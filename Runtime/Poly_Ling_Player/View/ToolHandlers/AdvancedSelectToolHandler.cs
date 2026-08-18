@@ -43,6 +43,29 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<Poly_Ling.Selection.MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
+        /// <summary>
+        /// ツール固有の選択モード override を Viewer へ通知する（Viewer から結線）。
+        /// null は「override なし＝ユーザのチェックボックスに従う」。
+        /// GetHoverElement の引数だけを固定するとホバーハイライトと GPU 側の絞り込みが
+        /// 追従しないため、モード変更のたびに Viewer 権限へ通知する。
+        /// </summary>
+        public Action<Poly_Ling.Selection.MeshSelectMode?> OnRequestSelectModeOverride;
+
+        /// <summary>
+        /// 現在の高度選択モードが要求するホバー種別。null はユーザ指定に従う。
+        /// Belt / EdgeLoop は辺と補助線分、ShortestPath は頂点。
+        /// 属性系（Connected / UvNormalCount / NearAxis / BoundaryEdge*）は絞らない。
+        /// </summary>
+        public Poly_Ling.Selection.MeshSelectMode? HoverSelectModeOverride => Mode switch
+        {
+            AdvancedSelectMode.Belt         => Poly_Ling.Selection.MeshSelectMode.Edge
+                                             | Poly_Ling.Selection.MeshSelectMode.Line,
+            AdvancedSelectMode.EdgeLoop     => Poly_Ling.Selection.MeshSelectMode.Edge
+                                             | Poly_Ling.Selection.MeshSelectMode.Line,
+            AdvancedSelectMode.ShortestPath => Poly_Ling.Selection.MeshSelectMode.Vertex,
+            _                               => (Poly_Ling.Selection.MeshSelectMode?)null,
+        };
+
         // ================================================================
         // モード設定公開
         // ================================================================
@@ -50,7 +73,12 @@ namespace Poly_Ling.Player
         public AdvancedSelectMode Mode
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.Mode ?? AdvancedSelectMode.Connected;
-            set { if (_tool.Settings is AdvancedSelectSettings s) s.Mode = value; }
+            set
+            {
+                if (_tool.Settings is AdvancedSelectSettings s) s.Mode = value;
+                // サブモードでホバー種別が変わる。Viewer 側の override を追従させる。
+                OnRequestSelectModeOverride?.Invoke(HoverSelectModeOverride);
+            }
         }
 
         public bool AddToSelection
@@ -302,14 +330,11 @@ namespace Poly_Ling.Player
             if (firstIdx < 0) return;
 
             // モードに応じて問い合わせ種別を決める。Connected 等は現在の選択モードに従う。
-            var queryMode = Mode switch
-            {
-                AdvancedSelectMode.Belt         => Poly_Ling.Selection.MeshSelectMode.Edge,
-                AdvancedSelectMode.EdgeLoop     => Poly_Ling.Selection.MeshSelectMode.Edge,
-                AdvancedSelectMode.ShortestPath => Poly_Ling.Selection.MeshSelectMode.Vertex,
-                _                               => (_selectionOps?.SelectionState?.Mode
-                                                    ?? Poly_Ling.Selection.MeshSelectMode.Vertex),
-            };
+            // 固定種別は HoverSelectModeOverride と同じ値を使い、ホバーハイライト
+            // （Viewer 権限が適用する override）と問い合わせ種別が食い違わないようにする。
+            var queryMode = HoverSelectModeOverride
+                            ?? (_selectionOps?.SelectionState?.Mode
+                                ?? Poly_Ling.Selection.MeshSelectMode.Vertex);
 
             var elem = GetHoverElement(queryMode);
             if (elem.MeshIndex != firstIdx) return;

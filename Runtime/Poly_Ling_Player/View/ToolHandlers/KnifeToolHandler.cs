@@ -44,6 +44,15 @@ namespace Poly_Ling.Player
         public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
         /// <summary>
+        /// ホバー用選択モードをツール固有 override として Viewer へ通知する（Viewer から結線）。
+        /// 適用先は Viewer 側の選択モード権限が一括で面倒を見る
+        /// （現モデル全メッシュ / SelectionOps / レンダラ保持分）。
+        /// ここで ActiveMeshContext だけに書くとメッシュ間や GPU 側と Mode が食い違うため、
+        /// 未結線時のフォールバック書き込みは行わない。
+        /// </summary>
+        public Action<MeshSelectMode> ApplyHoverModeToAllMeshes;
+
+        /// <summary>
         /// SimpleCut 実行直前の面カリングマスク取得（ctxMeshIndex, faceCount → mask, true=切らない）。
         /// カリングOFF時は null（＝全面対象）。線ホバーと同一の GPU 経路で生成。
         /// Player の Viewer が Viewport 経由で配線する。
@@ -180,12 +189,18 @@ namespace Poly_Ling.Player
         /// </summary>
         public void ApplyHoverSelectionMode()
         {
-            var sel = _project?.CurrentModel?.ActiveMeshContext?.Selection;
-            if (sel == null) return;
-            sel.Mode = _tool.NextClickIsEdge
+            ApplyHoverModeToAllMeshes?.Invoke(HoverSelectMode);
+        }
+
+        /// <summary>
+        /// 現在の段で必要なホバー種別。
+        /// 開始/終了頂点の段は頂点、セグメント（辺）の段は辺。
+        /// Viewer がツール進入時に override を決めるためにも読む。
+        /// </summary>
+        public Poly_Ling.Selection.MeshSelectMode HoverSelectMode
+            => _tool.NextClickIsEdge
                 ? Poly_Ling.Selection.MeshSelectMode.Edge
                 : Poly_Ling.Selection.MeshSelectMode.Vertex;
-        }
 
         // ================================================================
         // 内部ヘルパー

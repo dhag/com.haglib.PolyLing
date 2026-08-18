@@ -44,6 +44,19 @@ namespace Poly_Ling.Tools
         void Apply(Vector3 worldDelta);
 
         /// <summary>
+        /// 累積移動量を絶対値で設定する（差分の足し込みではない）。
+        ///
+        /// <para>
+        /// Apply(delta) を繰り返す方式は、呼び出しごとにスクリーン→ワールド換算の
+        /// 基準点が変わるため、総移動量が「総スクリーン差分を 1 回で換算した値」と
+        /// 一致しない。ドラッグ原点から現在位置までの差分を毎回まとめて換算し、
+        /// その結果をここへ渡すことで一致させる。
+        /// </para>
+        /// </summary>
+        /// <param name="worldTotal">ドラッグ原点からの累積移動量（ワールド）</param>
+        void SetTotalDelta(Vector3 worldTotal);
+
+        /// <summary>
         /// 変形終了
         /// </summary>
         void End();
@@ -124,7 +137,12 @@ namespace Poly_Ling.Tools
 
         public void Apply(Vector3 worldDelta)
         {
-            _totalDelta += worldDelta;
+            SetTotalDelta(_totalDelta + worldDelta);
+        }
+
+        public void SetTotalDelta(Vector3 worldTotal)
+        {
+            _totalDelta = worldTotal;
 
             foreach (int idx in _selectedIndices)
             {
@@ -305,7 +323,12 @@ namespace Poly_Ling.Tools
 
         public void Apply(Vector3 worldDelta)
         {
-            _totalDelta += worldDelta;
+            SetTotalDelta(_totalDelta + worldDelta);
+        }
+
+        public void SetTotalDelta(Vector3 worldTotal)
+        {
+            _totalDelta = worldTotal;
 
             // 選択頂点: フル移動
             foreach (int idx in _selectedIndices)
@@ -386,6 +409,11 @@ namespace Poly_Ling.Tools
         public void Apply(Vector3 worldDelta)
         {
             // IVertexTransform互換（使用しない）
+        }
+
+        public void SetTotalDelta(Vector3 worldTotal)
+        {
+            // IVertexTransform互換（回転は ApplyRotation を使うため未使用）
         }
 
         public void ApplyRotation(Vector3 eulerAngles)
@@ -478,6 +506,11 @@ namespace Poly_Ling.Tools
         public void Apply(Vector3 worldDelta)
         {
             // IVertexTransform互換（使用しない）
+        }
+
+        public void SetTotalDelta(Vector3 worldTotal)
+        {
+            // IVertexTransform互換（スケールは ApplyScale を使うため未使用）
         }
 
         public void ApplyScale(Vector3 scale)

@@ -53,6 +53,13 @@ namespace Poly_Ling.Player
         public event Action<int, Vector2, ModifierKeys> OnClick;
 
         /// <summary>ドラッグ開始。移動量が DragThreshold を超えた最初のフレーム。(btn, downScreenPos, mods)</summary>
+        /// <summary>
+        /// IMouseEventSource 実装のための宣言。旧ディスパッチャは押下中の
+        /// しきい値未満移動を区別しないため、このイベントは発火しない。
+        /// 押下時追従が要るのは PlayerViewportPanel 経路のみ。
+        /// </summary>
+        public event Action<int, Vector2, Vector2, ModifierKeys> OnPressMove;
+
         public event Action<int, Vector2, ModifierKeys> OnDragBegin;
 
         /// <summary>ドラッグ中。(btn, currentScreenPos, delta, mods)</summary>

@@ -192,11 +192,7 @@ namespace Poly_Ling.Player
             ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
             ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.Repaint          = OnRepaint;
-            // WorkPlane: カメラ注視点を原点とするカメラ平行平面
-            var wp = new Poly_Ling.Context.WorkPlaneContext();
-            wp.UpdateFromCamera(ctx.CameraPosition, ctx.CameraTarget);
-            wp.Origin = ctx.CameraTarget;
-            ctx.WorkPlane = wp;
+            ApplyWorkPlane(ctx);
         }
         public void Activate(ToolContext ctx)
         {
@@ -240,6 +236,7 @@ namespace Poly_Ling.Player
         {
             int gpuVertex = -1;
             UnityEngine.Vector3? snapWorld = null;
+            bool fromUnselected = false;
 
             var model = _project?.CurrentModel;
             if (model != null)
@@ -261,12 +258,16 @@ namespace Poly_Ling.Player
                     ApplyHoverElement(
                         GetSnapHoverElement(),
                         activeIdx, ref gpuVertex, ref snapWorld);
+                    // この経路で取れた吸着座標だけが非選択オブジェクト由来。
+                    fromUnselected = snapWorld.HasValue;
                 }
             }
 
             _tool.SetGpuHoverVertex(gpuVertex);
             // 同一メッシュヒットが優先。両方を同時に立てない。
-            _tool.SetGpuHoverSnapWorld(gpuVertex >= 0 ? (UnityEngine.Vector3?)null : snapWorld);
+            _tool.SetGpuHoverSnapWorld(
+                gpuVertex >= 0 ? (UnityEngine.Vector3?)null : snapWorld,
+                fromUnselected);
         }
 
         /// <summary>
@@ -304,6 +305,9 @@ namespace Poly_Ling.Player
             ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.UndoController   = _undoController;
             ctx.GetVertexWorldPosition = GetVertexWorldPosition;
+            // 新規面のマテリアル。ToToolContext は設定しないため、ここで補う。
+            // 参照元はモデル共通のカレント値（マテリアルリストパネルと同じ）。
+            if (model != null) ctx.CurrentMaterialIndex = model.CurrentMaterialIndex;
             if (_undoController?.MeshUndoContext != null)
             {
                 _undoController.MeshUndoContext.OnTopologyChanged = NotifyTopologyChanged;
@@ -313,13 +317,44 @@ namespace Poly_Ling.Player
             ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
             ctx.NotifyTopologyChanged = NotifyTopologyChanged;
             ctx.Repaint               = OnRepaint;
-            // WorkPlane: カメラ注視点を原点とするカメラ平行平面を設定。
-            // WorkPlaneがnullだと新規頂点がカメラから1.5*CameraDistance離れた位置に置かれる。
+            ApplyWorkPlane(ctx);
+            return ctx;
+        }
+
+        /// <summary>
+        /// 吸着しなかった場合の奥行きを決める WorkPlane を設定する。
+        ///
+        /// 面はカメラ平行（UpdateFromCamera）。原点は次の順で決める。
+        ///   1. 直前に指定された点。深さをその点に合わせる。
+        ///   2. 1 点も指定されていなければワールド原点。
+        /// WorkPlane が null だと新規頂点がカメラから 1.5*CameraDistance の位置に置かれる。
+        /// </summary>
+        private void ApplyWorkPlane(ToolContext ctx)
+        {
             var wp = new Poly_Ling.Context.WorkPlaneContext();
             wp.UpdateFromCamera(ctx.CameraPosition, ctx.CameraTarget);
-            wp.Origin = ctx.CameraTarget;
+            wp.Origin = ResolveDepthOrigin(ctx);
             ctx.WorkPlane = wp;
-            return ctx;
+        }
+
+        /// <summary>
+        /// 深さの基準となるワールド座標を返す。直前の点が無ければワールド原点。
+        ///
+        /// 既存頂点を指す点は GPU が計算したワールド座標を使う。
+        /// スキニング後の位置を CPU で計算し直すと描画とずれる。
+        /// </summary>
+        private Vector3 ResolveDepthOrigin(ToolContext ctx)
+        {
+            var last = _tool.GetLastPoint();
+            if (!last.HasValue) return Vector3.zero;
+
+            var p = last.Value;
+            if (p.IsExistingVertex && GetVertexWorldPosition != null)
+            {
+                var w = GetVertexWorldPosition(p.ExistingVertexIndex);
+                if (w.HasValue) return w.Value;
+            }
+            return ctx.ActiveLocalToWorld(p.Position);
         }
 
         private ToolContext BuildCtx(ModifierKeys mods, Vector2 sp)

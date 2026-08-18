@@ -131,9 +131,18 @@ namespace Poly_Ling.Player
         // パネルごとの「ビューポートで選択する」チェックの保存キー。
         // 他パネルへ広げるときはここへキーを足し、Build 直後に
         // AttachPanelSelectToggle、Show～Panel を ShowRightPanelSelectable にする。
-        private const string PanelSelectKeyMeshList   = "MeshList";
-        private const string PanelSelectKeyVertexHole = "VertexHole";
-        private const string PanelSelectKeyPrimitive  = "Primitive";
+        // 面追加ツールで非選択オブジェクトの頂点へ吸着したときのプレビュー色。
+        // 選択メッシュへの吸着（シアン）と区別するためのマゼンタ。
+        private static readonly Color AddFaceUnselectedSnapColor = new Color(1f, 0.35f, 0.9f, 0.95f);
+
+        private const string PanelSelectKeyMeshList    = "MeshList";
+        private const string PanelSelectKeyVertexHole  = "VertexHole";
+        private const string PanelSelectKeyPrimitive   = "Primitive";
+        // PMX/MQO はインポータ・エクスポータそれぞれで1キーを共有する（モード切替で状態を分けない）。
+        private const string PanelSelectKeyImport      = "Import";
+        private const string PanelSelectKeyExport      = "Export";
+        private const string PanelSelectKeyProjectSave = "ProjectSave";
+        private const string PanelSelectKeyProjectLoad = "ProjectLoad";
 
         // ================================================================
         // 一時選択サブツール (ショートカット R = 矩形 / G = 投げ縄。左ペインのボタンも同じ)
@@ -145,9 +154,8 @@ namespace Poly_Ling.Player
         private InteractionMode                         _subToolPrevMode;
         private MoveToolHandler.SelectionDragMode       _subToolPrevMoveDragMode;
         private ObjectMoveToolHandler.SelectionDragMode _subToolPrevObjectDragMode;
-        // AddFace は脱出時に Selection.Mode が All にされる一方、再進入時に絞り直さない。
-        // 復帰元がそういうモードでもホバー範囲が変わらないよう、ここで退避・復元する。
-        private MeshSelectMode?                         _subToolPrevSelectionMode;
+        // 選択モードの退避は持たない。SetInteractionMode が新モードごとに
+        // ツール固有 override を決め直すため、復帰時も自動で正しい値になる。
 
         // ================================================================
         // 面削除モード (ショートカット D。左ペインの「面削除モード」ボタンも同じ)
@@ -258,7 +266,26 @@ namespace Poly_Ling.Player
         private DeleteSelectionToolHandler        _deleteSelectionHandler;
         private PlayerAddFaceSubPanel             _addFaceSubPanel;
         private AddFaceToolHandler                _addFaceHandler;
-        private System.Action _applySelectMode;                 // 選択モード適用（トグル→モデル）。永続復元/モデル選択時に再利用。
+        // ================================================================
+        // 選択モード（頂点/辺/面/線分）の単一権限
+        //
+        // 【なぜ一箇所に集約するか】
+        // SelectionState は経路ごとに別インスタンスへ差し替わり、Mode の既定値は
+        // Vertex|Edge|Face|Line。書き込み口が分散していると、ツール脱出・Undo・
+        // モデルロード・メッシュ選択のたびに値が巻き戻り、チェックボックスの指定が
+        // 効かなくなる。書き込みは ApplySelectMode() だけが行う。
+        //
+        // 【実効値】_toolSelectModeOverride ?? _userSelectMode
+        //   _userSelectMode         … 左ペインのチェックボックス（永続化対象）
+        //   _toolSelectModeOverride … ツール固有の絞り込み。null でユーザ指定に従う。
+        //                             例: 面追加は常に頂点のみ（チェックボックス無関係）
+        // ================================================================
+        private MeshSelectMode  _userSelectMode = MeshSelectMode.Vertex;
+        private MeshSelectMode? _toolSelectModeOverride;
+        // 直近に適用した実効モード。変化した時だけ「無効になった種別の選択」を解除する。
+        // 毎回解除すると、モード外の種別を意図的に選ぶツール（高度選択の面/辺同時選択等）
+        // の結果まで消えてしまう。
+        private MeshSelectMode? _lastAppliedSelectMode;
         private const string SelectModePrefKey = "LeftPane.SelectMode";
         private PlayerFlipFaceSubPanel            _flipFaceSubPanel;
         private FlipFaceToolHandler               _flipFaceHandler;
@@ -306,6 +333,16 @@ namespace Poly_Ling.Player
         private PlayerViewport         _activeViewport;
 
         private PlayerCommandDispatcher _commandDispatcher;
+
+        // 左ペイン「回転はローカル原点中心」トグルの状態（既定 ON）。
+        // ON でも切り替えた時点では視点を動かさない。ComputeOrbitPivot が
+        // OrbitCameraController.GetOrbitPivot 経由で軌道回転時にだけ参照される。
+        private bool _orbitAroundLocalOrigin = true;
+
+        // 左ペイン「現在の選択を中心に」釦で確定した固定ピボット（ワールド）。
+        // スナップショットであり、押した後に選択や頂点が変わっても動かない。
+        // null なら未設定。トグルを ON に戻すと解除される。
+        private Vector3? _explicitOrbitPivot;
 
         private readonly List<(VisualElement section, Action refresh)> _sectionRefreshPairs = new();
         private PlayerRemoteFetchFlow   _fetchFlow;
@@ -893,6 +930,12 @@ namespace Poly_Ling.Player
         {
             _selectionOps = new PlayerSelectionOps(_selectionState);
 
+            // SelectionState は経路ごとに別インスタンスへ差し替わる
+            // (EnterSceneReset / SelectMeshCommand / SelectElementsCommand / 高度選択 等)。
+            // 差し替え直後に実効選択モードを再適用しないと、新インスタンスの既定値
+            // (Vertex|Edge|Face|Line) のままになりチェックボックスが無効化される。
+            _selectionOps.OnStateInstalled = _ => ApplySelectMode();
+
             // 複数オブジェクト選択対応:
             // PlayerSelectionOps はクリック／矩形／投げ縄の書き込み先を
             // 「当たったメッシュの MeshContext.Selection」へ振り分ける。
@@ -937,6 +980,10 @@ namespace Poly_Ling.Player
 
                 OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin),
                 OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd),
+                // ドラッグ開始時に選択が変わったときだけ呼ばれる。EnterSelectionChanged は
+                // UpdateSelectedDrawableMesh → PresentAll まで同期実行するので、
+                // TransformDragging へ入る前に選択が GPU へ届く。
+                OnCommitSelectionSync    = () => _viewportManager.EnterSelectionChanged(ActiveProject),
                 OnEnterBoxSelecting      = () => _viewportManager.EnterBoxSelecting(),
                 OnReadBackVertexFlags    = () => _viewportManager.ReadBackVertexFlags(),
                 OnExitBoxSelecting       = () => _viewportManager.ExitBoxSelecting(),
@@ -990,6 +1037,9 @@ namespace Poly_Ling.Player
             {
                 _selectionOps?.SetSelectionState(sel);
             };
+            // モデルロード / トポロジ変更 / Undo 適用では MeshContext と SelectionState が
+            // 作り直される。作り直された側へ実効選択モードを再適用する。
+            _viewportManager.OnApplySelectMode = ApplySelectMode;
 
             _objectMoveHandler = new ObjectMoveToolHandler();
             _objectMoveHandler.SetProject(ActiveProject);
@@ -1119,6 +1169,14 @@ namespace Poly_Ling.Player
             _advancedSelectHandler.SetSelectionOps(_selectionOps);
             _advancedSelectHandler.SetUndoController(_editOps?.UndoController);
             _advancedSelectHandler.GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport);
+            // Belt / EdgeLoop は辺と補助線分、ShortestPath は頂点に絞る。
+            // 属性系サブモードは null が来るのでチェックボックスの指定に戻る。
+            _advancedSelectHandler.OnRequestSelectModeOverride = m =>
+            {
+                if (_interactionMode != InteractionMode.AdvancedSelect) return;
+                _toolSelectModeOverride = m;
+                ApplySelectMode();
+            };
             _advancedSelectHandler.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
             _advancedSelectHandler.OnSelectionChanged = () =>
             {
@@ -1401,6 +1459,9 @@ namespace Poly_Ling.Player
                         // ビューポート操作でもカメラ調整パネルの数値を追従させる。
                         _cameraSubPanel?.Refresh();
                     };
+                    // 軌道回転の中心。軌道ドラッグ開始時に 1 回だけ評価される。
+                    // 選択変更イベントからは呼ばないので、選択しただけでは視点は動かない。
+                    vp.Orbit.GetOrbitPivot     = ComputeOrbitPivot;
                 }
                 if (vp.Ortho != null)
                 {
@@ -1762,18 +1823,23 @@ namespace Poly_Ling.Player
                 lines.Add((pointToScreen(data.PlacedPoints[data.PlacedPoints.Length - 1]), previewToScreen()));
 
             // プレビュー点
+            // 非選択オブジェクトへの吸着は色を変えて区別する（既定のシアンは選択メッシュ用）。
             var previewPts  = new System.Collections.Generic.List<UnityEngine.Vector2>();
             var previewSnap = new System.Collections.Generic.List<bool>();
+            var previewCols = new System.Collections.Generic.List<UnityEngine.Color?>();
             if (data.PreviewValid)
             {
                 previewPts.Add(previewToScreen());
                 previewSnap.Add(data.PreviewSnapped);
+                previewCols.Add(data.PreviewSnappedUnselected
+                    ? (UnityEngine.Color?)AddFaceUnselectedSnapColor
+                    : null);
             }
 
             // Quad で3点配置済み、ホバーが1点目の既存頂点のときは開始点を強調する。
             int afHighlight = (data.CloseToStart && pts.Count > 0) ? 0 : -1;
 
-            panel.UpdateAddFacePreview(pts, previewPts, previewSnap, lines, afHighlight);
+            panel.UpdateAddFacePreview(pts, previewPts, previewSnap, lines, afHighlight, previewCols);
         }
 
         /// <summary>
@@ -3060,7 +3126,7 @@ namespace Poly_Ling.Player
                     if (proj == null) return false;
                     if (proj.CurrentModel == null && proj.ModelCount > 0)
                         proj.SelectModel(0);
-                    _applySelectMode?.Invoke();  // 永続選択モードを新規アクティブモデルへ適用
+                    ApplySelectMode();  // 実効選択モードを新規アクティブモデルへ適用
                     var model = proj.CurrentModel;
                     if (model == null) return false;
 
@@ -3129,6 +3195,32 @@ namespace Poly_Ling.Player
             _addFaceSubPanel = new PlayerAddFaceSubPanel
             {
                 GetH = () => _addFaceHandler,
+
+                // 追加先オブジェクト。編集対象は ActiveMeshIndex（＝ SelectedDrawableMeshIndices[0]）
+                // なので、切り替えは通常のメッシュ選択と同じ SelectMeshCommand で行う。
+                GetMeshEntries     = BuildAddFaceMeshEntries,
+                GetActiveMeshIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1,
+                OnSelectMesh       = idx =>
+                {
+                    if (idx < 0) return;
+                    _commandDispatcher?.Dispatch(new SelectMeshCommand(
+                        ActiveProject?.CurrentModelIndex ?? 0,
+                        MeshCategory.Drawable,
+                        new[] { idx }));
+                    // 切り替え先メッシュへの選択モード反映は SelectMeshCommand の経路
+                    // (SetSelectionState → OnStateInstalled → ApplySelectMode) が行う。
+                    _addFaceSubPanel?.Refresh();
+                },
+
+                // マテリアルはモデル共通のカレント値。マテリアルリストパネルと同じ値を読み書きする。
+                GetMaterialNames        = BuildAddFaceMaterialNames,
+                GetCurrentMaterialIndex = () => ActiveProject?.CurrentModel?.CurrentMaterialIndex ?? -1,
+                OnSelectMaterial        = idx =>
+                {
+                    var model = ActiveProject?.CurrentModel;
+                    if (model == null || idx < 0 || idx >= model.MaterialCount) return;
+                    model.CurrentMaterialIndex = idx;
+                },
             };
             _addFaceSubPanel.Build(_layoutRoot.AddFaceSection);
             _flipFaceHandler = new FlipFaceToolHandler
@@ -3440,6 +3532,13 @@ namespace Poly_Ling.Player
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                // 段 (開始頂点 → セグメント辺 → 終了頂点) ごとにホバー種別が変わる。
+                // ツール固有 override として通知し、適用先は選択モード権限に任せる。
+                ApplyHoverModeToAllMeshes = m =>
+                {
+                    if (_interactionMode != InteractionMode.Knife) return;
+                    SetToolSelectModeOverride(m);
+                },
                 GetFaceCulledMask   = (ctxIdx, faceCount) => _viewportManager.GetFaceCulledMask(ctxIdx, faceCount, _activeViewport),
                 // 切断点の比率をスクリーン空間から 3D 空間へ補正するために使う。
                 GetVertexClipW      = vi =>
@@ -3610,21 +3709,22 @@ namespace Poly_Ling.Player
             _importSubPanel.Build(_layoutRoot.ImportSection);
             _importSubPanel.OnImportPmx = OnImportPmx;
             _importSubPanel.OnImportMqo = OnImportMqo;
+            AttachPanelSelectToggle(_layoutRoot.ImportSection, PanelSelectKeyImport);
 
             _exportSubPanel = new PlayerExportSubPanel();
             _exportSubPanel.Build(_layoutRoot.ExportSection);
             _exportSubPanel.OnExportPmx = OnExportPmx;
             _exportSubPanel.OnExportMqo = OnExportMqo;
+            AttachPanelSelectToggle(_layoutRoot.ExportSection, PanelSelectKeyExport);
 
             _projectSaveSubPanel = new PlayerProjectFileSubPanel
             {
                 Mode = PlayerProjectFileSubPanel.PanelMode.Save,
             };
             _projectSaveSubPanel.Build(_layoutRoot.ProjectSaveSection);
-            _projectSaveSubPanel.OnSave      = OnSaveProject;
-            _projectSaveSubPanel.OnSaveAs    = OnSaveAsProject;
-            _projectSaveSubPanel.OnSaveCsv   = OnSaveCsvProject;
-            _projectSaveSubPanel.OnSaveAsCsv = OnSaveAsCsvProject;
+            _projectSaveSubPanel.OnSave    = OnSaveProject;
+            _projectSaveSubPanel.OnSaveCsv = OnSaveCsvProject;
+            AttachPanelSelectToggle(_layoutRoot.ProjectSaveSection, PanelSelectKeyProjectSave);
 
             _projectLoadSubPanel = new PlayerProjectFileSubPanel
             {
@@ -3633,6 +3733,7 @@ namespace Poly_Ling.Player
             _projectLoadSubPanel.Build(_layoutRoot.ProjectLoadSection);
             _projectLoadSubPanel.OnLoad    = OnLoadProject;
             _projectLoadSubPanel.OnLoadCsv = OnLoadCsvProject;
+            AttachPanelSelectToggle(_layoutRoot.ProjectLoadSection, PanelSelectKeyProjectLoad);
 
             _partialImportSubPanel = new PlayerPartialImportSubPanel();
             _partialImportSubPanel.Build(_layoutRoot.PartialImportSection);
@@ -3860,6 +3961,35 @@ namespace Poly_Ling.Player
                         : ObjectMoveToolHandler.SelectionDragMode.Box;
             });
 
+            // 「回転はローカル原点中心」。状態を持つだけで、ここでカメラは動かさない。
+            // ON に戻したときは釦で確定した固定ピボットを解除し、ローカル原点中心へ戻す。
+            if (_layoutRoot.OrbitAroundLocalOriginToggle != null)
+                _layoutRoot.OrbitAroundLocalOriginToggle.RegisterValueChangedCallback(e =>
+                {
+                    _orbitAroundLocalOrigin = e.newValue;
+                    if (e.newValue) _explicitOrbitPivot = null;
+                });
+
+            // 「現在の選択を中心に」。押した時点の重心をワールド固定点として保持する。
+            // ここでもカメラは動かさない（次に回した瞬間から軸として効く）。
+            if (_layoutRoot.OrbitCenterToSelectionBtn != null)
+                _layoutRoot.OrbitCenterToSelectionBtn.clicked += () =>
+                {
+                    // 要素（頂点/辺/面/線分）が未選択ならローカル原点（ピボット）へ落とす。
+                    var pivot = ComputeElementCentroid() ?? ComputeLocalOriginCentroid();
+                    if (!pivot.HasValue)
+                    {
+                        Debug.LogWarning("[Orbit] 選択がないため回転中心を設定できません。");
+                        return;
+                    }
+
+                    _explicitOrbitPivot = pivot.Value;
+
+                    // UI 状態と実挙動を一致させる（チェック中なのに効かない状態を作らない）。
+                    _orbitAroundLocalOrigin = false;
+                    _layoutRoot.OrbitAroundLocalOriginToggle?.SetValueWithoutNotify(false);
+                };
+
             // ── 法線 自動計算 / 手動再計算 ──────────────────────────────
             // 自動計算 ON  = 選択メッシュの PreserveNormals を false にする
             // 自動計算 OFF = 選択メッシュの PreserveNormals を true  にする
@@ -3885,22 +4015,9 @@ namespace Poly_Ling.Player
                     NormalRecalcDefaultAngleDeg));
             };
 
-            // 選択モード切替（頂点/辺/面/線分・非排他）→ 現モデル各メッシュの Selection.Mode に反映。
-            _applySelectMode = () =>
-            {
-                var model = ActiveProject?.CurrentModel;
-                if (model?.MeshContextList == null) return;
-                MeshSelectMode m = MeshSelectMode.None;
-                if (_layoutRoot.SelModeVertexToggle.value) m |= MeshSelectMode.Vertex;
-                if (_layoutRoot.SelModeEdgeToggle.value)   m |= MeshSelectMode.Edge;
-                if (_layoutRoot.SelModeFaceToggle.value)   m |= MeshSelectMode.Face;
-                if (_layoutRoot.SelModeLineToggle.value)   m |= MeshSelectMode.Line;
-                if (m == MeshSelectMode.None) m = MeshSelectMode.Vertex;  // 全OFFは頂点にフォールバック
-                foreach (var mc in model.MeshContextList)
-                    if (mc?.Selection != null && mc.Type != MeshType.Bone)
-                        mc.Selection.Mode = m;
-                _activePanel?.MarkDirtyRepaint();
-            };
+            // 選択モード切替（頂点/辺/面/線分・非排他）。
+            // トグル → _userSelectMode → ApplySelectMode() の一方向だけ。
+            // トグルの値をここ以外から読んではならない（読み口が増えると再び分散する）。
 
             // 選択モードを端末ローカルに保存（V=1/E=2/F=4/L=8 の 4bit）。PTFS 表示と同じ RecentPaths ストア。
             System.Action saveSelectMode = () =>
@@ -3912,10 +4029,17 @@ namespace Poly_Ling.Player
                 PlayerUiPrefs.SetInt(SelectModePrefKey, bits);
             };
 
-            _layoutRoot.SelModeVertexToggle.RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
-            _layoutRoot.SelModeEdgeToggle  .RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
-            _layoutRoot.SelModeFaceToggle  .RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
-            _layoutRoot.SelModeLineToggle  .RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
+            System.Action onSelModeToggled = () =>
+            {
+                saveSelectMode();
+                ReadUserSelectModeFromToggles();
+                ApplySelectMode();
+            };
+
+            _layoutRoot.SelModeVertexToggle.RegisterValueChangedCallback(_ => onSelModeToggled());
+            _layoutRoot.SelModeEdgeToggle  .RegisterValueChangedCallback(_ => onSelModeToggled());
+            _layoutRoot.SelModeFaceToggle  .RegisterValueChangedCallback(_ => onSelModeToggled());
+            _layoutRoot.SelModeLineToggle  .RegisterValueChangedCallback(_ => onSelModeToggled());
 
             // 起動時：保存済み選択モードを復元してトグルへ反映（未保存は既定=頂点のまま）。
             {
@@ -3927,7 +4051,8 @@ namespace Poly_Ling.Player
                     _layoutRoot.SelModeFaceToggle  .SetValueWithoutNotify((savedBits & 4) != 0);
                     _layoutRoot.SelModeLineToggle  .SetValueWithoutNotify((savedBits & 8) != 0);
                 }
-                _applySelectMode();
+                ReadUserSelectModeFromToggles();
+                ApplySelectMode();
             }
 
             _layoutRoot.ModelListBtn.clicked += ShowModelListPanel;
@@ -4194,6 +4319,9 @@ namespace Poly_Ling.Player
             // D : 面削除モード。面クリックで即削除。Escape で直前のツールへ戻る。
             _shortcutController.Register(ShortcutMap.CmdToolDeleteFace,
                 EnterDeleteFaceMode);
+            // F : 面追加ツール。左ペインの「面追加」ボタンと同じ処理。
+            _shortcutController.Register(ShortcutMap.CmdToolAddFace,
+                ShowAddFacePanel);
             // Escape は一時選択サブツールと面削除モードの両方の復帰に使う。
             // どちらも進入中でなければ各メソッドが即 return するため順序は問わない。
             _shortcutController.OnEscape = () => { ExitSelectSubTool(); ExitDeleteFaceMode(); };
@@ -4283,6 +4411,36 @@ namespace Poly_Ling.Player
                 var mc = model.GetMeshContext(entry.MasterIndex);
                 if (mc?.MeshObject == null) continue;
                 list.Add(($"[{entry.MasterIndex}] {mc.Name ?? "?"}", entry.MasterIndex, mc.MeshObject));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 面追加パネルの「追加先」候補。BuildDrawableMeshEntryList と同じ並び・表示名で、
+        /// MeshObject を持たない項目を除いた (表示名, MasterIndex) を返す。
+        /// </summary>
+        private List<(string Label, int MasterIndex)> BuildAddFaceMeshEntries()
+        {
+            var list = new List<(string, int)>();
+            foreach (var e in BuildDrawableMeshEntryList())
+                list.Add((e.Label, e.MasterIndex));
+            return list;
+        }
+
+        /// <summary>
+        /// 面追加パネルの「マテリアル」候補。スロット順の名前を返す。未設定は "(None)"。
+        /// マテリアルリストパネルの表示（PlayerMaterialListSubPanel.MatName）と揃える。
+        /// </summary>
+        private List<string> BuildAddFaceMaterialNames()
+        {
+            var list = new List<string>();
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return list;
+
+            for (int i = 0; i < model.MaterialCount; i++)
+            {
+                var mat = model.GetMaterial(i);
+                list.Add(mat != null ? mat.name : "(None)");
             }
             return list;
         }
@@ -4393,9 +4551,8 @@ namespace Poly_Ling.Player
 
         private void ShowImportPanel(PlayerImportSubPanel.Mode mode)
         {
-            // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.ImportSection, null);
+            // カテゴリ 3（選択許可チェック ON なら SelectOnly で開く）
+            ShowRightPanelSelectable(_layoutRoot?.ImportSection, null, PanelSelectKeyImport);
             _importSubPanel?.SetMode(mode);
         }
 
@@ -4931,15 +5088,18 @@ namespace Poly_Ling.Player
             ShowCategory1Panel(InteractionMode.Knife);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _knifeHandler?.Activate(ctx);
+            // Activate は SetInteractionMode の後に走り、段（開始頂点/セグメント辺）を
+            // 初期化し得る。初期段に合わせて override を確定させる。
+            _knifeHandler?.ApplyHoverSelectionMode();
         }
         private void ShowAddFacePanel()
         {
             ShowCategory1Panel(InteractionMode.AddFace);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _addFaceHandler?.Activate(ctx);
-            // 面追加時は頂点ホバーのみ必要。辺・面のホバーは有害なので抑制する。
-            var firstMc = ActiveProject?.CurrentModel?.ActiveMeshContext;
-            if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.Vertex;
+            // 面追加時は頂点ホバーのみ必要（辺・面のホバーは有害）。
+            // 絞り込みは ShowCategory1Panel → SetInteractionMode(AddFace) →
+            // ResolveToolSelectModeOverride が行うため、ここでは書かない。
         }
 
         private void ShowSplitVerticesPanel()
@@ -5243,29 +5403,28 @@ namespace Poly_Ling.Player
 
         private void ShowExportPanel(PlayerExportSubPanel.Mode mode)
         {
-            // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            // カテゴリ 3（選択許可チェック ON なら SelectOnly で開く）
             var btn = mode == PlayerExportSubPanel.Mode.PMX
                 ? _layoutRoot?.FullExportPmxBtn
                 : _layoutRoot?.FullExportMqoBtn;
-            ShowRightPanel(_layoutRoot?.ExportSection, btn);
+            ShowRightPanelSelectable(_layoutRoot?.ExportSection, btn, PanelSelectKeyExport);
             _exportSubPanel?.SetMode(mode);
         }
 
         private void ShowProjectSavePanel()
         {
-            // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.ProjectSaveSection, _layoutRoot?.ProjectSaveBtn);
+            // カテゴリ 3（選択許可チェック ON なら SelectOnly で開く）
+            ShowRightPanelSelectable(
+                _layoutRoot?.ProjectSaveSection, _layoutRoot?.ProjectSaveBtn, PanelSelectKeyProjectSave);
             // もう一方のパネルで変更されたパスを取り込む（両者は RecentPaths を共有）。
             _projectSaveSubPanel?.Refresh();
         }
 
         private void ShowProjectLoadPanel()
         {
-            // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.ProjectLoadSection, _layoutRoot?.ProjectLoadBtn);
+            // カテゴリ 3（選択許可チェック ON なら SelectOnly で開く）
+            ShowRightPanelSelectable(
+                _layoutRoot?.ProjectLoadSection, _layoutRoot?.ProjectLoadBtn, PanelSelectKeyProjectLoad);
             _projectLoadSubPanel?.Refresh();
         }
 
@@ -6112,7 +6271,7 @@ namespace Poly_Ling.Player
             if (project == null) return;
             if (project.CurrentModel == null && project.ModelCount > 0)
                 project.SelectModel(0);
-            _applySelectMode?.Invoke();  // 永続選択モードを新規アクティブモデルへ適用
+            ApplySelectMode();  // 実効選択モードを新規アクティブモデルへ適用
 
             switch (addMode)
             {
@@ -6427,16 +6586,6 @@ namespace Poly_Ling.Player
             _projectSaveSubPanel?.SetStatus(ok ? "保存完了" : "保存失敗");
         }
 
-        private void OnSaveAsProject()
-        {
-            var project = ActiveProject;
-            if (project == null) { _projectSaveSubPanel?.SetStatus("プロジェクトがありません"); return; }
-            var dto = ProjectSerializer.FromProjectContext(project);
-            if (dto == null) { _projectSaveSubPanel?.SetStatus("シリアライズ失敗"); return; }
-            bool ok = ProjectSerializer.ExportWithDialog(dto, project.Name ?? "Project");
-            _projectSaveSubPanel?.SetStatus(ok ? "保存完了" : "キャンセルまたは失敗");
-        }
-
         private void OnLoadProject(string path)
         {
             if (string.IsNullOrEmpty(path)) { _projectLoadSubPanel?.SetStatus("パスが指定されていません"); return; }
@@ -6458,14 +6607,6 @@ namespace Poly_Ling.Player
             if (project == null) { _projectSaveSubPanel?.SetStatus("プロジェクトがありません"); return; }
             bool ok = CsvProjectSerializer.ExportToFile(path, project);
             _projectSaveSubPanel?.SetStatus(ok ? "CSV保存完了" : "保存失敗");
-        }
-
-        private void OnSaveAsCsvProject()
-        {
-            var project = ActiveProject;
-            if (project == null) { _projectSaveSubPanel?.SetStatus("プロジェクトがありません"); return; }
-            bool ok = CsvProjectSerializer.ExportWithDialog(project, defaultName: project.Name ?? "Project");
-            _projectSaveSubPanel?.SetStatus(ok ? "CSVフォルダ保存完了" : "キャンセルまたは失敗");
         }
 
         // path はCSVプロジェクトファイル（任意名の .csv）。
@@ -6849,11 +6990,8 @@ namespace Poly_Ling.Player
                     ? _objectMoveHandler.DragSelectMode
                     : ObjectMoveToolHandler.SelectionDragMode.Box;
 
-                var mcEnter = ActiveProject?.CurrentModel?.ActiveMeshContext;
-                _subToolPrevSelectionMode = mcEnter?.Selection != null
-                    ? mcEnter.Selection.Mode
-                    : (MeshSelectMode?)null;
-
+                // 選択モードの退避は不要。SelectOnly は
+                // ResolveToolSelectModeOverride が現在の override をそのまま引き継ぐ。
                 SetInteractionMode(InteractionMode.SelectOnly);
             }
 
@@ -6886,18 +7024,9 @@ namespace Poly_Ling.Player
             if (_objectMoveHandler != null)
                 _objectMoveHandler.DragSelectMode = _subToolPrevObjectDragMode;
 
+            // 復帰先モードの override は SetInteractionMode が決め直すため、
+            // 選択モードの復元処理は不要。
             SetInteractionMode(_subToolPrevMode);
-
-            // 進入時に退避した Selection.Mode を復元する。復帰先の case が絞り直す
-            // モード (EdgeBevel 等) では同値の再代入になり、絞り直さないモード
-            // (AddFace) では脱出処理で All にされた値を元へ戻す。
-            if (_subToolPrevSelectionMode.HasValue)
-            {
-                var mcExit = ActiveProject?.CurrentModel?.ActiveMeshContext;
-                if (mcExit?.Selection != null)
-                    mcExit.Selection.Mode = _subToolPrevSelectionMode.Value;
-            }
-            _subToolPrevSelectionMode = null;
 
             // ドラッグ選択モードのトグル表示を実状態へ戻す
             // (サブツール中に Refresh が走った場合のずれを解消する)。
@@ -6912,7 +7041,7 @@ namespace Poly_Ling.Player
         /// 矩形・投げ縄サブツールと違い InteractionMode は一切変更しない。
         /// 削除はマウス操作を伴わない即時実行なので、ドラッグを奪う必要が無く、
         /// SelectOnly へ往復させても SetInteractionMode の脱出/進入処理
-        /// (フックの null 化・Selection.Mode の All 復元・ボタンハイライト・
+        /// (フックの null 化・選択モード override の決め直し・ボタンハイライト・
         ///  ギズモ overlay 更新) が空回りするだけで実利が無い。
         /// モードを触らないので「実行前のツールに戻る」は自動的に満たされる。
         ///
@@ -6949,7 +7078,7 @@ namespace Poly_Ling.Player
         // ================================================================
         // 面削除モード
         //   ShowCategory1Panel は使わない。右ペインは切り替えず、入力挙動と
-        //   Selection.Mode だけを差し替えるため SetInteractionMode を直接呼ぶ
+        //   選択モードだけを差し替えるため SetInteractionMode を直接呼ぶ
         //   (一時選択サブツールと同じ方針)。
         // ================================================================
 
@@ -6974,7 +7103,7 @@ namespace Poly_Ling.Player
             if (!_deleteFaceModeActive) return;
 
             // SetInteractionMode の脱出処理が _deleteFaceModeActive を false にし、
-            // フック解除と Selection.Mode の All 復元も行う。
+            // フック解除を行う。選択モードは復帰先モードの override が決め直す。
             SetInteractionMode(_deleteFacePrevMode);
         }
 
@@ -7128,29 +7257,14 @@ namespace Poly_Ling.Player
                 SkinWeightPaintTool.ActivePanel = null;
             }
 
-            if (_interactionMode == InteractionMode.AddFace && mode != InteractionMode.AddFace)
-            {
-                var firstMc = ActiveProject?.CurrentModel?.ActiveMeshContext;
-                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
-            }
-
-            // EdgeTopology から脱出するとき、Selection.Mode を All に戻す。
-            // Flip/Dissolve は Edge、Split は Vertex に絞っているため、戻さないと
-            // 次のモード (VertexMove 等) でホバー範囲が狭いままになる。
-            if (_interactionMode == InteractionMode.EdgeTopology && mode != InteractionMode.EdgeTopology)
-            {
-                var firstMc = ActiveProject?.CurrentModel?.ActiveMeshContext;
-                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
-            }
-
-            // Knife から脱出するとき、Selection.Mode を All に戻す。
-            // ナイフは段に応じて Vertex/Edge に絞っているため、戻さないと
-            // 次のモードでホバー範囲が絞られたままになる。
-            if (_interactionMode == InteractionMode.Knife && mode != InteractionMode.Knife)
-            {
-                var firstMc = ActiveProject?.CurrentModel?.ActiveMeshContext;
-                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
-            }
+            // 【選択モードの復元について】
+            // 旧実装はツール脱出のたびに ActiveMeshContext.Selection.Mode へ
+            // MeshSelectMode.All を書き戻していた。All はチェックボックスの値ではないため、
+            // 「頂点だけチェックしているのに、ツールを一度使うと辺・面までホバー／選択され、
+            //  移動対象にもなる」状態が発生していた（＝設定がすぐ巻き戻る症状）。
+            // 現在は、この関数の末尾寄りで新モードに対応する override を決め直し、
+            // ApplySelectMode() が override 無しならチェックボックス値へ戻す。
+            // ここでの個別復元は行わない。
 
             // 格子変形から脱出するとき、進行中のセッションは取消する。
             // 黙って確定すると、ユーザが意図しない変形が Undo 履歴に残るため。
@@ -7177,9 +7291,7 @@ namespace Poly_Ling.Player
             //    フック利用に移行予定)
             // 脱出時は:
             //   - 全フックを null に戻す (次モードで古いフックが発火しないように)
-            //   - Selection.Mode を All に復元 (次モードのホバー範囲が絞られたままに
-            //     ならないように。Rotate/Scale は絞っていないので実質空振りだが、
-            //     一律復元として統一)
+            // 選択モードの復元は行わない (新モードの override 決定で自動的に戻る)。
             // ---------------------------------------------------------------
             bool leavingSharedSelectionTools =
                    (_interactionMode == InteractionMode.EdgeBevel   && mode != InteractionMode.EdgeBevel)
@@ -7189,11 +7301,11 @@ namespace Poly_Ling.Player
                 || (_interactionMode == InteractionMode.Solidify    && mode != InteractionMode.Solidify)
                 || (_interactionMode == InteractionMode.Rotate      && mode != InteractionMode.Rotate)
                 || (_interactionMode == InteractionMode.Scale       && mode != InteractionMode.Scale)
-                // DeleteFace は OnLeftClickExtra で面クリック削除を発火し、Selection.Mode を
-                // Face に絞る。脱出時のフック解除と All 復元は同じ処理でよい。
+                // DeleteFace は OnLeftClickExtra で面クリック削除を発火する。
+                // 脱出時のフック解除は同じ処理でよい。
                 || (_interactionMode == InteractionMode.DeleteFace  && mode != InteractionMode.DeleteFace)
-                // 頂点溶解 / 三角4→1 / 面結合 も OnLeftClickExtra でクリック実行し、
-                // Selection.Mode を絞る。脱出時の処理は面削除と同じでよい。
+                // 頂点溶解 / 三角4→1 / 面結合 も OnLeftClickExtra でクリック実行する。
+                // 脱出時の処理は面削除と同じでよい。
                 || (_interactionMode == InteractionMode.VertexDissolve && mode != InteractionMode.VertexDissolve)
                 || (_interactionMode == InteractionMode.Tri4To1        && mode != InteractionMode.Tri4To1)
                 || (_interactionMode == InteractionMode.FaceMerge      && mode != InteractionMode.FaceMerge)
@@ -7208,8 +7320,6 @@ namespace Poly_Ling.Player
                     _moveToolHandler.OnToolDragExtra    = null;
                     _moveToolHandler.OnToolDragEndExtra = null;
                 }
-                var firstMc = ActiveProject?.CurrentModel?.ActiveMeshContext;
-                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
             }
 
             // 面削除モードから他モードへ移るとき、進入フラグを下ろす。
@@ -7219,6 +7329,15 @@ namespace Poly_Ling.Player
                 _deleteFaceModeActive = false;
 
             _interactionMode = mode;
+
+            // ── 選択モードのツール固有 override をここで一括決定する ──────────
+            // 進入時に絞り、脱出時に書き戻す方式は復元漏れ・非対称が起きやすい
+            // (旧実装では脱出側が MeshSelectMode.All を書き、チェックボックスの
+            //  指定が失われていた)。モードが確定したこの一点だけで決めれば、
+            // どの経路から来ても実効モードが一意に定まる。
+            // null を返すモードはユーザのチェックボックスに従う。
+            _toolSelectModeOverride = ResolveToolSelectModeOverride(mode);
+            ApplySelectMode();
 
             // 吸着用ヒットテスト（メッシュ選択を無視）は面追加モードでトグルが ON の
             // ときだけ有効。有効な間はポインタ移動ごとに追加ディスパッチと
@@ -7321,7 +7440,6 @@ namespace Poly_Ling.Player
                     };
                     _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _edgeBevelHandler?.OnLeftDrag(pos, delta, mods);
                     _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _edgeBevelHandler?.OnLeftDragEnd(pos, mods);
-                    ApplySelectionModeForInteractionMode(InteractionMode.EdgeBevel);
                     break;
                 case InteractionMode.EdgeExtrude:
                     // MoveToolHandler の選択/矩形選択を流用。ドラッグ系ツール (EdgeBevel と同パターン)。
@@ -7339,7 +7457,6 @@ namespace Poly_Ling.Player
                     };
                     _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _edgeExtrudeHandler?.OnLeftDrag(pos, delta, mods);
                     _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _edgeExtrudeHandler?.OnLeftDragEnd(pos, mods);
-                    ApplySelectionModeForInteractionMode(InteractionMode.EdgeExtrude);
                     break;
                 case InteractionMode.FaceExtrude:
                     // MoveToolHandler の選択/矩形選択を流用。ドラッグ系ツール (EdgeBevel と同パターン)。
@@ -7357,21 +7474,18 @@ namespace Poly_Ling.Player
                     };
                     _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _faceExtrudeHandler?.OnLeftDrag(pos, delta, mods);
                     _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _faceExtrudeHandler?.OnLeftDragEnd(pos, mods);
-                    ApplySelectionModeForInteractionMode(InteractionMode.FaceExtrude);
                     break;
                 case InteractionMode.FlipFace:
                     // ビューポートでは選択のみ (面の単独選択 / Shift 追加 / 矩形選択)。
                     // 面反転自体はサブパネル経由で実行 (本セッション対象外、別件で修正)。
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.FlipFace);
                     break;
                 case InteractionMode.Solidify:
                     // ビューポートでは選択のみ (面の単独選択 / Shift 追加 / 矩形選択)。
                     // 厚み付けの実行はサブパネル経由。
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.Solidify);
                     break;
                 case InteractionMode.Rotate:
                     // ビューポート・回転リングギズモ: 選択は MoveToolHandler を維持し、
@@ -7401,7 +7515,6 @@ namespace Poly_Ling.Player
                         };
                     }
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _rotateHandler?.UpdateHover(pos, ctx));
-                    ApplySelectionModeForInteractionMode(InteractionMode.Rotate);
                     break;
                 case InteractionMode.Scale:
                     // ビューポート・スケールギズモ: 選択は MoveToolHandler を維持し、
@@ -7428,7 +7541,6 @@ namespace Poly_Ling.Player
                         };
                     }
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _scaleHandler?.UpdateHover(pos, ctx));
-                    ApplySelectionModeForInteractionMode(InteractionMode.Scale);
                     break;
                 case InteractionMode.DeleteFace:
                     // 面削除モード: 面のクリックのみ受け付け、クリックされた面を即削除する。
@@ -7445,7 +7557,6 @@ namespace Poly_Ling.Player
                     }
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.DeleteFace);
                     break;
                 case InteractionMode.VertexDissolve:
                     // 頂点溶解モード: 頂点クリックのみ受け付け、その頂点を即溶かす。
@@ -7459,7 +7570,6 @@ namespace Poly_Ling.Player
                     }
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.VertexDissolve);
                     break;
                 case InteractionMode.Tri4To1:
                     // 三角形4→1モード: 面クリックのみ受け付け、その三角形を即統合する。
@@ -7471,7 +7581,6 @@ namespace Poly_Ling.Player
                     }
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.Tri4To1);
                     break;
                 case InteractionMode.FaceMerge:
                     // 面結合モード: 辺クリックのみ受け付け、その辺を挟む2面を即結合する。
@@ -7483,7 +7592,6 @@ namespace Poly_Ling.Player
                     }
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.FaceMerge);
                     break;
                 case InteractionMode.Quad4To1:
                     // 四角形4→1モード: 頂点クリックのみ受け付け、その頂点を即統合する。
@@ -7495,7 +7603,6 @@ namespace Poly_Ling.Player
                     }
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.Quad4To1);
                     break;
                 case InteractionMode.FaceMergeCollapse:
                     // 面結合（頂点削除）モード: 辺クリックのみ受け付け、その辺を即結合する。
@@ -7507,19 +7614,18 @@ namespace Poly_Ling.Player
                     }
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    ApplySelectionModeForInteractionMode(InteractionMode.FaceMergeCollapse);
                     break;
                 case InteractionMode.EdgeTopology:
                     _vertexInteractor?.SetToolHandler(_edgeTopologyHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeTopologyHandler?.UpdateHover(pos, ctx));
                     // Split → Vertex ホバーのみ、Flip/Dissolve → Edge ホバーのみ
-                    ApplySelectionModeForEdgeTopology(
-                        _edgeTopologyHandler?.ModePublic ?? Poly_Ling.Tools.EdgeTopoMode.Flip);
+                    // (override は ResolveToolSelectModeOverride が同じ規則で決める)
                     break;
                 case InteractionMode.Knife:
                     _vertexInteractor?.SetToolHandler(_knifeHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _knifeHandler?.UpdateHover(pos, ctx));
-                    _knifeHandler?.ApplyHoverSelectionMode();   // 初期段（開始頂点）＝ Vertex ホバー
+                    // 初期段（開始頂点）＝ Vertex ホバー。
+                    // (override は ResolveToolSelectModeOverride が _knifeHandler.HoverSelectMode から決める)
                     break;
                 case InteractionMode.SkinWeightPaint:
                     _vertexInteractor?.SetToolHandler(_skinWeightPaintHandler);
@@ -7552,64 +7658,191 @@ namespace Poly_Ling.Player
             UpdateGizmoOverlay();
         }
 
+        // ================================================================
+        // 選択モード（頂点/辺/面/線分）の単一権限
+        //
+        // 書き込みは ApplySelectMode() だけが行う。他の場所から
+        // SelectionState.Mode / MeshContext.SelectMode へ代入してはならない。
+        // ================================================================
+
         /// <summary>
-        /// EdgeTopology のサブモード (Flip/Split/Dissolve) に応じてホバー有効範囲
-        /// (Selection.Mode) を切り替える。Split は頂点クリックで対角を指定、
-        /// Flip/Dissolve は辺クリックで実行するため、それぞれ不要な要素のホバーを
-        /// 抑制してユーザ体験を明確にする。
+        /// 左ペインのチェックボックスから _userSelectMode を読み取る。
+        /// 全 OFF は頂点へフォールバックする（何も選べないモードを作らない）。
         /// </summary>
-        /// <summary>
-        /// EdgeTopology のサブモード (Flip/Split/Dissolve) に応じてホバー有効範囲
-        /// (Selection.Mode) を切り替える。Split は頂点クリックで対角を指定、
-        /// Flip/Dissolve は辺クリックで実行するため、それぞれ不要な要素のホバーを
-        /// 抑制してユーザ体験を明確にする。
-        ///
-        /// 【設計ポイント: サブモード別のホバー絞り込みパターン】
-        /// 1 ツールの中でクリック対象が頂点/辺/面と切り替わるとき、
-        /// GPU ホバー全種類を流したままにするとユーザが混乱する。
-        /// ツール進入時と内部サブモード切替時の両方で Selection.Mode を絞り、
-        /// ツール脱出時 (SetInteractionMode の旧モード判定) で MeshSelectMode.All に
-        /// 戻すのが安全なパターン。AddFace が Vertex 絞り + 脱出時 All 復元を先例として
-        /// 既に実装しており、ここもそれを踏襲している (SetInteractionMode の脱出処理を参照)。
-        /// </summary>
-        private void ApplySelectionModeForEdgeTopology(Poly_Ling.Tools.EdgeTopoMode mode)
+        private void ReadUserSelectModeFromToggles()
         {
-            var firstMc = ActiveProject?.CurrentModel?.ActiveMeshContext;
-            if (firstMc == null) return;
-            firstMc.Selection.Mode = (mode == Poly_Ling.Tools.EdgeTopoMode.Split)
-                ? MeshSelectMode.Vertex
-                : MeshSelectMode.Edge;
+            if (_layoutRoot?.SelModeVertexToggle == null) return;
+
+            MeshSelectMode m = MeshSelectMode.None;
+            if (_layoutRoot.SelModeVertexToggle.value) m |= MeshSelectMode.Vertex;
+            if (_layoutRoot.SelModeEdgeToggle  .value) m |= MeshSelectMode.Edge;
+            if (_layoutRoot.SelModeFaceToggle  .value) m |= MeshSelectMode.Face;
+            if (_layoutRoot.SelModeLineToggle  .value) m |= MeshSelectMode.Line;
+            if (m == MeshSelectMode.None) m = MeshSelectMode.Vertex;
+
+            _userSelectMode = m;
+        }
+
+        /// <summary>現在の実効選択モード。ツール固有 override があればそれが優先。</summary>
+        private MeshSelectMode EffectiveSelectMode
+        {
+            get
+            {
+                var m = _toolSelectModeOverride ?? _userSelectMode;
+                return m == MeshSelectMode.None ? MeshSelectMode.Vertex : m;
+            }
         }
 
         /// <summary>
-        /// カテゴリ 1 ツール進入時にホバー有効範囲 (Selection.Mode) を絞る。
-        /// MoveToolHandler は Selection.Mode を尊重する設計になっているため、
-        /// ここで絞るだけで GPU ホバーの要素種・クリック選択・矩形選択いずれも
-        /// 対象要素タイプだけに応答するようになる。
-        /// 脱出時 (SetInteractionMode の旧モード判定) で MeshSelectMode.All に
-        /// 戻すこと (既に脱出処理側で実装済)。
+        /// 実効選択モードを、判定側が実際に読む全ての SelectionState へ書き込む。
+        ///
+        /// 【書き込み先と、その理由】
+        ///   1. 現モデルの全 MeshContext.Selection
+        ///      … MoveToolHandler.UpdateAffectedVertices が「メッシュごとの」Mode を読む。
+        ///        1 個だけに書くとメッシュを切り替えた瞬間に挙動が変わる。
+        ///   2. _selectionState
+        ///      … 初期化直後や、メッシュ未選択時に判定側が掴んでいる素の SelectionState。
+        ///   3. _selectionOps.SelectionState
+        ///      … MoveToolHandler / AdvancedSelect のクリック・矩形選択がここの Mode を読む。
+        ///   4. _renderer.CurrentSelectionState
+        ///      … GPU ホバーの種別絞り込み (UnifiedMeshSystem.ProcessMouseUpdate) が読む実体。
+        ///        1〜3 と別インスタンスになり得るため、ここを外すとホバーだけ効かなくなる。
+        ///
+        /// 【無効種別の選択解除】
+        /// 実効モードが「変化したとき」だけ、無効になった種別の選択を解除する。
+        /// 例: 辺を選択中にチェックを頂点のみへ変えた、面追加ツールへ入った、など。
+        /// 毎回解除しないのは、モード外の種別を意図的に選ぶ操作
+        /// （高度選択の頂点/辺/面同時選択など）の結果まで消さないため。
         /// </summary>
-        private void ApplySelectionModeForInteractionMode(InteractionMode mode)
+        private void ApplySelectMode()
         {
-            var firstMc = ActiveProject?.CurrentModel?.ActiveMeshContext;
-            if (firstMc == null) return;
+            var m = EffectiveSelectMode;
+
+            bool modeChanged = !_lastAppliedSelectMode.HasValue
+                               || _lastAppliedSelectMode.Value != m;
+            _lastAppliedSelectMode = m;
+
+            bool released = false;
+
+            var model = ActiveProject?.CurrentModel;
+            if (model?.MeshContextList != null)
+            {
+                foreach (var mc in model.MeshContextList)
+                {
+                    if (mc?.Selection == null || mc.Type == MeshType.Bone) continue;
+                    mc.Selection.Mode = m;
+                    if (modeChanged) released |= ReleaseDisabledSelections(mc.Selection, m);
+                }
+            }
+
+            released |= WriteSelectMode(_selectionState,               m, modeChanged);
+            released |= WriteSelectMode(_selectionOps?.SelectionState, m, modeChanged);
+            released |= WriteSelectMode(_renderer?.CurrentSelectionState, m, modeChanged);
+
+            // 解除が起きたときだけ GPU 選択フラグとサブパネルを更新する。
+            if (released) _selectionOps?.OnSelectionChanged?.Invoke();
+
+            _activePanel?.MarkDirtyRepaint();
+        }
+
+        /// <summary>1 個の SelectionState へモードを書き、必要なら無効種別を解除する。</summary>
+        private static bool WriteSelectMode(SelectionState sel, MeshSelectMode m, bool release)
+        {
+            if (sel == null) return false;
+            sel.Mode = m;
+            return release && ReleaseDisabledSelections(sel, m);
+        }
+
+        /// <summary>モードで無効になった種別の選択を解除する。解除したら true。</summary>
+        private static bool ReleaseDisabledSelections(SelectionState sel, MeshSelectMode m)
+        {
+            if (sel == null) return false;
+
+            bool changed = false;
+            if (!m.Has(MeshSelectMode.Vertex) && sel.Vertices.Count > 0) { sel.Vertices.Clear(); changed = true; }
+            if (!m.Has(MeshSelectMode.Edge)   && sel.Edges   .Count > 0) { sel.Edges   .Clear(); changed = true; }
+            if (!m.Has(MeshSelectMode.Face)   && sel.Faces   .Count > 0) { sel.Faces   .Clear(); changed = true; }
+            if (!m.Has(MeshSelectMode.Line)   && sel.Lines   .Count > 0) { sel.Lines   .Clear(); changed = true; }
+            return changed;
+        }
+
+        /// <summary>
+        /// ツール固有 override を設定して即適用する。
+        /// ツール内部でクリック対象が切り替わる場合（ナイフの段、EdgeTopology の
+        /// サブモード、高度選択のサブモード）にハンドラ側から呼ばれる。
+        /// </summary>
+        private void SetToolSelectModeOverride(MeshSelectMode mode)
+        {
+            _toolSelectModeOverride = mode;
+            ApplySelectMode();
+        }
+
+        /// <summary>
+        /// InteractionMode ごとのツール固有選択モードを返す。null はユーザ指定に従う。
+        ///
+        /// ここが「チェックボックスとは無関係にツールが要求する種別」の唯一の一覧。
+        /// 例: 面追加は面を張る点を拾うツールなので、チェックボックスの内容に関わらず頂点のみ。
+        /// </summary>
+        private MeshSelectMode? ResolveToolSelectModeOverride(InteractionMode mode)
+        {
             switch (mode)
             {
-                case InteractionMode.EdgeBevel:    firstMc.Selection.Mode = MeshSelectMode.Edge; break;
-                case InteractionMode.EdgeExtrude:  firstMc.Selection.Mode = MeshSelectMode.Edge | MeshSelectMode.Line; break;
-                case InteractionMode.FaceExtrude:  firstMc.Selection.Mode = MeshSelectMode.Face; break;
-                case InteractionMode.FlipFace:     firstMc.Selection.Mode = MeshSelectMode.Face; break;
-                case InteractionMode.Solidify:     firstMc.Selection.Mode = MeshSelectMode.Face; break;
-                case InteractionMode.DeleteFace:   firstMc.Selection.Mode = MeshSelectMode.Face; break;
-                case InteractionMode.VertexDissolve: firstMc.Selection.Mode = MeshSelectMode.Vertex; break;
-                case InteractionMode.Tri4To1:        firstMc.Selection.Mode = MeshSelectMode.Face;   break;
-                case InteractionMode.FaceMerge:      firstMc.Selection.Mode = MeshSelectMode.Edge;   break;
-                case InteractionMode.Quad4To1:          firstMc.Selection.Mode = MeshSelectMode.Vertex; break;
-                case InteractionMode.FaceMergeCollapse: firstMc.Selection.Mode = MeshSelectMode.Edge;   break;
+                // 面追加: 面を張る頂点だけを拾う。辺・面のホバーは有害。
+                case InteractionMode.AddFace:           return MeshSelectMode.Vertex;
+
+                // 辺を対象にするツール
+                case InteractionMode.EdgeBevel:         return MeshSelectMode.Edge;
+                case InteractionMode.FaceMerge:         return MeshSelectMode.Edge;
+                case InteractionMode.FaceMergeCollapse: return MeshSelectMode.Edge;
+                case InteractionMode.EdgeExtrude:       return MeshSelectMode.Edge | MeshSelectMode.Line;
+
+                // 面を対象にするツール
+                case InteractionMode.FaceExtrude:       return MeshSelectMode.Face;
+                case InteractionMode.FlipFace:          return MeshSelectMode.Face;
+                case InteractionMode.Solidify:          return MeshSelectMode.Face;
+                case InteractionMode.DeleteFace:        return MeshSelectMode.Face;
+                case InteractionMode.Tri4To1:           return MeshSelectMode.Face;
+
+                // 頂点を対象にするツール
+                case InteractionMode.VertexDissolve:    return MeshSelectMode.Vertex;
+                case InteractionMode.Quad4To1:          return MeshSelectMode.Vertex;
+
+                // サブモードで対象が変わるツール
+                case InteractionMode.EdgeTopology:
+                    return (_edgeTopologyHandler?.ModePublic ?? Poly_Ling.Tools.EdgeTopoMode.Flip)
+                               == Poly_Ling.Tools.EdgeTopoMode.Split
+                           ? MeshSelectMode.Vertex     // Split は頂点クリックで対角を指定
+                           : MeshSelectMode.Edge;      // Flip / Dissolve は辺クリック
+                case InteractionMode.Knife:
+                    return _knifeHandler?.HoverSelectMode ?? MeshSelectMode.Vertex;
+                case InteractionMode.AdvancedSelect:
+                    // Belt / EdgeLoop は辺と補助線分、ShortestPath は頂点。
+                    // 属性系サブモードは null（ユーザ指定に従う）。
+                    return _advancedSelectHandler?.HoverSelectModeOverride;
+
+                // 一時選択サブツール (矩形 / 投げ縄) は、呼び出し元ツールの絞り込みを引き継ぐ。
+                // ここでユーザ指定へ戻すと、面ツール中に矩形選択したら頂点が選ばれ、
+                // 復帰時にその選択が解除される、という噛み合わない挙動になる。
+                case InteractionMode.SelectOnly:        return _toolSelectModeOverride;
+
                 default:
-                    // 他のモードはこの関数の責務ではない
-                    break;
+                    // 頂点移動・回転・拡縮・彫刻・格子・オブジェクト移動などは
+                    // チェックボックスの指定をそのまま使う。
+                    return null;
             }
+        }
+
+        /// <summary>
+        /// EdgeTopology のサブモード (Flip/Split/Dissolve) 切替に追従して
+        /// ツール固有 override を更新する。Split は頂点クリックで対角を指定、
+        /// Flip/Dissolve は辺クリックで実行するため、不要な種別のホバーを抑制する。
+        /// </summary>
+        private void ApplySelectionModeForEdgeTopology(Poly_Ling.Tools.EdgeTopoMode mode)
+        {
+            if (_interactionMode != InteractionMode.EdgeTopology) return;
+            SetToolSelectModeOverride(mode == Poly_Ling.Tools.EdgeTopoMode.Split
+                ? MeshSelectMode.Vertex
+                : MeshSelectMode.Edge);
         }
 
         // ================================================================
@@ -7890,6 +8123,121 @@ namespace Poly_Ling.Player
             _isSyncingNormalRecalcToggle = true;
             tog.SetValueWithoutNotify(autoOn);
             _isSyncingNormalRecalcToggle = false;
+        }
+
+        // ================================================================
+        // 軌道回転の中心（ピボット）
+        // ================================================================
+
+        /// <summary>
+        /// 軌道回転の中心をワールド座標で返す。null なら従来どおり
+        /// OrbitCameraController.Target を中心に回る。
+        ///
+        /// OrbitCameraController.GetOrbitPivot として配線され、軌道ドラッグ
+        /// 開始時に 1 回だけ呼ばれる。選択変更イベントからは呼ばれないため、
+        /// 選択しただけでは視点は動かない。
+        ///
+        /// 優先順位:
+        ///   1. 「現在の選択を中心に」釦で確定した固定ピボット
+        ///   2. 「回転はローカル原点中心」が ON ならローカル原点（ピボット）の重心
+        ///   3. どちらでもなければ null
+        /// </summary>
+        private Vector3? ComputeOrbitPivot()
+        {
+            if (_explicitOrbitPivot.HasValue) return _explicitOrbitPivot;
+            if (_orbitAroundLocalOrigin)      return ComputeLocalOriginCentroid();
+            return null;
+        }
+
+        /// <summary>
+        /// 選択されている要素（頂点 / 辺 / 面 / 線分）のワールド重心。
+        /// 1 点も無ければ null。
+        ///
+        /// 集計規則は MoveToolHandler.UpdateAffectedVertices と同じ。
+        /// SelectionState の Vertices / Faces / Lines はメッシュ内ローカル番号
+        /// なので、選択メッシュごとにその MeshContext.Selection を見る。
+        /// </summary>
+        private Vector3? ComputeElementCentroid()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return null;
+
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+
+            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
+            {
+                var mc = model.GetMeshContext(ctxIdx);
+                if (mc?.MeshObject == null) continue;
+
+                var sel = mc.Selection;
+                if (sel == null) continue;
+
+                var mo = mc.MeshObject;
+                var affected = new HashSet<int>();
+
+                foreach (var v  in sel.Vertices) affected.Add(v);
+                foreach (var e  in sel.Edges)    { affected.Add(e.V1); affected.Add(e.V2); }
+                foreach (var fi in sel.Faces)
+                    if (fi >= 0 && fi < mo.FaceCount)
+                        foreach (var vi in mo.Faces[fi].VertexIndices)
+                            affected.Add(vi);
+                foreach (var li in sel.Lines)
+                    if (li >= 0 && li < mo.FaceCount)
+                    {
+                        var face = mo.Faces[li];
+                        if (face.VertexCount == 2)
+                        { affected.Add(face.VertexIndices[0]); affected.Add(face.VertexIndices[1]); }
+                    }
+
+                // ローカル頂点をワールド変換してから集計する。スキンド頂点に
+                // 実際に適用される行列はメッシュの WorldMatrix ではなくボーンの
+                // ブレンドなので、MeshContext.LocalToWorld を使う
+                // （MoveToolHandler.UpdateGizmoState と同じ）。
+                foreach (int vi in affected)
+                    if (vi >= 0 && vi < mo.VertexCount)
+                    { sum += mc.LocalToWorld(vi, mo.Vertices[vi].Position); count++; }
+            }
+
+            return count > 0 ? (Vector3?)(sum / count) : null;
+        }
+
+        /// <summary>
+        /// 選択オブジェクト（ボーン + 描画メッシュ）のローカル原点の重心。
+        /// 1 件も無ければ null。
+        ///
+        /// ローカル原点 = MeshContext.WorldMatrix の平行移動成分。これは
+        /// PivotOffsetTool が言う「ピボット原点」と同じ点であり、
+        /// ObjectMoveTool.UpdateGizmoCenter が使う点とも一致する。
+        /// </summary>
+        private Vector3? ComputeLocalOriginCentroid()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return null;
+
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+
+            foreach (int idx in model.SelectedBoneIndices)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc == null) continue;
+                var wm = mc.WorldMatrix;
+                sum += new Vector3(wm.m03, wm.m13, wm.m23);
+                count++;
+            }
+            foreach (int idx in model.SelectedDrawableMeshIndices)
+            {
+                // ボーン選択に既に含まれていれば重複させない
+                if (model.SelectedBoneIndices.Contains(idx)) continue;
+                var mc = model.GetMeshContext(idx);
+                if (mc == null) continue;
+                var wm = mc.WorldMatrix;
+                sum += new Vector3(wm.m03, wm.m13, wm.m23);
+                count++;
+            }
+
+            return count > 0 ? (Vector3?)(sum / count) : null;
         }
 
         private void NotifyPanels(ChangeKind kind)

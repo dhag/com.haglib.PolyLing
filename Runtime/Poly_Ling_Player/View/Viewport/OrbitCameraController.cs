@@ -126,6 +126,20 @@ namespace Poly_Ling.Player
         /// </summary>
         public System.Action OnCameraDragging;
 
+        /// <summary>
+        /// 軌道回転の中心（ピボット）をワールド座標で返す。null なら Target を中心に回す。
+        ///
+        /// 【設計】選択しただけでは視点を動かさない。Blender の
+        /// "Orbit Around Selection" / Maya の Tumble Pivot と同じく、
+        /// ピボットは回転操作をした瞬間に初めて効く。視点を選択へ寄せる
+        /// 操作（Frame Selected 相当）とは別物であり、ここで Target を
+        /// 書き換えてはならない。
+        ///
+        /// ドラッグ開始時に 1 回だけ評価してキャッシュする（重心計算が
+        /// 選択頂点数に比例するため、マウス移動ごとに呼ばない）。
+        /// </summary>
+        public Func<Vector3?> GetOrbitPivot;
+
         // ================================================================
         // 内部状態
         // ================================================================
@@ -135,6 +149,9 @@ namespace Poly_Ling.Player
 
         // パン（中ボタン）
         private bool    _isPanning;
+
+        // 軌道回転中のピボット（ドラッグ開始時に GetOrbitPivot から確定）。
+        private Vector3? _orbitPivot;
 
         // ================================================================
         // 初期化
@@ -253,7 +270,13 @@ namespace Poly_Ling.Player
 
         private void OnDragBegin(int btn, Vector2 screenPos, ModifierKeys mods)
         {
-            if      (btn == 1) { _isOrbiting = true; OnCameraDragBegin?.Invoke(); }
+            if      (btn == 1)
+            {
+                _isOrbiting = true;
+                // ドラッグ中は選択が変わらないので、ここで 1 回だけ確定する。
+                _orbitPivot = GetOrbitPivot?.Invoke();
+                OnCameraDragBegin?.Invoke();
+            }
             else if (btn == 2) { _isPanning  = true; OnCameraDragBegin?.Invoke(); }
         }
 
@@ -267,13 +290,21 @@ namespace Poly_Ling.Player
                 if (mods.Alt)
                 {
                     // Alt＋右ドラッグの左右移動 → カメラのZ軸周り回転（ロール）。
+                    // ロールは視線軸まわりの回転でカメラ位置が変わらないため、
+                    // ピボット補正は不要。
                     RotZ += delta.x * OrbitSensitivity * speed;
                 }
                 else
                 {
+                    // ピボット補正は回転前後の姿勢を必要とするため、更新前に退避する。
+                    Quaternion rotOld = Quaternion.Euler(RotX, RotY, 0f);
+
                     RotY  += delta.x * OrbitSensitivity * speed;
                     RotX  -= delta.y * OrbitSensitivity * speed;
                     RotX   = Mathf.Clamp(RotX, -89f, 89f);
+
+                    if (_orbitPivot.HasValue)
+                        ApplyOrbitAroundPivot(rotOld, _orbitPivot.Value);
                 }
                 changed = true;
             }
@@ -294,7 +325,7 @@ namespace Poly_Ling.Player
         private void OnDragEnd(int btn, Vector2 screenPos, ModifierKeys mods)
         {
             bool wasCameraOp = false;
-            if      (btn == 1) { _isOrbiting = false; wasCameraOp = true; }
+            if      (btn == 1) { _isOrbiting = false; _orbitPivot = null; wasCameraOp = true; }
             else if (btn == 2) { _isPanning  = false; wasCameraOp = true; }
 
             if (!wasCameraOp) return;
@@ -324,9 +355,51 @@ namespace Poly_Ling.Player
         /// <summary>オービット（回転）を直接適用する。delta はスクリーンピクセル差分。</summary>
         public void SimulateOrbit(float deltaX, float deltaY)
         {
+            Quaternion rotOld = Quaternion.Euler(RotX, RotY, 0f);
+
             RotY += deltaX * OrbitSensitivity;
             RotX -= deltaY * OrbitSensitivity;
             RotX  = Mathf.Clamp(RotX, -89f, 89f);
+
+            // 単発 API なのでキャッシュを使わずその場で問い合わせる。
+            var pivot = GetOrbitPivot?.Invoke();
+            if (pivot.HasValue) ApplyOrbitAroundPivot(rotOld, pivot.Value);
+        }
+
+        // ================================================================
+        // ピボット中心の軌道回転
+        // ================================================================
+
+        /// <summary>
+        /// RotX / RotY を更新した直後に呼び、カメラが pivot を中心に回ったのと
+        /// 等価になるよう Target を再計算する。Distance / RotZ は変更しない。
+        ///
+        /// 本コントローラは「注視点ピボット方式」で、ApplyCameraTransform が
+        /// カメラ位置を Target から導出し、姿勢も LookAt(Target) で決めている。
+        /// つまりピボットと画面中心が同一変数なので、任意点を中心に回すには
+        /// 回転後のカメラ位置から Target を逆算する必要がある。
+        ///
+        ///   P_old  = Target + rotOld * back * Distance   （回転前のカメラ位置）
+        ///   v      = Inverse(rotOld) * (P_old - pivot)   （回転前フレームでの相対位置）
+        ///   P_new  = pivot + rotNew * v                  （pivot を中心に回した位置）
+        ///   Target = P_new + rotNew * forward * Distance （画面中心を前方 Distance に置く）
+        ///
+        /// pivot == Target のときは Target が変化しない恒等式になるため、
+        /// ピボット未設定時の従来挙動の厳密な一般化になっている。
+        ///
+        /// 正投影時 ApplyCameraTransform はカメラを OrthoCameraPullback だけ引くが、
+        /// 正投影では投影 XY が前後位置に依存しないため、ここでは論理的な軌道半径
+        /// である Distance を使う。
+        /// </summary>
+        private void ApplyOrbitAroundPivot(Quaternion rotOld, Vector3 pivot)
+        {
+            Quaternion rotNew = Quaternion.Euler(RotX, RotY, 0f);
+
+            Vector3 pOld = Target + rotOld * Vector3.back * Distance;
+            Vector3 v    = Quaternion.Inverse(rotOld) * (pOld - pivot);
+            Vector3 pNew = pivot + rotNew * v;
+
+            Target = pNew + rotNew * Vector3.forward * Distance;
         }
 
         /// <summary>ズームを直接適用する。scroll は -WheelEvent.delta.y * 0.1f 相当の値。</summary>

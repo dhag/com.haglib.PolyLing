@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Diagnostics;
 using GizmoAxis = Poly_Ling.Tools.AxisGizmo;
 
 namespace Poly_Ling.Player
@@ -25,6 +26,15 @@ namespace Poly_Ling.Player
         public event Action<int, Vector2, ModifierKeys> OnButtonDown;
         public event Action<int, Vector2, ModifierKeys> OnButtonUp;
         public event Action<int, Vector2, ModifierKeys> OnClick;
+        /// <summary>
+        /// 押下中で、まだ DragThreshold を越えていない間の移動。
+        /// (btn, 現在位置(Y=0下), 前回からの差分, 修飾キー)
+        ///
+        /// 移動ツールはこれを受けて押下位置を原点に即座に追従する。
+        /// しきい値ぶんの移動が捨てられないため、開始時の飛びが出ない。
+        /// </summary>
+        public event Action<int, Vector2, Vector2, ModifierKeys> OnPressMove;
+
         public event Action<int, Vector2, ModifierKeys> OnDragBegin;
         public event Action<int, Vector2, Vector2, ModifierKeys> OnDrag;
         public event Action<int, Vector2, ModifierKeys> OnDragEnd;
@@ -99,6 +109,8 @@ namespace Poly_Ling.Player
         private List<Vector2>            _addFacePts          = new List<Vector2>();
         private List<Vector2>            _addFacePreviewPts   = new List<Vector2>(); // スナップ/通常プレビュー点
         private List<bool>               _addFacePreviewSnap  = new List<bool>();
+        // プレビュー点ごとの塗り色。null 要素・リスト自体 null は既定色（下記 OnGenerateAddFaceOverlay 参照）。
+        private List<Color?>             _addFacePreviewCols  = new List<Color?>();
         private List<(Vector2, Vector2)> _addFaceLines        = new List<(Vector2, Vector2)>();
         private int                      _addFaceHighlightIdx = -1;  // 強調する確定点の索引。-1 で無し
         private bool                     _addFaceVisible;
@@ -335,17 +347,24 @@ namespace Poly_Ling.Player
         /// previewSnapped: プレビュー点ごとのスナップフラグ
         ///                 (AddFace では頂点スナップ時、Split では対向点候補に乗ったとき true)
         /// lines: 確定済み線＋プレビュー線（Y=0上）
+        /// previewColors: プレビュー点ごとの塗り色。省略／null／要素 null は既定色
+        ///                (snap=true ならシアン、false なら黄半透明)。
+        ///                吸着元の種別で色を分けたい呼び出し元だけ指定する。
+        ///                サイズとリングの有無は previewSnapped が決めるため、
+        ///                色だけを差し替える用途に限る。
         /// </summary>
         public void UpdateAddFacePreview(
             List<Vector2> pts,
             List<Vector2> previewPts,
             List<bool>    previewSnapped,
             List<(Vector2, Vector2)> lines,
-            int highlightPtIndex = -1)
+            int highlightPtIndex = -1,
+            List<Color?> previewColors = null)
         {
             _addFacePts         = pts         ?? new List<Vector2>();
             _addFacePreviewPts  = previewPts  ?? new List<Vector2>();
             _addFacePreviewSnap = previewSnapped ?? new List<bool>();
+            _addFacePreviewCols = previewColors  ?? new List<Color?>();
             _addFaceLines       = lines       ?? new List<(Vector2, Vector2)>();
             _addFaceHighlightIdx = highlightPtIndex;
             _addFaceVisible     = true;
@@ -358,6 +377,7 @@ namespace Poly_Ling.Player
             _addFacePts.Clear();
             _addFacePreviewPts.Clear();
             _addFacePreviewSnap.Clear();
+            _addFacePreviewCols.Clear();
             _addFaceLines.Clear();
             _addFaceHighlightIdx = -1;
             _addFaceOverlay?.MarkDirtyRepaint();
@@ -462,6 +482,22 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public float DragThreshold = 4f;
+
+        /// <summary>OnPressMove の差分計算用。押下時に _downPos で初期化する。</summary>
+        private readonly Vector2[] _prevPressPos = new Vector2[3];
+
+        /// <summary>
+        /// 押下からの移動経路長。クリックとドラッグの振り分けだけに使う。
+        ///
+        /// 押下点からの直線距離ではなく、各 PointerMove の移動量の大きさを
+        /// 積算する。左右に小刻みに振った場合、直線距離は 0 に戻ってしまうが
+        /// 経路長は増え続けるため、「動かした」という意図を取りこぼさない。
+        /// 例: +1 → -1 と動いた場合、直線距離 0 に対し経路長は 2 になる。
+        ///
+        /// 移動量そのものの計算には一切使わない。移動量は押下位置から
+        /// 現在位置までの差分から毎回 1 回で求める（MoveToolHandler 側）。
+        /// </summary>
+        private readonly float[] _pressPathLen = new float[3];
 
         // ================================================================
         // プロパティ
@@ -699,8 +735,19 @@ namespace Poly_Ling.Player
             Vector2 pos  = ToViewportCoord(evt.localPosition);
             var     mods = GetMods(evt);
 
-            _state[btn]   = BtnState.Pressed;
-            _downPos[btn] = pos;
+            MousePosition = pos;
+
+            // ここでホバーを再計算してはならない。
+            // 押下位置と直前の PointerMove 位置が違うと、その差ぶんホバー判定位置が
+            // 飛ぶ。掴む要素は「直前の PointerMove で確定したホバー」を使う。
+            if (btn == 0)
+                PLDiag.PickRec("IA.Down", btn,
+                    x: evt.localPosition.x, y: evt.localPosition.y);
+
+            _state[btn]        = BtnState.Pressed;
+            _downPos[btn]      = pos;
+            _prevPressPos[btn] = pos;
+            _pressPathLen[btn] = 0f;
             OnButtonDown?.Invoke(btn, pos, mods);
         }
 
@@ -739,8 +786,18 @@ namespace Poly_Ling.Player
 
                 if (_state[btn] == BtnState.Pressed)
                 {
-                    float moved = Vector2.Distance(pos, _downPos[btn]);
-                    if (moved > DragThreshold)
+                    // しきい値を越える前の移動も通知する。移動ツールは押下位置を
+                    // 原点に絶対量で追従するため、ここで取りこぼすと開始時に
+                    // しきい値ぶんの飛びが出る。
+                    Vector2 pressDelta = pos - _prevPressPos[btn];
+                    _prevPressPos[btn] = pos;
+                    if (pressDelta.sqrMagnitude > 0f)
+                        OnPressMove?.Invoke(btn, pos, pressDelta, mods);
+
+                    // しきい値判定は押下点からの直線距離ではなく移動経路長で行う。
+                    // 理由は _pressPathLen の宣言部を参照。
+                    _pressPathLen[btn] += pressDelta.magnitude;
+                    if (_pressPathLen[btn] > DragThreshold)
                     {
                         _state[btn]       = BtnState.Dragging;
                         _prevDragPos[btn] = _downPos[btn];
@@ -795,7 +852,12 @@ namespace Poly_Ling.Player
                 if (_state[btn] == BtnState.Idle) continue;
                 var prev = _state[btn];
                 _state[btn] = BtnState.Idle;
-                if (prev == BtnState.Dragging)
+
+                // Pressed（しきい値未満）でも OnDragEnd を出す。
+                // 押下時追従は OnButtonDown の時点で移動と TransformDragging を
+                // 開始しているため、ここで終了を通知しないと押下状態のまま
+                // 取り残され、GPU ヒットテストが止まったままになる。
+                if (prev == BtnState.Dragging || prev == BtnState.Pressed)
                     OnDragEnd?.Invoke(btn, MousePosition, mods);
             }
         }
@@ -1056,15 +1118,20 @@ namespace Poly_Ling.Player
                 }
             }
 
-            // プレビュー点（スナップ=シアン大、通常=黄半透明）
+            // プレビュー点（既定: スナップ=シアン大、通常=黄半透明）。
+            // previewColors に色が入っている点はその色で塗り、リングは同色のアルファ 0.6 にする。
             for (int i = 0; i < _addFacePreviewPts.Count; i++)
             {
                 var p   = cv(_addFacePreviewPts[i]);
                 bool snap = i < _addFacePreviewSnap.Count && _addFacePreviewSnap[i];
                 float sz = snap ? 7f : 5f;
-                painter.fillColor = snap
+
+                Color? over = i < _addFacePreviewCols.Count ? _addFacePreviewCols[i] : null;
+                Color fill = over ?? (snap
                     ? new Color(0f, 1f, 1f, 0.95f)
-                    : new Color(1f, 1f, 0f, 0.55f);
+                    : new Color(1f, 1f, 0f, 0.55f));
+
+                painter.fillColor = fill;
                 painter.BeginPath();
                 painter.MoveTo(p + new Vector2(-sz, -sz));
                 painter.LineTo(p + new Vector2( sz, -sz));
@@ -1074,7 +1141,7 @@ namespace Poly_Ling.Player
                 painter.Fill();
                 if (snap)
                 {
-                    painter.strokeColor = new Color(0f, 1f, 1f, 0.6f);
+                    painter.strokeColor = new Color(fill.r, fill.g, fill.b, 0.6f);
                     painter.lineWidth = 1.5f;
                     painter.BeginPath();
                     painter.Arc(p, 12f, 0f, 360f);

@@ -133,20 +133,28 @@ namespace Poly_Ling.Core
         /// </summary>
         public void EnterTransformDragging()
         {
+            // ★ここでホバーをクリアしてはならない（意図的な仕様）。
+            //
             // ドラッグ開始直前フレームに hover パイプライン（OnPointerHover →
-            // NotifyPointerHover）が Normal モードで完走し、掴んだ頂点に GPU内部の
+            // NotifyPointerHover）が Normal モードで完走し、掴んだ要素に GPU内部の
             // 描画フラグ（hover）がセットされる。TransformDragging 移行後は
             // RequestNormal() が no-op ＋ UpdateFrame が AllowHitTest=false で
-            // 早期 return するため hover は再計算されないが、フラグは残ったままで
-            // ドラッグ中も PresentAll が描き続ける → 移動中ハイライトが残留する。
-            // ここで一度クリアしておくことで残留を断つ。選択フラグには触れない。
+            // 早期 return するため hover は再計算されず、掴んだ要素にフラグが
+            // 残ったままドラッグ中も PresentAll が描き続ける。
+            // この「移動中ハイライトの残留」こそが望ましい挙動である。掴んだ要素が
+            // 掴んだままハイライトされ続けることで、ボタンを押し続けていることが
+            // 視覚的に保証される。
             //
-            // TODO(hover残留): ドラッグ中も hover 通知が発火し続ける件
-            //   （PlayerViewportPanel.OnPointerMove の OnPointerHover 常時発火）を
-            //   起点にした同種の「操作中に不要な hover/ヒットテスト表示が残る」問題が
-            //   他にも複数ある。本修正はその改善の起点。以降、各操作モード開始時の
-            //   hover クリア／ドラッグ中の hover 通知抑止を順次整理していく。
-            ClearMouseHover();
+            // 旧実装はここで ClearMouseHover() を呼んでいたが、それは
+            // 「ホバー索引が別の要素へ書き換わる」問題への対処としては誤りだった。
+            // 索引が書き換わる原因は、通常の頂点/辺/面ドラッグが
+            // OnEnterTransformDragging を呼ばず Normal モードのまま
+            // ヒットテストを走らせていたことにあり、そちらは
+            // MoveToolHandler の PendingAction → MovingVertices 遷移で
+            // OnEnterTransformDragging を呼ぶことで解消済み。
+            //
+            // ブラシ系ツール（SkinWeightPaint 等）はホバー自体を出したくないので、
+            // ここではなく ToolContext.SetSuppressHover で抑止すること。
 
             SetMode(UpdateMode.TransformDragging);
         }

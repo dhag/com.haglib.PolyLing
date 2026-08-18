@@ -14,6 +14,22 @@ namespace Poly_Ling.Player
     {
         public Func<AddFaceToolHandler> GetH;
 
+        // ── 追加先オブジェクト（単一選択） ──
+        /// <summary>候補一覧。(表示名, MeshContextList インデックス) を並び順で返す。</summary>
+        public Func<List<(string Label, int MasterIndex)>> GetMeshEntries;
+        /// <summary>現在の追加先の MeshContextList インデックス。未解決は -1。</summary>
+        public Func<int>    GetActiveMeshIndex;
+        /// <summary>追加先を切り替える。</summary>
+        public Action<int>  OnSelectMesh;
+
+        // ── マテリアル ──
+        /// <summary>マテリアル名一覧（スロット順）。</summary>
+        public Func<List<string>> GetMaterialNames;
+        /// <summary>現在のマテリアルスロット。未解決は -1。</summary>
+        public Func<int>    GetCurrentMaterialIndex;
+        /// <summary>マテリアルスロットを切り替える。</summary>
+        public Action<int>  OnSelectMaterial;
+
         private VisualElement _root;
         private Label         _progressLabel;
         private Label         _placedHeader;
@@ -21,6 +37,17 @@ namespace Poly_Ling.Player
         private Toggle        _continuousToggle;
         private VisualElement _continuousRow;
         private Toggle        _snapUnselectedToggle;
+        private DropdownField _meshDD;
+        private DropdownField _materialDD;
+
+        // ドロップダウンの表示名 → 実インデックスの対応。
+        // 表示名は "[3] 名前" 形式で重複し得るので、選択は index で解決する。
+        private readonly List<int> _meshIndices     = new List<int>();
+        private readonly List<int> _materialIndices = new List<int>();
+
+        // 同期中のコールバック発火を止めるフラグ。
+        // SetValueWithoutNotify では choices 差し替え時の index 変化を抑えられない。
+        private bool _syncing;
 
         public void Build(VisualElement parent)
         {
@@ -45,6 +72,30 @@ namespace Poly_Ling.Player
                 UpdateConditionals();
             });
             _root.Add(modeDD);
+
+            // 追加先オブジェクト（1つだけ選ぶ）
+            _meshDD = new DropdownField("追加先", new List<string>(), -1);
+            _meshDD.style.color = new StyleColor(Color.white);
+            _meshDD.RegisterValueChangedCallback(e =>
+            {
+                if (_syncing) return;
+                int i = _meshDD.index;
+                if (i < 0 || i >= _meshIndices.Count) return;
+                OnSelectMesh?.Invoke(_meshIndices[i]);
+            });
+            _root.Add(_meshDD);
+
+            // マテリアル（モデル共通のカレントマテリアル。マテリアルリストと連動する）
+            _materialDD = new DropdownField("マテリアル", new List<string>(), -1);
+            _materialDD.style.color = new StyleColor(Color.white);
+            _materialDD.RegisterValueChangedCallback(e =>
+            {
+                if (_syncing) return;
+                int i = _materialDD.index;
+                if (i < 0 || i >= _materialIndices.Count) return;
+                OnSelectMaterial?.Invoke(_materialIndices[i]);
+            });
+            _root.Add(_materialDD);
 
             // ContinuousLine（Line mode 時のみ表示）
             _continuousRow = new VisualElement();
@@ -87,10 +138,13 @@ namespace Poly_Ling.Player
             _root.Add(helpBox);
 
             UpdateConditionals();
+            RefreshDropdowns();
         }
 
         public void Refresh()
         {
+            RefreshDropdowns();
+
             var h = GetH(); if (h == null) return;
             _progressLabel.text = $"Points: {h.PlacedPointCount} / {h.RequiredPointsPublic}";
             if (_snapUnselectedToggle != null
@@ -122,6 +176,49 @@ namespace Poly_Ling.Player
                 {
                     if (_placedHeader != null) _placedHeader.style.display = DisplayStyle.None;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 追加先／マテリアルのドロップダウンを現在の状態へ合わせ直す。
+        /// 一覧はメッシュ追加・削除やマテリアル増減で変わるため毎回作り直す。
+        /// </summary>
+        private void RefreshDropdowns()
+        {
+            _syncing = true;
+            try
+            {
+                if (_meshDD != null)
+                {
+                    var entries = GetMeshEntries?.Invoke() ?? new List<(string, int)>();
+                    var labels  = new List<string>();
+                    _meshIndices.Clear();
+                    foreach (var e in entries) { labels.Add(e.Label); _meshIndices.Add(e.MasterIndex); }
+
+                    _meshDD.choices = labels;
+                    int cur = GetActiveMeshIndex?.Invoke() ?? -1;
+                    _meshDD.index = _meshIndices.IndexOf(cur);
+                }
+
+                if (_materialDD != null)
+                {
+                    var names = GetMaterialNames?.Invoke() ?? new List<string>();
+                    var labels = new List<string>();
+                    _materialIndices.Clear();
+                    for (int i = 0; i < names.Count; i++)
+                    {
+                        labels.Add($"[{i}] {names[i]}");
+                        _materialIndices.Add(i);
+                    }
+
+                    _materialDD.choices = labels;
+                    int cur = GetCurrentMaterialIndex?.Invoke() ?? -1;
+                    _materialDD.index = _materialIndices.IndexOf(cur);
+                }
+            }
+            finally
+            {
+                _syncing = false;
             }
         }
 

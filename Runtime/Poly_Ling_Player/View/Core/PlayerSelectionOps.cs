@@ -112,9 +112,20 @@ namespace Poly_Ling.Player
             _selectionState = selectionState ?? throw new ArgumentNullException(nameof(selectionState));
         }
 
+        /// <summary>
+        /// 管理対象の SelectionState が差し替えられた直後に呼ばれる（Viewer から結線）。
+        ///
+        /// 選択モード（頂点/辺/面/線分）の権限は Viewer 側の一箇所にあり、
+        /// SelectionState は経路ごとに別インスタンスへ差し替わる。差し替え直後に
+        /// 現在の実効モードを再適用しないと、新しいインスタンスの既定値
+        /// （Vertex|Edge|Face|Line）のままになりチェックボックスが効かなくなる。
+        /// </summary>
+        public Action<SelectionState> OnStateInstalled;
+
         public void SetSelectionState(SelectionState selectionState)
         {
             _selectionState = selectionState ?? throw new ArgumentNullException(nameof(selectionState));
+            OnStateInstalled?.Invoke(_selectionState);
         }
 
         /// <summary>

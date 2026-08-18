@@ -140,6 +140,8 @@ namespace Poly_Ling.Tools
             public Vector3 PreviewPoint;
             /// <summary>プレビューが既存頂点にスナップしているか</summary>
             public bool PreviewSnapped;
+            /// <summary>スナップ先が非選択オブジェクトの頂点か（色を変えて示す）</summary>
+            public bool PreviewSnappedUnselected;
             /// <summary>スナップ先の既存頂点インデックス（未スナップは -1）</summary>
             public int PreviewVertexIndex;
             /// <summary>連続線分モードの開始点（nullなら不使用）</summary>
@@ -162,6 +164,7 @@ namespace Poly_Ling.Tools
                 // その場合 PreviewVertexIndex は -1 のままで、
                 // オーバーレイ側は PreviewPoint（ローカル座標）を使って描画する。
                 PreviewSnapped     = _previewHitVertex >= 0 || _previewSnappedOther,
+                PreviewSnappedUnselected = _previewSnappedOther && _snapWorldFromUnselected,
                 PreviewVertexIndex = _previewHitVertex,
                 ContinuousLineStart = contStart,
                 CloseToStart       = IsQuadCloseToStart(),
@@ -179,6 +182,19 @@ namespace Poly_Ling.Tools
             var start = _points[0];
             if (!start.IsExistingVertex) return false;
             return _previewHitVertex >= 0 && _previewHitVertex == start.ExistingVertexIndex;
+        }
+
+        /// <summary>
+        /// 深さの基準に使う「直前に指定された点」を返す。未指定なら null。
+        /// 連続線分モードで確定点が無い場合は、その開始点（前回の終点）を返す。
+        /// Position は操作対象メッシュのローカル座標。
+        /// </summary>
+        public PointInfo? GetLastPoint()
+        {
+            if (_points.Count > 0) return _points[_points.Count - 1];
+            if (Mode == AddFaceMode.Line && ContinuousLine && _lastLinePoint.HasValue)
+                return _lastLinePoint;
+            return null;
         }
 
         /// <summary>配置済み点のラベルリストを返す（SubPanel 表示用）</summary>
@@ -202,6 +218,8 @@ namespace Poly_Ling.Tools
         private bool _previewValid = false;
         private int _previewHitVertex = -1;     // プレビュー時に既存頂点にヒットしている場合
         private bool _previewSnappedOther = false;  // プレビューが他メッシュの頂点へ吸着している場合
+        // 吸着先が非選択オブジェクトかどうか。ハンドラが吸着座標と一緒に指定する。
+        private bool _snapWorldFromUnselected = false;
 
         // === モード名 ===
         private static readonly string[] ModeNames = { "Line (2)", "Triangle (3)", "Quad (4)" };
@@ -393,6 +411,7 @@ namespace Poly_Ling.Tools
             _gpuHoverVertex = -1;
             _gpuHoverSnapWorld = null;
             _previewSnappedOther = false;
+            _snapWorldFromUnselected = false;
         }
 
         public void Reset()
@@ -404,6 +423,7 @@ namespace Poly_Ling.Tools
             _gpuHoverVertex = -1;
             _gpuHoverSnapWorld = null;
             _previewSnappedOther = false;
+            _snapWorldFromUnselected = false;
         }
 
         // === 内部メソッド ===
@@ -430,7 +450,17 @@ namespace Poly_Ling.Tools
         /// Player のハンドラが OnMouseDown / UpdateHover 直前に呼ぶ。未ヒットは null。
         /// SetGpuHoverVertex が有効なとき（同一メッシュ内ヒット）は必ず null を渡すこと。
         /// </summary>
-        public void SetGpuHoverSnapWorld(Vector3? world) => _gpuHoverSnapWorld = world;
+        public void SetGpuHoverSnapWorld(Vector3? world) => SetGpuHoverSnapWorld(world, false);
+
+        /// <summary>
+        /// 吸着座標に加えて、その吸着先が非選択オブジェクトかどうかを指定する。
+        /// 表示色を分けるためだけに使い、座標の扱いは fromUnselected によらず同じ。
+        /// </summary>
+        public void SetGpuHoverSnapWorld(Vector3? world, bool fromUnselected)
+        {
+            _gpuHoverSnapWorld       = world;
+            _snapWorldFromUnselected = world.HasValue && fromUnselected;
+        }
 
         /// <summary>
         /// スクリーン位置から点を取得（戻り値 Position は常に「ローカル座標」）

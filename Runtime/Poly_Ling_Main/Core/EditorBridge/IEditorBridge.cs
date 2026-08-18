@@ -52,7 +52,8 @@ namespace Poly_Ling.EditorBridge
         /// <summary>
         /// 初期ファイル名付きの読込ダイアログ。
         /// defaultName はダイアログのファイル名欄の初期値。
-        /// Editor 実装（EditorUtility.OpenFilePanel）は初期ファイル名を受け取れないため無視される。
+        /// Windows では Editor / Player とも Win32FileDialog を使い defaultName を反映する。
+        /// Windows 以外の Editor は EditorUtility.OpenFilePanel へフォールバックし、defaultName は無視される。
         /// </summary>
         string OpenFilePanel(string title, string directory, string defaultName, string extension);
         string SaveFolderPanel(string title, string directory, string defaultName);

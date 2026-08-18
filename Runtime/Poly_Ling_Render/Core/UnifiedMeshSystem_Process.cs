@@ -270,7 +270,21 @@ namespace Poly_Ling.Core
             bool hasEdgeMode = (mode & MeshSelectMode.Edge) != 0;
             bool hasFaceMode = (mode & MeshSelectMode.Face) != 0;
             bool hasLineMode = (mode & MeshSelectMode.Line) != 0;
-            bool hasEdgeOrLineMode = hasEdgeMode || hasLineMode;
+
+            // 辺（面の辺）と補助線分（2頂点の独立線分）は別種別。
+            // GPU のライン当たり判定は両者を 1 本の配列で返すため、ここで
+            // IsAuxLine を見て「モードで無効な方」を落とす。
+            // これを行わないと「辺だけ ON」でも補助線分がホバーし、
+            // 「線分だけ ON」でも面の辺がホバーする。
+            if (newHoveredLine >= 0)
+            {
+                var lineArray = _bufferManager?.Lines;
+                bool isAuxLine = lineArray != null
+                                 && newHoveredLine < lineArray.Length
+                                 && lineArray[newHoveredLine].IsAuxLine;
+                if (isAuxLine ? !hasLineMode : !hasEdgeMode)
+                    newHoveredLine = -1;
+            }
 
             // 選択モードと優先度に基づいてホバーをフィルタリング
             // 優先度: 頂点 > 線分 > 面
@@ -288,8 +302,9 @@ namespace Poly_Ling.Core
                 effectiveVertex = newHoveredVertex;
                 // 頂点ヒット時は下位をクリア
             }
-            // 線分モードが有効で線分ヒットあり → 線分ホバー
-            else if (hasEdgeOrLineMode && newHoveredLine >= 0)
+            // 辺／補助線分ヒットあり → 線分ホバー
+            // （モードによる種別の絞り込みは上の IsAuxLine 判定で済んでいる）
+            else if (newHoveredLine >= 0)
             {
                 effectiveLine = newHoveredLine;
                 // 線分ヒット時は面をクリア

@@ -7,6 +7,7 @@ using System;
 using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Selection;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -71,6 +72,8 @@ namespace Poly_Ling.Player
             _dispatcher = dispatcher;
 
             _dispatcher.OnClick      += OnClick;
+            _dispatcher.OnButtonDown += OnButtonDown;
+            _dispatcher.OnPressMove  += OnPressMove;
             _dispatcher.OnDragBegin  += OnDragBegin;
             _dispatcher.OnDrag       += OnDrag;
             _dispatcher.OnDragEnd    += OnDragEnd;
@@ -79,10 +82,12 @@ namespace Poly_Ling.Player
         public void Disconnect(IMouseEventSource dispatcher)
         {
             if (dispatcher == null) return;
-            dispatcher.OnClick     -= OnClick;
-            dispatcher.OnDragBegin -= OnDragBegin;
-            dispatcher.OnDrag      -= OnDrag;
-            dispatcher.OnDragEnd   -= OnDragEnd;
+            dispatcher.OnClick      -= OnClick;
+            dispatcher.OnButtonDown -= OnButtonDown;
+            dispatcher.OnPressMove  -= OnPressMove;
+            dispatcher.OnDragBegin  -= OnDragBegin;
+            dispatcher.OnDrag       -= OnDrag;
+            dispatcher.OnDragEnd    -= OnDragEnd;
 
             if (_dispatcher == dispatcher)
                 _dispatcher = null;
@@ -98,12 +103,43 @@ namespace Poly_Ling.Player
         // イベントハンドラー（左ボタンのみ委譲）
         // ================================================================
 
+        /// <summary>
+        /// 押下フェーズを扱うハンドラ。実装していないハンドラでは null になり、
+        /// 押下時追従は行われず従来どおりしきい値超えで開始する。
+        /// </summary>
+        private IPlayerPressHandler PressHandler => _toolHandler as IPlayerPressHandler;
+
+        private void OnButtonDown(int btn, Vector2 screenPos, ModifierKeys mods)
+        {
+            if (btn != 0 || _toolHandler == null) return;
+
+            // 押下時点のホバーは「直前の PointerMove で GPU が確定した値」。
+            // PointerDown ではホバーを再計算しない（再計算すると判定位置が飛ぶ）。
+            var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
+            PLDiag.PickRec("IA.ButtonDown",
+                hit.HasHit ? 1 : 0, hit.MeshIndex, hit.VertexIndex,
+                x: screenPos.x, y: screenPos.y);
+            PressHandler?.OnLeftButtonDown(hit, screenPos, mods);
+        }
+
+        private void OnPressMove(int btn, Vector2 screenPos, Vector2 delta, ModifierKeys mods)
+        {
+            if (btn != 0 || _toolHandler == null) return;
+            PressHandler?.OnLeftPressMove(screenPos, delta, mods);
+        }
+
         private void OnClick(int btn, Vector2 screenPos, ModifierKeys mods)
         {
             if (btn != 0 || _toolHandler == null) return;
+
+            // しきい値を越えずに離された。押下時に開始していた操作を先に巻き戻す。
+            PressHandler?.OnLeftPressCancel(screenPos, mods);
+
             // GPU が UpdateFrame で計算済みのホバー結果を読み取る。
-            // マウスダウン時点の HoverVertexIndex が確定値。
             var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
+            PLDiag.PickRec("IA.Click",
+                hit.HasHit ? 1 : 0, hit.MeshIndex, hit.VertexIndex,
+                x: screenPos.x, y: screenPos.y);
             if (Poly_Ling.Tools.AxisGizmo.GizmoDebugLog)
                 Debug.Log($"[GizmoDbg/Click] screenPos={screenPos} handler={_toolHandler.GetType().Name}");
             _toolHandler.OnLeftClick(hit, screenPos, mods);
@@ -114,6 +150,11 @@ namespace Poly_Ling.Player
             if (btn != 0 || _toolHandler == null) return;
             // ドラッグ開始時も同様に GPU 計算済みのホバー結果を使う。
             var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
+            // screenPos は押下位置 (_downPos)。ホバーは直前の OnPointerHover で
+            // 「現在位置」で再計算されているため、両者は同一位置ではない。
+            PLDiag.PickRec("IA.DragBegin",
+                hit.HasHit ? 1 : 0, hit.MeshIndex, hit.VertexIndex,
+                x: screenPos.x, y: screenPos.y);
             if (Poly_Ling.Tools.AxisGizmo.GizmoDebugLog)
                 Debug.Log($"[GizmoDbg/DragBegin] screenPos={screenPos} handler={_toolHandler.GetType().Name}");
             _toolHandler.OnLeftDragBegin(hit, screenPos, mods);

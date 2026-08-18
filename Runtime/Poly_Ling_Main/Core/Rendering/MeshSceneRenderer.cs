@@ -149,6 +149,16 @@ namespace Poly_Ling.Core
         // ================================================================
 
         /// <summary>
+        /// 現在レンダラが保持している SelectionState（読み取り専用参照）。
+        ///
+        /// GPU ホバーの種別絞り込み（UnifiedMeshSystem.ProcessMouseUpdate）は
+        /// この参照の Mode を読む。Player 側の選択モード権限が「実際に GPU が見ている
+        /// SelectionState」へ確実に書き込めるように公開する。
+        /// 差し替えは行わないため、SetSelectionState の規約（正規入口経由）には影響しない。
+        /// </summary>
+        public SelectionState CurrentSelectionState => _selectionState;
+
+        /// <summary>
         /// 選択状態を設定する。RebuildAdapter より前に呼ぶこと。
         /// </summary>
         [System.Obsolete(

@@ -49,6 +49,9 @@ namespace Poly_Ling.Player
         // 既定割当は Delete キー (D は面削除モードに使う)。
         public const string CmdSubToolDelete      = "subtool.delete";
 
+        // 面追加ツール。左ペインの「面追加」ボタンと同じ処理を割り当てる。
+        public const string CmdToolAddFace        = "tool.addFace";
+
         // 面削除モード。進入後は面のクリックのみを受け付け、クリックされた面を即削除する。
         // 矩形/投げ縄選択と面以外のホバーは無効。Escape または他ツール選択で抜ける。
         public const string CmdToolDeleteFace     = "tool.deleteFace";
@@ -123,6 +126,7 @@ namespace Poly_Ling.Player
             m.Set(KeyCode.G, false, false, false, CmdSubToolLassoSelect); // G : 投げ縄選択サブツール (一時)
             m.Set(KeyCode.Delete, false, false, false, CmdSubToolDelete); // Delete : 選択削除サブツール
             m.Set(KeyCode.D, false, false, false, CmdToolDeleteFace);     // D      : 面削除モード
+            m.Set(KeyCode.F, false, false, false, CmdToolAddFace);        // F      : 面追加ツール
             m.Set(KeyCode.J, true,  false, false, CmdMergeVerticesCentroid);  // Ctrl+J       : 選択頂点を重心へ結合
             m.Set(KeyCode.J, true,  true,  false, CmdMergeVerticesThreshold); // Ctrl+Shift+J : しきい値で結合
             m.Set(KeyCode.O, true,  false, false, CmdPanelMeshList);          // Ctrl+O       : オブジェクトリスト

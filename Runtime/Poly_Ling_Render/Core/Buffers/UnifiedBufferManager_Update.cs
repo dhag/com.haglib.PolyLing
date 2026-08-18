@@ -416,6 +416,28 @@ namespace Poly_Ling.Core
         // ============================================================
 
         /// <summary>
+        /// ホバー要素を決めるときの「スクリーン距離の許容差」（ピクセル）。
+        ///
+        /// 【なぜ必要か】GPU 側のヒットテスト (UnifiedCompute.compute の
+        /// ComputeVertexHitTest) は、スクリーン距離を「ヒット半径内かどうか」の
+        /// 可否判定にしか使わず、半径内の要素には深度だけを書き込む。そのため
+        /// 順位付けを深度だけで行うと、カーソルから 1px の頂点よりも 9px 離れた
+        /// 手前の頂点が勝つ。密なメッシュではカーソルが 1px 動いただけで
+        /// 半径 10px の円に出入りする要素集合が変わり、ホバーが画面上の遠い
+        /// 別要素へ飛ぶ。押下時の微小なブレでも起きるため、掴む対象が
+        /// 見えていたものと食い違う。
+        ///
+        /// そこでスクリーン距離をこの幅で量子化した「バンド」を第一キー、
+        /// 深度を第二キーとして順位付けする。すなわち、この幅の中の差は
+        /// 人間が識別できないので従来どおり手前を優先し、この幅を超えて
+        /// 明らかに近い要素があればそちらを優先する。
+        ///
+        /// ヒット半径以上の値にすると全要素が同一バンドになり、
+        /// 深度のみで選ぶ従来の挙動へ完全に戻る。
+        /// </summary>
+        public float HoverDistanceTolerance { get; set; } = 3f;
+
+        /// <summary>
         /// ヒットテスト入力を設定
         /// </summary>
         public void SetHitTestInput(Vector2 mousePosition, float hitRadius, Rect previewRect, uint hitMode = 0xF)
@@ -1269,17 +1291,30 @@ namespace Poly_Ling.Core
         /// </summary>
         public int FindNearestVertexFromGPU(float hitRadius)
         {
-            int nearestIdx = -1;
+            Vector2 mouse = _hitTestInput != null && _hitTestInput.Length > 0
+                ? _hitTestInput[0].MousePosition
+                : Vector2.zero;
+            float tol = Mathf.Max(0.01f, HoverDistanceTolerance);
+
+            int nearestIdx   = -1;
+            int nearestBand  = int.MaxValue;
             float nearestDepth = float.MaxValue;
 
             for (int i = 0; i < _totalVertexCount; i++)
             {
-                // GPU側でhitRadius外・非選択メッシュは1e10が書き込まれている
+                // GPU側でhitRadius外・非選択メッシュは1e10が書き込まれている。
+                // ヒット可否の判定はここでやり直さない（半径・メッシュ選択・
+                // カリングの判定は全て GPU 側で済んでいる）。
                 float depth = _hitVertexDistances[i];
-                if (depth < 1e9f && depth < nearestDepth)
+                if (depth >= 1e9f) continue;
+
+                int band = (int)(Vector2.Distance(mouse, _screenPositions[i]) / tol);
+
+                if (band < nearestBand || (band == nearestBand && depth < nearestDepth))
                 {
+                    nearestBand  = band;
                     nearestDepth = depth;
-                    nearestIdx = i;
+                    nearestIdx   = i;
                 }
             }
 
@@ -1319,17 +1354,34 @@ namespace Poly_Ling.Core
         /// </summary>
         public int FindNearestLineFromGPU(float hitRadius)
         {
-            int nearestIdx = -1;
+            Vector2 mouse = _hitTestInput != null && _hitTestInput.Length > 0
+                ? _hitTestInput[0].MousePosition
+                : Vector2.zero;
+            float tol = Mathf.Max(0.01f, HoverDistanceTolerance);
+
+            int nearestIdx   = -1;
+            int nearestBand  = int.MaxValue;
             float nearestDepth = float.MaxValue;
 
             for (int i = 0; i < _totalLineCount; i++)
             {
-                // GPU側でhitRadius外・非選択メッシュは1e10が書き込まれている
+                // GPU側でhitRadius外・非選択メッシュは1e10が書き込まれている。
+                // ヒット可否の判定はここでやり直さない。
                 float depth = _hitLineDistances[i];
-                if (depth < 1e9f && depth < nearestDepth)
+                if (depth >= 1e9f) continue;
+
+                // 線分のスクリーン距離は両端の投影座標から線分距離で求める。
+                // CPU 版ヒットテスト (FindNearestLine) と同じ式を使う。
+                var line = _lines[i];
+                float dist = DistanceToLineSegment(
+                    mouse, _screenPositions[line.V1], _screenPositions[line.V2]);
+                int band = (int)(dist / tol);
+
+                if (band < nearestBand || (band == nearestBand && depth < nearestDepth))
                 {
+                    nearestBand  = band;
                     nearestDepth = depth;
-                    nearestIdx = i;
+                    nearestIdx   = i;
                 }
             }
 

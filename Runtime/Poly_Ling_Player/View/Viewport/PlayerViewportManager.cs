@@ -136,6 +136,16 @@ namespace Poly_Ling.Player
         public Action<Poly_Ling.Selection.SelectionState> OnSetSelectionState;
 
         /// <summary>
+        /// 現在の実効選択モード（頂点/辺/面/線分）を全 SelectionState へ再適用させる
+        /// コールバック（Core から結線）。
+        ///
+        /// モデルロード・トポロジ変更・Undo 適用では MeshContext と SelectionState が
+        /// 作り直される。作り直された側は SelectionState の既定モードのままなので、
+        /// ここで再適用しないとチェックボックスの指定が無効化される。
+        /// </summary>
+        public Action OnApplySelectMode;
+
+        /// <summary>
         /// Phase 2c-3: ツール固有の UIToolkit overlay (AddFace / TopologyTools /
         /// AdvancedSelect) を一括再描画する。各正規入口の末尾から呼ばれる。
         /// 各ハンドラ内部の状態（ホバー辺、プレビュー点等）はそのままに、
@@ -149,6 +159,11 @@ namespace Poly_Ling.Player
         }
 
         // カリングスロット（ビューポートごとに独立した per-slot カリングバッファを使用）
+        /// <summary>
+        /// ホバー確定頂点とマウス位置の差がこの px 数を超えたら診断ダンプを出す。
+        /// </summary>
+        private const float HoverOffsetDumpThresholdPx = 3f;
+
         private const int SlotPerspective = 0;
         private const int SlotTop         = 1;
         private const int SlotFront       = 2;
@@ -476,6 +491,7 @@ namespace Poly_Ling.Player
             {
                 _renderer.RebuildAdapter(0, model);
                 _renderer.UpdateSelectedDrawableMesh(0, model);
+                ApplySnapHitTestEnabled();
             }
             PresentAll(project);
 #pragma warning restore CS0618
@@ -502,12 +518,16 @@ namespace Poly_Ling.Player
         public void EnterTopologyChanged(ProjectContext project)
         {
             PLDiag.ViewportEnter("EnterTopologyChanged", DiagCaller());
+            // 選択モードの再適用は RebuildAdapter より前。
+            // 無効種別の選択解除が GPU 選択フラグ構築に反映されるようにする。
+            OnApplySelectMode?.Invoke();
 #pragma warning disable CS0618
             var model = project?.CurrentModel;
             if (_renderer != null && model != null)
             {
                 _renderer.RebuildAdapter(0, model);
                 _renderer.UpdateSelectedDrawableMesh(0, model);
+                ApplySnapHitTestEnabled();
             }
             // Phase 2a-2g-3 Fix: トポロジ変更は全 viewport のカリング再計算が必要。
             // 図形生成・モデルロード・面追加/削除等で Perspective 以外も更新されるようにする。
@@ -700,6 +720,9 @@ namespace Poly_Ling.Player
             VerticesMovedPhase phase,
             Poly_Ling.Data.MeshContext syncMc = null)
         {
+            // 診断: どのフェーズで、軽量同期経路 (syncMc != null) かどうかを記録する。
+            PLDiag.PickRec("VMoved", (int)phase, syncMc != null ? 1 : 0);
+
 #pragma warning disable CS0618
             switch (phase)
             {
@@ -848,6 +871,8 @@ namespace Poly_Ling.Player
         /// </param>
         public void EnterSceneReset(ProjectContext project, bool clearScene = false)
         {
+            // 選択モードの再適用は RebuildAdapter / SetSelectionState より前。
+            OnApplySelectMode?.Invoke();
 #pragma warning disable CS0618
             if (clearScene) _renderer?.ClearScene();
 
@@ -865,6 +890,7 @@ namespace Poly_Ling.Player
                 }
 
                 _renderer.UpdateSelectedDrawableMesh(0, model);
+                ApplySnapHitTestEnabled();
             }
 
             // Phase 2a-2g-3 Fix: シーンリセット時は全 slot のカメラ dirty を立てる。
@@ -908,11 +934,15 @@ namespace Poly_Ling.Player
         /// <param name="model">Undo スタックから取得した ModelContext (project.CurrentModel と異なり得る)</param>
         public void EnterUndoApplied(ProjectContext project, Poly_Ling.Context.ModelContext model)
         {
+            // Undo は MeshContext ごと差し替わり得る。作り直された SelectionState へ
+            // 現在の実効選択モードを再適用する。
+            OnApplySelectMode?.Invoke();
 #pragma warning disable CS0618
             if (_renderer != null && model != null)
             {
                 _renderer.RebuildAdapter(0, model);
                 _renderer.UpdateSelectedDrawableMesh(0, model);
+                ApplySnapHitTestEnabled();
             }
             // Phase 2a-2g-3 Fix: Undo 適用は全 viewport のカリング再計算が必要。
             MarkAllSlotsDirty();
@@ -1013,8 +1043,31 @@ namespace Poly_Ling.Player
                 if (adapter != null && adapter.IsInitialized)
                 {
                     var rect = new Rect(0, 0, _lastCamera.pixelWidth, _lastCamera.pixelHeight);
+
+                    // 診断: ここの UpdateFrame は「キャッシュされたマウス位置」で
+                    // ヒットテストを再実行する。ポインタが動いていなくても、
+                    // adapter.BackfaceCullingEnabled が PrepareViewport / DrawViewport で
+                    // slot ごとに上書きされた残留値になっているため、結果が入れ替わりうる。
+                    // 前後を記録し、NotifyPointerHover 経由でない入れ替わりはダンプする。
+                    int pv = adapter.HoverVertexIndex;
+                    int pl = adapter.HoverLineIndex;
+                    int pf = adapter.HoverFaceIndex;
+
                     adapter.RequestNormal();
                     adapter.UpdateFrame(_lastCamera, rect, _lastMousePos);
+
+                    PLDiag.PickRec("Present",
+                        pv, adapter.HoverVertexIndex,
+                        pl, adapter.HoverLineIndex,
+                        pf, adapter.HoverFaceIndex);
+
+                    if (!_inNotifyPointerHover &&
+                        (pv != adapter.HoverVertexIndex ||
+                         pl != adapter.HoverLineIndex ||
+                         pf != adapter.HoverFaceIndex))
+                    {
+                        PLDiag.PickDump("hover-changed-without-pointer-move");
+                    }
                 }
             }
 
@@ -1320,20 +1373,82 @@ namespace Poly_Ling.Player
                     $"suppress={_suppressHover}");
             }
 
+            // 診断: UpdateFrame の前後で hover インデックスがどう変わったかを記録する。
+            // ポインタ移動由来の入れ替わりはここで捕まる。
+            int hvBefore = adapter.HoverVertexIndex;
+            int hlBefore = adapter.HoverLineIndex;
+            int hfBefore = adapter.HoverFaceIndex;
+
+            // ツールハンドラより先に GPU ヒットテストを走らせる。
+            //
+            // ハンドラの UpdateHover（AddFace / Knife / EdgeTopology 等）は
+            // adapter.HoverVertexIndex / SnapHoverVertexIndex を読む。
+            // UpdateFrame を後に回すと、読める値は 1 イベント前のポインタ位置の
+            // ヒットテスト結果になり、プレビューと、最新の値を読むクリック経路とで
+            // 吸着先が食い違う。
+            // MoveToolHandler.UpdateHover は GPU ホバーを読まない（ギズモ軸判定のみ）ため
+            // 順序の影響を受けない。
+            adapter.RequestNormal();
+            adapter.UpdateFrame(cam, rect, panelLocalPos);
+
             if (_moveToolHandler != null && !_suppressHover)
                 _moveToolHandler.UpdateHover(handlerHoverPos, _toolCtx.ToToolContext(cam));
             // アクティブなツールが MoveToolHandler 以外の場合、そちらにも通知する
             if (!_suppressHover)
                 _activeToolHoverCallback?.Invoke(handlerHoverPos, _toolCtx.ToToolContext(cam));
 
-            adapter.RequestNormal();
-            adapter.UpdateFrame(cam, rect, panelLocalPos);
+            PLDiag.PickHover(
+                hvBefore, adapter.HoverVertexIndex,
+                hlBefore, adapter.HoverLineIndex,
+                hfBefore, adapter.HoverFaceIndex,
+                panelLocalPos);
+
+            // 診断: 「マウス位置」と「ホバー確定した頂点の実際のスクリーン座標」の差を測る。
+            //
+            // 参照するのは GPU が計算して CPU へ読み戻した配列
+            // (UnifiedBufferManager_Update.ComputeScreenPositionsGPU の末尾で
+            //  _screenPositions へ展開される)。CPU 側で投影を再計算してはならない。
+            // 座標系はどちらも Y=0 上・パネルローカル相当なので、そのまま引き算できる。
+            //
+            // 差が常に一定方向なら座標変換のバイアス、ばらつくならヒット半径内での
+            // 頂点の選び方の問題、と切り分けられる。
+            {
+                int hv = adapter.HoverVertexIndex;
+                var screenPositions = adapter.BufferManager?.GetScreenPositions();
+                if (hv >= 0 && screenPositions != null && hv < screenPositions.Length)
+                {
+                    Vector2 vertexScreen = screenPositions[hv];
+                    Vector2 d = vertexScreen - panelLocalPos;
+                    float   dist = d.magnitude;
+
+                    PLDiag.PickRec("HoverPos",
+                        hv, Mathf.RoundToInt(d.x), Mathf.RoundToInt(d.y),
+                        x: vertexScreen.x, y: vertexScreen.y, z: dist);
+
+                    // ホバー半径内であっても、マウスから 3px 以上離れた頂点が
+                    // 選ばれ続けるならずれとして記録を残す。
+                    if (dist > HoverOffsetDumpThresholdPx)
+                        PLDiag.PickDump("hover-offset");
+                }
+            }
 
             // Phase 1 event 配線: ホバー状態変更 → 描画キュー再構築。
             // UpdateFrame で GPU フラグバッファは更新されるが、CPU 側の頂点色キャッシュは
             // Prepare 系を通さないと反映されないため、ここで PresentAll を呼ぶ。
-            PresentAll(_lastProjectForPresent);
+            //
+            // PresentAll は内部で UpdateFrame を再実行する。ポインタ移動由来の
+            // 再計算はここで意図的に起きているものなので、PresentAll 側の
+            // 自動ダンプ (hover-changed-without-pointer-move) は抑止する。
+            _inNotifyPointerHover = true;
+            try   { PresentAll(_lastProjectForPresent); }
+            finally { _inNotifyPointerHover = false; }
         }
+
+        /// <summary>
+        /// NotifyPointerHover 実行中フラグ。PresentAll 内の
+        /// 「ポインタ移動を伴わないホバー入れ替わり」検出を抑止するために使う。
+        /// </summary>
+        private bool _inNotifyPointerHover;
 
         /// <summary>
         /// 矩形選択確定前に背面カリングフラグをGPU→CPUへ読み戻す。
@@ -1704,9 +1819,26 @@ namespace Poly_Ling.Player
         /// </summary>
         public void SetSnapHitTestEnabled(bool enabled)
         {
+            _snapHitTestEnabled = enabled;
+            ApplySnapHitTestEnabled();
+        }
+
+        // 吸着用ヒットテストの要求状態。
+        // RebuildAdapter は UnifiedSystemAdapter を Dispose して作り直し、
+        // 新しい adapter の EnableSnapHitTest は既定 false で始まる。
+        // 面追加は点を置くたびに EnterTopologyChanged（= RebuildAdapter）を通るため、
+        // 要求状態をここで保持し、作り直しのたびに復元する。
+        private bool _snapHitTestEnabled;
+
+        /// <summary>
+        /// 保持している吸着ヒットテストの要求状態を現在の adapter へ適用する。
+        /// adapter を作り直す入口から必ず呼ぶこと。
+        /// </summary>
+        private void ApplySnapHitTestEnabled()
+        {
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null) return;
-            adapter.EnableSnapHitTest = enabled;
+            adapter.EnableSnapHitTest = _snapHitTestEnabled;
         }
 
         /// <summary>
@@ -2203,6 +2335,7 @@ namespace Poly_Ling.Player
 #pragma warning disable CS0618
             _renderer?.RebuildAdapter(mi, model);
 #pragma warning restore CS0618
+            if (mi == 0) ApplySnapHitTestEnabled();
         }
 
         [System.Obsolete(

@@ -143,9 +143,18 @@ namespace Poly_Ling.EditorIO
         public string OpenFilePanel(string title, string directory, string extension)
             => EditorUtility.OpenFilePanel(title, directory, extension);
 
-        // EditorUtility.OpenFilePanel に初期ファイル名の引数がないため defaultName は無視する。
+        // EditorUtility.OpenFilePanel は初期ファイル名の引数を持たないため、
+        // Windows では Player と同じ Win32FileDialog を使って defaultName を反映する。
+        // それ以外のプラットフォームは EditorUtility にフォールバックし、defaultName は無視される。
         public string OpenFilePanel(string title, string directory, string defaultName, string extension)
-            => EditorUtility.OpenFilePanel(title, directory, extension);
+        {
+            if (!Win32FileDialog.Supported)
+                return EditorUtility.OpenFilePanel(title, directory, extension);
+
+            // Win32 は '\\' 区切りで返すため、EditorUtility と同じ '/' 区切りに揃える。
+            string path = Win32FileDialog.OpenFile(title, directory, defaultName, extension);
+            return string.IsNullOrEmpty(path) ? string.Empty : path.Replace('\\', '/');
+        }
 
         public string SaveFolderPanel(string title, string directory, string defaultName)
             => EditorUtility.SaveFolderPanel(title, directory, defaultName);

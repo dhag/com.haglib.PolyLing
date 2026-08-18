@@ -25,6 +25,13 @@ namespace Poly_Ling.Selection
         public event Action OnSelectionChanged;
 
         /// <summary>
+        /// 選択変更通知を外部から発火する。
+        /// 集合を直接操作した呼び出し側（選択モード変更に伴う無効種別の解除など）が
+        /// 描画・パネル更新を促すために使う。
+        /// </summary>
+        public void NotifySelectionChanged() => OnSelectionChanged?.Invoke();
+
+        /// <summary>
         /// 全ての選択をクリア（モードフラグに関係なく）
         /// </summary>
         public void ClearEnabledModes()
@@ -396,7 +403,11 @@ namespace Poly_Ling.Selection
         {
             if (snapshot == null) return;
 
-            Mode = snapshot.Mode;
+            // Mode はここで復元しない。
+            // Mode は「選択の中身」ではなく UI/ツール側の絞り込み設定であり、
+            // 唯一の権限は Player の選択モード（チェックボックス + ツール override）にある。
+            // ここで snapshot.Mode を書き戻すと、Undo/Redo・ドラッグ取消・トポロジ Undo の
+            // たびに撮影時点のモードへ巻き戻り、チェックボックスの指定が無効化される。
             Vertices.Clear();
             Edges.Clear();
             Faces.Clear();
@@ -425,7 +436,8 @@ namespace Poly_Ling.Selection
         public bool IsDifferentFrom(SelectionSnapshot other)
         {
             if (other == null) return true;
-            if (Mode != other.Mode) return true;
+            // Mode は選択の中身ではないので差分判定に含めない。
+            // 含めるとモード切替だけで選択変更 Undo レコードが積まれる。
             if (!Vertices.SetEquals(other.Vertices)) return true;
             if (!Edges.SetEquals(other.Edges)) return true;
             if (!Faces.SetEquals(other.Faces)) return true;

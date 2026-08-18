@@ -1,7 +1,7 @@
 // PlayerExportSubPanel.cs
 // プレイビュー右ペイン用 PMX / MQO エクスポート設定パネル（UIToolkit）。
 // PlayerImportSubPanel と対称な設計。
-// ファイル保存ダイアログは PLEditorBridge.I.SaveFilePanel 経由。
+// 保存は必ず PlayerIoUiKit.AskSavePath（保存ダイアログ）を通す。パス欄への直接書き出しは行わない。
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
@@ -75,12 +75,12 @@ namespace Poly_Ling.Player
             _panelNameLabel.style.marginBottom = 4;
             parent.Add(_panelNameLabel);
 
-            // 出力先パス行（[...] は保存先選択のみ・即実行しない）
+            // 出力先パス行（[...] は「エクスポート」と同一処理）
             var fileRow = new VisualElement();
             fileRow.style.flexDirection = FlexDirection.Row;
             fileRow.style.marginBottom  = 2;
 
-            var browseBtn = new Button(OnBrowse) { text = "..." };
+            var browseBtn = new Button(OnExportClicked) { text = "..." };
             browseBtn.style.width       = 28;
             browseBtn.style.marginRight = 2;
 
@@ -123,36 +123,26 @@ namespace Poly_Ling.Player
         // Export 実行
         // ================================================================
 
+        // 保存は必ず保存ダイアログを通す。
+        // パス欄の値へ無確認で書き出すと、読み込んだファイルを事故で上書きする。
+        // パス欄の値はダイアログの初期フォルダ／初期ファイル名としてだけ使い、
+        // 空欄のときは OS の現在フォルダに任せる。
         private void OnExportClicked()
         {
             SetStatus("");
 
-            string savePath = _pathField?.value ?? "";
-            if (string.IsNullOrEmpty(savePath)) { SetStatus("保存先が指定されていません"); return; }
+            string ext   = _mode == Mode.PMX ? "pmx" : "mqo";
+            string title = _mode == Mode.PMX ? "Export PMX" : "Export MQO";
 
-            RecentPaths.Set(ExportPathKey(), savePath);
+            string savePath = PlayerIoUiKit.AskSavePath(title, _pathField?.value ?? "", "", ext);
+            if (string.IsNullOrEmpty(savePath)) return;   // キャンセル
+
+            _pathField.value = savePath;                  // RecentPaths へは値変更コールバックで反映される
 
             if (_mode == Mode.PMX)
                 OnExportPmx?.Invoke(savePath, ClonePmxSettings());
             else
                 OnExportMqo?.Invoke(savePath, CloneMqoSettings());
-        }
-
-        private void OnBrowse()
-        {
-            string ext     = _mode == Mode.PMX ? "pmx" : "mqo";
-            string title   = _mode == Mode.PMX ? "Export PMX" : "Export MQO";
-            string prev    = _pathField?.value ?? "";
-            string dir     = string.IsNullOrEmpty(prev)
-                ? Application.dataPath
-                : (Path.GetDirectoryName(prev) ?? Application.dataPath);
-            string defName = string.IsNullOrEmpty(prev)
-                ? "model"
-                : Path.GetFileNameWithoutExtension(prev);
-
-            string savePath = PLEditorBridge.I.SaveFilePanel(title, dir, defName, ext);
-            if (!string.IsNullOrEmpty(savePath))
-                _pathField.value = savePath;   // 選択のみ（即実行しない）
         }
 
         /// <summary>エクスポートパスの保存キー（モード別）</summary>

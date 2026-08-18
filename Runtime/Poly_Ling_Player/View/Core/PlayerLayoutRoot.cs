@@ -84,6 +84,42 @@ namespace Poly_Ling.Player
         public Toggle LassoToggle { get; private set; }
 
         /// <summary>
+        /// 左ペイン：ピック／頂点ドラッグの診断ログ（verbose）トグル。既定 OFF。
+        ///
+        /// OFF でも PLDiag の Pick リング記録と異常時の自動ダンプは動作する。
+        /// ON にすると 1 イベントごとに Console へ出るため、再現手順が判っている
+        /// ときだけ使う。値は PlayerUiPrefs に永続化される。
+        /// </summary>
+        public Toggle PickDiagToggle { get; private set; }
+
+        /// <summary>
+        /// 左ペイン：軌道回転の中心をローカル原点（＝ピボット）にするトグル。既定 ON。
+        ///
+        /// ON のとき、メインビュー（透視ビューポート）の右ドラッグ回転は
+        /// 選択オブジェクトのローカル原点の重心を軸に回る。ローカル原点は
+        /// MeshContext.WorldMatrix の平行移動成分であり、PivotOffsetTool が
+        /// 言う「ピボット原点」と同じ点。
+        ///
+        /// ON にした瞬間も視点は一切動かない。回した瞬間に軸が変わるだけである
+        /// （Blender の Orbit Around Selection / Maya の Tumble Pivot と同じ扱い）。
+        /// 視点を選択へ寄せる操作（Frame Selected 相当）とは別物。
+        ///
+        /// OrbitCenterToSelectionBtn と排他。釦を押すとここは自動的に OFF になり、
+        /// 逆にここを ON に戻すと釦で確定した固定ピボットは解除される。
+        /// </summary>
+        public Toggle OrbitAroundLocalOriginToggle { get; private set; }
+
+        /// <summary>
+        /// 左ペイン：押した時点の選択の重心を軌道回転の中心として固定する押し釦。
+        ///
+        /// スナップショット動作。押した後に選択を変えても頂点を動かしても
+        /// 中心は移動しない。更新したいときは再度押す。
+        /// 要素（頂点/辺/面/線分）が未選択のときはローカル原点（ピボット）へ
+        /// フォールバックする。押しても視点は動かない。
+        /// </summary>
+        public Button OrbitCenterToSelectionBtn { get; private set; }
+
+        /// <summary>
         /// 左ペイン：法線自動計算トグル。既定 OFF（＝自動計算しない）。
         /// 選択メッシュの MeshObject.PreserveNormals を反転して書き込む
         /// （自動計算 ON ＝ PreserveNormals false）。
@@ -812,6 +848,38 @@ namespace Poly_Ling.Player
             LassoToggle.style.marginBottom = 4;
             scroll.Add(LassoToggle);
 
+            // 診断ログ（ピック／移動）。OFF でもリング記録と自動ダンプは動くため、
+            // このトグルは「1 イベントごとの Console 出力」だけを切り替える。
+            PickDiagToggle = new Toggle("診断ログ（ピック／移動）") { value = false };
+            PickDiagToggle.style.color        = new StyleColor(Color.white);
+            PickDiagToggle.style.marginBottom = 4;
+            if (PickDiagToggle.labelElement != null)
+            {
+                PickDiagToggle.labelElement.style.minWidth    = 0;
+                PickDiagToggle.labelElement.style.flexGrow    = 0;
+                PickDiagToggle.labelElement.style.marginRight = 3;
+            }
+            scroll.Add(PickDiagToggle);
+
+            // 軌道回転の中心（既定＝ローカル原点）。Lasso Select の直下に置く。
+            OrbitAroundLocalOriginToggle = new Toggle("回転はローカル原点中心") { value = true };
+            OrbitAroundLocalOriginToggle.style.color        = new StyleColor(Color.white);
+            OrbitAroundLocalOriginToggle.style.marginBottom = 2;
+            // 既定の広い label min-width を解除し、ラベルとチェックの間隔を詰める
+            // （選択モードのトグル群と同じ処理）。
+            if (OrbitAroundLocalOriginToggle.labelElement != null)
+            {
+                OrbitAroundLocalOriginToggle.labelElement.style.minWidth    = 0;
+                OrbitAroundLocalOriginToggle.labelElement.style.flexGrow    = 0;
+                OrbitAroundLocalOriginToggle.labelElement.style.marginRight = 3;
+            }
+            scroll.Add(OrbitAroundLocalOriginToggle);
+
+            // 押した時点の選択重心を回転中心として固定する（スナップショット）。
+            OrbitCenterToSelectionBtn = MakeBtn("現在の選択を中心に");
+            OrbitCenterToSelectionBtn.style.marginBottom = 4;
+            scroll.Add(OrbitCenterToSelectionBtn);
+
             // 法線の自動計算（既定 OFF）と手動再計算。対象はどちらも選択メッシュ。
             var normalRecalcRow = new VisualElement();
             normalRecalcRow.style.flexDirection = FlexDirection.Row;
@@ -938,7 +1006,7 @@ namespace Poly_Ling.Player
             var toolRow2 = new VisualElement();
             toolRow2.style.flexDirection = FlexDirection.Row;
             toolRow2.style.marginBottom  = 2;
-            ToolPivotOffsetBtn = MakeBtn("ピボット");    ToolPivotOffsetBtn.style.flexGrow = 1; ToolPivotOffsetBtn.style.marginRight = 2;
+            ToolPivotOffsetBtn = MakeBtn("ピボット位置");    ToolPivotOffsetBtn.style.flexGrow = 1; ToolPivotOffsetBtn.style.marginRight = 2;
             ToolSculptBtn      = MakeBtn("スカルプト");  ToolSculptBtn.style.flexGrow      = 1; ToolSculptBtn.style.marginRight      = 2;
             ToolAdvancedSelBtn = MakeBtn("詳細選択");    ToolAdvancedSelBtn.style.flexGrow = 1;
             toolRow2.Add(ToolPivotOffsetBtn); toolRow2.Add(ToolSculptBtn); toolRow2.Add(ToolAdvancedSelBtn);
@@ -1038,7 +1106,7 @@ namespace Poly_Ling.Player
             rowVertexId.Add(VertexIdBtn); rowVertexId.Add(VertexTransferBtn); foVertexTopo.Add(rowVertexId);
 
             var rowQuad = new VisualElement(); rowQuad.style.flexDirection = FlexDirection.Row; rowQuad.style.marginBottom = 2;
-            QuadDecimatorBtn = MakeBtn("Yet_Quad減面"); QuadDecimatorBtn.style.flexGrow = 1;
+            QuadDecimatorBtn = MakeBtn("Yet(Quad減面)"); QuadDecimatorBtn.style.flexGrow = 1;
             rowQuad.Add(QuadDecimatorBtn); foVertexTopo.Add(rowQuad);
 
             // ── ボーン・モーフ ─────────────────────────────────────────
@@ -1109,7 +1177,7 @@ namespace Poly_Ling.Player
 
             var rowMisc2 = new VisualElement(); rowMisc2.style.flexDirection = FlexDirection.Row; rowMisc2.style.marginBottom = 2;
             UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1; UnityClipTestBtn.style.marginRight = 2;
-            MotionClipTestBtn = MakeBtn("統合モーション"); MotionClipTestBtn.style.flexGrow = 1;
+            MotionClipTestBtn = MakeBtn("Yet（統合モーション)"); MotionClipTestBtn.style.flexGrow = 1;
             rowMisc2.Add(UnityClipTestBtn); rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
 
             var rowMisc3 = new VisualElement(); rowMisc3.style.flexDirection = FlexDirection.Row; rowMisc3.style.marginBottom = 2;

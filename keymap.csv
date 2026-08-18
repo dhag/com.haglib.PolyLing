@@ -26,6 +26,8 @@ edit.redo,Y,true,false,false
 edit.redo,Z,true,true,false
 # V : 頂点移動ツール
 tool.vertexMove,V,false,false,false
+# F : 面追加ツール
+tool.addFace,F,false,false,false
 # B : オブジェクト姿勢ツール
 tool.objectMove,B,false,false,false
 # S : スカルプトツール

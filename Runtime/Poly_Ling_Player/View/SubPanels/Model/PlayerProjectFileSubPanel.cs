@@ -34,7 +34,7 @@ namespace Poly_Ling.Player
 
         public enum PanelMode
         {
-            /// <summary>保存専用（上書き保存 / 名前を付けて保存）。</summary>
+            /// <summary>保存専用（名前を付けて保存）。</summary>
             Save,
             /// <summary>読込専用（開く）。</summary>
             Load,
@@ -51,20 +51,14 @@ namespace Poly_Ling.Player
         /// <summary>.mfproj 開く（指定パスから読込）。Load のみ。</summary>
         public Action<string> OnLoad;
 
-        /// <summary>.mfproj 保存（指定パスへ上書き保存）。Save のみ。</summary>
+        /// <summary>.mfproj 保存（ダイアログで確定したパスへ保存）。Save のみ。</summary>
         public Action<string> OnSave;
-
-        /// <summary>.mfproj 名前を付けて保存（ダイアログ）。Save のみ。</summary>
-        public Action OnSaveAs;
 
         /// <summary>CSVプロジェクトファイル 開く（merge=true で既存モデルにマージ）。Load のみ。</summary>
         public Action<string, bool> OnLoadCsv;
 
-        /// <summary>CSVプロジェクトファイル 保存（指定ファイルへ保存）。Save のみ。</summary>
+        /// <summary>CSVプロジェクトファイル 保存（ダイアログで確定したパスへ保存）。Save のみ。</summary>
         public Action<string> OnSaveCsv;
-
-        /// <summary>CSVプロジェクトファイル 名前を付けて保存（ダイアログ）。Save のみ。</summary>
-        public Action OnSaveAsCsv;
 
         // ================================================================
         // 内部 UI 参照
@@ -76,8 +70,8 @@ namespace Poly_Ling.Player
         private Toggle    _csvMergeToggle;
 
         // パス欄は保存側 / 読込側で同じキーを共有する。
-        // 「読み込んだファイルへそのまま上書き保存する」が最も多い操作なので、
-        // 別キーにすると保存側が別のファイルを指したまま残り、かえって危険になる。
+        // 「読み込んだファイルと同じ場所・同じ名前へ保存する」が最も多い操作なので、
+        // 別キーにすると保存ダイアログの初期値が別のファイルを指したまま残る。
         // 表示同期は Refresh()（パネル表示時に Viewer から呼ぶ）で行う。
         private const string JsonPathKey = "Project.JsonPath";
         private const string CsvPathKey  = "Project.CsvPath";
@@ -105,41 +99,18 @@ namespace Poly_Ling.Player
                 ? "既存ファイルを指定すると上書きされます。"
                 : "読込は現在編集中のプロジェクトを置き換えます。"));
 
-            // ── .mfproj(JSON) セクション ──────────────────────────────
-            parent.Add(SectionLabel(".mfproj (JSON)"));
-
-            _jsonPathField = new TextField();
-            _jsonPathField.RegisterValueChangedCallback(e => RecentPaths.Set(JsonPathKey, e.newValue));
-            parent.Add(MakePathRow(_jsonPathField, OnBrowseJson));
-            _jsonPathField.SetValueWithoutNotify(RecentPaths.Get(JsonPathKey));
-
-            if (IsSave)
-            {
-                parent.Add(MakeWideBtn("上書き保存", () => OnSave?.Invoke(_jsonPathField.value)));
-                parent.Add(MakeWideBtn("名前を付けて保存", () => OnSaveAs?.Invoke()));
-            }
-            else
-            {
-                parent.Add(MakeWideBtn("開く", OnOpenJson));
-            }
-
-            // ── 区切り線 ──────────────────────────────────────────────
-            parent.Add(Divider());
-
             // ── CSV セクション ────────────────────────────────────────
             parent.Add(SectionLabel("CSV (プロジェクトファイル)"));
 
             _csvPathField = new TextField();
             _csvPathField.tooltip = "プロジェクトCSVのファイルパス（任意名）。モデルフォルダは同じディレクトリ直下に置かれる。";
             _csvPathField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvPathKey, e.newValue));
-            parent.Add(MakePathRow(_csvPathField, OnBrowseCsv));
+            // [...] と主ボタンは同一処理にする（PMX/MQO インポータ・エクスポータと揃える）。
+            parent.Add(MakePathRow(_csvPathField, IsSave ? (Action)OnSaveAsCsvFile : OnOpenCsv));
             _csvPathField.SetValueWithoutNotify(RecentPaths.Get(CsvPathKey));
 
             if (IsSave)
-            {
-                parent.Add(MakeWideBtn("上書き保存", () => OnSaveCsv?.Invoke(_csvPathField.value)));
-                parent.Add(MakeWideBtn("名前を付けて保存", () => OnSaveAsCsv?.Invoke()));
-            }
+                parent.Add(MakeWideBtn("名前を付けて保存", OnSaveAsCsvFile));
             else
             {
                 _csvMergeToggle = new Toggle("追加マージ");
@@ -150,6 +121,22 @@ namespace Poly_Ling.Player
 
                 parent.Add(MakeWideBtn("開く", OnOpenCsv));
             }
+
+            // ── 区切り線 ──────────────────────────────────────────────
+            parent.Add(Divider());
+
+            // ── .mfproj(JSON) セクション ──────────────────────────────
+            parent.Add(SectionLabel(".mfproj (JSON)"));
+
+            _jsonPathField = new TextField();
+            _jsonPathField.RegisterValueChangedCallback(e => RecentPaths.Set(JsonPathKey, e.newValue));
+            parent.Add(MakePathRow(_jsonPathField, IsSave ? (Action)OnSaveAsJson : OnOpenJson));
+            _jsonPathField.SetValueWithoutNotify(RecentPaths.Get(JsonPathKey));
+
+            if (IsSave)
+                parent.Add(MakeWideBtn("名前を付けて保存", OnSaveAsJson));
+            else
+                parent.Add(MakeWideBtn("開く", OnOpenJson));
 
             // ── ステータス ───────────────────────────────────────────
             _statusLabel = new Label("");
@@ -197,45 +184,31 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // browse（[...] = ファイル選択）
+        // save（[...] = 「名前を付けて保存」と同一処理）— Save モード専用
+        //
+        // 保存は必ず保存ダイアログを通す。パス欄の値へ無確認で書き出す経路
+        // （旧「上書き保存」）は保存事故の原因になるため廃止した。
+        // パス欄の値はダイアログの初期フォルダ／初期ファイル名としてだけ使い、
+        // 空欄のときは OS の現在フォルダ＋既定名 "Project" を初期値にする。
         // ================================================================
 
-        private void OnBrowseJson()
+        private void OnSaveAsJson()
         {
-            string path;
-            if (IsSave)
-            {
-                string dir = string.IsNullOrEmpty(_jsonPathField.value)
-                    ? Application.dataPath
-                    : Path.GetDirectoryName(_jsonPathField.value);
-                path = PLEditorBridge.I.SaveFilePanel("プロジェクトの保存先", dir, "Project", "mfproj");
-            }
-            else
-            {
-                path = PlayerIoUiKit.AskLoadPath("プロジェクトを開く", _jsonPathField.value, "mfproj");
-            }
-            if (!string.IsNullOrEmpty(path))
-                _jsonPathField.value = path;
+            string path = PlayerIoUiKit.AskSavePath(
+                "プロジェクトの保存先", _jsonPathField.value, "Project", "mfproj");
+            if (string.IsNullOrEmpty(path)) return;
+            _jsonPathField.value = path;
+            OnSave?.Invoke(path);
         }
 
-        private void OnBrowseCsv()
+        private void OnSaveAsCsvFile()
         {
-            string path;
-            if (IsSave)
-            {
-                string dir = string.IsNullOrEmpty(_csvPathField.value)
-                    ? Application.dataPath
-                    : Path.GetDirectoryName(_csvPathField.value);
-                path = PLEditorBridge.I.SaveFilePanel(
-                    "プロジェクトCSVの保存先", dir, "Project", CsvProjectSerializer.ProjectFileExtension);
-            }
-            else
-            {
-                path = PlayerIoUiKit.AskLoadPath(
-                    "プロジェクトCSVを開く", _csvPathField.value, CsvProjectSerializer.ProjectFileExtension);
-            }
-            if (!string.IsNullOrEmpty(path))
-                _csvPathField.value = path;
+            string path = PlayerIoUiKit.AskSavePath(
+                "プロジェクトCSVの保存先", _csvPathField.value, "Project",
+                CsvProjectSerializer.ProjectFileExtension);
+            if (string.IsNullOrEmpty(path)) return;
+            _csvPathField.value = path;
+            OnSaveCsv?.Invoke(path);
         }
 
         // ================================================================
