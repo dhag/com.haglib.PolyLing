@@ -5194,6 +5194,11 @@ namespace Poly_Ling.Player
                 case NormalEditCommand.Op.FlattenOnAxis:
                     return NormalEditOps.FlattenOnAxis(mo, corners, c.Axis);
 
+                // ミラー対応（X軸対称）。中央近傍の頂点だけ法線の X をゼロにする。
+                // スロット数は変わらないため slotCountMayChange には含めない。
+                case NormalEditCommand.Op.MirrorFlattenSeamX:
+                    return NormalEditOps.FlattenMirrorSeamX(mo, corners, c.MirrorThreshold);
+
                 case NormalEditCommand.Op.Flip:
                     return NormalEditOps.Flip(mo, corners);
 

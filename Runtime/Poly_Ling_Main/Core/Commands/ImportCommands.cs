@@ -1,5 +1,5 @@
 // ImportCommands.cs
-// PMX / MQO インポートのコマンド化。
+// PMX / MQO / OBJ インポートのコマンド化。
 // UndoなしのICommand実装（インポートはプロジェクトロード操作であり編集操作ではないため）。
 // Runtime/Poly_Ling_Main/Core/Commands/ に配置
 
@@ -8,6 +8,7 @@ using System.IO;
 using UnityEngine;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
+using Poly_Ling.OBJ;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
 
@@ -205,6 +206,96 @@ namespace Poly_Ling.Commands
 
             // IK: import で構築した集約 Links から per-bone（EffectorBoneName/IKLink）を確定。
             Poly_Ling.Ops.IKChainResolver.SyncPerBoneFromLinks(model);
+
+            _onResult?.Invoke(model, result);
+        }
+    }
+
+    /// <summary>
+    /// OBJファイルをインポートするコマンド。
+    /// Execute() が同期でインポートを実行し、onResult にModelContextを返す。
+    /// 失敗時は onError にエラーメッセージを返す。
+    ///
+    /// OBJ はボーン・モーフ・ミラーを持たないため、生成するのはメッシュと
+    /// マテリアルだけになる。階層も無いので親子関係は設定しない。
+    /// </summary>
+    public class ImportObjCommand : ICommand
+    {
+        private readonly string            _filePath;
+        private readonly ObjImportSettings _settings;
+        private readonly Action<ModelContext, ObjImportResult> _onResult;
+        private readonly Action<string>    _onError;
+
+        public string         Description  => $"Import OBJ: {Path.GetFileName(_filePath)}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        /// <param name="filePath">OBJファイルパス</param>
+        /// <param name="settings">インポート設定（nullの場合デフォルト使用）</param>
+        /// <param name="onResult">成功時コールバック (ModelContext, ObjImportResult)</param>
+        /// <param name="onError">失敗時コールバック (エラーメッセージ)</param>
+        public ImportObjCommand(
+            string            filePath,
+            ObjImportSettings settings,
+            Action<ModelContext, ObjImportResult> onResult,
+            Action<string>    onError = null)
+        {
+            _filePath = filePath;
+            _settings = settings ?? ObjImportSettings.CreateDefault();
+            _onError  = onError;
+            _onResult = onResult;
+        }
+
+        public void Execute()
+        {
+            if (string.IsNullOrEmpty(_filePath))
+            {
+                _onError?.Invoke("ファイルパスが空です");
+                return;
+            }
+
+            if (!File.Exists(_filePath))
+            {
+                _onError?.Invoke($"ファイルが見つかりません: {_filePath}");
+                return;
+            }
+
+            // BaseDir が未設定の場合はファイルのディレクトリを使用（MTL・テクスチャの基準）
+            var settings = _settings;
+            if (string.IsNullOrEmpty(settings.BaseDir))
+                settings.BaseDir = Path.GetDirectoryName(_filePath);
+
+            ObjImportResult result;
+            try
+            {
+                result = ObjImporter.ImportFile(_filePath, settings);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ImportObjCommand] {e.Message}");
+                _onError?.Invoke(e.Message);
+                return;
+            }
+
+            if (!result.Success)
+            {
+                _onError?.Invoke(result.ErrorMessage);
+                return;
+            }
+
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileNameWithoutExtension(_filePath),
+                FilePath = _filePath,
+            };
+
+            if (result.MaterialReferences != null && result.MaterialReferences.Count > 0)
+                model.MaterialReferences = result.MaterialReferences;
+
+            foreach (var mc in result.MeshContexts)
+                model.Add(mc);
+
+            // 階層は無いが、WorldMatrix を単位で確定させておく（描画側が参照するため）。
+            model.ComputeWorldMatrices();
 
             _onResult?.Invoke(model, result);
         }

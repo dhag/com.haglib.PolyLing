@@ -577,6 +577,49 @@ namespace Poly_Ling.Ops
             return Finish(mesh, changed, mesh.Name);
         }
 
+        /// <summary>
+        /// ミラー対応（X軸対称）。対象コーナーのうち、参照頂点が YZ 平面の近傍
+        /// （|Position.x| がしきい値以下）にあるものだけ、法線の X 成分を 0 にして正規化する。
+        ///
+        /// 【用途】
+        ///   左右対称モデルの中央（合わせ目）の頂点は、法線に X 成分が残っていると
+        ///   ミラー側と符号が食い違い、境目に陰影の段差が出る。X を 0 にすると
+        ///   鏡像でも同じ法線になり段差が消える。
+        ///
+        /// 【FlattenOnAxis(axis=0) との違い】
+        ///   FlattenOnAxis は対象コーナー全部の X を 0 にする。本操作は中央近傍の
+        ///   頂点だけに限定するため、中央以外を選択に含んだまま実行しても壊れない。
+        ///
+        /// 座標は MeshObject のローカル空間で判定する（Vertex.Position と同じ空間）。
+        /// X が 0 になると残りが 0 になるコーナー（±X を向いた法線）は変更しない。
+        /// </summary>
+        /// <param name="threshold">|Position.x| がこの値以下の頂点を中央とみなす。</param>
+        public static int FlattenMirrorSeamX(
+            MeshObject mesh, IReadOnlyList<FaceCorner> corners, float threshold)
+        {
+            if (mesh == null || corners == null) return 0;
+            if (threshold < 0f) return 0;
+
+            int changed = 0;
+            foreach (var fc in corners)
+            {
+                int vi = VertexOf(mesh, fc);
+                if (vi < 0) continue;
+                if (Mathf.Abs(mesh.Vertices[vi].Position.x) > threshold) continue;
+
+                if (!TryReadNormal(mesh, fc, out var n)) continue;
+                if (Mathf.Approximately(n.x, 0f)) continue;
+
+                n.x = 0f;
+                if (n.sqrMagnitude < 1e-12f) continue;
+
+                WriteNormal(mesh, fc, n.normalized);
+                changed++;
+            }
+
+            return Finish(mesh, changed, mesh.Name);
+        }
+
         /// <summary>法線を反転する。</summary>
         public static int Flip(MeshObject mesh, IReadOnlyList<FaceCorner> corners)
         {

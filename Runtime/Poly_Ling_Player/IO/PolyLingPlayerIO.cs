@@ -1,5 +1,5 @@
 // PolyLingPlayerIO.cs
-// PMX / MQO インポート・エクスポートのファサード
+// PMX / MQO / OBJ インポート・エクスポートのファサード
 // 各 Importer/Exporter を直接使わず、ここを経由することで
 // PolyLingPlayerViewer からのアクセスを単純にする。
 // Runtime/Poly_Ling_Player/IO/ に配置
@@ -10,11 +10,12 @@ using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
+using Poly_Ling.OBJ;
 
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// PMX / MQO インポートのファサード。
+    /// PMX / MQO / OBJ インポートのファサード。
     /// パスを渡すだけでデフォルト設定による ModelContext を返す。
     /// </summary>
     public static class PolyLingPlayerIO
@@ -131,12 +132,72 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // OBJ
+        // ================================================================
+
+        /// <summary>
+        /// OBJ ファイルをデフォルト設定でインポートし ModelContext を返す。
+        /// 失敗時は null を返し errorMessage にエラー内容を格納する。
+        /// </summary>
+        public static ModelContext ImportObj(string filePath, out string errorMessage)
+            => ImportObj(filePath, null, out errorMessage);
+
+        /// <summary>
+        /// OBJ ファイルを指定設定でインポートし ModelContext を返す。
+        /// 失敗時は null を返し errorMessage にエラー内容を格納する。
+        /// </summary>
+        public static ModelContext ImportObj(string filePath, ObjImportSettings settings, out string errorMessage)
+        {
+            errorMessage = null;
+
+            if (string.IsNullOrEmpty(filePath))
+            {
+                errorMessage = "ファイルパスが空です";
+                return null;
+            }
+
+            if (!File.Exists(filePath))
+            {
+                errorMessage = $"ファイルが見つかりません: {filePath}";
+                return null;
+            }
+
+            ObjImportResult result;
+            try
+            {
+                if (settings == null)
+                {
+                    settings = ObjImportSettings.CreateDefault();
+                    settings.BaseDir = Path.GetDirectoryName(filePath);
+                }
+                else if (string.IsNullOrEmpty(settings.BaseDir))
+                {
+                    settings.BaseDir = Path.GetDirectoryName(filePath);
+                }
+                result = ObjImporter.ImportFile(filePath, settings);
+            }
+            catch (Exception e)
+            {
+                errorMessage = e.Message;
+                return null;
+            }
+
+            if (!result.Success)
+            {
+                errorMessage = result.ErrorMessage;
+                return null;
+            }
+
+            return BuildModelContext(filePath, result);
+        }
+
+        // ================================================================
         // 拡張子ルーティング
         // ================================================================
 
         /// <summary>
-        /// 拡張子から PMX / MQO を判定してインポートする。
-        /// 対応拡張子は .pmx / .mqo のみ。
+        /// 拡張子から PMX / MQO / OBJ を判定してインポートする。
+        /// 対応拡張子は .pmx / .mqo / .obj のみ。
         /// </summary>
         public static ModelContext ImportAuto(string filePath, out string errorMessage)
         {
@@ -147,6 +208,7 @@ namespace Poly_Ling.Player
             {
                 case ".pmx": return ImportPmx(filePath, out errorMessage);
                 case ".mqo": return ImportMqo(filePath, out errorMessage);
+                case ".obj": return ImportObj(filePath, out errorMessage);
                 default:
                     errorMessage = $"非対応の拡張子です: {ext}";
                     return null;
@@ -179,6 +241,31 @@ namespace Poly_Ling.Player
 
             foreach (var pair in result.MirrorPairs)
                 model.MirrorPairs.Add(pair);
+
+            return model;
+        }
+
+        // ================================================================
+        // 内部: ObjImportResult → ModelContext
+        // ================================================================
+
+        private static ModelContext BuildModelContext(string filePath, ObjImportResult result)
+        {
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileNameWithoutExtension(filePath),
+                FilePath = filePath,
+            };
+
+            // マテリアルを移送（テクスチャ・色含む）
+            if (result.MaterialReferences != null && result.MaterialReferences.Count > 0)
+                model.MaterialReferences = result.MaterialReferences;
+
+            foreach (var mc in result.MeshContexts)
+                model.Add(mc);
+
+            // OBJ は階層を持たない。WorldMatrix を単位で確定させておく。
+            model.ComputeWorldMatrices();
 
             return model;
         }

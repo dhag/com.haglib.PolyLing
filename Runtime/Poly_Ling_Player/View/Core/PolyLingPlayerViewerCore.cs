@@ -3709,12 +3709,14 @@ namespace Poly_Ling.Player
             _importSubPanel.Build(_layoutRoot.ImportSection);
             _importSubPanel.OnImportPmx = OnImportPmx;
             _importSubPanel.OnImportMqo = OnImportMqo;
+            _importSubPanel.OnImportObj = OnImportObj;
             AttachPanelSelectToggle(_layoutRoot.ImportSection, PanelSelectKeyImport);
 
             _exportSubPanel = new PlayerExportSubPanel();
             _exportSubPanel.Build(_layoutRoot.ExportSection);
             _exportSubPanel.OnExportPmx = OnExportPmx;
             _exportSubPanel.OnExportMqo = OnExportMqo;
+            _exportSubPanel.OnExportObj = OnExportObj;
             AttachPanelSelectToggle(_layoutRoot.ExportSection, PanelSelectKeyExport);
 
             _projectSaveSubPanel = new PlayerProjectFileSubPanel
@@ -3918,6 +3920,10 @@ namespace Poly_Ling.Player
             _layoutRoot.FullExportMqoBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.MQO);
             _layoutRoot.ProjectSaveBtn.clicked     += ShowProjectSavePanel;
             _layoutRoot.ProjectLoadBtn.clicked     += ShowProjectLoadPanel;
+            if (_layoutRoot.ObjLoadBtn != null)
+                _layoutRoot.ObjLoadBtn.clicked     += () => ShowImportPanel(PlayerImportSubPanel.Mode.OBJ);
+            if (_layoutRoot.ObjSaveBtn != null)
+                _layoutRoot.ObjSaveBtn.clicked     += () => ShowExportPanel(PlayerExportSubPanel.Mode.OBJ);
             _layoutRoot.PartialImportPmxBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.PMX);
             _layoutRoot.PartialImportMqoBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.MQO);
             _layoutRoot.PartialExportPmxBtn.clicked += () => ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode.PMX);
@@ -5404,9 +5410,13 @@ namespace Poly_Ling.Player
         private void ShowExportPanel(PlayerExportSubPanel.Mode mode)
         {
             // カテゴリ 3（選択許可チェック ON なら SelectOnly で開く）
-            var btn = mode == PlayerExportSubPanel.Mode.PMX
-                ? _layoutRoot?.FullExportPmxBtn
-                : _layoutRoot?.FullExportMqoBtn;
+            Button btn;
+            switch (mode)
+            {
+                case PlayerExportSubPanel.Mode.PMX: btn = _layoutRoot?.FullExportPmxBtn; break;
+                case PlayerExportSubPanel.Mode.OBJ: btn = _layoutRoot?.ObjSaveBtn;       break;
+                default:                            btn = _layoutRoot?.FullExportMqoBtn; break;
+            }
             ShowRightPanelSelectable(_layoutRoot?.ExportSection, btn, PanelSelectKeyExport);
             _exportSubPanel?.SetMode(mode);
         }
@@ -6537,6 +6547,35 @@ namespace Poly_Ling.Player
                 onResult: (model, _) => _localLoader.LoadModel(filePath, model),
                 onError:  msg       => _status = $"MQO読込失敗: {msg}");
             _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
+        private void OnImportObj(string filePath, Poly_Ling.OBJ.ObjImportSettings settings)
+        {
+            var cmd = new ImportObjCommand(
+                filePath, settings,
+                onResult: (model, _) => _localLoader.LoadModel(filePath, model),
+                onError:  msg       => _status = $"OBJ読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
+        private void OnExportObj(string outputPath, Poly_Ling.OBJ.ObjExportSettings settings)
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return; }
+            try
+            {
+                var result = Poly_Ling.OBJ.ObjExporter.ExportFile(outputPath, model, settings);
+                if (result.Success)
+                {
+                    string mtl = string.IsNullOrEmpty(result.MtlPath)
+                        ? ""
+                        : $" + {System.IO.Path.GetFileName(result.MtlPath)}";
+                    _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}{mtl}");
+                }
+                else
+                    _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+            }
+            catch (Exception ex) { _exportSubPanel?.SetStatus($"例外: {ex.Message}"); }
         }
 
         private void OnExportPmx(string outputPath, PMXExportSettings settings)

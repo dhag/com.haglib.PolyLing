@@ -582,6 +582,27 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.Append($",{F(n.x)},{F(n.y)},{F(n.z)}");
 
             sb.AppendLine();
+
+            WriteVertexControlPoints(sb, v);
+        }
+
+        // ================================================================
+        // Write: 頂点のオプション位置リスト（制御点位置など）
+        //
+        // 直前の v / vn 行の頂点に属する。保持していない頂点では行自体を
+        // 出力しないため、旧ファイルとの互換は行の有無だけで取れる。
+        // ================================================================
+
+        private static void WriteVertexControlPoints(StringBuilder sb, Vertex v)
+        {
+            if (!v.HasControlPoints) return;
+
+            // vcp,count,x,y,z,...
+            sb.Append($"vcp,{v.ControlPoints.Count}");
+            foreach (var p in v.ControlPoints)
+                sb.Append($",{F(p.x)},{F(p.y)},{F(p.z)}");
+
+            sb.AppendLine();
         }
 
         // ================================================================
@@ -634,6 +655,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.Append($",{F(n.x)},{F(n.y)},{F(n.z)}");
 
             sb.AppendLine();
+
+            WriteVertexControlPoints(sb, v);
         }
 
         // ================================================================
@@ -870,6 +893,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "v":
                         meshObject.Vertices.Add(ReadVertex(cols));
+                        break;
+                    case "vcp":
+                        ReadVertexControlPoints(cols, meshObject);
                         break;
                     case "f":
                         meshObject.Faces.Add(ReadFace(cols));
@@ -1188,6 +1214,34 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             return vertex;
+        }
+
+        // ================================================================
+        // Read: 頂点のオプション位置リスト（制御点位置など）
+        //
+        // 直前に読んだ頂点（v / vn いずれでも可）へ付与する。
+        // 頂点が1つも無い位置に現れた行は無視する。
+        // ================================================================
+
+        private static void ReadVertexControlPoints(string[] cols, MeshObject meshObject)
+        {
+            // vcp,count,x,y,z,...
+            if (meshObject == null || meshObject.Vertices.Count == 0) return;
+
+            int count = ParseInt(cols, 1);
+            if (count <= 0) return;
+
+            var vertex = meshObject.Vertices[meshObject.Vertices.Count - 1];
+            var list = vertex.EnsureControlPoints();
+
+            int idx = 2;
+            for (int i = 0; i < count; i++)
+            {
+                float x = ParseFloat(cols, idx++);
+                float y = ParseFloat(cols, idx++);
+                float z = ParseFloat(cols, idx++);
+                list.Add(new Vector3(x, y, z));
+            }
         }
 
         // ================================================================

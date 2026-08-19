@@ -621,6 +621,11 @@ namespace Poly_Ling.Data
             AlignToAxis,
             /// <summary>指定軸の成分をゼロにする</summary>
             FlattenOnAxis,
+            /// <summary>
+            /// ミラー対応（X軸対称）。中央近傍（|Position.x| ≦ MirrorThreshold）の
+            /// 頂点だけ法線の X 成分をゼロにする。
+            /// </summary>
+            MirrorFlattenSeamX,
             /// <summary>反転</summary>
             Flip,
         }
@@ -642,6 +647,11 @@ namespace Poly_Ling.Data
         public bool  AlignVectors { get; }
         /// <summary>平均時の重み付け方式</summary>
         public NormalWeightMode WeightMode { get; }
+        /// <summary>
+        /// MirrorFlattenSeamX の中央判定しきい値。
+        /// |Vertex.Position.x| がこの値以下の頂点を中央（合わせ目）とみなす。
+        /// </summary>
+        public float MirrorThreshold { get; }
 
         public NormalEditCommand(
             int modelIndex,
@@ -653,7 +663,8 @@ namespace Poly_Ling.Data
             Vector3 target = default,
             bool useSelectionCenter = true,
             bool alignVectors = false,
-            NormalWeightMode weightMode = NormalWeightMode.Uniform)
+            NormalWeightMode weightMode = NormalWeightMode.Uniform,
+            float mirrorThreshold = 0.00001f)
             : base(modelIndex)
         {
             Operation          = operation;
@@ -665,6 +676,7 @@ namespace Poly_Ling.Data
             UseSelectionCenter = useSelectionCenter;
             AlignVectors       = alignVectors;
             WeightMode         = weightMode;
+            MirrorThreshold    = mirrorThreshold;
         }
     }
 

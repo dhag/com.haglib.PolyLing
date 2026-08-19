@@ -1,5 +1,5 @@
 // PlayerExportSubPanel.cs
-// プレイビュー右ペイン用 PMX / MQO エクスポート設定パネル（UIToolkit）。
+// プレイビュー右ペイン用 PMX / MQO / OBJ エクスポート設定パネル（UIToolkit）。
 // PlayerImportSubPanel と対称な設計。
 // 保存は必ず PlayerIoUiKit.AskSavePath（保存ダイアログ）を通す。パス欄への直接書き出しは行わない。
 // Runtime/Poly_Ling_Player/View/ に配置
@@ -10,13 +10,14 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
+using Poly_Ling.OBJ;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// 右ペインに表示する PMX / MQO エクスポート設定 UI。
+    /// 右ペインに表示する PMX / MQO / OBJ エクスポート設定 UI。
     /// Build(parent) で UIToolkit 要素を生成し、
     /// OnExportPmx / OnExportMqo コールバックで実行を Viewer に委譲する。
     /// </summary>
@@ -26,7 +27,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO }
+        public enum Mode { PMX, MQO, OBJ }
 
         private Mode _mode;
 
@@ -42,6 +43,10 @@ namespace Poly_Ling.Player
         private MQOExportSettings _mqoSettings = MQOExportSettings.CreateFromCoordinate(
             0.01f, flipZ: false, flipX: true);
 
+        // OBJ も右手系・+Y 上で MQO と同じ置き方をするため X のみ反転。
+        // 単位は決まっていないので等倍を既定にする。
+        private ObjExportSettings _objSettings = ObjExportSettings.CreateDefault();
+
         // ================================================================
         // コールバック
         // ================================================================
@@ -51,6 +56,9 @@ namespace Poly_Ling.Player
 
         /// <summary>MQO Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
         public Action<string, MQOExportSettings> OnExportMqo;
+
+        /// <summary>OBJ Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
+        public Action<string, ObjExportSettings> OnExportObj;
 
         // ================================================================
         // 内部 UI 参照
@@ -114,7 +122,7 @@ namespace Poly_Ling.Player
         {
             _mode = mode;
             if (_panelNameLabel != null)
-                _panelNameLabel.text = mode == Mode.PMX ? "PMXエクスポータ" : "MQOエクスポータ";
+                _panelNameLabel.text = ModeName(mode) + "エクスポータ";
             _pathField?.SetValueWithoutNotify(RecentPaths.Get(ExportPathKey()));
             RebuildSettings();
         }
@@ -131,8 +139,9 @@ namespace Poly_Ling.Player
         {
             SetStatus("");
 
-            string ext   = _mode == Mode.PMX ? "pmx" : "mqo";
-            string title = _mode == Mode.PMX ? "Export PMX" : "Export MQO";
+            string name  = ModeName(_mode);
+            string ext   = name.ToLowerInvariant();
+            string title = "Export " + name;
 
             string savePath = PlayerIoUiKit.AskSavePath(title, _pathField?.value ?? "", "", ext);
             if (string.IsNullOrEmpty(savePath)) return;   // キャンセル
@@ -141,13 +150,26 @@ namespace Poly_Ling.Player
 
             if (_mode == Mode.PMX)
                 OnExportPmx?.Invoke(savePath, ClonePmxSettings());
+            else if (_mode == Mode.OBJ)
+                OnExportObj?.Invoke(savePath, _objSettings.Clone());
             else
                 OnExportMqo?.Invoke(savePath, CloneMqoSettings());
         }
 
+        /// <summary>モード名（表示・保存キー・拡張子の共通元）</summary>
+        private static string ModeName(Mode mode)
+        {
+            switch (mode)
+            {
+                case Mode.PMX: return "PMX";
+                case Mode.OBJ: return "OBJ";
+                default:       return "MQO";
+            }
+        }
+
         /// <summary>エクスポートパスの保存キー（モード別）</summary>
         private string ExportPathKey()
-            => "Export." + (_mode == Mode.PMX ? "PMX" : "MQO") + ".Path";
+            => "Export." + ModeName(_mode) + ".Path";
 
         public void SetStatus(string msg)
         {
@@ -165,6 +187,8 @@ namespace Poly_Ling.Player
 
             if (_mode == Mode.PMX)
                 BuildPmxSettings(_settingsContainer);
+            else if (_mode == Mode.OBJ)
+                BuildObjSettings(_settingsContainer);
             else
                 BuildMqoSettings(_settingsContainer);
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
@@ -239,6 +263,44 @@ namespace Poly_Ling.Player
         }
 
         private MQOExportSettings CloneMqoSettings() => _mqoSettings.Clone();
+
+        // ────────────────────────────────────────────────────────
+        // OBJ 設定
+        //
+        // OBJ は階層・ボーン・モーフ・非表示のいずれも持たない。
+        // 頂点はワールド座標へ畳んで書き、マテリアルは同名の .mtl を隣に作る。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildObjSettings(VisualElement parent)
+        {
+            parent.Add(SectionLabel("座標変換"));
+            parent.Add(FloatRow("Scale",      () => _objSettings.Scale,    v => _objSettings.Scale    = v));
+            parent.Add(ToggleRow("Flip X",    () => _objSettings.FlipX,    v => _objSettings.FlipX    = v));
+            parent.Add(ToggleRow("Flip Z",    () => _objSettings.FlipZ,    v => _objSettings.FlipZ    = v));
+            parent.Add(ToggleRow("Flip UV V", () => _objSettings.FlipUV_V, v => _objSettings.FlipUV_V = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("出力対象"));
+            parent.Add(ToggleRow("UV",   () => _objSettings.ExportUVs,     v => _objSettings.ExportUVs     = v));
+            parent.Add(ToggleRow("法線", () => _objSettings.ExportNormals, v => _objSettings.ExportNormals = v));
+            parent.Add(ToggleRow("材質（.mtl も出力）",
+                () => _objSettings.ExportMaterials, v => _objSettings.ExportMaterials = v));
+            parent.Add(ToggleRow("非表示メッシュも出力",
+                () => _objSettings.ExportInvisibleObjects, v => _objSettings.ExportInvisibleObjects = v));
+            parent.Add(ToggleRow("非表示面も出力",
+                () => _objSettings.ExportHiddenFaces, v => _objSettings.ExportHiddenFaces = v));
+            parent.Add(ToggleRow("補助線を l 行で出力",
+                () => _objSettings.ExportLines, v => _objSettings.ExportLines = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("出力形式"));
+            parent.Add(ToggleRow("ワールド座標で出力",
+                () => _objSettings.ExportVerticesInWorldSpace,
+                v => _objSettings.ExportVerticesInWorldSpace = v));
+            parent.Add(FloatRow("小数桁数",
+                () => _objSettings.DecimalPrecision,
+                v => _objSettings.DecimalPrecision = Mathf.Clamp(Mathf.RoundToInt(v), 1, 9)));
+        }
 
         // ================================================================
         // UIパーツ ヘルパー（PlayerImportSubPanel と共通パターン）

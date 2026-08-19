@@ -1,5 +1,5 @@
 // PlayerImportSubPanel.cs
-// プレイビュー右ペイン用 PMX / MQO インポート設定パネル（UIToolkit）。
+// プレイビュー右ペイン用 PMX / MQO / OBJ インポート設定パネル（UIToolkit）。
 // エディタ版 PMXImportPanel / MQOImportPanel と同じ設定項目を UIToolkit で実装し、
 // PMXImportTexts / MQOImportTexts を共有する。
 // ファイル選択は PLEditorBridge.I.OpenFilePanel 経由。
@@ -11,6 +11,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
+using Poly_Ling.OBJ;
 using Poly_Ling.Localization;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
@@ -18,7 +19,7 @@ using Poly_Ling.Core;
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// 右ペインに表示する PMX / MQO インポート設定 UI。
+    /// 右ペインに表示する PMX / MQO / OBJ インポート設定 UI。
     /// Build(parent) で UIToolkit 要素を生成し、
     /// OnImport コールバックでインポート実行を Viewer に委譲する。
     /// </summary>
@@ -28,7 +29,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO }
+        public enum Mode { PMX, MQO, OBJ }
 
         private Mode _mode;
 
@@ -38,6 +39,7 @@ namespace Poly_Ling.Player
 
         private PMXImportSettings _pmxSettings = PMXImportSettings.CreateDefault();
         private MQOImportSettings _mqoSettings = MQOImportSettings.CreateDefault();
+        private ObjImportSettings _objSettings = ObjImportSettings.CreateDefault();
 
         // ================================================================
         // コールバック
@@ -55,6 +57,12 @@ namespace Poly_Ling.Player
         /// 引数は (filePath, settings のコピー)。
         /// </summary>
         public Action<string, MQOImportSettings> OnImportMqo;
+
+        /// <summary>
+        /// OBJ Import ボタン押下時に呼ばれる。
+        /// 引数は (filePath, settings のコピー)。
+        /// </summary>
+        public Action<string, ObjImportSettings> OnImportObj;
 
         /// <summary>インポート後に3D表示をオートスケールするか</summary>
         public bool AutoScale => _autoScale;
@@ -137,7 +145,7 @@ namespace Poly_Ling.Player
             _mode = mode;
 
             if (_panelNameLabel != null)
-                _panelNameLabel.text = mode == Mode.PMX ? "PMXインポータ" : "MQOインポータ";
+                _panelNameLabel.text = ModeName(mode) + "インポータ";
 
             if (_pathField != null)
             {
@@ -150,9 +158,20 @@ namespace Poly_Ling.Player
             RebuildSettings();
         }
 
+        /// <summary>モード名（表示・保存キー・拡張子の共通元）</summary>
+        private static string ModeName(Mode mode)
+        {
+            switch (mode)
+            {
+                case Mode.PMX: return "PMX";
+                case Mode.OBJ: return "OBJ";
+                default:       return "MQO";
+            }
+        }
+
         /// <summary>インポートパスの保存キー（モード別）</summary>
         private string ImportPathKey()
-            => "Import." + (_mode == Mode.PMX ? "PMX" : "MQO") + ".Path";
+            => "Import." + ModeName(_mode) + ".Path";
 
         // ================================================================
         // ファイルブラウズ
@@ -161,8 +180,9 @@ namespace Poly_Ling.Player
         // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowse()
         {
-            string ext   = _mode == Mode.PMX ? "pmx" : "mqo";
-            string title = _mode == Mode.PMX ? "Select PMX File" : "Select MQO File";
+            string name  = ModeName(_mode);
+            string ext   = name.ToLowerInvariant();
+            string title = $"Select {name} File";
 
             string path = PlayerIoUiKit.AskLoadPath(title, _pathField.value, ext);
             if (!string.IsNullOrEmpty(path))
@@ -194,6 +214,8 @@ namespace Poly_Ling.Player
 
             if (_mode == Mode.PMX)
                 OnImportPmx?.Invoke(path, ClonePmxSettings());
+            else if (_mode == Mode.OBJ)
+                OnImportObj?.Invoke(path, _objSettings.Clone());
             else
                 OnImportMqo?.Invoke(path, CloneMqoSettings());
         }
@@ -215,6 +237,8 @@ namespace Poly_Ling.Player
 
             if (_mode == Mode.PMX)
                 BuildPmxSettings(_settingsContainer);
+            else if (_mode == Mode.OBJ)
+                BuildObjSettings(_settingsContainer);
             else
                 BuildMqoSettings(_settingsContainer);
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
@@ -417,6 +441,62 @@ namespace Poly_Ling.Player
 
         private static string TP(string key) => L.GetFrom(PMXImportTexts.Texts, key);
         private static string TM(string key) => L.GetFrom(MQOImportTexts.Texts, key);
+
+        // ================================================================
+        // UIパーツ ヘルパー
+        // ================================================================
+
+        // ────────────────────────────────────────────────────────
+        // OBJ 設定
+        //
+        // OBJ は右手系・+Y 上でメタセコイアと同じ置き方をするため、
+        // Unity へは X のみ反転で揃う（既定 Flip X = ON）。
+        // UV 原点は OBJ / Unity とも左下なので V 反転は既定 OFF。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildObjSettings(VisualElement parent)
+        {
+            parent.Add(SectionLabel("座標変換"));
+            parent.Add(FloatRow("Scale",      () => _objSettings.Scale,    v => _objSettings.Scale    = v));
+            parent.Add(ToggleRow("Flip X",    () => _objSettings.FlipX,    v => _objSettings.FlipX    = v));
+            parent.Add(ToggleRow("Flip Z",    () => _objSettings.FlipZ,    v => _objSettings.FlipZ    = v));
+            parent.Add(ToggleRow("Flip UV V", () => _objSettings.FlipUV_V, v => _objSettings.FlipUV_V = v));
+            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("分割"));
+
+            var groupingNames = new System.Collections.Generic.List<string>
+            {
+                "オブジェクト (o)", "グループ (g)", "マテリアル", "分割しない"
+            };
+            var groupingField = new DropdownField(groupingNames, (int)_objSettings.Grouping);
+            groupingField.tooltip = "OBJ をどの単位で1オブジェクトにするか。"
+                                  + "o / g が無いファイルでは自動でひとまとめになる。";
+            groupingField.style.marginBottom = 2;
+            groupingField.RegisterValueChangedCallback(
+                e => _objSettings.Grouping = (ObjGroupingMode)groupingField.index);
+            parent.Add(groupingField);
+
+            parent.Add(ToggleRow("空のオブジェクトをスキップ",
+                () => _objSettings.SkipEmptyObjects, v => _objSettings.SkipEmptyObjects = v));
+            parent.Add(ToggleRow("折れ線(l)を補助線として読む",
+                () => _objSettings.ImportLines, v => _objSettings.ImportLines = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("法線"));
+            parent.Add(ToggleRow("ファイルの法線(vn)を使う",
+                () => _objSettings.UseFileNormals, v => _objSettings.UseFileNormals = v));
+            parent.Add(FloatRow("スムージング角",
+                () => _objSettings.SmoothingAngle, v => _objSettings.SmoothingAngle = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("マテリアル"));
+            parent.Add(ToggleRow("MTL を読み込む",
+                () => _objSettings.ImportMaterials, v => _objSettings.ImportMaterials = v));
+            parent.Add(ToggleRow("テクスチャを読み込む",
+                () => _objSettings.ImportTextures, v => _objSettings.ImportTextures = v));
+        }
 
         // ================================================================
         // UIパーツ ヘルパー

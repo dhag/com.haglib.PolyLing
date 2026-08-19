@@ -430,6 +430,12 @@ namespace Poly_Ling.Serialization
         /// <summary>頂点フラグ (VertexFlags)</summary>
         public byte f;
 
+        /// <summary>
+        /// オプション位置リスト（制御点位置など） [[x,y,z], [x,y,z], ...]
+        /// null = 保持なし（NullValueHandling.Ignore で出力自体が省かれる）
+        /// </summary>
+        public List<float[]> cp;
+
         // === 変換ヘルパー ===
 
         public Vector3 GetPosition()
@@ -555,6 +561,40 @@ namespace Poly_Ling.Serialization
                 b.boneIndex0, b.boneIndex1, b.boneIndex2, b.boneIndex3,
                 b.weight0, b.weight1, b.weight2, b.weight3
             };
+        }
+
+        /// <summary>
+        /// オプション位置リストを取り出す。保持していなければ null。
+        /// Vertex.ControlPoints が null のときと空のときを区別しないため、
+        /// 空リストは null として扱う。
+        /// </summary>
+        public List<Vector3> GetControlPoints()
+        {
+            if (cp == null || cp.Count == 0) return null;
+
+            var result = new List<Vector3>(cp.Count);
+            foreach (var c in cp)
+            {
+                if (c != null && c.Length >= 3)
+                    result.Add(new Vector3(c[0], c[1], c[2]));
+            }
+            return result.Count > 0 ? result : null;
+        }
+
+        /// <summary>オプション位置リストを設定する。null/空なら cp も null。</summary>
+        public void SetControlPoints(List<Vector3> points)
+        {
+            if (points == null || points.Count == 0)
+            {
+                cp = null;
+                return;
+            }
+
+            cp = new List<float[]>(points.Count);
+            foreach (var p in points)
+            {
+                cp.Add(new float[] { p.x, p.y, p.z });
+            }
         }
     }
 

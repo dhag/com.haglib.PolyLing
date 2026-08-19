@@ -67,6 +67,7 @@ namespace Poly_Ling.Serialization
                 vertexDTO.SetNormals(vertex.Normals);
                 vertexDTO.SetBoneWeight(vertex.BoneWeight);
                 vertexDTO.SetMirrorBoneWeight(vertex.MirrorBoneWeight);
+                vertexDTO.SetControlPoints(vertex.ControlPoints);
                 vertexDTO.f = (byte)vertex.Flags;
                 meshDTO.vertices.Add(vertexDTO);
             }
@@ -201,6 +202,7 @@ namespace Poly_Ling.Serialization
                 vertex.Normals = vd.GetNormals();
                 vertex.BoneWeight = vd.GetBoneWeight();
                 vertex.MirrorBoneWeight = vd.GetMirrorBoneWeight();
+                vertex.ControlPoints = vd.GetControlPoints();
                 vertex.Flags = (VertexFlags)vd.f;
                 meshObject.Vertices.Add(vertex);
             }
@@ -1941,6 +1943,7 @@ namespace Poly_Ling.Serialization
                 vd.SetNormals(vertex.Normals);
                 vd.SetBoneWeight(vertex.BoneWeight);
                 vd.SetMirrorBoneWeight(vertex.MirrorBoneWeight);
+                vd.SetControlPoints(vertex.ControlPoints);
                 vd.f = (byte)vertex.Flags;
                 geo.vertices.Add(vd);
             }

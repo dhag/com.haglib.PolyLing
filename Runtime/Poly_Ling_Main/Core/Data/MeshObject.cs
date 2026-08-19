@@ -109,11 +109,31 @@ namespace Poly_Ling.Data
         /// </summary>
         public BoneWeight? MirrorBoneWeight = null;
 
+        /// <summary>
+        /// オプション位置リスト（制御点位置など）。
+        /// 用途は未定。null = 保持なし（頂点数が多いため既定は null）。
+        /// 座標系は Position と同じくローカル空間。
+        /// </summary>
+        public List<Vector3> ControlPoints = null;
+
         /// <summary>スキニングデータを持つか</summary>
         public bool HasBoneWeight => BoneWeight.HasValue;
 
         /// <summary>ミラー側スキニングデータを持つか</summary>
         public bool HasMirrorBoneWeight => MirrorBoneWeight.HasValue;
+
+        /// <summary>オプション位置リストを1件以上持つか。</summary>
+        public bool HasControlPoints => ControlPoints != null && ControlPoints.Count > 0;
+
+        /// <summary>
+        /// オプション位置リストを確保して返す。null なら生成する。
+        /// 読み取りだけの用途では呼ばないこと（空リストが残る）。
+        /// </summary>
+        public List<Vector3> EnsureControlPoints()
+        {
+            if (ControlPoints == null) ControlPoints = new List<Vector3>();
+            return ControlPoints;
+        }
 
         // === コンストラクタ ===
 
@@ -272,6 +292,10 @@ namespace Poly_Ling.Data
             clone.Flags = this.Flags;
             clone.BoneWeight = this.BoneWeight;
             clone.MirrorBoneWeight = this.MirrorBoneWeight;
+            // オプション位置リストは null なら null のまま複製する
+            clone.ControlPoints = this.ControlPoints != null
+                ? new List<Vector3>(this.ControlPoints)
+                : null;
             return clone;
         }
 

@@ -39,9 +39,13 @@ namespace Poly_Ling.Player
         private FloatField     _targetX, _targetY, _targetZ;
         private Toggle         _useCenterToggle;
         private Toggle         _alignVectorsToggle;
+        private FloatField     _mirrorThresholdField;
 
         private float _angleDeg = 59.5f;
         private float _strength = 0.5f;
+
+        /// <summary>中央判定しきい値の既定値（高度な選択の NearAxis と同じ）。</summary>
+        private const float DefaultMirrorThreshold = 0.00001f;
 
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
@@ -55,6 +59,9 @@ namespace Poly_Ling.Player
 
         private Vector3 Target => new Vector3(
             _targetX?.value ?? 0f, _targetY?.value ?? 0f, _targetZ?.value ?? 0f);
+
+        private float MirrorThreshold
+            => Mathf.Max(0f, _mirrorThresholdField?.value ?? DefaultMirrorThreshold);
 
         // ================================================================
         // 構築
@@ -184,6 +191,30 @@ namespace Poly_Ling.Player
                 "対象法線の向きを反転する。"));
             root.Add(rowFlat);
 
+            // ── E. ミラー（X軸対称） ───────────────────────────────────
+            root.Add(SecLabel("ミラー（X軸対称）"));
+
+            var rowMirrorTh = MkRow();
+            var mLabel = new Label("しきい値");
+            mLabel.style.width          = 60;
+            mLabel.style.fontSize       = 10;
+            mLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            rowMirrorTh.Add(mLabel);
+
+            _mirrorThresholdField = new FloatField { value = DefaultMirrorThreshold };
+            _mirrorThresholdField.style.flexGrow = 1;
+            _mirrorThresholdField.tooltip =
+                "中央とみなす範囲。|X座標| がこの値以下の頂点が対象。";
+            rowMirrorTh.Add(_mirrorThresholdField);
+            root.Add(rowMirrorTh);
+
+            var rowMirror = MkRow();
+            rowMirror.Add(MkBtn("中央の法線Xを0に",
+                () => Send(NormalEditCommand.Op.MirrorFlattenSeamX),
+                "対象のうち |X座標| がしきい値以下の頂点だけ、法線の X 成分をゼロにして"
+                + "正規化する。左右の合わせ目に出る陰影の段差を消す。"));
+            root.Add(rowMirror);
+
             _statusLabel = new Label();
             _statusLabel.style.fontSize   = 9;
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
@@ -245,7 +276,8 @@ namespace Poly_Ling.Player
                 target: Target,
                 useSelectionCenter: _useCenterToggle?.value ?? true,
                 alignVectors: _alignVectorsToggle?.value ?? false,
-                weightMode: WeightMode));
+                weightMode: WeightMode,
+                mirrorThreshold: MirrorThreshold));
 
             Refresh();
             SetStatus($"実行: {op}");

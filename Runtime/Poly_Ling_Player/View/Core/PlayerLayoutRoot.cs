@@ -379,6 +379,11 @@ namespace Poly_Ling.Player
         public Button ProjectSaveBtn { get; private set; }
         public Button ProjectLoadBtn { get; private set; }
 
+        /// <summary>左ペイン：OBJ 読み込み / 保存ボタン（プロジェクトの各ボタンの横）。
+        /// インポータ / エクスポータのセクションを OBJ モードで開く。</summary>
+        public Button ObjLoadBtn { get; private set; }
+        public Button ObjSaveBtn { get; private set; }
+
         /// <summary>右ペイン：部分インポートセクション（ScrollView内）。</summary>
         public VisualElement PartialImportSection { get; private set; }
 
@@ -927,8 +932,18 @@ namespace Poly_Ling.Player
             // ボタンのインスタンスと代入先プロパティは変えないので core 側の結線は不変。
 
             // ── 読み込み ──
+            // プロジェクト読み込みの横に OBJ 読み込みを並べる。
+            var projectLoadRow = new VisualElement();
+            projectLoadRow.style.flexDirection = FlexDirection.Row;
+            projectLoadRow.style.marginBottom  = 2;
             ProjectLoadBtn = MakeBtn("プロジェクト読み込み");
-            foFile.Add(ProjectLoadBtn);
+            ProjectLoadBtn.style.flexGrow    = 1;
+            ProjectLoadBtn.style.marginRight = 2;
+            ObjLoadBtn = MakeBtn("OBJ読み込み");
+            ObjLoadBtn.style.flexGrow = 1;
+            projectLoadRow.Add(ProjectLoadBtn);
+            projectLoadRow.Add(ObjLoadBtn);
+            foFile.Add(projectLoadRow);
 
             // PMX読み込み / MQO読み込み（PlayerLocalLoader.BuildUI が中身を作る）。
             foFile.Add(LocalLoaderSection);
@@ -936,8 +951,18 @@ namespace Poly_Ling.Player
             foFile.Add(Separator());
 
             // ── 保存 ──
+            // プロジェクト保存の横に OBJ 保存を並べる。
+            var projectSaveRow = new VisualElement();
+            projectSaveRow.style.flexDirection = FlexDirection.Row;
+            projectSaveRow.style.marginBottom  = 2;
             ProjectSaveBtn = MakeBtn("プロジェクト保存");
-            foFile.Add(ProjectSaveBtn);
+            ProjectSaveBtn.style.flexGrow    = 1;
+            ProjectSaveBtn.style.marginRight = 2;
+            ObjSaveBtn = MakeBtn("OBJ保存");
+            ObjSaveBtn.style.flexGrow = 1;
+            projectSaveRow.Add(ProjectSaveBtn);
+            projectSaveRow.Add(ObjSaveBtn);
+            foFile.Add(projectSaveRow);
 
             var fullExportRow = new VisualElement();
             fullExportRow.style.flexDirection = FlexDirection.Row;
