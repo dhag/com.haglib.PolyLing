@@ -46,6 +46,9 @@ namespace Poly_Ling.EditorIO
         /// <summary>可視ノードの親として補完した不可視ノード数。</summary>
         public int SupplementedAncestorCount;
 
+        /// <summary>不足する Humanoid 必須関節としてダミー生成した数。</summary>
+        public int SupplementedJointCount;
+
         /// <summary>出力したボーン数。</summary>
         public int BoneCount;
 
@@ -69,6 +72,7 @@ namespace Poly_Ling.EditorIO
             ExportedNodeCount         = 0;
             SkippedInvisibleCount     = 0;
             SupplementedAncestorCount = 0;
+            SupplementedJointCount    = 0;
             BoneCount                 = 0;
             AvatarResult              = null;
         }
@@ -124,6 +128,9 @@ namespace Poly_Ling.EditorIO
 
             if (SkippedInvisibleCount > 0)
                 sb.AppendLine($"不可視でスキップ: {SkippedInvisibleCount}");
+
+            if (SupplementedJointCount > 0)
+                sb.AppendLine($"不足する必須関節を補完: {SupplementedJointCount}（ダミー）");
 
             if (!string.IsNullOrEmpty(AvatarResult))
                 sb.AppendLine($"Avatar: {AvatarResult}");

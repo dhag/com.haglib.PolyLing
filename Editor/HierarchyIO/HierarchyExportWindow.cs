@@ -63,6 +63,7 @@ namespace Poly_Ling.EditorIO
         private bool _exportPhysics     = true;   // 剛体/JOINT を Unity 物理部品として出力
         private bool _saveAsPrefab      = true;   // シーンではなくプレファブとして保存（アセット化）
         private bool _buildAvatar       = true;   // プレファブと同時に Humanoid Avatar(.asset) を生成
+        private bool _supplementHumanoid = false; // 不足する Humanoid 必須関節をダミーで補完
         private bool _writeAttach       = true;   // IK 付帯を attach.csv でプレファブ同居出力
         private bool _attachAnimator    = true;   // 生成した Avatar を Animator に割り当てる（プレファブ時）
         private bool _sceneAnimator     = true;   // シーン出力時にルートへ空の Animator を付与
@@ -179,7 +180,10 @@ namespace Poly_Ling.EditorIO
 
                 _buildAvatar = EditorGUILayout.Toggle("Avatar も生成", _buildAvatar);
                 if (_buildAvatar)
+                {
                     _attachAnimator = EditorGUILayout.Toggle("Animator を付与して割当", _attachAnimator);
+                    _supplementHumanoid = EditorGUILayout.Toggle("不足関節を補完", _supplementHumanoid);
+                }
                 _writeAttach = EditorGUILayout.Toggle("IK付帯(attach.csv)も出力", _writeAttach);
                 EditorGUILayout.HelpBox(
                     NormalizeOutputRoot(_prefabOutputRoot) +
@@ -187,7 +191,9 @@ namespace Poly_Ling.EditorIO
                     "同名プレファブへ上書き保存します（繰り返しても増えません）。" +
                     (_buildAvatar ? "\nHumanoid 割当から Avatar(.asset) も同時生成します。" : "") +
                     (_buildAvatar && _attachAnimator
-                        ? "\n生成した Avatar を Animator に割り当ててからプレファブ化します。" : ""),
+                        ? "\n生成した Avatar を Animator に割り当ててからプレファブ化します。" : "") +
+                    (_buildAvatar && _supplementHumanoid
+                        ? "\n不足する必須関節をダミーの空オブジェクトで補ってから生成します。" : ""),
                     MessageType.Info);
             }
             else
@@ -482,36 +488,47 @@ namespace Poly_Ling.EditorIO
                         _report.AvatarResult = "スキップ（Humanoid 割当なし）";
                         _report.Warn("Humanoid 割当が無いため Avatar 生成をスキップ。");
                     }
-                    else if (!ValidateHumanoidBoneNames(root, avMap, out string dupNames))
-                    {
-                        _report.AvatarResult = "スキップ（ボーン名重複）";
-                        _report.Warn(
-                            "Humanoid 割当先のボーン名が階層内で重複しているため " +
-                            "Avatar 生成をスキップ: " + dupNames);
-                    }
                     else
                     {
-                        string avatarPath = $"{baseDir}/{modelName}.asset";
-                        var avatar = AvatarBuildCore.BuildAndSaveAvatar(root, avMap, avLimits, avatarPath,
-                            m => _report.Log(m));
-
-                        _report.AvatarResult = avatar != null
-                            ? $"生成しました（{avMap.Count} ボーン）"
-                            : "生成に失敗";
-                        if (avatar == null) _report.Warn("Avatar の生成に失敗しました。");
-
-                        if (_attachAnimator)
+                        // 不足する必須関節をダミーで補完（既定 OFF）。
+                        //   名前重複検査より前に実行する。補完で追加した名前も検査対象にするため。
+                        if (_supplementHumanoid)
                         {
-                            if (avatar != null)
+                            _report.SupplementedJointCount = HumanoidSupplementBuilder.Supplement(
+                                root, avMap, m => _report.Log(m), m => _report.Warn(m));
+                        }
+
+                        if (!ValidateHumanoidBoneNames(root, avMap, out string dupNames))
+                        {
+                            _report.AvatarResult = "スキップ（ボーン名重複）";
+                            _report.Warn(
+                                "Humanoid 割当先のボーン名が階層内で重複しているため " +
+                                "Avatar 生成をスキップ: " + dupNames);
+                        }
+                        else
+                        {
+                            string avatarPath = $"{baseDir}/{modelName}.asset";
+                            var avatar = AvatarBuildCore.BuildAndSaveAvatar(root, avMap, avLimits, avatarPath,
+                                m => _report.Log(m));
+
+                            _report.AvatarResult = avatar != null
+                                ? $"生成しました（{avMap.Count} ボーン）"
+                                : "生成に失敗";
+                            if (avatar == null) _report.Warn("Avatar の生成に失敗しました。");
+
+                            if (_attachAnimator)
                             {
-                                // root はプレファブ化後に破棄する一時オブジェクトのため Undo 登録しない。
-                                var animator = root.GetComponent<Animator>();
-                                if (animator == null) animator = root.AddComponent<Animator>();
-                                animator.avatar = avatar;
-                            }
-                            else
-                            {
-                                _report.Warn("Avatar 生成に失敗したため Animator を付与しない。");
+                                if (avatar != null)
+                                {
+                                    // root はプレファブ化後に破棄する一時オブジェクトのため Undo 登録しない。
+                                    var animator = root.GetComponent<Animator>();
+                                    if (animator == null) animator = root.AddComponent<Animator>();
+                                    animator.avatar = avatar;
+                                }
+                                else
+                                {
+                                    _report.Warn("Avatar 生成に失敗したため Animator を付与しない。");
+                                }
                             }
                         }
                     }
