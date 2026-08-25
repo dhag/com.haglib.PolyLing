@@ -241,6 +241,15 @@ namespace Poly_Ling.Remote
                 case BakePoseToBindPoseCommand   c: return c.MasterIndices;
                 case SetIgnorePoseCommand        c: return c.MasterIndices;
 
+                // メッシュブレンドの書き込み先は宛先 1 件。
+                // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
+                // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
+                // ソースは読むだけなので担当判定の対象に含めない（別モデルも指せる）。
+                // CreateNewObject のときは既存メッシュを書き換えず複製を足すだけなので、
+                // 追加系（DuplicateMeshesCommand）と同じく担当と無関係とみなす。
+                case ApplyBlendCommand           c:
+                    return c.CreateNewObject ? Array.Empty<int>() : One(c.DestMasterIndex);
+
                 // ── 読むだけ／新規作成なので担当と無関係 ──────────────
                 case SelectMeshCommand      _: return Array.Empty<int>();
                 case DuplicateMeshesCommand _: return Array.Empty<int>();

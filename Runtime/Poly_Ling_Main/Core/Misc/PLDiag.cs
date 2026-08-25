@@ -25,8 +25,19 @@
 //     1 件は構造体で、文字列生成はダンプ時にしか行わない（常時記録でも軽い）。
 //   ・Pick == true のときだけ、記録と同時に 1 行ずつ Console へも出す（verbose）。
 //   ・PickDump は異常検出時に呼ぶ。リングの中身をまとめて 1 回吐く。
-//     同一 reason の連続ダンプは PickDumpCooldownFrames ぶん抑制し、
-//     抑制した件数だけを次回ダンプの先頭に添える。
+//     1 回で 256 件ぶんの文字列（約 20KB）を Debug.Log へ出すため、既定では
+//     PickAutoDump == false で一切出さない。ON にしたときの抑制は 3 段:
+//       1. reason ごとに PickDumpCooldownFrames
+//       2. reason によらず PickDumpMinGapFrames
+//       3. 1 セッション PickDumpBudget 件まで
+//     抑制した件数は次回ダンプの先頭に添える。
+//   ・手で吸い出すときは PickDumpNow()（抑制を通さない）。
+//
+//   【なぜ 3 段にするか】
+//     直前 1 件の reason だけを覚えて抑制する方式だと、種類の違う reason が
+//     交互に来たときに抑制が全く効かず、毎フレーム全ダンプが出る。
+//     ホバーずれ検出（ポインタ移動ごと）とホバー入替検出（カメラドラッグ中の
+//     毎フレーム）が実際にこの組み合わせになる。
 //
 // Runtime/Poly_Ling_Main/Core/Misc/ に配置
 
@@ -43,11 +54,34 @@ namespace Poly_Ling.Diagnostics
         /// <summary>診断ログ全体の有効/無効。false ならカテゴリ設定に関わらず何も出ない。</summary>
         public static bool Enabled = true;
 
-        public static bool Command  = true;
-        public static bool Notify   = true;
-        public static bool Viewport = true;
-        public static bool Attr     = true;
-        public static bool Undo     = true;
+        // 【既定 false の理由】
+        //   これらは Debug.Log を経由する。Debug.Log は 1 件ごとに
+        //   Application.logMessageReceived → PlayerLog.Add を起こし、
+        //   Console と PlayerLog の両方に文字列を保持させる。
+        //   常時 ON だと選択・属性変更のたびに積み上がり、進行性に重くなる。
+        //   採取したいときだけログパネルのトグルで ON にすること。
+        public static bool Command  = false;
+        public static bool Notify   = false;
+        public static bool Viewport = false;
+        public static bool Attr     = false;
+        public static bool Undo     = false;
+
+        /// <summary>
+        /// 頂点位置の GPU 同期ログ。既定 false。
+        ///
+        /// SyncMeshPositionsAndTransform は頂点ドラッグ中に毎フレーム呼ばれる。
+        /// ここを無条件 Debug.Log にすると Console が 1 秒あたり数十件ずつ増え、
+        /// スタックトレース保持でメモリを食い進行性に重くなる。既定では出さない。
+        /// </summary>
+        public static bool EditSync = false;
+
+        /// <summary>
+        /// Undo スタックの逐次ログ（Record / ProcessRecord）。既定 false。
+        ///
+        /// 選択変更のたびに数行出るため、常時有効だと Console が膨れる。
+        /// Undo（[PL/Undo]）とは別スイッチにして、詳細を追うときだけ有効にする。
+        /// </summary>
+        public static bool UndoVerbose = false;
 
         /// <summary>
         /// Pick リングの verbose 出力。既定 false。
@@ -58,21 +92,48 @@ namespace Poly_Ling.Diagnostics
         /// </summary>
         public static bool Pick = false;
 
+        /// <summary>
+        /// 異常検出時の自動ダンプ（PickDump）。既定 false。
+        ///
+        /// PickDump は 1 回でリング 256 件ぶんの文字列（約 20KB）を Debug.Log へ出す。
+        /// 呼び出し元にはポインタ移動ごと・カメラドラッグ中の毎フレームに通る箇所が
+        /// あるため、既定では出さない。false でもリングへの記録は継続するので、
+        /// 再現直後に PickDumpNow() を押せば直前 256 件を取り出せる。
+        /// </summary>
+        public static bool PickAutoDump = false;
+
         /// <summary>全カテゴリをまとめて切り替える。</summary>
         public static void SetAll(bool on)
         {
-            Enabled  = on;
-            Command  = on;
-            Notify   = on;
-            Viewport = on;
-            Attr     = on;
-            Undo     = on;
-            Pick     = on;
+            Enabled      = on;
+            Command      = on;
+            Notify       = on;
+            Viewport     = on;
+            Attr         = on;
+            Undo         = on;
+            Pick         = on;
+            PickAutoDump = on;
+            EditSync     = on;
+            UndoVerbose  = on;
         }
 
         // ================================================================
         // 出力
         // ================================================================
+
+        /// <summary>頂点位置の GPU 同期（毎フレーム経路）。既定では出さない。</summary>
+        public static void Sync(string text)
+        {
+            if (!Enabled || !EditSync) return;
+            Debug.Log("[PL/Sync] " + text);
+        }
+
+        /// <summary>Undo スタックの逐次ログ。既定では出さない。</summary>
+        public static void UndoVerboseLog(string text)
+        {
+            if (!Enabled || !UndoVerbose) return;
+            Debug.Log("[PL/UndoV] " + text);
+        }
 
         /// <summary>Dispatch に来たコマンド。1コマンドにつき1行。</summary>
         public static void Cmd(string text)
@@ -165,14 +226,37 @@ namespace Poly_Ling.Diagnostics
         /// <summary>同一 reason のダンプを抑制するフレーム数。</summary>
         public const int PickDumpCooldownFrames = 600;
 
+        /// <summary>
+        /// reason によらない最短ダンプ間隔（フレーム）。
+        /// 種類の違う reason が交互に来ても、これより短い間隔では出さない。
+        /// </summary>
+        public const int PickDumpMinGapFrames = 60;
+
+        /// <summary>
+        /// 自動ダンプの発行上限。ここに達したら以降は件数だけ数える。
+        /// ResetPickDumpBudget() で数え直す。
+        /// </summary>
+        public const int PickDumpBudget = 20;
+
         private static readonly PickEntry[] _pickRing = new PickEntry[PickRingCapacity];
 
         /// <summary>リングへの総書き込み数。書き込み位置は _pickWriteCount % PickRingCapacity。</summary>
         private static int _pickWriteCount;
 
-        private static string _lastDumpReason;
-        private static int    _lastDumpFrame = int.MinValue;
-        private static int    _suppressedDumps;
+        /// <summary>
+        /// reason ごとの最終ダンプフレーム。
+        /// 直前 1 件だけを覚える方式だと、2 種類の reason が交互に来たときに
+        /// 抑制が全く効かず、毎フレーム全ダンプが出る。
+        /// </summary>
+        private static readonly System.Collections.Generic.Dictionary<string, int> _lastDumpFrameByReason
+            = new System.Collections.Generic.Dictionary<string, int>();
+
+        /// <summary>reason によらない最終ダンプフレーム。未ダンプは false。</summary>
+        private static bool _anyDumpDone;
+        private static int  _lastAnyDumpFrame;
+
+        private static int _dumpsEmitted;
+        private static int _suppressedDumps;
 
         // ---- 直近の "Hover" 記録（ダンプ条件の判定に使う） ----
 
@@ -243,18 +327,62 @@ namespace Poly_Ling.Diagnostics
 
         /// <summary>
         /// リングの中身を Console へまとめて吐く。異常を検出した箇所から呼ぶ。
-        /// 同一 reason の連続呼び出しは PickDumpCooldownFrames ぶん抑制する。
+        /// PickAutoDump == false（既定）なら何も出さず、抑制件数だけ数える。
+        /// 抑制は reason ごとのクールダウン・全体の最短間隔・発行上限の 3 段。
         /// </summary>
         public static void PickDump(string reason)
         {
+            if (!PickAutoDump) { _suppressedDumps++; return; }
+            if (string.IsNullOrEmpty(reason)) reason = "-";
+
             int frame = Time.frameCount;
-            if (reason == _lastDumpReason &&
-                frame - _lastDumpFrame < PickDumpCooldownFrames)
+
+            // 発行上限。
+            if (_dumpsEmitted >= PickDumpBudget) { _suppressedDumps++; return; }
+
+            // reason によらない最短間隔。同一フレーム内の連発と、
+            // reason 交互による抑制すり抜けを止める。
+            if (_anyDumpDone && frame - _lastAnyDumpFrame < PickDumpMinGapFrames)
             {
                 _suppressedDumps++;
                 return;
             }
 
+            // reason ごとのクールダウン。
+            if (_lastDumpFrameByReason.TryGetValue(reason, out int lastFrame) &&
+                frame - lastFrame < PickDumpCooldownFrames)
+            {
+                _suppressedDumps++;
+                return;
+            }
+
+            EmitPickDump(reason, frame);
+        }
+
+        /// <summary>
+        /// 抑制を通さずにリングの中身を 1 回出す。
+        /// 再現直後に手で吸い出すためのもの（ログパネルのボタンから呼ぶ）。
+        /// </summary>
+        public static void PickDumpNow()
+        {
+            EmitPickDump("manual", Time.frameCount);
+        }
+
+        /// <summary>自動ダンプの発行数と抑制状態を初期化する。</summary>
+        public static void ResetPickDumpBudget()
+        {
+            _lastDumpFrameByReason.Clear();
+            _anyDumpDone     = false;
+            _lastAnyDumpFrame = 0;
+            _dumpsEmitted    = 0;
+            _suppressedDumps = 0;
+        }
+
+        /// <summary>抑制されたダンプの件数（最後に出したダンプ以降）。</summary>
+        public static int SuppressedDumpCount => _suppressedDumps;
+
+        private static void EmitPickDump(string reason, int frame)
+        {
             var sb = new System.Text.StringBuilder();
             sb.Append("[PL/Pick] ==== DUMP reason=").Append(reason)
               .Append(" frame=").Append(frame);
@@ -272,9 +400,11 @@ namespace Poly_Ling.Diagnostics
             }
             Debug.Log(sb.ToString());
 
-            _lastDumpReason  = reason;
-            _lastDumpFrame   = frame;
-            _suppressedDumps = 0;
+            _lastDumpFrameByReason[reason] = frame;
+            _anyDumpDone      = true;
+            _lastAnyDumpFrame = frame;
+            _dumpsEmitted++;
+            _suppressedDumps  = 0;
         }
 
         private static string FormatPick(PickEntry e)

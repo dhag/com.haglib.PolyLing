@@ -20,6 +20,19 @@ namespace Poly_Ling.Player
         private FloatField    _thicknessField;
         private Toggle        _addToExistingToggle;
 
+        // 名前欄。「既存メッシュに追加」のときは追加先ドロップダウンへ差し替える
+        // （図形生成パネルの名前欄と同じ扱い）。
+        private TextField     _nameField;
+        private DropdownField _addTargetField;
+        private readonly System.Collections.Generic.List<int> _addTargetIndices =
+            new System.Collections.Generic.List<int>();
+
+        /// <summary>描画オブジェクト一覧（表示名, MeshContextList インデックス）。</summary>
+        public Func<System.Collections.Generic.List<(string Label, int MasterIndex)>> GetDrawableIndexList;
+
+        /// <summary>選択オブジェクトリストの先頭。追加先ドロップダウンの既定選択に使う。</summary>
+        public Func<int> GetFirstSelectedDrawableIndex;
+
         private SliderInt     _segFrontSlider;
         private SliderInt     _segBackSlider;
         private VisualElement _edgeParamsGroup;
@@ -62,14 +75,46 @@ namespace Poly_Ling.Player
             _root.Add(thickRow);
 
             // ── 追加先 ─────────────────────────────────────────────────
-            _addToExistingToggle = new Toggle("既存メッシュに追加") { value = false };
+            _root.Add(SectionLabel("追加先"));
+
+            _addToExistingToggle = new Toggle("既存の描画オブジェクトに追加") { value = false };
             _addToExistingToggle.style.marginTop = 3;
             _addToExistingToggle.RegisterValueChangedCallback(e =>
             {
                 var h = GetH();
                 if (h != null) h.AddToExisting = e.newValue;
+                RefreshAddTargetChoices();
+                RefreshNameFieldMode();
             });
             _root.Add(_addToExistingToggle);
+
+            // 名前欄と追加先ドロップダウンは同じ行に置き、display で見せ分ける。
+            var nameRow = MakeLabeledRow("名前:");
+
+            _nameField = new TextField { value = GetH()?.MeshName ?? "Solidify" };
+            _nameField.style.flexGrow = 1;
+            _nameField.RegisterValueChangedCallback(e =>
+            {
+                var h = GetH();
+                if (h != null) h.MeshName = e.newValue;
+            });
+            nameRow.Add(_nameField);
+
+            _addTargetField = new DropdownField(new System.Collections.Generic.List<string>(), -1);
+            _addTargetField.style.flexGrow = 1;
+            _addTargetField.RegisterValueChangedCallback(e =>
+            {
+                var h = GetH();
+                if (h == null) return;
+                int i = _addTargetField.index;
+                h.AddTargetIndex = (i >= 0 && i < _addTargetIndices.Count) ? _addTargetIndices[i] : -1;
+            });
+            nameRow.Add(_addTargetField);
+
+            _root.Add(nameRow);
+
+            RefreshAddTargetChoices();
+            RefreshNameFieldMode();
 
             // ── エッジ（角処理） ───────────────────────────────────────
             _root.Add(SectionLabel("エッジ（0=無効 / 1=面取り / 2以上=ラウンド）"));
@@ -175,6 +220,9 @@ namespace Poly_Ling.Player
 
             _thicknessField?.SetValueWithoutNotify(h.Thickness);
             _addToExistingToggle?.SetValueWithoutNotify(h.AddToExisting);
+            _nameField?.SetValueWithoutNotify(h.MeshName ?? "");
+            RefreshAddTargetChoices();
+            RefreshNameFieldMode();
             _segFrontSlider?.SetValueWithoutNotify(h.SegmentsFront);
             _segBackSlider?.SetValueWithoutNotify(h.SegmentsBack);
             _edgeFrontField?.SetValueWithoutNotify(h.EdgeSizeFront);
@@ -187,6 +235,58 @@ namespace Poly_Ling.Player
         // ================================================================
         // 内部
         // ================================================================
+
+        /// <summary>
+        /// 追加先ドロップダウンの選択肢を作り直す。
+        /// 既定選択は選択オブジェクトリストの先頭。前回の選択が残っていればそちらを優先。
+        /// </summary>
+        private void RefreshAddTargetChoices()
+        {
+            if (_addTargetField == null) return;
+
+            var h = GetH();
+
+            _addTargetIndices.Clear();
+            var labels = new System.Collections.Generic.List<string>();
+
+            var list = GetDrawableIndexList?.Invoke();
+            if (list != null)
+            {
+                foreach (var (label, masterIndex) in list)
+                {
+                    labels.Add(label);
+                    _addTargetIndices.Add(masterIndex);
+                }
+            }
+
+            _addTargetField.choices = labels;
+
+            if (labels.Count == 0)
+            {
+                if (h != null) h.AddTargetIndex = -1;
+                _addTargetField.SetValueWithoutNotify(string.Empty);
+                return;
+            }
+
+            int want = (h != null) ? _addTargetIndices.IndexOf(h.AddTargetIndex) : -1;
+            if (want < 0)
+            {
+                int first = GetFirstSelectedDrawableIndex?.Invoke() ?? -1;
+                want = _addTargetIndices.IndexOf(first);
+            }
+            if (want < 0) want = 0;
+
+            if (h != null) h.AddTargetIndex = _addTargetIndices[want];
+            _addTargetField.SetValueWithoutNotify(labels[want]);
+        }
+
+        /// <summary>名前欄と追加先ドロップダウンの見せ分けを現在の追加先へ合わせる。</summary>
+        private void RefreshNameFieldMode()
+        {
+            bool existing = GetH()?.AddToExisting ?? false;
+            if (_nameField      != null) _nameField.style.display      = existing ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_addTargetField != null) _addTargetField.style.display = existing ? DisplayStyle.Flex : DisplayStyle.None;
+        }
 
         private void UpdateEdgeParamVisibility()
         {

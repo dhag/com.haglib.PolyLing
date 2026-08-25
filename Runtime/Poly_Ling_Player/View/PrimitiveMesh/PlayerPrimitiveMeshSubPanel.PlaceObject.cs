@@ -6,7 +6,16 @@
 //   これで「rung ごとに巡回／抽選」が子孫に対して効く。
 //   面を持たないオブジェクト（グループ用の空オブジェクト等）は数に入れない。
 //
-// 【配置スケール】rung 長による等倍へさらに掛ける倍率。X/Y/Z 連動の1値。
+// 【配置スケール】方式を2つ持つ。X/Y/Z 連動の1値。
+//   rung 長に比例: 大きさ = rung 長 × 倍率。梯子の幅に比例する（従来の挙動）。
+//   一律サイズ    : 大きさ = サイズ。梯子の幅に関係なく一定。
+//
+// 【間引き】rung 方向と段方向を独立に何個おきかで指定する。
+//   rung 間引き: rung 番号 i が i % RungStride == RungOffset の rung だけ配置する。
+//   段 間引き  : 段番号 r が r % RowStride == RowOffset の段だけ配置する。
+//     段番号は「上下方向にも探索」でレール辺を跨いで得た BeltSnapshot.RowIndex。
+//     この探索が OFF のときは全梯子が RowIndex = 0 になるため、段間引きは効かない。
+//
 // 基準ベルトの取り込み・自動検索は PlayerPrimitiveMeshSubPanel.BeltProfile.cs の共通部を使う。
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 
@@ -34,8 +43,18 @@ namespace Poly_Ling.Player
         private BeltSplineOption _placeSpline = new BeltSplineOption();
         private BeltOrientOption _placeOrient = new BeltOrientOption();
 
+        // 上下（左右レール側）への段展開。既定 OFF は従来の検出結果と同じ。
+        // 段間引きはここで振られる RowIndex を使うため、段間引きを使うときは ON にする。
+        private BeltStackOption _placeStack = new BeltStackOption { Enabled = false };
+
         private Label         _placeInfoLabel;
         private VisualElement _placeSeedRow;   // Random のときだけ表示する
+
+        private Label _placeScaleLabel;        // 方式で「倍率」／「サイズ」を切り替える
+        private Label _placeScaleHint;
+
+        private const float PlaceScaleMin = 0.1f;
+        private const float PlaceScaleMax = 10f;
 
         // ================================================================
         // UI
@@ -86,10 +105,11 @@ namespace Poly_Ling.Player
             c.Add(_placeSeedRow);
             RefreshPlaceSeedVis();
 
-            // ── 配置スケール（X/Y/Z 連動。rung 長による等倍へさらに掛ける） ──
-            c.Add(SR(T("PlaceScale"), 0.1f, 10f,
-                () => _placeP.Scale <= 0f ? 1f : _placeP.Scale,
-                v  => { _placeP.Scale = v; D(); }));
+            // ── 配置スケール（方式＋数値。X/Y/Z 連動） ──
+            BuildPlaceScaleUI(c);
+
+            // ── 間引き（rung 方向・段方向） ──
+            BuildPlaceThinUI(c);
 
             // ── 基準はしご（取り込み〜向きまでを1つのフォールドにまとめる） ──
             c.Add(PlayerIoUiKit.Divider());
@@ -104,9 +124,20 @@ namespace Poly_Ling.Player
             hint.style.marginBottom = 2;
             bc.Add(hint);
 
+            // ── 上下方向への探索（取り込み・自動検索の両方に効く） ──
+            // 段間引きの段番号はこの探索で決まるので、段間引きを使うときは ON にする。
+            bc.Add(TR(T("BeltStackSearch"), () => _placeStack.Enabled,
+                v => { _placeStack.Enabled = v; D(); }));
+
+            var stackHint = new Label(T("BeltStackSearchHint"));
+            stackHint.style.fontSize     = 10;
+            stackHint.style.whiteSpace   = WhiteSpace.Normal;
+            stackHint.style.marginBottom = 2;
+            bc.Add(stackHint);
+
             bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
             {
-                ImportBeltFromMesh(_placeBelts);
+                ImportBeltFromMesh(_placeBelts, _placeStack.Enabled);
                 RefreshPlaceInfo();
             }));
 
@@ -121,11 +152,11 @@ namespace Poly_Ling.Player
 
             bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
             {
-                AutoDetectBelts(_placeBelts, _placeAutoPick.Current);
+                AutoDetectBelts(_placeBelts, _placeAutoPick.Current, _placeStack.Enabled);
                 RefreshPlaceInfo();
             }));
 
-            _placeInfoLabel = new Label(BeltsInfoText(_placeBelts));
+            _placeInfoLabel = new Label(PlaceInfoText());
             _placeInfoLabel.style.fontSize   = 10;
             _placeInfoLabel.style.whiteSpace = WhiteSpace.Normal;
             _placeInfoLabel.style.marginTop  = 2;
@@ -143,6 +174,117 @@ namespace Poly_Ling.Player
             BuildPlaceRollUI(c);
 
             BuildBeltSplineUI(c, _placeSpline);
+        }
+
+        /// <summary>
+        /// 配置スケール。方式のドロップダウンと数値行を作る。
+        /// 数値の意味が方式で変わるため、行ラベルとヒント文を方式に合わせて書き換える。
+        /// SR() はラベルを後から差し替えられないので、この行だけ手で組む。
+        /// </summary>
+        private void BuildPlaceScaleUI(VisualElement c)
+        {
+            c.Add(SL(T("PlaceScaleMode")));
+
+            var modeChoices = new List<string>
+            {
+                T("PlaceScaleModeRung"), T("PlaceScaleModeUniform"),
+            };
+            var modeDd = new DropdownField(modeChoices, (int)_placeP.ScaleMode);
+            modeDd.RegisterValueChangedCallback(_ =>
+            {
+                _placeP.ScaleMode = (PlaceScaleMode)modeDd.index;
+                RefreshPlaceScaleVis();
+                D();
+            });
+            c.Add(modeDd);
+
+            _placeScaleHint = new Label();
+            _placeScaleHint.style.fontSize     = 10;
+            _placeScaleHint.style.whiteSpace   = WhiteSpace.Normal;
+            _placeScaleHint.style.marginBottom = 2;
+            c.Add(_placeScaleHint);
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 2;
+
+            _placeScaleLabel = ML(string.Empty);
+            row.Add(_placeScaleLabel);
+
+            float cur = _placeP.Scale <= 0f ? 1f : _placeP.Scale;
+
+            var sl = new Slider(PlaceScaleMin, PlaceScaleMax) { value = cur };
+            sl.style.flexGrow = 1;
+            var nf = new FloatField { value = cur };
+            nf.style.width = 42;
+
+            sl.RegisterValueChangedCallback(e =>
+            {
+                nf.SetValueWithoutNotify(Mathf.Round(e.newValue * 1000f) / 1000f);
+                _placeP.Scale = e.newValue;
+                D();
+            });
+            nf.RegisterValueChangedCallback(e =>
+            {
+                float v = Mathf.Clamp(e.newValue, PlaceScaleMin, PlaceScaleMax);
+                sl.SetValueWithoutNotify(v);
+                _placeP.Scale = v;
+                D();
+            });
+
+            row.Add(sl);
+            row.Add(nf);
+            c.Add(row);
+
+            RefreshPlaceScaleVis();
+        }
+
+        /// <summary>スケール数値行のラベルとヒント文を、現在の方式へ合わせる。</summary>
+        private void RefreshPlaceScaleVis()
+        {
+            bool uniform = _placeP.ScaleMode == PlaceScaleMode.Uniform;
+
+            if (_placeScaleLabel != null)
+                _placeScaleLabel.text = uniform ? T("PlaceScaleUniformLabel") : T("PlaceScaleRungLabel");
+
+            if (_placeScaleHint != null)
+                _placeScaleHint.text = uniform ? T("PlaceScaleHintUniform") : T("PlaceScaleHintRung");
+        }
+
+        /// <summary>
+        /// 間引き。rung 方向と段方向を独立に指定する。
+        /// 間隔 1・開始位置 0 が全数配置（既定）。
+        /// </summary>
+        private void BuildPlaceThinUI(VisualElement c)
+        {
+            c.Add(PlayerIoUiKit.Divider());
+
+            var fold = new Foldout { text = T("PlaceThin"), value = false };
+            fold.style.marginBottom = 4;
+            var fc = fold.contentContainer;
+            c.Add(fold);
+
+            var hint = new Label(T("PlaceThinHint"));
+            hint.style.fontSize     = 10;
+            hint.style.whiteSpace   = WhiteSpace.Normal;
+            hint.style.marginBottom = 2;
+            fc.Add(hint);
+
+            fc.Add(IR(T("PlaceRungStride"), 1, 10,
+                () => Mathf.Max(1, _placeP.RungStride),
+                v  => { _placeP.RungStride = Mathf.Max(1, v); RefreshPlaceInfo(); D(); }));
+
+            fc.Add(IR(T("PlaceRungOffset"), 0, 9,
+                () => Mathf.Max(0, _placeP.RungOffset),
+                v  => { _placeP.RungOffset = Mathf.Max(0, v); RefreshPlaceInfo(); D(); }));
+
+            fc.Add(IR(T("PlaceRowStride"), 1, 10,
+                () => Mathf.Max(1, _placeP.RowStride),
+                v  => { _placeP.RowStride = Mathf.Max(1, v); RefreshPlaceInfo(); D(); }));
+
+            fc.Add(IR(T("PlaceRowOffset"), 0, 9,
+                () => Mathf.Max(0, _placeP.RowOffset),
+                v  => { _placeP.RowOffset = Mathf.Max(0, v); RefreshPlaceInfo(); D(); }));
         }
 
         /// <summary>
@@ -187,7 +329,61 @@ namespace Poly_Ling.Player
         private void RefreshPlaceInfo()
         {
             RefreshCreateButtonState();
-            if (_placeInfoLabel != null) _placeInfoLabel.text = BeltsInfoText(_placeBelts);
+            if (_placeInfoLabel != null) _placeInfoLabel.text = PlaceInfoText();
+        }
+
+        /// <summary>
+        /// 基準はしごの概要に、rung 長の実測値と間引き後の配置個数を足した文を返す。
+        /// スケール方式を選ぶときの判断材料として rung 長の幅を出す。
+        /// rung 長の統計は全段（間引き前）、配置個数は間引き後の数。
+        /// </summary>
+        private string PlaceInfoText()
+        {
+            string head = BeltsInfoText(_placeBelts);
+            if (_placeBelts == null || _placeBelts.Count == 0) return head;
+
+            int rungStride = Mathf.Max(1, _placeP.RungStride);
+            int rungOffset = ((_placeP.RungOffset % rungStride) + rungStride) % rungStride;
+            int rowStride  = Mathf.Max(1, _placeP.RowStride);
+            int rowOffset  = ((_placeP.RowOffset % rowStride) + rowStride) % rowStride;
+
+            float min = float.MaxValue, max = 0f, sum = 0f;
+            int   lenCount = 0, placed = 0, rows = 0;
+
+            foreach (var belt in _placeBelts)
+            {
+                if (belt == null || !belt.HasData) continue;
+
+                // 生成と同じ順序（向き補正 → 段間引き → スプライン分割）で数える。
+                var oriented = ApplyBeltOrient(belt, _placeOrient);
+
+                int  row    = Mathf.Max(0, oriented.RowIndex);
+                bool useRow = (row % rowStride) == rowOffset;
+                if (useRow) rows++;
+
+                var b = ApplyBeltSpline(oriented, _placeSpline);
+
+                int n = Mathf.Min(b.Left.Count, b.Right.Count);
+                for (int i = 0; i < n; i++)
+                {
+                    float len = (b.Right[i] - b.Left[i]).magnitude;
+                    if (len <= 1e-6f) continue;
+
+                    min = Mathf.Min(min, len);
+                    max = Mathf.Max(max, len);
+                    sum += len;
+                    lenCount++;
+
+                    if (useRow && (i % rungStride) == rungOffset) placed++;
+                }
+            }
+
+            if (lenCount == 0) return head;
+
+            string lenText = T("PlaceRungLenInfo",
+                min.ToString("0.###"), max.ToString("0.###"), (sum / lenCount).ToString("0.###"));
+
+            return head + "\n" + lenText + "\n" + T("PlaceCountInfo", placed, rows);
         }
 
         /// <summary>乱数シード欄は Random のときだけ表示する。</summary>
@@ -205,6 +401,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 各基準ベルトの rung 中心へ配置元オブジェクトを複製する。未取込・未選択なら空メッシュ。
         /// Combine は全 rung へ結合メッシュ、Sequence/Random は rung ごとに選択リストから1つを割り当てる。
+        /// 間引きは段（RowIndex）→ rung（rung 番号）の順に効かせ、置かない rung は割り当てを進めない。
         /// </summary>
         private MeshObject GeneratePlaceObjectMesh()
         {
@@ -228,15 +425,35 @@ namespace Poly_Ling.Player
             // Sequence の巡回位置はベルトをまたいで連続させる。
             int seqIndex = 0;
 
+            // 間引き。間隔は 1 以上へ、開始位置は間隔で割った余りへ丸める。
+            int rungStride = Mathf.Max(1, _placeP.RungStride);
+            int rungOffset = ((_placeP.RungOffset % rungStride) + rungStride) % rungStride;
+            int rowStride  = Mathf.Max(1, _placeP.RowStride);
+            int rowOffset  = ((_placeP.RowOffset % rowStride) + rowStride) % rowStride;
+
             foreach (var belt in _placeBelts)
             {
                 if (belt == null || !belt.HasData) continue;
-                var b = ApplyBeltSpline(ApplyBeltOrient(belt, _placeOrient), _placeSpline);
+
+                // 段間引き。段番号は上下探索で振られた RowIndex（未展開なら全段 0）。
+                // 向き補正（左右入れ替え）は RowIndex を反転させるので、補正後の番号で判定する。
+                // スプライン分割は rung 数を変えるだけなので、段を通した後に掛ける。
+                var oriented = ApplyBeltOrient(belt, _placeOrient);
+
+                int row = Mathf.Max(0, oriented.RowIndex);
+                if ((row % rowStride) != rowOffset) continue;
+
+                var b = ApplyBeltSpline(oriented, _placeSpline);
 
                 int n = Mathf.Min(b.Left.Count, b.Right.Count);
                 var perRung = new MeshObject[n];
                 for (int i = 0; i < n; i++)
                 {
+                    // rung 間引き。置かない rung は null のままにする
+                    // （PlaceObjectMeshGenerator は null の rung を飛ばす）。
+                    // 巡回位置・抽選は実際に置く rung だけで進める。
+                    if ((i % rungStride) != rungOffset) continue;
+
                     switch (_placeP.Mode)
                     {
                         case PlaceSourceMode.Sequence:
@@ -254,7 +471,7 @@ namespace Poly_Ling.Player
 
                 var part = PlaceObjectMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
-                    perRung, _placeP.MeshName, userScale, _placeP.RollSteps);
+                    perRung, _placeP.MeshName, userScale, _placeP.RollSteps, _placeP.ScaleMode);
                 AppendMesh(mo, part);
             }
             return mo;

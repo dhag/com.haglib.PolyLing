@@ -5,8 +5,9 @@
 //
 // 【リスト末尾へ追加する理由】
 //   ObjectArrayInserter は出力先の直後へ挿し込むため、挿入位置以降を指していた
-//   HierarchyParentIndex を全部ずらす必要がある（ObjectArrayInserter.cs の
-//   ShiftHierarchyParents）。ここは常に末尾へ足すので既存の索引が動かず、
+//   HierarchyParentIndex を ModelContext.Insert の付け替え
+//   （ModelContext.RemapIndexReferences）に頼ってずらすことになる。
+//   ここは常に末尾へ足すので既存の索引が動かず、
 //   元モデルの階層に一切触れずに済む。
 //
 // 【トランスフォーム】

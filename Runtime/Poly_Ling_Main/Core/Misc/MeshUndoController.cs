@@ -245,6 +245,34 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
+        /// 対象 MeshContext を明示して設定する。複数メッシュを1件ずつ回す操作は必ずこちらを使う。
+        ///
+        /// SetMeshObject(MeshObject, Mesh) は書き込み先が
+        /// MeshUndoContext.ResolvedMeshContext（既定で先頭の選択メッシュ）になるため、
+        /// ループの2件目以降で先頭メッシュの MeshObject を今の対象のもので上書きする。
+        /// こちらは ExplicitMeshContext を立ててから書くので、対象自身へ戻るだけになる。
+        ///
+        /// 使い終わったら ClearTargetMeshContext を呼ぶこと。
+        /// </summary>
+        public void SetMeshObjectFor(MeshContext targetContext, Mesh targetMesh = null)
+        {
+            if (targetContext?.MeshObject == null) return;
+
+            _meshContext.ExplicitMeshContext = targetContext;
+            _meshContext.MeshObject          = targetContext.MeshObject;
+            _meshContext.TargetMesh          = targetMesh ?? targetContext.UnityMesh;
+            _meshContext.OriginalPositions   = (Vector3[])targetContext.MeshObject.Positions.Clone();
+            _meshContext.SelectedVertices?.Clear();
+            _vertexEditStack.Clear();
+        }
+
+        /// <summary>明示指定を解除し、既定の解決（先頭の選択メッシュ）へ戻す。</summary>
+        public void ClearTargetMeshContext()
+        {
+            _meshContext.ExplicitMeshContext = null;
+        }
+
+        /// <summary>
         /// Undo/Redo後のメッシュ参照同期用。スタックをクリアしない。
         /// </summary>
         public void SyncMeshObjectReference(MeshObject meshObject, Mesh targetMesh = null)

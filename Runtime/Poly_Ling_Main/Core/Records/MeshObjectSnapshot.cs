@@ -110,12 +110,37 @@ namespace Poly_Ling.UndoSystem
         public SelectionSnapshot ExtendedSelection;
 
         /// <summary>
+        /// 捕獲元の MeshContext。復元先の取り違えを防ぐために持つ。
+        ///
+        /// MeshUndoContext を経由する ApplyTo は、既定では
+        /// ResolvedMeshContext（先頭の選択メッシュ）へ書き戻す。捕獲時と適用時で
+        /// 選択が違えば別メッシュへ書き込むため、ここに実体を控えて優先する。
+        /// </summary>
+        public MeshContext SourceMeshContext;
+
+        /// <summary>
+        /// メッシュデータの書き戻し先を決めて書く。
+        ///
+        /// 捕獲元（SourceMeshContext）が判っていればそこへ直接書く。
+        /// 判らない場合だけ ctx 経由＝適用時の ResolvedMeshContext へ落とす。
+        /// ctx 経由に一本化すると、捕獲時と適用時で選択が違ったときに
+        /// 別メッシュへ復元してしまう。
+        /// </summary>
+        private void WriteMeshObjectTo(MeshUndoContext ctx)
+        {
+            var clone = MeshObject?.Clone();
+            if (SourceMeshContext != null) SourceMeshContext.MeshObject = clone;
+            else                           ctx.MeshObject               = clone;
+        }
+
+        /// <summary>
         /// MeshContext + MeshUndoContext からスナップショットを作成
         /// </summary>
         public static MeshObjectSnapshot Capture(MeshContext mc, MeshUndoContext ctx)
         {
             return new MeshObjectSnapshot
             {
+                SourceMeshContext = mc,
                 MeshObject = mc.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(),
@@ -184,6 +209,7 @@ namespace Poly_Ling.UndoSystem
         {
             return new MeshObjectSnapshot
             {
+                SourceMeshContext = ctx.ResolvedMeshContext,
                 MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(),
@@ -219,6 +245,7 @@ namespace Poly_Ling.UndoSystem
         {
             MeshObjectSnapshot snapshot = new MeshObjectSnapshot
             {
+                SourceMeshContext = ctx.ResolvedMeshContext,
                 MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(),
@@ -245,7 +272,7 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void ApplyTo(MeshUndoContext ctx)
         {
-            ctx.MeshObject = MeshObject?.Clone();
+            WriteMeshObjectTo(ctx);
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
 
             // マテリアル復元
@@ -283,7 +310,7 @@ namespace Poly_Ling.UndoSystem
         public void ApplyTo(MeshUndoContext ctx, SelectionState selectionState)
         {
             // === 既存処理（メッシュデータ、レガシー選択、マテリアル） ===
-            ctx.MeshObject = MeshObject?.Clone();
+            WriteMeshObjectTo(ctx);
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
 
             if (Materials != null)

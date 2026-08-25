@@ -238,7 +238,7 @@ namespace Poly_Ling.Player
                 var result = LscmUnwrapOperation.Execute(mc.MeshObject, seamEdges,
                     _includeBoundaryAsSeam, Mathf.Clamp(_maxIterations, 100, 50000));
                 SetStatus(result.StatusMessage);
-                if (result.Success) { mc.UnityMesh = mc.MeshObject.ToUnityMesh(); OnRepaint?.Invoke(); }
+                if (result.Success) { mc.ReplaceUnityMesh(mc.MeshObject.ToUnityMesh()); OnRepaint?.Invoke(); }
             }
             RefreshSeamInfo(model);
         }

@@ -1628,11 +1628,15 @@ namespace Poly_Ling.Core
                     // MeshFilter と同じ実体である。Type だけで弾くと SkinningMatrix 経路に
                     // 落ち、BindPose が WorldMatrix⁻¹ に更新された瞬間（Tポーズ変換など）
                     // SkinningMatrix = W·W⁻¹ = 単位 となって変換が丸ごと消える。
+                    // ここは「行列表の中身」を決める場所であって、頂点の座標系の判定では
+                    // ない。対象の型を明示すること。型で絞らずに IsSkinned だけで分けると、
+                    // ボーンの欄が WorldMatrix になり、その欄を boneIndex で引く
+                    // スキンド頂点が全部ボーンのワールド位置ぶん飛ぶ。
                     bool usesWorldMatrixDirect =
                         (ctx.Type == MeshType.Mesh ||
                          ctx.Type == MeshType.MirrorSide ||
                          ctx.Type == MeshType.BakedMirror) &&
-                        !(ctx.MeshObject?.HasBoneWeight ?? false);
+                        !ctx.IsSkinned;
                     _transformMatrices[i] = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
                 }
                 else

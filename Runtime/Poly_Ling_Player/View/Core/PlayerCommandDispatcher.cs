@@ -155,7 +155,14 @@ namespace Poly_Ling.Player
             if (project == null) return;
             var model   = project.CurrentModel;
 
-            PLDiag.Cmd(DescribeCommand(cmd));
+            // DescribeCommand は補間文字列を作る。PLDiag.Cmd の中で捨てられる場合でも
+            // 引数側は必ず評価されるため、スイッチをここで見てから呼ぶ。
+            if (PLDiag.Enabled && PLDiag.Command)
+                PLDiag.Cmd(DescribeCommand(cmd));
+
+            // 性能ログ用の件数計上。記録 OFF のときは bool 判定 1 回で戻る。
+            // DescribeCommand の戻り値は使わない（型名だけで足り、文字列生成を増やさないため）。
+            PLPerfLog.CountCommand(cmd?.GetType().Name);
 
             switch (cmd)
             {
@@ -721,6 +728,7 @@ namespace Poly_Ling.Player
                     if (model == null) return;
                     var mirCtx = model.GetMeshContext(c.MasterIndex);
                     if (mirCtx == null) return;
+
                     int mirOld = mirCtx.MirrorType;
                     // なし→分離→結合→なし。3 以上は MeshContext.MirrorType の定義に無く、
                     // MQO の mirror 属性へそのまま書き出されてしまうため作らない。
@@ -755,6 +763,7 @@ namespace Poly_Ling.Player
                     {
                         var ctx = model.GetMeshContext(mi);
                         if (ctx == null || ctx.MirrorType == mirValue) continue;
+
                         PLDiag.AttrChange("MirrorType", mi, ctx.Name, ctx.MirrorType.ToString(), mirValue.ToString());
                         mirOldList.Add(new MeshAttributeChange { Index = mi, MirrorType = ctx.MirrorType });
                         ctx.MirrorType = mirValue;
@@ -1637,44 +1646,47 @@ namespace Poly_Ling.Player
                 // ── メッシュブレンド適用
                 case ApplyBlendCommand c:
                 {
-                    if (model == null) return;
-                    var srcCtx = model.GetMeshContext(c.SourceMasterIndex);
-                    if (srcCtx?.MeshObject == null) return;
+                    if (model == null || project == null) return;
 
-                    // ターゲットインデックスをモデルのSelectedDrawableMeshIndicesに一時設定
-                    var savedSelected = new System.Collections.Generic.List<int>(
-                        model.SelectedDrawableMeshIndices);
-                    model.SelectedDrawableMeshIndices.Clear();
-                    foreach (int idx in c.TargetMasterIndices)
-                        model.SelectedDrawableMeshIndices.Add(idx);
+                    var destCtx = model.GetMeshContext(c.DestMasterIndex);
+                    if (destCtx?.MeshObject == null) return;
 
-                    // UndoController に先頭ターゲットを設定（CaptureMeshObjectSnapshot が参照するため先に呼ぶ）
-                    var firstTarget = c.TargetMasterIndices.Length > 0
-                        ? model.GetMeshContext(c.TargetMasterIndices[0]) : null;
-                    if (firstTarget?.MeshObject != null && _undoController != null)
+                    // ソースは別モデルを指せる。MasterIndex は必ずその
+                    // BlendSourceSpec.ModelIndex のモデル内で引くこと。
+                    // 宛先モデルの索引で引くと無関係なメッシュを混ぜる。
+                    var sources    = new System.Collections.Generic.List<BlendSourceEntry>();
+                    var hideIndices = new System.Collections.Generic.List<int>();
+                    foreach (var spec in c.Sources)
                     {
-                        _undoController.SetMeshObject(firstTarget.MeshObject, firstTarget.UnityMesh);
-                        _undoController.MeshUndoContext.ParentModelContext = model;
+                        if (spec.Weight <= 0f) continue;
+                        var srcModel = project.GetModel(spec.ModelIndex);
+                        var srcCtx   = srcModel?.GetMeshContext(spec.MasterIndex);
+                        if (srcCtx?.MeshObject == null) continue;
+                        sources.Add(new BlendSourceEntry(srcCtx, spec.Weight));
+
+                        // 同一モデル内のソースだけプレビュー中に隠す。
+                        // 別モデルの索引を混ぜると索引空間が違うため別物を隠す。
+                        if (spec.ModelIndex == c.ModelIndex && spec.MasterIndex != c.DestMasterIndex)
+                            hideIndices.Add(spec.MasterIndex);
                     }
+                    if (sources.Count == 0) return;
 
-                    // ToolContext 構築（UndoController・CommandQueue 接続済み）
+                    // ToolContext 構築（UndoController・CommandQueue 接続済み）。
+                    // Undo の対象メッシュ指定は BlendOperation が SetMeshObjectFor で行う。
                     var blendCtx = BuildSkinWeightToolCtx(model);
+                    if (_undoController != null)
+                        _undoController.MeshUndoContext.ParentModelContext = model;
 
-                    // プレビュー → 確定
+                    // バックアップ位置を取ってから確定する。
+                    // ApplyBlend が同じ backup を基準に混ぜるので、
+                    // ここで preview.Apply を挟むと同じ計算を 2 回走らせるだけになる。
                     var preview = new BlendPreviewState();
-                    preview.Start(model, model.SelectedDrawableMeshIndices, c.SourceMasterIndex);
-                    preview.Apply(model, c.SourceMasterIndex, c.BlendWeight,
-                        c.SelectedVerticesOnly, null, c.MatchByVertexId, blendCtx);
+                    preview.Start(model, c.DestMasterIndex, hideIndices);
 
-                    BlendOperation.ApplyAndCreateBackups(
-                        model, preview, model.SelectedDrawableMeshIndices, c.SourceMasterIndex,
-                        c.BlendWeight, c.RecalculateNormals,
-                        c.SelectedVerticesOnly, null, c.MatchByVertexId, blendCtx);
-
-                    // 選択状態を復元
-                    model.SelectedDrawableMeshIndices.Clear();
-                    foreach (int idx in savedSelected)
-                        model.SelectedDrawableMeshIndices.Add(idx);
+                    BlendOperation.ApplyBlend(
+                        model, preview, sources,
+                        c.RecalculateNormals, c.SelectedVerticesOnly,
+                        c.MatchMode, c.CreateNewObject, blendCtx);
 
                     // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
                     _viewportManager.EnterTopologyChanged(project);
@@ -1731,6 +1743,45 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── 法線移植適用
+                case ApplyNormalTransplantCommand c:
+                {
+                    if (model == null) return;
+
+                    // プリズムの構築に使うワールド座標をこの時点で1回だけ更新する。
+                    _viewportManager.UpdateTransform();
+
+                    var ntSamples = NormalTransplantOperation.ComputeSamples(
+                        model, c.BeforeMasterIndex, c.AfterMasterIndex, c.TargetMasterIndices,
+                        c.Spherical
+                            ? NormalPrismSolver.TriangleBlendMode.Spherical
+                            : NormalPrismSolver.TriangleBlendMode.Linear,
+                        c.AllowNearest,
+                        mc => _viewportManager.TryGetMeshWorldPositions(model, mc, out var w) ? w : null,
+                        out string ntError);
+
+                    if (ntSamples == null)
+                    {
+                        Debug.LogWarning($"[NormalTransplant] 法線を算出できません: {ntError}");
+                        return;
+                    }
+
+                    var ntCtx = BuildSkinWeightToolCtx(model);
+
+                    // パネル側はコマンド送信前にプレビューを破棄して元法線へ戻している。
+                    var ntPreview = new NormalTransplantPreviewState();
+                    if (!ntPreview.Start(model, ntSamples)) return;
+
+                    int ntApplied = NormalTransplantOperation.Apply(
+                        model, ntPreview, c.Strength, ntCtx);
+                    if (ntApplied <= 0) return;
+
+                    // ミラー再ベイクで UnityMesh を作り直し得るため、再構築で揃える。
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
                 // ── UV 変更（移動・一括変換）
                 case ApplyUVChangesCommand c:
                 {
@@ -1777,41 +1828,38 @@ namespace Poly_Ling.Player
                     return;
                 }
 
-                // ── スキンウェイト Flood
+                // ── スキンウェイト Flood / Normalize / Prune
+                //    いずれも対象は選択中の描画オブジェクト全件。
+                //    メッシュごとに UndoController を差し替えて before/after を取る
+                //    （SetFaceHiddenCommand / SetSkinWeightNumericCommand と同型）。
                 case FloodSkinWeightCommand c:
-                {
-                    if (model == null) return;
-                    var swCtx = BuildSkinWeightAttrToolCtx(model);
-                    SkinWeightOperations.ExecuteFlood(
-                        model, swCtx,
-                        c.TargetBoneMaster, c.PaintMode,
-                        c.WeightValue, c.Strength,
-                        err => Debug.LogWarning($"[Flood] {err}"));
-                    _notifyPanels(ChangeKind.Attributes);
+                    ApplySkinWeightPerMesh(project, model, "Flood Skin Weight",
+                        mc => SkinWeightOperations.ApplyFloodToMesh(
+                            mc, c.TargetBoneMaster, c.PaintMode, c.WeightValue, c.Strength));
                     return;
-                }
 
-                // ── スキンウェイト Normalize
                 case NormalizeSkinWeightCommand _:
-                {
-                    if (model == null) return;
-                    var swCtx = BuildSkinWeightAttrToolCtx(model);
-                    SkinWeightOperations.ExecuteNormalize(model, swCtx,
-                        err => Debug.LogWarning($"[Normalize] {err}"));
-                    _notifyPanels(ChangeKind.Attributes);
+                    ApplySkinWeightPerMesh(project, model, "Normalize Skin Weights",
+                        mc => SkinWeightOperations.ApplyNormalizeToMesh(mc));
                     return;
-                }
 
-                // ── スキンウェイト Prune
                 case PruneSkinWeightCommand c:
-                {
-                    if (model == null) return;
-                    var swCtx = BuildSkinWeightAttrToolCtx(model);
-                    SkinWeightOperations.ExecutePrune(model, swCtx, c.Threshold,
-                        err => Debug.LogWarning($"[Prune] {err}"));
-                    _notifyPanels(ChangeKind.Attributes);
+                    ApplySkinWeightPerMesh(project, model, "Prune Skin Weights",
+                        mc => SkinWeightOperations.ApplyPruneToMesh(mc, c.Threshold));
                     return;
-                }
+
+                // ── スキンウェイト 数値設定（最大 4 ボーンを直接上書き）
+                case SetSkinWeightNumericCommand c:
+                    ApplySkinWeightPerMesh(project, model, "Set Skin Weight (Numeric)",
+                        mc => SkinWeightOperations.ApplyNumericToMesh(mc, c.BoneMasters, c.Weights));
+                    return;
+
+                // ── 対象メッシュ全件の全頂点を正規化
+                //    SetSkinWeightNumericCommand と同じくメッシュごとに Undo を取る。
+                case NormalizeAllSkinWeightsCommand:
+                    ApplySkinWeightPerMesh(project, model, "Normalize All Skin Weights",
+                        mc => SkinWeightOperations.NormalizeAllInMesh(mc));
+                    return;
 
                 // ── MeshFilter → Skinned 変換
                 case ConvertMeshFilterToSkinnedCommand c:
@@ -1826,7 +1874,10 @@ namespace Poly_Ling.Player
 
                     // 変換実行
                     MeshFilterToSkinnedConverter.Execute(
-                        model, entries, c.SwapAxisForRotated, c.SetAxisForIdentity);
+                        model, entries, c.SwapAxisForRotated, c.SetAxisForIdentity,
+                        c.TolerantMirrorBranch
+                            ? MirrorBranchTolerance.Tolerant
+                            : MirrorBranchTolerance.Strict);
 
                     // 変換後スナップショット
                     var afterList = MeshFilterToSkinnedRecord.CaptureList(model);
@@ -3242,6 +3293,13 @@ namespace Poly_Ling.Player
                 if (added.Count   > 0) _undoController.RecordMeshContextsAdd(added, oldSel, newSel);
             }
 
+            // 生成・破棄でリスト構造と階層が変わったのでワールド行列を組み直す。
+            //   ComputeWorldMatrices の冒頭で SyncDerivedMirrorTransforms が走り、
+            //   ミラー側の姿勢と階層親を実体側からそろえる。これを通さないと
+            //   生成直後のミラーが未計算の行列のまま描画される。
+            //   他の姿勢変更コマンドは軒並みこれを呼んでおり、ここだけ抜けていた。
+            model.ComputeWorldMatrices();
+
             _notifyPanels(ChangeKind.ListStructure);
         }
 
@@ -3347,7 +3405,14 @@ namespace Poly_Ling.Player
 
             generated.Type = MeshType.MirrorSide;
             if (generated.MeshObject != null) generated.MeshObject.Type = MeshType.MirrorSide;
-            generated.Name = realCtx.Name + "+";
+
+            // 左右対応が付く名前は「左腕 → 右腕」にする。付かない名前だけ従来の
+            // 接尾辞（"+"）へ落とす。既に同名が居る場合も接尾辞へ落として衝突を避ける。
+            generated.Name = MirrorNameOps.MakeMirrorName(
+                realCtx.Name,
+                MirrorBranchOps.MirrorBranchSuffix,
+                n => ExistsMeshName(model, n));
+            if (generated.MeshObject != null) generated.MeshObject.Name = generated.Name;
 
             int insertAt = realIdx + 1;
             model.Insert(insertAt, generated);
@@ -3363,6 +3428,18 @@ namespace Poly_Ling.Player
             added.Add((insertAt, generated));
             PLDiag.AttrChange("MirrorGenerate", insertAt, generated.Name, "none", "mirror");
             return true;
+        }
+
+        /// <summary>モデル内に同名のメッシュが既に居るか（ミラー命名の衝突判定用）。</summary>
+        private static bool ExistsMeshName(ModelContext model, string name)
+        {
+            if (model == null || string.IsNullOrEmpty(name)) return false;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+                if (string.Equals(model.GetMeshContext(i)?.Name, name, System.StringComparison.Ordinal))
+                    return true;
+
+            return false;
         }
 
         // ================================================================
@@ -3782,22 +3859,129 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// スキンウェイト値のみを変える一括操作（Flood / Normalize / Prune）用の ToolContext を構築する。
-        /// これらは頂点数・面構成を変えないため、RebuildAdapter を伴う EnterTopologyChanged ではなく
-        /// ウェイトの部分転送のみを行う EnterVertexAttributesChanged を通す。
-        /// SkinWeightOperations は model.FirstDrawableMeshContext のみを書き換える。
+        /// スキンウェイトの一括操作を、選択中の描画オブジェクト全件へ適用する。
+        ///
+        /// Flood / Normalize / Prune / 数値設定 / 全頂点正規化 の共通経路。
+        /// 対象の列挙は SkinWeightOperations.CollectTargetMeshContexts に一本化してあり、
+        /// ウェイト可視化（MeshSceneRenderer.CollectWeightVisTargets）と同じ集合になる。
+        ///
+        /// Undo はメッシュごとに取る。UndoController は一度に 1 メッシュしか保持できないため、
+        /// SetMeshObject → before → 適用 → after → 記録 をメッシュごとに繰り返す
+        /// （SetFaceHiddenCommand と同型）。
+        ///
+        /// 頂点数・面構成は変わらないので、同期は RebuildAdapter を伴う
+        /// EnterTopologyChanged ではなくウェイトの部分転送のみを行う
+        /// EnterVertexAttributesChanged を通す。
         /// </summary>
-        private ToolContext BuildSkinWeightAttrToolCtx(ModelContext model)
+        /// <param name="apply">1 メッシュへ適用し、書き換えた頂点数を返す関数</param>
+        private void ApplySkinWeightPerMesh(
+            ProjectContext project, ModelContext model, string undoLabel,
+            System.Func<MeshContext, int> apply)
         {
-            var ctx            = BuildMinimalToolCtx(model);
-            ctx.CommandQueue   = _commandQueue;
-            ctx.SyncMesh       = () =>
+            if (model == null || apply == null) return;
+
+            var targets = SkinWeightOperations.CollectTargetMeshContexts(model);
+            if (targets.Count == 0) return;
+
+            var changedMeshes = new List<MeshContext>();
+            var mirrorMeshes  = new List<MeshContext>();
+
+            foreach (var mc in targets)
             {
+                if (mc?.MeshObject == null) continue;
+
+                if (_undoController != null)
+                {
+                    // SetMeshObjectFor を使うこと。SetMeshObject(MeshObject,…) は
+                    // 書き込み先が MeshUndoContext.ResolvedMeshContext（既定で先頭の
+                    // 選択メッシュ）になるため、このループの2件目以降で先頭メッシュの
+                    // MeshObject が今の対象のもので上書きされる。
+                    _undoController.MeshUndoContext.ParentModelContext = model;
+                    _undoController.SetMeshObjectFor(mc, mc.UnityMesh);
+                }
+                var before = _undoController?.CaptureMeshObjectSnapshot();
+
+                int changed = apply(mc);
+                if (changed <= 0) continue;
+
+                changedMeshes.Add(mc);
+
+                // ミラー側へ写す。ミラー側メッシュはファイル実体を持つ独立メッシュで
+                // 自分の BoneWeight を保存するため、実体側を塗っただけでは更新されない。
+                // SyncBoneWeights は実体側頂点の MirrorBoneWeight（GPU 描画用）も
+                // 張り直すので、実体側の after を取る前に済ませる。後に回すと
+                // Redo で MirrorBoneWeight が古い値に戻る。
+                SyncSkinWeightToMirrors(model, mc, mirrorMeshes, undoLabel);
+
+                if (_undoController != null && before != null)
+                {
+                    // ミラー側の記録で対象が移っているので戻す。
+                    _undoController.SetMeshObjectFor(mc, mc.UnityMesh);
+                    var after = _undoController.CaptureMeshObjectSnapshot();
+                    _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                        _undoController, before, after, undoLabel));
+                }
+            }
+            _undoController?.ClearTargetMeshContext();
+
+            if (changedMeshes.Count == 0) return;
+
+            foreach (var mc in mirrorMeshes)
+                changedMeshes.Add(mc);
+
+            foreach (var mc in changedMeshes)
                 _viewportManager.EnterVertexAttributesChanged(
-                    _getProject(), model?.FirstDrawableMeshContext, weights: true, uvs: false);
-            };
-            ctx.Repaint        = () => { };
-            return ctx;
+                    project, mc, weights: true, uvs: false);
+
+            _notifyPanels(ChangeKind.Attributes);
+        }
+
+        /// <summary>
+        /// 書き換えたメッシュ 1 件のウェイトを、ペアの相方へ写す。
+        /// 実体側を塗ったらミラー側へ、ミラー側を塗ったら実体側へ写す。
+        /// 写した相方を collected へ足し、相方のぶんの Undo も積む。
+        /// 呼び出し側は、戻った直後に元のメッシュへ SetMeshObjectFor し直すこと。
+        /// </summary>
+        private void SyncSkinWeightToMirrors(
+            ModelContext model, MeshContext changedCtx,
+            List<MeshContext> collected, string undoLabel)
+        {
+            if (model?.MirrorPairs == null || changedCtx == null || collected == null) return;
+
+            foreach (var pair in model.MirrorPairs)
+            {
+                if (pair?.Real == null || pair.Mirror == null) continue;
+                if (pair.Real.MeshObject == null || pair.Mirror.MeshObject == null) continue;
+
+                // 塗ったのが実体側なら相方はミラー側、塗ったのがミラー側なら相方は実体側。
+                // ミラー側も選択して直接塗れるので、両方向を扱う。
+                bool fromReal   = ReferenceEquals(pair.Real, changedCtx);
+                bool fromMirror = ReferenceEquals(pair.Mirror, changedCtx);
+                if (!fromReal && !fromMirror) continue;
+
+                var peer = fromReal ? pair.Mirror : pair.Real;
+                if (collected.Contains(peer)) continue;
+
+                MeshObjectSnapshot before = null;
+                if (_undoController != null)
+                {
+                    _undoController.MeshUndoContext.ParentModelContext = model;
+                    _undoController.SetMeshObjectFor(peer, peer.UnityMesh);
+                    before = _undoController.CaptureMeshObjectSnapshot();
+                }
+
+                if (fromReal) pair.SyncBoneWeights();
+                else          pair.SyncBoneWeightsFromMirror();
+
+                collected.Add(peer);
+
+                if (_undoController != null && before != null)
+                {
+                    var after = _undoController.CaptureMeshObjectSnapshot();
+                    _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                        _undoController, before, after, undoLabel + " (mirror)"));
+                }
+            }
         }
 
         // ================================================================

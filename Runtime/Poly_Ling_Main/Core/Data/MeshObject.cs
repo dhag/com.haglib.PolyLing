@@ -931,10 +931,27 @@ namespace Poly_Ling.Data
         // ================================================================
 
         /// <summary>
-        /// 親メッシュのインデックス（-1=ルート）
-        /// メッシュ編集時のグループ化・表示用
+        /// 親メッシュのインデックス（-1=ルート）。
+        /// 実体は HierarchyParentIndex と同じ 1 つ。
+        ///
+        /// 【なぜ入れ物を分けないか】
+        ///   両者は同じ「親」を表しており、食い違ってよい場面が無い。
+        ///   親を書く箇所は全部が両方へ同じ値を入れている。
+        ///   別々の入れ物にしておくと、片方だけ書く箇所が 1 つ生まれるだけで
+        ///   食い違いが保存され、あとから読む側が壊れる
+        ///   （実測: メッシュリストの並べ替えが HierarchyParentIndex だけを書き、
+        ///    ParentIndex にブリッジ挿入前の古い値が残っていた）。
+        ///   入れ物を 1 つにして、食い違いを作れなくする。
+        ///
+        ///   CSV は従来どおり parentIndex 行と hierarchyParentIndex 行の両方を
+        ///   出し入れする。同じ場所へ入るので、食い違っている旧ファイルを読むと
+        ///   後に来る hierarchyParentIndex の値へ揃う（＝正しい側が残る）。
         /// </summary>
-        public int ParentIndex { get; set; } = -1;
+        public int ParentIndex
+        {
+            get => HierarchyParentIndex;
+            set => HierarchyParentIndex = value;
+        }
 
         /// <summary>
         /// 階層深度（MQO互換、インポート/エクスポート時のみ使用）
@@ -1120,6 +1137,16 @@ namespace Poly_Ling.Data
         public string HumanBodyBone { get; set; } = "";
 
         /// <summary>
+        /// 左右で対になるボーンの MeshContextList 索引（-1 = 対なし）。
+        ///
+        /// スキンド変換が実体側とミラー側のボーンを 1 対 1 で作った時点の確定値。
+        /// 左右のボーン対応をウェイトから推定してはならない。推定は、片側だけを
+        /// 塗って左右が非対称になった瞬間に外れ、ミラー側へ誤ったボーン番号を書く。
+        /// 索引なので ModelContext.RemapIndexReferences の付け替え対象に含める。
+        /// </summary>
+        public int MirrorBoneIndex { get; set; } = -1;
+
+        /// <summary>
         /// Humanoid マッスル可動域（null=Unity 既定を使う）。
         /// 3マッスル軸は Min/Max/Center の Vector3 成分で表現する。
         /// ※5d-1: 格納のみ。consumer 差し替えは 5d-2。
@@ -1150,6 +1177,20 @@ namespace Poly_Ling.Data
 
         /// <summary>スキンドメッシュか（1つ以上の頂点がBoneWeightを持つ）</summary>
         public bool HasBoneWeight => Vertices.Any(v => v.HasBoneWeight);
+
+        /// <summary>
+        /// ミラー側専用のボーンウェイトを持つか（PMX のミラー対と同じ持ち方）。
+        ///
+        /// これが true のメッシュは、ミラー側が実体側とは別のボーンに紐づく
+        /// 正しいウェイトを自前で持っている。スキンド変換が、ミラー分岐の中に
+        /// あるメッシュに対して反対側ボーンを指す値を書き込む。
+        ///
+        /// 生成するミラーを PMX 型（独立データ）にするかの判定に使う。
+        /// 分岐の外のメッシュはこれを持たないが、その場合は反対側ボーン自体が
+        /// 存在せず、実体側と同じボーンで動く鏡像になる（中心線上の
+        /// オブジェクトを鏡像化する MQO 系ミラーと同じ結果）。
+        /// </summary>
+        public bool HasMirrorBoneWeight => Vertices.Any(v => v.HasMirrorBoneWeight);
 
         // === コンストラクタ ===
 
@@ -1877,6 +1918,7 @@ namespace Poly_Ling.Data
             copy.SpringBoneJoint = this.SpringBoneJoint?.Clone();
             copy.SpringBoneChainRoot = this.SpringBoneChainRoot?.Clone();
             copy.HumanBodyBone = this.HumanBodyBone;
+            copy.MirrorBoneIndex = this.MirrorBoneIndex;
             copy.HumanLimit = this.HumanLimit?.Clone();
 
             // ID管理セットを再構築
@@ -1922,6 +1964,7 @@ namespace Poly_Ling.Data
             copy.SpringBoneJoint = this.SpringBoneJoint?.Clone();
             copy.SpringBoneChainRoot = this.SpringBoneChainRoot?.Clone();
             copy.HumanBodyBone = this.HumanBodyBone;
+            copy.MirrorBoneIndex = this.MirrorBoneIndex;
             copy.HumanLimit = this.HumanLimit?.Clone();
 
             // 頂点をコピー（新しいID）

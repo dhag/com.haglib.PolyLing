@@ -38,6 +38,17 @@ namespace Poly_Ling.MeshListV2
         public bool IsMirrorSide => _view.IsMirrorSide;
         public bool IsRealSide => _view.IsRealSide;
         public bool HasBakedMirrorChild => _view.HasBakedMirrorChild;
+        public bool MirrorGeometryDerived => _view.MirrorGeometryDerived;
+
+        /// <summary>
+        /// 選択させない行か。
+        ///
+        /// 生成ミラー（MirrorGeometryDerived）は頂点も姿勢も実体側から作り直されるため、
+        /// 選んで編集しても上書きで消える。ミラー側でもスキンド変換後の独立メッシュ
+        /// （MeshFilterToSkinnedConverter.cs:700 で false を立てる）は自分のウェイトを
+        /// 保存するので選択できなければならない。
+        /// </summary>
+        public bool IsSelectionBlocked => (IsMirrorSide || IsBakedMirror) && MirrorGeometryDerived;
         public int Depth => _view.Depth;
         public int HierarchyParentIndex => _view.HierarchyParentIndex;
 

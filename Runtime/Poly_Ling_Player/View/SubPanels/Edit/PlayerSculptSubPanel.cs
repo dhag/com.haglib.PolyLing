@@ -52,13 +52,15 @@ namespace Poly_Ling.Player
             "盛り上げ", "なめらか", "膨らみ", "平ら",
         };
 
-        // フォールオフ選択肢（表示名 ↔ FalloffType の対応）
-        private static readonly string[]      FalloffLabels = { "リニア", "ガウス", "円", "シャープ" };
-        private static readonly FalloffType[] FalloffValues = { FalloffType.Linear, FalloffType.Gaussian, FalloffType.Sphere, FalloffType.Sharp };
+        // フォールオフ／距離モードの選択肢は BrushFalloffControls に集約した。
+        // マグネット・スキンWペイントも同じものを使う。
+        private static string[]       FalloffLabels      => BrushFalloffControls.FalloffLabels;
+        private static FalloffType[]  FalloffValues      => BrushFalloffControls.FalloffValues;
+        private static string[]       DistanceModeLabels => BrushFalloffControls.DistanceModeLabels;
+        private static DistanceMode[] DistanceModeValues => BrushFalloffControls.DistanceModeValues;
 
-        // 距離モード選択肢
-        private static readonly string[]       DistanceModeLabels = { "直線", "リンク距離" };
-        private static readonly DistanceMode[] DistanceModeValues = { DistanceMode.Euclidean, DistanceMode.Link };
+        /// <summary>距離モード／フォールオフの共通 UI。</summary>
+        private readonly BrushFalloffControls _falloffControls = new BrushFalloffControls();
 
         // ================================================================
         // Build
@@ -152,31 +154,17 @@ namespace Poly_Ling.Player
             _radiusDragButton.style.fontSize     = 10;
             _root.Add(_radiusDragButton);
 
-            // ── フォールオフ ─────────────────────────────────────────
-            _falloffDropdown = new DropdownField("フォールオフ", new List<string>(FalloffLabels), 1);
-            _falloffDropdown.style.color = new StyleColor(Color.white);
-            _falloffDropdown.style.marginBottom = 3;
-            _falloffDropdown.RegisterValueChangedCallback(e =>
-            {
-                var h = GetHandler?.Invoke();
-                if (h == null) return;
-                int idx = System.Array.IndexOf(FalloffLabels, e.newValue);
-                if (idx >= 0) h.Falloff = FalloffValues[idx];
-            });
-            _root.Add(_falloffDropdown);
-
-            // ── 距離モード（直線 / リンク距離）──────────────────────
-            _distanceModeDropdown = new DropdownField("距離モード", new List<string>(DistanceModeLabels), 0);
-            _distanceModeDropdown.style.color = new StyleColor(Color.white);
-            _distanceModeDropdown.style.marginBottom = 3;
-            _distanceModeDropdown.RegisterValueChangedCallback(e =>
-            {
-                var h = GetHandler?.Invoke();
-                if (h == null) return;
-                int idx = System.Array.IndexOf(DistanceModeLabels, e.newValue);
-                if (idx >= 0) h.DistanceMode = DistanceModeValues[idx];
-            });
+            // ── 距離モード／フォールオフ（共通 UI）─────────────────
+            // 並びはマグネットに合わせて「距離モード」→「フォールオフ」。
+            _distanceModeDropdown = _falloffControls.BuildDistanceDropdown(
+                () => GetHandler?.Invoke()?.DistanceMode ?? DistanceMode.Euclidean,
+                v  => { var h = GetHandler?.Invoke(); if (h != null) h.DistanceMode = v; });
             _root.Add(_distanceModeDropdown);
+
+            _falloffDropdown = _falloffControls.BuildFalloffDropdown(
+                () => GetHandler?.Invoke()?.Falloff ?? FalloffType.Gaussian,
+                v  => { var h = GetHandler?.Invoke(); if (h != null) h.Falloff = v; });
+            _root.Add(_falloffDropdown);
 
             // ── 強度（スライダー + テキストボックス）────────────────
             AddSectionLabel("強度 (Strength)");

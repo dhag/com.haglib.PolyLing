@@ -187,10 +187,15 @@ namespace Poly_Ling.Player
                 int bindCount = deformer.Bind(positions);
                 deformer.Apply(afterLM, positions);
                 MeshObject cloned = sourceMesh.Clone();
-                cloned.Name = sourceMesh.Name + "_MP";
+                // 既存の描画オブジェクトと名前が衝突しないようにする
+                // （同じメッシュを 2 回変形すると "元名_MP" が重複していた）。
+                string baseName = sourceMesh.Name + "_MP";
+                cloned.Name = model != null ? model.GenerateUniqueMeshName(baseName) : baseName;
                 for (int i = 0; i < vertexCount; i++) cloned.Vertices[i].Position = positions[i];
                 var newMc = new MeshContext
                 {
+                    // MeshContext.Name が未設定だと、オブジェクトリストに名前無しで並ぶ。
+                    Name       = cloned.Name,
                     MeshObject = cloned,
                     Materials  = new List<Material>(mc.Materials ?? new List<Material>()),
                 };

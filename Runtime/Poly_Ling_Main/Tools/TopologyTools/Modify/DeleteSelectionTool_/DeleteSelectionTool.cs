@@ -1,5 +1,8 @@
 // DeleteSelectionTool.cs
-// 選択削除ツール - 選択中の頂点 / 面 / 線分 (2角形) を削除する。
+// 選択削除ツール - 選択中の頂点 / 面 / 線分を削除する。
+//
+// 【対象】選択中の描画オブジェクト全部（マルチセレクト対応）× 各オブジェクトの
+//   選択要素。VertexDissolveTool / VertexHoleTool と同じ方針。
 //
 // ================================================================
 // 【削除範囲】
@@ -14,9 +17,29 @@
 //     限り残す (無関係な浮き頂点を巻き込まないため)。
 //
 // 位相が変わる (頂点数/面数が変化する) ため OnTopologyChanged() を使う。
-// Undo は MeshObjectSnapshot + RecordTopologyChangeCommand の SelectionState 付き
-// オーバーロードで記録する (Edge/Line 選択の復元に必要。MeshUndoController の
-// RecordTopologyChange のコメント参照)。
+//
+// 【Undo】複数メッシュを書き換えるため MeshUndoContext.MeshObject 経由の
+//   MeshObjectSnapshot は使えない (先頭メッシュだけが復元される)。MeshContextIndex を
+//   持つ MultiMeshTopologySnapshotRecord を MeshListStack へ 1 件だけ記録する
+//   (メッシュが何個でも Undo は1手)。VertexDissolveTool と同じ方針。
+//
+// ================================================================
+// 【ミラー側への伝播】
+//   実体側の位相が変わったらミラー側も同じ形にする。対象の引き当ては
+//   MirrorBranchOps.CollectMirrorPeers（MirrorPairs と BakedMirrorSourceIndex）に
+//   一本化し、MirrorGeometryDerived では絞らない。同フラグは実効ワールドに
+//   共役 S·H·S を掛けるかという描画側の都合であって、ミラーの連結ではない。
+//   これで「生成ミラー」「スキンド変換後のミラー」「PMX 由来のミラー」の
+//   3系統が同じ経路を通る。
+//
+//   前提は添字恒等対応（頂点・面が 1:1、面内の巻き順は逆順）。位相を変える前に
+//   CaptureMirrorRebuildPlan が実測で検証し、成立しないペアは触らずログを出す。
+//
+//   伝播は「実体側と同じ面添字・同じ頂点添字を、ミラー側でも消す」だけで足りる。
+//   実体側から写す作業は無い。生き残ったミラー側の頂点オブジェクトはそのまま
+//   残るので、位置・UV・法線・ボーンウェイトは何もしなくても保存される。
+//   面の UVIndices / NormalIndices は頂点内のスロット番号なので、頂点添字の
+//   再マップの影響を受けない。
 //
 // ================================================================
 // 【MeshMergeHelper.DeleteVertices を使わない理由】
@@ -32,9 +55,11 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Context;
+using Poly_Ling.Diagnostics;
+using Poly_Ling.Ops;
 using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
-using Poly_Ling.Commands;
 
 namespace Poly_Ling.Tools
 {
@@ -64,6 +89,42 @@ namespace Poly_Ling.Tools
         public void Reset() { }
 
         // ================================================================
+        // 対象の集約
+        // ================================================================
+
+        /// <summary>1メッシュぶんの対象。</summary>
+        public struct DeleteTarget
+        {
+            public int         MeshIndex;
+            public MeshContext MeshContext;
+        }
+
+        /// <summary>
+        /// 選択中の描画オブジェクトを走査し、削除対象を持つものだけを返す。
+        /// ボーン表示用メッシュは編集対象外。
+        /// </summary>
+        private static List<DeleteTarget> EnumerateTargets(ModelContext model)
+        {
+            var list = new List<DeleteTarget>();
+            if (model == null) return list;
+
+            foreach (int idx in model.SelectedDrawableMeshIndices)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc?.MeshObject == null) continue;
+                if (mc.Type == MeshType.Bone) continue;
+
+                var sel = mc.Selection;
+                if (sel == null) continue;
+                if (sel.Vertices.Count == 0 && sel.Faces.Count == 0 && sel.Lines.Count == 0) continue;
+
+                list.Add(new DeleteTarget { MeshIndex = idx, MeshContext = mc });
+            }
+
+            return list;
+        }
+
+        // ================================================================
         // 公開 API
         //   ctx を引数で受け取る。ツールをアクティブにせず (InteractionMode を
         //   切り替えず) 呼べるようにするため、_context のような内部保持はしない。
@@ -71,15 +132,22 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// 削除対象の要素数を返す (実行可否判定用)。Edges は数えない。
+        /// 選択中の描画オブジェクト全部の合計。
         /// </summary>
-        public static int GetDeletableCount(SelectionState sel)
+        public static int GetDeletableCount(ModelContext model)
         {
-            if (sel == null) return 0;
-            return sel.Vertices.Count + sel.Faces.Count + sel.Lines.Count;
+            int total = 0;
+            foreach (var t in EnumerateTargets(model))
+            {
+                var sel = t.MeshContext.Selection;
+                total += sel.Vertices.Count + sel.Faces.Count + sel.Lines.Count;
+            }
+            return total;
         }
 
         /// <summary>
         /// 選択されている頂点 / 面 / 線分を削除する。
+        /// 対象メッシュすべてを 1 回の Undo にまとめる。
         /// </summary>
         public void Execute(ToolContext ctx)
         {
@@ -89,48 +157,154 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            var mc  = ctx.ActiveMeshContext;
-            var mo  = mc?.MeshObject;
-            var sel = ctx.SelectionState;
-            if (mo == null || sel == null)
+            var model   = ctx.Model;
+            var targets = EnumerateTargets(model);
+
+            if (model == null || targets.Count == 0)
             {
-                Debug.LogWarning($"[DeleteSelectionTool] EARLY RETURN: model={ctx.Model != null}, "
-                               + $"activeMeshContext={mc != null}, meshObject={mo != null}, selectionState={sel != null}");
+                Debug.LogWarning($"[DeleteSelectionTool] EARLY RETURN: model={model != null}, "
+                               + $"targets={targets.Count} <- edges are not deleted by design");
                 return;
             }
 
-            // ボーン表示用メッシュは編集対象外 (選択モード適用でも同じ扱い)。
-            if (mc.Type == MeshType.Bone)
+            var undo = ctx.UndoController;
+
+            // 生成ミラーは実体側から作り直すため、Undo の記録対象に含める。
+            // 片側だけ記録すると Undo で実体とミラーが食い違う。
+            var realIndices = new List<int>();
+            foreach (var t in targets) realIndices.Add(t.MeshIndex);
+            var captureIndices = MirrorBranchOps.CollectMirrorCaptureIndices(model, realIndices);
+
+            // ミラー側への伝播計画。添字恒等対応の検証を含むため、位相を変える前に取る。
+            var mirrorPlan = MirrorBranchOps.CaptureMirrorRebuildPlan(model, realIndices);
+
+            var before = new MultiMeshTopologySnapshot();
+            if (undo != null)
+                foreach (int idx in captureIndices) before.CaptureMesh(model, idx);
+
+            int selectedVertexTotal = 0;
+            int selectedFaceTotal   = 0;
+            int killedVerticesTotal = 0;
+            int killedFacesTotal    = 0;
+            int okMeshes            = 0;
+
+            // 実体側で消した添字。同じものをミラー側にも掛ける。
+            var killSets = new Dictionary<int, KillSet>();
+
+            foreach (var t in targets)
             {
-                Debug.LogWarning("[DeleteSelectionTool] EARLY RETURN: active mesh is MeshType.Bone");
+                bool ok = ComputeKillSet(
+                    t.MeshContext.MeshObject, t.MeshContext.Selection,
+                    out KillSet kill,
+                    out int selectedVerts, out int selectedFaces);
+
+                if (!ok) continue;
+
+                ApplyKill(t.MeshContext.MeshObject, kill);
+                killSets[t.MeshIndex] = kill;
+
+                selectedVertexTotal += selectedVerts;
+                selectedFaceTotal   += selectedFaces;
+                killedVerticesTotal += kill.Vertices.Count;
+                killedFacesTotal    += kill.Faces.Count;
+                okMeshes++;
+
+                // 消えた要素を指したままの選択を残さない。
+                t.MeshContext.Selection.ClearAll();
+            }
+
+            if (okMeshes == 0)
+            {
+                Debug.LogWarning("[DeleteSelectionTool] EARLY RETURN: nothing to delete "
+                               + "<- edges are not deleted by design");
                 return;
             }
+
+            // 実体側と同じ添字をミラー側でも消す。
+            // 検証を落ちたペアは触らず、理由を ApplyToMirrors が出す。
+            int mirrorApplied = MirrorBranchOps.ApplyToMirrors(model, mirrorPlan, (realIdx, mirrorMo) =>
+            {
+                if (!killSets.TryGetValue(realIdx, out var kill)) return false;
+                ApplyKill(mirrorMo, kill);
+                return true;
+            });
+
+            // 位相変更の通知 (SyncMesh → GPU 再構築 → 再描画)
+            ctx.OnTopologyChanged();
+
+            if (undo != null)
+            {
+                var after = new MultiMeshTopologySnapshot();
+                foreach (int idx in captureIndices) after.CaptureMesh(model, idx);
+
+                // MeshListStack の Context を今回のモデルに合わせる（Undo 時の復元先）。
+                undo.SetModelContext(model);
+
+                string desc = $"Delete Selection ({okMeshes} objs / {killedFacesTotal} faces / {killedVerticesTotal} vertices)";
+                var record = new MultiMeshTopologySnapshotRecord(before, after, desc);
+                PLDiag.UndoRecord("MeshList", desc, record);
+                undo.MeshListStack.Record(record, desc);
+            }
+
+            Debug.Log($"[DeleteSelectionTool] オブジェクト {okMeshes} / selected: {selectedVertexTotal} verts, "
+                    + $"{selectedFaceTotal} faces/lines -> deleted: {killedVerticesTotal} verts, "
+                    + $"{killedFacesTotal} faces/lines / ミラー伝播 {mirrorApplied}"
+                    + $" (対象 {mirrorPlan.Entries.Count} / 検証落ち {mirrorPlan.RejectedCount})");
+        }
+
+        // ================================================================
+        // 1 メッシュぶんの削除
+        //
+        // 「何を消すか」を決める ComputeKillSet と、「消す」ApplyKill に分ける。
+        // 実体側は両方を通し、ミラー側は同じ KillSet で ApplyKill だけを通す。
+        // これで左右がまったく同じ添字操作を受ける。
+        // ================================================================
+
+        /// <summary>削除対象の添字（削除前の番号）。</summary>
+        public struct KillSet
+        {
+            /// <summary>削除する面 / 線分（MeshObject.Faces の添字）。</summary>
+            public HashSet<int> Faces;
+
+            /// <summary>削除する頂点（MeshObject.Vertices の添字）。</summary>
+            public HashSet<int> Vertices;
+        }
+
+        /// <summary>
+        /// 選択内容と位相から、削除する面と頂点の添字を決める。対象が無ければ false。
+        /// メッシュは変更しない。
+        /// </summary>
+        private static bool ComputeKillSet(
+            MeshObject mo, SelectionState sel,
+            out KillSet kill,
+            out int selectedVertexCount, out int selectedFaceCount)
+        {
+            kill = new KillSet { Faces = new HashSet<int>(), Vertices = new HashSet<int>() };
+            selectedVertexCount = 0;
+            selectedFaceCount   = 0;
+
+            if (mo == null || sel == null) return false;
+
+            var faceKill = kill.Faces;
+            var vertKill = kill.Vertices;
 
             // ------------------------------------------------------------
             // 1. 明示的に選択されている削除対象を集める
             //    Faces と Lines はどちらも MeshObject.Faces のインデックス。
             //    Edges (VertexPair) は対象外。
             // ------------------------------------------------------------
-            var faceKill = new HashSet<int>();
             foreach (int fi in sel.Faces)
                 if (fi >= 0 && fi < mo.FaceCount) faceKill.Add(fi);
             foreach (int fi in sel.Lines)
                 if (fi >= 0 && fi < mo.FaceCount) faceKill.Add(fi);
 
-            var vertKill = new HashSet<int>();
             foreach (int vi in sel.Vertices)
                 if (vi >= 0 && vi < mo.VertexCount) vertKill.Add(vi);
 
-            if (faceKill.Count == 0 && vertKill.Count == 0)
-            {
-                Debug.LogWarning($"[DeleteSelectionTool] EARLY RETURN: nothing selected to delete "
-                               + $"(verts={sel.Vertices.Count}, faces={sel.Faces.Count}, lines={sel.Lines.Count}, "
-                               + $"edges={sel.Edges.Count} <- edges are not deleted by design)");
-                return;
-            }
+            if (faceKill.Count == 0 && vertKill.Count == 0) return false;
 
-            int selectedFaceCount   = faceKill.Count;
-            int selectedVertexCount = vertKill.Count;
+            selectedFaceCount   = faceKill.Count;
+            selectedVertexCount = vertKill.Count;
 
             // ------------------------------------------------------------
             // 2. 削除頂点を参照する面・線分を削除対象に加える
@@ -173,77 +347,60 @@ namespace Poly_Ling.Tools
                     if (!survivingRef.Contains(vi)) vertKill.Add(vi);
             }
 
-            // ------------------------------------------------------------
-            // 4. Undo 用スナップショット (操作前)
-            //    SelectionState 付きで撮ることで Undo 時に Edge/Line 選択も戻る。
-            // ------------------------------------------------------------
-            MeshObjectSnapshot before = ctx.UndoController != null
-                ? MeshObjectSnapshot.Capture(mc, ctx.UndoController.MeshUndoContext, sel)
-                : default;
+            return true;
+        }
 
-            int killedFaces    = faceKill.Count;
-            int killedVertices = vertKill.Count;
+        /// <summary>
+        /// KillSet の添字を実際に削除する。ミラー側にも同じ KillSet で掛ける。
+        ///
+        /// 面の UVIndices / NormalIndices は頂点内のスロット番号なので触らない。
+        /// 生き残った頂点オブジェクトはそのまま残るため、位置・UV・法線・
+        /// ボーンウェイトは自動的に保存される。
+        /// </summary>
+        private static void ApplyKill(MeshObject mo, KillSet kill)
+        {
+            if (mo == null || kill.Faces == null || kill.Vertices == null) return;
 
             // ------------------------------------------------------------
-            // 5. 面を降順で削除 (先頭から消すと後続インデックスがずれる)
+            // 面を降順で削除 (先頭から消すと後続インデックスがずれる)
             // ------------------------------------------------------------
-            foreach (int fi in faceKill.OrderByDescending(i => i))
+            foreach (int fi in kill.Faces.OrderByDescending(i => i))
             {
                 if (fi >= 0 && fi < mo.FaceCount) mo.Faces.RemoveAt(fi);
             }
 
+            if (kill.Vertices.Count == 0) return;
+
             // ------------------------------------------------------------
-            // 6. 頂点を降順で削除し、残存面の頂点インデックスを再マップ
-            //    手順 2 により残存面は vertKill の頂点を一切参照しないため、
+            // 頂点を降順で削除し、残存面の頂点インデックスを再マップ
+            //    手順 2 により残存面は kill.Vertices の頂点を一切参照しないため、
             //    ここは純粋なインデックスのシフトになる。面の部分的な作り直し
             //    (UVIndices / NormalIndices の詰め直し) は発生しない。
             // ------------------------------------------------------------
-            if (vertKill.Count > 0)
+            int originalCount = mo.VertexCount;
+            var indexMap = new int[originalCount];
+            int newIndex = 0;
+            for (int i = 0; i < originalCount; i++)
+                indexMap[i] = kill.Vertices.Contains(i) ? -1 : newIndex++;
+
+            foreach (var face in mo.Faces)
             {
-                int originalCount = mo.VertexCount;
-                var indexMap = new int[originalCount];
-                int newIndex = 0;
-                for (int i = 0; i < originalCount; i++)
-                    indexMap[i] = vertKill.Contains(i) ? -1 : newIndex++;
-
-                foreach (var face in mo.Faces)
+                var vidx = face.VertexIndices;
+                for (int j = 0; j < vidx.Count; j++)
                 {
-                    var vidx = face.VertexIndices;
-                    for (int j = 0; j < vidx.Count; j++)
-                    {
-                        int old = vidx[j];
-                        if (old >= 0 && old < originalCount && indexMap[old] >= 0)
-                            vidx[j] = indexMap[old];
-                    }
+                    int old = vidx[j];
+                    if (old >= 0 && old < originalCount && indexMap[old] >= 0)
+                        vidx[j] = indexMap[old];
                 }
-
-                foreach (int vi in vertKill.OrderByDescending(i => i))
-                {
-                    if (vi >= 0 && vi < mo.VertexCount) mo.Vertices.RemoveAt(vi);
-                }
-
-                // Vertices を直接操作したので Position 配列キャッシュを無効化する。
-                mo.InvalidatePositionCache();
             }
 
-            // ------------------------------------------------------------
-            // 7. 位相変更の通知 (選択の全クリア → SyncMesh → GPU 再構築 → 再描画)
-            // ------------------------------------------------------------
-            ctx.OnTopologyChanged();
-
-            // ------------------------------------------------------------
-            // 8. Undo 記録 (操作後スナップショット)
-            // ------------------------------------------------------------
-            if (ctx.UndoController != null)
+            foreach (int vi in kill.Vertices.OrderByDescending(i => i))
             {
-                var after = MeshObjectSnapshot.Capture(mc, ctx.UndoController.MeshUndoContext, sel);
-                ctx.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
-                    ctx.UndoController, before, after, sel,
-                    $"Delete Selection ({killedFaces} faces / {killedVertices} vertices)"));
+                if (vi >= 0 && vi < mo.VertexCount) mo.Vertices.RemoveAt(vi);
             }
 
-            Debug.Log($"[DeleteSelectionTool] selected: {selectedVertexCount} verts, {selectedFaceCount} faces/lines"
-                    + $" -> deleted: {killedVertices} verts, {killedFaces} faces/lines");
+            // Vertices を直接操作したので Position 配列キャッシュを無効化する。
+            mo.InvalidatePositionCache();
         }
     }
 }

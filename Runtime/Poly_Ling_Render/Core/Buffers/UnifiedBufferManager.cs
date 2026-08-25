@@ -304,6 +304,12 @@ namespace Poly_Ling.Core
         // 診断用: 生存中の UnifiedBufferManager インスタンス数
         private static int _liveCount = 0;
 
+        /// <summary>
+        /// 生存中の UnifiedBufferManager インスタンス数。
+        /// PLPerfLog が長期ログの 1 列として読む。増え続ける場合は Dispose 漏れ。
+        /// </summary>
+        public static int LiveCount => _liveCount;
+
         // 依存コンポーネント
         private FlagManager _flagManager;
         private UpdateManager _updateManager;

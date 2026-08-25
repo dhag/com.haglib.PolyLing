@@ -78,6 +78,7 @@ namespace Poly_Ling.View
         public bool IsMirrorSide { get; }
         public bool IsRealSide { get; }
         public bool HasBakedMirrorChild { get; }
+        public bool MirrorGeometryDerived { get; }
 
         // ボーン情報
         public int BoneIndex { get; }
@@ -90,6 +91,7 @@ namespace Poly_Ling.View
         public bool ExcludeFromExport { get; }
         public bool IgnorePoseInArmature { get; }
         public bool PreserveNormals { get; }
+        public bool IsMirrorBranchRoot { get; }
 
         // IMeshView.BonePose（IBonePoseViewとして返す）
         IBonePoseView IMeshView.BonePose => BonePoseData;
@@ -126,9 +128,10 @@ namespace Poly_Ling.View
             LocalPosition = Vector3.zero; LocalRotationEuler = Vector3.zero; LocalScale = Vector3.one;
             Depth = 0; HierarchyParentIndex = -1;
             MirrorType = 0; MirrorAxis = 1; IsBakedMirror = false; IsMirrorSide = false; IsRealSide = false; HasBakedMirrorChild = false;
+            MirrorGeometryDerived = false;
             BoneIndex = -1; BonePoseData = BonePoseSummary.Empty;
             IsMorph = false; MorphParentIndex = -1; MorphName = ""; ExcludeFromExport = false; IgnorePoseInArmature = false;
-            PreserveNormals = false;
+            PreserveNormals = false; IsMirrorBranchRoot = false;
             ObjectId = 0UL; EditorName = "";
         }
 
@@ -146,7 +149,9 @@ namespace Poly_Ling.View
             bool preserveNormals = false,
             ulong objectId = 0UL,
             string editorName = null,
-            int mirrorAxis = 1)
+            int mirrorAxis = 1,
+            bool isMirrorBranchRoot = false,
+            bool mirrorGeometryDerived = false)
         {
             MasterIndex = masterIndex; Name = name ?? "Untitled"; Type = type;
             VertexCount = vertexCount; FaceCount = faceCount;
@@ -156,11 +161,13 @@ namespace Poly_Ling.View
             Depth = depth; HierarchyParentIndex = hierarchyParentIndex;
             MirrorType = mirrorType; MirrorAxis = mirrorAxis; IsBakedMirror = isBakedMirror;
             IsMirrorSide = isMirrorSide; IsRealSide = isRealSide; HasBakedMirrorChild = hasBakedMirrorChild;
+            MirrorGeometryDerived = mirrorGeometryDerived;
             BoneIndex = boneIndex; BonePoseData = bonePose;
             IsMorph = isMorph; MorphParentIndex = morphParentIndex;
             MorphName = morphName ?? ""; ExcludeFromExport = excludeFromExport;
             IgnorePoseInArmature = ignorePoseInArmature;
             PreserveNormals = preserveNormals;
+            IsMirrorBranchRoot = isMirrorBranchRoot;
             ObjectId = objectId; EditorName = editorName ?? "";
         }
 
@@ -217,7 +224,9 @@ namespace Poly_Ling.View
                 ctx.PreserveNormals,
                 ctx.ObjectId,
                 ctx.EditorName,
-                ctx.MirrorAxis);
+                ctx.MirrorAxis,
+                ctx.IsMirrorBranchRoot,
+                ctx.MirrorGeometryDerived);
         }
 
         public override string ToString() => $"[{MasterIndex}] {Name} ({Type}) V:{VertexCount} F:{FaceCount}";

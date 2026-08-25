@@ -1,4 +1,4 @@
-// PlayerTPoseSubPanel.cs
+﻿// PlayerTPoseSubPanel.cs
 // TPosePanelV2 の Player 版サブパネル。
 // Runtime/Poly_Ling_Player/View/ に配置
 
@@ -39,6 +39,8 @@ namespace Poly_Ling.Player
         private Button        _btnBake;
         private Label         _noBackupLabel;
         private Label         _statusLabel;
+        private Button        _btnSaveOriginCsv;
+        private Toggle        _toggleBakeRotToPos;
 
         // ボーンを持たないモデル（MeshFilter 相当）用のマッピング読み込み
         private VisualElement _csvSection;
@@ -46,6 +48,9 @@ namespace Poly_Ling.Player
 
         /// <summary>Humanoidマッピング CSV の最近使ったパス。</summary>
         private const string MappingCsvRecentKey = "TPose.MappingCsv.Path";
+
+        /// <summary>原点CSVの最近使ったパス。ボーンエディタの原点CSV書出・読込と共有する。</summary>
+        private const string OriginCsvRecentKey = "BoneEditor.OriginCsv.Path";
 
         public void Build(VisualElement parent)
         {
@@ -132,6 +137,29 @@ namespace Poly_Ling.Player
             _noBackupLabel.style.color       = new StyleColor(Color.white);
             _noBackupLabel.style.marginBottom = 6;
             _mainContent.Add(_noBackupLabel);
+
+            // 現在の姿勢を原点CSVとして退避する。
+            // Tポーズ変換が階層に書くのは腕の回転なので、回転列は常に付ける。
+            _mainContent.Add(MakeSep());
+
+            _toggleBakeRotToPos = new Toggle("回転を位置に変換して保存") { value = true };
+            _toggleBakeRotToPos.style.color = new StyleColor(Color.white);
+            _toggleBakeRotToPos.style.marginBottom = 2;
+            _toggleBakeRotToPos.tooltip =
+                "読込後に各オブジェクトのワールド原点が今と同じ場所へ来るローカル位置を書き、\n" +
+                "回転は 0 で書く（読込後の階層を計算して逆算する）。\n" +
+                "保存時と同じ姿勢のモデルへ読み込む前提。読込側はボーンを適用対象に\n" +
+                "しないため、姿勢の違うモデルではボーン配下のオブジェクトは一致しない。\n" +
+                "オフのときは BoneTransform の位置・回転をそのまま書く。";
+            _mainContent.Add(_toggleBakeRotToPos);
+
+            _btnSaveOriginCsv = new Button(OnSaveOriginCsv) { text = "現在の姿勢を原点CSVに保存" };
+            _btnSaveOriginCsv.style.height       = 24;
+            _btnSaveOriginCsv.style.marginBottom = 4;
+            _btnSaveOriginCsv.tooltip =
+                "name,posX,posY,posZ,rotX,rotY,rotZ 形式で書き出す（ボーン行も含む）。\n" +
+                "ボーンエディタの「原点CSV読込」で読める書式。モデルは変更しない。";
+            _mainContent.Add(_btnSaveOriginCsv);
 
             _statusLabel = new Label();
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
@@ -271,6 +299,61 @@ namespace Poly_Ling.Player
                 model.TPoseBackup = null;
             SetStatus("バックアップを破棄しました。現在の姿勢がベース姿勢になります。");
             Refresh();
+        }
+
+        /// <summary>
+        /// 現在の姿勢を原点CSVとして書き出す。
+        /// 書き出すだけで、モデルのデータは変えない（ワールド行列のキャッシュ更新のみ）。
+        ///
+        /// 値は「回転を位置に変換して保存」トグルで決まる。
+        ///   オン : 読込後にワールド原点が今と同じ場所へ来るローカル位置、回転 = 0
+        ///   オフ : BoneTransform.Position / Rotation をそのまま
+        ///
+        /// 読込側（ApplyObjectOrigins）は MeshType.Bone を適用対象から外すため、
+        /// ボーン行は同名の非ボーンメッシュがある場合だけ効く。
+        /// </summary>
+        private void OnSaveOriginCsv()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) { SetStatus("モデルがありません"); return; }
+
+            string path = RecentFileDialog.AskSave(
+                "原点CSVの書き出し", OriginCsvRecentKey,
+                SanitizeFileName(model.Name) + "_tpose_origin", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            bool bakeRotToPos = _toggleBakeRotToPos?.value ?? true;
+
+            string csv = Poly_Ling.Tools.ObjectPose.ObjectOriginCsv.Build(
+                model, withRotation: true, includeBones: true,
+                bakeRotationToPosition: bakeRotToPos,
+                out int count, out int skippedMirror, out int skippedWedge);
+
+            try
+            {
+                File.WriteAllText(path, csv, new UTF8Encoding(true));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[TPose] 原点CSVの書き出しに失敗: {ex.Message}");
+                SetStatus("原点CSVの書き出しに失敗しました");
+                return;
+            }
+
+            Debug.Log($"[TPose] 現在の姿勢を原点CSVに保存: {count} 件 → {path}" +
+                      $"（回転を位置に変換={bakeRotToPos} / " +
+                      $"除外: ミラー {skippedMirror} 件・姿勢くさび {skippedWedge} 件）");
+            SetStatus($"原点CSVに保存しました: {count} 件" +
+                      $"（{(bakeRotToPos ? "回転を位置に変換" : "位置・回転をそのまま")}" +
+                      $" / 除外: ミラー {skippedMirror} 件・姿勢くさび {skippedWedge} 件）");
+        }
+
+        private static string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "model";
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            return name;
         }
 
         /// <summary>

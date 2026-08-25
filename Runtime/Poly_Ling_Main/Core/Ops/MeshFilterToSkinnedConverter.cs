@@ -34,6 +34,9 @@ namespace Poly_Ling.Ops
             ["SwapAxisRotated"]   = new() { ["en"] = "Rotated bones: Swap to PMX axis (Y→X)",              ["ja"] = "回転ありボーン: PMX軸に入替 (Y→X)" },
             ["SetAxisIdentity"]   = new() { ["en"] = "Identity bones: Set X=Up, Y=Side (PMX style)",       ["ja"] = "回転なしボーン: X軸上向き・Y軸横向きに設定" },
             ["MirrorSideRow"]     = new() { ["en"] = "mirror (follows source)",                            ["ja"] = "ミラー側 (実体側に従う)" },
+            ["MirrorBranch"]      = new() { ["en"] = "Mirror Branch",                                       ["ja"] = "ミラー分岐" },
+            ["TolerantMirror"]    = new() { ["en"] = "Tolerate missing mirror settings",                    ["ja"] = "ミラー設定漏れを許容" },
+            ["TolerantMirrorTip"] = new() { ["en"] = "Under a mirror branch root, generate the mirror side even for objects with no mirror setting.", ["ja"] = "ミラー分岐ルート配下は、ミラー設定の無いオブジェクトからもミラー側を生成します。" },
         };
 
         public static string T(string key)                       => L.GetFrom(Texts, key);
@@ -129,6 +132,113 @@ namespace Poly_Ling.Ops
         }
 
         // ================================================================
+        // ミラー設定漏れの救済（変換時にミラー側を実体化する）
+        // ================================================================
+
+        /// <summary>
+        /// ミラー分岐ルート配下で、ミラー側コンテキストを持たない実体側メッシュから
+        /// ミラー側 MeshContext を作ってモデルへ挿入する。
+        ///
+        /// 【なぜ変換時に実体化するか】
+        ///   実体化しておけば、以降のボーン生成・スキニング・エクスポートは
+        ///   すべて既存の「ミラー側メッシュが在る」経路をそのまま通る。
+        ///   ボーンだけをミラー化する救済（BonePlan の強制生成）は骨は繋がっても
+        ///   肉が付かず、右側が空洞のまま固定されてしまう。
+        ///
+        /// 【軸・距離】
+        ///   実体側ノード自身の MirrorAxis / MirrorDistance を使う。MirrorType は
+        ///   見ない（作業中にミラーを切って戻し忘れたケースを救うため）。
+        ///
+        /// 【頂点を持たないノード】
+        ///   関節（頂点ゼロ）は BonePlan 側が両側へ複製する。メッシュは作らない。
+        /// </summary>
+        /// <returns>実体化したミラー側の数</returns>
+        private static int MaterializeMissingBranchMirrors(
+            ModelContext model, MirrorBranchTolerance tolerance)
+        {
+            if (model == null || tolerance != MirrorBranchTolerance.Tolerant) return 0;
+
+            // 分岐解析は HierarchyParentIndex を正本にする
+            // （本変換の親子解決は一貫して HierarchyParentIndex を使う）。
+            var plan    = MirrorBranchOps.BuildMirrorBranchPlan(model, null, tolerance);
+            var targets = plan.CollectGeneratedMirrors();
+            if (targets.Count == 0) return 0;
+
+            int made = 0;
+            var log  = new List<string>();
+
+            // 挿入すると後続の索引が繰り下がる。降順に処理して影響を避ける。
+            for (int t = targets.Count - 1; t >= 0; t--)
+            {
+                int realIndex = targets[t].Index;
+
+                var realCtx = model.GetMeshContext(realIndex);
+                if (realCtx?.MeshObject == null) continue;
+                if (realCtx.MeshObject.Vertices.Count == 0) continue;   // 関節はボーン側で複製される
+
+                var mirrorCtx = MirrorBranchOps.CreateDerivedMirrorContext(
+                    realCtx, realIndex, requireMirrorEnabled: false);
+                if (mirrorCtx == null) continue;
+
+                mirrorCtx.Type = MeshType.MirrorSide;
+                if (mirrorCtx.MeshObject != null) mirrorCtx.MeshObject.Type = MeshType.MirrorSide;
+
+                // 「左腕+」ではなく「右腕」にする。左右対応が付かない名前だけ接尾辞へ落ちる。
+                mirrorCtx.Name = MirrorNameOps.MakeMirrorName(
+                    realCtx.Name, MirrorBranchOps.MirrorBranchSuffix,
+                    n => ExistsMeshName(model, n));
+                if (mirrorCtx.MeshObject != null) mirrorCtx.MeshObject.Name = mirrorCtx.Name;
+
+                // 親・ミラー元は「挿入前の索引」で書いてある。
+                // ModelContext.Insert が挿入分だけ繰り下げる（EnableMirror と同じ約束）。
+                model.Insert(realIndex + 1, mirrorCtx);
+
+                // ミラーが実在する状態に属性をそろえる。
+                // 立てておかないと、以後の編集や再保存でミラーが外れて見える。
+                if (realCtx.MirrorAxis == 0) realCtx.MirrorAxis = 1;
+                if (realCtx.MirrorType == 0) realCtx.MirrorType = 1;
+                realCtx.InvalidateSymmetryCache();
+
+                var pair = new MirrorPair
+                {
+                    Real   = realCtx,
+                    Mirror = mirrorCtx,
+                    Axis   = realCtx.GetMirrorSymmetryAxis()
+                };
+                if (pair.Build()) model.MirrorPairs?.Add(pair);
+                else
+                    Debug.LogWarning(
+                        $"[MirrorBranch] ミラーペアを張れませんでした"
+                        + $" real=\"{realCtx.Name}\" mirror=\"{mirrorCtx.Name}\"\n{pair.BuildLog}");
+
+                log.Add($"{realCtx.Name} → {mirrorCtx.Name}");
+                made++;
+            }
+
+            if (made > 0)
+            {
+                log.Reverse();
+                Debug.Log(
+                    $"[MirrorBranch] ミラー設定の無い枝内オブジェクト {made} 件から"
+                    + "ミラー側を生成しました:\n  " + string.Join("\n  ", log));
+            }
+
+            return made;
+        }
+
+        /// <summary>モデル内に同名のメッシュが既に居るか（ミラー命名の衝突判定用）。</summary>
+        private static bool ExistsMeshName(ModelContext model, string name)
+        {
+            if (model == null || string.IsNullOrEmpty(name)) return false;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+                if (string.Equals(model.GetMeshContext(i)?.Name, name, System.StringComparison.Ordinal))
+                    return true;
+
+            return false;
+        }
+
+        // ================================================================
         // 変換実行（Editor / Player 共通）
         // ================================================================
 
@@ -136,12 +246,28 @@ namespace Poly_Ling.Ops
         /// MeshFilter → Skinned 変換を実行する。
         /// 成功時に作成したボーン数を返す。失敗時は 0 を返す。
         /// </summary>
+        /// <param name="mirrorTolerance">
+        /// ミラー分岐ルート配下のミラー設定漏れを許容するか。既定は許容。
+        /// </param>
         public static int Execute(
             ModelContext model,
             List<MeshEntry> meshEntries,
             bool swapAxisForRotated,
-            bool setAxisForIdentity)
+            bool setAxisForIdentity,
+            MirrorBranchTolerance mirrorTolerance = MirrorBranchTolerance.Tolerant)
         {
+            // ================================================================
+            // ミラー設定漏れの救済
+            //   仕様: 分岐ルート配下は、個別オブジェクトのミラー設定の有無に
+            //   関わらずミラーツリーを構成する。スキンド変換ではこの時点で
+            //   ミラー側 MeshContext を実体化しておく（以後は PMX 系と同じ扱い）。
+            // ================================================================
+            if (MaterializeMissingBranchMirrors(model, mirrorTolerance) > 0)
+            {
+                // 挿入で索引が繰り下がるため、収集し直す。
+                meshEntries = CollectMeshEntries(model);
+            }
+
             // ================================================================
             // ミラー情報の収集
             //   分岐解析は HierarchyParentIndex を正本にする
@@ -220,9 +346,20 @@ namespace Poly_Ling.Ops
                     IsMirror       = false
                 });
 
-                // ミラー分岐配下の関節（頂点なし）は両側に複製する。
-                bool isJoint = (e.Context.MeshObject?.Vertices.Count ?? 0) == 0;
-                if (isJoint &&
+                // ── 分岐配下のミラーボーンは強制生成する ────────────────
+                //   仕様: 分岐以下はミラー設定の有無に関わらずボーンをミラー化する。
+                //   従来は「頂点なし（空オブジェクト）」のときだけ複製していたため、
+                //   ミラー側メッシュを作る前にスキンド変換すると、ミラー側の
+                //   ボーン木が丸ごと生成されず骨格が非対称のまま固定された。
+                //   後からミラーを掛けてもボーンは作り直されないため回復できない。
+                //   ＝ 操作順序に依存する片道の破壊だった。
+                //
+                //   実体側相方を持つノード（＝既にミラー側メッシュが在る）は、
+                //   そのミラー側メッシュ自身が上の分岐でボーンを登録済み。
+                //   ここで作ると同じ関節に 2 本並ぶので除外する。
+                bool hasMirrorPeer = peers != null && peers.TryGetMirror(e.Index, out _);
+
+                if (!hasMirrorPeer &&
                     branchSide.TryGetValue(e.Index, out int side) &&
                     side == MirrorBranchOps.SideReal)
                 {
@@ -348,13 +485,28 @@ namespace Poly_Ling.Ops
                 if (plan.IsMirror)
                     MirrorBranchOps.MirrorLocalTRS(trsCtx, ref localPos, ref localRot);
 
-                // ミラー側の関節は実体側と同名になるため接尾辞を付ける。
-                // ミラー側メッシュは元から実体側と別名なので付けない。
+                // ミラー側の関節は実体側と同名になるため別名にする。
+                // 左右対応が付く名前は入れ替え（左腕 → 右腕）、付かない名前だけ接尾辞。
+                // ミラー側メッシュは元から実体側と別名なので触らない。
                 string boneName = srcCtx.Name;
                 if (plan.IsMirror && !MirrorBranchOps.IsMirrorSideContext(srcCtx))
-                    boneName += MirrorBranchOps.MirrorBranchSuffix;
+                    boneName = MirrorNameOps.MakeMirrorName(
+                        boneName, MirrorBranchOps.MirrorBranchSuffix, null);
 
                 var boneMeshObject = new MeshObject(boneName) { Type = MeshType.Bone };
+
+                // ── Humanoid 割当をボーンへ引き継ぐ ─────────────────────
+                //   スキンド化後、Avatar が参照すべきはメッシュではなくボーン。
+                //   従来はここで移送しておらず、割当が変換のたびに迷子になっていた。
+                //   humanoid 名の由来は TRS と同じく trsCtx（ミラー側メッシュなら
+                //   実体側相方）。ミラー側ボーンには左右を入れ替えた名前を割り当てる。
+                string humanName = trsCtx?.MeshObject?.HumanBodyBone;
+                if (!string.IsNullOrEmpty(humanName))
+                {
+                    boneMeshObject.HumanBodyBone = plan.IsMirror
+                        ? (MirrorNameOps.SwapHumanoidLeftRight(humanName) ?? "")
+                        : humanName;
+                }
                 boneMeshObject.BoneTransform = new BoneTransform
                 {
                     Position          = localPos,
@@ -373,6 +525,34 @@ namespace Poly_Ling.Ops
                 boneCtx.ParentIndex          = parentBoneNum;
                 boneCtx.HierarchyParentIndex = parentBoneNum;
                 boneContexts.Add(boneCtx);
+            }
+
+            // ── 左右のボーン対応を確定値として記録する ──────────────────
+            //   ここは実体側ボーンとミラー側ボーンを 1 対 1 で作った直後で、
+            //   対応が一意に判っている唯一の場所。以後この値だけを正本とし、
+            //   ウェイトから左右対応を推定してはならない。
+            //   ボーンはリスト先頭へ並ぶので、この時点のボーン番号がそのまま
+            //   MeshContextList 索引になる（下の再構築で bone を先に Add する）。
+            foreach (var kv in mirrorBoneNumOf)
+            {
+                int oldIndex   = kv.Key;
+                int mirrorBone = kv.Value;
+                if (mirrorBone < 0 || mirrorBone >= boneContexts.Count) continue;
+
+                // ミラー側メッシュが鍵のとき実体側は相方の index、
+                // 分岐で強制生成したときは自分の index。
+                int realOwner = oldIndex;
+                if (!realBoneNumOf.ContainsKey(realOwner))
+                {
+                    var peerEntry = meshEntries.Find(x => x.Index == oldIndex);
+                    realOwner = peerEntry.RealPeerIndex;
+                }
+                if (realOwner < 0 || !realBoneNumOf.TryGetValue(realOwner, out int realBone)) continue;
+                if (realBone < 0 || realBone >= boneContexts.Count) continue;
+                if (realBone == mirrorBone) continue;
+
+                boneContexts[realBone].MirrorBoneIndex   = mirrorBone;
+                boneContexts[mirrorBone].MirrorBoneIndex = realBone;
             }
 
             // Phase 1.5: ボーン軸調整（boneContexts のみ、変更なし）
@@ -449,11 +629,14 @@ namespace Poly_Ling.Ops
             {
                 var ctx = model.MeshContextList[i];
                 if (ctx == null) continue;
+                // ParentIndex は HierarchyParentIndex と同じ入れ物。1 回だけ足す。
                 if (ctx.HierarchyParentIndex >= 0) ctx.HierarchyParentIndex += boneCount;
-                if (ctx.ParentIndex          >= 0) ctx.ParentIndex          += boneCount;
                 // MeshContextList 索引を保持する属性も同じだけずらす。
                 if (ctx.MorphParentIndex        >= 0) ctx.MorphParentIndex        += boneCount;
                 if (ctx.BakedMirrorSourceIndex  >= 0) ctx.BakedMirrorSourceIndex  += boneCount;
+                // 左右対のボーン索引。ボーンは先頭へ並ぶのでここでずれるのは
+                // 非ボーン側だけだが、索引を持つ属性は漏れなく同じだけずらす。
+                if (ctx.MirrorBoneIndex         >= 0) ctx.MirrorBoneIndex         += boneCount;
                 if (ctx.MeshObject != null)
                 {
                     // MirrorBoneWeight も同じボーン索引空間を指すため同じだけずらす。
@@ -562,9 +745,39 @@ namespace Poly_Ling.Ops
                         vertex.MirrorBoneWeight = new BoneWeight { boneIndex0 = mirrorBone, weight0 = 1f };
                 }
 
-                meshCtx.UnityMesh      = meshObj.ToUnityMesh();
+                meshCtx.ReplaceUnityMesh(meshObj.ToUnityMesh());
                 meshCtx.UnityMesh.name = meshCtx.Name;
                 meshCtx.OriginalPositions = (Vector3[])meshObj.Positions.Clone();
+            }
+
+            // Phase 4b: Humanoid 割当の正本をボーン側へ寄せる。
+            //   メッシュ側に残った HumanBodyBone は、変換後は「もうボーンではない
+            //   ノードが Humanoid 名を主張している」状態になり、
+            //   RebuildMappingFromPerBone の先勝ちでボーンを追い出してしまう。
+            //   ボーンへ移送済み（Phase 1）なのでメッシュ側は落として良い。
+            for (int i = boneCount; i < model.MeshContextList.Count; i++)
+            {
+                var mo = model.MeshContextList[i]?.MeshObject;
+                if (mo != null) mo.HumanBodyBone = "";
+            }
+            HumanoidMappingResolver.RebuildMappingFromPerBone(model);
+
+            // ── ミラーペアの対応表を組み直す ───────────────────────────
+            //   ペアは Execute の冒頭 MaterializeMissingBranchMirrors で作られる。
+            //   その時点ではボーンが 1 本も無いため、MirrorPair.BuildBonePairMap が
+            //   読む MirrorBoneIndex が存在せず、対応表が空のまま固定されていた。
+            //   その結果、実体側を塗ってもミラー側へ写せなかった。
+            //   ボーンが揃ったここで組み直す。
+            if (model.MirrorPairs != null)
+            {
+                foreach (var pair in model.MirrorPairs)
+                {
+                    if (pair?.Real == null || pair.Mirror == null) continue;
+                    if (!pair.Build())
+                        Debug.LogWarning(
+                            $"[MeshFilterToSkinnedConverter] ミラーペアの再構築に失敗: " +
+                            $"\"{pair.Real.Name}\" ↔ \"{pair.Mirror.Name}\"\n{pair.BuildLog}");
+                }
             }
 
             // Phase 5: 最終ワールド行列

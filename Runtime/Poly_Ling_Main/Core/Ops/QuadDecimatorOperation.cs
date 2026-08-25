@@ -23,7 +23,12 @@ namespace Poly_Ling.Tools.Panels.QuadDecimator
             if (sourceMeshObj == null) return null;
 
             var result = QuadPreservingDecimator.Decimate(sourceMeshObj, prms, out MeshObject resultMesh);
-            resultMesh.Name = sourceMeshObj.Name + "_decimated";
+
+            // 既存の描画オブジェクトと名前が衝突しないようにする
+            // （同じメッシュを 2 回減面すると "元名_decimated" が重複していた）。
+            string baseName = sourceMeshObj.Name + "_decimated";
+            var model = sourceMeshContext.ParentModelContext;
+            resultMesh.Name = model != null ? model.GenerateUniqueMeshName(baseName) : baseName;
 
             var newMeshContext = new MeshContext
             {

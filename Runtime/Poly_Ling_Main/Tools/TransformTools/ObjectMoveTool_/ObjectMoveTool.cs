@@ -492,8 +492,8 @@ namespace Poly_Ling.Tools
                 }
                 else if (t == MeshType.Mesh)
                 {
-                    bool skinned = mc.MeshObject != null && mc.MeshObject.HasBoneWeight;
-                    if (skinned)
+                    // 判定は MeshContext.IsSkinned に集約する。
+                    if (mc.IsSkinned)
                     {
                         if (!_settings.PickMeshesSkinned) continue;
                     }

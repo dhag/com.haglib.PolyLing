@@ -108,6 +108,20 @@ namespace Poly_Ling.Player
         public void SetSuppressHover(bool suppress) => _suppressHover = suppress;
         private PlayerToolContext _toolCtx = new PlayerToolContext();
 
+        /// <summary>
+        /// ツールが生成した MeshContext / MeshObject の受け口を結線する。
+        /// PolyLingPlayerViewerCore が Initialize で 1 回だけ呼ぶ。
+        /// 未結線だと ToolContext.AddMeshContext が null のままになり、
+        /// 生成系ツールが何も追加できない。
+        /// </summary>
+        public void SetMeshContextSinks(
+            Action<Poly_Ling.Data.MeshContext> addMeshContext,
+            Action<Poly_Ling.Data.MeshObject, string> addMeshObjectToCurrentMesh)
+        {
+            _toolCtx.AddMeshContext             = addMeshContext;
+            _toolCtx.AddMeshObjectToCurrentMesh = addMeshObjectToCurrentMesh;
+        }
+
         // ================================================================
         // Overlay 再描画コールバック (Phase 2b-1)
         //
@@ -517,7 +531,10 @@ namespace Poly_Ling.Player
         /// </summary>
         public void EnterTopologyChanged(ProjectContext project)
         {
-            PLDiag.ViewportEnter("EnterTopologyChanged", DiagCaller());
+            // DiagCaller() は StackTrace を作る。引数側は必ず評価されるため、
+            // スイッチをここで見てから呼ぶ。
+            if (PLDiag.Enabled && PLDiag.Viewport)
+                PLDiag.ViewportEnter("EnterTopologyChanged", DiagCaller());
             // 選択モードの再適用は RebuildAdapter より前。
             // 無効種別の選択解除が GPU 選択フラグ構築に反映されるようにする。
             OnApplySelectMode?.Invoke();
@@ -525,6 +542,10 @@ namespace Poly_Ling.Player
             var model = project?.CurrentModel;
             if (_renderer != null && model != null)
             {
+                // RebuildAdapter より前に呼ぶ。頂点位置はローカルのままでよく、
+                // RebuildAdapter 末尾の WritebackTransformedVertices が
+                // 展開ワールド座標で上書きする。
+                RebuildSelectedUnityMeshes(model);
                 _renderer.RebuildAdapter(0, model);
                 _renderer.UpdateSelectedDrawableMesh(0, model);
                 ApplySnapHitTestEnabled();
@@ -539,6 +560,45 @@ namespace Poly_Ling.Player
             OnRefreshGizmoOverlay?.Invoke();
             OnRefreshBoneOverlay?.Invoke();
             RefreshToolOverlays();
+        }
+
+        /// <summary>
+        /// 選択中の描画オブジェクトの UnityMesh を MeshObject から作り直す。
+        ///
+        /// 【なぜ要るか】
+        /// サーフェス（面）の描画は ctx.UnityMesh をそのまま使う（MeshSceneRenderer.SubmitMeshes）。
+        /// 一方 RebuildAdapter 末尾の WritebackTransformedVertices は
+        /// 「UnityMesh の頂点数 == 展開頂点数」なら位置だけ更新して戻り、三角形は作り直さない。
+        /// 展開頂点数は「いずれかの面に使われている頂点 × UV スロット数」で決まる
+        /// （MeshObject.BuildExpansionMap）ため、内部の面を 1 枚削除しても、その頂点が
+        /// 隣の面に使われていれば数が変わらない。結果、GPU 側のワイヤーと頂点は消えるのに
+        /// UnityMesh には消したはずの三角形が残る。ここで作り直してその取りこぼしを塞ぐ。
+        /// 面反転のようにインデックスだけが変わる操作も同じ経路。
+        ///
+        /// 【対象範囲】面削除・面反転はアクティブメッシュ固定、面結合は
+        /// SelectedDrawableMeshIndices 走査。どちらもこの範囲に収まるため、
+        /// 全 MeshContext を舐めずにここへ限定する。
+        ///
+        /// 【破棄】直接代入ではなく ReplaceUnityMesh を使う。Mesh はネイティブ
+        /// オブジェクトで、参照を捨てても解放されないため。
+        /// </summary>
+        private static void RebuildSelectedUnityMeshes(Poly_Ling.Context.ModelContext model)
+        {
+            var indices = model.SelectedDrawableMeshIndices;
+            if (indices == null || indices.Count == 0) return;
+
+            int materialCount = model.MaterialCount;
+
+            for (int i = 0; i < indices.Count; i++)
+            {
+                var mc = model.GetMeshContext(indices[i]);
+                if (mc?.MeshObject == null) continue;
+
+                // ボーン表示用メッシュは MeshObject から作らない（専用キャッシュで描く）。
+                if (mc.Type == Poly_Ling.Data.MeshType.Bone) continue;
+
+                mc.ReplaceUnityMesh(mc.MeshObject.ToUnityMesh(materialCount));
+            }
         }
 
         /// <summary>
@@ -577,7 +637,8 @@ namespace Poly_Ling.Player
         /// </summary>
         public void EnterMeshAttributesChanged(ProjectContext project)
         {
-            PLDiag.ViewportEnter("EnterMeshAttributesChanged", DiagCaller());
+            if (PLDiag.Enabled && PLDiag.Viewport)
+                PLDiag.ViewportEnter("EnterMeshAttributesChanged", DiagCaller());
 #pragma warning disable CS0618
             var adapter = _renderer?.GetAdapter(0);
             adapter?.BufferManager?.UpdateAllVisibilityFlags();
@@ -593,7 +654,8 @@ namespace Poly_Ling.Player
 
         public void EnterSelectionChanged(ProjectContext project)
         {
-            PLDiag.ViewportEnter("EnterSelectionChanged", DiagCaller());
+            if (PLDiag.Enabled && PLDiag.Viewport)
+                PLDiag.ViewportEnter("EnterSelectionChanged", DiagCaller());
 #pragma warning disable CS0618
             var model = project?.CurrentModel;
             if (_renderer != null && model != null)
@@ -1071,6 +1133,12 @@ namespace Poly_Ling.Player
                 }
             }
 
+            // ウェイト可視化の頂点カラーは slot に依存しない。
+            // PrepareViewport 内に置くと 1 回の PresentAll で 4 回走り、
+            // 対象メッシュぶんの Color 配列確保と mesh.colors 代入を毎回繰り返す。
+            // 4 slot の Prepare より前に 1 回だけ実行する。
+            _renderer.PrepareWeightVisualization(project);
+
             PrepareViewport(project, PerspectiveViewport, SlotPerspective);
             PrepareViewport(project, TopViewport,         SlotTop);
             PrepareViewport(project, FrontViewport,       SlotFront);
@@ -1340,6 +1408,10 @@ namespace Poly_Ling.Player
         public void NotifyPointerHover(PlayerViewport vp, Vector2 panelLocalPos)
         {
             if (vp == null || !vp.IsReady) return;
+
+            // 性能ログ: ポインタ移動 1 件を数える。記録 OFF なら bool 判定 1 回で戻る。
+            PLPerfLog.CountHover();
+
             var cam = vp.Cam;
 
             var adapter = _renderer?.GetAdapter(0);
@@ -1388,8 +1460,21 @@ namespace Poly_Ling.Player
             // 吸着先が食い違う。
             // MoveToolHandler.UpdateHover は GPU ホバーを読まない（ギズモ軸判定のみ）ため
             // 順序の影響を受けない。
-            adapter.RequestNormal();
-            adapter.UpdateFrame(cam, rect, panelLocalPos);
+            // 性能ログ: この 2 行が GPU ヒットテストパイプライン（同期読み戻しを含む）。
+            // 記録 OFF のときは Stopwatch を作らず、そのまま実行する。
+            if (PLPerfLog.IsRunning)
+            {
+                var __sw = System.Diagnostics.Stopwatch.StartNew();
+                adapter.RequestNormal();
+                adapter.UpdateFrame(cam, rect, panelLocalPos);
+                __sw.Stop();
+                PLPerfLog.AddHoverMs(__sw.Elapsed.TotalMilliseconds);
+            }
+            else
+            {
+                adapter.RequestNormal();
+                adapter.UpdateFrame(cam, rect, panelLocalPos);
+            }
 
             if (_moveToolHandler != null && !_suppressHover)
                 _moveToolHandler.UpdateHover(handlerHoverPos, _toolCtx.ToToolContext(cam));
@@ -2374,13 +2459,13 @@ namespace Poly_Ling.Player
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized)
             {
-                UnityEngine.Debug.Log($"[EditSync] SyncPos adapter=null_or_uninit ({(adapter == null ? "null" : "uninit")})");
+                PLDiag.Sync($"SyncPos adapter=null_or_uninit ({(adapter == null ? "null" : "uninit")})");
                 return;
             }
             if (mc?.MeshObject == null || model == null) return;
 
             var bm = adapter.BufferManager;
-            if (bm == null) { UnityEngine.Debug.Log("[EditSync] SyncPos bm=null"); return; }
+            if (bm == null) { PLDiag.Sync("SyncPos bm=null"); return; }
 
             // MeshContext → contextIndex → unifiedMeshIndex
             int ctxIdx = -1;
@@ -2388,12 +2473,13 @@ namespace Poly_Ling.Player
             {
                 if (ReferenceEquals(model.GetMeshContext(i), mc)) { ctxIdx = i; break; }
             }
-            if (ctxIdx < 0) { UnityEngine.Debug.Log("[EditSync] SyncPos ctxIdx=-1 (mc not found)"); return; }
+            if (ctxIdx < 0) { PLDiag.Sync("SyncPos ctxIdx=-1 (mc not found)"); return; }
 
             int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
-            if (unifiedIdx < 0) { UnityEngine.Debug.Log($"[EditSync] SyncPos unifiedIdx=-1 (ctxIdx={ctxIdx})"); return; }
+            if (unifiedIdx < 0) { PLDiag.Sync($"SyncPos unifiedIdx=-1 (ctxIdx={ctxIdx})"); return; }
 
-            UnityEngine.Debug.Log($"[EditSync] SyncPos UpdatePositions ctxIdx={ctxIdx} unifiedIdx={unifiedIdx} V={mc.MeshObject.VertexCount}");
+            // 頂点ドラッグ中は毎フレーム通る。既定では出さない（PLDiag.EditSync）。
+            PLDiag.Sync($"SyncPos UpdatePositions ctxIdx={ctxIdx} unifiedIdx={unifiedIdx} V={mc.MeshObject.VertexCount}");
             // ① CPU MeshObject.Positions（またはWorkingPositions）→ GPU _positionsBuffer
             bm.UpdatePositions(mc, unifiedIdx);
 
@@ -2559,10 +2645,11 @@ namespace Poly_Ling.Player
             // PrepareWireframeAndVertices は末尾で adapter.ConsumeNormalMode() を呼び
             // Normal モードを Idle へ降格させるため、後に置くと法線メッシュが
             // 二度と再構築されなくなる。
+            // PrepareWeightVisualization はここでは呼ばない。
+            // slot 非依存の処理であり、PresentAll 側で 1 回だけ実行する。
             _renderer.PrepareNormals(project);
             _renderer.PrepareWireframeAndVertices(cam, project, slot);
             _renderer.PrepareBones(project);
-            _renderer.PrepareWeightVisualization(project);
         }
 
         /// <summary>

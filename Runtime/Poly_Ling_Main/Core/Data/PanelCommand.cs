@@ -1271,14 +1271,22 @@ namespace Poly_Ling.Data
         /// <summary>回転なしボーンを X軸上向き・Y軸横向きに設定する</summary>
         public bool SetAxisForIdentity  { get; }
 
+        /// <summary>
+        /// ミラー分岐ルート配下の「ミラー設定漏れ」を許容し、
+        /// ミラー側メッシュを実体側から生成して実体化する。既定は true。
+        /// </summary>
+        public bool TolerantMirrorBranch { get; }
+
         public ConvertMeshFilterToSkinnedCommand(
             int modelIndex,
             bool swapAxisForRotated = false,
-            bool setAxisForIdentity = false)
+            bool setAxisForIdentity = false,
+            bool tolerantMirrorBranch = true)
             : base(modelIndex)
         {
-            SwapAxisForRotated = swapAxisForRotated;
-            SetAxisForIdentity = setAxisForIdentity;
+            SwapAxisForRotated   = swapAxisForRotated;
+            SetAxisForIdentity   = setAxisForIdentity;
+            TolerantMirrorBranch = tolerantMirrorBranch;
         }
     }
 
@@ -1318,44 +1326,114 @@ namespace Poly_Ling.Data
             : base(modelIndex) { Threshold = threshold; }
     }
 
+    /// <summary>
+    /// 選択頂点のボーンウェイトを、指定した最大 4 組（ボーン MasterIndex, ウェイト値）で
+    /// 直接上書きする。数値入力パネル（PlayerSkinWeightNumericSubPanel）から送られる。
+    /// BoneMasters が負値のスロットは未使用として weight 0 で埋める。
+    /// 正規化はパネル側のボタンで行うため、ここでは入力値をそのまま書き込む。
+    /// </summary>
+    public class SetSkinWeightNumericCommand : PanelCommand
+    {
+        /// <summary>長さ 4。ボーンの MasterIndex。負値は未使用スロット。</summary>
+        public int[] BoneMasters { get; }
+
+        /// <summary>長さ 4。各スロットのウェイト値。</summary>
+        public float[] Weights { get; }
+
+        public SetSkinWeightNumericCommand(int modelIndex, int[] boneMasters, float[] weights)
+            : base(modelIndex)
+        {
+            BoneMasters = boneMasters;
+            Weights     = weights;
+        }
+    }
+
+    /// <summary>
+    /// 対象メッシュ全件の全頂点についてボーンウェイトを正規化する。
+    /// 合計が 1 でない頂点は GPU スキニングで原点方向へ寄り見た目が崩れるため、
+    /// 読み込んだモデルや過去の編集で壊れた箇所をまとめて直す。
+    /// </summary>
+    public class NormalizeAllSkinWeightsCommand : PanelCommand
+    {
+        public NormalizeAllSkinWeightsCommand(int modelIndex) : base(modelIndex) { }
+    }
+
     // ================================================================
     // メッシュブレンド
     // ================================================================
 
     /// <summary>
-    /// 選択メッシュ（ターゲット）にソースメッシュをブレンドして適用する。
-    /// バックアップ作成 + Undo 記録付き。
+    /// メッシュブレンドのソース 1 件。
+    ///
+    /// ModelIndex は宛先モデルと異なってよい（別モデルのオブジェクトを混ぜられる）。
+    /// MasterIndex はその ModelIndex のモデル内での索引であり、
+    /// 宛先モデルの索引空間とは別物なので取り違えないこと。
+    /// </summary>
+    public struct BlendSourceSpec
+    {
+        /// <summary>ソースが属するモデルの索引</summary>
+        public int   ModelIndex;
+        /// <summary>そのモデル内の MeshContext 索引</summary>
+        public int   MasterIndex;
+        /// <summary>ウェイト [0, 1]</summary>
+        public float Weight;
+
+        public BlendSourceSpec(int modelIndex, int masterIndex, float weight)
+        {
+            ModelIndex  = modelIndex;
+            MasterIndex = masterIndex;
+            Weight      = weight;
+        }
+    }
+
+    /// <summary>
+    /// 宛先メッシュへ、複数のソースメッシュを加重平均でブレンドして適用する。
+    ///
+    /// 合成規則: result = base × (1 − Σw) + Σ(w_k × src_k)
+    /// base はブレンド前形状。Σw > 1 のときは w_k を正規化し base の係数を 0 にする。
+    ///
+    /// CreateNewObject = false … 宛先に書き込み、ブレンド前の形状を
+    ///   バックアップメッシュとして残す。
+    /// CreateNewObject = true  … 宛先を複製し、複製側へ書き込む（元は変更しない）。
+    ///
+    /// 宛先は ModelIndex のモデル内に限る。別モデルを宛先にすると
+    /// PanelCommand.ModelIndex と書き込み先が食い違い、Undo と
+    /// 所有権判定の基準が二重になるため。
     /// </summary>
     public class ApplyBlendCommand : PanelCommand
     {
-        /// <summary>ターゲット MeshContext の MasterIndex 配列</summary>
-        public int[]  TargetMasterIndices  { get; }
-        /// <summary>ソース MeshContext の MasterIndex</summary>
-        public int    SourceMasterIndex    { get; }
-        /// <summary>ブレンドウェイト [0, 1]</summary>
-        public float  BlendWeight          { get; }
+        /// <summary>1 コマンドで受け付けるソースの上限</summary>
+        public const int MaxSources = 6;
+
+        /// <summary>ソース一覧（最大 MaxSources 件）</summary>
+        public BlendSourceSpec[] Sources { get; }
+        /// <summary>書き込み先 MeshContext の MasterIndex（ModelIndex のモデル内）</summary>
+        public int    DestMasterIndex      { get; }
+        /// <summary>宛先を複製して、そちらへ書き込むか</summary>
+        public bool   CreateNewObject      { get; }
         /// <summary>適用後に法線を再計算するか</summary>
         public bool   RecalculateNormals   { get; }
-        /// <summary>選択頂点のみに適用するか</summary>
+        /// <summary>選択頂点のみに適用するか（対象は宛先の選択頂点）</summary>
         public bool   SelectedVerticesOnly { get; }
-        /// <summary>頂点IDで照合するか</summary>
-        public bool   MatchByVertexId      { get; }
+        /// <summary>宛先頂点とソース頂点の対応付け方式</summary>
+        public Poly_Ling.UI.BlendMatchMode MatchMode { get; }
 
         public ApplyBlendCommand(
             int modelIndex,
-            int[] targetMasterIndices, int sourceMasterIndex,
-            float blendWeight,
+            BlendSourceSpec[] sources,
+            int destMasterIndex,
+            bool createNewObject      = false,
             bool recalculateNormals   = true,
             bool selectedVerticesOnly = false,
-            bool matchByVertexId      = false)
+            Poly_Ling.UI.BlendMatchMode matchMode = Poly_Ling.UI.BlendMatchMode.Index)
             : base(modelIndex)
         {
-            TargetMasterIndices  = targetMasterIndices;
-            SourceMasterIndex    = sourceMasterIndex;
-            BlendWeight          = blendWeight;
+            Sources              = sources ?? System.Array.Empty<BlendSourceSpec>();
+            DestMasterIndex      = destMasterIndex;
+            CreateNewObject      = createNewObject;
             RecalculateNormals   = recalculateNormals;
             SelectedVerticesOnly = selectedVerticesOnly;
-            MatchByVertexId      = matchByVertexId;
+            MatchMode            = matchMode;
         }
     }
 
@@ -1412,6 +1490,59 @@ namespace Poly_Ling.Data
             FrontFaceOnly         = frontFaceOnly;
             RecalculateNormals    = recalculateNormals;
             CreateNewObject       = createNewObject;
+        }
+    }
+
+    // ================================================================
+    // 法線移植
+    // ================================================================
+
+    /// <summary>
+    /// ビフォー／アフターの2オブジェクトが作るシェル（プリズム群）から、
+    /// ターゲットオブジェクトの各頂点へ法線を移植する。Undo 記録付き。
+    ///
+    /// ビフォーとアフターは同一トポロジ（面数・各面のコーナー数が一致）であること。
+    /// 4角形以上の面は i0 / i_k / i_k+1 の扇で三角形化される。
+    ///
+    /// スキニング無しを前提とする。法線の空間変換はオブジェクト単位の
+    /// MeshContext.WorldMatrix だけを使う。
+    /// </summary>
+    public class ApplyNormalTransplantCommand : PanelCommand
+    {
+        /// <summary>ビフォー（内側の面）MeshContext の MasterIndex</summary>
+        public int   BeforeMasterIndex   { get; }
+        /// <summary>アフター（外側の面）MeshContext の MasterIndex</summary>
+        public int   AfterMasterIndex    { get; }
+        /// <summary>法線を差し替える MeshContext の MasterIndex 配列</summary>
+        public int[] TargetMasterIndices { get; }
+        /// <summary>適用率 [0, 1]。1 未満なら元の法線と Slerp する。</summary>
+        public float Strength            { get; }
+        /// <summary>
+        /// true : 三角形内を球面補間する
+        /// false: 三角形内を線形補間する（既定）
+        /// </summary>
+        public bool  Spherical           { get; }
+        /// <summary>
+        /// true : どのプリズムにも入らない頂点を最も近いプリズムへ寄せる
+        /// false: どのプリズムにも入らない頂点は変更しない（既定）
+        /// </summary>
+        public bool  AllowNearest        { get; }
+
+        public ApplyNormalTransplantCommand(
+            int modelIndex,
+            int beforeMasterIndex, int afterMasterIndex,
+            int[] targetMasterIndices,
+            float strength      = 1f,
+            bool  spherical     = false,
+            bool  allowNearest  = false)
+            : base(modelIndex)
+        {
+            BeforeMasterIndex   = beforeMasterIndex;
+            AfterMasterIndex    = afterMasterIndex;
+            TargetMasterIndices = targetMasterIndices;
+            Strength            = strength;
+            Spherical           = spherical;
+            AllowNearest        = allowNearest;
         }
     }
 

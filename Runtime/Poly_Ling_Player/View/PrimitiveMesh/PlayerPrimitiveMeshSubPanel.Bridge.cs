@@ -4,13 +4,14 @@
 // 2つの穴（エッジ＝1面だけが使う辺のグループ）を選び、対応する頂点どうしに
 // 面を張って橋渡しする。関節に柔らかい面を張ってからウェイトを塗る用途を想定。
 //
-// 【生成経路】他の図形と違い、生成物は書き込み先メッシュの既存頂点を参照する。
+// 【生成経路】他の図形と違い、生成物は追加先メッシュの既存頂点を参照する。
 //   そのため OnMeshCreated（単一 MeshObject を新規追加）は通らず、
 //   OnBridgeGenerate（Viewer 側の ExecuteBridge）へ流す。
+//   行き先は共通の「追加先」(PrimitiveAddMode) に従う。専用トグルは持たない。
 //
 // 【プレビュー】プレビュー用 MeshObject の座標は「ワールド空間」で作る。
 //   ライブワイヤの行列は Bridge のとき単位行列にするので、そのまま実位置に出る。
-//   実生成では Viewer が書き込み先のローカル空間へ変換する。
+//   実生成では Viewer が追加先のローカル空間へ変換する。
 //
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 
@@ -31,10 +32,11 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// 選択中の描画オブジェクトから「頂点1個 または 辺1本」の種をちょうど1つ拾う。
-        /// 複数・ゼロのときは Ok=false と理由を返す。
+        /// 選択中の描画オブジェクトから種を拾う。穴（エッジグループ）ごとに 1 つ、
+        /// 最大 2 件。範囲選択で 1 つの穴に多数の頂点が入っていても 1 つだけ返る。
+        /// 拾えなかったときは Ok=false の要素を 1 つだけ含むリストを返す。
         /// </summary>
-        public Func<BridgeSeedPick> PickBridgeSeed;
+        public Func<List<BridgeSeedPick>> PickBridgeSeeds;
 
         /// <summary>メッシュインデックス → MeshObject。</summary>
         public Func<int, MeshObject> GetMeshObjectAt;
@@ -47,6 +49,12 @@ namespace Poly_Ling.Player
 
         /// <summary>穴つなぎの「生成」。挿入と Undo は Viewer 側が持つ。</summary>
         public Action<PlayerPrimitiveMeshSubPanel> OnBridgeGenerate;
+
+        /// <summary>
+        /// 種 A / B の内容が変わったときに呼ぶ。ビューポート側の種マーカーを
+        /// 即時更新させるためのもの。未配線なら何もしない。
+        /// </summary>
+        public Action OnBridgeSeedsChanged;
 
         // ================================================================
         // 種（拾った頂点／辺）
@@ -80,7 +88,6 @@ namespace Poly_Ling.Player
         private readonly BridgeSeed _bridgeB = new BridgeSeed();
 
         private string _bridgeName        = "Bridge";
-        private bool   _bridgeNewObject   = false;
         private bool   _bridgeFlipCorresp = false;
         private bool   _bridgeFlipFaces   = false;
         private int    _bridgeSubdiv      = 0;
@@ -93,17 +100,29 @@ namespace Poly_Ling.Player
         // 公開プロパティ（Viewer から読む）
         // ================================================================
 
-        /// <summary>新規オブジェクトへ作るか。</summary>
-        public bool BridgeNewObject => _bridgeNewObject;
-
         /// <summary>穴A の所属メッシュインデックス。未取り込みは -1。</summary>
         public int BridgeSeedMeshIndexA => _bridgeA.Valid ? _bridgeA.MeshIndex : -1;
 
         /// <summary>穴B の所属メッシュインデックス。未取り込みは -1。</summary>
         public int BridgeSeedMeshIndexB => _bridgeB.Valid ? _bridgeB.MeshIndex : -1;
 
+        /// <summary>穴A の種頂点。未取り込みは -1。ビューポートのマーカー描画に使う。</summary>
+        public int BridgeSeedVertexA => _bridgeA.Valid ? _bridgeA.Vertex : -1;
+
+        /// <summary>穴B の種頂点。未取り込みは -1。</summary>
+        public int BridgeSeedVertexB => _bridgeB.Valid ? _bridgeB.Vertex : -1;
+
+        /// <summary>穴A の進行方向ヒント頂点。辺で取り込んでいないときは -1。</summary>
+        public int BridgeSeedDirHintA => _bridgeA.Valid ? _bridgeA.DirectionHint : -1;
+
+        /// <summary>穴B の進行方向ヒント頂点。辺で取り込んでいないときは -1。</summary>
+        public int BridgeSeedDirHintB => _bridgeB.Valid ? _bridgeB.DirectionHint : -1;
+
         /// <summary>新規オブジェクトの名前。</summary>
         public string BridgeMeshName => string.IsNullOrWhiteSpace(_bridgeName) ? "Bridge" : _bridgeName;
+
+        /// <summary>名前を書き換える。SetName（非重複候補の書き戻し）から呼ぶ。</summary>
+        private void SetBridgeMeshName(string name) => _bridgeName = name;
 
         /// <summary>種 A・B の両方が取込済みか。生成ボタンの有効判定に使う。</summary>
         private bool BridgeSeedsReady => _bridgeA.Valid && _bridgeB.Valid;
@@ -238,13 +257,28 @@ namespace Poly_Ling.Player
             _bridgeInfoB = BridgeInfoLabel();
             c.Add(_bridgeInfoB);
 
-            // ── 書き込み先 ──
+            // ── A/B 同時取り込み ──
+            // 選択が2つの穴にまたがっているとき、1回で A と B を埋める。
+            // 穴が1つしか無ければ A だけが埋まる。
+            var bothRow = new VisualElement();
+            bothRow.style.flexDirection = FlexDirection.Row;
+            bothRow.style.marginTop     = 3;
+            SB(bothRow, T("BridgeImportBoth"), () => { ImportBridgeSeedsBoth(); });
+            c.Add(bothRow);
+
+            var bothHint = new Label(T("BridgeImportBothHint"));
+            bothHint.style.fontSize     = 10;
+            bothHint.style.whiteSpace   = WhiteSpace.Normal;
+            bothHint.style.marginBottom = 3;
+            c.Add(bothHint);
+
+            // ── 名前 ──
+            // 行き先は共通の「追加先」ドロップダウンが決める。ここには専用トグルを置かない。
+            // 名前欄は NF が追加先に応じて TextField / ドロップダウンへ切り替える。
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(SL(T("BridgeTarget")));
-            c.Add(TR(T("BridgeNewObject"), () => _bridgeNewObject, v => { _bridgeNewObject = v; D(); }));
             c.Add(NF(() => _bridgeName, v => _bridgeName = v));
 
-            var targetHint = new Label(T("BridgeTargetHint"));
+            var targetHint = new Label(T("BridgeAddModeHint"));
             targetHint.style.fontSize     = 10;
             targetHint.style.whiteSpace   = WhiteSpace.Normal;
             targetHint.style.marginBottom = 3;
@@ -280,10 +314,22 @@ namespace Poly_Ling.Player
             seed.Valid = false;
             seed.Info  = "";
 
-            if (PickBridgeSeed == null) { seed.Info = T("BridgeNoPick"); return; }
+            if (PickBridgeSeeds == null) { seed.Info = T("BridgeNoPick"); return; }
 
-            var pick = PickBridgeSeed();
-            if (!pick.Ok) { seed.Info = pick.Message; return; }
+            var picks = PickBridgeSeeds();
+            if (picks == null || picks.Count == 0) { seed.Info = T("BridgeNoPick"); return; }
+            if (!picks[0].Ok) { seed.Info = picks[0].Message; return; }
+
+            ApplyBridgePick(seed, picks[0]);
+        }
+
+        /// <summary>
+        /// 拾った種 1 件を A または B へ入れる。エッジをたどれなければ入れない。
+        /// </summary>
+        private void ApplyBridgePick(BridgeSeed seed, BridgeSeedPick pick)
+        {
+            seed.Valid = false;
+            seed.Info  = "";
 
             var mesh = GetMeshObjectAt?.Invoke(pick.MeshIndex);
             if (mesh == null) { seed.Info = T("BridgeNoMesh"); return; }
@@ -302,6 +348,34 @@ namespace Poly_Ling.Player
             D();
         }
 
+        /// <summary>
+        /// 現在の選択から A と B をまとめて取り込む。
+        /// 拾えた穴が 1 つのときは A だけを入れ替え、B は触らない。
+        /// </summary>
+        public void ImportBridgeSeedsBoth()
+        {
+            if (PickBridgeSeeds == null)
+            {
+                _bridgeA.Valid = false; _bridgeA.Info = T("BridgeNoPick");
+                RefreshBridgeInfo();
+                return;
+            }
+
+            var picks = PickBridgeSeeds();
+            if (picks == null || picks.Count == 0 || !picks[0].Ok)
+            {
+                _bridgeA.Valid = false;
+                _bridgeA.Info  = (picks != null && picks.Count > 0) ? picks[0].Message : T("BridgeNoPick");
+                RefreshBridgeInfo();
+                return;
+            }
+
+            ApplyBridgePick(_bridgeA, picks[0]);
+            if (picks.Count > 1 && picks[1].Ok) ApplyBridgePick(_bridgeB, picks[1]);
+
+            RefreshBridgeInfo();
+        }
+
         private void RefreshBridgeInfo()
         {
             RefreshCreateButtonState();
@@ -318,11 +392,57 @@ namespace Poly_Ling.Player
                 if (TryBuildBridgePlan(out _, out string msg)) _bridgeInfoResult.text = msg;
                 else                                          _bridgeInfoResult.text = msg ?? "";
             }
+
+            // ビューポートの種マーカーを即時更新させる。
+            OnBridgeSeedsChanged?.Invoke();
         }
 
         // ================================================================
         // 生成
         // ================================================================
+
+        // ================================================================
+        // 自動検証用の公開入口
+        //   UI ボタンと同じ処理を、ボタンを押さずに呼べるようにする。
+        //   ボタンのハンドラと本体を共有するので、経路が二重にならない。
+        // ================================================================
+
+        /// <summary>穴A を現在の選択から取り込む。成功可否を返す。</summary>
+        public bool ImportBridgeSeedA()
+        {
+            ImportBridgeSeed(_bridgeA);
+            RefreshBridgeInfo();
+            return _bridgeA.Valid;
+        }
+
+        /// <summary>穴B を現在の選択から取り込む。成功可否を返す。</summary>
+        public bool ImportBridgeSeedB()
+        {
+            ImportBridgeSeed(_bridgeB);
+            RefreshBridgeInfo();
+            return _bridgeB.Valid;
+        }
+
+        /// <summary>取り込み済みの種を捨てる。</summary>
+        public void ClearBridgeSeeds()
+        {
+            _bridgeA.Valid = false; _bridgeA.Info = "";
+            _bridgeB.Valid = false; _bridgeB.Info = "";
+            RefreshBridgeInfo();
+        }
+
+        /// <summary>生成名を指定する。</summary>
+        public void SetBridgeName(string name)
+        {
+            if (!string.IsNullOrWhiteSpace(name)) _bridgeName = name;
+        }
+
+        /// <summary>穴A・穴B の取り込み状況の説明。失敗時の表示用。</summary>
+        public string BridgeSeedInfoA => _bridgeA.Info ?? "";
+        public string BridgeSeedInfoB => _bridgeB.Info ?? "";
+
+        /// <summary>生成ボタンと同じ処理を呼ぶ。</summary>
+        public void GenerateBridge() => InvokeBridgeGenerate();
 
         /// <summary>生成ボタンから呼ぶ。挿入と Undo は Viewer 側が持つ。</summary>
         private void InvokeBridgeGenerate()

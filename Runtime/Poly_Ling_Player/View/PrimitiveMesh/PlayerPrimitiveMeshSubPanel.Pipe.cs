@@ -75,7 +75,7 @@ namespace Poly_Ling.Player
 
             bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
             {
-                ImportBeltFromMesh(_pipeBelts);
+                ImportBeltFromMesh(_pipeBelts, false);
                 RefreshPipeInfo();
             }));
 
@@ -90,7 +90,7 @@ namespace Poly_Ling.Player
 
             bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
             {
-                AutoDetectBelts(_pipeBelts, _pipePick.Current);
+                AutoDetectBelts(_pipeBelts, _pipePick.Current, false);
                 RefreshPipeInfo();
             }));
 

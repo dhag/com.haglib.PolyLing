@@ -45,30 +45,19 @@ namespace Poly_Ling.Tools
         private SkinWeightPaintMode PaintMode => ActivePanel?.CurrentPaintMode ?? _settings.PaintMode;
         private float BrushRadius => ActivePanel?.CurrentBrushRadius ?? _settings.BrushRadius;
         private float Strength => ActivePanel?.CurrentStrength ?? _settings.Strength;
-        private BrushFalloff Falloff => ActivePanel?.CurrentFalloff ?? _settings.Falloff;
+        private FalloffType Falloff => ActivePanel?.CurrentFalloff ?? _settings.Falloff;
+
+        /// <summary>距離モード（直線 / リンク距離）。マグネット／スカルプトと共通。</summary>
+        public static DistanceMode CurrentDistanceMode =>
+            ActivePanel?.CurrentDistanceMode ?? DistanceMode.Euclidean;
         private float WeightValue => ActivePanel?.CurrentWeightValue ?? _settings.WeightValue;
         private int TargetBone => ActivePanel?.CurrentTargetBone ?? _settings.TargetBoneMasterIndex;
 
-        /// <summary>
-        /// パネルで選択中のメッシュコンテキストを返す。
-        /// CurrentTargetMesh が有効なら GetMeshContext、そうでなければ FirstDrawableMeshContext。
-        /// </summary>
-        /// <summary>
-        /// ペイント対象メッシュを解決する。パネルの対象メッシュを優先し、未指定なら ActiveMeshContext。
-        /// GPU バッファの部分更新側（SkinWeightPaintToolHandler の SyncMesh）が
-        /// 同じメッシュを指せるように公開する。
-        /// </summary>
-        public static MeshContext GetTargetMeshContext(ModelContext model)
-        {
-            if (model == null) return null;
-            int masterIdx = ActivePanel?.CurrentTargetMesh ?? -1;
-            if (masterIdx >= 0)
-            {
-                var mc = model.GetMeshContext(masterIdx);
-                if (mc?.MeshObject != null) return mc;
-            }
-            return model.ActiveMeshContext;
-        }
+        // ペイント対象メッシュの解決は
+        // Poly_Ling.UI.SkinWeightOperations.CollectTargetMeshContexts に一本化した。
+        // ブラシは選択中の描画オブジェクト全件をまたいで塗るため、
+        // 1 メッシュを返す GetTargetMeshContext は削除してある。
+        // ウェイト可視化（MeshSceneRenderer.CollectWeightVisTargets）とも同じ集合になる。
 
         // ================================================================
         // ウェイト可視化
@@ -84,50 +73,58 @@ namespace Poly_Ling.Tools
         public static int VisualizationTargetBone =>
             ActivePanel?.CurrentTargetBone ?? -1;
 
+        /// <summary>
+        /// 複数ボーン合算表示の対象（Blender の Multi-Paint 相当）。
+        /// パネルが IMultiBoneWeightVisualization を実装していない、または
+        /// 対象が空なら null。呼び出し側はそのとき VisualizationTargetBone の
+        /// 単一ボーン表示へ落とすこと。
+        /// </summary>
+        public static IReadOnlyList<int> VisualizationTargetBones
+        {
+            get
+            {
+                var bones = (ActivePanel as IMultiBoneWeightVisualization)?.VisualizationBones;
+                return (bones != null && bones.Count > 0) ? bones : null;
+            }
+        }
+
         /// <summary>ウェイト可視化用マテリアル</summary>
         private static Material _weightVisMaterial;
 
-        /// <summary>可視化用マテリアルを取得（遅延生成、カスタムシェーダー）</summary>
+        /// <summary>取得失敗を一度だけ報告するためのフラグ。</summary>
+        private static bool _weightVisShaderErrorLogged;
+
+        /// <summary>
+        /// 可視化用マテリアルを取得（遅延生成）。
+        ///
+        /// シェーダは Runtime/Resources/Shaders/PolyLing_WeightVis.shader。
+        /// Resources 配下にあるためビルドに必ず含まれる。
+        ///
+        /// フォールバックは持たない。以前は ShaderUtil でのランタイム生成と
+        /// GUI/Text Shader・Sprites/Default への差し替えを試みていたが、
+        /// 前者は Editor 専用、後者は URP に存在しないため、いずれも成立しないまま
+        /// 「マテリアルが null → 何も描かれない」状態を無音で作っていた。
+        /// 取得できない場合は原因を明示して null を返す。
+        /// </summary>
         public static Material GetVisualizationMaterial()
         {
             if (_weightVisMaterial != null) return _weightVisMaterial;
 
-            // 1. プロジェクト内のシェーダーファイルを検索
             var shader = Shader.Find("Hidden/PolyLing_WeightVis");
-
-            // 2. フォールバック: ShaderUtilでランタイム生成 (Editor専用)
-#if UNITY_EDITOR
             if (shader == null)
             {
-                string src =
-                    "Shader \"Hidden/PolyLing_WeightVis\" {\n" +
-                    "  SubShader {\n" +
-                    "    Tags { \"RenderType\"=\"Opaque\" }\n" +
-                    "    Cull Off ZWrite On ZTest LEqual\n" +
-                    "    Pass {\n" +
-                    "      CGPROGRAM\n" +
-                    "      #pragma vertex vert\n" +
-                    "      #pragma fragment frag\n" +
-                    "      #include \"UnityCG.cginc\"\n" +
-                    "      struct appdata { float4 vertex : POSITION; float4 color : COLOR; };\n" +
-                    "      struct v2f { float4 pos : SV_POSITION; float4 color : COLOR; };\n" +
-                    "      v2f vert(appdata v) { v2f o; o.pos = UnityObjectToClipPos(v.vertex); o.color = v.color; return o; }\n" +
-                    "      float4 frag(v2f i) : SV_Target { return i.color; }\n" +
-                    "      ENDCG\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}\n";
-                shader = UnityEditor.ShaderUtil.CreateShaderAsset(src, false);
+                if (!_weightVisShaderErrorLogged)
+                {
+                    _weightVisShaderErrorLogged = true;
+                    Debug.LogError(
+                        "[SkinWeightPaint] シェーダ \"Hidden/PolyLing_WeightVis\" が見つかりません。" +
+                        "Runtime/Resources/Shaders/PolyLing_WeightVis.shader の配置を確認してください。" +
+                        "ウェイト可視化は描画されません。");
+                }
+                return null;
             }
-#endif
 
-            // 3. フォールバック: 組み込みの頂点カラー対応シェーダー
-            if (shader == null) shader = Shader.Find("GUI/Text Shader");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-
-            if (shader != null)
-                _weightVisMaterial = new Material(shader);
-
+            _weightVisMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
             return _weightVisMaterial;
         }
 
@@ -135,12 +132,14 @@ namespace Poly_Ling.Tools
         /// 描画直前にメッシュの頂点カラーを設定する（Preview側から毎フレーム呼ばれる）
         /// SyncMeshでmesh.Clear()されても問題ない
         /// </summary>
-        public static void ApplyVisualizationColors(Mesh mesh, MeshObject mo, int targetBone)
+        /// <returns>ウェイトが 0 より大きかった頂点数。診断用。</returns>
+        public static int ApplyVisualizationColors(Mesh mesh, MeshObject mo, int targetBone)
         {
-            if (mesh == null || mo == null) return;
+            if (mesh == null || mo == null) return 0;
 
             int unityVertCount = mesh.vertexCount;
             var colors = new Color[unityVertCount];
+            int weightedCount = 0;
 
             if (targetBone < 0)
             {
@@ -161,6 +160,7 @@ namespace Poly_Ling.Tools
                     float w = 0f;
                     if (vertex.HasBoneWeight)
                         w = GetWeightForBone(vertex.BoneWeight.Value, targetBone);
+                    if (w > 0f) weightedCount++;
 
                     Color col = WeightToHeatmapColor(w);
 
@@ -178,6 +178,71 @@ namespace Poly_Ling.Tools
             }
 
             mesh.colors = colors;
+            return weightedCount;
+        }
+
+        /// <summary>
+        /// 複数ボーンのウェイトを合計してヒートマップ色を焼き込む
+        /// （Blender の Multi-Paint 相当）。
+        ///
+        /// 同一ボーンが複数スロットに指定されていても二重計上しないよう、
+        /// 重複を除いてから合算する。合計は 0..1 にクランプする
+        /// （正規化されていないメッシュでは合計が 1 を超え得る）。
+        /// </summary>
+        /// <returns>合計ウェイトが 0 より大きかった頂点数。診断用。</returns>
+        public static int ApplyVisualizationColors(
+            Mesh mesh, MeshObject mo, IReadOnlyList<int> targetBones)
+        {
+            if (mesh == null || mo == null) return 0;
+
+            // 対象が無ければ単一ボーン版の「未選択」表示に合わせる。
+            if (targetBones == null || targetBones.Count == 0)
+                return ApplyVisualizationColors(mesh, mo, -1);
+
+            // 重複ボーンを除いた一覧を作る。最大 4 件なので線形探索でよい。
+            var bones = new List<int>(targetBones.Count);
+            foreach (int b in targetBones)
+                if (b >= 0 && !bones.Contains(b)) bones.Add(b);
+
+            if (bones.Count == 0) return ApplyVisualizationColors(mesh, mo, -1);
+
+            int unityVertCount = mesh.vertexCount;
+            var colors         = new Color[unityVertCount];
+            int weightedCount  = 0;
+
+            // ToUnityMeshShared と同じ展開順: 頂点順 → UV順
+            int colorIdx = 0;
+            for (int vIdx = 0; vIdx < mo.VertexCount && colorIdx < unityVertCount; vIdx++)
+            {
+                var vertex  = mo.Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                float w = 0f;
+                if (vertex.HasBoneWeight)
+                {
+                    var bw = vertex.BoneWeight.Value;
+                    for (int i = 0; i < bones.Count; i++)
+                        w += GetWeightForBone(bw, bones[i]);
+                }
+                w = Mathf.Clamp01(w);
+                if (w > 0f) weightedCount++;
+
+                Color col = WeightToHeatmapColor(w);
+
+                for (int uvIdx = 0; uvIdx < uvCount && colorIdx < unityVertCount; uvIdx++)
+                {
+                    colors[colorIdx] = col;
+                    colorIdx++;
+                }
+            }
+
+            // 残りはグレー
+            var greyFill = new Color(0.3f, 0.3f, 0.3f, 1f);
+            for (; colorIdx < unityVertCount; colorIdx++)
+                colors[colorIdx] = greyFill;
+
+            mesh.colors = colors;
+            return weightedCount;
         }
 
         /// <summary>
@@ -222,11 +287,24 @@ namespace Poly_Ling.Tools
         private bool _isDragging;
         private Vector2 _currentScreenPos;
 
-        /// <summary>ドラッグ開始時のMeshObjectスナップショット（Undo用）</summary>
-        private MeshObjectSnapshot _beforeSnapshot;
+        /// <summary>
+        /// ドラッグ開始時のスナップショット（Undo 用）。メッシュごとに持つ。
+        /// UndoController は一度に 1 メッシュしか保持できないため、
+        /// 取得時・記録時ともに SetMeshObject で対象を差し替える。
+        /// </summary>
+        private readonly Dictionary<MeshContext, MeshObjectSnapshot> _beforeSnapshots
+            = new Dictionary<MeshContext, MeshObjectSnapshot>();
 
-        /// <summary>隣接頂点キャッシュ（Smoothモード用）</summary>
-        private Dictionary<int, HashSet<int>> _adjacencyCache;
+        /// <summary>実際に書き換えたメッシュ。OnMouseUp で Undo 記録する対象。</summary>
+        private readonly HashSet<MeshContext> _touchedMeshes = new HashSet<MeshContext>();
+
+        /// <summary>隣接頂点キャッシュ（Smoothモード用）。メッシュごとに持つ。</summary>
+        private readonly Dictionary<MeshContext, Dictionary<int, HashSet<int>>> _adjacencyCaches
+            = new Dictionary<MeshContext, Dictionary<int, HashSet<int>>>();
+
+        /// <summary>ブラシ対象のメッシュ群（＝選択中の描画オブジェクト全件）。</summary>
+        private static List<MeshContext> CollectBrushTargets(ModelContext model)
+            => Poly_Ling.UI.SkinWeightOperations.CollectTargetMeshContexts(model);
 
         // ================================================================
         // IEditTool 実装
@@ -240,18 +318,38 @@ namespace Poly_Ling.Tools
             // ターゲットボーンが未設定
             if (TargetBone < 0 && PaintMode != SkinWeightPaintMode.Smooth) return false;
 
-            var meshCtx = GetTargetMeshContext(model);
-            if (meshCtx?.MeshObject == null) return false;
+            var targets = CollectBrushTargets(model);
+            if (targets.Count == 0) return false;
 
             _isDragging = true;
             _currentScreenPos = mousePos;
 
-            // Undo用スナップショット
-            _beforeSnapshot = ctx.UndoController?.CaptureMeshObjectSnapshot();
+            // Undo 用スナップショットを対象メッシュごとに取る。
+            _beforeSnapshots.Clear();
+            _touchedMeshes.Clear();
+            _adjacencyCaches.Clear();
 
-            // Smoothモード用隣接キャッシュ
-            if (PaintMode == SkinWeightPaintMode.Smooth)
-                BuildAdjacencyCache(meshCtx.MeshObject);
+            var undo = ctx.UndoController;
+            foreach (var mc in targets)
+            {
+                if (mc?.MeshObject == null) continue;
+
+                if (undo != null)
+                {
+                    // SetMeshObjectFor を使うこと。SetMeshObject(MeshObject,…) は
+                    // 書き込み先が先頭の選択メッシュに固定されるため、この
+                    // ループの2件目以降で先頭メッシュの MeshObject が壊れる。
+                    undo.MeshUndoContext.ParentModelContext = model;
+                    undo.SetMeshObjectFor(mc, mc.UnityMesh);
+                    var snap = undo.CaptureMeshObjectSnapshot();
+                    if (snap != null) _beforeSnapshots[mc] = snap;
+                }
+
+                // Smoothモード用隣接キャッシュ
+                if (PaintMode == SkinWeightPaintMode.Smooth)
+                    _adjacencyCaches[mc] = BuildAdjacency(mc.MeshObject);
+            }
+            undo?.ClearTargetMeshContext();
 
             // 最初のストローク適用
             ApplyBrush(ctx);
@@ -275,16 +373,27 @@ namespace Poly_Ling.Tools
 
             _isDragging = false;
 
-            // Undo記録
-            if (ctx.UndoController != null && _beforeSnapshot != null)
+            // Undo 記録。書き換えたメッシュごとに対象を差し替えて after を取る。
+            var undo = ctx.UndoController;
+            if (undo != null)
             {
-                var afterSnapshot = ctx.UndoController.CaptureMeshObjectSnapshot();
-                ctx.CommandQueue?.Enqueue(new Commands.RecordTopologyChangeCommand(
-                    ctx.UndoController, _beforeSnapshot, afterSnapshot, "Paint Skin Weight"));
+                foreach (var mc in _touchedMeshes)
+                {
+                    if (mc?.MeshObject == null) continue;
+                    if (!_beforeSnapshots.TryGetValue(mc, out var before) || before == null) continue;
+
+                    undo.MeshUndoContext.ParentModelContext = ctx.Model;
+                    undo.SetMeshObjectFor(mc, mc.UnityMesh);
+                    var after = undo.CaptureMeshObjectSnapshot();
+                    ctx.CommandQueue?.Enqueue(new Commands.RecordTopologyChangeCommand(
+                        undo, before, after, "Paint Skin Weight"));
+                }
+                undo.ClearTargetMeshContext();
             }
 
-            _beforeSnapshot = null;
-            _adjacencyCache = null;
+            _beforeSnapshots.Clear();
+            _touchedMeshes.Clear();
+            _adjacencyCaches.Clear();
 
             ctx.SyncMesh?.Invoke();
             ctx.Repaint?.Invoke();
@@ -311,12 +420,11 @@ namespace Poly_Ling.Tools
             Reset();
             IsVisualizationActive = false;
             ctx.SetSuppressHover?.Invoke(false);
-            // 頂点カラーをクリア
+            // 頂点カラーをクリア（可視化と同じく選択中の描画オブジェクト全件）
             if (ctx?.Model != null)
             {
-                var meshCtx = GetTargetMeshContext(ctx.Model);
-                if (meshCtx?.UnityMesh != null)
-                    meshCtx.UnityMesh.colors = null;
+                foreach (var mc in CollectBrushTargets(ctx.Model))
+                    if (mc?.UnityMesh != null) mc.UnityMesh.colors = null;
             }
             ctx.Repaint?.Invoke();
         }
@@ -324,8 +432,9 @@ namespace Poly_Ling.Tools
         public void Reset()
         {
             _isDragging = false;
-            _beforeSnapshot = null;
-            _adjacencyCache = null;
+            _beforeSnapshots.Clear();
+            _touchedMeshes.Clear();
+            _adjacencyCaches.Clear();
         }
 
         // ================================================================
@@ -337,13 +446,31 @@ namespace Poly_Ling.Tools
             var model = ctx.Model;
             if (model == null) return;
 
-            var meshCtx = GetTargetMeshContext(model);
-            if (meshCtx?.MeshObject == null) return;
+            // ブラシ範囲内の頂点をメッシュごとに収集
+            // （Player の GPU hover path / スクリーン空間ブラシ）
+            var hits = ctx.GetBrushVerticesMulti?.Invoke();
+            if (hits == null || hits.Count == 0) return;
 
-            // ブラシ範囲内の頂点を収集（Player の GPU hover path / スクリーン空間ブラシ）
-            var affected = ctx.GetBrushVertices?.Invoke() ?? new List<(int index, float falloff)>();
-            if (affected.Count == 0) return;
+            bool any = false;
+            foreach (var (meshCtx, affected) in hits)
+            {
+                if (meshCtx?.MeshObject == null) continue;
+                if (affected == null || affected.Count == 0) continue;
+                ApplyBrushToMesh(meshCtx, affected);
+                _touchedMeshes.Add(meshCtx);
+                any = true;
+            }
+            if (!any) return;
 
+            // メッシュ更新
+            ctx.SyncMesh?.Invoke();
+            ctx.Repaint?.Invoke();
+        }
+
+        /// <summary>1 メッシュへブラシを適用する。</summary>
+        private void ApplyBrushToMesh(
+            MeshContext meshCtx, List<(int index, float falloff)> affected)
+        {
             int targetBone = TargetBone;
             float strength = Strength;
             float value = WeightValue;
@@ -399,22 +526,21 @@ namespace Poly_Ling.Tools
                     break;
 
                 case SkinWeightPaintMode.Smooth:
-                    ApplySmooth(mo, affected, strength);
+                    if (_adjacencyCaches.TryGetValue(meshCtx, out var adjacency))
+                        ApplySmooth(mo, affected, strength, adjacency);
                     break;
             }
-
-            // メッシュ更新
-            ctx.SyncMesh?.Invoke();
-            ctx.Repaint?.Invoke();
         }
 
         // ================================================================
         // Smooth モード
         // ================================================================
 
-        private void ApplySmooth(MeshObject mo, List<(int index, float falloff)> affected, float strength)
+        private void ApplySmooth(
+            MeshObject mo, List<(int index, float falloff)> affected, float strength,
+            Dictionary<int, HashSet<int>> adjacencyCache)
         {
-            if (_adjacencyCache == null) return;
+            if (adjacencyCache == null) return;
 
             // 各影響頂点のウェイトを、隣接頂点の平均に近づける
             // 全4スロット一括で処理
@@ -423,7 +549,7 @@ namespace Poly_Ling.Tools
             foreach (var (vi, falloff) in affected)
             {
                 if (vi < 0 || vi >= mo.VertexCount) continue;
-                if (!_adjacencyCache.TryGetValue(vi, out var neighbors) || neighbors.Count == 0) continue;
+                if (!adjacencyCache.TryGetValue(vi, out var neighbors) || neighbors.Count == 0) continue;
 
                 var vertex = mo.Vertices[vi];
                 if (!vertex.HasBoneWeight) continue;
@@ -534,9 +660,14 @@ namespace Poly_Ling.Tools
         // 隣接キャッシュ構築
         // ================================================================
 
-        private void BuildAdjacencyCache(MeshObject mo)
+        /// <summary>
+        /// 頂点隣接キャッシュを構築して返す。
+        /// リンク距離ブラシ（SkinWeightPaintToolHandler）からも使うため public。
+        /// </summary>
+        public static Dictionary<int, HashSet<int>> BuildAdjacency(MeshObject mo)
         {
-            _adjacencyCache = new Dictionary<int, HashSet<int>>();
+            var cache = new Dictionary<int, HashSet<int>>();
+            if (mo == null) return cache;
 
             foreach (var face in mo.Faces)
             {
@@ -546,34 +677,22 @@ namespace Poly_Ling.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    if (!_adjacencyCache.ContainsKey(v1)) _adjacencyCache[v1] = new HashSet<int>();
-                    if (!_adjacencyCache.ContainsKey(v2)) _adjacencyCache[v2] = new HashSet<int>();
+                    if (!cache.ContainsKey(v1)) cache[v1] = new HashSet<int>();
+                    if (!cache.ContainsKey(v2)) cache[v2] = new HashSet<int>();
 
-                    _adjacencyCache[v1].Add(v2);
-                    _adjacencyCache[v2].Add(v1);
+                    cache[v1].Add(v2);
+                    cache[v2].Add(v1);
                 }
             }
+            return cache;
         }
 
-        // ================================================================
-        // ブラシ falloff
-        // ================================================================
 
-        private static float ComputeFalloff(float normalizedDist, BrushFalloff type)
-        {
-            float t = 1f - normalizedDist;
-            switch (type)
-            {
-                case BrushFalloff.Constant:
-                    return 1f;
-                case BrushFalloff.Linear:
-                    return t;
-                case BrushFalloff.Smooth:
-                    return t * t * (3f - 2f * t); // Hermite smoothstep
-                default:
-                    return t;
-            }
-        }
+        // ブラシ falloff の計算は Poly_Ling.Tools.FalloffHelper.Calculate に統一した。
+        // 以前ここにあった ComputeFalloff（Constant/Linear/Smooth の 3 種）は削除。
+        // なお実際に falloff を掛けているのは
+        // SkinWeightPaintToolHandler.ComputeBrushVertices であり、この Tool 側は
+        // 受け取った falloff を使うだけ。
 
         // ================================================================
         // BoneWeight操作

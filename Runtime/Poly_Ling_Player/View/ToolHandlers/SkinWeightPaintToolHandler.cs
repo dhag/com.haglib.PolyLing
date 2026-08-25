@@ -217,62 +217,119 @@ namespace Poly_Ling.Player
             };
 
             // SyncMesh: ウェイト確定後に GPU バッファを同期。
-            // 対象メッシュは SkinWeightPaintTool.GetTargetMeshContext と同じ規則で解決する
-            // （パネルの対象メッシュ優先、未指定なら ActiveMeshContext）。
-            // ActiveMeshContext を直に使うと、パネルで別メッシュを対象にしている場合に
-            // 塗ったメッシュと転送するメッシュがずれる。
+            // ブラシは選択中の描画オブジェクト全件をまたいで塗るため、
+            // 対象全件へ転送する。1 件だけ転送すると他メッシュの表示が古いまま残る。
             baseCtx.SyncMesh = () =>
             {
-                var mc = SkinWeightPaintTool.GetTargetMeshContext(model);
-                if (mc != null) OnSyncMeshPositions?.Invoke(mc);
+                foreach (var mc in Poly_Ling.UI.SkinWeightOperations.CollectTargetMeshContexts(model))
+                    if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             };
 
             // ブラシ範囲頂点（GPU hover path / スクリーン空間ブラシ）
-            float worldRadius = SkinWeightPaintTool.ActivePanel?.CurrentBrushRadius ?? 0.3f;
+            float worldRadius = SkinWeightPaintTool.ActivePanel?.CurrentBrushRadius ?? 0.1f;
             float screenR     = EstimateBrushScreenRadius(baseCtx, worldRadius);
-            baseCtx.GetBrushVertices = () => ComputeBrushVertices(screenPosYDown, screenR);
+            baseCtx.GetBrushVerticesMulti = () => ComputeBrushVertices(screenPosYDown, screenR, worldRadius);
 
             return baseCtx;
         }
 
         /// <summary>
-        /// ブラシ範囲（スクリーン円）内の頂点＋falloff を GPU hover path で取得する。
-        /// CommitBoxSelect と同方式：GPU 計算済みスクリーン座標＋可視判定。
-        /// 背面除外はカリング ON のときのみ（OFF なら裏面も塗る）。
+        /// ブラシ範囲内の頂点＋falloff を、選択中の描画オブジェクトごとに返す。
+        ///
+        /// 【直線モード】スクリーン円で拾う。GPU 計算済みスクリーン座標＋可視判定を使い、
+        /// CommitBoxSelect と同方式。背面除外はカリング ON のときのみ。
+        ///
+        /// 【リンク距離モード】メッシュごとに、スクリーン円内で中心に最も近い可視頂点を
+        /// 種として辺をたどった累積距離（LinkDistanceField）で拾う。スカルプトの
+        /// GetVerticesInBrushRadiusLink と同じ手順。辺で繋がっていない別オブジェクトへは
+        /// 伝播しないので、種はメッシュごとに取り直す必要がある。
+        ///
+        /// falloff は両モードとも FalloffHelper.Calculate に通す
+        /// （マグネット・スカルプトと同一の計算）。
+        ///
+        /// 頂点オフセットはメッシュごとに GetVertexOffset(model.IndexOf(mc)) で取り直す。
+        /// 以前は model.FirstMeshIndex 固定で、先頭以外のメッシュでは別頂点を拾っていた。
         /// </summary>
-        private System.Collections.Generic.List<(int index, float falloff)> ComputeBrushVertices(
-            Vector2 mouseYDown, float screenRadius)
+        private System.Collections.Generic.List<
+            (Poly_Ling.Data.MeshContext mesh,
+             System.Collections.Generic.List<(int index, float falloff)> verts)>
+            ComputeBrushVertices(Vector2 mouseYDown, float screenRadius, float worldRadius)
         {
-            var result = new System.Collections.Generic.List<(int index, float falloff)>();
-            var model  = _project?.CurrentModel;
-            var meshCtx = model?.ActiveMeshContext;
-            var mo = meshCtx?.MeshObject;
-            if (mo == null || GetScreenPositions == null) return result;
+            var result = new System.Collections.Generic.List<
+                (Poly_Ling.Data.MeshContext, System.Collections.Generic.List<(int, float)>)>();
+
+            var model = _project?.CurrentModel;
+            if (model == null || GetScreenPositions == null) return result;
 
             var screenPos = GetScreenPositions();
             if (screenPos == null) return result;
 
-            int   ctxIdx       = model.FirstMeshIndex;
-            int   vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
-            float vpH          = GetViewportHeight?.Invoke() ?? 0f;
-            bool  cullOn       = IsBackfaceCullingEnabled?.Invoke() ?? true;
+            float vpH    = GetViewportHeight?.Invoke() ?? 0f;
+            bool  cullOn = IsBackfaceCullingEnabled?.Invoke() ?? true;
 
-            for (int i = 0; i < mo.VertexCount; i++)
+            var falloffType  = SkinWeightPaintTool.ActivePanel?.CurrentFalloff ?? FalloffType.Gaussian;
+            var distanceMode = SkinWeightPaintTool.CurrentDistanceMode;
+
+            foreach (var mc in Poly_Ling.UI.SkinWeightOperations.CollectTargetMeshContexts(model))
             {
-                int gi = vertexOffset + i;
-                if (gi < 0 || gi >= screenPos.Length) continue;
-                // 背面除外はカリング ON のときだけ（OFF なら裏面も対象）
-                if (cullOn && IsVertexVisible != null && !IsVertexVisible(gi)) continue;
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
 
-                // CommitBoxSelect と同じ Y 反転でスクリーン座標(Y=0下)へ揃える
-                Vector2 vs   = new Vector2(screenPos[gi].x, vpH - screenPos[gi].y);
-                float   dist = Vector2.Distance(vs, mouseYDown);
-                if (dist <= screenRadius)
+                int vertexOffset = GetVertexOffset?.Invoke(model.IndexOf(mc)) ?? 0;
+                var verts = new System.Collections.Generic.List<(int, float)>();
+
+                if (distanceMode == DistanceMode.Link)
                 {
-                    float falloff = screenRadius > 0f ? 1f - (dist / screenRadius) : 1f;
-                    result.Add((i, falloff));
+                    // 種頂点＝このメッシュ内でスクリーン円中心に最も近い可視頂点
+                    int   seed    = -1;
+                    float minDist = float.MaxValue;
+                    for (int i = 0; i < mo.VertexCount; i++)
+                    {
+                        int gi = vertexOffset + i;
+                        if (gi < 0 || gi >= screenPos.Length) continue;
+                        if (cullOn && IsVertexVisible != null && !IsVertexVisible(gi)) continue;
+
+                        Vector2 vs   = new Vector2(screenPos[gi].x, vpH - screenPos[gi].y);
+                        float   dist = Vector2.Distance(vs, mouseYDown);
+                        if (dist < minDist) { minDist = dist; seed = i; }
+                    }
+
+                    // 円内に頂点が無ければこのメッシュは対象外（直線モードと同じ判定）
+                    if (seed < 0 || minDist > screenRadius) continue;
+
+                    var adjacency = SkinWeightPaintTool.BuildAdjacency(mo);
+                    var field     = LinkDistanceField.Compute(
+                        adjacency, mo.Positions, new[] { seed }, worldRadius);
+
+                    foreach (var kvp in field)
+                    {
+                        float t = worldRadius > 0f ? kvp.Value / worldRadius : 0f;
+                        verts.Add((kvp.Key, FalloffHelper.Calculate(t, falloffType)));
+                    }
                 }
+                else
+                {
+                    for (int i = 0; i < mo.VertexCount; i++)
+                    {
+                        int gi = vertexOffset + i;
+                        if (gi < 0 || gi >= screenPos.Length) continue;
+                        // 背面除外はカリング ON のときだけ（OFF なら裏面も対象）
+                        if (cullOn && IsVertexVisible != null && !IsVertexVisible(gi)) continue;
+
+                        // CommitBoxSelect と同じ Y 反転でスクリーン座標(Y=0下)へ揃える
+                        Vector2 vs   = new Vector2(screenPos[gi].x, vpH - screenPos[gi].y);
+                        float   dist = Vector2.Distance(vs, mouseYDown);
+                        if (dist <= screenRadius)
+                        {
+                            float t = screenRadius > 0f ? dist / screenRadius : 0f;
+                            verts.Add((i, FalloffHelper.Calculate(t, falloffType)));
+                        }
+                    }
+                }
+
+                if (verts.Count > 0) result.Add((mc, verts));
             }
+
             return result;
         }
 

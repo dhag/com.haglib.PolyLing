@@ -41,6 +41,16 @@ namespace Poly_Ling.Core
 
             meshContext.ParentModelContext = _model;
 
+            // 既存の描画オブジェクトと名前が衝突しないようにする。
+            // ここは「ツールが新しく作ったメッシュを足す」経路であり、
+            // Undo からの復元（RestoreMeshContext 系）は別経路なので名前は保たれる。
+            string baseName = !string.IsNullOrEmpty(meshContext.Name) ? meshContext.Name
+                            : (!string.IsNullOrEmpty(meshContext.MeshObject?.Name) ? meshContext.MeshObject.Name : "Mesh");
+            string uniqueName = _model.GenerateUniqueMeshName(baseName);
+            meshContext.Name = uniqueName;
+            if (meshContext.MeshObject != null) meshContext.MeshObject.Name = uniqueName;
+            if (meshContext.UnityMesh  != null) meshContext.UnityMesh.name  = uniqueName;
+
             var oldSelected = _model.CaptureAllSelectedIndices();
             var oldCamera   = CaptureCameraSnapshot();
 

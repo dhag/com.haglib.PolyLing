@@ -5,6 +5,14 @@
 // モデルには一切触れない。値の読み書きは全て外部コールバック経由で行うため、
 // 本クラスは PlayerPrimitiveMeshSubPanel を直接参照しない。
 //
+// 【入力経路】ビューポート入力は MoveToolHandler が受け、そのフック
+//   (GizmoHitTestOverride / OnDragStartExtra / OnToolDragExtra / OnToolDragEndExtra)
+//   から GizmoHitTest / BeginGizmoDrag / GizmoDrag / EndGizmoDrag を呼ぶ。
+//   RotateToolHandler・ScaleToolHandler と同じ構成。
+//   本クラスを IPlayerToolHandler として直接ツールへ据えると、頂点・辺の選択が
+//   一切できなくなる（穴つなぎの種取り込みが選択を要求するため致命的）。
+//   IPlayerToolHandler 実装は上記4メソッドへの委譲として残す。
+//
 // Runtime/Poly_Ling_Player/View/ToolHandlers/ に配置
 
 using System;
@@ -73,6 +81,12 @@ namespace Poly_Ling.Player
         private AxisGizmo.AxisType _hoverAxis = AxisGizmo.AxisType.None;
         private AxisGizmo.AxisType _dragAxis  = AxisGizmo.AxisType.None;
 
+        // GizmoHitTest で当てた軸を BeginGizmoDrag まで持ち越すための控え。
+        // フック経由の呼び出しは (ヒットテスト) → (ドラッグ開始) の2段になり、
+        // 後者はスクリーン座標を受け取らないため、ここで押下位置も控える。
+        private AxisGizmo.AxisType _pendingAxis   = AxisGizmo.AxisType.None;
+        private Vector2            _pendingScreen = Vector2.zero;
+
         // ドラッグ開始時のスナップショット
         private Vector3 _startRotation;
         private Vector3 _startScale;
@@ -120,43 +134,90 @@ namespace Poly_Ling.Player
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
-            _dragAxis = AxisGizmo.AxisType.None;
-
             var ctx = GetToolContext?.Invoke();
-            if (ctx == null) return;
+            if (ctx == null) { _dragAxis = AxisGizmo.AxisType.None; return; }
+
+            if (!GizmoHitTest(screenPos, ctx)) { _dragAxis = AxisGizmo.AxisType.None; return; }
+            BeginGizmoDrag();
+        }
+
+        public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
+            => GizmoDrag(screenPos, delta);
+
+        public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
+            => EndGizmoDrag();
+
+        // ================================================================
+        // MoveToolHandler フック用（選択と配置ギズモを両立させる経路）
+        // ================================================================
+
+        /// <summary>
+        /// ギズモヒットテスト（MoveToolHandler.GizmoHitTestOverride 用）。
+        /// 当たった軸／リングは BeginGizmoDrag まで控える。
+        /// </summary>
+        public bool GizmoHitTest(Vector2 screenPos, ToolContext ctx)
+        {
+            _pendingAxis = AxisGizmo.AxisType.None;
+            if (ctx == null) return false;
 
             Vector3 center = GizmoCenter();
             Vector2 imgui  = ToImgui(screenPos);
 
+            AxisGizmo.AxisType axis;
             if (Mode == PlaceGizmoMode.Rotate)
             {
                 _ringGizmo.Center = center;
-                var axis = _ringGizmo.FindRingAtScreenPos(imgui, ctx);
-                if (axis == AxisGizmo.AxisType.None) return;
+                axis = _ringGizmo.FindRingAtScreenPos(imgui, ctx);
+            }
+            else
+            {
+                _axisGizmo.Center = center;
+                axis = _axisGizmo.FindAxisAtScreenPos(imgui, ctx);
+            }
+            if (axis == AxisGizmo.AxisType.None) return false;
 
+            _pendingAxis   = axis;
+            _pendingScreen = screenPos;
+            return true;
+        }
+
+        /// <summary>ドラッグセッション開始（OnDragStartExtra 用）。true でギズモ操作へ。</summary>
+        public bool BeginGizmoDrag()
+        {
+            _dragAxis = AxisGizmo.AxisType.None;
+            if (_pendingAxis == AxisGizmo.AxisType.None) return false;
+
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) { _pendingAxis = AxisGizmo.AxisType.None; return false; }
+
+            var axis = _pendingAxis;
+            _pendingAxis = AxisGizmo.AxisType.None;
+
+            if (Mode == PlaceGizmoMode.Rotate)
+            {
                 // 開始角・軸符号の算出は RotateRingGizmo の角度ドラッグセッションに集約。
-                if (!_ringGizmo.BeginAngleDrag(ctx, imgui, axis)) return;
+                _ringGizmo.Center = GizmoCenter();
+                if (!_ringGizmo.BeginAngleDrag(ctx, ToImgui(_pendingScreen), axis)) return false;
 
-                _dragAxis = axis;
+                _dragAxis      = axis;
                 _startRotation = GetRotation?.Invoke() ?? Vector3.zero;
-                return;
+                return true;
             }
 
-            _axisGizmo.Center = center;
-            var hitAxis = _axisGizmo.FindAxisAtScreenPos(imgui, ctx);
-            if (hitAxis == AxisGizmo.AxisType.None) return;
-
-            _dragAxis = hitAxis;
+            _axisGizmo.Center = GizmoCenter();
+            _dragAxis = axis;
 
             if (Mode == PlaceGizmoMode.Scale)
             {
                 _startScale = GetScale?.Invoke() ?? Vector3.one;
                 // 軸スクリーン方向の算出は AxisGizmo のスケールドラッグセッションに集約。
-                _axisGizmo.BeginScaleDrag(ctx, hitAxis, screenPos);
+                _axisGizmo.BeginScaleDrag(ctx, axis, _pendingScreen);
             }
+            return true;
         }
 
-        public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
+        /// <summary>ドラッグ中の更新（OnToolDragExtra 用）。</summary>
+        public void GizmoDrag(Vector2 screenPos, Vector2 screenDelta)
         {
             if (_dragAxis == AxisGizmo.AxisType.None) return;
 
@@ -165,7 +226,7 @@ namespace Poly_Ling.Player
 
             switch (Mode)
             {
-                case PlaceGizmoMode.Move:   DragMove(delta, ctx);       break;
+                case PlaceGizmoMode.Move:   DragMove(screenDelta, ctx); break;
                 case PlaceGizmoMode.Rotate: DragRotate(screenPos);      break;
                 case PlaceGizmoMode.Scale:  DragScale(screenPos);       break;
             }
@@ -174,9 +235,11 @@ namespace Poly_Ling.Player
             OnRepaint?.Invoke();
         }
 
-        public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
+        /// <summary>ドラッグ確定（OnToolDragEndExtra 用）。</summary>
+        public void EndGizmoDrag()
         {
-            _dragAxis = AxisGizmo.AxisType.None;
+            _dragAxis    = AxisGizmo.AxisType.None;
+            _pendingAxis = AxisGizmo.AxisType.None;
             _ringGizmo.EndAngleDrag();
             _axisGizmo.EndScaleDrag();
             OnRepaint?.Invoke();

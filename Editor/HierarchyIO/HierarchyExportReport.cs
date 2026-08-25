@@ -17,6 +17,7 @@
 //
 // ============================================================
 
+using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -55,6 +56,12 @@ namespace Poly_Ling.EditorIO
         /// <summary>Avatar の生成結果（未実行なら null）。</summary>
         public string AvatarResult;
 
+        /// <summary>
+        /// 書き出したレポートテキストのパス（未書き出しなら null）。
+        /// ダイアログはコンソールの代わりにここを案内する。
+        /// </summary>
+        public string LogFilePath;
+
         public int WarningCount => _warnings.Count;
         public int ErrorCount   => _errors.Count;
         public bool HasProblem  => _warnings.Count > 0 || _errors.Count > 0;
@@ -75,6 +82,7 @@ namespace Poly_Ling.EditorIO
             SupplementedJointCount    = 0;
             BoneCount                 = 0;
             AvatarResult              = null;
+            LogFilePath               = null;
         }
 
         /// <summary>ダイアログには出さず、コンソールにだけ出す。</summary>
@@ -139,10 +147,77 @@ namespace Poly_Ling.EditorIO
             AppendSection(sb, "警告",   _warnings);
             AppendSection(sb, "補足",   _notes);
 
-            if (!HasProblem) sb.AppendLine().Append("警告・エラーはありません。");
-            else             sb.AppendLine().Append("詳細はコンソールを確認してください。");
+            if (!HasProblem)
+            {
+                sb.AppendLine().Append("警告・エラーはありません。");
+            }
+            else if (!string.IsNullOrEmpty(LogFilePath))
+            {
+                sb.AppendLine().AppendLine("詳細は次のファイルを確認してください:");
+                sb.Append(LogFilePath);
+            }
+            else
+            {
+                sb.AppendLine().Append("詳細はコンソールを確認してください。");
+            }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// エクスポート先へ残すテキスト。ダイアログ用と違い省略しない。
+        ///   ・警告・エラー・補足を全件、改行もそのまま出す
+        ///   ・コンソールを追わなくても後から原因を追えるようにするのが目的
+        /// </summary>
+        public string BuildLogText(string header, string modelName)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("PolyLing Hierarchy Export Report");
+            sb.AppendLine("================================");
+            sb.AppendLine($"日時    : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"モデル  : {(string.IsNullOrEmpty(modelName) ? "(名称なし)" : modelName)}");
+            if (!string.IsNullOrEmpty(header)) sb.AppendLine($"結果    : {header}");
+            sb.AppendLine($"集計    : エラー {_errors.Count} / 警告 {_warnings.Count} / 補足 {_notes.Count}");
+            sb.AppendLine();
+
+            sb.AppendLine($"出力ノード                  : {ExportedNodeCount}");
+            sb.AppendLine($"ボーン                      : {BoneCount}");
+            sb.AppendLine($"不可視の親を補完            : {SupplementedAncestorCount}");
+            sb.AppendLine($"不可視でスキップ            : {SkippedInvisibleCount}");
+            sb.AppendLine($"不足する必須関節を補完      : {SupplementedJointCount}");
+            sb.AppendLine($"Avatar                      : {(string.IsNullOrEmpty(AvatarResult) ? "(未実行)" : AvatarResult)}");
+
+            AppendFullSection(sb, "エラー", _errors);
+            AppendFullSection(sb, "警告",   _warnings);
+            AppendFullSection(sb, "補足",   _notes);
+
+            if (!HasProblem)
+            {
+                sb.AppendLine();
+                sb.AppendLine("警告・エラーはありません。");
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>全件・全行を番号付きで出す（打ち切り・切り詰めをしない）。</summary>
+        private static void AppendFullSection(StringBuilder sb, string title, List<string> lines)
+        {
+            if (lines.Count == 0) return;
+
+            sb.AppendLine();
+            sb.AppendLine($"── {title} ({lines.Count}) ──");
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string body = lines[i] ?? "";
+                string[] rows = body.Replace("\r\n", "\n").Split('\n');
+
+                sb.AppendLine($"[{i + 1}] {rows[0]}");
+                for (int r = 1; r < rows.Length; r++)
+                    sb.AppendLine("    " + rows[r]);
+            }
         }
 
         private static void AppendSection(StringBuilder sb, string title, List<string> lines)

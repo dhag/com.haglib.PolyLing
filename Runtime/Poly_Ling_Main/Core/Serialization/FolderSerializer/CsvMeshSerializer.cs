@@ -290,6 +290,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine($"humanBodyBone,{EscapeCsv(human)}");
             }
 
+            // 左右対のボーン索引（確定値）。左右のボーン対応をウェイトから
+            // 推定しないための正本なので、往復で必ず保つ。
+            int mirrorBone = mc.MeshObject?.MirrorBoneIndex ?? -1;
+            if (mirrorBone >= 0)
+            {
+                sb.AppendLine($"mirrorBoneIndex,{mirrorBone}");
+            }
+
             // Humanoid マッスル可動域（per-bone・#5d-1）
             //   humanLimit,useDefault,minXYZ,maxXYZ,centerXYZ,axisLength（ラジアン）
             var hl = mc.MeshObject?.HumanLimit;
@@ -835,6 +843,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "humanBodyBone":
                         // humanBodyBone,<Unity Humanoid名>（per-bone・#5b）
                         meshObject.HumanBodyBone = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        break;
+                    case "mirrorBoneIndex":
+                        // mirrorBoneIndex,<左右対のボーンの MeshContextList 索引>
+                        meshObject.MirrorBoneIndex = ParseInt(cols, 1, -1);
                         break;
                     case "humanLimit":
                         // humanLimit,useDefault,minXYZ,maxXYZ,centerXYZ,axisLength（#5d-1）

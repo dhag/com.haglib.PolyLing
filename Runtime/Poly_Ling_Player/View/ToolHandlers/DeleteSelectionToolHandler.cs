@@ -60,11 +60,11 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 削除対象の要素数（頂点 + 面 + 線分）。0 なら実行しても何も起きない。
+        /// 選択中の描画オブジェクト全部の合計。
         /// </summary>
         public int GetDeletableCount()
         {
-            var mc = _project?.CurrentModel?.ActiveMeshContext;
-            return DeleteSelectionTool.GetDeletableCount(mc?.Selection);
+            return DeleteSelectionTool.GetDeletableCount(_project?.CurrentModel);
         }
 
         /// <summary>
@@ -94,12 +94,13 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) return null;
 
-            var mc  = model.ActiveMeshContext;
             var ctx = GetToolContext?.Invoke() ?? new ToolContext();
 
+            // SelectedVertices / SelectionState は設定しない。
+            // DeleteSelectionTool は選択中の描画オブジェクトを自分で走査し、
+            // 各メッシュの Selection を直接見るため、アクティブメッシュ固定の
+            // 単一 SelectionState を渡すと対象が 1 つに絞られてしまう。
             ctx.Model            = model;
-            ctx.SelectedVertices = mc?.SelectedVertices;
-            ctx.SelectionState   = mc?.Selection;
             ctx.UndoController   = _undoController;
             ctx.CommandQueue     = _commandQueue;
             ctx.Repaint          = OnRepaint;

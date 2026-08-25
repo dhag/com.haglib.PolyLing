@@ -51,7 +51,23 @@ namespace Poly_Ling.UndoSystem
         /// とは ActiveCategory が Bone / Morph のとき指す先が異なる。
         /// これは複数選択とは独立した既存の差異。
         /// </remarks>
-        public MeshContext ResolvedMeshContext => ParentModelContext?.FirstSelectedMeshContext;
+        public MeshContext ResolvedMeshContext
+            => ExplicitMeshContext ?? ParentModelContext?.FirstSelectedMeshContext;
+
+        /// <summary>
+        /// 解決先の明示指定。null のときだけ FirstSelectedMeshContext へ落ちる。
+        ///
+        /// 複数メッシュを1件ずつ回す操作（スキンウェイトの一括適用など）は、
+        /// 回すたびにここへ対象を入れること。入れないと MeshObject / TargetMesh /
+        /// OriginalPositions の書き込み先が「先頭の選択メッシュ」に固定され、
+        /// 2件目以降のループで先頭メッシュの MeshObject が今の対象のものへ
+        /// 差し替わる。Name / ParentIndex / Depth / HierarchyParentIndex は
+        /// MeshObject 側にある（MeshContext.cs:32-36,290-308）ため、
+        /// 名前も階層も道連れで壊れる。
+        ///
+        /// 使い終わったら null へ戻すこと（MeshUndoController.ClearTargetMeshContext）。
+        /// </summary>
+        public MeshContext ExplicitMeshContext { get; set; }
 
         // === メッシュデータ（委譲プロパティ） ===
 

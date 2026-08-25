@@ -84,13 +84,13 @@ namespace Poly_Ling.Player
         public Toggle LassoToggle { get; private set; }
 
         /// <summary>
-        /// 左ペイン：ピック／頂点ドラッグの診断ログ（verbose）トグル。既定 OFF。
+        /// 左ペイン：性能ログ（CSV）の記録トグル。既定 OFF。
         ///
-        /// OFF でも PLDiag の Pick リング記録と異常時の自動ダンプは動作する。
-        /// ON にすると 1 イベントごとに Console へ出るため、再現手順が判っている
-        /// ときだけ使う。値は PlayerUiPrefs に永続化される。
+        /// ON の間だけ PLPerfLog が一定間隔で数値 1 行を CSV へ追記する。
+        /// 出力先は Application.persistentDataPath で、開始時にログパネルへ通知される。
+        /// 値は PlayerUiPrefs に永続化される。
         /// </summary>
-        public Toggle PickDiagToggle { get; private set; }
+        public Toggle PerfLogToggle { get; private set; }
 
         /// <summary>
         /// 左ペイン：軌道回転の中心をローカル原点（＝ピボット）にするトグル。既定 ON。
@@ -176,6 +176,9 @@ namespace Poly_Ling.Player
         public Button ToolAdvancedSelBtn { get; private set; }
         public Button ToolSkinWeightPaintBtn { get; private set; }
 
+        /// <summary>左ペイン：スキンウェイト数値設定ボタン。</summary>
+        public Button SkinWeightNumericBtn { get; private set; }
+
         /// <summary>左ペイン：一時選択サブツール呼び出しボタン (デバッグ用。ショートカット R / G と同処理)。</summary>
         public Button SubToolBoxSelectBtn   { get; private set; }
         public Button SubToolLassoSelectBtn { get; private set; }
@@ -184,6 +187,9 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：スキンウェイトペイントセクション（ScrollView内）。</summary>
         public VisualElement SkinWeightPaintSection { get; private set; }
+
+        /// <summary>右ペイン：スキンウェイト数値設定セクション（ScrollView内）。</summary>
+        public VisualElement SkinWeightNumericSection { get; private set; }
 
         /// <summary>右ペイン：頂点移動サブパネルセクション（ScrollView内）。</summary>
         public VisualElement VertexMoveSection { get; private set; }
@@ -270,6 +276,8 @@ namespace Poly_Ling.Player
         public Button        NormalExcludeSetBtn   { get; private set; }
         public VisualElement NormalEditSection     { get; private set; }
         public Button        NormalEditBtn         { get; private set; }
+        public VisualElement NormalTransplantSection { get; private set; }
+        public Button        NormalTransplantBtn   { get; private set; }
         public VisualElement FaceHideSection       { get; private set; }
         public Button        FaceHideBtn           { get; private set; }
         public VisualElement MergeMeshesSection    { get; private set; }
@@ -356,6 +364,9 @@ namespace Poly_Ling.Player
         public Button        UnityClipTestBtn        { get; private set; }
         public VisualElement MotionClipTestSection   { get; private set; }
         public Button        MotionClipTestBtn        { get; private set; }
+        /// <summary>パイプライン自動検証（読み込み→スキン→ウェイト→マッピング→保存往復）。</summary>
+        public VisualElement PipelineTestSection      { get; private set; }
+        public Button        PipelineTestBtn          { get; private set; }
         public VisualElement RemoteServerSection    { get; private set; }
         public Button        RemoteServerBtn        { get; private set; }
         public VisualElement LogSection             { get; private set; }
@@ -853,18 +864,19 @@ namespace Poly_Ling.Player
             LassoToggle.style.marginBottom = 4;
             scroll.Add(LassoToggle);
 
-            // 診断ログ（ピック／移動）。OFF でもリング記録と自動ダンプは動くため、
-            // このトグルは「1 イベントごとの Console 出力」だけを切り替える。
-            PickDiagToggle = new Toggle("診断ログ（ピック／移動）") { value = false };
-            PickDiagToggle.style.color        = new StyleColor(Color.white);
-            PickDiagToggle.style.marginBottom = 4;
-            if (PickDiagToggle.labelElement != null)
+            // 性能ログ（CSV）。長時間の操作で次第に重くなる現象を追うための数値記録。
+            // ON の間だけ一定間隔で 1 行ずつ追記する。テキストログ（右ペインの「ログ」）
+            // とは別系統で、上限行数で捨てられないため長期の傾きが残る。
+            PerfLogToggle = new Toggle("性能ログを記録（CSV）") { value = false };
+            PerfLogToggle.style.color        = new StyleColor(Color.white);
+            PerfLogToggle.style.marginBottom = 4;
+            if (PerfLogToggle.labelElement != null)
             {
-                PickDiagToggle.labelElement.style.minWidth    = 0;
-                PickDiagToggle.labelElement.style.flexGrow    = 0;
-                PickDiagToggle.labelElement.style.marginRight = 3;
+                PerfLogToggle.labelElement.style.minWidth    = 0;
+                PerfLogToggle.labelElement.style.flexGrow    = 0;
+                PerfLogToggle.labelElement.style.marginRight = 3;
             }
-            scroll.Add(PickDiagToggle);
+            scroll.Add(PerfLogToggle);
 
             // 軌道回転の中心（既定＝ローカル原点）。Lasso Select の直下に置く。
             OrbitAroundLocalOriginToggle = new Toggle("回転はローカル原点中心") { value = true };
@@ -1099,6 +1111,10 @@ namespace Poly_Ling.Player
             NormalExcludeSetBtn = MakeBtn("法線再計算 除外辞書"); NormalExcludeSetBtn.style.flexGrow = 1;
             rowNormalExclude.Add(NormalEditBtn); rowNormalExclude.Add(NormalExcludeSetBtn); foTopology.Add(rowNormalExclude);
 
+            var rowNormalTransplant = new VisualElement(); rowNormalTransplant.style.flexDirection = FlexDirection.Row; rowNormalTransplant.style.marginBottom = 2;
+            NormalTransplantBtn = MakeBtn("法線移植"); NormalTransplantBtn.style.flexGrow = 1;
+            rowNormalTransplant.Add(NormalTransplantBtn); foTopology.Add(rowNormalTransplant);
+
             var rowFaceHide = new VisualElement(); rowFaceHide.style.flexDirection = FlexDirection.Row; rowFaceHide.style.marginBottom = 2;
             FaceHideBtn = MakeBtn("面の表示・非表示"); FaceHideBtn.style.flexGrow = 1;
             rowFaceHide.Add(FaceHideBtn); foTopology.Add(rowFaceHide);
@@ -1163,6 +1179,9 @@ namespace Poly_Ling.Player
             ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
             foBoneMorph.Add(ToolSkinWeightPaintBtn);
 
+            SkinWeightNumericBtn = MakeBtn("スキンW数値設定");
+            foBoneMorph.Add(SkinWeightNumericBtn);
+
             // ── UV・マテリアル ─────────────────────────────────────────
             var foUvMat = MakeFoldout("UV・マテリアル", "UvMat");
 
@@ -1204,6 +1223,10 @@ namespace Poly_Ling.Player
             UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1; UnityClipTestBtn.style.marginRight = 2;
             MotionClipTestBtn = MakeBtn("Yet（統合モーション)"); MotionClipTestBtn.style.flexGrow = 1;
             rowMisc2.Add(UnityClipTestBtn); rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
+
+            var rowMiscTest = new VisualElement(); rowMiscTest.style.flexDirection = FlexDirection.Row; rowMiscTest.style.marginBottom = 2;
+            PipelineTestBtn = MakeBtn("パイプライン自動検証"); PipelineTestBtn.style.flexGrow = 1;
+            rowMiscTest.Add(PipelineTestBtn); foOther.Add(rowMiscTest);
 
             var rowMisc3 = new VisualElement(); rowMisc3.style.flexDirection = FlexDirection.Row; rowMisc3.style.marginBottom = 2;
             UnderlayBtn = MakeBtn("下絵");        UnderlayBtn.style.flexGrow = 1; UnderlayBtn.style.marginRight = 2;
@@ -1468,6 +1491,9 @@ namespace Poly_Ling.Player
             // ── スキンウェイトペイントセクション
             SkinWeightPaintSection = AddSection(visible: false);
 
+            // ── スキンウェイト数値設定セクション
+            SkinWeightNumericSection = AddSection(visible: false);
+
             // ── ブレンドセクション
             BlendSection = AddSection(visible: false);
 
@@ -1494,6 +1520,7 @@ namespace Poly_Ling.Player
             MeshSelectionSetSection    = AddSection(visible: false);
             NormalExcludeSetSection    = AddSection(visible: false);
             NormalEditSection          = AddSection(visible: false);
+            NormalTransplantSection    = AddSection(visible: false);
             FaceHideSection            = AddSection(visible: false);
             MergeMeshesSection         = AddSection(visible: false);
             MorphSection               = AddSection(visible: false);
@@ -1532,6 +1559,7 @@ namespace Poly_Ling.Player
             VMDTestSection             = AddSection(visible: false);
             UnityClipTestSection       = AddSection(visible: false);
             MotionClipTestSection      = AddSection(visible: false);
+            PipelineTestSection        = AddSection(visible: false);
             UnderlaySection            = AddSection(visible: false);
             GridAxisSection            = AddSection(visible: false);
             CameraSection              = AddSection(visible: false);

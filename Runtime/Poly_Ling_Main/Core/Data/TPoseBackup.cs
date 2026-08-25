@@ -59,5 +59,37 @@ namespace Poly_Ling.Data
         /// ボーン別の BonePoseData バックアップ（Clone。ポーズ層の復元用）
         /// </summary>
         public Dictionary<int, BonePoseData> BonePoses = new();
+
+        /// <summary>
+        /// MeshContextList の並びが変わったとき、索引キーを付け替える。
+        /// remap が -1 を返したエントリは対象が消えたものとして捨てる。
+        /// ModelContext.Insert / RemoveAt / Move から呼ばれる。
+        /// </summary>
+        public void RemapIndices(System.Func<int, int> remap)
+        {
+            if (remap == null) return;
+
+            BoneRotations   = Remap(BoneRotations,   remap);
+            WorldMatrices   = Remap(WorldMatrices,   remap);
+            BindPoses       = Remap(BindPoses,       remap);
+            VertexPositions = Remap(VertexPositions, remap);
+            BonePositions   = Remap(BonePositions,   remap);
+            BoneUseLocal    = Remap(BoneUseLocal,    remap);
+            BonePoses       = Remap(BonePoses,       remap);
+        }
+
+        private static Dictionary<int, T> Remap<T>(
+            Dictionary<int, T> src, System.Func<int, int> remap)
+        {
+            if (src == null || src.Count == 0) return src;
+
+            var dst = new Dictionary<int, T>(src.Count);
+            foreach (var kv in src)
+            {
+                int ni = remap(kv.Key);
+                if (ni >= 0) dst[ni] = kv.Value;
+            }
+            return dst;
+        }
     }
 }

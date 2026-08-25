@@ -614,6 +614,11 @@ namespace Poly_Ling.Core
 
                         nativeArray.Dispose();
                     }
+                    // 【ここでは破棄しない】
+                    // WritebackTransformedVertices は Graphics.DrawMesh へ提出済みの
+                    // Mesh や GPU 側の可視フラグと同一フレーム内で競合し得る唯一の経路で、
+                    // ここで旧 Mesh を破棄すると矩形選択が一部頂点で効かなくなる不具合が出た。
+                    // リークは残るが、破棄は個別操作の経路 (ReplaceUnityMesh) に限定する。
                     ctx.UnityMesh = regenerated;
                 }
 
@@ -672,8 +677,10 @@ namespace Poly_Ling.Core
                 // データが永続的に壊れる。Vertices は変更せず、変換行列を適用した
                 // UnityMesh を生成する。行列の選択規則は
                 // UnifiedBufferManager.UpdateTransformMatrices と同一にする。
-                bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh && !meshObject.HasBoneWeight;
+                // 対象の型は明示する。ウェイトの有無の判定だけ MeshContext.IsSkinned へ寄せる。
+                bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh && !ctx.IsSkinned;
                 Matrix4x4 xform = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
+                // 上と同じ理由でここも破棄しない（直接代入）。
                 ctx.UnityMesh = meshObject.ToUnityMesh(xform);
             }
         }

@@ -137,102 +137,52 @@ namespace Poly_Ling.Data
         /// 実体側の頂点のBoneWeight.boneIndexNと、対応するミラー側頂点のBoneWeight.boneIndexNを
         /// 照合し、ウェイト値が一致するスロット同士のボーンインデックスをペアとして登録する。
         /// </summary>
+        /// <summary>
+        /// 左右のボーン対応表を、確定値（MeshObject.MirrorBoneIndex）から組む。
+        ///
+        /// 【ウェイトからの推定を廃止した理由】
+        ///   以前は「実体側と鏡側の頂点を並べ、ウェイトの数値が一致するスロット同士の
+        ///   ボーン番号を左右の相棒とみなして多数決」で決めていた。左右が対称に
+        ///   塗られている間しか当たらない方式で、片側だけ塗った直後に再構築すると
+        ///   誤った対応を学習し、MirrorBoneWeight とミラー側 BoneWeight に
+        ///   間違ったボーン番号を書き込んでいた（実測: 左腕・左ひじが両方とも
+        ///   ボーン Bridge+ に張り付いた）。
+        ///
+        ///   左右のボーン対応はスキンド変換が枝を分割した時点で 1 対 1 に確定している。
+        ///   MeshFilterToSkinnedConverter がその値を MirrorBoneIndex に書くので、
+        ///   ここはそれを読むだけにする。推定は一切しない。
+        /// </summary>
         private bool BuildBonePairMap()
         {
             BonePairMap = new Dictionary<int, int>();
 
+            var model = Real?.ParentModelContext ?? Mirror?.ParentModelContext;
             var realMesh = Real.MeshObject;
-            var mirrorMesh = Mirror.MeshObject;
 
-            // 投票カウント: (realBone, mirrorBone) → count
-            var votes = new Dictionary<(int, int), int>();
-
-            for (int i = 0; i < VertexMap.Length; i++)
-            {
-                int mi = VertexMap[i];
-                if (mi < 0) continue;
-
-                var realV = realMesh.Vertices[i];
-                var mirrorV = mirrorMesh.Vertices[mi];
-
-                if (!realV.HasBoneWeight || !mirrorV.HasBoneWeight)
-                    continue;
-
-                var rw = realV.BoneWeight.Value;
-                var mw = mirrorV.BoneWeight.Value;
-
-                // 各スロットのウェイト値が近いペアを検出
-                VoteSlots(rw, mw, votes);
-            }
-
-            // 投票結果からボーンペアを確定（最多得票を採用）
-            // realBone → (mirrorBone, count) の最大値
-            var bestMatch = new Dictionary<int, (int mirrorBone, int count)>();
-
-            foreach (var kv in votes)
-            {
-                int realBone = kv.Key.Item1;
-                int mirrorBone = kv.Key.Item2;
-                int count = kv.Value;
-
-                if (!bestMatch.TryGetValue(realBone, out var current) || count > current.count)
-                {
-                    bestMatch[realBone] = (mirrorBone, count);
-                }
-            }
-
-            foreach (var kv in bestMatch)
-            {
-                BonePairMap[kv.Key] = kv.Value.mirrorBone;
-            }
-
-            BuildLog += $"BonePairMap: {BonePairMap.Count} pairs from {votes.Count} vote entries\n";
-
-            // ボーンウェイトを持つ頂点が存在しない場合（MQO由来等）はボーンなしとして許可
             bool hasBoneWeights = realMesh.Vertices.Any(v => v.HasBoneWeight);
-            return BonePairMap.Count > 0 || !hasBoneWeights;
-        }
 
-        /// <summary>
-        /// BoneWeight4スロット同士で、ウェイト値が近いペアを投票する。
-        /// </summary>
-        private static void VoteSlots(BoneWeight rw, BoneWeight mw, Dictionary<(int, int), int> votes)
-        {
-            const float weightEpsilon = 0.01f;
-
-            // 実体側4スロット
-            float[] rWeights = { rw.weight0, rw.weight1, rw.weight2, rw.weight3 };
-            int[] rBones = { rw.boneIndex0, rw.boneIndex1, rw.boneIndex2, rw.boneIndex3 };
-
-            // ミラー側4スロット
-            float[] mWeights = { mw.weight0, mw.weight1, mw.weight2, mw.weight3 };
-            int[] mBones = { mw.boneIndex0, mw.boneIndex1, mw.boneIndex2, mw.boneIndex3 };
-
-            // 同じスロット位置のウェイト値が近ければ投票
-            for (int s = 0; s < 4; s++)
+            if (model == null)
             {
-                if (rWeights[s] < weightEpsilon) continue;
-
-                // 同じスロット位置が最も信頼性が高い
-                if (Mathf.Abs(rWeights[s] - mWeights[s]) < weightEpsilon)
-                {
-                    var pair = (rBones[s], mBones[s]);
-                    votes.TryGetValue(pair, out int c);
-                    votes[pair] = c + 2; // 同スロットは高信頼で+2
-                }
-
-                // ウェイト値が一致する他スロットも検索
-                for (int ms = 0; ms < 4; ms++)
-                {
-                    if (ms == s) continue;
-                    if (Mathf.Abs(rWeights[s] - mWeights[ms]) < weightEpsilon)
-                    {
-                        var pair = (rBones[s], mBones[ms]);
-                        votes.TryGetValue(pair, out int c);
-                        votes[pair] = c + 1;
-                    }
-                }
+                BuildLog += "BonePairMap: ParentModelContext が無いため対応表を作れない\n";
+                // 対応が判らないときは写像しない。壊れた値を書くよりも書かないほうが良い。
+                return !hasBoneWeights;
             }
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.Type != MeshType.Bone) continue;
+
+                int peer = mc.MirrorBoneIndex;
+                if (peer < 0 || peer >= model.MeshContextCount) continue;
+                BonePairMap[i] = peer;
+            }
+
+            BuildLog += $"BonePairMap: {BonePairMap.Count} pairs from MirrorBoneIndex\n";
+
+            // 対応表が空でもペア自体は成立させる。頂点マップは別に組めているので、
+            // 位置・法線の同期は動く。ウェイトだけ写像しない。
+            return true;
         }
 
         // ================================================================
@@ -253,18 +203,8 @@ namespace Poly_Ling.Data
                 var vertex = realMesh.Vertices[i];
                 if (!vertex.HasBoneWeight) continue;
 
-                var bw = vertex.BoneWeight.Value;
-                var mirrorBw = new BoneWeight
-                {
-                    boneIndex0 = MapBone(bw.boneIndex0),
-                    boneIndex1 = MapBone(bw.boneIndex1),
-                    boneIndex2 = MapBone(bw.boneIndex2),
-                    boneIndex3 = MapBone(bw.boneIndex3),
-                    weight0 = bw.weight0,
-                    weight1 = bw.weight1,
-                    weight2 = bw.weight2,
-                    weight3 = bw.weight3
-                };
+                // 写像できないものは書かない。誤ったボーン番号を残すより無いほうが良い。
+                if (!TryMapBoneWeight(vertex.BoneWeight.Value, out var mirrorBw)) continue;
 
                 vertex.MirrorBoneWeight = mirrorBw;
                 applied++;
@@ -274,13 +214,53 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// ボーンインデックスを反対側に変換。マップにない場合はそのまま返す。
+        /// ボーンインデックスを反対側に変換。対応が無ければ -1 を返す。
+        ///
+        /// 以前は対応が無いとき元の番号をそのまま返していた。中心線上のボーンなら
+        /// それで正しいが、対応表が不完全なだけの場合は「左のボーンで右側を動かす」
+        /// 誤りになる。呼び出し側で -1 を見て書き込みを止める。
         /// </summary>
         private int MapBone(int boneIndex)
         {
+            if (boneIndex < 0) return boneIndex;
             if (BonePairMap != null && BonePairMap.TryGetValue(boneIndex, out int mapped))
                 return mapped;
-            return boneIndex;
+            return -1;
+        }
+
+        /// <summary>
+        /// 4 スロット全部の写像を試みる。1 つでも対応が無ければ false。
+        /// ウェイト 0 のスロットは対応が無くてもそのまま 0 として通す。
+        /// </summary>
+        private bool TryMapBoneWeight(BoneWeight src, out BoneWeight dst)
+        {
+            dst = default;
+
+            int[] bones   = { src.boneIndex0, src.boneIndex1, src.boneIndex2, src.boneIndex3 };
+            float[] weights = { src.weight0, src.weight1, src.weight2, src.weight3 };
+            var mappedBones = new int[4];
+
+            for (int i = 0; i < 4; i++)
+            {
+                if (weights[i] <= 0f) { mappedBones[i] = 0; continue; }
+
+                int m = MapBone(bones[i]);
+                if (m < 0) return false;
+                mappedBones[i] = m;
+            }
+
+            dst = new BoneWeight
+            {
+                boneIndex0 = mappedBones[0],
+                boneIndex1 = mappedBones[1],
+                boneIndex2 = mappedBones[2],
+                boneIndex3 = mappedBones[3],
+                weight0 = weights[0],
+                weight1 = weights[1],
+                weight2 = weights[2],
+                weight3 = weights[3]
+            };
+            return true;
         }
 
         // ================================================================
@@ -304,6 +284,80 @@ namespace Poly_Ling.Data
                 if (mi < 0 || mi >= mirrorMesh.VertexCount) continue;
 
                 mirrorMesh.Vertices[mi].Position = MirrorPosition(realMesh.Vertices[i].Position);
+            }
+        }
+
+        /// <summary>
+        /// Real側のボーンウェイトを、対応ボーンに差し替えて Mirror 側へ書き込む。
+        ///
+        /// Mirror 側メッシュはファイルに実体を持つ独立メッシュ（スキン変換後は
+        /// MirrorGeometryDerived = false）で、自分の BoneWeight を保存する。
+        /// 実体側を塗っただけではこれが更新されないため、ウェイト操作のあとに呼ぶ。
+        ///
+        /// 併せて Real 側頂点の MirrorBoneWeight（GPU のミラー描画が読む値）も
+        /// 張り直す。従来これは Build() の ApplyMirrorBoneWeights でしか作られず、
+        /// 塗ったあとは古い値のまま残っていた。
+        /// </summary>
+        public void SyncBoneWeights()
+        {
+            if (!IsValid) return;
+
+            var realMesh   = Real.MeshObject;
+            var mirrorMesh = Mirror.MeshObject;
+            if (realMesh == null || mirrorMesh == null) return;
+
+            for (int i = 0; i < VertexMap.Length; i++)
+            {
+                if (i >= realMesh.VertexCount) break;
+
+                var realVertex = realMesh.Vertices[i];
+                if (!realVertex.HasBoneWeight) continue;
+
+                // 写像できないものは書かない。誤ったボーン番号を残すより無いほうが良い。
+                if (!TryMapBoneWeight(realVertex.BoneWeight.Value, out var mapped)) continue;
+
+                // GPU のミラー描画用（実体側頂点に持たせる値）
+                realVertex.MirrorBoneWeight = mapped;
+
+                // ミラーメッシュ本体（保存される値）
+                int mi = VertexMap[i];
+                if (mi < 0 || mi >= mirrorMesh.VertexCount) continue;
+                mirrorMesh.Vertices[mi].BoneWeight = mapped;
+            }
+        }
+
+        /// <summary>
+        /// Mirror 側のボーンウェイトを Real 側へ写す（SyncBoneWeights の逆向き）。
+        ///
+        /// ミラー側メッシュも選択して直接塗れる。塗った内容が次の実体側同期で
+        /// 消えないよう、ミラー側を書き換えたときはこちらを通す。
+        /// </summary>
+        public void SyncBoneWeightsFromMirror()
+        {
+            if (!IsValid) return;
+
+            var realMesh   = Real.MeshObject;
+            var mirrorMesh = Mirror.MeshObject;
+            if (realMesh == null || mirrorMesh == null) return;
+
+            for (int i = 0; i < VertexMap.Length; i++)
+            {
+                if (i >= realMesh.VertexCount) break;
+
+                int mi = VertexMap[i];
+                if (mi < 0 || mi >= mirrorMesh.VertexCount) continue;
+
+                var mirrorVertex = mirrorMesh.Vertices[mi];
+                if (!mirrorVertex.HasBoneWeight) continue;
+
+                // ミラー→実体は同じ対応表を逆向きに引く。BonePairMap は
+                // 実体ボーン→ミラーボーンとミラーボーン→実体ボーンの両方を持つ
+                // （MirrorBoneIndex を双方向に書いているため）。
+                if (!TryMapBoneWeight(mirrorVertex.BoneWeight.Value, out var mapped)) continue;
+
+                var realVertex = realMesh.Vertices[i];
+                realVertex.BoneWeight       = mapped;
+                realVertex.MirrorBoneWeight = mirrorVertex.BoneWeight.Value;
             }
         }
 

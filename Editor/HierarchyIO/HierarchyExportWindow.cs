@@ -68,6 +68,26 @@ namespace Poly_Ling.EditorIO
         private bool _attachAnimator    = true;   // 生成した Avatar を Animator に割り当てる（プレファブ時）
         private bool _sceneAnimator     = true;   // シーン出力時にルートへ空の Animator を付与
 
+        // --- レンダラ種別 ------------------------------------------------
+        //   従来は「頂点がボーンウェイトを持つか」だけで自動決定していたため、
+        //   同じモデルから MeshFilter 版とスキンド版を作り分ける手段が無かった。
+        //   Auto            : 従来どおり（ウェイトがあればスキンド）
+        //   ForceMeshFilter : ウェイトがあっても MeshFilter+MeshRenderer で出す
+        //   ※「スキンド強制」は用意しない。ウェイトが無いメッシュはスキンドに
+        //     できないため、その場合は先に MeshFilter → Skinned 変換が必要。
+        private enum RendererMode { Auto = 0, ForceMeshFilter = 1 }
+        private static readonly string[] RendererModeLabels =
+            { "自動（ウェイト有無で判定）", "MeshFilter を強制" };
+        private RendererMode _rendererMode = RendererMode.Auto;
+
+        // --- ミラー分岐の許容モード（EditorPrefs で保持・既定は許容） ------
+        //   部品数が多いモデルでは、個々のオブジェクトのミラー設定漏れ（もしくは
+        //   作業中に切って戻し忘れ）がほぼ必ず起きる。許容モードでは、分岐ルート
+        //   配下の実体側ノードにミラー側コンテキストが無くても、実体側から鏡像を
+        //   生成してミラー枝へ出す。厳密モードは従来動作。
+        private const string PrefsKeyTolerantMirrorBranch = "PolyLing.HierarchyExport.TolerantMirrorBranch";
+        private bool _tolerantMirrorBranch = true;
+
         // --- プレファブ／アセットの出力ルート（Assets/ 以下・EditorPrefs で保持） ---
         private const string DefaultPrefabOutputRoot  = "Assets/PolyLing";
         private const string PrefsKeyPrefabOutputRoot = "PolyLing.HierarchyExport.PrefabOutputRoot";
@@ -87,7 +107,9 @@ namespace Poly_Ling.EditorIO
         // --- Export() が生成した「マスター索引 → Transform」（Export→Avatar 間で共有） ---
         //   Avatar 割当先を model 側の名前ではなく実際に生成した Transform で引くために持つ。
         //   MakeUniqueName による改名や可視フィルタでの欠落を取りこぼさないため。
-        //   _exportedMirrorTf はミラー枝側のノード（関節の複製 `名前+` と MirrorSide メッシュ）。
+        //   _exportedMirrorTf は「索引 i のノードのミラー側」を引く表。
+        //   ミラー側の実現は 2 通り（関節の両側複製 ／ 別 MeshContext の MirrorSide）
+        //   あるが、どちらも実体側の索引で引けるよう Export 末尾で寄せている。
         private readonly Dictionary<int, Transform> _exportedRealTf   = new Dictionary<int, Transform>();
         private readonly Dictionary<int, Transform> _exportedMirrorTf = new Dictionary<int, Transform>();
 
@@ -117,12 +139,15 @@ namespace Poly_Ling.EditorIO
             _animatorController = string.IsNullOrEmpty(acPath)
                 ? null
                 : AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(acPath);
+
+            _tolerantMirrorBranch = EditorPrefs.GetBool(PrefsKeyTolerantMirrorBranch, true);
         }
 
         private void OnDisable()
         {
             SaveOutputRootPref();
             SaveAnimatorControllerPref();
+            EditorPrefs.SetBool(PrefsKeyTolerantMirrorBranch, _tolerantMirrorBranch);
         }
 
         // ================================================================
@@ -164,6 +189,31 @@ namespace Poly_Ling.EditorIO
                     + "（隠した形状は出力しません）。切ると子がルート直下へ平坦化されます。",
                     MessageType.None);
             }
+            _rendererMode = (RendererMode)EditorGUILayout.Popup(
+                "レンダラ", (int)_rendererMode, RendererModeLabels);
+            if (_rendererMode == RendererMode.ForceMeshFilter)
+            {
+                EditorGUILayout.HelpBox(
+                    "ボーンウェイトを無視して MeshFilter + MeshRenderer で出力します"
+                    + "（ボーン階層は Armature として出ます）。",
+                    MessageType.None);
+            }
+
+            EditorGUI.BeginChangeCheck();
+            _tolerantMirrorBranch = EditorGUILayout.Toggle(
+                "ミラー設定漏れを許容", _tolerantMirrorBranch);
+            if (EditorGUI.EndChangeCheck())
+                EditorPrefs.SetBool(PrefsKeyTolerantMirrorBranch, _tolerantMirrorBranch);
+            if (_tolerantMirrorBranch)
+            {
+                EditorGUILayout.HelpBox(
+                    "ミラー分岐ルート配下は、個々のオブジェクトのミラー設定が無くても"
+                    + "実体側から鏡像を作ってミラー枝へ出力します"
+                    + "（軸・距離はオブジェクトごとの設定を使います）。\n"
+                    + "切ると、ミラー側メッシュが実在するオブジェクトだけがミラー枝に出ます。",
+                    MessageType.None);
+            }
+
             _exportMeshOnly    = EditorGUILayout.Toggle("メッシュのみ（ボーン除外）", _exportMeshOnly);
             _exportPhysics     = EditorGUILayout.Toggle("剛体/JOINTを出力", _exportPhysics);
             _saveAsPrefab      = EditorGUILayout.Toggle("プレファブとして保存", _saveAsPrefab);
@@ -378,6 +428,8 @@ namespace Poly_Ling.EditorIO
             // BoneTransform の親子関係から WorldMatrix を構築してから書き出す。
             model.ComputeWorldMatrices();
 
+            WarnAboutExpectations(model);
+
             if (_saveAsPrefab)
             {
                 bool prefabOk = ExportAsPrefab(model);
@@ -426,6 +478,42 @@ namespace Poly_Ling.EditorIO
 
             EditorUtility.DisplayDialog(title, _report.BuildDialogText(header), "OK");
         }
+
+        /// <summary>
+        /// レポートをエクスポート先フォルダへ export_report.txt として書き出す。
+        ///   書き出し自体の失敗は本体の成否に影響させない（ログに落とすだけ）。
+        ///   パスは _report.LogFilePath に入れ、結果ダイアログの案内先にする。
+        /// </summary>
+        private void WriteExportReportFile(ModelContext model, string baseDir, bool ok)
+        {
+            if (string.IsNullOrEmpty(baseDir)) return;
+
+            string modelName = string.IsNullOrEmpty(model?.Name) ? "(名称なし)" : model.Name;
+            string header    = ok ? "書き出し成功" : "書き出し失敗";
+            string path      = $"{baseDir}/{ReportFileName}";
+
+            try
+            {
+                // BOM 付き UTF-8。Windows のテキストエディタで文字化けさせないため。
+                File.WriteAllText(
+                    path,
+                    _report.BuildLogText(header, modelName),
+                    new System.Text.UTF8Encoding(true));
+
+                _report.LogFilePath = path;
+                AssetDatabase.Refresh();
+                _report.Log($"レポート書き出し: {path}");
+            }
+            catch (System.Exception e)
+            {
+                // ここで Warn にすると「レポートが書けなかった」という警告が
+                // レポートに載らないまま件数だけ増える。ログに留める。
+                _report.Log($"レポートの書き出しに失敗: {path} → {e.Message}");
+            }
+        }
+
+        /// <summary>エクスポート先へ残すレポートのファイル名。</summary>
+        private const string ReportFileName = "export_report.txt";
 
         // ================================================================
         // プレファブ保存（決定論パス・上書き・アセット化）
@@ -562,6 +650,12 @@ namespace Poly_Ling.EditorIO
                     AssetDatabase.Refresh();
                 }
 
+                // 警告・エラーをプレファブと同じフォルダへテキストで残す。
+                //   コンソールはスタックトレースが混ざって読みにくく、他のログにも流される。
+                //   ここまでで警告は出揃っている（WarnAboutExpectations は ExportSingleModel、
+                //   Avatar 関連は上の BuildAvatarMapsFromModel / AvatarBuildCore）。
+                WriteExportReportFile(model, baseDir, prefab != null);
+
                 return prefab != null;
             }
             finally
@@ -590,6 +684,10 @@ namespace Poly_Ling.EditorIO
         /// メッシュ／関節の GameObject を1つ生成する。
         /// mirror=true のときはミラー側の枝に配置し、関節のローカル姿勢を鏡像化する。
         /// </summary>
+        /// <param name="generateMirrorShape">
+        /// ミラー枝に出す形状を実体側から作るか（許容モードでミラー設定漏れを救済する場合）。
+        /// false のときは mc 自身が既に鏡像済みのミラー側コンテキストである前提。
+        /// </param>
         private void CreateMeshGameObject(
             ModelContext model, MeshContext mc, int index, Mesh unityMesh,
             bool isSkinned, bool isJoint, bool mirror,
@@ -599,14 +697,18 @@ namespace Poly_Ling.EditorIO
             Dictionary<int, Transform> mirrorTransformByIndex,
             HashSet<string> usedMeshNames,
             int[] parentIndices,
-            MirrorPeerIndex peers)
+            MirrorPeerIndex peers,
+            bool generateMirrorShape)
         {
             string rawName = string.IsNullOrEmpty(mc.Name) ? $"Mesh_{index}" : mc.Name;
 
-            // ミラー側の関節は元と同名になるため接尾辞を付ける。
-            // ミラー側メッシュ（MirrorSide / BakedMirror）は元から実体側と別名なので付けない。
+            // ミラー側の関節は元と同名になるため別名にする。
+            //   まず左右対応で解決（左腕 → 右腕）。左右を持たない名前（センター等）と
+            //   既に使われている名前だけ従来の接尾辞（"+"）へ落とす。
+            // ミラー側メッシュ（MirrorSide / BakedMirror）は元から実体側と別名なので触らない。
             if (mirror && !MirrorBranchOps.IsMirrorSideContext(mc))
-                rawName += MirrorBranchSuffix;
+                rawName = MirrorNameOps.MakeMirrorName(
+                    rawName, MirrorBranchSuffix, usedMeshNames.Contains);
 
             string goName = usedMeshNames.Contains(rawName)
                 ? MakeUniqueName(rawName + MeshNameSuffix, usedMeshNames)
@@ -672,9 +774,58 @@ namespace Poly_Ling.EditorIO
             }
 
             // ミラー側は姿勢を鏡像化するため、頂点も新しいピボット基準に直す。
-            Mesh meshForGo = mirror ? BuildMirrorSideMesh(mc, unityMesh, realPeer) : unityMesh;
+            //   ・ミラー側コンテキスト … 形状は既に反転済み。ピボット差だけ平行移動する。
+            //   ・許容モードの生成    … 実体側から鏡像を作る（反転と巻き順の反転を伴う）。
+            Mesh meshForGo = unityMesh;
+            if (mirror)
+            {
+                meshForGo = generateMirrorShape
+                    ? BuildGeneratedMirrorMesh(mc, unityMesh, goName)
+                    : BuildMirrorSideMesh(mc, unityMesh, realPeer);
+
+                if (meshForGo == null)
+                {
+                    _report.Warn($"ミラー側メッシュを生成できませんでした: \"{mc.Name}\"");
+                    meshForGo = unityMesh;
+                }
+            }
 
             AttachStaticMesh(go, mc, meshForGo, model, hasMeshParent, mirror, trsSource);
+        }
+
+        /// <summary>
+        /// ミラー設定を持たない実体側ノードから、ミラー枝用のメッシュを新しく作る。
+        ///
+        /// ピボットは ApplyJointTransform / AttachStaticMesh が MirrorLocalTRS で
+        /// 鏡像化する。ローカル姿勢は L' = S_d · L · S_0 の形になるため
+        /// （S_d はミラー面 x=d での反射、S_0 は原点まわりの反射）、
+        /// 頂点に掛けるべきなのは距離を含まない S_0 の側になる。
+        /// よって BuildMirroredMeshObject には距離 0 を渡す。
+        ///
+        /// 実体側の UnityMesh をそのまま使い回すと巻き順が裏返ったままになるため、
+        /// MeshObject 段階で鏡像化してから Unity メッシュへ変換する。
+        /// </summary>
+        private static Mesh BuildGeneratedMirrorMesh(MeshContext mc, Mesh source, string goName)
+        {
+            if (mc?.MeshObject == null) return null;
+
+            var mirroredObj = MirrorBranchOps.BuildMirroredMeshObject(
+                mc.MeshObject,
+                MirrorBranchOps.ResolveMirrorAxis(mc),
+                0f,                            // 距離はピボット側が吸収する
+                mc.MirrorMaterialOffset,
+                mc.Name);
+            if (mirroredObj == null) return null;
+
+            // 行列版を単位行列で呼ぶ理由は実体側と同じ（法線が分岐する頂点の欠落回避）。
+            var mesh = mirroredObj.ToUnityMesh(Matrix4x4.identity);
+            if (mesh == null) return null;
+
+            // アセット名は GameObject 名（既に左右入替済み）に合わせる。
+            mesh.name = string.IsNullOrEmpty(goName)
+                ? (source != null ? source.name : mc.Name) + MirrorBranchSuffix
+                : goName;
+            return mesh;
         }
 
         /// <summary>
@@ -723,7 +874,8 @@ namespace Poly_Ling.EditorIO
             if (offset.sqrMagnitude < 1e-12f) return source;
 
             var mesh = UnityEngine.Object.Instantiate(source);
-            mesh.name = source.name + MirrorBranchSuffix;
+            // 「左腕+」ではなく「右腕」にする。左右対応が付かない名前だけ接尾辞へ落ちる。
+            mesh.name = MirrorNameOps.MakeMirrorName(source.name, MirrorBranchSuffix, null);
 
             var verts = mesh.vertices;
             for (int i = 0; i < verts.Length; i++) verts[i] += offset;
@@ -760,12 +912,23 @@ namespace Poly_Ling.EditorIO
             }
 
             // 親を持たない場合はワールド指定。
-            //   ここで鏡像化するとモデル原点基準で反転してしまうため行わない。
-            //   ミラー分岐のルートは必ず実体側の親を持つ想定。
-            var wm = mc.WorldMatrix;
-            go.transform.position    = new Vector3(wm.m03, wm.m13, wm.m23);
-            go.transform.rotation    = wm.rotation;
-            go.transform.localScale  = wm.lossyScale;
+            //   分岐ルートがモデルのルート（HierarchyParentIndex == -1）でも
+            //   成立させる必要があるため、ミラー側はここでも鏡像化する。
+            //   親が無いときのローカル基準はモデル原点そのものなので、
+            //   ワールド値に同じ規則（MirrorLocalTRS）を適用すれば
+            //   親を持つ場合と同じ結果になる。
+            //   飛ばすとミラー側ルートが実体側と同じ位置に出て、
+            //   配下のミラー枝ごと実体側へ重なる。
+            var wm   = mc.WorldMatrix;
+            var wPos = new Vector3(wm.m03, wm.m13, wm.m23);
+            var wRot = wm.rotation.eulerAngles;
+            var wScl = wm.lossyScale;
+
+            if (mirror) MirrorBranchOps.MirrorLocalTRS(src, ref wPos, ref wRot);
+
+            go.transform.position   = wPos;
+            go.transform.rotation   = Quaternion.Euler(wRot);
+            go.transform.localScale = wScl;
         }
 
         // ================================================================
@@ -1193,8 +1356,9 @@ namespace Poly_Ling.EditorIO
                 string traitName = kv.Key;
                 int    index     = kv.Value;
 
-                // 両表に同じ索引があるノード＝両側に複製された関節。
-                // MirrorSide メッシュはミラー枝側にしか居ないためここに入らない。
+                // 両表に同じ索引がある＝そのノードが両側に出ている。
+                // ミラー側の実現方法（関節の両側複製／別 MeshContext の MirrorSide）は
+                // Export 末尾で実体側索引へ寄せてあるため、ここでは区別しない。
                 if (!_exportedRealTf.ContainsKey(index)) continue;
                 if (!_exportedMirrorTf.TryGetValue(index, out var mirrorTf)) continue;
                 if (mirrorTf == null) continue;
@@ -1249,6 +1413,70 @@ namespace Poly_Ling.EditorIO
                 Debug.Log(
                     $"[HierarchyExport] 半身モデルのミラー側 {supplemented} 件を補完:\n  " +
                     string.Join("\n  ", supplementedLog));
+            }
+        }
+
+        /// <summary>
+        /// 「そのつもりで出したのに出ない」典型パターンを、出力の前に明示する。
+        ///   ・ウェイト皆無なのにスキンドを期待している
+        ///   ・MirrorType は立っているのにミラー側コンテキストが無い（＝右側は出ない）
+        ///   ・ミラー側はあるのに分岐ルートが未設定（＝枝が展開されない）
+        ///   ・Humanoid 割当が空のまま Avatar 生成を頼まれている
+        /// いずれもログを読まないと原因に辿り着けず、無言で片側だけが出る。
+        /// </summary>
+        private void WarnAboutExpectations(ModelContext model)
+        {
+            if (model == null) return;
+
+            bool anyWeight        = false;
+            bool anyMirrorType    = false;
+            bool anyMirrorSide    = false;
+            bool anyBranchRoot    = false;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null) continue;
+
+                if (mc.MeshObject != null && mc.MeshObject.HasBoneWeight) anyWeight = true;
+                if (mc.MirrorType > 0)                                    anyMirrorType = true;
+                if (MirrorBranchOps.IsMirrorSideContext(mc))              anyMirrorSide = true;
+                if (mc.IsMirrorBranchRoot)                                anyBranchRoot = true;
+            }
+
+            if (!anyWeight)
+            {
+                _report.Warn(
+                    "ボーンウェイトを持つメッシュがありません。全て MeshFilter で出力します。\n"
+                    + "スキンド版が必要なら、先に「MeshFilter → Skinned 変換」を実行してください。");
+            }
+
+            // 許容モードで分岐ルートが在れば、ミラー側メッシュが無くても枝から生成される。
+            //   その場合この警告は事実に反するので出さない。
+            bool coveredByBranch = _tolerantMirrorBranch && anyBranchRoot;
+
+            if (anyMirrorType && !anyMirrorSide && !coveredByBranch)
+            {
+                _report.Warn(
+                    "ミラーが有効（MirrorType>0）なのに、ミラー側メッシュがモデル内に存在しません。\n"
+                    + "プロジェクトファイルの読込ではミラー側は生成されないため、このままでは"
+                    + "反対側は出力されません。メッシュ一覧でミラーを一度 OFF→ON するか、"
+                    + "ミラー分岐ルートを設定して「ミラー設定漏れを許容」を有効にしてください。");
+            }
+
+            if (!anyBranchRoot && (anyMirrorSide || anyMirrorType))
+            {
+                _report.Warn(
+                    "ミラー分岐ルートが1つも設定されていません。\n"
+                    + "枝が展開されないため、関節の複製と左右の Humanoid 補完は行われません。");
+            }
+
+            if (_buildAvatar && (model.HumanoidMapping == null || model.HumanoidMapping.IsEmpty))
+            {
+                _report.Warn(
+                    "Humanoid 割当が空です。Avatar は生成できません。\n"
+                    + "先に Humanoid 割当（最低でも Hips）を設定してください。"
+                    + "「不足関節を補完」は Hips を起点に脚・腕を補うため、Hips が無いと動きません。");
             }
         }
 
@@ -1418,7 +1646,21 @@ namespace Poly_Ling.EditorIO
             // ミラー分岐の解析（分岐ルート配下を実体側／ミラー側に振り分ける）。
             //   可視性には依存しないので補完より前に出せる。ミラー相方の補完判定に使うため
             //   「ミラー解析 → 不可視補完 → 生成」の順に固定する。
-            var branchSide = MirrorBranchOps.AnalyzeMirrorBranches(model, parentIndices);
+            //   許容モードでは、ミラー側コンテキストを持たない実体側ノードにも
+            //   ミラー枝のノードを作る（形状はその場で鏡像化する。モデルは変えない）。
+            var branchPlan = MirrorBranchOps.BuildMirrorBranchPlan(
+                model, parentIndices,
+                _tolerantMirrorBranch
+                    ? MirrorBranchTolerance.Tolerant
+                    : MirrorBranchTolerance.Strict,
+                mirrorPeers);
+            var branchSide = branchPlan.Side;
+
+            int generatedMirrorCount = branchPlan.CollectGeneratedMirrors().Count;
+            if (generatedMirrorCount > 0)
+                _report.Note(
+                    $"ミラー設定の無い枝内オブジェクト {generatedMirrorCount} 件から"
+                    + "ミラー側を生成して出力します（許容モード）。");
 
             var exportTargets = BuildExportTargets(model, parentIndices, mirrorPeers, branchSide);
 
@@ -1435,7 +1677,8 @@ namespace Poly_Ling.EditorIO
                 if (mc.MeshObject == null) continue;
                 if (!exportTargets.Contains(i)) continue;
 
-                bool isSkinned = mc.MeshObject.HasBoneWeight && boneTransformMap.Count > 0
+                bool isSkinned = _rendererMode != RendererMode.ForceMeshFilter
+                              && mc.MeshObject.HasBoneWeight && boneTransformMap.Count > 0
                               && !_supplementedIndices.Contains(i);
 
                 // 頂点を持たないノードは関節（グループ）として扱い、空の GameObject にする。
@@ -1469,22 +1712,31 @@ namespace Poly_Ling.EditorIO
                 bool supplementedMirrorSide =
                     _supplementedIndices.Contains(i) && MirrorBranchOps.IsMirrorSideContext(mc);
 
+                // ミラー枝に出すかは出力計画が決める。
+                //   ・ミラー側コンテキスト（従来）
+                //   ・許容モードで、ミラー相方を持たない実体側ノード
+                // 関節の両側複製は計画の外なので、ここで OR する（従来どおり）。
+                bool emitMirror = !isSkinned && branchPlan.EmitsMirror(i);
+
                 bool makeNormal = !supplementedMirrorSide && (!inBranch || isJoint || side == 0);
-                bool makeMirror = inBranch && (isJoint || side == 1);
+                bool makeMirror = (inBranch && isJoint) || emitMirror;
+
+                // ミラー枝の形状を実体側から作る必要があるか（＝ミラー設定漏れの救済）。
+                bool generateMirrorShape = emitMirror && branchPlan.GeneratesMirrorShape(i);
 
                 if (makeNormal)
                     CreateMeshGameObject(
                         model, mc, i, unityMesh, isSkinned, isJoint, mirror: false,
                         rootGo, armatureRoot, boneTransformMap,
                         meshTransformByIndex, mirrorTransformByIndex, usedMeshNames,
-                        parentIndices, mirrorPeers);
+                        parentIndices, mirrorPeers, generateMirrorShape: false);
 
                 if (makeMirror)
                     CreateMeshGameObject(
                         model, mc, i, unityMesh, isSkinned, isJoint, mirror: true,
                         rootGo, armatureRoot, boneTransformMap,
                         meshTransformByIndex, mirrorTransformByIndex, usedMeshNames,
-                        parentIndices, mirrorPeers);
+                        parentIndices, mirrorPeers, generateMirrorShape);
             }
 
             // ── 剛体/JOINT 書き出し ──────────────────────────────────
@@ -1492,11 +1744,46 @@ namespace Poly_Ling.EditorIO
                 ExportPhysics(model, rootGo, boneTransformMap);
 
             // ── 索引→Transform 表を確定（Avatar 割当がこれを引く）───────
-            //   ボーンとメッシュは索引が重ならないため実体側にまとめて入れる。
-            //   ミラー枝側は別表。関節は両表に同じ索引で入る（＝両側に複製された印）。
+            //
+            // 【規約】索引は常に「割当対象ノード（＝実体側）の MeshContext 索引」。
+            //   _exportedRealTf[i]   … 索引 i のノードの実体側 GameObject
+            //   _exportedMirrorTf[i] … 索引 i のノードのミラー側 GameObject
+            //
+            //   ミラー側 GameObject の作られ方は 2 通りあり、由来ノードの索引が
+            //   一致するとは限らない。両方をこの規約へ寄せてから格納する。
+            //     A: 頂点ゼロの関節（左肩・左腕 …）
+            //        ミラー側 MeshContext が存在しない（CreateDerivedMirrorContext は
+            //        頂点ゼロで null を返す）ため、CreateMeshGameObject が実体側と
+            //        同じ索引でミラー枝にも GameObject を作る。索引は一致する。
+            //     B: 頂点を持つメッシュ（左人指１・左つま先・左目 …）
+            //        ミラーはインポータが作った別の MeshContext（MirrorSide）で、
+            //        GameObject はその相方自身の索引で登録される。索引が一致しない。
+            //
+            //   B を実体側索引へ寄せずに mirrorTransformByIndex をそのまま流すと、
+            //   消費側は「ミラー枝が無い」と誤認して左右補完を黙って諦める。
+            //   規約は表の側で満たす（消費側ごとに引き直さない）。
             foreach (var kv in boneTransformMap)     _exportedRealTf[kv.Key]   = kv.Value;
             foreach (var kv in meshTransformByIndex) _exportedRealTf[kv.Key]   = kv.Value;
+
+            // A: 由来ノードの索引がそのまま実体側索引。
             foreach (var kv in mirrorTransformByIndex) _exportedMirrorTf[kv.Key] = kv.Value;
+
+            // B: ミラー側 MeshContext の GameObject を、実体側相方の索引へ登録する。
+            //    ミラー分岐ルート配下でないノード（目など）のミラー側は
+            //    branchSide に載らず makeNormal 側へ回るため meshTransformByIndex に
+            //    入る。どちらの表からも拾う。
+            //    A で既に埋まっている索引は上書きしない（関節の複製が正）。
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                if (_exportedMirrorTf.ContainsKey(i)) continue;
+                if (!mirrorPeers.TryGetMirror(i, out int peerIndex)) continue;
+
+                if (mirrorTransformByIndex.TryGetValue(peerIndex, out var peerTf) ||
+                    meshTransformByIndex.TryGetValue(peerIndex, out peerTf))
+                {
+                    if (peerTf != null) _exportedMirrorTf[i] = peerTf;
+                }
+            }
 
             _report.BoneCount         = boneTransformMap.Count;
             _report.ExportedNodeCount = meshTransformByIndex.Count + mirrorTransformByIndex.Count;
@@ -1703,9 +1990,21 @@ namespace Poly_Ling.EditorIO
             }
             else
             {
-                var wm = mc.WorldMatrix;
-                go.transform.position   = new Vector3(wm.m03, wm.m13, wm.m23);
-                go.transform.rotation   = wm.rotation;
+                // 親を持たない場合はワールド指定。
+                var wm   = mc.WorldMatrix;
+                var wPos = new Vector3(wm.m03, wm.m13, wm.m23);
+                var wRot = wm.rotation.eulerAngles;
+
+                // 実体側ノードを複製して作ったミラー枝は、WorldMatrix が実体側のままなので
+                // ここで鏡像化しないと反対側へ行かない（分岐ルートがモデルのルート直下の
+                // ときに露見する）。ミラー側コンテキストは WorldMatrix が既に鏡像
+                // （ModelContext.ApplyMirrorConjugate の S·H·S）なので触らない。
+                // ApplyJointTransform の親なし分岐と同じ規則。
+                if (mirror && !MirrorBranchOps.IsMirrorSideContext(mc))
+                    MirrorBranchOps.MirrorLocalTRS(src, ref wPos, ref wRot);
+
+                go.transform.position   = wPos;
+                go.transform.rotation   = Quaternion.Euler(wRot);
                 go.transform.localScale = wm.lossyScale;
             }
 

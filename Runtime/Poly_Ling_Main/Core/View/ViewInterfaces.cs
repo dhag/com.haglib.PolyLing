@@ -71,6 +71,18 @@ namespace Poly_Ling.View
         bool IsMirrorSide { get; }
         bool IsRealSide { get; }
         bool HasBakedMirrorChild { get; }
+        /// <summary>
+        /// 生成ミラーか。true のとき、頂点も姿勢も実体側から作り直されるため
+        /// このメッシュを直接編集しても上書きで消える（＝選択させない）。
+        /// スキンド変換後のミラーは独立メッシュになるので false。
+        /// </summary>
+        bool MirrorGeometryDerived { get; }
+        /// <summary>
+        /// ミラー分岐ルート。エクスポート／スキンド変換で、このノードを含む
+        /// 配下を実体側とミラー側の2本の枝に分割する起点。
+        /// ボーン生成前のメッシュ属性なので、オブジェクトリストで設定する。
+        /// </summary>
+        bool IsMirrorBranchRoot { get; }
 
         // ボーン
         int BoneIndex { get; }

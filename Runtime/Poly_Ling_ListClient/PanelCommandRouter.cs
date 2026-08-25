@@ -132,6 +132,25 @@ namespace Poly_Ling.ListClient
                         ("objectIds",     IdCsv(c.ModelIndex, c.MasterIndices, null)));
                     break;
 
+                // ── メッシュブレンド ──────────────────────────────────
+                // ソースは (モデル索引, オブジェクト索引, ウェイト) の3列を
+                // 同じ並びの CSV で送る。ソースは別モデルを指せるため、
+                // objectIds は書き込み先（宛先）についてだけ添える。
+                // ウェイトはロケール依存の小数点を避けて InvariantCulture で送る。
+                case ApplyBlendCommand c:
+                    P(c.ModelIndex, "applyBlend",
+                        ("masterIndices",    Csv(new[] { c.DestMasterIndex })),
+                        ("objectIds",        IdCsv(c.ModelIndex, new[] { c.DestMasterIndex }, null)),
+                        ("destMasterIndex",  c.DestMasterIndex.ToString()),
+                        ("srcModelIndices",  Csv(SrcModelIndices(c.Sources))),
+                        ("srcMasterIndices", Csv(SrcMasterIndices(c.Sources))),
+                        ("srcWeights",       FloatCsv(SrcWeights(c.Sources))),
+                        ("matchMode",        ((int)c.MatchMode).ToString()),
+                        ("createNewObject",  c.CreateNewObject      ? "true" : "false"),
+                        ("recalcNormals",    c.RecalculateNormals   ? "true" : "false"),
+                        ("selectedOnly",     c.SelectedVerticesOnly ? "true" : "false"));
+                    break;
+
                 // ── BonePose ──────────────────────────────────────────
                 case InitBonePoseCommand c:
                     P(c.ModelIndex, "initBonePose", ("masterIndices", Csv(c.MasterIndices)),
@@ -237,6 +256,46 @@ namespace Poly_Ling.ListClient
             if (s.Contains(",") || s.Contains("\"") || s.Contains("\n"))
                 return "\"" + s.Replace("\"", "\"\"") + "\"";
             return s;
+        }
+
+        /// <summary>
+        /// float 配列を CSV 1行にする。ロケール依存の小数点（"0,5"）を避けるため
+        /// InvariantCulture で書く。受け側も同じ規則で読む。
+        /// </summary>
+        private static string FloatCsv(float[] a)
+        {
+            if (a == null || a.Length == 0) return "";
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(a[i].ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            return sb.ToString();
+        }
+
+        private static int[] SrcModelIndices(BlendSourceSpec[] s)
+        {
+            if (s == null) return System.Array.Empty<int>();
+            var a = new int[s.Length];
+            for (int i = 0; i < s.Length; i++) a[i] = s[i].ModelIndex;
+            return a;
+        }
+
+        private static int[] SrcMasterIndices(BlendSourceSpec[] s)
+        {
+            if (s == null) return System.Array.Empty<int>();
+            var a = new int[s.Length];
+            for (int i = 0; i < s.Length; i++) a[i] = s[i].MasterIndex;
+            return a;
+        }
+
+        private static float[] SrcWeights(BlendSourceSpec[] s)
+        {
+            if (s == null) return System.Array.Empty<float>();
+            var a = new float[s.Length];
+            for (int i = 0; i < s.Length; i++) a[i] = s[i].Weight;
+            return a;
         }
 
         private static string Csv(int[] a)

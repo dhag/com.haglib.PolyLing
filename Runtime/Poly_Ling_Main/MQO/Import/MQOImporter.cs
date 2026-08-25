@@ -115,11 +115,8 @@ namespace Poly_Ling.MQO
             {
                 if (boneCtx == null) continue;
 
-                // 親インデックスがある場合のみオフセット
-                if (boneCtx.ParentIndex >= 0)
-                {
-                    boneCtx.ParentIndex += offset;
-                }
+                // 親インデックスがある場合のみオフセット。
+                // ParentIndex は HierarchyParentIndex と同じ入れ物なので 1 回だけ足す。
                 if (boneCtx.HierarchyParentIndex >= 0)
                 {
                     boneCtx.HierarchyParentIndex += offset;

@@ -24,19 +24,39 @@ namespace Poly_Ling.Player
         private MeshSourcePick     _frillPick  = new MeshSourcePick();
         private BeltSplineOption   _frillSpline = new BeltSplineOption();
         private BeltOrientOption   _frillOrient = new BeltOrientOption();
+        private BeltStackOption    _frillStack  = new BeltStackOption();
 
         private BeltProfileEdit _frillEdit = new BeltProfileEdit
         {
             ClosedLoop     = false,
             DefaultProfile = DefaultFrillProfile,
             UndoStackId    = "PlayerEdit/FrillProfileEdit",
-            UndoTitle      = "フリル断面編集",
-            BgSectionLabel = "フリル下絵",
+            UndoTitle      = "フリル断面編集A",
+            BgSectionLabel = "フリル下絵A",
             CsvRecentKey   = "Primitive.Frill.ProfileCsv",
             CsvDefaultName = "frill_profile.csv",
         };
 
+        /// <summary>2プロファイルモードの B 側。A とは Undo スタックも下絵もCSVパスも別に持つ。</summary>
+        private BeltProfileEdit _frillEditB = new BeltProfileEdit
+        {
+            ClosedLoop     = false,
+            DefaultProfile = DefaultFrillProfile,
+            UndoStackId    = "PlayerEdit/FrillProfileEditB",
+            UndoTitle      = "フリル断面編集B",
+            BgSectionLabel = "フリル下絵B",
+            CsvRecentKey   = "Primitive.Frill.ProfileCsvB",
+            CsvDefaultName = "frill_profile_b.csv",
+        };
+
+        /// <summary>断面プロファイルエディタで B 側を編集中なら true（メモリ保持・非永続）。</summary>
+        private bool _frillEditingB;
+
         private Label _frillInfoLabel;
+
+        /// <summary>上下フリップ行。2プロファイルOFFのときは隠す。</summary>
+        private VisualElement _frillFlipRow;
+        private VisualElement _frillFlipHint;
 
         /// <summary>梯子1本ごとの高さ倍率スライダを並べるコンテナ。梯子リストの変化で作り直す。</summary>
         private VisualElement _frillBeltScaleContainer;
@@ -70,9 +90,19 @@ namespace Poly_Ling.Player
             hint.style.marginBottom = 2;
             bc.Add(hint);
 
+            // ── 上下方向への探索（取り込み・自動検索・円環検索すべてに効く） ──
+            bc.Add(TR(T("BeltStackSearch"), () => _frillStack.Enabled,
+                v => { _frillStack.Enabled = v; D(); }));
+
+            var stackHint = new Label(T("BeltStackSearchHint"));
+            stackHint.style.fontSize     = 10;
+            stackHint.style.whiteSpace   = WhiteSpace.Normal;
+            stackHint.style.marginBottom = 2;
+            bc.Add(stackHint);
+
             bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
             {
-                ImportBeltFromMesh(_frillBelts);
+                ImportBeltFromMesh(_frillBelts, _frillStack.Enabled);
                 RefreshFrillInfo();
             }));
 
@@ -87,7 +117,7 @@ namespace Poly_Ling.Player
 
             bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
             {
-                AutoDetectBelts(_frillBelts, _frillPick.Current);
+                AutoDetectBelts(_frillBelts, _frillPick.Current, _frillStack.Enabled);
                 RefreshFrillInfo();
             }));
 
@@ -100,7 +130,7 @@ namespace Poly_Ling.Player
 
             bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectRings"), () =>
             {
-                AutoDetectRings(_frillBelts, _frillPick.Current);
+                AutoDetectRings(_frillBelts, _frillPick.Current, _frillStack.Enabled);
                 RefreshFrillInfo();
             }));
 
@@ -143,6 +173,30 @@ namespace Poly_Ling.Player
             seamHint.style.whiteSpace   = WhiteSpace.Normal;
             seamHint.style.marginBottom = 2;
             c.Add(seamHint);
+
+            // ── 断面プロファイルを2本にする ──
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(TR(T("FrillTwoProfiles"), () => _frillP.TwoProfiles,
+                v => { _frillP.TwoProfiles = v; D(); RefreshFrillProfileVis(); RebuildFrillProfileEditor(); }));
+
+            var twoHint = new Label(T("FrillTwoProfilesHint"));
+            twoHint.style.fontSize     = 10;
+            twoHint.style.whiteSpace   = WhiteSpace.Normal;
+            twoHint.style.marginBottom = 2;
+            c.Add(twoHint);
+
+            _frillFlipRow = TR(T("FrillProfileFlip"), () => _frillP.ProfileFlip,
+                v => { _frillP.ProfileFlip = v; D(); });
+            c.Add(_frillFlipRow);
+
+            var flipHint = new Label(T("FrillProfileFlipHint"));
+            flipHint.style.fontSize     = 10;
+            flipHint.style.whiteSpace   = WhiteSpace.Normal;
+            flipHint.style.marginBottom = 2;
+            _frillFlipHint = flipHint;
+            c.Add(flipHint);
+
+            RefreshFrillProfileVis();
 
             // ── 面の向き ──
             c.Add(TR(T("FlipFaces"), () => _frillP.FlipFaces,
@@ -191,7 +245,80 @@ namespace Poly_Ling.Player
                 -0.5f, 0.5f,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
-            BuildBeltProfileEditor(_profileEditorContainer, _frillEdit, T("FrillAxisHint"));
+            RebuildFrillProfileEditor();
+        }
+
+        /// <summary>上下フリップ行の表示切替（2プロファイルON時のみ出す）。</summary>
+        private void RefreshFrillProfileVis()
+        {
+            var d = _frillP.TwoProfiles ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_frillFlipRow  != null) _frillFlipRow.style.display  = d;
+            if (_frillFlipHint != null) _frillFlipHint.style.display = d;
+        }
+
+        /// <summary>
+        /// 断面プロファイルエディタを作り直す。
+        /// 2プロファイルONのときは A/B 切替行を先頭に置き、編集していない側を灰色で重ねて表示する。
+        /// </summary>
+        private void RebuildFrillProfileEditor()
+        {
+            var pe = _profileEditorContainer;
+            if (pe == null) return;
+
+            pe.Clear();
+
+            EnsureBeltProfile(_frillEdit);
+            EnsureBeltProfile(_frillEditB);
+
+            bool two = _frillP.TwoProfiles;
+            if (!two) _frillEditingB = false;
+
+            var active = _frillEditingB ? _frillEditB : _frillEdit;
+            var other  = _frillEditingB ? _frillEdit  : _frillEditB;
+
+            _frillEdit .GhostPoints = null;
+            _frillEditB.GhostPoints = null;
+            if (two) active.GhostPoints = other.Points;
+
+            if (two)
+            {
+                pe.Add(PlayerIoUiKit.SectionLabel(T("FrillProfileTarget")));
+
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.marginBottom  = 2;
+
+                row.Add(FrillProfileTargetBtn(T("FrillProfileA"), false));
+                row.Add(FrillProfileTargetBtn(T("FrillProfileB"), true));
+                pe.Add(row);
+
+                var ghostHint = new Label(T("FrillProfileGhostHint"));
+                ghostHint.style.fontSize     = 10;
+                ghostHint.style.whiteSpace   = WhiteSpace.Normal;
+                ghostHint.style.marginBottom = 2;
+                pe.Add(ghostHint);
+            }
+
+            BuildBeltProfileEditor(pe, active, T("FrillAxisHint"));
+            PlayerLayoutRoot.ApplyDarkTheme(pe);
+        }
+
+        /// <summary>A/B 切替ボタン1個ぶん。</summary>
+        private Button FrillProfileTargetBtn(string label, bool isB)
+        {
+            var btn = new Button(() =>
+            {
+                if (_frillEditingB == isB) return;
+                _frillEditingB = isB;
+                RebuildFrillProfileEditor();
+            })
+            { text = label };
+
+            btn.style.flexGrow = 1;
+            btn.style.backgroundColor = (_frillEditingB == isB)
+                ? new StyleColor(new Color(0.25f, 0.45f, 0.65f))
+                : new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+            return btn;
         }
 
         private void RefreshFrillInfo()
@@ -202,9 +329,9 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 梯子1本ごとの高さ倍率スライダを作り直す。
+        /// 高さ倍率スライダを作り直す。段グループが1つの単位になる（段ごとには出さない）。
         /// 梯子の取込・自動検索・CSV読込はすべて RefreshFrillInfo を通るため、ここから呼ばれる。
-        /// 梯子が1本以下のときは全体倍率だけで足りるので何も出さない。
+        /// グループが1つ以下のときは全体倍率だけで足りるので何も出さない。
         /// </summary>
         private void RebuildFrillBeltScales()
         {
@@ -213,9 +340,25 @@ namespace Poly_Ling.Player
 
             box.Clear();
 
-            int count = 0;
-            foreach (var b in _frillBelts) if (b != null && b.HasData) count++;
-            if (count < 2) return;
+            // グループ番号ごとにまとめる。出現順を保つため List で持つ。
+            var order  = new List<int>();
+            var groups = new Dictionary<int, List<BeltSnapshot>>();
+
+            foreach (var b in _frillBelts)
+            {
+                if (b == null || !b.HasData) continue;
+
+                int gid = b.GroupId;
+                if (!groups.TryGetValue(gid, out var list))
+                {
+                    list = new List<BeltSnapshot>();
+                    groups[gid] = list;
+                    order.Add(gid);
+                }
+                list.Add(b);
+            }
+
+            if (order.Count < 2) return;
 
             box.Add(PlayerIoUiKit.SectionLabel(T("FrillBeltScales")));
 
@@ -225,22 +368,24 @@ namespace Poly_Ling.Player
             hint.style.marginBottom = 2;
             box.Add(hint);
 
-            // ラベル欄は 80px 固定でベルト名が入らないため、見出し行とスライダ行に分ける。
-            for (int i = 0; i < _frillBelts.Count; i++)
+            // ラベル欄は 80px 固定でグループ名が入らないため、見出し行とスライダ行に分ける。
+            for (int i = 0; i < order.Count; i++)
             {
-                var belt = _frillBelts[i];
-                if (belt == null || !belt.HasData) continue;
+                var members = groups[order[i]];   // クロージャがループ変数を掴まないように控える
 
-                var target = belt;   // クロージャがループ変数を掴まないように控える
+                int rungs = 0;
+                foreach (var b in members) rungs += b.RungCount;
 
-                var rowLabel = new Label(T("FrillBeltScaleRow", i + 1, target.RungCount));
+                var rowLabel = new Label(members.Count > 1
+                    ? T("FrillGroupScaleRow", i + 1, members.Count, rungs)
+                    : T("FrillBeltScaleRow",  i + 1, rungs));
                 rowLabel.style.fontSize  = 10;
                 rowLabel.style.marginTop = 3;
                 box.Add(rowLabel);
 
                 box.Add(SR(T("FrillHeightScale"), 0f, 5f,
-                    () => target.HeightScale,
-                    v => { target.HeightScale = v; D(); }));
+                    () => members[0].HeightScale,
+                    v => { foreach (var b in members) b.HeightScale = v; D(); }));
             }
 
             PlayerLayoutRoot.ApplyDarkTheme(box);
@@ -260,6 +405,7 @@ namespace Poly_Ling.Player
         private MeshObject GenerateFrillMesh()
         {
             EnsureBeltProfile(_frillEdit);
+            EnsureBeltProfile(_frillEditB);
 
             if (_frillP.ConnectShared)
             {
@@ -269,11 +415,12 @@ namespace Poly_Ling.Player
                     if (belt == null || !belt.HasData) continue;
                     inputs.Add(ToFrillInput(
                         ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline),
-                        _frillP.HeightScale));
+                        _frillP.HeightScale, _frillP.ProfileFlip));
                 }
 
                 var joined = FrillMeshGenerator.Generate(
-                    inputs, _frillEdit.Points, true, _frillP.RungSeam, _frillP.MeshName);
+                    inputs, _frillEdit.Points, _frillEditB.Points, _frillP.TwoProfiles,
+                    true, _frillP.RungSeam, _frillP.MeshName);
 
                 var solid = ApplySolidify(joined,
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
@@ -292,10 +439,11 @@ namespace Poly_Ling.Player
                 if (belt == null || !belt.HasData) continue;
                 single[0] = ToFrillInput(
                     ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline),
-                    _frillP.HeightScale);
+                    _frillP.HeightScale, _frillP.ProfileFlip);
 
                 var part = FrillMeshGenerator.Generate(
-                    single, _frillEdit.Points, false, _frillP.RungSeam, _frillP.MeshName);
+                    single, _frillEdit.Points, _frillEditB.Points, _frillP.TwoProfiles,
+                    false, _frillP.RungSeam, _frillP.MeshName);
                 part = ApplySolidify(part,
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
                     _frillP.EdgeSizeFront, _frillP.EdgeSizeBack, _frillP.EdgeInward,
@@ -310,15 +458,30 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 生成入力へ変換する。高さ倍率は「全体 × 梯子ごと」の掛け算で合成する。
+        /// プロファイル補間パラメータは段番号から決める。
+        /// N 段グループの段 r は左レール r/N・右レール (r+1)/N になり、
+        /// 隣り合う段が共有するレールでは同じ値になる。
         /// </summary>
-        private static FrillBeltInput ToFrillInput(BeltSnapshot b, float globalHeightScale)
-            => new FrillBeltInput
+        private static FrillBeltInput ToFrillInput(BeltSnapshot b, float globalHeightScale, bool flip)
+        {
+            int n = Mathf.Max(1, b.RowCount);
+            int r = Mathf.Clamp(b.RowIndex, 0, n - 1);
+
+            float t0 = (float)r / n;
+            float t1 = (float)(r + 1) / n;
+
+            if (flip) { t0 = 1f - t0; t1 = 1f - t1; }
+
+            return new FrillBeltInput
             {
                 Left        = b.Left,
                 Right       = b.Right,
                 Closed      = b.Closed,
                 FlipWinding = b.FlipWinding,
                 HeightScale = globalHeightScale * b.HeightScale,
+                TLeft       = t0,
+                TRight      = t1,
             };
+        }
     }
 }

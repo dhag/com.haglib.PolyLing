@@ -1267,12 +1267,12 @@ namespace Poly_Ling.Player
             _undoController.MeshUndoContext.ParentModelContext = model;
             var record = new MultiMeshSelectionChangeRecord(entries.ToArray());
             _undoController.FocusVertexEdit();
-            UnityEngine.Debug.Log(
-                $"[UndoDbg] Push MultiMeshSelectionChangeRecord (model={model.Name}, " +
+            Poly_Ling.Diagnostics.PLDiag.UndoVerboseLog(
+                $"Push MultiMeshSelectionChangeRecord (model={model.Name}, " +
                 $"entries={entries.Count})");
             _undoController.VertexEditStack.Record(record, "選択変更");
-            UnityEngine.Debug.Log(
-                $"[UndoDbg]   after Record: VertexEdit.Undo={_undoController.VertexEditStack.UndoCount}, " +
+            Poly_Ling.Diagnostics.PLDiag.UndoVerboseLog(
+                $"  after Record: VertexEdit.Undo={_undoController.VertexEditStack.UndoCount}, " +
                 $"VertexEdit.Pending={_undoController.VertexEditStack.PendingCount}, " +
                 $"MeshList.Undo={_undoController.MeshListStack.UndoCount}, " +
                 $"MeshList.Pending={_undoController.MeshListStack.PendingCount}");

@@ -31,6 +31,18 @@ namespace Poly_Ling.PrimitiveMesh
         public Vector3? StartPoint;
         public Vector3? EndPoint;
 
+        /// <summary>
+        /// 上下につながった段グループの識別子。$group が無い旧CSVでは -1。
+        /// フリルの2プロファイル補間で使う。
+        /// </summary>
+        public int GroupId = -1;
+
+        /// <summary>グループ内の段番号（0 が t=0 側）。$row が無い旧CSVでは 0。</summary>
+        public int RowIndex;
+
+        /// <summary>グループの段数。$rowCount が無い旧CSVでは 1。</summary>
+        public int RowCount = 1;
+
         public bool HasData => Left != null && Right != null
                                && Left.Count >= 2 && Left.Count == Right.Count;
     }
@@ -73,6 +85,9 @@ namespace Poly_Ling.PrimitiveMesh
                             w.WriteLine($"$closed={b.Closed}");
                             w.WriteLine($"$flipWinding={b.FlipWinding}");
                             w.WriteLine($"$heightScale={b.HeightScale.ToString(CultureInfo.InvariantCulture)}");
+                            w.WriteLine($"$group={b.GroupId.ToString(CultureInfo.InvariantCulture)}");
+                            w.WriteLine($"$row={b.RowIndex.ToString(CultureInfo.InvariantCulture)}");
+                            w.WriteLine($"$rowCount={b.RowCount.ToString(CultureInfo.InvariantCulture)}");
                             if (b.StartPoint.HasValue) w.WriteLine($"$startPoint={V3(b.StartPoint.Value)}");
                             if (b.EndPoint.HasValue)   w.WriteLine($"$endPoint={V3(b.EndPoint.Value)}");
                             w.WriteLine(Header);
@@ -148,6 +163,15 @@ namespace Poly_Ling.PrimitiveMesh
                             case "endpoint":
                                 if (TryParseV3(val, out Vector3 ep)) current.EndPoint = ep;
                                 break;
+                            case "group":
+                                if (TryI(val, out int gid)) current.GroupId = gid;
+                                break;
+                            case "row":
+                                if (TryI(val, out int row)) current.RowIndex = row;
+                                break;
+                            case "rowcount":
+                                if (TryI(val, out int rc)) current.RowCount = rc;
+                                break;
                         }
                         continue;
                     }
@@ -196,6 +220,9 @@ namespace Poly_Ling.PrimitiveMesh
             if (!entry.HasData) return;
             result.Belts.Add(entry);
         }
+
+        private static bool TryI(string s, out int v)
+            => int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out v);
 
         private static string V3(Vector3 v)
             => $"{v.x.ToString(CultureInfo.InvariantCulture)}," +

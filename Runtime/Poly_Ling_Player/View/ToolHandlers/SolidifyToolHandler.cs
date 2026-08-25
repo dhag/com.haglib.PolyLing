@@ -34,9 +34,17 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 生成メッシュの追加先。図形生成パネルの OnMeshCreated と同じ形。
         /// (MeshObject, meshName, worldPosition, poseRotationEuler, poseScale,
-        ///  ignorePoseInArmature, addMode)
+        ///  ignorePoseInArmature, addMode, addTargetIndex)
+        /// addTargetIndex は AddToExisting のときの追加先（MeshContextList インデックス）。
+        /// -1 なら選択オブジェクトリストの先頭。
         /// </summary>
-        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
+        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode, int> OnMeshCreated;
+
+        /// <summary>
+        /// AddToExisting のときの追加先。パネルの名前欄ドロップダウンが書き込む。
+        /// -1 は選択オブジェクトリストの先頭。
+        /// </summary>
+        public int AddTargetIndex { get; set; } = -1;
 
         public SolidifyToolHandler()
         {
@@ -51,7 +59,8 @@ namespace Poly_Ling.Player
                     Vector3.zero,
                     Vector3.one,
                     false,
-                    addToExisting ? PrimitiveAddMode.AddToExisting : PrimitiveAddMode.NewObject);
+                    addToExisting ? PrimitiveAddMode.AddToExisting : PrimitiveAddMode.NewObject,
+                    addToExisting ? AddTargetIndex : -1);
             };
         }
 

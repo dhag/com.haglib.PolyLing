@@ -27,6 +27,13 @@
 //   FrillRungSeam.Merge は両者の生成位置を平均して1頂点にまとめ、段差を消す。
 //   FrillRungSeam.Split は別頂点のまま残し、段差をそのまま出す。
 //
+// 【2プロファイル】twoProfiles = true のとき、レールごとに補間パラメータ t を持ち、
+//   プロファイルを Lerp(A[k], B[k], t) で解決する。梯子の TLeft / TRight が各レールの t。
+//   段グループなら t=0 側の最外レールが A、t=1 側の最外レールが B、中間の段は線形補間になる。
+//   A と B の点数が違うときは点数の少ない側を両方に使う。
+//   t はレールキーにも含めるため、位置が同じでも t が違うレールは溶接されない
+//   （縦に閉じた形では、そこが上下を分ける裂け目になる）。
+//
 // 【高さ倍率】FrillBeltInput.HeightScale は法線方向成分 (y * len) だけに掛ける。
 //   進行方向成分 (x) には掛けないため、レール上の位置は変えずに波の高さだけが変わる。
 //   connectShared で梯子どうしがレール線分を共有した場合、法線を合成するのと同じく
@@ -49,12 +56,21 @@ namespace Poly_Ling.Frill
 
         /// <summary>この梯子の高さ倍率（法線方向成分に掛ける）。1 で従来どおり。</summary>
         public float HeightScale = 1f;
+
+        /// <summary>左レールのプロファイル補間パラメータ（0 = A / 1 = B）。</summary>
+        public float TLeft = 0f;
+
+        /// <summary>右レールのプロファイル補間パラメータ（0 = A / 1 = B）。</summary>
+        public float TRight = 1f;
     }
 
     public static class FrillMeshGenerator
     {
         /// <summary>位置キーの量子化幅。</summary>
         private const float PosEps = 1e-5f;
+
+        /// <summary>プロファイル補間パラメータ t の量子化幅。</summary>
+        private const float TEps = 1e-4f;
 
         // ================================================================
         // 単一梯子（既存API・挙動そのまま）
@@ -90,10 +106,40 @@ namespace Poly_Ling.Frill
             bool connectShared,
             FrillRungSeam seam,
             string meshName)
+            => Generate(belts, profile, null, false, connectShared, seam, meshName);
+
+        /// <summary>
+        /// 断面プロファイルを A / B の2本にできる版。
+        /// twoProfiles = false なら profileA だけを使い、従来と同じ結果になる。
+        /// </summary>
+        public static MeshObject Generate(
+            IReadOnlyList<FrillBeltInput> belts,
+            IReadOnlyList<Vector2> profileA,
+            IReadOnlyList<Vector2> profileB,
+            bool twoProfiles,
+            bool connectShared,
+            FrillRungSeam seam,
+            string meshName)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Frill" : meshName);
 
-            int m = (profile == null) ? 0 : profile.Count;
+            int ca = (profileA == null) ? 0 : profileA.Count;
+            int cb = (profileB == null) ? 0 : profileB.Count;
+
+            bool two = twoProfiles && ca >= 2 && cb >= 2;
+
+            var pa = profileA;
+            var pb = profileA;
+
+            if (two)
+            {
+                // 点数が違うときは点数の少ない側を両方に使う。
+                if (ca == cb)      { pb = profileB; }
+                else if (ca < cb)  { pb = profileA; two = false; }
+                else               { pa = profileB; pb = profileB; two = false; }
+            }
+
+            int m = (pa == null) ? 0 : pa.Count;
             if (belts == null || belts.Count == 0 || m < 2) return mo;
 
             var steps = BuildSteps(belts);
@@ -108,8 +154,8 @@ namespace Poly_Ling.Frill
             for (int i = 0; i < steps.Count; i++)
             {
                 var st = steps[i];
-                stepRailL[i] = GetOrAddRail(rails, railIndex, connectShared, st.A0, st.A1, st, 0f);
-                stepRailR[i] = GetOrAddRail(rails, railIndex, connectShared, st.B0, st.B1, st, 1f);
+                stepRailL[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.A0, st.A1, st, 0f, st.TA);
+                stepRailR[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.B0, st.B1, st, 1f, st.TB);
             }
 
             foreach (var r in rails)
@@ -132,10 +178,12 @@ namespace Poly_Ling.Frill
                     Vector3 dir = r.P1 - r.P0;
                     float   len = dir.magnitude;
 
-                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P0, r.Scope),
-                                  ProfilePos(r.P0, dir, len, r.Normal, profile[0], r.HeightScale));
-                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P1, r.Scope),
-                                  ProfilePos(r.P0, dir, len, r.Normal, profile[m - 1], r.HeightScale));
+                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P0, r.Scope, r.TKey),
+                                  ProfilePos(r.P0, dir, len, r.Normal,
+                                             ProfileAt(pa, pb, two, 0, r.T), r.HeightScale));
+                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P1, r.Scope, r.TKey),
+                                  ProfilePos(r.P0, dir, len, r.Normal,
+                                             ProfileAt(pa, pb, two, m - 1, r.T), r.HeightScale));
                 }
             }
 
@@ -151,7 +199,7 @@ namespace Poly_Ling.Frill
 
                 for (int k = 0; k < m; k++)
                 {
-                    Vector2 p  = profile[k];
+                    Vector2 p  = ProfileAt(pa, pb, two, k, r.T);
                     Vector2 uv = new Vector2(r.U0 + p.x * r.UStep, r.V);
 
                     bool isStart = (k == 0);
@@ -159,7 +207,7 @@ namespace Poly_Ling.Frill
 
                     if (seam == FrillRungSeam.Merge && (isStart || isEnd))
                     {
-                        var bk = new PosKey(isStart ? r.P0 : r.P1, r.Scope);
+                        var bk = new PosKey(isStart ? r.P0 : r.P1, r.Scope, r.TKey);
                         if (boundaryVert.TryGetValue(bk, out int reuse)) { r.Verts[k] = reuse; continue; }
 
                         Vector3 avg = boundarySum[bk] / boundaryCount[bk];
@@ -204,6 +252,14 @@ namespace Poly_Ling.Frill
             Vector3 p0, Vector3 dir, float len, Vector3 nrm, Vector2 p, float heightScale)
             => p0 + dir * p.x + nrm * (p.y * len * heightScale);
 
+        /// <summary>レールの補間パラメータ t で断面プロファイル点を解決する。</summary>
+        private static Vector2 ProfileAt(
+            IReadOnlyList<Vector2> a, IReadOnlyList<Vector2> b, bool two, int k, float t)
+            => two ? Vector2.Lerp(a[k], b[k], t) : a[k];
+
+        /// <summary>t の量子化。2プロファイル無効時は 0 固定にして従来と同じキーにする。</summary>
+        private static long TKeyOf(bool two, float t) => two ? (long)Mathf.Round(t / TEps) : 0L;
+
         /// <summary>1ステップぶんの生成情報。</summary>
         private struct StepInfo
         {
@@ -211,6 +267,7 @@ namespace Poly_Ling.Frill
             public Vector3 B0, B1;   // 右レール線分
             public Vector3 Normal;   // このステップの基準面法線
             public float   HeightScale; // この梯子の高さ倍率
+            public float   TA, TB;   // 左右レールのプロファイル補間パラメータ
             public bool    FlipWinding;
             public float   U0;       // UV の u（プロファイル x=0 のとき）
             public float   UStep;    // UV の u の1ステップぶん
@@ -227,6 +284,8 @@ namespace Poly_Ling.Frill
             public float   HeightSum;    // 寄与した各ステップの高さ倍率の和
             public int     HeightCount;  // 寄与したステップ数
             public float   HeightScale;  // 確定値（HeightSum / HeightCount）
+            public float   T;            // プロファイル補間パラメータ
+            public long    TKey;         // T の量子化値（キー用）
             public float   U0, UStep, V;
             public int     Scope;    // 境界溶接のスコープ（共有あり=0 / 共有なし=梯子index）
             public int[]   Verts;
@@ -263,6 +322,8 @@ namespace Poly_Ling.Frill
                         B1          = b1,
                         Normal      = StepNormal(a0, b0, b1, a1, belt.FlipWinding),
                         HeightScale = belt.HeightScale,
+                        TA          = belt.TLeft,
+                        TB          = belt.TRight,
                         FlipWinding = belt.FlipWinding,
                         U0          = (float)s / stepCount,
                         UStep       = 1f / stepCount,
@@ -279,12 +340,14 @@ namespace Poly_Ling.Frill
         /// 共有ありのときは同一キーへ法線を加算し、既存の記録を使い回す。
         /// </summary>
         private static int GetOrAddRail(
-            List<RailRec> rails, Dictionary<RailKey, int> railIndex, bool connectShared,
-            Vector3 p0, Vector3 p1, StepInfo st, float v)
+            List<RailRec> rails, Dictionary<RailKey, int> railIndex, bool connectShared, bool two,
+            Vector3 p0, Vector3 p1, StepInfo st, float v, float t)
         {
+            long tKey = TKeyOf(two, t);
+
             if (connectShared)
             {
-                var key = new RailKey(p0, p1);
+                var key = new RailKey(p0, p1, tKey);
                 if (railIndex.TryGetValue(key, out int idx))
                 {
                     rails[idx].NormalSum   += st.Normal;
@@ -294,16 +357,17 @@ namespace Poly_Ling.Frill
                 }
 
                 idx = rails.Count;
-                rails.Add(NewRail(p0, p1, st, v, 0));
+                rails.Add(NewRail(p0, p1, st, v, 0, t, tKey));
                 railIndex[key] = idx;
                 return idx;
             }
 
-            rails.Add(NewRail(p0, p1, st, v, st.BeltIndex));
+            rails.Add(NewRail(p0, p1, st, v, st.BeltIndex, t, tKey));
             return rails.Count - 1;
         }
 
-        private static RailRec NewRail(Vector3 p0, Vector3 p1, StepInfo st, float v, int scope)
+        private static RailRec NewRail(
+            Vector3 p0, Vector3 p1, StepInfo st, float v, int scope, float t, long tKey)
             => new RailRec
             {
                 P0          = p0,
@@ -312,6 +376,8 @@ namespace Poly_Ling.Frill
                 FirstNormal = st.Normal,
                 HeightSum   = st.HeightScale,
                 HeightCount = 1,
+                T           = t,
+                TKey        = tKey,
                 U0          = st.U0,
                 UStep       = st.UStep,
                 V           = v,
@@ -343,20 +409,25 @@ namespace Poly_Ling.Frill
         // キー
         // ================================================================
 
-        /// <summary>量子化した始点→終点の順序付きペア。向きが逆なら別キーになる。</summary>
+        /// <summary>
+        /// 量子化した始点→終点の順序付きペア＋プロファイル補間パラメータ。
+        /// 向きが逆なら別キーになる。t が違うレールも別キーになる（裂け目）。
+        /// </summary>
         private readonly struct RailKey : System.IEquatable<RailKey>
         {
-            private readonly long _x0, _y0, _z0, _x1, _y1, _z1;
+            private readonly long _x0, _y0, _z0, _x1, _y1, _z1, _t;
 
-            public RailKey(Vector3 p0, Vector3 p1)
+            public RailKey(Vector3 p0, Vector3 p1, long tKey)
             {
                 _x0 = Q(p0.x); _y0 = Q(p0.y); _z0 = Q(p0.z);
                 _x1 = Q(p1.x); _y1 = Q(p1.y); _z1 = Q(p1.z);
+                _t  = tKey;
             }
 
             public bool Equals(RailKey o)
                 => _x0 == o._x0 && _y0 == o._y0 && _z0 == o._z0
-                && _x1 == o._x1 && _y1 == o._y1 && _z1 == o._z1;
+                && _x1 == o._x1 && _y1 == o._y1 && _z1 == o._z1
+                && _t  == o._t;
 
             public override bool Equals(object obj) => obj is RailKey k && Equals(k);
 
@@ -370,25 +441,28 @@ namespace Poly_Ling.Frill
                     h = h * 31 + _x1;
                     h = h * 31 + _y1;
                     h = h * 31 + _z1;
+                    h = h * 31 + _t;
                     return (int)(h ^ (h >> 32));
                 }
             }
         }
 
-        /// <summary>量子化したレール頂点位置 + 溶接スコープ。</summary>
+        /// <summary>量子化したレール頂点位置 + 溶接スコープ + プロファイル補間パラメータ。</summary>
         private readonly struct PosKey : System.IEquatable<PosKey>
         {
-            private readonly long _x, _y, _z;
+            private readonly long _x, _y, _z, _t;
             private readonly int  _scope;
 
-            public PosKey(Vector3 p, int scope)
+            public PosKey(Vector3 p, int scope, long tKey)
             {
                 _x = Q(p.x); _y = Q(p.y); _z = Q(p.z);
+                _t = tKey;
                 _scope = scope;
             }
 
             public bool Equals(PosKey o)
-                => _x == o._x && _y == o._y && _z == o._z && _scope == o._scope;
+                => _x == o._x && _y == o._y && _z == o._z
+                && _t == o._t && _scope == o._scope;
 
             public override bool Equals(object obj) => obj is PosKey k && Equals(k);
 
@@ -399,6 +473,7 @@ namespace Poly_Ling.Frill
                     long h = _x;
                     h = h * 31 + _y;
                     h = h * 31 + _z;
+                    h = h * 31 + _t;
                     h = h * 31 + _scope;
                     return (int)(h ^ (h >> 32));
                 }

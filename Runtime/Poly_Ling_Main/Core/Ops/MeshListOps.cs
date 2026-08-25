@@ -270,9 +270,20 @@ namespace Poly_Ling.Ops
             _model.MeshContextList.Clear();
             _model.MeshContextList.AddRange(newOrder);
 
-            // Depth/ParentIndex更新
+            // 並べ替えで動いた索引参照を付け替える。
+            // ここを飛ばすと、entries に入っていない要素（既定でツリーから外れる
+            // ミラー側など）が持つ BakedMirrorSourceIndex / MorphParentIndex /
+            // ParentIndex が並べ替え前の位置を指したまま残り、別のオブジェクトを
+            // ミラー元や親として掴む。
+            // 下の entries ループより先に呼ぶこと（明示指定の新しい親を最後に勝たせる）。
+            _model.RemapIndexReferencesAfterReorder(preOrderedList);
+
+            // Depth / 親の更新
             // MeshContextList は差し替え済みなので、対象も親も「並べ替え前の
             // インデックス」から実体を引き、位置だけ新リストから求める。
+            // HierarchyParentIndex だけ書けば足りる。ParentIndex は同じ入れ物
+            // （MeshObject.ParentIndex が HierarchyParentIndex への委譲）なので、
+            // 片方だけ書いて食い違う、ということが起きない。
             foreach (var e in entries)
             {
                 var ctx = ResolveOld(e.MasterIndex);

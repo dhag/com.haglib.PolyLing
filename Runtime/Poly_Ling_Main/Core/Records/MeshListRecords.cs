@@ -246,7 +246,7 @@ namespace Poly_Ling.UndoSystem
 
             if (meshContext.MeshObject != null)
             {
-                meshContext.UnityMesh = meshContext.MeshObject.ToUnityMeshShared();
+                meshContext.ReplaceUnityMesh(meshContext.MeshObject.ToUnityMeshShared());
                 meshContext.UnityMesh.name = Name;
                 meshContext.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
             }
@@ -1163,7 +1163,7 @@ namespace Poly_Ling.UndoSystem
             // UnityMesh は MeshObject から再生成
             if (dst.MeshObject != null && dst.MeshObject.VertexCount > 0)
             {
-                dst.UnityMesh = dst.MeshObject.ToUnityMesh();
+                dst.ReplaceUnityMesh(dst.MeshObject.ToUnityMesh());
                 if (dst.UnityMesh != null) dst.UnityMesh.name = src.Name;
             }
             // マテリアルは ModelContext 一元管理（ParentModelContext へ委譲）のため

@@ -65,6 +65,21 @@ namespace Poly_Ling.Frill
         /// <summary>生成後にメッシュ全体の面を反転する</summary>
         public bool  FlipFaces;
 
+        // ── 断面プロファイル（拡張モード） ──
+        /// <summary>
+        /// 断面プロファイルを A / B の2本にする。
+        /// 段グループの t=0 側レールが A、t=1 側レールが B、中間の段は線形補間になる。
+        /// 段が1本しかない場合は Left レールが A、Right レールが B。
+        /// 点数が違うときは点数の少ない側を両方に使う。
+        /// </summary>
+        public bool  TwoProfiles;
+
+        /// <summary>
+        /// A / B の割り当てを上下反転する（t → 1-t）。
+        /// 梯子の上下は幾何的に定義できないため、目視で合わせるための切替。
+        /// </summary>
+        public bool  ProfileFlip;
+
         // ── ピボット ──
         /// <summary>AABB サイズ基準のピボット。生成後に -Pivot * サイズ だけ平行移動する</summary>
         public Vector3 Pivot;
@@ -82,6 +97,8 @@ namespace Poly_Ling.Frill
             EdgeSizeBack  = 0.02f,
             EdgeInward    = false,
             FlipFaces     = false,
+            TwoProfiles   = false,
+            ProfileFlip   = false,
             Pivot         = Vector3.zero,
         };
 
@@ -97,6 +114,8 @@ namespace Poly_Ling.Frill
             && Mathf.Approximately(EdgeSizeBack,  o.EdgeSizeBack)
             && EdgeInward == o.EdgeInward
             && FlipFaces  == o.FlipFaces
+            && TwoProfiles == o.TwoProfiles
+            && ProfileFlip == o.ProfileFlip
             && Pivot      == o.Pivot;
 
         public override bool Equals(object obj) => obj is FrillParams p && Equals(p);

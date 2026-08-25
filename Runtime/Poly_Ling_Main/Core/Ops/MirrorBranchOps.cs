@@ -110,6 +110,94 @@ namespace Poly_Ling.Ops
     // ミラー分岐の解析・鏡像化
     // ================================================================
 
+    /// <summary>
+    /// ミラー分岐配下で「個別オブジェクトのミラー設定漏れ」をどう扱うか。
+    /// </summary>
+    public enum MirrorBranchTolerance
+    {
+        /// <summary>ミラー側コンテキストが実在するノードだけをミラー枝に出す（従来動作）。</summary>
+        Strict = 0,
+
+        /// <summary>
+        /// 分岐配下の実体側ノードは、ミラー側コンテキストが無くてもミラー枝に出す。
+        /// 形状は実体側から鏡像を生成する。既定。
+        /// </summary>
+        Tolerant = 1,
+    }
+
+    // ================================================================
+    // ミラー分岐の出力計画
+    // ================================================================
+
+    /// <summary>
+    /// 分岐解析の結果を「各ノードを実体側／ミラー枝のどちらに出すか」まで
+    /// 落とし込んだ表。エクスポートとスキンド変換が同じ表を読む。
+    ///
+    /// 関節（頂点ゼロのノード）の両側複製は呼び出し側の都合なのでここでは扱わない。
+    /// </summary>
+    public sealed class MirrorBranchPlan
+    {
+        public struct Node
+        {
+            /// <summary>MeshContextList の索引。</summary>
+            public int Index;
+
+            /// <summary>実体側の枝に出すか。</summary>
+            public bool EmitReal;
+
+            /// <summary>ミラー枝に出すか。</summary>
+            public bool EmitMirror;
+
+            /// <summary>
+            /// ミラー枝に出す形状を実体側から生成する必要があるか。
+            /// false のときは自身が既に鏡像済みのミラー側コンテキスト。
+            /// </summary>
+            public bool GenerateMirrorShape;
+
+            /// <summary>鏡映に使う軸（1=X / 2=Y / 4=Z）。ノード自身の設定が正本。</summary>
+            public int MirrorAxis;
+
+            /// <summary>鏡映に使う距離。ノード自身の設定が正本。</summary>
+            public float MirrorDistance;
+        }
+
+        private readonly Dictionary<int, Node> _nodes = new Dictionary<int, Node>();
+
+        /// <summary>従来の所属側テーブル（SideReal / SideMirror）。</summary>
+        public Dictionary<int, int> Side { get; internal set; }
+
+        /// <summary>実体側 ↔ ミラー側の対応表。</summary>
+        public MirrorPeerIndex Peers { get; internal set; }
+
+        /// <summary>適用した許容モード。</summary>
+        public MirrorBranchTolerance Tolerance { get; internal set; }
+
+        internal void Add(Node node) => _nodes[node.Index] = node;
+
+        public bool TryGet(int index, out Node node) => _nodes.TryGetValue(index, out node);
+
+        /// <summary>ミラー枝に出すノードか。</summary>
+        public bool EmitsMirror(int index)
+            => _nodes.TryGetValue(index, out var n) && n.EmitMirror;
+
+        /// <summary>ミラー枝の形状を実体側から生成する必要があるノードか。</summary>
+        public bool GeneratesMirrorShape(int index)
+            => _nodes.TryGetValue(index, out var n) && n.EmitMirror && n.GenerateMirrorShape;
+
+        /// <summary>
+        /// 実体側から鏡像を生成する必要があるノードを索引の昇順で返す。
+        /// スキンド変換はこれを見てミラー側 MeshContext を実体化する。
+        /// </summary>
+        public List<Node> CollectGeneratedMirrors()
+        {
+            var list = new List<Node>();
+            foreach (var kv in _nodes)
+                if (kv.Value.EmitMirror && kv.Value.GenerateMirrorShape) list.Add(kv.Value);
+            list.Sort((a, b) => a.Index.CompareTo(b.Index));
+            return list;
+        }
+    }
+
     public static class MirrorBranchOps
     {
         /// <summary>ミラー分岐のミラー側ノードに付ける接尾辞。</summary>
@@ -136,12 +224,32 @@ namespace Poly_Ling.Ops
         ///   SideReal(0) = 実体側 / SideMirror(1) = ミラー側
         /// ミラー側コンテキストを自身または祖先に持つノードはミラー側として扱う。
         /// （作業用の無効データがミラー側の下にぶら下がっていてもミラー側に入る）
+        ///
+        /// 【分岐ルート自身の扱い】
+        ///   分岐フラグが立ったオブジェクトは、そのオブジェクト自身を含めて
+        ///   子孫まで枝に入れる。条件分岐は設けない。
+        ///
+        ///   枝の中の空オブジェクト（頂点なし＝関節）は、そのオブジェクトの
+        ///   ミラー設定の有無に関わらず実体側とミラー側の両方へ複製される
+        ///   （HierarchyExportWindow の makeMirror が isJoint 単独で成立し、
+        ///     MeshFilterToSkinnedConverter の BonePlan も同様）。
+        ///   途中の空オブジェクトでミラー設定を忘れていても枝のツリーが
+        ///   途切れないようにするための強制であり、意図した挙動。
+        ///   分岐ルート自身が空であれば同様に両側へ複製される。
         /// </summary>
         /// <param name="parentIndices">
         /// Depth から補正した親インデックス配列（MeshHierarchyOps.BuildParentIndicesFromDepth）。
         /// null の場合は MeshContext.HierarchyParentIndex をそのまま使う。
         /// </param>
         public static Dictionary<int, int> AnalyzeMirrorBranches(ModelContext model, int[] parentIndices)
+            => AnalyzeMirrorBranches(model, parentIndices, null);
+
+        /// <summary>
+        /// 実体側 ↔ ミラー側の対応表を外から渡す版。
+        /// 呼び出し側が既に MirrorPeerIndex を組んでいる場合の重複構築を避ける。
+        /// </summary>
+        public static Dictionary<int, int> AnalyzeMirrorBranches(
+            ModelContext model, int[] parentIndices, MirrorPeerIndex peers)
         {
             var result = new Dictionary<int, int>();
             if (model == null) return result;
@@ -173,6 +281,41 @@ namespace Poly_Ling.Ops
                 AssignBranchSide(model, childrenOf, result, i, parentIsMirror: false);
             }
 
+            // ── 枝の外へ落ちたミラー相方を取り込む ──────────────────────
+            //
+            // 【なぜ要るか】
+            //   ミラー側コンテキストは実体側の「兄弟」として親を解決される
+            //   （MeshHierarchyOps.BuildParentIndicesFromDepth は MirrorSide を
+            //     スタックへ push しないため、同じ Depth の実体側ではなく
+            //     その一段上が親になる）。
+            //   したがって分岐ルート自身のミラー相方は必ず枝の外に落ちる。
+            //     例）分岐ルート＝左腕 のとき、右腕 の親は 上半身2 になり、
+            //         左腕 の子孫を辿る AssignBranchSide では拾えない。
+            //   すると右腕はミラー枝に登録されず、TryResolveMirrorParent の
+            //   mirrorNodeExists が空振りして、右ひじ以下が実体側の左腕へ
+            //   ぶら下がる（左右が混ざる）。
+            //
+            // 【対処】
+            //   枝内の実体側ノードのミラー相方は、親がどこにあってもミラー側として
+            //   枝へ編入する。許容モードとは無関係の不具合なので常に行う。
+            if (result.Count > 0)
+            {
+                peers = peers ?? MirrorPeerIndex.Build(model);
+
+                var realsInBranch = new List<int>();
+                foreach (var kv in result)
+                    if (kv.Value == SideReal) realsInBranch.Add(kv.Key);
+
+                foreach (int realIndex in realsInBranch)
+                {
+                    if (!peers.TryGetMirror(realIndex, out int mirrorIndex)) continue;
+                    if (mirrorIndex < 0 || mirrorIndex >= count) continue;
+                    if (result.ContainsKey(mirrorIndex)) continue;
+
+                    AssignBranchSide(model, childrenOf, result, mirrorIndex, parentIsMirror: true);
+                }
+            }
+
             return result;
         }
 
@@ -189,6 +332,92 @@ namespace Poly_Ling.Ops
             if (!childrenOf.TryGetValue(index, out var children)) return;
             foreach (int c in children)
                 AssignBranchSide(model, childrenOf, result, c, isMirror);
+        }
+
+        // ================================================================
+        // 出力計画
+        // ================================================================
+
+        /// <summary>
+        /// 鏡映に使う軸を解く。0（未設定）は X(1) に倒す。
+        /// GetMirrorSymmetryAxis / EnableMirror と同じ規則。
+        /// </summary>
+        public static int ResolveMirrorAxis(MeshContext mc)
+        {
+            int axis = mc?.MirrorAxis ?? 0;
+            return axis == 0 ? 1 : axis;
+        }
+
+        /// <summary>
+        /// 分岐解析の結果から、各ノードを実体側／ミラー枝のどちらに出すかを決める。
+        ///
+        /// 【許容モード（既定）】
+        ///   分岐配下の実体側ノードは、ミラー側コンテキストを持っていなくても
+        ///   ミラー枝に出す。形状は実体側から鏡像を生成する。
+        ///   ミラー側コンテキストを持つノードは従来どおり相方がミラー枝に出るので
+        ///   二重にはしない。
+        ///
+        /// 【軸・距離】
+        ///   ノード自身の MirrorAxis / MirrorDistance を正本にする。MirrorType は
+        ///   見ない（作業中にミラーを切って戻し忘れても軸・距離は残るため）。
+        ///   軸が未設定（0）のときだけ X に倒す。
+        /// </summary>
+        public static MirrorBranchPlan BuildMirrorBranchPlan(
+            ModelContext model, int[] parentIndices,
+            MirrorBranchTolerance tolerance,
+            MirrorPeerIndex peers = null)
+        {
+            var plan = new MirrorBranchPlan { Tolerance = tolerance };
+
+            if (model == null)
+            {
+                plan.Side  = new Dictionary<int, int>();
+                plan.Peers = new MirrorPeerIndex();
+                return plan;
+            }
+
+            peers = peers ?? MirrorPeerIndex.Build(model);
+            var side = AnalyzeMirrorBranches(model, parentIndices, peers);
+
+            plan.Side  = side;
+            plan.Peers = peers;
+
+            bool tolerant = tolerance == MirrorBranchTolerance.Tolerant;
+            int  count    = model.MeshContextCount;
+
+            for (int i = 0; i < count; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null) continue;
+
+                bool inBranch = side.TryGetValue(i, out int s);
+                if (!inBranch) s = SideReal;
+
+                bool isMirrorCtx = IsMirrorSideContext(mc);
+
+                // 枝の外はそのまま実体側。枝の中は所属側に従う。
+                bool emitReal = !inBranch || s == SideReal;
+
+                // ミラー枝に出す条件:
+                //   ・所属側がミラー側（＝ミラー側コンテキスト、従来動作）
+                //   ・許容モードで、実体側かつミラー相方を持たない（設定漏れの救済）
+                bool emitMirror =
+                    inBranch &&
+                    (s == SideMirror ||
+                     (tolerant && s == SideReal && !peers.HasMirror(i)));
+
+                plan.Add(new MirrorBranchPlan.Node
+                {
+                    Index               = i,
+                    EmitReal            = emitReal,
+                    EmitMirror          = emitMirror,
+                    GenerateMirrorShape = emitMirror && !isMirrorCtx,
+                    MirrorAxis          = ResolveMirrorAxis(mc),
+                    MirrorDistance      = mc.MirrorDistance,
+                });
+            }
+
+            return plan;
         }
 
         // ================================================================
@@ -425,82 +654,55 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         public static MeshContext CreateDerivedMirrorContext(MeshContext source, int sourceIndex)
+            => CreateDerivedMirrorContext(source, sourceIndex, requireMirrorEnabled: true);
+
+        /// <summary>
+        /// ミラー有効（MirrorType &gt; 0）の判定を省ける版。
+        ///
+        /// ミラー分岐の許容モードでは「ミラー設定を忘れた／作業中に切って戻し忘れた」
+        /// ノードからもミラー側を作る必要がある。MirrorType はユーザーの表示設定に
+        /// すぎず、鏡映そのものに必要なのは軸と距離だけなので、判定を外せるようにする。
+        /// 軸・距離は source 自身の値を使う（分岐ルートの値では上書きしない）。
+        /// </summary>
+        public static MeshContext CreateDerivedMirrorContext(
+            MeshContext source, int sourceIndex, bool requireMirrorEnabled)
         {
-            if (source == null || source.MeshObject == null || !source.IsMirrored)
+            if (source == null || source.MeshObject == null)
+                return null;
+            if (requireMirrorEnabled && !source.IsMirrored)
                 return null;
 
             var srcMeshObj = source.MeshObject;
 
             if (srcMeshObj.Vertices.Count == 0)
                 return null;
-            var axis = source.GetMirrorSymmetryAxis();
 
-            // 新しいMeshObjectを作成
-            var mirrorMeshObj = new MeshObject
-            {
-                Name = source.Name + "_BakedMirror",
-                Type = MeshType.BakedMirror  // 明示的に設定
-            };
+            int   axis = ResolveMirrorAxis(source);
+            float dist = source.MirrorDistance;
 
-            // 頂点をミラー変換してコピー
-            foreach (var srcVertex in srcMeshObj.Vertices)
-            {
-                var mirrorVertex = new Vertex
-                {
-                    Id = srcVertex.Id,
-                    Position = MirrorLocalPosition(srcVertex.Position, axis)
-                };
+            // スキニング済みか。
+            //   スキンド変換（MeshFilterToSkinnedConverter の Phase 4）は、
+            //   全メッシュの頂点をワールドへ焼き、BoneTransform を単位に潰し、
+            //   MirrorGeometryDerived を無条件で false にする。
+            //   ＝ スキンド化した時点でモデル内のミラーは全て PMX 型になる。
+            //   変換より後に作るミラーもそれに揃える。
+            bool skinned = srcMeshObj.HasBoneWeight;
 
-                // UVをコピー
-                foreach (var uv in srcVertex.UVs)
-                {
-                    mirrorVertex.UVs.Add(uv);
-                }
-
-                // 法線をミラー変換してコピー
-                foreach (var normal in srcVertex.Normals)
-                {
-                    mirrorVertex.Normals.Add(MirrorLocalNormal(normal, axis));
-                }
-
-                // ボーンウェイト: ミラー側があればミラー側、なければ実体側
-                if (srcVertex.HasMirrorBoneWeight)
-                {
-                    mirrorVertex.BoneWeight = srcVertex.MirrorBoneWeight;
-                }
-                else if (srcVertex.HasBoneWeight)
-                {
-                    mirrorVertex.BoneWeight = srcVertex.BoneWeight;
-                }
-
-                mirrorMeshObj.Vertices.Add(mirrorVertex);
-            }
-
-            // 面をコピー（頂点順序を反転して法線方向を維持）
-            foreach (var srcFace in srcMeshObj.Faces)
-            {
-                var mirrorFace = new Face
-                {
-                    MaterialIndex = srcFace.MaterialIndex + source.MirrorMaterialOffset,
-                };
-                if (srcFace.IsHidden)
-                    mirrorFace.SetFlag(FaceFlags.Hidden);
-
-                // 頂点順序を反転（法線方向維持のため）
-                for (int i = srcFace.VertexCount - 1; i >= 0; i--)
-                {
-                    mirrorFace.VertexIndices.Add(srcFace.VertexIndices[i]);
-                    mirrorFace.UVIndices.Add(srcFace.UVIndices[i]);
-                    mirrorFace.NormalIndices.Add(srcFace.NormalIndices[i]);
-                }
-
-                mirrorMeshObj.Faces.Add(mirrorFace);
-            }
+            // 頂点・面の鏡像化は BuildMirroredMeshObject に集約している。
+            var mirrorMeshObj = BuildMirroredMeshObject(
+                srcMeshObj, axis, dist, source.MirrorMaterialOffset,
+                source.Name + "_BakedMirror");
+            if (mirrorMeshObj == null) return null;
+            mirrorMeshObj.Type = MeshType.BakedMirror;  // 明示的に設定
 
             // 姿勢は実体側と同一にする。
-            // ミラー側は自前の姿勢を持たず、実効ワールドは ComputeWorldMatrices が
-            // S·H·S として算出する。ここで H を実体側と揃えておかないと
-            // v_M = S·v_R の不変条件が崩れる。
+            // 生成ミラー（MirrorGeometryDerived=true）では、ミラー側は自前の姿勢を
+            // 持たず実効ワールドを ComputeWorldMatrices が S·H·S として算出する。
+            // ここで H を実体側と揃えておかないと v_M = S·v_R の不変条件が崩れる。
+            //
+            // PMX 型（skinned）ではコンバータが実体側の BoneTransform を
+            // 単位に潰しているため、ここでのコピーも単位になり副作用は無い。
+            // 描画はボーンウェイトで駆動されるので姿勢は使われない。
             if (mirrorMeshObj.BoneTransform == null)
                 mirrorMeshObj.BoneTransform = new BoneTransform();
             if (source.BoneTransform != null)
@@ -519,9 +721,25 @@ namespace Poly_Ling.Ops
                 Type = MeshType.BakedMirror,
                 BakedMirrorSourceIndex = sourceIndex,
                 // 実体側の頂点から生成した鏡像。実効ワールドは S·H·S で解決する。
-                MirrorGeometryDerived = true,
+                //
+                // ただしスキニング済みメッシュから作った場合は PMX 型にする。
+                // スキンド変換がモデル内の全メッシュを PMX 型に変えているので、
+                // 変換より後に作るミラーだけ生成ミラーにすると持ち方が混ざる。
+                //   ・頂点はコンバータがワールドへ焼いてあり BoneTransform は単位。
+                //     ローカル鏡像がそのままモデル中心での鏡像になる。
+                //   ・ミラー側は自分の BoneWeight で動くので、実体側の姿勢を
+                //     引き写す S·H·S は不要かつ有害（二重変換になる）。
+                //   ・RebakeDerivedMirrorVertices が焼いた頂点を上書きしない。
+                //   ・DisableMirror が破棄せず独立メッシュとして残す。
+                MirrorGeometryDerived = !skinned,
                 // 階層情報は元メッシュに合わせる
                 ParentIndex = source.ParentIndex,
+                // ゲームオブジェクト階層の親も実体側に合わせる。
+                //   既定値は -1（＝ルート）なので、設定しないとミラーだけが
+                //   ルート直下に置かれ、ワールド行列に親の姿勢が乗らない。
+                //   MQO 経路は挿入後に RecalculateParentIndicesFromDepth が
+                //   ミラー専用分岐でここを設定するため露見しなかった。
+                HierarchyParentIndex = ResolveMirrorHierarchyParent(source, skinned),
                 Depth = source.Depth,
                 IsVisible = source.IsVisible,
                 // ミラー属性はなし（実体化されているため）
@@ -538,28 +756,132 @@ namespace Poly_Ling.Ops
             return mirrorContext;
         }
 
-        /// <summary>ローカル位置を軸で鏡像化する。</summary>
-        private static Vector3 MirrorLocalPosition(Vector3 pos, Poly_Ling.Symmetry.SymmetryAxis axis)
+        /// <summary>
+        /// ミラー側をぶら下げる親を決める。
+        ///
+        /// スキンド済みモデルでは描画オブジェクトがボーンの子として並ぶ。
+        /// 実体側と同じ親（＝実体側のボーン）に付けると、右のメッシュが左のボーンに
+        /// ぶら下がる。左右対のボーン（MirrorBoneIndex）が判っていればそちらへ付ける。
+        /// スキンド変換が作ったミラーは全てこの並びになっている。
+        /// 対応が無ければ実体側と同じ親に落とす。
+        /// </summary>
+        private static int ResolveMirrorHierarchyParent(MeshContext source, bool skinned)
         {
-            switch (axis)
-            {
-                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-pos.x, pos.y, pos.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(pos.x, -pos.y, pos.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(pos.x, pos.y, -pos.z);
-                default: return new Vector3(-pos.x, pos.y, pos.z);
-            }
+            int parent = source.HierarchyParentIndex;
+            if (!skinned) return parent;
+
+            var model = source.ParentModelContext;
+            if (model == null || parent < 0 || parent >= model.MeshContextCount) return parent;
+
+            var parentCtx = model.GetMeshContext(parent);
+            if (parentCtx == null || parentCtx.Type != MeshType.Bone) return parent;
+
+            int peer = parentCtx.MirrorBoneIndex;
+            if (peer < 0 || peer >= model.MeshContextCount) return parent;
+
+            return peer;
         }
 
-        /// <summary>ローカル法線を軸で鏡像化する。</summary>
-        private static Vector3 MirrorLocalNormal(Vector3 normal, Poly_Ling.Symmetry.SymmetryAxis axis)
+        /// <summary>
+        /// 実体側の MeshObject から鏡像の MeshObject を作る。
+        ///
+        /// 【添字恒等対応】
+        ///   result.Vertices[v] ↔ source.Vertices[v]
+        ///   result.Faces[f]    ↔ source.Faces[f]（VertexIndices は逆順）
+        ///   ミラー側への位相伝播（ApplyToMirrors）が前提にしている形を必ず満たす。
+        ///
+        /// 【軸・距離】
+        ///   鏡映は MirrorPoint / MirrorNormal（軸＋距離）で行う。
+        ///   生成ミラーの実効ワールドは ModelContext.ApplyMirrorConjugate が
+        ///   S = MirrorMatrix(axis, distance) の共役 S·H·S で解くため、
+        ///   ローカル頂点も同じ S で鏡像化されていなければ v_M = S·v_R が崩れる。
+        ///   RebakeDerivedMirrorVertices / RebuildDerivedMirrorGeometry も同じ式。
+        ///
+        ///   ピボット側で距離を吸収する使い方（エクスポート時の GameObject 生成。
+        ///   ローカル姿勢を MirrorLocalTRS で鏡像化して親に付ける）では
+        ///   distance に 0 を渡すこと。L' = S_d·L·S_0 となるため、
+        ///   頂点に掛かるのは原点まわりの反射 S_0 になる。
+        /// </summary>
+        /// <param name="materialOffset">ミラー側の面に足すマテリアル番号のオフセット。</param>
+        /// <param name="name">生成物の名前。null なら source の名前をそのまま使う。</param>
+        public static MeshObject BuildMirroredMeshObject(
+            MeshObject source, int mirrorAxis, float mirrorDistance,
+            int materialOffset = 0, string name = null)
         {
-            switch (axis)
+            if (source == null || source.Vertices == null || source.Vertices.Count == 0)
+                return null;
+
+            var result = new MeshObject
             {
-                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-normal.x, normal.y, normal.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(normal.x, -normal.y, normal.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(normal.x, normal.y, -normal.z);
-                default: return new Vector3(-normal.x, normal.y, normal.z);
+                Name = name ?? source.Name
+            };
+
+            // 頂点をミラー変換してコピー
+            foreach (var srcVertex in source.Vertices)
+            {
+                var mirrorVertex = new Vertex
+                {
+                    Id = srcVertex.Id,
+                    Position = MirrorPoint(mirrorAxis, mirrorDistance, srcVertex.Position)
+                };
+
+                // UVをコピー
+                foreach (var uv in srcVertex.UVs)
+                {
+                    mirrorVertex.UVs.Add(uv);
+                }
+
+                // 法線をミラー変換してコピー
+                foreach (var normal in srcVertex.Normals)
+                {
+                    mirrorVertex.Normals.Add(MirrorNormal(mirrorAxis, normal));
+                }
+
+                // ボーンウェイト: ミラー側があればミラー側、なければ実体側
+                if (srcVertex.HasMirrorBoneWeight)
+                {
+                    mirrorVertex.BoneWeight = srcVertex.MirrorBoneWeight;
+                }
+                else if (srcVertex.HasBoneWeight)
+                {
+                    mirrorVertex.BoneWeight = srcVertex.BoneWeight;
+                }
+
+                result.Vertices.Add(mirrorVertex);
             }
+
+            // 面をコピー（頂点順序を反転して法線方向を維持）
+            foreach (var srcFace in source.Faces)
+            {
+                var mirrorFace = new Face
+                {
+                    MaterialIndex = srcFace.MaterialIndex + materialOffset,
+                };
+                if (srcFace.IsHidden)
+                    mirrorFace.SetFlag(FaceFlags.Hidden);
+
+                // 頂点順序を反転（法線方向維持のため）
+                //
+                // UVIndices / NormalIndices は VertexIndices と同じ長さとは限らない。
+                //   ・面ごとの法線を持たないメッシュ … NormalIndices.Count == 0
+                //   ・UV を持たないメッシュ           … UVIndices.Count == 0
+                // これらを VertexCount で回すと IndexOutOfRange で落ち、
+                // ミラー生成が MirrorType だけ立てて中断する（リストに何も増えない）。
+                // 各リストを自分の長さで独立に反転する。
+                for (int i = srcFace.VertexIndices.Count - 1; i >= 0; i--)
+                    mirrorFace.VertexIndices.Add(srcFace.VertexIndices[i]);
+
+                for (int i = srcFace.UVIndices.Count - 1; i >= 0; i--)
+                    mirrorFace.UVIndices.Add(srcFace.UVIndices[i]);
+
+                for (int i = srcFace.NormalIndices.Count - 1; i >= 0; i--)
+                    mirrorFace.NormalIndices.Add(srcFace.NormalIndices[i]);
+
+                result.Faces.Add(mirrorFace);
+            }
+
+            result.InvalidatePositionCache();
+            return result;
         }
 
 
@@ -727,22 +1049,29 @@ namespace Poly_Ling.Ops
 
                     int n = rf.VertexCount;
                     if (mf.VertexCount != n) continue;
-                    if (rf.UVIndices.Count < n || rf.NormalIndices.Count < n) continue;
 
-                    mf.UVIndices.Clear();
-                    mf.NormalIndices.Clear();
-
-                    for (int j = n - 1; j >= 0; j--)
+                    // UV と法線は独立に扱う。以前は「両方そろっていなければ何もしない」
+                    // だったため、法線インデックスを持たないメッシュ（MQO 由来で
+                    // normalCount==0）では UV の張り直しまで丸ごと飛んでいた。
+                    if (rf.UVIndices.Count >= n)
                     {
-                        mf.UVIndices.Add(rf.UVIndices[j]);
-                        mf.NormalIndices.Add(rf.NormalIndices[j]);
+                        mf.UVIndices.Clear();
+                        for (int j = n - 1; j >= 0; j--)
+                            mf.UVIndices.Add(rf.UVIndices[j]);
+                    }
+
+                    if (rf.NormalIndices.Count >= n)
+                    {
+                        mf.NormalIndices.Clear();
+                        for (int j = n - 1; j >= 0; j--)
+                            mf.NormalIndices.Add(rf.NormalIndices[j]);
                     }
                 }
 
                 // --- UnityMesh へ反映 ---
                 // スロット数が変わっていると法線だけの差し替えが成立しないので作り直す。
                 if (mc.UnityMesh == null || !mirrorMo.ApplyNormalsToUnityMesh(mc.UnityMesh))
-                    mc.UnityMesh = mirrorMo.ToUnityMesh(materialCount);
+                    mc.ReplaceUnityMesh(mirrorMo.ToUnityMesh(materialCount));
 
                 rebaked++;
             }
@@ -844,7 +1173,7 @@ namespace Poly_Ling.Ops
                 // 消えた頂点・面を指したままの選択を残さない。
                 mc.Selection?.ClearAll();
 
-                mc.UnityMesh        = mirrorMo.ToUnityMesh();
+                mc.ReplaceUnityMesh(mirrorMo.ToUnityMesh());
                 mc.OriginalPositions = (Vector3[])mirrorMo.Positions.Clone();
 
                 rebuilt++;
@@ -896,6 +1225,417 @@ namespace Poly_Ling.Ops
             }
 
             return result;
+        }
+
+        // ================================================================
+        // ミラー側への位相変更の伝播（3系統共通）
+        //
+        // 【RebuildDerivedMirrorGeometry と別に置く理由】
+        //   同関数は MirrorGeometryDerived == true だけを対象にする。この値は
+        //   「実効ワールドに共役 S·H·S を掛けるか」という描画側の都合で決まり、
+        //   MeshFilterToSkinnedConverter は変換時に無条件で false を書く。
+        //   PMX 経路も設定しないため false のまま。その結果、
+        //   「ユーザーが重みを塗る側のミラー」が丸ごと対象外になっていた。
+        //
+        //   ミラーの連結そのものの正本は MirrorPairs と BakedMirrorSourceIndex で、
+        //   頂点移動の同期（PlayerViewportManager.SyncMeshPositionsAndTransform）も
+        //   この2つしか見ていない。ここでも CollectMirrorPeers に一本化する。
+        //
+        // 【前提: 添字恒等対応】
+        //   real.Vertices[v] ↔ mirror.Vertices[v]
+        //   real.Faces[f]    ↔ mirror.Faces[f]
+        //   mirror.Faces[f].VertexIndices は real 側の逆順
+        //
+        //   生成ミラー（CreateDerivedMirrorContext）は必ず成立する。スキンド変換は
+        //   頂点の並べ替え・増減をせず Position に行列を掛けるだけなので変換後も
+        //   保たれる。ファイル由来のミラーは保証が無いため、位相を変える前に
+        //   VerifyIdentityCorrespondence で実測し、成立しないペアは触らない。
+        //
+        // 【伝播のやり方】
+        //   ミラー側の頂点・面を実体側から作り直すことはしない。実体側に掛けたのと
+        //   同じ位相操作を、同じ添字でミラー側にも掛ける（ApplyToMirrors）。
+        //
+        //   前提 A が成り立っていれば、両側で同じ面添字・同じ頂点添字を消し、
+        //   生き残った面の VertexIndices に同じ再マップを掛けるだけで
+        //     mirror'.Faces[f].VertexIndices[j]
+        //       = map[ mirror.Faces[f].VertexIndices[j] ]
+        //       = map[ real.Faces[f].VertexIndices[n-1-j] ]
+        //       = real'.Faces[f].VertexIndices[n-1-j]
+        //   となり前提 A がそのまま保たれる。
+        //
+        //   UVIndices / NormalIndices は頂点内のスロット番号であって頂点添字では
+        //   ないため、頂点の削除・再マップの影響を受けない。ミラー側の頂点
+        //   オブジェクト（位置・UV・法線・ボーンウェイト）は生き残ったものを
+        //   そのまま残すだけなので、実体側から写す作業は一切要らない。
+        //
+        // 【面内の巻き順の正規化】
+        //   面を張り替える操作（Tri4To1 / FaceMerge / VertexDissolve 等）は
+        //   面の巻き順に沿って外周を辿るため、ミラー側では逆回りに辿ることになり、
+        //   結果の並びが「実体側の逆順」を巡回回転した形になることがある。
+        //   幾何としては同じ面だが前提 A の「厳密な逆順」からは外れるため、
+        //   操作後に NormalizeMirrorFaceOrder で回転を戻して厳密形に揃える。
+        // ================================================================
+
+        /// <summary>
+        /// ミラー側への位相変更の伝播計画。位相を変える前に作ること。
+        /// </summary>
+        public sealed class MirrorRebuildPlan
+        {
+            public sealed class Entry
+            {
+                /// <summary>実体側の MeshContextList 索引。</summary>
+                public int RealIndex;
+
+                /// <summary>ミラー側の MeshContextList 索引。</summary>
+                public int MirrorIndex;
+
+                /// <summary>添字恒等対応が実測で成立したか。false のペアは触らない。</summary>
+                public bool Verified;
+
+                /// <summary>成立しなかった理由（Verified == false のとき）。</summary>
+                public string RejectReason;
+            }
+
+            public readonly List<Entry> Entries = new List<Entry>();
+
+            /// <summary>検証を通ったペア数。</summary>
+            public int VerifiedCount
+            {
+                get
+                {
+                    int n = 0;
+                    for (int i = 0; i < Entries.Count; i++) if (Entries[i].Verified) n++;
+                    return n;
+                }
+            }
+
+            /// <summary>検証を落ちたペア数。</summary>
+            public int RejectedCount => Entries.Count - VerifiedCount;
+        }
+
+        /// <summary>
+        /// 実体側の索引からミラー側を引き当て、添字恒等対応の成否を実測して控える。
+        /// 位相を変える「前」に呼ぶこと（変更後では対応の検証ができない）。
+        /// </summary>
+        public static MirrorRebuildPlan CaptureMirrorRebuildPlan(
+            ModelContext model, IEnumerable<int> realIndices)
+        {
+            var plan = new MirrorRebuildPlan();
+            if (model?.MeshContextList == null || realIndices == null) return plan;
+
+            var list = model.MeshContextList;
+            var seen = new HashSet<int>();
+
+            foreach (int realIndex in realIndices)
+            {
+                if (realIndex < 0 || realIndex >= list.Count) continue;
+
+                var peers = new List<int>();
+                CollectMirrorPeers(model, realIndex, peers);
+
+                foreach (int mirrorIndex in peers)
+                {
+                    if (mirrorIndex < 0 || mirrorIndex >= list.Count) continue;
+                    if (mirrorIndex == realIndex) continue;
+                    if (!seen.Add(mirrorIndex)) continue;   // 同じミラーを二重に扱わない
+
+                    var entry = new MirrorRebuildPlan.Entry
+                    {
+                        RealIndex   = realIndex,
+                        MirrorIndex = mirrorIndex,
+                    };
+
+                    var realMo   = list[realIndex]?.MeshObject;
+                    var mirrorMo = list[mirrorIndex]?.MeshObject;
+
+                    string reason;
+                    entry.Verified     = VerifyIdentityCorrespondence(realMo, mirrorMo, out reason);
+                    entry.RejectReason = reason;
+
+                    plan.Entries.Add(entry);
+                }
+            }
+
+            return plan;
+        }
+
+        /// <summary>
+        /// 実体側とミラー側が添字恒等対応（面内の巻き順は逆順）になっているかを実測する。
+        /// </summary>
+        private static bool VerifyIdentityCorrespondence(
+            MeshObject realMo, MeshObject mirrorMo, out string reason)
+        {
+            reason = "";
+
+            if (realMo == null)   { reason = "実体側の MeshObject が null";   return false; }
+            if (mirrorMo == null) { reason = "ミラー側の MeshObject が null"; return false; }
+
+            if (realMo.Vertices == null || mirrorMo.Vertices == null)
+            { reason = "Vertices が null"; return false; }
+            if (realMo.Faces == null || mirrorMo.Faces == null)
+            { reason = "Faces が null"; return false; }
+
+            if (realMo.Vertices.Count != mirrorMo.Vertices.Count)
+            {
+                reason = $"頂点数が不一致 real={realMo.Vertices.Count} mirror={mirrorMo.Vertices.Count}";
+                return false;
+            }
+            if (realMo.Faces.Count != mirrorMo.Faces.Count)
+            {
+                reason = $"面数が不一致 real={realMo.Faces.Count} mirror={mirrorMo.Faces.Count}";
+                return false;
+            }
+
+            for (int v = 0; v < realMo.Vertices.Count; v++)
+            {
+                if (realMo.Vertices[v] == null || mirrorMo.Vertices[v] == null)
+                { reason = $"頂点 {v} が null"; return false; }
+            }
+
+            for (int f = 0; f < realMo.Faces.Count; f++)
+            {
+                var rf = realMo.Faces[f];
+                var mf = mirrorMo.Faces[f];
+                if (rf == null || mf == null) { reason = $"面 {f} が null"; return false; }
+                if (rf.VertexIndices == null || mf.VertexIndices == null)
+                { reason = $"面 {f} の VertexIndices が null"; return false; }
+
+                int n = rf.VertexIndices.Count;
+                if (mf.VertexIndices.Count != n)
+                {
+                    reason = $"面 {f} の頂点数が不一致 real={n} mirror={mf.VertexIndices.Count}";
+                    return false;
+                }
+
+                for (int j = 0; j < n; j++)
+                {
+                    if (mf.VertexIndices[j] != rf.VertexIndices[n - 1 - j])
+                    {
+                        reason = $"面 {f} が逆順恒等でない "
+                               + $"(slot {j}: mirror={mf.VertexIndices[j]} real={rf.VertexIndices[n - 1 - j]})";
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 実体側に掛けたのと同じ位相操作を、検証を通ったミラー側にも掛ける。
+        /// MirrorGeometryDerived は見ない（3系統すべてが対象）。
+        ///
+        /// plan は位相を変える「前」に CaptureMirrorRebuildPlan で取っておくこと。
+        /// 本メソッドは実体側の操作が終わった「後」に呼ぶ。ミラー側はまだ変更前の
+        /// 状態なので、操作に渡す添字は変更前のものをそのまま使える。
+        /// </summary>
+        /// <param name="apply">
+        /// (実体側の索引, ミラー側の MeshObject) を受け取り、実体側と同じ操作を
+        /// ミラー側に掛ける。成功したら true。
+        /// </param>
+        /// <returns>更新したミラー側の数</returns>
+        public static int ApplyToMirrors(
+            ModelContext model,
+            MirrorRebuildPlan plan,
+            Func<int, MeshObject, bool> apply)
+        {
+            if (model?.MeshContextList == null || plan == null || apply == null) return 0;
+
+            var list = model.MeshContextList;
+            int materialCount = model.MaterialCount;
+            int applied = 0;
+
+            foreach (var entry in plan.Entries)
+            {
+                if (!entry.Verified)
+                {
+                    Debug.LogWarning(
+                        "[Mirror] 添字恒等対応が成立しないためミラー側へ伝播しませんでした。"
+                      + $" real=[{entry.RealIndex}]\"{SafeContextName(list, entry.RealIndex)}\""
+                      + $" mirror=[{entry.MirrorIndex}]\"{SafeContextName(list, entry.MirrorIndex)}\""
+                      + $" 理由: {entry.RejectReason}");
+                    continue;
+                }
+
+                var realCtx   = SafeContext(list, entry.RealIndex);
+                var mirrorCtx = SafeContext(list, entry.MirrorIndex);
+                var realMo    = realCtx?.MeshObject;
+                var mirrorMo  = mirrorCtx?.MeshObject;
+                if (realMo == null || mirrorMo == null) continue;
+
+                if (!apply(entry.RealIndex, mirrorMo))
+                {
+                    Debug.LogError(
+                        "[Mirror] ミラー側への操作が失敗しました。左右が食い違ったままです。"
+                      + $" real=[{entry.RealIndex}]\"{SafeContextName(list, entry.RealIndex)}\""
+                      + $" mirror=[{entry.MirrorIndex}]\"{SafeContextName(list, entry.MirrorIndex)}\"");
+                    continue;
+                }
+
+                // 面を張り替える操作は巻き順に沿って外周を辿るため、ミラー側の結果が
+                // 「実体側の逆順」を巡回回転した形になることがある。厳密形へ戻す。
+                int rotated = NormalizeMirrorFaceOrder(realMo, mirrorMo, out string normError);
+                if (normError != null)
+                {
+                    Debug.LogError(
+                        $"[Mirror] ミラー側の面の並びを揃えられませんでした: {normError}"
+                      + $" mirror=[{entry.MirrorIndex}]\"{SafeContextName(list, entry.MirrorIndex)}\"");
+                }
+
+                // 操作後にもう一度、前提が保たれているかを実測する。
+                if (!VerifyIdentityCorrespondence(realMo, mirrorMo, out string afterReason))
+                {
+                    Debug.LogError(
+                        "[Mirror] 操作後に添字恒等対応が崩れました。Undo で戻してください。"
+                      + $" mirror=[{entry.MirrorIndex}]\"{SafeContextName(list, entry.MirrorIndex)}\""
+                      + $" 理由: {afterReason}");
+                }
+
+                if (rotated > 0)
+                    Debug.Log($"[Mirror] ミラー側の面 {rotated} 枚の並びを厳密な逆順へ揃えました"
+                            + $" mirror=\"{SafeContextName(list, entry.MirrorIndex)}\"");
+
+                mirrorMo.InvalidatePositionCache();
+
+                // 消えた頂点・面を指したままの選択を残さない。
+                mirrorCtx.Selection?.ClearAll();
+
+                mirrorCtx.ReplaceUnityMesh(mirrorMo.ToUnityMesh(materialCount));
+                mirrorCtx.OriginalPositions = (Vector3[])mirrorMo.Positions.Clone();
+
+                applied++;
+            }
+
+            if (applied > 0) RebuildAffectedMirrorPairs(model, plan);
+
+            return applied;
+        }
+
+        /// <summary>
+        /// ミラー側の各面の並びを「実体側の厳密な逆順」へ回転で揃える。
+        /// 巡回回転で一致しない面があれば error に理由を入れる（回転はしない）。
+        /// UVIndices / NormalIndices も同じ回転量で揃える（長さが n のときのみ）。
+        /// </summary>
+        /// <returns>回転した面の数</returns>
+        private static int NormalizeMirrorFaceOrder(
+            MeshObject realMo, MeshObject mirrorMo, out string error)
+        {
+            error = null;
+
+            if (realMo?.Faces == null || mirrorMo?.Faces == null)
+            {
+                error = "Faces が null";
+                return 0;
+            }
+            if (realMo.Faces.Count != mirrorMo.Faces.Count)
+            {
+                error = $"面数が不一致 real={realMo.Faces.Count} mirror={mirrorMo.Faces.Count}";
+                return 0;
+            }
+
+            int rotatedCount = 0;
+
+            for (int f = 0; f < realMo.Faces.Count; f++)
+            {
+                var rf = realMo.Faces[f];
+                var mf = mirrorMo.Faces[f];
+                if (rf?.VertexIndices == null || mf?.VertexIndices == null)
+                {
+                    error = $"面 {f} が null";
+                    return rotatedCount;
+                }
+
+                int n = rf.VertexIndices.Count;
+                if (mf.VertexIndices.Count != n)
+                {
+                    error = $"面 {f} の頂点数が不一致 real={n} mirror={mf.VertexIndices.Count}";
+                    return rotatedCount;
+                }
+                if (n == 0) continue;
+
+                int r = FindReverseRotation(rf.VertexIndices, mf.VertexIndices, n);
+                if (r < 0)
+                {
+                    error = $"面 {f} が巡回回転を含めても逆順一致しません";
+                    return rotatedCount;
+                }
+                if (r == 0) continue;
+
+                RotateLeft(mf.VertexIndices, r, n);
+                if (mf.UVIndices     != null && mf.UVIndices.Count     == n) RotateLeft(mf.UVIndices,     r, n);
+                if (mf.NormalIndices != null && mf.NormalIndices.Count == n) RotateLeft(mf.NormalIndices, r, n);
+
+                rotatedCount++;
+            }
+
+            return rotatedCount;
+        }
+
+        /// <summary>
+        /// mirror[j] == real[(n-1-j+r) % n] が全 j で成り立つ r を返す。無ければ -1。
+        /// </summary>
+        private static int FindReverseRotation(List<int> real, List<int> mirror, int n)
+        {
+            for (int r = 0; r < n; r++)
+            {
+                bool ok = true;
+                for (int j = 0; j < n; j++)
+                {
+                    int k = ((n - 1 - j + r) % n + n) % n;
+                    if (mirror[j] != real[k]) { ok = false; break; }
+                }
+                if (ok) return r;
+            }
+            return -1;
+        }
+
+        /// <summary>リストを左へ r 個ぶん回転する（先頭が元の r 番目になる）。</summary>
+        private static void RotateLeft(List<int> listToRotate, int r, int n)
+        {
+            if (r <= 0 || n <= 1) return;
+
+            var tmp = new int[n];
+            for (int j = 0; j < n; j++) tmp[j] = listToRotate[(j + r) % n];
+            for (int j = 0; j < n; j++) listToRotate[j] = tmp[j];
+        }
+
+        private static MeshContext SafeContext(IList<MeshContext> list, int index)
+        {
+            if (list == null || index < 0 || index >= list.Count) return null;
+            return list[index];
+        }
+
+        private static string SafeContextName(IList<MeshContext> list, int index)
+        {
+            var mc = SafeContext(list, index);
+            return mc?.Name ?? "<範囲外/null>";
+        }
+
+        /// <summary>
+        /// 作り直したミラー側を含む MirrorPair の対応表を張り直す。
+        /// 位相が変わると VertexMap（件数一致が前提）が古くなるため。
+        /// </summary>
+        private static void RebuildAffectedMirrorPairs(ModelContext model, MirrorRebuildPlan plan)
+        {
+            if (model?.MirrorPairs == null) return;
+
+            var list = model.MeshContextList;
+            if (list == null) return;
+
+            foreach (var entry in plan.Entries)
+            {
+                if (!entry.Verified) continue;
+
+                var mirrorCtx = SafeContext(list, entry.MirrorIndex);
+                if (mirrorCtx == null) continue;
+
+                foreach (var pair in model.MirrorPairs)
+                {
+                    if (pair == null || pair.Mirror != mirrorCtx) continue;
+                    if (!pair.Build())
+                        Debug.LogWarning($"[Mirror] ペアの張り直しに失敗しました mirror=\"{mirrorCtx.Name}\"");
+                }
+            }
         }
 
         /// <summary>

@@ -1021,6 +1021,20 @@ namespace Poly_Ling.Remote
                 return SplitQuotedCsv(s);
             }
 
+            // float[]パラメータ取得ヘルパー。送信側（PanelCommandRouter.FloatCsv）が
+            // InvariantCulture で書くので、読む側もロケールを固定する。
+            float[] GetFloats(string key)
+            {
+                if (msg.Params == null || !msg.Params.TryGetValue(key, out var s) || string.IsNullOrEmpty(s))
+                    return System.Array.Empty<float>();
+                var parts = s.Split(',');
+                var result = new float[parts.Length];
+                for (int i = 0; i < parts.Length; i++)
+                    float.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out result[i]);
+                return result;
+            }
+
             switch (msg.Action)
             {
                 // ── 選択 ──────────────────────────────────────────────
@@ -1114,6 +1128,33 @@ namespace Poly_Ling.Remote
 
                 case "duplicateMeshes":
                     return new DuplicateMeshesCommand(modelIndex, GetIndices("masterIndices"));
+
+                // ── メッシュブレンド ──────────────────────────────────
+                // ソースの3列は同じ並びで届く。長さが揃わない要求は
+                // 対応関係が決まらないので短いほうに合わせて切る。
+                case "applyBlend":
+                {
+                    var srcModels  = GetIndices("srcModelIndices");
+                    var srcMasters = GetIndices("srcMasterIndices");
+                    var srcWeights = GetFloats("srcWeights");
+
+                    int n = Math.Min(srcModels.Length, Math.Min(srcMasters.Length, srcWeights.Length));
+                    if (n > ApplyBlendCommand.MaxSources) n = ApplyBlendCommand.MaxSources;
+
+                    var specs = new BlendSourceSpec[n];
+                    for (int i = 0; i < n; i++)
+                        specs[i] = new BlendSourceSpec(srcModels[i], srcMasters[i], srcWeights[i]);
+
+                    return new ApplyBlendCommand(
+                        modelIndex,
+                        specs,
+                        GetParamInt(msg, "destMasterIndex", -1),
+                        GetParamString(msg, "createNewObject", "false") == "true",
+                        GetParamString(msg, "recalcNormals",   "true")  == "true",
+                        GetParamString(msg, "selectedOnly",    "false") == "true",
+                        (Poly_Ling.UI.BlendMatchMode)GetParamInt(
+                            msg, "matchMode", (int)Poly_Ling.UI.BlendMatchMode.Index));
+                }
 
                 // ── BonePose ──────────────────────────────────────────
                 case "initBonePose":

@@ -21,12 +21,23 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public SkinWeightPaintMode CurrentPaintMode   { get; private set; } = SkinWeightPaintMode.Replace;
-        public float               CurrentBrushRadius { get; private set; } = 0.3f;
+        // ブラシ半径はワールド単位。範囲・既定値はマグネット（MoveSettings）に揃える。
+        public float               CurrentBrushRadius { get; private set; } = 0.1f;
         public float               CurrentStrength    { get; private set; } = 0.5f;
-        public BrushFalloff        CurrentFalloff     { get; private set; } = BrushFalloff.Smooth;
+        public FalloffType         CurrentFalloff      { get; private set; } = FalloffType.Gaussian;
+        public DistanceMode        CurrentDistanceMode { get; private set; } = DistanceMode.Euclidean;
         public float               CurrentWeightValue { get; private set; } = 1f;
         public int                 CurrentTargetBone  { get; private set; } = -1;
-        public int                 CurrentTargetMesh  { get; private set; } = -1;
+        /// <summary>
+        /// 常に -1。ペイント対象はオブジェクトリストの選択に従う。
+        ///
+        /// 以前はパネル独自の「ターゲットメッシュ」ドロップダウンを持っていたが、
+        /// オブジェクトリストと連動せず、可視化されるメッシュと塗られるメッシュが
+        /// 食い違う原因になっていたため削除した。
+        /// 対象の解決は SkinWeightOperations.CollectTargetMeshContexts に一本化してあり、
+        /// ウェイト可視化（MeshSceneRenderer.CollectWeightVisTargets）と同じ集合になる。
+        /// </summary>
+        public int                 CurrentTargetMesh  => -1;
 
         public void NotifyWeightChanged()
         {
@@ -43,7 +54,6 @@ namespace Poly_Ling.Player
         public Action OnTargetBoneChanged;
 
         /// <summary>メッシュドロップダウン変更時に呼ばれる。</summary>
-        public Action OnMeshSelectionChanged;
 
         /// <summary>Flood/Normalize/Prune 実行時に ToolContext を取得するコールバック。</summary>
         public Func<Poly_Ling.Tools.ToolContext> GetToolContext;
@@ -65,11 +75,6 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private VisualElement _root;
-
-        // ターゲットメッシュ
-        private DropdownField  _meshDropdown;
-        private List<string>   _meshNames         = new List<string>();
-        private List<int>      _meshMasterIndices  = new List<int>();
 
         // ターゲットボーン
         private DropdownField  _boneDropdown;
@@ -96,20 +101,6 @@ namespace Poly_Ling.Player
 
             AddSectionLabel("スキンウェイトペイント");
             AddSep();
-
-            // ── ターゲットメッシュ
-            AddSectionLabel("ターゲットメッシュ");
-            _meshDropdown = new DropdownField(new List<string> { "（未選択）" }, 0);
-            _meshDropdown.style.color = new StyleColor(Color.white);
-            _meshDropdown.style.marginBottom = 4;
-            _meshDropdown.RegisterValueChangedCallback(e =>
-            {
-                int sel = _meshDropdown.index;
-                CurrentTargetMesh = (sel <= 0) ? -1 : _meshMasterIndices[sel - 1];
-                OnMeshSelectionChanged?.Invoke();
-                OnRepaint?.Invoke();
-            });
-            _root.Add(_meshDropdown);
 
             // ── ターゲットボーン
             AddSectionLabel("ターゲットボーン");
@@ -143,22 +134,20 @@ namespace Poly_Ling.Player
 
             // ── ブラシ設定
             AddSectionLabel("ブラシ");
-            _root.Add(SR("半径",  0.05f, 1.0f, () => CurrentBrushRadius, v => { CurrentBrushRadius = v; OnRepaint?.Invoke(); }));
-            _root.Add(SR("強度",  0.01f, 1.0f, () => CurrentStrength,    v => { CurrentStrength    = v; }));
-            _root.Add(SR("値",    0f,    1.0f, () => CurrentWeightValue,  v => { CurrentWeightValue  = v; }));
+            // 半径のみ刻みなし（step: 0f）。強度・値は SliderStep 刻み。
+            _root.Add(SR("半径",  MagnetRadiusMin, MagnetRadiusMax,
+                () => CurrentBrushRadius, v => { CurrentBrushRadius = v; OnRepaint?.Invoke(); }, 0f));
+            _root.Add(SR("強度",  0.01f, 1.0f, () => CurrentStrength,    v => { CurrentStrength    = v; }, SliderStep));
+            _root.Add(SR("値",    0f,    1.0f, () => CurrentWeightValue,  v => { CurrentWeightValue  = v; }, SliderStep));
 
             AddSep();
 
-            // ── フォールオフ
-            AddSectionLabel("フォールオフ");
-            var foRow = new VisualElement();
-            foRow.style.flexDirection = FlexDirection.Row;
-            foRow.style.marginBottom  = 4;
-            AddFalloffBtn(foRow, "Const",  BrushFalloff.Constant);
-            AddFalloffBtn(foRow, "Linear", BrushFalloff.Linear);
-            AddFalloffBtn(foRow, "Smooth", BrushFalloff.Smooth);
-            _root.Add(foRow);
-            UpdateFalloffBtns();
+            // ── 距離モード／フォールオフ（マグネット・スカルプトと共通 UI）
+            // 並び・ラベル・選択肢はマグネット（PlayerVertexMoveSubPanel）に合わせる。
+            _root.Add(_falloffControls.BuildDistanceDropdown(
+                () => CurrentDistanceMode, v => CurrentDistanceMode = v));
+            _root.Add(_falloffControls.BuildFalloffDropdown(
+                () => CurrentFalloff, v => CurrentFalloff = v));
 
             // ── 操作ボタン（エディタ版 SkinWeightPaintPanelV2 の Flood/Normalize/Prune に対応）
             AddSep();
@@ -209,113 +198,43 @@ namespace Poly_Ling.Player
         // Flood / Normalize / Prune
         // ================================================================
 
+        // Flood / Normalize / Prune はいずれも PanelCommand 経由で実行する。
+        // 対象は選択中の描画オブジェクト全件で、メッシュごとの Undo 記録と
+        // GPU 転送は PlayerCommandDispatcher.ApplySkinWeightPerMesh が行う。
+        // 以前あった PanelContext 未設定時のフォールバック（SkinWeightOperations を
+        // 直接呼ぶ経路）は、1 メッシュしか処理できず Undo も片方だけ記録される
+        // 別経路になっていたため削除した。
+
         private void OnFlood()
         {
-            int modelIdx = _getModelIndex?.Invoke() ?? 0;
-            if (_panelContext != null)
-            {
-                SendCmd(new FloodSkinWeightCommand(modelIdx,
-                    CurrentTargetBone, CurrentPaintMode,
-                    CurrentWeightValue, CurrentStrength));
-                SetStatus("Flood 実行");
-            }
-            else
-            {
-                // フォールバック（PanelContext未設定時）
-                var ctx = GetToolContext?.Invoke();
-                if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
-                SkinWeightOperations.ExecuteFlood(ctx.Model, ctx,
-                    CurrentTargetBone, CurrentPaintMode,
-                    CurrentWeightValue, CurrentStrength,
-                    msg => SetStatus(msg));
-                SetStatus("Flood 完了");
-            }
+            if (_panelContext == null) { SetStatus("コンテキスト未設定"); return; }
+            if (CurrentTargetBone < 0)  { SetStatus("ターゲットボーンが未選択です。"); return; }
+
+            SendCmd(new FloodSkinWeightCommand(_getModelIndex?.Invoke() ?? 0,
+                CurrentTargetBone, CurrentPaintMode,
+                CurrentWeightValue, CurrentStrength));
+            SetStatus("Flood 実行");
         }
 
         private void OnNormalize()
         {
-            int modelIdx = _getModelIndex?.Invoke() ?? 0;
-            if (_panelContext != null)
-            {
-                SendCmd(new NormalizeSkinWeightCommand(modelIdx));
-                SetStatus("Normalize 実行");
-            }
-            else
-            {
-                var ctx = GetToolContext?.Invoke();
-                if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
-                SkinWeightOperations.ExecuteNormalize(ctx.Model, ctx,
-                    msg => SetStatus(msg));
-                SetStatus("Normalize 完了");
-            }
+            if (_panelContext == null) { SetStatus("コンテキスト未設定"); return; }
+
+            SendCmd(new NormalizeSkinWeightCommand(_getModelIndex?.Invoke() ?? 0));
+            SetStatus("Normalize 実行");
         }
 
         private void OnPrune()
         {
-            int modelIdx = _getModelIndex?.Invoke() ?? 0;
-            if (_panelContext != null)
-            {
-                SendCmd(new PruneSkinWeightCommand(modelIdx, _pruneThreshold));
-                SetStatus("Prune 実行");
-            }
-            else
-            {
-                var ctx = GetToolContext?.Invoke();
-                if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
-                int count = SkinWeightOperations.ExecutePrune(ctx.Model, ctx, _pruneThreshold,
-                    msg => SetStatus(msg));
-                SetStatus($"Prune 完了: {count} 頂点");
-            }
+            if (_panelContext == null) { SetStatus("コンテキスト未設定"); return; }
+
+            SendCmd(new PruneSkinWeightCommand(_getModelIndex?.Invoke() ?? 0, _pruneThreshold));
+            SetStatus("Prune 実行");
         }
 
         private void SetStatus(string msg)
         {
             if (_statusLabel != null) _statusLabel.text = msg;
-        }
-
-        // ================================================================
-        // モデル変更時にメッシュリストを更新する
-        // ================================================================
-
-        public void RefreshMeshList(ModelContext model)
-        {
-            _meshNames.Clear();
-            _meshMasterIndices.Clear();
-
-            if (model != null)
-            {
-                // DrawableMeshes（MirrorSide含む）を全て列挙
-                for (int i = 0; i < model.MeshContextCount; i++)
-                {
-                    var mc = model.GetMeshContext(i);
-                    if (mc == null || mc.MeshObject == null) continue;
-                    var t = mc.Type;
-                    if (t == MeshType.Bone || t == MeshType.Morph ||
-                        t == MeshType.RigidBody || t == MeshType.RigidBodyJoint ||
-                        t == MeshType.Group) continue;
-                    string baseName = string.IsNullOrEmpty(mc.Name) ? $"Mesh_{i}" : mc.Name;
-                    string label = mc.Type == MeshType.MirrorSide
-                        ? $"{baseName} [{i}][Mirror]"
-                        : $"{baseName} [{i}]";
-                    _meshNames.Add(label);
-                    _meshMasterIndices.Add(i);
-                }
-            }
-
-            if (_meshDropdown == null) return;
-
-            var choices = new List<string> { "（未選択）" };
-            choices.AddRange(_meshNames);
-            _meshDropdown.choices = choices;
-
-            int selIdx = 0;
-            if (CurrentTargetMesh >= 0)
-            {
-                int found = _meshMasterIndices.IndexOf(CurrentTargetMesh);
-                selIdx = found >= 0 ? found + 1 : 0;
-            }
-            _meshDropdown.SetValueWithoutNotify(choices[selIdx]);
-            if (selIdx == 0) CurrentTargetMesh = -1;
         }
 
         // ================================================================
@@ -365,7 +284,26 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly Button[] _modeBtns  = new Button[4];
-        private readonly Button[] _falloffBtns = new Button[3];
+
+        /// <summary>フォールオフ／距離モードの共通 UI（マグネット・スカルプトと共有）。</summary>
+        private readonly BrushFalloffControls _falloffControls = new BrushFalloffControls();
+
+        // ブラシ半径の範囲。マグネット（MoveSettings.MIN/MAX_MAGNET_RADIUS）と同じ
+        // ParameterLimits のキーを参照し、3 ツールで同一レンジにする。
+        private static float MagnetRadiusMin => Poly_Ling.Core.ParameterLimits.GetF("Move.MagnetRadius.Min");
+        private static float MagnetRadiusMax => Poly_Ling.Core.ParameterLimits.GetF("Move.MagnetRadius.Max");
+
+        /// <summary>強度・値スライダのドラッグ時の刻み幅。半径には適用しない。</summary>
+        private const float SliderStep = 0.05f;
+
+        // 選択中／非選択のボタン色。
+        // 旧実装は選択中に Color.white、非選択に StyleKeyword.Null を入れていた。
+        // 文字色は ApplyDarkTheme が白にするため白背景では読めず、Null は
+        // インライン値を外すだけで USS 既定の明るい灰色になり、どちらも白く見えていた。
+        // 色は PolyLingPlayerViewerCore の
+        // InteractionActiveBtnColor / InactiveBtnColor と同じ値に揃える。
+        private static readonly StyleColor SegActiveColor   = new StyleColor(new Color(0.3f,  0.5f,  1.0f));
+        private static readonly StyleColor SegInactiveColor = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
 
         private void AddModeBtn(VisualElement row, string label, SkinWeightPaintMode mode)
         {
@@ -384,40 +322,23 @@ namespace Poly_Ling.Player
             row.Add(b);
         }
 
+        /// <summary>
+        /// セグメント型ボタン（モード／フォールオフ）の色を塗り直す。
+        /// PlayerLayoutRoot.ApplyDarkTheme は全 Button を既定色へ戻すため、
+        /// それが走った後に外部から呼ぶ。
+        /// </summary>
+        public void RepaintSegmentButtons()
+        {
+            UpdateModeBtns();
+            _falloffControls.Sync();
+        }
+
         private void UpdateModeBtns()
         {
-            var active   = new StyleColor(Color.white);
-            var inactive = new StyleColor(StyleKeyword.Null);
             for (int i = 0; i < _modeBtns.Length; i++)
                 if (_modeBtns[i] != null)
                     _modeBtns[i].style.backgroundColor =
-                        ((int)CurrentPaintMode == i) ? active : inactive;
-        }
-
-        private void AddFalloffBtn(VisualElement row, string label, BrushFalloff fo)
-        {
-            int idx = (int)fo;
-            var b = new Button(() =>
-            {
-                CurrentFalloff = fo;
-                UpdateFalloffBtns();
-            }) { text = label };
-            b.style.flexGrow    = 1;
-            b.style.marginRight = 2;
-            b.style.fontSize    = 9;
-            b.style.height      = 20;
-            _falloffBtns[idx] = b;
-            row.Add(b);
-        }
-
-        private void UpdateFalloffBtns()
-        {
-            var active   = new StyleColor(Color.white);
-            var inactive = new StyleColor(StyleKeyword.Null);
-            for (int i = 0; i < _falloffBtns.Length; i++)
-                if (_falloffBtns[i] != null)
-                    _falloffBtns[i].style.backgroundColor =
-                        ((int)CurrentFalloff == i) ? active : inactive;
+                        ((int)CurrentPaintMode == i) ? SegActiveColor : SegInactiveColor;
         }
 
         // ================================================================
@@ -444,7 +365,8 @@ namespace Poly_Ling.Player
             _root.Add(v);
         }
 
-        private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set)
+        /// <param name="step">スライダのドラッグ時の刻み幅。0 のとき刻みなし。</param>
+        private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set, float step = 0f)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -462,12 +384,20 @@ namespace Poly_Ling.Player
             sl.style.flexGrow = 1;
             var nf = new FloatField { value = get() };
             nf.style.color = new StyleColor(Color.black);
-            nf.style.width = 42;
+            nf.style.width = 63;
 
             sl.RegisterValueChangedCallback(e =>
             {
-                nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3));
-                set(e.newValue);
+                // step > 0 のときだけドラッグ値を刻みへ丸める。
+                // 数値フィールドの直接入力（下の nf 側）は丸めない。
+                float v = e.newValue;
+                if (step > 0f)
+                {
+                    v = Mathf.Clamp(Mathf.Round(v / step) * step, min, max);
+                    if (!Mathf.Approximately(v, e.newValue)) sl.SetValueWithoutNotify(v);
+                }
+                nf.SetValueWithoutNotify((float)Math.Round(v, 3));
+                set(v);
             });
             nf.RegisterValueChangedCallback(e =>
             {

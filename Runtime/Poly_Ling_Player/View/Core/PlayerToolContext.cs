@@ -3,9 +3,11 @@
 // UnityEngine.Camera から計算して AxisGizmo に渡す。
 // Runtime/Poly_Ling_Player/View/ に配置
 
+using System;
 using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
@@ -31,6 +33,22 @@ namespace Poly_Ling.Player
         /// BuildToolContext が Model を入れ直すため気付きにくい。
         /// </summary>
         public ModelContext Model { get; set; }
+
+        // ================================================================
+        // MeshContext 追加の受け口
+        //
+        // ToToolContext が返す ToolContext には元々これらが載っておらず、
+        // ctx.AddMeshContext / ctx.AddMeshObjectToCurrentMesh を呼ぶツール
+        // （線押し出し・MediaPipe 顔変形など）は ?.Invoke で握り潰され、
+        // 生成物がどこにも入らないまま成功ログだけ出ていた。
+        // PolyLingPlayerViewerCore が Initialize で結線する。
+        // ================================================================
+
+        /// <summary>新しい MeshContext をモデルへ追加する（Undo 記録込み）。</summary>
+        public Action<MeshContext> AddMeshContext { get; set; }
+
+        /// <summary>MeshObject を編集対象メッシュへマージする（Undo 記録込み）。</summary>
+        public Action<MeshObject, string> AddMeshObjectToCurrentMesh { get; set; }
 
         // ================================================================
         // Camera から毎フレーム更新する
@@ -123,6 +141,8 @@ namespace Poly_Ling.Player
             ctx.ScreenDeltaToWorldDelta = (sd, cp, ct, cd, rect) =>
                 ScreenDeltaToWorldDelta(sd, cp, ct, cd, rect);
             ctx.ScreenPosToRay = screenPos => ScreenPosToRay(screenPos);
+            ctx.AddMeshContext             = AddMeshContext;
+            ctx.AddMeshObjectToCurrentMesh = AddMeshObjectToCurrentMesh;
             return ctx;
         }
 

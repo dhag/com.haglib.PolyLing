@@ -38,6 +38,51 @@ namespace Poly_Ling.Data
         public MeshObject MeshObject;               // メッシュオブジェクト
         public Vector3[] OriginalPositions;         // 元の頂点位置（リセット用）
 
+        /// <summary>
+        /// 旧 Mesh を破棄するか。既定 true。
+        ///
+        /// 【経緯】
+        /// 全差し替え箇所で破棄を有効にしたところ、矩形選択が一部頂点で効かなくなった。
+        /// 原因は UnifiedSystemAdapter.WritebackTransformedVertices の 2 箇所で、
+        /// 描画提出済みの Mesh や GPU 可視フラグと同一フレーム内で競合していた。
+        /// その 2 箇所は直接代入へ戻し（＝この経路を通らない）、
+        /// 個別操作でのみ走る残りの箇所だけ破棄する構成にしてある。
+        ///
+        /// 再び選択や表示に異常が出た場合は、まずこれを false にして切り分けること。
+        /// </summary>
+        public static bool DestroyReplacedUnityMesh = true;
+
+        /// <summary>
+        /// UnityMesh を差し替える。
+        ///
+        /// 【必ずこれを使うこと】
+        /// Mesh はネイティブオブジェクトで、C# 参照を捨てても GC では解放されない。
+        /// ctx.UnityMesh = mo.ToUnityMesh() のように直接代入すると旧 Mesh が
+        /// 到達不能なまま常駐し、Undo / ミラー再構築 / 変換のたびに積み上がる
+        /// （長時間の編集で目に見えて重くなる原因）。
+        ///
+        /// 旧 Mesh の破棄は DestroyReplacedUnityMesh で切り替える。
+        /// false のときは差し替えるだけで、変更前と同じ挙動になる。
+        /// 同一インスタンスの再代入では破棄しない。
+        /// </summary>
+        public void ReplaceUnityMesh(Mesh newMesh)
+        {
+            var old = UnityMesh;
+            UnityMesh = newMesh;
+
+            if (!DestroyReplacedUnityMesh) return;
+            if (old == null || ReferenceEquals(old, newMesh)) return;
+            DestroyMesh(old);
+        }
+
+        /// <summary>再生中か否かで Destroy / DestroyImmediate を使い分ける。</summary>
+        public static void DestroyMesh(Mesh mesh)
+        {
+            if (mesh == null) return;
+            if (Application.isPlaying) UnityEngine.Object.Destroy(mesh);
+            else                       UnityEngine.Object.DestroyImmediate(mesh);
+        }
+
         // ================================================================
         // 選択状態 — SelectionState が Single Source of Truth
         // 全ての選択アクセスは Selection プロパティ経由
@@ -242,10 +287,24 @@ namespace Poly_Ling.Data
         // ================================================================
 
         /// <summary>親メッシュのインデックス（-1=ルート）</summary>
+        /// <summary>
+        /// 親の MeshContextList 索引。HierarchyParentIndex と同じ場所を指す。
+        ///
+        /// 【なぜ委譲か】
+        ///   この 2 つは同じ「親」を表しており、値が食い違ってよい場面が無い。
+        ///   実際、親を書く箇所（MeshHierarchyOps / ObjectArrayInserter /
+        ///   ObjectPoseWedgeInserter / MeshFilterToSkinnedConverter）は
+        ///   すべて両方へ同じ値を入れている。
+        ///   別々の入れ物にしておくと、片方だけ書く箇所が 1 つ生まれるだけで
+        ///   食い違いが保存され、あとから読む側が壊れる
+        ///   （実測: 並べ替えが HierarchyParentIndex だけを書き、
+        ///    ParentIndex にブリッジ挿入前の古い値が残っていた）。
+        ///   入れ物を 1 つにして、食い違いを作れなくする。
+        /// </summary>
         public int ParentIndex
         {
-            get => MeshObject?.ParentIndex ?? -1;
-            set { if (MeshObject != null) MeshObject.ParentIndex = value; }
+            get => HierarchyParentIndex;
+            set => HierarchyParentIndex = value;
         }
 
         /// <summary>階層深度（MQO互換）</summary>
@@ -260,6 +319,56 @@ namespace Poly_Ling.Data
         {
             get => MeshObject?.HierarchyParentIndex ?? -1;
             set { if (MeshObject != null) MeshObject.HierarchyParentIndex = value; }
+        }
+
+        /// <summary>
+        /// スキンドか（頂点がボーンウェイトを持つ描画オブジェクトか）。
+        ///
+        /// 【何を分けるための判定か】
+        ///   頂点の座標系が違う。
+        ///     非スキンド … 頂点はローカル空間。ワールドへ出すには WorldMatrix を掛ける
+        ///     スキンド   … 頂点はワールド（バインド）空間。描画は
+        ///                  SkinningMatrix = WorldMatrix × BindPose を通し、静止時は単位。
+        ///                  ここへ WorldMatrix を掛けると二重に効いて位置が飛ぶ
+        ///
+        ///   スキンド変換後のメッシュは親がボーンになるため WorldMatrix は
+        ///   ボーンのワールド行列になる。「メッシュ自身の姿勢」ではないので、
+        ///   頂点へ掛けてはいけない。
+        ///
+        /// 【この判定が答えるのは「ウェイトを持つか」だけ】
+        ///   どの行列を使うかまでは決めない。用途によって意味が違うため。
+        ///   例: UnifiedBufferManager.UpdateTransformMatrices の行列表は
+        ///   ボーンの欄に SkinningMatrix を要求する（スキンド頂点の boneIndex が
+        ///   その欄を引くため）。ここに「頂点の座標系」の判定を持ち込むと、
+        ///   ボーンの欄が WorldMatrix になってスキンド頂点が全部飛ぶ。
+        ///   型で対象を絞るのは各所の責任とし、ここはウェイトの有無だけを答える。
+        ///
+        ///   ボーンは頂点を持たないので、結果は常に false。
+        /// </summary>
+        public bool IsSkinned => MeshObject?.HasBoneWeight ?? false;
+
+        /// <summary>
+        /// 頂点をワールドへ出すために掛ける行列。
+        /// スキンドは頂点が既にワールド（バインド）空間なので単位行列。
+        /// </summary>
+        public Matrix4x4 VertexToWorldMatrix
+            => IsSkinned ? Matrix4x4.identity : WorldMatrix;
+
+        /// <summary>
+        /// ワールド座標を、このオブジェクトの頂点格納空間へ落とす行列。
+        /// VertexToWorldMatrix の逆。
+        /// </summary>
+        public Matrix4x4 WorldToVertexMatrix
+            => IsSkinned ? Matrix4x4.identity : WorldMatrixInverse;
+
+        /// <summary>
+        /// 左右で対になるボーンの MeshContextList 索引（-1 = 対なし）。
+        /// スキンド変換が確定させた値。ウェイトからの推定に使ってはならない。
+        /// </summary>
+        public int MirrorBoneIndex
+        {
+            get => MeshObject?.MirrorBoneIndex ?? -1;
+            set { if (MeshObject != null) MeshObject.MirrorBoneIndex = value; }
         }
 
         /// <summary>

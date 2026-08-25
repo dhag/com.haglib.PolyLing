@@ -1161,6 +1161,153 @@ namespace Poly_Ling.Context
         }
 
         // ================================================================
+        // リスト構造変更に伴う索引参照の付け替え
+        //
+        // 【なぜ要るか】
+        //   MeshContext は他要素を「MeshContextList の索引」で指す。
+        //     ParentIndex / HierarchyParentIndex … 階層
+        //     MorphParentIndex                   … モーフの所属
+        //     BakedMirrorSourceIndex             … ミラーの実体側
+        //   さらに ModelContext 側にも索引参照がある。
+        //     HumanoidMapping (name→index)       … Avatar 割当
+        //     TPoseBackup      (index→姿勢)      … T ポーズ退避
+        //   Insert / RemoveAt / Move はこれらを一切詰め直していなかったため、
+        //   ミラーの付け外し（EnableMirror/DisableMirror が Insert/RemoveAt を呼ぶ）
+        //   のたびに階層と Avatar 割当が静かに壊れていた。
+        //
+        // 【表の意味】
+        //   map[old] = new。new が -1 なら「その要素は消えた」。
+        //   親系フィールドは -1 のとき祖先へ繰り上げる（BuildRemoveMap が解決済み）。
+        // ================================================================
+
+        /// <summary>挿入用の付け替え表を作る。newCount は挿入後の件数。</summary>
+        private static int[] BuildInsertMap(int oldCount, int insertIndex)
+        {
+            var map = new int[oldCount];
+            for (int i = 0; i < oldCount; i++)
+                map[i] = i >= insertIndex ? i + 1 : i;
+            return map;
+        }
+
+        /// <summary>
+        /// 削除用の付け替え表を作る（削除前に呼ぶこと）。
+        /// 削除された要素は -1 ではなく「削除要素の親」へ繰り上げる。
+        /// 子を根へ吹き飛ばさないため。祖先も削除されていれば更に上へたどる。
+        /// </summary>
+        private int[] BuildRemoveMap(int removeIndex)
+        {
+            int oldCount = MeshContextList.Count;
+            var map = new int[oldCount];
+
+            for (int i = 0; i < oldCount; i++)
+                map[i] = i < removeIndex ? i : (i == removeIndex ? -1 : i - 1);
+
+            // 削除要素の親へ繰り上げる（自己参照・循環はカウンタで打ち切る）。
+            int cur = MeshContextList[removeIndex]?.HierarchyParentIndex ?? -1;
+            int safety = oldCount + 1;
+            while (cur >= 0 && cur < oldCount && cur == removeIndex && safety-- > 0)
+                cur = MeshContextList[cur]?.HierarchyParentIndex ?? -1;
+
+            map[removeIndex] = (cur >= 0 && cur < oldCount) ? map[cur] : -1;
+            return map;
+        }
+
+        /// <summary>移動用の付け替え表を作る。count は移動後（＝移動前）の件数。</summary>
+        private static int[] BuildMoveMap(int count, int fromIndex, int toIndex)
+        {
+            var map = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                if (i == fromIndex)                       map[i] = toIndex;
+                else if (fromIndex < toIndex)             map[i] = (i > fromIndex && i <= toIndex) ? i - 1 : i;
+                else                                      map[i] = (i >= toIndex && i < fromIndex) ? i + 1 : i;
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// 並べ替え（MeshContextList をまるごと差し替える操作）のあとに索引参照を付け替える。
+        ///
+        /// oldOrder は差し替え前の並び。実体の参照一致で新しい位置を引くので、
+        /// 「どの要素がどこへ動いたか」を呼び出し側が計算しなくてよい。
+        /// 新リストに居ない実体は -1 へ落ちる。
+        ///
+        /// 付け替える中身は Insert / RemoveAt / Move と同じ RemapIndexReferences。
+        /// 索引参照フィールドの列挙をここに複製しないこと。
+        /// </summary>
+        public void RemapIndexReferencesAfterReorder(IReadOnlyList<MeshContext> oldOrder)
+        {
+            if (oldOrder == null || oldOrder.Count == 0) return;
+            if (MeshContextList == null) return;
+
+            var newIndexOf = new Dictionary<MeshContext, int>(MeshContextList.Count);
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var mc = MeshContextList[i];
+                if (mc != null) newIndexOf[mc] = i;
+            }
+
+            var map = new int[oldOrder.Count];
+            for (int i = 0; i < oldOrder.Count; i++)
+            {
+                var mc = oldOrder[i];
+                map[i] = (mc != null && newIndexOf.TryGetValue(mc, out int ni)) ? ni : -1;
+            }
+
+            RemapIndexReferences(map);
+        }
+
+        /// <summary>索引で他要素を指している全参照を付け替える。</summary>
+        private void RemapIndexReferences(int[] map)
+        {
+            if (map == null) return;
+
+            int Map(int old)
+            {
+                if (old < 0 || old >= map.Length) return -1;
+                return map[old];
+            }
+
+            // 1) メッシュ側の索引参照
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var mc = MeshContextList[i];
+                if (mc == null) continue;
+
+                // ParentIndex は HierarchyParentIndex と同じ入れ物なので 1 回だけ写す。
+                // 2 回書くと +1 が 2 度掛かり、親が 1 つ先の要素（多くは自分自身）を指す。
+                if (mc.HierarchyParentIndex >= 0) mc.HierarchyParentIndex = Map(mc.HierarchyParentIndex);
+                if (mc.MorphParentIndex     >= 0) mc.MorphParentIndex     = Map(mc.MorphParentIndex);
+
+                // 左右対のボーン索引。スキンド変換が確定させた値なので、
+                // 索引が動いたら必ず付け替える（切らない）。
+                if (mc.MirrorBoneIndex      >= 0) mc.MirrorBoneIndex      = Map(mc.MirrorBoneIndex);
+
+                // ミラー元が消えたらミラーとしての意味を失うので関係ごと切る。
+                if (mc.BakedMirrorSourceIndex >= 0)
+                    mc.BakedMirrorSourceIndex = Map(mc.BakedMirrorSourceIndex);
+            }
+
+            // 2) Humanoid 割当（実行時 working 表現）
+            //    per-bone の HumanBodyBone が canonical だが、保存時に
+            //    SyncPerBoneFromMapping がこの Dict を per-bone へ書き戻すため、
+            //    ここが stale だと canonical まで壊れる。
+            if (_humanoidMapping != null && !_humanoidMapping.IsEmpty)
+            {
+                var remapped = new Dictionary<string, int>();
+                foreach (var kv in _humanoidMapping.BoneIndexMap)
+                {
+                    int ni = Map(kv.Value);
+                    if (ni >= 0 && ni < MeshContextList.Count) remapped[kv.Key] = ni;
+                }
+                _humanoidMapping.FromDictionary(remapped);
+            }
+
+            // 3) T ポーズ退避（索引をキーに持つ Dictionary 群）
+            TPoseBackup?.RemapIndices(Map);
+        }
+
+        // ================================================================
         // メッシュリスト操作
         // ================================================================
 
@@ -1202,6 +1349,16 @@ namespace Poly_Ling.Context
             InvalidateTypedIndices();
             IsDirty = true;
 
+            // 索引で他要素を指している参照（親・ミラー元・Humanoid 割当・Tポーズ退避）を
+            // 挿入分だけ繰り下げる。ここを飛ばすと親子が迷子になり、depth からの
+            // 復元に頼らないと階層が壊れたままになる。
+            //   ※挿入した meshContext 自身の親・ミラー元も「挿入前の索引」で
+            //     設定されている前提で一緒に付け替える（EnableMirror がそう書く）。
+            //   ※adjustSelection==false は Undo/Redo の挿し戻し。スナップショットが
+            //     既に正しい索引を持っているので、ここで動かすと二重適用になる。
+            if (adjustSelection)
+                RemapIndexReferences(BuildInsertMap(MeshContextList.Count - 1, index));
+
             if (adjustSelection)
             {
                 // 選択インデックス調整（挿入位置以降は+1）- 各カテゴリ個別に
@@ -1236,9 +1393,16 @@ namespace Poly_Ling.Context
             if (index < 0 || index >= MeshContextList.Count)
                 return false;
 
+            // 付け替え表は削除前に作る（削除された親は祖父へ繰り上げるため、
+            // 削除前の親子関係を読む必要がある）。
+            // adjustSelection==false は Undo/Redo の巻き戻しなので付け替えない。
+            int[] removeMap = adjustSelection ? BuildRemoveMap(index) : null;
+
             MeshContextList.RemoveAt(index);
             InvalidateTypedIndices();
             IsDirty = true;
+
+            if (removeMap != null) RemapIndexReferences(removeMap);
 
             if (adjustSelection)
             {
@@ -1288,6 +1452,8 @@ namespace Poly_Ling.Context
             var meshContext = MeshContextList[fromIndex];
             MeshContextList.RemoveAt(fromIndex);
             MeshContextList.Insert(toIndex, meshContext);
+
+            RemapIndexReferences(BuildMoveMap(MeshContextList.Count, fromIndex, toIndex));
 
             // 選択インデックス調整 - 各カテゴリ個別に
             SelectedDrawableMeshIndices = AdjustIndicesForMove(SelectedDrawableMeshIndices, fromIndex, toIndex);

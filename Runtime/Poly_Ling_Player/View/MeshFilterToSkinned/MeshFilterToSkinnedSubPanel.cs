@@ -42,6 +42,10 @@ namespace Poly_Ling.Player
         private bool _swapAxisForRotated = false;
         private bool _setAxisForIdentity = false;
 
+        // ミラー分岐ルート配下のミラー設定漏れを許容する（既定 ON）。
+        // 部品数が多いモデルでは設定漏れがほぼ必ず起きるため既定で有効にする。
+        private bool _tolerantMirrorBranch = true;
+
         // UI
         private VisualElement _hierarchyContainer;
         private Label         _statusLabel;
@@ -89,6 +93,21 @@ namespace Poly_Ling.Player
             var identToggle = new Toggle(T("SetAxisIdentity")) { value = _setAxisForIdentity };
             identToggle.style.marginBottom = 6;            identToggle.RegisterValueChangedCallback(e => _setAxisForIdentity = e.newValue);
             parent.Add(identToggle);
+
+            parent.Add(Sep());
+
+            // ── ミラー分岐
+            var mirrorLabel = new Label(T("MirrorBranch"));
+            mirrorLabel.style.fontSize = 10;
+            mirrorLabel.style.color    = new StyleColor(new Color(0.65f, 0.8f, 1f));
+            mirrorLabel.style.marginBottom = 3;
+            parent.Add(mirrorLabel);
+
+            var tolerantToggle = new Toggle(T("TolerantMirror")) { value = _tolerantMirrorBranch };
+            tolerantToggle.tooltip = T("TolerantMirrorTip");
+            tolerantToggle.style.marginBottom = 6;
+            tolerantToggle.RegisterValueChangedCallback(e => _tolerantMirrorBranch = e.newValue);
+            parent.Add(tolerantToggle);
 
             parent.Add(Sep());
 
@@ -265,7 +284,7 @@ namespace Poly_Ling.Player
                 // 完了メッセージは NotifyPanels → Refresh() 側で実本数を使って出す。
                 _conversionPending = true;
                 _panelContext.SendCommand(new ConvertMeshFilterToSkinnedCommand(
-                    modelIdx, _swapAxisForRotated, _setAxisForIdentity));
+                    modelIdx, _swapAxisForRotated, _setAxisForIdentity, _tolerantMirrorBranch));
             }
             else
             {
@@ -273,7 +292,10 @@ namespace Poly_Ling.Player
                 try
                 {
                     int boneCount = MeshFilterToSkinnedConverter.Execute(
-                        _model, entries, _swapAxisForRotated, _setAxisForIdentity);
+                        _model, entries, _swapAxisForRotated, _setAxisForIdentity,
+                        _tolerantMirrorBranch
+                            ? MirrorBranchTolerance.Tolerant
+                            : MirrorBranchTolerance.Strict);
                     SetStatus(T("ConvertSuccess", boneCount));
                     RefreshHierarchy();
                     OnConversionComplete?.Invoke();

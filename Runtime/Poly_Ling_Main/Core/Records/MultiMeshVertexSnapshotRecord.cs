@@ -18,6 +18,14 @@ namespace Poly_Ling.UndoSystem
         public Dictionary<int, Vector3[]> VertexPositions = new();
 
         /// <summary>
+        /// MeshContextインデックス → 捕獲時の MeshContext 実体。
+        ///
+        /// 索引だけで戻すと、捕獲と復元の間にリストの並べ替え・挿入・削除が挟まった
+        /// 場合に別メッシュへ座標を書き込む。実体で引き当てられるならそちらを優先する。
+        /// </summary>
+        public Dictionary<int, MeshContext> Contexts = new();
+
+        /// <summary>
         /// ModelContextの全Drawableメッシュの頂点座標をキャプチャ
         /// </summary>
         public static MultiMeshVertexSnapshot Capture(ModelContext model)
@@ -36,6 +44,7 @@ namespace Poly_Ling.UndoSystem
                 for (int v = 0; v < verts.Count; v++)
                     positions[v] = verts[v].Position;
                 snapshot.VertexPositions[i] = positions;
+                snapshot.Contexts[i]        = mc;
             }
 
             return snapshot;
@@ -51,9 +60,19 @@ namespace Poly_Ling.UndoSystem
             foreach (var kv in VertexPositions)
             {
                 int idx = kv.Key;
-                if (idx < 0 || idx >= model.MeshContextCount) continue;
 
-                var mc = model.GetMeshContext(idx);
+                // 実体優先。モデルから消えている場合だけ索引へ落とす。
+                MeshContext mc = null;
+                if (Contexts.TryGetValue(idx, out var captured)
+                    && captured != null
+                    && model.MeshContextList.Contains(captured))
+                {
+                    mc = captured;
+                }
+                else if (idx >= 0 && idx < model.MeshContextCount)
+                {
+                    mc = model.GetMeshContext(idx);
+                }
                 if (mc?.MeshObject == null) continue;
 
                 var verts = mc.MeshObject.Vertices;

@@ -8,7 +8,10 @@
 //           それぞれ 2 三角に割った法線の平均（2 または 4 枚）
 //   X 軸  = normalize(Right[i] - Left[i]) を Z と直交化
 //   Y 軸  = Cross(Z, X)
-//   倍率  = rung 長 × userScale（userScale = 1 で従来どおりの等倍）
+//   倍率  = scaleMode で決める。
+//           RungLength: rung 長 × userScale（userScale = 1 で rung 長と等倍。従来の挙動）
+//           Uniform   : userScale のみ（rung 長を使わないので、梯子の幅が変わっても大きさは一定）
+//           どちらのモードでも rung 長は X 軸の向きを決めるために使う（長さ 0 の rung は飛ばす）。
 //   ロール = Z 軸まわり 90°単位（rollSteps 0〜3）。X/Y を入れ替えるだけなので誤差が出ない。
 //
 // 元オブジェクトの面構成・UV・マテリアルインデックスはそのまま複製する。
@@ -29,12 +32,14 @@ namespace Poly_Ling.PlaceObject
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            MeshObject source, string meshName, float userScale = 1f, int rollSteps = 0)
+            MeshObject source, string meshName, float userScale = 1f, int rollSteps = 0,
+            PlaceScaleMode scaleMode = PlaceScaleMode.RungLength)
         {
             int n = (left == null || right == null) ? 0 : Mathf.Min(left.Count, right.Count);
             var sources = new MeshObject[n];
             for (int i = 0; i < n; i++) sources[i] = source;
-            return Generate(left, right, beltClosed, flipWinding, sources, meshName, userScale, rollSteps);
+            return Generate(left, right, beltClosed, flipWinding, sources, meshName, userScale, rollSteps,
+                            scaleMode);
         }
 
         /// <summary>
@@ -45,7 +50,7 @@ namespace Poly_Ling.PlaceObject
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
             IReadOnlyList<MeshObject> sourcesPerRung, string meshName, float userScale = 1f,
-            int rollSteps = 0)
+            int rollSteps = 0, PlaceScaleMode scaleMode = PlaceScaleMode.RungLength)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "PlaceObject" : meshName);
 
@@ -62,11 +67,16 @@ namespace Poly_Ling.PlaceObject
 
                 Vector3 center = (left[i] + right[i]) * 0.5f;
 
-                Vector3 axis  = right[i] - left[i];
-                float   scale = axis.magnitude;
-                if (scale <= 1e-6f) continue;
+                // rung 長は X 軸の向きを出すために必ず使う。倍率へ反映するかは scaleMode で決める。
+                Vector3 axis    = right[i] - left[i];
+                float   rungLen = axis.magnitude;
+                if (rungLen <= 1e-6f) continue;
 
-                Vector3 xDir = axis / scale;
+                float scale = (scaleMode == PlaceScaleMode.Uniform)
+                    ? userScale
+                    : rungLen * userScale;
+
+                Vector3 xDir = axis / rungLen;
                 Vector3 zDir = RungNormal(left, right, beltClosed, flipWinding, segments, i);
 
                 // X を Z と直交化してから、Y を作る
@@ -77,7 +87,7 @@ namespace Poly_Ling.PlaceObject
 
                 ApplyRoll(rollSteps, ref x, ref y);
 
-                AppendInstance(mo, source, center, x, y, zDir, scale * userScale);
+                AppendInstance(mo, source, center, x, y, zDir, scale);
             }
 
             mo.RecalculateNormals();

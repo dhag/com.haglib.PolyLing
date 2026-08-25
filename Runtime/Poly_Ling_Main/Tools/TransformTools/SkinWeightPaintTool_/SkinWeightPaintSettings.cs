@@ -26,8 +26,11 @@ namespace Poly_Ling.Tools
         /// <summary>ブラシ強度</summary>
         public float Strength = 1.0f;
 
-        /// <summary>フォールオフ</summary>
-        public BrushFalloff Falloff = BrushFalloff.Smooth;
+        /// <summary>フォールオフ（マグネット／スカルプトと共通の FalloffType）</summary>
+        public FalloffType Falloff = FalloffType.Smooth;
+
+        /// <summary>距離モード（直線 / リンク距離）</summary>
+        public DistanceMode DistanceMode = DistanceMode.Euclidean;
 
         /// <summary>ペイントウェイト値</summary>
         public float WeightValue = 1.0f;

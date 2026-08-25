@@ -175,8 +175,15 @@ namespace Poly_Ling.UndoSystem
             if (context == null || orderedList == null || orderedList.Count == 0) return;
 
             // 1. リストを並べ替え（同じオブジェクト参照を使用）
+            var prevOrder = new List<MeshContext>(context.MeshContextList);
             context.MeshContextList.Clear();
             context.MeshContextList.AddRange(orderedList);
+
+            // 1b. 並べ替えで動いた索引参照を付け替える。
+            //     ここで戻すのは親（下の 2. が上書きする）以外の索引参照
+            //     ―― ParentIndex / MorphParentIndex / BakedMirrorSourceIndex /
+            //     Humanoid 割当 / T ポーズ退避。
+            context.RemapIndexReferencesAfterReorder(prevOrder);
 
             // 2. 親子関係を復元
             if (parentMap != null)

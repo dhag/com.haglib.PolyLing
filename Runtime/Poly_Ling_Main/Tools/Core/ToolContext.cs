@@ -319,10 +319,17 @@ namespace Poly_Ling.Tools
         public Action<MeshContext> SyncMeshContextPositionsOnly { get; set; }
 
         /// <summary>
-        /// スキンウェイトブラシ範囲の頂点(+falloff)を取得する。
+        /// スキンウェイトブラシ範囲の頂点(+falloff)をメッシュごとに取得する。
         /// Player 側が GPU hover path（スクリーン座標＋可視判定）で実装する。
+        ///
+        /// ブラシは選択中の描画オブジェクト全件をまたいで塗るため、
+        /// 「どのメッシュの何番の頂点か」を組で返す必要がある。
+        /// 頂点番号はメッシュごとのローカル番号。
         /// </summary>
-        public Func<System.Collections.Generic.List<(int index, float falloff)>> GetBrushVertices { get; set; }
+        public Func<System.Collections.Generic.List<
+            (Poly_Ling.Data.MeshContext mesh,
+             System.Collections.Generic.List<(int index, float falloff)> verts)>>
+            GetBrushVerticesMulti { get; set; }
 
         /// <summary>画面再描画を要求</summary>
         public Action Repaint { get; set; }

@@ -125,7 +125,7 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, FaceMergeCollapse, Camera }
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, SkinWeightNumeric, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, FaceMergeCollapse, Camera }
         private InteractionMode               _interactionMode = InteractionMode.VertexMove;
 
         // パネルごとの「ビューポートで選択する」チェックの保存キー。
@@ -205,6 +205,7 @@ namespace Poly_Ling.Player
         private Poly_Ling.Selection.VertexPair? _advSelFlashEdge;
         private SkinWeightPaintToolHandler   _skinWeightPaintHandler;
         private PlayerSkinWeightPaintPanel   _skinWeightPaintPanel;
+        private PlayerSkinWeightNumericSubPanel _skinWeightNumericSubPanel;
         private int                          _skinWeightUndoMasterIndex = -1;
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
@@ -227,6 +228,7 @@ namespace Poly_Ling.Player
         private PlayerPartsSelectionSetSubPanel _partsSelSetSubPanel;
         private PlayerNormalExcludeSetSubPanel  _normalExcludeSubPanel;
         private PlayerNormalEditSubPanel        _normalEditSubPanel;
+        private PlayerNormalTransplantSubPanel  _normalTransplantSubPanel;
         private PlayerFaceHideSubPanel          _faceHideSubPanel;
         private PlayerMeshSelectionSetSubPanel  _meshSelSetSubPanel;
         private PlayerMergeMeshesSubPanel    _mergeMeshesSubPanel;
@@ -307,6 +309,7 @@ namespace Poly_Ling.Player
         private SolidifyToolHandler               _solidifyHandler;
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
+        private PlayerPipelineTestSubPanel   _pipelineTestSubPanel;
         private PlayerUnityClipTestSubPanel  _unityClipTestSubPanel;
         private PlayerMotionClipTestSubPanel _motionClipTestSubPanel;
 
@@ -646,7 +649,7 @@ namespace Poly_Ling.Player
                             // MaterialIndex 別サブメッシュで再構築する。EnterUndoApplied は編集用
                             // GPUアダプタのみ再構築するため、これが無いと Undo しても表面の材質が
                             // 戻らない（適用側 ApplyMaterialToFacesCommand と対称の処理）。
-                            liveMc.UnityMesh = liveMc.MeshObject.ToUnityMesh(targetModel.MaterialCount);
+                            liveMc.ReplaceUnityMesh(liveMc.MeshObject.ToUnityMesh(targetModel.MaterialCount));
                             _editOps.UndoController.SyncMeshObjectReference(liveMc.MeshObject, liveMc.UnityMesh);
                             // ミラー側は実体側から導出される、という原則を Undo 後も保つ。
                             // スナップショットには実体側しか入っていないため、復元後に
@@ -839,7 +842,6 @@ namespace Poly_Ling.Player
                 }
 
                 RebuildModelList();
-                _skinWeightPaintPanel?.RefreshMeshList(loadedModel);
                 _skinWeightPaintPanel?.RefreshBoneList(loadedModel);
                 NotifyPanels(ChangeKind.ModelSwitch);
             };
@@ -860,6 +862,142 @@ namespace Poly_Ling.Player
             // リモートモード（インスペクタ設定）に応じた左ペイン表示の出し分け。
             // _remoteMode はセッション中不変のため、ここで一度だけ適用する。
             ApplyRemoteModeVisibility();
+
+            // 生成系ツール（線押し出し・MediaPipe 顔変形など）が使う
+            // ToolContext.AddMeshContext / AddMeshObjectToCurrentMesh を結線する。
+            _viewportManager.SetMeshContextSinks(
+                AddMeshContextFromTool, AddMeshObjectToCurrentMeshFromTool);
+
+            SetupPerfLog();
+        }
+
+        // ================================================================
+        // ツールが生成したメッシュの受け口
+        // ================================================================
+
+        /// <summary>
+        /// ツールが作った MeshContext を現在のモデルへ追加する。
+        /// 名前は既存オブジェクトと衝突しないよう一意化し、選択と Undo は
+        /// 図形生成の「新しい描画オブジェクト」と同じ扱いにする。
+        /// </summary>
+        private void AddMeshContextFromTool(MeshContext ctx)
+        {
+            if (ctx == null) return;
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return;
+
+            string baseName = !string.IsNullOrEmpty(ctx.Name) ? ctx.Name
+                            : (!string.IsNullOrEmpty(ctx.MeshObject?.Name) ? ctx.MeshObject.Name : "Mesh");
+            string name = model.GenerateUniqueMeshName(baseName);
+
+            ctx.Name = name;
+            if (ctx.MeshObject != null) ctx.MeshObject.Name = name;
+            if (ctx.UnityMesh  != null) ctx.UnityMesh.name  = name;
+            ctx.ParentModelContext = model;
+
+            var oldSelected = model.CaptureAllSelectedIndices();
+            int insertIndex = model.Add(ctx);
+            model.ComputeWorldMatrices();
+            model.SelectMeshContextExclusive(insertIndex);
+            model.SelectMesh(insertIndex);
+            var newSelected = model.CaptureAllSelectedIndices();
+
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetModelContext(model);
+                _editOps.UndoController.RecordMeshContextAdd(
+                    ctx, insertIndex, oldSelected, newSelected);
+            }
+
+            PrimitiveMeshFinalize(model);
+        }
+
+        /// <summary>
+        /// ツールが作った MeshObject を編集対象メッシュへマージする。
+        /// 図形生成の「既存の描画オブジェクトに追加」と同じ経路を通す。
+        /// </summary>
+        private void AddMeshObjectToCurrentMeshFromTool(MeshObject meshObject, string meshName)
+        {
+            if (meshObject == null) return;
+            var project = ActiveProject;
+            if (project?.CurrentModel == null) return;
+
+            PrimitiveMeshAddToExisting(
+                project, meshObject,
+                string.IsNullOrEmpty(meshName) ? "Mesh" : meshName,
+                Vector3.zero, Vector3.zero, Vector3.one, false, -1);
+        }
+
+        // ================================================================
+        // 性能ログ（CSV）
+        // ================================================================
+
+        /// <summary>性能ログ記録トグルの保存キー。</summary>
+        private const string PerfLogPrefKey = "PerfLog.Enabled";
+
+        /// <summary>
+        /// 性能ログの結線。データ取得口を差し込み、左ペインのトグルへ開始／停止を結ぶ。
+        /// Initialize の末尾（_editOps / _layoutRoot 確定後）で 1 回だけ呼ぶ。
+        /// </summary>
+        private void SetupPerfLog()
+        {
+            PLPerfLog.GetProject        = () => ActiveProject;
+            PLPerfLog.GetUndoController = () => _editOps?.UndoController;
+            PLPerfLog.GetLogLineCount   = () => PlayerLog.Count;
+            PLPerfLog.GetLogTotalAdded  = () => PlayerLog.TotalAdded;
+
+            var toggle = _layoutRoot?.PerfLogToggle;
+            if (toggle == null) return;
+
+            toggle.RegisterValueChangedCallback(e =>
+            {
+                PlayerUiPrefs.SetBool(PerfLogPrefKey, e.newValue);
+                ApplyPerfLogEnabled(e.newValue);
+            });
+
+            bool on = PlayerUiPrefs.GetBool(PerfLogPrefKey, false);
+            toggle.SetValueWithoutNotify(on);
+            if (on) ApplyPerfLogEnabled(true);
+        }
+
+        /// <summary>性能ログの開始／停止。開始時は出力先をログパネルへ通知する。</summary>
+        private void ApplyPerfLogEnabled(bool on)
+        {
+            if (on)
+            {
+                PLPerfLog.Start(_uiRoot);
+                // 現在のツール状態を初回サンプルへ反映する。
+                ReportPerfToolState();
+                if (PLPerfLog.IsRunning)
+                    PlayerLog.Add("Perf", "性能ログの記録を開始しました: " + PLPerfLog.CurrentPath);
+            }
+            else
+            {
+                string path = PLPerfLog.CurrentPath;
+                PLPerfLog.Stop();
+                if (!string.IsNullOrEmpty(path))
+                    PlayerLog.Add("Perf", "性能ログの記録を停止しました: " + path);
+            }
+        }
+
+        /// <summary>
+        /// 現在のツールとサブツールを性能ログへ通知する。
+        /// 値が変わったときだけ 1 行出る（PLPerfLog 側で判定）。
+        /// </summary>
+        private void ReportPerfToolState()
+        {
+            string sub;
+            if (_subToolActive)
+                sub = (_moveToolHandler != null &&
+                       _moveToolHandler.DragSelectMode == MoveToolHandler.SelectionDragMode.Lasso)
+                    ? "Lasso" : "Rect";
+            else if (_deleteFaceModeActive)
+                sub = "DeleteFace";
+            else
+                sub = "-";
+
+            PLPerfLog.SetToolState(_interactionMode.ToString(), sub);
         }
 
         // Phase 2a-2f: 旧 Tick / LateTick / _Tick / _LateTick / PresentAll を削除。
@@ -916,6 +1054,12 @@ namespace Poly_Ling.Player
             _editOps = null;
             _renderer?.Dispose();
             _renderer = null;
+
+            PLPerfLog.Stop();
+            PLPerfLog.GetProject        = null;
+            PLPerfLog.GetUndoController = null;
+            PLPerfLog.GetLogLineCount   = null;
+            PLPerfLog.GetLogTotalAdded  = null;
 
             _logSubPanel?.Dispose();
             _logSubPanel = null;
@@ -2000,6 +2144,13 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // ── 穴つなぎ（ブリッジ）の種マーカー ─────────────────────
+            // ブリッジは専用の InteractionMode を持たず、図形生成パネルを開いた
+            // ままの SelectOnly / None / PrimitivePlace で操作する。以降の分岐は
+            // どれも該当せず末尾の HideTopoToolOverlay() まで落ちるため、
+            // ここで先に横取りする。
+            if (UpdateBridgeSeedOverlay(panel, ctx)) return;
+
             // ── 格子変形 ─────────────────────────────────────────────
             // 格子の線と制御点はメッシュ頂点ではなく作業軸ローカルの制御点を
             // 投影したもの。組み立ては LatticeToolHandler が持つ。
@@ -2498,6 +2649,7 @@ namespace Poly_Ling.Player
                 case InteractionMode.Sculpt:
                 case InteractionMode.AdvancedSelect:
                 case InteractionMode.SkinWeightPaint:
+                case InteractionMode.SkinWeightNumeric:
                 case InteractionMode.None:            return null;
 
                 default:                              return _moveToolHandler;
@@ -2540,17 +2692,22 @@ namespace Poly_Ling.Player
             _skinWeightPaintPanel = new PlayerSkinWeightPaintPanel();
             _skinWeightPaintPanel.OnRepaint = () => _activePanel?.MarkDirtyRepaint();
             _skinWeightPaintPanel.OnTargetBoneChanged = () => _viewportManager.EnterWeightTargetChanged(ActiveProject);
-            _skinWeightPaintPanel.OnMeshSelectionChanged = () =>
-            {
-                if (_interactionMode == InteractionMode.SkinWeightPaint)
-                    SyncSkinWeightUndoMesh();
-                _activePanel?.MarkDirtyRepaint();
-            };
             _skinWeightPaintPanel.GetToolContext =
                 () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _skinWeightPaintPanel.SetCommandContext(
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _skinWeightPaintPanel.Build(_layoutRoot.SkinWeightPaintSection);
+
+            _skinWeightNumericSubPanel = new PlayerSkinWeightNumericSubPanel
+            {
+                GetModel  = () => ActiveProject?.CurrentModel,
+                OnRepaint = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _skinWeightNumericSubPanel.OnVisualizationTargetChanged =
+                () => _viewportManager.EnterWeightTargetChanged(ActiveProject);
+            _skinWeightNumericSubPanel.SetCommandContext(
+                _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _skinWeightNumericSubPanel.Build(_layoutRoot.SkinWeightNumericSection);
 
             _blendSubPanel = new PlayerBlendSubPanel();
             _blendSubPanel.OnSyncMeshPositions = mc =>
@@ -2567,9 +2724,39 @@ namespace Poly_Ling.Player
                 _viewportManager.EnterTopologyChanged(proj);
                 NotifyPanels(ChangeKind.ListStructure);
             };
+            // プレビュー中に法線を再計算した分を GPU へ送る。
+            // OnSyncMeshPositions（EnterVerticesMoved/Dragging）は
+            // SyncMeshPositionsAndTransform で位置しか送らないため、
+            // これを通さないとプレビューの陰影が確定結果と一致しない。
+            _blendSubPanel.OnSyncMeshNormals = mc =>
+            {
+                var proj = ActiveProject;
+                if (proj?.CurrentModel == null || mc?.MeshObject == null) return;
+
+                if (mc.UnityMesh != null && mc.MeshObject.ApplyNormalsToUnityMesh(mc.UnityMesh))
+                    _viewportManager.EnterVertexAttributesChanged(proj, mc, weights: false, uvs: false);
+                else
+                    _viewportManager.EnterTopologyChanged(proj);
+            };
+            // プレビュー中にソースを隠す/戻すときの書き戻し。
+            // 面は SubmitMeshes が毎フレーム MeshContext.IsVisible を見るので
+            // 勝手に消えるが、頂点と辺は GPU 内部の描画フラグで決まる。
+            // それを書き戻すのは EnterMeshAttributesChanged だけ。
+            _blendSubPanel.OnMeshVisibilityChanged = () =>
+            {
+                var proj = ActiveProject;
+                if (proj == null) return;
+                _viewportManager.EnterMeshAttributesChanged(proj);
+            };
             _blendSubPanel.OnRepaint          = () => _activePanel?.MarkDirtyRepaint();
             _blendSubPanel.GetUndoController  = () => _editOps?.UndoController;
             _blendSubPanel.GetCommandQueue    = () => _editOps?.CommandQueue;
+            // ソースは別モデルから選べる。モデル一覧は IProjectView、
+            // 実体の MeshContext は ProjectContext.GetModel から引く。
+            _blendSubPanel.GetProjectView     = () => ActiveProject != null
+                ? new PlayerProjectView(ActiveProject) : null;
+            _blendSubPanel.GetModelContext    = mi =>
+                mi >= 0 ? ActiveProject?.GetModel(mi) : null;
             _blendSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _blendSubPanel.Build(_layoutRoot.BlendSection);
 
@@ -2599,6 +2786,41 @@ namespace Poly_Ling.Player
             _shrinkSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
             _shrinkSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _shrinkSubPanel.Build(_layoutRoot.ShrinkSection);
+
+            _normalTransplantSubPanel = new PlayerNormalTransplantSubPanel();
+            // スロット数は変わらないので、法線だけを Unity Mesh へ差し替える。
+            // 差し替えられなければメッシュを作り直す。
+            _normalTransplantSubPanel.OnSyncMeshNormals = mc =>
+            {
+                var proj = ActiveProject;
+                if (proj?.CurrentModel == null || mc?.MeshObject == null) return;
+
+                if (mc.UnityMesh != null && mc.MeshObject.ApplyNormalsToUnityMesh(mc.UnityMesh))
+                    _viewportManager.EnterVertexAttributesChanged(proj, mc, weights: false, uvs: false);
+                else
+                    _viewportManager.EnterTopologyChanged(proj);
+            };
+            _normalTransplantSubPanel.OnNotifyTopologyChanged = () =>
+            {
+                var proj = ActiveProject;
+                if (proj?.CurrentModel == null) return;
+                _viewportManager.EnterTopologyChanged(proj);
+                NotifyPanels(ChangeKind.Attributes);
+            };
+            _normalTransplantSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
+            _normalTransplantSubPanel.GetUndoController = () => _editOps?.UndoController;
+            _normalTransplantSubPanel.GetCommandQueue   = () => _editOps?.CommandQueue;
+            // プリズムの構築に使うワールド座標は GPU が計算したものだけを参照する。
+            _normalTransplantSubPanel.GetWorldPositions = mc =>
+            {
+                var model = ActiveProject?.CurrentModel;
+                if (model == null) return null;
+                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
+            };
+            // ワールド座標が要るのは法線計算の直前だけ。毎フレームは呼ばない。
+            _normalTransplantSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _normalTransplantSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _normalTransplantSubPanel.Build(_layoutRoot.NormalTransplantSection);
 
             _modelBlendSubPanel = new PlayerModelBlendSubPanel();
             _modelBlendSubPanel.SendCommand    = cmd => _commandDispatcher?.Dispatch(cmd);
@@ -3597,12 +3819,18 @@ namespace Poly_Ling.Player
                     NotifyPanels(ChangeKind.ListStructure);
                 },
                 // 生成メッシュの追加は図形生成と同じ経路に流す（UNDO もそちらで記録される）。
-                OnMeshCreated = (mo, name, pos, rot, scl, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode),
+                OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target) =>
+                    OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode, target),
             };
             _solidifyHandler.SetProject(ActiveProject);
             _solidifyHandler.SetUndoController(_editOps?.UndoController);
             _solidifyHandler.SetCommandQueue(_editOps?.CommandQueue);
-            _solidifySubPanel = new PlayerSolidifySubPanel { GetH = () => _solidifyHandler };
+            _solidifySubPanel = new PlayerSolidifySubPanel
+            {
+                GetH = () => _solidifyHandler,
+                GetDrawableIndexList          = BuildDrawableIndexList,
+                GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1,
+            };
             _solidifySubPanel.Build(_layoutRoot.SolidifySection);
 
             _mediaPipeSubPanel = new PlayerMediaPipeFaceDeformSubPanel
@@ -3626,6 +3854,24 @@ namespace Poly_Ling.Player
                 },
             };
             _vmdTestSubPanel.Build(_layoutRoot.VMDTestSection);
+
+            // パイプライン自動検証。パネルが押されたときと同じ PanelCommand を送るので、
+            // ディスパッチャ側の欠陥もそのまま検査に掛かる。
+            _pipelineTestSubPanel = new PlayerPipelineTestSubPanel
+            {
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+                LoadProjectFolder = LoadProjectFolderForTest,
+                SaveProjectFolder = SaveProjectFolderForTest,
+                CreateBridge      = CreateBridgeForTest,
+                RefreshAfterTopologyChange = () =>
+                {
+                    _viewportManager.EnterTopologyChanged(ActiveProject);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _pipelineTestSubPanel.Build(_layoutRoot.PipelineTestSection);
 
             _unityClipTestSubPanel = new PlayerUnityClipTestSubPanel
             {
@@ -3748,7 +3994,8 @@ namespace Poly_Ling.Player
             // 最後に選んだ図形の保存キー。Build 内で読み込むため Build より前に設定する。
             _primitiveSubPanel.MemoryKey = "Primitive";
             _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
-            _primitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode);
+            _primitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target) =>
+                OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode, target);
             _primitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;
             _primitiveSubPanel.GetSelectedFaceIndices = () =>
@@ -3760,6 +4007,8 @@ namespace Poly_Ling.Player
             _primitiveSubPanel.GetUndoController = () => _editOps?.UndoController;
             // 歪み複製（高度な図形）。作業軸を基準に複製＋歪みを行う。
             _primitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
+            // 追加先ドロップダウン（名前欄の差し替え先）の既定選択。
+            _primitiveSubPanel.GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1;
             _primitiveSubPanel.OnObjectArrayGenerate = ExecuteObjectArray;
             // 穴つなぎ（ブリッジ）。種の取り込みと実生成は Viewer 側が持つ。
             WireBridgeCallbacks(_primitiveSubPanel);
@@ -3784,7 +4033,8 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.MemoryKey = "LivePrimitive";
 
             _livePrimitiveSubPanel.Build(_layoutRoot.LivePrimitiveSection, _sceneRoot);
-            _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode);
+            _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target) =>
+                OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode, target);
             _livePrimitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;
             _livePrimitiveSubPanel.GetSelectedFaceIndices = () =>
@@ -3796,6 +4046,7 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.GetUndoController = () => _editOps?.UndoController;
             // 歪み複製（新しい高度）。既存インスタンスとは状態を共有しない。
             _livePrimitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
+            _livePrimitiveSubPanel.GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1;
             _livePrimitiveSubPanel.OnObjectArrayGenerate = ExecuteObjectArray;
             // 穴つなぎ（ブリッジ）。既存インスタンスと同じ経路を通す。
             WireBridgeCallbacks(_livePrimitiveSubPanel);
@@ -3855,6 +4106,7 @@ namespace Poly_Ling.Player
             _layoutRoot.MeshSelectionSetBtn.clicked  += ShowMeshSelectionSetPanel;
             _layoutRoot.NormalExcludeSetBtn.clicked  += ShowNormalExcludeSetPanel;
             _layoutRoot.NormalEditBtn.clicked        += ShowNormalEditPanel;
+            _layoutRoot.NormalTransplantBtn.clicked  += ShowNormalTransplantPanel;
             _layoutRoot.FaceHideBtn.clicked          += ShowFaceHidePanel;
             _layoutRoot.MergeMeshesBtn.clicked     += ShowMergeMeshesPanel;
             _layoutRoot.TPoseBtn.clicked           += ShowTPosePanel;
@@ -3903,6 +4155,8 @@ namespace Poly_Ling.Player
             _layoutRoot.SolidifyBtn.clicked              += ShowSolidifyPanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
+            if (_layoutRoot.PipelineTestBtn != null)
+                _layoutRoot.PipelineTestBtn.clicked += ShowPipelineTestPanel;
             _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
             _layoutRoot.MotionClipTestBtn.clicked   += ShowMotionClipTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
@@ -3938,6 +4192,8 @@ namespace Poly_Ling.Player
             _layoutRoot.ToolSculptBtn.clicked            += () => ShowCategory1Panel(InteractionMode.Sculpt);
             _layoutRoot.ToolAdvancedSelBtn.clicked       += () => ShowCategory1Panel(InteractionMode.AdvancedSelect);
             _layoutRoot.ToolSkinWeightPaintBtn.clicked   += () => ShowCategory1Panel(InteractionMode.SkinWeightPaint);
+            if (_layoutRoot.SkinWeightNumericBtn != null)
+                _layoutRoot.SkinWeightNumericBtn.clicked += () => ShowCategory1Panel(InteractionMode.SkinWeightNumeric);
 
             // 一時選択サブツール (デバッグ用ボタン。ショートカット R / G と同処理)。
             if (_layoutRoot.SubToolBoxSelectBtn != null)
@@ -4172,10 +4428,17 @@ namespace Poly_Ling.Player
             // 配置ギズモボタン（サブツール内）の着色はこの後で行う。
             RepaintPlaceGizmoButtons();
 
+            // 同じ理由で、Build 時に着色しているセグメント型ボタン
+            // （スキンWペイントのモード／フォールオフ、スキンW数値設定の「色」）も
+            // ここで塗り直す。これをしないと起動直後だけ選択状態が消える。
+            _skinWeightPaintPanel?.RepaintSegmentButtons();
+            _skinWeightNumericSubPanel?.RepaintSegmentButtons();
+
             WireShortcuts();
 
             _sectionRefreshPairs.Clear();
             _sectionRefreshPairs.Add((_layoutRoot.BoneEditorSection,        () => _boneEditorSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SkinWeightNumericSection, () => _skinWeightNumericSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UVEditorSection,          () => _uvEditorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UVUnwrapSection,          () => _uvUnwrapSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MaterialListSection,      () => _materialListSubPanel?.Refresh()));
@@ -4258,6 +4521,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.SolidifySection,          () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _solidifyHandler?.Activate(ctx); _solidifySubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.MediaPipeSection,         () => _mediaPipeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VMDTestSection,           () => _vmdTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.PipelineTestSection,      () => _pipelineTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UnityClipTestSection,     () => _unityClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
@@ -4769,6 +5033,14 @@ namespace Poly_Ling.Player
             _normalEditSubPanel?.Refresh();
         }
 
+        private void ShowNormalTransplantPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.NormalTransplantSection, _layoutRoot?.NormalTransplantBtn);
+            _normalTransplantSubPanel?.SetModel(ActiveProject?.CurrentModel);
+        }
+
         private void ShowFaceHidePanel()
         {
             // カテゴリ 2: 3D 操作 (InteractionMode) は維持。
@@ -5196,6 +5468,86 @@ namespace Poly_Ling.Player
             _vmdTestSubPanel?.Refresh();
         }
 
+        private void ShowPipelineTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.PipelineTestSection, _layoutRoot?.PipelineTestBtn);
+            _pipelineTestSubPanel?.Refresh();
+        }
+
+        /// <summary>
+        /// 自動検証用のプロジェクトフォルダ読み込み。
+        /// 通常の読み込みと同じ経路（CsvProjectSerializer.Import → _localLoader）を通す。
+        /// </summary>
+        private bool LoadProjectFolderForTest(string folderPath)
+        {
+            if (string.IsNullOrEmpty(folderPath)) return false;
+
+            var loaded = CsvProjectSerializer.Import(folderPath, out _, out _);
+            if (loaded == null) return false;
+
+            _localLoader.Clear();
+            foreach (var m in loaded.Models)
+                _localLoader.LoadModel(m.FilePath ?? loaded.Name, m);
+            return true;
+        }
+
+        /// <summary>
+        /// 自動検証用のブリッジ生成。UI ボタンと同じ経路
+        /// （選択 → 穴A 取り込み → 穴B 取り込み → 生成）を通す。
+        /// 頂点は呼び出し側が決めた「エッジ上の 1 頂点」を使う。
+        /// </summary>
+        private bool CreateBridgeForTest(
+            int meshA, int vertexA, int meshB, int vertexB, string name, out string message)
+        {
+            message = "";
+
+            var model = ActiveProject?.CurrentModel;
+            var panel = _primitiveSubPanel;
+            if (model == null || panel == null) { message = "モデルかパネルが無い"; return false; }
+
+            panel.ClearBridgeSeeds();
+            panel.SetBridgeName(name);
+
+            if (!SelectSingleVertexForTest(model, meshA, vertexA)) { message = "穴A の選択に失敗"; return false; }
+            if (!panel.ImportBridgeSeedA()) { message = "穴A 取り込み失敗: " + panel.BridgeSeedInfoA; return false; }
+
+            if (!SelectSingleVertexForTest(model, meshB, vertexB)) { message = "穴B の選択に失敗"; return false; }
+            if (!panel.ImportBridgeSeedB()) { message = "穴B 取り込み失敗: " + panel.BridgeSeedInfoB; return false; }
+
+            panel.GenerateBridge();
+            return true;
+        }
+
+        /// <summary>
+        /// 指定メッシュだけを選択し、その頂点を 1 個だけ選択状態にする。
+        /// PickBridgeSeeds は穴ごとに 1 つ拾うので複数選択でも通るが、
+        /// 検証では拾われる種を一意にしたいので他の選択は全部落とす。
+        /// </summary>
+        private bool SelectSingleVertexForTest(ModelContext model, int meshIndex, int vertex)
+        {
+            var mc = model?.GetMeshContext(meshIndex);
+            if (mc?.MeshObject == null) return false;
+            if (vertex < 0 || vertex >= mc.MeshObject.VertexCount) return false;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+                model.GetMeshContext(i)?.Selection?.ClearAll();
+
+            model.SelectedDrawableMeshIndices = new List<int> { meshIndex };
+            mc.Selection.Vertices.Add(vertex);
+            return true;
+        }
+
+        /// <summary>自動検証用のプロジェクトフォルダ保存。</summary>
+        private bool SaveProjectFolderForTest(string folderPath)
+        {
+            if (string.IsNullOrEmpty(folderPath)) return false;
+            var project = ActiveProject;
+            if (project == null) return false;
+            return CsvProjectSerializer.Export(folderPath, project);
+        }
+
         private void ShowUnityClipTestPanel()
         {
             SetInteractionMode(InteractionMode.None);
@@ -5486,6 +5838,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.ModelListSection);
             Hide(_layoutRoot.MeshListSection);
             Hide(_layoutRoot.SkinWeightPaintSection);
+            Hide(_layoutRoot.SkinWeightNumericSection);
             Hide(_layoutRoot.VertexMoveSection);
             Hide(_layoutRoot.PivotSection);
             Hide(_layoutRoot.SculptSection);
@@ -5499,8 +5852,12 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.PrimitiveSection);
             Hide(_layoutRoot.LivePrimitiveSection);
             Hide(_layoutRoot.MeshFilterToSkinnedSection);
+            // メッシュブレンドのプレビュー結果は MeshObject に書かれているため、
+            // 非表示にするだけでは未確定の形状が残ったままになる。
+            _blendSubPanel?.CancelIfActive();
             Hide(_layoutRoot.BlendSection);
             Hide(_layoutRoot.ShrinkSection);
+            Hide(_layoutRoot.NormalTransplantSection);
             Hide(_layoutRoot.ModelBlendSection);
             Hide(_layoutRoot.BoneEditorSection);
             Hide(_layoutRoot.UVEditorSection);
@@ -5597,6 +5954,7 @@ namespace Poly_Ling.Player
                 case InteractionMode.Sculpt:          return _layoutRoot.ToolSculptBtn;
                 case InteractionMode.AdvancedSelect:  return _layoutRoot.ToolAdvancedSelBtn;
                 case InteractionMode.SkinWeightPaint: return _layoutRoot.ToolSkinWeightPaintBtn;
+                case InteractionMode.SkinWeightNumeric: return _layoutRoot.SkinWeightNumericBtn;
                 case InteractionMode.DeleteFace:      return _layoutRoot.ToolDeleteFaceBtn;
                 // AddFace / EdgeBevel / EdgeExtrude / FaceExtrude / EdgeTopology / Knife
                 // はツールボタンを持たない (右ペインから起動) ため null のまま。
@@ -5622,6 +5980,7 @@ namespace Poly_Ling.Player
                 Add(_layoutRoot.ToolSculptBtn);
                 Add(_layoutRoot.ToolAdvancedSelBtn);
                 Add(_layoutRoot.ToolSkinWeightPaintBtn);
+                Add(_layoutRoot.SkinWeightNumericBtn);
                 Add(_layoutRoot.ToolDeleteFaceBtn);
                 // 現在パネルを示す可能性があるボタンは、_activePanelBtn が非 null のとき
                 // それ 1 つだけなので個別列挙は不要 (下の色設定で扱う)
@@ -5681,6 +6040,7 @@ namespace Poly_Ling.Player
             if (section != null) section.style.display = DisplayStyle.Flex;
             _activeRightSection = section;
             SetActivePanelButton(panelBtn);
+            PLPerfLog.SetPanel(panelBtn?.text);
         }
 
         /// <summary>
@@ -5913,65 +6273,185 @@ namespace Poly_Ling.Player
         {
             if (panel == null) return;
 
-            panel.PickBridgeSeed       = PickBridgeSeed;
+            panel.PickBridgeSeeds      = PickBridgeSeeds;
             panel.GetMeshObjectAt      = idx =>
                 ActiveProject?.CurrentModel?.GetMeshContext(idx)?.MeshObject;
             panel.GetMeshNameAt        = idx =>
                 ActiveProject?.CurrentModel?.GetMeshContext(idx)?.Name ?? $"#{idx}";
+            // 頂点をワールドへ出す行列。スキンドは頂点が既にワールド（バインド）空間で、
+            // かつ WorldMatrix は親ボーンのワールド行列なので、掛けると位置が飛ぶ。
+            // 判定は MeshContext.IsSkinned に集約してある。
             panel.GetMeshWorldMatrixAt = idx =>
-                ActiveProject?.CurrentModel?.GetMeshContext(idx)?.WorldMatrix ?? Matrix4x4.identity;
+                ActiveProject?.CurrentModel?.GetMeshContext(idx)?.VertexToWorldMatrix ?? Matrix4x4.identity;
             panel.OnBridgeGenerate     = ExecuteBridge;
+            // 種の取り込み・破棄・図形切替でマーカーを即時更新する。
+            // （視点変更・ホバー変更では PlayerViewportManager.RefreshToolOverlays が拾う）
+            panel.OnBridgeSeedsChanged = UpdateTopologyToolsOverlay;
         }
 
         /// <summary>
-        /// 選択中の描画オブジェクトを走査し、「頂点1個 または 辺1本」の種をちょうど1つ拾う。
-        /// 複数ある / ゼロのときは Ok=false と理由を返す。
+        /// 選択中の描画オブジェクトを走査し、穴（エッジグループ）ごとに種を 1 つ拾う。
+        /// 最大 2 件で打ち切る。範囲選択などで 1 つの穴に多数の頂点が入っていても、
+        /// その穴からは 1 つだけを採る。
+        ///
+        /// 【拾えなかったとき】
+        /// 空リストではなく Ok=false の要素を 1 つだけ入れて返す。理由をパネルの
+        /// 情報欄へそのまま出すため。
+        ///
+        /// 【並びを固定する理由】
+        /// SelectionState.Vertices / Edges は HashSet で列挙順が保証されない。
+        /// 同じ選択で毎回同じ種が拾えるよう、頂点番号の昇順に並べ直してから走査する。
         /// </summary>
-        private PlayerPrimitiveMeshSubPanel.BridgeSeedPick PickBridgeSeed()
+        private List<PlayerPrimitiveMeshSubPanel.BridgeSeedPick> PickBridgeSeeds()
         {
-            var result = new PlayerPrimitiveMeshSubPanel.BridgeSeedPick
-            {
-                Ok = false, MeshIndex = -1, Vertex = -1, DirectionHint = -1,
-            };
+            var picks = new List<PlayerPrimitiveMeshSubPanel.BridgeSeedPick>();
+
+            PlayerPrimitiveMeshSubPanel.BridgeSeedPick Fail(string message)
+                => new PlayerPrimitiveMeshSubPanel.BridgeSeedPick
+                {
+                    Ok = false, Message = message, MeshIndex = -1, Vertex = -1, DirectionHint = -1,
+                };
 
             var model = ActiveProject?.CurrentModel;
-            if (model == null) { result.Message = "モデルがありません"; return result; }
+            if (model == null) { picks.Add(Fail("モデルがありません")); return picks; }
 
-            int hits = 0;
+            bool sawSelection = false;
+
             foreach (int idx in model.SelectedDrawableMeshIndices)
             {
+                if (picks.Count >= 2) break;
+
                 var mc  = model.GetMeshContext(idx);
+                var mo  = mc?.MeshObject;
                 var sel = mc?.Selection;
-                if (mc?.MeshObject == null || sel == null) continue;
+                if (mo == null || sel == null) continue;
+                if (sel.Vertices.Count == 0 && sel.Edges.Count == 0) continue;
+                sawSelection = true;
 
-                foreach (int v in sel.Vertices)
-                {
-                    hits++;
-                    if (hits == 1)
-                    {
-                        result.MeshIndex     = idx;
-                        result.Vertex        = v;
-                        result.DirectionHint = -1;
-                    }
-                }
+                // 穴の表はメッシュごとに 1 回だけ作る（頂点 → エッジグループ番号）。
+                var groups = BoundaryEdgeOps.BuildGroups(BoundaryEdgeOps.CollectBoundaryEdges(mo));
+                if (groups.Count == 0) continue;
 
-                foreach (var e in sel.Edges)
-                {
-                    hits++;
-                    if (hits == 1)
+                var groupOf = new Dictionary<int, int>();
+                for (int g = 0; g < groups.Count; g++)
+                    foreach (var be in groups[g])
                     {
-                        result.MeshIndex     = idx;
-                        result.Vertex        = e.V1;
-                        result.DirectionHint = e.V2;
+                        if (!groupOf.ContainsKey(be.V1)) groupOf[be.V1] = g;
+                        if (!groupOf.ContainsKey(be.V2)) groupOf[be.V2] = g;
                     }
+
+                // 候補（種頂点, 進行方向ヒント）。辺は V1 を種、V2 を方向にする
+                // （VertexPair は V1 <= V2 に正規化済みなので毎回同じ向きになる）。
+                var cands = new List<(int Vertex, int Hint)>();
+                foreach (int v in sel.Vertices) cands.Add((v, -1));
+                foreach (var e in sel.Edges)    cands.Add((e.V1, e.V2));
+                cands.Sort((a, b) => a.Vertex != b.Vertex
+                    ? a.Vertex.CompareTo(b.Vertex)
+                    : a.Hint.CompareTo(b.Hint));
+
+                var takenGroups = new HashSet<int>();
+                foreach (var c in cands)
+                {
+                    if (picks.Count >= 2) break;
+                    if (c.Vertex < 0 || c.Vertex >= mo.VertexCount) continue;
+                    if (!groupOf.TryGetValue(c.Vertex, out int gi)) continue;  // エッジ上にない頂点
+                    if (!takenGroups.Add(gi)) continue;                        // その穴は採用済み
+
+                    // 方向ヒントは同じ穴の頂点のときだけ活かす。
+                    int hint = -1;
+                    if (c.Hint >= 0 && groupOf.TryGetValue(c.Hint, out int gh) && gh == gi)
+                        hint = c.Hint;
+
+                    picks.Add(new PlayerPrimitiveMeshSubPanel.BridgeSeedPick
+                    {
+                        Ok = true, MeshIndex = idx, Vertex = c.Vertex, DirectionHint = hint,
+                    });
                 }
             }
 
-            if (hits == 0) { result.Message = "頂点1個または辺1本を選択してください"; return result; }
-            if (hits > 1)  { result.Message = $"選択が {hits} 個あります。1つだけにしてください"; return result; }
+            if (picks.Count == 0)
+                picks.Add(Fail(sawSelection
+                    ? "選択はエッジ（1面だけが使う辺）の上にありません"
+                    : "エッジ上の頂点または辺を選択してください"));
 
-            result.Ok = true;
-            return result;
+            return picks;
+        }
+
+        // ================================================================
+        // 穴つなぎ（ブリッジ）の種マーカー
+        // ================================================================
+
+        /// <summary>穴A の種マーカー色。</summary>
+        private static readonly Color BridgeSeedColorA = new Color(0.20f, 0.90f, 1.00f);
+        /// <summary>穴B の種マーカー色。</summary>
+        private static readonly Color BridgeSeedColorB = new Color(1.00f, 0.35f, 0.90f);
+
+        /// <summary>
+        /// 穴つなぎのマーカーを描くべきサブパネルを返す。
+        /// 図形生成パネルが表示中で、かつ選んでいる図形が「ブリッジ」のときだけ返す。
+        /// </summary>
+        private PlayerPrimitiveMeshSubPanel ActiveBridgeSeedPanel()
+        {
+            if (_livePrimitiveSubPanel != null && _livePrimitiveSubPanel.BridgeOverlayActive)
+                return _livePrimitiveSubPanel;
+            if (_primitiveSubPanel != null && _primitiveSubPanel.BridgeOverlayActive)
+                return _primitiveSubPanel;
+            return null;
+        }
+
+        /// <summary>
+        /// 取り込み済みの種 A / B を色分けしてビューポートへ出す。
+        /// 描けたら true、対象外なら false（呼出し側が他の分岐へ進む）。
+        ///
+        /// 【座標】頂点のワールド座標は GPU の値（TryGetVertexWorld → GetDisplayPositions）
+        /// を使う。スキニング規則を CPU で計算し直すと描画位置と食い違う。
+        /// </summary>
+        private bool UpdateBridgeSeedOverlay(PlayerViewportPanel panel, Poly_Ling.Tools.ToolContext ctx)
+        {
+            var bridgePanel = ActiveBridgeSeedPanel();
+            if (bridgePanel == null) return false;
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { panel.HideTopoToolOverlay(); return true; }
+
+            float h = ctx.PreviewRect.height;
+
+            Vector2? SeedToScreen(int meshIndex, int vertex)
+            {
+                if (meshIndex < 0 || vertex < 0) return null;
+                var mc = model.GetMeshContext(meshIndex);
+                if (mc?.MeshObject == null) return null;
+                if (!_viewportManager.TryGetVertexWorld(model, mc, vertex, out var wp)) return null;
+                var sp = ctx.WorldToScreen(wp);
+                return new Vector2(sp.x, h - sp.y);
+            }
+
+            var lines  = new List<(Vector2, Vector2, Color)>();
+            var points = new List<(Vector2, Color, float)>();
+            var rings  = new List<(Vector2, Color, float)>();
+
+            void AddSeed(int meshIndex, int vertex, int hint, Color col)
+            {
+                var p = SeedToScreen(meshIndex, vertex);
+                if (!p.HasValue) return;
+
+                points.Add((p.Value, col, 6f));
+                rings.Add((p.Value, col, 10f));
+
+                // 辺で取り込んだ種は、進行方向側の頂点への線も同色で引く。
+                if (hint < 0) return;
+                var q = SeedToScreen(meshIndex, hint);
+                if (q.HasValue) lines.Add((p.Value, q.Value, col));
+            }
+
+            AddSeed(bridgePanel.BridgeSeedMeshIndexA, bridgePanel.BridgeSeedVertexA,
+                    bridgePanel.BridgeSeedDirHintA, BridgeSeedColorA);
+            AddSeed(bridgePanel.BridgeSeedMeshIndexB, bridgePanel.BridgeSeedVertexB,
+                    bridgePanel.BridgeSeedDirHintB, BridgeSeedColorB);
+
+            if (points.Count == 0) panel.HideTopoToolOverlay();
+            else                   panel.UpdateTopoToolOverlay(lines, points, rings);
+            return true;
         }
 
         /// <summary>
@@ -5991,20 +6471,38 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            if (panel.BridgeNewObject) ExecuteBridgeNewObject(model, panel, plan);
-            else                       ExecuteBridgeIntoExisting(model, panel, plan);
+            // 行き先は共通の「追加先」に従う。専用トグルは廃止した。
+            switch (panel.CurrentAddMode)
+            {
+                case PrimitiveAddMode.AddToExisting:
+                    ExecuteBridgeIntoExisting(model, panel, plan);
+                    break;
+                case PrimitiveAddMode.NewModel:
+                    ExecuteBridgeNewModel(panel, plan);
+                    break;
+                default:
+                    ExecuteBridgeNewObject(model, panel, plan);
+                    break;
+            }
         }
 
-        /// <summary>書き込み先＝選択中の描画オブジェクトの先頭。既存頂点をそのまま使う。</summary>
+        /// <summary>
+        /// 追加先＝既存の描画オブジェクト。既存頂点をそのまま使う。
+        ///
+        /// 対象の解決は図形生成の AddToExisting と同じ ResolveAddTargetMeshContext を通す。
+        /// 以前はここだけ ModelContext.FirstMeshIndex を直に見ており、
+        /// ModelContext.cs の「編集対象は ActiveMeshContext / ActiveMeshIndex を使う」
+        /// という規約から外れていた。
+        /// </summary>
         private void ExecuteBridgeIntoExisting(
             ModelContext model, PlayerPrimitiveMeshSubPanel panel,
             PlayerPrimitiveMeshSubPanel.BridgePlan plan)
         {
-            int targetIdx = model.FirstMeshIndex;
-            var targetMc  = targetIdx >= 0 ? model.GetMeshContext(targetIdx) : null;
-            if (targetMc?.MeshObject == null)
+            var targetMc  = ResolveAddTargetMeshContext(model, panel.CurrentAddTargetIndex);
+            int targetIdx = targetMc != null ? model.IndexOf(targetMc) : -1;
+            if (targetMc?.MeshObject == null || targetIdx < 0)
             {
-                panel.SetBridgeStatus("書き込み先の描画オブジェクトがありません");
+                panel.SetBridgeStatus("追加先の描画オブジェクトがありません");
                 return;
             }
 
@@ -6017,8 +6515,9 @@ namespace Poly_Ling.Player
                 before = _editOps.UndoController.CaptureMeshObjectSnapshot();
             }
 
+            // 書き込み先自身の座標系へ落とす。スキンドなら頂点はワールド空間なので恒等。
             int added = AppendBridgeInto(
-                targetMc.MeshObject, targetMc.WorldMatrixInverse, plan,
+                targetMc.MeshObject, targetMc.WorldToVertexMatrix, plan,
                 plan.SrcMeshA == targetIdx, plan.SrcMeshB == targetIdx,
                 model.GetMeshContext(plan.SrcMeshA)?.MeshObject,
                 model.GetMeshContext(plan.SrcMeshB)?.MeshObject);
@@ -6041,7 +6540,10 @@ namespace Poly_Ling.Player
             panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} / 追加頂点 {added} → {targetMc.Name}");
         }
 
-        /// <summary>書き込み先＝新規オブジェクト。両側とも位置クローンになる。</summary>
+        /// <summary>
+        /// 追加先＝新しい描画オブジェクト。両側とも位置クローンになる。
+        /// ResolveBridgeParent が決めた親候補の子として作る。
+        /// </summary>
         private void ExecuteBridgeNewObject(
             ModelContext model, PlayerPrimitiveMeshSubPanel panel,
             PlayerPrimitiveMeshSubPanel.BridgePlan plan)
@@ -6049,16 +6551,30 @@ namespace Poly_Ling.Player
             int parentIdx = ResolveBridgeParent(model, plan.SrcMeshA, plan.SrcMeshB);
             var parentMc  = parentIdx >= 0 ? model.GetMeshContext(parentIdx) : null;
 
-            // ぶら下げ姿勢は恒等（ローカル位置0・回転0）なので、
-            // 新規オブジェクトの WorldMatrix は親の WorldMatrix と一致する。
-            Matrix4x4 worldToLocal = parentMc != null ? parentMc.WorldMatrixInverse : Matrix4x4.identity;
+            // 挿入で索引がずれるので、元メッシュは実体で控える。
+            // 計画の SrcMeshA/B は計画を立てた時点の索引で、挿入後は別の要素を指す。
+            var srcCtxA = model.GetMeshContext(plan.SrcMeshA);
+            var srcCtxB = model.GetMeshContext(plan.SrcMeshB);
+
+            // 頂点をどの空間へ格納するかは「生成物自身」が決める。親ではない。
+            //
+            //   生成物はウェイトを引き継ぐのでスキンドになる。スキンドの頂点は
+            //   ワールド（バインド）空間へ格納するのが約束なので、変換を掛けない。
+            //
+            //   親を基準にすると誤る。スキンド後の親はボーンで、ボーンは頂点を
+            //   持たないため WorldToVertexMatrix は WorldMatrixInverse を返す。
+            //   それを掛けると、ボーンのワールド位置ぶん頂点がずれる。
+            bool producesSkinned = (srcCtxA?.IsSkinned ?? false) || (srcCtxB?.IsSkinned ?? false);
+
+            Matrix4x4 worldToLocal = producesSkinned
+                ? Matrix4x4.identity
+                : (parentMc != null ? parentMc.WorldToVertexMatrix : Matrix4x4.identity);
 
             var mo = new MeshObject(panel.BridgeMeshName);
 
             AppendBridgeInto(
                 mo, worldToLocal, plan, false, false,
-                model.GetMeshContext(plan.SrcMeshA)?.MeshObject,
-                model.GetMeshContext(plan.SrcMeshB)?.MeshObject);
+                srcCtxA?.MeshObject, srcCtxB?.MeshObject);
 
             var piece = new ObjectArrayPiece
             {
@@ -6088,20 +6604,138 @@ namespace Poly_Ling.Player
             }
 
             PrimitiveMeshFinalize(model);
-            panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} → {added[0].MeshContext.Name}");
+
+            // 両端の元メッシュがどちらもミラー実体側なら、生成物にもミラーを付ける。
+            // ブリッジだけミラーが無いと、左右で構成が食い違ったまま残る。
+            // 送るのは UI の ⇆ と同じコマンド。ここで直に EnableMirror を呼ばない。
+            // 索引ではなく実体で持ち回る。コマンドはキュー経由で後から走るため、
+            // その間に挿入・削除が挟まると索引はずれ、別の要素にミラーが付く。
+            var generatedCtx = added[0].MeshContext;
+            if (ShouldMirrorGeneratedBridge(model, srcCtxA, srcCtxB))
+            {
+                int idxNow = model.IndexOf(generatedCtx);
+                if (idxNow >= 0)
+                {
+                    _panelContext?.SendCommand(new SetMirrorEnabledCommand(
+                        ActiveProject?.CurrentModelIndex ?? 0, new[] { idxNow }, true));
+                    panel.SetBridgeStatus(
+                        $"面 {plan.Result.Faces.Count} → {generatedCtx.Name}（ミラーを付与）");
+                    return;
+                }
+            }
+
+            panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} → {generatedCtx.Name}");
         }
 
         /// <summary>
-        /// 新規オブジェクトのぶら下げ先。同一オブジェクトならそれ自身、
-        /// 祖先・子孫関係があればルートに近い方、無ければ -1（ルート直下）。
+        /// 生成したブリッジにミラーを付けるべきか。
+        /// 穴A・穴Bの元メッシュが両方ともミラーペアの実体側のときだけ true。
+        /// 片側だけの場合は左右の対応が決まらないので付けない。
+        /// </summary>
+        private static bool ShouldMirrorGeneratedBridge(
+            ModelContext model, MeshContext mcA, MeshContext mcB)
+        {
+            if (model?.MirrorPairs == null) return false;
+            if (mcA == null || mcB == null) return false;
+
+            bool realA = false, realB = false;
+            foreach (var pair in model.MirrorPairs)
+            {
+                if (pair?.Real == null) continue;
+                if (ReferenceEquals(pair.Real, mcA)) realA = true;
+                if (ReferenceEquals(pair.Real, mcB)) realB = true;
+            }
+            return realA && realB;
+        }
+
+        /// <summary>
+        /// 新規オブジェクトのぶら下げ先。親候補は穴A物体と穴B物体の 2 つ。
+        ///
+        ///   同一オブジェクト        → それ自身
+        ///   子孫関係がある          → ルートに近い側
+        ///   子孫関係が無い          → 穴A物体
+        ///
+        /// 以前は子孫関係が無いとき -1（ルート直下）を返しており、
+        /// 生成物がどちらの物体にも付かなかった。
         /// </summary>
         private static int ResolveBridgeParent(ModelContext model, int a, int b)
         {
-            if (model == null || a < 0 || b < 0) return -1;
+            if (model == null) return -1;
+            if (a < 0) return b;
+            if (b < 0) return a;
             if (a == b) return a;
+
             if (IsBridgeAncestor(model, a, b)) return a;
             if (IsBridgeAncestor(model, b, a)) return b;
+
+            // スキンド済みモデルでは 2 つの穴物体がどちらもボーンの子なので、
+            // 互いに祖先にならない。どちらが親側かはボーンの鎖で決まるので、
+            // それぞれの親ボーンの祖先関係を見て親側の穴物体を返す。
+            //
+            // ボーン自身を親にはしない。描画オブジェクトの並びの中に置きたいのと、
+            // スキンドは頂点の変換に WorldMatrix を使わない（SkinningMatrix を使う）ため、
+            // メッシュの子にしても描画には影響しないため。
+            int byBone = ResolveBridgeParentByBoneChain(model, a, b);
+            if (byBone >= 0) return byBone;
+
+            return a;   // 決まらないときは穴A物体の子にする
+        }
+
+        /// <summary>
+        /// 2 つの穴物体それぞれの親ボーンを引き、ボーンの祖先関係で親側を選ぶ。
+        /// 決まらなければ -1。
+        /// </summary>
+        private static int ResolveBridgeParentByBoneChain(ModelContext model, int a, int b)
+        {
+            int boneA = BoneParentOf(model, a);
+            int boneB = BoneParentOf(model, b);
+            if (boneA < 0 || boneB < 0 || boneA == boneB) return -1;
+
+            if (IsBridgeAncestor(model, boneA, boneB)) return a;
+            if (IsBridgeAncestor(model, boneB, boneA)) return b;
             return -1;
+        }
+
+        /// <summary>描画オブジェクトが付いているボーンの索引。ボーンでなければ -1。</summary>
+        private static int BoneParentOf(ModelContext model, int meshIndex)
+        {
+            var mc = model.GetMeshContext(meshIndex);
+            if (mc == null) return -1;
+
+            int p = mc.HierarchyParentIndex;
+            if (p < 0 || p >= model.MeshContextCount) return -1;
+            return model.GetMeshContext(p)?.Type == MeshType.Bone ? p : -1;
+        }
+
+        /// <summary>
+        /// 追加先＝新しいモデル。両側とも位置クローンになる。
+        ///
+        /// 生成物は元モデルの頂点位置から作るだけで、既存頂点を参照しない。
+        /// そのため他図形と同じ OnPrimitiveMeshCreated / PrimitiveMeshCreateNewModel 経路へ
+        /// 流せる。新モデルには親が無いのでルート直下に置かれる。
+        /// 座標はワールド空間のまま渡す（worldToLocal に単位行列を使う）。
+        /// </summary>
+        private void ExecuteBridgeNewModel(
+            PlayerPrimitiveMeshSubPanel panel,
+            PlayerPrimitiveMeshSubPanel.BridgePlan plan)
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { panel.SetBridgeStatus("モデルがありません"); return; }
+
+            var mo = new MeshObject(panel.BridgeMeshName);
+
+            AppendBridgeInto(
+                mo, Matrix4x4.identity, plan, false, false,
+                model.GetMeshContext(plan.SrcMeshA)?.MeshObject,
+                model.GetMeshContext(plan.SrcMeshB)?.MeshObject);
+
+            if (mo.FaceCount == 0) { panel.SetBridgeStatus("生成できませんでした"); return; }
+
+            OnPrimitiveMeshCreated(
+                mo, panel.BridgeMeshName, Vector3.zero, Vector3.zero, Vector3.one,
+                false, PrimitiveAddMode.NewModel);
+
+            panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} → 新しいモデル");
         }
 
         /// <summary>ancestor が descendant の祖先か。HierarchyParentIndex を辿る。</summary>
@@ -6246,7 +6880,8 @@ namespace Poly_Ling.Player
         private void OnPrimitiveMeshCreated(
             MeshObject meshObject, string meshName, Vector3 worldPos,
             Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature, PrimitiveAddMode addMode)
+            bool ignorePoseInArmature, PrimitiveAddMode addMode,
+            int addTargetIndex = -1)
         {
             _localLoader.EnsureProject();
             _moveToolHandler?.SetProject(ActiveProject);
@@ -6291,13 +6926,32 @@ namespace Poly_Ling.Player
                     break;
                 case PrimitiveAddMode.AddToExisting:
                     PrimitiveMeshAddToExisting(project, meshObject, meshName, worldPos,
-                        poseRotation, poseScale, ignorePoseInArmature);
+                        poseRotation, poseScale, ignorePoseInArmature, addTargetIndex);
                     break;
                 case PrimitiveAddMode.NewModel:
                     PrimitiveMeshCreateNewModel(project, meshObject, meshName, worldPos,
                         poseRotation, poseScale, ignorePoseInArmature);
                     break;
             }
+        }
+
+        /// <summary>
+        /// 「既存の描画オブジェクトに追加」の追加先を解決する。
+        ///
+        /// addTargetIndex はパネルの名前欄ドロップダウンが返す MeshContextList
+        /// インデックス。-1 や範囲外のときは選択オブジェクトリストの先頭
+        /// （ModelContext.ActiveMeshContext）へ落とす。
+        /// 穴つなぎもこの 1 箇所を通し、図形生成と同じ対象になるようにする。
+        /// </summary>
+        private static MeshContext ResolveAddTargetMeshContext(ModelContext model, int addTargetIndex)
+        {
+            if (model == null) return null;
+            if (addTargetIndex >= 0)
+            {
+                var mc = model.GetMeshContext(addTargetIndex);
+                if (mc?.MeshObject != null) return mc;
+            }
+            return model.ActiveMeshContext;
         }
 
         /// <summary>
@@ -6378,13 +7032,14 @@ namespace Poly_Ling.Player
         private void PrimitiveMeshAddToExisting(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature)
+            bool ignorePoseInArmature, int addTargetIndex = -1)
         {
             var model  = project.CurrentModel;
             if (model == null) return;
 
-            // 対象MeshContextを選択（なければ新規作成にフォールバック）
-            var targetMc = model.ActiveMeshContext;
+            // 追加先はパネルの名前欄ドロップダウンで選んだオブジェクト。
+            // -1（未選択・未配線）のときだけ従来どおり選択オブジェクトリストの先頭。
+            var targetMc = ResolveAddTargetMeshContext(model, addTargetIndex);
             if (targetMc == null || targetMc.MeshObject == null)
             {
                 PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
@@ -6904,6 +7559,11 @@ namespace Poly_Ling.Player
                     section = _layoutRoot?.SkinWeightPaintSection;
                     btn     = _layoutRoot?.ToolSkinWeightPaintBtn;
                     break;
+                case InteractionMode.SkinWeightNumeric:
+                    section = _layoutRoot?.SkinWeightNumericSection;
+                    btn     = _layoutRoot?.SkinWeightNumericBtn;
+                    refresh = () => _skinWeightNumericSubPanel?.Refresh();
+                    break;
                 case InteractionMode.AddFace:
                     section = _layoutRoot?.AddFaceSection;
                     // AddFace は右ペインから起動するためツールボタンなし → btn = null
@@ -7045,6 +7705,10 @@ namespace Poly_Ling.Player
                     : ObjectMoveToolHandler.SelectionDragMode.Box;
 
             _moveToolHandler.OneShotFinished = ExitSelectSubTool;
+
+            // SetInteractionMode より後に DragSelectMode が決まるため、ここで再通知する
+            // （矩形／投げ縄の別を性能ログへ残す）。
+            ReportPerfToolState();
         }
 
         /// <summary>
@@ -7156,28 +7820,28 @@ namespace Poly_Ling.Player
         /// ここで選択をクリック面 1 枚に差し替えてから削除するため、
         /// 「クリックした面だけが消える」挙動が常に保たれる。
         ///
-        /// 削除対象はアクティブメッシュに限る。ホバーは選択中の全メッシュから返るため
-        /// 別メッシュの面もクリックし得るが、DeleteSelectionTool は ActiveMeshContext
-        /// 固定で動くので、そのまま流すと別の面を消してしまう。
+        /// 削除対象はクリックされたメッシュ。ホバーは選択中の全メッシュから返るため、
+        /// アクティブメッシュ (SelectedDrawableMeshIndices の先頭) 以外の面もクリック
+        /// し得る。DeleteSelectionTool は選択中の描画オブジェクトを走査するので、
+        /// 選択中オブジェクト全部の選択をクリアしてから、クリックされたメッシュに
+        /// その面だけを入れて実行する。ActiveMeshIndex は変更しない。
         /// </summary>
         private void OnDeleteFaceClicked(PlayerHoverElement elem, ModifierKeys mods)
         {
             if (elem.Kind != PlayerHoverKind.Face) return;
 
             var model = ActiveProject?.CurrentModel;
-            var mc    = model?.ActiveMeshContext;
-            if (model == null || mc?.Selection == null) return;
+            if (model == null) return;
 
-            if (elem.MeshIndex != model.ActiveMeshIndex)
-            {
-                Debug.LogWarning("[DeleteFaceMode] アクティブメッシュ以外の面は削除しません "
-                               + $"(clicked={elem.MeshIndex}, active={model.ActiveMeshIndex})");
-                return;
-            }
+            var target = model.GetMeshContext(elem.MeshIndex);
+            if (target?.Selection == null) return;
 
             // 選択をクリック面 1 枚に差し替える (修飾キーによる追加選択を無効化)。
-            mc.Selection.ClearAll();
-            mc.Selection.SelectFace(elem.FaceIndex, false);
+            // 他オブジェクトに選択が残っていると一緒に消えるため、全部クリアする。
+            foreach (int idx in model.SelectedDrawableMeshIndices)
+                model.GetMeshContext(idx)?.Selection?.ClearAll();
+            target.Selection.ClearAll();
+            target.Selection.SelectFace(elem.FaceIndex, false);
 
             ExecuteDeleteSelection();
         }
@@ -7296,6 +7960,17 @@ namespace Poly_Ling.Player
                 SkinWeightPaintTool.ActivePanel = null;
             }
 
+            // スキンW数値設定もウェイト可視化を使う（ActivePanel に数値パネルを差す）。
+            // 脱出時は可視化を止め、頂点カラーを消してから ActivePanel を外す。
+            // 順序が逆だと ActivePanel が null になって対象メッシュを解決できず、
+            // 色が残ったままになる。
+            if (_interactionMode == InteractionMode.SkinWeightNumeric && mode != InteractionMode.SkinWeightNumeric)
+            {
+                ClearNumericWeightVisualization();
+                SkinWeightPaintTool.SetVisualizationActive(false);
+                SkinWeightPaintTool.ActivePanel = null;
+            }
+
             // 【選択モードの復元について】
             // 旧実装はツール脱出のたびに ActiveMeshContext.Selection.Mode へ
             // MeshSelectMode.All を書き戻していた。All はチェックボックスの値ではないため、
@@ -7321,8 +7996,8 @@ namespace Poly_Ling.Player
 
             // ---------------------------------------------------------------
             // カテゴリ 1 ツール (EdgeBevel / EdgeExtrude / FaceExtrude /
-            // FlipFace / Solidify / Rotate / Scale) は MoveToolHandler の
-            // 共通選択ロジックを流用している。
+            // FlipFace / Solidify / Rotate / Scale / PrimitivePlace) は
+            // MoveToolHandler の共通選択ロジックを流用している。
             // - EdgeBevel / EdgeExtrude / FaceExtrude はフック (OnDragStartExtra 等) に
             //   ツール固有ドラッグ動作を差し込む
             // - FlipFace / Solidify / Rotate / Scale は選択のみフック不要
@@ -7340,6 +8015,10 @@ namespace Poly_Ling.Player
                 || (_interactionMode == InteractionMode.Solidify    && mode != InteractionMode.Solidify)
                 || (_interactionMode == InteractionMode.Rotate      && mode != InteractionMode.Rotate)
                 || (_interactionMode == InteractionMode.Scale       && mode != InteractionMode.Scale)
+                // 配置ギズモも Rotate / Scale と同じくフックへ委譲する。
+                // 解除し損ねると、次のモードでも OnDragStartExtra が true を返し続けて
+                // 頂点移動が一切効かなくなる。
+                || (_interactionMode == InteractionMode.PrimitivePlace && mode != InteractionMode.PrimitivePlace)
                 // DeleteFace は OnLeftClickExtra で面クリック削除を発火する。
                 // 脱出時のフック解除は同じ処理でよい。
                 || (_interactionMode == InteractionMode.DeleteFace  && mode != InteractionMode.DeleteFace)
@@ -7368,6 +8047,8 @@ namespace Poly_Ling.Player
                 _deleteFaceModeActive = false;
 
             _interactionMode = mode;
+
+            ReportPerfToolState();
 
             // ── 選択モードのツール固有 override をここで一括決定する ──────────
             // 進入時に絞り、脱出時に書き戻す方式は復元漏れ・非対称が起きやすい
@@ -7422,8 +8103,31 @@ namespace Poly_Ling.Player
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _pivotOffsetHandler?.UpdateHover(pos, ctx));
                     break;
                 case InteractionMode.PrimitivePlace:
-                    // 配置ギズモ専用。モデルの選択・頂点操作は行わない。
-                    _vertexInteractor?.SetToolHandler(_primitivePlaceHandler);
+                    // 配置ギズモ: 選択は MoveToolHandler を維持し、組み込み移動ギズモを
+                    // 抑制、フック経由で PrimitivePlaceToolHandler のギズモへ委譲する
+                    // (Rotate / Scale と同じ構成)。
+                    //
+                    // ハンドラごと _primitivePlaceHandler へ差し替えると、その OnLeftClick が
+                    // 空で MoveToolHandler も外れるため、ビューポートでの頂点・辺の選択が
+                    // クリック・矩形・投げ縄すべて不能になる。穴つなぎ（ブリッジ）の
+                    // 種取り込みは選択を要求する (PickBridgeSeeds) ので、
+                    // 差し替え方式のままでは図形パネルを開いた時点で操作不能になる。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SuppressBuiltinGizmo = true;
+                        _moveToolHandler.GizmoHitTestOverride  = (pos, c) => _primitivePlaceHandler != null && _primitivePlaceHandler.GizmoHitTest(pos, c);
+                        // このツールはモデルへ触れない。ギズモに当たらなかったドラッグでも
+                        // true を返して通常の頂点移動を抑止する。クリック選択と、
+                        // 何も掴んでいない位置からの矩形／投げ縄選択はそのまま効く。
+                        _moveToolHandler.OnDragStartExtra      = (elem, mods) =>
+                        {
+                            _primitivePlaceHandler?.BeginGizmoDrag();
+                            return true;
+                        };
+                        _moveToolHandler.OnToolDragExtra       = (pos, delta, mods) => _primitivePlaceHandler?.GizmoDrag(pos, delta);
+                        _moveToolHandler.OnToolDragEndExtra    = (pos, mods) => _primitivePlaceHandler?.EndGizmoDrag();
+                    }
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _primitivePlaceHandler?.UpdateHover(pos, ctx));
                     break;
                 case InteractionMode.WorkAxis:
@@ -7666,14 +8370,46 @@ namespace Poly_Ling.Player
                     // 初期段（開始頂点）＝ Vertex ホバー。
                     // (override は ResolveToolSelectModeOverride が _knifeHandler.HoverSelectMode から決める)
                     break;
+                case InteractionMode.SkinWeightNumeric:
+                    // 数値入力のみで適用する。ビューポートでは MoveToolHandler の
+                    // 選択・矩形選択だけを流用し、組み込み移動ギズモは出さない
+                    // (Deform と同型)。選択種別は ResolveToolSelectModeOverride で頂点のみ。
+                    if (_moveToolHandler != null) _moveToolHandler.SelectOnly = true;
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    _skinWeightNumericSubPanel?.RefreshBoneList(ActiveProject?.CurrentModel);
+                    // ウェイトのヒートマップ可視化はペイントツールの機構を流用する。
+                    // ActivePanel は SkinWeightPaintTool.VisualizationTargetBone と
+                    // MeshSceneRenderer.CollectWeightVisTargets の参照先。
+                    SkinWeightPaintTool.ActivePanel = _skinWeightNumericSubPanel;
+                    SkinWeightPaintTool.SetVisualizationActive(true);
+                    _viewportManager.EnterWeightTargetChanged(ActiveProject);
+                    // Undo 対象は PlayerCommandDispatcher がメッシュごとに
+                    // SetMeshObject で差し替えるため、ここでは設定しない。
+                    // _skinWeightUndoMasterIndex を残すと Undo 書き戻し先 (:608 付近) が
+                    // その 1 メッシュに固定され、多メッシュ編集の Undo が壊れる。
+                    // -1 にしておけば MeshObject 参照からの逆引きが働く。
+                    _skinWeightUndoMasterIndex = -1;
+                    break;
                 case InteractionMode.SkinWeightPaint:
                     _vertexInteractor?.SetToolHandler(_skinWeightPaintHandler);
                     SkinWeightPaintTool.ActivePanel = _skinWeightPaintPanel;
-                    _skinWeightPaintPanel?.RefreshMeshList(ActiveProject?.CurrentModel);
                     _skinWeightPaintPanel?.RefreshBoneList(ActiveProject?.CurrentModel);
                     _skinWeightPaintHandler?.OnActivate();
-                    // UndoController に対象 MeshObject を設定（スナップショット取得のため必須）
-                    SyncSkinWeightUndoMesh();
+                    // 【可視化の有効化は OnActivate に任せない】
+                    // SkinWeightPaintToolHandler.OnActivate は GetToolContext() が null だと
+                    // 無言で return し、その中にある IsVisualizationActive = true に届かない。
+                    // 結果ヒートマップが一切出ない状態になっていた。
+                    // SkinWeightNumeric 側と同じく、ここで無条件に立てる。
+                    SkinWeightPaintTool.SetVisualizationActive(true);
+                    // 進入直後に色を焼き込む。これが無いとボーンのドロップダウンを
+                    // 触るまで PresentAll が走らず色が出ない。
+                    _viewportManager.EnterWeightTargetChanged(ActiveProject);
+                    // Undo 対象は SkinWeightPaintTool がストローク中にメッシュごとへ
+                    // SetMeshObject で差し替える（ブラシは選択オブジェクト全件をまたぐ）。
+                    // _skinWeightUndoMasterIndex を残すと Undo 書き戻し先 (:608 付近) が
+                    // 1 メッシュに固定され、複数メッシュの Undo が壊れる。
+                    _skinWeightUndoMasterIndex = -1;
                     break;
             }
 
@@ -7843,6 +8579,7 @@ namespace Poly_Ling.Player
                 case InteractionMode.Tri4To1:           return MeshSelectMode.Face;
 
                 // 頂点を対象にするツール
+                case InteractionMode.SkinWeightNumeric: return MeshSelectMode.Vertex;
                 case InteractionMode.VertexDissolve:    return MeshSelectMode.Vertex;
                 case InteractionMode.Quad4To1:          return MeshSelectMode.Vertex;
 
@@ -7912,7 +8649,6 @@ namespace Poly_Ling.Player
             _advancedSelectHandler?.SetProject(project);
             _skinWeightPaintHandler?.SetProject(project);
 
-            _skinWeightPaintPanel?.RefreshMeshList(model);
             _skinWeightPaintPanel?.RefreshBoneList(model);
         }
 
@@ -8007,24 +8743,18 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// SkinWeightPaint 用 UndoController に現在のターゲットメッシュを設定する。
-        /// ツール切り替え時・メッシュドロップダウン変更時に呼ぶ。
+        /// スキンW数値設定モードで焼き込んだ頂点カラーを消す。
+        /// 対象は数値設定パネルと同じく選択中の描画メッシュ全件
+        /// （CurrentTargetMesh は常に -1 を返すため、MeshSceneRenderer 側の
+        /// CollectWeightVisTargets も SelectedDrawableMeshIndices を使う）。
         /// </summary>
-        private void SyncSkinWeightUndoMesh()
+        private void ClearNumericWeightVisualization()
         {
-            var swModel = ActiveProject?.CurrentModel;
-            if (swModel == null || _editOps?.UndoController == null) return;
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return;
 
-            // パネルで選択されたメッシュを優先、なければ FirstDrawableMeshContext
-            int targetMasterIdx = _skinWeightPaintPanel?.CurrentTargetMesh ?? -1;
-            MeshContext swMc = targetMasterIdx >= 0
-                ? swModel.GetMeshContext(targetMasterIdx)
-                : swModel.ActiveMeshContext;
-
-            if (swMc?.MeshObject == null) return;
-            _editOps.UndoController.SetMeshObject(swMc.MeshObject, swMc.UnityMesh);
-            _editOps.UndoController.MeshUndoContext.ParentModelContext = swModel;
-            _skinWeightUndoMasterIndex = swModel.IndexOf(swMc);
+            foreach (var mc in Poly_Ling.UI.SkinWeightOperations.CollectTargetMeshContexts(model))
+                if (mc?.UnityMesh != null) mc.UnityMesh.colors = null;
         }
 
         /// <summary>
@@ -8321,9 +9051,14 @@ namespace Poly_Ling.Player
             // 属性変更は Hidden / Locked を GPU へ書き戻す軽量経路へ回す。
             // RebuildAdapter は伴わない。
             bool __attr = kind == ChangeKind.Attributes;
-            PLDiag.NotifyKind(kind.ToString(),
-                __full ? "EnterTopologyChanged"
-                       : (__attr ? "EnterMeshAttributesChanged" : "EnterSelectionChanged"));
+            // kind.ToString() と三項の文字列選択は引数側で必ず評価される。
+            // スイッチをここで見てから呼ぶ。
+            if (PLDiag.Enabled && PLDiag.Notify)
+            {
+                PLDiag.NotifyKind(kind.ToString(),
+                    __full ? "EnterTopologyChanged"
+                           : (__attr ? "EnterMeshAttributesChanged" : "EnterSelectionChanged"));
+            }
             if (__full)
                 _viewportManager.EnterTopologyChanged(ActiveProject);
             else if (__attr)

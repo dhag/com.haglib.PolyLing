@@ -259,8 +259,8 @@ namespace Poly_Ling.UndoSystem
 
             // [UndoDbg] Pending → Undo スタック昇格時のログ。
             // Record() 呼出し箇所のログが仮に漏れていてもここで必ず補足できる。
-            UnityEngine.Debug.Log(
-                "[UndoDbg] ProcessRecord stackId=" + Id +
+            Poly_Ling.Diagnostics.PLDiag.UndoVerboseLog(
+                "ProcessRecord stackId=" + Id +
                 " type=" + (record?.GetType().Name ?? "<null>") +
                 " desc=" + (pending.Description ?? "<null>") +
                 " seq=" + pending.Sequence +

@@ -362,7 +362,7 @@ namespace Poly_Ling.Ops
                         verts[v].Position = positions[v];
 
                     // UnityMeshを再生成
-                    ctx.UnityMesh = ctx.MeshObject.ToUnityMesh();
+                    ctx.ReplaceUnityMesh(ctx.MeshObject.ToUnityMesh());
                 }
             }
 
@@ -531,7 +531,7 @@ namespace Poly_Ling.Ops
                     }
 
                     // UnityMeshを再生成して表示を更新
-                    ctx.UnityMesh = ctx.MeshObject.ToUnityMesh();
+                    ctx.ReplaceUnityMesh(ctx.MeshObject.ToUnityMesh());
 
                     bakedMeshCount++;
                     bakedVertexCount += vertexCount;

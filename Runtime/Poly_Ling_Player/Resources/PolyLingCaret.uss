@@ -5,3 +5,20 @@
 .unity-base-text-field__input {
     --unity-cursor-color: rgb(255, 255, 255);
 }
+
+/* TreeView（オブジェクトリスト）の展開/折り畳み矢印。
+ * 組み込みの checkmark 画像は既定色が暗く、行がハイライトされていないと
+ * 背景に埋もれて見えない。tint を明るくして常時視認できるようにする。
+ * -unity-background-image-tint-color は C# の style.* から設定できないため USS で行う。 */
+.unity-tree-view__item-toggle > .unity-toggle__input > .unity-toggle__checkmark {
+    -unity-background-image-tint-color: rgb(205, 205, 205);
+}
+
+.unity-tree-view__item-toggle:hover > .unity-toggle__input > .unity-toggle__checkmark {
+    -unity-background-image-tint-color: rgb(255, 255, 255);
+}
+
+/* Foldout（右ペインの各折り畳み見出し）の矢印も同じ理由で明るくする。 */
+.unity-foldout__toggle > .unity-toggle__input > .unity-toggle__checkmark {
+    -unity-background-image-tint-color: rgb(205, 205, 205);
+}

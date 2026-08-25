@@ -150,6 +150,7 @@ namespace Poly_Ling.View
         public bool IsMirrorSide => _model != null && _model.IsMirrorSide(_ctx);
         public bool IsRealSide => _model != null && _model.IsRealSide(_ctx);
         public bool HasBakedMirrorChild => _ctx.HasBakedMirrorChild;
+        public bool MirrorGeometryDerived => _ctx.MirrorGeometryDerived;
 
         // ボーン
         public int BoneIndex => _model?.TypedIndices?.MasterToBoneIndex(_masterIndex) ?? -1;
@@ -174,6 +175,7 @@ namespace Poly_Ling.View
         public string MorphName => _ctx.MorphName;
         public bool ExcludeFromExport => _ctx.ExcludeFromExport;
         public bool IgnorePoseInArmature => _ctx.IgnorePoseInArmature;
+        public bool IsMirrorBranchRoot => _ctx.IsMirrorBranchRoot;
         public bool PreserveNormals => _ctx.PreserveNormals;
 
         // 表示用計算プロパティ

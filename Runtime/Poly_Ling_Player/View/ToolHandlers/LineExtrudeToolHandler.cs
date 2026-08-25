@@ -95,13 +95,17 @@ namespace Poly_Ling.Player
             }
             else
             {
-                // 新規 MeshContext として追加
+                // 新規 MeshContext として追加。
+                // 名前は既存の描画オブジェクトと衝突しないようにする。
+                string uniqueName = model.GenerateUniqueMeshName(meshName);
+                meshObject.Name    = uniqueName;
+
                 var unityMesh      = meshObject.ToUnityMesh();
-                unityMesh.name     = meshName;
+                unityMesh.name     = uniqueName;
                 unityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
                 var newMc = new Poly_Ling.Data.MeshContext
                 {
-                    Name       = meshName,
+                    Name       = uniqueName,
                     MeshObject = meshObject,
                 };
                 newMc.UnityMesh = unityMesh;

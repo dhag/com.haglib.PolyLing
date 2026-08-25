@@ -86,7 +86,8 @@ namespace Poly_Ling.Player
 
             if (OnObjectArrayGenerate == null)
             {
-                _objArrayPanel.SetStatus("生成先が設定されていません");
+                // 行き先の設定不足ではなく、Viewer 側のコールバック未結線を指す内部エラー。
+                _objArrayPanel.SetStatus("歪み複製の生成が結線されていません");
                 return;
             }
 

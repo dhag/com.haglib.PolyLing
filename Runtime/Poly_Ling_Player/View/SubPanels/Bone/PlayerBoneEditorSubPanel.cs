@@ -1,4 +1,4 @@
-// PlayerBoneEditorSubPanel.cs
+﻿// PlayerBoneEditorSubPanel.cs
 // ボーン・描画メッシュ統合 TRS エディタ（旧 BoneEditorSubPanel + ObjectMoveTRSPanel の統合）
 // SubPanelScope でボーンのみ / 描画メッシュのみ / 両方 を切り替え可能。
 // Runtime/Poly_Ling_Player/View/ に配置
@@ -114,8 +114,6 @@ namespace Poly_Ling.Player
         private Toggle        _ignorePoseToggle;
         private VisualElement _ignorePoseRow;
 
-        // ミラー分岐ルート（オブジェクト姿勢タブ専用）
-        private Toggle        _mirrorBranchToggle;
 
         // 原点CSV（オブジェクト姿勢タブ専用）
         private Toggle        _originIncludeRotToggle;
@@ -424,19 +422,6 @@ namespace Poly_Ling.Player
             });
             _ignorePoseRow.Add(_ignorePoseToggle);
 
-            _mirrorBranchToggle = new Toggle("ミラー分岐ルート");
-            _mirrorBranchToggle.style.color = new StyleColor(Color.white);
-            _mirrorBranchToggle.tooltip =
-                "エクスポート時、この配下を実体側とミラー側の2本の枝に分割する（非スキンド専用）";
-            _mirrorBranchToggle.RegisterValueChangedCallback(e =>
-            {
-                if (_suppressTRS) return;
-                var indices = GetTargetIndices();
-                if (indices.Length > 0)
-                    SendCommand(new SetMirrorBranchRootCommand(
-                        GetModelIndex?.Invoke() ?? 0, indices, e.newValue));
-            });
-            _ignorePoseRow.Add(_mirrorBranchToggle);
 
             // 原点の途中経過を CSV で退避・復元する（オブジェクト姿勢タブ専用）
             var originIoRow = new VisualElement();
@@ -610,6 +595,7 @@ namespace Poly_Ling.Player
             if (_boneSection    != null) _boneSection.style.display    = showBoneSection ? DisplayStyle.Flex : DisplayStyle.None;
             if (_ignorePoseRow  != null) _ignorePoseRow.style.display  = showIgnorePose  ? DisplayStyle.Flex : DisplayStyle.None;
 
+
             // 「ボーンポーズ」セクションはモードC（ポーズ一時）専用。A/Bでは常に非表示（モデル有無に依存しない）。
             bool poseModeC = (GetObjectMoveSettings?.Invoke())?.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer;
             if (_bonePoseSection != null)
@@ -686,9 +672,6 @@ namespace Poly_Ling.Player
                 _ignorePoseToggle.SetValueWithoutNotify(
                     model.GetMeshContext(indices[0])?.IgnorePoseInArmature ?? false);
 
-            if (_mirrorBranchToggle != null && showIgnorePose)
-                _mirrorBranchToggle.SetValueWithoutNotify(
-                    model.GetMeshContext(indices[0])?.IsMirrorBranchRoot ?? false);
 
             _suppressTRS = false;
             _statusLabel.text = StatusText(model);
@@ -761,11 +744,8 @@ namespace Poly_Ling.Player
         // オブジェクト原点の CSV 入出力
         // ================================================================
 
-        private const string OriginCsvHeader = "#PolyLing_ObjectOrigin,version,1.0";
-
-        // 列見出し。回転列は後ろに足すだけなので、位置だけの旧 CSV もそのまま読める。
-        private const string OriginCsvColumns    = "name,posX,posY,posZ";
-        private const string OriginCsvColumnsRot = "name,posX,posY,posZ,rotX,rotY,rotZ";
+        // 書式（先頭行・列見出し）と本文の組み立ては
+        // Poly_Ling.Tools.ObjectPose.ObjectOriginCsv に集約している。
 
         /// <summary>回転(°)も書き出し・読み込みの対象にするか。</summary>
         private bool IncludeRotationInCsv => _originIncludeRotToggle?.value ?? false;
@@ -785,42 +765,14 @@ namespace Poly_Ling.Player
 
             bool withRot = IncludeRotationInCsv;
 
-            // 姿勢くさびは表示用の生成物で、原点は常に単位。本体の原点一覧に混ぜない。
-            var wedgeIndices = Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeReader
-                .CollectWedgeIndices(model);
-
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine(OriginCsvHeader);
-            sb.AppendLine(withRot ? OriginCsvColumnsRot : OriginCsvColumns);
-
-            int count = 0;
-            int skippedWedge = 0;
-            int skippedMirror = 0;
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type == MeshType.Bone) continue;
-                // ミラー側は実体側と BoneTransform を共有する前提（H_M = H_R）。
-                // 別の原点を持てないので書き出さない。読み込み側も同じ扱い。
-                if (mc.Type == MeshType.MirrorSide || mc.Type == MeshType.BakedMirror)
-                { skippedMirror++; continue; }
-                if (wedgeIndices.Contains(i)) { skippedWedge++; continue; }
-                if (string.IsNullOrEmpty(mc.Name)) continue;
-
-                bool useLocal = mc.BoneTransform != null && mc.BoneTransform.UseLocalTransform;
-                Vector3 p = useLocal ? mc.BoneTransform.Position : Vector3.zero;
-                Vector3 r = useLocal ? mc.BoneTransform.Rotation : Vector3.zero;
-
-                sb.Append(EscapeCsvField(mc.Name));
-                sb.Append($",{p.x:R},{p.y:R},{p.z:R}");
-                if (withRot) sb.Append($",{r.x:R},{r.y:R},{r.z:R}");
-                sb.AppendLine();
-                count++;
-            }
+            // ボーンは読込側（ApplyObjectOrigins）が適用対象から外すため、ここでは出さない。
+            string csv = Poly_Ling.Tools.ObjectPose.ObjectOriginCsv.Build(
+                model, withRot, includeBones: false, bakeRotationToPosition: false,
+                out int count, out int skippedMirror, out int skippedWedge);
 
             try
             {
-                System.IO.File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(true));
+                System.IO.File.WriteAllText(path, csv, new System.Text.UTF8Encoding(true));
                 Debug.Log($"[ObjectOrigin] 原点を書き出し: {count} 件 → {path}" +
                           $"（除外: ミラー {skippedMirror} 件 / 姿勢くさび {skippedWedge} 件）");
             }
@@ -942,13 +894,6 @@ namespace Poly_Ling.Player
                 Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultContainerName));
 
             OnRepaint?.Invoke();
-        }
-
-        private static string EscapeCsvField(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            if (s.IndexOf(',') < 0 && s.IndexOf('"') < 0) return s;
-            return "\"" + s.Replace("\"", "\"\"") + "\"";
         }
 
         private static List<string> SplitCsvLine(string line)

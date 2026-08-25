@@ -44,14 +44,37 @@ namespace Poly_Ling.Player
         private TextField _nameField;
 
         /// <summary>
+        /// 追加先が AddToExisting のときに名前欄の代わりに出す追加先オブジェクト選択。
+        /// RebuildSettings のたびに NF が差し替える。
+        /// </summary>
+        private DropdownField _addTargetField;
+
+        /// <summary>_addTargetField の選択肢に対応する MeshContextList インデックス。</summary>
+        private readonly List<int> _addTargetIndices = new List<int>();
+
+        /// <summary>
+        /// AddToExisting のときの追加先。-1 は「選択オブジェクトリストの先頭」。
+        /// 名前欄のドロップダウンで選ぶ。
+        /// </summary>
+        private int _addTargetIndex = -1;
+
+        /// <summary>
+        /// 選択オブジェクトリストの先頭にある描画オブジェクトの MeshContextList インデックス。
+        /// 追加先ドロップダウンの既定選択に使う。未配線・未選択は -1。
+        /// </summary>
+        public Func<int> GetFirstSelectedDrawableIndex;
+
+        /// <summary>
         /// 生成ボタン押下時。
         /// (MeshObject, meshName, worldPosition, poseRotationEuler, poseScale,
-        ///  ignorePoseInArmature, addMode)
+        ///  ignorePoseInArmature, addMode, addTargetIndex)
         /// poseRotationEuler / poseScale は「ベイクしなかった」成分。
         /// 呼出し側が MeshContext.BoneTransform へ設定する。ベイク済みなら
         /// それぞれ Vector3.zero / Vector3.one が渡る。
+        /// addTargetIndex は addMode == AddToExisting のときの追加先
+        /// （MeshContextList インデックス）。-1 なら選択オブジェクトリストの先頭。
         /// </summary>
-        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
+        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode, int> OnMeshCreated;
 
         /// <summary>選択中の描画オブジェクトの MeshObject を返す(なければ null)。取り込み/反映で使用。</summary>
         public Func<MeshObject> GetSelectedMeshObject;
@@ -90,6 +113,12 @@ namespace Poly_Ling.Player
         /// <summary>現在の追加先モード。ギズモ中心の座標系判定に使う。</summary>
         public PrimitiveAddMode CurrentAddMode => _addMode;
 
+        /// <summary>
+        /// AddToExisting のときの追加先（MeshContextList インデックス）。
+        /// -1 は「選択オブジェクトリストの先頭」。穴つなぎも同じ値を使う。
+        /// </summary>
+        public int CurrentAddTargetIndex => _addTargetIndex;
+
         // ---- 配置ギズモのサブモード切替（LiveWireInMainViewport のときだけ UI を出す） ----
 
         /// <summary>現在の配置ギズモサブモードを返す。未配線なら Move 扱い。</summary>
@@ -115,10 +144,11 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear }
 
         private static readonly string[] ShapeKeys =
-            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge" };
+            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
+              "NGonGear","NGonStar","InvoluteGear" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced }
@@ -127,8 +157,9 @@ namespace Poly_Ling.Player
         private static readonly ShapeKind[] BasicShapes =
             { ShapeKind.Cube, ShapeKind.Sphere, ShapeKind.Cylinder, ShapeKind.Capsule, ShapeKind.Plane, ShapeKind.Pyramid };
         private static readonly ShapeKind[] AdvancedShapes =
-            { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.PlaceObject,
-              ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
+            { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
+              ShapeKind.NGonGear, ShapeKind.NGonStar, ShapeKind.InvoluteGear,
+              ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
 
         // ================================================================
         // パラメータ
@@ -216,11 +247,47 @@ namespace Poly_Ling.Player
             if (_bakeScaleToggle != null) _bakeScaleToggle.style.display = d;
         }
 
+        /// <summary>
+        /// 追加先ドロップダウンを操作した直後に呼ぶ。
+        /// ベイクの表示・名前欄の見せ分け・追加先候補をまとめて追随させる。
+        /// </summary>
+        private void OnAddModeChanged()
+        {
+            RefreshBakeToggleVis();
+            RefreshAddTargetChoices();
+            RefreshNameFieldMode();
+        }
+
+        /// <summary>
+        /// 図形ごとに効かない共通 UI を隠す。
+        ///
+        /// 歪み複製と穴つなぎは OnMeshCreated を通らないため、共通の姿勢
+        /// （位置・回転・スケール・ベイク・頂点結合）は一切効かない。歪み複製は
+        /// さらに独自の「出力先」「出力モード」を持つので追加先も効かない。
+        /// 出しっぱなしにすると操作しても何も起きない欄になるため隠す。
+        /// </summary>
+        private void RefreshCommonUiVisibility()
+        {
+            bool useAddMode = _current != ShapeKind.ObjectArray;
+            bool usePose    = _current != ShapeKind.ObjectArray && _current != ShapeKind.Bridge;
+
+            if (_addModeDd != null)
+                _addModeDd.style.display = useAddMode ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_poseFold != null)
+                _poseFold.style.display  = usePose ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
         /// <summary>ベイクしなかった回転（描画オブジェクトの姿勢へ渡す分）。</summary>
         private Vector3 PoseRotation => BakeRotationEffective ? Vector3.zero : _rotEuler;
 
         /// <summary>ベイクしなかったスケール（描画オブジェクトの姿勢へ渡す分）。</summary>
         private Vector3 PoseScale    => BakeScaleEffective    ? Vector3.one  : _scale;
+
+        /// <summary>追加先ドロップダウン。図形別に表示を切り替えるため保持する。</summary>
+        private DropdownField _addModeDd;
+
+        /// <summary>姿勢フォールド。図形別に表示を切り替えるため保持する。</summary>
+        private Foldout _poseFold;
 
         // TRS 行の FloatField 参照。外部（将来のギズモ）から値を書き戻すために保持する。
         private readonly FloatField[] _posFields = new FloatField[3];
@@ -250,7 +317,7 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private readonly Button[]  _shapeBtns = new Button[15];
+        private readonly Button[]  _shapeBtns = new Button[19];
         private VisualElement      _shapeGrid;
         private VisualElement      _settingsContainer;
         private VisualElement      _profileEditorContainer;
@@ -584,11 +651,13 @@ namespace Poly_Ling.Player
             addModeDd.RegisterValueChangedCallback(e =>
             {
                 _addMode = (PrimitiveAddMode)addModeChoices.IndexOf(e.newValue);
-                RefreshBakeToggleVis();
+                OnAddModeChanged();
             });
+            _addModeDd = addModeDd;
             parent.Add(addModeDd);
 
             var poseFold = new Foldout { text = T("ObjectPose"), value = false };
+            _poseFold = poseFold;
             poseFold.style.marginTop    = 2;
             poseFold.style.marginBottom = 2;
             var poseFoldLabel = poseFold.Q<Label>();
@@ -758,6 +827,13 @@ namespace Poly_Ling.Player
             if (_sectionEl == null) return true;   // 判定材料が無い場合は従来どおり描画する
             return _sectionEl.resolvedStyle.display != DisplayStyle.None;
         }
+
+        /// <summary>
+        /// 穴つなぎの種マーカーをビューポートへ出す状態か。
+        /// このパネルが表示中で、かつ選んでいる図形が「ブリッジ」のときだけ true。
+        /// ブリッジは専用の InteractionMode を持たないため、Viewer 側はこの値で判定する。
+        /// </summary>
+        public bool BridgeOverlayActive => IsSectionVisible() && _current == ShapeKind.Bridge;
 
         // ================================================================
         // メイン3Dウインドウへのライブワイヤ提出
@@ -936,7 +1012,11 @@ namespace Poly_Ling.Player
             // 名前欄を組み立てる前に非重複候補へ更新する。
             RefreshMeshNameCandidate();
             RebuildSettings();
+            RefreshCommonUiVisibility();
             _dirty = true;
+
+            // ブリッジへ入った / から出たときに種マーカーを出し入れする。
+            OnBridgeSeedsChanged?.Invoke();
         }
 
         // ================================================================
@@ -945,8 +1025,9 @@ namespace Poly_Ling.Player
 
         private void RebuildSettings()
         {
-            // 旧 UI の TextField は破棄される。NF が呼ばれれば新しいものが入る。
-            _nameField = null;
+            // 旧 UI の TextField / ドロップダウンは破棄される。NF が呼ばれれば新しいものが入る。
+            _nameField      = null;
+            _addTargetField = null;
 
             _profileEditorContainer?.Clear();
             _settingsContainer?.Clear();
@@ -967,6 +1048,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.ObjectArray: BuildObjectArrayUI(_settingsContainer); break;
                 case ShapeKind.Text:        BuildTextUI(_settingsContainer);        break;
                 case ShapeKind.Bridge:      BuildBridgeUI(_settingsContainer);      break;
+                case ShapeKind.Ribbon:      BuildRibbonUI(_settingsContainer);      break;
+                case ShapeKind.NGonGear:     BuildNGonGearUI(_settingsContainer);     break;
+                case ShapeKind.NGonStar:     BuildNGonStarUI(_settingsContainer);     break;
+                case ShapeKind.InvoluteGear: BuildInvoluteGearUI(_settingsContainer); break;
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -4114,6 +4199,18 @@ namespace Poly_Ling.Player
                 case ShapeKind.Text:
                     mo = GenerateTextMesh();
                     break;
+                case ShapeKind.Ribbon:
+                    mo = GenerateRibbonMesh();
+                    break;
+                case ShapeKind.NGonGear:
+                    mo = GenerateNGonGearMesh();
+                    break;
+                case ShapeKind.NGonStar:
+                    mo = GenerateNGonStarMesh();
+                    break;
+                case ShapeKind.InvoluteGear:
+                    mo = GenerateInvoluteGearMesh();
+                    break;
                 // 穴つなぎはプレビューだけ MeshObject を作る（座標はワールド空間）。
                 // 実生成は書き込み先の既存頂点を参照するため OnBridgeGenerate へ流す。
                 case ShapeKind.Bridge:
@@ -4148,6 +4245,23 @@ namespace Poly_Ling.Player
             return mo;
         }
 
+        /// <summary>
+        /// Generate() を通らずに MeshObject を作る経路（プロファイルの「メッシュへ反映」）で、
+        /// 姿勢の回転・スケールを Generate() 末尾と同じ規則で処理する。
+        ///
+        /// ベイク ON の成分だけ頂点へ焼き込む。OFF の成分は呼出し側が
+        /// PoseRotation / PoseScale として描画オブジェクトの姿勢へ入れる。
+        /// 平行移動は焼き込まない（追加先別の処理が _worldPos を扱う）。
+        /// </summary>
+        private void ApplyPoseForDirectMeshCreate(MeshObject mo)
+        {
+            if (mo == null) return;
+            PrimitiveMeshTransform.ApplyRotationScale(
+                mo,
+                BakeRotationEffective ? _rotEuler : Vector3.zero,
+                BakeScaleEffective    ? _scale    : Vector3.one);
+        }
+
         private string Name()
         {
             switch (_current)
@@ -4165,6 +4279,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.Pipe:       return _pipeP.MeshName;
                 case ShapeKind.PlaceObject: return _placeP.MeshName;
                 case ShapeKind.Text:       return _textP.MeshName;
+                case ShapeKind.Ribbon:     return _ribbonP.MeshName;
+                case ShapeKind.NGonGear:     return _ngonGearP.MeshName;
+                case ShapeKind.NGonStar:     return _ngonStarP.MeshName;
+                case ShapeKind.InvoluteGear: return _involGearP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
                 case ShapeKind.Bridge:     return BridgeMeshName;
@@ -4190,6 +4308,13 @@ namespace Poly_Ling.Player
                 case ShapeKind.Pipe:        _pipeP.MeshName    = name; break;
                 case ShapeKind.PlaceObject: _placeP.MeshName   = name; break;
                 case ShapeKind.Text:        _textP.MeshName    = name; break;
+                case ShapeKind.Ribbon:      _ribbonP.MeshName  = name; break;
+                case ShapeKind.NGonGear:     _ngonGearP.MeshName = name; break;
+                case ShapeKind.NGonStar:     _ngonStarP.MeshName = name; break;
+                case ShapeKind.InvoluteGear: _involGearP.MeshName = name; break;
+                // 穴つなぎも非重複候補の対象にする（Name() は BridgeMeshName を返すため、
+                // ここを欠かすと RefreshMeshNameCandidate が名前を書き戻せない）。
+                case ShapeKind.Bridge:      SetBridgeMeshName(name); break;
             }
         }
 
@@ -4291,8 +4416,11 @@ namespace Poly_Ling.Player
             var mo = LineProfileExtractor.PolylineToLineMesh(_revProfile, _revP.MeshName, _revP.CloseLoop);
             if (mo == null || mo.FaceCount == 0) { _statusLabel.text = T("NoLinesFound"); return; }
 
+            ApplyPoseForDirectMeshCreate(mo);
+
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
-            OnMeshCreated?.Invoke(mo, _revP.MeshName, _worldPos, Vector3.zero, Vector3.one, false, _addMode);
+            OnMeshCreated?.Invoke(mo, _revP.MeshName, _worldPos, PoseRotation, PoseScale, false,
+                _addMode, _addTargetIndex);
         }
 
         /// <summary>選択オブジェクトの全2頂点ラインを Profile2D ループへ取り込む。</summary>
@@ -4324,8 +4452,11 @@ namespace Poly_Ling.Player
             var mo = LineProfileExtractor.LoopsToLineMesh(_p2dLoops, _p2dP.MeshName);
             if (mo == null || mo.FaceCount == 0) { _statusLabel.text = T("NoLinesFound"); return; }
 
+            ApplyPoseForDirectMeshCreate(mo);
+
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
-            OnMeshCreated?.Invoke(mo, _p2dP.MeshName, _worldPos, Vector3.zero, Vector3.one, false, _addMode);
+            OnMeshCreated?.Invoke(mo, _p2dP.MeshName, _worldPos, PoseRotation, PoseScale, false,
+                _addMode, _addTargetIndex);
         }
 
         // ================================================================
@@ -4382,7 +4513,8 @@ namespace Poly_Ling.Player
                     var mo = Generate(false);
                     if (mo == null) { _statusLabel.text = "生成失敗"; return; }
                     _statusLabel.text = T("VertsFaces", mo.VertexCount, mo.FaceCount);
-                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, PoseRotation, PoseScale, false, _addMode);
+                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, PoseRotation, PoseScale, false,
+                        _addMode, _addTargetIndex);
 
                     // 次の生成に備えて名前欄を非重複候補へ更新する。
                     // AddToExisting は既存オブジェクトへの統合なので新しい名前は要らない。
@@ -4440,6 +4572,10 @@ namespace Poly_Ling.Player
                     return OnObjectArrayGenerate != null
                         && _objArrayPanel != null
                         && _objArrayPanel.SelectedMasterIndices().Count > 0;
+
+                // 部品が1つも無いと頂点0のメッシュになる。
+                case ShapeKind.Ribbon:
+                    return _ribbonP.BuildLoops || _ribbonP.BuildTails || _ribbonP.BuildKnot;
 
                 // フォントが開けて、かつ文字列が空でないこと。
                 case ShapeKind.Text:
@@ -4586,14 +4722,90 @@ namespace Poly_Ling.Player
         /// 名前欄。生成した TextField を控えておき、非重複候補への更新で書き戻す
         /// （設定UI 全体を作り直さずに名前だけ差し替えるため）。
         /// </summary>
+        /// <summary>
+        /// 名前欄。
+        ///
+        /// 追加先が「新しい描画オブジェクト」「新しいモデル」のときは、これから作る
+        /// オブジェクトの名前を打つ TextField。
+        /// 「既存の描画オブジェクトに追加」のときは、既存オブジェクトから追加先を選ぶ
+        /// ドロップダウンへ差し替える（これから名前を付ける対象が無いため）。
+        /// 2 つは同じ行に置き、display の切り替えだけで見せ分ける。
+        /// </summary>
         private VisualElement NF(Func<string> get, Action<string> set)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
             row.Add(ML(T("Name")));
+
             var f = new TextField { value = get() }; f.style.flexGrow = 1;
             f.RegisterValueChangedCallback(e => set(e.newValue));
             _nameField = f;
-            row.Add(f); return row;
+            row.Add(f);
+
+            var dd = new DropdownField(new List<string>(), -1);
+            dd.style.flexGrow = 1;
+            dd.RegisterValueChangedCallback(e =>
+            {
+                int i = dd.index;
+                _addTargetIndex = (i >= 0 && i < _addTargetIndices.Count) ? _addTargetIndices[i] : -1;
+                D();
+            });
+            _addTargetField = dd;
+            row.Add(dd);
+
+            RefreshAddTargetChoices();
+            RefreshNameFieldMode();
+            return row;
+        }
+
+        /// <summary>
+        /// 追加先ドロップダウンの選択肢を作り直す。
+        /// 既定選択は「選択オブジェクトリストの先頭」。前回選んだ対象がまだ在れば維持する。
+        /// </summary>
+        private void RefreshAddTargetChoices()
+        {
+            if (_addTargetField == null) return;
+
+            _addTargetIndices.Clear();
+            var labels = new List<string>();
+
+            var list = GetDrawableIndexList?.Invoke();
+            if (list != null)
+            {
+                foreach (var (label, masterIndex) in list)
+                {
+                    labels.Add(label);
+                    _addTargetIndices.Add(masterIndex);
+                }
+            }
+
+            _addTargetField.choices = labels;
+
+            if (labels.Count == 0)
+            {
+                _addTargetIndex = -1;
+                _addTargetField.SetValueWithoutNotify(string.Empty);
+                return;
+            }
+
+            // 選択候補は選択オブジェクトリストの先頭。前回の選択が残っていればそちらを優先。
+            int want = _addTargetIndices.IndexOf(_addTargetIndex);
+            if (want < 0)
+            {
+                int first = GetFirstSelectedDrawableIndex?.Invoke() ?? -1;
+                want = _addTargetIndices.IndexOf(first);
+            }
+            if (want < 0) want = 0;
+
+            _addTargetIndex = _addTargetIndices[want];
+            _addTargetField.SetValueWithoutNotify(labels[want]);
+        }
+
+        /// <summary>名前欄（TextField）と追加先ドロップダウンの見せ分けを現在の追加先へ合わせる。</summary>
+        private void RefreshNameFieldMode()
+        {
+            bool existing = _addMode == PrimitiveAddMode.AddToExisting;
+            if (_nameField      != null) _nameField.style.display      = existing ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_addTargetField != null) _addTargetField.style.display = existing ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set)

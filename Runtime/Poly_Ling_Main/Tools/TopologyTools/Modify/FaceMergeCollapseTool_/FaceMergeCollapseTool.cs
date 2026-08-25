@@ -194,6 +194,10 @@ namespace Poly_Ling.Tools
             foreach (var t in targets) realIndices.Add(t.MeshIndex);
             var captureIndices = MirrorBranchOps.CollectMirrorCaptureIndices(model, realIndices);
 
+            // ミラー側への伝播計画。添字恒等対応の検証を含むため、位相を変える前に取る。
+            // ミラー側には実体側とまったく同じ操作を同じ添字で掛ける（ApplyToMirrors）。
+            var mirrorPlan = MirrorBranchOps.CaptureMirrorRebuildPlan(model, realIndices);
+
             var before = new MultiMeshTopologySnapshot();
             if (undo != null)
                 foreach (int idx in captureIndices) before.CaptureMesh(model, idx);
@@ -204,6 +208,10 @@ namespace Poly_Ling.Tools
             int skippedTotal       = 0;
             int okMeshes           = 0;
             string lastReason      = null;
+
+            // ミラー側へ同じ操作を掛けるための入力（変更前の添字）。
+            var opInputs = new Dictionary<int, List<VertexPair>>();
+            foreach (var t in targets) opInputs[t.MeshIndex] = t.Edges;
 
             foreach (var t in targets)
             {
@@ -235,9 +243,14 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            // 実体側の位相が変わったので、生成ミラーを作り直す。
-            // ミラー側は選択できないため、実体側の結果を反映する以外に手段が無い。
-            int mirrorRebuilt = MirrorBranchOps.RebuildDerivedMirrorGeometry(model);
+            // 実体側に掛けたのと同じ操作を、同じ添字でミラー側にも掛ける。
+            // 検証を落ちたペアは触らず、理由を ApplyToMirrors が出す。
+            int mirrorApplied = MirrorBranchOps.ApplyToMirrors(model, mirrorPlan, (realIdx, mirrorMo) =>
+            {
+                if (!opInputs.TryGetValue(realIdx, out var src)) return false;
+                return FaceMergeCollapseOps.ExecuteMany(mirrorMo, src,
+                    out _, out _, out _, out _, out _);
+            });
 
             _context.OnTopologyChanged();
 
@@ -256,7 +269,7 @@ namespace Poly_Ling.Tools
             }
 
             Debug.Log($"[FaceMergeCollapseTool] 結合完了: オブジェクト {okMeshes} / 結合 {mergedTotal} 箇所 "
-                    + $"/ 消えた面 {removedFaceTotal} / 消えた頂点 {removedVertexTotal} / 除外 {skippedTotal} / ミラー再構築 {mirrorRebuilt}");
+                    + $"/ 消えた面 {removedFaceTotal} / 消えた頂点 {removedVertexTotal} / 除外 {skippedTotal} / ミラー伝播 {mirrorApplied} (対象 {mirrorPlan.Entries.Count} / 検証落ち {mirrorPlan.RejectedCount})");
         }
     }
 }

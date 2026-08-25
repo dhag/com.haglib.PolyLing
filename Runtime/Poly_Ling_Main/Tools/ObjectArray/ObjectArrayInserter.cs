@@ -13,11 +13,14 @@
 //   の3つを同時に満たす必要がある。
 //
 // 【挿入で既存の HierarchyParentIndex がずれる】
-//   ModelContext.Insert (ModelContext.cs:1183-1210) は選択インデックスと
-//   モーフエクスプレッションは直すが、HierarchyParentIndex は直さない。
-//   挿入位置以降を指していた参照が1つぶんずれるため、ここで先に足しておく。
-//   既存の階層をまるごと組み直すより、ずれたぶんだけ直すほうが
-//   もともと不整合な階層に触れずに済む。
+//   付け替えは ModelContext.Insert (ModelContext.cs:1298) が行う。
+//   adjustSelection = true のとき RemapIndexReferences
+//   (ModelContext.cs:1229-1271) が ParentIndex / HierarchyParentIndex /
+//   MorphParentIndex / BakedMirrorSourceIndex / Humanoid 割当 / T ポーズ退避を
+//   まとめて繰り下げるため、ここで先に足してはいけない。
+//   （以前ここに事前シフトがあり、Insert の付け替えと二重に掛かって
+//     挿入位置以降を親に持つ無関係な描画オブジェクトの親索引が
+//     +1 ではなく +2 になり、末尾を親にしていたものは -1 へ飛んでいた。）
 //
 // 【生成物のトランスフォーム】
 //   BoneTransform は単位（UseLocalTransform = false）にする。頂点は
@@ -114,13 +117,11 @@ namespace Poly_Ling.Tools.ObjectArray
             int baseDepth = target != null ? target.Depth + 1 : 0;
             int insertAt  = ResolveInsertIndex(model, targetMasterIndex);
 
-            // 挿入で後ろへずれる既存参照を先に直す。実際に入れる数だけずらす
+            // 入れるものが1つも無ければ何もしない
             // （メッシュを持たない要素は下のループで飛ばすため、先に数える）。
             int validCount = 0;
             foreach (var piece in pieces) if (piece?.Mesh != null) validCount++;
             if (validCount == 0) return added;
-
-            ShiftHierarchyParents(model, insertAt, validCount);
 
             // 相対深さごとに「直近に置いた実インデックス」を覚え、親を解決する。
             // 生成物は入力リスト順（親が先）に並んでいるため、これで足りる。
@@ -148,7 +149,8 @@ namespace Poly_Ling.Tools.ObjectArray
 
                 model.Insert(index, ctx);
 
-                // Insert のあとに書く。Insert 自体は階層参照を触らない。
+                // Insert のあとに書く。挿入前は自身の親索引が -1 で、
+                // Insert の付け替え対象にならないため、ここで確定させる。
                 ctx.HierarchyParentIndex = parentIndex;
                 ctx.ParentIndex          = parentIndex;
 
@@ -157,23 +159,6 @@ namespace Poly_Ling.Tools.ObjectArray
             }
 
             return added;
-        }
-
-        /// <summary>
-        /// insertAt 以降を指していた HierarchyParentIndex / ParentIndex を count ぶん進める。
-        /// </summary>
-        private static void ShiftHierarchyParents(ModelContext model, int insertAt, int count)
-        {
-            if (count <= 0) return;
-
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc == null) continue;
-
-                if (mc.HierarchyParentIndex >= insertAt) mc.HierarchyParentIndex += count;
-                if (mc.ParentIndex          >= insertAt) mc.ParentIndex          += count;
-            }
         }
 
         // ================================================================

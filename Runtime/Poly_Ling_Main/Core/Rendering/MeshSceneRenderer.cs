@@ -265,8 +265,32 @@ namespace Poly_Ling.Core
             "EnterVerticesMoved / EnterHoverChanged / EnterDisplaySettingsChanged) " +
             "経由で呼ぶこと。",
             error: false)]
+        /// <summary>
+        /// ボーン／法線ラインメッシュのキャッシュを破棄する。
+        ///
+        /// _boneMeshCache は (モデル番号, MeshContext 番号) をキーに Mesh を保持する。
+        /// Mesh はネイティブオブジェクトで、Dictionary を Clear するだけでは解放されない。
+        /// モデルを読み直すと MeshContext の並びが変わり、旧エントリは二度と参照されない
+        /// まま常駐する。プロジェクトを開き直すたびにボーン本数ぶん積み上がるため、
+        /// アダプタ再構築のたびにここで破棄する。
+        /// </summary>
+        public void ClearMeshCaches()
+        {
+            foreach (var mesh in _boneMeshCache.Values)
+                if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
+            _boneMeshCache.Clear();
+
+            foreach (var mesh in _normalMeshCache.Values)
+                if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
+            _normalMeshCache.Clear();
+        }
+
         public void RebuildAdapter(int mi, ModelContext model)
         {
+            // MeshContext の並びが変わるため、番号をキーにした Mesh キャッシュは
+            // ここで必ず捨てる（放置すると読み直しのたびにリークする）。
+            ClearMeshCaches();
+
             while (_adapters.Count <= mi) _adapters.Add(null);
             _adapters[mi]?.Dispose();
             _adapters[mi] = null;
@@ -367,10 +391,21 @@ namespace Poly_Ling.Core
 
             var selDrawable = model.SelectedDrawableMeshIndices;
 
+            // ウェイト可視化中のメッシュはベース面を描かない。
+            // 同じ UnityMesh を identity で二重に描くことになり、材質の renderQueue
+            // （MaterialDataConverter: 不透明 2000 / cutout 2450 / 半透明 3000）が
+            // 可視化シェーダ (Geometry+1 = 2001) より後になると、ベース面が
+            // ヒートマップ色を上から塗り潰して可視化が一切見えなくなる。
+            // 対象の決め方は CollectWeightVisTargets に一本化してある。
+            var weightVisTargets = CollectWeightVisTargets(model);
+
             for (int i = 0; i < drawables.Count; i++)
             {
                 var ctx = drawables[i].Context;
                 if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
+
+                if (weightVisTargets != null && weightVisTargets.Contains(drawables[i].MasterIndex))
+                    continue;
 
                 bool isSel = selDrawable.Contains(drawables[i].MasterIndex);
                 bool isMirror = ctx.Type == MeshType.BakedMirror || ctx.Type == MeshType.MirrorSide;
@@ -950,27 +985,62 @@ namespace Poly_Ling.Core
         /// </summary>
         public void PrepareWeightVisualization(ProjectContext project)
         {
-            if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return;
-            if (project == null) return;
+            var masterIndices = CollectWeightVisTargets(project?.CurrentModel);
+            if (masterIndices == null) return;
 
             var model = project.CurrentModel;
-            if (model == null) return;
 
-            int targetBone = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
-
-            int targetMeshIdx = Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel?.CurrentTargetMesh ?? -1;
-            var masterIndices = targetMeshIdx >= 0
-                ? new System.Collections.Generic.List<int> { targetMeshIdx }
-                : new System.Collections.Generic.List<int>(model.SelectedDrawableMeshIndices);
+            // 複数ボーン合算表示（数値設定パネルの「色」トグル）が指定されていれば
+            // そちらを優先する。指定が無ければ従来の 1 ボーン表示。
+            var targetBones = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBones;
+            int targetBone  = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
 
             foreach (int masterIdx in masterIndices)
             {
                 var ctx = model.GetMeshContext(masterIdx);
                 if (ctx?.UnityMesh == null || ctx.MeshObject == null || !ctx.IsVisible) continue;
 
-                var mesh = ctx.UnityMesh;
-                Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(mesh, ctx.MeshObject, targetBone);
+                if (targetBones != null)
+                    Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(
+                        ctx.UnityMesh, ctx.MeshObject, targetBones);
+                else
+                    Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(
+                        ctx.UnityMesh, ctx.MeshObject, targetBone);
             }
+        }
+
+        /// <summary>CollectWeightVisTargets の戻り値。使い回して毎フレームの確保を避ける。</summary>
+        private static readonly List<int> _weightVisTargets = new List<int>();
+
+        /// <summary>
+        /// ウェイト可視化の対象メッシュ（MasterIndex）を返す。可視化が無効なら null。
+        ///
+        /// 【一本化の理由】
+        /// 対象の決め方は SubmitMeshes（ベース面をスキップする判定）・
+        /// PrepareWeightVisualization（頂点カラーを書く対象）・
+        /// SubmitWeightVisualization（可視化を描く対象）の 3 箇所で必ず一致していなければ
+        /// ならない。1 箇所でもずれると「ベース面を消したのに可視化は描かれない」
+        /// あるいは「両方描かれてベース面が可視化色を上書きする」状態になる。
+        /// 判定はこの関数だけが持つこと。
+        /// </summary>
+        /// <remarks>
+        /// SubmitMeshes は毎フレーム・カメラごとに呼ばれるため、戻り値は使い回しの
+        /// 静的リストとし、呼び出しごとに新規確保しない。呼び出しは入れ子にならない
+        /// （SubmitMeshes → 完了 → SubmitWeightVisualization の順）ので共有して問題ない。
+        /// 可視化が無効なときは Clear すら行わず即 null を返す。
+        /// </remarks>
+        private static List<int> CollectWeightVisTargets(ModelContext model)
+        {
+            if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return null;
+            if (model == null) return null;
+
+            _weightVisTargets.Clear();
+
+            int targetMeshIdx = Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel?.CurrentTargetMesh ?? -1;
+            if (targetMeshIdx >= 0) _weightVisTargets.Add(targetMeshIdx);
+            else                    _weightVisTargets.AddRange(model.SelectedDrawableMeshIndices);
+
+            return _weightVisTargets;
         }
 
         /// <summary>
@@ -982,19 +1052,15 @@ namespace Poly_Ling.Core
         /// </summary>
         public void SubmitWeightVisualization(ProjectContext project, Camera cam)
         {
-            if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return;
-            if (project == null || cam == null) return;
+            if (cam == null) return;
+
+            var masterIndices = CollectWeightVisTargets(project?.CurrentModel);
+            if (masterIndices == null) return;
 
             var visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
             if (visMat == null) return;
 
             var model = project.CurrentModel;
-            if (model == null) return;
-
-            int targetMeshIdx = Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel?.CurrentTargetMesh ?? -1;
-            var masterIndices = targetMeshIdx >= 0
-                ? new System.Collections.Generic.List<int> { targetMeshIdx }
-                : new System.Collections.Generic.List<int>(model.SelectedDrawableMeshIndices);
 
             foreach (int masterIdx in masterIndices)
             {
@@ -1045,13 +1111,7 @@ namespace Poly_Ling.Core
             _adapters.Clear();
             _selectedMeshIndexForDraw.Clear();
 
-            foreach (var mesh in _boneMeshCache.Values)
-                if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
-            _boneMeshCache.Clear();
-
-            foreach (var mesh in _normalMeshCache.Values)
-                if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
-            _normalMeshCache.Clear();
+            ClearMeshCaches();
             _normalsSuppressed = false;
 
             if (_boneMaterial != null)

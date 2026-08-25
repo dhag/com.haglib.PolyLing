@@ -368,6 +368,12 @@ namespace Poly_Ling.Serialization
         /// <summary>Unity Humanoid 割当名（空/null=非割当）。#5b: per-bone。</summary>
         public string humanBodyBone;
 
+        /// <summary>
+        /// 左右で対になるボーンの MeshContextList 索引（-1=対なし）。
+        /// スキンド変換が確定させた値。ここに無いと保存往復で消える。
+        /// </summary>
+        public int mirrorBoneIndex = -1;
+
         /// <summary>Humanoid マッスル可動域（null=既定使用）。#5d-1: per-bone。</summary>
         public HumanLimitDataDTO humanLimit;
 

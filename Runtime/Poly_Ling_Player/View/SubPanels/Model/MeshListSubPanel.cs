@@ -63,6 +63,7 @@ namespace Poly_Ling.MeshListV2
         private Label _vertexCountLabel, _faceCountLabel, _triCountLabel, _quadCountLabel, _ngonCountLabel;
         private Toggle _ignorePoseToggle;
         private Toggle _preserveNormalsToggle;
+        private Toggle _mirrorBranchRootToggle;
         // ミラーモード（なし/分離/結合）。⇆ ボタンは有無だけを切り替えるので、
         // 結合(2) の指定はここで行う。
         private DropdownField _mirrorModeDropdown;
@@ -330,6 +331,14 @@ namespace Poly_Ling.MeshListV2
             indentRow.Add(_indentValueLabel);
             root.Add(indentRow);
 
+            // ── すべてのオブジェクトを選択
+            var selectAllRow = new VisualElement();
+            selectAllRow.style.flexDirection = FlexDirection.Row;
+            selectAllRow.style.marginBottom  = 3;
+            selectAllRow.Add(MakeSmallBtn("すべてのオブジェクトを選択", "btn-select-all",
+                                          "リストにある全オブジェクトを選択する"));
+            root.Add(selectAllRow);
+
             var filterLabel = new Label("フィルタ:");
             filterLabel.style.color    = new StyleColor(Color.white);
             filterLabel.style.fontSize = 10;
@@ -497,13 +506,42 @@ namespace Poly_Ling.MeshListV2
                 // 「なし」への切り替えはミラー側メッシュの始末を伴う。
                 // 「なし」からの切り替えも同様に生成が要る。
                 // 分離(1) ↔ 結合(2) は MQO の属性が変わるだけなので属性コマンドで足りる。
-                int prev = _selectedAdapters[0].MirrorType;
-                if (mode == 0 || prev == 0)
-                    SendCmd(new SetMirrorEnabledCommand(ModelIndex, indices, mode != 0));
+                //
+                // 生成・始末の対象は、ミラー側メッシュをまだ持たない行だけに絞る。
+                // 実在するペアをここで解体させない。
+                // 判定は行ごとに行う。以前は _selectedAdapters[0].MirrorType を
+                // 全行の分岐に使っており、先頭行の状態で対象全部が引きずられていた。
+                var enableTargets = _selectedAdapters
+                    .Where(a => !HasLiveMirrorPeer(a))
+                    .Where(a => mode == 0 ? a.MirrorType != 0 : a.MirrorType == 0)
+                    .Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
+
+                if (enableTargets.Length > 0)
+                    SendCmd(new SetMirrorEnabledCommand(ModelIndex, enableTargets, mode != 0));
                 if (mode != 0)
                     SendCmd(new SetBatchMirrorTypeCommand(ModelIndex, indices, mode));
             });
             c.Add(LabeledRow("ミラー", _mirrorModeDropdown));
+
+            // ── ミラー分岐ルート ──────────────────────────────────────
+            //   エクスポート／スキンド変換で、このノードを含む配下を実体側と
+            //   ミラー側の2本の枝に分割する起点。ボーン生成より前に決めるメッシュ
+            //   属性なので、ボーンエディタではなくここで設定する。
+            _mirrorBranchRootToggle = new Toggle("ミラー分岐ルート") { name = "mirror-branch-root-toggle" };
+            _mirrorBranchRootToggle.style.color     = new StyleColor(Color.white);
+            _mirrorBranchRootToggle.style.marginTop = 2;
+            _mirrorBranchRootToggle.tooltip =
+                "このオブジェクトを含む配下を、実体側とミラー側の2本の枝に分割する。\n"
+                + "半身モデルの反対側を生成する起点。\n"
+                + "枝の中のオブジェクトは、ミラー設定の有無に関わらずボーンがミラー化される。";
+            _mirrorBranchRootToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_isReceiving || _ctx == null) return;
+                var indices = SelIndices();
+                if (indices.Length > 0)
+                    SendCmd(new SetMirrorBranchRootCommand(ModelIndex, indices, e.newValue));
+            });
+            c.Add(_mirrorBranchRootToggle);
 
             _preserveNormalsToggle = new Toggle("法線を保持(再計算しない)") { name = "preserve-normals-toggle" };
             _preserveNormalsToggle.style.color     = new StyleColor(Color.white);
@@ -905,7 +943,11 @@ namespace Poly_Ling.MeshListV2
             if (cache.NameLabel != null)
             {
                 if (adapter.IsMirrorSide)
-                { cache.NameLabel.text = $"\U0001FA9E {adapter.DisplayName}"; cache.NameLabel.style.opacity = 0.4f; }
+                {
+                    // 選択できる行を薄く描かない。薄さは「選べない（生成ミラー）」の印。
+                    cache.NameLabel.text = $"\U0001FA9E {adapter.DisplayName}";
+                    cache.NameLabel.style.opacity = adapter.IsSelectionBlocked ? 0.4f : 1f;
+                }
                 else if (adapter.IsRealSide)
                 { cache.NameLabel.text = $"\u21C6 {adapter.DisplayName}"; cache.NameLabel.style.opacity = 1f; }
                 else if (adapter.HasBakedMirrorChild)
@@ -1029,8 +1071,9 @@ namespace Poly_Ling.MeshListV2
         /// </summary>
         private void SetMirrorFromRow(SummaryTreeAdapter adapter)
         {
-            if (adapter == null || IsMirrorLocked(adapter)) return;
-            var targets = RowTargets(adapter, IsMirrorLocked);
+            if (adapter == null || HasLiveMirrorPeer(adapter)) return;
+            // ミラー側メッシュが実在する行は対象から外す。ペアを解体させないため。
+            var targets = RowTargets(adapter, HasLiveMirrorPeer);
             if (targets.Length == 0) return;
             // 属性を書くだけでなく、ミラー側メッシュの生成・始末まで行う。
             SendCmd(new SetMirrorEnabledCommand(ModelIndex, targets, adapter.MirrorType == 0));
@@ -1064,8 +1107,11 @@ namespace Poly_Ling.MeshListV2
             bool locked = IsMirrorLocked(adapter);
             bool on     = adapter.MirrorType > 0;
 
-            btn.text = adapter.IsMirrorSide ? "\U0001FA9E" : (on ? "\u21C6" : "");
-            btn.style.opacity = locked ? 0.5f : (on ? 1f : 0.3f);
+            // OFF のときもラベルを出す。空文字だと「押せるボタンがそこにある」ことが
+            // 見えず、ミラーを掛ける入口が存在しないように見えてしまう。
+            // 状態の区別は不透明度で付ける（ON=不透明 / OFF=薄い / ロック=中間）。
+            btn.text = adapter.IsMirrorSide ? "\U0001FA9E" : "\u21C6";
+            btn.style.opacity = locked ? 0.5f : (on ? 1f : 0.28f);
             btn.tooltip = adapter.IsMirrorSide
                 ? "ミラー側メッシュ。実体側の従属なのでここでは変更できません。"
                 : MirrorTooltip(adapter);
@@ -1081,25 +1127,41 @@ namespace Poly_Ling.MeshListV2
         /// <summary>
         /// ミラーの変更をロックする行か。
         ///
-        /// ・ミラー側そのもの（IsMirrorSide）は常にロック。実体側の従属のため。
-        /// ・PMX 由来のミラーはロック。ミラー側メッシュがファイル上の実データで、
-        ///   MirrorType を落とすと実体との対応が食い違うため。
-        /// ・MQO 由来はロックしない。ミラー側メッシュはインポータが実体側から生成したもので、
-        ///   MQO の mirror 属性を切り替えるのが本来の操作であるため。
+        /// ミラー側そのもの（IsMirrorSide）だけをロックする。実体側の従属で、
+        /// ここで切り替えても実体側との対応が変わらないため。
         ///
-        /// PMX か MQO かは ModelContext.FilePath の拡張子で判定する
-        /// （読込時にファイルパスがそのまま入る）。メッシュ単位で由来を記録した
-        /// フィールドは存在しないため、現状これが唯一の判別材料になる。
+        /// スキニング済みメッシュは特別扱いしない。
+        ///   ・分岐の中にあるメッシュは、変換時に反対側ボーンが作られ
+        ///     MirrorBoneWeight を持つ。ミラーを掛ければ PMX 型ミラーが
+        ///     正しいボーンに紐づいて生成される（CreateDerivedMirrorContext）。
+        ///   ・分岐の外にあるメッシュは反対側ボーンが存在しない。
+        ///     実体側と同じボーンで動く鏡像になるが、これは中心線上の
+        ///     オブジェクトを鏡像化する MQO 系ミラーと同じ結果であり、
+        ///     分岐を張らなかったという指定どおりの挙動。
         /// </summary>
         private bool IsMirrorLocked(SummaryTreeAdapter adapter)
         {
             if (adapter == null) return true;
-            // ミラー側そのものだけロックする。実体側の従属で、
-            // ここで切り替えても実体側との対応が変わらないため。
-            //
-            // 以前は PMX 由来の実体側もロックしていたが、解消時にミラー側を
-            // 破棄せず独立メッシュとして残すようにしたので、その必要はなくなった。
             return adapter.IsMirrorSide;
+        }
+
+        /// <summary>
+        /// ミラーの有無を切り替える操作（SetMirrorEnabledCommand）の対象から外す行か。
+        ///
+        /// ミラー側メッシュが実在する行を外す。実体側で切ると DisableMirror が
+        /// ミラー側を Mesh へ降格させ MirrorPairs から外す（＝ペアの解体）。
+        /// ミラー側はウェイトを持つ独立メッシュなので、選択・編集の途中で
+        /// ペアが解体されてはならない。ミラーの有無を扱えるのは、ミラー側メッシュを
+        /// まだ持たない行だけ。
+        ///
+        /// 選択できるかどうかとは別の判定であり、混ぜないこと。
+        /// 選択の可否は SummaryTreeAdapter.IsSelectionBlocked。
+        /// </summary>
+        private static bool HasLiveMirrorPeer(SummaryTreeAdapter adapter)
+        {
+            if (adapter == null) return true;
+            return adapter.IsMirrorSide || adapter.IsBakedMirror
+                || adapter.IsRealSide  || adapter.HasBakedMirrorChild;
         }
 
         private string MirrorTooltip(SummaryTreeAdapter adapter)
@@ -1260,8 +1322,10 @@ namespace Poly_Ling.MeshListV2
         {
             if (_isReceiving || _ctx == null) return;
             _selectedAdapters.Clear();
+            // 除外するのは生成ミラーだけ。ミラー側でもスキンド変換後の独立メッシュは
+            // 自分のウェイトを保存するため、選択できないとウェイトを塗れない。
             foreach (var item in selection)
-                if (item is SummaryTreeAdapter a && !a.IsBakedMirror && !a.IsMirrorSide)
+                if (item is SummaryTreeAdapter a && !a.IsSelectionBlocked)
                     _selectedAdapters.Add(a);
 
             _isReceiving = true;
@@ -1295,6 +1359,45 @@ namespace Poly_Ling.MeshListV2
             // IsFolding は IsExpanded の反転値 (folding = true で折りたたみ)
             if (a.MasterIndex >= 0)
                 SendCmd(new SetMeshFoldingCommand(ModelIndex, a.MasterIndex, !newExpanded));
+        }
+
+        /// <summary>
+        /// 現在のタブのリストにある全オブジェクトを選択する。
+        /// ツリーの展開状態は見ないため、折りたたまれている子も対象になる。
+        /// ミラー側 / ベイク済みミラーは選択対象外。
+        /// </summary>
+        private void SelectAllObjects()
+        {
+            var model = CurrentModel;
+            if (model == null) return;
+
+            IReadOnlyList<IMeshView> list = CurrentCategory switch
+            {
+                MeshCategory.Drawable       => model.DrawableList,
+                MeshCategory.Bone           => model.BoneList,
+                MeshCategory.RigidBody      => model.RigidBodyList,
+                MeshCategory.RigidBodyJoint => model.RigidBodyJointList,
+                _                           => null,
+            };
+            if (list == null) return;
+
+            var indices = new List<int>();
+            foreach (var v in list)
+            {
+                if (v == null) continue;
+                // 生成ミラーだけ外す（OnSelectionChanged と同じ判定）。
+                if ((v.IsBakedMirror || v.IsMirrorSide) && v.MirrorGeometryDerived) continue;
+                if (v.MasterIndex < 0) continue;
+                indices.Add(v.MasterIndex);
+            }
+            if (indices.Count == 0) return;
+
+            var arr = indices.ToArray();
+
+            // 同じ選択を送り直すと GPU 側が丸ごと作り直されるだけなので送らない。
+            if (SameAsCurrentSelection(arr)) return;
+
+            SendCmd(new SelectMeshCommand(ModelIndex, CurrentCategory, arr));
         }
 
         /// <summary>
@@ -1395,6 +1498,8 @@ namespace Poly_Ling.MeshListV2
             Q<Button>("btn-indent")   ?.RegisterCallback<ClickEvent>(_ => IndentSelected());
             Q<Button>("btn-duplicate")?.RegisterCallback<ClickEvent>(_ => DuplicateSelected());
             Q<Button>("btn-delete")   ?.RegisterCallback<ClickEvent>(_ => DeleteSelected());
+            Q<Button>("btn-select-all")?.RegisterCallback<ClickEvent>(_ => SelectAllObjects());
+
             Q<Button>("btn-show")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(true));
             Q<Button>("btn-hide")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(false));
 
@@ -1708,8 +1813,10 @@ namespace Poly_Ling.MeshListV2
         /// </summary>
         private void SetSelectedMirror(int mirrorType)
         {
+            // ミラー側メッシュが実在する行は対象から外す。ペアを解体させないため。
             var targets = _selectedAdapters
-                .Where(a => !IsMirrorLocked(a))
+                .Where(a => !HasLiveMirrorPeer(a))
+                .Where(a => mirrorType == 0 ? a.MirrorType != 0 : a.MirrorType == 0)
                 .Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
             if (targets.Length == 0) { Log("ミラーを変更できる行が選択されていません"); return; }
             SendCmd(new SetMirrorEnabledCommand(ModelIndex, targets, mirrorType != 0));
@@ -1947,6 +2054,8 @@ namespace Poly_Ling.MeshListV2
                 SL(_boneIndexLabel, "ボーンIdx: -"); SL(_masterIndexLabel, "マスターIdx: -");
                 _ignorePoseToggle?.SetValueWithoutNotify(false);
                 _preserveNormalsToggle?.SetValueWithoutNotify(false);
+                _mirrorBranchRootToggle?.SetValueWithoutNotify(false);
+                _mirrorBranchRootToggle?.SetEnabled(false);
                 SetMirrorMode(0, false);
                 _detailFoldout?.SetEnabled(false);
                 return;
@@ -1963,6 +2072,8 @@ namespace Poly_Ling.MeshListV2
                 _ignorePoseToggle?.SetEnabled(true);
                 _preserveNormalsToggle?.SetValueWithoutNotify(s.PreserveNormals);
                 _preserveNormalsToggle?.SetEnabled(true);
+                _mirrorBranchRootToggle?.SetValueWithoutNotify(s.IsMirrorBranchRoot);
+                _mirrorBranchRootToggle?.SetEnabled(true);
                 // ミラー側と PMX 由来のミラーは変更させない
                 SetMirrorMode(s.MirrorType, !IsMirrorLocked(_selectedAdapters[0]));
             }
@@ -1978,6 +2089,9 @@ namespace Poly_Ling.MeshListV2
                 bool pnAllSame = _selectedAdapters.All(a => a.MeshView.PreserveNormals == _selectedAdapters[0].MeshView.PreserveNormals);
                 _preserveNormalsToggle?.SetValueWithoutNotify(pnAllSame && _selectedAdapters[0].MeshView.PreserveNormals);
                 _preserveNormalsToggle?.SetEnabled(true);
+                bool mbAllSame = _selectedAdapters.All(a => a.MeshView.IsMirrorBranchRoot == _selectedAdapters[0].MeshView.IsMirrorBranchRoot);
+                _mirrorBranchRootToggle?.SetValueWithoutNotify(mbAllSame && _selectedAdapters[0].MeshView.IsMirrorBranchRoot);
+                _mirrorBranchRootToggle?.SetEnabled(true);
                 bool mtAllSame = _selectedAdapters.All(a => a.MirrorType == _selectedAdapters[0].MirrorType);
                 bool anyEditable = _selectedAdapters.Any(a => !IsMirrorLocked(a));
                 SetMirrorMode(_selectedAdapters[0].MirrorType, anyEditable, mixed: !mtAllSame);
@@ -2487,7 +2601,7 @@ namespace Poly_Ling.MeshListV2
             _selectedAdapters.Clear();
             if (_treeView == null) return;
             foreach (var item in _treeView.selectedItems)
-                if (item is SummaryTreeAdapter a && !a.IsBakedMirror && !a.IsMirrorSide)
+                if (item is SummaryTreeAdapter a && !a.IsSelectionBlocked)
                     _selectedAdapters.Add(a);
         }
 
@@ -2505,7 +2619,7 @@ namespace Poly_Ling.MeshListV2
             foreach (int idx in sel)
             {
                 var a = _treeRoot.GetAdapterByMasterIndex(idx);
-                if (a != null && !a.IsBakedMirror && !a.IsMirrorSide)
+                if (a != null && !a.IsSelectionBlocked)
                     _selectedAdapters.Add(a);
             }
         }

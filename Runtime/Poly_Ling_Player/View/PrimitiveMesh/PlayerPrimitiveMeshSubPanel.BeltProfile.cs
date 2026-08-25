@@ -69,9 +69,28 @@ namespace Poly_Ling.Player
             public Vector3? StartPoint;
             public Vector3? EndPoint;
 
+            /// <summary>
+            /// 上下につながった段グループの識別子。-1 は未設定（単独の梯子として扱う）。
+            /// フリルの2プロファイル補間で使う。
+            /// </summary>
+            public int GroupId = -1;
+
+            /// <summary>グループ内の段番号（0 が t=0 側）。</summary>
+            public int RowIndex;
+
+            /// <summary>グループの段数。</summary>
+            public int RowCount = 1;
+
             public int  RungCount => Left?.Count ?? 0;
             public bool HasData   => Left != null && Right != null
                                      && Left.Count >= 2 && Left.Count == Right.Count;
+        }
+
+        /// <summary>上下方向への探索オプション。</summary>
+        private sealed class BeltStackOption
+        {
+            /// <summary>見つけた梯子から上下（左右レール側）へ横断して段を足す。</summary>
+            public bool Enabled = true;
         }
 
         /// <summary>スプライン分割の設定。</summary>
@@ -113,6 +132,10 @@ namespace Poly_Ling.Player
 
             // ── 編集データ ──
             public List<Vector2> Points        = new List<Vector2>();
+
+            /// <summary>参考表示するだけのプロファイル（A/B のもう一方）。null なら描かない。</summary>
+            public List<Vector2> GhostPoints;
+
             public int           SelectedIndex = -1;
             public readonly HashSet<int> Sel   = new HashSet<int>();
 
@@ -226,8 +249,11 @@ namespace Poly_Ling.Player
         // 取り込み（選択四角形 → 基準ベルト）
         // ================================================================
 
-        /// <summary>選択中の描画オブジェクトの選択四角形から、順序付きの梯子状ベルトを1本取り込む。</summary>
-        private void ImportBeltFromMesh(List<BeltSnapshot> dst)
+        /// <summary>
+        /// 選択中の描画オブジェクトの選択四角形から、順序付きの梯子状ベルトを取り込む。
+        /// crossRows = true なら、そこから上下へ横断して段グループにまとめる（選択範囲外へも進む）。
+        /// </summary>
+        private void ImportBeltFromMesh(List<BeltSnapshot> dst, bool crossRows)
         {
             if (dst == null) return;
 
@@ -240,94 +266,98 @@ namespace Poly_Ling.Player
             var strip = BeltStripExtractor.Extract(mesh, sel);
             if (!strip.Ok) { SetBeltStatus(strip.Message); return; }
 
-            var snap = new BeltSnapshot
+            var baseRow = new BeltAutoStrip
             {
-                Left        = new List<Vector3>(strip.RungCount),
-                Right       = new List<Vector3>(strip.RungCount),
                 Closed      = strip.Closed,
                 FlipWinding = strip.FlipWinding,
             };
-            for (int i = 0; i < strip.RungCount; i++)
-            {
-                snap.Left .Add(mesh.Vertices[strip.Left[i]].Position);
-                snap.Right.Add(mesh.Vertices[strip.Right[i]].Position);
-            }
+            baseRow.Left .AddRange(strip.Left);
+            baseRow.Right.AddRange(strip.Right);
+            baseRow.Faces.AddRange(strip.Faces);
+
+            var bases = new List<BeltAutoStrip>(1) { baseRow };
+            var rows  = BeltStackExpander.ExpandAll(mesh, bases, crossRows, out _);
 
             dst.Clear();
-            dst.Add(snap);
+            foreach (var st in rows) dst.Add(ToBeltSnapshot(mesh, st));
 
-            SetBeltStatus(strip.Message);
+            SetBeltStatus(rows.Count > 1 ? $"{strip.Message} / 段 {rows.Count}" : strip.Message);
             D();
         }
 
         /// <summary>指定オブジェクト全体から梯子を自動検出して差し替える。</summary>
-        private void AutoDetectBelts(List<BeltSnapshot> dst, MeshObject mesh)
+        private void AutoDetectBelts(List<BeltSnapshot> dst, MeshObject mesh, bool crossRows)
         {
             if (dst == null) return;
             if (mesh == null) { SetBeltStatus(T("NoSourceObject")); return; }
 
-            var strips = BeltAutoDetector.Detect(mesh, out string message);
+            var strips = BeltStackDetector.Detect(mesh, crossRows, out string message);
 
             dst.Clear();
-            foreach (var st in strips)
-            {
-                var snap = new BeltSnapshot
-                {
-                    Left        = new List<Vector3>(st.RungCount),
-                    Right       = new List<Vector3>(st.RungCount),
-                    Closed      = st.Closed,
-                    FlipWinding = st.FlipWinding,
-                };
-                for (int i = 0; i < st.RungCount; i++)
-                {
-                    snap.Left .Add(mesh.Vertices[st.Left[i]].Position);
-                    snap.Right.Add(mesh.Vertices[st.Right[i]].Position);
-                }
-                if (st.StartPoint >= 0) snap.StartPoint = mesh.Vertices[st.StartPoint].Position;
-                if (st.EndPoint   >= 0) snap.EndPoint   = mesh.Vertices[st.EndPoint].Position;
-                dst.Add(snap);
-            }
+            foreach (var st in strips) dst.Add(ToBeltSnapshot(mesh, st));
 
             SetBeltStatus(message);
             D();
         }
 
         /// <summary>指定オブジェクト全体から円環状の梯子を検出して差し替える。</summary>
-        private void AutoDetectRings(List<BeltSnapshot> dst, MeshObject mesh)
+        private void AutoDetectRings(List<BeltSnapshot> dst, MeshObject mesh, bool crossRows)
         {
             if (dst == null) return;
             if (mesh == null) { SetBeltStatus(T("NoSourceObject")); return; }
 
             var rings = BeltRingDetector.Detect(mesh, out string message);
+            var rows  = BeltStackExpander.ExpandAll(mesh, rings, crossRows, out int groupCount);
 
             dst.Clear();
-            foreach (var st in rings)
+            foreach (var st in rows) dst.Add(ToBeltSnapshot(mesh, st));
+
+            SetBeltStatus(crossRows
+                ? $"{message} → グループ {groupCount} / 段 {rows.Count}"
+                : message);
+            D();
+        }
+
+        /// <summary>検出結果（頂点インデックス）を座標スナップショットへ変換する。</summary>
+        private static BeltSnapshot ToBeltSnapshot(MeshObject mesh, BeltAutoStrip st)
+        {
+            var snap = new BeltSnapshot
             {
-                var snap = new BeltSnapshot
-                {
-                    Left        = new List<Vector3>(st.RungCount),
-                    Right       = new List<Vector3>(st.RungCount),
-                    Closed      = st.Closed,
-                    FlipWinding = st.FlipWinding,
-                };
-                for (int i = 0; i < st.RungCount; i++)
-                {
-                    snap.Left .Add(mesh.Vertices[st.Left[i]].Position);
-                    snap.Right.Add(mesh.Vertices[st.Right[i]].Position);
-                }
-                dst.Add(snap);
+                Left        = new List<Vector3>(st.RungCount),
+                Right       = new List<Vector3>(st.RungCount),
+                Closed      = st.Closed,
+                FlipWinding = st.FlipWinding,
+                GroupId     = st.GroupId,
+                RowIndex    = st.RowIndex,
+                RowCount    = st.RowCount,
+            };
+
+            for (int i = 0; i < st.RungCount; i++)
+            {
+                snap.Left .Add(mesh.Vertices[st.Left[i]].Position);
+                snap.Right.Add(mesh.Vertices[st.Right[i]].Position);
             }
 
-            SetBeltStatus(message);
-            D();
+            if (st.StartPoint >= 0) snap.StartPoint = mesh.Vertices[st.StartPoint].Position;
+            if (st.EndPoint   >= 0) snap.EndPoint   = mesh.Vertices[st.EndPoint].Position;
+            return snap;
         }
 
         private string BeltsInfoText(List<BeltSnapshot> belts)
         {
             if (belts == null || belts.Count == 0) return T("FrillNoBase");
+
             int total = 0;
-            foreach (var b in belts) total += b.RungCount;
-            return T("BeltsInfo", belts.Count, total);
+            var groups = new HashSet<int>();
+            foreach (var b in belts)
+            {
+                total += b.RungCount;
+                groups.Add(b.GroupId);
+            }
+
+            return belts.Count > groups.Count
+                ? T("BeltsInfoG", belts.Count, groups.Count, total)
+                : T("BeltsInfo", belts.Count, total);
         }
 
         private void SetBeltStatus(string text)
@@ -357,6 +387,9 @@ namespace Poly_Ling.Player
                     HeightScale = b.HeightScale,
                     StartPoint  = b.StartPoint,
                     EndPoint    = b.EndPoint,
+                    GroupId     = b.GroupId,
+                    RowIndex    = b.RowIndex,
+                    RowCount    = b.RowCount,
                 });
             }
             return list;
@@ -371,6 +404,12 @@ namespace Poly_Ling.Player
             foreach (var e in entries)
             {
                 if (e == null || !e.HasData) continue;
+
+                // $group が無い旧CSVは、梯子ごとに独立した1段グループとして扱う。
+                int gid = e.GroupId >= 0 ? e.GroupId : list.Count;
+                int cnt = Mathf.Max(1, e.RowCount);
+                int row = Mathf.Clamp(e.RowIndex, 0, cnt - 1);
+
                 list.Add(new BeltSnapshot
                 {
                     Left        = new List<Vector3>(e.Left),
@@ -380,6 +419,9 @@ namespace Poly_Ling.Player
                     HeightScale = e.HeightScale,
                     StartPoint  = e.StartPoint,
                     EndPoint    = e.EndPoint,
+                    GroupId     = gid,
+                    RowIndex    = row,
+                    RowCount    = cnt,
                 });
             }
             return list;
@@ -1040,6 +1082,28 @@ namespace Poly_Ling.Player
             p2d.LineTo(BeltP2C(ed, new Vector2(1f,  2f), w, h));
             p2d.Stroke();
 
+            // 参考プロファイル（A/B のもう一方）。編集対象ではないので灰色で薄く描く。
+            if (ed.GhostPoints != null && ed.GhostPoints.Count >= 2)
+            {
+                var ghost = new Color(0.55f, 0.55f, 0.62f, 0.75f);
+                int gseg  = ed.ClosedLoop ? ed.GhostPoints.Count : ed.GhostPoints.Count - 1;
+
+                p2d.strokeColor = ghost;
+                p2d.lineWidth   = 1f;
+                p2d.BeginPath();
+                for (int i = 0; i < gseg; i++)
+                {
+                    int j = (i + 1) % ed.GhostPoints.Count;
+                    p2d.MoveTo(BeltP2C(ed, ed.GhostPoints[i], w, h));
+                    p2d.LineTo(BeltP2C(ed, ed.GhostPoints[j], w, h));
+                }
+                p2d.Stroke();
+
+                p2d.fillColor = ghost;
+                for (int i = 0; i < ed.GhostPoints.Count; i++)
+                    RevFillCircle(p2d, BeltP2C(ed, ed.GhostPoints[i], w, h), 2.5f, 8);
+            }
+
             // 断面ライン（セグメントごとにホバー表示）
             if (ed.Points.Count >= 2)
             {
@@ -1505,6 +1569,10 @@ namespace Poly_Ling.Player
         /// 左右入替・rung順反転はどちらも巻き順の意味を反転させるため、
         /// ステップ法線を元メッシュと同じ向きに保つには FlipWinding も同時に反転する必要がある。
         /// 両方ONなら2回反転して元に戻る。
+        ///
+        /// 左右入替では段の Left/Right の意味も入れ替わるため、段番号を反転させる。
+        /// これをしないと、隣り合う段が共有するレールの補間パラメータ t が食い違い、
+        /// 共有レールが溶接されなくなる。
         /// </summary>
         private static BeltSnapshot ApplyBeltOrient(BeltSnapshot belt, BeltOrientOption opt)
         {
@@ -1516,11 +1584,14 @@ namespace Poly_Ling.Player
             var start = belt.StartPoint;
             var end   = belt.EndPoint;
             bool flip = belt.FlipWinding;
+            int  rowCount = Mathf.Max(1, belt.RowCount);
+            int  rowIndex = Mathf.Clamp(belt.RowIndex, 0, rowCount - 1);
 
             if (opt.SwapSides)
             {
                 var tmp = left; left = right; right = tmp;
                 flip = !flip;
+                rowIndex = rowCount - 1 - rowIndex;
             }
 
             if (opt.ReverseOrder)
@@ -1540,6 +1611,9 @@ namespace Poly_Ling.Player
                 HeightScale = belt.HeightScale,
                 StartPoint  = start,
                 EndPoint    = end,
+                GroupId     = belt.GroupId,
+                RowIndex    = rowIndex,
+                RowCount    = rowCount,
             };
         }
 
@@ -1592,6 +1666,9 @@ namespace Poly_Ling.Player
                 HeightScale = belt.HeightScale,
                 StartPoint  = belt.StartPoint,
                 EndPoint    = belt.EndPoint,
+                GroupId     = belt.GroupId,
+                RowIndex    = belt.RowIndex,
+                RowCount    = belt.RowCount,
             };
         }
 

@@ -689,6 +689,7 @@ namespace Poly_Ling.Serialization
 
                 // Humanoid 割当（per-bone・#5b）
                 contextData.humanBodyBone = meshContext.MeshObject?.HumanBodyBone;
+                contextData.mirrorBoneIndex = meshContext.MeshObject?.MirrorBoneIndex ?? -1;
 
                 // Humanoid マッスル可動域（per-bone・#5d-1）
                 SaveHumanLimitDataToDTO(meshContext, contextData);
@@ -774,6 +775,7 @@ namespace Poly_Ling.Serialization
             // Humanoid 割当（per-bone・#5b）
             if (meshContext.MeshObject != null)
                 meshContext.MeshObject.HumanBodyBone = meshDTO.humanBodyBone ?? "";
+                meshContext.MeshObject.MirrorBoneIndex = meshDTO.mirrorBoneIndex;
 
             // Humanoid マッスル可動域（per-bone・#5d-1）
             LoadHumanLimitDataFromDTO(meshDTO, meshContext);
