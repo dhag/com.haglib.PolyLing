@@ -206,6 +206,9 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：MeshFilter→Skinnedボタン。</summary>
         public Button MeshFilterToSkinnedBtn { get; private set; }
 
+        /// <summary>描画オブジェクト単位の種別変換（MeshFilter 系 ⇔ SkinnedMesh 系）。</summary>
+        public Button SkinKindBtn { get; private set; }
+
         /// <summary>左ペイン：下絵ボタン（その他）。</summary>
         public Button UnderlayBtn { get; private set; }
 
@@ -415,6 +418,9 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：MeshFilter→Skinnedセクション（ScrollView外）。</summary>
         public VisualElement MeshFilterToSkinnedSection { get; private set; }
+
+        /// <summary>描画オブジェクト単位の種別変換セクション。</summary>
+        public VisualElement SkinKindSection { get; private set; }
 
         /// <summary>右ペイン：オブジェクト移動TRSセクション（ScrollView内、MeshListSectionの直後）。</summary>
         public VisualElement ObjectMoveTRSSection { get; private set; }
@@ -1156,6 +1162,9 @@ namespace Poly_Ling.Player
             MeshFilterToSkinnedBtn = MakeBtn("メッシュからボーンとスキンの生成");
             foBoneMorph.Add(MeshFilterToSkinnedBtn);
 
+            SkinKindBtn = MakeBtn("描画オブジェクトの種別変換");
+            foBoneMorph.Add(SkinKindBtn);
+
             BoneEditorBtn = MakeBtn("ボーンエディタ");
             foBoneMorph.Add(BoneEditorBtn);
 
@@ -1597,6 +1606,9 @@ namespace Poly_Ling.Player
 
             // ── MeshFilter→Skinnedセクション（ScrollView内へ移動）
             MeshFilterToSkinnedSection = AddSection(visible: false);
+
+            // ── 描画オブジェクト単位の種別変換セクション
+            SkinKindSection = AddSection(visible: false);
 
             return pane;
         }

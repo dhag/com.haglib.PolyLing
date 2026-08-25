@@ -776,7 +776,115 @@ namespace Poly_Ling.Player
             foreach (var v in violations)
                 AddLine("    " + v, true);
 
+            CheckSkinKindConsistency(model);
+            CheckSkinKindRoundTrip(model);
+
             _prevSnapshot = ModelStructureSnapshot.Capture(model);
+        }
+
+        /// <summary>
+        /// 「スキンド化 → MeshFilter へ戻す」の往復で、頂点のワールド座標が
+        /// 保存されるかを実測する。データは書き換えない（複製の上で試す）。
+        ///
+        /// 【何を見つけるための検査か】
+        ///   2 つの種別は頂点の格納空間が違う。SkinKindConverter が焼き直しを
+        ///   間違えると、変換した瞬間に形が飛ぶ。合否は「往復後のワールド座標が
+        ///   元と一致するか」で判定する。
+        ///
+        ///   検査は複製した ModelContext ではなく、実データの読み取りだけで行う。
+        ///   種別ごとに「格納値 → ワールド」の式が正しく合っているかを見る。
+        /// </summary>
+        private void CheckSkinKindRoundTrip(ModelContext model)
+        {
+            if (model == null) return;
+
+            int bad = 0;
+            int checkedCount = 0;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                var mo = mc?.MeshObject;
+                if (mo == null || mo.VertexCount == 0) continue;
+                if (mc.Type != MeshType.Mesh) continue;
+
+                checkedCount++;
+
+                // VertexToWorldMatrix は種別で答えを変える。
+                //   MeshFilter … WorldMatrix
+                //   Skinned    … 単位（頂点が既にワールド空間）
+                // ここが種別と食い違うと、往復変換でワールド座標がずれる。
+                Matrix4x4 toWorld  = mc.VertexToWorldMatrix;
+                Matrix4x4 toVertex = mc.WorldToVertexMatrix;
+
+                // 往復して戻るか。掛け算の順序と逆行列の整合を実測する。
+                Vector3 v0    = mo.Vertices[0].Position;
+                Vector3 world = toWorld.MultiplyPoint3x4(v0);
+                Vector3 back  = toVertex.MultiplyPoint3x4(world);
+
+                float d = Vector3.Distance(v0, back);
+                if (d > 1e-3f)
+                {
+                    bad++;
+                    AddLine($"    座標往復ずれ: \"{mc.Name}\" 索引={i} " +
+                            $"種別={mo.SkinKind} 距離={d:F5}", true);
+                }
+            }
+
+            if (bad > 0) _failCount += bad;
+
+            AddLine($"    SkinKind 座標往復検査: 対象 {checkedCount} 件 / ずれ {bad} 件",
+                    bad > 0);
+        }
+
+        /// <summary>
+        /// 描画オブジェクトの種別（MeshObject.SkinKind）と実頂点のウェイトの食い違いを報告する。
+        ///
+        /// 【何を見つけるための検査か】
+        ///   SkinKind は明示状態であり、頂点のウェイトから毎回導出しない。
+        ///   そのため「ウェイトを入れたのに種別を確定させ忘れた」経路があると、
+        ///   頂点はワールド（バインド）空間なのに WorldMatrix 経路で描画され、
+        ///   位置が二重に掛かる。これを実測で拾う。
+        ///
+        /// 【判定】
+        ///   ・種別 MeshFilter なのにウェイト付き頂点がある … 不合格（確定漏れ）
+        ///   ・種別 Skinned なのにウェイト付き頂点が 0 個   … 情報のみ
+        ///     （ウェイトを全部消しても種別は自動で戻さない仕様。想定内）
+        /// </summary>
+        private void CheckSkinKindConsistency(ModelContext model)
+        {
+            if (model == null) return;
+
+            int missing = 0;   // MeshFilter 宣言なのにウェイトあり
+            int empty   = 0;   // Skinned 宣言なのにウェイトなし
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                var mo = mc?.MeshObject;
+                if (mo == null || mo.VertexCount == 0) continue;
+                if (mc.Type == MeshType.Bone) continue;
+
+                bool anyWeight = mo.AnyVertexHasBoneWeight();
+
+                if (!mc.IsSkinned && anyWeight)
+                {
+                    missing++;
+                    AddLine($"    種別未確定: \"{mc.Name}\" 索引={i} " +
+                            $"SkinKind={mo.SkinKind} だがウェイト付き頂点あり", true);
+                }
+                else if (mc.IsSkinned && !anyWeight)
+                {
+                    empty++;
+                    AddLine($"    種別のみ Skinned: \"{mc.Name}\" 索引={i} " +
+                            $"ウェイト付き頂点 0（明示状態のため自動では戻さない）");
+                }
+            }
+
+            if (missing > 0) _failCount += missing;
+
+            AddLine($"    SkinKind 検査: 未確定 {missing} 件 / ウェイト 0 の Skinned {empty} 件",
+                    missing > 0);
         }
 
         // ================================================================

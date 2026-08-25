@@ -117,6 +117,7 @@ namespace Poly_Ling.Player
         // 検証用の2つ目のインスタンス。既存 _primitiveSubPanel とは状態を共有しない。
         private PlayerPrimitiveMeshSubPanel    _livePrimitiveSubPanel;
         private MeshFilterToSkinnedSubPanel    _mfToSkinnedSubPanel;
+        private PlayerSkinKindSubPanel         _skinKindSubPanel;
         private PanelContext                   _panelContext;
         private ModelListSubPanel              _modelListSubPanel;
         private MeshListSubPanel               _meshListSubPanel;
@@ -1806,7 +1807,7 @@ namespace Poly_Ling.Player
                 bool isBone       = mc.Type == MeshType.Bone;
                 bool isNonSkinned = mc.Type == MeshType.Mesh
                                     && mc.MeshObject != null
-                                    && !mc.MeshObject.HasBoneWeight;
+                                    && !mc.IsSkinned;
 
                 bool include = boneEditorOpen ? isBone : (isBone || isNonSkinned);
                 if (!include) continue;
@@ -4094,6 +4095,12 @@ namespace Poly_Ling.Player
 
             _layoutRoot.MeshFilterToSkinnedBtn.clicked += ShowMeshFilterToSkinnedPanel;
 
+            _skinKindSubPanel = new PlayerSkinKindSubPanel();
+            _skinKindSubPanel.SetContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _skinKindSubPanel.Build(_layoutRoot.SkinKindSection);
+
+            _layoutRoot.SkinKindBtn.clicked += ShowSkinKindPanel;
+
             _layoutRoot.BlendBtn.clicked      += ShowBlendPanel;
             _layoutRoot.ShrinkBtn.clicked     += ShowShrinkPanel;
             _layoutRoot.ModelBlendBtn.clicked += ShowModelBlendPanel;
@@ -4455,6 +4462,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.TPoseSection,             () => _tposeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.HumanoidMappingSection,   () => _humanoidMappingSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MeshFilterToSkinnedSection, () => _mfToSkinnedSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SkinKindSection, () => _skinKindSubPanel?.SetModel(ActiveProject?.CurrentModel)));
             _sectionRefreshPairs.Add((_layoutRoot.QuadDecimatorSection,         () => _quadDecimatorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.AlignVerticesSection,         () => _alignVerticesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PlanarizeAlongBonesSection,   () => _planarizeAlongBonesSubPanel?.Refresh()));
@@ -4932,6 +4940,14 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MeshFilterToSkinnedSection, _layoutRoot?.MeshFilterToSkinnedBtn);
             _mfToSkinnedSubPanel?.SetModel(ActiveProject?.CurrentModel);
+        }
+
+        private void ShowSkinKindPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.SkinKindSection, _layoutRoot?.SkinKindBtn);
+            _skinKindSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
 
         private void ShowBlendPanel()
@@ -5852,6 +5868,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.PrimitiveSection);
             Hide(_layoutRoot.LivePrimitiveSection);
             Hide(_layoutRoot.MeshFilterToSkinnedSection);
+            Hide(_layoutRoot.SkinKindSection);
             // メッシュブレンドのプレビュー結果は MeshObject に書かれているため、
             // 非表示にするだけでは未確定の形状が残ったままになる。
             _blendSubPanel?.CancelIfActive();
@@ -6826,6 +6843,10 @@ namespace Poly_Ling.Player
                 face.MaterialIndex = 0;
                 dst.AddFace(face);
             }
+
+            // ブリッジは別メッシュ間でも張れる。相手のウェイトを引き継いだ結果、
+            // 転送先が初めてウェイトを持つことがあるため種別を確認し直す。
+            dst.RecomputeSkinKind();
 
             return addedCount;
         }
@@ -8777,6 +8798,10 @@ namespace Poly_Ling.Player
                     dv.UVs.Add(uv);
             }
             dst.InvalidatePositionCache();
+
+            // ウェイトごと書き戻すため種別も合わせる。
+            // src はスナップショット由来で SkinKind を持っているのでそれを正とする。
+            dst.SetSkinKind(src.SkinKind);
         }
 
         /// <summary>

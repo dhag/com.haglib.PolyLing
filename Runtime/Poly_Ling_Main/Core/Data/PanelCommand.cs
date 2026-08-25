@@ -1291,6 +1291,65 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
+    // 描画オブジェクト単位の種別変換（MeshFilter 系 ⇔ SkinnedMesh 系）
+    // ================================================================
+
+    /// <summary>
+    /// 選んだ描画オブジェクトのウェイトを破棄して MeshFilter 系へ戻す。
+    ///
+    /// 頂点はスキンド時にワールド（バインド）空間へ焼かれているため、
+    /// 変換先の WorldMatrix の逆行列でローカル化し直す（SkinKindConverter）。
+    /// ボーンの生成・破棄は行わない。
+    /// </summary>
+    public class ConvertToMeshFilterCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+
+        /// <summary>階層の扱い。既定はルート直下へ移す。</summary>
+        public UnskinParentMode ParentMode { get; }
+
+        public ConvertToMeshFilterCommand(
+            int modelIndex, int[] masterIndices,
+            UnskinParentMode parentMode = UnskinParentMode.MoveToRoot)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices;
+            ParentMode    = parentMode;
+        }
+    }
+
+    /// <summary>
+    /// 選んだ描画オブジェクトを、指定ボーンへウェイト 1.0 でバインドして
+    /// SkinnedMesh 系にする。ボーンの生成は行わない（既存ボーンへ付ける）。
+    /// </summary>
+    public class ConvertToSkinnedCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+
+        /// <summary>バインド先ボーンの MeshContextList 索引。</summary>
+        public int BoneMasterIndex { get; }
+
+        public ConvertToSkinnedCommand(int modelIndex, int[] masterIndices, int boneMasterIndex)
+            : base(modelIndex)
+        {
+            MasterIndices   = masterIndices;
+            BoneMasterIndex = boneMasterIndex;
+        }
+    }
+
+    /// <summary>
+    /// ボーンの左右対応（MirrorBoneIndex）を、ボーン名の左右から補完する。
+    ///
+    /// スキンド変換が確定させた値（-1 以外）は上書きしない。
+    /// PMX インポート直後のようにボーンが全て -1 のモデルで、
+    /// ミラー生成前に一度だけ実行する用途。
+    /// </summary>
+    public class ResolveMirrorBoneIndexCommand : PanelCommand
+    {
+        public ResolveMirrorBoneIndexCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    // ================================================================
     // スキンウェイト一括操作
     // ================================================================
 

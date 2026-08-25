@@ -1340,7 +1340,7 @@ namespace Poly_Ling.Player
                         {
                             var omc = model.GetMeshContext(idx);
                             if (omc?.MeshObject == null) continue;
-                            if (omc.Type != MeshType.Mesh || omc.MeshObject.HasBoneWeight) continue;
+                            if (omc.Type != MeshType.Mesh || omc.IsSkinned) continue;
                             _boneOriginStartPositions[idx] = (Vector3[])omc.MeshObject.Positions.Clone();
                             _boneOriginStartWorld[idx]     = omc.WorldMatrix;
                         }
@@ -1903,6 +1903,82 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterSceneReset(project, clearScene: true);
                     _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
                     _notifyPanels(ChangeKind.ModelSwitch);
+                    return;
+                }
+
+                // ── 描画オブジェクト単位: SkinnedMesh 系 → MeshFilter 系
+                case ConvertToMeshFilterCommand c:
+                {
+                    if (model == null) return;
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+
+                    var mfBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    var mfResults = SkinKindConverter.ToMeshFilter(
+                        model, c.MasterIndices, c.ParentMode);
+
+                    int mfDone = 0;
+                    foreach (var r in mfResults) if (r.Converted) mfDone++;
+                    if (mfDone == 0) return;
+
+                    RecordMeshListSnapshot(mfBefore, model,
+                        $"ウェイト破棄 → MeshFilter x{mfDone}");
+
+                    // 階層と頂点の格納空間が変わったので、GPU バッファを作り直す。
+                    _viewportManager.EnterSceneReset(project, clearScene: true);
+                    _viewportManager.EnterCameraChanged(
+                        _viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
+                    _notifyPanels(ChangeKind.ModelSwitch);
+                    return;
+                }
+
+                // ── 描画オブジェクト単位: MeshFilter 系 → SkinnedMesh 系
+                case ConvertToSkinnedCommand c:
+                {
+                    if (model == null) return;
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+
+                    var skBone = model.GetMeshContext(c.BoneMasterIndex);
+                    if (skBone == null || skBone.Type != MeshType.Bone)
+                    {
+                        Debug.LogWarning(
+                            $"[SkinKind] バインド先がボーンではありません idx={c.BoneMasterIndex}");
+                        return;
+                    }
+
+                    var skBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    var skResults = SkinKindConverter.ToSkinned(
+                        model, c.MasterIndices, c.BoneMasterIndex);
+
+                    int skDone = 0;
+                    foreach (var r in skResults) if (r.Converted) skDone++;
+                    if (skDone == 0) return;
+
+                    RecordMeshListSnapshot(skBefore, model,
+                        $"スキンド化 → \"{skBone.Name}\" x{skDone}");
+
+                    _viewportManager.EnterSceneReset(project, clearScene: true);
+                    _viewportManager.EnterCameraChanged(
+                        _viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
+                    _notifyPanels(ChangeKind.ModelSwitch);
+                    return;
+                }
+
+                // ── ボーンの左右対応を名前から補完
+                case ResolveMirrorBoneIndexCommand c:
+                {
+                    if (model == null) return;
+
+                    var mbiBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    var mbiResult = MirrorBoneIndexResolver.Resolve(model);
+                    if (mbiResult.Resolved == 0) { _notifyPanels(ChangeKind.Attributes); return; }
+
+                    RecordMeshListSnapshot(mbiBefore, model,
+                        $"左右ボーン対応の補完 x{mbiResult.Resolved}");
+
+                    _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
 
@@ -3159,6 +3235,12 @@ namespace Poly_Ling.Player
                     return $"SetBatchMirrorType model={c.ModelIndex} mirrorType={c.MirrorType} targets={PLDiag.Ids(c.MasterIndices)}";
                 case SetMirrorEnabledCommand c:
                     return $"SetMirrorEnabled model={c.ModelIndex} enabled={c.Enabled} targets={PLDiag.Ids(c.MasterIndices)}";
+                case ConvertToMeshFilterCommand c:
+                    return $"ConvertToMeshFilter model={c.ModelIndex} parentMode={c.ParentMode} targets={PLDiag.Ids(c.MasterIndices)}";
+                case ConvertToSkinnedCommand c:
+                    return $"ConvertToSkinned model={c.ModelIndex} bone={c.BoneMasterIndex} targets={PLDiag.Ids(c.MasterIndices)}";
+                case ResolveMirrorBoneIndexCommand c:
+                    return $"ResolveMirrorBoneIndex model={c.ModelIndex}";
                 case RenameMeshCommand c:
                     return $"RenameMesh model={c.ModelIndex} idx={c.MasterIndex}";
                 case RenameMeshesCommand c:
@@ -3380,6 +3462,7 @@ namespace Poly_Ling.Player
                     };
                     if (pair.Build())
                     {
+                        SyncMirrorWeightsIfSkinned(pair, realCtx);
                         model.MirrorPairs.Add(pair);
                         realCtx.DetachedMirrorObjectId = 0;
                         PLDiag.AttrChange("MirrorReattach", detachedIdx, mirrorCtx.Name, "mesh", "mirror");
@@ -3423,11 +3506,59 @@ namespace Poly_Ling.Player
                 Mirror = generated,
                 Axis   = realCtx.GetMirrorSymmetryAxis()
             };
-            if (genPair.Build()) model.MirrorPairs.Add(genPair);
+            if (genPair.Build())
+            {
+                SyncMirrorWeightsIfSkinned(genPair, realCtx);
+                model.MirrorPairs.Add(genPair);
+            }
 
             added.Add((insertAt, generated));
             PLDiag.AttrChange("MirrorGenerate", insertAt, generated.Name, "none", "mirror");
             return true;
+        }
+
+        /// <summary>
+        /// MeshContextList の丸ごとスナップショットで Undo を 1 件記録する。
+        /// before は操作前に CaptureList で取っておくこと。
+        /// </summary>
+        private void RecordMeshListSnapshot(
+            List<MeshContext> before, ModelContext model, string desc)
+        {
+            if (_undoController == null || before == null || model == null) return;
+
+            var after  = MeshFilterToSkinnedRecord.CaptureList(model);
+            var record = new MeshFilterToSkinnedRecord { BeforeList = before, AfterList = after };
+
+            PLDiag.UndoRecord("MeshList", desc, record);
+            _undoController.MeshListStack.Record(record, desc);
+            _undoController.FocusMeshList();
+        }
+
+        /// <summary>
+        /// 実体側がスキンドなら、ミラー側メッシュ本体のウェイトを左右対のボーンへ写す。
+        ///
+        /// 【なぜ Build() だけでは足りないか】
+        ///   MirrorBranchOps.BuildMirroredMeshObject は、実体側頂点の MirrorBoneWeight が
+        ///   あればそれを、無ければ実体側の BoneWeight をそのままミラー側へ複製する。
+        ///   一方 MirrorPair.Build() の中で走る ApplyMirrorBoneWeights が書くのは
+        ///   「実体側頂点の MirrorBoneWeight」だけで、ミラーメッシュ本体の BoneWeight は
+        ///   触らない。順序として複製が先なので、初回生成時のミラー側は実体側と同じ
+        ///   ボーンを指したままになり、右のメッシュが左のボーンで動く。
+        ///
+        ///   SyncBoneWeights() は BonePairMap を通した値をミラーメッシュ本体へ書く。
+        ///   Build() が対応表を作り終えたこの時点で呼ぶ。
+        ///
+        /// 【対応表が空のとき】
+        ///   BonePairMap は MirrorBoneIndex からしか作らない。全ボーンが -1 の
+        ///   モデル（PMX インポート直後など）では写像できるスロットが 1 つも無く、
+        ///   SyncBoneWeights は何も書かずに終わる。誤ったボーン番号を残すより良い。
+        ///   左右対応は ResolveMirrorBoneIndexCommand で先に埋めること。
+        /// </summary>
+        private static void SyncMirrorWeightsIfSkinned(MirrorPair pair, MeshContext realCtx)
+        {
+            if (pair == null || realCtx == null) return;
+            if (!realCtx.IsSkinned) return;
+            pair.SyncBoneWeights();
         }
 
         /// <summary>モデル内に同名のメッシュが既に居るか（ミラー命名の衝突判定用）。</summary>
@@ -4698,8 +4829,8 @@ namespace Poly_Ling.Player
                 if (mc.BoneTransform.Scale == Vector3.one)           { skipUnit.Add(nm);    continue; }
                 if (hasChild.Contains(idx))                          { skipChild.Add(nm);   continue; }
 
-                // MeshObject.HasBoneWeight は「1つ以上の頂点が BoneWeight を持つ」判定。
-                if (mc.MeshObject.HasBoneWeight) { skipSkin.Add(nm); continue; }
+                // 種別（SkinnedMesh 系か）で弾く。実頂点のウェイト有無ではない。
+                if (mc.IsSkinned) { skipSkin.Add(nm); continue; }
 
                 targets.Add(idx);
             }
