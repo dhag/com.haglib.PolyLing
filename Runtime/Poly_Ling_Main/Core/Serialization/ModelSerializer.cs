@@ -51,7 +51,8 @@ namespace Poly_Ling.Serialization
             var meshDTO = new MeshDTO
             {
                 name = name ?? meshObject.Name ?? "Untitled",
-                isTriangulated = meshObject.IsTriangulated
+                isTriangulated = meshObject.IsTriangulated,
+                skinKind = (int)meshObject.SkinKind
             };
 
             // BoneTransform
@@ -221,6 +222,17 @@ namespace Poly_Ling.Serialization
                 };
                 meshObject.Faces.Add(face);
             }
+
+            // 描画オブジェクトの種別。
+            //   欄がある     … 保存された明示状態をそのまま復元する。
+            //                   ウェイト頂点が 0 でも Skinned のままにする（明示状態の往復）。
+            //   欄が無い(null) … 旧データ。頂点のボーンウェイトから求め直す。
+            //                   ここで再計算しないと、旧プロジェクトのスキンドメッシュが
+            //                   MeshFilter 扱いになり WorldMatrix が二重に掛かる。
+            if (meshDTO.skinKind.HasValue)
+                meshObject.SetSkinKind((SkinKind)meshDTO.skinKind.Value);
+            else
+                meshObject.RecomputeSkinKind();
 
             return meshObject;
         }
@@ -1934,6 +1946,7 @@ namespace Poly_Ling.Serialization
             {
                 meshIndex  = meshIndex,
                 isTriangulated = meshObject.IsTriangulated,
+                skinKind   = (int)meshObject.SkinKind,
             };
 
             foreach (var vertex in meshObject.Vertices)
@@ -1977,6 +1990,7 @@ namespace Poly_Ling.Serialization
             var tmp = new MeshDTO
             {
                 isTriangulated = geo.isTriangulated,
+                skinKind   = geo.skinKind,
                 vertices   = geo.vertices ?? new System.Collections.Generic.List<VertexDTO>(),
                 faces      = geo.faces    ?? new System.Collections.Generic.List<FaceDTO>(),
             };

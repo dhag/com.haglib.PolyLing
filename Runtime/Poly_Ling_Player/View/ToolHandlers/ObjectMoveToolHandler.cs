@@ -355,7 +355,7 @@ namespace Poly_Ling.Player
 
             if (t == Poly_Ling.Data.MeshType.Mesh)
             {
-                bool skinned = mc.MeshObject != null && mc.MeshObject.HasBoneWeight;
+                bool skinned = mc.IsSkinned;
                 return skinned ? s.PickMeshesSkinned : s.PickMeshesNoSkin;
             }
 

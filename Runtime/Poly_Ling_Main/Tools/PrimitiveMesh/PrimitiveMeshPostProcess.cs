@@ -40,6 +40,8 @@ namespace Poly_Ling.PrimitiveMesh
                 newVerts.Add(mo.Vertices[order[k]]);
                 oldToNew[order[k]] = k;
             }
+            // 並べ替えのみ。同じ Vertex インスタンスを詰め替えるだけなので
+            // ウェイトの有無は変わらず、SkinKind の再計算は不要。
             mo.Vertices = newVerts;
 
             if (mo.Faces == null) return;

@@ -546,6 +546,12 @@ namespace Poly_Ling.Remote
                 };
                 mesh.Vertices[i].BoneWeight = bw;
             }
+
+            // 受信でウェイトが入った時点で SkinnedMesh 系へ遷移させる。
+            // ヘッダには種別欄が無い（BinaryHeader v2 は固定長）ため、
+            // 受信側で求め直すのが唯一の確定手段。
+            // 無 → 有の一方向のみ。MeshFilter へ戻すのは明示操作だけ。
+            mesh.RecomputeSkinKind();
         }
 
         private static void ReadVertexFlags(BinaryReader r, MeshObject mesh, uint count)

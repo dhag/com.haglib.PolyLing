@@ -52,6 +52,11 @@ namespace Poly_Ling.UI
                 vertex.BoneWeight = SkinWeightOps.NormalizeBoneWeight(bw);
                 count++;
             }
+
+            // ウェイトを持たなかった頂点にも書き込めるため、ここは無 → 有の遷移点。
+            // 描画オブジェクトの種別を確定させる。
+            if (count > 0) mo.RecomputeSkinKind();
+
             return count;
         }
 
@@ -153,6 +158,9 @@ namespace Poly_Ling.UI
                 mo.Vertices[vi].BoneWeight = bw;
                 count++;
             }
+
+            // 数値設定もウェイトを持たなかった頂点へ書き込むため、無 → 有の遷移点。
+            if (count > 0) mo.RecomputeSkinKind();
 
             return count;
         }

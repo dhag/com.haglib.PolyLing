@@ -227,6 +227,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"editorName,{EscapeCsv(mc.EditorName ?? "")}");
             sb.AppendLine($"isTriangulated,{mc.MeshObject?.IsTriangulated ?? false}");
             sb.AppendLine($"preserveNormals,{mc.MeshObject?.PreserveNormals ?? false}");
+            // 描画オブジェクトの種別（MeshFilter 系 / SkinnedMesh 系）。
+            // この行が無いファイルは旧形式。読込側で頂点ウェイトから求め直す。
+            sb.AppendLine($"skinKind,{mc.MeshObject?.SkinKind ?? SkinKind.MeshFilter}");
             sb.AppendLine($"mirrorType,{mc.MirrorType}");
             sb.AppendLine($"mirrorAxis,{mc.MirrorAxis}");
             sb.AppendLine($"mirrorDistance,{F(mc.MirrorDistance)}");
@@ -709,6 +712,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             int morphPanel = 3;
             bool hasMorphBase = false;
 
+            // skinKind 行の有無。無い（旧形式）ときだけ頂点ウェイトから求め直す。
+            bool sawSkinKind = false;
+
             while (i < lines.Length)
             {
                 string line = lines[i].Trim();
@@ -772,6 +778,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "preserveNormals":
                         meshObject.PreserveNormals = ParseBool(cols, 1);
+                        break;
+                    case "skinKind":
+                        if (cols.Length > 1 && Enum.TryParse<SkinKind>(cols[1], out var __sk))
+                        {
+                            meshObject.SetSkinKind(__sk);
+                            sawSkinKind = true;
+                        }
                         break;
                     case "mirrorType":
                         mc.MirrorType = ParseInt(cols, 1);
@@ -969,6 +982,18 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     BaseUVs = morphBaseUVs.Count > 0 ? morphBaseUVs.ToArray() : null
                 };
             }
+
+            // 描画オブジェクトの種別。
+            //   skinKind 行があれば保存された明示状態をそのまま使う。
+            //   無ければ旧形式なので頂点ウェイトから求め直す。ここで求め直さないと
+            //   旧プロジェクトのスキンドメッシュが MeshFilter 扱いになり、
+            //   WorldMatrix が二重に掛かって位置が飛ぶ。
+            //
+            //   名前ベースCSVもこの時点で BoneWeight 自体は入っている
+            //   （ReadVertexNameBased がダミーのボーン番号で値を作る。番号の解決は
+            //    ResolveNameReferences で後から行う）ので、ここで判定できる。
+            if (!sawSkinKind)
+                meshObject.RecomputeSkinKind();
 
             // UnityMesh生成
             mc.UnityMesh = meshObject.ToUnityMeshShared();

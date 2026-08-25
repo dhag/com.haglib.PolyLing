@@ -38,13 +38,13 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// ピック対象: スキンドでないメッシュ
-        /// (MeshType.Mesh かつ MeshObject.HasBoneWeight == false)
+        /// (MeshType.Mesh かつ MeshObject.SkinKind == MeshFilter)
         /// </summary>
         public bool PickMeshesNoSkin = true;
 
         /// <summary>
         /// ピック対象: スキンドメッシュ
-        /// (MeshType.Mesh かつ MeshObject.HasBoneWeight == true)
+        /// (MeshType.Mesh かつ MeshObject.SkinKind == Skinned)
         /// 通常ボーン側を動かすので OFF 推奨。
         /// </summary>
         public bool PickMeshesSkinned = false;

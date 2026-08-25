@@ -225,7 +225,7 @@ namespace Poly_Ling.Ops
             foreach (var ctx in meshContexts)
             {
                 if (ctx?.MeshObject == null) continue;
-                if (ctx.MeshObject.HasBoneWeight) return true;
+                if (ctx.IsSkinned) return true;
             }
             return false;
         }
@@ -515,7 +515,7 @@ namespace Poly_Ling.Ops
                         (ctx.Type == MeshType.Mesh ||
                          ctx.Type == MeshType.MirrorSide ||
                          ctx.Type == MeshType.BakedMirror) &&
-                        !ctx.MeshObject.HasBoneWeight;
+                        !ctx.IsSkinned;
                     Matrix4x4 unskinnedInv = (usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix).inverse;
 
                     var verts = ctx.MeshObject.Vertices;

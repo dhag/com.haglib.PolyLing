@@ -1775,7 +1775,7 @@ namespace Poly_Ling.Context
                     continue;
 
                 // スキンド頂点を持つ場合はインポート時BindPoseを維持する
-                if (ctx.MeshObject != null && ctx.MeshObject.HasBoneWeight)
+                if (ctx.IsSkinned)
                     continue;
 
                 ctx.BindPose = ctx.WorldMatrix.inverse;

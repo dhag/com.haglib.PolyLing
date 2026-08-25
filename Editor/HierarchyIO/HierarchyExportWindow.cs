@@ -28,7 +28,7 @@
 //     Armature                  ← ボーン階層ルート（ボーンが存在する場合のみ）
 //       <BoneName> ...          ← ボーン Transform ツリー（WorldMatrix で配置）
 //     <MeshName> ...            ← SkinnedMeshRenderer または MeshFilter+MeshRenderer
-//       スキニング: MeshObject.HasBoneWeight==true → SkinnedMeshRenderer
+//       スキニング: MeshObject.SkinKind==Skinned → SkinnedMeshRenderer
 //                  （BindPose を bindposes に設定、ボーン Transform を bones に設定）
 //       それ以外 → MeshFilter + MeshRenderer（WorldMatrix で配置）
 //
@@ -1438,7 +1438,7 @@ namespace Poly_Ling.EditorIO
                 var mc = model.GetMeshContext(i);
                 if (mc == null) continue;
 
-                if (mc.MeshObject != null && mc.MeshObject.HasBoneWeight) anyWeight = true;
+                if (mc.IsSkinned)                                         anyWeight = true;
                 if (mc.MirrorType > 0)                                    anyMirrorType = true;
                 if (MirrorBranchOps.IsMirrorSideContext(mc))              anyMirrorSide = true;
                 if (mc.IsMirrorBranchRoot)                                anyBranchRoot = true;
@@ -1678,7 +1678,7 @@ namespace Poly_Ling.EditorIO
                 if (!exportTargets.Contains(i)) continue;
 
                 bool isSkinned = _rendererMode != RendererMode.ForceMeshFilter
-                              && mc.MeshObject.HasBoneWeight && boneTransformMap.Count > 0
+                              && mc.IsSkinned && boneTransformMap.Count > 0
                               && !_supplementedIndices.Contains(i);
 
                 // 頂点を持たないノードは関節（グループ）として扱い、空の GameObject にする。

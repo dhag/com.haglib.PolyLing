@@ -217,6 +217,12 @@ namespace Poly_Ling.UndoSystem
                     ctx.MeshObject.Vertices[idx].BoneWeight = weights[i];
                 }
             }
+
+            // Undo/Redo でウェイトが戻る/入り直すため、種別を確認し直す。
+            // 無 → 有の一方向。ウェイトを全部 Undo で消しても MeshFilter へは
+            // 戻さない（種別は明示状態であり、頂点データの副作用で変えない）。
+            ctx.MeshObject.RecomputeSkinKind();
+
             ctx.ApplyToMesh();
         }
     }

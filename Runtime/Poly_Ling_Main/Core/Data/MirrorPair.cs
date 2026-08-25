@@ -159,7 +159,7 @@ namespace Poly_Ling.Data
             var model = Real?.ParentModelContext ?? Mirror?.ParentModelContext;
             var realMesh = Real.MeshObject;
 
-            bool hasBoneWeights = realMesh.Vertices.Any(v => v.HasBoneWeight);
+            bool hasBoneWeights = realMesh.AnyVertexHasBoneWeight();
 
             if (model == null)
             {
@@ -324,6 +324,10 @@ namespace Poly_Ling.Data
                 if (mi < 0 || mi >= mirrorMesh.VertexCount) continue;
                 mirrorMesh.Vertices[mi].BoneWeight = mapped;
             }
+
+            // 写した先の種別を確定させる。実体側を塗ってミラー側へ写した結果、
+            // ミラー側が初めてウェイトを持つことがある。
+            mirrorMesh.RecomputeSkinKind();
         }
 
         /// <summary>
@@ -359,6 +363,9 @@ namespace Poly_Ling.Data
                 realVertex.BoneWeight       = mapped;
                 realVertex.MirrorBoneWeight = mirrorVertex.BoneWeight.Value;
             }
+
+            // ミラー側だけを塗った場合、実体側はここで初めてウェイトを持つ。
+            realMesh.RecomputeSkinKind();
         }
 
         /// <summary>

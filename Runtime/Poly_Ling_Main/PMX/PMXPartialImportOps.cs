@@ -216,6 +216,10 @@ namespace Poly_Ling.PMX
                         dst.BoneWeight = src.BoneWeight;
                 }
 
+                // ウェイトを取り込んだ場合は取り込み先の種別を確定させる。
+                if (boneWeight)
+                    modelMo.RecomputeSkinKind();
+
                 totalUpdated += count;
             }
 

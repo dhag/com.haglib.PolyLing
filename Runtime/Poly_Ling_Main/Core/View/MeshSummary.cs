@@ -61,6 +61,8 @@ namespace Poly_Ling.View
         // 属性フラグ
         public bool IsVisible { get; }
         public bool IsLocked { get; }
+
+        /// <summary>SkinnedMesh 系か（MeshObject.SkinKind == Skinned）。</summary>
         public bool HasBoneWeight { get; }
         public bool IsFolding { get; }
         public Vector3 LocalPosition { get; }
@@ -212,7 +214,7 @@ namespace Poly_Ling.View
             return new MeshSummary(
                 masterIndex, ctx.Name ?? "Untitled", ctx.Type,
                 vertexCount, faceCount, tri, quad, ngon,
-                ctx.IsVisible, ctx.IsLocked, ctx.MeshObject?.HasBoneWeight ?? false, ctx.IsFolding,
+                ctx.IsVisible, ctx.IsLocked, ctx.IsSkinned, ctx.IsFolding,
                 ctx.BoneTransform?.Position ?? Vector3.zero,
                 ctx.BoneTransform?.Rotation ?? Vector3.zero,
                 ctx.BoneTransform?.Scale ?? Vector3.one,

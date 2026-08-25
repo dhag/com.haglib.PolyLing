@@ -385,6 +385,10 @@ namespace Poly_Ling.MQO
                 Debug.LogWarning($"[MQOBoneWeight] '{meshObject.Name}': {unmatchedBoneCount} bone name lookups failed");
             }
 
+            // ウェイトが入った時点で描画オブジェクトの種別を確定させる。
+            // 無 → 有の一方向のみ（0 件でも MeshFilter へは戻さない）。
+            meshObject.RecomputeSkinKind();
+
             return appliedCount;
         }
 

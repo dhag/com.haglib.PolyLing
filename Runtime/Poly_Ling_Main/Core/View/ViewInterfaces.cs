@@ -50,6 +50,11 @@ namespace Poly_Ling.View
         // 属性
         bool IsVisible { get; }
         bool IsLocked { get; }
+
+        /// <summary>
+        /// SkinnedMesh 系か（MeshObject.SkinKind == Skinned）。
+        /// 実頂点のウェイト有無ではなく、描画オブジェクトの種別を表す。
+        /// </summary>
         bool HasBoneWeight { get; }
         bool IsFolding { get; }
 

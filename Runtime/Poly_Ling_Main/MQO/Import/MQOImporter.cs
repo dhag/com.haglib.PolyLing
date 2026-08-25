@@ -585,6 +585,11 @@ namespace Poly_Ling.MQO
             if (settings.AutoDetectMirrorBranchRoot)
                 ApplyMirrorBranchRootByName(result.MeshContexts, boneContextCount);
 
+            // 描画オブジェクトの種別を確定する。
+            // ボーン索引のオフセット補正・CSVウェイト適用が全部終わったあとに 1 回だけ行う。
+            // TPoseConverter は種別（IsSkinned）を見るため、その前に確定させておく。
+            SkinKindOps.RecomputeAll(result.MeshContexts);
+
             // Tポーズ変換（オプション）
             if (settings.ConvertToTPose && boneContextCount > 0)
             {

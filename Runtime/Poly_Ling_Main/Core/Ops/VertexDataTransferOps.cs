@@ -247,6 +247,11 @@ namespace Poly_Ling.Ops
                 if (wrote) result.Written++;
             }
 
+            // ウェイトを転送した場合は転送先の種別を確定させる。
+            // 転送先が MeshFilter 系でもウェイトが入り得るため、ここは無 → 有の遷移点。
+            if (kinds.HasFlag(VertexDataKind.BoneWeight))
+                dstMo.RecomputeSkinKind();
+
             // UVs / Normals を差し替えた場合、面が参照するスロット番号が
             // 範囲外になり得るのでここで詰め直す。
             if (kinds.HasFlag(VertexDataKind.UVs) || kinds.HasFlag(VertexDataKind.Normals))

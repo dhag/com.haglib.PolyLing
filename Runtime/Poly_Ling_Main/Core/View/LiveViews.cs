@@ -133,7 +133,7 @@ namespace Poly_Ling.View
         // 属性
         public bool IsVisible => _ctx.IsVisible;
         public bool IsLocked => _ctx.IsLocked;
-        public bool HasBoneWeight => _ctx.MeshObject?.HasBoneWeight ?? false;
+        public bool HasBoneWeight => _ctx.MeshObject?.IsSkinnedKind ?? false;
         public bool IsFolding => _ctx.IsFolding;
         public Vector3 LocalPosition => _ctx.BoneTransform?.Position ?? Vector3.zero;
         public Vector3 LocalRotationEuler => _ctx.BoneTransform?.Rotation ?? Vector3.zero;

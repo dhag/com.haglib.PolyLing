@@ -686,7 +686,7 @@ namespace Poly_Ling.Ops
             //   MirrorGeometryDerived を無条件で false にする。
             //   ＝ スキンド化した時点でモデル内のミラーは全て PMX 型になる。
             //   変換より後に作るミラーもそれに揃える。
-            bool skinned = srcMeshObj.HasBoneWeight;
+            bool skinned = srcMeshObj.IsSkinnedKind;
 
             // 頂点・面の鏡像化は BuildMirroredMeshObject に集約している。
             var mirrorMeshObj = BuildMirroredMeshObject(
@@ -881,6 +881,12 @@ namespace Poly_Ling.Ops
             }
 
             result.InvalidatePositionCache();
+
+            // ミラー側は実体側のウェイト（または MirrorBoneWeight）を引き継ぐ。
+            // 引き継いだ結果ウェイトを持つなら、生成したミラーも SkinnedMesh 系である。
+            // 種別を確定させないと、実体側だけが SkinningMatrix 経路に乗り、
+            // ミラー側が WorldMatrix 経路に落ちて左右で位置がずれる。
+            result.RecomputeSkinKind();
             return result;
         }
 
@@ -1169,6 +1175,9 @@ namespace Poly_Ling.Ops
                 }
 
                 mirrorMo.InvalidatePositionCache();
+
+                // 実体側から引き継いだウェイトに合わせて種別を確定させる。
+                mirrorMo.RecomputeSkinKind();
 
                 // 消えた頂点・面を指したままの選択を残さない。
                 mc.Selection?.ClearAll();

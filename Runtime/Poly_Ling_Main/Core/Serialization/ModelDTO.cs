@@ -275,6 +275,16 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public bool preserveNormals = false;
 
+        /// <summary>
+        /// 描画オブジェクトの種別（MeshObject.SkinKind の値。0=MeshFilter, 1=Skinned）。
+        ///
+        /// null = この欄を持たない旧データ。読み込み側は頂点のボーンウェイトから
+        /// 再計算する（ModelSerializer.ToMeshObject）。ここを非 null の既定値にすると、
+        /// 旧プロジェクトのスキンドメッシュが MeshFilter として復元され、
+        /// WorldMatrix が二重に掛かって位置が飛ぶ。
+        /// </summary>
+        public int? skinKind = null;
+
         // ================================================================
         // ミラー設定
         // ================================================================
@@ -1187,6 +1197,10 @@ namespace Poly_Ling.Serialization
         /// <summary>対応するメッシュのインデックス（ModelContext.MeshContextList内）</summary>
         public int meshIndex;
         public bool isTriangulated = false;
+
+        /// <summary>描画オブジェクトの種別（0=MeshFilter, 1=Skinned）。null=旧データ→再計算。</summary>
+        public int? skinKind = null;
+
         public List<VertexDTO> vertices = new List<VertexDTO>();
         public List<FaceDTO>   faces    = new List<FaceDTO>();
     }

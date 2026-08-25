@@ -731,7 +731,14 @@ namespace Poly_Ling.EditorIO
                 meshContext.MeshObject.FromUnityMesh(sourceMesh, true, isSkinnedMesh);
 
                 if (isSkinnedMesh)
+                {
                     RemapBoneWeightIndices(meshContext.MeshObject, boneIndexRemap);
+
+                    // Unity 階層から取り込んだスキンドメッシュの種別を確定させる。
+                    // FromUnityMesh も内部で同じ判定を行うが、リマップで
+                    // ウェイトが入れ替わったあとに改めて確認する。
+                    meshContext.MeshObject.RecomputeSkinKind();
+                }
 
                 // スキンド頂点をルート空間へベイク（恒等に近い場合はスキップ＝body/新モデルは無影響）
                 if (isSkinnedMesh && skinnedBakeMatrix.HasValue && !IsApproxIdentity(skinnedBakeMatrix.Value))

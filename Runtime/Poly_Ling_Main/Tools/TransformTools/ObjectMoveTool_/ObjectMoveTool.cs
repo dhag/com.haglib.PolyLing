@@ -478,8 +478,8 @@ namespace Poly_Ling.Tools
 
                 // ObjectMoveSettings のピック対象フィルタ:
                 //   PickBones         : MeshType.Bone
-                //   PickMeshesNoSkin  : MeshType.Mesh かつ HasBoneWeight == false
-                //   PickMeshesSkinned : MeshType.Mesh かつ HasBoneWeight == true
+                //   PickMeshesNoSkin  : MeshType.Mesh かつ SkinKind == MeshFilter
+                //   PickMeshesSkinned : MeshType.Mesh かつ SkinKind == Skinned
                 //   PickMirrorSides   : MirrorSide / BakedMirror（既定 OFF）
                 // Helper は従来互換で常にピック対象。
                 if ((t == MeshType.MirrorSide || t == MeshType.BakedMirror) &&
@@ -1104,7 +1104,7 @@ namespace Poly_Ling.Tools
                 {
                     var mc = model.GetMeshContext(idx);
                     if (mc?.MeshObject == null) continue;
-                    if (mc.Type != MeshType.Mesh || mc.MeshObject.HasBoneWeight) continue; // MeshFilterのみ
+                    if (mc.Type != MeshType.Mesh || mc.IsSkinned) continue; // MeshFilterのみ
                     _originStartPositions[idx] = (UnityEngine.Vector3[])mc.MeshObject.Positions.Clone();
                     _originStartWorld[idx]     = mc.WorldMatrix;
                 }

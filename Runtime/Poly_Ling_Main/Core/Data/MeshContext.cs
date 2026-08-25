@@ -344,8 +344,25 @@ namespace Poly_Ling.Data
         ///   型で対象を絞るのは各所の責任とし、ここはウェイトの有無だけを答える。
         ///
         ///   ボーンは頂点を持たないので、結果は常に false。
+        ///
+        /// 【O(1) である】
+        ///   MeshObject.SkinKind の明示状態を読むだけ。以前は全頂点を走査していたため、
+        ///   カメラ操作・ドラッグ・行列アップロードのたびに
+        ///   全 MeshContext × 全頂点ぶんの走査が走っていた。
+        ///   実頂点にウェイトが入っているかを知りたい場合はここではなく
+        ///   MeshObject.AnyVertexHasBoneWeight() を呼ぶこと。
         /// </summary>
-        public bool IsSkinned => MeshObject?.HasBoneWeight ?? false;
+        public bool IsSkinned => MeshObject?.IsSkinnedKind ?? false;
+
+        /// <summary>
+        /// 描画オブジェクトの種別（MeshObject に委譲）。MeshObject が無いときは MeshFilter。
+        /// 設定は MeshObject.SetSkinKind と同じく明示操作。
+        /// </summary>
+        public SkinKind SkinKind
+        {
+            get => MeshObject?.SkinKind ?? SkinKind.MeshFilter;
+            set { if (MeshObject != null) MeshObject.SetSkinKind(value); }
+        }
 
         /// <summary>
         /// 頂点をワールドへ出すために掛ける行列。

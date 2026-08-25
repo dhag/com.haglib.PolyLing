@@ -745,6 +745,12 @@ namespace Poly_Ling.Ops
                         vertex.MirrorBoneWeight = new BoneWeight { boneIndex0 = mirrorBone, weight0 = 1f };
                 }
 
+                // ここが「メッシュからボーンとスキンの生成」の遷移点。
+                // 全頂点へウェイトを与えた直後に SkinnedMesh 系へ確定させる。
+                // 種別が MeshFilter のままだと、頂点はワールド（バインド）空間なのに
+                // WorldMatrix 経路で描画され、位置が二重に掛かる。
+                meshObj.SetSkinKind(SkinKind.Skinned);
+
                 meshCtx.ReplaceUnityMesh(meshObj.ToUnityMesh());
                 meshCtx.UnityMesh.name = meshCtx.Name;
                 meshCtx.OriginalPositions = (Vector3[])meshObj.Positions.Clone();

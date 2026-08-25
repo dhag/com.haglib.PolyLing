@@ -537,6 +537,12 @@ namespace Poly_Ling.Tools
                 CreatedAt = DateTime.Now
             };
 
+            // ベイク結果は元メッシュのウェイトを引き継ぐ。種別も合わせる。
+            // 元が SkinnedMesh 系なら、頂点が 0 件でも種別は引き継ぐ必要がある
+            // （RecomputeSkinKind は無 → 有の一方向なので、明示コピーで揃える）。
+            bakedMesh.SetSkinKind(source.SkinKind);
+            bakedMesh.RecomputeSkinKind();
+
             Debug.Log($"[MirrorBaker] Baked '{source.Name}': " +
                       $"Original={N} verts, Baked={newVertexCount} verts, " +
                       $"Merged={newOrigin.Count(o => o == VertexOrigin.Merged)} boundary verts");
@@ -815,6 +821,10 @@ namespace Poly_Ling.Tools
             // 中身だけ差し替える（MeshObject インスタンスは維持）
             target.Vertices = baked.Vertices;
             target.Faces    = baked.Faces;
+
+            // Vertices を丸ごと差し替えたので種別を確認し直す。
+            // 差し替え前が MeshFilter でも、ベイク結果がウェイトを持てば Skinned。
+            target.RecomputeSkinKind();
 
             return result;
         }

@@ -195,6 +195,10 @@ namespace Poly_Ling.Ops
             newMeshObj.Faces    = newFaces;
             newMeshObj.Type     = MeshType.Mesh;
             newMeshObj.AssignMissingIds();
+
+            // UV 展開作業用の平面メッシュ。頂点は新規生成でウェイトを持たないため
+            // 種別は既定の MeshFilter のままでよい。念のため実データから確認する。
+            newMeshObj.RecomputeSkinKind();
             return newMeshObj;
         }
 

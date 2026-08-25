@@ -37,23 +37,28 @@ namespace Poly_Ling.PMX
         /// <returns>MeshContextのリスト</returns>
         public static List<MeshContext> Convert(PMXDocument doc, bool splitByObjectName = true)
         {
+            List<MeshContext> results;
+
             if (splitByObjectName)
             {
                 // PMX追加仕様：ObjectNameでオブジェクト分割
                 // PMXHelper.BuildObjectGroupsを使用
-                return ConvertByObjectName(doc);
+                results = ConvertByObjectName(doc);
             }
             else
             {
                 // 単一メッシュとして変換（後方互換性）
-                var results = new List<MeshContext>();
+                results = new List<MeshContext>();
                 var meshContext = ConvertAll(doc);
                 meshContext.Name = !string.IsNullOrEmpty(doc.ModelInfo?.Name) 
                     ? doc.ModelInfo.Name 
                     : Path.GetFileNameWithoutExtension(doc.FilePath);
                 results.Add(meshContext);
-                return results;
             }
+
+            // 描画オブジェクトの種別を確定する（頂点が揃ったあとに 1 回だけ）。
+            SkinKindOps.RecomputeAll(results);
+            return results;
         }
 
         /// <summary>

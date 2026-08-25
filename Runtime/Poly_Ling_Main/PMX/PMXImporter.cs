@@ -488,6 +488,11 @@ namespace Poly_Ling.PMX
 
             // ミラーペア検出・構築（常に実行）
             DetectAndBuildMirrorPairs(result, boneContextCount, settings);
+
+            // 描画オブジェクトの種別を確定する。
+            // 頂点のウェイトが揃うのはここまでの変換が全部終わったあと
+            // （ボーン索引のオフセット補正・ミラーペア構築を含む）なので、最後に 1 回だけ行う。
+            SkinKindOps.RecomputeAll(result.MeshContexts);
         }
 
         // ================================================================

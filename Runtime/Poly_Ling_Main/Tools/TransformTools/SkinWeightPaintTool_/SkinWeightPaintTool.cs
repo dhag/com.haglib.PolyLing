@@ -530,6 +530,11 @@ namespace Poly_Ling.Tools
                         ApplySmooth(mo, affected, strength, adjacency);
                     break;
             }
+
+            // Replace / Add / Scale は BoneWeight を持たない頂点にも書き込む
+            //（vertex.BoneWeight ?? default から始める）ため、無 → 有の遷移点。
+            // Smooth は既存ウェイトのある頂点しか触らないが、判定は同じ場所へ寄せる。
+            mo.RecomputeSkinKind();
         }
 
         // ================================================================

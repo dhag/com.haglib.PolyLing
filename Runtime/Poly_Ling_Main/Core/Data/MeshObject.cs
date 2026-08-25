@@ -570,6 +570,34 @@ namespace Poly_Ling.Data
     }
 
     // ============================================================
+    // 描画オブジェクトの種別（MeshFilter 系 / SkinnedMesh 系）
+    // ============================================================
+
+    /// <summary>
+    /// 描画オブジェクトの種別。MeshObject が持つ明示状態であり、
+    /// 頂点のボーンウェイトから毎回導出してはならない。
+    ///
+    /// 【なぜ明示状態か】
+    ///   従来は Vertices.Any(v =&gt; v.HasBoneWeight) で毎回判定していた。
+    ///   この判定はカメラ操作・ドラッグ・行列アップロードのたびに
+    ///   全 MeshContext × 全頂点を走査する。種別は編集操作でしか変わらないため、
+    ///   状態として持ち、変わる契機でだけ再計算する。
+    ///
+    /// 【頂点ウェイトの有無とは別物】
+    ///   ウェイト付き頂点が 0 個になっても種別は自動で戻らない。
+    ///   MeshFilter へ戻すのは明示操作（ClearAllBoneWeights など）だけ。
+    ///   実データの検査が要る箇所は AnyVertexHasBoneWeight() を使うこと。
+    /// </summary>
+    public enum SkinKind
+    {
+        /// <summary>MeshFilter 系。頂点はローカル空間、描画は WorldMatrix を直接使う。</summary>
+        MeshFilter = 0,
+
+        /// <summary>SkinnedMesh 系。頂点はワールド（バインド）空間、描画は SkinningMatrix を通す。</summary>
+        Skinned = 1
+    }
+
+    // ============================================================
     // MeshObject クラス
     // ============================================================
 
@@ -826,6 +854,22 @@ namespace Poly_Ling.Data
 
         /// <summary>面リスト</summary>
         public List<Face> Faces = new List<Face>();
+
+        /// <summary>
+        /// 描画オブジェクトの種別（MeshFilter 系 / SkinnedMesh 系）。既定は MeshFilter。
+        ///
+        /// 【書き換えてよい場所】
+        ///   RecomputeSkinKind() / SetSkinKind() 経由に限る。
+        ///   直接代入すると、実データと食い違ったまま描画経路が選ばれる。
+        ///
+        /// 【再計算する契機】
+        ///   インポート、プロジェクト/モデル読込、スキン生成、ウェイトペイント（数値設定含む）、
+        ///   頂点データ転送、ミラー生成/同期、Undo/Redo のウェイト書き戻し、
+        ///   Vertices リストの丸ごと差し替え。
+        ///   同一メッシュ内でのウェイト複製・補間（押し出し／ナイフ／ベベル／穴埋め等）は
+        ///   無 → 有 の遷移を起こさないため再計算不要。
+        /// </summary>
+        public SkinKind SkinKind = SkinKind.MeshFilter;
 
         // ================================================================
         // Position 配列キャッシュ（ハイブリッドSoA）
@@ -1175,8 +1219,57 @@ namespace Poly_Ling.Data
             }
         }
 
-        /// <summary>スキンドメッシュか（1つ以上の頂点がBoneWeightを持つ）</summary>
-        public bool HasBoneWeight => Vertices.Any(v => v.HasBoneWeight);
+        /// <summary>
+        /// SkinnedMesh 系か。O(1)。SkinKind の明示状態を読むだけ。
+        /// 描画経路・座標系の判定はすべてこれを使う。
+        /// </summary>
+        public bool IsSkinnedKind => SkinKind == SkinKind.Skinned;
+
+        /// <summary>
+        /// ボーンウェイトを持つ頂点が 1 つ以上あるか。O(頂点数)。
+        ///
+        /// 【種別判定には使わないこと】
+        ///   種別は SkinKind（IsSkinnedKind）が答える。こちらは実データの検査用で、
+        ///   ミラー対応表の構築可否のように「実際にウェイトが入っているか」を
+        ///   知る必要がある場所だけが呼ぶ。プロパティではなくメソッドにしてあるのは、
+        ///   走査コストを名前で示すため。
+        /// </summary>
+        public bool AnyVertexHasBoneWeight()
+        {
+            for (int i = 0; i < Vertices.Count; i++)
+            {
+                var v = Vertices[i];
+                if (v != null && v.HasBoneWeight) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 実頂点のウェイト有無から SkinKind を求め直す。
+        ///
+        /// 【一方向】
+        ///   ウェイトを持つ頂点があれば Skinned にする。
+        ///   0 個でも MeshFilter へは戻さない。戻すのは明示操作だけ（SetSkinKind /
+        ///   ClearAllBoneWeights）。頂点削除やトポロジ編集の途中経過で種別が
+        ///   勝手に切り替わると、描画行列が入れ替わって形状が飛ぶ。
+        /// </summary>
+        /// <returns>呼び出しによって SkinKind が変化したら true。</returns>
+        public bool RecomputeSkinKind()
+        {
+            if (SkinKind == SkinKind.Skinned) return false;
+            if (!AnyVertexHasBoneWeight())    return false;
+            SkinKind = SkinKind.Skinned;
+            return true;
+        }
+
+        /// <summary>
+        /// 種別を明示的に設定する。MeshFilter へ戻す唯一の入口。
+        /// ウェイトデータ自体は変更しない（破棄は ClearAllBoneWeights）。
+        /// </summary>
+        public void SetSkinKind(SkinKind kind)
+        {
+            SkinKind = kind;
+        }
 
         /// <summary>
         /// ミラー側専用のボーンウェイトを持つか（PMX のミラー対と同じ持ち方）。
@@ -1888,6 +1981,7 @@ namespace Poly_Ling.Data
         {
             var copy = new MeshObject(Name);
             copy.Type = this.Type;
+            copy.SkinKind = this.SkinKind;
             copy.IsTriangulated = this.IsTriangulated;
             copy.Vertices = Vertices.Select(v => v.Clone()).ToList();
             copy.Faces = Faces.Select(f => f.Clone()).ToList();
@@ -1934,6 +2028,7 @@ namespace Poly_Ling.Data
         {
             var copy = new MeshObject(Name);
             copy.Type = this.Type;
+            copy.SkinKind = this.SkinKind;
             copy.IsTriangulated = this.IsTriangulated;
             copy.ParentIndex = this.ParentIndex;
             copy.Depth = this.Depth;
@@ -2092,12 +2187,21 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// 全頂点のボーンウェイトをクリア
+        /// 全頂点のボーンウェイトをクリアし、種別を MeshFilter 系へ戻す。
+        ///
+        /// ウェイトの破棄と種別の変更は同時に行う。片方だけ行うと、
+        /// SkinningMatrix 経路のままウェイトが無い（＝全頂点がボーン 0 に張り付く）
+        /// 状態や、ウェイトを持つのに WorldMatrix が二重に掛かる状態を作る。
+        /// MirrorBoneWeight も同時に落とす（実体側だけ消すとミラー描画に古い値が残る）。
         /// </summary>
         public void ClearAllBoneWeights()
         {
             foreach (var v in Vertices)
-                v.BoneWeight = null;
+            {
+                v.BoneWeight       = null;
+                v.MirrorBoneWeight = null;
+            }
+            SkinKind = SkinKind.MeshFilter;
         }
 
         /// <summary>

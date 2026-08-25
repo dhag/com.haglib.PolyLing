@@ -59,7 +59,7 @@ namespace Poly_Ling.MeshBridge
             var unityUVs = new List<Vector2>();
             var unityNormals = new List<Vector3>();
             var unityBoneWeights = new List<BoneWeight>();
-            bool hasBoneWeights = source.HasBoneWeight;
+            bool hasBoneWeights = source.IsSkinnedKind;
 
             // 孤立頂点除外: いずれかの面（3頂点以上）に参照される頂点を展開対象にする。
             // 【重要】ここで face.IsHidden を見てはならない。面の非表示は編集補助であり、
@@ -187,7 +187,7 @@ namespace Poly_Ling.MeshBridge
             var unityUVs = new List<Vector2>();
             var unityNormals = new List<Vector3>();
             var unityBoneWeights = new List<BoneWeight>();
-            bool hasBoneWeights = source.HasBoneWeight;
+            bool hasBoneWeights = source.IsSkinnedKind;
 
             // 法線変換用（逆転置行列）
             Matrix4x4 normalMatrix = transform.inverse.transpose;
@@ -308,7 +308,7 @@ namespace Poly_Ling.MeshBridge
             var unityUVs = new List<Vector2>();
             var unityNormals = new List<Vector3>();
             var unityBoneWeights = new List<BoneWeight>();
-            bool hasBoneWeights = source.HasBoneWeight;
+            bool hasBoneWeights = source.IsSkinnedKind;
 
             // 孤立頂点除外（face.IsHidden を見ない理由は ToUnityMesh 側のコメント参照）
             var nonIsolatedVerts = new HashSet<int>();
@@ -424,7 +424,7 @@ namespace Poly_Ling.MeshBridge
             var unityUVs = new List<Vector2>();
             var unityNormals = new List<Vector3>();
             var unityBoneWeights = new List<BoneWeight>();
-            bool hasBoneWeights = source.HasBoneWeight;
+            bool hasBoneWeights = source.IsSkinnedKind;
 
             Matrix4x4 normalMatrix = transform.inverse.transpose;
 
@@ -671,6 +671,12 @@ namespace Poly_Ling.MeshBridge
                     }
                 }
             }
+
+            // Unity Mesh から取り込んだ結果、ウェイトが入ったなら
+            // 描画オブジェクトの種別を SkinnedMesh 系へ確定させる。
+            // 種別を更新しないと、頂点はワールド（バインド）空間なのに
+            // WorldMatrix 経路で描画され、位置が二重に掛かる。
+            target.RecomputeSkinKind();
         }
 
         // ============================================================
