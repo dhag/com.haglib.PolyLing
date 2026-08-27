@@ -61,7 +61,9 @@ namespace Poly_Ling.Tools.Deformers
     public class RotateDeformer : IMeshDeformer
     {
         public string Name        => "Rotate";
-        public string DisplayName => "Rotate";
+
+        // Name は内部 ID（レジストリの検索キー）。表示だけを日本語にする。
+        public string DisplayName => "回転";
 
         private readonly RotateDeformerParams _params = new RotateDeformerParams();
         public IDeformerParams Params => _params;

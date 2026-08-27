@@ -826,6 +826,12 @@ namespace Poly_Ling.Player
             if (!SelectOnly && GizmoHitTestOverride != null && ctx != null
                 && GizmoHitTestOverride(screenPos, ctx))
             {
+                // 掴んだのはギズモであって要素ではない。ここで _elemOnMouseDown を
+                // 残すと、しきい値超過時の選択差し替え（PendingAction の
+                // ApplyElementClick）が走り、カーソル下の未選択頂点1個へ選択が
+                // 潰れる。複数頂点を選んでギズモを回しても1頂点しか動かなくなる。
+                _elemOnMouseDown = PlayerHoverElement.None;
+
                 UpdateAffectedVertices();
                 _state    = MoveState.PendingAction;
                 _dragMode = DragMode.Moving;

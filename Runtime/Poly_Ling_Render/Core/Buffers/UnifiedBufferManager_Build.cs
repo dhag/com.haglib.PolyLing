@@ -613,9 +613,13 @@ namespace Poly_Ling.Core
         {
             if (_totalVertexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_positionBuffer", _positionBuffer, 0);
                 _positionBuffer.SetData(_positions, 0, 0, _totalVertexCount);
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_normalBuffer", _normalBuffer, 0);
                 _normalBuffer.SetData(_normals, 0, 0, _totalVertexCount);
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_uvBuffer", _uvBuffer, 0);
                 _uvBuffer.SetData(_uvs, 0, 0, _totalVertexCount);
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_vertexFlagsBuffer", _vertexFlagsBuffer, 0);
                 _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
                 _vertexMeshIndexBuffer?.SetData(_vertexMeshIndices, 0, 0, _totalVertexCount);
                 _boneWeightsBuffer?.SetData(_boneWeights, 0, 0, _totalVertexCount);
@@ -626,28 +630,35 @@ namespace Poly_Ling.Core
 
             if (_totalLineCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_lineBuffer", _lineBuffer, 0);
                 _lineBuffer.SetData(_lines, 0, 0, _totalLineCount);
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_lineFlagsBuffer", _lineFlagsBuffer, 0);
                 _lineFlagsBuffer.SetData(_lineFlags, 0, 0, _totalLineCount);
             }
 
             if (_totalFaceCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_faceBuffer", _faceBuffer, 0);
                 _faceBuffer.SetData(_faces, 0, 0, _totalFaceCount);
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_faceFlagsBuffer", _faceFlagsBuffer, 0);
                 _faceFlagsBuffer.SetData(_faceFlags, 0, 0, _totalFaceCount);
             }
 
             if (_totalIndexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_indexBuffer", _indexBuffer, 0);
                 _indexBuffer.SetData(_indices, 0, 0, _totalIndexCount);
             }
 
             if (_meshCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_meshInfoBuffer", _meshInfoBuffer, 0);
                 _meshInfoBuffer.SetData(_meshInfos, 0, 0, _meshCount);
             }
 
             if (_modelCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_modelInfoBuffer", _modelInfoBuffer, 0);
                 _modelInfoBuffer.SetData(_modelInfos, 0, 0, _modelCount);
             }
         }
@@ -675,6 +686,7 @@ namespace Poly_Ling.Core
             Array.Copy(meshObject.Positions, 0, _positions, (int)baseOffset, count);
 
             // GPUにアップロード
+            Poly_Ling.Diagnostics.PLCamDbg.Wr("_positionBuffer", _positionBuffer, 0);
             _positionBuffer.SetData(_positions, (int)baseOffset, (int)baseOffset, (int)meshInfo.VertexCount);
         }
 
@@ -705,6 +717,7 @@ namespace Poly_Ling.Core
                 for (int i = wCount; i < count; i++)
                     _positions[(int)baseOffset + i] = basePositions[i];
 
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_positionBuffer", _positionBuffer, 0);
                 _positionBuffer.SetData(_positions, (int)baseOffset, (int)baseOffset, (int)meshInfo.VertexCount);
             }
             else
@@ -761,6 +774,7 @@ namespace Poly_Ling.Core
             // 全頂点をアップロード
             if (_totalVertexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_positionBuffer", _positionBuffer, 0);
                 _positionBuffer.SetData(_positions, 0, 0, _totalVertexCount);
             }
         }
@@ -963,6 +977,7 @@ namespace Poly_Ling.Core
             // GPUバッファにアップロード
             if (_expandedToOriginalBuffer != null)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_expandedToOriginalBuffer", _expandedToOriginalBuffer, 0);
                 _expandedToOriginalBuffer.SetData(_expandedToOriginal, 0, 0, totalExpanded);
             }
         }

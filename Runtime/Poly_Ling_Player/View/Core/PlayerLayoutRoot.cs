@@ -253,6 +253,7 @@ namespace Poly_Ling.Player
 
         /// <summary>シュリンカーボタン</summary>
         public Button ShrinkBtn { get; private set; }
+        public Button ThinPlateMorphBtn { get; private set; }
 
         /// <summary>左ペイン：モデルブレンドボタン。</summary>
         public Button ModelBlendBtn { get; private set; }
@@ -280,6 +281,7 @@ namespace Poly_Ling.Player
         public VisualElement NormalEditSection     { get; private set; }
         public Button        NormalEditBtn         { get; private set; }
         public VisualElement NormalTransplantSection { get; private set; }
+        public VisualElement ThinPlateMorphSection { get; private set; }
         public Button        NormalTransplantBtn   { get; private set; }
         public VisualElement FaceHideSection       { get; private set; }
         public Button        FaceHideBtn           { get; private set; }
@@ -1182,6 +1184,8 @@ namespace Poly_Ling.Player
 
             ShrinkBtn = MakeBtn("シュリンカー"); foBoneMorph.Add(ShrinkBtn);
 
+            ThinPlateMorphBtn = MakeBtn("TPSモーフ"); foBoneMorph.Add(ThinPlateMorphBtn);
+
             MorphCreateBtn = MakeBtn("モーフ生成・差分から");         foBoneMorph.Add(MorphCreateBtn);
             MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
 
@@ -1511,6 +1515,9 @@ namespace Poly_Ling.Player
 
             // ── シュリンカーセクション
             ShrinkSection = AddSection(visible: false);
+
+            // ── TPSモーフセクション
+            ThinPlateMorphSection = AddSection(visible: false);
 
             // ── ボーンエディタセクション
             BoneEditorSection = AddSection(visible: false);

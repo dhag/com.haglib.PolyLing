@@ -151,6 +151,7 @@ namespace Poly_Ling.Core
             // GPUにアップロード
             if (_mirrorVertexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_mirrorPositionBuffer", _mirrorPositionBuffer, 0);
                 _mirrorPositionBuffer.SetData(_mirrorPositions, 0, 0, _mirrorVertexCount);
             }
         }
@@ -177,6 +178,7 @@ namespace Poly_Ling.Core
             }
 
             // 部分アップロード
+            Poly_Ling.Diagnostics.PLCamDbg.Wr("_mirrorPositionBuffer", _mirrorPositionBuffer, 0);
             _mirrorPositionBuffer.SetData(_mirrorPositions, startIdx, startIdx, count);
         }
 
@@ -220,7 +222,19 @@ namespace Poly_Ling.Core
             if (_skinnedMirrorPositions == null || _skinnedMirrorPositions.Length < _totalVertexCount)
                 _skinnedMirrorPositions = new Vector3[_totalVertexCount];
 
-            _skinnedMirrorPositionBuffer.GetData(_skinnedMirrorPositions, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G15 before n=" + _totalVertexCount + " buf=" + _skinnedMirrorPositionBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _skinnedMirrorPositionBuffer.count + " arr=" + _skinnedMirrorPositions.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                _skinnedMirrorPositionBuffer.GetData(_skinnedMirrorPositions, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G15 after");
             return _skinnedMirrorPositions;
         }
 
@@ -274,8 +288,9 @@ namespace Poly_Ling.Core
 
             if (_mirrorScreenPosBuffer == null || _mirrorScreenPosBuffer.count < _mirrorVertexCount)
             {
+                if (_mirrorScreenPosBuffer != null) Poly_Ling.Diagnostics.PLResStat.LiveCB--;
                 _mirrorScreenPosBuffer?.Release();
-                _mirrorScreenPosBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 2);
+                _mirrorScreenPosBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 2));
             }
 
             for (int i = 0; i < _mirrorVertexCount; i++)
@@ -299,6 +314,7 @@ namespace Poly_Ling.Core
                 }
             }
 
+            Poly_Ling.Diagnostics.PLCamDbg.Wr("_mirrorScreenPosBuffer", _mirrorScreenPosBuffer, 0);
             _mirrorScreenPosBuffer.SetData(_mirrorScreenPositions, 0, 0, _mirrorVertexCount);
         }
 
@@ -317,6 +333,7 @@ namespace Poly_Ling.Core
         {
             if (_mirrorScreenPosBuffer != null)
             {
+                Poly_Ling.Diagnostics.PLResStat.LiveCB--;
                 _mirrorScreenPosBuffer.Release();
                 _mirrorScreenPosBuffer = null;
             }

@@ -205,6 +205,15 @@ namespace Poly_Ling.Player
             /// null / 空なら何もしない。
             /// </summary>
             public ScreenPolyline[] ExtraLines;
+
+            /// <summary>
+            /// true のとき ExtraLines だけを描いて終わる（矢印・リング・
+            /// 中心ハンドル・ピボットを出さない）。
+            ///
+            /// ポインタが乗っていないビューポートへ「掴めない表示だけ」を出す用。
+            /// そこで矢印を描くと掴めるように見えてしまうため分けている。
+            /// </summary>
+            public bool SuppressAxisShapes;
         }
 
         public void UpdateGizmo(GizmoData d)
@@ -1287,6 +1296,10 @@ namespace Poly_Ling.Player
                     DrawGizmoPolyline(ctx, pl.Points, pl.Color, pl.Width > 0f ? pl.Width : 1.2f);
                 }
             }
+
+            // 表示専用データ（掴めないビューポート向け）はここで終わり。
+            // 以降の軸・リング・ピボットは操作対象を示すものなので描かない。
+            if (_gizmoData.SuppressAxisShapes) return;
 
             var at = _gizmoData.HoveredAxis; var dt = _gizmoData.DraggingAxis;
 

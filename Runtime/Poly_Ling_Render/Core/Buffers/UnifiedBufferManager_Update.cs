@@ -128,6 +128,7 @@ namespace Poly_Ling.Core
             // GPUにアップロード
             if (_totalVertexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_vertexFlagsBuffer", _vertexFlagsBuffer, 0);
                 _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
             }
 
@@ -179,6 +180,7 @@ namespace Poly_Ling.Core
         {
             if (_totalVertexCount > 0 && _vertexFlagsBuffer != null)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_vertexFlagsBuffer", _vertexFlagsBuffer, 0);
                 _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
             }
         }
@@ -243,6 +245,7 @@ namespace Poly_Ling.Core
             // GPUにアップロード
             if (_totalLineCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_lineFlagsBuffer", _lineFlagsBuffer, 0);
                 _lineFlagsBuffer.SetData(_lineFlags, 0, 0, _totalLineCount);
             }
         }
@@ -292,6 +295,7 @@ namespace Poly_Ling.Core
             // GPUにアップロード
             if (_totalFaceCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_faceFlagsBuffer", _faceFlagsBuffer, 0);
                 _faceFlagsBuffer.SetData(_faceFlags, 0, 0, _totalFaceCount);
             }
         }
@@ -352,6 +356,7 @@ namespace Poly_Ling.Core
                 ClipPlanes = new Vector4(0.01f, 1000f, 0, 0)
             };
 
+            Poly_Ling.Diagnostics.PLCamDbg.Wr("_cameraBuffer", _cameraBuffer, 0);
             _cameraBuffer.SetData(_cameraInfo);
         }
 
@@ -407,6 +412,7 @@ namespace Poly_Ling.Core
 
             if (_totalVertexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_screenPosBuffer", _screenPosBuffer, 0);
                 _screenPosBuffer.SetData(_screenPositions, 0, 0, _totalVertexCount);
             }
         }
@@ -450,6 +456,7 @@ namespace Poly_Ling.Core
                 PreviewRect = new Vector4(previewRect.x, previewRect.y, previewRect.width, previewRect.height)
             };
 
+            Poly_Ling.Diagnostics.PLCamDbg.Wr("_hitTestInputBuffer", _hitTestInputBuffer, 0);
             _hitTestInputBuffer.SetData(_hitTestInput);
         }
 
@@ -715,6 +722,7 @@ namespace Poly_Ling.Core
             // アップロード
             if (_totalVertexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_vertexFlagsBuffer", _vertexFlagsBuffer, 0);
                 _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
             }
         }
@@ -750,6 +758,7 @@ namespace Poly_Ling.Core
             // アップロード
             if (_totalLineCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_lineFlagsBuffer", _lineFlagsBuffer, 0);
                 _lineFlagsBuffer.SetData(_lineFlags, 0, 0, _totalLineCount);
             }
         }
@@ -771,6 +780,7 @@ namespace Poly_Ling.Core
             // アップロード
             if (_totalFaceCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_faceFlagsBuffer", _faceFlagsBuffer, 0);
                 _faceFlagsBuffer.SetData(_faceFlags, 0, 0, _totalFaceCount);
             }
         }
@@ -786,14 +796,17 @@ namespace Poly_Ling.Core
 
             if (_totalVertexCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_vertexFlagsBuffer", _vertexFlagsBuffer, 0);
                 _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
             }
             if (_totalLineCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_lineFlagsBuffer", _lineFlagsBuffer, 0);
                 _lineFlagsBuffer.SetData(_lineFlags, 0, 0, _totalLineCount);
             }
             if (_totalFaceCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_faceFlagsBuffer", _faceFlagsBuffer, 0);
                 _faceFlagsBuffer.SetData(_faceFlags, 0, 0, _totalFaceCount);
             }
         }
@@ -992,8 +1005,13 @@ namespace Poly_Ling.Core
         /// <summary>
         /// GPUでスクリーン座標を計算
         /// </summary>
-        public void ComputeScreenPositionsGPU(Matrix4x4 viewProjection, Rect viewport, int slot = 0)
+        public void ComputeScreenPositionsGPU(Matrix4x4 viewProjection, Rect viewport, int slot = 0, string dbgSrc = "?")
         {
+            Poly_Ling.Diagnostics.PLCamDbg.Cap("v=" + _totalVertexCount + "/" + _vertexCapacity
+                + " l=" + _totalLineCount + "/" + _lineCapacity
+                + " f=" + _totalFaceCount + "/" + _faceCapacity
+                + " mesh=" + (_meshInfos == null ? -1 : _meshInfos.Length)
+                + " sp4=" + (_screenPositions4 == null ? -1 : _screenPositions4.Length));
             if (!_gpuComputeAvailable || _computeShader == null || _totalVertexCount <= 0)
             {
                 ComputeScreenPositions(viewProjection, viewport);
@@ -1018,10 +1036,23 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelScreenPos, "_MirrorScreenPositionBuffer",_mirrorScreenPosBuffer4);
 
             int groups = ThreadGroups(_totalVertexCount);
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("ScreenPos", 0, null, groups);
             _computeShader.Dispatch(_kernelScreenPos, groups, 1, 1);
 
             // CPU 読み戻し（ホバー・ヒットテスト・CommitBoxSelect 用）
-            screenBuf.GetData(_screenPositions4, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G1 before n=" + _totalVertexCount + " buf=" + screenBuf.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + screenBuf.count + " arr=" + _screenPositions4.Length + " slot=" + slot + " src=" + dbgSrc);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData && Poly_Ling.Diagnostics.PLCamDbg.SwHotGetData)
+                screenBuf.GetData(_screenPositions4, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G1 after");
             for (int i = 0; i < _totalVertexCount; i++)
                 _screenPositions[i] = new Vector2(_screenPositions4[i].x, _screenPositions4[i].y);
         }
@@ -1044,10 +1075,23 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelVertexHit, "_VertexCulledBuffer",      GetVertexCulledBuffer(0) ?? _vertexFlagsBuffer);
             _computeShader.SetBuffer(_kernelVertexHit, "_VertexHitDistanceBuffer", _hitVertexDistBuffer);
 
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("VertexHit", 0, null, ThreadGroups(_totalVertexCount));
             _computeShader.Dispatch(_kernelVertexHit, ThreadGroups(_totalVertexCount), 1, 1);
 
             // 結果を読み戻し
-            _hitVertexDistBuffer.GetData(_hitVertexDistances, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G2 before n=" + _totalVertexCount + " buf=" + _hitVertexDistBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _hitVertexDistBuffer.count + " arr=" + _hitVertexDistances.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData && Poly_Ling.Diagnostics.PLCamDbg.SwHotGetData)
+                _hitVertexDistBuffer.GetData(_hitVertexDistances, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G2 after");
         }
 
         /// <summary>
@@ -1076,10 +1120,23 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelVertexSnapHit, "_VertexCulledBuffer",          GetVertexCulledBuffer(0) ?? _vertexFlagsBuffer);
             _computeShader.SetBuffer(_kernelVertexSnapHit, "_VertexSnapHitDistanceBuffer", _snapHitVertexDistBuffer);
 
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("VertexSnapHit", 0, null, ThreadGroups(_totalVertexCount));
             _computeShader.Dispatch(_kernelVertexSnapHit, ThreadGroups(_totalVertexCount), 1, 1);
 
             // 結果を読み戻し
-            _snapHitVertexDistBuffer.GetData(_snapHitVertexDistances, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G3 before n=" + _totalVertexCount + " buf=" + _snapHitVertexDistBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _snapHitVertexDistBuffer.count + " arr=" + _snapHitVertexDistances.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData && Poly_Ling.Diagnostics.PLCamDbg.SwHotGetData)
+                _snapHitVertexDistBuffer.GetData(_snapHitVertexDistances, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G3 after");
         }
 
         /// <summary>
@@ -1101,10 +1158,23 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelLineHit, "_LineCulledBuffer",     GetLineCulledBuffer(0) ?? _lineFlagsBuffer);
             _computeShader.SetBuffer(_kernelLineHit, "_LineHitDistanceBuffer",_hitLineDistBuffer);
 
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("LineHit", 0, null, ThreadGroups(_totalLineCount));
             _computeShader.Dispatch(_kernelLineHit, ThreadGroups(_totalLineCount), 1, 1);
 
             // 結果を読み戻し
-            _hitLineDistBuffer.GetData(_hitLineDistances, 0, 0, _totalLineCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G4 before n=" + _totalLineCount + " buf=" + _hitLineDistBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _hitLineDistBuffer.count + " arr=" + _hitLineDistances.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData && Poly_Ling.Diagnostics.PLCamDbg.SwHotGetData)
+                _hitLineDistBuffer.GetData(_hitLineDistances, 0, 0, _totalLineCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G4 after");
         }
 
         /// <summary>
@@ -1133,6 +1203,7 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelFaceVisibility, "_VertexFlagsBuffer",    _vertexFlagsBuffer);
             _computeShader.SetBuffer(_kernelFaceVisibility, "_VertexCulledBuffer",   vCulledBuf);
 
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("FaceVisibility", 0, null, ThreadGroups(_totalFaceCount));
             _computeShader.Dispatch(_kernelFaceVisibility, ThreadGroups(_totalFaceCount), 1, 1);
         }
 
@@ -1160,6 +1231,7 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelLineVisibility, "_LineFlagsBuffer",  _lineFlagsBuffer);
             _computeShader.SetBuffer(_kernelLineVisibility, "_LineCulledBuffer", lCulledBuf);
 
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("LineVisibility", 0, null, ThreadGroups(_totalFaceCount));
             _computeShader.Dispatch(_kernelLineVisibility, ThreadGroups(_totalFaceCount), 1, 1);
         }
 
@@ -1171,7 +1243,19 @@ namespace Poly_Ling.Core
         {
             if (_vertexFlagsBuffer == null || _totalVertexCount <= 0)
                 return;
-            _vertexFlagsBuffer.GetData(_vertexFlags, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G7 before n=" + _totalVertexCount + " buf=" + _vertexFlagsBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _vertexFlagsBuffer.count + " arr=" + _vertexFlags.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                _vertexFlagsBuffer.GetData(_vertexFlags, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G7 after");
         }
 
         /// <summary>
@@ -1195,7 +1279,19 @@ namespace Poly_Ling.Core
             if (_vertexCulledCache == null || _vertexCulledCache.Length < _totalVertexCount)
                 _vertexCulledCache = new uint[_totalVertexCount];
 
-            vCulledBuf.GetData(_vertexCulledCache, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G8 before n=" + _totalVertexCount + " buf=" + vCulledBuf.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + vCulledBuf.count + " arr=" + _vertexCulledCache.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                vCulledBuf.GetData(_vertexCulledCache, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G8 after");
         }
 
         /// <summary>
@@ -1212,7 +1308,19 @@ namespace Poly_Ling.Core
             if (_faceCulledCache == null || _faceCulledCache.Length < _totalFaceCount)
                 _faceCulledCache = new uint[_totalFaceCount];
 
-            fCulledBuf.GetData(_faceCulledCache, 0, 0, _totalFaceCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G9 before n=" + _totalFaceCount + " buf=" + fCulledBuf.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + fCulledBuf.count + " arr=" + _faceCulledCache.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                fCulledBuf.GetData(_faceCulledCache, 0, 0, _totalFaceCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G9 after");
         }
 
         /// <summary>
@@ -1223,7 +1331,19 @@ namespace Poly_Ling.Core
             const uint FLAG_CULLED = 0x00004000;
             
             // 頂点フラグを読み戻し
-            _vertexFlagsBuffer.GetData(_vertexFlags, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G10 before n=" + _totalVertexCount + " buf=" + _vertexFlagsBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _vertexFlagsBuffer.count + " arr=" + _vertexFlags.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                _vertexFlagsBuffer.GetData(_vertexFlags, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G10 after");
             int frontVertices = 0, backVertices = 0;
             for (int i = 0; i < _totalVertexCount; i++)
             {
@@ -1234,7 +1354,19 @@ namespace Poly_Ling.Core
             }
             
             // 面フラグを読み戻し
-            _faceFlagsBuffer.GetData(_faceFlags, 0, 0, _totalFaceCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G11 before n=" + _totalFaceCount + " buf=" + _faceFlagsBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _faceFlagsBuffer.count + " arr=" + _faceFlags.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                _faceFlagsBuffer.GetData(_faceFlags, 0, 0, _totalFaceCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G11 after");
             int frontFaces = 0, backFaces = 0;
             for (int i = 0; i < _totalFaceCount; i++)
             {
@@ -1271,11 +1403,36 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelFaceHit, "_FaceHitBuffer",       _faceHitBuffer);
             _computeShader.SetBuffer(_kernelFaceHit, "_FaceHitDepthBuffer",  _faceHitDepthBuffer);
 
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("FaceHit", 0, null, ThreadGroups(_totalFaceCount));
             _computeShader.Dispatch(_kernelFaceHit, ThreadGroups(_totalFaceCount), 1, 1);
 
             // 結果を読み戻し
-            _faceHitBuffer.GetData(_faceHitResults, 0, 0, _totalFaceCount);
-            _faceHitDepthBuffer.GetData(_faceHitDepths, 0, 0, _totalFaceCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G5 before n=" + _totalFaceCount + " buf=" + _faceHitBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _faceHitBuffer.count + " arr=" + _faceHitResults.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData && Poly_Ling.Diagnostics.PLCamDbg.SwHotGetData)
+                _faceHitBuffer.GetData(_faceHitResults, 0, 0, _totalFaceCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G5 after");
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G6 before n=" + _totalFaceCount + " buf=" + _faceHitDepthBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _faceHitDepthBuffer.count + " arr=" + _faceHitDepths.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData && Poly_Ling.Diagnostics.PLCamDbg.SwHotGetData)
+                _faceHitDepthBuffer.GetData(_faceHitDepths, 0, 0, _totalFaceCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G6 after");
         }
 
         /// <summary>
@@ -1422,7 +1579,7 @@ namespace Poly_Ling.Core
             DispatchClearCulledBuffersGPU(0);
 
             // 2. スクリーン座標計算（slot 0）
-            ComputeScreenPositionsGPU(viewProjection, viewport, 0);
+            ComputeScreenPositionsGPU(viewProjection, viewport, 0, "cullSelf");
 
             // 3. 面可視性計算（slot 0）
             DispatchFaceVisibilityGPU(0);
@@ -1461,6 +1618,7 @@ namespace Poly_Ling.Core
 
             int maxVertexLine = Mathf.Max(_totalVertexCount, _totalLineCount);
             if (maxVertexLine > 0)
+                Poly_Ling.Diagnostics.PLCamDbg.Dsp("Clear", 0, null, ThreadGroups(maxVertexLine));
                 _computeShader.Dispatch(_kernelClear, ThreadGroups(maxVertexLine), 1, 1);
 
             // カーネル2: 面関連（ヒット距離のみ）
@@ -1469,6 +1627,7 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelClearFace, "_FaceFlagsBuffer",    _faceFlagsBuffer);
 
             if (_totalFaceCount > 0)
+                Poly_Ling.Diagnostics.PLCamDbg.Dsp("ClearFace", 0, null, ThreadGroups(_totalFaceCount));
                 _computeShader.Dispatch(_kernelClearFace, ThreadGroups(_totalFaceCount), 1, 1);
         }
 
@@ -1509,6 +1668,7 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelClearCulled, "_LineCulledBuffer",   lBuf);
             int maxVL = Mathf.Max(_totalVertexCount, _totalLineCount);
             if (maxVL > 0)
+                Poly_Ling.Diagnostics.PLCamDbg.Dsp("ClearCulled", 0, null, ThreadGroups(maxVL));
                 _computeShader.Dispatch(_kernelClearCulled, ThreadGroups(maxVL), 1, 1);
 
             // 面
@@ -1517,6 +1677,7 @@ namespace Poly_Ling.Core
                 _computeShader.SetBuffer(_kernelClearFaceCulled, "_FaceFlagsBuffer",  _faceFlagsBuffer);
                 _computeShader.SetBuffer(_kernelClearFaceCulled, "_FaceCulledBuffer", fBuf);
                 if (_totalFaceCount > 0)
+                    Poly_Ling.Diagnostics.PLCamDbg.Dsp("ClearFaceCulled", 0, null, ThreadGroups(_totalFaceCount));
                     _computeShader.Dispatch(_kernelClearFaceCulled, ThreadGroups(_totalFaceCount), 1, 1);
             }
         }
@@ -1548,6 +1709,7 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelApplyMirrorCull, "_LineCulledBuffer",   lBuf);
             int maxVL = Mathf.Max(_totalVertexCount, _totalLineCount);
             if (maxVL > 0)
+                Poly_Ling.Diagnostics.PLCamDbg.Dsp("ApplyMirrorCull", 0, null, ThreadGroups(maxVL));
                 _computeShader.Dispatch(_kernelApplyMirrorCull, ThreadGroups(maxVL), 1, 1);
         }
 
@@ -1570,10 +1732,13 @@ namespace Poly_Ling.Core
                 Array.Resize(ref _zeroFaceCache,   Mathf.NextPowerOfTwo(Mathf.Max(1, _totalFaceCount)));
 
             if (vBuf != null && _totalVertexCount > 0)
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("vBuf", vBuf, 0);
                 vBuf.SetData(_zeroVertexCache, 0, 0, _totalVertexCount);
             if (lBuf != null && _totalLineCount > 0)
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("lBuf", lBuf, 0);
                 lBuf.SetData(_zeroLineCache, 0, 0, _totalLineCount);
             if (fBuf != null && _totalFaceCount > 0)
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("fBuf", fBuf, 0);
                 fBuf.SetData(_zeroFaceCache, 0, 0, _totalFaceCount);
         }
 
@@ -1602,8 +1767,9 @@ namespace Poly_Ling.Core
             // バッファサイズが足りない場合は再作成
             if (_transformMatrixBuffer.count < contextCount)
             {
+                if (_transformMatrixBuffer != null) Poly_Ling.Diagnostics.PLResStat.LiveCB--;
                 _transformMatrixBuffer?.Release();
-                _transformMatrixBuffer = new ComputeBuffer(Mathf.Max(contextCount, 256), sizeof(float) * 16);
+                _transformMatrixBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(Mathf.Max(contextCount, 256), sizeof(float) * 16));
             }
 
             // 全MeshContext（ボーン含む）の変換行列を設定
@@ -1648,6 +1814,7 @@ namespace Poly_Ling.Core
             // GPUにアップロード
             if (contextCount > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_transformMatrixBuffer", _transformMatrixBuffer, 0);
                 _transformMatrixBuffer.SetData(_transformMatrices, 0, 0, contextCount);
             }
         }
@@ -1729,6 +1896,7 @@ namespace Poly_Ling.Core
 
             // ディスパッチ
             int threadGroups = Mathf.CeilToInt(_totalVertexCount / 256.0f);
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("TransformVertices", 0, null, threadGroups);
             _computeShader.Dispatch(_kernelTransformVertices, threadGroups, 1, 1);
 
             // CPU側に読み戻し（描画用）- 非推奨、後方互換用
@@ -1737,7 +1905,19 @@ namespace Poly_Ling.Core
                 if (_worldPositions == null || _worldPositions.Length < _totalVertexCount)
                     _worldPositions = new Vector3[_totalVertexCount];
                 
-                _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G12 before n=" + _totalVertexCount + " buf=" + _worldPositionBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _worldPositionBuffer.count + " arr=" + _worldPositions.Length);
+                // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                    _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
+                // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+                //   GetData = フラッシュ + GPU 完了待ち
+                //   GL.Flush = フラッシュのみ（待たない）
+                //   どちらが引き金かを分離するための診断。
+                else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                    UnityEngine.GL.Flush();
+                else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                    Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G12 after");
             }
         }
 
@@ -1790,6 +1970,7 @@ namespace Poly_Ling.Core
 
             // ディスパッチ
             int threadGroups = Mathf.CeilToInt(_totalExpandedVertexCount / 256.0f);
+            Poly_Ling.Diagnostics.PLCamDbg.Dsp("ExpandVertices", 0, null, threadGroups);
             _computeShader.Dispatch(_kernelExpandVertices, threadGroups, 1, 1);
         }
 
@@ -1824,7 +2005,19 @@ namespace Poly_Ling.Core
             if (_worldPositions == null || _worldPositions.Length < _totalVertexCount)
                 _worldPositions = new Vector3[_totalVertexCount];
 
-            _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G13 before n=" + _totalVertexCount + " buf=" + _worldPositionBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _worldPositionBuffer.count + " arr=" + _worldPositions.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G13 after");
             return _worldPositions;
         }
 
@@ -1842,7 +2035,19 @@ namespace Poly_Ling.Core
             if (_expandedPositions == null || _expandedPositions.Length < _totalExpandedVertexCount)
                 _expandedPositions = new Vector3[_totalExpandedVertexCount];
 
-            _expandedPositionBuffer.GetData(_expandedPositions, 0, 0, _totalExpandedVertexCount);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G14 before n=" + _totalExpandedVertexCount + " buf=" + _expandedPositionBuffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _expandedPositionBuffer.count + " arr=" + _expandedPositions.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                _expandedPositionBuffer.GetData(_expandedPositions, 0, 0, _totalExpandedVertexCount);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G14 after");
             return _expandedPositions;
         }
     }

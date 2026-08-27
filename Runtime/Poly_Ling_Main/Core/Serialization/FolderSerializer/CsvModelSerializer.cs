@@ -1339,6 +1339,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"origin,{Fl(o.x)},{Fl(o.y)},{Fl(o.z)}");
             sb.AppendLine($"rotation,{Fl(r.x)},{Fl(r.y)},{Fl(r.z)},{Fl(r.w)}");
             sb.AppendLine($"isVisible,{wa.IsVisible}");
+            sb.AppendLine($"length,{Fl(wa.Length)}");
 
             File.WriteAllText(Path.Combine(folderPath, "workaxis.csv"), sb.ToString(), Encoding.UTF8);
         }
@@ -1365,6 +1366,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "isVisible":
                         wa.IsVisible = PBool(cols, 1, true);
+                        break;
+                    case "length":
+                        // 行が無い旧ファイルは Reset() の既定値のまま。
+                        // 0 以下は下限クランプで使い物にならない長さになるため無視する。
+                        {
+                            float len = PFl(cols, 1);
+                            if (len > 0f) wa.Length = len;
+                        }
                         break;
                 }
             }

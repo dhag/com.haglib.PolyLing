@@ -26,6 +26,8 @@ namespace Poly_Ling.Tools.Deformers
         public static readonly Func<IMeshDeformer>[] DeformerFactories = new Func<IMeshDeformer>[]
         {
             () => new RotateDeformer(),
+            () => new MoveDeformer(),
+            () => new ScaleDeformer(),
             () => new BendDeformer(),
             () => new TwistDeformer(),
             () => new WaveDeformer(),
@@ -60,7 +62,11 @@ namespace Poly_Ling.Tools.Deformers
             return null;
         }
 
-        /// <summary>登録済み Name の一覧（UI のドロップダウン等に使う）。</summary>
+        /// <summary>
+        /// 登録済み Name の一覧。Name は内部 ID なので、UI へ出すのではなく
+        /// 選択結果を Create へ渡すために使う。表示は GetDisplayNames。
+        /// 両者の並び順は DeformerFactories と同じで、index が対応する。
+        /// </summary>
         public static List<string> GetNames()
         {
             var names = new List<string>(DeformerFactories.Length);
@@ -68,6 +74,21 @@ namespace Poly_Ling.Tools.Deformers
             {
                 var d = factory();
                 if (d != null) names.Add(d.Name);
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// 登録済み DisplayName の一覧（UI のドロップダウン表示用）。
+        /// GetNames と同じ並び順なので、選ばれた index で GetNames を引ける。
+        /// </summary>
+        public static List<string> GetDisplayNames()
+        {
+            var names = new List<string>(DeformerFactories.Length);
+            foreach (var factory in DeformerFactories)
+            {
+                var d = factory();
+                if (d != null) names.Add(d.DisplayName);
             }
             return names;
         }

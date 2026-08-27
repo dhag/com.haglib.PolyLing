@@ -26,13 +26,20 @@ namespace Poly_Ling.Serialization
         /// <summary>ギズモ表示</summary>
         public bool isVisible = true;
 
+        /// <summary>
+        /// 軸長（ワールド単位）。六角錐ギズモの長さの基準で、Y 軸先端の位置を決める。
+        /// この項目が無い旧データを読んだときは既定値のままになる。
+        /// </summary>
+        public float length = 1f;
+
         public static WorkAxisDTO CreateDefault()
         {
             return new WorkAxisDTO
             {
                 origin    = new float[] { 0, 0, 0 },
                 rotation  = new float[] { 0, 0, 0, 1 },
-                isVisible = true
+                isVisible = true,
+                length    = 1f
             };
         }
     }

@@ -184,6 +184,9 @@ namespace Poly_Ling.Core
             if (_isInitialized)
                 return true;
 
+            Poly_Ling.Diagnostics.PLResStat.LiveAdapter++;
+            Poly_Ling.Diagnostics.PLResStat.Report("Adapter.Initialize");
+
             _unifiedSystem.Initialize();
 
             if (!_renderer.Initialize())
@@ -533,6 +536,23 @@ namespace Poly_Ling.Core
                 return;
             }
 
+            {
+                // [CamDbg] GPU から読み戻した頂点座標に NaN / Inf が無いかを検査する。
+                int __bad = 0, __firstBad = -1;
+                int __n = totalExpandedCount < expandedPositions.Length ? totalExpandedCount : expandedPositions.Length;
+                for (int __i = 0; __i < __n; __i++)
+                {
+                    var __p = expandedPositions[__i];
+                    if (float.IsNaN(__p.x) || float.IsNaN(__p.y) || float.IsNaN(__p.z)
+                     || float.IsInfinity(__p.x) || float.IsInfinity(__p.y) || float.IsInfinity(__p.z))
+                    {
+                        __bad++;
+                        if (__firstBad < 0) __firstBad = __i;
+                    }
+                }
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("WB n=" + __n + " bad=" + __bad + " first=" + __firstBad);
+            }
+
             // 展開済み頂点のオフセットを追跡
             int expandedOffset = 0;
 
@@ -857,21 +877,30 @@ namespace Poly_Ling.Core
             // 対象スロットのカリングバッファのみクリアする。
             // DispatchClearBuffersGPU は呼ばない（ヒットテストバッファのクリアは不要、
             // かつ呼ぶと他スロットの slot 0 自動クリアが発生する可能性があるため）。
+            // [CamDbg] cull=0 のとき表示用カリングを丸ごと止める。診断専用。
+            if (!Poly_Ling.Diagnostics.PLCamDbg.SwCullDisplay) return;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C1 clearCulled slot=" + slot);
             bm.DispatchClearCulledBuffersGPU(slot);
-            bm.ComputeScreenPositionsGPU(vp, viewport, slot);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C2 screenPos slot=" + slot);
+            bm.ComputeScreenPositionsGPU(vp, viewport, slot, "cullDisplay");
 
             if (backfaceCulling)
             {
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C3 faceVis slot=" + slot);
                 bm.DispatchFaceVisibilityGPU(slot);
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C4 lineVis slot=" + slot);
                 bm.DispatchLineVisibilityGPU(slot);
             }
             else
             {
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C3b clearCulledFlags slot=" + slot);
                 bm.ClearCulledFlagsGPU(slot);
             }
 
             // 永続ミラーの最終カリング（両分岐後に適用し、上書きを受けないようにする）。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C5 applyMirrorCull slot=" + slot);
             bm.DispatchApplyMirrorCullGPU(slot);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C6 cullDone slot=" + slot);
         }
 
         /// <summary>
@@ -1117,6 +1146,8 @@ namespace Poly_Ling.Core
         {
             if (!_disposed)
             {
+                Poly_Ling.Diagnostics.PLResStat.LiveAdapter--;
+                Poly_Ling.Diagnostics.PLResStat.Report("Adapter.Dispose");
                 if (disposing)
                 {
                     _renderer?.Dispose();

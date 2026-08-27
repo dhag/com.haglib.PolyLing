@@ -1010,18 +1010,28 @@ namespace Poly_Ling.Core.Rendering
             var meshes    = _pendingMeshesBySlot[slot];
             var materials = _pendingMaterialsBySlot[slot];
             var mpbs      = _pendingPropertyBlocksBySlot[slot];
+            int __draws = 0, __nullMesh = 0, __nullMat = 0, __empty = 0, __vtxSum = 0, __idxSum = 0;
             for (int i = 0; i < meshes.Count; i++)
             {
                 var mesh     = meshes[i];
                 var material = materials[i];
                 var mpb      = i < mpbs.Count ? mpbs[i] : null;
-                if (mesh != null && material != null)
+                if (mesh == null)     { __nullMesh++; continue; }
+                if (material == null) { __nullMat++;  continue; }
+                if (mesh.vertexCount <= 0) { __empty++; continue; }
+                __vtxSum += mesh.vertexCount;
+                __idxSum += (int)mesh.GetIndexCount(0);
+                __draws++;
+                Poly_Ling.Core.PLMeshValidator.Check(mesh, material, "SubW slot=" + slot);
                 {
                     // MPB が設定されている場合は per-draw-call プロパティを適用
                     // （MaterialPropertyBlock の値は DrawMesh 呼び出し時点でキャプチャされる）
                     Graphics.DrawMesh(mesh, Matrix4x4.identity, material, 0, camera, 0, mpb);
                 }
             }
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("SubW slot=" + slot + " list=" + meshes.Count
+                + " draws=" + __draws + " nullMesh=" + __nullMesh + " nullMat=" + __nullMat
+                + " empty=" + __empty + " vtx=" + __vtxSum + " idx=" + __idxSum);
         }
 
         /// <summary>

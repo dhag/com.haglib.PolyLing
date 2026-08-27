@@ -167,15 +167,22 @@ namespace Poly_Ling.Player
             };
             RT.Create();
             if (Cam != null) Cam.targetTexture = RT;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("RT create id=" + RT.GetInstanceID()
+                + " w=" + w + " h=" + h
+                + " cam=" + (Cam == null ? "null" : Cam.name));
         }
 
         private void ReleaseRT()
         {
             if (RT == null) return;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("RT release id=" + RT.GetInstanceID()
+                + " w=" + RT.width + " h=" + RT.height
+                + " cam=" + (Cam == null ? "null" : Cam.name));
             if (Cam != null && Cam.targetTexture == RT) Cam.targetTexture = null;
             RT.Release();
             Object.Destroy(RT);
             RT = null;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("RT released");
         }
     }
 }

@@ -57,7 +57,7 @@ namespace Poly_Ling.Core
                 return null;
 
             int stride = System.Runtime.InteropServices.Marshal.SizeOf<T>();
-            return new ComputeBuffer(count, stride, type);
+            return Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(count, stride, type));
         }
 
         /// <summary>
@@ -68,7 +68,7 @@ namespace Poly_Ling.Core
             if (count <= 0 || stride <= 0)
                 return null;
 
-            return new ComputeBuffer(count, stride, type);
+            return Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(count, stride, type));
         }
 
         /// <summary>
@@ -78,6 +78,7 @@ namespace Poly_Ling.Core
         {
             if (buffer != null)
             {
+                Poly_Ling.Diagnostics.PLResStat.LiveCB--;
                 buffer.Release();
                 buffer = null;
             }
@@ -191,6 +192,7 @@ namespace Poly_Ling.Core
 
             if (_data != null && _count > 0)
             {
+                Poly_Ling.Diagnostics.PLCamDbg.Wr("_buffer", _buffer, 0);
                 _buffer.SetData(_data, 0, 0, _count);
             }
         }
@@ -274,6 +276,7 @@ namespace Poly_Ling.Core
             if (_buffer == null || _data == null || _count == 0)
                 return;
 
+            Poly_Ling.Diagnostics.PLCamDbg.Wr("_buffer", _buffer, 0);
             _buffer.SetData(_data, 0, 0, _count);
         }
 
@@ -289,6 +292,7 @@ namespace Poly_Ling.Core
             if (uploadCount <= 0)
                 return;
 
+            Poly_Ling.Diagnostics.PLCamDbg.Wr("_buffer", _buffer, 0);
             _buffer.SetData(_data, start, start, uploadCount);
         }
 
@@ -300,7 +304,19 @@ namespace Poly_Ling.Core
             if (_buffer == null || _data == null || _count == 0)
                 return;
 
-            _buffer.GetData(_data, 0, 0, _count);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G16 before n=" + _count + " buf=" + _buffer.GetHashCode() + " f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " cnt=" + _buffer.count + " arr=" + _data.Length);
+            // [CamDbg] getdata=0 のとき同期読み戻しを飛ばす。診断専用。
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwGetData)
+                _buffer.GetData(_data, 0, 0, _count);
+            // [CamDbg] flush=1 のとき、読み戻しの代わりにフラッシュのみ行う。
+            //   GetData = フラッシュ + GPU 完了待ち
+            //   GL.Flush = フラッシュのみ（待たない）
+            //   どちらが引き金かを分離するための診断。
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushOnly)
+                UnityEngine.GL.Flush();
+            else if (Poly_Ling.Diagnostics.PLCamDbg.SwFlushDeferred)
+                Poly_Ling.Diagnostics.PLCamDbg.FlushPending = true;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("G16 after");
         }
     }
 }

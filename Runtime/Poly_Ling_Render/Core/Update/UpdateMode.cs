@@ -209,7 +209,7 @@ namespace Poly_Ling.Core
         /// </summary>
         public static UpdateModeProfile FromMode(UpdateMode mode)
         {
-            return mode switch
+            var p = mode switch
             {
                 UpdateMode.Normal => Normal,
                 UpdateMode.Idle => Idle,
@@ -219,6 +219,22 @@ namespace Poly_Ling.Core
                 UpdateMode.ActiveMesh => ActiveMeshChange,
                 _ => Normal,
             };
+
+            // [CamDbg] 切り分け用の強制無効化。恒久コードではない。
+            // CamDbgSwitch.txt が無い、または全て 1 のときは何もしない。
+            Poly_Ling.Diagnostics.PLCamDbg.EnsureSwitches();
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwHitTest
+             && Poly_Ling.Diagnostics.PLCamDbg.SwMeshRebuild
+             && Poly_Ling.Diagnostics.PLCamDbg.SwReadback)
+                return p;
+
+            return new UpdateModeProfile(
+                allowHitTest:                 p.AllowHitTest              && Poly_Ling.Diagnostics.PLCamDbg.SwHitTest,
+                allowVertexFlagsReadback:     p.AllowVertexFlagsReadback  && Poly_Ling.Diagnostics.PLCamDbg.SwReadback,
+                allowGpuVisibility:           p.AllowGpuVisibility,
+                allowUnselectedOverlay:       p.AllowUnselectedOverlay,
+                allowMeshRebuild:             p.AllowMeshRebuild          && Poly_Ling.Diagnostics.PLCamDbg.SwMeshRebuild,
+                allowSelectedDrawableMeshSync:p.AllowSelectedDrawableMeshSync);
         }
     }
 }

@@ -84,11 +84,34 @@ namespace Poly_Ling.Player
             // OnRenderObject() は URP 環境で発火タイミング・Camera.current の扱いが
             // 不確実なため、ここでは RenderPipelineManager 経由で確実に各カメラ描画前に呼ぶ。
             UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
+            // [CamDbg] フレーム境界の計測。診断専用。
+            UnityEngine.Rendering.RenderPipelineManager.beginFrameRendering += OnBeginFrameRendering;
+            UnityEngine.Rendering.RenderPipelineManager.endFrameRendering   += OnEndFrameRendering;
         }
 
         private void OnDisable()
         {
             UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
+            UnityEngine.Rendering.RenderPipelineManager.beginFrameRendering -= OnBeginFrameRendering;
+            UnityEngine.Rendering.RenderPipelineManager.endFrameRendering   -= OnEndFrameRendering;
+        }
+
+        // [CamDbg] フレーム境界。診断専用。
+        private void OnBeginFrameRendering(
+            UnityEngine.Rendering.ScriptableRenderContext ctx, Camera[] cams)
+        {
+            Poly_Ling.Diagnostics.PLCamDbg.Frame++;
+            // [CamDbg] flush=2 のとき、溜まったフラッシュをここで 1 回だけ実行する。
+            Poly_Ling.Diagnostics.PLCamDbg.FlushIfPending();
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("F1 frameBegin f=" + Poly_Ling.Diagnostics.PLCamDbg.Frame + " n=" + (cams == null ? -1 : cams.Length));
+        }
+
+        private void OnEndFrameRendering(
+            UnityEngine.Rendering.ScriptableRenderContext ctx, Camera[] cams)
+        {
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("F2 frameEnd");
+            // [PLResStat] 組込みカウンタは値が変わったときだけ出力される。
+            Poly_Ling.Diagnostics.PLResStat.ReportStat();
         }
 
         private void OnDestroy()
@@ -113,7 +136,9 @@ namespace Poly_Ling.Player
         private void OnBeginCameraRendering(UnityEngine.Rendering.ScriptableRenderContext ctx, Camera cam)
         {
             if (cam == null) return;
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("R1 begin cam=" + cam.name);
             _core?.SubmitDrawForCamera(cam);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("R2 end cam=" + cam.name);
         }
     }
 }

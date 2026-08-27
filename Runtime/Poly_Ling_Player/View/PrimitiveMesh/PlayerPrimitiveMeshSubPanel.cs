@@ -853,7 +853,11 @@ namespace Poly_Ling.Player
             EnsureLiveWireMaterial();
             if (_liveWireMat == null) return;
 
-            Graphics.DrawMesh(_wireMesh, LiveWireMatrix(), _liveWireMat, 0, cam);
+            var __m = LiveWireMatrix();
+            Graphics.RenderMesh(
+                Poly_Ling.Core.PLRenderMeshHelper.Make(
+                    _liveWireMat, cam, Poly_Ling.Core.PLRenderMeshHelper.WorldBoundsOf(_wireMesh, __m)),
+                _wireMesh, 0, __m);
         }
 
         /// <summary>

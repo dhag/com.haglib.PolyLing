@@ -274,8 +274,9 @@ namespace Poly_Ling.Player
             _root.Add(PlayerIoUiKit.Divider());
             _root.Add(PlayerIoUiKit.SectionLabel("歪み"));
 
-            var names = DeformerRegistry.GetNames();
-            _deformerDropdown = new DropdownField("種類", names, names.Count > 0 ? 0 : -1);
+            // 表示は DisplayName（日本語）。選択は index で GetNames を引く。
+            var labels = DeformerRegistry.GetDisplayNames();
+            _deformerDropdown = new DropdownField("種類", labels, labels.Count > 0 ? 0 : -1);
             _deformerDropdown.style.color = new StyleColor(Color.white);
             _deformerDropdown.RegisterValueChangedCallback(e =>
             {
@@ -302,8 +303,13 @@ namespace Poly_Ling.Player
             index = Mathf.Clamp(index, 0, names.Count - 1);
             Deformer = DeformerRegistry.Create(names[index]);
 
+            var labels = DeformerRegistry.GetDisplayNames();
             _suppressCallback = true;
-            try { _deformerDropdown?.SetValueWithoutNotify(names[index]); }
+            try
+            {
+                if (index < labels.Count)
+                    _deformerDropdown?.SetValueWithoutNotify(labels[index]);
+            }
             finally { _suppressCallback = false; }
 
             UpdateGroupVisibility();

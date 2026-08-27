@@ -81,7 +81,9 @@ namespace Poly_Ling.Tools.Deformers
     public class TwistDeformer : IMeshDeformer
     {
         public string Name        => "Twist";
-        public string DisplayName => "Twist";
+
+        // Name は内部 ID（レジストリの検索キー）。表示だけを日本語にする。
+        public string DisplayName => "ねじり";
 
         private readonly TwistDeformerParams _params = new TwistDeformerParams();
         public IDeformerParams Params => _params;

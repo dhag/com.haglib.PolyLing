@@ -157,7 +157,8 @@ namespace Poly_Ling.Serialization
             {
                 origin    = new float[] { o.x, o.y, o.z },
                 rotation  = new float[] { r.x, r.y, r.z, r.w },
-                isVisible = workAxis.IsVisible
+                isVisible = workAxis.IsVisible,
+                length    = workAxis.Length
             };
         }
 
@@ -177,6 +178,10 @@ namespace Poly_Ling.Serialization
                     data.rotation[0], data.rotation[1], data.rotation[2], data.rotation[3]);
 
             workAxis.IsVisible = data.isVisible;
+
+            // length が無い旧データは 0 で入ってくる。Length の下限クランプに
+            // 任せると 1e-3 という使い物にならない長さになるため、ここで弾く。
+            if (data.length > 0f) workAxis.Length = data.length;
         }
 
         // ================================================================

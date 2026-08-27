@@ -287,6 +287,8 @@ namespace Poly_Ling.Core
 
         public void RebuildAdapter(int mi, ModelContext model)
         {
+            Poly_Ling.Diagnostics.PLResStat.Report("RebuildAdapter.enter mi=" + mi);
+
             // MeshContext の並びが変わるため、番号をキーにした Mesh キャッシュは
             // ここで必ず捨てる（放置すると読み直しのたびにリークする）。
             ClearMeshCaches();
@@ -299,6 +301,14 @@ namespace Poly_Ling.Core
             foreach (var mc in model.MeshContextList)
                 if (mc?.MeshObject != null && mc.MeshObject.VertexCount > 0) { hasAny = true; break; }
             if (!hasAny) return;
+
+            // [CamDbg] adapter=1 のとき UnifiedSystemAdapter を作らない。診断専用。
+            Poly_Ling.Diagnostics.PLCamDbg.EnsureSwitches();
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwNoAdapter)
+            {
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("SW noAdapter skip mi=" + mi);
+                return;
+            }
 
             var adapter = new UnifiedSystemAdapter();
             if (!adapter.Initialize())
@@ -347,8 +357,12 @@ namespace Poly_Ling.Core
             // MeshFilter は WorldMatrix を直接使用、スキンドは SkinningMatrix を使用。
             // （ComputeMeshFilterBindPoses は呼ばない: BindPose=WorldMatrix.inverse にすると
             //   SkinningMatrix=identity になり全メッシュがローカル原点に表示されてしまうため）
-            adapter.UpdateTransform(useWorldTransform: true);
-            adapter.WritebackTransformedVertices();
+            // [CamDbg] xform=1 のとき GPU 変換と書き戻しを止める。診断専用。
+            if (!Poly_Ling.Diagnostics.PLCamDbg.SwNoXform)
+            {
+                adapter.UpdateTransform(useWorldTransform: true);
+                adapter.WritebackTransformedVertices();
+            }
 
             _adapters[mi] = adapter;
 
@@ -379,6 +393,9 @@ namespace Poly_Ling.Core
         /// 面本体の Graphics.DrawMesh 提出のみを担当する。
         /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
         /// </summary>
+        /// <summary>[EmptyMeshDbg] 空 UnityMesh の記録残回数。診断専用。</summary>
+        private int _emptyMeshDbgLeft = 60;
+
         public void SubmitMeshes(ProjectContext project, Camera cam)
         {
             if (project == null || cam == null) return;
@@ -399,10 +416,31 @@ namespace Poly_Ling.Core
             // 対象の決め方は CollectWeightVisTargets に一本化してある。
             var weightVisTargets = CollectWeightVisTargets(model);
 
+            int __draws = 0, __nullMesh = 0, __nullMat = 0, __badMesh = 0, __vtxSum = 0;
+
             for (int i = 0; i < drawables.Count; i++)
             {
                 var ctx = drawables[i].Context;
-                if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
+                // 頂点 0 の UnityMesh は null ではないため、vertexCount も見ないと
+                // 空メッシュを Graphics.DrawMesh へ渡してしまう。
+                if (ctx?.UnityMesh == null || ctx.UnityMesh.vertexCount <= 0 || !ctx.IsVisible)
+                {
+                    // [EmptyMeshDbg] 空 UnityMesh の発生源を特定するための一時記録。
+                    // 先頭 60 件のみ。恒久コードではない。
+                    if (_emptyMeshDbgLeft > 0 && ctx != null && ctx.UnityMesh != null && ctx.UnityMesh.vertexCount <= 0)
+                    {
+                        _emptyMeshDbgLeft--;
+                        var __mo = ctx.MeshObject;
+                        if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("EmptyMesh master=" + drawables[i].MasterIndex
+                            + " name=\"" + ctx.Name + "\""
+                            + " type=" + ctx.Type
+                            + " vis=" + ctx.IsVisible
+                            + " uSub=" + ctx.UnityMesh.subMeshCount
+                            + " moVtx=" + (__mo == null ? -1 : __mo.VertexCount)
+                            + " moFace=" + (__mo == null ? -1 : __mo.FaceCount));
+                    }
+                    continue;
+                }
 
                 if (weightVisTargets != null && weightVisTargets.Contains(drawables[i].MasterIndex))
                     continue;
@@ -445,9 +483,19 @@ namespace Poly_Ling.Core
                         mat.SetFloat("_Cull", cullValue);
                     }
 
+                    if (mesh == null) { __nullMesh++; continue; }
+                    if (mat == null)  { __nullMat++;  continue; }
+                    if (mesh.vertexCount <= 0 || sub >= mesh.subMeshCount) { __badMesh++; continue; }
+                    if (sub == 0) __vtxSum += mesh.vertexCount;
+                    __draws++;
+                    Poly_Ling.Core.PLMeshValidator.Check(mesh, mat, "SubM");
                     Graphics.DrawMesh(mesh, Matrix4x4.identity, mat, 0, cam, sub);
                 }
             }
+
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("SubM draws=" + __draws
+                + " nullMesh=" + __nullMesh + " nullMat=" + __nullMat
+                + " badMesh=" + __badMesh + " vtx=" + __vtxSum);
         }
 
         /// <summary>
@@ -511,7 +559,7 @@ namespace Poly_Ling.Core
                         bufMgr.DispatchClearBuffersGPU();
                         bufMgr.DispatchClearCulledBuffersGPU(cullingSlot);
                         bufMgr.ComputeScreenPositionsGPU(
-                            cam.projectionMatrix * cam.worldToCameraMatrix, viewport, cullingSlot);
+                            cam.projectionMatrix * cam.worldToCameraMatrix, viewport, cullingSlot, "cullSubmit");
                         bufMgr.DispatchFaceVisibilityGPU(cullingSlot);
                         bufMgr.DispatchLineVisibilityGPU(cullingSlot);
                         bufMgr.DispatchApplyMirrorCullGPU(cullingSlot);
@@ -998,7 +1046,8 @@ namespace Poly_Ling.Core
             foreach (int masterIdx in masterIndices)
             {
                 var ctx = model.GetMeshContext(masterIdx);
-                if (ctx?.UnityMesh == null || ctx.MeshObject == null || !ctx.IsVisible) continue;
+                if (ctx?.UnityMesh == null || ctx.UnityMesh.vertexCount <= 0
+                 || ctx.MeshObject == null || !ctx.IsVisible) continue;
 
                 if (targetBones != null)
                     Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(
@@ -1065,7 +1114,8 @@ namespace Poly_Ling.Core
             foreach (int masterIdx in masterIndices)
             {
                 var ctx = model.GetMeshContext(masterIdx);
-                if (ctx?.UnityMesh == null || ctx.MeshObject == null || !ctx.IsVisible) continue;
+                if (ctx?.UnityMesh == null || ctx.UnityMesh.vertexCount <= 0
+                 || ctx.MeshObject == null || !ctx.IsVisible) continue;
 
                 var mesh = ctx.UnityMesh;
                 // 通常描画 SubmitMeshes と同じく identity で描画する。

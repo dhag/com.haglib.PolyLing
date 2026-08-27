@@ -42,6 +42,18 @@ namespace Poly_Ling.Tools.Deformers
         public float BendPlaneAngleDeg = 0f;
 
         /// <summary>
+        /// たわみ方向をカメラの奥行軸から自動で決めるか。既定は true。
+        ///
+        /// true のとき、曲げの回転軸が視線と一致するよう BendPlaneAngleDeg を
+        /// 毎回計算して書き込む。画面上で見たとおりに曲がるので狙いが付けやすい。
+        /// 計算はカメラを知っている呼び出し側（DeformToolHandler）が行う。
+        /// デフォーマ自身はカメラを参照しない。
+        ///
+        /// false のときは BendPlaneAngleDeg を手で指定する従来の挙動になる。
+        /// </summary>
+        public bool UseCameraBendPlane = true;
+
+        /// <summary>
         /// 曲げの起点となる s。既定は false = 選択範囲の下端（SMin）を起点にする。
         /// true にすると作業軸の原点（s = 0）を起点にする。
         /// </summary>
@@ -50,9 +62,10 @@ namespace Poly_Ling.Tools.Deformers
         public override IDeformerParams Clone()
             => new BendDeformerParams
             {
-                TotalAngleDeg     = TotalAngleDeg,
-                BendPlaneAngleDeg = BendPlaneAngleDeg,
-                PivotAtAxisOrigin = PivotAtAxisOrigin
+                TotalAngleDeg      = TotalAngleDeg,
+                BendPlaneAngleDeg  = BendPlaneAngleDeg,
+                UseCameraBendPlane = UseCameraBendPlane,
+                PivotAtAxisOrigin  = PivotAtAxisOrigin
             };
 
         public override bool IsDifferentFrom(IDeformerParams other)
@@ -60,22 +73,25 @@ namespace Poly_Ling.Tools.Deformers
             if (!IsSameType<BendDeformerParams>(other, out var o)) return true;
             return !Mathf.Approximately(TotalAngleDeg, o.TotalAngleDeg)
                 || !Mathf.Approximately(BendPlaneAngleDeg, o.BendPlaneAngleDeg)
+                || UseCameraBendPlane != o.UseCameraBendPlane
                 || PivotAtAxisOrigin != o.PivotAtAxisOrigin;
         }
 
         public override void CopyFrom(IDeformerParams other)
         {
             if (!IsSameType<BendDeformerParams>(other, out var o)) return;
-            TotalAngleDeg     = o.TotalAngleDeg;
-            BendPlaneAngleDeg = o.BendPlaneAngleDeg;
-            PivotAtAxisOrigin = o.PivotAtAxisOrigin;
+            TotalAngleDeg      = o.TotalAngleDeg;
+            BendPlaneAngleDeg  = o.BendPlaneAngleDeg;
+            UseCameraBendPlane = o.UseCameraBendPlane;
+            PivotAtAxisOrigin  = o.PivotAtAxisOrigin;
         }
 
         public override void Reset()
         {
-            TotalAngleDeg     = 0f;
-            BendPlaneAngleDeg = 0f;
-            PivotAtAxisOrigin = false;
+            TotalAngleDeg      = 0f;
+            BendPlaneAngleDeg  = 0f;
+            UseCameraBendPlane = true;
+            PivotAtAxisOrigin  = false;
         }
     }
 
@@ -86,7 +102,9 @@ namespace Poly_Ling.Tools.Deformers
     public class BendDeformer : IMeshDeformer
     {
         public string Name        => "Bend";
-        public string DisplayName => "Bend";
+
+        // Name は内部 ID（レジストリの検索キー）。表示だけを日本語にする。
+        public string DisplayName => "曲げ";
 
         private readonly BendDeformerParams _params = new BendDeformerParams();
         public IDeformerParams Params => _params;

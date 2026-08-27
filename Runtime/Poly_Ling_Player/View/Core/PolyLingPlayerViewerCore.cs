@@ -185,6 +185,8 @@ namespace Poly_Ling.Player
         // 作業用ローカル軸サブツール。モデルには触れず ModelContext.WorkAxis だけを操作する。
         private WorkAxisToolHandler          _workAxisHandler;
         private PlayerWorkAxisSubPanel       _workAxisSubPanel;
+        // 変形パネルの先頭へ埋め込むぶん。左ペインの作業軸ツールとは別インスタンス。
+        private PlayerWorkAxisSubPanel       _deformWorkAxisSubPanel;
         // カメラ調整。メインカメラ / 3面カメラのパラメータだけを読み書きし、モデルには触れない。
         private CameraToolHandler            _cameraHandler;
         private PlayerCameraSubPanel         _cameraSubPanel;
@@ -746,6 +748,7 @@ namespace Poly_Ling.Player
             {
                 // Phase 2a-2g-3: 冒頭の _renderer.ClearScene() を削除。
                 // 行末の EnterSceneReset(clearScene: true) に統合。
+                UnityEngine.Debug.Log("[LoadDbg] 01 handler-enter");
                 var loadedModel = project.CurrentModel;
 
                 if (_importSubPanel?.AutoScale == true)
@@ -764,6 +767,7 @@ namespace Poly_Ling.Player
                         }
                     }
                 }
+                UnityEngine.Debug.Log("[LoadDbg] 02 before-SetProject");
                 _moveToolHandler?.SetProject(ActiveProject);
                 _objectMoveHandler?.SetProject(ActiveProject);
                 _pivotOffsetHandler?.SetProject(ActiveProject);
@@ -792,13 +796,17 @@ namespace Poly_Ling.Player
                 _quad4To1Handler?.SetProject(ActiveProject);
                 _faceMergeCollapseHandler?.SetProject(ActiveProject);
 
+                UnityEngine.Debug.Log("[LoadDbg] 03 before-UndoCtx");
                 _editOps?.UndoController.SetModelContext(loadedModel);
                 // 問題 A/B 対応: ProjectStack (モデル切替用 Undo) の Context も同期する。
                 _editOps?.UndoController.SetProjectContext(project);
 
+                UnityEngine.Debug.Log("[LoadDbg] 04 before-ComputeWorldMatrices");
                 loadedModel.ComputeWorldMatrices();
+                UnityEngine.Debug.Log("[LoadDbg] 05 after-ComputeWorldMatrices");
 
                 // Phase 2a-2b-2 Batch 3: モデル初期選択処理を先に行ってから EnterSceneReset で一括更新。
+                UnityEngine.Debug.Log("[LoadDbg] 06 before-Drawables");
                 var loadedDrawables = loadedModel.DrawableMeshes;
                 if (loadedDrawables != null)
                     foreach (var entry in loadedDrawables)
@@ -808,6 +816,7 @@ namespace Poly_Ling.Player
                         { loadedModel.SelectMesh(entry.MasterIndex); break; }
                     }
 
+                UnityEngine.Debug.Log("[LoadDbg] 07 before-BoneScan");
                 int lNeckIdx = -1, lFirstBone = -1;
                 for (int ci = 0; ci < loadedModel.MeshContextCount; ci++)
                 {
@@ -825,8 +834,11 @@ namespace Poly_Ling.Player
 
                 // RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を一括実行。
                 // Phase 2a-2g-3: clearScene: true で冒頭の ClearScene 呼出しを統合。
+                UnityEngine.Debug.Log("[LoadDbg] 08 before-EnterSceneReset");
                 _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+                UnityEngine.Debug.Log("[LoadDbg] 09 before-EnterCameraChanged");
                 _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
+                UnityEngine.Debug.Log("[LoadDbg] 10 after-EnterCameraChanged");
 
                 // UNDO記録: PMX/MQO/CSV 読込によるモデル追加全体を 1 ステップ (ProjectStack) として記録。
                 // (問題 E/I: 従来は MeshListStack に RecordMeshContextsAdd していたが、Undo で
@@ -834,6 +846,7 @@ namespace Poly_Ling.Player
                 //  残り、モデルリストに名前だけ残るバグがあった。ModelOperationRecord.CreateAdd は
                 //  ModelContextSnapshot にモデル全体を保存し、Undo でモデル自体を削除・
                 //  Redo で復元するため、リスト表示も一致する)
+                UnityEngine.Debug.Log("[LoadDbg] 11 before-RecordModelAdd");
                 if (_editOps?.UndoController != null && loadedModel != null)
                 {
                     int __addedIdx = _localLoader?.LastAddedModelIndex ?? project.CurrentModelIndex;
@@ -842,9 +855,14 @@ namespace Poly_Ling.Player
                     _editOps.UndoController.RecordModelAdd(__addedIdx, loadedModel, __oldIdx);
                 }
 
+                UnityEngine.Debug.Log("[LoadDbg] 12 before-RebuildModelList");
                 RebuildModelList();
+                UnityEngine.Debug.Log("[LoadDbg] 13 before-RefreshBoneList");
                 _skinWeightPaintPanel?.RefreshBoneList(loadedModel);
+                UnityEngine.Debug.Log("[LoadDbg] 14 before-NotifyPanels");
                 NotifyPanels(ChangeKind.ModelSwitch);
+                _loadDbgSubmitLeft = 12;
+                UnityEngine.Debug.Log("[LoadDbg] 15 handler-exit");
             };
 
             _receiver.OnProjectHeaderReceived += OnProjectHeaderReceived;
@@ -1014,8 +1032,16 @@ namespace Poly_Ling.Player
         /// OnRenderObject 経路から呼ばれる。計算処理は一切禁止。
         /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
         /// </summary>
+        /// <summary>[LoadDbg] 読込直後の描画到達を数回だけ記録するための残回数。恒久コードではない。</summary>
+        private int _loadDbgSubmitLeft = 0;
+
         public void SubmitDrawForCamera(Camera cam)
         {
+            if (_loadDbgSubmitLeft > 0)
+            {
+                _loadDbgSubmitLeft--;
+                UnityEngine.Debug.Log("[LoadDbg] 18 submit-enter");
+            }
             _viewportManager?.SubmitForCamera(cam, ActiveProject);
         }
 
@@ -2601,6 +2627,11 @@ namespace Poly_Ling.Player
 
         private void UpdateGizmoOverlay()
         {
+            // 作業軸はポインタが乗っていないビューポートにも出す。
+            // 下のアクティブ側処理は _activePanel が null 等で早期 return する
+            // 経路があるため、取り残さないよう先に済ませる。
+            UpdateWorkAxisOverlayOnInactivePanels();
+
             var panel = _activePanel;
             if (panel == null) return;
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
@@ -2625,6 +2656,126 @@ namespace Poly_Ling.Player
                 panel.UpdateGizmo(data);
             }
             else panel.HideGizmo();
+        }
+
+        /// <summary>
+        /// 作業軸を 3D 画面で編集できる状態か。
+        /// 作業軸ツールそのものと、変形モードの作業軸フェーズが該当する。
+        /// </summary>
+        private bool IsWorkAxisEditable()
+        {
+            if (_interactionMode == InteractionMode.WorkAxis) return true;
+
+            return _interactionMode == InteractionMode.Deform
+                && _deformHandler != null
+                && _deformHandler.Phase == DeformToolHandler.DeformPhase.WorkAxis;
+        }
+
+        /// <summary>
+        /// 変形モードの入力経路をフェーズに応じて張り替える。
+        /// SwitchTool と DeformToolHandler.OnPhaseChanged の両方から呼ぶ。
+        ///
+        /// 作業軸フェーズ … 作業軸ツールと同じ経路。矢印・リング・Y 先端ハンドルを掴める。
+        ///                  ビューポートでの頂点選択はできない（作業軸ツールと同じ制約）。
+        /// 変形フェーズ   … MoveToolHandler を流用して選択を残しつつ、組み込み移動ギズモを
+        ///                  抑制して変形ハンドルへ委譲する（PrimitivePlace と同じ構成）。
+        ///                  SelectOnly は使えない。GizmoHitTestOverride が SelectOnly 時に
+        ///                  スキップされるため、ハンドルを掴めなくなる。代わりに
+        ///                  OnDragStartExtra が常に true を返して頂点移動だけを抑止する。
+        ///                  クリック選択と、何も掴んでいない位置からの矩形／投げ縄選択は効く。
+        /// </summary>
+        private void ApplyDeformToolRouting()
+        {
+            if (_interactionMode != InteractionMode.Deform) return;
+
+            bool workAxisPhase = _deformHandler != null
+                && _deformHandler.Phase == DeformToolHandler.DeformPhase.WorkAxis;
+
+            // フックは毎回張り直す。作業軸フェーズで残すと、掴んでいない
+            // ドラッグでも OnDragStartExtra が true を返し続けてしまう。
+            if (_moveToolHandler != null)
+            {
+                _moveToolHandler.SuppressBuiltinGizmo = false;
+                _moveToolHandler.GizmoHitTestOverride = null;
+                _moveToolHandler.OnDragStartExtra     = null;
+                _moveToolHandler.OnToolDragExtra      = null;
+                _moveToolHandler.OnToolDragEndExtra   = null;
+            }
+
+            if (workAxisPhase)
+            {
+                _vertexInteractor?.SetToolHandler(_workAxisHandler);
+                _viewportManager?.RegisterActiveToolHandler(
+                    (pos, ctx) => _workAxisHandler?.UpdateHover(pos, ctx));
+                return;
+            }
+
+            _vertexInteractor?.SetToolHandler(_moveToolHandler);
+            if (_moveToolHandler != null)
+            {
+                _moveToolHandler.SuppressBuiltinGizmo = true;
+                _moveToolHandler.GizmoHitTestOverride = (pos, c) =>
+                    _deformHandler != null && _deformHandler.GizmoHitTest(pos, c);
+                _moveToolHandler.OnDragStartExtra     = (elem, mods) =>
+                {
+                    _deformHandler?.BeginGizmoDrag();
+                    return true;
+                };
+                _moveToolHandler.OnToolDragExtra      = (pos, delta, mods) => _deformHandler?.GizmoDrag(pos);
+                _moveToolHandler.OnToolDragEndExtra   = (pos, mods) => _deformHandler?.EndGizmoDrag();
+            }
+            _viewportManager?.RegisterActiveToolHandler(
+                (pos, ctx) => _deformHandler?.UpdateHover(pos, ctx));
+        }
+
+        /// <summary>
+        /// ポインタが乗っていないビューポートの作業軸表示を更新する。
+        ///
+        /// 【なぜ要るか】
+        /// UpdateGizmoOverlay は _activePanel にしか GizmoData を書かず、別の
+        /// ビューポートへポインタが移ると前のパネルは HideGizmo される
+        /// （OnPointerHover 内）。そのため作業軸が「見ている画面」から消えていた。
+        ///
+        /// 【何を出すか】
+        /// 作業軸モード … 六角錐だけの表示専用データ（TryBuildDisplayOnlyGizmoData）。
+        ///                矢印やリングはそのビューポートでは掴めないので出さない。
+        /// 変形モード   … アクティブ側と同じもの。変形のギズモは元から操作を
+        ///                受けない（UpdateHover とドラッグが空実装）ため、
+        ///                掴めるように見えてしまう心配がない。
+        /// それ以外     … 隠す。
+        /// </summary>
+        private void UpdateWorkAxisOverlayOnInactivePanels()
+        {
+            Apply(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport);
+            Apply(_layoutRoot?.TopPanel,         _viewportManager.TopViewport);
+            Apply(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport);
+            Apply(_layoutRoot?.SidePanel,        _viewportManager.SideViewport);
+
+            void Apply(PlayerViewportPanel p, PlayerViewport vp)
+            {
+                if (p == null || ReferenceEquals(p, _activePanel)) return;
+
+                var ctx = _viewportManager.GetCurrentToolContext(vp);
+                if (ctx == null) { p.HideGizmo(); return; }
+
+                if (_interactionMode == InteractionMode.WorkAxis &&
+                    _workAxisHandler != null &&
+                    _workAxisHandler.TryBuildDisplayOnlyGizmoData(ctx, out var waData))
+                {
+                    p.UpdateGizmo(waData);
+                    return;
+                }
+
+                if (_interactionMode == InteractionMode.Deform &&
+                    _deformHandler != null &&
+                    _deformHandler.TryBuildGizmoData(ctx, out var dfData))
+                {
+                    p.UpdateGizmo(dfData);
+                    return;
+                }
+
+                p.HideGizmo();
+            }
         }
 
         /// <summary>
@@ -3491,9 +3642,20 @@ namespace Poly_Ling.Player
                 GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
                 GetWorkAxis    = () => CurrentWorkAxis(),
+                // 原点 / Y 先端ハンドルの吸着先。頂点は GPU 吸着ヒットテスト、
+                // ボーンは MeshContext の WorldMatrix 投影で拾う。
+                GetSnapTargetWorld = imguiPos => WorkAxisSnapTargetWorld(imguiPos),
+                // 吸着用ヒットテストの有効化。作業軸モードでハンドルを掴んでいる間だけ。
+                // 有効な間はポインタ移動ごとに頂点数ぶんの読み戻しが増えるため、
+                // 他モードでは必ず切る。
+                // 作業軸ツールに加えて、変形モードの作業軸フェーズでも吸着させる。
+                // ここを広げないと変形パネル側で頂点／ボーンへ吸着できない。
+                OnSnapHitTestEnabledChanged = on =>
+                    _viewportManager.SetSnapHitTestEnabled(on && IsWorkAxisEditable()),
                 OnValueChanged = () =>
                 {
                     _workAxisSubPanel?.Refresh();
+                    _deformWorkAxisSubPanel?.Refresh();
                     UpdateGizmoOverlay();
                     // 格子変形の格子フレームは作業軸そのもの。開いていれば追従させる。
                     _latticeHandler?.OnFrameChanged();
@@ -3561,7 +3723,13 @@ namespace Poly_Ling.Player
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
-                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+                OnRepaint      = () =>
+                {
+                    // 形状プレビューは曲げの合計角などに追従させたいので、
+                    // 再描画だけでなくギズモデータの作り直しまで行う。
+                    UpdateGizmoOverlay();
+                    _activePanel?.MarkDirtyRepaint();
+                },
                 GetWorkAxis    = () => CurrentWorkAxis(),
                 GetModel       = () => ActiveProject?.CurrentModel,
                 OnSyncMeshPositions = mc =>
@@ -3569,9 +3737,39 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
                 OnApplyCompleted = () => NotifyPanels(ChangeKind.Attributes),
+                // 回転ハンドルで角度が変わったらスライダへ書き戻す。
+                OnParamsChangedByGizmo = () => _deformSubPanel?.Refresh(),
             };
             _deformHandler.SetUndoController(_editOps?.UndoController);
-            _deformSubPanel = new PlayerDeformSubPanel { GetH = () => _deformHandler };
+
+            // 作業軸フェーズでは作業軸ツールと同じギズモを出す。
+            _deformHandler.WorkAxisGizmoProvider = _workAxisHandler;
+            // フェーズが変わったら入力経路を張り替える。
+            _deformHandler.OnPhaseChanged = () =>
+            {
+                ApplyDeformToolRouting();
+                UpdateGizmoOverlay();
+            };
+
+            // 変形パネル先頭へ埋め込む作業軸パネル。左ペインのものと同じ結線で、
+            // 同じ WorkAxisContext / WorkAxisToolHandler を操作する。
+            _deformWorkAxisSubPanel = new PlayerWorkAxisSubPanel
+            {
+                GetWorkAxis               = () => CurrentWorkAxis(),
+                GetH                      = () => _workAxisHandler,
+                OnValueChanged            = () =>
+                {
+                    UpdateGizmoOverlay();
+                    _latticeHandler?.OnFrameChanged();
+                },
+                GetSelectionCentroidWorld = () => SelectedVerticesCentroidWorld(),
+            };
+
+            _deformSubPanel = new PlayerDeformSubPanel
+            {
+                GetH          = () => _deformHandler,
+                WorkAxisPanel = _deformWorkAxisSubPanel,
+            };
             _deformSubPanel.Build(_layoutRoot.DeformSection);
 
             // 格子変形。格子フレームは作業軸。制御点の選択・移動はビューポートで行う。
@@ -5214,6 +5412,60 @@ namespace Poly_Ling.Player
             if (model == null) return null;
             if (model.WorkAxis == null) model.WorkAxis = new Poly_Ling.Context.WorkAxisContext();
             return model.WorkAxis;
+        }
+
+        /// <summary>作業軸ハンドルがボーンへ吸着する当たり半径（px）。</summary>
+        private const float WorkAxisBoneSnapRadius = 10f;
+
+        /// <summary>
+        /// 作業軸ハンドル（原点 / Y 先端）の吸着先ワールド座標。無ければ null。
+        ///
+        /// 引数はギズモ判定と同じ ctx 系スクリーン座標（ハンドラ側で ToImgui 済み）。
+        /// 頂点は選択されていないオブジェクトも対象にしたいため、通常ホバーではなく
+        /// 吸着用 GPU ヒットテスト（GetSnapHoverElement）を使う。座標は GPU が計算した
+        /// 表示位置（TryGetVertexWorld）から取る。CPU で WorldMatrix を掛け直すと
+        /// スキニング済みメッシュで表示とずれる。
+        ///
+        /// ボーンは GPU の描画要素ではないので、ボーンオーバーレイと同じく
+        /// MeshContext.WorldMatrix の平行移動成分を投影して最近傍を採る。
+        /// 走査するのは MeshContext の数だけで、頂点は走査しない。
+        /// 頂点が取れたときはそちらを優先する。
+        /// </summary>
+        private Vector3? WorkAxisSnapTargetWorld(Vector2 imguiPos)
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return null;
+
+            // ---- 頂点（GPU 吸着ヒットテスト） ----
+            var elem = _viewportManager.GetSnapHoverElement(model);
+            if (elem.Kind == PlayerHoverKind.Vertex && elem.MeshIndex >= 0)
+            {
+                var vmc = model.GetMeshContext(elem.MeshIndex);
+                if (vmc != null &&
+                    _viewportManager.TryGetVertexWorld(model, vmc, elem.VertexIndex, out var vw))
+                    return vw;
+            }
+
+            // ---- ボーン（CPU 最近傍） ----
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx == null) return null;
+
+            float    best  = WorkAxisBoneSnapRadius;
+            Vector3? found = null;
+
+            for (int i = 0; i < model.Count; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.Type != MeshType.Bone) continue;
+
+                var     wm = mc.WorldMatrix;
+                Vector3 wp = new Vector3(wm.m03, wm.m13, wm.m23);
+
+                float d = Vector2.Distance(imguiPos, ctx.WorldToScreen(wp));
+                if (d < best) { best = d; found = wp; }
+            }
+
+            return found;
         }
 
         /// <summary>
@@ -7220,9 +7472,10 @@ namespace Poly_Ling.Player
         {
             var cmd = new ImportMqoCommand(
                 filePath, settings,
-                onResult: (model, _) => _localLoader.LoadModel(filePath, model),
+                onResult: (model, _) => { _localLoader.LoadModel(filePath, model); UnityEngine.Debug.Log("[LoadDbg] 16 after-LoadModel"); },
                 onError:  msg       => _status = $"MQO読込失敗: {msg}");
             _editOps?.CommandQueue.Enqueue(cmd);
+            UnityEngine.Debug.Log("[LoadDbg] 17 after-Enqueue");
         }
 
         private void OnImportObj(string filePath, Poly_Ling.OBJ.ObjImportSettings settings)
@@ -8040,6 +8293,8 @@ namespace Poly_Ling.Player
                 // 解除し損ねると、次のモードでも OnDragStartExtra が true を返し続けて
                 // 頂点移動が一切効かなくなる。
                 || (_interactionMode == InteractionMode.PrimitivePlace && mode != InteractionMode.PrimitivePlace)
+                // 変形も回転ハンドルをフックへ委譲する。解除し損ねると同じ症状になる。
+                || (_interactionMode == InteractionMode.Deform      && mode != InteractionMode.Deform)
                 // DeleteFace は OnLeftClickExtra で面クリック削除を発火する。
                 // 脱出時のフック解除は同じ処理でよい。
                 || (_interactionMode == InteractionMode.DeleteFace  && mode != InteractionMode.DeleteFace)
@@ -8066,6 +8321,14 @@ namespace Poly_Ling.Player
             // ExitDeleteFaceMode を経由しなくてもフラグが取り残されない。
             if (_interactionMode == InteractionMode.DeleteFace && mode != InteractionMode.DeleteFace)
                 _deleteFaceModeActive = false;
+
+            // 変形モードへ入り直すときは作業軸フェーズから始める。
+            // 「軸を決める → 変形を掛ける」の順に誘導するため。
+            // OnPhaseChanged 経由で ApplyDeformToolRouting が走るのを避けたいので
+            // _interactionMode を書き換える前に済ませておく。
+            if (mode == InteractionMode.Deform && _interactionMode != InteractionMode.Deform
+                && _deformHandler != null)
+                _deformHandler.Phase = DeformToolHandler.DeformPhase.WorkAxis;
 
             _interactionMode = mode;
 
@@ -8162,11 +8425,7 @@ namespace Poly_Ling.Player
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _cameraHandler?.UpdateHover(pos, ctx));
                     break;
                 case InteractionMode.Deform:
-                    // 数値 / スライダのみで操作する。ビューポートでは
-                    // MoveToolHandler の選択・矩形選択を流用し、組み込み移動ギズモは出さない。
-                    if (_moveToolHandler != null) _moveToolHandler.SelectOnly = true;
-                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
-                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplyDeformToolRouting();
                     break;
                 case InteractionMode.Lattice:
                     // 未開始・格子配置中はメッシュ頂点の選び直しを許し、

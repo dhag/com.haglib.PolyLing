@@ -186,7 +186,7 @@ namespace Poly_Ling.Core
                 // 不定値（または前フレームの残留値）がカリング判定に使われ、
                 // 常にカリング済みと判定されてしまう。
                 _bufferManager.DispatchClearCulledBuffersGPU(0);
-                _bufferManager.ComputeScreenPositionsGPU(viewProjection, _viewport);
+                _bufferManager.ComputeScreenPositionsGPU(viewProjection, _viewport, 0, "hover");
                 if (_backfaceCullingEnabled)
                 {
                     _bufferManager.DispatchFaceVisibilityGPU();

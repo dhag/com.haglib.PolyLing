@@ -93,9 +93,13 @@ namespace Poly_Ling.Player
             if (!IsReady) return;
             Orbit.ApplyCameraTransform(Cam);
             if (_solidMesh != null && _solidMat != null)
-                Graphics.DrawMesh(_solidMesh, Matrix4x4.identity, _solidMat, 0, Cam);
+                Graphics.RenderMesh(
+                    Poly_Ling.Core.PLRenderMeshHelper.Make(_solidMat, Cam, _solidMesh.bounds),
+                    _solidMesh, 0, Matrix4x4.identity);
             if (wireMesh != null && _wireMat != null)
-                Graphics.DrawMesh(wireMesh,   Matrix4x4.identity, _wireMat,  0, Cam);
+                Graphics.RenderMesh(
+                    Poly_Ling.Core.PLRenderMeshHelper.Make(_wireMat, Cam, wireMesh.bounds),
+                    wireMesh, 0, Matrix4x4.identity);
             Cam.targetTexture = RT;
             Cam.Render();
         }

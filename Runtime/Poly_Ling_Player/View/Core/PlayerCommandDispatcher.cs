@@ -1782,6 +1782,43 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── TPSモーフ適用
+                case ApplyThinPlateMorphCommand c:
+                {
+                    if (model == null) return;
+
+                    var tpsLocal = ThinPlateMorphOperation.ComputeWarpedLocalPositions(
+                        model, c.BeforeMasterIndex, c.AfterMasterIndex, c.TargetMasterIndex,
+                        c.Lambda, c.SelectedControlPointsOnly,
+                        out var tpsControlPoints, out string tpsError);
+
+                    if (tpsLocal == null)
+                    {
+                        Debug.LogWarning($"[ThinPlateMorph] 変形を算出できません: {tpsError}");
+                        return;
+                    }
+
+                    if (tpsControlPoints != null && tpsControlPoints.DuplicateCount > 0)
+                    {
+                        Debug.Log($"[ThinPlateMorph] 位置が重複する制御点 {tpsControlPoints.DuplicateCount} 点を除きました" +
+                                  $"（{tpsControlPoints.Count} 点を使用）");
+                    }
+
+                    var tpsCtx = BuildSkinWeightToolCtx(model);
+                    int tpsNewIndex = ThinPlateMorphOperation.ApplyAsNewObject(
+                        model, c.TargetMasterIndex, tpsLocal, c.RecalculateNormals, tpsCtx);
+
+                    if (tpsNewIndex < 0)
+                    {
+                        Debug.LogWarning("[ThinPlateMorph] 結果オブジェクトを作成できませんでした");
+                        return;
+                    }
+
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
                 // ── UV 変更（移動・一括変換）
                 case ApplyUVChangesCommand c:
                 {

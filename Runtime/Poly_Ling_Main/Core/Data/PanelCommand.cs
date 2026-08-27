@@ -1606,6 +1606,55 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
+    // TPSモーフ
+    // ================================================================
+
+    /// <summary>
+    /// ビフォー／アフター2オブジェクトの頂点対応から 3D Thin Plate Spline を解き、
+    /// ターゲットオブジェクトを変形した結果を新規オブジェクトとして追加する。
+    /// ターゲット自身は変更しない。Undo 記録付き。
+    ///
+    /// ビフォーとアフターは頂点インデックスで対応させるため、頂点数が一致していること。
+    ///
+    /// スキニング無しを前提とする。空間変換はオブジェクト単位の
+    /// MeshContext.WorldMatrix だけを使う。
+    /// </summary>
+    public class ApplyThinPlateMorphCommand : PanelCommand
+    {
+        /// <summary>ビフォー（変形前の対応点）MeshContext の MasterIndex</summary>
+        public int   BeforeMasterIndex         { get; }
+        /// <summary>アフター（変形後の対応点）MeshContext の MasterIndex</summary>
+        public int   AfterMasterIndex          { get; }
+        /// <summary>変形させる MeshContext の MasterIndex</summary>
+        public int   TargetMasterIndex         { get; }
+        /// <summary>平滑化係数。K 行列の対角に加算される。0 で厳密補間。</summary>
+        public float Lambda                    { get; }
+        /// <summary>
+        /// true : ビフォー／アフターの選択頂点（両者の和集合）だけを制御点にする
+        /// false: 全頂点を制御点にする（既定）
+        /// </summary>
+        public bool  SelectedControlPointsOnly { get; }
+        /// <summary>結果の法線を再計算するか</summary>
+        public bool  RecalculateNormals        { get; }
+
+        public ApplyThinPlateMorphCommand(
+            int modelIndex,
+            int beforeMasterIndex, int afterMasterIndex, int targetMasterIndex,
+            float lambda                        = 0.001f,
+            bool  selectedControlPointsOnly     = false,
+            bool  recalculateNormals            = true)
+            : base(modelIndex)
+        {
+            BeforeMasterIndex         = beforeMasterIndex;
+            AfterMasterIndex          = afterMasterIndex;
+            TargetMasterIndex         = targetMasterIndex;
+            Lambda                    = lambda;
+            SelectedControlPointsOnly = selectedControlPointsOnly;
+            RecalculateNormals        = recalculateNormals;
+        }
+    }
+
+    // ================================================================
     // UV 編集
     // ================================================================
 

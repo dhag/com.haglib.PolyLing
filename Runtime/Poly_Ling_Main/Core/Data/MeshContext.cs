@@ -79,6 +79,7 @@ namespace Poly_Ling.Data
         public static void DestroyMesh(Mesh mesh)
         {
             if (mesh == null) return;
+            Poly_Ling.Diagnostics.PLResStat.LiveMesh--;
             if (Application.isPlaying) UnityEngine.Object.Destroy(mesh);
             else                       UnityEngine.Object.DestroyImmediate(mesh);
         }

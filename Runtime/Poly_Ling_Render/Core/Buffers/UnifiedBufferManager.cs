@@ -583,47 +583,50 @@ namespace Poly_Ling.Core
         /// </summary>
         private void CreateAllBuffers()
         {
+            Poly_Ling.Diagnostics.PLResStat.LiveBufSet++;
+            Poly_Ling.Diagnostics.PLResStat.Report("CreateAllBuffers");
+
             // Level 5: Topology
-            _positionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
-            _normalBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
-            _uvBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 2);
-            _indexBuffer = new ComputeBuffer(_indexCapacity, sizeof(uint));
-            _lineBuffer = new ComputeBuffer(_lineCapacity, UnifiedLine.Stride);
-            _faceBuffer = new ComputeBuffer(_faceCapacity, UnifiedFace.Stride);
-            _meshInfoBuffer = new ComputeBuffer(_meshInfos.Length, MeshInfo.Stride);
-            _modelInfoBuffer = new ComputeBuffer(16, ModelInfo.Stride);
+            _positionBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 3));
+            _normalBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 3));
+            _uvBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 2));
+            _indexBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_indexCapacity, sizeof(uint)));
+            _lineBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_lineCapacity, UnifiedLine.Stride));
+            _faceBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity, UnifiedFace.Stride));
+            _meshInfoBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_meshInfos.Length, MeshInfo.Stride));
+            _modelInfoBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(16, ModelInfo.Stride));
 
             // Level 4: Transform
-            _boundsBuffer = new ComputeBuffer(_meshInfos.Length, AABB.Stride);
-            _mirrorPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
-            _skinnedMirrorPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
-            _worldPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
-            _transformMatrixBuffer = new ComputeBuffer(Mathf.Max(1, _meshInfos.Length), sizeof(float) * 16);
-            _vertexMeshIndexBuffer = new ComputeBuffer(_vertexCapacity, sizeof(uint));
-            _boneWeightsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4);
-            _boneIndicesBuffer = new ComputeBuffer(_vertexCapacity, UInt4.Stride);
-            _mirrorBoneWeightsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4);
-            _mirrorBoneIndicesBuffer = new ComputeBuffer(_vertexCapacity, UInt4.Stride);
+            _boundsBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_meshInfos.Length, AABB.Stride));
+            _mirrorPositionBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 3));
+            _skinnedMirrorPositionBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 3));
+            _worldPositionBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 3));
+            _transformMatrixBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(Mathf.Max(1, _meshInfos.Length), sizeof(float) * 16));
+            _vertexMeshIndexBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(uint)));
+            _boneWeightsBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 4));
+            _boneIndicesBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, UInt4.Stride));
+            _mirrorBoneWeightsBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 4));
+            _mirrorBoneIndicesBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, UInt4.Stride));
 
             // Level 3: Selection
-            _vertexFlagsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(uint));
-            _lineFlagsBuffer = new ComputeBuffer(_lineCapacity, sizeof(uint));
-            _faceFlagsBuffer = new ComputeBuffer(_faceCapacity, sizeof(uint));
+            _vertexFlagsBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(uint)));
+            _lineFlagsBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_lineCapacity, sizeof(uint)));
+            _faceFlagsBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity, sizeof(uint)));
 
             // Level 2: Camera
-            _cameraBuffer = new ComputeBuffer(1, CameraInfo.Stride);
-            _screenPosBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 2);
-            _screenPosBuffer4 = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4); // GPU用float4
-            _mirrorScreenPosBuffer4 = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4); // GPU用float4
-            _cullingBuffer = new ComputeBuffer(_vertexCapacity, sizeof(uint));
+            _cameraBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(1, CameraInfo.Stride));
+            _screenPosBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 2));
+            _screenPosBuffer4 = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 4)); // GPU用float4
+            _mirrorScreenPosBuffer4 = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 4)); // GPU用float4
+            _cullingBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(uint)));
 
             // Level 1: Mouse
-            _hitTestInputBuffer = new ComputeBuffer(1, HitTestInput.Stride);
-            _hitVertexDistBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float));
-            _snapHitVertexDistBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float));
-            _hitLineDistBuffer = new ComputeBuffer(_lineCapacity, sizeof(float));
-            _faceHitBuffer = new ComputeBuffer(_faceCapacity, sizeof(float));
-            _faceHitDepthBuffer = new ComputeBuffer(_faceCapacity, sizeof(float));
+            _hitTestInputBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(1, HitTestInput.Stride));
+            _hitVertexDistBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float)));
+            _snapHitVertexDistBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float)));
+            _hitLineDistBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_lineCapacity, sizeof(float)));
+            _faceHitBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity, sizeof(float)));
+            _faceHitDepthBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity, sizeof(float)));
 
             // per-slot カリングバッファ
             _slotScreenPosBufs    = new ComputeBuffer[CullingSlotCount];
@@ -632,10 +635,10 @@ namespace Poly_Ling.Core
             _slotFaceCulledBufs   = new ComputeBuffer[CullingSlotCount];
             for (int s = 0; s < CullingSlotCount; s++)
             {
-                _slotScreenPosBufs[s]    = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4);
-                _slotVertexCulledBufs[s] = new ComputeBuffer(_vertexCapacity, sizeof(uint));
-                _slotLineCulledBufs[s]   = new ComputeBuffer(_lineCapacity,   sizeof(uint));
-                _slotFaceCulledBufs[s]   = new ComputeBuffer(_faceCapacity,   sizeof(uint));
+                _slotScreenPosBufs[s]    = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 4));
+                _slotVertexCulledBufs[s] = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(uint)));
+                _slotLineCulledBufs[s]   = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_lineCapacity,   sizeof(uint)));
+                _slotFaceCulledBufs[s]   = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity,   sizeof(uint)));
             }
         }
 
@@ -679,8 +682,9 @@ namespace Poly_Ling.Core
                 Array.Resize(ref _meshInfos, newSize);
                 
                 // GPUバッファも再作成
+                if (_meshInfoBuffer != null) Poly_Ling.Diagnostics.PLResStat.LiveCB--;
                 _meshInfoBuffer?.Release();
-                _meshInfoBuffer = new ComputeBuffer(newSize, MeshInfo.Stride);
+                _meshInfoBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(newSize, MeshInfo.Stride));
             }
 
             if (needsRebuild)
@@ -710,9 +714,9 @@ namespace Poly_Ling.Core
             ReleaseBuffer(ref _expandedPositionBuffer);
             ReleaseBuffer(ref _expandedNormalBuffer);
 
-            _expandedToOriginalBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(uint));
-            _expandedPositionBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3);
-            _expandedNormalBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3);
+            _expandedToOriginalBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_expandedVertexCapacity, sizeof(uint)));
+            _expandedPositionBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3));
+            _expandedNormalBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3));
 
             //Debug.Log($"[EnsureExpandedCapacity] Resized to {_expandedVertexCapacity} (requested: {expandedVertexCount})");
         }
@@ -772,6 +776,9 @@ namespace Poly_Ling.Core
         /// </summary>
         private void ReleaseAllBuffers()
         {
+            Poly_Ling.Diagnostics.PLResStat.LiveBufSet--;
+            Poly_Ling.Diagnostics.PLResStat.Report("ReleaseAllBuffers");
+
             ReleaseBuffer(ref _positionBuffer);
             ReleaseBuffer(ref _worldPositionBuffer);
             ReleaseBuffer(ref _expandedToOriginalBuffer);
@@ -827,6 +834,7 @@ namespace Poly_Ling.Core
         {
             if (buffer != null)
             {
+                Poly_Ling.Diagnostics.PLResStat.LiveCB--;
                 buffer.Release();
                 buffer = null;
             }

@@ -305,6 +305,16 @@ namespace Poly_Ling.Player
             FrontViewport.Ortho?.SetSharedState(orthoShared);
             SideViewport .Ortho?.SetSharedState(orthoShared);
 
+            // [CamDbg] cams=1 のとき Perspective 以外のカメラを止める。診断専用。
+            Poly_Ling.Diagnostics.PLCamDbg.EnsureSwitches();
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwSingleCamera)
+            {
+                if (TopViewport  ?.Cam != null) TopViewport.Cam.enabled   = false;
+                if (FrontViewport?.Cam != null) FrontViewport.Cam.enabled = false;
+                if (SideViewport ?.Cam != null) SideViewport.Cam.enabled  = false;
+                if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("SW singleCamera applied");
+            }
+
             // 軸/グリッドはモデル未ロードでも表示するため、ここで構築しておく。
             EnsureGridPrepared();
         }
@@ -1175,6 +1185,7 @@ namespace Poly_Ling.Player
             int slot = CameraToSlot(cam);
             if (slot < 0) return;
 
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S0 enter slot=" + slot);
             // 軸/グリッドはモデル・レンダラーの有無に依存しないため先に提出する。
             _gridAxisRenderer?.Submit(cam);
 
@@ -1198,11 +1209,19 @@ namespace Poly_Ling.Player
             _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;
             _renderer.ShowNormals               = ds.ShowNormals;
 
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S1 meshes slot=" + slot);
             _renderer.SubmitMeshes(project, cam);
-            _renderer.SubmitWireframeAndVertices(cam, slot);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S2 wireVerts slot=" + slot);
+            // [CamDbg] wire=1 のときワイヤ・頂点の提出を止める。診断専用。
+            if (!Poly_Ling.Diagnostics.PLCamDbg.SwNoWire)
+                _renderer.SubmitWireframeAndVertices(cam, slot);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S3 bones slot=" + slot);
             _renderer.SubmitBones(project, cam);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S4 normals slot=" + slot);
             _renderer.SubmitNormals(project, cam);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S5 weightVis slot=" + slot);
             _renderer.SubmitWeightVisualization(project, cam);
+            if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S6 submitDone slot=" + slot);
         }
 
         /// <summary>

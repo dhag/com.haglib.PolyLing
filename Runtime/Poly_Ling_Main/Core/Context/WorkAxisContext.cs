@@ -33,12 +33,14 @@ namespace Poly_Ling.Context
         public Vector3    Origin;
         public Quaternion Rotation;
         public bool       IsVisible;
+        public float      Length;
 
         /// <summary>他のスナップショットと異なるか。</summary>
         public bool IsDifferentFrom(WorkAxisSnapshot other)
         {
             return Vector3.Distance(Origin, other.Origin) > 0.0001f ||
                    Quaternion.Angle(Rotation, other.Rotation) > 0.001f ||
+                   Mathf.Abs(Length - other.Length) > 0.0001f ||
                    IsVisible != other.IsVisible;
         }
 
@@ -49,6 +51,8 @@ namespace Poly_Ling.Context
                 return "Move WorkAxis";
             if (Quaternion.Angle(Rotation, before.Rotation) > 0.001f)
                 return "Rotate WorkAxis";
+            if (Mathf.Abs(Length - before.Length) > 0.0001f)
+                return "Resize WorkAxis";
             if (IsVisible != before.IsVisible)
                 return IsVisible ? "Show WorkAxis" : "Hide WorkAxis";
             return "Change WorkAxis";
@@ -70,6 +74,13 @@ namespace Poly_Ling.Context
         [SerializeField] private Vector3    _origin   = Vector3.zero;
         [SerializeField] private Quaternion _rotation = Quaternion.identity;
         [SerializeField] private bool       _isVisible = true;
+        [SerializeField] private float      _length    = DefaultLength;
+
+        /// <summary>軸長の既定値（ワールド単位）。</summary>
+        public const float DefaultLength = 1f;
+
+        /// <summary>軸長の下限。0 や負値で六角錐が退化するのを防ぐ。</summary>
+        public const float MinLength = 1e-3f;
 
         // === プロパティ ===
 
@@ -101,10 +112,24 @@ namespace Poly_Ling.Context
             set => _isVisible = value;
         }
 
+        /// <summary>
+        /// 軸長（ワールド単位）。六角錐ギズモの長さの基準であり、
+        /// Y 軸先端のワールド位置は Origin + AxisY * Length になる。
+        /// 矢印ギズモは従来どおり画面固定長なのでこの値を使わない。
+        /// </summary>
+        public float Length
+        {
+            get => _length;
+            set => _length = Mathf.Max(MinLength, value);
+        }
+
         /// <summary>軸方向（ワールド）。</summary>
         public Vector3 AxisX => _rotation * Vector3.right;
         public Vector3 AxisY => _rotation * Vector3.up;
         public Vector3 AxisZ => _rotation * Vector3.forward;
+
+        /// <summary>Y 軸先端のワールド座標（Origin + AxisY * Length）。</summary>
+        public Vector3 YTip => _origin + AxisY * _length;
 
         /// <summary>オイラー角（度）。UI 入力用。</summary>
         public Vector3 EulerAngles
@@ -127,6 +152,7 @@ namespace Poly_Ling.Context
             _origin    = Vector3.zero;
             _rotation  = Quaternion.identity;
             _isVisible = true;
+            _length    = DefaultLength;
         }
 
         /// <summary>回転だけをワールド軸へ戻す。原点は維持する。</summary>
@@ -135,12 +161,31 @@ namespace Poly_Ling.Context
             _rotation = Quaternion.identity;
         }
 
+        /// <summary>
+        /// Y 軸をワールド点 target へ向ける。Origin と Length は変えない
+        /// （向きだけを合わせる。軸の長さは「長さ」欄で別に指定する）。
+        ///
+        /// 最小回転（Quaternion.FromToRotation）を左から掛けるため、Y まわりの
+        /// ロール＝X/Z 軸の捻れは保たれる。target が Origin と重なるときは
+        /// 向きが決まらないので何もせず false を返す。
+        /// </summary>
+        public bool AimYAt(Vector3 target)
+        {
+            Vector3 d   = target - _origin;
+            float   len = d.magnitude;
+            if (len < 1e-4f) return false;
+
+            Rotation = Quaternion.FromToRotation(AxisY, d / len) * _rotation;
+            return true;
+        }
+
         public void CopyFrom(WorkAxisContext other)
         {
             if (other == null) return;
             _origin    = other._origin;
             _rotation  = other._rotation;
             _isVisible = other._isVisible;
+            _length    = other._length;
         }
 
         public WorkAxisSnapshot CreateSnapshot()
@@ -149,7 +194,8 @@ namespace Poly_Ling.Context
             {
                 Origin    = _origin,
                 Rotation  = _rotation,
-                IsVisible = _isVisible
+                IsVisible = _isVisible,
+                Length    = _length
             };
         }
 
@@ -158,6 +204,7 @@ namespace Poly_Ling.Context
             _origin    = snapshot.Origin;
             _rotation  = snapshot.Rotation;
             _isVisible = snapshot.IsVisible;
+            _length    = Mathf.Max(MinLength, snapshot.Length);
         }
 
         // === 座標変換 ===

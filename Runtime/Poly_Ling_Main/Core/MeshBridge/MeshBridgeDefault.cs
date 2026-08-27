@@ -44,6 +44,7 @@ namespace Poly_Ling.MeshBridge
         public Mesh ToUnityMesh(MeshObject source, int materialCount = -1)
         {
             var mesh = new Mesh();
+            Poly_Ling.Diagnostics.PLResStat.LiveMesh++;
             mesh.name = source.Name;
 
             if (source.Vertices.Count == 0)
@@ -174,6 +175,7 @@ namespace Poly_Ling.MeshBridge
         public Mesh ToUnityMesh(MeshObject source, Matrix4x4 transform, int materialCount = -1)
         {
             var mesh = new Mesh();
+            Poly_Ling.Diagnostics.PLResStat.LiveMesh++;
             mesh.name = source.Name;
 
             if (source.Vertices.Count == 0)
@@ -295,6 +297,7 @@ namespace Poly_Ling.MeshBridge
         public Mesh ToUnityMeshShared(MeshObject source, int materialCount = -1)
         {
             var mesh = new Mesh();
+            Poly_Ling.Diagnostics.PLResStat.LiveMesh++;
             mesh.name = source.Name;
 
             if (source.Vertices.Count == 0)
@@ -411,6 +414,7 @@ namespace Poly_Ling.MeshBridge
         public Mesh ToUnityMeshShared(MeshObject source, Matrix4x4 transform, int materialCount = -1)
         {
             var mesh = new Mesh();
+            Poly_Ling.Diagnostics.PLResStat.LiveMesh++;
             mesh.name = source.Name;
 
             if (source.Vertices.Count == 0)

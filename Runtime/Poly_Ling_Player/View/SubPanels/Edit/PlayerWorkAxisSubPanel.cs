@@ -7,9 +7,13 @@
 // Runtime/Poly_Ling_Player/View/SubPanels/Edit/ に配置
 
 using System;
+using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Serialization;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.Player
 {
@@ -32,6 +36,21 @@ namespace Poly_Ling.Player
         /// <summary>選択頂点の重心（ワールド座標）。取得できないときは null。</summary>
         public Func<Vector3?> GetSelectionCentroidWorld;
 
+        /// <summary>
+        /// 見出しと説明文を出すか。Build の前に設定する。
+        /// 他パネルへ埋め込むときは false にして、見出しの重複を避ける。
+        /// </summary>
+        public bool ShowHeader = true;
+
+        /// <summary>
+        /// 名前付き作業軸の辞書。Viewer が用意した1個を全パネルで共有する。
+        /// null なら辞書 UI を出さない。
+        /// </summary>
+        public Func<WorkAxisLibrary> GetLibrary;
+
+        /// <summary>辞書の中身が変わったときに呼ぶ。他パネルの一覧を揃えるため。</summary>
+        public Action OnLibraryChanged;
+
         // ================================================================
         // ウィジェット
         // ================================================================
@@ -39,11 +58,20 @@ namespace Poly_Ling.Player
         private VisualElement _root;
         private FloatField _posX, _posY, _posZ;
         private FloatField _rotX, _rotY, _rotZ;
+        private FloatField _lengthField;
         private Toggle     _visibleToggle;
         private FloatField _snapField;
         private Toggle     _snapToggle;
         private Button     _modeMoveBtn, _modeRotateBtn;
         private Label      _infoLabel;
+
+        // 吸着対象
+        private Toggle _snapVertexToggle, _snapBoneToggle, _snapObjectToggle;
+
+        // 辞書
+        private TextField    _libNameField;
+        private DropdownField _libDropdown;
+        private readonly List<string> _libNames = new List<string>();
 
         private static readonly Color ActiveBtnColor   = new Color(0.20f, 0.45f, 0.25f);
         private static readonly Color InactiveBtnColor = new Color(0.25f, 0.25f, 0.25f);
@@ -60,16 +88,23 @@ namespace Poly_Ling.Player
             _root.style.paddingRight = 4;
             parent.Add(_root);
 
-            _root.Add(Header("作業軸 (Work Axis)"));
+            if (ShowHeader)
+            {
+                _root.Add(Header("作業軸 (Work Axis)"));
 
-            var help = new HelpBox(
-                "回転・曲げの基準となるローカル軸です。\n" +
-                "原点はワールド座標で保持され、プロジェクトに保存されます。\n" +
-                "モデルを移動しても軸は追従しません。",
-                HelpBoxMessageType.Info);
-            help.style.color = new StyleColor(Color.white);
-            help.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
-            _root.Add(help);
+                var help = new HelpBox(
+                    "回転・曲げの基準となるローカル軸です。\n" +
+                    "原点はワールド座標で保持され、プロジェクトに保存されます。\n" +
+                    "モデルを移動しても軸は追従しません。\n" +
+                    "3D画面の六角錐は「長さ」で描かれます（X は 0.5 倍、Z は 0.3 倍）。\n" +
+                    "原点ハンドルと Y 先端ハンドルは頂点／ボーンへ重ねると吸着し、\n" +
+                    "外せば自由に動きます。\n" +
+                    "Y 先端ハンドルは向きだけを変えます（長さは変わりません）。",
+                    HelpBoxMessageType.Info);
+                help.style.color = new StyleColor(Color.white);
+                help.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
+                _root.Add(help);
+            }
 
             // ── サブモード切替 ────────────────────────────────────────
             var modeRow = new VisualElement();
@@ -105,6 +140,16 @@ namespace Poly_Ling.Player
             rotRow.Add(_rotX); rotRow.Add(_rotY); rotRow.Add(_rotZ);
             _root.Add(rotRow);
 
+            // ── 長さ ─────────────────────────────────────────────────
+            // 六角錐ギズモのワールド長の基準。Y 軸先端ハンドルの定位置を決める。
+            _root.Add(Header("長さ (ワールド)"));
+            var lenRow = new VisualElement();
+            lenRow.style.flexDirection = FlexDirection.Row;
+            lenRow.style.marginBottom  = 3;
+            _lengthField = MakeField("L", SetLength);
+            lenRow.Add(_lengthField);
+            _root.Add(lenRow);
+
             // ── 回転スナップ ──────────────────────────────────────────
             var snapRow = new VisualElement();
             snapRow.style.flexDirection = FlexDirection.Row;
@@ -118,6 +163,22 @@ namespace Poly_Ling.Player
             _snapField.RegisterValueChangedCallback(_ => ApplySnapToHandler());
             snapRow.Add(_snapToggle); snapRow.Add(_snapField);
             _root.Add(snapRow);
+
+            // ── 吸着対象 ─────────────────────────────────────────────
+            // 原点ハンドルと Y 先端ハンドルが何へ吸い付くかを選ぶ。
+            // 頂点は GPU ヒットテストが要るので、要らないときは切っておくと軽い。
+            _root.Add(Header("吸着対象"));
+
+            _snapVertexToggle = MakeSnapToggle("頂点にスナップ",
+                (h, v) => h.SnapToVertex = v);
+            _snapBoneToggle   = MakeSnapToggle("ボーンにスナップ",
+                (h, v) => h.SnapToBone = v);
+            _snapObjectToggle = MakeSnapToggle("描画オブジェクトにスナップ",
+                (h, v) => h.SnapToObject = v);
+
+            _root.Add(_snapVertexToggle);
+            _root.Add(_snapBoneToggle);
+            _root.Add(_snapObjectToggle);
 
             // ── 表示 ─────────────────────────────────────────────────
             _visibleToggle = new Toggle("ギズモを表示") { value = true };
@@ -150,6 +211,8 @@ namespace Poly_Ling.Player
             cmdRow2.Add(alignWorld); cmdRow2.Add(resetBtn);
             _root.Add(cmdRow2);
 
+            BuildLibrarySection();
+
             _infoLabel = new Label();
             _infoLabel.style.fontSize    = 10;
             _infoLabel.style.marginTop   = 4;
@@ -157,6 +220,190 @@ namespace Poly_Ling.Player
             _root.Add(_infoLabel);
 
             RepaintModeButtons();
+        }
+
+        private Toggle MakeSnapToggle(string label, Action<WorkAxisToolHandler, bool> set)
+        {
+            var t = new Toggle(label);
+            t.style.color = new StyleColor(Color.white);
+            t.RegisterValueChangedCallback(e =>
+            {
+                var h = GetH?.Invoke();
+                if (h == null) return;
+                set(h, e.newValue);
+            });
+            return t;
+        }
+
+        // ================================================================
+        // 辞書
+        // ================================================================
+
+        private void BuildLibrarySection()
+        {
+            if (GetLibrary == null) return;
+
+            _root.Add(Header("作業軸の辞書"));
+
+            // 登録
+            var addRow = new VisualElement();
+            addRow.style.flexDirection = FlexDirection.Row;
+            addRow.style.marginTop     = 2;
+
+            _libNameField = new TextField { value = "" };
+            _libNameField.style.flexGrow = 1;
+            _libNameField.style.marginRight = 2;
+            addRow.Add(_libNameField);
+
+            var addBtn = new Button(RegisterCurrent) { text = "登録" };
+            addBtn.style.width = 56;
+            addRow.Add(addBtn);
+            _root.Add(addRow);
+
+            // 呼び出し / 削除
+            _libDropdown = new DropdownField("登録済み", new List<string>(), -1);
+            _libDropdown.style.color     = new StyleColor(Color.white);
+            _libDropdown.style.marginTop = 2;
+            _root.Add(_libDropdown);
+
+            var useRow = new VisualElement();
+            useRow.style.flexDirection = FlexDirection.Row;
+            useRow.style.marginTop     = 2;
+            var recallBtn = new Button(RecallSelected) { text = "呼び出し" };
+            recallBtn.style.flexGrow = 1; recallBtn.style.marginRight = 2;
+            var delBtn = new Button(RemoveSelected) { text = "削除" };
+            delBtn.style.flexGrow = 1;
+            useRow.Add(recallBtn); useRow.Add(delBtn);
+            _root.Add(useRow);
+
+            // CSV
+            var csvRow = new VisualElement();
+            csvRow.style.flexDirection = FlexDirection.Row;
+            csvRow.style.marginTop     = 2;
+            var saveBtn = new Button(SaveLibraryCsv) { text = "CSV保存" };
+            saveBtn.style.flexGrow = 1; saveBtn.style.marginRight = 2;
+            var loadBtn = new Button(LoadLibraryCsv) { text = "CSV読込" };
+            loadBtn.style.flexGrow = 1;
+            csvRow.Add(saveBtn); csvRow.Add(loadBtn);
+            _root.Add(csvRow);
+
+            RefreshLibraryList();
+        }
+
+        /// <summary>ドロップダウンの中身を辞書から作り直す。選択はできる限り保つ。</summary>
+        public void RefreshLibraryList()
+        {
+            if (_libDropdown == null) return;
+
+            var lib = GetLibrary?.Invoke();
+            string prev = _libDropdown.index >= 0 && _libDropdown.index < _libNames.Count
+                ? _libNames[_libDropdown.index] : null;
+
+            _libNames.Clear();
+            if (lib != null) _libNames.AddRange(lib.Names);
+
+            _libDropdown.choices = new List<string>(_libNames);
+
+            int idx = prev != null ? _libNames.IndexOf(prev) : -1;
+            if (idx < 0 && _libNames.Count > 0) idx = 0;
+            _libDropdown.index = idx;
+        }
+
+        private void RegisterCurrent()
+        {
+            var lib = GetLibrary?.Invoke();
+            var wa  = GetWorkAxis?.Invoke();
+            if (lib == null || wa == null) return;
+
+            string name = WorkAxisLibrary.Normalize(_libNameField?.value);
+            if (name.Length == 0)
+            {
+                SetInfo("名前を入れてください。");
+                return;
+            }
+
+            bool overwrite = lib.Contains(name);
+            lib.Set(name, WorkAxisEntry.FromContext(wa));
+
+            RefreshLibraryList();
+            if (_libDropdown != null) _libDropdown.index = _libNames.IndexOf(name);
+
+            SetInfo(overwrite ? $"「{name}」を上書きしました。" : $"「{name}」を登録しました。");
+            OnLibraryChanged?.Invoke();
+        }
+
+        private void RecallSelected()
+        {
+            var lib = GetLibrary?.Invoke();
+            var wa  = GetWorkAxis?.Invoke();
+            if (lib == null || wa == null || _libDropdown == null) return;
+
+            int i = _libDropdown.index;
+            if (i < 0 || i >= _libNames.Count) return;
+
+            if (!lib.TryGet(_libNames[i], out var e)) return;
+
+            e.ApplyTo(wa);
+            Refresh();
+            OnValueChanged?.Invoke();
+            SetInfo($"「{_libNames[i]}」を呼び出しました。");
+        }
+
+        private void RemoveSelected()
+        {
+            var lib = GetLibrary?.Invoke();
+            if (lib == null || _libDropdown == null) return;
+
+            int i = _libDropdown.index;
+            if (i < 0 || i >= _libNames.Count) return;
+
+            string name = _libNames[i];
+            if (!lib.Remove(name)) return;
+
+            RefreshLibraryList();
+            SetInfo($"「{name}」を削除しました。");
+            OnLibraryChanged?.Invoke();
+        }
+
+        private void SaveLibraryCsv()
+        {
+            var lib = GetLibrary?.Invoke();
+            if (lib == null) return;
+
+            if (lib.Count == 0) { SetInfo("辞書が空です。"); return; }
+
+            string path = PLEditorBridge.I.SaveFilePanel(
+                "作業軸辞書を保存", Application.dataPath, "workaxis_library.csv", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            SetInfo(WorkAxisLibraryCsvIO.Save(path, lib)
+                ? $"{lib.Count} 件を保存しました： {Path.GetFileName(path)}"
+                : "保存に失敗しました。");
+        }
+
+        private void LoadLibraryCsv()
+        {
+            var lib = GetLibrary?.Invoke();
+            if (lib == null) return;
+
+            string path = PLEditorBridge.I.OpenFilePanel(
+                "作業軸辞書を読み込み", Application.dataPath, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            // 既存へ足す。同名は上書き。
+            var r = WorkAxisLibraryCsvIO.Load(path, lib, true);
+
+            RefreshLibraryList();
+            OnLibraryChanged?.Invoke();
+
+            SetInfo(r.Success
+                ? $"{r.Loaded} 件を読み込みました" + (r.Skipped > 0 ? $"（{r.Skipped} 行を読み飛ばし）" : "")
+                : $"読み込みに失敗しました： {r.ErrorMessage}");
+        }
+
+        private void SetInfo(string text)
+        {
+            if (_infoLabel != null) _infoLabel.text = text;
         }
 
         // ================================================================
@@ -183,6 +430,17 @@ namespace Poly_Ling.Player
             _rotZ?.SetValueWithoutNotify(e.z);
 
             _visibleToggle?.SetValueWithoutNotify(wa.IsVisible);
+            _lengthField?.SetValueWithoutNotify(wa.Length);
+
+            var h = GetH?.Invoke();
+            if (h != null)
+            {
+                _snapVertexToggle?.SetValueWithoutNotify(h.SnapToVertex);
+                _snapBoneToggle  ?.SetValueWithoutNotify(h.SnapToBone);
+                _snapObjectToggle?.SetValueWithoutNotify(h.SnapToObject);
+            }
+
+            RefreshLibraryList();
 
             if (_infoLabel != null)
             {
@@ -230,6 +488,18 @@ namespace Poly_Ling.Player
             else if (component == 1) e.y = value;
             else                     e.z = value;
             wa.EulerAngles = e;
+
+            OnValueChanged?.Invoke();
+        }
+
+        private void SetLength(float value)
+        {
+            var wa = GetWorkAxis?.Invoke();
+            if (wa == null) return;
+
+            // 下限のクランプは WorkAxisContext.Length に集約されている。
+            wa.Length = value;
+            _lengthField?.SetValueWithoutNotify(wa.Length);
 
             OnValueChanged?.Invoke();
         }

@@ -109,10 +109,14 @@ namespace Poly_Ling.Core.Rendering
             if (cam == null || _material == null || !_hasCache) return;
 
             if (_cached.ShowGrid && _gridMesh != null)
-                Graphics.DrawMesh(_gridMesh, Matrix4x4.identity, _material, 0, cam);
+                Graphics.RenderMesh(
+                    Poly_Ling.Core.PLRenderMeshHelper.Make(_material, cam, _gridMesh.bounds),
+                    _gridMesh, 0, Matrix4x4.identity);
 
             if (_cached.ShowAxis && _axisMesh != null)
-                Graphics.DrawMesh(_axisMesh, Matrix4x4.identity, _material, 0, cam);
+                Graphics.RenderMesh(
+                    Poly_Ling.Core.PLRenderMeshHelper.Make(_material, cam, _axisMesh.bounds),
+                    _axisMesh, 0, Matrix4x4.identity);
         }
 
         // ================================================================

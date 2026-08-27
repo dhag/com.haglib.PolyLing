@@ -147,7 +147,7 @@ namespace Poly_Ling.UI
         /// 引き継がないと、スキンドメッシュの複製を表示したときに
         /// SkinningMatrix = WorldMatrix × BindPose が単位行列基準になり形が飛ぶ。
         /// </summary>
-        private static MeshContext CloneContext(MeshContext src, string newName)
+        public static MeshContext CloneContext(MeshContext src, string newName)
         {
             var mo = src.MeshObject.Clone();
             mo.Name = newName;
