@@ -102,6 +102,12 @@ namespace Poly_Ling.Player
         private int _materialIndex = 0;
 
         /// <summary>
+        /// 直近にドロップダウンへ反映した選択肢の内容。
+        /// NotifyPanels は選択変更でも走るため、毎回 choices を組み直さないための比較用。
+        /// </summary>
+        private string _materialChoicesKey;
+
+        /// <summary>
         /// マテリアル指定が効く図形か。
         ///
         /// 藤壺は元オブジェクトの MaterialIndex をそのまま複製する
@@ -132,6 +138,12 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// マテリアル指定ドロップダウンの選択肢を取り直す外部入口。
+        /// 生成でスロットが作られた直後などに Viewer 側から呼ぶ。
+        /// </summary>
+        public void RefreshMaterials() => RefreshMaterialChoices();
+
+        /// <summary>
         /// マテリアルドロップダウンの選択肢を取り直す。
         /// スロットが 1 つも無いモデルでは選ぶものが無いので、
         /// 「生成時に作る」の 1 項目だけを出して操作させない。
@@ -140,23 +152,29 @@ namespace Poly_Ling.Player
         {
             if (_materialDd == null) return;
 
-            var names = GetMaterialNames?.Invoke();
+            var  names = GetMaterialNames?.Invoke();
+            bool empty = names == null || names.Count == 0;
 
-            if (names == null || names.Count == 0)
+            if (empty)
+            {
+                names          = new List<string> { T("MaterialNone") };
+                _materialIndex = 0;
+            }
+            else if (_materialIndex < 0 || _materialIndex >= names.Count)
             {
                 _materialIndex = 0;
-                var none = new List<string> { T("MaterialNone") };
-                _materialDd.choices = none;
-                _materialDd.SetValueWithoutNotify(none[0]);
-                _materialDd.SetEnabled(false);
-                return;
             }
 
-            if (_materialIndex < 0 || _materialIndex >= names.Count) _materialIndex = 0;
+            // 選択肢が変わっていなければ作り直さない。
+            string key = string.Join("\u0001", names);
+            if (key != _materialChoicesKey)
+            {
+                _materialChoicesKey = key;
+                _materialDd.choices = new List<string>(names);
+            }
 
-            _materialDd.choices = new List<string>(names);
             _materialDd.SetValueWithoutNotify(names[_materialIndex]);
-            _materialDd.SetEnabled(true);
+            _materialDd.SetEnabled(!empty);
         }
 
         // ================================================================

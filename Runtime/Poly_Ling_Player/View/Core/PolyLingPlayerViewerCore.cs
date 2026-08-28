@@ -4651,6 +4651,10 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.UVEditorSection,          () => _uvEditorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UVUnwrapSection,          () => _uvUnwrapSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MaterialListSection,      () => _materialListSubPanel?.Refresh()));
+            // 図形生成のマテリアル指定ドロップダウン。生成でスロットを作った直後や、
+            // マテリアル一覧側でスロットを増減した後に選択肢を追随させる。
+            _sectionRefreshPairs.Add((_layoutRoot.PrimitiveSection,          () => _primitiveSubPanel?.RefreshMaterials()));
+            _sectionRefreshPairs.Add((_layoutRoot.LivePrimitiveSection,      () => _livePrimitiveSubPanel?.RefreshMaterials()));
             _sectionRefreshPairs.Add((_layoutRoot.UVZSection,               () => _uvzSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PartsSelectionSetSection, () => _partsSelSetSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MeshSelectionSetSection,  () => _meshSelSetSubPanel?.Refresh()));
@@ -7264,10 +7268,15 @@ namespace Poly_Ling.Player
         /// materialIndex が負のときは何もしない。藤壺のように元オブジェクトの
         /// MaterialIndex を引き継ぐ図形と、図形生成以外の経路が該当する。
         ///
-        /// スロットが 1 つも無いモデルには 1 つ作る。作ったときだけ true を返すので、
-        /// 呼出し側は「作る前のマテリアル一覧」を Undo へ渡すこと。
+        /// スロットが 1 つも無いモデルには 1 つ作る。作成は EnsureDefaultMaterialSlot に
+        /// 任せる。ここで AddMaterial を直接呼ぶと、PrimitiveMeshFinalize 内の
+        /// EnsureDefaultMaterialSlot が「既に 1 件ある」と判断して何もせず、
+        /// 名前 "Default" と描画フォールバックと同じ灰(0.7)が付かなくなる。
+        ///
+        /// 作ったときだけ true を返すので、呼出し側は「作る前のマテリアル一覧」を
+        /// Undo へ渡すこと。
         /// </summary>
-        private static bool ApplyGeneratedMaterialIndex(
+        private bool ApplyGeneratedMaterialIndex(
             ModelContext model, MeshObject meshObject, int materialIndex)
         {
             if (model == null || meshObject == null || materialIndex < 0) return false;
@@ -7275,10 +7284,11 @@ namespace Poly_Ling.Player
             bool added = false;
             if (model.MaterialCount == 0)
             {
-                model.AddMaterial(null);
-                model.CurrentMaterialIndex = 0;
-                added = true;
+                EnsureDefaultMaterialSlot(model);
+                added = model.MaterialCount > 0;
             }
+
+            if (model.MaterialCount == 0) return false;
 
             int slot = Mathf.Clamp(materialIndex, 0, model.MaterialCount - 1);
             foreach (var f in meshObject.Faces)
