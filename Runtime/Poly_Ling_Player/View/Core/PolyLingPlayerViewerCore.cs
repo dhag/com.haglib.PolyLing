@@ -4193,8 +4193,8 @@ namespace Poly_Ling.Player
             // 最後に選んだ図形の保存キー。Build 内で読み込むため Build より前に設定する。
             _primitiveSubPanel.MemoryKey = "Primitive";
             _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
-            _primitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target) =>
-                OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode, target);
+            _primitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target, mat) =>
+                OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode, target, mat);
             _primitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;
             _primitiveSubPanel.GetSelectedFaceIndices = () =>
@@ -4203,6 +4203,8 @@ namespace Poly_Ling.Player
             _primitiveSubPanel.GetDrawableMeshEntryList = BuildDrawableMeshEntryList;
             _primitiveSubPanel.GetSubtreeMeshList       = BuildSubtreeMeshList;
             _primitiveSubPanel.GetExistingMeshNames = BuildExistingMeshNames;
+            // マテリアル指定ドロップダウンの選択肢。
+            _primitiveSubPanel.GetMaterialNames = BuildMaterialNames;
             _primitiveSubPanel.GetUndoController = () => _editOps?.UndoController;
             // 歪み複製（高度な図形）。作業軸を基準に複製＋歪みを行う。
             _primitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
@@ -4232,8 +4234,8 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.MemoryKey = "LivePrimitive";
 
             _livePrimitiveSubPanel.Build(_layoutRoot.LivePrimitiveSection, _sceneRoot);
-            _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target) =>
-                OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode, target);
+            _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target, mat) =>
+                OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode, target, mat);
             _livePrimitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;
             _livePrimitiveSubPanel.GetSelectedFaceIndices = () =>
@@ -4242,6 +4244,8 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.GetDrawableMeshEntryList = BuildDrawableMeshEntryList;
             _livePrimitiveSubPanel.GetSubtreeMeshList       = BuildSubtreeMeshList;
             _livePrimitiveSubPanel.GetExistingMeshNames = BuildExistingMeshNames;
+            // マテリアル指定ドロップダウンの選択肢。
+            _livePrimitiveSubPanel.GetMaterialNames = BuildMaterialNames;
             _livePrimitiveSubPanel.GetUndoController = () => _editOps?.UndoController;
             // 歪み複製（新しい高度）。既存インスタンスとは状態を共有しない。
             _livePrimitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
@@ -5017,6 +5021,27 @@ namespace Poly_Ling.Player
             {
                 if (mc == null || string.IsNullOrEmpty(mc.Name)) continue;
                 list.Add(mc.Name);
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 図形生成パネルのマテリアル指定ドロップダウン用の表示名一覧。
+        /// 添字がそのままマテリアルスロット番号になる。
+        /// スロットが 1 つも無いモデルでは空リストを返す
+        /// （パネル側が「生成時に作成」表示へ切り替える）。
+        /// </summary>
+        private List<string> BuildMaterialNames()
+        {
+            var list  = new List<string>();
+            var model = ActiveProject?.CurrentModel;
+            if (model?.MaterialReferences == null) return list;
+
+            for (int i = 0; i < model.MaterialReferences.Count; i++)
+            {
+                var matRef = model.MaterialReferences[i];
+                string name = string.IsNullOrEmpty(matRef?.Name) ? "(no name)" : matRef.Name;
+                list.Add($"[{i}] {name}");
             }
             return list;
         }
@@ -7150,11 +7175,16 @@ namespace Poly_Ling.Player
             return n.sqrMagnitude > 1e-20f ? n.normalized : Vector3.up;
         }
 
+        /// <param name="materialIndex">
+        /// 生成面へ割り当てるマテリアルスロット番号。-1 は「指定しない」で、
+        /// 生成器が入れた MaterialIndex をそのまま使う（藤壺などの継承組と、
+        /// 図形生成以外の経路が該当）。
+        /// </param>
         private void OnPrimitiveMeshCreated(
             MeshObject meshObject, string meshName, Vector3 worldPos,
             Vector3 poseRotation, Vector3 poseScale,
             bool ignorePoseInArmature, PrimitiveAddMode addMode,
-            int addTargetIndex = -1)
+            int addTargetIndex = -1, int materialIndex = -1)
         {
             _localLoader.EnsureProject();
             _moveToolHandler?.SetProject(ActiveProject);
@@ -7195,15 +7225,16 @@ namespace Poly_Ling.Player
             {
                 case PrimitiveAddMode.NewObject:
                     PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
-                        poseRotation, poseScale, ignorePoseInArmature);
+                        poseRotation, poseScale, ignorePoseInArmature, materialIndex);
                     break;
                 case PrimitiveAddMode.AddToExisting:
                     PrimitiveMeshAddToExisting(project, meshObject, meshName, worldPos,
-                        poseRotation, poseScale, ignorePoseInArmature, addTargetIndex);
+                        poseRotation, poseScale, ignorePoseInArmature, addTargetIndex,
+                        materialIndex);
                     break;
                 case PrimitiveAddMode.NewModel:
                     PrimitiveMeshCreateNewModel(project, meshObject, meshName, worldPos,
-                        poseRotation, poseScale, ignorePoseInArmature);
+                        poseRotation, poseScale, ignorePoseInArmature, materialIndex);
                     break;
             }
         }
@@ -7225,6 +7256,37 @@ namespace Poly_Ling.Player
                 if (mc?.MeshObject != null) return mc;
             }
             return model.ActiveMeshContext;
+        }
+
+        /// <summary>
+        /// 生成メッシュの全面へマテリアルスロット番号を割り当てる。
+        ///
+        /// materialIndex が負のときは何もしない。藤壺のように元オブジェクトの
+        /// MaterialIndex を引き継ぐ図形と、図形生成以外の経路が該当する。
+        ///
+        /// スロットが 1 つも無いモデルには 1 つ作る。作ったときだけ true を返すので、
+        /// 呼出し側は「作る前のマテリアル一覧」を Undo へ渡すこと。
+        /// </summary>
+        private static bool ApplyGeneratedMaterialIndex(
+            ModelContext model, MeshObject meshObject, int materialIndex)
+        {
+            if (model == null || meshObject == null || materialIndex < 0) return false;
+
+            bool added = false;
+            if (model.MaterialCount == 0)
+            {
+                model.AddMaterial(null);
+                model.CurrentMaterialIndex = 0;
+                added = true;
+            }
+
+            int slot = Mathf.Clamp(materialIndex, 0, model.MaterialCount - 1);
+            foreach (var f in meshObject.Faces)
+            {
+                if (f == null) continue;
+                f.MaterialIndex = slot;
+            }
+            return added;
         }
 
         /// <summary>
@@ -7268,13 +7330,21 @@ namespace Poly_Ling.Player
         private void PrimitiveMeshCreateNewObject(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature)
+            bool ignorePoseInArmature, int materialIndex = -1)
         {
             var model = project.CurrentModel;
             if (model == null) return;
 
             // 既存の描画オブジェクトと名前が衝突しないようにしてから作る。
             meshName = model.GenerateUniqueMeshName(meshName);
+
+            // マテリアル割当。スロットを作るのは 0 件のときだけなので、
+            // その場合の「作る前の一覧」は必ず空になる。
+            // 指定が無いときは Materials に触れない（MaterialReference の実体化を避ける）。
+            bool willAddSlot      = materialIndex >= 0 && model.MaterialCount == 0;
+            var  oldMaterials     = willAddSlot ? new List<Material>() : null;
+            int  oldMaterialIndex = model.CurrentMaterialIndex;
+            bool matSlotAdded     = ApplyGeneratedMaterialIndex(model, meshObject, materialIndex);
 
             var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos,
                 poseRotation, poseScale, ignorePoseInArmature);
@@ -7287,12 +7357,17 @@ namespace Poly_Ling.Player
             model.SelectMesh(insertIndex);
             var newSelected = model.CaptureAllSelectedIndices();
 
-            // UNDO記録
+            // UNDO記録。マテリアルスロットを作った場合だけ、その前後も同じレコードへ入れる。
             if (_editOps?.UndoController != null)
             {
                 _editOps.UndoController.SetModelContext(model);
                 _editOps.UndoController.RecordMeshContextAdd(
-                    ctx, insertIndex, oldSelected, newSelected);
+                    ctx, insertIndex, oldSelected, newSelected,
+                    null, null,
+                    matSlotAdded ? oldMaterials : null,
+                    oldMaterialIndex,
+                    matSlotAdded ? new List<Material>(model.Materials) : null,
+                    matSlotAdded ? model.CurrentMaterialIndex : 0);
             }
 
             PrimitiveMeshFinalize(model);
@@ -7305,7 +7380,7 @@ namespace Poly_Ling.Player
         private void PrimitiveMeshAddToExisting(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature, int addTargetIndex = -1)
+            bool ignorePoseInArmature, int addTargetIndex = -1, int materialIndex = -1)
         {
             var model  = project.CurrentModel;
             if (model == null) return;
@@ -7316,7 +7391,7 @@ namespace Poly_Ling.Player
             if (targetMc == null || targetMc.MeshObject == null)
             {
                 PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
-                    poseRotation, poseScale, ignorePoseInArmature);
+                    poseRotation, poseScale, ignorePoseInArmature, materialIndex);
                 return;
             }
 
@@ -7347,6 +7422,11 @@ namespace Poly_Ling.Player
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
                 before = _editOps.UndoController.CaptureMeshObjectSnapshot();
             }
+
+            // マテリアル割当。MeshObjectSnapshot は Materials も保持するので、
+            // スロットを作る可能性のあるこの処理は必ず before 捕獲の後に行う。
+            // 面を書き換える対象は、マージで実際に読まれる srcObject 側。
+            ApplyGeneratedMaterialIndex(model, srcObject, materialIndex);
 
             // マージ
             int baseVertIdx = targetMc.MeshObject.VertexCount;
@@ -7386,13 +7466,20 @@ namespace Poly_Ling.Player
         private void PrimitiveMeshCreateNewModel(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature)
+            bool ignorePoseInArmature, int materialIndex = -1)
         {
             var newModel = project.CreateNewModel(meshName);
             if (newModel == null) return;
 
             // 新規モデルなので通常は衝突しないが、経路を揃えるため同じ一意化を通す。
             meshName = newModel.GenerateUniqueMeshName(meshName);
+
+            // 新規モデルはマテリアルスロットが 0 件なので、指定があれば 1 つ作る。
+            // 作る前の一覧は必ず空。指定が無いときは Materials に触れない。
+            bool willAddSlot      = materialIndex >= 0 && newModel.MaterialCount == 0;
+            var  oldMaterials     = willAddSlot ? new List<Material>() : null;
+            int  oldMaterialIndex = newModel.CurrentMaterialIndex;
+            bool matSlotAdded     = ApplyGeneratedMaterialIndex(newModel, meshObject, materialIndex);
 
             var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos,
                 poseRotation, poseScale, ignorePoseInArmature);
@@ -7405,12 +7492,18 @@ namespace Poly_Ling.Player
             newModel.SelectMesh(insertIndex);
             var newSelected = newModel.CaptureAllSelectedIndices();
 
-            // UNDO記録（新モデル上のメッシュ追加）
+            // UNDO記録（新モデル上のメッシュ追加）。
+            // マテリアルスロットを作った場合だけ、その前後も同じレコードへ入れる。
             if (_editOps?.UndoController != null)
             {
                 _editOps.UndoController.SetModelContext(newModel);
                 _editOps.UndoController.RecordMeshContextAdd(
-                    ctx, insertIndex, oldSelected, newSelected);
+                    ctx, insertIndex, oldSelected, newSelected,
+                    null, null,
+                    matSlotAdded ? oldMaterials : null,
+                    oldMaterialIndex,
+                    matSlotAdded ? new List<Material>(newModel.Materials) : null,
+                    matSlotAdded ? newModel.CurrentMaterialIndex : 0);
             }
 
             // ハンドラーを新モデルに切り替え

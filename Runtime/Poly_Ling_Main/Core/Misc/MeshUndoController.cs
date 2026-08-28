@@ -1362,13 +1362,24 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// メッシュコンテキスト追加を記録
         /// </summary>
+        /// <param name="oldMaterials">
+        /// 追加処理でモデルのマテリアルスロットも変えた場合の、変更前の一覧。
+        /// null なら Undo でマテリアルを触らない（従来どおり）。
+        /// </param>
+        /// <param name="newMaterials">
+        /// 同じく変更後の一覧。null なら Redo でマテリアルを触らない。
+        /// </param>
         public void RecordMeshContextAdd(
             MeshContext meshContext, 
             int insertIndex, 
             List<int> oldSelectedIndices, 
             List<int> newSelectedIndices,
             CameraSnapshot? oldCamera = null,
-            CameraSnapshot? newCamera = null)
+            CameraSnapshot? newCamera = null,
+            List<Material> oldMaterials = null,
+            int oldMaterialIndex = 0,
+            List<Material> newMaterials = null,
+            int newMaterialIndex = 0)
         {
             var record = new MeshListChangeRecord
             {
@@ -1379,7 +1390,11 @@ namespace Poly_Ling.UndoSystem
                 OldSelectedIndices = oldSelectedIndices ?? new List<int>(),
                 NewSelectedIndices = newSelectedIndices ?? new List<int>(),
                 OldCameraState = oldCamera,
-                NewCameraState = newCamera
+                NewCameraState = newCamera,
+                OldMaterials = oldMaterials != null ? new List<Material>(oldMaterials) : null,
+                OldCurrentMaterialIndex = oldMaterialIndex,
+                NewMaterials = newMaterials != null ? new List<Material>(newMaterials) : null,
+                NewCurrentMaterialIndex = newMaterialIndex
             };
 
             {

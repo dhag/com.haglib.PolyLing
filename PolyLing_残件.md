@@ -501,4 +501,6 @@ Editor/CreateRuntime/CreatePlayerViewer.cs:288 は今後も Text Settings 未設
 手順2のメニュー表記が不明な件も含めて、FontAsset と PanelTextSettings をプログラムから生成する Editor スクリプト（FontAsset.CreateFontAsset を使用）を用意することもできる。この場合メニュー探しは不要になる。
 ----
 
-「生成」ツールででマテリアルを設定できるようにしたい。
+・「図形生成」ツールででマテリアルを設定できるようにしたい。：解決
+
+・「図形生成」「高度な図形」「文字」でフォントが存在するフォルダを指定したい。複数のフォルダを指定したい。

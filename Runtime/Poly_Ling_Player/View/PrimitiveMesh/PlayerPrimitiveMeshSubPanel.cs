@@ -67,20 +67,97 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 生成ボタン押下時。
         /// (MeshObject, meshName, worldPosition, poseRotationEuler, poseScale,
-        ///  ignorePoseInArmature, addMode, addTargetIndex)
+        ///  ignorePoseInArmature, addMode, addTargetIndex, materialIndex)
         /// poseRotationEuler / poseScale は「ベイクしなかった」成分。
         /// 呼出し側が MeshContext.BoneTransform へ設定する。ベイク済みなら
         /// それぞれ Vector3.zero / Vector3.one が渡る。
         /// addTargetIndex は addMode == AddToExisting のときの追加先
         /// （MeshContextList インデックス）。-1 なら選択オブジェクトリストの先頭。
+        /// materialIndex は生成面へ割り当てるマテリアルスロット番号。
+        /// -1 は「指定しない」で、生成器が入れた MaterialIndex をそのまま使う。
         /// </summary>
-        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode, int> OnMeshCreated;
+        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode, int, int> OnMeshCreated;
 
         /// <summary>選択中の描画オブジェクトの MeshObject を返す(なければ null)。取り込み/反映で使用。</summary>
         public Func<MeshObject> GetSelectedMeshObject;
 
         /// <summary>Undoコントローラ取得（プロファイル編集Undo用）。未設定なら記録しない。</summary>
         public Func<MeshUndoController> GetUndoController;
+
+        // ================================================================
+        // マテリアル指定
+        // ================================================================
+
+        /// <summary>
+        /// 現在のモデルのマテリアルスロット表示名一覧を返す。
+        /// 添字がそのままスロット番号になる。スロットが 1 つも無ければ空リスト。
+        /// 未配線のときも空リスト扱いにする。
+        /// </summary>
+        public Func<List<string>> GetMaterialNames;
+
+        /// <summary>マテリアル指定ドロップダウン。図形と追加先によって隠す。</summary>
+        private DropdownField _materialDd;
+
+        /// <summary>生成面へ割り当てるマテリアルスロット番号。</summary>
+        private int _materialIndex = 0;
+
+        /// <summary>
+        /// マテリアル指定が効く図形か。
+        ///
+        /// 藤壺は元オブジェクトの MaterialIndex をそのまま複製する
+        /// （PlaceObjectMeshGenerator）。歪み複製は複製元、穴つなぎは書き込み先の
+        /// マテリアルをそのまま使う。いずれも上書きすると継承が壊れるため、
+        /// ドロップダウン自体を出さない。
+        /// </summary>
+        private bool ShapeUsesMaterialSlot =>
+            _current != ShapeKind.PlaceObject
+         && _current != ShapeKind.ObjectArray
+         && _current != ShapeKind.Bridge;
+
+        /// <summary>
+        /// OnMeshCreated へ渡すマテリアルスロット番号。
+        ///
+        /// 継承する図形は -1（指定なし）。追加先が新しいモデルのときは、
+        /// そのモデルにスロットが無くドロップダウンも出していないため 0
+        /// （呼出し側がスロットを 1 つ作る）。
+        /// </summary>
+        private int EffectiveMaterialIndex
+        {
+            get
+            {
+                if (!ShapeUsesMaterialSlot)                  return -1;
+                if (_addMode == PrimitiveAddMode.NewModel)   return 0;
+                return _materialIndex;
+            }
+        }
+
+        /// <summary>
+        /// マテリアルドロップダウンの選択肢を取り直す。
+        /// スロットが 1 つも無いモデルでは選ぶものが無いので、
+        /// 「生成時に作る」の 1 項目だけを出して操作させない。
+        /// </summary>
+        private void RefreshMaterialChoices()
+        {
+            if (_materialDd == null) return;
+
+            var names = GetMaterialNames?.Invoke();
+
+            if (names == null || names.Count == 0)
+            {
+                _materialIndex = 0;
+                var none = new List<string> { T("MaterialNone") };
+                _materialDd.choices = none;
+                _materialDd.SetValueWithoutNotify(none[0]);
+                _materialDd.SetEnabled(false);
+                return;
+            }
+
+            if (_materialIndex < 0 || _materialIndex >= names.Count) _materialIndex = 0;
+
+            _materialDd.choices = new List<string>(names);
+            _materialDd.SetValueWithoutNotify(names[_materialIndex]);
+            _materialDd.SetEnabled(true);
+        }
 
         // ================================================================
         // メイン3Dウインドウへのライブワイヤ描画（新サブツール用）
@@ -256,6 +333,9 @@ namespace Poly_Ling.Player
             RefreshBakeToggleVis();
             RefreshAddTargetChoices();
             RefreshNameFieldMode();
+            // マテリアル欄は追加先が「新しいモデル」かどうかで出し入れが変わる。
+            RefreshCommonUiVisibility();
+            RefreshMaterialChoices();
         }
 
         /// <summary>
@@ -265,16 +345,23 @@ namespace Poly_Ling.Player
         /// （位置・回転・スケール・ベイク・頂点結合）は一切効かない。歪み複製は
         /// さらに独自の「出力先」「出力モード」を持つので追加先も効かない。
         /// 出しっぱなしにすると操作しても何も起きない欄になるため隠す。
+        ///
+        /// マテリアル指定も同様で、継承する図形（藤壺・歪み複製・穴つなぎ）と、
+        /// 追加先が「新しいモデル」のとき（スロットが 0 件なので選ぶ対象が無い）は隠す。
         /// </summary>
         private void RefreshCommonUiVisibility()
         {
             bool useAddMode = _current != ShapeKind.ObjectArray;
             bool usePose    = _current != ShapeKind.ObjectArray && _current != ShapeKind.Bridge;
+            bool useMaterial = ShapeUsesMaterialSlot
+                            && _addMode != PrimitiveAddMode.NewModel;
 
             if (_addModeDd != null)
                 _addModeDd.style.display = useAddMode ? DisplayStyle.Flex : DisplayStyle.None;
             if (_poseFold != null)
                 _poseFold.style.display  = usePose ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_materialDd != null)
+                _materialDd.style.display = useMaterial ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         /// <summary>ベイクしなかった回転（描画オブジェクトの姿勢へ渡す分）。</summary>
@@ -733,6 +820,21 @@ namespace Poly_Ling.Player
 
             parent.Add(poseFold);
 
+            // マテリアル指定（姿勢の下）。生成面の MaterialIndex を決める。
+            // 選択肢はモデルのマテリアルスロット。0 件のときは操作できない
+            // 「生成時に作成」表示にし、実際の作成は生成時に呼出し側が行う。
+            var materialDd = new DropdownField(new List<string> { T("MaterialNone") }, 0);
+            materialDd.label            = T("Material");
+            materialDd.style.marginTop    = 2;
+            materialDd.style.marginBottom = 2;
+            materialDd.RegisterValueChangedCallback(e =>
+            {
+                int i = materialDd.choices.IndexOf(e.newValue);
+                _materialIndex = i < 0 ? 0 : i;
+            });
+            _materialDd = materialDd;
+            parent.Add(materialDd);
+
             parent.Add(Sep());
 
             // プロファイル編集コンテナ（回転体/2D押し出し/フリル/パイプ時のみ中身を持つ）
@@ -1017,6 +1119,8 @@ namespace Poly_Ling.Player
             RefreshMeshNameCandidate();
             RebuildSettings();
             RefreshCommonUiVisibility();
+            // 一覧はモデルが変わると古くなるので、図形を選び直すたびに取り直す。
+            RefreshMaterialChoices();
             _dirty = true;
 
             // ブリッジへ入った / から出たときに種マーカーを出し入れする。
@@ -4424,7 +4528,7 @@ namespace Poly_Ling.Player
 
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
             OnMeshCreated?.Invoke(mo, _revP.MeshName, _worldPos, PoseRotation, PoseScale, false,
-                _addMode, _addTargetIndex);
+                _addMode, _addTargetIndex, EffectiveMaterialIndex);
         }
 
         /// <summary>選択オブジェクトの全2頂点ラインを Profile2D ループへ取り込む。</summary>
@@ -4460,7 +4564,7 @@ namespace Poly_Ling.Player
 
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
             OnMeshCreated?.Invoke(mo, _p2dP.MeshName, _worldPos, PoseRotation, PoseScale, false,
-                _addMode, _addTargetIndex);
+                _addMode, _addTargetIndex, EffectiveMaterialIndex);
         }
 
         // ================================================================
@@ -4518,7 +4622,7 @@ namespace Poly_Ling.Player
                     if (mo == null) { _statusLabel.text = "生成失敗"; return; }
                     _statusLabel.text = T("VertsFaces", mo.VertexCount, mo.FaceCount);
                     OnMeshCreated?.Invoke(mo, Name(), _worldPos, PoseRotation, PoseScale, false,
-                        _addMode, _addTargetIndex);
+                        _addMode, _addTargetIndex, EffectiveMaterialIndex);
 
                     // 次の生成に備えて名前欄を非重複候補へ更新する。
                     // AddToExisting は既存オブジェクトへの統合なので新しい名前は要らない。
