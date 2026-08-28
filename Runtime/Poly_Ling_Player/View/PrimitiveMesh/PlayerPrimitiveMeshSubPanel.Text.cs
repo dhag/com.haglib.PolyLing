@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Data;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.GlyphText;
 using Poly_Ling.Profile2DExtrude;
 using static Poly_Ling.Player.PrimitiveMeshTexts;
@@ -26,6 +27,9 @@ namespace Poly_Ling.Player
         private DropdownField _textFontDrop;
         private Label _textInfoLabel;
         private SolidifyUI _textSolidUI;
+
+        /// <summary>フォント置き場フォルダの行を並べる入れ物。</summary>
+        private VisualElement _textFontDirList;
 
         /// <summary>直近の生成でフォントに存在せず飛ばした文字数。</summary>
         private int _textMissing;
@@ -70,11 +74,39 @@ namespace Poly_Ling.Player
                 RefreshTextInfo();
             }));
 
-            var dirHint = new Label(T("TextFontDir") + "\n" + PlyFontLibrary.RootDir);
+            // ── フォント置き場（複数指定可） ──
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(PlayerIoUiKit.SectionLabel(T("TextFontDirs")));
+
+            var dirHint = new Label(T("TextFontDir"));
             dirHint.style.fontSize = 10;
             dirHint.style.whiteSpace = WhiteSpace.Normal;
             dirHint.style.marginBottom = 2;
             c.Add(dirHint);
+
+            _textFontDirList = new VisualElement();
+            c.Add(_textFontDirList);
+
+            c.Add(PlayerIoUiKit.WideBtn(T("TextFontDirAdd"), () =>
+            {
+                var dirs = PlyFontLibrary.GetDirs();
+                if (dirs.Count >= PlyFontLibrary.MaxDirs) return;
+
+                string start = dirs.Count > 0 ? dirs[dirs.Count - 1] : PlyFontLibrary.DefaultRootDir;
+                string sel   = PLEditorBridge.I.OpenFolderPanel(T("TextFontDirs"), start, "");
+                if (string.IsNullOrEmpty(sel)) return;
+
+                dirs.Add(sel);
+                ApplyTextFontDirs(dirs);
+            }));
+
+            c.Add(PlayerIoUiKit.WideBtn(T("TextFontDirReset"), () =>
+            {
+                PlyFontLibrary.ResetDirs();
+                AfterTextFontDirsChanged();
+            }));
+
+            RebuildTextFontDirRows();
 
             _textInfoLabel = new Label(TextInfoText());
             _textInfoLabel.style.fontSize = 10;
@@ -131,6 +163,101 @@ namespace Poly_Ling.Player
             c.Add(textSolid.EdgeLabel); c.Add(textSolid.FrontSeg); c.Add(textSolid.FrontSize);
             c.Add(textSolid.BackSeg);   c.Add(textSolid.BackSize); c.Add(textSolid.Inward);
             RefreshTextSolidVis();
+        }
+
+        // ================================================================
+        // フォント置き場フォルダ
+        // ================================================================
+
+        /// <summary>
+        /// 置き場フォルダの行を作り直す。
+        /// 1 行 = [...]（フォルダ選択）＋ パス欄 ＋ ×（削除）。
+        /// </summary>
+        private void RebuildTextFontDirRows()
+        {
+            if (_textFontDirList == null) return;
+            _textFontDirList.Clear();
+
+            var dirs = PlyFontLibrary.GetDirs();
+            for (int i = 0; i < dirs.Count; i++)
+            {
+                int idx = i;
+
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.marginBottom  = 2;
+
+                var browse = new Button(() =>
+                {
+                    var cur = PlyFontLibrary.GetDirs();
+                    if (idx < 0 || idx >= cur.Count) return;
+
+                    string sel = PLEditorBridge.I.OpenFolderPanel(T("TextFontDirs"), cur[idx], "");
+                    if (string.IsNullOrEmpty(sel)) return;
+
+                    cur[idx] = sel;
+                    ApplyTextFontDirs(cur);
+                })
+                { text = "..." };
+                browse.style.width       = 28;
+                browse.style.marginRight = 2;
+
+                var field = new TextField { value = dirs[idx] };
+                // 1 文字打つたびに保存と作り直しが走らないよう、確定時だけ通知させる。
+                field.isDelayed      = true;
+                field.style.flexGrow = 1;
+                field.RegisterValueChangedCallback(e =>
+                {
+                    var cur = PlyFontLibrary.GetDirs();
+                    if (idx < 0 || idx >= cur.Count) return;
+
+                    cur[idx] = e.newValue;
+                    ApplyTextFontDirs(cur);
+                });
+
+                var del = new Button(() =>
+                {
+                    var cur = PlyFontLibrary.GetDirs();
+                    if (idx < 0 || idx >= cur.Count) return;
+
+                    cur.RemoveAt(idx);
+                    ApplyTextFontDirs(cur);
+                })
+                { text = "×" };
+                del.style.width      = 22;
+                del.style.marginLeft = 2;
+
+                row.Add(browse);
+                row.Add(field);
+                row.Add(del);
+                _textFontDirList.Add(row);
+            }
+        }
+
+        /// <summary>置き場一覧を確定し、保存・再読込・UI 更新までまとめて行う。</summary>
+        private void ApplyTextFontDirs(List<string> dirs)
+        {
+            PlyFontLibrary.SetDirs(dirs);
+            AfterTextFontDirsChanged();
+        }
+
+        /// <summary>置き場が変わった後の再読込と UI 更新。</summary>
+        private void AfterTextFontDirsChanged()
+        {
+            RefreshTextFontEntries();
+
+            if (_textFontDrop != null)
+            {
+                _textFontDrop.choices = TextFontChoices();
+                _textFontDrop.index   = TextFontIndex();
+            }
+
+            // 行の作り直しは、この呼出し元である行内のボタン／入力欄を
+            // イベント処理中に破棄しないよう次フレームへ回す。
+            _textFontDirList?.schedule.Execute(RebuildTextFontDirRows);
+
+            D();
+            RefreshTextInfo();
         }
 
         // ================================================================

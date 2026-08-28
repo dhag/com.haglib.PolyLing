@@ -506,4 +506,9 @@ Editor/CreateRuntime/CreatePlayerViewer.cs:288 は今後も Text Settings 未設
 
 ・「図形生成」「高度な図形」「文字」でフォントが存在するフォルダを指定したい。複数のフォルダを指定したい。：解決
 
+・不可視オブジェクトもGPUに送って計算だけしてるようだ（未確認）。効率悪い。空オブジェクトが DrawableMeshes に載る、はブロック済みだが別件。ブロックの効率も不明。
+
+・頂点IDの拡張、SubID,PartsID
+
+
 
