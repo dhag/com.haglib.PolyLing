@@ -232,6 +232,11 @@ namespace Poly_Ling.Player
                 row.Add(del);
                 _textFontDirList.Add(row);
             }
+
+            // 行は RebuildSettings 末尾の ApplyDarkTheme より後に作られることがある。
+            // ApplyDarkTheme は background-color / color をインライン設定するため、
+            // 通らなかった要素は明るい既定色のまま残る。ここで自分の入れ物へ掛け直す。
+            PlayerLayoutRoot.ApplyDarkTheme(_textFontDirList);
         }
 
         /// <summary>置き場一覧を確定し、保存・再読込・UI 更新までまとめて行う。</summary>

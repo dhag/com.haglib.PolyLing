@@ -3,6 +3,7 @@
 // 曲線の折れ線化は TTFont.cpp:308-325 と同じ 2 次ベジエ式を使う（終点も出力する点だけ異なる）。
 // 巻き方向は全ループ CCW へ正規化する。MiterCollapse
 // (Profile2DExtrudeMeshGenerator.cs:240-267) が CCW でのみ正しくインセットするため。
+// 正規化で元の巻き方向は失われるので、穴かどうかは包含関係だけで決める。
 // Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/ に配置
 
 using System.Collections.Generic;
@@ -148,15 +149,26 @@ namespace Poly_Ling.GlyphText
 
             if (built.Count == 0) return;
 
-            // 包含数の偶奇で穴を決める。輪郭は交差しない前提。
+            // 外接矩形は内包判定の足切りに使う。
+            var mins = new Vector2[built.Count];
+            var maxs = new Vector2[built.Count];
+            for (int i = 0; i < built.Count; i++)
+                ComputeBounds(built[i], out mins[i], out maxs[i]);
+
+            // 「その輪郭を完全に内包する輪郭」の数の偶奇で穴を決める。
+            //
+            // 単に 1 頂点の包含数を数えると、筆画が重なるグリフ（漢字に多い）で
+            // 誤判定する。重なり合う 2 本の輪郭は互いに交差しており、どちらも
+            // 相手を内包していない。交差する輪郭を数えないことで、両方とも
+            // 外側として扱われ、どちらのフタも張られる。
             for (int a = 0; a < built.Count; a++)
             {
-                Vector2 probe = built[a][0];
                 int depth = 0;
                 for (int b = 0; b < built.Count; b++)
                 {
                     if (a == b) continue;
-                    if (PointInPolygon(probe, built[b])) depth++;
+                    if (ContainsLoop(built[b], mins[b], maxs[b], built[a], mins[a], maxs[a]))
+                        depth++;
                 }
 
                 var loop = new Loop();
@@ -240,6 +252,94 @@ namespace Poly_Ling.GlyphText
 
             return pts;
         }
+
+        private static void ComputeBounds(List<Vector2> pts, out Vector2 min, out Vector2 max)
+        {
+            min = new Vector2(float.MaxValue, float.MaxValue);
+            max = new Vector2(float.MinValue, float.MinValue);
+            for (int i = 0; i < pts.Count; i++)
+            {
+                Vector2 p = pts[i];
+                if (p.x < min.x) min.x = p.x;
+                if (p.y < min.y) min.y = p.y;
+                if (p.x > max.x) max.x = p.x;
+                if (p.y > max.y) max.y = p.y;
+            }
+        }
+
+        /// <summary>
+        /// inner が outer に完全に内包されるか。
+        ///
+        /// 辺が 1 本でも交差していれば内包ではない（重なり合う筆画がここで弾かれる）。
+        /// 交差が無ければ、閉曲線同士は「完全に内側」か「完全に外側」のどちらかしか
+        /// 取り得ないので、1 点の内外判定で決まる。
+        /// </summary>
+        private static bool ContainsLoop(
+            List<Vector2> outer, Vector2 outerMin, Vector2 outerMax,
+            List<Vector2> inner, Vector2 innerMin, Vector2 innerMax)
+        {
+            if (outer == null || inner == null || outer.Count < 3 || inner.Count < 3)
+                return false;
+
+            // 外接矩形に収まらなければ内包し得ない。ここで大半の組を落とす。
+            if (innerMin.x < outerMin.x || innerMin.y < outerMin.y ||
+                innerMax.x > outerMax.x || innerMax.y > outerMax.y)
+                return false;
+
+            if (AnyEdgeCrosses(inner, outer)) return false;
+
+            return PointInPolygon(inner[0], outer);
+        }
+
+        /// <summary>2 つの閉曲線の辺が 1 本でも交差するか。</summary>
+        private static bool AnyEdgeCrosses(List<Vector2> a, List<Vector2> b)
+        {
+            int na = a.Count;
+            int nb = b.Count;
+
+            for (int i = 0; i < na; i++)
+            {
+                Vector2 p1 = a[i];
+                Vector2 p2 = a[i + 1 < na ? i + 1 : 0];
+
+                float pminx = p1.x < p2.x ? p1.x : p2.x;
+                float pmaxx = p1.x > p2.x ? p1.x : p2.x;
+                float pminy = p1.y < p2.y ? p1.y : p2.y;
+                float pmaxy = p1.y > p2.y ? p1.y : p2.y;
+
+                for (int j = 0; j < nb; j++)
+                {
+                    Vector2 q1 = b[j];
+                    Vector2 q2 = b[j + 1 < nb ? j + 1 : 0];
+
+                    // 辺同士の外接矩形が重ならなければ交差しない。
+                    if (pmaxx < (q1.x < q2.x ? q1.x : q2.x)) continue;
+                    if (pminx > (q1.x > q2.x ? q1.x : q2.x)) continue;
+                    if (pmaxy < (q1.y < q2.y ? q1.y : q2.y)) continue;
+                    if (pminy > (q1.y > q2.y ? q1.y : q2.y)) continue;
+
+                    if (SegmentsProperlyIntersect(p1, p2, q1, q2)) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 線分が真に交差するか。端点が相手の線分上に乗るだけの接触は交差としない。
+        /// 入れ子の輪郭が 1 点で接するだけの場合に、内包を取り消さないため。
+        /// </summary>
+        private static bool SegmentsProperlyIntersect(Vector2 p1, Vector2 p2, Vector2 q1, Vector2 q2)
+        {
+            float d1 = Cross(q2 - q1, p1 - q1);
+            float d2 = Cross(q2 - q1, p2 - q1);
+            float d3 = Cross(p2 - p1, q1 - p1);
+            float d4 = Cross(p2 - p1, q2 - p1);
+
+            return ((d1 > 0f && d2 < 0f) || (d1 < 0f && d2 > 0f))
+                && ((d3 > 0f && d4 < 0f) || (d3 < 0f && d4 > 0f));
+        }
+
+        private static float Cross(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
 
         private static float SignedArea(List<Vector2> pts)
         {
