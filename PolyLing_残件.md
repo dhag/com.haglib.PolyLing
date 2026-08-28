@@ -493,5 +493,12 @@ var mat = new Material(shader);
 
 
 忘備録
-ランタイムで漢字がでないという不具合あり
+・ランタイムで漢字がでないという不具合あり：解決。
+　ただしエディタ拡張で下記は未対応
+----
+Editor/CreateRuntime/CreatePlayerViewer.cs:288 は今後も Text Settings 未設定の PanelSettings を作り続ける。ここに、プロジェクト内の PanelTextSettings を検索して自動割当する処理を入れれば同じ問題は再発しない。
+
+手順2のメニュー表記が不明な件も含めて、FontAsset と PanelTextSettings をプログラムから生成する Editor スクリプト（FontAsset.CreateFontAsset を使用）を用意することもできる。この場合メニュー探しは不要になる。
+----
+
 「生成」ツールででマテリアルを設定できるようにしたい。
