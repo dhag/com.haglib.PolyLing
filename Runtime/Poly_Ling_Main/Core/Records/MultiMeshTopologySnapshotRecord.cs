@@ -10,7 +10,15 @@
 //   （MultiMeshVertexSnapshotRecord と同じ方式。あちらは座標のみ、こちらは位相ごと）
 //
 // 【UnityMesh】既存の単一メッシュ位相 Undo（MeshSnapshotRecord）と同じく触らない。
-//   描画側は Undo 適用後の RebuildAdapter で MeshObject から作り直される。
+//
+//   【誰が作り直すか】RebuildAdapter ではない。RebuildAdapter は GPU バッファの
+//   再構築と WritebackTransformedVertices しか行わない。UnityMesh を作り直すのは
+//     (1) PlayerViewportManager.RebuildSelectedUnityMeshes
+//         → 対象は SelectedDrawableMeshIndices に入っているメッシュだけ
+//     (2) UnifiedSystemAdapter.WritebackTransformedVertices の再生成分岐
+//         → 上で拾えなかったメッシュはここが唯一の復旧経路
+//   非選択メッシュを含む位相 Undo は (2) に依存している。(2) を「スキップして
+//   警告のみ」に変えるなら、先に本レコード側で UnityMesh を作り直すこと。
 
 using System.Collections.Generic;
 using Poly_Ling.Data;

@@ -63,6 +63,8 @@ namespace Poly_Ling.Serialization
             {
                 var vertexDTO = new VertexDTO();
                 vertexDTO.id = vertex.Id;
+                vertexDTO.sid = vertex.SubId;
+                vertexDTO.pid = vertex.PartsId;
                 vertexDTO.SetPosition(vertex.Position);
                 vertexDTO.SetUVs(vertex.UVs);
                 vertexDTO.SetNormals(vertex.Normals);
@@ -204,6 +206,8 @@ namespace Poly_Ling.Serialization
             {
                 var vertex = new Vertex(vd.GetPosition());
                 vertex.Id = vd.id;
+                vertex.SubId = vd.sid;
+                vertex.PartsId = vd.pid;
                 vertex.UVs = vd.GetUVs();
                 vertex.Normals = vd.GetNormals();
                 vertex.BoneWeight = vd.GetBoneWeight();
@@ -1958,6 +1962,8 @@ namespace Poly_Ling.Serialization
             {
                 var vd = new VertexDTO();
                 vd.id = vertex.Id;
+                vd.sid = vertex.SubId;
+                vd.pid = vertex.PartsId;
                 vd.SetPosition(vertex.Position);
                 vd.SetUVs(vertex.UVs);
                 vd.SetNormals(vertex.Normals);

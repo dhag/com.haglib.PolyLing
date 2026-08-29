@@ -9,6 +9,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.Selection;
+using Poly_Ling.MeshBridge;
 
 namespace Poly_Ling.Core
 {
@@ -39,6 +40,62 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// このメッシュを GPU バッファへ載せるか。
+        ///
+        /// 【なぜ載せないものがあるか】
+        ///   不可視メッシュも空メッシュも、載せればバッファ容量・ディスパッチ数・
+        ///   読み戻しサイズをそのぶん消費する。TransformVertices と ExpandVertices は
+        ///   非表示かどうかを見ずに全頂点を変換するため、描かないデータの
+        ///   スキニング計算をそのまま払っていた。
+        ///
+        /// 【面が無いメッシュは載せる】
+        ///   BuildVertexVisibilityByFace は「3頂点以上の面に一度も参照されない頂点は
+        ///   可視のまま」と決めている。面を持たないメッシュの頂点は点として描かれ、
+        ///   選択もできる。ここで落とすと孤立点だけのオブジェクトや、頂点を置いた
+        ///   直後でまだ面の無いオブジェクトが画面から消えて編集不能になる。
+        ///   落とすのは頂点が1つも無いものだけ。
+        ///
+        /// 【呼び出し規則】
+        ///   容量計算のループと実データ構築のループで必ず同じ判定を使うこと。
+        ///   片方だけ変えると確保量と書き込み量がずれる。
+        /// </summary>
+        private static bool ShouldIncludeInBuffers(MeshContext mc)
+        {
+            var mo = mc?.MeshObject;
+            if (mo == null) return false;
+            if (!mc.IsVisible) return false;
+            if (mo.VertexCount == 0) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// 現在バッファに載っているメッシュの集合が、いま載るべき集合と食い違っているか。
+        ///
+        /// 可視性が変わると載せる対象が変わり、グローバル頂点／線分／面インデックスが
+        /// 丸ごとずれる。呼び出し側はこれが true のときだけ全再構築へ回すこと。
+        /// ロックだけが変わった場合は false になるので、無駄な再構築は起きない。
+        /// </summary>
+        public bool NeedsRebuildForMembership(ModelContext model)
+        {
+            if (model == null) return _contextToUnifiedMeshIndex.Count > 0;
+
+            var entries = model.TypedIndices.GetEntries(MeshCategory.Drawable);
+
+            int expected = 0;
+            foreach (var entry in entries)
+            {
+                if (!ShouldIncludeInBuffers(entry.Context)) continue;
+                expected++;
+                if (!_contextToUnifiedMeshIndex.ContainsKey(entry.MasterIndex))
+                    return true;
+            }
+
+            // 件数まで一致すれば、載っているキー集合と一致する
+            // （上のループで「載るべきものが全て載っている」ことは確認済み）。
+            return expected != _contextToUnifiedMeshIndex.Count;
+        }
+
+        /// <summary>
         /// TypedMeshEntryリストからバッファを構築
         /// MasterIndex（MeshContextList内のインデックス）をマッピングキーとして使用
         /// </summary>
@@ -63,18 +120,17 @@ namespace Poly_Ling.Core
             foreach (var entry in entries)
             {
                 var mc = entry.Context;
-                if (mc?.MeshObject == null) continue;
+                // 実データ構築ループと同じ判定を使う。片方だけ変えると確保量がずれる。
+                if (!ShouldIncludeInBuffers(mc)) continue;
                 var mo = mc.MeshObject;
 
                 totalVerts += mo.VertexCount;
                 totalFaces += mo.FaceCount;
                 meshCount++;
 
-                foreach (var vertex in mo.Vertices)
-                {
-                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-                    totalExpandedVerts += uvCount;
-                }
+                // 展開頂点数は MeshExpansion（孤立頂点除外）で数える。
+                // BuildExpandedVertexMapping と同じ数え方でなければ確保量がずれる。
+                totalExpandedVerts += MeshExpansion.CountExpanded(mo);
 
                 foreach (var face in mo.Faces)
                 {
@@ -108,7 +164,8 @@ namespace Poly_Ling.Core
             {
                 var entry = entries[i];
                 var meshContext = entry.Context;
-                if (meshContext?.MeshObject == null)
+                // 容量計算ループと同じ判定。不可視・空メッシュはバッファに載せない。
+                if (!ShouldIncludeInBuffers(meshContext))
                     continue;
 
                 int masterIndex = entry.MasterIndex;  // MeshContextList内のインデックス
@@ -156,8 +213,14 @@ namespace Poly_Ling.Core
             _totalIndexCount = (int)indexOffset;
             _modelCount = 1;
 
-            // UV展開マッピングを構築（MeshContextリストを作成して渡す）
-            var meshContextList = entries.Select(e => e.Context).ToList();
+            // UV展開マッピングを構築。
+            // BuildExpandedVertexMapping は渡された順に vertexBaseOffset を積むので、
+            // バッファへ載せなかったメッシュを混ぜると展開index空間が
+            // _positions の並びと食い違う。必ず同じ判定で絞ってから渡すこと。
+            var meshContextList = entries
+                .Select(e => e.Context)
+                .Where(ShouldIncludeInBuffers)
+                .ToList();
             BuildExpandedVertexMapping(meshContextList);
 
             // ModelInfo作成
@@ -204,12 +267,8 @@ namespace Poly_Ling.Core
                 totalFaces += mo.FaceCount;
                 meshCount++;
 
-                // UV展開後の頂点数を計算
-                foreach (var vertex in mo.Vertices)
-                {
-                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-                    totalExpandedVerts += uvCount;
-                }
+                // UV展開後の頂点数を計算（孤立頂点除外。MeshExpansion に一本化）
+                totalExpandedVerts += MeshExpansion.CountExpanded(mo);
 
                 // ライン数を計算（エッジ + 補助線）
                 foreach (var face in mo.Faces)
@@ -916,24 +975,42 @@ namespace Poly_Ling.Core
         // ============================================================
 
         /// <summary>
-        /// UV展開後の頂点マッピングを構築
-        /// ToUnityMesh()と同じロジックでマッピングを生成
+        /// UV展開後の頂点マッピングを構築し、メッシュごとの展開範囲を記録する。
+        ///
+        /// 【展開順序】MeshExpansion に一本化してある。ToUnityMesh と同一。
+        ///   孤立頂点（3頂点以上の面から参照されない頂点）は除外する。
+        ///   face.IsHidden は見ない。
+        ///
+        /// 【なぜ孤立頂点を除外するか】
+        ///   このバッファの唯一の読み手は GetExpandedPositions で、その唯一の
+        ///   呼び出し元が UnifiedSystemAdapter.WritebackTransformedVertices。
+        ///   書き戻し先の ctx.UnityMesh は ToUnityMesh が作るので孤立頂点を持たない。
+        ///   ここで孤立頂点ぶんのスロットを確保すると行き先が無く、
+        ///   両者の頂点数が一致しなくなって書き戻しが丸ごと飛ぶ。
+        ///
+        /// 【混同禁止】基本頂点バッファ (_positions / _worldPositions) とは別物。
+        ///   あちらは孤立頂点を必ず含める（点として描画・選択するため。
+        ///   ShouldIncludeInBuffers のコメントを参照）。
+        ///   下の vertexBaseOffset を Vertices.Count ぶん進めているのはそのためで、
+        ///   元頂点 index 空間は孤立頂点を含んだままである。
+        ///
+        /// 【呼び出し規則】
+        ///   渡すリストの並びと絞り込みは、_meshInfos を積む構築ループと
+        ///   完全に一致させること。ずれると展開範囲が別メッシュを指す。
         /// </summary>
         private void BuildExpandedVertexMapping(List<MeshContext> meshContexts)
         {
+            _totalExpandedVertexCount = 0;
+
             if (meshContexts == null || meshContexts.Count == 0)
                 return;
 
-            // 展開後の総頂点数を計算
+            // 展開後の総頂点数を計算（孤立頂点除外）
             int totalExpanded = 0;
             foreach (var mc in meshContexts)
             {
                 if (mc?.MeshObject == null) continue;
-                foreach (var vertex in mc.MeshObject.Vertices)
-                {
-                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-                    totalExpanded += uvCount;
-                }
+                totalExpanded += MeshExpansion.CountExpanded(mc.MeshObject);
             }
 
             _totalExpandedVertexCount = totalExpanded;
@@ -947,31 +1024,50 @@ namespace Poly_Ling.Core
                 _expandedToOriginal = new uint[totalExpanded];
             }
 
-            // マッピングを構築
-            // ToUnityMesh()と同じ順序: 頂点順 → UV順
+            // マッピングを構築（頂点順 → UV順、孤立頂点はスキップ）
             int expandedIdx = 0;
             uint vertexBaseOffset = 0;
+            int unifiedIdx = 0;
 
             foreach (var mc in meshContexts)
             {
                 if (mc?.MeshObject == null) continue;
                 var mo = mc.MeshObject;
 
-                for (int vIdx = 0; vIdx < mo.Vertices.Count; vIdx++)
-                {
-                    var vertex = mo.Vertices[vIdx];
-                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                int meshExpandedStart = expandedIdx;
+                uint baseOffset = vertexBaseOffset;
 
-                    // この頂点の全UV分、同じ元頂点インデックスを指す
-                    uint originalIdx = vertexBaseOffset + (uint)vIdx;
-                    for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                    {
-                        _expandedToOriginal[expandedIdx] = originalIdx;
-                        expandedIdx++;
-                    }
+                // 非孤立集合は 1 メッシュにつき 1 回だけ作って使い回す。
+                var nonIsolated = MeshExpansion.BuildNonIsolatedSet(mo);
+                int meshExpandedCount = 0;
+
+                MeshExpansion.Enumerate(mo, (vIdx, uvIdx, expIdx) =>
+                {
+                    // この頂点の全UV分、同じ元頂点インデックスを指す。
+                    // 元頂点 index は孤立頂点を含んだ通し番号であることに注意。
+                    _expandedToOriginal[meshExpandedStart + expIdx] = baseOffset + (uint)vIdx;
+                    meshExpandedCount = expIdx + 1;
+                }, nonIsolated);
+
+                expandedIdx += meshExpandedCount;
+
+                // メッシュごとの展開範囲を記録する。書き戻しはこれを読むだけにする。
+                if (_meshExpandedStart != null && unifiedIdx < _meshExpandedStart.Length)
+                {
+                    _meshExpandedStart[unifiedIdx] = (uint)meshExpandedStart;
+                    _meshExpandedCount[unifiedIdx] = (uint)meshExpandedCount;
+                }
+                else
+                {
+                    // 構築ループと絞り込みが食い違っている。ここに来たら記録が
+                    // 足りず、書き戻しが別メッシュの座標を書く。原因を直すこと。
+                    Debug.LogError(
+                        $"[BuildExpandedVertexMapping] 展開範囲の記録先が不足: unifiedIdx={unifiedIdx}, " +
+                        $"capacity={_meshExpandedStart?.Length ?? 0}, meshCount={_meshCount}");
                 }
 
                 vertexBaseOffset += (uint)mo.Vertices.Count;
+                unifiedIdx++;
             }
 
             // GPUバッファにアップロード

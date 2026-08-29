@@ -64,21 +64,31 @@ namespace Poly_Ling.Player
         // itemIndex 定数
         // 「選択Mirror」トグルは廃止。選択メッシュのミラー表示は選択Mesh に従属する
         // （ViewportDisplaySettings.WithMirrorClamped）。
+        // 【番号を繰り下げてよい理由】 2026-08-28
+        //   非選Mirror の直下に 2 行を挿入したため VD_SEL_WIRE 以降が +2 されている。
+        //   これらは全てシンボルで参照されており、表示設定の永続化は
+        //   ViewportDisplaySettings.ToBits / FromBits が担う（トグルの並び順とは無関係）。
+        //   したがって番号が変わっても保存データは壊れない。
+        //   itemLabels / itemDefaults の並びは必ずこの順序に一致させること。
         public const int VD_CULLING      = 0;
         public const int VD_SEL_MESH     = 1;
         public const int VD_UNSEL_MESH   = 2;
         public const int VD_UNSEL_MIRROR = 3;
-        public const int VD_SEL_WIRE     = 4;
-        public const int VD_UNSEL_WIRE   = 5;
-        public const int VD_SEL_VERT     = 6;
-        public const int VD_UNSEL_VERT   = 7;
-        public const int VD_SEL_BONE     = 8;
-        public const int VD_UNSEL_BONE   = 9;
-        public const int VD_SEL_MESH_ORIGIN   = 10;
-        public const int VD_UNSEL_MESH_ORIGIN = 11;
-        public const int VD_MIRROR_MESH_ORIGIN = 12;
-        public const int VD_NORMAL       = 13;
-        public const int VD_COUNT        = 14;
+        /// <summary>非選択ミラーの辺。VD_UNSEL_MIRROR に従属。</summary>
+        public const int VD_UNSEL_MIRROR_WIRE = 4;
+        /// <summary>非選択ミラーの頂点。VD_UNSEL_MIRROR に従属。</summary>
+        public const int VD_UNSEL_MIRROR_VERT = 5;
+        public const int VD_SEL_WIRE     = 6;
+        public const int VD_UNSEL_WIRE   = 7;
+        public const int VD_SEL_VERT     = 8;
+        public const int VD_UNSEL_VERT   = 9;
+        public const int VD_SEL_BONE     = 10;
+        public const int VD_UNSEL_BONE   = 11;
+        public const int VD_SEL_MESH_ORIGIN   = 12;
+        public const int VD_UNSEL_MESH_ORIGIN = 13;
+        public const int VD_MIRROR_MESH_ORIGIN = 14;
+        public const int VD_NORMAL       = 15;
+        public const int VD_COUNT        = 16;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
@@ -1296,6 +1306,7 @@ namespace Poly_Ling.Player
             {
                 "カリング",
                 "選択Mesh",  "非選Mesh", "非選Mirror",
+                "非選M辺",   "非選M頂点",
                 "選択辺",    "非選辺",
                 "選択頂点",  "非選頂点",
                 "選択Bone",  "非選Bone",
@@ -1309,6 +1320,8 @@ namespace Poly_Ling.Player
                 true,  // 選択Mesh
                 true,  // 非選Mesh
                 true,  // 非選Mirror
+                true,  // 非選M辺
+                true,  // 非選M頂点
                 true,  // 選択辺
                 true,  // 非選辺
                 true,  // 選択頂点

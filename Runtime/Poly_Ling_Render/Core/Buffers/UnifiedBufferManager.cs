@@ -118,6 +118,27 @@ namespace Poly_Ling.Core
         private uint[] _expandedToOriginal;               // CPU側マッピングデータ
         private int _totalExpandedVertexCount;            // 展開後の総頂点数
 
+        // ------------------------------------------------------------
+        // メッシュごとの UV 展開範囲（CPU 専用。GPU には送らない）
+        //
+        // 【なぜ必要か】
+        //   書き戻し (UnifiedSystemAdapter.WritebackTransformedVertices) は以前、
+        //   自前で MeshContextList を走査して展開頂点数とオフセットを数え直していた。
+        //   数え方が BuildExpandedVertexMapping と 1 か所でも違うと、別メッシュの
+        //   ワールド座標を UnityMesh へ書き込む。数える主体を構築側の 1 つに寄せ、
+        //   書き戻しは読むだけにする。
+        //
+        // 【添字】unified メッシュ index（_meshInfos と同じ並び）。
+        //   MeshContextList の index ではない。変換は ContextToUnifiedMeshIndex。
+        //
+        // 【MeshInfo に入れない理由】
+        //   MeshInfo は UnifiedCompute.compute の struct MeshInfo とレイアウトを
+        //   共有している。フィールドを足すと HLSL 側も同時に直す必要があり、
+        //   GPU はこの値を使わないので割に合わない。
+        // ------------------------------------------------------------
+        private uint[] _meshExpandedStart;                // 展開バッファ内の開始位置
+        private uint[] _meshExpandedCount;                // 展開後頂点数
+
         // 変換行列（メッシュごと）
         private ComputeBuffer _transformMatrixBuffer;
         private Matrix4x4[] _transformMatrices;
@@ -196,18 +217,56 @@ namespace Poly_Ling.Core
         private CameraInfo[] _cameraInfo;
 
         // スクリーン座標
-        private ComputeBuffer _screenPosBuffer;
+        //
+        // 【_screenPosBuffer / _cullingBuffer / _cullingResults を撤去した理由】
+        //   _screenPosBuffer(float2) は ComputeScreenPositions が SetData するだけで、
+        //   ComputeShader.SetBuffer に渡している箇所が 0 件だった。GPU が実際に読むのは
+        //   _screenPosBuffer4(float4) と per-slot の _slotScreenPosBufs。
+        //   _cullingBuffer は確保と解放しかしておらず SetData も SetBuffer も 0 件。
+        //   _cullingResults は CPU 版 ComputeScreenPositions が埋めるだけで、
+        //   公開プロパティ CullingResults の呼出元が 0 件だった。
+        //   背面カリングの CPU キャッシュは _vertexCulledCache / _faceCulledCache が担う。
         private Vector2[] _screenPositions;
-
-        // カリング結果
-        private ComputeBuffer _cullingBuffer;
-        private uint[] _cullingResults;
 
         // ================================================================
         // per-slot カリングバッファ（CullingSlotCount 個）
         // ================================================================
+        //
+        // 【slot の割り当て】 2026-08-28
+        //   0〜3 : ビューポート表示用。PlayerViewportManager の
+        //          SlotPerspective / SlotTop / SlotFront / SlotSide と 1:1。
+        //          そのビューポートのカメラで計算した結果を保持し、
+        //          描画シェーダー（MeshFactoryWireframe3D 等）が読む。
+        //   4    : ヒットテスト用スクラッチ（HitTestSlot）。
+        //          UnifiedMeshSystem.ProcessMouseUpdate が
+        //          「今ポインタが乗っているビューポート」のカメラで毎回上書きする。
+        //
+        // 【分離した理由】
+        //   以前はヒットテストも slot 0 を使っていた。slot 0 は Perspective
+        //   ビューの表示用でもあるため、Top ビュー上でマウスを動かすと
+        //   Top のカメラで計算したカリングが Perspective の表示用バッファへ
+        //   書き込まれ、Perspective の表示が壊れた。
+        //   さらにホバー経路は DispatchApplyMirrorCullGPU を呼ばないので、
+        //   永続ミラーの表示トグルも slot 0 では反映されなかった。
+        //
+        //   従来はこの汚染を、描画準備のたびに slot 0 を Perspective カメラで
+        //   計算し直すことで結果的に打ち消していた。その再計算を効率化で
+        //   省いた結果、汚染が残るようになった。用途を分ければ構造的に解決する。
+        //
+        // 【守ること】
+        //   ・表示用の slot へヒットテスト経路から書き込まない。
+        //   ・ヒットテスト用の slot を描画シェーダーへ渡さない。
+        //   ・ビューポートを増やすときは CullingSlotCount を増やし、
+        //     HitTestSlot を末尾（= CullingSlotCount - 1）に保つ。
 
-        public const int CullingSlotCount = 4;
+        /// <summary>ビューポート表示用 slot の本数。slot 番号 0〜3。</summary>
+        public const int ViewportSlotCount = 4;
+
+        /// <summary>ヒットテスト専用の slot 番号。表示用とは絶対に共用しない。</summary>
+        public const int HitTestSlot = ViewportSlotCount;
+
+        /// <summary>確保する slot バッファの総数（表示用 + ヒットテスト用）。</summary>
+        public const int CullingSlotCount = ViewportSlotCount + 1;
 
         private ComputeBuffer[] _slotScreenPosBufs;     // float4 × vertexCount
         private ComputeBuffer[] _slotVertexCulledBufs;  // uint   × vertexCount
@@ -244,11 +303,13 @@ namespace Poly_Ling.Core
 
         // ヒット結果（面）
         private ComputeBuffer _faceHitBuffer;
-        private float[] _faceHitResults;
+        // 面ヒット結果の CPU キャッシュ。x = ヒット（0 or 1）、y = 深度。
+        // GPU 側 _FaceHitBuffer（float2）と 1:1。旧 _faceHitResults(float[]) と
+        // _faceHitDepths(float[]) を統合したもの。分けていた頃は 1 ホバーごとに
+        // GetData が 2 回走っていた（同期読み戻しの回数がそのまま停止回数になる）。
+        private Vector2[] _faceHit;
 
         // ヒット深度（面）
-        private ComputeBuffer _faceHitDepthBuffer;
-        private float[] _faceHitDepths;
 
         // ============================================================
         // カウント・オフセット
@@ -288,11 +349,29 @@ namespace Poly_Ling.Core
         private int _kernelApplyMirrorCull;
         private bool _gpuComputeAvailable = false;
 
-        // GPU出力バッファ（float4: xy=screen, z=depth, w=valid）
-        private ComputeBuffer _screenPosBuffer4;
+        // GPU 出力の受け先（float4: xy=screen, z=depth, w=valid）。
+        // ComputeScreenPositionsGPU が readback: true のときだけ GetData で埋める。
         private Vector4[] _screenPositions4;
-        private ComputeBuffer _mirrorScreenPosBuffer4;
-        private Vector4[] _mirrorScreenPositions4;
+
+        // 【_screenPosBuffer4 / _mirrorScreenPosBuffer4 / _mirrorScreenPositions4 を撤去した理由】
+        //   2026-08-28
+        //
+        //   _screenPosBuffer4:
+        //     ComputeShader へ渡していたのは DispatchClearBuffersGPU の
+        //     _kernelClear（_ScreenPositionBuffer）1 か所だけで、書いた値の読み手が
+        //     0 件だった。ヒットテストも表示用カリングも per-slot バッファ
+        //     _slotScreenPosBufs[slot] を読む。slot バッファは Initialize で
+        //     CullingSlotCount(=4) 本を必ず確保するため、
+        //     旧コードの「GetSlotScreenPosBuffer(slot) ?? _screenPosBuffer4」の
+        //     フォールバック側には一度も到達していなかった。
+        //
+        //   _mirrorScreenPosBuffer4 / _mirrorScreenPositions4:
+        //     ClearBuffers と ComputeScreenPositions が書き込むだけで、
+        //     .compute / .shader / .hlsl のどこにも読み取りが 0 件だった。
+        //     ミラー有効時は全頂点ぶんの行列積・除算・書き込みを毎回捨てていた。
+        //     シェーダー側のミラー分岐と _UseMirror も同時に撤去している。
+        //     ミラー頂点のワールド座標 _mirrorPositionBuffer は
+        //     TransformVertices が使うので残っている。
 
         // ============================================================
         // 状態
@@ -329,9 +408,28 @@ namespace Poly_Ling.Core
         // バッファアクセス
         public ComputeBuffer PositionBuffer => _positionBuffer;
         public ComputeBuffer WorldPositionBuffer => _worldPositionBuffer;
-        public ComputeBuffer ExpandedPositionBuffer => _expandedPositionBuffer;
-        public ComputeBuffer ExpandedNormalBuffer => _expandedNormalBuffer;
+        // ExpandedPositionBuffer / ExpandedNormalBuffer は呼出元 0 件のため撤去した。
+        // 展開バッファは DispatchExpandVertices と GetExpandedPositions が内部で扱う。
         public int TotalExpandedVertexCount => _totalExpandedVertexCount;
+
+        /// <summary>
+        /// 指定 unified メッシュの UV 展開範囲を返す。載っていなければ false。
+        ///
+        /// 値の生成は BuildExpandedVertexMapping ただ 1 か所。呼び出し側で
+        /// 展開頂点数を数え直さないこと（数え方が割れると別メッシュの座標を書く）。
+        /// </summary>
+        public bool TryGetExpandedRange(int unifiedMeshIndex, out int start, out int count)
+        {
+            start = 0;
+            count = 0;
+            if (_meshExpandedStart == null || _meshExpandedCount == null) return false;
+            if (unifiedMeshIndex < 0 || unifiedMeshIndex >= _meshCount) return false;
+            if (unifiedMeshIndex >= _meshExpandedStart.Length) return false;
+
+            start = (int)_meshExpandedStart[unifiedMeshIndex];
+            count = (int)_meshExpandedCount[unifiedMeshIndex];
+            return true;
+        }
         public ComputeBuffer TransformMatrixBuffer => _transformMatrixBuffer;
         public ComputeBuffer VertexMeshIndexBuffer => _vertexMeshIndexBuffer;
         public ComputeBuffer BoneWeightsBuffer => _boneWeightsBuffer;
@@ -349,9 +447,8 @@ namespace Poly_Ling.Core
         public ComputeBuffer MeshInfoBuffer => _meshInfoBuffer;
         public ComputeBuffer ModelInfoBuffer => _modelInfoBuffer;
         public ComputeBuffer CameraBuffer => _cameraBuffer;
-        public ComputeBuffer ScreenPosBuffer => _screenPosBuffer;
-        public ComputeBuffer FaceHitBuffer => _faceHitBuffer;
-        public ComputeBuffer FaceHitDepthBuffer => _faceHitDepthBuffer;
+        // FaceHitBuffer / FaceHitDepthBuffer は呼出元 0 件のため撤去した（2026-08-28）。
+        // 面ヒット結果を読むのは FindNearestFaceFromGPU だけで、内部の _faceHit を使う。
 
         /// <summary>スロット指定スクリーン座標バッファ</summary>
         public ComputeBuffer GetSlotScreenPosBuffer(int slot)
@@ -424,9 +521,7 @@ namespace Poly_Ling.Core
         public uint[] LineFlags => _lineFlags;
         public UnifiedLine[] Lines => _lines;
         public MeshInfo[] MeshInfos => _meshInfos;
-        public float[] FaceHitResults => _faceHitResults;
-        public float[] FaceHitDepths => _faceHitDepths;
-        public uint[] CullingResults => _cullingResults;
+        // FaceHitResults / FaceHitDepths も呼出元 0 件のため撤去した（2026-08-28）。
         // Phase 2c: 面塗り overlay の CPU mesh 構築で参照。
         public UnifiedFace[] Faces => _faces;
         public uint[] FaceFlags => _faceFlags;
@@ -511,25 +606,24 @@ namespace Poly_Ling.Core
             _indices = new uint[_indexCapacity];
 
             _meshInfos = new MeshInfo[256];
+            _meshExpandedStart = new uint[256];
+            _meshExpandedCount = new uint[256];
             _modelInfos = new ModelInfo[16];
             _transformMatrices = new Matrix4x4[256];
 
             _cameraInfo = new CameraInfo[1];
             _screenPositions = new Vector2[_vertexCapacity];
-            _cullingResults = new uint[_vertexCapacity];
 
             _hitTestInput = new HitTestInput[1];
             _hitVertexDistances = new float[_vertexCapacity];
             _snapHitVertexDistances = new float[_vertexCapacity];
             _hitLineDistances = new float[_lineCapacity];
-            _faceHitResults = new float[_faceCapacity];
-            _faceHitDepths = new float[_faceCapacity];
+            _faceHit = new Vector2[_faceCapacity];
 
             _bounds = new AABB[256];
 
             // float4スクリーン座標（GPU用）
             _screenPositions4 = new Vector4[_vertexCapacity];
-            _mirrorScreenPositions4 = new Vector4[_vertexCapacity];
 
             // GPUバッファ作成
             CreateAllBuffers();
@@ -615,18 +709,16 @@ namespace Poly_Ling.Core
 
             // Level 2: Camera
             _cameraBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(1, CameraInfo.Stride));
-            _screenPosBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 2));
-            _screenPosBuffer4 = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 4)); // GPU用float4
-            _mirrorScreenPosBuffer4 = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 4)); // GPU用float4
-            _cullingBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(uint)));
+            // スクリーン座標の実体は per-slot バッファ（下の _slotScreenPosBufs）だけ。
+            // 旧 _screenPosBuffer4 / _mirrorScreenPosBuffer4 は撤去した（理由は宣言部）。
 
             // Level 1: Mouse
             _hitTestInputBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(1, HitTestInput.Stride));
             _hitVertexDistBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float)));
             _snapHitVertexDistBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float)));
             _hitLineDistBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_lineCapacity, sizeof(float)));
-            _faceHitBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity, sizeof(float)));
-            _faceHitDepthBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity, sizeof(float)));
+            // float2（x=ヒット, y=深度）。旧 2 本を 1 本に統合。stride は 8。
+            _faceHitBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_faceCapacity, sizeof(float) * 2));
 
             // per-slot カリングバッファ
             _slotScreenPosBufs    = new ComputeBuffer[CullingSlotCount];
@@ -680,6 +772,9 @@ namespace Poly_Ling.Core
                 int newSize = Mathf.NextPowerOfTwo(meshCount);
                 Debug.Log($"[EnsureCapacity] Resizing MeshInfos: {oldSize} -> {newSize} (requested: {meshCount})");
                 Array.Resize(ref _meshInfos, newSize);
+                // 展開範囲は _meshInfos と同じ添字で引く。必ず同じ長さに保つこと。
+                Array.Resize(ref _meshExpandedStart, newSize);
+                Array.Resize(ref _meshExpandedCount, newSize);
                 
                 // GPUバッファも再作成
                 if (_meshInfoBuffer != null) Poly_Ling.Diagnostics.PLResStat.LiveCB--;
@@ -740,8 +835,6 @@ namespace Poly_Ling.Core
             Array.Resize(ref _mirrorBoneIndices, _vertexCapacity);
             Array.Resize(ref _screenPositions, _vertexCapacity);
             Array.Resize(ref _screenPositions4, _vertexCapacity);
-            Array.Resize(ref _mirrorScreenPositions4, _vertexCapacity);
-            Array.Resize(ref _cullingResults, _vertexCapacity);
             Array.Resize(ref _hitVertexDistances, _vertexCapacity);
             Array.Resize(ref _snapHitVertexDistances, _vertexCapacity);
 
@@ -751,8 +844,7 @@ namespace Poly_Ling.Core
 
             Array.Resize(ref _faces, _faceCapacity);
             Array.Resize(ref _faceFlags, _faceCapacity);
-            Array.Resize(ref _faceHitResults, _faceCapacity);
-            Array.Resize(ref _faceHitDepths, _faceCapacity);
+            Array.Resize(ref _faceHit, _faceCapacity);
 
             Array.Resize(ref _indices, _indexCapacity);
 
@@ -804,16 +896,11 @@ namespace Poly_Ling.Core
             ReleaseBuffer(ref _lineFlagsBuffer);
             ReleaseBuffer(ref _faceFlagsBuffer);
             ReleaseBuffer(ref _cameraBuffer);
-            ReleaseBuffer(ref _screenPosBuffer);
-            ReleaseBuffer(ref _screenPosBuffer4);
-            ReleaseBuffer(ref _mirrorScreenPosBuffer4);
-            ReleaseBuffer(ref _cullingBuffer);
             ReleaseBuffer(ref _hitTestInputBuffer);
             ReleaseBuffer(ref _hitVertexDistBuffer);
             ReleaseBuffer(ref _snapHitVertexDistBuffer);
             ReleaseBuffer(ref _hitLineDistBuffer);
             ReleaseBuffer(ref _faceHitBuffer);
-            ReleaseBuffer(ref _faceHitDepthBuffer);
 
             // per-slot カリングバッファ
             if (_slotScreenPosBufs != null)
@@ -851,6 +938,13 @@ namespace Poly_Ling.Core
             _totalIndexCount = 0;
             _meshCount = 0;
             _modelCount = 0;
+
+            // 展開範囲も無効化する。_meshCount = 0 で TryGetExpandedRange は
+            // false を返すが、古い値が残っていると再構築の途中で
+            // 読まれたときに前のモデルの範囲を返してしまう。
+            _totalExpandedVertexCount = 0;
+            if (_meshExpandedStart != null) Array.Clear(_meshExpandedStart, 0, _meshExpandedStart.Length);
+            if (_meshExpandedCount != null) Array.Clear(_meshExpandedCount, 0, _meshExpandedCount.Length);
         }
 
         // ============================================================
@@ -881,6 +975,8 @@ namespace Poly_Ling.Core
                     _faceFlags = null;
                     _indices = null;
                     _meshInfos = null;
+                    _meshExpandedStart = null;
+                    _meshExpandedCount = null;
                     _modelInfos = null;
                 }
 

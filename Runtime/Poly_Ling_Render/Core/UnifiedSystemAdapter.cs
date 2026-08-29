@@ -43,10 +43,8 @@ namespace Poly_Ling.Core
         private bool _disposed = false;
         private bool _useUnifiedRendering = false; // 統合レンダリング使用フラグ
 
-        // ★ ホバー軽量更新用のviewport記録
-        // UpdateFrame（Repaint, Normalモード時）で更新される。
-        // UpdateHoverOnly（MouseMove時）でviewport変更を検出するために使用。
-        private Rect _lastKnownViewport;
+        // _lastKnownViewport は UpdateHoverOnly(Vector2, Rect) 専用の記録だった。
+        // その経路ごと撤去したため読み手が無くなり、フィールドも削除した（2026-08-28）。
 
         // クワッドメッシュ（頂点描画用）
         private Mesh _quadMesh;
@@ -359,9 +357,6 @@ namespace Poly_Ling.Core
             if (!_currentProfile.AllowHitTest)
                 return;
 
-            // ★ viewport記録: UpdateHoverOnlyのviewport変更検出で参照される
-            _lastKnownViewport = viewport;
-
             _unifiedSystem.BeginFrame();
 
             // カメラ更新
@@ -391,8 +386,6 @@ namespace Poly_Ling.Core
             if (!_currentProfile.AllowHitTest)
                 return;
 
-            _lastKnownViewport = viewport;
-
             _unifiedSystem.BeginFrame();
 
             Vector3 camPos    = camera.transform.position;
@@ -414,70 +407,19 @@ namespace Poly_Ling.Core
         }
 
         // ============================================================
-        // 軽量ホバー更新
+        // 軽量ホバー更新（撤去済み） 2026-08-28
         // ============================================================
         //
-        // 【背景】
-        // ワンショット方式により、通常時はIdleモード（AllowHitTest=false）で
-        // UpdateFrameが全スキップされ、ホバー結果（_hoveredVertexIndex等）が凍結する。
-        // これにより「マウス直下の要素」が古いまま残り、クリック+ドラッグ=選択同時移動が失敗する。
+        // 【UpdateHoverOnly(Vector2, Rect) を撤去した理由】
+        //   呼出元 0 件。旧 Editor 側の PolyLing_Input.UpdateHoverOnMouseMove から
+        //   呼ばれる前提のコードで、Player 経路からは一度も呼ばれていない。
+        //   本体は UnifiedMeshSystem.ProcessHoverOnly → ProcessMouseUpdate(cpuOnly: true)
+        //   を呼ぶ CPU ヒットテスト専用パスであり、そちらも同時に撤去した。
         //
-        // 【解決策】
-        // MouseMoveイベント時にヒットテストのみを実行する軽量パスを提供する。
-        // スクリーン座標は直前のRepaintで計算済みのものを再利用するため、
-        // Topology/Transform/Selection/Cameraの再計算は不要。
-        //
-        // 【★★★ 禁忌（絶対厳守） ★★★】
-        // このメソッドをRepaintイベントやOnGUIの毎フレーム処理に組み込んではならない。
-        // MouseMoveイベント（ユーザーがマウスを動かした時のみ発火）からのみ呼び出すこと。
-        // Repaint毎に呼ぶとGPUヒットテスト（ComputeScreenPositions+DispatchVertexHitTest等）が
-        // 毎描画フレームで実行され、パフォーマンスが深刻に劣化する。
-        //
-        // 呼び出し元: PolyLing_Input.UpdateHoverOnMouseMove()
-        //   → EventType.MouseMove かつ rect.Contains(mousePos) の場合のみ
-        // ★★★★★★★★★★★★★★★★★★★★
-
-        /// <summary>
-        /// ホバー専用の軽量更新パス
-        ///
-        /// TransformDragging/CameraDragging中は何もしない（禁忌維持）。
-        /// viewportが変更された場合（ウインドウリサイズ等）はスクリーン座標が無効なため
-        /// RequestNormal()を発行して次のRepaintでフルパイプラインを実行させ、
-        /// この回のヒットテストはスキップする。
-        /// </summary>
-        /// <param name="localMousePos">ローカル座標系のマウス位置（rect.position を引いた値）</param>
-        /// <param name="viewport">現在のプレビューエリアサイズ new Rect(0, 0, width, height)</param>
-        public void UpdateHoverOnly(Vector2 localMousePos, Rect viewport)
-        {
-            if (!_isInitialized)
-                return;
-
-            // ドラッグ中はホバー更新禁止（TransformDragging/CameraDragging）
-            if (_currentMode == UpdateMode.TransformDragging ||
-                _currentMode == UpdateMode.CameraDragging)
-                return;
-
-            // viewport変更検出（ウインドウリサイズ等）
-            // スクリーン座標が古いためヒットテスト結果は不正確になる。
-            // RequestNormal()で次のRepaintでフルパイプラインを実行させ、
-            // _lastKnownViewportはそのUpdateFrame内で更新される。
-            //
-            // ★ 近似比較（1px許容）を使う理由:
-            //   Rect.operator!= は浮動小数点の完全一致比較。
-            //   IMGUIのGUILayoutUtility.GetRectはRepaintイベントとMouseMoveイベントで
-            //   微小な浮動小数点差（DPIスケーリング等）を返すことがある。
-            //   完全一致だとProcessHoverOnlyが一度も実行されず、ホバーが凍結する。
-            //   1px以上の変更は実際のリサイズとみなしてフルパイプラインに委譲する。
-            if (Mathf.Abs(_lastKnownViewport.width - viewport.width) > 1f ||
-                Mathf.Abs(_lastKnownViewport.height - viewport.height) > 1f)
-            {
-                RequestNormal();
-                return;
-            }
-
-            // 軽量パス: マウス位置更新 + ヒットテストのみ
-            _unifiedSystem.ProcessHoverOnly(localMousePos);
-        }
+        //   現在のホバーの正規入口は UpdateFrame(Camera, Rect, Vector2)。
+        //   PlayerViewportManager.NotifyPointerHover がポインタ移動ごとに呼ぶ。
+        //   GPU ヒットテストを削って軽量化したくなった場合でも、
+        //   CPU ヒットテストへ戻す経路をここに復活させてはならない。
 
         /// <summary>
         /// 変換行列を更新してGPUで頂点変換を実行
@@ -506,9 +448,23 @@ namespace Poly_Ling.Core
         /// <summary>
         /// GPU変換後の頂点をUnityMeshに設定
         /// 展開済み頂点バッファから一度ReadBackして各メッシュに配分
+        ///
+        /// 【展開範囲の権威】
+        ///   メッシュごとの展開開始位置・頂点数は BufferManager が構築時に記録した
+        ///   値 (TryGetExpandedRange) だけを使う。ここで数え直してはならない。
+        ///   数え方が BuildExpandedVertexMapping と 1 か所でも違うと、
+        ///   別メッシュのワールド座標を UnityMesh へ書き込む。
+        ///
+        /// 【旧 Mesh の破棄】
+        ///   本メソッドは Graphics.DrawMesh 提出と同一フレーム内で走り得る唯一の
+        ///   差し替え経路なので、破棄は MeshContext の退避キューへ回し、
+        ///   次回の呼び出し先頭でまとめて解放する（下の FlushRetiredMeshes）。
         /// </summary>
         public void WritebackTransformedVertices()
         {
+            // 前回積んだ旧 Mesh をここで解放する。前フレームの描画は完了している。
+            Poly_Ling.Data.MeshContext.FlushRetiredMeshes();
+
             if (!_isInitialized || _modelContext == null)
                 return;
 
@@ -553,9 +509,6 @@ namespace Poly_Ling.Core
                 if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("WB n=" + __n + " bad=" + __bad + " first=" + __firstBad);
             }
 
-            // 展開済み頂点のオフセットを追跡
-            int expandedOffset = 0;
-
             // 各MeshContextのUnityMeshを更新
             for (int ctxIdx = 0; ctxIdx < meshContextList.Count; ctxIdx++)
             {
@@ -563,87 +516,126 @@ namespace Poly_Ling.Core
                 if (ctx?.MeshObject == null)
                     continue;
 
-                // ボーン・モーフはスキップ（GPUバッファはDrawableのみ）
-                if (ctx.Type == MeshType.Bone || ctx.Type == MeshType.Morph)
+                // バッファに載っていないメッシュはスキップする。
+                //
+                // 【なぜ型で判定しないか】
+                //   ボーン・モーフに加えて不可視メッシュ・空メッシュも載らないため、
+                //   型による判定では足りない。実際のマッピング
+                //   （ContextToUnifiedMeshIndex）を唯一の根拠にする。
+                //   載せる条件は UnifiedBufferManager.ShouldIncludeInBuffers。
+                int unifiedIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);
+                if (unifiedIdx < 0)
                     continue;
 
                 var meshObject = ctx.MeshObject;
 
-                // このメッシュの展開後頂点数を計算
-                int expandedVertexCount = 0;
-                foreach (var vertex in meshObject.Vertices)
-                {
-                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-                    expandedVertexCount += uvCount;
-                }
+                // 展開範囲は構築時に記録された値だけを使う。ここで数え直さないこと
+                // （数え方が BuildExpandedVertexMapping と割れると別メッシュを書く）。
+                if (!bufferManager.TryGetExpandedRange(unifiedIdx, out int expandedOffset, out int expandedVertexCount))
+                    continue;
 
+                // 展開頂点 0 は「全頂点が孤立頂点」のメッシュ（点群・補助線のみ）。
+                // UnityMesh 側にも対応する頂点が無いので書き戻す対象が無い。
+                // 表示・選択は基本頂点バッファ側（点描画）が担当する。
                 if (expandedVertexCount == 0)
                     continue;
 
                 // 境界チェック: expandedPositions配列の範囲外アクセスを防ぐ
-                if (expandedOffset + expandedVertexCount > expandedPositions.Length)
+                if (expandedOffset < 0 || expandedOffset + expandedVertexCount > expandedPositions.Length)
                 {
-                    /*
-                    // バッファサイズ不整合 - フォールバック処理へ
-                    Debug.LogWarning($"[WritebackTransformedVertices] Buffer size mismatch for mesh '{ctx.Name}': " +
-                        $"offset={expandedOffset}, count={expandedVertexCount}, bufferSize={expandedPositions.Length}. " +
-                        $"Skipping this mesh.");
-                    */
-                    expandedOffset += expandedVertexCount;
+                    WarnWritebackOnce(
+                        $"展開範囲がバッファ外を指している mesh='{ctx.Name}' " +
+                        $"offset={expandedOffset} count={expandedVertexCount} bufferSize={expandedPositions.Length}");
                     continue;
                 }
 
-                // UnityMeshが存在し、頂点数が一致する場合は位置のみ更新
                 var unityMesh = ctx.UnityMesh;
+
+                // UnityMeshが存在し、頂点数が一致する場合は位置のみ更新（通常経路）
                 if (unityMesh != null && unityMesh.vertexCount == expandedVertexCount)
                 {
-                    // NativeArrayを使ってコピー（GC削減）
-                    var nativeArray = new Unity.Collections.NativeArray<Vector3>(
-                        expandedVertexCount,
-                        Unity.Collections.Allocator.Temp,
-                        Unity.Collections.NativeArrayOptions.UninitializedMemory);
-
-                    Unity.Collections.NativeArray<Vector3>.Copy(expandedPositions, expandedOffset, nativeArray, 0, expandedVertexCount);
-
-                    unityMesh.SetVertices(nativeArray);
-                    unityMesh.RecalculateBounds();
-
-                    nativeArray.Dispose();
+                    CopyExpandedPositions(unityMesh, expandedPositions, expandedOffset, expandedVertexCount);
+                    continue;
                 }
-                else
+
+                // ここから先は「UnityMesh が無い」か「MeshObject の位相と食い違っている」場合。
+                //
+                // 【どういうときに来るか】
+                //   ・新規メッシュに面を張った直後（UnityMesh が空 Mesh のまま）
+                //   ・位相 Undo / Redo。MeshObjectSnapshot.ApplyTo は MeshObject を
+                //     差し替えるだけで UnityMesh を触らない。UnityMesh を作り直すのは
+                //     PlayerViewportManager.RebuildSelectedUnityMeshes だが、対象は
+                //     SelectedDrawableMeshIndices に入っているメッシュだけなので、
+                //     非選択メッシュはここが唯一の復旧経路になる。
+                //   ・選択外のメッシュを書き換えるツール
+                //
+                // 【重要】ここで meshObject.Vertices[].Position に GPU のワールド座標を
+                // 書き戻してはならない。Vertices はローカル座標であり、ワールド座標を
+                // 焼き込むと描画時に WorldMatrix が二重適用され、メッシュがずれたまま
+                // 保存されてデータが永続的に壊れる。
+                // 上の分岐と同じく、UnityMesh 側にだけ展開済みワールド座標を入れる。
+                var regenerated = meshObject.ToUnityMesh();
+
+                if (regenerated == null)
                 {
-                    // UnityMeshが存在しないか頂点数が違う場合は再生成する。
-                    //
-                    // 【重要】ここで meshObject.Vertices[].Position に GPU の worldPositions を
-                    // 書き戻してはならない。Vertices はローカル座標であり、ワールド座標を
-                    // 焼き込むと描画時に WorldMatrix が二重適用され、メッシュがずれたまま
-                    // 保存されてデータが永続的に壊れる（面追加で頂点数が変わると必ずこの分岐に入る）。
-                    // 上の if 分岐と同じく、UnityMesh 側にだけ展開済みワールド座標を入れる。
-                    var regenerated = meshObject.ToUnityMesh();
-                    if (regenerated != null && regenerated.vertexCount == expandedVertexCount)
-                    {
-                        var nativeArray = new Unity.Collections.NativeArray<Vector3>(
-                            expandedVertexCount,
-                            Unity.Collections.Allocator.Temp,
-                            Unity.Collections.NativeArrayOptions.UninitializedMemory);
-
-                        Unity.Collections.NativeArray<Vector3>.Copy(expandedPositions, expandedOffset, nativeArray, 0, expandedVertexCount);
-
-                        regenerated.SetVertices(nativeArray);
-                        regenerated.RecalculateBounds();
-
-                        nativeArray.Dispose();
-                    }
-                    // 【ここでは破棄しない】
-                    // WritebackTransformedVertices は Graphics.DrawMesh へ提出済みの
-                    // Mesh や GPU 側の可視フラグと同一フレーム内で競合し得る唯一の経路で、
-                    // ここで旧 Mesh を破棄すると矩形選択が一部頂点で効かなくなる不具合が出た。
-                    // リークは残るが、破棄は個別操作の経路 (ReplaceUnityMesh) に限定する。
-                    ctx.UnityMesh = regenerated;
+                    WarnWritebackOnce($"ToUnityMesh が null を返した mesh='{ctx.Name}'");
+                    continue;
                 }
 
-                expandedOffset += expandedVertexCount;
+                if (regenerated.vertexCount != expandedVertexCount)
+                {
+                    // 展開規則は MeshExpansion に一本化してあるので、ここは
+                    // 「バッファ構築後に MeshObject が書き換わった」ことを意味する。
+                    // 呼び出し側が再構築（EnterTopologyChanged）を通していない。
+                    WarnWritebackOnce(
+                        $"再生成した Mesh の頂点数が展開頂点数と一致しない mesh='{ctx.Name}' " +
+                        $"regenerated={regenerated.vertexCount} expected={expandedVertexCount}。" +
+                        "バッファ構築後に MeshObject が変更されている。呼び出し側の再構築漏れを疑うこと。");
+
+                    // 座標を書けないまま表示すると原点基準のローカル座標が描かれる。
+                    // 作りかけを表に出さず、その場で捨てる。
+                    // ここで作った Mesh は一度も DrawMesh へ提出していないので、
+                    // 退避キューを経由せず即時破棄してよい。
+                    Poly_Ling.Data.MeshContext.DestroyMesh(regenerated);
+                    continue;
+                }
+
+                CopyExpandedPositions(regenerated, expandedPositions, expandedOffset, expandedVertexCount);
+
+                // 旧 Mesh は退避キューへ（同一フレーム内で破棄しない）。
+                ctx.ReplaceUnityMeshDeferred(regenerated);
             }
+        }
+
+        /// <summary>
+        /// 展開済みワールド座標を Mesh へコピーする。NativeArray 経由で GC を抑える。
+        /// </summary>
+        private static void CopyExpandedPositions(
+            Mesh mesh, Vector3[] expandedPositions, int offset, int count)
+        {
+            var nativeArray = new Unity.Collections.NativeArray<Vector3>(
+                count,
+                Unity.Collections.Allocator.Temp,
+                Unity.Collections.NativeArrayOptions.UninitializedMemory);
+
+            Unity.Collections.NativeArray<Vector3>.Copy(expandedPositions, offset, nativeArray, 0, count);
+
+            mesh.SetVertices(nativeArray);
+            mesh.RecalculateBounds();
+
+            nativeArray.Dispose();
+        }
+
+        /// <summary>
+        /// 書き戻しの不整合を報告する。毎フレーム走る経路なので同じ内容は 1 回だけ出す。
+        /// ここが出たら呼び出し側の再構築漏れ。握り潰さずに原因を直すこと。
+        /// </summary>
+        private readonly HashSet<string> _writebackWarned = new HashSet<string>();
+
+        private void WarnWritebackOnce(string message)
+        {
+            if (!_writebackWarned.Add(message)) return;
+            Debug.LogWarning($"[WritebackTransformedVertices] {message}");
         }
 
         /// <summary>
@@ -690,19 +682,60 @@ namespace Poly_Ling.Core
 
                 var meshObject = ctx.MeshObject;
                 if (meshObject.VertexCount != vertexCount)
+                {
+                    WarnWritebackOnce(
+                        $"[Fallback] MeshObject の頂点数がバッファと一致しない mesh='{ctx.Name}' " +
+                        $"meshObject={meshObject.VertexCount} buffer={vertexCount}。" +
+                        "バッファ構築後に MeshObject が変更されている。");
                     continue;
+                }
 
                 // 【重要】meshObject.Vertices[].Position はローカル座標。
                 // GPU の worldPositions を書き戻すと描画時に WorldMatrix が二重適用され、
-                // データが永続的に壊れる。Vertices は変更せず、変換行列を適用した
-                // UnityMesh を生成する。行列の選択規則は
+                // データが永続的に壊れる。Vertices は変更せず、変換行列を適用した座標を
+                // UnityMesh 側にだけ入れる。行列の選択規則は
                 // UnifiedBufferManager.UpdateTransformMatrices と同一にする。
                 // 対象の型は明示する。ウェイトの有無の判定だけ MeshContext.IsSkinned へ寄せる。
                 bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh && !ctx.IsSkinned;
                 Matrix4x4 xform = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
-                // 上と同じ理由でここも破棄しない（直接代入）。
-                ctx.UnityMesh = meshObject.ToUnityMesh(xform);
+
+                // 【ToUnityMesh(xform) を使わない理由】
+                //   行列版は面駆動で (頂点, UVスロット, 法線スロット) の組で名寄せする
+                //   別順序であり、ToUnityMesh() の展開順序（MeshExpansion）と
+                //   頂点数も並びも一致しない。ここで行列版の Mesh を作ると、
+                //   以後 通常経路の「UnityMesh.vertexCount == 展開頂点数」判定が
+                //   永久に偽になり、毎回この再生成を通り続ける。
+                //   引数なし版で作り、座標だけ後から変換して入れる。
+                var regenerated = meshObject.ToUnityMesh();
+                if (regenerated == null)
+                {
+                    WarnWritebackOnce($"[Fallback] ToUnityMesh が null を返した mesh='{ctx.Name}'");
+                    continue;
+                }
+
+                ApplyTransformToMeshVertices(regenerated, xform);
+
+                // 旧 Mesh は退避キューへ（同一フレーム内で破棄しない）。
+                ctx.ReplaceUnityMeshDeferred(regenerated);
             }
+        }
+
+        /// <summary>
+        /// Mesh の頂点へ変換行列を適用する。展開順序は変えない。
+        /// フォールバック経路が「ToUnityMesh() の並びのまま座標だけワールド化」を
+        /// 行うために使う。法線は RecalculateNormals せず、そのまま残す
+        /// （ToUnityMesh() が MeshObject の法線を入れている）。
+        /// </summary>
+        private static void ApplyTransformToMeshVertices(Mesh mesh, Matrix4x4 xform)
+        {
+            if (mesh == null || mesh.vertexCount == 0) return;
+
+            var verts = mesh.vertices;
+            for (int i = 0; i < verts.Length; i++)
+                verts[i] = xform.MultiplyPoint3x4(verts[i]);
+
+            mesh.vertices = verts;
+            mesh.RecalculateBounds();
         }
 
         // ============================================================
@@ -865,7 +898,23 @@ namespace Poly_Ling.Core
         /// プレイヤービルド用: カメラ情報からGPUカリングを実行して per-slot カリングバッファを更新する。
         /// DrawQueued の前に呼ぶこと。
         /// </summary>
-        public void DispatchCullingForDisplay(Camera camera, bool backfaceCulling = true, int slot = 0)
+        /// <param name="readback">
+        /// スクリーン座標を CPU へ同期読み戻しするか。既定 false。
+        ///
+        /// 本メソッドの後続（FaceVisibility / LineVisibility / ApplyMirrorCull）は
+        /// すべて GPU 内で完結し、CPU は結果を読まない。したがって表示用カリングの
+        /// ために呼ぶときは false のままでよい。
+        ///
+        /// true にするのは「そのあと CPU が GetScreenPositions() を読む」ときだけ。
+        /// 現状の該当箇所は PlayerViewportManager.PresentAll 末尾の
+        /// アクティブ slot 最終確定 1 か所のみ（矩形選択・投げ縄選択が読む）。
+        ///
+        /// _screenPositions は slot ごとに分かれていない単一配列なので、
+        /// 1 回の PresentAll で true にしてよい呼び出しは 1 つだけ。
+        /// 複数 slot で true にすると最後の 1 回の値しか残らない。
+        /// </param>
+        public void DispatchCullingForDisplay(
+            Camera camera, bool backfaceCulling = true, int slot = 0, bool readback = false)
         {
             if (!_isInitialized || camera == null) return;
             var bm = _unifiedSystem?.BufferManager;
@@ -882,7 +931,7 @@ namespace Poly_Ling.Core
             if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C1 clearCulled slot=" + slot);
             bm.DispatchClearCulledBuffersGPU(slot);
             if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("C2 screenPos slot=" + slot);
-            bm.ComputeScreenPositionsGPU(vp, viewport, slot, "cullDisplay");
+            bm.ComputeScreenPositionsGPU(vp, viewport, slot, "cullDisplay", readback);
 
             if (backfaceCulling)
             {
@@ -1150,6 +1199,10 @@ namespace Poly_Ling.Core
                 Poly_Ling.Diagnostics.PLResStat.Report("Adapter.Dispose");
                 if (disposing)
                 {
+                    // 退避キューに残った旧 Mesh をここで解放する。
+                    // アダプター破棄時点で描画提出は既に消化されている。
+                    Poly_Ling.Data.MeshContext.FlushRetiredMeshes();
+
                     _renderer?.Dispose();
                     _unifiedSystem?.Dispose();
 

@@ -68,8 +68,23 @@ namespace Poly_Ling.Data
         /// 頂点マップとボーンペアマップを構築し、MirrorBoneWeightを設定する。
         /// Real/Mirrorが設定済みの状態で呼び出すこと。
         /// </summary>
+        /// <param name="meshList">
+        /// ボーンの左右対応を引くための MeshContext 列。省略時は
+        /// Real / Mirror の ParentModelContext.MeshContextList を使う。
+        ///
+        /// 【なぜ引数が要るか】
+        ///   インポータは MeshContext を組み立ててから ModelContext へ繋ぐ。
+        ///   その順序のため、インポータ内で呼ぶ時点では ParentModelContext が
+        ///   まだ null で、BuildBonePairMap が対応表を作れずに Build() ごと
+        ///   失敗していた。失敗するとペアが登録されず、ミラーの同期が
+        ///   丸ごと無効になる（実測: PMX 読込でミラー 30 件が全滅）。
+        ///   組み立て中の列をそのまま渡せるようにして、この失敗を無くす。
+        ///
+        ///   渡す列は、最終的な MeshContextList と同じ並びであること。
+        ///   BonePairMap はその列の添字をキーと値に使う。
+        /// </param>
         /// <returns>成功した場合true</returns>
-        public bool Build()
+        public bool Build(IReadOnlyList<MeshContext> meshList = null)
         {
             BuildLog = "";
 
@@ -83,7 +98,7 @@ namespace Poly_Ling.Data
             if (!vertexOk)
                 return false;
 
-            bool boneOk = BuildBonePairMap();
+            bool boneOk = BuildBonePairMap(meshList);
             if (!boneOk)
                 return false;
 
@@ -152,29 +167,34 @@ namespace Poly_Ling.Data
         ///   MeshFilterToSkinnedConverter がその値を MirrorBoneIndex に書くので、
         ///   ここはそれを読むだけにする。推定は一切しない。
         /// </summary>
-        private bool BuildBonePairMap()
+        private bool BuildBonePairMap(IReadOnlyList<MeshContext> meshList = null)
         {
             BonePairMap = new Dictionary<int, int>();
 
-            var model = Real?.ParentModelContext ?? Mirror?.ParentModelContext;
+            // 引数が最優先。インポータは ModelContext へ繋ぐ前に呼ぶため、
+            // そちらでは ParentModelContext がまだ null になる。
+            var list = meshList
+                    ?? Real?.ParentModelContext?.MeshContextList
+                    ?? Mirror?.ParentModelContext?.MeshContextList;
+
             var realMesh = Real.MeshObject;
 
             bool hasBoneWeights = realMesh.AnyVertexHasBoneWeight();
 
-            if (model == null)
+            if (list == null)
             {
-                BuildLog += "BonePairMap: ParentModelContext が無いため対応表を作れない\n";
+                BuildLog += "BonePairMap: メッシュ列が無いため対応表を作れない\n";
                 // 対応が判らないときは写像しない。壊れた値を書くよりも書かないほうが良い。
                 return !hasBoneWeights;
             }
 
-            for (int i = 0; i < model.MeshContextCount; i++)
+            for (int i = 0; i < list.Count; i++)
             {
-                var mc = model.GetMeshContext(i);
+                var mc = list[i];
                 if (mc == null || mc.Type != MeshType.Bone) continue;
 
                 int peer = mc.MirrorBoneIndex;
-                if (peer < 0 || peer >= model.MeshContextCount) continue;
+                if (peer < 0 || peer >= list.Count) continue;
                 BonePairMap[i] = peer;
             }
 

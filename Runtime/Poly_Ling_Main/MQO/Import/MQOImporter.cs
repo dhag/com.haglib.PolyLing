@@ -517,7 +517,11 @@ namespace Poly_Ling.MQO
                                 Axis = ctx.GetMirrorSymmetryAxis()
                             };
 
-                            bool success = pair.Build();
+                            // PMX と同じ理由で、組み立て中の列を渡す
+                            // （ParentModelContext はまだ null）。
+                            // result.MeshContexts は先頭がボーン、以降がメッシュで、
+                            // ModelContext へはこの順で Add される。
+                            bool success = pair.Build(result.MeshContexts);
                             if (success)
                             {
                                 result.MirrorPairs.Add(pair);
@@ -525,7 +529,12 @@ namespace Poly_Ling.MQO
                             }
                             else
                             {
-                                Debug.LogWarning($"[MQOImporter] MirrorPair build failed: '{ctx.Name}' ↔ '{mirrorMesh.Name}'\n{pair.BuildLog}");
+                                // 失敗するとペアを登録しないので、このオブジェクトは
+                                // ミラー同期が丸ごと効かなくなる。
+                                Debug.LogWarning(
+                                    $"[MQOImporter] MirrorPair build failed: '{ctx.Name}' ↔ '{mirrorMesh.Name}'"
+                                    + " — このオブジェクトのミラー同期は無効になります"
+                                    + $"\n{pair.BuildLog}");
                             }
                         }
 
@@ -1194,21 +1203,22 @@ namespace Poly_Ling.MQO
                 stats.TotalVertices++;
             }
 
-            // 特殊面から頂点IDを抽出（VertexIdHelper使用）
-            // 対応パターン:
-            //   COL(1 1 ID) → 独自ID
-            //   COL(0xFFFFFFFF 0xFFFFFFFF ID) → メタセコイアデフォルト白
-            //   COL(1 ID ID) → 共有ID (COL[1]==COL[2])
+            // 特殊面から頂点の識別子を抽出（VertexIdHelper使用）
+            // 三角形特殊面の COL を (PartsID, SubID, ID) として読む。
+            // COL の値によるパターン判定は行わない。
             var vertexIdMap = VertexIdHelper.ExtractIdsFromSpecialFaces(mqoObj.Faces);
             foreach (var kvp in vertexIdMap)
             {
                 int vertIndex = kvp.Key;
-                int vertexId = kvp.Value;
+                var ids = kvp.Value;
 
                 if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
                 {
-                    meshObject.Vertices[vertIndex].Id = vertexId;
-                    meshObject.RegisterVertexId(vertexId);
+                    var vertex = meshObject.Vertices[vertIndex];
+                    vertex.Id      = ids.Id;
+                    vertex.SubId   = ids.SubId;
+                    vertex.PartsId = ids.PartsId;
+                    meshObject.RegisterVertexId(ids.Id);
                 }
             }
 

@@ -129,7 +129,24 @@ namespace Poly_Ling.Core
             {3,4},{3,5},
             {4,5},
         };
-        private const float BoneShapeScale              = 0.04f;
+        /// <summary>
+        /// ボーン／メッシュ原点マーカー（くさび）の大きさ（Unity 単位）。
+        ///
+        /// 【const をやめてプロパティにした理由】 2026-08-28
+        ///   以前は private const 0.04f で、設定から変える手段が無かった。
+        ///   4 面共通の表示パラメータとして ViewportGridSettings.BoneMarkerScale
+        ///   に持たせ、PlayerViewportManager.PrepareViewport がここへ転記する。
+        ///
+        /// 【既定値を 0.04f → 0.01f にした理由】
+        ///   従来の 1/4。マーカーが大きすぎてメッシュを隠していたため。
+        ///   値の正本は ViewportGridSettings.Default.BoneMarkerScale で、
+        ///   ここの初期値は転記前に描いてしまった場合の保険。両方そろえること。
+        ///
+        /// 【カメラ距離に依存しない】
+        ///   ワールド単位固定なので、モデルのスケールが極端だと見えにくくなる。
+        ///   その場合は設定（軸 / グリッドパネル）で調整する。
+        /// </summary>
+        public float BoneMarkerScale { get; set; } = 0.01f;
         private static readonly Color BoneWireColor     = new Color(0.2f, 0.8f, 1.0f, 0.8f);
         private static readonly Color BoneWireSelColor  = new Color(1.0f, 0.6f, 0.1f, 0.9f);
         // メッシュ原点マーカー色（ボーン色と区別するため緑系）。
@@ -289,6 +306,10 @@ namespace Poly_Ling.Core
         {
             Poly_Ling.Diagnostics.PLResStat.Report("RebuildAdapter.enter mi=" + mi);
 
+            // 書き戻しが積んだ旧 Mesh をここで解放する。
+            // 再構築の入口なので前フレームの描画は完了している。
+            Poly_Ling.Data.MeshContext.FlushRetiredMeshes();
+
             // MeshContext の並びが変わるため、番号をキーにした Mesh キャッシュは
             // ここで必ず捨てる（放置すると読み直しのたびにリークする）。
             ClearMeshCaches();
@@ -334,6 +355,14 @@ namespace Poly_Ling.Core
             // Viewer（PolyLingPlayerViewer）がフェッチ完了後に行う。
             // ここではレンダラー内部の GPU バッファ初期化のみ行う。
             int firstCtxIdx = model.FirstMeshIndex;
+            // 選択中メッシュが不可視・空だとバッファに載っていない。
+            // その場合 ContextToUnifiedMeshIndex は -1 を返すので、
+            // 下のフォールバックへ落として載っているメッシュを探し直す。
+            if (firstCtxIdx >= 0 &&
+                (adapter.BufferManager?.ContextToUnifiedMeshIndex(firstCtxIdx) ?? -1) < 0)
+            {
+                firstCtxIdx = -1;
+            }
             if (firstCtxIdx < 0)
             {
                 // SelectedDrawableMeshIndices が未設定の場合は
@@ -348,9 +377,13 @@ namespace Poly_Ling.Core
                     }
             }
 
+            // 見つからないときは SetActiveMesh を呼ばない。
+            // -1 をそのまま渡すと、アクティブメッシュ番号として不正な値が
+            // GPU 内部の描画フラグの計算へ流れ込む。
             int firstUnified = (firstCtxIdx >= 0)
-                ? (adapter.BufferManager?.ContextToUnifiedMeshIndex(firstCtxIdx) ?? 0) : 0;
-            adapter.BufferManager?.SetActiveMesh(0, firstUnified);
+                ? (adapter.BufferManager?.ContextToUnifiedMeshIndex(firstCtxIdx) ?? -1) : -1;
+            if (firstUnified >= 0)
+                adapter.BufferManager?.SetActiveMesh(0, firstUnified);
             adapter.BufferManager?.UpdateAllSelectionFlags();
 
             // WorldMatrix を使って初期表示位置を確定する。
@@ -545,26 +578,41 @@ namespace Poly_Ling.Core
                     }
                 }
 
-                // ---- AllowGpuVisibility ----
-                // Normal モード（ワンショット）のときのみ実行。
-                // Player では DispatchCullingForDisplay が per-slot で呼ばれるため
-                // ここでは slot 0 固定（Editor 単一ビューポート用）。
-                if (profile.AllowGpuVisibility)
-                {
-                    var bufMgr = adapter.BufferManager;
-                    if (bufMgr != null)
-                    {
-                        var viewport = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
-                        bufMgr.SetMirrorDisplay(cullingSlot, ShowSelectedMirror, ShowUnselectedMirror);
-                        bufMgr.DispatchClearBuffersGPU();
-                        bufMgr.DispatchClearCulledBuffersGPU(cullingSlot);
-                        bufMgr.ComputeScreenPositionsGPU(
-                            cam.projectionMatrix * cam.worldToCameraMatrix, viewport, cullingSlot, "cullSubmit");
-                        bufMgr.DispatchFaceVisibilityGPU(cullingSlot);
-                        bufMgr.DispatchLineVisibilityGPU(cullingSlot);
-                        bufMgr.DispatchApplyMirrorCullGPU(cullingSlot);
-                    }
-                }
+                // ---- カリングはここで発行しない（旧 cullSubmit ブロックを撤去） 2026-08-28 ----
+                //
+                // 【撤去した理由 1: 二重計算】
+                //   PlayerViewportManager.PrepareViewport は、本メソッドを呼ぶ直前に
+                //   同じ slot・同じカメラで adapter.DispatchCullingForDisplay(slot) を
+                //   呼んでいる。そこで
+                //     ClearCulledBuffers → ComputeScreenPositions → FaceVisibility
+                //     → LineVisibility → ApplyMirrorCull
+                //   を済ませているのに、ここで丸ごと同じ手順をもう一度回していた。
+                //
+                // 【撤去した理由 2: 背面カリング OFF を握り潰していた】
+                //   DispatchCullingForDisplay は backfaceCulling == false のとき
+                //   ClearCulledFlagsGPU(slot) で全要素を可視(0)にする。ところが
+                //   ここは BackfaceCullingEnabled を見ずに必ず
+                //   ClearCulledBuffers(全カリング済み=1) → FaceVisibility を実行するため、
+                //   直前の「全可視」を必ず上書きし、設定が OFF でもカリングが
+                //   適用された状態で終わっていた。
+                //   本ブロックは profile.AllowGpuVisibility（Normal モード）でのみ走り、
+                //   末尾の ConsumeNormalMode が Idle へ落とすため、
+                //   1 回の PresentAll で最初に処理される slot（Perspective）だけが
+                //   この影響を受けていた。
+                //
+                // 【DispatchClearBuffersGPU を失って困らない理由】
+                //   同メソッドがクリアするのは _screenPosBuffer4 と各ヒット距離バッファ。
+                //   ヒットテストの直前に UnifiedMeshSystem.ProcessMouseUpdate が
+                //   毎回クリアし直すので、読み手を失うものは無い。
+                //
+                // 【SetMirrorDisplay を失って困らない理由】
+                //   PrepareViewport が DispatchCullingForDisplay より前に
+                //   slot ごとの値で呼んでいる。ここのは同じ値の二度目だった。
+                //
+                // 【カリングを再計算する条件】
+                //   PrepareViewport の dirty 判定が唯一の発行条件になる。
+                //   カリング入力（スクリーン座標 / FLAG_HIDDEN / FLAG_MESH_SELECTED /
+                //   ミラー表示設定）を変えたら、必ず該当 slot を dirty にすること。
 
                 adapter.PrepareDrawing(
                     cam,
@@ -654,15 +702,18 @@ namespace Poly_Ling.Core
 
                     if (!ExtractBoneTransform(ctx.WorldMatrix, out Vector3 pos, out Quaternion rot)) continue;
 
+                    // 大きさは毎回渡す。キャッシュ済みでも UpdateBoneLineMesh が
+                    // 頂点を書き直すため、設定変更後に PresentAll するだけで反映される。
+                    // キャッシュを捨てる必要は無い。
                     var key = (mi, ci);
                     if (!_boneMeshCache.TryGetValue(key, out var boneMesh) || boneMesh == null)
                     {
-                        boneMesh = BuildBoneLineMesh(pos, rot, col);
+                        boneMesh = BuildBoneLineMesh(pos, rot, col, BoneMarkerScale);
                         _boneMeshCache[key] = boneMesh;
                     }
                     else
                     {
-                        UpdateBoneLineMesh(boneMesh, pos, rot, col);
+                        UpdateBoneLineMesh(boneMesh, pos, rot, col, BoneMarkerScale);
                     }
                 }
             }
@@ -760,8 +811,12 @@ namespace Poly_Ling.Core
         //   法線は Vertex.Normals（スロット配列）に入っており、面は
         //   Face.NormalIndices でどのスロットを使うかを指す。よって同じスロットは
         //   複数の面から参照される。ここでは (頂点, スロット) 単位で 1 本だけ描く。
-        //   線分の総数は UnifiedBufferManager.TotalExpandedVertexCount と一致する
-        //   （不変条件 UVs.Count == Normals.Count による）。
+        //
+        //   【TotalExpandedVertexCount とは一致しない】
+        //   ここは mo.Vertices を全走査するので孤立頂点の法線も描く。一方
+        //   UnifiedBufferManager.TotalExpandedVertexCount は孤立頂点を除外した
+        //   数（MeshExpansion の規則）なので、孤立頂点を持つメッシュでは
+        //   本数の方が多くなる。両者を突き合わせないこと。
         //
         // 【ワールド化】
         //   始点は GPU 変換済みのワールド座標（GetDisplayPositions）。
@@ -1279,7 +1334,11 @@ namespace Poly_Ling.Core
         // ボーンメッシュ構築
         // ================================================================
 
-        private static Mesh BuildBoneLineMesh(Vector3 pos, Quaternion rot, Color col)
+        /// <param name="scale">
+        /// くさびの大きさ。呼出側が BoneMarkerScale を渡す。
+        /// 静的メソッドなのでインスタンスのプロパティを直接は読めない。
+        /// </param>
+        private static Mesh BuildBoneLineMesh(Vector3 pos, Quaternion rot, Color col, float scale)
         {
             int ec = BoneShapeEdges.GetLength(0);
             var verts   = new Vector3[ec * 2];
@@ -1289,8 +1348,8 @@ namespace Poly_Ling.Core
 
             for (int i = 0; i < ec; i++)
             {
-                verts[i*2]   = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,0]] * BoneShapeScale);
-                verts[i*2+1] = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,1]] * BoneShapeScale);
+                verts[i*2]   = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,0]] * scale);
+                verts[i*2+1] = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,1]] * scale);
                 colors[i*2] = colors[i*2+1] = col;
                 uvs[i*2] = uvs[i*2+1] = Vector2.zero;
                 indices[i*2] = i*2; indices[i*2+1] = i*2+1;
@@ -1305,15 +1364,16 @@ namespace Poly_Ling.Core
             return mesh;
         }
 
-        private static void UpdateBoneLineMesh(Mesh mesh, Vector3 pos, Quaternion rot, Color col)
+        /// <param name="scale">くさびの大きさ。BuildBoneLineMesh と同じ値を渡すこと。</param>
+        private static void UpdateBoneLineMesh(Mesh mesh, Vector3 pos, Quaternion rot, Color col, float scale)
         {
             int ec = BoneShapeEdges.GetLength(0);
             var verts  = new Vector3[ec * 2];
             var colors = new Color[ec * 2];
             for (int i = 0; i < ec; i++)
             {
-                verts[i*2]   = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,0]] * BoneShapeScale);
-                verts[i*2+1] = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,1]] * BoneShapeScale);
+                verts[i*2]   = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,0]] * scale);
+                verts[i*2+1] = pos + rot * (BoneShapeVertices[BoneShapeEdges[i,1]] * scale);
                 colors[i*2] = colors[i*2+1] = col;
             }
             mesh.SetVertices(verts);

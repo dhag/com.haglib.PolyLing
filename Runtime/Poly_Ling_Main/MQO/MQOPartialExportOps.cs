@@ -202,9 +202,10 @@ namespace Poly_Ling.MQO
 
                 if (vertexInfo != null)
                 {
-                    if (vertexInfo.Id != -1)
+                    if (vertexInfo.Id != -1 || vertexInfo.SubId != 0 || vertexInfo.PartsId != 0)
                         mqoDocObj.Faces.Add(
-                            VertexIdHelper.CreateSpecialFaceForVertexId(vIdx, vertexInfo.Id, 0));
+                            VertexIdHelper.CreateSpecialFaceForVertexId(
+                                vIdx, vertexInfo.Id, vertexInfo.SubId, vertexInfo.PartsId, 0));
 
                     if (vertexInfo.HasBoneWeight)
                     {

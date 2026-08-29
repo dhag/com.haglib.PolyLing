@@ -557,7 +557,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         private static void WriteVertex(StringBuilder sb, Vertex v)
         {
-            // v,id,px,py,pz,flags,bwCount(0or8),bw...,uvCount,uv...,nrmCount,nrm...
+            // v,id,px,py,pz,flags,bwCount(0or8),bw...,uvCount,uv...,nrmCount,nrm...,subId,partsId
+            //
+            // subId / partsId は行末に足す。ReadVertex は idx を先頭から順に進めるだけで、
+            // ParseInt が範囲外を 0 で返すため、この 2 列を持たない旧ファイルは
+            // 自動的に 0（未設定）になる。
             sb.Append($"v,{v.Id},{F(v.Position.x)},{F(v.Position.y)},{F(v.Position.z)},{(byte)v.Flags}");
 
             // BoneWeight (0 or 8 values)
@@ -592,6 +596,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             foreach (var n in v.Normals)
                 sb.Append($",{F(n.x)},{F(n.y)},{F(n.z)}");
 
+            // SubId / PartsId（行末。旧ファイルには無いので読み側で 0 に落ちる）
+            sb.Append($",{v.SubId},{v.PartsId}");
+
             sb.AppendLine();
 
             WriteVertexControlPoints(sb, v);
@@ -622,7 +629,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         private static void WriteVertexNameBased(StringBuilder sb, Vertex v, Dictionary<int, string> indexToName)
         {
-            // vn,id,px,py,pz,flags,bwCount(0or8),boneName0..3,w0..3,mbwCount,...,uvCount,uv...,nrmCount,nrm...
+            // vn,id,px,py,pz,flags,bwCount(0or8),boneName0..3,w0..3,mbwCount,...,uvCount,uv...,nrmCount,nrm...,subId,partsId
             sb.Append($"vn,{v.Id},{F(v.Position.x)},{F(v.Position.y)},{F(v.Position.z)},{(byte)v.Flags}");
 
             // BoneWeight (名前ベース)
@@ -664,6 +671,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.Append($",{v.Normals.Count}");
             foreach (var n in v.Normals)
                 sb.Append($",{F(n.x)},{F(n.y)},{F(n.z)}");
+
+            // SubId / PartsId（行末。旧ファイルには無いので読み側で 0 に落ちる）
+            sb.Append($",{v.SubId},{v.PartsId}");
 
             sb.AppendLine();
 
@@ -1186,7 +1196,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         private static Vertex ReadVertex(string[] cols)
         {
-            // v,id,px,py,pz,flags,bwCount,[bw...],mbwCount,[mbw...],uvCount,[uv...],nrmCount,[nrm...]
+            // v,id,px,py,pz,flags,bwCount,[bw...],mbwCount,[mbw...],uvCount,[uv...],nrmCount,[nrm...],subId,partsId
             int idx = 1;
             int id = ParseInt(cols, idx++);
             float px = ParseFloat(cols, idx++);
@@ -1250,6 +1260,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 vertex.Normals.Add(new Vector3(nx, ny, nz));
             }
 
+            // SubId / PartsId。この 2 列を持たない旧ファイルでは
+            // ParseInt が範囲外で 0 を返すため、未設定として復元される。
+            vertex.SubId   = ParseInt(cols, idx++);
+            vertex.PartsId = ParseInt(cols, idx++);
+
             return vertex;
         }
 
@@ -1291,7 +1306,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         /// </summary>
         private static (Vertex vertex, string[] boneNames, string[] mirrorBoneNames) ReadVertexNameBased(string[] cols)
         {
-            // vn,id,px,py,pz,flags,bwCount,[boneName0..3,w0..3],mbwCount,[...],uvCount,[uv...],nrmCount,[nrm...]
+            // vn,id,px,py,pz,flags,bwCount,[boneName0..3,w0..3],mbwCount,[...],uvCount,[uv...],nrmCount,[nrm...],subId,partsId
             int idx = 1;
             int id = ParseInt(cols, idx++);
             float px = ParseFloat(cols, idx++);
@@ -1364,6 +1379,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 float nz = ParseFloat(cols, idx++);
                 vertex.Normals.Add(new Vector3(nx, ny, nz));
             }
+
+            // SubId / PartsId。この 2 列を持たない旧ファイルでは
+            // ParseInt が範囲外で 0 を返すため、未設定として復元される。
+            vertex.SubId   = ParseInt(cols, idx++);
+            vertex.PartsId = ParseInt(cols, idx++);
 
             return (vertex, boneNames, mirrorBoneNames);
         }

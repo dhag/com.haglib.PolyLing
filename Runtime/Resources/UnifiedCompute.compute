@@ -141,14 +141,33 @@ RWStructuredBuffer<uint> _FaceCulledBuffer;
 
 // 出力バッファ
 RWStructuredBuffer<float4> _ScreenPositionBuffer;      // xy=screen, z=depth, w=valid
-RWStructuredBuffer<float4> _MirrorScreenPositionBuffer;
 RWStructuredBuffer<float> _VertexHitDistanceBuffer;
 // 吸着用ヒットテストの出力（ComputeVertexSnapHitTest 専用）。
 // 通常のホバー結果を壊さないよう _VertexHitDistanceBuffer とは別に持つ。
 RWStructuredBuffer<float> _VertexSnapHitDistanceBuffer;
 RWStructuredBuffer<float> _LineHitDistanceBuffer;
-RWStructuredBuffer<float> _FaceHitBuffer;              // 面ヒット結果（0 or 1）
-RWStructuredBuffer<float> _FaceHitDepthBuffer;         // 面の深度
+
+// 面ヒット結果。x = ヒット（0 or 1）、y = 深度（非ヒットは 1e10）。
+//
+// 【1 本にまとめた理由】 2026-08-28
+//   以前は _FaceHitBuffer(float) と _FaceHitDepthBuffer(float) の 2 本で、
+//   CPU 側が 1 ホバーごとに ComputeBuffer.GetData を 2 回行っていた。
+//   GetData はコマンドキューのフラッシュと GPU 完了待ちを伴うため、
+//   本数がそのままメインスレッドの停止回数になる。
+//   両者は必ず同じ index へ同じタイミングで書かれるので float2 で足りる。
+//   UAV も 1 本減り、D3D11.0 の 8 本制限に余裕が出る。
+//
+//   読む側は UnifiedBufferManager.FindNearestFaceFromGPU（.x と .y を参照）。
+//   片方だけ書くことがないよう、必ず float2 でまとめて代入すること。
+RWStructuredBuffer<float2> _FaceHitBuffer;
+
+// 【_MirrorScreenPositionBuffer を撤去した理由】 2026-08-28
+//   ClearBuffers と ComputeScreenPositions が書き込むだけで、
+//   このシェーダー内にも .shader / .hlsl 側にも読み取りが 0 件だった。
+//   ミラー頂点のスクリーン座標を必要とする機能は現状存在しない。
+//   （CPU 側の対になる _mirrorScreenPosBuffer も同じ理由で撤去済み。）
+//   ミラー頂点のワールド座標 _MirrorPositionBuffer は TransformVertices が
+//   使うので残してある。復活させるなら読み手を先に用意すること。
 
 // ============================================================
 // パラメータ
@@ -164,13 +183,24 @@ uint _LineCount;
 uint _FaceCount;
 uint _MeshCount;
 
-int _UseMirror;             // 1: ミラー計算も実行
+// _UseMirror は _MirrorScreenPositionBuffer への書き込み分岐だけが読んでいた。
+// そのバッファを撤去したため使い道が無くなり、変数ごと削除した（2026-08-28）。
+// C# 側の SetInt("_UseMirror", ...) も同時に削除している。
 int _IsMirrored;            // 現在ミラーパスかどうか
 
 // 永続ミラー（MirrorSide/BakedMirror）の per-slot 表示制御。
-// 0 のとき、該当選択状態のミラー要素を per-slot culled バッファで非表示にする。
-int _ShowSelectedMirror;    // 1: 選択中ミラーを表示 / 0: 非表示
-int _ShowUnselectedMirror;  // 1: 非選択ミラーを表示 / 0: 非表示
+// 0 のとき、該当する要素を per-slot culled バッファで非表示にする。
+//
+// 【頂点と線分で別の uniform を持つ理由】 2026-08-28
+//   以前は選択・非選択の 2 本しかなく、ApplyMirrorCull の頂点ブロックと
+//   線分ブロックが同じ値を読んでいたため、「ミラーの辺だけ消して頂点は残す」
+//   といった指定ができなかった。要素ごとに分けた。
+//   選択側は UI トグルを持たない（選択 Mesh に従属）ため、C# 側から
+//   Vertex と Line に同じ値が入る。将来トグルを足すならここは既に分かれている。
+int _ShowSelectedMirrorVertex;    // 1: 選択中ミラーの頂点を表示 / 0: 非表示
+int _ShowUnselectedMirrorVertex;  // 1: 非選択ミラーの頂点を表示 / 0: 非表示
+int _ShowSelectedMirrorLine;      // 1: 選択中ミラーの辺を表示   / 0: 非表示
+int _ShowUnselectedMirrorLine;    // 1: 非選択ミラーの辺を表示   / 0: 非表示
 
 float2 _MousePosition;
 float _HitRadius;
@@ -180,39 +210,41 @@ int _EnableBackfaceCulling;  // バックフェースカリング有効時は1
 // クリアカーネル（D3D11.0のUAV制限8個のため2つに分割）
 // ============================================================
 
-// ClearBuffers1: 頂点・線分関連（UAV 6個）
+// ClearBuffers1: 頂点・線分のヒット距離（UAV 2個）
+//
+// 【スクリーン座標のクリアを撤去した理由】 2026-08-28
+//   ここが書いていた _ScreenPositionBuffer の実体は
+//   UnifiedBufferManager._screenPosBuffer4 で、読み手が 0 件だった。
+//   ヒットテストと表示用カリングが読むのは per-slot バッファ
+//   (_slotScreenPosBufs[slot]) であり、そちらは ComputeScreenPositions が
+//   全頂点を無条件に書くのでクリアは不要。
+//   _MirrorScreenPositionBuffer は撤去済み。
 [numthreads(64, 1, 1)]
 void ClearBuffers(uint3 id : SV_DispatchThreadID)
 {
     uint index = id.x;
-    
+
     if (index < _VertexCount)
     {
-        _ScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
         _VertexHitDistanceBuffer[index] = 1e10;
-        
-        if (_UseMirror > 0)
-        {
-            _MirrorScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
-        }
     }
-    
+
     if (index < _LineCount)
     {
         _LineHitDistanceBuffer[index] = 1e10;
     }
 }
 
-// ClearBuffers2: 面関連（UAV 3個）
+// ClearBuffers2: 面関連（UAV 1個）
 [numthreads(64, 1, 1)]
 void ClearFaceBuffers(uint3 id : SV_DispatchThreadID)
 {
     uint index = id.x;
-    
+
     if (index < _FaceCount)
     {
-        _FaceHitBuffer[index] = 0.0;
-        _FaceHitDepthBuffer[index] = 1e10;
+        // x = ヒットなし、y = 無限遠
+        _FaceHitBuffer[index] = float2(0.0, 1e10);
     }
 }
 
@@ -256,7 +288,8 @@ void ApplyMirrorCull(uint3 id : SV_DispatchThreadID)
         uint vFlags = _VertexFlagsBuffer[index];
         if (HAS_FLAG(vFlags, FLAG_MIRROR))
         {
-            int vShow = HAS_FLAG(vFlags, FLAG_MESH_SELECTED) ? _ShowSelectedMirror : _ShowUnselectedMirror;
+            int vShow = HAS_FLAG(vFlags, FLAG_MESH_SELECTED)
+                      ? _ShowSelectedMirrorVertex : _ShowUnselectedMirrorVertex;
             if (vShow == 0) _VertexCulledBuffer[index] = 1u;
         }
     }
@@ -266,7 +299,8 @@ void ApplyMirrorCull(uint3 id : SV_DispatchThreadID)
         uint lFlags = _LineFlagsBuffer[index];
         if (HAS_FLAG(lFlags, FLAG_MIRROR))
         {
-            int lShow = HAS_FLAG(lFlags, FLAG_MESH_SELECTED) ? _ShowSelectedMirror : _ShowUnselectedMirror;
+            int lShow = HAS_FLAG(lFlags, FLAG_MESH_SELECTED)
+                      ? _ShowSelectedMirrorLine : _ShowUnselectedMirrorLine;
             if (lShow == 0) _LineCulledBuffer[index] = 1u;
         }
     }
@@ -332,26 +366,11 @@ void ComputeScreenPositions(uint3 id : SV_DispatchThreadID)
     float depth = clipPos.z / clipPos.w;
     
     _ScreenPositionBuffer[index] = float4(screenX, screenY, depth, 1.0);
-    
-    // ミラー座標も計算
-    if (_UseMirror > 0)
-    {
-        float3 mirrorPos = _MirrorPositionBuffer[index];
-        float4 mirrorClip = mul(_ViewProjectionMatrix, float4(mirrorPos, 1.0));
-        
-        if (mirrorClip.w > 0.0001)
-        {
-            float2 mirrorNdc = mirrorClip.xy / mirrorClip.w;
-            float mirrorScreenX = _ViewportParams.x + (mirrorNdc.x * 0.5 + 0.5) * _ViewportParams.z;
-            float mirrorScreenY = _ViewportParams.y + (1.0 - (mirrorNdc.y * 0.5 + 0.5)) * _ViewportParams.w;
-            float mirrorDepth = mirrorClip.z / mirrorClip.w;
-            _MirrorScreenPositionBuffer[index] = float4(mirrorScreenX, mirrorScreenY, mirrorDepth, 1.0);
-        }
-        else
-        {
-            _MirrorScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
-        }
-    }
+
+    // 【ミラー座標の計算を撤去した理由】 2026-08-28
+    //   出力先 _MirrorScreenPositionBuffer に読み手が 0 件だった。
+    //   このカーネルは 1 回の PresentAll で最大 6 回、ホバー 1 イベントで 1 回走る。
+    //   ミラー有効時は全頂点ぶんの行列積・除算・書き込みをそのたびに捨てていた。
 }
 
 // ============================================================
@@ -739,32 +758,28 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     // 非表示はヒットなし
     if (HAS_FLAG(flags, FLAG_HIDDEN))
     {
-        _FaceHitBuffer[faceIndex] = 0.0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        _FaceHitBuffer[faceIndex] = float2(0.0, 1e10);
         return;
     }
-    
+
     // 非選択メッシュはスキップ
     if (!HAS_FLAG(flags, FLAG_MESH_SELECTED))
     {
-        _FaceHitBuffer[faceIndex] = 0.0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        _FaceHitBuffer[faceIndex] = float2(0.0, 1e10);
         return;
     }
-    
+
     // カリングチェック（バックフェースカリング有効時のみ）
     if (_EnableBackfaceCulling != 0 && _FaceCulledBuffer[faceIndex] != 0u)
     {
-        _FaceHitBuffer[faceIndex] = 0.0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        _FaceHitBuffer[faceIndex] = float2(0.0, 1e10);
         return;
     }
-    
+
     uint vertexCount = face.vertexCount;
     if (vertexCount < 3 || vertexCount > 16)
     {
-        _FaceHitBuffer[faceIndex] = 0.0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        _FaceHitBuffer[faceIndex] = float2(0.0, 1e10);
         return;
     }
     
@@ -816,8 +831,7 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     
     if (!allValid)
     {
-        _FaceHitBuffer[faceIndex] = 0.0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        _FaceHitBuffer[faceIndex] = float2(0.0, 1e10);
         return;
     }
     
@@ -844,11 +858,11 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     }
     
     // 奇数回交差 = 内部
+    // x = ヒット可否、y = 深度（ヒット時は平均深度、非ヒット時は無限遠）
     bool isHit = (crossings & 1) != 0;
-    _FaceHitBuffer[faceIndex] = isHit ? 1.0 : 0.0;
-    
-    // 深度を出力（ヒット時は平均深度、非ヒット時は無限遠）
-    _FaceHitDepthBuffer[faceIndex] = isHit ? (totalDepth / vertexCount) : 1e10;
+    _FaceHitBuffer[faceIndex] = isHit
+        ? float2(1.0, totalDepth / vertexCount)
+        : float2(0.0, 1e10);
 }
 
 // ============================================================

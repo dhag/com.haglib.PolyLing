@@ -3672,6 +3672,9 @@ namespace Poly_Ling.Player
                     _latticeHandler?.OnFrameChanged();
                 },
                 GetSelectionCentroidWorld = () => SelectedVerticesCentroidWorld(),
+                // 辞書はプロジェクト単位の 1 個を左ペインと変形パネルで共有する。
+                GetLibrary                = () => ActiveProject?.WorkAxes,
+                OnLibraryChanged          = () => RefreshWorkAxisLibraryLists(),
             };
             _workAxisSubPanel.Build(_layoutRoot.WorkAxisSection);
 
@@ -3763,6 +3766,9 @@ namespace Poly_Ling.Player
                     _latticeHandler?.OnFrameChanged();
                 },
                 GetSelectionCentroidWorld = () => SelectedVerticesCentroidWorld(),
+                // 左ペインと同じ WorkAxisLibrary を指す。片方で登録したら両方の一覧が揃う。
+                GetLibrary                = () => ActiveProject?.WorkAxes,
+                OnLibraryChanged          = () => RefreshWorkAxisLibraryLists(),
             };
 
             _deformSubPanel = new PlayerDeformSubPanel
@@ -4553,17 +4559,37 @@ namespace Poly_Ling.Player
             _layoutRoot.FrontPanel      .SetViewport(_viewportManager.FrontViewport);
             _layoutRoot.SidePanel       .SetViewport(_viewportManager.SideViewport);
 
-            // 非選Mesh トグルに対する 非選Mirror トグルの従属を UI に反映する。
-            // 非選Mesh が OFF のとき、非選Mirror は値を OFF に同期し、グレーアウト（無効化）する。
-            // 選択Mirror は UI トグルを持たない（選択Mesh に従属。WithMirrorClamped 参照）。
+            // ミラー系トグルの従属関係を UI に反映する。
+            //
+            //   非選Mesh → 非選Mirror → 非選M辺 / 非選M頂点
+            //
+            // 親が OFF のとき、子は値を OFF に同期しグレーアウト（無効化）する。
+            // 値のクランプ自体は ViewportDisplaySettings.WithMirrorClamped が行うので、
+            // ここは「クランプ済みの値を UI に映す」だけ。判定を二重に書かない。
+            // 選択Mirror は UI トグルを持たない（選択Mesh に従属）。
             void ApplyMirrorToggleGating(int slot)
             {
                 var d = _viewportManager.GetDisplaySettings(slot); // SetDisplaySettings でクランプ済み
+
                 var unselMirror = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_UNSEL_MIRROR];
                 if (unselMirror != null)
                 {
                     unselMirror.SetValueWithoutNotify(d.ShowUnselectedMirror);
                     unselMirror.SetEnabled(d.ShowUnselectedMesh);
+                }
+
+                var mirrorWire = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE];
+                if (mirrorWire != null)
+                {
+                    mirrorWire.SetValueWithoutNotify(d.ShowUnselectedMirrorWireframe);
+                    mirrorWire.SetEnabled(d.ShowUnselectedMirror);
+                }
+
+                var mirrorVert = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT];
+                if (mirrorVert != null)
+                {
+                    mirrorVert.SetValueWithoutNotify(d.ShowUnselectedMirrorVertices);
+                    mirrorVert.SetEnabled(d.ShowUnselectedMirror);
                 }
             }
 
@@ -4590,6 +4616,8 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_UNSEL_VERT: ds.ShowUnselectedVertices  = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_BONE:   ds.ShowUnselectedBone      = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR: ds.ShowUnselectedMirror    = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE: ds.ShowUnselectedMirrorWireframe = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT: ds.ShowUnselectedMirrorVertices  = e.newValue; break;
                                 case PlayerLayoutRoot.VD_SEL_MESH_ORIGIN:   ds.ShowSelectedMeshOrigin   = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN: ds.ShowUnselectedMeshOrigin = e.newValue; break;
                                 case PlayerLayoutRoot.VD_MIRROR_MESH_ORIGIN: ds.ShowMirrorMeshOrigin    = e.newValue; break;
@@ -4620,6 +4648,8 @@ namespace Poly_Ling.Player
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_VERT,   ds.ShowUnselectedVertices);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_BONE,   ds.ShowUnselectedBone);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR, ds.ShowUnselectedMirror);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE, ds.ShowUnselectedMirrorWireframe);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT, ds.ShowUnselectedMirrorVertices);
                 SyncTog(PlayerLayoutRoot.VD_SEL_MESH_ORIGIN,   ds.ShowSelectedMeshOrigin);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN, ds.ShowUnselectedMeshOrigin);
                 SyncTog(PlayerLayoutRoot.VD_MIRROR_MESH_ORIGIN, ds.ShowMirrorMeshOrigin);
@@ -5787,6 +5817,7 @@ namespace Poly_Ling.Player
             _localLoader.Clear();
             foreach (var m in loaded.Models)
                 _localLoader.LoadModel(m.FilePath ?? loaded.Name, m);
+            AdoptWorkAxisLibrary(loaded);
             return true;
         }
 
@@ -6544,8 +6575,9 @@ namespace Poly_Ling.Player
             var newUnityMesh = targetMc.MeshObject.ToUnityMesh();
             newUnityMesh.name      = targetMc.Name;
             newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
-            if (targetMc.UnityMesh != null) UnityEngine.Object.Destroy(targetMc.UnityMesh);
-            targetMc.UnityMesh = newUnityMesh;
+            // Object.Destroy は edit mode では破棄しない。ReplaceUnityMesh は
+            // MeshContext.DestroyMesh 経由で isPlaying を見て使い分ける。
+            targetMc.ReplaceUnityMesh(newUnityMesh);
 
             if (_editOps?.UndoController != null && before != null)
             {
@@ -6823,8 +6855,9 @@ namespace Poly_Ling.Player
             var newUnityMesh = targetMc.MeshObject.ToUnityMesh();
             newUnityMesh.name      = targetMc.Name;
             newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
-            if (targetMc.UnityMesh != null) UnityEngine.Object.Destroy(targetMc.UnityMesh);
-            targetMc.UnityMesh = newUnityMesh;
+            // Object.Destroy は edit mode では破棄しない。ReplaceUnityMesh は
+            // MeshContext.DestroyMesh 経由で isPlaying を見て使い分ける。
+            targetMc.ReplaceUnityMesh(newUnityMesh);
 
             if (_editOps?.UndoController != null && before != null)
             {
@@ -7455,9 +7488,9 @@ namespace Poly_Ling.Player
             var newUnityMesh = targetMc.MeshObject.ToUnityMesh();
             newUnityMesh.name      = targetMc.Name;
             newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
-            if (targetMc.UnityMesh != null)
-                UnityEngine.Object.Destroy(targetMc.UnityMesh);
-            targetMc.UnityMesh = newUnityMesh;
+            // Object.Destroy は edit mode では破棄しない。ReplaceUnityMesh は
+            // MeshContext.DestroyMesh 経由で isPlaying を見て使い分ける。
+            targetMc.ReplaceUnityMesh(newUnityMesh);
 
             // UNDO: 変更後スナップショット記録
             if (_editOps?.UndoController != null && before != null)
@@ -7667,6 +7700,7 @@ namespace Poly_Ling.Player
             _localLoader.Clear();
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? dto.name, m);
+            AdoptWorkAxisLibrary(loadedProject);
             _projectLoadSubPanel?.SetStatus($"読込完了: {dto.name}");
         }
 
@@ -7698,7 +7732,43 @@ namespace Poly_Ling.Player
             _localLoader.Clear();
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? loadedProject.Name, m);
+            AdoptWorkAxisLibrary(loadedProject);
             _projectLoadSubPanel?.SetStatus($"CSV読込完了: {loadedProject.Name}");
+        }
+
+        /// <summary>
+        /// 読み込んだプロジェクトの作業軸辞書を、実際に表示されるプロジェクトへ移す。
+        ///
+        /// 読み込み経路は復元した ProjectContext をそのまま使わず、モデルだけを
+        /// _localLoader へ渡して別の ProjectContext を作り直す
+        /// （PlayerLocalLoader.FinishLoad）。辞書はモデルにぶら下がっていないので、
+        /// ここで明示的に移さないと読み込みのたびに消える。
+        /// </summary>
+        private void AdoptWorkAxisLibrary(ProjectContext loaded)
+        {
+            var src = loaded?.WorkAxes;
+            var dst = ActiveProject?.WorkAxes;
+
+            // 同一インスタンスなら移す必要はない（Clear して自分を舐めると壊れる）。
+            if (src == null || dst == null || ReferenceEquals(src, dst)) return;
+
+            dst.Clear();
+            foreach (var name in src.Names)
+            {
+                if (src.TryGet(name, out var e)) dst.Set(name, e);
+            }
+
+            RefreshWorkAxisLibraryLists();
+        }
+
+        /// <summary>
+        /// 作業軸辞書の一覧を持つパネルをまとめて更新する。
+        /// 左ペインと変形パネルは同じ辞書を指すので、片方の変更を両方へ反映させる。
+        /// </summary>
+        private void RefreshWorkAxisLibraryLists()
+        {
+            _workAxisSubPanel?.RefreshLibraryList();
+            _deformWorkAxisSubPanel?.RefreshLibraryList();
         }
 
         // ==== ピボット重心スナップ（頂点のみ移動＋カメラ逆移動で「ピボットが動いた」ように見せる） ====

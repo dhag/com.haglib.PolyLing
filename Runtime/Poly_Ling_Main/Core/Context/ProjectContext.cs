@@ -51,6 +51,25 @@ namespace Poly_Ling.Context
         public int ModelCount => Models?.Count ?? 0;
 
         // ================================================================
+        // 作業軸辞書
+        // ================================================================
+
+        /// <summary>
+        /// 名前付き作業軸の辞書。プロジェクト単位で 1 個持ち、全モデル・全パネルで共有する。
+        ///
+        /// 作業軸そのもの（WorkAxisContext）はモデル単位（ModelContext.WorkAxis）だが、
+        /// 辞書はモデルをまたいで呼び出せた方が使えるのでプロジェクト側に置く。
+        ///
+        /// 【永続化】
+        ///   .mfproj  … ProjectDTO.workAxisLibrary
+        ///   CSV      … プロジェクトファイルと同じフォルダ直下の workaxis_library.csv
+        ///              （CsvProjectSerializer が読み書きする独立ファイル）
+        ///
+        /// null にはせず常にインスタンスを持たせる（呼び出し側の null 判定を減らすため）。
+        /// </summary>
+        public WorkAxisLibrary WorkAxes { get; set; } = new WorkAxisLibrary();
+
+        // ================================================================
         // カレントモデル（シリアライズしない）
         // ================================================================
 
@@ -349,6 +368,9 @@ namespace Poly_Ling.Context
             IsDirty = false;
             CreatedAt = DateTime.Now;
             ModifiedAt = DateTime.Now;
+            // 作業軸辞書はプロジェクトの持ち物。新規プロジェクトでは空に戻す。
+            // （Clear() はモデルだけを対象にするので、そちらでは触らない）
+            WorkAxes?.Clear();
         }
 
         /// <summary>更新日時を現在時刻に設定</summary>

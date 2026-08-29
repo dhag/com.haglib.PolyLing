@@ -1169,7 +1169,7 @@ namespace Poly_Ling.Player
                         _undoController.RecordTopologyChange(remBefore, remAfter, $"Remove Material Slot [{c.SlotIndex}]");
                     }
                     if (remMc?.UnityMesh != null && remMc.MeshObject != null)
-                        remMc.UnityMesh = remMc.MeshObject.ToUnityMesh();
+                        remMc.ReplaceUnityMesh(remMc.MeshObject.ToUnityMesh());
                     // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
                     _viewportManager.EnterTopologyChanged(project);
                     model.IsDirty = true;
@@ -1201,7 +1201,7 @@ namespace Poly_Ling.Player
                     // テクスチャ表面(ctx.UnityMesh)は MaterialIndex 別サブメッシュで描画されるため、
                     // MaterialIndex 変更後は UnityMesh を再構築しないと表面に反映されない
                     // （EnterTopologyChanged は編集用GPUアダプタのみ再構築し UnityMesh は触らない）。
-                    matMc.UnityMesh = matMc.MeshObject.ToUnityMesh(model.MaterialCount);
+                    matMc.ReplaceUnityMesh(matMc.MeshObject.ToUnityMesh(model.MaterialCount));
                     // Phase 2a-2g-1: Material 変更後の GPU 反映を EnterTopologyChanged に集約。
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
@@ -1239,7 +1239,7 @@ namespace Poly_Ling.Player
                             var after = _undoController.CaptureMeshObjectSnapshot();
                             _undoController.RecordTopologyChange(before, after, "LSCM UV展開");
                         }
-                        lscmMc.UnityMesh = lscmMc.MeshObject.ToUnityMesh();
+                        lscmMc.ReplaceUnityMesh(lscmMc.MeshObject.ToUnityMesh());
                         // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
                         _viewportManager.EnterTopologyChanged(project);
                         _notifyPanels(ChangeKind.Attributes);
@@ -1263,7 +1263,9 @@ namespace Poly_Ling.Player
                         model, _undoController, BuildMinimalToolCtx(model),
                         mc =>
                         {
-                            mc.UnityMesh = mc.MeshObject?.ToUnityMesh();
+                            // UnityMesh は HandleUvToXyz が MeshContext の初期化子で
+                            // 生成済み（PolyLingCore_UvHandlers.cs）。ここで作り直すと
+                            // 1 個作っては捨てる二重生成になり、旧 Mesh が漏れる。
                             model.Add(mc);
                         },
                         () => { }, c);
@@ -2577,7 +2579,8 @@ namespace Poly_Ling.Player
                     var mergedUnityMesh       = destMesh.ToUnityMesh();
                     mergedUnityMesh.name      = destMesh.Name;
                     mergedUnityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
-                    destCtx.UnityMesh         = mergedUnityMesh;
+                    // CreateNewMesh=false のとき destCtx は baseCtx（既存 MeshContext）そのもの。
+                    destCtx.ReplaceUnityMesh(mergedUnityMesh);
                     destCtx.OriginalPositions = (Vector3[])destMesh.Positions.Clone();
 
                     // モデルへの追加・削除
@@ -5386,7 +5389,7 @@ namespace Poly_Ling.Player
             var newMesh = mo.ToUnityMesh();
             newMesh.name      = mo.Name;
             newMesh.hideFlags = HideFlags.HideAndDontSave;
-            mc.UnityMesh = newMesh;
+            mc.ReplaceUnityMesh(newMesh);
 
             mc.InvalidateSymmetryCache();
         }

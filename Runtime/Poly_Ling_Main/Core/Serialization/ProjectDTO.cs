@@ -37,6 +37,16 @@ namespace Poly_Ling.Serialization
         public List<ModelDTO> models = new List<ModelDTO>();
 
         // ================================================================
+        // 作業軸辞書
+        // ================================================================
+
+        /// <summary>
+        /// 名前付き作業軸の辞書（登録順）。ProjectContext.WorkAxes に対応する。
+        /// この項目が無い旧データを読んだときは空の辞書になる。
+        /// </summary>
+        public List<WorkAxisEntryDTO> workAxisLibrary = new List<WorkAxisEntryDTO>();
+
+        // ================================================================
         // 将来用：モーションリスト
         // ================================================================
         // public List<MotionData> motions = new List<MotionData>();

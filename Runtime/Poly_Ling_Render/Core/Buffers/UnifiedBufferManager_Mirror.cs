@@ -267,77 +267,19 @@ namespace Poly_Ling.Core
         // ============================================================
         // ミラースクリーン座標
         // ============================================================
-
-        // ミラースクリーン座標用バッファ（必要に応じて遅延作成）
-        private ComputeBuffer _mirrorScreenPosBuffer;
-        private Vector2[] _mirrorScreenPositions;
-
-        /// <summary>
-        /// ミラー頂点のスクリーン座標を計算
-        /// </summary>
-        public void ComputeMirrorScreenPositions(Matrix4x4 viewProjection, Rect viewport)
-        {
-            if (!_mirrorEnabled || _mirrorVertexCount == 0)
-                return;
-
-            // バッファ遅延作成
-            if (_mirrorScreenPositions == null || _mirrorScreenPositions.Length < _mirrorVertexCount)
-            {
-                _mirrorScreenPositions = new Vector2[_vertexCapacity];
-            }
-
-            if (_mirrorScreenPosBuffer == null || _mirrorScreenPosBuffer.count < _mirrorVertexCount)
-            {
-                if (_mirrorScreenPosBuffer != null) Poly_Ling.Diagnostics.PLResStat.LiveCB--;
-                _mirrorScreenPosBuffer?.Release();
-                _mirrorScreenPosBuffer = Poly_Ling.Diagnostics.PLResStat.NewCB(new ComputeBuffer(_vertexCapacity, sizeof(float) * 2));
-            }
-
-            for (int i = 0; i < _mirrorVertexCount; i++)
-            {
-                Vector4 clipPos = viewProjection * new Vector4(
-                    _mirrorPositions[i].x,
-                    _mirrorPositions[i].y,
-                    _mirrorPositions[i].z,
-                    1f);
-
-                if (clipPos.w <= 0)
-                {
-                    _mirrorScreenPositions[i] = new Vector2(-10000, -10000);
-                }
-                else
-                {
-                    Vector2 ndc = new Vector2(clipPos.x / clipPos.w, clipPos.y / clipPos.w);
-                    _mirrorScreenPositions[i] = new Vector2(
-                        viewport.x + (ndc.x * 0.5f + 0.5f) * viewport.width,
-                        viewport.y + (1f - (ndc.y * 0.5f + 0.5f)) * viewport.height);
-                }
-            }
-
-            Poly_Ling.Diagnostics.PLCamDbg.Wr("_mirrorScreenPosBuffer", _mirrorScreenPosBuffer, 0);
-            _mirrorScreenPosBuffer.SetData(_mirrorScreenPositions, 0, 0, _mirrorVertexCount);
-        }
-
-        /// <summary>
-        /// ミラースクリーン座標バッファを取得
-        /// </summary>
-        public ComputeBuffer GetMirrorScreenPosBuffer()
-        {
-            return _mirrorScreenPosBuffer;
-        }
-
-        /// <summary>
-        /// ミラー関連バッファを解放
-        /// </summary>
-        private void ReleaseMirrorBuffers()
-        {
-            if (_mirrorScreenPosBuffer != null)
-            {
-                Poly_Ling.Diagnostics.PLResStat.LiveCB--;
-                _mirrorScreenPosBuffer.Release();
-                _mirrorScreenPosBuffer = null;
-            }
-            _mirrorScreenPositions = null;
-        }
+        //
+        // 【ComputeMirrorScreenPositions 一式を撤去した理由】 2026-08-28
+        //   _mirrorScreenPosBuffer(float2) は本メソッドが SetData するだけで、
+        //   ComputeShader.SetBuffer へ渡している箇所が 0 件だった。
+        //   GetMirrorScreenPosBuffer() の呼出元も 0 件。
+        //   すなわち「全ミラー頂点ぶんの投影計算を CPU で回し、GPU へ転送し、
+        //   誰も読まない」処理だった。
+        //   GPU が実際に使うミラースクリーン座標は _mirrorScreenPosBuffer4 で、
+        //   これは UnifiedCompute.compute の ComputeScreenPositions カーネルが
+        //   _UseMirror > 0 のときに GPU 側で直接埋める。
+        //
+        //   あわせて ReleaseMirrorBuffers() も撤去した。呼出元が 0 件で、
+        //   _mirrorScreenPosBuffer が一度も解放されていなかった（残件 6 章の
+        //   「ReleaseAllBuffers の一覧から漏れている」はこれが原因）。
     }
 }

@@ -79,9 +79,32 @@ namespace Poly_Ling.Data
     {
         /// <summary>
         /// 頂点ID（トポロジー追跡・外部連携・モーフ用）
-        /// MeshObjectが管理する一意の識別子
+        ///
+        /// 【一意性の範囲】
+        ///   一意が保証されるのは 1 つの MeshObject の中だけ。GenerateVertexId が
+        ///   参照する使用中IDセット（_usedVertexIds）はインスタンスごとに持つため、
+        ///   モデル全体では重複しうるし、重複してよい。
+        ///   首と胴のつなぎ目のようにオブジェクトをまたいで同じ頂点を指す用途や、
+        ///   モデルをまたいだモーフの指標として意図的に共有する。
+        ///   「モデル内で重複している」ことを異常として扱わないこと。
         /// </summary>
         public int Id = 0;
+
+        /// <summary>
+        /// 部品ID。1 つのオブジェクトの中に複数の部品があるとき、
+        /// どの部品に属するかを表すグループ番号。
+        ///
+        /// 0 = 未設定。一意性は保証しない（同じ値を多数の頂点が共有する）。
+        /// 自動採番はしない。値の意味付けは利用側の責務。
+        /// </summary>
+        public int PartsId = 0;
+
+        /// <summary>
+        /// サブID。部品ローカルなインデックスを表すグループ番号。
+        ///
+        /// 0 = 未設定。一意性は保証しない。自動採番はしない。
+        /// </summary>
+        public int SubId = 0;
 
         /// <summary>頂点位置</summary>
         public Vector3 Position;
@@ -287,6 +310,8 @@ namespace Poly_Ling.Data
         {
             var clone = new Vertex(this.Position);
             clone.Id = this.Id;
+            clone.PartsId = this.PartsId;
+            clone.SubId = this.SubId;
             clone.UVs = new List<Vector2>(this.UVs);
             clone.Normals = new List<Vector3>(this.Normals);
             clone.Flags = this.Flags;
@@ -2225,30 +2250,9 @@ namespace Poly_Ling.Data
         /// </summary>
         public Dictionary<(int vIdx, int uvIdx), int> BuildExpansionMap()
         {
-            // face.IsHidden は見ない（MeshBridgeDefault.ToUnityMesh と同じ規則。
-            // 面の非表示で展開頂点数が変わると展開index空間が食い違う）。
-            var nonIsolated = new HashSet<int>();
-            foreach (var face in Faces)
-            {
-                if (face.VertexCount < 3) continue;
-                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
-            }
-
+            // 展開規則は MeshExpansion に一本化してある（孤立頂点除外／IsHidden は見ない）。
             var map = new Dictionary<(int vIdx, int uvIdx), int>();
-            int expandedIdx = 0;
-
-            for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
-            {
-                if (!nonIsolated.Contains(vIdx)) continue;
-                var vertex = Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-
-                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                {
-                    map[(vIdx, uvIdx)] = expandedIdx++;
-                }
-            }
-
+            MeshExpansion.Enumerate(this, (vIdx, uvIdx, expIdx) => map[(vIdx, uvIdx)] = expIdx);
             return map;
         }
 
@@ -2257,30 +2261,9 @@ namespace Poly_Ling.Data
         /// </summary>
         public Dictionary<int, (int vIdx, int uvIdx)> BuildInverseExpansionMap()
         {
-            // face.IsHidden は見ない（MeshBridgeDefault.ToUnityMesh と同じ規則。
-            // 面の非表示で展開頂点数が変わると展開index空間が食い違う）。
-            var nonIsolated = new HashSet<int>();
-            foreach (var face in Faces)
-            {
-                if (face.VertexCount < 3) continue;
-                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
-            }
-
+            // 展開規則は MeshExpansion に一本化してある（孤立頂点除外／IsHidden は見ない）。
             var map = new Dictionary<int, (int vIdx, int uvIdx)>();
-            int expandedIdx = 0;
-
-            for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
-            {
-                if (!nonIsolated.Contains(vIdx)) continue;
-                var vertex = Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-
-                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                {
-                    map[expandedIdx++] = (vIdx, uvIdx);
-                }
-            }
-
+            MeshExpansion.Enumerate(this, (vIdx, uvIdx, expIdx) => map[expIdx] = (vIdx, uvIdx));
             return map;
         }
     }

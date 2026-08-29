@@ -90,6 +90,9 @@ namespace Poly_Ling.Remote
                 if (flags.HasFlag(MeshFieldFlags.VertexIds))
                     WriteVertexIds(w, mesh);
 
+                if (flags.HasFlag(MeshFieldFlags.VertexSubIds))
+                    WriteVertexSubIds(w, mesh);
+
                 // 面系フィールド
                 if (flags.HasFlag(MeshFieldFlags.FaceIndices))
                     WriteFaceIndices(w, mesh);
@@ -250,6 +253,9 @@ namespace Poly_Ling.Remote
 
                 if (flags.HasFlag(MeshFieldFlags.VertexIds))
                     ReadVertexIds(r, mesh, vertexCount);
+
+                if (flags.HasFlag(MeshFieldFlags.VertexSubIds))
+                    ReadVertexSubIds(r, mesh, vertexCount);
 
                 // 面系
                 if (flags.HasFlag(MeshFieldFlags.FaceIndices))
@@ -418,6 +424,21 @@ namespace Poly_Ling.Remote
                 w.Write(mesh.Vertices[i].Id);
         }
 
+        /// <summary>
+        /// SubID / PartsID を頂点ごとに int×2 で書く。
+        /// VertexIds(0x0020) の中身は変えずに別ブロックへ足しているので、
+        /// VertexSubIds を立てない相手とは従来どおりの並びになる。
+        /// </summary>
+        private static void WriteVertexSubIds(BinaryWriter w, MeshObject mesh)
+        {
+            for (int i = 0; i < mesh.VertexCount; i++)
+            {
+                var v = mesh.Vertices[i];
+                w.Write(v.SubId);
+                w.Write(v.PartsId);
+            }
+        }
+
         // ================================================================
         // Write（面系）— N角形対応で可変長
         // ================================================================
@@ -566,6 +587,16 @@ namespace Poly_Ling.Remote
             EnsureVertexCount(mesh, count);
             for (int i = 0; i < count; i++)
                 mesh.Vertices[i].Id = r.ReadInt32();
+        }
+
+        private static void ReadVertexSubIds(BinaryReader r, MeshObject mesh, uint count)
+        {
+            EnsureVertexCount(mesh, count);
+            for (int i = 0; i < count; i++)
+            {
+                mesh.Vertices[i].SubId   = r.ReadInt32();
+                mesh.Vertices[i].PartsId = r.ReadInt32();
+            }
         }
 
         // ================================================================

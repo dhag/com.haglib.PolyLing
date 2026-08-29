@@ -497,7 +497,9 @@ namespace Poly_Ling.Core
             var unityMesh = destMesh.ToUnityMesh();
             unityMesh.name = destMesh.Name;
             unityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
-            destCtx.UnityMesh = unityMesh;
+            // CreateNewMesh=false のとき destCtx は baseCtx（既存 MeshContext）そのもの。
+            // 直接代入すると旧 Mesh が到達不能なまま常駐する。
+            destCtx.ReplaceUnityMesh(unityMesh);
             destCtx.OriginalPositions = (Vector3[])destMesh.Positions.Clone();
 
             // ----------------------------------------------------------------

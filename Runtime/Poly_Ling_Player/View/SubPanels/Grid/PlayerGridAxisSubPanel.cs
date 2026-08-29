@@ -22,6 +22,7 @@ namespace Poly_Ling.Player
         private DropdownField _planeDropdown;
         private FloatField    _cellSize;
         private IntegerField  _halfCount;
+        private FloatField    _boneMarkerScale;
 
         private bool _suppress;   // フィールド→設定 反映の一時抑止（同期時）
 
@@ -83,6 +84,13 @@ namespace Poly_Ling.Player
             _halfCount.RegisterValueChangedCallback(_ => WriteFields());
             parent.Add(_halfCount);
 
+            // ── マーカー ────────────────────────────────────────────
+            // ボーンとメッシュ原点は同じくさび形を共有しており、大きさも共通。
+            parent.Add(PlayerIoUiKit.SectionLabel("マーカー"));
+
+            _boneMarkerScale = MakeFloat("ボーン/原点の大きさ", ViewportGridSettings.Default.BoneMarkerScale);
+            parent.Add(_boneMarkerScale);
+
             // ── 既定値へ戻す ─────────────────────────────────────────
             var resetBtn = new Button(OnReset) { text = "既定値に戻す" };
             resetBtn.style.marginTop = 6;
@@ -117,6 +125,7 @@ namespace Poly_Ling.Player
             _planeDropdown.SetValueWithoutNotify(PlaneNames[Mathf.Clamp((int)s.Plane, 0, PlaneNames.Count - 1)]);
             _cellSize     .SetValueWithoutNotify(s.CellSize);
             _halfCount    .SetValueWithoutNotify(s.HalfCount);
+            _boneMarkerScale.SetValueWithoutNotify(s.BoneMarkerScale);
             _suppress = false;
         }
 
@@ -137,6 +146,7 @@ namespace Poly_Ling.Player
                 Plane      = (GridPlaneKind)planeIdx,
                 CellSize   = _cellSize.value,
                 HalfCount  = _halfCount.value,
+                BoneMarkerScale = _boneMarkerScale.value,
             }.Clamped();
 
             _set?.Invoke(s);

@@ -2,6 +2,7 @@
 // プロジェクトフォルダ全体の読み書き
 // ProjectFolder/
 //   project.csv
+//   workaxis_library.csv   （作業軸辞書。プロジェクト単位の独立ファイル）
 //   ModelName/
 //     model.csv, materials.csv, humanoid.csv, morphgroups.csv,
 //     editorstate.csv, workplane.csv,
@@ -34,6 +35,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         /// <summary>単一モデルフォルダのモデルファイル名。</summary>
         public const string ModelFileName = "model.csv";
+
+        /// <summary>
+        /// 作業軸辞書ファイル名。プロジェクトファイルと同じフォルダ直下に置く独立ファイル。
+        /// 中身の書式は WorkAxisLibraryCsvIO が持つ（単体での保存/読込と同じ）。
+        /// </summary>
+        public const string WorkAxisLibraryFileName = "workaxis_library.csv";
 
         public const string CurrentVersion = "1.0";
 
@@ -224,6 +231,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // プロジェクトファイル（既定 project.csv）
                 WriteProjectCsv(projectFolderPath, project, projectFileName);
 
+                // workaxis_library.csv（作業軸辞書。プロジェクト単位の独立ファイル）
+                WriteWorkAxisLibraryCsv(projectFolderPath, project);
+
                 // 各モデルフォルダ
                 for (int i = 0; i < project.ModelCount; i++)
                 {
@@ -328,6 +338,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 var project = new ProjectContext(projectName);
                 project.Models.Clear();
 
+                // workaxis_library.csv（作業軸辞書。無ければ空のまま）
+                ReadWorkAxisLibraryCsv(projectFolderPath, project);
+
                 foreach (var folder in modelFolders)
                 {
                     string modelFolderPath = Path.Combine(projectFolderPath, folder);
@@ -390,7 +403,61 @@ namespace Poly_Ling.Serialization.FolderSerializer
             editorStates.Add(es);
             workPlanes.Add(wp);
 
+            // 単一モデルフォルダを直接指定された場合でも、同じフォルダに
+            // 辞書ファイルがあれば拾う（無ければ空のまま）。
+            ReadWorkAxisLibraryCsv(folderPath, project);
+
             return project;
+        }
+
+        // ================================================================
+        // workaxis_library.csv 読み書き
+        //
+        // プロジェクト単位の作業軸辞書。model.csv 側の workaxis.csv
+        // （モデルごとの作業軸そのもの）とは別物なので混同しないこと。
+        // ================================================================
+
+        /// <summary>
+        /// 作業軸辞書を独立CSVへ書き出す。
+        /// 空の辞書のときは書かず、以前の保存で残ったファイルは削除する
+        /// （空で保存したのに古い内容が復活する事故を防ぐ）。
+        /// </summary>
+        private static void WriteWorkAxisLibraryCsv(string projectFolderPath, ProjectContext project)
+        {
+            string path = Path.Combine(projectFolderPath, WorkAxisLibraryFileName);
+            var lib = project?.WorkAxes;
+
+            if (lib == null || lib.Count == 0)
+            {
+                try
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[CsvProjectSerializer] {WorkAxisLibraryFileName} の削除に失敗: {ex.Message}");
+                }
+                return;
+            }
+
+            WorkAxisLibraryCsvIO.Save(path, lib);
+        }
+
+        /// <summary>
+        /// 独立CSVから作業軸辞書を読み込む。ファイルが無ければ何もしない。
+        /// merge=false で読むので、読み込み後の辞書はファイルの内容と一致する。
+        /// </summary>
+        private static void ReadWorkAxisLibraryCsv(string projectFolderPath, ProjectContext project)
+        {
+            if (project == null) return;
+            if (project.WorkAxes == null) project.WorkAxes = new WorkAxisLibrary();
+
+            string path = Path.Combine(projectFolderPath, WorkAxisLibraryFileName);
+            if (!File.Exists(path)) return;
+
+            var r = WorkAxisLibraryCsvIO.Load(path, project.WorkAxes, false);
+            if (!r.Success)
+                Debug.LogWarning($"[CsvProjectSerializer] {WorkAxisLibraryFileName} の読み込みに失敗: {r.ErrorMessage}");
         }
 
         // ================================================================

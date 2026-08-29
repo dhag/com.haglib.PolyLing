@@ -305,71 +305,102 @@ namespace Poly_Ling.MQO
         // =====================================================================
 
         /// <summary>
-        /// MQOの特殊面からVertexIDを抽出
-        /// 特殊面: 全頂点インデックスが同じ面（メタデータ格納用）
-        /// 三角形特殊面: COL属性の3番目の値がVertexID
+        /// 三角形特殊面が運ぶ頂点の識別子一式。COL(PartsID, SubID, ID) の並びに対応する。
+        /// </summary>
+        public struct MqoVertexIds
+        {
+            /// <summary>頂点ID。COL[2]。</summary>
+            public int Id;
+
+            /// <summary>サブID（部品ローカルなインデックス）。COL[1]。0 = 未設定。</summary>
+            public int SubId;
+
+            /// <summary>部品ID。COL[0]。0 = 未設定。</summary>
+            public int PartsId;
+        }
+
+        /// <summary>
+        /// MQOの三角形特殊面から頂点の識別子一式を抽出する。
+        ///
+        /// 【仕様】
+        ///   頂点インデックスが全て同じ三角形が存在し、かつ COL を持つとき、
+        ///   その COL を (PartsID, SubID, ID) として読む。
+        ///   COL の値によるパターン判定は行わない。
+        ///
+        ///   以前は COL(1 1 ID) / 白 / COL(1 ID ID) の 3 パターンだけを受理し、
+        ///   一致しない面を捨てていたが、いずれの分岐も返す値は COL[2] と同値
+        ///   （共有ID分岐は成立条件が COL[1]==COL[2]）だったため、
+        ///   無条件に COL[2] を読んでも既存データの読み取り結果は変わらない。
+        ///
+        /// 【四角形特殊面】
+        ///   ボーンウェイト用なのでここでは扱わない
+        ///   （ExtractBoneWeightsFromSpecialFaces 参照）。
         /// </summary>
         /// <param name="faces">MQOの面リスト</param>
-        /// <returns>頂点インデックス → VertexID のマッピング</returns>
-        public static Dictionary<int, int> ExtractIdsFromSpecialFaces(IEnumerable<MQOFace> faces)
+        /// <returns>頂点インデックス → 識別子一式 のマッピング</returns>
+        public static Dictionary<int, MqoVertexIds> ExtractIdsFromSpecialFaces(IEnumerable<MQOFace> faces)
         {
-            var vertexIdMap = new Dictionary<int, int>();
+            var vertexIdMap = new Dictionary<int, MqoVertexIds>();
+            if (faces == null) return vertexIdMap;
+
             foreach (var face in faces)
             {
                 // 三角形特殊面のみ対象（四角形はボーンウェイト用）
                 if (!face.IsSpecialFace || face.VertexCount != 3)
                     continue;
-                // COL属性から頂点IDを取得
-                if (face.VertexColors != null && face.VertexColors.Length >= 3)
+                if (face.VertexColors == null || face.VertexColors.Length < 3)
+                    continue;
+
+                int partsId = (int)face.VertexColors[0];
+                int subId   = (int)face.VertexColors[1];
+                int id      = (int)face.VertexColors[2];
+
+                // uint → int のキャストで負になるのは int.MaxValue を超えた不正値。
+                // ID として使えないのでその面ごと捨てる。
+                // SubID / PartsID は 0 も有効なので値では弾かない。
+                int vertexIndex = face.VertexIndices[0];
+                if (vertexIndex < 0 || id < 0)
+                    continue;
+
+                vertexIdMap[vertexIndex] = new MqoVertexIds
                 {
-                    // 三角形特殊面の識別:
-                    // パターン1: COL(1 1 ID) → 独自ID
-                    // パターン2: COL(0xFFFFFFFF 0xFFFFFFFF ID) → メタセコイアデフォルト白
-                    // パターン3: COL(1 ID ID) → 共有ID (COL[1]==COL[2])
-                    bool isMarker1 = (face.VertexColors[0] == 1 && face.VertexColors[1] == 1);
-                    bool isMarkerWhite = (face.VertexColors[0] == 4294967295 && face.VertexColors[1] == 4294967295);
-                    bool isSharedId = (face.VertexColors[0] == 1 && face.VertexColors[1] == face.VertexColors[2] && face.VertexColors[1] > 1);
-                    int vertexId;
-                    if (isMarker1 || isMarkerWhite)
-                    {
-                        vertexId = (int)face.VertexColors[2];
-                    }
-                    else if (isSharedId)
-                    {
-                        vertexId = (int)face.VertexColors[1];  // 共有IDはCOL[1]から取得
-                    }
-                    else
-                    {
-                        continue;
-                    }
-                    int vertexIndex = face.VertexIndices[0];
-                    if (vertexIndex >= 0 && vertexId >= 0)
-                    {
-                        vertexIdMap[vertexIndex] = vertexId;
-                    }
-                }
+                    Id      = id,
+                    SubId   = subId,
+                    PartsId = partsId,
+                };
             }
             return vertexIdMap;
         }
 
         /// <summary>
-        /// VertexIDを埋め込むための特殊面を生成
+        /// 頂点の識別子一式を埋め込むための三角形特殊面を生成。
+        /// COL(PartsID, SubID, ID) の並びで書く。
         /// </summary>
         /// <param name="vertexIndex">頂点インデックス</param>
-        /// <param name="vertexId">頂点ID</param>
+        /// <param name="vertexId">頂点ID（COL[2]）</param>
+        /// <param name="subId">サブID（COL[1]）。0 = 未設定</param>
+        /// <param name="partsId">部品ID（COL[0]）。0 = 未設定</param>
         /// <param name="materialIndex">マテリアルインデックス（デフォルト0）</param>
         /// <returns>特殊面データ</returns>
-        public static MQOFace CreateSpecialFaceForVertexId(int vertexIndex, int vertexId, int materialIndex = 0)
+        /// <remarks>
+        /// subId / partsId は既定値を持たせない。既存の呼び出しが
+        /// 第3引数へ materialIndex を渡していたため、既定値を置くと
+        /// それが subId に読み替えられて無言で壊れる。
+        /// </remarks>
+        public static MQOFace CreateSpecialFaceForVertexId(
+            int vertexIndex, int vertexId, int subId, int partsId, int materialIndex = 0)
         {
             return new MQOFace
             {
                 // 3頂点すべて同じインデックス（特殊面の印）
                 VertexIndices = new int[] { vertexIndex, vertexIndex, vertexIndex },
                 MaterialIndex = materialIndex,
-                // UVは (0,0) で統一
+                // UVは (0,0) で統一。
+                // MQO の UV は F6 の float として出力されるため、
+                // 2^24 を超える整数を往復できない。識別子は必ず COL に載せること。
                 UVs = new Vector2[] { Vector2.zero, Vector2.zero, Vector2.zero },
-                // COL属性: [1, 1, vertexId]（1,1は識別用マーカー）
-                VertexColors = new uint[] { 1, 1, (uint)vertexId }
+                // COL属性: [PartsID, SubID, ID]
+                VertexColors = new uint[] { (uint)partsId, (uint)subId, (uint)vertexId }
             };
         }
 

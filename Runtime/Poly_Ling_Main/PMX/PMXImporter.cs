@@ -561,7 +561,12 @@ namespace Poly_Ling.PMX
                         Axis = Poly_Ling.Symmetry.SymmetryAxis.X
                     };
 
-                    bool success = pair.Build();
+                    // 組み立て中の列を渡す。この時点では MeshContext がまだ
+                    // ModelContext へ繋がっておらず ParentModelContext が null なので、
+                    // 渡さないと BuildBonePairMap が失敗し Build() ごと落ちる。
+                    // result.MeshContexts の並びは、この後 ModelContext へ
+                    // 先頭から順に Add される並びと一致する。
+                    bool success = pair.Build(result.MeshContexts);
 
                     if (success)
                     {
@@ -578,7 +583,12 @@ namespace Poly_Ling.PMX
                     }
                     else
                     {
-                        Debug.LogWarning($"[PMXImporter] MirrorPair build failed: '{sourceName}' ↔ '{ctx.Name}'\n{pair.BuildLog}");
+                        // 失敗するとペアを登録しないので、このオブジェクトは
+                        // ミラー同期（頂点移動・ウェイトの写し）が丸ごと効かなくなる。
+                        Debug.LogWarning(
+                            $"[PMXImporter] MirrorPair build failed: '{sourceName}' ↔ '{ctx.Name}'"
+                            + " — このオブジェクトのミラー同期は無効になります"
+                            + $"\n{pair.BuildLog}");
                     }
                 }
             }

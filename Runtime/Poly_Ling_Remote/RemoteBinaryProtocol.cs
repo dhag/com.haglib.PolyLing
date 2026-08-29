@@ -87,6 +87,18 @@
 //   v1 の PositionsOnly は対象を運べず、受信側が先頭の描画メッシュ決め打ちで
 //   適用していたため、複数人が同時に頂点を動かすと全員の編集が
 //   同じメッシュへ流れ込んでいた。ObjectId で対象を確定させる。
+//
+// ■ ボディのフィールド順（MeshFieldFlags のビット順）
+//   Positions → Normals → UVs → BoneWeights → VertexFlags → VertexIds
+//   → VertexSubIds → FaceIndices → FaceMaterials → FaceFlags → FaceIds
+//   → FaceUVIndices → FaceNormalIndices
+//
+//   VertexSubIds(0x0040) は SubID / PartsID を運ぶ後付けのブロックで、
+//   VertexIds(0x0020) の中身は変えていない。読み手はヘッダの FieldFlags に
+//   従ってブロックを読むので、同一ビルド同士では整合する。
+//   ⚠ VertexSubIds を知らない旧ビルドへ AllVertex を送ると、
+//     このブロックを読み飛ばせず以降の面データがずれる。
+//     旧ビルドと混在させる場合は VertexSubIds を落として送ること。
 
 using System;
 using Poly_Ling.Data;
@@ -152,6 +164,8 @@ namespace Poly_Ling.Remote
         BoneWeights       = 0x0008,
         VertexFlags       = 0x0010,
         VertexIds         = 0x0020,
+        /// <summary>SubID / PartsID（各頂点 int×2）。VertexIds とは別ブロックで送る。</summary>
+        VertexSubIds      = 0x0040,
 
         // 面系
         FaceIndices       = 0x0100,
@@ -163,7 +177,7 @@ namespace Poly_Ling.Remote
 
         // 複合
         VertexBasic    = Positions | Normals | UVs,
-        AllVertex      = Positions | Normals | UVs | BoneWeights | VertexFlags | VertexIds,
+        AllVertex      = Positions | Normals | UVs | BoneWeights | VertexFlags | VertexIds | VertexSubIds,
         AllFace        = FaceIndices | FaceMaterials | FaceFlags | FaceIds | FaceUVIndices | FaceNormalIndices,
         All            = AllVertex | AllFace,
     }

@@ -183,8 +183,40 @@ namespace Poly_Ling.Player
         private const int SlotFront       = 2;
         private const int SlotSide        = 3;
 
-        // スロットごとのカメラ dirty フラグ（カメラが変化したスロットのみ再カリング）
+        // ================================================================
+        // per-slot カリング再計算の dirty フラグ（2 種類ある。混同しないこと）
+        // ================================================================
+        //
+        // カリング（DispatchCullingForDisplay）の入力は 4 つ。
+        //   ① 全頂点のスクリーン座標（= カメラ行列 × ワールド頂点位置）
+        //   ② FLAG_HIDDEN          … ClearCulledBuffers カーネルが読む
+        //   ③ FLAG_MESH_SELECTED   … ApplyMirrorCull カーネルが読む（ミラー要素のみ）
+        //   ④ ミラー表示設定 / 背面カリング ON-OFF … SetMirrorDisplay と分岐
+        //
+        // ②③④とワールド頂点位置は「内容」側、①のカメラ部分だけが「カメラ」側。
+        // 両者を 1 本のフラグで持つと、カメラ側にしか効かない最適化
+        // （下の CameraChangeAffectsCulling）を内容変更にも誤適用してしまう。
+        // そのため 2 本に分ける。
+
+        /// <summary>
+        /// 内容 dirty。ジオメトリ・可視性フラグ・選択・表示設定が変わった。
+        /// 立った slot は無条件で再カリングする。
+        /// 立てるのは MarkAllSlotsDirty() と SetDisplaySettings() のみ。
+        /// </summary>
+        private readonly bool[] _slotContentDirty = new bool[4] { true, true, true, true };
+
+        /// <summary>
+        /// カメラ dirty。そのビューポートのカメラパラメータが変わった。
+        /// 再カリングするかは CameraChangeAffectsCulling() が判定する。
+        /// 立てるのは NotifyCameraChanged / NotifyCameraMoved / ApplyAndDirtyLinkedOrtho。
+        /// </summary>
         private readonly bool[] _slotCameraDirty = new bool[4] { true, true, true, true };
+
+        // 各 slot で最後にカリングを計算したときのカメラ姿勢と投影種別。
+        // CameraChangeAffectsCulling の比較対象。_slotCullValid が false の間は未計算。
+        private readonly Quaternion[] _slotCullRotation   = new Quaternion[4];
+        private readonly bool[]       _slotCullOrthographic = new bool[4];
+        private readonly bool[]       _slotCullValid      = new bool[4];
 
         // ================================================================
         // ビューポート表示設定（面ごと）
@@ -226,9 +258,12 @@ namespace Poly_Ling.Player
             // 表示設定を起動間で記録（write-through）。
             if (slot >= 0 && slot < 4)
                 RecentPaths.Set(DisplaySettingsKey(slot), s.ToBits().ToString());
-            // 表示設定（カリングON/OFF等）が変わったらカリングバッファを再計算する。
-            if (slot >= 0 && slot < _slotCameraDirty.Length)
-                _slotCameraDirty[slot] = true;
+            // 表示設定（背面カリング ON/OFF、ミラー表示）が変わったらカリングを再計算する。
+            // カメラは動いていないので「内容 dirty」側に立てる。カメラ dirty に立てると
+            // CameraChangeAffectsCulling が「回転が同じ正射影だから不要」と判定して
+            // 再計算が飛ばされ、設定変更が反映されなくなる。
+            if (slot >= 0 && slot < _slotContentDirty.Length)
+                _slotContentDirty[slot] = true;
         }
 
         // ================================================================
@@ -377,13 +412,24 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// メッシュトポロジー変更・モデル切り替え時に呼ぶ。
-        /// 全スロットのカリングを次フレームで強制再計算させる。
+        /// メッシュトポロジー変更・モデル切り替え・頂点移動確定・可視性変更・
+        /// 選択変更・GPU バッファ再構築のあとに呼ぶ。
+        /// 全スロットのカリングを次の PresentAll で強制再計算させる。
+        ///
+        /// 【カメラ dirty ではなく内容 dirty を立てる理由】
+        ///   カメラ dirty は CameraChangeAffectsCulling のフィルタを通る。
+        ///   正射影ビューでカメラ姿勢が変わっていなければ再計算は飛ばされるので、
+        ///   ジオメトリやフラグの変更をカメラ dirty で伝えると取りこぼす。
+        ///
+        /// 【選択変更でも呼ぶ必要がある】
+        ///   ApplyMirrorCull カーネルが FLAG_MESH_SELECTED を読み、
+        ///   永続ミラーの表示可否を選択・非選択で切り替えるため。
+        ///   「選択はカリングに影響しない」は誤り。
         /// </summary>
         public void MarkAllSlotsDirty()
         {
-            for (int i = 0; i < _slotCameraDirty.Length; i++)
-                _slotCameraDirty[i] = true;
+            for (int i = 0; i < _slotContentDirty.Length; i++)
+                _slotContentDirty[i] = true;
         }
 
         /// <summary>
@@ -407,8 +453,17 @@ namespace Poly_Ling.Player
         /// <summary>
         /// Top/Side/Front は Target/WorldHeightPerPixel を共有（連動）するため、
         /// いずれか1つの ortho カメラが変化したら、他2つにも Camera.transform を
-        /// 反映し slot を dirty にする。呼び出し側で PresentAll される前提。
+        /// 反映し slot をカメラ dirty にする。呼び出し側で PresentAll される前提。
         /// changed が ortho でない（Perspective）場合は何もしない。
+        ///
+        /// 【3 面を毎回 dirty にしてよい理由】
+        ///   ここで立てるのはカメラ dirty なので、実際に再カリングするかは
+        ///   PrepareViewport の CameraChangeAffectsCulling が決める。
+        ///   パン・ズームでは（真の正射影である限り）カメラ姿勢が変わらないため
+        ///   再計算は飛ばされる。斜め 45°（RigRotation）・フリップ・パース表示の
+        ///   切り替えは姿勢または投影種別が変わるので必ず拾われる。
+        ///   これらは全て EnterCameraChanged(Committed) を通り、パン・ズームと
+        ///   同じ経路でここへ来るため、入口側では区別できない。判定は使う直前に置く。
         /// </summary>
         private void ApplyAndDirtyLinkedOrtho(PlayerViewport changed)
         {
@@ -517,6 +572,20 @@ namespace Poly_Ling.Player
                 _renderer.UpdateSelectedDrawableMesh(0, model);
                 ApplySnapHitTestEnabled();
             }
+
+            // 【MarkAllSlotsDirty が必須である理由】 2026-08-28
+            //   RebuildAdapter は _adapters[mi].Dispose() のあと
+            //   new UnifiedSystemAdapter() を作る。UnifiedBufferManager ごと
+            //   作り直されるので、per-slot カリングバッファは中身が未定義になる。
+            //   _slotContentDirty を立てないと、2 回目以降のモデルロードで
+            //   カリング結果が前のバッファの残骸のままになる。
+            //   RebuildAdapter を呼ぶ他の入口（EnterSceneReset / EnterUndoApplied /
+            //   EnterTopologyChanged / EnterMeshAttributesChanged）は既に呼んでいる。
+            //   ここだけ抜けていた。
+            MarkAllSlotsDirty();
+            // 4 viewport の Camera.transform を最新のカメラパラメータへ同期する。
+            // 他の重量級入口と同じ組にそろえる。
+            ApplyAllViewportCameraTransforms();
             PresentAll(project);
 #pragma warning restore CS0618
             OnRefreshFaceHoverOverlay?.Invoke();
@@ -637,11 +706,21 @@ namespace Poly_Ling.Player
         /// <summary>
         /// カテゴリ 2'': メッシュ属性のみの変更（可視・ロック）。
         ///
-        /// EnterTopologyChanged と違い RebuildAdapter を呼ばない。
-        /// Hidden / Locked の頂点・線分・面フラグだけを GPU へ書き戻して再描画する。
+        /// 【2つの経路がある】
+        ///   不可視メッシュと空メッシュは GPU バッファに載せない
+        ///   （UnifiedBufferManager.ShouldIncludeInBuffers）。可視が変わると
+        ///   載せる対象そのものが変わり、グローバル頂点／線分／面インデックスが
+        ///   丸ごとずれるため、フラグの書き戻しでは追いつかない。
         ///
-        /// これが無いと、可視の変更が面（SubmitMeshes が毎フレーム MeshContext を見る）
-        /// にだけ効き、頂点と辺（GPU フラグ）に反映されない。
+        ///   載せる集合が変わった  … EnterTopologyChanged と同じ全再構築へ回す。
+        ///   変わっていない        … 従来どおり Hidden / Locked のフラグだけ書き戻す。
+        ///
+        ///   ChangeKind.Attributes はロック変更も含むが、ロックだけなら集合は
+        ///   変わらないので再構築は走らない。
+        ///
+        /// 後者の経路が無いと、面の非表示（Face.IsHidden）の変更が面
+        /// （SubmitMeshes が毎フレーム MeshContext を見る）にだけ効き、
+        /// 頂点と辺に反映されない。
         ///
         /// 契機: 可視性・ロックの変更（ChangeKind.Attributes）。
         /// </summary>
@@ -651,7 +730,33 @@ namespace Poly_Ling.Player
                 PLDiag.ViewportEnter("EnterMeshAttributesChanged", DiagCaller());
 #pragma warning disable CS0618
             var adapter = _renderer?.GetAdapter(0);
-            adapter?.BufferManager?.UpdateAllVisibilityFlags();
+            var model   = project?.CurrentModel;
+
+            // バッファに載せる集合が変わったか。変わっていればインデックス空間が
+            // ずれるので、フラグ書き戻しでは済まない。
+            bool needsRebuild =
+                adapter?.BufferManager != null &&
+                model != null &&
+                adapter.BufferManager.NeedsRebuildForMembership(model);
+
+            if (needsRebuild)
+            {
+                if (_renderer != null)
+                {
+                    // 順序は EnterTopologyChanged と同じ。RebuildAdapter より前に
+                    // UnityMesh を作り直し、末尾の WritebackTransformedVertices に
+                    // 展開ワールド座標で上書きさせる。
+                    RebuildSelectedUnityMeshes(model);
+                    _renderer.RebuildAdapter(0, model);
+                    _renderer.UpdateSelectedDrawableMesh(0, model);
+                    ApplySnapHitTestEnabled();
+                }
+                ApplyAllViewportCameraTransforms();
+            }
+            else
+            {
+                adapter?.BufferManager?.UpdateAllVisibilityFlags();
+            }
 
             MarkAllSlotsDirty();
             PresentAll(project);
@@ -1036,58 +1141,59 @@ namespace Poly_Ling.Player
         //                                  Graphics.DrawMesh 提出のみ。
         // ================================================================
 
-        /// <summary>
-        /// ★★★ 【重大規約違反コード: 旧 API】 ★★★
-        /// 旧 LateTick 経路から毎フレーム呼ばれていた実装。
-        /// 「毎フレームポーリング禁止」規約に違反する。
-        /// Phase 1 では暫定互換のため残置するが、新規コードから呼ぶことは厳禁。
-        /// 代わりに以下を使うこと:
-        ///   - 計算・準備:     PresentAll(project)        (event 駆動)
-        ///   - 描画提出:       SubmitForCamera(cam, proj) (OnRenderObject 経路)
-        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-        /// </summary>
-        public void LateUpdate(ProjectContext project)
-        {
-            if (_renderer == null) return;
-
-            // 毎フレーム RequestNormal + UpdateFrame を呼ぶ。
-            if (_lastParamsValid && _lastCamera != null)
-            {
-                var adapter = _renderer.GetAdapter(0);
-                if (adapter != null && adapter.IsInitialized)
-                {
-                    var rect = new Rect(0, 0, _lastCamera.pixelWidth, _lastCamera.pixelHeight);
-                    adapter.RequestNormal();
-                    adapter.UpdateFrame(_lastCamera, rect, _lastMousePos);
-                }
-            }
-
-            // アクティブビューポートを最後に描画することで、
-            // ComputeScreenPositionsGPU の CPU 読み戻し結果が
-            // GetScreenPositions() から取得できる値になる。
-            DrawViewport(project, PerspectiveViewport, SlotPerspective);
-            DrawViewport(project, TopViewport,         SlotTop);
-            DrawViewport(project, FrontViewport,       SlotFront);
-            DrawViewport(project, SideViewport,        SlotSide);
-
-            // アクティブビューポートのスクリーン座標を最終確定させる。
-            // CommitBoxSelect 等の CPU 側処理が GetScreenPositions() を参照するため。
-            if (_lastParamsValid && _lastCamera != null)
-            {
-                var adapter = _renderer?.GetAdapter(0);
-                if (adapter != null && adapter.IsInitialized)
-                {
-                    int activeSlot = ViewportToSlot(ActiveViewport);
-                    if (activeSlot >= 0)
-                        adapter.DispatchCullingForDisplay(_lastCamera, adapter.BackfaceCullingEnabled, activeSlot);
-                }
-            }
-        }
+        // 【LateUpdate(ProjectContext) を撤去した理由】 2026-08-28
+        //   呼出元 0 件。旧 LateTick 経路（毎フレームポーリング）の名残で、
+        //   内部で RequestNormal + UpdateFrame + DrawViewport ×4 +
+        //   アクティブ slot の最終カリングを行っていた。
+        //   現在の描画は PresentAll（計算・準備）と SubmitForCamera（提出）に
+        //   分離済み。毎フレームポーリングへ戻してはならない。
+        //   同時に、ここからのみ呼ばれていた DrawViewport も撤去した。
 
         // Phase 1: 最後に PresentAll に渡された ProjectContext を保持。
         // NotifyCameraChanged 等の event ハンドラ内で project 引数なしで PresentAll を
         // 再呼出しするために使用する。
         private ProjectContext _lastProjectForPresent;
+
+        // ================================================================
+        // ポインタ移動の間引き（残件 3-1）
+        // ================================================================
+        //
+        // NotifyPointerHover は 1 回で GPU 同期読み戻しを 4 回起こす。
+        // UIToolkit の PointerMoveEvent は OS のマウス移動メッセージごとに発火し、
+        // 高解像度マウスやトラックパッドでは 1 画素未満の移動でも連続して届く。
+        // 同じ画素なら結果は同じなので、そこは丸ごと省く。
+        //
+        // 【安全である根拠】
+        //   ホバー結果はマウス位置だけでなく、カメラ・頂点位置・選択・トポロジにも
+        //   依存する。それらが変わる経路は必ず PresentAll を通るので、
+        //   PresentAll の先頭でこのキャッシュを捨てる。これにより
+        //   「同じ画素だが結果は変わっている」状況で取りこぼすことはない。
+        //   EnterHoverChanged は PresentAll を呼ばないため、純粋なポインタ移動では
+        //   キャッシュは生き続ける。
+        //
+        // 【slot を鍵に含める理由】
+        //   panelLocalPos はパネルローカル座標。ビューポートをまたいで同じ画素へ
+        //   移った場合はカメラが違うので、必ず再計算しなければならない。
+        //
+        // 【承知しているトレードオフ】
+        //   1 画素未満の移動ではホバーをやり直さない。ヒット半径の境界や
+        //   HoverDistanceTolerance(3px) のバンド境界にある要素は、
+        //   切り替わりが最大 1 画素ぶん遅れる。
+        private int _lastHoverSlot = -1;
+        private int _lastHoverPixelX = int.MinValue;
+        private int _lastHoverPixelY = int.MinValue;
+
+        /// <summary>
+        /// ホバー間引きのキャッシュを捨てる。次のポインタ移動は同じ画素でも再計算する。
+        /// ホバー結果に影響し得る変更（カメラ・頂点・選択・トポロジ・表示設定）の
+        /// あとに必ず呼ぶこと。現状の呼び出し箇所は PresentAll の先頭のみ。
+        /// </summary>
+        private void InvalidateHoverDedup()
+        {
+            _lastHoverSlot   = -1;
+            _lastHoverPixelX = int.MinValue;
+            _lastHoverPixelY = int.MinValue;
+        }
 
         /// <summary>
         /// 【event 駆動で呼ぶ】全 slot の描画準備（計算・Prepare）を一括実行する。
@@ -1109,6 +1215,11 @@ namespace Poly_Ling.Player
             if (_renderer == null) return;
             _lastProjectForPresent = project;
 
+            // ここへ来たということは、カメラ・頂点位置・選択・トポロジ・表示設定の
+            // いずれかが変わった可能性がある。ホバー間引きのキャッシュを捨てて、
+            // 次のポインタ移動が同じ画素でも必ず再計算されるようにする。
+            InvalidateHoverDedup();
+
             if (_lastParamsValid && _lastCamera != null)
             {
                 var adapter = _renderer.GetAdapter(0);
@@ -1118,7 +1229,7 @@ namespace Poly_Ling.Player
 
                     // 診断: ここの UpdateFrame は「キャッシュされたマウス位置」で
                     // ヒットテストを再実行する。ポインタが動いていなくても、
-                    // adapter.BackfaceCullingEnabled が PrepareViewport / DrawViewport で
+                    // adapter.BackfaceCullingEnabled が PrepareViewport で
                     // slot ごとに上書きされた残留値になっているため、結果が入れ替わりうる。
                     // 前後を記録し、NotifyPointerHover 経由でない入れ替わりはダンプする。
                     int pv = adapter.HoverVertexIndex;
@@ -1155,6 +1266,13 @@ namespace Poly_Ling.Player
             PrepareViewport(project, SideViewport,        SlotSide);
 
             // アクティブビューポートのスクリーン座標を最終確定させる。
+            //
+            // 【readback: true にする唯一の箇所】
+            //   矩形選択・投げ縄選択（MoveToolHandler）と、ウェイトペイントの
+            //   ブラシ判定が GetScreenPositions() を読む。その値をここで
+            //   アクティブビューポートのカメラに合わせて確定させる。
+            //   上の PrepareViewport 4 回はすべて readback: false なので、
+            //   _screenPositions が他 slot のカメラで汚されることはない。
             if (_lastParamsValid && _lastCamera != null)
             {
                 var adapter = _renderer?.GetAdapter(0);
@@ -1162,7 +1280,15 @@ namespace Poly_Ling.Player
                 {
                     int activeSlot = ViewportToSlot(ActiveViewport);
                     if (activeSlot >= 0)
-                        adapter.DispatchCullingForDisplay(_lastCamera, adapter.BackfaceCullingEnabled, activeSlot);
+                    {
+                        // 背面カリングの ON/OFF は「そのビューポートの設定」を渡す。
+                        // adapter.BackfaceCullingEnabled は直前の PrepareViewport
+                        // （= 最後に処理した Side ビュー）の値が残っているだけで、
+                        // アクティブビューの設定とは限らない。
+                        adapter.DispatchCullingForDisplay(
+                            _lastCamera, _displaySettings[activeSlot].BackfaceCulling,
+                            activeSlot, readback: true);
+                    }
                 }
             }
         }
@@ -1431,6 +1557,24 @@ namespace Poly_Ling.Player
             // 性能ログ: ポインタ移動 1 件を数える。記録 OFF なら bool 判定 1 回で戻る。
             PLPerfLog.CountHover();
 
+            // 同一画素なら丸ごと省く（詳細は _lastHoverPixelX の宣言部）。
+            // ここから先は GPU 同期読み戻しを 4 回起こすため、
+            // 判定は必ず adapter 取得より前に行う。
+            {
+                int hoverSlotForDedup = ViewportToSlot(vp);
+                int px = Mathf.RoundToInt(panelLocalPos.x);
+                int py = Mathf.RoundToInt(panelLocalPos.y);
+                if (hoverSlotForDedup == _lastHoverSlot
+                 && px == _lastHoverPixelX
+                 && py == _lastHoverPixelY)
+                {
+                    return;
+                }
+                _lastHoverSlot   = hoverSlotForDedup;
+                _lastHoverPixelX = px;
+                _lastHoverPixelY = py;
+            }
+
             var cam = vp.Cam;
 
             var adapter = _renderer?.GetAdapter(0);
@@ -1447,8 +1591,8 @@ namespace Poly_Ling.Player
             SyncToolCtx(vp);
 
             // ヒットテストに使う BackfaceCullingEnabled をこのビューポートの設定に同期する。
-            // DrawViewport は複数ビューポートを順番に処理するため、最後に処理した
-            // ビューポートの設定が adapter に残ってしまう。
+            // PresentAll は 4 つのビューポートを順番に PrepareViewport へ通すため、
+            // 最後に処理したビューポートの設定が adapter に残ってしまう。
             int hoverSlot = ViewportToSlot(vp);
             if (hoverSlot >= 0)
                 adapter.BackfaceCullingEnabled = _displaySettings[hoverSlot].BackfaceCulling;
@@ -1595,13 +1739,18 @@ namespace Poly_Ling.Player
             if (adapter == null || !adapter.IsInitialized) return null;
 
             // 【重要】自前で再計算しない。
-            // 線分表示・ホバーテストが正しく使っているのと同一の面カリング結果
-            // (_FaceCulledBuffer[slot0]) をそのまま読む。slot0 はホバー/表示パイプラインが
-            // アクティブビューのカメラで毎回算出・維持しているスクラッチスロットであり、
+            // ホバーテストが使っているのと同一の面カリング結果をそのまま読む。
+            // 参照先はヒットテスト専用 slot（HitTestSlot）。ホバー経路が
+            // 「今ポインタが乗っているビューポート」のカメラで毎回算出・維持しており、
             // 切断が行われるアクティブビューのカリングと一致する。
-            // （旧実装は DispatchCullingForDisplay で別カメラ/行列/ビューポート矩形で
+            //
+            // 2026-08-28: 以前はここが slot 0 だった。slot 0 は Perspective ビューの
+            // 表示用でもあり、ホバー経路との共用が Perspective の表示破壊を招いていた。
+            // 用途を分離したのに合わせて参照先も移した。意味は変えていない。
+            //
+            // （さらに旧実装は DispatchCullingForDisplay で別カメラ/行列/ビューポート矩形で
             //   再計算しており、表示と食い違って前面が裏面扱いになっていた。）
-            const int slot = 0;
+            const int slot = Poly_Ling.Core.UnifiedBufferManager.HitTestSlot;
             adapter.ReadBackFaceCulled(slot);
 
             int unifiedIdx = adapter.ContextToUnifiedMeshIndex(contextMeshIndex);
@@ -2295,8 +2444,16 @@ namespace Poly_Ling.Player
         /// <summary>
         /// スカルプトブラシ用ヒットテスト。
         /// Normal モード（ドラッグなし）: UpdateFrame 算出済みの HoverVertexIndex を再利用（二重計算なし）。
-        /// TransformDragging 中: _screenPositions（DrawViewport で毎イベント更新済み）から直接検索し
-        ///   ブラシ中心をマウスに追従させる。
+        /// TransformDragging 中: _screenPositions から直接検索してブラシ中心をマウスに追従させる。
+        ///
+        /// 【_screenPositions の更新元について（2026-08-28 訂正）】
+        ///   旧コメントは「DrawViewport が毎イベント更新済み」と書いていたが、
+        ///   DrawViewport は呼出元 0 件の死んだ経路で、撤去した。
+        ///   実際の更新元は PresentAll 末尾のアクティブ slot 最終確定
+        ///   （DispatchCullingForDisplay(readback: true)）ただ 1 か所である。
+        ///   EnterVerticesMoved の Dragging フェーズで syncMc != null の軽量経路を
+        ///   通る間は PresentAll を呼ばないため、_screenPositions はドラッグ開始時の
+        ///   値のまま据え置かれる。これは本変更で生じたものではなく従来からの挙動。
         /// </summary>
         public PlayerHitResult GetBrushHit(Vector2 screenPos, float hitRadius)
         {
@@ -2401,28 +2558,31 @@ namespace Poly_Ling.Player
 
             // ToUnityMesh/ToUnityMeshShared と同じ展開順序でUnityMesh頂点を更新する。
             // 孤立頂点を除外し、頂点順 → UV順 で展開。
+            //
+            // 【以前ここだけ規則が違っていた】
+            //   孤立頂点の判定に face.IsHidden を含めていたため、面を非表示に
+            //   すると ToUnityMesh / GPU 展開バッファと展開頂点数が食い違った。
+            //   面の非表示は編集補助であり、展開 index 空間を変えてはならない。
+            //   現在は MeshExpansion に一本化してある。
             var mo = mc.MeshObject;
-            var nonIsolated = new System.Collections.Generic.HashSet<int>();
-            foreach (var face in mo.Faces)
-            {
-                if (face.VertexCount < 3 || face.IsHidden) continue;
-                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
-            }
 
-            int unityIdx = 0;
             int totalUnity = mc.UnityMesh.vertexCount;
-            var unityVerts = new UnityEngine.Vector3[totalUnity];
-
-            for (int vIdx = 0; vIdx < mo.Vertices.Count && unityIdx < totalUnity; vIdx++)
+            int expectedExpanded = Poly_Ling.MeshBridge.MeshExpansion.CountExpanded(mo);
+            if (expectedExpanded != totalUnity)
             {
-                if (!nonIsolated.Contains(vIdx)) continue;
-                var vertex = mo.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-
-                UnityEngine.Vector3 pos = mc.WorldMatrix.MultiplyPoint3x4(vertex.Position);
-                for (int uvIdx = 0; uvIdx < uvCount && unityIdx < totalUnity; uvIdx++, unityIdx++)
-                    unityVerts[unityIdx] = pos;
+                // UnityMesh と MeshObject の位相が食い違っている。このまま書くと
+                // 別の頂点へ座標を入れるので何もしない。作り直しは
+                // EnterTopologyChanged（RebuildSelectedUnityMeshes）の責務。
+                return;
             }
+
+            var unityVerts = new UnityEngine.Vector3[totalUnity];
+            var worldMatrix = mc.WorldMatrix;
+
+            Poly_Ling.MeshBridge.MeshExpansion.Enumerate(mo, (vIdx, uvIdx, expIdx) =>
+            {
+                unityVerts[expIdx] = worldMatrix.MultiplyPoint3x4(mo.Vertices[vIdx].Position);
+            });
 
             mc.UnityMesh.vertices = unityVerts;
             mc.UnityMesh.RecalculateBounds();
@@ -2608,6 +2768,55 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
+        /// カメラパラメータの変化が、この slot のカリング結果を変え得るかを返す。
+        /// false を返せる場合だけ DispatchCullingForDisplay を省略できる。
+        ///
+        /// 【false を返してよい根拠】
+        ///   面の表裏は UnifiedCompute.compute の ComputeFaceVisibility が
+        ///   スクリーン空間の符号付き面積（ショエレース公式）の**符号だけ**で決める。
+        ///   真の正射影では
+        ///     ・パン         … スクリーン空間の平行移動
+        ///     ・ズーム       … スクリーン空間の正の一様拡大
+        ///   のいずれも符号を変えない。よってカメラ姿勢が同じなら結果は同一になる。
+        ///   線分カリング（ComputeLineVisibility）は _FaceCulledBuffer に従属するので
+        ///   同じ結論。頂点カリングも ComputeFaceVisibility が書く。
+        ///
+        /// 【true を返さなければならない場合】
+        ///   ・透視投影（Perspective ビュー、および 3 面の「パース表示」ON）
+        ///       平行移動でも視線が変わり、符号が変わり得る。
+        ///   ・カメラ姿勢が変わった
+        ///       Perspective のオービット、3 面の斜め 45°（RigRotation）、
+        ///       フリップ（Top↔Bottom 等）が該当する。
+        ///   ・この slot でまだ一度もカリングを計算していない
+        ///   ・前回は透視で今回は正射影（またはその逆）
+        ///
+        /// 【この判定はカメラ dirty にしか使えない】
+        ///   ジオメトリ・FLAG_HIDDEN・FLAG_MESH_SELECTED・ミラー表示設定・
+        ///   背面カリング ON-OFF の変更はカメラと無関係に結果を変える。
+        ///   それらは _slotContentDirty 側で扱い、本判定を通さない。
+        /// </summary>
+        private bool CameraChangeAffectsCulling(int slot, Camera cam)
+        {
+            if (cam == null) return true;
+            if (slot < 0 || slot >= _slotCullValid.Length) return true;
+
+            // まだ一度も計算していない slot は比較対象が無い。
+            if (!_slotCullValid[slot]) return true;
+
+            // 透視投影は平行移動でも符号が変わり得る。
+            if (!cam.orthographic) return true;
+
+            // 投影種別が切り替わった（パース表示トグル等）。
+            if (!_slotCullOrthographic[slot]) return true;
+
+            // 姿勢が変わっていなければ、パン・ズームだけの変化とみなせる。
+            // しきい値は「同一値の再計算による浮動小数点の揺れ」を吸収する程度に取る。
+            const float RotationEpsilonDeg = 1e-3f;
+            return Quaternion.Angle(_slotCullRotation[slot], cam.transform.rotation)
+                   > RotationEpsilonDeg;
+        }
+
+        /// <summary>
         /// 【event 駆動・内部】指定 slot の描画準備（計算・Prepare）を実行する。
         /// display settings の適用・カリング Dispatch・CPU Mesh 再構築・Queue 登録を行う。
         /// Submit は一切行わない（そちらは SubmitForCamera が担当）。
@@ -2643,6 +2852,10 @@ namespace Poly_Ling.Player
             _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;
             _renderer.ShowNormals               = ds.ShowNormals;
 
+            // くさび（ボーン／メッシュ原点マーカー）の大きさは 4 面共通のため
+            // ViewportDisplaySettings ではなく ViewportGridSettings から取る。
+            _renderer.BoneMarkerScale           = _gridSettings.BoneMarkerScale;
+
             // adapter の BackfaceCullingEnabled もここで同期する
             // （DispatchCullingForDisplay の引数に使用するため）。
             adapter.BackfaceCullingEnabled = ds.BackfaceCulling;
@@ -2650,14 +2863,42 @@ namespace Poly_Ling.Player
             // 永続ミラーの per-slot 表示状態を bufMgr へ設定する。
             // （直後の DispatchCullingForDisplay(slot) と、後段のアクティブ slot 最終カリングが
             //   slot ごとの正しい値を参照できるようにするため。）
-            adapter.BufferManager?.SetMirrorDisplay(slot, ds.ShowSelectedMirror, ds.ShowUnselectedMirror);
+            // 選択側は UI トグルを持たず選択 Mesh に従属するため、頂点・辺に同じ値を渡す。
+            // 非選択側は WithMirrorClamped が親（ShowUnselectedMirror）を既に反映済みなので、
+            // ここでは子の値をそのまま渡す。AND を二重に書かない。
+            adapter.BufferManager?.SetMirrorDisplay(
+                slot,
+                ds.ShowSelectedMirror,           ds.ShowSelectedMirror,
+                ds.ShowUnselectedMirrorVertices, ds.ShowUnselectedMirrorWireframe);
 
-            // カメラが変化したスロットのみ per-slot カリングを再計算する。
-            if (_slotCameraDirty[slot])
+            // ここが per-slot カリングを発行する唯一の場所。
+            //
+            // 再計算する条件:
+            //   ・内容 dirty       … 無条件で再計算
+            //   ・カメラ dirty     … カリング結果が変わり得るときだけ再計算
+            //
+            // readback は既定の false。ここで読み戻すと 4 slot ぶんの
+            // GetData が走り、しかも単一配列 _screenPositions を
+            // 最後の slot のカメラで上書きしてしまう。
+            // CPU が読む値は PresentAll 末尾の最終確定 1 回で作る。
+            bool recomputeCulling =
+                _slotContentDirty[slot]
+                || (_slotCameraDirty[slot] && CameraChangeAffectsCulling(slot, cam));
+
+            if (recomputeCulling)
             {
                 adapter.DispatchCullingForDisplay(cam, adapter.BackfaceCullingEnabled, slot);
-                _slotCameraDirty[slot] = false;
+
+                // 次回の比較用に、いま計算に使ったカメラ姿勢と投影種別を控える。
+                _slotCullRotation[slot]     = cam.transform.rotation;
+                _slotCullOrthographic[slot] = cam.orthographic;
+                _slotCullValid[slot]        = true;
             }
+
+            // 判定が済んだら両方とも降ろす。飛ばした場合も、飛ばした根拠は
+            // 「カリング結果が変わらない」なので持ち越す必要はない。
+            _slotContentDirty[slot] = false;
+            _slotCameraDirty[slot]  = false;
 
             // Prepare 系のみ呼び出す。Submit は OnRenderObject / SubmitForCamera で行う。
             // PrepareNormals は PrepareWireframeAndVertices より前に呼ぶこと。
@@ -2671,41 +2912,8 @@ namespace Poly_Ling.Player
             _renderer.PrepareBones(project);
         }
 
-        /// <summary>
-        /// 【重大規約違反コード: 旧 API】
-        /// LateUpdate 経路で使われていた per-slot の描画呼び出し。
-        /// 新規コードは PrepareViewport + SubmitForCamera を使うこと。
-        /// </summary>
-        private void DrawViewport(ProjectContext project, PlayerViewport vp, int slot)
-        {
-            if (vp == null || !vp.IsReady) return;
-            var cam     = vp.Cam;
-            var adapter = _renderer?.GetAdapter(0);
-            if (adapter == null || !adapter.IsInitialized) return;
-
-            var ds = _displaySettings[slot];
-            _renderer.BackfaceCullingEnabled    = ds.BackfaceCulling;
-            _renderer.ShowSelectedMesh          = ds.ShowSelectedMesh;
-            _renderer.ShowSelectedWireframe     = ds.ShowSelectedWireframe;
-            _renderer.ShowSelectedVertices      = ds.ShowSelectedVertices;
-            _renderer.ShowSelectedBone          = ds.ShowSelectedBone;
-            _renderer.ShowUnselectedMesh        = ds.ShowUnselectedMesh;
-            _renderer.ShowUnselectedWireframe   = ds.ShowUnselectedWireframe;
-            _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
-            _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
-
-            adapter.BackfaceCullingEnabled = ds.BackfaceCulling;
-
-            if (_slotCameraDirty[slot])
-            {
-                adapter.DispatchCullingForDisplay(cam, adapter.BackfaceCullingEnabled, slot);
-                _slotCameraDirty[slot] = false;
-            }
-
-            _renderer.DrawMeshes(project, cam);
-            _renderer.DrawWireframeAndVertices(cam, project, slot);
-            _renderer.DrawBones(project, cam);
-            _renderer.DrawWeightVisualization(project, cam);
-        }
+        // 【DrawViewport を撤去した理由】 2026-08-28
+        //   唯一の呼出元だった LateUpdate と一緒に死んでいた。
+        //   per-slot の準備は PrepareViewport、提出は SubmitForCamera が担う。
     }
 }

@@ -422,6 +422,18 @@ namespace Poly_Ling.Serialization
         /// <summary>頂点ID（モーフ追跡等に使用）</summary>
         public int id;
 
+        /// <summary>
+        /// サブID（部品ローカルなインデックス）。0 = 未設定。
+        /// この項目が無い旧データを読んだときは 0 のままになる。
+        /// </summary>
+        public int sid;
+
+        /// <summary>
+        /// 部品ID（オブジェクト内の部品を表すグループ番号）。0 = 未設定。
+        /// この項目が無い旧データを読んだときは 0 のままになる。
+        /// </summary>
+        public int pid;
+
         /// <summary>位置 [x, y, z]</summary>
         public float[] p;
 

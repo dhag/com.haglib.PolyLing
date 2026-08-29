@@ -228,7 +228,71 @@ namespace Poly_Ling.Serialization
                 }
             }
 
+            // 作業軸辞書（プロジェクト単位。規約4：CSV/JSON 対称）
+            projectDTO.workAxisLibrary = ToWorkAxisLibraryData(project.WorkAxes);
+
             return projectDTO;
+        }
+
+        // ================================================================
+        // 変換: 作業軸辞書
+        // ================================================================
+
+        /// <summary>
+        /// WorkAxisLibrary を DTO のリストへ。登録順を保つ。
+        /// </summary>
+        public static List<WorkAxisEntryDTO> ToWorkAxisLibraryData(WorkAxisLibrary lib)
+        {
+            var list = new List<WorkAxisEntryDTO>();
+            if (lib == null) return list;
+
+            foreach (var name in lib.Names)
+            {
+                if (!lib.TryGet(name, out var e)) continue;
+
+                list.Add(new WorkAxisEntryDTO
+                {
+                    name     = name,
+                    origin   = new float[] { e.Origin.x, e.Origin.y, e.Origin.z },
+                    rotation = new float[] { e.Rotation.x, e.Rotation.y, e.Rotation.z, e.Rotation.w },
+                    length   = e.Length,
+                });
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// DTO のリストを WorkAxisLibrary へ流し込む。読み込み前に Clear する。
+        /// 壊れた要素は読み飛ばす（WorkAxisLibraryCsvIO.Load と同じ扱い）。
+        /// </summary>
+        public static void ApplyToWorkAxisLibrary(List<WorkAxisEntryDTO> list, WorkAxisLibrary lib)
+        {
+            if (lib == null) return;
+
+            lib.Clear();
+            if (list == null) return;
+
+            foreach (var d in list)
+            {
+                if (d == null) continue;
+                if (WorkAxisLibrary.Normalize(d.name).Length == 0) continue;
+                if (d.origin   == null || d.origin.Length   < 3) continue;
+                if (d.rotation == null || d.rotation.Length < 4) continue;
+
+                var q = new Quaternion(d.rotation[0], d.rotation[1], d.rotation[2], d.rotation[3]);
+                // 単位クォータニオンでないと姿勢として使えない。ゼロ長は捨てる。
+                if (q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w < 1e-8f) continue;
+                q.Normalize();
+
+                lib.Set(d.name, new WorkAxisEntry
+                {
+                    Origin   = new Vector3(d.origin[0], d.origin[1], d.origin[2]),
+                    Rotation = q,
+                    // 0 以下は WorkAxisContext.Length の下限クランプで
+                    // 使い物にならない長さになるため既定値へ倒す。
+                    Length   = d.length > 0f ? d.length : WorkAxisContext.DefaultLength,
+                });
+            }
         }
 
         /// <summary>
@@ -259,6 +323,10 @@ namespace Poly_Ling.Serialization
             {
                 project.Models.Add(new ModelContext("Model"));
             }
+
+            // 作業軸辞書（項目が無い旧データでは空のまま）
+            if (project.WorkAxes == null) project.WorkAxes = new WorkAxisLibrary();
+            ApplyToWorkAxisLibrary(projectDTO.workAxisLibrary, project.WorkAxes);
 
             // CurrentModelIndex を設定
             project.CurrentModelIndex = 0;

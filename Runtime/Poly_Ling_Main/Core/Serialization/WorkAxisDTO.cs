@@ -43,4 +43,29 @@ namespace Poly_Ling.Serialization
             };
         }
     }
+
+    /// <summary>
+    /// 作業軸辞書（WorkAxisLibrary）の 1 件ぶんのDTO。
+    ///
+    /// ProjectDTO.workAxisLibrary に登録順で並ぶ。CSV 側は
+    /// workaxis_library.csv（WorkAxisLibraryCsvIO）が同じ値を持つ（規約4: CSV/JSON 対称）。
+    ///
+    /// 表示フラグ（WorkAxisDTO.isVisible）は辞書には入らない。
+    /// 呼び出しで書き戻すのは Origin / Rotation / Length だけ（WorkAxisEntry.ApplyTo 参照）。
+    /// </summary>
+    [Serializable]
+    public class WorkAxisEntryDTO
+    {
+        /// <summary>登録名（辞書のキー）</summary>
+        public string name;
+
+        /// <summary>原点（ワールド座標）[x, y, z]</summary>
+        public float[] origin;
+
+        /// <summary>回転（クォータニオン）[x, y, z, w]</summary>
+        public float[] rotation;
+
+        /// <summary>軸長（ワールド単位）</summary>
+        public float length = 1f;
+    }
 }

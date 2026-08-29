@@ -73,7 +73,18 @@ namespace Poly_Ling.Core
         /// <summary>GPU頂点フラグのCPU読み戻しを実行するか</summary>
         public readonly bool AllowVertexFlagsReadback;
 
-        /// <summary>GPU可視性計算（背面カリング等）を実行するか</summary>
+        /// <summary>
+        /// GPU可視性計算（背面カリング等）を実行するか。
+        ///
+        /// 【現在の読み手は 0 件】 2026-08-28
+        ///   唯一の読み手だった MeshSceneRenderer.PrepareWireframeAndVertices の
+        ///   cullSubmit ブロックを撤去したため。カリングは
+        ///   PlayerViewportManager.PrepareViewport が slot ごとの dirty 判定に基づいて
+        ///   UnifiedSystemAdapter.DispatchCullingForDisplay へ 1 本化して発行する。
+        ///   プロファイル 6 フラグの構造を崩さないためフィールドは残してある。
+        ///   カリングの実行可否をモードで切り替えたくなった場合も、判断は
+        ///   PrepareViewport 側に置くこと（モードは slot を知らないため）。
+        /// </summary>
         public readonly bool AllowGpuVisibility;
 
         /// <summary>非選択メッシュのワイヤーフレーム/頂点を描画するか</summary>
@@ -135,14 +146,43 @@ namespace Poly_Ling.Core
         );
 
         /// <summary>
-        /// カメラドラッグ中: 全スキップ
+        /// カメラドラッグ中: 重い再計算は全スキップ。
         /// シェーダーがカメラ行列で変換するため再計算不要。
+        ///
+        /// 【allowUnselectedOverlay を true に変えた理由】 2026-08-28
+        ///   以前は false で、視点移動中だけ非選択メッシュの頂点・辺が消えていた。
+        ///   ユーザー設定（ViewportDisplaySettings.ShowUnselectedWireframe /
+        ///   ShowUnselectedVertices）が true でも、
+        ///   MeshSceneRenderer が profile.AllowUnselectedOverlay と AND を取るため
+        ///   強制的に抑止されていた。表示されるのを既定に戻す。
+        ///
+        ///   抑止しても軽くならない。UnifiedSystemAdapter.PrepareDrawing で
+        ///   showUnselected* が効くのは QueueWireframe / QueuePoints の引数、
+        ///   すなわちキュー登録の可否だけである。重い
+        ///   UpdateWireframeMeshUnselected / UpdatePointMeshUnselected は
+        ///   allowMeshRebuild が制御しており、こちらは false のまま。
+        ///   よってこの変更で増えるのは Graphics.DrawMesh の提出 1 本ぶんで、
+        ///   メッシュ再構築は一切増えない。
+        ///
+        ///   非表示に戻したい場合は ViewportDisplaySettings 側で切ること。
+        ///   ここを false に戻すと、ユーザー設定が視点移動中だけ無視される
+        ///   元の状態に戻る。
+        ///
+        /// 【TransformDragging を同時に変えてはならない】
+        ///   頂点ドラッグ中は ProcessTransformUpdateSelectedOnly が選択メッシュしか
+        ///   位置更新しないため、非選択側を出すと古い位置のまま残る。
+        ///   視点移動とは事情が違う。
+        ///
+        /// 【矩形選択・投げ縄選択もこのプロファイルを流用している】
+        ///   PlayerViewportManager.EnterBoxSelecting が EnterCameraDragging を呼ぶため。
+        ///   したがって囲んでいる最中も非選択の頂点・辺が見えるようになる。
+        ///   分けたくなったら矩形選択専用のモードを起こすこと。
         /// </summary>
         public static UpdateModeProfile CameraDragging => new UpdateModeProfile(
             allowHitTest: false,
             allowVertexFlagsReadback: false,
             allowGpuVisibility: false,
-            allowUnselectedOverlay: false,
+            allowUnselectedOverlay: true,
             allowMeshRebuild: false,
             allowSelectedDrawableMeshSync: false
         );

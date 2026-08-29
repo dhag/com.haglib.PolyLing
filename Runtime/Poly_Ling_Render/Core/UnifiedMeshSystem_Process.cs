@@ -126,13 +126,43 @@ namespace Poly_Ling.Core
                 _cameraTarget,
                 _viewport);
 
-            _bufferManager.ComputeScreenPositions(viewProjection, _viewport);
+            // ============================================================
+            // 【スクリーン座標をここで計算しない理由】 2026-08-28（残件 3-3）
+            //
+            //   ExecuteUpdates は Topology / Transform / Camera のどの分岐でも
+            //   ProcessCameraUpdate() の直後に ProcessMouseUpdate() を呼ぶ。
+            //   ProcessMouseUpdate は GPU 版 ComputeScreenPositionsGPU で
+            //   _screenPositions / _screenPositions4 を上書きするため、
+            //   ここで CPU 版を回しても結果は必ず捨てられていた。
+            //   全頂点ぶんの投影計算を CPU と GPU で二重に行っていたことになる。
+            //
+            //   ただし後段の GPU 版が走らない条件が 2 つある。そのときだけ
+            //   CPU 版を回す。ここを外すと _screenPositions が古いまま残り、
+            //   矩形選択・投げ縄選択・ウェイトペイントのブラシ判定が
+            //   前フレームの座標で行われる。
+            //
+            //     ・SuppressHover == true
+            //         ProcessMouseUpdate がホバーを消して早期 return する。
+            //         ブラシ系ツール（SkinWeightPaint 等）がこの状態になる。
+            //     ・GPU が使えない、または GPU ヒットテストが無効
+            //         ProcessMouseUpdate が CPU 版ヒットテストへ分岐する。
+            //         CPU 版は _screenPositions を「読むだけ」で埋めない。
+            //
+            //   条件式は ProcessMouseUpdate の分岐と一字一句そろえること。
+            //   片方だけ変えると座標が誰にも埋められないフレームが生まれる。
+            // ============================================================
+            bool gpuWillRecomputeScreenPositions =
+                !SuppressHover
+                && _bufferManager.GpuComputeAvailable
+                && _useGpuHitTest;
 
-            // ミラースクリーン座標も計算
-            if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
-            {
-                _bufferManager.ComputeMirrorScreenPositions(viewProjection, _viewport);
-            }
+            if (!gpuWillRecomputeScreenPositions)
+                _bufferManager.ComputeScreenPositions(viewProjection, _viewport);
+
+            // ミラースクリーン座標の CPU 計算（ComputeMirrorScreenPositions）は撤去した。
+            // 出力先 _mirrorScreenPosBuffer を ComputeShader へ渡す箇所が 0 件で、
+            // 誰も読まない計算だった。GPU が使うミラースクリーン座標は
+            // ComputeScreenPositions カーネルが _UseMirror > 0 のときに直接埋める。
         }
 
         /// <summary>
@@ -179,24 +209,44 @@ namespace Poly_Ling.Core
                 // 正しい順序でGPU計算を実行
                 // ★注意: DispatchClearBuffersGPUは_VertexFlagsBuffer等を全クリアする。
                 //   フルパイプライン外（cpuOnly=true）では絶対に実行してはならない。
+                // ============================================================
+                // 【この経路が書き込む slot は HitTestSlot ただ 1 つ】 2026-08-28
+                //
+                //   使うカメラは「今ポインタが乗っているビューポート」のもの。
+                //   ビューポート表示用の slot 0〜3 へ書くと、別のビューポートの
+                //   カメラで計算した結果がそのビューの表示用カリングになる。
+                //   以前は slot 0（= Perspective 表示用）を共用しており、
+                //   Top ビュー上でマウスを動かすと Perspective の表示が壊れていた。
+                //
+                //   ここを表示用 slot へ戻してはならない。
+                // ============================================================
+                const int hitSlot = Poly_Ling.Core.UnifiedBufferManager.HitTestSlot;
+
                 _bufferManager.DispatchClearBuffersGPU();
                 // per-slot カリングバッファを「全カリング済み=1u」に初期化する。
-                // 4画面対応で per-slot バッファが導入されたため必須。
                 // この呼び出しがないと DispatchFaceVisibilityGPU が書き込む前の
                 // 不定値（または前フレームの残留値）がカリング判定に使われ、
                 // 常にカリング済みと判定されてしまう。
-                _bufferManager.DispatchClearCulledBuffersGPU(0);
-                _bufferManager.ComputeScreenPositionsGPU(viewProjection, _viewport, 0, "hover");
+                _bufferManager.DispatchClearCulledBuffersGPU(hitSlot);
+                // readback: true。直後の FindNearestVertexFromGPU / FindNearestLineFromGPU が
+                // _screenPositions を読んでスクリーン距離のバンド量子化に使うため、
+                // この経路だけは同期読み戻しが要る。
+                _bufferManager.ComputeScreenPositionsGPU(
+                    viewProjection, _viewport, hitSlot, "hover", readback: true);
                 if (_backfaceCullingEnabled)
                 {
-                    _bufferManager.DispatchFaceVisibilityGPU();
-                    _bufferManager.DispatchLineVisibilityGPU();
+                    _bufferManager.DispatchFaceVisibilityGPU(hitSlot);
+                    _bufferManager.DispatchLineVisibilityGPU(hitSlot);
                 }
                 else
                 {
                     // カリングOFF: 全頂点・辺・面を可視（0u）に設定
-                    _bufferManager.ClearCulledFlagsGPU(0);
+                    _bufferManager.ClearCulledFlagsGPU(hitSlot);
                 }
+
+                // 永続ミラーの表示トグル（ApplyMirrorCull）はここでは適用しない。
+                // 非表示にしているミラーでも吸着・ナイフ等の判定対象に残す必要があるため。
+                // 表示側の抑止は slot 0〜3 の DispatchCullingForDisplay が行う。
                 _bufferManager.DispatchVertexHitTestGPU(_mousePosition, _hitRadius, _backfaceCullingEnabled);
                 _bufferManager.DispatchLineHitTestGPU(_mousePosition, _hitRadius, _backfaceCullingEnabled);
                 _bufferManager.DispatchFaceHitTestGPU(_mousePosition, _backfaceCullingEnabled);
@@ -530,50 +580,25 @@ namespace Poly_Ling.Core
         }
 
         // ============================================================
-        // 軽量ホバー更新パス
+        // 軽量ホバー更新パス（撤去済み） 2026-08-28
         // ============================================================
         //
-        // 【背景と経緯】
-        // 通常のホバー更新はUpdateFrame（Repaintイベント時、AllowHitTest=true時のみ）で行われる。
-        // しかしワンショット方式（Normal→Idle自動降格）により、Idle時はAllowHitTest=falseとなり
-        // UpdateFrame全体がスキップされ、_hoveredVertexIndex等が凍結する。
+        // 【ProcessHoverOnly を撤去した理由】
+        //   唯一の呼出元だった UnifiedSystemAdapter.UpdateHoverOnly(Vector2, Rect) の
+        //   呼出元が 0 件で、経路全体が死んでいた。本体は無条件の
+        //   Debug.LogError("cpuOnly: trueは禁止") を含んでおり、生きていれば
+        //   毎回エラーを吐く実装だった（残件 5-2）。
         //
-        // この凍結により「マウス直下の要素」が古いまま残り、以下の問題が発生した:
-        //   - OnMouseDownでホバー結果から_hitResultOnMouseDownを構築 → 古い要素を参照
-        //   - クリック+ドラッグ=選択同時移動が失敗（頂点がない位置でもヒット判定される等）
-        //   - Shift+新頂点クリック+ドラッグで新頂点が取り残される
+        //   Player の正規ホバー経路は
+        //   PlayerViewportPanel.OnPointerHover
+        //     → PlayerViewportManager.NotifyPointerHover
+        //     → UnifiedSystemAdapter.UpdateFrame
+        //     → ProcessMouseUpdate(cpuOnly: false)
+        //   であり、GPU ヒットテストで完結する。
+        //   CPU ヒットテストへ戻す軽量パスを再び作ってはならない。
         //
-        // 【解決策】
-        // MouseMoveイベント時（かつプレビューエリア内のみ）に、ヒットテストだけを実行する
-        // 軽量パスを追加した。フルパイプライン（Topology/Transform/Selection/Camera全更新）は不要で、
-        // ProcessMouseUpdate（CPU/GPUヒットテスト）のみを実行する。
-        //
-        // 【★★★ 禁忌（絶対厳守） ★★★】
-        // このメソッドをRepaintイベントやUpdate/OnGUIの毎フレーム処理から呼んではならない。
-        // MouseMoveイベント（ユーザーがマウスを実際に動かした時のみ発火）専用である。
-        // 毎フレーム呼び出すとGPUヒットテストが毎フレーム走り、パフォーマンスが劣化する。
-        //
-        // 呼び出し元: UnifiedSystemAdapter.UpdateHoverOnly()
-        //           → PolyLing_Input.UpdateHoverOnMouseMove()（MouseMoveイベント内）
-        // ★★★★★★★★★★★★★★★★★★★★
-
-        /// <summary>
-        /// ホバー専用の軽量更新
-        /// マウス位置を設定し、ヒットテスト（ProcessMouseUpdate）のみ実行する。
-        /// カメラ/トポロジ/選択の再計算は行わない。
-        /// スクリーン座標は直前のProcessCameraUpdateで計算済みのものを使用する。
-        /// </summary>
-        /// <param name="mousePosition">ローカル座標系のマウス位置（BeginClip後相当）</param>
-        public void ProcessHoverOnly(Vector2 mousePosition)
-        {
-            _mousePosition = mousePosition;
-            // ★ cpuOnly=true: GPUバッファ（選択フラグ等）を破壊しない。
-            // GPU版はDispatchClearBuffersGPUで_VertexFlagsBufferをゼロクリアし、
-            // Idle時はAllowSelectedDrawableMeshSync=falseのため再設定されずちらつく。
-            ProcessMouseUpdate(cpuOnly: true);
-
-            Debug.LogError("cpuOnly: trueは禁止");
-        }
+        //   ProcessMouseUpdate の cpuOnly 引数自体は残してある。GPU 非対応環境で
+        //   GpuComputeAvailable が false のときの分岐で使う。
 
         // ============================================================
         // デバッグ

@@ -43,14 +43,86 @@ namespace Poly_Ling.Data
         ///
         /// 【経緯】
         /// 全差し替え箇所で破棄を有効にしたところ、矩形選択が一部頂点で効かなくなった。
-        /// 原因は UnifiedSystemAdapter.WritebackTransformedVertices の 2 箇所で、
-        /// 描画提出済みの Mesh や GPU 可視フラグと同一フレーム内で競合していた。
-        /// その 2 箇所は直接代入へ戻し（＝この経路を通らない）、
-        /// 個別操作でのみ走る残りの箇所だけ破棄する構成にしてある。
+        /// 当時は UnifiedSystemAdapter.WritebackTransformedVertices の 2 箇所を
+        /// 直接代入へ戻す（＝破棄しない＝リークを容認する）ことで回避していた。
+        /// 現在はその 2 箇所も ReplaceUnityMesh を通し、破棄は下の退避キューで
+        /// 1 フレーム遅らせている。リークは無い。
         ///
         /// 再び選択や表示に異常が出た場合は、まずこれを false にして切り分けること。
         /// </summary>
         public static bool DestroyReplacedUnityMesh = true;
+
+        // ================================================================
+        // Mesh の退避キュー（遅延破棄）
+        //
+        // 【なぜ即時破棄しないか】
+        //   Graphics.DrawMesh は「そのフレームの描画に使う」提出であり、
+        //   実際に読まれるのはレンダースレッドがコマンドを処理するとき。
+        //   提出後・描画前に同じフレーム内で Mesh を破棄すると、
+        //   レンダラーから見れば解放済みオブジェクトの参照になる。
+        //
+        //   WritebackTransformedVertices は DrawMesh 提出と同一フレーム内で
+        //   走り得る唯一の差し替え経路なので、ここだけは破棄を次フレームへ回す。
+        //
+        // 【フラッシュ地点】
+        //   UnifiedSystemAdapter.WritebackTransformedVertices の先頭
+        //   MeshSceneRenderer.RebuildAdapter の入口
+        //   UnifiedSystemAdapter.Dispose
+        //   いずれも「前フレームの描画は終わっている」地点。
+        //
+        // 【注意】キューに積んだ Mesh を再び使ってはならない。
+        //   ReplaceUnityMesh / RetireUnityMesh を通った時点で参照は捨てること。
+        // ================================================================
+        private static readonly List<Mesh> _retiredMeshes = new List<Mesh>();
+
+        /// <summary>退避キューに積まれている Mesh の数。診断用。</summary>
+        public static int RetiredMeshCount => _retiredMeshes.Count;
+
+        /// <summary>
+        /// Mesh を退避キューへ積む。破棄は次の FlushRetiredMeshes まで遅らせる。
+        /// null / 既にキューにあるものは無視する。
+        /// </summary>
+        public static void RetireUnityMesh(Mesh mesh)
+        {
+            if (mesh == null) return;
+            if (!DestroyReplacedUnityMesh) return;
+
+            // 同一フレームに同じ Mesh が二重に積まれると二重破棄になる。
+            for (int i = 0; i < _retiredMeshes.Count; i++)
+                if (ReferenceEquals(_retiredMeshes[i], mesh)) return;
+
+            _retiredMeshes.Add(mesh);
+        }
+
+        /// <summary>
+        /// 退避キューの Mesh をまとめて破棄する。
+        /// 「前フレームの描画が終わっている」と言える地点でのみ呼ぶこと。
+        /// </summary>
+        public static void FlushRetiredMeshes()
+        {
+            if (_retiredMeshes.Count == 0) return;
+
+            for (int i = 0; i < _retiredMeshes.Count; i++)
+                DestroyMesh(_retiredMeshes[i]);
+
+            _retiredMeshes.Clear();
+        }
+
+        /// <summary>
+        /// UnityMesh を差し替え、旧 Mesh を退避キューへ積む（遅延破棄）。
+        ///
+        /// 描画提出と同一フレーム内で走り得る経路
+        /// （UnifiedSystemAdapter.WritebackTransformedVertices）はこちらを使う。
+        /// それ以外の個別操作は ReplaceUnityMesh（即時破棄）でよい。
+        /// </summary>
+        public void ReplaceUnityMeshDeferred(Mesh newMesh)
+        {
+            var old = UnityMesh;
+            UnityMesh = newMesh;
+
+            if (old == null || ReferenceEquals(old, newMesh)) return;
+            RetireUnityMesh(old);
+        }
 
         /// <summary>
         /// UnityMesh を差し替える。

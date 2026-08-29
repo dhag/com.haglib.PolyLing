@@ -7,7 +7,9 @@ namespace Poly_Ling.Player
     /// <summary>
     /// ビューポート1面分の描画表示設定。
     /// PlayerViewportManager が4面分（スロット0〜3）を配列で保持し、
-    /// DrawViewport() 内で描画前に MeshSceneRenderer の各フラグに適用する。
+    /// PrepareViewport() 内で描画準備前に MeshSceneRenderer の各フラグに適用する。
+    /// （旧記述は DrawViewport() を指していたが、同メソッドは呼出元 0 件のため
+    ///   2026-08-28 に撤去した。）
     ///
     /// スロット番号は PlayerViewportManager の定数と対応する:
     ///   0 = Perspective、1 = Top、2 = Front、3 = Side
@@ -24,7 +26,12 @@ namespace Poly_Ling.Player
         public bool ShowUnselectedVertices;
         public bool ShowUnselectedBone;
         public bool ShowSelectedMirror;
+        /// <summary>非選択ミラーを表示するか。面・辺・頂点すべての親。</summary>
         public bool ShowUnselectedMirror;
+        /// <summary>非選択ミラーの辺を表示するか。ShowUnselectedMirror に従属。既定 true。</summary>
+        public bool ShowUnselectedMirrorWireframe;
+        /// <summary>非選択ミラーの頂点を表示するか。ShowUnselectedMirror に従属。既定 true。</summary>
+        public bool ShowUnselectedMirrorVertices;
         public bool ShowSelectedMeshOrigin;
         public bool ShowUnselectedMeshOrigin;
         /// <summary>ミラー側の原点マーカーを描くか。既定 false。</summary>
@@ -48,6 +55,8 @@ namespace Poly_Ling.Player
             ShowUnselectedBone      = false,
             ShowSelectedMirror      = true,
             ShowUnselectedMirror    = true,
+            ShowUnselectedMirrorWireframe = true,
+            ShowUnselectedMirrorVertices  = true,
             ShowSelectedMeshOrigin   = true,
             ShowUnselectedMeshOrigin = true,
             ShowMirrorMeshOrigin     = false,
@@ -56,14 +65,27 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// ミラー表示をメッシュ表示に従属させたコピーを返す（元の値は変更しない）。
-        /// 選択Mesh が OFF なら選択Mirror を、非選Mesh が OFF なら非選Mirror を強制的に OFF にする。
-        /// 表示不変条件「Mesh が OFF のとき、そのミラーは ON にならない」を保証する。
+        ///
+        /// 従属関係:
+        ///   ShowSelectedMesh   → ShowSelectedMirror
+        ///   ShowUnselectedMesh → ShowUnselectedMirror
+        ///                          ├ ShowUnselectedMirrorWireframe
+        ///                          └ ShowUnselectedMirrorVertices
+        ///
+        /// 表示不変条件「親が OFF のとき、子は ON にならない」を保証する。
+        /// 従属の判定はここ 1 か所に集約すること。呼出側で個別に AND を書くと、
+        /// 片方だけ直したときに UI とレンダラで解釈がずれる。
         /// </summary>
         public ViewportDisplaySettings WithMirrorClamped()
         {
             var s = this;
             if (!s.ShowSelectedMesh)   s.ShowSelectedMirror   = false;
             if (!s.ShowUnselectedMesh) s.ShowUnselectedMirror = false;
+            if (!s.ShowUnselectedMirror)
+            {
+                s.ShowUnselectedMirrorWireframe = false;
+                s.ShowUnselectedMirrorVertices  = false;
+            }
             return s;
         }
 
@@ -86,6 +108,14 @@ namespace Poly_Ling.Player
             if (ShowUnselectedMeshOrigin) b |= 1 << 12;
             if (ShowMirrorMeshOrigin)     b |= 1 << 13;
             if (ShowNormals)              b |= 1 << 14;
+            // 【ビット15/16 だけ反転して詰める理由】 2026-08-28
+            //   この 2 つは既定が true。既存の保存データにはビットが無く 0 で読まれる。
+            //   正のまま詰めると「既定は表示なのに復元すると非表示」になる。
+            //   反転して「1 = 非表示」で持てば、旧データの 0 が表示を意味して一致する。
+            //   ビット13/14（ShowMirrorMeshOrigin / ShowNormals）は既定 false なので
+            //   正のままでよい。事情が違うので真似しないこと。
+            if (!ShowUnselectedMirrorWireframe) b |= 1 << 15;
+            if (!ShowUnselectedMirrorVertices)  b |= 1 << 16;
             return b;
         }
 
@@ -111,6 +141,10 @@ namespace Poly_Ling.Player
             ShowMirrorMeshOrigin     = (b & (1 << 13)) != 0,
             // 旧データにはビット14が無いので false になる。新既定と一致する。
             ShowNormals              = (b & (1 << 14)) != 0,
+            // ビット15/16 は反転格納（1 = 非表示）。ToBits のコメント参照。
+            // 旧データはビットが無く 0 → 表示。既定 true と一致する。
+            ShowUnselectedMirrorWireframe = (b & (1 << 15)) == 0,
+            ShowUnselectedMirrorVertices  = (b & (1 << 16)) == 0,
         };
     }
 }

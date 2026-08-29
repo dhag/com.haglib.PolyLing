@@ -6,8 +6,12 @@
 // WorkAxisContext の参照は持たない。呼び出しは値のコピーになる。
 //
 // 【永続化】
-//   プロジェクトファイルには入らない。セッション内の保持のみで、
-//   残したいときは CSV へ書き出す（WorkAxisLibraryCsvIO）。
+//   ProjectContext.WorkAxes として保持され、プロジェクトと一緒に保存される。
+//     .mfproj  … ProjectDTO.workAxisLibrary
+//     CSV      … プロジェクトファイルと同じフォルダ直下の workaxis_library.csv
+//                （CsvProjectSerializer が読み書きする独立ファイル）
+//   単体で書き出し・読み込みしたいときは WorkAxisLibraryCsvIO を直接使う。
+//   どちらの経路も同じ CSV 書式を共有する。
 //
 // 【名前】
 //   前後の空白を落として一意キーにする。同名の登録は上書き。

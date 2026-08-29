@@ -161,20 +161,21 @@ namespace Poly_Ling.Remote
             string savedName = mc.Name;
             MeshType savedType = mc.Type;
 
-            if (mc.UnityMesh != null)
-            {
-                UnityEngine.Object.Destroy(mc.UnityMesh);
-                mc.UnityMesh = null;
-            }
-
             mc.MeshObject = mesh;
+
+            // 旧 Mesh の破棄と差し替えを 1 回にまとめる。
+            // Object.Destroy は edit mode では破棄しないため ReplaceUnityMesh を通す
+            // （MeshContext.DestroyMesh が isPlaying で使い分ける）。
+            // mesh が null か頂点 0 のときは null を渡し、旧 Mesh だけを破棄する。
+            UnityEngine.Mesh rebuilt = null;
             if (mesh != null)
             {
                 mesh.Name = savedName;
                 mesh.Type = savedType;
                 if (mesh.VertexCount > 0)
-                    mc.UnityMesh = mesh.ToUnityMesh();
+                    rebuilt = mesh.ToUnityMesh();
             }
+            mc.ReplaceUnityMesh(rebuilt);
 
             Debug.Log($"[RemoteProjectReceiver] PLRD: [{mi}][{si}] \"{savedName}\" V={mesh?.VertexCount ?? 0}");
             OnMeshDataReceived?.Invoke(mi, si, mc);
@@ -210,10 +211,7 @@ namespace Poly_Ling.Remote
             if (m.MeshContextList != null)
                 foreach (var mc in m.MeshContextList)
                     if (mc?.UnityMesh != null)
-                    {
-                        UnityEngine.Object.Destroy(mc.UnityMesh);
-                        mc.UnityMesh = null;
-                    }
+                        mc.ReplaceUnityMesh(null);
 
             if (destroyMaterials && m.MaterialReferences != null)
                 foreach (var mr in m.MaterialReferences)

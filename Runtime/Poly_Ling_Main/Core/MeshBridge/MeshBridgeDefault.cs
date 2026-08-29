@@ -62,25 +62,19 @@ namespace Poly_Ling.MeshBridge
             var unityBoneWeights = new List<BoneWeight>();
             bool hasBoneWeights = source.IsSkinnedKind;
 
-            // 孤立頂点除外: いずれかの面（3頂点以上）に参照される頂点を展開対象にする。
-            // 【重要】ここで face.IsHidden を見てはならない。面の非表示は編集補助であり、
-            // 見るかどうかで展開頂点数が変わると GPU 展開バッファ
+            // 孤立頂点除外。規則は MeshExpansion に一本化してある
+            // （3頂点以上の面から参照されない頂点は除外／face.IsHidden は見ない）。
+            // ここに規則を書き直すと GPU 展開バッファ
             // （UnifiedBufferManager_Build.BuildExpandedVertexMapping）や書き戻し
-            // （UnifiedSystemAdapter.WritebackTransformedVertices）が数える頂点数と
-            // 食い違い、頂点位置が反映されなくなる。非表示は下の三角形生成で行う。
-            var nonIsolatedVerts = new HashSet<int>();
-            foreach (var face in source.Faces)
-            {
-                if (face.VertexCount < 3) continue;
-                foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
-            }
+            // （UnifiedSystemAdapter.WritebackTransformedVertices）と食い違う。
+            var nonIsolatedVerts = MeshExpansion.BuildNonIsolatedSet(source);
 
             // パス1: 頂点順 -> UV順 で Unity頂点を作成（孤立頂点はスキップ）。
             for (int vIdx = 0; vIdx < source.Vertices.Count; vIdx++)
             {
                 if (!nonIsolatedVerts.Contains(vIdx)) continue;
                 var vertex = source.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                int uvCount = MeshExpansion.SlotCount(vertex);
 
                 for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
                 {
@@ -313,20 +307,15 @@ namespace Poly_Ling.MeshBridge
             var unityBoneWeights = new List<BoneWeight>();
             bool hasBoneWeights = source.IsSkinnedKind;
 
-            // 孤立頂点除外（face.IsHidden を見ない理由は ToUnityMesh 側のコメント参照）
-            var nonIsolatedVerts = new HashSet<int>();
-            foreach (var face in source.Faces)
-            {
-                if (face.VertexCount < 3) continue;
-                foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
-            }
+            // 孤立頂点除外（規則は MeshExpansion に一本化。ToUnityMesh と同一）
+            var nonIsolatedVerts = MeshExpansion.BuildNonIsolatedSet(source);
 
             // パス1: 頂点順 -> UV順 で Unity頂点を作成
             for (int vIdx = 0; vIdx < source.Vertices.Count; vIdx++)
             {
                 if (!nonIsolatedVerts.Contains(vIdx)) continue;
                 var vertex = source.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                int uvCount = MeshExpansion.SlotCount(vertex);
 
                 for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
                 {
@@ -749,23 +738,13 @@ namespace Poly_Ling.MeshBridge
             // ToUnityMeshShared と同一の名寄せ（頂点順 -> UV順）。頂点は作らず対応表だけ作る。
             var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
 
-            var nonIsolatedVerts = new HashSet<int>();
-            foreach (var face in source.Faces)
-            {
-                if (face.VertexCount < 3) continue;
-                foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
-            }
-
+            // 孤立頂点除外（規則は MeshExpansion に一本化。ToUnityMesh と同一）
             int expandedCount = 0;
-            for (int vIdx = 0; vIdx < source.Vertices.Count; vIdx++)
+            MeshExpansion.Enumerate(source, (vIdx, uvIdx, expIdx) =>
             {
-                if (!nonIsolatedVerts.Contains(vIdx)) continue;
-                var vertex = source.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-
-                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                    vertexMapping[(vIdx, uvIdx)] = expandedCount++;
-            }
+                vertexMapping[(vIdx, uvIdx)] = expIdx;
+                expandedCount = expIdx + 1;
+            });
 
             // 頂点構成が変わっている場合はここでは扱えない
             if (expandedCount != target.vertexCount) return false;

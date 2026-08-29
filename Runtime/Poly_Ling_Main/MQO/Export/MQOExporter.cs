@@ -1059,14 +1059,16 @@ namespace Poly_Ling.MQO
                     stats.TotalFaces++;
                 }
 
-                // 頂点ID用の特殊面を追加（ID != -1 の頂点のみ）
-                // VertexIdHelper.CreateSpecialFaceForVertexIdを使用
+                // 頂点識別子用の特殊面を追加。COL(PartsID, SubID, ID) で書く。
+                // 出力対象は「ID が -1 でない」か「SubID / PartsID のいずれかが設定済み」。
+                // 前半の条件は従来どおりなので、既存の出力対象は 1 件も減らない。
                 for (int i = 0; i < meshObject.Vertices.Count; i++)
                 {
                     var vertex = meshObject.Vertices[i];
-                    if (vertex.Id != -1)
+                    if (vertex.Id != -1 || vertex.SubId != 0 || vertex.PartsId != 0)
                     {
-                        mqoObj.Faces.Add(VertexIdHelper.CreateSpecialFaceForVertexId(i, vertex.Id, 0));
+                        mqoObj.Faces.Add(VertexIdHelper.CreateSpecialFaceForVertexId(
+                            i, vertex.Id, vertex.SubId, vertex.PartsId, 0));
                     }
                 }
 
