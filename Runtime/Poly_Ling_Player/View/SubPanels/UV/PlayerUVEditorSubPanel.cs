@@ -1365,7 +1365,7 @@ namespace Poly_Ling.Player
             var sl = new Slider(0f, 1f) { value = Mathf.Clamp01(val) };
             sl.style.flexGrow = 1; sl.style.marginRight = 3;
             var ff = new FloatField { value = val };
-            ff.style.color = new StyleColor(Color.black); ff.style.width = 52;
+            ff.style.width = 52;
 
             sl.RegisterValueChangedCallback(e => { if (!_anchorSuppress) onChange(e.newValue); });
             ff.RegisterValueChangedCallback(e => { if (!_anchorSuppress) onChange(e.newValue); });
@@ -1662,10 +1662,8 @@ namespace Poly_Ling.Player
             lb.style.unityTextAlign = TextAnchor.MiddleLeft;
             row.Add(lb);
             f1 = new FloatField(l1.Split(' ').Length > 1 ? l1.Split(' ')[1] : "") { value = v1 };
-            f1.style.color = new StyleColor(Color.black);
             f1.style.flexGrow = 1;
             f2 = new FloatField(l2) { value = v2 };
-            f2.style.color = new StyleColor(Color.black);
             f2.style.flexGrow = 1;
             row.Add(f1); row.Add(f2);
             return row;
@@ -1680,7 +1678,6 @@ namespace Poly_Ling.Player
             lb.style.color = new StyleColor(Color.white);
             lb.style.unityTextAlign = TextAnchor.MiddleLeft;
             field = new FloatField { value = val };
-            field.style.color = new StyleColor(Color.black);
             field.style.flexGrow = 1;
             row.Add(lb); row.Add(field);
             return row;

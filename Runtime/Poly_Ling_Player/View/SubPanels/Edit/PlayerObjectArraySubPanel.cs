@@ -684,7 +684,6 @@ namespace Poly_Ling.Player
             var f = new FloatField { value = 0f };
             f.style.width      = 60;
             f.style.marginLeft = 4;
-            f.style.color      = new StyleColor(Color.black);
 
             s.RegisterValueChangedCallback(e =>
             {

@@ -26,8 +26,23 @@ namespace Poly_Ling.Player
         public bool ShowUnselectedVertices;
         public bool ShowUnselectedBone;
         public bool ShowSelectedMirror;
-        /// <summary>非選択ミラーを表示するか。面・辺・頂点すべての親。</summary>
+        /// <summary>
+        /// 非選択ミラーのマスタ。面・辺・頂点の 3 子を一括で落とすためだけに使う。
+        ///
+        /// 【描画に直接作用しない】 2026-08-28
+        ///   以前はこのフラグがマスタと「ミラーの面」を兼ねており、
+        ///   面だけ消すと辺・頂点まで巻き添えで消えていた。面を
+        ///   ShowUnselectedMirrorMesh へ切り出し、こちらはマスタ専用にした。
+        ///   レンダラ側からこのフラグを読まないこと。読むのは 3 子。
+        ///
+        /// 【ShowUnselectedMesh に従属しない】
+        ///   実体側メッシュを隠してミラーだけ見る、ができるようにするため
+        ///   従属を切った（独立化）。選択側（ShowSelectedMesh → ShowSelectedMirror）
+        ///   は従来どおり従属したままで、非対称である点に注意。
+        /// </summary>
         public bool ShowUnselectedMirror;
+        /// <summary>非選択ミラーの面を表示するか。ShowUnselectedMirror に従属。既定 true。</summary>
+        public bool ShowUnselectedMirrorMesh;
         /// <summary>非選択ミラーの辺を表示するか。ShowUnselectedMirror に従属。既定 true。</summary>
         public bool ShowUnselectedMirrorWireframe;
         /// <summary>非選択ミラーの頂点を表示するか。ShowUnselectedMirror に従属。既定 true。</summary>
@@ -55,6 +70,7 @@ namespace Poly_Ling.Player
             ShowUnselectedBone      = false,
             ShowSelectedMirror      = true,
             ShowUnselectedMirror    = true,
+            ShowUnselectedMirrorMesh      = true,
             ShowUnselectedMirrorWireframe = true,
             ShowUnselectedMirrorVertices  = true,
             ShowSelectedMeshOrigin   = true,
@@ -64,13 +80,21 @@ namespace Poly_Ling.Player
         };
 
         /// <summary>
-        /// ミラー表示をメッシュ表示に従属させたコピーを返す（元の値は変更しない）。
+        /// ミラー表示の従属関係を適用したコピーを返す（元の値は変更しない）。
         ///
         /// 従属関係:
-        ///   ShowSelectedMesh   → ShowSelectedMirror
-        ///   ShowUnselectedMesh → ShowUnselectedMirror
-        ///                          ├ ShowUnselectedMirrorWireframe
-        ///                          └ ShowUnselectedMirrorVertices
+        ///   ShowSelectedMesh → ShowSelectedMirror
+        ///
+        ///   ShowUnselectedMirror（独立。どこにも従属しない）
+        ///     ├ ShowUnselectedMirrorMesh
+        ///     ├ ShowUnselectedMirrorWireframe
+        ///     └ ShowUnselectedMirrorVertices
+        ///
+        /// 【ShowUnselectedMesh → ShowUnselectedMirror の従属を撤廃した理由】 2026-08-28
+        ///   実体側メッシュを隠してミラーだけ確認する、という使い方ができなかった。
+        ///   非選択ミラーは独立した表示グループとして扱う。
+        ///   選択側は UI トグルを持たず選択 Mesh に従属したままで、非対称である。
+        ///   選択側にもトグルを足すなら、そのとき同じ形にそろえること。
         ///
         /// 表示不変条件「親が OFF のとき、子は ON にならない」を保証する。
         /// 従属の判定はここ 1 か所に集約すること。呼出側で個別に AND を書くと、
@@ -79,10 +103,10 @@ namespace Poly_Ling.Player
         public ViewportDisplaySettings WithMirrorClamped()
         {
             var s = this;
-            if (!s.ShowSelectedMesh)   s.ShowSelectedMirror   = false;
-            if (!s.ShowUnselectedMesh) s.ShowUnselectedMirror = false;
+            if (!s.ShowSelectedMesh) s.ShowSelectedMirror = false;
             if (!s.ShowUnselectedMirror)
             {
+                s.ShowUnselectedMirrorMesh      = false;
                 s.ShowUnselectedMirrorWireframe = false;
                 s.ShowUnselectedMirrorVertices  = false;
             }
@@ -116,6 +140,8 @@ namespace Poly_Ling.Player
             //   正のままでよい。事情が違うので真似しないこと。
             if (!ShowUnselectedMirrorWireframe) b |= 1 << 15;
             if (!ShowUnselectedMirrorVertices)  b |= 1 << 16;
+            // ビット17 も同じ理由で反転格納する（既定 true）。
+            if (!ShowUnselectedMirrorMesh)      b |= 1 << 17;
             return b;
         }
 
@@ -145,6 +171,7 @@ namespace Poly_Ling.Player
             // 旧データはビットが無く 0 → 表示。既定 true と一致する。
             ShowUnselectedMirrorWireframe = (b & (1 << 15)) == 0,
             ShowUnselectedMirrorVertices  = (b & (1 << 16)) == 0,
+            ShowUnselectedMirrorMesh      = (b & (1 << 17)) == 0,
         };
     }
 }

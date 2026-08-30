@@ -1386,7 +1386,6 @@ namespace Poly_Ling.Player
             var f = new FloatField(label) { name = name };
             f.style.flexGrow    = 1;
             f.style.marginRight = 2;
-            f.style.color       = new StyleColor(Color.black);
             return f;
         }
 

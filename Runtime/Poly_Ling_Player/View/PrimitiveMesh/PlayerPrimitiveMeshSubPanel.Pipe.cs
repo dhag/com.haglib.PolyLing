@@ -166,6 +166,10 @@ namespace Poly_Ling.Player
             EnsureBeltProfile(_pipeEdit);
 
             var mo = new MeshObject(_pipeP.MeshName);
+
+            // 梯子1本＝パーツ1つ。全ベルトで同じカウンタを共有し、0 から連番にする。
+            var partsIds = new Poly_Ling.PrimitiveMesh.PartsIdCounter();
+
             foreach (var belt in _pipeBelts)
             {
                 if (belt == null || !belt.HasData) continue;
@@ -174,7 +178,7 @@ namespace Poly_Ling.Player
                     b.Left, b.Right, b.Closed, b.FlipWinding,
                     _pipeEdit.Points, _pipeEdit.ClosedLoop, _pipeP.CapEnds,
                     b.StartPoint, b.EndPoint,
-                    _pipeP.MeshName);
+                    _pipeP.MeshName, partsIds);
                 part = ApplySolidify(part,
                     _pipeP.Thickness, _pipeP.SegmentsFront, _pipeP.SegmentsBack,
                     _pipeP.EdgeSizeFront, _pipeP.EdgeSizeBack, _pipeP.EdgeInward,

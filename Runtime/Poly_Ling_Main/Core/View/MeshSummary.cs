@@ -113,7 +113,7 @@ namespace Poly_Ling.View
         {
             get
             {
-                if (IsBakedMirror) return "\U0001FA9E";
+                if (IsBakedMirror) return "\u25C7";
                 return MirrorType > 0 ? "\u21C6" : "";
             }
         }

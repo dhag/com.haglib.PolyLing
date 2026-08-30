@@ -2277,14 +2277,26 @@ namespace Poly_Ling.Player
                         return;
                     }
 
-                    // 半身に戻したので、見た目・エクスポート用のミラーモードを強制的に付ける。
-                    // 軸は実体化に使った軸から決める（0:X→1, 1:Y→2, 2:Z→4）。
-                    ubMc.MirrorType = 2; // 結合
-                    ubMc.MirrorAxis = ubState.BakeAxis == 1 ? 2 : (ubState.BakeAxis == 2 ? 4 : 1);
-                    ubMc.MirrorDistance = ubState.SavedMirrorType == 2
-                        ? ubState.SavedMirrorDistance
-                        : ubState.Threshold;
-                    ubMc.MirrorMaterialOffset = ubState.SavedMirrorMaterialOffset;
+                    if (c.RestoreSavedMirrorSettings)
+                    {
+                        // ツール内の「一時ミラー」による解除。
+                        // 実体化前のミラー設定をそのまま戻す（恒久設定を変えない）。
+                        ubMc.MirrorType           = ubState.SavedMirrorType;
+                        ubMc.MirrorAxis           = ubState.SavedMirrorAxis;
+                        ubMc.MirrorDistance       = ubState.SavedMirrorDistance;
+                        ubMc.MirrorMaterialOffset = ubState.SavedMirrorMaterialOffset;
+                    }
+                    else
+                    {
+                        // 半身に戻したので、見た目・エクスポート用のミラーモードを強制的に付ける。
+                        // 軸は実体化に使った軸から決める（0:X→1, 1:Y→2, 2:Z→4）。
+                        ubMc.MirrorType = 2; // 結合
+                        ubMc.MirrorAxis = ubState.BakeAxis == 1 ? 2 : (ubState.BakeAxis == 2 ? 4 : 1);
+                        ubMc.MirrorDistance = ubState.SavedMirrorType == 2
+                            ? ubState.SavedMirrorDistance
+                            : ubState.Threshold;
+                        ubMc.MirrorMaterialOffset = ubState.SavedMirrorMaterialOffset;
+                    }
                     ubMc.InvalidateSymmetryCache();
 
                     ubMo.MirrorBakeState = null;
@@ -2305,7 +2317,8 @@ namespace Poly_Ling.Player
                         $"[MirrorBake] \"{ubMc.Name}\" 解除 " +
                         $"verts {ubVertsBefore} → {ubMo.VertexCount} " +
                         $"faces {ubFacesBefore} → {ubMo.FaceCount} " +
-                        $"mode={c.Mode} mirrorType=2 axis={ubMc.MirrorAxis} dist={ubMc.MirrorDistance}");
+                        $"mode={c.Mode} restoreSaved={c.RestoreSavedMirrorSettings} " +
+                        $"mirrorType={ubMc.MirrorType} axis={ubMc.MirrorAxis} dist={ubMc.MirrorDistance}");
 
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
@@ -2542,6 +2555,16 @@ namespace Poly_Ling.Player
 
                     MeshObject destMesh = destCtx.MeshObject;
 
+                    // 部品IDはマージで振り直す。1 つのメッシュにつき 1 つの部品として
+                    // 0 から順に付け、サブIDは全部の追記が終わってから部品ごとに 0 から振る。
+                    // CreateNewMesh=false のときは base の既存頂点が部品 0 になる。
+                    int mergePartsId = 0;
+                    if (!c.CreateNewMesh)
+                    {
+                        Poly_Ling.Ops.PartsIdOps.SetPartsId(destMesh, mergePartsId);
+                        mergePartsId++;
+                    }
+
                     // 各ソースメッシュを destMesh に追記
                     foreach (var srcCtx in mergeTargets)
                     {
@@ -2558,6 +2581,7 @@ namespace Poly_Ling.Player
                         {
                             var newV      = v.Clone();
                             newV.Id       = destMesh.GenerateVertexId();
+                            newV.PartsId  = mergePartsId;
                             newV.Position = xform.MultiplyPoint3x4(v.Position);
                             if (v.Normals != null)
                                 newV.Normals = v.Normals.Select(n => xform.MultiplyVector(n).normalized).ToList();
@@ -2573,7 +2597,12 @@ namespace Poly_Ling.Player
                             destMesh.Faces.Add(newF);
                             destMesh.RegisterFaceId(newF.Id);
                         }
+
+                        mergePartsId++;
                     }
+
+                    // サブIDは部品ごとに 0 から。頂点を全部並べ終えてから振る。
+                    Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(destMesh);
 
                     // UnityMesh 再生成
                     var mergedUnityMesh       = destMesh.ToUnityMesh();
@@ -2616,6 +2645,110 @@ namespace Poly_Ling.Player
                             string __dbgDesc = "メッシュマージ";
                             PLDiag.UndoRecord("MeshList", __dbgDesc, mergeRecord);
                             _undoController.MeshListStack.Record(mergeRecord, __dbgDesc);
+                        }
+                        _undoController.FocusMeshList();
+                    }
+
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
+                // ── ブーリアン
+                case BooleanMeshCommand c:
+                {
+                    if (model == null) return;
+
+                    var boolCtxA = model.GetMeshContext(c.AMasterIndex);
+                    var boolCtxB = model.GetMeshContext(c.BMasterIndex);
+                    if (boolCtxA?.MeshObject == null || boolCtxB?.MeshObject == null) return;
+                    if (ReferenceEquals(boolCtxA, boolCtxB)) return;
+
+                    // 演算そのものは BooleanOps に集約してある。
+                    // 演算空間は A のローカル空間で、結果も A の姿勢を引き継ぐ。
+                    var boolResult = BooleanOps.Perform(
+                        c.Op,
+                        boolCtxA.MeshObject, boolCtxA.WorldMatrix,
+                        boolCtxB.MeshObject, boolCtxB.WorldMatrix,
+                        boolCtxA.WorldMatrixInverse,
+                        c.Epsilon,
+                        c.MergeVertices,
+                        c.MergeThreshold,
+                        resultName: null);
+
+                    if (!boolResult.Success || boolResult.Mesh == null)
+                    {
+                        Debug.LogWarning("[PolyLing] ブーリアン失敗: " + boolResult.Message);
+                        return;
+                    }
+
+                    // 変更前スナップショット（MeshListStack Undo 用）。
+                    // 追加・削除・メッシュ差し替えが混ざるため、メッシュマージと同じく
+                    // リスト全体を 1 件で記録する。
+                    var boolBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    MeshObject boolMesh = boolResult.Mesh;
+
+                    if (c.CreateNewMesh)
+                    {
+                        var destCtx = new MeshContext
+                        {
+                            Name              = boolMesh.Name,
+                            MeshObject        = boolMesh,
+                            OriginalPositions = new Vector3[0],
+                        };
+                        var boolBt = new BoneTransform();
+                        boolBt.CopyFrom(boolCtxA.BoneTransform);
+                        destCtx.BoneTransform      = boolBt;
+                        destCtx.WorldMatrix        = boolCtxA.WorldMatrix;
+                        destCtx.WorldMatrixInverse = boolCtxA.WorldMatrixInverse;
+                        destCtx.BindPose           = boolCtxA.BindPose;
+
+                        var destUnityMesh       = boolMesh.ToUnityMesh();
+                        destUnityMesh.name      = boolMesh.Name;
+                        destUnityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+                        destCtx.ReplaceUnityMesh(destUnityMesh);
+                        destCtx.OriginalPositions = (Vector3[])boolMesh.Positions.Clone();
+
+                        destCtx.ParentModelContext = model;
+                        model.Add(destCtx);
+                    }
+                    else
+                    {
+                        // A の中身を置き換える。名前は A のものを保つ。
+                        boolMesh.Name = boolCtxA.MeshObject.Name;
+                        boolCtxA.MeshObject = boolMesh;
+                        boolCtxA.ClearSelection();
+
+                        var aUnityMesh       = boolMesh.ToUnityMesh();
+                        aUnityMesh.name      = boolMesh.Name;
+                        aUnityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+                        boolCtxA.ReplaceUnityMesh(aUnityMesh);
+                        boolCtxA.OriginalPositions = (Vector3[])boolMesh.Positions.Clone();
+                    }
+
+                    if (c.DeleteSourceB)
+                    {
+                        int boolIdxB = model.IndexOf(boolCtxB);
+                        if (boolIdxB >= 0) model.RemoveAt(boolIdxB);
+                    }
+
+                    model.OnListChanged?.Invoke();
+
+                    // 変更後スナップショット → MeshListStack に記録
+                    if (_undoController != null)
+                    {
+                        var boolAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
+                        var boolRecord = new MeshFilterToSkinnedRecord
+                        {
+                            BeforeList = boolBefore,
+                            AfterList  = boolAfter,
+                        };
+                        {
+                            string __dbgDesc = "ブーリアン " + BooleanOps.DisplayName(c.Op);
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, boolRecord);
+                            _undoController.MeshListStack.Record(boolRecord, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
                     }
@@ -4957,6 +5090,34 @@ namespace Poly_Ling.Player
         {
             if (cmd?.Names == null || cmd.Positions == null) return;
 
+            // 診断（既定は無効）。検証パネルが実行中だけ立てる。
+            Poly_Ling.Diagnostics.ObjectOriginDiag.Begin("ApplyObjectOrigins");
+            if (Poly_Ling.Diagnostics.ObjectOriginDiag.Enabled)
+            {
+                // 実値の階層をそのまま控える。MQO の depth からの推定ではなく、
+                // 適用時点で ComputeWorldMatrices が使う HierarchyParentIndex を記録する。
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null) continue;
+
+                    var e = Poly_Ling.Diagnostics.ObjectOriginDiag.Get(i);
+                    e.Name                 = mc.Name ?? "";
+                    e.Type                 = mc.Type.ToString();
+                    e.VertexCount          = mc.MeshObject?.VertexCount ?? 0;
+                    e.HierarchyParentIndex = mc.HierarchyParentIndex;
+
+                    int p = mc.HierarchyParentIndex;
+                    int guard = 0;
+                    while (p >= 0 && p < model.MeshContextCount && guard < 256)
+                    {
+                        e.Ancestors.Add(p);
+                        p = model.GetMeshContext(p)?.HierarchyParentIndex ?? -1;
+                        guard++;
+                    }
+                }
+            }
+
             // 名前 → インデックス（重複名は先着）
             // 姿勢くさびは書出側で除外しているので、読込側でも適用先にしない。
             // 既存の（くさび行を含む）CSV を読んでも巻き込まないようにする。
@@ -4992,7 +5153,18 @@ namespace Poly_Ling.Player
                     ? cmd.Rotations[i]
                     : null;
 
-                if (indexByName.TryGetValue(name, out int idx)) targets.Add((idx, cmd.Positions[i], rot));
+                if (indexByName.TryGetValue(name, out int idx))
+                {
+                    targets.Add((idx, cmd.Positions[i], rot));
+
+                    var de = Poly_Ling.Diagnostics.ObjectOriginDiag.Get(idx);
+                    if (de != null)
+                    {
+                        de.InCsv       = true;
+                        de.CsvPosition = cmd.Positions[i];
+                        de.IsTarget    = true;
+                    }
+                }
                 else missing.Add(name);
             }
 
@@ -5006,16 +5178,42 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // 再局所化の対象を決める。
+            //
+            // 姿勢を書き換えるのは CSV に名前があった行（targets）だけだが、
+            // 見た目を保つ対象はそれでは足りない。CSV に無いオブジェクトは
+            // 姿勢こそ変わらないが、祖先の原点が入ればワールド行列が変わり
+            // （ModelContext.ComputeWorldMatrices は 親のワールド × 自身のローカル）、
+            // 頂点を補正しないと祖先の原点の合計ぶん飛ぶ。
+            // 「CSV に無いものは動かさない」を満たすには全メッシュを対象にする。
+            // 姿勢くさび取込（ImportObjectPoseWedges）と同じ範囲にそろえる。
+            //
+            // 除外は適用先（indexByName）と同じ規則にして targets ⊆ relocalize を保証する。
+            // ミラー側は後段の RebakeDerivedMirrorVertices が実体側から作り直す。
+            var relocalize = new List<int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc?.MeshObject == null) continue;
+                if (mc.Type == MeshType.Bone) continue;
+                if (mc.Type == MeshType.MirrorSide || mc.Type == MeshType.BakedMirror) continue;
+                relocalize.Add(i);
+
+                var de = Poly_Ling.Diagnostics.ObjectOriginDiag.Get(i);
+                if (de != null) de.InRelocalize = true;
+            }
+
             // 変更前スナップショット + 現在の頂点ワールド位置
             // 回転も動かし得るので、位置だけの ObjectOriginUndoRecord ではなく
             // 回転込みの ObjectPoseUndoRecord に記録する（回転を変えない場合も
             // 変更前後の実値をそのまま入れるため挙動は変わらない）。
             var before      = new Dictionary<int, ObjectPoseSnapshot>();
             var startWorld  = new Dictionary<int, Vector3[]>();
+            var startMatrix = new Dictionary<int, Matrix4x4>();
 
             model.ComputeWorldMatrices();
 
-            foreach (var (idx, _, _) in targets)
+            foreach (int idx in relocalize)
             {
                 var mc = model.GetMeshContext(idx);
                 var mo = mc?.MeshObject;
@@ -5038,7 +5236,17 @@ namespace Poly_Ling.Player
                     UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
                     VertexPositions   = verts,
                 };
-                startWorld[idx] = world;
+                startWorld[idx]  = world;
+                startMatrix[idx] = wm;
+
+                var de = Poly_Ling.Diagnostics.ObjectOriginDiag.Get(idx);
+                if (de != null)
+                {
+                    de.HasStartWorld  = true;
+                    de.WorldBefore    = wm;
+                    de.PosBefore      = mc.BoneTransform?.Position ?? Vector3.zero;
+                    de.UseLocalBefore = mc.BoneTransform?.UseLocalTransform ?? false;
+                }
             }
 
             // 原点（と、指定があれば回転）を設定
@@ -5054,12 +5262,30 @@ namespace Poly_Ling.Player
 
             model.ComputeWorldMatrices();
 
-            // 自頂点を再局所化して見た目を保つ
-            foreach (var (idx, _, _) in targets)
+            // 自頂点を再局所化して見た目を保つ。
+            // ワールド行列が変わっていないものは触らない（丸め誤差を持ち込まないため）。
+            var changed = new HashSet<int>();
+            int relocalizedCount = 0;
+
+            foreach (int idx in relocalize)
             {
                 var mc = model.GetMeshContext(idx);
                 var mo = mc?.MeshObject;
+                var de = Poly_Ling.Diagnostics.ObjectOriginDiag.Get(idx);
+
+                if (de != null && mc != null)
+                {
+                    de.WorldAfter    = mc.WorldMatrix;
+                    de.PosAfter      = mc.BoneTransform?.Position ?? Vector3.zero;
+                    de.UseLocalAfter = mc.BoneTransform?.UseLocalTransform ?? false;
+                }
+
                 if (mo == null || !startWorld.TryGetValue(idx, out var world)) continue;
+                if (startMatrix.TryGetValue(idx, out var wm0) && wm0 == mc.WorldMatrix)
+                {
+                    if (de != null) de.SkippedByMatrixCompare = true;
+                    continue;
+                }
 
                 Matrix4x4 inv = mc.WorldMatrixInverse;
                 int cnt = Mathf.Min(mo.Vertices.Count, world.Length);
@@ -5070,23 +5296,88 @@ namespace Poly_Ling.Player
                     mo.Vertices[v] = vert;
                 }
                 mo.InvalidatePositionCache();
+
+                if (de != null) de.Relocalized = true;
+
+                changed.Add(idx);
+                relocalizedCount++;
             }
+
+            // 診断: 適用前後で頂点のワールド位置がどれだけ動いたかを測る。
+            // 再局所化まで終えた状態で測るので、0 でなければ補正が効いていない。
+            if (Poly_Ling.Diagnostics.ObjectOriginDiag.Enabled)
+            {
+                model.ComputeWorldMatrices();
+
+                foreach (int idx in relocalize)
+                {
+                    var mc = model.GetMeshContext(idx);
+                    var mo = mc?.MeshObject;
+                    var de = Poly_Ling.Diagnostics.ObjectOriginDiag.Get(idx);
+                    if (mo == null || de == null) continue;
+                    if (!startWorld.TryGetValue(idx, out var world)) continue;
+
+                    Matrix4x4 wm = mc.WorldMatrix;
+                    de.WorldAfter = wm;
+
+                    int cnt = Mathf.Min(mo.Vertices.Count, world.Length);
+                    for (int v = 0; v < cnt; v++)
+                    {
+                        Vector3 now = wm.MultiplyPoint3x4(mo.Vertices[v].Position);
+                        Vector3 d   = now - world[v];
+                        float   mag = d.magnitude;
+                        if (mag > de.MaxWorldDelta)
+                        {
+                            de.MaxWorldDelta   = mag;
+                            de.WorldDeltaOfMax = d;
+                        }
+                    }
+                }
+            }
+
+            // 頂点が動かなくても姿勢を書き換えたものは Undo の対象に含める。
+            foreach (var (idx, _, _) in targets) changed.Add(idx);
 
             // 実体側のローカル頂点が変わったので、生成ミラーを作り直して
             // v_M = S·v_R を保つ（実効ワールド S·H·S の前提）。
             MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
 
-            // 変更後スナップショット
-            var after = new Dictionary<int, ObjectPoseSnapshot>();
-            foreach (var (idx, _, _) in targets)
+            // 書き換えたローカル頂点を描画側へ送る。
+            //
+            // ここを省くと、GPU には新しいワールド行列だけが届き、頂点位置は
+            // 再局所化前のまま残る。結果、原点を入れた祖先を持つオブジェクトが
+            // 「原点の合計」ぶんずれて描かれる。MeshObject の値は正しいので
+            // 検査では 0 と出る一方、画面だけが飛ぶ。
+            //
+            // 生成ミラーは RebakeDerivedMirrorVertices が同じことを済ませている
+            // （MirrorBranchOps: OriginalPositions 更新 + ApplyVertexPositionsToMesh）。
+            // 実体側にだけ無かったのをそろえる。
+            foreach (int idx in changed)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null || mo.VertexCount == 0) continue;
+
+                mc.OriginalPositions = (Vector3[])mo.Positions.Clone();
+                mc.ApplyVertexPositionsToMesh();
+                _viewportManager?.SyncMeshPositionsAndTransform(mc, model);
+            }
+
+            // 変更後スナップショット。実際に変わったものだけ記録する。
+            var after       = new Dictionary<int, ObjectPoseSnapshot>();
+            var beforeSaved = new Dictionary<int, ObjectPoseSnapshot>();
+
+            foreach (int idx in changed)
             {
                 var mc = model.GetMeshContext(idx);
                 var mo = mc?.MeshObject;
                 if (mo == null) continue;
+                if (!before.TryGetValue(idx, out var beforeSnap)) continue;
 
                 var verts = new Vector3[mo.Vertices.Count];
                 for (int v = 0; v < mo.Vertices.Count; v++) verts[v] = mo.Vertices[v].Position;
 
+                beforeSaved[idx] = beforeSnap;
                 after[idx] = new ObjectPoseSnapshot
                 {
                     Position          = mc.BoneTransform?.Position ?? Vector3.zero,
@@ -5100,7 +5391,7 @@ namespace Poly_Ling.Player
             {
                 _undoController.SetModelContext(model);
                 _undoController.MeshListStack.Record(
-                    new ObjectPoseUndoRecord(before, after, "原点の読み込み"), "原点の読み込み");
+                    new ObjectPoseUndoRecord(beforeSaved, after, "原点の読み込み"), "原点の読み込み");
                 _undoController.FocusMeshList();
             }
 
@@ -5109,7 +5400,8 @@ namespace Poly_Ling.Player
             _viewportManager.EnterTopologyChanged(_getProject());
             _notifyPanels(ChangeKind.Attributes);
 
-            Debug.Log($"[ObjectOrigin] 原点を適用: {targets.Count} 件");
+            Debug.Log($"[ObjectOrigin] 原点を適用: {targets.Count} 件" +
+                      $"（見た目維持のため頂点を補正: {relocalizedCount} 件 / 対象 {relocalize.Count} 件）");
         }
 
         // ================================================================

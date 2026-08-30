@@ -18,7 +18,7 @@ MonoBehaviour:
   m_FallbackFontAssets: []
   m_FallbackOSFontAssets: []
   m_MatchMaterialPreset: 0
-  m_MissingCharacterUnicode: 0
+  m_MissingCharacterUnicode: 12307
   m_ClearDynamicDataOnBuild: 1
   m_EnableEmojiSupport: 0
   m_EmojiFallbackTextAssets: []

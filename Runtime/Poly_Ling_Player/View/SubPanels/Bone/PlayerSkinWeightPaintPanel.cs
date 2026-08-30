@@ -180,7 +180,6 @@ namespace Poly_Ling.Player
             pruneLbl.style.unityTextAlign    = TextAnchor.MiddleLeft;
             pruneLbl.style.fontSize          = 10;
             _pruneThreshField = new FloatField { value = _pruneThreshold };
-            _pruneThreshField.style.color = new StyleColor(Color.black);
             _pruneThreshField.style.flexGrow = 1;
             _pruneThreshField.RegisterValueChangedCallback(e =>
                 _pruneThreshold = Mathf.Clamp(e.newValue, 0.0001f, 0.5f));
@@ -302,8 +301,8 @@ namespace Poly_Ling.Player
         // インライン値を外すだけで USS 既定の明るい灰色になり、どちらも白く見えていた。
         // 色は PolyLingPlayerViewerCore の
         // InteractionActiveBtnColor / InactiveBtnColor と同じ値に揃える。
-        private static readonly StyleColor SegActiveColor   = new StyleColor(new Color(0.3f,  0.5f,  1.0f));
-        private static readonly StyleColor SegInactiveColor = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+        private static readonly StyleColor SegActiveColor   = PlayerLayoutRoot.BtnActiveColor;
+        private static readonly StyleColor SegInactiveColor = PlayerLayoutRoot.BtnInactiveColor;
 
         private void AddModeBtn(VisualElement row, string label, SkinWeightPaintMode mode)
         {
@@ -383,7 +382,6 @@ namespace Poly_Ling.Player
             sl.style.color = new StyleColor(Color.white);
             sl.style.flexGrow = 1;
             var nf = new FloatField { value = get() };
-            nf.style.color = new StyleColor(Color.black);
             nf.style.width = 63;
 
             sl.RegisterValueChangedCallback(e =>

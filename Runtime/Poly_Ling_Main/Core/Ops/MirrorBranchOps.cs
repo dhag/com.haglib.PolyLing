@@ -654,7 +654,12 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         public static MeshContext CreateDerivedMirrorContext(MeshContext source, int sourceIndex)
-            => CreateDerivedMirrorContext(source, sourceIndex, requireMirrorEnabled: true);
+            => CreateDerivedMirrorContext(source, sourceIndex, requireMirrorEnabled: true, nameExists: null);
+
+        /// <summary>同名の有無を渡せる版。</summary>
+        public static MeshContext CreateDerivedMirrorContext(
+            MeshContext source, int sourceIndex, Func<string, bool> nameExists)
+            => CreateDerivedMirrorContext(source, sourceIndex, requireMirrorEnabled: true, nameExists: nameExists);
 
         /// <summary>
         /// ミラー有効（MirrorType &gt; 0）の判定を省ける版。
@@ -666,6 +671,20 @@ namespace Poly_Ling.Ops
         /// </summary>
         public static MeshContext CreateDerivedMirrorContext(
             MeshContext source, int sourceIndex, bool requireMirrorEnabled)
+            => CreateDerivedMirrorContext(source, sourceIndex, requireMirrorEnabled, nameExists: null);
+
+        /// <summary>
+        /// ミラー側の名前は MirrorNameOps.MakeMirrorName に決めさせる。
+        ///
+        /// 【なぜ直書きしないか】
+        ///   「左腕」のミラーは「右腕」であって「左腕+」ではない。
+        ///   接尾辞は左右を持たない名前（「腕」→「腕+」）のための逃げ道で、
+        ///   左右を持つ名前に付けるのは誤りになる。判断は1箇所に置く。
+        ///   nameExists には「その名前が既に使われているか」を渡す（null 可）。
+        /// </summary>
+        public static MeshContext CreateDerivedMirrorContext(
+            MeshContext source, int sourceIndex, bool requireMirrorEnabled,
+            Func<string, bool> nameExists)
         {
             if (source == null || source.MeshObject == null)
                 return null;
@@ -691,7 +710,7 @@ namespace Poly_Ling.Ops
             // 頂点・面の鏡像化は BuildMirroredMeshObject に集約している。
             var mirrorMeshObj = BuildMirroredMeshObject(
                 srcMeshObj, axis, dist, source.MirrorMaterialOffset,
-                source.Name + "_BakedMirror");
+                MirrorNameOps.MakeMirrorName(source.Name, MirrorBranchSuffix, nameExists));
             if (mirrorMeshObj == null) return null;
             mirrorMeshObj.Type = MeshType.BakedMirror;  // 明示的に設定
 

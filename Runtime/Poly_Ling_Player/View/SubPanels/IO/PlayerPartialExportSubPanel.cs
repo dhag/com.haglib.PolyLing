@@ -377,7 +377,7 @@ namespace Poly_Ling.Player
 
                 if (!string.IsNullOrEmpty(m.PMXMaterialName))
                 {
-                    var icon = new Label(m.IsMatched ? "✓" : "✗");
+                    var icon = new Label(m.IsMatched ? "✓" : "×");
                     icon.style.color = m.IsMatched
                         ? new StyleColor(new Color(0.3f, 1f, 0.3f))
                         : new StyleColor(new Color(1f, 0.3f, 0.3f));
@@ -495,7 +495,7 @@ namespace Poly_Ling.Player
                 var tog = new Toggle { value = entry.Selected };
                 tog.style.marginRight = 2;
                 tog.RegisterValueChangedCallback(ev => { entry.Selected = ev.newValue; });
-                string mirrorMark = entry.IsMirrored ? "⟲" : "";
+                string mirrorMark = entry.IsMirrored ? "⇆" : "";
                 var lbl = new Label($"{entry.Name}{mirrorMark} ({entry.ExpandedVertexCountWithMirror})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9;
                 row.Add(tog); row.Add(lbl); right.Add(row);
             }

@@ -1329,7 +1329,7 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
             _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
             _renderer.ShowSelectedMirror        = ds.ShowSelectedMirror;
-            _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
+            _renderer.ShowUnselectedMirrorMesh  = ds.ShowUnselectedMirrorMesh;
             _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
             _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
             _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;
@@ -1459,11 +1459,13 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// ギズモ軸ホバー専用の軽量経路。GPU ヒットテストを一切行わない。
+        /// スクリーン座標だけで完結するオーバーレイ専用の軽量経路。
+        /// GPU ヒットテストを一切行わない。
         ///
         /// 【この経路で扱ってよいもの】
         ///   AxisGizmo.FindAxisAtScreenPos / RotateRingGizmo.FindRingAtScreenPos の
-        ///   ようなスクリーン座標だけで完結する当たり判定に限る。
+        ///   ようなスクリーン座標だけで完結する当たり判定と、
+        ///   スカルプトのブラシ円のようにカメラと PreviewRect だけから決まる表示に限る。
         ///
         /// 【禁止事項（重要）】
         ///   頂点・辺・面のホバー判定をこの経路へ移すことを禁止する。
@@ -1482,7 +1484,7 @@ namespace Poly_Ling.Player
         ///   これらは PresentAll / UpdateFrame が参照するため、軽量経路が触ると
         ///   GPU 側のホバー状態に副作用が出る。
         /// </summary>
-        public void NotifyGizmoHoverOnly(PlayerViewport vp, Vector2 panelLocalPos)
+        public void NotifyScreenOnlyHover(PlayerViewport vp, Vector2 panelLocalPos)
         {
             if (vp == null || !vp.IsReady) return;
             var cam = vp.Cam;
@@ -1526,7 +1528,7 @@ namespace Poly_Ling.Player
         ///   これが頂点・辺・面ホバーの正規 GPU 経路である。
         ///   UpdateFrame / PresentAll を削って軽量化してはならない。削ると要素ホバーが
         ///   GPU フラグバッファへ反映されなくなり、CPU ヒットテストへの巻き戻りを招く。
-        ///   ギズモ軸だけを更新したい場合は NotifyGizmoHoverOnly を使うこと。
+        ///   ギズモ軸やブラシ円だけを更新したい場合は NotifyScreenOnlyHover を使うこと。
         ///
         /// 【いつ呼ぶか】
         ///   PlayerViewportPanel.OnPointerHover（UIToolkit PointerMoveEvent）。
@@ -2846,7 +2848,7 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
             _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
             _renderer.ShowSelectedMirror        = ds.ShowSelectedMirror;
-            _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
+            _renderer.ShowUnselectedMirrorMesh  = ds.ShowUnselectedMirrorMesh;
             _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
             _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
             _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;

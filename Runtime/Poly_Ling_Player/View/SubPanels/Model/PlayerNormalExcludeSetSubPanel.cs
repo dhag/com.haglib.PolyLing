@@ -160,7 +160,7 @@ namespace Poly_Ling.Player
             lbl.style.flexGrow = 1;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             lbl.style.paddingLeft = 4;
-            var renameBtn = new Button { text = "✎" };
+            var renameBtn = new Button { text = "※" };
             renameBtn.style.width = 22;
             renameBtn.style.height = 18;
             row.Add(lbl);

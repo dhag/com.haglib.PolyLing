@@ -163,7 +163,6 @@ namespace Poly_Ling.Player
             maxIterLbl.style.width = 80; maxIterLbl.style.fontSize = 10;
             maxIterLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var maxIterField = new IntegerField { value = _maxIterations };
-            maxIterField.style.color = new StyleColor(Color.black);
             maxIterField.style.flexGrow = 1;
             maxIterField.RegisterValueChangedCallback(e => _maxIterations = Mathf.Clamp(e.newValue, 100, 50000));
             maxIterRow.Add(maxIterLbl); maxIterRow.Add(maxIterField);
@@ -254,16 +253,19 @@ namespace Poly_Ling.Player
 
         private void UpdateTabColors()
         {
-            var active   = new StyleColor(Color.white);
-            var inactive = new StyleColor(StyleKeyword.Null);
+            // active に Color.white、非 active に StyleKeyword.Null を入れると、
+            // ApplyDarkTheme が入れた白文字がどちらの背景でも読めなくなる
+            // （Null はインライン背景を外すだけで USS 既定の明るい灰色に戻る）。
+            var active   = PlayerLayoutRoot.BtnActiveColor;
+            var inactive = PlayerLayoutRoot.BtnInactiveColor;
             if (_tabProjBtn != null) _tabProjBtn.style.backgroundColor = _tab == Tab.Projection ? active : inactive;
             if (_tabLscmBtn != null) _tabLscmBtn.style.backgroundColor = _tab == Tab.Lscm       ? active : inactive;
         }
 
         private void UpdateProjBtns()
         {
-            var active   = new StyleColor(Color.white);
-            var inactive = new StyleColor(StyleKeyword.Null);
+            var active   = PlayerLayoutRoot.BtnActiveColor;
+            var inactive = PlayerLayoutRoot.BtnInactiveColor;
             var types    = new[] { ProjectionType.PlanarXY, ProjectionType.PlanarXZ, ProjectionType.PlanarYZ, ProjectionType.Box, ProjectionType.Cylindrical, ProjectionType.Spherical };
             for (int i = 0; i < _projBtns.Length; i++)
                 if (_projBtns[i] != null) _projBtns[i].style.backgroundColor = (_projection == types[i]) ? active : inactive;
@@ -281,7 +283,6 @@ namespace Poly_Ling.Player
             var sl = new Slider(min, max) { value = val }; sl.style.flexGrow = 1;
             sl.style.color = new StyleColor(Color.white);
             var nf = new FloatField { value = val }; nf.style.width = 50;
-            nf.style.color = new StyleColor(Color.black);
             sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3)); onChange(e.newValue); });
             nf.RegisterValueChangedCallback(e => { float v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); onChange(v); });
             row.Add(lb); row.Add(sl); row.Add(nf);

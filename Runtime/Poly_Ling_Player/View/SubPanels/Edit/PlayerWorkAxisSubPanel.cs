@@ -158,7 +158,6 @@ namespace Poly_Ling.Player
             _snapToggle.style.color = new StyleColor(Color.white);
             _snapToggle.RegisterValueChangedCallback(_ => ApplySnapToHandler());
             _snapField = new FloatField { value = 15f };
-            _snapField.style.color = new StyleColor(Color.black);
             _snapField.style.width = 50; _snapField.style.marginLeft = 4;
             _snapField.RegisterValueChangedCallback(_ => ApplySnapToHandler());
             snapRow.Add(_snapToggle); snapRow.Add(_snapField);
@@ -579,7 +578,6 @@ namespace Poly_Ling.Player
             var f = new FloatField(label) { value = 0f };
             f.style.flexGrow    = 1;
             f.style.marginRight = 2;
-            f.style.color       = new StyleColor(Color.black);
             f.RegisterValueChangedCallback(e => onChange(e.newValue));
             return f;
         }

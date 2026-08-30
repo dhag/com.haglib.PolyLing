@@ -90,11 +90,16 @@ namespace Poly_Ling.Player
         private string _bridgeName        = "Bridge";
         private bool   _bridgeFlipCorresp = false;
         private bool   _bridgeFlipFaces   = false;
-        private int    _bridgeSubdiv      = 0;
+        private int    _bridgeSubdiv      = 3;
 
-        private Label _bridgeInfoA;
-        private Label _bridgeInfoB;
-        private Label _bridgeInfoResult;
+        /// <summary>直近の自動判定の説明。結果表示欄に併記する。</summary>
+        private string _bridgeAutoInfo = "";
+
+        private Label  _bridgeInfoA;
+        private Label  _bridgeInfoB;
+        private Label  _bridgeInfoResult;
+        private Toggle _bridgeFlipCorrespToggle;
+        private Toggle _bridgeFlipFacesToggle;
 
         // ================================================================
         // 公開プロパティ（Viewer から読む）
@@ -248,12 +253,12 @@ namespace Poly_Ling.Player
 
             // ── 穴A / 穴B の取り込み ──
             c.Add(PlayerIoUiKit.SectionLabel(T("BridgeHoleA")));
-            SB(c, T("BridgeImport"), () => { ImportBridgeSeed(_bridgeA); RefreshBridgeInfo(); });
+            SB(c, T("BridgeImport"), () => ImportBridgeSeedA());
             _bridgeInfoA = BridgeInfoLabel();
             c.Add(_bridgeInfoA);
 
             c.Add(PlayerIoUiKit.SectionLabel(T("BridgeHoleB")));
-            SB(c, T("BridgeImport"), () => { ImportBridgeSeed(_bridgeB); RefreshBridgeInfo(); });
+            SB(c, T("BridgeImport"), () => ImportBridgeSeedB());
             _bridgeInfoB = BridgeInfoLabel();
             c.Add(_bridgeInfoB);
 
@@ -286,8 +291,12 @@ namespace Poly_Ling.Player
 
             // ── 対応と分割 ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(TR(T("BridgeFlipPair"),  () => _bridgeFlipCorresp, v => { _bridgeFlipCorresp = v; D(); }));
-            c.Add(TR(T("BridgeFlipFaces"), () => _bridgeFlipFaces,   v => { _bridgeFlipFaces   = v; D(); }));
+            var flipPairRow  = TR(T("BridgeFlipPair"),  () => _bridgeFlipCorresp, v => { _bridgeFlipCorresp = v; D(); });
+            var flipFacesRow = TR(T("BridgeFlipFaces"), () => _bridgeFlipFaces,   v => { _bridgeFlipFaces   = v; D(); });
+            _bridgeFlipCorrespToggle = flipPairRow  as Toggle;
+            _bridgeFlipFacesToggle   = flipFacesRow as Toggle;
+            c.Add(flipPairRow);
+            c.Add(flipFacesRow);
             c.Add(IR(T("BridgeSubdiv"), 0, 16, () => _bridgeSubdiv, v => { _bridgeSubdiv = v; D(); }));
 
             _bridgeInfoResult = BridgeInfoLabel();
@@ -373,7 +382,57 @@ namespace Poly_Ling.Player
             ApplyBridgePick(_bridgeA, picks[0]);
             if (picks.Count > 1 && picks[1].Ok) ApplyBridgePick(_bridgeB, picks[1]);
 
+            ApplyBridgeAutoFlags();
             RefreshBridgeInfo();
+        }
+
+        // ================================================================
+        // 対応フリップ／面フリップの自動判定
+        // ================================================================
+
+        /// <summary>
+        /// 種 A・B が揃っているとき、両ループの巻き方向から対応フリップと
+        /// 面フリップを決めてチェックボックスへ書き戻す。
+        /// 取り込みのたびに上書きする。以後の手動操作は次の取り込みまで保たれる。
+        /// 判定できないときはフラグを変更しない。
+        /// </summary>
+        private void ApplyBridgeAutoFlags()
+        {
+            if (!_bridgeA.Valid || !_bridgeB.Valid)
+            {
+                _bridgeAutoInfo = T("BridgeAutoNotReady");
+                return;
+            }
+
+            var meshA = GetMeshObjectAt?.Invoke(_bridgeA.MeshIndex);
+            var meshB = GetMeshObjectAt?.Invoke(_bridgeB.MeshIndex);
+            if (meshA == null || meshB == null)
+            {
+                _bridgeAutoInfo = T("BridgeNoMesh");
+                return;
+            }
+
+            var loopA = BridgeLoopOps.OrderBoundaryLoop(
+                meshA, _bridgeA.Vertex, _bridgeA.DirectionHint, out _);
+            var loopB = BridgeLoopOps.OrderBoundaryLoop(
+                meshB, _bridgeB.Vertex, _bridgeB.DirectionHint, out _);
+
+            if (!BridgeLoopOps.TryAutoFlags(
+                    meshA, loopA, meshB, loopB,
+                    out bool fc, out bool ff, out string why))
+            {
+                _bridgeAutoInfo = T("BridgeAutoFailed") + (string.IsNullOrEmpty(why) ? "" : " / " + why);
+                return;
+            }
+
+            _bridgeFlipCorresp = fc;
+            _bridgeFlipFaces   = ff;
+
+            _bridgeFlipCorrespToggle?.SetValueWithoutNotify(fc);
+            _bridgeFlipFacesToggle?.SetValueWithoutNotify(ff);
+
+            _bridgeAutoInfo = T("BridgeAutoApplied");
+            D();
         }
 
         private void RefreshBridgeInfo()
@@ -389,8 +448,11 @@ namespace Poly_Ling.Player
 
             if (_bridgeInfoResult != null)
             {
-                if (TryBuildBridgePlan(out _, out string msg)) _bridgeInfoResult.text = msg;
-                else                                          _bridgeInfoResult.text = msg ?? "";
+                TryBuildBridgePlan(out _, out string msg);
+                string text = msg ?? "";
+                if (!string.IsNullOrEmpty(_bridgeAutoInfo))
+                    text = string.IsNullOrEmpty(text) ? _bridgeAutoInfo : text + "\n" + _bridgeAutoInfo;
+                _bridgeInfoResult.text = text;
             }
 
             // ビューポートの種マーカーを即時更新させる。
@@ -411,6 +473,7 @@ namespace Poly_Ling.Player
         public bool ImportBridgeSeedA()
         {
             ImportBridgeSeed(_bridgeA);
+            ApplyBridgeAutoFlags();
             RefreshBridgeInfo();
             return _bridgeA.Valid;
         }
@@ -419,6 +482,7 @@ namespace Poly_Ling.Player
         public bool ImportBridgeSeedB()
         {
             ImportBridgeSeed(_bridgeB);
+            ApplyBridgeAutoFlags();
             RefreshBridgeInfo();
             return _bridgeB.Valid;
         }
@@ -428,6 +492,7 @@ namespace Poly_Ling.Player
         {
             _bridgeA.Valid = false; _bridgeA.Info = "";
             _bridgeB.Valid = false; _bridgeB.Info = "";
+            _bridgeAutoInfo = "";
             RefreshBridgeInfo();
         }
 

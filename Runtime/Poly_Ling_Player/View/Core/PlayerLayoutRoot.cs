@@ -73,22 +73,25 @@ namespace Poly_Ling.Player
         public const int VD_CULLING      = 0;
         public const int VD_SEL_MESH     = 1;
         public const int VD_UNSEL_MESH   = 2;
+        /// <summary>非選択ミラーのマスタ。下の 3 つを一括で落とす。独立（非選Mesh に従属しない）。</summary>
         public const int VD_UNSEL_MIRROR = 3;
+        /// <summary>非選択ミラーの面。VD_UNSEL_MIRROR に従属。</summary>
+        public const int VD_UNSEL_MIRROR_MESH = 4;
         /// <summary>非選択ミラーの辺。VD_UNSEL_MIRROR に従属。</summary>
-        public const int VD_UNSEL_MIRROR_WIRE = 4;
+        public const int VD_UNSEL_MIRROR_WIRE = 5;
         /// <summary>非選択ミラーの頂点。VD_UNSEL_MIRROR に従属。</summary>
-        public const int VD_UNSEL_MIRROR_VERT = 5;
-        public const int VD_SEL_WIRE     = 6;
-        public const int VD_UNSEL_WIRE   = 7;
-        public const int VD_SEL_VERT     = 8;
-        public const int VD_UNSEL_VERT   = 9;
-        public const int VD_SEL_BONE     = 10;
-        public const int VD_UNSEL_BONE   = 11;
-        public const int VD_SEL_MESH_ORIGIN   = 12;
-        public const int VD_UNSEL_MESH_ORIGIN = 13;
-        public const int VD_MIRROR_MESH_ORIGIN = 14;
-        public const int VD_NORMAL       = 15;
-        public const int VD_COUNT        = 16;
+        public const int VD_UNSEL_MIRROR_VERT = 6;
+        public const int VD_SEL_WIRE     = 7;
+        public const int VD_UNSEL_WIRE   = 8;
+        public const int VD_SEL_VERT     = 9;
+        public const int VD_UNSEL_VERT   = 10;
+        public const int VD_SEL_BONE     = 11;
+        public const int VD_UNSEL_BONE   = 12;
+        public const int VD_SEL_MESH_ORIGIN   = 13;
+        public const int VD_UNSEL_MESH_ORIGIN = 14;
+        public const int VD_MIRROR_MESH_ORIGIN = 15;
+        public const int VD_NORMAL       = 16;
+        public const int VD_COUNT        = 17;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
@@ -297,6 +300,8 @@ namespace Poly_Ling.Player
         public Button        FaceHideBtn           { get; private set; }
         public VisualElement MergeMeshesSection    { get; private set; }
         public Button        MergeMeshesBtn        { get; private set; }
+        public VisualElement BooleanSection        { get; private set; }
+        public Button        BooleanBtn            { get; private set; }
         public VisualElement MorphSection          { get; private set; }
         public Button        MorphBtn              { get; private set; }
         public VisualElement MorphCreateSection    { get; private set; }
@@ -382,6 +387,13 @@ namespace Poly_Ling.Player
         /// <summary>パイプライン自動検証（読み込み→スキン→ウェイト→マッピング→保存往復）。</summary>
         public VisualElement PipelineTestSection      { get; private set; }
         public Button        PipelineTestBtn          { get; private set; }
+        public VisualElement OriginTestSection        { get; private set; }
+        public Button        OriginTestBtn            { get; private set; }
+        public VisualElement SkinTestSection          { get; private set; }
+        public Button        SkinTestBtn              { get; private set; }
+
+        /// <summary>左ペイン：現在のタブの全オブジェクトを選択する。処理はメッシュリスト側と同じ。</summary>
+        public Button        SelectAllObjectsBtn      { get; private set; }
         public VisualElement RemoteServerSection    { get; private set; }
         public Button        RemoteServerBtn        { get; private set; }
         public VisualElement LogSection             { get; private set; }
@@ -943,6 +955,12 @@ namespace Poly_Ling.Player
 
             scroll.Add(normalRecalcRow);
 
+            // 現在のタブの全オブジェクトを選択する。
+            // メッシュリスト内の同名ボタンと同じ処理を呼ぶだけで、判定は増やさない。
+            SelectAllObjectsBtn = MakeBtn("すべてのオブジェクトを選択");
+            SelectAllObjectsBtn.style.marginBottom = 4;
+            scroll.Add(SelectAllObjectsBtn);
+
             scroll.Add(Separator());
 
             LocalLoaderSection = new VisualElement();
@@ -1185,8 +1203,6 @@ namespace Poly_Ling.Player
             TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1;
             rowTPoseHuman.Add(HumanoidMappingBtn); rowTPoseHuman.Add(TPoseBtn); foBoneMorph.Add(rowTPoseHuman);
 
-            MirrorBtn = MakeBtn("ミラー編集"); foBoneMorph.Add(MirrorBtn);
-
             var rowBlend = new VisualElement(); rowBlend.style.flexDirection = FlexDirection.Row; rowBlend.style.marginBottom = 2;
             BlendBtn      = MakeBtn("メッシュブレンド"); BlendBtn.style.flexGrow      = 1; BlendBtn.style.marginRight      = 2;
             ModelBlendBtn = MakeBtn("モデルブレンド");   ModelBlendBtn.style.flexGrow = 1;
@@ -1215,6 +1231,7 @@ namespace Poly_Ling.Player
             rowUv.Add(UVEditorBtn); rowUv.Add(UVUnwrapBtn); rowUv.Add(UVZBtn); foUvMat.Add(rowUv);
 
             MergeMeshesBtn  = MakeBtn("メッシュマージ");   foUvMat.Add(MergeMeshesBtn);
+            BooleanBtn      = MakeBtn("ブーリアン");       foUvMat.Add(BooleanBtn);
 
             // ── サーバと連携 ───────────────────────────────────────────
             // クライアントモードでのサーバとのやり取り。
@@ -1247,10 +1264,6 @@ namespace Poly_Ling.Player
             MotionClipTestBtn = MakeBtn("Yet（統合モーション)"); MotionClipTestBtn.style.flexGrow = 1;
             rowMisc2.Add(UnityClipTestBtn); rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
 
-            var rowMiscTest = new VisualElement(); rowMiscTest.style.flexDirection = FlexDirection.Row; rowMiscTest.style.marginBottom = 2;
-            PipelineTestBtn = MakeBtn("パイプライン自動検証"); PipelineTestBtn.style.flexGrow = 1;
-            rowMiscTest.Add(PipelineTestBtn); foOther.Add(rowMiscTest);
-
             var rowMisc3 = new VisualElement(); rowMisc3.style.flexDirection = FlexDirection.Row; rowMisc3.style.marginBottom = 2;
             UnderlayBtn = MakeBtn("下絵");        UnderlayBtn.style.flexGrow = 1; UnderlayBtn.style.marginRight = 2;
             GridAxisBtn = MakeBtn("軸/グリッド"); GridAxisBtn.style.flexGrow = 1; GridAxisBtn.style.marginRight = 2;
@@ -1261,6 +1274,12 @@ namespace Poly_Ling.Player
             CameraBtn  = MakeBtn("カメラ調整"); CameraBtn.style.flexGrow  = 1; CameraBtn.style.marginRight = 2;
             CaptureBtn = MakeBtn("キャプチャ"); CaptureBtn.style.flexGrow = 1;
             rowMisc4.Add(CameraBtn); rowMisc4.Add(CaptureBtn); foOther.Add(rowMisc4);
+
+            // 一時ミラー（旧「ミラー編集」）。
+            // 作業中だけ反対側の実体を生やす一時的な機能であり、ボーン・モーフの編集
+            // 機能ではないため「その他」に置く。各ツール内の「一時ミラー」ボタンは
+            // このパネルで指定したパラメータ（TempMirrorSettings）を使う。
+            MirrorBtn = MakeBtn("一時ミラー"); foOther.Add(MirrorBtn);
 
             // ── 結合 ───────────────────────────────────────────────────
             var foMerge = MakeFoldout("結合", "Merge");
@@ -1276,6 +1295,20 @@ namespace Poly_Ling.Player
             FaceMergeCollapseBtn = MakeBtn("面結合(頂点削除)"); FaceMergeCollapseBtn.style.flexGrow = 1;
             rowMerge2.Add(Quad4To1Btn); rowMerge2.Add(FaceMergeCollapseBtn); foMerge.Add(rowMerge2);
 
+            // ── システムデバッグ ───────────────────────────────────────
+            // 自動検証の入口。通常の編集操作ではないので独立させる。
+            var foSysDebug = MakeFoldout("システムデバッグ", "SysDebug");
+
+            var rowSysDebug = new VisualElement(); rowSysDebug.style.flexDirection = FlexDirection.Row; rowSysDebug.style.marginBottom = 2;
+            PipelineTestBtn = MakeBtn("パイプライン自動検証"); PipelineTestBtn.style.flexGrow = 1;
+            PipelineTestBtn.style.marginRight = 2;
+            OriginTestBtn = MakeBtn("原点CSV自動検証"); OriginTestBtn.style.flexGrow = 1;
+            rowSysDebug.Add(PipelineTestBtn); rowSysDebug.Add(OriginTestBtn); foSysDebug.Add(rowSysDebug);
+
+            var rowSysDebug2 = new VisualElement(); rowSysDebug2.style.flexDirection = FlexDirection.Row; rowSysDebug2.style.marginBottom = 2;
+            SkinTestBtn = MakeBtn("スキン生成自動検証"); SkinTestBtn.style.flexGrow = 1;
+            rowSysDebug2.Add(SkinTestBtn); foSysDebug.Add(rowSysDebug2);
+
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
             scroll.Add(foRemote);
@@ -1289,6 +1322,7 @@ namespace Poly_Ling.Player
             scroll.Add(foBoneMorph);
             scroll.Add(foOther);
             scroll.Add(foMerge);
+            scroll.Add(foSysDebug);
 
             scroll.Add(Separator());
 
@@ -1306,7 +1340,7 @@ namespace Poly_Ling.Player
             {
                 "カリング",
                 "選択Mesh",  "非選Mesh", "非選Mirror",
-                "非選M辺",   "非選M頂点",
+                "非選M面",   "非選M辺",  "非選M頂点",
                 "選択辺",    "非選辺",
                 "選択頂点",  "非選頂点",
                 "選択Bone",  "非選Bone",
@@ -1320,6 +1354,7 @@ namespace Poly_Ling.Player
                 true,  // 選択Mesh
                 true,  // 非選Mesh
                 true,  // 非選Mirror
+                true,  // 非選M面
                 true,  // 非選M辺
                 true,  // 非選M頂点
                 true,  // 選択辺
@@ -1552,6 +1587,7 @@ namespace Poly_Ling.Player
             NormalTransplantSection    = AddSection(visible: false);
             FaceHideSection            = AddSection(visible: false);
             MergeMeshesSection         = AddSection(visible: false);
+            BooleanSection             = AddSection(visible: false);
             MorphSection               = AddSection(visible: false);
             MorphCreateSection         = AddSection(visible: false);
             TPoseSection               = AddSection(visible: false);
@@ -1589,6 +1625,8 @@ namespace Poly_Ling.Player
             UnityClipTestSection       = AddSection(visible: false);
             MotionClipTestSection      = AddSection(visible: false);
             PipelineTestSection        = AddSection(visible: false);
+            OriginTestSection          = AddSection(visible: false);
+            SkinTestSection            = AddSection(visible: false);
             UnderlaySection            = AddSection(visible: false);
             GridAxisSection            = AddSection(visible: false);
             CameraSection              = AddSection(visible: false);
@@ -1677,70 +1715,126 @@ namespace Poly_Ling.Player
             ApplyDarkTheme(root);
         }
 
+        // ================================================================
+        // ボタン色の共通定数
+        //
+        // ApplyDarkTheme は全 Button へ color = 白 / backgroundColor = 暗灰 を
+        // 「インラインスタイル」で設定する。UIToolkit ではインラインが StyleSheet より
+        // 優先されるため、非 active に戻すときに StyleColor(StyleKeyword.Null) を入れると
+        // インライン背景だけが外れて USS 既定の明るい灰色になり、白のままの文字色と
+        // 相まって「白地に白文字」になる。
+        // 非 active へ戻すときは Null ではなく BtnInactiveColor を明示すること。
+        //
+        // 各パネルが独自に色定数を持つと同じ不具合が再発するため、ApplyDarkTheme と
+        // 同じ場所に置いて全パネルから参照させる。
+        // ================================================================
+
+        /// <summary>非 active なボタンの背景色（ApplyDarkTheme が入れる値と同じ）。</summary>
+        public static readonly StyleColor BtnInactiveColor = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+
+        /// <summary>active なボタンの背景色（青）。</summary>
+        public static readonly StyleColor BtnActiveColor   = new StyleColor(new Color(0.3f, 0.5f, 1.0f));
+
         /// <summary>
         /// VisualElement サブツリー全体にダークテーマを適用する。
         /// Build 後に動的再構築するコンテナに対しても呼び出すこと。
+        ///
+        /// 【重要: コントロールの型を列挙しないこと】
+        /// 旧実装は Query&lt;TextField&gt; / Query&lt;FloatField&gt; / Query&lt;DropdownField&gt; …
+        /// のように型を並べて塗っていた。この方式は新しいコントロールを使うたびに
+        /// 塗り漏れ（白背景に白文字で読めない）が発生し、実際に EnumField・SliderInt・
+        /// Foldout・RadioButtonGroup・ListView・TreeView が長く塗られないままだった。
+        ///
+        /// そのため現在は型ではなく「UIToolkit が部品へ付ける USS クラス名」で拾う。
+        ///   ・文字色  … TextElement 一本（Label / Button の文字 / ポップアップの
+        ///                表示文字はすべて TextElement の派生）
+        ///   ・入力部  … unity-base-text-field__input / unity-base-popup-field__input 等
+        /// これにより、今後どの型を追加しても自動的に塗られる。
+        /// 型名を書き足す修正をしたくなったら、それは設計を戻す変更なので避けること。
+        ///
+        /// 【個々のパネルで色を指定しないこと】
+        /// パネル側で style.color を書くと、ここでの一括指定と競合して読めない配色になる。
+        /// 配色の決定はこの関数に集約する。
         /// </summary>
         public static void ApplyDarkTheme(UnityEngine.UIElements.VisualElement root)
         {
             if (root == null) return;
             var white   = new StyleColor(Color.white);
-            var btnBg   = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+            var btnBg   = BtnInactiveColor;
             var fieldBg = new StyleColor(new Color(0.20f, 0.20f, 0.20f));
             var hbBg    = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
 
+            // ── 文字色（全コントロール共通） ─────────────────────────────
+            // Label・Button の文字・DropdownField / EnumField の表示文字・
+            // Foldout の見出しなど、テキストを持つ要素はすべて TextElement の派生。
+            root.Query<TextElement>().ForEach(t => t.style.color = white);
+
+            // ── ボタン ───────────────────────────────────────────────────
+            // Button は BaseField ではないので背景を個別に指定する。
             root.Query<Button>().ForEach(b =>
             {
                 b.style.color = white;
                 b.style.backgroundColor = btnBg;
             });
 
-            root.Query<Label>().ForEach(l => l.style.color = white);
+            // ── フィールド本体の背景・文字色 ─────────────────────────────
+            // BaseField<T> 派生はすべて unity-base-field を持つ。型を問わない。
+            root.Query<VisualElement>(className: "unity-base-field").ForEach(f =>
+            {
+                f.style.color = white;
+            });
 
+            // ── 入力部の背景 ─────────────────────────────────────────────
+            // 型ではなく部品クラス名で拾う。派生クラスが基底名を持つ場合と
+            // 自分の名前しか持たない場合の両方に備えて候補を並べる。
+            PaintInputParts(root, fieldBg, white,
+                "unity-base-text-field__input",
+                "unity-base-popup-field__input",
+                "unity-popup-field__input",
+                "unity-enum-field__input");
+
+            // ── HelpBox ──────────────────────────────────────────────────
             root.Query<HelpBox>().ForEach(h =>
             {
                 h.style.color = white;
                 h.style.backgroundColor = hbBg;
             });
 
-            root.Query<TextField>().ForEach(t =>
-            {
-                t.style.color = white;
-                t.style.backgroundColor = fieldBg;
-                var inp = t.Q(className: "unity-base-text-field__input");
-                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
-            });
-            root.Query<FloatField>().ForEach(t =>
-            {
-                t.style.color = white;
-                t.style.backgroundColor = fieldBg;
-                var inp = t.Q(className: "unity-base-text-field__input");
-                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
-            });
-            root.Query<IntegerField>().ForEach(t =>
-            {
-                t.style.color = white;
-                t.style.backgroundColor = fieldBg;
-                var inp = t.Q(className: "unity-base-text-field__input");
-                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
-            });
-            root.Query<DropdownField>().ForEach(t =>
-            {
-                t.style.color = white;
-                t.style.backgroundColor = fieldBg;
-                var inp = t.Q(className: "unity-base-popup-field__input");
-                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
-            });
+            // ── チェックマーク（Toggle / RadioButton） ───────────────────
+            root.Query<VisualElement>(className: "unity-toggle__checkmark").ForEach(e =>
+                e.style.backgroundColor = white);
 
-            root.Query<Toggle>().ForEach(t =>
-            {
-                t.style.color = white;
-                var checkmark = t.Q(className: "unity-toggle__checkmark");
-                if (checkmark != null) checkmark.style.backgroundColor = new StyleColor(Color.white);
-            });
-
+            // ── スライダの溝（Slider / SliderInt / MinMaxSlider 共通） ───
             root.Query<VisualElement>(className: "unity-base-slider__tracker").ForEach(e =>
                 e.style.backgroundColor = fieldBg);
+
+            // ── 数値欄は確定時にだけ通知させる ───────────────────────────
+            // 既定では 1 文字打つたびに ChangeEvent が飛び、入力途中の値
+            // （"90" と打つ途中の "9"）で操作が走ってしまう。
+            //
+            // ここだけ型名が出るのは配色の話ではないため。isDelayed は
+            // TextInputBaseField 派生にしか無いプロパティで、部品クラス名からは
+            // 触れない。上の配色部分に型名を書き足してはならない。
+            root.Query<FloatField>().ForEach(f   => f.isDelayed = true);
+            root.Query<IntegerField>().ForEach(f => f.isDelayed = true);
+        }
+
+        /// <summary>
+        /// 入力部（テキスト欄・ポップアップの表示部）へ背景色と文字色を塗る。
+        /// クラス名の候補を順に走査するので、コントロールの型を知る必要がない。
+        /// </summary>
+        private static void PaintInputParts(
+            UnityEngine.UIElements.VisualElement root,
+            StyleColor bg, StyleColor fg, params string[] classNames)
+        {
+            foreach (string cn in classNames)
+            {
+                root.Query<VisualElement>(className: cn).ForEach(e =>
+                {
+                    e.style.backgroundColor = bg;
+                    e.style.color           = fg;
+                });
+            }
         }
 
         // ================================================================

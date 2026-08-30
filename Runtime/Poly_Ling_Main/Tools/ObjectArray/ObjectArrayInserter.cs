@@ -175,6 +175,9 @@ namespace Poly_Ling.Tools.ObjectArray
         {
             if (dst == null || pieces == null) return;
 
+            // 生成物1つを 1 つの部品として扱い、出力先の空き番号から順に付ける。
+            int partsId = Poly_Ling.Ops.PartsIdOps.NextPartsId(dst);
+
             foreach (var piece in pieces)
             {
                 var src = piece?.Mesh;
@@ -185,8 +188,12 @@ namespace Poly_Ling.Tools.ObjectArray
                 for (int v = 0; v < src.VertexCount; v++)
                 {
                     var sv = src.Vertices[v];
-                    dst.Vertices.Add(sv != null ? sv.Clone() : new Vertex(Vector3.zero));
+                    var nv = sv != null ? sv.Clone() : new Vertex(Vector3.zero);
+                    nv.PartsId = partsId;
+                    dst.Vertices.Add(nv);
                 }
+
+                partsId++;
 
                 for (int f = 0; f < src.FaceCount; f++)
                 {
@@ -200,6 +207,9 @@ namespace Poly_Ling.Tools.ObjectArray
                     dst.AddFace(nf);
                 }
             }
+
+            // サブIDは連結後の並びで、部品ごとに 0 から振り直す。
+            Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(dst);
 
             dst.InvalidatePositionCache();
         }
@@ -230,6 +240,10 @@ namespace Poly_Ling.Tools.ObjectArray
 
             var mo = piece.Mesh;
             mo.Name = name;
+
+            // 新しい描画オブジェクトとして置くので、部品IDは 0 から始める。
+            Poly_Ling.Ops.PartsIdOps.SetPartsId(mo, 0);
+            Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(mo);
 
             // 複製元から受け継いだ階層情報は捨てる（置き場所はここで決め直すため）。
             mo.ParentIndex           = -1;

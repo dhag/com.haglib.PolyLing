@@ -561,6 +561,10 @@ namespace Poly_Ling.Tools
             v.BoneWeight       = src.BoneWeight;
             v.MirrorBoneWeight = src.MirrorBoneWeight;
 
+            // 部品ID / サブIDは引き継ぐ。厚み付けで増えた頂点も元の部品に属するものとして扱う。
+            v.PartsId = src.PartsId;
+            v.SubId   = src.SubId;
+
             // Flags は引き継がない（Locked / Auxiliary を生成物へ持ち込まないため）。
             return v;
         }
@@ -575,6 +579,10 @@ namespace Poly_Ling.Tools
             v.Normals.Add(normal);
             v.BoneWeight       = src.BoneWeight;
             v.MirrorBoneWeight = src.MirrorBoneWeight;
+
+            // 部品ID / サブIDは引き継ぐ。
+            v.PartsId = src.PartsId;
+            v.SubId   = src.SubId;
             return v;
         }
     }

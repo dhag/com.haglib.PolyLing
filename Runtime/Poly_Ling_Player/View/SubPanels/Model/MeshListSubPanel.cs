@@ -346,7 +346,6 @@ namespace Poly_Ling.MeshListV2
             root.Add(filterLabel);
 
             _filterField = new TextField { name = "filter-field" };
-            _filterField.style.color = new StyleColor(Color.black);
             _filterField.style.marginBottom = 3;
             root.Add(_filterField);
 
@@ -381,12 +380,12 @@ namespace Poly_Ling.MeshListV2
             btnRow.Add(MakeSmallBtn("Del", "btn-delete"));
             // 一括操作。対象は「選択されている行すべて」。
             // 行内のボタンは押した行 1 件だけなので、押す場所で対象が分かれる。
-            btnRow.Add(MakeSmallBtn("👁",  "btn-show",        "選択を可視にする"));
+            btnRow.Add(MakeSmallBtn("◉",  "btn-show",        "選択を可視にする"));
             btnRow.Add(MakeSmallBtn("−",   "btn-hide",        "選択を不可視にする"));
-            btnRow.Add(MakeSmallBtn("🔒",  "btn-lock",        "選択をロックする"));
-            btnRow.Add(MakeSmallBtn("🔓",  "btn-unlock",      "選択のロックを解除する"));
+            btnRow.Add(MakeSmallBtn("■",  "btn-lock",        "選択をロックする"));
+            btnRow.Add(MakeSmallBtn("□",  "btn-unlock",      "選択のロックを解除する"));
             btnRow.Add(MakeSmallBtn("⇆",   "btn-mirror-on",   "選択のミラーを有効にする"));
-            btnRow.Add(MakeSmallBtn("⇆̸",   "btn-mirror-off",  "選択のミラーを無効にする"));
+            btnRow.Add(MakeSmallBtn("⇆×",   "btn-mirror-off",  "選択のミラーを無効にする"));
             _mainContent.Add(btnRow);
 
             // ── 選択辞書（オブジェクト選択辞書）からの読み込み
@@ -459,7 +458,6 @@ namespace Poly_Ling.MeshListV2
             nameRow.Add(nameLabel);
 
             _meshNameField = new TextField { name = "mesh-name-field" };
-            _meshNameField.style.color   = new StyleColor(Color.black);
             _meshNameField.style.flexGrow = 1;
             nameRow.Add(_meshNameField);
 
@@ -570,7 +568,6 @@ namespace Poly_Ling.MeshListV2
             c.Add(hint);
 
             _renamePathField = new TextField { name = "rename-path-field" };
-            _renamePathField.style.color = new StyleColor(Color.black);
             _renamePathField.RegisterValueChangedCallback(e => RecentPaths.Set(RenamePathKey(), e.newValue));
             c.Add(PlayerIoUiKit.PathRow(_renamePathField, OnRenameBrowse));
             _renamePathField.SetValueWithoutNotify(ResolveRenamePath());
@@ -604,7 +601,6 @@ namespace Poly_Ling.MeshListV2
             parent.Add(topRow);
 
             _morphFilterField = new TextField(); _morphFilterField.style.marginBottom = 3;
-            _morphFilterField.style.color = new StyleColor(Color.black);
             parent.Add(_morphFilterField);
 
             // リスト
@@ -644,7 +640,6 @@ namespace Poly_Ling.MeshListV2
             parent.Add(LabeledRow("パネル", _morphPanelPopupContainer));
 
             _morphNameField = new TextField(); _morphNameField.name = "morph-name-field";
-            _morphNameField.style.color = new StyleColor(Color.black);
             parent.Add(LabeledRow("名前", _morphNameField));
 
             var convRow = new VisualElement(); convRow.style.flexDirection = FlexDirection.Row;
@@ -658,7 +653,6 @@ namespace Poly_Ling.MeshListV2
             // モーフセット作成
             parent.Add(SectionHeader("モーフセット作成"));
             _morphSetNameField = new TextField(); _morphSetNameField.name = "morph-set-name-field";
-            _morphSetNameField.style.color = new StyleColor(Color.black);
             parent.Add(LabeledRow("セット名", _morphSetNameField));
 
             _morphSetTypePopupContainer = new VisualElement { name = "morph-set-type-container" };
@@ -903,10 +897,10 @@ namespace Poly_Ling.MeshListV2
                 e => _rowCtrlDown = e.ctrlKey || e.commandKey, TrickleDown.TrickleDown);
 
             var attr = new VisualElement(); attr.style.flexDirection = FlexDirection.Row; attr.style.flexShrink = 0;
-            var editorBtn = MkAttrBtn("editor-btn", "\u270B", "編集者の取得／解放");
+            var editorBtn = MkAttrBtn("editor-btn", "\u25CB", "編集者の取得／解放");
             attr.Add(editorBtn);
-            var visBtn = MkAttrBtn("vis-btn", "👁", "可視性切り替え");
-            var lockBtn = MkAttrBtn("lock-btn", "🔒", "ロック切り替え");
+            var visBtn = MkAttrBtn("vis-btn", "◉", "可視性切り替え");
+            var lockBtn = MkAttrBtn("lock-btn", "■", "ロック切り替え");
             var symBtn  = MkAttrBtn("sym-btn", "⇆", "対称切り替え");
             attr.Add(visBtn); attr.Add(lockBtn); attr.Add(symBtn);
             c.Add(attr);
@@ -945,7 +939,7 @@ namespace Poly_Ling.MeshListV2
                 if (adapter.IsMirrorSide)
                 {
                     // 選択できる行を薄く描かない。薄さは「選べない（生成ミラー）」の印。
-                    cache.NameLabel.text = $"\U0001FA9E {adapter.DisplayName}";
+                    cache.NameLabel.text = $"\u25C7 {adapter.DisplayName}";
                     cache.NameLabel.style.opacity = adapter.IsSelectionBlocked ? 0.4f : 1f;
                 }
                 else if (adapter.IsRealSide)
@@ -968,9 +962,9 @@ namespace Poly_Ling.MeshListV2
             BindEditor(cache, adapter);
             ApplyIndentWidth(element);
 
-            BindAttrBtn(cache.VisBtn, adapter, adapter.IsVisible, "👁", "−",
+            BindAttrBtn(cache.VisBtn, adapter, adapter.IsVisible, "◉", "−",
                 () => ToggleVisibilityFromRow(adapter));
-            BindAttrBtn(cache.LockBtn, adapter, adapter.IsLocked, "🔒", "🔓",
+            BindAttrBtn(cache.LockBtn, adapter, adapter.IsLocked, "■", "□",
                 () => ToggleLockFromRow(adapter));
 
             if (cache.SymBtn != null)
@@ -1110,7 +1104,7 @@ namespace Poly_Ling.MeshListV2
             // OFF のときもラベルを出す。空文字だと「押せるボタンがそこにある」ことが
             // 見えず、ミラーを掛ける入口が存在しないように見えてしまう。
             // 状態の区別は不透明度で付ける（ON=不透明 / OFF=薄い / ロック=中間）。
-            btn.text = adapter.IsMirrorSide ? "\U0001FA9E" : "\u21C6";
+            btn.text = adapter.IsMirrorSide ? "\u25C7" : "\u21C6";
             btn.style.opacity = locked ? 0.5f : (on ? 1f : 0.28f);
             btn.tooltip = adapter.IsMirrorSide
                 ? "ミラー側メッシュ。実体側の従属なのでここでは変更できません。"
@@ -1271,7 +1265,7 @@ namespace Poly_Ling.MeshListV2
 
             // 取得なら自分の名前、解放なら空文字を送る。
             // ObjectIds を添えることでサーバ側がリスト構造のズレを検出できる。
-            string icon = isMine ? "\u2714" : "\u270B";
+            string icon = isMine ? "\u25CF" : "\u25CB";
             string next = isMine ? "" : LocalUserName;
             BindAttrBtn(cache.EditorBtn, adapter, true, icon, icon,
                 () =>
@@ -1360,6 +1354,12 @@ namespace Poly_Ling.MeshListV2
             if (a.MasterIndex >= 0)
                 SendCmd(new SetMeshFoldingCommand(ModelIndex, a.MasterIndex, !newExpanded));
         }
+
+        /// <summary>
+        /// 左ペインのボタンから「すべてのオブジェクトを選択」を実行する。
+        /// リスト内のボタン（btn-select-all）と同じ処理へ委ねるだけで、判定は持たない。
+        /// </summary>
+        public void SelectAllObjectsFromExternal() => SelectAllObjects();
 
         /// <summary>
         /// 現在のタブのリストにある全オブジェクトを選択する。
@@ -2804,11 +2804,8 @@ namespace Poly_Ling.MeshListV2
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             fx = new FloatField("X") { name = $"{prefix}-x" }; fx.style.flexGrow = 1;
-            fx.style.color = new StyleColor(Color.black);
             fy = new FloatField("Y") { name = $"{prefix}-y" }; fy.style.flexGrow = 1;
-            fy.style.color = new StyleColor(Color.black);
             fz = new FloatField("Z") { name = $"{prefix}-z" }; fz.style.flexGrow = 1;
-            fz.style.color = new StyleColor(Color.black);
             row.Add(fx); row.Add(fy); row.Add(fz); parent.Add(row);
         }
 
@@ -2821,11 +2818,8 @@ namespace Poly_Ling.MeshListV2
         {
             var frow = new VisualElement(); frow.style.flexDirection = FlexDirection.Row; frow.style.marginBottom = 1;
             fx = new FloatField("X"); fx.style.flexGrow = 1;
-            fx.style.color = new StyleColor(Color.black);
             fy = new FloatField("Y"); fy.style.flexGrow = 1;
-            fy.style.color = new StyleColor(Color.black);
             fz = new FloatField("Z"); fz.style.flexGrow = 1;
-            fz.style.color = new StyleColor(Color.black);
             frow.Add(fx); frow.Add(fy); frow.Add(fz); parent.Add(frow);
 
             var srow = new VisualElement(); srow.style.flexDirection = FlexDirection.Row; srow.style.marginBottom = 2;

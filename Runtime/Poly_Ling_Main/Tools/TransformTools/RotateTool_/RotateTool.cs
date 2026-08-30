@@ -92,6 +92,11 @@ namespace Poly_Ling.Tools
         {
             if (_ctx != null) ApplyRotation(_ctx);
             ExitSliderDragging();
+            // 確定した回転はメッシュへ焼き込まれ、次のプレビューは焼き込み後の形状を
+            // 基準に取り直す。角度を残すと同じ値がもう一度加算されるため 0 へ戻す。
+            // ScaleTool.EndSliderDrag がスケールを 1 に戻すのと同じ扱い。
+            _rotX = _rotY = _rotZ = 0f;
+            _axisAngle = 0f;
         }
 
         /// <summary>回転をリセットして元の位置に戻す。</summary>

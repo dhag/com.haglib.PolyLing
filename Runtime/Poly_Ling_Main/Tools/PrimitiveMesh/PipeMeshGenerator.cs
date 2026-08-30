@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
+using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.Pipe
 {
@@ -32,6 +33,23 @@ namespace Poly_Ling.Pipe
             IReadOnlyList<Vector2> profile, bool profileClosed, bool capEnds,
             Vector3? startPoint, Vector3? endPoint,
             string meshName)
+            => Generate(left, right, beltClosed, flipWinding,
+                        profile, profileClosed, capEnds, startPoint, endPoint, meshName, null);
+
+        /// <summary>
+        /// パーツIDを採番する版。梯子1本＝パーツ1つとして partsIds から1つ取り、
+        /// この梯子で作った全頂点（側面・蓋）へ書く。partsIds が null なら書かない。
+        ///
+        /// サブIDはここでは触らない。厚み付けや重複頂点の結合で頂点数が変わるため、
+        /// メッシュ確定後に PrimitiveMeshPostProcess.AssignSubIdByPartsId で振り直す。
+        /// 頂点が1つも出来なかったとき（基準ベルト／断面が不足）はIDを消費しない。
+        /// </summary>
+        public static MeshObject Generate(
+            IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
+            bool beltClosed, bool flipWinding,
+            IReadOnlyList<Vector2> profile, bool profileClosed, bool capEnds,
+            Vector3? startPoint, Vector3? endPoint,
+            string meshName, PartsIdCounter partsIds)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Pipe" : meshName);
 
@@ -91,6 +109,16 @@ namespace Poly_Ling.Pipe
 
                 if (endPoint.HasValue)   AddPointCap(mo, (n - 1) * m, m, endPoint.Value,   tailOut);
                 else                     AddCap     (mo, (n - 1) * m, m, tailOut);
+            }
+
+            // この梯子で作った全頂点へ同じパーツIDを書く（側面・蓋をまとめて1パーツ）。
+            if (partsIds != null && mo.VertexCount > 0)
+            {
+                int pid = partsIds.Take();
+                for (int v = 0; v < mo.Vertices.Count; v++)
+                {
+                    if (mo.Vertices[v] != null) mo.Vertices[v].PartsId = pid;
+                }
             }
 
             mo.RecalculateNormals();

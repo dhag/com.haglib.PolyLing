@@ -43,6 +43,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
+using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.Frill
 {
@@ -120,6 +121,30 @@ namespace Poly_Ling.Frill
             bool connectShared,
             FrillRungSeam seam,
             string meshName)
+            => Generate(belts, profileA, profileB, twoProfiles, connectShared, seam, meshName, null);
+
+        /// <summary>
+        /// パーツIDを採番する版。partsIds が null なら書かない。
+        ///
+        /// 【非融合】梯子1本＝パーツ1つ。左右レールとも同じIDになる。
+        /// 【融合】  レール行（溶接後に1本になったレール）ごとにパーツを分ける。
+        ///   段0上 = 0、段0下（= 段1上）= 1、… 最後の段の下レール = 段数 となり、
+        ///   梯子1本の並びなら「段数 + 1」個のパーツが出来る。
+        ///   位置・向き・プロファイル補間パラメータが一致せず溶接されなかった
+        ///   レール行は、その梯子ぶんだけ独立したパーツになる。
+        ///
+        /// サブIDはここでは触らない。厚み付けや重複頂点の結合で頂点数が変わるため、
+        /// メッシュ確定後に PrimitiveMeshPostProcess.AssignSubIdByPartsId で振り直す。
+        /// </summary>
+        public static MeshObject Generate(
+            IReadOnlyList<FrillBeltInput> belts,
+            IReadOnlyList<Vector2> profileA,
+            IReadOnlyList<Vector2> profileB,
+            bool twoProfiles,
+            bool connectShared,
+            FrillRungSeam seam,
+            string meshName,
+            PartsIdCounter partsIds)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Frill" : meshName);
 
@@ -151,11 +176,17 @@ namespace Poly_Ling.Frill
             var stepRailL = new int[steps.Count];
             var stepRailR = new int[steps.Count];
 
+            // パーツIDの割り当て単位 → パーツID。
+            // 融合ありはレール行（梯子index, 左右の別）単位、融合なしは梯子単位。
+            var rowParts = new Dictionary<long, int>();
+
             for (int i = 0; i < steps.Count; i++)
             {
                 var st = steps[i];
-                stepRailL[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.A0, st.A1, st, 0f, st.TA);
-                stepRailR[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.B0, st.B1, st, 1f, st.TB);
+                stepRailL[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.A0, st.A1, st, 0f, st.TA,
+                                            rowParts, partsIds, 0);
+                stepRailR[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.B0, st.B1, st, 1f, st.TB,
+                                            rowParts, partsIds, 1);
             }
 
             foreach (var r in rails)
@@ -212,13 +243,17 @@ namespace Poly_Ling.Frill
 
                         Vector3 avg = boundarySum[bk] / boundaryCount[bk];
                         r.Verts[k] = mo.VertexCount;
-                        mo.Vertices.Add(new Vertex(avg, uv));
+                        var bv = new Vertex(avg, uv);
+                        if (partsIds != null) bv.PartsId = r.PartsId;
+                        mo.Vertices.Add(bv);
                         boundaryVert[bk] = r.Verts[k];
                         continue;
                     }
 
                     r.Verts[k] = mo.VertexCount;
-                    mo.Vertices.Add(new Vertex(ProfilePos(r.P0, dir, len, r.Normal, p, r.HeightScale), uv));
+                    var nv = new Vertex(ProfilePos(r.P0, dir, len, r.Normal, p, r.HeightScale), uv);
+                    if (partsIds != null) nv.PartsId = r.PartsId;
+                    mo.Vertices.Add(nv);
                 }
             }
 
@@ -288,6 +323,7 @@ namespace Poly_Ling.Frill
             public long    TKey;         // T の量子化値（キー用）
             public float   U0, UStep, V;
             public int     Scope;    // 境界溶接のスコープ（共有あり=0 / 共有なし=梯子index）
+            public int     PartsId;  // このレールの頂点へ書くパーツID
             public int[]   Verts;
         }
 
@@ -341,9 +377,13 @@ namespace Poly_Ling.Frill
         /// </summary>
         private static int GetOrAddRail(
             List<RailRec> rails, Dictionary<RailKey, int> railIndex, bool connectShared, bool two,
-            Vector3 p0, Vector3 p1, StepInfo st, float v, float t)
+            Vector3 p0, Vector3 p1, StepInfo st, float v, float t,
+            Dictionary<long, int> rowParts, PartsIdCounter partsIds, int side)
         {
             long tKey = TKeyOf(two, t);
+
+            // 融合ありはレール行（梯子index, 左右の別）単位、融合なしは梯子単位でパーツを分ける。
+            long rowKey = connectShared ? ((long)st.BeltIndex * 2 + side) : st.BeltIndex;
 
             if (connectShared)
             {
@@ -353,17 +393,41 @@ namespace Poly_Ling.Frill
                     rails[idx].NormalSum   += st.Normal;
                     rails[idx].HeightSum   += st.HeightScale;
                     rails[idx].HeightCount += 1;
+
+                    // 溶接で相手のレールを使う行も、同じパーツIDとして覚えておく。
+                    // 同じ行の別ステップが溶接されず新規レールになったとき、同じIDを使うため。
+                    if (partsIds != null && !rowParts.ContainsKey(rowKey))
+                        rowParts[rowKey] = rails[idx].PartsId;
+
                     return idx;
                 }
 
                 idx = rails.Count;
-                rails.Add(NewRail(p0, p1, st, v, 0, t, tKey));
+                var newRec = NewRail(p0, p1, st, v, 0, t, tKey);
+                newRec.PartsId = ResolvePartsId(rowParts, partsIds, rowKey);
+                rails.Add(newRec);
                 railIndex[key] = idx;
                 return idx;
             }
 
-            rails.Add(NewRail(p0, p1, st, v, st.BeltIndex, t, tKey));
+            var rec = NewRail(p0, p1, st, v, st.BeltIndex, t, tKey);
+            rec.PartsId = ResolvePartsId(rowParts, partsIds, rowKey);
+            rails.Add(rec);
             return rails.Count - 1;
+        }
+
+        /// <summary>
+        /// 割り当て単位のパーツIDを引く。初出なら採番する。partsIds が null なら 0 を返す。
+        /// </summary>
+        private static int ResolvePartsId(
+            Dictionary<long, int> rowParts, PartsIdCounter partsIds, long rowKey)
+        {
+            if (partsIds == null) return 0;
+            if (rowParts.TryGetValue(rowKey, out int id)) return id;
+
+            id = partsIds.Take();
+            rowParts[rowKey] = id;
+            return id;
         }
 
         private static RailRec NewRail(

@@ -109,7 +109,14 @@ namespace Poly_Ling.Player
             radiusRow.style.marginBottom  = 3;
             _magnetParamsGroup.Add(radiusRow);
 
-            _magnetRadiusSlider = new Slider(0.01f, 1.0f) { value = 0.5f };
+            // ハンドラの実値から作る。固定値でスライダを作ると、上下限を変えた状態で
+            // 開き直したときにつまみの位置と数字が食い違う。
+            var h0 = GetHandler?.Invoke();
+            float radMin0 = h0?.MinMagnetRadius ?? 0.01f;
+            float radMax0 = h0?.MaxMagnetRadius ?? 1.0f;
+            float rad0    = h0?.MagnetRadius    ?? 0.5f;
+
+            _magnetRadiusSlider = new Slider(radMin0, radMax0) { value = Mathf.Clamp(rad0, radMin0, radMax0) };
             _magnetRadiusSlider.style.flexGrow = 1;
             _magnetRadiusSlider.style.color = new StyleColor(Color.white);
             _magnetRadiusSlider.RegisterValueChangedCallback(e =>
@@ -123,19 +130,16 @@ namespace Poly_Ling.Player
             });
             radiusRow.Add(_magnetRadiusSlider);
 
-            _magnetRadiusField = new FloatField { value = 0.5f };
+            _magnetRadiusField = new FloatField { value = rad0 };
             _magnetRadiusField.style.width = 52;
             _magnetRadiusField.style.color = new StyleColor(Color.white);
+            _magnetRadiusField.tooltip = "上下限の外の値を入れると、上下限のほうを広げて入力値を採用する。";
             _magnetRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
-                float clamped = h != null ? Mathf.Clamp(e.newValue, h.MinMagnetRadius, h.MaxMagnetRadius) : e.newValue;
-                if (h != null) h.MagnetRadius = clamped;
-                _suppressSync = true;
-                _magnetRadiusSlider?.SetValueWithoutNotify(clamped);
-                _magnetRadiusField.SetValueWithoutNotify(clamped);
-                _suppressSync = false;
+                if (h == null) return;
+                ApplyRadiusInput(h, e.newValue);
             });
             radiusRow.Add(_magnetRadiusField);
 
@@ -186,17 +190,16 @@ namespace Poly_Ling.Player
             minLabel.style.color = new StyleColor(Color.white);
             minLabel.style.width = 50;
             minRow.Add(minLabel);
-            _minRadiusField = new FloatField { value = 0.01f };
+            _minRadiusField = new FloatField { value = radMin0 };
             _minRadiusField.style.flexGrow = 1;
             _minRadiusField.style.color = new StyleColor(Color.white);
             _minRadiusField.RegisterValueChangedCallback(e =>
             {
+                if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                float v = Mathf.Max(0.001f, e.newValue);
-                h.MinMagnetRadius = v;
-                _magnetRadiusSlider.lowValue = v;
-                _minRadiusField.SetValueWithoutNotify(v);
+                h.MinMagnetRadius = Mathf.Max(0.001f, e.newValue);
+                ApplyRadiusRange(h);
             });
             minRow.Add(_minRadiusField);
 
@@ -209,17 +212,16 @@ namespace Poly_Ling.Player
             maxLabel.style.color = new StyleColor(Color.white);
             maxLabel.style.width = 50;
             maxRow.Add(maxLabel);
-            _maxRadiusField = new FloatField { value = 1.0f };
+            _maxRadiusField = new FloatField { value = radMax0 };
             _maxRadiusField.style.flexGrow = 1;
             _maxRadiusField.style.color = new StyleColor(Color.white);
             _maxRadiusField.RegisterValueChangedCallback(e =>
             {
+                if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                float v = Mathf.Max(h.MinMagnetRadius + 0.001f, e.newValue);
-                h.MaxMagnetRadius = v;
-                _magnetRadiusSlider.highValue = v;
-                _maxRadiusField.SetValueWithoutNotify(v);
+                h.MaxMagnetRadius = Mathf.Max(h.MinMagnetRadius + SliderRangeUtil.MinSpan, e.newValue);
+                ApplyRadiusRange(h);
             });
             maxRow.Add(_maxRadiusField);
 
@@ -305,11 +307,6 @@ namespace Poly_Ling.Player
 
             _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
 
-            _suppressSync = true;
-            _magnetRadiusSlider?.SetValueWithoutNotify(h.MagnetRadius);
-            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius);
-            _suppressSync = false;
-
             if (_lassoToggle != null)
                 _lassoToggle.SetValueWithoutNotify(
                     h.DragSelectMode == MoveToolHandler.SelectionDragMode.Lasso);
@@ -331,14 +328,15 @@ namespace Poly_Ling.Player
             _gizmoOffsetXSlider?.SetValueWithoutNotify(h.GizmoScreenOffsetX);
             _gizmoOffsetYSlider?.SetValueWithoutNotify(h.GizmoScreenOffsetY);
 
+            // レンジ → 値 の順で入れる（逆順だと旧レンジで値が切り詰められ、
+            // つまみの位置とテキストボックスの数字が食い違う）。
+            _suppressSync = true;
+            SliderRangeUtil.SetRangeAndValue(
+                _magnetRadiusSlider, h.MinMagnetRadius, h.MaxMagnetRadius, h.MagnetRadius);
+            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius);
             _minRadiusField?.SetValueWithoutNotify(h.MinMagnetRadius);
             _maxRadiusField?.SetValueWithoutNotify(h.MaxMagnetRadius);
-
-            if (_magnetRadiusSlider != null)
-            {
-                _magnetRadiusSlider.lowValue  = h.MinMagnetRadius;
-                _magnetRadiusSlider.highValue = h.MaxMagnetRadius;
-            }
+            _suppressSync = false;
 
             UpdateRadiusDragButtonStyle(h.IsRadiusDragMode);
 
@@ -370,9 +368,55 @@ namespace Poly_Ling.Player
         private void UpdateRadiusDragButtonStyle(bool active)
         {
             if (_radiusDragButton == null) return;
+            // 非 active に StyleKeyword.Null を入れると ApplyDarkTheme のインライン背景が
+            // 外れて USS 既定の明るい灰色になり、白文字が読めなくなる。明示色を入れる。
             _radiusDragButton.style.backgroundColor = active
                 ? new StyleColor(new Color(0.3f, 0.6f, 1.0f, 0.8f))
-                : new StyleColor(StyleKeyword.Null);
+                : PlayerLayoutRoot.BtnInactiveColor;
+        }
+
+        /// <summary>
+        /// テキストボックスの入力をそのまま採用する。上下限の外なら上下限を広げる。
+        /// 黙ってクランプすると、上下限が折りたたみの中にあるため
+        /// 「入れた数字が勝手に変わる」ように見える。
+        /// </summary>
+        private void ApplyRadiusInput(MoveToolHandler h, float requested)
+        {
+            float min = h.MinMagnetRadius;
+            float max = h.MaxMagnetRadius;
+            SliderRangeUtil.ExpandToInclude(requested, ref min, ref max);
+            min = Mathf.Max(0.001f, min);
+            if (max < min + SliderRangeUtil.MinSpan) max = min + SliderRangeUtil.MinSpan;
+
+            h.MinMagnetRadius = min;
+            h.MaxMagnetRadius = max;
+            h.MagnetRadius    = Mathf.Clamp(requested, min, max);
+
+            SyncRadiusWidgets(h, min, max);
+        }
+
+        /// <summary>上下限が変わったとき、現在値を新レンジへ収めて UI を揃える。</summary>
+        private void ApplyRadiusRange(MoveToolHandler h)
+        {
+            float min = h.MinMagnetRadius;
+            float max = h.MaxMagnetRadius;
+            if (max < min + SliderRangeUtil.MinSpan)
+            {
+                max = min + SliderRangeUtil.MinSpan;
+                h.MaxMagnetRadius = max;
+            }
+            h.MagnetRadius = Mathf.Clamp(h.MagnetRadius, min, max);
+            SyncRadiusWidgets(h, min, max);
+        }
+
+        private void SyncRadiusWidgets(MoveToolHandler h, float min, float max)
+        {
+            _suppressSync = true;
+            SliderRangeUtil.SetRangeAndValue(_magnetRadiusSlider, min, max, h.MagnetRadius);
+            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius);
+            _minRadiusField?.SetValueWithoutNotify(min);
+            _maxRadiusField?.SetValueWithoutNotify(max);
+            _suppressSync = false;
         }
 
         private void AddHeader(string text, VisualElement target = null)

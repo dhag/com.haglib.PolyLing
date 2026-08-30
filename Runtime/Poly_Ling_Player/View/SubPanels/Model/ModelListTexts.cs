@@ -14,10 +14,10 @@ namespace Poly_Ling.Player
             ["Title"]     = new Dictionary<string, string> { ["en"] = "Model List",   ["ja"] = "モデルリスト" },
             ["NoProject"] = new Dictionary<string, string> { ["en"] = "No project",   ["ja"] = "プロジェクトがありません" },
             ["NoModel"]   = new Dictionary<string, string> { ["en"] = "No models",    ["ja"] = "モデルがありません" },
-            ["Rename"]    = new Dictionary<string, string> { ["en"] = "✎ Rename",     ["ja"] = "✎ 名前変更" },
+            ["Rename"]    = new Dictionary<string, string> { ["en"] = "※ Rename",     ["ja"] = "※ 名前変更" },
             ["Confirm"]   = new Dictionary<string, string> { ["en"] = "✓",            ["ja"] = "✓" },
-            ["Cancel"]    = new Dictionary<string, string> { ["en"] = "✕",            ["ja"] = "✕" },
-            ["Delete"]    = new Dictionary<string, string> { ["en"] = "×",            ["ja"] = "×" },
+            ["Cancel"]    = new Dictionary<string, string> { ["en"] = "×",            ["ja"] = "×" },
+            ["Delete"]    = new Dictionary<string, string> { ["en"] = "Del",          ["ja"] = "Del" },
             ["MeshCount"] = new Dictionary<string, string> { ["en"] = "{0} mesh",     ["ja"] = "{0} mesh" },
         };
 

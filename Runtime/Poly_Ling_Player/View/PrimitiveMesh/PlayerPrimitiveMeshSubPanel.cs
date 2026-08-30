@@ -4352,6 +4352,8 @@ namespace Poly_Ling.Player
             if (!forPreview && _mergeDuplicateVertices && mo != null && mo.VertexCount >= 2)
                 MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, 0.001f);
 
+            AssignGeneratedPartsIds(mo);
+
             // 回転・スケールを頂点へ焼き込む。
             // マージ許容値 (0.001) はローカル空間で評価させたいので、必ずマージの後に行う。
             // 平行移動は焼き込まない (呼出し側の AddMode 別処理が従来どおり _worldPos を扱う)。
@@ -4372,6 +4374,38 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 生成したメッシュへパーツID / サブIDを割り当てる。
+        ///
+        /// 厚み付けと重複頂点の結合で頂点数が変わるため、確定した頂点列に対して呼ぶこと。
+        ///
+        /// フリル／パイプは生成器が複数パーツへ分けているので、パーツIDはそのまま使い
+        /// サブIDだけを振り直す。藤壺は配置元のサブIDをそのまま使うので何もしない。
+        /// それ以外の図形は「1つのパーツを作った」扱いで、パーツID 0 とサブID 0.. を振る。
+        ///
+        /// 既存オブジェクトへ追加するときの番号のずらしは追加側（Viewer）が行う。
+        /// </summary>
+        private void AssignGeneratedPartsIds(MeshObject mo)
+        {
+            if (mo == null || mo.VertexCount == 0) return;
+
+            switch (_current)
+            {
+                case ShapeKind.PlaceObject:
+                    return;
+
+                case ShapeKind.Frill:
+                case ShapeKind.Pipe:
+                    Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(mo);
+                    return;
+
+                default:
+                    Poly_Ling.Ops.PartsIdOps.SetPartsId(mo, 0);
+                    Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(mo);
+                    return;
+            }
+        }
+
+        /// <summary>
         /// Generate() を通らずに MeshObject を作る経路（プロファイルの「メッシュへ反映」）で、
         /// 姿勢の回転・スケールを Generate() 末尾と同じ規則で処理する。
         ///
@@ -4386,6 +4420,9 @@ namespace Poly_Ling.Player
                 mo,
                 BakeRotationEffective ? _rotEuler : Vector3.zero,
                 BakeScaleEffective    ? _scale    : Vector3.one);
+
+            // Generate() を通らないため、パーツID / サブIDもここで割り当てる。
+            AssignGeneratedPartsIds(mo);
         }
 
         private string Name()

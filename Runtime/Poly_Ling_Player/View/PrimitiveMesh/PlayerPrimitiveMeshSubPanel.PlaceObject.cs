@@ -425,6 +425,9 @@ namespace Poly_Ling.Player
             // Sequence の巡回位置はベルトをまたいで連続させる。
             int seqIndex = 0;
 
+            // 配置1インスタンス＝パーツ1つ。ベルトをまたいで 0 から連番にする。
+            var partsIds = new Poly_Ling.PrimitiveMesh.PartsIdCounter();
+
             // 間引き。間隔は 1 以上へ、開始位置は間隔で割った余りへ丸める。
             int rungStride = Mathf.Max(1, _placeP.RungStride);
             int rungOffset = ((_placeP.RungOffset % rungStride) + rungStride) % rungStride;
@@ -471,7 +474,8 @@ namespace Poly_Ling.Player
 
                 var part = PlaceObjectMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
-                    perRung, _placeP.MeshName, userScale, _placeP.RollSteps, _placeP.ScaleMode);
+                    perRung, _placeP.MeshName, userScale, _placeP.RollSteps, _placeP.ScaleMode,
+                    partsIds);
                 AppendMesh(mo, part);
             }
             return mo;

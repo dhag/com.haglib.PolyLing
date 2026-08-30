@@ -332,6 +332,9 @@ namespace Poly_Ling.Tools
             var meshObject = ctx.ActiveMeshObject;
             var vertexRemap = new Dictionary<int, int>();
 
+            // 押し出しで増える頂点の始まり。部品ID / サブIDの採番に使う。
+            int origVertexCount = meshObject.VertexCount;
+
             var allVertices = new HashSet<int>();
             foreach (var edge in _targetEdges)
             {
@@ -365,6 +368,9 @@ namespace Poly_Ling.Tools
                 meshObject.Vertices.Add(newV);
                 _extrudeDragVertices.Add(new ExtrudeDragVertex { Index = newIdx, BasePos = oldV.Position });
             }
+
+            // 今回増えた頂点を 1 つの部品として扱う。
+            Poly_Ling.Ops.PartsIdOps.AssignNewVertices(meshObject, origVertexCount);
 
             int matIdx = ctx.CurrentMaterialIndex;
             var newEdges = new List<VertexPair>();

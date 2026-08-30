@@ -72,14 +72,13 @@ namespace Poly_Ling.Player
             // フィルタ行
             var filterRow = new VisualElement(); filterRow.style.flexDirection = FlexDirection.Row; filterRow.style.marginBottom = 4;
             _filterField = new TextField(); _filterField.style.flexGrow = 1;
-            _filterField.style.color = new StyleColor(Color.black);
             _filterField.tooltip = "メッシュ名でフィルタ";
             _filterField.RegisterValueChangedCallback(e =>
             {
                 int ti = (int)_currentTab; _filterTexts[ti] = e.newValue ?? "";
                 _setListView?.RefreshItems();
             });
-            var btnClearFilter = new Button(() => { _filterField.SetValueWithoutNotify(""); _filterTexts[(int)_currentTab] = ""; _setListView?.RefreshItems(); }) { text = "✕" };
+            var btnClearFilter = new Button(() => { _filterField.SetValueWithoutNotify(""); _filterTexts[(int)_currentTab] = ""; _setListView?.RefreshItems(); }) { text = "×" };
             btnClearFilter.style.width = 22;
             filterRow.Add(_filterField); filterRow.Add(btnClearFilter);
             root.Add(filterRow);
@@ -92,7 +91,6 @@ namespace Poly_Ling.Player
             // 名前 + 辞書化
             var saveRow = new VisualElement(); saveRow.style.flexDirection = FlexDirection.Row; saveRow.style.marginBottom = 4;
             _setNameField = new TextField(); _setNameField.style.flexGrow = 1;
-            _setNameField.style.color = new StyleColor(Color.black);
             var btnSave = new Button(OnSaveSet) { text = "辞書化" }; btnSave.style.width = 52;
             saveRow.Add(_setNameField); saveRow.Add(btnSave);
             root.Add(saveRow);
@@ -181,8 +179,11 @@ namespace Poly_Ling.Player
         }
         private void UpdateTabColors()
         {
-            var active   = new StyleColor(Color.white);
-            var inactive = new StyleColor(StyleKeyword.Null);
+            // active に Color.white、非 active に StyleKeyword.Null を入れると、
+            // ApplyDarkTheme が入れた白文字がどちらの背景でも読めなくなる
+            // （Null はインライン背景を外すだけで USS 既定の明るい灰色に戻る）。
+            var active   = PlayerLayoutRoot.BtnActiveColor;
+            var inactive = PlayerLayoutRoot.BtnInactiveColor;
             if (_tabDrawable != null) _tabDrawable.style.backgroundColor = _currentTab == TabType.Drawable ? active : inactive;
             if (_tabBone     != null) _tabBone.style.backgroundColor     = _currentTab == TabType.Bone     ? active : inactive;
             if (_tabMorph    != null) _tabMorph.style.backgroundColor    = _currentTab == TabType.Morph    ? active : inactive;

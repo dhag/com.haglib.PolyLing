@@ -200,6 +200,9 @@ namespace Poly_Ling.Player
         private LatticeToolHandler           _latticeHandler;
         private PlayerLatticeSubPanel        _latticeSubPanel;
         private SculptToolHandler            _sculptHandler;
+        // ツール内「一時ミラー」の状態。所有権を持つのはこの 1 インスタンスだけで、
+        // どのツールが実体化したか (OwnerToken = (int)InteractionMode) を覚える。
+        private TempMirrorController         _tempMirrorController;
         private AdvancedSelectToolHandler    _advancedSelectHandler;
         // 接続モードのクリック点フラッシュ強調（頂点インデックス。-1=非表示）。
         private int                          _advSelFlashVertex = -1;
@@ -235,6 +238,7 @@ namespace Poly_Ling.Player
         private PlayerFaceHideSubPanel          _faceHideSubPanel;
         private PlayerMeshSelectionSetSubPanel  _meshSelSetSubPanel;
         private PlayerMergeMeshesSubPanel    _mergeMeshesSubPanel;
+        private PlayerBooleanSubPanel        _booleanSubPanel;
         private PlayerMorphSubPanel          _morphSubPanel;
         private PlayerMorphCreateSubPanel    _morphCreateSubPanel;
         private PlayerTPoseSubPanel          _tposeSubPanel;
@@ -313,6 +317,8 @@ namespace Poly_Ling.Player
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
         private PlayerPipelineTestSubPanel   _pipelineTestSubPanel;
+        private PlayerOriginTestSubPanel     _originTestSubPanel;
+        private PlayerSkinTestSubPanel       _skinTestSubPanel;
         private PlayerUnityClipTestSubPanel  _unityClipTestSubPanel;
         private PlayerMotionClipTestSubPanel _motionClipTestSubPanel;
 
@@ -1335,6 +1341,14 @@ namespace Poly_Ling.Player
                 _activePanel?.HideBrushCircle();
             _sculptHandler.GetBrushHit = (pos, r) => _viewportManager.GetBrushHit(pos, r);
 
+            // ツール内「一時ミラー」。ツール横断で 1 つだけ持ち、
+            // 実体化したツールから離れたときに SetInteractionMode が解除する。
+            _tempMirrorController = new TempMirrorController
+            {
+                GetProject  = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
+
             _advancedSelectHandler = new AdvancedSelectToolHandler();
             _advancedSelectHandler.SetProject(ActiveProject);
             _advancedSelectHandler.SetSelectionOps(_selectionOps);
@@ -1443,6 +1457,8 @@ namespace Poly_Ling.Player
                             _activePanel.HideBoxSelect();
                             _activePanel.HideFaceHover();
                             _activePanel.HideGizmo();
+                            // ブラシ円は常時表示なので、旧ビューポートに残さない。
+                            _activePanel.HideBrushCircle();
                             _vertexInteractor.Disconnect(_activePanel);
                         }
                         _activePanel    = panel;
@@ -1455,13 +1471,18 @@ namespace Poly_Ling.Player
                     var hoverKind = GetCurrentHoverTargetKind();
 
                     // kind == None のモードは EnterHoverChanged が NotifyPointerHover を
-                    // 呼ばないため、ツールの UpdateHover (= ギズモ軸ホバー) が一度も
-                    // 走らない。ギズモを持つモードだけ、ここで軸ホバーのみ先に更新する。
+                    // 呼ばないため、ツールの UpdateHover (= ギズモ軸ホバー / ブラシ円) が
+                    // 一度も走らない。スクリーン座標だけで決まる表示を持つモードだけ、
+                    // ここで先に更新する。
                     // EnterHoverChanged 末尾の OnRefreshGizmoOverlay が更新後の軸を拾う。
-                    if (hoverKind == HoverTargetKind.None) UpdateGizmoHoverOnly(vp, localPos);
+                    if (hoverKind == HoverTargetKind.None) UpdateScreenOnlyHover(vp, localPos);
 
                     _viewportManager.EnterHoverChanged(vp, localPos, hoverKind);
                 };
+
+                // ポインタがビューポートから出たらブラシ円を消す。
+                // 出たあとは PointerMove が来ないので、円が置き去りになる。
+                panel.OnPointerLeft += () => panel.HideBrushCircle();
             }
 
             ConnectPanelHover(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport);
@@ -3085,6 +3106,13 @@ namespace Poly_Ling.Player
             };
             _mergeMeshesSubPanel.Build(_layoutRoot.MergeMeshesSection);
 
+            _booleanSubPanel = new PlayerBooleanSubPanel
+            {
+                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
+            _booleanSubPanel.Build(_layoutRoot.BooleanSection);
+
             _morphSubPanel = new PlayerMorphSubPanel
             {
                 GetModel      = () => ActiveProject?.CurrentModel,
@@ -4078,6 +4106,28 @@ namespace Poly_Ling.Player
             };
             _pipelineTestSubPanel.Build(_layoutRoot.PipelineTestSection);
 
+            // 原点CSV自動検証。MQO 読込も CSV 適用も実経路（ImportMqoCommand /
+            // ApplyObjectOriginsCommand）へ流すので、ディスパッチャ側の欠陥も検査に掛かる。
+            _originTestSubPanel = new PlayerOriginTestSubPanel
+            {
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+                ImportMqo     = path => OnImportMqo(path, null),
+            };
+            _originTestSubPanel.Build(_layoutRoot.OriginTestSection);
+
+            // スキン生成自動検証。原点CSVは使わず、ConvertMeshFilterToSkinnedCommand と
+            // ApplyHumanoidMappingCommand を実経路へ流す。
+            _skinTestSubPanel = new PlayerSkinTestSubPanel
+            {
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+                ImportMqo     = path => OnImportMqo(path, null),
+            };
+            _skinTestSubPanel.Build(_layoutRoot.SkinTestSection);
+
             _unityClipTestSubPanel = new PlayerUnityClipTestSubPanel
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
@@ -4140,11 +4190,18 @@ namespace Poly_Ling.Player
 
             _sculptSubPanel = new PlayerSculptSubPanel
             {
-                GetHandler = () => _sculptHandler,
+                GetHandler              = () => _sculptHandler,
+                GetTempMirror           = () => _tempMirrorController,
+                GetTempMirrorOwnerToken = () => (int)InteractionMode.Sculpt,
             };
             _sculptSubPanel.Build(_layoutRoot.SculptSection);
             // 起動時にスライダ範囲・値・詳細設定をハンドラ実値へ同期する。
             _sculptSubPanel.Refresh();
+
+            // 一時ミラーの実体化・解除は自動解除経路からも起きるため、
+            // 状態が変わったらボタン表示を持つサブパネルを同期する。
+            if (_tempMirrorController != null)
+                _tempMirrorController.OnStateChanged += () => _sculptSubPanel?.Refresh();
 
             _advancedSelectSubPanel = new PlayerAdvancedSelectSubPanel
             {
@@ -4324,6 +4381,7 @@ namespace Poly_Ling.Player
             _layoutRoot.NormalTransplantBtn.clicked  += ShowNormalTransplantPanel;
             _layoutRoot.FaceHideBtn.clicked          += ShowFaceHidePanel;
             _layoutRoot.MergeMeshesBtn.clicked     += ShowMergeMeshesPanel;
+            _layoutRoot.BooleanBtn.clicked         += ShowBooleanPanel;
             _layoutRoot.TPoseBtn.clicked           += ShowTPosePanel;
             _layoutRoot.HumanoidMappingBtn.clicked += ShowHumanoidMappingPanel;
             _layoutRoot.MirrorBtn.clicked          += ShowMirrorPanel;
@@ -4372,6 +4430,10 @@ namespace Poly_Ling.Player
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
             if (_layoutRoot.PipelineTestBtn != null)
                 _layoutRoot.PipelineTestBtn.clicked += ShowPipelineTestPanel;
+            if (_layoutRoot.OriginTestBtn != null)
+                _layoutRoot.OriginTestBtn.clicked += ShowOriginTestPanel;
+            if (_layoutRoot.SkinTestBtn != null)
+                _layoutRoot.SkinTestBtn.clicked += ShowSkinTestPanel;
             _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
             _layoutRoot.MotionClipTestBtn.clicked   += ShowMotionClipTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
@@ -4484,6 +4546,12 @@ namespace Poly_Ling.Player
             // （PlayerCommandDispatcher.CollectSelectedMeshContexts）。
             // 角度は法線編集パネルと同じ既定値を使う。角度を変えて掛けたい場合は
             // 「法線編集」パネルの「角度で再計算」を使うこと。
+            // 左ペインの「すべてのオブジェクトを選択」。
+            // メッシュリスト側の同名ボタンと同じ処理を呼ぶ。
+            if (_layoutRoot.SelectAllObjectsBtn != null)
+                _layoutRoot.SelectAllObjectsBtn.clicked += () =>
+                    _meshListSubPanel?.SelectAllObjectsFromExternal();
+
             _layoutRoot.RecalcNormalsBtn.clicked += () =>
             {
                 _commandDispatcher?.Dispatch(new NormalEditCommand(
@@ -4561,7 +4629,10 @@ namespace Poly_Ling.Player
 
             // ミラー系トグルの従属関係を UI に反映する。
             //
-            //   非選Mesh → 非選Mirror → 非選M辺 / 非選M頂点
+            //   非選Mirror（独立。非選Mesh に従属しないので常に操作可能）
+            //     ├ 非選M面
+            //     ├ 非選M辺
+            //     └ 非選M頂点
             //
             // 親が OFF のとき、子は値を OFF に同期しグレーアウト（無効化）する。
             // 値のクランプ自体は ViewportDisplaySettings.WithMirrorClamped が行うので、
@@ -4571,26 +4642,21 @@ namespace Poly_Ling.Player
             {
                 var d = _viewportManager.GetDisplaySettings(slot); // SetDisplaySettings でクランプ済み
 
+                // マスタは独立。SetEnabled を呼ばない（呼ぶと従属が復活する）。
                 var unselMirror = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_UNSEL_MIRROR];
-                if (unselMirror != null)
+                unselMirror?.SetValueWithoutNotify(d.ShowUnselectedMirror);
+
+                void SyncChild(int item, bool value)
                 {
-                    unselMirror.SetValueWithoutNotify(d.ShowUnselectedMirror);
-                    unselMirror.SetEnabled(d.ShowUnselectedMesh);
+                    var t = _layoutRoot.ViewportDisplayToggles[slot, item];
+                    if (t == null) return;
+                    t.SetValueWithoutNotify(value);
+                    t.SetEnabled(d.ShowUnselectedMirror);
                 }
 
-                var mirrorWire = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE];
-                if (mirrorWire != null)
-                {
-                    mirrorWire.SetValueWithoutNotify(d.ShowUnselectedMirrorWireframe);
-                    mirrorWire.SetEnabled(d.ShowUnselectedMirror);
-                }
-
-                var mirrorVert = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT];
-                if (mirrorVert != null)
-                {
-                    mirrorVert.SetValueWithoutNotify(d.ShowUnselectedMirrorVertices);
-                    mirrorVert.SetEnabled(d.ShowUnselectedMirror);
-                }
+                SyncChild(PlayerLayoutRoot.VD_UNSEL_MIRROR_MESH, d.ShowUnselectedMirrorMesh);
+                SyncChild(PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE, d.ShowUnselectedMirrorWireframe);
+                SyncChild(PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT, d.ShowUnselectedMirrorVertices);
             }
 
             // 面ごとの表示設定トグルを接続する。
@@ -4616,6 +4682,7 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_UNSEL_VERT: ds.ShowUnselectedVertices  = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_BONE:   ds.ShowUnselectedBone      = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR: ds.ShowUnselectedMirror    = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_MIRROR_MESH: ds.ShowUnselectedMirrorMesh      = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE: ds.ShowUnselectedMirrorWireframe = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT: ds.ShowUnselectedMirrorVertices  = e.newValue; break;
                                 case PlayerLayoutRoot.VD_SEL_MESH_ORIGIN:   ds.ShowSelectedMeshOrigin   = e.newValue; break;
@@ -4648,6 +4715,7 @@ namespace Poly_Ling.Player
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_VERT,   ds.ShowUnselectedVertices);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_BONE,   ds.ShowUnselectedBone);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR, ds.ShowUnselectedMirror);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR_MESH, ds.ShowUnselectedMirrorMesh);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE, ds.ShowUnselectedMirrorWireframe);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT, ds.ShowUnselectedMirrorVertices);
                 SyncTog(PlayerLayoutRoot.VD_SEL_MESH_ORIGIN,   ds.ShowSelectedMeshOrigin);
@@ -4693,6 +4761,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.FaceHideSection,          () => _faceHideSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MirrorSection,            () => _mirrorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MergeMeshesSection,       () => _mergeMeshesSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.BooleanSection,           () => _booleanSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MorphSection,             () => _morphSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MorphCreateSection,       () => _morphCreateSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.TPoseSection,             () => _tposeSubPanel?.Refresh()));
@@ -4766,6 +4835,8 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.MediaPipeSection,         () => _mediaPipeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VMDTestSection,           () => _vmdTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PipelineTestSection,      () => _pipelineTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.OriginTestSection,        () => _originTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SkinTestSection,          () => _skinTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UnityClipTestSection,     () => _unityClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
@@ -5338,6 +5409,14 @@ namespace Poly_Ling.Player
             _mergeMeshesSubPanel?.Refresh();
         }
 
+        private void ShowBooleanPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.BooleanSection, _layoutRoot?.BooleanBtn);
+            _booleanSubPanel?.Refresh();
+        }
+
         private void ShowMorphPanel()
         {
             // カテゴリ 3
@@ -5803,6 +5882,22 @@ namespace Poly_Ling.Player
             _pipelineTestSubPanel?.Refresh();
         }
 
+        private void ShowOriginTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.OriginTestSection, _layoutRoot?.OriginTestBtn);
+            _originTestSubPanel?.Refresh();
+        }
+
+        private void ShowSkinTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.SkinTestSection, _layoutRoot?.SkinTestBtn);
+            _skinTestSubPanel?.Refresh();
+        }
+
         /// <summary>
         /// 自動検証用のプロジェクトフォルダ読み込み。
         /// 通常の読み込みと同じ経路（CsvProjectSerializer.Import → _localLoader）を通す。
@@ -6196,6 +6291,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.PartsSelectionSetSection);
             Hide(_layoutRoot.MeshSelectionSetSection);
             Hide(_layoutRoot.MergeMeshesSection);
+            Hide(_layoutRoot.BooleanSection);
             Hide(_layoutRoot.MorphSection);
             Hide(_layoutRoot.MorphCreateSection);
             Hide(_layoutRoot.TPoseSection);
@@ -6255,10 +6351,10 @@ namespace Poly_Ling.Player
         // 同一ボタンが両系統 active になる場合は BothActiveBtnColor で表示する。
         // ================================================================
 
-        // 非 active 色 (既存)
-        private static readonly StyleColor InactiveBtnColor         = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+        // 非 active 色 (既存)。PlayerLayoutRoot.ApplyDarkTheme が入れる値と同一。
+        private static readonly StyleColor InactiveBtnColor         = PlayerLayoutRoot.BtnInactiveColor;
         // InteractionMode のみ active (青)
-        private static readonly StyleColor InteractionActiveBtnColor = new StyleColor(new Color(0.3f,  0.5f,  1.0f));
+        private static readonly StyleColor InteractionActiveBtnColor = PlayerLayoutRoot.BtnActiveColor;
         // RightPanel のみ active (緑系)
         private static readonly StyleColor PanelActiveBtnColor       = new StyleColor(new Color(0.3f,  0.75f, 0.4f));
         // 両方 active (α: 混色の青緑)
@@ -7471,6 +7567,13 @@ namespace Poly_Ling.Player
             // 面を書き換える対象は、マージで実際に読まれる srcObject 側。
             ApplyGeneratedMaterialIndex(model, srcObject, materialIndex);
 
+            // 部品IDは追加先の空き番号へずらす。生成物が内部で複数パーツに分かれている
+            // （フリル・パイプ・藤壺）場合も、内部の構成を保ったまま全体を平行移動させる。
+            // 直前の ApplyGeneratedMaterialIndex と同じく srcObject を直接書き換える
+            // （頂点は下のマージで Clone() されるため、ここで複製する必要はない）。
+            Poly_Ling.Ops.PartsIdOps.OffsetPartsId(
+                srcObject, Poly_Ling.Ops.PartsIdOps.NextPartsId(targetMc.MeshObject));
+
             // マージ
             int baseVertIdx = targetMc.MeshObject.VertexCount;
             foreach (var v in srcObject.Vertices)
@@ -7484,6 +7587,10 @@ namespace Poly_Ling.Player
                 newFace.MaterialIndex  = f.MaterialIndex;
                 targetMc.MeshObject.Faces.Add(newFace);
             }
+
+            // サブIDは連結後の並びで、部品IDごとに 0 から振り直す。
+            Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(targetMc.MeshObject);
+
             // UnityMesh再構築
             var newUnityMesh = targetMc.MeshObject.ToUnityMesh();
             newUnityMesh.name      = targetMc.Name;
@@ -7996,6 +8103,8 @@ namespace Poly_Ling.Player
                 case InteractionMode.Sculpt:
                     section = _layoutRoot?.SculptSection;
                     btn     = _layoutRoot?.ToolSculptBtn;
+                    // 一時ミラーのボタン表示を実状態へ合わせるため Refresh が要る。
+                    refresh = () => _sculptSubPanel?.Refresh();
                     break;
                 case InteractionMode.AdvancedSelect:
                     section = _layoutRoot?.AdvancedSelectSection;
@@ -8394,6 +8503,20 @@ namespace Poly_Ling.Player
 
         private void SetInteractionMode(InteractionMode mode)
         {
+            // ── ツール内「一時ミラー」の自動解除 ─────────────────────────
+            // 実体化したツールから離れたら、そのツールが生やした実体を必ず戻す。
+            // ここが全ツール遷移の唯一の合流点なので、各ツール側に後始末を書かない。
+            //
+            // 一時選択サブツール (R / G → SelectOnly) への往復はツール遷移ではないので
+            // 除外する。除外しないと、矩形選択を挟むたびに一時ミラーが消える。
+            if (_tempMirrorController != null
+                && _tempMirrorController.IsActive
+                && _tempMirrorController.OwnerToken != (int)mode
+                && !(_subToolActive && mode == InteractionMode.SelectOnly))
+            {
+                _tempMirrorController.Unbake();
+            }
+
             // 旧モードの後始末 (新モードに関係なく必要な処理)
             if (_interactionMode == InteractionMode.Sculpt && mode != InteractionMode.Sculpt)
                 _activePanel?.HideBrushCircle();
@@ -9262,25 +9385,27 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 頂点ホバーが抑止されるモード (HoverTargetKind.None) でも、ギズモ軸の
-        /// ホバーだけは更新する。
+        /// 頂点ホバーが抑止されるモード (HoverTargetKind.None) でも、スクリーン座標だけで
+        /// 決まるオーバーレイは更新する。
         /// <para>
-        /// 対象は現状 ObjectMove のみ。Sculpt / SkinWeightPaint / None は
-        /// GizmoProviderFor が null を返す = ギズモを持たないため何もしない。
+        /// 対象は ObjectMove / Camera のギズモ軸ホバーと、Sculpt のブラシ円。
+        /// ブラシ円の半径は SculptToolHandler.ScreenRadiusFromWorldRadius がカメラと
+        /// PreviewRect だけから求めるため、GPU ヒットテストを必要としない。
         /// </para>
         /// <para>
-        /// 実体は PlayerViewportManager.NotifyGizmoHoverOnly で、GPU ヒットテストを
-        /// 伴わないギズモ軸専用の軽量経路。どのハンドラへ渡すかは SetInteractionMode で
-        /// 登録済みの ActiveToolHandler に任せる。
+        /// 実体は PlayerViewportManager.NotifyScreenOnlyHover。どのハンドラへ渡すかは
+        /// SetInteractionMode で登録済みの ActiveToolHandler に任せる。
         /// 要素 (頂点/辺/面) のホバーをこの経路へ移すことは禁止（同メソッドの注記参照）。
         /// </para>
         /// </summary>
-        private void UpdateGizmoHoverOnly(PlayerViewport vp, Vector2 localPos)
+        private void UpdateScreenOnlyHover(PlayerViewport vp, Vector2 localPos)
         {
-            // ホバー種別が None のモードのうち、ギズモを持つものだけ軸ホバーを更新する。
+            // ホバー種別が None のモードのうち、スクリーン座標だけで決まる表示を
+            // 持つものだけ更新する。
             if (_interactionMode != InteractionMode.ObjectMove &&
-                _interactionMode != InteractionMode.Camera) return;
-            _viewportManager.NotifyGizmoHoverOnly(vp, localPos);
+                _interactionMode != InteractionMode.Camera &&
+                _interactionMode != InteractionMode.Sculpt) return;
+            _viewportManager.NotifyScreenOnlyHover(vp, localPos);
         }
 
         private HoverTargetKind GetCurrentHoverTargetKind()

@@ -1036,6 +1036,62 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
+    // ブーリアン演算
+    // ================================================================
+
+    /// <summary>
+    /// 2 つのメッシュオブジェクトにブーリアン演算（和 / 差 / 積）を行う。
+    /// 演算は A のローカル空間で行い、結果も A の姿勢を引き継ぐ。
+    ///
+    /// CreateNewMesh が true なら新規メッシュオブジェクトに結果を格納し、
+    /// A / B はそのまま残す。false なら A の中身を結果で置き換える。
+    /// DeleteSourceB が true なら B を削除する。
+    ///
+    /// スキンドメッシュは対象にできない（ボーンウェイトが失われるため）。
+    /// </summary>
+    public class BooleanMeshCommand : PanelCommand
+    {
+        /// <summary>左辺（基準）オブジェクトの MasterIndex。差では削られる側。</summary>
+        public int AMasterIndex { get; }
+        /// <summary>右辺オブジェクトの MasterIndex。差では削る側。</summary>
+        public int BMasterIndex { get; }
+        /// <summary>演算の種類</summary>
+        public Poly_Ling.Ops.BooleanOpKind Op { get; }
+        /// <summary>true: 新規メッシュオブジェクトに結果を格納する</summary>
+        public bool CreateNewMesh { get; }
+        /// <summary>true: 演算後に B を削除する</summary>
+        public bool DeleteSourceB { get; }
+        /// <summary>true: 演算後に同一位置頂点をマージする</summary>
+        public bool MergeVertices { get; }
+        /// <summary>同一位置頂点マージのしきい値</summary>
+        public float MergeThreshold { get; }
+        /// <summary>平面の同一判定の許容量（pb_CSG の epsilon）</summary>
+        public float Epsilon { get; }
+
+        public BooleanMeshCommand(
+            int modelIndex,
+            int aMasterIndex,
+            int bMasterIndex,
+            Poly_Ling.Ops.BooleanOpKind op,
+            bool createNewMesh,
+            bool deleteSourceB,
+            bool mergeVertices,
+            float mergeThreshold,
+            float epsilon)
+            : base(modelIndex)
+        {
+            AMasterIndex   = aMasterIndex;
+            BMasterIndex   = bMasterIndex;
+            Op             = op;
+            CreateNewMesh  = createNewMesh;
+            DeleteSourceB  = deleteSourceB;
+            MergeVertices  = mergeVertices;
+            MergeThreshold = mergeThreshold;
+            Epsilon        = epsilon;
+        }
+    }
+
+    // ================================================================
     // 頂点・辺・面の選択
     // ================================================================
 
@@ -1907,7 +1963,8 @@ namespace Poly_Ling.Data
 
     /// <summary>
     /// ミラー実体化を解除して半身へ戻す（in-place）。
-    /// 解除後は強制的に見た目・エクスポート用のミラーモード（MirrorType = 2 / 結合）にする。
+    /// 既定では解除後に見た目・エクスポート用のミラーモード（MirrorType = 2 / 結合）を強制する。
+    /// RestoreSavedMirrorSettings = true のときは、実体化前のミラー設定へそのまま戻す。
     /// </summary>
     public class UnbakeMirrorCommand : PanelCommand
     {
@@ -1916,11 +1973,28 @@ namespace Poly_Ling.Data
         /// <summary>どちら側の編集結果を残すか</summary>
         public Poly_Ling.Tools.WriteBackMode Mode { get; }
 
+        /// <summary>
+        /// 実体化前のミラー設定（MirrorType / MirrorAxis / MirrorDistance / MirrorMaterialOffset）へ
+        /// 戻すか。ツール内の「一時ミラー」はモデルの恒久設定を変えてはいけないので true にする。
+        /// false のときは従来どおり MirrorType = 2（結合）を強制する。
+        /// </summary>
+        public bool RestoreSavedMirrorSettings { get; }
+
         public UnbakeMirrorCommand(int modelIndex, int sourceMasterIndex, Poly_Ling.Tools.WriteBackMode mode)
+            : this(modelIndex, sourceMasterIndex, mode, false)
+        {
+        }
+
+        public UnbakeMirrorCommand(
+            int modelIndex,
+            int sourceMasterIndex,
+            Poly_Ling.Tools.WriteBackMode mode,
+            bool restoreSavedMirrorSettings)
             : base(modelIndex)
         {
-            SourceMasterIndex = sourceMasterIndex;
-            Mode              = mode;
+            SourceMasterIndex          = sourceMasterIndex;
+            Mode                       = mode;
+            RestoreSavedMirrorSettings = restoreSavedMirrorSettings;
         }
     }
 

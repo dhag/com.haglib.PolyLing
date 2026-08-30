@@ -403,6 +403,9 @@ namespace Poly_Ling.Tools
         {
             var meshObject = ctx.ActiveMeshObject;
 
+            // 押し出しで増える頂点の始まり。部品ID / サブIDの採番に使う。
+            int origVertexCount = meshObject.VertexCount;
+
             Vector3 avgNormal = Vector3.zero;
             if (!IndividualNormals)
             {
@@ -500,6 +503,9 @@ namespace Poly_Ling.Tools
 
                 newFaceIndices.Add(faceInfo.FaceIndex);
             }
+
+            // 今回増えた頂点を 1 つの部品として扱う。
+            Poly_Ling.Ops.PartsIdOps.AssignNewVertices(meshObject, origVertexCount);
 
             ctx.SelectionState.Faces.Clear();
             foreach (int fIdx in newFaceIndices)

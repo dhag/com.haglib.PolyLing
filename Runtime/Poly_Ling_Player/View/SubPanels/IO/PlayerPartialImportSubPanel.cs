@@ -557,7 +557,7 @@ namespace Poly_Ling.Player
                 var tog = new Toggle { value = entry.Selected };
                 tog.style.marginRight = 2;
                 tog.RegisterValueChangedCallback(ev => { entry.Selected = ev.newValue; });
-                string mirrorMark = entry.IsMirrored ? "⟲" : "";
+                string mirrorMark = entry.IsMirrored ? "⇆" : "";
                 var lbl = new Label($"{entry.Name}{mirrorMark} ({entry.ExpandedVertexCount})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9; lbl.style.color = new StyleColor(Color.white);
                 row.Add(tog); row.Add(lbl); left.Add(row);
             }

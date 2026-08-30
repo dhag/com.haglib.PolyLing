@@ -26,7 +26,7 @@ namespace Poly_Ling.Tools
 
             // オプション
             ["ContinuousLine"] = new() { ["en"] = "Continuous Line", ["ja"] = "連続線分", ["hi"] = "つづけてせん" },
-            ["ContinuousHint"] = new() { ["en"] = "  ↳ Click to continue from last point", ["ja"] = "  ↳ クリックで続きを描画", ["hi"] = "  ↳ クリックでつづきをかく" },
+            ["ContinuousHint"] = new() { ["en"] = "  └ Click to continue from last point", ["ja"] = "  └ クリックで続きを描画", ["hi"] = "  └ クリックでつづきをかく" },
 
             // 進捗表示
             ["Progress"] = new() { ["en"] = "Points: {0} / {1}", ["ja"] = "点: {0} / {1}", ["hi"] = "てん: {0} / {1}" },

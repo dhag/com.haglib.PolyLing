@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
+using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.PlaceObject
 {
@@ -33,24 +34,30 @@ namespace Poly_Ling.PlaceObject
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
             MeshObject source, string meshName, float userScale = 1f, int rollSteps = 0,
-            PlaceScaleMode scaleMode = PlaceScaleMode.RungLength)
+            PlaceScaleMode scaleMode = PlaceScaleMode.RungLength,
+            PartsIdCounter partsIds = null)
         {
             int n = (left == null || right == null) ? 0 : Mathf.Min(left.Count, right.Count);
             var sources = new MeshObject[n];
             for (int i = 0; i < n; i++) sources[i] = source;
             return Generate(left, right, beltClosed, flipWinding, sources, meshName, userScale, rollSteps,
-                            scaleMode);
+                            scaleMode, partsIds);
         }
 
         /// <summary>
         /// rung ごとに配置元を差し替えて複製配置する。
         /// sourcesPerRung[i] が null または空メッシュの rung には何も置かない。
+        ///
+        /// partsIds が非 null のとき、実際に置いた1インスタンスにつきパーツIDを1つ消費する。
+        /// 置かなかった rung（配置元なし・rung 長ゼロ・軸が作れない）はIDを消費しない。
+        /// サブIDは採番せず、配置元オブジェクトの頂点が持つ値をそのまま複写する。
         /// </summary>
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
             IReadOnlyList<MeshObject> sourcesPerRung, string meshName, float userScale = 1f,
-            int rollSteps = 0, PlaceScaleMode scaleMode = PlaceScaleMode.RungLength)
+            int rollSteps = 0, PlaceScaleMode scaleMode = PlaceScaleMode.RungLength,
+            PartsIdCounter partsIds = null)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "PlaceObject" : meshName);
 
@@ -87,7 +94,11 @@ namespace Poly_Ling.PlaceObject
 
                 ApplyRoll(rollSteps, ref x, ref y);
 
-                AppendInstance(mo, source, center, x, y, zDir, scale);
+                // 配置1インスタンス＝パーツ1つ。置いた rung だけIDを進める。
+                bool assignParts = (partsIds != null);
+                int  partsId     = assignParts ? partsIds.Take() : 0;
+
+                AppendInstance(mo, source, center, x, y, zDir, scale, assignParts, partsId);
             }
 
             mo.RecalculateNormals();
@@ -162,7 +173,8 @@ namespace Poly_Ling.PlaceObject
 
         private static void AppendInstance(
             MeshObject dst, MeshObject src,
-            Vector3 center, Vector3 x, Vector3 y, Vector3 z, float scale)
+            Vector3 center, Vector3 x, Vector3 y, Vector3 z, float scale,
+            bool assignParts, int partsId)
         {
             int baseIdx = dst.VertexCount;
 
@@ -178,6 +190,10 @@ namespace Poly_Ling.PlaceObject
                     for (int k = 0; k < sv.UVs.Count; k++) nv.UVs.Add(sv.UVs[k]);
                 }
                 if (nv.UVs.Count == 0) nv.UVs.Add(Vector2.zero);
+
+                // サブIDは配置元の値をそのまま使う（新規採番はしない）。
+                nv.SubId = sv.SubId;
+                if (assignParts) nv.PartsId = partsId;
 
                 dst.Vertices.Add(nv);
             }

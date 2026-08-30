@@ -1,0 +1,57 @@
+This folder contains source code derived from the following projects.
+
+--------------------------------------------------------------------------------
+csg.js
+Copyright (c) 2011 Evan Wallace (http://madebyevan.com)
+https://github.com/evanw/csg.js/
+
+csgjs-cpp (C++ port)
+Copyright (c) 2014 Tomasz Dabrowski (http://28byteslater.com)
+https://github.com/dabroz/csgjs-cpp/
+
+pb_CSG (C# port)
+Copyright (c) 2015 Karl Henkel (parabox.co)
+https://github.com/karl-/pb_CSG
+--------------------------------------------------------------------------------
+
+The MIT License (MIT)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+PolyLing での改変点（pb_CSG master からの差分）
+--------------------------------------------------------------------------------
+- namespace を Parabox.CSG -> Poly_Ling.CSG に変更。
+  ProBuilder 同梱の CSG 実装と型名が衝突しないようにするため。
+- Parabox.CSG.asmdef は取り込まない。本フォルダは PolyLing.Runtime に含める。
+  元 asmdef の name は "Unity.ProBuilder.Csg" で、ProBuilder 導入時に
+  アセンブリ名が衝突する。
+- Polygon.material (UnityEngine.Material) を materialIndex (int) に変更。
+  PolyLing の MeshObject は Face.MaterialIndex（サブメッシュ番号）で
+  マテリアルを表すため、Material 参照は保持しない。
+- Model から GameObject / Transform / Material 依存を削除し、
+  Model(Mesh, Matrix4x4) を追加。
+- Model(Mesh, ...) で非三角形サブメッシュを読み飛ばすと m_Indices の添字と
+  実サブメッシュ番号がずれる不具合を修正（実番号を m_MaterialIndices に記録）。
+- VertexUtility.TransformVertex を Transform 版から Matrix4x4 版へ置換。
+  法線は逆転置行列で変換する。
+- VertexUtility.SetMesh で頂点数が 65535 を超える場合に
+  IndexFormat.UInt32 を設定。
+- Plane のコンストラクタで法線を正規化していない点は元コードのまま維持。
+  この結果 CSG.epsilon は三角形の面積に依存した実効許容量になる。

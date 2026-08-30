@@ -19,6 +19,12 @@ namespace Poly_Ling.Player
 
         public Func<SculptToolHandler> GetHandler;
 
+        /// <summary>一時ミラーのコントローラ取得。</summary>
+        public Func<TempMirrorController> GetTempMirror;
+
+        /// <summary>このツールの識別値（InteractionMode を int 化したもの）。</summary>
+        public Func<int> GetTempMirrorOwnerToken;
+
         // ================================================================
         // UI 要素
         // ================================================================
@@ -62,6 +68,9 @@ namespace Poly_Ling.Player
         /// <summary>距離モード／フォールオフの共通 UI。</summary>
         private readonly BrushFalloffControls _falloffControls = new BrushFalloffControls();
 
+        /// <summary>一時ミラーのトグルボタン（共通 UI）。</summary>
+        private readonly TempMirrorControls _tempMirrorControls = new TempMirrorControls();
+
         // ================================================================
         // Build
         // ================================================================
@@ -100,7 +109,15 @@ namespace Poly_Ling.Player
             radiusRow.style.marginBottom  = 3;
             _root.Add(radiusRow);
 
-            _brushRadiusSlider = new Slider(0.05f, 1.0f) { value = 0.5f };
+            // ハンドラの実値（= ParameterLimits の上下限、SculptSettings の現在値）から作る。
+            // 固定値でスライダを作ると、上下限を変更した状態で開き直したときに
+            // つまみの位置と数字が食い違う。
+            var h0 = GetHandler?.Invoke();
+            float radMin0 = h0?.MinBrushRadius ?? 0.05f;
+            float radMax0 = h0?.MaxBrushRadius ?? 1.0f;
+            float rad0    = h0?.BrushRadius    ?? 0.1f;
+
+            _brushRadiusSlider = new Slider(radMin0, radMax0) { value = Mathf.Clamp(rad0, radMin0, radMax0) };
             _brushRadiusSlider.style.flexGrow = 1;
             _brushRadiusSlider.style.color = new StyleColor(Color.white);
             _brushRadiusSlider.RegisterValueChangedCallback(e =>
@@ -117,19 +134,16 @@ namespace Poly_Ling.Player
             });
             radiusRow.Add(_brushRadiusSlider);
 
-            _brushRadiusField = new FloatField { value = 0.5f };
+            _brushRadiusField = new FloatField { value = rad0 };
             _brushRadiusField.style.width = 52;
             _brushRadiusField.style.color = new StyleColor(Color.white);
+            _brushRadiusField.tooltip = "上下限の外の値を入れると、上下限のほうを広げて入力値を採用する。";
             _brushRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
-                float clamped = h != null ? Mathf.Clamp(e.newValue, h.MinBrushRadius, h.MaxBrushRadius) : e.newValue;
-                if (h != null) h.BrushRadius = clamped;
-                _suppressSync = true;
-                _brushRadiusSlider?.SetValueWithoutNotify(clamped);
-                _brushRadiusField.SetValueWithoutNotify(clamped);
-                _suppressSync = false;
+                if (h == null) return;
+                ApplyRadiusInput(h, e.newValue);
             });
             radiusRow.Add(_brushRadiusField);
 
@@ -174,7 +188,11 @@ namespace Poly_Ling.Player
             strengthRow.style.marginBottom  = 3;
             _root.Add(strengthRow);
 
-            _strengthSlider = new Slider(0.01f, 0.05f) { value = 0.1f };
+            float strMin0 = h0?.MinStrength ?? 0.01f;
+            float strMax0 = h0?.MaxStrength ?? 0.05f;
+            float str0    = h0?.Strength    ?? 0.02f;
+
+            _strengthSlider = new Slider(strMin0, strMax0) { value = Mathf.Clamp(str0, strMin0, strMax0) };
             _strengthSlider.style.flexGrow = 1;
             _strengthSlider.style.color = new StyleColor(Color.white);
             _strengthSlider.RegisterValueChangedCallback(e =>
@@ -191,19 +209,16 @@ namespace Poly_Ling.Player
             });
             strengthRow.Add(_strengthSlider);
 
-            _strengthField = new FloatField { value = 0.1f };
+            _strengthField = new FloatField { value = str0 };
             _strengthField.style.width = 52;
             _strengthField.style.color = new StyleColor(Color.white);
+            _strengthField.tooltip = "上下限の外の値を入れると、上下限のほうを広げて入力値を採用する。";
             _strengthField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
-                float clamped = h != null ? Mathf.Clamp(e.newValue, h.MinStrength, h.MaxStrength) : e.newValue;
-                if (h != null) h.Strength = clamped;
-                _suppressSync = true;
-                _strengthSlider?.SetValueWithoutNotify(clamped);
-                _strengthField.SetValueWithoutNotify(clamped);
-                _suppressSync = false;
+                if (h == null) return;
+                ApplyStrengthInput(h, e.newValue);
             });
             strengthRow.Add(_strengthField);
 
@@ -217,6 +232,14 @@ namespace Poly_Ling.Player
                 if (h != null) h.Invert = e.newValue;
             });
             _root.Add(_invertToggle);
+
+            // ── 一時ミラー ───────────────────────────────────────────
+            // 対称面をまたぐスカルプト（なめらか等）を正しく効かせるための一時的な実体化。
+            // パラメータは左ペイン「一時ミラー」の設定を共有する。
+            // 他のツールへ移ると PolyLingPlayerViewerCore が自動で解除する。
+            _root.Add(_tempMirrorControls.Build(
+                () => GetTempMirror?.Invoke(),
+                () => GetTempMirrorOwnerToken?.Invoke() ?? -1));
 
             // ── 詳細設定（折りたたみ）─────────────────────────────────
             var foldout = new Foldout { text = "詳細設定", value = false };
@@ -234,18 +257,16 @@ namespace Poly_Ling.Player
             minLabel.style.color = new StyleColor(Color.white);
             minLabel.style.width = 50;
             minRow.Add(minLabel);
-            _minRadiusField = new FloatField { value = 0.05f };
+            _minRadiusField = new FloatField { value = radMin0 };
             _minRadiusField.style.flexGrow = 1;
             _minRadiusField.style.color = new StyleColor(Color.white);
             _minRadiusField.RegisterValueChangedCallback(e =>
             {
+                if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
                 h.MinBrushRadius = e.newValue;      // setter で 0.001 以上にクランプ
-                float applied = h.MinBrushRadius;
-                _brushRadiusSlider.lowValue = applied;
-                _minRadiusField.SetValueWithoutNotify(applied);
-                ClampRadiusToRange(h);
+                ApplyRadiusRange(h);
             });
             minRow.Add(_minRadiusField);
 
@@ -258,18 +279,16 @@ namespace Poly_Ling.Player
             maxLabel.style.color = new StyleColor(Color.white);
             maxLabel.style.width = 50;
             maxRow.Add(maxLabel);
-            _maxRadiusField = new FloatField { value = 1.0f };
+            _maxRadiusField = new FloatField { value = radMax0 };
             _maxRadiusField.style.flexGrow = 1;
             _maxRadiusField.style.color = new StyleColor(Color.white);
             _maxRadiusField.RegisterValueChangedCallback(e =>
             {
+                if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
                 h.MaxBrushRadius = e.newValue;      // setter で Min+0.001 以上にクランプ
-                float applied = h.MaxBrushRadius;
-                _brushRadiusSlider.highValue = applied;
-                _maxRadiusField.SetValueWithoutNotify(applied);
-                ClampRadiusToRange(h);
+                ApplyRadiusRange(h);
             });
             maxRow.Add(_maxRadiusField);
 
@@ -285,18 +304,16 @@ namespace Poly_Ling.Player
             minStrLabel.style.color = new StyleColor(Color.white);
             minStrLabel.style.width = 50;
             minStrRow.Add(minStrLabel);
-            _minStrengthField = new FloatField { value = 0.01f };
+            _minStrengthField = new FloatField { value = strMin0 };
             _minStrengthField.style.flexGrow = 1;
             _minStrengthField.style.color = new StyleColor(Color.white);
             _minStrengthField.RegisterValueChangedCallback(e =>
             {
+                if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
                 h.MinStrength = e.newValue;         // setter で 0.001 以上にクランプ
-                float applied = h.MinStrength;
-                _strengthSlider.lowValue = applied;
-                _minStrengthField.SetValueWithoutNotify(applied);
-                ClampStrengthToRange(h);
+                ApplyStrengthRange(h);
             });
             minStrRow.Add(_minStrengthField);
 
@@ -309,18 +326,16 @@ namespace Poly_Ling.Player
             maxStrLabel.style.color = new StyleColor(Color.white);
             maxStrLabel.style.width = 50;
             maxStrRow.Add(maxStrLabel);
-            _maxStrengthField = new FloatField { value = 0.05f };
+            _maxStrengthField = new FloatField { value = strMax0 };
             _maxStrengthField.style.flexGrow = 1;
             _maxStrengthField.style.color = new StyleColor(Color.white);
             _maxStrengthField.RegisterValueChangedCallback(e =>
             {
+                if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
                 h.MaxStrength = e.newValue;         // setter で Min+0.001 以上にクランプ
-                float applied = h.MaxStrength;
-                _strengthSlider.highValue = applied;
-                _maxStrengthField.SetValueWithoutNotify(applied);
-                ClampStrengthToRange(h);
+                ApplyStrengthRange(h);
             });
             maxStrRow.Add(_maxStrengthField);
 
@@ -342,16 +357,14 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
+            // 一時ミラーの表示はハンドラの有無に依らないので先に同期する。
+            _tempMirrorControls.Refresh();
+
             var h = GetHandler?.Invoke();
             if (h == null) return;
 
             int modeIdx = System.Array.IndexOf(ModeValues, h.Mode);
             _modeGroup?.SetValueWithoutNotify(modeIdx >= 0 ? modeIdx : 0);
-
-            _suppressSync = true;
-            _brushRadiusSlider?.SetValueWithoutNotify(h.BrushRadius);
-            _brushRadiusField?.SetValueWithoutNotify(h.BrushRadius);
-            _suppressSync = false;
 
             // フォールオフ
             if (_falloffDropdown != null)
@@ -368,28 +381,24 @@ namespace Poly_Ling.Player
             }
 
             _invertToggle?.SetValueWithoutNotify(h.Invert);
+
+            // レンジ → 値 の順で入れる（逆順だと旧レンジで値が切り詰められ、
+            // つまみの位置とテキストボックスの数字が食い違う）。
+            _suppressSync = true;
+
+            SliderRangeUtil.SetRangeAndValue(
+                _brushRadiusSlider, h.MinBrushRadius, h.MaxBrushRadius, h.BrushRadius);
+            _brushRadiusField?.SetValueWithoutNotify(h.BrushRadius);
             _minRadiusField?.SetValueWithoutNotify(h.MinBrushRadius);
             _maxRadiusField?.SetValueWithoutNotify(h.MaxBrushRadius);
 
-            if (_brushRadiusSlider != null)
-            {
-                _brushRadiusSlider.lowValue  = h.MinBrushRadius;
-                _brushRadiusSlider.highValue = h.MaxBrushRadius;
-            }
-
-            _suppressSync = true;
-            _strengthSlider?.SetValueWithoutNotify(h.Strength);
+            SliderRangeUtil.SetRangeAndValue(
+                _strengthSlider, h.MinStrength, h.MaxStrength, h.Strength);
             _strengthField?.SetValueWithoutNotify(h.Strength);
-            _suppressSync = false;
-
-            if (_strengthSlider != null)
-            {
-                _strengthSlider.lowValue  = h.MinStrength;
-                _strengthSlider.highValue = h.MaxStrength;
-            }
-
             _minStrengthField?.SetValueWithoutNotify(h.MinStrength);
             _maxStrengthField?.SetValueWithoutNotify(h.MaxStrength);
+
+            _suppressSync = false;
 
             UpdateRadiusDragButtonStyle(h.IsRadiusDragMode);
             UpdateHelp(h.Mode);
@@ -402,9 +411,11 @@ namespace Poly_Ling.Player
         private void UpdateRadiusDragButtonStyle(bool active)
         {
             if (_radiusDragButton == null) return;
+            // 非 active に StyleKeyword.Null を入れると ApplyDarkTheme のインライン背景が
+            // 外れて USS 既定の明るい灰色になり、白文字が読めなくなる。明示色を入れる。
             _radiusDragButton.style.backgroundColor = active
                 ? new StyleColor(new Color(0.3f, 0.6f, 1.0f, 0.8f))
-                : new StyleColor(StyleKeyword.Null);
+                : PlayerLayoutRoot.BtnInactiveColor;
         }
 
         private void UpdateHelp(SculptMode mode)
@@ -420,27 +431,91 @@ namespace Poly_Ling.Player
             };
         }
 
-        // 半径レンジ変更後、現在のブラシ半径を新レンジ内へ再クランプしてUIへ反映
-        private void ClampRadiusToRange(SculptToolHandler h)
+        // ── 半径 ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// テキストボックスの入力をそのまま採用する。上下限の外なら上下限を広げる。
+        /// 黙ってクランプすると、上下限が折りたたみの中にあるため
+        /// 「入れた数字が勝手に変わる」ように見える。
+        /// </summary>
+        private void ApplyRadiusInput(SculptToolHandler h, float requested)
         {
-            if (h == null) return;
-            float cur = Mathf.Clamp(h.BrushRadius, h.MinBrushRadius, h.MaxBrushRadius);
-            h.BrushRadius = cur;
+            float min = h.MinBrushRadius;
+            float max = h.MaxBrushRadius;
+            SliderRangeUtil.ExpandToInclude(requested, ref min, ref max);
+
+            // setter 側にもクランプがあるので、書いた後に実値を読み戻す。
+            h.MinBrushRadius = min;
+            h.MaxBrushRadius = max;
+            min = h.MinBrushRadius;
+            max = h.MaxBrushRadius;
+
+            h.BrushRadius = requested;
+            SyncRadiusWidgets(h, min, max);
+        }
+
+        /// <summary>上下限が変わったとき、現在値を新レンジへ収めて UI を揃える。</summary>
+        private void ApplyRadiusRange(SculptToolHandler h)
+        {
+            float min = h.MinBrushRadius;
+            float max = h.MaxBrushRadius;
+            if (max < min + SliderRangeUtil.MinSpan)
+            {
+                h.MaxBrushRadius = min + SliderRangeUtil.MinSpan;
+                max = h.MaxBrushRadius;
+            }
+            h.BrushRadius = Mathf.Clamp(h.BrushRadius, min, max);
+            SyncRadiusWidgets(h, min, max);
+        }
+
+        private void SyncRadiusWidgets(SculptToolHandler h, float min, float max)
+        {
             _suppressSync = true;
-            _brushRadiusSlider?.SetValueWithoutNotify(cur);
-            _brushRadiusField?.SetValueWithoutNotify(cur);
+            SliderRangeUtil.SetRangeAndValue(_brushRadiusSlider, min, max, h.BrushRadius);
+            _brushRadiusField?.SetValueWithoutNotify(h.BrushRadius);
+            _minRadiusField?.SetValueWithoutNotify(min);
+            _maxRadiusField?.SetValueWithoutNotify(max);
             _suppressSync = false;
         }
 
-        // 強度レンジ変更後、現在の強度を新レンジ内へ再クランプしてUIへ反映
-        private void ClampStrengthToRange(SculptToolHandler h)
+        // ── 強度 ─────────────────────────────────────────────────────
+
+        /// <summary>半径と同じ方針。入力値を採用し、必要なら上下限を広げる。</summary>
+        private void ApplyStrengthInput(SculptToolHandler h, float requested)
         {
-            if (h == null) return;
-            float cur = Mathf.Clamp(h.Strength, h.MinStrength, h.MaxStrength);
-            h.Strength = cur;
+            float min = h.MinStrength;
+            float max = h.MaxStrength;
+            SliderRangeUtil.ExpandToInclude(requested, ref min, ref max);
+
+            h.MinStrength = min;
+            h.MaxStrength = max;
+            min = h.MinStrength;
+            max = h.MaxStrength;
+
+            h.Strength = requested;
+            SyncStrengthWidgets(h, min, max);
+        }
+
+        private void ApplyStrengthRange(SculptToolHandler h)
+        {
+            float min = h.MinStrength;
+            float max = h.MaxStrength;
+            if (max < min + SliderRangeUtil.MinSpan)
+            {
+                h.MaxStrength = min + SliderRangeUtil.MinSpan;
+                max = h.MaxStrength;
+            }
+            h.Strength = Mathf.Clamp(h.Strength, min, max);
+            SyncStrengthWidgets(h, min, max);
+        }
+
+        private void SyncStrengthWidgets(SculptToolHandler h, float min, float max)
+        {
             _suppressSync = true;
-            _strengthSlider?.SetValueWithoutNotify(cur);
-            _strengthField?.SetValueWithoutNotify(cur);
+            SliderRangeUtil.SetRangeAndValue(_strengthSlider, min, max, h.Strength);
+            _strengthField?.SetValueWithoutNotify(h.Strength);
+            _minStrengthField?.SetValueWithoutNotify(min);
+            _maxStrengthField?.SetValueWithoutNotify(max);
             _suppressSync = false;
         }
 

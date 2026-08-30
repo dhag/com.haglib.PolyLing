@@ -51,6 +51,9 @@ namespace Poly_Ling.Tools
             if (mo == null || plan == null || !plan.Ok) return;
             if (plan.FaceCuts.Count == 0) return;
 
+            // 分割で増える頂点の始まり。部品ID / サブIDの採番に使う。
+            int origVertexCount = mo.VertexCount;
+
             MeshObjectSnapshot before = ctx.UndoController != null
                 ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext)
                 : null;
@@ -102,6 +105,9 @@ namespace Poly_Ling.Tools
                     SplitFaceEdgeToEdge(mo, cut.FaceIndex, l0, n0, l1, n1);
                 }
             }
+
+            // 今回増えた頂点を 1 つの部品として扱う。
+            Poly_Ling.Ops.PartsIdOps.AssignNewVertices(mo, origVertexCount);
 
             ctx.SyncMesh?.Invoke();
 

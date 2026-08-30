@@ -138,6 +138,9 @@ namespace Poly_Ling.Tools
                     cutCount++;
             }
 
+            // 今回増えた頂点を 1 つの部品として扱う。
+            Poly_Ling.Ops.PartsIdOps.AssignNewVertices(mo, origVertexCount);
+
             UnityEngine.Debug.Log(
                 $"[SimpleCut] faces={origFaceCount} mask={(faceCulledMask != null)} " +
                 $"culledSkip={culledSkip} culledWouldCut={culledWouldCut} " +

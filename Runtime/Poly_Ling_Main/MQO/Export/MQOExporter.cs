@@ -1206,12 +1206,14 @@ namespace Poly_Ling.MQO
 
         private static bool ShouldSkipAsMirror(MeshContext mc, MQOExportSettings settings)
         {
-            // B: Type=BakedMirror
-            if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
+            // B: ミラー側の型（BakedMirror / MirrorSide）。
+            //    名前ではなく型で判定する。ミラー名は「左腕+」とは限らず
+            //    「右腕」になり得るため、接尾辞に頼ると MirrorSide を取りこぼす。
+            if (settings.SkipBakedMirror && Poly_Ling.Ops.MirrorBranchOps.IsMirrorSideContext(mc))
                 return true;
 
-            // C: 名前末尾が+（Type=BakedMirrorでないもの）
-            if (settings.SkipNamedMirror && mc.Type != MeshType.BakedMirror &&
+            // C: 名前末尾が+（型情報を持たない古いデータ向けの保険）
+            if (settings.SkipNamedMirror && !Poly_Ling.Ops.MirrorBranchOps.IsMirrorSideContext(mc) &&
                 !string.IsNullOrEmpty(mc.Name) && mc.Name.EndsWith("+"))
                 return true;
 

@@ -118,7 +118,7 @@ namespace Poly_Ling.Player
         private static bool Exists(TextField f) =>
             f != null && !string.IsNullOrEmpty(f.value) && File.Exists(f.value);
 
-        private static string Mark(bool ok) => ok ? "✓" : "✗";
+        private static string Mark(bool ok) => ok ? "✓" : "×";
 
         /// <summary>
         /// 他のIOパネルと同じ「セクション見出し + [...] + パス欄」の1組を追加する。

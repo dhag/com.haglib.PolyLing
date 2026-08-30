@@ -84,6 +84,10 @@ namespace Poly_Ling.Tools
             var facesByVertex = BuildFacesByVertex(mesh);
 
             int splitCount = 0;
+
+            // 分離で増える頂点の始まり。部品ID / サブIDの採番に使う。
+            int origVertexCount = mesh.VertexCount;
+
             // 選択頂点インデックスのスナップショット（ループ中に頂点数が増えるため）
             var selectedSnapshot = sel.ToList();
 
@@ -116,6 +120,9 @@ namespace Poly_Ling.Tools
 
             if (splitCount > 0)
             {
+                // 今回増えた頂点を 1 つの部品として扱う。
+                Poly_Ling.Ops.PartsIdOps.AssignNewVertices(mesh, origVertexCount);
+
                 _context.OnTopologyChanged();
 
                 if (_context.UndoController != null)

@@ -50,7 +50,6 @@ namespace Poly_Ling.Player
             sensLbl.style.color = new StyleColor(Color.white);
             sensLbl.style.width = 70; sensLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             _dragSensField = new FloatField { value = 1f };
-            _dragSensField.style.color = new StyleColor(Color.black);
             _dragSensField.style.flexGrow = 1;
             _dragSensField.RegisterValueChangedCallback(e =>
             {

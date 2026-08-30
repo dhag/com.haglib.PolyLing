@@ -21,13 +21,44 @@ namespace Poly_Ling.Player
         public Func<int>            GetModelIndex;
 
         // ── 設定値 ────────────────────────────────────────────────────────
-        private int           _mirrorAxis    = 0;    // 0=X, 1=Y, 2=Z
-        private float         _threshold     = 0.0001f;
-        private float         _planeOffset   = 0f;
-        private bool          _flipU         = false;
-        private MirrorBoundaryMode _boundaryMode = MirrorBoundaryMode.Threshold;
-        private bool          _projectBoundary = true;
-        private WriteBackMode _writeBackMode = WriteBackMode.OriginalSideOnly;
+        // 実体はすべて TempMirrorSettings（共有）にある。
+        // 各ツール内の「一時ミラー」ボタンが同じ値を使う必要があるため、
+        // このパネルの private フィールドとしては持たない。
+        private static int _mirrorAxis
+        {
+            get => TempMirrorSettings.MirrorAxis;
+            set => TempMirrorSettings.MirrorAxis = value;
+        }
+        private static float _threshold
+        {
+            get => TempMirrorSettings.Threshold;
+            set => TempMirrorSettings.Threshold = value;
+        }
+        private static float _planeOffset
+        {
+            get => TempMirrorSettings.PlaneOffset;
+            set => TempMirrorSettings.PlaneOffset = value;
+        }
+        private static bool _flipU
+        {
+            get => TempMirrorSettings.FlipU;
+            set => TempMirrorSettings.FlipU = value;
+        }
+        private static MirrorBoundaryMode _boundaryMode
+        {
+            get => TempMirrorSettings.BoundaryMode;
+            set => TempMirrorSettings.BoundaryMode = value;
+        }
+        private static bool _projectBoundary
+        {
+            get => TempMirrorSettings.ProjectBoundary;
+            set => TempMirrorSettings.ProjectBoundary = value;
+        }
+        private static WriteBackMode _writeBackMode
+        {
+            get => TempMirrorSettings.WriteBack;
+            set => TempMirrorSettings.WriteBack = value;
+        }
 
         // ── UI ────────────────────────────────────────────────────────────
         private Label         _statusLabel;
@@ -49,7 +80,7 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
-            root.Add(SecLabel("Mirror Edit"));
+            root.Add(SecLabel("一時ミラー"));
             root.Add(new HelpBox(
                 "選択メッシュ自身に反対側の実体を一時的に生やします。対称面をまたぐ処理"
                 + "（法線スムージング等）を正しく効かせるための作業用機能で、別オブジェクトは作りません。"
@@ -69,7 +100,6 @@ namespace Poly_Ling.Player
             var offsetLbl = new Label("平面オフセット"); offsetLbl.style.width = 90; offsetLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             offsetLbl.style.color = new StyleColor(Color.white);
             var offsetField = new FloatField { value = _planeOffset }; offsetField.style.flexGrow = 1;
-            offsetField.style.color = new StyleColor(Color.black);
             offsetField.tooltip = "ミラー平面をローカル座標でずらす。オブジェクト原点が対称面上に無いときに使う。";
             offsetField.RegisterValueChangedCallback(e => _planeOffset = e.newValue);
             offsetRow.Add(offsetLbl); offsetRow.Add(offsetField);
@@ -77,7 +107,8 @@ namespace Poly_Ling.Player
 
             var bmChoices = new List<string> { "しきい値", "選択頂点" };
             var bmValues  = new[] { MirrorBoundaryMode.Threshold, MirrorBoundaryMode.SelectedVertices };
-            var bmDd = new DropdownField("境界の決め方", bmChoices, 0);
+            int bmInit = System.Array.IndexOf(bmValues, _boundaryMode);
+            var bmDd = new DropdownField("境界の決め方", bmChoices, bmInit >= 0 ? bmInit : 0);
             bmDd.style.color = new StyleColor(Color.white);
             bmDd.tooltip = "しきい値: ミラー平面からの距離で境界を判定 / 選択頂点: 選択している頂点を境界とみなす";
             bmDd.RegisterValueChangedCallback(e =>
@@ -97,7 +128,6 @@ namespace Poly_Ling.Player
             var threshLbl = new Label("境界閾値"); threshLbl.style.width = 90; threshLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             threshLbl.style.color = new StyleColor(Color.white);
             var threshField = new FloatField { value = _threshold }; threshField.style.flexGrow = 1;
-            threshField.style.color = new StyleColor(Color.black);
             threshField.RegisterValueChangedCallback(e => _threshold = Mathf.Max(0.00001f, e.newValue));
             _threshRow.Add(threshLbl); _threshRow.Add(threshField);
             root.Add(_threshRow);
@@ -133,7 +163,8 @@ namespace Poly_Ling.Player
 
             var wbChoices = new List<string> { "元側を採用", "ミラー側を採用", "両側の平均" };
             var wbValues  = new[] { WriteBackMode.OriginalSideOnly, WriteBackMode.MirroredSideOnly, WriteBackMode.Average };
-            var wbDd = new DropdownField("残す編集結果", wbChoices, 0);
+            int wbInit = System.Array.IndexOf(wbValues, _writeBackMode);
+            var wbDd = new DropdownField("残す編集結果", wbChoices, wbInit >= 0 ? wbInit : 0);
             wbDd.style.color = new StyleColor(Color.white);
             wbDd.tooltip = "解除して半身に戻すとき、どちら側で行った編集を採用するか。";
             wbDd.RegisterValueChangedCallback(e => { int i = wbChoices.IndexOf(e.newValue); if (i >= 0) _writeBackMode = wbValues[i]; });

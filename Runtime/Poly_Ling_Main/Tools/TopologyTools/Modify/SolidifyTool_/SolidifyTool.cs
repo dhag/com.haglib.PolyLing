@@ -157,6 +157,12 @@ namespace Poly_Ling.Tools
                 return;
             }
 
+            // 厚み付けの結果は 1 つの部品として渡す。
+            // 元頂点から複写された部品IDをここで潰す。既存オブジェクトへ追加するときの
+            // 番号のずらしは追加側（PrimitiveMeshAddToExisting）が行う。
+            Poly_Ling.Ops.PartsIdOps.SetPartsId(result.Mesh, 0);
+            Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(result.Mesh);
+
             OnMeshCreated?.Invoke(result.Mesh, MeshName, AddToExisting);
 
             _lastMessage = result.BoundaryEdgeCount > 0

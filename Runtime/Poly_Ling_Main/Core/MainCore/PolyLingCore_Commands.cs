@@ -279,6 +279,12 @@ namespace Poly_Ling.Core
                 NotifyPanels(ChangeKind.ListStructure);
                 return;
 
+            // --- ブーリアン ---
+            case BooleanMeshCommand c:
+                HandleBooleanMeshCommand(c);
+                NotifyPanels(ChangeKind.ListStructure);
+                return;
+
             // --- BoneTransform ---
             case SetBoneTransformValueCommand c:
                 _meshListOps.SetBoneTransformValue(c.MasterIndices, c.TargetField, c.Value);
@@ -525,6 +531,113 @@ namespace Poly_Ling.Core
 
                 // 基準メッシュのGPU同期
                 _toolContext?.SyncMesh?.Invoke();
+            }
+
+            _model?.OnListChanged?.Invoke();
+        }
+
+        // ================================================================
+        // ブーリアン演算
+        // ================================================================
+
+        /// <summary>
+        /// 2 つのメッシュオブジェクトにブーリアン演算を行う。
+        /// 演算そのものは BooleanOps に集約してあり、ここは MeshContext の
+        /// 組み立てとモデルへの反映（Undo 付き）だけを行う。
+        ///
+        /// CreateNewMesh=true : 新規 MeshContext を追加する。A / B は残る
+        ///                      （DeleteSourceB=true のときは B のみ削除）。
+        /// CreateNewMesh=false: A の MeshObject を結果で置き換える。
+        /// </summary>
+        private void HandleBooleanMeshCommand(BooleanMeshCommand cmd)
+        {
+            if (_model == null) return;
+
+            var ctxA = _model.GetMeshContext(cmd.AMasterIndex);
+            var ctxB = _model.GetMeshContext(cmd.BMasterIndex);
+            if (ctxA?.MeshObject == null || ctxB?.MeshObject == null) return;
+            if (ReferenceEquals(ctxA, ctxB)) return;
+
+            // 演算空間は A のローカル空間。結果も A の姿勢を引き継ぐ。
+            var result = Poly_Ling.Ops.BooleanOps.Perform(
+                cmd.Op,
+                ctxA.MeshObject, ctxA.WorldMatrix,
+                ctxB.MeshObject, ctxB.WorldMatrix,
+                ctxA.WorldMatrixInverse,
+                cmd.Epsilon,
+                cmd.MergeVertices,
+                cmd.MergeThreshold,
+                resultName: null);
+
+            if (!result.Success || result.Mesh == null)
+            {
+                Debug.LogWarning("[PolyLing] ブーリアン失敗: " + result.Message);
+                return;
+            }
+
+            MeshObject resultMesh = result.Mesh;
+
+            if (cmd.CreateNewMesh)
+            {
+                // 新規 MeshContext: A の姿勢一式を引き継ぐ
+                var destCtx = new MeshContext
+                {
+                    Name              = resultMesh.Name,
+                    MeshObject        = resultMesh,
+                    OriginalPositions = new Vector3[0],
+                };
+                var bt = new BoneTransform();
+                bt.CopyFrom(ctxA.BoneTransform);
+                destCtx.BoneTransform      = bt;
+                destCtx.WorldMatrix        = ctxA.WorldMatrix;
+                destCtx.WorldMatrixInverse = ctxA.WorldMatrixInverse;
+                destCtx.BindPose           = ctxA.BindPose;
+
+                var newUnityMesh       = resultMesh.ToUnityMesh();
+                newUnityMesh.name      = resultMesh.Name;
+                newUnityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+                destCtx.ReplaceUnityMesh(newUnityMesh);
+                destCtx.OriginalPositions = (Vector3[])resultMesh.Positions.Clone();
+
+                AddMeshContextWithUndo(destCtx);
+            }
+            else
+            {
+                // A の中身を置き換える。名前は A のものを保つ。
+                //
+                // Undo は MeshObject 差し替えなので、対象を A に固定してから
+                // 前後のスナップショットを取る（既定の解決先は先頭の選択メッシュで、
+                // A とは限らないため SetMeshObjectFor を使う）。
+                _undoController?.SetMeshObjectFor(ctxA);
+                var before = _undoController?.CaptureMeshObjectSnapshot();
+
+                resultMesh.Name = ctxA.MeshObject.Name;
+                ctxA.MeshObject = resultMesh;
+                ctxA.ClearSelection();
+
+                var newUnityMesh       = resultMesh.ToUnityMesh();
+                newUnityMesh.name      = resultMesh.Name;
+                newUnityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+                ctxA.ReplaceUnityMesh(newUnityMesh);
+                ctxA.OriginalPositions = (Vector3[])resultMesh.Positions.Clone();
+
+                if (_undoController != null && before != null)
+                {
+                    // 差し替え後の MeshObject を指し直してから after を取る。
+                    _undoController.SetMeshObjectFor(ctxA);
+                    var after = _undoController.CaptureMeshObjectSnapshot();
+                    _undoController.RecordTopologyChange(before, after,
+                        "ブーリアン " + Poly_Ling.Ops.BooleanOps.DisplayName(cmd.Op));
+                }
+                _undoController?.ClearTargetMeshContext();
+
+                _toolContext?.SyncMesh?.Invoke();
+            }
+
+            if (cmd.DeleteSourceB)
+            {
+                int idxB = _model.IndexOf(ctxB);
+                if (idxB >= 0) RemoveMeshContextWithUndo(idxB);
             }
 
             _model?.OnListChanged?.Invoke();

@@ -488,7 +488,18 @@ namespace Poly_Ling.MQO
                     //Debug.Log($"[MQOImporter] mesh={ctx.Name} IsMirrored={ctx.IsMirrored} MirrorType={ctx.MirrorType} Type={ctx.Type}");
                     if (ctx.IsMirrored && ctx.Type == MeshType.Mesh)
                     {
-                        var mirrorMesh = CreateBakedMirrorMesh(ctx, i, settings);
+                        // 同名の有無は、その時点の列（挿入済みのミラーも含む）で見る。
+                        // 「左腕」→「右腕」が空いていればそれを使い、埋まっていれば接尾辞へ落ちる。
+                        var snapshot = result.MeshContexts;
+                        Func<string, bool> nameExists = n =>
+                        {
+                            if (string.IsNullOrEmpty(n)) return false;
+                            for (int k = 0; k < snapshot.Count; k++)
+                                if (snapshot[k] != null && snapshot[k].Name == n) return true;
+                            return false;
+                        };
+
+                        var mirrorMesh = CreateBakedMirrorMesh(ctx, i, settings, nameExists);
                         if (mirrorMesh == null) continue;
 
                         Debug.Log($"[MQOImporter] BakeMirror={settings.BakeMirror} ctx={ctx.Name}");
@@ -504,8 +515,9 @@ namespace Poly_Ling.MQO
                         else
                         {
                             // MirrorPair: Real↔Mirror同期
+                            // 名前は CreateDerivedMirrorContext が MirrorNameOps で決めている。
+                            // ここで上書きしない（「左腕」のミラーは「右腕」）。
                             mirrorMesh.Type = MeshType.MirrorSide;
-                            mirrorMesh.Name = ctx.Name + "+";
                             result.MeshContexts.Insert(i + 1, mirrorMesh);
                             insertedCount++;
 
@@ -2246,9 +2258,12 @@ namespace Poly_Ling.MQO
         /// 実装は MirrorBranchOps.CreateDerivedMirrorContext にある
         /// （ミラーの有効化からも呼ぶため Ops へ移した）。
         /// </summary>
-        private static MeshContext CreateBakedMirrorMesh(MeshContext source, int sourceIndex, MQOImportSettings settings)
+        private static MeshContext CreateBakedMirrorMesh(
+            MeshContext source, int sourceIndex, MQOImportSettings settings,
+            Func<string, bool> nameExists = null)
         {
-            return Poly_Ling.Ops.MirrorBranchOps.CreateDerivedMirrorContext(source, sourceIndex);
+            return Poly_Ling.Ops.MirrorBranchOps.CreateDerivedMirrorContext(
+                source, sourceIndex, nameExists);
         }
 
     }

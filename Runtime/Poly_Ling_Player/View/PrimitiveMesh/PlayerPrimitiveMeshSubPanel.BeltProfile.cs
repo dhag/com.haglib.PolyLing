@@ -1690,6 +1690,11 @@ namespace Poly_Ling.Player
                 if (sv.UVs != null)
                     for (int k = 0; k < sv.UVs.Count; k++) nv.UVs.Add(sv.UVs[k]);
                 if (nv.UVs.Count == 0) nv.UVs.Add(Vector2.zero);
+
+                // 部品ID / サブIDは連結で失わない。
+                nv.PartsId = sv.PartsId;
+                nv.SubId   = sv.SubId;
+
                 dst.Vertices.Add(nv);
             }
 

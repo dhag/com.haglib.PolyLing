@@ -57,15 +57,15 @@ namespace Poly_Ling.Player
             _sliderY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotY = Snap(v); });
             _sliderZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotZ = Snap(v); });
             foreach (var s in new[] { _sliderX, _sliderY, _sliderZ })
-                s.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
+                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
 
             _fieldX = new FloatField(); _fieldY = new FloatField(); _fieldZ = new FloatField();
             _eulerGroup.Add(SliderWithField(_sliderX, _fieldX, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotX = Snap(v); h.EndSliderDrag(); }));
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotX = Snap(v); }));
             _eulerGroup.Add(SliderWithField(_sliderY, _fieldY, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotY = Snap(v); h.EndSliderDrag(); }));
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotY = Snap(v); }));
             _eulerGroup.Add(SliderWithField(_sliderZ, _fieldZ, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotZ = Snap(v); h.EndSliderDrag(); }));
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotZ = Snap(v); }));
             _root.Add(_eulerGroup);
 
             // 軸-角度 グループ
@@ -78,10 +78,10 @@ namespace Poly_Ling.Player
             axisRow.Add(_axisX); axisRow.Add(_axisY); axisRow.Add(_axisZ);
             _axisGroup.Add(axisRow);
             _axisAngle = MakeSlider("Angle", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.AxisAngle = Snap(v); });
-            _axisAngle.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
+            _axisAngle.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
             _fieldAngle = new FloatField();
             _axisGroup.Add(SliderWithField(_axisAngle, _fieldAngle, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.AxisAngle = Snap(v); h.EndSliderDrag(); }));
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.AxisAngle = Snap(v); }));
             _root.Add(_axisGroup);
             UpdateModeVisibility(false);
 
@@ -92,7 +92,6 @@ namespace Poly_Ling.Player
             _snapToggle.style.color = new StyleColor(Color.white);
             _snapToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.UseSnap = e.newValue; });
             _snapField = new FloatField { value = 15f };
-            _snapField.style.color = new StyleColor(Color.black);
             _snapField.style.width = 50; _snapField.style.marginLeft = 4;
             _snapField.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.SnapAngle = Mathf.Max(0.1f, e.newValue); });
             snapRow.Add(_snapToggle); snapRow.Add(_snapField);
@@ -122,22 +121,10 @@ namespace Poly_Ling.Player
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.marginTop     = 4;
-            var applyBtn  = new Button(() => GetH()?.EndSliderDrag()) { text = "Apply" };
+            var applyBtn  = new Button(() => { GetH()?.EndSliderDrag(); Refresh(); }) { text = "Apply" };
             applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
-            var revertBtn = new Button(() =>
-            {
-                GetH()?.Revert();
-                _suppressSync = true;
-                _sliderX?.SetValueWithoutNotify(0);
-                _sliderY?.SetValueWithoutNotify(0);
-                _sliderZ?.SetValueWithoutNotify(0);
-                _axisAngle?.SetValueWithoutNotify(0);
-                _fieldX?.SetValueWithoutNotify(0);
-                _fieldY?.SetValueWithoutNotify(0);
-                _fieldZ?.SetValueWithoutNotify(0);
-                _fieldAngle?.SetValueWithoutNotify(0);
-                _suppressSync = false;
-            }) { text = "Reset" };
+            // 確定後は EndSliderDrag が角度を 0 に戻すので、Refresh で表示も 0 へ揃う。
+            var revertBtn = new Button(() => { GetH()?.Revert(); Refresh(); }) { text = "Reset" };
             revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn);
             _root.Add(btnRow);
@@ -188,18 +175,21 @@ namespace Poly_Ling.Player
         {
             var f = new FloatField(label) { value = 0f };
             f.style.flexGrow = 1; f.style.marginRight = 2;
-            f.style.color = new StyleColor(Color.black);
             f.RegisterValueChangedCallback(e => onChange(e.newValue));
             return f;
         }
 
         /// <summary>
         /// スライダーと数値入力欄を 1 行に並べる。
-        /// スライダー操作は数値欄へ表示同期するだけ（適用は既存の PointerUp → EndSliderDrag）。
-        /// 数値欄の確定は min..max へクランプしたうえで onCommit を呼ぶ。
-        /// onCommit 側で BeginSliderDrag → 値設定 → EndSliderDrag を行い、Undo 1 件にまとめる。
+        ///
+        /// 【確定は Apply ボタンだけ】
+        /// 数値欄は値を入れてもプレビューを更新するだけで、ベイクも Undo 記録もしない。
+        /// 旧実装は欄の変更ごとに EndSliderDrag（= ApplyRotation）まで走らせていたため、
+        /// 「90」と打つ途中の「9」が確定・ベイクされ、続く「90」がその上に積まれて
+        /// 合計 99 度になっていた。
+        /// スライダーは従来どおりポインタアップで確定する（終端が明確なため）。
         /// </summary>
-        private VisualElement SliderWithField(Slider slider, FloatField field, float min, float max, Action<float> onCommit)
+        private VisualElement SliderWithField(Slider slider, FloatField field, float min, float max, Action<float> onPreview)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -211,7 +201,6 @@ namespace Poly_Ling.Player
 
             field.style.width      = 56;
             field.style.marginLeft = 4;
-            field.style.color      = new StyleColor(Color.black);
 
             slider.RegisterValueChangedCallback(e =>
             {
@@ -229,7 +218,7 @@ namespace Poly_Ling.Player
                 field.SetValueWithoutNotify(v);
                 slider.SetValueWithoutNotify(v);
                 _suppressSync = false;
-                onCommit(v);
+                onPreview(v);
             });
 
             row.Add(slider); row.Add(field);

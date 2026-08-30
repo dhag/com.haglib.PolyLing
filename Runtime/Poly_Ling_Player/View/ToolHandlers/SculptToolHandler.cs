@@ -172,7 +172,9 @@ namespace Poly_Ling.Player
             if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             _tool.OnMouseUp  (ctx, ToImgui(screenPos, ctx));
-            OnHideBrushCircle?.Invoke();
+            // ブラシ円はポインタがビューポート上にある間は出したままにする。
+            // ここで消すと、クリックのたびに円が消えて次のホバーまで戻らない。
+            UpdateBrushCircleOverlay(ctx, screenPos);
         }
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
@@ -225,18 +227,18 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
-            OnHideBrushCircle?.Invoke();
+            // ストローク後もポインタ位置に円を残す（OnLeftClick と同じ理由）。
+            UpdateBrushCircleOverlay(ctx, screenPos);
         }
 
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null) return;
-            // OnPointerHover は UIToolkit 座標（Y=0 が上）で渡される。
-            // UpdateBrushCircleOverlay / ShowBrushCircle は Y=0 が下を期待するため反転する。
-            // ドラッグ中は PlayerViewportPanel.ToViewportCoord で反転済みなので一致する。
-            float panelH = ctx.PreviewRect.height;
-            var screenPosYDown = new Vector2(screenPos.x, panelH - screenPos.y);
-            UpdateBrushCircleOverlay(ctx, screenPosYDown);
+            // screenPos は PlayerViewportManager.ToHandlerHoverPos で
+            // 既にビューポート座標（Y=0 が下）へ変換済み。
+            // UpdateBrushCircleOverlay / ShowBrushCircle が期待するのも Y=0 下なので、
+            // ここで反転してはならない（ドラッグ経路が渡す ToViewportCoord の結果と同じ空間）。
+            UpdateBrushCircleOverlay(ctx, screenPos);
         }
 
         // ================================================================

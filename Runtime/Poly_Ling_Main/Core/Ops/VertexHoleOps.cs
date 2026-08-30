@@ -136,6 +136,11 @@ namespace Poly_Ling.Ops
             float t = Mathf.Clamp01(ratio);
             var apexVertex = mo.Vertices[apex];
 
+            // 穴あけで増える頂点の始まり。部品ID / サブIDの採番に使う。
+            // 採番は頂点 A の削除より前に行う。削除でインデックスがずれても、
+            // 採番済みの値は頂点そのものが持つため影響を受けない。
+            int origVertexCount = mo.VertexCount;
+
             // 根元 → 新頂点インデックス
             var newIdxOf = new Dictionary<int, int>();
 
@@ -225,6 +230,9 @@ namespace Poly_Ling.Ops
             }
 
             createdVertexCount = newIdxOf.Count;
+
+            // 今回増えた頂点を 1 つの部品として扱う。
+            Poly_Ling.Ops.PartsIdOps.AssignNewVertices(mo, origVertexCount);
 
             // ここで A はどの面からも参照されていないはず。
             for (int fi = 0; fi < mo.Faces.Count; fi++)

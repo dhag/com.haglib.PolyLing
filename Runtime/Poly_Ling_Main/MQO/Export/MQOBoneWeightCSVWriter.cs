@@ -270,11 +270,11 @@ namespace Poly_Ling.MQO
                 if (mc == null) continue;
                 if (mc.Type == MeshType.Bone)
                     boneContexts.Add(mc);
-                else if (mc.Type == MeshType.BakedMirror && mc.MeshObject != null)
-                    bakedMirrorContexts.Add(mc);
-                else if (mc.Type != MeshType.BakedMirror && mc.MeshObject != null &&
+                else if (Poly_Ling.Ops.MirrorBranchOps.IsMirrorSideContext(mc) && mc.MeshObject != null)
+                    bakedMirrorContexts.Add(mc);  // タイプB: ミラー側の型で判定する
+                else if (!Poly_Ling.Ops.MirrorBranchOps.IsMirrorSideContext(mc) && mc.MeshObject != null &&
                          !string.IsNullOrEmpty(mc.Name) && mc.Name.EndsWith("+"))
-                    bakedMirrorContexts.Add(mc);  // タイプC: 名前末尾+もミラーとして扱う
+                    bakedMirrorContexts.Add(mc);  // タイプC: 型情報を持たない古いデータ向けの保険
                 else if (mc.MeshObject != null && mc.Type != MeshType.Morph)
                     meshContexts.Add(mc);
             }

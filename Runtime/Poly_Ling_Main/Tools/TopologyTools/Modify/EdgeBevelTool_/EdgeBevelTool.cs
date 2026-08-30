@@ -351,6 +351,12 @@ namespace Poly_Ling.Tools
         private void ExecuteBevel(ToolContext ctx)
         {
             var meshObject = ctx.ActiveMeshObject;
+
+            // ベベルで増える頂点の始まり。部品ID / サブIDの採番に使う。
+            // 採番は Pass 1 の直後（孤立頂点の除去より前）に行う。除去でインデックスが
+            // ずれても、採番済みの値は頂点そのものが持つため影響を受けない。
+            int origVertexCount = meshObject.VertexCount;
+
             float amount = _dragAmount;
             int segments = Segments;
             int matIdx = ctx.CurrentMaterialIndex;
@@ -461,6 +467,9 @@ namespace Poly_Ling.Tools
                     P1 = p1,
                 });
             }
+
+            // Pass 1 で増えた頂点を 1 つの部品として扱う。
+            Poly_Ling.Ops.PartsIdOps.AssignNewVertices(meshObject, origVertexCount);
 
             // ============================================================
             // Pass 1.5: 連続線分の共有端点をマージする

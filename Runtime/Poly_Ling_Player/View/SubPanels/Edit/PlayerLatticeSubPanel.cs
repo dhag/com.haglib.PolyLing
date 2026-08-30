@@ -218,7 +218,6 @@ namespace Poly_Ling.Player
             var f = new FloatField(label) { value = 0f };
             f.style.flexGrow    = 1;
             f.style.marginRight = 2;
-            f.style.color       = new StyleColor(Color.black);
             f.RegisterValueChangedCallback(e =>
             {
                 if (_suppressCallback) return;

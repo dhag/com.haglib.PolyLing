@@ -75,6 +75,13 @@ namespace Poly_Ling.Player
         /// </summary>
         public event Action<Vector2> OnPointerHover;
 
+        /// <summary>
+        /// ポインターがこのパネルから出たときに発火する。
+        /// PointerMoveEvent はパネル内でしか来ないため、常時表示するオーバーレイ
+        /// （スカルプトのブラシ円）は退出時に明示的に消す必要がある。
+        /// </summary>
+        public event Action OnPointerLeft;
+
         // ================================================================
         // 矩形選択オーバーレイ
         // ================================================================
@@ -540,6 +547,7 @@ namespace Poly_Ling.Player
             RegisterCallback<PointerMoveEvent>(OnPointerMove);
             RegisterCallback<PointerUpEvent>(OnPointerUp);
             RegisterCallback<PointerCaptureOutEvent>(OnPointerCaptureLost);
+            RegisterCallback<PointerLeaveEvent>(_ => OnPointerLeft?.Invoke());
             RegisterCallback<WheelEvent>(OnWheel);
             RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
 

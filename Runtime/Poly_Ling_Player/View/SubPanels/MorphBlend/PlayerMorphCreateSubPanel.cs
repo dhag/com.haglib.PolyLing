@@ -85,7 +85,6 @@ namespace Poly_Ling.Player
             root.Add(_morphModelDropdown);
 
             _morphNameField = new TextField("モーフ名") { value = "NewMorph" };
-            _morphNameField.style.color = new StyleColor(Color.black);
             root.Add(_morphNameField);
 
             _panelDropdown = new DropdownField("パネル",

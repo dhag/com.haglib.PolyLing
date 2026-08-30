@@ -696,6 +696,10 @@ namespace Poly_Ling.Tools
                 }
             }
 
+            // 今回増えた頂点を 1 つの部品として扱う。
+            // 部品IDは既存の最大値 + 1、サブIDはその中で 0 から。既存頂点は書き換えない。
+            Poly_Ling.Ops.PartsIdOps.AssignNewVertices(meshObject, originalVertexCount);
+
             // 面を作成
             Face newFace = null;
             switch (Mode)

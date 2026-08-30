@@ -47,19 +47,19 @@ namespace Poly_Ling.Player
             _sliderY = MakeSlider("Y", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleY = v; });
             _sliderZ = MakeSlider("Z", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleZ = v; });
             foreach (var s in new[] { _sliderXYZ, _sliderX, _sliderY, _sliderZ })
-                s.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
+                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
 
             _fieldXYZ = new FloatField(); _fieldX = new FloatField();
             _fieldY   = new FloatField(); _fieldZ = new FloatField();
-            // EndSliderDrag はスケール値を 1 に戻すため、確定後に Refresh で表示も 1 に戻す。
+            // 数値欄はプレビューのみ。確定（＝ベイクと Undo 記録）は Apply ボタンだけが行う。
             _rowXYZ = SliderWithField(_sliderXYZ, _fieldXYZ, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleX = v; h.ScaleY = v; h.ScaleZ = v; h.EndSliderDrag(); Refresh(); });
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleX = v; h.ScaleY = v; h.ScaleZ = v; });
             _rowX = SliderWithField(_sliderX, _fieldX, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleX = v; h.EndSliderDrag(); Refresh(); });
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleX = v; });
             _rowY = SliderWithField(_sliderY, _fieldY, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleY = v; h.EndSliderDrag(); Refresh(); });
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleY = v; });
             _rowZ = SliderWithField(_sliderZ, _fieldZ, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleZ = v; h.EndSliderDrag(); Refresh(); });
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleZ = v; });
             _root.Add(_rowXYZ); _root.Add(_rowX); _root.Add(_rowY); _root.Add(_rowZ);
             _originToggle = new Toggle("オブジェクトの原点を中心に") { value = false }; _originToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseOriginPivot = e.newValue; });
             _originToggle.style.color = new StyleColor(Color.white);
@@ -71,15 +71,15 @@ namespace Poly_Ling.Player
             _axisY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisY = v; });
             _axisZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisZ = v; });
             foreach (var s in new[] { _axisX, _axisY, _axisZ })
-                s.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
+                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
 
             _fieldAxisX = new FloatField(); _fieldAxisY = new FloatField(); _fieldAxisZ = new FloatField();
             _root.Add(SliderWithField(_axisX, _fieldAxisX, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisX = v; h.EndSliderDrag(); Refresh(); }));
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisX = v; }));
             _root.Add(SliderWithField(_axisY, _fieldAxisY, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisY = v; h.EndSliderDrag(); Refresh(); }));
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisY = v; }));
             _root.Add(SliderWithField(_axisZ, _fieldAxisZ, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisZ = v; h.EndSliderDrag(); Refresh(); }));
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisZ = v; }));
 
             // マグネット（比例編集）
             _magnetToggle = new Toggle("Magnet") { value = false };
@@ -98,17 +98,9 @@ namespace Poly_Ling.Player
             _root.Add(_magnetFalloff);
 
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginTop = 4;
-            var applyBtn = new Button(() => GetH()?.EndSliderDrag()) { text = "Apply" }; applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
-            var revertBtn = new Button(() =>
-            {
-                GetH()?.Revert();
-                _suppressSync = true;
-                _sliderX?.SetValueWithoutNotify(1); _sliderY?.SetValueWithoutNotify(1);
-                _sliderZ?.SetValueWithoutNotify(1); _sliderXYZ?.SetValueWithoutNotify(1);
-                _fieldX?.SetValueWithoutNotify(1); _fieldY?.SetValueWithoutNotify(1);
-                _fieldZ?.SetValueWithoutNotify(1); _fieldXYZ?.SetValueWithoutNotify(1);
-                _suppressSync = false;
-            }) { text = "Reset" }; revertBtn.style.flexGrow = 1;
+            var applyBtn = new Button(() => { GetH()?.EndSliderDrag(); Refresh(); }) { text = "Apply" }; applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
+            // 確定後は EndSliderDrag がスケールを 1 に戻すので、Refresh で表示も 1 へ揃う。
+            var revertBtn = new Button(() => { GetH()?.Revert(); Refresh(); }) { text = "Reset" }; revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn); _root.Add(btnRow);
         }
 
@@ -166,11 +158,14 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// スライダーと数値入力欄を 1 行に並べる。
-        /// スライダー操作は数値欄へ表示同期するだけ（適用は既存の PointerUp → EndSliderDrag）。
-        /// 数値欄の確定は min..max へクランプしたうえで onCommit を呼ぶ。
-        /// onCommit 側で BeginSliderDrag → 値設定 → EndSliderDrag を行い、Undo 1 件にまとめる。
+        ///
+        /// 【確定は Apply ボタンだけ】
+        /// 数値欄は値を入れてもプレビューを更新するだけで、ベイクも Undo 記録もしない。
+        /// 旧実装は欄の変更ごとに EndSliderDrag（= ApplyScale）まで走らせていたため、
+        /// 入力途中の桁がそのまま確定・ベイクされ、続く入力がその上に積まれていた。
+        /// スライダーは従来どおりポインタアップで確定する（終端が明確なため）。
         /// </summary>
-        private VisualElement SliderWithField(Slider slider, FloatField field, float min, float max, Action<float> onCommit)
+        private VisualElement SliderWithField(Slider slider, FloatField field, float min, float max, Action<float> onPreview)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -182,7 +177,6 @@ namespace Poly_Ling.Player
 
             field.style.width      = 56;
             field.style.marginLeft = 4;
-            field.style.color      = new StyleColor(Color.black);
 
             slider.RegisterValueChangedCallback(e =>
             {
@@ -200,7 +194,7 @@ namespace Poly_Ling.Player
                 field.SetValueWithoutNotify(v);
                 slider.SetValueWithoutNotify(v);
                 _suppressSync = false;
-                onCommit(v);
+                onPreview(v);
             });
 
             row.Add(slider); row.Add(field);

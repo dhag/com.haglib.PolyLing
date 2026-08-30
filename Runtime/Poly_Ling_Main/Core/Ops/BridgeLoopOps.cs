@@ -281,6 +281,94 @@ namespace Poly_Ling.Ops
         }
 
         // ================================================================
+        // 巻き方向の判定（対応フリップ／面フリップの自動決定）
+        // ================================================================
+
+        /// <summary>
+        /// 辺 {v0,v1} を使う面が 1 枚だけのとき、その面が辺を v0→v1 の向きに
+        /// 通るなら follows=true、v1→v0 なら follows=false を返して true。
+        /// 使う面が 0 枚または 2 枚以上（＝エッジでない）なら false。
+        /// </summary>
+        public static bool EdgeFollowsFaceWinding(
+            MeshObject mesh, int v0, int v1, out bool follows)
+        {
+            follows = false;
+            if (mesh == null || v0 < 0 || v1 < 0 || v0 == v1) return false;
+
+            int useCount = 0;
+            bool forward = false;
+
+            for (int fi = 0; fi < mesh.Faces.Count; fi++)
+            {
+                var face = mesh.Faces[fi];
+                int n = face.VertexIndices.Count;
+                if (n < 3) continue;   // 線分は辺を持たない
+
+                for (int i = 0; i < n; i++)
+                {
+                    int a = face.VertexIndices[i];
+                    int b = face.VertexIndices[(i + 1) % n];
+                    if (a == b) continue;
+
+                    if (a == v0 && b == v1) { useCount++; forward = true;  }
+                    else if (a == v1 && b == v0) { useCount++; forward = false; }
+                }
+            }
+
+            if (useCount != 1) return false;
+
+            follows = forward;
+            return true;
+        }
+
+        /// <summary>
+        /// ループAとループBの巻き方向から、対応フリップ／面フリップを決める。
+        ///
+        /// 【根拠】境界辺は 1 面だけが使う。ブリッジ面がその辺を既存面と逆向きに
+        /// 通るとき、既存面とブリッジ面の表裏がつながる。
+        /// <see cref="Build"/> の生成面は、A 側辺を loopA の前進向き、
+        /// B 側辺を実効B順の後退向きに通る（flipFaces でどちらも反転する）。
+        /// dA = 既存面が loopA[0]→loopA[1] を通るか、dB = 同じく loopB とすると
+        ///   flipFaces         = dA
+        ///   flipCorrespondence = (dA == dB)
+        /// で一意に決まる。
+        ///
+        /// 判定できないとき（種の辺がエッジでない等）は false を返し、
+        /// 出力フラグは触らない。
+        /// </summary>
+        public static bool TryAutoFlags(
+            MeshObject meshA, IReadOnlyList<int> loopA,
+            MeshObject meshB, IReadOnlyList<int> loopB,
+            out bool flipCorrespondence, out bool flipFaces, out string message)
+        {
+            flipCorrespondence = false;
+            flipFaces          = false;
+            message            = null;
+
+            if (loopA == null || loopA.Count < 2 || loopB == null || loopB.Count < 2)
+            {
+                message = "ループの頂点が足りません";
+                return false;
+            }
+
+            if (!EdgeFollowsFaceWinding(meshA, loopA[0], loopA[1], out bool dA))
+            {
+                message = "穴A の巻き方向を判定できません";
+                return false;
+            }
+
+            if (!EdgeFollowsFaceWinding(meshB, loopB[0], loopB[1], out bool dB))
+            {
+                message = "穴B の巻き方向を判定できません";
+                return false;
+            }
+
+            flipFaces          = dA;
+            flipCorrespondence = (dA == dB);
+            return true;
+        }
+
+        // ================================================================
         // 位置の解決
         // ================================================================
 

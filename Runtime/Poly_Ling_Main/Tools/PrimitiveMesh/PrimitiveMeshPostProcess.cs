@@ -5,11 +5,19 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.PrimitiveMesh
 {
     public static class PrimitiveMeshPostProcess
     {
+        /// <summary>
+        /// パーツIDごとに、頂点の並び順の先頭から 0,1,2… とサブIDを振り直す。
+        /// 実体は PartsIdOps.AssignSubIdByPartsId。図形生成側からの呼び出し口として残す。
+        /// </summary>
+        public static void AssignSubIdByPartsId(MeshObject mo)
+            => PartsIdOps.AssignSubIdByPartsId(mo);
+
         /// <summary>
         /// 頂点を Y 降順 → X 降順 → Z 降順（同値は元順で安定）に並べ替え、
         /// Face.VertexIndices を再マップする。

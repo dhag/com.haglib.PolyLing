@@ -443,8 +443,11 @@ namespace Poly_Ling.Player
             var h = GetHandler?.Invoke();
             bool adding = h?.AddToSelection ?? true;
 
-            var activeColor   = new StyleColor(Color.white);
-            var inactiveColor = new StyleColor(StyleKeyword.Null);
+            // active に Color.white、非 active に StyleKeyword.Null を入れると、
+            // ApplyDarkTheme が入れた白文字がどちらの背景でも読めなくなる
+            // （Null はインライン背景を外すだけで USS 既定の明るい灰色に戻る）。
+            var activeColor   = PlayerLayoutRoot.BtnActiveColor;
+            var inactiveColor = PlayerLayoutRoot.BtnInactiveColor;
 
             if (_addBtn    != null) _addBtn.style.backgroundColor    = adding  ? activeColor : inactiveColor;
             if (_removeBtn != null) _removeBtn.style.backgroundColor = !adding ? activeColor : inactiveColor;

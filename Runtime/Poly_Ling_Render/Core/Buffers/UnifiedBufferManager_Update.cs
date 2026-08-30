@@ -64,17 +64,23 @@ namespace Poly_Ling.Core
                 _flagManager.SelectedUnifiedMeshIndices.Add(kv.Key);
             }
             
-            // 先頭メッシュも同期
+            // 先頭メッシュも同期。
+            //
+            // 【-1 に落とす理由】
+            //   不可視・頂点0のメッシュは GPU バッファに載らない
+            //   （UnifiedBufferManager_Build.ShouldIncludeInBuffers）。
+            //   そういうオブジェクトを選ぶと ContextToUnifiedMeshIndex が -1 を返す。
+            //   従来はそのとき代入を飛ばしていたため、前に選んでいたメッシュの
+            //   ActiveMeshIndex / SelectedMeshIndex が残り、選択したはずのものと
+            //   画面上の選択が食い違っていた。何も選んでいない状態からだと
+            //   ActiveMeshIndex の初期値 0 が残り、0 番のメッシュが選択に見える。
+            //   載っていない＝描画上は選択なし、として明示的に落とす。
+            //   FlagManager は -1 を「該当なし」として扱う（比較のみ）。
             int firstCtx = model.FirstMeshIndex;
-            if (firstCtx >= 0)
-            {
-                int firstUnified = ContextToUnifiedMeshIndex(firstCtx);
-                if (firstUnified >= 0)
-                {
-                    _flagManager.ActiveMeshIndex = firstUnified;
-                    _flagManager.SelectedMeshIndex = firstUnified;
-                }
-            }
+            int firstUnified = (firstCtx >= 0) ? ContextToUnifiedMeshIndex(firstCtx) : -1;
+
+            _flagManager.ActiveMeshIndex   = firstUnified;
+            _flagManager.SelectedMeshIndex = firstUnified;
         }
         
         // v2.1: ModelContext参照（複数メッシュ選択用）

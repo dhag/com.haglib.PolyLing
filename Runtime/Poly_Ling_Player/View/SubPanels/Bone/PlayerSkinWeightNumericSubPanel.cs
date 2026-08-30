@@ -298,7 +298,6 @@ namespace Poly_Ling.Player
             sl.style.flexGrow = 1;
 
             var nf = new FloatField { value = _slotWeight[slot] };
-            nf.style.color = new StyleColor(Color.black);
             nf.style.width = 72;
 
             sl.RegisterValueChangedCallback(e =>

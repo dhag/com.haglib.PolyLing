@@ -92,12 +92,10 @@ namespace Poly_Ling.Player
             parent.Add(MakeSep());
 
             _setName   = new TextField("名前 (JP)");
-            _setName.style.color = new StyleColor(Color.black);
             _setName.RegisterCallback<FocusOutEvent>(_ => OnSetDetailChanged());
             parent.Add(_setName);
 
             _setNameEn = new TextField("名前 (EN)");
-            _setNameEn.style.color = new StyleColor(Color.black);
             _setNameEn.RegisterCallback<FocusOutEvent>(_ => OnSetDetailChanged());
             parent.Add(_setNameEn);
 

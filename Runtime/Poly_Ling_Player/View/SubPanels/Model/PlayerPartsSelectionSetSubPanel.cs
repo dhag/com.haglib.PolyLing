@@ -181,7 +181,7 @@ namespace Poly_Ling.Player
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row;
             var lbl = new Label(); lbl.style.flexGrow = 1; lbl.style.unityTextAlign = TextAnchor.MiddleLeft; lbl.style.paddingLeft = 4;
-            var renameBtn = new Button { text = "✎" }; renameBtn.style.width = 22; renameBtn.style.height = 18;
+            var renameBtn = new Button { text = "※" }; renameBtn.style.width = 22; renameBtn.style.height = 18;
             row.Add(lbl); row.Add(renameBtn);
             return row;
         }

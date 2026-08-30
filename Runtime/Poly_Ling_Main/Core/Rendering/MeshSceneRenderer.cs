@@ -35,7 +35,10 @@ namespace Poly_Ling.Core
         public bool ShowSelectedBone          { get; set; } = true;
         public bool ShowUnselectedBone        { get; set; } = false;
         public bool ShowSelectedMirror        { get; set; } = true;
-        public bool ShowUnselectedMirror      { get; set; } = true;
+        // 非選択ミラーの「面」。マスタ（ViewportDisplaySettings.ShowUnselectedMirror）は
+        // WithMirrorClamped が既に織り込むため、レンダラはこの子だけを見る。
+        // マスタ相当のプロパティはここに持たない（どちらを見るか曖昧になるため）。
+        public bool ShowUnselectedMirrorMesh  { get; set; } = true;
         // メッシュ原点マーカー（MeshType.Bone 以外のピック対象に対して、
         // ボーンと同じ形状のラインメッシュを原点へ描く）。
         public bool ShowSelectedMeshOrigin    { get; set; } = true;
@@ -239,19 +242,33 @@ namespace Poly_Ling.Core
 
             // PrepareDrawing の selectedMeshIndex は adapter の unifiedMeshIndex を期待する。
             // SelectedDrawableMeshIndices[0]（MeshContextList インデックス）を変換する。
-            int ctxIdx = model.FirstMeshIndex;
-            if (ctxIdx < 0 || mi >= _adapters.Count || _adapters[mi] == null)
+            // アダプタが無ければ何も出来ない。
+            if (mi >= _adapters.Count || _adapters[mi] == null)
             {
                 _selectedMeshIndexForDraw[mi] = -1;
                 return;
             }
-            int unifiedIdx = _adapters[mi].BufferManager?.ContextToUnifiedMeshIndex(ctxIdx) ?? -1;
+
+            // 選択が無い（ctxIdx < 0）場合も -1 として下へ流す。
+            // 早期 return すると GPU 側の選択フラグが前のまま残る。
+            int ctxIdx = model.FirstMeshIndex;
+            int unifiedIdx = (ctxIdx >= 0)
+                ? (_adapters[mi].BufferManager?.ContextToUnifiedMeshIndex(ctxIdx) ?? -1)
+                : -1;
             _selectedMeshIndexForDraw[mi] = unifiedIdx;
 
             // ActiveMeshIndex と選択フラグを即時更新する。
             // RebuildAdapter は SelectMesh より先に呼ばれるため、ここで再設定が必要。
+            //
+            // 【unifiedIdx < 0 でも走らせる理由】
+            //   不可視・頂点0のメッシュは GPU バッファに載らないので -1 になる
+            //   （UnifiedBufferManager_Build.ShouldIncludeInBuffers）。
+            //   従来は -1 のとき3つとも飛ばしていたため、前の選択が GPU に残り、
+            //   リスト上の選択と画面の選択が食い違っていた。
+            //   -1 は「選択なし」として SetActiveMesh へ渡す。FlagManager は
+            //   -1 を該当なしとして扱うため、どのメッシュにも選択フラグが立たない。
             var bm = _adapters[mi].BufferManager;
-            if (bm != null && unifiedIdx >= 0)
+            if (bm != null)
             {
                 bm.SyncSelectionFromModel(model);
                 bm.SetActiveMesh(0, unifiedIdx);
@@ -482,8 +499,8 @@ namespace Poly_Ling.Core
                 bool isMirror = ctx.Type == MeshType.BakedMirror || ctx.Type == MeshType.MirrorSide;
                 if (isMirror)
                 {
-                    if ( isSel && !ShowSelectedMirror)   continue;
-                    if (!isSel && !ShowUnselectedMirror) continue;
+                    if ( isSel && !ShowSelectedMirror)       continue;
+                    if (!isSel && !ShowUnselectedMirrorMesh) continue;
                 }
                 else
                 {

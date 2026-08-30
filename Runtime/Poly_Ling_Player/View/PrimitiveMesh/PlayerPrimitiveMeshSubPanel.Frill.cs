@@ -407,6 +407,9 @@ namespace Poly_Ling.Player
             EnsureBeltProfile(_frillEdit);
             EnsureBeltProfile(_frillEditB);
 
+            // 融合ありはレール行ごと、融合なしは梯子ごとにパーツIDを 0 から連番にする。
+            var partsIds = new Poly_Ling.PrimitiveMesh.PartsIdCounter();
+
             if (_frillP.ConnectShared)
             {
                 var inputs = new List<FrillBeltInput>();
@@ -420,7 +423,7 @@ namespace Poly_Ling.Player
 
                 var joined = FrillMeshGenerator.Generate(
                     inputs, _frillEdit.Points, _frillEditB.Points, _frillP.TwoProfiles,
-                    true, _frillP.RungSeam, _frillP.MeshName);
+                    true, _frillP.RungSeam, _frillP.MeshName, partsIds);
 
                 var solid = ApplySolidify(joined,
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
@@ -443,7 +446,7 @@ namespace Poly_Ling.Player
 
                 var part = FrillMeshGenerator.Generate(
                     single, _frillEdit.Points, _frillEditB.Points, _frillP.TwoProfiles,
-                    false, _frillP.RungSeam, _frillP.MeshName);
+                    false, _frillP.RungSeam, _frillP.MeshName, partsIds);
                 part = ApplySolidify(part,
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
                     _frillP.EdgeSizeFront, _frillP.EdgeSizeBack, _frillP.EdgeInward,

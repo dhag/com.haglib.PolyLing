@@ -423,6 +423,10 @@ namespace Poly_Ling.Tools
                 // 新しい頂点を作成
                 var newVertex = new Vertex(pos);
 
+                // 部品ID: 非ミラー側 0 / ミラー側 1。
+                // 境界で統合された頂点は両側に属するが、元からある頂点なので非ミラー側とする。
+                newVertex.PartsId = (newOrigin[newV] == VertexOrigin.Mirrored) ? 1 : 0;
+
                 // UVをコピー
                 if (srcVertex.UVs.Count > 0)
                 {
@@ -470,6 +474,9 @@ namespace Poly_Ling.Tools
 
                 bakedMesh.Vertices.Add(newVertex);
             }
+
+            // サブIDは部品ごとに 0 から。頂点を全部並べ終えてから振る。
+            Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(bakedMesh);
 
             // ================================================================
             // Step 6: 面を生成（インデックスをリマップ）

@@ -205,7 +205,6 @@ namespace Poly_Ling.Player
             lbl.style.color = new StyleColor(Color.white);
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var f = new FloatField { value = initVal }; f.style.flexGrow = 1;
-            f.style.color = new StyleColor(Color.black);
             f.RegisterValueChangedCallback(e => onChange(e.newValue));
             row.Add(lbl); row.Add(f);
             return row;
