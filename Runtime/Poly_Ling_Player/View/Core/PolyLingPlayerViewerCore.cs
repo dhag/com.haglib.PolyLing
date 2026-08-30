@@ -6709,6 +6709,10 @@ namespace Poly_Ling.Player
             // 判定は MeshContext.IsSkinned に集約してある。
             panel.GetMeshWorldMatrixAt = idx =>
                 ActiveProject?.CurrentModel?.GetMeshContext(idx)?.VertexToWorldMatrix ?? Matrix4x4.identity;
+            // 自動選択の対象。頂点選択ではなく「選択中の描画オブジェクト」を見る。
+            // 2つなら別々の物体、1つならその物体内の2つの穴が対象になる。
+            panel.GetBridgeAutoMeshIndices = () =>
+                ActiveProject?.CurrentModel?.SelectedDrawableMeshIndices;
             panel.OnBridgeGenerate     = ExecuteBridge;
             // 種の取り込み・破棄・図形切替でマーカーを即時更新する。
             // （視点変更・ホバー変更では PlayerViewportManager.RefreshToolOverlays が拾う）

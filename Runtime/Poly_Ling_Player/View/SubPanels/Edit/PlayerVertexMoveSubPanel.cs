@@ -220,7 +220,10 @@ namespace Poly_Ling.Player
                 if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                h.MaxMagnetRadius = Mathf.Max(h.MinMagnetRadius + SliderRangeUtil.MinSpan, e.newValue);
+                h.MaxMagnetRadius = Mathf.Clamp(
+                    e.newValue,
+                    h.MinMagnetRadius + SliderRangeUtil.MinSpan,
+                    MoveToolHandler.MagnetRadiusHardMax);
                 ApplyRadiusRange(h);
             });
             maxRow.Add(_maxRadiusField);
@@ -386,6 +389,8 @@ namespace Poly_Ling.Player
             float max = h.MaxMagnetRadius;
             SliderRangeUtil.ExpandToInclude(requested, ref min, ref max);
             min = Mathf.Max(0.001f, min);
+            // 自動拡張の歯止め。桁を打ち間違えても操作不能な半径にならないようにする。
+            max = Mathf.Min(max, MoveToolHandler.MagnetRadiusHardMax);
             if (max < min + SliderRangeUtil.MinSpan) max = min + SliderRangeUtil.MinSpan;
 
             h.MinMagnetRadius = min;

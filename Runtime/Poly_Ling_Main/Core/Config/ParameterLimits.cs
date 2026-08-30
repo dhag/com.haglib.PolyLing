@@ -72,9 +72,9 @@ namespace Poly_Ling.Core
 
             // --- Solidify（厚み付け） ---
             ("Solidify.Thickness.Min",             0.0001f, "厚み付け: 厚みの下限"),
-            ("Solidify.Thickness.Max",             100.0f,  "厚み付け: 厚みの上限"),
+            ("Solidify.Thickness.Max",             5.0f,    "厚み付け: 厚みの上限"),
             ("Solidify.EdgeSize.Min",              0.0001f, "厚み付け: エッジサイズの下限"),
-            ("Solidify.EdgeSize.Max",              100.0f,  "厚み付け: エッジサイズの上限"),
+            ("Solidify.EdgeSize.Max",              5.0f,    "厚み付け: エッジサイズの上限"),
             ("Solidify.Segments.Min",              0f,      "厚み付け: エッジ分割数の下限（整数）"),
             ("Solidify.Segments.Max",              8f,      "厚み付け: エッジ分割数の上限（整数）"),
 
@@ -97,6 +97,27 @@ namespace Poly_Ling.Core
         };
 
         // ================================================================
+        // ハードリミット（この CSV に入りうる値そのものの許容範囲）
+        //
+        // 上の Defaults は「初期値」であって「入ってよい値の範囲」ではない。
+        // UI から SetF で書き戻せるキーや、ユーザーが CSV を手編集したキーは、
+        // 非現実的な値（例: ブラシ半径の上限 100 m）がそのまま永続化されてしまう。
+        // ここに載せたキーは GetF / SetF の両方でこの範囲へクランプする。
+        //
+        // ・SetF だけでは不十分。CSV を直接書き換えられた場合に素通りする
+        // ・載っていないキーは無制限。必要になった時点で追加する
+        // ================================================================
+
+        private static readonly (string Key, float Lo, float Hi)[] HardLimits =
+            new (string, float, float)[]
+        {
+            // 長さ（メートル）を持つ上限値。桁が飛ぶと操作不能になる。
+            ("Sculpt.BrushRadius.Max",   0.001f, 1.0f),   // スカルプト: ブラシ半径の上限
+            ("Solidify.Thickness.Max",   0.001f, 5.0f),   // 厚み付け: 厚みの上限
+            ("Solidify.EdgeSize.Max",    0.001f, 5.0f),   // 厚み付け: エッジサイズの上限
+        };
+
+        // ================================================================
         // 内部状態
         // ================================================================
 
@@ -112,12 +133,16 @@ namespace Poly_Ling.Core
         // 公開API
         // ================================================================
 
-        /// <summary>float値を取得（未登録キーは既定値、それも無ければ0）</summary>
+        /// <summary>
+        /// float値を取得（未登録キーは既定値、それも無ければ0）。
+        /// HardLimits に載っているキーは許容範囲へクランプして返す。
+        /// CSV を手編集された場合もここで弾く。
+        /// </summary>
         public static float GetF(string key)
         {
             EnsureLoaded();
-            if (_values.TryGetValue(key, out var v)) return v;
-            return DefaultOf(key);
+            float v = _values.TryGetValue(key, out var stored) ? stored : DefaultOf(key);
+            return ClampToHardLimit(key, v);
         }
 
         /// <summary>int値を取得（四捨五入）</summary>
@@ -133,7 +158,7 @@ namespace Poly_Ling.Core
             if (!IsKnownKey(key)) return; // 未知キーは無視（キー体系を保つ）
             lock (_lock)
             {
-                _values[key] = value;
+                _values[key] = ClampToHardLimit(key, value);
                 Write();
             }
         }
@@ -224,6 +249,17 @@ namespace Poly_Ling.Core
             return 0f;
         }
 
+        /// <summary>
+        /// HardLimits に載っているキーなら許容範囲へクランプする。載っていなければ素通し。
+        /// GetF / SetF の両方から呼ぶこと（片方だけだと CSV 手編集が素通りする）。
+        /// </summary>
+        private static float ClampToHardLimit(string key, float value)
+        {
+            foreach (var h in HardLimits)
+                if (h.Key == key) return Mathf.Clamp(value, h.Lo, h.Hi);
+            return value;
+        }
+
         private static void LoadOrCreate()
         {
             var values = new Dictionary<string, float>();
@@ -249,7 +285,10 @@ namespace Poly_Ling.Core
 
                         if (float.TryParse(valStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float val))
                         {
-                            if (IsKnownKey(key)) values[key] = val;
+                            // 読込時にもクランプする。ここを通さないと、CSV に残った
+                            // 旧い非現実値（例: ブラシ半径の上限 100）がそのまま
+                            // 次回の Write() で書き戻されてしまう。
+                            if (IsKnownKey(key)) values[key] = ClampToHardLimit(key, val);
                             else unknown.Add(key + "," + valStr);
                         }
                     }

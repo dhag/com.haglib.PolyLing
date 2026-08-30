@@ -328,6 +328,14 @@ namespace Poly_Ling.Player
         public float MinMagnetRadius { get; set; } = 0.01f;
         public float MaxMagnetRadius { get; set; } = 1.0f;
 
+        /// <summary>
+        /// MaxMagnetRadius として受け付ける絶対上限（メートル）。
+        /// パネルの数値入力は上下限を自動で広げるため、歯止めが無いと
+        /// 桁を打ち間違えただけで半径 100 m のような操作不能な状態になる。
+        /// ParameterLimits の HardLimits と同じ役割。
+        /// </summary>
+        public const float MagnetRadiusHardMax = 1.0f;
+
         /// <summary>マグネット半径が変更されたときに呼ばれるコールバック（UIパネル更新用）。</summary>
         public Action<float> OnRadiusChanged;
 

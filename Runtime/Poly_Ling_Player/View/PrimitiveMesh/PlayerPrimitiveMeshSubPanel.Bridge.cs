@@ -47,6 +47,12 @@ namespace Poly_Ling.Player
         /// <summary>メッシュインデックス → WorldMatrix。</summary>
         public Func<int, Matrix4x4> GetMeshWorldMatrixAt;
 
+        /// <summary>
+        /// 自動選択の対象にする描画オブジェクトのインデックス。
+        /// 2 つなら別々の物体、1 つならその物体内の 2 つの穴を対象にする。
+        /// </summary>
+        public Func<List<int>> GetBridgeAutoMeshIndices;
+
         /// <summary>穴つなぎの「生成」。挿入と Undo は Viewer 側が持つ。</summary>
         public Action<PlayerPrimitiveMeshSubPanel> OnBridgeGenerate;
 
@@ -94,6 +100,9 @@ namespace Poly_Ling.Player
 
         /// <summary>直近の自動判定の説明。結果表示欄に併記する。</summary>
         private string _bridgeAutoInfo = "";
+
+        /// <summary>直近の自動選択の説明。結果表示欄に併記する。</summary>
+        private string _bridgeAutoPickInfo = "";
 
         private Label  _bridgeInfoA;
         private Label  _bridgeInfoB;
@@ -277,6 +286,20 @@ namespace Poly_Ling.Player
             bothHint.style.marginBottom = 3;
             c.Add(bothHint);
 
+            // ── 自動選択 ──
+            // 頂点選択を使わず、選んだ物体の穴だけから A/B を決める。
+            var autoRow = new VisualElement();
+            autoRow.style.flexDirection = FlexDirection.Row;
+            autoRow.style.marginTop     = 3;
+            SB(autoRow, T("BridgeAutoSelect"), () => { AutoSelectBridgeSeeds(); });
+            c.Add(autoRow);
+
+            var autoHint = new Label(T("BridgeAutoSelectHint"));
+            autoHint.style.fontSize     = 10;
+            autoHint.style.whiteSpace   = WhiteSpace.Normal;
+            autoHint.style.marginBottom = 3;
+            c.Add(autoHint);
+
             // ── 名前 ──
             // 行き先は共通の「追加先」ドロップダウンが決める。ここには専用トグルを置かない。
             // 名前欄は NF が追加先に応じて TextField / ドロップダウンへ切り替える。
@@ -322,6 +345,7 @@ namespace Poly_Ling.Player
         {
             seed.Valid = false;
             seed.Info  = "";
+            _bridgeAutoPickInfo = "";   // 手動取り込みでは自動選択の説明を残さない
 
             if (PickBridgeSeeds == null) { seed.Info = T("BridgeNoPick"); return; }
 
@@ -363,6 +387,8 @@ namespace Poly_Ling.Player
         /// </summary>
         public void ImportBridgeSeedsBoth()
         {
+            _bridgeAutoPickInfo = "";   // 手動取り込みでは自動選択の説明を残さない
+
             if (PickBridgeSeeds == null)
             {
                 _bridgeA.Valid = false; _bridgeA.Info = T("BridgeNoPick");
@@ -384,6 +410,93 @@ namespace Poly_Ling.Player
 
             ApplyBridgeAutoFlags();
             RefreshBridgeInfo();
+        }
+
+        // ================================================================
+        // 自動選択
+        // ================================================================
+
+        /// <summary>
+        /// 頂点選択を使わず、対象物体の穴だけから種 A / B を決める。
+        ///
+        /// 【手順】穴を列挙 → 頂点数が同数の穴ペアを候補にする → 重心距離が最小の
+        ///   もの（等距離はすべて）を残す → その中で穴Aと穴Bの最短距離になる
+        ///   頂点ペア (A0, B0) を種にする。
+        ///
+        /// 【対象】GetBridgeAutoMeshIndices が返す描画オブジェクト。
+        ///   2 つなら別々の物体、1 つならその物体内の 2 つの穴を対象にする。
+        /// </summary>
+        public bool AutoSelectBridgeSeeds()
+        {
+            _bridgeAutoPickInfo = "";
+
+            // ── 対象物体を決める ──
+            int indexA = -1, indexB = -1;
+            var indices = GetBridgeAutoMeshIndices?.Invoke();
+            if (indices != null)
+            {
+                var uniq = new List<int>();
+                foreach (int i in indices)
+                    if (i >= 0 && !uniq.Contains(i)) uniq.Add(i);
+
+                if (uniq.Count == 1)      { indexA = uniq[0]; indexB = uniq[0]; }
+                else if (uniq.Count == 2) { indexA = uniq[0]; indexB = uniq[1]; }
+            }
+
+            if (indexA < 0)
+            {
+                _bridgeAutoPickInfo = T("BridgeAutoNeedTarget");
+                RefreshBridgeInfo();
+                return false;
+            }
+
+            var meshA = GetMeshObjectAt?.Invoke(indexA);
+            var meshB = GetMeshObjectAt?.Invoke(indexB);
+            if (meshA == null || meshB == null)
+            {
+                _bridgeAutoPickInfo = T("BridgeNoMesh");
+                RefreshBridgeInfo();
+                return false;
+            }
+
+            Matrix4x4 wA = GetMeshWorldMatrixAt?.Invoke(indexA) ?? Matrix4x4.identity;
+            Matrix4x4 wB = GetMeshWorldMatrixAt?.Invoke(indexB) ?? Matrix4x4.identity;
+
+            bool sameMesh = (indexA == indexB);
+            var holesA = BridgeAutoPairOps.CollectHoles(meshA, wA);
+            var holesB = sameMesh ? holesA : BridgeAutoPairOps.CollectHoles(meshB, wB);
+
+            var pair = BridgeAutoPairOps.SelectPair(holesA, holesB, sameMesh);
+            if (!pair.Ok)
+            {
+                _bridgeAutoPickInfo = pair.Failure switch
+                {
+                    BridgeAutoPairOps.PairFailure.NoHoles         => T("BridgeAutoNoHole"),
+                    BridgeAutoPairOps.PairFailure.NoSameCountPair => T("BridgeAutoNoPair"),
+                    _                                             => pair.Message ?? "",
+                };
+                RefreshBridgeInfo();
+                return false;
+            }
+
+            ApplyBridgePick(_bridgeA, new BridgeSeedPick
+            {
+                Ok = true, MeshIndex = indexA, Vertex = pair.VertexA, DirectionHint = -1,
+            });
+            ApplyBridgePick(_bridgeB, new BridgeSeedPick
+            {
+                Ok = true, MeshIndex = indexB, Vertex = pair.VertexB, DirectionHint = -1,
+            });
+
+            _bridgeAutoPickInfo = T("BridgeAutoPicked",
+                holesA[pair.HoleA].Count,
+                pair.CentroidDistance.ToString("0.####"),
+                pair.VertexA, pair.VertexB,
+                pair.VertexDistance.ToString("0.####"));
+
+            ApplyBridgeAutoFlags();
+            RefreshBridgeInfo();
+            return _bridgeA.Valid && _bridgeB.Valid;
         }
 
         // ================================================================
@@ -450,6 +563,8 @@ namespace Poly_Ling.Player
             {
                 TryBuildBridgePlan(out _, out string msg);
                 string text = msg ?? "";
+                if (!string.IsNullOrEmpty(_bridgeAutoPickInfo))
+                    text = string.IsNullOrEmpty(text) ? _bridgeAutoPickInfo : text + "\n" + _bridgeAutoPickInfo;
                 if (!string.IsNullOrEmpty(_bridgeAutoInfo))
                     text = string.IsNullOrEmpty(text) ? _bridgeAutoInfo : text + "\n" + _bridgeAutoInfo;
                 _bridgeInfoResult.text = text;
@@ -493,6 +608,7 @@ namespace Poly_Ling.Player
             _bridgeA.Valid = false; _bridgeA.Info = "";
             _bridgeB.Valid = false; _bridgeB.Info = "";
             _bridgeAutoInfo = "";
+            _bridgeAutoPickInfo = "";
             RefreshBridgeInfo();
         }
 
