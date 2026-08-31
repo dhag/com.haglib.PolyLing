@@ -408,6 +408,11 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：MQOフルエクスポートボタン。</summary>
         public Button FullExportMqoBtn { get; private set; }
 
+        /// <summary>左ペイン：VRM 1.0 フルエクスポートボタン。
+        /// 実装は PolyLing.Vrm10 アセンブリ側にあり、VRM パッケージが無い環境では
+        /// パネルが「利用できません」を表示する（規約は IVrm10Exporter.cs を正典とする）。</summary>
+        public Button FullExportVrmBtn { get; private set; }
+
         /// <summary>右ペイン：プロジェクト保存 / 読込セクション（ScrollView内）。
         /// 押し間違いでデータを壊さないよう、保存と読込は別セクションに分けている。</summary>
         public VisualElement ProjectSaveSection { get; private set; }
@@ -1016,8 +1021,9 @@ namespace Poly_Ling.Player
             fullExportRow.style.flexDirection = FlexDirection.Row;
             fullExportRow.style.marginBottom  = 2;
             FullExportPmxBtn = MakeBtn("PMX保存"); FullExportPmxBtn.style.flexGrow = 1; FullExportPmxBtn.style.marginRight = 2;
-            FullExportMqoBtn = MakeBtn("MQO保存"); FullExportMqoBtn.style.flexGrow = 1;
-            fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn);
+            FullExportMqoBtn = MakeBtn("MQO保存"); FullExportMqoBtn.style.flexGrow = 1; FullExportMqoBtn.style.marginRight = 2;
+            FullExportVrmBtn = MakeBtn("VRM保存"); FullExportVrmBtn.style.flexGrow = 1;
+            fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn); fullExportRow.Add(FullExportVrmBtn);
             foFile.Add(fullExportRow);
 
             foFile.Add(Separator());

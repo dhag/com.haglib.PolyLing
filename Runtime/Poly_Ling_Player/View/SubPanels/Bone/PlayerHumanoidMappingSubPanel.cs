@@ -27,6 +27,8 @@ namespace Poly_Ling.Player
         public Func<int>            GetModelIndex;
 
         private Label       _warningLabel;
+        private Label       _modelMappingLabel;
+        private Toggle      _scopeToggle;
         private TextField   _csvPathField;
         private Label       _csvHintLabel;
         private Button      _btnAutoMap, _btnLoadCsv, _btnApply, _btnClear;
@@ -64,6 +66,14 @@ namespace Poly_Ling.Player
             _warningLabel.style.whiteSpace = WhiteSpace.Normal;
             root.Add(_warningLabel);
 
+            // 現在のモデルが既にマッピングを持っているかどうか。
+            // 下の「プレビュー」は本パネル内の一時バッファの状態であり、
+            // モデル本体のマッピングとは別物なので、ここで別に出す。
+            _modelMappingLabel = new Label();
+            _modelMappingLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _modelMappingLabel.style.marginBottom = 4;
+            root.Add(_modelMappingLabel);
+
             // CSV ファイル行
             root.Add(SecLabel("CSV ファイル"));
             _csvPathField = new TextField();
@@ -79,16 +89,16 @@ namespace Poly_Ling.Player
             root.Add(_csvHintLabel);
 
             // 割当候補の範囲
-            var scopeToggle = new Toggle("ボーン以外も候補に含める (MeshFilter用)")
+            _scopeToggle = new Toggle("ボーン以外も候補に含める (MeshFilter用)")
             {
                 value = _includeNonBoneContexts
             };
-            scopeToggle.style.fontSize     = 10;
-            scopeToggle.style.marginBottom = 2;
-            scopeToggle.RegisterValueChangedCallback(e => _includeNonBoneContexts = e.newValue);
-            root.Add(scopeToggle);
+            _scopeToggle.style.fontSize     = 10;
+            _scopeToggle.style.marginBottom = 2;
+            _scopeToggle.RegisterValueChangedCallback(e => _includeNonBoneContexts = e.newValue);
+            root.Add(_scopeToggle);
 
-            var scopeHint = new Label("通常はオフ。ボーンが無いモデルで階層をそのまま骨格に使うとき用。");
+            var scopeHint = new Label("ボーン数に応じて自動設定（ボーン0本でオン）。手動で変えてもツール再選択で戻る。");
             scopeHint.style.fontSize     = 9;
             scopeHint.style.whiteSpace   = WhiteSpace.Normal;
             scopeHint.style.marginBottom = 4;
@@ -106,8 +116,9 @@ namespace Poly_Ling.Player
 
             // プレビュー
             root.Add(SecLabel("プレビュー"));
-            _previewEmptyLabel = new Label("マッピング未読込み");
-            _previewEmptyLabel.style.color = new StyleColor(Color.white);
+            _previewEmptyLabel = new Label("プレビューなし（Auto Map か CSVから読み込み で作成）");
+            _previewEmptyLabel.style.color      = new StyleColor(Color.white);
+            _previewEmptyLabel.style.whiteSpace = WhiteSpace.Normal;
             root.Add(_previewEmptyLabel);
 
             _previewContent = new VisualElement();
@@ -129,7 +140,8 @@ namespace Poly_Ling.Player
             _statusLabel.style.color = new StyleColor(PlayerIoUiKit.StatusColor);
             root.Add(_statusLabel);
 
-            UpdatePreviewUI();
+            // 構築直後にも状態表示と候補範囲の自動設定を通す。
+            Refresh();
         }
 
         public void Refresh()
@@ -147,9 +159,12 @@ namespace Poly_Ling.Player
             {
                 _warningLabel.text          = "モデルがありません";
                 _warningLabel.style.display = DisplayStyle.Flex;
+                UpdateModelMappingLabel(null);
                 return;
             }
             _warningLabel.style.display = DisplayStyle.None;
+            UpdateModelMappingLabel(model);
+            SyncScopeToggleToBoneCount(model);
             UpdatePreviewUI();
         }
 
@@ -227,6 +242,7 @@ namespace Poly_Ling.Player
                 SendCommand.Invoke(new ClearHumanoidMappingCommand(modelIdx));
                 _previewMapping = null;
                 SetStatus("マッピングをクリアしました");
+                UpdateModelMappingLabel(Model);
                 UpdatePreviewUI();
                 return;
             }
@@ -246,6 +262,7 @@ namespace Poly_Ling.Player
             Model.IsDirty   = true;
             _previewMapping = null;
             SetStatus("マッピングをクリアしました");
+            UpdateModelMappingLabel(Model);
             UpdatePreviewUI();
         }
 
@@ -307,6 +324,50 @@ namespace Poly_Ling.Player
                 names.Add(mc != null && !string.IsNullOrEmpty(mc.Name) ? mc.Name : "");
             }
             return names;
+        }
+
+        /// <summary>
+        /// モデル本体（ModelContext.HumanoidMapping）の割当状態を出す。
+        /// この Dict は保存対象で、humanoid.csv と bone.csv の humanBodyBone 列に
+        /// 書き出され、読込時に再構築される（CsvModelSerializer / ModelSerializer）。
+        /// </summary>
+        private void UpdateModelMappingLabel(ModelContext model)
+        {
+            if (_modelMappingLabel == null) return;
+
+            if (model == null)
+            {
+                _modelMappingLabel.text  = "";
+                _modelMappingLabel.style.display = DisplayStyle.None;
+                return;
+            }
+            _modelMappingLabel.style.display = DisplayStyle.Flex;
+
+            var mapping = model.HumanoidMapping;
+            if (mapping == null || mapping.IsEmpty)
+            {
+                _modelMappingLabel.text  = "このモデル: マッピング未設定";
+                _modelMappingLabel.style.color = new StyleColor(new Color(1f, 0.7f, 0.4f));
+                return;
+            }
+
+            int missing = mapping.GetMissingRequiredBones().Count;
+            _modelMappingLabel.text = missing == 0
+                ? $"このモデル: マッピング設定済み {mapping.Count} ボーン（必須すべて割当済み。Avatar作成可）"
+                : $"このモデル: マッピング設定済み {mapping.Count} ボーン（必須未割当 {missing} 件）";
+            _modelMappingLabel.style.color = new StyleColor(
+                missing == 0 ? new Color(0.5f, 0.9f, 0.5f) : new Color(1f, 0.85f, 0.4f));
+        }
+
+        /// <summary>
+        /// 「ボーン以外も候補に含める」をボーン数から決める。
+        /// ボーンが 1 本も無ければオン、あればオフ。Refresh のたびに無条件で上書きする。
+        /// </summary>
+        private void SyncScopeToggleToBoneCount(ModelContext model)
+        {
+            bool auto = (model != null && model.BoneCount == 0);
+            _includeNonBoneContexts = auto;
+            _scopeToggle?.SetValueWithoutNotify(auto);
         }
 
         private void UpdatePreviewUI()

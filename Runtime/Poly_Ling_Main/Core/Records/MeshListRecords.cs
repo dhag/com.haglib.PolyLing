@@ -98,6 +98,12 @@ namespace Poly_Ling.UndoSystem
         /// <summary>モーフ親メッシュのマスターインデックス</summary>
         public int MorphParentIndex;
 
+        /// <summary>モーフのミラー適用ポリシー（規約は MorphMirrorPolicy.cs を正典とする）</summary>
+        public MorphMirrorPolicy MorphMirrorPolicy;
+
+        /// <summary>MirrorOf のときの参照先モーフのマスターインデックス</summary>
+        public int MirrorOfMorphIndex;
+
         /// <summary>エクスポートから除外するか</summary>
         public bool ExcludeFromExport;
 
@@ -160,6 +166,8 @@ namespace Poly_Ling.UndoSystem
                 // モーフデータ（Phase Morph追加）
                 MorphBaseData = meshContext.MorphBaseData?.Clone(),
                 MorphParentIndex = meshContext.MorphParentIndex,
+                MorphMirrorPolicy = meshContext.MorphMirrorPolicy,
+                MirrorOfMorphIndex = meshContext.MirrorOfMorphIndex,
                 ExcludeFromExport = meshContext.ExcludeFromExport,
                 IgnorePoseInArmature = meshContext.IgnorePoseInArmature,
                 // BonePoseData（Phase BonePose追加）
@@ -264,6 +272,8 @@ namespace Poly_Ling.UndoSystem
             // モーフデータを復元（Phase Morph追加）
             meshContext.MorphBaseData = MorphBaseData?.Clone();
             meshContext.MorphParentIndex = MorphParentIndex;
+            meshContext.MorphMirrorPolicy = MorphMirrorPolicy;
+            meshContext.MirrorOfMorphIndex = MirrorOfMorphIndex;
             meshContext.ExcludeFromExport = ExcludeFromExport;
             meshContext.IgnorePoseInArmature = IgnorePoseInArmature;
 
@@ -882,18 +892,51 @@ namespace Poly_Ling.UndoSystem
         /// <summary>変更後のExcludeFromExport</summary>
         public bool NewExcludeFromExport;
 
+        // ================================================================
+        // 表示ミラー設定
+        //   モーフ化のとき親のミラー設定を継承する（規約は MorphMirrorPolicy.cs を正典とする）。
+        //   継承で書き換わる値なので、記録しないと Undo で元の設定に戻せない。
+        // ================================================================
+
+        /// <summary>変更前の表示ミラー設定 (MirrorType, MirrorAxis, MirrorDistance, MirrorMaterialOffset)</summary>
+        public (int Type, int Axis, float Distance, int MaterialOffset) OldMirror;
+        /// <summary>変更後の表示ミラー設定</summary>
+        public (int Type, int Axis, float Distance, int MaterialOffset) NewMirror;
+
+        /// <summary>ミラー設定を記録・復元の対象にするか（既定 false = 従来どおり触らない）</summary>
+        public bool HasMirrorChange;
+
+        // ================================================================
+        // MorphExpressions
+        //   モーフ化のとき Expression を自動生成するため、リスト全体が変わる。
+        //   Expression は名前とエントリ（index + weight）だけの軽い構造なので、
+        //   前後をまるごと控えて差し替える（MorphExpressionListReplaceRecord と同じ方式）。
+        // ================================================================
+
+        /// <summary>変更前の MorphExpressions</summary>
+        public List<MorphExpression> OldExpressions;
+        /// <summary>変更後の MorphExpressions</summary>
+        public List<MorphExpression> NewExpressions;
+
+        /// <summary>MorphExpressions を記録・復元の対象にするか（既定 false = 従来どおり触らない）</summary>
+        public bool HasExpressionChange;
+
         public override void Undo(ModelContext ctx)
         {
-            Apply(ctx, OldType, OldMorphBaseData, OldMorphParentIndex, OldName, OldExcludeFromExport);
+            Apply(ctx, OldType, OldMorphBaseData, OldMorphParentIndex, OldName, OldExcludeFromExport,
+                  OldMirror, OldExpressions);
         }
 
         public override void Redo(ModelContext ctx)
         {
-            Apply(ctx, NewType, NewMorphBaseData, NewMorphParentIndex, NewName, NewExcludeFromExport);
+            Apply(ctx, NewType, NewMorphBaseData, NewMorphParentIndex, NewName, NewExcludeFromExport,
+                  NewMirror, NewExpressions);
         }
 
         private void Apply(ModelContext ctx, MeshType type, MorphBaseData morphData,
-            int morphParentIndex, string name, bool excludeFromExport)
+            int morphParentIndex, string name, bool excludeFromExport,
+            (int Type, int Axis, float Distance, int MaterialOffset) mirror,
+            List<MorphExpression> expressions)
         {
             if (ctx == null) return;
             if (MasterIndex < 0 || MasterIndex >= ctx.MeshContextCount) return;
@@ -907,6 +950,23 @@ namespace Poly_Ling.UndoSystem
             mc.MorphParentIndex = morphParentIndex;
             mc.Name = name;
             mc.ExcludeFromExport = excludeFromExport;
+
+            if (HasMirrorChange)
+            {
+                mc.MirrorType           = mirror.Type;
+                mc.MirrorAxis           = mirror.Axis;
+                mc.MirrorDistance       = mirror.Distance;
+                mc.MirrorMaterialOffset = mirror.MaterialOffset;
+                mc.InvalidateSymmetryCache();
+            }
+
+            if (HasExpressionChange && expressions != null)
+            {
+                var restored = new List<MorphExpression>(expressions.Count);
+                for (int i = 0; i < expressions.Count; i++)
+                    restored.Add(expressions[i]?.Clone());
+                ctx.MorphExpressions = restored;
+            }
 
             ctx.TypedIndices?.Invalidate();
             ctx.OnListChanged?.Invoke();
@@ -1154,6 +1214,8 @@ namespace Poly_Ling.UndoSystem
                 MirrorGeometryDerived  = src.MirrorGeometryDerived,
                 DetachedMirrorObjectId = src.DetachedMirrorObjectId,
                 MorphParentIndex       = src.MorphParentIndex,
+                MorphMirrorPolicy      = src.MorphMirrorPolicy,
+                MirrorOfMorphIndex     = src.MirrorOfMorphIndex,
                 ExcludeFromExport      = src.ExcludeFromExport,
                 IgnorePoseInArmature   = src.IgnorePoseInArmature,
                 BindPose               = src.BindPose,

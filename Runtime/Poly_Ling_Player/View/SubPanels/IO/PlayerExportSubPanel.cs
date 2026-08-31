@@ -11,6 +11,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
 using Poly_Ling.OBJ;
+using Poly_Ling.Vrm;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
 
@@ -27,7 +28,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO, OBJ }
+        public enum Mode { PMX, MQO, OBJ, VRM }
 
         private Mode _mode;
 
@@ -47,6 +48,11 @@ namespace Poly_Ling.Player
         // 単位は決まっていないので等倍を既定にする。
         private ObjExportSettings _objSettings = ObjExportSettings.CreateDefault();
 
+        // VRM 1.0。実装は PolyLing.Vrm10 アセンブリ側にあり、
+        // VRM パッケージが無い環境では PLVrm10Bridge.I.IsAvailable が false になる。
+        // 規約は IVrm10Exporter.cs 冒頭のコメントを正典とする。
+        private Vrm10ExportSettings _vrmSettings = Vrm10ExportSettings.CreateDefault();
+
         // ================================================================
         // コールバック
         // ================================================================
@@ -59,6 +65,9 @@ namespace Poly_Ling.Player
 
         /// <summary>OBJ Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
         public Action<string, ObjExportSettings> OnExportObj;
+
+        /// <summary>VRM Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
+        public Action<string, Vrm10ExportSettings> OnExportVrm;
 
         // ================================================================
         // 内部 UI 参照
@@ -152,6 +161,8 @@ namespace Poly_Ling.Player
                 OnExportPmx?.Invoke(savePath, ClonePmxSettings());
             else if (_mode == Mode.OBJ)
                 OnExportObj?.Invoke(savePath, _objSettings.Clone());
+            else if (_mode == Mode.VRM)
+                OnExportVrm?.Invoke(savePath, _vrmSettings.Clone());
             else
                 OnExportMqo?.Invoke(savePath, CloneMqoSettings());
         }
@@ -163,6 +174,7 @@ namespace Poly_Ling.Player
             {
                 case Mode.PMX: return "PMX";
                 case Mode.OBJ: return "OBJ";
+                case Mode.VRM: return "VRM";
                 default:       return "MQO";
             }
         }
@@ -189,6 +201,8 @@ namespace Poly_Ling.Player
                 BuildPmxSettings(_settingsContainer);
             else if (_mode == Mode.OBJ)
                 BuildObjSettings(_settingsContainer);
+            else if (_mode == Mode.VRM)
+                BuildVrmSettings(_settingsContainer);
             else
                 BuildMqoSettings(_settingsContainer);
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
@@ -300,6 +314,81 @@ namespace Poly_Ling.Player
             parent.Add(FloatRow("小数桁数",
                 () => _objSettings.DecimalPrecision,
                 v => _objSettings.DecimalPrecision = Mathf.Clamp(Mathf.RoundToInt(v), 1, 9)));
+        }
+
+        // ────────────────────────────────────────────────────────
+        // VRM 1.0 設定
+        // ────────────────────────────────────────────────────────
+
+        private void BuildVrmSettings(VisualElement parent)
+        {
+            if (!PLVrm10Bridge.I.IsAvailable)
+            {
+                var warn = new Label(
+                    "VRM 1.0 エクスポータが利用できません。\n" +
+                    "VRM パッケージ (com.vrmc.vrm) を導入し、再生モードで実行してください。");
+                warn.style.whiteSpace = WhiteSpace.Normal;
+                warn.style.fontSize   = 10;
+                warn.style.color      = new StyleColor(new Color(1f, 0.6f, 0.4f));
+                parent.Add(warn);
+                return;
+            }
+
+            parent.Add(SectionLabel("メタ情報（VRM 仕様で必須）"));
+            parent.Add(TextRow("モデル名", () => _vrmSettings.Title,   v => _vrmSettings.Title   = v));
+            parent.Add(TextRow("バージョン", () => _vrmSettings.Version, v => _vrmSettings.Version = v));
+            parent.Add(TextRow("作者", () => FirstAuthor(_vrmSettings), v => SetFirstAuthor(_vrmSettings, v)));
+            parent.Add(TextRow("連絡先",
+                () => _vrmSettings.ContactInformation, v => _vrmSettings.ContactInformation = v));
+            parent.Add(TextRow("ライセンスURL",
+                () => _vrmSettings.OtherLicenseUrl, v => _vrmSettings.OtherLicenseUrl = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("出力対象"));
+            parent.Add(FloatRow("Scale", () => _vrmSettings.Scale, v => _vrmSettings.Scale = v));
+            parent.Add(ToggleRow("UV",         () => _vrmSettings.ExportUVs,      v => _vrmSettings.ExportUVs      = v));
+            parent.Add(ToggleRow("法線",       () => _vrmSettings.ExportNormals,  v => _vrmSettings.ExportNormals  = v));
+            parent.Add(ToggleRow("スキニング", () => _vrmSettings.ExportSkinning, v => _vrmSettings.ExportSkinning = v));
+            parent.Add(ToggleRow("非表示メッシュも出力",
+                () => _vrmSettings.ExportInvisibleObjects,
+                v => _vrmSettings.ExportInvisibleObjects = v));
+
+            parent.Add(Separator());
+            var note = new Label("テクスチャ・モーフ・スプリングボーン・表情は未対応です。");
+            note.style.whiteSpace = WhiteSpace.Normal;
+            note.style.fontSize   = 10;
+            note.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+            parent.Add(note);
+        }
+
+        private static string FirstAuthor(Vrm10ExportSettings s)
+            => (s.Authors != null && s.Authors.Count > 0) ? s.Authors[0] : "";
+
+        private static void SetFirstAuthor(Vrm10ExportSettings s, string value)
+        {
+            if (s.Authors == null) s.Authors = new System.Collections.Generic.List<string>();
+            if (s.Authors.Count == 0) s.Authors.Add(value);
+            else                      s.Authors[0] = value;
+        }
+
+        private static VisualElement TextRow(string label, Func<string> get, Action<string> set)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 2;
+
+            var lbl = new Label(label);
+            lbl.style.width          = 80;
+            lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            lbl.style.fontSize       = 10;
+
+            var field = new TextField { value = get() ?? "" };
+            field.style.flexGrow = 1;
+            field.RegisterValueChangedCallback(e => set(e.newValue));
+
+            row.Add(lbl);
+            row.Add(field);
+            return row;
         }
 
         // ================================================================

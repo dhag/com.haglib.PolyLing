@@ -1020,6 +1020,8 @@ namespace Poly_Ling.Core
                     MirrorGeometryDerived  = s.MirrorGeometryDerived,
                     // モーフ
                     MorphParentIndex       = s.MorphParentIndex,
+                    MorphMirrorPolicy      = s.MorphMirrorPolicy,
+                    MirrorOfMorphIndex     = s.MirrorOfMorphIndex,
                     // BindPose（DTOに保存されないため直接コピー必須）
                     BindPose               = s.BindPose,
                     // BonePoseData / MorphBaseData

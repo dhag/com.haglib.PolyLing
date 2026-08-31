@@ -1,6 +1,7 @@
 // Assets/Editor/Poly_Ling/Serialization/FolderSerializer/CsvModelSerializer.cs
 // モデルフォルダ内のCSVファイル読み書き
-// model.csv, materials.csv, humanoid.csv, morphgroups.csv, editorstate.csv, workplane.csv
+// model.csv, materials.csv, materialprops.csv, humanoid.csv, morphgroups.csv, editorstate.csv, workplane.csv
+// springbonegroups.csv, springbonesettings.csv
 // + mesh/bone/morph CSVの振り分け
 
 using System;
@@ -123,6 +124,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // materials.csv
             WriteMaterialsCsv(modelFolderPath, model);
 
+            // materialprops.csv（シェーダー固有プロパティ。materials.csv の列を伸ばさないため独立CSV）
+            WriteMaterialPropsCsv(modelFolderPath, model);
+
             // humanoid.csv
             if (model.HumanoidMapping != null && !model.HumanoidMapping.IsEmpty)
                 WriteHumanoidCsv(modelFolderPath, model, useNameBased, indexToName);
@@ -158,6 +162,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // springbonegroups.csv（SpringBone コライダーグループ名。規約4: CSV/JSON 対称）
             if (model.SpringBoneColliderGroupNames != null && model.SpringBoneColliderGroupNames.Count > 0)
                 WriteSpringBoneGroupsCsv(modelFolderPath, model);
+
+            // springbonesettings.csv（SpringBone 評価設定。既定値でも往復対称のため常時出力）
+            WriteSpringBoneSettingsCsv(modelFolderPath, model);
 
             // textures フォルダにテクスチャをコピー
             string texturesFolder = Path.Combine(modelFolderPath, "textures");
@@ -304,6 +311,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // materials.csv
             ReadMaterialsCsv(modelFolderPath, model);
 
+            // materialprops.csv（materials.csv の直後に読む。無い場合は ShaderProperties は null のまま）
+            ReadMaterialPropsCsv(modelFolderPath, model);
+
             // textures フォルダからテクスチャを復元
             LoadTextures(modelFolderPath, model);
 
@@ -352,6 +362,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string sbgPath = Path.Combine(modelFolderPath, "springbonegroups.csv");
             if (File.Exists(sbgPath))
                 ReadSpringBoneGroupsCsv(sbgPath, model);
+
+            // springbonesettings.csv（SpringBone 評価設定。無い場合は既定値のまま）
+            string sbsPath = Path.Combine(modelFolderPath, "springbonesettings.csv");
+            if (File.Exists(sbsPath))
+                ReadSpringBoneSettingsCsv(sbsPath, model);
 
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
             IKChainResolver.RebuildLinksFromPerBone(model);
@@ -511,7 +526,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         private static void WriteMaterialsCsv(string folderPath, ModelContext model)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("#PolyLing_Materials,version,1.0");
+            sb.AppendLine("#PolyLing_Materials,version,1.1");
             sb.AppendLine($"currentIndex,{model.CurrentMaterialIndex}");
 
             if (model.MaterialReferences != null)
@@ -550,6 +565,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // surface,blendMode,cullMode,alphaClipEnabled,alphaCutoff,
             // baseMapPath,metallicMapPath,normalMapPath,occlusionMapPath,emissionMapPath,
             // sourceTexturePath,sourceAlphaMapPath,sourceBumpMapPath
+            // [v1.1追加] shaderName,baseMapST(4),normalMapST(4),emissionMapST(4),
+            //            renderQueueOffset,zWriteOverride,zTest,doubleSidedGI,enableGPUInstancing
             sb.Append($"{prefix},{index},{Esc(d.Name)},{d.ShaderType},{Esc(matRef.AssetPath ?? "")}");
             sb.Append($",{Fc(d.BaseColor, 0)},{Fc(d.BaseColor, 1)},{Fc(d.BaseColor, 2)},{Fc(d.BaseColor, 3)}");
             sb.Append($",{Fl(d.Metallic)},{Fl(d.Smoothness)},{Fl(d.NormalScale)},{Fl(d.OcclusionStrength)}");
@@ -558,6 +575,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.Append($",{Esc(d.BaseMapPath ?? "")},{Esc(d.MetallicMapPath ?? "")},{Esc(d.NormalMapPath ?? "")}");
             sb.Append($",{Esc(d.OcclusionMapPath ?? "")},{Esc(d.EmissionMapPath ?? "")}");
             sb.Append($",{Esc(d.SourceTexturePath ?? "")},{Esc(d.SourceAlphaMapPath ?? "")},{Esc(d.SourceBumpMapPath ?? "")}");
+            // --- version 1.1 追加分（末尾追加。旧ファイルは列不足＝既定値で読める）---
+            sb.Append($",{Esc(d.ShaderName ?? "")}");
+            sb.Append($",{Fc(d.BaseMapST, 0)},{Fc(d.BaseMapST, 1)},{Fc(d.BaseMapST, 2)},{Fc(d.BaseMapST, 3)}");
+            sb.Append($",{Fc(d.NormalMapST, 0)},{Fc(d.NormalMapST, 1)},{Fc(d.NormalMapST, 2)},{Fc(d.NormalMapST, 3)}");
+            sb.Append($",{Fc(d.EmissionMapST, 0)},{Fc(d.EmissionMapST, 1)},{Fc(d.EmissionMapST, 2)},{Fc(d.EmissionMapST, 3)}");
+            sb.Append($",{d.RenderQueueOffset},{d.ZWriteOverride},{d.ZTest},{d.DoubleSidedGI},{d.EnableGPUInstancing}");
             sb.AppendLine();
         }
 
@@ -609,6 +632,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // surface,blendMode,cullMode,alphaClipEnabled,alphaCutoff,
             // baseMapPath,metallicMapPath,normalMapPath,occlusionMapPath,emissionMapPath,
             // sourceTexturePath,sourceAlphaMapPath,sourceBumpMapPath
+            // [v1.1追加] shaderName,baseMapST(4),normalMapST(4),emissionMapST(4),
+            //            renderQueueOffset,zWriteOverride,zTest,doubleSidedGI,enableGPUInstancing
             if (cols.Length < 5) return new MaterialReference();
 
             int idx = 2; // skip prefix, index
@@ -641,6 +666,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
             d.SourceAlphaMapPath = NullIfEmpty(Unesc(SafeGet(cols, idx++)));
             d.SourceBumpMapPath = NullIfEmpty(Unesc(SafeGet(cols, idx++)));
 
+            // --- version 1.1 追加分。旧ファイルは列が足りず、各 P* が既定値を返す ---
+            d.ShaderName = NullIfEmpty(Unesc(SafeGet(cols, idx++)));
+            d.BaseMapST = ReadST(cols, ref idx);
+            d.NormalMapST = ReadST(cols, ref idx);
+            d.EmissionMapST = ReadST(cols, ref idx);
+            d.RenderQueueOffset = PInt(cols, idx++);
+            d.ZWriteOverride = PInt(cols, idx++, -1);
+            d.ZTest = PInt(cols, idx++);
+            d.DoubleSidedGI = PBool(cols, idx++);
+            d.EnableGPUInstancing = PBool(cols, idx++);
+
             var matRef = new MaterialReference
             {
                 AssetPath = string.IsNullOrEmpty(assetPath) ? null : assetPath,
@@ -648,6 +684,96 @@ namespace Poly_Ling.Serialization.FolderSerializer
             };
 
             return matRef;
+        }
+
+        /// <summary>ST（tilingX,tilingY,offsetX,offsetY）を4列読む。列不足時は既定 1,1,0,0。</summary>
+        private static float[] ReadST(string[] cols, ref int idx)
+        {
+            float tx = PFl(cols, idx++, 1f);
+            float ty = PFl(cols, idx++, 1f);
+            float ox = PFl(cols, idx++, 0f);
+            float oy = PFl(cols, idx++, 0f);
+            return new float[] { tx, ty, ox, oy };
+        }
+
+        // ================================================================
+        // materialprops.csv（シェーダー固有プロパティ：独立CSV）
+        //   materials.csv は位置固定列のため、シェーダーごとに数が変わるプロパティは
+        //   列を伸ばさずこちらへ縦持ちで格納する。
+        //   行形式: matProp,<scope>,<index>,<name>,<kind>,<x>,<y>,<z>,<w>,<texturePath>
+        //     scope … "mat"（MaterialReferences）/ "defaultMat"（DefaultMaterialReferences）
+        //     index … 各リスト内の並び順（materials.csv と同じ index）
+        //     kind  … MaterialPropertyKind
+        //   ファイルが無い＝シェーダー固有プロパティなし（ShaderProperties は null のまま）。
+        // ================================================================
+
+        private static void WriteMaterialPropsCsv(string folderPath, ModelContext model)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_MaterialProps,version,1.0");
+
+            AppendMaterialPropLines(sb, "mat", model.MaterialReferences);
+            AppendMaterialPropLines(sb, "defaultMat", model.DefaultMaterialReferences);
+
+            File.WriteAllText(Path.Combine(folderPath, "materialprops.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void AppendMaterialPropLines(StringBuilder sb, string scope, List<MaterialReference> refs)
+        {
+            if (refs == null) return;
+
+            for (int i = 0; i < refs.Count; i++)
+            {
+                var props = refs[i]?.Data?.ShaderProperties;
+                if (props == null) continue;
+
+                foreach (var p in props)
+                {
+                    if (p == null || string.IsNullOrEmpty(p.Name)) continue;
+                    sb.AppendLine(
+                        $"matProp,{scope},{i},{Esc(p.Name)},{(int)p.Kind}," +
+                        $"{Fl(p.X)},{Fl(p.Y)},{Fl(p.Z)},{Fl(p.W)},{Esc(p.TexturePath ?? "")}");
+                }
+            }
+        }
+
+        private static void ReadMaterialPropsCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "materialprops.csv");
+            if (!File.Exists(path)) return;
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+
+                var cols = Split(line);
+                if (cols.Length < 10 || cols[0] != "matProp") continue;
+
+                string scope = SafeGet(cols, 1);
+                int index = PInt(cols, 2, -1);
+
+                var list = (scope == "defaultMat") ? model.DefaultMaterialReferences : model.MaterialReferences;
+                if (list == null || index < 0 || index >= list.Count) continue;
+
+                var data = list[index]?.Data;
+                if (data == null) continue;
+
+                var prop = new MaterialProperty
+                {
+                    Name = Unesc(SafeGet(cols, 3)),
+                    Kind = (MaterialPropertyKind)PInt(cols, 4),
+                    X = PFl(cols, 5),
+                    Y = PFl(cols, 6),
+                    Z = PFl(cols, 7),
+                    W = PFl(cols, 8),
+                    TexturePath = NullIfEmpty(Unesc(SafeGet(cols, 9)))
+                };
+                if (string.IsNullOrEmpty(prop.Name)) continue;
+
+                if (data.ShaderProperties == null)
+                    data.ShaderProperties = new List<MaterialProperty>();
+                data.ShaderProperties.Add(prop);
+            }
         }
 
         // ================================================================
@@ -979,6 +1105,42 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 names.Add(Unesc(cols[0]));
             }
             model.SpringBoneColliderGroupNames = names;
+        }
+
+        // ================================================================
+        // springbonesettings.csv（SpringBone 評価設定：モデルレベル）
+        //   fixedDeltaTime … 0=実時間、>0=固定タイムステップ[秒]
+        //   warmupFrames   … 評価開始直後の安定化フレーム数
+        // ================================================================
+
+        private static void WriteSpringBoneSettingsCsv(string folderPath, ModelContext model)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_SpringBoneSettings,version,1.0");
+            sb.AppendLine($"fixedDeltaTime,{Fl(model.SpringBoneFixedDeltaTime)}");
+            sb.AppendLine($"warmupFrames,{model.SpringBoneWarmupFrames.ToString(CultureInfo.InvariantCulture)}");
+
+            File.WriteAllText(Path.Combine(folderPath, "springbonesettings.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadSpringBoneSettingsCsv(string path, ModelContext model)
+        {
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                switch (cols[0])
+                {
+                    case "fixedDeltaTime":
+                        model.SpringBoneFixedDeltaTime = PFl(cols, 1, 0f);
+                        break;
+                    case "warmupFrames":
+                        model.SpringBoneWarmupFrames = PInt(cols, 1, 3);
+                        break;
+                }
+            }
         }
 
         /// <summary>

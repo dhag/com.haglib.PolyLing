@@ -110,6 +110,16 @@ namespace Poly_Ling.Serialization
         public List<string> springBoneColliderGroupNames = new List<string>();
 
         // ================================================================
+        // スプリングボーン・評価設定（モデルレベル）
+        // ================================================================
+
+        /// <summary>揺れ評価の固定タイムステップ[秒]。0=実時間。</summary>
+        public float springBoneFixedDeltaTime = 0f;
+
+        /// <summary>揺れ評価開始直後の安定化フレーム数。</summary>
+        public int springBoneWarmupFrames = 3;
+
+        // ================================================================
         // TPoseバックアップ（Tポーズ変換前の姿勢。CSV/JSON 対称：規約4）
         // ================================================================
 
@@ -340,6 +350,17 @@ namespace Poly_Ling.Serialization
         /// -1 = 未指定（名前規則ベースで検索）
         /// </summary>
         public int morphParentIndex = -1;
+
+        /// <summary>
+        /// モーフのミラー適用ポリシー（MorphMirrorPolicy）。
+        /// 既定 0 = FollowParent。規約は MorphMirrorPolicy.cs を正典とする。
+        /// </summary>
+        public int morphMirrorPolicy = 0;
+
+        /// <summary>
+        /// MirrorOf のときの参照先モーフのインデックス。-1 = 未指定。
+        /// </summary>
+        public int mirrorOfMorphIndex = -1;
 
         /// <summary>
         /// ボーンポーズデータ（PreBindPose + Manualレイヤー）
@@ -951,6 +972,45 @@ namespace Poly_Ling.Serialization
         public int cullMode = 2;       // CullModeType.Back（表面のみ表示）
         public bool alphaClipEnabled = false;
         public float alphaCutoff = 0.5f;
+
+        // ================================================================
+        // 共通コア拡張（ST／描画順／深度／GI／インスタンシング）
+        // ================================================================
+
+        /// <summary>シェーダー名（Custom時の解決先。空=ShaderTypeから解決）</summary>
+        public string shaderName;
+
+        public float[] baseMapST = new float[] { 1f, 1f, 0f, 0f };      // [tilingX,tilingY,offsetX,offsetY]
+        public float[] normalMapST = new float[] { 1f, 1f, 0f, 0f };
+        public float[] emissionMapST = new float[] { 1f, 1f, 0f, 0f };
+
+        public int renderQueueOffset = 0;
+        public int zWriteOverride = -1;     // -1=自動 / 0=Off / 1=On
+        public int zTest = 0;               // 0=未指定
+        public bool doubleSidedGI = false;
+        public bool enableGPUInstancing = false;
+
+        // ================================================================
+        // シェーダー固有プロパティ（共通コアに無いもの。null/空=なし）
+        // ================================================================
+
+        public List<MaterialPropertyDTO> shaderProperties;
+    }
+
+    /// <summary>
+    /// シェーダー固有マテリアルプロパティDTO。
+    /// POCO は Poly_Ling.Materials.MaterialProperty。変換は ModelSerializer が行う。
+    /// </summary>
+    [Serializable]
+    public class MaterialPropertyDTO
+    {
+        public string name = "";
+        public int kind = 0;                // MaterialPropertyKind
+        public float x;
+        public float y;
+        public float z;
+        public float w;
+        public string texturePath;
     }
 
     // ================================================================
@@ -1184,6 +1244,10 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public ulong  detachedMirrorObjectId = 0;
         public int    morphParentIndex = -1;
+        /// <summary>モーフのミラー適用ポリシー（既定 0 = FollowParent）。</summary>
+        public int    morphMirrorPolicy = 0;
+        /// <summary>MirrorOf のときの参照先モーフのインデックス。-1 = 未指定。</summary>
+        public int    mirrorOfMorphIndex = -1;
         public bool   excludeFromExport = false;
         public bool   ignorePoseInArmature = false;
         public bool   isMirrorBranchRoot = false;

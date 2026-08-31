@@ -25,7 +25,7 @@
 // ■ PLRM フォーマット（S→C ModelMeta）
 // [Header 8B+]
 //   Magic      : 4B "PLRM"
-//   Version    : 1B
+//   Version    : 1B (現在 2。2 で MaterialData に拡張ブロックを追加。1 とは非互換)
 //   Padding    : 1B
 //   ModelIndex : 2B (int16)
 //   ModelName  : string
@@ -35,7 +35,7 @@
 // ■ PLRS フォーマット（S→C MeshSummary）
 // [Header 10B+]
 //   Magic      : 4B "PLRS"
-//   Version    : 1B
+//   Version    : 1B (現在 4。4 で末尾にモーフのミラー適用を追加。旧版は既定値で読む)
 //   Padding    : 1B
 //   ModelIndex : 2B (int16)
 //   MeshIndex  : 2B (int16)

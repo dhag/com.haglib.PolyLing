@@ -2366,13 +2366,38 @@ namespace Poly_Ling.MeshListV2
 
         private void RefreshMorphListData()
         {
+            // ================================================================
+            // ミラー側モーフは一覧に出さない。
+            //   Real 側から自動同期される派生物で、ユーザーが選んで編集する対象ではない
+            //   （規約は MorphMirrorPolicy.cs を正典とする）。
+            //   一覧に並べるとモーフ1つにつき2行になり、管理対象が倍に見えてしまう。
+            //   隠した数は件数ラベルに「(派生 N)」として出し、消えたわけではないと分かるようにする。
+            // ================================================================
             _morphListData.Clear(); _morphFilteredData.Clear();
-            if (CurrentModel?.MorphList != null) foreach (var s in CurrentModel.MorphList) _morphListData.Add(s);
+
+            int derivedHidden = 0;
+            if (CurrentModel?.MorphList != null)
+            {
+                foreach (var s in CurrentModel.MorphList)
+                {
+                    if (s == null) continue;
+                    if (s.IsMirrorSide) { derivedHidden++; continue; }
+                    _morphListData.Add(s);
+                }
+            }
+
             string f = _morphFilterField?.value;
             foreach (var s in _morphListData)
                 if (string.IsNullOrEmpty(f) || s.Name.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0)
                     _morphFilteredData.Add(s);
-            if (_morphCountLabel != null) _morphCountLabel.text = $"モーフ: {_morphFilteredData.Count}";
+
+            if (_morphCountLabel != null)
+            {
+                _morphCountLabel.text = derivedHidden > 0
+                    ? $"モーフ: {_morphFilteredData.Count} (派生 {derivedHidden})"
+                    : $"モーフ: {_morphFilteredData.Count}";
+            }
+
             _morphListView?.RefreshItems();
             SyncMorphSel();
         }

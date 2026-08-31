@@ -71,9 +71,15 @@ namespace Poly_Ling.Data
         public MorphType Type = MorphType.Vertex;
 
         /// <summary>
-        /// 対称モーフかどうか（デフォルトtrue）
-        /// true: MeshEntriesにはReal側のみ登録。Mirror側はシステムが自動管理。
-        /// false: MeshEntriesに影響させるメッシュを明示列挙（ウインク等の非対称モーフ）
+        /// 【参照禁止・非推奨】対称モーフかどうか。
+        ///
+        /// ミラー適用の可否は MeshContext.MorphMirrorPolicy が持つ。
+        /// ミラーが MeshContext 単位の機構である以上、式レベルの真偽値では
+        /// 「どの実体にミラーを効かせるか」を表現できないため、本フィールドは役目を終えた。
+        /// 規約は MorphMirrorPolicy.cs 冒頭のコメントを正典とする。
+        ///
+        /// フィールド自体は、リモート転送のバイト列を動かさないために残している。
+        /// 新しい判断に使わないこと。
         /// </summary>
         public bool IsSymmetric = true;
 

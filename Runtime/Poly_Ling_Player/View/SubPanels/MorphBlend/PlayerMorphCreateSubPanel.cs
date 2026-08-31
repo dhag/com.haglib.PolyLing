@@ -268,7 +268,7 @@ namespace Poly_Ling.Player
                     int mirrorParentIdx = baseModel.MeshContextList.IndexOf(pair.Mirror);
                     if (mirrorParentIdx >= 0)
                         CreateMirrorMorphMeshContext(
-                            baseModel, pair, mirrorParentIdx,
+                            baseModel, pair, mirrorParentIdx, newMorphIdx,
                             baseCtx.MeshObject, morphCtx.MeshObject,
                             morphName, panel, expression);
                 }
@@ -322,7 +322,9 @@ namespace Poly_Ling.Player
 
             var newCtx = new MeshContext
             {
-                Name      = morphName,
+                // モーフ実体の名前はシステムが決める（PMXImporter と同じ「{親名}_{モーフ名}」）。
+                // ユーザーが管理する名前は MorphExpression.Name ひとつだけにする。
+                Name      = $"{baseCtx.Name}_{morphName}",
                 MeshObject = morphObj,
                 IsVisible = false,
             };
@@ -331,6 +333,9 @@ namespace Poly_Ling.Player
             newCtx.SetAsMorph(morphName, baseCtx.MeshObject);
             newCtx.MorphBaseData.Panel = panel;
             newCtx.MorphParentIndex   = parentIdx;
+
+            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）
+            newCtx.InheritMirrorSettingsFrom(baseCtx);
 
             int newIdx = baseModel.Add(newCtx);
             expression.AddMesh(newIdx);
@@ -345,6 +350,7 @@ namespace Poly_Ling.Player
             ModelContext    baseModel,
             MirrorPair      pair,
             int             mirrorParentIdx,
+            int             realMorphIdx,
             MeshObject      realBaseMeshObj,
             MeshObject      realMorphMeshObj,
             string          morphName,
@@ -376,7 +382,9 @@ namespace Poly_Ling.Player
 
             var newCtx = new MeshContext
             {
-                Name       = morphName,
+                // モーフ実体の名前はシステムが決める（「{親名}_{モーフ名}」）。
+                // ミラー側は親名が違うので、Real 側モーフと自然に別名になる。
+                Name       = $"{mirrorBaseCtx.Name}_{morphName}",
                 MeshObject = morphObj,
                 IsVisible  = false,
             };
@@ -384,6 +392,18 @@ namespace Poly_Ling.Player
             newCtx.SetAsMorph(morphName, mirrorBaseCtx.MeshObject);
             newCtx.MorphBaseData.Panel = panel;
             newCtx.MorphParentIndex   = mirrorParentIdx;
+
+            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）
+            newCtx.InheritMirrorSettingsFrom(mirrorBaseCtx);
+
+            // 親が生成ミラー（実体側から作られた形状）なら、モーフ側にも同じ連結を張る。
+            // これで既存の MirrorBranchOps.RebakeDerivedMirrorVertices が
+            // Real 側モーフ → Mirror 側モーフ の追随を担当できる。
+            if (mirrorBaseCtx.MirrorGeometryDerived && realMorphIdx >= 0)
+            {
+                newCtx.MirrorGeometryDerived  = true;
+                newCtx.BakedMirrorSourceIndex = realMorphIdx;
+            }
 
             int newIdx = baseModel.Add(newCtx);
             expression.AddMesh(newIdx);

@@ -3,12 +3,7 @@
     "rootNamespace": "",
     "references": [
         "Unity.TextMeshPro",
-        "HagLib.NET.Duplex.Runtime",
-
-        "UniGLTF",
-        "UniHumanoid",
-        "VrmLib",
-        "VRM10"
+        "HagLib.NET.Duplex.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

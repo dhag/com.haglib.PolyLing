@@ -447,6 +447,13 @@ namespace Poly_Ling.Serialization
                     : new List<string>();
 
             // ================================================================
+            // スプリングボーン・評価設定（モデルレベル）
+            // ================================================================
+
+            modelDTO.springBoneFixedDeltaTime = model.SpringBoneFixedDeltaTime;
+            modelDTO.springBoneWarmupFrames = model.SpringBoneWarmupFrames;
+
+            // ================================================================
             // TPoseバックアップ（規約4：CSV/JSON 対称）
             // ================================================================
 
@@ -623,6 +630,13 @@ namespace Poly_Ling.Serialization
                 (modelDTO.springBoneColliderGroupNames != null)
                     ? new List<string>(modelDTO.springBoneColliderGroupNames)
                     : new List<string>();
+
+            // ================================================================
+            // スプリングボーン・評価設定復元（モデルレベル）
+            // ================================================================
+
+            model.SpringBoneFixedDeltaTime = modelDTO.springBoneFixedDeltaTime;
+            model.SpringBoneWarmupFrames = modelDTO.springBoneWarmupFrames;
 
             // ================================================================
             // TPoseバックアップ復元（規約4：CSV/JSON 対称）
@@ -923,8 +937,72 @@ namespace Poly_Ling.Serialization
                 blendMode = (int)data.BlendMode,
                 cullMode = (int)data.CullMode,
                 alphaClipEnabled = data.AlphaClipEnabled,
-                alphaCutoff = data.AlphaCutoff
+                alphaCutoff = data.AlphaCutoff,
+                shaderName = data.ShaderName,
+                baseMapST = CloneST(data.BaseMapST),
+                normalMapST = CloneST(data.NormalMapST),
+                emissionMapST = CloneST(data.EmissionMapST),
+                renderQueueOffset = data.RenderQueueOffset,
+                zWriteOverride = data.ZWriteOverride,
+                zTest = data.ZTest,
+                doubleSidedGI = data.DoubleSidedGI,
+                enableGPUInstancing = data.EnableGPUInstancing,
+                shaderProperties = ToMaterialPropertyDTOList(data.ShaderProperties)
             };
+        }
+
+        // ================================================================
+        // マテリアル拡張の小ヘルパー（ST / シェーダー固有プロパティ）
+        // ================================================================
+
+        private static float[] CloneST(float[] src)
+        {
+            if (src == null || src.Length < 4) return new float[] { 1f, 1f, 0f, 0f };
+            return (float[])src.Clone();
+        }
+
+        private static List<MaterialPropertyDTO> ToMaterialPropertyDTOList(List<MaterialProperty> src)
+        {
+            if (src == null || src.Count == 0) return null;
+
+            var list = new List<MaterialPropertyDTO>(src.Count);
+            foreach (var p in src)
+            {
+                if (p == null) continue;
+                list.Add(new MaterialPropertyDTO
+                {
+                    name = p.Name ?? "",
+                    kind = (int)p.Kind,
+                    x = p.X,
+                    y = p.Y,
+                    z = p.Z,
+                    w = p.W,
+                    texturePath = p.TexturePath
+                });
+            }
+            return list.Count > 0 ? list : null;
+        }
+
+        private static List<MaterialProperty> ToMaterialPropertyList(List<MaterialPropertyDTO> src)
+        {
+            if (src == null || src.Count == 0) return null;
+
+            var list = new List<MaterialProperty>(src.Count);
+            foreach (var d in src)
+            {
+                if (d == null || string.IsNullOrEmpty(d.name)) continue;
+                list.Add(new MaterialProperty
+                {
+                    Name = d.name,
+                    Kind = (MaterialPropertyKind)d.kind,
+                    X = d.x,
+                    Y = d.y,
+                    Z = d.z,
+                    W = d.w,
+                    TexturePath = d.texturePath
+                });
+            }
+            return list.Count > 0 ? list : null;
         }
 
         /// <summary>
@@ -957,7 +1035,17 @@ namespace Poly_Ling.Serialization
                 BlendMode = (BlendModeType)dto.blendMode,
                 CullMode = (CullModeType)dto.cullMode,
                 AlphaClipEnabled = dto.alphaClipEnabled,
-                AlphaCutoff = dto.alphaCutoff
+                AlphaCutoff = dto.alphaCutoff,
+                ShaderName = dto.shaderName,
+                BaseMapST = CloneST(dto.baseMapST),
+                NormalMapST = CloneST(dto.normalMapST),
+                EmissionMapST = CloneST(dto.emissionMapST),
+                RenderQueueOffset = dto.renderQueueOffset,
+                ZWriteOverride = dto.zWriteOverride,
+                ZTest = dto.zTest,
+                DoubleSidedGI = dto.doubleSidedGI,
+                EnableGPUInstancing = dto.enableGPUInstancing,
+                ShaderProperties = ToMaterialPropertyList(dto.shaderProperties)
             };
 
             // ShaderType をパース
@@ -1135,6 +1223,10 @@ namespace Poly_Ling.Serialization
             // モーフ親インデックス
             meshDTO.morphParentIndex = meshContext.MorphParentIndex;
 
+            // モーフのミラー適用（規約は MorphMirrorPolicy.cs を正典とする）
+            meshDTO.morphMirrorPolicy  = (int)meshContext.MorphMirrorPolicy;
+            meshDTO.mirrorOfMorphIndex = meshContext.MirrorOfMorphIndex;
+
             // エクスポート除外フラグ
             meshDTO.excludeFromExport = meshContext.ExcludeFromExport;
             meshDTO.ignorePoseInArmature = meshContext.IgnorePoseInArmature;
@@ -1161,6 +1253,10 @@ namespace Poly_Ling.Serialization
 
             // モーフ親インデックス
             meshContext.MorphParentIndex = meshDTO.morphParentIndex;
+
+            // モーフのミラー適用（旧データは既定 FollowParent / -1 になる）
+            meshContext.MorphMirrorPolicy  = (MorphMirrorPolicy)meshDTO.morphMirrorPolicy;
+            meshContext.MirrorOfMorphIndex = meshDTO.mirrorOfMorphIndex;
 
             // エクスポート除外フラグ
             meshContext.ExcludeFromExport = meshDTO.excludeFromExport;
@@ -1849,6 +1945,8 @@ namespace Poly_Ling.Serialization
                 detachedMirrorObjectId  = mc.DetachedMirrorObjectId,
                 hasBakedMirrorChild     = mc.HasBakedMirrorChild,
                 morphParentIndex        = mc.MorphParentIndex,
+                morphMirrorPolicy       = (int)mc.MorphMirrorPolicy,
+                mirrorOfMorphIndex      = mc.MirrorOfMorphIndex,
                 excludeFromExport       = mc.ExcludeFromExport,
                 ignorePoseInArmature    = mc.IgnorePoseInArmature,
                 isMirrorBranchRoot      = mc.IsMirrorBranchRoot,
@@ -1908,6 +2006,8 @@ namespace Poly_Ling.Serialization
                 DetachedMirrorObjectId = meta.detachedMirrorObjectId,
                 HasBakedMirrorChild    = meta.hasBakedMirrorChild,
                 MorphParentIndex       = meta.morphParentIndex,
+                MorphMirrorPolicy      = (MorphMirrorPolicy)meta.morphMirrorPolicy,
+                MirrorOfMorphIndex     = meta.mirrorOfMorphIndex,
                 ExcludeFromExport      = meta.excludeFromExport,
                 IgnorePoseInArmature   = meta.ignorePoseInArmature,
                 IsMirrorBranchRoot     = meta.isMirrorBranchRoot,

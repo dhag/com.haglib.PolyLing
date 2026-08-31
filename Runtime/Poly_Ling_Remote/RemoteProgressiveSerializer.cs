@@ -63,6 +63,9 @@ namespace Poly_Ling.Remote
         // [string] ModelName  [2B] MeshCount  [1B] ActiveCategory
         // [2B] SelectedCount  [int32 × SelectedCount]
         // [2B] MaterialCount  [MaterialData × MaterialCount]
+        //   ※ Version 2 で MaterialData に拡張ブロックを追加（ShaderName / テクスチャST /
+        //     RenderQueueOffset / ZWriteOverride / ZTest / DoubleSidedGI / GPUInstancing /
+        //     ShaderProperties）。Version 1 の受信側とは非互換のため Editor/Player を同時更新すること。
         // [2B] ExpressionCount  [MorphExpression × ExpressionCount]
         //   MorphExpression: [string] Name  [string] NameEnglish  [1B] Panel  [1B] Type  [1B] IsSymmetric
         //                    [2B] EntryCount  ([2B] MeshIndex  [4B] Weight) × EntryCount
@@ -75,7 +78,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)1);
+                w.Write((byte)2);   // version 2: MaterialData 拡張ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -122,7 +125,7 @@ namespace Poly_Ling.Remote
             using (var r = new BinaryReader(ms))
             {
                 if (r.ReadUInt32() != RemoteMagic.ModelMeta) return null;
-                r.ReadByte(); // version
+                int metaVersion = r.ReadByte(); // version
                 r.ReadByte(); // padding
                 int modelIndex = r.ReadInt16();
 
@@ -146,7 +149,7 @@ namespace Poly_Ling.Remote
                 var refList = new List<MaterialReference>(matCount);
                 for (int i = 0; i < matCount; i++)
                 {
-                    var (mdata, tex) = ReadMaterialData(r);
+                    var (mdata, tex) = ReadMaterialData(r, metaVersion);
 
                     // wire の MaterialData から直接参照を生成する。
                     // Unity Material 経由（model.Materials）だと SetMaterial→GetAssetPath/
@@ -211,6 +214,9 @@ namespace Poly_Ling.Remote
         // [64B] WorldMatrix  [64B] BindPose  [16B] BoneModelRotation
         // [1B] IsIK  [2B] IKTargetIndex  [2B] IKLoopCount  [4B] IKLimitAngle
         // [4B] VertexCount  [4B] FaceCount
+        // [1B] MorphMirrorPolicy(v4+)  [2B] MirrorOfMorphIndex(v4+)
+        //   ※ v4 追加分は末尾に置く。既存レイアウトは動かさない。
+        //     規約は MorphMirrorPolicy.cs を正典とする。
         // ================================================================
 
         public static byte[] SerializeMeshSummary(MeshContext mc, int modelIndex, int meshIndex)
@@ -220,7 +226,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.MeshSummary);
-                w.Write((byte)3);   // version 2: HierarchyParentIndex / version 3: ObjectId + EditorName
+                w.Write((byte)4);   // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
                 w.Write((short)meshIndex);
@@ -291,6 +297,11 @@ namespace Poly_Ling.Remote
                 // ジオメトリなし、サマリ用カウントのみ
                 w.Write((uint)(mc.MeshObject?.VertexCount ?? 0));
                 w.Write((uint)(mc.MeshObject?.FaceCount ?? 0));
+
+                // ---- v4: モーフのミラー適用（規約は MorphMirrorPolicy.cs を正典とする）----
+                // 追加は必ずこのブロックの末尾に行うこと。
+                w.Write((byte)mc.MorphMirrorPolicy);
+                w.Write((short)mc.MirrorOfMorphIndex);
 
                 return ms.ToArray();
             }
@@ -395,6 +406,14 @@ namespace Poly_Ling.Remote
 
                 int vertexCount = (int)r.ReadUInt32();
                 int faceCount   = (int)r.ReadUInt32();
+
+                // ---- v4: モーフのミラー適用 ----
+                // v3 以前の送信元からは届かないので、既定（FollowParent / -1）のままにする。
+                if (summaryVersion >= 4)
+                {
+                    mc.MorphMirrorPolicy  = (MorphMirrorPolicy)r.ReadByte();
+                    mc.MirrorOfMorphIndex = r.ReadInt16();
+                }
 
                 // BoneTransform は MeshObject 設定後に適用
                 // mc.MeshObject は先頭で生成済み（Name/Type書き込み済み）なのでそのまま使う
@@ -519,9 +538,54 @@ namespace Poly_Ling.Remote
 
             if (pngData != null) { w.Write((uint)pngData.Length); w.Write(pngData); }
             else                 { w.Write((uint)0); }
+
+            // ---- version 2 拡張ブロック ----
+            // ここより後は version >= 2 の受信側だけが読む。追加は必ずこのブロックの末尾に行うこと。
+            // ※ シェーダー固有プロパティのテクスチャはパスのみ送る（PNG実体は BaseMap のみ送信）。
+            WriteString(w, d.ShaderName ?? string.Empty);
+            WriteST(w, d.BaseMapST);
+            WriteST(w, d.NormalMapST);
+            WriteST(w, d.EmissionMapST);
+            w.Write(d.RenderQueueOffset);
+            w.Write(d.ZWriteOverride);
+            w.Write(d.ZTest);
+            w.Write(d.DoubleSidedGI);
+            w.Write(d.EnableGPUInstancing);
+
+            var props = d.ShaderProperties;
+            int propCount = props?.Count ?? 0;
+            w.Write((ushort)propCount);
+            for (int i = 0; i < propCount; i++)
+            {
+                var p = props[i] ?? new MaterialProperty();
+                WriteString(w, p.Name ?? string.Empty);
+                w.Write((byte)p.Kind);
+                w.Write(p.X);
+                w.Write(p.Y);
+                w.Write(p.Z);
+                w.Write(p.W);
+                WriteString(w, p.TexturePath ?? string.Empty);
+            }
         }
 
-        private static (MaterialData data, Texture2D tex) ReadMaterialData(BinaryReader r)
+        private static void WriteST(BinaryWriter w, float[] st)
+        {
+            if (st != null && st.Length >= 4)
+            {
+                w.Write(st[0]); w.Write(st[1]); w.Write(st[2]); w.Write(st[3]);
+            }
+            else
+            {
+                w.Write(1f); w.Write(1f); w.Write(0f); w.Write(0f);
+            }
+        }
+
+        private static float[] ReadST(BinaryReader r)
+        {
+            return new float[] { r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle() };
+        }
+
+        private static (MaterialData data, Texture2D tex) ReadMaterialData(BinaryReader r, int version)
         {
             var d = new MaterialData();
             d.Name       = ReadString(r);
@@ -543,6 +607,47 @@ namespace Poly_Ling.Remote
                 tex.LoadImage(pngData);
                 tex.name = d.Name;
             }
+
+            // ---- version 2 拡張ブロック ----
+            if (version >= 2)
+            {
+                d.ShaderName = ReadString(r);
+                d.BaseMapST = ReadST(r);
+                d.NormalMapST = ReadST(r);
+                d.EmissionMapST = ReadST(r);
+                d.RenderQueueOffset = r.ReadInt32();
+                d.ZWriteOverride = r.ReadInt32();
+                d.ZTest = r.ReadInt32();
+                d.DoubleSidedGI = r.ReadBoolean();
+                d.EnableGPUInstancing = r.ReadBoolean();
+
+                ushort propCount = r.ReadUInt16();
+                if (propCount > 0)
+                {
+                    var props = new List<MaterialProperty>(propCount);
+                    for (int i = 0; i < propCount; i++)
+                    {
+                        var p = new MaterialProperty
+                        {
+                            Name = ReadString(r),
+                            Kind = (MaterialPropertyKind)r.ReadByte(),
+                            X = r.ReadSingle(),
+                            Y = r.ReadSingle(),
+                            Z = r.ReadSingle(),
+                            W = r.ReadSingle()
+                        };
+                        string texPath = ReadString(r);
+                        p.TexturePath = string.IsNullOrEmpty(texPath) ? null : texPath;
+                        if (!string.IsNullOrEmpty(p.Name)) props.Add(p);
+                    }
+                    d.ShaderProperties = props.Count > 0 ? props : null;
+                }
+                else
+                {
+                    d.ShaderProperties = null;
+                }
+            }
+
             return (d, tex);
         }
 

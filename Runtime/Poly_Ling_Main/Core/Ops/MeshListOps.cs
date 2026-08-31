@@ -664,13 +664,52 @@ namespace Poly_Ling.Ops
                 OldName = ctx.Name, OldExcludeFromExport = ctx.ExcludeFromExport,
             };
 
-            MeshObject baseMeshObject = null;
+            MeshContext parentCtx = null;
             if (parentIndex >= 0 && parentIndex < _model.MeshContextCount)
-                baseMeshObject = _model.GetMeshContext(parentIndex)?.MeshObject;
+                parentCtx = _model.GetMeshContext(parentIndex);
+            MeshObject baseMeshObject = parentCtx?.MeshObject;
+
+            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）。
+            // 継承で書き換わるので、変更前の設定を Undo 用に控える。
+            if (parentCtx != null)
+            {
+                undoRecord.HasMirrorChange = true;
+                undoRecord.OldMirror = (ctx.MirrorType, ctx.MirrorAxis, ctx.MirrorDistance, ctx.MirrorMaterialOffset);
+            }
 
             ctx.SetAsMorph(morphName, baseMeshObject);
             ctx.MorphPanel = panel;
             ctx.MorphParentIndex = parentIndex;
+
+            if (parentCtx != null)
+            {
+                ctx.InheritMirrorSettingsFrom(parentCtx);
+                undoRecord.NewMirror = (ctx.MirrorType, ctx.MirrorAxis, ctx.MirrorDistance, ctx.MirrorMaterialOffset);
+
+                // モーフ実体の名前はシステムが決める（PMXImporter と同じ「{親名}_{モーフ名}」）。
+                // ユーザーが管理する名前は MorphExpression.Name ひとつだけにする。
+                ctx.Name = $"{parentCtx.Name}_{morphName}";
+            }
+
+            // ================================================================
+            // MorphExpression の自動生成
+            //   PMX の1モーフ＝ユーザーが名付ける単位。材質グループ分割や
+            //   Real/Mirror 分割はその下に隠す。
+            //   同名の Expression があればエントリを足し、無ければ作る。
+            //   ここで作らないと、ユーザーが手で Expression を組む手間が残る。
+            // ================================================================
+            undoRecord.OldExpressions = CloneExpressions(_model.MorphExpressions);
+
+            var expression = FindExpressionByName(morphName);
+            if (expression == null)
+            {
+                expression = new MorphExpression(morphName, MorphType.Vertex) { Panel = panel };
+                _model.MorphExpressions.Add(expression);
+            }
+            expression.AddMesh(sourceIndex);
+
+            undoRecord.NewExpressions = CloneExpressions(_model.MorphExpressions);
+            undoRecord.HasExpressionChange = true;
             ctx.Type = MeshType.Morph;
             ctx.IsVisible = false;
             if (ctx.MeshObject != null) ctx.MeshObject.Type = MeshType.Morph;
@@ -1015,6 +1054,30 @@ namespace Poly_Ling.Ops
                 _undo.MeshListStack.Record(record, __dbgDesc);
             }
             _undo.FocusMeshList();
+        }
+
+        /// <summary>MorphExpressions のディープコピー（Undo 用スナップショット）。</summary>
+        private static List<MorphExpression> CloneExpressions(List<MorphExpression> src)
+        {
+            if (src == null) return new List<MorphExpression>();
+
+            var dst = new List<MorphExpression>(src.Count);
+            for (int i = 0; i < src.Count; i++)
+                dst.Add(src[i]?.Clone());
+            return dst;
+        }
+
+        /// <summary>同名の MorphExpression を探す（無ければ null）。</summary>
+        private MorphExpression FindExpressionByName(string name)
+        {
+            var list = _model?.MorphExpressions;
+            if (list == null || string.IsNullOrEmpty(name)) return null;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null && list[i].Name == name) return list[i];
+            }
+            return null;
         }
 
         private void RecordMorphUndo(MeshListUndoRecord record, string description)

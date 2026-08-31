@@ -1,0 +1,28 @@
+{
+    "name": "PolyLing.Vrm10",
+    "rootNamespace": "",
+    "references": [
+        "PolyLing.Runtime",
+        "UniGLTF",
+        "UniHumanoid",
+        "VrmLib",
+        "VRM10"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "POLYLING_HAS_VRM10"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.vrmc.vrm",
+            "expression": "",
+            "define": "POLYLING_HAS_VRM10"
+        }
+    ],
+    "noEngineReferences": false
+}

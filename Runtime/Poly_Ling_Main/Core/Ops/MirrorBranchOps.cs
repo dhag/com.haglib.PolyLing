@@ -1534,7 +1534,17 @@ namespace Poly_Ling.Ops
                 applied++;
             }
 
-            if (applied > 0) RebuildAffectedMirrorPairs(model, plan);
+            if (applied > 0)
+            {
+                RebuildAffectedMirrorPairs(model, plan);
+
+                // 実体側の形が変わったので、ミラー側モーフを Real 側モーフから作り直す。
+                // 頂点編集系ツール（DeleteSelection / FaceMerge / VertexDissolve /
+                // Tri4To1 / FaceMergeCollapse）は全てここを通るため、
+                // モーフ同期の共通の合流点になる。
+                // 規約は MorphMirrorPolicy.cs を正典とする。
+                model.SyncAllMirrorMorphs();
+            }
 
             return applied;
         }

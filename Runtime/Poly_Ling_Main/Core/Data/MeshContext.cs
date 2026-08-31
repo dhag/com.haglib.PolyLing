@@ -969,6 +969,23 @@ namespace Poly_Ling.Data
         /// </summary>
         public int MorphParentIndex { get; set; } = -1;
 
+        // ================================================================
+        // モーフのミラー適用（規約は MorphMirrorPolicy.cs を正典とする）
+        // ================================================================
+
+        /// <summary>
+        /// モーフのミラー適用ポリシー（既定 FollowParent＝親のミラー設定に従う）。
+        /// モーフでない MeshContext では意味を持たない。
+        /// 規約は MorphMirrorPolicy.cs 冒頭のコメントを正典とする。
+        /// </summary>
+        public MorphMirrorPolicy MorphMirrorPolicy { get; set; } = MorphMirrorPolicy.FollowParent;
+
+        /// <summary>
+        /// MorphMirrorPolicy == MirrorOf のときの参照先モーフ MeshContext のマスターインデックス。
+        /// -1 = 未指定。MorphParentIndex と同じく、メッシュリストの増減で再マップされる索引参照。
+        /// </summary>
+        public int MirrorOfMorphIndex { get; set; } = -1;
+
         /// <summary>
         /// モーフに関わるメッシュか。
         /// true のとき法線再計算でUVスロットを増やしてはならない。
@@ -1012,6 +1029,8 @@ namespace Poly_Ling.Data
         {
             MorphBaseData = null;
             MorphParentIndex = -1;
+            MorphMirrorPolicy = MorphMirrorPolicy.FollowParent;
+            MirrorOfMorphIndex = -1;
         }
 
         /// <summary>
@@ -1084,6 +1103,29 @@ namespace Poly_Ling.Data
 
         /// <summary>ミラーが有効か</summary>
         public bool IsMirrored => MirrorType > 0;
+
+        /// <summary>
+        /// 親メッシュの表示ミラー設定をこの MeshContext へ継承する。
+        ///
+        /// モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）。
+        /// ①表示ミラーはミラー側の実体を持たず、元頂点 i をミラー行列で写して描くだけなので、
+        /// モーフ側にも同じ設定を持たせるだけで連動する。オブジェクト数も頂点数も増えない。
+        ///
+        /// 継承するのは表示ミラーの4値のみ。ベイクミラーの関係
+        /// （BakedMirrorSourceIndex / HasBakedMirrorChild / MirrorGeometryDerived）は
+        /// モーフとメッシュで別の関係なので写さない。
+        /// </summary>
+        public void InheritMirrorSettingsFrom(MeshContext parent)
+        {
+            if (parent == null) return;
+
+            MirrorType           = parent.MirrorType;
+            MirrorAxis           = parent.MirrorAxis;
+            MirrorDistance       = parent.MirrorDistance;
+            MirrorMaterialOffset = parent.MirrorMaterialOffset;
+
+            InvalidateSymmetryCache();
+        }
 
         /// <summary>ミラー軸をSymmetryAxisに変換</summary>
         public Poly_Ling.Symmetry.SymmetryAxis GetMirrorSymmetryAxis()

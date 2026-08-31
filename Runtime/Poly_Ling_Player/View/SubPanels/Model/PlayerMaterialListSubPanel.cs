@@ -13,6 +13,7 @@ using Poly_Ling.Tools;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Materials;
 using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
@@ -51,8 +52,24 @@ namespace Poly_Ling.Player
         private Label         _statusLabel;
         private const string  TexPathKey = "Material.TexPath";
 
+        private DropdownField _shaderDropdown;
+        private TextField     _customShaderField;
+
         // ── 状態 ──────────────────────────────────────────────────────────
         private int _editingSlot = -1;   // パラメータ展開中のスロット番号（-1=非表示）
+
+        // シェーダー候補。ビルドに含まれない種別は Shader.Find が null を返すため、
+        // 実際に解決できたものだけを並べる（MaterialDataConverter.GetShader で判定）。
+        private static readonly (ShaderType Type, string Label)[] ShaderChoices =
+        {
+            (ShaderType.URPLit,        "URP / Lit"),
+            (ShaderType.URPSimpleLit,  "URP / Simple Lit"),
+            (ShaderType.URPUnlit,      "URP / Unlit"),
+            (ShaderType.StandardLit,   "Standard (Built-in)"),
+            (ShaderType.StandardUnlit, "Unlit / Texture"),
+            (ShaderType.MToon,         "VRM / MToon10"),
+        };
+        private const string CustomShaderLabel = "Custom（名前指定）";
 
         // ── Build ─────────────────────────────────────────────────────────
         public void Build(VisualElement parent)
@@ -233,7 +250,8 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            var mat = model.GetMaterial(_editingSlot);
+            var mat    = model.GetMaterial(_editingSlot);
+            var matRef = model.GetMaterialReference(_editingSlot);
             _paramSection.style.display = DisplayStyle.Flex;
 
             // ヘッダー
@@ -252,6 +270,10 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // ── シェーダー ──
+            _paramSection.Add(ParamLabel("シェーダー"));
+            _paramSection.Add(MakeShaderRow(matRef, mat));
+
             // ── メインカラー ──
             if (mat.HasProperty("_BaseColor") || mat.HasProperty("_Color"))
             {
@@ -260,7 +282,7 @@ namespace Poly_Ling.Player
                     : mat.GetColor("_Color");
 
                 _paramSection.Add(ParamLabel("メインカラー"));
-                _paramSection.Add(MakeColorRGBARow(mat, current));
+                _paramSection.Add(MakeColorRGBARow(matRef, mat, current));
             }
 
             // ── メインテクスチャ ──
@@ -302,7 +324,7 @@ namespace Poly_Ling.Player
                 texLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
 
                 string capturedProp = propName;
-                var browseBtn = new Button(() => OnBrowseTexture(mat, capturedProp, texLabel, thumb)) { text = "..." };
+                var browseBtn = new Button(() => OnBrowseTexture(matRef, mat, capturedProp, texLabel, thumb)) { text = "..." };
                 browseBtn.style.width = 28;
                 browseBtn.style.marginRight = 2;
 
@@ -322,6 +344,7 @@ namespace Poly_Ling.Player
                 slider.RegisterValueChangedCallback(e =>
                 {
                     mat.SetFloat("_Metallic", e.newValue);
+                    var d = EnsureData(matRef); if (d != null) d.Metallic = e.newValue;
                     labelRef.text = $"Metallic  {e.newValue:F2}";
                     MarkDirty();
                 });
@@ -343,6 +366,7 @@ namespace Poly_Ling.Player
                 slider.RegisterValueChangedCallback(e =>
                 {
                     mat.SetFloat(capturedProp, e.newValue);
+                    var d = EnsureData(matRef); if (d != null) d.Smoothness = e.newValue;
                     labelRef.text = $"Smoothness  {e.newValue:F2}";
                     MarkDirty();
                 });
@@ -356,8 +380,8 @@ namespace Poly_Ling.Player
             surfaceRow.style.flexDirection = FlexDirection.Row;
             surfaceRow.style.marginBottom  = 4;
 
-            var opaqueBtn      = new Button(() => SetSurfaceOpaque(mat))      { text = "Opaque"      };
-            var transparentBtn = new Button(() => SetSurfaceTransparent(mat)) { text = "Transparent" };
+            var opaqueBtn      = new Button(() => OnSurfaceOpaque(matRef, mat))      { text = "Opaque"      };
+            var transparentBtn = new Button(() => OnSurfaceTransparent(matRef, mat)) { text = "Transparent" };
             StyleSurfaceBtn(opaqueBtn,      !isTransparent);
             StyleSurfaceBtn(transparentBtn, isTransparent);
 
@@ -366,8 +390,171 @@ namespace Poly_Ling.Player
             _paramSection.Add(surfaceRow);
         }
 
+        // ── シェーダー選択行 ──────────────────────────────────────────────
+        private VisualElement MakeShaderRow(MaterialReference matRef, Material mat)
+        {
+            var container = new VisualElement();
+            container.style.marginBottom = 4;
+
+            var labels = new List<string>();
+            var types  = new List<ShaderType>();
+            foreach (var choice in ShaderChoices)
+            {
+                // ビルドに含まれないシェーダーは Shader.Find が null を返す。並べない。
+                if (MaterialDataConverter.GetShader(choice.Type) == null) continue;
+                labels.Add(choice.Label);
+                types.Add(choice.Type);
+            }
+            labels.Add(CustomShaderLabel);
+            types.Add(ShaderType.Custom);
+
+            // 表示は実材質の shader から求める。matRef.Data.ShaderType と食い違うのは
+            // 「記録した種別のシェーダーがビルドに無く ToMaterial がフォールバックした」場合で、
+            // ここで Data を書き換えると記録した種別を失う。表示だけ合わせ、Data は触らない。
+            var detected = MaterialDataConverter.DetectShaderType(mat);
+            int sel = types.IndexOf(detected);
+            if (sel < 0) sel = types.Count - 1;   // Unknown → Custom 扱い
+
+            _shaderDropdown = new DropdownField(labels, sel);
+            _shaderDropdown.style.marginBottom = 2;
+            container.Add(_shaderDropdown);
+
+            string shaderName = mat.shader != null ? mat.shader.name : "";
+            _customShaderField = new TextField("シェーダー名") { isDelayed = true, value = shaderName };
+            _customShaderField.style.fontSize = 10;
+            _customShaderField.style.display =
+                (types[sel] == ShaderType.Custom) ? DisplayStyle.Flex : DisplayStyle.None;
+            container.Add(_customShaderField);
+
+            var nowLabel = new Label($"現在: {shaderName}");
+            nowLabel.style.fontSize    = 9;
+            nowLabel.style.marginBottom = 2;
+            container.Add(nowLabel);
+
+            // フィールド(_customShaderField)ではなくローカルを捕捉する。Rebuild でフィールドが
+            // 次の要素に差し替わっても、このコールバックは自分が作った要素を操作する。
+            var capturedTypes  = types;
+            var capturedLabels = labels;
+            var customField    = _customShaderField;
+            _shaderDropdown.RegisterValueChangedCallback(e =>
+            {
+                int i = capturedLabels.IndexOf(e.newValue);
+                if (i < 0) return;
+                var t = capturedTypes[i];
+                if (t == ShaderType.Custom)
+                {
+                    // 名前欄を出すだけ。適用は名前が確定してから。
+                    customField.style.display = DisplayStyle.Flex;
+                    SetStatus("シェーダー名を入力してください");
+                    return;
+                }
+                ApplyShaderType(matRef, mat, t, null);
+            });
+
+            customField.RegisterValueChangedCallback(e =>
+                ApplyShaderType(matRef, mat, ShaderType.Custom, e.newValue));
+
+            // DropdownField / TextField は自前で色を持たないため暗色テーマを掛ける。
+            // 全 TextElement を白にするので、灰色にしたいラベルはこの後で塗り直す。
+            PlayerLayoutRoot.ApplyDarkTheme(container);
+            nowLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+
+            return container;
+        }
+
+        /// <summary>
+        /// マテリアルのシェーダーを差し替える。
+        ///
+        /// キャッシュ材質の shader を直接差し替える。MaterialDataConverter の
+        /// FromMaterial / ToMaterial 経由で作り直さないのは、Player では
+        /// PLEditorBridge が EditorBridgeNull（EditorBridgeNull.cs:21-36）で
+        /// LoadAssetAtPath / GetAssetPath が null を返し、GetTexturePath / SetTexture
+        /// （MaterialDataConverter.cs:765-790）がテクスチャを落とすため。
+        /// InvalidateCache も呼ばない（MaterialReference.cs:239-245：旧材質を解放しない）。
+        /// </summary>
+        private void ApplyShaderType(MaterialReference matRef, Material mat, ShaderType type, string customName)
+        {
+            if (matRef == null || mat == null) return;
+
+            Shader shader = (type == ShaderType.Custom)
+                ? (string.IsNullOrEmpty(customName) ? null : Shader.Find(customName))
+                : MaterialDataConverter.GetShader(type);
+
+            if (shader == null)
+            {
+                SetStatus(type == ShaderType.Custom
+                    ? $"シェーダーが見つかりません: {customName}"
+                    : $"シェーダーが見つかりません: {type}（ビルドに含まれていない）");
+                Refresh();
+                return;
+            }
+
+            // 切替前の状態を Unity オブジェクトのまま退避する（パス経由にしない）。
+            Color   keepColor      = GetMaterialColor(mat);
+            Texture keepTex        = GetMainTexture(mat);
+            bool    wasTransparent = IsTransparent(mat);
+
+            mat.shader = shader;
+
+            SetMaterialColor(mat, keepColor);
+            SetMainTexture(mat, keepTex);
+
+            // 新シェーダーのブレンド状態を確定させる。キーワードと renderQueue だけでは
+            // URP の半透明は成立しない（MaterialDataConverter.ApplySurfaceSettings:504-518）。
+            if (wasTransparent) WriteSurfaceTransparent(mat);
+            else                WriteSurfaceOpaque(mat);
+
+            var d = EnsureData(matRef);
+            if (d != null)
+            {
+                d.ShaderType = type;
+                d.ShaderName = shader.name;
+                d.SetBaseColor(keepColor);
+                SyncSurfaceToData(d, wasTransparent);
+            }
+
+            MarkDirty();
+            NotifyAndRefresh($"シェーダー: {shader.name}");
+        }
+
+        private static Color GetMaterialColor(Material mat)
+        {
+            if (mat.HasProperty("_BaseColor")) return mat.GetColor("_BaseColor");
+            if (mat.HasProperty("_Color"))     return mat.GetColor("_Color");
+            return Color.white;
+        }
+
+        private static Texture GetMainTexture(Material mat)
+        {
+            if (mat.HasProperty("_BaseMap"))
+            {
+                var t = mat.GetTexture("_BaseMap");
+                if (t != null) return t;
+            }
+            if (mat.HasProperty("_MainTex"))
+            {
+                var t = mat.GetTexture("_MainTex");
+                if (t != null) return t;
+            }
+            return null;
+        }
+
+        private static void SetMainTexture(Material mat, Texture tex)
+        {
+            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
+            if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", tex);
+        }
+
+        /// <summary>Data が無ければ作って返す（保存対象は MaterialReference.Data 側）。</summary>
+        private static MaterialData EnsureData(MaterialReference matRef)
+        {
+            if (matRef == null) return null;
+            if (matRef.Data == null) matRef.Data = new MaterialData();
+            return matRef.Data;
+        }
+
         // ── RGBA スライダー行 ─────────────────────────────────────────────
-        private VisualElement MakeColorRGBARow(Material mat, Color initial)
+        private VisualElement MakeColorRGBARow(MaterialReference matRef, Material mat, Color initial)
         {
             var container = new VisualElement();
             container.style.marginBottom = 4;
@@ -431,6 +618,7 @@ namespace Poly_Ling.Player
                         case 3: cur[0].a = e.newValue; break;
                     }
                     SetMaterialColor(mat, cur[0]);
+                    var d = EnsureData(matRef); if (d != null) d.SetBaseColor(cur[0]);
                     preview.style.backgroundColor = new StyleColor(cur[0]);
                     MarkDirty();
                 });
@@ -446,7 +634,7 @@ namespace Poly_Ling.Player
         }
 
         // ── テクスチャブラウズ ────────────────────────────────────────────
-        private void OnBrowseTexture(Material mat, string propName, Label displayLabel, VisualElement preview)
+        private void OnBrowseTexture(MaterialReference matRef, Material mat, string propName, Label displayLabel, VisualElement preview)
         {
             string last = RecentPaths.Get(TexPathKey);
             string path = PlayerIoUiKit.AskLoadPath("テクスチャ選択", last, "png,jpg,jpeg,tga,bmp");
@@ -462,6 +650,18 @@ namespace Poly_Ling.Player
                 {
                     tex.name = Path.GetFileNameWithoutExtension(path);
                     mat.SetTexture(propName, tex);
+
+                    // 外部ファイルから読んだテクスチャ。SourceTexturePath は絶対パス欄で、
+                    // 保存時に CopyTextureFile が textures フォルダへ複製し
+                    // （CsvModelSerializer.cs:1834）、読込時に ApplyTextureFromFolder が
+                    // ファイル名で復元する（同:2051-2052）。
+                    var d = EnsureData(matRef);
+                    if (d != null)
+                    {
+                        d.SourceTexturePath = path;
+                        d.BaseMapPath       = null;   // AssetDatabase パス欄。外部ファイルに差し替えたので無効。
+                    }
+
                     displayLabel.text = tex.name;
                     if (preview != null) preview.style.backgroundImage = new StyleBackground(tex);
                     MarkDirty();
@@ -487,7 +687,8 @@ namespace Poly_Ling.Player
             return false;
         }
 
-        private void SetSurfaceOpaque(Material mat)
+        /// <summary>Opaque を材質へ書く（Data 更新・通知は行わない）。</summary>
+        private static void WriteSurfaceOpaque(Material mat)
         {
             if (mat.HasProperty("_Surface")) mat.SetFloat("_Surface", 0);
             if (mat.HasProperty("_AlphaClip")) mat.SetFloat("_AlphaClip", 0);
@@ -499,11 +700,10 @@ namespace Poly_Ling.Player
             mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
             mat.DisableKeyword("_ALPHABLEND_ON");
             mat.SetOverrideTag("RenderType", "Opaque");
-            MarkDirty();
-            NotifyAndRefresh("Opaque に設定");
         }
 
-        private void SetSurfaceTransparent(Material mat)
+        /// <summary>Transparent を材質へ書く（Data 更新・通知は行わない）。</summary>
+        private static void WriteSurfaceTransparent(Material mat)
         {
             if (mat.HasProperty("_Surface")) mat.SetFloat("_Surface", 1);
             if (mat.HasProperty("_Blend"))   mat.SetFloat("_Blend", 0);
@@ -518,8 +718,37 @@ namespace Poly_Ling.Player
             mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             mat.EnableKeyword("_ALPHABLEND_ON");
             mat.SetOverrideTag("RenderType", "Transparent");
+        }
+
+        private void OnSurfaceOpaque(MaterialReference matRef, Material mat)
+        {
+            if (mat == null) return;
+            WriteSurfaceOpaque(mat);
+            SyncSurfaceToData(EnsureData(matRef), false);
+            MarkDirty();
+            NotifyAndRefresh("Opaque に設定");
+        }
+
+        private void OnSurfaceTransparent(MaterialReference matRef, Material mat)
+        {
+            if (mat == null) return;
+            WriteSurfaceTransparent(mat);
+            SyncSurfaceToData(EnsureData(matRef), true);
             MarkDirty();
             NotifyAndRefresh("Transparent に設定");
+        }
+
+        /// <summary>
+        /// 表面種別を Data 側にも反映する。WriteSurface* が材質へ書いた内容と一致させる。
+        /// AlphaClip は両方とも _AlphaClip=0 を書くので false 固定。
+        /// _Blend は Transparent 側だけが 0（Alpha）を書くので、Opaque では触らない。
+        /// </summary>
+        private static void SyncSurfaceToData(MaterialData d, bool transparent)
+        {
+            if (d == null) return;
+            d.Surface          = transparent ? SurfaceType.Transparent : SurfaceType.Opaque;
+            d.AlphaClipEnabled = false;
+            if (transparent) d.BlendMode = BlendModeType.Alpha;
         }
 
         private static void SetMaterialColor(Material mat, Color color)

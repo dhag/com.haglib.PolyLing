@@ -1,15 +1,6 @@
 font_0001.plgly	Noto Sans JP
 font_0002.plgly	Noto Sans JP Black
 font_0003.plgly	Noto Sans JP DemiLight
-font_0004.plgly	Noto Sans JP ExtraBold
-font_0005.plgly	Noto Sans JP ExtraLight
-font_0006.plgly	Noto Sans JP Light
-font_0007.plgly	Noto Sans JP Medium
-font_0008.plgly	Noto Sans JP SemiBold
-font_0009.plgly	Noto Sans JP Thin
 font_0010.plgly	Noto Serif JP
 font_0011.plgly	Noto Serif JP Black
-font_0012.plgly	Noto Serif JP ExtraLight
-font_0013.plgly	Noto Serif JP Light
-font_0014.plgly	Noto Serif JP Medium
-font_0015.plgly	Noto Serif JP SemiBold
+

@@ -2820,7 +2820,7 @@ namespace Poly_Ling.Player
                             int mirrorParentIdx = baseModel.MeshContextList.IndexOf(pair.Mirror);
                             if (mirrorParentIdx >= 0)
                                 CreateMirrorMorphMeshContextInDispatcher(
-                                    baseModel, pair, mirrorParentIdx,
+                                    baseModel, pair, mirrorParentIdx, newIdx,
                                     baseCtx.MeshObject, morphCtx.MeshObject,
                                     c.MorphName, c.Panel, expression);
                         }
@@ -4747,7 +4747,9 @@ namespace Poly_Ling.Player
 
             var newCtx = new MeshContext
             {
-                Name       = morphName,
+                // モーフ実体の名前はシステムが決める（PMXImporter と同じ「{親名}_{モーフ名}」）。
+                // ユーザーが管理する名前は MorphExpression.Name ひとつだけにする。
+                Name       = $"{baseCtx.Name}_{morphName}",
                 MeshObject = morphObj,
                 IsVisible  = false,
             };
@@ -4755,13 +4757,16 @@ namespace Poly_Ling.Player
             newCtx.MorphBaseData.Panel = panel;
             newCtx.MorphParentIndex   = parentIdx;
 
+            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）
+            newCtx.InheritMirrorSettingsFrom(baseCtx);
+
             int newIdx = baseModel.Add(newCtx);
             expression.AddMesh(newIdx);
             return newIdx;
         }
 
         private static void CreateMirrorMorphMeshContextInDispatcher(
-            ModelContext baseModel, MirrorPair pair, int mirrorParentIdx,
+            ModelContext baseModel, MirrorPair pair, int mirrorParentIdx, int realMorphIdx,
             MeshObject realBaseObj, MeshObject realMorphObj,
             string morphName, int panel, MorphExpression expression)
         {
@@ -4783,13 +4788,27 @@ namespace Poly_Ling.Player
 
             var newCtx = new MeshContext
             {
-                Name       = morphName,
+                // モーフ実体の名前はシステムが決める（「{親名}_{モーフ名}」）。
+                // ミラー側は親名が違うので、Real 側モーフと自然に別名になる。
+                Name       = $"{mirrorBaseCtx.Name}_{morphName}",
                 MeshObject = morphObj,
                 IsVisible  = false,
             };
             newCtx.SetAsMorph(morphName, mirrorBaseCtx.MeshObject);
             newCtx.MorphBaseData.Panel = panel;
             newCtx.MorphParentIndex   = mirrorParentIdx;
+
+            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）
+            newCtx.InheritMirrorSettingsFrom(mirrorBaseCtx);
+
+            // 親が生成ミラー（実体側から作られた形状）なら、モーフ側にも同じ連結を張る。
+            // これで既存の MirrorBranchOps.RebakeDerivedMirrorVertices が
+            // Real 側モーフ → Mirror 側モーフ の追随を担当できる。
+            if (mirrorBaseCtx.MirrorGeometryDerived && realMorphIdx >= 0)
+            {
+                newCtx.MirrorGeometryDerived  = true;
+                newCtx.BakedMirrorSourceIndex = realMorphIdx;
+            }
 
             int newIdx = baseModel.Add(newCtx);
             expression.AddMesh(newIdx);
@@ -5342,6 +5361,10 @@ namespace Poly_Ling.Player
             // v_M = S·v_R を保つ（実効ワールド S·H·S の前提）。
             MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
 
+            // ②派生ミラー実体のミラー側モーフも Real 側から作り直す
+            // （規約は MorphMirrorPolicy.cs を正典とする）。
+            model.SyncAllMirrorMorphs();
+
             // 書き換えたローカル頂点を描画側へ送る。
             //
             // ここを省くと、GPU には新しいワールド行列だけが届き、頂点位置は
@@ -5621,6 +5644,10 @@ namespace Poly_Ling.Player
             // 実体側のローカル頂点が変わったので、生成ミラーを作り直して
             // v_M = S·v_R を保つ（実効ワールド S·H·S の前提）。
             MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
+
+            // ②派生ミラー実体のミラー側モーフも Real 側から作り直す
+            // （規約は MorphMirrorPolicy.cs を正典とする）。
+            model.SyncAllMirrorMorphs();
 
             // ── 変更後スナップショット ───────────────────────────────
             var after = new Dictionary<int, ObjectPoseSnapshot>();

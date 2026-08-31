@@ -458,6 +458,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine($"morphParentIndex,{mc.MorphParentIndex}");
             }
 
+            // モーフのミラー適用（規約は MorphMirrorPolicy.cs を正典とする）。
+            // 既定値のときは行を書かない＝旧ファイルと同じ出力になる。
+            if (mc.MorphMirrorPolicy != MorphMirrorPolicy.FollowParent || mc.MirrorOfMorphIndex >= 0)
+            {
+                sb.AppendLine($"morphMirror,{(int)mc.MorphMirrorPolicy},{mc.MirrorOfMorphIndex}");
+            }
+
             if (mc.MorphBaseData != null && mc.MorphBaseData.IsValid)
             {
                 var mbd = mc.MorphBaseData;
@@ -904,6 +911,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "morphParentIndex":
                         mc.MorphParentIndex = ParseInt(cols, 1, -1);
+                        break;
+                    case "morphMirror":
+                        // morphMirror,policy,mirrorOfMorphIndex
+                        // 行が無い旧ファイルは FollowParent / -1 のまま。
+                        mc.MorphMirrorPolicy  = (MorphMirrorPolicy)ParseInt(cols, 1, 0);
+                        mc.MirrorOfMorphIndex = ParseInt(cols, 2, -1);
                         break;
                     case "morphName":
                         morphName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";

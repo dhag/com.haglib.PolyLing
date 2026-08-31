@@ -921,6 +921,22 @@ namespace Poly_Ling.Context
         /// <summary>スプリングボーン・コライダーグループ名リスト（index＝並び順）。</summary>
         public List<string> SpringBoneColliderGroupNames { get; set; } = new List<string>();
 
+        // ================================================================
+        // スプリングボーン・評価設定（モデルレベル）
+        //   揺れ評価のマネージャ単位パラメータ。VRM 仕様外の実装依存値だが、
+        //   モデルごとに揺れの見た目が変わるためモデルに帰属させる。
+        // ================================================================
+
+        /// <summary>
+        /// 揺れ評価の固定タイムステップ[秒]。0=実時間（フレーム時間）を使用する。
+        /// </summary>
+        public float SpringBoneFixedDeltaTime { get; set; } = 0f;
+
+        /// <summary>
+        /// 揺れ評価開始直後に状態を安定化させるフレーム数。
+        /// </summary>
+        public int SpringBoneWarmupFrames { get; set; } = 3;
+
         /// <summary>
         /// 指定MeshContextが属するMirrorPairを取得（実体側・ミラー側どちらでも検索）
         /// </summary>
@@ -956,6 +972,13 @@ namespace Poly_Ling.Context
                         return true;
                 }
             }
+
+            // ミラー側モーフ。Real 側から自動同期される派生物なので、
+            // メッシュのミラー側と同じく編集不可側として扱う
+            // （規約は MorphMirrorPolicy.cs を正典とする）。
+            // 親はモーフではないため IsMirrorSideMorph 側で再帰は止まる。
+            if (IsMirrorSideMorph(meshContext)) return true;
+
             return false;
         }
 
@@ -983,6 +1006,78 @@ namespace Poly_Ling.Context
             {
                 MirrorPairs[i].SyncPositions();
             }
+        }
+
+        /// <summary>
+        /// 指定モーフがミラー側（＝親がミラー側）のモーフかどうか。
+        ///
+        /// ミラー側モーフは Real 側から自動同期される派生物なので、
+        /// 編集対象・選択対象として扱ってはならない
+        /// （規約は MorphMirrorPolicy.cs を正典とする）。
+        /// </summary>
+        public bool IsMirrorSideMorph(MeshContext morphCtx)
+        {
+            if (morphCtx == null || !morphCtx.IsMorph) return false;
+
+            int parentIdx = morphCtx.MorphParentIndex;
+            if (parentIdx < 0 || parentIdx >= Count) return false;
+
+            return IsMirrorSide(GetMeshContext(parentIdx));
+        }
+
+        /// <summary>
+        /// Real 側モーフの編集結果を、対応するミラー側モーフへ反映する（Real→Mirror）。
+        ///
+        /// ②派生ミラー実体ではミラー側モーフが独立した MeshContext として実在するため、
+        /// Real 側を編集しただけでは追随しない。本メソッドが左右対応
+        /// （MirrorPair.VertexMap）を使ってミラー側を作り直す。
+        /// 規約は MorphMirrorPolicy.cs を正典とする。
+        ///
+        /// 【対象外】
+        ///   MorphMirrorPolicy.NoMirror … 片側だけに効くモーフなので同期しない。
+        ///   MorphMirrorPolicy.MirrorOf … 鏡像として導出する形式。導出は別途行う。
+        ///   MirrorPair を持たない親  … FindMirrorMorph が相手を引けないため対象外。
+        ///                               生成ミラー(MirrorGeometryDerived)はこの経路に乗らない。
+        /// </summary>
+        /// <returns>同期したミラー側モーフの数</returns>
+        public int SyncAllMirrorMorphs()
+        {
+            if (MirrorPairs == null || MirrorPairs.Count == 0) return 0;
+
+            int synced = 0;
+
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var realMorph = MeshContextList[i];
+                if (realMorph == null || !realMorph.IsMorph) continue;
+                if (realMorph.MeshObject == null) continue;
+
+                // 派生物側からは同期しない（Real→Mirror の一方向）
+                if (IsMirrorSideMorph(realMorph)) continue;
+
+                // ポリシー上ミラーへ写さないものは触らない
+                if (realMorph.MorphMirrorPolicy != MorphMirrorPolicy.FollowParent) continue;
+
+                int parentIdx = realMorph.MorphParentIndex;
+                if (parentIdx < 0 || parentIdx >= Count) continue;
+
+                var pair = GetMirrorPair(GetMeshContext(parentIdx));
+                if (pair == null || !pair.IsValid) continue;
+
+                var mirrorMorph = FindMirrorMorph(realMorph);
+                if (mirrorMorph?.MeshObject == null || mirrorMorph.MorphBaseData == null) continue;
+
+                pair.SyncMorphSymmetric(
+                    realMorph.MorphBaseData, mirrorMorph.MorphBaseData,
+                    realMorph.MeshObject, mirrorMorph.MeshObject);
+
+                mirrorMorph.MeshObject.InvalidatePositionCache();
+                mirrorMorph.ApplyVertexPositionsToMesh();
+
+                synced++;
+            }
+
+            return synced;
         }
 
         /// <summary>
@@ -1279,6 +1374,9 @@ namespace Poly_Ling.Context
                 if (mc.HierarchyParentIndex >= 0) mc.HierarchyParentIndex = Map(mc.HierarchyParentIndex);
                 if (mc.MorphParentIndex     >= 0) mc.MorphParentIndex     = Map(mc.MorphParentIndex);
 
+                // MirrorOf モーフの参照先。切れると鏡像モーフが導出できなくなるので付け替える。
+                if (mc.MirrorOfMorphIndex   >= 0) mc.MirrorOfMorphIndex   = Map(mc.MirrorOfMorphIndex);
+
                 // 左右対のボーン索引。スキンド変換が確定させた値なので、
                 // 索引が動いたら必ず付け替える（切らない）。
                 if (mc.MirrorBoneIndex      >= 0) mc.MirrorBoneIndex      = Map(mc.MirrorBoneIndex);
@@ -1524,6 +1622,9 @@ namespace Poly_Ling.Context
 
             MeshContextList.Clear();
             MirrorPairs.Clear();
+            SpringBoneColliderGroupNames.Clear();
+            SpringBoneFixedDeltaTime = 0f;
+            SpringBoneWarmupFrames = 3;
             ClearAllCategorySelection();
             InvalidateTypedIndices();
             IsDirty = true;

@@ -368,6 +368,7 @@ namespace Poly_Ling.Diagnostics
                 CheckOneIndex(list, "HierarchyParentIndex", i, mc.Name, mc.HierarchyParentIndex, n);
                 CheckOneIndex(list, "ParentIndex",          i, mc.Name, mc.ParentIndex,          n);
                 CheckOneIndex(list, "MorphParentIndex",     i, mc.Name, mc.MorphParentIndex,     n);
+                CheckOneIndex(list, "MirrorOfMorphIndex",   i, mc.Name, mc.MirrorOfMorphIndex,   n);
                 CheckOneIndex(list, "BakedMirrorSourceIndex", i, mc.Name, mc.BakedMirrorSourceIndex, n);
                 CheckOneIndex(list, "MirrorBoneIndex",      i, mc.Name, mc.MirrorBoneIndex,      n);
 

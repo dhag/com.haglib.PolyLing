@@ -4225,6 +4225,7 @@ namespace Poly_Ling.Player
             _exportSubPanel.OnExportPmx = OnExportPmx;
             _exportSubPanel.OnExportMqo = OnExportMqo;
             _exportSubPanel.OnExportObj = OnExportObj;
+            _exportSubPanel.OnExportVrm = OnExportVrm;
             AttachPanelSelectToggle(_layoutRoot.ExportSection, PanelSelectKeyExport);
 
             _projectSaveSubPanel = new PlayerProjectFileSubPanel
@@ -4449,6 +4450,7 @@ namespace Poly_Ling.Player
                 _layoutRoot.CaptureBtn.clicked      += ShowCapturePanel;
             _layoutRoot.FullExportPmxBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.PMX);
             _layoutRoot.FullExportMqoBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.MQO);
+            _layoutRoot.FullExportVrmBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.VRM);
             _layoutRoot.ProjectSaveBtn.clicked     += ShowProjectSavePanel;
             _layoutRoot.ProjectLoadBtn.clicked     += ShowProjectLoadPanel;
             if (_layoutRoot.ObjLoadBtn != null)
@@ -6190,6 +6192,7 @@ namespace Poly_Ling.Player
             {
                 case PlayerExportSubPanel.Mode.PMX: btn = _layoutRoot?.FullExportPmxBtn; break;
                 case PlayerExportSubPanel.Mode.OBJ: btn = _layoutRoot?.ObjSaveBtn;       break;
+                case PlayerExportSubPanel.Mode.VRM: btn = _layoutRoot?.FullExportVrmBtn; break;
                 default:                            btn = _layoutRoot?.FullExportMqoBtn; break;
             }
             ShowRightPanelSelectable(_layoutRoot?.ExportSection, btn, PanelSelectKeyExport);
@@ -7747,6 +7750,28 @@ namespace Poly_Ling.Player
                         ? ""
                         : $" + {System.IO.Path.GetFileName(result.MtlPath)}";
                     _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}{mtl}");
+                }
+                else
+                    _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+            }
+            catch (Exception ex) { _exportSubPanel?.SetStatus($"例外: {ex.Message}"); }
+        }
+
+        private void OnExportVrm(string outputPath, Poly_Ling.Vrm.Vrm10ExportSettings settings)
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return; }
+            try
+            {
+                var result = Poly_Ling.Vrm.PLVrm10Bridge.I.Export(model, outputPath, settings);
+                if (result.Success)
+                {
+                    string msg = $"完了: {System.IO.Path.GetFileName(outputPath)} " +
+                                 $"({result.MeshCount}メッシュ / {result.VertexCount}頂点 / " +
+                                 $"Humanoid {result.HumanoidBoneCount}ボーン)";
+                    if (!string.IsNullOrEmpty(result.Warning))
+                        msg += "\n警告: " + result.Warning;
+                    _exportSubPanel?.SetStatus(msg);
                 }
                 else
                     _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
