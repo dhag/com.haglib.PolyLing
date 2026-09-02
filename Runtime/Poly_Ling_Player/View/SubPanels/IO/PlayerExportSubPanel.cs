@@ -346,15 +346,41 @@ namespace Poly_Ling.Player
             parent.Add(Separator());
             parent.Add(SectionLabel("出力対象"));
             parent.Add(FloatRow("Scale", () => _vrmSettings.Scale, v => _vrmSettings.Scale = v));
-            parent.Add(ToggleRow("UV",         () => _vrmSettings.ExportUVs,      v => _vrmSettings.ExportUVs      = v));
-            parent.Add(ToggleRow("法線",       () => _vrmSettings.ExportNormals,  v => _vrmSettings.ExportNormals  = v));
+            // UV・法線のトグルは置かない。VRM 出力は常に両方を含む。
+            //   UniVRM の ModelExporter.CreateMesh が法線・UV を常に載せるうえ、
+            //   MeshWriter.ExportMeshDivided は VertexBuffer.Normals / TexCoords を
+            //   null チェックせずに読むため、外すと出力が落ちる。
+            //   切れないものをトグルで見せると「切ったのに出る」ことになるので出さない。
             parent.Add(ToggleRow("スキニング", () => _vrmSettings.ExportSkinning, v => _vrmSettings.ExportSkinning = v));
             parent.Add(ToggleRow("非表示メッシュも出力",
                 () => _vrmSettings.ExportInvisibleObjects,
                 v => _vrmSettings.ExportInvisibleObjects = v));
 
+            // 必須関節が欠けると VRM ビューアは読み込みを拒否する。
+            // 上半身だけ・片側だけのモデルを確認したいときに使う。
+            parent.Add(ToggleRow("不足関節を補完",
+                () => _vrmSettings.SupplementHumanoid,
+                v => _vrmSettings.SupplementHumanoid = v));
+
             parent.Add(Separator());
-            var note = new Label("テクスチャ・モーフ・スプリングボーン・表情は未対応です。");
+            parent.Add(SectionLabel("モーフ・表情・揺れ"));
+            parent.Add(ToggleRow("モーフ（ブレンドシェイプ）",
+                () => _vrmSettings.ExportMorphTargets,
+                v => _vrmSettings.ExportMorphTargets = v));
+            parent.Add(ToggleRow("表情（モーフエクスプレッション）",
+                () => _vrmSettings.ExportExpressions,
+                v => _vrmSettings.ExportExpressions = v));
+            parent.Add(ToggleRow("表情名をプリセットへ割当",
+                () => _vrmSettings.MapExpressionPresets,
+                v => _vrmSettings.MapExpressionPresets = v));
+            parent.Add(ToggleRow("スプリングボーン",
+                () => _vrmSettings.ExportSpringBones,
+                v => _vrmSettings.ExportSpringBones = v));
+
+            parent.Add(Separator());
+            var note = new Label(
+                "表情はモーフの出力が前提です（モーフを切ると表情も出ません）。\n"
+                + "テクスチャ・視線（LookAt）・一人称設定は未対応です。");
             note.style.whiteSpace = WhiteSpace.Normal;
             note.style.fontSize   = 10;
             note.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));

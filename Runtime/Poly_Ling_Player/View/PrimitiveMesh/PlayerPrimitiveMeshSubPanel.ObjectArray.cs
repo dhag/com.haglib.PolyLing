@@ -6,7 +6,7 @@
 // それぞれが自分の PlayerObjectArraySubPanel を1つ持ち、状態は共有しない。
 //
 // 【生成経路】他の図形と違い、1つの MeshObject を返さない。
-//   モデルへ複数オブジェクトを挿入するため OnMeshCreated は通らず、
+//   モデルへ複数オブジェクトを挿入するため図形生成コマンドは通らず、
 //   OnObjectArrayGenerate（Viewer 側の ExecuteObjectArray）へ流す。
 //   3Dプレビュー / ライブワイヤは出ない（Generate() が null を返す）。
 //

@@ -84,6 +84,16 @@ namespace Poly_Ling.Player
         public Action OnRequestNormal;
         public Action OnClearMouseHover;
 
+        /// <summary>
+        /// 辺／面／線分の選択を、構成頂点の頂点選択へ展開する種別を返す
+        /// （Viewer の左ペイン「選んだ要素の頂点も選択する」チェックボックス）。
+        ///
+        /// 返す MeshSelectMode は「どの種別を頂点へ展開するか」の集合であり、
+        /// 選択モード（何を選べるか）とは別物。Edge / Face / Line の 3 ビットだけを見る。
+        /// 未結線のときは 3 種すべて展開する（従来の挙動）。
+        /// </summary>
+        public Func<MeshSelectMode> GetExpandToVertexKinds;
+
         // ================================================================
         // ツール流用フック (EdgeBevel / FlipFace / FaceExtrude / Solidify 等)
         // 未設定 (null) なら MoveToolHandler は純粋な移動モードとして動作。
@@ -1564,11 +1574,28 @@ namespace Poly_Ling.Player
         /// 辺／面／線分の選択を、対応する頂点選択へ展開する。
         /// 選択メッシュごとに自分の MeshObject を参照する
         /// （面インデックスはメッシュ内ローカル番号のため）。
+        ///
+        /// 展開する種別は <see cref="GetExpandToVertexKinds"/> が返す集合で決まる
+        /// （左ペインの「選んだ要素の頂点も選択する」チェックボックス）。
+        /// 未結線のときは 3 種すべて展開する（従来の挙動）。
+        ///
+        /// 【OFF にしたときに既存の頂点選択を消さない理由】
+        /// SelectionState.Vertices は「展開で入った頂点」と「利用者が直接選んだ頂点」を
+        /// 区別しない。切替時に一括で消すと、意図して選んだ頂点まで失われる。
+        /// よって切替以降のクリック／矩形／投げ縄選択から展開が止まるだけにする。
         /// </summary>
         private void ExpandLinkedVertices()
         {
             var model = _project?.CurrentModel;
             if (model == null) return;
+
+            var kinds = GetExpandToVertexKinds?.Invoke()
+                        ?? (MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line);
+
+            bool expandEdge = kinds.Has(MeshSelectMode.Edge);
+            bool expandFace = kinds.Has(MeshSelectMode.Face);
+            bool expandLine = kinds.Has(MeshSelectMode.Line);
+            if (!expandEdge && !expandFace && !expandLine) return;
 
             foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
             {
@@ -1577,26 +1604,35 @@ namespace Poly_Ling.Player
                 var sel = mc?.Selection;
                 if (meshObject == null || sel == null) continue;
 
-                foreach (var edge in sel.Edges)
+                if (expandEdge)
                 {
-                    sel.Vertices.Add(edge.V1);
-                    sel.Vertices.Add(edge.V2);
-                }
-                foreach (var faceIdx in sel.Faces)
-                {
-                    if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
-                        foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
-                            sel.Vertices.Add(vIdx);
-                }
-                foreach (var lineIdx in sel.Lines)
-                {
-                    if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
+                    foreach (var edge in sel.Edges)
                     {
-                        var face = meshObject.Faces[lineIdx];
-                        if (face.VertexCount == 2)
+                        sel.Vertices.Add(edge.V1);
+                        sel.Vertices.Add(edge.V2);
+                    }
+                }
+                if (expandFace)
+                {
+                    foreach (var faceIdx in sel.Faces)
+                    {
+                        if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
+                            foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
+                                sel.Vertices.Add(vIdx);
+                    }
+                }
+                if (expandLine)
+                {
+                    foreach (var lineIdx in sel.Lines)
+                    {
+                        if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
                         {
-                            sel.Vertices.Add(face.VertexIndices[0]);
-                            sel.Vertices.Add(face.VertexIndices[1]);
+                            var face = meshObject.Faces[lineIdx];
+                            if (face.VertexCount == 2)
+                            {
+                                sel.Vertices.Add(face.VertexIndices[0]);
+                                sel.Vertices.Add(face.VertexIndices[1]);
+                            }
                         }
                     }
                 }

@@ -16,14 +16,38 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct SphereParams : IEquatable<SphereParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>半径の下限・上限</summary>
+            public const float RadiusMin = 0.05f;
+            public const float RadiusMax = 5f;
+
+            /// <summary>経線・緯線の分割数の下限・上限</summary>
+            public const int SegmentsMin = 4;
+            public const int SegmentsMax = 64;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
+            [PLParam(TextKey = "Radius", Description = "半径", Min = RadiusMin, Max = RadiusMax)]
             public float Radius;
+            [PLParam(TextKey = "Radial", Description = "経線方向の分割数", Min = SegmentsMin, Max = SegmentsMax,
+                     Step = 1)]
             public int LongitudeSegments;
+            [PLParam(TextKey = "Lateral", Description = "緯線方向の分割数", Min = SegmentsMin, Max = SegmentsMax,
+                     Step = 1)]
             public int LatitudeSegments;
+            [PLParam(TextKey = "Subdivisions", Description = "キューブスフィアのときの1面あたりの分割数", Step = 1)]
             public int CubeSubdivisions;
+            [PLParam(TextKey = "CubeSphere", Description = "立方体を膨らませた球にする")]
             public bool CubeSphere;
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
-            public float RotationX, RotationY;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationX;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationY;
 
             public static SphereParams Default => new SphereParams
             {

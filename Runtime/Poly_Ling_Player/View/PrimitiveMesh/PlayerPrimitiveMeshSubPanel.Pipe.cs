@@ -10,6 +10,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Pipe;
 using static Poly_Ling.Player.PrimitiveMeshTexts;
+using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.Player
 {
@@ -114,20 +115,20 @@ namespace Poly_Ling.Player
 
             // ── 厚み付け ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(SR(T("Thickness"), 0f, 0.5f, () => _pipeP.Thickness,
+            c.Add(SR(T("Thickness"), PipeParams.ThicknessMin, PipeParams.ThicknessMax, () => _pipeP.Thickness,
                 v => { _pipeP.Thickness = v; D(); RefreshPipeSolidVis(); }));
 
             // 角処理(ベベル)UI は常時生成し、厚み/分割数に応じて表示切替する。
             var pipeSolid = new SolidifyUI
             {
                 EdgeLabel = SL(T("EdgeSettings")),
-                FrontSeg  = IR(T("FrontSegments"), 0, 16, () => _pipeP.SegmentsFront,
+                FrontSeg  = IR(T("FrontSegments"), PipeParams.EdgeSegmentsMin, PipeParams.EdgeSegmentsMax, () => _pipeP.SegmentsFront,
                                v => { _pipeP.SegmentsFront = v; D(); RefreshPipeSolidVis(); }),
-                FrontSize = SR(T("EdgeSize"), 0.001f, 0.25f, () => _pipeP.EdgeSizeFront,
+                FrontSize = SR(T("EdgeSize"), PipeParams.EdgeSizeMin, PipeParams.EdgeSizeMax, () => _pipeP.EdgeSizeFront,
                                v => { _pipeP.EdgeSizeFront = v; D(); }),
-                BackSeg   = IR(T("BackSegments"), 0, 16, () => _pipeP.SegmentsBack,
+                BackSeg   = IR(T("BackSegments"), PipeParams.EdgeSegmentsMin, PipeParams.EdgeSegmentsMax, () => _pipeP.SegmentsBack,
                                v => { _pipeP.SegmentsBack = v; D(); RefreshPipeSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), 0.001f, 0.25f, () => _pipeP.EdgeSizeBack,
+                BackSize  = SR(T("EdgeSize"), PipeParams.EdgeSizeMin, PipeParams.EdgeSizeMax, () => _pipeP.EdgeSizeBack,
                                v => { _pipeP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _pipeP.EdgeInward,
                                v => { _pipeP.EdgeInward = v; D(); }),
@@ -141,7 +142,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _pipeP.Pivot, v => { _pipeP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
             BuildBeltProfileEditor(_profileEditorContainer, _pipeEdit, T("PipeAxisHint"));
@@ -183,7 +184,7 @@ namespace Poly_Ling.Player
                     _pipeP.Thickness, _pipeP.SegmentsFront, _pipeP.SegmentsBack,
                     _pipeP.EdgeSizeFront, _pipeP.EdgeSizeBack, _pipeP.EdgeInward,
                     _pipeP.MeshName);
-                AppendMesh(mo, part);
+                Poly_Ling.Ops.MeshObjectAppendOps.Append(mo, part);
             }
             if (_pipeP.FlipFaces)
                 Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.FlipFaces(mo);

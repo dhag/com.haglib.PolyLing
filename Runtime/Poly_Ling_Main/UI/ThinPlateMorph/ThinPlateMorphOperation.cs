@@ -45,6 +45,33 @@ namespace Poly_Ling.UI
         /// <summary>既定の平滑化係数。</summary>
         public const float DefaultLambda = PLThinPlateSpline3D.DefaultLambda;
 
+        // ----------------------------------------------------------------
+        // 局所モード（ターゲット頂点ごとに独立に係数を求める）
+        // ----------------------------------------------------------------
+
+        /// <summary>局所モードの既定近傍数。</summary>
+        public const int LocalDefaultNeighborCount = 24;
+
+        /// <summary>
+        /// 局所モードの制御点数の上限。1 頂点あたり (N+4)^3/3 の積和が要るため、
+        /// 全域モードの MaxControlPointCount をそのまま使うと現実的な時間で終わらない。
+        /// ターゲット 10,000 頂点での総積和は N=24 で約 1.1e8、N=256 で約 5.9e10。
+        /// </summary>
+        public const int LocalMaxControlPointCount = 256;
+
+        /// <summary>
+        /// 局所モードの既定平滑化係数。
+        ///
+        /// カーネルは U = r^2 * log(r^2) で、λ は K 行列の対角に加算される。
+        /// 全域モードの典型的な制御点間距離 r = 0.5 では |U| = 0.347 なので
+        /// λ = 0.001 の寄与は 0.3% にとどまるが、局所モードで近傍が縮むと
+        /// |U| も縮むため同じ λ では平滑化が支配的になる
+        /// （r = 0.01 で |U| = 9.2e-4、λ = 0.001 と同オーダー）。
+        /// λ = 1e-5 は r = 0.02 付近で全域モードと同等の効き（0.003）になる。
+        /// 近傍の大きさに応じた自動調整は行わないため、必要なら手で変える。
+        /// </summary>
+        public const float LocalDefaultLambda = 1.0e-5f;
+
         // ================================================================
         // 制御点
         // ================================================================
@@ -253,6 +280,185 @@ namespace Poly_Ling.UI
                 result[i] = toLocal.MultiplyPoint3x4(warped);
             }
             return result;
+        }
+
+        // ================================================================
+        // 局所モードの入力組み立て（メインスレッド）
+        // ================================================================
+
+        /// <summary>
+        /// 局所 TPS の入力を組み立てる。MeshContext に触れるためメインスレッドで呼ぶこと。
+        /// 出来上がった LocalMorphInput は配列だけで構成され、
+        /// LocalThinPlateMorphSolver.Solve へそのままワーカースレッドへ渡せる。
+        ///
+        /// ビフォー位置の重複除去はここでは行わない。誘導部分グラフのノードが
+        /// 消えて経路が切れるため、除去は係数を解く直前に近傍単位で行う
+        /// （LocalThinPlateMorphSolver 冒頭のコメントを参照）。
+        /// </summary>
+        /// <returns>失敗時は null を返し error に理由を入れる。</returns>
+        public static LocalMorphInput BuildLocalInput(
+            ModelContext model,
+            int beforeIndex, int afterIndex, int targetIndex,
+            bool selectedControlPointsOnly,
+            out string error)
+        {
+            error = null;
+
+            if (model == null) { error = "モデルがありません"; return null; }
+
+            var beforeCtx = model.GetMeshContext(beforeIndex);
+            var afterCtx  = model.GetMeshContext(afterIndex);
+            var targetCtx = model.GetMeshContext(targetIndex);
+
+            if (beforeCtx?.MeshObject == null) { error = "ビフォーオブジェクトが不正です"; return null; }
+            if (afterCtx?.MeshObject  == null) { error = "アフターオブジェクトが不正です"; return null; }
+            if (targetCtx?.MeshObject == null) { error = "ターゲットオブジェクトが不正です"; return null; }
+            if (beforeIndex == afterIndex)     { error = "ビフォーとアフターが同一です"; return null; }
+            if (targetIndex == beforeIndex || targetIndex == afterIndex)
+            {
+                error = "ターゲットはビフォー／アフターと別のオブジェクトにしてください";
+                return null;
+            }
+
+            var beforeMo = beforeCtx.MeshObject;
+            var afterMo  = afterCtx.MeshObject;
+            var targetMo = targetCtx.MeshObject;
+
+            if (beforeMo.VertexCount != afterMo.VertexCount)
+            {
+                error = $"頂点数が一致しません（ビフォー {beforeMo.VertexCount} / アフター {afterMo.VertexCount}）";
+                return null;
+            }
+
+            var indices = BuildControlIndices(beforeCtx, afterCtx, selectedControlPointsOnly);
+            if (indices.Count == 0)
+            {
+                error = selectedControlPointsOnly ? "選択頂点がありません" : "制御点がありません";
+                return null;
+            }
+
+            int targetCount = targetMo.VertexCount;
+            if (targetCount == 0) { error = "ターゲットに頂点がありません"; return null; }
+
+            Matrix4x4 beforeToWorld = beforeCtx.WorldMatrix;
+            Matrix4x4 afterToWorld  = afterCtx.WorldMatrix;
+            Matrix4x4 targetToWorld = targetCtx.WorldMatrix;
+
+            int candidateCount = indices.Count;
+            var beforeWorld = new Vector3[candidateCount];
+            var afterWorld  = new Vector3[candidateCount];
+            for (int k = 0; k < candidateCount; k++)
+            {
+                int vi = indices[k];
+                beforeWorld[k] = beforeToWorld.MultiplyPoint3x4(beforeMo.Vertices[vi].Position);
+                afterWorld[k]  = afterToWorld.MultiplyPoint3x4(afterMo.Vertices[vi].Position);
+            }
+
+            BuildInducedAdjacency(beforeMo, indices, out int[] adjStart, out int[] adjList);
+
+            var targetWorld = new Vector3[targetCount];
+            for (int i = 0; i < targetCount; i++)
+            {
+                targetWorld[i] = targetToWorld.MultiplyPoint3x4(targetMo.Vertices[i].Position);
+            }
+
+            return new LocalMorphInput
+            {
+                BeforeWorld    = beforeWorld,
+                AfterWorld     = afterWorld,
+                AdjacencyStart = adjStart,
+                AdjacencyList  = adjList,
+                TargetWorld    = targetWorld,
+                TargetToLocal  = targetToWorld.inverse,
+            };
+        }
+
+        /// <summary>
+        /// 候補頂点だけを残した誘導部分グラフを CSR 形式で作る。
+        /// 両端が候補である辺だけを残すため、選択が飛び地なら分断される。
+        /// 辺が 1 本も無い場合（ビフォーに面が無い場合を含む）は両方 null を返す。
+        /// </summary>
+        public static void BuildInducedAdjacency(
+            MeshObject beforeMesh, List<int> candidateIndices,
+            out int[] adjacencyStart, out int[] adjacencyList)
+        {
+            adjacencyStart = null;
+            adjacencyList  = null;
+
+            if (beforeMesh == null || candidateIndices == null) return;
+            if (beforeMesh.FaceCount == 0) return;
+
+            int vertexCount    = beforeMesh.VertexCount;
+            int candidateCount = candidateIndices.Count;
+            if (candidateCount == 0) return;
+
+            // 元頂点索引 → 候補内の局所索引
+            var localOf = new int[vertexCount];
+            for (int i = 0; i < vertexCount; i++) localOf[i] = -1;
+            for (int k = 0; k < candidateCount; k++)
+            {
+                int vi = candidateIndices[k];
+                if (vi >= 0 && vi < vertexCount) localOf[vi] = k;
+            }
+
+            var adjacency = SelectionHelper.BuildVertexAdjacency(beforeMesh);
+
+            // 次数を数える
+            var start = new int[candidateCount + 1];
+            int edgeCount = 0;
+            for (int k = 0; k < candidateCount; k++)
+            {
+                int vi = candidateIndices[k];
+                if (vi < 0 || vi >= vertexCount) continue;
+                if (!adjacency.TryGetValue(vi, out var neighbors)) continue;
+
+                int degree = 0;
+                foreach (int nb in neighbors)
+                {
+                    if (nb < 0 || nb >= vertexCount) continue;
+                    if (localOf[nb] < 0) continue;
+                    degree++;
+                }
+                start[k + 1] = degree;
+                edgeCount   += degree;
+            }
+
+            if (edgeCount == 0) return;
+
+            for (int k = 0; k < candidateCount; k++) start[k + 1] += start[k];
+
+            var list   = new int[edgeCount];
+            var cursor = new int[candidateCount];
+            for (int k = 0; k < candidateCount; k++)
+            {
+                int vi = candidateIndices[k];
+                if (vi < 0 || vi >= vertexCount) continue;
+                if (!adjacency.TryGetValue(vi, out var neighbors)) continue;
+
+                foreach (int nb in neighbors)
+                {
+                    if (nb < 0 || nb >= vertexCount) continue;
+                    int local = localOf[nb];
+                    if (local < 0) continue;
+                    list[start[k] + cursor[k]] = local;
+                    cursor[k]++;
+                }
+            }
+
+            adjacencyStart = start;
+            adjacencyList  = list;
+        }
+
+        /// <summary>
+        /// 局所モードの LU 分解にかかる積和回数の見積り。
+        /// ターゲット頂点数 × (制御点数 + 4)^3 / 3。
+        /// 半径モードは制御点数が入力依存なので、この見積りは使えない。
+        /// </summary>
+        public static double EstimateLocalSolveCost(int targetVertexCount, int controlPointCount)
+        {
+            if (targetVertexCount <= 0 || controlPointCount <= 0) return 0.0;
+            double size = controlPointCount + 4.0;
+            return targetVertexCount * (size * size * size) / 3.0;
         }
 
         // ================================================================

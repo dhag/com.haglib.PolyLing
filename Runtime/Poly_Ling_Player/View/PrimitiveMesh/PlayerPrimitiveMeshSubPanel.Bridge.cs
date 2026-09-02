@@ -5,7 +5,7 @@
 // 面を張って橋渡しする。関節に柔らかい面を張ってからウェイトを塗る用途を想定。
 //
 // 【生成経路】他の図形と違い、生成物は追加先メッシュの既存頂点を参照する。
-//   そのため OnMeshCreated（単一 MeshObject を新規追加）は通らず、
+//   そのため図形生成コマンド（単一 MeshObject を新規追加）は通らず、
 //   OnBridgeGenerate（Viewer 側の ExecuteBridge）へ流す。
 //   行き先は共通の「追加先」(PrimitiveAddMode) に従う。専用トグルは持たない。
 //
@@ -25,7 +25,7 @@ using static Poly_Ling.Player.PrimitiveMeshTexts;
 
 namespace Poly_Ling.Player
 {
-    public partial class PlayerPrimitiveMeshSubPanel
+    public partial class PlayerPrimitiveMeshSubPanel : IHoleSeedSource
     {
         // ================================================================
         // 外部コールバック（Viewer から設定）
@@ -36,7 +36,7 @@ namespace Poly_Ling.Player
         /// 最大 2 件。範囲選択で 1 つの穴に多数の頂点が入っていても 1 つだけ返る。
         /// 拾えなかったときは Ok=false の要素を 1 つだけ含むリストを返す。
         /// </summary>
-        public Func<List<BridgeSeedPick>> PickBridgeSeeds;
+        public Func<List<HoleSeedPick>> PickBridgeSeeds;
 
         /// <summary>メッシュインデックス → MeshObject。</summary>
         public Func<int, MeshObject> GetMeshObjectAt;
@@ -53,8 +53,8 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<List<int>> GetBridgeAutoMeshIndices;
 
-        /// <summary>穴つなぎの「生成」。挿入と Undo は Viewer 側が持つ。</summary>
-        public Action<PlayerPrimitiveMeshSubPanel> OnBridgeGenerate;
+        // 穴つなぎの生成は CreateHoleBridgeCommand へ移した。
+        // パネルからモデルへ直接面を足す経路は残していない。
 
         /// <summary>
         /// 種 A / B の内容が変わったときに呼ぶ。ビューポート側の種マーカーを
@@ -66,16 +66,8 @@ namespace Poly_Ling.Player
         // 種（拾った頂点／辺）
         // ================================================================
 
-        /// <summary>選択から拾った種。</summary>
-        public struct BridgeSeedPick
-        {
-            public bool   Ok;
-            public string Message;
-            public int    MeshIndex;
-            public int    Vertex;
-            /// <summary>辺を拾ったときの進行方向側の頂点。頂点を拾ったときは -1。</summary>
-            public int    DirectionHint;
-        }
+        // 選択から拾った種の型は HoleSeedPick（View/Core/HoleSeed.cs）へ移した。
+        // 同じ拾い方を穴頂点数合わせツールも使うため、パネルから独立させている。
 
         private sealed class BridgeSeed
         {
@@ -147,6 +139,22 @@ namespace Poly_Ling.Player
             if (_bridgeInfoResult != null) _bridgeInfoResult.text = text ?? "";
             if (_statusLabel != null && !string.IsNullOrEmpty(text)) _statusLabel.text = text;
         }
+
+        // ================================================================
+        // IHoleSeedSource（ビューポートの種マーカー）
+        //   ブリッジ専用だった判定を共通インタフェースへ寄せたもの。
+        //   中身は上の Bridge* プロパティをそのまま返すだけ。
+        // ================================================================
+
+        public bool HoleSeedOverlayActive => BridgeOverlayActive;
+
+        public int HoleSeedMeshIndexA => BridgeSeedMeshIndexA;
+        public int HoleSeedVertexA    => BridgeSeedVertexA;
+        public int HoleSeedDirHintA   => BridgeSeedDirHintA;
+
+        public int HoleSeedMeshIndexB => BridgeSeedMeshIndexB;
+        public int HoleSeedVertexB    => BridgeSeedVertexB;
+        public int HoleSeedDirHintB   => BridgeSeedDirHintB;
 
         // ================================================================
         // 計画（Viewer が実生成に使う）
@@ -320,7 +328,7 @@ namespace Poly_Ling.Player
             _bridgeFlipFacesToggle   = flipFacesRow as Toggle;
             c.Add(flipPairRow);
             c.Add(flipFacesRow);
-            c.Add(IR(T("BridgeSubdiv"), 0, 16, () => _bridgeSubdiv, v => { _bridgeSubdiv = v; D(); }));
+            c.Add(IR(T("BridgeSubdiv"), CreateHoleBridgeCommand.SubdivisionsMin, CreateHoleBridgeCommand.SubdivisionsMax, () => _bridgeSubdiv, v => { _bridgeSubdiv = v; D(); }));
 
             _bridgeInfoResult = BridgeInfoLabel();
             c.Add(_bridgeInfoResult);
@@ -359,7 +367,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 拾った種 1 件を A または B へ入れる。エッジをたどれなければ入れない。
         /// </summary>
-        private void ApplyBridgePick(BridgeSeed seed, BridgeSeedPick pick)
+        private void ApplyBridgePick(BridgeSeed seed, HoleSeedPick pick)
         {
             seed.Valid = false;
             seed.Info  = "";
@@ -479,11 +487,11 @@ namespace Poly_Ling.Player
                 return false;
             }
 
-            ApplyBridgePick(_bridgeA, new BridgeSeedPick
+            ApplyBridgePick(_bridgeA, new HoleSeedPick
             {
                 Ok = true, MeshIndex = indexA, Vertex = pair.VertexA, DirectionHint = -1,
             });
-            ApplyBridgePick(_bridgeB, new BridgeSeedPick
+            ApplyBridgePick(_bridgeB, new HoleSeedPick
             {
                 Ok = true, MeshIndex = indexB, Vertex = pair.VertexB, DirectionHint = -1,
             });
@@ -625,16 +633,27 @@ namespace Poly_Ling.Player
         /// <summary>生成ボタンと同じ処理を呼ぶ。</summary>
         public void GenerateBridge() => InvokeBridgeGenerate();
 
-        /// <summary>生成ボタンから呼ぶ。挿入と Undo は Viewer 側が持つ。</summary>
+        /// <summary>
+        /// 生成ボタンから呼ぶ。コマンドへ流し、挿入と Undo はディスパッチャ側が持つ。
+        ///
+        /// コマンドは種・対応フリップ・分割数・追加先をすべて載せるので、
+        /// 自動検証や MCP から同じコマンドを送れば同じ結果になる。
+        /// </summary>
         private void InvokeBridgeGenerate()
         {
-            if (OnBridgeGenerate == null)
+            var cmd = BuildHoleBridgeCommand();
+            if (cmd == null)
             {
                 SetBridgeStatus(T("BridgeNoTarget"));
                 return;
             }
+            if (SendCommand == null)
+            {
+                SetBridgeStatus("配線が足りません（SendCommand）");
+                return;
+            }
 
-            OnBridgeGenerate(this);
+            SendCommand(cmd);
             RefreshBridgeInfo();
         }
     }

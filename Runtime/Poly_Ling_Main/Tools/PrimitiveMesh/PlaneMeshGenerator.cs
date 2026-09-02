@@ -18,14 +18,41 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct PlaneParams : IEquatable<PlaneParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>幅・高さの下限・上限</summary>
+            public const float SizeMin = 0.1f;
+            public const float SizeMax = 10f;
+
+            /// <summary>分割数の下限・上限</summary>
+            public const int SegmentsMin = 1;
+            public const int SegmentsMax = 32;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
-            public float Width, Height;
-            public int WidthSegments, HeightSegments;
+            [PLParam(TextKey = "Width", Description = "幅", Min = SizeMin, Max = SizeMax)]
+            public float Width;
+            [PLParam(TextKey = "Height", Description = "高さ", Min = SizeMin, Max = SizeMax)]
+            public float Height;
+            [PLParam(TextKey = "Width", Description = "幅方向の分割数", Min = SegmentsMin, Max = SegmentsMax, Step = 1)]
+            public int WidthSegments;
+            [PLParam(TextKey = "Height", Description = "高さ方向の分割数", Min = SegmentsMin, Max = SegmentsMax,
+                     Step = 1)]
+            public int HeightSegments;
+            [PLParam(TextKey = "DoubleSided", Description = "裏面も張る")]
             public bool DoubleSided;
+            [PLParam(TextKey = "FaceFront", Description = "表を正面へ向ける")]
             public bool FaceFront;
+            [PLParam(TextKey = "Orientation", Description = "平面の向き（XY / XZ / YZ）")]
             public PlaneOrientation Orientation;
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
-            public float RotationX, RotationY;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationX;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationY;
 
             public static PlaneParams Default => new PlaneParams
             {

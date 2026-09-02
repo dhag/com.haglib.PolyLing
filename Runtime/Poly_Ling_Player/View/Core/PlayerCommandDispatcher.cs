@@ -146,11 +146,54 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 生成系の受け口（Viewer から設定）
+        //
+        // 【なぜ委譲するか】
+        //   図形生成・ブリッジ・面削除の実処理は、追加先の解決・Undo 記録・
+        //   再構築・オーバーレイ更新まで Viewer 側の状態に触れる。
+        //   ここへ移すとディスパッチャが Viewer の内部を抱えることになるので、
+        //   コマンドの受け付けだけをここで行い、実行は Viewer のメソッドへ渡す。
+        //   経路はコマンド 1 本になるので、パネルも自動検証も MCP も同じ道を通る。
+        // ================================================================
+
+        /// <summary>図形生成コマンドの実行。</summary>
+        public Action<CreatePrimitiveMeshCommand> OnCreatePrimitiveMesh;
+
+        /// <summary>出来上がったメッシュをそのまま置くコマンドの実行。</summary>
+        public Action<AddGeneratedMeshCommand> OnAddGeneratedMesh;
+
+        /// <summary>穴つなぎコマンドの実行。</summary>
+        public Action<CreateHoleBridgeCommand> OnCreateHoleBridge;
+
+        /// <summary>辺群ブリッジコマンドの実行。</summary>
+        public Action<CreateEdgeBridgeCommand> OnCreateEdgeBridge;
+
+        /// <summary>面削除コマンドの実行。</summary>
+        public Action<DeleteFacesCommand> OnDeleteFaces;
+
+        /// <summary>穴点数合わせコマンドの実行。</summary>
+        public Action<MatchHoleRingCountCommand> OnMatchHoleRingCount;
+
+        /// <summary>プロジェクト初期化コマンドの実行。</summary>
+        public Action<ResetProjectCommand> OnResetProject;
+
+        /// <summary>歪み複製コマンドの実行。</summary>
+        public Action<CreateObjectArrayCommand> OnCreateObjectArray;
+
+        // ================================================================
         // ディスパッチ
         // ================================================================
 
         public void Dispatch(PanelCommand cmd)
         {
+            // プロジェクト初期化は「プロジェクトがまだ無い状態」から呼ぶコマンド。
+            // 下の null 門より前で捌かないと、初回に握り潰されて何も起きない。
+            if (cmd is ResetProjectCommand reset)
+            {
+                OnResetProject?.Invoke(reset);
+                return;
+            }
+
             var project = _getProject();
             if (project == null) return;
             var model   = project.CurrentModel;
@@ -674,6 +717,42 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return;
 
+                // ── 生成系。実処理は Viewer 側にあるので委譲する
+                case CreatePrimitiveMeshCommand c:
+                    if (model == null) return;
+                    OnCreatePrimitiveMesh?.Invoke(c);
+                    return;
+
+                case AddGeneratedMeshCommand c:
+                    if (model == null) return;
+                    OnAddGeneratedMesh?.Invoke(c);
+                    return;
+
+                case CreateHoleBridgeCommand c:
+                    if (model == null) return;
+                    OnCreateHoleBridge?.Invoke(c);
+                    return;
+
+                case CreateEdgeBridgeCommand c:
+                    if (model == null) return;
+                    OnCreateEdgeBridge?.Invoke(c);
+                    return;
+
+                case DeleteFacesCommand c:
+                    if (model == null) return;
+                    OnDeleteFaces?.Invoke(c);
+                    return;
+
+                case MatchHoleRingCountCommand c:
+                    if (model == null) return;
+                    OnMatchHoleRingCount?.Invoke(c);
+                    return;
+
+                case CreateObjectArrayCommand c:
+                    if (model == null) return;
+                    OnCreateObjectArray?.Invoke(c);
+                    return;
+
                 // ── オブジェクト原点の一括設定（CSV読み込み）
                 case ApplyObjectOriginsCommand c:
                 {
@@ -931,7 +1010,7 @@ namespace Poly_Ling.Player
                     if (model == null) return;
                     if (c.Entries == null || c.Entries.Length == 0) return;
                     var __ops = new MeshListOps(model, _undoController);
-                    __ops.ReorderMeshes(c.Category, c.Entries);
+                    __ops.ReorderMeshes(c.Category, c.Entries, c.PreserveWorldTransform);
                     model.OnListChanged?.Invoke();
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
@@ -1821,6 +1900,31 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── TPSモーフ 算出済み結果の適用（局所モードのバックグラウンド計算の受け口）
+                case ApplyThinPlateMorphResultCommand c:
+                {
+                    if (model == null) return;
+                    if (c.LocalPositions == null)
+                    {
+                        Debug.LogWarning("[ThinPlateMorph] 変形結果が空です");
+                        return;
+                    }
+
+                    var tpsrCtx = BuildSkinWeightToolCtx(model);
+                    int tpsrNewIndex = ThinPlateMorphOperation.ApplyAsNewObject(
+                        model, c.TargetMasterIndex, c.LocalPositions, c.RecalculateNormals, tpsrCtx);
+
+                    if (tpsrNewIndex < 0)
+                    {
+                        Debug.LogWarning("[ThinPlateMorph] 結果オブジェクトを作成できませんでした");
+                        return;
+                    }
+
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
                 // ── UV 変更（移動・一括変換）
                 case ApplyUVChangesCommand c:
                 {
@@ -2368,6 +2472,63 @@ namespace Poly_Ling.Player
                     }
                     model.IsDirty = true;
                     _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── スプリングボーン検証用ダミー装備の生成（システムデバッグ）
+                //   揺れデータのオーサリング UI が無いので、検証用に生成する。
+                //   トポロジが変わるので MeshFilterToSkinnedRecord で丸ごと記録する
+                //   （AddMeshCommand と同じ扱い）。
+                case BuildSpringBoneTestRigCommand sbtCmd:
+                {
+                    if (model == null) return;
+
+                    _undoController?.SetModelContext(model);
+                    var sbtBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    var sbtParams = sbtCmd.Params
+                        ?? new Poly_Ling.Tools.SpringBoneTest.SpringBoneTestRigParams();
+
+                    if (sbtCmd.ClearExisting)
+                        Poly_Ling.Tools.SpringBoneTest.SpringBoneTestRigBuilder
+                            .RemoveGenerated(model, sbtParams.Prefix);
+
+                    var sbtResult = Poly_Ling.Tools.SpringBoneTest.SpringBoneTestRigBuilder
+                        .Build(model, sbtParams);
+
+                    Debug.Log(
+                        "[BuildSpringBoneTestRig] " + sbtResult.Message +
+                        $" ボーン {sbtResult.AddedBoneCount} / メッシュ {sbtResult.AddedMeshCount}" +
+                        $" / チェーン {sbtResult.ChainCount} / ジョイント {sbtResult.JointCount}" +
+                        $" / コライダー {sbtResult.ColliderCount}");
+
+                    // 生成側はログ方針を持たないので、ここで流す。
+                    foreach (string sbtNote in sbtResult.Notes)
+                        Debug.Log("[BuildSpringBoneTestRig] " + sbtNote);
+                    foreach (string sbtWarn in sbtResult.Warnings)
+                        Debug.LogWarning("[BuildSpringBoneTestRig] " + sbtWarn);
+
+                    model.OnListChanged?.Invoke();
+
+                    if (_undoController != null)
+                    {
+                        var sbtAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
+                        var sbtRecord = new MeshFilterToSkinnedRecord
+                        {
+                            BeforeList = sbtBefore,
+                            AfterList  = sbtAfter
+                        };
+                        {
+                            string __dbgDesc = "Build SpringBone Test Rig";
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, sbtRecord);
+                            _undoController.MeshListStack.Record(sbtRecord, __dbgDesc);
+                        }
+                        _undoController.FocusMeshList();
+                    }
+
+                    model.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
 

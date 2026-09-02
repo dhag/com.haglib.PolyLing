@@ -138,6 +138,17 @@ namespace Poly_Ling.UndoSystem
         /// <summary>変更後の選択MeshContext</summary>
         public MeshContext NewSelectedMeshContext { get; set; }
 
+        /// <summary>
+        /// 変更前の BoneTransform。親の付け替えでワールド姿勢を保つとき
+        /// （ReorderMeshesCommand.PreserveWorldTransform）だけ入る。
+        /// 姿勢を組み直しているので、これを戻さないと Undo で位置が戻らない。
+        /// null なら姿勢は触っていない。
+        /// </summary>
+        public Dictionary<MeshContext, BoneTransform> OldTransformMap { get; set; }
+
+        /// <summary>変更後の BoneTransform。null なら姿勢は触っていない。</summary>
+        public Dictionary<MeshContext, BoneTransform> NewTransformMap { get; set; }
+
         public MeshReorderChangeRecord()
         {
             OldOrderedList = new List<MeshContext>();
@@ -153,7 +164,8 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void Undo(ModelContext context)
         {
-            ApplyState(context, OldOrderedList, OldParentMap, OldDepthMap, OldSelectedMeshContext);
+            ApplyState(context, OldOrderedList, OldParentMap, OldDepthMap, OldSelectedMeshContext,
+                       OldTransformMap);
         }
 
         /// <summary>
@@ -161,7 +173,8 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void Redo(ModelContext context)
         {
-            ApplyState(context, NewOrderedList, NewParentMap, NewDepthMap, NewSelectedMeshContext);
+            ApplyState(context, NewOrderedList, NewParentMap, NewDepthMap, NewSelectedMeshContext,
+                       NewTransformMap);
         }
 
         /// <summary>
@@ -170,7 +183,8 @@ namespace Poly_Ling.UndoSystem
         private void ApplyState(ModelContext context, List<MeshContext> orderedList, 
                                Dictionary<MeshContext, MeshContext> parentMap,
                                Dictionary<MeshContext, int> depthMap,
-                               MeshContext selectedMeshContext)
+                               MeshContext selectedMeshContext,
+                               Dictionary<MeshContext, BoneTransform> transformMap = null)
         {
             if (context == null || orderedList == null || orderedList.Count == 0) return;
 
@@ -211,6 +225,21 @@ namespace Poly_Ling.UndoSystem
                     if (mc != null && depthMap.TryGetValue(mc, out int depth))
                         mc.Depth = depth;
                 }
+            }
+
+            // 2c. 姿勢を復元。
+            //     親の付け替えでワールド姿勢を保つときは BoneTransform を組み直して
+            //     いるので、親と Depth だけ戻しても位置が戻らない。
+            if (transformMap != null)
+            {
+                for (int i = 0; i < context.MeshContextCount; i++)
+                {
+                    var mc = context.GetMeshContext(i);
+                    if (mc?.BoneTransform == null) continue;
+                    if (transformMap.TryGetValue(mc, out var bt) && bt != null)
+                        mc.BoneTransform.CopyFrom(bt);
+                }
+                context.ComputeWorldMatrices();
             }
 
             // 3. 選択を復元（オブジェクト参照から新しいインデックスを取得）

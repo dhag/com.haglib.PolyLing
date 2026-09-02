@@ -270,19 +270,19 @@ namespace Poly_Ling.Player
             hint.style.marginBottom = 2;
             fc.Add(hint);
 
-            fc.Add(IR(T("PlaceRungStride"), 1, 10,
+            fc.Add(IR(T("PlaceRungStride"), PlaceObjectParams.StrideMin, PlaceObjectParams.StrideMax,
                 () => Mathf.Max(1, _placeP.RungStride),
                 v  => { _placeP.RungStride = Mathf.Max(1, v); RefreshPlaceInfo(); D(); }));
 
-            fc.Add(IR(T("PlaceRungOffset"), 0, 9,
+            fc.Add(IR(T("PlaceRungOffset"), PlaceObjectParams.OffsetMin, PlaceObjectParams.OffsetMax,
                 () => Mathf.Max(0, _placeP.RungOffset),
                 v  => { _placeP.RungOffset = Mathf.Max(0, v); RefreshPlaceInfo(); D(); }));
 
-            fc.Add(IR(T("PlaceRowStride"), 1, 10,
+            fc.Add(IR(T("PlaceRowStride"), PlaceObjectParams.StrideMin, PlaceObjectParams.StrideMax,
                 () => Mathf.Max(1, _placeP.RowStride),
                 v  => { _placeP.RowStride = Mathf.Max(1, v); RefreshPlaceInfo(); D(); }));
 
-            fc.Add(IR(T("PlaceRowOffset"), 0, 9,
+            fc.Add(IR(T("PlaceRowOffset"), PlaceObjectParams.OffsetMin, PlaceObjectParams.OffsetMax,
                 () => Mathf.Max(0, _placeP.RowOffset),
                 v  => { _placeP.RowOffset = Mathf.Max(0, v); RefreshPlaceInfo(); D(); }));
         }
@@ -413,7 +413,7 @@ namespace Poly_Ling.Player
 
             // Combine は全 rung 共通の1メッシュ。連結は生成ごとに1回だけ行う。
             MeshObject combined = (_placeP.Mode == PlaceSourceMode.Combine)
-                ? CombineMeshes(srcs, _placeP.MeshName)
+                ? Poly_Ling.Ops.MeshObjectAppendOps.Combine(srcs, _placeP.MeshName)
                 : null;
 
             // Random は生成開始時に1個だけ作り、ベルト→rung の固定順で引く。
@@ -476,7 +476,7 @@ namespace Poly_Ling.Player
                     b.Left, b.Right, b.Closed, b.FlipWinding,
                     perRung, _placeP.MeshName, userScale, _placeP.RollSteps, _placeP.ScaleMode,
                     partsIds);
-                AppendMesh(mo, part);
+                Poly_Ling.Ops.MeshObjectAppendOps.Append(mo, part);
             }
             return mo;
         }

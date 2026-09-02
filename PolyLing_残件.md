@@ -933,3 +933,13 @@ Editor/CreateRuntime/CreatePlayerViewer.cs:288 は今後も Text Settings 未設
 マテリアルのUNDO対応。
 計画から1点外しました。Undo 記録は入れていません。
 MaterialDataSnapshot.ApplyTo（MaterialUndoRecords.cs:83）が matRef.InvalidateCache() を呼びます。描画は MeshSceneRenderer.cs:514 が毎フレーム model.GetMaterial(sub) を叩くため、キャッシュ破棄直後に GetOrCreateMaterial（MaterialReference.cs:118-147）が ToMaterial で材質を作り直します。Player では SetTexture（MaterialDataConverter.cs:788）が EditorBridgeNull.LoadAssetAtPath（EditorBridgeNull.cs:21-25）を呼んで null を返すため、Undo するたびにテクスチャが消えて LogError が出ます。この既存レコードをそのまま使うと不具合を作るので見送りました。
+
+スプリングボーンの編集機能。
+スプリングボーンのシミュレーション機能
+スプリングボーンのパラメータ最大最小など不足してるもの
+
+
+パイプ群などの特殊な対称化
+
+
+LOOKAT

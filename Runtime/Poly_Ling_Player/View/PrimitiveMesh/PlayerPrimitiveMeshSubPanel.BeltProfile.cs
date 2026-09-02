@@ -1634,11 +1634,11 @@ namespace Poly_Ling.Player
             f.Add(hint);
 
             f.Add(TR(T("BeltSplineEnable"), () => opt.Enabled,  v => { opt.Enabled  = v; D(); }));
-            f.Add(IR(T("BeltSplineSegs"), 0, 10, () => opt.Segments,  v => { opt.Segments  = v; D(); }));
+            f.Add(IR(T("BeltSplineSegs"), BeltSplineOptions.SegmentsMin, BeltSplineOptions.SegmentsMax, () => opt.Segments,  v => { opt.Segments  = v; D(); }));
             f.Add(TR(T("BeltSplineUseFirst"), () => opt.UseFirst, v => { opt.UseFirst = v; D(); }));
             f.Add(TR(T("BeltSplineUseLast"),  () => opt.UseLast,  v => { opt.UseLast  = v; D(); }));
-            f.Add(IR(T("BeltSplineTrimStart"), 0, 10, () => opt.TrimStart, v => { opt.TrimStart = v; D(); }));
-            f.Add(IR(T("BeltSplineTrimEnd"),   0, 10, () => opt.TrimEnd,   v => { opt.TrimEnd   = v; D(); }));
+            f.Add(IR(T("BeltSplineTrimStart"), BeltSplineOptions.TrimMin, BeltSplineOptions.TrimMax, () => opt.TrimStart, v => { opt.TrimStart = v; D(); }));
+            f.Add(IR(T("BeltSplineTrimEnd"), BeltSplineOptions.TrimMin, BeltSplineOptions.TrimMax, () => opt.TrimEnd,   v => { opt.TrimEnd   = v; D(); }));
         }
 
         /// <summary>
@@ -1676,43 +1676,7 @@ namespace Poly_Ling.Player
         // 生成ユーティリティ
         // ================================================================
 
-        /// <summary>src の頂点・面を dst へ連結する（UVスロットとマテリアルは元のまま）。</summary>
-        private static void AppendMesh(MeshObject dst, MeshObject src)
-        {
-            if (dst == null || src == null || src.VertexCount == 0) return;
-
-            int baseIdx = dst.VertexCount;
-
-            for (int v = 0; v < src.VertexCount; v++)
-            {
-                var sv = src.Vertices[v];
-                var nv = new Poly_Ling.Data.Vertex(sv.Position);
-                if (sv.UVs != null)
-                    for (int k = 0; k < sv.UVs.Count; k++) nv.UVs.Add(sv.UVs[k]);
-                if (nv.UVs.Count == 0) nv.UVs.Add(Vector2.zero);
-
-                // 部品ID / サブIDは連結で失わない。
-                nv.PartsId = sv.PartsId;
-                nv.SubId   = sv.SubId;
-
-                dst.Vertices.Add(nv);
-            }
-
-            for (int f = 0; f < src.FaceCount; f++)
-            {
-                var sf = src.Faces[f];
-                if (sf?.VertexIndices == null || sf.VertexIndices.Count < 3) continue;
-
-                var nf = new Face { MaterialIndex = sf.MaterialIndex };
-                for (int k = 0; k < sf.VertexIndices.Count; k++)
-                {
-                    nf.VertexIndices.Add(baseIdx + sf.VertexIndices[k]);
-                    nf.UVIndices.Add(sf.UVIndices != null && k < sf.UVIndices.Count ? sf.UVIndices[k] : 0);
-                    nf.NormalIndices.Add(0);
-                }
-                dst.AddFace(nf);
-            }
-        }
+        // src の頂点・面を dst へ連結する処理は Poly_Ling.Ops.MeshObjectAppendOps.Append へ移設した。
 
         // ================================================================
         // 厚み付け（ソリッド化）共通部：フリル／パイプで共用
@@ -1821,64 +1785,8 @@ namespace Poly_Ling.Player
         // 対象オブジェクト複数選択（配置の配置元で使用）
         // ================================================================
 
-        /// <summary>描画オブジェクトの複数選択状態。選択はラベルで保持し、一覧再取得後も復元する。</summary>
-        private sealed class MeshSourceMultiPick
-        {
-            public List<(string Label, int MasterIndex, MeshObject Mesh)> Candidates
-                = new List<(string, int, MeshObject)>();
-            public readonly HashSet<string> SelectedLabels = new HashSet<string>();
-            public VisualElement ListContainer;
-
-            /// <summary>
-            /// 候補の並び順で、選択されているメッシュを返す。
-            /// 面を持たないもの（グループ用の空オブジェクト等）は数に入れない。
-            /// </summary>
-            public List<MeshObject> CurrentList()
-                => CurrentList(false, null);
-
-            /// <summary>
-            /// 候補の並び順で、選択されているメッシュを返す。
-            /// includeChildren が true のときは、チェックした項目を「本体＋子孫」へ展開し、
-            /// それぞれを別々の配置元として並べる（結合しない）。これで rung ごとの
-            /// 巡回・抽選が子孫に対して効く。
-            /// 展開結果は MasterIndex で重複排除するため、ルートと子の両方をチェックしても
-            /// 二重には入らない。面を持たないものは数に入れない。
-            /// </summary>
-            public List<MeshObject> CurrentList(
-                bool includeChildren, Func<int, List<(int MasterIndex, MeshObject Mesh)>> expand)
-            {
-                var list  = new List<MeshObject>();
-                var added = new HashSet<int>();
-
-                foreach (var e in Candidates)
-                {
-                    if (!SelectedLabels.Contains(e.Label)) continue;
-
-                    if (includeChildren && expand != null)
-                    {
-                        var sub = expand(e.MasterIndex);
-                        if (sub != null)
-                        {
-                            foreach (var s in sub)
-                            {
-                                if (!HasFace(s.Mesh)) continue;
-                                if (!added.Add(s.MasterIndex)) continue;
-                                list.Add(s.Mesh);
-                            }
-                            continue;
-                        }
-                    }
-
-                    if (!HasFace(e.Mesh)) continue;
-                    if (!added.Add(e.MasterIndex)) continue;
-                    list.Add(e.Mesh);
-                }
-                return list;
-            }
-
-            /// <summary>面を1枚以上持つか。頂点だけのオブジェクトは配置しても何も出ないため除く。</summary>
-            private static bool HasFace(MeshObject mo) => mo != null && mo.FaceCount > 0;
-        }
+        // MeshSourceMultiPick は Runtime/Poly_Ling_Player/View/Common/MeshSourceMultiPick.cs へ移設した。
+        // 一覧の組み立て・再取得は下の 2 メソッドがパネル側の依存を持つため、ここに残す。
 
         /// <summary>描画オブジェクトのチェックボックス一覧と再取得ボタンを組み立てる。</summary>
         private void BuildMeshSourceMultiRow(VisualElement c, MeshSourceMultiPick pick, string sectionLabel)
@@ -1935,17 +1843,7 @@ namespace Poly_Ling.Player
             }
         }
 
-        /// <summary>
-        /// 複数メッシュを1つへ連結する。頂点ローカル座標をそのまま連結する
-        /// （既存の配置が source.Vertices[v].Position を直接使うのと同じ扱いで、BoneTransform は考慮しない）。
-        /// </summary>
-        private static MeshObject CombineMeshes(IReadOnlyList<MeshObject> sources, string meshName)
-        {
-            var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Combined" : meshName);
-            if (sources == null) return mo;
-            foreach (var s in sources) AppendMesh(mo, s);
-            return mo;
-        }
+        // 複数メッシュの連結は Poly_Ling.Ops.MeshObjectAppendOps.Combine へ移設した。
 
         /// <summary>Undo/Redo で復元されたスナップショットをパネルへ反映。</summary>
         private void ApplyBeltUndoContext(BeltProfileEdit ed)

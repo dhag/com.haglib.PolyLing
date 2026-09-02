@@ -799,8 +799,13 @@ namespace Poly_Ling.Ops
             return boneCount;
         }
 
-        // ボーン名と衝突したメッシュに付ける接尾辞（エディタ拡張のエクスポータと同じ規則）
-        private const string MeshNameSuffix = "_skinned";
+        /// <summary>
+        /// ボーン名と衝突したメッシュに付ける接尾辞（エディタ拡張のエクスポータと同じ規則）。
+        ///
+        /// 変換後の名前を引く側が同じ文字列を直書きすると、ここを変えたときに
+        /// 黙って引けなくなる。正典はこの定数なので公開して参照させる。
+        /// </summary>
+        public const string MeshNameSuffix = "_skinned";
 
         /// <summary>ボーンウェイトの参照先ボーン索引を offset 分ずらす。</summary>
         private static BoneWeight ShiftBoneWeight(BoneWeight bw, int offset)

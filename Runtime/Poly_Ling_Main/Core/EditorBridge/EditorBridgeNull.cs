@@ -95,6 +95,47 @@ namespace Poly_Ling.EditorBridge
         }
 
         // ================================================================
+        // 組み込みアセット
+        // ================================================================
+
+        /// <summary>
+        /// Player には組み込みの Default-Diffuse アセットが無いので、実行時に生成する。
+        /// 呼ばれるたびに new すると Material が漏れるため 1 個だけ作って使い回す。
+        /// シェーダ探索の順序は PMXImporter / MQOImporter の FindBestShader と同じ。
+        /// </summary>
+        private static Material _defaultMaterial;
+
+        public Material GetBuiltinDefaultMaterial()
+        {
+            if (_defaultMaterial != null) return _defaultMaterial;
+
+            string[] shaderNames =
+            {
+                "Universal Render Pipeline/Lit",
+                "Universal Render Pipeline/Simple Lit",
+                "HDRP/Lit",
+                "Standard",
+                "Unlit/Color"
+            };
+
+            Shader shader = null;
+            foreach (var name in shaderNames)
+            {
+                shader = Shader.Find(name);
+                if (shader != null) break;
+            }
+            if (shader == null) shader = Shader.Find("Standard");
+            if (shader == null) return null;
+
+            _defaultMaterial = new Material(shader)
+            {
+                name = "PolyLing_Default",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            return _defaultMaterial;
+        }
+
+        // ================================================================
         // PrefabUtility
         // ================================================================
 

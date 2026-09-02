@@ -10,6 +10,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Frill;
 using static Poly_Ling.Player.PrimitiveMeshTexts;
+using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.Player
 {
@@ -204,7 +205,7 @@ namespace Poly_Ling.Player
 
             // ── 高さ倍率（全体） ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(SR(T("FrillHeightScale"), 0f, 5f, () => _frillP.HeightScale,
+            c.Add(SR(T("FrillHeightScale"), FrillParams.HeightScaleMin, FrillParams.HeightScaleMax, () => _frillP.HeightScale,
                 v => { _frillP.HeightScale = v; D(); }));
 
             var heightHint = new Label(T("FrillHeightScaleHint"));
@@ -215,20 +216,20 @@ namespace Poly_Ling.Player
 
             // ── 厚み付け ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(SR(T("Thickness"), 0f, 0.5f, () => _frillP.Thickness,
+            c.Add(SR(T("Thickness"), FrillParams.ThicknessMin, FrillParams.ThicknessMax, () => _frillP.Thickness,
                 v => { _frillP.Thickness = v; D(); RefreshFrillSolidVis(); }));
 
             // 角処理(ベベル)UI は常時生成し、厚み/分割数に応じて表示切替する。
             var frillSolid = new SolidifyUI
             {
                 EdgeLabel = SL(T("EdgeSettings")),
-                FrontSeg  = IR(T("FrontSegments"), 0, 16, () => _frillP.SegmentsFront,
+                FrontSeg  = IR(T("FrontSegments"), FrillParams.EdgeSegmentsMin, FrillParams.EdgeSegmentsMax, () => _frillP.SegmentsFront,
                                v => { _frillP.SegmentsFront = v; D(); RefreshFrillSolidVis(); }),
-                FrontSize = SR(T("EdgeSize"), 0.001f, 0.25f, () => _frillP.EdgeSizeFront,
+                FrontSize = SR(T("EdgeSize"), FrillParams.EdgeSizeMin, FrillParams.EdgeSizeMax, () => _frillP.EdgeSizeFront,
                                v => { _frillP.EdgeSizeFront = v; D(); }),
-                BackSeg   = IR(T("BackSegments"), 0, 16, () => _frillP.SegmentsBack,
+                BackSeg   = IR(T("BackSegments"), FrillParams.EdgeSegmentsMin, FrillParams.EdgeSegmentsMax, () => _frillP.SegmentsBack,
                                v => { _frillP.SegmentsBack = v; D(); RefreshFrillSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), 0.001f, 0.25f, () => _frillP.EdgeSizeBack,
+                BackSize  = SR(T("EdgeSize"), FrillParams.EdgeSizeMin, FrillParams.EdgeSizeMax, () => _frillP.EdgeSizeBack,
                                v => { _frillP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _frillP.EdgeInward,
                                v => { _frillP.EdgeInward = v; D(); }),
@@ -242,7 +243,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _frillP.Pivot, v => { _frillP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
             RebuildFrillProfileEditor();
@@ -383,7 +384,7 @@ namespace Poly_Ling.Player
                 rowLabel.style.marginTop = 3;
                 box.Add(rowLabel);
 
-                box.Add(SR(T("FrillHeightScale"), 0f, 5f,
+                box.Add(SR(T("FrillHeightScale"), FrillParams.HeightScaleMin, FrillParams.HeightScaleMax,
                     () => members[0].HeightScale,
                     v => { foreach (var b in members) b.HeightScale = v; D(); }));
             }
@@ -451,7 +452,7 @@ namespace Poly_Ling.Player
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
                     _frillP.EdgeSizeFront, _frillP.EdgeSizeBack, _frillP.EdgeInward,
                     _frillP.MeshName);
-                AppendMesh(mo, part);
+                Poly_Ling.Ops.MeshObjectAppendOps.Append(mo, part);
             }
             if (_frillP.FlipFaces)
                 Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.FlipFaces(mo);

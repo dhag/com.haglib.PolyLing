@@ -11,6 +11,16 @@ namespace Poly_Ling.PrimitiveMesh
 {
     public static class PrimitiveMeshPostProcess
     {
+        // ================================================================
+        // 値域
+        //   ApplyPivotOffset が扱うピボットの範囲。図形生成のパラメータ構造体の
+        //   PLParam 属性と、図形生成パネルのピボット行の双方がここを参照する。
+        //   AABB サイズ基準の比率なので、-0.5 が下端、+0.5 が上端にあたる。
+        // ================================================================
+
+        public const float PivotMin = -0.5f;
+        public const float PivotMax =  0.5f;
+
         /// <summary>
         /// パーツIDごとに、頂点の並び順の先頭から 0,1,2… とサブIDを振り直す。
         /// 実体は PartsIdOps.AssignSubIdByPartsId。図形生成側からの呼び出し口として残す。

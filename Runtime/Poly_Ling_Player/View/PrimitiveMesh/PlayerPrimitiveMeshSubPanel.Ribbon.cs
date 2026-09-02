@@ -11,6 +11,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Ribbon;
 using static Poly_Ling.Player.PrimitiveMeshTexts;
+using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.Player
 {
@@ -33,7 +34,7 @@ namespace Poly_Ling.Player
 
             c.Add(RibbonHint(T("RibbonHint")));
 
-            c.Add(SR(T("RibbonWidth"), 0.01f, 2f,
+            c.Add(SR(T("RibbonWidth"), RibbonBowParams.RibbonWidthMin, RibbonBowParams.RibbonWidthMax,
                 () => _ribbonP.RibbonWidth, v => { _ribbonP.RibbonWidth = v; D(); }));
 
             // ── 部品の取捨 ──
@@ -57,58 +58,58 @@ namespace Poly_Ling.Player
                     D();
                 }));
             c.Add(RibbonHint(T("RibbonLoopFlipHint")));
-            c.Add(SR(T("RibbonLoopWidth"), 0.05f, 5f,
+            c.Add(SR(T("RibbonLoopWidth"), RibbonLoopParams.WidthMin, RibbonLoopParams.WidthMax,
                 () => _ribbonP.Loop.Width, v => { _ribbonP.Loop.Width = v; D(); }));
-            c.Add(SR(T("RibbonLoopHeight"), 0f, 3f,
+            c.Add(SR(T("RibbonLoopHeight"), RibbonLoopParams.HeightMin, RibbonLoopParams.HeightMax,
                 () => _ribbonP.Loop.Height, v => { _ribbonP.Loop.Height = v; D(); }));
-            c.Add(SR(T("RibbonLoopSag"), 0f, 1f,
+            c.Add(SR(T("RibbonLoopSag"), RibbonLoopParams.SagMin, RibbonLoopParams.SagMax,
                 () => _ribbonP.Loop.Sag, v => { _ribbonP.Loop.Sag = v; D(); }));
-            c.Add(SR(T("RibbonLoopTilt"), -90f, 90f,
+            c.Add(SR(T("RibbonLoopTilt"), RibbonLoopParams.TiltMin, RibbonLoopParams.TiltMax,
                 () => _ribbonP.Loop.Tilt, v => { _ribbonP.Loop.Tilt = v; D(); }));
             c.Add(RibbonHint(T("RibbonLoopTiltHint")));
-            c.Add(SR(T("RibbonLoopDepth"), 0f, 1f,
+            c.Add(SR(T("RibbonLoopDepth"), RibbonLoopParams.DepthMin, RibbonLoopParams.DepthMax,
                 () => _ribbonP.Loop.Depth, v => { _ribbonP.Loop.Depth = v; D(); }));
             c.Add(RibbonHint(T("RibbonLoopDepthHint")));
-            c.Add(SR(T("RibbonRootGap"), 0f, 1f,
+            c.Add(SR(T("RibbonRootGap"), RibbonLoopParams.RootGapMin, RibbonLoopParams.RootGapMax,
                 () => _ribbonP.Loop.RootGap, v => { _ribbonP.Loop.RootGap = v; D(); }));
-            c.Add(SR(T("RibbonRootPinch"), 0.05f, 1f,
+            c.Add(SR(T("RibbonRootPinch"), RibbonLoopParams.RootPinchMin, RibbonLoopParams.RootPinchMax,
                 () => _ribbonP.Loop.RootPinch, v => { _ribbonP.Loop.RootPinch = v; D(); }));
 
             // ── テール ──
             c.Add(SL(T("RibbonTail")));
-            c.Add(SR(T("RibbonTailLength"), 0.05f, 5f,
+            c.Add(SR(T("RibbonTailLength"), RibbonTailParams.LengthMin, RibbonTailParams.LengthMax,
                 () => _ribbonP.Tail.Length, v => { _ribbonP.Tail.Length = v; D(); }));
-            c.Add(SR(T("RibbonTailSpread"), -1f, 1f,
+            c.Add(SR(T("RibbonTailSpread"), RibbonTailParams.SpreadMin, RibbonTailParams.SpreadMax,
                 () => _ribbonP.Tail.Spread, v => { _ribbonP.Tail.Spread = v; D(); }));
-            c.Add(SR(T("RibbonTailClose"), 0f, 1f,
+            c.Add(SR(T("RibbonTailClose"), RibbonTailParams.CloseMin, RibbonTailParams.CloseMax,
                 () => _ribbonP.Tail.Close, v => { _ribbonP.Tail.Close = v; D(); }));
-            c.Add(SR(T("RibbonTailCloseAt"), 0.05f, 0.95f,
+            c.Add(SR(T("RibbonTailCloseAt"), RibbonTailParams.CloseAtMin, RibbonTailParams.CloseAtMax,
                 () => _ribbonP.Tail.CloseAt, v => { _ribbonP.Tail.CloseAt = v; D(); }));
             c.Add(RibbonHint(T("RibbonTailCloseHint")));
-            c.Add(SR(T("RibbonTailSag"), 0f, 1f,
+            c.Add(SR(T("RibbonTailSag"), RibbonTailParams.SagMin, RibbonTailParams.SagMax,
                 () => _ribbonP.Tail.Sag, v => { _ribbonP.Tail.Sag = v; D(); }));
-            c.Add(SR(T("RibbonTailDepth"), 0f, 1f,
+            c.Add(SR(T("RibbonTailDepth"), RibbonTailParams.DepthMin, RibbonTailParams.DepthMax,
                 () => _ribbonP.Tail.Depth, v => { _ribbonP.Tail.Depth = v; D(); }));
-            c.Add(SR(T("RibbonTailTaper"), 0.05f, 2f,
+            c.Add(SR(T("RibbonTailTaper"), RibbonTailParams.TaperMin, RibbonTailParams.TaperMax,
                 () => _ribbonP.Tail.Taper, v => { _ribbonP.Tail.Taper = v; D(); }));
 
             // ── ノット ──
             c.Add(SL(T("RibbonKnot")));
             c.Add(RibbonHint(T("RibbonKnotHint")));
-            c.Add(SR(T("RibbonKnotWidth"), 0.01f, 2f,
+            c.Add(SR(T("RibbonKnotWidth"), RibbonKnotParams.WidthMin, RibbonKnotParams.WidthMax,
                 () => _ribbonP.Knot.Width, v => { _ribbonP.Knot.Width = v; D(); }));
-            c.Add(SR(T("RibbonKnotHeight"), 0.01f, 2f,
+            c.Add(SR(T("RibbonKnotHeight"), RibbonKnotParams.HeightMin, RibbonKnotParams.HeightMax,
                 () => _ribbonP.Knot.Height, v => { _ribbonP.Knot.Height = v; D(); }));
-            c.Add(SR(T("RibbonKnotDepth"), 0f, 1f,
+            c.Add(SR(T("RibbonKnotDepth"), RibbonKnotParams.DepthMin, RibbonKnotParams.DepthMax,
                 () => _ribbonP.Knot.Depth, v => { _ribbonP.Knot.Depth = v; D(); }));
 
             // ── 分割数 ──
             c.Add(SL(T("Segments")));
-            c.Add(IR(T("RibbonLoopSegs"), 2, 64,
+            c.Add(IR(T("RibbonLoopSegs"), RibbonBowParams.LoopSegmentsMin, RibbonBowParams.LoopSegmentsMax,
                 () => _ribbonP.LoopSegments, v => { _ribbonP.LoopSegments = v; D(); }));
-            c.Add(IR(T("RibbonTailSegs"), 1, 64,
+            c.Add(IR(T("RibbonTailSegs"), RibbonBowParams.TailSegmentsMin, RibbonBowParams.TailSegmentsMax,
                 () => _ribbonP.TailSegments, v => { _ribbonP.TailSegments = v; D(); }));
-            c.Add(IR(T("RibbonKnotSegs"), 1, 32,
+            c.Add(IR(T("RibbonKnotSegs"), RibbonBowParams.KnotSegmentsMin, RibbonBowParams.KnotSegmentsMax,
                 () => _ribbonP.KnotSegments, v => { _ribbonP.KnotSegments = v; D(); }));
 
             // ── 梯子タグ ──
@@ -120,9 +121,9 @@ namespace Poly_Ling.Player
                 () => _ribbonP.AddStartTip, v => { _ribbonP.AddStartTip = v; D(); }));
             c.Add(TR(T("RibbonEndTip"),
                 () => _ribbonP.AddEndTip, v => { _ribbonP.AddEndTip = v; D(); }));
-            c.Add(SR(T("RibbonTipLen"), 0.05f, 2f,
+            c.Add(SR(T("RibbonTipLen"), RibbonBowParams.TipLengthScaleMin, RibbonBowParams.TipLengthScaleMax,
                 () => _ribbonP.TipLengthScale, v => { _ribbonP.TipLengthScale = v; D(); }));
-            c.Add(SR(T("RibbonTagSize"), 0.05f, 2f,
+            c.Add(SR(T("RibbonTagSize"), RibbonBowParams.TagSizeScaleMin, RibbonBowParams.TagSizeScaleMax,
                 () => _ribbonP.TagSizeScale, v => { _ribbonP.TagSizeScale = v; D(); }));
 
             // ── 面の向き ──
@@ -132,7 +133,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _ribbonP.Pivot, v => { _ribbonP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
         }
 

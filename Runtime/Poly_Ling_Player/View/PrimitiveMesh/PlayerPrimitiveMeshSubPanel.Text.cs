@@ -133,28 +133,28 @@ namespace Poly_Ling.Player
 
             // ── 形状 ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(IR(T("Segments"), 1, 20, () => _textP.Segment, v => { _textP.Segment = v; D(); }));
-            c.Add(SR(T("Size"), 0.01f, 10f, () => _textP.Size, v => { _textP.Size = v; D(); }));
-            c.Add(SR(T("TextLetterSpacing"), -0.5f, 1f, () => _textP.LetterSpacing,
+            c.Add(IR(T("Segments"), TextMeshParams.SegmentMin, TextMeshParams.SegmentMax, () => _textP.Segment, v => { _textP.Segment = v; D(); }));
+            c.Add(SR(T("Size"), TextMeshParams.SizeMin, TextMeshParams.SizeMax, () => _textP.Size, v => { _textP.Size = v; D(); }));
+            c.Add(SR(T("TextLetterSpacing"), TextMeshParams.LetterSpacingMin, TextMeshParams.LetterSpacingMax, () => _textP.LetterSpacing,
                 v => { _textP.LetterSpacing = v; D(); }));
-            c.Add(SR(T("TextLineSpacing"), 0.5f, 3f, () => _textP.LineSpacing,
+            c.Add(SR(T("TextLineSpacing"), TextMeshParams.LineSpacingMin, TextMeshParams.LineSpacingMax, () => _textP.LineSpacing,
                 v => { _textP.LineSpacing = v; D(); }));
 
             // ── 厚み付け ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(SR(T("Thickness"), 0f, 0.5f, () => _textP.Thickness,
+            c.Add(SR(T("Thickness"), TextMeshParams.ThicknessMin, TextMeshParams.ThicknessMax, () => _textP.Thickness,
                 v => { _textP.Thickness = v; D(); RefreshTextSolidVis(); }));
 
             var textSolid = new SolidifyUI
             {
                 EdgeLabel = SL(T("EdgeSettings")),
-                FrontSeg  = IR(T("FrontSegments"), 0, 16, () => _textP.SegmentsFront,
+                FrontSeg  = IR(T("FrontSegments"), TextMeshParams.EdgeSegmentsMin, TextMeshParams.EdgeSegmentsMax, () => _textP.SegmentsFront,
                                v => { _textP.SegmentsFront = v; D(); RefreshTextSolidVis(); }),
-                FrontSize = SR(T("EdgeSize"), 0.001f, 0.25f, () => _textP.EdgeSizeFront,
+                FrontSize = SR(T("EdgeSize"), TextMeshParams.EdgeSizeMin, TextMeshParams.EdgeSizeMax, () => _textP.EdgeSizeFront,
                                v => { _textP.EdgeSizeFront = v; D(); }),
-                BackSeg   = IR(T("BackSegments"), 0, 16, () => _textP.SegmentsBack,
+                BackSeg   = IR(T("BackSegments"), TextMeshParams.EdgeSegmentsMin, TextMeshParams.EdgeSegmentsMax, () => _textP.SegmentsBack,
                                v => { _textP.SegmentsBack = v; D(); RefreshTextSolidVis(); }),
-                BackSize  = SR(T("EdgeSize"), 0.001f, 0.25f, () => _textP.EdgeSizeBack,
+                BackSize  = SR(T("EdgeSize"), TextMeshParams.EdgeSizeMin, TextMeshParams.EdgeSizeMax, () => _textP.EdgeSizeBack,
                                v => { _textP.EdgeSizeBack = v; D(); }),
                 Inward    = TR(T("EdgeInward"), () => _textP.EdgeInward,
                                v => { _textP.EdgeInward = v; D(); }),

@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Poly_Ling.Data;
+using Poly_Ling.PrimitiveMesh;   // PrimitiveMeshPostProcess.PivotMin / PivotMax
 
 namespace Poly_Ling.Profile2DExtrude
 {
@@ -31,27 +33,76 @@ namespace Poly_Ling.Profile2DExtrude
     [Serializable]
     public struct Profile2DParams : IEquatable<Profile2DParams>
     {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+        /// <summary>拡大率の下限・上限</summary>
+        public const float ScaleMin = 0.01f;
+        public const float ScaleMax = 10f;
+
+        /// <summary>平行移動の下限・上限</summary>
+        public const float OffsetMin = -5f;
+        public const float OffsetMax = 5f;
+
+        /// <summary>厚みの下限・上限</summary>
+        public const float ThicknessMin = 0f;
+        public const float ThicknessMax = 2f;
+
+        /// <summary>エッジ分割数の下限・上限</summary>
+        public const int EdgeSegmentsMin = 0;
+        public const int EdgeSegmentsMax = 16;
+
+        /// <summary>エッジサイズの下限・上限</summary>
+        public const float EdgeSizeMin = 0.01f;
+        public const float EdgeSizeMax = 0.5f;
+
+        [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
         public string MeshName;
+        [PLParam(Ignore = true, Description = "直前に読み書きした CSV のパス。形状には影響しない")]
         public string CsvPath;
+        [PLParam(TextKey = "Scale", Description = "輪郭の拡大率", Min = ScaleMin, Max = ScaleMax)]
         public float Scale;
+        [PLParam(TextKey = "Offset", Description = "輪郭の平行移動", Min = OffsetMin, Max = OffsetMax)]
         public Vector2 Offset;
+        [PLParam(TextKey = "FlipY", Description = "輪郭の Y を反転する")]
         public bool FlipY;
+        [PLParam(TextKey = "Thickness", Description = "押し出しの厚み。0 で板", Min = ThicknessMin, Max = ThicknessMax)]
         public float Thickness;
-        public int SegmentsFront, SegmentsBack;
-        public float EdgeSizeFront, EdgeSizeBack;
+        [PLParam(TextKey = "FrontSegments", Description = "表側エッジの分割数（0=無効 / 1=面取り / 2以上=ラウンド）",
+                 Min = EdgeSegmentsMin, Max = EdgeSegmentsMax, Step = 1)]
+        public int SegmentsFront;
+        [PLParam(TextKey = "BackSegments", Description = "裏側エッジの分割数（0=無効 / 1=面取り / 2以上=ラウンド）",
+                 Min = EdgeSegmentsMin, Max = EdgeSegmentsMax, Step = 1)]
+        public int SegmentsBack;
+        [PLParam(TextKey = "EdgeSize", Description = "表側エッジのサイズ", Min = EdgeSizeMin, Max = EdgeSizeMax)]
+        public float EdgeSizeFront;
+        [PLParam(TextKey = "EdgeSize", Description = "裏側エッジのサイズ", Min = EdgeSizeMin, Max = EdgeSizeMax)]
+        public float EdgeSizeBack;
+        [PLParam(TextKey = "EdgeInward", Description = "ラウンドの曲率方向を入れ替える")]
         public bool EdgeInward;
+        [PLParam(TextKey = "SymmetryMode", Description = "左右対称として扱う")]
         public bool SymmetryMode;
         /// <summary>AABB サイズ基準のピボット。生成後に -Pivot * サイズ だけ平行移動する</summary>
+        [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                 Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
         public Vector3 Pivot;
+        [PLParam(TextKey = "Profile2DLoops", Description = "押し出す輪郭のループ列。生成器が実際に読むのはこの値", Required = true)]
         public LoopData[] Loops;
+        [PLParam(Ignore = true, Description = "編集中のループの位置。形状には影響しない")]
         public int SelectedLoopIndex;
+        [PLParam(Ignore = true, Description = "編集中の点の位置。形状には影響しない")]
         public int SelectedPointIndex;
-        public float RotationX, RotationY;
+        [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+        public float RotationX;
+        [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+        public float RotationY;
 
         [Serializable]
         public struct LoopData
         {
+            [PLParam(TextKey = "Profile2DLoopPoints", Description = "ループの点列", Required = true)]
             public Vector2[] Points;
+            [PLParam(TextKey = "Profile2DLoopIsHole", Description = "穴として扱う")]
             public bool IsHole;
 
             public LoopData(Loop loop)

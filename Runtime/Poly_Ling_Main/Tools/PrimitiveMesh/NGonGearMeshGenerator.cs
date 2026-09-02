@@ -25,35 +25,90 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct NGonGearParams : IEquatable<NGonGearParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>歯数の下限・上限</summary>
+            public const int ToothCountMin = 3;
+            public const int ToothCountMax = 64;
+
+            /// <summary>歯底円半径の下限・上限</summary>
+            public const float InnerRadiusMin = 0.05f;
+            public const float InnerRadiusMax = 5f;
+
+            /// <summary>歯先円半径の下限・上限</summary>
+            public const float OuterRadiusMin = 0.06f;
+            public const float OuterRadiusMax = 6f;
+
+            /// <summary>厚みの下限・上限</summary>
+            public const float ThicknessMin = 0f;
+            public const float ThicknessMax = 3f;
+
+            /// <summary>歯元角の下限・上限（度）</summary>
+            public const float ThetaLMin = 1f;
+            public const float ThetaLMax = 30f;
+
+            /// <summary>歯先角の下限・上限（度）</summary>
+            public const float ThetaMMin = 1f;
+            public const float ThetaMMax = 20f;
+
+            /// <summary>回転オフセットの下限・上限（度）</summary>
+            public const float RotationOffsetMin = 0f;
+            public const float RotationOffsetMax = 360f;
+
+            /// <summary>軸穴半径の下限・上限</summary>
+            public const float BoreRadiusMin = 0f;
+            public const float BoreRadiusMax = 5f;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
 
             /// <summary>歯の数</summary>
+            [PLParam(TextKey = "GearToothCount", Description = "歯数", Min = ToothCountMin, Max = ToothCountMax,
+                     Step = 1)]
             public int ToothCount;
             /// <summary>谷の半径</summary>
+            [PLParam(TextKey = "GearInnerRadius", Description = "歯底円半径", Min = InnerRadiusMin,
+                     Max = InnerRadiusMax)]
             public float InnerRadius;
             /// <summary>歯先の半径</summary>
+            [PLParam(TextKey = "GearOuterRadius", Description = "歯先円半径", Min = OuterRadiusMin,
+                     Max = OuterRadiusMax)]
             public float OuterRadius;
             /// <summary>厚み</summary>
+            [PLParam(TextKey = "Thickness", Description = "厚み。0 で板", Min = ThicknessMin, Max = ThicknessMax)]
             public float Thickness;
 
             /// <summary>歯先の幅（度）</summary>
+            [PLParam(TextKey = "GearThetaL", Description = "歯元の開き角（度）", Min = ThetaLMin, Max = ThetaLMax)]
             public float ThetaL;
             /// <summary>傾斜部の幅（度）</summary>
+            [PLParam(TextKey = "GearThetaM", Description = "歯先の開き角（度）", Min = ThetaMMin, Max = ThetaMMax)]
             public float ThetaM;
 
             /// <summary>全体の回転オフセット（度）</summary>
+            [PLParam(TextKey = "GearRotationOffset", Description = "全体の回転オフセット（度）", Min = RotationOffsetMin,
+                     Max = RotationOffsetMax)]
             public float RotationOffset;
 
             /// <summary>中心の丸穴半径。0 で穴なし。</summary>
+            [PLParam(TextKey = "GearBoreRadius", Description = "軸穴の半径。0 で穴なし", Min = BoreRadiusMin,
+                     Max = BoreRadiusMax)]
             public float BoreRadius;
             /// <summary>穴リングの分割数</summary>
+            [PLParam(TextKey = "GearBoreSegments", Description = "軸穴の円周分割数",
+                     Min = GearDiskBuilder.BoreSegmentsMin, Max = GearDiskBuilder.BoreSegmentsMax, Step = 1)]
             public int BoreSegments;
 
             /// <summary>板を置く平面</summary>
+            [PLParam(TextKey = "Orientation", Description = "板の向き（XY / XZ / YZ）")]
             public PlaneOrientation Orientation;
             /// <summary>生成後にメッシュ全体の面を反転する</summary>
+            [PLParam(TextKey = "FlipFaces", Description = "生成後にメッシュ全体の面を反転する")]
             public bool FlipFaces;
             /// <summary>AABB サイズ基準のピボット</summary>
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
 
             public static NGonGearParams Default => new NGonGearParams

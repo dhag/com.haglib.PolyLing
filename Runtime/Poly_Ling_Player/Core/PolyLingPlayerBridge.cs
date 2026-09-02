@@ -37,6 +37,44 @@ namespace Poly_Ling.EditorBridge
         public void Refresh() { }
 
         // ================================================================
+        // 組み込みアセット — Player にはアセットが無いので実行時に生成
+        //
+        // 呼ばれるたびに new すると Material が漏れるため 1 個だけ作って使い回す。
+        // シェーダ探索の順序は PMXImporter / MQOImporter の FindBestShader と同じ。
+        // ================================================================
+        private static Material _defaultMaterial;
+
+        public Material GetBuiltinDefaultMaterial()
+        {
+            if (_defaultMaterial != null) return _defaultMaterial;
+
+            string[] shaderNames =
+            {
+                "Universal Render Pipeline/Lit",
+                "Universal Render Pipeline/Simple Lit",
+                "HDRP/Lit",
+                "Standard",
+                "Unlit/Color"
+            };
+
+            Shader shader = null;
+            foreach (var name in shaderNames)
+            {
+                shader = Shader.Find(name);
+                if (shader != null) break;
+            }
+            if (shader == null) shader = Shader.Find("Standard");
+            if (shader == null) return null;
+
+            _defaultMaterial = new Material(shader)
+            {
+                name = "PolyLing_Default",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            return _defaultMaterial;
+        }
+
+        // ================================================================
         // PrefabUtility — Playerでは使用不可
         // ================================================================
         public GameObject SaveAsPrefabAsset(GameObject go, string path) => null;

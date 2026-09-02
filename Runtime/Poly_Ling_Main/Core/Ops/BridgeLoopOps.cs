@@ -158,44 +158,79 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// ループA（n頂点）とループB（m頂点）をつなぐ面を作る。
-        /// flipCorrespondence が true のときループBの周回方向を反転する。
-        /// flipFaces が true のとき生成面の巻き方向を反転する。
-        /// subdivisions は A→B 方向の分割数（0 で分割なし）。
+        /// 閉環同士としてつなぐ。従来からの入口。
         /// </summary>
         public static BridgeResult Build(
             int aCount, int bCount, bool flipCorrespondence, bool flipFaces, int subdivisions)
         {
+            return Build(aCount, bCount, true, true, flipCorrespondence, flipFaces, subdivisions);
+        }
+
+        /// <summary>
+        /// 辺群A（n頂点）と辺群B（m頂点）をつなぐ面を作る。
+        /// flipCorrespondence が true のとき辺群Bの並び順を反転する。
+        /// flipFaces が true のとき生成面の巻き方向を反転する。
+        /// subdivisions は A→B 方向の分割数（0 で分割なし）。
+        ///
+        /// <para>
+        /// closedA / closedB は各辺群が閉環かどうか。
+        /// 閉環同士は端を巻き戻して環状に面を張る（穴つなぎ。従来の挙動）。
+        /// 開環同士は両端を巻き戻さず、帯状に面を張る。
+        /// 片方だけ閉環は対応点数が合わず面が破綻するため拒否する。
+        /// </para>
+        /// </summary>
+        public static BridgeResult Build(
+            int aCount, int bCount, bool closedA, bool closedB,
+            bool flipCorrespondence, bool flipFaces, int subdivisions)
+        {
             var r = new BridgeResult { ACount = aCount, BCount = bCount };
 
-            if (aCount < 3 || bCount < 3)
+            if (closedA != closedB)
             {
-                r.Message = "エッジの頂点が足りません";
+                r.Message = "片方だけが閉じた辺群です。両方とも閉じるか、両方とも開いた辺にしてください";
+                return r;
+            }
+
+            bool closed = closedA;
+            int  minCount = closed ? 3 : 2;   // 開環は 1 辺（2頂点）どうしでも面になる
+            if (aCount < minCount || bCount < minCount)
+            {
+                r.Message = closed ? "エッジの頂点が足りません" : "辺群の頂点が足りません";
                 return r;
             }
 
             int s = Mathf.Max(0, subdivisions);
 
-            // ループB の周回順。反転時は先頭を保ったまま逆回りにする
-            //（開始点どうしの対応は保ちたいため、先頭は動かさない）。
+            // 辺群B の並び順。
+            // 閉環は先頭を保ったまま逆回りにする（開始点どうしの対応を保つため）。
+            // 開環は端から端へ入れ替える（先頭と末尾が入れ替わるのが反転の意味）。
             var bOrder = new int[bCount];
             for (int k = 0; k < bCount; k++)
-                bOrder[k] = flipCorrespondence ? (bCount - k) % bCount : k;
+            {
+                if (!flipCorrespondence) bOrder[k] = k;
+                else if (closed)         bOrder[k] = (bCount - k) % bCount;
+                else                     bOrder[k] = bCount - 1 - k;
+            }
 
-            // 格子経路（(0,0) → (n,m)）
-            var path = BuildPairPath(aCount, bCount);
+            // 格子経路。閉環は辺数＝頂点数、開環は辺数＝頂点数-1 で刻む。
+            var path = closed
+                ? BuildPairPath(aCount, bCount)
+                : BuildPairPath(aCount - 1, bCount - 1);
 
-            // 各対応点の中間頂点列。path の末尾は先頭と同じ位置なので列も共有する。
-            int pairCount = path.Count - 1;                 // 独立した対応点の数
+            // 各対応点の中間頂点列。
+            // 閉環は path の末尾が先頭と同じ位置なので、その分を列から外す。
+            // 開環は末尾も独立した対応点なので全て列にする。
+            int pairCount = closed ? path.Count - 1 : path.Count;
             var columns = new int[pairCount][];             // columns[k][l] = 符号化ID（l=0..s+1）
 
             for (int k = 0; k < pairCount; k++)
             {
-                int ai = path[k].I % aCount;
-                int bj = bOrder[path[k].J % bCount];
+                int ai = closed ? path[k].I % aCount : path[k].I;
+                int bj = closed ? bOrder[path[k].J % bCount] : bOrder[path[k].J];
 
                 var col = new int[s + 2];
-                col[0]     = ai;                 // ループA
-                col[s + 1] = aCount + bj;        // ループB
+                col[0]     = ai;                 // 辺群A
+                col[s + 1] = aCount + bj;        // 辺群B
 
                 for (int l = 1; l <= s; l++)
                 {
@@ -206,10 +241,12 @@ namespace Poly_Ling.Ops
                 columns[k] = col;
             }
 
-            // 隣り合う列の間に面を張る
-            for (int k = 0; k < pairCount; k++)
+            // 隣り合う列の間に面を張る。
+            // 閉環は最後の列と先頭の列もつなぐ。開環はつながない。
+            int spanCount = closed ? pairCount : pairCount - 1;
+            for (int k = 0; k < spanCount; k++)
             {
-                int k2 = (k + 1) % pairCount;
+                int k2 = closed ? (k + 1) % pairCount : k + 1;
 
                 bool aAdvanced = path[k + 1].I != path[k].I;
                 bool bAdvanced = path[k + 1].J != path[k].J;

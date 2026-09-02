@@ -17,14 +17,45 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct PyramidParams : IEquatable<PyramidParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>底面の外接円半径の下限・上限</summary>
+            public const float BaseRadiusMin = 0.1f;
+            public const float BaseRadiusMax = 5f;
+
+            /// <summary>高さの下限・上限</summary>
+            public const float HeightMin = 0.1f;
+            public const float HeightMax = 10f;
+
+            /// <summary>底面の辺数の下限・上限</summary>
+            public const int SidesMin = 3;
+            public const int SidesMax = 16;
+
+            /// <summary>頂点のずらしの下限・上限</summary>
+            public const float ApexOffsetMin = -1f;
+            public const float ApexOffsetMax = 1f;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
+            [PLParam(TextKey = "BaseRadius", Description = "底面の外接円半径", Min = BaseRadiusMin, Max = BaseRadiusMax)]
             public float BaseRadius;
+            [PLParam(TextKey = "Height", Description = "高さ", Min = HeightMin, Max = HeightMax)]
             public float Height;
+            [PLParam(TextKey = "Sides", Description = "底面の辺数", Min = SidesMin, Max = SidesMax, Step = 1)]
             public int Sides;
+            [PLParam(TextKey = "ApexOffset", Description = "頂点の水平方向のずらし", Min = ApexOffsetMin,
+                     Max = ApexOffsetMax)]
             public float ApexOffset;
+            [PLParam(TextKey = "CapBottom", Description = "底面にフタを張る")]
             public bool CapBottom;
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
-            public float RotationX, RotationY;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationX;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationY;
 
             public static PyramidParams Default => new PyramidParams
             {

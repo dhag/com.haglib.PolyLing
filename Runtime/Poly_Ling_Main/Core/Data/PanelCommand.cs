@@ -309,8 +309,30 @@ namespace Poly_Ling.Data
         public MeshCategory Category { get; }
         public ReorderEntry[] Entries { get; }
 
-        public ReorderMeshesCommand(int modelIndex, MeshCategory category, ReorderEntry[] entries)
-            : base(modelIndex) { Category = category; Entries = entries; }
+        /// <summary>
+        /// 親を付け替えたとき、ワールド姿勢を保つようローカル姿勢を組み直すか。
+        ///
+        /// ComputeWorldMatrices は「親のワールド × 自身のローカル」と積む
+        /// （ModelContext.cs:1746-1748）ので、組み直さないと親が付いた瞬間に
+        /// 子のワールド位置が親のぶんだけ飛ぶ。
+        /// Unity の Transform.SetParent(parent, worldPositionStays: true) と同じ扱いを既定にする。
+        ///
+        /// false にすると付け替え前のローカル値がそのまま残る（従来の挙動）。
+        /// 親からの相対値を直接入れてある場合はこちらを使う。
+        /// </summary>
+        [PLParam(TextKey = "PreserveWorldTransform",
+                 Description = "親を付け替えてもワールド姿勢を保つ")]
+        public bool PreserveWorldTransform { get; }
+
+        public ReorderMeshesCommand(
+            int modelIndex, MeshCategory category, ReorderEntry[] entries,
+            bool preserveWorldTransform = true)
+            : base(modelIndex)
+        {
+            Category               = category;
+            Entries                = entries;
+            PreserveWorldTransform = preserveWorldTransform;
+        }
     }
 
     // ================================================================
@@ -1666,6 +1688,33 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>
+    /// TPSモーフの制御点の選び方。
+    ///
+    /// Global 以外は「ターゲット頂点ごとに独立に係数を求める」局所モードで、
+    /// 近傍の選び方が 4 通りある。局所モードは 1 頂点ごとに LU 分解を行うため、
+    /// 制御点数 N に対して「ターゲット頂点数 × (N+4)^3 / 3」の積和が要る。
+    /// 半径モード（EuclideanRadius / LinkRadius）は制御点数が入力依存で
+    /// 上限が無いため、必ず制御点数の上限で頭打ちにすること。
+    ///
+    /// リンク距離モード（LinkCount / LinkRadius）は、制御点候補だけの
+    /// 誘導部分グラフをたどる。選択が飛び地になっていると到達できず
+    /// 制御点が減る。ビフォーに面が無い場合は使えない。
+    /// </summary>
+    public enum ThinPlateLocalMode
+    {
+        /// <summary>全域モード。全制御点で 1 度だけ係数を求める（従来動作）。</summary>
+        Global          = 0,
+        /// <summary>ターゲット頂点位置から直線距離で近い順に N 個。</summary>
+        EuclideanCount  = 1,
+        /// <summary>最も近い候補点を始点に、リンク距離で近い順に N 個。</summary>
+        LinkCount       = 2,
+        /// <summary>ターゲット頂点位置から直線距離 L 以下。</summary>
+        EuclideanRadius = 3,
+        /// <summary>最も近い候補点を始点に、リンク距離 L 以下。</summary>
+        LinkRadius      = 4,
+    }
+
+    /// <summary>
     /// ビフォー／アフター2オブジェクトの頂点対応から 3D Thin Plate Spline を解き、
     /// ターゲットオブジェクトを変形した結果を新規オブジェクトとして追加する。
     /// ターゲット自身は変更しない。Undo 記録付き。
@@ -1707,6 +1756,36 @@ namespace Poly_Ling.Data
             Lambda                    = lambda;
             SelectedControlPointsOnly = selectedControlPointsOnly;
             RecalculateNormals        = recalculateNormals;
+        }
+    }
+
+    /// <summary>
+    /// 算出済みの変形結果を新規オブジェクトとして追加する。
+    /// ターゲット自身は変更しない。Undo 記録付き。
+    ///
+    /// 局所モードの TPS は 1 頂点ごとに LU 分解を行うため実行時間が長く、
+    /// 中止できるようバックグラウンドスレッドで走らせる。計算が終わった後に
+    /// メインスレッドへ戻すのがこのコマンドで、変形そのものは行わない。
+    /// 全域モードは ApplyThinPlateMorphCommand が同期実行するため、
+    /// このコマンドを経由しない。
+    /// </summary>
+    public class ApplyThinPlateMorphResultCommand : PanelCommand
+    {
+        /// <summary>変形させた MeshContext の MasterIndex</summary>
+        public int       TargetMasterIndex  { get; }
+        /// <summary>ターゲットのローカル座標での変形後位置。ターゲットの頂点数と同数であること。</summary>
+        public Vector3[] LocalPositions     { get; }
+        /// <summary>結果の法線を再計算するか</summary>
+        public bool      RecalculateNormals { get; }
+
+        public ApplyThinPlateMorphResultCommand(
+            int modelIndex, int targetMasterIndex,
+            Vector3[] localPositions, bool recalculateNormals = true)
+            : base(modelIndex)
+        {
+            TargetMasterIndex  = targetMasterIndex;
+            LocalPositions     = localPositions;
+            RecalculateNormals = recalculateNormals;
         }
     }
 
@@ -1851,6 +1930,33 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>Humanoidマッピングを使用してTポーズに変換する</summary>
+    /// <summary>
+    /// スプリングボーン検証用のダミー装備を生成する（システムデバッグ）。
+    ///
+    /// 揺れデータ（SpringBoneChainRoot / SpringBoneJoint / SpringBoneColliders）を
+    /// 書き込むオーサリング UI が無いため、VRM 出力の検証ができない。
+    /// このコマンドは既存モデルへボーン鎖・スキンドメッシュ・揺れ付帯データ・
+    /// コライダーを一度に足す。生成規則は SpringBoneTestRigBuilder が正典。
+    /// </summary>
+    public class BuildSpringBoneTestRigCommand : PanelCommand
+    {
+        /// <summary>生成パラメータ。null なら既定値。</summary>
+        public Poly_Ling.Tools.SpringBoneTest.SpringBoneTestRigParams Params { get; }
+
+        /// <summary>生成前に同じ接頭辞の既存生成物を消すか。</summary>
+        public bool ClearExisting { get; }
+
+        public BuildSpringBoneTestRigCommand(
+            int modelIndex,
+            Poly_Ling.Tools.SpringBoneTest.SpringBoneTestRigParams prms,
+            bool clearExisting = true)
+            : base(modelIndex)
+        {
+            Params        = prms;
+            ClearExisting = clearExisting;
+        }
+    }
+
     public class ApplyTPoseCommand : PanelCommand
     {
         public ApplyTPoseCommand(int modelIndex) : base(modelIndex) { }
@@ -2040,6 +2146,836 @@ namespace Poly_Ling.Data
             BeforePath        = beforePath;
             AfterPath         = afterPath;
             TrianglesPath     = trianglesPath;
+        }
+    }
+
+    // ================================================================
+    // 図形生成
+    //
+    // 【なぜ図形ごとにコマンドを分けるか】
+    //   1本のコマンドに図形種別と汎用の入れ物を持たせると、
+    //   何を渡せばよいかがコマンドの型から読めなくなる。
+    //   図形ごとに型付きのパラメータを1つだけ持たせると、
+    //   コマンドの型からそのまま MCP のツールスキーマを起こせる。
+    //
+    // 【生成そのもの】
+    //   Poly_Ling.PrimitiveMesh.PrimitiveMeshFactory.Build がコマンドから MeshObject を作る。
+    //   モデルへの反映（追加先の解決・Undo・再構築）はディスパッチャ側が行う。
+    // ================================================================
+
+    /// <summary>
+    /// 生成した図形をどこへどんな姿勢で置くか。図形の内容とは独立なのでまとめて持つ。
+    ///
+    /// 【回転・拡大の焼き込み】
+    ///   BakeRotation / BakeScale が立っている成分は頂点へ焼き込む。
+    ///   立っていない成分は描画オブジェクトの姿勢（BoneTransform）へ入れる。
+    ///   「既存の描画オブジェクトに追加」のときは追加先の姿勢を変えられないので、
+    ///   指定にかかわらず両方とも焼き込む（BakeRotationEffective / BakeScaleEffective）。
+    /// </summary>
+    public struct PrimitivePlacement
+    {
+        /// <summary>配置位置（ワールド）。</summary>
+        [PLParam(TextKey = "PlacePosition", Description = "配置位置（ワールド座標）")]
+        public Vector3 WorldPosition;
+
+        /// <summary>配置の回転（度）。</summary>
+        [PLParam(TextKey = "PlaceRotation", Description = "配置の回転（度）")]
+        public Vector3 PlaceRotation;
+
+        /// <summary>配置の拡大率。</summary>
+        [PLParam(TextKey = "PlaceScale", Description = "配置の拡大率")]
+        public Vector3 PlaceScale;
+
+        /// <summary>回転を頂点へ焼き込むか。</summary>
+        [PLParam(TextKey = "BakeRotation", Description = "回転を頂点へ焼き込む")]
+        public bool BakeRotation;
+
+        /// <summary>拡大率を頂点へ焼き込むか。</summary>
+        [PLParam(TextKey = "BakeScale", Description = "拡大率を頂点へ焼き込む")]
+        public bool BakeScale;
+
+        /// <summary>アーマチュア内で姿勢を無視するか。</summary>
+        [PLParam(TextKey = "IgnorePoseInArmature", Description = "アーマチュア内で姿勢を無視する")]
+        public bool IgnorePoseInArmature;
+
+        /// <summary>追加先モード。</summary>
+        [PLParam(TextKey = "AddMode", Description = "新規オブジェクト / 既存へ追加 / 新規モデル")]
+        public Poly_Ling.Player.PrimitiveAddMode AddMode;
+
+        /// <summary>
+        /// 「既存へ追加」のときの追加先 MeshContextList インデックス。
+        /// -1 なら選択オブジェクトリストの先頭。
+        /// </summary>
+        [PLParam(TextKey = "AddTargetIndex", Description = "追加先の索引。-1 で選択の先頭")]
+        public int AddTargetIndex;
+
+        /// <summary>
+        /// 生成面へ割り当てるマテリアルスロット番号。
+        /// -1 は「指定しない」で、生成器が入れた値をそのまま使う。
+        /// </summary>
+        [PLParam(TextKey = "MaterialIndex", Description = "マテリアルスロット番号。-1 で指定しない")]
+        public int MaterialIndex;
+
+        /// <summary>同一位置の重複頂点を結合するか。</summary>
+        [PLParam(TextKey = "MergeDuplicateVertices", Description = "同一位置の重複頂点を結合する")]
+        public bool MergeDuplicateVertices;
+
+        public static PrimitivePlacement Default => new PrimitivePlacement
+        {
+            WorldPosition          = Vector3.zero,
+            PlaceRotation          = Vector3.zero,
+            PlaceScale             = Vector3.one,
+            BakeRotation           = true,
+            BakeScale              = true,
+            IgnorePoseInArmature   = false,
+            AddMode                = Poly_Ling.Player.PrimitiveAddMode.NewObject,
+            AddTargetIndex         = -1,
+            MaterialIndex          = -1,
+            MergeDuplicateVertices = true,
+        };
+    }
+
+    /// <summary>図形生成コマンドの共通部分。</summary>
+    public abstract class CreatePrimitiveMeshCommand : PanelCommand
+    {
+        /// <summary>配置と後処理の指定。</summary>
+        [PLParam(TextKey = "PrimitivePlacement", Description = "配置と後処理の指定", Required = true)]
+        public PrimitivePlacement Placement { get; }
+
+        /// <summary>図形の識別子。PrimitiveMeshTexts のキーと同じ文字列。</summary>
+        [PLParam(Ignore = true)]
+        public abstract string ShapeName { get; }
+
+        /// <summary>生成する描画オブジェクトの名前。各図形のパラメータが持つ値を返す。</summary>
+        [PLParam(Ignore = true)]
+        public abstract string MeshName { get; }
+
+        /// <summary>実際に回転を焼き込むか。「既存へ追加」は無条件に焼き込む。</summary>
+        public bool BakeRotationEffective
+            => Placement.BakeRotation
+               || Placement.AddMode == Poly_Ling.Player.PrimitiveAddMode.AddToExisting;
+
+        /// <summary>実際に拡大率を焼き込むか。</summary>
+        public bool BakeScaleEffective
+            => Placement.BakeScale
+               || Placement.AddMode == Poly_Ling.Player.PrimitiveAddMode.AddToExisting;
+
+        /// <summary>頂点へ焼き込む回転（度）。焼き込まないときはゼロ。</summary>
+        public Vector3 BakedRotation => BakeRotationEffective ? Placement.PlaceRotation : Vector3.zero;
+
+        /// <summary>頂点へ焼き込む拡大率。焼き込まないときは 1。</summary>
+        public Vector3 BakedScale => BakeScaleEffective ? Placement.PlaceScale : Vector3.one;
+
+        /// <summary>描画オブジェクトの姿勢へ入れる回転（度）。焼き込んだときはゼロ。</summary>
+        public Vector3 PoseRotation => BakeRotationEffective ? Vector3.zero : Placement.PlaceRotation;
+
+        /// <summary>描画オブジェクトの姿勢へ入れる拡大率。焼き込んだときは 1。</summary>
+        public Vector3 PoseScale => BakeScaleEffective ? Vector3.one : Placement.PlaceScale;
+
+        protected CreatePrimitiveMeshCommand(int modelIndex, PrimitivePlacement placement)
+            : base(modelIndex) { Placement = placement; }
+    }
+
+    // ── 基本図形 ────────────────────────────────────────────────
+
+    public sealed class CreateCubeCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Cube", Description = "直方体のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.CubeMeshGenerator.CubeParams Params { get; }
+
+        public override string ShapeName => "Cube";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateCubeCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.CubeMeshGenerator.CubeParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateSphereCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Sphere", Description = "球のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.SphereMeshGenerator.SphereParams Params { get; }
+
+        public override string ShapeName => "Sphere";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateSphereCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.SphereMeshGenerator.SphereParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateCylinderCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Cylinder", Description = "円柱のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.CylinderMeshGenerator.CylinderParams Params { get; }
+
+        public override string ShapeName => "Cylinder";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateCylinderCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.CylinderMeshGenerator.CylinderParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateCapsuleCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Capsule", Description = "カプセルのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.CapsuleMeshGenerator.CapsuleParams Params { get; }
+
+        public override string ShapeName => "Capsule";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateCapsuleCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.CapsuleMeshGenerator.CapsuleParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreatePlaneCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Plane", Description = "平面のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.PlaneMeshGenerator.PlaneParams Params { get; }
+
+        public override string ShapeName => "Plane";
+        public override string MeshName  => Params.MeshName;
+
+        public CreatePlaneCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.PlaneMeshGenerator.PlaneParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreatePyramidCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Pyramid", Description = "角錐のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.PyramidMeshGenerator.PyramidParams Params { get; }
+
+        public override string ShapeName => "Pyramid";
+        public override string MeshName  => Params.MeshName;
+
+        public CreatePyramidCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.PyramidMeshGenerator.PyramidParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateStadiumBoxCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "StadiumBox", Description = "小判型のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.StadiumBoxMeshGenerator.StadiumBoxParams Params { get; }
+
+        public override string ShapeName => "StadiumBox";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateStadiumBoxCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.StadiumBoxMeshGenerator.StadiumBoxParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    // ── 高度な図形（パラメータだけで閉じるもの） ──────────────────
+
+    public sealed class CreateNGonGearCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "NGonGear", Description = "多角形歯車のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.NGonGearMeshGenerator.NGonGearParams Params { get; }
+
+        public override string ShapeName => "NGonGear";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateNGonGearCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.NGonGearMeshGenerator.NGonGearParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateNGonStarCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "NGonStar", Description = "星形のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.NGonStarMeshGenerator.NGonStarParams Params { get; }
+
+        public override string ShapeName => "NGonStar";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateNGonStarCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.NGonStarMeshGenerator.NGonStarParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateInvoluteGearCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "InvoluteGear", Description = "インボリュート歯車のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.InvoluteTrochoidGearMeshGenerator.InvoluteGearParams Params { get; }
+
+        public override string ShapeName => "InvoluteGear";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateInvoluteGearCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.InvoluteTrochoidGearMeshGenerator.InvoluteGearParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateRibbonBowCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Ribbon", Description = "リボンのパラメータ", Required = true)]
+        public Poly_Ling.Ribbon.RibbonBowParams Params { get; }
+
+        public override string ShapeName => "Ribbon";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateRibbonBowCommand(
+            int modelIndex,
+            Poly_Ling.Ribbon.RibbonBowParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    /// <summary>
+    /// 回転体。プロファイル（断面の点列）は RevolutionParams.Profile が持つ。
+    /// </summary>
+    public sealed class CreateRevolutionCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Revolution", Description = "回転体のパラメータ", Required = true)]
+        public Poly_Ling.Revolution.RevolutionParams Params { get; }
+
+        public override string ShapeName => "Revolution";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateRevolutionCommand(
+            int modelIndex,
+            Poly_Ling.Revolution.RevolutionParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    /// <summary>
+    /// 2D 押し出し。ループ（輪郭の点列）は Profile2DParams.Loops が持つ。
+    /// </summary>
+    public sealed class CreateProfile2DCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Profile2D", Description = "2D押し出しのパラメータ", Required = true)]
+        public Poly_Ling.Profile2DExtrude.Profile2DParams Params { get; }
+
+        public override string ShapeName => "Profile2D";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateProfile2DCommand(
+            int modelIndex,
+            Poly_Ling.Profile2DExtrude.Profile2DParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateTextMeshCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Text", Description = "文字のパラメータ", Required = true)]
+        public Poly_Ling.GlyphText.TextMeshParams Params { get; }
+
+        public override string ShapeName => "Text";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateTextMeshCommand(
+            int modelIndex,
+            Poly_Ling.GlyphText.TextMeshParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateNohMaskCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "NohMask", Description = "面（能面）のパラメータ", Required = true)]
+        public Poly_Ling.NohMask.FaceMeshParams Params { get; }
+
+        public override string ShapeName => "NohMask";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateNohMaskCommand(
+            int modelIndex,
+            Poly_Ling.NohMask.FaceMeshParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    // ── 基準ベルトを使う図形 ─────────────────────────────────────
+
+    /// <summary>
+    /// 基準ベルト（梯子状データ）を入力に取る図形の共通部分。
+    ///
+    /// ベルトは取り込み元メッシュのローカル座標を持つ点列で、
+    /// パネルでは選択メッシュから拾う。コマンドにはその結果を載せる。
+    /// 向き補正とスプライン分割は生成側で掛けるので、拾ったままの値を渡す。
+    /// </summary>
+    public abstract class CreateBeltPrimitiveCommand : CreatePrimitiveMeshCommand
+    {
+        /// <summary>基準ベルト。1本が梯子1本にあたる。</summary>
+        [PLParam(TextKey = "Belts", Description = "基準ベルト（梯子）の列", Required = true)]
+        public Poly_Ling.PrimitiveMesh.BeltCsvEntry[] Belts { get; }
+
+        /// <summary>向き補正。</summary>
+        [PLParam(TextKey = "BeltOrient", Description = "梯子の向き補正")]
+        public Poly_Ling.PrimitiveMesh.BeltOrientOptions Orient { get; }
+
+        /// <summary>スプライン分割。</summary>
+        [PLParam(TextKey = "BeltSpline", Description = "梯子のスプライン分割")]
+        public Poly_Ling.PrimitiveMesh.BeltSplineOptions Spline { get; }
+
+        protected CreateBeltPrimitiveCommand(
+            int modelIndex, PrimitivePlacement placement,
+            Poly_Ling.PrimitiveMesh.BeltCsvEntry[] belts,
+            Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
+            Poly_Ling.PrimitiveMesh.BeltSplineOptions spline)
+            : base(modelIndex, placement)
+        {
+            Belts  = belts;
+            Orient = orient;
+            Spline = spline;
+        }
+    }
+
+    /// <summary>
+    /// フリル。断面プロファイルは A / B の2本まで持てる。
+    /// TwoProfiles が false のときは A だけを使う。
+    /// </summary>
+    public sealed class CreateFrillCommand : CreateBeltPrimitiveCommand
+    {
+        [PLParam(TextKey = "Frill", Description = "フリルのパラメータ", Required = true)]
+        public Poly_Ling.Frill.FrillParams Params { get; }
+
+        /// <summary>断面プロファイル A。</summary>
+        [PLParam(TextKey = "FrillProfileA", Description = "断面プロファイル A", Required = true)]
+        public Vector2[] ProfileA { get; }
+
+        /// <summary>断面プロファイル B。TwoProfiles が false なら使わない。</summary>
+        [PLParam(TextKey = "FrillProfileB", Description = "断面プロファイル B")]
+        public Vector2[] ProfileB { get; }
+
+        public override string ShapeName => "Frill";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateFrillCommand(
+            int modelIndex,
+            Poly_Ling.Frill.FrillParams prms,
+            Vector2[] profileA, Vector2[] profileB,
+            Poly_Ling.PrimitiveMesh.BeltCsvEntry[] belts,
+            Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
+            Poly_Ling.PrimitiveMesh.BeltSplineOptions spline,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement, belts, orient, spline)
+        {
+            Params   = prms;
+            ProfileA = profileA;
+            ProfileB = profileB;
+        }
+    }
+
+    /// <summary>パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。</summary>
+    public sealed class CreatePipeCommand : CreateBeltPrimitiveCommand
+    {
+        [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ", Required = true)]
+        public Poly_Ling.Pipe.PipeParams Params { get; }
+
+        [PLParam(TextKey = "PipeProfile", Description = "断面プロファイル", Required = true)]
+        public Vector2[] Profile { get; }
+
+        [PLParam(TextKey = "PipeProfileClosed", Description = "断面を閉ループとして扱う")]
+        public bool ProfileClosed { get; }
+
+        public override string ShapeName => "Pipe";
+        public override string MeshName  => Params.MeshName;
+
+        public CreatePipeCommand(
+            int modelIndex,
+            Poly_Ling.Pipe.PipeParams prms,
+            Vector2[] profile, bool profileClosed,
+            Poly_Ling.PrimitiveMesh.BeltCsvEntry[] belts,
+            Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
+            Poly_Ling.PrimitiveMesh.BeltSplineOptions spline,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement, belts, orient, spline)
+        {
+            Params        = prms;
+            Profile       = profile;
+            ProfileClosed = profileClosed;
+        }
+    }
+
+    /// <summary>
+    /// 藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。
+    /// 索引から MeshObject への解決はディスパッチャ側が行う。
+    /// </summary>
+    public sealed class CreatePlaceObjectCommand : CreateBeltPrimitiveCommand
+    {
+        [PLParam(TextKey = "PlaceObject", Description = "配置のパラメータ", Required = true)]
+        public Poly_Ling.PlaceObject.PlaceObjectParams Params { get; }
+
+        /// <summary>配置元の MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "PlaceSourceIndices", Description = "配置元オブジェクトの索引", Required = true)]
+        public int[] SourceMasterIndices { get; }
+
+        public override string ShapeName => "PlaceObject";
+        public override string MeshName  => Params.MeshName;
+
+        public CreatePlaceObjectCommand(
+            int modelIndex,
+            Poly_Ling.PlaceObject.PlaceObjectParams prms,
+            int[] sourceMasterIndices,
+            Poly_Ling.PrimitiveMesh.BeltCsvEntry[] belts,
+            Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
+            Poly_Ling.PrimitiveMesh.BeltSplineOptions spline,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement, belts, orient, spline)
+        {
+            Params              = prms;
+            SourceMasterIndices = sourceMasterIndices;
+        }
+    }
+
+    /// <summary>
+    /// 出来上がった MeshObject をそのままモデルへ置く。
+    ///
+    /// 【なぜ図形パラメータではなくメッシュを載せるか】
+    ///   プロファイル編集の「メッシュへ反映」や厚み付け（ソリッド化）の結果は、
+    ///   図形パラメータから決まるのではなく、編集中の点列や選択面から出来る。
+    ///   パラメータ化できないので、そのままメッシュを渡す。
+    ///
+    /// 【MCP には出さない】
+    ///   Mesh はスキーマにできないため Ignore を付けてある。
+    ///   MCP からの生成には図形ごとの CreatePrimitiveMeshCommand を使う。
+    /// </summary>
+    public class AddGeneratedMeshCommand : PanelCommand
+    {
+        /// <summary>置くメッシュ。呼出し側が作った実体をそのまま渡す。</summary>
+        [PLParam(Ignore = true, Description = "出来上がったメッシュ。スキーマには出さない")]
+        public MeshObject Mesh { get; }
+
+        /// <summary>描画オブジェクトの名前。</summary>
+        [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
+        public string MeshName { get; }
+
+        /// <summary>配置と後処理の指定。</summary>
+        [PLParam(TextKey = "PrimitivePlacement", Description = "配置と後処理の指定", Required = true)]
+        public PrimitivePlacement Placement { get; }
+
+        /// <summary>
+        /// 回転・拡大は呼出し側で頂点へ焼き込み済みか。
+        /// true のとき、ディスパッチャは Placement の回転・拡大を頂点へ入れ直さない。
+        /// </summary>
+        [PLParam(Ignore = true, Description = "回転・拡大を呼出し側が頂点へ入れ済みか")]
+        public bool PoseAlreadyBaked { get; }
+
+        public AddGeneratedMeshCommand(
+            int modelIndex, MeshObject mesh, string meshName,
+            PrimitivePlacement placement, bool poseAlreadyBaked)
+            : base(modelIndex)
+        {
+            Mesh             = mesh;
+            MeshName         = meshName;
+            Placement        = placement;
+            PoseAlreadyBaked = poseAlreadyBaked;
+        }
+    }
+
+    // ================================================================
+    // 単一メッシュを返さない生成
+    // ================================================================
+
+    /// <summary>
+    /// 穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。
+    /// 穴は種頂点で指す。種から縁を復元するのは生成側。
+    /// </summary>
+    public class CreateHoleBridgeCommand : PanelCommand
+    {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と図形生成パネルの穴つなぎ UI の双方がここを参照する。
+
+        /// <summary>橋の中間分割数の下限・上限。</summary>
+        public const int SubdivisionsMin = 0;
+        public const int SubdivisionsMax = 16;
+
+        /// <summary>穴A のあるメッシュの MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "BridgeHoleA", Description = "穴A のメッシュ索引", Required = true)]
+        public int MeshA { get; }
+
+        /// <summary>穴A の種頂点。</summary>
+        [PLParam(TextKey = "BridgeHoleAVertex", Description = "穴A の種頂点番号", Required = true)]
+        public int VertexA { get; }
+
+        /// <summary>穴B のあるメッシュの MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "BridgeHoleB", Description = "穴B のメッシュ索引", Required = true)]
+        public int MeshB { get; }
+
+        /// <summary>穴B の種頂点。</summary>
+        [PLParam(TextKey = "BridgeHoleBVertex", Description = "穴B の種頂点番号", Required = true)]
+        public int VertexB { get; }
+
+        /// <summary>
+        /// 穴A の進行方向ヒント頂点。縁をどちら回りに辿るかを決める。
+        /// 辺で取り込んでいないときは -1（縁の並び順そのままで辿る）。
+        /// </summary>
+        [PLParam(TextKey = "BridgeHoleADirHint", Description = "穴A の進行方向ヒント頂点。-1 で指定なし")]
+        public int DirectionHintA { get; }
+
+        /// <summary>穴B の進行方向ヒント頂点。-1 で指定なし。</summary>
+        [PLParam(TextKey = "BridgeHoleBDirHint", Description = "穴B の進行方向ヒント頂点。-1 で指定なし")]
+        public int DirectionHintB { get; }
+
+        /// <summary>新規オブジェクトにするときの名前。</summary>
+        [PLParam(TextKey = "MeshName", Description = "生成物の名前")]
+        public string Name { get; }
+
+        /// <summary>行き先。図形生成と同じ「追加先」に従う。</summary>
+        [PLParam(TextKey = "AddMode", Description = "新規オブジェクト / 既存へ追加 / 新規モデル")]
+        public Poly_Ling.Player.PrimitiveAddMode AddMode { get; }
+
+        [PLParam(TextKey = "AddTargetIndex", Description = "追加先の索引。-1 で選択の先頭")]
+        public int AddTargetIndex { get; }
+
+        /// <summary>
+        /// 対応フリップと面フリップを、両穴の巻き方向から自動で決めるか。
+        ///
+        /// true のとき FlipCorrespondence / FlipFaces は使わず、
+        /// BridgeLoopOps.TryAutoFlags の判定結果を使う。裏返りとねじれを避けるための既定。
+        /// 判定できなかったときはフラグを変えない（TryAutoFlags の仕様）。
+        ///
+        /// false のときはコマンドの値をそのまま使う。手作業でチェックを
+        /// 外した状態を再現したいときに使う。
+        /// </summary>
+        [PLParam(TextKey = "BridgeAutoFlags", Description = "対応と面の向きを自動で決める")]
+        public bool AutoFlags { get; }
+
+        /// <summary>縁どうしの対応をずらす。AutoFlags が true のときは使わない。</summary>
+        [PLParam(TextKey = "BridgeFlipPair", Description = "縁どうしの対応を反転する")]
+        public bool FlipCorrespondence { get; }
+
+        /// <summary>張った面を裏返す。AutoFlags が true のときは使わない。</summary>
+        [PLParam(TextKey = "BridgeFlipFaces", Description = "張った面を裏返す")]
+        public bool FlipFaces { get; }
+
+        /// <summary>橋の中間分割数。</summary>
+        [PLParam(TextKey = "BridgeSubdiv", Description = "橋の中間分割数",
+                 Min = SubdivisionsMin, Max = SubdivisionsMax, Step = 1)]
+        public int Subdivisions { get; }
+
+        public CreateHoleBridgeCommand(
+            int modelIndex, int meshA, int vertexA, int meshB, int vertexB, string name,
+            Poly_Ling.Player.PrimitiveAddMode addMode, int addTargetIndex,
+            bool flipCorrespondence, bool flipFaces, int subdivisions,
+            int directionHintA = -1, int directionHintB = -1,
+            bool autoFlags = true)
+            : base(modelIndex)
+        {
+            AutoFlags          = autoFlags;
+            MeshA              = meshA;
+            VertexA            = vertexA;
+            MeshB              = meshB;
+            VertexB            = vertexB;
+            DirectionHintA     = directionHintA;
+            DirectionHintB     = directionHintB;
+            Name               = name;
+            AddMode            = addMode;
+            AddTargetIndex     = addTargetIndex;
+            FlipCorrespondence = flipCorrespondence;
+            FlipFaces          = flipFaces;
+            Subdivisions       = subdivisions;
+        }
+    }
+
+    /// <summary>
+    /// 辺群ブリッジ。拾った辺そのものを辺群として、その間に面を張る。
+    /// 開いた辺の連なりも扱える点が穴つなぎと違う。
+    /// 辺は同一メッシュのものに限る（生成側が2群へ分けるため）。
+    /// </summary>
+    public class CreateEdgeBridgeCommand : PanelCommand
+    {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と EdgeBridgeToolHandler.Subdivisions の丸めの双方がここを参照する。
+        // 穴つなぎ（CreateHoleBridgeCommand）とは上限が違う。辺群ブリッジは
+        // 開いた辺の連なりも扱うため、もとから広い範囲を許している。
+
+        /// <summary>橋の中間分割数の下限・上限。</summary>
+        public const int SubdivisionsMin = 0;
+        public const int SubdivisionsMax = 32;
+
+        /// <summary>辺のあるメッシュの MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "EdgeBridgeMesh", Description = "対象メッシュの索引", Required = true)]
+        public int MeshIndex { get; }
+
+        /// <summary>拾った辺。両端の頂点番号の組で表す。</summary>
+        [PLParam(TextKey = "EdgeBridgeEdges", Description = "拾った辺の列", Required = true)]
+        public Poly_Ling.Selection.VertexPair[] Edges { get; }
+
+        /// <summary>面の向きを自動で決めるか。</summary>
+        [PLParam(TextKey = "BridgeAutoSelect", Description = "対応と面の向きを自動で決める")]
+        public bool AutoCorrespondence { get; }
+
+        [PLParam(TextKey = "BridgeFlipPair", Description = "縁どうしの対応を反転する")]
+        public bool FlipCorrespondence { get; }
+
+        [PLParam(TextKey = "BridgeFlipFaces", Description = "張った面を裏返す")]
+        public bool FlipFaces { get; }
+
+        [PLParam(TextKey = "BridgeSubdiv", Description = "橋の中間分割数",
+                 Min = SubdivisionsMin, Max = SubdivisionsMax, Step = 1)]
+        public int Subdivisions { get; }
+
+        public CreateEdgeBridgeCommand(
+            int modelIndex, int meshIndex, Poly_Ling.Selection.VertexPair[] edges,
+            bool autoCorrespondence, bool flipCorrespondence, bool flipFaces, int subdivisions)
+            : base(modelIndex)
+        {
+            MeshIndex          = meshIndex;
+            Edges              = edges;
+            AutoCorrespondence = autoCorrespondence;
+            FlipCorrespondence = flipCorrespondence;
+            FlipFaces          = flipFaces;
+            Subdivisions       = subdivisions;
+        }
+    }
+
+    /// <summary>
+    /// プロジェクトを空にして、モデルを 1 つだけ作り直す。
+    ///
+    /// 【何のためか】
+    ///   自動検証は系統ごとに「まっさらな状態」から積み上げる。
+    ///   モデルを足すだけだと前の系統のモデルが残り、保存したフォルダに
+    ///   関係ないモデルが同梱される（CsvProjectSerializer はプロジェクト内の
+    ///   全モデルをフォルダへ書く）。何をどの順番でやった結果なのかが
+    ///   読み取れなくなるので、明示的に捨てる口を用意する。
+    ///
+    /// 【破壊的】
+    ///   開いているモデルを全部捨てる。Undo では戻せない。
+    ///   UI のボタンには出さず、自動検証とリモートからのみ使う。
+    /// </summary>
+    public class ResetProjectCommand : PanelCommand
+    {
+        /// <summary>作り直すモデルの名前。空なら "Model"。</summary>
+        [PLParam(TextKey = "ResetProjectModelName", Description = "作り直すモデルの名前")]
+        public string ModelName { get; }
+
+        public ResetProjectCommand(string modelName = null)
+            : base(0) { ModelName = modelName; }
+    }
+
+    /// <summary>
+    /// 穴の頂点数を基準穴に合わせる。穴つなぎ（BridgeLoopOps）が要求する
+    /// 「2 つの穴の頂点数が同じ」を満たすための前処理。
+    ///
+    /// 変更されるのは対象穴のメッシュだけで、基準穴は頂点数を読むだけ。
+    /// 基準と対象が同じメッシュにあってもよい。
+    /// </summary>
+    public class MatchHoleRingCountCommand : PanelCommand
+    {
+        /// <summary>基準穴のあるメッシュの MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "HoleRingBaseMesh", Description = "基準穴のメッシュ索引", Required = true)]
+        public int BaseMeshIndex { get; }
+
+        /// <summary>基準穴の種頂点。</summary>
+        [PLParam(TextKey = "HoleRingBaseVertex", Description = "基準穴の種頂点番号", Required = true)]
+        public int BaseVertex { get; }
+
+        /// <summary>基準穴の進行方向ヒント頂点。-1 で指定なし。</summary>
+        [PLParam(TextKey = "HoleRingBaseDirHint", Description = "基準穴の進行方向ヒント頂点。-1 で指定なし")]
+        public int BaseDirectionHint { get; }
+
+        /// <summary>対象穴のあるメッシュの MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "HoleRingTargetMesh", Description = "対象穴のメッシュ索引", Required = true)]
+        public int TargetMeshIndex { get; }
+
+        /// <summary>対象穴の種頂点。</summary>
+        [PLParam(TextKey = "HoleRingTargetVertex", Description = "対象穴の種頂点番号", Required = true)]
+        public int TargetVertex { get; }
+
+        /// <summary>対象穴の進行方向ヒント頂点。-1 で指定なし。</summary>
+        [PLParam(TextKey = "HoleRingTargetDirHint", Description = "対象穴の進行方向ヒント頂点。-1 で指定なし")]
+        public int TargetDirectionHint { get; }
+
+        /// <summary>三角形を三角形へ分割するか。false なら四角へ分割する。</summary>
+        [PLParam(TextKey = "HoleRingSplitTri", Description = "三角形を三角形へ分割する")]
+        public bool SplitTriangleIntoTriangles { get; }
+
+        public MatchHoleRingCountCommand(
+            int modelIndex,
+            int baseMeshIndex, int baseVertex, int baseDirectionHint,
+            int targetMeshIndex, int targetVertex, int targetDirectionHint,
+            bool splitTriangleIntoTriangles = true)
+            : base(modelIndex)
+        {
+            BaseMeshIndex              = baseMeshIndex;
+            BaseVertex                 = baseVertex;
+            BaseDirectionHint          = baseDirectionHint;
+            TargetMeshIndex            = targetMeshIndex;
+            TargetVertex               = targetVertex;
+            TargetDirectionHint        = targetDirectionHint;
+            SplitTriangleIntoTriangles = splitTriangleIntoTriangles;
+        }
+    }
+
+    /// <summary>
+    /// 面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。
+    /// 消すのは指定メッシュの面だけで、他のオブジェクトの選択は巻き込まない。
+    /// </summary>
+    public class DeleteFacesCommand : PanelCommand
+    {
+        /// <summary>対象メッシュの MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "DeleteFacesMesh", Description = "対象メッシュの索引", Required = true)]
+        public int MeshIndex { get; }
+
+        /// <summary>消す面の番号。</summary>
+        [PLParam(TextKey = "DeleteFacesIndices", Description = "消す面の番号", Required = true)]
+        public int[] FaceIndices { get; }
+
+        public DeleteFacesCommand(int modelIndex, int meshIndex, int[] faceIndices)
+            : base(modelIndex)
+        {
+            MeshIndex   = meshIndex;
+            FaceIndices = faceIndices;
+        }
+    }
+
+    /// <summary>
+    /// 歪み複製。複製元を歪ませながら複数組つくり、モデルへ挿入する。
+    /// 単一のメッシュを返さないので図形生成コマンドとは別系統にする。
+    /// 作業軸はモデル側の状態なのでディスパッチャが解決する。
+    /// </summary>
+    public class CreateObjectArrayCommand : PanelCommand
+    {
+        /// <summary>生成パラメータ。</summary>
+        [PLParam(TextKey = "ObjectArray", Description = "歪み複製のパラメータ", Required = true)]
+        public Poly_Ling.Tools.ObjectArray.ObjectArrayParams Params { get; }
+
+        /// <summary>複製元の MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "ObjectArraySources", Description = "複製元オブジェクトの索引", Required = true)]
+        public int[] SourceMasterIndices { get; }
+
+        /// <summary>掛ける歪み。DeformerRegistry の実装をそのまま渡す。</summary>
+        [PLParam(TextKey = "ObjectArrayDeformer", Description = "掛ける歪み", Required = true)]
+        public Poly_Ling.Tools.Deformers.IMeshDeformer Deformer { get; }
+
+        public CreateObjectArrayCommand(
+            int modelIndex,
+            Poly_Ling.Tools.ObjectArray.ObjectArrayParams prms,
+            int[] sourceMasterIndices,
+            Poly_Ling.Tools.Deformers.IMeshDeformer deformer)
+            : base(modelIndex)
+        {
+            Params              = prms;
+            SourceMasterIndices = sourceMasterIndices;
+            Deformer            = deformer;
         }
     }
 }

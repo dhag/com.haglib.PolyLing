@@ -68,6 +68,49 @@ namespace Poly_Ling.Vrm
         /// </summary>
         public bool ExportInvisibleObjects = false;
 
+        // ================================================================
+        // モーフ・表情・揺れ
+        // ================================================================
+
+        /// <summary>
+        /// モーフをブレンドシェイプとして出力するか。
+        /// 表情（VRMC_vrm.expressions）はこれを前提にするので、
+        /// false のとき ExportExpressions は無効になる。
+        /// </summary>
+        public bool ExportMorphTargets = true;
+
+        /// <summary>
+        /// モーフエクスプレッションを VRM の表情として出力するか。
+        /// </summary>
+        public bool ExportExpressions = true;
+
+        /// <summary>
+        /// スプリングボーン（VRMC_springBone）を出力するか。
+        /// </summary>
+        public bool ExportSpringBones = true;
+
+        /// <summary>
+        /// 表情名を VRM のプリセット（happy / aa / blink …）へ割り当てるか。
+        /// false のときは全てカスタム表情として出力する。
+        /// </summary>
+        public bool MapExpressionPresets = true;
+
+        // ================================================================
+        // Humanoid
+        // ================================================================
+
+        /// <summary>
+        /// Humanoid の必須関節が足りないとき、空ノード（ダミー関節）で補うか。
+        ///
+        /// VRM 1.0 は humanoid を必須とし、必須ボーンが1つでも欠けるとビューアが
+        /// 読み込みを拒否する。上半身だけのモデルや片側だけのモデルはそのままでは
+        /// 必ず欠けるので、HumanoidSupplementBuilder で補ってから割り当てる。
+        ///
+        /// 既定 false。プレファブ書き出し側（HierarchyExportWindow の
+        /// 「不足関節を補完」）の既定と揃えてあり、既存の出力結果は変わらない。
+        /// </summary>
+        public bool SupplementHumanoid = false;
+
         /// <summary>ディープコピー。</summary>
         public Vrm10ExportSettings Clone()
         {
@@ -83,7 +126,12 @@ namespace Poly_Ling.Vrm
                 ExportSkinning = this.ExportSkinning,
                 ExportNormals = this.ExportNormals,
                 ExportUVs = this.ExportUVs,
-                ExportInvisibleObjects = this.ExportInvisibleObjects
+                ExportInvisibleObjects = this.ExportInvisibleObjects,
+                ExportMorphTargets = this.ExportMorphTargets,
+                ExportExpressions = this.ExportExpressions,
+                ExportSpringBones = this.ExportSpringBones,
+                MapExpressionPresets = this.MapExpressionPresets,
+                SupplementHumanoid = this.SupplementHumanoid
             };
         }
 
@@ -106,6 +154,24 @@ namespace Poly_Ling.Vrm
 
         /// <summary>Humanoid に割り当てられたボーン数。0 のとき VRM としては不完全。</summary>
         public int HumanoidBoneCount { get; set; }
+
+        /// <summary>
+        /// ダミー関節で補った数。SupplementHumanoid が false のときは常に 0。
+        /// HumanoidBoneCount にはこの分も含まれる。
+        /// </summary>
+        public int SupplementedJointCount { get; set; }
+
+        /// <summary>出力したブレンドシェイプ（モーフターゲット）の総数。</summary>
+        public int MorphTargetCount { get; set; }
+
+        /// <summary>出力した表情の数（プリセット＋カスタム）。</summary>
+        public int ExpressionCount { get; set; }
+
+        /// <summary>出力した揺れチェーン（VRMC_springBone.springs）の数。</summary>
+        public int SpringCount { get; set; }
+
+        /// <summary>出力したスプリングボーン・コライダーの数。</summary>
+        public int SpringBoneColliderCount { get; set; }
 
         /// <summary>
         /// 出力は行えたが VRM として不完全な場合の警告（null/空 = 警告なし）。

@@ -16,16 +16,56 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct CubeParams : IEquatable<CubeParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>幅・高さ・奥行きの下限・上限</summary>
+            public const float SizeMin = 0.1f;
+            public const float SizeMax = 10f;
+
+            /// <summary>角丸半径の下限・上限</summary>
+            public const float CornerRadiusMin = 0f;
+            public const float CornerRadiusMax = 0.5f;
+
+            /// <summary>角丸の分割数の下限・上限</summary>
+            public const int CornerSegmentsMin = 1;
+            public const int CornerSegmentsMax = 8;
+
+            /// <summary>各軸の分割数の下限・上限</summary>
+            public const int SubdivisionsMin = 1;
+            public const int SubdivisionsMax = 8;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
-            public float WidthTop, DepthTop;
-            public float WidthBottom, DepthBottom;
+            [PLParam(TextKey = "WidthX", Description = "上面の幅（X）", Min = SizeMin, Max = SizeMax)]
+            public float WidthTop;
+            [PLParam(TextKey = "DepthZ", Description = "上面の奥行き（Z）", Min = SizeMin, Max = SizeMax)]
+            public float DepthTop;
+            [PLParam(TextKey = "WidthX", Description = "底面の幅（X）", Min = SizeMin, Max = SizeMax)]
+            public float WidthBottom;
+            [PLParam(TextKey = "DepthZ", Description = "底面の奥行き（Z）", Min = SizeMin, Max = SizeMax)]
+            public float DepthBottom;
+            [PLParam(TextKey = "HeightY", Description = "高さ（Y）", Min = SizeMin, Max = SizeMax)]
             public float Height;
+            [PLParam(TextKey = "CornerRadius", Description = "角丸の半径。0 で角丸なし", Min = CornerRadiusMin,
+                     Max = CornerRadiusMax)]
             public float CornerRadius;
+            [PLParam(TextKey = "CornerSeg", Description = "角丸の分割数", Min = CornerSegmentsMin,
+                     Max = CornerSegmentsMax, Step = 1)]
             public int CornerSegments;
+            [PLParam(TextKey = "Subdivisions", Description = "各軸の分割数", Min = SubdivisionsMin,
+                     Max = SubdivisionsMax, Step = 1)]
             public Vector3Int Subdivisions;
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
-            public float RotationX, RotationY;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationX;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationY;
+            [PLParam(Ignore = true, Description = "UI の上下連動トグル。生成器は読まない")]
             public bool LinkTopBottom;
+            [PLParam(Ignore = true, Description = "UI の幅高奥連動トグル。生成器は読まない")]
             public bool LinkWHD;
 
             public static CubeParams Default => new CubeParams

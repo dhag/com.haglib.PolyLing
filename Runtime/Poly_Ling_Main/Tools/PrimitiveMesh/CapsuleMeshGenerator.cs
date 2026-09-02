@@ -16,12 +16,53 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct CapsuleParams : IEquatable<CapsuleParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>上下の半球の半径の下限・上限</summary>
+            public const float RadiusMin = 0.1f;
+            public const float RadiusMax = 2f;
+
+            /// <summary>全高の下限・上限</summary>
+            public const float HeightMin = 0.5f;
+            public const float HeightMax = 10f;
+
+            /// <summary>円周方向の分割数の下限・上限</summary>
+            public const int RadialSegmentsMin = 8;
+            public const int RadialSegmentsMax = 48;
+
+            /// <summary>胴の高さ方向の分割数の下限・上限</summary>
+            public const int HeightSegmentsMin = 1;
+            public const int HeightSegmentsMax = 16;
+
+            /// <summary>半球の分割数の下限・上限</summary>
+            public const int CapSegmentsMin = 2;
+            public const int CapSegmentsMax = 16;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
-            public float RadiusTop, RadiusBottom;
+            [PLParam(TextKey = "RadiusTop", Description = "上の半球の半径", Min = RadiusMin, Max = RadiusMax)]
+            public float RadiusTop;
+            [PLParam(TextKey = "RadiusBottom", Description = "下の半球の半径", Min = RadiusMin, Max = RadiusMax)]
+            public float RadiusBottom;
+            [PLParam(TextKey = "Height", Description = "全高", Min = HeightMin, Max = HeightMax)]
             public float Height;
-            public int RadialSegments, HeightSegments, CapSegments;
+            [PLParam(TextKey = "Radial", Description = "円周方向の分割数", Min = RadialSegmentsMin,
+                     Max = RadialSegmentsMax, Step = 1)]
+            public int RadialSegments;
+            [PLParam(TextKey = "Lateral", Description = "胴の高さ方向の分割数", Min = HeightSegmentsMin,
+                     Max = HeightSegmentsMax, Step = 1)]
+            public int HeightSegments;
+            [PLParam(TextKey = "Cap", Description = "半球の分割数", Min = CapSegmentsMin, Max = CapSegmentsMax,
+                     Step = 1)]
+            public int CapSegments;
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
-            public float RotationX, RotationY;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationX;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationY;
 
             public static CapsuleParams Default => new CapsuleParams
             {

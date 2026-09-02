@@ -15,6 +15,8 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Data;
+using Poly_Ling.PrimitiveMesh;   // PrimitiveMeshPostProcess.PivotMin / PivotMax
 
 namespace Poly_Ling.Ribbon
 {
@@ -40,17 +42,55 @@ namespace Poly_Ling.Ribbon
     [Serializable]
     public struct RibbonLoopParams : IEquatable<RibbonLoopParams>
     {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+        /// <summary>張り出し量の下限・上限</summary>
+        public const float WidthMin = 0.05f;
+        public const float WidthMax = 5f;
+
+        /// <summary>上下方向の大きさの下限・上限</summary>
+        public const float HeightMin = 0f;
+        public const float HeightMax = 3f;
+
+        /// <summary>下がり量の下限・上限</summary>
+        public const float SagMin = 0f;
+        public const float SagMax = 1f;
+
+        /// <summary>Z 方向の膨らみの下限・上限</summary>
+        public const float DepthMin = 0f;
+        public const float DepthMax = 1f;
+
+        /// <summary>根元の Y 間隔の下限・上限</summary>
+        public const float RootGapMin = 0f;
+        public const float RootGapMax = 1f;
+
+        /// <summary>根元の幅倍率の下限・上限</summary>
+        public const float RootPinchMin = 0.05f;
+        public const float RootPinchMax = 1f;
+
+        /// <summary>ループ全体の回転角の下限・上限（度）</summary>
+        public const float TiltMin = -90f;
+        public const float TiltMax = 90f;
+
         /// <summary>中央から外側への張り出し量。</summary>
+        [PLParam(TextKey = "RibbonLoopWidth", Description = "中央から外側への張り出し量", Min = WidthMin, Max = WidthMax)]
         public float Width;
         /// <summary>ループの上下方向の大きさ。</summary>
+        [PLParam(TextKey = "RibbonLoopHeight", Description = "ループの上下方向の大きさ", Min = HeightMin, Max = HeightMax)]
         public float Height;
         /// <summary>ループの下方向への下がり量。外側点と下側制御点の Y を下げる。</summary>
+        [PLParam(TextKey = "RibbonLoopSag", Description = "ループの下方向への下がり量", Min = SagMin, Max = SagMax)]
         public float Sag;
         /// <summary>ループの Z 方向の膨らみ。中間の制御点の Z を前へ出す。</summary>
+        [PLParam(TextKey = "RibbonLoopDepth", Description = "ループの Z 方向の膨らみ", Min = DepthMin, Max = DepthMax)]
         public float Depth;
         /// <summary>上側根元と下側根元の Y 間隔。</summary>
+        [PLParam(TextKey = "RibbonRootGap", Description = "上側根元と下側根元の Y 間隔", Min = RootGapMin, Max = RootGapMax)]
         public float RootGap;
         /// <summary>根元付近の幅倍率（1 で幅一定）。上下の根元の両方に掛かる。</summary>
+        [PLParam(TextKey = "RibbonRootPinch", Description = "根元付近の幅倍率。1 で幅一定", Min = RootPinchMin,
+                 Max = RootPinchMax)]
         public float RootPinch;
 
         /// <summary>
@@ -58,9 +98,11 @@ namespace Poly_Ling.Ribbon
         /// 左右とも正で外側が上がる。0 で回さない。
         /// Sag は折り返し点を下げるだけなので、折り返しをノットより上へ置くにはこちらを使う。
         /// </summary>
+        [PLParam(TextKey = "RibbonLoopTilt", Description = "ループ全体の回転角（度）", Min = TiltMin, Max = TiltMax)]
         public float Tilt;
 
         /// <summary>折り返しで面が裏返るか。</summary>
+        [PLParam(TextKey = "RibbonLoopTopology", Description = "ループの位相（折り返しで裏返る / 裏返らない）")]
         public RibbonLoopTopology Topology;
 
         public bool Equals(RibbonLoopParams o)
@@ -81,27 +123,67 @@ namespace Poly_Ling.Ribbon
     [Serializable]
     public struct RibbonTailParams : IEquatable<RibbonTailParams>
     {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+        /// <summary>縦方向の落差の下限・上限</summary>
+        public const float LengthMin = 0.05f;
+        public const float LengthMax = 5f;
+
+        /// <summary>横方向への開き量の下限・上限</summary>
+        public const float SpreadMin = -1f;
+        public const float SpreadMax = 1f;
+
+        /// <summary>曲がり具合の下限・上限</summary>
+        public const float SagMin = 0f;
+        public const float SagMax = 1f;
+
+        /// <summary>Z 方向の膨らみの下限・上限</summary>
+        public const float DepthMin = 0f;
+        public const float DepthMax = 1f;
+
+        /// <summary>先端の幅倍率の下限・上限</summary>
+        public const float TaperMin = 0.05f;
+        public const float TaperMax = 2f;
+
+        /// <summary>最大開き点の位置の下限・上限</summary>
+        public const float CloseAtMin = 0.05f;
+        public const float CloseAtMax = 0.95f;
+
+        /// <summary>中央側へ戻る割合の下限・上限</summary>
+        public const float CloseMin = 0f;
+        public const float CloseMax = 1f;
+
         /// <summary>根元から先端までの縦方向の落差。</summary>
+        [PLParam(TextKey = "RibbonTailLength", Description = "根元から先端までの縦方向の落差", Min = LengthMin, Max = LengthMax)]
         public float Length;
         /// <summary>横方向への開き量。Length に対する比で効かせる（0 で真下）。</summary>
+        [PLParam(TextKey = "RibbonTailSpread", Description = "横方向への開き量。0 で真下", Min = SpreadMin, Max = SpreadMax)]
         public float Spread;
         /// <summary>途中の曲がり具合。中間制御点の Y を下げる。</summary>
+        [PLParam(TextKey = "RibbonTailSag", Description = "途中の曲がり具合", Min = SagMin, Max = SagMax)]
         public float Sag;
         /// <summary>Z 方向の膨らみ。中間制御点の Z を前へ出す。</summary>
+        [PLParam(TextKey = "RibbonTailDepth", Description = "Z 方向の膨らみ", Min = DepthMin, Max = DepthMax)]
         public float Depth;
         /// <summary>先端の幅倍率（1 で幅一定）。</summary>
+        [PLParam(TextKey = "RibbonTailTaper", Description = "先端の幅倍率。1 で幅一定", Min = TaperMin, Max = TaperMax)]
         public float Taper;
 
         /// <summary>
         /// 横方向の開きが最大になる位置（0=根元 / 1=先端）。
         /// Close が 0 のときは効かない。
         /// </summary>
+        [PLParam(TextKey = "RibbonTailCloseAt", Description = "横方向の開きが最大になる位置（0=根元 / 1=先端）", Min = CloseAtMin,
+                 Max = CloseAtMax)]
         public float CloseAt;
 
         /// <summary>
         /// 最大開き点から先端までに中央側へ戻る割合。
         /// 0 で戻さない（開くだけ＝従来の形）、1 で根元と同じ X まで戻る。
         /// </summary>
+        [PLParam(TextKey = "RibbonTailClose", Description = "最大開き点から先端までに中央側へ戻る割合", Min = CloseMin,
+                 Max = CloseMax)]
         public float Close;
 
         public bool Equals(RibbonTailParams o)
@@ -121,11 +203,30 @@ namespace Poly_Ling.Ribbon
     [Serializable]
     public struct RibbonKnotParams : IEquatable<RibbonKnotParams>
     {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+        /// <summary>帯の幅の下限・上限</summary>
+        public const float WidthMin = 0.01f;
+        public const float WidthMax = 2f;
+
+        /// <summary>帯の長さの下限・上限</summary>
+        public const float HeightMin = 0.01f;
+        public const float HeightMax = 2f;
+
+        /// <summary>Z 方向の膨らみの下限・上限</summary>
+        public const float DepthMin = 0f;
+        public const float DepthMax = 1f;
+
         /// <summary>帯の幅（rung 長）。</summary>
+        [PLParam(TextKey = "RibbonKnotWidth", Description = "帯の幅（rung 長）", Min = WidthMin, Max = WidthMax)]
         public float Width;
         /// <summary>帯の長さ（下端から上端までの Y 方向の長さ）。</summary>
+        [PLParam(TextKey = "RibbonKnotHeight", Description = "帯の長さ（下端から上端までの Y 方向の長さ）", Min = HeightMin,
+                 Max = HeightMax)]
         public float Height;
         /// <summary>中間の Z 方向の膨らみ。</summary>
+        [PLParam(TextKey = "RibbonKnotDepth", Description = "中間の Z 方向の膨らみ", Min = DepthMin, Max = DepthMax)]
         public float Depth;
 
         public bool Equals(RibbonKnotParams o)
@@ -141,28 +242,69 @@ namespace Poly_Ling.Ribbon
     [Serializable]
     public struct RibbonBowParams : IEquatable<RibbonBowParams>
     {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+        /// <summary>帯の基準幅の下限・上限</summary>
+        public const float RibbonWidthMin = 0.01f;
+        public const float RibbonWidthMax = 2f;
+
+        /// <summary>ループの分割数の下限・上限</summary>
+        public const int LoopSegmentsMin = 2;
+        public const int LoopSegmentsMax = 64;
+
+        /// <summary>テールの分割数の下限・上限</summary>
+        public const int TailSegmentsMin = 1;
+        public const int TailSegmentsMax = 64;
+
+        /// <summary>ノットの分割数の下限・上限</summary>
+        public const int KnotSegmentsMin = 1;
+        public const int KnotSegmentsMax = 32;
+
+        /// <summary>先端三角の長さ倍率の下限・上限</summary>
+        public const float TipLengthScaleMin = 0.05f;
+        public const float TipLengthScaleMax = 2f;
+
+        /// <summary>タグ三角のサイズ倍率の下限・上限</summary>
+        public const float TagSizeScaleMin = 0.05f;
+        public const float TagSizeScaleMax = 2f;
+
+        [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
         public string MeshName;
 
         /// <summary>帯の基準幅。テール・ループの幅と、タグ三角のサイズ基準になる。</summary>
+        [PLParam(TextKey = "RibbonWidth", Description = "帯の基準幅", Min = RibbonWidthMin, Max = RibbonWidthMax)]
         public float RibbonWidth;
 
+        [PLParam(TextKey = "RibbonLoop", Description = "ループの形状")]
         public RibbonLoopParams Loop;
+        [PLParam(TextKey = "RibbonTail", Description = "テールの形状")]
         public RibbonTailParams Tail;
+        [PLParam(TextKey = "RibbonKnot", Description = "ノットの形状")]
         public RibbonKnotParams Knot;
 
         // ── 部品の取捨 ──
         // 多重リボンは複数回に分けて生成し、別のツールで結合して作る。
         // 例: 1回目はループ抜き、2回目はループだけ、あとで結合。
         /// <summary>左右のループを作る。</summary>
+        [PLParam(TextKey = "RibbonBuildLoops", Description = "左右のループを作る")]
         public bool BuildLoops;
         /// <summary>左右のテールを作る。</summary>
+        [PLParam(TextKey = "RibbonBuildTails", Description = "左右のテールを作る")]
         public bool BuildTails;
         /// <summary>中央のノットを作る。</summary>
+        [PLParam(TextKey = "RibbonBuildKnot", Description = "中央のノットを作る")]
         public bool BuildKnot;
 
         // ── 分割数（梯子の rung 数 - 1） ──
+        [PLParam(TextKey = "RibbonLoopSegs", Description = "ループの分割数", Min = LoopSegmentsMin,
+                 Max = LoopSegmentsMax, Step = 1)]
         public int LoopSegments;
+        [PLParam(TextKey = "RibbonTailSegs", Description = "テールの分割数", Min = TailSegmentsMin,
+                 Max = TailSegmentsMax, Step = 1)]
         public int TailSegments;
+        [PLParam(TextKey = "RibbonKnotSegs", Description = "ノットの分割数", Min = KnotSegmentsMin,
+                 Max = KnotSegmentsMax, Step = 1)]
         public int KnotSegments;
 
         // ── 梯子タグ ──
@@ -171,22 +313,32 @@ namespace Poly_Ling.Ribbon
         /// タグは開始三角の頂点 P に1点だけで接する必要があるため、
         /// これが true のときは開始三角も自動で付く。
         /// </summary>
+        [PLParam(TextKey = "RibbonAddStartTag", Description = "開始タグ三角を付ける。開始三角も自動で付く")]
         public bool AddStartTag;
         /// <summary>開始側の先端三角を付ける。</summary>
+        [PLParam(TextKey = "RibbonAddStartTip", Description = "開始側の先端三角を付ける")]
         public bool AddStartTip;
         /// <summary>終了側の先端三角を付ける。Pipe の点収束キャップの先端になる。</summary>
+        [PLParam(TextKey = "RibbonAddEndTip", Description = "終了側の先端三角を付ける")]
         public bool AddEndTip;
         /// <summary>先端三角の突き出し長（RibbonWidth 比）。</summary>
+        [PLParam(TextKey = "RibbonTipLen", Description = "先端三角の長さ倍率", Min = TipLengthScaleMin,
+                 Max = TipLengthScaleMax)]
         public float TipLengthScale;
         /// <summary>開始タグ三角の大きさ（RibbonWidth 比）。</summary>
+        [PLParam(TextKey = "RibbonTagSize", Description = "タグ三角のサイズ倍率", Min = TagSizeScaleMin,
+                 Max = TagSizeScaleMax)]
         public float TagSizeScale;
 
         // ── 面の向き ──
         /// <summary>生成後にメッシュ全体の面を反転する。</summary>
+        [PLParam(TextKey = "FlipFaces", Description = "生成後にメッシュ全体の面を反転する")]
         public bool FlipFaces;
 
         // ── ピボット ──
         /// <summary>AABB サイズ基準のピボット。生成後に -Pivot * サイズ だけ平行移動する。</summary>
+        [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                 Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
         public Vector3 Pivot;
 
         public static RibbonBowParams Default => new RibbonBowParams

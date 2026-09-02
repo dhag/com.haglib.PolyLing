@@ -148,6 +148,13 @@ namespace Poly_Ling.Player
         public Toggle SelModeFaceToggle   { get; private set; }
         public Toggle SelModeLineToggle   { get; private set; }
 
+        // 辺／面／線分を選んだとき、その構成頂点も頂点選択へ入れるか（種別ごと）。
+        // MoveToolHandler.ExpandLinkedVertices の展開対象を種別単位で切る。
+        // OFF にすると「辺だけを選んだのに頂点まで選択色になる」状態を避けられる。
+        public Toggle SelExpandEdgeToVertexToggle { get; private set; }
+        public Toggle SelExpandFaceToVertexToggle { get; private set; }
+        public Toggle SelExpandLineToVertexToggle { get; private set; }
+
         /// <summary>右ペイン内の動的コンテンツ領域（ScrollView の contentContainer）。</summary>
         public VisualElement RightPaneContent { get; private set; }
 
@@ -322,6 +329,12 @@ namespace Poly_Ling.Player
         public Button        PlanarizeAlongBonesBtn     { get; private set; }
         public VisualElement SmoothEdgesSection         { get; private set; }
         public Button        SmoothEdgesBtn             { get; private set; }
+        /// <summary>右ペイン：パイプ群専用の左右対称化（パイプの整列）。</summary>
+        public VisualElement PipeAlignSection           { get; private set; }
+        public Button        PipeAlignBtn               { get; private set; }
+        /// <summary>右ペイン：藤壺（オブジェクト配置）の部品を原型の形へ張り直す。</summary>
+        public VisualElement PlaceObjectReshapeSection  { get; private set; }
+        public Button        PlaceObjectReshapeBtn      { get; private set; }
         public VisualElement MergeVerticesSection       { get; private set; }
         public Button        MergeVerticesBtn           { get; private set; }
         public VisualElement SplitVerticesSection       { get; private set; }
@@ -330,6 +343,14 @@ namespace Poly_Ling.Player
         public Button        VertexHoleBtn              { get; private set; }
         public VisualElement VertexDissolveSection      { get; private set; }
         public Button        VertexDissolveBtn          { get; private set; }
+
+        /// <summary>右ペイン：穴頂点数合わせ（ブリッジの前処理）セクション。</summary>
+        public VisualElement HoleRingCountSection       { get; private set; }
+        public Button        HoleRingCountBtn           { get; private set; }
+
+        /// <summary>右ペイン：辺群ブリッジ（2 か所の辺群の間に面を張る）セクション。</summary>
+        public VisualElement EdgeBridgeSection          { get; private set; }
+        public Button        EdgeBridgeBtn              { get; private set; }
         public VisualElement Tri4To1Section             { get; private set; }
         public Button        Tri4To1Btn                 { get; private set; }
         public VisualElement FaceMergeSection           { get; private set; }
@@ -390,6 +411,17 @@ namespace Poly_Ling.Player
         public VisualElement OriginTestSection        { get; private set; }
         public Button        OriginTestBtn            { get; private set; }
         public VisualElement SkinTestSection          { get; private set; }
+
+        /// <summary>スプリングボーン検証（ダミー揺れもの生成→割当→Tポーズ）。</summary>
+        public VisualElement SpringBoneTestSection    { get; private set; }
+        public Button        SpringBoneTestBtn        { get; private set; }
+
+        /// <summary>
+        /// ロボ組み立て自動検証。基本図形の生成から VRM 書き出しまでを 5 系統ぶん流す。
+        /// 段ごとにフォルダへ保存するので、途中経過をあとから追える。
+        /// </summary>
+        public VisualElement RobotBuildTestSection    { get; private set; }
+        public Button        RobotBuildTestBtn        { get; private set; }
         public Button        SkinTestBtn              { get; private set; }
 
         /// <summary>左ペイン：現在のタブの全オブジェクトを選択する。処理はメッシュリスト側と同じ。</summary>
@@ -895,6 +927,35 @@ namespace Poly_Ling.Player
             }
             scroll.Add(selModeRow);
 
+            // 辺／面／線分を選んだとき、その構成頂点も頂点選択へ入れるか（種別ごと）。
+            // 既定は 3 つとも ON（従来どおり展開する）。
+            scroll.Add(Header("選んだ要素の頂点も選択する"));
+            var selExpandRow = new VisualElement();
+            selExpandRow.style.flexDirection = FlexDirection.Row;
+            selExpandRow.style.flexWrap      = Wrap.Wrap;   // 収まらない場合は折り返して見切れを防ぐ
+            selExpandRow.style.marginBottom  = 4;
+            SelExpandEdgeToVertexToggle = new Toggle("辺→頂点")   { value = true };
+            SelExpandFaceToVertexToggle = new Toggle("面→頂点")   { value = true };
+            SelExpandLineToVertexToggle = new Toggle("線分→頂点") { value = true };
+            foreach (var t in new[] { SelExpandEdgeToVertexToggle,
+                                      SelExpandFaceToVertexToggle,
+                                      SelExpandLineToVertexToggle })
+            {
+                t.style.color      = new StyleColor(Color.white);
+                t.style.flexGrow   = 0;
+                t.style.flexShrink = 0;
+                t.style.marginRight = 12;
+                // 選択モードのトグルと同じ詰め方（既定の広い label min-width を解除する）。
+                if (t.labelElement != null)
+                {
+                    t.labelElement.style.minWidth    = 0;
+                    t.labelElement.style.flexGrow    = 0;
+                    t.labelElement.style.marginRight = 3;
+                }
+                selExpandRow.Add(t);
+            }
+            scroll.Add(selExpandRow);
+
             LassoToggle = new Toggle("Lasso Select") { value = false };
             LassoToggle.style.marginBottom = 4;
             scroll.Add(LassoToggle);
@@ -1141,6 +1202,13 @@ namespace Poly_Ling.Player
             BridgeBtn       = MakeBtn("ブリッジ");     BridgeBtn.style.flexGrow       = 1;
             rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); rowEdgeKnife.Add(VertexHoleBtn); rowEdgeKnife.Add(BridgeBtn); foTopology.Add(rowEdgeKnife);
 
+            // 穴頂点数合わせ。ブリッジの「2つの穴の頂点数が同じ」制約を満たすための前処理。
+            var rowHoleRing = new VisualElement(); rowHoleRing.style.flexDirection = FlexDirection.Row; rowHoleRing.style.marginBottom = 2;
+            HoleRingCountBtn = MakeBtn("穴頂点数合わせ"); HoleRingCountBtn.style.flexGrow = 1; HoleRingCountBtn.style.marginRight = 2;
+            // 辺群ブリッジ。穴（閉じた縁）に限らず、拾った 2 か所の辺群の間に面を張る。
+            EdgeBridgeBtn    = MakeBtn("辺群ブリッジ");   EdgeBridgeBtn.style.flexGrow    = 1;
+            rowHoleRing.Add(HoleRingCountBtn); rowHoleRing.Add(EdgeBridgeBtn); foTopology.Add(rowHoleRing);
+
             // 削除系。面削除モードは進入中にボタンがハイライトされる
             // (破壊的モードなので表示は必須)。
             var rowDelete = new VisualElement(); rowDelete.style.flexDirection = FlexDirection.Row; rowDelete.style.marginBottom = 2;
@@ -1172,6 +1240,14 @@ namespace Poly_Ling.Player
             var rowSmoothEdges = new VisualElement(); rowSmoothEdges.style.flexDirection = FlexDirection.Row; rowSmoothEdges.style.marginBottom = 2;
             SmoothEdgesBtn = MakeBtn("辺を滑らかに"); SmoothEdgesBtn.style.flexGrow = 1;
             rowSmoothEdges.Add(SmoothEdgesBtn); foVertexPos.Add(rowSmoothEdges);
+
+            var rowPipeAlign = new VisualElement(); rowPipeAlign.style.flexDirection = FlexDirection.Row; rowPipeAlign.style.marginBottom = 2;
+            PipeAlignBtn = MakeBtn("パイプの整列"); PipeAlignBtn.style.flexGrow = 1;
+            rowPipeAlign.Add(PipeAlignBtn); foVertexPos.Add(rowPipeAlign);
+
+            var rowPlaceObjectReshape = new VisualElement(); rowPlaceObjectReshape.style.flexDirection = FlexDirection.Row; rowPlaceObjectReshape.style.marginBottom = 2;
+            PlaceObjectReshapeBtn = MakeBtn("藤壺の整形"); PlaceObjectReshapeBtn.style.flexGrow = 1;
+            rowPlaceObjectReshape.Add(PlaceObjectReshapeBtn); foVertexPos.Add(rowPlaceObjectReshape);
 
             // ── 選択頂点トポロジー ─────────────────────────────────────
             var foVertexTopo = MakeFoldout("選択頂点トポロジー", "VertexTopo");
@@ -1313,7 +1389,13 @@ namespace Poly_Ling.Player
 
             var rowSysDebug2 = new VisualElement(); rowSysDebug2.style.flexDirection = FlexDirection.Row; rowSysDebug2.style.marginBottom = 2;
             SkinTestBtn = MakeBtn("スキン生成自動検証"); SkinTestBtn.style.flexGrow = 1;
-            rowSysDebug2.Add(SkinTestBtn); foSysDebug.Add(rowSysDebug2);
+            SkinTestBtn.style.marginRight = 2;
+            SpringBoneTestBtn = MakeBtn("スプリングボーン検証"); SpringBoneTestBtn.style.flexGrow = 1;
+            rowSysDebug2.Add(SkinTestBtn); rowSysDebug2.Add(SpringBoneTestBtn); foSysDebug.Add(rowSysDebug2);
+
+            var rowSysDebug3 = new VisualElement(); rowSysDebug3.style.flexDirection = FlexDirection.Row; rowSysDebug3.style.marginBottom = 2;
+            RobotBuildTestBtn = MakeBtn("ロボ組み立て自動検証"); RobotBuildTestBtn.style.flexGrow = 1;
+            rowSysDebug3.Add(RobotBuildTestBtn); foSysDebug.Add(rowSysDebug3);
 
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
@@ -1603,10 +1685,14 @@ namespace Poly_Ling.Player
             AlignVerticesSection       = AddSection(visible: false);
             PlanarizeAlongBonesSection = AddSection(visible: false);
             SmoothEdgesSection         = AddSection(visible: false);
+            PipeAlignSection           = AddSection(visible: false);
+            PlaceObjectReshapeSection  = AddSection(visible: false);
             MergeVerticesSection       = AddSection(visible: false);
             SplitVerticesSection       = AddSection(visible: false);
             VertexHoleSection          = AddSection(visible: false);
             VertexDissolveSection      = AddSection(visible: false);
+            HoleRingCountSection       = AddSection(visible: false);
+            EdgeBridgeSection          = AddSection(visible: false);
             Tri4To1Section             = AddSection(visible: false);
             FaceMergeSection           = AddSection(visible: false);
             Quad4To1Section            = AddSection(visible: false);
@@ -1633,6 +1719,8 @@ namespace Poly_Ling.Player
             PipelineTestSection        = AddSection(visible: false);
             OriginTestSection          = AddSection(visible: false);
             SkinTestSection            = AddSection(visible: false);
+            SpringBoneTestSection      = AddSection(visible: false);
+            RobotBuildTestSection      = AddSection(visible: false);
             UnderlaySection            = AddSection(visible: false);
             GridAxisSection            = AddSection(visible: false);
             CameraSection              = AddSection(visible: false);

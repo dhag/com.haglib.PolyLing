@@ -121,6 +121,17 @@ namespace Poly_Ling.EditorIO
         public void Refresh() => AssetDatabase.Refresh();
 
         // ================================================================
+        // 組み込みアセット
+        // ================================================================
+
+        /// <summary>
+        /// 組み込みの Default-Diffuse を返す。プレファブ化したときに
+        /// 実体のあるアセットへの参照が残る（実行時生成のマテリアルだと残らない）。
+        /// </summary>
+        public Material GetBuiltinDefaultMaterial()
+            => AssetDatabase.GetBuiltinExtraResource<Material>("Default-Diffuse.mat");
+
+        // ================================================================
         // PrefabUtility
         // ================================================================
 

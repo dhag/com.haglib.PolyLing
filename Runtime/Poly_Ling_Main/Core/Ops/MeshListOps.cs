@@ -195,8 +195,38 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         public bool ReorderMeshes(MeshCategory category, ReorderMeshesCommand.ReorderEntry[] entries)
+            => ReorderMeshes(category, entries, preserveWorldTransform: false);
+
+        /// <summary>
+        /// 並べ替えと親の付け替え。
+        ///
+        /// preserveWorldTransform が true のとき、親が変わった対象の
+        /// BoneTransform を組み直してワールド姿勢を保つ。
+        /// ComputeWorldMatrices は「親のワールド × 自身のローカル」と積む
+        /// （ModelContext.cs:1746-1748）ため、組み直さないと親が付いた瞬間に
+        /// 子のワールド位置が親のぶんだけ飛ぶ。
+        ///
+        /// 既定を false にしてあるのは、この引数を持たない従来の呼び出しの
+        /// 挙動を変えないため。コマンド経由（ReorderMeshesCommand）は true で入る。
+        /// </summary>
+        public bool ReorderMeshes(
+            MeshCategory category, ReorderMeshesCommand.ReorderEntry[] entries,
+            bool preserveWorldTransform)
         {
             if (_model == null || entries == null || entries.Length == 0) return false;
+
+            // 付け替え前のワールド姿勢を控える。親を書き換える前でなければ意味がない。
+            Dictionary<MeshContext, Matrix4x4> beforeWorld = null;
+            Dictionary<MeshContext, BoneTransform> beforeTransform = null;
+            if (preserveWorldTransform)
+            {
+                beforeWorld = HierarchyReparentOps.CaptureWorld(_model);
+
+                beforeTransform = new Dictionary<MeshContext, BoneTransform>();
+                foreach (var mc in _model.MeshContextList)
+                    if (mc?.BoneTransform != null)
+                        beforeTransform[mc] = new BoneTransform(mc.BoneTransform);
+            }
 
             // 変更前の状態を保存
             var preOrderedList = new List<MeshContext>(_model.MeshContextList);
@@ -301,6 +331,39 @@ namespace Poly_Ling.Ops
                 }
             }
 
+            // ワールド姿勢の維持。
+            //   親が変わった対象だけを組み直す。親が同じものまで触ると、
+            //   丸め誤差で姿勢がじりじり動く。
+            Dictionary<MeshContext, BoneTransform> afterTransform = null;
+            if (preserveWorldTransform && beforeWorld != null)
+            {
+                var moved = new HashSet<MeshContext>();
+                foreach (var e in entries)
+                {
+                    var ctx = ResolveOld(e.MasterIndex);
+                    if (ctx == null) continue;
+
+                    preParentMap.TryGetValue(ctx, out var oldParent);
+                    MeshContext newParent = null;
+                    if (ctx.HierarchyParentIndex >= 0 && ctx.HierarchyParentIndex < _model.MeshContextCount)
+                        newParent = _model.GetMeshContext(ctx.HierarchyParentIndex);
+
+                    if (!ReferenceEquals(oldParent, newParent)) moved.Add(ctx);
+                }
+
+                if (moved.Count > 0)
+                {
+                    var warns = new List<string>();
+                    HierarchyReparentOps.RestoreWorld(_model, beforeWorld, moved, warns);
+                    foreach (string w in warns) Debug.LogWarning("[ReorderMeshes] " + w);
+
+                    afterTransform = new Dictionary<MeshContext, BoneTransform>();
+                    foreach (var mc in _model.MeshContextList)
+                        if (mc?.BoneTransform != null)
+                            afterTransform[mc] = new BoneTransform(mc.BoneTransform);
+                }
+            }
+
             // 選択インデックス復元
             RestoreSelectionAfterReorder(category, preOrderedList);
 
@@ -331,6 +394,10 @@ namespace Poly_Ling.Ops
                         NewParentMap = newParentMap,
                         OldDepthMap  = preDepthMap,
                         NewDepthMap  = newDepthMap,
+
+                        // 姿勢を組み直したときだけ入れる。組み直していなければ null。
+                        OldTransformMap = afterTransform != null ? beforeTransform : null,
+                        NewTransformMap = afterTransform,
                     };
                     {
                         string __dbgDesc = "メッシュ順序変更";

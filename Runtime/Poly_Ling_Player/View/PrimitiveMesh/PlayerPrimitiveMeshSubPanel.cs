@@ -64,19 +64,8 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<int> GetFirstSelectedDrawableIndex;
 
-        /// <summary>
-        /// 生成ボタン押下時。
-        /// (MeshObject, meshName, worldPosition, poseRotationEuler, poseScale,
-        ///  ignorePoseInArmature, addMode, addTargetIndex, materialIndex)
-        /// poseRotationEuler / poseScale は「ベイクしなかった」成分。
-        /// 呼出し側が MeshContext.BoneTransform へ設定する。ベイク済みなら
-        /// それぞれ Vector3.zero / Vector3.one が渡る。
-        /// addTargetIndex は addMode == AddToExisting のときの追加先
-        /// （MeshContextList インデックス）。-1 なら選択オブジェクトリストの先頭。
-        /// materialIndex は生成面へ割り当てるマテリアルスロット番号。
-        /// -1 は「指定しない」で、生成器が入れた MaterialIndex をそのまま使う。
-        /// </summary>
-        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode, int, int> OnMeshCreated;
+        // 生成の受け渡しは PanelCommand へ移した（PlayerPrimitiveMeshSubPanel.Command.cs）。
+        // パネルからモデルへ直接メッシュを渡す経路は残していない。
 
         /// <summary>選択中の描画オブジェクトの MeshObject を返す(なければ null)。取り込み/反映で使用。</summary>
         public Func<MeshObject> GetSelectedMeshObject;
@@ -121,7 +110,7 @@ namespace Poly_Ling.Player
          && _current != ShapeKind.Bridge;
 
         /// <summary>
-        /// OnMeshCreated へ渡すマテリアルスロット番号。
+        /// 生成コマンドへ載せるマテリアルスロット番号。
         ///
         /// 継承する図形は -1（指定なし）。追加先が新しいモデルのときは、
         /// そのモデルにスロットが無くドロップダウンも出していないため 0
@@ -239,18 +228,19 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
-              "NGonGear","NGonStar","InvoluteGear" };
+              "NGonGear","NGonStar","InvoluteGear","StadiumBox" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced }
 
         // カテゴリ別の図形リスト。グリッドはこの内容だけを表示する。
         private static readonly ShapeKind[] BasicShapes =
-            { ShapeKind.Cube, ShapeKind.Sphere, ShapeKind.Cylinder, ShapeKind.Capsule, ShapeKind.Plane, ShapeKind.Pyramid };
+            { ShapeKind.Cube, ShapeKind.Sphere, ShapeKind.Cylinder, ShapeKind.Capsule, ShapeKind.Plane, ShapeKind.Pyramid,
+              ShapeKind.StadiumBox };
         private static readonly ShapeKind[] AdvancedShapes =
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
               ShapeKind.NGonGear, ShapeKind.NGonStar, ShapeKind.InvoluteGear,
@@ -359,7 +349,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 図形ごとに効かない共通 UI を隠す。
         ///
-        /// 歪み複製と穴つなぎは OnMeshCreated を通らないため、共通の姿勢
+        /// 歪み複製と穴つなぎは図形生成コマンドを通らないため、共通の姿勢
         /// （位置・回転・スケール・ベイク・頂点結合）は一切効かない。歪み複製は
         /// さらに独自の「出力先」「出力モード」を持つので追加先も効かない。
         /// 出しっぱなしにすると操作しても何も起きない欄になるため隠す。
@@ -422,7 +412,7 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private readonly Button[]  _shapeBtns = new Button[19];
+        private readonly Button[]  _shapeBtns = new Button[20];
         private VisualElement      _shapeGrid;
         private VisualElement      _settingsContainer;
         private VisualElement      _profileEditorContainer;
@@ -1178,6 +1168,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonGear:     BuildNGonGearUI(_settingsContainer);     break;
                 case ShapeKind.NGonStar:     BuildNGonStarUI(_settingsContainer);     break;
                 case ShapeKind.InvoluteGear: BuildInvoluteGearUI(_settingsContainer); break;
+                case ShapeKind.StadiumBox:   BuildStadiumBoxUI(_settingsContainer);   break;
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -1208,31 +1199,31 @@ namespace Poly_Ling.Player
             c.Add(SL(T("Size")));
             if (_cubeP.LinkWHD)
             {
-                c.Add(SR(T("WidthX"), 0.1f, 10f, () => _cubeP.WidthTop, v =>
+                c.Add(SR(T("WidthX"), CubeMeshGenerator.CubeParams.SizeMin, CubeMeshGenerator.CubeParams.SizeMax, () => _cubeP.WidthTop, v =>
                 {
                     _cubeP.WidthTop = _cubeP.WidthBottom = _cubeP.DepthTop = _cubeP.DepthBottom = _cubeP.Height = v; D();
                 }));
             }
             else
             {
-                c.Add(SR(T("WidthX"),  0.1f, 10f, () => _cubeP.WidthTop, v => { _cubeP.WidthTop  = v; _cubeP.WidthBottom  = v; D(); }));
-                c.Add(SR(T("HeightY"), 0.1f, 10f, () => _cubeP.Height,   v => { _cubeP.Height = v; D(); }));
-                c.Add(SR(T("DepthZ"),  0.1f, 10f, () => _cubeP.DepthTop, v => { _cubeP.DepthTop  = v; _cubeP.DepthBottom  = v; D(); }));
+                c.Add(SR(T("WidthX"), CubeMeshGenerator.CubeParams.SizeMin, CubeMeshGenerator.CubeParams.SizeMax, () => _cubeP.WidthTop, v => { _cubeP.WidthTop  = v; _cubeP.WidthBottom  = v; D(); }));
+                c.Add(SR(T("HeightY"), CubeMeshGenerator.CubeParams.SizeMin, CubeMeshGenerator.CubeParams.SizeMax, () => _cubeP.Height,   v => { _cubeP.Height = v; D(); }));
+                c.Add(SR(T("DepthZ"), CubeMeshGenerator.CubeParams.SizeMin, CubeMeshGenerator.CubeParams.SizeMax, () => _cubeP.DepthTop, v => { _cubeP.DepthTop  = v; _cubeP.DepthBottom  = v; D(); }));
             }
 
             c.Add(SL(T("CornerRadius")));
-            c.Add(SR(T("CornerRadius"), 0f, 0.5f, () => _cubeP.CornerRadius, v => { _cubeP.CornerRadius = v; D(); }));
+            c.Add(SR(T("CornerRadius"), CubeMeshGenerator.CubeParams.CornerRadiusMin, CubeMeshGenerator.CubeParams.CornerRadiusMax, () => _cubeP.CornerRadius, v => { _cubeP.CornerRadius = v; D(); }));
             if (_cubeP.CornerRadius > 0f)
-                c.Add(IR(T("CornerSeg"), 1, 8, () => _cubeP.CornerSegments, v => { _cubeP.CornerSegments = v; D(); }));
+                c.Add(IR(T("CornerSeg"), CubeMeshGenerator.CubeParams.CornerSegmentsMin, CubeMeshGenerator.CubeParams.CornerSegmentsMax, () => _cubeP.CornerSegments, v => { _cubeP.CornerSegments = v; D(); }));
 
             c.Add(SL(T("Subdivisions")));
-            c.Add(IR(T("SubdivX"), 1, 8, () => _cubeP.Subdivisions.x, v => { _cubeP.Subdivisions = new Vector3Int(v, _cubeP.Subdivisions.y, _cubeP.Subdivisions.z); D(); }));
-            c.Add(IR(T("SubdivY"), 1, 8, () => _cubeP.Subdivisions.y, v => { _cubeP.Subdivisions = new Vector3Int(_cubeP.Subdivisions.x, v, _cubeP.Subdivisions.z); D(); }));
-            c.Add(IR(T("SubdivZ"), 1, 8, () => _cubeP.Subdivisions.z, v => { _cubeP.Subdivisions = new Vector3Int(_cubeP.Subdivisions.x, _cubeP.Subdivisions.y, v); D(); }));
+            c.Add(IR(T("SubdivX"), CubeMeshGenerator.CubeParams.SubdivisionsMin, CubeMeshGenerator.CubeParams.SubdivisionsMax, () => _cubeP.Subdivisions.x, v => { _cubeP.Subdivisions = new Vector3Int(v, _cubeP.Subdivisions.y, _cubeP.Subdivisions.z); D(); }));
+            c.Add(IR(T("SubdivY"), CubeMeshGenerator.CubeParams.SubdivisionsMin, CubeMeshGenerator.CubeParams.SubdivisionsMax, () => _cubeP.Subdivisions.y, v => { _cubeP.Subdivisions = new Vector3Int(_cubeP.Subdivisions.x, v, _cubeP.Subdivisions.z); D(); }));
+            c.Add(IR(T("SubdivZ"), CubeMeshGenerator.CubeParams.SubdivisionsMin, CubeMeshGenerator.CubeParams.SubdivisionsMax, () => _cubeP.Subdivisions.z, v => { _cubeP.Subdivisions = new Vector3Int(_cubeP.Subdivisions.x, _cubeP.Subdivisions.y, v); D(); }));
 
             BuildPivotXYZ(c,
                 () => _cubeP.Pivot, v => { _cubeP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
@@ -1241,15 +1232,15 @@ namespace Poly_Ling.Player
         {
             c.Add(ShapeTitle(T("Sphere")));
             c.Add(NF(() => _sphereP.MeshName, v => _sphereP.MeshName = v));
-            c.Add(SR(T("Radius"), 0.05f, 5f, () => _sphereP.Radius, v => { _sphereP.Radius = v; D(); }));
+            c.Add(SR(T("Radius"), SphereMeshGenerator.SphereParams.RadiusMin, SphereMeshGenerator.SphereParams.RadiusMax, () => _sphereP.Radius, v => { _sphereP.Radius = v; D(); }));
             c.Add(SL(T("Segments")));
-            c.Add(IR(T("Lateral"), 4, 64, () => _sphereP.LatitudeSegments,  v => { _sphereP.LatitudeSegments  = v; D(); }));
-            c.Add(IR(T("Radial"),  4, 64, () => _sphereP.LongitudeSegments, v => { _sphereP.LongitudeSegments = v; D(); }));
+            c.Add(IR(T("Lateral"), SphereMeshGenerator.SphereParams.SegmentsMin, SphereMeshGenerator.SphereParams.SegmentsMax, () => _sphereP.LatitudeSegments,  v => { _sphereP.LatitudeSegments  = v; D(); }));
+            c.Add(IR(T("Radial"), SphereMeshGenerator.SphereParams.SegmentsMin, SphereMeshGenerator.SphereParams.SegmentsMax, () => _sphereP.LongitudeSegments, v => { _sphereP.LongitudeSegments = v; D(); }));
             c.Add(TR(T("CubeSphere"), () => _sphereP.CubeSphere, v => { _sphereP.CubeSphere = v; D(); }));
 
             BuildPivotXYZ(c,
                 () => _sphereP.Pivot, v => { _sphereP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
@@ -1259,12 +1250,12 @@ namespace Poly_Ling.Player
             c.Add(ShapeTitle(T("Cylinder")));
             c.Add(NF(() => _cylP.MeshName, v => _cylP.MeshName = v));
             c.Add(SL(T("Size")));
-            c.Add(SR(T("RadiusTop"),    0f,   5f,   () => _cylP.RadiusTop,    v => { _cylP.RadiusTop    = v; D(); }));
-            c.Add(SR(T("RadiusBottom"), 0f,   5f,   () => _cylP.RadiusBottom, v => { _cylP.RadiusBottom = v; D(); }));
-            c.Add(SR(T("Height"),       0.1f, 10f,  () => _cylP.Height,       v => { _cylP.Height       = v; D(); }));
+            c.Add(SR(T("RadiusTop"), CylinderMeshGenerator.CylinderParams.RadiusMin, CylinderMeshGenerator.CylinderParams.RadiusMax,   () => _cylP.RadiusTop,    v => { _cylP.RadiusTop    = v; D(); }));
+            c.Add(SR(T("RadiusBottom"), CylinderMeshGenerator.CylinderParams.RadiusMin, CylinderMeshGenerator.CylinderParams.RadiusMax,   () => _cylP.RadiusBottom, v => { _cylP.RadiusBottom = v; D(); }));
+            c.Add(SR(T("Height"), CylinderMeshGenerator.CylinderParams.HeightMin, CylinderMeshGenerator.CylinderParams.HeightMax,  () => _cylP.Height,       v => { _cylP.Height       = v; D(); }));
             c.Add(SL(T("Segments")));
-            c.Add(IR(T("Radial"),  3, 48, () => _cylP.RadialSegments, v => { _cylP.RadialSegments = v; D(); }));
-            c.Add(IR(T("Lateral"), 1, 16, () => _cylP.HeightSegments, v => { _cylP.HeightSegments = v; D(); }));
+            c.Add(IR(T("Radial"), CylinderMeshGenerator.CylinderParams.RadialSegmentsMin, CylinderMeshGenerator.CylinderParams.RadialSegmentsMax, () => _cylP.RadialSegments, v => { _cylP.RadialSegments = v; D(); }));
+            c.Add(IR(T("Lateral"), CylinderMeshGenerator.CylinderParams.HeightSegmentsMin, CylinderMeshGenerator.CylinderParams.HeightSegmentsMax, () => _cylP.HeightSegments, v => { _cylP.HeightSegments = v; D(); }));
             c.Add(TR(T("CapTop"),    () => _cylP.CapTop,    v => { _cylP.CapTop    = v; D(); }));
             c.Add(TR(T("CapBottom"), () => _cylP.CapBottom, v => { _cylP.CapBottom = v; D(); }));
 
@@ -1273,9 +1264,9 @@ namespace Poly_Ling.Player
             if (_cylP.CapBottom && _cylP.RadiusBottom > 0) maxEdge = Mathf.Min(maxEdge, _cylP.RadiusBottom);
             if (maxEdge > 0f)
             {
-                c.Add(SR(T("EdgeRadius"), 0f, maxEdge, () => _cylP.EdgeRadius, v => { _cylP.EdgeRadius = v; D(); }));
+                c.Add(SR(T("EdgeRadius"), CylinderMeshGenerator.CylinderParams.EdgeRadiusMin, maxEdge, () => _cylP.EdgeRadius, v => { _cylP.EdgeRadius = v; D(); }));
                 if (_cylP.EdgeRadius > 0f)
-                    c.Add(IR(T("EdgeSeg"), 1, 16, () => _cylP.EdgeSegments, v => { _cylP.EdgeSegments = v; D(); }));
+                    c.Add(IR(T("EdgeSeg"), CylinderMeshGenerator.CylinderParams.EdgeSegmentsMin, CylinderMeshGenerator.CylinderParams.EdgeSegmentsMax, () => _cylP.EdgeSegments, v => { _cylP.EdgeSegments = v; D(); }));
             }
 
             BuildPivotY(c,
@@ -1289,13 +1280,13 @@ namespace Poly_Ling.Player
             c.Add(ShapeTitle(T("Capsule")));
             c.Add(NF(() => _capsP.MeshName, v => _capsP.MeshName = v));
             c.Add(SL(T("Size")));
-            c.Add(SR(T("RadiusTop"),    0.1f, 2f,  () => _capsP.RadiusTop,    v => { _capsP.RadiusTop    = v; D(); }));
-            c.Add(SR(T("RadiusBottom"), 0.1f, 2f,  () => _capsP.RadiusBottom, v => { _capsP.RadiusBottom = v; D(); }));
-            c.Add(SR(T("Height"),       0.5f, 10f, () => _capsP.Height,       v => { _capsP.Height       = v; D(); }));
+            c.Add(SR(T("RadiusTop"), CapsuleMeshGenerator.CapsuleParams.RadiusMin, CapsuleMeshGenerator.CapsuleParams.RadiusMax,  () => _capsP.RadiusTop,    v => { _capsP.RadiusTop    = v; D(); }));
+            c.Add(SR(T("RadiusBottom"), CapsuleMeshGenerator.CapsuleParams.RadiusMin, CapsuleMeshGenerator.CapsuleParams.RadiusMax,  () => _capsP.RadiusBottom, v => { _capsP.RadiusBottom = v; D(); }));
+            c.Add(SR(T("Height"), CapsuleMeshGenerator.CapsuleParams.HeightMin, CapsuleMeshGenerator.CapsuleParams.HeightMax, () => _capsP.Height,       v => { _capsP.Height       = v; D(); }));
             c.Add(SL(T("Segments")));
-            c.Add(IR(T("Radial"),  8, 48, () => _capsP.RadialSegments, v => { _capsP.RadialSegments = v; D(); }));
-            c.Add(IR(T("Lateral"), 1, 16, () => _capsP.HeightSegments, v => { _capsP.HeightSegments = v; D(); }));
-            c.Add(IR(T("Cap"),     2, 16, () => _capsP.CapSegments,    v => { _capsP.CapSegments    = v; D(); }));
+            c.Add(IR(T("Radial"), CapsuleMeshGenerator.CapsuleParams.RadialSegmentsMin, CapsuleMeshGenerator.CapsuleParams.RadialSegmentsMax, () => _capsP.RadialSegments, v => { _capsP.RadialSegments = v; D(); }));
+            c.Add(IR(T("Lateral"), CapsuleMeshGenerator.CapsuleParams.HeightSegmentsMin, CapsuleMeshGenerator.CapsuleParams.HeightSegmentsMax, () => _capsP.HeightSegments, v => { _capsP.HeightSegments = v; D(); }));
+            c.Add(IR(T("Cap"), CapsuleMeshGenerator.CapsuleParams.CapSegmentsMin, CapsuleMeshGenerator.CapsuleParams.CapSegmentsMax, () => _capsP.CapSegments,    v => { _capsP.CapSegments    = v; D(); }));
 
             BuildPivotY(c,
                 () => _capsP.Pivot.y, v => { _capsP.Pivot = new Vector3(0, v, 0); D(); },
@@ -1328,11 +1319,11 @@ namespace Poly_Ling.Player
         {
             c.Add(ShapeTitle(T("Plane")));
             c.Add(NF(() => _planeP.MeshName, v => _planeP.MeshName = v));
-            c.Add(SR(T("Width"),  0.1f, 10f, () => _planeP.Width,  v => { _planeP.Width  = v; D(); }));
-            c.Add(SR(T("Height"), 0.1f, 10f, () => _planeP.Height, v => { _planeP.Height = v; D(); }));
+            c.Add(SR(T("Width"), PlaneMeshGenerator.PlaneParams.SizeMin, PlaneMeshGenerator.PlaneParams.SizeMax, () => _planeP.Width,  v => { _planeP.Width  = v; D(); }));
+            c.Add(SR(T("Height"), PlaneMeshGenerator.PlaneParams.SizeMin, PlaneMeshGenerator.PlaneParams.SizeMax, () => _planeP.Height, v => { _planeP.Height = v; D(); }));
             c.Add(SL(T("Segments")));
-            c.Add(IR(T("Width"),  1, 32, () => _planeP.WidthSegments,  v => { _planeP.WidthSegments  = v; D(); }));
-            c.Add(IR(T("Height"), 1, 32, () => _planeP.HeightSegments, v => { _planeP.HeightSegments = v; D(); }));
+            c.Add(IR(T("Width"), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.WidthSegments,  v => { _planeP.WidthSegments  = v; D(); }));
+            c.Add(IR(T("Height"), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.HeightSegments, v => { _planeP.HeightSegments = v; D(); }));
             var dd = new DropdownField(new List<string>{ T("PlaneXY"), T("PlaneXZ"), T("PlaneYZ") }, (int)_planeP.Orientation);
             dd.label = T("Orientation"); dd.style.marginBottom = 2;
             dd.RegisterValueChangedCallback(e => { _planeP.Orientation = (PlaneOrientation)dd.index; D(); });
@@ -1342,7 +1333,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _planeP.Pivot, v => { _planeP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
@@ -1351,15 +1342,15 @@ namespace Poly_Ling.Player
         {
             c.Add(ShapeTitle(T("Pyramid")));
             c.Add(NF(() => _pyramidP.MeshName, v => _pyramidP.MeshName = v));
-            c.Add(IR(T("Sides"),      3, 16,     () => _pyramidP.Sides,       v => { _pyramidP.Sides       = v; D(); }));
-            c.Add(SR(T("BaseRadius"), 0.1f, 5f,  () => _pyramidP.BaseRadius,  v => { _pyramidP.BaseRadius  = v; D(); }));
-            c.Add(SR(T("Height"),     0.1f, 10f, () => _pyramidP.Height,      v => { _pyramidP.Height      = v; D(); }));
-            c.Add(SR(T("ApexOffset"), -1f,  1f,  () => _pyramidP.ApexOffset,  v => { _pyramidP.ApexOffset  = v; D(); }));
+            c.Add(IR(T("Sides"), PyramidMeshGenerator.PyramidParams.SidesMin, PyramidMeshGenerator.PyramidParams.SidesMax,     () => _pyramidP.Sides,       v => { _pyramidP.Sides       = v; D(); }));
+            c.Add(SR(T("BaseRadius"), PyramidMeshGenerator.PyramidParams.BaseRadiusMin, PyramidMeshGenerator.PyramidParams.BaseRadiusMax,  () => _pyramidP.BaseRadius,  v => { _pyramidP.BaseRadius  = v; D(); }));
+            c.Add(SR(T("Height"), PyramidMeshGenerator.PyramidParams.HeightMin, PyramidMeshGenerator.PyramidParams.HeightMax, () => _pyramidP.Height,      v => { _pyramidP.Height      = v; D(); }));
+            c.Add(SR(T("ApexOffset"), PyramidMeshGenerator.PyramidParams.ApexOffsetMin, PyramidMeshGenerator.PyramidParams.ApexOffsetMax,  () => _pyramidP.ApexOffset,  v => { _pyramidP.ApexOffset  = v; D(); }));
             c.Add(TR(T("CapBottom"),  () => _pyramidP.CapBottom, v => { _pyramidP.CapBottom = v; D(); }));
 
             BuildPivotXYZ(c,
                 () => _pyramidP.Pivot, v => { _pyramidP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
@@ -1418,7 +1409,7 @@ namespace Poly_Ling.Player
             fold.style.marginBottom = 4;
             var f = fold.contentContainer;
             content = f;
-            f.Add(SR(T("PivotY"), -0.5f, 0.5f, getY, setY, out var ySl, out var yNf));
+            f.Add(SR(T("PivotY"), PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax, getY, setY, out var ySl, out var yNf));
             void SyncY() { float v = getY(); ySl.SetValueWithoutNotify(v); yNf.SetValueWithoutNotify((float)Math.Round(v, 3)); }
             sync = SyncY;
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 4;
@@ -1488,15 +1479,15 @@ namespace Poly_Ling.Player
 
             c.Add(ShapeTitle(T("Revolution")));
             c.Add(NF(() => _revP.MeshName, v => _revP.MeshName = v));
-            c.Add(IR(T("RadialSegments"), 3, 64,   () => _revP.RadialSegments, v => { _revP.RadialSegments = v; D(); }));
+            c.Add(IR(T("RadialSegments"), RevolutionParams.RadialSegmentsMin, RevolutionParams.RadialSegmentsMax,   () => _revP.RadialSegments, v => { _revP.RadialSegments = v; D(); }));
             c.Add(TR(T("CloseTop"),    () => _revP.CloseTop,    v => { _revP.CloseTop    = v; D(); }));
             c.Add(TR(T("CloseBottom"), () => _revP.CloseBottom, v => { _revP.CloseBottom = v; D(); }));
             c.Add(TR(T("CloseLoop"),   () => _revP.CloseLoop,   v => { _revP.CloseLoop   = v; D(); RefreshRevCanvas(); }));
             c.Add(TR(T("Spiral"),      () => _revP.Spiral,      v => { _revP.Spiral      = v; D(); }));
             if (_revP.Spiral)
             {
-                c.Add(IR(T("SpiralTurns"), 1, 10,   () => _revP.SpiralTurns, v => { _revP.SpiralTurns = v; D(); }));
-                c.Add(SR(T("SpiralPitch"), -2f, 2f, () => _revP.SpiralPitch, v => { _revP.SpiralPitch = v; D(); }));
+                c.Add(IR(T("SpiralTurns"), RevolutionParams.SpiralTurnsMin, RevolutionParams.SpiralTurnsMax,   () => _revP.SpiralTurns, v => { _revP.SpiralTurns = v; D(); }));
+                c.Add(SR(T("SpiralPitch"), RevolutionParams.SpiralPitchMin, RevolutionParams.SpiralPitchMax, () => _revP.SpiralPitch, v => { _revP.SpiralPitch = v; D(); }));
             }
             c.Add(TR(T("FlipY"), () => _revP.FlipY, v => { _revP.FlipY = v; D(); }));
             c.Add(TR(T("FlipZ"), () => _revP.FlipZ, v => { _revP.FlipZ = v; D(); }));
@@ -1529,22 +1520,22 @@ namespace Poly_Ling.Player
             if (_revP.CurrentPreset == ProfilePreset.Donut)
             {
                 c.Add(SL(T("Donut")));
-                c.Add(SR(T("DonutMajorRadius"), 0.2f, 2f,   () => _revP.DonutMajorRadius, v => { _revP.DonutMajorRadius = v; ApplyRevPreset(); }));
-                c.Add(SR(T("DonutMinorRadius"), 0.05f, 1f,  () => _revP.DonutMinorRadius, v => { _revP.DonutMinorRadius = v; ApplyRevPreset(); }));
-                c.Add(IR(T("DonutTubeSegs"),    4, 32,      () => _revP.DonutTubeSegments, v => { _revP.DonutTubeSegments = v; ApplyRevPreset(); }));
+                c.Add(SR(T("DonutMajorRadius"), RevolutionParams.DonutMajorRadiusMin, RevolutionParams.DonutMajorRadiusMax,   () => _revP.DonutMajorRadius, v => { _revP.DonutMajorRadius = v; ApplyRevPreset(); }));
+                c.Add(SR(T("DonutMinorRadius"), RevolutionParams.DonutMinorRadiusMin, RevolutionParams.DonutMinorRadiusMax,  () => _revP.DonutMinorRadius, v => { _revP.DonutMinorRadius = v; ApplyRevPreset(); }));
+                c.Add(IR(T("DonutTubeSegs"), RevolutionParams.DonutTubeSegmentsMin, RevolutionParams.DonutTubeSegmentsMax,      () => _revP.DonutTubeSegments, v => { _revP.DonutTubeSegments = v; ApplyRevPreset(); }));
             }
             if (_revP.CurrentPreset == ProfilePreset.RoundedPipe)
             {
                 c.Add(SL(T("RoundedPipe")));
-                c.Add(SR(T("PipeInnerRadius"), 0.05f, 2f, () => _revP.PipeInnerRadius, v => { _revP.PipeInnerRadius = v; ApplyRevPreset(); }));
-                c.Add(SR(T("PipeOuterRadius"), 0.06f, 3f, () => _revP.PipeOuterRadius, v => { _revP.PipeOuterRadius = v; ApplyRevPreset(); }));
-                c.Add(SR(T("PipeHeight"),      0.1f,  3f, () => _revP.PipeHeight,      v => { _revP.PipeHeight      = v; ApplyRevPreset(); }));
+                c.Add(SR(T("PipeInnerRadius"), RevolutionParams.PipeInnerRadiusMin, RevolutionParams.PipeInnerRadiusMax, () => _revP.PipeInnerRadius, v => { _revP.PipeInnerRadius = v; ApplyRevPreset(); }));
+                c.Add(SR(T("PipeOuterRadius"), RevolutionParams.PipeOuterRadiusMin, RevolutionParams.PipeOuterRadiusMax, () => _revP.PipeOuterRadius, v => { _revP.PipeOuterRadius = v; ApplyRevPreset(); }));
+                c.Add(SR(T("PipeHeight"), RevolutionParams.PipeHeightMin, RevolutionParams.PipeHeightMax, () => _revP.PipeHeight,      v => { _revP.PipeHeight      = v; ApplyRevPreset(); }));
                 c.Add(SL(T("InnerCorner")));
-                c.Add(SR(T("CornerRadius"), 0f, 0.5f, () => _revP.PipeInnerCornerRadius,  v => { _revP.PipeInnerCornerRadius  = v; ApplyRevPreset(); }));
-                c.Add(IR(T("CornerSeg"),    1, 16,    () => _revP.PipeInnerCornerSegments, v => { _revP.PipeInnerCornerSegments = v; ApplyRevPreset(); }));
+                c.Add(SR(T("CornerRadius"), RevolutionParams.PipeCornerRadiusMin, RevolutionParams.PipeCornerRadiusMax, () => _revP.PipeInnerCornerRadius,  v => { _revP.PipeInnerCornerRadius  = v; ApplyRevPreset(); }));
+                c.Add(IR(T("CornerSeg"), RevolutionParams.PipeCornerSegmentsMin, RevolutionParams.PipeCornerSegmentsMax,    () => _revP.PipeInnerCornerSegments, v => { _revP.PipeInnerCornerSegments = v; ApplyRevPreset(); }));
                 c.Add(SL(T("OuterCorner")));
-                c.Add(SR(T("CornerRadius"), 0f, 0.5f, () => _revP.PipeOuterCornerRadius,  v => { _revP.PipeOuterCornerRadius  = v; ApplyRevPreset(); }));
-                c.Add(IR(T("CornerSeg"),    1, 16,    () => _revP.PipeOuterCornerSegments, v => { _revP.PipeOuterCornerSegments = v; ApplyRevPreset(); }));
+                c.Add(SR(T("CornerRadius"), RevolutionParams.PipeCornerRadiusMin, RevolutionParams.PipeCornerRadiusMax, () => _revP.PipeOuterCornerRadius,  v => { _revP.PipeOuterCornerRadius  = v; ApplyRevPreset(); }));
+                c.Add(IR(T("CornerSeg"), RevolutionParams.PipeCornerSegmentsMin, RevolutionParams.PipeCornerSegmentsMax,    () => _revP.PipeOuterCornerSegments, v => { _revP.PipeOuterCornerSegments = v; ApplyRevPreset(); }));
             }
 
             BuildPivotY(c,
@@ -2981,20 +2972,20 @@ namespace Poly_Ling.Player
 
             // ── パラメータ ────────────────────────────────────────────────
             c.Add(SL(T("Scale")));
-            c.Add(SR(T("Scale"),   0.01f, 10f, () => _p2dP.Scale,    v => { _p2dP.Scale    = v; D(); }));
-            c.Add(SR(T("OffsetX"), -5f,   5f,  () => _p2dP.Offset.x, v => { _p2dP.Offset = new Vector2(v, _p2dP.Offset.y); D(); }));
-            c.Add(SR(T("OffsetY"), -5f,   5f,  () => _p2dP.Offset.y, v => { _p2dP.Offset = new Vector2(_p2dP.Offset.x, v); D(); }));
+            c.Add(SR(T("Scale"), Profile2DParams.ScaleMin, Profile2DParams.ScaleMax, () => _p2dP.Scale,    v => { _p2dP.Scale    = v; D(); }));
+            c.Add(SR(T("OffsetX"), Profile2DParams.OffsetMin, Profile2DParams.OffsetMax,  () => _p2dP.Offset.x, v => { _p2dP.Offset = new Vector2(v, _p2dP.Offset.y); D(); }));
+            c.Add(SR(T("OffsetY"), Profile2DParams.OffsetMin, Profile2DParams.OffsetMax,  () => _p2dP.Offset.y, v => { _p2dP.Offset = new Vector2(_p2dP.Offset.x, v); D(); }));
             c.Add(TR(T("FlipY"),               () => _p2dP.FlipY,    v => { _p2dP.FlipY    = v; D(); }));
             c.Add(TR(T("SymmetryMode"),        () => _p2dP.SymmetryMode, v => { _p2dP.SymmetryMode = v; D(); }));
-            c.Add(SR(T("Thickness"), 0f, 2f,   () => _p2dP.Thickness, v => { _p2dP.Thickness = v; D(); UpdateP2dEdgeVis(); }));
+            c.Add(SR(T("Thickness"), Profile2DParams.ThicknessMin, Profile2DParams.ThicknessMax,   () => _p2dP.Thickness, v => { _p2dP.Thickness = v; D(); UpdateP2dEdgeVis(); }));
 
             // 角処理(ベベル)UI は常時生成し、Thickness/Segments に応じて表示切替
             // （ビルド時条件生成だと Thickness を後から上げても出ないため）
             _p2dEdgeLabel     = SL(T("EdgeSettings"));
-            _p2dEdgeFrontSeg  = IR(T("FrontSegments"), 0, 16, () => _p2dP.SegmentsFront, v => { _p2dP.SegmentsFront = v; D(); UpdateP2dEdgeVis(); });
-            _p2dEdgeFrontSize = SR(T("EdgeSize"), 0.01f, 0.5f, () => _p2dP.EdgeSizeFront, v => { _p2dP.EdgeSizeFront = v; D(); });
-            _p2dEdgeBackSeg   = IR(T("BackSegments"),  0, 16, () => _p2dP.SegmentsBack, v => { _p2dP.SegmentsBack = v; D(); UpdateP2dEdgeVis(); });
-            _p2dEdgeBackSize  = SR(T("EdgeSize"), 0.01f, 0.5f, () => _p2dP.EdgeSizeBack, v => { _p2dP.EdgeSizeBack = v; D(); });
+            _p2dEdgeFrontSeg  = IR(T("FrontSegments"), Profile2DParams.EdgeSegmentsMin, Profile2DParams.EdgeSegmentsMax, () => _p2dP.SegmentsFront, v => { _p2dP.SegmentsFront = v; D(); UpdateP2dEdgeVis(); });
+            _p2dEdgeFrontSize = SR(T("EdgeSize"), Profile2DParams.EdgeSizeMin, Profile2DParams.EdgeSizeMax, () => _p2dP.EdgeSizeFront, v => { _p2dP.EdgeSizeFront = v; D(); });
+            _p2dEdgeBackSeg   = IR(T("BackSegments"), Profile2DParams.EdgeSegmentsMin, Profile2DParams.EdgeSegmentsMax, () => _p2dP.SegmentsBack, v => { _p2dP.SegmentsBack = v; D(); UpdateP2dEdgeVis(); });
+            _p2dEdgeBackSize  = SR(T("EdgeSize"), Profile2DParams.EdgeSizeMin, Profile2DParams.EdgeSizeMax, () => _p2dP.EdgeSizeBack, v => { _p2dP.EdgeSizeBack = v; D(); });
             _p2dEdgeInward    = TR(T("EdgeInward"), () => _p2dP.EdgeInward, v => { _p2dP.EdgeInward = v; D(); });
             c.Add(_p2dEdgeLabel); c.Add(_p2dEdgeFrontSeg); c.Add(_p2dEdgeFrontSize);
             c.Add(_p2dEdgeBackSeg); c.Add(_p2dEdgeBackSize); c.Add(_p2dEdgeInward);
@@ -3002,7 +2993,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _p2dP.Pivot, v => { _p2dP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
         }
 
@@ -4020,16 +4011,16 @@ namespace Poly_Ling.Player
             }) { text = T("UseBuiltinDefault") };
             defBtn.style.marginBottom = 4; c.Add(defBtn);
 
-            c.Add(SR(T("Scale"),      1f,  10f, () => _nohP.Scale,      v => { _nohP.Scale      = v; D(); }));
-            c.Add(SR(T("DepthScale"), 0.1f, 5f, () => _nohP.DepthScale, v => { _nohP.DepthScale = v; D(); }));
+            c.Add(SR(T("Scale"), FaceMeshParams.ScaleMin, FaceMeshParams.ScaleMax, () => _nohP.Scale,      v => { _nohP.Scale      = v; D(); }));
+            c.Add(SR(T("DepthScale"), FaceMeshParams.DepthScaleMin, FaceMeshParams.DepthScaleMax, () => _nohP.DepthScale, v => { _nohP.DepthScale = v; D(); }));
             c.Add(TR(T("FlipFaces"),           () => _nohP.FlipFaces,   v => { _nohP.FlipFaces  = v; D(); }));
             c.Add(TR(T("FlipX"),               () => _nohP.FlipX,       v => { _nohP.FlipX      = v; D(); }));
             c.Add(TR(T("FlipY"),               () => _nohP.FlipY,       v => { _nohP.FlipY      = v; D(); }));
             c.Add(TR(T("FlipZ"),               () => _nohP.FlipZ,       v => { _nohP.FlipZ      = v; D(); }));
             c.Add(TR(T("FillHoles"),           () => _nohP.FillHoles,   v => { _nohP.FillHoles  = v; D(); }));
             c.Add(TR(T("RimEnabled"),          () => _nohP.RimEnabled,  v => { _nohP.RimEnabled = v; D(); }));
-            c.Add(SR(T("RimWidth"), 0f, 1.5f,  () => _nohP.RimWidth,    v => { _nohP.RimWidth   = v; D(); }));
-            c.Add(IR(T("FaceIndex"), 0, 10,    () => _nohP.FaceIndex,   v => { _nohP.FaceIndex  = v; D(); }));
+            c.Add(SR(T("RimWidth"), FaceMeshParams.RimWidthMin, FaceMeshParams.RimWidthMax,  () => _nohP.RimWidth,    v => { _nohP.RimWidth   = v; D(); }));
+            c.Add(IR(T("FaceIndex"), FaceMeshParams.FaceIndexMin, FaceMeshParams.FaceIndexMax,    () => _nohP.FaceIndex,   v => { _nohP.FaceIndex  = v; D(); }));
 
             // ── 既存メッシュを能面JSON形式で保存（能面とは独立の汎用エクスポート） ──
             c.Add(PlayerIoUiKit.Divider());
@@ -4279,99 +4270,40 @@ namespace Poly_Ling.Player
         /// </param>
         private MeshObject Generate(bool forPreview, bool applyTransform = true)
         {
-            MeshObject mo;
-            switch (_current)
+            // 穴つなぎはプレビューだけ MeshObject を作る（座標はワールド空間）。
+            // 実生成は書き込み先の既存頂点を参照するため CreateHoleBridgeCommand を使う。
+            if (_current == ShapeKind.Bridge) return GenerateBridgeMesh();
+
+            // 歪み複製は1つのメッシュを返さない（モデルへ直接オブジェクトを挿入する）。
+            // プレビュー / ライブワイヤは出さないので null を返す。
+            if (_current == ShapeKind.ObjectArray) return null;
+
+            var cmd = BuildCreateCommand(applyTransform ? CurrentPlacement() : NeutralPlacement());
+            if (cmd == null) return null;
+
+            // 重複頂点の結合・パーツID の割当・回転/拡大の焼き込みはファクトリ側にある。
+            // 図形種別の分岐がパネルとファクトリの 2 箇所に分かれないようにするため、
+            // プレビューもボタンも同じコマンドを通す。
+            var mo = PrimitiveMeshFactory.Build(cmd, forPreview, ResolvePlaceSources);
+
+            // 見つからなかった字数は生成の副産物なので、情報欄はここで更新する。
+            if (_current == ShapeKind.Text)
             {
-                case ShapeKind.Cube:      mo = CubeMeshGenerator.Generate(_cubeP); break;
-                case ShapeKind.Sphere:    mo = SphereMeshGenerator.Generate(_sphereP); break;
-                case ShapeKind.Cylinder:  mo = CylinderMeshGenerator.Generate(_cylP); break;
-                case ShapeKind.Capsule:   mo = CapsuleMeshGenerator.Generate(_capsP); break;
-                case ShapeKind.Plane:     mo = PlaneMeshGenerator.Generate(_planeP); break;
-                case ShapeKind.Pyramid:   mo = PyramidMeshGenerator.Generate(_pyramidP); break;
-                case ShapeKind.Revolution:
-                    EnsureRevProfile();
-                    mo = RevolutionMeshGenerator.Generate(_revProfile, _revP);
-                    break;
-                case ShapeKind.Profile2D:
-                    EnsureP2DLoops();
-                    mo = Profile2DExtrudeMeshGenerator.Generate(_p2dLoops, _p2dP.MeshName,
-                        new Profile2DGenerateParams
-                        {
-                            Scale          = _p2dP.Scale,
-                            Offset         = _p2dP.Offset,
-                            FlipY          = _p2dP.FlipY,
-                            Thickness      = _p2dP.Thickness,
-                            SegmentsFront  = _p2dP.SegmentsFront,
-                            SegmentsBack   = _p2dP.SegmentsBack,
-                            EdgeSizeFront  = _p2dP.EdgeSizeFront,
-                            EdgeSizeBack   = _p2dP.EdgeSizeBack,
-                            EdgeInward     = _p2dP.EdgeInward,
-                            SymmetryMode   = _p2dP.SymmetryMode,
-                        });
-                    Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.ApplyPivotOffset(mo, _p2dP.Pivot);
-                    break;
-                case ShapeKind.NohMask:
-                    mo = NohMaskMeshGenerator.GenerateFromFiles(_nohP);
-                    break;
-                case ShapeKind.Frill:
-                    mo = GenerateFrillMesh();
-                    break;
-                case ShapeKind.Pipe:
-                    mo = GeneratePipeMesh();
-                    break;
-                case ShapeKind.PlaceObject:
-                    mo = GeneratePlaceObjectMesh();
-                    break;
-                case ShapeKind.Text:
-                    mo = GenerateTextMesh();
-                    break;
-                case ShapeKind.Ribbon:
-                    mo = GenerateRibbonMesh();
-                    break;
-                case ShapeKind.NGonGear:
-                    mo = GenerateNGonGearMesh();
-                    break;
-                case ShapeKind.NGonStar:
-                    mo = GenerateNGonStarMesh();
-                    break;
-                case ShapeKind.InvoluteGear:
-                    mo = GenerateInvoluteGearMesh();
-                    break;
-                // 穴つなぎはプレビューだけ MeshObject を作る（座標はワールド空間）。
-                // 実生成は書き込み先の既存頂点を参照するため OnBridgeGenerate へ流す。
-                case ShapeKind.Bridge:
-                    return GenerateBridgeMesh();
-                // 歪み複製は1つのメッシュを返さない（モデルへ直接オブジェクトを挿入する）。
-                // プレビュー / ライブワイヤは出さないので null を返す。
-                case ShapeKind.ObjectArray: return null;
-                default: return null;
+                _textMissing = PrimitiveMeshFactory.LastTextMissingGlyphs;
+                RefreshTextInfo();
             }
-
-            // プレビューでは結合しない。結合は O(N^2) で、
-            // 接地の「全部を結合して配置」のように頂点数が膨らむ形状ではプレビューが停止する。
-            if (!forPreview && _mergeDuplicateVertices && mo != null && mo.VertexCount >= 2)
-                MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, 0.001f);
-
-            AssignGeneratedPartsIds(mo);
-
-            // 回転・スケールを頂点へ焼き込む。
-            // マージ許容値 (0.001) はローカル空間で評価させたいので、必ずマージの後に行う。
-            // 平行移動は焼き込まない (呼出し側の AddMode 別処理が従来どおり _worldPos を扱う)。
-            // プレビューは見た目を変えないため常に両方を焼き込む。
-            // 実生成はベイク OFF の成分を焼き込まず、呼出し側が姿勢へ入れる。
-            if (!applyTransform)
-                return mo;
-
-            if (forPreview)
-                PrimitiveMeshTransform.ApplyRotationScale(mo, _rotEuler, _scale);
-            else
-                PrimitiveMeshTransform.ApplyRotationScale(
-                    mo,
-                    BakeRotationEffective ? _rotEuler : Vector3.zero,
-                    BakeScaleEffective    ? _scale    : Vector3.one);
 
             return mo;
         }
+
+        /// <summary>
+        /// 藤壺（配置）の配置元を索引から解決する。ファクトリへ渡す。
+        /// 展開・重複排除・面なしの除外は MeshSourceMultiPick.Resolve が持つ。
+        /// </summary>
+        private List<MeshObject> ResolvePlaceSources(int[] masterIndices, bool includeChildren)
+            => MeshSourceMultiPick.Resolve(
+                masterIndices, includeChildren, GetSubtreeMeshList,
+                idx => GetMeshObjectAt?.Invoke(idx));
 
         /// <summary>
         /// 生成したメッシュへパーツID / サブIDを割り当てる。
@@ -4385,25 +4317,7 @@ namespace Poly_Ling.Player
         /// 既存オブジェクトへ追加するときの番号のずらしは追加側（Viewer）が行う。
         /// </summary>
         private void AssignGeneratedPartsIds(MeshObject mo)
-        {
-            if (mo == null || mo.VertexCount == 0) return;
-
-            switch (_current)
-            {
-                case ShapeKind.PlaceObject:
-                    return;
-
-                case ShapeKind.Frill:
-                case ShapeKind.Pipe:
-                    Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(mo);
-                    return;
-
-                default:
-                    Poly_Ling.Ops.PartsIdOps.SetPartsId(mo, 0);
-                    Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(mo);
-                    return;
-            }
-        }
+            => PrimitiveMeshFactory.AssignPartsIds(mo, ShapeKeys[(int)_current]);
 
         /// <summary>
         /// Generate() を通らずに MeshObject を作る経路（プロファイルの「メッシュへ反映」）で、
@@ -4446,6 +4360,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonGear:     return _ngonGearP.MeshName;
                 case ShapeKind.NGonStar:     return _ngonStarP.MeshName;
                 case ShapeKind.InvoluteGear: return _involGearP.MeshName;
+                case ShapeKind.StadiumBox:   return _stadiumP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
                 case ShapeKind.Bridge:     return BridgeMeshName;
@@ -4475,6 +4390,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonGear:     _ngonGearP.MeshName = name; break;
                 case ShapeKind.NGonStar:     _ngonStarP.MeshName = name; break;
                 case ShapeKind.InvoluteGear: _involGearP.MeshName = name; break;
+                case ShapeKind.StadiumBox:   _stadiumP.MeshName   = name; break;
                 // 穴つなぎも非重複候補の対象にする（Name() は BridgeMeshName を返すため、
                 // ここを欠かすと RefreshMeshNameCandidate が名前を書き戻せない）。
                 case ShapeKind.Bridge:      SetBridgeMeshName(name); break;
@@ -4582,8 +4498,7 @@ namespace Poly_Ling.Player
             ApplyPoseForDirectMeshCreate(mo);
 
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
-            OnMeshCreated?.Invoke(mo, _revP.MeshName, _worldPos, PoseRotation, PoseScale, false,
-                _addMode, _addTargetIndex, EffectiveMaterialIndex);
+            SendGeneratedMesh(mo, _revP.MeshName);
         }
 
         /// <summary>選択オブジェクトの全2頂点ラインを Profile2D ループへ取り込む。</summary>
@@ -4618,8 +4533,7 @@ namespace Poly_Ling.Player
             ApplyPoseForDirectMeshCreate(mo);
 
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
-            OnMeshCreated?.Invoke(mo, _p2dP.MeshName, _worldPos, PoseRotation, PoseScale, false,
-                _addMode, _addTargetIndex, EffectiveMaterialIndex);
+            SendGeneratedMesh(mo, _p2dP.MeshName);
         }
 
         // ================================================================
@@ -4666,18 +4580,22 @@ namespace Poly_Ling.Player
                 try
                 {
                     // 歪み複製はモデルへ直接オブジェクトを挿入するため、
-                    // OnMeshCreated（単一 MeshObject）経路は通らない。
+                    // 単一 MeshObject を作る経路は通らない。
                     if (_current == ShapeKind.ObjectArray) { InvokeObjectArrayGenerate(); return; }
 
                     // 穴つなぎは書き込み先の既存頂点を参照する面を足すため、
-                    // OnMeshCreated（単一 MeshObject を新規追加）経路は通らない。
+                    // 単一 MeshObject を新規追加する経路は通らない。
                     if (_current == ShapeKind.Bridge) { InvokeBridgeGenerate(); return; }
 
-                    var mo = Generate(false);
-                    if (mo == null) { _statusLabel.text = "生成失敗"; return; }
-                    _statusLabel.text = T("VertsFaces", mo.VertexCount, mo.FaceCount);
-                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, PoseRotation, PoseScale, false,
-                        _addMode, _addTargetIndex, EffectiveMaterialIndex);
+                    // 生成はコマンドへ流す。モデルへの反映（追加先の解決・Undo・再構築）は
+                    // ディスパッチャ側が持つ。ここでメッシュを作って渡す経路は残さない
+                    // （残すとディスパッチャ側の欠陥が自動検査を素通りするため）。
+                    var cmd = BuildCreateCommand();
+                    if (cmd == null) { _statusLabel.text = "生成失敗"; return; }
+                    if (SendCommand == null) { _statusLabel.text = "配線が足りません（SendCommand）"; return; }
+
+                    SendCommand(cmd);
+                    _statusLabel.text = T("Create");
 
                     // 次の生成に備えて名前欄を非重複候補へ更新する。
                     // AddToExisting は既存オブジェクトへの統合なので新しい名前は要らない。
@@ -4745,9 +4663,9 @@ namespace Poly_Ling.Player
                     return !string.IsNullOrWhiteSpace(_textP.Text)
                         && Poly_Ling.GlyphText.PlyFontLibrary.Open(_textP.FontFamily) != null;
 
-                // 種 A・B の両方が取込済みであること。書き込み先は Viewer 側の結線。
+                // 種 A・B の両方が取込済みで、コマンドの送り先が結線されていること。
                 case ShapeKind.Bridge:
-                    return OnBridgeGenerate != null && BridgeSeedsReady;
+                    return SendCommand != null && BridgeSeedsReady;
 
                 default: return true;
             }

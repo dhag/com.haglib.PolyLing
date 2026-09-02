@@ -41,33 +41,33 @@ namespace Poly_Ling.Player
 
             c.Add(GearHint(T("NGonGearHint")));
 
-            c.Add(IR(T("GearToothCount"), 3, 64,
+            c.Add(IR(T("GearToothCount"), NGonGearMeshGenerator.NGonGearParams.ToothCountMin, NGonGearMeshGenerator.NGonGearParams.ToothCountMax,
                 () => _ngonGearP.ToothCount, v => { _ngonGearP.ToothCount = v; D(); RefreshNGonGearThetaS(); }));
-            c.Add(SR(T("GearInnerRadius"), 0.05f, 5f,
+            c.Add(SR(T("GearInnerRadius"), NGonGearMeshGenerator.NGonGearParams.InnerRadiusMin, NGonGearMeshGenerator.NGonGearParams.InnerRadiusMax,
                 () => _ngonGearP.InnerRadius, v => { _ngonGearP.InnerRadius = v; D(); }));
-            c.Add(SR(T("GearOuterRadius"), 0.06f, 6f,
+            c.Add(SR(T("GearOuterRadius"), NGonGearMeshGenerator.NGonGearParams.OuterRadiusMin, NGonGearMeshGenerator.NGonGearParams.OuterRadiusMax,
                 () => _ngonGearP.OuterRadius, v => { _ngonGearP.OuterRadius = v; D(); }));
-            c.Add(SR(T("Thickness"), 0f, 3f,
+            c.Add(SR(T("Thickness"), NGonGearMeshGenerator.NGonGearParams.ThicknessMin, NGonGearMeshGenerator.NGonGearParams.ThicknessMax,
                 () => _ngonGearP.Thickness, v => { _ngonGearP.Thickness = v; D(); }));
 
             // ── 歯の角度 ──
             c.Add(SL(T("GearAngles")));
-            c.Add(SR(T("GearThetaL"), 1f, 30f,
+            c.Add(SR(T("GearThetaL"), NGonGearMeshGenerator.NGonGearParams.ThetaLMin, NGonGearMeshGenerator.NGonGearParams.ThetaLMax,
                 () => _ngonGearP.ThetaL, v => { _ngonGearP.ThetaL = v; D(); RefreshNGonGearThetaS(); }));
-            c.Add(SR(T("GearThetaM"), 1f, 20f,
+            c.Add(SR(T("GearThetaM"), NGonGearMeshGenerator.NGonGearParams.ThetaMMin, NGonGearMeshGenerator.NGonGearParams.ThetaMMax,
                 () => _ngonGearP.ThetaM, v => { _ngonGearP.ThetaM = v; D(); RefreshNGonGearThetaS(); }));
 
             _ngonGearThetaSLabel = GearHint(string.Empty);
             c.Add(_ngonGearThetaSLabel);
             RefreshNGonGearThetaS();
 
-            c.Add(SR(T("GearRotationOffset"), 0f, 360f,
+            c.Add(SR(T("GearRotationOffset"), NGonGearMeshGenerator.NGonGearParams.RotationOffsetMin, NGonGearMeshGenerator.NGonGearParams.RotationOffsetMax,
                 () => _ngonGearP.RotationOffset, v => { _ngonGearP.RotationOffset = v; D(); }));
 
             // ── 穴 ──
             c.Add(SL(T("GearBore")));
             c.Add(GearHint(T("GearBoreHint")));
-            c.Add(SR(T("GearBoreRadius"), 0f, 5f,
+            c.Add(SR(T("GearBoreRadius"), NGonGearMeshGenerator.NGonGearParams.BoreRadiusMin, NGonGearMeshGenerator.NGonGearParams.BoreRadiusMax,
                 () => _ngonGearP.BoreRadius, v => { _ngonGearP.BoreRadius = v; D(); }));
             c.Add(IR(T("GearBoreSegments"), GearDiskBuilder.BoreSegmentsMin, GearDiskBuilder.BoreSegmentsMax,
                 () => _ngonGearP.BoreSegments, v => { _ngonGearP.BoreSegments = v; D(); }));
@@ -81,7 +81,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _ngonGearP.Pivot, v => { _ngonGearP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
         }
 
@@ -113,21 +113,21 @@ namespace Poly_Ling.Player
 
             c.Add(GearHint(T("NGonStarHint")));
 
-            c.Add(IR(T("StarPoints"), 3, 64,
+            c.Add(IR(T("StarPoints"), NGonStarMeshGenerator.NGonStarParams.PointsMin, NGonStarMeshGenerator.NGonStarParams.PointsMax,
                 () => _ngonStarP.Points, v => { _ngonStarP.Points = v; D(); }));
-            c.Add(SR(T("StarInnerRadius"), 0.02f, 5f,
+            c.Add(SR(T("StarInnerRadius"), NGonStarMeshGenerator.NGonStarParams.InnerRadiusMin, NGonStarMeshGenerator.NGonStarParams.InnerRadiusMax,
                 () => _ngonStarP.InnerRadius, v => { _ngonStarP.InnerRadius = v; D(); }));
-            c.Add(SR(T("StarOuterRadius"), 0.03f, 6f,
+            c.Add(SR(T("StarOuterRadius"), NGonStarMeshGenerator.NGonStarParams.OuterRadiusMin, NGonStarMeshGenerator.NGonStarParams.OuterRadiusMax,
                 () => _ngonStarP.OuterRadius, v => { _ngonStarP.OuterRadius = v; D(); }));
-            c.Add(SR(T("Thickness"), 0f, 3f,
+            c.Add(SR(T("Thickness"), NGonStarMeshGenerator.NGonStarParams.ThicknessMin, NGonStarMeshGenerator.NGonStarParams.ThicknessMax,
                 () => _ngonStarP.Thickness, v => { _ngonStarP.Thickness = v; D(); }));
-            c.Add(SR(T("GearRotationOffset"), 0f, 360f,
+            c.Add(SR(T("GearRotationOffset"), NGonStarMeshGenerator.NGonStarParams.RotationOffsetMin, NGonStarMeshGenerator.NGonStarParams.RotationOffsetMax,
                 () => _ngonStarP.RotationOffset, v => { _ngonStarP.RotationOffset = v; D(); }));
 
             // ── 穴 ──
             c.Add(SL(T("GearBore")));
             c.Add(GearHint(T("GearBoreHint")));
-            c.Add(SR(T("GearBoreRadius"), 0f, 5f,
+            c.Add(SR(T("GearBoreRadius"), NGonStarMeshGenerator.NGonStarParams.BoreRadiusMin, NGonStarMeshGenerator.NGonStarParams.BoreRadiusMax,
                 () => _ngonStarP.BoreRadius, v => { _ngonStarP.BoreRadius = v; D(); }));
             c.Add(IR(T("GearBoreSegments"), GearDiskBuilder.BoreSegmentsMin, GearDiskBuilder.BoreSegmentsMax,
                 () => _ngonStarP.BoreSegments, v => { _ngonStarP.BoreSegments = v; D(); }));
@@ -141,7 +141,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _ngonStarP.Pivot, v => { _ngonStarP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
         }
 
@@ -159,43 +159,43 @@ namespace Poly_Ling.Player
 
             c.Add(GearHint(T("InvoluteGearHint")));
 
-            c.Add(IR(T("InvToothCount"), 3, 120,
+            c.Add(IR(T("InvToothCount"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ToothCountMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ToothCountMax,
                 () => _involGearP.ToothCount, v => { _involGearP.ToothCount = v; DI(); }));
-            c.Add(SR(T("InvModule"), 0.01f, 1f,
+            c.Add(SR(T("InvModule"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ModuleMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ModuleMax,
                 () => _involGearP.Module, v => { _involGearP.Module = v; DI(); }));
-            c.Add(SR(T("InvPressureAngle"), 10f, 35f,
+            c.Add(SR(T("InvPressureAngle"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.PressureAngleMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.PressureAngleMax,
                 () => _involGearP.PressureAngleDeg, v => { _involGearP.PressureAngleDeg = v; DI(); }));
-            c.Add(SR(T("Thickness"), 0f, 3f,
+            c.Add(SR(T("Thickness"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ThicknessMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ThicknessMax,
                 () => _involGearP.Thickness, v => { _involGearP.Thickness = v; DI(); }));
 
             // ── 転位・バックラッシ ──
             c.Add(SL(T("InvCorrection")));
             c.Add(GearHint(T("InvCorrectionHint")));
-            c.Add(SR(T("InvProfileShift"), -1f, 1f,
+            c.Add(SR(T("InvProfileShift"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ProfileShiftMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ProfileShiftMax,
                 () => _involGearP.ProfileShift, v => { _involGearP.ProfileShift = v; DI(); }));
-            c.Add(SR(T("InvBacklash"), 0f, 0.2f,
+            c.Add(SR(T("InvBacklash"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.BacklashMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.BacklashMax,
                 () => _involGearP.Backlash, v => { _involGearP.Backlash = v; DI(); }));
 
             // ── 穴 ──
             c.Add(SL(T("GearBore")));
             c.Add(GearHint(T("GearBoreHint")));
-            c.Add(SR(T("GearBoreRadius"), 0f, 5f,
+            c.Add(SR(T("GearBoreRadius"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.BoreRadiusMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.BoreRadiusMax,
                 () => _involGearP.BoreRadius, v => { _involGearP.BoreRadius = v; DI(); }));
             c.Add(IR(T("GearBoreSegments"), GearDiskBuilder.BoreSegmentsMin, GearDiskBuilder.BoreSegmentsMax,
                 () => _involGearP.BoreSegments, v => { _involGearP.BoreSegments = v; D(); }));
 
             // ── 曲線の分割数 ──
             c.Add(SL(T("InvSampling")));
-            c.Add(IR(T("InvTrochoidSamples"), 3, 64,
+            c.Add(IR(T("InvTrochoidSamples"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.CurveSamplesMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.CurveSamplesMax,
                 () => _involGearP.TrochoidSamples, v => { _involGearP.TrochoidSamples = v; D(); }));
-            c.Add(IR(T("InvInvoluteSamples"), 3, 64,
+            c.Add(IR(T("InvInvoluteSamples"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.CurveSamplesMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.CurveSamplesMax,
                 () => _involGearP.InvoluteSamples, v => { _involGearP.InvoluteSamples = v; D(); }));
-            c.Add(IR(T("InvTipArcSamples"), 1, 16,
+            c.Add(IR(T("InvTipArcSamples"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ArcSamplesMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ArcSamplesMax,
                 () => _involGearP.TipArcSamples, v => { _involGearP.TipArcSamples = v; D(); }));
-            c.Add(IR(T("InvRootArcSamples"), 1, 16,
+            c.Add(IR(T("InvRootArcSamples"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ArcSamplesMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ArcSamplesMax,
                 () => _involGearP.RootArcSamples, v => { _involGearP.RootArcSamples = v; D(); }));
 
-            c.Add(SR(T("GearRotationOffset"), 0f, 360f,
+            c.Add(SR(T("GearRotationOffset"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.RotationOffsetMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.RotationOffsetMax,
                 () => _involGearP.RotationOffsetDeg, v => { _involGearP.RotationOffsetDeg = v; D(); }));
 
             // ── 派生諸元 ──
@@ -216,7 +216,7 @@ namespace Poly_Ling.Player
 
             BuildPivotXYZ(c,
                 () => _involGearP.Pivot, v => { _involGearP.Pivot = v; D(); },
-                -0.5f, 0.5f,
+                PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
         }
 

@@ -75,30 +75,64 @@ namespace Poly_Ling.NohMask
     [Serializable]
     public struct FaceMeshParams : IEquatable<FaceMeshParams>
     {
+        // ── 値域 ─────────────────────────────────────────────────
+        // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+        /// <summary>拡大率の下限・上限</summary>
+        public const float ScaleMin = 1f;
+        public const float ScaleMax = 10f;
+
+        /// <summary>奥行き倍率の下限・上限</summary>
+        public const float DepthScaleMin = 0.1f;
+        public const float DepthScaleMax = 5f;
+
+        /// <summary>外縁の拡張幅の下限・上限</summary>
+        public const float RimWidthMin = 0f;
+        public const float RimWidthMax = 1.5f;
+
+        /// <summary>顔番号の下限・上限</summary>
+        public const int FaceIndexMin = 0;
+        public const int FaceIndexMax = 10;
+
+        [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
         public string MeshName;
+        [PLParam(TextKey = "NohLandmarksPath", Description = "ランドマーク JSON のパス。空なら内蔵の既定データを使う")]
         public string LandmarksFilePath;
+        [PLParam(TextKey = "NohTrianglesPath", Description = "三角形 JSON のパス。空なら内蔵の既定データを使う")]
         public string TrianglesFilePath;
+        [PLParam(TextKey = "Scale", Description = "拡大率", Min = ScaleMin, Max = ScaleMax)]
         public float Scale;
+        [PLParam(TextKey = "DepthScale", Description = "奥行き方向だけの倍率", Min = DepthScaleMin, Max = DepthScaleMax)]
         public float DepthScale;
+        [PLParam(TextKey = "FaceIndex", Description = "JSON 内の何番目の顔を使うか", Min = FaceIndexMin,
+                 Max = FaceIndexMax, Step = 1)]
         public int FaceIndex;
+        [PLParam(TextKey = "FlipFaces", Description = "生成後にメッシュ全体の面を反転する")]
         public bool FlipFaces;
 
         /// <summary>X軸反転（頂点位置の x の符号を反転）。</summary>
+        [PLParam(TextKey = "FlipX", Description = "頂点位置の x の符号を反転する")]
         public bool FlipX;
 
         /// <summary>Y軸反転（頂点位置の y の符号を反転）。</summary>
+        [PLParam(TextKey = "FlipY", Description = "頂点位置の y の符号を反転する")]
         public bool FlipY;
 
         /// <summary>Z軸反転（頂点位置の z の符号を反転）。</summary>
+        [PLParam(TextKey = "FlipZ", Description = "頂点位置の z の符号を反転する")]
         public bool FlipZ;
 
         /// <summary>内側の穴（目・口）を面で塞ぐ。</summary>
+        [PLParam(TextKey = "FillHoles", Description = "内側の穴（目・口）を面で塞ぐ")]
         public bool FillHoles;
 
         /// <summary>外縁を外向きに拡張する（餃子の羽根）。</summary>
+        [PLParam(TextKey = "RimEnabled", Description = "外縁を外向きに拡張する")]
         public bool RimEnabled;
 
         /// <summary>外縁の拡張幅。外周ループの平均半径に対する比率。</summary>
+        [PLParam(TextKey = "RimWidth", Description = "外縁の拡張幅。外周ループの平均半径に対する比率", Min = RimWidthMin,
+                 Max = RimWidthMax)]
         public float RimWidth;
 
         public static FaceMeshParams Default => new FaceMeshParams

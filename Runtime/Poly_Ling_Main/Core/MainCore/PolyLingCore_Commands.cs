@@ -88,7 +88,7 @@ namespace Poly_Ling.Core
 
             // --- リオーダー（構造変更） ---
             case ReorderMeshesCommand c:
-                _meshListOps.ReorderMeshes(c.Category, c.Entries);
+                _meshListOps.ReorderMeshes(c.Category, c.Entries, c.PreserveWorldTransform);
                 _model?.OnListChanged?.Invoke();
                 OnRepaintRequired?.Invoke();
                 NotifyPanels(ChangeKind.ListStructure);

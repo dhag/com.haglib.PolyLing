@@ -16,15 +16,63 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct CylinderParams : IEquatable<CylinderParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>上面・底面の半径の下限・上限</summary>
+            public const float RadiusMin = 0f;
+            public const float RadiusMax = 5f;
+
+            /// <summary>高さの下限・上限</summary>
+            public const float HeightMin = 0.1f;
+            public const float HeightMax = 10f;
+
+            /// <summary>円周方向の分割数の下限・上限</summary>
+            public const int RadialSegmentsMin = 3;
+            public const int RadialSegmentsMax = 48;
+
+            /// <summary>高さ方向の分割数の下限・上限</summary>
+            public const int HeightSegmentsMin = 1;
+            public const int HeightSegmentsMax = 16;
+
+            /// <summary>縁の丸めの下限。上限は高さと半径から決まるので定数にできない</summary>
+            public const float EdgeRadiusMin = 0f;
+
+            /// <summary>縁の丸めの分割数の下限・上限</summary>
+            public const int EdgeSegmentsMin = 1;
+            public const int EdgeSegmentsMax = 16;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
-            public float RadiusTop, RadiusBottom;
+            [PLParam(TextKey = "RadiusTop", Description = "上面の半径。0 で円錐になる", Min = RadiusMin, Max = RadiusMax)]
+            public float RadiusTop;
+            [PLParam(TextKey = "RadiusBottom", Description = "底面の半径。0 で円錐になる", Min = RadiusMin, Max = RadiusMax)]
+            public float RadiusBottom;
+            [PLParam(TextKey = "Height", Description = "高さ", Min = HeightMin, Max = HeightMax)]
             public float Height;
-            public int RadialSegments, HeightSegments;
-            public bool CapTop, CapBottom;
+            [PLParam(TextKey = "Radial", Description = "円周方向の分割数", Min = RadialSegmentsMin,
+                     Max = RadialSegmentsMax, Step = 1)]
+            public int RadialSegments;
+            [PLParam(TextKey = "Lateral", Description = "高さ方向の分割数", Min = HeightSegmentsMin,
+                     Max = HeightSegmentsMax, Step = 1)]
+            public int HeightSegments;
+            [PLParam(TextKey = "CapTop", Description = "上面にフタを張る")]
+            public bool CapTop;
+            [PLParam(TextKey = "CapBottom", Description = "底面にフタを張る")]
+            public bool CapBottom;
+            [PLParam(TextKey = "EdgeRadius", Description = "上下の縁の丸め半径。0 で丸めなし。上限は高さの半分と半径のうち小さい方",
+                     Min = EdgeRadiusMin)]
             public float EdgeRadius;
+            [PLParam(TextKey = "EdgeSeg", Description = "縁の丸めの分割数", Min = EdgeSegmentsMin,
+                     Max = EdgeSegmentsMax, Step = 1)]
             public int EdgeSegments;
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
-            public float RotationX, RotationY;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationX;
+            [PLParam(Ignore = true, Description = "プレビューの視点角。形状には影響しない")]
+            public float RotationY;
 
             public static CylinderParams Default => new CylinderParams
             {

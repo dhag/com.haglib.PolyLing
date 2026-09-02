@@ -29,49 +29,120 @@ namespace Poly_Ling.PrimitiveMesh
         [Serializable]
         public struct InvoluteGearParams : IEquatable<InvoluteGearParams>
         {
+            // ── 値域 ─────────────────────────────────────────────────
+            // PLParam 属性と図形生成パネルの行ヘルパの双方がここを参照する。
+
+            /// <summary>歯数の下限・上限</summary>
+            public const int ToothCountMin = 3;
+            public const int ToothCountMax = 120;
+
+            /// <summary>モジュールの下限・上限</summary>
+            public const float ModuleMin = 0.01f;
+            public const float ModuleMax = 1f;
+
+            /// <summary>圧力角の下限・上限（度）</summary>
+            public const float PressureAngleMin = 10f;
+            public const float PressureAngleMax = 35f;
+
+            /// <summary>厚みの下限・上限</summary>
+            public const float ThicknessMin = 0f;
+            public const float ThicknessMax = 3f;
+
+            /// <summary>転位係数の下限・上限</summary>
+            public const float ProfileShiftMin = -1f;
+            public const float ProfileShiftMax = 1f;
+
+            /// <summary>バックラッシの下限・上限</summary>
+            public const float BacklashMin = 0f;
+            public const float BacklashMax = 0.2f;
+
+            /// <summary>軸穴半径の下限・上限</summary>
+            public const float BoreRadiusMin = 0f;
+            public const float BoreRadiusMax = 5f;
+
+            /// <summary>トロコイド曲線・インボリュート曲線の標本数の下限・上限</summary>
+            public const int CurveSamplesMin = 3;
+            public const int CurveSamplesMax = 64;
+
+            /// <summary>歯先円弧・歯底円弧の標本数の下限・上限</summary>
+            public const int ArcSamplesMin = 1;
+            public const int ArcSamplesMax = 16;
+
+            /// <summary>回転オフセットの下限・上限（度）</summary>
+            public const float RotationOffsetMin = 0f;
+            public const float RotationOffsetMax = 360f;
+
+            [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
             public string MeshName;
 
             // ── 基本諸元 ──
             /// <summary>歯数 z</summary>
+            [PLParam(TextKey = "InvToothCount", Description = "歯数", Min = ToothCountMin, Max = ToothCountMax,
+                     Step = 1)]
             public int ToothCount;
             /// <summary>モジュール m</summary>
+            [PLParam(TextKey = "InvModule", Description = "モジュール（歯の大きさ）", Min = ModuleMin, Max = ModuleMax)]
             public float Module;
             /// <summary>圧力角 α（度）</summary>
+            [PLParam(TextKey = "InvPressureAngle", Description = "圧力角（度）", Min = PressureAngleMin,
+                     Max = PressureAngleMax)]
             public float PressureAngleDeg;
             /// <summary>厚み</summary>
+            [PLParam(TextKey = "Thickness", Description = "厚み。0 で板", Min = ThicknessMin, Max = ThicknessMax)]
             public float Thickness;
 
             // ── 転位・バックラッシ ──
             /// <summary>転位係数 x</summary>
+            [PLParam(TextKey = "InvProfileShift", Description = "転位係数", Min = ProfileShiftMin,
+                     Max = ProfileShiftMax)]
             public float ProfileShift;
             /// <summary>ピッチ円上のバックラッシ</summary>
+            [PLParam(TextKey = "InvBacklash", Description = "バックラッシ", Min = BacklashMin, Max = BacklashMax)]
             public float Backlash;
 
             // ── 穴 ──
             /// <summary>中心の丸穴半径。0 で穴なし。</summary>
+            [PLParam(TextKey = "GearBoreRadius", Description = "軸穴の半径。0 で穴なし", Min = BoreRadiusMin,
+                     Max = BoreRadiusMax)]
             public float BoreRadius;
             /// <summary>穴リングの分割数</summary>
+            [PLParam(TextKey = "GearBoreSegments", Description = "軸穴の円周分割数",
+                     Min = GearDiskBuilder.BoreSegmentsMin, Max = GearDiskBuilder.BoreSegmentsMax, Step = 1)]
             public int BoreSegments;
 
             // ── 曲線のサンプル数 ──
             /// <summary>歯面 1 本あたりのトロコイド分割数</summary>
+            [PLParam(TextKey = "InvTrochoidSamples", Description = "歯元トロコイド曲線の標本数", Min = CurveSamplesMin,
+                     Max = CurveSamplesMax, Step = 1)]
             public int TrochoidSamples;
             /// <summary>歯面 1 本あたりのインボリュート分割数</summary>
+            [PLParam(TextKey = "InvInvoluteSamples", Description = "インボリュート曲線の標本数", Min = CurveSamplesMin,
+                     Max = CurveSamplesMax, Step = 1)]
             public int InvoluteSamples;
             /// <summary>歯先円弧の分割数</summary>
+            [PLParam(TextKey = "InvTipArcSamples", Description = "歯先円弧の標本数", Min = ArcSamplesMin,
+                     Max = ArcSamplesMax, Step = 1)]
             public int TipArcSamples;
             /// <summary>歯元円弧の分割数</summary>
+            [PLParam(TextKey = "InvRootArcSamples", Description = "歯底円弧の標本数", Min = ArcSamplesMin,
+                     Max = ArcSamplesMax, Step = 1)]
             public int RootArcSamples;
 
             // ── 配置 ──
             /// <summary>全体の回転オフセット（度）</summary>
+            [PLParam(TextKey = "GearRotationOffset", Description = "全体の回転オフセット（度）", Min = RotationOffsetMin,
+                     Max = RotationOffsetMax)]
             public float RotationOffsetDeg;
 
             /// <summary>板を置く平面</summary>
+            [PLParam(TextKey = "Orientation", Description = "板の向き（XY / XZ / YZ）")]
             public PlaneOrientation Orientation;
             /// <summary>生成後にメッシュ全体の面を反転する</summary>
+            [PLParam(TextKey = "FlipFaces", Description = "生成後にメッシュ全体の面を反転する")]
             public bool FlipFaces;
             /// <summary>AABB サイズ基準のピボット</summary>
+            [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
+                     Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
 
             public static InvoluteGearParams Default => new InvoluteGearParams
