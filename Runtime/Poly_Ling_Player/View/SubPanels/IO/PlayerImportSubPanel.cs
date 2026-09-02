@@ -34,6 +34,33 @@ namespace Poly_Ling.Player
         private Mode _mode;
 
         // ================================================================
+        // 読込後オプション
+        // ================================================================
+
+        /// <summary>
+        /// インポータ本体の設定ではなく、読み込みが終わったあとに
+        /// 追加で流す処理の指定。呼び出し側（Viewer）がこれを見て
+        /// ApplyHumanoidMappingCommand / ApplyObjectOriginsCommand を送る。
+        ///
+        /// 検証パネルから OnImportXxx を直接呼ぶ経路は null を渡すため、
+        /// パネルのチェック状態が自動検証に混ざることはない。
+        /// </summary>
+        public class PostOptions
+        {
+            /// <summary>アバター用ヒューマンマッピングを名前から自動割当するか。</summary>
+            public bool HumanoidAutoMap;
+
+            /// <summary>読込後に原点CSVを適用するか。</summary>
+            public bool ApplyOriginCsv;
+
+            /// <summary>適用する原点CSVのパス。</summary>
+            public string OriginCsvPath;
+
+            /// <summary>原点CSVの回転列（rotX,rotY,rotZ）も適用対象にするか。</summary>
+            public bool OriginCsvIncludeRotation;
+        }
+
+        // ================================================================
         // 設定
         // ================================================================
 
@@ -47,22 +74,22 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// PMX Import ボタン押下時に呼ばれる。
-        /// 引数は (filePath, settings のコピー)。
+        /// 引数は (filePath, settings のコピー, 読込後オプション)。
         /// Viewer がコマンド生成・エンキューを行う。
         /// </summary>
-        public Action<string, PMXImportSettings> OnImportPmx;
+        public Action<string, PMXImportSettings, PostOptions> OnImportPmx;
 
         /// <summary>
         /// MQO Import ボタン押下時に呼ばれる。
-        /// 引数は (filePath, settings のコピー)。
+        /// 引数は (filePath, settings のコピー, 読込後オプション)。
         /// </summary>
-        public Action<string, MQOImportSettings> OnImportMqo;
+        public Action<string, MQOImportSettings, PostOptions> OnImportMqo;
 
         /// <summary>
         /// OBJ Import ボタン押下時に呼ばれる。
-        /// 引数は (filePath, settings のコピー)。
+        /// 引数は (filePath, settings のコピー, 読込後オプション)。
         /// </summary>
-        public Action<string, ObjImportSettings> OnImportObj;
+        public Action<string, ObjImportSettings, PostOptions> OnImportObj;
 
         /// <summary>インポート後に3D表示をオートスケールするか</summary>
         public bool AutoScale => _autoScale;
@@ -76,6 +103,34 @@ namespace Poly_Ling.Player
         private Label        _panelNameLabel;
         private VisualElement _settingsContainer;
         private bool         _autoScale = false;
+
+        // ── 読込後オプションの保持値（パネル再構築をまたいで残す）──
+        //
+        // チェックボックスはどちらも既定オフ。
+        // 原点CSVのパスだけは「設定に保存されているもの」を既定にするため、
+        // 姿勢タブと同じ履歴キー(OriginCsvRecentKey)から初期値を取る。
+        private bool   _humanoidAutoMap     = false;
+        private bool   _applyOriginCsv      = false;
+        private string _originCsvPath       = null;   // null = 履歴から未取得
+        private bool   _originCsvIncludeRot = false;
+
+        /// <summary>
+        /// 原点CSVの最近使ったパス。「描画オブジェクトの姿勢」タブの
+        /// 書出・読込（PlayerBoneEditorSubPanel）と同じキーを共有する。
+        /// </summary>
+        private const string OriginCsvRecentKey = "BoneEditor.OriginCsv.Path";
+
+        /// <summary>原点CSVのパス。未取得なら履歴から読み出して確定する。</summary>
+        private string OriginCsvPath
+        {
+            get
+            {
+                if (_originCsvPath == null)
+                    _originCsvPath = RecentPaths.Get(OriginCsvRecentKey) ?? "";
+                return _originCsvPath;
+            }
+            set => _originCsvPath = value ?? "";
+        }
 
         // ================================================================
         // Build
@@ -184,7 +239,7 @@ namespace Poly_Ling.Player
             string ext   = name.ToLowerInvariant();
             string title = $"Select {name} File";
 
-            string path = PlayerIoUiKit.AskLoadPath(title, _pathField.value, ext);
+            string path = PlayerIoUiKit.AskLoadPath(title, ImportPathKey(), _pathField.value, ext);
             if (!string.IsNullOrEmpty(path))
             {
                 _pathField.value = path;
@@ -213,11 +268,27 @@ namespace Poly_Ling.Player
             SetStatus("");
 
             if (_mode == Mode.PMX)
-                OnImportPmx?.Invoke(path, ClonePmxSettings());
+                OnImportPmx?.Invoke(path, ClonePmxSettings(), BuildPostOptions());
             else if (_mode == Mode.OBJ)
-                OnImportObj?.Invoke(path, _objSettings.Clone());
+                OnImportObj?.Invoke(path, _objSettings.Clone(), BuildPostOptions());
             else
-                OnImportMqo?.Invoke(path, CloneMqoSettings());
+                OnImportMqo?.Invoke(path, CloneMqoSettings(), BuildPostOptions());
+        }
+
+        /// <summary>
+        /// 現在のチェック状態から読込後オプションを作る。
+        /// 原点CSVは MQO / OBJ だけの機能なので PMX では常に無効にする。
+        /// </summary>
+        private PostOptions BuildPostOptions()
+        {
+            bool originCsv = _applyOriginCsv && _mode != Mode.PMX;
+            return new PostOptions
+            {
+                HumanoidAutoMap          = _humanoidAutoMap,
+                ApplyOriginCsv           = originCsv,
+                OriginCsvPath            = originCsv ? OriginCsvPath : "",
+                OriginCsvIncludeRotation = _originCsvIncludeRot,
+            };
         }
 
         private void SetStatus(string msg)
@@ -323,6 +394,12 @@ namespace Poly_Ling.Player
             parent.Add(SectionLabel(TP("Normals")));
             parent.Add(ToggleRow(TP("RecalculateNormals"), () => _pmxSettings.RecalculateNormals, v => _pmxSettings.RecalculateNormals = v));
             parent.Add(SliderRow(TP("SmoothingAngle"), 0f, 180f, () => _pmxSettings.SmoothingAngle, v => _pmxSettings.SmoothingAngle = v));
+
+            parent.Add(Separator());
+
+            // 読込後オプション（インポータ本体の設定ではない）
+            parent.Add(SectionLabel("読込後オプション"));
+            parent.Add(HumanoidAutoMapToggle());
         }
 
         private void SetPmxTarget(PMXImportTarget flag, bool value)
@@ -426,6 +503,13 @@ namespace Poly_Ling.Player
             parent.Add(SectionLabel(TM("ExternalCSV"), small: true));
             parent.Add(CsvPathRow(TM("BoneWeightCSV"), () => _mqoSettings.BoneWeightCSVPath, v => _mqoSettings.BoneWeightCSVPath = v, "csv", "Import.MQO.BoneWeightCSV"));
             parent.Add(CsvPathRow(TM("BoneCSV"),       () => _mqoSettings.BoneCSVPath,       v => _mqoSettings.BoneCSVPath       = v, "csv", "Import.MQO.BoneCSV"));
+
+            parent.Add(Separator());
+
+            // 読込後オプション（インポータ本体の設定ではない）
+            parent.Add(SectionLabel("読込後オプション"));
+            parent.Add(HumanoidAutoMapToggle());
+            parent.Add(OriginCsvOptionBlock());
         }
 
         private MQOImportSettings CloneMqoSettings()
@@ -434,6 +518,128 @@ namespace Poly_Ling.Player
             s.CopyFrom(_mqoSettings);
             return s;
         }
+
+        // ================================================================
+        // 読込後オプション UI
+        // ================================================================
+
+        /// <summary>
+        /// 「ヒューマンマッピングAuto」チェック（既定オフ）。
+        /// オンのとき、読込後にボーン名から Humanoid 割当を作って適用する。
+        /// </summary>
+        private VisualElement HumanoidAutoMapToggle()
+        {
+            var t = new Toggle("ヒューマンマッピングAuto") { value = _humanoidAutoMap };
+            t.tooltip = "読み込みが終わったあと、ボーン名からアバター用の\n"
+                      + "ヒューマンマッピングを自動で作って割り当てる。\n"
+                      + "一致する名前が無ければ何もしない。";
+            t.style.marginBottom = 2;
+            t.RegisterValueChangedCallback(e => _humanoidAutoMap = e.newValue);
+            return t;
+        }
+
+        /// <summary>
+        /// 「オブジェクトのローカル姿勢（原点）」チェック（既定オフ）と、
+        /// オンのときだけ出す原点CSVの読み込み設定。
+        ///
+        /// 設定の中身は「描画オブジェクトの姿勢」タブの原点CSV読込と同じで、
+        /// CSVパスの履歴キー（OriginCsvRecentKey）も回転列の扱いもそろえてある。
+        /// ここで選んだCSVを、読み込みが終わったあとに適用する。
+        /// </summary>
+        private VisualElement OriginCsvOptionBlock()
+        {
+            var container = new VisualElement();
+
+            var detail = new VisualElement();
+            detail.style.marginLeft    = 12;
+            detail.style.marginBottom  = 2;
+            detail.style.display       = _applyOriginCsv ? DisplayStyle.Flex : DisplayStyle.None;
+
+            var t = new Toggle("オブジェクトのローカル姿勢（原点）") { value = _applyOriginCsv };
+            t.tooltip = "読み込みが終わったあと、指定した原点CSVを名前一致で適用する\n"
+                      + "（原点だけ移動・子は動かさない）。\n"
+                      + "CSV に載っていないオブジェクトと、モデルに無い名前はどちらも無視する";
+            t.style.marginBottom = 2;
+            t.RegisterValueChangedCallback(e =>
+            {
+                _applyOriginCsv     = e.newValue;
+                detail.style.display = e.newValue ? DisplayStyle.Flex : DisplayStyle.None;
+            });
+            container.Add(t);
+
+            detail.Add(OriginCsvPathRow());
+
+            var rotToggle = new Toggle("回転(°)も対象") { value = _originCsvIncludeRot };
+            rotToggle.tooltip =
+                "読込: 回転列がある行だけ回転も適用する（列が無い行・オフのときは位置だけ）";
+            rotToggle.style.marginTop = 2;
+            rotToggle.RegisterValueChangedCallback(e => _originCsvIncludeRot = e.newValue);
+            detail.Add(rotToggle);
+
+            container.Add(detail);
+            return container;
+        }
+
+        /// <summary>
+        /// 原点CSVのパス行（ラベル + ファイル名 + 参照 + クリア）。
+        ///
+        /// 汎用の CsvPathRow を使わないのは「クリア」の扱いが違うため。
+        /// 履歴キーを「描画オブジェクトの姿勢」タブと共有しているので、
+        /// CsvPathRow のように RecentPaths からキーごと消すと、姿勢タブ側で
+        /// 覚えているパスまで巻き添えで消える。ここでは選択の解除だけを行い、
+        /// 保存されている設定には触らない。
+        /// </summary>
+        private VisualElement OriginCsvPathRow()
+        {
+            var container = new VisualElement();
+            container.style.marginBottom = 3;
+
+            var lbl = new Label("原点CSV");
+            lbl.style.fontSize = 9;
+            container.Add(lbl);
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+
+            var pathLbl = new Label(PathLabelText(OriginCsvPath));
+            pathLbl.style.flexGrow       = 1;
+            pathLbl.style.fontSize       = 9;
+            pathLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            pathLbl.style.overflow       = Overflow.Hidden;
+
+            var browseBtn = new Button(() =>
+            {
+                // 確定したパスは AskLoadPath が履歴へ書き戻す。
+                string path = PlayerIoUiKit.AskLoadPath(
+                    "原点CSVの読み込み", OriginCsvRecentKey, OriginCsvPath, "csv");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    OriginCsvPath = path;
+                    pathLbl.text  = PathLabelText(path);
+                }
+            }) { text = TM("Browse") };
+            browseBtn.style.width      = 52;
+            browseBtn.style.marginLeft = 2;
+            browseBtn.style.fontSize   = 9;
+
+            var clearBtn = new Button(() =>
+            {
+                OriginCsvPath = "";
+                pathLbl.text  = PathLabelText("");
+            }) { text = TM("Clear") };
+            clearBtn.style.width      = 36;
+            clearBtn.style.marginLeft = 2;
+            clearBtn.style.fontSize   = 9;
+
+            row.Add(pathLbl);
+            row.Add(browseBtn);
+            row.Add(clearBtn);
+            container.Add(row);
+            return container;
+        }
+
+        private static string PathLabelText(string path)
+            => string.IsNullOrEmpty(path) ? TM("CSVNotSet") : Path.GetFileName(path);
 
         // ================================================================
         // ローカライズヘルパー
@@ -496,6 +702,13 @@ namespace Poly_Ling.Player
                 () => _objSettings.ImportMaterials, v => _objSettings.ImportMaterials = v));
             parent.Add(ToggleRow("テクスチャを読み込む",
                 () => _objSettings.ImportTextures, v => _objSettings.ImportTextures = v));
+
+            parent.Add(Separator());
+
+            // 読込後オプション（インポータ本体の設定ではない）
+            parent.Add(SectionLabel("読込後オプション"));
+            parent.Add(HumanoidAutoMapToggle());
+            parent.Add(OriginCsvOptionBlock());
         }
 
         // ================================================================
@@ -630,7 +843,9 @@ namespace Poly_Ling.Player
 
             var browseBtn = new Button(() =>
             {
-                string path = PlayerIoUiKit.AskLoadPath(label, get(), ext);
+                string path = PlayerIoUiKit.AskLoadPath(
+                    label, string.IsNullOrEmpty(recentKey) ? "Import.Csv." + label : recentKey,
+                    get(), ext);
                 if (!string.IsNullOrEmpty(path))
                 {
                     set(path);

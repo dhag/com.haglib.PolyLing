@@ -136,7 +136,6 @@ namespace Poly_Ling.Player
         // 選択メッシュへの吸着（シアン）と区別するためのマゼンタ。
         private static readonly Color AddFaceUnselectedSnapColor = new Color(1f, 0.35f, 0.9f, 0.95f);
 
-        private const string PanelSelectKeyMeshList    = "MeshList";
         private const string PanelSelectKeyVertexHole  = "VertexHole";
         private const string PanelSelectKeyHoleRingCount = "HoleRingCount";
         private const string PanelSelectKeyEdgeBridge    = "EdgeBridge";
@@ -185,6 +184,13 @@ namespace Poly_Ling.Player
         private ObjectMoveToolHandler        _objectMoveHandler;
         private PivotOffsetToolHandler       _pivotOffsetHandler;
         private PrimitivePlaceToolHandler    _primitivePlaceHandler;
+
+        /// <summary>
+        /// 図形生成パネルの配置ギズモ表示と姿勢仮表示の設定。1 個だけ持ち、
+        /// PrimitivePlaceToolHandler と 3D連携サブパネルで共有する。
+        /// 「描画オブジェクトの姿勢」の ObjectMoveSettings とは別物で連動しない。
+        /// </summary>
+        private readonly PrimitivePlaceSettings _primitivePlaceSettings = new PrimitivePlaceSettings();
         // 作業用ローカル軸サブツール。モデルには触れず ModelContext.WorkAxis だけを操作する。
         private WorkAxisToolHandler          _workAxisHandler;
         private PlayerWorkAxisSubPanel       _workAxisSubPanel;
@@ -219,6 +225,7 @@ namespace Poly_Ling.Player
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
         private PlayerShrinkSubPanel         _shrinkSubPanel;
+        private PlayerShrinkSubPanel         _shrinkFaceSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;
         private PlayerBoneEditorSubPanel     _boneEditorSubPanel;
         private PlayerUVEditorSubPanel       _uvEditorSubPanel;
@@ -275,6 +282,7 @@ namespace Poly_Ling.Player
         private PlayerFaceMergeCollapseSubPanel   _faceMergeCollapseSubPanel;
         // 頂点IDユーティリティ。ID を使う突き合わせ操作の前段で状態を確認・修復する。
         private PlayerVertexIdSubPanel           _vertexIdSubPanel;
+        private PlayerPartsIdSubPanel            _partsIdSubPanel;
         // モデル間頂点データ転送。メッシュのペアを明示して 1 対 1 で転送する。
         private PlayerVertexTransferSubPanel     _vertexTransferSubPanel;
         private SplitVerticesToolHandler          _splitVerticesHandler;
@@ -1270,6 +1278,16 @@ namespace Poly_Ling.Player
             // NotifyPanels(Selection) を行う。
             _objectMoveHandler.OnSelectionChanged = () =>
             {
+                var m = ActiveProject?.CurrentModel;
+                PLDiag.SelList(
+                    "pick -> " +
+                    (m == null
+                        ? "model=null"
+                        : $"cat={m.ActiveCategory} " +
+                          $"mesh=[{string.Join(",", m.SelectedDrawableMeshIndices)}] " +
+                          $"bone=[{string.Join(",", m.SelectedBoneIndices)}] " +
+                          $"mode={_interactionMode}"));
+
                 _viewportManager.EnterTopologyChanged(ActiveProject);
                 _boneEditorSubPanel?.Refresh();
                 NotifyPanels(ChangeKind.Selection);
@@ -1866,21 +1884,45 @@ namespace Poly_Ling.Player
             var model = ActiveProject?.CurrentModel;
             bool haveModel = model != null && model.MeshContextCount > 0;
 
-            // 全ビューポートのボーンオーバーレイを更新（アクティブ以外も追従させる）。
-            // スライダ/TRS 編集ではビューポートに触れないため、従来はアクティブ 1 画面しか
-            // 更新されず、他画面のマーカーが取り残されていた（触れると直る症状の原因）。
-            UpdateBoneOverlayFor(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport, model, show && haveModel, boneEditorOpen);
-            UpdateBoneOverlayFor(_layoutRoot?.TopPanel,         _viewportManager.TopViewport,         model, show && haveModel, boneEditorOpen);
-            UpdateBoneOverlayFor(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport,       model, show && haveModel, boneEditorOpen);
-            UpdateBoneOverlayFor(_layoutRoot?.SidePanel,        _viewportManager.SideViewport,        model, show && haveModel, boneEditorOpen);
+            // マーカーを出す対象は「いま ObjectMoveTool でつかめるもの」に揃える。
+            // 判定を独自に書くと『つかめるのにマーカーが出ない』『マーカーは出るのに
+            // つかめない』が起きるため、ピックフィルタそのものを渡す。
+            //
+            // 原点だけ移動 (PivotOffset) はギズモ専用で Pick* を全て false にしてある。
+            // そのフィルタを渡すと 1 つも出なくなるので、そこだけ従来の規則
+            // （ボーン＋非スキンドメッシュ）を使う。
+            var pickFilter = pivotMode ? null : _objectMoveHandler?.GetSettings();
+
+            // 図形生成パネル（3D連携）の「原点マーカーを仮表示」。
+            // まだ作られていない生成予定位置を、描画オブジェクトの姿勢と
+            // 同じ水色ダイヤで出す。実体が無いのでピック対象にはしない。
+            Vector3? placePreview = LivePrimitiveOriginPreview();
+
+            UpdateBoneOverlayFor(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport, model, show && haveModel, pickFilter, placePreview);
+            UpdateBoneOverlayFor(_layoutRoot?.TopPanel,         _viewportManager.TopViewport,         model, show && haveModel, pickFilter, placePreview);
+            UpdateBoneOverlayFor(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport,       model, show && haveModel, pickFilter, placePreview);
+            UpdateBoneOverlayFor(_layoutRoot?.SidePanel,        _viewportManager.SideViewport,        model, show && haveModel, pickFilter, placePreview);
+        }
+
+        /// <summary>
+        /// 原点マーカーの仮表示を出すワールド座標。出さないときは null。
+        /// 図形配置モードで、チェックが入っていて、姿勢が効く図形のときだけ返す。
+        /// </summary>
+        private Vector3? LivePrimitiveOriginPreview()
+        {
+            if (_interactionMode != InteractionMode.PrimitivePlace) return null;
+            if (!_primitivePlaceSettings.ShowOriginMarker) return null;
+            if (_livePrimitiveSubPanel == null || !_livePrimitiveSubPanel.PoseApplicable) return null;
+            return LivePrimitiveGizmoCenter();
         }
 
         private void UpdateBoneOverlayFor(
             PlayerViewportPanel panel, PlayerViewport vp,
-            ModelContext model, bool show, bool boneEditorOpen)
+            ModelContext model, bool show, Poly_Ling.Tools.ObjectMoveSettings pickFilter,
+            Vector3? placePreview)
         {
             if (panel == null) return;
-            if (!show) { panel.HideBoneWire(); return; }
+            if (!show && !placePreview.HasValue) { panel.HideBoneWire(); return; }
 
             var ctx = _viewportManager.GetCurrentToolContext(vp);
             if (ctx == null) { panel.HideBoneWire(); return; }
@@ -1892,7 +1934,7 @@ namespace Poly_Ling.Player
             var positions   = new System.Collections.Generic.List<Vector2>();
             var selected    = new System.Collections.Generic.List<bool>();
 
-            for (int i = 0; i < model.MeshContextCount; i++)
+            for (int i = 0; show && i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
                 if (mc == null) continue;
@@ -1902,7 +1944,9 @@ namespace Poly_Ling.Player
                                     && mc.MeshObject != null
                                     && !mc.IsSkinned;
 
-                bool include = boneEditorOpen ? isBone : (isBone || isNonSkinned);
+                bool include = pickFilter != null
+                    ? Poly_Ling.Tools.ObjectMoveTool.PassesPickFilter(mc, pickFilter)
+                    : (isBone || isNonSkinned);
                 if (!include) continue;
 
                 var wm = mc.WorldMatrix;
@@ -1921,6 +1965,16 @@ namespace Poly_Ling.Player
                         ScreenPos        = sp,
                         IsBone           = isBone,
                     });
+            }
+
+            // 仮表示は最後に足す。_overlayIndicators へは入れないので、
+            // クリックしても選択対象にはならない（実体がまだ無いため）。
+            if (placePreview.HasValue)
+            {
+                Vector2 sp = ctx.WorldToScreen(placePreview.Value);
+                sp.y = panelH - sp.y;
+                positions.Add(sp);
+                selected.Add(false);
             }
 
             if (positions.Count == 0) { panel.HideBoneWire(); return; }
@@ -2892,10 +2946,30 @@ namespace Poly_Ling.Player
         {
             _uiRoot = root;
 
-            // 全 TextField のキャレット色を白で一元化する USS を root に一度だけ付与する。
+            // 全 TextField のキャレット色を白で一元化する USS を付与する。
             // 子孫の TextField 全てへカスケードするため、各フィールドでの個別適用は不要。
+            //
+            // 貼り先は root ではなく「パネル最上位のコンテナ」にする。
+            // DropdownField を押して開くメニューは、UIToolkit が最上位コンテナへ
+            // 差し込む（root の子ではない）。root に貼るとメニューへ届かず、
+            // 既定の明るい配色のまま白背景で出てしまう。
+            // 最上位が root 自身のときは 1 回だけ貼られる。
             var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
-            if (caretSheet != null) root.styleSheets.Add(caretSheet);
+            if (caretSheet != null)
+            {
+                void AttachCaretSheet()
+                {
+                    var host = root;
+                    while (host.hierarchy.parent != null) host = host.hierarchy.parent;
+                    if (!host.styleSheets.Contains(caretSheet)) host.styleSheets.Add(caretSheet);
+                    if (!root.styleSheets.Contains(caretSheet)) root.styleSheets.Add(caretSheet);
+                }
+
+                // Build 時点でまだパネルへ載っていない場合（UIDocument 経由）に備え、
+                // 載ったタイミングでも貼り直す。二重付与は Contains で防ぐ。
+                AttachCaretSheet();
+                root.RegisterCallback<AttachToPanelEvent>(_ => AttachCaretSheet());
+            }
 
             // 全ボタンの操作フィードバック（ホバー/押下中/押下確定/無効）を root に一括導入する。
             // 個々のボタン生成箇所やサブパネル側の変更は不要。
@@ -2913,7 +2987,16 @@ namespace Poly_Ling.Player
             _meshListSubPanel = new MeshListSubPanel();
             _meshListSubPanel.Build(_layoutRoot.MeshListSection);
             _meshListSubPanel.SetContext(_panelContext);
-            AttachPanelSelectToggle(_layoutRoot.MeshListSection, PanelSelectKeyMeshList);
+            // オブジェクトリストのビューポート操作は 3 択（操作なし / 要素選択 / 姿勢調整）。
+            // 従来の「ビューポートで選択する」チェック（2 択）は使わない。
+            _meshListSubPanel.GetObjectMoveSettings = () => _objectMoveHandler?.GetSettings();
+            _meshListSubPanel.OnGizmoRefresh        = UpdateGizmoOverlay;
+            _meshListSubPanel.OnViewportOpModeChanged = mode =>
+            {
+                if (_layoutRoot?.MeshListSection == null) return;
+                if (_activeRightSection != _layoutRoot.MeshListSection) return;
+                ApplyMeshListViewportOpMode(mode);
+            };
 
             // ObjectMoveTRSPanel は BoneEditorSubPanel に統合済みのため生成不要
 
@@ -2988,7 +3071,7 @@ namespace Poly_Ling.Player
             _blendSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _blendSubPanel.Build(_layoutRoot.BlendSection);
 
-            _shrinkSubPanel = new PlayerShrinkSubPanel();
+            _shrinkSubPanel = new PlayerShrinkSubPanel(Poly_Ling.UI.ShrinkCollisionMode.VertexSegment);
             _shrinkSubPanel.OnSyncMeshPositions = mc =>
             {
                 _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
@@ -3014,6 +3097,32 @@ namespace Poly_Ling.Player
             _shrinkSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
             _shrinkSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _shrinkSubPanel.Build(_layoutRoot.ShrinkSection);
+
+            // 面方式。頂点方式と同じ配線を、別インスタンス・別セクションに対して行う。
+            _shrinkFaceSubPanel = new PlayerShrinkSubPanel(Poly_Ling.UI.ShrinkCollisionMode.FacePair);
+            _shrinkFaceSubPanel.OnSyncMeshPositions = mc =>
+            {
+                _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+            };
+            _shrinkFaceSubPanel.OnNotifyTopologyChanged = () =>
+            {
+                var proj = ActiveProject;
+                if (proj?.CurrentModel == null) return;
+                _viewportManager.EnterTopologyChanged(proj);
+                NotifyPanels(ChangeKind.ListStructure);
+            };
+            _shrinkFaceSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
+            _shrinkFaceSubPanel.GetUndoController = () => _editOps?.UndoController;
+            _shrinkFaceSubPanel.GetCommandQueue   = () => _editOps?.CommandQueue;
+            _shrinkFaceSubPanel.GetWorldPositions = mc =>
+            {
+                var model = ActiveProject?.CurrentModel;
+                if (model == null) return null;
+                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
+            };
+            _shrinkFaceSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _shrinkFaceSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _shrinkFaceSubPanel.Build(_layoutRoot.ShrinkFaceSection);
 
             _normalTransplantSubPanel = new PlayerNormalTransplantSubPanel();
             // スロット数は変わらないので、法線だけを Unity Mesh へ差し替える。
@@ -3079,6 +3188,7 @@ namespace Poly_Ling.Player
             // サブパネル側のチェックボックスと ObjectMoveHandler 内部の
             // ObjectMoveSettings を同一インスタンスで結びつける。
             _boneEditorSubPanel.GetObjectMoveSettings = () => _objectMoveHandler?.GetSettings();
+            _boneEditorSubPanel.OnGizmoRefresh        = UpdateGizmoOverlay;
             _boneEditorSubPanel.RequestBakeObjectScale = BakeObjectScale;
             // ObjectMoveツール用セクションとBoneEditorセクションを統合
             // ObjectMoveTRSSectionは廃止し、BoneEditorSectionを共用する
@@ -3611,6 +3721,19 @@ namespace Poly_Ling.Player
                 SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _vertexIdSubPanel.Build(_layoutRoot.VertexIdSection);
+
+            // パーツID / サブID の採番。対象・リファレンスはパネル内のドロップダウンで
+            // 選ぶため、ビューポートのオブジェクト選択には依存しない。
+            _partsIdSubPanel = new PlayerPartsIdSubPanel
+            {
+                GetView                  = () => ActiveProject,
+                SendCommand              = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetDrawableMeshEntryList = BuildDrawableMeshEntryList,
+                GetLastResult            = () => _commandDispatcher != null
+                                               ? _commandDispatcher.LastPartsIdResult
+                                               : default,
+            };
+            _partsIdSubPanel.Build(_layoutRoot.PartsIdSection);
 
             _vertexTransferSubPanel = new PlayerVertexTransferSubPanel
             {
@@ -4312,7 +4435,7 @@ namespace Poly_Ling.Player
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
                 SendCommand   = cmd => _panelContext?.SendCommand(cmd),
-                ImportMqo     = path => OnImportMqo(path, null),
+                ImportMqo     = path => OnImportMqo(path, null, null),
             };
             _originTestSubPanel.Build(_layoutRoot.OriginTestSection);
 
@@ -4323,7 +4446,7 @@ namespace Poly_Ling.Player
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
                 SendCommand   = cmd => _panelContext?.SendCommand(cmd),
-                ImportMqo     = path => OnImportMqo(path, null),
+                ImportMqo     = path => OnImportMqo(path, null, null),
             };
             _skinTestSubPanel.Build(_layoutRoot.SkinTestSection);
 
@@ -4335,7 +4458,7 @@ namespace Poly_Ling.Player
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
                 SendCommand   = cmd => _panelContext?.SendCommand(cmd),
-                ImportPmx     = path => OnImportPmx(path, null),
+                ImportPmx     = path => OnImportPmx(path, null, null),
 
                 // 書き出しはエクスポートパネルと同じ経路。
                 // 検査に使うので結果をそのまま返す。
@@ -4528,8 +4651,9 @@ namespace Poly_Ling.Player
             WireBridgeCallbacks(_primitiveSubPanel);
             AttachPanelSelectToggle(_layoutRoot.PrimitiveSection, PanelSelectKeyPrimitive);
 
-            _layoutRoot.PrimitiveBtn.clicked += ShowPrimitivePanel;
-            _layoutRoot.AdvancedPrimitiveBtn.clicked += ShowAdvancedPrimitivePanel;
+            // 左ペインの「基本図形」「高度な図形」ボタンは廃止した。
+            // PrimitiveSection はショートカット（ShowPrimitiveShape）と
+            // 「穴つなぎ」ボタンから開く。
 
             // 検証用の新サブツール。同一クラスの別インスタンスで、既存とは状態を共有しない。
             // 生成結果の扱い (生成コマンド以降) は既存と完全に同じ経路を通す。
@@ -4590,15 +4714,20 @@ namespace Poly_Ling.Player
                 {
                     _livePrimitiveSubPanel?.NotifyPlaceTrsChanged();
                     UpdateGizmoOverlay();
+                    // 原点マーカーの仮表示は生成位置に追従させる。
+                    UpdateBoneOverlay();
                 },
             };
 
-            // 配置ギズモのサブモード切替 UI（サブツール内）。Build 済みのボタンへ
-            // 後から配線する。Build 時点の描画は既定 Move で、実モードとの同期は
-            // PostBuildButtonColors 直後の RepaintPlaceGizmoButtons() で行う。
-            _livePrimitiveSubPanel.GetPlaceGizmoMode = () => _primitivePlaceHandler?.Mode
-                                                          ?? PrimitivePlaceToolHandler.PlaceGizmoMode.Move;
-            _livePrimitiveSubPanel.SetPlaceGizmoMode = m => SetPlaceGizmoMode(m);
+            // 配置ギズモ・姿勢仮表示の設定を、ハンドラとサブパネルで共有する。
+            _primitivePlaceHandler.Settings   = _primitivePlaceSettings;
+            _livePrimitiveSubPanel.PlaceSettings = _primitivePlaceSettings;
+            _livePrimitiveSubPanel.OnPlaceOverlayChanged = () =>
+            {
+                UpdateGizmoOverlay();
+                UpdateBoneOverlay();
+            };
+            _livePrimitiveSubPanel.RefreshPlaceToggles();
 
             _layoutRoot.LivePrimitiveBtn.clicked += ShowLivePrimitivePanel;
             _layoutRoot.LiveAdvancedPrimitiveBtn.clicked += ShowLiveAdvancedPrimitivePanel;
@@ -4618,6 +4747,7 @@ namespace Poly_Ling.Player
 
             _layoutRoot.BlendBtn.clicked      += ShowBlendPanel;
             _layoutRoot.ShrinkBtn.clicked     += ShowShrinkPanel;
+            _layoutRoot.ShrinkFaceBtn.clicked += ShowShrinkFacePanel;
             _layoutRoot.ModelBlendBtn.clicked += ShowModelBlendPanel;
             _layoutRoot.BoneEditorBtn.clicked  += () => { ShowBoneEditorPanel(); _boneEditorSubPanel?.ShowBonesTab(); };
             _layoutRoot.UVEditorBtn.clicked    += ShowUVEditorPanel;
@@ -4664,6 +4794,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.VertexIdBtn.clicked          += ShowVertexIdPanel;
             if (_layoutRoot.VertexTransferBtn != null)
                 _layoutRoot.VertexTransferBtn.clicked    += ShowVertexTransferPanel;
+            if (_layoutRoot.PartsIdBtn != null)
+                _layoutRoot.PartsIdBtn.clicked           += ShowPartsIdPanel;
             _layoutRoot.AddFaceBtn.clicked               += ShowAddFacePanel;
             _layoutRoot.FlipFaceBtn.clicked              += ShowFlipFacePanel;
             _layoutRoot.RotateBtn.clicked                += ShowRotatePanel;
@@ -4929,10 +5061,10 @@ namespace Poly_Ling.Player
 
             // ミラー系トグルの従属関係を UI に反映する。
             //
-            //   非選Mirror（独立。非選Mesh に従属しないので常に操作可能）
-            //     ├ 非選M面
-            //     ├ 非選M辺
-            //     └ 非選M頂点
+            //   ミラー（独立。非選Mesh に従属しないので常に操作可能）
+            //     ├ ミラー面
+            //     ├ ミラー辺
+            //     └ ミラー頂点
             //
             // 親が OFF のとき、子は値を OFF に同期しグレーアウト（無効化）する。
             // 値のクランプ自体は ViewportDisplaySettings.WithMirrorClamped が行うので、
@@ -4981,7 +5113,18 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_UNSEL_WIRE: ds.ShowUnselectedWireframe = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_VERT: ds.ShowUnselectedVertices  = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_BONE:   ds.ShowUnselectedBone      = e.newValue; break;
-                                case PlayerLayoutRoot.VD_UNSEL_MIRROR: ds.ShowUnselectedMirror    = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_MIRROR:
+                                    ds.ShowUnselectedMirror = e.newValue;
+                                    // マスタ ON で面・辺・頂点も同時に ON にする。
+                                    // OFF 側は WithMirrorClamped が 3 つとも落とすので、
+                                    // ここでは ON のときだけ書く（消灯処理を二重に持たない）。
+                                    if (e.newValue)
+                                    {
+                                        ds.ShowUnselectedMirrorMesh      = true;
+                                        ds.ShowUnselectedMirrorWireframe = true;
+                                        ds.ShowUnselectedMirrorVertices  = true;
+                                    }
+                                    break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR_MESH: ds.ShowUnselectedMirrorMesh      = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR_WIRE: ds.ShowUnselectedMirrorWireframe = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR_VERT: ds.ShowUnselectedMirrorVertices  = e.newValue; break;
@@ -5030,10 +5173,6 @@ namespace Poly_Ling.Player
             _layoutRoot.MorphCreateBtn.clicked += ShowMorphCreatePanel;
 
             _layoutRoot.PostBuildButtonColors(_uiRoot);
-
-            // PostBuildButtonColors（ApplyDarkTheme）は全 Button を既定色へ戻すため、
-            // 配置ギズモボタン（サブツール内）の着色はこの後で行う。
-            RepaintPlaceGizmoButtons();
 
             // 同じ理由で、Build 時に着色しているセグメント型ボタン
             // （スキンWペイントのモード／フォールオフ、スキンW数値設定の「色」）も
@@ -5135,6 +5274,7 @@ namespace Poly_Ling.Player
             }));
             _sectionRefreshPairs.Add((_layoutRoot.VertexIdSection,          () => _vertexIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VertexTransferSection,    () => _vertexTransferSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.PartsIdSection,           () => _partsIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.AddFaceSection,           () => _addFaceSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FlipFaceSection,          () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _flipFaceHandler?.Activate(ctx); _flipFaceSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.RotateSection,            () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _rotateHandler?.Activate(ctx); _rotateSubPanel?.Refresh(); }));
@@ -5476,23 +5616,6 @@ namespace Poly_Ling.Player
             _importSubPanel?.SetMode(mode);
         }
 
-        private void ShowPrimitivePanel()
-        {
-            // 選択許可チェック（既定 ON なら SelectOnly で開く）。
-            // 基本図形/高度な図形は同一 PrimitiveSection を共有し、グリッドだけカテゴリで切替える。
-            ShowRightPanelSelectable(
-                _layoutRoot?.PrimitiveSection, _layoutRoot?.PrimitiveBtn, PanelSelectKeyPrimitive);
-            _primitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Basic);
-        }
-
-        private void ShowAdvancedPrimitivePanel()
-        {
-            // 基本図形と同じセクションを開き、カテゴリのみ高度な図形へ切り替える。
-            ShowRightPanelSelectable(
-                _layoutRoot?.PrimitiveSection, _layoutRoot?.AdvancedPrimitiveBtn, PanelSelectKeyPrimitive);
-            _primitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced);
-        }
-
         private void ShowLivePrimitivePanel()
         {
             // カテゴリ 1: 配置ギズモを使うため InteractionMode を強制する。
@@ -5508,26 +5631,6 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.PrimitivePlace);
             ShowRightPanel(_layoutRoot?.LivePrimitiveSection, _layoutRoot?.LiveAdvancedPrimitiveBtn);
             _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced);
-        }
-
-        /// <summary>
-        /// 配置ギズモのサブモードを切り替える（サブツール内の3ボタンから呼ぶ）。
-        /// パネル表示や InteractionMode は変更しない。
-        /// </summary>
-        private void SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode mode)
-        {
-            if (_primitivePlaceHandler != null) _primitivePlaceHandler.Mode = mode;
-            RepaintPlaceGizmoButtons();
-            UpdateGizmoOverlay();
-        }
-
-        /// <summary>
-        /// 配置ギズモのサブモードボタンの背景色を現在のモードに合わせる。
-        /// ボタン本体はサブツール（3D連携インスタンス）側が持つ。
-        /// </summary>
-        private void RepaintPlaceGizmoButtons()
-        {
-            _livePrimitiveSubPanel?.RefreshPlaceGizmoButtons();
         }
 
         /// <summary>
@@ -5567,12 +5670,9 @@ namespace Poly_Ling.Player
         private void ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind k)
         {
             if (_primitiveSubPanel == null) return;
-            bool advanced =
-                _primitiveSubPanel.CategoryOf(k) == PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced;
+            // 左ペインのボタンは廃止したので、ハイライト対象は無い（null 可）。
             ShowRightPanelSelectable(
-                _layoutRoot?.PrimitiveSection,
-                advanced ? _layoutRoot?.AdvancedPrimitiveBtn : _layoutRoot?.PrimitiveBtn,
-                PanelSelectKeyPrimitive);
+                _layoutRoot?.PrimitiveSection, null, PanelSelectKeyPrimitive);
             _primitiveSubPanel.SelectShape(k);
         }
 
@@ -5606,6 +5706,14 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.ShrinkSection, _layoutRoot?.ShrinkBtn);
             _shrinkSubPanel?.SetModel(ActiveProject?.CurrentModel);
+        }
+
+        private void ShowShrinkFacePanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ShrinkFaceSection, _layoutRoot?.ShrinkFaceBtn);
+            _shrinkFaceSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
 
         private void ShowModelBlendPanel()
@@ -6218,6 +6326,14 @@ namespace Poly_Ling.Player
             _vertexIdSubPanel?.Refresh();
         }
 
+        private void ShowPartsIdPanel()
+        {
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持。
+            // 採番は選んだオブジェクトへの即時操作で、ビューポート入力は使わない。
+            ShowRightPanel(_layoutRoot?.PartsIdSection, _layoutRoot?.PartsIdBtn);
+            _partsIdSubPanel?.Refresh();
+        }
+
         private void ShowVertexTransferPanel()
         {
             // カテゴリ 3: モデル間の操作でビューポート入力を使わないため 3D 操作は落とす。
@@ -6634,9 +6750,35 @@ namespace Poly_Ling.Player
 
         private void ShowMeshListPanel()
         {
-            // カテゴリ 3 + 選択許可チェック（既定 ON なら SelectOnly で開く）
-            ShowRightPanelSelectable(
-                _layoutRoot?.MeshListSection, _layoutRoot?.MeshListBtn, PanelSelectKeyMeshList);
+            // ビューポート操作は 3 択（操作なし / 要素選択 / 姿勢調整）。
+            // 既定は「姿勢調整」＝オブジェクト原点の選択と姿勢調整（ObjectMove）。
+            ApplyMeshListViewportOpMode(
+                _meshListSubPanel?.CurrentViewportOpMode
+                ?? MeshListSubPanel.ViewportOpMode.ObjectPose);
+            ShowRightPanel(_layoutRoot?.MeshListSection, _layoutRoot?.MeshListBtn);
+            _meshListSubPanel?.SyncObjectPoseToggles();
+        }
+
+        /// <summary>
+        /// オブジェクトリストのビューポート操作モードを InteractionMode へ反映する。
+        /// 「姿勢調整」のときだけ ObjectMoveTool のピック対象をこのパネルが決める
+        /// （PlayerBoneEditorSubPanel.ApplyPickFilter と同じ役割）。
+        /// </summary>
+        private void ApplyMeshListViewportOpMode(MeshListSubPanel.ViewportOpMode mode)
+        {
+            switch (mode)
+            {
+                case MeshListSubPanel.ViewportOpMode.ObjectPose:
+                    _meshListSubPanel?.ApplyPickFilter();
+                    SetInteractionMode(InteractionMode.ObjectMove);
+                    break;
+                case MeshListSubPanel.ViewportOpMode.SelectElem:
+                    SetInteractionMode(InteractionMode.SelectOnly);
+                    break;
+                default:
+                    SetInteractionMode(InteractionMode.None);
+                    break;
+            }
         }
 
         private void HideAllRightPanels()
@@ -6665,7 +6807,13 @@ namespace Poly_Ling.Player
             // 非表示にするだけでは未確定の形状が残ったままになる。
             _blendSubPanel?.CancelIfActive();
             Hide(_layoutRoot.BlendSection);
+            // シュリンカーのプレビュー結果も MeshObject に書かれている。
+            // 頂点方式と面方式が同じ MeshObject を触るため、切り替え時に破棄しないと
+            // もう一方が変形後の座標をバックアップに取り込む。
+            _shrinkSubPanel?.CancelIfActive();
+            _shrinkFaceSubPanel?.CancelIfActive();
             Hide(_layoutRoot.ShrinkSection);
+            Hide(_layoutRoot.ShrinkFaceSection);
             Hide(_layoutRoot.NormalTransplantSection);
             Hide(_layoutRoot.ThinPlateMorphSection);
             Hide(_layoutRoot.ModelBlendSection);
@@ -6701,6 +6849,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.FaceMergeCollapseSection);
             Hide(_layoutRoot.VertexIdSection);
             Hide(_layoutRoot.VertexTransferSection);
+            Hide(_layoutRoot.PartsIdSection);
             Hide(_layoutRoot.AddFaceSection);
             Hide(_layoutRoot.FlipFaceSection);
             Hide(_layoutRoot.RotateSection);
@@ -6856,6 +7005,23 @@ namespace Poly_Ling.Player
             _activeRightSection = section;
             SetActivePanelButton(panelBtn);
             PLPerfLog.SetPanel(panelBtn?.text);
+            RefreshObjectOverlays();
+        }
+
+        /// <summary>
+        /// 原点マーカー（水色ダイヤ）とギズモを、今のモード・パネルで組み直す。
+        ///
+        /// 【なぜ要るか】
+        ///   この 2 つの更新は PlayerViewportManager の Enter〜（データが変わる出来事）
+        ///   からしか呼ばれていなかった。パネルやツールを切り替えただけでは何も
+        ///   起きないため、視点を動かすなど別の理由で再描画が走るまで
+        ///   「マーカーが出ない」「前のギズモが残る」状態になっていた。
+        ///   切替もマーカー・ギズモの出し分けを変える出来事なので、ここで組み直す。
+        /// </summary>
+        private void RefreshObjectOverlays()
+        {
+            UpdateBoneOverlay();
+            UpdateGizmoOverlay();
         }
 
         /// <summary>
@@ -8233,32 +8399,181 @@ namespace Poly_Ling.Player
             model.CurrentMaterialIndex = 0;
         }
 
-        private void OnImportPmx(string filePath, PMXImportSettings settings)
+        private void OnImportPmx(string filePath, PMXImportSettings settings,
+                                 PlayerImportSubPanel.PostOptions post)
         {
             var cmd = new ImportPmxCommand(
                 filePath, settings,
-                onResult: (model, _) => _localLoader.LoadModel(filePath, model),
+                onResult: (model, _) =>
+                {
+                    _localLoader.LoadModel(filePath, model);
+                    ApplyImportPostOptions(post);
+                },
                 onError:  msg       => _status = $"PMX読込失敗: {msg}");
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
-        private void OnImportMqo(string filePath, MQOImportSettings settings)
+        private void OnImportMqo(string filePath, MQOImportSettings settings,
+                                 PlayerImportSubPanel.PostOptions post)
         {
             var cmd = new ImportMqoCommand(
                 filePath, settings,
-                onResult: (model, _) => { _localLoader.LoadModel(filePath, model); UnityEngine.Debug.Log("[LoadDbg] 16 after-LoadModel"); },
+                onResult: (model, _) =>
+                {
+                    _localLoader.LoadModel(filePath, model);
+                    UnityEngine.Debug.Log("[LoadDbg] 16 after-LoadModel");
+                    ApplyImportPostOptions(post);
+                },
                 onError:  msg       => _status = $"MQO読込失敗: {msg}");
             _editOps?.CommandQueue.Enqueue(cmd);
             UnityEngine.Debug.Log("[LoadDbg] 17 after-Enqueue");
         }
 
-        private void OnImportObj(string filePath, Poly_Ling.OBJ.ObjImportSettings settings)
+        private void OnImportObj(string filePath, Poly_Ling.OBJ.ObjImportSettings settings,
+                                 PlayerImportSubPanel.PostOptions post)
         {
             var cmd = new ImportObjCommand(
                 filePath, settings,
-                onResult: (model, _) => _localLoader.LoadModel(filePath, model),
+                onResult: (model, _) =>
+                {
+                    _localLoader.LoadModel(filePath, model);
+                    ApplyImportPostOptions(post);
+                },
                 onError:  msg       => _status = $"OBJ読込失敗: {msg}");
             _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
+        // ================================================================
+        // 読込後オプション（インポータパネルのチェック）
+        // ================================================================
+
+        /// <summary>
+        /// PMX / MQO / OBJ の読み込みが終わったあとに、インポータパネルの
+        /// チェックに応じた処理を流す。呼び出しは _localLoader.LoadModel の直後で、
+        /// この時点でモデルはプロジェクトへ追加され CurrentModel になっている
+        /// （PlayerLocalLoader.FinishLoad が AddModel → SelectModel まで済ませる）。
+        ///
+        /// post が null の経路（自動検証パネルからの直接呼び出し）では何もしない。
+        ///
+        /// CommandQueue.ProcessAll は Execute() 内の例外を握り潰すため、
+        /// ここで捕まえないと失敗が画面にもログにも出ない。
+        /// </summary>
+        private void ApplyImportPostOptions(PlayerImportSubPanel.PostOptions post)
+        {
+            if (post == null) return;
+
+            try
+            {
+                if (post.HumanoidAutoMap) ApplyImportHumanoidAutoMap();
+                if (post.ApplyOriginCsv)  ApplyImportOriginCsv(post);
+            }
+            catch (Exception ex)
+            {
+                _status = $"読込後オプションで例外: {ex.Message}";
+                UnityEngine.Debug.LogError($"[ImportPostOptions] {ex}");
+            }
+        }
+
+        /// <summary>
+        /// ボーン名からアバター用ヒューマンマッピングを作って適用する。
+        ///
+        /// HumanoidBoneMapping が受ける名前リストは
+        /// 「インデックス = MeshContextList のインデックス」（HumanoidBoneMapping.cs の
+        /// AutoMapFromEmbeddedCSV 引数説明）なので、長さ MeshContextCount の配列を作り
+        /// 各名前を自分の索引位置へ置く。ボーンを持つモデルではボーン以外の位置を
+        /// 空文字にして、描画メッシュの名前が Humanoid 名に引っかからないようにする
+        /// （FindBoneByAliases は空文字にヒットしない）。ボーンが 1 本も無いモデルでは
+        /// 全コンテキストを候補にする。
+        /// </summary>
+        private void ApplyImportHumanoidAutoMap()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { _status = "ヒューマンマッピング: モデルがありません"; return; }
+
+            bool bonesOnly = model.BoneCount > 0;
+
+            var names = new List<string>(model.MeshContextCount);
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                bool use = mc != null && !string.IsNullOrEmpty(mc.Name)
+                           && (!bonesOnly || mc.Type == MeshType.Bone);
+                names.Add(use ? mc.Name : "");
+            }
+
+            var mapping = new Poly_Ling.Data.HumanoidBoneMapping();
+            int mapped  = mapping.AutoMapFromEmbeddedCSV(names);
+
+            if (mapped == 0)
+            {
+                _status = bonesOnly
+                    ? "ヒューマンマッピング: 一致するボーン名がありませんでした"
+                    : "ヒューマンマッピング: 一致する名前がありませんでした（ボーンなしのモデル）";
+                UnityEngine.Debug.LogWarning("[ImportPostOptions] " + _status);
+                return;
+            }
+
+            _panelContext?.SendCommand(new ApplyHumanoidMappingCommand(
+                ActiveProject?.CurrentModelIndex ?? 0, mapping.Clone()));
+
+            _status = $"ヒューマンマッピングを自動割当: {mapped} ボーン";
+            UnityEngine.Debug.Log("[ImportPostOptions] " + _status);
+        }
+
+        /// <summary>
+        /// 指定された原点CSVを読み、名前一致で適用する。
+        /// 解析も適用も「描画オブジェクトの姿勢」タブの原点CSV読込と同じ経路
+        /// （ObjectOriginCsv.Parse → ApplyObjectOriginsCommand）を通す。
+        /// </summary>
+        private void ApplyImportOriginCsv(PlayerImportSubPanel.PostOptions post)
+        {
+            string path = post.OriginCsvPath;
+            if (string.IsNullOrEmpty(path))
+            {
+                _status = "原点CSV: パスが未指定です";
+                UnityEngine.Debug.LogWarning("[ImportPostOptions] " + _status);
+                return;
+            }
+            if (!System.IO.File.Exists(path))
+            {
+                _status = $"原点CSV: ファイルが見つかりません: {System.IO.Path.GetFileName(path)}";
+                UnityEngine.Debug.LogWarning("[ImportPostOptions] " + _status);
+                return;
+            }
+
+            string[] lines;
+            try
+            {
+                lines = System.IO.File.ReadAllLines(path);
+            }
+            catch (Exception e)
+            {
+                _status = $"原点CSV: 読み込みに失敗: {e.Message}";
+                UnityEngine.Debug.LogError("[ImportPostOptions] " + _status);
+                return;
+            }
+
+            bool withRot = post.OriginCsvIncludeRotation;
+
+            Poly_Ling.Tools.ObjectPose.ObjectOriginCsv.Parse(
+                lines, withRot,
+                out var names, out var positions, out var rotations, out int rotRows);
+
+            if (names.Count == 0)
+            {
+                _status = "原点CSV: 有効な行がありません";
+                UnityEngine.Debug.LogWarning("[ImportPostOptions] " + _status + ": " + path);
+                return;
+            }
+
+            _panelContext?.SendCommand(new ApplyObjectOriginsCommand(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                names.ToArray(), positions.ToArray(),
+                withRot ? rotations.ToArray() : null));
+
+            _status = $"原点CSVを適用: {names.Count} 行" +
+                      (withRot ? $"（うち回転あり {rotRows} 行）" : "（回転は対象外）");
+            UnityEngine.Debug.Log("[ImportPostOptions] " + _status);
         }
 
         private void OnExportObj(string outputPath, Poly_Ling.OBJ.ObjExportSettings settings)
@@ -9574,7 +9889,10 @@ namespace Poly_Ling.Player
             // OnRefreshGizmoOverlay を発火する) まで前モードのギズモが残っていた。
             // _viewportManager は readonly の inline 初期化で null にならず、
             // UpdateGizmoOverlay 自身が _activePanel == null を先頭で弾くため安全。
-            UpdateGizmoOverlay();
+            //
+            // 原点マーカー（水色ダイヤ）も同じ理由で組み直す。出す対象はモードと
+            // ピックフィルタで決まるので、モードが変わればマーカーも変わる。
+            RefreshObjectOverlays();
         }
 
         // ================================================================
@@ -10201,7 +10519,10 @@ namespace Poly_Ling.Player
             // シュリンカーは選択状態を使わないため ModelSwitch だけに追随する
             // （Selection で作り直すとプレビュー中の状態が失われる）。
             if (kind == ChangeKind.ModelSwitch)
+            {
                 _shrinkSubPanel?.SetModel(ActiveProject?.CurrentModel);
+                _shrinkFaceSubPanel?.SetModel(ActiveProject?.CurrentModel);
+            }
 
             // TPSモーフはモデル単位でビフォー／アフター／ターゲットを選ぶ。
             // モデルが変わったら選び直しになる（計算中のジョブは中止される）。

@@ -198,21 +198,89 @@ namespace Poly_Ling.Player
         public PrimitiveAddMode CurrentAddMode => _addMode;
 
         /// <summary>
+        /// 姿勢（位置・回転・スケール）が効く図形か。
+        /// 歪み複製と穴つなぎは図形生成コマンドを通らず姿勢を持たないため false。
+        /// RefreshCommonUiVisibility が姿勢フォールドを隠す条件と同じ。
+        /// 原点マーカー・くさびの仮表示もこの条件に従う。
+        /// </summary>
+        public bool PoseApplicable
+            => _current != ShapeKind.ObjectArray && _current != ShapeKind.Bridge;
+
+        /// <summary>
         /// AddToExisting のときの追加先（MeshContextList インデックス）。
         /// -1 は「選択オブジェクトリストの先頭」。穴つなぎも同じ値を使う。
         /// </summary>
         public int CurrentAddTargetIndex => _addTargetIndex;
 
-        // ---- 配置ギズモのサブモード切替（LiveWireInMainViewport のときだけ UI を出す） ----
+        // ---- 配置ギズモ・姿勢仮表示（LiveWireInMainViewport のときだけ UI を出す） ----
 
-        /// <summary>現在の配置ギズモサブモードを返す。未配線なら Move 扱い。</summary>
-        public Func<PrimitivePlaceToolHandler.PlaceGizmoMode> GetPlaceGizmoMode;
+        /// <summary>
+        /// 配置ギズモと姿勢仮表示の設定。Viewer が持つ 1 個を共有する。
+        /// 基本図形 / 高度な図形はこのインスタンスの表示切替なので、値も共通になる。
+        /// 未配線でも落ちないよう既定インスタンスを持たせておく。
+        /// </summary>
+        public PrimitivePlaceSettings PlaceSettings { get; set; } = new PrimitivePlaceSettings();
 
-        /// <summary>配置ギズモサブモードの切替要求。未配線なら何もしない。</summary>
-        public Action<PrimitivePlaceToolHandler.PlaceGizmoMode> SetPlaceGizmoMode;
+        /// <summary>
+        /// 配置ギズモ・姿勢仮表示のチェックを変えた直後に呼ぶ。
+        /// ビューポートのギズモと原点マーカーを組み直させる。
+        /// </summary>
+        public Action OnPlaceOverlayChanged;
 
-        /// <summary>配置ギズモのサブモード切替ボタン（Move / Rotate / Scale の順）。</summary>
-        private Button[] _placeGizmoBtns;
+        /// <summary>
+        /// くさび仮表示の画面上の全長（ピクセル）。
+        /// 軸ギズモの AxisGizmo.ScreenAxisLength（50px）に揃えてある。
+        /// カメラから遠いほどワールド長を伸ばし、見かけの大きさを一定に保つ。
+        /// </summary>
+        private const float WedgeScreenLength = 50f;
+
+        /// <summary>
+        /// ギズモ表示チェック（移動 / 回転）。
+        /// 拡大縮小は PrimitivePlaceSettings.ShowScaleGizmo に機能だけ残し、
+        /// チェックは出さない（表示・操作を封印）。
+        /// </summary>
+        private Toggle _togShowMoveGizmo, _togShowRotationGizmo;
+
+        /// <summary>姿勢仮表示チェック（原点マーカー / くさび）。</summary>
+        private Toggle _togShowOriginMarker, _togShowWedge;
+
+        /// <summary>RefreshPlaceToggles で書き戻す間、変更コールバックを止める。</summary>
+        private bool _suppressPlaceToggles;
+
+        /// <summary>
+        /// 生成時の回転 Z を相対で動かす（クイック回転ボタン）。
+        /// 押すたびに 360 を超えて伸びないよう、毎回 ±180 へ畳む
+        /// （PlayerBoneEditorSubPanel.OffsetTransform と同じ扱い）。
+        ///
+        /// 位置は変わらないので原点マーカーの仮表示は組み直さない（D で足りる）。
+        /// くさびの向きはカメラ描画のたびに作り直すため自動で追従する。
+        /// </summary>
+        private void OffsetRotationZ(float deltaDeg)
+        {
+            _rotEuler.z = NormAngle180(_rotEuler.z + deltaDeg);
+            RefreshTrsFields();
+            D();
+        }
+
+        /// <summary>角度を −180〜180 に畳む。</summary>
+        private static float NormAngle180(float a)
+        {
+            a %= 360f;
+            if (a > 180f) a -= 360f;
+            else if (a < -180f) a += 360f;
+            return a;
+        }
+
+        /// <summary>
+        /// 生成位置を数値欄で変えたときに呼ぶ。プレビュー再生成に加えて、
+        /// 原点マーカーの仮表示（ビューポート側のスナップショット）も作り直させる。
+        /// くさびはカメラ描画のたびに組み直すので、ここでの通知は要らない。
+        /// </summary>
+        private void DPlace()
+        {
+            D();
+            OnPlaceOverlayChanged?.Invoke();
+        }
 
         /// <summary>
         /// 外部（配置ギズモ）から TRS を変更した後に呼ぶ。
@@ -228,11 +296,11 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox, PipeStadium }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
-              "NGonGear","NGonStar","InvoluteGear","StadiumBox" };
+              "NGonGear","NGonStar","InvoluteGear","StadiumBox","PipeStadium" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced }
@@ -244,6 +312,7 @@ namespace Poly_Ling.Player
         private static readonly ShapeKind[] AdvancedShapes =
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
               ShapeKind.NGonGear, ShapeKind.NGonStar, ShapeKind.InvoluteGear,
+              ShapeKind.PipeStadium,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
 
         // ================================================================
@@ -338,6 +407,9 @@ namespace Poly_Ling.Player
         /// </summary>
         private void OnAddModeChanged()
         {
+            // 追加先が変わると生成位置の基準（追加先の WorldMatrix）が変わるので、
+            // 原点マーカーの仮表示も作り直させる。
+            OnPlaceOverlayChanged?.Invoke();
             RefreshBakeToggleVis();
             RefreshAddTargetChoices();
             RefreshNameFieldMode();
@@ -404,6 +476,12 @@ namespace Poly_Ling.Player
         /// <summary>メイン3Dウインドウへ描く黄色ワイヤ用マテリアル。初回描画時に遅延生成する。</summary>
         private Material _liveWireMat;
 
+        /// <summary>くさび仮表示用マテリアル。色だけ変えた黄色ワイヤと同じ作り。</summary>
+        private Material _wedgeMat;
+
+        /// <summary>くさび仮表示の線メッシュ。MeshSceneRenderer と同じ形状で作る。</summary>
+        private Mesh _wedgeMesh;
+
         private Mesh                     _wireMesh;
         private bool                     _dirty = true;
         private double                   _nextGenAllowed;   // 適応スロットル：次回再生成を許可する時刻(realtime秒)
@@ -412,7 +490,10 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private readonly Button[]  _shapeBtns = new Button[20];
+        // 添字は ShapeKind の値そのもの。図形を足したときに溢れないよう、
+        // 長さは列挙の要素数から取る。
+        private readonly Button[]  _shapeBtns =
+            new Button[System.Enum.GetValues(typeof(ShapeKind)).Length];
         private VisualElement      _shapeGrid;
         private VisualElement      _settingsContainer;
         private VisualElement      _profileEditorContainer;
@@ -761,9 +842,9 @@ namespace Poly_Ling.Player
 
             pose.Add(SL(T("WorldPos")));
             pose.Add(V3FRef(T("WorldPosX"), T("WorldPosY"), T("WorldPosZ"),
-                () => _worldPos.x, v => { _worldPos.x = v; D(); },
-                () => _worldPos.y, v => { _worldPos.y = v; D(); },
-                () => _worldPos.z, v => { _worldPos.z = v; D(); },
+                () => _worldPos.x, v => { _worldPos.x = v; DPlace(); },
+                () => _worldPos.y, v => { _worldPos.y = v; DPlace(); },
+                () => _worldPos.z, v => { _worldPos.z = v; DPlace(); },
                 _posFields));
 
             pose.Add(BakeHeaderRow(T("Rotation"), () => _bakeRotation, v => _bakeRotation = v,
@@ -773,6 +854,17 @@ namespace Poly_Ling.Player
                 () => _rotEuler.y, v => { _rotEuler.y = v; D(); },
                 () => _rotEuler.z, v => { _rotEuler.z = v; D(); },
                 _rotFields));
+
+            // よく使う相対回転（「描画オブジェクトの姿勢」の
+            // PlayerBoneEditorSubPanel.BuildQuickOffsetRow と同じ並び・同じ動き）。
+            // 向こうは選択オブジェクトの BoneTransform を動かすが、こちらは
+            // 生成時の回転そのものを動かす。
+            var quickRotRow = new VisualElement();
+            quickRotRow.style.flexDirection = FlexDirection.Row;
+            quickRotRow.style.marginBottom  = 2;
+            SB(quickRotRow, T("QuickRotZPlus90"),  () => OffsetRotationZ( 90f));
+            SB(quickRotRow, T("QuickRotZMinus90"), () => OffsetRotationZ(-90f));
+            pose.Add(quickRotRow);
 
             pose.Add(BakeHeaderRow(T("ScaleLabel"), () => _bakeScale, v => _bakeScale = v,
                 out _bakeScaleToggle));
@@ -791,32 +883,58 @@ namespace Poly_Ling.Player
                 _rotEuler = Vector3.zero;
                 _scale    = Vector3.one;
                 RefreshTrsFields();
-                D();
+                DPlace();
             });
             pose.Add(trsResetRow);
 
-            // 配置ギズモのサブモード切替。GizmoData は矢印 / リング / キューブを
-            // 排他的にしか描画できないため、3種を同時には出さず切り替える。
+            // 配置ギズモの表示チェックと、生成予定姿勢の仮表示チェック。
+            // 「描画オブジェクトの姿勢」（PlayerBoneEditorSubPanel）と同じ形式だが、
+            // 設定は PrimitivePlaceSettings で別に持ち、互いに影響しない。
             // 配置ギズモを持つのは 3D連携インスタンスだけなので、そちらにのみ出す。
             if (LiveWireInMainViewport)
             {
                 pose.Add(SL(T("PlaceGizmo")));
 
-                var placeGizmoRow = new VisualElement();
-                placeGizmoRow.style.flexDirection = FlexDirection.Row;
-                placeGizmoRow.style.marginBottom  = 2;
+                _togShowMoveGizmo     = PlaceToggle(T("PlaceGizmoShowMove"),
+                    "OFF にすると矢印と中央ハンドルを消し、当たり判定も止める");
+                _togShowRotationGizmo = PlaceToggle(T("PlaceGizmoShowRotate"),
+                    "OFF にすると回転リングを消し、当たり判定も止める");
+                _togShowOriginMarker  = PlaceToggle(T("PlacePreviewOrigin"),
+                    "生成予定位置に原点マーカー（水色ダイヤ）を出す。まだ作られていない仮の表示");
+                _togShowWedge         = PlaceToggle(T("PlacePreviewWedge"),
+                    "生成予定の姿勢にくさびを出す。まだ作られていない仮の表示");
 
-                _placeGizmoBtns = new Button[3];
-                _placeGizmoBtns[0] = PGB(placeGizmoRow, T("PlaceGizmoMove"),
-                    PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
-                _placeGizmoBtns[1] = PGB(placeGizmoRow, T("PlaceGizmoRotate"),
-                    PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
-                _placeGizmoBtns[2] = PGB(placeGizmoRow, T("PlaceGizmoScale"),
-                    PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
-                _placeGizmoBtns[2].style.marginRight = 0;
+                _togShowMoveGizmo.RegisterValueChangedCallback(e =>
+                {
+                    if (_suppressPlaceToggles) return;
+                    if (PlaceSettings != null) PlaceSettings.ShowMoveGizmo = e.newValue;
+                    RefreshPlaceToggles();
+                    OnPlaceOverlayChanged?.Invoke();
+                });
+                _togShowRotationGizmo.RegisterValueChangedCallback(e =>
+                {
+                    if (_suppressPlaceToggles) return;
+                    if (PlaceSettings != null) PlaceSettings.ShowRotationGizmo = e.newValue;
+                    RefreshPlaceToggles();
+                    OnPlaceOverlayChanged?.Invoke();
+                });
+                _togShowOriginMarker.RegisterValueChangedCallback(e =>
+                {
+                    if (_suppressPlaceToggles) return;
+                    if (PlaceSettings != null) PlaceSettings.ShowOriginMarker = e.newValue;
+                    OnPlaceOverlayChanged?.Invoke();
+                });
+                _togShowWedge.RegisterValueChangedCallback(e =>
+                {
+                    if (_suppressPlaceToggles) return;
+                    if (PlaceSettings != null) PlaceSettings.ShowWedge = e.newValue;
+                    OnPlaceOverlayChanged?.Invoke();
+                });
 
-                pose.Add(placeGizmoRow);
-                RefreshPlaceGizmoButtons();
+                pose.Add(_togShowMoveGizmo);
+                pose.Add(_togShowRotationGizmo);
+                pose.Add(_togShowOriginMarker);
+                pose.Add(_togShowWedge);
             }
 
             RefreshBakeToggleVis();
@@ -929,6 +1047,10 @@ namespace Poly_Ling.Player
             // この順序により、SubmitLiveWire は Graphics.DrawMesh 提出のみを行えばよい。
             TickPreview();
             SubmitLiveWire(cam);
+
+            // くさび仮表示は生成予定形状のワイヤとは独立に出す
+            // （形状のプレビューが無くても姿勢は見せたいため）。
+            SubmitPoseWedge(cam);
         }
 
         /// <summary>このパネルのセクションが右ペインに表示されているか。</summary>
@@ -971,6 +1093,101 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 生成予定姿勢のくさびをメイン3Dウインドウのカメラへ提出する（仮表示）。
+        ///
+        /// 形状と大きさは MeshSceneRenderer の原点マーカーと同じものを使う。
+        /// 姿勢は「生成後に描画オブジェクトの姿勢（BoneTransform）へ入る分」で、
+        /// ベイク ON の回転は頂点へ焼かれて姿勢に残らないため PoseRotation を見る。
+        /// </summary>
+        private void SubmitPoseWedge(Camera cam)
+        {
+            if (!LiveWireInMainViewport) return;
+            if (cam == null) return;
+            if (IsMainViewportCamera == null || !IsMainViewportCamera(cam)) return;
+            if (PlaceSettings == null || !PlaceSettings.ShowWedge) return;
+
+            // 姿勢そのものを持たない図形（歪み複製・穴つなぎ）は対象外。
+            if (!PoseApplicable) return;
+
+            if (!Poly_Ling.Core.MeshSceneRenderer.ExtractBoneTransform(
+                    PoseWedgeMatrix(), out var pos, out var rot))
+                return;
+
+            float scale = WedgeWorldScale(cam, pos);
+            if (scale <= 0f) return;
+
+            // 色はマテリアル側で持たせる。頂点色は白のまま
+            // （Hidden/Internal-Colored は頂点色とマテリアル色の積を出すため）。
+            //
+            // 大きさがカメラごとに変わるので、毎回 UpdateBoneLineMesh で書き直す。
+            // 4 面はそれぞれ別カメラで、同じ 1 個のメッシュを提出直前に
+            // そのカメラ向きの寸法へ更新する。
+            if (_wedgeMesh == null)
+                _wedgeMesh = Poly_Ling.Core.MeshSceneRenderer.BuildBoneLineMesh(
+                    pos, rot, Color.white, scale);
+            else
+                Poly_Ling.Core.MeshSceneRenderer.UpdateBoneLineMesh(
+                    _wedgeMesh, pos, rot, Color.white, scale);
+
+            EnsureWedgeMaterial();
+            if (_wedgeMat == null) return;
+
+            // 頂点はワールド座標で作ってあるので行列は単位。
+            Graphics.RenderMesh(
+                Poly_Ling.Core.PLRenderMeshHelper.Make(
+                    _wedgeMat, cam,
+                    Poly_Ling.Core.PLRenderMeshHelper.WorldBoundsOf(_wedgeMesh, Matrix4x4.identity)),
+                _wedgeMesh, 0, Matrix4x4.identity);
+        }
+
+        /// <summary>
+        /// くさび仮表示へ渡す倍率（BuildBoneLineMesh の scale）。
+        ///
+        /// 【見かけ一定にする理由】
+        ///   軸ギズモ（AxisGizmo.ScreenAxisLength = 50px）も回転リング
+        ///   （RotateRingGizmo は CameraDistance 比例）も画面上の大きさが一定で、
+        ///   ワールド固定なのは MeshSceneRenderer の原点マーカーだけだった。
+        ///   仮表示を後者に合わせると引いたときに見えなくなるため、
+        ///   ギズモ側の規則へ揃える。
+        ///
+        /// 【正投影も同じ式で扱える理由】
+        ///   OrbitCameraController が orthographicSize = Distance * tan(fov/2) を
+        ///   保っているので、「画面の半分の高さがワールドで何単位か」を基準にすれば
+        ///   透視・正投影のどちらでも同じ意味になる。
+        ///
+        /// 倍率は BoneShapeVertices の先端 y（= ObjectPoseWedgeShape.UnitTipY）で
+        /// 全長を割った値。ObjectPoseWedgeShape.Build の k = size / UnitTipY と同じ換算。
+        /// </summary>
+        private static float WedgeWorldScale(Camera cam, Vector3 worldPos)
+        {
+            if (cam == null) return 0f;
+            int px = cam.pixelHeight;
+            if (px <= 0) return 0f;
+
+            float halfH = cam.orthographic
+                ? cam.orthographicSize
+                : Vector3.Distance(cam.transform.position, worldPos)
+                  * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            if (halfH <= 0f) return 0f;
+
+            float worldPerPixel = (halfH * 2f) / px;
+            float length        = WedgeScreenLength * worldPerPixel;
+            return length / Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeShape.UnitTipY;
+        }
+
+        /// <summary>
+        /// くさび仮表示のワールド行列（位置＋姿勢へ残る回転）。
+        /// 位置の扱いは LiveWireMatrix と同じ規則。
+        /// </summary>
+        private Matrix4x4 PoseWedgeMatrix()
+        {
+            var local = Matrix4x4.TRS(_worldPos, Quaternion.Euler(PoseRotation), Vector3.one);
+            if (_addMode != PrimitiveAddMode.AddToExisting) return local;
+            var parent = GetAddTargetWorldMatrix?.Invoke() ?? Matrix4x4.identity;
+            return parent * local;
+        }
+
+        /// <summary>
         /// ライブワイヤの配置行列。回転・スケールは Generate() で頂点へ焼き込み済みのため、
         /// ここで扱うのは生成位置のみ。
         /// <para>
@@ -1008,6 +1225,24 @@ namespace Poly_Ling.Player
             _liveWireMat.SetInt("_ZWrite", 0);
         }
 
+        /// <summary>
+        /// くさび仮表示用マテリアル。作り方は EnsureLiveWireMaterial と同じで、
+        /// 色だけ MeshSceneRenderer のメッシュ原点マーカーに合わせた緑にする。
+        /// </summary>
+        private void EnsureWedgeMaterial()
+        {
+            if (_wedgeMat != null) return;
+
+            var sh = Shader.Find("Hidden/Internal-Colored")
+                  ?? Shader.Find("Unlit/Color");
+            if (sh == null) return;
+
+            _wedgeMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            _wedgeMat.SetColor("_Color", new Color(0.4f, 1f, 0.4f, 0.8f));
+            _wedgeMat.SetInt("_ZTest",  (int)CompareFunction.Always);
+            _wedgeMat.SetInt("_ZWrite", 0);
+        }
+
         public void Dispose()
         {
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
@@ -1018,6 +1253,16 @@ namespace Poly_Ling.Player
             {
                 UnityEngine.Object.Destroy(_liveWireMat);
                 _liveWireMat = null;
+            }
+            if (_wedgeMat != null)
+            {
+                UnityEngine.Object.Destroy(_wedgeMat);
+                _wedgeMat = null;
+            }
+            if (_wedgeMesh != null)
+            {
+                UnityEngine.Object.Destroy(_wedgeMesh);
+                _wedgeMesh = null;
             }
         }
 
@@ -1169,6 +1414,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonStar:     BuildNGonStarUI(_settingsContainer);     break;
                 case ShapeKind.InvoluteGear: BuildInvoluteGearUI(_settingsContainer); break;
                 case ShapeKind.StadiumBox:   BuildStadiumBoxUI(_settingsContainer);   break;
+                case ShapeKind.PipeStadium:  BuildPipeStadiumUI(_settingsContainer);  break;
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -1774,7 +2020,7 @@ namespace Poly_Ling.Player
             // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
             void LoadRevCsv()
             {
-                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), _revCsvPath, "csv");
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), RevCsvKey, _revCsvPath, "csv");
                 if (string.IsNullOrEmpty(sel)) return;
                 _revCsvPath = sel;
                 csvPathField.value = _revCsvPath;
@@ -1813,7 +2059,7 @@ namespace Poly_Ling.Player
             revCsvFold.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
                 // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), _revCsvPath, "revolution.csv", "csv");
+                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), RevCsvKey, _revCsvPath, "revolution.csv", "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 _revCsvPath = save;
                 csvPathField.SetValueWithoutNotify(_revCsvPath);
@@ -2916,7 +3162,7 @@ namespace Poly_Ling.Player
             // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
             void LoadP2dCsv()
             {
-                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), _p2dCsvPath, "csv");
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), P2dCsvKey, _p2dCsvPath, "csv");
                 if (string.IsNullOrEmpty(sel)) return;
                 _p2dCsvPath = sel;
                 csvTf.value = _p2dCsvPath;
@@ -2940,7 +3186,7 @@ namespace Poly_Ling.Player
                 if (_p2dLoops == null) return;
 
                 // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), _p2dCsvPath, "profile2d.csv", "csv");
+                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), P2dCsvKey, _p2dCsvPath, "profile2d.csv", "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 _p2dCsvPath = save;
                 csvTf.SetValueWithoutNotify(_p2dCsvPath);
@@ -3782,7 +4028,7 @@ namespace Poly_Ling.Player
             // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
             void LoadBgImage()
             {
-                string path = PlayerIoUiKit.AskLoadPath("Select Image", getPath(), "png,jpg,jpeg");
+                string path = PlayerIoUiKit.AskLoadPath("Select Image", bgKey, getPath(), "png,jpg,jpeg");
                 if (string.IsNullOrEmpty(path)) return;
                 pathField.value = path;
                 onLoad();
@@ -3988,7 +4234,7 @@ namespace Poly_Ling.Player
             lmField.RegisterValueChangedCallback(e => { _nohP.LandmarksFilePath = e.newValue; RecentPaths.Set(NohLmKey, e.newValue); D(); });
             c.Add(PlayerIoUiKit.PathRow(lmField, () =>
             {
-                string path = PlayerIoUiKit.AskLoadPath("Open Landmarks JSON", _nohP.LandmarksFilePath, "json");
+                string path = PlayerIoUiKit.AskLoadPath("Open Landmarks JSON", NohLmKey, _nohP.LandmarksFilePath, "json");
                 if (!string.IsNullOrEmpty(path)) lmField.value = path;
             }));
 
@@ -3999,7 +4245,7 @@ namespace Poly_Ling.Player
             triField.RegisterValueChangedCallback(e => { _nohP.TrianglesFilePath = e.newValue; RecentPaths.Set(NohTriKey, e.newValue); D(); });
             c.Add(PlayerIoUiKit.PathRow(triField, () =>
             {
-                string path = PlayerIoUiKit.AskLoadPath("Open Triangles JSON", _nohP.TrianglesFilePath, "json");
+                string path = PlayerIoUiKit.AskLoadPath("Open Triangles JSON", NohTriKey, _nohP.TrianglesFilePath, "json");
                 if (!string.IsNullOrEmpty(path)) triField.value = path;
             }));
 
@@ -4041,11 +4287,9 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            string saveDir  = RecentPaths.Get(NohSaveKey);
-            string basePath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(
-                "メッシュをJSON保存", string.IsNullOrEmpty(saveDir) ? "" : System.IO.Path.GetDirectoryName(saveDir), "facemesh.json", "json");
+            string basePath = PlayerIoUiKit.AskSavePath(
+                "メッシュをJSON保存", NohSaveKey, null, "facemesh.json", "json");
             if (string.IsNullOrEmpty(basePath)) return;
-            RecentPaths.Set(NohSaveKey, basePath);
 
             string dir  = System.IO.Path.GetDirectoryName(basePath);
             string stem = System.IO.Path.GetFileNameWithoutExtension(basePath);
@@ -4361,6 +4605,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonStar:     return _ngonStarP.MeshName;
                 case ShapeKind.InvoluteGear: return _involGearP.MeshName;
                 case ShapeKind.StadiumBox:   return _stadiumP.MeshName;
+                case ShapeKind.PipeStadium:  return _pipeStadiumP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
                 case ShapeKind.Bridge:     return BridgeMeshName;
@@ -4391,6 +4636,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonStar:     _ngonStarP.MeshName = name; break;
                 case ShapeKind.InvoluteGear: _involGearP.MeshName = name; break;
                 case ShapeKind.StadiumBox:   _stadiumP.MeshName   = name; break;
+                case ShapeKind.PipeStadium:  _pipeStadiumP.MeshName = name; break;
                 // 穴つなぎも非重複候補の対象にする（Name() は BridgeMeshName を返すため、
                 // ここを欠かすと RefreshMeshNameCandidate が名前を書き戻せない）。
                 case ShapeKind.Bridge:      SetBridgeMeshName(name); break;
@@ -5001,45 +5247,34 @@ namespace Poly_Ling.Player
             b.style.height = 18; b.style.fontSize = 9; p.Add(b);
         }
 
-        /// <summary>配置ギズモのサブモードボタンを1つ作って行へ追加する。</summary>
-        private Button PGB(VisualElement row, string label,
-                           PrimitivePlaceToolHandler.PlaceGizmoMode mode)
+        /// <summary>配置ギズモ・姿勢仮表示のチェックを1つ作る（追加は呼出側）。</summary>
+        private static Toggle PlaceToggle(string label, string tooltip)
         {
-            var b = new Button(() =>
-            {
-                SetPlaceGizmoMode?.Invoke(mode);
-                RefreshPlaceGizmoButtons();
-            }) { text = label };
-            b.style.flexGrow = 1; b.style.marginRight = 2;
-            b.style.height = 18; b.style.fontSize = 9;
-            row.Add(b);
-            return b;
+            var t = new Toggle(label) { value = false };
+            t.style.color = new StyleColor(Color.white);
+            t.tooltip     = tooltip;
+            return t;
         }
 
         /// <summary>
-        /// 配置ギズモのサブモードボタンの背景色を現在のモードに合わせる。
-        /// ApplyDarkTheme は全 Button を既定色へ戻すため、その後にも呼ぶこと。
+        /// チェックの表示値を PrimitivePlaceSettings に合わせ直す。
+        /// 設定側に排他（拡大縮小 ON → 移動 OFF）があるため、
+        /// 変更のたびに全部読み直す。
         /// </summary>
-        public void RefreshPlaceGizmoButtons()
+        public void RefreshPlaceToggles()
         {
-            if (_placeGizmoBtns == null) return;
+            var s = PlaceSettings;
+            if (s == null) return;
 
-            var cur = GetPlaceGizmoMode != null
-                ? GetPlaceGizmoMode()
-                : PrimitivePlaceToolHandler.PlaceGizmoMode.Move;
-
-            var on  = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
-            var off = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
-
-            void Paint(int i, PrimitivePlaceToolHandler.PlaceGizmoMode m)
+            _suppressPlaceToggles = true;
+            try
             {
-                if (i >= _placeGizmoBtns.Length || _placeGizmoBtns[i] == null) return;
-                _placeGizmoBtns[i].style.backgroundColor = (m == cur) ? on : off;
+                _togShowMoveGizmo?.SetValueWithoutNotify(s.ShowMoveGizmo);
+                _togShowRotationGizmo?.SetValueWithoutNotify(s.ShowRotationGizmo);
+                _togShowOriginMarker?.SetValueWithoutNotify(s.ShowOriginMarker);
+                _togShowWedge?.SetValueWithoutNotify(s.ShowWedge);
             }
-
-            Paint(0, PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
-            Paint(1, PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
-            Paint(2, PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
+            finally { _suppressPlaceToggles = false; }
         }
     }
 }

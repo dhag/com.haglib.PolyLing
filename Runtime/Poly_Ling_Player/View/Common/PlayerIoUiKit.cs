@@ -5,10 +5,10 @@
 // Runtime/Poly_Ling_Player/View/Common/ に配置
 
 using System;
-using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.EditorBridge;
+using RecentFileDialog = Poly_Ling.Core.RecentFileDialog;
 
 namespace Poly_Ling.Player
 {
@@ -112,62 +112,52 @@ namespace Poly_Ling.Player
         // 読込パス欄と保存パス欄を兼ねる画面では、パスが埋まっているときに
         // 保存ダイアログを省くと、読み込んだファイルを無確認で上書きしてしまう。
         // 保存は必ず AskSavePath を通し、パス欄の値はダイアログの初期値としてだけ使う。
+        //
+        // 【recentKey が必須である理由】
+        //   以前ここは PLEditorBridge を直接叩くだけで、履歴（RecentPaths）へ
+        //   一切書いていなかった。初期値の置き場をパネルの TextField 任せに
+        //   していたため、欄を自前で永続化していないパネルでは、次に開いた
+        //   ときにフォルダもファイル名も消えていた。
+        //   履歴の責務を呼び出し側へ配ると必ず実装漏れが出るので、
+        //   キーを必須引数にして RecentFileDialog へ一本化する。
+        //   キーは他パネルと衝突しない固有名にすること（例 "Export.PMX"）。
         // ================================================================
 
         /// <summary>
         /// 保存先を保存ダイアログで確定する。
-        /// 初期フォルダと初期ファイル名は currentPath から取り、空なら defaultName を使う。
-        /// キャンセル時は空文字を返す。
+        /// 初期値は currentPath を優先し、空なら recentKey の履歴を使う。
+        /// どちらからもファイル名が取れないときだけ defaultName を使う。
+        /// 確定したパスは履歴へ書き戻す。キャンセル時は空文字を返す。
         /// </summary>
-        public static string AskSavePath(string title, string currentPath, string defaultName, string extension)
-        {
-            string dir  = "";
-            string name = defaultName;
-
-            if (!string.IsNullOrEmpty(currentPath))
-            {
-                try
-                {
-                    string d = Path.GetDirectoryName(currentPath);
-                    if (!string.IsNullOrEmpty(d)) dir = d;
-                    string n = Path.GetFileName(currentPath);
-                    if (!string.IsNullOrEmpty(n)) name = n;
-                }
-                catch (ArgumentException)
-                {
-                    // 不正な文字を含むパスは初期値として使わない。
-                }
-            }
-
-            return PLEditorBridge.I.SaveFilePanel(title, dir, name, extension);
-        }
+        public static string AskSavePath(
+            string title, string recentKey, string currentPath, string defaultName, string extension)
+            => RecentFileDialog.AskSaveTo(title, recentKey, currentPath, defaultName, extension);
 
         /// <summary>
         /// 読込元をファイル選択ダイアログで確定する。
-        /// 初期フォルダと初期ファイル名は currentPath から取る。キャンセル時は空文字を返す。
-        /// 初期ファイル名が反映されるのは Player 実装のみ（Editor 実装は無視する）。
+        /// 初期値は currentPath を優先し、空なら recentKey の履歴を使う。
+        /// 確定したパスは履歴へ書き戻す。キャンセル時は空文字を返す。
+        /// 初期ファイル名が反映されるのは Windows のみ。
         /// </summary>
-        public static string AskLoadPath(string title, string currentPath, string extension)
+        public static string AskLoadPath(
+            string title, string recentKey, string currentPath, string extension)
+            => RecentFileDialog.AskLoadFrom(title, recentKey, currentPath, extension);
+
+        /// <summary>
+        /// フォルダをフォルダ選択ダイアログで確定する。
+        /// 初期フォルダは currentPath を優先し、空なら recentKey の履歴を使う。
+        /// 確定したフォルダは履歴へ書き戻す。キャンセル時は空文字を返す。
+        /// </summary>
+        public static string AskFolderPath(string title, string recentKey, string currentPath)
         {
-            string dir  = "";
-            string name = "";
+            string seed = !string.IsNullOrEmpty(currentPath)
+                ? currentPath
+                : Poly_Ling.Core.RecentPaths.Get(recentKey);
 
-            if (!string.IsNullOrEmpty(currentPath))
-            {
-                try
-                {
-                    string d = Path.GetDirectoryName(currentPath);
-                    if (!string.IsNullOrEmpty(d)) dir = d;
-                    string n = Path.GetFileName(currentPath);
-                    if (!string.IsNullOrEmpty(n)) name = n;
-                }
-                catch (ArgumentException)
-                {
-                    // 不正な文字を含むパスは初期値として使わない。
-                }
-            }
-
-            return PLEditorBridge.I.OpenFilePanel(title, dir, name, extension);
+            string path = PLEditorBridge.I.OpenFolderPanel(title, seed ?? "", "");
+            if (!string.IsNullOrEmpty(path))
+                Poly_Ling.Core.RecentPaths.Set(recentKey, path);
+            return path;
         }
 
         /// <summary>縦スペーサ。</summary>

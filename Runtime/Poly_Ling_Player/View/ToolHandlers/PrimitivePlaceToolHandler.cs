@@ -22,16 +22,21 @@ using Poly_Ling.Tools;
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// 図形の配置ギズモ。移動 / 回転 / スケールをサブモードで切り替える。
+    /// 図形の配置ギズモ。表示は PrimitivePlaceSettings のチェックで決める。
     /// <para>
-    /// GizmoData（PlayerViewportPanel）は矢印 / リング / キューブを排他的にしか
-    /// 描画できないため、3種を同時には出さずサブモードで切り替える設計とする。
+    /// 回転リングは矢印 / キューブとは別スロット（GizmoData.RingX/Y/Z）なので
+    /// 同時に出せる。移動の矢印と拡大縮小のキューブは軸ギズモの座標 1 組を
+    /// 共有するため同時には出せず、PrimitivePlaceSettings 側で排他になっている。
+    /// </para>
+    /// <para>
+    /// 掴んだときの動作は「当たった要素」で決める。リング＝回転、
+    /// 軸ギズモ＝拡大縮小表示中なら拡大縮小、そうでなければ移動。
     /// </para>
     /// </summary>
     public class PrimitivePlaceToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
-        /// <summary>配置ギズモのサブモード。</summary>
-        public enum PlaceGizmoMode { Move, Rotate, Scale }
+        /// <summary>ドラッグ中の操作種別。</summary>
+        private enum DragKind { None, Move, Rotate, Scale }
 
         // ================================================================
         // 外部コールバック（Viewer から設定）
@@ -72,19 +77,35 @@ namespace Poly_Ling.Player
         // 状態
         // ================================================================
 
-        /// <summary>現在のサブモード。</summary>
-        public PlaceGizmoMode Mode { get; set; } = PlaceGizmoMode.Move;
+        /// <summary>
+        /// 表示設定。Viewer が生成した 1 個をサブパネルと共有する。
+        /// 未設定にしないため既定インスタンスを持たせておく。
+        /// </summary>
+        public PrimitivePlaceSettings Settings { get; set; } = new PrimitivePlaceSettings();
+
+        /// <summary>軸ギズモ（矢印またはキューブ）を出すか。</summary>
+        private bool ShowArrows
+            => Settings != null && (Settings.ShowMoveGizmo || Settings.ShowScaleGizmo);
+
+        /// <summary>軸ギズモを拡大縮小として扱うか。false なら移動。</summary>
+        private bool ArrowIsScale => Settings != null && Settings.ShowScaleGizmo;
+
+        /// <summary>回転リングを出すか。</summary>
+        private bool ShowRings => Settings != null && Settings.ShowRotationGizmo;
 
         private readonly AxisGizmo       _axisGizmo = new AxisGizmo();
         private readonly RotateRingGizmo _ringGizmo = new RotateRingGizmo();
 
         private AxisGizmo.AxisType _hoverAxis = AxisGizmo.AxisType.None;
         private AxisGizmo.AxisType _dragAxis  = AxisGizmo.AxisType.None;
+        private DragKind           _dragKind  = DragKind.None;
 
         // GizmoHitTest で当てた軸を BeginGizmoDrag まで持ち越すための控え。
         // フック経由の呼び出しは (ヒットテスト) → (ドラッグ開始) の2段になり、
         // 後者はスクリーン座標を受け取らないため、ここで押下位置も控える。
+        // 当てた要素で操作種別が決まるので、種別も一緒に控える。
         private AxisGizmo.AxisType _pendingAxis   = AxisGizmo.AxisType.None;
+        private DragKind           _pendingKind   = DragKind.None;
         private Vector2            _pendingScreen = Vector2.zero;
 
         // ドラッグ開始時のスナップショット
@@ -110,12 +131,16 @@ namespace Poly_Ling.Player
             if (ctx == null) { _hoverAxis = AxisGizmo.AxisType.None; return; }
 
             var imgui = ToImgui(screenPos);
-            if (Mode == PlaceGizmoMode.Rotate)
+            _hoverAxis = AxisGizmo.AxisType.None;
+
+            // リングを先に見る。リングと矢印が重なる位置では回転を優先する
+            // （GizmoHitTest と同じ順序にしないと、見た目と掴める対象がずれる）。
+            if (ShowRings)
             {
                 _ringGizmo.Center = GizmoCenter();
                 _hoverAxis = _ringGizmo.FindRingAtScreenPos(imgui, ctx);
             }
-            else
+            if (_hoverAxis == AxisGizmo.AxisType.None && ShowArrows)
             {
                 _axisGizmo.Center = GizmoCenter();
                 _hoverAxis = _axisGizmo.FindAxisAtScreenPos(imgui, ctx);
@@ -158,56 +183,78 @@ namespace Poly_Ling.Player
         public bool GizmoHitTest(Vector2 screenPos, ToolContext ctx)
         {
             _pendingAxis = AxisGizmo.AxisType.None;
+            _pendingKind = DragKind.None;
             if (ctx == null) return false;
 
             Vector3 center = GizmoCenter();
             Vector2 imgui  = ToImgui(screenPos);
 
-            AxisGizmo.AxisType axis;
-            if (Mode == PlaceGizmoMode.Rotate)
+            if (ShowRings)
             {
                 _ringGizmo.Center = center;
-                axis = _ringGizmo.FindRingAtScreenPos(imgui, ctx);
+                var ringAxis = _ringGizmo.FindRingAtScreenPos(imgui, ctx);
+                if (ringAxis != AxisGizmo.AxisType.None)
+                {
+                    _pendingAxis   = ringAxis;
+                    _pendingKind   = DragKind.Rotate;
+                    _pendingScreen = screenPos;
+                    return true;
+                }
             }
-            else
+
+            if (ShowArrows)
             {
                 _axisGizmo.Center = center;
-                axis = _axisGizmo.FindAxisAtScreenPos(imgui, ctx);
+                var axis = _axisGizmo.FindAxisAtScreenPos(imgui, ctx);
+                if (axis != AxisGizmo.AxisType.None)
+                {
+                    _pendingAxis   = axis;
+                    _pendingKind   = ArrowIsScale ? DragKind.Scale : DragKind.Move;
+                    _pendingScreen = screenPos;
+                    return true;
+                }
             }
-            if (axis == AxisGizmo.AxisType.None) return false;
 
-            _pendingAxis   = axis;
-            _pendingScreen = screenPos;
-            return true;
+            return false;
         }
 
         /// <summary>ドラッグセッション開始（OnDragStartExtra 用）。true でギズモ操作へ。</summary>
         public bool BeginGizmoDrag()
         {
             _dragAxis = AxisGizmo.AxisType.None;
+            _dragKind = DragKind.None;
             if (_pendingAxis == AxisGizmo.AxisType.None) return false;
 
             var ctx = GetToolContext?.Invoke();
-            if (ctx == null) { _pendingAxis = AxisGizmo.AxisType.None; return false; }
+            if (ctx == null)
+            {
+                _pendingAxis = AxisGizmo.AxisType.None;
+                _pendingKind = DragKind.None;
+                return false;
+            }
 
             var axis = _pendingAxis;
+            var kind = _pendingKind;
             _pendingAxis = AxisGizmo.AxisType.None;
+            _pendingKind = DragKind.None;
 
-            if (Mode == PlaceGizmoMode.Rotate)
+            if (kind == DragKind.Rotate)
             {
                 // 開始角・軸符号の算出は RotateRingGizmo の角度ドラッグセッションに集約。
                 _ringGizmo.Center = GizmoCenter();
                 if (!_ringGizmo.BeginAngleDrag(ctx, ToImgui(_pendingScreen), axis)) return false;
 
                 _dragAxis      = axis;
+                _dragKind      = DragKind.Rotate;
                 _startRotation = GetRotation?.Invoke() ?? Vector3.zero;
                 return true;
             }
 
             _axisGizmo.Center = GizmoCenter();
             _dragAxis = axis;
+            _dragKind = kind;
 
-            if (Mode == PlaceGizmoMode.Scale)
+            if (kind == DragKind.Scale)
             {
                 _startScale = GetScale?.Invoke() ?? Vector3.one;
                 // 軸スクリーン方向の算出は AxisGizmo のスケールドラッグセッションに集約。
@@ -224,11 +271,12 @@ namespace Poly_Ling.Player
             var ctx = GetToolContext?.Invoke();
             if (ctx == null) return;
 
-            switch (Mode)
+            switch (_dragKind)
             {
-                case PlaceGizmoMode.Move:   DragMove(screenDelta, ctx); break;
-                case PlaceGizmoMode.Rotate: DragRotate(screenPos);      break;
-                case PlaceGizmoMode.Scale:  DragScale(screenPos);       break;
+                case DragKind.Move:   DragMove(screenDelta, ctx); break;
+                case DragKind.Rotate: DragRotate(screenPos);      break;
+                case DragKind.Scale:  DragScale(screenPos);       break;
+                default: return;
             }
 
             OnValueChanged?.Invoke();
@@ -239,7 +287,9 @@ namespace Poly_Ling.Player
         public void EndGizmoDrag()
         {
             _dragAxis    = AxisGizmo.AxisType.None;
+            _dragKind    = DragKind.None;
             _pendingAxis = AxisGizmo.AxisType.None;
+            _pendingKind = DragKind.None;
             _ringGizmo.EndAngleDrag();
             _axisGizmo.EndScaleDrag();
             OnRepaint?.Invoke();
@@ -311,7 +361,7 @@ namespace Poly_Ling.Player
         // ギズモスクリーン座標（UpdateGizmoOverlay 用）
         // ================================================================
 
-        /// <summary>移動 / スケールの軸ギズモ座標。回転モードのときは false。</summary>
+        /// <summary>移動 / 拡大縮小の軸ギズモ座標。どちらも非表示のときは false。</summary>
         public bool TryGetGizmoScreenPositions(
             ToolContext ctx,
             out Vector2 origin, out Vector2 xEnd, out Vector2 yEnd, out Vector2 zEnd,
@@ -320,7 +370,7 @@ namespace Poly_Ling.Player
             origin = xEnd = yEnd = zEnd = Vector2.zero;
             hoveredAxis = AxisGizmo.AxisType.None;
 
-            if (ctx == null || Mode == PlaceGizmoMode.Rotate) return false;
+            if (ctx == null || !ShowArrows) return false;
 
             _axisGizmo.Center       = GizmoCenter();
             _axisGizmo.HoveredAxis  = _hoverAxis;
@@ -330,7 +380,7 @@ namespace Poly_Ling.Player
             return true;
         }
 
-        /// <summary>回転リング座標。回転モード以外のときは false。</summary>
+        /// <summary>回転リング座標。回転ギズモ非表示のときは false。</summary>
         public bool TryGetGizmoRings(
             ToolContext ctx,
             out Vector2[] ringX, out Vector2[] ringY, out Vector2[] ringZ,
@@ -339,7 +389,7 @@ namespace Poly_Ling.Player
             ringX = ringY = ringZ = null;
             hoveredAxis = AxisGizmo.AxisType.None;
 
-            if (ctx == null || Mode != PlaceGizmoMode.Rotate) return false;
+            if (ctx == null || !ShowRings) return false;
 
             _ringGizmo.Center = GizmoCenter();
             ringX = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.X);
@@ -351,37 +401,36 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。
-        /// Rotate はリング、Scale はキューブ、Move はオブジェクト姿勢と同じ矢印。
+        /// 回転はリング、拡大縮小はキューブ、移動はオブジェクト姿勢と同じ矢印。
+        /// リングと軸ギズモは DrawAxisWithRing で同時に描く
+        /// （ObjectMoveToolHandler.TryBuildGizmoData と同じ組み立て方）。
+        /// どちらも無ければ false を返し、呼び出し側が HideGizmo する。
         /// </summary>
         public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
         {
             data = default;
 
-            if (Mode == PlaceGizmoMode.Rotate)
-            {
-                if (!TryGetGizmoRings(ctx, out var prx, out var pry, out var prz, out var pha))
-                    return false;
+            bool hasAxis = TryGetGizmoScreenPositions(
+                ctx, out var po, out var pxe, out var pye, out var pze, out var axisHover);
+            bool hasRing = TryGetGizmoRings(
+                ctx, out var prx, out var pry, out var prz, out var ringHover);
 
-                data = new PlayerViewportPanel.GizmoData
-                {
-                    HasGizmo    = true,
-                    IsRingStyle = true,
-                    RingX = prx, RingY = pry, RingZ = prz,
-                    HoveredAxis = pha,
-                };
-                return true;
-            }
+            if (!hasAxis && !hasRing) return false;
 
-            if (!TryGetGizmoScreenPositions(ctx, out var po, out var pxe, out var pye, out var pze, out var pah))
-                return false;
+            // ホバーは UpdateHover でリング優先の排他にしてあるので、
+            // 非 None の方をそのまま採用する。
+            var shownHover = axisHover != AxisGizmo.AxisType.None ? axisHover : ringHover;
 
             data = new PlayerViewportPanel.GizmoData
             {
-                HasGizmo       = true,
-                IsCubeStyle    = Mode == PlaceGizmoMode.Scale,
-                IsDiamondStyle = false,
-                Origin         = po, XEnd = pxe, YEnd = pye, ZEnd = pze,
-                HoveredAxis    = pah,
+                HasGizmo         = true,
+                IsCubeStyle      = hasAxis && ArrowIsScale,
+                IsDiamondStyle   = false,
+                Origin           = po, XEnd = pxe, YEnd = pye, ZEnd = pze,
+                HoveredAxis      = shownHover,
+                IsRingStyle      = hasRing,
+                RingX = prx, RingY = pry, RingZ = prz,
+                DrawAxisWithRing = hasAxis,
             };
             return true;
         }

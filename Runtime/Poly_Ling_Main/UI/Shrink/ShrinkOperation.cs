@@ -77,6 +77,102 @@ namespace Poly_Ling.UI
             return solver.ComputeStopParams(beforeWorld, afterWorld, surfaceOffset, frontFaceOnly);
         }
 
+        /// <summary>
+        /// 判定方式で分岐する版。面方式では frontFaceOnly は使わない
+        /// （距離判定に面の向きの概念が無いため）。
+        /// </summary>
+        public static float[] ComputeStopParams(
+            ModelContext model,
+            int beforeIndex, int afterIndex,
+            IList<int> colliderIndices,
+            float surfaceOffset, bool frontFaceOnly,
+            ShrinkCollisionMode mode, int maxPasses,
+            Func<MeshContext, Vector3[]> getWorldPositions,
+            out string error)
+        {
+            if (mode == ShrinkCollisionMode.FacePair)
+            {
+                return ComputeStopParamsByFace(
+                    model, beforeIndex, afterIndex, colliderIndices,
+                    surfaceOffset, maxPasses, getWorldPositions,
+                    out error, out _);
+            }
+
+            return ComputeStopParams(
+                model, beforeIndex, afterIndex, colliderIndices,
+                surfaceOffset, frontFaceOnly, getWorldPositions, out error);
+        }
+
+        /// <summary>
+        /// 面方式。ビフォー面を三角形に割り、移動する三角形とコライダー三角形の
+        /// 接触時刻を保守的前進法で求め、面単位でまとめてから頂点へ配る。
+        /// 失敗時は null を返し error に理由を入れる。
+        /// </summary>
+        public static float[] ComputeStopParamsByFace(
+            ModelContext model,
+            int beforeIndex, int afterIndex,
+            IList<int> colliderIndices,
+            float surfaceOffset, int maxPasses,
+            Func<MeshContext, Vector3[]> getWorldPositions,
+            out string error,
+            out ShrinkFaceStats stats)
+        {
+            error = null;
+            stats = default;
+
+            if (model == null) { error = "モデルがありません"; return null; }
+            if (getWorldPositions == null) { error = "ワールド座標の取得経路が未配線です"; return null; }
+
+            var beforeCtx = model.GetMeshContext(beforeIndex);
+            var afterCtx  = model.GetMeshContext(afterIndex);
+            if (beforeCtx?.MeshObject == null) { error = "ビフォーオブジェクトが不正です"; return null; }
+            if (afterCtx?.MeshObject == null)  { error = "アフターオブジェクトが不正です"; return null; }
+            if (beforeIndex == afterIndex)     { error = "ビフォーとアフターが同一です"; return null; }
+
+            var beforeWorld = getWorldPositions(beforeCtx);
+            var afterWorld  = getWorldPositions(afterCtx);
+            if (beforeWorld == null) { error = "ビフォーのワールド座標を取得できません"; return null; }
+            if (afterWorld  == null) { error = "アフターのワールド座標を取得できません"; return null; }
+
+            var solver = new ShrinkFaceCollisionSolver();
+
+            if (colliderIndices != null)
+            {
+                foreach (int ci in colliderIndices)
+                {
+                    if (ci == beforeIndex || ci == afterIndex) continue;
+                    var cctx = model.GetMeshContext(ci);
+                    if (cctx?.MeshObject == null) continue;
+                    var cw = getWorldPositions(cctx);
+                    if (cw == null) continue;
+                    solver.AddColliderMesh(cctx.MeshObject, cw);
+                }
+            }
+
+            if (solver.ColliderTriangleCount == 0)
+                error = "衝突対象の三角形が0件です（全頂点がアフターまで移動します）";
+
+            var result = solver.ComputeStopParams(
+                beforeCtx.MeshObject, beforeWorld, afterWorld, surfaceOffset, maxPasses);
+
+            if (result == null)
+            {
+                if (string.IsNullOrEmpty(error)) error = "停止パラメータを算出できません";
+                return null;
+            }
+
+            stats = new ShrinkFaceStats
+            {
+                FaceCount             = solver.FaceCount,
+                StoppedFaceCount      = solver.StoppedFaceCount,
+                UsedPasses            = solver.UsedPasses,
+                HitPassLimit          = solver.HitPassLimit,
+                ColliderTriangleCount = solver.ColliderTriangleCount,
+            };
+
+            return result;
+        }
+
         // ================================================================
         // 確定
         // ================================================================

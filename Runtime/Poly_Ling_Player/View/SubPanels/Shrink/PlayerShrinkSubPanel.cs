@@ -22,6 +22,30 @@ namespace Poly_Ling.Player
     public class PlayerShrinkSubPanel
     {
         // ================================================================
+        // 判定方式
+        // ================================================================
+
+        /// <summary>
+        /// このパネルが使う衝突判定の単位。生成時に決め、以後変えない。
+        /// 左ペインの「シュリンカー(頂点)」と「シュリンカー(面)」がそれぞれの
+        /// 方式で本クラスを1つずつ持つ。
+        /// </summary>
+        private readonly ShrinkCollisionMode _mode;
+
+        public ShrinkCollisionMode Mode => _mode;
+
+        private bool IsFaceMode => _mode == ShrinkCollisionMode.FacePair;
+
+        public PlayerShrinkSubPanel(ShrinkCollisionMode mode = ShrinkCollisionMode.VertexSegment)
+        {
+            _mode = mode;
+            // 面方式は「面どうしの距離が余白まで詰まったら停止」なので、
+            // 余白が既定で正だと、最初から余白以内にある面が動かなくなる。
+            // 頂点方式（線分が面を貫いたら停止）と挙動を揃えるため 0 から始める。
+            _surfaceOffset = mode == ShrinkCollisionMode.FacePair ? 0f : 0.001f;
+        }
+
+        // ================================================================
         // コールバック（Viewer から設定）
         // ================================================================
 
@@ -73,7 +97,9 @@ namespace Poly_Ling.Player
         private readonly HashSet<int> _colliderIndices = new HashSet<int>();
 
         private float _slider             = 0f;
-        private float _surfaceOffset      = 0.001f;
+        private float _surfaceOffset;
+        /// <summary>面方式の反復上限。頂点方式では使わない。</summary>
+        private int   _maxPasses          = 8;
         // 既定は「両面にぶつかる」。表面のみにすると、衝突対象の内側から外へ向かう
         // 移動は一切止まらなくなる（出口面が候補から外れるため）。
         private bool  _frontFaceOnly      = false;
@@ -82,6 +108,7 @@ namespace Poly_Ling.Player
 
         private readonly ShrinkPreviewState _preview = new ShrinkPreviewState();
         private float[] _stopParams;
+        private ShrinkFaceStats _lastFaceStats;
 
         private readonly List<(int index, string name, int vertexCount)> _candidates
             = new List<(int, string, int)>();
@@ -97,6 +124,7 @@ namespace Poly_Ling.Player
         private VisualElement _afterListContainer;
         private VisualElement _colliderListContainer;
         private FloatField    _offsetField;
+        private IntegerField  _maxPassesField;
         private RadioButtonGroup _backfaceModeGroup;
         private Toggle        _toggleRecalcNormals;
         private RadioButtonGroup _resultModeGroup;
@@ -159,25 +187,49 @@ namespace Poly_Ling.Player
             _offsetField.RegisterValueChangedCallback(e => _surfaceOffset = Mathf.Max(0f, e.newValue));
             _mainContent.Add(_offsetField);
 
-            // ── 裏面判定（既定は両面）
-            _mainContent.Add(SecLabel("衝突対象の裏面"));
-            var backfaceChoices = new List<string>
+            if (IsFaceMode)
             {
-                "ぶつかる（既定）",
-                "ぶつからない（表面のみ）",
-            };
-            _backfaceModeGroup = new RadioButtonGroup(null, backfaceChoices) { value = _frontFaceOnly ? 1 : 0 };
-            _backfaceModeGroup.style.marginBottom = 4;
-            _backfaceModeGroup.RegisterValueChangedCallback(e =>
+                // ── 反復上限（面方式のみ）
+                // 面単位で止めると1つの面の頂点が別々の停止値を持ち、掃引中に一度も
+                // 判定していない配置が最終形状に出る。停止値を入力に同じ計算を繰り返せば
+                // 潰せる。停止値は単調減少するので必ず収束する。
+                _maxPassesField = new IntegerField("反復上限") { value = _maxPasses };
+                _maxPassesField.style.fontSize     = 10;
+                _maxPassesField.style.marginBottom = 4;
+                _maxPassesField.RegisterValueChangedCallback(e =>
+                {
+                    int v = Mathf.Clamp(e.newValue, 1, 64);
+                    if (v != e.newValue) _maxPassesField.SetValueWithoutNotify(v);
+                    if (_maxPasses == v) return;
+                    _maxPasses = v;
+                    CancelComputation();
+                    _shrinkSection.style.display = DisplayStyle.None;
+                });
+                _mainContent.Add(_maxPassesField);
+            }
+            else
             {
-                bool newFrontFaceOnly = (e.newValue == 1);
-                if (_frontFaceOnly == newFrontFaceOnly) return;
-                _frontFaceOnly = newFrontFaceOnly;
-                // 停止パラメータが変わるため、計算済みのプレビューは破棄する
-                CancelComputation();
-                _shrinkSection.style.display = DisplayStyle.None;
-            });
-            _mainContent.Add(_backfaceModeGroup);
+                // ── 裏面判定（既定は両面）
+                // 面方式では距離で判定するため面の向きの概念が無く、この設定は使わない。
+                _mainContent.Add(SecLabel("衝突対象の裏面"));
+                var backfaceChoices = new List<string>
+                {
+                    "ぶつかる（既定）",
+                    "ぶつからない（表面のみ）",
+                };
+                _backfaceModeGroup = new RadioButtonGroup(null, backfaceChoices) { value = _frontFaceOnly ? 1 : 0 };
+                _backfaceModeGroup.style.marginBottom = 4;
+                _backfaceModeGroup.RegisterValueChangedCallback(e =>
+                {
+                    bool newFrontFaceOnly = (e.newValue == 1);
+                    if (_frontFaceOnly == newFrontFaceOnly) return;
+                    _frontFaceOnly = newFrontFaceOnly;
+                    // 停止パラメータが変わるため、計算済みのプレビューは破棄する
+                    CancelComputation();
+                    _shrinkSection.style.display = DisplayStyle.None;
+                });
+                _mainContent.Add(_backfaceModeGroup);
+            }
 
             _toggleRecalcNormals = new Toggle("法線再計算") { value = _recalculateNormals };
             _toggleRecalcNormals.style.fontSize     = 10;
@@ -431,9 +483,24 @@ namespace Poly_Ling.Player
             // ワールド座標が要るのはこの時点だけ。毎フレームは呼ばない。
             OnRequestUpdateTransform?.Invoke();
 
-            var stops = ShrinkOperation.ComputeStopParams(
-                _model, _beforeIndex, _afterIndex, new List<int>(_colliderIndices),
-                _surfaceOffset, _frontFaceOnly, GetWorldPositions, out string error);
+            var colliders = new List<int>(_colliderIndices);
+
+            float[] stops;
+            string  error;
+            var     stats = default(ShrinkFaceStats);
+
+            if (IsFaceMode)
+            {
+                stops = ShrinkOperation.ComputeStopParamsByFace(
+                    _model, _beforeIndex, _afterIndex, colliders,
+                    _surfaceOffset, _maxPasses, GetWorldPositions, out error, out stats);
+            }
+            else
+            {
+                stops = ShrinkOperation.ComputeStopParams(
+                    _model, _beforeIndex, _afterIndex, colliders,
+                    _surfaceOffset, _frontFaceOnly, GetWorldPositions, out error);
+            }
 
             if (stops == null)
             {
@@ -444,6 +511,7 @@ namespace Poly_Ling.Player
             }
 
             _stopParams = stops;
+            _lastFaceStats = stats;
 
             if (!_preview.Start(_model, _beforeIndex, _afterIndex, _stopParams))
             {
@@ -458,12 +526,30 @@ namespace Poly_Ling.Player
             _preview.Apply(_model, 0f, BuildToolCtx());
 
             int stopped = _preview.CountStoppedVertices();
-            _statusLabel.style.color = string.IsNullOrEmpty(error)
-                ? new StyleColor(new Color(0.4f, 0.8f, 1f))
-                : new StyleColor(new Color(1f, 0.7f, 0.3f));
-            _statusLabel.text = string.IsNullOrEmpty(error)
-                ? $"衝突で停止する頂点: {stopped} / {_stopParams.Length}"
-                : error;
+
+            bool warn = !string.IsNullOrEmpty(error) || (IsFaceMode && _lastFaceStats.HitPassLimit);
+            _statusLabel.style.color = warn
+                ? new StyleColor(new Color(1f, 0.7f, 0.3f))
+                : new StyleColor(new Color(0.4f, 0.8f, 1f));
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                _statusLabel.text = error;
+            }
+            else if (IsFaceMode)
+            {
+                string conv = _lastFaceStats.HitPassLimit
+                    ? $"反復 {_lastFaceStats.UsedPasses} 回で上限に達しました（未収束）"
+                    : $"反復 {_lastFaceStats.UsedPasses} 回で収束";
+                _statusLabel.text =
+                    $"停止した面: {_lastFaceStats.StoppedFaceCount} / {_lastFaceStats.FaceCount}"
+                    + $"　停止した頂点: {stopped} / {_stopParams.Length}\n"
+                    + $"コライダー三角形: {_lastFaceStats.ColliderTriangleCount}　{conv}";
+            }
+            else
+            {
+                _statusLabel.text = $"衝突で停止する頂点: {stopped} / {_stopParams.Length}";
+            }
 
             // アフターを非表示にした状態を GPU バッファへ反映する（この時点で1回だけ）。
             OnNotifyTopologyChanged?.Invoke();
@@ -515,7 +601,7 @@ namespace Poly_Ling.Player
                     _getModelIndex?.Invoke() ?? 0,
                     beforeIndex, afterIndex, colliders,
                     slider, _surfaceOffset, _frontFaceOnly, _recalculateNormals,
-                    _createNewObject));
+                    _createNewObject, _mode, _maxPasses));
             }
             else
             {
@@ -523,7 +609,8 @@ namespace Poly_Ling.Player
                 OnRequestUpdateTransform?.Invoke();
                 var stops = ShrinkOperation.ComputeStopParams(
                     _model, beforeIndex, afterIndex, colliders,
-                    _surfaceOffset, _frontFaceOnly, GetWorldPositions, out _);
+                    _surfaceOffset, _frontFaceOnly, _mode, _maxPasses,
+                    GetWorldPositions, out _);
 
                 var ctx = BuildToolCtx();
                 var pv  = new ShrinkPreviewState();
@@ -549,6 +636,24 @@ namespace Poly_Ling.Player
             if (_sliderValueLabel != null) _sliderValueLabel.text = "0.00";
             _statusLabel.text = string.Empty;
             Refresh();
+        }
+
+        /// <summary>
+        /// プレビュー中なら破棄して元座標へ戻す。
+        /// プレビュー結果は MeshObject に直接書かれているため、パネルを隠すだけでは
+        /// 未確定の形状が残る。頂点方式と面方式の2枚が同じ MeshObject を触るので、
+        /// 切り替え時にこれを呼ばないと、もう一方が変形後の座標をバックアップに取り込む。
+        /// </summary>
+        public void CancelIfActive()
+        {
+            if (!_preview.IsActive) return;
+            EndPreview();
+            _stopParams = null;
+            _slider     = 0f;
+            _sliderShrink?.SetValueWithoutNotify(0f);
+            if (_sliderValueLabel != null) _sliderValueLabel.text = "0.00";
+            if (_statusLabel != null) _statusLabel.text = string.Empty;
+            if (_shrinkSection != null) _shrinkSection.style.display = DisplayStyle.None;
         }
 
         private void EndPreview()

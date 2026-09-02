@@ -102,6 +102,16 @@ namespace Poly_Ling.Diagnostics
         /// </summary>
         public static bool PickAutoDump = false;
 
+        /// <summary>
+        /// オブジェクトリストの選択同期ログ。既定 true。
+        ///
+        /// 3D で選んだオブジェクトがリストへ反映されるまでの経路
+        /// （通知の到達・マスタ索引・ツリー内 id・行の展開）を 1 回の同期につき
+        /// 1〜2 行だけ出す。頻度は選択変更のときだけなので常時 ON でも増え続けない。
+        /// 検証が済んだら false にしてよい。
+        /// </summary>
+        public static bool ListSel = true;
+
         /// <summary>全カテゴリをまとめて切り替える。</summary>
         public static void SetAll(bool on)
         {
@@ -115,6 +125,7 @@ namespace Poly_Ling.Diagnostics
             PickAutoDump = on;
             EditSync     = on;
             UndoVerbose  = on;
+            ListSel      = on;
         }
 
         // ================================================================
@@ -126,6 +137,13 @@ namespace Poly_Ling.Diagnostics
         {
             if (!Enabled || !EditSync) return;
             Debug.Log("[PL/Sync] " + text);
+        }
+
+        /// <summary>オブジェクトリストの選択同期。選択が動いたときだけ出る。</summary>
+        public static void SelList(string text)
+        {
+            if (!Enabled || !ListSel) return;
+            Debug.Log("[PL/ListSel] " + text);
         }
 
         /// <summary>Undo スタックの逐次ログ。既定では出さない。</summary>

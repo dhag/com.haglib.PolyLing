@@ -60,6 +60,13 @@ namespace Poly_Ling.Editor.Player
         {
             //_core?.Tick();/// <summary>この関数は利用してはならない。厳守せよ</summary>
             //_core?.LateTick();/// <summary>この関数は利用してはならない。厳守せよ</summary>
+
+            // ファイルダイアログ表示中は再描画しない。
+            // ネイティブのモーダル中もこの update は回り続けるため、ここで Repaint すると
+            // UIToolkit が保留イベントを処理し直し、ダイアログを開かせたクリックが
+            // 再配送されて同じダイアログが二重に開く。
+            if (FileDialogGuard.IsOpen) return;
+
             Repaint();
         }
 

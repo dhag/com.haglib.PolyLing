@@ -46,6 +46,12 @@ namespace Poly_Ling.Player
         public Func<Poly_Ling.Tools.ObjectMoveSettings> GetObjectMoveSettings;
 
         /// <summary>
+        /// ギズモ表示チェックを変えた直後にビューポートのギズモを組み直す要求。
+        /// OnRepaint（パネル再描画）とは別経路で、ViewerCore の UpdateGizmoOverlay を呼ぶ。
+        /// </summary>
+        public Action OnGizmoRefresh;
+
+        /// <summary>
         /// 「拡大縮小をベイク」実行要求。戻り値は結果メッセージ
         /// （適用件数とスキップ理由）で、そのままパネル内に表示する。
         /// </summary>
@@ -126,6 +132,8 @@ namespace Poly_Ling.Player
         // ここから操作する。GetObjectMoveSettings() 経由で同一インスタンスを共有。
         private Toggle        _toggleMoveWithChildren;
         private Toggle        _toggleOriginOnly;
+        private Toggle        _toggleShowMoveGizmo;
+        private Toggle        _toggleShowRotationGizmo;
         private Toggle        _toggleModeA;
         private Toggle        _toggleModeB;
         private Toggle        _toggleModeC;
@@ -150,7 +158,7 @@ namespace Poly_Ling.Player
             tabRow.style.flexDirection = FlexDirection.Row;
             tabRow.style.marginBottom  = 6;
             _tabBones  = MakeScopeTab("ボーン",               () => SetScope(SubPanelScope.BonesOnly));
-            _tabMeshes = MakeScopeTab("オブジェクト姿勢",       () => SetScope(SubPanelScope.MeshesOnly));
+            _tabMeshes = MakeScopeTab("描画オブジェクトの姿勢", () => SetScope(SubPanelScope.MeshesOnly));
             _tabBones.style.flexGrow = _tabMeshes.style.flexGrow = 1;
             tabRow.Add(_tabBones); tabRow.Add(_tabMeshes);
             root.Add(tabRow);
@@ -165,14 +173,24 @@ namespace Poly_Ling.Player
 
             _toggleMoveWithChildren  = new Toggle("子を一緒に移動") { value = true };
             _toggleOriginOnly        = new Toggle("原点だけ移動") { value = false };
+            _toggleShowMoveGizmo     = new Toggle("移動ギズモを表示") { value = true };
+            _toggleShowRotationGizmo = new Toggle("回転ギズモを表示") { value = false };
             _toggleModeA             = new Toggle("ボーンだけ動かす（スキン固定）") { value = true };
             _toggleModeB             = new Toggle("スキンごと動かして確定（焼き込み）") { value = false };
             _toggleModeC             = new Toggle("ポーズ（一時）") { value = false };
             _toggleMoveWithChildren.style.color  = new StyleColor(Color.white);
             _toggleOriginOnly.style.color        = new StyleColor(Color.white);
+            _toggleShowMoveGizmo.style.color     = new StyleColor(Color.white);
+            _toggleShowRotationGizmo.style.color = new StyleColor(Color.white);
             _toggleModeA.style.color             = new StyleColor(Color.white);
             _toggleModeB.style.color             = new StyleColor(Color.white);
             _toggleModeC.style.color             = new StyleColor(Color.white);
+
+            _toggleShowMoveGizmo.tooltip =
+                "OFF にすると矢印と中央ハンドルを消し、当たり判定も止める"
+                + "（オブジェクト原点をクリックで選びやすくする）";
+            _toggleShowRotationGizmo.tooltip =
+                "OFF にすると回転リングを消し、当たり判定も止める";
 
             _toggleMoveWithChildren.RegisterValueChangedCallback(e =>
             {
@@ -185,7 +203,32 @@ namespace Poly_Ling.Player
                 if (_suppressMoveSettings) return;
                 var s = GetObjectMoveSettings?.Invoke();
                 if (s != null) s.OriginOnly = e.newValue;
+
+                // 「原点だけ移動」を ON にしたときだけ「子を一緒に移動」を OFF にする。
+                // OFF にしたときは連動しない（子ごと動かすかは利用者が決める）。
+                if (e.newValue)
+                {
+                    if (s != null) s.MoveWithChildren = false;
+                    _suppressMoveSettings = true;
+                    try { _toggleMoveWithChildren?.SetValueWithoutNotify(false); }
+                    finally { _suppressMoveSettings = false; }
+                }
+
                 ApplyOriginOnlyVisibility();
+            });
+            _toggleShowMoveGizmo.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.AllowMoveGizmo = e.newValue;
+                OnGizmoRefresh?.Invoke();
+            });
+            _toggleShowRotationGizmo.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.AllowRotationGizmo = e.newValue;
+                OnGizmoRefresh?.Invoke();
             });
             _toggleModeA.RegisterValueChangedCallback(e =>
             {
@@ -218,17 +261,22 @@ namespace Poly_Ling.Player
                 Refresh();
             });
 
-            // 子を一緒に移動: ボーン/メッシュ両方に適用 → 共通（両タブで表示）
-            _commonMoveSection = new VisualElement();
-            _commonMoveSection.style.marginBottom = 6;
-            _commonMoveSection.Add(_toggleMoveWithChildren);
-            root.Add(_commonMoveSection);
-
-            // 原点だけ移動: MeshFilter 対象 → 「オブジェクト姿勢」タブ専用
+            // 原点だけ移動: MeshFilter 対象 → 「描画オブジェクトの姿勢」タブ専用。
+            // 「子を一緒に移動」より上に置く（下の連動と読み順を合わせるため）。
             _meshMoveOptionsSection = new VisualElement();
             _meshMoveOptionsSection.style.marginBottom = 6;
             _meshMoveOptionsSection.Add(_toggleOriginOnly);
             root.Add(_meshMoveOptionsSection);
+
+            // 子を一緒に移動: ボーン/メッシュ両方に適用 → 共通（両タブで表示）
+            // ギズモ表示チェックも同じ ObjectMoveTool を対象にするので同居させる。
+            _commonMoveSection = new VisualElement();
+            _commonMoveSection.style.marginBottom = 6;
+            _commonMoveSection.Add(_toggleMoveWithChildren);
+            _commonMoveSection.Add(_toggleShowMoveGizmo);
+            _commonMoveSection.Add(_toggleShowRotationGizmo);
+            _commonMoveSection.Add(BuildQuickOffsetRow());
+            root.Add(_commonMoveSection);
 
             // スキンモード A/B/C: 「ボーン」タブ専用
             _moveOptionsSection.Add(MakeSecLabel("移動モード"));
@@ -450,10 +498,25 @@ namespace Poly_Ling.Player
             _ignorePoseRow.Add(_originIncludeRotToggle);
             _ignorePoseRow.Add(originIoRow);
 
-            // ── 姿勢くさび（オブジェクト姿勢タブ専用）────────────────
-            // オブジェクト姿勢を、モデル内の表示用オブジェクトとして出し入れする。
-            _ignorePoseRow.Add(MakeSecLabel("姿勢くさび"));
-
+            // ── 姿勢くさび: UI のみ抑止（2026-09 時点）────────────────
+            //
+            // 【なぜ出さないか】
+            //   姿勢の可視化は既に MeshSceneRenderer が持っている。
+            //   同ファイルの「くさび形状（ボーン表示・メッシュオブジェクト原点表示で共用）」は
+            //   ObjectPoseWedgeShape と同じ軸規約・同じ「+Z を広くして 180 度の自己対称を壊す」
+            //   設計で、表示トグルの「選択M原点 / 非選M原点」で既に描かれている。
+            //   こちらは同じ形状を実メッシュとして生成し直す二重実装だった。
+            //   運ぶ情報（位置＋回転）も原点CSVと同じで、CSV の方が対象範囲が広い。
+            //
+            // 【何を残したか】
+            //   ボタンとフィールドを画面へ足すのをやめただけで、
+            //   ObjectPoseWedgeGenerator / Inserter / Reader / Shape、
+            //   Generate/ApplyObjectPoseWedgesCommand、ディスパッチャの処理、
+            //   原点CSV・Tポーズ側のくさび除外規則はすべてそのまま残してある。
+            //
+            // 【戻すとき】
+            //   下のコメントアウトを解除するだけでよい。_wedgeLengthField は
+            //   生成だけ済ませてあるので、GenerateObjectPoseWedges は今のまま動く。
             _wedgeLengthField = new FloatField("長さ")
             {
                 value = Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultWedgeLength
@@ -461,26 +524,20 @@ namespace Poly_Ling.Player
             _wedgeLengthField.tooltip =
                 "くさびの全長。実際の大きさは、これに各オブジェクトの拡大率平均を掛けたものになる";
             _wedgeLengthField.style.marginBottom = 2;
-            _ignorePoseRow.Add(_wedgeLengthField);
 
-            var wedgeIoRow = new VisualElement();
-            wedgeIoRow.style.flexDirection = FlexDirection.Row;
-
-            var wedgeGenBtn = new Button(GenerateObjectPoseWedges) { text = "姿勢くさび生成" };
-            var wedgeGetBtn = new Button(ImportObjectPoseWedges)   { text = "姿勢くさび取込" };
-            wedgeGenBtn.style.flexGrow = 1;
-            wedgeGetBtn.style.flexGrow = 1;
-            wedgeGenBtn.tooltip =
-                "全メッシュオブジェクトの姿勢を、新しい空オブジェクトの配下にくさびとして生成する\n" +
-                "名前は「元メッシュ名_bone」。階層はメッシュのまま・グローバル原点・" +
-                "位置0回転なしのものは空のオブジェクト";
-            wedgeGetBtn.tooltip =
-                "くさびのコンテナを選んで実行すると、名前（_bone を外したもの）一致で" +
-                "メッシュオブジェクトの姿勢に戻す\n未選択なら生成時の名前で自動検出・見た目は保つ";
-
-            wedgeIoRow.Add(wedgeGenBtn);
-            wedgeIoRow.Add(wedgeGetBtn);
-            _ignorePoseRow.Add(wedgeIoRow);
+            // _ignorePoseRow.Add(MakeSecLabel("姿勢くさび"));
+            // _ignorePoseRow.Add(_wedgeLengthField);
+            //
+            // var wedgeIoRow = new VisualElement();
+            // wedgeIoRow.style.flexDirection = FlexDirection.Row;
+            //
+            // var wedgeGenBtn = new Button(GenerateObjectPoseWedges) { text = "姿勢くさび生成" };
+            // var wedgeGetBtn = new Button(ImportObjectPoseWedges)   { text = "姿勢くさび取込" };
+            // wedgeGenBtn.style.flexGrow = 1;
+            // wedgeGetBtn.style.flexGrow = 1;
+            // wedgeIoRow.Add(wedgeGenBtn);
+            // wedgeIoRow.Add(wedgeGetBtn);
+            // _ignorePoseRow.Add(wedgeIoRow);
 
             root.Add(_ignorePoseRow);
 
@@ -489,6 +546,143 @@ namespace Poly_Ling.Player
             _statusLabel.style.color     = new StyleColor(Color.white);
             _statusLabel.style.marginTop = 6;
             root.Add(_statusLabel);
+        }
+
+        // ================================================================
+        // クイック操作（よく使う相対移動・相対回転）
+        // ================================================================
+
+        /// <summary>
+        /// 選択対象のローカル姿勢を決め打ちの量だけ動かすボタン行。
+        /// 値は現在値への加算で、複数選択でもそれぞれの現在値を基準にする。
+        /// </summary>
+        private VisualElement BuildQuickOffsetRow()
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginTop     = 2;
+
+            Button Make(string text, string tip, System.Action onClick)
+            {
+                var b = new Button(onClick) { text = text, tooltip = tip };
+                b.style.flexGrow      = 1;
+                b.style.height        = 20;
+                b.style.fontSize      = 9;
+                b.style.marginRight   = 2;
+                b.style.paddingLeft   = 2;
+                b.style.paddingRight  = 2;
+                row.Add(b);
+                return b;
+            }
+
+            Make("Z90度回転", "選択対象のローカル Z 回転に +90 度を足す",
+                 () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, 90f, "Z+90度回転"));
+            Make("Y0.1移動", "選択対象のローカル Y 位置に +0.1 を足す",
+                 () => OffsetTransform(SetBoneTransformValueCommand.Field.PositionY, 0.1f, "Y+0.1移動"));
+            var last = Make("Z-90度回転", "選択対象のローカル Z 回転に −90 度を足す",
+                 () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, -90f, "Z-90度回転"));
+            last.style.marginRight = 0;
+
+            return row;
+        }
+
+        /// <summary>
+        /// ローカル姿勢の 1 軸を相対で動かす。
+        ///
+        /// 【既存の Begin → Set → End 経路へ流す理由】
+        ///   「原点だけ移動」の自頂点再ローカル化、スキン固定の BindPose 追従、
+        ///   ポーズ層への書き分け、Undo スナップショットは全て
+        ///   PlayerCommandDispatcher の SetBoneTransformValueCommand 側にある。
+        ///   専用の相対コマンドを足すとこの後処理を丸ごと書き写すことになるので、
+        ///   ここでは「現在値 + 差分」を求めて既存コマンドへ渡すだけにする。
+        ///
+        /// 現在値はオブジェクトごとに違うため 1 件ずつ送る
+        /// （SetBoneTransformValueCommand は配列全員へ同じ値を代入するので束ねられない）。
+        /// </summary>
+        private void OffsetTransform(
+            SetBoneTransformValueCommand.Field field, float delta, string undoLabel)
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) return;
+
+            var indices = GetTargetIndices();
+            if (indices.Length == 0) return;
+
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            var mvs      = GetObjectMoveSettings?.Invoke();
+            bool poseMode = mvs != null && mvs.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer;
+
+            SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices)
+            {
+                Mode       = mvs?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                OriginOnly = IsOriginOnlyActive(),
+            });
+
+            bool isRotation =
+                field == SetBoneTransformValueCommand.Field.RotationX ||
+                field == SetBoneTransformValueCommand.Field.RotationY ||
+                field == SetBoneTransformValueCommand.Field.RotationZ;
+
+            foreach (int idx in indices)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc == null) continue;
+                if (!TryReadTransformValue(mc, field, poseMode, out float cur)) continue;
+
+                float next = cur + delta;
+                // 回転は押すたびに 360 を超えて伸びていくので毎回畳む。
+                if (isRotation) next = NormAngle180(next);
+
+                SendCommand(new SetBoneTransformValueCommand(modelIdx, new[] { idx }, field, next));
+            }
+
+            SendCommand(new EndBoneTransformSliderDragCommand(modelIdx, undoLabel));
+            Refresh();
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// 相対操作の基準値を読む。TRS 欄が表示しているのと同じ値を返す
+        /// （モードC はポーズ層 "Manual" の差分、それ以外は BoneTransform）。
+        /// </summary>
+        private static bool TryReadTransformValue(
+            MeshContext mc, SetBoneTransformValueCommand.Field field, bool poseMode, out float value)
+        {
+            value = 0f;
+
+            if (poseMode)
+            {
+                var layer = mc.BonePoseData?.GetLayer("Manual");
+                Vector3 pRot = layer != null ? NormEuler180(layer.DeltaRotation.eulerAngles) : Vector3.zero;
+                Vector3 pPos = layer != null ? layer.DeltaPosition : Vector3.zero;
+                switch (field)
+                {
+                    case SetBoneTransformValueCommand.Field.PositionX: value = pPos.x; return true;
+                    case SetBoneTransformValueCommand.Field.PositionY: value = pPos.y; return true;
+                    case SetBoneTransformValueCommand.Field.PositionZ: value = pPos.z; return true;
+                    case SetBoneTransformValueCommand.Field.RotationX: value = pRot.x; return true;
+                    case SetBoneTransformValueCommand.Field.RotationY: value = pRot.y; return true;
+                    case SetBoneTransformValueCommand.Field.RotationZ: value = pRot.z; return true;
+                    // スケールはポーズ層の対象外（ディスパッチャ側も BoneTransform へ書く）
+                    default: return false;
+                }
+            }
+
+            var bt = mc.BoneTransform;
+            if (bt == null) return false;
+            switch (field)
+            {
+                case SetBoneTransformValueCommand.Field.PositionX: value = bt.Position.x; return true;
+                case SetBoneTransformValueCommand.Field.PositionY: value = bt.Position.y; return true;
+                case SetBoneTransformValueCommand.Field.PositionZ: value = bt.Position.z; return true;
+                case SetBoneTransformValueCommand.Field.RotationX: value = bt.Rotation.x; return true;
+                case SetBoneTransformValueCommand.Field.RotationY: value = bt.Rotation.y; return true;
+                case SetBoneTransformValueCommand.Field.RotationZ: value = bt.Rotation.z; return true;
+                case SetBoneTransformValueCommand.Field.ScaleX:    value = bt.Scale.x;    return true;
+                case SetBoneTransformValueCommand.Field.ScaleY:    value = bt.Scale.y;    return true;
+                case SetBoneTransformValueCommand.Field.ScaleZ:    value = bt.Scale.z;    return true;
+                default: return false;
+            }
         }
 
         // ================================================================
@@ -503,8 +697,28 @@ namespace Poly_Ling.Player
         private void SetScope(SubPanelScope scope)
         {
             _scope = scope;
+            ApplyPickFilter();
             UpdateTabHighlight();
             Refresh();
+        }
+
+        /// <summary>
+        /// このパネルのスコープを ObjectMoveTool のピック対象へ反映する。
+        ///
+        /// 【Refresh から切り出してある理由】
+        ///   Refresh は選択変更のたびに（このパネルを開いていなくても）呼ばれる。
+        ///   ここで書き込むと、オブジェクトリスト側がビューポート操作を持っている間も
+        ///   ピック対象がこのパネルのタブ状態に上書きされてしまう。
+        ///   ピック対象は「今ビューポートを担当しているパネル」が入場時に決める。
+        /// </summary>
+        public void ApplyPickFilter()
+        {
+            var s = GetObjectMoveSettings?.Invoke();
+            if (s == null) return;
+            bool boneScope = _scope == SubPanelScope.BonesOnly;
+            s.PickBones         = boneScope;
+            s.PickMeshesNoSkin  = !boneScope;
+            s.PickMeshesSkinned = false;
         }
 
         private void UpdateTabHighlight()
@@ -571,20 +785,13 @@ namespace Poly_Ling.Player
                 {
                     _toggleMoveWithChildren?.SetValueWithoutNotify(moveSettings.MoveWithChildren);
                     _toggleOriginOnly?.SetValueWithoutNotify(moveSettings.OriginOnly);
+                    _toggleShowMoveGizmo?.SetValueWithoutNotify(moveSettings.AllowMoveGizmo);
+                    _toggleShowRotationGizmo?.SetValueWithoutNotify(moveSettings.AllowRotationGizmo);
                     _toggleModeA?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind);
                     _toggleModeB?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.SkinBakeRebind);
                     _toggleModeC?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer);
                 }
                 finally { _suppressMoveSettings = false; }
-            }
-
-            // スコープからピックフィルタを駆動（チェックボックス廃止に伴い一本化）
-            if (moveSettings != null)
-            {
-                bool boneScope = _scope == SubPanelScope.BonesOnly;
-                moveSettings.PickBones         = boneScope;
-                moveSettings.PickMeshesNoSkin  = !boneScope;
-                moveSettings.PickMeshesSkinned = false;
             }
 
             var model = GetModel?.Invoke();
@@ -804,40 +1011,10 @@ namespace Poly_Ling.Player
 
             bool withRot = IncludeRotationInCsv;
 
-            var names     = new List<string>();
-            var positions = new List<Vector3>();
-            var rotations = new List<Vector3?>();
-            int rotRows   = 0;
-
-            foreach (string raw in lines)
-            {
-                string line = raw?.Trim('\uFEFF', ' ', '\t');
-                if (string.IsNullOrEmpty(line)) continue;
-                if (line.StartsWith("#")) continue;
-                if (line.StartsWith("name,")) continue;   // 見出し行
-
-                var cols = SplitCsvLine(line);
-                if (cols.Count < 4) continue;
-
-                if (!float.TryParse(cols[1], out float x)) continue;
-                if (!float.TryParse(cols[2], out float y)) continue;
-                if (!float.TryParse(cols[3], out float z)) continue;
-
-                // 回転列は任意。無い行・読めない行は「回転の指定なし」として位置だけ適用する。
-                Vector3? rot = null;
-                if (withRot && cols.Count >= 7 &&
-                    float.TryParse(cols[4], out float rx) &&
-                    float.TryParse(cols[5], out float ry) &&
-                    float.TryParse(cols[6], out float rz))
-                {
-                    rot = new Vector3(rx, ry, rz);
-                    rotRows++;
-                }
-
-                names.Add(cols[0]);
-                positions.Add(new Vector3(x, y, z));
-                rotations.Add(rot);
-            }
+            // 解析は Poly_Ling.Tools.ObjectPose.ObjectOriginCsv に集約している。
+            Poly_Ling.Tools.ObjectPose.ObjectOriginCsv.Parse(
+                lines, withRot,
+                out var names, out var positions, out var rotations, out int rotRows);
 
             if (names.Count == 0)
             {
@@ -894,34 +1071,6 @@ namespace Poly_Ling.Player
                 Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultContainerName));
 
             OnRepaint?.Invoke();
-        }
-
-        private static List<string> SplitCsvLine(string line)
-        {
-            var result = new List<string>();
-            var sb     = new System.Text.StringBuilder();
-            bool inQuote = false;
-
-            for (int i = 0; i < line.Length; i++)
-            {
-                char c = line[i];
-
-                if (inQuote)
-                {
-                    if (c == '"')
-                    {
-                        if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
-                        else inQuote = false;
-                    }
-                    else sb.Append(c);
-                }
-                else if (c == '"') inQuote = true;
-                else if (c == ',') { result.Add(sb.ToString()); sb.Clear(); }
-                else sb.Append(c);
-            }
-
-            result.Add(sb.ToString());
-            return result;
         }
 
         private static string SanitizeFileName(string name)

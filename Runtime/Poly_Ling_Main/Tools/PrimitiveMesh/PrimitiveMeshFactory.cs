@@ -113,6 +113,7 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreatePlaneCommand c:        return PlaneMeshGenerator.Generate(c.Params);
                 case CreatePyramidCommand c:      return PyramidMeshGenerator.Generate(c.Params);
                 case CreateStadiumBoxCommand c:   return StadiumBoxMeshGenerator.Generate(c.Params);
+                case CreatePipeStadiumCommand c:  return PipeStadiumMeshGenerator.Generate(c.Params);
                 case CreateNGonGearCommand c:     return NGonGearMeshGenerator.Generate(c.Params);
                 case CreateNGonStarCommand c:     return NGonStarMeshGenerator.Generate(c.Params);
                 case CreateInvoluteGearCommand c: return InvoluteTrochoidGearMeshGenerator.Generate(c.Params);

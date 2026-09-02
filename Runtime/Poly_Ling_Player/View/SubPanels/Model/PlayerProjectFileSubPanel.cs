@@ -168,7 +168,7 @@ namespace Poly_Ling.Player
 
         private void OnOpenJson()
         {
-            string path = PlayerIoUiKit.AskLoadPath("プロジェクトを開く", _jsonPathField.value, "mfproj");
+            string path = PlayerIoUiKit.AskLoadPath("プロジェクトを開く", JsonPathKey, _jsonPathField.value, "mfproj");
             if (string.IsNullOrEmpty(path)) return;
             _jsonPathField.value = path;
             OnLoad?.Invoke(path);
@@ -177,7 +177,8 @@ namespace Poly_Ling.Player
         private void OnOpenCsv()
         {
             string path = PlayerIoUiKit.AskLoadPath(
-                "プロジェクトCSVを開く", _csvPathField.value, CsvProjectSerializer.ProjectFileExtension);
+                "プロジェクトCSVを開く", CsvPathKey, _csvPathField.value,
+                CsvProjectSerializer.ProjectFileExtension);
             if (string.IsNullOrEmpty(path)) return;
             _csvPathField.value = path;
             OnLoadCsv?.Invoke(path, _csvMergeToggle != null && _csvMergeToggle.value);
@@ -195,7 +196,7 @@ namespace Poly_Ling.Player
         private void OnSaveAsJson()
         {
             string path = PlayerIoUiKit.AskSavePath(
-                "プロジェクトの保存先", _jsonPathField.value, "Project", "mfproj");
+                "プロジェクトの保存先", JsonPathKey, _jsonPathField.value, "Project", "mfproj");
             if (string.IsNullOrEmpty(path)) return;
             _jsonPathField.value = path;
             OnSave?.Invoke(path);
@@ -204,7 +205,7 @@ namespace Poly_Ling.Player
         private void OnSaveAsCsvFile()
         {
             string path = PlayerIoUiKit.AskSavePath(
-                "プロジェクトCSVの保存先", _csvPathField.value, "Project",
+                "プロジェクトCSVの保存先", CsvPathKey, _csvPathField.value, "Project",
                 CsvProjectSerializer.ProjectFileExtension);
             if (string.IsNullOrEmpty(path)) return;
             _csvPathField.value = path;

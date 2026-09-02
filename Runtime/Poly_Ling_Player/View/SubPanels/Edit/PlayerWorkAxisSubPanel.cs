@@ -364,6 +364,9 @@ namespace Poly_Ling.Player
             OnLibraryChanged?.Invoke();
         }
 
+        /// <summary>作業軸辞書 CSV のパス履歴キー。</summary>
+        private const string LibraryCsvKey = "WorkAxis.Library.CsvPath";
+
         private void SaveLibraryCsv()
         {
             var lib = GetLibrary?.Invoke();
@@ -371,8 +374,9 @@ namespace Poly_Ling.Player
 
             if (lib.Count == 0) { SetInfo("辞書が空です。"); return; }
 
-            string path = PLEditorBridge.I.SaveFilePanel(
-                "作業軸辞書を保存", Application.dataPath, "workaxis_library.csv", "csv");
+            // 以前は履歴を持たず、初期フォルダが毎回 Application.dataPath 固定だった。
+            string path = Poly_Ling.Player.PlayerIoUiKit.AskSavePath(
+                "作業軸辞書を保存", LibraryCsvKey, null, "workaxis_library.csv", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             SetInfo(WorkAxisLibraryCsvIO.Save(path, lib)
@@ -385,8 +389,8 @@ namespace Poly_Ling.Player
             var lib = GetLibrary?.Invoke();
             if (lib == null) return;
 
-            string path = PLEditorBridge.I.OpenFilePanel(
-                "作業軸辞書を読み込み", Application.dataPath, "csv");
+            string path = Poly_Ling.Player.PlayerIoUiKit.AskLoadPath(
+                "作業軸辞書を読み込み", LibraryCsvKey, null, "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             // 既存へ足す。同名は上書き。

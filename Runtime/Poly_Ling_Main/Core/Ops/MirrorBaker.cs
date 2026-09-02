@@ -421,6 +421,20 @@ namespace Poly_Ling.Tools
                 }
 
                 // 新しい頂点を作成
+                //
+                // 【未対応・要修正】頂点ID / パーツID / サブIDを引き継いでいない。
+                //   ・new Vertex(pos) は Id を設定しないため（MeshObject.cs:168-171）、
+                //     ベイク後の全頂点で Vertex.Id が 0（未設定）になる。
+                //   ・直下でパーツIDを 0 / 1 へ上書きし、Step 5 の末尾でサブIDも振り直すため、
+                //     パイプ・フリル・藤壺の持つパーツID構造が失われる。
+                //   ・BakeInPlace は target.Vertices を丸ごと差し替え、UnbakeInPlace は
+                //     Position しか戻さない（このファイルの :809-836 / :845-910）。
+                //     そのため「一時ミラー → 解除」を通すと、頂点ID・パーツID・サブIDは
+                //     戻らない。PipeAlignOps はパーツID依存なので、一時ミラー後は
+                //     パーツID / サブID採番ツール（PartsIdAssignOps）で振り直す必要がある。
+                //   直す方針：非ミラー側は srcVertex の Id / PartsId / SubId をそのまま引き継ぎ、
+                //   ミラー側は Id を未設定にしたうえでパーツIDへ元メッシュの
+                //   MaxPartsId + 1 のオフセットを足す。着手は保留（PolyLing 課題）。
                 var newVertex = new Vertex(pos);
 
                 // 部品ID: 非ミラー側 0 / ミラー側 1。

@@ -87,20 +87,23 @@ namespace Poly_Ling.EditorBridge
         // Windows 以外では Win32FileDialog が空文字を返す。
         // ================================================================
 
+        // FileDialogGuard で包む理由は PolyLingEditorBridgeImpl 側のコメントを参照。
+        // ダイアログの入口をブリッジ 2 実装に閉じ込め、呼び出し側には対策を書かない。
+
         public string OpenFilePanel(string title, string directory, string extension)
             => OpenFilePanel(title, directory, null, extension);
 
         public string OpenFilePanel(string title, string directory, string defaultName, string extension)
-            => Win32FileDialog.OpenFile(title, directory, defaultName, extension);
+            => FileDialogGuard.Run(() => Win32FileDialog.OpenFile(title, directory, defaultName, extension));
 
         public string SaveFilePanel(string title, string directory, string defaultName, string extension)
-            => Win32FileDialog.SaveFile(title, directory, defaultName, extension);
+            => FileDialogGuard.Run(() => Win32FileDialog.SaveFile(title, directory, defaultName, extension));
 
         public string SaveFilePanelInProject(string title, string defaultName, string extension, string message)
             => SaveFilePanel(title, UnityEngine.Application.dataPath, defaultName, extension);
 
         public string OpenFolderPanel(string title, string directory, string defaultName)
-            => Win32FileDialog.OpenFolder(title, directory);
+            => FileDialogGuard.Run(() => Win32FileDialog.OpenFolder(title, directory));
 
         public string SaveFolderPanel(string title, string directory, string defaultName)
             => OpenFolderPanel(title, directory, defaultName);

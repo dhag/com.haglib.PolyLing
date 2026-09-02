@@ -255,14 +255,15 @@ namespace Poly_Ling.Player
             string ext     = _mode == Mode.PMX ? "pmx" : "mqo";
             string title   = _mode == Mode.PMX ? "Export PMX" : "Export MQO";
             string refPath = _mode == Mode.PMX ? _pmxRefPath : _mqoRefPath;
-            string dir     = string.IsNullOrEmpty(refPath)
-                ? Application.dataPath
-                : (Path.GetDirectoryName(refPath) ?? Application.dataPath);
             string defName = _mode == Mode.PMX
                 ? (Path.GetFileNameWithoutExtension(refPath) + "_modified.pmx")
                 : (Path.GetFileNameWithoutExtension(refPath) + "_partial.mqo");
 
-            string savePath = PLEditorBridge.I.SaveFilePanel(title, dir, defName, ext);
+            // 初期値は出力先欄 → 参照元 → 履歴 の順で拾う。
+            string seed = _outPathField?.value;
+            if (string.IsNullOrEmpty(seed)) seed = refPath;
+
+            string savePath = PlayerIoUiKit.AskSavePath(title, OutPathKey(), seed, defName, ext);
             if (!string.IsNullOrEmpty(savePath))
                 _outPathField.value = savePath;   // 選択のみ（即実行しない）
         }
@@ -312,10 +313,9 @@ namespace Poly_Ling.Player
             parent.Add(FilePickRow(_pmxRefPath, "pmx", "Select PMX", path =>
             {
                 _pmxRefPath = path;
-                RecentPaths.Set("PartialExport.PMX.Ref", path);
                 LoadPMXRef(path);
                 RebuildList();
-            }));
+            }, "PartialExport.PMX.Ref"));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("座標変換"));
@@ -418,10 +418,9 @@ namespace Poly_Ling.Player
             parent.Add(FilePickRow(_mqoRefPath, "mqo", "Select MQO", path =>
             {
                 _mqoRefPath = path;
-                RecentPaths.Set("PartialExport.MQO.Ref", path);
                 LoadMQORef(path);
                 RebuildList();
-            }));
+            }, "PartialExport.MQO.Ref"));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("オプション"));
@@ -528,7 +527,8 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>ファイルパス表示 + ブラウズボタン行</summary>
-        private VisualElement FilePickRow(string currentPath, string ext, string title, Action<string> onPicked)
+        private VisualElement FilePickRow(
+            string currentPath, string ext, string title, Action<string> onPicked, string recentKey = null)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lbl = new Label(string.IsNullOrEmpty(currentPath) ? "(未選択)" : Path.GetFileName(currentPath));
@@ -537,8 +537,10 @@ namespace Poly_Ling.Player
             lbl.style.overflow = Overflow.Hidden;
             var btn = new Button(() =>
             {
-                string dir  = string.IsNullOrEmpty(currentPath) ? Application.dataPath : Path.GetDirectoryName(currentPath);
-                string path = PLEditorBridge.I.OpenFilePanel(title, dir, ext);
+                string path = PlayerIoUiKit.AskLoadPath(
+                    title,
+                    string.IsNullOrEmpty(recentKey) ? "PartialExport.Ref." + ext : recentKey,
+                    currentPath, ext);
                 if (!string.IsNullOrEmpty(path))
                 {
                     lbl.text = Path.GetFileName(path);

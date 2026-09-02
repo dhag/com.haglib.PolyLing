@@ -172,7 +172,7 @@ namespace Poly_Ling.Player
         // 「CSVから読み込み」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowseCSV()
         {
-            string path = PlayerIoUiKit.AskLoadPath("Select Bone Mapping CSV", _csvFilePath, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("Select Bone Mapping CSV", CsvPathKey, _csvFilePath, "csv");
             if (!string.IsNullOrEmpty(path))
             {
                 _csvFilePath = path;

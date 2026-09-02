@@ -170,12 +170,6 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：図形生成セクション（PlayerPrimitiveMeshSubPanel を Build する対象）。</summary>
         public VisualElement PrimitiveSection { get; private set; }
 
-        /// <summary>左ペイン：図形生成ボタン（基本図形）。</summary>
-        public Button PrimitiveBtn { get; private set; }
-
-        /// <summary>左ペイン：図形生成ボタン（高度な図形）。基本図形と同じ PrimitiveSection を開く。</summary>
-        public Button AdvancedPrimitiveBtn { get; private set; }
-
         /// <summary>
         /// 右ペイン：新図形生成セクション（2つ目の PlayerPrimitiveMeshSubPanel を Build する対象）。
         /// 既存 PrimitiveSection とは別インスタンスで、状態を共有しない。
@@ -268,11 +262,17 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：モデルブレンドセクション（ScrollView内）。</summary>
         public VisualElement ModelBlendSection { get; private set; }
 
-        /// <summary>シュリンカーセクション</summary>
+        /// <summary>シュリンカー(頂点)セクション</summary>
         public VisualElement ShrinkSection { get; private set; }
 
-        /// <summary>シュリンカーボタン</summary>
+        /// <summary>シュリンカー(頂点)ボタン</summary>
         public Button ShrinkBtn { get; private set; }
+
+        /// <summary>シュリンカー(面)セクション</summary>
+        public VisualElement ShrinkFaceSection { get; private set; }
+
+        /// <summary>シュリンカー(面)ボタン</summary>
+        public Button ShrinkFaceBtn { get; private set; }
         public Button ThinPlateMorphBtn { get; private set; }
 
         /// <summary>左ペイン：モデルブレンドボタン。</summary>
@@ -367,6 +367,10 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：モデル間頂点データ転送セクション。</summary>
         public VisualElement VertexTransferSection      { get; private set; }
         public Button        VertexTransferBtn          { get; private set; }
+
+        /// <summary>右ペイン：パーツID / サブID 採番セクション。</summary>
+        public VisualElement PartsIdSection             { get; private set; }
+        public Button        PartsIdBtn                 { get; private set; }
         public VisualElement AddFaceSection             { get; private set; }
         public Button        AddFaceBtn                 { get; private set; }
         public VisualElement FlipFaceSection            { get; private set; }
@@ -1053,7 +1057,7 @@ namespace Poly_Ling.Player
             ProjectLoadBtn = MakeBtn("プロジェクト読み込み");
             ProjectLoadBtn.style.flexGrow    = 1;
             ProjectLoadBtn.style.marginRight = 2;
-            ObjLoadBtn = MakeBtn("OBJ読み込み");
+            ObjLoadBtn = MakeBtn(".OBJファイル読込");
             ObjLoadBtn.style.flexGrow = 1;
             projectLoadRow.Add(ProjectLoadBtn);
             projectLoadRow.Add(ObjLoadBtn);
@@ -1072,7 +1076,7 @@ namespace Poly_Ling.Player
             ProjectSaveBtn = MakeBtn("プロジェクト保存");
             ProjectSaveBtn.style.flexGrow    = 1;
             ProjectSaveBtn.style.marginRight = 2;
-            ObjSaveBtn = MakeBtn("OBJ保存");
+            ObjSaveBtn = MakeBtn(".OBJファイル保存");
             ObjSaveBtn.style.flexGrow = 1;
             projectSaveRow.Add(ProjectSaveBtn);
             projectSaveRow.Add(ObjSaveBtn);
@@ -1114,15 +1118,11 @@ namespace Poly_Ling.Player
             // ── 図形生成 ───────────────────────────────────────────────
             var foPrimitive = MakeFoldout("図形生成", "Primitive");
 
-            PrimitiveBtn = MakeBtn("基本図形");
-            foPrimitive.Add(PrimitiveBtn);
+            // 「基本図形」「高度な図形」ボタンは廃止した。PrimitiveSection 自体は
+            // ショートカット（ShowPrimitiveShape）と「穴つなぎ」ボタンから開くため残す。
 
-            // 高度な図形には歪み複製も並ぶ（PlayerPrimitiveMeshSubPanel.ObjectArray.cs）。
-            AdvancedPrimitiveBtn = MakeBtn("高度な図形");
-            foPrimitive.Add(AdvancedPrimitiveBtn);
-
-            // 検証用の新サブツール（メイン3Dウインドウ連携版の入口）。
-            // 既存の「基本図形」「高度な図形」とは別インスタンス・別セクション。
+            // メイン3Dウインドウ連携版の入口。歪み複製も高度側に並ぶ
+            // （PlayerPrimitiveMeshSubPanel.ObjectArray.cs）。
             LivePrimitiveBtn = MakeBtn("基本図形（3D連携）");
             foPrimitive.Add(LivePrimitiveBtn);
 
@@ -1139,7 +1139,7 @@ namespace Poly_Ling.Player
             toolRow.style.flexDirection = FlexDirection.Row;
             toolRow.style.marginBottom  = 2;
             ToolVertexMoveBtn  = MakeBtn("頂点移動");     ToolVertexMoveBtn.style.flexGrow  = 1; ToolVertexMoveBtn.style.marginRight  = 2;
-            ToolObjectMoveBtn  = MakeBtn("オブジェクト姿勢"); ToolObjectMoveBtn.style.flexGrow  = 1;
+            ToolObjectMoveBtn  = MakeBtn("描画オブジェクトの姿勢"); ToolObjectMoveBtn.style.flexGrow  = 1;
             toolRow.Add(ToolVertexMoveBtn); toolRow.Add(ToolObjectMoveBtn);
             foSelectMove.Add(toolRow);
 
@@ -1199,7 +1199,7 @@ namespace Poly_Ling.Player
             EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
             KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1; KnifeBtn.style.marginRight     = 2;
             VertexHoleBtn   = MakeBtn("穴あけ");       VertexHoleBtn.style.flexGrow   = 1; VertexHoleBtn.style.marginRight = 2;
-            BridgeBtn       = MakeBtn("ブリッジ");     BridgeBtn.style.flexGrow       = 1;
+            BridgeBtn       = MakeBtn("穴つなぎブリッジ");     BridgeBtn.style.flexGrow       = 1;
             rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); rowEdgeKnife.Add(VertexHoleBtn); rowEdgeKnife.Add(BridgeBtn); foTopology.Add(rowEdgeKnife);
 
             // 穴頂点数合わせ。ブリッジの「2つの穴の頂点数が同じ」制約を満たすための前処理。
@@ -1264,6 +1264,11 @@ namespace Poly_Ling.Player
             VertexTransferBtn = MakeBtn("頂点データ転送"); VertexTransferBtn.style.flexGrow = 1;
             rowVertexId.Add(VertexIdBtn); rowVertexId.Add(VertexTransferBtn); foVertexTopo.Add(rowVertexId);
 
+            // パーツID / サブID の採番。頂点IDとは独立して掛ける。
+            var rowPartsId = new VisualElement(); rowPartsId.style.flexDirection = FlexDirection.Row; rowPartsId.style.marginBottom = 2;
+            PartsIdBtn = MakeBtn("パーツID / サブID"); PartsIdBtn.style.flexGrow = 1;
+            rowPartsId.Add(PartsIdBtn); foVertexTopo.Add(rowPartsId);
+
             var rowQuad = new VisualElement(); rowQuad.style.flexDirection = FlexDirection.Row; rowQuad.style.marginBottom = 2;
             QuadDecimatorBtn = MakeBtn("Yet(Quad減面)"); QuadDecimatorBtn.style.flexGrow = 1;
             rowQuad.Add(QuadDecimatorBtn); foVertexTopo.Add(rowQuad);
@@ -1290,7 +1295,10 @@ namespace Poly_Ling.Player
             ModelBlendBtn = MakeBtn("モデルブレンド");   ModelBlendBtn.style.flexGrow = 1;
             rowBlend.Add(BlendBtn); rowBlend.Add(ModelBlendBtn); foBoneMorph.Add(rowBlend);
 
-            ShrinkBtn = MakeBtn("シュリンカー"); foBoneMorph.Add(ShrinkBtn);
+            var rowShrink = new VisualElement(); rowShrink.style.flexDirection = FlexDirection.Row; rowShrink.style.marginBottom = 2;
+            ShrinkBtn     = MakeBtn("シュリンカー(頂点)"); ShrinkBtn.style.flexGrow     = 1; ShrinkBtn.style.marginRight = 2;
+            ShrinkFaceBtn = MakeBtn("シュリンカー(面)");   ShrinkFaceBtn.style.flexGrow = 1;
+            rowShrink.Add(ShrinkBtn); rowShrink.Add(ShrinkFaceBtn); foBoneMorph.Add(rowShrink);
 
             ThinPlateMorphBtn = MakeBtn("TPSモーフ"); foBoneMorph.Add(ThinPlateMorphBtn);
 
@@ -1427,8 +1435,8 @@ namespace Poly_Ling.Player
             var itemLabels = new string[]
             {
                 "カリング",
-                "選択Mesh",  "非選Mesh", "非選Mirror",
-                "非選M面",   "非選M辺",  "非選M頂点",
+                "選択Mesh",  "非選Mesh", "ミラー",
+                "ミラー面",  "ミラー辺", "ミラー頂点",
                 "選択辺",    "非選辺",
                 "選択頂点",  "非選頂点",
                 "選択Bone",  "非選Bone",
@@ -1441,10 +1449,10 @@ namespace Poly_Ling.Player
                 true,  // カリング
                 true,  // 選択Mesh
                 true,  // 非選Mesh
-                true,  // 非選Mirror
-                true,  // 非選M面
-                true,  // 非選M辺
-                true,  // 非選M頂点
+                true,  // ミラー
+                true,  // ミラー面
+                true,  // ミラー辺
+                true,  // ミラー頂点
                 true,  // 選択辺
                 true,  // 非選辺
                 true,  // 選択頂点
@@ -1649,8 +1657,11 @@ namespace Poly_Ling.Player
             // ── モデルブレンドセクション
             ModelBlendSection = AddSection(visible: false);
 
-            // ── シュリンカーセクション
+            // ── シュリンカー(頂点)セクション
             ShrinkSection = AddSection(visible: false);
+
+            // ── シュリンカー(面)セクション
+            ShrinkFaceSection = AddSection(visible: false);
 
             // ── TPSモーフセクション
             ThinPlateMorphSection = AddSection(visible: false);
@@ -1699,6 +1710,7 @@ namespace Poly_Ling.Player
             FaceMergeCollapseSection   = AddSection(visible: false);
             VertexIdSection            = AddSection(visible: false);
             VertexTransferSection      = AddSection(visible: false);
+            PartsIdSection             = AddSection(visible: false);
             AddFaceSection             = AddSection(visible: false);
             FlipFaceSection            = AddSection(visible: false);
             RotateSection              = AddSection(visible: false);

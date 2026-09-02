@@ -352,15 +352,26 @@ namespace Poly_Ling.MQO
                     continue;
 
                 int partsId = (int)face.VertexColors[0];
-                int subId   = (int)face.VertexColors[1];
-                int id      = (int)face.VertexColors[2];
+                int subId    = (int)face.VertexColors[1];
+                int id       = (int)face.VertexColors[2];
 
-                // uint → int のキャストで負になるのは int.MaxValue を超えた不正値。
-                // ID として使えないのでその面ごと捨てる。
-                // SubID / PartsID は 0 も有効なので値では弾かない。
                 int vertexIndex = face.VertexIndices[0];
-                if (vertexIndex < 0 || id < 0)
+                if (vertexIndex < 0)
                     continue;
+
+                // uint → int のキャストで負になるのは int.MaxValue を超えた値。
+                // 頂点IDは「未設定」を -1 で書き出す（MQOExporter.cs:1068-1072 の出力条件は
+                // 「ID が -1 でない」か「SubID / PartsID のいずれかが設定済み」なので、
+                //  ID が -1 のまま PartsID だけ持つ面が実際に出る）。
+                // (uint)(-1) は 4294967295 になり、読み戻すと再び -1 になる。
+                //
+                // 以前はここで面ごと捨てていたため、頂点IDを持たない MQO 由来メッシュへ
+                // パーツIDを振って書き出すと、読み戻しでパーツID / サブIDが消えていた。
+                // 頂点IDとパーツID / サブIDは独立に扱うので、頂点IDが未設定でも
+                // パーツID / サブIDは読む。
+                if (id < 0) id = -1;                 // 未設定として扱う（MeshObject.IsUnsetId）
+                if (partsId < 0) partsId = 0;        // 0 = 未設定
+                if (subId   < 0) subId   = 0;
 
                 vertexIdMap[vertexIndex] = new MqoVertexIds
                 {

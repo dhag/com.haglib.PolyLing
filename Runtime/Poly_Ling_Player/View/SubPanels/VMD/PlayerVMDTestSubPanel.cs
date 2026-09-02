@@ -416,7 +416,7 @@ namespace Poly_Ling.Player
         // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowseVmd()
         {
-            string path = PlayerIoUiKit.AskLoadPath("Open VMD", _vmdPathField.value, "vmd");
+            string path = PlayerIoUiKit.AskLoadPath("Open VMD", VmdPathKey, _vmdPathField.value, "vmd");
             if (string.IsNullOrEmpty(path)) return;
             _vmdPathField.value = path;
             LoadVMD(path);

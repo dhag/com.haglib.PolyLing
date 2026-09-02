@@ -138,7 +138,9 @@ namespace Poly_Ling.Tools
             if (HasAnySelection(ctx))
             {
                 UpdateGizmoCenter(ctx);
-                var hitAxis = _axisGizmo.FindAxisAtScreenPos(mousePos, ctx);
+                var hitAxis = IsMoveGizmoEnabled()
+                    ? _axisGizmo.FindAxisAtScreenPos(mousePos, ctx)
+                    : AxisGizmo.AxisType.None;
                 if (hitAxis != AxisGizmo.AxisType.None)
                 {
                     SaveSnapshots(ctx);
@@ -229,7 +231,9 @@ namespace Poly_Ling.Tools
             if (_state == DragState.Idle && HasAnySelection(ctx))
             {
                 UpdateGizmoCenter(ctx);
-                var hovered = _axisGizmo.FindAxisAtScreenPos(mousePos, ctx);
+                var hovered = IsMoveGizmoEnabled()
+                    ? _axisGizmo.FindAxisAtScreenPos(mousePos, ctx)
+                    : AxisGizmo.AxisType.None;
                 if (hovered != _hoveredAxis)
                 {
                     _hoveredAxis = hovered;
@@ -285,7 +289,9 @@ namespace Poly_Ling.Tools
             if (_state != DragState.Idle) return;
             if (!HasAnySelection(ctx)) return;
             UpdateGizmoCenter(ctx);
-            var hovered = _axisGizmo.FindAxisAtScreenPos(mousePos, ctx);
+            var hovered = IsMoveGizmoEnabled()
+                ? _axisGizmo.FindAxisAtScreenPos(mousePos, ctx)
+                : AxisGizmo.AxisType.None;
             if (hovered != _hoveredAxis)
             {
                 _hoveredAxis = hovered;
@@ -304,12 +310,14 @@ namespace Poly_Ling.Tools
 
             if (_state == DragState.Idle)
             {
-                _hoveredAxis = _axisGizmo.FindAxisAtScreenPos(_lastMousePos, ctx);
+                _hoveredAxis = IsMoveGizmoEnabled()
+                    ? _axisGizmo.FindAxisAtScreenPos(_lastMousePos, ctx)
+                    : AxisGizmo.AxisType.None;
                 _axisGizmo.HoveredAxis = _hoveredAxis;
                 UpdateRingHover(ctx, _lastMousePos);
             }
 
-            _axisGizmo.Draw(ctx);
+            if (IsMoveGizmoEnabled()) _axisGizmo.Draw(ctx);
         }
 
         /// <summary>
@@ -325,6 +333,7 @@ namespace Poly_Ling.Tools
             origin = xEnd = yEnd = zEnd = Vector2.zero;
             hoveredAxis = AxisGizmo.AxisType.None;
             if (ctx == null || !HasAnySelection(ctx)) return false;
+            if (!IsMoveGizmoEnabled()) return false;
 
             UpdateGizmoCenter(ctx);
             _axisGizmo.HoveredAxis  = _hoveredAxis;
@@ -458,6 +467,39 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// マウス位置から最近傍オブジェクト（ボーン or MeshFilter）をピック
         /// </summary>
+        /// <summary>
+        /// ピック対象フィルタを 1 つの MeshContext に対して評価する。
+        ///
+        /// 【1 か所に集約する理由】
+        ///   同じ判定を「クリックピック」「矩形・投げ縄選択」「原点マーカーの表示」の
+        ///   3 か所で書くと、片方だけ直したときに『掴めるのにマーカーが出ない』
+        ///   『マーカーは出るのに掴めない』が起きる。判定はここだけに置くこと。
+        /// </summary>
+        public static bool PassesPickFilter(MeshContext mc, ObjectMoveSettings s)
+        {
+            if (mc == null || s == null) return false;
+
+            var t = mc.Type;
+
+            // モーフ・剛体・ジョイント・グループは常に除外
+            if (t == MeshType.Morph || t == MeshType.RigidBody ||
+                t == MeshType.RigidBodyJoint || t == MeshType.Group)
+                return false;
+
+            // ミラー側は実体側と原点が重なるため既定で除外
+            if (t == MeshType.MirrorSide || t == MeshType.BakedMirror)
+                return s.PickMirrorSides;
+
+            if (t == MeshType.Bone) return s.PickBones;
+
+            // 判定は MeshContext.IsSkinned に集約する。
+            if (t == MeshType.Mesh)
+                return mc.IsSkinned ? s.PickMeshesSkinned : s.PickMeshesNoSkin;
+
+            // Helper は従来互換で常にピック対象。
+            return true;
+        }
+
         private bool TryPickObject(ToolContext ctx, Vector2 mousePos, bool shift, bool ctrl)
         {
             var model = ctx?.Model;
@@ -470,38 +512,7 @@ namespace Poly_Ling.Tools
             {
                 var mc = model.GetMeshContext(i);
                 if (mc == null) continue;
-                // モーフ・剛体・ジョイント・グループは従来通り除外
-                var t = mc.Type;
-                if (t == MeshType.Morph || t == MeshType.RigidBody ||
-                    t == MeshType.RigidBodyJoint || t == MeshType.Group)
-                    continue;
-
-                // ObjectMoveSettings のピック対象フィルタ:
-                //   PickBones         : MeshType.Bone
-                //   PickMeshesNoSkin  : MeshType.Mesh かつ SkinKind == MeshFilter
-                //   PickMeshesSkinned : MeshType.Mesh かつ SkinKind == Skinned
-                //   PickMirrorSides   : MirrorSide / BakedMirror（既定 OFF）
-                // Helper は従来互換で常にピック対象。
-                if ((t == MeshType.MirrorSide || t == MeshType.BakedMirror) &&
-                    !_settings.PickMirrorSides)
-                    continue;
-
-                if (t == MeshType.Bone)
-                {
-                    if (!_settings.PickBones) continue;
-                }
-                else if (t == MeshType.Mesh)
-                {
-                    // 判定は MeshContext.IsSkinned に集約する。
-                    if (mc.IsSkinned)
-                    {
-                        if (!_settings.PickMeshesSkinned) continue;
-                    }
-                    else
-                    {
-                        if (!_settings.PickMeshesNoSkin) continue;
-                    }
-                }
+                if (!PassesPickFilter(mc, _settings)) continue;
 
                 var wm = mc.WorldMatrix;
                 Vector3 worldPos = new Vector3(wm.m03, wm.m13, wm.m23);
@@ -740,6 +751,13 @@ namespace Poly_Ling.Tools
         /// PivotOffsetToolHandler のように回転リングを描かない呼び出し元だけが false にする。
         /// </summary>
         private bool IsRotationEnabled() => _settings.AllowRotationGizmo;
+
+        /// <summary>
+        /// 移動（矢印）ギズモを許可する状態か。
+        /// false のときは描画・当たり判定・ホバーの全てを止める。
+        /// オブジェクト原点が矢印や中央ハンドルに隠れて掴めない場合に OFF にする。
+        /// </summary>
+        private bool IsMoveGizmoEnabled() => _settings.AllowMoveGizmo;
 
         /// <summary>
         /// 回転リングのヒットテストを行い、当たっていれば回転ドラッグを開始する。

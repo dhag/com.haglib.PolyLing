@@ -152,7 +152,8 @@ namespace Poly_Ling.Player
             string ext   = name.ToLowerInvariant();
             string title = "Export " + name;
 
-            string savePath = PlayerIoUiKit.AskSavePath(title, _pathField?.value ?? "", "", ext);
+            string savePath = PlayerIoUiKit.AskSavePath(
+                title, ExportPathKey(), _pathField?.value ?? "", "", ext);
             if (string.IsNullOrEmpty(savePath)) return;   // キャンセル
 
             _pathField.value = savePath;                  // RecentPaths へは値変更コールバックで反映される

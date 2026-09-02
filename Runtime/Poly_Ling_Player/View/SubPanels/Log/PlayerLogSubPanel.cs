@@ -397,15 +397,8 @@ namespace Poly_Ling.Player
 
         private void OnBrowseSave()
         {
-            string cur = _pathField?.value ?? string.Empty;
-            string dir = string.IsNullOrEmpty(cur)
-                ? Application.persistentDataPath
-                : (Path.GetDirectoryName(cur) ?? Application.persistentDataPath);
-            string name = string.IsNullOrEmpty(cur)
-                ? DefaultFileName()
-                : Path.GetFileName(cur);
-
-            string path = PLEditorBridge.I.SaveFilePanel("ログを保存", dir, name, "txt");
+            string path = PlayerIoUiKit.AskSavePath(
+                "ログを保存", SavePathKey, _pathField?.value, DefaultFileName(), "txt");
             if (!string.IsNullOrEmpty(path))
                 _pathField.value = path;
         }

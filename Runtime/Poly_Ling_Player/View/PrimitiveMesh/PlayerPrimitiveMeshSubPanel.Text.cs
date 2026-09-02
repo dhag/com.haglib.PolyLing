@@ -23,6 +23,9 @@ namespace Poly_Ling.Player
 
         private TextMeshParams _textP = TextMeshParams.Default;
 
+        /// <summary>フォントフォルダ選択の初期フォルダ履歴キー。</summary>
+        private const string TextFontDirKey = "Primitive.Text.FontDir";
+
         private List<PlyFontLibrary.Entry> _textFonts = new List<PlyFontLibrary.Entry>();
         private DropdownField _textFontDrop;
         private Label _textInfoLabel;
@@ -93,7 +96,7 @@ namespace Poly_Ling.Player
                 if (dirs.Count >= PlyFontLibrary.MaxDirs) return;
 
                 string start = dirs.Count > 0 ? dirs[dirs.Count - 1] : PlyFontLibrary.DefaultRootDir;
-                string sel   = PLEditorBridge.I.OpenFolderPanel(T("TextFontDirs"), start, "");
+                string sel   = PlayerIoUiKit.AskFolderPath(T("TextFontDirs"), TextFontDirKey, start);
                 if (string.IsNullOrEmpty(sel)) return;
 
                 dirs.Add(sel);
@@ -192,7 +195,7 @@ namespace Poly_Ling.Player
                     var cur = PlyFontLibrary.GetDirs();
                     if (idx < 0 || idx >= cur.Count) return;
 
-                    string sel = PLEditorBridge.I.OpenFolderPanel(T("TextFontDirs"), cur[idx], "");
+                    string sel = PlayerIoUiKit.AskFolderPath(T("TextFontDirs"), TextFontDirKey, cur[idx]);
                     if (string.IsNullOrEmpty(sel)) return;
 
                     cur[idx] = sel;

@@ -636,11 +636,10 @@ namespace Poly_Ling.Player
         // ── テクスチャブラウズ ────────────────────────────────────────────
         private void OnBrowseTexture(MaterialReference matRef, Material mat, string propName, Label displayLabel, VisualElement preview)
         {
-            string last = RecentPaths.Get(TexPathKey);
-            string path = PlayerIoUiKit.AskLoadPath("テクスチャ選択", last, "png,jpg,jpeg,tga,bmp");
+            string path = PlayerIoUiKit.AskLoadPath(
+                "テクスチャ選択", TexPathKey, null, "png,jpg,jpeg,tga,bmp");
             if (string.IsNullOrEmpty(path)) return;
             if (!File.Exists(path)) return;
-            RecentPaths.Set(TexPathKey, path);
 
             try
             {

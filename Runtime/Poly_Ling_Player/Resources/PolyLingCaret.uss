@@ -22,3 +22,45 @@
 .unity-foldout__toggle > .unity-toggle__input > .unity-toggle__checkmark {
     -unity-background-image-tint-color: rgb(205, 205, 205);
 }
+
+/* ドロップダウンで開くメニュー本体（DropdownField を押したときに出る一覧）。
+ *
+ * 【なぜ USS でしかできないか】
+ * PlayerLayoutRoot.ApplyDarkTheme は Build 直後に一度だけ走り、そのとき存在する
+ * 要素へインラインで色を入れる。メニューは「押した瞬間」に UIToolkit が作り、
+ * しかもパネル最上位のコンテナへ差し込まれるので、ApplyDarkTheme は決して届かない。
+ * 結果、既定の明るい配色（白背景）のまま残っていた。
+ * 後から作られる要素に効かせられるのはクラス名で当てる USS だけなので、ここに置く。
+ * このシートは root ではなくパネル最上位へ貼ること（PolyLingPlayerViewerCore 側）。*/
+.unity-base-dropdown__container-outer {
+    background-color: rgb(51, 51, 51);
+    border-left-color: rgb(90, 90, 90);
+    border-right-color: rgb(90, 90, 90);
+    border-top-color: rgb(90, 90, 90);
+    border-bottom-color: rgb(90, 90, 90);
+}
+
+.unity-base-dropdown__container-inner {
+    background-color: rgb(51, 51, 51);
+}
+
+.unity-base-dropdown__item {
+    background-color: rgb(51, 51, 51);
+    color: rgb(255, 255, 255);
+}
+
+.unity-base-dropdown__item:hover {
+    background-color: rgb(64, 90, 140);
+}
+
+.unity-base-dropdown__label {
+    color: rgb(255, 255, 255);
+}
+
+.unity-base-dropdown__separator {
+    background-color: rgb(90, 90, 90);
+}
+
+.unity-base-dropdown__checkmark {
+    -unity-background-image-tint-color: rgb(255, 255, 255);
+}

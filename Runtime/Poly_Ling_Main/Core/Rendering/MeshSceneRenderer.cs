@@ -1351,11 +1351,19 @@ namespace Poly_Ling.Core
         // ボーンメッシュ構築
         // ================================================================
 
+        /// <summary>
+        /// くさび（ボーン／メッシュ原点マーカー）の線メッシュをワールド座標で作る。
+        ///
+        /// 【public にしている理由】
+        ///   図形生成パネルが「生成予定姿勢のくさび」を仮表示するのに使う。
+        ///   形状定数（BoneShapeVertices / BoneShapeEdges）を二重定義すると
+        ///   本物のマーカーと仮表示で形が食い違うため、生成もここへ一本化する。
+        /// </summary>
         /// <param name="scale">
         /// くさびの大きさ。呼出側が BoneMarkerScale を渡す。
         /// 静的メソッドなのでインスタンスのプロパティを直接は読めない。
         /// </param>
-        private static Mesh BuildBoneLineMesh(Vector3 pos, Quaternion rot, Color col, float scale)
+        public static Mesh BuildBoneLineMesh(Vector3 pos, Quaternion rot, Color col, float scale)
         {
             int ec = BoneShapeEdges.GetLength(0);
             var verts   = new Vector3[ec * 2];
@@ -1382,7 +1390,7 @@ namespace Poly_Ling.Core
         }
 
         /// <param name="scale">くさびの大きさ。BuildBoneLineMesh と同じ値を渡すこと。</param>
-        private static void UpdateBoneLineMesh(Mesh mesh, Vector3 pos, Quaternion rot, Color col, float scale)
+        public static void UpdateBoneLineMesh(Mesh mesh, Vector3 pos, Quaternion rot, Color col, float scale)
         {
             int ec = BoneShapeEdges.GetLength(0);
             var verts  = new Vector3[ec * 2];
@@ -1397,7 +1405,11 @@ namespace Poly_Ling.Core
             mesh.SetColors(colors);
         }
 
-        private static bool ExtractBoneTransform(Matrix4x4 m, out Vector3 pos, out Quaternion rot)
+        /// <summary>
+        /// ワールド行列から、くさびを置く位置と向きを取り出す（拡大は捨てる）。
+        /// 仮表示側も同じ分解を使うため public。
+        /// </summary>
+        public static bool ExtractBoneTransform(Matrix4x4 m, out Vector3 pos, out Quaternion rot)
         {
             pos = new Vector3(m.m03, m.m13, m.m23);
             Vector3 c0 = new Vector3(m.m00, m.m10, m.m20);

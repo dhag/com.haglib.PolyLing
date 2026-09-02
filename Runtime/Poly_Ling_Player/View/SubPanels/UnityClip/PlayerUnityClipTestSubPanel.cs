@@ -333,7 +333,7 @@ namespace Poly_Ling.Player
         // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowseClip()
         {
-            string path = PlayerIoUiKit.AskLoadPath("Open Unity Clip", _clipPathField.value, "json");
+            string path = PlayerIoUiKit.AskLoadPath("Open Unity Clip", ClipPathKey, _clipPathField.value, "json");
             if (string.IsNullOrEmpty(path)) return;
             _clipPathField.value = path;
             LoadClip(path);
@@ -367,7 +367,7 @@ namespace Poly_Ling.Player
         // 外部 UnityLimit CSV（マッスル可動域・実測）を読む。無くても動作する。
         private void OnBrowseLimit()
         {
-            string path = PlayerIoUiKit.AskLoadPath("Open UnityLimit CSV", _limitPathField.value, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("Open UnityLimit CSV", LimitPathKey, _limitPathField.value, "csv");
             if (string.IsNullOrEmpty(path)) return;
             _limitPathField.value = path;
             LoadLimits(path);

@@ -19,6 +19,8 @@ using Poly_Ling.View;
 using Poly_Ling.Diagnostics;
 using UIList.UIToolkitExtensions;
 using PlayerIoUiKit        = Poly_Ling.Player.PlayerIoUiKit;
+using PlayerUiPrefs        = Poly_Ling.Player.PlayerUiPrefs;
+using ObjectMoveSettings   = Poly_Ling.Tools.ObjectMoveSettings;
 using RecentPaths          = Poly_Ling.Core.RecentPaths;
 using PartsDictionaryPath  = Poly_Ling.Core.PartsDictionaryPath;
 using MeshRenameCsvHelper  = Poly_Ling.UI.MeshRenameCsvHelper;
@@ -28,6 +30,40 @@ namespace Poly_Ling.MeshListV2
     public class MeshListSubPanel
     {
         private enum TabType { Drawable, Bone, Morph, RigidBody, Joint }
+
+        // ================================================================
+        // ビューポート操作モード（3択）
+        // ================================================================
+
+        /// <summary>
+        /// オブジェクトリストを開いている間、ビューポートの左ドラッグを何に使うか。
+        /// None       : 3D 操作なし（視点操作だけ）
+        /// SelectElem : 頂点・辺・面の選択専用（従来の「ビューポートで選択する」ON 相当）
+        /// ObjectPose : オブジェクト原点の選択と姿勢調整（描画オブジェクトの姿勢と同じ）
+        /// </summary>
+        public enum ViewportOpMode { None = 0, SelectElem = 1, ObjectPose = 2 }
+
+        private const string ViewportOpModeKey = "MeshList.ViewportOpMode";
+
+        private ViewportOpMode _viewportOpMode = ViewportOpMode.ObjectPose;
+        private Button _btnOpNone, _btnOpSelect, _btnOpPose;
+
+        /// <summary>現在のビューポート操作モード。ViewerCore が入場時に読む。</summary>
+        public ViewportOpMode CurrentViewportOpMode => _viewportOpMode;
+
+        /// <summary>ビューポート操作モードが変わったときに呼ぶ（ViewerCore が配線する）。</summary>
+        public Action<ViewportOpMode> OnViewportOpModeChanged;
+
+        /// <summary>ObjectMoveTool の共有設定を返す（姿勢調整チェックの実体）。</summary>
+        public Func<ObjectMoveSettings> GetObjectMoveSettings;
+
+        /// <summary>ギズモ表示チェックを変えた直後にビューポートのギズモを組み直す要求。</summary>
+        public Action OnGizmoRefresh;
+
+        // 姿勢調整チェック（ObjectMoveSettings と双方向同期）
+        private Toggle _toggleOriginOnly, _toggleMoveWithChildren;
+        private Toggle _toggleShowMoveGizmo, _toggleShowRotationGizmo;
+        private bool   _suppressMoveSettings;
 
         // ================================================================
         // コンテキスト
@@ -265,6 +301,9 @@ namespace Poly_Ling.MeshListV2
             panelNameLabel.style.marginBottom = 3;
             root.Add(panelNameLabel);
 
+            // ── ビューポート操作（3択）
+            root.Add(BuildViewportOpModeRow());
+
             // ── スキンドメッシュ（= 詳細モード）トグル
             _detailModeToggle = new Toggle("スキンドメッシュ") { value = false, name = "detail-mode-toggle" };
             _detailModeToggle.style.color = new StyleColor(Color.white);
@@ -438,10 +477,286 @@ namespace Poly_Ling.MeshListV2
             BuildMorphEditor(_morphEditor);
             root.Add(_morphEditor);
 
+            // ── 姿勢調整（常に表示。ビューポート操作モードに関わらず出す）
+            root.Add(BuildObjectPoseSection());
+
             // ── ステータス
             _statusLabel = new Label("") { name = "status-label" };
             _statusLabel.style.color = new StyleColor(Color.white);
             root.Add(_statusLabel);
+        }
+
+        // ================================================================
+        // ビューポート操作モード（3択）
+        // ================================================================
+
+        private VisualElement BuildViewportOpModeRow()
+        {
+            _viewportOpMode = (ViewportOpMode)PlayerUiPrefs.GetInt(
+                ViewportOpModeKey, (int)ViewportOpMode.ObjectPose);
+
+            var box = new VisualElement();
+            box.style.marginBottom = 3;
+
+            var lbl = new Label("ビューポート操作:");
+            lbl.style.color    = new StyleColor(Color.white);
+            lbl.style.fontSize = 10;
+            box.Add(lbl);
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+
+            Button MakeOpBtn(string text, string tip, ViewportOpMode mode)
+            {
+                var b = new Button(() => SetViewportOpMode(mode)) { text = text, tooltip = tip };
+                b.style.flexGrow      = 1;
+                b.style.height        = 20;
+                b.style.fontSize      = 9;
+                b.style.marginRight   = 2;
+                b.style.paddingLeft   = 2;
+                b.style.paddingRight  = 2;
+                row.Add(b);
+                return b;
+            }
+
+            _btnOpNone   = MakeOpBtn("操作なし", "3D 操作を受け付けない（視点操作だけ）",
+                                     ViewportOpMode.None);
+            _btnOpSelect = MakeOpBtn("要素選択", "頂点・辺・面の選択だけを行う（移動ギズモは出さない）",
+                                     ViewportOpMode.SelectElem);
+            _btnOpPose   = MakeOpBtn("姿勢調整", "オブジェクト原点を選び、姿勢を調整する（描画オブジェクトの姿勢と同じ）",
+                                     ViewportOpMode.ObjectPose);
+            _btnOpPose.style.marginRight = 0;
+
+            box.Add(row);
+            UpdateViewportOpModeButtons();
+            return box;
+        }
+
+        private void SetViewportOpMode(ViewportOpMode mode)
+        {
+            _viewportOpMode = mode;
+            PlayerUiPrefs.SetInt(ViewportOpModeKey, (int)mode);
+            UpdateViewportOpModeButtons();
+            OnViewportOpModeChanged?.Invoke(mode);
+        }
+
+        private void UpdateViewportOpModeButtons()
+        {
+            void Style(Button b, bool active)
+            {
+                if (b == null) return;
+                b.style.backgroundColor = new StyleColor(
+                    active ? new Color(0.25f, 0.45f, 0.7f) : new Color(0.2f, 0.2f, 0.2f));
+                b.style.color = new StyleColor(Color.white);
+            }
+            Style(_btnOpNone,   _viewportOpMode == ViewportOpMode.None);
+            Style(_btnOpSelect, _viewportOpMode == ViewportOpMode.SelectElem);
+            Style(_btnOpPose,   _viewportOpMode == ViewportOpMode.ObjectPose);
+        }
+
+        // ================================================================
+        // 姿勢調整（ObjectMoveSettings と双方向同期）
+        // ================================================================
+
+        /// <summary>
+        /// 「描画オブジェクトの姿勢」タブと同じ操作チェックを、オブジェクトリストにも置く。
+        /// 実体は ObjectMoveTool の共有 ObjectMoveSettings 1 個なので、
+        /// どちらのパネルで変えても同じ設定を触る。
+        /// 数値での位置・回転・スケールは既存の「トランスフォーム」に集約してあるため、
+        /// ここには置かない（同じ値の入力欄を 2 か所に作らない）。
+        /// </summary>
+        private VisualElement BuildObjectPoseSection()
+        {
+            var box = new VisualElement { name = "object-pose-section" };
+            box.Add(Separator());
+            box.Add(SectionHeader("姿勢調整"));
+
+            _toggleOriginOnly        = new Toggle("原点だけ移動") { value = false };
+            _toggleMoveWithChildren  = new Toggle("子を一緒に移動") { value = true };
+            _toggleShowMoveGizmo     = new Toggle("移動ギズモを表示") { value = true };
+            _toggleShowRotationGizmo = new Toggle("回転ギズモを表示") { value = false };
+
+            _toggleOriginOnly.style.color        = new StyleColor(Color.white);
+            _toggleMoveWithChildren.style.color  = new StyleColor(Color.white);
+            _toggleShowMoveGizmo.style.color     = new StyleColor(Color.white);
+            _toggleShowRotationGizmo.style.color = new StyleColor(Color.white);
+
+            _toggleShowMoveGizmo.tooltip =
+                "OFF にすると矢印と中央ハンドルを消し、当たり判定も止める"
+                + "（オブジェクト原点をクリックで選びやすくする）";
+            _toggleShowRotationGizmo.tooltip =
+                "OFF にすると回転リングを消し、当たり判定も止める";
+
+            _toggleOriginOnly.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.OriginOnly = e.newValue;
+
+                // 「原点だけ移動」を ON にしたときだけ「子を一緒に移動」を OFF にする。
+                // OFF にしたときは連動しない。
+                if (e.newValue)
+                {
+                    if (s != null) s.MoveWithChildren = false;
+                    _suppressMoveSettings = true;
+                    try { _toggleMoveWithChildren?.SetValueWithoutNotify(false); }
+                    finally { _suppressMoveSettings = false; }
+                }
+            });
+            _toggleMoveWithChildren.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.MoveWithChildren = e.newValue;
+            });
+            _toggleShowMoveGizmo.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.AllowMoveGizmo = e.newValue;
+                OnGizmoRefresh?.Invoke();
+            });
+            _toggleShowRotationGizmo.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.AllowRotationGizmo = e.newValue;
+                OnGizmoRefresh?.Invoke();
+            });
+
+            box.Add(_toggleOriginOnly);
+            box.Add(_toggleMoveWithChildren);
+            box.Add(_toggleShowMoveGizmo);
+            box.Add(_toggleShowRotationGizmo);
+            box.Add(BuildQuickOffsetRow());
+            return box;
+        }
+
+        /// <summary>
+        /// 選択対象のローカル姿勢を決め打ちの量だけ動かすボタン行。
+        /// 「描画オブジェクトの姿勢」タブと同じ並び・同じ動きにする。
+        /// </summary>
+        private VisualElement BuildQuickOffsetRow()
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginTop     = 2;
+
+            Button Make(string text, string tip, Action onClick)
+            {
+                var b = new Button(onClick) { text = text, tooltip = tip };
+                b.style.flexGrow     = 1;
+                b.style.height       = 20;
+                b.style.fontSize     = 9;
+                b.style.marginRight  = 2;
+                b.style.paddingLeft  = 2;
+                b.style.paddingRight = 2;
+                row.Add(b);
+                return b;
+            }
+
+            Make("Z90度回転", "選択対象のローカル Z 回転に +90 度を足す",
+                 () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, 90f, "Z+90度回転"));
+            Make("Y0.1移動", "選択対象のローカル Y 位置に +0.1 を足す",
+                 () => OffsetTransform(SetBoneTransformValueCommand.Field.PositionY, 0.1f, "Y+0.1移動"));
+            var last = Make("Z-90度回転", "選択対象のローカル Z 回転に −90 度を足す",
+                 () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, -90f, "Z-90度回転"));
+            last.style.marginRight = 0;
+
+            return row;
+        }
+
+        /// <summary>
+        /// ローカル姿勢の 1 軸を相対で動かす。
+        ///
+        /// 「原点だけ移動」の自頂点再ローカル化・スキン固定の BindPose 追従・Undo は
+        /// PlayerCommandDispatcher の Begin → Set → End 経路が持っている。
+        /// ここでは現在値に差分を足した絶対値を求めて既存経路へ渡すだけにする
+        /// （後処理を書き写さない）。
+        ///
+        /// SetBoneTransformValueCommand は配列全員へ同じ値を代入するため、
+        /// 現在値がオブジェクトごとに違う相対操作では 1 件ずつ送る必要がある。
+        /// 対象はポーズを持たないもの（＝トランスフォーム欄と同じ集合）。
+        /// </summary>
+        private void OffsetTransform(
+            SetBoneTransformValueCommand.Field field, float delta, string undoLabel)
+        {
+            if (_ctx == null) return;
+
+            var targets = _selectedAdapters
+                .Where(a => !a.MeshView.BonePose.HasPose && a.MasterIndex >= 0)
+                .ToList();
+            if (targets.Count == 0) return;
+
+            var indices = targets.Select(a => a.MasterIndex).ToArray();
+            var s = GetObjectMoveSettings?.Invoke();
+
+            SendCmd(new BeginBoneTransformSliderDragCommand(ModelIndex, indices)
+            {
+                Mode       = s?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                OriginOnly = s?.OriginOnly ?? false,
+            });
+
+            bool isRotation =
+                field == SetBoneTransformValueCommand.Field.RotationX ||
+                field == SetBoneTransformValueCommand.Field.RotationY ||
+                field == SetBoneTransformValueCommand.Field.RotationZ;
+
+            foreach (var a in targets)
+            {
+                var v = a.MeshView;
+                float cur;
+                switch (field)
+                {
+                    case SetBoneTransformValueCommand.Field.PositionX: cur = v.LocalPosition.x; break;
+                    case SetBoneTransformValueCommand.Field.PositionY: cur = v.LocalPosition.y; break;
+                    case SetBoneTransformValueCommand.Field.PositionZ: cur = v.LocalPosition.z; break;
+                    case SetBoneTransformValueCommand.Field.RotationX: cur = v.LocalRotationEuler.x; break;
+                    case SetBoneTransformValueCommand.Field.RotationY: cur = v.LocalRotationEuler.y; break;
+                    case SetBoneTransformValueCommand.Field.RotationZ: cur = v.LocalRotationEuler.z; break;
+                    default: continue;
+                }
+
+                float next = cur + delta;
+                // 回転は押すたびに 360 を超えて伸びていくので毎回畳む。
+                if (isRotation) next = NormAngle(next);
+
+                SendCmd(new SetBoneTransformValueCommand(
+                    ModelIndex, new[] { a.MasterIndex }, field, next));
+            }
+
+            SendCmd(new EndBoneTransformSliderDragCommand(ModelIndex, undoLabel));
+            UpdateTransformPanel();
+        }
+
+        /// <summary>ObjectMoveSettings の現在値をチェックへ映す。パネル表示時に呼ぶ。</summary>
+        public void SyncObjectPoseToggles()
+        {
+            var s = GetObjectMoveSettings?.Invoke();
+            if (s == null) return;
+            _suppressMoveSettings = true;
+            try
+            {
+                _toggleOriginOnly?.SetValueWithoutNotify(s.OriginOnly);
+                _toggleMoveWithChildren?.SetValueWithoutNotify(s.MoveWithChildren);
+                _toggleShowMoveGizmo?.SetValueWithoutNotify(s.AllowMoveGizmo);
+                _toggleShowRotationGizmo?.SetValueWithoutNotify(s.AllowRotationGizmo);
+            }
+            finally { _suppressMoveSettings = false; }
+        }
+
+        /// <summary>
+        /// このパネルが担当する間の ObjectMoveTool のピック対象を決める。
+        /// ボーンタブならボーン、それ以外は描画メッシュ（スキンドは除く）。
+        /// </summary>
+        public void ApplyPickFilter()
+        {
+            var s = GetObjectMoveSettings?.Invoke();
+            if (s == null) return;
+            bool boneTab = !IsSimpleMode && _currentTab == TabType.Bone;
+            s.PickBones         = boneTab;
+            s.PickMeshesNoSkin  = !boneTab;
+            s.PickMeshesSkinned = false;
         }
 
         private void BuildDetailFoldout(VisualElement c)
@@ -776,6 +1091,8 @@ namespace Poly_Ling.MeshListV2
             // 名称一括変更はタブ（メッシュ／ボーン／モーフ…）ごとに独立させる
             ResetRenameState();
             RefreshSelectionDictionary();
+            // タブでピック対象（ボーン / 描画メッシュ）が変わる。
+            ApplyPickFilter();
             Log($"{tab} タブ");
         }
 
@@ -1423,27 +1740,100 @@ namespace Poly_Ling.MeshListV2
             return true;
         }
 
+        /// <summary>直前に同期したツリー内 id。展開・スクロールを「変わったときだけ」に絞る判定に使う。</summary>
+        private readonly List<int> _lastSyncedSelIds = new List<int>();
+
+        /// <summary>
+        /// モデル側の選択をツリーの選択へ反映する。
+        ///
+        /// 【id と index を取り違えないこと】
+        ///   TreeView は BaseVerticalCollectionView から
+        ///   SetSelectionWithoutNotify(IEnumerable&lt;int&gt;) を継承しており、これは
+        ///   「今表示されている行の index」を取る。SummaryTreeAdapter.Id は
+        ///   TreeViewItemData に渡した item id であって index ではない。
+        ///   ここへ id を渡すと、折り畳みやフィルタで行数がずれた瞬間に
+        ///   まったく別の行が選ばれる（すべて展開・フィルタなしのときだけ
+        ///   id と index が一致するので、症状が出たり出なかったりする）。
+        ///   id で指定するときは必ず SetSelectionByIdWithoutNotify を使う。
+        ///   モーフ側 (SyncMorphSel) は ListView なので index で正しい。
+        /// </summary>
         private void SyncTreeViewSelection()
         {
-            if (_treeView == null || _treeRoot == null || CurrentModel == null) return;
+            if (_treeView == null || _treeRoot == null || CurrentModel == null)
+            {
+                PLDiag.SelList($"sync skip tree={_treeView != null} root={_treeRoot != null} model={CurrentModel != null}");
+                return;
+            }
+
             int[] sel = _currentTab switch
             {
                 TabType.Drawable => CurrentModel.SelectedDrawableIndices,
                 TabType.Bone     => CurrentModel.SelectedBoneIndices,
                 _                => null,
             };
-            if (sel == null) { _treeView.ClearSelection(); return; }
+            if (sel == null)
+            {
+                PLDiag.SelList($"sync clear tab={_currentTab}");
+                _treeView.ClearSelection();
+                _lastSyncedSelIds.Clear();
+                return;
+            }
 
-            var ids = new List<int>();
+            var ids     = new List<int>();
+            var missing = new List<int>();
             foreach (var idx in sel)
             {
                 var a = _treeRoot.GetAdapterByMasterIndex(idx);
-                if (a != null) ids.Add(a.Id);
+                if (a == null) { missing.Add(idx); continue; }
+                ids.Add(a.Id);
             }
+
+            bool changed = !SameIntList(ids, _lastSyncedSelIds);
+
+            PLDiag.SelList(
+                $"sync tab={_currentTab} simple={IsSimpleMode} rows={_treeRoot.TotalCount} " +
+                $"master=[{string.Join(",", sel)}] ids=[{string.Join(",", ids)}] " +
+                $"missing=[{string.Join(",", missing)}] changed={changed}");
+
+            // ここは OnViewChanged の中からも呼ばれる。無条件に false へ戻すと
+            // 外側の受信中フラグを途中で落としてしまうため、元の値へ戻す。
+            bool prevReceiving = _isReceiving;
             _isReceiving = true;
-            try { _treeView.SetSelectionWithoutNotify(ids); }
-            finally { _isReceiving = false; }
+            try
+            {
+                // 折り畳みを開くのは「選択が変わった」ときだけ。
+                // 属性変更などの通知でも同期は走るので、無条件に開くと
+                // 利用者が閉じた枝を勝手に開き直してしまう。
+                if (changed)
+                    foreach (int id in ids) ExpandAncestorsIfCollapsed(id);
+
+                _treeView.SetSelectionByIdWithoutNotify(ids);
+            }
+            finally { _isReceiving = prevReceiving; }
+
+            // 選択行が表示範囲の外だと、選ばれていること自体が見えない。
+            // 先頭の 1 件までスクロールする（複数選択でも基準を 1 つに決める）。
+            if (changed && ids.Count > 0)
+            {
+                int firstId = ids[0];
+                _root?.schedule.Execute(() =>
+                {
+                    try { _treeView?.ScrollToItemById(firstId); }
+                    catch (System.Exception) { /* 行が消えている場合は何もしない */ }
+                });
+            }
+
+            _lastSyncedSelIds.Clear();
+            _lastSyncedSelIds.AddRange(ids);
+
             RebuildSelectedAdaptersFromCurrentModel();
+        }
+
+        private static bool SameIntList(List<int> a, List<int> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++) if (a[i] != b[i]) return false;
+            return true;
         }
 
         // ================================================================
@@ -1642,7 +2032,7 @@ namespace Poly_Ling.MeshListV2
         {
             string cur = _renamePathField?.value ?? "";
             if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
-            string path = PlayerIoUiKit.AskLoadPath("名称一括変更 対応表の読込", cur, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("名称一括変更 対応表の読込", RenamePathKey(), cur, "csv");
             if (!string.IsNullOrEmpty(path)) _renamePathField.value = path;
         }
 
@@ -1657,7 +2047,7 @@ namespace Poly_Ling.MeshListV2
             if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
 
             string path = PlayerIoUiKit.AskSavePath(
-                "名称一括変更 対応表の書き出し", cur, RenameDefaultFileName(), "csv");
+                "名称一括変更 対応表の書き出し", RenamePathKey(), cur, RenameDefaultFileName(), "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             _renamePathField.value = path;
@@ -1689,7 +2079,7 @@ namespace Poly_Ling.MeshListV2
             string cur = _renamePathField?.value?.Trim() ?? "";
             if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
 
-            string path = PlayerIoUiKit.AskLoadPath("名称一括変更 対応表の読込", cur, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("名称一括変更 対応表の読込", RenamePathKey(), cur, "csv");
             if (string.IsNullOrEmpty(path)) { UpdateRenameButtonStates(); return; }
 
             _renamePathField.value = path;
@@ -1985,6 +2375,34 @@ namespace Poly_Ling.MeshListV2
                     var s = _treeView?.Q<ScrollView>();
                     if (s != null) s.scrollOffset = keep;
                 });
+            }
+        }
+
+        /// <summary>
+        /// この行を表示するために本当に必要な祖先だけを開く。
+        /// 既に開いている枝には触らない。
+        ///
+        /// データ側 (MeshContext.IsFolding) にも同じ操作を送る。送らないと、
+        /// 次の属性通知で SyncExpandedFromData が IsFolding を見て閉じ直してしまう。
+        /// 呼び出し元で _isReceiving を立てているため、この送信で OnViewChanged へ
+        /// 再入しても弾かれる。
+        /// </summary>
+        private void ExpandAncestorsIfCollapsed(int id)
+        {
+            if (_treeView == null || _treeRoot == null) return;
+            var item = _treeRoot.FindById(id);
+            if (item == null) return;
+
+            for (var p = item.Parent; p != null; p = p.Parent)
+            {
+                if (_treeView.IsExpanded(p.Id)) continue;   // 開いている枝は触らない
+
+                p.IsExpanded = true;
+                _treeView.ExpandItem(p.Id, false);
+                if (p.MasterIndex >= 0)
+                    SendCmd(new SetMeshFoldingCommand(ModelIndex, p.MasterIndex, false));
+
+                PLDiag.SelList($"expand ancestor id={p.Id} master={p.MasterIndex} name={p.DisplayName}");
             }
         }
 

@@ -185,7 +185,7 @@ namespace Poly_Ling.Player
             string ext   = _mode == Mode.PMX ? "pmx" : "mqo";
             string title = _mode == Mode.PMX ? "Select PMX" : "Select MQO";
 
-            string path = PlayerIoUiKit.AskLoadPath(title, _filePathField?.value, ext);
+            string path = PlayerIoUiKit.AskLoadPath(title, PartialImportPathKey(), _filePathField?.value, ext);
             if (string.IsNullOrEmpty(path)) return;
 
             _filePathField.value = path;

@@ -249,25 +249,34 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。
-        /// 軸ギズモは矢印スタイル、回転リングは設定で有効なときのみ併用し、
-        /// ピボット位置はダイヤで別途表示する。
+        /// 軸ギズモ（矢印）と回転リングはそれぞれ ObjectMoveSettings の
+        /// AllowMoveGizmo / AllowRotationGizmo で独立に出し入れできる。
+        /// どちらも無効なら false を返し、呼び出し側が HideGizmo する。
+        ///
+        /// 【矢印だけを消す場合の描き方】
+        ///   PlayerViewportPanel は IsRingStyle かつ DrawAxisWithRing == false のとき
+        ///   リングだけ描いて終了する。ピボットのダイヤもこの分岐で描かれなくなるため、
+        ///   矢印非表示時は HasPivotGizmo を立てない（立てても描かれないため）。
         /// </summary>
         public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
         {
             data = default;
-            if (!TryGetGizmoScreenPositions(
-                    ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
-                return false;
 
-            GetPivotScreenPos(out var pivotScreen);
+            bool hasAxis = TryGetGizmoScreenPositions(
+                ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis);
 
             // 回転リング（設定で無効なときは false が返る）
             bool hasRing = TryGetGizmoRings(
                 ctx, out var ringX, out var ringY, out var ringZ, out var ringHovAxis);
 
+            if (!hasAxis && !hasRing) return false;
+
             // 軸ホバーとリングホバーは ObjectMoveTool 側で排他になっている。
             // GizmoData の HoveredAxis は 1 つなので、非 None の方を採用する。
             var shownHover = hovAxis != AxisGizmo.AxisType.None ? hovAxis : ringHovAxis;
+
+            Vector2 pivotScreen = Vector2.zero;
+            if (hasAxis) GetPivotScreenPos(out pivotScreen);
 
             data = new PlayerViewportPanel.GizmoData
             {
@@ -275,10 +284,10 @@ namespace Poly_Ling.Player
                 IsDiamondStyle = false,
                 Origin         = origin, XEnd = xEnd, YEnd = yEnd, ZEnd = zEnd,
                 HoveredAxis    = shownHover,
-                HasPivotGizmo  = true, PivotOrigin = pivotScreen,
+                HasPivotGizmo  = hasAxis, PivotOrigin = pivotScreen,
                 IsRingStyle    = hasRing,
                 RingX = ringX, RingY = ringY, RingZ = ringZ,
-                DrawAxisWithRing = true,
+                DrawAxisWithRing = hasAxis,
             };
             return true;
         }
@@ -337,36 +346,12 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// ObjectMoveTool.TryPickObject と同じピックフィルタを 1 つの MeshContext に対して評価。
+        /// ピックフィルタの評価は ObjectMoveTool.PassesPickFilter へ一本化する。
+        /// ここに同じ判定を書き直さないこと（クリックピック・矩形選択・原点マーカーで
+        /// 判定がずれる原因になる）。
         /// </summary>
         private bool PassPickFilter(Poly_Ling.Data.MeshContext mc, Poly_Ling.Tools.ObjectMoveSettings s)
-        {
-            if (mc == null || s == null) return false;
-            // モーフ・剛体・ジョイント・グループは TryPickObject と同様に常に除外
-            var t = mc.Type;
-            if (t == Poly_Ling.Data.MeshType.Morph ||
-                t == Poly_Ling.Data.MeshType.RigidBody ||
-                t == Poly_Ling.Data.MeshType.RigidBodyJoint ||
-                t == Poly_Ling.Data.MeshType.Group)
-                return false;
-
-            if (t == Poly_Ling.Data.MeshType.Bone)
-                return s.PickBones;
-
-            if (t == Poly_Ling.Data.MeshType.Mesh)
-            {
-                bool skinned = mc.IsSkinned;
-                return skinned ? s.PickMeshesSkinned : s.PickMeshesNoSkin;
-            }
-
-            // ミラー側は実体側と原点が重なるため既定で除外（TryPickObject と同じ）
-            if (t == Poly_Ling.Data.MeshType.MirrorSide ||
-                t == Poly_Ling.Data.MeshType.BakedMirror)
-                return s.PickMirrorSides;
-
-            // Helper は TryPickObject 互換で常に通す
-            return true;
-        }
+            => Poly_Ling.Tools.ObjectMoveTool.PassesPickFilter(mc, s);
 
         /// <summary>
         /// 修飾キー処理を MoveToolHandler の頂点矩形選択と揃える:

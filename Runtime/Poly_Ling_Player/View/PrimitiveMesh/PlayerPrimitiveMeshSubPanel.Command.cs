@@ -101,6 +101,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Plane:        return new CreatePlaneCommand(mi, _planeP, pl);
                 case ShapeKind.Pyramid:      return new CreatePyramidCommand(mi, _pyramidP, pl);
                 case ShapeKind.StadiumBox:   return new CreateStadiumBoxCommand(mi, _stadiumP, pl);
+                case ShapeKind.PipeStadium:  return new CreatePipeStadiumCommand(mi, _pipeStadiumP, pl);
                 case ShapeKind.NGonGear:     return new CreateNGonGearCommand(mi, _ngonGearP, pl);
                 case ShapeKind.NGonStar:     return new CreateNGonStarCommand(mi, _ngonStarP, pl);
                 case ShapeKind.InvoluteGear: return new CreateInvoluteGearCommand(mi, _involGearP, pl);

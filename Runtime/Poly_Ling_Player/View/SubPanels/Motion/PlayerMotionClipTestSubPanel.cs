@@ -324,7 +324,7 @@ namespace Poly_Ling.Player
         private void OnBrowse()
         {
             string ext  = _sourceKind == 0 ? "vmd" : "json";
-            string path = PlayerIoUiKit.AskLoadPath("Open Motion", _pathField.value, ext);
+            string path = PlayerIoUiKit.AskLoadPath("Open Motion", PathKey, _pathField.value, ext);
             if (string.IsNullOrEmpty(path)) return;
             _pathField.value = path;
             Load(path);
@@ -406,7 +406,7 @@ namespace Poly_Ling.Player
         private void OnBrowseBind()
         {
             string path = PlayerIoUiKit.AskLoadPath(
-                "Open UnityBone CSV (bind pose)", _bindPathField.value, "csv");
+                "Open UnityBone CSV (bind pose)", BindPathKey, _bindPathField.value, "csv");
             if (string.IsNullOrEmpty(path)) return;
             _bindPathField.value = path;
             LoadBind(path);

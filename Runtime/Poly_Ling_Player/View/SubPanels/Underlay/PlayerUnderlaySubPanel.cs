@@ -228,7 +228,7 @@ namespace Poly_Ling.Player
         private void OnBrowseFile()
         {
             string path = PlayerIoUiKit.AskLoadPath(
-                "下絵画像を選択", _pathField.value, "png,jpg,jpeg,tga,bmp");
+                "下絵画像を選択", PathKey, _pathField.value, "png,jpg,jpeg,tga,bmp");
             if (string.IsNullOrEmpty(path)) return;
             _pathField.value = path;
             LoadFromPath(path);

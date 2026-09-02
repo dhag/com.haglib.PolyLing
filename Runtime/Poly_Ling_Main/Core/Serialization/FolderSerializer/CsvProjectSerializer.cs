@@ -47,6 +47,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // RecentPaths のキー（CSVプロジェクトの保存/読込先ディレクトリを起動間で記録する）
         public const string CsvFolderKey = "Project.CsvFolder";
 
+        /// <summary>
+        /// プロジェクトCSVの「最後に使ったフルパス」。
+        /// CsvFolderKey はフォルダだけを覚えるため、ファイル名が毎回消えていた。
+        /// 初期値はこちらを使い、フォルダ用の旧キーも従来どおり更新する
+        /// （他所が CsvFolderKey を見ている場合に備えて残す）。
+        /// </summary>
+        public const string CsvFileKey = "Project.CsvFilePath";
+
         // ================================================================
         // Export: ダイアログ付き
         // ================================================================
@@ -63,12 +71,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string filePath = PLEditorBridge.I.SaveFilePanel(
-                "Export Project File",
-                RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                defaultName,
-                ProjectFileExtension
-            );
+            string filePath = RecentFileDialog.AskSave(
+                "Export Project File", CsvFileKey, defaultName, ProjectFileExtension);
 
             if (string.IsNullOrEmpty(filePath))
                 return false;
@@ -87,12 +91,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string filePath = PLEditorBridge.I.SaveFilePanel(
-                "Export Project File",
-                RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                defaultName,
-                ProjectFileExtension
-            );
+            string filePath = RecentFileDialog.AskSave(
+                "Export Project File", CsvFileKey, defaultName, ProjectFileExtension);
 
             if (string.IsNullOrEmpty(filePath))
                 return false;
@@ -122,11 +122,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             out List<EditorStateDTO> editorStates,
             out List<WorkPlaneContext> workPlanes)
         {
-            string filePath = PLEditorBridge.I.OpenFilePanel(
-                "Import Project File",
-                RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                ProjectFileExtension
-            );
+            string filePath = RecentFileDialog.AskLoad(
+                "Import Project File", CsvFileKey, ProjectFileExtension);
 
             editorStates = null;
             workPlanes = null;
@@ -150,11 +147,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             workPlane = null;
             additionalEntries = new List<CsvMeshEntry>();
 
-            string filePath = PLEditorBridge.I.OpenFilePanel(
-                "Import Project File",
-                RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                ProjectFileExtension
-            );
+            string filePath = RecentFileDialog.AskLoad(
+                "Import Project File", CsvFileKey, ProjectFileExtension);
 
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
                 return null;

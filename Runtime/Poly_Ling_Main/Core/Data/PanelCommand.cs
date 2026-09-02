@@ -728,6 +728,73 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// パーツID（Vertex.PartsId）／サブID（Vertex.SubId）の一括採番。
+    ///
+    /// 【頂点IDとの分離】
+    ///   このコマンドは Vertex.Id を読まないし書かない。頂点IDの修復は
+    ///   RepairVertexIdsCommand が持つ。両者は独立して掛けられる。
+    ///
+    /// 【対象】
+    ///   TargetMasterIndex で指定した描画オブジェクト 1 つだけ。
+    ///   ビューポートの「オブジェクト選択」とは無関係で、選択状態を参照しない。
+    ///
+    /// 【リファレンス】
+    ///   ReferenceVertexCount のときだけ使う。1 つだけ指定する。
+    ///   藤壺の配置元が複数オブジェクトだった場合は、あらかじめ 1 つへ結合したものを
+    ///   リファレンスに指定すること（このコマンドは結合を行わない）。
+    /// </summary>
+    public class AssignPartsIdsCommand : PanelCommand
+    {
+        public enum PartsIdMode
+        {
+            /// <summary>面・線のつながり（独立性）でパーツを分ける。</summary>
+            Connectivity,
+            /// <summary>リファレンスの頂点数で頂点列を等分してパーツを分ける。</summary>
+            ReferenceVertexCount,
+            /// <summary>パーツIDはそのままで、サブIDだけ振り直す。</summary>
+            SubIdOnly,
+            /// <summary>パーツID・サブIDを 0 に戻す。</summary>
+            Clear,
+        }
+
+        /// <summary>採番する描画オブジェクトの masterIndex。</summary>
+        [PLParam(TextKey = "PartsIdTargetMasterIndex",
+                 Description = "採番する描画オブジェクトの masterIndex", Required = true)]
+        public int TargetMasterIndex { get; }
+
+        [PLParam(TextKey = "PartsIdMode",
+                 Description = "つながり / リファレンス頂点数 / サブIDのみ / 消去", Required = true)]
+        public PartsIdMode Mode { get; }
+
+        /// <summary>
+        /// 1 パーツの頂点数を取る描画オブジェクトの masterIndex。-1 で未指定。
+        /// ReferenceVertexCount 以外のモードでは無視する。
+        /// </summary>
+        [PLParam(TextKey = "PartsIdReferenceMasterIndex",
+                 Description = "1 パーツの頂点数を取るオブジェクトの masterIndex。-1 で未指定")]
+        public int ReferenceMasterIndex { get; }
+
+        /// <summary>面にも線にも属さない頂点の扱い。Connectivity のときだけ効く。</summary>
+        [PLParam(TextKey = "PartsIdIsolatedPolicy",
+                 Description = "孤立頂点をまとめて 1 パーツにするか、1 つずつ独立させるか")]
+        public IsolatedVertexPolicy IsolatedPolicy { get; }
+
+        public AssignPartsIdsCommand(
+            int modelIndex,
+            int targetMasterIndex,
+            PartsIdMode mode,
+            int referenceMasterIndex = -1,
+            IsolatedVertexPolicy isolatedPolicy = IsolatedVertexPolicy.SingleGroup)
+            : base(modelIndex)
+        {
+            TargetMasterIndex    = targetMasterIndex;
+            Mode                 = mode;
+            ReferenceMasterIndex = referenceMasterIndex;
+            IsolatedPolicy       = isolatedPolicy;
+        }
+    }
+
+    /// <summary>
     /// モデル間・オブジェクト間で頂点データを転送する。
     ///
     /// メッシュのペアは SourceMeshIndices[i] ↔ TargetMeshIndices[i] で明示する
@@ -1607,6 +1674,17 @@ namespace Poly_Ling.Data
         /// false: ビフォーを上書きし、元形状を &lt;名前&gt;_backup として追加する
         /// </summary>
         public bool  CreateNewObject       { get; }
+        /// <summary>
+        /// 衝突判定の単位。
+        /// VertexSegment … 頂点のビフォー→アフター線分とコライダー三角形の交差（既定）
+        /// FacePair      … ビフォー面を三角形に割り、面どうしの接触時刻を求める
+        /// </summary>
+        public Poly_Ling.UI.ShrinkCollisionMode CollisionMode { get; }
+        /// <summary>
+        /// 面方式の反復上限。頂点方式では使わない。
+        /// 停止値は単調減少するので必ず収束するが、上限で打ち切ることもできる。
+        /// </summary>
+        public int   MaxPasses             { get; }
 
         public ApplyShrinkCommand(
             int modelIndex,
@@ -1616,7 +1694,9 @@ namespace Poly_Ling.Data
             float surfaceOffset      = 0f,
             bool  frontFaceOnly      = false,
             bool  recalculateNormals = true,
-            bool  createNewObject    = true)
+            bool  createNewObject    = true,
+            Poly_Ling.UI.ShrinkCollisionMode collisionMode = Poly_Ling.UI.ShrinkCollisionMode.VertexSegment,
+            int   maxPasses          = 8)
             : base(modelIndex)
         {
             BeforeMasterIndex     = beforeMasterIndex;
@@ -1627,6 +1707,8 @@ namespace Poly_Ling.Data
             FrontFaceOnly         = frontFaceOnly;
             RecalculateNormals    = recalculateNormals;
             CreateNewObject       = createNewObject;
+            CollisionMode         = collisionMode;
+            MaxPasses             = maxPasses;
         }
     }
 
@@ -2384,6 +2466,25 @@ namespace Poly_Ling.Data
     }
 
     // ── 高度な図形（パラメータだけで閉じるもの） ──────────────────
+
+    /// <summary>
+    /// パイプ接続用小判型（手のひらのもと）。
+    /// 長さ X と奥行き Z は指定ではなく、円の個数・半径・矩形部の幅から決まる。
+    /// </summary>
+    public sealed class CreatePipeStadiumCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "PipeStadium", Description = "パイプ接続用小判型のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.PipeStadiumMeshGenerator.PipeStadiumParams Params { get; }
+
+        public override string ShapeName => "PipeStadium";
+        public override string MeshName  => Params.MeshName;
+
+        public CreatePipeStadiumCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.PipeStadiumMeshGenerator.PipeStadiumParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
 
     public sealed class CreateNGonGearCommand : CreatePrimitiveMeshCommand
     {

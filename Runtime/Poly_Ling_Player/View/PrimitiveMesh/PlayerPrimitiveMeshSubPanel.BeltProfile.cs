@@ -127,6 +127,9 @@ namespace Poly_Ling.Player
             public string CsvRecentKey  = "Primitive.BeltProfile.Csv";
             public string CsvDefaultName = "profile.csv";
 
+            /// <summary>「反映(→メッシュ)」で作る描画オブジェクトの名前。</summary>
+            public string ObjectName = "Profile";
+
             /// <summary>終点と始点をつないだ閉じた断面として扱うか。</summary>
             public bool ClosedLoop;
 
@@ -449,7 +452,7 @@ namespace Poly_Ling.Player
             // パス欄の値は初期フォルダ／初期ファイル名としてだけ使い、確定後そのまま読込む。
             void LoadBeltCsv()
             {
-                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), path, "csv");
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), recentKey, path, "csv");
                 if (string.IsNullOrEmpty(sel)) return;
                 pathField.value = sel;
                 path = sel;
@@ -479,7 +482,7 @@ namespace Poly_Ling.Player
                 if (belts.Count == 0) { SetBeltStatus(T("FrillNoBase")); return; }
 
                 // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), path, defaultName, "csv");
+                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), recentKey, path, defaultName, "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 path = save;
                 pathField.value = path;
@@ -529,7 +532,7 @@ namespace Poly_Ling.Player
             // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
             void LoadProfileCsv()
             {
-                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), ed.CsvPath, "csv");
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), ed.CsvRecentKey, ed.CsvPath, "csv");
                 if (string.IsNullOrEmpty(sel)) return;
                 pathField.value = sel;
                 ed.CsvPath = sel;
@@ -557,7 +560,7 @@ namespace Poly_Ling.Player
 
                 // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
                 string save = PlayerIoUiKit.AskSavePath(
-                    T("SaveCSV"), ed.CsvPath, ed.CsvDefaultName, "csv");
+                    T("SaveCSV"), ed.CsvRecentKey, ed.CsvPath, ed.CsvDefaultName, "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 ed.CsvPath = save;
                 pathField.value = ed.CsvPath;
@@ -713,6 +716,20 @@ namespace Poly_Ling.Player
 
             // ── 断面プロファイルCSV ───────────────────────────────────────
             BuildBeltProfileCsvUI(pe, ed);
+
+            // ── メッシュ⇄プロファイル ─────────────────────────────────────
+            var beltIoFold = FoldSection(pe, T("MeshProfileIO"), false);
+            var beltIoRow  = new VisualElement();
+            beltIoRow.style.flexDirection = FlexDirection.Row;
+            beltIoRow.style.marginBottom  = 4;
+            SB(beltIoRow, T("ImportFromMesh"), () => ImportBeltProfileFromMesh(ed));
+            SB(beltIoRow, T("ApplyToMesh"),    () => ApplyBeltProfileToMesh(ed));
+            beltIoFold.Add(beltIoRow);
+
+            var beltIoHint = new Label(T("BeltProfileIOHint"));
+            beltIoHint.style.fontSize   = 10;
+            beltIoHint.style.whiteSpace = WhiteSpace.Normal;
+            beltIoFold.Add(beltIoHint);
 
             // 下絵
             BuildBgSection(pe,
@@ -1540,6 +1557,101 @@ namespace Poly_Ling.Player
             ed.UndoCtx.Profile = CloneBeltProfile(after);
             ed.UndoStack.Record(new BeltProfileUndoRecord { Before = before, After = after }, desc);
             undo.FocusSubWindow(ed.UndoStackId);
+        }
+
+        // ================================================================
+        // メッシュ⇄断面プロファイル
+        // 取り込み元／反映先 = 選択オブジェクト内の2頂点ライン。Z は捨てて XY を使う
+        // （回転体・2Dプロファイルと同じ規約）。
+        // 断面座標は rung 長で正規化された系なので、取り込み時だけ長辺が 1 になるよう
+        // 等方スケールし、AABB の最小角を原点へ寄せる。反映は生データのまま書き出す。
+        // ================================================================
+
+        /// <summary>選択オブジェクトの2頂点ラインを断面プロファイルへ取り込む。</summary>
+        private void ImportBeltProfileFromMesh(BeltProfileEdit ed)
+        {
+            if (ed == null) return;
+
+            var mesh = GetSelectedMeshObject?.Invoke();
+            if (mesh == null) { SetBeltStatus(T("NoSelectedMesh")); return; }
+
+            var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
+
+            List<Vector2> pts = null;
+            if (ed.ClosedLoop)
+            {
+                // 閉ループ断面。複数ループがあれば点数が最多のものを採る。
+                var loops = LineProfileExtractor.ExtractLoops(mesh, lineFaces);
+                if (loops != null)
+                {
+                    foreach (var lp in loops)
+                    {
+                        if (lp?.Points == null || lp.Points.Count < 3) continue;
+                        if (pts == null || lp.Points.Count > pts.Count) pts = lp.Points;
+                    }
+                }
+            }
+            else
+            {
+                pts = LineProfileExtractor.ExtractPolyline(mesh, lineFaces);
+            }
+
+            if (pts == null || pts.Count < 2) { SetBeltStatus(T("NoLinesFound")); return; }
+
+            var norm = NormalizeBeltProfile(pts);
+            if (norm == null) { SetBeltStatus(T("ProfileDegenerate")); return; }
+
+            BeltBegin(ed);
+            ed.Points = norm;
+            ed.Sel.Clear(); ed.SelectedIndex = -1;
+            BeltCommit(ed, "メッシュ取込");
+
+            SetBeltStatus(T("ImportedPoints", norm.Count));
+            D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
+        }
+
+        /// <summary>断面プロファイルを2頂点ラインの描画オブジェクトとして反映する（正規化なし）。</summary>
+        private void ApplyBeltProfileToMesh(BeltProfileEdit ed)
+        {
+            if (ed == null) return;
+
+            EnsureBeltProfile(ed);
+            if (ed.Points == null || ed.Points.Count < 2) { SetBeltStatus(T("NoLinesFound")); return; }
+
+            string name = string.IsNullOrEmpty(ed.ObjectName) ? "Profile" : ed.ObjectName;
+            var mo = LineProfileExtractor.PolylineToLineMesh(ed.Points, name, ed.ClosedLoop);
+            if (mo == null || mo.FaceCount == 0) { SetBeltStatus(T("NoLinesFound")); return; }
+
+            ApplyPoseForDirectMeshCreate(mo);
+
+            SetBeltStatus(T("AppliedToMesh", mo.FaceCount));
+            SendGeneratedMesh(mo, name);
+        }
+
+        /// <summary>
+        /// AABB の長辺が 1 になるよう等方スケールし、AABB の最小角を原点へ寄せる。
+        /// 長辺が 0（全点が同一位置）なら null。
+        /// </summary>
+        private static List<Vector2> NormalizeBeltProfile(IReadOnlyList<Vector2> src)
+        {
+            if (src == null || src.Count < 2) return null;
+
+            float minX = float.MaxValue, minY = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue;
+            for (int i = 0; i < src.Count; i++)
+            {
+                minX = Mathf.Min(minX, src[i].x); maxX = Mathf.Max(maxX, src[i].x);
+                minY = Mathf.Min(minY, src[i].y); maxY = Mathf.Max(maxY, src[i].y);
+            }
+
+            float span = Mathf.Max(maxX - minX, maxY - minY);
+            if (span <= 1e-6f) return null;
+
+            float k = 1f / span;
+            var dst = new List<Vector2>(src.Count);
+            for (int i = 0; i < src.Count; i++)
+                dst.Add(new Vector2((src[i].x - minX) * k, (src[i].y - minY) * k));
+            return dst;
         }
 
         // ================================================================

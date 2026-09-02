@@ -143,35 +143,43 @@ namespace Poly_Ling.EditorIO
 
         // ================================================================
         // EditorUtility ダイアログ
+        //
+        // 【FileDialogGuard で包む理由】
+        //   ネイティブのモーダル表示中もエディタのループは回り続ける。
+        //   そこでウィンドウが Repaint すると UIToolkit が保留イベントを処理し直し、
+        //   ダイアログを開かせたクリックが再配送されて同じダイアログが二重に開く。
+        //   ダイアログの入口はここだけなので、全メソッドを門番でくぐらせる。
+        //   （PolyLingEditorWindow 側でも、開いている間は Repaint を止める）
         // ================================================================
 
         public string SaveFilePanel(string title, string directory, string defaultName, string extension)
-            => EditorUtility.SaveFilePanel(title, directory, defaultName, extension);
+            => FileDialogGuard.Run(() => EditorUtility.SaveFilePanel(title, directory, defaultName, extension));
 
         public string SaveFilePanelInProject(string title, string defaultName, string extension, string message)
-            => EditorUtility.SaveFilePanelInProject(title, defaultName, extension, message);
+            => FileDialogGuard.Run(() => EditorUtility.SaveFilePanelInProject(title, defaultName, extension, message));
 
         public string OpenFilePanel(string title, string directory, string extension)
-            => EditorUtility.OpenFilePanel(title, directory, extension);
+            => FileDialogGuard.Run(() => EditorUtility.OpenFilePanel(title, directory, extension));
 
         // EditorUtility.OpenFilePanel は初期ファイル名の引数を持たないため、
         // Windows では Player と同じ Win32FileDialog を使って defaultName を反映する。
         // それ以外のプラットフォームは EditorUtility にフォールバックし、defaultName は無視される。
         public string OpenFilePanel(string title, string directory, string defaultName, string extension)
-        {
-            if (!Win32FileDialog.Supported)
-                return EditorUtility.OpenFilePanel(title, directory, extension);
+            => FileDialogGuard.Run(() =>
+            {
+                if (!Win32FileDialog.Supported)
+                    return EditorUtility.OpenFilePanel(title, directory, extension);
 
-            // Win32 は '\\' 区切りで返すため、EditorUtility と同じ '/' 区切りに揃える。
-            string path = Win32FileDialog.OpenFile(title, directory, defaultName, extension);
-            return string.IsNullOrEmpty(path) ? string.Empty : path.Replace('\\', '/');
-        }
+                // Win32 は '\\' 区切りで返すため、EditorUtility と同じ '/' 区切りに揃える。
+                string path = Win32FileDialog.OpenFile(title, directory, defaultName, extension);
+                return string.IsNullOrEmpty(path) ? string.Empty : path.Replace('\\', '/');
+            });
 
         public string SaveFolderPanel(string title, string directory, string defaultName)
-            => EditorUtility.SaveFolderPanel(title, directory, defaultName);
+            => FileDialogGuard.Run(() => EditorUtility.SaveFolderPanel(title, directory, defaultName));
 
         public string OpenFolderPanel(string title, string directory, string defaultName)
-            => EditorUtility.OpenFolderPanel(title, directory, defaultName);
+            => FileDialogGuard.Run(() => EditorUtility.OpenFolderPanel(title, directory, defaultName));
 
         public bool DisplayDialog(string title, string message, string ok)
             => EditorUtility.DisplayDialog(title, message, ok);

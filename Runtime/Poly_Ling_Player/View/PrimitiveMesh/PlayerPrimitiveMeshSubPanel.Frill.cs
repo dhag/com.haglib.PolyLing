@@ -36,6 +36,7 @@ namespace Poly_Ling.Player
             BgSectionLabel = "フリル下絵A",
             CsvRecentKey   = "Primitive.Frill.ProfileCsv",
             CsvDefaultName = "frill_profile.csv",
+            ObjectName     = "FrillProfileA",
         };
 
         /// <summary>2プロファイルモードの B 側。A とは Undo スタックも下絵もCSVパスも別に持つ。</summary>
@@ -48,6 +49,7 @@ namespace Poly_Ling.Player
             BgSectionLabel = "フリル下絵B",
             CsvRecentKey   = "Primitive.Frill.ProfileCsvB",
             CsvDefaultName = "frill_profile_b.csv",
+            ObjectName     = "FrillProfileB",
         };
 
         /// <summary>断面プロファイルエディタで B 側を編集中なら true（メモリ保持・非永続）。</summary>

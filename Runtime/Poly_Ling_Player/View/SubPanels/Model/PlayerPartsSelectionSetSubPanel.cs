@@ -280,11 +280,14 @@ namespace Poly_Ling.Player
                 : folder;
         }
 
+        /// <summary>辞書フォルダのパス履歴キー。</summary>
+        private const string PartsDicFolderKey = "PartsSelSet.DicFolder";
+
         private void OnBrowseCsvFolder()
         {
             string cur = _csvFolderField?.value ?? "";
             string dir = string.IsNullOrEmpty(cur) ? PartsDictionaryPath.Resolve() : cur;
-            string path = PLEditorBridge.I.OpenFolderPanel("辞書フォルダ", dir, "");
+            string path = PlayerIoUiKit.AskFolderPath("辞書フォルダ", PartsDicFolderKey, dir);
             if (!string.IsNullOrEmpty(path)) _csvFolderField.value = path;
         }
 

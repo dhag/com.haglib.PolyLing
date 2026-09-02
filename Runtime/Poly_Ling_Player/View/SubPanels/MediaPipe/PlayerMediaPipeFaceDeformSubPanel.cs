@@ -137,7 +137,7 @@ namespace Poly_Ling.Player
 
             parent.Add(PlayerIoUiKit.PathRow(field, () =>
             {
-                string path = PlayerIoUiKit.AskLoadPath(dialogTitle, field.value, "json");
+                string path = PlayerIoUiKit.AskLoadPath(dialogTitle, prefKey, field.value, "json");
                 if (!string.IsNullOrEmpty(path)) field.value = path;
             }));
 

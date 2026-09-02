@@ -35,6 +35,12 @@ namespace Poly_Ling.Serialization
         // RecentPaths のキー（.mfproj 保存/読込フォルダを起動間で記録する）
         public const string JsonFolderKey = "Project.JsonFolder";
 
+        /// <summary>
+        /// プロジェクトJSONの「最後に使ったフルパス」。
+        /// JsonFolderKey はフォルダだけを覚えるため、ファイル名が毎回消えていた。
+        /// </summary>
+        public const string JsonFileKey   = "Project.JsonFilePath";
+
         // ================================================================
         // エクスポート
         // ================================================================
@@ -75,8 +81,10 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public static bool ExportWithDialog(ProjectDTO projectDTO, string defaultName = "Project")
         {
-            string path = PLEditorBridge.I.SaveFilePanel("Export Project",
-                RecentPaths.Get(JsonFolderKey, Application.dataPath), defaultName, FileExtension);
+            // JsonFolderKey はフォルダだけを覚えるためファイル名が毎回消えていた。
+            // 初期値はフルパスのキーから取り、旧キーも従来どおり更新する。
+            string path = RecentFileDialog.AskSave(
+                "Export Project", JsonFileKey, defaultName, FileExtension);
 
             if (string.IsNullOrEmpty(path))
                 return false;
@@ -126,8 +134,7 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public static ProjectDTO ImportWithDialog()
         {
-            string path = PLEditorBridge.I.OpenFilePanel("Import Project",
-                RecentPaths.Get(JsonFolderKey, Application.dataPath), FileExtension);
+            string path = RecentFileDialog.AskLoad("Import Project", JsonFileKey, FileExtension);
 
             if (string.IsNullOrEmpty(path))
                 return null;

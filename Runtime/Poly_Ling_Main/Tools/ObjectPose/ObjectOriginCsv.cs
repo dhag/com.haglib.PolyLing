@@ -1,12 +1,14 @@
 ﻿// ObjectOriginCsv.cs
-// オブジェクト原点CSV（#PolyLing_ObjectOrigin）の本文を組み立てる。
+// オブジェクト原点CSV（#PolyLing_ObjectOrigin）の本文を組み立て・解析する。
 // Runtime/Poly_Ling_Main/Tools/ObjectPose/ に配置
 //
 // 【この場所に置く理由】
 //   同じ書式を PlayerBoneEditorSubPanel（原点CSV書出）と
-//   PlayerTPoseSubPanel（Tポーズ後の姿勢保存）の2箇所が書く。
-//   書式が離れて育つのを防ぐため、本文の組み立てだけをここに置く。
-//   ファイル入出力・ダイアログは呼び出し側の責務。
+//   PlayerTPoseSubPanel（Tポーズ後の姿勢保存）の2箇所が書き、
+//   PlayerBoneEditorSubPanel（原点CSV読込）と
+//   PolyLingPlayerViewerCore（MQO/OBJ 読込後の原点適用）の2箇所が読む。
+//   書式が離れて育つのを防ぐため、本文の組み立て（Build）と解析（Parse）を
+//   ここに置く。ファイル入出力・ダイアログは呼び出し側の責務。
 //
 // 【除外規則】
 //   MirrorSide / BakedMirror : 実体側と BoneTransform を共有する前提（H_M = H_R）。
@@ -40,7 +42,7 @@ using Poly_Ling.Data;
 
 namespace Poly_Ling.Tools.ObjectPose
 {
-    /// <summary>オブジェクト原点CSVの本文組み立て。</summary>
+    /// <summary>オブジェクト原点CSVの本文組み立て・解析。</summary>
     public static class ObjectOriginCsv
     {
         /// <summary>先頭行（書式の識別）。</summary>
@@ -235,6 +237,104 @@ namespace Poly_Ling.Tools.ObjectPose
                 Matrix4x4 newLocal = Matrix4x4.TRS(pos, Quaternion.identity, scale) * pose;
                 sim[idx] = simParent * newLocal;
             }
+        }
+
+        // ================================================================
+        // 読み込み
+        // ================================================================
+
+        /// <summary>
+        /// オブジェクト原点CSVの本文を解析する。ファイル入出力・ダイアログは呼び出し側の責務。
+        ///
+        /// 行の扱いは書式そのままで、
+        ///   先頭が # の行（識別行を含む）・"name," で始まる列見出し行・空行 … 読み飛ばす
+        ///   列が 4 未満、または posX/posY/posZ が数値でない行           … 読み飛ばす
+        ///   回転列（rotX,rotY,rotZ）は任意。withRotation が false の行、
+        ///   列が 7 未満の行、数値でない行は「回転の指定なし」(null) にする
+        /// とする。位置だけの旧CSVをそのまま読めるようにするため。
+        /// </summary>
+        /// <param name="lines">CSV の全行。</param>
+        /// <param name="withRotation">回転列を読む対象にするか。</param>
+        /// <param name="names">行の名前。</param>
+        /// <param name="positions">行の位置。</param>
+        /// <param name="rotations">行の回転(°)。指定なしの行は null。</param>
+        /// <param name="rotRows">回転を読み取れた行数。</param>
+        /// <returns>読み取れた行数（names.Count と同じ）。</returns>
+        public static int Parse(
+            IEnumerable<string> lines,
+            bool withRotation,
+            out List<string> names,
+            out List<Vector3> positions,
+            out List<Vector3?> rotations,
+            out int rotRows)
+        {
+            names     = new List<string>();
+            positions = new List<Vector3>();
+            rotations = new List<Vector3?>();
+            rotRows   = 0;
+
+            if (lines == null) return 0;
+
+            foreach (string raw in lines)
+            {
+                string line = raw?.Trim('\uFEFF', ' ', '\t');
+                if (string.IsNullOrEmpty(line)) continue;
+                if (line.StartsWith("#")) continue;
+                if (line.StartsWith("name,")) continue;   // 見出し行
+
+                var cols = SplitCsvLine(line);
+                if (cols.Count < 4) continue;
+
+                if (!float.TryParse(cols[1], out float x)) continue;
+                if (!float.TryParse(cols[2], out float y)) continue;
+                if (!float.TryParse(cols[3], out float z)) continue;
+
+                // 回転列は任意。無い行・読めない行は「回転の指定なし」として位置だけ適用する。
+                Vector3? rot = null;
+                if (withRotation && cols.Count >= 7 &&
+                    float.TryParse(cols[4], out float rx) &&
+                    float.TryParse(cols[5], out float ry) &&
+                    float.TryParse(cols[6], out float rz))
+                {
+                    rot = new Vector3(rx, ry, rz);
+                    rotRows++;
+                }
+
+                names.Add(cols[0]);
+                positions.Add(new Vector3(x, y, z));
+                rotations.Add(rot);
+            }
+
+            return names.Count;
+        }
+
+        /// <summary>引用符付きフィールドを含む 1 行をカンマで分割する。</summary>
+        private static List<string> SplitCsvLine(string line)
+        {
+            var result = new List<string>();
+            var sb     = new StringBuilder();
+            bool inQuote = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (inQuote)
+                {
+                    if (c == '"')
+                    {
+                        if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
+                        else inQuote = false;
+                    }
+                    else sb.Append(c);
+                }
+                else if (c == '"') inQuote = true;
+                else if (c == ',') { result.Add(sb.ToString()); sb.Clear(); }
+                else sb.Append(c);
+            }
+
+            result.Add(sb.ToString());
+            return result;
         }
 
         /// <summary>カンマ・引用符を含む名前を CSV フィールドとして囲む。</summary>

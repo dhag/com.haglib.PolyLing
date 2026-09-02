@@ -35,6 +35,7 @@ namespace Poly_Ling.Player
             BgSectionLabel = "パイプ下絵",
             CsvRecentKey   = "Primitive.Pipe.ProfileCsv",
             CsvDefaultName = "pipe_profile.csv",
+            ObjectName     = "PipeProfile",
         };
 
         private Label _pipeInfoLabel;

@@ -21,6 +21,9 @@ namespace Poly_Ling.UI
         /// <summary>選択辞書 CSV 読込の最近使ったパス。</summary>
         private const string ImportCsvRecentKey = "PartsSet.ImportCsv.Path";
 
+        /// <summary>書き出し先フォルダの履歴キー。</summary>
+        private const string PartsSetFolderKey  = "PartsSet.ExportFolder";
+
         // ================================================================
         // エクスポート
         // ================================================================
@@ -29,9 +32,9 @@ namespace Poly_Ling.UI
         {
             if (meshContext == null || meshContext.PartsSelectionSetList.Count == 0) return;
 
-            string folderPath = PLEditorBridge.I.SaveFolderPanel(
-                "Select Folder for CSV Export",
-                Application.dataPath,
+            // 以前は履歴を持たず、初期フォルダが毎回 Application.dataPath 固定だった。
+            string folderPath = RecentFileDialog.AskFolder(
+                "Select Folder for CSV Export", PartsSetFolderKey,
                 $"SelectionSets_{meshContext.Name}");
             if (string.IsNullOrEmpty(folderPath)) { GUIUtility.ExitGUI(); return; }
 

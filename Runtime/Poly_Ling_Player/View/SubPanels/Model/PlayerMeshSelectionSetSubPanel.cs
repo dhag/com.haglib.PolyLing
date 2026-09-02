@@ -267,7 +267,7 @@ namespace Poly_Ling.Player
         {
             string cur = _dicPathField?.value ?? "";
             if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
-            string path = PlayerIoUiKit.AskLoadPath("辞書ファイルの読込", cur, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("辞書ファイルの読込", DicPathKey, cur, "csv");
             if (!string.IsNullOrEmpty(path)) _dicPathField.value = path;
         }
 
@@ -284,7 +284,8 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
 
             string path = PlayerIoUiKit.AskSavePath(
-                "辞書ファイルの書き出し", cur, PartsDictionaryPath.MeshSelSetsFileName, "csv");
+                "辞書ファイルの書き出し", DicPathKey, cur,
+                PartsDictionaryPath.MeshSelSetsFileName, "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             _dicPathField.value = path;
@@ -307,7 +308,7 @@ namespace Poly_Ling.Player
             string cur = _dicPathField?.value?.Trim() ?? "";
             if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
 
-            string path = PlayerIoUiKit.AskLoadPath("辞書ファイルの読込", cur, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("辞書ファイルの読込", DicPathKey, cur, "csv");
             if (string.IsNullOrEmpty(path)) { SetStatus("取り込むファイルを指定してください"); return; }
 
             _dicPathField.value = path;

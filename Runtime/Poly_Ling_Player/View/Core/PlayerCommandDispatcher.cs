@@ -36,6 +36,12 @@ namespace Poly_Ling.Player
         private readonly MeshUndoController     _undoController;
         private readonly CommandQueue           _commandQueue;
 
+        /// <summary>
+        /// AssignPartsIdsCommand の直近の実行結果。パネルが結果表示へ使う。
+        /// 失敗（割り切れない等）のときも理由を持たせて残す。
+        /// </summary>
+        public PartsIdAssignResult LastPartsIdResult { get; private set; }
+
         // BoneTransformスライダーのUndo用スナップショット（Begin～End間で保持）
         private readonly Dictionary<int, BoneTransformSnapshot> _boneTransformBeforeSnapshots
             = new Dictionary<int, BoneTransformSnapshot>();
@@ -194,9 +200,17 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // 生成系（図形生成・生成メッシュ追加）は、プロジェクトもモデルも無い状態から
+            // 呼べる。実処理側が
+            //   PlaceGeneratedMesh → PrepareHandlersForGeneratedMesh → EnsureProject
+            // でプロジェクトとモデルを作り、PrimitiveMeshFinalize → EnsureDefaultMaterialSlot
+            // で材質スロットも作るため、ここで門を掛けると自動生成へ到達できない。
+            // 診断ログは通したいので、ResetProjectCommand のような早期 return にはしない。
+            bool createsOwnModel = cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand;
+
             var project = _getProject();
-            if (project == null) return;
-            var model   = project.CurrentModel;
+            if (project == null && !createsOwnModel) return;
+            var model   = project?.CurrentModel;
 
             // DescribeCommand は補間文字列を作る。PLDiag.Cmd の中で捨てられる場合でも
             // 引数側は必ず評価されるため、スイッチをここで見てから呼ぶ。
@@ -317,10 +331,15 @@ namespace Poly_Ling.Player
                             case MeshCategory.Bone:
                                 model.ClearBoneSelection();
                                 foreach (int idx in sel.Indices) model.AddToBoneSelection(idx);
+                                // 描画メッシュ側と違い、ここは Enter〜 を呼んでいなかった。
+                                // そのため原点マーカー（水色ダイヤ）とギズモが組み直されず、
+                                // ボーンを選んでも視点を動かすまで表示が変わらなかった。
+                                _viewportManager.EnterSelectionChanged(project);
                                 break;
                             case MeshCategory.Morph:
                                 model.ClearMorphSelection();
                                 foreach (int idx in sel.Indices) model.AddToMorphSelection(idx);
+                                _viewportManager.EnterSelectionChanged(project);
                                 break;
                         }
 
@@ -718,13 +737,12 @@ namespace Poly_Ling.Player
                     return;
 
                 // ── 生成系。実処理は Viewer 側にあるので委譲する
+                // モデルが無くても通す（実処理側が作る）。上の createsOwnModel を参照。
                 case CreatePrimitiveMeshCommand c:
-                    if (model == null) return;
                     OnCreatePrimitiveMesh?.Invoke(c);
                     return;
 
                 case AddGeneratedMeshCommand c:
-                    if (model == null) return;
                     OnAddGeneratedMesh?.Invoke(c);
                     return;
 
@@ -1787,7 +1805,7 @@ namespace Poly_Ling.Player
 
                     var stops = ShrinkOperation.ComputeStopParams(
                         model, c.BeforeMasterIndex, c.AfterMasterIndex, c.ColliderMasterIndices,
-                        c.SurfaceOffset, c.FrontFaceOnly,
+                        c.SurfaceOffset, c.FrontFaceOnly, c.CollisionMode, c.MaxPasses,
                         mc => _viewportManager.TryGetMeshWorldPositions(model, mc, out var w) ? w : null,
                         out string shrinkError);
 
@@ -3339,6 +3357,97 @@ namespace Poly_Ling.Player
                     // パネル表示（診断結果）だけ更新させる。
                     if (totalChanged > 0) _notifyPanels(ChangeKind.Attributes);
                     Debug.Log($"[VertexId] {c.Mode}: {idTargets.Count} オブジェクト / {totalChanged} 頂点");
+                    return;
+                }
+
+                case AssignPartsIdsCommand c:
+                {
+                    if (model == null) return;
+
+                    var partsMc = model.GetMeshContext(c.TargetMasterIndex);
+                    if (partsMc?.MeshObject == null)
+                    {
+                        Debug.LogWarning(
+                            $"[PartsId] 対象メッシュが見つかりません masterIndex={c.TargetMasterIndex}");
+                        LastPartsIdResult = PartsIdAssignResult.Fail("対象メッシュが見つかりません");
+                        return;
+                    }
+                    var partsMo = partsMc.MeshObject;
+
+                    // リファレンスは「1 パーツの頂点数」を取るためだけに読む。書き換えない。
+                    int perPart = 0;
+                    if (c.Mode == AssignPartsIdsCommand.PartsIdMode.ReferenceVertexCount)
+                    {
+                        var refMc = model.GetMeshContext(c.ReferenceMasterIndex);
+                        if (refMc?.MeshObject == null || refMc.MeshObject.VertexCount == 0)
+                        {
+                            Debug.LogWarning(
+                                $"[PartsId] リファレンスが見つかりません masterIndex={c.ReferenceMasterIndex}");
+                            LastPartsIdResult = PartsIdAssignResult.Fail("リファレンスが見つかりません");
+                            return;
+                        }
+                        if (ReferenceEquals(refMc, partsMc))
+                        {
+                            Debug.LogWarning("[PartsId] リファレンスに対象と同じオブジェクトは指定できません");
+                            LastPartsIdResult =
+                                PartsIdAssignResult.Fail("リファレンスに対象と同じオブジェクトは指定できません");
+                            return;
+                        }
+                        perPart = refMc.MeshObject.VertexCount;
+                    }
+
+                    // Undo は頂点ID修復と同じ MeshObjectSnapshot 方式。
+                    // Vertex.Clone() が PartsId / SubId を引き継ぐ（MeshObject.cs:313-314）ので
+                    // スナップショットで元に戻せる。
+                    if (_undoController != null)
+                    {
+                        _undoController.SetMeshObject(partsMo, partsMc.UnityMesh);
+                        _undoController.MeshUndoContext.ParentModelContext = model;
+                    }
+                    var partsBefore = _undoController?.CaptureMeshObjectSnapshot();
+
+                    PartsIdAssignResult partsResult;
+                    switch (c.Mode)
+                    {
+                        case AssignPartsIdsCommand.PartsIdMode.Connectivity:
+                            partsResult = PartsIdAssignOps.AssignByConnectivity(partsMo, c.IsolatedPolicy);
+                            break;
+                        case AssignPartsIdsCommand.PartsIdMode.ReferenceVertexCount:
+                            partsResult = PartsIdAssignOps.AssignByVertexCount(partsMo, perPart);
+                            break;
+                        case AssignPartsIdsCommand.PartsIdMode.SubIdOnly:
+                            partsResult = PartsIdAssignOps.AssignSubIdOnly(partsMo);
+                            break;
+                        case AssignPartsIdsCommand.PartsIdMode.Clear:
+                            partsResult = PartsIdAssignOps.Clear(partsMo);
+                            break;
+                        default:
+                            LastPartsIdResult = PartsIdAssignResult.Fail("未知の採番モードです");
+                            return;
+                    }
+
+                    if (!partsResult.Success)
+                    {
+                        Debug.LogWarning($"[PartsId] {c.Mode}: {partsResult.Reason}");
+                        LastPartsIdResult = partsResult;
+                        _notifyPanels(ChangeKind.Attributes);
+                        return;
+                    }
+
+                    if (_undoController != null && partsBefore != null)
+                    {
+                        var partsAfter = _undoController.CaptureMeshObjectSnapshot();
+                        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                            _undoController, partsBefore, partsAfter, $"Assign Parts Ids ({c.Mode})"));
+                    }
+
+                    LastPartsIdResult = partsResult;
+
+                    // パーツID / サブIDは描画に影響しないので GPU 再構築は不要。
+                    _notifyPanels(ChangeKind.Attributes);
+                    Debug.Log(
+                        $"[PartsId] {c.Mode}: \"{partsMc.Name}\" 頂点 {partsResult.VertexCount} / "
+                      + $"パーツ {partsResult.PartCount} / 孤立頂点 {partsResult.IsolatedVertexCount}");
                     return;
                 }
 

@@ -13,6 +13,13 @@
 //
 // 【巻き順】取り込み時に判定した基準ベルトの巻き順に従う。
 //   断面が 2 点 (0,0)-(1,0) かつ開いた断面のときは基準ベルトと同一の面になる。
+//   ただし閉じた断面（3 点以上）は、断面の周り順だけで筒の内外が決まってしまう
+//   （flipWinding は quad の巻き順と yDir を同時に反転するので相殺し、内外は変わらない）。
+//   そのため符号付き面積が正の断面は側面の巻き順を反転し、常に外向きの筒にする。
+//
+// 【蓋の巻き順】隣接する側面が rung の境界辺を通る向きの逆を通す（多様体一貫性）。
+//   幾何的な外向き判定は使わない。先端頂点は元メッシュの先端三角形の頂点であり、
+//   断面の第1辺 (0,0)-(1,0) と同一平面に載るため、内積による判定は 0 になって働かない。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -62,6 +69,13 @@ namespace Poly_Ling.Pipe
             var len  = new float[n];
             BuildFrames(left, right, beltClosed, flipWinding, xDir, yDir, len);
 
+            // 側面の巻き順。閉じた断面（3点以上）が正の向き（符号付き面積 > 0）のときは
+            // 筒が内向きになるため反転し、断面をどちら回りで描いても外向きへ揃える。
+            // 開いた断面・2点断面は基準ベルトの巻き順のまま
+            //（断面 2 点 (0,0)-(1,0) が基準ベルトと同一面になる規約を保つ）。
+            bool invertSide = profileClosed && m >= 3 && SignedProfileArea(profile) > 0f;
+            bool quadFlip   = flipWinding ^ invertSide;
+
             int   segments = beltClosed ? n : n - 1;
             float den      = beltClosed ? n : n - 1;
 
@@ -92,23 +106,26 @@ namespace Poly_Ling.Pipe
                     int c = j * m + k1;
                     int d = j * m + k;
 
-                    if (flipWinding) mo.AddQuad(a, d, c, b);
-                    else             mo.AddQuad(a, b, c, d);
+                    if (quadFlip) mo.AddQuad(a, d, c, b);
+                    else          mo.AddQuad(a, b, c, d);
                 }
             }
 
             // 蓋（開いた梯子・閉じた断面のときのみ）
+            // 巻き順は隣接する側面の境界辺から決める。
+            //   rung 0 の境界辺を側面は k→k+1（quadFlip=false）／k+1→k（true）で通るので、
+            //   先端の蓋はその逆を通る。rung n-1 では側面が逆順に通るため条件も逆になる。
             if (capEnds && !beltClosed && profileClosed && m >= 3)
             {
-                Vector3 headOut = RungCenter(left, right, 0) - RungCenter(left, right, 1);
-                Vector3 tailOut = RungCenter(left, right, n - 1) - RungCenter(left, right, n - 2);
+                bool headReverse = !quadFlip;
+                bool tailReverse =  quadFlip;
 
                 // 先端が与えられていれば、その点へ収束させる三角ファンで閉じる
-                if (startPoint.HasValue) AddPointCap(mo, 0,           m, startPoint.Value, headOut);
-                else                     AddCap     (mo, 0,           m, headOut);
+                if (startPoint.HasValue) AddPointCap(mo, 0,           m, startPoint.Value, headReverse);
+                else                     AddCap     (mo, 0,           m,                  headReverse);
 
-                if (endPoint.HasValue)   AddPointCap(mo, (n - 1) * m, m, endPoint.Value,   tailOut);
-                else                     AddCap     (mo, (n - 1) * m, m, tailOut);
+                if (endPoint.HasValue)   AddPointCap(mo, (n - 1) * m, m, endPoint.Value,   tailReverse);
+                else                     AddCap     (mo, (n - 1) * m, m,                  tailReverse);
             }
 
             // この梯子で作った全頂点へ同じパーツIDを書く（側面・蓋をまとめて1パーツ）。
@@ -123,6 +140,24 @@ namespace Poly_Ling.Pipe
 
             mo.RecalculateNormals();
             return mo;
+        }
+
+        // ================================================================
+        // 断面
+        // ================================================================
+
+        /// <summary>断面の符号付き面積。正 = 正の向き（この向きだと筒が内向きになる）。</summary>
+        private static float SignedProfileArea(IReadOnlyList<Vector2> profile)
+        {
+            int m = profile.Count;
+            float sum = 0f;
+            for (int k = 0; k < m; k++)
+            {
+                Vector2 p = profile[k];
+                Vector2 q = profile[(k + 1) % m];
+                sum += p.x * q.y - q.x * p.y;
+            }
+            return sum * 0.5f;
         }
 
         // ================================================================
@@ -177,23 +212,14 @@ namespace Poly_Ling.Pipe
         // 蓋
         // ================================================================
 
-        private static Vector3 RungCenter(IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right, int i)
-            => (left[i] + right[i]) * 0.5f;
-
         /// <summary>
         /// baseIdx から m 個の断面リング頂点を、指定した先端へ収束させる三角ファンで閉じる。
-        /// 面法線が outward 側を向くよう、必要なら並びを反転する。
+        /// reverse=false でリングを k→k+1 の向きに、true で k+1→k の向きに通る。
         /// </summary>
-        private static void AddPointCap(MeshObject mo, int baseIdx, int m, Vector3 apex, Vector3 outward)
+        private static void AddPointCap(MeshObject mo, int baseIdx, int m, Vector3 apex, bool reverse)
         {
             int apexIdx = mo.VertexCount;
             mo.Vertices.Add(new Vertex(apex, new Vector2(0.5f, 0.5f)));
-
-            Vector3 nrm = NormalHelper.CalculateFaceNormal(
-                apex,
-                mo.Vertices[baseIdx].Position,
-                mo.Vertices[baseIdx + 1].Position);
-            bool flip = Vector3.Dot(nrm, outward) < 0f;
 
             for (int k = 0; k < m; k++)
             {
@@ -202,8 +228,8 @@ namespace Poly_Ling.Pipe
 
                 var f = new Face();
                 f.VertexIndices.Add(apexIdx);
-                if (flip) { f.VertexIndices.Add(b); f.VertexIndices.Add(a); }
-                else      { f.VertexIndices.Add(a); f.VertexIndices.Add(b); }
+                if (reverse) { f.VertexIndices.Add(b); f.VertexIndices.Add(a); }
+                else         { f.VertexIndices.Add(a); f.VertexIndices.Add(b); }
                 for (int i = 0; i < 3; i++) { f.UVIndices.Add(0); f.NormalIndices.Add(0); }
                 mo.AddFace(f);
             }
@@ -211,19 +237,13 @@ namespace Poly_Ling.Pipe
 
         /// <summary>
         /// baseIdx から m 個の断面リング頂点で N 角形の蓋を張る。
-        /// 面法線が outward 側を向くよう、必要なら並びを反転する。
+        /// reverse=false でリングを k→k+1 の向きに、true で k+1→k の向きに通る。
         /// </summary>
-        private static void AddCap(MeshObject mo, int baseIdx, int m, Vector3 outward)
+        private static void AddCap(MeshObject mo, int baseIdx, int m, bool reverse)
         {
             var idx = new List<int>(m);
             for (int k = 0; k < m; k++) idx.Add(baseIdx + k);
-
-            Vector3 nrm = NormalHelper.CalculateFaceNormal(
-                mo.Vertices[idx[0]].Position,
-                mo.Vertices[idx[1]].Position,
-                mo.Vertices[idx[2]].Position);
-
-            if (Vector3.Dot(nrm, outward) < 0f) idx.Reverse();
+            if (reverse) idx.Reverse();
 
             var face = new Face();
             face.VertexIndices.AddRange(idx);

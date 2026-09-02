@@ -939,7 +939,10 @@ MaterialDataSnapshot.ApplyTo（MaterialUndoRecords.cs:83）が matRef.Invalidate
 スプリングボーンのパラメータ最大最小など不足してるもの
 
 
-パイプ群などの特殊な対称化
+パイプ群などの特殊な対称化:一部完成
 
 
 LOOKAT
+
+
+質問：(A) の MirrorBaker（一時ミラーで頂点ID・PartsId を保存するよう MirrorBaker.cs:424,428 を直す）を今回の作業に含めますか、それとも振り直しツールだけ先に作りますか。
