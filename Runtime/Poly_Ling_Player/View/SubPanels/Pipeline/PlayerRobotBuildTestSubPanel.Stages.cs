@@ -3,17 +3,31 @@
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
 //
 // 【段の並び】
-//   S1 図形生成      … 小判型と六角柱をコマンドで置く。回転は頂点へ焼き込む。
-//   S2 原点          … ApplyObjectOriginsCommand で位置を入れる。
-//   S3 階層          … ReorderMeshesCommand で親子を張る。
-//   S4 仕切り        … センター下部を X 中央で 2 穴に割る（ブリッジ系統のみ）。
-//   S5 面削除        … 上半身2 の中段側面と上蓋中央を落として穴を開ける（同上）。
-//   S6 頂点数合わせ  … 穴つなぎの前提（両穴の頂点数が同じ）を満たす（同上）。
-//   S7 穴つなぎ      … 関節どうしを面で橋渡しする（同上）。
-//   S8 ミラー分岐    … 左半身から右半身を出す（片側系統以外）。
-//   S9 スキンド変換  … メッシュからボーンとスキンを作る（スキン系統のみ）。
-//   S10 Humanoid     … 自動割当。
-//   S11 VRM 書き出し … 必須関節の補完を ON にして出す。
+//   S1 図形生成 … 小判型と六角柱を、位置と回転を入れた状態でコマンドから置く。
+//                 最後に既定マテリアルの色を灰青へ変える。
+//   S2 階層     … ReorderMeshesCommand で親子を張る。
+//   S3 ミラー   … 左半身から右半身を出すための分岐ルートを立てる（片側系統以外）。
+//   S4 ブリッジ … 仕切り・面削除・穴点数合わせ・穴つなぎ（ブリッジ系統のみ）。
+//   S5 スキン   … メッシュからボーンとスキンを作る（スキン系統のみ）。
+//   S6 アバター … Humanoid 自動割当と VRM 書き出し。
+//
+// 【姿勢を生成に入れた理由】
+//   以前は「部位ごとに生成 → 姿勢」の 2 段に分けていた。生成側が
+//   PrimitivePlacement.WorldPosition / PlaceRotation を持っている
+//   （PanelCommand.cs:2257-2305）ので、置くのと同時に姿勢が入る。
+//   段が半分になり、原点に重なった状態を経由しなくなる。
+//
+//   回転は BakeRotation = true で頂点へ焼き込まれる
+//   （PanelCommand.cs:2346 → PrimitiveMeshFactory.cs:90-95）。
+//   焼き込んだぶん BoneTransform.Rotation は 0 のままになり、
+//   手作業データ（全部位の回転がゼロ）と同じ状態になる。
+//   位置は BoneTransform.Position へ入る
+//   （PolyLingPlayerViewerCore.cs:8148-8157）。
+//
+// 【左手首だけ姿勢の段を残す理由】
+//   姿勢の段が全部消えると、その経路が一度も通らなくなる。
+//   左手首だけ配置位置の Y をわざと下げて生成し、次の段で正しい高さへ直す。
+//   間違えて置いてもあとから直せることを、毎回の検証で通す。
 //
 // 【穴の頂点数】
 //   小判型（LengthSegments=3 / CapSegments=3）の開口は 12 点。
@@ -41,6 +55,26 @@ namespace Poly_Ling.Player
     public partial class PlayerRobotBuildTestSubPanel
     {
         // ================================================================
+        // 検証用の値
+        // ================================================================
+
+        /// <summary>
+        /// 生成のときにわざと配置位置を間違える部位。
+        /// 5 系統すべてに含まれる部位でないと、通らない系統が出る。
+        /// </summary>
+        private const string MisplacedPart = "左手首";
+
+        /// <summary>わざと入れる Y のずれ。正しい高さからこれだけ下へ置く。</summary>
+        private const float MisplacedOffsetY = -0.22f;
+
+        /// <summary>
+        /// 既定マテリアルへ入れる灰青。
+        /// 生成時に作られるスロットは描画フォールバックと同じ灰(0.7)なので
+        /// （PolyLingPlayerViewerCore.cs:8097-8100）、面の陰影が読み取りにくい。
+        /// </summary>
+        private static readonly Color GreyBlue = new Color(0.62f, 0.68f, 0.75f, 1f);
+
+        // ================================================================
         // 段の組み立て
         // ================================================================
 
@@ -50,9 +84,9 @@ namespace Poly_Ling.Player
 
             var parts = PartsOf(v);
 
-            // ── 部位ごとに「生成 → 保存 → 姿勢 → 保存」を繰り返す ──
-            //   生成は原点に置く。次の部位も原点に出るので、置いたものは
-            //   姿勢で退かしてから次へ進む。重なったままだと目視で追えない。
+            // ── 部位ごとに「生成 → 保存」を繰り返す ──
+            //   位置と回転は生成のときに入れるので、置いた時点で正しい場所に出る。
+            //   姿勢の段は、わざと間違えた左手首を直すときだけ挟む。
             _stages.Add(new Stage { Name = "S1 図形生成", Group = true });
 
             // 空のモデルを用意する。これを飛ばすとモデルが無いままコマンドを送ることになり、
@@ -73,65 +107,91 @@ namespace Poly_Ling.Player
                 string partName = name;
                 var part = RobotBuildRecipe.Find(partName);
                 bool stadium = part.Stadium;
+                bool rot     = part.BakeRotation != Vector3.zero;
+
+                // 正しい位置と、生成のときに実際に入れる位置。
+                // わざと間違える部位だけ、Y を下げた値を入れる。
+                Vector3 w       = RobotBuildRecipe.WorldOrigin(partName);
+                bool    wrong   = partName == MisplacedPart;
+                Vector3 placeAt = wrong ? w + new Vector3(0f, MisplacedOffsetY, 0f) : w;
+
+                var howTo = new List<string> { "「基本図形」パネルを開く" };
+                if (stadium)
+                {
+                    howTo.Add("形に「小判型」を選ぶ");
+                    howTo.Add($"長さ {part.Length:0.###} / 高さ {part.Height:0.###} / 奥行 {part.Depth:0.###} を入れる");
+                    howTo.Add($"分割は 長さ {RobotBuildRecipe.StadiumLengthSegments} / 丸み {RobotBuildRecipe.StadiumCapSegments} / 高さ {part.HeightSegments}");
+                    howTo.Add($"上の蓋を{(part.CapTop ? "付ける" : "外す")}、下の蓋を外す");
+                }
+                else
+                {
+                    howTo.Add("形に「円柱」を選ぶ");
+                    howTo.Add($"半径 {part.Radius:0.###} / 高さ {part.Height:0.###} を入れる");
+                    howTo.Add($"円周の分割を {RobotBuildRecipe.PrismRadialSegments} にする（六角柱になる）");
+                    howTo.Add("上下の蓋を両方とも外す");
+                }
+                howTo.Add("ピボットを下端にする");
+                if (rot)
+                {
+                    howTo.Add($"配置の回転に ({part.BakeRotation.x:0.#}, {part.BakeRotation.y:0.#}, {part.BakeRotation.z:0.#}) を入れる");
+                    howTo.Add("「回転を頂点へ焼き込む」を入れる");
+                }
+                howTo.Add($"配置位置に ({placeAt.x:0.####}, {placeAt.y:0.####}, {placeAt.z:0.####}) を入れる");
+                howTo.Add($"名前を「{partName}」にして「生成」を押す");
 
                 _stages.Add(new Stage
                 {
                     Name    = $"{partName}_生成",
-                    Run     = () => StageCreateOne(partName),
-                    Purpose = $"「{partName}」の素材となる基本図形を、原点に作ります。",
-                    HowTo   = stadium
-                        ? new[]
-                        {
-                            "「基本図形」パネルを開く",
-                            "形に「小判型」を選ぶ",
-                            $"長さ {part.Length:0.###} / 高さ {part.Height:0.###} / 奥行 {part.Depth:0.###} を入れる",
-                            $"分割は 長さ {RobotBuildRecipe.StadiumLengthSegments} / 丸み {RobotBuildRecipe.StadiumCapSegments} / 高さ {part.HeightSegments}",
-                            $"上の蓋を{(part.CapTop ? "付ける" : "外す")}、下の蓋を外す",
-                            "ピボットを下端にする",
-                            $"名前を「{partName}」にして「生成」を押す",
-                        }
-                        : new[]
-                        {
-                            "「基本図形」パネルを開く",
-                            "形に「円柱」を選ぶ",
-                            $"半径 {part.Radius:0.###} / 高さ {part.Height:0.###} を入れる",
-                            $"円周の分割を {RobotBuildRecipe.PrismRadialSegments} にする（六角柱になる）",
-                            "上下の蓋を両方とも外す",
-                            "ピボットを下端にする",
-                            $"名前を「{partName}」にして「生成」を押す",
-                        },
-                    Note    = "位置も向きもここでは入れません。必ず原点に出します。\n"
-                            + "次の「姿勢」で動かすまで、前に作った部品と重なった状態です。\n"
-                            + "蓋を外すのは、あとで他の部品とつなぐ穴にするためです。",
+                    Run     = () => StageCreateOne(partName, placeAt),
+                    Purpose = wrong
+                        ? $"「{partName}」を、わざと高さを間違えた位置に作ります。"
+                        : $"「{partName}」を、体の正しい位置と向きで作ります。",
+                    HowTo   = howTo.ToArray(),
+                    Note    = wrong
+                        ? $"ここだけわざと配置位置の Y を {placeAt.y:0.####} にします"
+                          + $"（正しくは {w.y:0.####}）。\n"
+                          + "次の「姿勢」の段で正しい高さへ直します。生成のときに入れ間違えても\n"
+                          + "あとから直せることを、毎回の検証で通すための段です。"
+                        : "位置と向きは生成のときに入れます。あとから動かす必要はありません。\n"
+                          + "回転は頂点へ焼き込むので、出来た部品の姿勢の回転欄は 0 のままです。\n"
+                          + "蓋を外すのは、あとで他の部品とつなぐ穴にするためです。",
                 });
 
-                Vector3 w = RobotBuildRecipe.WorldOrigin(partName);
-                bool rot = part.BakeRotation != Vector3.zero;
+                if (!wrong) continue;
 
                 _stages.Add(new Stage
                 {
                     Name    = $"{partName}_姿勢",
                     Run     = () => StagePlaceOne(partName),
-                    Purpose = $"「{partName}」を体の正しい位置へ動かします。",
-                    HowTo   = rot
-                        ? new[]
-                        {
-                            $"オブジェクトリストで「{partName}」を選ぶ",
-                            "「ボーンエディタ」で姿勢の欄を開く",
-                            $"回転に ({part.BakeRotation.x:0.#}, {part.BakeRotation.y:0.#}, {part.BakeRotation.z:0.#}) を入れる",
-                            $"位置に ({w.x:0.####}, {w.y:0.####}, {w.z:0.####}) を入れる",
-                        }
-                        : new[]
-                        {
-                            $"オブジェクトリストで「{partName}」を選ぶ",
-                            "「ボーンエディタ」で姿勢の欄を開く",
-                            $"位置に ({w.x:0.####}, {w.y:0.####}, {w.z:0.####}) を入れる",
-                        },
-                    Note    = "回転を先、位置をあとに入れます。逆にすると原点のまわりに振れます。\n"
+                    Purpose = $"「{partName}」の高さを、正しい位置へ直します。",
+                    HowTo   = new[]
+                    {
+                        $"オブジェクトリストで「{partName}」を選ぶ",
+                        "「ボーンエディタ」で姿勢の欄を開く",
+                        $"位置に ({w.x:0.####}, {w.y:0.####}, {w.z:0.####}) を入れる",
+                    },
+                    Note    = "回転は生成のときに頂点へ焼き込んであるので、ここでは触りません。\n"
                             + "まだ親子を組んでいないので、ここで入れる位置は原点からの絶対値です。\n"
                             + "親子を組むと、この値は親から見た相対値に置き換わります。",
                 });
             }
+
+            // ── 既定マテリアルの色 ──
+            //   図形を置き終えてから 1 回だけ変える。部位ごとに変える必要はない。
+            _stages.Add(new Stage
+            {
+                Name    = "マテリアル色",
+                Run     = StageSetMaterialColor,
+                Purpose = "既定のマテリアルの色を灰青へ変えます。",
+                HowTo   = new[]
+                {
+                    "「マテリアル一覧」パネルを開く",
+                    "先頭のスロット（Default）を選ぶ",
+                    $"RGBA を ({GreyBlue.r:0.##}, {GreyBlue.g:0.##}, {GreyBlue.b:0.##}, {GreyBlue.a:0.##}) にする",
+                },
+                Note    = "図形を作るとスロットが 1 枚だけ作られ、描画の既定と同じ灰が入ります。\n"
+                        + "そのままだと面の陰影が読み取りにくいので、少し青へ寄せます。",
+            });
 
             // ── 階層 ──
             _stages.Add(new Stage { Name = "S2 階層", Group = true });
@@ -358,20 +418,30 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 部位を 1 つ、原点に置く。
-        /// 位置も回転もここでは入れない。次の姿勢の段で動かす。
-        /// 手作業で「基本図形を作る」を押した直後と同じ状態にする。
+        /// 部位を 1 つ、姿勢を入れた状態で置く。
+        ///
+        /// 回転は BakeRotation = true で頂点へ焼き込まれ、BoneTransform.Rotation は
+        /// 0 のままになる（PanelCommand.cs:2346 / PrimitiveMeshFactory.cs:90-95）。
+        /// 位置は BoneTransform.Position へ入る（PolyLingPlayerViewerCore.cs:8148-8157）。
+        /// 階層はまだ張っていないので、入れる位置はワールド絶対値。
         /// </summary>
-        private StageResult StageCreateOne(string name)
+        /// <param name="name">部位名。</param>
+        /// <param name="worldOverride">
+        /// 配置位置の上書き。null なら定義表から積んだ絶対位置。
+        /// わざと間違えた位置を入れる段でだけ渡す。
+        /// </param>
+        private StageResult StageCreateOne(string name, Vector3? worldOverride = null)
         {
             var part = RobotBuildRecipe.Find(name);
             if (string.IsNullOrEmpty(part.Name)) return StageResult.Fail;
 
+            Vector3 world = worldOverride ?? RobotBuildRecipe.WorldOrigin(part.Name);
+
             int mi = ModelIndex();
 
             var placement = PrimitivePlacement.Default;
-            placement.WorldPosition          = Vector3.zero;
-            placement.PlaceRotation          = Vector3.zero;
+            placement.WorldPosition          = world;
+            placement.PlaceRotation          = part.BakeRotation;
             placement.PlaceScale             = Vector3.one;
             placement.BakeRotation           = true;
             placement.BakeScale              = true;
@@ -419,17 +489,60 @@ namespace Poly_Ling.Player
 
             // 送っただけでは成否が分からない。実際に増えたかを見る。
             var model = GetModel?.Invoke();
-            if (model == null || FindMeshIndex(model, part.Name) < 0) return StageResult.Fail;
+            if (model == null) return StageResult.Fail;
+
+            int idx = FindMeshIndex(model, part.Name);
+            if (idx < 0) return StageResult.Fail;
+
+            // 入った姿勢も確かめる。位置がずれる不具合は見た目に出ないので、
+            // BoneTransform の実値で判定しないと素通りする。
+            // 回転は頂点へ焼き込んであるので、姿勢側は 0 でなければならない。
+            var mc = model.GetMeshContext(idx);
+            if (mc?.BoneTransform == null) return StageResult.Fail;
+
+            if ((mc.BoneTransform.Position - world).sqrMagnitude > 1e-8f)
+                return StageResult.Fail;
+
+            if (mc.BoneTransform.Rotation.sqrMagnitude > 1e-6f)
+                return StageResult.Fail;
 
             return StageResult.Ok;
         }
 
         /// <summary>
-        /// 部位を 1 つ、オブジェクト姿勢で動かす。
+        /// 既定マテリアル（スロット 0）の基本色を灰青にする。
         ///
+        /// スロットは図形生成のときに 1 枚だけ作られる
+        /// （PolyLingPlayerViewerCore.cs:8105-8126）。作られる前に送っても
+        /// 何も起きないので、図形を全部置いたあとで呼ぶ。
+        /// </summary>
+        private StageResult StageSetMaterialColor()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null || model.MaterialCount == 0) return StageResult.Fail;
+
+            SendLogged(new SetMaterialColorCommand(ModelIndex(), 0, GreyBlue));
+
+            // 保存に乗るのは MaterialData 側なので、そちらの値で判定する。
+            var matRef = model.GetMaterialReference(0);
+            if (matRef?.Data == null) return StageResult.Fail;
+
+            Color c = matRef.Data.GetBaseColor();
+            if (Mathf.Abs(c.r - GreyBlue.r) > 1e-4f ||
+                Mathf.Abs(c.g - GreyBlue.g) > 1e-4f ||
+                Mathf.Abs(c.b - GreyBlue.b) > 1e-4f ||
+                Mathf.Abs(c.a - GreyBlue.a) > 1e-4f)
+                return StageResult.Fail;
+
+            return StageResult.Ok;
+        }
+
+        /// <summary>
+        /// 部位を 1 つ、オブジェクト姿勢で正しい位置へ動かす。
+        ///
+        /// 回転は生成のときに頂点へ焼き込んであるので、ここでは位置だけを入れる。
         /// 階層を張る前なので、入れる値はワールド絶対位置。
         /// 階層の段で PreserveWorldTransform により親からの相対値へ組み直される。
-        /// 回転が要る部位は回転を先に入れる（位置を入れてから回すと原点まわりに振れる）。
         /// </summary>
         private StageResult StagePlaceOne(string name)
         {
@@ -470,14 +583,6 @@ namespace Poly_Ling.Player
             void Set(SetBoneTransformValueCommand.Field f, float value)
                 => SendLogged(new SetBoneTransformValueCommand(mi, target, f, value));
 
-            // 回転 → 位置の順。位置を入れてから回すと原点まわりに振れる。
-            if (part.BakeRotation != Vector3.zero)
-            {
-                Set(SetBoneTransformValueCommand.Field.RotationX, part.BakeRotation.x);
-                Set(SetBoneTransformValueCommand.Field.RotationY, part.BakeRotation.y);
-                Set(SetBoneTransformValueCommand.Field.RotationZ, part.BakeRotation.z);
-            }
-
             Vector3 w = RobotBuildRecipe.WorldOrigin(part.Name);
             Set(SetBoneTransformValueCommand.Field.PositionX, w.x);
             Set(SetBoneTransformValueCommand.Field.PositionY, w.y);
@@ -493,7 +598,8 @@ namespace Poly_Ling.Player
             if ((mc.BoneTransform.Position - w).sqrMagnitude > 1e-8f)
                 return StageResult.Fail;
 
-            if ((mc.BoneTransform.Rotation - part.BakeRotation).sqrMagnitude > 1e-6f)
+            // 焼き込んだ回転を姿勢側へ二重に入れていないか。
+            if (mc.BoneTransform.Rotation.sqrMagnitude > 1e-6f)
                 return StageResult.Fail;
 
             return StageResult.Ok;

@@ -27,6 +27,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Frill;
+using Poly_Ling.HairStrand;
 using Poly_Ling.Pipe;
 using Poly_Ling.PlaceObject;
 using Poly_Ling.Profile2DExtrude;
@@ -114,6 +115,7 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreatePyramidCommand c:      return PyramidMeshGenerator.Generate(c.Params);
                 case CreateStadiumBoxCommand c:   return StadiumBoxMeshGenerator.Generate(c.Params);
                 case CreatePipeStadiumCommand c:  return PipeStadiumMeshGenerator.Generate(c.Params);
+                case CreateHairStrandCommand c:   return HairStrandMeshGenerator.Generate(c.Params);
                 case CreateNGonGearCommand c:     return NGonGearMeshGenerator.Generate(c.Params);
                 case CreateNGonStarCommand c:     return NGonStarMeshGenerator.Generate(c.Params);
                 case CreateInvoluteGearCommand c: return InvoluteTrochoidGearMeshGenerator.Generate(c.Params);
@@ -455,6 +457,7 @@ namespace Poly_Ling.PrimitiveMesh
 
                 case "Frill":
                 case "Pipe":
+                case "HairStrand":
                     PartsIdOps.AssignSubIdByPartsId(mo);
                     return;
 

@@ -296,11 +296,11 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox, PipeStadium }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox, PipeStadium, HairStrand }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
-              "NGonGear","NGonStar","InvoluteGear","StadiumBox","PipeStadium" };
+              "NGonGear","NGonStar","InvoluteGear","StadiumBox","PipeStadium","HairStrand" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced }
@@ -312,7 +312,7 @@ namespace Poly_Ling.Player
         private static readonly ShapeKind[] AdvancedShapes =
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
               ShapeKind.NGonGear, ShapeKind.NGonStar, ShapeKind.InvoluteGear,
-              ShapeKind.PipeStadium,
+              ShapeKind.PipeStadium, ShapeKind.HairStrand,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
 
         // ================================================================
@@ -1415,6 +1415,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.InvoluteGear: BuildInvoluteGearUI(_settingsContainer); break;
                 case ShapeKind.StadiumBox:   BuildStadiumBoxUI(_settingsContainer);   break;
                 case ShapeKind.PipeStadium:  BuildPipeStadiumUI(_settingsContainer);  break;
+                case ShapeKind.HairStrand:   BuildHairStrandUI(_settingsContainer);   break;
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -4606,6 +4607,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.InvoluteGear: return _involGearP.MeshName;
                 case ShapeKind.StadiumBox:   return _stadiumP.MeshName;
                 case ShapeKind.PipeStadium:  return _pipeStadiumP.MeshName;
+                case ShapeKind.HairStrand:   return _hairP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
                 case ShapeKind.Bridge:     return BridgeMeshName;
@@ -4637,6 +4639,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.InvoluteGear: _involGearP.MeshName = name; break;
                 case ShapeKind.StadiumBox:   _stadiumP.MeshName   = name; break;
                 case ShapeKind.PipeStadium:  _pipeStadiumP.MeshName = name; break;
+                case ShapeKind.HairStrand:   _hairP.MeshName        = name; break;
                 // 穴つなぎも非重複候補の対象にする（Name() は BridgeMeshName を返すため、
                 // ここを欠かすと RefreshMeshNameCandidate が名前を書き戻せない）。
                 case ShapeKind.Bridge:      SetBridgeMeshName(name); break;

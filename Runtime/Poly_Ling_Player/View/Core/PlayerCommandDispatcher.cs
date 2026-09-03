@@ -1305,6 +1305,38 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── マテリアル色設定
+                case SetMaterialColorCommand c:
+                {
+                    if (model == null) return;
+
+                    var colRef = model.GetMaterialReference(c.SlotIndex);
+                    if (colRef == null) return;
+
+                    // 永続データ側。保存に乗るのはこちら。
+                    if (colRef.Data == null) colRef.Data = new Poly_Ling.Materials.MaterialData();
+                    colRef.Data.SetBaseColor(c.BaseColor);
+
+                    // 起きている Material 側。Data を書いてもキャッシュは作り直されないので、
+                    // ここへ入れないと画面の色が変わらない。
+                    var colMat = colRef.Material;
+                    if (colMat != null)
+                    {
+                        if (colMat.HasProperty("_BaseColor")) colMat.SetColor("_BaseColor", c.BaseColor);
+                        if (colMat.HasProperty("_Color"))     colMat.SetColor("_Color",     c.BaseColor);
+                    }
+
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
+
+                    // 色だけの変更なので載せる集合は変わらない。
+                    // EnterMeshAttributesChanged は集合が同じなら再構築せず、
+                    // 描き直しだけを回す（PlayerViewportManager.cs:735-760）。
+                    _viewportManager.EnterMeshAttributesChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
                 // ── LSCM UV 展開
                 case ApplyLscmUnwrapCommand c:
                 {

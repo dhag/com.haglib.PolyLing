@@ -1975,6 +1975,32 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// マテリアルスロットの基本色を設定する。
+    ///
+    /// 【なぜ Data と Material の両方を書くか】
+    ///   MaterialReference は永続データを Data（MaterialData）側に持ち、
+    ///   Material はそこから起こしたキャッシュ（MaterialReference.cs:28-44）。
+    ///   Data だけを書くと既に起きている Material が古い色のままで画面に出ず、
+    ///   Material だけを書くと保存に乗らない。マテリアル一覧パネルの色スライダーも
+    ///   両方へ書いている（PlayerMaterialListSubPanel.cs:610-625）。
+    ///   書く先はディスパッチャ側が持つ。
+    /// </summary>
+    public class SetMaterialColorCommand : PanelCommand
+    {
+        /// <summary>対象マテリアルスロット番号</summary>
+        public int   SlotIndex { get; }
+        /// <summary>設定する基本色（RGBA）</summary>
+        public Color BaseColor { get; }
+
+        public SetMaterialColorCommand(int modelIndex, int slotIndex, Color baseColor)
+            : base(modelIndex)
+        {
+            SlotIndex = slotIndex;
+            BaseColor = baseColor;
+        }
+    }
+
     // ================================================================
     // 差分からのモーフ生成
     // ================================================================
@@ -2482,6 +2508,25 @@ namespace Poly_Ling.Data
         public CreatePipeStadiumCommand(
             int modelIndex,
             Poly_Ling.PrimitiveMesh.PipeStadiumMeshGenerator.PipeStadiumParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    /// <summary>
+    /// 髪の房。房 M 個 × 筒 N 本 の独立したチューブを 1 つの描画オブジェクトに入れる。
+    /// 筒 1 本が部品 1 個になる（フリル・パイプと同じ扱い）。
+    /// </summary>
+    public sealed class CreateHairStrandCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "HairStrand", Description = "髪の房のパラメータ", Required = true)]
+        public Poly_Ling.HairStrand.HairStrandParams Params { get; }
+
+        public override string ShapeName => "HairStrand";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateHairStrandCommand(
+            int modelIndex,
+            Poly_Ling.HairStrand.HairStrandParams prms,
             PrimitivePlacement placement)
             : base(modelIndex, placement) { Params = prms; }
     }

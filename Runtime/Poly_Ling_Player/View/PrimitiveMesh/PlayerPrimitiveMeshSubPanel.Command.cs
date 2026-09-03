@@ -102,6 +102,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Pyramid:      return new CreatePyramidCommand(mi, _pyramidP, pl);
                 case ShapeKind.StadiumBox:   return new CreateStadiumBoxCommand(mi, _stadiumP, pl);
                 case ShapeKind.PipeStadium:  return new CreatePipeStadiumCommand(mi, _pipeStadiumP, pl);
+                case ShapeKind.HairStrand:   return BuildHairStrandCommand(mi, pl);
                 case ShapeKind.NGonGear:     return new CreateNGonGearCommand(mi, _ngonGearP, pl);
                 case ShapeKind.NGonStar:     return new CreateNGonStarCommand(mi, _ngonStarP, pl);
                 case ShapeKind.InvoluteGear: return new CreateInvoluteGearCommand(mi, _involGearP, pl);
@@ -123,6 +124,28 @@ namespace Poly_Ling.Player
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// 髪の房。幅配分は配列なので、パネルが持つ実体をそのまま載せると
+        /// コマンドを作った後のスライダ操作がコマンド側の値まで書き換えてしまう。
+        /// 回転体・2D 押し出しと同じく、写してから載せる。
+        /// </summary>
+        private CreatePrimitiveMeshCommand BuildHairStrandCommand(int mi, PrimitivePlacement pl)
+        {
+            var p = _hairP;
+            int n = Mathf.Clamp(p.LobeCount,
+                Poly_Ling.HairStrand.HairStrandParams.LobeCountMin,
+                Poly_Ling.HairStrand.HairStrandParams.LobeCountMax);
+
+            var arr = new float[n];
+            for (int i = 0; i < n; i++)
+                arr[i] = (_hairP.LobeWidths != null && i < _hairP.LobeWidths.Length)
+                    ? _hairP.LobeWidths[i]
+                    : Poly_Ling.HairStrand.HairStrandParams.LobeWidthMin;
+            p.LobeWidths = arr;
+
+            return new CreateHairStrandCommand(mi, p, pl);
         }
 
         /// <summary>

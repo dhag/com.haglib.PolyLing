@@ -332,6 +332,8 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：パイプ群専用の左右対称化（パイプの整列）。</summary>
         public VisualElement PipeAlignSection           { get; private set; }
         public Button        PipeAlignBtn               { get; private set; }
+        public VisualElement SurfaceSnapSection         { get; private set; }
+        public Button        SurfaceSnapBtn             { get; private set; }
         /// <summary>右ペイン：藤壺（オブジェクト配置）の部品を原型の形へ張り直す。</summary>
         public VisualElement PlaceObjectReshapeSection  { get; private set; }
         public Button        PlaceObjectReshapeBtn      { get; private set; }
@@ -1245,6 +1247,10 @@ namespace Poly_Ling.Player
             PipeAlignBtn = MakeBtn("パイプの整列"); PipeAlignBtn.style.flexGrow = 1;
             rowPipeAlign.Add(PipeAlignBtn); foVertexPos.Add(rowPipeAlign);
 
+            var rowSurfaceSnap = new VisualElement(); rowSurfaceSnap.style.flexDirection = FlexDirection.Row; rowSurfaceSnap.style.marginBottom = 2;
+            SurfaceSnapBtn = MakeBtn("面に張り付け"); SurfaceSnapBtn.style.flexGrow = 1;
+            rowSurfaceSnap.Add(SurfaceSnapBtn); foVertexPos.Add(rowSurfaceSnap);
+
             var rowPlaceObjectReshape = new VisualElement(); rowPlaceObjectReshape.style.flexDirection = FlexDirection.Row; rowPlaceObjectReshape.style.marginBottom = 2;
             PlaceObjectReshapeBtn = MakeBtn("藤壺の整形"); PlaceObjectReshapeBtn.style.flexGrow = 1;
             rowPlaceObjectReshape.Add(PlaceObjectReshapeBtn); foVertexPos.Add(rowPlaceObjectReshape);
@@ -1697,6 +1703,7 @@ namespace Poly_Ling.Player
             PlanarizeAlongBonesSection = AddSection(visible: false);
             SmoothEdgesSection         = AddSection(visible: false);
             PipeAlignSection           = AddSection(visible: false);
+            SurfaceSnapSection         = AddSection(visible: false);
             PlaceObjectReshapeSection  = AddSection(visible: false);
             MergeVerticesSection       = AddSection(visible: false);
             SplitVerticesSection       = AddSection(visible: false);

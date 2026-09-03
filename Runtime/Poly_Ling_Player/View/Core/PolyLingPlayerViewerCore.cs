@@ -260,6 +260,8 @@ namespace Poly_Ling.Player
         private AlignVerticesToolHandler          _alignVerticesHandler;
         private PlayerPipeAlignSubPanel           _pipeAlignSubPanel;
         private PipeAlignToolHandler              _pipeAlignHandler;
+        private PlayerSurfaceSnapSubPanel         _surfaceSnapSubPanel;
+        private SurfaceSnapToolHandler            _surfaceSnapHandler;
         private PlayerPlaceObjectReshapeSubPanel  _placeObjectReshapeSubPanel;
         private PlaceObjectReshapeToolHandler     _placeObjectReshapeHandler;
         private PlayerPlanarizeAlongBonesSubPanel _planarizeAlongBonesSubPanel;
@@ -3393,6 +3395,54 @@ namespace Poly_Ling.Player
             };
             _pipeAlignSubPanel.Build(_layoutRoot.PipeAlignSection);
 
+            _surfaceSnapHandler = new SurfaceSnapToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                },
+            };
+            // 張り付け計算に使うワールド座標は GPU が計算したものだけを参照する。
+            _surfaceSnapHandler.GetWorldPositions = mc =>
+            {
+                var model = ActiveProject?.CurrentModel;
+                if (model == null) return null;
+                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
+            };
+            // ワールド座標が要るのは計算の直前だけ。毎フレームは呼ばない。
+            _surfaceSnapHandler.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            // Poly_Ling_Main 側へビューポート実装を持ち込まないため、値だけを写して渡す。
+            _surfaceSnapHandler.GetCamera = kind =>
+            {
+                PlayerViewport vp;
+                switch (kind)
+                {
+                    case SurfaceSnapCameraKind.Perspective: vp = _viewportManager.PerspectiveViewport; break;
+                    case SurfaceSnapCameraKind.Top:         vp = _viewportManager.TopViewport;         break;
+                    case SurfaceSnapCameraKind.Front:       vp = _viewportManager.FrontViewport;       break;
+                    case SurfaceSnapCameraKind.Side:        vp = _viewportManager.SideViewport;        break;
+                    default:                                vp = _activeViewport ?? _viewportManager.PerspectiveViewport; break;
+                }
+                var cam = vp?.Cam;
+                if (cam == null) return null;
+                return new SurfaceSnapCamera
+                {
+                    IsOrthographic = cam.orthographic,
+                    Position       = cam.transform.position,
+                    Forward        = cam.transform.forward,
+                };
+            };
+            _surfaceSnapHandler.SetProject(ActiveProject);
+            _surfaceSnapHandler.SetUndoController(_editOps?.UndoController);
+            _surfaceSnapHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _surfaceSnapSubPanel = new PlayerSurfaceSnapSubPanel
+            {
+                GetH = () => _surfaceSnapHandler,
+            };
+            _surfaceSnapSubPanel.Build(_layoutRoot.SurfaceSnapSection);
+
             _placeObjectReshapeHandler = new PlaceObjectReshapeToolHandler
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
@@ -4771,6 +4821,7 @@ namespace Poly_Ling.Player
             _layoutRoot.PlanarizeAlongBonesBtn.clicked += ShowPlanarizeAlongBonesPanel;
             _layoutRoot.SmoothEdgesBtn.clicked         += ShowSmoothEdgesPanel;
             _layoutRoot.PipeAlignBtn.clicked           += ShowPipeAlignPanel;
+            _layoutRoot.SurfaceSnapBtn.clicked         += ShowSurfaceSnapPanel;
             _layoutRoot.PlaceObjectReshapeBtn.clicked  += ShowPlaceObjectReshapePanel;
             _layoutRoot.MergeVerticesBtn.clicked       += ShowMergeVerticesPanel;
             _layoutRoot.SplitVerticesBtn.clicked        += ShowSplitVerticesPanel;
@@ -5213,6 +5264,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.PlanarizeAlongBonesSection,   () => _planarizeAlongBonesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SmoothEdgesSection,           () => _smoothEdgesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PipeAlignSection,             () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _pipeAlignHandler?.Activate(ctx); _pipeAlignSubPanel?.Refresh(); }));
+            _sectionRefreshPairs.Add((_layoutRoot.SurfaceSnapSection,           () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _surfaceSnapHandler?.Activate(ctx); _surfaceSnapSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.PlaceObjectReshapeSection,    () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _placeObjectReshapeHandler?.Activate(ctx); _placeObjectReshapeSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.MergeVerticesSection, () =>
             {
@@ -5934,6 +5986,15 @@ namespace Poly_Ling.Player
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _pipeAlignHandler?.Activate(ctx);
             _pipeAlignSubPanel?.Refresh();
+        }
+
+        private void ShowSurfaceSnapPanel()
+        {
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持。右ペインのみ切替。
+            ShowRightPanel(_layoutRoot?.SurfaceSnapSection, _layoutRoot?.SurfaceSnapBtn);
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _surfaceSnapHandler?.Activate(ctx);
+            _surfaceSnapSubPanel?.Refresh();
         }
 
         private void ShowPlaceObjectReshapePanel()
@@ -6835,7 +6896,11 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.AlignVerticesSection);
             Hide(_layoutRoot.PlanarizeAlongBonesSection);
             Hide(_layoutRoot.SmoothEdgesSection);
+            // 面に張り付けのプレビュー結果も MeshObject に書かれている。
+            // 非表示にするだけでは未確定の形状が残るため、先に破棄する。
+            _surfaceSnapHandler?.CancelIfActive();
             Hide(_layoutRoot.PipeAlignSection);
+            Hide(_layoutRoot.SurfaceSnapSection);
             Hide(_layoutRoot.PlaceObjectReshapeSection);
             Hide(_layoutRoot.MergeVerticesSection);
             Hide(_layoutRoot.SplitVerticesSection);
