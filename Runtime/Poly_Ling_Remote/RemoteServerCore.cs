@@ -827,13 +827,8 @@ namespace Poly_Ling.Remote
         {
             try
             {
-                // DispatchCommandが設定されている場合はPanelCommand経由で全処理
-                if (DispatchCommand != null)
-                    return ProcessCommandViaPanelCommand(msg, channel);
-
-                // フォールバック: ToolContext直接操作（後方互換）
-                if (Context == null) return BuildErrorResponse(msg.Id, "No ToolContext");
-                return ProcessCommandLegacy(msg);
+                // 受信コマンドは全て PanelCommand 経由で処理する。
+                return ProcessCommandViaPanelCommand(msg, channel);
             }
             catch (Exception ex)
             {
@@ -1224,39 +1219,6 @@ namespace Poly_Ling.Remote
                 }
             }
             return result.ToArray();
-        }
-
-        /// <summary>後方互換: ToolContext直接操作（DispatchCommandなし時）</summary>
-        private string ProcessCommandLegacy(RemoteMessage msg)
-        {
-            switch (msg.Action)
-            {
-                case "selectMesh":
-                {
-                    int index = GetParamInt(msg, "index", -1);
-                    if (index < 0) return BuildErrorResponse(msg.Id, "Invalid index");
-                    Context.SelectMeshContext?.Invoke(index);
-                    Context.OnMeshSelectionChanged?.Invoke();
-                    Context.Repaint?.Invoke();
-                    Log($"selectMesh(legacy): {index}");
-                    return BuildSuccessResponse(msg.Id, "true");
-                }
-                case "updateAttribute":
-                {
-                    int index = GetParamInt(msg, "index", -1);
-                    if (index < 0) return BuildErrorResponse(msg.Id, "Invalid index");
-                    var change = new MeshAttributeChange { Index = index };
-                    if (msg.Params.TryGetValue("name",    out var n)) change.Name      = n;
-                    if (msg.Params.TryGetValue("visible", out var v)) change.IsVisible = v == "true";
-                    if (msg.Params.TryGetValue("locked",  out var l)) change.IsLocked  = l == "true";
-                    Context.UpdateMeshAttributes?.Invoke(new List<MeshAttributeChange> { change });
-                    Context.Repaint?.Invoke();
-                    Log($"updateAttribute(legacy): [{index}]");
-                    return BuildSuccessResponse(msg.Id, "true");
-                }
-                default:
-                    return BuildErrorResponse(msg.Id, $"Unknown action: {msg.Action}");
-            }
         }
 
         // ================================================================

@@ -368,22 +368,6 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
 
-    /// <summary>スライダードラッグ開始: Undoスナップショット取得</summary>
-    public class BeginBonePoseSliderDragCommand : PanelCommand
-    {
-        public int[] MasterIndices { get; }
-        public BeginBonePoseSliderDragCommand(int modelIndex, int[] masterIndices)
-            : base(modelIndex) { MasterIndices = masterIndices; }
-    }
-
-    /// <summary>スライダードラッグ終了: Undo記録コミット</summary>
-    public class EndBonePoseSliderDragCommand : PanelCommand
-    {
-        public string Description { get; }
-        public EndBonePoseSliderDragCommand(int modelIndex, string description)
-            : base(modelIndex) { Description = description; }
-    }
-
     // ================================================================
     // モーフ
     // ================================================================

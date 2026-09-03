@@ -36,6 +36,12 @@ namespace Poly_Ling.Player
         private readonly MeshUndoController     _undoController;
         private readonly CommandQueue           _commandQueue;
 
+        // MeshListOps はモーフプレビューとスライダードラッグの途中経過を
+        // インスタンス内に持つ（MeshListOps.cs:29-35）。Start→Apply→End が
+        // 同一インスタンスで揃わないと成立しないため、ここで 1 個だけ保持する。
+        private MeshListOps  _meshListOps;
+        private ModelContext _meshListOpsModel;
+
         /// <summary>
         /// AssignPartsIdsCommand の直近の実行結果。パネルが結果表示へ使う。
         /// 失敗（割り切れない等）のときも理由を持たせて残す。
@@ -149,6 +155,36 @@ namespace Poly_Ling.Player
             _rebuildModelList = rebuildModelList ?? throw new ArgumentNullException(nameof(rebuildModelList));
             _undoController   = undoController;
             _commandQueue     = commandQueue;
+        }
+
+        /// <summary>
+        /// 保持している MeshListOps を返す。対象モデルが変わったときだけ差し替える。
+        /// SetContext は内部で EndMorphPreview() を呼ぶ（MeshListOps.cs:45）ので、
+        /// 毎回呼ぶとプレビューの途中経過が消える。
+        /// </summary>
+        private MeshListOps GetMeshListOps(ModelContext model)
+        {
+            if (_meshListOps == null)
+            {
+                _meshListOps = new MeshListOps(model, _undoController);
+
+                // 位置のみの GPU 反映。SyncMeshPositionsAndTransform は
+                // PlayerViewportManager.cs:2630 で Obsolete 指定されているため、
+                // 正規入口の EnterVerticesMoved(Dragging) 経由で渡す。
+                _meshListOps.SyncPositionsOnly = mc =>
+                    _viewportManager.EnterVerticesMoved(
+                        _getProject(), VerticesMovedPhase.Dragging, mc);
+
+                _meshListOpsModel = model;
+                return _meshListOps;
+            }
+
+            if (!ReferenceEquals(_meshListOpsModel, model))
+            {
+                _meshListOps.SetContext(model, _undoController);
+                _meshListOpsModel = model;
+            }
+            return _meshListOps;
         }
 
         // ================================================================
@@ -736,6 +772,19 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return;
 
+                // ── 担当者（EditorName）の設定・解放
+                // 到達時点で権限判定は完了している:
+                //   リモート発 → RemoteOwnership.TryAuthorize が可否を決めて弾く
+                //   ローカル発 → ホスト自身の操作なので無条件に許可
+                // よってここは確定適用（force）。ObjectIds の照合だけは残す。
+                case SetObjectEditorCommand c:
+                    if (model == null) return;
+                    GetMeshListOps(model).SetObjectEditor(
+                        c.MasterIndices, c.EditorName, c.ObjectIds,
+                        requesterName: null, force: true);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+
                 // ── 生成系。実処理は Viewer 側にあるので委譲する
                 // モデルが無くても通す（実処理側が作る）。上の createsOwnModel を参照。
                 case CreatePrimitiveMeshCommand c:
@@ -1027,7 +1076,7 @@ namespace Poly_Ling.Player
                 {
                     if (model == null) return;
                     if (c.Entries == null || c.Entries.Length == 0) return;
-                    var __ops = new MeshListOps(model, _undoController);
+                    var __ops = GetMeshListOps(model);
                     __ops.ReorderMeshes(c.Category, c.Entries, c.PreserveWorldTransform);
                     model.OnListChanged?.Invoke();
                     _notifyPanels(ChangeKind.ListStructure);
@@ -1098,14 +1147,61 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Selection);
                     return;
 
-                // ── モーフ変換・プレビュー・セット作成（PolyLingCore が必要、Player では未実装）
-                case ConvertMeshToMorphCommand _:
-                case ConvertMorphToMeshCommand _:
-                case CreateMorphSetCommand _:
-                case StartMorphPreviewCommand _:
-                case ApplyMorphPreviewCommand _:
+                // ── モーフ変換（構造変更）
+                case ConvertMeshToMorphCommand c:
+                    if (model == null) return;
+                    GetMeshListOps(model).ConvertMeshToMorph(
+                        c.SourceIndex, c.ParentIndex, c.MorphName, c.Panel);
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+
+                case ConvertMorphToMeshCommand c:
+                    if (model == null) return;
+                    GetMeshListOps(model).ConvertMorphToMesh(c.MasterIndices);
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+
+                case CreateMorphSetCommand c:
+                    if (model == null) return;
+                    GetMeshListOps(model).CreateMorphSet(
+                        c.SetName, c.MorphType, c.MorphIndices);
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+
+                // ── モーフプレビュー
+                // 開始と重み変更では通知しない。頂点位置の GPU 反映は
+                // MeshListOps.SyncPositionsOnly（GetMeshListOps で配線）が担う。
+                case StartMorphPreviewCommand c:
+                    if (model == null) return;
+                    GetMeshListOps(model).StartMorphPreview(c.MorphIndices);
+                    return;
+
+                case ApplyMorphPreviewCommand c:
+                    if (model == null) return;
+                    GetMeshListOps(model).ApplyMorphPreview(c.Weight);
+                    return;
+
+                // 終了時は元の頂点位置へ戻したうえで確定させる。
+                // 法線抑止の解除と全 viewport の再計算が要るので DragEnd を通す。
                 case EndMorphPreviewCommand _:
-                    Debug.LogWarning($"[PlayerCommandDispatcher] {cmd.GetType().Name} requires PolyLingCore (not implemented in Player).");
+                    if (model == null) return;
+                    GetMeshListOps(model).EndMorphPreview();
+                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.DragEnd);
+                    return;
+
+                // ── パネル側で直接変更した後の通知
+                case NotifyListStructureChangedCommand _:
+                    if (model == null) return;
+                    model.OnListChanged?.Invoke();
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+
+                case NotifyDictionaryChangedCommand _:
+                    _notifyPanels(ChangeKind.Attributes);
                     return;
 
                 // ── BoneTransform 値設定
