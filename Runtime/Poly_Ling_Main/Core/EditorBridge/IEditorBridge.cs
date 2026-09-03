@@ -108,16 +108,6 @@ namespace Poly_Ling.EditorBridge
         T    AddComponent<T>(GameObject go) where T : Component;
 
         // ================================================================
-        // RemoteServer
-        // ================================================================
-
-        /// <summary>
-        /// RemoteServerを取得または生成し、DispatchCommandを接続する。
-        /// Runtime環境（EditorBridgeNull）では無操作。
-        /// </summary>
-        void SetupRemoteServer(Action<PanelCommand> dispatch);
-
-        // ================================================================
         // ウィンドウ再接続
         // ================================================================
 

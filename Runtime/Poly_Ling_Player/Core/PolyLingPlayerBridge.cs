@@ -142,11 +142,6 @@ namespace Poly_Ling.EditorBridge
         public T AddComponent<T>(GameObject go) where T : Component => go.AddComponent<T>();
 
         // ================================================================
-        // RemoteServer — Playerでは不要
-        // ================================================================
-        public void SetupRemoteServer(System.Action<Poly_Ling.Data.PanelCommand> dispatch) { }
-
-        // ================================================================
         // ウィンドウ再接続 — Playerでは不要
         // ================================================================
         public IToolContextReceiver[] FindAllToolContextReceivers() => System.Array.Empty<IToolContextReceiver>();

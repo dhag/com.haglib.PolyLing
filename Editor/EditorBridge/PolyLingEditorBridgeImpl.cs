@@ -239,18 +239,6 @@ namespace Poly_Ling.EditorIO
             => go == null ? null : Undo.AddComponent<T>(go);
 
         // ================================================================
-        // RemoteServer
-        // ================================================================
-
-        /// <summary>
-        /// Editor 側 RemoteServer ウィンドウは本パッケージに存在しないため無操作。
-        /// Player 側は PolyLingPlayerServer が担当する。
-        /// </summary>
-        public void SetupRemoteServer(Action<PanelCommand> dispatch)
-        {
-        }
-
-        // ================================================================
         // ウィンドウ再接続
         // ================================================================
 
