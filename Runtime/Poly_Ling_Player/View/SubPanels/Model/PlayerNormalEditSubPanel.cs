@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
 
@@ -55,13 +56,28 @@ namespace Poly_Ling.Player
         private NormalWeightMode WeightMode
             => (NormalWeightMode)Mathf.Clamp(_weightDropdown?.index ?? 0, 0, 3);
 
-        private int Axis => Mathf.Clamp(_axisDropdown?.index ?? 0, 0, 2);
+        private int Axis
+            => Mathf.Clamp(_axisDropdown?.index ?? 0, 0, NormalEditCommand.AxisCount - 1);
 
         private Vector3 Target => new Vector3(
             _targetX?.value ?? 0f, _targetY?.value ?? 0f, _targetZ?.value ?? 0f);
 
         private float MirrorThreshold
-            => Mathf.Max(0f, _mirrorThresholdField?.value ?? DefaultMirrorThreshold);
+            => Mathf.Max(MirrorThresholdMin, _mirrorThresholdField?.value ?? DefaultMirrorThreshold);
+
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float AngleDegMin        => ParameterLimits.GetF("NormalEdit.AngleDeg.Min");
+        private static float AngleDegMax        => ParameterLimits.GetF("NormalEdit.AngleDeg.Max");
+        private static float StrengthMin        => ParameterLimits.GetF("NormalEdit.Strength.Min");
+        private static float StrengthMax        => ParameterLimits.GetF("NormalEdit.Strength.Max");
+        private static float MirrorThresholdMin => ParameterLimits.GetF("NormalEdit.MirrorThreshold.Min");
 
         // ================================================================
         // 構築
@@ -108,7 +124,7 @@ namespace Poly_Ling.Player
 
             // ── A. 再計算 ──────────────────────────────────────────────
             root.Add(SecLabel("再計算"));
-            root.Add(MkSliderRow("角度", 0f, 180f, _angleDeg, v => _angleDeg = v));
+            root.Add(MkSliderRow("角度", AngleDegMin, AngleDegMax, _angleDeg, v => _angleDeg = v));
 
             var rowRecalc = MkRow();
             rowRecalc.Add(MkBtn("角度で再計算", () => Send(NormalEditCommand.Op.RecalcByAngle),
@@ -134,7 +150,7 @@ namespace Poly_Ling.Player
 
             // ── C. 平均・平滑 ──────────────────────────────────────────
             root.Add(SecLabel("平均・平滑"));
-            root.Add(MkSliderRow("平滑強度", 0f, 1f, _strength, v => _strength = v));
+            root.Add(MkSliderRow("平滑強度", StrengthMin, StrengthMax, _strength, v => _strength = v));
 
             var rowAvg = MkRow();
             rowAvg.Add(MkBtn("1方向に平均", () => Send(NormalEditCommand.Op.AverageAll),

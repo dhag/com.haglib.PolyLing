@@ -267,6 +267,27 @@ namespace Poly_Ling.Player
         private Dictionary<int, HashSet<int>>     _affectedVertices = new Dictionary<int, HashSet<int>>();
         private Dictionary<int, IVertexTransform> _meshTransforms   = new Dictionary<int, IVertexTransform>();
 
+        /// <summary>
+        /// ドラッグ 1 ストロークのワールド総移動量。
+        ///
+        /// IVertexTransform の累積はメッシュごとのローカル量なので、コマンドへ載せる
+        /// ワールドの総量はここで持つ。BeginMove で 0 にし、ApplyDelta で足し、
+        /// ApplyAbsoluteFromOrigin（絶対指定）では代入する。
+        /// </summary>
+        private Vector3 _dragWorldTotal;
+
+        /// <summary>
+        /// コマンド送信口。マウス経路の確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        // コマンド経由の対象指定。null のときはモデルの現在の選択を使う（マウス経路）。
+        // UpdateAffectedVertices だけがこれを見る。以降の BeginMove / ApplyDelta /
+        // EndMove は _affectedVertices と _meshTransforms を辿るので、絞り込みは
+        // 1 か所で足りる。
+        private HashSet<int> _targetOverride;
+
         private AxisGizmo          _axisGizmo      = new AxisGizmo();
 
         /// <summary>
@@ -383,7 +404,11 @@ namespace Poly_Ling.Player
         // ================================================================
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
-            var before = CaptureAllSelectionSnapshots();
+            // スナップショットは ApplyClick の直呼び経路でしか使わない。
+            // コマンド経路の Undo は ExecuteFromCommand が自前で取る。
+            var before = GetHoverElement == null
+                ? CaptureAllSelectionSnapshots()
+                : null;
 
             var mode = _selectionOps.SelectionState?.Mode
                     ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge |
@@ -396,12 +421,36 @@ namespace Poly_Ling.Player
             // 診断: クリック前の選択要素総数（ドラッグ経路と揃えて比較するため）
             int selCountBefore = CountSelectedElements();
 
+            // 【コマンド発行に寄せている経路】
+            //   GetHoverElement が結線されているときは、修飾キーの解釈だけを
+            //   ResolveElementClick に取らせ、結果を SelectElementsCommand として
+            //   送る。書き込み・頂点展開・選択 Undo はディスパッチャ経由で
+            //   ExecuteFromCommand へ戻り、そこで 1 本の実装を通る。
+            //
+            //   未結線時の ApplyClick は直呼びのまま残す。PlayerHitResult.MeshIndex は
+            //   GlobalToLocalVertexIndex 由来の unified インデックスで
+            //   （ApplyClick の remarks を参照）、MeshContextList インデックスを
+            //   期待するコマンドには載せられない。
             if (GetHoverElement != null)
-                _selectionOps.ApplyElementClick(clickedElem, mods);
+            {
+                if (SendCommand != null &&
+                    _selectionOps.ResolveElementClick(clickedElem, mods, out var r))
+                {
+                    SendCommand(new Poly_Ling.Data.SelectElementsCommand(
+                        _project?.CurrentModelIndex ?? 0,
+                        r.ClearTargets,
+                        r.VertexIndices, r.VertexMeshIndices,
+                        r.EdgePairs,     r.EdgeMeshIndices,
+                        r.FaceIndices,   r.FaceMeshIndices,
+                        r.LineIndices,   r.LineMeshIndices,
+                        r.Op));
+                }
+            }
             else
+            {
                 _selectionOps.ApplyClick(hit, mods);
-
-            ExpandLinkedVertices();
+                ExpandLinkedVertices();
+            }
 
             // 診断: クリックで何を掴み、選択が何件になったか。
             // ドラッグ経路 ("MTH.Pending") と対比できるよう同じ並びで記録する。
@@ -416,7 +465,11 @@ namespace Poly_Ling.Player
                 PLDiag.PickDump("click-mesh-not-operable");
 
             OnRequestNormal?.Invoke();
-            RecordSelectionChange(before, CaptureAllSelectionSnapshots());
+
+            // 選択 Undo は、コマンド経路では ExecuteFromCommand が積む。
+            // ここで積むのは ApplyClick の直呼び経路だけ。
+            if (GetHoverElement == null)
+                RecordSelectionChange(before, CaptureAllSelectionSnapshots());
 
             // ツール流用フック: クリック系ツール (FlipFace 等) がここで発火
             OnLeftClickExtra?.Invoke(clickedElem, mods);
@@ -740,6 +793,8 @@ namespace Poly_Ling.Player
                 worldTotal = _axisGizmo.ComputeFreeDelta(screenPos - _pressOriginPos, ctx);
             }
 
+            // 絶対指定なので加算ではなく代入する。
+            _dragWorldTotal = worldTotal;
             SetTotalDeltaAll(worldTotal);
             _pressMoveStarted = true;
         }
@@ -930,12 +985,26 @@ namespace Poly_Ling.Player
                 case MoveState.PendingAction:
                     if (Vector2.Distance(screenPos, _mouseDownPos) > DragThreshold)
                     {
-                        // ヒット要素が未選択なら選択
+                        // ヒット要素が未選択なら選択。
+                        // ここはしきい値を越えてドラッグへ移行した時点の確定選択で、
+                        // 巻き戻らない（押下時の暫定選択は RollbackPressSelection 側）。
+                        // よってコマンドとして発行し、書き込み・頂点展開・選択 Undo は
+                        // ディスパッチャ経由で ExecuteFromCommand へ戻す。
                         if (_elemOnMouseDown.HasHit && !IsElemSelected(_elemOnMouseDown))
                         {
-                            var selBefore = CaptureAllSelectionSnapshots();
-                            _selectionOps.ApplyElementClick(_elemOnMouseDown, new ModifierKeys());
-                            RecordSelectionChange(selBefore, CaptureAllSelectionSnapshots());
+                            if (SendCommand != null &&
+                                _selectionOps.ResolveElementClick(
+                                    _elemOnMouseDown, new ModifierKeys(), out var pr))
+                            {
+                                SendCommand(new Poly_Ling.Data.SelectElementsCommand(
+                                    _project?.CurrentModelIndex ?? 0,
+                                    pr.ClearTargets,
+                                    pr.VertexIndices, pr.VertexMeshIndices,
+                                    pr.EdgePairs,     pr.EdgeMeshIndices,
+                                    pr.FaceIndices,   pr.FaceMeshIndices,
+                                    pr.LineIndices,   pr.LineMeshIndices,
+                                    pr.Op));
+                            }
 
                             // 下の OnEnterTransformDragging で TransformDragging へ入ると
                             // 選択が GPU へ届かなくなるため、ここで同期的に反映させる。
@@ -1105,7 +1174,7 @@ namespace Poly_Ling.Player
                       || _state == MoveState.CenterDragging;
             if (moved)
             {
-                EndMove();
+                CommitDragMove();
                 OnExitTransformDragging?.Invoke();
             }
 
@@ -1210,12 +1279,27 @@ namespace Poly_Ling.Player
         /// メッシュごとに 1 個ずつ控えて MultiMeshSelectionChangeRecord に渡す。
         /// </summary>
         private Dictionary<int, SelectionSnapshot> CaptureAllSelectionSnapshots()
+            => CaptureAllSelectionSnapshots(null);
+
+        /// <summary>
+        /// 選択メッシュのスナップショットを取る。extra を渡すと、選択メッシュに
+        /// 入っていないものも対象へ足す。
+        ///
+        /// コマンドは選択に入っていないメッシュも指定できる。足しておかないと
+        /// before / after のどちらにも現れず、RecordSelectionChange が差分なしと
+        /// 判断して Undo が積まれない。
+        /// </summary>
+        private Dictionary<int, SelectionSnapshot> CaptureAllSelectionSnapshots(
+            IEnumerable<int> extra)
         {
             var result = new Dictionary<int, SelectionSnapshot>();
             var model  = _project?.CurrentModel;
             if (model == null) return result;
 
-            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
+            var indices = new HashSet<int>(model.SelectedDrawableMeshIndices);
+            if (extra != null) foreach (int i in extra) indices.Add(i);
+
+            foreach (int ctxIdx in indices)
             {
                 var mc  = model.GetMeshContext(ctxIdx);
                 var sel = mc?.Selection;
@@ -1319,7 +1403,14 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) return;
 
-            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
+            // _targetOverride が入っているときは選択メッシュではなくそちらを回す
+            // （コマンド経由。ExecuteFromCommand が設定する）。
+            // 各メッシュの中で「どの要素が選ばれているか」は SelectionState を見る点が
+            // マウス経路と共通で、絞るのは対象メッシュだけ。
+            IEnumerable<int> sourceIndices =
+                _targetOverride ?? (IEnumerable<int>)model.SelectedDrawableMeshIndices;
+
+            foreach (int ctxIdx in sourceIndices)
             {
                 var mc = model.GetMeshContext(ctxIdx);
                 if (mc?.MeshObject == null) continue;
@@ -1431,6 +1522,7 @@ namespace Poly_Ling.Player
 
         private void BeginMove()
         {
+            _dragWorldTotal = Vector3.zero;
             _meshTransforms.Clear();
             var model = _project?.CurrentModel;
             if (model == null) return;
@@ -1460,6 +1552,8 @@ namespace Poly_Ling.Player
         {
             if (worldDelta == Vector3.zero) return;
 
+            _dragWorldTotal += worldDelta;
+
             // 診断: 移動量はあるのに transform が 0 件 → 画面に何も反映されない。
             PLDiag.PickRec("MTH.ApplyDelta", _meshTransforms.Count,
                 x: worldDelta.x, y: worldDelta.y, z: worldDelta.z);
@@ -1480,6 +1574,59 @@ namespace Poly_Ling.Player
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             }
             OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// ドラッグ移動を確定する。
+        ///
+        /// 【なぜ EndMove を直接呼ばないか】
+        ///   1 ストローク = 1 コマンドにするため。ドラッグ中の適用はプレビュー
+        ///   （Undo に積まない）として扱い、確定時に開始位置へ戻してから
+        ///   MoveSelectedVerticesCommand を送る。実際の移動と Undo 記録は
+        ///   ディスパッチャ経由で ExecuteFromCommand → ApplyNumericMove が行う。
+        ///
+        /// 【戻す方法】
+        ///   IVertexTransform は開始スナップショットからの絶対計算なので、
+        ///   SetTotalDelta(0) で開始位置に戻る。復元用の経路を別に作らない。
+        ///
+        /// 【送れないとき】
+        ///   SendCommand が未結線なら、プレビューを消して終わりでは移動が失われる。
+        ///   その場合は従来どおり EndMove で確定させる。
+        /// </summary>
+        private void CommitDragMove()
+        {
+            Vector3 total = _dragWorldTotal;
+
+            if (SendCommand == null) { EndMove(); return; }
+
+            if (total == Vector3.zero)
+            {
+                // 実質動いていない。プレビューを戻して Undo も積まない。
+                SetTotalDeltaAll(Vector3.zero);
+                _meshTransforms.Clear();
+                return;
+            }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { EndMove(); return; }
+
+            var targets = new List<int>(_meshTransforms.Keys);
+            if (targets.Count == 0) { EndMove(); return; }
+
+            // プレビューを開始位置へ戻す。
+            SetTotalDeltaAll(Vector3.zero);
+            _meshTransforms.Clear();
+
+            SendCommand(new Poly_Ling.Data.MoveSelectedVerticesCommand(
+                _project?.CurrentModelIndex ?? 0,
+                targets.ToArray(),
+                total,
+                Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World,
+                recalcNormals:      false,
+                useMagnet:          UseMagnet,
+                magnetRadius:       MagnetRadius,
+                magnetFalloff:      MagnetFalloff,
+                magnetDistanceMode: MagnetDistanceMode));
         }
 
         private void EndMove()
@@ -1542,6 +1689,186 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 要素選択コマンドを実行する。
+        ///
+        /// 【なぜ要るか】
+        ///   クリック経路は GPU ホバーが返した 1 要素と修飾キーから選択を決めるので、
+        ///   コマンド経由（自動検証・MCP）からは通せない。要素の集合だけを渡せる
+        ///   入口をここに置く。
+        ///
+        /// 【クリック経路と同じ実装を通す】
+        ///   OnLeftClick と同じ「スナップショット → 選択の書き換え → 頂点への展開
+        ///   → Undo 記録」の 4 手順を通す。頂点展開の種別（左ペインのチェック）と
+        ///   MultiMeshSelectionChangeRecord の作り方は共有される。
+        ///
+        /// 【受け取る集合】
+        ///   要素の索引はメッシュ内ローカル番号なので、同じ並びの *MeshIndices と
+        ///   対で受ける。長さが合わないものは弾いて理由を返す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.SelectElementsCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+            if (_selectionOps == null) { reason = "選択操作がありません"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            int VLen(int[] a) => a?.Length ?? 0;
+
+            if (VLen(cmd.VertexIndices) != VLen(cmd.VertexMeshIndices))
+            { reason = "VertexIndices と VertexMeshIndices の長さが違います"; return false; }
+            if (VLen(cmd.FaceIndices) != VLen(cmd.FaceMeshIndices))
+            { reason = "FaceIndices と FaceMeshIndices の長さが違います"; return false; }
+            if (VLen(cmd.LineIndices) != VLen(cmd.LineMeshIndices))
+            { reason = "LineIndices と LineMeshIndices の長さが違います"; return false; }
+            if (VLen(cmd.EdgePairs) % 2 != 0)
+            { reason = "EdgePairs の長さが偶数ではありません"; return false; }
+            if (VLen(cmd.EdgePairs) / 2 != VLen(cmd.EdgeMeshIndices))
+            { reason = "EdgeMeshIndices の長さが EdgePairs の半分ではありません"; return false; }
+
+            // 触るメッシュを集める。存在しないものが混ざっていたら何も書かずに返す。
+            var touched = new HashSet<int>();
+            if (cmd.MasterIndices != null)     foreach (int i in cmd.MasterIndices)     touched.Add(i);
+            if (cmd.VertexMeshIndices != null) foreach (int i in cmd.VertexMeshIndices) touched.Add(i);
+            if (cmd.EdgeMeshIndices != null)   foreach (int i in cmd.EdgeMeshIndices)   touched.Add(i);
+            if (cmd.FaceMeshIndices != null)   foreach (int i in cmd.FaceMeshIndices)   touched.Add(i);
+            if (cmd.LineMeshIndices != null)   foreach (int i in cmd.LineMeshIndices)   touched.Add(i);
+
+            if (touched.Count == 0) { reason = "対象が指定されていません"; return false; }
+
+            foreach (int idx in touched)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc == null)
+                { reason = $"masterIndex {idx} のオブジェクトがありません"; return false; }
+                if (mc.Selection == null)
+                { reason = $"masterIndex {idx} に選択状態がありません"; return false; }
+            }
+
+            var before = CaptureAllSelectionSnapshots(touched);
+
+            _selectionOps.ApplyElementSet(
+                cmd.MasterIndices, cmd.Op,
+                cmd.VertexMeshIndices, cmd.VertexIndices,
+                cmd.EdgeMeshIndices,   cmd.EdgePairs,
+                cmd.FaceMeshIndices,   cmd.FaceIndices,
+                cmd.LineMeshIndices,   cmd.LineIndices);
+
+            ExpandLinkedVertices();
+
+            OnRequestNormal?.Invoke();
+            RecordSelectionChange(before, CaptureAllSelectionSnapshots(touched));
+
+            OnRepaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 選択頂点の移動コマンドを実行する。
+        ///
+        /// 【なぜ要るか】
+        ///   マウス経路は移動量を画面のドラッグ差分から決めるので、コマンド経由
+        ///   （自動検証・MCP）からは通せない。対象と移動量だけを渡せる入口を置く。
+        ///   SculptToolHandler.ExecuteFromCommand と同じ形。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   ApplyNumericMove をそのまま呼ぶ。辺・面・線分の選択を頂点へ展開する
+        ///   規則、マグネットの重み付け、Undo 記録、リモート配信
+        ///   （OnVerticesCommitted）はすべてその中にあるので、ここで書き足すものは無い。
+        ///
+        /// 【マグネット】
+        ///   コマンドの値を正典として実行し、終わったら UI の値へ戻す。1 呼び出しが
+        ///   パネルの状態に依存しないようにするため。
+        ///
+        /// 【Local の基準】
+        ///   Space == Local のとき、Delta は MasterIndices[0] のローカル量として
+        ///   解釈し、そのメッシュの WorldMatrix でワールドへ変換する。ApplyDelta は
+        ///   受け取ったワールド量をメッシュごとにローカル化する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.MoveSelectedVerticesCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            var indices = cmd.MasterIndices;
+            if (indices == null || indices.Length == 0)
+            { reason = "対象が指定されていません"; return false; }
+
+            var targets = new HashSet<int>();
+            foreach (int idx in indices)
+            {
+                if (model.GetMeshContext(idx) == null)
+                { reason = $"masterIndex {idx} のオブジェクトがありません"; return false; }
+                targets.Add(idx);
+            }
+
+            Vector3 worldDelta;
+            if (cmd.Space == Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World)
+            {
+                worldDelta = cmd.Delta;
+            }
+            else
+            {
+                var baseMc = model.GetMeshContext(indices[0]);
+                worldDelta = baseMc.WorldMatrix.MultiplyVector(cmd.Delta);
+            }
+
+            if (worldDelta == Vector3.zero) { reason = "移動量が 0 です"; return false; }
+
+            // マグネットの UI 状態を退避する。
+            bool         savedUse      = UseMagnet;
+            float        savedRadius   = MagnetRadius;
+            FalloffType  savedFalloff  = MagnetFalloff;
+            DistanceMode savedDistance = MagnetDistanceMode;
+
+            _targetOverride = targets;
+            bool moved = false;
+            try
+            {
+                UseMagnet          = cmd.UseMagnet;
+                MagnetRadius       = cmd.MagnetRadius;
+                MagnetFalloff      = cmd.MagnetFalloff;
+                MagnetDistanceMode = cmd.MagnetDistanceMode;
+
+                moved = ApplyNumericMove(worldDelta);
+                if (!moved) reason = "対象メッシュに選択された要素がありません";
+            }
+            finally
+            {
+                _targetOverride    = null;
+                UseMagnet          = savedUse;
+                MagnetRadius       = savedRadius;
+                MagnetFalloff      = savedFalloff;
+                MagnetDistanceMode = savedDistance;
+                OnExitTransformDragging?.Invoke();
+            }
+
+            if (!moved) return false;
+
+            // 法線の再計算はマウス経路が持たない追加処理なので、明示指定のときだけ掛ける。
+            if (cmd.RecalcNormals)
+            {
+                foreach (int idx in targets)
+                {
+                    var mc = model.GetMeshContext(idx);
+                    var mo = mc?.MeshObject;
+                    if (mo == null) continue;
+                    mo.RecalculateSmoothNormals();
+                    OnSyncMeshPositions?.Invoke(mc);
+                }
+            }
+
+            OnRepaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
         /// ワールド空間の移動量を数値指定で適用し、Undo 1 件として確定する。
         /// サブパネルの数値入力から呼ぶ。ドラッグ状態機 (_state) には入らない。
         ///
@@ -1549,9 +1876,10 @@ namespace Poly_Ling.Player
         /// ワールドデルタは ApplyDelta 内でメッシュごとに WorldMatrixInverse で
         /// ローカル化されるため、ここではワールド量をそのまま渡す。
         /// </summary>
-        public void ApplyNumericMove(Vector3 worldDelta)
+        /// <returns>実際に移動したら true。対象が無い・移動量が 0 なら false。</returns>
+        private bool ApplyNumericMove(Vector3 worldDelta)
         {
-            if (worldDelta == Vector3.zero) return;
+            if (worldDelta == Vector3.zero) return false;
 
             OnEnterTransformDragging?.Invoke();
 
@@ -1559,7 +1887,7 @@ namespace Poly_Ling.Player
             if (!HasAnyAffected())
             {
                 OnExitTransformDragging?.Invoke();
-                return;
+                return false;
             }
 
             BeginMove();
@@ -1568,6 +1896,7 @@ namespace Poly_Ling.Player
 
             OnExitTransformDragging?.Invoke();
             OnRepaint?.Invoke();
+            return true;
         }
 
         /// <summary>
@@ -1698,34 +2027,55 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 矩形選択を確定する。
+        /// 範囲選択の走査結果。SelectElementsCommand へそのまま載せられる並び。
+        /// </summary>
+        private struct RegionPick
+        {
+            public List<int> VertexMeshIndices;
+            public List<int> VertexIndices;
+            public List<int> EdgeMeshIndices;
+            public List<int> EdgePairs;
+            public List<int> FaceMeshIndices;
+            public List<int> FaceIndices;
+            public List<int> LineMeshIndices;
+            public List<int> LineIndices;
+
+            public static RegionPick Create() => new RegionPick
+            {
+                VertexMeshIndices = new List<int>(), VertexIndices = new List<int>(),
+                EdgeMeshIndices   = new List<int>(), EdgePairs     = new List<int>(),
+                FaceMeshIndices   = new List<int>(), FaceIndices   = new List<int>(),
+                LineMeshIndices   = new List<int>(), LineIndices   = new List<int>(),
+            };
+        }
+
+        /// <summary>
+        /// 画面上の範囲に入る要素を集める。SelectionState には触らない。
+        ///
+        /// 矩形と投げ縄で違うのは内外判定だけなので、判定を contains で受けて
+        /// 走査規則を 1 本にする。
         ///
         /// 選択メッシュを全て走査する。頂点オフセット（GetVertexOffset）は
         /// メッシュごとに異なるため、必ずメッシュ単位で取り直すこと。
         /// GetScreenPositions() は全メッシュぶんを連結したグローバル配列なので
         /// そのまま使える。
+        ///
+        /// 可視判定は GPU 計算済みの IsVertexVisible による。辺・線分は両端頂点、
+        /// 面は全頂点が可視のときだけ対象にする（裏面を拾わないため）。
         /// </summary>
-        private void CommitBoxSelect(ModifierKeys mods)
+        private RegionPick CollectInRegion(Func<Vector2, bool> contains)
         {
-            if (GetScreenPositions == null)
-            { _selectionOps.EndBoxSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
+            var pick = RegionPick.Create();
 
             var model = _project?.CurrentModel;
-            if (model == null || model.SelectedDrawableMeshIndices.Count == 0)
-            { _selectionOps.EndBoxSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
+            if (model == null) return pick;
 
-            var rect      = _selectionOps.BoxRect;
-            var screenPos = GetScreenPositions();
+            var screenPos = GetScreenPositions?.Invoke();
             float vpH     = GetViewportHeight?.Invoke() ?? 0f;
 
-            var selBefore = CaptureAllSelectionSnapshots();
-
-            bool additive = mods.Shift || mods.Ctrl;
-
             var mode = _selectionOps.SelectionState?.Mode
-                    ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line);
-
-            var inBox = new List<MeshVertexRef>();
+                    ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge |
+                        MeshSelectMode.Face   | MeshSelectMode.Line);
 
             foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
             {
@@ -1743,26 +2093,22 @@ namespace Poly_Ling.Player
                     return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
                 };
 
-                if (!additive)
-                {
-                    mc.Selection.ClearAll();
-                }
+                bool Visible(int localIndex)
+                    => IsVertexVisible == null || IsVertexVisible(vertexOffset + localIndex);
 
-                // 頂点選択
+                // 頂点
                 if (mode.Has(MeshSelectMode.Vertex))
                 {
                     for (int i = 0; i < mo.Vertices.Count; i++)
                     {
-                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
-                        if (rect.Contains(vertexScreen(i), true)) inBox.Add(new MeshVertexRef(ctxIdx, i));
+                        if (!Visible(i)) continue;
+                        if (!contains(vertexScreen(i))) continue;
+                        pick.VertexMeshIndices.Add(ctxIdx);
+                        pick.VertexIndices.Add(i);
                     }
                 }
 
-                // 辺選択
-                // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
-                // 表面の面に属さない頂点から成る辺は除外する。
-                // 厳密には「両端が可視でも辺自体は裏を通る」ケースも稀に拾うが、
-                // GPU 側でも辺単位の可視判定は無く頂点ベースなので同じ挙動で OK。
+                // 辺
                 if (mode.Has(MeshSelectMode.Edge))
                 {
                     for (int fi = 0; fi < mo.FaceCount; fi++)
@@ -1773,20 +2119,16 @@ namespace Poly_Ling.Player
                         {
                             int v1 = face.VertexIndices[ei];
                             int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
-                            if (IsVertexVisible != null
-                                && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
-                                continue;
-                            if (rect.Contains(vertexScreen(v1), true) &&
-                                rect.Contains(vertexScreen(v2), true))
-                            {
-                                mc.Selection.SelectEdge(v1, v2, true);
-                            }
+                            if (!Visible(v1) || !Visible(v2)) continue;
+                            if (!contains(vertexScreen(v1)) || !contains(vertexScreen(v2))) continue;
+                            pick.EdgeMeshIndices.Add(ctxIdx);
+                            pick.EdgePairs.Add(v1);
+                            pick.EdgePairs.Add(v2);
                         }
                     }
                 }
 
-                // 面選択
-                // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
+                // 面
                 if (mode.Has(MeshSelectMode.Face))
                 {
                     for (int fi = 0; fi < mo.FaceCount; fi++)
@@ -1796,15 +2138,15 @@ namespace Poly_Ling.Player
                         bool allIn = true;
                         foreach (int vi in face.VertexIndices)
                         {
-                            if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
-                            if (!rect.Contains(vertexScreen(vi), true)) { allIn = false; break; }
+                            if (!Visible(vi) || !contains(vertexScreen(vi))) { allIn = false; break; }
                         }
-                        if (allIn) mc.Selection.SelectFace(fi, true);
+                        if (!allIn) continue;
+                        pick.FaceMeshIndices.Add(ctxIdx);
+                        pick.FaceIndices.Add(fi);
                     }
                 }
 
-                // 線分選択
-                // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
+                // 線分
                 if (mode.Has(MeshSelectMode.Line))
                 {
                     for (int fi = 0; fi < mo.FaceCount; fi++)
@@ -1813,156 +2155,87 @@ namespace Poly_Ling.Player
                         if (face.VertexCount != 2) continue;
                         int v1 = face.VertexIndices[0];
                         int v2 = face.VertexIndices[1];
-                        if (IsVertexVisible != null
-                            && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
-                            continue;
-                        if (rect.Contains(vertexScreen(v1), true) &&
-                            rect.Contains(vertexScreen(v2), true))
-                        {
-                            mc.Selection.SelectLine(fi, true);
-                        }
+                        if (!Visible(v1) || !Visible(v2)) continue;
+                        if (!contains(vertexScreen(v1)) || !contains(vertexScreen(v2))) continue;
+                        pick.LineMeshIndices.Add(ctxIdx);
+                        pick.LineIndices.Add(fi);
                     }
                 }
             }
 
-            _selectionOps.EndBoxSelect(inBox, mods);
-            ExpandLinkedVertices();
-            RecordSelectionChange(selBefore, CaptureAllSelectionSnapshots());
+            return pick;
+        }
+
+        /// <summary>
+        /// 範囲選択の走査結果をコマンドとして発行する。
+        ///
+        /// Op は修飾キーで決まる。修飾なし = Replace、Shift = Add、
+        /// Ctrl = Toggle（範囲内の既選択は外れ、未選択は入る。従来の Ctrl 矩形と同じ）。
+        /// 書き込み・頂点展開・選択 Undo はディスパッチャ経由で ExecuteFromCommand へ戻る。
+        /// </summary>
+        private void SendRegionPick(RegionPick pick, ModifierKeys mods)
+        {
+            if (SendCommand == null) return;
+
+            var model = _project?.CurrentModel;
+            if (model == null) return;
+
+            var targets = model.SelectedDrawableMeshIndices;
+            var clear   = new int[targets.Count];
+            for (int i = 0; i < targets.Count; i++) clear[i] = targets[i];
+
+            var op = mods.Ctrl  ? Poly_Ling.Data.SelectElementsCommand.SelectOp.Toggle
+                   : mods.Shift ? Poly_Ling.Data.SelectElementsCommand.SelectOp.Add
+                                : Poly_Ling.Data.SelectElementsCommand.SelectOp.Replace;
+
+            SendCommand(new Poly_Ling.Data.SelectElementsCommand(
+                _project?.CurrentModelIndex ?? 0,
+                clear,
+                pick.VertexIndices.ToArray(), pick.VertexMeshIndices.ToArray(),
+                pick.EdgePairs.ToArray(),     pick.EdgeMeshIndices.ToArray(),
+                pick.FaceIndices.ToArray(),   pick.FaceMeshIndices.ToArray(),
+                pick.LineIndices.ToArray(),   pick.LineMeshIndices.ToArray(),
+                op));
+        }
+
+        /// <summary>
+        /// 矩形選択を確定する。走査は CollectInRegion、書き込みはコマンド経由。
+        /// </summary>
+        private void CommitBoxSelect(ModifierKeys mods)
+        {
+            var rect = _selectionOps.BoxRect;
+            _selectionOps.EndBoxSelect();
+
+            if (GetScreenPositions == null) return;
+
+            var model = _project?.CurrentModel;
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0) return;
+
+            SendRegionPick(CollectInRegion(p => rect.Contains(p, true)), mods);
             OnRepaint?.Invoke();
         }
 
         /// <summary>
-        /// 投げ縄選択を確定する。走査規則は CommitBoxSelect と同じ
-        /// （選択メッシュ全走査・頂点オフセットはメッシュ単位）。
+        /// 投げ縄選択を確定する。走査規則は矩形と同じ（CollectInRegion を共有）。
+        ///
+        /// 座標系の確認：
+        /// GetScreenPositions() は NDC から screenY = (1 - ndcY) * height で計算 → UIToolkit Y（Y=0上）
+        /// CollectInRegion の vertexScreen は vpH - UIToolkitY → GPU Y（Y=0下）
+        /// LassoPoints は ToViewportCoord()（h - local.y）→ GPU Y（Y=0下）
+        /// → 同じ GPU Y。変換不要。
         /// </summary>
         private void CommitLassoSelect(ModifierKeys mods)
         {
-            var lasso = _selectionOps.LassoPoints;
-            if (lasso.Count < 3)
-            { _selectionOps.EndLassoSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
+            var lassoGPU = new List<Vector2>(_selectionOps.LassoPoints);
+            _selectionOps.EndLassoSelect();
 
-            if (GetScreenPositions == null)
-            { _selectionOps.EndLassoSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
+            if (lassoGPU.Count < 3) return;
+            if (GetScreenPositions == null) return;
 
             var model = _project?.CurrentModel;
-            if (model == null || model.SelectedDrawableMeshIndices.Count == 0)
-            { _selectionOps.EndLassoSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0) return;
 
-            var screenPos = GetScreenPositions();
-            float vpH     = GetViewportHeight?.Invoke() ?? 0f;
-
-            // 座標系の確認：
-            // GetScreenPositions() は NDC から screenY = (1 - ndcY) * height で計算 → UIToolkit Y（Y=0上）
-            // vertexScreen は vpH - UIToolkitY → GPU Y（Y=0下）
-            // LassoPoints は ToViewportCoord()（h - local.y）→ GPU Y（Y=0下）
-            // → vertexScreen と LassoPoints は同じ GPU Y。変換不要。
-            var lassoGPU = lasso;
-
-            var selBefore = CaptureAllSelectionSnapshots();
-
-            bool additive = mods.Shift || mods.Ctrl;
-
-            var mode = _selectionOps.SelectionState?.Mode
-                    ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line);
-
-            var inLasso = new List<MeshVertexRef>();
-
-            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
-            {
-                var mc = model.GetMeshContext(ctxIdx);
-                if (mc?.MeshObject == null || mc.Selection == null) continue;
-
-                var mo = mc.MeshObject;
-                int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
-
-                Func<int, Vector2> vertexScreen = (i) =>
-                {
-                    if (screenPos == null || vertexOffset + i >= screenPos.Length)
-                        return new Vector2(-10000, -10000);
-                    return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
-                };
-
-                if (!additive)
-                    mc.Selection.ClearAll();
-
-                // 頂点選択
-                if (mode.Has(MeshSelectMode.Vertex))
-                {
-                    for (int i = 0; i < mo.Vertices.Count; i++)
-                    {
-                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
-                        if (IsPointInLasso(vertexScreen(i), lassoGPU)) inLasso.Add(new MeshVertexRef(ctxIdx, i));
-                    }
-                }
-
-                // 辺選択
-                // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
-                // 表面の面に属さない頂点から成る辺は除外する。矩形選択と同じ扱い。
-                if (mode.Has(MeshSelectMode.Edge))
-                {
-                    for (int fi = 0; fi < mo.FaceCount; fi++)
-                    {
-                        var face = mo.Faces[fi];
-                        if (face.VertexCount < 2) continue;
-                        for (int ei = 0; ei < face.VertexCount; ei++)
-                        {
-                            int v1 = face.VertexIndices[ei];
-                            int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
-                            if (IsVertexVisible != null
-                                && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
-                                continue;
-                            if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
-                                IsPointInLasso(vertexScreen(v2), lassoGPU))
-                            {
-                                mc.Selection.SelectEdge(v1, v2, true);
-                            }
-                        }
-                    }
-                }
-
-                // 面選択
-                // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
-                if (mode.Has(MeshSelectMode.Face))
-                {
-                    for (int fi = 0; fi < mo.FaceCount; fi++)
-                    {
-                        var face = mo.Faces[fi];
-                        if (face.VertexCount < 3) continue;
-                        bool allIn = true;
-                        foreach (int vi in face.VertexIndices)
-                        {
-                            if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
-                            if (!IsPointInLasso(vertexScreen(vi), lassoGPU)) { allIn = false; break; }
-                        }
-                        if (allIn) mc.Selection.SelectFace(fi, true);
-                    }
-                }
-
-                // 線分選択
-                // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
-                if (mode.Has(MeshSelectMode.Line))
-                {
-                    for (int fi = 0; fi < mo.FaceCount; fi++)
-                    {
-                        var face = mo.Faces[fi];
-                        if (face.VertexCount != 2) continue;
-                        int v1 = face.VertexIndices[0];
-                        int v2 = face.VertexIndices[1];
-                        if (IsVertexVisible != null
-                            && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
-                            continue;
-                        if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
-                            IsPointInLasso(vertexScreen(v2), lassoGPU))
-                        {
-                            mc.Selection.SelectLine(fi, true);
-                        }
-                    }
-                }
-            }
-
-            _selectionOps.EndLassoSelect(inLasso, mods);
-            ExpandLinkedVertices();
-            RecordSelectionChange(selBefore, CaptureAllSelectionSnapshots());
+            SendRegionPick(CollectInRegion(p => IsPointInLasso(p, lassoGPU)), mods);
             OnRepaint?.Invoke();
         }
 

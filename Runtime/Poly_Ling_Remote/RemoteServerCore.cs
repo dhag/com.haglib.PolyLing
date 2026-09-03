@@ -53,11 +53,10 @@ namespace Poly_Ling.Remote
         public Action OnRepaint;
 
         /// <summary>
-        /// PanelCommandディスパッチコールバック。
-        /// PanelContext.SendCommand を渡すとDispatchPanelCommandを通じて全コマンドが処理される。
-        /// nullの場合はlegacyの直接ToolContext操作にフォールバックする。
+        /// PanelCommandディスパッチコールバック。実行結果を返す。
+        /// PolyLingPlayerServer.Initialize が PlayerCommandDispatcher.Dispatch を渡す。
         /// </summary>
-        public Action<PanelCommand> DispatchCommand;
+        public Func<PanelCommand, CommandResult> DispatchCommand;
 
         // ================================================================
         // コンテキスト注入
@@ -847,9 +846,14 @@ namespace Poly_Ling.Remote
         private string ProcessCommandViaPanelCommand(RemoteMessage msg, IDuplexChannel channel)
         {
             int modelIndex = GetParamInt(msg, "modelIndex", 0);
-            PanelCommand cmd = BuildPanelCommand(msg, modelIndex);
+            PanelCommand cmd = BuildPanelCommand(msg, modelIndex, out string buildError);
             if (cmd == null)
-                return BuildErrorResponse(msg.Id, $"Unknown action: {msg.Action}");
+            {
+                string reason = string.IsNullOrEmpty(buildError)
+                    ? $"Unknown action: {msg.Action}" : buildError;
+                Log($"組み立て失敗: {reason}");
+                return BuildErrorResponse(msg.Id, reason);
+            }
 
             string requester = ResolveUserName(channel);
 
@@ -880,14 +884,30 @@ namespace Poly_Ling.Remote
             // ── 選択スコープを差し替えてから実行 ────────────────────
             // MasterIndex を持たないコマンド（PartsSet系・SkinWeight系など）は
             // 「今の選択」を見て動くため、要求者の選択を一時的に流し込む。
-            DispatchWithSelectionOf(requester, cmd);
+            CommandResult result = DispatchWithSelectionOf(requester, cmd);
 
-            Log($"cmd: {msg.Action} model={modelIndex} user=\"{requester}\"");
+            Log($"cmd: {msg.Action} model={modelIndex} user=\"{requester}\" → {result}");
 
             // 担当が動いた可能性があるので差分があれば全体へ通知
             CheckOwnershipChanged();
 
-            return BuildSuccessResponse(msg.Id, "true");
+            if (!result.Success)
+                return BuildErrorResponse(msg.Id, result.Reason);
+
+            return BuildSuccessResponse(msg.Id, BuildResultJson(result));
+        }
+
+        /// <summary>実行結果を応答の data 部へ載せる JSON にする。</summary>
+        private static string BuildResultJson(CommandResult result)
+        {
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            if (result.MasterIndices != null && result.MasterIndices.Length > 0)
+                jb.KeyValue("masterIndices", string.Join(",", result.MasterIndices));
+            if (result.ObjectIds != null && result.ObjectIds.Length > 0)
+                jb.KeyValue("objectIds", string.Join(",", result.ObjectIds));
+            jb.EndObject();
+            return jb.ToString();
         }
 
         /// <summary>
@@ -896,29 +916,36 @@ namespace Poly_Ling.Remote
         /// 差し替えが起きた場合はホストUIが他ユーザーの選択で描画されているため、
         /// 復帰後に再同期を要求する。
         /// </summary>
-        private void DispatchWithSelectionOf(string userName, PanelCommand cmd)
+        /// <summary>
+        /// DispatchCommand を呼び、結果を必ず非 null で返す。
+        /// null が返るのは配線側の不備なので、成功に丸めず失敗として扱う。
+        /// </summary>
+        private CommandResult Invoke(PanelCommand cmd)
+            => DispatchCommand(cmd) ?? CommandResult.Fail("dispatcher returned no result");
+
+        private CommandResult DispatchWithSelectionOf(string userName, PanelCommand cmd)
         {
             var model = Context?.Model;
             var slot  = _selectionStore.Find(userName);
 
             if (model == null || slot == null)
-            {
-                DispatchCommand(cmd);
-                return;
-            }
+                return Invoke(cmd);
 
             var proj = Context?.Project;
             int mi = proj?.CurrentModelIndex ?? 0;
 
             bool swapped;
+            CommandResult result;
             using (var scope = SelectionScope.Apply(model, mi, slot))
             {
                 swapped = scope.Swapped;
-                DispatchCommand(cmd);
+                result  = Invoke(cmd);
             }
 
             if (swapped)
                 (RequestPanelRefresh ?? OnRepaint)?.Invoke();
+
+            return result;
         }
 
         /// <summary>
@@ -993,49 +1020,33 @@ namespace Poly_Ling.Remote
         /// RemoteMessageからPanelCommandを組み立てる。
         /// 対応するコマンドがない場合はnullを返す。
         /// </summary>
-        private static PanelCommand BuildPanelCommand(RemoteMessage msg, int modelIndex)
+        /// <summary>
+        /// action と params から PanelCommand を作る。
+        ///
+        /// 組み立ての規則はどのコマンドでも同じなので、本体は
+        /// PanelCommandFactory がリフレクションで行う。コマンドを 1 本足しても
+        /// ここは触らなくてよい。
+        ///
+        /// ここに手書きで残すのは、規則で書けない 2 件だけ。
+        ///   selectMesh … 単数の index を受ける後方互換がある
+        ///                （RemoteHtmlClient.cs:284-285 が index だけを送る）
+        ///   applyBlend … BlendSourceSpec[] 1 本を 3 列に分けて送っている
+        ///                （PanelCommandRouter.cs:145-147）
+        ///
+        /// undo / redo は型名と action 名がずれるだけなので、
+        /// PanelCommandFactory.ActionAliases が引き受ける。
+        /// </summary>
+        private static PanelCommand BuildPanelCommand(
+            RemoteMessage msg, int modelIndex, out string error)
         {
-            // int[]パラメータ取得ヘルパー（"1,2,3" 形式）
-            int[] GetIndices(string key)
-            {
-                if (msg.Params == null || !msg.Params.TryGetValue(key, out var s) || string.IsNullOrEmpty(s))
-                    return System.Array.Empty<int>();
-                var parts = s.Split(',');
-                var result = new int[parts.Length];
-                for (int i = 0; i < parts.Length; i++)
-                    int.TryParse(parts[i].Trim(), out result[i]);
-                return result;
-            }
-
-            // string[]パラメータ取得ヘルパー。カンマ区切りで、名前自体がカンマ・
-            // 引用符・改行を含む場合は二重引用符で包まれている（PanelCommandRouter.EscName）。
-            string[] GetNames(string key)
-            {
-                if (msg.Params == null || !msg.Params.TryGetValue(key, out var s) || string.IsNullOrEmpty(s))
-                    return System.Array.Empty<string>();
-                return SplitQuotedCsv(s);
-            }
-
-            // float[]パラメータ取得ヘルパー。送信側（PanelCommandRouter.FloatCsv）が
-            // InvariantCulture で書くので、読む側もロケールを固定する。
-            float[] GetFloats(string key)
-            {
-                if (msg.Params == null || !msg.Params.TryGetValue(key, out var s) || string.IsNullOrEmpty(s))
-                    return System.Array.Empty<float>();
-                var parts = s.Split(',');
-                var result = new float[parts.Length];
-                for (int i = 0; i < parts.Length; i++)
-                    float.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out result[i]);
-                return result;
-            }
+            error = null;
 
             switch (msg.Action)
             {
-                // ── 選択 ──────────────────────────────────────────────
+                // ── 選択（単数 index の後方互換） ──────────────────────
                 case "selectMesh":
                 {
-                    var indices  = GetIndices("indices");
+                    var indices = GetIndices(msg, "indices");
                     if (indices.Length == 0)
                     {
                         int idx = GetParamInt(msg, "index", -1);
@@ -1045,93 +1056,14 @@ namespace Poly_Ling.Remote
                     return new SelectMeshCommand(modelIndex, category, indices);
                 }
 
-                // ── 属性変更 ──────────────────────────────────────────
-                case "toggleVisibility":
-                    return new ToggleVisibilityCommand(
-                        modelIndex, GetParamInt(msg, "masterIndex", 0));
-
-                case "setBatchVisibility":
-                    return new SetBatchVisibilityCommand(
-                        modelIndex,
-                        GetIndices("masterIndices"),
-                        GetParamString(msg, "visible", "true") == "true");
-
-                case "toggleLock":
-                    return new ToggleLockCommand(
-                        modelIndex, GetParamInt(msg, "masterIndex", 0));
-
-                case "setBatchLock":
-                    return new SetBatchLockCommand(
-                        modelIndex,
-                        GetIndices("masterIndices"),
-                        GetParamString(msg, "locked", "true") == "true");
-
-                case "setMirrorEnabled":
-                    return new SetMirrorEnabledCommand(
-                        modelIndex,
-                        GetIndices("masterIndices"),
-                        GetParamString(msg, "enabled", "true") == "true");
-
-                case "setBatchMirrorType":
-                    return new SetBatchMirrorTypeCommand(
-                        modelIndex,
-                        GetIndices("masterIndices"),
-                        GetParamInt(msg, "mirrorType", 0));
-
-                // ── 編集者（担当）の取得・解放 ────────────────────────
-                // editorName が空文字なら解放。
-                // 「自分以外の名前を設定していないか」「他人の担当を奪っていないか」は
-                // RemoteOwnership.TryAuthorize が判定する。
-                case "setObjectEditor":
-                    return new SetObjectEditorCommand(
-                        modelIndex,
-                        GetIndices("masterIndices"),
-                        GetParamString(msg, "editorName", ""),
-                        RemoteOwnership.ParseIdCsv(GetParamString(msg, "objectIds", null)),
-                        force: false);
-
-                case "cycleMirrorType":
-                    return new CycleMirrorTypeCommand(
-                        modelIndex, GetParamInt(msg, "masterIndex", 0));
-
-                case "renameMesh":
-                    return new RenameMeshCommand(
-                        modelIndex,
-                        GetParamInt(msg, "masterIndex", 0),
-                        GetParamString(msg, "name", ""));
-
-                // 名称一括変更。名前の重複回避は PlayerCommandDispatcher 側で行う。
-                case "renameMeshes":
-                    return new RenameMeshesCommand(
-                        modelIndex,
-                        GetIndices("masterIndices"),
-                        GetNames("names"));
-
-                // ── 選択辞書 ──────────────────────────────────────────
-                case "applySelectionDictionary":
-                    return new ApplySelectionDictionaryCommand(
-                        modelIndex,
-                        GetParamInt(msg, "setIndex", -1),
-                        GetParamString(msg, "addToExisting", "false") == "true");
-
-                // ── リスト操作 ────────────────────────────────────────
-                case "addMesh":
-                    return new AddMeshCommand(modelIndex);
-
-                case "deleteMeshes":
-                    return new DeleteMeshesCommand(modelIndex, GetIndices("masterIndices"));
-
-                case "duplicateMeshes":
-                    return new DuplicateMeshesCommand(modelIndex, GetIndices("masterIndices"));
-
-                // ── メッシュブレンド ──────────────────────────────────
-                // ソースの3列は同じ並びで届く。長さが揃わない要求は
+                // ── メッシュブレンド（ソース 3 列の組み直し） ──────────
+                // ソースの 3 列は同じ並びで届く。長さが揃わない要求は
                 // 対応関係が決まらないので短いほうに合わせて切る。
                 case "applyBlend":
                 {
-                    var srcModels  = GetIndices("srcModelIndices");
-                    var srcMasters = GetIndices("srcMasterIndices");
-                    var srcWeights = GetFloats("srcWeights");
+                    var srcModels  = GetIndices(msg, "srcModelIndices");
+                    var srcMasters = GetIndices(msg, "srcMasterIndices");
+                    var srcWeights = GetFloats(msg, "srcWeights");
 
                     int n = Math.Min(srcModels.Length, Math.Min(srcMasters.Length, srcWeights.Length));
                     if (n > ApplyBlendCommand.MaxSources) n = ApplyBlendCommand.MaxSources;
@@ -1150,76 +1082,43 @@ namespace Poly_Ling.Remote
                         (Poly_Ling.UI.BlendMatchMode)GetParamInt(
                             msg, "matchMode", (int)Poly_Ling.UI.BlendMatchMode.Index));
                 }
-
-                // ── BonePose ──────────────────────────────────────────
-                case "initBonePose":
-                    return new InitBonePoseCommand(modelIndex, GetIndices("masterIndices"));
-
-                case "setBonePoseActive":
-                    return new SetBonePoseActiveCommand(
-                        modelIndex,
-                        GetIndices("masterIndices"),
-                        GetParamString(msg, "active", "true") == "true");
-
-                case "resetBonePoseLayers":
-                    return new ResetBonePoseLayersCommand(modelIndex, GetIndices("masterIndices"));
-
-                case "bakePoseToBindPose":
-                    return new BakePoseToBindPoseCommand(modelIndex, GetIndices("masterIndices"));
-
-                // ── モデル操作 ────────────────────────────────────────
-                case "switchModel":
-                    return new SwitchModelCommand(
-                        GetParamInt(msg, "targetModelIndex", 0));
-
-                case "renameModel":
-                    return new RenameModelCommand(
-                        modelIndex, GetParamString(msg, "name", ""));
-
-                case "deleteModel":
-                    return new DeleteModelCommand(modelIndex);
-
-                default:
-                    return null;
             }
+
+            // 一般化した経路。作れない理由は呼び出し元へ返し、応答に載せる。
+            return PanelCommandFactory.Create(msg.Action, modelIndex, msg.Params, out error);
         }
 
         /// <summary>
-        /// 二重引用符に対応したカンマ区切り分割。
-        /// エスケープ規則は MeshSelSetCsvHelper / PanelCommandRouter.EscName と同一。
+        /// int[] パラメータ（"1,2,3" 形式）。
+        /// 手書きで残した 2 件が使う。一般化した経路は PanelCommandFactory が読む。
         /// </summary>
-        private static string[] SplitQuotedCsv(string line)
+        private static int[] GetIndices(RemoteMessage msg, string key)
         {
-            var result = new List<string>();
-            int i = 0;
-            while (i < line.Length)
-            {
-                if (line[i] == '"')
-                {
-                    i++;
-                    var sb = new System.Text.StringBuilder();
-                    while (i < line.Length)
-                    {
-                        if (line[i] == '"')
-                        {
-                            if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i += 2; }
-                            else { i++; break; }
-                        }
-                        else { sb.Append(line[i]); i++; }
-                    }
-                    result.Add(sb.ToString());
-                    if (i < line.Length && line[i] == ',') i++;
-                }
-                else
-                {
-                    int start = i;
-                    while (i < line.Length && line[i] != ',') i++;
-                    result.Add(line.Substring(start, i - start));
-                    if (i < line.Length) i++;
-                }
-            }
-            return result.ToArray();
+            if (msg.Params == null || !msg.Params.TryGetValue(key, out var s) || string.IsNullOrEmpty(s))
+                return System.Array.Empty<int>();
+            var parts = s.Split(',');
+            var result = new int[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+                int.TryParse(parts[i].Trim(), out result[i]);
+            return result;
         }
+
+        /// <summary>
+        /// float[] パラメータ。送信側（PanelCommandRouter.FloatCsv）が
+        /// InvariantCulture で書くので、読む側もロケールを固定する。
+        /// </summary>
+        private static float[] GetFloats(RemoteMessage msg, string key)
+        {
+            if (msg.Params == null || !msg.Params.TryGetValue(key, out var s) || string.IsNullOrEmpty(s))
+                return System.Array.Empty<float>();
+            var parts = s.Split(',');
+            var result = new float[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+                float.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out result[i]);
+            return result;
+        }
+
 
         // ================================================================
         // バッチフレーム組み立て

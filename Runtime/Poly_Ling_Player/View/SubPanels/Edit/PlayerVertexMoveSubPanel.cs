@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
@@ -17,6 +19,18 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<MoveToolHandler> GetHandler;
+
+        private PanelContext _ctx;
+
+        /// <summary>コマンド送信口を渡す。Build の前後どちらでもよい。</summary>
+        public void SetContext(PanelContext ctx) => _ctx = ctx;
+
+        private void SendCmd(PanelCommand cmd) => _ctx?.SendCommand(cmd);
+
+        private int ModelIndex => _ctx?.CurrentView?.CurrentModelIndex ?? 0;
+
+        private int[] SelectedDrawables
+            => _ctx?.CurrentView?.CurrentModel?.SelectedDrawableIndices;
 
         // ================================================================
         // UI 要素
@@ -232,7 +246,8 @@ namespace Poly_Ling.Player
 
             // ── 数値移動 ─────────────────────────────────────────────
             // ワールド空間の「増分」を入力して選択要素を移動する（絶対座標ではない）。
-            // 適用は MoveToolHandler.ApplyNumericMove。Undo は 1 件にまとまる。
+            // MoveSelectedVerticesCommand を発行し、ディスパッチャ経由で
+            // MoveToolHandler へ戻る。Undo は 1 件にまとまる。
             AddHeader("数値移動 (ワールド増分)");
 
             var moveRow = new VisualElement();
@@ -254,10 +269,25 @@ namespace Poly_Ling.Player
             {
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                h.ApplyNumericMove(new Vector3(
-                    _moveXField?.value ?? 0f,
-                    _moveYField?.value ?? 0f,
-                    _moveZField?.value ?? 0f));
+
+                var targets = SelectedDrawables;
+                if (targets == null || targets.Length == 0) return;
+
+                // マグネットはコマンドが正典。パネルの現在値を載せて送る。
+                // ハンドラ側は実行後に元の値へ戻すので、表示は変わらない。
+                SendCmd(new MoveSelectedVerticesCommand(
+                    ModelIndex,
+                    targets,
+                    new Vector3(
+                        _moveXField?.value ?? 0f,
+                        _moveYField?.value ?? 0f,
+                        _moveZField?.value ?? 0f),
+                    MoveSelectedVerticesCommand.CoordSpace.World,
+                    recalcNormals:      false,
+                    useMagnet:          h.UseMagnet,
+                    magnetRadius:       h.MagnetRadius,
+                    magnetFalloff:      h.MagnetFalloff,
+                    magnetDistanceMode: h.MagnetDistanceMode));
             }) { text = "移動" };
             applyMoveBtn.style.flexGrow = 1; applyMoveBtn.style.marginRight = 2;
             moveBtnRow.Add(applyMoveBtn);

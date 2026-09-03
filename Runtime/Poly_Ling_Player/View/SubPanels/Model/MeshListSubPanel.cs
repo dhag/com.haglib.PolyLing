@@ -21,6 +21,7 @@ using UIList.UIToolkitExtensions;
 using PlayerIoUiKit        = Poly_Ling.Player.PlayerIoUiKit;
 using PlayerUiPrefs        = Poly_Ling.Player.PlayerUiPrefs;
 using ObjectMoveSettings   = Poly_Ling.Tools.ObjectMoveSettings;
+using ParameterLimits      = Poly_Ling.Core.ParameterLimits;
 using RecentPaths          = Poly_Ling.Core.RecentPaths;
 using PartsDictionaryPath  = Poly_Ling.Core.PartsDictionaryPath;
 using MeshRenameCsvHelper  = Poly_Ling.UI.MeshRenameCsvHelper;
@@ -29,6 +30,17 @@ namespace Poly_Ling.MeshListV2
 {
     public class MeshListSubPanel
     {
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float MorphWeightMin => ParameterLimits.GetF("MorphPreview.Weight.Min");
+        private static float MorphWeightMax => ParameterLimits.GetF("MorphPreview.Weight.Max");
+
         private enum TabType { Drawable, Bone, Morph, RigidBody, Joint }
 
         // ================================================================
@@ -928,8 +940,10 @@ namespace Poly_Ling.MeshListV2
                 () => _morphListHeight, h => _morphListHeight = h, MorphListMinHeight);
 
             // テストウェイト
+            // レンジの実体は ParameterLimits（persistentDataPath の CSV）にある。
+            // 同じキーを ApplyMorphPreviewCommand.Weight の PLParam(LimitKey) が指す。
             var wRow = new VisualElement(); wRow.style.flexDirection = FlexDirection.Row; wRow.style.marginTop = 4; wRow.style.alignItems = Align.Center;
-            _morphTestWeight = new Slider(0f, 1f); _morphTestWeight.style.flexGrow = 1; wRow.Add(_morphTestWeight);
+            _morphTestWeight = new Slider(MorphWeightMin, MorphWeightMax); _morphTestWeight.style.flexGrow = 1; wRow.Add(_morphTestWeight);
             _morphTestWeight.style.color = new StyleColor(Color.white);
             parent.Add(wRow);
 

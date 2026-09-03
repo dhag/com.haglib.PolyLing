@@ -31,6 +31,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.Jobs;
 using Poly_Ling.UI;
@@ -39,6 +40,16 @@ namespace Poly_Ling.Player
 {
     public class PlayerThinPlateMorphSubPanel
     {
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float LambdaMin => ParameterLimits.GetF("ThinPlateMorph.Lambda.Min");
+
         // ================================================================
         // コールバック（Viewer から設定）
         // ================================================================
@@ -256,9 +267,9 @@ namespace Poly_Ling.Player
             _fieldLambda.RegisterValueChangedCallback(e =>
             {
                 float v = e.newValue;
-                if (v < 0f)
+                if (v < LambdaMin)
                 {
-                    v = 0f;
+                    v = LambdaMin;
                     _fieldLambda.SetValueWithoutNotify(v);
                 }
                 _lambda = v;

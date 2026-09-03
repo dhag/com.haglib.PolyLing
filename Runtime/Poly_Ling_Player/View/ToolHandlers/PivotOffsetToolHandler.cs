@@ -52,6 +52,65 @@ namespace Poly_Ling.Player
         public void SetProject(ProjectContext project) => _project = project;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
 
+        /// <summary>
+        /// コマンド送信口。ドラッグ確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 原点移動コマンドを実行する。
+        ///
+        /// 【なぜ要るか】
+        ///   マウス経路はギズモの軸を画面座標で当てるので、コマンド経由
+        ///   （自動検証・MCP）からは通せない。対象と移動量だけを渡せる入口を置く。
+        ///   SculptToolHandler.ExecuteFromCommand と同じ形。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   変形・子の補償・Undo は ObjectMoveTool.ApplyOriginOnlyFromCommand が
+        ///   ドラッグ確定時と同じ SaveSnapshots → ApplyWorldDelta → CommitUndo を通す。
+        ///
+        /// 【Local の基準】
+        ///   Space == Local のとき、Delta は MasterIndices[0] のローカル量として
+        ///   解釈し、そのメッシュの WorldMatrix でワールドへ変換する。対象ごとに
+        ///   行列が違うため基準は先頭の 1 本に固定する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.MovePivotCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            var indices = cmd.MasterIndices;
+            if (indices == null || indices.Length == 0)
+            { reason = "対象が指定されていません"; return false; }
+
+            Vector3 worldDelta;
+            if (cmd.Space == Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World)
+            {
+                worldDelta = cmd.Delta;
+            }
+            else
+            {
+                var baseMc = model.GetMeshContext(indices[0]);
+                if (baseMc == null)
+                { reason = $"masterIndex {indices[0]} のオブジェクトがありません"; return false; }
+                worldDelta = baseMc.WorldMatrix.MultiplyVector(cmd.Delta);
+            }
+
+            var ctx = BuildToolContext(default(ModifierKeys));
+            if (ctx == null) { reason = "モデルがありません"; return false; }
+
+            return _tool.ApplyOriginOnlyFromCommand(ctx, indices, worldDelta, out reason);
+        }
+
         // ================================================================
         // IPlayerToolHandler
         // ================================================================
@@ -82,7 +141,29 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildToolContext(mods);
             if (ctx == null) return;
+
+            // 【1 ストローク = 1 コマンド】
+            //   ドラッグ中の適用はプレビュー扱い。確定時に開始状態へ戻して
+            //   総移動量だけを取り出し、MovePivotCommand として送る。実際の移動と
+            //   Undo 記録は ApplyOriginOnlyFromCommand が行う。
+            //   送信口が無いときは取り出さず、ObjectMoveTool.OnMouseUp が
+            //   従来どおり CommitUndo で確定させる。
+            bool taken = false;
+            int[] targets = null;
+            Vector3 worldTotal = Vector3.zero;
+
+            if (SendCommand != null && _tool.OriginOnlyDragPending)
+                taken = _tool.TryTakeOriginOnlyDrag(ctx, out targets, out worldTotal);
+
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+
+            if (!taken) return;
+
+            SendCommand(new Poly_Ling.Data.MovePivotCommand(
+                _project?.CurrentModelIndex ?? 0,
+                targets,
+                worldTotal,
+                Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World));
         }
 
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)

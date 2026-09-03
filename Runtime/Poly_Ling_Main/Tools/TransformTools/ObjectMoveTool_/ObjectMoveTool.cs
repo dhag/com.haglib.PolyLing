@@ -96,6 +96,16 @@ namespace Poly_Ling.Tools
         private readonly Dictionary<int, Matrix4x4> _originStartWorld
             = new Dictionary<int, Matrix4x4>();
 
+        // 原点だけ移動のドラッグ 1 ストロークのワールド総移動量。
+        // SaveSnapshots で 0、ApplyWorldDelta で加算する。
+        // 確定をコマンド 1 本に寄せるために、ワールドの総量をここで持つ。
+        private Vector3 _originWorldTotal;
+
+        // コマンド経由の対象指定。null のときはモデルの現在の選択を使う（マウス経路）。
+        // SaveSnapshots / ApplyWorldDelta / CommitUndo はいずれも AllSelectedIndices を
+        // 見るので、ここを差し替えるだけで 3 つとも同じ集合を対象にできる。
+        private HashSet<int> _targetOverride;
+
         // 回転ドラッグ用: ドラッグ開始時の状態。
         // 回転はフレーム差分を累積せず「開始状態 + 累計ΔR」で毎フレーム再計算する。
         // (BoneTransform.Rotation はオイラー保持のため、差分を毎フレーム往復させると
@@ -254,7 +264,12 @@ namespace Poly_Ling.Tools
             {
                 case DragState.AxisDragging:
                 case DragState.CenterDragging:
-                    CommitUndo(ctx);
+                    // 原点だけ移動は 1 ストローク = 1 コマンドに寄せてある。
+                    // 呼び出し側（PivotOffsetToolHandler.OnMouseUp）が
+                    // TryTakeOriginOnlyDrag で結果を取り出してコマンドを送るので、
+                    // ここでは確定しない。取り出されなかった場合のみ従来どおり積む。
+                    if (!(_settings.OriginOnly && OriginOnlyDragPending))
+                        CommitUndo(ctx);
                     handled = true;
                     break;
                 case DragState.RingDragging:
@@ -276,6 +291,144 @@ namespace Poly_Ling.Tools
             _ringGizmo.EndAngleDrag();
             ctx.Repaint?.Invoke();
             return handled;
+        }
+
+        /// <summary>
+        /// 取り出せる「原点だけ移動」のドラッグ結果があるか。
+        /// TryTakeOriginOnlyDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool OriginOnlyDragPending
+            => _settings.OriginOnly
+            && _originStartPositions.Count > 0
+            && _originWorldTotal.sqrMagnitude >= 1e-10f;
+
+        /// <summary>
+        /// 「原点だけ移動」のドラッグ結果を取り出し、開始状態へ戻す。
+        ///
+        /// 【なぜ要るか】
+        ///   1 ストローク = 1 コマンドにするため。ドラッグ中の適用はプレビューとして
+        ///   扱い、確定時はここで開始状態へ戻して総移動量だけを返す。呼び出し側
+        ///   （PivotOffsetToolHandler）が MovePivotCommand を送り、実際の移動と
+        ///   Undo 記録は ApplyOriginOnlyFromCommand が行う。
+        ///
+        /// 【戻す方法】
+        ///   CommitUndo が Undo 記録に使うのと同じ _originStartPositions と
+        ///   _beforeSnapshots をそのまま書き戻す。復元用の経路を別に作らない。
+        ///
+        /// 【何も返さない場合】
+        ///   OriginOnly でない、スナップショットが無い、総移動量が 0 のときは
+        ///   false を返し、状態も戻さない。呼び出し側は従来どおり確定させる。
+        /// </summary>
+        public bool TryTakeOriginOnlyDrag(
+            ToolContext ctx, out int[] masterIndices, out Vector3 worldTotal)
+        {
+            masterIndices = System.Array.Empty<int>();
+            worldTotal    = Vector3.zero;
+
+            if (!_settings.OriginOnly) return false;
+            if (_originStartPositions.Count == 0) return false;
+            if (_originWorldTotal.sqrMagnitude < 1e-10f) return false;
+
+            var model = ctx?.Model;
+            if (model == null) return false;
+
+            worldTotal = _originWorldTotal;
+
+            var targets = new List<int>(_originStartPositions.Keys);
+            masterIndices = targets.ToArray();
+
+            // 対象メッシュの頂点を開始位置へ戻す。
+            foreach (var kv in _originStartPositions)
+            {
+                var mc = model.GetMeshContext(kv.Key);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+                int n = Mathf.Min(mo.VertexCount, kv.Value.Length);
+                for (int i = 0; i < n; i++) mo.Vertices[i].Position = kv.Value[i];
+            }
+
+            // 対象と補償した子の BoneTransform を開始状態へ戻す。
+            foreach (var kv in _beforeSnapshots)
+            {
+                var mc = model.GetMeshContext(kv.Key);
+                if (mc?.BoneTransform == null) continue;
+                mc.BoneTransform.ApplySnapshot(kv.Value);
+            }
+
+            model.ComputeWorldMatrices();
+            ctx.SyncMesh?.Invoke();
+
+            _beforeSnapshots.Clear();
+            _rebindStartSkinning.Clear();
+            _rebindStartBindPose.Clear();
+            _originStartPositions.Clear();
+            _originStartWorld.Clear();
+            _originWorldTotal = Vector3.zero;
+            ctx.ExitTransformDragging?.Invoke();
+
+            return true;
+        }
+
+        /// <summary>
+        /// 「原点だけ移動」をコマンドから実行する。
+        ///
+        /// 【なぜ要るか】
+        ///   OnMouseDown はギズモの軸を画面座標で当てて対象を決めるので、
+        ///   コマンド経由（自動検証・MCP）からは通せない。対象と移動量だけを
+        ///   渡せる入口をここに置く。EdgeBridgeToolHandler.SetPicks と同じ形。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   SaveSnapshots → ApplyWorldDelta → CommitUndo の順序はドラッグ確定時と
+        ///   同一。子 BoneTransform の補償・スキン判定・Undo のグループ化はすべて
+        ///   その 3 つの中にあるので、ここで書き足すものは無い。
+        ///
+        /// 【対象の渡し方】
+        ///   3 つとも AllSelectedIndices を見るため、_targetOverride を立ててから
+        ///   呼ぶ。モデルの選択状態は書き換えない（呼び出し後も画面の選択は不変）。
+        /// </summary>
+        /// <param name="masterIndices">対象の MeshContextList インデックス。</param>
+        /// <param name="worldDelta">ワールド空間での移動量。</param>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ApplyOriginOnlyFromCommand(
+            ToolContext ctx, IReadOnlyList<int> masterIndices, Vector3 worldDelta, out string reason)
+        {
+            reason = null;
+
+            if (!_settings.OriginOnly)
+            { reason = "このツールは原点だけ移動の設定になっていません"; return false; }
+
+            var model = ctx?.Model;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (masterIndices == null || masterIndices.Count == 0)
+            { reason = "対象が指定されていません"; return false; }
+
+            var targets = new HashSet<int>();
+            foreach (int idx in masterIndices)
+            {
+                if (model.GetMeshContext(idx) == null)
+                { reason = $"masterIndex {idx} のオブジェクトがありません"; return false; }
+                targets.Add(idx);
+            }
+
+            if (worldDelta.sqrMagnitude < 1e-10f)
+            { reason = "移動量が 0 です"; return false; }
+
+            _targetOverride = targets;
+            try
+            {
+                ctx.EnterTransformDragging?.Invoke();
+                SaveSnapshots(ctx);
+                ApplyWorldDelta(worldDelta, ctx);
+                CommitUndo(ctx);
+            }
+            finally
+            {
+                _targetOverride = null;
+            }
+
+            ctx.Repaint?.Invoke();
+            return true;
         }
 
         /// <summary>
@@ -446,9 +599,19 @@ namespace Poly_Ling.Tools
             return model.SelectedBoneIndices.Count + model.SelectedDrawableMeshIndices.Count;
         }
 
-        /// <summary>選択中アイテム全インデックス（ボーン + メッシュ）</summary>
+        /// <summary>
+        /// 選択中アイテム全インデックス（ボーン + メッシュ）。
+        /// _targetOverride が入っているときは選択ではなくそちらを返す
+        /// （コマンド経由。ApplyOriginOnlyFromCommand が設定する）。
+        /// </summary>
         private IEnumerable<int> AllSelectedIndices(ToolContext ctx)
         {
+            if (_targetOverride != null)
+            {
+                foreach (int i in _targetOverride) yield return i;
+                yield break;
+            }
+
             var model = ctx?.Model;
             if (model == null) yield break;
             foreach (int i in model.SelectedBoneIndices) yield return i;
@@ -608,6 +771,8 @@ namespace Poly_Ling.Tools
             if (worldDelta.sqrMagnitude < 1e-10f) return;
             var model = ctx?.Model;
             if (model == null) return;
+
+            _originWorldTotal += worldDelta;
 
             var selectedSet = new HashSet<int>(AllSelectedIndices(ctx));
 
@@ -1068,6 +1233,8 @@ namespace Poly_Ling.Tools
             _beforeSnapshots.Clear();
             var model = ctx?.Model;
             if (model == null) return;
+
+            _originWorldTotal = Vector3.zero;
 
             // 選択アイテムのスナップショット
             foreach (int idx in AllSelectedIndices(ctx))

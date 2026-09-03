@@ -7,6 +7,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Ops;
+using Poly_Ling.Symmetry;
 
 namespace Poly_Ling.Data
 {
@@ -35,7 +36,12 @@ namespace Poly_Ling.Data
 
     public class SelectMeshCommand : PanelCommand
     {
+        [PLParam(TextKey = "SelectMeshCategory",
+                 Description = "選択するリストの分類", Required = true)]
         public MeshCategory Category { get; }
+
+        [PLParam(TextKey = "SelectMeshIndices",
+                 Description = "Category のリスト内での索引", Required = true)]
         public int[] Indices { get; }
         public SelectMeshCommand(int modelIndex, MeshCategory category, int[] indices)
             : base(modelIndex) { Category = category; Indices = indices; }
@@ -47,6 +53,8 @@ namespace Poly_Ling.Data
 
     public class ToggleVisibilityCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
         public ToggleVisibilityCommand(int modelIndex, int masterIndex)
             : base(modelIndex) { MasterIndex = masterIndex; }
@@ -54,7 +62,12 @@ namespace Poly_Ling.Data
 
     public class SetBatchVisibilityCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "BatchVisible",
+                 Description = "表示する / 隠す", Required = true)]
         public bool Visible { get; }
         public SetBatchVisibilityCommand(int modelIndex, int[] masterIndices, bool visible)
             : base(modelIndex) { MasterIndices = masterIndices; Visible = visible; }
@@ -62,6 +75,8 @@ namespace Poly_Ling.Data
 
     public class ToggleLockCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
         public ToggleLockCommand(int modelIndex, int masterIndex)
             : base(modelIndex) { MasterIndex = masterIndex; }
@@ -73,7 +88,12 @@ namespace Poly_Ling.Data
     /// </summary>
     public class SetBatchLockCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "BatchLocked",
+                 Description = "ロックする / 解除する", Required = true)]
         public bool  Locked        { get; }
         public SetBatchLockCommand(int modelIndex, int[] masterIndices, bool locked)
             : base(modelIndex) { MasterIndices = masterIndices; Locked = locked; }
@@ -96,7 +116,12 @@ namespace Poly_Ling.Data
     /// </summary>
     public class SetMirrorEnabledCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "MirrorEnabled",
+                 Description = "ミラーを有効にする / 解消する", Required = true)]
         public bool  Enabled       { get; }
         public SetMirrorEnabledCommand(int modelIndex, int[] masterIndices, bool enabled)
             : base(modelIndex) { MasterIndices = masterIndices; Enabled = enabled; }
@@ -104,11 +129,19 @@ namespace Poly_Ling.Data
 
     /// <summary>
     /// 複数オブジェクトのミラータイプを一括設定する。
-    /// 値は CycleMirrorTypeCommand と同じ 0..3 の範囲。
+    /// 値は CycleMirrorTypeCommand と同じ 0..2 の範囲（0=なし / 1=分離 / 2=結合）。
+    /// 上限は MirrorViewUtil.MirrorTypeCount が正典で、3 以上は MQO へ不正値として
+    /// 書き出されるため作らない（MirrorViewUtil.cs:43-52）。
     /// </summary>
     public class SetBatchMirrorTypeCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "BatchMirrorType",
+                 Description = "ミラータイプ。0=なし, 1=分離, 2=結合",
+                 Min = 0, Max = Poly_Ling.View.MirrorViewUtil.MirrorTypeCount - 1, Required = true)]
         public int   MirrorType    { get; }
         public SetBatchMirrorTypeCommand(int modelIndex, int[] masterIndices, int mirrorType)
             : base(modelIndex) { MasterIndices = masterIndices; MirrorType = mirrorType; }
@@ -128,9 +161,20 @@ namespace Poly_Ling.Data
     /// </summary>
     public class SetObjectEditorCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
         public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "EditorName",
+                 Description = "担当者の名前。空文字で解放する", Required = true)]
         public string  EditorName    { get; }
+
+        [PLParam(TextKey = "ForceClaim",
+                 Description = "他人が担当中でも上書きする。既定は false")]
         public bool    Force         { get; }
 
         public SetObjectEditorCommand(
@@ -151,7 +195,12 @@ namespace Poly_Ling.Data
     /// </summary>
     public class SetIgnorePoseCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "IgnorePoseValue",
+                 Description = "アーマチュア内で姿勢を無視する", Required = true)]
         public bool  Value         { get; }
         public SetIgnorePoseCommand(int modelIndex, int[] masterIndices, bool value)
             : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
@@ -166,10 +215,17 @@ namespace Poly_Ling.Data
     /// </summary>
     public class ApplyObjectOriginsCommand : PanelCommand
     {
+        [PLParam(TextKey = "ObjectOriginNames",
+                 Description = "原点を設定する描画オブジェクトの名前", Required = true)]
         public string[]  Names     { get; }
+
+        [PLParam(TextKey = "ObjectOriginPositions",
+                 Description = "Names と同じ並びの原点位置", Required = true)]
         public Vector3[] Positions { get; }
 
         /// <summary>行ごとの回転(°)。null = 回転を適用しない。</summary>
+        [PLParam(TextKey = "ObjectOriginRotations",
+                 Description = "Names と同じ並びの回転（度）。null で回転を触らない")]
         public Vector3?[] Rotations { get; }
 
         public ApplyObjectOriginsCommand(
@@ -184,9 +240,13 @@ namespace Poly_Ling.Data
     public class GenerateObjectPoseWedgesCommand : PanelCommand
     {
         /// <summary>くさびの全長（オブジェクトの拡大率平均を掛ける前の基準値）。</summary>
+        [PLParam(TextKey = "WedgeLength",
+                 Description = "くさびの全長。拡大率平均を掛ける前の基準値", Required = true)]
         public float WedgeLength { get; }
 
         /// <summary>コンテナの名前。空なら既定名。</summary>
+        [PLParam(TextKey = "WedgeContainerNewName",
+                 Description = "生成するコンテナの名前。空で既定名", Required = true)]
         public string ContainerName { get; }
 
         public GenerateObjectPoseWedgesCommand(int modelIndex, float wedgeLength, string containerName)
@@ -200,9 +260,13 @@ namespace Poly_Ling.Data
     public class ApplyObjectPoseWedgesCommand : PanelCommand
     {
         /// <summary>コンテナの MeshContextList 索引。-1 なら名前で自動検出。</summary>
+        [PLParam(TextKey = "WedgeContainerMasterIndex",
+                 Description = "くさびコンテナの masterIndex。-1 で名前から自動検出", Required = true)]
         public int ContainerMasterIndex { get; }
 
         /// <summary>自動検出に使うコンテナ名。空なら既定名。</summary>
+        [PLParam(TextKey = "WedgeContainerName",
+                 Description = "自動検出に使うコンテナ名。空で既定名", Required = true)]
         public string ContainerName { get; }
 
         public ApplyObjectPoseWedgesCommand(int modelIndex, int containerMasterIndex, string containerName)
@@ -214,7 +278,12 @@ namespace Poly_Ling.Data
     /// </summary>
     public class SetPreserveNormalsCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "PreserveNormalsValue",
+                 Description = "頂点法線を自動再計算しない", Required = true)]
         public bool  Value         { get; }
         public SetPreserveNormalsCommand(int modelIndex, int[] masterIndices, bool value)
             : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
@@ -223,7 +292,12 @@ namespace Poly_Ling.Data
     /// <summary>ミラー分岐ルートのフラグを設定するコマンド。</summary>
     public class SetMirrorBranchRootCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "MirrorBranchRootValue",
+                 Description = "ミラー分岐のルートとして扱う", Required = true)]
         public bool  Value         { get; }
         public SetMirrorBranchRootCommand(int modelIndex, int[] masterIndices, bool value)
             : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
@@ -231,6 +305,8 @@ namespace Poly_Ling.Data
 
     public class CycleMirrorTypeCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
         public CycleMirrorTypeCommand(int modelIndex, int masterIndex)
             : base(modelIndex) { MasterIndex = masterIndex; }
@@ -238,7 +314,12 @@ namespace Poly_Ling.Data
 
     public class RenameMeshCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
+
+        [PLParam(TextKey = "MeshNewName",
+                 Description = "描画オブジェクトの新しい名前", Required = true)]
         public string NewName { get; }
         public RenameMeshCommand(int modelIndex, int masterIndex, string newName)
             : base(modelIndex) { MasterIndex = masterIndex; NewName = newName; }
@@ -254,7 +335,12 @@ namespace Poly_Ling.Data
     /// </summary>
     public class RenameMeshesCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]    MasterIndices { get; }
+
+        [PLParam(TextKey = "MeshNewNames",
+                 Description = "MasterIndices と同じ並び・同じ長さの新しい名前", Required = true)]
         public string[] NewNames      { get; }
         public RenameMeshesCommand(int modelIndex, int[] masterIndices, string[] newNames)
             : base(modelIndex) { MasterIndices = masterIndices; NewNames = newNames; }
@@ -265,7 +351,12 @@ namespace Poly_Ling.Data
     /// </summary>
     public class SetMeshFoldingCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
+
+        [PLParam(TextKey = "MeshFolding",
+                 Description = "ツリーの子を折りたたむ", Required = true)]
         public bool IsFolding { get; }
         public SetMeshFoldingCommand(int modelIndex, int masterIndex, bool isFolding)
             : base(modelIndex) { MasterIndex = masterIndex; IsFolding = isFolding; }
@@ -282,6 +373,8 @@ namespace Poly_Ling.Data
 
     public class DeleteMeshesCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public DeleteMeshesCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
@@ -289,6 +382,8 @@ namespace Poly_Ling.Data
 
     public class DuplicateMeshesCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public DuplicateMeshesCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
@@ -306,7 +401,12 @@ namespace Poly_Ling.Data
             public int NewParentMasterIndex;
         }
 
+        [PLParam(TextKey = "ReorderCategory",
+                 Description = "並べ替える対象リストの分類", Required = true)]
         public MeshCategory Category { get; }
+
+        [PLParam(TextKey = "ReorderEntries",
+                 Description = "各行の移動先の深さと親を並べたもの", Required = true)]
         public ReorderEntry[] Entries { get; }
 
         /// <summary>
@@ -341,6 +441,8 @@ namespace Poly_Ling.Data
 
     public class InitBonePoseCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public InitBonePoseCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
@@ -348,7 +450,12 @@ namespace Poly_Ling.Data
 
     public class SetBonePoseActiveCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "BonePoseActive",
+                 Description = "ボーンポーズを有効にする", Required = true)]
         public bool Active { get; }
         public SetBonePoseActiveCommand(int modelIndex, int[] masterIndices, bool active)
             : base(modelIndex) { MasterIndices = masterIndices; Active = active; }
@@ -356,6 +463,8 @@ namespace Poly_Ling.Data
 
     public class ResetBonePoseLayersCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public ResetBonePoseLayersCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
@@ -363,6 +472,8 @@ namespace Poly_Ling.Data
 
     public class BakePoseToBindPoseCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public BakePoseToBindPoseCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
@@ -374,9 +485,29 @@ namespace Poly_Ling.Data
 
     public class ConvertMeshToMorphCommand : PanelCommand
     {
+        /// <summary>
+        /// PMX のモーフパネルの種類数（0=眉 / 1=目 / 2=口 / 3=その他）。
+        /// MeshContext.MorphPanel の定義がこれと同じで、パネル側の選択肢
+        /// （MeshListSubPanel の panelLabels）も 4 項目で対応する。
+        /// Panel を持つ他のコマンドもこの const を参照する。
+        /// </summary>
+        public const int MorphPanelCount = 4;
+
+        [PLParam(TextKey = "MeshToMorphSourceIndex",
+                 Description = "モーフへ変換する描画オブジェクトの masterIndex", Required = true)]
         public int SourceIndex { get; }
+
+        [PLParam(TextKey = "MeshToMorphParentIndex",
+                 Description = "モーフを付けるベースメッシュの masterIndex。-1 で未指定", Required = true)]
         public int ParentIndex { get; }
+
+        [PLParam(TextKey = "MeshToMorphName",
+                 Description = "生成するモーフの名前", Required = true)]
         public string MorphName { get; }
+
+        [PLParam(TextKey = "MeshToMorphPanel",
+                 Description = "モーフパネル。0=眉, 1=目, 2=口, 3=その他",
+                 Min = 0, Max = MorphPanelCount - 1, Required = true)]
         public int Panel { get; }
         public ConvertMeshToMorphCommand(int modelIndex, int sourceIndex, int parentIndex, string morphName, int panel)
             : base(modelIndex) { SourceIndex = sourceIndex; ParentIndex = parentIndex; MorphName = morphName; Panel = panel; }
@@ -384,6 +515,8 @@ namespace Poly_Ling.Data
 
     public class ConvertMorphToMeshCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public ConvertMorphToMeshCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
@@ -391,8 +524,16 @@ namespace Poly_Ling.Data
 
     public class CreateMorphSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "MorphSetName",
+                 Description = "作成するモーフセットの名前", Required = true)]
         public string SetName { get; }
+
+        [PLParam(TextKey = "MorphSetType",
+                 Description = "PMX のモーフ種別コード。1 = 頂点、3 = グループ", Required = true)]
         public int MorphType { get; }
+
+        [PLParam(TextKey = "MorphSetIndices",
+                 Description = "セットに含めるモーフの索引", Required = true)]
         public int[] MorphIndices { get; }
         public CreateMorphSetCommand(int modelIndex, string setName, int morphType, int[] morphIndices)
             : base(modelIndex) { SetName = setName; MorphType = morphType; MorphIndices = morphIndices; }
@@ -404,6 +545,8 @@ namespace Poly_Ling.Data
 
     public class StartMorphPreviewCommand : PanelCommand
     {
+        [PLParam(TextKey = "PreviewMorphIndices",
+                 Description = "プレビューするモーフの索引", Required = true)]
         public int[] MorphIndices { get; }
         public StartMorphPreviewCommand(int modelIndex, int[] morphIndices)
             : base(modelIndex) { MorphIndices = morphIndices; }
@@ -411,6 +554,9 @@ namespace Poly_Ling.Data
 
     public class ApplyMorphPreviewCommand : PanelCommand
     {
+        [PLParam(TextKey = "MorphPreviewWeight",
+                 Description = "プレビューに掛けるモーフのウェイト",
+                 LimitKey = "MorphPreview.Weight", Required = true)]
         public float Weight { get; }
         public ApplyMorphPreviewCommand(int modelIndex, float weight)
             : base(modelIndex) { Weight = weight; }
@@ -427,6 +573,8 @@ namespace Poly_Ling.Data
 
     public class SelectAllMorphsCommand : PanelCommand
     {
+        [PLParam(TextKey = "AllMorphIndices",
+                 Description = "全選択の対象となるモーフの索引", Required = true)]
         public int[] AllMorphIndices { get; }
         public SelectAllMorphsCommand(int modelIndex, int[] allMorphIndices)
             : base(modelIndex) { AllMorphIndices = allMorphIndices; }
@@ -444,6 +592,8 @@ namespace Poly_Ling.Data
     /// <summary>現在のパーツ選択をセットとして保存</summary>
     public class SavePartsSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "PartsSetName",
+                 Description = "保存するパーツ選択セットの名前", Required = true)]
         public string SetName { get; }
         public SavePartsSetCommand(int modelIndex, string setName)
             : base(modelIndex) { SetName = setName; }
@@ -452,6 +602,8 @@ namespace Poly_Ling.Data
     /// <summary>選択辞書エントリを現在の選択に適用（置き換え）</summary>
     public class LoadPartsSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "PartsSetIndex",
+                 Description = "適用するパーツ選択セットの索引", Required = true)]
         public int SetIndex { get; }
         public LoadPartsSetCommand(int modelIndex, int setIndex)
             : base(modelIndex) { SetIndex = setIndex; }
@@ -460,6 +612,8 @@ namespace Poly_Ling.Data
     /// <summary>選択辞書エントリを現在の選択に追加（Union）</summary>
     public class AddPartsSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "PartsSetIndex",
+                 Description = "現在の選択へ足すパーツ選択セットの索引", Required = true)]
         public int SetIndex { get; }
         public AddPartsSetCommand(int modelIndex, int setIndex)
             : base(modelIndex) { SetIndex = setIndex; }
@@ -468,6 +622,8 @@ namespace Poly_Ling.Data
     /// <summary>現在の選択から辞書エントリを除外（Subtract）</summary>
     public class SubtractPartsSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "PartsSetIndex",
+                 Description = "現在の選択から引くパーツ選択セットの索引", Required = true)]
         public int SetIndex { get; }
         public SubtractPartsSetCommand(int modelIndex, int setIndex)
             : base(modelIndex) { SetIndex = setIndex; }
@@ -476,6 +632,8 @@ namespace Poly_Ling.Data
     /// <summary>選択辞書エントリを削除</summary>
     public class DeletePartsSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "PartsSetIndex",
+                 Description = "削除するパーツ選択セットの索引", Required = true)]
         public int SetIndex { get; }
         public DeletePartsSetCommand(int modelIndex, int setIndex)
             : base(modelIndex) { SetIndex = setIndex; }
@@ -484,7 +642,12 @@ namespace Poly_Ling.Data
     /// <summary>選択辞書エントリの名前を変更</summary>
     public class RenamePartsSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "PartsSetIndex",
+                 Description = "名前を変えるパーツ選択セットの索引", Required = true)]
         public int SetIndex { get; }
+
+        [PLParam(TextKey = "PartsSetNewName",
+                 Description = "パーツ選択セットの新しい名前", Required = true)]
         public string NewName { get; }
         public RenamePartsSetCommand(int modelIndex, int setIndex, string newName)
             : base(modelIndex) { SetIndex = setIndex; NewName = newName; }
@@ -524,6 +687,8 @@ namespace Poly_Ling.Data
     /// <summary>現在の選択を法線再計算の除外セットとして保存</summary>
     public class SaveNormalExcludeSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "NormalExcludeSetName",
+                 Description = "保存する法線再計算 除外セットの名前", Required = true)]
         public string SetName { get; }
         public SaveNormalExcludeSetCommand(int modelIndex, string setName)
             : base(modelIndex) { SetName = setName; }
@@ -532,6 +697,8 @@ namespace Poly_Ling.Data
     /// <summary>除外セットを現在の選択に適用（置き換え）</summary>
     public class LoadNormalExcludeSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "NormalExcludeSetIndex",
+                 Description = "適用する法線再計算 除外セットの索引", Required = true)]
         public int SetIndex { get; }
         public LoadNormalExcludeSetCommand(int modelIndex, int setIndex)
             : base(modelIndex) { SetIndex = setIndex; }
@@ -540,6 +707,8 @@ namespace Poly_Ling.Data
     /// <summary>除外セットを削除</summary>
     public class DeleteNormalExcludeSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "NormalExcludeSetIndex",
+                 Description = "削除する法線再計算 除外セットの索引", Required = true)]
         public int SetIndex { get; }
         public DeleteNormalExcludeSetCommand(int modelIndex, int setIndex)
             : base(modelIndex) { SetIndex = setIndex; }
@@ -548,7 +717,12 @@ namespace Poly_Ling.Data
     /// <summary>除外セットの名前を変更</summary>
     public class RenameNormalExcludeSetCommand : PanelCommand
     {
+        [PLParam(TextKey = "NormalExcludeSetIndex",
+                 Description = "名前を変える法線再計算 除外セットの索引", Required = true)]
         public int SetIndex { get; }
+
+        [PLParam(TextKey = "NormalExcludeSetNewName",
+                 Description = "法線再計算 除外セットの新しい名前", Required = true)]
         public string NewName { get; }
         public RenameNormalExcludeSetCommand(int modelIndex, int setIndex, string newName)
             : base(modelIndex) { SetIndex = setIndex; NewName = newName; }
@@ -579,6 +753,8 @@ namespace Poly_Ling.Data
             InvertHidden,
         }
 
+        [PLParam(TextKey = "FaceHiddenOperation",
+                 Description = "隠す / 選択以外を隠す / 全表示 / 反転", Required = true)]
         public Mode Operation { get; }
 
         public SetFaceHiddenCommand(int modelIndex, Mode operation)
@@ -600,6 +776,13 @@ namespace Poly_Ling.Data
     /// </summary>
     public class NormalEditCommand : PanelCommand
     {
+        /// <summary>
+        /// AlignToAxis / FlattenOnAxis で指せる軸の数（X / Y / Z）。
+        /// パネル側の選択肢（PlayerNormalEditSubPanel の AxisNames）も同数で対応する。
+        /// ミラー軸（BakeMirrorCommand.MirrorAxisCount）とは別物なので共有しない。
+        /// </summary>
+        public const int AxisCount = 3;
+
         public enum Op
         {
             /// <summary>スムージング角で法線を作り直す（メッシュ全体・スロット再構築）</summary>
@@ -636,27 +819,59 @@ namespace Poly_Ling.Data
             Flip,
         }
 
+        [PLParam(TextKey = "NormalEditOperation",
+                 Description = "法線に対して何をするか", Required = true)]
         public Op    Operation  { get; }
+
         /// <summary>RecalcByAngle のスムージング角（度）</summary>
+        [PLParam(TextKey = "NormalEditAngleDeg",
+                 Description = "RecalcByAngle のスムージング角（度）。既定は 59.5",
+                 LimitKey = "NormalEdit.AngleDeg")]
         public float AngleDeg   { get; }
+
         /// <summary>Smooth の強度（0-1）</summary>
+        [PLParam(TextKey = "NormalEditStrength",
+                 Description = "Smooth の強度。既定は 0.5",
+                 LimitKey = "NormalEdit.Strength")]
         public float Strength   { get; }
+
         /// <summary>AlignToAxis / FlattenOnAxis の軸（0=X, 1=Y, 2=Z）</summary>
+        [PLParam(TextKey = "NormalEditAxis",
+                 Description = "AlignToAxis / FlattenOnAxis の軸。0=X, 1=Y, 2=Z。既定は 0",
+                 Min = 0, Max = AxisCount - 1)]
         public int   Axis       { get; }
+
         /// <summary>AlignToAxis の符号（true で負方向）</summary>
+        [PLParam(TextKey = "NormalEditNegative",
+                 Description = "AlignToAxis を負方向にする。既定は false")]
         public bool  Negative   { get; }
+
         /// <summary>Sphereize / PointToTarget の座標</summary>
+        [PLParam(TextKey = "NormalEditTarget",
+                 Description = "Sphereize の中心 / PointToTarget の向き先")]
         public Vector3 Target   { get; }
+
         /// <summary>Sphereize の中心に選択の重心を使うか</summary>
+        [PLParam(TextKey = "NormalEditUseSelectionCenter",
+                 Description = "Sphereize の中心に選択の重心を使う。既定は true")]
         public bool  UseSelectionCenter { get; }
+
         /// <summary>PointToTarget で 1 本のベクトルに揃えるか</summary>
+        [PLParam(TextKey = "NormalEditAlignVectors",
+                 Description = "PointToTarget で 1 本のベクトルに揃える。既定は false")]
         public bool  AlignVectors { get; }
+
         /// <summary>平均時の重み付け方式</summary>
+        [PLParam(TextKey = "NormalEditWeightMode",
+                 Description = "面法線を平均するときの重み付け。既定は Uniform")]
         public NormalWeightMode WeightMode { get; }
         /// <summary>
         /// MirrorFlattenSeamX の中央判定しきい値。
         /// |Vertex.Position.x| がこの値以下の頂点を中央（合わせ目）とみなす。
         /// </summary>
+        [PLParam(TextKey = "NormalEditMirrorThreshold",
+                 Description = "MirrorFlattenSeamX の中央判定しきい値。既定は 0.00001",
+                 LimitKey = "NormalEdit.MirrorThreshold")]
         public float MirrorThreshold { get; }
 
         public NormalEditCommand(
@@ -706,6 +921,8 @@ namespace Poly_Ling.Data
             ClearAll,
         }
 
+        [PLParam(TextKey = "RepairVertexIdMode",
+                 Description = "未設定のみ / 重複の解消 / 連番振り直し / 全消去", Required = true)]
         public RepairMode Mode { get; }
         public RepairVertexIdsCommand(int modelIndex, RepairMode mode)
             : base(modelIndex) { Mode = mode; }
@@ -791,11 +1008,24 @@ namespace Poly_Ling.Data
         public int SourceModelIndex => ModelIndex;
 
         /// <summary>転送先モデル。</summary>
+        [PLParam(TextKey = "TransferTargetModelIndex",
+                 Description = "転送先モデルの索引", Required = true)]
         public int   TargetModelIndex  { get; }
+
+        [PLParam(TextKey = "TransferSourceMeshIndices",
+                 Description = "転送元メッシュの索引。TargetMeshIndices と同じ長さ", Required = true)]
         public int[] SourceMeshIndices { get; }
+
+        [PLParam(TextKey = "TransferTargetMeshIndices",
+                 Description = "転送先メッシュの索引。SourceMeshIndices と同じ長さ", Required = true)]
         public int[] TargetMeshIndices { get; }
 
+        [PLParam(TextKey = "TransferMatchMode",
+                 Description = "頂点の突き合わせ方", Required = true)]
         public VertexMatchMode MatchMode { get; }
+
+        [PLParam(TextKey = "TransferKinds",
+                 Description = "転送する頂点データの種類", Required = true)]
         public VertexDataKind  Kinds     { get; }
 
         public TransferVertexDataCommand(
@@ -840,6 +1070,8 @@ namespace Poly_Ling.Data
     /// </summary>
     public class CreateBlendCloneCommand : PanelCommand
     {
+        [PLParam(TextKey = "CloneNameBase",
+                 Description = "クローンの名前の基。空で自動採番", Required = true)]
         public string CloneNameBase { get; }
         public CreateBlendCloneCommand(int sourceModelIndex, string cloneNameBase)
             : base(sourceModelIndex) { CloneNameBase = cloneNameBase; }
@@ -849,10 +1081,24 @@ namespace Poly_Ling.Data
     public class ApplyModelBlendCommand : PanelCommand
     {
         /// <summary>クローン先モデルインデックス</summary>
+        [PLParam(TextKey = "BlendCloneModelIndex",
+                 Description = "ブレンド結果を書き込むクローンモデルの索引", Required = true)]
         public int CloneModelIndex { get; }
+
+        [PLParam(TextKey = "BlendWeights",
+                 Description = "ブレンド元ごとの重み", Required = true)]
         public float[] Weights     { get; }
+
+        [PLParam(TextKey = "BlendMeshEnabled",
+                 Description = "メッシュごとにブレンドへ含めるか", Required = true)]
         public bool[]  MeshEnabled { get; }
+
+        [PLParam(TextKey = "BlendRecalcNormals",
+                 Description = "ブレンド後に頂点法線を再計算する", Required = true)]
         public bool    RecalcNormals { get; }
+
+        [PLParam(TextKey = "BlendBones",
+                 Description = "ボーンの姿勢もブレンドする", Required = true)]
         public bool    BlendBones  { get; }
         public ApplyModelBlendCommand(
             int sourceModelIndex, int cloneModelIndex,
@@ -870,9 +1116,20 @@ namespace Poly_Ling.Data
     /// <summary>ブレンドプレビュー（Undo記録なし）</summary>
     public class PreviewModelBlendCommand : PanelCommand
     {
+        [PLParam(TextKey = "BlendCloneModelIndex",
+                 Description = "プレビューを書き込むクローンモデルの索引", Required = true)]
         public int CloneModelIndex { get; }
+
+        [PLParam(TextKey = "BlendWeights",
+                 Description = "ブレンド元ごとの重み", Required = true)]
         public float[] Weights     { get; }
+
+        [PLParam(TextKey = "BlendMeshEnabled",
+                 Description = "メッシュごとにブレンドへ含めるか", Required = true)]
         public bool[]  MeshEnabled { get; }
+
+        [PLParam(TextKey = "BlendBones",
+                 Description = "ボーンの姿勢もブレンドする", Required = true)]
         public bool    BlendBones  { get; }
         public PreviewModelBlendCommand(
             int sourceModelIndex, int cloneModelIndex,
@@ -893,6 +1150,8 @@ namespace Poly_Ling.Data
     /// <summary>カレントモデルを切り替える</summary>
     public class SwitchModelCommand : PanelCommand
     {
+        [PLParam(TextKey = "TargetModelIndex",
+                 Description = "切り替え先のモデルの索引", Required = true)]
         public int TargetModelIndex { get; }
         public SwitchModelCommand(int targetModelIndex)
             : base(targetModelIndex) { TargetModelIndex = targetModelIndex; }
@@ -901,6 +1160,8 @@ namespace Poly_Ling.Data
     /// <summary>モデルの名前を変更する</summary>
     public class RenameModelCommand : PanelCommand
     {
+        [PLParam(TextKey = "ModelNewName",
+                 Description = "モデルの新しい名前", Required = true)]
         public string NewName { get; }
         public RenameModelCommand(int modelIndex, string newName)
             : base(modelIndex) { NewName = newName; }
@@ -919,8 +1180,16 @@ namespace Poly_Ling.Data
     /// <summary>選択中のメッシュを選択辞書エントリとして保存</summary>
     public class SaveSelectionDictionaryCommand : PanelCommand
     {
+        [PLParam(TextKey = "SelectionDictionaryCategory",
+                 Description = "保存する選択辞書エントリの分類", Required = true)]
         public MeshCategory Category { get; }
+
+        [PLParam(TextKey = "SelectionDictionarySetName",
+                 Description = "保存する選択辞書エントリの名前", Required = true)]
         public string SetName { get; }
+
+        [PLParam(TextKey = "SelectionDictionaryMeshNames",
+                 Description = "エントリに含める描画オブジェクトの名前", Required = true)]
         public string[] MeshNames { get; }
         public SaveSelectionDictionaryCommand(int modelIndex, MeshCategory category, string setName, string[] meshNames)
             : base(modelIndex) { Category = category; SetName = setName; MeshNames = meshNames; }
@@ -929,7 +1198,12 @@ namespace Poly_Ling.Data
     /// <summary>選択辞書エントリを選択に適用（置き換えまたは追加）</summary>
     public class ApplySelectionDictionaryCommand : PanelCommand
     {
+        [PLParam(TextKey = "SelectionDictionarySetIndex",
+                 Description = "適用する選択辞書エントリの索引", Required = true)]
         public int SetIndex { get; }
+
+        [PLParam(TextKey = "SelectionDictionaryAddToExisting",
+                 Description = "現在の選択へ足す。false で置き換える。既定は false")]
         public bool AddToExisting { get; }
         public ApplySelectionDictionaryCommand(int modelIndex, int setIndex, bool addToExisting = false)
             : base(modelIndex) { SetIndex = setIndex; AddToExisting = addToExisting; }
@@ -938,6 +1212,8 @@ namespace Poly_Ling.Data
     /// <summary>選択辞書エントリを削除</summary>
     public class DeleteSelectionDictionaryCommand : PanelCommand
     {
+        [PLParam(TextKey = "SelectionDictionarySetIndex",
+                 Description = "削除する選択辞書エントリの索引", Required = true)]
         public int SetIndex { get; }
         public DeleteSelectionDictionaryCommand(int modelIndex, int setIndex)
             : base(modelIndex) { SetIndex = setIndex; }
@@ -946,7 +1222,12 @@ namespace Poly_Ling.Data
     /// <summary>選択辞書エントリの名前を変更</summary>
     public class RenameSelectionDictionaryCommand : PanelCommand
     {
+        [PLParam(TextKey = "SelectionDictionarySetIndex",
+                 Description = "名前を変える選択辞書エントリの索引", Required = true)]
         public int SetIndex { get; }
+
+        [PLParam(TextKey = "SelectionDictionaryNewName",
+                 Description = "選択辞書エントリの新しい名前", Required = true)]
         public string NewName { get; }
         public RenameSelectionDictionaryCommand(int modelIndex, int setIndex, string newName)
             : base(modelIndex) { SetIndex = setIndex; NewName = newName; }
@@ -977,10 +1258,27 @@ namespace Poly_Ling.Data
     /// <summary>選択メッシュに投影UV展開を適用する</summary>
     public class ApplyUvUnwrapCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "UvUnwrapProjection",
+                 Description = "UV の投影方式", Required = true)]
         public ProjectionType Projection { get; }
+
+        [PLParam(TextKey = "UvUnwrapScale",
+                 Description = "投影した UV の拡大率",
+                 LimitKey = "UvUnwrap.Scale", Required = true)]
         public float Scale { get; }
+
+        [PLParam(TextKey = "UvUnwrapOffsetU",
+                 Description = "U 方向のオフセット",
+                 LimitKey = "UvUnwrap.Offset", Required = true)]
         public float OffsetU { get; }
+
+        [PLParam(TextKey = "UvUnwrapOffsetV",
+                 Description = "V 方向のオフセット",
+                 LimitKey = "UvUnwrap.Offset", Required = true)]
         public float OffsetV { get; }
 
         public ApplyUvUnwrapCommand(int modelIndex, int[] masterIndices,
@@ -998,10 +1296,26 @@ namespace Poly_Ling.Data
     /// <summary>UV→XYZ展開メッシュを新規生成してリストに追加する</summary>
     public class UvToXyzCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
+
+        [PLParam(TextKey = "UvZUvScale",
+                 Description = "UV を XY へ写すときの拡大率",
+                 LimitKey = "UvZ.UvScale", Required = true)]
         public float UvScale { get; }
+
+        [PLParam(TextKey = "UvZDepthScale",
+                 Description = "カメラ深度を Z へ写すときの拡大率",
+                 LimitKey = "UvZ.DepthScale", Required = true)]
         public float DepthScale { get; }
+
+        [PLParam(TextKey = "UvZCameraPosition",
+                 Description = "深度の基準に使うカメラ位置", Required = true)]
         public Vector3 CameraPosition { get; }
+
+        [PLParam(TextKey = "UvZCameraForward",
+                 Description = "深度の基準に使うカメラの前方向", Required = true)]
         public Vector3 CameraForward { get; }
 
         public UvToXyzCommand(int modelIndex, int masterIndex,
@@ -1019,8 +1333,17 @@ namespace Poly_Ling.Data
     /// <summary>ソースメッシュのXYZ座標をターゲットメッシュのUVに書き戻す</summary>
     public class XyzToUvCommand : PanelCommand
     {
+        [PLParam(TextKey = "XyzToUvSourceMasterIndex",
+                 Description = "XYZ を読む描画オブジェクトの masterIndex", Required = true)]
         public int SourceMasterIndex { get; }
+
+        [PLParam(TextKey = "XyzToUvTargetMasterIndex",
+                 Description = "UV を書き戻す描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
+
+        [PLParam(TextKey = "UvZUvScale",
+                 Description = "XY を UV へ戻すときの拡大率",
+                 LimitKey = "UvZ.UvScale", Required = true)]
         public float UvScale { get; }
 
         public XyzToUvCommand(int modelIndex, int sourceMasterIndex, int targetMasterIndex, float uvScale)
@@ -1040,8 +1363,17 @@ namespace Poly_Ling.Data
     public class SetBoneTransformValueCommand : PanelCommand
     {
         public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }
+
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "BoneTransformField",
+                 Description = "書き換える軸。位置 / 回転 / 拡大率の X・Y・Z", Required = true)]
         public Field TargetField { get; }
+
+        [PLParam(TextKey = "BoneTransformValue",
+                 Description = "TargetField へ入れる値。回転は度", Required = true)]
         public float Value { get; }
         public SetBoneTransformValueCommand(int modelIndex, int[] masterIndices, Field field, float value)
             : base(modelIndex) { MasterIndices = masterIndices; TargetField = field; Value = value; }
@@ -1050,14 +1382,21 @@ namespace Poly_Ling.Data
     /// <summary>BoneTransform スライダードラッグ開始（Undo スナップショット取得）</summary>
     public class BeginBoneTransformSliderDragCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
         /// <summary>ボーン編集の確定モード（A/B）。パネルが送信時に刻む。</summary>
+        [PLParam(TextKey = "BoneMoveMode",
+                 Description = "ボーン編集の確定モード。既定は BoneOnlyRebind")]
         public BoneMoveMode Mode { get; set; } = BoneMoveMode.BoneOnlyRebind;
         /// <summary>
         /// 「原点だけ移動」中か。true のとき、対象 MeshFilter の見た目を固定したまま
         /// 原点(BoneTransform)だけを動かすよう受信側が自頂点を再ローカル化する。
         /// パネルが送信時に刻む。
         /// </summary>
+        [PLParam(TextKey = "BoneOriginOnly",
+                 Description = "見た目を固定したまま原点だけを動かす。既定は false")]
         public bool OriginOnly { get; set; } = false;
         public BeginBoneTransformSliderDragCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
@@ -1066,6 +1405,8 @@ namespace Poly_Ling.Data
     /// <summary>BoneTransform スライダードラッグ終了（Undo 記録コミット）</summary>
     public class EndBoneTransformSliderDragCommand : PanelCommand
     {
+        [PLParam(TextKey = "BoneDragDescription",
+                 Description = "Undo 記録に残す操作名", Required = true)]
         public string Description { get; }
         public EndBoneTransformSliderDragCommand(int modelIndex, string description)
             : base(modelIndex) { Description = description; }
@@ -1093,10 +1434,18 @@ namespace Poly_Ling.Data
     public class MergeMeshesCommand : PanelCommand
     {
         /// <summary>マージ対象の MasterIndex 配列（基準オブジェクトを含む）</summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
+
         /// <summary>基準オブジェクトの MasterIndex</summary>
+        [PLParam(TextKey = "MergeBaseMasterIndex",
+                 Description = "結合の基準になるオブジェクトの masterIndex", Required = true)]
         public int BaseMasterIndex { get; }
+
         /// <summary>true: 新規メッシュオブジェクトに結果を格納する</summary>
+        [PLParam(TextKey = "MergeCreateNewMesh",
+                 Description = "結果を新規オブジェクトに入れる。false で基準へ直接結合", Required = true)]
         public bool CreateNewMesh { get; }
 
         public MergeMeshesCommand(int modelIndex, int[] masterIndices, int baseMasterIndex, bool createNewMesh)
@@ -1125,20 +1474,44 @@ namespace Poly_Ling.Data
     public class BooleanMeshCommand : PanelCommand
     {
         /// <summary>左辺（基準）オブジェクトの MasterIndex。差では削られる側。</summary>
+        [PLParam(TextKey = "BooleanAMasterIndex",
+                 Description = "左辺（基準）オブジェクトの masterIndex。差では削られる側", Required = true)]
         public int AMasterIndex { get; }
+
         /// <summary>右辺オブジェクトの MasterIndex。差では削る側。</summary>
+        [PLParam(TextKey = "BooleanBMasterIndex",
+                 Description = "右辺オブジェクトの masterIndex。差では削る側", Required = true)]
         public int BMasterIndex { get; }
+
         /// <summary>演算の種類</summary>
+        [PLParam(TextKey = "BooleanOpKind",
+                 Description = "和 / 差 / 積のどれを行うか", Required = true)]
         public Poly_Ling.Ops.BooleanOpKind Op { get; }
+
         /// <summary>true: 新規メッシュオブジェクトに結果を格納する</summary>
+        [PLParam(TextKey = "BooleanCreateNewMesh",
+                 Description = "結果を新規オブジェクトに入れる", Required = true)]
         public bool CreateNewMesh { get; }
+
         /// <summary>true: 演算後に B を削除する</summary>
+        [PLParam(TextKey = "BooleanDeleteSourceB",
+                 Description = "演算後に右辺オブジェクトを削除する", Required = true)]
         public bool DeleteSourceB { get; }
+
         /// <summary>true: 演算後に同一位置頂点をマージする</summary>
+        [PLParam(TextKey = "BooleanMergeVertices",
+                 Description = "演算後に同一位置の頂点を結合する", Required = true)]
         public bool MergeVertices { get; }
+
         /// <summary>同一位置頂点マージのしきい値</summary>
+        [PLParam(TextKey = "BooleanMergeThreshold",
+                 Description = "同一位置とみなす距離のしきい値",
+                 LimitKey = "Boolean.MergeThreshold", Required = true)]
         public float MergeThreshold { get; }
+
         /// <summary>平面の同一判定の許容量（pb_CSG の epsilon）</summary>
+        [PLParam(TextKey = "BooleanEpsilon",
+                 Description = "平面の同一判定の許容量。0 以下を渡すと BooleanOps.DefaultEpsilon が使われる", Required = true)]
         public float Epsilon { get; }
 
         public BooleanMeshCommand(
@@ -1169,35 +1542,125 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>
-    /// 頂点・辺・面をインデックス指定で選択する。
-    /// null のフィールドは対応する選択を変更しない。
-    /// Additive = false の場合、設定前に既存の選択全体をクリアする。
-    /// 辺は [v1a, v2a, v1b, v2b, ...] のフラット配列で指定する。
+    /// 頂点・辺・面・線分をインデックス指定で選択する。
+    ///
+    /// 実処理は MoveToolHandler / PlayerSelectionOps が持つ。クリック経路と同じ
+    /// 「スナップショット → 選択の書き換え → 頂点への展開 → Undo 記録」を通すため、
+    /// このコマンドは対象と選ばせる要素だけを運ぶ。
+    ///
+    /// 【要素とメッシュの対応】
+    ///   要素の索引はメッシュ内ローカル番号なので、どのメッシュのものかを
+    ///   同じ並び・同じ長さの *MeshIndices で対にして渡す。
+    ///     VertexIndices[i] は VertexMeshIndices[i] のメッシュの頂点
+    ///     FaceIndices[i]   は FaceMeshIndices[i]   のメッシュの面
+    ///     LineIndices[i]   は LineMeshIndices[i]   のメッシュの線分
+    ///   辺だけは [v1a, v2a, v1b, v2b, ...] と 2 個 1 組で平坦化してあるので、
+    ///   EdgeMeshIndices の長さは EdgePairs の半分になる。
+    ///     EdgePairs[2i], EdgePairs[2i+1] は EdgeMeshIndices[i] のメッシュの辺
+    ///   入れ子の配列を持てないための形。PanelCommandFactory は平坦な int[] しか
+    ///   組み立てられない。
+    ///
+    /// 【操作の種類】
+    ///   Op = Replace のとき、MasterIndices に挙げたメッシュの選択を先に消す。
+    ///   1 メッシュだけ消すとほかのメッシュに残った選択が画面に出たままになる
+    ///   （GPU のフラグは MeshContext 単位で立つため）。クリック経路の
+    ///   ClearAllTargetsSilent と同じ範囲を明示で受ける形。
+    ///   Op = Remove は列挙要素を選択から外す。Ctrl クリックが既選択に当たったとき
+    ///   （ApplyElementClick の解除分岐）がこれに落ちる。
+    ///   Op = Toggle は列挙要素を 1 個ずつ反転する。Ctrl の矩形・投げ縄選択が
+    ///   これに落ちる（範囲内の既選択は外れ、未選択は入る）。
+    ///
+    /// ObjectIds は MasterIndices と同じ並び・同じ長さの安定ID。
+    /// リモート経由の場合、サーバ側で「その位置に本当にそのIDのオブジェクトが
+    /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
+    /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
     public class SelectElementsCommand : PanelCommand
     {
-        /// <summary>対象 MeshContext の MasterIndex</summary>
-        public int   MasterIndex   { get; }
-        /// <summary>選択する頂点インデックス配列。null = 変更しない</summary>
-        public int[] VertexIndices { get; }
-        /// <summary>選択する辺のフラット配列 [v1a, v2a, v1b, v2b, ...]。null = 変更しない</summary>
-        public int[] EdgePairs     { get; }
-        /// <summary>選択する面インデックス配列。null = 変更しない</summary>
-        public int[] FaceIndices   { get; }
-        /// <summary>false = 既存選択をクリアしてから設定、true = 既存選択に追加</summary>
-        public bool  Additive      { get; }
+        /// <summary>
+        /// 選択の書き換え方。
+        /// Replace = MasterIndices の選択を消してから列挙要素を選ぶ。
+        /// Add     = 列挙要素を足す。
+        /// Remove  = 列挙要素を外す。
+        /// Toggle  = 列挙要素を 1 個ずつ反転する。
+        /// </summary>
+        public enum SelectOp { Replace, Add, Remove, Toggle }
+
+        /// <summary>Replace のときに選択を消す対象メッシュの範囲</summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "非加算のときに選択を消す対象の masterIndex 配列", Required = true)]
+        public int[]   MasterIndices     { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds         { get; }
+
+        /// <summary>選択する頂点の索引</summary>
+        [PLParam(TextKey = "SelectVertexIndices",
+                 Description = "選択する頂点の索引。null / 空で頂点を足さない", Required = true)]
+        public int[]   VertexIndices     { get; }
+
+        /// <summary>VertexIndices と同じ並び・同じ長さ。各頂点が属する masterIndex</summary>
+        [PLParam(TextKey = "SelectVertexMeshIndices",
+                 Description = "VertexIndices と同じ並び・同じ長さの masterIndex", Required = true)]
+        public int[]   VertexMeshIndices { get; }
+
+        /// <summary>選択する辺のフラット配列 [v1a, v2a, v1b, v2b, ...]</summary>
+        [PLParam(TextKey = "SelectEdgePairs",
+                 Description = "選択する辺を [v1, v2] の並びで平坦化したもの。null / 空で辺を足さない", Required = true)]
+        public int[]   EdgePairs         { get; }
+
+        /// <summary>EdgePairs の組ごとの masterIndex。長さは EdgePairs の半分</summary>
+        [PLParam(TextKey = "SelectEdgeMeshIndices",
+                 Description = "EdgePairs の組ごとの masterIndex。長さは EdgePairs の半分", Required = true)]
+        public int[]   EdgeMeshIndices   { get; }
+
+        /// <summary>選択する面の索引</summary>
+        [PLParam(TextKey = "SelectFaceIndices",
+                 Description = "選択する面の索引。null / 空で面を足さない", Required = true)]
+        public int[]   FaceIndices       { get; }
+
+        /// <summary>FaceIndices と同じ並び・同じ長さ。各面が属する masterIndex</summary>
+        [PLParam(TextKey = "SelectFaceMeshIndices",
+                 Description = "FaceIndices と同じ並び・同じ長さの masterIndex", Required = true)]
+        public int[]   FaceMeshIndices   { get; }
+
+        /// <summary>選択する線分の索引（MeshObject.Faces[] の添字。VertexCount==2）</summary>
+        [PLParam(TextKey = "SelectLineIndices",
+                 Description = "選択する線分の索引。null / 空で線分を足さない", Required = true)]
+        public int[]   LineIndices       { get; }
+
+        /// <summary>LineIndices と同じ並び・同じ長さ。各線分が属する masterIndex</summary>
+        [PLParam(TextKey = "SelectLineMeshIndices",
+                 Description = "LineIndices と同じ並び・同じ長さの masterIndex", Required = true)]
+        public int[]   LineMeshIndices   { get; }
+
+        /// <summary>選択の書き換え方</summary>
+        [PLParam(TextKey = "SelectOp",
+                 Description = "選択の書き換え方。Replace / Add / Remove / Toggle。既定は Replace")]
+        public SelectOp Op                { get; }
 
         public SelectElementsCommand(
-            int modelIndex, int masterIndex,
-            int[] vertexIndices, int[] edgePairs, int[] faceIndices,
-            bool additive = false)
+            int modelIndex, int[] masterIndices,
+            int[] vertexIndices, int[] vertexMeshIndices,
+            int[] edgePairs,     int[] edgeMeshIndices,
+            int[] faceIndices,   int[] faceMeshIndices,
+            int[] lineIndices,   int[] lineMeshIndices,
+            SelectOp op = SelectOp.Replace,
+            ulong[] objectIds = null)
             : base(modelIndex)
         {
-            MasterIndex   = masterIndex;
-            VertexIndices = vertexIndices;
-            EdgePairs     = edgePairs;
-            FaceIndices   = faceIndices;
-            Additive      = additive;
+            MasterIndices     = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds         = objectIds;
+            VertexIndices     = vertexIndices;
+            VertexMeshIndices = vertexMeshIndices;
+            EdgePairs         = edgePairs;
+            EdgeMeshIndices   = edgeMeshIndices;
+            FaceIndices       = faceIndices;
+            FaceMeshIndices   = faceMeshIndices;
+            LineIndices       = lineIndices;
+            LineMeshIndices   = lineMeshIndices;
+            Op                = op;
         }
     }
 
@@ -1207,31 +1670,100 @@ namespace Poly_Ling.Data
 
     /// <summary>
     /// 現在の選択頂点をデルタ値で移動する。Undo記録付き。
-    /// CoordinateSpace.World の場合、Delta をモデルローカル空間に変換してから適用する。
+    ///
+    /// 実処理は MoveToolHandler が持つ。マウス経路・数値入力経路と同じ
+    /// UpdateAffectedVertices → BeginMove → ApplyDelta → EndMove を通すため、
+    /// このコマンドは対象・移動量・マグネット設定だけを運ぶ。
+    ///
+    /// 対象頂点は「選択メッシュの選択要素」で、辺・面・線分の選択は
+    /// SelectionState.Mode に従って頂点へ展開される。
+    ///
+    /// マグネットの 4 件はハンドラの UI 状態と同名だが、こちらが正典として
+    /// 実行時に適用され、実行後に UI の値へ戻される。1 呼び出しが UI 状態に
+    /// 依存しないようにするため（MCP の自己完結）。
+    ///
+    /// ObjectIds は MasterIndices と同じ並び・同じ長さの安定ID。
+    /// リモート経由の場合、サーバ側で「その位置に本当にそのIDのオブジェクトが
+    /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
+    /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
     public class MoveSelectedVerticesCommand : PanelCommand
     {
         public enum CoordSpace { Local, World }
 
-        /// <summary>対象 MeshContext の MasterIndex</summary>
-        public int        MasterIndex      { get; }
+        /// <summary>対象 MeshContext の MasterIndex 配列</summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
+        public int[]        MasterIndices      { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[]      ObjectIds          { get; }
+
         /// <summary>移動量</summary>
-        public Vector3    Delta            { get; }
-        /// <summary>Delta の座標空間</summary>
-        public CoordSpace Space            { get; }
-        /// <summary>移動後に法線を再計算するか</summary>
-        public bool       RecalcNormals    { get; }
+        [PLParam(TextKey = "MoveDelta",
+                 Description = "選択頂点の移動量", Required = true)]
+        public Vector3      Delta              { get; }
+
+        /// <summary>
+        /// Delta の座標空間。
+        /// Local は MasterIndices[0] のローカル空間として解釈し、そのメッシュの
+        /// WorldMatrix でワールドへ変換する。対象ごとに行列が違うため、基準は
+        /// 先頭の 1 本に固定する。
+        /// </summary>
+        [PLParam(TextKey = "MoveCoordSpace",
+                 Description = "Delta の座標空間。Local は MasterIndices[0] のローカル空間", Required = true)]
+        public CoordSpace   Space              { get; }
+
+        /// <summary>マグネットを使うか</summary>
+        [PLParam(TextKey = "MoveUseMagnet",
+                 Description = "選択外の周辺頂点も減衰させて引きずる。既定は false")]
+        public bool         UseMagnet          { get; }
+
+        /// <summary>マグネットの影響半径</summary>
+        [PLParam(TextKey = "MoveMagnetRadius",
+                 Description = "マグネットの影響半径。UseMagnet が false のときは使わない",
+                 LimitKey = "Move.MagnetRadius")]
+        public float        MagnetRadius       { get; }
+
+        /// <summary>マグネットの減衰の形</summary>
+        [PLParam(TextKey = "MoveMagnetFalloff",
+                 Description = "マグネットの減衰の形。既定は Smooth")]
+        public FalloffType  MagnetFalloff      { get; }
+
+        /// <summary>マグネットの距離計算方式</summary>
+        [PLParam(TextKey = "MoveMagnetDistanceMode",
+                 Description = "マグネットの距離計算方式。Euclidean / Link。既定は Euclidean")]
+        public DistanceMode MagnetDistanceMode { get; }
+
+        /// <summary>
+        /// 移動後に法線を再計算するか。
+        /// マウス経路は再計算しないので、既定の false で同一結果になる。
+        /// </summary>
+        [PLParam(TextKey = "MoveRecalcNormals",
+                 Description = "移動後に頂点法線を再計算する。既定は false")]
+        public bool         RecalcNormals      { get; }
 
         public MoveSelectedVerticesCommand(
-            int modelIndex, int masterIndex,
+            int modelIndex, int[] masterIndices,
             Vector3 delta, CoordSpace space,
-            bool recalcNormals = false)
+            bool recalcNormals = false,
+            bool useMagnet = false,
+            float magnetRadius = 0.5f,
+            FalloffType magnetFalloff = FalloffType.Smooth,
+            DistanceMode magnetDistanceMode = DistanceMode.Euclidean,
+            ulong[] objectIds = null)
             : base(modelIndex)
         {
-            MasterIndex   = masterIndex;
-            Delta         = delta;
-            Space         = space;
-            RecalcNormals = recalcNormals;
+            MasterIndices      = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds          = objectIds;
+            Delta              = delta;
+            Space              = space;
+            RecalcNormals      = recalcNormals;
+            UseMagnet          = useMagnet;
+            MagnetRadius       = magnetRadius;
+            MagnetFalloff      = magnetFalloff;
+            MagnetDistanceMode = magnetDistanceMode;
         }
     }
 
@@ -1241,26 +1773,54 @@ namespace Poly_Ling.Data
 
     /// <summary>
     /// ピボット（原点）をデルタ値で移動する。Undo記録付き。
-    /// 全頂点を -Delta 方向に移動し、BoneTransform.Position を +Delta 方向に移動する。
-    /// CoordinateSpace.World の場合、Delta をモデルローカル空間に変換してから頂点に適用する。
+    /// 対象の BoneTransform.Position を Delta 方向へ動かし、対象メッシュ（非スキンの
+    /// MeshFilter）の頂点を「開始ワールド位置を保つ」よう再局所化する。直接の子は
+    /// ワールド位置を保つよう補償される。
+    ///
+    /// 実処理は ObjectMoveTool（OriginOnly）が持つ。マウス経路と同じ実装を通すため、
+    /// このコマンドは対象と移動量だけを運ぶ。
+    ///
+    /// ObjectIds は MasterIndices と同じ並び・同じ長さの安定ID。
+    /// リモート経由の場合、サーバ側で「その位置に本当にそのIDのオブジェクトが
+    /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
+    /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
     public class MovePivotCommand : PanelCommand
     {
-        /// <summary>対象 MeshContext の MasterIndex</summary>
-        public int        MasterIndex { get; }
+        /// <summary>対象 MeshContext の MasterIndex 配列</summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
+        public int[]      MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[]    ObjectIds     { get; }
+
         /// <summary>ピボットの移動量</summary>
-        public Vector3    Delta       { get; }
-        /// <summary>Delta の座標空間</summary>
+        [PLParam(TextKey = "PivotDelta",
+                 Description = "ピボット（原点）の移動量", Required = true)]
+        public Vector3    Delta         { get; }
+
+        /// <summary>
+        /// Delta の座標空間。
+        /// Local は MasterIndices[0] のローカル空間として解釈し、そのメッシュの
+        /// WorldMatrix でワールドへ変換する。対象ごとに行列が違うため、基準は
+        /// 先頭の 1 本に固定する。
+        /// </summary>
+        [PLParam(TextKey = "PivotCoordSpace",
+                 Description = "Delta の座標空間。Local は MasterIndices[0] のローカル空間", Required = true)]
         public MoveSelectedVerticesCommand.CoordSpace Space { get; }
 
         public MovePivotCommand(
-            int modelIndex, int masterIndex,
-            Vector3 delta, MoveSelectedVerticesCommand.CoordSpace space)
+            int modelIndex, int[] masterIndices,
+            Vector3 delta, MoveSelectedVerticesCommand.CoordSpace space,
+            ulong[] objectIds = null)
             : base(modelIndex)
         {
-            MasterIndex = masterIndex;
-            Delta       = delta;
-            Space       = space;
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            Delta         = delta;
+            Space         = space;
         }
     }
 
@@ -1269,38 +1829,93 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>
-    /// スカルプトブラシを一連のローカル空間座標に沿って適用する。Undo記録付き。
-    /// BrushCenters は対象メッシュのローカル座標系で指定すること。
+    /// スカルプトブラシを一連のワールド座標に沿って適用する。Undo記録付き。
+    ///
+    /// 実処理は SculptTool が持つ。マウス経路と同じ ApplyStrokeToMesh /
+    /// CommitStroke を通すため、このコマンドは対象・点列・ブラシ設定だけを運ぶ。
+    ///
+    /// 【なぜワールド座標か】
+    ///   マウス経路（ApplyBrush）は 1 点のブラシ中心を選択メッシュ全部へ掛け、
+    ///   メッシュごとに WorldToLocal で変換する。点列をローカル座標 1 組で持つと
+    ///   複数メッシュを 1 コマンドで表せない。ローカル化は適用側の仕事とする。
+    ///
+    /// 【ViewDirections】
+    ///   BrushCenters と同じ並び・同じ長さのワールド視線方向。Draw モードの
+    ///   反転補正（ApplyStrokeToMesh の viewDirLocal）に使う。空にすると補正を
+    ///   行わないため、マウス経路と結果が変わる点に注意する。
+    ///
+    /// ObjectIds は MasterIndices と同じ並び・同じ長さの安定ID。
+    /// リモート経由の場合、サーバ側で「その位置に本当にそのIDのオブジェクトが
+    /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
+    /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
     public class SculptStrokeCommand : PanelCommand
     {
-        /// <summary>対象 MeshContext の MasterIndex</summary>
-        public int          MasterIndex   { get; }
-        /// <summary>ブラシ中心の列（ローカル空間）</summary>
+        /// <summary>対象 MeshContext の MasterIndex 配列</summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
+        public int[]        MasterIndices  { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[]      ObjectIds      { get; }
+
+        /// <summary>ブラシ中心の列（ワールド空間）</summary>
+        [PLParam(TextKey = "SculptBrushCenters",
+                 Description = "ブラシ中心をストローク順に並べたもの（ワールド座標）", Required = true)]
         public Vector3[]    BrushCenters  { get; }
+
+        /// <summary>視線方向の列（ワールド空間）。BrushCenters と同じ長さ。空で補正なし</summary>
+        [PLParam(TextKey = "SculptViewDirections",
+                 Description = "BrushCenters と同じ並び・同じ長さのワールド視線方向。空で Draw の反転補正を行わない")]
+        public Vector3[]    ViewDirections { get; }
+
         /// <summary>スカルプトモード</summary>
+        [PLParam(TextKey = "SculptMode",
+                 Description = "ブラシの効き方", Required = true)]
         public SculptMode   Mode          { get; }
+
         /// <summary>ブラシ半径（ローカル空間単位）</summary>
+        [PLParam(TextKey = "SculptBrushRadius",
+                 Description = "ブラシ半径（対象のローカル空間単位）",
+                 LimitKey = "Sculpt.BrushRadius", Required = true)]
         public float        BrushRadius   { get; }
+
         /// <summary>強度（0〜1）</summary>
+        [PLParam(TextKey = "SculptStrength",
+                 Description = "1 ストロークあたりの効きの強さ",
+                 LimitKey = "Sculpt.Strength", Required = true)]
         public float        Strength      { get; }
+
         /// <summary>反転フラグ</summary>
+        [PLParam(TextKey = "SculptInvert",
+                 Description = "凹凸を反転する。既定は false")]
         public bool         Invert        { get; }
+
         /// <summary>フォールオフ種別</summary>
+        [PLParam(TextKey = "SculptFalloff",
+                 Description = "ブラシ中心からの減衰の形。既定は Gaussian")]
         public FalloffType  Falloff       { get; }
+
         /// <summary>ストローク終了後に法線を再計算するか</summary>
+        [PLParam(TextKey = "SculptRecalcNormals",
+                 Description = "ストローク後に頂点法線を再計算する。既定は true")]
         public bool         RecalcNormals { get; }
 
         public SculptStrokeCommand(
-            int modelIndex, int masterIndex,
+            int modelIndex, int[] masterIndices,
             Vector3[] brushCenters,
             SculptMode mode, float brushRadius, float strength,
             bool invert = false,
             FalloffType falloff = FalloffType.Gaussian,
-            bool recalcNormals = true)
+            bool recalcNormals = true,
+            Vector3[] viewDirections = null,
+            ulong[] objectIds = null)
             : base(modelIndex)
         {
-            MasterIndex   = masterIndex;
+            MasterIndices  = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds      = objectIds;
+            ViewDirections = viewDirections;
             BrushCenters  = brushCenters;
             Mode          = mode;
             BrushRadius   = brushRadius;
@@ -1327,36 +1942,84 @@ namespace Poly_Ling.Data
     /// </summary>
     public class AdvancedSelectCommand : PanelCommand
     {
-        /// <summary>対象 MeshContext の MasterIndex</summary>
-        public int                MasterIndex       { get; }
+        /// <summary>
+        /// 対象 MeshContext の MasterIndex 配列。
+        /// 実処理（AdvancedSelectTool）は編集対象メッシュ 1 本にしか効かないため、
+        /// 受け口は「1 個で、それが編集対象と一致すること」を要求する。
+        /// 配列にしてあるのは他コマンドと形を揃えて ObjectIds と対にするため。
+        /// </summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個", Required = true)]
+        public int[]              MasterIndices     { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[]            ObjectIds         { get; }
+
         /// <summary>選択モード</summary>
+        [PLParam(TextKey = "AdvancedSelectMode",
+                 Description = "選択の広げ方。使う Seed がモードごとに変わる", Required = true)]
         public AdvancedSelectMode Mode              { get; }
 
         // ── Seed ──────────────────────────────────────────────────
         /// <summary>頂点起点インデックス（不使用時 -1）</summary>
+        [PLParam(TextKey = "SeedVertexIndex",
+                 Description = "起点にする頂点の索引。-1 で不使用")]
         public int                SeedVertexIndex   { get; }
+
         /// <summary>辺起点 V1（不使用時 -1）</summary>
+        [PLParam(TextKey = "SeedEdgeV1",
+                 Description = "起点にする辺の片側の頂点索引。-1 で不使用")]
         public int                SeedEdgeV1        { get; }
+
         /// <summary>辺起点 V2（不使用時 -1）</summary>
+        [PLParam(TextKey = "SeedEdgeV2",
+                 Description = "起点にする辺のもう片側の頂点索引。-1 で不使用")]
         public int                SeedEdgeV2        { get; }
+
         /// <summary>面起点インデックス（不使用時 -1）</summary>
+        [PLParam(TextKey = "SeedFaceIndex",
+                 Description = "起点にする面の索引。-1 で不使用")]
         public int                SeedFaceIndex     { get; }
+
         /// <summary>ShortestPath 終点インデックス（他モードでは無視）</summary>
+        [PLParam(TextKey = "EndVertexIndex",
+                 Description = "ShortestPath の終点頂点索引。他モードでは無視。-1 で不使用")]
         public int                EndVertexIndex    { get; }
 
         // ── 出力フラグ ──────────────────────────────────────────────
+        //
+        // モードによっては効かないものがある。実処理を持つ AdvancedSelectTool 側が
+        // 意図的に外しているためで、EdgeLoop は頂点（EdgeLoopSelectMode.cs:28）、
+        // ShortestPath は辺（ShortestPathSelectMode.cs:42）が対象外。
+        [PLParam(TextKey = "AdvancedSelectVertices",
+                 Description = "結果を頂点選択へ入れる。既定は true")]
         public bool               SelectVertices    { get; }
+
+        [PLParam(TextKey = "AdvancedSelectEdges",
+                 Description = "結果を辺選択へ入れる。既定は false")]
         public bool               SelectEdges       { get; }
+
+        [PLParam(TextKey = "AdvancedSelectFaces",
+                 Description = "結果を面選択へ入れる。既定は false")]
         public bool               SelectFaces       { get; }
 
         /// <summary>false = 既存選択をクリアしてから選択</summary>
+        [PLParam(TextKey = "AdvancedSelectAdditive",
+                 Description = "既存の選択へ足す。false で置き換える。既定は false")]
         public bool               Additive          { get; }
 
-        /// <summary>EdgeLoop モードの方向一致閾値（cos値、デフォルト 0.5）</summary>
+        /// <summary>
+        /// EdgeLoop モードの方向一致閾値（cos値）。
+        /// 既定は AdvancedSelectSettings.cs:41 の実既定と同じ 0.7。
+        /// </summary>
+        [PLParam(TextKey = "EdgeLoopThreshold",
+                 Description = "EdgeLoop の方向一致しきい値（cos 値）。既定は 0.5",
+                 LimitKey = "AdvancedSelect.EdgeLoopThreshold")]
         public float              EdgeLoopThreshold { get; }
 
         public AdvancedSelectCommand(
-            int modelIndex, int masterIndex,
+            int modelIndex, int[] masterIndices,
             AdvancedSelectMode mode,
             int seedVertexIndex   = -1,
             int seedEdgeV1        = -1,
@@ -1367,10 +2030,12 @@ namespace Poly_Ling.Data
             bool selectEdges      = false,
             bool selectFaces      = false,
             bool additive         = false,
-            float edgeLoopThreshold = 0.5f)
+            float edgeLoopThreshold = 0.7f,
+            ulong[] objectIds       = null)
             : base(modelIndex)
         {
-            MasterIndex       = masterIndex;
+            MasterIndices     = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds         = objectIds;
             Mode              = mode;
             SeedVertexIndex   = seedVertexIndex;
             SeedEdgeV1        = seedEdgeV1;
@@ -1385,6 +2050,97 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// 属性で頂点を選ぶ（クリック非依存）。Undo記録付き。
+    ///
+    /// 実処理は AdvancedSelectTool.ExecuteAttributeSelect が持つ。パネルの「実行」
+    /// ボタンと同じ経路を通すため、このコマンドは対象とモードとしきい値だけを運ぶ。
+    ///
+    /// 【AdvancedSelectCommand との違い】
+    ///   あちらは起点（Seed）から選択を広げるモード用で、GPU ホバーが返した要素を
+    ///   種にする。こちらは種を持たず、メッシュ全体の属性を走査する。
+    ///   AdvancedSelectTool.IsAttributeMode が true を返すモードだけを受け付ける。
+    ///
+    /// 【LimitToCurrentSelection の効き方】
+    ///   OFF … 判定に一致した頂点を AddToSelection に従って追加／削除する。
+    ///   ON かつ AddToSelection = true  … 現在の選択のうち一致しなかった頂点を解除する（絞り込み）。
+    ///   ON かつ AddToSelection = false … 現在の選択のうち一致した頂点を解除する。
+    ///
+    /// ObjectIds は MasterIndices と同じ並び・同じ長さの安定ID。
+    /// リモート経由の場合、サーバ側で「その位置に本当にそのIDのオブジェクトが
+    /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
+    /// ローカル発行時は null / 空でよい（照合をスキップする）。
+    /// </summary>
+    public class AdvancedSelectByAttributeCommand : PanelCommand
+    {
+        /// <summary>
+        /// 対象 MeshContext の MasterIndex 配列。
+        /// 実処理は編集対象メッシュ 1 本にしか効かないため、受け口は
+        /// 「1 個で、それが編集対象と一致すること」を要求する。
+        /// </summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個", Required = true)]
+        public int[]              MasterIndices           { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[]            ObjectIds               { get; }
+
+        /// <summary>属性モード。UvNormalCount / NearAxis のいずれか</summary>
+        [PLParam(TextKey = "AttributeSelectMode",
+                 Description = "属性の種類。UvNormalCount / NearAxis", Required = true)]
+        public AdvancedSelectMode Mode                    { get; }
+
+        /// <summary>true = 選択に追加、false = 選択から削除</summary>
+        [PLParam(TextKey = "AttributeSelectAdd",
+                 Description = "一致した頂点を選択へ足す。false で選択から外す。既定は true")]
+        public bool               AddToSelection          { get; }
+
+        /// <summary>
+        /// UvNormalCount モードのしきい値。
+        /// max(Vertex.UVs.Count, Vertex.Normals.Count) がこの値より大きい頂点を選ぶ。
+        /// </summary>
+        [PLParam(TextKey = "AttributeUvNormalCountThreshold",
+                 Description = "UvNormalCount のしきい値。UV／法線の本数がこれを超える頂点を選ぶ")]
+        public int                UvNormalCountThreshold  { get; }
+
+        /// <summary>NearAxis モードの対称軸</summary>
+        [PLParam(TextKey = "AttributeAxisKind",
+                 Description = "NearAxis の基準軸。X / Y / Z")]
+        public SymmetryAxis       AxisKind                { get; }
+
+        /// <summary>NearAxis モードの距離しきい値（軸平面からの距離）</summary>
+        [PLParam(TextKey = "AttributeAxisDistanceThreshold",
+                 Description = "NearAxis の距離しきい値。軸平面からこの距離以内の頂点を選ぶ")]
+        public float              AxisDistanceThreshold   { get; }
+
+        /// <summary>現在の選択の中だけを対象にするか</summary>
+        [PLParam(TextKey = "AttributeLimitToCurrentSelection",
+                 Description = "現在の選択の中だけを対象にする。既定は false")]
+        public bool               LimitToCurrentSelection { get; }
+
+        public AdvancedSelectByAttributeCommand(
+            int modelIndex, int[] masterIndices,
+            AdvancedSelectMode mode,
+            bool addToSelection             = true,
+            int uvNormalCountThreshold      = 0,
+            SymmetryAxis axisKind           = SymmetryAxis.X,
+            float axisDistanceThreshold     = 0.00001f,
+            bool limitToCurrentSelection    = false,
+            ulong[] objectIds               = null)
+            : base(modelIndex)
+        {
+            MasterIndices           = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds               = objectIds;
+            Mode                    = mode;
+            AddToSelection          = addToSelection;
+            UvNormalCountThreshold  = uvNormalCountThreshold;
+            AxisKind                = axisKind;
+            AxisDistanceThreshold   = axisDistanceThreshold;
+            LimitToCurrentSelection = limitToCurrentSelection;
+        }
+    }
+
     // ================================================================
     // MeshFilter → Skinned 変換
     // ================================================================
@@ -1396,14 +2152,21 @@ namespace Poly_Ling.Data
     public class ConvertMeshFilterToSkinnedCommand : PanelCommand
     {
         /// <summary>回転ありボーンの軸をPMX軸 (Y→X) に入替える</summary>
+        [PLParam(TextKey = "SwapAxisForRotated",
+                 Description = "回転ありボーンの軸を PMX 軸（Y→X）に入れ替える。既定は false")]
         public bool SwapAxisForRotated  { get; }
+
         /// <summary>回転なしボーンを X軸上向き・Y軸横向きに設定する</summary>
+        [PLParam(TextKey = "SetAxisForIdentity",
+                 Description = "回転なしボーンを X 軸上向き・Y 軸横向きにする。既定は false")]
         public bool SetAxisForIdentity  { get; }
 
         /// <summary>
         /// ミラー分岐ルート配下の「ミラー設定漏れ」を許容し、
         /// ミラー側メッシュを実体側から生成して実体化する。既定は true。
         /// </summary>
+        [PLParam(TextKey = "TolerantMirrorBranch",
+                 Description = "ミラー分岐ルート配下の設定漏れを許容して実体化する。既定は true")]
         public bool TolerantMirrorBranch { get; }
 
         public ConvertMeshFilterToSkinnedCommand(
@@ -1432,9 +2195,13 @@ namespace Poly_Ling.Data
     /// </summary>
     public class ConvertToMeshFilterCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
         /// <summary>階層の扱い。既定はルート直下へ移す。</summary>
+        [PLParam(TextKey = "UnskinParentMode",
+                 Description = "変換後の階層の扱い。既定は MoveToRoot")]
         public UnskinParentMode ParentMode { get; }
 
         public ConvertToMeshFilterCommand(
@@ -1453,9 +2220,13 @@ namespace Poly_Ling.Data
     /// </summary>
     public class ConvertToSkinnedCommand : PanelCommand
     {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
         /// <summary>バインド先ボーンの MeshContextList 索引。</summary>
+        [PLParam(TextKey = "BindBoneMasterIndex",
+                 Description = "ウェイト 1.0 でバインドする先のボーンの masterIndex", Required = true)]
         public int BoneMasterIndex { get; }
 
         public ConvertToSkinnedCommand(int modelIndex, int[] masterIndices, int boneMasterIndex)
@@ -1485,9 +2256,21 @@ namespace Poly_Ling.Data
     /// <summary>選択中の描画メッシュ全頂点に指定ウェイトを一括塗りつぶす（Flood）</summary>
     public class FloodSkinWeightCommand : PanelCommand
     {
+        [PLParam(TextKey = "SkinWeightTargetBone",
+                 Description = "塗り対象のボーンの masterIndex", Required = true)]
         public int                          TargetBoneMaster { get; }
+
+        [PLParam(TextKey = "SkinWeightPaintMode",
+                 Description = "塗り方。Replace / Add / Scale / Smooth", Required = true)]
         public Poly_Ling.UI.SkinWeightPaintMode PaintMode    { get; }
+
+        [PLParam(TextKey = "SkinWeightValue",
+                 Description = "書き込むウェイト値", Required = true)]
         public float                        WeightValue      { get; }
+
+        [PLParam(TextKey = "SkinWeightStrength",
+                 Description = "適用の強さ",
+                 LimitKey = "SkinWeight.Strength", Required = true)]
         public float                        Strength         { get; }
         public FloodSkinWeightCommand(int modelIndex, int targetBoneMaster,
             Poly_Ling.UI.SkinWeightPaintMode paintMode, float weightValue, float strength)
@@ -1509,6 +2292,8 @@ namespace Poly_Ling.Data
     /// <summary>選択中の描画メッシュ全頂点の微小ウェイトを除去する（Prune）</summary>
     public class PruneSkinWeightCommand : PanelCommand
     {
+        [PLParam(TextKey = "SkinWeightPruneThreshold",
+                 Description = "この値より小さいウェイトを除去する", Required = true)]
         public float Threshold { get; }
         public PruneSkinWeightCommand(int modelIndex, float threshold)
             : base(modelIndex) { Threshold = threshold; }
@@ -1523,9 +2308,13 @@ namespace Poly_Ling.Data
     public class SetSkinWeightNumericCommand : PanelCommand
     {
         /// <summary>長さ 4。ボーンの MasterIndex。負値は未使用スロット。</summary>
+        [PLParam(TextKey = "SkinWeightBoneMasters",
+                 Description = "長さ 4。ボーンの masterIndex。負値は未使用スロット", Required = true)]
         public int[] BoneMasters { get; }
 
         /// <summary>長さ 4。各スロットのウェイト値。</summary>
+        [PLParam(TextKey = "SkinWeightWeights",
+                 Description = "長さ 4。各スロットのウェイト値", Required = true)]
         public float[] Weights { get; }
 
         public SetSkinWeightNumericCommand(int modelIndex, int[] boneMasters, float[] weights)
@@ -1594,16 +2383,33 @@ namespace Poly_Ling.Data
         public const int MaxSources = 6;
 
         /// <summary>ソース一覧（最大 MaxSources 件）</summary>
+        [PLParam(TextKey = "MeshBlendSources",
+                 Description = "ブレンド元の指定。MaxSources 件まで", Required = true)]
         public BlendSourceSpec[] Sources { get; }
+
         /// <summary>書き込み先 MeshContext の MasterIndex（ModelIndex のモデル内）</summary>
+        [PLParam(TextKey = "MeshBlendDestMasterIndex",
+                 Description = "結果を書き込む描画オブジェクトの masterIndex", Required = true)]
         public int    DestMasterIndex      { get; }
+
         /// <summary>宛先を複製して、そちらへ書き込むか</summary>
+        [PLParam(TextKey = "MeshBlendCreateNewObject",
+                 Description = "宛先を複製してそちらへ書く。既定は false")]
         public bool   CreateNewObject      { get; }
+
         /// <summary>適用後に法線を再計算するか</summary>
+        [PLParam(TextKey = "MeshBlendRecalculateNormals",
+                 Description = "適用後に頂点法線を再計算する。既定は true")]
         public bool   RecalculateNormals   { get; }
+
         /// <summary>選択頂点のみに適用するか（対象は宛先の選択頂点）</summary>
+        [PLParam(TextKey = "MeshBlendSelectedVerticesOnly",
+                 Description = "宛先の選択頂点だけに適用する。既定は false")]
         public bool   SelectedVerticesOnly { get; }
+
         /// <summary>宛先頂点とソース頂点の対応付け方式</summary>
+        [PLParam(TextKey = "MeshBlendMatchMode",
+                 Description = "宛先頂点とソース頂点の突き合わせ方。既定は Index")]
         public Poly_Ling.UI.BlendMatchMode MatchMode { get; }
 
         public ApplyBlendCommand(
@@ -1637,37 +2443,65 @@ namespace Poly_Ling.Data
     public class ApplyShrinkCommand : PanelCommand
     {
         /// <summary>ビフォー（変形対象）MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "ShrinkBeforeMasterIndex",
+                 Description = "変形させる描画オブジェクトの masterIndex", Required = true)]
         public int   BeforeMasterIndex     { get; }
+
         /// <summary>アフター（目標形状）MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "ShrinkAfterMasterIndex",
+                 Description = "目標形状の描画オブジェクトの masterIndex", Required = true)]
         public int   AfterMasterIndex      { get; }
+
         /// <summary>衝突対象 MeshContext の MasterIndex 配列</summary>
+        [PLParam(TextKey = "ShrinkColliderMasterIndices",
+                 Description = "衝突対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] ColliderMasterIndices { get; }
+
         /// <summary>シュリンク量 [0, 1]</summary>
+        [PLParam(TextKey = "ShrinkSlider",
+                 Description = "ビフォーからアフターへの進行量",
+                 LimitKey = "Shrink.Slider", Required = true)]
         public float Slider                { get; }
+
         /// <summary>コライダー面から手前に残す距離（ワールド単位）</summary>
+        [PLParam(TextKey = "ShrinkSurfaceOffset",
+                 Description = "コライダー面から手前に残す距離（ワールド単位）。既定は 0",
+                 LimitKey = "Shrink.SurfaceOffset")]
         public float SurfaceOffset         { get; }
         /// <summary>
         /// true : 進行方向に対して表を向いた面のみを衝突とみなす（裏面は素通り）
         /// false: 表裏を問わず衝突とみなす（既定）
         /// </summary>
+        [PLParam(TextKey = "ShrinkFrontFaceOnly",
+                 Description = "進行方向に表を向いた面だけを衝突とみなす。既定は false")]
         public bool  FrontFaceOnly         { get; }
+
         /// <summary>適用後に法線を再計算するか</summary>
+        [PLParam(TextKey = "ShrinkRecalculateNormals",
+                 Description = "適用後に頂点法線を再計算する。既定は true")]
         public bool  RecalculateNormals    { get; }
         /// <summary>
         /// true : 結果を新規オブジェクトとして追加し、ビフォー／アフターを非表示にする（既定）
         /// false: ビフォーを上書きし、元形状を &lt;名前&gt;_backup として追加する
         /// </summary>
+        [PLParam(TextKey = "ShrinkCreateNewObject",
+                 Description = "結果を新規オブジェクトとして追加する。false でビフォーを上書きする。既定は true")]
         public bool  CreateNewObject       { get; }
         /// <summary>
         /// 衝突判定の単位。
         /// VertexSegment … 頂点のビフォー→アフター線分とコライダー三角形の交差（既定）
         /// FacePair      … ビフォー面を三角形に割り、面どうしの接触時刻を求める
         /// </summary>
+        [PLParam(TextKey = "ShrinkCollisionMode",
+                 Description = "衝突判定の単位。VertexSegment / FacePair。既定は VertexSegment")]
         public Poly_Ling.UI.ShrinkCollisionMode CollisionMode { get; }
         /// <summary>
         /// 面方式の反復上限。頂点方式では使わない。
         /// 停止値は単調減少するので必ず収束するが、上限で打ち切ることもできる。
         /// </summary>
+        [PLParam(TextKey = "ShrinkMaxPasses",
+                 Description = "面方式の反復上限。頂点方式では使わない。既定は 8",
+                 LimitKey = "Shrink.MaxPasses")]
         public int   MaxPasses             { get; }
 
         public ApplyShrinkCommand(
@@ -1713,22 +2547,38 @@ namespace Poly_Ling.Data
     public class ApplyNormalTransplantCommand : PanelCommand
     {
         /// <summary>ビフォー（内側の面）MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "TransplantBeforeMasterIndex",
+                 Description = "ビフォー（内側の面）の masterIndex", Required = true)]
         public int   BeforeMasterIndex   { get; }
+
         /// <summary>アフター（外側の面）MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "TransplantAfterMasterIndex",
+                 Description = "アフター（外側の面）の masterIndex", Required = true)]
         public int   AfterMasterIndex    { get; }
+
         /// <summary>法線を差し替える MeshContext の MasterIndex 配列</summary>
+        [PLParam(TextKey = "TransplantTargetMasterIndices",
+                 Description = "法線を差し替える描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] TargetMasterIndices { get; }
+
         /// <summary>適用率 [0, 1]。1 未満なら元の法線と Slerp する。</summary>
+        [PLParam(TextKey = "TransplantStrength",
+                 Description = "適用率。1 未満なら元の法線と球面補間する。既定は 1",
+                 LimitKey = "NormalTransplant.Strength")]
         public float Strength            { get; }
         /// <summary>
         /// true : 三角形内を球面補間する
         /// false: 三角形内を線形補間する（既定）
         /// </summary>
+        [PLParam(TextKey = "TransplantSpherical",
+                 Description = "三角形内を球面補間する。false で線形補間。既定は false")]
         public bool  Spherical           { get; }
         /// <summary>
         /// true : どのプリズムにも入らない頂点を最も近いプリズムへ寄せる
         /// false: どのプリズムにも入らない頂点は変更しない（既定）
         /// </summary>
+        [PLParam(TextKey = "TransplantAllowNearest",
+                 Description = "どのプリズムにも入らない頂点を最も近いプリズムへ寄せる。既定は false")]
         public bool  AllowNearest        { get; }
 
         public ApplyNormalTransplantCommand(
@@ -1793,19 +2643,36 @@ namespace Poly_Ling.Data
     public class ApplyThinPlateMorphCommand : PanelCommand
     {
         /// <summary>ビフォー（変形前の対応点）MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "ThinPlateBeforeMasterIndex",
+                 Description = "変形前の対応点を持つオブジェクトの masterIndex", Required = true)]
         public int   BeforeMasterIndex         { get; }
+
         /// <summary>アフター（変形後の対応点）MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "ThinPlateAfterMasterIndex",
+                 Description = "変形後の対応点を持つオブジェクトの masterIndex", Required = true)]
         public int   AfterMasterIndex          { get; }
+
         /// <summary>変形させる MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "ThinPlateSourceMasterIndex",
+                 Description = "変形させる描画オブジェクトの masterIndex", Required = true)]
         public int   TargetMasterIndex         { get; }
+
         /// <summary>平滑化係数。K 行列の対角に加算される。0 で厳密補間。</summary>
+        [PLParam(TextKey = "ThinPlateLambda",
+                 Description = "平滑化係数。0 で厳密補間。既定は 0.001",
+                 LimitKey = "ThinPlateMorph.Lambda")]
         public float Lambda                    { get; }
         /// <summary>
         /// true : ビフォー／アフターの選択頂点（両者の和集合）だけを制御点にする
         /// false: 全頂点を制御点にする（既定）
         /// </summary>
+        [PLParam(TextKey = "ThinPlateSelectedControlPointsOnly",
+                 Description = "ビフォー／アフターの選択頂点だけを制御点にする。既定は false")]
         public bool  SelectedControlPointsOnly { get; }
+
         /// <summary>結果の法線を再計算するか</summary>
+        [PLParam(TextKey = "ThinPlateMorphRecalculateNormals",
+                 Description = "適用後に頂点法線を再計算する。既定は true")]
         public bool  RecalculateNormals        { get; }
 
         public ApplyThinPlateMorphCommand(
@@ -1838,10 +2705,18 @@ namespace Poly_Ling.Data
     public class ApplyThinPlateMorphResultCommand : PanelCommand
     {
         /// <summary>変形させた MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "ThinPlateTargetMasterIndex",
+                 Description = "変形結果を書き込む描画オブジェクトの masterIndex", Required = true)]
         public int       TargetMasterIndex  { get; }
+
         /// <summary>ターゲットのローカル座標での変形後位置。ターゲットの頂点数と同数であること。</summary>
+        [PLParam(TextKey = "ThinPlateLocalPositions",
+                 Description = "変形後の頂点位置（ターゲットのローカル座標）。頂点数と同数", Required = true)]
         public Vector3[] LocalPositions     { get; }
+
         /// <summary>結果の法線を再計算するか</summary>
+        [PLParam(TextKey = "ThinPlateRecalculateNormals",
+                 Description = "適用後に頂点法線を再計算する。既定は true")]
         public bool      RecalculateNormals { get; }
 
         public ApplyThinPlateMorphResultCommand(
@@ -1866,16 +2741,33 @@ namespace Poly_Ling.Data
     public class ApplyUVChangesCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int       MasterIndex   { get; }
+
         /// <summary>変更対象の頂点インデックス配列</summary>
+        [PLParam(TextKey = "UvChangeVertexIndices",
+                 Description = "UV を変える頂点の索引", Required = true)]
         public int[]     VertexIndices { get; }
+
         /// <summary>変更対象の UV サブインデックス配列（VertexIndices と同長）</summary>
+        [PLParam(TextKey = "UvChangeUVIndices",
+                 Description = "変更する UV のサブ索引。VertexIndices と同じ長さ", Required = true)]
         public int[]     UVIndices     { get; }
+
         /// <summary>変更前 UV 座標配列</summary>
+        [PLParam(TextKey = "UvChangeBeforeUVs",
+                 Description = "変更前の UV 座標", Required = true)]
         public Vector2[] BeforeUVs     { get; }
+
         /// <summary>変更後 UV 座標配列</summary>
+        [PLParam(TextKey = "UvChangeAfterUVs",
+                 Description = "変更後の UV 座標", Required = true)]
         public Vector2[] AfterUVs      { get; }
+
         /// <summary>操作名（Undo スタックの説明文用）</summary>
+        [PLParam(TextKey = "UvChangeOperationName",
+                 Description = "Undo 記録に残す操作名。既定は UV Edit")]
         public string    OperationName { get; }
 
         public ApplyUVChangesCommand(
@@ -1905,10 +2797,19 @@ namespace Poly_Ling.Data
     public class ApplyLscmUnwrapCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int  MasterIndex            { get; }
+
         /// <summary>バウンダリをシームに含めるか</summary>
+        [PLParam(TextKey = "LscmIncludeBoundaryAsSeam",
+                 Description = "外周をシームとして扱う", Required = true)]
         public bool IncludeBoundaryAsSeam  { get; }
+
         /// <summary>最大反復数</summary>
+        [PLParam(TextKey = "LscmMaxIterations",
+                 Description = "LSCM の反復回数の上限",
+                 LimitKey = "LscmUnwrap.MaxIterations", Required = true)]
         public int  MaxIterations          { get; }
 
         public ApplyLscmUnwrapCommand(int modelIndex, int masterIndex,
@@ -1934,6 +2835,8 @@ namespace Poly_Ling.Data
     /// <summary>指定インデックスのマテリアルスロットを削除する</summary>
     public class RemoveMaterialSlotCommand : PanelCommand
     {
+        [PLParam(TextKey = "RemoveMaterialSlotIndex",
+                 Description = "削除するマテリアルスロットの番号", Required = true)]
         public int SlotIndex { get; }
         public RemoveMaterialSlotCommand(int modelIndex, int slotIndex)
             : base(modelIndex) { SlotIndex = slotIndex; }
@@ -1943,10 +2846,18 @@ namespace Poly_Ling.Data
     public class ApplyMaterialToFacesCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int   MasterIndex  { get; }
+
         /// <summary>適用するマテリアルスロット番号</summary>
+        [PLParam(TextKey = "ApplyMaterialSlot",
+                 Description = "適用するマテリアルスロットの番号", Required = true)]
         public int   MaterialSlot { get; }
+
         /// <summary>適用対象の面インデックス配列</summary>
+        [PLParam(TextKey = "MaterialFaceIndices",
+                 Description = "マテリアルを適用する面の索引", Required = true)]
         public int[] FaceIndices  { get; }
 
         public ApplyMaterialToFacesCommand(int modelIndex, int masterIndex,
@@ -1973,8 +2884,13 @@ namespace Poly_Ling.Data
     public class SetMaterialColorCommand : PanelCommand
     {
         /// <summary>対象マテリアルスロット番号</summary>
+        [PLParam(TextKey = "MaterialColorSlotIndex",
+                 Description = "色を変えるマテリアルスロットの番号", Required = true)]
         public int   SlotIndex { get; }
+
         /// <summary>設定する基本色（RGBA）</summary>
+        [PLParam(TextKey = "MaterialBaseColor",
+                 Description = "設定する基本色（RGBA）", Required = true)]
         public Color BaseColor { get; }
 
         public SetMaterialColorCommand(int modelIndex, int slotIndex, Color baseColor)
@@ -1997,12 +2913,24 @@ namespace Poly_Ling.Data
     public class CreateMorphFromDiffCommand : PanelCommand
     {
         /// <summary>基準モデルのインデックス（プロジェクト内）</summary>
+        [PLParam(TextKey = "MorphDiffBaseModelIndex",
+                 Description = "基準モデルの索引", Required = true)]
         public int    BaseModelIndex  { get; }
+
         /// <summary>モーフモデルのインデックス（プロジェクト内）</summary>
+        [PLParam(TextKey = "MorphDiffModelIndex",
+                 Description = "差分を取るモーフモデルの索引", Required = true)]
         public int    MorphModelIndex { get; }
+
         /// <summary>生成するモーフの名前</summary>
+        [PLParam(TextKey = "MorphDiffName",
+                 Description = "生成するモーフの名前", Required = true)]
         public string MorphName       { get; }
+
         /// <summary>パネル番号（0=眉 / 1=目 / 2=口 / 3=その他）</summary>
+        [PLParam(TextKey = "MorphDiffPanel",
+                 Description = "モーフパネル。0=眉, 1=目, 2=口, 3=その他",
+                 Min = 0, Max = ConvertMeshToMorphCommand.MorphPanelCount - 1, Required = true)]
         public int    Panel            { get; }
 
         public CreateMorphFromDiffCommand(
@@ -2033,9 +2961,13 @@ namespace Poly_Ling.Data
     public class BuildSpringBoneTestRigCommand : PanelCommand
     {
         /// <summary>生成パラメータ。null なら既定値。</summary>
+        [PLParam(TextKey = "SpringBoneTestRig",
+                 Description = "揺れ物テストリグの生成パラメータ。null で既定値", Required = true)]
         public Poly_Ling.Tools.SpringBoneTest.SpringBoneTestRigParams Params { get; }
 
         /// <summary>生成前に同じ接頭辞の既存生成物を消すか。</summary>
+        [PLParam(TextKey = "SpringBoneClearExisting",
+                 Description = "生成前に同じ接頭辞の既存生成物を消す。既定は true")]
         public bool ClearExisting { get; }
 
         public BuildSpringBoneTestRigCommand(
@@ -2073,11 +3005,33 @@ namespace Poly_Ling.Data
     /// <summary>Quad保持減数化を実行して結果メッシュをモデルに追加する</summary>
     public class QuadDecimateCommand : PanelCommand
     {
+        [PLParam(TextKey = "QuadDecimateSourceMasterIndex",
+                 Description = "減面する描画オブジェクトの masterIndex", Required = true)]
         public int   SourceMasterIndex { get; }
+
+        [PLParam(TextKey = "QuadDecimateTargetRatio",
+                 Description = "残す面数の比率",
+                 LimitKey = "QuadDecimate.TargetRatio", Required = true)]
         public float TargetRatio       { get; }
+
+        [PLParam(TextKey = "QuadDecimateMaxPasses",
+                 Description = "減面を繰り返す回数の上限",
+                 LimitKey = "QuadDecimate.MaxPasses", Required = true)]
         public int   MaxPasses         { get; }
+
+        [PLParam(TextKey = "QuadDecimateNormalAngleDeg",
+                 Description = "法線を保つ角度のしきい値（度）",
+                 LimitKey = "QuadDecimate.AngleDeg", Required = true)]
         public float NormalAngleDeg    { get; }
+
+        [PLParam(TextKey = "QuadDecimateHardAngleDeg",
+                 Description = "ハードエッジとみなす角度のしきい値（度）",
+                 LimitKey = "QuadDecimate.AngleDeg", Required = true)]
         public float HardAngleDeg      { get; }
+
+        [PLParam(TextKey = "QuadDecimateUvSeamThreshold",
+                 Description = "UV シームとみなす差のしきい値",
+                 LimitKey = "QuadDecimate.UvSeamThreshold", Required = true)]
         public float UvSeamThreshold   { get; }
 
         public QuadDecimateCommand(int modelIndex, int sourceMasterIndex,
@@ -2116,20 +3070,45 @@ namespace Poly_Ling.Data
     /// </summary>
     public class BakeMirrorCommand : PanelCommand
     {
+        /// <summary>
+        /// ミラー軸として指せる軸の数（X / Y / Z）。
+        /// パネル側の選択肢（PlayerMirrorSubPanel の axisChoices）も同数で対応する。
+        /// 法線編集の軸（NormalEditCommand.AxisCount）とは別物なので共有しない。
+        /// </summary>
+        public const int MirrorAxisCount = 3;
+
+        [PLParam(TextKey = "BakeMirrorSourceMasterIndex",
+                 Description = "ミラーを実体化する描画オブジェクトの masterIndex", Required = true)]
         public int   SourceMasterIndex { get; }
 
         /// <summary>ミラー軸（0:X, 1:Y, 2:Z）。メッシュが MirrorType > 0 のときはメッシュ側の設定が優先される。</summary>
+        [PLParam(TextKey = "BakeMirrorAxis",
+                 Description = "ミラー軸。0=X, 1=Y, 2=Z。メッシュ側の設定があればそちらが優先される",
+                 Min = 0, Max = MirrorAxisCount - 1, Required = true)]
         public int   MirrorAxis        { get; }
+
+        [PLParam(TextKey = "BakeMirrorThreshold",
+                 Description = "ミラー平面からの距離が この値未満の頂点を境界とみなす",
+                 LimitKey = "Mirror.Threshold", Required = true)]
         public float Threshold         { get; }
+
+        [PLParam(TextKey = "BakeMirrorFlipU",
+                 Description = "ミラー側の U 座標を反転する", Required = true)]
         public bool  FlipU             { get; }
 
         /// <summary>ミラー平面のオフセット（ローカル座標）</summary>
+        [PLParam(TextKey = "BakeMirrorPlaneOffset",
+                 Description = "ミラー平面のオフセット（ローカル座標）。既定は 0")]
         public float PlaneOffset { get; }
 
         /// <summary>境界の決め方</summary>
+        [PLParam(TextKey = "BakeMirrorBoundaryMode",
+                 Description = "境界の決め方。しきい値 / 選択頂点。既定は Threshold")]
         public MirrorBoundaryMode BoundaryMode { get; }
 
         /// <summary>境界頂点をミラー平面へ射影するか</summary>
+        [PLParam(TextKey = "BakeMirrorProjectBoundaryToPlane",
+                 Description = "境界頂点をミラー平面へ射影する。既定は true")]
         public bool ProjectBoundaryToPlane { get; }
 
         public BakeMirrorCommand(int modelIndex, int sourceMasterIndex, int mirrorAxis, float threshold, bool flipU)
@@ -2166,9 +3145,13 @@ namespace Poly_Ling.Data
     /// </summary>
     public class UnbakeMirrorCommand : PanelCommand
     {
+        [PLParam(TextKey = "UnbakeSourceMasterIndex",
+                 Description = "ミラーを解除する描画オブジェクトの masterIndex", Required = true)]
         public int SourceMasterIndex { get; }
 
         /// <summary>どちら側の編集結果を残すか</summary>
+        [PLParam(TextKey = "UnbakeWriteBackMode",
+                 Description = "どちら側の編集結果を残すか", Required = true)]
         public Poly_Ling.Tools.WriteBackMode Mode { get; }
 
         /// <summary>
@@ -2176,6 +3159,8 @@ namespace Poly_Ling.Data
         /// 戻すか。ツール内の「一時ミラー」はモデルの恒久設定を変えてはいけないので true にする。
         /// false のときは従来どおり MirrorType = 2（結合）を強制する。
         /// </summary>
+        [PLParam(TextKey = "UnbakeRestoreSavedMirrorSettings",
+                 Description = "実体化前のミラー設定へ戻す。false で MirrorType = 2 を強制する")]
         public bool RestoreSavedMirrorSettings { get; }
 
         public UnbakeMirrorCommand(int modelIndex, int sourceMasterIndex, Poly_Ling.Tools.WriteBackMode mode)
@@ -2204,6 +3189,8 @@ namespace Poly_Ling.Data
     public class ApplyHumanoidMappingCommand : PanelCommand
     {
         /// <summary>適用するマッピングのクローン</summary>
+        [PLParam(TextKey = "HumanoidMapping",
+                 Description = "モデルへ適用する Humanoid ボーンマッピング", Required = true)]
         public Poly_Ling.Data.HumanoidBoneMapping Mapping { get; }
         public ApplyHumanoidMappingCommand(int modelIndex, Poly_Ling.Data.HumanoidBoneMapping mapping)
             : base(modelIndex) { Mapping = mapping; }
@@ -2999,6 +3986,25 @@ namespace Poly_Ling.Data
 
         public ResetProjectCommand(string modelName = null)
             : base(0) { ModelName = modelName; }
+    }
+
+    // ================================================================
+    // Undo / Redo
+    // ================================================================
+
+    /// <summary>
+    /// 直前の操作を 1 段戻す。モデル非依存なので ModelIndex は 0 固定。
+    /// 戻せる履歴が無いときは失敗として返る。
+    /// </summary>
+    public class PerformUndoCommand : PanelCommand
+    {
+        public PerformUndoCommand() : base(0) { }
+    }
+
+    /// <summary>戻した操作を 1 段やり直す。</summary>
+    public class PerformRedoCommand : PanelCommand
+    {
+        public PerformRedoCommand() : base(0) { }
     }
 
     /// <summary>

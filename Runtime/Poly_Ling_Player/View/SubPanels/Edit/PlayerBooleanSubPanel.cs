@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.View;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
@@ -191,7 +192,7 @@ namespace Poly_Ling.Player
 
             var op = (BooleanOpKind)_opField.value;
 
-            float mergeThreshold = Mathf.Max(0f, _mergeThresholdField.value);
+            float mergeThreshold = Mathf.Max(MergeThresholdMin, _mergeThresholdField.value);
             float epsilon        = _epsilonField.value;
             if (epsilon <= 0f) epsilon = BooleanOps.DefaultEpsilon;
 
@@ -208,6 +209,16 @@ namespace Poly_Ling.Player
 
             SetStatus($"{BooleanOps.DisplayName(op)} を実行しました");
         }
+
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float MergeThresholdMin => ParameterLimits.GetF("Boolean.MergeThreshold.Min");
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
 

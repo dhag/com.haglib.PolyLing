@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.View;
 using Poly_Ling.UI.Lscm;
@@ -128,9 +129,9 @@ namespace Poly_Ling.Player
             UpdateProjBtns();
 
             root.Add(SecLabel("パラメータ"));
-            root.Add(MkSliderRow("スケール",     0.01f, 10f, _scale,   v => _scale   = v));
-            root.Add(MkSliderRow("オフセット U", -2f,   2f,  _offsetU, v => _offsetU = v));
-            root.Add(MkSliderRow("オフセット V", -2f,   2f,  _offsetV, v => _offsetV = v));
+            root.Add(MkSliderRow("スケール",     ScaleMin,  ScaleMax,  _scale,   v => _scale   = v));
+            root.Add(MkSliderRow("オフセット U", OffsetMin, OffsetMax, _offsetU, v => _offsetU = v));
+            root.Add(MkSliderRow("オフセット V", OffsetMin, OffsetMax, _offsetV, v => _offsetV = v));
 
             var btn = new Button(OnApplyProjection) { text = "UV展開を実行" };
             btn.style.height = 28; btn.style.marginTop = 6; btn.style.fontSize = 11;
@@ -164,7 +165,8 @@ namespace Poly_Ling.Player
             maxIterLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var maxIterField = new IntegerField { value = _maxIterations };
             maxIterField.style.flexGrow = 1;
-            maxIterField.RegisterValueChangedCallback(e => _maxIterations = Mathf.Clamp(e.newValue, 100, 50000));
+            maxIterField.RegisterValueChangedCallback(
+                e => _maxIterations = Mathf.Clamp(e.newValue, MaxIterationsMin, MaxIterationsMax));
             maxIterRow.Add(maxIterLbl); maxIterRow.Add(maxIterField);
             root.Add(maxIterRow);
 
@@ -227,7 +229,7 @@ namespace Poly_Ling.Player
             {
                 _panelContext.SendCommand(new ApplyLscmUnwrapCommand(
                     modelIdx, masterIdx, _includeBoundaryAsSeam,
-                    Mathf.Clamp(_maxIterations, 100, 50000)));
+                    Mathf.Clamp(_maxIterations, MaxIterationsMin, MaxIterationsMax)));
                 SetStatus("LSCM展開を実行しました");
             }
             else
@@ -235,7 +237,8 @@ namespace Poly_Ling.Player
                 // フォールバック（PanelContext 未設定時）
                 var seamEdges = mc.SelectedEdges ?? new HashSet<VertexPair>();
                 var result = LscmUnwrapOperation.Execute(mc.MeshObject, seamEdges,
-                    _includeBoundaryAsSeam, Mathf.Clamp(_maxIterations, 100, 50000));
+                    _includeBoundaryAsSeam,
+                    Mathf.Clamp(_maxIterations, MaxIterationsMin, MaxIterationsMax));
                 SetStatus(result.StatusMessage);
                 if (result.Success) { mc.ReplaceUnityMesh(mc.MeshObject.ToUnityMesh()); OnRepaint?.Invoke(); }
             }
@@ -274,6 +277,21 @@ namespace Poly_Ling.Player
         private void SetStatus(string t) { if (_statusLabel != null) _statusLabel.text = t; }
 
         private static Label SecLabel(string t) { var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f)); l.style.fontSize = 10; l.style.marginTop = 4; l.style.marginBottom = 2; return l; }
+
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float ScaleMin         => ParameterLimits.GetF("UvUnwrap.Scale.Min");
+        private static float ScaleMax         => ParameterLimits.GetF("UvUnwrap.Scale.Max");
+        private static float OffsetMin        => ParameterLimits.GetF("UvUnwrap.Offset.Min");
+        private static float OffsetMax        => ParameterLimits.GetF("UvUnwrap.Offset.Max");
+        private static int   MaxIterationsMin => ParameterLimits.GetI("LscmUnwrap.MaxIterations.Min");
+        private static int   MaxIterationsMax => ParameterLimits.GetI("LscmUnwrap.MaxIterations.Max");
 
         private static VisualElement MkSliderRow(string label, float min, float max, float val, Action<float> onChange)
         {

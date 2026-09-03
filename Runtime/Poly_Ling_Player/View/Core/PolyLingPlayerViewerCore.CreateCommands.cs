@@ -41,6 +41,14 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnMatchHoleRingCount  = ExecuteMatchHoleRingCount;
             _commandDispatcher.OnResetProject        = ExecuteResetProject;
             _commandDispatcher.OnCreateObjectArray   = ExecuteCreateObjectArray;
+            _commandDispatcher.OnAdvancedSelect      = ExecuteAdvancedSelect;
+            _commandDispatcher.OnSculptStroke        = ExecuteSculptStroke;
+            _commandDispatcher.OnMovePivot           = ExecuteMovePivot;
+            _commandDispatcher.OnMoveSelectedVertices = ExecuteMoveSelectedVertices;
+            _commandDispatcher.OnSelectElements       = ExecuteSelectElements;
+            _commandDispatcher.OnAdvancedSelectByAttribute = ExecuteAdvancedSelectByAttribute;
+            _commandDispatcher.OnUndo                = () => _editOps != null && _editOps.PerformUndo();
+            _commandDispatcher.OnRedo                = () => _editOps != null && _editOps.PerformRedo();
         }
 
         // ================================================================
@@ -149,6 +157,100 @@ namespace Poly_Ling.Player
         // ================================================================
         // 辺群ブリッジ
         // ================================================================
+
+        /// <summary>
+        /// スカルプトストロークコマンド。点列をハンドラへ入れ、
+        /// マウスと同じブラシ処理を通す。変形アルゴリズムは SculptTool に一本化してある。
+        /// </summary>
+        private void ExecuteSculptStroke(Poly_Ling.Data.SculptStrokeCommand cmd)
+        {
+            if (cmd == null) return;
+
+            var h = _sculptHandler;
+            if (h == null) return;
+
+            if (!h.ExecuteFromCommand(cmd, out string reason))
+                Debug.LogWarning($"[SculptStroke] 実行できませんでした: {reason}");
+        }
+
+        /// <summary>
+        /// 詳細選択コマンド。種をハンドラへ入れ、クリックと同じモード実装を通す。
+        /// 選択アルゴリズムはディスパッチャに持たせず AdvancedSelectTool に一本化してある。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteAdvancedSelect(Poly_Ling.Data.AdvancedSelectCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _advancedSelectHandler;
+            if (h == null) return "詳細選択ハンドラがありません";
+
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>
+        /// 属性選択コマンド。パネルの「実行」ボタンと同じ
+        /// スナップショット → ExecuteAttributeSelect → Undo 記録を通す。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteAdvancedSelectByAttribute(
+            Poly_Ling.Data.AdvancedSelectByAttributeCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _advancedSelectHandler;
+            if (h == null) return "詳細選択ハンドラがありません";
+
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>
+        /// 原点移動コマンド。対象と移動量をハンドラへ入れ、ドラッグ確定と同じ
+        /// ObjectMoveTool(OriginOnly) の経路を通す。
+        ///
+        /// ほかの Execute* と違い失敗理由を戻り値で返す。ディスパッチャが Fail() に
+        /// 載せてリモート応答へ返すため（P1-3）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteMovePivot(Poly_Ling.Data.MovePivotCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _pivotOffsetHandler;
+            if (h == null) return "原点移動ハンドラがありません";
+
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>
+        /// 選択頂点の移動コマンド。対象と移動量をハンドラへ入れ、数値入力・ドラッグ確定と
+        /// 同じ UpdateAffectedVertices → BeginMove → ApplyDelta → EndMove を通す。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteMoveSelectedVertices(Poly_Ling.Data.MoveSelectedVerticesCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _moveToolHandler;
+            if (h == null) return "移動ハンドラがありません";
+
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>
+        /// 要素選択コマンド。要素の集合をハンドラへ入れ、クリックと同じ
+        /// スナップショット → 書き換え → 頂点展開 → Undo 記録を通す。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSelectElements(Poly_Ling.Data.SelectElementsCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _moveToolHandler;
+            if (h == null) return "移動ハンドラがありません";
+
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
 
         /// <summary>
         /// 辺群ブリッジコマンド。拾いをハンドラへ入れてから、既存の生成経路を通す。

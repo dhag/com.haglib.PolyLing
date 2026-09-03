@@ -80,6 +80,13 @@ namespace Poly_Ling.Tools
             // === 複数メッシュ: 開始時位置 ===
             private Dictionary<int, Vector3[]> _originalPositions = new Dictionary<int, Vector3[]>();
 
+            // === ドラッグ 1 ストロークの点列（ワールド座標） ===
+            // 確定を SculptStrokeCommand 1 本に寄せるために保持する。
+            // ブラシ中心をローカルで持つと、複数メッシュを 1 コマンドで表せない。
+            private readonly List<Vector3> _strokeWorldCenters  = new List<Vector3>();
+            private readonly List<Vector3> _strokeWorldViewDirs = new List<Vector3>();
+            private readonly List<int>     _strokeMeshIndices   = new List<int>();
+
             // === メッシュ別キャッシュ ===
             private Dictionary<int, Dictionary<int, HashSet<int>>> _adjacencyCachePerMesh;
             private Dictionary<int, Dictionary<int, Vector3>> _vertexNormalsCachePerMesh;
@@ -104,6 +111,13 @@ namespace Poly_Ling.Tools
                 _isDragging = true;
                 _currentScreenPos = mousePos;
                 ctx.EnterTransformDragging?.Invoke();
+
+                // ストロークの点列。確定をコマンド 1 本に寄せるため、
+                // ApplyBrush が 1 点ごとにワールド座標で積む。
+                _strokeWorldCenters.Clear();
+                _strokeWorldViewDirs.Clear();
+                _strokeMeshIndices.Clear();
+                foreach (int mi in model.SelectedDrawableMeshIndices) _strokeMeshIndices.Add(mi);
 
                 // 全選択メッシュの開始時位置を保存・キャッシュ構築
                 _originalPositions.Clear();
@@ -148,6 +162,22 @@ namespace Poly_Ling.Tools
                 _isDragging = false;
                 ctx.ExitTransformDragging?.Invoke();
 
+                // ストロークは 1 ストローク = 1 コマンドに寄せてある。
+                // 呼び出し側（SculptToolHandler）が TryTakeStrokeFromDrag で
+                // 点列を取り出してコマンドを送るので、ここでは確定しない。
+                // 取り出されなかった場合のみ従来どおり積む。
+                if (!StrokePending) CommitStroke(ctx);
+
+                ctx.Repaint?.Invoke();
+                return true;
+            }
+
+            /// <summary>
+            /// ストロークを確定する。動いた頂点を Undo へ記録し、作業キャッシュを捨てる。
+            /// マウス経路（OnMouseUp）とコマンド経路（ApplyStrokeFromCommand）で共有する。
+            /// </summary>
+            private void CommitStroke(ToolContext ctx)
+            {
                 // MultiMeshVertexMoveRecordで記録
                 var model = ctx.Model;
                 if (model != null && _originalPositions.Count > 0 && ctx.UndoController != null)
@@ -216,9 +246,6 @@ namespace Poly_Ling.Tools
                 _originalPositions.Clear();
                 _adjacencyCachePerMesh = null;
                 _vertexNormalsCachePerMesh = null;
-
-                ctx.Repaint?.Invoke();
-                return true;
             }
 
             /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
@@ -250,6 +277,14 @@ namespace Poly_Ling.Tools
             // ブラシ中心のワールド座標を計算（全メッシュでレイキャスト）
             Vector3 brushCenterWorld = FindBrushCenter(ctx, ray);
 
+            // ストローク 1 点ぶんを記録。TryTakeStrokeFromDrag が
+            // SculptStrokeCommand として取り出す。
+            if (_isDragging)
+            {
+                _strokeWorldCenters.Add(brushCenterWorld);
+                _strokeWorldViewDirs.Add(ray.direction.normalized);
+            }
+
             // 全選択メッシュにブラシ適用
             bool anyAffected = false;
             foreach (int meshIdx in model.SelectedDrawableMeshIndices)
@@ -257,41 +292,13 @@ namespace Poly_Ling.Tools
                 var meshContext = model.GetMeshContext(meshIdx);
                 if (meshContext?.MeshObject == null) continue;
 
-                var meshObject = meshContext.MeshObject;
-
                 // Vertices[].Position はローカル座標。ブラシ中心とレイ方向を
                 // このメッシュのローカル空間に変換してから距離判定・変形を行う。
                 Vector3 brushCenter = meshContext.WorldToLocal(brushCenterWorld);
                 Vector3 rayDirLocal = meshContext.WorldMatrixInverse.MultiplyVector(ray.direction).normalized;
 
-                // キャッシュ取得
-                Dictionary<int, HashSet<int>> adjacencyCache = null;
-                Dictionary<int, Vector3> vertexNormalsCache = null;
-                _adjacencyCachePerMesh?.TryGetValue(meshIdx, out adjacencyCache);
-                _vertexNormalsCachePerMesh?.TryGetValue(meshIdx, out vertexNormalsCache);
-
-                // ブラシ範囲内の頂点を収集
-                var affectedVertices = GetVerticesInBrushRadius(meshObject, brushCenter, adjacencyCache);
-                if (affectedVertices.Count == 0) continue;
-
-                // モードに応じて変形
-                switch (Mode)
-                {
-                    case SculptMode.Draw:
-                        ApplyDraw(meshObject, affectedVertices, brushCenter, rayDirLocal, vertexNormalsCache);
-                        break;
-                    case SculptMode.Smooth:
-                        ApplySmooth(meshObject, affectedVertices, brushCenter, adjacencyCache);
-                        break;
-                    case SculptMode.Inflate:
-                        ApplyInflate(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
-                        break;
-                    case SculptMode.Flatten:
-                        ApplyFlatten(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
-                        break;
-                }
-
-                anyAffected = true;
+                if (ApplyStrokeToMesh(meshIdx, meshContext.MeshObject, brushCenter, rayDirLocal))
+                    anyAffected = true;
             }
 
             if (anyAffected)
@@ -300,6 +307,197 @@ namespace Poly_Ling.Tools
                 ctx.SyncMesh?.Invoke();
                 ctx.Repaint?.Invoke();
             }
+        }
+
+        /// <summary>
+        /// 1 メッシュへ 1 点ぶんのブラシを掛ける。
+        ///
+        /// 【なぜ分けてあるか】
+        ///   ApplyBrush は「どこに掛けるか」を画面のレイから決める。コマンド経由
+        ///   （SculptStrokeCommand）はローカル座標の点列を直接持つので、レイの部分だけを
+        ///   飛ばして同じ変形を通せるよう、掛ける処理をここへ切り出してある。
+        ///   選択アルゴリズムを 2 組持たないための分割で、挙動は変えていない。
+        /// </summary>
+        /// <param name="viewDirLocal">
+        /// 視線方向（このメッシュのローカル空間）。null で Draw の反転補正を行わない。
+        /// </param>
+        /// <returns>1 頂点でも範囲に入れば true。</returns>
+        private bool ApplyStrokeToMesh(
+            int meshIdx, MeshObject meshObject, Vector3 brushCenter, Vector3? viewDirLocal)
+        {
+            if (meshObject == null) return false;
+
+            // キャッシュ取得
+            Dictionary<int, HashSet<int>> adjacencyCache = null;
+            Dictionary<int, Vector3> vertexNormalsCache = null;
+            _adjacencyCachePerMesh?.TryGetValue(meshIdx, out adjacencyCache);
+            _vertexNormalsCachePerMesh?.TryGetValue(meshIdx, out vertexNormalsCache);
+
+            // ブラシ範囲内の頂点を収集
+            var affectedVertices = GetVerticesInBrushRadius(meshObject, brushCenter, adjacencyCache);
+            if (affectedVertices.Count == 0) return false;
+
+            // モードに応じて変形
+            switch (Mode)
+            {
+                case SculptMode.Draw:
+                    ApplyDraw(meshObject, affectedVertices, brushCenter, viewDirLocal, vertexNormalsCache);
+                    break;
+                case SculptMode.Smooth:
+                    ApplySmooth(meshObject, affectedVertices, brushCenter, adjacencyCache);
+                    break;
+                case SculptMode.Inflate:
+                    ApplyInflate(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
+                    break;
+                case SculptMode.Flatten:
+                    ApplyFlatten(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// コマンドで指定された点列にブラシを掛ける。
+        ///
+        /// 【なぜ要るか】
+        ///   ApplyBrush はブラシ中心を画面のレイから求めるので、コマンド経由
+        ///   （自動検証・MCP）からは通せない。点列を直接渡せる入口をここに置き、
+        ///   変形と Undo 記録はマウス経路と同じ ApplyStrokeToMesh / CommitStroke を通す。
+        ///
+        /// 【視点を取らない】
+        ///   Draw の「カメラ側へ盛り上げる」反転補正は視線方向が要るが、コマンドは
+        ///   視点を持たない。補正なしで幾何法線の向きに従うので、同じコマンドは
+        ///   カメラの向きによらず常に同じ結果になる。
+        ///
+        /// 【対象は 1 メッシュ】
+        ///   マウス経路は選択中の全メッシュへ掛けるが、こちらは meshIdx の 1 本だけ。
+        ///   コマンドが対象を明示しているので選択には依存させない。
+        /// </summary>
+        /// <returns>1 頂点でも動けば true。</returns>
+        public bool ApplyStrokeFromCommand(
+            ToolContext ctx,
+            IReadOnlyList<int> meshIndices,
+            IReadOnlyList<Vector3> worldCenters,
+            IReadOnlyList<Vector3> worldViewDirs)
+        {
+            if (_isDragging) return false;   // マウスのストローク中は割り込ませない
+
+            var model = ctx?.Model;
+            if (model == null) return false;
+            if (meshIndices == null || meshIndices.Count == 0) return false;
+            if (worldCenters == null || worldCenters.Count == 0) return false;
+
+            // OnMouseDown と同じ準備（開始時位置の保存とキャッシュ構築）を対象全部に行う
+            _originalPositions.Clear();
+            _adjacencyCachePerMesh     = new Dictionary<int, Dictionary<int, HashSet<int>>>();
+            _vertexNormalsCachePerMesh = new Dictionary<int, Dictionary<int, Vector3>>();
+
+            var targets = new List<int>();
+            foreach (int meshIdx in meshIndices)
+            {
+                var mc = model.GetMeshContext(meshIdx);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+
+                var positions = new Vector3[mo.VertexCount];
+                for (int i = 0; i < mo.VertexCount; i++)
+                    positions[i] = mo.Vertices[i].Position;
+                _originalPositions[meshIdx] = positions;
+
+                BuildCachesForMesh(meshIdx, mo);
+                targets.Add(meshIdx);
+            }
+            if (targets.Count == 0) return false;
+
+            // ApplyBrush と同じ順序（点が外、メッシュが内）で掛ける。
+            // ブラシ中心と視線方向はメッシュごとにローカル化する。
+            bool anyAffected = false;
+            for (int i = 0; i < worldCenters.Count; i++)
+            {
+                Vector3? worldDir = (worldViewDirs != null && i < worldViewDirs.Count)
+                    ? worldViewDirs[i]
+                    : (Vector3?)null;
+
+                foreach (int meshIdx in targets)
+                {
+                    var mc = model.GetMeshContext(meshIdx);
+                    var mo = mc?.MeshObject;
+                    if (mo == null) continue;
+
+                    Vector3 localCenter = mc.WorldToLocal(worldCenters[i]);
+                    Vector3? localDir = worldDir.HasValue
+                        ? mc.WorldMatrixInverse.MultiplyVector(worldDir.Value).normalized
+                        : (Vector3?)null;
+
+                    if (ApplyStrokeToMesh(meshIdx, mo, localCenter, localDir))
+                        anyAffected = true;
+                }
+            }
+
+            // Undo 記録とキャッシュ破棄はマウス経路と同じ処理を通す。
+            CommitStroke(ctx);
+            return anyAffected;
+        }
+
+        /// <summary>
+        /// 取り出せるストローク結果があるか。TryTakeStrokeFromDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool StrokePending
+            => _strokeWorldCenters.Count > 0 && _originalPositions.Count > 0;
+
+        /// <summary>
+        /// ドラッグのストローク結果を取り出し、開始状態へ戻す。
+        ///
+        /// 【なぜ要るか】
+        ///   1 ストローク = 1 コマンドにするため。ドラッグ中の変形はプレビューとして
+        ///   扱い、確定時はここで開始状態へ戻して点列だけを返す。呼び出し側
+        ///   （SculptToolHandler）が SculptStrokeCommand を送り、実際の変形と
+        ///   Undo 記録は ApplyStrokeFromCommand が行う。
+        ///
+        /// 【戻す方法】
+        ///   CommitStroke が Undo 記録の比較元に使う _originalPositions を
+        ///   そのまま書き戻す。復元用の経路を別に作らない。
+        /// </summary>
+        public bool TryTakeStrokeFromDrag(
+            ToolContext ctx,
+            out int[] meshIndices,
+            out Vector3[] worldCenters,
+            out Vector3[] worldViewDirs)
+        {
+            meshIndices   = System.Array.Empty<int>();
+            worldCenters  = System.Array.Empty<Vector3>();
+            worldViewDirs = System.Array.Empty<Vector3>();
+
+            if (!StrokePending) return false;
+
+            var model = ctx?.Model;
+            if (model == null) return false;
+
+            meshIndices   = _strokeMeshIndices.ToArray();
+            worldCenters  = _strokeWorldCenters.ToArray();
+            worldViewDirs = _strokeWorldViewDirs.ToArray();
+
+            // 開始位置へ戻す
+            foreach (var kv in _originalPositions)
+            {
+                var mo = model.GetMeshContext(kv.Key)?.MeshObject;
+                if (mo == null) continue;
+                int n = Mathf.Min(mo.VertexCount, kv.Value.Length);
+                for (int i = 0; i < n; i++) mo.Vertices[i].Position = kv.Value[i];
+                mo.InvalidatePositionCache();
+            }
+
+            ctx.SyncMesh?.Invoke();
+
+            _originalPositions.Clear();
+            _adjacencyCachePerMesh     = null;
+            _vertexNormalsCachePerMesh = null;
+            _strokeWorldCenters.Clear();
+            _strokeWorldViewDirs.Clear();
+            _strokeMeshIndices.Clear();
+
+            return true;
         }
 
         /// <summary>
@@ -435,7 +633,12 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// Draw: 盛り上げ/盛り下げ
         /// </summary>
-        private void ApplyDraw(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Vector3 viewDir, Dictionary<int, Vector3> vertexNormalsCache)
+        /// <param name="viewDir">
+        /// 視線方向（メッシュのローカル空間）。カメラ側へ盛り上げるための反転補正に使う。
+        /// null のときは補正せず、幾何法線の向きにそのまま従う。
+        /// コマンド経由（SculptStrokeCommand）は視点を持たないので null が入る。
+        /// </param>
+        private void ApplyDraw(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Vector3? viewDir, Dictionary<int, Vector3> vertexNormalsCache)
         {
             if (vertexNormalsCache == null) return;
 
@@ -450,8 +653,8 @@ namespace Poly_Ling.Tools
             }
             avgNormal = avgNormal.normalized;
 
-            // 視線方向と逆向きなら反転
-            if (Vector3.Dot(avgNormal, -viewDir) < 0)
+            // 視線方向と逆向きなら反転。視点が無いときは補正しない。
+            if (viewDir.HasValue && Vector3.Dot(avgNormal, -viewDir.Value) < 0)
             {
                 avgNormal = -avgNormal;
             }

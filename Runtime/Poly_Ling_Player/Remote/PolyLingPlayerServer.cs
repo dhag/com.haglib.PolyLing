@@ -54,12 +54,12 @@ namespace Poly_Ling.Player
         /// <param name="port">待ち受けポート番号</param>
         /// <param name="autoStart">true のとき Initialize 内でサーバを起動する</param>
         /// <param name="getToolContext">ToolContext を返すデリゲート（RemoteServerCore に渡す）</param>
-        /// <param name="dispatchCommand">受信コマンドを処理するデリゲート</param>
+        /// <param name="dispatchCommand">受信コマンドを処理し、実行結果を返すデリゲート</param>
         public void Initialize(
             int port,
             bool autoStart,
             System.Func<ToolContext> getToolContext,
-            System.Action<PanelCommand> dispatchCommand,
+            System.Func<PanelCommand, CommandResult> dispatchCommand,
             System.Action requestPanelRefresh = null,
             string hostUserName = null)
         {

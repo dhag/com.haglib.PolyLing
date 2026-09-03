@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.View;
 
@@ -15,6 +16,17 @@ namespace Poly_Ling.Player
 {
     public class PlayerUVZSubPanel
     {
+        // ================================================================
+        // レンジ（下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float UvScaleMin    => ParameterLimits.GetF("UvZ.UvScale.Min");
+        private static float DepthScaleMin => ParameterLimits.GetF("UvZ.DepthScale.Min");
+
         // ── コールバック ──────────────────────────────────────────────────
         public Func<ModelContext>   GetModel;
         public Action<PanelCommand> SendCommand;
@@ -80,8 +92,8 @@ namespace Poly_Ling.Player
 
             // スケール
             root.Add(SecLabel("スケール"));
-            root.Add(MakeFloatRow("UV スケール", 10f, v => _uvScale = Mathf.Max(0.001f, v)));
-            root.Add(MakeFloatRow("深度スケール", 1f, v => _depthScale = Mathf.Max(0.001f, v)));
+            root.Add(MakeFloatRow("UV スケール", 10f, v => _uvScale    = Mathf.Max(UvScaleMin,    v)));
+            root.Add(MakeFloatRow("深度スケール", 1f, v => _depthScale = Mathf.Max(DepthScaleMin, v)));
 
             // UV → XYZ
             root.Add(SecLabel("UV → XYZ（展開）"));

@@ -24,6 +24,12 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<ToolContext>  GetToolContext;
+
+        /// <summary>
+        /// コマンド送信口。ストローク確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
         public Action             OnRepaint;
         public Action             OnEnterTransformDragging;
         public Action             OnExitTransformDragging;
@@ -159,6 +165,68 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public void SetProject(ProjectContext project) => _project = project;
+
+        /// <summary>
+        /// コマンドで指定された点列にブラシを掛ける。
+        ///
+        /// 【なぜ要るか】
+        ///   マウス経路はブラシ中心を画面のレイから決めるので、コマンド経由
+        ///   （自動検証・MCP）からは通せない。点列だけを渡せる入口をここに置く。
+        ///   EdgeBridgeToolHandler.SetPicks と同じ形。
+        ///
+        /// 【実行時と同じ配線を通す】
+        ///   変形と Undo 記録は SculptTool.ApplyStrokeFromCommand が
+        ///   マウス経路と同じ ApplyStrokeToMesh / CommitStroke を通す。
+        ///   ブラシ範囲の収集も距離モード（直線 / リンク）ごと共有される。
+        ///
+        /// 【Draw の向き】
+        ///   コマンドは視点を持たないので、カメラ側へ盛り上げる反転補正は掛からない。
+        ///   幾何法線の向きに従うため、同じコマンドは常に同じ結果になる。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.SculptStrokeCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+            if (cmd.BrushCenters == null || cmd.BrushCenters.Length == 0)
+            { reason = "ブラシ中心が空です"; return false; }
+
+            var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) { reason = "モデルがありません"; return false; }
+
+            var indices = cmd.MasterIndices;
+            if (indices == null || indices.Length == 0)
+            { reason = "対象が指定されていません"; return false; }
+
+            foreach (int idx in indices)
+            {
+                if (ctx.Model?.GetMeshContext(idx)?.MeshObject == null)
+                { reason = $"masterIndex {idx} のメッシュがありません"; return false; }
+            }
+
+            Mode        = cmd.Mode;
+            BrushRadius = cmd.BrushRadius;
+            Strength    = cmd.Strength;
+            Invert      = cmd.Invert;
+            Falloff     = cmd.Falloff;
+
+            if (!_tool.ApplyStrokeFromCommand(
+                    ctx, indices, cmd.BrushCenters, cmd.ViewDirections))
+            { reason = "ブラシ範囲に頂点がありません"; return false; }
+
+            foreach (int idx in indices)
+            {
+                var mc = ctx.Model?.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+                mo.InvalidatePositionCache();
+                if (cmd.RecalcNormals) mo.RecalculateSmoothNormals();
+                OnSyncMeshPositions?.Invoke(mc);
+            }
+
+            OnRepaint?.Invoke();
+            return true;
+        }
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
 
         // ================================================================
@@ -171,10 +239,48 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
-            _tool.OnMouseUp  (ctx, ToImgui(screenPos, ctx));
+
+            // クリックも OnMouseDown + OnMouseUp で 1 点ストロークになる。
+            // 取り出しは OnMouseUp の前。OnMouseUp は取り出し済みなら
+            // CommitStroke を飛ばす（StrokePending の判定）。
+            SendStrokeIfTakenAndFinish(ctx, screenPos);
+
             // ブラシ円はポインタがビューポート上にある間は出したままにする。
             // ここで消すと、クリックのたびに円が消えて次のホバーまで戻らない。
             UpdateBrushCircleOverlay(ctx, screenPos);
+        }
+
+        /// <summary>
+        /// 取り出し → OnMouseUp → 発行の順に行う。
+        ///
+        /// 取り出しを OnMouseUp より先に行うのは、OnMouseUp が StrokePending を見て
+        /// CommitStroke を飛ばすため。発行を OnMouseUp より後にするのは、
+        /// ExitTransformDragging を通してから変形させるため（ドラッグ中は
+        /// 選択・頂点の GPU 反映が抑えられる）。
+        /// </summary>
+        private void SendStrokeIfTakenAndFinish(ToolContext ctx, Vector2 screenPos)
+        {
+            bool taken = false;
+            int[] meshIndices = null;
+            Vector3[] centers = null;
+            Vector3[] viewDirs = null;
+
+            if (SendCommand != null && _tool.StrokePending)
+                taken = _tool.TryTakeStrokeFromDrag(ctx, out meshIndices, out centers, out viewDirs);
+
+            _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+
+            if (!taken) return;
+
+            SendCommand(new Poly_Ling.Data.SculptStrokeCommand(
+                _project?.CurrentModelIndex ?? 0,
+                meshIndices,
+                centers,
+                Mode, BrushRadius, Strength,
+                invert:         Invert,
+                falloff:        Falloff,
+                recalcNormals:  true,
+                viewDirections: viewDirs));
         }
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
@@ -226,7 +332,7 @@ namespace Poly_Ling.Player
 
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
-            _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+            SendStrokeIfTakenAndFinish(ctx, screenPos);
             // ストローク後もポインタ位置に円を残す（OnLeftClick と同じ理由）。
             UpdateBrushCircleOverlay(ctx, screenPos);
         }

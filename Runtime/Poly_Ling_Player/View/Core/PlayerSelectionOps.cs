@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Context;
+using Poly_Ling.Data;
 using Poly_Ling.Selection;
 
 namespace Poly_Ling.Player
@@ -196,13 +197,6 @@ namespace Poly_Ling.Player
                 sel.ClearAll();
         }
 
-        /// <summary>操作対象メッシュ全ての頂点選択のみクリアする（OnSelectionChanged は呼ばない）。</summary>
-        private void ClearAllTargetVerticesSilent()
-        {
-            foreach (var sel in TargetSelections())
-                sel.Vertices.Clear();
-        }
-
         // ================================================================
         // クリック選択
         // ================================================================
@@ -267,58 +261,216 @@ namespace Poly_Ling.Player
         /// </summary>
         public void ApplyElementClick(PlayerHoverElement elem, ModifierKeys mods)
         {
+            if (!ResolveElementClick(elem, mods, out var r)) return;
+
+            ApplyElementSet(
+                r.ClearTargets, r.Op,
+                r.VertexMeshIndices, r.VertexIndices,
+                r.EdgeMeshIndices,   r.EdgePairs,
+                r.FaceMeshIndices,   r.FaceIndices,
+                r.LineMeshIndices,   r.LineIndices);
+        }
+
+        /// <summary>
+        /// クリック 1 回の「解釈だけ」を行う。SelectionState には触らない。
+        ///
+        /// 【なぜ分けるか】
+        ///   マウス経路をコマンド発行に寄せるため、修飾キーの解釈結果を
+        ///   SelectElementsCommand へ載せられる形で取り出す必要がある。
+        ///   書き込みは ApplyElementSet が 1 本で持つ。
+        ///
+        /// 【解釈の規則】（従来のクリック挙動と同じ）
+        ///   ヒット無し・Shift/Ctrl なし → 全解除（Replace で要素 0 個）
+        ///   ヒット無し・Shift/Ctrl あり → 何もしない（false を返す）
+        ///   ヒット有り・修飾なし        → Replace
+        ///   ヒット有り・Shift           → Add
+        ///   ヒット有り・Ctrl かつ未選択 → Add
+        ///   ヒット有り・Ctrl かつ既選択 → Remove
+        /// </summary>
+        /// <returns>書き換えるものがあれば true。</returns>
+        public bool ResolveElementClick(
+            PlayerHoverElement elem, ModifierKeys mods, out ElementClickResult result)
+        {
+            result = default;
+            result.ClearTargets = CollectTargetMasterIndices();
+
             if (!elem.HasHit)
             {
-                if (!mods.Shift && !mods.Ctrl) ClearAll();
-                return;
+                if (mods.Shift || mods.Ctrl) return false;
+                // 全解除。Replace で要素を 1 個も渡さない。
+                result.Op = SelectElementsCommand.SelectOp.Replace;
+                return true;
             }
-
-            bool additive = mods.Shift || mods.Ctrl;
-            // 非加算クリックは「他メッシュに残った選択」も消す。
-            // 単一 SelectionState だけを消すと、選択中の別メッシュの選択が
-            // 画面に残り続ける（GPU フラグは MeshContext 単位で立つため）。
-            if (!additive) ClearAllTargetsSilent();
 
             // 書き込み先は「当たったメッシュ」の SelectionState。
             // elem.VertexIndex / FaceIndex はそのメッシュ内のローカル番号なので、
             // 別メッシュの SelectionState に入れると別の要素を選ぶことになる。
             var target = ResolveSelection(elem.MeshIndex);
-            if (target == null) return;
+            if (target == null) return false;
+
+            bool additive = mods.Shift || mods.Ctrl;
+            var op = additive
+                ? SelectElementsCommand.SelectOp.Add
+                : SelectElementsCommand.SelectOp.Replace;
+
+            int mesh = elem.MeshIndex;
 
             switch (elem.Kind)
             {
                 case PlayerHoverKind.Vertex:
                     if (mods.Ctrl && target.Vertices.Contains(elem.VertexIndex))
-                        target.Vertices.Remove(elem.VertexIndex);
-                    else
-                        target.SelectVertex(elem.VertexIndex, additive);
+                        op = SelectElementsCommand.SelectOp.Remove;
+                    result.VertexMeshIndices = new[] { mesh };
+                    result.VertexIndices     = new[] { elem.VertexIndex };
                     break;
 
                 case PlayerHoverKind.Edge:
                 {
                     var pair = new Poly_Ling.Selection.VertexPair(elem.EdgeV1, elem.EdgeV2);
                     if (mods.Ctrl && target.Edges.Contains(pair))
-                        target.DeselectEdge(pair);
-                    else
-                        target.SelectEdge(pair, additive);
+                        op = SelectElementsCommand.SelectOp.Remove;
+                    result.EdgeMeshIndices = new[] { mesh };
+                    result.EdgePairs       = new[] { elem.EdgeV1, elem.EdgeV2 };
                     break;
                 }
 
                 case PlayerHoverKind.Line:
                     // 補助線分。FaceIndex が MeshObject.Faces[] の添字（VertexCount==2）
                     if (mods.Ctrl && target.Lines.Contains(elem.FaceIndex))
-                        target.Lines.Remove(elem.FaceIndex);
-                    else
-                        target.SelectLine(elem.FaceIndex, additive);
+                        op = SelectElementsCommand.SelectOp.Remove;
+                    result.LineMeshIndices = new[] { mesh };
+                    result.LineIndices     = new[] { elem.FaceIndex };
                     break;
 
                 case PlayerHoverKind.Face:
                     if (mods.Ctrl && target.Faces.Contains(elem.FaceIndex))
-                        target.DeselectFace(elem.FaceIndex);
-                    else
-                        target.SelectFace(elem.FaceIndex, additive);
+                        op = SelectElementsCommand.SelectOp.Remove;
+                    result.FaceMeshIndices = new[] { mesh };
+                    result.FaceIndices     = new[] { elem.FaceIndex };
                     break;
+
+                default:
+                    return false;
             }
+
+            result.Op = op;
+            return true;
+        }
+
+        /// <summary>ResolveElementClick の戻り。SelectElementsCommand へそのまま載せられる形。</summary>
+        public struct ElementClickResult
+        {
+            public int[] ClearTargets;
+            public SelectElementsCommand.SelectOp Op;
+            public int[] VertexMeshIndices;
+            public int[] VertexIndices;
+            public int[] EdgeMeshIndices;
+            public int[] EdgePairs;
+            public int[] FaceMeshIndices;
+            public int[] FaceIndices;
+            public int[] LineMeshIndices;
+            public int[] LineIndices;
+        }
+
+        /// <summary>操作対象メッシュの MasterIndex 一覧。GetModel 未設定なら空。</summary>
+        private int[] CollectTargetMasterIndices()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) return Array.Empty<int>();
+            var list = model.SelectedDrawableMeshIndices;
+            if (list == null || list.Count == 0) return Array.Empty<int>();
+            var arr = new int[list.Count];
+            for (int i = 0; i < list.Count; i++) arr[i] = list[i];
+            return arr;
+        }
+
+        /// <summary>
+        /// 要素の集合を直接指定して選択を書き換える。
+        ///
+        /// 【なぜ要るか】
+        ///   ApplyElementClick は GPU ホバーが返した 1 要素と修飾キーを解釈する。
+        ///   コマンド経由（自動検証・MCP）はホバーも修飾キーも持たないので、
+        ///   「この集合をこう扱う」という指定を受ける入口をここに置く。
+        ///   トグルではないので、同じ要素が 2 回来ても 1 つとして扱う。
+        ///   クリック経路も ResolveElementClick 経由でここへ来る。
+        ///
+        /// 【下請けは共通】
+        ///   書き込み先の解決（ResolveSelection）と SelectionState の Select* は
+        ///   クリック経路と同じものを通す。ここで持つのは並びの解釈だけ。
+        ///
+        /// 【索引はメッシュ内ローカル番号】
+        ///   要素ごとに属するメッシュを *MeshIndices で受ける。単一 SelectionState へ
+        ///   まとめて入れると別メッシュの別要素を選ぶことになる。
+        /// </summary>
+        /// <param name="clearMasterIndices">
+        /// Op が Replace のときに選択を消す対象。空のときは操作対象メッシュ全部
+        /// （TargetSelections）を消す。
+        /// </param>
+        public void ApplyElementSet(
+            IReadOnlyList<int> clearMasterIndices,
+            SelectElementsCommand.SelectOp op,
+            IReadOnlyList<int> vertexMeshIndices, IReadOnlyList<int> vertexIndices,
+            IReadOnlyList<int> edgeMeshIndices,   IReadOnlyList<int> edgePairs,
+            IReadOnlyList<int> faceMeshIndices,   IReadOnlyList<int> faceIndices,
+            IReadOnlyList<int> lineMeshIndices,   IReadOnlyList<int> lineIndices)
+        {
+            bool remove = op == SelectElementsCommand.SelectOp.Remove;
+            bool toggle = op == SelectElementsCommand.SelectOp.Toggle;
+
+            if (op == SelectElementsCommand.SelectOp.Replace)
+            {
+                if (clearMasterIndices == null || clearMasterIndices.Count == 0)
+                {
+                    ClearAllTargetsSilent();
+                }
+                else
+                {
+                    foreach (int idx in clearMasterIndices)
+                        ResolveSelection(idx)?.ClearAll();
+                }
+            }
+
+            if (vertexIndices != null && vertexMeshIndices != null)
+                for (int i = 0; i < vertexIndices.Count && i < vertexMeshIndices.Count; i++)
+                {
+                    var sel = ResolveSelection(vertexMeshIndices[i]);
+                    if (sel == null) continue;
+                    if (toggle)      sel.ToggleVertex(vertexIndices[i]);
+                    else if (remove) sel.Vertices.Remove(vertexIndices[i]);
+                    else             sel.SelectVertex(vertexIndices[i], additive: true);
+                }
+
+            if (edgePairs != null && edgeMeshIndices != null)
+                for (int i = 0; i < edgeMeshIndices.Count && (i * 2) + 1 < edgePairs.Count; i++)
+                {
+                    var sel = ResolveSelection(edgeMeshIndices[i]);
+                    if (sel == null) continue;
+                    var pair = new Poly_Ling.Selection.VertexPair(
+                        edgePairs[i * 2], edgePairs[(i * 2) + 1]);
+                    if (toggle)      sel.ToggleEdge(pair);
+                    else if (remove) sel.DeselectEdge(pair);
+                    else             sel.SelectEdge(pair, additive: true);
+                }
+
+            if (faceIndices != null && faceMeshIndices != null)
+                for (int i = 0; i < faceIndices.Count && i < faceMeshIndices.Count; i++)
+                {
+                    var sel = ResolveSelection(faceMeshIndices[i]);
+                    if (sel == null) continue;
+                    if (toggle)      sel.ToggleFace(faceIndices[i]);
+                    else if (remove) sel.DeselectFace(faceIndices[i]);
+                    else             sel.SelectFace(faceIndices[i], additive: true);
+                }
+
+            if (lineIndices != null && lineMeshIndices != null)
+                for (int i = 0; i < lineIndices.Count && i < lineMeshIndices.Count; i++)
+                {
+                    var sel = ResolveSelection(lineMeshIndices[i]);
+                    if (sel == null) continue;
+                    if (toggle)      sel.ToggleLine(lineIndices[i]);
+                    else if (remove) sel.DeselectLine(lineIndices[i]);
+                    else             sel.SelectLine(lineIndices[i], additive: true);
+                }
 
             OnSelectionChanged?.Invoke();
         }
@@ -348,32 +500,16 @@ namespace Poly_Ling.Player
         /// それ以外 → 既存選択を置き換え。
         /// </para>
         /// </summary>
-        public void EndBoxSelect(IEnumerable<MeshVertexRef> boxVertices, ModifierKeys mods)
+        /// <summary>
+        /// 矩形選択の状態を解除する。
+        ///
+        /// 選択の書き込みは持たない。走査結果は SelectElementsCommand として
+        /// 発行され、ApplyElementSet が 1 本で書き込む
+        /// （MoveToolHandler.CommitBoxSelect を参照）。
+        /// </summary>
+        public void EndBoxSelect()
         {
             IsBoxSelecting = false;
-
-            if (!mods.Shift && !mods.Ctrl)
-                ClearAllTargetVerticesSilent();
-
-            foreach (var v in boxVertices)
-            {
-                var target = ResolveSelection(v.MeshIndex);
-                if (target == null) continue;
-
-                if (mods.Ctrl)
-                {
-                    if (target.Vertices.Contains(v.VertexIndex))
-                        target.Vertices.Remove(v.VertexIndex);
-                    else
-                        target.Vertices.Add(v.VertexIndex);
-                }
-                else
-                {
-                    target.Vertices.Add(v.VertexIndex);
-                }
-            }
-
-            OnSelectionChanged?.Invoke();
         }
 
         /// <summary>矩形選択をキャンセル（ドラッグ中断など）。</summary>
@@ -407,33 +543,17 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 投げ縄選択確定。lassoVertices は投げ縄内にある頂点インデックス列。
         /// </summary>
-        public void EndLassoSelect(IEnumerable<MeshVertexRef> lassoVertices, ModifierKeys mods)
+        /// <summary>
+        /// 投げ縄選択の状態を解除する。
+        ///
+        /// 選択の書き込みは持たない。走査結果は SelectElementsCommand として
+        /// 発行され、ApplyElementSet が 1 本で書き込む
+        /// （MoveToolHandler.CommitLassoSelect を参照）。
+        /// </summary>
+        public void EndLassoSelect()
         {
             IsLassoSelecting = false;
             LassoPoints.Clear();
-
-            if (!mods.Shift && !mods.Ctrl)
-                ClearAllTargetVerticesSilent();
-
-            foreach (var v in lassoVertices)
-            {
-                var target = ResolveSelection(v.MeshIndex);
-                if (target == null) continue;
-
-                if (mods.Ctrl)
-                {
-                    if (target.Vertices.Contains(v.VertexIndex))
-                        target.Vertices.Remove(v.VertexIndex);
-                    else
-                        target.Vertices.Add(v.VertexIndex);
-                }
-                else
-                {
-                    target.Vertices.Add(v.VertexIndex);
-                }
-            }
-
-            OnSelectionChanged?.Invoke();
         }
 
         /// <summary>投げ縄選択をキャンセル。</summary>

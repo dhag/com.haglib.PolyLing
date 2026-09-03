@@ -788,7 +788,9 @@ namespace Poly_Ling.Player
                         }
                         return ctx;
                     },
-                    cmd => _commandDispatcher?.Dispatch(cmd));
+                    cmd => _commandDispatcher != null
+                        ? _commandDispatcher.Dispatch(cmd)
+                        : CommandResult.Fail("command dispatcher is not ready"));
             }
 
             // ── ローカルローダー配線 ────────────────────────────────────
@@ -1178,6 +1180,10 @@ namespace Poly_Ling.Player
 
             _moveToolHandler = new MoveToolHandler(_selectionOps, ActiveProject)
             {
+                // クリック選択はコマンド発行に寄せてある。
+                // 送り先は他パネルと同じ DispatchPanelCommand。
+                SendCommand = DispatchPanelCommand,
+
                 // Phase 2b-1: 正規入口 EnterVerticesMoved(Dragging, syncMc) 経由に切替。
                 // 軽量同期 (SyncMeshPositionsAndTransform + UpdateTransform) + overlay 更新を一元化。
                 OnSyncMeshPositions = mc =>
@@ -1344,6 +1350,8 @@ namespace Poly_Ling.Player
             };
 
             _pivotOffsetHandler = new PivotOffsetToolHandler();
+            // ドラッグ確定はコマンド発行に寄せてある。送り先は他パネルと同じ。
+            _pivotOffsetHandler.SendCommand = DispatchPanelCommand;
             _pivotOffsetHandler.SetProject(ActiveProject);
             _pivotOffsetHandler.SetUndoController(_editOps?.UndoController);
             _pivotOffsetHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
@@ -1380,6 +1388,8 @@ namespace Poly_Ling.Player
             };
 
             _sculptHandler = new SculptToolHandler();
+            // ストローク確定はコマンド発行に寄せてある。送り先は他パネルと同じ。
+            _sculptHandler.SendCommand = DispatchPanelCommand;
             _sculptHandler.SetProject(ActiveProject);
             _sculptHandler.SetUndoController(_editOps?.UndoController);
             _sculptHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
@@ -1409,6 +1419,8 @@ namespace Poly_Ling.Player
             };
 
             _advancedSelectHandler = new AdvancedSelectToolHandler();
+            // クリック選択はコマンド発行に寄せてある。送り先は他パネルと同じ。
+            _advancedSelectHandler.SendCommand = DispatchPanelCommand;
             _advancedSelectHandler.SetProject(ActiveProject);
             _advancedSelectHandler.SetSelectionOps(_selectionOps);
             _advancedSelectHandler.SetUndoController(_editOps?.UndoController);
@@ -4602,6 +4614,7 @@ namespace Poly_Ling.Player
             {
                 GetHandler = () => _moveToolHandler,
             };
+            _vertexMoveSubPanel.SetContext(_panelContext);
             _vertexMoveSubPanel.Build(_layoutRoot.VertexMoveSection);
 
             _pivotSubPanel = new PlayerPivotSubPanel();
@@ -5102,8 +5115,8 @@ namespace Poly_Ling.Player
             _layoutRoot.ConnectBtn   .clicked += () => _client?.Connect();
             _layoutRoot.DisconnectBtn.clicked += () => _client?.Disconnect();
             _layoutRoot.FetchBtn     .clicked += FetchProject;
-            _layoutRoot.UndoBtn      .clicked += () => _editOps?.PerformUndo();
-            _layoutRoot.RedoBtn      .clicked += () => _editOps?.PerformRedo();
+            _layoutRoot.UndoBtn      .clicked += () => _commandDispatcher?.Dispatch(new PerformUndoCommand());
+            _layoutRoot.RedoBtn      .clicked += () => _commandDispatcher?.Dispatch(new PerformRedoCommand());
 
             _layoutRoot.PerspectivePanel.SetViewport(_viewportManager.PerspectiveViewport);
             _layoutRoot.TopPanel        .SetViewport(_viewportManager.TopViewport);
@@ -5376,8 +5389,10 @@ namespace Poly_Ling.Player
             _shortcutController = new PlayerShortcutController(map);
 
             // コマンドID → 実行内容。対応するツールボタンと同じ処理を割り当てる。
-            _shortcutController.Register(ShortcutMap.CmdUndo, () => _editOps?.PerformUndo());
-            _shortcutController.Register(ShortcutMap.CmdRedo, () => _editOps?.PerformRedo());
+            _shortcutController.Register(ShortcutMap.CmdUndo,
+                () => _commandDispatcher?.Dispatch(new PerformUndoCommand()));
+            _shortcutController.Register(ShortcutMap.CmdRedo,
+                () => _commandDispatcher?.Dispatch(new PerformRedoCommand()));
             _shortcutController.Register(ShortcutMap.CmdToolVertexMove,
                 () => ShowCategory1Panel(InteractionMode.VertexMove));
             _shortcutController.Register(ShortcutMap.CmdToolObjectMove,

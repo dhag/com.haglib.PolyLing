@@ -70,8 +70,11 @@ namespace Poly_Ling.Player
         // Undo / Redo
         // ================================================================
 
-        public void PerformUndo() => _undoManager.PerformUndo();
-        public void PerformRedo() => _undoManager.PerformRedo();
+        /// <returns>1 段戻せたら true。履歴が空なら false。</returns>
+        public bool PerformUndo() => _undoManager.PerformUndo();
+
+        /// <returns>1 段やり直せたら true。履歴が空なら false。</returns>
+        public bool PerformRedo() => _undoManager.PerformRedo();
 
         // ================================================================
         // 将来の編集操作はここに追加していく

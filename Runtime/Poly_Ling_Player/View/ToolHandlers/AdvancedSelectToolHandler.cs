@@ -150,10 +150,13 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// UvNormalCount / NearAxis モードの選択を実行する（パネルの「実行」ボタン）。
+        /// UvNormalCount / NearAxis モードの選択を実行する。
         /// クリック非依存のため GPU ホバーは参照しない。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// AdvancedSelectByAttributeCommand 経由に統一するため。
         /// </summary>
-        public void ExecuteAttributeSelect()
+        private void ExecuteAttributeSelectCore()
         {
             var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
             if (ctx == null) return;
@@ -166,6 +169,77 @@ namespace Poly_Ling.Player
                 OnSelectionChanged?.Invoke();
             }
             OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// 属性選択コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   走査は AdvancedSelectTool.ExecuteAttributeSelect が正典。ここは
+        ///   コマンドの値をツール設定へ入れてから同じ経路を呼ぶ。
+        ///
+        /// 【設定の扱い】
+        ///   コマンドの値を正典として実行し、終わったらパネルの値へ戻す。
+        ///   1 呼び出しがパネルの状態に依存しないようにするため。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.AdvancedSelectByAttributeCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            if (!AdvancedSelectTool.IsAttributeMode(cmd.Mode))
+            { reason = $"{cmd.Mode} は属性モードではありません"; return false; }
+
+            var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) { reason = "モデルがありません"; return false; }
+
+            var model = ctx.Model;
+            var mc    = model?.ActiveMeshContext;
+            if (mc?.MeshObject == null) { reason = "編集対象メッシュがありません"; return false; }
+
+            var indices = cmd.MasterIndices;
+            if (indices == null || indices.Length != 1)
+            { reason = "MasterIndices は 1 個で指定してください"; return false; }
+
+            int activeMaster = model.IndexOf(mc);
+            if (indices[0] != activeMaster)
+            {
+                reason = $"masterIndex {indices[0]} は編集対象（{activeMaster}）ではありません";
+                return false;
+            }
+
+            // パネルの設定を退避する。
+            var savedMode      = Mode;
+            bool savedAdd      = AddToSelection;
+            int  savedUvCount  = UvNormalCountThreshold;
+            var  savedAxisKind = AxisKind;
+            float savedAxisDist = AxisDistanceThreshold;
+            bool savedLimit    = LimitToCurrentSelection;
+
+            try
+            {
+                Mode                    = cmd.Mode;
+                AddToSelection          = cmd.AddToSelection;
+                UvNormalCountThreshold  = cmd.UvNormalCountThreshold;
+                AxisKind                = cmd.AxisKind;
+                AxisDistanceThreshold   = cmd.AxisDistanceThreshold;
+                LimitToCurrentSelection = cmd.LimitToCurrentSelection;
+
+                ExecuteAttributeSelectCore();
+            }
+            finally
+            {
+                Mode                    = savedMode;
+                AddToSelection          = savedAdd;
+                UvNormalCountThreshold  = savedUvCount;
+                AxisKind                = savedAxisKind;
+                AxisDistanceThreshold   = savedAxisDist;
+                LimitToCurrentSelection = savedLimit;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -185,6 +259,139 @@ namespace Poly_Ling.Player
                 OnSelectionChanged?.Invoke();
             }
             OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// コマンドで指定された種から詳細選択を実行する。
+        ///
+        /// 【なぜ要るか】
+        ///   クリック経路は GPU ホバーで種を決めるので、コマンド経由
+        ///   （自動検証・MCP）からは通せない。同じモード実装を通したまま
+        ///   種だけを渡せる入口をここに置く。EdgeBridgeToolHandler.SetPicks と同じ形。
+        ///
+        /// 【実行時と同じ配線を通す】
+        ///   種は AdvancedSelectTool.SetGpuStart へ入れ、確定は OnMouseDown を呼ぶ。
+        ///   各モードは mousePos を使わず GpuStart* だけを見るので、クリックと同じ
+        ///   経路・同じ結果になる。選択アルゴリズムを別に持たない。
+        ///
+        /// 【選択種別】
+        ///   コマンドの SelectVertices / SelectEdges / SelectFaces を
+        ///   SelectionState.Mode へ一時的に流し込み、実行後に元へ戻す。
+        ///   モードによっては効かないものがある（EdgeLoop は頂点、
+        ///   ShortestPath は辺を、Tool 側が意図的に外している）。
+        ///
+        /// 【対象メッシュ】
+        ///   Tool は ctx.ActiveMeshObject に対して動く。コマンドの MasterIndex が
+        ///   編集対象と違うときは、黙って別のメッシュを触らずに false を返す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.AdvancedSelectCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) { reason = "モデルがありません"; return false; }
+
+            var model = ctx.Model;
+            var mc    = model?.ActiveMeshContext;
+            if (mc?.MeshObject == null) { reason = "編集対象メッシュがありません"; return false; }
+
+            var cmdIndices = cmd.MasterIndices;
+            if (cmdIndices == null || cmdIndices.Length != 1)
+            { reason = "MasterIndices は 1 個で指定してください"; return false; }
+
+            int activeMaster = model.IndexOf(mc);
+            if (cmdIndices[0] != activeMaster)
+            {
+                reason = $"masterIndex {cmdIndices[0]} は編集対象（{activeMaster}）ではありません";
+                return false;
+            }
+
+            if (AdvancedSelectTool.IsAttributeMode(cmd.Mode))
+            {
+                reason = $"{cmd.Mode} はクリック非依存のモードです。AdvancedSelectByAttributeCommand を使ってください";
+                return false;
+            }
+
+            // 種の過不足をモードごとに先に弾く。足りないまま流すと
+            // モード側が false を返すだけで理由が残らない。
+            var seedEdge = (cmd.SeedEdgeV1 >= 0 && cmd.SeedEdgeV2 >= 0)
+                ? (Poly_Ling.Selection.VertexPair?)new Poly_Ling.Selection.VertexPair(cmd.SeedEdgeV1, cmd.SeedEdgeV2)
+                : null;
+
+            switch (cmd.Mode)
+            {
+                case AdvancedSelectMode.Connected:
+                    if (cmd.SeedVertexIndex < 0 && !seedEdge.HasValue && cmd.SeedFaceIndex < 0)
+                    { reason = "Connected は頂点・辺・面のいずれかの種が要ります"; return false; }
+                    break;
+                case AdvancedSelectMode.Belt:
+                case AdvancedSelectMode.EdgeLoop:
+                    if (!seedEdge.HasValue)
+                    { reason = $"{cmd.Mode} は辺の種（SeedEdgeV1 / SeedEdgeV2）が要ります"; return false; }
+                    break;
+                case AdvancedSelectMode.ShortestPath:
+                    if (cmd.SeedVertexIndex < 0 || cmd.EndVertexIndex < 0)
+                    { reason = "ShortestPath は始点と終点の頂点が要ります"; return false; }
+                    break;
+                default:
+                    reason = $"{cmd.Mode} はコマンドから実行できません";
+                    return false;
+            }
+
+            var sel = _selectionOps?.SelectionState;
+            if (sel == null) { reason = "選択状態がありません"; return false; }
+
+            Mode              = cmd.Mode;
+            AddToSelection    = cmd.Additive;
+            EdgeLoopThreshold = cmd.EdgeLoopThreshold;
+
+            var savedMode = sel.Mode;
+            var wantMode  = Poly_Ling.Selection.MeshSelectMode.None;
+            if (cmd.SelectVertices) wantMode |= Poly_Ling.Selection.MeshSelectMode.Vertex;
+            if (cmd.SelectEdges)    wantMode |= Poly_Ling.Selection.MeshSelectMode.Edge;
+            if (cmd.SelectFaces)    wantMode |= Poly_Ling.Selection.MeshSelectMode.Face;
+            if (wantMode == Poly_Ling.Selection.MeshSelectMode.None)
+            { reason = "SelectVertices / SelectEdges / SelectFaces がすべて false です"; return false; }
+
+            var oldSnap = sel.CreateSnapshot();
+            bool changed;
+
+            try
+            {
+                sel.Mode = wantMode;
+
+                // 進行中の状態（ShortestPath の始点など）を捨ててから始める。
+                _tool.Reset();
+
+                if (cmd.Mode == AdvancedSelectMode.ShortestPath)
+                {
+                    // 1 回目で始点を覚え、2 回目で確定する作り
+                    // （ShortestPathSelectMode.cs:30-52）。
+                    _tool.SetGpuStart(cmd.SeedVertexIndex, null, -1, -1);
+                    _tool.OnMouseDown(ctx, Vector2.zero);
+
+                    _tool.SetGpuStart(cmd.EndVertexIndex, null, -1, -1);
+                    changed = _tool.OnMouseDown(ctx, Vector2.zero);
+                }
+                else
+                {
+                    _tool.SetGpuStart(cmd.SeedVertexIndex, seedEdge, cmd.SeedFaceIndex, -1);
+                    changed = _tool.OnMouseDown(ctx, Vector2.zero);
+                }
+            }
+            finally
+            {
+                sel.Mode = savedMode;
+            }
+
+            if (!changed) { reason = "選択が変わりませんでした"; return false; }
+
+            RecordSelectionUndo(ctx, oldSnap);
+            OnSelectionChanged?.Invoke();
+            OnRepaint?.Invoke();
+            return true;
         }
 
         /// <summary>
@@ -210,6 +417,12 @@ namespace Poly_Ling.Player
         // 初期化
         // ================================================================
 
+        /// <summary>
+        /// コマンド送信口。クリック確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
         public void SetProject(ProjectContext project) => _project = project;
         public void SetSelectionOps(PlayerSelectionOps ops) => _selectionOps = ops;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
@@ -224,6 +437,15 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             ResolveGpuStart();
+
+            if (TrySendSeedCommand(ctx))
+            {
+                // ドラッグ状態を残さないため OnMouseUp だけ通す。
+                _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+                OnRepaint?.Invoke();
+                return;
+            }
+
             var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
             bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
@@ -240,6 +462,9 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             ResolveGpuStart();
+
+            if (TrySendSeedCommand(ctx)) return;
+
             var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
             bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             if (changed)
@@ -247,6 +472,75 @@ namespace Poly_Ling.Player
                 RecordSelectionUndo(ctx, oldSnap);
                 OnSelectionChanged?.Invoke();
             }
+        }
+
+        /// <summary>
+        /// GPU ホバーが返した起点から AdvancedSelectCommand を送る。
+        ///
+        /// 【なぜ要るか】
+        ///   選択アルゴリズムは AdvancedSelectTool が正典で、受け口
+        ///   （ExecuteFromCommand）も既にある。発行側だけが無かったので足す。
+        ///
+        /// 【対象モードを絞っている理由】
+        ///   Connected / Belt / EdgeLoop は 1 クリックで起点が確定し、その 1 回が
+        ///   確定操作になる。ShortestPath は 1 回目のクリックが始点の仮置きで
+        ///   選択は変わらず、その状態は ShortestPathSelectMode._firstVertex に
+        ///   あってここからは読めない。BoundaryEdge 系は AdvancedSelectCommand の
+        ///   受け口が弾く（ExecuteFromCommand の default 分岐）。
+        ///   これらは従来の直呼び経路に残す。
+        ///
+        /// 【出力フラグ】
+        ///   マウス経路は現在の SelectionState.Mode を使う。コマンドの
+        ///   SelectVertices / SelectEdges / SelectFaces もそこから起こして、
+        ///   両経路で同じ対象になるようにする。
+        /// </summary>
+        /// <returns>コマンドを送ったら true。false なら呼び出し側が直呼び経路へ落ちる。</returns>
+        private bool TrySendSeedCommand(ToolContext ctx)
+        {
+            if (SendCommand == null) return false;
+
+            if (Mode != AdvancedSelectMode.Connected &&
+                Mode != AdvancedSelectMode.Belt &&
+                Mode != AdvancedSelectMode.EdgeLoop)
+                return false;
+
+            var model = ctx?.Model;
+            var mc    = model?.ActiveMeshContext;
+            if (mc?.MeshObject == null) return false;
+
+            var sel = _selectionOps?.SelectionState;
+            if (sel == null) return false;
+
+            QueryGpuStart(out int gpuVertex, out var gpuEdge, out int gpuFace, out int _);
+
+            // 起点の過不足はモードごとに違う。足りないときは送らず直呼びへ落とす
+            // （直呼び経路のモード側が false を返して何も起きない、という従来の挙動）。
+            if (Mode == AdvancedSelectMode.Connected)
+            {
+                if (gpuVertex < 0 && !gpuEdge.HasValue && gpuFace < 0) return false;
+            }
+            else if (!gpuEdge.HasValue) return false;
+
+            bool wantV = sel.Mode.Has(Poly_Ling.Selection.MeshSelectMode.Vertex);
+            bool wantE = sel.Mode.Has(Poly_Ling.Selection.MeshSelectMode.Edge);
+            bool wantF = sel.Mode.Has(Poly_Ling.Selection.MeshSelectMode.Face);
+            if (!wantV && !wantE && !wantF) return false;
+
+            SendCommand(new Poly_Ling.Data.AdvancedSelectCommand(
+                _project?.CurrentModelIndex ?? 0,
+                new[] { model.IndexOf(mc) },
+                Mode,
+                seedVertexIndex:   gpuVertex,
+                seedEdgeV1:        gpuEdge.HasValue ? gpuEdge.Value.V1 : -1,
+                seedEdgeV2:        gpuEdge.HasValue ? gpuEdge.Value.V2 : -1,
+                seedFaceIndex:     gpuFace,
+                endVertexIndex:    -1,
+                selectVertices:    wantV,
+                selectEdges:       wantE,
+                selectFaces:       wantF,
+                additive:          AddToSelection,
+                edgeLoopThreshold: EdgeLoopThreshold));
+            return true;
         }
 
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)

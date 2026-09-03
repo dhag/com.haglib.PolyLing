@@ -8,6 +8,7 @@ using UnityEngine;
 using Poly_Ling.Ops;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 
@@ -24,6 +25,16 @@ namespace Poly_Ling.Player
         // 実体はすべて TempMirrorSettings（共有）にある。
         // 各ツール内の「一時ミラー」ボタンが同じ値を使う必要があるため、
         // このパネルの private フィールドとしては持たない。
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float ThresholdMin => ParameterLimits.GetF("Mirror.Threshold.Min");
+
         private static int _mirrorAxis
         {
             get => TempMirrorSettings.MirrorAxis;
@@ -128,7 +139,7 @@ namespace Poly_Ling.Player
             var threshLbl = new Label("境界閾値"); threshLbl.style.width = 90; threshLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             threshLbl.style.color = new StyleColor(Color.white);
             var threshField = new FloatField { value = _threshold }; threshField.style.flexGrow = 1;
-            threshField.RegisterValueChangedCallback(e => _threshold = Mathf.Max(0.00001f, e.newValue));
+            threshField.RegisterValueChangedCallback(e => _threshold = Mathf.Max(ThresholdMin, e.newValue));
             _threshRow.Add(threshLbl); _threshRow.Add(threshField);
             root.Add(_threshRow);
 

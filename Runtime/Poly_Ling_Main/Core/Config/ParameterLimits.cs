@@ -94,6 +94,61 @@ namespace Poly_Ling.Core
             ("SmoothEdges.Strength.Max",           1.0f,  "辺を滑らかに: 強度の上限"),
             ("SmoothEdges.Iterations.Min",         1f,    "辺を滑らかに: 反復回数の下限（整数）"),
             ("SmoothEdges.Iterations.Max",         50f,   "辺を滑らかに: 反復回数の上限（整数）"),
+
+            // --- Shrink（シュリンカー） ---
+            ("Shrink.Slider.Min",                  0.0f,  "シュリンカー: 進行スライダーの下限"),
+            ("Shrink.Slider.Max",                  1.0f,  "シュリンカー: 進行スライダーの上限"),
+            ("Shrink.SurfaceOffset.Min",           0.0f,  "シュリンカー: 面からの余白の下限"),
+            ("Shrink.MaxPasses.Min",               1f,    "シュリンカー: 反復上限の下限（整数）"),
+            ("Shrink.MaxPasses.Max",               64f,   "シュリンカー: 反復上限の上限（整数）"),
+
+            // --- NormalEdit（法線編集） ---
+            ("NormalEdit.AngleDeg.Min",            0.0f,  "法線編集: 角度の下限（度）"),
+            ("NormalEdit.AngleDeg.Max",            180.0f, "法線編集: 角度の上限（度）"),
+            ("NormalEdit.Strength.Min",            0.0f,  "法線編集: 平滑強度の下限"),
+            ("NormalEdit.Strength.Max",            1.0f,  "法線編集: 平滑強度の上限"),
+            ("NormalEdit.MirrorThreshold.Min",     0.0f,  "法線編集: ミラー対応しきい値の下限"),
+
+            // --- UvUnwrap（UV 投影展開） ---
+            ("UvUnwrap.Scale.Min",                 0.01f, "UV投影展開: スケールの下限"),
+            ("UvUnwrap.Scale.Max",                 10.0f, "UV投影展開: スケールの上限"),
+            ("UvUnwrap.Offset.Min",               -2.0f,  "UV投影展開: オフセット U/V の下限"),
+            ("UvUnwrap.Offset.Max",                2.0f,  "UV投影展開: オフセット U/V の上限"),
+
+            // --- LscmUnwrap（LSCM 展開） ---
+            ("LscmUnwrap.MaxIterations.Min",       100f,   "LSCM展開: 最大反復数の下限（整数）"),
+            ("LscmUnwrap.MaxIterations.Max",       50000f, "LSCM展開: 最大反復数の上限（整数）"),
+
+            // --- UvZ（UV ⇔ XYZ 変換） ---
+            ("UvZ.UvScale.Min",                    0.001f, "UV⇔XYZ: UV スケールの下限"),
+            ("UvZ.DepthScale.Min",                 0.001f, "UV⇔XYZ: 深度スケールの下限"),
+
+            // --- Boolean（ブーリアン） ---
+            ("Boolean.MergeThreshold.Min",         0.0f,   "ブーリアン: 頂点マージしきい値の下限"),
+
+            // --- QuadDecimate（四角形リダクション） ---
+            ("QuadDecimate.TargetRatio.Min",       0.1f,   "四角形リダクション: 目標比率の下限"),
+            ("QuadDecimate.TargetRatio.Max",       0.9f,   "四角形リダクション: 目標比率の上限"),
+            ("QuadDecimate.MaxPasses.Min",         1f,     "四角形リダクション: 最大パス数の下限（整数）"),
+            ("QuadDecimate.MaxPasses.Max",         10f,    "四角形リダクション: 最大パス数の上限（整数）"),
+            ("QuadDecimate.AngleDeg.Min",          0.0f,   "四角形リダクション: 角度の下限（度。法線角度・ハードエッジ角度で共用）"),
+            ("QuadDecimate.AngleDeg.Max",          180.0f, "四角形リダクション: 角度の上限（度。法線角度・ハードエッジ角度で共用）"),
+            ("QuadDecimate.UvSeamThreshold.Min",   0.0f,   "四角形リダクション: UVシーム閾値の下限"),
+            ("QuadDecimate.UvSeamThreshold.Max",   0.1f,   "四角形リダクション: UVシーム閾値の上限"),
+
+            // --- Mirror（ミラー実体化） ---
+            ("Mirror.Threshold.Min",               0.00001f, "ミラー実体化: 中央判定しきい値の下限"),
+
+            // --- NormalTransplant（法線移植） ---
+            ("NormalTransplant.Strength.Min",      0.0f,   "法線移植: 適用率の下限"),
+            ("NormalTransplant.Strength.Max",      1.0f,   "法線移植: 適用率の上限"),
+
+            // --- ThinPlateMorph（TPSモーフ） ---
+            ("ThinPlateMorph.Lambda.Min",          0.0f,   "TPSモーフ: 平滑化係数λの下限"),
+
+            // --- MorphPreview（モーフプレビュー） ---
+            ("MorphPreview.Weight.Min",            0.0f,   "モーフプレビュー: ウェイトの下限"),
+            ("MorphPreview.Weight.Max",            1.0f,   "モーフプレビュー: ウェイトの上限"),
         };
 
         // ================================================================

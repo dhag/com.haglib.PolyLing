@@ -210,7 +210,24 @@ namespace Poly_Ling.Player
             _executeBtn.style.marginBottom = 4;
             _executeBtn.clicked += () =>
             {
-                GetHandler?.Invoke()?.ExecuteAttributeSelect();
+                var h = GetHandler?.Invoke();
+                if (h == null) return;
+
+                var model = GetView?.Invoke()?.CurrentModel;
+                var mc    = model?.ActiveMeshContext;
+                if (mc == null) return;
+
+                // 設定値はコマンドが正典。パネルの現在値を載せて送る。
+                // ハンドラ側は実行後に元の値へ戻すので、表示は変わらない。
+                SendCommand?.Invoke(new AdvancedSelectByAttributeCommand(
+                    ModelIndex,
+                    new[] { model.IndexOf(mc) },
+                    h.Mode,
+                    addToSelection:          h.AddToSelection,
+                    uvNormalCountThreshold:  h.UvNormalCountThreshold,
+                    axisKind:                h.AxisKind,
+                    axisDistanceThreshold:   h.AxisDistanceThreshold,
+                    limitToCurrentSelection: h.LimitToCurrentSelection));
                 Refresh();
             };
             _attrGroup.Add(_executeBtn);

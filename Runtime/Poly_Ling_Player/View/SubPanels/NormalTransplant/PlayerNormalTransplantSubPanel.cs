@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.UI;
 
@@ -25,6 +26,17 @@ namespace Poly_Ling.Player
 {
     public class PlayerNormalTransplantSubPanel
     {
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float StrengthMin => ParameterLimits.GetF("NormalTransplant.Strength.Min");
+        private static float StrengthMax => ParameterLimits.GetF("NormalTransplant.Strength.Max");
+
         // ================================================================
         // コールバック（Viewer から設定）
         // ================================================================
@@ -209,7 +221,7 @@ namespace Poly_Ling.Player
             var slRow = new VisualElement();
             slRow.style.flexDirection = FlexDirection.Row;
             slRow.style.marginBottom = 4;
-            _sliderStrength = new Slider(0f, 1f) { value = 1f };
+            _sliderStrength = new Slider(StrengthMin, StrengthMax) { value = StrengthMax };
             _sliderStrength.style.flexGrow = 1;
             _sliderStrength.RegisterValueChangedCallback(e => OnSliderChanged(e.newValue));
             _sliderValueLabel = new Label("1.00");

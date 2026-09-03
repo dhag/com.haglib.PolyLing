@@ -6,6 +6,7 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Tools.Panels.QuadDecimator;
@@ -78,11 +79,11 @@ namespace Poly_Ling.Player
 
             // パラメータ
             root.Add(SecLabel("パラメータ"));
-            _sliderTargetRatio = MkSlider("目標比率",           0.1f, 0.9f, _targetRatio,     v => _targetRatio     = v);
-            _sliderMaxPasses   = MkSliderInt("最大パス数",      1,    10,   _maxPasses,        v => _maxPasses       = v);
-            _sliderNormalAngle = MkSlider("法線角度 (°)",       0f,   180f, _normalAngleDeg,   v => _normalAngleDeg  = v);
-            _sliderHardAngle   = MkSlider("ハードエッジ角度(°)", 0f,  180f, _hardAngleDeg,     v => _hardAngleDeg    = v);
-            _sliderUvSeam      = MkSlider("UVシーム閾値",       0f,   0.1f, _uvSeamThreshold,  v => _uvSeamThreshold = v);
+            _sliderTargetRatio = MkSlider("目標比率",           TargetRatioMin, TargetRatioMax, _targetRatio,     v => _targetRatio     = v);
+            _sliderMaxPasses   = MkSliderInt("最大パス数",      MaxPassesMin,   MaxPassesMax,   _maxPasses,        v => _maxPasses       = v);
+            _sliderNormalAngle = MkSlider("法線角度 (°)",       AngleDegMin,    AngleDegMax,    _normalAngleDeg,   v => _normalAngleDeg  = v);
+            _sliderHardAngle   = MkSlider("ハードエッジ角度(°)", AngleDegMin,    AngleDegMax,    _hardAngleDeg,     v => _hardAngleDeg    = v);
+            _sliderUvSeam      = MkSlider("UVシーム閾値",       UvSeamMin,      UvSeamMax,      _uvSeamThreshold,  v => _uvSeamThreshold = v);
             root.Add(_sliderTargetRatio);
             root.Add(_sliderMaxPasses);
             root.Add(_sliderNormalAngle);
@@ -230,6 +231,23 @@ namespace Poly_Ling.Player
             _warningLabel.text          = msg;
             _warningLabel.style.display = DisplayStyle.Flex;
         }
+
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float TargetRatioMin => ParameterLimits.GetF("QuadDecimate.TargetRatio.Min");
+        private static float TargetRatioMax => ParameterLimits.GetF("QuadDecimate.TargetRatio.Max");
+        private static int   MaxPassesMin   => ParameterLimits.GetI("QuadDecimate.MaxPasses.Min");
+        private static int   MaxPassesMax   => ParameterLimits.GetI("QuadDecimate.MaxPasses.Max");
+        private static float AngleDegMin    => ParameterLimits.GetF("QuadDecimate.AngleDeg.Min");
+        private static float AngleDegMax    => ParameterLimits.GetF("QuadDecimate.AngleDeg.Max");
+        private static float UvSeamMin      => ParameterLimits.GetF("QuadDecimate.UvSeamThreshold.Min");
+        private static float UvSeamMax      => ParameterLimits.GetF("QuadDecimate.UvSeamThreshold.Max");
 
         private static Slider MkSlider(string label, float min, float max, float init, Action<float> onChange)
         { var s = new Slider(label, min, max) { value = init }; s.style.marginBottom = 3; s.RegisterValueChangedCallback(e => onChange(e.newValue)); return s; }

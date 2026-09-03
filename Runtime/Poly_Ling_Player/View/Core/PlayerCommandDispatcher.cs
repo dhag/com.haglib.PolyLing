@@ -210,6 +210,48 @@ namespace Poly_Ling.Player
         /// <summary>辺群ブリッジコマンドの実行。</summary>
         public Action<CreateEdgeBridgeCommand> OnCreateEdgeBridge;
 
+        /// <summary>
+        /// 詳細選択コマンドの実行。
+        /// 選択アルゴリズムは AdvancedSelectTool が正典なので、ここでは持たずに委譲する。
+        /// 戻り値は失敗理由。成功時は null（P1-3: 無言 return を残さない）。
+        /// </summary>
+        public Func<AdvancedSelectCommand, string> OnAdvancedSelect;
+
+        /// <summary>
+        /// 属性選択コマンドの実行。
+        /// 走査は AdvancedSelectTool.ExecuteAttributeSelect が正典なので委譲する。
+        /// 戻り値は失敗理由。成功時は null。
+        /// </summary>
+        public Func<AdvancedSelectByAttributeCommand, string> OnAdvancedSelectByAttribute;
+
+        /// <summary>
+        /// スカルプトストロークコマンドの実行。
+        /// 変形アルゴリズムは SculptTool が正典なので、ここでは持たずに委譲する。
+        /// </summary>
+        public Action<SculptStrokeCommand> OnSculptStroke;
+
+        /// <summary>
+        /// 原点移動コマンドの実行。
+        /// 変形・子の補償・Undo は ObjectMoveTool(OriginOnly) が正典なので委譲する。
+        /// 戻り値は失敗理由。成功時は null（P1-3: 無言 return を残さない）。
+        /// </summary>
+        public Func<MovePivotCommand, string> OnMovePivot;
+
+        /// <summary>
+        /// 選択頂点の移動コマンドの実行。
+        /// 選択要素の頂点展開・マグネット・Undo・リモート配信は MoveToolHandler が
+        /// 正典なので委譲する。戻り値は失敗理由。成功時は null。
+        /// </summary>
+        public Func<MoveSelectedVerticesCommand, string> OnMoveSelectedVertices;
+
+        /// <summary>
+        /// 要素選択コマンドの実行。
+        /// 書き込み先の解決・頂点への展開・選択 Undo は
+        /// PlayerSelectionOps / MoveToolHandler が正典なので委譲する。
+        /// 戻り値は失敗理由。成功時は null。
+        /// </summary>
+        public Func<SelectElementsCommand, string> OnSelectElements;
+
         /// <summary>面削除コマンドの実行。</summary>
         public Action<DeleteFacesCommand> OnDeleteFaces;
 
@@ -222,17 +264,70 @@ namespace Poly_Ling.Player
         /// <summary>歪み複製コマンドの実行。</summary>
         public Action<CreateObjectArrayCommand> OnCreateObjectArray;
 
+        /// <summary>Undo の実行。1 段戻せたら true を返すこと。</summary>
+        public Func<bool> OnUndo;
+
+        /// <summary>Redo の実行。1 段やり直せたら true を返すこと。</summary>
+        public Func<bool> OnRedo;
+
         // ================================================================
         // ディスパッチ
         // ================================================================
 
-        public void Dispatch(PanelCommand cmd)
+        /// <summary>
+        /// 直近のコマンドの失敗内容。DispatchCore 内のハンドラが Fail() で設定する。
+        /// 未設定のまま DispatchCore を抜けたら成功とみなす。
+        /// </summary>
+        private CommandResult _pendingResult;
+
+        /// <summary>ハンドラから失敗を報告する。設定後は通常どおり return してよい。</summary>
+        private void Fail(string reason) => _pendingResult = CommandResult.Fail(reason);
+
+        /// <summary>
+        /// コマンドを実行し、結果を返す。
+        /// 本体（DispatchCore）は void のままなので、結果は _pendingResult 経由で受け取る。
+        /// 実行中に別のコマンドが発行されることがある（生成系が Viewer 側へ委譲した先など）ため、
+        /// 呼び出しごとに退避・復元する。catch は付けない（例外の伝播を変えないため）。
+        /// </summary>
+        public CommandResult Dispatch(PanelCommand cmd)
+        {
+            var saved = _pendingResult;
+            _pendingResult = null;
+
+            CommandResult result;
+            try
+            {
+                DispatchCore(cmd);
+                result = _pendingResult ?? CommandResult.Ok();
+            }
+            finally
+            {
+                _pendingResult = saved;
+            }
+            return result;
+        }
+
+        private void DispatchCore(PanelCommand cmd)
         {
             // プロジェクト初期化は「プロジェクトがまだ無い状態」から呼ぶコマンド。
             // 下の null 門より前で捌かないと、初回に握り潰されて何も起きない。
             if (cmd is ResetProjectCommand reset)
             {
                 OnResetProject?.Invoke(reset);
+                return;
+            }
+
+            // Undo / Redo もプロジェクトの有無に関わらず受ける。
+            // 実行は Viewer が持つ UndoManager へ委譲する（ディスパッチャの
+            // MeshUndoController は対象ノードが別のため使わない）。
+            if (cmd is PerformUndoCommand)
+            {
+                if (OnUndo == null || !OnUndo()) Fail("nothing to undo");
+                return;
+            }
+            if (cmd is PerformRedoCommand)
+            {
+                if (OnRedo == null || !OnRedo()) Fail("nothing to redo");
                 return;
             }
 
@@ -245,7 +340,7 @@ namespace Poly_Ling.Player
             bool createsOwnModel = cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand;
 
             var project = _getProject();
-            if (project == null && !createsOwnModel) return;
+            if (project == null && !createsOwnModel) { Fail("no project"); return; }
             var model   = project?.CurrentModel;
 
             // DescribeCommand は補間文字列を作る。PLDiag.Cmd の中で捨てられる場合でも
@@ -390,332 +485,157 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Selection);
                     return;
 
-                // ── 頂点・辺・面の選択
+                // ── 頂点・辺・面・線分の選択
+                //
+                // 書き込み先の解決・線分の扱い・頂点への展開・選択 Undo は
+                // PlayerSelectionOps と MoveToolHandler が持つ。以前はここに同じ
+                // 選択処理をもう 1 組持っていたが、クリック経路と食い違っていたため
+                // 削除して委譲に寄せた。
+                // 食い違っていた点: 書き込み先が単一 MasterIndex で非加算でも他メッシュの
+                // 選択が残った / 線分(SelectionState.Lines)を扱えなかった /
+                // ExpandLinkedVertices を通らず「選んだ要素の頂点も選択する」が効かなかった /
+                // 選択 Undo を積まなかった / クリック経路が行わない
+                // SetSelectionState の差し替えをしていた。
                 case SelectElementsCommand c:
                 {
-                    if (model == null) return;
-                    var targetMc = model.GetMeshContext(c.MasterIndex);
-                    if (targetMc?.Selection == null) return;
-                    var sel2 = targetMc.Selection;
-                    if (!c.Additive)
-                        sel2.ClearAll();
-                    if (c.VertexIndices != null)
-                        foreach (int vi in c.VertexIndices)
-                            sel2.SelectVertex(vi, additive: true);
-                    if (c.EdgePairs != null)
-                        for (int i = 0; i + 1 < c.EdgePairs.Length; i += 2)
-                            sel2.SelectEdge(c.EdgePairs[i], c.EdgePairs[i + 1], additive: true);
-                    if (c.FaceIndices != null)
-                        foreach (int fi in c.FaceIndices)
-                            sel2.SelectFace(fi, additive: true);
-                    _selectionOps?.SetSelectionState(sel2);
-                    _renderer?.SetSelectionState(sel2);
-                    _notifyPanels(ChangeKind.Selection);
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnSelectElements == null)
+                    {
+                        Fail("selection handler not wired");
+                        return;
+                    }
+                    string selReason = OnSelectElements.Invoke(c);
+                    if (selReason != null)
+                    {
+                        Fail(selReason);
+                        return;
+                    }
+                    // _notifyPanels は呼ばない。
+                    // 反映は PlayerSelectionOps.ApplyElementSet 末尾の
+                    // OnSelectionChanged が担い、クリック経路と同じ重さになる。
+                    // NotifyPanels(Selection) が追加で行うのは
+                    // EnterSelectionChanged（全メッシュ×全頂点のフラグ再計算と
+                    // 全頂点 GPU 転送）、可視セクション refresh の 2 周目、
+                    // PlayerBlendSubPanel.OnSelectionChanged、
+                    // PolyLingPlayerServer.NotifySelectionChanged だが、
+                    // いずれも要素選択では不要（前 3 者は OnSelectionChanged 側で
+                    // 足りる／メッシュ増減しか見ない。最後は選択署名に
+                    // 要素選択を含まないため差分なしで早期 return する）。
                     return;
                 }
 
                 // ── 選択頂点の移動
+                //
+                // 頂点への展開規則・マグネット・Undo 記録・リモート配信は
+                // MoveToolHandler が持つ。以前はここに同じ移動処理をもう 1 組
+                // 持っていたが、マウス経路と食い違っていたため削除して委譲に寄せた。
+                // 食い違っていた点: 対象が単一 MasterIndex だった / Selection.Vertices
+                // しか見ず辺・面・線分の選択を頂点へ展開していなかった /
+                // マグネットを通らなかった / OnVerticesCommitted を呼ばないため
+                // 他クライアントへ配信されなかった。
+                //
+                // GPU 反映はここでは行わない。マウス経路と同じく ApplyDelta 内の
+                // OnSyncMeshPositions が担う。
                 case MoveSelectedVerticesCommand c:
                 {
-                    if (model == null) return;
-                    var moveMc = model.GetMeshContext(c.MasterIndex);
-                    if (moveMc?.MeshObject == null || moveMc.Selection == null) return;
-
-                    // Delta をローカル空間に変換
-                    var localDelta = c.Space == MoveSelectedVerticesCommand.CoordSpace.World
-                        ? moveMc.WorldMatrixInverse.MultiplyVector(c.Delta)
-                        : c.Delta;
-
-                    var mo              = moveMc.MeshObject;
-                    var selectedVerts   = new List<int>(moveMc.Selection.Vertices);
-                    if (selectedVerts.Count == 0) return;
-
-                    // 移動前位置を記録
-                    var oldPositions = new Vector3[selectedVerts.Count];
-                    var newPositions = new Vector3[selectedVerts.Count];
-                    for (int i = 0; i < selectedVerts.Count; i++)
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnMoveSelectedVertices == null)
                     {
-                        int vi = selectedVerts[i];
-                        oldPositions[i] = mo.Vertices[vi].Position;
-                        newPositions[i] = mo.Vertices[vi].Position + localDelta;
-                        mo.Vertices[vi].Position = newPositions[i];
+                        Fail("move handler not wired");
+                        return;
                     }
-                    mo.InvalidatePositionCache();
-
-                    if (c.RecalcNormals)
-                        mo.RecalculateSmoothNormals();
-
-                    // Undo 記録
-                    if (_undoController != null)
+                    string moveReason = OnMoveSelectedVertices.Invoke(c);
+                    if (moveReason != null)
                     {
-                        var entry = new MeshMoveEntry
-                        {
-                            MeshContextIndex = c.MasterIndex,
-                            Indices          = selectedVerts.ToArray(),
-                            OldPositions     = oldPositions,
-                            NewPositions     = newPositions,
-                        };
-                        var record = new MultiMeshVertexMoveRecord(new[] { entry });
-                        _undoController.FocusVertexEdit();
-                        {
-                            string __dbgDesc = $"Move {selectedVerts.Count} Vertices";
-                            PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
-                            _undoController.VertexEditStack.Record(record, __dbgDesc);
-                        }
+                        Fail(moveReason);
+                        return;
                     }
-
-                    // GPU 反映
-                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
-
-                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, moveMc);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
 
-                // ── ピボット移動
+                // ── ピボット移動（原点だけ移動）
+                //
+                // 変形・子 BoneTransform の補償・Undo のグループ化は
+                // ObjectMoveTool(OriginOnly) が持つ。以前はここに同じ処理をもう 1 組
+                // 持っていたが、マウス経路と食い違っていたため削除して委譲に寄せた。
+                // 食い違っていた点: 対象が単一 MasterIndex だった / スキン判定
+                // (MeshType.Mesh && !IsSkinned) が無かった / 孤立頂点を除外していた /
+                // 直接の子のワールド位置を保つ補償が無かった /
+                // MeshListStack のグループ化が無く Undo が対象数だけ分かれていた。
                 case MovePivotCommand c:
                 {
-                    if (model == null) return;
-                    var pivotMc = model.GetMeshContext(c.MasterIndex);
-                    if (pivotMc?.MeshObject == null) return;
-
-                    var mo = pivotMc.MeshObject;
-
-                    // worldDelta / localDelta を確定
-                    Vector3 worldDelta, localDelta;
-                    if (c.Space == MoveSelectedVerticesCommand.CoordSpace.World)
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnMovePivot == null)
                     {
-                        worldDelta = c.Delta;
-                        localDelta = pivotMc.WorldMatrixInverse.MultiplyVector(c.Delta);
+                        Fail("pivot handler not wired");
+                        return;
                     }
-                    else
+                    string pivotReason = OnMovePivot.Invoke(c);
+                    if (pivotReason != null)
                     {
-                        localDelta = c.Delta;
-                        worldDelta = pivotMc.WorldMatrix.MultiplyVector(c.Delta);
+                        Fail(pivotReason);
+                        return;
                     }
-
-                    // 孤立頂点を除いた全頂点インデックスを収集
-                    var nonIsolated = BuildBlendNonIsolatedSet(mo);
-                    var indices     = new List<int>(nonIsolated);
-
-                    // 移動前後の位置を記録しながら頂点に -localDelta を適用
-                    var oldPositions = new Vector3[indices.Count];
-                    var newPositions = new Vector3[indices.Count];
-                    for (int i = 0; i < indices.Count; i++)
-                    {
-                        int vi = indices[i];
-                        oldPositions[i]          = mo.Vertices[vi].Position;
-                        newPositions[i]          = mo.Vertices[vi].Position - localDelta;
-                        mo.Vertices[vi].Position = newPositions[i];
-                    }
-                    mo.InvalidatePositionCache();
-                    if (pivotMc.OriginalPositions != null && pivotMc.OriginalPositions.Length == mo.VertexCount)
-                        for (int i = 0; i < indices.Count; i++)
-                            pivotMc.OriginalPositions[indices[i]] = newPositions[i];
-
-                    // BoneTransform.Position を +worldDelta
-                    BoneTransformSnapshot oldBoneSnap = default, newBoneSnap = default;
-                    if (pivotMc.BoneTransform != null)
-                    {
-                        oldBoneSnap = pivotMc.BoneTransform.CreateSnapshot();
-                        pivotMc.BoneTransform.UseLocalTransform = true;
-                        pivotMc.BoneTransform.Position         += worldDelta;
-                        newBoneSnap = pivotMc.BoneTransform.CreateSnapshot();
-                    }
-
-                    // Undo 記録（PivotMoveRecord を MeshListStack へ）
-                    if (_undoController != null)
-                    {
-                        var record = new PivotMoveRecord
-                        {
-                            MasterIndex       = c.MasterIndex,
-                            VertexIndices     = indices.ToArray(),
-                            OldVertexPositions = oldPositions,
-                            NewVertexPositions = newPositions,
-                            OldBoneTransform  = oldBoneSnap,
-                            NewBoneTransform  = newBoneSnap,
-                        };
-                        {
-                            string __dbgDesc = "Pivot Move";
-                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
-                            _undoController.MeshListStack.Record(record, __dbgDesc);
-                        }
-                        _undoController.FocusMeshList();
-                    }
-
-                    // GPU 反映
-                    model.ComputeWorldMatrices();
-                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
-
-                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, pivotMc);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
 
                 // ── スカルプトストローク
+                //
+                // 変形は SculptTool が持つ。以前はここに同じブラシ処理をもう 1 組
+                // 持っていたが、Draw の視線方向による反転補正が無く、距離モード
+                // （リンク距離）の分岐も無かったためマウス経路と結果が食い違っていた。
+                // 削除して委譲に寄せた。GPU 反映と Undo 記録はハンドラ側が行う。
                 case SculptStrokeCommand c:
                 {
                     if (model == null) return;
-                    var sculptMc = model.GetMeshContext(c.MasterIndex);
-                    if (sculptMc?.MeshObject == null) return;
-
-                    var mo = sculptMc.MeshObject;
-
-                    // 開始時の全頂点位置を保存
-                    var beforePositions = new Vector3[mo.VertexCount];
-                    for (int i = 0; i < mo.VertexCount; i++)
-                        beforePositions[i] = mo.Vertices[i].Position;
-
-                    // キャッシュ構築（ストローク開始時に1回）
-                    var adjacency    = SculptBuildAdjacency(mo);
-                    var vertNormals  = SculptBuildVertexNormals(mo);
-
-                    // 各ブラシ中心でブラシを適用
-                    foreach (var center in c.BrushCenters)
+                    if (OnSculptStroke == null)
                     {
-                        var affected = SculptGetAffected(mo, center, c.BrushRadius, c.Falloff);
-                        if (affected.Count == 0) continue;
-
-                        switch (c.Mode)
-                        {
-                            case SculptMode.Draw:
-                                SculptApplyDraw(mo, affected, c.Strength, c.Invert, vertNormals);
-                                break;
-                            case SculptMode.Smooth:
-                                SculptApplySmooth(mo, affected, c.Strength, adjacency);
-                                break;
-                            case SculptMode.Inflate:
-                                SculptApplyInflate(mo, affected, c.Strength, c.Invert, vertNormals);
-                                break;
-                            case SculptMode.Flatten:
-                                SculptApplyFlatten(mo, affected, c.Strength, vertNormals);
-                                break;
-                        }
+                        Fail("sculpt handler not wired");
+                        return;
                     }
-
-                    mo.InvalidatePositionCache();
-
-                    if (c.RecalcNormals)
-                        mo.RecalculateSmoothNormals();
-
-                    // 移動した頂点のみUndo記録に含める
-                    if (_undoController != null)
-                    {
-                        var movedIdx  = new List<int>();
-                        var oldPos    = new List<Vector3>();
-                        var newPos    = new List<Vector3>();
-                        for (int i = 0; i < mo.VertexCount; i++)
-                        {
-                            var cur = mo.Vertices[i].Position;
-                            if (cur != beforePositions[i])
-                            {
-                                movedIdx.Add(i);
-                                oldPos.Add(beforePositions[i]);
-                                newPos.Add(cur);
-                            }
-                        }
-                        if (movedIdx.Count > 0)
-                        {
-                            var entry = new MeshMoveEntry
-                            {
-                                MeshContextIndex = c.MasterIndex,
-                                Indices          = movedIdx.ToArray(),
-                                OldPositions     = oldPos.ToArray(),
-                                NewPositions     = newPos.ToArray(),
-                            };
-                            var record = new MultiMeshVertexMoveRecord(new[] { entry });
-                            _undoController.FocusVertexEdit();
-                            {
-                                string __dbgDesc = $"Sculpt ({c.Mode}) {movedIdx.Count} Vertices";
-                                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
-                                _undoController.VertexEditStack.Record(record, __dbgDesc);
-                            }
-                        }
-                    }
-
-                    // GPU 反映
-                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
-
-                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, sculptMc);
+                    OnSculptStroke.Invoke(c);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
 
                 // ── 詳細選択
+                //
+                // 実処理は AdvancedSelectTool（EdgeLoopSelectMode ほか）が持つ。
+                // 以前はここに同じ選択アルゴリズムをもう 1 組持っていたが、
+                // マウス経路と結果が食い違っていたため削除し、委譲に寄せた。
+                // 例: 旧 AdvEdgeLoop は VertexPair が V1<=V2 へ正規化される
+                //     （EdgeTypes.cs:21-25）ことで逆方向の探索が初回で break し、
+                //     輪の片側しか拾えていなかった。
                 case AdvancedSelectCommand c:
                 {
-                    if (model == null) return;
-                    var advMc = model.GetMeshContext(c.MasterIndex);
-                    if (advMc?.MeshObject == null || advMc.Selection == null) return;
-                    var mo  = advMc.MeshObject;
-                    var sel = advMc.Selection;
-
-                    if (!c.Additive) sel.ClearAll();
-
-                    switch (c.Mode)
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnAdvancedSelect == null)
                     {
-                        case AdvancedSelectMode.Connected:
-                        {
-                            if (c.SeedVertexIndex >= 0)
-                            {
-                                var verts = AdvConnectedFromVertex(mo, c.SeedVertexIndex);
-                                if (c.SelectVertices) foreach (int v in verts) sel.SelectVertex(v, additive: true);
-                                if (c.SelectEdges)    foreach (var e in AdvEdgesFromVertices(mo, verts)) sel.SelectEdge(e, additive: true);
-                                if (c.SelectFaces)    foreach (int f in AdvFacesFromVertices(mo, verts)) sel.SelectFace(f, additive: true);
-                            }
-                            else if (c.SeedEdgeV1 >= 0 && c.SeedEdgeV2 >= 0)
-                            {
-                                var edges = AdvConnectedFromEdge(mo, new VertexPair(c.SeedEdgeV1, c.SeedEdgeV2));
-                                var verts = new HashSet<int>();
-                                foreach (var e in edges) { verts.Add(e.V1); verts.Add(e.V2); }
-                                if (c.SelectVertices) foreach (int v in verts) sel.SelectVertex(v, additive: true);
-                                if (c.SelectEdges)    foreach (var e in edges) sel.SelectEdge(e, additive: true);
-                                if (c.SelectFaces)    foreach (int f in AdvFacesFromVertices(mo, verts)) sel.SelectFace(f, additive: true);
-                            }
-                            else if (c.SeedFaceIndex >= 0)
-                            {
-                                var faces = AdvConnectedFromFace(mo, c.SeedFaceIndex);
-                                var verts = new HashSet<int>();
-                                foreach (int f in faces) foreach (int v in mo.Faces[f].VertexIndices) verts.Add(v);
-                                if (c.SelectVertices) foreach (int v in verts) sel.SelectVertex(v, additive: true);
-                                if (c.SelectEdges)    foreach (var e in AdvEdgesFromFaces(mo, faces)) sel.SelectEdge(e, additive: true);
-                                if (c.SelectFaces)    foreach (int f in faces) sel.SelectFace(f, additive: true);
-                            }
-                            break;
-                        }
-                        case AdvancedSelectMode.Belt:
-                        {
-                            if (c.SeedEdgeV1 < 0 || c.SeedEdgeV2 < 0) break;
-                            var (bVerts, bEdges, bFaces) = AdvBelt(mo, new VertexPair(c.SeedEdgeV1, c.SeedEdgeV2));
-                            if (c.SelectVertices) foreach (int v in bVerts)  sel.SelectVertex(v, additive: true);
-                            if (c.SelectEdges)    foreach (var e in bEdges)  sel.SelectEdge(e, additive: true);
-                            if (c.SelectFaces)    foreach (int f in bFaces)  sel.SelectFace(f, additive: true);
-                            break;
-                        }
-                        case AdvancedSelectMode.EdgeLoop:
-                        {
-                            if (c.SeedEdgeV1 < 0 || c.SeedEdgeV2 < 0) break;
-                            var loopEdges = AdvEdgeLoop(mo, new VertexPair(c.SeedEdgeV1, c.SeedEdgeV2), c.EdgeLoopThreshold);
-                            var loopVerts = new HashSet<int>();
-                            foreach (var e in loopEdges) { loopVerts.Add(e.V1); loopVerts.Add(e.V2); }
-                            if (c.SelectVertices) foreach (int v in loopVerts)  sel.SelectVertex(v, additive: true);
-                            if (c.SelectEdges)    foreach (var e in loopEdges)  sel.SelectEdge(e, additive: true);
-                            if (c.SelectFaces)    foreach (int f in AdvFacesFromEdges(mo, loopEdges)) sel.SelectFace(f, additive: true);
-                            break;
-                        }
-                        case AdvancedSelectMode.ShortestPath:
-                        {
-                            if (c.SeedVertexIndex < 0 || c.EndVertexIndex < 0) break;
-                            var path = AdvShortestPath(mo, c.SeedVertexIndex, c.EndVertexIndex);
-                            if (c.SelectVertices) foreach (int v in path)            sel.SelectVertex(v, additive: true);
-                            if (c.SelectEdges)    foreach (var e in AdvEdgesFromPath(path)) sel.SelectEdge(e, additive: true);
-                            if (c.SelectFaces)    foreach (int f in AdvFacesFromEdges(mo, AdvEdgesFromPath(path))) sel.SelectFace(f, additive: true);
-                            break;
-                        }
+                        Fail("advanced select handler not wired");
+                        return;
                     }
+                    string advReason = OnAdvancedSelect.Invoke(c);
+                    if (advReason != null) { Fail(advReason); return; }
+                    _notifyPanels(ChangeKind.Selection);
+                    return;
+                }
 
-                    _selectionOps?.SetSelectionState(sel);
-                    _renderer?.SetSelectionState(sel);
+                // ── 属性選択（クリック非依存）
+                //
+                // 走査は AdvancedSelectTool.ExecuteAttributeSelect が正典。
+                // パネルの「実行」ボタンもこのコマンド経由に統一してある。
+                case AdvancedSelectByAttributeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnAdvancedSelectByAttribute == null)
+                    {
+                        Fail("attribute select handler not wired");
+                        return;
+                    }
+                    string attrReason = OnAdvancedSelectByAttribute.Invoke(c);
+                    if (attrReason != null) { Fail(attrReason); return; }
                     _notifyPanels(ChangeKind.Selection);
                     return;
                 }
@@ -778,7 +698,7 @@ namespace Poly_Ling.Player
                 //   ローカル発 → ホスト自身の操作なので無条件に許可
                 // よってここは確定適用（force）。ObjectIds の照合だけは残す。
                 case SetObjectEditorCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GetMeshListOps(model).SetObjectEditor(
                         c.MasterIndices, c.EditorName, c.ObjectIds,
                         requesterName: null, force: true);
@@ -1149,7 +1069,7 @@ namespace Poly_Ling.Player
 
                 // ── モーフ変換（構造変更）
                 case ConvertMeshToMorphCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GetMeshListOps(model).ConvertMeshToMorph(
                         c.SourceIndex, c.ParentIndex, c.MorphName, c.Panel);
                     _viewportManager.EnterTopologyChanged(project);
@@ -1157,14 +1077,14 @@ namespace Poly_Ling.Player
                     return;
 
                 case ConvertMorphToMeshCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GetMeshListOps(model).ConvertMorphToMesh(c.MasterIndices);
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
 
                 case CreateMorphSetCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GetMeshListOps(model).CreateMorphSet(
                         c.SetName, c.MorphType, c.MorphIndices);
                     _viewportManager.EnterTopologyChanged(project);
@@ -1175,26 +1095,26 @@ namespace Poly_Ling.Player
                 // 開始と重み変更では通知しない。頂点位置の GPU 反映は
                 // MeshListOps.SyncPositionsOnly（GetMeshListOps で配線）が担う。
                 case StartMorphPreviewCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GetMeshListOps(model).StartMorphPreview(c.MorphIndices);
                     return;
 
                 case ApplyMorphPreviewCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GetMeshListOps(model).ApplyMorphPreview(c.Weight);
                     return;
 
                 // 終了時は元の頂点位置へ戻したうえで確定させる。
                 // 法線抑止の解除と全 viewport の再計算が要るので DragEnd を通す。
                 case EndMorphPreviewCommand _:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GetMeshListOps(model).EndMorphPreview();
                     _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.DragEnd);
                     return;
 
                 // ── パネル側で直接変更した後の通知
                 case NotifyListStructureChangedCommand _:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     model.OnListChanged?.Invoke();
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
@@ -4690,414 +4610,19 @@ namespace Poly_Ling.Player
         // スカルプト ブラシ ヘルパー（SculptStrokeCommand 用）
         // ================================================================
 
-        private static List<(int index, float weight)> SculptGetAffected(
-            MeshObject mo, Vector3 center, float radius, FalloffType falloff)
-        {
-            var result = new List<(int, float)>();
-            for (int i = 0; i < mo.VertexCount; i++)
-            {
-                float dist = Vector3.Distance(mo.Vertices[i].Position, center);
-                if (dist <= radius)
-                {
-                    float t      = radius > 0f ? dist / radius : 0f;
-                    float weight = FalloffHelper.Calculate(t, falloff);
-                    result.Add((i, weight));
-                }
-            }
-            return result;
-        }
-
-        private static Dictionary<int, HashSet<int>> SculptBuildAdjacency(MeshObject mo)
-        {
-            var cache = new Dictionary<int, HashSet<int>>();
-            foreach (var face in mo.Faces)
-            {
-                int n = face.VertexIndices.Count;
-                for (int i = 0; i < n; i++)
-                {
-                    int v1 = face.VertexIndices[i];
-                    int v2 = face.VertexIndices[(i + 1) % n];
-                    if (!cache.ContainsKey(v1)) cache[v1] = new HashSet<int>();
-                    if (!cache.ContainsKey(v2)) cache[v2] = new HashSet<int>();
-                    cache[v1].Add(v2);
-                    cache[v2].Add(v1);
-                }
-            }
-            return cache;
-        }
-
-        private static Dictionary<int, Vector3> SculptBuildVertexNormals(MeshObject mo)
-        {
-            var faceNormals = new Dictionary<int, List<Vector3>>();
-            foreach (var face in mo.Faces)
-            {
-                if (face.VertexIndices.Count < 3) continue;
-                var v0 = mo.Vertices[face.VertexIndices[0]].Position;
-                var v1 = mo.Vertices[face.VertexIndices[1]].Position;
-                var v2 = mo.Vertices[face.VertexIndices[2]].Position;
-                var fn = NormalHelper.CalculateFaceNormal(v0, v1, v2);
-                foreach (int vi in face.VertexIndices)
-                {
-                    if (!faceNormals.ContainsKey(vi)) faceNormals[vi] = new List<Vector3>();
-                    faceNormals[vi].Add(fn);
-                }
-            }
-            var result = new Dictionary<int, Vector3>();
-            foreach (var kv in faceNormals)
-            {
-                var avg = Vector3.zero;
-                foreach (var n in kv.Value) avg += n;
-                result[kv.Key] = avg.normalized;
-            }
-            return result;
-        }
-
-        private static void SculptApplyDraw(
-            MeshObject mo,
-            List<(int index, float weight)> verts,
-            float strength, bool invert,
-            Dictionary<int, Vector3> normals)
-        {
-            if (normals == null) return;
-            var avgN = Vector3.zero;
-            foreach (var (idx, w) in verts)
-                if (normals.TryGetValue(idx, out var n)) avgN += n * w;
-            avgN = avgN.normalized;
-            float dir = invert ? -1f : 1f;
-            foreach (var (idx, w) in verts)
-                mo.Vertices[idx].Position += avgN * strength * w * dir;
-        }
-
-        private static void SculptApplySmooth(
-            MeshObject mo,
-            List<(int index, float weight)> verts,
-            float strength,
-            Dictionary<int, HashSet<int>> adjacency)
-        {
-            if (adjacency == null) return;
-            var newPos = new Dictionary<int, Vector3>();
-            foreach (var (idx, w) in verts)
-            {
-                if (!adjacency.TryGetValue(idx, out var neighbors) || neighbors.Count == 0) continue;
-                var avg = Vector3.zero;
-                foreach (int nb in neighbors) avg += mo.Vertices[nb].Position;
-                avg /= neighbors.Count;
-                newPos[idx] = Vector3.Lerp(mo.Vertices[idx].Position, avg, strength * w);
-            }
-            foreach (var kv in newPos) mo.Vertices[kv.Key].Position = kv.Value;
-        }
-
-        private static void SculptApplyInflate(
-            MeshObject mo,
-            List<(int index, float weight)> verts,
-            float strength, bool invert,
-            Dictionary<int, Vector3> normals)
-        {
-            if (normals == null) return;
-            float dir = invert ? -1f : 1f;
-            foreach (var (idx, w) in verts)
-                if (normals.TryGetValue(idx, out var n))
-                    mo.Vertices[idx].Position += n * strength * w * dir;
-        }
-
-        private static void SculptApplyFlatten(
-            MeshObject mo,
-            List<(int index, float weight)> verts,
-            float strength,
-            Dictionary<int, Vector3> normals)
-        {
-            if (verts.Count == 0 || normals == null) return;
-            var avgPos = Vector3.zero;
-            var avgN   = Vector3.zero;
-            float total = 0f;
-            foreach (var (idx, w) in verts)
-            {
-                avgPos += mo.Vertices[idx].Position * w;
-                if (normals.TryGetValue(idx, out var n)) avgN += n * w;
-                total  += w;
-            }
-            if (total > 0f) avgPos /= total;
-            avgN = avgN.normalized;
-
-            foreach (var (idx, w) in verts)
-            {
-                var pos  = mo.Vertices[idx].Position;
-                var proj = pos - avgN * Vector3.Dot(pos - avgPos, avgN);
-                mo.Vertices[idx].Position = Vector3.Lerp(pos, proj, strength * w);
-            }
-        }
-
         // ================================================================
         // 詳細選択 トポロジー ヘルパー（AdvancedSelectCommand 用）
         // ================================================================
 
         // ── Connected ────────────────────────────────────────────────
 
-        private static List<int> AdvConnectedFromVertex(MeshObject mo, int start)
-        {
-            var adj    = SelectionHelper.BuildVertexAdjacency(mo);
-            var result = new HashSet<int>();
-            var queue  = new Queue<int>();
-            queue.Enqueue(start); result.Add(start);
-            while (queue.Count > 0)
-            {
-                int cur = queue.Dequeue();
-                if (!adj.TryGetValue(cur, out var neighbors)) continue;
-                foreach (int nb in neighbors)
-                    if (result.Add(nb)) queue.Enqueue(nb);
-            }
-            return result.ToList();
-        }
-
-        private static List<VertexPair> AdvConnectedFromEdge(MeshObject mo, VertexPair start)
-        {
-            var adj    = SelectionHelperBuildEdgeAdj(mo);
-            var result = new HashSet<VertexPair>();
-            var queue  = new Queue<VertexPair>();
-            queue.Enqueue(start); result.Add(start);
-            while (queue.Count > 0)
-            {
-                var cur = queue.Dequeue();
-                if (!adj.TryGetValue(cur, out var neighbors)) continue;
-                foreach (var nb in neighbors)
-                    if (result.Add(nb)) queue.Enqueue(nb);
-            }
-            return result.ToList();
-        }
-
-        private static List<int> AdvConnectedFromFace(MeshObject mo, int start)
-        {
-            var adj    = SelectionHelper.BuildFaceAdjacency(mo);
-            var result = new HashSet<int>();
-            var queue  = new Queue<int>();
-            queue.Enqueue(start); result.Add(start);
-            while (queue.Count > 0)
-            {
-                int cur = queue.Dequeue();
-                if (!adj.TryGetValue(cur, out var neighbors)) continue;
-                foreach (int nb in neighbors)
-                    if (result.Add(nb)) queue.Enqueue(nb);
-            }
-            return result.ToList();
-        }
-
         // ── Belt ─────────────────────────────────────────────────────
-
-        private static (HashSet<int> verts, List<VertexPair> edges, List<int> faces)
-            AdvBelt(MeshObject mo, VertexPair startEdge)
-        {
-            var verts        = new HashSet<int>();
-            var ladderEdges  = new List<VertexPair>();
-            var faces        = new List<int>();
-            var edgeToFaces  = SelectionHelper.BuildEdgeToFacesMap(mo);
-            var visited      = new HashSet<VertexPair>();
-
-            AdvBeltTraverse(mo, startEdge, edgeToFaces, visited, verts, ladderEdges, faces, forward: true);
-            AdvBeltTraverse(mo, startEdge, edgeToFaces, visited, verts, ladderEdges, faces, forward: false);
-
-            return (verts, ladderEdges, faces);
-        }
-
-        private static void AdvBeltTraverse(
-            MeshObject mo, VertexPair cur,
-            Dictionary<VertexPair, List<int>> edgeToFaces,
-            HashSet<VertexPair> visited,
-            HashSet<int> verts, List<VertexPair> edges, List<int> faces,
-            bool forward)
-        {
-            while (true)
-            {
-                if (visited.Contains(cur)) break;
-                visited.Add(cur);
-                verts.Add(cur.V1); verts.Add(cur.V2);
-                edges.Add(cur);
-
-                if (!edgeToFaces.TryGetValue(cur, out var faceList)) break;
-
-                VertexPair? next = null;
-                foreach (int fi in faceList)
-                {
-                    var face = mo.Faces[fi];
-                    if (face.VertexIndices.Count != 4) continue;
-                    if (!faces.Contains(fi)) faces.Add(fi);
-                    var opp = AdvFindOppositeEdge(face, cur.V1, cur.V2);
-                    if (opp.HasValue)
-                    {
-                        var oppPair = new VertexPair(opp.Value.Item1, opp.Value.Item2);
-                        if (!visited.Contains(oppPair)) { next = oppPair; break; }
-                    }
-                }
-                if (!next.HasValue) break;
-                cur = next.Value;
-            }
-        }
-
-        private static (int, int)? AdvFindOppositeEdge(Face face, int v1, int v2)
-        {
-            var vs = face.VertexIndices;
-            int n  = vs.Count;
-            if (n != 4) return null;
-            for (int i = 0; i < n; i++)
-            {
-                if ((vs[i] == v1 && vs[(i + 1) % n] == v2) ||
-                    (vs[i] == v2 && vs[(i + 1) % n] == v1))
-                {
-                    int s = (i + 2) % n;
-                    int e = (i + 3) % n;
-                    return (vs[s], vs[e]);
-                }
-            }
-            return null;
-        }
 
         // ── EdgeLoop ─────────────────────────────────────────────────
 
-        private static List<VertexPair> AdvEdgeLoop(MeshObject mo, VertexPair startEdge, float threshold)
-        {
-            var adj     = SelectionHelper.BuildVertexAdjacency(mo);
-            var result  = new HashSet<VertexPair>();
-            var visited = new HashSet<VertexPair>();
-            var dir = (mo.Vertices[startEdge.V2].Position - mo.Vertices[startEdge.V1].Position).normalized;
-
-            AdvEdgeLoopTraverse(mo, startEdge.V1, startEdge.V2,  dir, adj, visited, result, threshold);
-            AdvEdgeLoopTraverse(mo, startEdge.V2, startEdge.V1, -dir, adj, visited, result, threshold);
-
-            return result.ToList();
-        }
-
-        private static void AdvEdgeLoopTraverse(
-            MeshObject mo, int from, int to, Vector3 dir,
-            Dictionary<int, HashSet<int>> adj,
-            HashSet<VertexPair> visited, HashSet<VertexPair> result,
-            float threshold)
-        {
-            int prev = from, cur = to;
-            var curDir = dir;
-            while (true)
-            {
-                var edge = new VertexPair(prev, cur);
-                if (visited.Contains(edge)) break;
-                visited.Add(edge); result.Add(edge);
-
-                if (!adj.TryGetValue(cur, out var neighbors)) break;
-                int best = -1; float bestDot = threshold;
-                foreach (int nb in neighbors)
-                {
-                    if (nb == prev) continue;
-                    var nd = (mo.Vertices[nb].Position - mo.Vertices[cur].Position).normalized;
-                    float dot = Vector3.Dot(curDir, nd);
-                    if (dot > bestDot) { bestDot = dot; best = nb; }
-                }
-                if (best < 0) break;
-                curDir = (mo.Vertices[best].Position - mo.Vertices[cur].Position).normalized;
-                prev = cur; cur = best;
-            }
-        }
-
         // ── ShortestPath (Dijkstra) ───────────────────────────────────
 
-        private static List<int> AdvShortestPath(MeshObject mo, int start, int end)
-        {
-            var adj      = SelectionHelper.BuildVertexAdjacency(mo);
-            var dist     = new Dictionary<int, float>();
-            var prev     = new Dictionary<int, int>();
-            var unvisited = new HashSet<int>();
-
-            for (int i = 0; i < mo.VertexCount; i++) { dist[i] = float.MaxValue; unvisited.Add(i); }
-            dist[start] = 0f;
-
-            while (unvisited.Count > 0)
-            {
-                int cur = -1; float minD = float.MaxValue;
-                foreach (int v in unvisited) if (dist[v] < minD) { minD = dist[v]; cur = v; }
-                if (cur < 0 || cur == end) break;
-                unvisited.Remove(cur);
-                if (!adj.TryGetValue(cur, out var nbs)) continue;
-                foreach (int nb in nbs)
-                {
-                    if (!unvisited.Contains(nb)) continue;
-                    float alt = dist[cur] + Vector3.Distance(mo.Vertices[cur].Position, mo.Vertices[nb].Position);
-                    if (alt < dist[nb]) { dist[nb] = alt; prev[nb] = cur; }
-                }
-            }
-
-            var path = new List<int>();
-            int node = end;
-            while (prev.ContainsKey(node)) { path.Add(node); node = prev[node]; }
-            path.Add(start);
-            path.Reverse();
-            return path;
-        }
-
         // ── 共通ユーティリティ ────────────────────────────────────────
-
-        private static List<VertexPair> AdvEdgesFromVertices(MeshObject mo, IEnumerable<int> verts)
-        {
-            var vset   = new HashSet<int>(verts);
-            var result = new HashSet<VertexPair>();
-            foreach (var face in mo.Faces)
-            {
-                int n = face.VertexIndices.Count;
-                for (int i = 0; i < n; i++)
-                {
-                    int v1 = face.VertexIndices[i];
-                    int v2 = face.VertexIndices[(i + 1) % n];
-                    if (vset.Contains(v1) && vset.Contains(v2))
-                        result.Add(new VertexPair(v1, v2));
-                }
-            }
-            return result.ToList();
-        }
-
-        private static List<VertexPair> AdvEdgesFromFaces(MeshObject mo, IEnumerable<int> faceIndices)
-        {
-            var result = new HashSet<VertexPair>();
-            foreach (int fi in faceIndices)
-            {
-                var verts = mo.Faces[fi].VertexIndices;
-                int n = verts.Count;
-                for (int i = 0; i < n; i++)
-                    result.Add(new VertexPair(verts[i], verts[(i + 1) % n]));
-            }
-            return result.ToList();
-        }
-
-        private static List<int> AdvFacesFromVertices(MeshObject mo, IEnumerable<int> verts)
-        {
-            var vset   = new HashSet<int>(verts);
-            var result = new List<int>();
-            for (int fi = 0; fi < mo.FaceCount; fi++)
-            {
-                bool all = true;
-                foreach (int v in mo.Faces[fi].VertexIndices)
-                    if (!vset.Contains(v)) { all = false; break; }
-                if (all) result.Add(fi);
-            }
-            return result;
-        }
-
-        private static List<int> AdvFacesFromEdges(MeshObject mo, IEnumerable<VertexPair> edges)
-        {
-            var eset   = new HashSet<VertexPair>(edges);
-            var result = new HashSet<int>();
-            for (int fi = 0; fi < mo.FaceCount; fi++)
-            {
-                var vs = mo.Faces[fi].VertexIndices;
-                int n  = vs.Count;
-                for (int i = 0; i < n; i++)
-                    if (eset.Contains(new VertexPair(vs[i], vs[(i + 1) % n])))
-                        { result.Add(fi); break; }
-            }
-            return result.ToList();
-        }
-
-        private static List<VertexPair> AdvEdgesFromPath(List<int> path)
-        {
-            var result = new List<VertexPair>();
-            for (int i = 0; i < path.Count - 1; i++)
-                result.Add(new VertexPair(path[i], path[i + 1]));
-            return result;
-        }
 
         // SelectionHelper の BuildEdgeAdjacency は ToolContext を取るが
         // MeshObject のみから辺隣接を構築するオーバーロードを作成

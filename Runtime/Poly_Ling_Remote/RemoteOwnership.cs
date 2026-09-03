@@ -241,6 +241,17 @@ namespace Poly_Ling.Remote
                 case BakePoseToBindPoseCommand   c: return c.MasterIndices;
                 case SetIgnorePoseCommand        c: return c.MasterIndices;
 
+                // 原点だけ移動。対象の頂点と BoneTransform を書き換えるので担当判定が要る。
+                // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
+                // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
+                case MovePivotCommand            c: return c.MasterIndices;
+
+                // 選択頂点の移動。対象メッシュの頂点を書き換えるので担当判定が要る。
+                case MoveSelectedVerticesCommand c: return c.MasterIndices;
+
+                // スカルプトストローク。対象メッシュの頂点を書き換える。
+                case SculptStrokeCommand         c: return c.MasterIndices;
+
                 // メッシュブレンドの書き込み先は宛先 1 件。
                 // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
                 // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
@@ -252,6 +263,9 @@ namespace Poly_Ling.Remote
 
                 // ── 読むだけ／新規作成なので担当と無関係 ──────────────
                 case SelectMeshCommand      _: return Array.Empty<int>();
+                case SelectElementsCommand  _: return Array.Empty<int>();
+                case AdvancedSelectCommand  _: return Array.Empty<int>();
+                case AdvancedSelectByAttributeCommand _: return Array.Empty<int>();
                 case DuplicateMeshesCommand _: return Array.Empty<int>();
                 case AddMeshCommand         _: return Array.Empty<int>();
                 case SwitchModelCommand     _: return Array.Empty<int>();

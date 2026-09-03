@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.UI;
 
@@ -184,7 +185,8 @@ namespace Poly_Ling.Player
             _offsetField = new FloatField("面からの余白") { value = _surfaceOffset };
             _offsetField.style.fontSize     = 10;
             _offsetField.style.marginBottom = 2;
-            _offsetField.RegisterValueChangedCallback(e => _surfaceOffset = Mathf.Max(0f, e.newValue));
+            _offsetField.RegisterValueChangedCallback(
+                e => _surfaceOffset = Mathf.Max(SurfaceOffsetMin, e.newValue));
             _mainContent.Add(_offsetField);
 
             if (IsFaceMode)
@@ -198,7 +200,7 @@ namespace Poly_Ling.Player
                 _maxPassesField.style.marginBottom = 4;
                 _maxPassesField.RegisterValueChangedCallback(e =>
                 {
-                    int v = Mathf.Clamp(e.newValue, 1, 64);
+                    int v = Mathf.Clamp(e.newValue, MaxPassesMin, MaxPassesMax);
                     if (v != e.newValue) _maxPassesField.SetValueWithoutNotify(v);
                     if (_maxPasses == v) return;
                     _maxPasses = v;
@@ -274,7 +276,7 @@ namespace Poly_Ling.Player
             var slRow = new VisualElement();
             slRow.style.flexDirection = FlexDirection.Row;
             slRow.style.marginBottom  = 4;
-            _sliderShrink = new Slider(0f, 1f) { value = 0f };
+            _sliderShrink = new Slider(SliderMin, SliderMax) { value = SliderMin };
             _sliderShrink.style.flexGrow = 1;
             _sliderShrink.RegisterValueChangedCallback(e => OnSliderChanged(e.newValue));
             _sliderValueLabel = new Label("0.00");
@@ -568,6 +570,20 @@ namespace Poly_Ling.Player
         // ================================================================
         // スライダー
         // ================================================================
+
+        // ================================================================
+        // レンジ（上下限）
+        //
+        // 実体は ParameterLimits（persistentDataPath の CSV）にあり、ここでは
+        // キーを引くだけにする。同じキーを PanelCommand の PLParam(LimitKey) が
+        // 指すので、UI とスキーマで範囲の定義が1箇所になる。
+        // ================================================================
+
+        private static float SliderMin        => ParameterLimits.GetF("Shrink.Slider.Min");
+        private static float SliderMax        => ParameterLimits.GetF("Shrink.Slider.Max");
+        private static float SurfaceOffsetMin => ParameterLimits.GetF("Shrink.SurfaceOffset.Min");
+        private static int   MaxPassesMin     => ParameterLimits.GetI("Shrink.MaxPasses.Min");
+        private static int   MaxPassesMax     => ParameterLimits.GetI("Shrink.MaxPasses.Max");
 
         private void OnSliderChanged(float newValue)
         {
