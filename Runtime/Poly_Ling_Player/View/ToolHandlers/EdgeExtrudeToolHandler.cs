@@ -74,11 +74,78 @@ namespace Poly_Ling.Player
             _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), delta);
         }
 
+        /// <summary>
+        /// ドラッグ確定。
+        ///
+        /// 【1 ドラッグ = 1 コマンド】
+        ///   ドラッグ中の生成はプレビューとして扱い、確定時に開始状態へ戻してから
+        ///   EdgeExtrudeCommand を 1 本発行する。実際の生成と Undo 記録は
+        ///   EdgeExtrudeTool.ApplyExtrudeFromCommand が行う。
+        ///
+        /// 【SendCommand 未結線のとき】
+        ///   取り出さず OnMouseUp（EndExtrude）に確定させる（3-d と同じ方針）。
+        /// </summary>
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
+
+            bool taken = false;
+            VertexPair? takenEdge = null;
+            int     takenLine   = -1;
+            Vector3 takenOffset = Vector3.zero;
+
+            if (SendCommand != null && _tool.ExtrudePending)
+                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenEdge, out takenLine, out takenOffset);
+
+            // 取り出したときは _snapshotBefore が null なので EndExtrude は Undo を積まない。
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+
+            if (taken)
+            {
+                var model = _project?.CurrentModel;
+                var mc    = model?.ActiveMeshContext;
+                if (model != null && mc != null)
+                {
+                    SendCommand.Invoke(new Poly_Ling.Data.EdgeExtrudeCommand(
+                        _project.CurrentModelIndex,
+                        new[] { model.IndexOf(mc) },
+                        takenEdge.HasValue ? takenEdge.Value.V1 : -1,
+                        takenEdge.HasValue ? takenEdge.Value.V2 : -1,
+                        takenLine,
+                        takenOffset));
+                }
+            }
+
             OnApplyCompleted?.Invoke();
+        }
+
+        /// <summary>コマンドの発行先（Viewer から結線）。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        /// <summary>
+        /// 辺・線分の押し出しコマンドを実行する。
+        /// 生成そのものは EdgeExtrudeTool が正典。ここは対象の照合だけを行う。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.EdgeExtrudeCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var ctx = GetEnrichedCtx();
+            if (ctx == null) { reason = "ツールコンテキストがありません"; return false; }
+
+            VertexPair? edge = (cmd.EdgeV1 >= 0 && cmd.EdgeV2 >= 0)
+                ? new VertexPair(cmd.EdgeV1, cmd.EdgeV2)
+                : (VertexPair?)null;
+
+            return _tool.ApplyExtrudeFromCommand(ctx, edge, cmd.LineIndex, cmd.LocalOffset, out reason);
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {

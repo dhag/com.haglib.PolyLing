@@ -119,13 +119,88 @@ namespace Poly_Ling.Player
         public int    SelectedFaceCount => _tool.SelectedFaceCount;
         public string LastMessage       => _tool.LastMessage;
 
-        /// <summary>厚み付けを実行する。</summary>
-        public void Execute()
+        /// <summary>
+        /// 厚み付けを実行する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// SolidifyCommand 経由に統一するため。
+        /// </summary>
+        private void ExecuteCore()
         {
             var ctx = GetEnrichedCtx();
             if (ctx == null) return;
             _tool.OnActivate(ctx);
             _tool.Execute();
+        }
+
+        /// <summary>
+        /// 厚み付けコマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   生成そのものは SolidifyTool が正典。ここは対象の照合と設定値の
+        ///   差し替えだけを行い、同じ経路を呼ぶ。出来上がったメッシュは
+        ///   OnMeshCreated 経由で AddGeneratedMeshCommand へ流れる（既存の結線のまま）。
+        ///
+        /// 【失敗理由】
+        ///   実行できたかは SolidifyTool.LastMessage に入る。実行前後で見て、
+        ///   面が選ばれていない等はここで先に弾く。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.SolidifyCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var sel = model.ActiveMeshContext?.Selection?.Faces;
+            if (sel == null || sel.Count == 0)
+            {
+                reason = "面を選択してください";
+                return false;
+            }
+
+            float  savedThickness = Thickness;
+            int    savedSegF      = SegmentsFront;
+            int    savedSegB      = SegmentsBack;
+            float  savedEdgeF     = EdgeSizeFront;
+            float  savedEdgeB     = EdgeSizeBack;
+            bool   savedInward    = EdgeInward;
+            string savedName      = MeshName;
+            bool   savedAddTo     = AddToExisting;
+            int    savedTarget    = AddTargetIndex;
+            try
+            {
+                Thickness      = cmd.Thickness;
+                SegmentsFront  = cmd.SegmentsFront;
+                SegmentsBack   = cmd.SegmentsBack;
+                EdgeSizeFront  = cmd.EdgeSizeFront;
+                EdgeSizeBack   = cmd.EdgeSizeBack;
+                EdgeInward     = cmd.EdgeInward;
+                MeshName       = cmd.MeshName;
+                AddToExisting  = cmd.AddToExisting;
+                AddTargetIndex = cmd.AddTargetIndex;
+
+                ExecuteCore();
+            }
+            finally
+            {
+                Thickness      = savedThickness;
+                SegmentsFront  = savedSegF;
+                SegmentsBack   = savedSegB;
+                EdgeSizeFront  = savedEdgeF;
+                EdgeSizeBack   = savedEdgeB;
+                EdgeInward     = savedInward;
+                MeshName       = savedName;
+                AddToExisting  = savedAddTo;
+                AddTargetIndex = savedTarget;
+            }
+
+            return true;
         }
 
         // ================================================================

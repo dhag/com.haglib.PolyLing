@@ -37,6 +37,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+using UnityEngine;
 
 namespace Poly_Ling.Data
 {
@@ -330,6 +331,12 @@ namespace Poly_Ling.Data
                 catch (Exception) { why = "列挙の値でも名前でもない"; return false; }
             }
 
+            // ベクトルは float[] と同じカンマ区切りで受ける。
+            // 長さは意味を持つので、ちょうど合わないときは弾く
+            // （float[] と違い、足りない・多いのは指定ミスなので黙って通さない）。
+            if (type == typeof(Vector2)) return TryParseVector(raw, 2, out value, out why);
+            if (type == typeof(Vector3)) return TryParseVector(raw, 3, out value, out why);
+
             if (type == typeof(int[]))    return TryParseIntArray(raw, out value, out why);
             if (type == typeof(float[]))  return TryParseFloatArray(raw, out value, out why);
             if (type == typeof(bool[]))   return TryParseBoolArray(raw, out value);
@@ -357,6 +364,34 @@ namespace Poly_Ling.Data
                                   CultureInfo.InvariantCulture, out a[i]))
                 { value = null; why = $"{i} 番目が整数でない"; return false; }
             value = a;
+            return true;
+        }
+
+        /// <summary>
+        /// "x,y" / "x,y,z" を Vector2 / Vector3 として読む。
+        /// 要素数がちょうど count でなければ失敗させる。
+        /// </summary>
+        private static bool TryParseVector(string raw, int count, out object value, out string why)
+        {
+            value = null;
+            why   = "";
+
+            var parts = SplitPlain(raw);
+            if (parts.Length != count)
+            {
+                why = $"要素が {count} 個でない（{parts.Length} 個）";
+                return false;
+            }
+
+            var a = new float[count];
+            for (int i = 0; i < count; i++)
+                if (!float.TryParse(parts[i].Trim(), NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out a[i]))
+                { why = $"{i} 番目が実数でない"; return false; }
+
+            value = (count == 2)
+                ? (object)new Vector2(a[0], a[1])
+                : (object)new Vector3(a[0], a[1], a[2]);
             return true;
         }
 
@@ -412,6 +447,13 @@ namespace Poly_Ling.Data
                 case int i:      s = i.ToString(CultureInfo.InvariantCulture); return true;
                 case ulong u:    s = u.ToString(CultureInfo.InvariantCulture); return true;
                 case float f:    s = f.ToString("R", CultureInfo.InvariantCulture); return true;
+
+                // ベクトルは読み side（TryParseVector）と同じカンマ区切り。
+                // 片方だけ変えると往復しなくなるので必ず対で直すこと。
+                case Vector2 v2: s = JoinPlain(2, k => (k == 0 ? v2.x : v2.y)
+                                     .ToString("R", CultureInfo.InvariantCulture)); return true;
+                case Vector3 v3: s = JoinPlain(3, k => (k == 0 ? v3.x : k == 1 ? v3.y : v3.z)
+                                     .ToString("R", CultureInfo.InvariantCulture)); return true;
             }
 
             if (v is Enum e)

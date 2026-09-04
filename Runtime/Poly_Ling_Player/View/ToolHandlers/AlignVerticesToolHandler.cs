@@ -72,8 +72,81 @@ namespace Poly_Ling.Player
         public int     SelectedVertexCount => _tool.SelectedVertexCount;
         public Vector3 GetAlignTarget()    => _tool.GetAlignTarget();
 
-        public void TriggerAlign()      => _tool.TriggerAlign();
+        /// <summary>
+        /// 整列を実行する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// AlignVerticesCommand 経由に統一するため。
+        /// </summary>
+        private void TriggerAlignCore() => _tool.TriggerAlign();
+
+        /// <summary>
+        /// 統計から整列軸を推定してトグルへ入れる。メッシュも選択も書き換えない
+        /// （AlignVerticesTool.cs:95-137）ので public のまま残す。
+        /// </summary>
         public void TriggerAutoSelect() => _tool.TriggerAutoSelect();
+
+        /// <summary>
+        /// 頂点整列コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   整列そのものは AlignVerticesTool が正典。ここは対象の照合と
+        ///   設定値の差し替えだけを行い、同じ経路を呼ぶ。
+        ///
+        /// 【設定の扱い】
+        ///   コマンドの値を正典として実行し、終わったらパネルの値へ戻す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.AlignVerticesCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            if (!cmd.AlignX && !cmd.AlignY && !cmd.AlignZ)
+            {
+                reason = "そろえる軸を 1 つ以上指定してください";
+                return false;
+            }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            // 実行時と同じコンテキストで対象数を見るため、先に Activate を通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            if (SelectedVertexCount < 2)
+            {
+                reason = "整列するには頂点を 2 個以上選択してください";
+                return false;
+            }
+
+            bool savedX  = AlignX;
+            bool savedY  = AlignY;
+            bool savedZ  = AlignZ;
+            var  savedMd = Mode;
+            try
+            {
+                AlignX = cmd.AlignX;
+                AlignY = cmd.AlignY;
+                AlignZ = cmd.AlignZ;
+                Mode   = cmd.Mode;
+
+                TriggerAlignCore();
+            }
+            finally
+            {
+                AlignX = savedX;
+                AlignY = savedY;
+                AlignZ = savedZ;
+                Mode   = savedMd;
+            }
+
+            return true;
+        }
 
         // ================================================================
         // 初期化

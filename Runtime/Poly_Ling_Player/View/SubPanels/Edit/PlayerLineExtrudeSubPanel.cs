@@ -7,12 +7,31 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerLineExtrudeSubPanel
     {
         public Func<LineExtrudeToolHandler> GetH;
+        public Func<ProjectContext>         GetView;
+        public Action<PanelCommand>         SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
 
         // ================================================================
         // UI 要素
@@ -166,7 +185,23 @@ namespace Poly_Ling.Player
 
             _executeBtn = new Button(() =>
             {
-                GetH()?.ExecuteExtrude("LineExtrude", _addToCurrentToggle?.value ?? false);
+                var h = GetH();
+                var targets = ActiveMasterIndices();
+                if (h == null || targets == null) return;
+
+                SendCommand?.Invoke(new LineExtrudeCommand(
+                    ModelIndex, targets,
+                    meshName:      "LineExtrude",
+                    addToCurrent:  _addToCurrentToggle?.value ?? false,
+                    thickness:     h.Thickness,
+                    scale:         h.Scale,
+                    offset:        h.Offset,
+                    flipY:         h.FlipY,
+                    segmentsFront: h.SegmentsFront,
+                    segmentsBack:  h.SegmentsBack,
+                    edgeSizeFront: h.EdgeSizeFront,
+                    edgeSizeBack:  h.EdgeSizeBack,
+                    edgeInward:    h.EdgeInward));
                 Refresh();
             }) { text = "押し出し実行" };
             _executeBtn.style.height    = 30;

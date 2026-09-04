@@ -5,12 +5,30 @@
 using System;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerVertexDissolveSubPanel
     {
         public Func<VertexDissolveToolHandler> GetH;
+        public Func<ProjectContext>  GetView;
+        public Action<PanelCommand>  SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 実行時点の選択オブジェクトをコマンドの対象として載せる。
+        /// 受け口は照合するだけで選択を書き換えないため、ここで作った並びと
+        /// 実行時点の選択が一致していることが前提になる。
+        /// </summary>
+        private int[] SelectedMasterIndices()
+        {
+            var sel = GetView?.Invoke()?.CurrentModel?.SelectedDrawableMeshIndices;
+            return sel != null ? sel.ToArray() : System.Array.Empty<int>();
+        }
 
         // ================================================================
         // UI 要素
@@ -50,7 +68,7 @@ namespace Poly_Ling.Player
 
             _dissolveBtn = new Button(() =>
             {
-                GetH?.Invoke()?.TriggerDissolve();
+                SendCommand?.Invoke(new VertexDissolveCommand(ModelIndex, SelectedMasterIndices()));
                 Refresh();
             })
             { text = "頂点溶解 実行" };

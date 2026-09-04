@@ -11,6 +11,7 @@
 // 実行の直前に GetPrototype から取り出してツールへ渡す。
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
@@ -38,7 +39,13 @@ namespace Poly_Ling.Player
         public Action                             OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
 
-        /// <summary>原型メッシュの供給。パネルが結合済みの MeshObject を返す。</summary>
+        /// <summary>
+        /// 原型メッシュの供給。パネルが結合済みの MeshObject を返す。
+        ///
+        /// コマンド経路では使わない（コマンドは材料の masterIndex 配列を持ち、
+        /// 受け口が同じ MeshObjectAppendOps.Combine で組み立てる）。
+        /// 結線は残してあるが、実行経路からは参照しない。
+        /// </summary>
         public Func<MeshObject> GetPrototype;
 
         // ================================================================
@@ -60,10 +67,95 @@ namespace Poly_Ling.Player
         /// <summary>選択頂点が属するパーツIDを「1,3,5」形式で返す。</summary>
         public string CollectSelectedPartsIdText() => _tool.CollectSelectedPartsIdText();
 
-        public void TriggerExecute()
+        /// <summary>
+        /// 整形を実行する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// PlaceObjectReshapeCommand 経由に統一するため。
+        /// </summary>
+        private void TriggerExecuteCore(MeshObject prototype)
         {
-            _tool.Prototype = GetPrototype?.Invoke();
+            _tool.Prototype = prototype;
             _tool.TriggerExecute();
+        }
+
+        /// <summary>
+        /// 配置物の整形コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   整形そのものは PlaceObjectReshapeTool が正典。ここは対象の照合と
+        ///   原型の組み立て・設定値の差し替えだけを行い、同じ経路を呼ぶ。
+        ///
+        /// 【原型の組み立て】
+        ///   MeshObject はコマンドに載せられないので、材料の masterIndex 配列から
+        ///   パネルと同じ MeshObjectAppendOps.Combine で並び順どおりに結合する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.PlaceObjectReshapeCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var sources = new List<MeshObject>();
+            foreach (int idx in cmd.PrototypeMasterIndices)
+            {
+                var mo = model.GetMeshContext(idx)?.MeshObject;
+                if (mo == null)
+                {
+                    reason = $"原型オブジェクトが見つかりません: masterIndex {idx}";
+                    return false;
+                }
+                sources.Add(mo);
+            }
+            if (sources.Count == 0)
+            {
+                reason = "原型オブジェクトを 1 つ以上指定してください";
+                return false;
+            }
+
+            var prototype = MeshObjectAppendOps.Combine(sources, "PlaceObjectReshapePrototype");
+            if (prototype == null)
+            {
+                reason = "原型オブジェクトを組み立てられませんでした";
+                return false;
+            }
+
+            // 実行時と同じコンテキストを通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            if (TargetMeshCount <= 0)
+            {
+                reason = "対象オブジェクトがありません";
+                return false;
+            }
+
+            var    savedMode   = Mode;
+            float  savedLambda = Lambda;
+            string savedTarget = TargetText;
+            try
+            {
+                Mode       = cmd.Mode;
+                Lambda     = cmd.Lambda;
+                TargetText = cmd.TargetText;
+
+                TriggerExecuteCore(prototype);
+            }
+            finally
+            {
+                Mode       = savedMode;
+                Lambda     = savedLambda;
+                TargetText = savedTarget;
+            }
+
+            return true;
         }
 
         // ================================================================

@@ -252,6 +252,43 @@ namespace Poly_Ling.Remote
                 // スカルプトストローク。対象メッシュの頂点を書き換える。
                 case SculptStrokeCommand         c: return c.MasterIndices;
 
+                // 位相編集（パラメータを持たない実行系）。
+                // 対象メッシュの面・頂点を書き換えるので担当判定が要る。
+                // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
+                // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
+                case FaceMergeCommand            c: return c.MasterIndices;
+                case FaceMergeCollapseCommand    c: return c.MasterIndices;
+                case Quad4To1Command             c: return c.MasterIndices;
+                case Tri4To1Command              c: return c.MasterIndices;
+                case VertexDissolveCommand       c: return c.MasterIndices;
+                case SplitVerticesCommand        c: return c.MasterIndices;
+
+                // 位相・頂点編集（パラメータを持つ実行系）。同上。
+                case VertexHoleCommand           c: return c.MasterIndices;
+                case FlipFaceCommand             c: return c.MasterIndices;
+                case AlignVerticesCommand        c: return c.MasterIndices;
+                case SmoothEdgesCommand          c: return c.MasterIndices;
+                case PlanarizeAlongBonesCommand  c: return c.MasterIndices;
+                case MergeVerticesCommand        c: return c.MasterIndices;
+
+                // 位相・頂点編集（対象や生成先の指定を伴う実行系）。同上。
+                // SurfaceSnap のリファレンスは読むだけなので担当判定に含めない。
+                // PlaceObjectReshape の原型も同じく読むだけ。
+                case DeleteSelectionCommand      c: return c.MasterIndices;
+                case PipeAlignCommand            c: return c.MasterIndices;
+                case PlaceObjectReshapeCommand   c: return c.MasterIndices;
+                case SolidifyCommand             c: return c.MasterIndices;
+                case LineExtrudeCommand          c: return c.MasterIndices;
+                case SurfaceSnapCommand          c: return c.MasterIndices;
+
+                // ドラッグ確定（ベベル・押し出し）。対象メッシュの頂点と面を書き換える。
+                case EdgeBevelCommand            c: return c.MasterIndices;
+                case EdgeExtrudeCommand          c: return c.MasterIndices;
+                case FaceExtrudeCommand          c: return c.MasterIndices;
+
+                // スキンウェイト塗り。対象メッシュの BoneWeight を書き換える。
+                case SkinWeightPaintCommand      c: return c.MasterIndices;
+
                 // メッシュブレンドの書き込み先は宛先 1 件。
                 // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
                 // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
@@ -262,6 +299,10 @@ namespace Poly_Ling.Remote
                     return c.CreateNewObject ? Array.Empty<int>() : One(c.DestMasterIndex);
 
                 // ── 読むだけ／新規作成なので担当と無関係 ──────────────
+                // 作業軸はモデルの頂点・選択を書き換えない。
+                case SetWorkAxisCommand     _: return Array.Empty<int>();
+                case RecallWorkAxisCommand  _: return Array.Empty<int>();
+
                 case SelectMeshCommand      _: return Array.Empty<int>();
                 case SelectElementsCommand  _: return Array.Empty<int>();
                 case AdvancedSelectCommand  _: return Array.Empty<int>();

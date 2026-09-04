@@ -168,6 +168,14 @@ namespace Poly_Ling.Player
             c.Add(SR(T("Thickness"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ThicknessMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ThicknessMax,
                 () => _involGearP.Thickness, v => { _involGearP.Thickness = v; DI(); }));
 
+            // ── 歯たけ ──
+            c.Add(SL(T("GearToothDepth")));
+            c.Add(GearHint(T("GearToothDepthHint")));
+            c.Add(SR(T("GearAddendumCoef"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ToothDepthCoefMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ToothDepthCoefMax,
+                () => _involGearP.AddendumCoef, v => { _involGearP.AddendumCoef = v; DI(); }));
+            c.Add(SR(T("GearDedendumCoef"), InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ToothDepthCoefMin, InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.ToothDepthCoefMax,
+                () => _involGearP.DedendumCoef, v => { _involGearP.DedendumCoef = v; DI(); }));
+
             // ── 転位・バックラッシ ──
             c.Add(SL(T("InvCorrection")));
             c.Add(GearHint(T("InvCorrectionHint")));

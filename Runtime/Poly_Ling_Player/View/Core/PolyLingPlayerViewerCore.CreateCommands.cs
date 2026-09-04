@@ -47,6 +47,30 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnMoveSelectedVertices = ExecuteMoveSelectedVertices;
             _commandDispatcher.OnSelectElements       = ExecuteSelectElements;
             _commandDispatcher.OnAdvancedSelectByAttribute = ExecuteAdvancedSelectByAttribute;
+            _commandDispatcher.OnFaceMerge           = ExecuteFaceMerge;
+            _commandDispatcher.OnFaceMergeCollapse   = ExecuteFaceMergeCollapse;
+            _commandDispatcher.OnQuad4To1            = ExecuteQuad4To1;
+            _commandDispatcher.OnTri4To1             = ExecuteTri4To1;
+            _commandDispatcher.OnVertexDissolve      = ExecuteVertexDissolve;
+            _commandDispatcher.OnSplitVertices       = ExecuteSplitVertices;
+            _commandDispatcher.OnVertexHole          = ExecuteVertexHole;
+            _commandDispatcher.OnFlipFace            = ExecuteFlipFace;
+            _commandDispatcher.OnAlignVertices       = ExecuteAlignVertices;
+            _commandDispatcher.OnSmoothEdges         = ExecuteSmoothEdges;
+            _commandDispatcher.OnPlanarizeAlongBones = ExecutePlanarizeAlongBones;
+            _commandDispatcher.OnMergeVertices       = ExecuteMergeVertices;
+            _commandDispatcher.OnDeleteSelection     = ExecuteDeleteSelectionCommand;
+            _commandDispatcher.OnPipeAlign           = ExecutePipeAlign;
+            _commandDispatcher.OnPlaceObjectReshape  = ExecutePlaceObjectReshape;
+            _commandDispatcher.OnSolidify            = ExecuteSolidify;
+            _commandDispatcher.OnLineExtrude         = ExecuteLineExtrude;
+            _commandDispatcher.OnSurfaceSnap         = ExecuteSurfaceSnap;
+            _commandDispatcher.OnEdgeBevel           = ExecuteEdgeBevel;
+            _commandDispatcher.OnEdgeExtrude         = ExecuteEdgeExtrude;
+            _commandDispatcher.OnFaceExtrude         = ExecuteFaceExtrude;
+            _commandDispatcher.OnSkinWeightPaint     = ExecuteSkinWeightPaint;
+            _commandDispatcher.OnSetWorkAxis         = ExecuteSetWorkAxis;
+            _commandDispatcher.OnRecallWorkAxis      = ExecuteRecallWorkAxis;
             _commandDispatcher.OnUndo                = () => _editOps != null && _editOps.PerformUndo();
             _commandDispatcher.OnRedo                = () => _editOps != null && _editOps.PerformRedo();
         }
@@ -252,6 +276,428 @@ namespace Poly_Ling.Player
             return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
         }
 
+        // ================================================================
+        // 位相編集（パラメータを持たない実行系）
+        //
+        // どれも「対象の照合 → ハンドラへ委譲」だけを行う。実処理は各 Tool が
+        // 正典なので、ここには第 2 実装を置かない（Phase 1 と同じ方針）。
+        // 対象の照合はハンドラ側（PlayerCommandTargets）が行う。
+        // ================================================================
+
+        /// <summary>面の結合コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteFaceMerge(Poly_Ling.Data.FaceMergeCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _faceMergeHandler;
+            if (h == null) return "面結合ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _faceMergeSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>面の結合（頂点を外す方式）コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteFaceMergeCollapse(Poly_Ling.Data.FaceMergeCollapseCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _faceMergeCollapseHandler;
+            if (h == null) return "面結合（頂点を外す方式）ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _faceMergeCollapseSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>四角形 4→1 コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteQuad4To1(Poly_Ling.Data.Quad4To1Command cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _quad4To1Handler;
+            if (h == null) return "四角形 4→1 ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _quad4To1SubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>三角形 4→1 コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteTri4To1(Poly_Ling.Data.Tri4To1Command cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _tri4To1Handler;
+            if (h == null) return "三角形 4→1 ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _tri4To1SubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>頂点溶かしコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteVertexDissolve(Poly_Ling.Data.VertexDissolveCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _vertexDissolveHandler;
+            if (h == null) return "頂点溶かしハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _vertexDissolveSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>頂点分離コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSplitVertices(Poly_Ling.Data.SplitVerticesCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _splitVerticesHandler;
+            if (h == null) return "頂点分離ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _splitVerticesSubPanel?.Refresh();
+            return null;
+        }
+
+        // ================================================================
+        // 位相・頂点編集（パラメータを持つ実行系）
+        //
+        // 4-a-1 と同じく「対象の照合 → ハンドラへ委譲」だけを行う。
+        // 設定値の差し替えと復元はハンドラ側が持つ。
+        // ================================================================
+
+        /// <summary>頂点に穴あけコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteVertexHole(Poly_Ling.Data.VertexHoleCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _vertexHoleHandler;
+            if (h == null) return "頂点に穴あけハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _vertexHoleSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>面反転コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteFlipFace(Poly_Ling.Data.FlipFaceCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _flipFaceHandler;
+            if (h == null) return "面反転ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _flipFaceSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>頂点整列コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteAlignVertices(Poly_Ling.Data.AlignVerticesCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _alignVerticesHandler;
+            if (h == null) return "頂点整列ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _alignVerticesSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>辺の平滑化コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSmoothEdges(Poly_Ling.Data.SmoothEdgesCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _smoothEdgesHandler;
+            if (h == null) return "辺の平滑化ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _smoothEdgesSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>ボーン平面への平面化コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecutePlanarizeAlongBones(Poly_Ling.Data.PlanarizeAlongBonesCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _planarizeAlongBonesHandler;
+            if (h == null) return "ボーン平面への平面化ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _planarizeAlongBonesSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>頂点結合コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteMergeVertices(Poly_Ling.Data.MergeVerticesCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _mergeVerticesHandler;
+            if (h == null) return "頂点結合ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _mergeVerticesSubPanel?.Refresh();
+            return null;
+        }
+
+        // ================================================================
+        // 位相・頂点編集（対象や生成先の指定を伴う実行系）
+        // ================================================================
+
+        /// <summary>選択要素の削除コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteDeleteSelectionCommand(Poly_Ling.Data.DeleteSelectionCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _deleteSelectionHandler;
+            if (h == null) return "選択要素の削除ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+            return null;
+        }
+
+        /// <summary>パイプ整列コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecutePipeAlign(Poly_Ling.Data.PipeAlignCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _pipeAlignHandler;
+            if (h == null) return "パイプ整列ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _pipeAlignSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>配置物の整形コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecutePlaceObjectReshape(Poly_Ling.Data.PlaceObjectReshapeCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _placeObjectReshapeHandler;
+            if (h == null) return "配置物の整形ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _placeObjectReshapeSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>厚み付けコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSolidify(Poly_Ling.Data.SolidifyCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _solidifyHandler;
+            if (h == null) return "厚み付けハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _solidifySubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>線分押し出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteLineExtrude(Poly_Ling.Data.LineExtrudeCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _lineExtrudeHandler;
+            if (h == null) return "線分押し出しハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _lineExtrudeSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>面に張り付けコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSurfaceSnap(Poly_Ling.Data.SurfaceSnapCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _surfaceSnapHandler;
+            if (h == null) return "面に張り付けハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _surfaceSnapSubPanel?.Refresh();
+            return null;
+        }
+
+        // ================================================================
+        // ドラッグ確定（ベベル・押し出し）
+        //
+        // ドラッグ確定・パネル操作・リモートのどれも同じ Apply*FromCommand を通る。
+        // ================================================================
+
+        /// <summary>辺ベベルコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteEdgeBevel(Poly_Ling.Data.EdgeBevelCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _edgeBevelHandler;
+            if (h == null) return "辺ベベルハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _edgeBevelSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>辺・線分の押し出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteEdgeExtrude(Poly_Ling.Data.EdgeExtrudeCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _edgeExtrudeHandler;
+            if (h == null) return "辺・線分の押し出しハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _edgeExtrudeSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>面の押し出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteFaceExtrude(Poly_Ling.Data.FaceExtrudeCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _faceExtrudeHandler;
+            if (h == null) return "面の押し出しハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _faceExtrudeSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>
+        /// スキンウェイト塗りコマンド。
+        /// 専用サブパネルは Refresh を持たないので、ウェイト表示の更新は
+        /// ツール側（ActivePanel.NotifyWeightChanged）に任せる。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSkinWeightPaint(Poly_Ling.Data.SkinWeightPaintCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _skinWeightPaintHandler;
+            if (h == null) return "スキンウェイト塗りハンドラがありません";
+
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        // ================================================================
+        // 作業軸
+        //
+        // 作業軸はモデルの頂点・選択を書き換えない。Undo も積まない
+        // （マウス経路・パネル経路とも積んでいないので、そこは変えない）。
+        // ================================================================
+
+        /// <summary>
+        /// 作業軸の状態差し替えコマンド。
+        /// 書き込みは WorkAxisContext.ApplySnapshot に通す（下限クランプを含めて正典）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSetWorkAxis(Poly_Ling.Data.SetWorkAxisCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var wa = CurrentWorkAxis();
+            if (wa == null) return "作業軸がありません";
+
+            wa.ApplySnapshot(new Poly_Ling.Context.WorkAxisSnapshot
+            {
+                Origin    = cmd.Origin,
+                Rotation  = UnityEngine.Quaternion.Euler(cmd.EulerAngles),
+                Length    = cmd.Length,
+                IsVisible = cmd.IsVisible,
+            });
+
+            NotifyWorkAxisChanged();
+            return null;
+        }
+
+        /// <summary>
+        /// 作業軸ライブラリ呼び出しコマンド。
+        /// 表示フラグは変えない（WorkAxisEntry.ApplyTo と同じ）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteRecallWorkAxis(Poly_Ling.Data.RecallWorkAxisCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var wa = CurrentWorkAxis();
+            if (wa == null) return "作業軸がありません";
+
+            var lib = ActiveProject?.WorkAxes;
+            if (lib == null) return "作業軸ライブラリがありません";
+
+            string name = Poly_Ling.Context.WorkAxisLibrary.Normalize(cmd.Name);
+            if (name.Length == 0) return "名前が空です";
+            if (!lib.TryGet(name, out var entry)) return $"「{name}」は登録されていません";
+
+            entry.ApplyTo(wa);
+
+            NotifyWorkAxisChanged();
+            return null;
+        }
+
+        /// <summary>
+        /// 作業軸が変わったときの後処理。ハンドラ・パネルの OnValueChanged と同じ内容を通す。
+        /// </summary>
+        private void NotifyWorkAxisChanged()
+        {
+            _workAxisSubPanel?.Refresh();
+            _deformWorkAxisSubPanel?.Refresh();
+            UpdateGizmoOverlay();
+            // 格子変形の格子フレームは作業軸そのもの。開いていれば追従させる。
+            _latticeHandler?.OnFrameChanged();
+        }
+
         /// <summary>
         /// 辺群ブリッジコマンド。拾いをハンドラへ入れてから、既存の生成経路を通す。
         /// 受理判定（境界辺のみ・同一オブジェクトのみ）は SetPicks が既存の
@@ -348,7 +794,24 @@ namespace Poly_Ling.Player
             }
             if (!any) return;
 
-            ExecuteDeleteSelection();
+            // 削除そのものは DeleteSelectionToolHandler が正典。
+            // ここから ExecuteDeleteSelection() を呼ぶと DeleteSelectionCommand の
+            // 発行になり、コマンドがコマンドを呼ぶ形になるのでハンドラを直接呼ぶ。
+            //
+            // ExecuteDeleteFaces は void（OnDeleteFaces が Action）なので、
+            // 失敗理由はディスパッチャへ返せない。ここは他の void の受け口
+            // （ExecuteMatchHoleRingCount）と同じくログに出す。
+            var h = _deleteSelectionHandler;
+            if (h == null)
+            {
+                Debug.LogWarning("[DeleteFaces] 選択削除ハンドラがありません");
+                return;
+            }
+
+            var delCmd = new Poly_Ling.Data.DeleteSelectionCommand(
+                cmd.ModelIndex, model.SelectedDrawableMeshIndices.ToArray());
+            if (!h.ExecuteFromCommand(delCmd, out string delReason))
+                Debug.LogWarning($"[DeleteFaces] 削除できませんでした: {delReason}");
         }
 
         // ================================================================

@@ -75,11 +75,76 @@ namespace Poly_Ling.Player
             _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), delta);
         }
 
+        /// <summary>
+        /// ドラッグ確定。
+        ///
+        /// 【1 ドラッグ = 1 コマンド】
+        ///   ドラッグ中の生成はプレビューとして扱い、確定時に開始状態へ戻してから
+        ///   FaceExtrudeCommand を 1 本発行する。実際の生成と Undo 記録は
+        ///   FaceExtrudeTool.ApplyExtrudeFromCommand が行う。
+        ///
+        /// 【SendCommand 未結線のとき】
+        ///   取り出さず OnMouseUp（EndExtrude）に確定させる（3-d と同じ方針）。
+        /// </summary>
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
+
+            bool  taken = false;
+            int   takenFace = -1;
+            float takenDistance = 0f;
+            var   type   = _tool.Type;
+            float bevel  = _tool.BevelScale;
+            bool  indiv  = _tool.IndividualNormals;
+
+            if (SendCommand != null && _tool.ExtrudePending)
+                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenFace, out takenDistance);
+
+            // 取り出したときは _snapshotBefore が null なので EndExtrude は Undo を積まない。
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+
+            if (taken)
+            {
+                var model = _project?.CurrentModel;
+                var mc    = model?.ActiveMeshContext;
+                if (model != null && mc != null)
+                {
+                    SendCommand.Invoke(new Poly_Ling.Data.FaceExtrudeCommand(
+                        _project.CurrentModelIndex,
+                        new[] { model.IndexOf(mc) },
+                        takenFace, takenDistance,
+                        type, bevel, indiv));
+                }
+            }
+
             OnApplyCompleted?.Invoke();
+        }
+
+        /// <summary>コマンドの発行先（Viewer から結線）。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        /// <summary>
+        /// 面の押し出しコマンドを実行する。
+        /// 生成そのものは FaceExtrudeTool が正典。ここは対象の照合だけを行う。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.FaceExtrudeCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var ctx = GetEnrichedCtx();
+            if (ctx == null) { reason = "ツールコンテキストがありません"; return false; }
+
+            return _tool.ApplyExtrudeFromCommand(
+                ctx, cmd.FaceIndex, cmd.Distance,
+                cmd.Type, cmd.BevelScale, cmd.IndividualNormals, out reason);
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {

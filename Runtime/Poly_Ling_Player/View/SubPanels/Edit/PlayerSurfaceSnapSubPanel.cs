@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Tools;
@@ -20,6 +21,21 @@ namespace Poly_Ling.Player
     public class PlayerSurfaceSnapSubPanel
     {
         public Func<SurfaceSnapToolHandler> GetH;
+        public Func<ProjectContext>         GetView;
+        public Action<PanelCommand>         SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 実行時点の選択オブジェクトをコマンドの対象として載せる。
+        /// 受け口は照合するだけで選択を書き換えない。
+        /// </summary>
+        private int[] SelectedMasterIndices()
+        {
+            var sel = GetView?.Invoke()?.CurrentModel?.SelectedDrawableMeshIndices;
+            return sel != null ? sel.ToArray() : System.Array.Empty<int>();
+        }
 
         // ================================================================
         // UI 要素
@@ -349,12 +365,27 @@ namespace Poly_Ling.Player
             h.SetSlider(newValue);
         }
 
+        /// <summary>
+        /// 「決定」ボタン。確定はコマンドへ流す。
+        ///
+        /// 受け口は計算・スライダー・決定を続けて呼ぶ（1 コマンドに畳んである）ので、
+        /// ここで作ったプレビューはいったん破棄されてから計算し直される。
+        /// 画面上の見た目は変わらないが、確定の経路が 1 本になる。
+        /// </summary>
         private void OnApplyClicked()
         {
             var h = GetH();
             if (h == null || !h.IsPreviewing) return;
 
-            h.TriggerApply();
+            SendCommand?.Invoke(new SurfaceSnapCommand(
+                ModelIndex, SelectedMasterIndices(),
+                new List<int>(h.ReferenceIndices).ToArray(),
+                cameraKind:           h.CameraKind,
+                selectedVerticesOnly: h.SelectedVerticesOnly,
+                surfaceOffset:        h.SurfaceOffset,
+                backface:             h.Backface,
+                slider:               h.Slider));
+
             HidePreview();
             Refresh();
         }

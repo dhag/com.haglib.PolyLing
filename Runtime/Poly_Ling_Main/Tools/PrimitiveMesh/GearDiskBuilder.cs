@@ -18,6 +18,12 @@
 //   XY 平面で組み、前面（+Z 側）の法線を +Z にする。PolyLing の正面ビューは +Z 側なので、
 //   生成直後の見た目が正面ビューの表になる。
 //   外周壁は外向き、穴壁は軸へ向く（穴の内側から見える）。
+//
+// 【共用しているもの】
+//   フタまわり（CapPoint / MinDistanceToOutline / SignedArea / AddCapRingVertices /
+//   TryTriangulateCap）と PlanarUV / ApplyOrientation は Gears/GearLoftBuilder が
+//   そのまま使う。フタの頂点並び（輪郭リング → 穴リング）と統合インデックスの規約を
+//   2 箇所で持たないよう internal にしてある。挙動はここが基準。
 
 using System;
 using System.Collections.Generic;
@@ -230,11 +236,11 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
 
         /// <summary>フタ用の統合インデックス（0..n-1 = 輪郭、n 以降 = 穴リング）から点を引く。</summary>
-        private static Vector2 CapPoint(IReadOnlyList<Vector2> outline, Vector2[] boreRing, int index)
+        internal static Vector2 CapPoint(IReadOnlyList<Vector2> outline, Vector2[] boreRing, int index)
             => index < outline.Count ? outline[index] : boreRing[index - outline.Count];
 
         /// <summary>原点から輪郭の各辺までの最短距離。</summary>
-        private static float MinDistanceToOutline(IReadOnlyList<Vector2> outline, int n)
+        internal static float MinDistanceToOutline(IReadOnlyList<Vector2> outline, int n)
         {
             float min = float.MaxValue;
 
@@ -257,11 +263,11 @@ namespace Poly_Ling.PrimitiveMesh
         }
 
         /// <summary>三角形の符号付き面積（CCW で正）。</summary>
-        private static float SignedArea(Vector2 a, Vector2 b, Vector2 c)
+        internal static float SignedArea(Vector2 a, Vector2 b, Vector2 c)
             => 0.5f * ((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y));
 
         /// <summary>輪郭リング＋穴リングの順で、片面ぶんのフタ頂点を並べる。</summary>
-        private static void AddCapRingVertices(
+        internal static void AddCapRingVertices(
             MeshObject mo, IReadOnlyList<Vector2> outline, Vector2[] boreRing,
             float z, Vector3 normal, float uvScale)
         {
@@ -283,7 +289,7 @@ namespace Poly_Ling.PrimitiveMesh
         /// <summary>
         /// フタを Poly2Tri で三角化し、統合インデックスの三角形列を返す。失敗したら null。
         /// </summary>
-        private static List<int> TryTriangulateCap(IReadOnlyList<Vector2> outline, Vector2[] boreRing)
+        internal static List<int> TryTriangulateCap(IReadOnlyList<Vector2> outline, Vector2[] boreRing)
         {
             // Poly2Tri は頂点が辺上に載るとエラーになるため、三角化の入力にだけ微小オフセットを乗せる。
             // 面を張る位置は元の座標を使う（Profile2DExtrudeMeshGenerator と同じ手口）。
@@ -493,7 +499,7 @@ namespace Poly_Ling.PrimitiveMesh
         /// <summary>
         /// XY 平面で組んだ形状を指定の平面へ回す。純回転なので巻き順は変わらない。
         /// </summary>
-        private static void ApplyOrientation(MeshObject mo, PlaneOrientation orientation)
+        internal static void ApplyOrientation(MeshObject mo, PlaneOrientation orientation)
         {
             if (orientation == PlaneOrientation.XY) return;
 
@@ -524,7 +530,7 @@ namespace Poly_Ling.PrimitiveMesh
             => new Vector2(radius * Mathf.Cos(angleRad), radius * Mathf.Sin(angleRad));
 
         /// <summary>前面 / 背面の平面投影 UV。</summary>
-        private static Vector2 PlanarUV(Vector2 p, float scale)
+        internal static Vector2 PlanarUV(Vector2 p, float scale)
             => new Vector2(0.5f + p.x * scale, 0.5f + p.y * scale);
 
         /// <summary>隣り合う重複点を取り除く（閉じた輪郭として先頭と末尾も見る）。</summary>

@@ -7,13 +7,33 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerFlipFaceSubPanel
     {
         public Func<FlipFaceToolHandler> GetH;
+        public Func<ProjectContext>      GetView;
+        public Action<PanelCommand>      SendCommand;
+
         private VisualElement _root;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
 
         public void Build(VisualElement parent)
         {
@@ -21,14 +41,23 @@ namespace Poly_Ling.Player
             parent.Add(_root);
             _root.Add(Header("Flip Face"));
             _root.Add(new HelpBox("選択面の法線方向を反転します", HelpBoxMessageType.Info));
-            var flipSelBtn = new Button(() => GetH()?.FlipSelected()) { text = "Flip Selected" };
+            var flipSelBtn = new Button(() => SendFlip(FlipFaceCommand.FlipScope.Selected))
+                { text = "Flip Selected" };
             flipSelBtn.style.height = 30; flipSelBtn.style.marginTop = 6; flipSelBtn.style.marginBottom = 3;
             _root.Add(flipSelBtn);
-            var flipAllBtn = new Button(() => GetH()?.FlipAll()) { text = "Flip All" };
+            var flipAllBtn = new Button(() => SendFlip(FlipFaceCommand.FlipScope.All))
+                { text = "Flip All" };
             _root.Add(flipAllBtn);
         }
 
         public void Refresh() {}
+
+        private void SendFlip(FlipFaceCommand.FlipScope scope)
+        {
+            var targets = ActiveMasterIndices();
+            if (targets == null) return;
+            SendCommand?.Invoke(new FlipFaceCommand(ModelIndex, targets, scope));
+        }
 
         // ── ヘルパー ──────────────────────────────────────────────────────
 

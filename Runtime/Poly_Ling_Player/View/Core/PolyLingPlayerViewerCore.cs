@@ -353,6 +353,8 @@ namespace Poly_Ling.Player
         private KnifeToolHandler                  _knifeHandler;
         private PlayerSolidifySubPanel            _solidifySubPanel;
         private SolidifyToolHandler               _solidifyHandler;
+        private PlayerLineExtrudeSubPanel         _lineExtrudeSubPanel;
+        private LineExtrudeToolHandler            _lineExtrudeHandler;
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
         private PlayerPipelineTestSubPanel   _pipelineTestSubPanel;
@@ -830,6 +832,7 @@ namespace Poly_Ling.Player
                 _planarizeAlongBonesHandler?.SetProject(ActiveProject);
                 _mergeVerticesHandler?.SetProject(ActiveProject);
                 _splitVerticesHandler?.SetProject(ActiveProject);
+                _lineExtrudeHandler?.SetProject(ActiveProject);
                 _vertexHoleHandler?.SetProject(ActiveProject);
                 _addFaceHandler?.SetProject(ActiveProject);
                 _flipFaceHandler?.SetProject(ActiveProject);
@@ -1468,6 +1471,7 @@ namespace Poly_Ling.Player
             _skinWeightPaintHandler.SetProject(ActiveProject);
             _skinWeightPaintHandler.SetUndoController(_editOps?.UndoController);
             _skinWeightPaintHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _skinWeightPaintHandler.SendCommand              = DispatchPanelCommand;
             _skinWeightPaintHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _skinWeightPaintHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
             _skinWeightPaintHandler.OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
@@ -3385,7 +3389,9 @@ namespace Poly_Ling.Player
             _alignVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _alignVerticesSubPanel = new PlayerAlignVerticesSubPanel
             {
-                GetH = () => _alignVerticesHandler,
+                GetH        = () => _alignVerticesHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _alignVerticesSubPanel.Build(_layoutRoot.AlignVerticesSection);
 
@@ -3403,7 +3409,9 @@ namespace Poly_Ling.Player
             _pipeAlignHandler.SetCommandQueue(_editOps?.CommandQueue);
             _pipeAlignSubPanel = new PlayerPipeAlignSubPanel
             {
-                GetH = () => _pipeAlignHandler,
+                GetH        = () => _pipeAlignHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _pipeAlignSubPanel.Build(_layoutRoot.PipeAlignSection);
 
@@ -3451,7 +3459,9 @@ namespace Poly_Ling.Player
             _surfaceSnapHandler.SetCommandQueue(_editOps?.CommandQueue);
             _surfaceSnapSubPanel = new PlayerSurfaceSnapSubPanel
             {
-                GetH = () => _surfaceSnapHandler,
+                GetH        = () => _surfaceSnapHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _surfaceSnapSubPanel.Build(_layoutRoot.SurfaceSnapSection);
 
@@ -3473,6 +3483,8 @@ namespace Poly_Ling.Player
             {
                 GetH                     = () => _placeObjectReshapeHandler,
                 GetDrawableMeshEntryList = BuildDrawableMeshEntryList,
+                GetView                  = () => ActiveProject,
+                SendCommand              = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _placeObjectReshapeSubPanel.Build(_layoutRoot.PlaceObjectReshapeSection);
 
@@ -3492,7 +3504,9 @@ namespace Poly_Ling.Player
             _planarizeAlongBonesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _planarizeAlongBonesSubPanel = new PlayerPlanarizeAlongBonesSubPanel
             {
-                GetH = () => _planarizeAlongBonesHandler,
+                GetH        = () => _planarizeAlongBonesHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _planarizeAlongBonesSubPanel.Build(_layoutRoot.PlanarizeAlongBonesSection);
 
@@ -3512,7 +3526,9 @@ namespace Poly_Ling.Player
             _smoothEdgesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _smoothEdgesSubPanel = new PlayerSmoothEdgesSubPanel
             {
-                GetH = () => _smoothEdgesHandler,
+                GetH        = () => _smoothEdgesHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _smoothEdgesSubPanel.Build(_layoutRoot.SmoothEdgesSection);
 
@@ -3540,7 +3556,9 @@ namespace Poly_Ling.Player
                 };
             _mergeVerticesSubPanel = new PlayerMergeVerticesSubPanel
             {
-                GetH = () => _mergeVerticesHandler,
+                GetH        = () => _mergeVerticesHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _mergeVerticesSubPanel.Build(_layoutRoot.MergeVerticesSection);
 
@@ -3568,7 +3586,9 @@ namespace Poly_Ling.Player
                 };
             _splitVerticesSubPanel = new PlayerSplitVerticesSubPanel
             {
-                GetH = () => _splitVerticesHandler,
+                GetH        = () => _splitVerticesHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _splitVerticesSubPanel.Build(_layoutRoot.SplitVerticesSection);
 
@@ -3589,7 +3609,9 @@ namespace Poly_Ling.Player
                 };
             _vertexHoleSubPanel = new PlayerVertexHoleSubPanel
             {
-                GetH = () => _vertexHoleHandler,
+                GetH        = () => _vertexHoleHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _vertexHoleSubPanel.Build(_layoutRoot.VertexHoleSection);
             AttachPanelSelectToggle(_layoutRoot.VertexHoleSection, PanelSelectKeyVertexHole);
@@ -3611,7 +3633,9 @@ namespace Poly_Ling.Player
                 };
             _vertexDissolveSubPanel = new PlayerVertexDissolveSubPanel
             {
-                GetH = () => _vertexDissolveHandler,
+                GetH        = () => _vertexDissolveHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _vertexDissolveSubPanel.Build(_layoutRoot.VertexDissolveSection);
 
@@ -3710,7 +3734,9 @@ namespace Poly_Ling.Player
                 };
             _tri4To1SubPanel = new PlayerTri4To1SubPanel
             {
-                GetH = () => _tri4To1Handler,
+                GetH        = () => _tri4To1Handler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _tri4To1SubPanel.Build(_layoutRoot.Tri4To1Section);
 
@@ -3731,7 +3757,9 @@ namespace Poly_Ling.Player
                 };
             _faceMergeSubPanel = new PlayerFaceMergeSubPanel
             {
-                GetH = () => _faceMergeHandler,
+                GetH        = () => _faceMergeHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _faceMergeSubPanel.Build(_layoutRoot.FaceMergeSection);
 
@@ -3752,7 +3780,9 @@ namespace Poly_Ling.Player
                 };
             _quad4To1SubPanel = new PlayerQuad4To1SubPanel
             {
-                GetH = () => _quad4To1Handler,
+                GetH        = () => _quad4To1Handler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _quad4To1SubPanel.Build(_layoutRoot.Quad4To1Section);
 
@@ -3773,7 +3803,9 @@ namespace Poly_Ling.Player
                 };
             _faceMergeCollapseSubPanel = new PlayerFaceMergeCollapseSubPanel
             {
-                GetH = () => _faceMergeCollapseHandler,
+                GetH        = () => _faceMergeCollapseHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _faceMergeCollapseSubPanel.Build(_layoutRoot.FaceMergeCollapseSection);
 
@@ -4010,7 +4042,12 @@ namespace Poly_Ling.Player
             _flipFaceHandler.SetProject(ActiveProject);
             _flipFaceHandler.SetUndoController(_editOps?.UndoController);
             _flipFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
-            _flipFaceSubPanel = new PlayerFlipFaceSubPanel { GetH = () => _flipFaceHandler };
+            _flipFaceSubPanel = new PlayerFlipFaceSubPanel
+            {
+                GetH        = () => _flipFaceHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
             _flipFaceSubPanel.Build(_layoutRoot.FlipFaceSection);
             _rotateHandler = new RotateToolHandler
             {
@@ -4037,6 +4074,8 @@ namespace Poly_Ling.Player
                 GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
                 GetWorkAxis    = () => CurrentWorkAxis(),
+                SendCommand    = DispatchPanelCommand,
+                GetModelIndex  = () => ActiveProject?.CurrentModelIndex ?? 0,
                 // 原点 / Y 先端ハンドルの吸着先。頂点は GPU 吸着ヒットテスト、
                 // ボーンは MeshContext の WorldMatrix 投影で拾う。
                 GetSnapTargetWorld = imguiPos => WorkAxisSnapTargetWorld(imguiPos),
@@ -4060,6 +4099,8 @@ namespace Poly_Ling.Player
             {
                 GetWorkAxis               = () => CurrentWorkAxis(),
                 GetH                      = () => _workAxisHandler,
+                SendCommand               = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,
                 OnValueChanged            = () =>
                 {
                     UpdateGizmoOverlay();
@@ -4155,6 +4196,8 @@ namespace Poly_Ling.Player
             {
                 GetWorkAxis               = () => CurrentWorkAxis(),
                 GetH                      = () => _workAxisHandler,
+                SendCommand               = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,
                 OnValueChanged            = () =>
                 {
                     UpdateGizmoOverlay();
@@ -4250,6 +4293,7 @@ namespace Poly_Ling.Player
             _edgeBevelHandler.SetProject(ActiveProject);
             _edgeBevelHandler.SetUndoController(_editOps?.UndoController);
             _edgeBevelHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _edgeBevelHandler.SendCommand = DispatchPanelCommand;
             _edgeBevelSubPanel = new PlayerEdgeBevelSubPanel { GetH = () => _edgeBevelHandler };
             _edgeBevelSubPanel.Build(_layoutRoot.EdgeBevelSection);
             _edgeExtrudeHandler = new EdgeExtrudeToolHandler
@@ -4285,6 +4329,7 @@ namespace Poly_Ling.Player
             _edgeExtrudeHandler.SetProject(ActiveProject);
             _edgeExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _edgeExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _edgeExtrudeHandler.SendCommand = DispatchPanelCommand;
             _edgeExtrudeSubPanel = new PlayerEdgeExtrudeSubPanel { GetH = () => _edgeExtrudeHandler };
             _edgeExtrudeSubPanel.Build(_layoutRoot.EdgeExtrudeSection);
             _faceExtrudeHandler = new FaceExtrudeToolHandler
@@ -4322,6 +4367,7 @@ namespace Poly_Ling.Player
             _faceExtrudeHandler.SetProject(ActiveProject);
             _faceExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _faceExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _faceExtrudeHandler.SendCommand = DispatchPanelCommand;
             _faceExtrudeSubPanel = new PlayerFaceExtrudeSubPanel { GetH = () => _faceExtrudeHandler };
             _faceExtrudeSubPanel.Build(_layoutRoot.FaceExtrudeSection);
             _edgeTopologyHandler = new EdgeTopologyToolHandler
@@ -4447,8 +4493,39 @@ namespace Poly_Ling.Player
                 GetH = () => _solidifyHandler,
                 GetDrawableIndexList          = BuildDrawableIndexList,
                 GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1,
+                GetView                       = () => ActiveProject,
+                SendCommand                   = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _solidifySubPanel.Build(_layoutRoot.SolidifySection);
+
+            // 線分押し出し。選択線分から輪郭ループを検出して新しいメッシュを作る。
+            // ツールはマウス入力を持たない（LineExtrudeTool.cs:50-52 が全部 => false）。
+            _lineExtrudeHandler = new LineExtrudeToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _lineExtrudeHandler.SetProject(ActiveProject);
+            _lineExtrudeHandler.SetUndoController(_editOps?.UndoController);
+            _lineExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _lineExtrudeSubPanel = new PlayerLineExtrudeSubPanel
+            {
+                GetH        = () => _lineExtrudeHandler,
+                GetView     = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
+            _lineExtrudeSubPanel.Build(_layoutRoot.LineExtrudeSection);
 
             _mediaPipeSubPanel = new PlayerMediaPipeFaceDeformSubPanel
             {
@@ -4794,6 +4871,7 @@ namespace Poly_Ling.Player
 
             _layoutRoot.LivePrimitiveBtn.clicked += ShowLivePrimitivePanel;
             _layoutRoot.LiveAdvancedPrimitiveBtn.clicked += ShowLiveAdvancedPrimitivePanel;
+            _layoutRoot.LiveMechanismPrimitiveBtn.clicked += ShowLiveMechanismPrimitivePanel;
 
             _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
             _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
@@ -4879,6 +4957,8 @@ namespace Poly_Ling.Player
             if (_layoutRoot.BridgeBtn != null)
                 _layoutRoot.BridgeBtn.clicked            += () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Bridge);
             _layoutRoot.SolidifyBtn.clicked              += ShowSolidifyPanel;
+            if (_layoutRoot.LineExtrudeBtn != null)
+                _layoutRoot.LineExtrudeBtn.clicked      += ShowLineExtrudePanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
             if (_layoutRoot.PipelineTestBtn != null)
@@ -5276,6 +5356,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.AlignVerticesSection,         () => _alignVerticesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PlanarizeAlongBonesSection,   () => _planarizeAlongBonesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SmoothEdgesSection,           () => _smoothEdgesSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.LineExtrudeSection,           () => _lineExtrudeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PipeAlignSection,             () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _pipeAlignHandler?.Activate(ctx); _pipeAlignSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.SurfaceSnapSection,           () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _surfaceSnapHandler?.Activate(ctx); _surfaceSnapSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.PlaceObjectReshapeSection,    () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _placeObjectReshapeHandler?.Activate(ctx); _placeObjectReshapeSubPanel?.Refresh(); }));
@@ -5698,6 +5779,13 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.PrimitivePlace);
             ShowRightPanel(_layoutRoot?.LivePrimitiveSection, _layoutRoot?.LiveAdvancedPrimitiveBtn);
             _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced);
+        }
+
+        private void ShowLiveMechanismPrimitivePanel()
+        {
+            SetInteractionMode(InteractionMode.PrimitivePlace);
+            ShowRightPanel(_layoutRoot?.LivePrimitiveSection, _layoutRoot?.LiveMechanismPrimitiveBtn);
+            _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Mechanism);
         }
 
         /// <summary>
@@ -6313,6 +6401,16 @@ namespace Poly_Ling.Player
             // ResolveToolSelectModeOverride が行うため、ここでは書かない。
         }
 
+        private void ShowLineExtrudePanel()
+        {
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持。右ペインのみ切替。
+            // 線分の選択は既存のツールで行い、このパネルは実行だけを持つ。
+            ShowRightPanel(_layoutRoot?.LineExtrudeSection, _layoutRoot?.LineExtrudeBtn);
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _lineExtrudeHandler?.Activate(ctx);
+            _lineExtrudeSubPanel?.Refresh();
+        }
+
         private void ShowSplitVerticesPanel()
         {
             // カテゴリ 2
@@ -6911,6 +7009,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.AlignVerticesSection);
             Hide(_layoutRoot.PlanarizeAlongBonesSection);
             Hide(_layoutRoot.SmoothEdgesSection);
+            Hide(_layoutRoot.LineExtrudeSection);
             // 面に張り付けのプレビュー結果も MeshObject に書かれている。
             // 非表示にするだけでは未確定の形状が残るため、先に破棄する。
             _surfaceSnapHandler?.CancelIfActive();
@@ -8127,6 +8226,7 @@ namespace Poly_Ling.Player
             _planarizeAlongBonesHandler?.SetProject(ActiveProject);
             _mergeVerticesHandler?.SetProject(ActiveProject);
             _splitVerticesHandler?.SetProject(ActiveProject);
+            _lineExtrudeHandler?.SetProject(ActiveProject);
             _vertexHoleHandler?.SetProject(ActiveProject);
             _addFaceHandler?.SetProject(ActiveProject);
             _flipFaceHandler?.SetProject(ActiveProject);
@@ -9265,7 +9365,12 @@ namespace Poly_Ling.Player
         /// </summary>
         private void ExecuteDeleteSelection()
         {
-            _deleteSelectionHandler?.TriggerDelete();
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return;
+
+            _commandDispatcher?.Dispatch(new DeleteSelectionCommand(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                model.SelectedDrawableMeshIndices.ToArray()));
         }
 
         // ================================================================
@@ -9276,17 +9381,40 @@ namespace Poly_Ling.Player
         //   その場で組み立てるため）。
         // ================================================================
 
-        /// <summary>距離を見ず、選択頂点を 1 点（重心）へ結合する。</summary>
+        /// <summary>
+        /// 距離を見ず、選択頂点を 1 点（重心）へ結合する。
+        ///
+        /// 実処理はコマンドへ流す。しきい値はパネルの現在値を載せる
+        /// （Centroid では読まれないが、コマンドを自己完結させるため）。
+        /// </summary>
         private void ExecuteMergeSelectedToCentroid()
         {
-            _mergeVerticesHandler?.TriggerMergeToCentroidNow();
-            _mergeVerticesSubPanel?.Refresh();
+            DispatchMergeVertices(Poly_Ling.Data.MergeVerticesCommand.MergeMode.Centroid);
         }
 
         /// <summary>選択頂点のうち、しきい値以下の距離にあるものを結合する。</summary>
         private void ExecuteMergeSelectedByThreshold()
         {
-            _mergeVerticesHandler?.TriggerMergeByThresholdNow();
+            DispatchMergeVertices(Poly_Ling.Data.MergeVerticesCommand.MergeMode.Threshold);
+        }
+
+        /// <summary>
+        /// 頂点結合コマンドを組んで送る。ショートカットの 2 経路で共通。
+        /// 対象は編集対象メッシュ 1 本（受け口は照合するだけで選択を書き換えない）。
+        /// </summary>
+        private void DispatchMergeVertices(
+            Poly_Ling.Data.MergeVerticesCommand.MergeMode mode)
+        {
+            var model = ActiveProject?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return;
+
+            _commandDispatcher?.Dispatch(new Poly_Ling.Data.MergeVerticesCommand(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                new[] { model.IndexOf(mc) },
+                mode,
+                _mergeVerticesHandler?.Threshold ?? 0.001f));
+
             _mergeVerticesSubPanel?.Refresh();
         }
 
@@ -9367,6 +9495,11 @@ namespace Poly_Ling.Player
         //   ・アクティブメッシュ以外は無視する（各 Tool は選択中オブジェクトを
         //     走査するため、別メッシュの要素をそのまま流すと意図しない箇所が変わる）
         //   ・修飾キーは無視し、選択をクリックした要素 1 つに差し替えてから実行する
+        //
+        // 実行そのものはコマンドへ流す。対象は「実行時点の選択オブジェクト」を
+        // そのまま載せる（受け口は照合するだけで選択を書き換えない）。
+        // ここで選択を差し替えているのはクリックした要素を選ぶためで、
+        // 対象オブジェクトの集合は変えていない。
         // ================================================================
 
         private void OnVertexDissolveClicked(PlayerHoverElement elem, ModifierKeys mods)
@@ -9381,7 +9514,9 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectVertex(elem.VertexIndex, false);
 
-            _vertexDissolveHandler?.TriggerDissolve();
+            _commandDispatcher?.Dispatch(new VertexDissolveCommand(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                model.SelectedDrawableMeshIndices.ToArray()));
             _vertexDissolveSubPanel?.Refresh();
         }
 
@@ -9397,7 +9532,9 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectFace(elem.FaceIndex, false);
 
-            _tri4To1Handler?.TriggerMerge();
+            _commandDispatcher?.Dispatch(new Tri4To1Command(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                model.SelectedDrawableMeshIndices.ToArray()));
             _tri4To1SubPanel?.Refresh();
         }
 
@@ -9413,7 +9550,9 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectEdge(new VertexPair(elem.EdgeV1, elem.EdgeV2), false);
 
-            _faceMergeHandler?.TriggerMerge();
+            _commandDispatcher?.Dispatch(new FaceMergeCommand(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                model.SelectedDrawableMeshIndices.ToArray()));
             _faceMergeSubPanel?.Refresh();
         }
 
@@ -9429,7 +9568,9 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectVertex(elem.VertexIndex, false);
 
-            _quad4To1Handler?.TriggerMerge();
+            _commandDispatcher?.Dispatch(new Quad4To1Command(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                model.SelectedDrawableMeshIndices.ToArray()));
             _quad4To1SubPanel?.Refresh();
         }
 
@@ -9445,7 +9586,9 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectEdge(new VertexPair(elem.EdgeV1, elem.EdgeV2), false);
 
-            _faceMergeCollapseHandler?.TriggerMerge();
+            _commandDispatcher?.Dispatch(new FaceMergeCollapseCommand(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                model.SelectedDrawableMeshIndices.ToArray()));
             _faceMergeCollapseSubPanel?.Refresh();
         }
 
@@ -10775,6 +10918,7 @@ namespace Poly_Ling.Player
             _planarizeAlongBonesHandler?.SetProject(ActiveProject);
                 _mergeVerticesHandler?.SetProject(ActiveProject);
                 _splitVerticesHandler?.SetProject(ActiveProject);
+                _lineExtrudeHandler?.SetProject(ActiveProject);
                 _vertexHoleHandler?.SetProject(ActiveProject);
                 _addFaceHandler?.SetProject(ActiveProject);
                 _flipFaceHandler?.SetProject(ActiveProject);

@@ -69,8 +69,11 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 選択されている頂点 / 面 / 線分を削除する。
+        ///
+        /// private にしてある。ボタン・ショートカットからの直呼びは塞ぎ、
+        /// DeleteSelectionCommand 経由に統一するため。
         /// </summary>
-        public void TriggerDelete()
+        private void TriggerDeleteCore()
         {
             var ctx = BuildCtx();
             if (ctx == null)
@@ -83,6 +86,38 @@ namespace Poly_Ling.Player
                 return;
             }
             _tool.Execute(ctx);
+        }
+
+        /// <summary>
+        /// 選択要素の削除コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   削除そのものは DeleteSelectionTool が正典。ここは対象の照合だけを行い、
+        ///   同じ経路（BuildCtx → Execute）を呼ぶ。
+        ///
+        /// 【対象の照合】
+        ///   MasterIndices で選択を書き換えず、実行時点の選択と一致するかだけを見る。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.DeleteSelectionCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
+                return false;
+
+            if (GetDeletableCount() <= 0)
+            {
+                reason = "削除できる要素がありません。頂点・面・線分を選択してください";
+                return false;
+            }
+
+            TriggerDeleteCore();
+            return true;
         }
 
         // ================================================================

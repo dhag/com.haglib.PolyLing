@@ -15,12 +15,28 @@ using UnityEngine.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
 
 namespace Poly_Ling.Player
 {
     public class PlayerPlaceObjectReshapeSubPanel
     {
         public Func<PlaceObjectReshapeToolHandler> GetH;
+        public Func<ProjectContext>                GetView;
+        public Action<PanelCommand>                SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 実行時点の選択オブジェクトをコマンドの対象として載せる。
+        /// 受け口は照合するだけで選択を書き換えない。
+        /// </summary>
+        private int[] SelectedMasterIndices()
+        {
+            var sel = GetView?.Invoke()?.CurrentModel?.SelectedDrawableMeshIndices;
+            return sel != null ? sel.ToArray() : System.Array.Empty<int>();
+        }
 
         /// <summary>原型の候補一覧。Viewer から設定する。</summary>
         public Func<List<(string Label, int MasterIndex, MeshObject Mesh)>> GetDrawableMeshEntryList;
@@ -82,7 +98,17 @@ namespace Poly_Ling.Player
             // ── 実行 ───────────────────────────────────────────────────
             _executeBtn = new Button(() =>
             {
-                GetH()?.TriggerExecute();
+                var h = GetH();
+                if (h == null) return;
+
+                // 原型は MeshObject ではなく材料の masterIndex 配列で送る。
+                // 受け口が同じ MeshObjectAppendOps.Combine で組み立てる。
+                SendCommand?.Invoke(new PlaceObjectReshapeCommand(
+                    ModelIndex, SelectedMasterIndices(),
+                    _srcPick.SelectedMasterIndices().ToArray(),
+                    h.Mode,
+                    lambda:     h.Lambda,
+                    targetText: h.TargetText));
                 Refresh();
             }) { text = "開始" };
             _executeBtn.style.height    = 30;

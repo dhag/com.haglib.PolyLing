@@ -58,6 +58,12 @@ namespace Poly_Ling.Player
         /// <summary>ドラッグで値が変わったときに呼ぶ。UI 書き戻しとギズモ再描画に使う。</summary>
         public Action OnValueChanged;
 
+        /// <summary>コマンドの発行先（Viewer から結線）。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引（Viewer から結線）。</summary>
+        public Func<int> GetModelIndex;
+
         /// <summary>
         /// 吸着先（頂点／ボーン）のワールド座標を返す。無ければ null。
         /// 引数はギズモ判定と同じ ctx 系スクリーン座標（ToImgui 済み）。
@@ -108,6 +114,12 @@ namespace Poly_Ling.Player
 
         // ドラッグ開始時のスナップショット（絶対計算の基準）
         private Quaternion _startRotation = Quaternion.identity;
+
+        // ハンドルを掴めたか。掴めた場合だけ確定時にコマンドを発行する。
+        private bool _dragStarted;
+
+        // ドラッグ開始時の作業軸の状態。確定時に戻してからコマンドを送る。
+        private Poly_Ling.Context.WorkAxisSnapshot _dragBefore;
 
         // 回転スナップ（度）。0 以下でスナップ無効。
         public float RotateSnapDeg { get; set; } = 0f;
@@ -306,6 +318,7 @@ namespace Poly_Ling.Player
             _dragRoll     = false;
             _snapTarget   = null;
             _tipDragWorld = null;
+            _dragStarted  = false;
 
             var ctx = GetToolContext?.Invoke();
             if (ctx == null || !SyncGizmoFromAxis()) return;
@@ -323,6 +336,8 @@ namespace Poly_Ling.Player
 
                 _dragAxis      = axis;
                 _startRotation = wa.Rotation;
+                _dragStarted   = true;
+                _dragBefore    = wa.CreateSnapshot();
                 return;
             }
 
@@ -337,6 +352,8 @@ namespace Poly_Ling.Player
                 {
                     _dragRoll      = true;
                     _startRotation = wa.Rotation;
+                    _dragStarted   = true;
+                    _dragBefore    = wa.CreateSnapshot();
                     return;
                 }
             }
@@ -346,6 +363,8 @@ namespace Poly_Ling.Player
             {
                 _dragYTip     = true;
                 _tipDragWorld = wa.YTip;   // 掴んだ位置から動かし始める
+                _dragStarted  = true;
+                _dragBefore   = wa.CreateSnapshot();
                 SetSnapHitTest(true);
                 return;
             }
@@ -353,7 +372,9 @@ namespace Poly_Ling.Player
             var hitAxis = _axisGizmo.FindAxisAtScreenPos(imgui, ctx);
             if (hitAxis == AxisGizmo.AxisType.None) return;
 
-            _dragAxis = hitAxis;
+            _dragAxis    = hitAxis;
+            _dragStarted = true;
+            _dragBefore  = wa.CreateSnapshot();
 
             // 原点ハンドルは自由移動中に吸着させる。軸拘束移動は吸着させない
             // （軸から外れた位置へ飛ぶことになり拘束の意味が無くなるため）。
@@ -377,12 +398,26 @@ namespace Poly_Ling.Player
             OnRepaint?.Invoke();
         }
 
+        /// <summary>
+        /// ドラッグ確定。
+        ///
+        /// 【1 ドラッグ = 1 コマンド】
+        ///   ドラッグ中の書き換えはプレビューとして扱い、確定時に開始状態へ戻してから
+        ///   SetWorkAxisCommand を 1 本発行する。作業軸は状態の全指定で送るので、
+        ///   ドラッグ後の値をそのまま載せればよい。
+        ///
+        /// 【SendCommand 未結線のとき】
+        ///   戻さず、ドラッグ中に書き換えた値をそのまま残す（3-d と同じ方針）。
+        /// </summary>
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
+            TakeDragAndSend();
+
             _dragAxis     = AxisGizmo.AxisType.None;
             _dragYTip     = false;
             _dragRoll     = false;
             _snapTarget   = null;
+            _dragStarted  = false;
             // ハンドルは軸の先端へ戻す。
             _tipDragWorld = null;
             _ringGizmo.EndAngleDrag();
@@ -392,6 +427,38 @@ namespace Poly_Ling.Player
             SetSnapHitTest(false);
 
             OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// ドラッグ結果をコマンドとして送る。
+        ///
+        /// ドラッグ中の書き換えはプレビュー扱いなので、開始状態へ戻してから
+        /// 確定後の値を SetWorkAxisCommand に載せる。書き込みは受け口の
+        /// WorkAxisContext.ApplySnapshot に一本化される。
+        ///
+        /// SendCommand が未結線のときは戻さず、書き換えたままにする。
+        /// </summary>
+        private void TakeDragAndSend()
+        {
+            if (!_dragStarted) return;
+
+            var wa = GetWorkAxis?.Invoke();
+            if (wa == null) return;
+
+            if (SendCommand == null) return;
+
+            var after = wa.CreateSnapshot();
+            if (!after.IsDifferentFrom(_dragBefore)) return;
+
+            // プレビューを戻す。
+            wa.ApplySnapshot(_dragBefore);
+
+            SendCommand.Invoke(new Poly_Ling.Data.SetWorkAxisCommand(
+                GetModelIndex?.Invoke() ?? 0,
+                after.Origin,
+                after.Rotation.eulerAngles,
+                after.Length,
+                after.IsVisible));
         }
 
         // ================================================================

@@ -228,6 +228,123 @@ namespace Poly_Ling.Tools
         public void PrepareHit(VertexPair? edge) { _hitEdgeOnMouseDown = edge; }
 
         // ================================================================
+        // コマンド経路
+        //
+        // 【なぜ要るか】
+        //   ベベル量はドラッグの画面移動から導かれる（UpdateBevel）ので、
+        //   コマンド（自動検証・MCP）からは通せない。辺と量を直接渡せる入口を
+        //   ここに置き、生成と Undo 記録はマウス経路と同じ
+        //   CollectTargetEdges / ExecuteBevel / EndBevel を通す。
+        // ================================================================
+
+        /// <summary>
+        /// 指定した辺を指定量でベベルする。
+        ///
+        /// ExecuteBevel は _dragAmount を使って頂点位置まで決める（:360, 419-420）ので、
+        /// 量を入れてから 1 回呼べばドラッグ確定と同じ形になる。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ApplyBevelFromCommand(
+            ToolContext ctx, VertexPair edge, float amount, int segments, bool fillet,
+            out string reason)
+        {
+            reason = null;
+
+            if (_state != BevelState.Idle)
+            { reason = "ドラッグ中は実行できません"; return false; }
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null || ctx.SelectionState == null)
+            { reason = "編集対象メッシュがありません"; return false; }
+
+            if (edge.V1 < 0 || edge.V1 >= mo.VertexCount ||
+                edge.V2 < 0 || edge.V2 >= mo.VertexCount)
+            { reason = "辺の頂点番号が範囲外です"; return false; }
+
+            if (amount <= 0f)
+            { reason = "Amount は 0 より大きい値を指定してください"; return false; }
+
+            int  savedSegments = Segments;
+            bool savedFillet   = Fillet;
+            float savedAmount  = Amount;
+            try
+            {
+                Segments = segments;
+                Fillet   = fillet;
+
+                if (ctx.UndoController != null)
+                    _snapshotBefore = MeshObjectSnapshot.Capture(
+                        ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+
+                ctx.SelectionState.Edges.Clear();
+                ctx.SelectionState.Edges.Add(edge);
+
+                CollectTargetEdges(ctx);
+                if (_targetEdges.Count == 0)
+                {
+                    _snapshotBefore = null;
+                    reason = "ベベルできる辺がありません（隣接面が 2 枚でない可能性があります）";
+                    return false;
+                }
+
+                _dragAmount = amount;
+                ExecuteBevel(ctx);
+                EndBevel(ctx);   // Amount = _dragAmount と Undo 記録
+            }
+            finally
+            {
+                Reset();
+                Segments = savedSegments;
+                Fillet   = savedFillet;
+                // Amount は EndBevel が確定値を入れる。コマンドの量をパネルへ
+                // 残さないよう、呼び出し前の値へ戻す。
+                Amount   = savedAmount;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 取り出せるドラッグ結果があるか。TryTakeBevelFromDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool BevelPending
+            => _state == BevelState.Beveling && _hitEdgeOnMouseDown.HasValue && _dragAmount > 0f;
+
+        /// <summary>
+        /// ドラッグの確定内容を取り出し、開始状態へ戻す。
+        ///
+        /// 【なぜ要るか】
+        ///   1 ドラッグ = 1 コマンドにするため。ドラッグ中の生成はプレビューとして扱い、
+        ///   確定時はここで開始状態へ戻して辺と量だけを返す。呼び出し側
+        ///   （EdgeBevelToolHandler）が EdgeBevelCommand を送り、実際の生成と
+        ///   Undo 記録は ApplyBevelFromCommand が行う。
+        ///
+        /// 【戻し方】
+        ///   ベベルはドラッグ開始時にトポロジーまで作る（StartBevel → ExecuteBevel）ので、
+        ///   位置を戻すだけでは足りない。マウスダウン時のスナップショットを丸ごと適用する。
+        ///   _snapshotBefore は null にするので、続けて呼ばれる OnMouseUp（EndBevel）は
+        ///   Undo を積まない。
+        /// </summary>
+        public bool TryTakeBevelFromDrag(
+            ToolContext ctx, out VertexPair edge, out float amount)
+        {
+            edge   = default;
+            amount = 0f;
+
+            if (!BevelPending) return false;
+            if (ctx?.UndoController == null || _snapshotBefore == null) return false;
+
+            edge   = _hitEdgeOnMouseDown.Value;
+            amount = _dragAmount;
+
+            _snapshotBefore.ApplyTo(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+            _snapshotBefore = null;
+
+            ctx.SyncMesh?.Invoke();
+            return true;
+        }
+
+        // ================================================================
         // ベベル処理
         // ================================================================
 

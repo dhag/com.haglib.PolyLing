@@ -6,12 +6,31 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Core;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerSmoothEdgesSubPanel
     {
         public Func<SmoothEdgesToolHandler> GetH;
+        public Func<ProjectContext>         GetView;
+        public Action<PanelCommand>         SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
 
         // ================================================================
         // UI 要素
@@ -108,7 +127,13 @@ namespace Poly_Ling.Player
             // 実行
             _smoothBtn = new Button(() =>
             {
-                GetH?.Invoke()?.TriggerSmooth();
+                var h = GetH?.Invoke();
+                var targets = ActiveMasterIndices();
+                if (h == null || targets == null) return;
+
+                SendCommand?.Invoke(new SmoothEdgesCommand(
+                    ModelIndex, targets, h.Strength, h.Iterations,
+                    h.FixEndpoints, h.LockX, h.LockY, h.LockZ));
                 Refresh();
             })
             { text = "平滑化実行" };

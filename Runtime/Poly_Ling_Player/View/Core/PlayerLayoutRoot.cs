@@ -182,6 +182,9 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：新図形生成ボタン（新しい高度）。新しい基本と同じ LivePrimitiveSection を開く。</summary>
         public Button LiveAdvancedPrimitiveBtn { get; private set; }
 
+        /// <summary>左ペイン：新図形生成ボタン（機構部品）。同じ LivePrimitiveSection を開く。</summary>
+        public Button LiveMechanismPrimitiveBtn { get; private set; }
+
         /// <summary>左ペイン：ツール切り替えボタン群。</summary>
         public Button ToolVertexMoveBtn  { get; private set; }
         public Button ToolObjectMoveBtn  { get; private set; }
@@ -403,6 +406,8 @@ namespace Poly_Ling.Player
         public Button        BridgeBtn                  { get; private set; }
         public VisualElement SolidifySection            { get; private set; }
         public Button        SolidifyBtn                { get; private set; }
+        public VisualElement LineExtrudeSection         { get; private set; }
+        public Button        LineExtrudeBtn             { get; private set; }
         public VisualElement MediaPipeSection       { get; private set; }
         public Button        MediaPipeBtn           { get; private set; }
         public VisualElement VMDTestSection         { get; private set; }
@@ -1131,6 +1136,10 @@ namespace Poly_Ling.Player
             LiveAdvancedPrimitiveBtn = MakeBtn("高度な図形（3D連携）");
             foPrimitive.Add(LiveAdvancedPrimitiveBtn);
 
+            // 歯車まわり（かみ合う部品）はここへ集める。
+            LiveMechanismPrimitiveBtn = MakeBtn("機構部品（3D連携）");
+            foPrimitive.Add(LiveMechanismPrimitiveBtn);
+
             // 配置ギズモのサブモード切替ボタンは
             // PlayerPrimitiveMeshSubPanel（3D連携インスタンス）の中へ移設済み。
 
@@ -1196,6 +1205,12 @@ namespace Poly_Ling.Player
             FaceExtrudeBtn = MakeBtn("面押し出し"); FaceExtrudeBtn.style.flexGrow = 1; FaceExtrudeBtn.style.marginRight = 2;
             SolidifyBtn = MakeBtn("厚み付け"); SolidifyBtn.style.flexGrow = 1;
             rowExtrude.Add(EdgeExtrudeBtn); rowExtrude.Add(FaceExtrudeBtn); rowExtrude.Add(SolidifyBtn); foTopology.Add(rowExtrude);
+
+            // 線分押し出しは選択線分からループを検出して新しいメッシュを作る。
+            // 押し出し系と並べたいが 1 行 3 つで幅が詰まるため行を分ける。
+            var rowLineExtrude = new VisualElement(); rowLineExtrude.style.flexDirection = FlexDirection.Row; rowLineExtrude.style.marginBottom = 2;
+            LineExtrudeBtn = MakeBtn("線分押し出し"); LineExtrudeBtn.style.flexGrow = 1;
+            rowLineExtrude.Add(LineExtrudeBtn); foTopology.Add(rowLineExtrude);
 
             var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
             EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
@@ -1731,6 +1746,7 @@ namespace Poly_Ling.Player
             EdgeTopologySection        = AddSection(visible: false);
             KnifeSection               = AddSection(visible: false);
             SolidifySection            = AddSection(visible: false);
+            LineExtrudeSection         = AddSection(visible: false);
             MediaPipeSection           = AddSection(visible: false);
             VMDTestSection             = AddSection(visible: false);
             UnityClipTestSection       = AddSection(visible: false);

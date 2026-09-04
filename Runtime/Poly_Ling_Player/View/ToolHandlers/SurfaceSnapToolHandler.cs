@@ -106,11 +106,107 @@ namespace Poly_Ling.Player
         /// <summary>候補リスト作成用。現在のモデル。</summary>
         public ModelContext Model => _project?.CurrentModel;
 
+        // プレビュー操作（計算・スライダー・取り消し）は画面上の確認であって
+        // 確定操作ではないため、コマンド化せず public のまま残す。
+        // 確定（TriggerApply）だけが Undo を積む（SurfaceSnapTool.cs:439-453）。
         public void TriggerCompute()      => _tool.TriggerCompute();
         public void SetSlider(float v)    => _tool.SetSlider(v);
-        public void TriggerApply()        => _tool.TriggerApply();
         public void TriggerCancel()       => _tool.TriggerCancel();
         public void CancelIfActive()      => _tool.CancelIfActive();
+
+        /// <summary>
+        /// プレビューを確定する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// SurfaceSnapCommand 経由に統一するため。
+        /// </summary>
+        private void TriggerApplyCore()   => _tool.TriggerApply();
+
+        /// <summary>
+        /// 面に張り付けコマンドを実行する。
+        ///
+        /// 【1 コマンドに畳んである】
+        ///   パネルは「計算 → スライダー → 決定」の 3 段だが、確定は決定の 1 回だけ。
+        ///   よってここは計算・スライダー・決定を続けて呼ぶ。
+        ///   計算に失敗した（IsPreviewing が false のまま）ときは LastResult を返す。
+        ///
+        /// 【リファレンス】
+        ///   コマンドの ReferenceMasterIndices を正典として入れ替え、
+        ///   終わったらパネルの指定へ戻す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.SurfaceSnapCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
+                return false;
+
+            if (cmd.ReferenceMasterIndices == null || cmd.ReferenceMasterIndices.Length == 0)
+            {
+                reason = "リファレンスオブジェクトを 1 つ以上指定してください";
+                return false;
+            }
+            foreach (int idx in cmd.ReferenceMasterIndices)
+            {
+                if (model.GetMeshContext(idx)?.MeshObject == null)
+                {
+                    reason = $"リファレンスオブジェクトが見つかりません: masterIndex {idx}";
+                    return false;
+                }
+            }
+
+            // 計算の途中で前のプレビューが残っていると結果が混ざるので先に畳む。
+            CancelIfActive();
+
+            // 実行時と同じコンテキストを通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            var savedRefs   = new List<int>(ReferenceIndices);
+            var savedCam    = CameraKind;
+            bool savedOnly  = SelectedVerticesOnly;
+            float savedOff  = SurfaceOffset;
+            var savedBack   = Backface;
+            try
+            {
+                foreach (int idx in savedRefs) SetReference(idx, false);
+                foreach (int idx in cmd.ReferenceMasterIndices) SetReference(idx, true);
+
+                CameraKind           = cmd.CameraKind;
+                SelectedVerticesOnly = cmd.SelectedVerticesOnly;
+                SurfaceOffset        = cmd.SurfaceOffset;
+                Backface             = cmd.Backface;
+
+                TriggerCompute();
+                if (!IsPreviewing)
+                {
+                    reason = string.IsNullOrEmpty(LastResult) ? "計算できませんでした" : LastResult;
+                    return false;
+                }
+
+                SetSlider(cmd.Slider);
+                TriggerApplyCore();
+            }
+            finally
+            {
+                CancelIfActive();
+
+                foreach (int idx in cmd.ReferenceMasterIndices) SetReference(idx, false);
+                foreach (int idx in savedRefs) SetReference(idx, true);
+
+                CameraKind           = savedCam;
+                SelectedVerticesOnly = savedOnly;
+                SurfaceOffset        = savedOff;
+                Backface             = savedBack;
+            }
+
+            return true;
+        }
 
         // ================================================================
         // 初期化

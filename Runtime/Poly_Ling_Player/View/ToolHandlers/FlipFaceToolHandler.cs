@@ -33,8 +33,68 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
-        public void FlipSelected() => _tool.FlipSelectedFaces();
-        public void FlipAll()      => _tool.FlipAllFaces();
+        /// <summary>
+        /// 面を反転する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// FlipFaceCommand 経由に統一するため。
+        /// </summary>
+        private void FlipSelectedCore() => _tool.FlipSelectedFaces();
+        private void FlipAllCore()      => _tool.FlipAllFaces();
+
+        /// <summary>
+        /// 面反転コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   反転そのものは FlipFaceTool が正典。ここは対象の照合と
+        ///   前提条件の確認だけを行い、同じ経路を呼ぶ。
+        ///
+        /// 【前提条件をここで見る理由】
+        ///   FlipFaceTool は Inspect を持たず、失敗内容は private な _lastMessage に
+        ///   入るだけで外から読めない（FlipFaceTool.cs:31, 95, 102）。
+        ///   そのため、ツールが内部で見ているのと同じデータ（選択面 / 面数）を
+        ///   ここでも確かめて失敗理由を作る。反転処理は複製しない。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.FlipFaceCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var mc = model.ActiveMeshContext;
+
+            if (cmd.Scope == Poly_Ling.Data.FlipFaceCommand.FlipScope.Selected)
+            {
+                var faces = mc.Selection?.Faces;
+                if (faces == null || faces.Count == 0)
+                {
+                    reason = "面を選択してください";
+                    return false;
+                }
+            }
+            else if (mc.MeshObject.FaceCount == 0)
+            {
+                reason = "反転できる面がありません";
+                return false;
+            }
+
+            // 実行時と同じコンテキストを通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            if (cmd.Scope == Poly_Ling.Data.FlipFaceCommand.FlipScope.Selected)
+                FlipSelectedCore();
+            else
+                FlipAllCore();
+
+            return true;
+        }
 
         // ================================================================
         // 初期化

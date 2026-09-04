@@ -56,11 +56,83 @@ namespace Poly_Ling.Player
         /// <summary>統計だけ再計算する（選択変更後のパネル更新用）。</summary>
         public void RefreshStats() => _tool.RecalculateStats();
 
-        /// <summary>平滑化を実行する。</summary>
-        public void TriggerSmooth()
+        /// <summary>
+        /// 平滑化を実行する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// SmoothEdgesCommand 経由に統一するため。
+        /// </summary>
+        private void TriggerSmoothCore()
         {
             _tool.TriggerSmooth();
             OnApplyCompleted?.Invoke();
+        }
+
+        /// <summary>
+        /// 辺の平滑化コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   平滑化そのものは SmoothEdgesTool が正典。ここは対象の照合と
+        ///   設定値の差し替えだけを行い、同じ経路を呼ぶ。
+        ///
+        /// 【設定の扱い】
+        ///   コマンドの値を正典として実行し、終わったらパネルの値へ戻す。
+        ///   統計（MovableVertexCount）は FixEndpoints に依存するので、
+        ///   差し替えたあとに RefreshStats してから可否を見る。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.SmoothEdgesCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            // 実行時と同じコンテキストで統計を出すため、先に Activate を通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            float savedStrength = Strength;
+            int   savedIter     = Iterations;
+            bool  savedFix      = FixEndpoints;
+            bool  savedLockX    = LockX;
+            bool  savedLockY    = LockY;
+            bool  savedLockZ    = LockZ;
+            try
+            {
+                Strength     = cmd.Strength;
+                Iterations   = cmd.Iterations;
+                FixEndpoints = cmd.FixEndpoints;
+                LockX        = cmd.LockX;
+                LockY        = cmd.LockY;
+                LockZ        = cmd.LockZ;
+
+                RefreshStats();
+                if (MovableVertexCount <= 0)
+                {
+                    reason = SegmentCount > 0
+                        ? "動かせる頂点がありません。端点固定を外すか選択範囲を広げてください"
+                        : "辺または線分を選択してください";
+                    return false;
+                }
+
+                TriggerSmoothCore();
+            }
+            finally
+            {
+                Strength     = savedStrength;
+                Iterations   = savedIter;
+                FixEndpoints = savedFix;
+                LockX        = savedLockX;
+                LockY        = savedLockY;
+                LockZ        = savedLockZ;
+            }
+
+            return true;
         }
 
         // ================================================================

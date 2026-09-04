@@ -255,6 +255,106 @@ namespace Poly_Ling.Player
         /// <summary>面削除コマンドの実行。</summary>
         public Action<DeleteFacesCommand> OnDeleteFaces;
 
+        // ================================================================
+        // 位相編集（パラメータを持たない実行系）
+        //
+        // 実処理は各 Tool が正典。ここに第 2 実装を置かず、ハンドラへ委譲する。
+        // 戻り値は失敗理由。成功時は null（P1-3: 無言 return を残さない）。
+        // ================================================================
+
+        /// <summary>面の結合コマンドの実行。</summary>
+        public Func<FaceMergeCommand, string> OnFaceMerge;
+
+        /// <summary>面の結合（頂点を外す方式）コマンドの実行。</summary>
+        public Func<FaceMergeCollapseCommand, string> OnFaceMergeCollapse;
+
+        /// <summary>四角形 4→1 コマンドの実行。</summary>
+        public Func<Quad4To1Command, string> OnQuad4To1;
+
+        /// <summary>三角形 4→1 コマンドの実行。</summary>
+        public Func<Tri4To1Command, string> OnTri4To1;
+
+        /// <summary>頂点溶かしコマンドの実行。</summary>
+        public Func<VertexDissolveCommand, string> OnVertexDissolve;
+
+        /// <summary>頂点分離コマンドの実行。</summary>
+        public Func<SplitVerticesCommand, string> OnSplitVertices;
+
+        // ================================================================
+        // 位相・頂点編集（パラメータを持つ実行系）
+        //
+        // 実処理は各 Tool が正典。ここに第 2 実装を置かず、ハンドラへ委譲する。
+        // 戻り値は失敗理由。成功時は null（P1-3: 無言 return を残さない）。
+        // ================================================================
+
+        /// <summary>頂点に穴あけコマンドの実行。</summary>
+        public Func<VertexHoleCommand, string> OnVertexHole;
+
+        /// <summary>面反転コマンドの実行。</summary>
+        public Func<FlipFaceCommand, string> OnFlipFace;
+
+        /// <summary>頂点整列コマンドの実行。</summary>
+        public Func<AlignVerticesCommand, string> OnAlignVertices;
+
+        /// <summary>辺の平滑化コマンドの実行。</summary>
+        public Func<SmoothEdgesCommand, string> OnSmoothEdges;
+
+        /// <summary>ボーン平面への平面化コマンドの実行。</summary>
+        public Func<PlanarizeAlongBonesCommand, string> OnPlanarizeAlongBones;
+
+        /// <summary>頂点結合コマンドの実行。</summary>
+        public Func<MergeVerticesCommand, string> OnMergeVertices;
+
+        // ================================================================
+        // 位相・頂点編集（対象や生成先の指定を伴う実行系）
+        // ================================================================
+
+        /// <summary>選択要素の削除コマンドの実行。</summary>
+        public Func<DeleteSelectionCommand, string> OnDeleteSelection;
+
+        /// <summary>パイプ整列コマンドの実行。</summary>
+        public Func<PipeAlignCommand, string> OnPipeAlign;
+
+        /// <summary>配置物の整形コマンドの実行。</summary>
+        public Func<PlaceObjectReshapeCommand, string> OnPlaceObjectReshape;
+
+        /// <summary>厚み付けコマンドの実行。</summary>
+        public Func<SolidifyCommand, string> OnSolidify;
+
+        /// <summary>線分押し出しコマンドの実行。</summary>
+        public Func<LineExtrudeCommand, string> OnLineExtrude;
+
+        /// <summary>面に張り付けコマンドの実行。</summary>
+        public Func<SurfaceSnapCommand, string> OnSurfaceSnap;
+
+        // ================================================================
+        // ドラッグ確定（ベベル・押し出し）
+        // ================================================================
+
+        /// <summary>辺ベベルコマンドの実行。</summary>
+        public Func<EdgeBevelCommand, string> OnEdgeBevel;
+
+        /// <summary>辺・線分の押し出しコマンドの実行。</summary>
+        public Func<EdgeExtrudeCommand, string> OnEdgeExtrude;
+
+        /// <summary>面の押し出しコマンドの実行。</summary>
+        public Func<FaceExtrudeCommand, string> OnFaceExtrude;
+
+        /// <summary>スキンウェイト塗りコマンドの実行。</summary>
+        public Func<SkinWeightPaintCommand, string> OnSkinWeightPaint;
+
+        // ================================================================
+        // 作業軸
+        //
+        // モデルの頂点・選択は書き換えないので Undo も所有権判定も持たない。
+        // ================================================================
+
+        /// <summary>作業軸の状態差し替えコマンドの実行。</summary>
+        public Func<SetWorkAxisCommand, string> OnSetWorkAxis;
+
+        /// <summary>作業軸ライブラリ呼び出しコマンドの実行。</summary>
+        public Func<RecallWorkAxisCommand, string> OnRecallWorkAxis;
+
         /// <summary>穴点数合わせコマンドの実行。</summary>
         public Action<MatchHoleRingCountCommand> OnMatchHoleRingCount;
 
@@ -637,6 +737,235 @@ namespace Poly_Ling.Player
                     string attrReason = OnAdvancedSelectByAttribute.Invoke(c);
                     if (attrReason != null) { Fail(attrReason); return; }
                     _notifyPanels(ChangeKind.Selection);
+                    return;
+                }
+
+                // ── 位相編集（パラメータを持たない実行系）
+                //
+                // 実処理は FaceMergeTool ほかが正典。受け口はハンドラへ委譲し、
+                // 対象照合（MasterIndices と現在の選択が一致するか）もハンドラが行う。
+                // 位相が変わるので Selection ではなく Topology を通知する。
+                case FaceMergeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnFaceMerge == null) { Fail("face merge handler not wired"); return; }
+                    string fmReason = OnFaceMerge.Invoke(c);
+                    if (fmReason != null) { Fail(fmReason); return; }
+                    return;
+                }
+
+                case FaceMergeCollapseCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnFaceMergeCollapse == null) { Fail("face merge collapse handler not wired"); return; }
+                    string fmcReason = OnFaceMergeCollapse.Invoke(c);
+                    if (fmcReason != null) { Fail(fmcReason); return; }
+                    return;
+                }
+
+                case Quad4To1Command c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnQuad4To1 == null) { Fail("quad 4to1 handler not wired"); return; }
+                    string q41Reason = OnQuad4To1.Invoke(c);
+                    if (q41Reason != null) { Fail(q41Reason); return; }
+                    return;
+                }
+
+                case Tri4To1Command c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnTri4To1 == null) { Fail("tri 4to1 handler not wired"); return; }
+                    string t41Reason = OnTri4To1.Invoke(c);
+                    if (t41Reason != null) { Fail(t41Reason); return; }
+                    return;
+                }
+
+                case VertexDissolveCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnVertexDissolve == null) { Fail("vertex dissolve handler not wired"); return; }
+                    string vdReason = OnVertexDissolve.Invoke(c);
+                    if (vdReason != null) { Fail(vdReason); return; }
+                    return;
+                }
+
+                case SplitVerticesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnSplitVertices == null) { Fail("split vertices handler not wired"); return; }
+                    string svReason = OnSplitVertices.Invoke(c);
+                    if (svReason != null) { Fail(svReason); return; }
+                    return;
+                }
+
+                // ── 位相・頂点編集（パラメータを持つ実行系）
+                //
+                // 設定値はコマンドが正典。ハンドラが実行後にパネルの値へ戻すので、
+                // リモートから送ってもパネルの表示は変わらない。
+                case VertexHoleCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnVertexHole == null) { Fail("vertex hole handler not wired"); return; }
+                    string vhReason = OnVertexHole.Invoke(c);
+                    if (vhReason != null) { Fail(vhReason); return; }
+                    return;
+                }
+
+                case FlipFaceCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnFlipFace == null) { Fail("flip face handler not wired"); return; }
+                    string ffReason = OnFlipFace.Invoke(c);
+                    if (ffReason != null) { Fail(ffReason); return; }
+                    return;
+                }
+
+                case AlignVerticesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnAlignVertices == null) { Fail("align vertices handler not wired"); return; }
+                    string avReason = OnAlignVertices.Invoke(c);
+                    if (avReason != null) { Fail(avReason); return; }
+                    return;
+                }
+
+                case SmoothEdgesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnSmoothEdges == null) { Fail("smooth edges handler not wired"); return; }
+                    string seReason = OnSmoothEdges.Invoke(c);
+                    if (seReason != null) { Fail(seReason); return; }
+                    return;
+                }
+
+                case PlanarizeAlongBonesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnPlanarizeAlongBones == null) { Fail("planarize handler not wired"); return; }
+                    string pabReason = OnPlanarizeAlongBones.Invoke(c);
+                    if (pabReason != null) { Fail(pabReason); return; }
+                    return;
+                }
+
+                case MergeVerticesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnMergeVertices == null) { Fail("merge vertices handler not wired"); return; }
+                    string mvReason = OnMergeVertices.Invoke(c);
+                    if (mvReason != null) { Fail(mvReason); return; }
+                    return;
+                }
+
+                // ── 位相・頂点編集（対象や生成先の指定を伴う実行系）
+                case DeleteSelectionCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnDeleteSelection == null) { Fail("delete selection handler not wired"); return; }
+                    string delReason = OnDeleteSelection.Invoke(c);
+                    if (delReason != null) { Fail(delReason); return; }
+                    return;
+                }
+
+                case PipeAlignCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnPipeAlign == null) { Fail("pipe align handler not wired"); return; }
+                    string paReason = OnPipeAlign.Invoke(c);
+                    if (paReason != null) { Fail(paReason); return; }
+                    return;
+                }
+
+                case PlaceObjectReshapeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnPlaceObjectReshape == null) { Fail("place object reshape handler not wired"); return; }
+                    string porReason = OnPlaceObjectReshape.Invoke(c);
+                    if (porReason != null) { Fail(porReason); return; }
+                    return;
+                }
+
+                case SolidifyCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnSolidify == null) { Fail("solidify handler not wired"); return; }
+                    string solReason = OnSolidify.Invoke(c);
+                    if (solReason != null) { Fail(solReason); return; }
+                    return;
+                }
+
+                case LineExtrudeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnLineExtrude == null) { Fail("line extrude handler not wired"); return; }
+                    string leReason = OnLineExtrude.Invoke(c);
+                    if (leReason != null) { Fail(leReason); return; }
+                    return;
+                }
+
+                case SurfaceSnapCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnSurfaceSnap == null) { Fail("surface snap handler not wired"); return; }
+                    string ssReason = OnSurfaceSnap.Invoke(c);
+                    if (ssReason != null) { Fail(ssReason); return; }
+                    return;
+                }
+
+                // ── ドラッグ確定（ベベル・押し出し）
+                case EdgeBevelCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnEdgeBevel == null) { Fail("edge bevel handler not wired"); return; }
+                    string ebReason = OnEdgeBevel.Invoke(c);
+                    if (ebReason != null) { Fail(ebReason); return; }
+                    return;
+                }
+
+                case EdgeExtrudeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnEdgeExtrude == null) { Fail("edge extrude handler not wired"); return; }
+                    string eeReason = OnEdgeExtrude.Invoke(c);
+                    if (eeReason != null) { Fail(eeReason); return; }
+                    return;
+                }
+
+                case FaceExtrudeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnFaceExtrude == null) { Fail("face extrude handler not wired"); return; }
+                    string feReason = OnFaceExtrude.Invoke(c);
+                    if (feReason != null) { Fail(feReason); return; }
+                    return;
+                }
+
+                // ── スキンウェイト塗り
+                case SkinWeightPaintCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnSkinWeightPaint == null) { Fail("skin weight paint handler not wired"); return; }
+                    string swpReason = OnSkinWeightPaint.Invoke(c);
+                    if (swpReason != null) { Fail(swpReason); return; }
+                    return;
+                }
+
+                // ── 作業軸
+                //
+                // 作業軸はモデルに属さないので model の有無を条件にしない。
+                case SetWorkAxisCommand c:
+                {
+                    if (OnSetWorkAxis == null) { Fail("work axis handler not wired"); return; }
+                    string swaReason = OnSetWorkAxis.Invoke(c);
+                    if (swaReason != null) { Fail(swaReason); return; }
+                    return;
+                }
+
+                case RecallWorkAxisCommand c:
+                {
+                    if (OnRecallWorkAxis == null) { Fail("work axis recall handler not wired"); return; }
+                    string rwaReason = OnRecallWorkAxis.Invoke(c);
+                    if (rwaReason != null) { Fail(rwaReason); return; }
                     return;
                 }
 

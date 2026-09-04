@@ -5,12 +5,19 @@
 using System;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerSplitVerticesSubPanel
     {
         public Func<SplitVerticesToolHandler> GetH;
+        public Func<ProjectContext>           GetView;
+        public Action<PanelCommand>           SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
         // ================================================================
         // UI 要素
@@ -45,7 +52,18 @@ namespace Poly_Ling.Player
             _splittableLabel = InfoLabel();
             _root.Add(_splittableLabel);
 
-            _splitBtn = new Button(() => GetH()?.TriggerSplit()) { text = "分割実行" };
+            // 実処理は編集対象メッシュ 1 本にしか効かないため、対象もその 1 本を載せる。
+            _splitBtn = new Button(() =>
+            {
+                var model = GetView?.Invoke()?.CurrentModel;
+                var mc    = model?.ActiveMeshContext;
+                if (mc == null) return;
+
+                SendCommand?.Invoke(new SplitVerticesCommand(
+                    ModelIndex, new[] { model.IndexOf(mc) }));
+                Refresh();
+            })
+            { text = "分割実行" };
             _splitBtn.style.height    = 30;
             _splitBtn.style.marginTop = 6;
             _root.Add(_splitBtn);

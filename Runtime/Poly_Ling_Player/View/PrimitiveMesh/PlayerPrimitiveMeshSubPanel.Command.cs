@@ -106,6 +106,16 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonGear:     return new CreateNGonGearCommand(mi, _ngonGearP, pl);
                 case ShapeKind.NGonStar:     return new CreateNGonStarCommand(mi, _ngonStarP, pl);
                 case ShapeKind.InvoluteGear: return new CreateInvoluteGearCommand(mi, _involGearP, pl);
+
+                // ── 機構部品 ──
+                case ShapeKind.HelicalGear:       return new CreateHelicalGearCommand(mi, _helGearP, pl);
+                case ShapeKind.InternalGear:      return new CreateInternalGearCommand(mi, _intGearP, pl);
+                case ShapeKind.InvoluteRack:      return new CreateInvoluteRackCommand(mi, _rackP, pl);
+                case ShapeKind.HelicalRack:       return new CreateHelicalRackCommand(mi, _helRackP, pl);
+                case ShapeKind.StraightBevelGear: return new CreateStraightBevelGearCommand(mi, _strBevelP, pl);
+                case ShapeKind.SpiralBevelGear:   return new CreateSpiralBevelGearCommand(mi, _spiBevelP, pl);
+                case ShapeKind.CylindricalWorm:   return new CreateCylindricalWormCommand(mi, _wormP, pl);
+                case ShapeKind.WormWheel:         return new CreateWormWheelCommand(mi, _wheelP, pl);
                 case ShapeKind.Ribbon:       return new CreateRibbonBowCommand(mi, _ribbonP, pl);
                 case ShapeKind.NohMask:      return new CreateNohMaskCommand(mi, _nohP, pl);
                 case ShapeKind.Text:         return new CreateTextMeshCommand(mi, _textP, pl);

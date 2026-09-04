@@ -8,12 +8,31 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerAlignVerticesSubPanel
     {
         public Func<AlignVerticesToolHandler> GetH;
+        public Func<ProjectContext>           GetView;
+        public Action<PanelCommand>           SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
 
         // ================================================================
         // UI 要素
@@ -95,7 +114,19 @@ namespace Poly_Ling.Player
             _root.Add(_previewLabel);
 
             // 整列実行ボタン
-            _alignBtn = new Button(() => GetH()?.TriggerAlign()) { text = "整列実行" };
+            _alignBtn = new Button(() =>
+            {
+                var h = GetH();
+                var targets = ActiveMasterIndices();
+                if (h == null || targets == null) return;
+
+                // 設定値はコマンドが正典。パネルの現在値を載せて送る。
+                // ハンドラ側は実行後に元の値へ戻すので、表示は変わらない。
+                SendCommand?.Invoke(new AlignVerticesCommand(
+                    ModelIndex, targets, h.AlignX, h.AlignY, h.AlignZ, h.Mode));
+                Refresh();
+            })
+            { text = "整列実行" };
             _alignBtn.style.height    = 30;
             _alignBtn.style.marginTop = 6;
             _root.Add(_alignBtn);

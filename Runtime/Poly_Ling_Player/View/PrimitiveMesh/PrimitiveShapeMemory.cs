@@ -1,7 +1,7 @@
 // PrimitiveShapeMemory.cs
 // 図形生成パネルで最後に選んだ図形をカテゴリ別に記憶する。
 // 保存先: Application.persistentDataPath/PolyLing/PrimitiveShapeMemory.json
-//   { "Entries": [ { "Panel": "Primitive", "Basic": "Sphere", "Advanced": "Pipe" } ] }
+//   { "Entries": [ { "Panel": "Primitive", "Basic": "Sphere", "Advanced": "Pipe", "Mechanism": "InvoluteGear" } ] }
 // 図形は列挙値の「名前」で保存する（ShapeKind の並び替えで値がずれても壊れないため）。
 // 読込は初回1回だけの静的キャッシュ。書込は値が変化したときのみ。
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
@@ -28,6 +28,7 @@ namespace Poly_Ling.Player
             public string Panel;      // パネル識別子（"Primitive" / "LivePrimitive"）
             public string Basic;      // 基本図形カテゴリで最後に選んだ ShapeKind 名
             public string Advanced;   // 高度な図形カテゴリで最後に選んだ ShapeKind 名
+            public string Mechanism;  // 機構部品カテゴリで最後に選んだ ShapeKind 名
         }
 
         [Serializable]
@@ -97,7 +98,7 @@ namespace Poly_Ling.Player
             var entry = Find(panelKey);
             if (entry == null) return null;
 
-            string name = category == ShapeCategory.Advanced ? entry.Advanced : entry.Basic;
+            string name = NameOf(entry, category);
             if (string.IsNullOrEmpty(name)) return null;
 
             if (!Enum.TryParse(name, out ShapeKind kind)) return null;
@@ -123,18 +124,29 @@ namespace Poly_Ling.Player
                 }
 
                 string name = kind.ToString();
-                if (category == ShapeCategory.Advanced)
+                if (NameOf(entry, category) == name) return;
+
+                switch (category)
                 {
-                    if (entry.Advanced == name) return;
-                    entry.Advanced = name;
-                }
-                else
-                {
-                    if (entry.Basic == name) return;
-                    entry.Basic = name;
+                    case ShapeCategory.Advanced:  entry.Advanced  = name; break;
+                    case ShapeCategory.Mechanism: entry.Mechanism = name; break;
+                    default:                      entry.Basic     = name; break;
                 }
 
                 Write();
+            }
+        }
+
+        /// <summary>カテゴリに対応する保存欄を読む。</summary>
+        private static string NameOf(Entry entry, ShapeCategory category)
+        {
+            if (entry == null) return null;
+
+            switch (category)
+            {
+                case ShapeCategory.Advanced:  return entry.Advanced;
+                case ShapeCategory.Mechanism: return entry.Mechanism;
+                default:                      return entry.Basic;
             }
         }
 

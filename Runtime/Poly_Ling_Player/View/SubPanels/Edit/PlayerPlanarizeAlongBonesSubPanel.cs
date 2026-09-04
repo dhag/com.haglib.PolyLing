@@ -8,12 +8,31 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerPlanarizeAlongBonesSubPanel
     {
         public Func<PlanarizeAlongBonesToolHandler> GetH;
+        public Func<ProjectContext>                 GetView;
+        public Action<PanelCommand>                 SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
 
         // ================================================================
         // UI 要素
@@ -138,7 +157,17 @@ namespace Poly_Ling.Player
             _root.Add(_previewLabel);
 
             // 実行ボタン
-            _planarizeBtn = new Button(() => GetH()?.TriggerPlanarize()) { text = "平面化実行" };
+            _planarizeBtn = new Button(() =>
+            {
+                var h = GetH();
+                var targets = ActiveMasterIndices();
+                if (h == null || targets == null) return;
+
+                SendCommand?.Invoke(new PlanarizeAlongBonesCommand(
+                    ModelIndex, targets, h.BoneIndexA, h.BoneIndexB, h.PlaneMode, h.Blend));
+                Refresh();
+            })
+            { text = "平面化実行" };
             _planarizeBtn.style.height    = 30;
             _planarizeBtn.style.marginTop = 6;
             _root.Add(_planarizeBtn);

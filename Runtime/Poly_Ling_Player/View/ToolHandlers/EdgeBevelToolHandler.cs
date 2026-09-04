@@ -74,11 +74,79 @@ namespace Poly_Ling.Player
             _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), delta);
         }
 
+        /// <summary>
+        /// ドラッグ確定。
+        ///
+        /// 【1 ドラッグ = 1 コマンド】
+        ///   ドラッグ中の生成はプレビューとして扱い、確定時に開始状態へ戻してから
+        ///   EdgeBevelCommand を 1 本発行する。実際の生成と Undo 記録は
+        ///   EdgeBevelTool.ApplyBevelFromCommand が行う。
+        ///
+        /// 【SendCommand 未結線のとき】
+        ///   取り出さず OnMouseUp（EndBevel）に確定させる。未結線でユーザー操作が
+        ///   消えるより、従来どおり確定するほうが害が小さい（3-d と同じ方針）。
+        /// </summary>
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
+
+            bool taken = false;
+            VertexPair takenEdge = default;
+            float takenAmount = 0f;
+            int   segments = _tool.Segments;
+            bool  fillet   = _tool.Fillet;
+
+            if (SendCommand != null && _tool.BevelPending)
+                taken = _tool.TryTakeBevelFromDrag(ctx, out takenEdge, out takenAmount);
+
+            // 取り出したときは _snapshotBefore が null なので EndBevel は Undo を積まない。
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+
+            if (taken)
+            {
+                var model = _project?.CurrentModel;
+                var mc    = model?.ActiveMeshContext;
+                if (model != null && mc != null)
+                {
+                    SendCommand.Invoke(new Poly_Ling.Data.EdgeBevelCommand(
+                        _project.CurrentModelIndex,
+                        new[] { model.IndexOf(mc) },
+                        takenEdge.V1, takenEdge.V2, takenAmount,
+                        segments, fillet));
+                }
+            }
+
             OnApplyCompleted?.Invoke();
+        }
+
+        /// <summary>コマンドの発行先（Viewer から結線）。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        /// <summary>
+        /// 辺ベベルコマンドを実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   生成そのものは EdgeBevelTool が正典。ここは対象の照合だけを行い、
+        ///   ApplyBevelFromCommand へ渡す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.EdgeBevelCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var ctx = GetEnrichedCtx();
+            if (ctx == null) { reason = "ツールコンテキストがありません"; return false; }
+
+            return _tool.ApplyBevelFromCommand(
+                ctx, new VertexPair(cmd.EdgeV1, cmd.EdgeV2),
+                cmd.Amount, cmd.Segments, cmd.Fillet, out reason);
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {

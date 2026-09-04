@@ -42,7 +42,7 @@ namespace Poly_Ling.Player
         /// 次の Update(ctx) で実行される。頂点マージパネルを開いている間しか
         /// Update が回らないため、パネル外からは Trigger*Now を使うこと。
         /// </summary>
-        public void  TriggerMerge() => _tool.TriggerMerge();
+        private void TriggerMergeLazyCore() => _tool.TriggerMerge();
 
         // ================================================================
         // 即時実行 API（ショートカット / ボタンから）
@@ -50,8 +50,13 @@ namespace Poly_Ling.Player
         //   DeleteSelectionToolHandler.TriggerDelete と同じ方針。
         // ================================================================
 
-        /// <summary>距離を見ず、選択頂点を 1 点（重心）へ結合する。</summary>
-        public void TriggerMergeToCentroidNow()
+        /// <summary>
+        /// 距離を見ず、選択頂点を 1 点（重心）へ結合する。
+        ///
+        /// private にしてある。パネル・ショートカットからの直呼びは塞ぎ、
+        /// MergeVerticesCommand 経由に統一するため。
+        /// </summary>
+        private void TriggerMergeToCentroidNow()
         {
             var ctx = BuildImmediateCtx();
             if (ctx == null)
@@ -63,8 +68,12 @@ namespace Poly_Ling.Player
             _tool.ExecuteMergeToCentroid(ctx);
         }
 
-        /// <summary>選択頂点のうち、しきい値以下の距離にあるものを結合する。</summary>
-        public void TriggerMergeByThresholdNow()
+        /// <summary>
+        /// 選択頂点のうち、しきい値以下の距離にあるものを結合する。
+        ///
+        /// private にしてある。理由は TriggerMergeToCentroidNow と同じ。
+        /// </summary>
+        private void TriggerMergeByThresholdNow()
         {
             var ctx = BuildImmediateCtx();
             if (ctx == null)
@@ -105,6 +114,65 @@ namespace Poly_Ling.Player
             _tool.OnActivate(ctx);
         }
         public void Deactivate(ToolContext ctx) { _tool.OnDeactivate(ctx); }
+
+        // ================================================================
+        // コマンド受け口
+        // ================================================================
+
+        /// <summary>
+        /// 頂点結合コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   結合そのものは MergeVerticesTool が正典。ここは対象の照合と
+        ///   設定値の差し替えだけを行い、即時実行と同じ経路を呼ぶ。
+        ///
+        /// 【Threshold の扱い】
+        ///   Centroid では読まれないが、Threshold モードと同じく退避・復元する。
+        ///   1 呼び出しがパネルの状態に依存しないようにするため。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.MergeVerticesCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var sel = model.ActiveMeshContext?.SelectedVertices;
+            if (sel == null || sel.Count < 2)
+            {
+                reason = "結合するには頂点を 2 個以上選択してください";
+                return false;
+            }
+
+            if (cmd.Mode == Poly_Ling.Data.MergeVerticesCommand.MergeMode.Threshold
+                && cmd.Threshold <= 0f)
+            {
+                reason = "Threshold は 0 より大きい値を指定してください";
+                return false;
+            }
+
+            float savedThreshold = Threshold;
+            try
+            {
+                Threshold = cmd.Threshold;
+
+                if (cmd.Mode == Poly_Ling.Data.MergeVerticesCommand.MergeMode.Centroid)
+                    TriggerMergeToCentroidNow();
+                else
+                    TriggerMergeByThresholdNow();
+            }
+            finally
+            {
+                Threshold = savedThreshold;
+            }
+
+            return true;
+        }
 
         // ================================================================
         // 内部ヘルパー

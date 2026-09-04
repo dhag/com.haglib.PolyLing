@@ -41,17 +41,45 @@ namespace Poly_Ling.Tools
         /// </summary>
         public static ISkinWeightPaintPanel ActivePanel { get; set; }
 
+        // ================================================================
+        // コマンド用の一時オーバーライド
+        //
+        // 【なぜ要るか】
+        //   設定値は静的な ActivePanel から読む computed プロパティで setter が無く、
+        //   他ツールで使っている「退避 → コマンド値を代入 → 復元」ができない。
+        //   コマンド実行中だけパネルより先に読む値をここに置く。
+        //
+        // 【BrushRadius / Falloff は持たない】
+        //   コマンドは対象頂点と falloff を確定済みで持つ（SkinWeightPaintCommand）ので、
+        //   ブラシ半径と falloff 種別はコマンド経路では読まれない。
+        // ================================================================
+
+        private bool                 _cmdOverrideActive;
+        private SkinWeightPaintMode  _cmdPaintMode;
+        private float                _cmdStrength;
+        private float                _cmdWeightValue;
+        private int                  _cmdTargetBone;
+
         // パネルから設定を読む（パネルがなければ自分の設定を使う）
-        private SkinWeightPaintMode PaintMode => ActivePanel?.CurrentPaintMode ?? _settings.PaintMode;
+        // コマンド実行中はオーバーライド値が最優先。
+        private SkinWeightPaintMode PaintMode
+            => _cmdOverrideActive ? _cmdPaintMode
+             : (ActivePanel?.CurrentPaintMode ?? _settings.PaintMode);
         private float BrushRadius => ActivePanel?.CurrentBrushRadius ?? _settings.BrushRadius;
-        private float Strength => ActivePanel?.CurrentStrength ?? _settings.Strength;
+        private float Strength
+            => _cmdOverrideActive ? _cmdStrength
+             : (ActivePanel?.CurrentStrength ?? _settings.Strength);
         private FalloffType Falloff => ActivePanel?.CurrentFalloff ?? _settings.Falloff;
 
         /// <summary>距離モード（直線 / リンク距離）。マグネット／スカルプトと共通。</summary>
         public static DistanceMode CurrentDistanceMode =>
             ActivePanel?.CurrentDistanceMode ?? DistanceMode.Euclidean;
-        private float WeightValue => ActivePanel?.CurrentWeightValue ?? _settings.WeightValue;
-        private int TargetBone => ActivePanel?.CurrentTargetBone ?? _settings.TargetBoneMasterIndex;
+        private float WeightValue
+            => _cmdOverrideActive ? _cmdWeightValue
+             : (ActivePanel?.CurrentWeightValue ?? _settings.WeightValue);
+        private int TargetBone
+            => _cmdOverrideActive ? _cmdTargetBone
+             : (ActivePanel?.CurrentTargetBone ?? _settings.TargetBoneMasterIndex);
 
         // ペイント対象メッシュの解決は
         // Poly_Ling.UI.SkinWeightOperations.CollectTargetMeshContexts に一本化した。
@@ -298,6 +326,13 @@ namespace Poly_Ling.Tools
         /// <summary>実際に書き換えたメッシュ。OnMouseUp で Undo 記録する対象。</summary>
         private readonly HashSet<MeshContext> _touchedMeshes = new HashSet<MeshContext>();
 
+        /// <summary>
+        /// ドラッグ中に掛けたブラシの列。1 要素 = ブラシ 1 回分（対象メッシュと頂点＋falloff）。
+        /// マウス経路（ApplyBrush）とコマンド経路（TryTakeStrokeFromDrag）で共有する。
+        /// </summary>
+        private readonly List<(MeshContext mesh, List<(int index, float falloff)> verts)> _strokeSteps
+            = new List<(MeshContext, List<(int, float)>)>();
+
         /// <summary>隣接頂点キャッシュ（Smoothモード用）。メッシュごとに持つ。</summary>
         private readonly Dictionary<MeshContext, Dictionary<int, HashSet<int>>> _adjacencyCaches
             = new Dictionary<MeshContext, Dictionary<int, HashSet<int>>>();
@@ -328,6 +363,7 @@ namespace Poly_Ling.Tools
             _beforeSnapshots.Clear();
             _touchedMeshes.Clear();
             _adjacencyCaches.Clear();
+            _strokeSteps.Clear();
 
             var undo = ctx.UndoController;
             foreach (var mc in targets)
@@ -394,6 +430,7 @@ namespace Poly_Ling.Tools
             _beforeSnapshots.Clear();
             _touchedMeshes.Clear();
             _adjacencyCaches.Clear();
+            _strokeSteps.Clear();
 
             ctx.SyncMesh?.Invoke();
             ctx.Repaint?.Invoke();
@@ -435,6 +472,190 @@ namespace Poly_Ling.Tools
             _beforeSnapshots.Clear();
             _touchedMeshes.Clear();
             _adjacencyCaches.Clear();
+            _strokeSteps.Clear();
+        }
+
+        // ================================================================
+        // コマンド経路
+        //
+        // 【なぜ点列ではなく頂点列か】
+        //   対象頂点はスクリーン空間のブラシ円で決まる（ハンドラの ComputeBrushVertices）。
+        //   ワールド座標の点列から求め直すと対象が変わり、パネル操作とリモート発行で
+        //   結果が食い違う。よってコマンドは「掛けた頂点と falloff」をそのまま持つ。
+        //
+        // 【ステップを合成しない】
+        //   Add は毎回加算、Replace は毎回 Lerp、Scale は毎回乗算するので、
+        //   結果は適用回数と順序に依存する。ブラシ 1 回分を 1 ステップとして順に適用する。
+        // ================================================================
+
+        /// <summary>コマンドで渡すブラシ 1 回分。</summary>
+        public struct StrokeStep
+        {
+            /// <summary>対象メッシュの MeshContextList インデックス。</summary>
+            public int MeshIndex;
+            /// <summary>掛けた頂点と falloff。</summary>
+            public List<(int index, float falloff)> Verts;
+        }
+
+        /// <summary>
+        /// コマンドで指定されたブラシ列を順に掛ける。
+        ///
+        /// 変形と Undo 記録はマウス経路と同じ ApplyBrushToMesh / OnMouseUp と同じ手順を通す。
+        /// 設定値はオーバーライドに入れてから掛け、終わったら外す。
+        /// </summary>
+        /// <returns>1 頂点でも塗れば true。</returns>
+        public bool ApplyStrokeFromCommand(
+            ToolContext ctx,
+            IReadOnlyList<StrokeStep> steps,
+            SkinWeightPaintMode paintMode, int targetBone, float strength, float weightValue)
+        {
+            if (_isDragging) return false;   // マウスのストローク中は割り込ませない
+
+            var model = ctx?.Model;
+            if (model == null) return false;
+            if (steps == null || steps.Count == 0) return false;
+
+            _beforeSnapshots.Clear();
+            _touchedMeshes.Clear();
+            _adjacencyCaches.Clear();
+
+            // 触るメッシュを先に洗い出し、OnMouseDown と同じ準備を行う。
+            var undo = ctx.UndoController;
+            var involved = new HashSet<MeshContext>();
+            foreach (var st in steps)
+            {
+                var mc = model.GetMeshContext(st.MeshIndex);
+                if (mc?.MeshObject != null) involved.Add(mc);
+            }
+            if (involved.Count == 0) return false;
+
+            foreach (var mc in involved)
+            {
+                if (undo != null)
+                {
+                    undo.MeshUndoContext.ParentModelContext = model;
+                    undo.SetMeshObjectFor(mc, mc.UnityMesh);
+                    var snap = undo.CaptureMeshObjectSnapshot();
+                    if (snap != null) _beforeSnapshots[mc] = snap;
+                }
+
+                if (paintMode == SkinWeightPaintMode.Smooth)
+                    _adjacencyCaches[mc] = BuildAdjacency(mc.MeshObject);
+            }
+            undo?.ClearTargetMeshContext();
+
+            bool any = false;
+            _cmdOverrideActive = true;
+            _cmdPaintMode      = paintMode;
+            _cmdTargetBone     = targetBone;
+            _cmdStrength       = strength;
+            _cmdWeightValue    = weightValue;
+            try
+            {
+                foreach (var st in steps)
+                {
+                    var mc = model.GetMeshContext(st.MeshIndex);
+                    if (mc?.MeshObject == null) continue;
+                    if (st.Verts == null || st.Verts.Count == 0) continue;
+
+                    ApplyBrushToMesh(mc, st.Verts);
+                    _touchedMeshes.Add(mc);
+                    any = true;
+                }
+            }
+            finally
+            {
+                _cmdOverrideActive = false;
+            }
+
+            // Undo 記録は OnMouseUp と同じ手順。
+            if (undo != null)
+            {
+                foreach (var mc in _touchedMeshes)
+                {
+                    if (mc?.MeshObject == null) continue;
+                    if (!_beforeSnapshots.TryGetValue(mc, out var before) || before == null) continue;
+
+                    undo.MeshUndoContext.ParentModelContext = model;
+                    undo.SetMeshObjectFor(mc, mc.UnityMesh);
+                    var after = undo.CaptureMeshObjectSnapshot();
+                    ctx.CommandQueue?.Enqueue(new Commands.RecordTopologyChangeCommand(
+                        undo, before, after, "Paint Skin Weight"));
+                }
+                undo.ClearTargetMeshContext();
+            }
+
+            _beforeSnapshots.Clear();
+            _touchedMeshes.Clear();
+            _adjacencyCaches.Clear();
+
+            ctx.SyncMesh?.Invoke();
+            ctx.Repaint?.Invoke();
+            ActivePanel?.NotifyWeightChanged();
+
+            return any;
+        }
+
+        /// <summary>
+        /// 取り出せるストローク結果があるか。TryTakeStrokeFromDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool StrokePending => _isDragging && _strokeSteps.Count > 0;
+
+        /// <summary>
+        /// ドラッグのストローク結果を取り出し、開始状態へ戻す。
+        ///
+        /// 【なぜ要るか】
+        ///   1 ストローク = 1 コマンドにするため。ドラッグ中の塗りはプレビューとして扱い、
+        ///   確定時はここで開始状態へ戻してステップ列だけを返す。呼び出し側
+        ///   （SkinWeightPaintToolHandler）が SkinWeightPaintCommand を送り、
+        ///   実際の塗りと Undo 記録は ApplyStrokeFromCommand が行う。
+        ///
+        /// 【戻し方】
+        ///   OnMouseDown で取ったメッシュごとのスナップショットを適用する。
+        ///   _beforeSnapshots を空にするので、続けて呼ばれる OnMouseUp は Undo を積まない。
+        /// </summary>
+        /// <param name="paintMode">実行時の塗りモード。コマンドへ載せる。</param>
+        /// <param name="targetBone">実行時の対象ボーン。コマンドへ載せる。</param>
+        /// <param name="strength">実行時の強度。コマンドへ載せる。</param>
+        /// <param name="weightValue">実行時の書き込み値。コマンドへ載せる。</param>
+        public bool TryTakeStrokeFromDrag(
+            ToolContext ctx, ModelContext model,
+            out List<StrokeStep> steps,
+            out SkinWeightPaintMode paintMode, out int targetBone,
+            out float strength, out float weightValue)
+        {
+            steps       = null;
+            paintMode   = PaintMode;
+            targetBone  = TargetBone;
+            strength    = Strength;
+            weightValue = WeightValue;
+
+            if (!StrokePending) return false;
+            if (ctx?.UndoController == null || model == null) return false;
+
+            var list = new List<StrokeStep>(_strokeSteps.Count);
+            foreach (var (mesh, verts) in _strokeSteps)
+            {
+                int idx = model.IndexOf(mesh);
+                if (idx < 0 || verts == null || verts.Count == 0) continue;
+                list.Add(new StrokeStep { MeshIndex = idx, Verts = verts });
+            }
+            if (list.Count == 0) return false;
+
+            // 塗った内容を開始状態へ戻す。
+            foreach (var kv in _beforeSnapshots)
+            {
+                if (kv.Key?.MeshObject == null || kv.Value == null) continue;
+                ctx.UndoController.MeshUndoContext.ParentModelContext = model;
+                ctx.UndoController.SetMeshObjectFor(kv.Key, kv.Key.UnityMesh);
+                kv.Value.ApplyTo(ctx.UndoController.MeshUndoContext);
+            }
+            ctx.UndoController.ClearTargetMeshContext();
+            _beforeSnapshots.Clear();
+
+            steps = list;
+            ctx.SyncMesh?.Invoke();
+            return true;
         }
 
         // ================================================================
@@ -458,6 +679,13 @@ namespace Poly_Ling.Tools
                 if (affected == null || affected.Count == 0) continue;
                 ApplyBrushToMesh(meshCtx, affected);
                 _touchedMeshes.Add(meshCtx);
+
+                // 1 ドラッグ = 1 コマンドにするため、掛けた内容をそのまま貯める。
+                // Add / Replace / Scale は適用回数と順序で結果が変わるので、
+                // 合成せずステップ単位で残す。
+                if (_isDragging)
+                    _strokeSteps.Add((meshCtx, new List<(int, float)>(affected)));
+
                 any = true;
             }
             if (!any) return;

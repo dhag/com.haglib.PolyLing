@@ -119,6 +119,16 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateNGonGearCommand c:     return NGonGearMeshGenerator.Generate(c.Params);
                 case CreateNGonStarCommand c:     return NGonStarMeshGenerator.Generate(c.Params);
                 case CreateInvoluteGearCommand c: return InvoluteTrochoidGearMeshGenerator.Generate(c.Params);
+
+                // ── 機構部品（Gears/ 配下） ──
+                case CreateHelicalGearCommand c:       return HelicalGearMeshGenerator.Generate(c.Params);
+                case CreateInternalGearCommand c:      return InternalGearMeshGenerator.Generate(c.Params);
+                case CreateInvoluteRackCommand c:      return InvoluteRackMeshGenerator.Generate(c.Params);
+                case CreateHelicalRackCommand c:       return HelicalRackMeshGenerator.Generate(c.Params);
+                case CreateStraightBevelGearCommand c: return StraightBevelGearMeshGenerator.Generate(c.Params);
+                case CreateSpiralBevelGearCommand c:   return SpiralBevelGearMeshGenerator.Generate(c.Params);
+                case CreateCylindricalWormCommand c:   return CylindricalWormMeshGenerator.Generate(c.Params);
+                case CreateWormWheelCommand c:         return WormWheelMeshGenerator.Generate(c.Params);
                 case CreateRibbonBowCommand c:    return RibbonBowMeshGenerator.Generate(c.Params);
                 case CreateNohMaskCommand c:      return NohMaskMeshGenerator.GenerateFromFiles(c.Params);
 

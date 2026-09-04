@@ -3547,6 +3547,131 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = prms; }
     }
 
+    // ── 機構部品 ────────────────────────────────────────────────
+    //
+    // 歯車まわりの生成器は Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/Gears/ にある。
+    // どれもパラメータ構造体だけで形が決まるので、コマンドは値を運ぶだけでよい。
+
+    public sealed class CreateHelicalGearCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "HelicalGear", Description = "はすば歯車のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.HelicalGearMeshGenerator.HelicalGearParams Params { get; }
+
+        public override string ShapeName => "HelicalGear";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateHelicalGearCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.HelicalGearMeshGenerator.HelicalGearParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateInternalGearCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "InternalGear", Description = "内歯車のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.InternalGearMeshGenerator.InternalGearParams Params { get; }
+
+        public override string ShapeName => "InternalGear";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateInternalGearCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.InternalGearMeshGenerator.InternalGearParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateInvoluteRackCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "InvoluteRack", Description = "ラックのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.InvoluteRackMeshGenerator.InvoluteRackParams Params { get; }
+
+        public override string ShapeName => "InvoluteRack";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateInvoluteRackCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.InvoluteRackMeshGenerator.InvoluteRackParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateHelicalRackCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "HelicalRack", Description = "はすばラックのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.HelicalRackMeshGenerator.HelicalRackParams Params { get; }
+
+        public override string ShapeName => "HelicalRack";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateHelicalRackCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.HelicalRackMeshGenerator.HelicalRackParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateStraightBevelGearCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "StraightBevelGear", Description = "すぐばかさ歯車のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.StraightBevelGearMeshGenerator.StraightBevelGearParams Params { get; }
+
+        public override string ShapeName => "StraightBevelGear";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateStraightBevelGearCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.StraightBevelGearMeshGenerator.StraightBevelGearParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateSpiralBevelGearCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "SpiralBevelGear", Description = "まがりばかさ歯車のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.SpiralBevelGearMeshGenerator.SpiralBevelGearParams Params { get; }
+
+        public override string ShapeName => "SpiralBevelGear";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateSpiralBevelGearCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.SpiralBevelGearMeshGenerator.SpiralBevelGearParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateCylindricalWormCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "CylindricalWorm", Description = "円筒ウォームのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.CylindricalWormMeshGenerator.CylindricalWormParams Params { get; }
+
+        public override string ShapeName => "CylindricalWorm";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateCylindricalWormCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.CylindricalWormMeshGenerator.CylindricalWormParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
+    public sealed class CreateWormWheelCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "WormWheel", Description = "ウォームホイールのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.WormWheelMeshGenerator.WormWheelParams Params { get; }
+
+        public override string ShapeName => "WormWheel";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateWormWheelCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.WormWheelMeshGenerator.WormWheelParams prms,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = prms; }
+    }
+
     public sealed class CreateRibbonBowCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Ribbon", Description = "リボンのパラメータ", Required = true)]
@@ -4112,6 +4237,1190 @@ namespace Poly_Ling.Data
             Params              = prms;
             SourceMasterIndices = sourceMasterIndices;
             Deformer            = deformer;
+        }
+    }
+
+    // ================================================================
+    // 位相編集（パラメータを持たない実行系）
+    //
+    // 【対象の指定】
+    //   MasterIndices は「実行時点の選択オブジェクトと一致すること」を要求する
+    //   （照合方式）。受け口は一致しなければ失敗理由を返し、選択を書き換えない。
+    //   リモート／MCP から呼ぶときは先に SelectMeshCommand で選択を作る。
+    //
+    // 【要素の指定】
+    //   どの頂点・辺・面に効くかは各メッシュの Selection が持つ。P7 で明示化する。
+    //
+    // ObjectIds は MasterIndices と同じ並び・同じ長さの安定ID。
+    // ローカル発行時は null / 空でよい（照合をスキップする）。
+    // ================================================================
+
+    /// <summary>
+    /// 選択辺を挟む 2 枚の面を 1 枚へ結合する。
+    /// 共有頂点はほかの面が使っていなければ削除して前後の点をつなぐ。
+    /// 実処理は FaceMergeTool。対象は選択中の描画オブジェクト全部。
+    /// </summary>
+    public class FaceMergeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        public FaceMergeCommand(int modelIndex, int[] masterIndices, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
+    /// 選択辺を挟む 2 枚の面を 1 枚へ結合する（共有頂点を新しい面から外す方式）。
+    /// 外した頂点はどの面からも使われなくなったときだけ消える。
+    /// 実処理は FaceMergeCollapseTool。対象は選択中の描画オブジェクト全部。
+    /// </summary>
+    public class FaceMergeCollapseCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        public FaceMergeCollapseCommand(int modelIndex, int[] masterIndices, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
+    /// 選択頂点を共有する四角形 4 枚を、四隅を結ぶ四角形 1 枚へ張り替える。
+    /// 実処理は Quad4To1Tool。対象は選択中の描画オブジェクト全部。
+    /// </summary>
+    public class Quad4To1Command : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        public Quad4To1Command(int modelIndex, int[] masterIndices, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
+    /// 選択した三角形とそれを囲む三角形 3 枚を、外側の 3 頂点を結ぶ三角形 1 枚へ張り替える。
+    /// 中点細分割の逆操作。実処理は Tri4To1Tool。対象は選択中の描画オブジェクト全部。
+    /// </summary>
+    public class Tri4To1Command : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        public Tri4To1Command(int modelIndex, int[] masterIndices, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
+    /// 選択頂点を消して、その頂点を囲む面を 1 枚の面へ張り替える。
+    /// 周りが閉じていない（境界の）頂点は対象外。
+    /// 実処理は VertexDissolveTool。対象は選択中の描画オブジェクト全部。
+    /// </summary>
+    public class VertexDissolveCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        public VertexDissolveCommand(int modelIndex, int[] masterIndices, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
+    /// 選択頂点を面ごとに独立したコピーへ分離する。2 面以上に共有されている頂点が対象。
+    ///
+    /// 実処理（SplitVerticesTool）が編集対象メッシュ 1 本にしか効かないため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    /// 配列なのは他のコマンドと形をそろえて ObjectIds と対にするため。
+    /// </summary>
+    public class SplitVerticesCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        public SplitVerticesCommand(int modelIndex, int[] masterIndices, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+        }
+    }
+
+    // ================================================================
+    // 位相・頂点編集（パラメータを持つ実行系）
+    //
+    // 対象の指定・要素の指定の扱いは上の「パラメータを持たない実行系」と同じ。
+    // 設定値はコマンドが正典で、受け口は実行後にパネルの値へ戻す。
+    // 1 呼び出しがパネルの状態に依存しないようにするため。
+    // ================================================================
+
+    /// <summary>
+    /// 選択頂点を消して穴を開ける。頂点につながる各辺の上に新しい頂点を作り、
+    /// 元の面を張り替える。実処理は VertexHoleTool。
+    /// 対象は選択中の描画オブジェクト全部。
+    /// </summary>
+    public class VertexHoleCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        /// <summary>
+        /// 新しい頂点を置く位置の比率。1 が選択頂点の位置、0 が辺の反対側（根元）。
+        /// 小さいほど穴が大きくなる。
+        /// </summary>
+        [PLParam(TextKey = "VertexHoleRatio",
+                 Description = "穴の位置比率。1 = 選択頂点の位置、0 = 辺の根元。既定は 0.5",
+                 LimitKey = "VertexHole.Ratio")]
+        public float   Ratio { get; }
+
+        public VertexHoleCommand(
+            int modelIndex, int[] masterIndices,
+            float ratio        = 0.5f,
+            ulong[] objectIds  = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            Ratio         = ratio;
+        }
+    }
+
+    /// <summary>
+    /// 面の裏表を反転する。実処理は FlipFaceTool。
+    ///
+    /// 実処理が編集対象メッシュ 1 本にしか効かない（FlipFaceTool.cs:93）ため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    /// </summary>
+    public class FlipFaceCommand : PanelCommand
+    {
+        /// <summary>反転する範囲。</summary>
+        public enum FlipScope
+        {
+            /// <summary>選択されている面だけ。</summary>
+            Selected,
+            /// <summary>メッシュの全面。</summary>
+            All
+        }
+
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "FlipFaceScope",
+                 Description = "反転する範囲。Selected / All", Required = true)]
+        public FlipScope Scope { get; }
+
+        public FlipFaceCommand(
+            int modelIndex, int[] masterIndices,
+            FlipScope scope,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            Scope         = scope;
+        }
+    }
+
+    /// <summary>
+    /// 選択頂点を軸ごとに整列する。実処理は AlignVerticesTool。
+    ///
+    /// 実処理が編集対象メッシュ 1 本にしか効かない（AlignVerticesTool.cs:141）ため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    /// </summary>
+    public class AlignVerticesCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "AlignX", Description = "X 座標をそろえる")]
+        public bool      AlignX { get; }
+
+        [PLParam(TextKey = "AlignY", Description = "Y 座標をそろえる")]
+        public bool      AlignY { get; }
+
+        [PLParam(TextKey = "AlignZ", Description = "Z 座標をそろえる")]
+        public bool      AlignZ { get; }
+
+        /// <summary>そろえる先の決め方。</summary>
+        [PLParam(TextKey = "AlignMode",
+                 Description = "そろえる先。Average / Min / Max", Required = true)]
+        public AlignMode Mode   { get; }
+
+        public AlignVerticesCommand(
+            int modelIndex, int[] masterIndices,
+            bool alignX, bool alignY, bool alignZ,
+            AlignMode mode,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            AlignX        = alignX;
+            AlignY        = alignY;
+            AlignZ        = alignZ;
+            Mode          = mode;
+        }
+    }
+
+    /// <summary>
+    /// 選択した辺・線分のつながりを平滑化する。実処理は SmoothEdgesTool。
+    ///
+    /// 実処理が編集対象メッシュ 1 本にしか効かない（SmoothEdgesTool.cs:116）ため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    /// </summary>
+    public class SmoothEdgesCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "SmoothEdgesStrength",
+                 Description = "平滑化の強度", LimitKey = "SmoothEdges.Strength")]
+        public float Strength     { get; }
+
+        [PLParam(TextKey = "SmoothEdgesIterations",
+                 Description = "平滑化の反復回数", LimitKey = "SmoothEdges.Iterations")]
+        public int   Iterations   { get; }
+
+        [PLParam(TextKey = "SmoothEdgesFixEndpoints",
+                 Description = "チェーンの端点を動かさない")]
+        public bool  FixEndpoints { get; }
+
+        [PLParam(TextKey = "SmoothEdgesLockX", Description = "X 方向の移動を禁じる")]
+        public bool  LockX { get; }
+
+        [PLParam(TextKey = "SmoothEdgesLockY", Description = "Y 方向の移動を禁じる")]
+        public bool  LockY { get; }
+
+        [PLParam(TextKey = "SmoothEdgesLockZ", Description = "Z 方向の移動を禁じる")]
+        public bool  LockZ { get; }
+
+        public SmoothEdgesCommand(
+            int modelIndex, int[] masterIndices,
+            float strength, int iterations,
+            bool fixEndpoints = true,
+            bool lockX = false, bool lockY = false, bool lockZ = false,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            Strength      = strength;
+            Iterations    = iterations;
+            FixEndpoints  = fixEndpoints;
+            LockX         = lockX;
+            LockY         = lockY;
+            LockZ         = lockZ;
+        }
+    }
+
+    /// <summary>
+    /// 2 本のボーンが決める平面へ選択頂点を寄せる。実処理は PlanarizeAlongBonesTool。
+    ///
+    /// 実処理が編集対象メッシュ 1 本にしか効かない（PlanarizeAlongBonesTool.cs:140）ため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    ///
+    /// BoneIndexA / BoneIndexB は BoneNames の並び（ツールが組むボーン一覧）の索引で、
+    /// MeshContextList の索引ではない。
+    /// </summary>
+    public class PlanarizeAlongBonesCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "PlanarizeBoneA",
+                 Description = "基準ボーン A。ツールのボーン一覧内の索引", Required = true)]
+        public int                BoneIndexA { get; }
+
+        [PLParam(TextKey = "PlanarizeBoneB",
+                 Description = "基準ボーン B。ツールのボーン一覧内の索引。A と別であること", Required = true)]
+        public int                BoneIndexB { get; }
+
+        [PLParam(TextKey = "PlanarizePlaneMode",
+                 Description = "平面の置き方。MinMovement / AnchorToA")]
+        public PlanePlacementMode PlaneMode  { get; }
+
+        [PLParam(TextKey = "PlanarizeBlend",
+                 Description = "寄せる度合い。0 = 動かさない、1 = 完全に平面へ。既定は 1",
+                 Min = 0.0, Max = 1.0)]
+        public float              Blend      { get; }
+
+        public PlanarizeAlongBonesCommand(
+            int modelIndex, int[] masterIndices,
+            int boneIndexA, int boneIndexB,
+            PlanePlacementMode planeMode = PlanePlacementMode.MinMovement,
+            float blend                  = 1f,
+            ulong[] objectIds            = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            BoneIndexA    = boneIndexA;
+            BoneIndexB    = boneIndexB;
+            PlaneMode     = planeMode;
+            Blend         = blend;
+        }
+    }
+
+    /// <summary>
+    /// 選択頂点を結合する。実処理は MergeVerticesTool。
+    ///
+    /// 実処理が編集対象メッシュ 1 本にしか効かない（MergeVerticesTool.cs:119）ため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    /// </summary>
+    public class MergeVerticesCommand : PanelCommand
+    {
+        /// <summary>結合の仕方。</summary>
+        public enum MergeMode
+        {
+            /// <summary>距離を見ず、選択頂点を 1 点（重心）へ寄せる。</summary>
+            Centroid,
+            /// <summary>しきい値以下の距離にある頂点どうしだけを結合する。</summary>
+            Threshold
+        }
+
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "MergeVerticesMode",
+                 Description = "結合の仕方。Centroid / Threshold", Required = true)]
+        public MergeMode Mode      { get; }
+
+        /// <summary>Threshold モードの距離しきい値。Centroid では読まれない。</summary>
+        [PLParam(TextKey = "MergeVerticesThreshold",
+                 Description = "Threshold モードの距離しきい値。既定は 0.001",
+                 Min = 0.0001)]
+        public float     Threshold { get; }
+
+        public MergeVerticesCommand(
+            int modelIndex, int[] masterIndices,
+            MergeMode mode,
+            float threshold   = 0.001f,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            Mode          = mode;
+            Threshold     = threshold;
+        }
+    }
+
+    // ================================================================
+    // 位相・頂点編集（対象や生成先の指定を伴う実行系）
+    //
+    // 対象の指定・要素の指定・設定値の扱いは上の 2 群と同じ。
+    // ここは「参照メッシュを別に指定する」「生成物の置き場を指定する」ものを集める。
+    // ================================================================
+
+    /// <summary>
+    /// 選択されている頂点・面・線分を削除する。実処理は DeleteSelectionTool。
+    /// 対象は選択中の描画オブジェクト全部。
+    ///
+    /// 面だけを消す DeleteFacesCommand と違い、消す要素は各メッシュの Selection が持つ。
+    /// </summary>
+    public class DeleteSelectionCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        public DeleteSelectionCommand(int modelIndex, int[] masterIndices, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
+    /// パイプ状の部品どうしで断面の頂点位置をそろえる。実処理は PipeAlignTool。
+    /// 対象は選択中の描画オブジェクト全部。
+    ///
+    /// PairText / WeightText / TargetText はツール側のパーサ
+    /// （PipeAlignOps.ParsePairs / PipeSmoothOps.ParseWeights / ParseTargets）が読む
+    /// 書式そのまま。読めなければ受け口が失敗理由を返す。
+    /// </summary>
+    public class PipeAlignCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "PipeAlignMode",
+                 Description = "整列の仕方。Auto / Manual / Smooth", Required = true)]
+        public PipeAlignMode      Mode      { get; }
+
+        [PLParam(TextKey = "PipeAlignDirection",
+                 Description = "書き込む向き。PlusToMinus / MinusToPlus")]
+        public PipeAlignDirection Direction { get; }
+
+        [PLParam(TextKey = "PipeAlignEdgeMode",
+                 Description = "Smooth のとき端をどう扱うか。Skip / Partial")]
+        public PipeSmoothEdgeMode EdgeMode  { get; }
+
+        [PLParam(TextKey = "PipeAlignRingVertexCount",
+                 Description = "断面 1 周の頂点数")]
+        public int    RingVertexCount { get; }
+
+        [PLParam(TextKey = "PipeAlignCapStart", Description = "始端に蓋をする")]
+        public bool   CapStart { get; }
+
+        [PLParam(TextKey = "PipeAlignCapEnd",   Description = "終端に蓋をする")]
+        public bool   CapEnd   { get; }
+
+        [PLParam(TextKey = "PipeAlignPairText",
+                 Description = "Manual のペア指定。ツールの書式そのまま")]
+        public string PairText   { get; }
+
+        [PLParam(TextKey = "PipeAlignWeightText",
+                 Description = "Smooth の重み指定。例 \"1,2,4,2,1\"")]
+        public string WeightText { get; }
+
+        [PLParam(TextKey = "PipeAlignTargetText",
+                 Description = "対象パーツID の指定。例 \"1,3,5\"。空で全部")]
+        public string TargetText { get; }
+
+        public PipeAlignCommand(
+            int modelIndex, int[] masterIndices,
+            PipeAlignMode mode,
+            PipeAlignDirection direction = PipeAlignDirection.PlusToMinus,
+            PipeSmoothEdgeMode edgeMode  = PipeSmoothEdgeMode.Skip,
+            int ringVertexCount          = 0,
+            bool capStart                = false,
+            bool capEnd                  = false,
+            string pairText              = "",
+            string weightText            = "",
+            string targetText            = "",
+            ulong[] objectIds            = null)
+            : base(modelIndex)
+        {
+            MasterIndices   = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds       = objectIds;
+            Mode            = mode;
+            Direction       = direction;
+            EdgeMode        = edgeMode;
+            RingVertexCount = ringVertexCount;
+            CapStart        = capStart;
+            CapEnd          = capEnd;
+            PairText        = pairText   ?? "";
+            WeightText      = weightText ?? "";
+            TargetText      = targetText ?? "";
+        }
+    }
+
+    /// <summary>
+    /// 配置済みの部品を原型メッシュの形へ張り直す。実処理は PlaceObjectReshapeTool。
+    /// 対象は選択中の描画オブジェクト全部。
+    ///
+    /// 原型は MeshObject そのものではなく、材料になる描画オブジェクトの
+    /// masterIndex 配列で指定する。受け口が MeshObjectAppendOps.Combine で
+    /// 並び順どおりに 1 つへ結合する（パネルの「複数チェックで上から結合」と同じ）。
+    /// </summary>
+    public class PlaceObjectReshapeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "PlaceObjectReshapePrototypes",
+                 Description = "原型にする描画オブジェクトの masterIndex 配列。並び順に結合する",
+                 Required = true)]
+        public int[] PrototypeMasterIndices { get; }
+
+        [PLParam(TextKey = "PlaceObjectReshapeMode",
+                 Description = "張り直しの方式。Affine / ThinPlateSpline", Required = true)]
+        public PlaceObjectReshapeMode Mode { get; }
+
+        [PLParam(TextKey = "PlaceObjectReshapeLambda",
+                 Description = "ThinPlateSpline の平滑化の強さ。Affine では読まれない")]
+        public float  Lambda     { get; }
+
+        [PLParam(TextKey = "PlaceObjectReshapeTargetText",
+                 Description = "対象パーツID の指定。例 \"1,3,5\"。空で全部")]
+        public string TargetText { get; }
+
+        public PlaceObjectReshapeCommand(
+            int modelIndex, int[] masterIndices,
+            int[] prototypeMasterIndices,
+            PlaceObjectReshapeMode mode,
+            float lambda      = 0f,
+            string targetText = "",
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices          = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds              = objectIds;
+            PrototypeMasterIndices = prototypeMasterIndices ?? System.Array.Empty<int>();
+            Mode                   = mode;
+            Lambda                 = lambda;
+            TargetText             = targetText ?? "";
+        }
+    }
+
+    /// <summary>
+    /// 選択面に厚みを付けて別メッシュとして生成する。実処理は SolidifyTool。
+    ///
+    /// 実処理が編集対象メッシュ 1 本の選択面しか見ない（SolidifyTool.cs:128, 135）ため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    /// 生成物の追加は AddGeneratedMeshCommand が担う（ここでは作るところまで）。
+    /// </summary>
+    public class SolidifyCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "SolidifyThickness", Description = "付ける厚み")]
+        public float  Thickness     { get; }
+
+        [PLParam(TextKey = "SolidifySegmentsFront", Description = "表側の角の分割数")]
+        public int    SegmentsFront { get; }
+
+        [PLParam(TextKey = "SolidifySegmentsBack",  Description = "裏側の角の分割数")]
+        public int    SegmentsBack  { get; }
+
+        [PLParam(TextKey = "SolidifyEdgeSizeFront", Description = "表側の角の大きさ")]
+        public float  EdgeSizeFront { get; }
+
+        [PLParam(TextKey = "SolidifyEdgeSizeBack",  Description = "裏側の角の大きさ")]
+        public float  EdgeSizeBack  { get; }
+
+        [PLParam(TextKey = "SolidifyEdgeInward",    Description = "角を内側へ寄せる")]
+        public bool   EdgeInward    { get; }
+
+        [PLParam(TextKey = "SolidifyMeshName",      Description = "生成するメッシュの名前")]
+        public string MeshName      { get; }
+
+        [PLParam(TextKey = "SolidifyAddToExisting",
+                 Description = "既存オブジェクトへ足す。false で新規オブジェクトにする")]
+        public bool   AddToExisting { get; }
+
+        /// <summary>
+        /// AddToExisting のときの追加先（MeshContextList インデックス）。
+        /// -1 は選択オブジェクトリストの先頭。
+        /// </summary>
+        [PLParam(TextKey = "SolidifyAddTargetIndex",
+                 Description = "追加先の masterIndex。-1 で選択オブジェクトの先頭")]
+        public int    AddTargetIndex { get; }
+
+        public SolidifyCommand(
+            int modelIndex, int[] masterIndices,
+            float thickness,
+            int segmentsFront    = 0,
+            int segmentsBack     = 0,
+            float edgeSizeFront  = 0.1f,
+            float edgeSizeBack   = 0.1f,
+            bool edgeInward      = false,
+            string meshName      = "Solidify",
+            bool addToExisting   = false,
+            int addTargetIndex   = -1,
+            ulong[] objectIds    = null)
+            : base(modelIndex)
+        {
+            MasterIndices  = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds      = objectIds;
+            Thickness      = thickness;
+            SegmentsFront  = segmentsFront;
+            SegmentsBack   = segmentsBack;
+            EdgeSizeFront  = edgeSizeFront;
+            EdgeSizeBack   = edgeSizeBack;
+            EdgeInward     = edgeInward;
+            MeshName       = meshName ?? "Solidify";
+            AddToExisting  = addToExisting;
+            AddTargetIndex = addTargetIndex;
+        }
+    }
+
+    /// <summary>
+    /// 選択線分から検出した輪郭ループを押し出してメッシュを作る。
+    /// 実処理は LineExtrudeTool + Profile2DExtrudeMeshGenerator。
+    ///
+    /// 実処理が編集対象メッシュ 1 本の選択線分しか見ないため、
+    /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
+    /// </summary>
+    public class LineExtrudeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "LineExtrudeMeshName", Description = "生成するメッシュの名前")]
+        public string  MeshName     { get; }
+
+        [PLParam(TextKey = "LineExtrudeAddToCurrent",
+                 Description = "編集対象メッシュへ足す。false で新規オブジェクトにする")]
+        public bool    AddToCurrent { get; }
+
+        [PLParam(TextKey = "LineExtrudeThickness", Description = "押し出す厚み")]
+        public float   Thickness    { get; }
+
+        [PLParam(TextKey = "LineExtrudeScale",     Description = "輪郭の拡大率")]
+        public float   Scale        { get; }
+
+        [PLParam(TextKey = "LineExtrudeOffset",    Description = "輪郭の平行移動（XY）")]
+        public Vector2 Offset       { get; }
+
+        [PLParam(TextKey = "LineExtrudeFlipY",     Description = "輪郭の Y を反転する")]
+        public bool    FlipY        { get; }
+
+        [PLParam(TextKey = "LineExtrudeSegmentsFront", Description = "表側の角の分割数")]
+        public int     SegmentsFront { get; }
+
+        [PLParam(TextKey = "LineExtrudeSegmentsBack",  Description = "裏側の角の分割数")]
+        public int     SegmentsBack  { get; }
+
+        [PLParam(TextKey = "LineExtrudeEdgeSizeFront", Description = "表側の角の大きさ")]
+        public float   EdgeSizeFront { get; }
+
+        [PLParam(TextKey = "LineExtrudeEdgeSizeBack",  Description = "裏側の角の大きさ")]
+        public float   EdgeSizeBack  { get; }
+
+        [PLParam(TextKey = "LineExtrudeEdgeInward",    Description = "角を内側へ寄せる")]
+        public bool    EdgeInward    { get; }
+
+        public LineExtrudeCommand(
+            int modelIndex, int[] masterIndices,
+            string meshName      = "LineExtrude",
+            bool addToCurrent    = false,
+            float thickness      = 0.1f,
+            float scale          = 1f,
+            Vector2 offset       = default,
+            bool flipY           = false,
+            int segmentsFront    = 0,
+            int segmentsBack     = 0,
+            float edgeSizeFront  = 0.1f,
+            float edgeSizeBack   = 0.1f,
+            bool edgeInward      = false,
+            ulong[] objectIds    = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            MeshName      = meshName ?? "LineExtrude";
+            AddToCurrent  = addToCurrent;
+            Thickness     = thickness;
+            Scale         = scale;
+            Offset        = offset;
+            FlipY         = flipY;
+            SegmentsFront = segmentsFront;
+            SegmentsBack  = segmentsBack;
+            EdgeSizeFront = edgeSizeFront;
+            EdgeSizeBack  = edgeSizeBack;
+            EdgeInward    = edgeInward;
+        }
+    }
+
+    /// <summary>
+    /// 対象オブジェクトの頂点を、リファレンスオブジェクトの面へ視線方向に張り付ける。
+    /// 実処理は SurfaceSnapTool。対象は選択中の描画オブジェクト全部。
+    ///
+    /// 【1 コマンドに畳んである】
+    ///   パネルは「計算 → スライダーで確認 → 決定」の 3 段だが、確定操作は決定の 1 回だけで、
+    ///   計算とスライダーは画面上のプレビューでしかない（Undo は ApplyPreview の中の 1 回。
+    ///   SurfaceSnapTool.cs:439-453）。よって受け口は計算・スライダー・決定を続けて呼ぶ。
+    ///   Slider は最終的な補間量（0 = 動かさない、1 = 完全に張り付く）。
+    /// </summary>
+    public class SurfaceSnapCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "SurfaceSnapReferences",
+                 Description = "張り付け先にする描画オブジェクトの masterIndex 配列",
+                 Required = true)]
+        public int[] ReferenceMasterIndices { get; }
+
+        [PLParam(TextKey = "SurfaceSnapCameraKind",
+                 Description = "張り付ける向きを決めるカメラ。Current / Perspective / Top / Front など")]
+        public SurfaceSnapCameraKind CameraKind { get; }
+
+        [PLParam(TextKey = "SurfaceSnapSelectedVerticesOnly",
+                 Description = "選択頂点だけを動かす。false で対象メッシュの全頂点")]
+        public bool                SelectedVerticesOnly { get; }
+
+        [PLParam(TextKey = "SurfaceSnapSurfaceOffset",
+                 Description = "張り付け先の面からの浮かせ量")]
+        public float               SurfaceOffset { get; }
+
+        [PLParam(TextKey = "SurfaceSnapBackface",
+                 Description = "裏面を対象にするか。Both / FrontOnly")]
+        public SurfaceSnapBackface Backface { get; }
+
+        [PLParam(TextKey = "SurfaceSnapSlider",
+                 Description = "補間量。0 = 動かさない、1 = 完全に張り付く。既定は 1",
+                 Min = 0.0, Max = 1.0)]
+        public float               Slider { get; }
+
+        public SurfaceSnapCommand(
+            int modelIndex, int[] masterIndices,
+            int[] referenceMasterIndices,
+            SurfaceSnapCameraKind cameraKind = SurfaceSnapCameraKind.Current,
+            bool selectedVerticesOnly        = false,
+            float surfaceOffset              = 0f,
+            SurfaceSnapBackface backface     = SurfaceSnapBackface.Both,
+            float slider                     = 1f,
+            ulong[] objectIds                = null)
+            : base(modelIndex)
+        {
+            MasterIndices          = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds              = objectIds;
+            ReferenceMasterIndices = referenceMasterIndices ?? System.Array.Empty<int>();
+            CameraKind             = cameraKind;
+            SelectedVerticesOnly   = selectedVerticesOnly;
+            SurfaceOffset          = surfaceOffset;
+            Backface               = backface;
+            Slider                 = slider;
+        }
+    }
+
+    // ================================================================
+    // ドラッグ確定（ベベル・押し出し）
+    //
+    // マウス経路は「押した要素 1 つ」と「ドラッグ量」で結果が決まる。
+    // コマンドも同じ 2 つを持ち、量は画面座標ではなく対象メッシュの
+    // ローカル空間の長さ／ベクトルで指定する。
+    //
+    // 実処理が編集対象メッシュ 1 本にしか効かないため、MasterIndices は
+    // 「1 個で、それが編集対象と一致すること」を要求する。
+    // ================================================================
+
+    /// <summary>
+    /// 指定した辺をベベルする。実処理は EdgeBevelTool。
+    /// </summary>
+    public class EdgeBevelCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "EdgeBevelV1", Description = "対象の辺の頂点番号 1", Required = true)]
+        public int   EdgeV1 { get; }
+
+        [PLParam(TextKey = "EdgeBevelV2", Description = "対象の辺の頂点番号 2", Required = true)]
+        public int   EdgeV2 { get; }
+
+        /// <summary>ベベル量。対象メッシュのローカル空間の長さ。</summary>
+        [PLParam(TextKey = "EdgeBevelAmount",
+                 Description = "ベベル量。対象メッシュのローカル空間の長さ。0 より大きいこと",
+                 Required = true)]
+        public float Amount   { get; }
+
+        [PLParam(TextKey = "EdgeBevelSegments", Description = "ベベルの分割数")]
+        public int   Segments { get; }
+
+        [PLParam(TextKey = "EdgeBevelFillet",
+                 Description = "角を弧で結ぶ。false で平坦にする")]
+        public bool  Fillet   { get; }
+
+        public EdgeBevelCommand(
+            int modelIndex, int[] masterIndices,
+            int edgeV1, int edgeV2, float amount,
+            int segments      = 1,
+            bool fillet       = false,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            EdgeV1        = edgeV1;
+            EdgeV2        = edgeV2;
+            Amount        = amount;
+            Segments      = segments;
+            Fillet        = fillet;
+        }
+    }
+
+    /// <summary>
+    /// 指定した辺または線分を押し出す。実処理は EdgeExtrudeTool。
+    ///
+    /// 辺と線分はどちらか一方だけを指定する。
+    /// 辺を指定するときは LineIndex = -1、線分を指定するときは EdgeV1 = EdgeV2 = -1。
+    ///
+    /// 押し出し量は対象メッシュのローカル空間のベクトル。マウス経路の累積
+    /// （EdgeExtrudeTool.cs:296-298）がローカル空間で積まれるのに合わせている。
+    /// </summary>
+    public class EdgeExtrudeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "EdgeExtrudeV1",
+                 Description = "対象の辺の頂点番号 1。線分を指定するときは -1")]
+        public int     EdgeV1 { get; }
+
+        [PLParam(TextKey = "EdgeExtrudeV2",
+                 Description = "対象の辺の頂点番号 2。線分を指定するときは -1")]
+        public int     EdgeV2 { get; }
+
+        [PLParam(TextKey = "EdgeExtrudeLineIndex",
+                 Description = "対象の線分の索引。辺を指定するときは -1")]
+        public int     LineIndex { get; }
+
+        [PLParam(TextKey = "EdgeExtrudeLocalOffset",
+                 Description = "押し出し量。対象メッシュのローカル空間のベクトル", Required = true)]
+        public Vector3 LocalOffset { get; }
+
+        public EdgeExtrudeCommand(
+            int modelIndex, int[] masterIndices,
+            int edgeV1, int edgeV2, int lineIndex,
+            Vector3 localOffset,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            EdgeV1        = edgeV1;
+            EdgeV2        = edgeV2;
+            LineIndex     = lineIndex;
+            LocalOffset   = localOffset;
+        }
+    }
+
+    /// <summary>
+    /// 指定した面を押し出す。実処理は FaceExtrudeTool。
+    /// </summary>
+    public class FaceExtrudeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "FaceExtrudeFaceIndex", Description = "対象の面の索引", Required = true)]
+        public int   FaceIndex { get; }
+
+        /// <summary>押し出し距離。対象メッシュのローカル空間の長さ。負値で内側へ。</summary>
+        [PLParam(TextKey = "FaceExtrudeDistance",
+                 Description = "押し出し距離。対象メッシュのローカル空間の長さ。負値で内側へ",
+                 Required = true)]
+        public float Distance { get; }
+
+        [PLParam(TextKey = "FaceExtrudeType",
+                 Description = "押し出しの種類。Normal / Bevel")]
+        public FaceExtrudeSettings.ExtrudeType Type { get; }
+
+        [PLParam(TextKey = "FaceExtrudeBevelScale",
+                 Description = "Bevel のときの縮小率。1 で縮小なし")]
+        public float BevelScale { get; }
+
+        [PLParam(TextKey = "FaceExtrudeIndividualNormals",
+                 Description = "面ごとの法線で押し出す。false で平均法線")]
+        public bool  IndividualNormals { get; }
+
+        public FaceExtrudeCommand(
+            int modelIndex, int[] masterIndices,
+            int faceIndex, float distance,
+            FaceExtrudeSettings.ExtrudeType type = FaceExtrudeSettings.ExtrudeType.Normal,
+            float bevelScale        = 0.8f,
+            bool individualNormals  = false,
+            ulong[] objectIds       = null)
+            : base(modelIndex)
+        {
+            MasterIndices     = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds         = objectIds;
+            FaceIndex         = faceIndex;
+            Distance          = distance;
+            Type              = type;
+            BevelScale        = bevelScale;
+            IndividualNormals = individualNormals;
+        }
+    }
+
+    // ================================================================
+    // スキンウェイト塗り
+    // ================================================================
+
+    /// <summary>
+    /// ブラシで塗ったスキンウェイトを適用する。実処理は SkinWeightPaintTool。
+    ///
+    /// 【なぜ点列ではなく頂点列を持つか】
+    ///   対象頂点はスクリーン空間のブラシ円で決まる（SkinWeightPaintToolHandler の
+    ///   ComputeBrushVertices）。ワールド座標の点列から求め直すと対象が変わり、
+    ///   パネル操作とリモート発行で結果が食い違う。よって「掛けた頂点と falloff」を
+    ///   そのまま持つ。カメラに依存しないので MCP から見ても自己完結する。
+    ///
+    /// 【ステップを合成しない理由】
+    ///   Add は毎回加算、Replace は毎回 Lerp、Scale は毎回乗算するため、結果は
+    ///   適用回数と順序に依存する。ブラシ 1 回分を 1 ステップとして順に適用する。
+    ///
+    /// 【平坦な配列】
+    ///   PanelCommandFactory は文字列パラメータから平坦な配列しか組み立てられないため、
+    ///   入れ子を持てない。ステップの区切りは StepStarts が持つ。
+    ///   長さの整合（StepStarts.Length == StepMeshIndices.Length、
+    ///   VertexIndices.Length == Falloffs.Length、StepStarts が単調増加で範囲内）は
+    ///   受け口の実行時検証で守る。型では表現できない。
+    /// </summary>
+    public class SkinWeightPaintCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "ステップが触る描画オブジェクトの masterIndex 配列。実行時点の塗り対象に含まれること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。null でズレ照合を省く")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "SkinPaintStepStarts",
+                 Description = "各ステップが VertexIndices のどこから始まるか。単調増加。長さ = ステップ数",
+                 Required = true)]
+        public int[]   StepStarts { get; }
+
+        [PLParam(TextKey = "SkinPaintStepMeshIndices",
+                 Description = "各ステップの対象メッシュ masterIndex。StepStarts と同じ長さ",
+                 Required = true)]
+        public int[]   StepMeshIndices { get; }
+
+        [PLParam(TextKey = "SkinPaintVertexIndices",
+                 Description = "全ステップ分の頂点番号を連結したもの", Required = true)]
+        public int[]   VertexIndices { get; }
+
+        [PLParam(TextKey = "SkinPaintFalloffs",
+                 Description = "VertexIndices と同じ長さの falloff（0〜1）", Required = true)]
+        public float[] Falloffs { get; }
+
+        [PLParam(TextKey = "SkinPaintMode",
+                 Description = "塗り方。Replace / Add / Scale / Smooth", Required = true)]
+        public Poly_Ling.UI.SkinWeightPaintMode PaintMode { get; }
+
+        /// <summary>対象ボーンの masterIndex。Smooth では読まれない。</summary>
+        [PLParam(TextKey = "SkinPaintTargetBone",
+                 Description = "対象ボーンの masterIndex。Smooth では読まれない")]
+        public int   TargetBone { get; }
+
+        [PLParam(TextKey = "SkinPaintStrength", Description = "塗りの強度")]
+        public float Strength { get; }
+
+        [PLParam(TextKey = "SkinPaintWeightValue",
+                 Description = "書き込む値。Replace は目標値、Add は加算量、Scale は倍率")]
+        public float WeightValue { get; }
+
+        public SkinWeightPaintCommand(
+            int modelIndex, int[] masterIndices,
+            int[] stepStarts, int[] stepMeshIndices,
+            int[] vertexIndices, float[] falloffs,
+            Poly_Ling.UI.SkinWeightPaintMode paintMode,
+            int targetBone    = -1,
+            float strength    = 1f,
+            float weightValue = 1f,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices   = masterIndices   ?? System.Array.Empty<int>();
+            ObjectIds       = objectIds;
+            StepStarts      = stepStarts      ?? System.Array.Empty<int>();
+            StepMeshIndices = stepMeshIndices ?? System.Array.Empty<int>();
+            VertexIndices   = vertexIndices   ?? System.Array.Empty<int>();
+            Falloffs        = falloffs        ?? System.Array.Empty<float>();
+            PaintMode       = paintMode;
+            TargetBone      = targetBone;
+            Strength        = strength;
+            WeightValue     = weightValue;
+        }
+    }
+
+    // ================================================================
+    // 作業軸
+    //
+    // 作業軸（WorkAxisContext）はモデルの頂点・選択を書き換えない。
+    // 回転・拡大縮小・歪みのピボット源なので、どの軸を使うかが 1 呼び出しで
+    // 確定するよう、差分ではなく状態の全指定にする。
+    // 差分指定にすると「送る前の状態を知らないと結果が予測できない」ものになり、
+    // SelectElementsCommand の Toggle と同じ問題を抱える。
+    // ================================================================
+
+    /// <summary>
+    /// 作業軸の状態を指定した値へ差し替える。実処理は WorkAxisContext。
+    ///
+    /// 「選択重心へ移動」「ワールド軸へ整列」「リセット」も、呼び出し側で結果の
+    /// 値を解決してからこのコマンドに載せる。専用コマンドを増やさず、
+    /// 実行前の状態に依存しない形にそろえるため。
+    ///
+    /// Length は WorkAxisContext.Length が下限（MinLength）でクランプする。
+    /// </summary>
+    public class SetWorkAxisCommand : PanelCommand
+    {
+        [PLParam(TextKey = "WorkAxisOrigin",
+                 Description = "軸の原点（ワールド座標）。\"x,y,z\"", Required = true)]
+        public Vector3 Origin { get; }
+
+        /// <summary>
+        /// 軸の回転（度）。WorkAxisContext.EulerAngles と同じく Quaternion.Euler で解釈する。
+        /// </summary>
+        [PLParam(TextKey = "WorkAxisEulerAngles",
+                 Description = "軸の回転（度）。\"x,y,z\"", Required = true)]
+        public Vector3 EulerAngles { get; }
+
+        [PLParam(TextKey = "WorkAxisLength",
+                 Description = "軸長（ワールド単位）。下限は WorkAxisContext.MinLength でクランプされる")]
+        public float Length { get; }
+
+        [PLParam(TextKey = "WorkAxisVisible", Description = "ギズモを表示するか")]
+        public bool IsVisible { get; }
+
+        public SetWorkAxisCommand(
+            int modelIndex,
+            Vector3 origin, Vector3 eulerAngles,
+            float length   = Poly_Ling.Context.WorkAxisContext.DefaultLength,
+            bool isVisible = true)
+            : base(modelIndex)
+        {
+            Origin      = origin;
+            EulerAngles = eulerAngles;
+            Length      = length;
+            IsVisible   = isVisible;
+        }
+    }
+
+    /// <summary>
+    /// 作業軸ライブラリの登録名を呼び出して作業軸へ入れる。
+    /// 表示フラグは変えない（WorkAxisEntry.ApplyTo と同じ）。
+    /// </summary>
+    public class RecallWorkAxisCommand : PanelCommand
+    {
+        [PLParam(TextKey = "WorkAxisName",
+                 Description = "作業軸ライブラリの登録名", Required = true)]
+        public string Name { get; }
+
+        public RecallWorkAxisCommand(int modelIndex, string name)
+            : base(modelIndex)
+        {
+            Name = name ?? "";
         }
     }
 }

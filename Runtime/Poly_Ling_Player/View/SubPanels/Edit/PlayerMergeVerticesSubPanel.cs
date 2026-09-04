@@ -7,12 +7,31 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerMergeVerticesSubPanel
     {
         public Func<MergeVerticesToolHandler> GetH;
+        public Func<ProjectContext>           GetView;
+        public Action<PanelCommand>           SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
 
         private VisualElement _root;
         private FloatField    _threshField;
@@ -80,19 +99,34 @@ namespace Poly_Ling.Player
             _detailList = new VisualElement();
             _root.Add(_detailList);
 
-            // どちらも即時実行 API を使う。パネル外のショートカットと同じ経路にすることで
+            // どちらもコマンドへ流す。パネル外のショートカットと同じ経路にすることで
             // 「パネルを開いている間しか動かない」旧経路 (TriggerMerge) への依存を無くす。
-            var mergeThreshBtn = new Button(() => GetH()?.TriggerMergeByThresholdNow())
+            var mergeThreshBtn = new Button(() => SendMerge(MergeVerticesCommand.MergeMode.Threshold))
                 { text = "しきい値で結合 Ctrl+Shift+J" };
             mergeThreshBtn.style.height    = 30;
             mergeThreshBtn.style.marginTop = 6;
             _root.Add(mergeThreshBtn);
 
-            var mergeCentroidBtn = new Button(() => GetH()?.TriggerMergeToCentroidNow())
+            var mergeCentroidBtn = new Button(() => SendMerge(MergeVerticesCommand.MergeMode.Centroid))
                 { text = "結合（距離無視） Ctrl+J" };
             mergeCentroidBtn.style.height    = 30;
             mergeCentroidBtn.style.marginTop = 4;
             _root.Add(mergeCentroidBtn);
+        }
+
+        /// <summary>
+        /// 頂点結合コマンドを組んで送る。しきい値は Centroid でも載せる
+        /// （読まれないが、コマンドを自己完結させるため）。
+        /// </summary>
+        private void SendMerge(MergeVerticesCommand.MergeMode mode)
+        {
+            var h = GetH();
+            var targets = ActiveMasterIndices();
+            if (h == null || targets == null) return;
+
+            SendCommand?.Invoke(new MergeVerticesCommand(
+                ModelIndex, targets, mode, h.Threshold));
+            Refresh();
         }
 
         public void Refresh()

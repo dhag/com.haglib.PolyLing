@@ -34,7 +34,52 @@ namespace Poly_Ling.Player
 
         public int  SelectedVertexCount  => _tool.SelectedVertexCount;
         public int  GetSplittableCount() => _tool.GetSplittableCount();
-        public void TriggerSplit()       => _tool.TriggerSplit();
+
+        /// <summary>
+        /// 頂点分離を実行する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// SplitVerticesCommand 経由に統一するため。
+        /// </summary>
+        private void TriggerSplitCore()  => _tool.TriggerSplit();
+
+        /// <summary>
+        /// 頂点分離コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   実処理は SplitVerticesTool が正典。ここは対象の照合だけを行い、
+        ///   同じ経路（Activate → GetSplittableCount → TriggerSplit）を呼ぶ。
+        ///
+        /// 【対象の照合】
+        ///   SplitVerticesTool は ActiveMeshContext 1 本にしか効かない
+        ///   （SplitVerticesTool.cs:57, 71）。よって MasterIndices は
+        ///   「1 個で、それが編集対象と一致すること」を要求する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.SplitVerticesCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            // 実行時と同じコンテキストで下調べするため、先に Activate を通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            if (GetSplittableCount() <= 0)
+            {
+                reason = "分離できる頂点がありません。2 面以上に共有されている頂点を選んでください";
+                return false;
+            }
+
+            TriggerSplitCore();
+            return true;
+        }
 
         // ================================================================
         // 初期化

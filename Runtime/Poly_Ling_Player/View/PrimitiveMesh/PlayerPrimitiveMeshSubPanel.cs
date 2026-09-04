@@ -296,14 +296,18 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox, PipeStadium, HairStrand }
+        // 末尾に足すこと。PrimitiveShapeMemory は列挙値の「名前」で保存するので値の並びは
+        // 保存内容に影響しないが、_shapeBtns は添字を (int)ShapeKind で引く。
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox, PipeStadium, HairStrand,
+                               HelicalGear, InternalGear, InvoluteRack, HelicalRack, StraightBevelGear, SpiralBevelGear, CylindricalWorm, WormWheel }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
-              "NGonGear","NGonStar","InvoluteGear","StadiumBox","PipeStadium","HairStrand" };
+              "NGonGear","NGonStar","InvoluteGear","StadiumBox","PipeStadium","HairStrand",
+              "HelicalGear","InternalGear","InvoluteRack","HelicalRack","StraightBevelGear","SpiralBevelGear","CylindricalWorm","WormWheel" };
 
-        /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
-        public enum ShapeCategory { Basic, Advanced }
+        /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品」に対応）。</summary>
+        public enum ShapeCategory { Basic, Advanced, Mechanism }
 
         // カテゴリ別の図形リスト。グリッドはこの内容だけを表示する。
         private static readonly ShapeKind[] BasicShapes =
@@ -311,9 +315,17 @@ namespace Poly_Ling.Player
               ShapeKind.StadiumBox };
         private static readonly ShapeKind[] AdvancedShapes =
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
-              ShapeKind.NGonGear, ShapeKind.NGonStar, ShapeKind.InvoluteGear,
+              ShapeKind.NGonGear, ShapeKind.NGonStar,
               ShapeKind.PipeStadium, ShapeKind.HairStrand,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
+
+        // 機構部品。かみ合う歯車まわりをここへ集める。
+        // インボリュート歯車は「高度な図形」からここへ移した。
+        private static readonly ShapeKind[] MechanismShapes =
+            { ShapeKind.InvoluteGear, ShapeKind.HelicalGear, ShapeKind.InternalGear,
+              ShapeKind.InvoluteRack, ShapeKind.HelicalRack,
+              ShapeKind.StraightBevelGear, ShapeKind.SpiralBevelGear,
+              ShapeKind.CylindricalWorm, ShapeKind.WormWheel };
 
         // ================================================================
         // パラメータ
@@ -325,8 +337,9 @@ namespace Poly_Ling.Player
         // カテゴリ別に「最後に選んだ図形」を保持する。パネルを開き直したときは
         // カテゴリ先頭ではなくこの値を選び直す。MemoryKey があれば起動をまたいで
         // PrimitiveShapeMemory（JSON）にも保存する。
-        private ShapeKind _lastBasic    = ShapeKind.Cube;
-        private ShapeKind _lastAdvanced = ShapeKind.Revolution;
+        private ShapeKind _lastBasic     = ShapeKind.Cube;
+        private ShapeKind _lastAdvanced  = ShapeKind.Revolution;
+        private ShapeKind _lastMechanism = ShapeKind.InvoluteGear;
 
         /// <summary>
         /// 最後に選んだ図形の保存に使うパネル識別子。Build より前に設定する。
@@ -1271,8 +1284,17 @@ namespace Poly_Ling.Player
         // ================================================================
 
         // 現在カテゴリに属する図形リスト。
-        private ShapeKind[] CurrentCategoryShapes()
-            => _category == ShapeCategory.Advanced ? AdvancedShapes : BasicShapes;
+        private ShapeKind[] CurrentCategoryShapes() => ShapesOf(_category);
+
+        private static ShapeKind[] ShapesOf(ShapeCategory cat)
+        {
+            switch (cat)
+            {
+                case ShapeCategory.Advanced:  return AdvancedShapes;
+                case ShapeCategory.Mechanism: return MechanismShapes;
+                default:                      return BasicShapes;
+            }
+        }
 
         // 現在カテゴリの図形だけでボタングリッドを再構築する。
         // Build と SetCategory で共用（ボタン生成コードはここ1箇所）。
@@ -1310,8 +1332,16 @@ namespace Poly_Ling.Player
         /// </summary>
         private ShapeKind RememberedShape(ShapeCategory cat)
         {
-            var shapes = cat == ShapeCategory.Advanced ? AdvancedShapes : BasicShapes;
-            var kind   = cat == ShapeCategory.Advanced ? _lastAdvanced : _lastBasic;
+            var shapes = ShapesOf(cat);
+
+            ShapeKind kind;
+            switch (cat)
+            {
+                case ShapeCategory.Advanced:  kind = _lastAdvanced;  break;
+                case ShapeCategory.Mechanism: kind = _lastMechanism; break;
+                default:                      kind = _lastBasic;     break;
+            }
+
             if (System.Array.IndexOf(shapes, kind) >= 0) return kind;
             return shapes.Length > 0 ? shapes[0] : ShapeKind.Cube;
         }
@@ -1328,13 +1358,19 @@ namespace Poly_Ling.Player
             var adv = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.Advanced);
             if (adv.HasValue && System.Array.IndexOf(AdvancedShapes, adv.Value) >= 0)
                 _lastAdvanced = adv.Value;
+
+            var mech = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.Mechanism);
+            if (mech.HasValue && System.Array.IndexOf(MechanismShapes, mech.Value) >= 0)
+                _lastMechanism = mech.Value;
         }
 
         /// <summary>指定形状のカテゴリを返す。</summary>
         public ShapeCategory CategoryOf(ShapeKind k)
-            => System.Array.IndexOf(AdvancedShapes, k) >= 0
-                ? ShapeCategory.Advanced
-                : ShapeCategory.Basic;
+        {
+            if (System.Array.IndexOf(MechanismShapes, k) >= 0) return ShapeCategory.Mechanism;
+            if (System.Array.IndexOf(AdvancedShapes,  k) >= 0) return ShapeCategory.Advanced;
+            return ShapeCategory.Basic;
+        }
 
         /// <summary>
         /// 指定形状のサブメニューを開く (形状ボタンをクリックしたのと同じ)。
@@ -1357,8 +1393,12 @@ namespace Poly_Ling.Player
 
             // 選んだ図形をカテゴリ別に記憶する（次にパネルを開いたときの復元用）。
             var cat = CategoryOf(k);
-            if (cat == ShapeCategory.Advanced) _lastAdvanced = k;
-            else                               _lastBasic    = k;
+            switch (cat)
+            {
+                case ShapeCategory.Advanced:  _lastAdvanced  = k; break;
+                case ShapeCategory.Mechanism: _lastMechanism = k; break;
+                default:                      _lastBasic     = k; break;
+            }
             PrimitiveShapeMemory.Set(MemoryKey, cat, k);
 
             for (int i = 0; i < _shapeBtns.Length; i++)
@@ -1416,6 +1456,17 @@ namespace Poly_Ling.Player
                 case ShapeKind.StadiumBox:   BuildStadiumBoxUI(_settingsContainer);   break;
                 case ShapeKind.PipeStadium:  BuildPipeStadiumUI(_settingsContainer);  break;
                 case ShapeKind.HairStrand:   BuildHairStrandUI(_settingsContainer);   break;
+
+                // ── 機構部品（PlayerPrimitiveMeshSubPanel.Mechanism.cs） ──
+                case ShapeKind.HelicalGear:       BuildHelicalGearUI(_settingsContainer);       break;
+                case ShapeKind.InternalGear:      BuildInternalGearUI(_settingsContainer);      break;
+                case ShapeKind.InvoluteRack:      BuildInvoluteRackUI(_settingsContainer);      break;
+                case ShapeKind.HelicalRack:       BuildHelicalRackUI(_settingsContainer);       break;
+                case ShapeKind.StraightBevelGear: BuildStraightBevelGearUI(_settingsContainer); break;
+                case ShapeKind.SpiralBevelGear:   BuildSpiralBevelGearUI(_settingsContainer);   break;
+                case ShapeKind.CylindricalWorm:   BuildCylindricalWormUI(_settingsContainer);   break;
+                case ShapeKind.WormWheel:         BuildWormWheelUI(_settingsContainer);         break;
+
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -4608,6 +4659,15 @@ namespace Poly_Ling.Player
                 case ShapeKind.StadiumBox:   return _stadiumP.MeshName;
                 case ShapeKind.PipeStadium:  return _pipeStadiumP.MeshName;
                 case ShapeKind.HairStrand:   return _hairP.MeshName;
+
+                case ShapeKind.HelicalGear:       return _helGearP.MeshName;
+                case ShapeKind.InternalGear:      return _intGearP.MeshName;
+                case ShapeKind.InvoluteRack:      return _rackP.MeshName;
+                case ShapeKind.HelicalRack:       return _helRackP.MeshName;
+                case ShapeKind.StraightBevelGear: return _strBevelP.MeshName;
+                case ShapeKind.SpiralBevelGear:   return _spiBevelP.MeshName;
+                case ShapeKind.CylindricalWorm:   return _wormP.MeshName;
+                case ShapeKind.WormWheel:         return _wheelP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
                 case ShapeKind.Bridge:     return BridgeMeshName;
@@ -4640,6 +4700,15 @@ namespace Poly_Ling.Player
                 case ShapeKind.StadiumBox:   _stadiumP.MeshName   = name; break;
                 case ShapeKind.PipeStadium:  _pipeStadiumP.MeshName = name; break;
                 case ShapeKind.HairStrand:   _hairP.MeshName        = name; break;
+
+                case ShapeKind.HelicalGear:       _helGearP.MeshName  = name; break;
+                case ShapeKind.InternalGear:      _intGearP.MeshName  = name; break;
+                case ShapeKind.InvoluteRack:      _rackP.MeshName     = name; break;
+                case ShapeKind.HelicalRack:       _helRackP.MeshName  = name; break;
+                case ShapeKind.StraightBevelGear: _strBevelP.MeshName = name; break;
+                case ShapeKind.SpiralBevelGear:   _spiBevelP.MeshName = name; break;
+                case ShapeKind.CylindricalWorm:   _wormP.MeshName     = name; break;
+                case ShapeKind.WormWheel:         _wheelP.MeshName    = name; break;
                 // 穴つなぎも非重複候補の対象にする（Name() は BridgeMeshName を返すため、
                 // ここを欠かすと RefreshMeshNameCandidate が名前を書き戻せない）。
                 case ShapeKind.Bridge:      SetBridgeMeshName(name); break;

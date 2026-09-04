@@ -233,6 +233,117 @@ namespace Poly_Ling.Tools
         public void PrepareHit(int faceIdx) { _hitFaceOnMouseDown = faceIdx; }
 
         // ================================================================
+        // コマンド経路
+        //
+        // 【なぜ要るか】
+        //   押し出し距離はドラッグの画面移動から導かれる（UpdateExtrude、:283-308）ので、
+        //   コマンドからは通せない。面と距離を直接渡せる入口をここに置き、
+        //   生成と Undo 記録はマウス経路と同じ
+        //   CollectTargetFaces / ExecuteExtrude / EndExtrude を通す。
+        // ================================================================
+
+        /// <summary>
+        /// 指定した面を指定距離だけ押し出す。
+        ///
+        /// ExecuteExtrude は _extrudeDistance を複製頂点の位置へ足す（:426-431, 435-443）ので、
+        /// 距離を入れてから 1 回呼べばドラッグ確定と同じ形になる。
+        /// 距離は対象メッシュのローカル空間の長さ。負値で内側へ押し出す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ApplyExtrudeFromCommand(
+            ToolContext ctx, int faceIndex, float distance,
+            FaceExtrudeSettings.ExtrudeType type, float bevelScale, bool individualNormals,
+            out string reason)
+        {
+            reason = null;
+
+            if (_state != ExtrudeState.Idle)
+            { reason = "ドラッグ中は実行できません"; return false; }
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null || ctx.SelectionState == null)
+            { reason = "編集対象メッシュがありません"; return false; }
+
+            if (faceIndex < 0 || faceIndex >= mo.FaceCount)
+            { reason = "面の索引が範囲外です"; return false; }
+
+            if (Mathf.Abs(distance) < 1e-6f)
+            { reason = "押し出し距離が 0 です"; return false; }
+
+            var   savedType   = Type;
+            float savedBevel  = BevelScale;
+            bool  savedIndiv  = IndividualNormals;
+            try
+            {
+                Type              = type;
+                BevelScale        = bevelScale;
+                IndividualNormals = individualNormals;
+
+                if (ctx.UndoController != null)
+                    _snapshotBefore = MeshObjectSnapshot.Capture(
+                        ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+
+                ctx.SelectionState.Faces.Clear();
+                ctx.SelectionState.Faces.Add(faceIndex);
+
+                CollectTargetFaces(ctx);
+                if (_targetFaces.Count == 0)
+                {
+                    _snapshotBefore = null;
+                    reason = "押し出せる面がありません";
+                    return false;
+                }
+
+                _extrudeDistance = distance;
+                ExecuteExtrude(ctx);
+                EndExtrude(ctx);   // Undo 記録
+            }
+            finally
+            {
+                Reset();
+                Type              = savedType;
+                BevelScale        = savedBevel;
+                IndividualNormals = savedIndiv;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 取り出せるドラッグ結果があるか。TryTakeExtrudeFromDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool ExtrudePending
+            => _state == ExtrudeState.Extruding
+               && _hitFaceOnMouseDown >= 0
+               && Mathf.Abs(_extrudeDistance) > 1e-6f;
+
+        /// <summary>
+        /// ドラッグの確定内容を取り出し、開始状態へ戻す。
+        ///
+        /// 押し出しはドラッグ開始時にトポロジーまで作る（StartExtrude → ExecuteExtrude）ので、
+        /// 位置を戻すだけでは足りない。マウスダウン時のスナップショットを丸ごと適用する。
+        /// _snapshotBefore は null にするので、続けて呼ばれる OnMouseUp（EndExtrude）は
+        /// Undo を積まない。
+        /// </summary>
+        public bool TryTakeExtrudeFromDrag(ToolContext ctx, out int faceIndex, out float distance)
+        {
+            faceIndex = -1;
+            distance  = 0f;
+
+            if (!ExtrudePending) return false;
+            if (ctx?.UndoController == null || _snapshotBefore == null) return false;
+
+            faceIndex = _hitFaceOnMouseDown;
+            distance  = _extrudeDistance;
+
+            _snapshotBefore.ApplyTo(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+            _snapshotBefore = null;
+
+            ctx.SyncMesh?.Invoke();
+            return true;
+        }
+
+        // ================================================================
         // 押し出し処理
         // ================================================================
 

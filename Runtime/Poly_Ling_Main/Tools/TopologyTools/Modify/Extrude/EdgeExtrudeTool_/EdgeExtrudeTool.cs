@@ -233,6 +233,139 @@ namespace Poly_Ling.Tools
         }
 
         // ================================================================
+        // コマンド経路
+        //
+        // 【なぜ要るか】
+        //   押し出し量はドラッグの累積（_accumMove、:296-298）から決まるので、
+        //   コマンドからは通せない。対象と量を直接渡せる入口をここに置き、
+        //   生成と Undo 記録はマウス経路と同じ
+        //   CollectTargetEdges / ExecuteExtrude / EndExtrude を通す。
+        //
+        // 【量はローカル空間のベクトル】
+        //   マウス経路の _accumMove は対象メッシュのローカル空間で累積される
+        //   （:296-298 が WorldToLocalVectorAt を通す）。対象が 1 メッシュに限られる
+        //   ので、コマンドも同じローカル空間のベクトルで持つ。
+        //
+        // 【Mode / SnapToAxis は読まない】
+        //   Mode は StartExtrude で初期方向を決めるだけで、確定位置は _accumMove が
+        //   上書きする（:291 の注記のとおり移動化に伴い不使用）。量を直接渡す
+        //   コマンドでは結果に影響しないため引数に持たない。
+        // ================================================================
+
+        /// <summary>
+        /// 指定した辺（または線分）を指定量だけ押し出す。
+        ///
+        /// ExecuteExtrude は _extrudeDirection * _extrudeDistance を複製頂点の位置へ
+        /// 足す（:331）ので、量を方向と長さに分けて入れてから 1 回呼べば
+        /// ドラッグ確定と同じ形になる。
+        /// </summary>
+        /// <param name="edge">対象の辺。線分を指定するときは null。</param>
+        /// <param name="line">対象の線分索引。辺を指定するときは -1。</param>
+        /// <param name="localOffset">対象メッシュのローカル空間での押し出し量。</param>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ApplyExtrudeFromCommand(
+            ToolContext ctx, VertexPair? edge, int line, Vector3 localOffset, out string reason)
+        {
+            reason = null;
+
+            if (_state != ExtrudeState.Idle)
+            { reason = "ドラッグ中は実行できません"; return false; }
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null || ctx.SelectionState == null)
+            { reason = "編集対象メッシュがありません"; return false; }
+
+            if (edge.HasValue == (line >= 0))
+            { reason = "辺と線分はどちらか一方だけを指定してください"; return false; }
+
+            if (edge.HasValue)
+            {
+                if (edge.Value.V1 < 0 || edge.Value.V1 >= mo.VertexCount ||
+                    edge.Value.V2 < 0 || edge.Value.V2 >= mo.VertexCount)
+                { reason = "辺の頂点番号が範囲外です"; return false; }
+            }
+            else if (line >= mo.FaceCount || mo.Faces[line].VertexCount != 2)
+            {
+                // 線分は Faces のうち頂点数 2 のもの（CollectTargetEdges:594-595 と同じ判定）。
+                reason = "線分の索引が範囲外か、線分ではありません";
+                return false;
+            }
+
+            if (localOffset.sqrMagnitude < 1e-10f)
+            { reason = "押し出し量が 0 です"; return false; }
+
+            try
+            {
+                if (ctx.UndoController != null)
+                    _snapshotBefore = MeshObjectSnapshot.Capture(
+                        ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+
+                ctx.SelectionState.Edges.Clear();
+                ctx.SelectionState.Lines.Clear();
+                if (edge.HasValue) ctx.SelectionState.Edges.Add(edge.Value);
+                else               ctx.SelectionState.Lines.Add(line);
+
+                CollectTargetEdges(ctx);
+                if (_targetEdges.Count == 0 && _targetLines.Count == 0)
+                {
+                    _snapshotBefore = null;
+                    reason = "押し出せる辺・線分がありません";
+                    return false;
+                }
+
+                _extrudeDirection = localOffset.normalized;
+                _extrudeDistance  = localOffset.magnitude;
+                _accumMove        = localOffset;
+
+                ExecuteExtrude(ctx);
+                EndExtrude(ctx);   // Undo 記録
+            }
+            finally
+            {
+                Reset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 取り出せるドラッグ結果があるか。TryTakeExtrudeFromDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool ExtrudePending
+            => _state == ExtrudeState.Extruding
+               && (_hitEdgeOnMouseDown.HasValue || _hitLineOnMouseDown >= 0)
+               && _accumMove.sqrMagnitude > 1e-10f;
+
+        /// <summary>
+        /// ドラッグの確定内容を取り出し、開始状態へ戻す。
+        ///
+        /// 押し出しはドラッグ開始時にトポロジーまで作る（StartExtrude → ExecuteExtrude）ので、
+        /// 位置を戻すだけでは足りない。マウスダウン時のスナップショットを丸ごと適用する。
+        /// _snapshotBefore は null にするので、続けて呼ばれる OnMouseUp（EndExtrude）は
+        /// Undo を積まない。
+        /// </summary>
+        public bool TryTakeExtrudeFromDrag(
+            ToolContext ctx, out VertexPair? edge, out int line, out Vector3 localOffset)
+        {
+            edge        = null;
+            line        = -1;
+            localOffset = Vector3.zero;
+
+            if (!ExtrudePending) return false;
+            if (ctx?.UndoController == null || _snapshotBefore == null) return false;
+
+            edge        = _hitEdgeOnMouseDown;
+            line        = _hitEdgeOnMouseDown.HasValue ? -1 : _hitLineOnMouseDown;
+            localOffset = _accumMove;
+
+            _snapshotBefore.ApplyTo(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+            _snapshotBefore = null;
+
+            ctx.SyncMesh?.Invoke();
+            return true;
+        }
+
+        // ================================================================
         // 押し出し処理
         // ================================================================
 

@@ -6,12 +6,31 @@
 using System;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerSolidifySubPanel
     {
         public Func<SolidifyToolHandler> GetH;
+        public Func<ProjectContext>      GetView;
+        public Action<PanelCommand>      SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
 
         private VisualElement _root;
         private Label         _infoLabel;
@@ -190,7 +209,20 @@ namespace Poly_Ling.Player
             // ── 実行 ───────────────────────────────────────────────────
             var execBtn = new Button(() =>
             {
-                GetH()?.Execute();
+                var h = GetH();
+                var targets = ActiveMasterIndices();
+                if (h == null || targets == null) return;
+
+                SendCommand?.Invoke(new SolidifyCommand(
+                    ModelIndex, targets, h.Thickness,
+                    segmentsFront:  h.SegmentsFront,
+                    segmentsBack:   h.SegmentsBack,
+                    edgeSizeFront:  h.EdgeSizeFront,
+                    edgeSizeBack:   h.EdgeSizeBack,
+                    edgeInward:     h.EdgeInward,
+                    meshName:       h.MeshName,
+                    addToExisting:  h.AddToExisting,
+                    addTargetIndex: h.AddTargetIndex));
                 Refresh();
             }) { text = "厚み付け実行" };
             execBtn.style.height    = 30;

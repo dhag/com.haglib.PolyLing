@@ -3,6 +3,7 @@
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
@@ -87,11 +88,170 @@ namespace Poly_Ling.Player
             UpdateBrushOverlay(ctx, screenPos);
         }
 
+        /// <summary>
+        /// ドラッグ確定。
+        ///
+        /// 【1 ストローク = 1 コマンド】
+        ///   ドラッグ中の塗りはプレビューとして扱い、確定時に開始状態へ戻してから
+        ///   SkinWeightPaintCommand を 1 本発行する。実際の塗りと Undo 記録は
+        ///   SkinWeightPaintTool.ApplyStrokeFromCommand が行う。
+        ///
+        /// 【SendCommand 未結線のとき】
+        ///   取り出さず OnMouseUp に確定させる（3-d / 3-e と同じ方針）。
+        /// </summary>
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
+
+            var model = _project?.CurrentModel;
+
+            bool taken = false;
+            List<SkinWeightPaintTool.StrokeStep> steps = null;
+            Poly_Ling.UI.SkinWeightPaintMode paintMode = default;
+            int   targetBone  = -1;
+            float strength    = 0f;
+            float weightValue = 0f;
+
+            if (SendCommand != null && model != null && _tool.StrokePending)
+                taken = _tool.TryTakeStrokeFromDrag(
+                    ctx, model, out steps, out paintMode, out targetBone, out strength, out weightValue);
+
+            // 取り出したときは _beforeSnapshots が空なので OnMouseUp は Undo を積まない。
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+
+            if (taken)
+                SendCommand.Invoke(BuildStrokeCommand(
+                    model, steps, paintMode, targetBone, strength, weightValue));
+        }
+
+        /// <summary>コマンドの発行先（Viewer から結線）。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        /// <summary>
+        /// ステップ列を平坦な配列へ畳んでコマンドを組む。
+        ///
+        /// PanelCommandFactory は文字列パラメータから平坦な配列しか組み立てられないため、
+        /// 入れ子を持てない。ステップの区切りは StepStarts が持つ。
+        /// </summary>
+        private Poly_Ling.Data.SkinWeightPaintCommand BuildStrokeCommand(
+            Poly_Ling.Context.ModelContext model,
+            List<SkinWeightPaintTool.StrokeStep> steps,
+            Poly_Ling.UI.SkinWeightPaintMode paintMode, int targetBone, float strength, float weightValue)
+        {
+            var stepStarts  = new List<int>(steps.Count);
+            var stepMeshes  = new List<int>(steps.Count);
+            var vertIndices = new List<int>();
+            var falloffs    = new List<float>();
+
+            var targets = new List<int>();
+            foreach (var st in steps)
+            {
+                stepStarts.Add(vertIndices.Count);
+                stepMeshes.Add(st.MeshIndex);
+                if (!targets.Contains(st.MeshIndex)) targets.Add(st.MeshIndex);
+
+                foreach (var (vi, fo) in st.Verts)
+                {
+                    vertIndices.Add(vi);
+                    falloffs.Add(fo);
+                }
+            }
+            targets.Sort();
+
+            return new Poly_Ling.Data.SkinWeightPaintCommand(
+                _project?.CurrentModelIndex ?? 0,
+                targets.ToArray(),
+                stepStarts.ToArray(), stepMeshes.ToArray(),
+                vertIndices.ToArray(), falloffs.ToArray(),
+                paintMode, targetBone, strength, weightValue);
+        }
+
+        /// <summary>
+        /// スキンウェイト塗りコマンドを実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   塗りそのものは SkinWeightPaintTool が正典。ここは平坦な配列をステップ列へ
+        ///   戻し、長さの整合を確かめてから ApplyStrokeFromCommand へ渡す。
+        ///
+        /// 【対象の照合】
+        ///   MasterIndices は「ステップが触るメッシュの集合」。実行時点の塗り対象
+        ///   （SkinWeightOperations.CollectTargetMeshContexts）に含まれることを確かめる。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.SkinWeightPaintCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            var starts   = cmd.StepStarts      ?? Array.Empty<int>();
+            var meshes   = cmd.StepMeshIndices ?? Array.Empty<int>();
+            var vertices = cmd.VertexIndices   ?? Array.Empty<int>();
+            var falloffs = cmd.Falloffs        ?? Array.Empty<float>();
+
+            if (starts.Length == 0)
+            { reason = "ステップがありません"; return false; }
+            if (starts.Length != meshes.Length)
+            { reason = "StepStarts と StepMeshIndices の長さが違います"; return false; }
+            if (vertices.Length != falloffs.Length)
+            { reason = "VertexIndices と Falloffs の長さが違います"; return false; }
+
+            for (int i = 0; i < starts.Length; i++)
+            {
+                if (starts[i] < 0 || starts[i] > vertices.Length)
+                { reason = $"StepStarts[{i}] が範囲外です"; return false; }
+                if (i > 0 && starts[i] < starts[i - 1])
+                { reason = "StepStarts は単調増加で指定してください"; return false; }
+            }
+
+            // 対象の照合。塗り対象に含まれないメッシュを指していないか見る。
+            var paintable = new HashSet<int>();
+            foreach (var mc in Poly_Ling.UI.SkinWeightOperations.CollectTargetMeshContexts(model))
+            {
+                int idx = model.IndexOf(mc);
+                if (idx >= 0) paintable.Add(idx);
+            }
+            foreach (int idx in cmd.MasterIndices ?? Array.Empty<int>())
+            {
+                if (!paintable.Contains(idx))
+                {
+                    reason = $"masterIndex {idx} は塗り対象ではありません。"
+                           + "先に SelectMeshCommand で選択を合わせてください";
+                    return false;
+                }
+            }
+
+            var steps = new List<SkinWeightPaintTool.StrokeStep>(starts.Length);
+            for (int i = 0; i < starts.Length; i++)
+            {
+                int from = starts[i];
+                int to   = (i + 1 < starts.Length) ? starts[i + 1] : vertices.Length;
+                if (to < from) { reason = $"StepStarts[{i}] の範囲が逆転しています"; return false; }
+
+                var verts = new List<(int index, float falloff)>(to - from);
+                for (int k = from; k < to; k++) verts.Add((vertices[k], falloffs[k]));
+
+                steps.Add(new SkinWeightPaintTool.StrokeStep
+                {
+                    MeshIndex = meshes[i],
+                    Verts     = verts,
+                });
+            }
+
+            var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) { reason = "ツールコンテキストがありません"; return false; }
+
+            if (!_tool.ApplyStrokeFromCommand(
+                    ctx, steps, cmd.PaintMode, cmd.TargetBone, cmd.Strength, cmd.WeightValue))
+            {
+                reason = "塗れる頂点がありませんでした";
+                return false;
+            }
+
+            return true;
         }
 
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)

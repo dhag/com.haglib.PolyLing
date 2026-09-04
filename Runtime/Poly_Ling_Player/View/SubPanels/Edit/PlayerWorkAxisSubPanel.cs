@@ -12,6 +12,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Data;
 using Poly_Ling.Serialization;
 using Poly_Ling.EditorBridge;
 
@@ -35,6 +36,45 @@ namespace Poly_Ling.Player
 
         /// <summary>選択頂点の重心（ワールド座標）。取得できないときは null。</summary>
         public Func<Vector3?> GetSelectionCentroidWorld;
+
+        /// <summary>コマンドの発行先（Viewer から結線）。</summary>
+        public Action<PanelCommand> SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        public Func<int> GetModelIndex;
+
+        /// <summary>
+        /// 作業軸の状態を組んでコマンドを送る。
+        ///
+        /// 作業軸は差分ではなく状態の全指定で送る（SetWorkAxisCommand の注記）。
+        /// 呼び出し側は「変えたい成分だけ」を渡し、残りは現在値をここで埋める。
+        ///
+        /// EulerAngles は wa.EulerAngles を読み直すと 0..360 へ正規化されて
+        /// 入力中の -30 が 330 に化けるため、既定値は入力欄の表示値を使う。
+        /// </summary>
+        private void SendWorkAxis(
+            Vector3? origin = null, Vector3? euler = null,
+            float? length = null, bool? visible = null)
+        {
+            var wa = GetWorkAxis?.Invoke();
+            if (wa == null) return;
+
+            SendCommand?.Invoke(new SetWorkAxisCommand(
+                GetModelIndex?.Invoke() ?? 0,
+                origin  ?? wa.Origin,
+                euler   ?? DisplayedEuler(),
+                length  ?? wa.Length,
+                visible ?? wa.IsVisible));
+        }
+
+        /// <summary>入力欄に出ているオイラー角。正規化前の値を保つため表示値を使う。</summary>
+        private Vector3 DisplayedEuler()
+        {
+            return new Vector3(
+                _rotX?.value ?? 0f,
+                _rotY?.value ?? 0f,
+                _rotZ?.value ?? 0f);
+        }
 
         /// <summary>
         /// 見出しと説明文を出すか。Build の前に設定する。
@@ -184,10 +224,7 @@ namespace Poly_Ling.Player
             _visibleToggle.style.color = new StyleColor(Color.white);
             _visibleToggle.RegisterValueChangedCallback(e =>
             {
-                var wa = GetWorkAxis?.Invoke();
-                if (wa == null) return;
-                wa.IsVisible = e.newValue;
-                OnValueChanged?.Invoke();
+                SendWorkAxis(visible: e.newValue);
             });
             _root.Add(_visibleToggle);
 
@@ -340,11 +377,11 @@ namespace Poly_Ling.Player
             int i = _libDropdown.index;
             if (i < 0 || i >= _libNames.Count) return;
 
-            if (!lib.TryGet(_libNames[i], out var e)) return;
+            if (!lib.Contains(_libNames[i])) return;
 
-            e.ApplyTo(wa);
+            SendCommand?.Invoke(new RecallWorkAxisCommand(
+                GetModelIndex?.Invoke() ?? 0, _libNames[i]));
             Refresh();
-            OnValueChanged?.Invoke();
             SetInfo($"「{_libNames[i]}」を呼び出しました。");
         }
 
@@ -470,9 +507,8 @@ namespace Poly_Ling.Player
             if      (component == 0) o.x = value;
             else if (component == 1) o.y = value;
             else                     o.z = value;
-            wa.Origin = o;
 
-            OnValueChanged?.Invoke();
+            SendWorkAxis(origin: o);
         }
 
         private void SetEuler(int component, float value)
@@ -490,9 +526,8 @@ namespace Poly_Ling.Player
             if      (component == 0) e.x = value;
             else if (component == 1) e.y = value;
             else                     e.z = value;
-            wa.EulerAngles = e;
 
-            OnValueChanged?.Invoke();
+            SendWorkAxis(euler: e);
         }
 
         private void SetLength(float value)
@@ -501,10 +536,8 @@ namespace Poly_Ling.Player
             if (wa == null) return;
 
             // 下限のクランプは WorkAxisContext.Length に集約されている。
-            wa.Length = value;
+            SendWorkAxis(length: value);
             _lengthField?.SetValueWithoutNotify(wa.Length);
-
-            OnValueChanged?.Invoke();
         }
 
         private void ApplySnapToHandler()
@@ -531,8 +564,7 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            wa.Origin = c.Value;
-            OnValueChanged?.Invoke();
+            SendWorkAxis(origin: c.Value);
             Refresh();
         }
 
@@ -540,8 +572,10 @@ namespace Poly_Ling.Player
         {
             var wa = GetWorkAxis?.Invoke();
             if (wa == null) return;
-            wa.AlignToWorld();
-            OnValueChanged?.Invoke();
+
+            // 結果はここで解決してから状態の全指定で送る（専用コマンドを増やさない）。
+            // AlignToWorld は回転だけをワールド軸へそろえる。
+            SendWorkAxis(euler: Vector3.zero);
             Refresh();
         }
 
@@ -549,8 +583,13 @@ namespace Poly_Ling.Player
         {
             var wa = GetWorkAxis?.Invoke();
             if (wa == null) return;
-            wa.Reset();
-            OnValueChanged?.Invoke();
+
+            // Reset の結果（WorkAxisContext.Reset）と同じ値を明示して送る。
+            SendWorkAxis(
+                origin:  Vector3.zero,
+                euler:   Vector3.zero,
+                length:  WorkAxisContext.DefaultLength,
+                visible: true);   // WorkAxisContext.Reset は _isVisible = true にする（:154）
             Refresh();
         }
 

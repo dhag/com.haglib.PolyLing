@@ -9,12 +9,29 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Ops;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerPipeAlignSubPanel
     {
         public Func<PipeAlignToolHandler> GetH;
+        public Func<ProjectContext>       GetView;
+        public Action<PanelCommand>       SendCommand;
+
+        /// <summary>コマンドに載せるモデル索引。</summary>
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 実行時点の選択オブジェクトをコマンドの対象として載せる。
+        /// 受け口は照合するだけで選択を書き換えない。
+        /// </summary>
+        private int[] SelectedMasterIndices()
+        {
+            var sel = GetView?.Invoke()?.CurrentModel?.SelectedDrawableMeshIndices;
+            return sel != null ? sel.ToArray() : System.Array.Empty<int>();
+        }
 
         // ================================================================
         // UI 要素
@@ -92,7 +109,20 @@ namespace Poly_Ling.Player
             // ── 実行 ───────────────────────────────────────────────────
             _executeBtn = new Button(() =>
             {
-                GetH()?.TriggerExecute();
+                var h = GetH();
+                if (h == null) return;
+
+                // 設定値はコマンドが正典。パネルの現在値を載せて送る。
+                SendCommand?.Invoke(new PipeAlignCommand(
+                    ModelIndex, SelectedMasterIndices(), h.Mode,
+                    direction:       h.Direction,
+                    edgeMode:        h.EdgeMode,
+                    ringVertexCount: h.RingVertexCount,
+                    capStart:        h.CapStart,
+                    capEnd:          h.CapEnd,
+                    pairText:        h.PairText,
+                    weightText:      h.WeightText,
+                    targetText:      h.TargetText));
                 Refresh();
             }) { text = "開始" };
             _executeBtn.style.height    = 30;

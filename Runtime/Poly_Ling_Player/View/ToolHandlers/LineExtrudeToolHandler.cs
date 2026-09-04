@@ -51,7 +51,13 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 検出済みループを押し出してモデルに追加する。
         /// </summary>
-        public void ExecuteExtrude(string meshName = "LineExtrude", bool addToCurrent = false)
+        /// <summary>
+        /// 検出済みループを押し出してモデルに追加する。
+        ///
+        /// private にしてある。パネルからの直呼びは塞ぎ、
+        /// LineExtrudeCommand 経由に統一するため。
+        /// </summary>
+        private void ExecuteExtrudeCore(string meshName = "LineExtrude", bool addToCurrent = false)
         {
             var loops = _tool.GetLoopsForExtrude();
             if (loops == null || loops.Count == 0)
@@ -115,6 +121,82 @@ namespace Poly_Ling.Player
             NotifyTopologyChanged?.Invoke();
             OnRepaint?.Invoke();
             Debug.Log($"[LineExtrudeToolHandler] Extruded {loops.Count} loops → {meshObject.VertexCount} verts, {meshObject.FaceCount} faces.");
+        }
+
+        /// <summary>
+        /// 線分押し出しコマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   ループ検出と生成は LineExtrudeTool / Profile2DExtrudeMeshGenerator が正典。
+        ///   ここは対象の照合と設定値の差し替えだけを行い、同じ経路を呼ぶ。
+        ///
+        /// 【Undo が付かない】
+        ///   ExecuteExtrudeCore は ctx.AddMeshContext で直接足しており、
+        ///   AddGeneratedMeshCommand を通していないため Undo に積まれない。
+        ///   これはコマンド化で持ち込んだものではなく元からの挙動なので、ここでは変えない。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.LineExtrudeCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            // 実行時と同じコンテキストでループを検出する。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            AnalyzeLoops();
+            if (DetectedLoopCount <= 0)
+            {
+                reason = SelectedLineCount > 0
+                    ? "選択線分から閉じたループを検出できませんでした"
+                    : "線分を選択してください";
+                return false;
+            }
+
+            float   savedThickness = Thickness;
+            float   savedScale     = Scale;
+            Vector2 savedOffset    = Offset;
+            bool    savedFlipY     = FlipY;
+            int     savedSegF      = SegmentsFront;
+            int     savedSegB      = SegmentsBack;
+            float   savedEdgeF     = EdgeSizeFront;
+            float   savedEdgeB     = EdgeSizeBack;
+            bool    savedInward    = EdgeInward;
+            try
+            {
+                Thickness     = cmd.Thickness;
+                Scale         = cmd.Scale;
+                Offset        = cmd.Offset;
+                FlipY         = cmd.FlipY;
+                SegmentsFront = cmd.SegmentsFront;
+                SegmentsBack  = cmd.SegmentsBack;
+                EdgeSizeFront = cmd.EdgeSizeFront;
+                EdgeSizeBack  = cmd.EdgeSizeBack;
+                EdgeInward    = cmd.EdgeInward;
+
+                ExecuteExtrudeCore(cmd.MeshName, cmd.AddToCurrent);
+            }
+            finally
+            {
+                Thickness     = savedThickness;
+                Scale         = savedScale;
+                Offset        = savedOffset;
+                FlipY         = savedFlipY;
+                SegmentsFront = savedSegF;
+                SegmentsBack  = savedSegB;
+                EdgeSizeFront = savedEdgeF;
+                EdgeSizeBack  = savedEdgeB;
+                EdgeInward    = savedInward;
+            }
+
+            return true;
         }
 
         public int  SelectedLineCount => _tool.GetSelectedLineCount();
