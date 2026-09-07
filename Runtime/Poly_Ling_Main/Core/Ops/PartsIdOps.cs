@@ -24,8 +24,30 @@ namespace Poly_Ling.Ops
     public static class PartsIdOps
     {
         /// <summary>
+        /// ボーンウェイトを 1 つも持たない頂点へ付ける予約値。
+        /// 採番するのは PartsIdByBoneWeightOps で、ここは値の定義だけを持つ。
+        ///
+        /// 【なぜ int.MaxValue か】
+        ///   -1 は使えない。MQO の頂点識別子は COL(PartsID, SubID, ID) で往復するが、
+        ///   書き出しは (uint)partsId（VertexIdHelper.cs:414）、読み戻しは
+        ///   「負なら 0」（VertexIdHelper.cs:374）なので -1 は 0 に潰れる。
+        ///   PartsId = 0 は「未設定」の定義（MeshObject.cs:97-100）でもあるため、
+        ///   ウェイト無しと未設定が見分けられなくなる。
+        ///   非負の int.MaxValue なら clamp されず往復で保たれる。
+        ///
+        /// 【この値を通し番号から外す】
+        ///   MaxPartsId / AssignNewVertices はこの値を最大値の計算から除く。
+        ///   除かないと NextPartsId が int.MaxValue + 1 で int.MinValue へ回り込み
+        ///   （C# の既定は unchecked なので無言で回る）、
+        ///   PolyLingPlayerViewerCore.cs:8760-8761 と ObjectArrayInserter.cs:179 が
+        ///   追加物へ負の部品IDを配る。
+        /// </summary>
+        public const int UnweightedPartsId = int.MaxValue;
+
+        /// <summary>
         /// メッシュ内の部品IDの最大値。頂点が 1 つも無ければ -1 を返す。
         /// 「次に使える部品ID」は この値 + 1。
+        /// UnweightedPartsId は通し番号ではないので数えない。
         /// </summary>
         public static int MaxPartsId(MeshObject mo)
         {
@@ -35,6 +57,7 @@ namespace Poly_Ling.Ops
             foreach (var v in mo.Vertices)
             {
                 if (v == null) continue;
+                if (v.PartsId == UnweightedPartsId) continue;
                 if (v.PartsId > max) max = v.PartsId;
             }
             return max;
@@ -125,11 +148,13 @@ namespace Poly_Ling.Ops
             if (fromIndex < 0 || fromIndex >= mo.Vertices.Count) return;
 
             // 既存側の最大値だけを見る（新規側はこれから書くので数えない）。
+            // MaxPartsId と同じ理由で UnweightedPartsId は数えない。
             int max = -1;
             for (int i = 0; i < fromIndex; i++)
             {
                 var v = mo.Vertices[i];
                 if (v == null) continue;
+                if (v.PartsId == UnweightedPartsId) continue;
                 if (v.PartsId > max) max = v.PartsId;
             }
 

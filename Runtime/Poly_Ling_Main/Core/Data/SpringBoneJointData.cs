@@ -25,6 +25,13 @@
 //
 // 【座標系】
 //   GravityDir は working空間の生値（Unity 左手系）を保持する。
+//   LimitRotation も working空間の生値。系変換は VRM 等 I/O 境界で行う。
+//
+// 【角度制限（VRMC_springBone_limit）】
+//   UniVRM 0.129.4 以降の VRM10SpringBoneJoint が持つ
+//   m_anglelimitType / m_limitSpaceOffset / m_pitch / m_yaw に対応する。
+//   拡張 VRMC_springBone_limit として出力される。
+//   AngleLimitType == None のときは残りの 3 つを読まない（拡張も出力しない）。
 //
 // 【依存】
 //   UnityEngine.Vector3 のみ。#if UNITY_EDITOR を含まない。
@@ -36,6 +43,22 @@ using UnityEngine;
 
 namespace Poly_Ling.Data
 {
+    /// <summary>
+    /// 揺れの向きを制限する形（VRMC_springBone_limit）。
+    /// 値は VRM の limit の種別に 1 対 1 で対応する。
+    /// </summary>
+    public enum SpringBoneAngleLimitType
+    {
+        /// <summary>制限しない（拡張を出力しない）。</summary>
+        None = 0,
+        /// <summary>円錐。Pitch だけを使う。</summary>
+        Cone = 1,
+        /// <summary>蝶番。Pitch だけを使う。</summary>
+        Hinge = 2,
+        /// <summary>球面。Pitch と Yaw の両方を使う。</summary>
+        Spherical = 3,
+    }
+
     /// <summary>
     /// スプリングボーン・ジョイントデータ（純POCO）。
     /// MeshObject.SpringBoneJoint として付帯し、非nullが揺れジョイントを表す。
@@ -58,6 +81,30 @@ namespace Poly_Ling.Data
         /// <summary>減衰（1.0=完全停止。VRM dragForce）。</summary>
         public float DragForce { get; set; } = 0.4f;
 
+        // ------------------------------------------------------------
+        // 角度制限（VRMC_springBone_limit）
+        // ------------------------------------------------------------
+
+        /// <summary>揺れの向きを制限する形。None なら制限しない。</summary>
+        public SpringBoneAngleLimitType AngleLimitType { get; set; } = SpringBoneAngleLimitType.None;
+
+        /// <summary>
+        /// 制限の向き（VRM limit の rotation）。既定の向きからの回転。
+        /// 既定は無回転で、そのボーンの初期姿勢の向きを軸にする。
+        /// </summary>
+        public Quaternion LimitRotation { get; set; } = Quaternion.identity;
+
+        /// <summary>
+        /// 開き（ラジアン）。Cone / Hinge は開き角、Spherical は phi。
+        /// 既定は π（＝制限なしと同じ広さ）。
+        /// </summary>
+        public float Pitch { get; set; } = Mathf.PI;
+
+        /// <summary>
+        /// もう一方の開き（ラジアン）。Spherical のときだけ使う（theta）。
+        /// </summary>
+        public float Yaw { get; set; } = 0f;
+
         /// <summary>ディープコピー。</summary>
         public SpringBoneJointData Clone()
         {
@@ -67,7 +114,11 @@ namespace Poly_Ling.Data
                 StiffnessForce = this.StiffnessForce,
                 GravityPower = this.GravityPower,
                 GravityDir = this.GravityDir,
-                DragForce = this.DragForce
+                DragForce = this.DragForce,
+                AngleLimitType = this.AngleLimitType,
+                LimitRotation = this.LimitRotation,
+                Pitch = this.Pitch,
+                Yaw = this.Yaw
             };
         }
     }

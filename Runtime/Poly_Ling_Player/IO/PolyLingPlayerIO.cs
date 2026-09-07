@@ -227,6 +227,7 @@ namespace Poly_Ling.Player
                 FilePath           = filePath,
                 SourceDocument     = result.Document,
                 BoneWorldPositions = result.BoneWorldPositions,
+                PmxModelInfo       = result.ModelInfo,
             };
 
             // マテリアルを移送（テクスチャ含む）

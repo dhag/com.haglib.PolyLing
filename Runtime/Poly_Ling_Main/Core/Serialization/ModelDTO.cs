@@ -96,6 +96,16 @@ namespace Poly_Ling.Serialization
         public List<MeshSelectionSetDTO> meshSelectionSets = new List<MeshSelectionSetDTO>();
 
         // ================================================================
+        // オブジェクトグループ（入力ソース＋生成パラメータ＋出力先）
+        // ================================================================
+
+        /// <summary>
+        /// オブジェクトグループ一覧。
+        /// 参照は ObjectId で持つので、メッシュの並べ替えでは付け替えが要らない。
+        /// </summary>
+        public List<ObjectGroupDTO> objectGroups = new List<ObjectGroupDTO>();
+
+        // ================================================================
         // MirrorPair（ミラーペア情報）
         // ================================================================
 
@@ -125,6 +135,30 @@ namespace Poly_Ling.Serialization
 
         /// <summary>Tポーズ変換前バックアップ（null=バックアップ無し）。</summary>
         public TPoseBackupDTO tPoseBackup;
+
+        // ================================================================
+        // VRM 1.0 モデルレベル設定（CSV/JSON 対称：規約4）
+        // ================================================================
+
+        /// <summary>VRM メタ情報（null=未設定）。</summary>
+        public VrmMetaDTO vrmMeta;
+
+        /// <summary>VRM 視線設定（null=未設定）。</summary>
+        public VrmLookAtDTO vrmLookAt;
+
+        // ================================================================
+        // Avatar リターゲット設定（CSV/JSON 対称：規約4）
+        // ================================================================
+
+        /// <summary>Avatar リターゲット設定8項目（null=未設定）。</summary>
+        public AvatarRetargetDTO avatarRetarget;
+
+        // ================================================================
+        // PMX / MQO の座標規約（CSV/JSON 対称：規約4）
+        // ================================================================
+
+        /// <summary>PMX / MQO の座標規約（null=未設定）。</summary>
+        public CoordinateConventionDTO coordinateConvention;
 
         // === ファクトリメソッド ===
 
@@ -428,6 +462,12 @@ namespace Poly_Ling.Serialization
 
         /// <summary>スプリングボーン・チェーンルート（null=非ルート）。</summary>
         public SpringBoneChainDataDTO springBoneChainRoot;
+
+        /// <summary>
+        /// 一人称カメラでの扱い（VrmFirstPersonType の値。0=Auto）。
+        /// 旧データはこの欄を持たず 0 になり、従来どおり VRM の既定に任せる。
+        /// </summary>
+        public int vrmFirstPersonType = 0;
     }
 
     // ================================================================
@@ -1394,6 +1434,13 @@ namespace Poly_Ling.Serialization
         public float gravityPower = 0f;
         public float[] gravityDir;                  // [x,y,z]
         public float dragForce = 0.4f;
+
+        // 角度制限（VRMC_springBone_limit）。後から足したので、
+        // 旧 JSON には無い。既定値は「制限なし・無回転・π・0」。
+        public int angleLimitType = 0;              // SpringBoneAngleLimitType
+        public float[] limitRotation;               // [x,y,z,w]
+        public float pitch = 3.14159265f;
+        public float yaw = 0f;
     }
 
     /// <summary>スプリングボーン・チェーンルートDTO。</summary>
@@ -1403,5 +1450,95 @@ namespace Poly_Ling.Serialization
         public string name = "";
         public List<int> colliderGroupIndices = new List<int>();  // 衝突group index
         public string centerBoneName = "";          // name主（空=World）
+    }
+
+    // ================================================================
+    // VRM 1.0 モデルレベル設定用DTO（フィールド型・[Serializable]）
+    //   POCO（Poly_Ling.Data の VrmMetaData / VrmLookAtData）は
+    //   プロパティ主体のため、JsonUtility互換のフィールド型DTOを別途用意する。
+    //   enum は int で保持する（並びは POCO の定義順）。
+    // ================================================================
+
+    /// <summary>VRM メタ情報DTO。</summary>
+    [Serializable]
+    public class VrmMetaDTO
+    {
+        public string name = "";
+        public string version = "";
+        public List<string> authors = new List<string>();
+        public string copyrightInformation = "";
+        public string contactInformation = "";
+        public List<string> references = new List<string>();
+        public string thirdPartyLicenses = "";
+        public string thumbnailPath = "";
+
+        public int  avatarPermission = 0;           // VrmAvatarPermission
+        public bool violentUsage = false;
+        public bool sexualUsage = false;
+        public int  commercialUsage = 0;            // VrmCommercialUsage
+        public bool politicalOrReligiousUsage = false;
+        public bool antisocialOrHateUsage = false;
+
+        public int  creditNotation = 0;             // VrmCreditNotation
+        public bool redistribution = false;
+        public int  modification = 0;               // VrmModification
+        public string otherLicenseUrl = "";
+    }
+
+    /// <summary>視線の対応づけ 1 本ぶんのDTO。</summary>
+    [Serializable]
+    public class VrmLookAtRangeMapDTO
+    {
+        public float inputMaxDegrees = 90f;
+        public float outputScale = 10f;
+    }
+
+    /// <summary>VRM 視線設定DTO。</summary>
+    [Serializable]
+    public class VrmLookAtDTO
+    {
+        public float[] offsetFromHead;              // [x,y,z]（Unity 左手系のまま）
+        public int lookAtType = 0;                  // VrmLookAtType
+        public VrmLookAtRangeMapDTO horizontalInner;
+        public VrmLookAtRangeMapDTO horizontalOuter;
+        public VrmLookAtRangeMapDTO verticalDown;
+        public VrmLookAtRangeMapDTO verticalUp;
+    }
+
+    // ================================================================
+    // Avatar リターゲット設定用DTO（フィールド型・[Serializable]）
+    //   既定値は Unity の既定と同じ。旧データで欄が無いときは
+    //   ModelDTO.avatarRetarget ごと null になり、未設定として扱われる。
+    // ================================================================
+
+    /// <summary>Avatar リターゲット設定DTO。</summary>
+    [Serializable]
+    public class AvatarRetargetDTO
+    {
+        public float upperArmTwist = 0.5f;
+        public float lowerArmTwist = 0.5f;
+        public float upperLegTwist = 0.5f;
+        public float lowerLegTwist = 0.5f;
+        public float armStretch = 0.05f;
+        public float legStretch = 0.05f;
+        public float feetSpacing = 0f;
+        public bool  hasTranslationDoF = false;
+    }
+
+    // ================================================================
+    // PMX / MQO 座標規約用DTO（フィールド型・[Serializable]）
+    //   既定値は CoordinateConventionData と同じ。
+    // ================================================================
+
+    /// <summary>PMX / MQO の座標規約DTO。</summary>
+    [Serializable]
+    public class CoordinateConventionDTO
+    {
+        public float pmxUnityRatio = 0.1f;
+        public bool  pmxFlipX = true;
+        public bool  pmxFlipZ = true;
+        public float mqoUnityRatio = 0.01f;
+        public bool  mqoFlipX = true;
+        public bool  mqoFlipZ = false;
     }
 }

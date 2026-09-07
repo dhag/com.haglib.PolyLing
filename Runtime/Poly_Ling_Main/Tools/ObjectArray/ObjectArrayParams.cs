@@ -3,6 +3,9 @@
 // Runtime/Poly_Ling_Main/Tools/ObjectArray/ に配置
 
 using UnityEngine;
+// PLParam を付けるため。CreateObjectArrayCommand の入れ子として
+// スキーマへ出すのに要る（PanelCommandNested.cs の走査規則を参照）。
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Tools.ObjectArray
 {
@@ -23,27 +26,39 @@ namespace Poly_Ling.Tools.ObjectArray
     public class ObjectArrayParams
     {
         /// <summary>複製する組の数。1 なら元と同じ配置に歪みだけ掛かった1組を作る。</summary>
+        [PLParam(TextKey = "ObjectArrayCount",
+                 Description = "複製する組の数。1 なら元と同じ配置に歪みだけ掛かった 1 組", Min = 1)]
         public int Count = 2;
 
         /// <summary>
         /// 複製 i の位相 = PhaseStepDeg × i。
         /// デフォーマが IDeformerPhase を実装していないときは無視される。
         /// </summary>
+        [PLParam(TextKey = "ObjectArrayPhaseStep",
+                 Description = "複製 i の位相 = この値 × i（度）。位相を持たない歪みでは無視される")]
         public float PhaseStepDeg = 90f;
 
         /// <summary>複製 i の位置ずらし = OffsetStep × i。作業軸ローカル。</summary>
+        [PLParam(TextKey = "ObjectArrayOffsetStep",
+                 Description = "複製 i の位置ずらし = この値 × i。作業軸ローカル")]
         public Vector3 OffsetStep = Vector3.zero;
 
         /// <summary>置き場所。</summary>
+        [PLParam(TextKey = "ObjectArrayOutputMode",
+                 Description = "置き場所。AsChild = 出力先の子へ別オブジェクトで / Inside = 出力先の中身へ統合")]
         public ObjectArrayOutputMode OutputMode = ObjectArrayOutputMode.AsChild;
 
         /// <summary>出力先オブジェクトの MasterIndex。-1 でルート。</summary>
+        [PLParam(TextKey = "ObjectArrayTargetMaster",
+                 Description = "出力先オブジェクトの masterIndex。-1 でルート")]
         public int TargetMasterIndex = -1;
 
         /// <summary>
         /// 生成物の名前。空なら元オブジェクト名を使う。
         /// どちらの場合も末尾に組番号が付き、最終的な一意化は呼び出し側が行う。
         /// </summary>
+        [PLParam(TextKey = "ObjectArrayNameBase",
+                 Description = "生成物の名前の素。空なら元オブジェクト名。末尾に組番号が付く")]
         public string NameBase = "";
 
         /// <summary>
@@ -51,9 +66,13 @@ namespace Poly_Ling.Tools.ObjectArray
         /// 複製元が1本のときも包む。
         /// 「中に生成」は全部を1メッシュへ統合するので親に意味が無く、無視される。
         /// </summary>
+        [PLParam(TextKey = "ObjectArrayGroupEachCopy",
+                 Description = "組ごとに空の親を作って子にまとめる。Inside では無視される。既定は true")]
         public bool GroupEachCopy = true;
 
         /// <summary>空の親の名前の素。末尾に組番号が付く。</summary>
+        [PLParam(TextKey = "ObjectArrayGroupNameBase",
+                 Description = "空の親の名前の素。末尾に組番号が付く")]
         public string GroupNameBase = "Group";
 
         /// <summary>
@@ -62,6 +81,8 @@ namespace Poly_Ling.Tools.ObjectArray
         /// それ以外の位置は上端からの相対で決まる。
         /// 実装は「上端での変位を全頂点から引く」で、X / Y / Z の全成分を引く。
         /// </summary>
+        [PLParam(TextKey = "ObjectArrayFixOrigin",
+                 Description = "上端（作業軸ローカル +Y の最大側）を固定する。既定は true")]
         public bool FixOrigin = true;
 
         public ObjectArrayParams Clone()

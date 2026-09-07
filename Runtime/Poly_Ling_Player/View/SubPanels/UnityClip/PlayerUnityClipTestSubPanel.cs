@@ -24,6 +24,7 @@ using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.UnityClip;
+using Poly_Ling.Vrm;
 
 namespace Poly_Ling.Player
 {
@@ -33,6 +34,12 @@ namespace Poly_Ling.Player
         public Func<ModelContext>  GetModel;
         public Func<ToolContext>   GetToolContext;
         public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
+
+        /// <summary>コマンドの発行口。VRMA 書き出しで使う。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        /// <summary>現在のモデル索引。</summary>
+        public Func<int> GetModelIndex;
 
         /// <summary>フレーム適用後に呼ぶ。GPU メッシュ再スキン（UpdateTransform）を core 側で起こすため。</summary>
         public Action OnFrameApplied;
@@ -63,8 +70,18 @@ namespace Poly_Ling.Player
         private Foldout       _boneListFoldout;
         private Label         _statusLabel;
 
+        // VRMA 書き出し
+        private TextField  _vrmaPathField;
+        private FloatField _vrmaFpsField;
+        private FloatField _vrmaScaleField;
+        private FloatField _vrmaStartField;
+        private FloatField _vrmaEndField;
+        private Button     _btnVrmaExport;
+        private Label      _vrmaLabel;
+
         private const string ClipPathKey  = "UnityClip.Clip.Path";
         private const string LimitPathKey = "UnityClip.Limit.Path";
+        private const string VrmaPathKey  = "UnityClip.Vrma.Path";
 
         private ModelContext Model => GetModel?.Invoke();
         private float FrameRate => _clip != null && _clip.frameRate > 0f ? _clip.frameRate : 30f;
@@ -224,10 +241,69 @@ namespace Poly_Ling.Player
             scaleRow.Add(scaleLbl); scaleRow.Add(_scaleField);
             root.Add(scaleRow);
 
+            BuildVrmaSection(root);
+
             _boneListFoldout = new Foldout { text = "Bone Tracks (0)", value = false };
             _boneListContainer = new VisualElement();
             _boneListFoldout.Add(_boneListContainer);
             root.Add(_boneListFoldout);
+        }
+
+        // ── VRM アニメーション書き出し ───────────────────────
+        //   出るのは Hips の平行移動と Humanoid 骨の回転だけ。
+        //   二次骨（髪・スカート等）と表情は VRMA には載らない。
+        private void BuildVrmaSection(VisualElement root)
+        {
+            root.Add(SecLabel("VRM アニメーション書き出し（.vrma）"));
+
+            _vrmaPathField = new TextField();
+            _vrmaPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VrmaPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_vrmaPathField, OnBrowseVrma));
+            _vrmaPathField.SetValueWithoutNotify(RecentPaths.Get(VrmaPathKey));
+
+            var row1 = new VisualElement();
+            row1.style.flexDirection = FlexDirection.Row;
+            row1.style.marginBottom  = 2;
+            row1.Add(VrmaNumField("FPS", out _vrmaFpsField, 30f));
+            row1.Add(VrmaNumField("Scale", out _vrmaScaleField, 1f));
+            root.Add(row1);
+
+            var row2 = new VisualElement();
+            row2.style.flexDirection = FlexDirection.Row;
+            row2.style.marginBottom  = 3;
+            row2.Add(VrmaNumField("Start", out _vrmaStartField, 0f));
+            row2.Add(VrmaNumField("End", out _vrmaEndField, 0f));
+            root.Add(row2);
+
+            _btnVrmaExport = new Button(OnExportVrma) { text = "VRMA 書き出し" };
+            _btnVrmaExport.style.marginBottom = 2;
+            root.Add(_btnVrmaExport);
+
+            _vrmaLabel = new Label();
+            _vrmaLabel.style.fontSize     = 10;
+            _vrmaLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _vrmaLabel.style.marginBottom = 4;
+            root.Add(_vrmaLabel);
+        }
+
+        private static VisualElement VrmaNumField(string label, out FloatField field, float initial)
+        {
+            var box = new VisualElement();
+            box.style.flexDirection = FlexDirection.Row;
+            box.style.flexGrow      = 1;
+            box.style.marginRight   = 4;
+
+            var lbl = new Label(label);
+            lbl.style.width          = 44;
+            lbl.style.fontSize       = 10;
+            lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+
+            field = new FloatField { value = initial };
+            field.style.flexGrow = 1;
+
+            box.Add(lbl);
+            box.Add(field);
+            return box;
         }
 
         // ================================================================
@@ -300,9 +376,33 @@ namespace Poly_Ling.Player
                 _clipMatchLabel.style.whiteSpace = WhiteSpace.Normal;
             }
 
+            RefreshVrmaSection(model);
+
             UpdateSlider();
             UpdateTimeLabel();
             RefreshBoneList();
+        }
+
+        // VRMA 書き出しの可否と理由を出す。
+        //   実装未登録（VRM パッケージ無し）と Humanoid 未割当を区別する。
+        private void RefreshVrmaSection(ModelContext model)
+        {
+            if (_btnVrmaExport == null || _vrmaLabel == null) return;
+
+            if (!PLVrmAnimationBridge.I.IsAvailable)
+            {
+                _btnVrmaExport.SetEnabled(false);
+                _vrmaLabel.text = "VRM パッケージ (com.vrmc.vrm) が無いため書き出せません";
+                return;
+            }
+
+            int mapped = model?.HumanoidMapping != null ? model.HumanoidMapping.Count : 0;
+            bool hasModel = model != null && mapped > 0;
+
+            _btnVrmaExport.SetEnabled(hasModel && SendCommand != null);
+            _vrmaLabel.text = hasModel
+                ? $"Humanoid {mapped} bones。Hips 位置と Humanoid 骨の回転だけを出します"
+                : "Humanoid 割り当てがありません";
         }
 
         private void RefreshBoneList()
@@ -417,6 +517,76 @@ namespace Poly_Ling.Player
 
             SetStatus("マッスル可動域をクリアしました（既定値を使用）");
             RefreshAll();
+        }
+
+        // ── VRMA 書き出し ─────────────────────────────────
+
+        private void OnBrowseVrma()
+        {
+            string path = AskVrmaSavePath();
+            if (string.IsNullOrEmpty(path)) return;
+            _vrmaPathField.value = path;
+        }
+
+        // 書き出しは必ず保存ダイアログを通す。パス欄の値は初期値としてだけ使う
+        //（PlayerMeshSelectionSetSubPanel の書き出しと同じ規則）。
+        private string AskVrmaSavePath()
+        {
+            string cur     = _vrmaPathField?.value?.Trim() ?? string.Empty;
+            string defName = (_clip != null && !string.IsNullOrEmpty(_clip.name)) ? _clip.name : "motion";
+            return PlayerIoUiKit.AskSavePath(
+                "VRM アニメーションの書き出し", VrmaPathKey, cur, defName, "vrma");
+        }
+
+        private void OnExportVrma()
+        {
+            if (Model == null)      { SetStatus("モデルがありません"); return; }
+            if (_clip == null || string.IsNullOrEmpty(_filePath))
+                                    { SetStatus("クリップを読み込んでください"); return; }
+            if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
+            if (!PLVrmAnimationBridge.I.IsAvailable)
+                                    { SetStatus("VRM パッケージが無いため書き出せません"); return; }
+
+            string outPath = AskVrmaSavePath();
+            if (string.IsNullOrEmpty(outPath)) return;
+            _vrmaPathField.value = outPath;
+
+            // クリップと CSV はこのパネルのダイアログで利用者が選んだもの。
+            // PLSandbox の 1 回許可は解決した時点で消える（PLSandbox.cs:224-226）ので、
+            // コマンドを送る直前に付け直す。
+            string limitPath = _limitPathField?.value?.Trim() ?? string.Empty;
+            PLSandbox.AllowOnceFromDialog(_filePath);
+            if (!string.IsNullOrEmpty(limitPath)) PLSandbox.AllowOnceFromDialog(limitPath);
+
+            var since = DateTime.Now.AddSeconds(-2);
+
+            SendCommand(new Poly_Ling.Data.ExportVrmAnimationCommand(
+                GetModelIndex?.Invoke() ?? 0,
+                outPath,
+                _filePath,
+                limitPath,
+                _vrmaFpsField?.value   ?? 30f,
+                _vrmaStartField?.value ?? 0f,
+                _vrmaEndField?.value   ?? 0f,
+                _vrmaScaleField?.value ?? 1f));
+
+            // Dispatch は同期なので、書き出し結果をここで確かめる。
+            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
+            SetStatus(ok
+                ? $"VRMA を書き出しました: {Path.GetFileName(outPath)}"
+                : "VRMA 書き出しに失敗しました（ログを参照）");
+            RefreshAll();
+        }
+
+        /// <summary>
+        /// 表示中のフレームをモデルへ引き直す。
+        /// VRMA 書き出しがポーズ層を戻したあとに受け口から呼ばれる。
+        /// 再描画は呼び出し側が行う。
+        /// </summary>
+        public void ReapplyCurrentFrame()
+        {
+            if (_clip == null || Model == null || _applier == null) return;
+            _applier.ApplyFrame(Model, _clip, _currentTime);
         }
 
         private void Clear()

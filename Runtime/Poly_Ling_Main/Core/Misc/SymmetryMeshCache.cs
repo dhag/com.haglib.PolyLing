@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Symmetry;
+using Poly_Ling.MeshBridge;
 
 namespace Poly_Ling.Symmetry
 {
@@ -270,31 +271,25 @@ namespace Poly_Ling.Symmetry
             // キー: (頂点インデックス, UVサブインデックス) → Unity頂点インデックス
             var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
 
-            // 頂点を展開（頂点順→UV順）
-            for (int vIdx = 0; vIdx < meshObject.VertexCount; vIdx++)
+            // 頂点を展開。展開順は MeshExpansion が唯一の実装（手書きしない）。
+            MeshExpansion.Enumerate(meshObject, (vIdx, uvIdx, expIdx) =>
             {
                 var vertex = meshObject.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                vertexMapping[(vIdx, uvIdx)] = expIdx;
 
-                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                {
-                    int unityIdx = unityVerts.Count;
-                    vertexMapping[(vIdx, uvIdx)] = unityIdx;
+                // 位置（ミラー変換）
+                unityVerts.Add(mirrorMatrix.MultiplyPoint3x4(vertex.Position));
 
-                    // 位置（ミラー変換）
-                    unityVerts.Add(mirrorMatrix.MultiplyPoint3x4(vertex.Position));
+                // UV
+                if (uvIdx < vertex.UVs.Count)
+                    unityUVs.Add(vertex.UVs[uvIdx]);
+                else
+                    unityUVs.Add(Vector2.zero);
 
-                    // UV
-                    if (uvIdx < vertex.UVs.Count)
-                        unityUVs.Add(vertex.UVs[uvIdx]);
-                    else
-                        unityUVs.Add(Vector2.zero);
-
-                    // 法線（ミラー変換）
-                    Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
-                    unityNormals.Add(MirrorNormal(normal, axis));
-                }
-            }
+                // 法線（ミラー変換）
+                Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
+                unityNormals.Add(MirrorNormal(normal, axis));
+            });
 
             // 面データを収集（3頂点以上の面のみ）
             var facesByMaterial = new Dictionary<int, List<Face>>();
@@ -437,21 +432,12 @@ namespace Poly_Ling.Symmetry
         {
             var expanded = new List<Vector3>();
 
-            // RebuildMirrorMeshと同じ頂点展開ロジック（頂点順→UV順）
-            for (int vIdx = 0; vIdx < meshObject.VertexCount; vIdx++)
+            // RebuildMirrorMesh と同じ展開順。実装は MeshExpansion に一本化。
+            MeshExpansion.Enumerate(meshObject, (vIdx, uvIdx, expIdx) =>
             {
-                var vertex = meshObject.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
-
-                // GPU座標を取得
-                Vector3 pos = (vIdx < positions.Length) ? positions[vIdx] : Vector3.zero;
-
-                // UVの数だけ同じ座標を追加
-                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                {
-                    expanded.Add(pos);
-                }
-            }
+                // GPU座標を取得。UV スロットの数だけ同じ座標を並べる。
+                expanded.Add((vIdx < positions.Length) ? positions[vIdx] : Vector3.zero);
+            });
 
 
             UnityEngine.Debug.Log($"[MirrorCache] ExpandPositions: inputVerts={meshObject.VertexCount}, outputVerts={expanded.Count}");

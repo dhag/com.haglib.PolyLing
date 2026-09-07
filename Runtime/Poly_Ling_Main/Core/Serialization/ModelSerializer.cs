@@ -432,6 +432,12 @@ namespace Poly_Ling.Serialization
             SaveMeshSelectionSetsToDTO(model, modelDTO);
 
             // ================================================================
+            // ObjectGroups
+            // ================================================================
+
+            SaveObjectGroupsToDTO(model, modelDTO);
+
+            // ================================================================
             // MirrorPairs
             // ================================================================
 
@@ -458,6 +464,25 @@ namespace Poly_Ling.Serialization
             // ================================================================
 
             modelDTO.tPoseBackup = ToTPoseBackupDTO(model.TPoseBackup);
+
+            // ================================================================
+            // VRM 1.0 モデルレベル設定（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            modelDTO.vrmMeta   = ToVrmMetaDTO(model.VrmMeta);
+            modelDTO.vrmLookAt = ToVrmLookAtDTO(model.VrmLookAt);
+
+            // ================================================================
+            // Avatar リターゲット設定（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            modelDTO.avatarRetarget = ToAvatarRetargetDTO(model.AvatarRetarget);
+
+            // ================================================================
+            // PMX / MQO の座標規約（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            modelDTO.coordinateConvention = ToCoordinateConventionDTO(model.CoordinateConvention);
 
             return modelDTO;
         }
@@ -617,6 +642,12 @@ namespace Poly_Ling.Serialization
             LoadMeshSelectionSetsFromDTO(modelDTO, model);
 
             // ================================================================
+            // ObjectGroups復元
+            // ================================================================
+
+            LoadObjectGroupsFromDTO(modelDTO, model);
+
+            // ================================================================
             // MirrorPairs復元
             // ================================================================
 
@@ -644,6 +675,25 @@ namespace Poly_Ling.Serialization
 
             if (modelDTO.tPoseBackup != null)
                 model.TPoseBackup = FromTPoseBackupDTO(modelDTO.tPoseBackup);
+
+            // ================================================================
+            // VRM 1.0 モデルレベル設定復元（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            model.VrmMeta   = FromVrmMetaDTO(modelDTO.vrmMeta);
+            model.VrmLookAt = FromVrmLookAtDTO(modelDTO.vrmLookAt);
+
+            // ================================================================
+            // Avatar リターゲット設定復元（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            model.AvatarRetarget = FromAvatarRetargetDTO(modelDTO.avatarRetarget);
+
+            // ================================================================
+            // PMX / MQO の座標規約復元（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            model.CoordinateConvention = FromCoordinateConventionDTO(modelDTO.coordinateConvention);
 
             // ================================================================
             // WorkAxis復元（作業用ローカル軸。規約4：CSV/JSON 対称）
@@ -728,6 +778,10 @@ namespace Poly_Ling.Serialization
 
                 // Humanoid マッスル可動域（per-bone・#5d-1）
                 SaveHumanLimitDataToDTO(meshContext, contextData);
+
+                // 一人称カメラでの扱い（per-mesh）
+                contextData.vrmFirstPersonType =
+                    (int)(meshContext.MeshObject?.VrmFirstPerson ?? VrmFirstPersonType.Auto);
             }
 
             return contextData;
@@ -814,6 +868,11 @@ namespace Poly_Ling.Serialization
 
             // Humanoid マッスル可動域（per-bone・#5d-1）
             LoadHumanLimitDataFromDTO(meshDTO, meshContext);
+
+            // 一人称カメラでの扱い（per-mesh）。欄を持たない旧データは 0=Auto。
+            if (meshContext.MeshObject != null)
+                meshContext.MeshObject.VrmFirstPerson =
+                    ToVrmFirstPersonType(meshDTO.vrmFirstPersonType);
 
             return meshContext;
         }
@@ -1429,6 +1488,60 @@ namespace Poly_Ling.Serialization
         }
 
         // ================================================================
+        // ObjectGroups シリアライズ
+        //
+        // 【索引の付け替えが要らない】
+        //   ObjectGroup の参照は ObjectId で、保存往復でも値が変わらない。
+        //   MorphExpressions（索引参照）のように読み込み後の補正が要らない。
+        //
+        // 【引けない参照は残す】
+        //   参照先が保存に含まれていなくてもグループは捨てない。
+        //   部分書き出し／部分読み込みで一時的に引けないことがあるため。
+        //   参照切れは ModelInvariantChecker が報告し、片づけは
+        //   ObjectGroupOps.PurgeMissing（明示操作）で行う。
+        // ================================================================
+
+        /// <summary>
+        /// ModelContextのオブジェクトグループをModelDTOに保存
+        /// </summary>
+        public static void SaveObjectGroupsToDTO(ModelContext model, ModelDTO modelDTO)
+        {
+            if (model == null || modelDTO == null) return;
+
+            modelDTO.objectGroups = new List<ObjectGroupDTO>();
+
+            if (model.ObjectGroups != null)
+            {
+                foreach (var g in model.ObjectGroups)
+                {
+                    var dto = ObjectGroupDTO.FromObjectGroup(g);
+                    if (dto != null)
+                        modelDTO.objectGroups.Add(dto);
+                }
+            }
+        }
+
+        /// <summary>
+        /// ModelDTOのオブジェクトグループをModelContextに復元
+        /// </summary>
+        public static void LoadObjectGroupsFromDTO(ModelDTO modelDTO, ModelContext model)
+        {
+            if (modelDTO == null || model == null) return;
+
+            model.ObjectGroups = new List<Data.ObjectGroup>();
+
+            if (modelDTO.objectGroups != null)
+            {
+                foreach (var dto in modelDTO.objectGroups)
+                {
+                    var g = dto?.ToObjectGroup();
+                    if (g != null)
+                        model.ObjectGroups.Add(g);
+                }
+            }
+        }
+
+        // ================================================================
         // BonePoseData シリアライズ（Phase BonePose追加）
         // ================================================================
 
@@ -1523,6 +1636,238 @@ namespace Poly_Ling.Serialization
                 HasLimit = d.hasLimit,
                 LimitMin = SerVec3(d.limitMin),
                 LimitMax = SerVec3(d.limitMax)
+            };
+        }
+
+        // ================================================================
+        // VRM 1.0 設定 POCO⇔DTO 変換
+        //   enum は int で持つ。定義外の値が来ても落とさず既定へ丸める
+        //   （手で CSV/JSON を書き換えたときに読めなくなるのを避ける）。
+        // ================================================================
+
+        /// <summary>int → VrmFirstPersonType。範囲外は Auto。</summary>
+        public static VrmFirstPersonType ToVrmFirstPersonType(int v)
+        {
+            switch (v)
+            {
+                case 1:  return VrmFirstPersonType.Both;
+                case 2:  return VrmFirstPersonType.ThirdPersonOnly;
+                case 3:  return VrmFirstPersonType.FirstPersonOnly;
+                default: return VrmFirstPersonType.Auto;
+            }
+        }
+
+        /// <summary>VRM メタ情報 POCO → DTO。null は null のまま。</summary>
+        public static VrmMetaDTO ToVrmMetaDTO(VrmMetaData m)
+        {
+            if (m == null) return null;
+            return new VrmMetaDTO
+            {
+                name                 = m.Name ?? "",
+                version              = m.Version ?? "",
+                authors              = (m.Authors != null)
+                                       ? new List<string>(m.Authors) : new List<string>(),
+                copyrightInformation = m.CopyrightInformation ?? "",
+                contactInformation   = m.ContactInformation ?? "",
+                references           = (m.References != null)
+                                       ? new List<string>(m.References) : new List<string>(),
+                thirdPartyLicenses   = m.ThirdPartyLicenses ?? "",
+                thumbnailPath        = m.ThumbnailPath ?? "",
+
+                avatarPermission          = (int)m.AvatarPermission,
+                violentUsage              = m.ViolentUsage,
+                sexualUsage               = m.SexualUsage,
+                commercialUsage           = (int)m.CommercialUsage,
+                politicalOrReligiousUsage = m.PoliticalOrReligiousUsage,
+                antisocialOrHateUsage     = m.AntisocialOrHateUsage,
+
+                creditNotation  = (int)m.CreditNotation,
+                redistribution  = m.Redistribution,
+                modification    = (int)m.Modification,
+                otherLicenseUrl = m.OtherLicenseUrl ?? "",
+            };
+        }
+
+        /// <summary>VRM メタ情報 DTO → POCO。null は null のまま。</summary>
+        public static VrmMetaData FromVrmMetaDTO(VrmMetaDTO d)
+        {
+            if (d == null) return null;
+            return new VrmMetaData
+            {
+                Name                 = d.name ?? "",
+                Version              = d.version ?? "",
+                Authors              = (d.authors != null)
+                                       ? new List<string>(d.authors) : new List<string>(),
+                CopyrightInformation = d.copyrightInformation ?? "",
+                ContactInformation   = d.contactInformation ?? "",
+                References           = (d.references != null)
+                                       ? new List<string>(d.references) : new List<string>(),
+                ThirdPartyLicenses   = d.thirdPartyLicenses ?? "",
+                ThumbnailPath        = d.thumbnailPath ?? "",
+
+                AvatarPermission          = ToVrmAvatarPermission(d.avatarPermission),
+                ViolentUsage              = d.violentUsage,
+                SexualUsage               = d.sexualUsage,
+                CommercialUsage           = ToVrmCommercialUsage(d.commercialUsage),
+                PoliticalOrReligiousUsage = d.politicalOrReligiousUsage,
+                AntisocialOrHateUsage     = d.antisocialOrHateUsage,
+
+                CreditNotation  = ToVrmCreditNotation(d.creditNotation),
+                Redistribution  = d.redistribution,
+                Modification    = ToVrmModification(d.modification),
+                OtherLicenseUrl = d.otherLicenseUrl ?? "",
+            };
+        }
+
+        /// <summary>int → VrmAvatarPermission。範囲外は OnlyAuthor。</summary>
+        public static VrmAvatarPermission ToVrmAvatarPermission(int v)
+        {
+            switch (v)
+            {
+                case 1:  return VrmAvatarPermission.OnlySeparatelyLicensedPerson;
+                case 2:  return VrmAvatarPermission.Everyone;
+                default: return VrmAvatarPermission.OnlyAuthor;
+            }
+        }
+
+        /// <summary>int → VrmCommercialUsage。範囲外は PersonalNonProfit。</summary>
+        public static VrmCommercialUsage ToVrmCommercialUsage(int v)
+        {
+            switch (v)
+            {
+                case 1:  return VrmCommercialUsage.PersonalProfit;
+                case 2:  return VrmCommercialUsage.Corporation;
+                default: return VrmCommercialUsage.PersonalNonProfit;
+            }
+        }
+
+        /// <summary>int → VrmCreditNotation。範囲外は Required。</summary>
+        public static VrmCreditNotation ToVrmCreditNotation(int v)
+            => (v == 1) ? VrmCreditNotation.Unnecessary : VrmCreditNotation.Required;
+
+        /// <summary>int → VrmModification。範囲外は Prohibited。</summary>
+        public static VrmModification ToVrmModification(int v)
+        {
+            switch (v)
+            {
+                case 1:  return VrmModification.AllowModification;
+                case 2:  return VrmModification.AllowModificationRedistribution;
+                default: return VrmModification.Prohibited;
+            }
+        }
+
+        /// <summary>VRM 視線設定 POCO → DTO。null は null のまま。</summary>
+        public static VrmLookAtDTO ToVrmLookAtDTO(VrmLookAtData l)
+        {
+            if (l == null) return null;
+            return new VrmLookAtDTO
+            {
+                offsetFromHead  = SerVec3(l.OffsetFromHead),
+                lookAtType      = (int)l.LookAtType,
+                horizontalInner = ToRangeMapDTO(l.HorizontalInner),
+                horizontalOuter = ToRangeMapDTO(l.HorizontalOuter),
+                verticalDown    = ToRangeMapDTO(l.VerticalDown),
+                verticalUp      = ToRangeMapDTO(l.VerticalUp),
+            };
+        }
+
+        /// <summary>VRM 視線設定 DTO → POCO。null は null のまま。</summary>
+        public static VrmLookAtData FromVrmLookAtDTO(VrmLookAtDTO d)
+        {
+            if (d == null) return null;
+            return new VrmLookAtData
+            {
+                // 欄が無い場合だけ UniVRM の既定 (0, 0.06, 0) に戻す。
+                // SerVec3(null) は原点になるが、原点は「頭ボーンそのもの」で
+                // 目の基準点としては別の意味になるため、ここでは使わない。
+                OffsetFromHead  = (d.offsetFromHead != null && d.offsetFromHead.Length >= 3)
+                                  ? SerVec3(d.offsetFromHead)
+                                  : new Vector3(0f, 0.06f, 0f),
+                LookAtType      = (d.lookAtType == 1) ? VrmLookAtType.Expression : VrmLookAtType.Bone,
+                HorizontalInner = FromRangeMapDTO(d.horizontalInner),
+                HorizontalOuter = FromRangeMapDTO(d.horizontalOuter),
+                VerticalDown    = FromRangeMapDTO(d.verticalDown),
+                VerticalUp      = FromRangeMapDTO(d.verticalUp),
+            };
+        }
+
+        private static VrmLookAtRangeMapDTO ToRangeMapDTO(VrmLookAtRangeMap m)
+        {
+            var src = m ?? new VrmLookAtRangeMap();
+            return new VrmLookAtRangeMapDTO
+            {
+                inputMaxDegrees = src.InputMaxDegrees,
+                outputScale     = src.OutputScale,
+            };
+        }
+
+        private static VrmLookAtRangeMap FromRangeMapDTO(VrmLookAtRangeMapDTO d)
+        {
+            if (d == null) return new VrmLookAtRangeMap();
+            return new VrmLookAtRangeMap(d.inputMaxDegrees, d.outputScale);
+        }
+
+        /// <summary>Avatar リターゲット設定 POCO → DTO。null は null のまま。</summary>
+        public static AvatarRetargetDTO ToAvatarRetargetDTO(AvatarRetargetData a)
+        {
+            if (a == null) return null;
+            return new AvatarRetargetDTO
+            {
+                upperArmTwist     = a.UpperArmTwist,
+                lowerArmTwist     = a.LowerArmTwist,
+                upperLegTwist     = a.UpperLegTwist,
+                lowerLegTwist     = a.LowerLegTwist,
+                armStretch        = a.ArmStretch,
+                legStretch        = a.LegStretch,
+                feetSpacing       = a.FeetSpacing,
+                hasTranslationDoF = a.HasTranslationDoF,
+            };
+        }
+
+        /// <summary>PMX / MQO 座標規約 POCO → DTO。null は null のまま。</summary>
+        public static CoordinateConventionDTO ToCoordinateConventionDTO(CoordinateConventionData c)
+        {
+            if (c == null) return null;
+            return new CoordinateConventionDTO
+            {
+                pmxUnityRatio = c.PmxUnityRatio,
+                pmxFlipX      = c.PmxFlipX,
+                pmxFlipZ      = c.PmxFlipZ,
+                mqoUnityRatio = c.MqoUnityRatio,
+                mqoFlipX      = c.MqoFlipX,
+                mqoFlipZ      = c.MqoFlipZ,
+            };
+        }
+
+        /// <summary>PMX / MQO 座標規約 DTO → POCO。null は null のまま。</summary>
+        public static CoordinateConventionData FromCoordinateConventionDTO(CoordinateConventionDTO d)
+        {
+            if (d == null) return null;
+            return new CoordinateConventionData
+            {
+                PmxUnityRatio = d.pmxUnityRatio,
+                PmxFlipX      = d.pmxFlipX,
+                PmxFlipZ      = d.pmxFlipZ,
+                MqoUnityRatio = d.mqoUnityRatio,
+                MqoFlipX      = d.mqoFlipX,
+                MqoFlipZ      = d.mqoFlipZ,
+            };
+        }
+
+        /// <summary>Avatar リターゲット設定 DTO → POCO。null は null のまま。</summary>
+        public static AvatarRetargetData FromAvatarRetargetDTO(AvatarRetargetDTO d)
+        {
+            if (d == null) return null;
+            return new AvatarRetargetData
+            {
+                UpperArmTwist     = d.upperArmTwist,
+                LowerArmTwist     = d.lowerArmTwist,
+                UpperLegTwist     = d.upperLegTwist,
+                LowerLegTwist     = d.lowerLegTwist,
+                ArmStretch        = d.armStretch,
+                LegStretch        = d.legStretch,
+                FeetSpacing       = d.feetSpacing,
+                HasTranslationDoF = d.hasTranslationDoF,
             };
         }
 
@@ -1740,7 +2085,11 @@ namespace Poly_Ling.Serialization
                 stiffnessForce = j.StiffnessForce,
                 gravityPower = j.GravityPower,
                 gravityDir = SerVec3(j.GravityDir),
-                dragForce = j.DragForce
+                dragForce = j.DragForce,
+                angleLimitType = (int)j.AngleLimitType,
+                limitRotation = SerQuat(j.LimitRotation),
+                pitch = j.Pitch,
+                yaw = j.Yaw
             };
 
             // チェーンルート
@@ -1794,7 +2143,11 @@ namespace Poly_Ling.Serialization
                 StiffnessForce = jd.stiffnessForce,
                 GravityPower = jd.gravityPower,
                 GravityDir = SerVec3(jd.gravityDir),
-                DragForce = jd.dragForce
+                DragForce = jd.dragForce,
+                AngleLimitType = (SpringBoneAngleLimitType)jd.angleLimitType,
+                LimitRotation = SerQuat(jd.limitRotation),
+                Pitch = jd.pitch,
+                Yaw = jd.yaw
             };
 
             // チェーンルート
@@ -1813,6 +2166,17 @@ namespace Poly_Ling.Serialization
         private static float[] SerVec3(Vector3 v) => new[] { v.x, v.y, v.z };
         private static Vector3 SerVec3(float[] a) =>
             (a != null && a.Length >= 3) ? new Vector3(a[0], a[1], a[2]) : Vector3.zero;
+
+        // Quaternion ⇔ float[4]。旧 JSON には無いので、
+        // 欠けているときと長さ 0 のときは無回転に直す。
+        private static float[] SerQuat(Quaternion q) => new[] { q.x, q.y, q.z, q.w };
+        private static Quaternion SerQuat(float[] a)
+        {
+            if (a == null || a.Length < 4) return Quaternion.identity;
+            var q = new Quaternion(a[0], a[1], a[2], a[3]);
+            if (q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w < 1e-12f) return Quaternion.identity;
+            return q;
+        }
 
         // ================================================================
         // TPoseBackup ⇔ TPoseBackupDTO（規約4：CSV/JSON 対称）

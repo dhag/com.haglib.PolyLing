@@ -40,6 +40,14 @@ namespace Poly_Ling.Data
         /// <summary>モーフパネル（PMX: 0=眉, 1=目, 2=口, 3=その他）</summary>
         public int Panel = 3;
 
+        /// <summary>
+        /// 元になった描画オブジェクトの名前。
+        /// PMX 書き出しでモーフのオフセットを頂点番号へ写すとき、
+        /// どのメッシュの展開範囲に載せるかをこの名前で引く。
+        /// 空 = 不明（名前の前方一致で探す従来動作になる）。
+        /// </summary>
+        public string BaseMeshName = "";
+
         /// <summary>作成日時</summary>
         public DateTime CreatedAt = DateTime.Now;
 
@@ -207,7 +215,13 @@ namespace Poly_Ling.Data
         /// <param name="meshObject">モーフ後のメッシュ</param>
         /// <param name="threshold">変化とみなす閾値</param>
         /// <returns>(頂点インデックス, 差分) のリスト</returns>
-        public List<(int Index, Vector3 Offset)> GetSparseOffsets(MeshObject meshObject, float threshold = 0.0001f)
+        /// <remarks>
+        /// 既定の閾値は 0。0 より大きくすると、わずかにしか動かない頂点が
+        /// 書き出しから落ちる。実測では PMX の頂点モーフ 350,071 件のうち
+        /// 24,803 件が閾値 0.0001（Unity 単位）で消えていた。
+        /// 位置がまったく同じ頂点は差分 0 なのでどちらにせよ出ない。
+        /// </remarks>
+        public List<(int Index, Vector3 Offset)> GetSparseOffsets(MeshObject meshObject, float threshold = 0f)
         {
             var result = new List<(int, Vector3)>();
 
@@ -235,7 +249,7 @@ namespace Poly_Ling.Data
         /// <param name="meshObject">モーフ後のメッシュ</param>
         /// <param name="threshold">変化とみなす閾値</param>
         /// <returns>(頂点インデックス, 差分) のリスト</returns>
-        public List<(int Index, Vector2 Offset)> GetSparseUVOffsets(MeshObject meshObject, float threshold = 0.0001f)
+        public List<(int Index, Vector2 Offset)> GetSparseUVOffsets(MeshObject meshObject, float threshold = 0f)
         {
             var result = new List<(int, Vector2)>();
 

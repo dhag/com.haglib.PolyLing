@@ -49,7 +49,7 @@ namespace Poly_Ling.PMX
         public AxisFlip Flip => new AxisFlip(FlipX, FlipZ);
 
         /// <summary>UV V座標反転</summary>
-        public bool FlipUV_V = false;
+        public bool FlipUV_V = true;
 
         // ================================================================
         // フル出力モード設定

@@ -134,6 +134,56 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
+        /// 親索引配列から「親 → 子の索引リスト」を作る（非破壊）。
+        ///
+        /// 【なぜここに置くか】
+        ///   親子表は BuildParentIndicesFromDepth の裏返しであり、
+        ///   ボーンは HierarchyParentIndex・それ以外は Depth という
+        ///   同じ規則の上に立つ。呼び出し側で作り直すと規則が分かれる。
+        ///
+        /// 【絞り込みはしない】
+        ///   モーフ・剛体なども含めた全索引を入れる。用途ごとの絞り込み
+        ///   （ボーンだけ／揺れジョイントを持つものだけ）は呼び出し側で行う。
+        ///   ここで絞ると、絞った種別が親のときに子が行き場を失う。
+        /// </summary>
+        /// <param name="parentIndices">
+        /// BuildParentIndicesFromDepth の結果。省くとその場で作る。
+        /// </param>
+        public static Dictionary<int, List<int>> BuildChildrenTable(
+            ModelContext model, int[] parentIndices = null)
+        {
+            var table = new Dictionary<int, List<int>>();
+
+            int count = model?.MeshContextCount ?? 0;
+            if (count == 0) return table;
+
+            if (parentIndices == null)
+                parentIndices = BuildParentIndicesFromDepth(model);
+
+            for (int i = 0; i < count; i++)
+            {
+                var ctx = model.GetMeshContext(i);
+                if (ctx == null) continue;
+
+                int parent = (parentIndices != null && i < parentIndices.Length)
+                    ? parentIndices[i]
+                    : ctx.HierarchyParentIndex;
+
+                if (parent < 0 || parent >= count) continue;
+                if (parent == i) continue;   // 自己参照は捨てる（無限ループの種）
+
+                if (!table.TryGetValue(parent, out var list))
+                {
+                    list = new List<int>();
+                    table[parent] = list;
+                }
+                list.Add(i);
+            }
+
+            return table;
+        }
+
+        /// <summary>
         /// スタックを変更せずに currentDepth より浅い最初の要素を親として返す。
         /// Stack&lt;T&gt; の列挙は LIFO 順（先頭が Peek と同一）。
         /// </summary>

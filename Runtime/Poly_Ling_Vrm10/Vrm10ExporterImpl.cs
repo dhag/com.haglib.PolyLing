@@ -50,6 +50,7 @@ using UniVRM10;
 using Poly_Ling.Context;
 using Poly_Ling.HierarchyIO;
 using Poly_Ling.Vrm;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Vrm10Impl
 {
@@ -83,6 +84,10 @@ namespace Poly_Ling.Vrm10Impl
 
             HierarchyBuildResult built = null;
             Vrm10SceneAssembler assembler = null;
+
+            // サムネイルは出力のためだけに読む。アセットではないので
+            // 出し終えたら必ず捨てる（放置すると Play を抜けるまで残る）。
+            Texture2D thumbnail = null;
 
             try
             {
@@ -137,6 +142,8 @@ namespace Poly_Ling.Vrm10Impl
                 // 2. VRM コンポーネント
                 // ------------------------------------------------------------
                 var meta = BuildMeta(model, settings);
+                thumbnail = LoadThumbnail(model.VrmMeta?.ThumbnailPath);
+                if (thumbnail != null) meta.Thumbnail = thumbnail;
 
                 assembler = new Vrm10SceneAssembler();
                 var report = assembler.Assemble(model, built, meta, settings);
@@ -222,6 +229,12 @@ namespace Poly_Ling.Vrm10Impl
             {
                 assembler?.Dispose();
                 DestroyHierarchy(built?.Root);
+
+                if (thumbnail != null)
+                {
+                    if (Application.isPlaying) UnityEngine.Object.Destroy(thumbnail);
+                    else                       UnityEngine.Object.DestroyImmediate(thumbnail);
+                }
             }
         }
 
@@ -275,30 +288,171 @@ namespace Poly_Ling.Vrm10Impl
         // ================================================================
 
         /// <summary>
-        /// VRM Meta を設定から組む。
-        /// Name / Version / Authors は仕様上必須なので、空なら埋める。
+        /// VRM Meta を組む。
+        ///
+        /// 【値の出どころ】
+        ///   1) ModelContext.VrmMeta … プロジェクトに保存される恒久値。正本。
+        ///   2) Vrm10ExportSettings  … 出力ごとの上書き。空欄は「指定なし」で
+        ///      1) を残す。出力パネルの既定が空欄なのはこのため。
+        ///   3) それでも空なら仕様上の必須項目だけ埋める（name / version / authors）。
+        ///
+        /// 【許諾の扱い】
+        ///   許諾（AvatarPermission / CommercialUsage / CreditNotation /
+        ///   Modification と各 bool）は Vrm10ExportSettings が持たないので、
+        ///   1) だけが出どころになる。未設定なら VRM10ObjectMeta の既定
+        ///   （もっとも制限が強い側）が載る。
         /// </summary>
         private static VRM10ObjectMeta BuildMeta(ModelContext model, Vrm10ExportSettings settings)
         {
+            var src = model?.VrmMeta;
+
             var meta = new VRM10ObjectMeta
             {
-                Name    = !string.IsNullOrEmpty(settings.Title) ? settings.Title
-                        : (!string.IsNullOrEmpty(model.Name) ? model.Name : "Untitled"),
-                Version = !string.IsNullOrEmpty(settings.Version) ? settings.Version : "1.0",
-                CopyrightInformation = settings.CopyrightInformation ?? "",
-                ContactInformation   = settings.ContactInformation ?? "",
-                OtherLicenseUrl      = settings.OtherLicenseUrl ?? "",
+                Name                 = src?.Name ?? "",
+                Version              = src?.Version ?? "",
+                CopyrightInformation = src?.CopyrightInformation ?? "",
+                ContactInformation   = src?.ContactInformation ?? "",
+                ThirdPartyLicenses   = src?.ThirdPartyLicenses ?? "",
+                OtherLicenseUrl      = src?.OtherLicenseUrl ?? "",
             };
 
             meta.Authors.Clear();
+            if (src?.Authors != null)
+                foreach (var a in src.Authors)
+                    if (!string.IsNullOrEmpty(a)) meta.Authors.Add(a);
+
+            meta.References.Clear();
+            if (src?.References != null)
+                foreach (var r in src.References)
+                    if (!string.IsNullOrEmpty(r)) meta.References.Add(r);
+
+            if (src != null)
+            {
+                meta.AvatarPermission          = ToVrmPermission(src.AvatarPermission);
+                meta.ViolentUsage              = src.ViolentUsage;
+                meta.SexualUsage               = src.SexualUsage;
+                meta.CommercialUsage           = ToVrmCommercial(src.CommercialUsage);
+                meta.PoliticalOrReligiousUsage = src.PoliticalOrReligiousUsage;
+                meta.AntisocialOrHateUsage     = src.AntisocialOrHateUsage;
+                meta.CreditNotation            = ToVrmCredit(src.CreditNotation);
+                meta.Redistribution            = src.Redistribution;
+                meta.Modification              = ToVrmModification(src.Modification);
+            }
+
+            // 出力ごとの上書き（空欄は触らない）
+            if (!string.IsNullOrEmpty(settings.Title))                meta.Name                 = settings.Title;
+            if (!string.IsNullOrEmpty(settings.Version))              meta.Version              = settings.Version;
+            if (!string.IsNullOrEmpty(settings.CopyrightInformation)) meta.CopyrightInformation = settings.CopyrightInformation;
+            if (!string.IsNullOrEmpty(settings.ContactInformation))   meta.ContactInformation   = settings.ContactInformation;
+            if (!string.IsNullOrEmpty(settings.OtherLicenseUrl))      meta.OtherLicenseUrl      = settings.OtherLicenseUrl;
+
             if (settings.Authors != null)
             {
+                var over = new System.Collections.Generic.List<string>();
                 foreach (var a in settings.Authors)
-                    if (!string.IsNullOrEmpty(a)) meta.Authors.Add(a);
+                    if (!string.IsNullOrEmpty(a)) over.Add(a);
+                if (over.Count > 0) { meta.Authors.Clear(); meta.Authors.AddRange(over); }
             }
-            if (meta.Authors.Count == 0) meta.Authors.Add("Unknown");
+
+            // 必須項目の穴埋め
+            if (string.IsNullOrEmpty(meta.Name))
+                meta.Name = !string.IsNullOrEmpty(model?.Name) ? model.Name : "Untitled";
+            if (string.IsNullOrEmpty(meta.Version))
+                meta.Version = "1.0";
+            if (meta.Authors.Count == 0)
+                meta.Authors.Add("Unknown");
 
             return meta;
+        }
+
+        // ================================================================
+        // 許諾 enum の写し
+        //   PolyLing 側と UniGLTF 側で並びはそろえてあるが、(int) キャストで
+        //   写さない。片方の並びが変わったときに黙って壊れるため。
+        // ================================================================
+
+        private static UniGLTF.Extensions.VRMC_vrm.AvatarPermissionType ToVrmPermission(
+            VrmAvatarPermission v)
+        {
+            switch (v)
+            {
+                case VrmAvatarPermission.OnlySeparatelyLicensedPerson:
+                    return UniGLTF.Extensions.VRMC_vrm.AvatarPermissionType.onlySeparatelyLicensedPerson;
+                case VrmAvatarPermission.Everyone:
+                    return UniGLTF.Extensions.VRMC_vrm.AvatarPermissionType.everyone;
+                default:
+                    return UniGLTF.Extensions.VRMC_vrm.AvatarPermissionType.onlyAuthor;
+            }
+        }
+
+        private static UniGLTF.Extensions.VRMC_vrm.CommercialUsageType ToVrmCommercial(
+            VrmCommercialUsage v)
+        {
+            switch (v)
+            {
+                case VrmCommercialUsage.PersonalProfit:
+                    return UniGLTF.Extensions.VRMC_vrm.CommercialUsageType.personalProfit;
+                case VrmCommercialUsage.Corporation:
+                    return UniGLTF.Extensions.VRMC_vrm.CommercialUsageType.corporation;
+                default:
+                    return UniGLTF.Extensions.VRMC_vrm.CommercialUsageType.personalNonProfit;
+            }
+        }
+
+        private static UniGLTF.Extensions.VRMC_vrm.CreditNotationType ToVrmCredit(
+            VrmCreditNotation v)
+            => (v == VrmCreditNotation.Unnecessary)
+                ? UniGLTF.Extensions.VRMC_vrm.CreditNotationType.unnecessary
+                : UniGLTF.Extensions.VRMC_vrm.CreditNotationType.required;
+
+        private static UniGLTF.Extensions.VRMC_vrm.ModificationType ToVrmModification(
+            VrmModification v)
+        {
+            switch (v)
+            {
+                case VrmModification.AllowModification:
+                    return UniGLTF.Extensions.VRMC_vrm.ModificationType.allowModification;
+                case VrmModification.AllowModificationRedistribution:
+                    return UniGLTF.Extensions.VRMC_vrm.ModificationType.allowModificationRedistribution;
+                default:
+                    return UniGLTF.Extensions.VRMC_vrm.ModificationType.prohibited;
+            }
+        }
+
+        /// <summary>
+        /// サムネイル画像を読む。読めなければ null を返し、警告だけ出す。
+        /// サムネイルが無くても VRM は成立するので、出力そのものは止めない。
+        /// </summary>
+        private static Texture2D LoadThumbnail(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    Debug.LogWarning($"[Vrm10Exporter] サムネイルが見つかりません: {path}");
+                    return null;
+                }
+
+                byte[] bytes = File.ReadAllBytes(path);
+                var tex = new Texture2D(2, 2);
+                if (!tex.LoadImage(bytes))
+                {
+                    UnityEngine.Object.DestroyImmediate(tex);
+                    Debug.LogWarning($"[Vrm10Exporter] サムネイルを画像として読めません: {path}");
+                    return null;
+                }
+
+                tex.name = Path.GetFileNameWithoutExtension(path);
+                tex.hideFlags = HideFlags.HideAndDontSave;
+                return tex;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Vrm10Exporter] サムネイルの読み込みに失敗しました: {ex.Message}");
+                return null;
+            }
         }
     }
 }

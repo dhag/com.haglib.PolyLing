@@ -26,6 +26,18 @@ namespace Poly_Ling.Player
         NewObject,      // 新しい描画オブジェクトを作る（デフォルト）
         AddToExisting,  // 既存の描画オブジェクトに追加（なければ新規作成）
         NewModel,       // 新しいモデルを作って描画オブジェクトを追加
+
+        /// <summary>
+        /// 既存の描画オブジェクトの中身を捨てて、生成物で置き換える。
+        ///
+        /// オブジェクトグループの作り直し専用。新しいオブジェクトを作らないので
+        /// ObjectId・名前・階層・姿勢・材質割当がそのまま残り、
+        /// 出力先を指している参照が切れない。
+        ///
+        /// 図形生成パネルの追加先ドロップダウンには出さない
+        /// （選択肢を手書きで 3 つ並べているため、ここに足しても UI は変わらない）。
+        /// </summary>
+        ReplaceExisting,
     }
 
     public partial class PlayerPrimitiveMeshSubPanel
@@ -299,15 +311,17 @@ namespace Poly_Ling.Player
         // 末尾に足すこと。PrimitiveShapeMemory は列挙値の「名前」で保存するので値の並びは
         // 保存内容に影響しないが、_shapeBtns は添字を (int)ShapeKind で引く。
         public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox, PipeStadium, HairStrand,
-                               HelicalGear, InternalGear, InvoluteRack, HelicalRack, StraightBevelGear, SpiralBevelGear, CylindricalWorm, WormWheel }
+                               HelicalGear, InternalGear, InvoluteRack, HelicalRack, StraightBevelGear, SpiralBevelGear, CylindricalWorm, WormWheel,
+                               SpringBoneSingle, SpringBoneCylinder, SpringBoneRevolution }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
               "NGonGear","NGonStar","InvoluteGear","StadiumBox","PipeStadium","HairStrand",
-              "HelicalGear","InternalGear","InvoluteRack","HelicalRack","StraightBevelGear","SpiralBevelGear","CylindricalWorm","WormWheel" };
+              "HelicalGear","InternalGear","InvoluteRack","HelicalRack","StraightBevelGear","SpiralBevelGear","CylindricalWorm","WormWheel",
+              "SpringBoneSingle","SpringBoneCylinder","SpringBoneRevolution" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品」に対応）。</summary>
-        public enum ShapeCategory { Basic, Advanced, Mechanism }
+        public enum ShapeCategory { Basic, Advanced, Mechanism, SpringBone }
 
         // カテゴリ別の図形リスト。グリッドはこの内容だけを表示する。
         private static readonly ShapeKind[] BasicShapes =
@@ -318,6 +332,12 @@ namespace Poly_Ling.Player
               ShapeKind.NGonGear, ShapeKind.NGonStar,
               ShapeKind.PipeStadium, ShapeKind.HairStrand,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
+
+        // 揺れもの用のボーン鎖。作るのはボーンで、メッシュではない。
+        //   「回転体」と同じくプロファイル（断面の折れ線）を持ち、
+        //   同じプロファイルエディタをそのまま使う。
+        private static readonly ShapeKind[] SpringBoneShapes =
+            { ShapeKind.SpringBoneSingle, ShapeKind.SpringBoneCylinder, ShapeKind.SpringBoneRevolution };
 
         // 機構部品。かみ合う歯車まわりをここへ集める。
         // インボリュート歯車は「高度な図形」からここへ移した。
@@ -339,6 +359,7 @@ namespace Poly_Ling.Player
         // PrimitiveShapeMemory（JSON）にも保存する。
         private ShapeKind _lastBasic     = ShapeKind.Cube;
         private ShapeKind _lastAdvanced  = ShapeKind.Revolution;
+        private ShapeKind _lastSpringBone = ShapeKind.SpringBoneCylinder;
         private ShapeKind _lastMechanism = ShapeKind.InvoluteGear;
 
         /// <summary>
@@ -383,6 +404,20 @@ namespace Poly_Ling.Player
         private Vector3         _worldPos            = Vector3.zero;
         private PrimitiveAddMode _addMode             = PrimitiveAddMode.NewObject;
         private bool            _mergeDuplicateVertices = true;
+
+        /// <summary>
+        /// 生成に使った入力とパラメータをオブジェクトグループとして残すか。既定 false。
+        /// false（＝これまでのやり方）では生成後に何も残らないので、
+        /// 作り直したいときは同じ操作をやり直すことになる。
+        /// </summary>
+        private bool            _keepAsGroup = false;
+
+        // ── プロファイルの取り込み元（作り直しで掛け直すために控える）
+        //    「取り込み(メッシュ→プロファイル)」を押したときだけ埋まる。
+        //    点を手で打った／プリセットを使った場合は -1 / Baked のままで、
+        //    作り直しでは控えた点列がそのまま使われる。
+        private int _revProfileSrcIndex = -1;
+        private int _p2dProfileSrcIndex = -1;
 
         // 生成時の回転(度) / スケール（平行移動は従来どおり呼出し側が扱う）。
         // ベイク ON = 頂点へ焼き込む / OFF = 描画オブジェクトの姿勢(BoneTransform)へ入れる。
@@ -957,6 +992,28 @@ namespace Poly_Ling.Player
             mergeToggle.RegisterValueChangedCallback(e => { _mergeDuplicateVertices = e.newValue; _dirty = true; });
             pose.Add(mergeToggle);
 
+            // ── グループとして残すか
+            //    毎回ダイアログを出すと「ちょっと作るだけ」の操作が重くなるので、
+            //    警告は常設のラベルにする。off のときだけ出す。
+            var keepToggle = new Toggle(T("KeepAsGroup")) { value = _keepAsGroup };
+            keepToggle.style.color = new StyleColor(Color.white);
+            pose.Add(keepToggle);
+
+            var keepWarn = new Label(T("KeepAsGroupWarn"));
+            keepWarn.style.whiteSpace  = WhiteSpace.Normal;
+            keepWarn.style.fontSize    = 10;
+            keepWarn.style.marginLeft  = 16;
+            keepWarn.style.marginBottom = 2;
+            keepWarn.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
+            keepWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
+            pose.Add(keepWarn);
+
+            keepToggle.RegisterValueChangedCallback(e =>
+            {
+                _keepAsGroup = e.newValue;
+                keepWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
+            });
+
             parent.Add(poseFold);
 
             // マテリアル指定（姿勢の下）。生成面の MaterialIndex を決める。
@@ -1290,9 +1347,10 @@ namespace Poly_Ling.Player
         {
             switch (cat)
             {
-                case ShapeCategory.Advanced:  return AdvancedShapes;
-                case ShapeCategory.Mechanism: return MechanismShapes;
-                default:                      return BasicShapes;
+                case ShapeCategory.Advanced:   return AdvancedShapes;
+                case ShapeCategory.Mechanism:  return MechanismShapes;
+                case ShapeCategory.SpringBone: return SpringBoneShapes;
+                default:                       return BasicShapes;
             }
         }
 
@@ -1337,9 +1395,10 @@ namespace Poly_Ling.Player
             ShapeKind kind;
             switch (cat)
             {
-                case ShapeCategory.Advanced:  kind = _lastAdvanced;  break;
-                case ShapeCategory.Mechanism: kind = _lastMechanism; break;
-                default:                      kind = _lastBasic;     break;
+                case ShapeCategory.Advanced:   kind = _lastAdvanced;   break;
+                case ShapeCategory.Mechanism:  kind = _lastMechanism;  break;
+                case ShapeCategory.SpringBone: kind = _lastSpringBone; break;
+                default:                       kind = _lastBasic;      break;
             }
 
             if (System.Array.IndexOf(shapes, kind) >= 0) return kind;
@@ -1362,13 +1421,18 @@ namespace Poly_Ling.Player
             var mech = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.Mechanism);
             if (mech.HasValue && System.Array.IndexOf(MechanismShapes, mech.Value) >= 0)
                 _lastMechanism = mech.Value;
+
+            var sb = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.SpringBone);
+            if (sb.HasValue && System.Array.IndexOf(SpringBoneShapes, sb.Value) >= 0)
+                _lastSpringBone = sb.Value;
         }
 
         /// <summary>指定形状のカテゴリを返す。</summary>
         public ShapeCategory CategoryOf(ShapeKind k)
         {
-            if (System.Array.IndexOf(MechanismShapes, k) >= 0) return ShapeCategory.Mechanism;
-            if (System.Array.IndexOf(AdvancedShapes,  k) >= 0) return ShapeCategory.Advanced;
+            if (System.Array.IndexOf(SpringBoneShapes, k) >= 0) return ShapeCategory.SpringBone;
+            if (System.Array.IndexOf(MechanismShapes,  k) >= 0) return ShapeCategory.Mechanism;
+            if (System.Array.IndexOf(AdvancedShapes,   k) >= 0) return ShapeCategory.Advanced;
             return ShapeCategory.Basic;
         }
 
@@ -1395,9 +1459,10 @@ namespace Poly_Ling.Player
             var cat = CategoryOf(k);
             switch (cat)
             {
-                case ShapeCategory.Advanced:  _lastAdvanced  = k; break;
-                case ShapeCategory.Mechanism: _lastMechanism = k; break;
-                default:                      _lastBasic     = k; break;
+                case ShapeCategory.Advanced:   _lastAdvanced   = k; break;
+                case ShapeCategory.Mechanism:  _lastMechanism  = k; break;
+                case ShapeCategory.SpringBone: _lastSpringBone = k; break;
+                default:                       _lastBasic      = k; break;
             }
             PrimitiveShapeMemory.Set(MemoryKey, cat, k);
 
@@ -1441,6 +1506,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.Plane:      BuildPlaneUI(_settingsContainer);      break;
                 case ShapeKind.Pyramid:    BuildPyramidUI(_settingsContainer);    break;
                 case ShapeKind.Revolution: BuildRevolutionUI(_settingsContainer); break;
+                case ShapeKind.SpringBoneSingle:
+                case ShapeKind.SpringBoneCylinder:
+                case ShapeKind.SpringBoneRevolution:
+                    BuildSpringBoneChainUI(_settingsContainer); break;
                 case ShapeKind.Profile2D:  BuildProfile2DUI(_settingsContainer);  break;
                 case ShapeKind.NohMask:    BuildNohMaskUI(_settingsContainer);    break;
                 case ShapeKind.Frill:      BuildFrillUI(_settingsContainer);      break;
@@ -1840,8 +1909,18 @@ namespace Poly_Ling.Player
                 () => _revP.Pivot.y, v => { _revP.Pivot = new Vector3(0, v, 0); D(); },
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _, out _);
 
-            // ── プロファイルエディタ ──────────────────────────────────────
-            var pe = _profileEditorContainer;
+            // プロファイルエディタは「回転体」と「揺れボーン 1本 / 回転体」で
+            // 共用する。折れ線の意味も同じ（X が半径方向、Y が高さ）。
+            BuildRevolutionProfileEditor(_profileEditorContainer);
+        }
+
+        /// <summary>
+        /// 折れ線（プロファイル）の編集 UI を組む。
+        /// 回転体と、揺れもの用ボーン鎖の「1 本」「回転体」から呼ぶ。
+        /// 状態は _revProfile / _revSelIdx / _revZoom / _revOffset を共有する。
+        /// </summary>
+        private void BuildRevolutionProfileEditor(VisualElement pe)
+        {
             pe.Add(SL(T("ProfileEditor")));
 
             // インタラクティブキャンバス
@@ -4795,6 +4874,10 @@ namespace Poly_Ling.Player
             var pts       = LineProfileExtractor.ExtractPolyline(mesh, lineFaces);
             if (pts == null || pts.Count < 2) { _statusLabel.text = T("NoLinesFound"); return; }
 
+            // 取り込み元を控える。オブジェクトグループが作り直すときに、
+            // 同じオブジェクトから同じ読み方で掛け直せるようにするため。
+            _revProfileSrcIndex = ResolveMasterIndexOf(mesh);
+
             RevBegin();
             _revProfile = new List<Vector2>(pts);
             _revSel.Clear(); _revSelIdx  = -1;
@@ -4828,6 +4911,9 @@ namespace Poly_Ling.Player
             var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
             var loops     = LineProfileExtractor.ExtractLoops(mesh, lineFaces);
             if (loops == null || loops.Count == 0) { _statusLabel.text = T("NoLinesFound"); return; }
+
+            // 取り込み元を控える（回転体側と同じ理由）。
+            _p2dProfileSrcIndex = ResolveMasterIndexOf(mesh);
 
             P2dBegin();
             _p2dLoops   = loops;
@@ -4904,6 +4990,16 @@ namespace Poly_Ling.Player
                     // 穴つなぎは書き込み先の既存頂点を参照する面を足すため、
                     // 単一 MeshObject を新規追加する経路は通らない。
                     if (_current == ShapeKind.Bridge) { InvokeBridgeGenerate(); return; }
+
+                    // 揺れもの用ボーン鎖は作るのがボーンで、メッシュではない。
+                    // 単一 MeshObject を新規追加する経路は通らない。
+                    if (_current == ShapeKind.SpringBoneSingle ||
+                        _current == ShapeKind.SpringBoneCylinder ||
+                        _current == ShapeKind.SpringBoneRevolution)
+                    {
+                        GenerateSpringBoneChains();
+                        return;
+                    }
 
                     // 生成はコマンドへ流す。モデルへの反映（追加先の解決・Undo・再構築）は
                     // ディスパッチャ側が持つ。ここでメッシュを作って渡す経路は残さない
@@ -4984,6 +5080,14 @@ namespace Poly_Ling.Player
                 // 種 A・B の両方が取込済みで、コマンドの送り先が結線されていること。
                 case ShapeKind.Bridge:
                     return SendCommand != null && BridgeSeedsReady;
+
+                // 揺れもの用ボーン鎖。折れ線を使う 2 種は点が 2 個以上要る。
+                case ShapeKind.SpringBoneSingle:
+                case ShapeKind.SpringBoneRevolution:
+                    return SendCommand != null && _revProfile != null && _revProfile.Count >= 2;
+
+                case ShapeKind.SpringBoneCylinder:
+                    return SendCommand != null;
 
                 default: return true;
             }

@@ -24,6 +24,8 @@ namespace Poly_Ling.Player
         private TextField   _setNameField;
         private ListView    _setListView;
         private Button      _btnLoad, _btnAdd, _btnSubtract, _btnDelete;
+        private Button      _btnCaptureIds, _btnResolveIds;
+        private Label       _idStateLabel;
         private TextField   _csvFolderField;
         private Label       _dicFolderLabel;
         private Toggle      _useCustomFolderToggle;
@@ -93,6 +95,22 @@ namespace Poly_Ling.Player
             _btnDelete   = MkBtn("削除",    OnDelete);
             foreach (var b in new[] { _btnLoad, _btnAdd, _btnSubtract, _btnDelete }) { b.style.flexGrow = 1; opRow.Add(b); }
             root.Add(opRow);
+
+            // ── 頂点IDの控え ──────────────────────────────────────────
+            // 辞書は頂点をローカル索引で指す。頂点を足したり消したりすると索引が
+            // ずれ、辞書が別の頂点を指す。控えた頂点IDから引き直すための操作。
+            _idStateLabel = new Label();
+            _idStateLabel.style.fontSize   = 9;
+            _idStateLabel.style.whiteSpace = WhiteSpace.Normal;
+            _idStateLabel.style.color      = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
+            _idStateLabel.style.marginBottom = 2;
+            root.Add(_idStateLabel);
+
+            var idRow = new VisualElement(); idRow.style.flexDirection = FlexDirection.Row; idRow.style.marginBottom = 4;
+            _btnCaptureIds = MkBtn("IDを控える",  OnCaptureIds);
+            _btnResolveIds = MkBtn("IDで引き直す", OnResolveIds);
+            foreach (var b in new[] { _btnCaptureIds, _btnResolveIds }) { b.style.flexGrow = 1; idRow.Add(b); }
+            root.Add(idRow);
 
             // 辞書ファイル（エクスポート / インポート）— PlayerIoUiKit 準拠
             //
@@ -171,9 +189,28 @@ namespace Poly_Ling.Player
             _selectedSetIndex = Mathf.Clamp(_selectedSetIndex, -1, _setNames.Count - 1);
             if (_selectedSetIndex >= 0) _setListView.SetSelection(_selectedSetIndex);
             UpdateButtonStates();
+            UpdateIdStateLabel(sets);
 
             // プロジェクトを保存 / 読込した直後は解決先が変わるので追従させる。
             UpdateDicFolderLabel();
+        }
+
+        /// <summary>選んだ辞書が控えている識別子の件数を出す。</summary>
+        private void UpdateIdStateLabel(List<Poly_Ling.Selection.PartsSelectionSet> sets)
+        {
+            if (_idStateLabel == null) return;
+
+            if (sets == null || _selectedSetIndex < 0 || _selectedSetIndex >= sets.Count)
+            {
+                _idStateLabel.text = "";
+                return;
+            }
+
+            var set = sets[_selectedSetIndex];
+            _idStateLabel.text = (set.VertexIdCount == 0)
+                ? "頂点IDの控えなし。索引がずれると復旧できません。"
+                : $"頂点IDの控え {set.VertexIdCount} 件"
+                  + (set.HasResolvableVertexIds ? "" : "（引き当てに使えるIDなし）");
         }
 
         // ── ListView helpers ─────────────────────────────────────────────
@@ -208,6 +245,20 @@ namespace Poly_Ling.Player
             if (!hasSel) { SetStatus("選択なし"); return; }
             SendCmd(new SavePartsSetCommand(ModelIndex, _setNameField?.value?.Trim() ?? ""));
             _setNameField?.SetValueWithoutNotify(""); SetStatus("辞書化しました");
+        }
+
+        private void OnCaptureIds()
+        {
+            if (_selectedSetIndex < 0) { SetStatus("辞書を選んでください"); return; }
+            SendCmd(new CapturePartsSetVertexIdsCommand(ModelIndex, _selectedSetIndex));
+            SetStatus("頂点IDを控えました");
+        }
+
+        private void OnResolveIds()
+        {
+            if (_selectedSetIndex < 0) { SetStatus("辞書を選んでください"); return; }
+            SendCmd(new ResolvePartsSetByVertexIdCommand(ModelIndex, _selectedSetIndex));
+            SetStatus("控えた頂点IDで引き直しました");
         }
 
         private void OnLoad()

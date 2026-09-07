@@ -105,13 +105,20 @@ namespace Poly_Ling.PMX
                 for (int i = 0; i < rigidBodyCount; i++)
                     doc.RigidBodies.Add(ReadRigidBody(reader, doc));
 
-                // 剛体のボーン名を解決
-                ResolveRigidBodyNames(doc);
-
                 // ジョイント
                 int jointCount = reader.ReadInt32();
                 for (int i = 0; i < jointCount; i++)
                     doc.Joints.Add(ReadJoint(reader, doc));
+
+                // 剛体のボーン名と、ジョイントの接続剛体名を解決する。
+                // ResolveRigidBodyNames は doc.Joints も走査するので、
+                // ジョイントを読み終えたあとに呼ぶ必要がある。
+                // 剛体の直後で呼んでいた頃は doc.Joints が空で、
+                // JointData.BodyAName / BodyBName が空のまま残り、
+                // 書き出しで接続剛体が -1 になっていた。
+                // ジョイントの読み込み自体は剛体名を参照しないので、
+                // ここへ移しても読み込み結果は変わらない。
+                ResolveRigidBodyNames(doc);
 
                 // ソフトボディ（PMX 2.1以降）
                 if (doc.Version >= 2.1f && fs.Position < fs.Length)

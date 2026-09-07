@@ -200,6 +200,59 @@ namespace Poly_Ling.Data
             }
         }
 
+        /// <summary>
+        /// 検査をまとめて 1 回で回す。コマンドを足したあとはこれを走らせる。
+        ///
+        /// 【何を見るか】
+        ///   1. PLParamAudit.Run        PLParam の付け忘れ
+        ///   2. RunStructure            action 衝突・引数の対応なし・未対応の型
+        ///   3. スキーマ生成            道具として出せた数と出せなかった数
+        ///
+        /// 往復検査（RoundTrip）は実物のコマンドを渡す必要があるのでここには含めない。
+        /// 呼び出し側が用意した見本を別途渡すこと。
+        /// </summary>
+        public static string RunAll()
+        {
+            var sb = new StringBuilder();
+
+            sb.Append(PLParamAudit.Run().ToString());
+            sb.Append('\n');
+            sb.Append(RunStructure().ToString());
+
+            PanelCommandFactory.CountTools(out int usable, out int skipped);
+            sb.Append('\n')
+              .Append("[PanelCommandSchema] 道具として出せた ").Append(usable)
+              .Append(" / 出せなかった ").Append(skipped);
+
+            // 説明が無い道具は MCP のクライアントが選べない。件数と名前を出す。
+            var noDesc = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+            {
+                if (!PanelCommandFactory.TryBuildToolJson(t, out _, out _)) continue;
+                var a = t.GetCustomAttribute<PLCommandAttribute>(inherit: false);
+                if (a == null || string.IsNullOrEmpty(a.Description)) noDesc.Add(t.Name);
+            }
+            sb.Append('\n')
+              .Append("[PLCommand] 説明が無い道具 ").Append(noDesc.Count);
+            if (noDesc.Count > 0)
+            {
+                sb.Append('\n').Append("── PLCommand が無い / 説明が空 ──");
+                foreach (var n in noDesc) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            if (skipped > 0)
+            {
+                sb.Append('\n').Append("── スキーマに出せないコマンド ──");
+                foreach (var t in PLParamAudit.FindCommandTypes())
+                {
+                    if (PanelCommandFactory.TryBuildToolJson(t, out _, out string why)) continue;
+                    sb.Append('\n').Append("  ").Append(why);
+                }
+            }
+
+            return sb.ToString();
+        }
+
         /// <summary>全コマンド型について、一般化器で扱えるかを静的に調べる。</summary>
         public static StructureReport RunStructure()
         {
@@ -266,14 +319,23 @@ namespace Poly_Ling.Data
                 n.Equals("baseModelIndex",   StringComparison.OrdinalIgnoreCase) ||
                 n.Equals("targetModelIndex", StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>
+        /// PanelCommandFactory.TryParse が扱える型か。
+        ///
+        /// 【対応表は 3 か所ある。必ず一緒に直すこと】
+        ///   ・PanelCommandFactory.TryParse   文字列 → 値
+        ///   ・PanelCommandFactory.TryFormat  値 → 文字列
+        ///   ・PanelCommandFactory.TryJsonType  JSON Schema の型名
+        ///   ここはその判定を検査側から見たもの。Vector2 / Vector3 は
+        ///   TryParse へ追加済みだったのにここへ入れ忘れており、
+        ///   使える型を「未対応」と報告していた。
+        /// </summary>
         private static bool IsSupported(Type t)
         {
-            if (t == null) return false;
-            if (t.IsEnum) return true;
-            return t == typeof(string)   || t == typeof(int)     || t == typeof(float)   ||
-                   t == typeof(bool)     || t == typeof(ulong)   ||
-                   t == typeof(int[])    || t == typeof(float[]) || t == typeof(bool[])  ||
-                   t == typeof(ulong[])  || t == typeof(string[]);
+            // 判定は PanelCommandFactory 側に 1 つだけ置く。
+            // ここに書き写すと 4 つ目の対応表になり、必ずずれる
+            // （実際 Vector2 / Vector3 を入れ忘れて誤検出していた）。
+            return PanelCommandFactory.IsSchemaRepresentable(t);
         }
 
         private static string TypeName(Type t)

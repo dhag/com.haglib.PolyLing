@@ -214,6 +214,13 @@ namespace Poly_Ling.Materials
         /// <summary>シェーダー固有プロパティ（null=なし）</summary>
         public List<MaterialProperty> ShaderProperties = null;
 
+        /// <summary>
+        /// PMX 固有の付帯データ（null = PMX 由来でない）。
+        /// 反射色・環境色・描画フラグ・エッジ・スフィア・トゥーン・メモを保持する。
+        /// PolyLing は編集しないが、読み書きで失ってはいけない値。
+        /// </summary>
+        public PmxMaterialData Pmx = null;
+
         // ================================================================
         // ヘルパーメソッド
         // ================================================================
@@ -336,7 +343,8 @@ namespace Poly_Ling.Materials
                 ZTest = this.ZTest,
                 DoubleSidedGI = this.DoubleSidedGI,
                 EnableGPUInstancing = this.EnableGPUInstancing,
-                ShaderProperties = CloneShaderProperties(this.ShaderProperties)
+                ShaderProperties = CloneShaderProperties(this.ShaderProperties),
+                Pmx = this.Pmx?.Clone()
             };
         }
 

@@ -66,6 +66,9 @@ namespace Poly_Ling.PMX
         /// <summary>インポートされたモーフエクスプレッション</summary>
         public List<MorphExpression> MorphExpressions { get; } = new List<MorphExpression>();
 
+        /// <summary>PMX のモデル情報（名前・英語名・コメント）。</summary>
+        public PmxModelInfoData ModelInfo { get; set; }
+
         /// <summary>検出されたミラーペア</summary>
         public List<MirrorPair> MirrorPairs { get; } = new List<MirrorPair>();
 
@@ -316,6 +319,16 @@ namespace Poly_Ling.PMX
             result.Stats.BoneCount = document.Bones.Count;
             result.Stats.MorphCount = document.Morphs.Count;
 
+            // モデル情報を保持する。ModelContext.Name はファイル名で上書きされるため、
+            // PMX が持っていた表示名とコメントはここに残す。
+            result.ModelInfo = new PmxModelInfoData
+            {
+                Name           = document.ModelInfo?.Name           ?? "",
+                NameEnglish    = document.ModelInfo?.NameEnglish    ?? "",
+                Comment        = document.ModelInfo?.Comment        ?? "",
+                CommentEnglish = document.ModelInfo?.CommentEnglish ?? ""
+            };
+
             //Debug.Log($"[PMXImporter] ImportTarget: {settings.ImportTarget}");
 
             // マテリアルをUnityマテリアルに変換（Mesh読み込み時のみ）
@@ -334,6 +347,29 @@ namespace Poly_Ling.PMX
                     // 両面描画フラグを CullMode に反映（DrawMeshes での動的カリング制御に使用）
                     if ((pmxMat.DrawFlags & 0x01) != 0)
                         matRef.Data.CullMode = Poly_Ling.Materials.CullModeType.Off;
+
+                    // PMX 固有欄を保持する。MaterialData は URP 用でこれらを表現できないため、
+                    // ここで落とすと書き出しで既定値になる（反射色・環境色・描画フラグなど）。
+                    matRef.Data.Pmx = new PmxMaterialData
+                    {
+                        NameEnglish       = pmxMat.NameEnglish ?? "",
+                        SpecularPower     = pmxMat.SpecularPower,
+                        DrawFlags         = pmxMat.DrawFlags,
+                        EdgeSize          = pmxMat.EdgeSize,
+                        SphereTexturePath = pmxMat.SphereTexturePath ?? "",
+                        SphereMode        = pmxMat.SphereMode,
+                        SharedToon        = pmxMat.SharedToon,
+                        ToonTextureIndex  = pmxMat.ToonTextureIndex,
+                        ToonTexturePath   = pmxMat.ToonTexturePath ?? "",
+                        Memo              = pmxMat.Memo ?? ""
+                    };
+                    matRef.Data.Pmx.SetSpecular(pmxMat.Specular);
+                    matRef.Data.Pmx.SetAmbient(pmxMat.Ambient);
+                    matRef.Data.Pmx.SetEdgeColor(pmxMat.EdgeColor);
+
+                    // テクスチャパスは MaterialData 側を正とする（書き出しでここから引く）。
+                    if (!string.IsNullOrEmpty(pmxMat.TexturePath))
+                        matRef.Data.BaseMapPath = pmxMat.TexturePath;
 
                     result.MaterialReferences.Add(matRef);
                 }
@@ -843,6 +879,25 @@ namespace Poly_Ling.PMX
             {
                 Type = MeshType.Bone,
                 HierarchyParentIndex = parentIndex
+            };
+
+            // PMX ボーンの付帯データを保持する。変形階層・フラグ・接続先・付与親・
+            // 固定軸・ローカル軸・外部親は BoneTransform では表現できないため、
+            // ここで落とすと書き出しで既定値になる。参照は名前を主とする。
+            meshObject.PmxBone = new PmxBoneAttrData
+            {
+                NameEnglish               = pmxBone.NameEnglish ?? "",
+                TransformLevel            = pmxBone.TransformLevel,
+                Flags                     = pmxBone.Flags,
+                ConnectBoneName           = pmxBone.ConnectBoneName ?? "",
+                ConnectOffset             = pmxBone.ConnectOffset,
+                GrantParentBoneName       = pmxBone.GrantParentBoneName ?? "",
+                GrantRate                 = pmxBone.GrantRate,
+                FixedAxis                 = pmxBone.FixedAxis,
+                LocalAxisX                = pmxBone.LocalAxisX,
+                LocalAxisZ                = pmxBone.LocalAxisZ,
+                IsLocalAxisAutoCalculated = pmxBone.IsLocalAxisAutoCalculated,
+                ExternalParentKey         = pmxBone.ExternalParentKey
             };
 
             // BoneTransformを設定（ローカル座標・ローカル回転）
@@ -2082,6 +2137,18 @@ namespace Poly_Ling.PMX
                         }
                     }
 
+                    // 子モーフの名前は PMX ドキュメントから取る。
+                    // 取り込めた MorphExpression の名前から取ると、オフセットが
+                    // 1 件も無い空モーフの子が記録から漏れる（実測: まばたきの子
+                    // まばたき_MD / まばたき_ME が両方 0 件で、4 → 2 に減っていた）。
+                    string childNameForGroup =
+                        (childMorphIndex >= 0 && childMorphIndex < document.Morphs.Count)
+                            ? document.Morphs[childMorphIndex].Name
+                            : groupOffset.MorphName;
+
+                    if (!string.IsNullOrEmpty(childNameForGroup))
+                        groupSet.GroupChildren.Add(new MorphGroupChild(childNameForGroup, groupOffset.Weight));
+
                     MorphExpression childSet = null;
                     bool found = childMorphIndex >= 0 && tempMorphExpressions.TryGetValue(childMorphIndex, out childSet);
                     if (!found)
@@ -2106,7 +2173,9 @@ namespace Poly_Ling.PMX
                     groupedMorphIndices.Add(childMorphIndex);
                 }
 
-                if (groupSet.MeshCount > 0)
+                // 子がすべて空モーフでもグループ自体は残す。
+                // 落とすと書き戻しでグループモーフが丸ごと消える。
+                if (groupSet.MeshCount > 0 || groupSet.GroupChildren.Count > 0)
                 {
                     result.MorphExpressions.Add(groupSet);
                     //Debug.Log($"[PMXImporter] Group morph '{pmxMorph.Name}': {groupSet.MeshCount} meshes from {pmxMorph.Offsets.Count} children");
@@ -2207,6 +2276,11 @@ namespace Poly_Ling.PMX
                 // MorphBaseDataを設定（現在の位置を基準として保存）
                 morphMesh.SetAsMorph(pmxMorph.Name);
                 morphMesh.MorphPanel = pmxMorph.Panel;
+
+                // どの描画オブジェクトから作ったかを残す。
+                // 書き出しでオフセットを頂点番号へ写すときにこの名前で引く。
+                if (morphMesh.MorphBaseData != null)
+                    morphMesh.MorphBaseData.BaseMeshName = baseMesh.Name;
 
                 // オフセットを適用
                 foreach (var (localIndex, offset) in offsets)
@@ -2327,6 +2401,11 @@ namespace Poly_Ling.PMX
                 // MorphBaseDataを設定
                 morphMesh.SetAsMorph(pmxMorph.Name);
                 morphMesh.MorphPanel = pmxMorph.Panel;
+
+                // どの描画オブジェクトから作ったかを残す。
+                // 書き出しでオフセットを頂点番号へ写すときにこの名前で引く。
+                if (morphMesh.MorphBaseData != null)
+                    morphMesh.MorphBaseData.BaseMeshName = baseMesh.Name;
 
                 // UVオフセットを適用
                 foreach (var (localIndex, uvOffset) in offsets)

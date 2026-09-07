@@ -56,16 +56,25 @@ namespace Poly_Ling.Tools.SpringBoneTest
     [Serializable]
     public class SpringBoneTestRigParams
     {
+        [PLParam(TextKey = "SbTestShape",
+                 Description = "作る形。Skirt = 腰まわりの放射チェーン / Ponytail = 頭の後ろ 1 本")]
         public SpringBoneTestRigShape Shape = SpringBoneTestRigShape.Skirt;
 
         /// <summary>生成物の名前につける接頭辞。削除・再生成の目印にもする。</summary>
+        [PLParam(TextKey = "SbTestPrefix",
+                 Description = "生成物の名前につける接頭辞。削除・再生成の目印にもする")]
         public string Prefix = "SBTest";
 
         // ---- 形状（Skirt） ----
+        [PLParam(TextKey = "SbTestStrands", Description = "スカートのチェーン本数", Min = 1)]
         public int   Strands           = 12;
+        [PLParam(TextKey = "SbTestSegmentsPerStrand", Description = "チェーン 1 本あたりの節数", Min = 1)]
         public int   SegmentsPerStrand = 5;
+        [PLParam(TextKey = "SbTestWaistRadius", Description = "腰まわりの半径")]
         public float WaistRadius       = 0.12f;
+        [PLParam(TextKey = "SbTestHemRadius", Description = "裾の半径")]
         public float HemRadius         = 0.45f;
+        [PLParam(TextKey = "SbTestSegmentLength", Description = "節 1 つあたりの長さ")]
         public float SegmentLength     = 0.12f;
 
         /// <summary>
@@ -81,6 +90,8 @@ namespace Poly_Ling.Tools.SpringBoneTest
         ///
         ///   股関節はどのモデルでも必ず腰の高さにあるので、これを基準にする。
         /// </summary>
+        [PLParam(TextKey = "SbTestAutoSkirtHeight",
+                 Description = "腰高さを股関節から自動で決める。既定は true")]
         public bool AutoSkirtHeight = true;
 
         /// <summary>
@@ -88,9 +99,12 @@ namespace Poly_Ling.Tools.SpringBoneTest
         /// AutoSkirtHeight が true のときは股関節高さからの差分、
         /// false のときは取付先ボーンからの持ち上げ量として効く。
         /// </summary>
+        [PLParam(TextKey = "SbTestSkirtLift",
+                 Description = "腰高さの追加補正[m]。AutoSkirtHeight が true なら股関節高さからの差分")]
         public float SkirtLift = 0f;
 
         // ---- 形状（Ponytail） ----
+        [PLParam(TextKey = "SbTestPonytailSegments", Description = "ポニーテールの節数", Min = 1)]
         public int   PonytailSegments = 6;
 
         /// <summary>
@@ -99,24 +113,74 @@ namespace Poly_Ling.Tools.SpringBoneTest
         /// 頭に密着させると髪と重なって見えないので既定で離してある。
         /// 頭のコライダーも同じだけずらす。
         /// </summary>
+        [PLParam(TextKey = "SbTestPonytailBack",
+                 Description = "頭から後ろ（+Z）へずらす量[m]")]
         public float PonytailBack     = 0.50f;
 
-        public float PonytailWidth    = 0.06f;   // メッシュの帯幅（片側）
+        [PLParam(TextKey = "SbTestPonytailWidth", Description = "メッシュの帯幅（片側）")]
+        public float PonytailWidth    = 0.06f;
 
         // ---- Spring ----
-        public float StiffnessTop  = 0.01f;   // 根元側
-        public float StiffnessTip  = 0.08f;   // 末端側
+        //
+        // 【この既定値の出どころ】
+        //   下の 5 つは、決めた根拠がコードにもコメントにも残っていない。
+        //   行末に旧値（0.01 / 0.08）が消し残っているだけで、何を見て
+        //   今の値にしたのかは辿れない。検証用の見た目に合わせた値であり、
+        //   実モデルの推奨値ではない。
+        //
+        // 【VRM 側の既定・通常範囲との差】
+        //   VRM(UniVRM) の既定は stiffness 1.0 / drag 0.4 / gravityPower 0 /
+        //   hitRadius 0.02。インスペクタの通常スライダは stiffness 0〜4、
+        //   gravityPower 0〜2、hitRadius 0〜0.5、drag は 0〜1 固定。
+        //   StiffnessTip = 8.0 はその通常範囲の 2 倍にあたる。
+        //   値そのものは既存の見た目を変えないため据え置く。
+
+        [PLParam(TextKey = "SbTestStiffnessTop",
+                 Description = "根元側のかたさ。初期姿勢へ戻す速度で、大きいほど硬い")]
+        public float StiffnessTop  = 1.0f;   // 根元側
+        [PLParam(TextKey = "SbTestStiffnessTip",
+                 Description = "末端側のかたさ。根元から末端へ線形補間する")]
+        public float StiffnessTip  = 8.0f;   // 末端側
+
+        /// <summary>
+        /// 減衰。前フレームの移動を (1 - Drag) 倍して持ち越す。
+        /// 空気抵抗ではない。0 で持ち越し切って止まらず、1 で慣性を捨てる。
+        /// </summary>
+        [PLParam(TextKey = "SbTestDrag",
+                 Description = "減衰。前フレームの移動をどれだけ捨てるか。0 で止まらない、1 で慣性なし",
+                 Min = 0.0, Max = 1.0)]
         public float Drag          = 0.15f;
+
+        /// <summary>
+        /// 重力の強さ。加速度[m/s^2]ではない。向きベクトルに掛けて
+        /// 経過時間倍したものを位置へ足す量。9.8 を入れる前提の値ではない。
+        /// </summary>
+        [PLParam(TextKey = "SbTestGravityPower",
+                 Description = "重力の強さ。加速度ではなく、重力の向きへ足す量",
+                 Min = 0.0)]
         public float GravityPower  = 0.15f;
+
+        /// <summary>
+        /// ジョイント側の球の半径。衝突判定でコライダーの半径に足される。
+        /// </summary>
+        [PLParam(TextKey = "SbTestHitRadius",
+                 Description = "ジョイント側の球の半径。コライダーの半径に足されて衝突を判定する",
+                 Min = 0.0)]
         public float HitRadius     = 0.04f;
 
         // ---- コライダー ----
+        [PLParam(TextKey = "SbTestLegRadius", Description = "脚カプセルの半径")]
         public float LegRadius  = 0.07f;
+        [PLParam(TextKey = "SbTestLegSpacing", Description = "脚カプセルの間隔")]
         public float LegSpacing = 0.09f;
+        [PLParam(TextKey = "SbTestLegLength", Description = "脚カプセルの長さ")]
         public float LegLength  = 0.7f;
+        [PLParam(TextKey = "SbTestHeadRadius", Description = "頭の球コライダーの半径")]
         public float HeadRadius = 0.12f;
 
         /// <summary>チェーンの慣性基準に取付先ボーンを使うか。false なら World 空間評価。</summary>
+        [PLParam(TextKey = "SbTestUseCenterBone",
+                 Description = "慣性の基準に取付先ボーンを使う。false なら World 空間評価")]
         public bool UseCenterBone = false;
     }
 

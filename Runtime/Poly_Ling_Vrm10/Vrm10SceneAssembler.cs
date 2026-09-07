@@ -84,6 +84,12 @@ namespace Poly_Ling.Vrm10Impl
         /// <summary>付けたスプリングボーン・コライダーの数。</summary>
         public int SpringBoneColliderCount;
 
+        /// <summary>視線設定を書いたか（false=VRM の既定のまま）。</summary>
+        public bool LookAtWritten;
+
+        /// <summary>一人称の扱いを書いた描画オブジェクトの数（Auto は数えない）。</summary>
+        public int FirstPersonAnnotationCount;
+
         /// <summary>載せたブレンドシェイプの総数。</summary>
         public int MorphShapeCount;
 
@@ -201,6 +207,16 @@ namespace Poly_Ling.Vrm10Impl
             if (settings.ExportSpringBones)
                 BuildSpringBones(model, hierarchy, instance, report);
 
+            // ----------------------------------------------------------------
+            // 視線・一人称
+            //   どちらも VRM10Object のフィールド初期値が非 null なので、
+            //   書かなくても UniVRM 側は既定値を出力する
+            //   （Vrm10Exporter.cs:733-750 / :696-722）。
+            //   ここで書くのは「PolyLing 側に値があるときだけ上書きする」ため。
+            // ----------------------------------------------------------------
+            BuildLookAt(model, report);
+            BuildFirstPerson(model, hierarchy, report);
+
             return report;
         }
 
@@ -214,6 +230,144 @@ namespace Poly_Ling.Vrm10Impl
             }
             _created.Clear();
             VrmObject = null;
+        }
+
+        // ================================================================
+        // 視線（VRMC_vrm.lookAt）
+        // ================================================================
+
+        /// <summary>
+        /// ModelContext.VrmLookAt を VRM10Object.LookAt へ写す。
+        /// 未設定（null）なら触らない＝UniVRM の既定がそのまま出る。
+        ///
+        /// OffsetFromHead は Unity 左手系のまま渡す。右手系への反転は
+        /// UniVRM の ExportLookAt が ReverseX で行う（Vrm10Exporter.cs:743）。
+        /// </summary>
+        private void BuildLookAt(ModelContext model, AssembleReport report)
+        {
+            var src = model?.VrmLookAt;
+            if (src == null || VrmObject == null) return;
+
+            var dst = VrmObject.LookAt;
+            if (dst == null)
+            {
+                dst = new VRM10ObjectLookAt();
+                VrmObject.LookAt = dst;
+            }
+
+            dst.OffsetFromHead = src.OffsetFromHead;
+            dst.LookAtType = (src.LookAtType == VrmLookAtType.Expression)
+                ? UniGLTF.Extensions.VRMC_vrm.LookAtType.expression
+                : UniGLTF.Extensions.VRMC_vrm.LookAtType.bone;
+
+            dst.HorizontalInner = ToCurveMapper(src.HorizontalInner);
+            dst.HorizontalOuter = ToCurveMapper(src.HorizontalOuter);
+            dst.VerticalDown    = ToCurveMapper(src.VerticalDown);
+            dst.VerticalUp      = ToCurveMapper(src.VerticalUp);
+
+            report.LookAtWritten = true;
+        }
+
+        /// <summary>
+        /// 対応づけ 1 本を CurveMapper へ。
+        /// CurveXRangeDegree が 0 だと UniVRM 側の OnValidate が 90 に直すので、
+        /// ここでも 0 は 90 に寄せて往復で値が変わらないようにする。
+        /// </summary>
+        private static CurveMapper ToCurveMapper(VrmLookAtRangeMap m)
+        {
+            var src = m ?? new VrmLookAtRangeMap();
+            float x = (src.InputMaxDegrees == 0f) ? 90f : src.InputMaxDegrees;
+            return new CurveMapper(x, src.OutputScale);
+        }
+
+        // ================================================================
+        // 一人称（VRMC_vrm.firstPerson）
+        // ================================================================
+
+        /// <summary>
+        /// MeshObject.VrmFirstPerson を VRM10Object.FirstPerson へ写す。
+        ///
+        /// 【Auto は書かない】
+        ///   VRM 仕様の既定が auto なので、書かないことと auto を書くことは
+        ///   同じ意味になる。行を増やさないほうが読みやすい。
+        ///   1件も書かない場合、UniVRM は meshAnnotations を空配列で出す
+        ///   （現状と同じ）。
+        ///
+        /// 【ミラー側も対象】
+        ///   ミラー枝は別のレンダラとして出るので、実体側と同じ扱いを付ける。
+        ///   索引はミラー側も実体側に寄せてあるため、同じ MeshObject を引く。
+        /// </summary>
+        private void BuildFirstPerson(
+            ModelContext model, HierarchyBuildResult hierarchy, AssembleReport report)
+        {
+            if (model == null || VrmObject == null || hierarchy?.Root == null) return;
+
+            var fp = VrmObject.FirstPerson;
+            if (fp == null)
+            {
+                fp = new VRM10ObjectFirstPerson();
+                VrmObject.FirstPerson = fp;
+            }
+
+            var rootTf = hierarchy.Root.transform;
+            int written = 0;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mo = model.GetMeshContext(i)?.MeshObject;
+                if (mo == null) continue;
+                if (mo.VrmFirstPerson == VrmFirstPersonType.Auto) continue;
+
+                var flag = ToFirstPersonType(mo.VrmFirstPerson);
+
+                if (hierarchy.RealTransformByIndex.TryGetValue(i, out var real))
+                    written += AddAnnotation(fp, rootTf, real, flag, mo.Name, report);
+
+                if (hierarchy.MirrorTransformByIndex.TryGetValue(i, out var mirror))
+                    written += AddAnnotation(fp, rootTf, mirror, flag, mo.Name, report);
+            }
+
+            report.FirstPersonAnnotationCount = written;
+        }
+
+        /// <summary>
+        /// Transform に付いたレンダラへ注記を足す。足せたら 1、足せなければ 0。
+        /// レンダラが無いノード（空の関節など）は静かに飛ばす。
+        /// </summary>
+        private static int AddAnnotation(
+            VRM10ObjectFirstPerson fp, Transform root, Transform tf,
+            UniGLTF.Extensions.VRMC_vrm.FirstPersonType flag,
+            string name, AssembleReport report)
+        {
+            if (tf == null) return 0;
+
+            var renderer = tf.GetComponent<Renderer>();
+            if (renderer == null)
+            {
+                report.Warnings.Add(
+                    $"\"{name}\" は一人称の指定を持っていますが、"
+                    + "出力側にレンダラが無いため落とします。");
+                return 0;
+            }
+
+            fp.Renderers.Add(RendererFirstPersonFlags.Create(root, renderer, flag));
+            return 1;
+        }
+
+        private static UniGLTF.Extensions.VRMC_vrm.FirstPersonType ToFirstPersonType(
+            VrmFirstPersonType t)
+        {
+            switch (t)
+            {
+                case VrmFirstPersonType.Both:
+                    return UniGLTF.Extensions.VRMC_vrm.FirstPersonType.both;
+                case VrmFirstPersonType.ThirdPersonOnly:
+                    return UniGLTF.Extensions.VRMC_vrm.FirstPersonType.thirdPersonOnly;
+                case VrmFirstPersonType.FirstPersonOnly:
+                    return UniGLTF.Extensions.VRMC_vrm.FirstPersonType.firstPersonOnly;
+                default:
+                    return UniGLTF.Extensions.VRMC_vrm.FirstPersonType.auto;
+            }
         }
 
         // ================================================================
@@ -411,18 +565,31 @@ namespace Poly_Ling.Vrm10Impl
         /// SpringBone 付帯データを VRM のコンポーネントへ写す。
         ///
         /// 格納規約は MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
-        ///   ・コライダー … MeshObject.SpringBoneColliders（1ボーンに複数可）
+        ///   ・コライダー … MeshObject.SpringBoneColliders（1ノードに複数可）
         ///   ・ジョイント … MeshObject.SpringBoneJoint（非null＝揺れチェーンのメンバー）
         ///   ・チェーン   … MeshObject.SpringBoneChainRoot（非null＝チェーン起点）
-        /// チェーンの形状はボーン階層＋SpringBoneJoint の有無から導出する
+        /// チェーンの形状は階層＋SpringBoneJoint の有無から導出する
         /// （SpringBoneChainData.cs:15-20）。
+        ///
+        /// 【付帯先をボーンに限らない理由】
+        ///   VRM の joint / collider はノード索引を指すだけで、スキン関節である
+        ///   必要がない。UniVRM の ModelExporter は階層の全 Transform を無条件に
+        ///   ノード化する（Model.Nodes は Root を除く全ノード）ので、
+        ///   描画オブジェクトのノードにも揺れを載せられる。
+        ///
+        /// 【実体側だけを見る】
+        ///   参照表は RealTransformByIndex（ボーンと描画オブジェクトの両方が入る）。
+        ///   ミラー枝側の GameObject は MirrorTransformByIndex にあり、
+        ///   1 つの索引が 2 つの Transform を持ちうる。どちらに載せるかを
+        ///   決められないため、揺れは実体側にだけ載せ、実体側の出力が無い
+        ///   ノードに揺れが付いていたら警告して落とす。
         /// </summary>
         private void BuildSpringBones(
             ModelContext model, HierarchyBuildResult hierarchy,
             Vrm10Instance instance, AssembleReport report)
         {
-            var boneTf = hierarchy.BoneTransformByIndex;
-            if (boneTf.Count == 0) return;
+            var nodeTf = hierarchy.RealTransformByIndex;
+            if (nodeTf.Count == 0) return;
 
             // ---- コライダー ----------------------------------------------
             // グループ名リストはモデルレベルに1つ。所属は index 参照。
@@ -433,11 +600,16 @@ namespace Poly_Ling.Vrm10Impl
             for (int i = 0; i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.Bone) continue;
+                if (mc == null) continue;
 
                 var list = mc.MeshObject?.SpringBoneColliders;
                 if (list == null || list.Count == 0) continue;
-                if (!boneTf.TryGetValue(i, out var tf) || tf == null) continue;
+                if (!nodeTf.TryGetValue(i, out var tf) || tf == null)
+                {
+                    report.Warnings.Add(
+                        $"\"{mc.Name}\" のコライダー {list.Count} 個は、出力ノードが無いため落とします。");
+                    continue;
+                }
 
                 foreach (var c in list)
                 {
@@ -489,11 +661,16 @@ namespace Poly_Ling.Vrm10Impl
             for (int i = 0; i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.Bone) continue;
+                if (mc == null) continue;
 
                 var j = mc.MeshObject?.SpringBoneJoint;
                 if (j == null) continue;
-                if (!boneTf.TryGetValue(i, out var tf) || tf == null) continue;
+                if (!nodeTf.TryGetValue(i, out var tf) || tf == null)
+                {
+                    report.Warnings.Add(
+                        $"\"{mc.Name}\" の揺れジョイントは、出力ノードが無いため落とします。");
+                    continue;
+                }
 
                 var comp = tf.gameObject.AddComponent<VRM10SpringBoneJoint>();
                 comp.m_jointRadius    = j.HitRadius;
@@ -502,20 +679,35 @@ namespace Poly_Ling.Vrm10Impl
                 comp.m_gravityDir     = j.GravityDir;
                 comp.m_dragForce      = j.DragForce;
 
+                // 【角度制限（VRMC_springBone_limit）を写していない理由】
+                //   VRM10SpringBoneJoint.m_anglelimitType の型
+                //   UniGLTF.SpringBoneJobs.AnglelimitTypes は、
+                //   PolyLing.Vrm10.asmdef が参照していないアセンブリにある。
+                //   参照を足せば写せるが、そのアセンブリ名が未確認のため保留。
+                //   写していないことは下で警告として出す（黙って落とさない）。
+                if (j.AngleLimitType != SpringBoneAngleLimitType.None)
+                {
+                    report.Warnings.Add(
+                        $"\"{mc.Name}\" の揺れの角度制限は、この版では VRM に書き出しません。"
+                      + "読み込んだ側では制限なしとして動きます。");
+                }
+
                 jointComp[i] = comp;
             }
 
             // ---- チェーン ------------------------------------------------
-            // 親子表は HierarchyBuilder と同じものを使う（Depth 由来）。
+            // 親子表は HierarchyBuilder と同じ規則（ボーンは HierarchyParentIndex、
+            // それ以外は Depth）で作る。規則は MeshHierarchyOps が正典。
             var parentIndices = MeshHierarchyOps.BuildParentIndicesFromDepth(model);
-            var childrenOf = BuildChildrenTable(model, parentIndices);
+            var childrenOf = MeshHierarchyOps.BuildChildrenTable(model, parentIndices);
 
-            // ボーン名 → 索引（center 解決用。先勝ち）
+            // ノード名 → 索引（center 解決用。先勝ち）
+            // center も joint と同じくノード索引を指すだけなので、ボーンに限らない。
             var boneIndexByName = new Dictionary<string, int>();
             for (int i = 0; i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.Bone) continue;
+                if (mc == null || !nodeTf.ContainsKey(i)) continue;
                 if (!string.IsNullOrEmpty(mc.Name) && !boneIndexByName.ContainsKey(mc.Name))
                     boneIndexByName[mc.Name] = i;
             }
@@ -523,7 +715,7 @@ namespace Poly_Ling.Vrm10Impl
             for (int i = 0; i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.Bone) continue;
+                if (mc == null) continue;
 
                 var chain = mc.MeshObject?.SpringBoneChainRoot;
                 if (chain == null) continue;
@@ -553,7 +745,7 @@ namespace Poly_Ling.Vrm10Impl
                 if (!string.IsNullOrEmpty(chain.CenterBoneName) &&
                     boneIndexByName.TryGetValue(chain.CenterBoneName, out int centerIdx))
                 {
-                    boneTf.TryGetValue(centerIdx, out center);
+                    nodeTf.TryGetValue(centerIdx, out center);
                 }
 
                 for (int p = 0; p < paths.Count; p++)
@@ -583,31 +775,6 @@ namespace Poly_Ling.Vrm10Impl
         private static string ChainName(SpringBoneChainData chain, MeshContext mc)
             => !string.IsNullOrEmpty(chain.Name) ? chain.Name
              : (!string.IsNullOrEmpty(mc.Name) ? mc.Name : "Spring");
-
-        /// <summary>親索引配列から子リストを作る（ボーンのみ）。</summary>
-        private static Dictionary<int, List<int>> BuildChildrenTable(
-            ModelContext model, int[] parentIndices)
-        {
-            var table = new Dictionary<int, List<int>>();
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.Bone) continue;
-
-                int parent = (parentIndices != null && i < parentIndices.Length)
-                    ? parentIndices[i]
-                    : mc.HierarchyParentIndex;
-                if (parent < 0) continue;
-
-                if (!table.TryGetValue(parent, out var list))
-                {
-                    list = new List<int>();
-                    table[parent] = list;
-                }
-                list.Add(i);
-            }
-            return table;
-        }
 
         /// <summary>
         /// current を起点に、SpringBoneJoint を持つ子孫だけを辿って

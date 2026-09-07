@@ -83,6 +83,44 @@ namespace Poly_Ling.Tools
         }
 
         public void RevertPublic() { RevertToStart(); _scaleX = _scaleY = _scaleZ = 1f; }
+
+        /// <summary>
+        /// 取り出せるスケールプレビューがあるか。TryTakeScaleFromDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool ScaleDragPending
+            => _ctx != null && _isDirty && _multiMeshStartPositions.Count > 0;
+
+        /// <summary>
+        /// ドラッグ／スライダーのスケール量を取り出し、開始状態へ戻す。
+        ///
+        /// 【なぜ要るか】
+        ///   1 ドラッグ = 1 コマンドにするため。ドラッグ中の適用はプレビューとして
+        ///   扱い、確定時はここで開始状態へ戻して倍率だけを返す。呼び出し側
+        ///   （ScaleToolHandler）が ScaleSelectionCommand を送り、実際の適用と
+        ///   Undo 記録は EndSliderDrag → ApplyScale が行う。
+        ///   ObjectMoveTool.TryTakeOriginOnlyDrag と同じ形。
+        ///
+        /// 【戻す方法】
+        ///   ApplyScale が Undo 記録に使うのと同じ _multiMeshStartPositions を
+        ///   書き戻す RevertToStart をそのまま使う。復元用の経路を別に作らない。
+        ///
+        /// 【何も返さない場合】
+        ///   プレビューが無いときは false を返し、状態も戻さない。
+        ///   呼び出し側は従来どおり EndSliderDrag で確定させる。
+        /// </summary>
+        public bool TryTakeScaleFromDrag(out Vector3 scale, out Vector3 scaleAxis)
+        {
+            scale     = new Vector3(_scaleX, _scaleY, _scaleZ);
+            scaleAxis = new Vector3(_scaleAxisX, _scaleAxisY, _scaleAxisZ);
+
+            if (!ScaleDragPending) return false;
+
+            RevertToStart();
+            ExitSliderDragging();
+            _scaleX = _scaleY = _scaleZ = 1f;
+            return true;
+        }
+
         public void SetContextPublic(ToolContext ctx) { _ctx = ctx; UpdateAffected(); UpdatePivot(); }
 
         public void OnActivate(ToolContext ctx) { _ctx = ctx; ResetState(); }

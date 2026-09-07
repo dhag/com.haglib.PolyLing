@@ -980,6 +980,91 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
+    // オブジェクトグループ変更記録
+    // ============================================================
+
+    /// <summary>
+    /// オブジェクトグループの追加 / 削除 / 差し替えの Undo 記録。
+    ///
+    /// 【なぜメッシュリストのレコードに混ぜないか】
+    ///   グループはメッシュの追加・削除とは別のタイミングで増減する。
+    ///   「ちょっと作るだけ」はグループを作らずに描画オブジェクトだけ増えるし、
+    ///   グループの解除は描画オブジェクトを残したままグループだけ消す。
+    ///   MorphExpressionChangeRecord と同じく独立したレコードにする。
+    ///
+    /// 【実体ではなく複製を持つ】
+    ///   グループは Args と MeshRefIds を可変の辞書で持つ。参照のまま控えると、
+    ///   あとで中身を書き換えたときに記録側も一緒に変わる。
+    /// </summary>
+    public class ObjectGroupChangeRecord : MeshListUndoRecord
+    {
+        /// <summary>追加されたグループ（Undo 時に削除）。</summary>
+        public Poly_Ling.Data.ObjectGroup AddedGroup;
+        /// <summary>追加位置。</summary>
+        public int AddedIndex = -1;
+
+        /// <summary>削除されたグループ（Undo 時に復元）。</summary>
+        public Poly_Ling.Data.ObjectGroup RemovedGroup;
+        /// <summary>削除位置。</summary>
+        public int RemovedIndex = -1;
+
+        /// <summary>差し替え前のグループ（Undo 時に戻す）。</summary>
+        public Poly_Ling.Data.ObjectGroup OldGroup;
+        /// <summary>差し替え後のグループ（Redo 時に入れる）。</summary>
+        public Poly_Ling.Data.ObjectGroup NewGroup;
+        /// <summary>差し替え位置。-1 = 差し替えではない。</summary>
+        public int ReplacedIndex = -1;
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx?.ObjectGroups == null) return;
+
+            if (ReplacedIndex >= 0 && ReplacedIndex < ctx.ObjectGroups.Count && OldGroup != null)
+                ctx.ObjectGroups[ReplacedIndex] = OldGroup.Clone();
+
+            if (AddedGroup != null && AddedIndex >= 0 && AddedIndex < ctx.ObjectGroups.Count)
+                ctx.ObjectGroups.RemoveAt(AddedIndex);
+
+            if (RemovedGroup != null && RemovedIndex >= 0)
+            {
+                int idx = Mathf.Clamp(RemovedIndex, 0, ctx.ObjectGroups.Count);
+                ctx.ObjectGroups.Insert(idx, RemovedGroup.Clone());
+            }
+
+            ctx.IsDirty = true;
+            ctx.OnListChanged?.Invoke();
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx?.ObjectGroups == null) return;
+
+            if (RemovedGroup != null && RemovedIndex >= 0 && RemovedIndex < ctx.ObjectGroups.Count)
+                ctx.ObjectGroups.RemoveAt(RemovedIndex);
+
+            if (AddedGroup != null && AddedIndex >= 0)
+            {
+                int idx = Mathf.Clamp(AddedIndex, 0, ctx.ObjectGroups.Count);
+                ctx.ObjectGroups.Insert(idx, AddedGroup.Clone());
+            }
+
+            if (ReplacedIndex >= 0 && ReplacedIndex < ctx.ObjectGroups.Count && NewGroup != null)
+                ctx.ObjectGroups[ReplacedIndex] = NewGroup.Clone();
+
+            ctx.IsDirty = true;
+            ctx.OnListChanged?.Invoke();
+        }
+
+        public override string ToString()
+        {
+            if (AddedGroup   != null) return $"ObjectGroupAdd: {AddedGroup.Name}";
+            if (RemovedGroup != null) return $"ObjectGroupRemove: {RemovedGroup.Name}";
+            if (NewGroup     != null) return $"ObjectGroupReplace: {NewGroup.Name}";
+            return "ObjectGroupChange";
+        }
+    }
+
+    // ============================================================
     // モーフセット変更記録（Phase MorphEditor追加）
     // ============================================================
 
@@ -1183,45 +1268,22 @@ namespace Poly_Ling.UndoSystem
 
         /// <summary>
         /// MeshContext を HierarchyParentIndex を含めてディープコピーする。
+        ///
+        /// 写す項目は MeshContextCloneOps が持つ。以前ここに書いていた初期化子は
+        /// BlendOperation.CloneContext / Player の複製と食い違っており、
+        /// フィールドを足すたびに 3 箇所へ手で足す形になっていた。
+        ///
+        /// 同一オブジェクトの状態複写（Undo/Redo 用）なので
+        /// 安定IDと担当者はそのまま引き継ぐ（StateSnapshot）。
+        /// ※ 複製(Duplicate)は別オブジェクトなのでこの経路を使わないこと。
+        ///    MeshContextCloneKind.NewObject を使う。
         /// </summary>
         public static MeshContext CloneMeshContext(MeshContext src)
         {
             if (src == null) return null;
-            var dst = new MeshContext
-            {
-                Name                   = src.Name,
-                // 同一オブジェクトの状態複写（Undo/Redo 用）なので
-                // 安定IDと担当者はそのまま引き継ぐ。
-                // ※ 複製(Duplicate)は別オブジェクトなのでこの経路を使わないこと。
-                //    ModelContext.Insert が ObjectId==0 に新IDを振る。
-                ObjectId               = src.ObjectId,
-                EditorName             = src.EditorName,
-                MeshObject             = src.MeshObject?.Clone(),
-                BoneTransform          = src.BoneTransform != null ? new BoneTransform(src.BoneTransform) : null,
-                OriginalPositions      = src.OriginalPositions != null ? (Vector3[])src.OriginalPositions.Clone() : null,
-                ParentIndex            = src.ParentIndex,
-                HierarchyParentIndex   = src.HierarchyParentIndex,
-                Depth                  = src.Depth,
-                IsVisible              = src.IsVisible,
-                IsLocked               = src.IsLocked,
-                IsFolding              = src.IsFolding,
-                MirrorType             = src.MirrorType,
-                MirrorAxis             = src.MirrorAxis,
-                MirrorDistance         = src.MirrorDistance,
-                MirrorMaterialOffset   = src.MirrorMaterialOffset,
-                BakedMirrorSourceIndex = src.BakedMirrorSourceIndex,
-                HasBakedMirrorChild    = src.HasBakedMirrorChild,
-                MirrorGeometryDerived  = src.MirrorGeometryDerived,
-                DetachedMirrorObjectId = src.DetachedMirrorObjectId,
-                MorphParentIndex       = src.MorphParentIndex,
-                MorphMirrorPolicy      = src.MorphMirrorPolicy,
-                MirrorOfMorphIndex     = src.MirrorOfMorphIndex,
-                ExcludeFromExport      = src.ExcludeFromExport,
-                IgnorePoseInArmature   = src.IgnorePoseInArmature,
-                BindPose               = src.BindPose,
-                BonePoseData           = src.BonePoseData?.Clone(),
-                MorphBaseData          = src.MorphBaseData?.Clone(),
-            };
+            var dst = Poly_Ling.Ops.MeshContextCloneOps.Clone(
+                src, Poly_Ling.Ops.MeshContextCloneKind.StateSnapshot);
+
             // UnityMesh は MeshObject から再生成
             if (dst.MeshObject != null && dst.MeshObject.VertexCount > 0)
             {

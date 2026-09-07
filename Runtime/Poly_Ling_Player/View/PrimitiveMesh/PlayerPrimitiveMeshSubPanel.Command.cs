@@ -63,6 +63,7 @@ namespace Poly_Ling.Player
                 AddTargetIndex         = _addTargetIndex,
                 MaterialIndex          = EffectiveMaterialIndex,
                 MergeDuplicateVertices = _mergeDuplicateVertices,
+                KeepAsGroup            = _keepAsGroup,
             };
 
         /// <summary>
@@ -121,6 +122,14 @@ namespace Poly_Ling.Player
                 case ShapeKind.Text:         return new CreateTextMeshCommand(mi, _textP, pl);
 
                 case ShapeKind.Revolution:   return BuildRevolutionCommand(mi, pl);
+
+                // 揺れもの用ボーン鎖は作るのがボーンなので、
+                // メッシュ生成の経路（AddGeneratedMeshCommand）へは載せない。
+                // パネル側の「生成」ボタンから直接コマンドを送る。
+                case ShapeKind.SpringBoneSingle:
+                case ShapeKind.SpringBoneCylinder:
+                case ShapeKind.SpringBoneRevolution:
+                    return null;
                 case ShapeKind.Profile2D:    return BuildProfile2DCommand(mi, pl);
 
                 case ShapeKind.Frill:        return BuildFrillCommand(mi, pl);
@@ -168,7 +177,14 @@ namespace Poly_Ling.Player
 
             var p = _revP;
             p.Profile = _revProfile != null ? _revProfile.ToArray() : new Vector2[0];
-            return new CreateRevolutionCommand(mi, p, pl);
+
+            // 取り込み元を控えてあれば、作り直しで折れ線として読み直せる。
+            return new CreateRevolutionCommand(
+                mi, p, pl,
+                _revProfileSrcIndex,
+                _revProfileSrcIndex >= 0
+                    ? ProfileAcquireMethod.LinePolyline
+                    : ProfileAcquireMethod.Baked);
         }
 
         /// <summary>
@@ -191,7 +207,24 @@ namespace Poly_Ling.Player
                     arr[i] = new Profile2DParams.LoopData(_p2dLoops[i]);
                 p.Loops = arr;
             }
-            return new CreateProfile2DCommand(mi, p, pl);
+
+            // 平坦な列も必ず埋める。Loops は PLParam(Ignore) なので ToArgs に出ず、
+            // ここを埋めないとオブジェクトグループが輪郭を控えられない
+            // （作り直しで空になる）。生成側は ResolveLoops で Loops を優先するので、
+            // 両方入っていても結果は変わらない。
+            Profile2DParams.SplitLoops(
+                p.Loops, out var loopVals, out var loopStarts, out var loopHoles);
+            p.LoopPointValues = loopVals;
+            p.LoopStarts      = loopStarts;
+            p.LoopIsHole      = loopHoles;
+
+            // 取り込み元を控えてあれば、作り直しで閉ループ群として読み直せる。
+            return new CreateProfile2DCommand(
+                mi, p, pl,
+                _p2dProfileSrcIndex,
+                _p2dProfileSrcIndex >= 0
+                    ? ProfileAcquireMethod.LineLoops
+                    : ProfileAcquireMethod.Baked);
         }
 
         private CreatePrimitiveMeshCommand BuildFrillCommand(int mi, PrimitivePlacement pl)
@@ -199,38 +232,69 @@ namespace Poly_Ling.Player
             EnsureBeltProfile(_frillEdit);
             EnsureBeltProfile(_frillEditB);
 
+            CreateBeltPrimitiveCommand.SplitBelts(
+                BeltsToCsv(_frillBelts).ToArray(),
+                out var fL, out var fR, out var fStarts,
+                out var fClosed, out var fFlip, out var fHeight);
+
             return new CreateFrillCommand(
                 mi, _frillP,
                 _frillEdit?.Points?.ToArray(),
                 _frillEditB?.Points?.ToArray(),
-                BeltsToCsv(_frillBelts).ToArray(),
+                fL, fR, fStarts, fClosed, fFlip, fHeight,
                 ToOrientOptions(_frillOrient),
                 ToSplineOptions(_frillSpline),
-                pl);
+                pl,
+                BeltsSourceMasterIndex(_frillBelts), BeltsAcquireMethod(_frillBelts),
+                BeltsAcquireCrossRows(_frillBelts), BeltsAcquireSetName(_frillBelts),
+                _frillEdit?.SourceMasterIndex ?? -1,
+                (_frillEdit?.SourceMasterIndex ?? -1) >= 0
+                    ? ProfileAcquireMethod.LinePolyline
+                    : ProfileAcquireMethod.Baked);
         }
 
         private CreatePrimitiveMeshCommand BuildPipeCommand(int mi, PrimitivePlacement pl)
         {
             EnsureBeltProfile(_pipeEdit);
 
+            CreateBeltPrimitiveCommand.SplitBelts(
+                BeltsToCsv(_pipeBelts).ToArray(),
+                out var pL, out var pR, out var pStarts,
+                out var pClosed, out var pFlip, out var pHeight);
+
             return new CreatePipeCommand(
                 mi, _pipeP,
                 _pipeEdit?.Points?.ToArray(),
                 _pipeEdit != null && _pipeEdit.ClosedLoop,
-                BeltsToCsv(_pipeBelts).ToArray(),
+                pL, pR, pStarts, pClosed, pFlip, pHeight,
                 ToOrientOptions(_pipeOrient),
                 ToSplineOptions(_pipeSpline),
-                pl);
+                pl,
+                BeltsSourceMasterIndex(_pipeBelts), BeltsAcquireMethod(_pipeBelts),
+                BeltsAcquireCrossRows(_pipeBelts), BeltsAcquireSetName(_pipeBelts),
+                _pipeEdit?.SourceMasterIndex ?? -1,
+                (_pipeEdit?.SourceMasterIndex ?? -1) < 0 ? ProfileAcquireMethod.Baked
+                    : (_pipeEdit.ClosedLoop ? ProfileAcquireMethod.LineLoops
+                                            : ProfileAcquireMethod.LinePolyline));
         }
 
         private CreatePrimitiveMeshCommand BuildPlaceObjectCommand(int mi, PrimitivePlacement pl)
-            => new CreatePlaceObjectCommand(
+        {
+            CreateBeltPrimitiveCommand.SplitBelts(
+                BeltsToCsv(_placeBelts).ToArray(),
+                out var oL, out var oR, out var oStarts,
+                out var oClosed, out var oFlip, out var oHeight);
+
+            return new CreatePlaceObjectCommand(
                 mi, _placeP,
                 _placeSrcPick != null ? _placeSrcPick.SelectedMasterIndices().ToArray() : new int[0],
-                BeltsToCsv(_placeBelts).ToArray(),
+                oL, oR, oStarts, oClosed, oFlip, oHeight,
                 ToOrientOptions(_placeOrient),
                 ToSplineOptions(_placeSpline),
-                pl);
+                pl,
+                BeltsSourceMasterIndex(_placeBelts), BeltsAcquireMethod(_placeBelts),
+                BeltsAcquireCrossRows(_placeBelts), BeltsAcquireSetName(_placeBelts));
+        }
 
         /// <summary>パネル内部の向き補正 → コマンドに載せる形。</summary>
         private static BeltOrientOptions ToOrientOptions(BeltOrientOption o)

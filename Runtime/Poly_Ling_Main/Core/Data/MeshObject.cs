@@ -595,6 +595,36 @@ namespace Poly_Ling.Data
     }
 
     // ============================================================
+    // 一人称カメラでの見え方（VRM FirstPerson）
+    // ============================================================
+
+    /// <summary>
+    /// VRM の firstPerson.meshAnnotations に対応する、描画オブジェクトごとの
+    /// 一人称カメラでの扱い。
+    ///
+    /// 【値の並び】
+    ///   UniGLTF.Extensions.VRMC_vrm.FirstPersonType と同じ並びにしてある
+    ///   （auto / both / thirdPersonOnly / firstPersonOnly）。
+    ///   PolyLing.Vrm10 側で (int) キャストせず switch で写すが、
+    ///   並べ替えると読み手が混乱するので順序は変えないこと。
+    ///
+    /// 【既定は Auto】
+    ///   VRM 仕様の既定と同じ。Auto のノードは出力に書かない
+    ///   （書かないことが「auto として扱ってよい」の意味になる）。
+    /// </summary>
+    public enum VrmFirstPersonType
+    {
+        /// <summary>頭の子孫かどうかで自動判定させる（VRM 既定）。</summary>
+        Auto = 0,
+        /// <summary>一人称・三人称の両方で描く。</summary>
+        Both = 1,
+        /// <summary>三人称でだけ描く（自分の視界からは消える）。</summary>
+        ThirdPersonOnly = 2,
+        /// <summary>一人称でだけ描く。</summary>
+        FirstPersonOnly = 3,
+    }
+
+    // ============================================================
     // 描画オブジェクトの種別（MeshFilter 系 / SkinnedMesh 系）
     // ============================================================
 
@@ -1097,8 +1127,15 @@ namespace Poly_Ling.Data
         // ----------------------------------------------------------------
         //   1. per-bone POCO 統一
         //      ボーン付帯データ（IK / 剛体 / JOINT / SpringBone / Humanoid割当）は
-        //      Type == MeshType.Bone の MeshObject に per-bone POCO として持つ。
+        //      MeshObject に per-node POCO として持つ。
         //      null = 当該属性を持たない。#if UNITY_EDITOR を含めない。
+        //
+        //      付帯先は原則 Type == MeshType.Bone。ただし SpringBone だけは
+        //      「階層に載るノード」まで許す（下の SpringBone 節を参照）。
+        //      VRM の joint / collider は glTF のノード索引を指すだけで、
+        //      スキン関節である必要がない。UniVRM の ModelExporter は
+        //      階層の全 Transform を無条件にノード化するため、描画オブジェクトの
+        //      ノードにも揺れを載せられる。判定は SpringBoneOps.IsCarrier が正典。
         //
         //   2. 参照は name主・index従
         //      ボーン間参照は付帯先/相手の MeshObject.Name を一次キーとする。
@@ -1174,9 +1211,22 @@ namespace Poly_Ling.Data
         /// </summary>
         public JointData JointData { get; set; } = null;
 
+        /// <summary>
+        /// PMX ボーンの付帯データ（Type == MeshType.Bone かつ PMX 由来のとき非null）。
+        /// 変形階層・フラグ・接続先・付与親・固定軸・ローカル軸・外部親を保持する。
+        /// 位置と親子関係と IK は BoneTransform / HierarchyParentIndex / IKData が正。
+        /// 参照はすべて名前を主とする（JointData と同じ規約）。
+        /// </summary>
+        public PmxBoneAttrData PmxBone { get; set; } = null;
+
         // ------------------------------------------------------------
-        // スプリングボーン付帯データ（Type == MeshType.Bone のボーンに付く）
+        // スプリングボーン付帯データ（階層に載るノードに付く）
         //   VRM SpringBone(VRMC_springBone) 由来。物理演算(RigidBody/Joint)とは別物。
+        //
+        //   【付帯先】ボーン、および非スキンドの描画オブジェクト。
+        //     スキンドの描画オブジェクトは HierarchyBuilder がルート直下へ置く
+        //     （親を解決するのは !isSkinned の枝だけ）ので親子の鎖にならず、
+        //     揺らしても意味がないため対象外。判定は SpringBoneOps.IsCarrier。
         //   - コライダー : SpringBoneColliders（1ボーンに複数可。null/空=なし）
         //   - ジョイント : SpringBoneJoint（揺れチェーンメンバー。非null=揺れjoint）
         //   - チェーンルート : SpringBoneChainRoot（チェーン起点ボーンのみ。非null=ルート）
@@ -1221,6 +1271,16 @@ namespace Poly_Ling.Data
         /// ※5d-1: 格納のみ。consumer 差し替えは 5d-2。
         /// </summary>
         public HumanLimitData HumanLimit { get; set; } = null;
+
+        // ------------------------------------------------------------
+        // 一人称カメラでの見え方（描画オブジェクトに付く）
+        //   VRM の firstPerson.meshAnnotations 由来。付帯先はレンダラになる
+        //   ノード（Mesh / BakedMirror など）で、ボーンには意味がない。
+        //   既定 Auto は「指定なし」と同義で、出力にも書かない。
+        // ------------------------------------------------------------
+
+        /// <summary>一人称カメラでの扱い（既定 Auto＝VRM の既定に任せる）。</summary>
+        public VrmFirstPersonType VrmFirstPerson { get; set; } = VrmFirstPersonType.Auto;
 
         // === プロパティ ===
 
@@ -2031,6 +2091,7 @@ namespace Poly_Ling.Data
             copy.IKLink = this.IKLink?.Clone();
             copy.RigidBodyData = this.RigidBodyData?.Clone();
             copy.JointData = this.JointData?.Clone();
+            copy.PmxBone = this.PmxBone?.Clone();
 
             // スプリングボーン付帯データをディープコピー（nullはnullのまま）
             copy.SpringBoneColliders = CloneSpringBoneColliders(this.SpringBoneColliders);
@@ -2039,6 +2100,7 @@ namespace Poly_Ling.Data
             copy.HumanBodyBone = this.HumanBodyBone;
             copy.MirrorBoneIndex = this.MirrorBoneIndex;
             copy.HumanLimit = this.HumanLimit?.Clone();
+            copy.VrmFirstPerson = this.VrmFirstPerson;
 
             // ID管理セットを再構築
             copy.RebuildIdSets();
@@ -2078,6 +2140,7 @@ namespace Poly_Ling.Data
             copy.IKLink = this.IKLink?.Clone();
             copy.RigidBodyData = this.RigidBodyData?.Clone();
             copy.JointData = this.JointData?.Clone();
+            copy.PmxBone = this.PmxBone?.Clone();
 
             // スプリングボーン付帯データをディープコピー（頂点/面IDとは独立）。
             copy.SpringBoneColliders = CloneSpringBoneColliders(this.SpringBoneColliders);
@@ -2086,6 +2149,7 @@ namespace Poly_Ling.Data
             copy.HumanBodyBone = this.HumanBodyBone;
             copy.MirrorBoneIndex = this.MirrorBoneIndex;
             copy.HumanLimit = this.HumanLimit?.Clone();
+            copy.VrmFirstPerson = this.VrmFirstPerson;
 
             // 頂点をコピー（新しいID）
             foreach (var v in Vertices)

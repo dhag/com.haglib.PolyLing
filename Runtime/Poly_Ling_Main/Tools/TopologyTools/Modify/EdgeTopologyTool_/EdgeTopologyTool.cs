@@ -270,6 +270,206 @@ namespace Poly_Ling.Tools
             // ここでは追加の説明のみ表示
         }
 
+        // ================================================================
+        // コマンド経路
+        //
+        // 【1 クリック = 1 コマンド】
+        //   クリックが何を実行するかだけを TryTakeEdgeActionFromClick で決め、
+        //   実行はコマンドの受け口（Execute*FromCommand）が行う。
+        //   Split の 1 クリック目は段を進めるだけで、実行はしない。
+        // ================================================================
+
+        /// <summary>
+        /// このクリックが実行する操作を決めて返す。実行はしない。
+        ///
+        /// 【なぜ要るか】
+        ///   OnMouseDown はホバー状態から対象を決めてその場で実行してしまうので、
+        ///   コマンド経由（自動検証・MCP）と経路が分かれる。ここで対象の解決だけを
+        ///   行い、実行はコマンドの受け口へ寄せる。
+        ///
+        /// 【段の扱い】
+        ///   Split の 1 クリック目は _splitFirstVertex と候補表を作って false を返す。
+        ///   2 クリック目で true を返し、そのとき段は解除する。
+        ///   OnMouseDown と同じ更新をここで行うので、呼び出し側は
+        ///   このメソッドと OnMouseDown のどちらか一方だけを使うこと。
+        /// </summary>
+        /// <param name="a">Flip / Dissolve は辺の頂点 1、Split は 1 点目。</param>
+        /// <param name="b">Flip / Dissolve は辺の頂点 2、Split は 2 点目。</param>
+        /// <returns>実行すべき操作が決まったら true。</returns>
+        public bool TryTakeEdgeActionFromClick(
+            ToolContext ctx, out EdgeTopoMode mode, out int a, out int b)
+        {
+            mode = Mode;
+            a = -1;
+            b = -1;
+
+            if (ctx?.ActiveMeshObject == null) return false;
+
+            switch (Mode)
+            {
+                case EdgeTopoMode.Flip:
+                    if (_hoveredEdge.HasValue && _hoveredEdge.Value.IsShared &&
+                        _hoveredEdge.Value.CanFlip(ctx.ActiveMeshObject))
+                    {
+                        a = _hoveredEdge.Value.VertexIndex1;
+                        b = _hoveredEdge.Value.VertexIndex2;
+                        return true;
+                    }
+                    return false;
+
+                case EdgeTopoMode.Dissolve:
+                    if (_hoveredEdge.HasValue && _hoveredEdge.Value.IsShared)
+                    {
+                        a = _hoveredEdge.Value.VertexIndex1;
+                        b = _hoveredEdge.Value.VertexIndex2;
+                        return true;
+                    }
+                    return false;
+
+                case EdgeTopoMode.Split:
+                    if (_splitHoverVertex < 0) return false;
+
+                    if (_splitFirstVertex < 0)
+                    {
+                        // 1 クリック目。OnMouseDown と同じ更新だけを行う。
+                        _splitFirstVertex = _splitHoverVertex;
+                        BuildSplitOpponentCandidates(ctx.ActiveMeshObject, _splitFirstVertex);
+                        ctx.Repaint?.Invoke();
+                        return false;
+                    }
+
+                    {
+                        int v1 = _splitFirstVertex;
+                        int v2 = _splitHoverVertex;
+                        bool ok = v1 != v2 && _splitOpponentCandidates.ContainsKey(v2);
+
+                        // 成功でも失敗でも 2 点目クリックで段は解除する（OnMouseDown と同じ）。
+                        _splitFirstVertex = -1;
+                        _splitOpponentCandidates.Clear();
+                        ctx.Repaint?.Invoke();
+
+                        if (!ok) return false;
+                        a = v1;
+                        b = v2;
+                        return true;
+                    }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 辺の入れ替えをコマンドから実行する。
+        /// 対象の解決に SetHoverEdge を使い回すため、呼び出し前後でホバー辺を退避・復元する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFlipFromCommand(ToolContext ctx, int v1, int v2, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+            if (v1 < 0 || v2 < 0 || v1 == v2 ||
+                v1 >= mo.VertexCount || v2 >= mo.VertexCount)
+            { reason = "頂点番号が不正です"; return false; }
+
+            var saved = _hoveredEdge;
+            try
+            {
+                SetHoverEdge(v1, v2, mo);
+                if (!_hoveredEdge.HasValue)
+                { reason = $"頂点 {v1} と {v2} を結ぶ辺がありません"; return false; }
+                if (!_hoveredEdge.Value.IsShared)
+                { reason = "境界辺は入れ替えられません"; return false; }
+                if (!_hoveredEdge.Value.CanFlip(mo))
+                { reason = "両側が三角形の辺だけ入れ替えられます"; return false; }
+
+                ExecuteFlip(ctx, _hoveredEdge.Value);
+            }
+            finally
+            {
+                _hoveredEdge = saved;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 辺の消去（2 面の結合）をコマンドから実行する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteDissolveFromCommand(ToolContext ctx, int v1, int v2, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+            if (v1 < 0 || v2 < 0 || v1 == v2 ||
+                v1 >= mo.VertexCount || v2 >= mo.VertexCount)
+            { reason = "頂点番号が不正です"; return false; }
+
+            var saved = _hoveredEdge;
+            try
+            {
+                SetHoverEdge(v1, v2, mo);
+                if (!_hoveredEdge.HasValue)
+                { reason = $"頂点 {v1} と {v2} を結ぶ辺がありません"; return false; }
+                if (!_hoveredEdge.Value.IsShared)
+                { reason = "境界辺は消去できません"; return false; }
+
+                ExecuteDissolve(ctx, _hoveredEdge.Value);
+            }
+            finally
+            {
+                _hoveredEdge = saved;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 四角形の対角分割をコマンドから実行する。
+        ///
+        /// 面番号はコマンドに載せず、マウス経路と同じ
+        /// BuildSplitOpponentCandidates で 2 頂点から解決する。
+        /// 同じ 2 頂点を対角に持つ四角形が複数あるときは最初のものを使う
+        /// （マウス経路と同じ）。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteSplitFromCommand(ToolContext ctx, int v1, int v2, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+            if (v1 < 0 || v2 < 0 || v1 == v2 ||
+                v1 >= mo.VertexCount || v2 >= mo.VertexCount)
+            { reason = "頂点番号が不正です"; return false; }
+
+            // 候補表はクリック経路の段と共有しているので、使い終わったら段ごと戻す。
+            int savedFirst = _splitFirstVertex;
+            var savedCandidates = new Dictionary<int, int>(_splitOpponentCandidates);
+            try
+            {
+                BuildSplitOpponentCandidates(mo, v1);
+                if (!_splitOpponentCandidates.TryGetValue(v2, out int faceIndex))
+                {
+                    reason = $"頂点 {v1} と {v2} を対角に持つ四角形がありません";
+                    return false;
+                }
+
+                ExecuteSplit(ctx, faceIndex, v1, v2);
+            }
+            finally
+            {
+                _splitOpponentCandidates.Clear();
+                foreach (var kv in savedCandidates) _splitOpponentCandidates[kv.Key] = kv.Value;
+                _splitFirstVertex = savedFirst;
+            }
+
+            return true;
+        }
+
         public void Reset()
         {
             _isDragging = false;

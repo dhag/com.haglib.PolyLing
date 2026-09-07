@@ -51,6 +51,23 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>グループモーフの子への参照（名前主）。</summary>
+    [Serializable]
+    public struct MorphGroupChild
+    {
+        /// <summary>子モーフ名。</summary>
+        public string Name;
+
+        /// <summary>適用率。</summary>
+        public float Weight;
+
+        public MorphGroupChild(string name, float weight)
+        {
+            Name = name;
+            Weight = weight;
+        }
+    }
+
     /// <summary>
     /// モーフエクスプレッション
     /// 複数メッシュのモーフを1つの名前でグループ化
@@ -105,6 +122,14 @@ namespace Poly_Ling.Data
 
         /// <summary>作成日時</summary>
         public DateTime CreatedAt = DateTime.Now;
+
+        /// <summary>
+        /// グループモーフの子（Type == MorphType.Group のときのみ）。
+        /// PMX のグループモーフは子モーフを重み付きで参照する。取り込み時に
+        /// 子の内容を親へ展開してしまうと、この参照関係が失われて書き戻せない。
+        /// 参照は名前で持つ（番号はモーフの並び替えで壊れる）。
+        /// </summary>
+        public List<MorphGroupChild> GroupChildren = new List<MorphGroupChild>();
 
         // ================================================================
         // コンストラクタ
@@ -234,6 +259,7 @@ namespace Poly_Ling.Data
                 Type = this.Type,
                 IsSymmetric = this.IsSymmetric,
                 MeshEntries = this.MeshEntries.Select(e => new MorphMeshEntry(e.MeshIndex, e.Weight)).ToList(),
+                GroupChildren = this.GroupChildren.Select(c => new MorphGroupChild(c.Name, c.Weight)).ToList(),
                 CreatedAt = this.CreatedAt
             };
         }

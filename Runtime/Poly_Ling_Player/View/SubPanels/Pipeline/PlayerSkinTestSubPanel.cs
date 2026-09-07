@@ -1,28 +1,22 @@
 // PlayerSkinTestSubPanel.cs
-// スキン生成自動検証パネル。ボタン1つで MQO 読込 → 原点CSV適用 →
-// メッシュからボーンとスキンの生成 → アバター用 Humanoid オートマップ →
-// 検査 → レポート書出まで流す。
+// スキン生成自動検証。ボタン 1 回で
+//   MQO 読込 → 原点CSV適用 → 変換前の記録 → スキンド変換 → Humanoid 自動割当
+//   → 検査とレポート書出 → T ポーズ化 → VRM 書出
+// までを流す。段ランナーと 3 行ログは PlayerStagedTestSubPanelBase が持つ。
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
 //
-// 【原点CSV を先に通す理由】
-//   MeshFilterToSkinnedConverter はボーンのローカル位置を
-//   BoneTransform.Position から取る（BonePlan）。MQO はオブジェクトの
-//   translation を持たないことがあり、その場合 Position はゼロのままなので、
-//   原点CSV を通さずに変換すると全ボーンが原点に重なる。
-//   関節位置を入れるのは原点CSV なので、実際の作業手順と同じ順で流す。
+// 【何を確かめるための検証か】
+//   スキンド変換は「板の集まり」を「ボーン＋スキンドメッシュ」に組み替える。
+//   組み替えの前後で見た目が変わらないこと（頂点のワールド位置が保たれること）と、
+//   ボーンが実際に生成されて Humanoid に割り当てられることを機械的に見る。
 //
-// 【原点CSV自動検証との違い】
-//   あちらは原点適用そのものを検査する。こちらは適用済みの状態から
-//   スキンド変換を掛け、ボーン生成とアバター割当までを検査する。
+// 【原点CSVを先に通す理由】
+//   関節位置（BoneTransform.Position）は原点CSVで入る。入れずに変換すると
+//   全ボーンが原点に重なり、Unity のアバターが成立しない。
+//   検査では「ローカル位置がゼロのボーン」を数えて、この状態を捕まえる。
 //
 // 【入力欄を置かない理由】
-//   同じファイルを何度も使うため。MQO は直前の import が RecentPaths に残しているので
-//   それをそのまま使う。押すだけで走る。
-//
-// 【段の区切り】
-//   コマンドはキュー経由で処理されるため、送信直後の状態は当てにならない。
-//   PlayerPipelineTestSubPanel と同じく UIToolkit の schedule で 1 段ずつ間を空ける。
-//   MonoBehaviour.Update は使わない。
+//   MQO は直前の import が、CSV は直前の原点CSV読込が RecentPaths に残している。
 
 using System;
 using System.Collections.Generic;
@@ -37,7 +31,7 @@ using Poly_Ling.Core;
 namespace Poly_Ling.Player
 {
     /// <summary>スキン生成自動検証。人の操作は「テスト実行」を押すだけ。</summary>
-    public class PlayerSkinTestSubPanel
+    public class PlayerSkinTestSubPanel : PlayerStagedTestSubPanelBase
     {
         // ================================================================
         // 外部依存（Viewer から設定）
@@ -47,6 +41,9 @@ namespace Poly_Ling.Player
         public Func<int>            GetModelIndex;
         public Action<PanelCommand> SendCommand;
         public Action<string>       ImportMqo;
+
+        /// <summary>VRM を書き出す。エクスポートパネルと同じ経路へ流す。</summary>
+        public Func<string, Poly_Ling.Vrm.Vrm10ExportSettings, Poly_Ling.Vrm.Vrm10ExportResult> ExportVrm;
 
         // ================================================================
         // 定数
@@ -61,9 +58,6 @@ namespace Poly_Ling.Player
         /// <summary>スキンド変換がメッシュ名へ付ける接尾辞（MeshFilterToSkinnedConverter と同じ）。</summary>
         private const string MeshNameSuffix = "_skinned";
 
-        /// <summary>段の本体からコマンド処理が落ち着くまでの待ち（ミリ秒）。</summary>
-        private const long SettleMs = 600;
-
         /// <summary>ワールド位置が動いたと見なす閾値。</summary>
         private const float MoveEpsilon = 1e-4f;
 
@@ -71,20 +65,12 @@ namespace Poly_Ling.Player
         // 状態
         // ================================================================
 
-        private VisualElement _root;
-        private Button        _runButton;
-        private Label         _statusLabel;
-        private Label         _pathLabel;
-        private ScrollView    _resultView;
 
-        private bool   _running;
-        private int    _stepIndex;
         private string _mqoPath = "";
         private string _csvPath = "";
         private string _reportPath = "";
         private int    _csvRows;
 
-        private readonly List<Func<bool>> _stages = new List<Func<bool>>();
 
         /// <summary>変換前の記録。名前をキーにする（索引は変換で動くため）。</summary>
         private sealed class Before
@@ -100,64 +86,59 @@ namespace Poly_Ling.Player
 
         private HumanoidBoneMapping _mapping;
         private int _mapCandidates;
+        private int _meshCountBefore;
+
+        private const string VrmPathKey = "Export.VRM.Path";
 
         // ================================================================
         // UI
         // ================================================================
 
-        public void Build(VisualElement parent)
+        private Label     _pathLabel;
+        private Toggle    _doTPose;
+        private Toggle    _doExport;
+        private TextField _vrmPathField;
+
+        protected override string TitleText => "スキン生成自動検証";
+
+        protected override string NoteText =>
+            "MQO 読込 → 原点CSV適用 → 変換前の記録 → スキンド変換 → Humanoid 自動割当\n"
+          + "→ 検査とレポート書出 → T ポーズ化 → VRM 書出 を通しで流します。\n"
+          + "対象は直前に使った MQO と原点CSV です。段ごとに手順と理由をログに出します。";
+
+        protected override void BuildOptionsUI(VisualElement root)
         {
-            _root = new VisualElement();
-            _root.style.paddingTop    = 4;
-            _root.style.paddingLeft   = 4;
-            _root.style.paddingRight  = 4;
-            _root.style.paddingBottom = 4;
-            parent.Add(_root);
-
-            var title = new Label("スキン生成自動検証");
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color = new StyleColor(Color.white);
-            title.style.marginBottom = 4;
-            _root.Add(title);
-
-            var hint = new Label(
-                "「テスト実行」を押すだけで、MQO 読込 → 原点CSV適用 →\n" +
-                "ボーンとスキンの生成 → Humanoid オートマップ → レポート書出まで流します。\n" +
-                "対象は直前に使った MQO と原点CSV です。");
-            hint.style.fontSize   = 10;
-            hint.style.whiteSpace = WhiteSpace.Normal;
-            hint.style.marginBottom = 4;
-            _root.Add(hint);
-
-            _runButton = new Button(StartRun) { text = "テスト実行" };
-            _runButton.style.height = 32;
-            _runButton.style.marginBottom = 4;
-            _root.Add(_runButton);
-
+            root.Add(Sec("入力（直前に使ったパスをそのまま使う）"));
             _pathLabel = new Label("");
-            _pathLabel.style.fontSize = 10;
+            _pathLabel.style.fontSize   = 10;
             _pathLabel.style.whiteSpace = WhiteSpace.Normal;
-            _pathLabel.style.marginBottom = 2;
-            _root.Add(_pathLabel);
+            root.Add(_pathLabel);
+            root.Add(Hint(
+                "原点CSV は必須です。関節位置が入っていない状態で変換すると"
+              + "全ボーンが原点に重なり、アバターが成立しません。"));
 
-            _statusLabel = new Label("待機中");
-            _statusLabel.style.fontSize = 10;
-            _statusLabel.style.whiteSpace = WhiteSpace.Normal;
-            _statusLabel.style.marginBottom = 4;
-            _root.Add(_statusLabel);
+            root.Add(Sec("仕上げ"));
+            _doTPose = new Toggle("T ポーズ化してから書き出す") { value = true };
+            root.Add(_doTPose);
+            root.Add(Hint(
+                "VRM 1.0 は T ポーズを前提にします。素材が別の姿勢で作られている場合、"
+              + "ここを通さないとビューアで腕の角度がずれます。"));
 
-            _resultView = new ScrollView();
-            _resultView.style.flexGrow = 1;
-            _resultView.style.minHeight = 200;
-            _root.Add(_resultView);
+            _doExport = new Toggle("最後に VRM を書き出す") { value = true };
+            root.Add(_doExport);
+
+            _vrmPathField = new TextField("VRM パス");
+            _vrmPathField.style.fontSize = 10;
+            _vrmPathField.value = SafeGet(VrmPathKey);
+            root.Add(_vrmPathField);
 
             RefreshPathLabel();
         }
 
-        public void Refresh()
+        public override void Refresh()
         {
-            if (_runButton != null) _runButton.SetEnabled(!_running);
-            if (!_running) RefreshPathLabel();
+            base.Refresh();
+            if (!IsRunning) RefreshPathLabel();
         }
 
         private void RefreshPathLabel()
@@ -176,95 +157,118 @@ namespace Poly_Ling.Player
             catch { return ""; }
         }
 
-        // ================================================================
-        // 実行
-        // ================================================================
-
-        private void StartRun()
+        protected override bool CanRun()
         {
-            if (_running) return;
-
             _mqoPath = SafeGet(MqoPathKey);
             _csvPath = SafeGet(CsvPathKey);
-            if (string.IsNullOrEmpty(_mqoPath) || !File.Exists(_mqoPath))
-            {
-                SetStatus("直前に読み込んだ MQO が見つかりません。一度 MQO を import してください。");
-                return;
-            }
-            if (string.IsNullOrEmpty(_csvPath) || !File.Exists(_csvPath))
-            {
-                SetStatus("直前に使った原点CSVが見つかりません。関節位置が入らないため実行しません。");
-                return;
-            }
-            if (ImportMqo == null || SendCommand == null || GetModel == null)
-            {
-                SetStatus("配線が足りません（ImportMqo / SendCommand / GetModel）。");
-                return;
-            }
 
-            _resultView.Clear();
+            if (string.IsNullOrEmpty(_mqoPath) || !File.Exists(_mqoPath))
+            { SetStatus("直前に読み込んだ MQO が見つかりません。一度 MQO を import してください。"); return false; }
+
+            if (string.IsNullOrEmpty(_csvPath) || !File.Exists(_csvPath))
+            { SetStatus("直前に使った原点CSVが見つかりません。関節位置が入らないため実行しません。"); return false; }
+
+            if (ImportMqo == null || SendCommand == null || GetModel == null)
+            { SetStatus("配線が足りません（ImportMqo / SendCommand / GetModel）。"); return false; }
+
+            if (_doExport.value)
+            {
+                if (ExportVrm == null) { SetStatus("配線が足りません（ExportVrm）。"); return false; }
+                if (string.IsNullOrEmpty(_vrmPathField.value)) { SetStatus("VRM パスが空です。"); return false; }
+            }
+            return true;
+        }
+
+        protected override void ResetRunState()
+        {
             _before.Clear();
-            _mapping   = null;
-            _stepIndex = 0;
-            _running   = true;
-            _runButton.SetEnabled(false);
+            _mapping     = null;
+            _beforeCount = 0;
+            _csvRows     = 0;
+            _meshCountBefore = GetModel()?.MeshContextCount ?? 0;
 
             _reportPath = Path.Combine(
                 Application.persistentDataPath, "PolyLing", "SkinTest",
                 DateTime.Now.ToString("yyyyMMdd_HHmmss"), "report.txt");
-
-            _stages.Clear();
-            _stages.Add(StageImportMqo);
-            _stages.Add(StageApplyOriginCsv);
-            _stages.Add(StageCaptureBefore);
-            _stages.Add(StageConvertSkinned);
-            _stages.Add(StageAutoMapHumanoid);
-            _stages.Add(StageWriteReport);
-
-            SetStatus("実行中…");
-            ScheduleNextStage();
         }
 
-        private void ScheduleNextStage()
+        protected override void CollectStages(List<(string Name, Func<StageResult> Run)> stages)
         {
-            if (!_running || _root == null) return;
-            if (_stepIndex >= _stages.Count) { Finish(); return; }
-
-            var stage = _stages[_stepIndex];
-
-            Debug.Log($"[SkinTest] 段 {_stepIndex + 1}/{_stages.Count} 開始");
-
-            bool ok;
-            try { ok = stage(); }
-            catch (Exception e)
-            {
-                AddLine($"例外: {e.Message}", true);
-                AddLine(e.StackTrace ?? "", true);
-                WriteAbortReport($"段 {_stepIndex + 1} で例外: {e.Message}");
-                Finish();
-                return;
-            }
-
-            if (!ok)
-            {
-                WriteAbortReport($"段 {_stepIndex + 1} が中断を返した");
-                Finish();
-                return;
-            }
-
-            _root.schedule.Execute(() =>
-            {
-                if (!_running) return;
-                _stepIndex++;
-                ScheduleNextStage();
-            }).StartingIn(SettleMs);
+            stages.Add(("1. MQO を読み込む",               StageImportMqo));
+            stages.Add(("2. 読み込みの完了を待つ",         StageWaitImport));
+            stages.Add(("3. 原点CSVを適用する",            StageApplyOriginCsv));
+            stages.Add(("4. 変換前のワールド位置を控える", StageCaptureBefore));
+            stages.Add(("5. ボーンとスキンを生成する",     StageConvertSkinned));
+            stages.Add(("6. Humanoid を自動割当する",      StageAutoMapHumanoid));
+            stages.Add(("7. 検査してレポートを書く",       StageWriteReport));
+            if (_doTPose.value)  stages.Add(("8. T ポーズ化する", StageApplyTPose));
+            if (_doExport.value) stages.Add(("9. VRM を書き出す", StageExportVrm));
         }
 
-        private void Finish()
+        protected override void OnFinished(bool aborted)
         {
-            _running = false;
-            if (_runButton != null) _runButton.SetEnabled(true);
-            Debug.Log("[SkinTest] 終了");
+            if (aborted) WriteAbortReport("段の途中で停止した");
+        }
+
+        /// <summary>読み込みの完了を待つ。件数が増えるまで同じ段を繰り返す。</summary>
+        private StageResult StageWaitImport()
+        {
+            var model = GetModel();
+            if (model == null) return StageResult.Retry;
+            if (model.MeshContextCount == 0) return StageResult.Retry;
+            if (model.MeshContextCount == _meshCountBefore) return StageResult.Retry;
+
+            return Ok(
+                $"モデル「{model.Name}」に MeshContext が {model.MeshContextCount} 件できた",
+                null,
+                "読み込みはファイルの大きさで時間が変わる。件数が増えるまで待ち直している。"
+              + "ここで止まるなら、そもそも import が走っていない。");
+        }
+
+        /// <summary>T ポーズ化。VRM 1.0 は T ポーズを前提にする。</summary>
+        private StageResult StageApplyTPose()
+        {
+            SendCommand(new ApplyTPoseCommand(GetModelIndex?.Invoke() ?? 0));
+            return Ok(
+                "ApplyTPoseCommand を送った",
+                "T ポーズパネル →「T ポーズ化」",
+                "VRM 1.0 のビューアは T ポーズを基準に姿勢を解釈する。"
+              + "素材が別の姿勢で作られていると、通さないまま出力したときに腕の角度がずれる。"
+              + "元の姿勢はバックアップされるので、あとで戻せる。");
+        }
+
+        /// <summary>VRM 書出。スキンド変換済みなのでスキニングが付く。</summary>
+        private StageResult StageExportVrm()
+        {
+            string path = _vrmPathField.value;
+
+            var settings = Poly_Ling.Vrm.Vrm10ExportSettings.CreateDefault();
+            // 欠けている必須関節はダミーで補う。補わないと VRM 1.0 の必須ボーンが
+            // 欠けたままになり、ビューアが読み込みを拒否する。
+            settings.SupplementHumanoid = true;
+
+            var result = ExportVrm(path, settings);
+            if (result == null || !result.Success)
+                return Ng("VRM 書出に失敗: " + (result?.ErrorMessage ?? "戻り値がありません"),
+                    "エクスポートパネル → VRM",
+                    "Humanoid の割当が 0 件だと VRM にできない。段 6 の割当件数を見る。");
+
+            if (result.HumanoidBoneCount == 0)
+                return Ng("Humanoid ボーンが 0 件で出力された", null,
+                    "VRM 1.0 は humanoid が必須。0 件のファイルはビューアが読めない。");
+
+            try { RecentPaths.Set(VrmPathKey, path); } catch { }
+
+            return Ok(
+                $"「{Path.GetFileName(path)}」へ書き出した。"
+              + $"ノード {result.NodeCount} / メッシュ {result.MeshCount} / 頂点 {result.VertexCount} / "
+              + $"Humanoid ボーン {result.HumanoidBoneCount}（うちダミー補完 {result.SupplementedJointCount}） / "
+              + $"ブレンドシェイプ {result.MorphTargetCount} / 表情 {result.ExpressionCount}"
+              + (string.IsNullOrEmpty(result.Warning) ? "" : $" / 警告: {result.Warning}"),
+                "エクスポートパネル → VRM → 保存先を選ぶ",
+                "スキンド変換済みなのでスキニング（ボーンウェイト）が付く。"
+              + "ダミー補完が多いときは、変換で作られなかった関節があるということ。"
+              + "段 7 の「生成されたボーン」の本数と見比べる。");
         }
 
         /// <summary>
@@ -278,7 +282,8 @@ namespace Poly_Ling.Player
             sb.AppendLine("日時: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine("MQO: " + _mqoPath);
             sb.AppendLine("中断理由: " + reason);
-            sb.AppendLine($"到達した段: {_stepIndex + 1} / {_stages.Count}");
+            sb.AppendLine("実行ログ:");
+            foreach (var l in PlainLog) sb.Append(l);
             sb.AppendLine();
 
             var model = GetModel?.Invoke();
@@ -305,14 +310,11 @@ namespace Poly_Ling.Player
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_reportPath));
                 File.WriteAllText(_reportPath, sb.ToString(), new UTF8Encoding(true));
-                AddLine("■ レポート（中断）", true);
-                AddLine("    " + _reportPath, true);
-                SetStatus("中断しました。レポートを確認してください。");
+                Debug.Log("[SkinTest] 中断レポート: " + _reportPath);
             }
             catch (Exception e)
             {
-                AddLine("    中断レポートも書けなかった: " + e.Message, true);
-                SetStatus("中断しました。レポートの書き出しにも失敗しました。");
+                Debug.LogWarning("[SkinTest] 中断レポートも書けなかった: " + e.Message);
             }
         }
 
@@ -320,40 +322,40 @@ namespace Poly_Ling.Player
         // 段
         // ================================================================
 
-        /// <summary>段1: MQO を実経路で読み込む。</summary>
-        private bool StageImportMqo()
+        private StageResult StageImportMqo()
         {
-            AddLine("■ MQO 読込");
-            AddLine("    " + _mqoPath);
             ImportMqo(_mqoPath);
-            return true;
+            return Ok(
+                $"ImportMqoCommand と同じ経路で「{Path.GetFileName(_mqoPath)}」を読み込んだ",
+                "インポートパネル → MQO → ファイルを選ぶ",
+                "MQO は板（MeshFilter 系）の集まりで、この時点ではボーンもウェイトも無い。"
+              + "関節の位置はこのあと原点CSVで入れ、ボーンはスキンド変換で作る。");
         }
 
         /// <summary>
         /// 段2: 原点CSVを適用する。UI ボタンと同じコマンド経路へ流す。
         /// 関節位置（BoneTransform.Position）はこれで入る。
         /// </summary>
-        private bool StageApplyOriginCsv()
+        private StageResult StageApplyOriginCsv()
         {
             var model = GetModel();
-            if (model == null) { AddLine("    モデルが読み込まれていない", true); return false; }
-
-            AddLine("■ 原点CSV適用");
-            AddLine("    " + _csvPath);
+            if (model == null) return Ng("モデルが読み込まれていない", null, null);
 
             if (!ParseCsv(_csvPath, out var names, out var positions, out string err))
-            {
-                AddLine("    CSV を読めなかった: " + err, true);
-                return false;
-            }
+                return Ng($"CSV を読めなかった: {err}",
+                    "ボーン編集パネル →「原点CSV読込」",
+                    "CSV は 1 行が「名前, x, y, z」。# で始まる行と name, の見出し行は飛ばす。"
+                  + "有効な行が 0 なら区切り文字か列数が違う。");
 
             _csvRows = names.Length;
-            AddLine($"    CSV {_csvRows} 行");
-
             SendCommand(new ApplyObjectOriginsCommand(
-                GetModelIndex?.Invoke() ?? 0, names, positions, null));
+                GetModelIndex?.Invoke() ?? 0, names, positions));
 
-            return true;
+            return Ok(
+                $"CSV {_csvRows} 行を ApplyObjectOriginsCommand で適用した",
+                "ボーン編集パネル →「原点CSV読込」でファイルを選ぶ",
+                "関節位置はここで入る。入れずに変換すると全ボーンが原点に重なり、"
+              + "Unity のアバターが成立しない。段 7 の「ローカル位置がゼロのボーン」で見張る。");
         }
 
         /// <summary>
@@ -400,10 +402,10 @@ namespace Poly_Ling.Player
         /// 段3: 変換前の状態を控える。
         /// 索引はスキンド変換でボーンが挿入されて動くので、名前をキーにする。
         /// </summary>
-        private bool StageCaptureBefore()
+        private StageResult StageCaptureBefore()
         {
             var model = GetModel();
-            if (model == null) { AddLine("    モデルが読み込まれていない", true); return false; }
+            if (model == null) return Ng("モデルが読み込まれていない", null, null);
 
             model.ComputeWorldMatrices();
 
@@ -428,17 +430,23 @@ namespace Poly_Ling.Player
                 });
             }
 
-            AddLine("■ 変換前の記録");
-            AddLine($"    MeshContext {_beforeCount} 件 / 頂点を控えたもの {_before.Count} 件");
-            return true;
+            return Ok(
+                $"MeshContext {_beforeCount} 件のうち {_before.Count} 件について、"
+              + "全頂点のワールド位置を控えた",
+                "（手作業には対応する操作が無い。検証のための記録）",
+                "変換の前後で見た目が変わらないことを確かめるための基準。"
+              + "索引はスキンド変換でボーンが挿し込まれて動くので、名前をキーにする。");
         }
 
-        /// <summary>段3: メッシュからボーンとスキンを生成する（実経路）。</summary>
-        private bool StageConvertSkinned()
+        private StageResult StageConvertSkinned()
         {
-            AddLine("■ ボーンとスキンの生成");
             SendCommand(new ConvertMeshFilterToSkinnedCommand(GetModelIndex?.Invoke() ?? 0));
-            return true;
+            return Ok(
+                "ConvertMeshFilterToSkinnedCommand を送った",
+                "スキン生成パネル →「ボーンとスキンを生成」",
+                "板ごとの原点がボーンになり、板の頂点はワールド（バインド）空間へ移して"
+              + "そのボーンへ重み 1 で結ぶ。メッシュ名には _skinned が付く。"
+              + "同時にミラー枝の計画が実体化し、右半身のボーンがここで初めて生まれる。");
         }
 
         /// <summary>
@@ -446,12 +454,10 @@ namespace Poly_Ling.Player
         /// 変換でボーンが生成されるが、ボーン以外も候補に含めておく
         /// （変換が期待どおりに走らなかった場合でも割当の様子が判るようにするため）。
         /// </summary>
-        private bool StageAutoMapHumanoid()
+        private StageResult StageAutoMapHumanoid()
         {
             var model = GetModel();
-            if (model == null) { AddLine("    モデルが無い", true); return false; }
-
-            AddLine("■ Humanoid オートマップ");
+            if (model == null) return Ng("モデルが無い", null, null);
 
             var names = new List<string>();
             _mapCandidates = 0;
@@ -466,19 +472,30 @@ namespace Poly_Ling.Player
             _mapping = new HumanoidBoneMapping();
             int mapped = _mapping.AutoMapFromEmbeddedCSV(names);
 
-            AddLine($"    候補 {_mapCandidates} 件 / 割当 {mapped} 件", mapped == 0);
-
             if (mapped > 0)
-                SendCommand(new ApplyHumanoidMappingCommand(GetModelIndex?.Invoke() ?? 0, _mapping.Clone()));
+            {
+                ApplyHumanoidMappingCommand.SplitMapping(_mapping, out var hmNames, out var hmIdx);
+                SendCommand(new ApplyHumanoidMappingCommand(GetModelIndex?.Invoke() ?? 0, hmNames, hmIdx));
+            }
 
-            return true;
+            if (mapped == 0)
+                return Ng($"候補 {_mapCandidates} 件に対して割当 0 件",
+                    "Humanoid 割当パネル →「自動割当」",
+                    "自動割当は名前の表（埋め込みCSV）と突き合わせる。0 件なら"
+                  + "ボーン名が表のどれにも当たっていない。変換自体が走っていない場合もここで 0 になる。");
+
+            return Ok(
+                $"候補 {_mapCandidates} 件 → 割当 {mapped} 件",
+                "Humanoid 割当パネル →「自動割当」",
+                "候補にはボーン以外も含める。変換が期待どおりに走らなかった場合でも"
+              + "割当の様子が判るようにするため。");
         }
 
         /// <summary>段5: 検査してレポートを書く。</summary>
-        private bool StageWriteReport()
+        private StageResult StageWriteReport()
         {
             var model = GetModel();
-            if (model == null) { AddLine("    モデルが無い", true); return false; }
+            if (model == null) return Ng("モデルが無い", null, null);
 
             model.ComputeWorldMatrices();
 
@@ -575,46 +592,43 @@ namespace Poly_Ling.Player
                 Directory.CreateDirectory(Path.GetDirectoryName(_reportPath));
                 File.WriteAllText(_reportPath, sb.ToString(), new UTF8Encoding(true));
             }
-            catch (Exception e) { AddLine("    レポートを書けなかった: " + e.Message, true); return false; }
+            catch (Exception e) { return Ng("レポートを書けなかった: " + e.Message, null, null); }
 
             var missing = _mapping?.GetMissingRequiredBones() ?? new List<string>();
+            bool canAvatar = _mapping?.CanCreateAvatar ?? false;
 
-            AddLine("■ 検査");
-            AddLine($"    MeshContext {_beforeCount} → {model.MeshContextCount} 件");
-            AddLine($"    生成されたボーン: {bones.Count} 本", bones.Count == 0);
-            AddLine($"    ワールド位置が動いた: {moved.Count} 件", moved.Count > 0);
-            AddLine($"    変換後に見つからない: {lost.Count} 件", lost.Count > 0);
-            AddLine($"    頂点数が変わった: {countDiff.Count} 件", countDiff.Count > 0);
-            AddLine($"    種別とウェイトの食い違い: {weightOnly.Count + kindOnly.Count} 件",
-                    weightOnly.Count + kindOnly.Count > 0);
-            AddLine($"    ローカル位置がゼロのボーン: {zeroBones.Count} / {bones.Count} 本",
-                    bones.Count > 0 && zeroBones.Count == bones.Count);
-
-            int show = Mathf.Min(10, moved.Count);
-            for (int i = 0; i < show; i++)
-            {
-                var m = moved[i];
-                AddLine($"      {m.b.Name} 索引={m.idx} ずれ={m.delta:F6} " +
-                        $"({m.d.x:F6}, {m.d.y:F6}, {m.d.z:F6})", true);
-            }
-            if (moved.Count > show) AddLine($"      … 他 {moved.Count - show} 件", true);
-
-            AddLine("■ Humanoid");
-            AddLine($"    割当 {_mapping?.Count ?? 0} 件 / 必須の未割当 {missing.Count} 件",
-                    (_mapping?.Count ?? 0) == 0);
-            AddLine($"    アバター生成可={(_mapping?.CanCreateAvatar ?? false)}",
-                    !(_mapping?.CanCreateAvatar ?? false));
-
-            AddLine("■ レポート");
-            AddLine("    " + _reportPath);
+            string detail =
+                $"MeshContext {_beforeCount} → {model.MeshContextCount} 件 / 生成ボーン {bones.Count} 本 / "
+              + $"ワールド位置が動いた {moved.Count} 件 / 変換後に見つからない {lost.Count} 件 / "
+              + $"頂点数が変わった {countDiff.Count} 件 / 種別とウェイトの食い違い {weightOnly.Count + kindOnly.Count} 件 / "
+              + $"ローカル位置がゼロのボーン {zeroBones.Count}／{bones.Count} 本。"
+              + $"Humanoid 割当 {_mapping?.Count ?? 0} 件（必須の未割当 {missing.Count}／アバター生成可={canAvatar}）。"
+              + $"レポート: {_reportPath}";
 
             bool ok = moved.Count == 0 && lost.Count == 0 && countDiff.Count == 0
-                   && bones.Count > 0 && zeroBones.Count < bones.Count
-                   && (_mapping?.CanCreateAvatar ?? false);
-            SetStatus(ok
-                ? "合格。位置が保たれ、ボーン生成とアバター割当がそろっています。"
-                : "不合格。レポートを確認してください。");
-            return true;
+                   && bones.Count > 0 && zeroBones.Count < bones.Count && canAvatar;
+
+            if (!ok)
+            {
+                var head = new StringBuilder();
+                int show = Mathf.Min(5, moved.Count);
+                for (int i2 = 0; i2 < show; i2++)
+                    head.Append($" {moved[i2].b.Name} ずれ={moved[i2].delta:F6}");
+                if (moved.Count > show) head.Append($" … 他 {moved.Count - show} 件");
+
+                return Ng(detail + head,
+                    null,
+                    "ワールド位置が動いた＝変換でバインド空間への移し替えがずれている。"
+                  + "見つからない＝名前の付け替え規則（_skinned）から外れた。"
+                  + "全ボーンのローカル位置がゼロ＝原点CSVが効いていない。"
+                  + "アバター生成不可＝必須ボーンの割当が足りない。"
+                  + "どのオブジェクトかはレポートに全件出ている。");
+            }
+
+            return Ok(detail,
+                "スキン生成のあと、形が崩れていないかとアバターが作れるかを目で見るのと同じ",
+                "合格の条件は 6 つ。位置が保たれる／全部見つかる／頂点数が変わらない／"
+              + "ボーンが 1 本以上できる／全ボーンが原点に重なっていない／アバターが作れる。");
         }
 
         // ================================================================
@@ -768,31 +782,5 @@ namespace Poly_Ling.Player
             return model.GetMeshContext(p)?.Name ?? "?";
         }
 
-        // ================================================================
-        // 出力
-        // ================================================================
-
-        private void AddLine(string text, bool bad = false)
-        {
-            // パネルを閉じていても追えるように Console へも出す。
-            // どの段で止まったかが分からない、という状態を作らないため。
-            if (bad) Debug.LogWarning("[SkinTest] " + text);
-            else     Debug.Log("[SkinTest] " + text);
-
-            if (_resultView == null) return;
-
-            var l = new Label(text);
-            l.style.fontSize   = 10;
-            l.style.whiteSpace = WhiteSpace.Normal;
-            l.style.color = new StyleColor(bad
-                ? new Color(1f, 0.45f, 0.45f)
-                : new Color(0.75f, 1f, 0.75f));
-            _resultView.Add(l);
-        }
-
-        private void SetStatus(string text)
-        {
-            if (_statusLabel != null) _statusLabel.text = text ?? "";
-        }
     }
 }

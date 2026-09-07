@@ -289,6 +289,72 @@ namespace Poly_Ling.Remote
                 // スキンウェイト塗り。対象メッシュの BoneWeight を書き換える。
                 case SkinWeightPaintCommand      c: return c.MasterIndices;
 
+                // 変形ギズモ（選択頂点の回転・スケール）。対象メッシュの頂点を書き換える。
+                case RotateSelectionCommand      c: return c.MasterIndices;
+                case ScaleSelectionCommand       c: return c.MasterIndices;
+
+                // オブジェクトごと移動・回転。対象の BoneTransform を書き換える。
+                case MoveObjectsCommand          c: return c.MasterIndices;
+                case RotateObjectsCommand        c: return c.MasterIndices;
+
+                // 揺れもの（VRM SpringBone）の付帯データ。対象ノードだけを書き換える。
+                case SetSpringBoneChainRootCommand   c: return One(c.MasterIndex);
+                case ClearSpringBoneChainRootCommand c: return c.MasterIndices;
+                case SetSpringBoneJointCommand       c: return c.MasterIndices;
+                case ClearSpringBoneJointCommand     c: return c.MasterIndices;
+
+                // 一人称カメラでの扱い。対象の描画オブジェクトだけを書き換える。
+                case SetVrmFirstPersonCommand       c: return c.MasterIndices;
+
+                // VRM のメタ情報と視線、Avatar のリターゲット設定はモデル固有の値。
+                // 対象ノードを持たないのでモデル全体判定（default）へ落とす。
+                //   → ここには書かない。書くと空配列＝「誰の担当でもない」になり、
+                //     リモートの別クライアントと同時に書き換えられる。
+
+                // マッスル可動域（HumanLimit）。対象ボーンの付帯データだけを書き換える。
+                case SetHumanLimitCommand           c: return c.MasterIndices;
+                case ClearHumanLimitCommand         c: return c.MasterIndices;
+
+                // ボーンの親付け替えは対象ボーンを書き換える。
+                case SetBoneParentCommand           c: return c.MasterIndices;
+
+                // 当たり判定の追加は付ける先のボーンだけを書き換える。
+                case AddSpringBoneColliderCommand   c: return One(c.MasterIndex);
+
+                // ボーン鎖の配置も、既存を書き換えず末尾にボーンを足すだけ。
+                case PlaceSpringBoneChainsCommand   _: return Array.Empty<int>();
+
+                // 末端ボーンの追加は既存ノードを書き換えず、末尾にボーンを足すだけ。
+                // 追加系（DuplicateMeshesCommand / AddMeshCommand）と同じ扱いにする。
+                case AddSpringBoneTailBoneCommand    _: return Array.Empty<int>();
+
+                // 選択を変えるだけ。形状も付帯データも書き換えない。
+                case SelectBoneChainCommand          _: return Array.Empty<int>();
+                case SelectBonesByVertexWeightCommand _: return Array.Empty<int>();
+
+                // コライダーグループと評価設定はモデル固有の値。
+                // 参照索引の詰め直しで全ノードに波及しうるので、
+                // 対象を特定せずモデル全体判定（default）へ落とす。
+
+                // デフォーマ。対象メッシュの頂点を書き換える。
+                // 抽象基底で受ければ派生 6 種を拾える。
+                case ApplyDeformCommand          c: return c.MasterIndices;
+
+                // 格子変形。対象メッシュの頂点を書き換える。
+                case ApplyLatticeDeformCommand   c: return c.MasterIndices;
+
+                // クリック確定（辺トポロジ・面追加）。対象メッシュの面と頂点を書き換える。
+                case EdgeTopologyFlipCommand     c: return c.MasterIndices;
+                case EdgeTopologyDissolveCommand c: return c.MasterIndices;
+                case EdgeTopologySplitCommand    c: return c.MasterIndices;
+                case AddFaceCommand              c: return c.MasterIndices;
+
+                // ナイフ。対象メッシュの面と頂点を書き換える。
+                case KnifeLadderCutCommand       c: return c.MasterIndices;
+                case KnifeBeltLoopCutCommand     c: return c.MasterIndices;
+                case KnifeEraseEdgeCommand       c: return c.MasterIndices;
+                case KnifeSimpleCutCommand       c: return c.MasterIndices;
+
                 // メッシュブレンドの書き込み先は宛先 1 件。
                 // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
                 // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
@@ -302,6 +368,13 @@ namespace Poly_Ling.Remote
                 // 作業軸はモデルの頂点・選択を書き換えない。
                 case SetWorkAxisCommand     _: return Array.Empty<int>();
                 case RecallWorkAxisCommand  _: return Array.Empty<int>();
+
+                // VRMA 書き出しはフレームを一時適用するが、終了時に
+                // UnityClipApplier.ResetAllBones でポーズ層を戻す。形状は変えない。
+                case ExportVrmAnimationCommand _: return Array.Empty<int>();
+
+                // VMD → VRMA も同じ。VMDApplier.ResetAllBones でポーズ層を戻す。
+                case ExportVmdToVrmaCommand _: return Array.Empty<int>();
 
                 case SelectMeshCommand      _: return Array.Empty<int>();
                 case SelectElementsCommand  _: return Array.Empty<int>();
@@ -342,6 +415,8 @@ namespace Poly_Ling.Remote
         {
             switch (cmd)
             {
+                // モデルを一切参照しない（クリップ JSON → .vrma の変換のみ）。
+                case ConvertUnityClipToVrmaCommand _:
                 case SelectMeshCommand _:
                 case SwitchModelCommand _:
                 case NotifyListStructureChangedCommand _:

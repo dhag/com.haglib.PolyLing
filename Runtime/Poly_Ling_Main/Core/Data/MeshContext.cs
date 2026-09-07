@@ -29,13 +29,58 @@ namespace Poly_Ling.Data
     // ================================================================
     public class MeshContext
     {
+        /// <summary>
+        /// 名前。実体は MeshObject.Name。
+        ///
+        /// 【MeshObject が未設定のときの代入を捨てない】
+        ///   以前は setter が「MeshObject が null なら何もしない」だったため、
+        ///     new MeshContext { Name = ..., MeshObject = ... }
+        ///   と書くと（オブジェクト初期化子は書いた順に走るので）名前の代入が
+        ///   黙って捨てられていた。この書き方はコード内に 16 箇所あり、
+        ///   図形生成の一意名も捨てられて同名の描画オブジェクトが並んでいた
+        ///   （PolyLingPlayerViewerCore.BuildPrimitiveMeshContext）。
+        ///   呼び出し側の順序に依存させないため、未設定のときは保留し、
+        ///   MeshObject が入った時点で反映する。
+        /// </summary>
         public string Name
         {
-            get => MeshObject?.Name ?? "Untitled";
-            set { if (MeshObject != null) MeshObject.Name = value; }
+            get => MeshObject?.Name ?? (_pendingName ?? "Untitled");
+            set
+            {
+                if (MeshObject != null) MeshObject.Name = value;
+                else                    _pendingName = value;
+            }
         }
+
+        /// <summary>MeshObject 未設定のときに受けた名前。MeshObject 代入時に流し込む。</summary>
+        private string _pendingName;
+
         public Mesh UnityMesh;                      // Unity UnityMesh（表示用）
-        public MeshObject MeshObject;               // メッシュオブジェクト
+
+        /// <summary>
+        /// メッシュオブジェクト。
+        ///
+        /// Name / Type / Depth / ParentIndex / HierarchyParentIndex / BoneTransform /
+        /// SkinKind / MirrorBoneIndex / IgnorePoseInArmature / PreserveNormals /
+        /// NormalRecalcExcludeList / IsMirrorBranchRoot はこちらへ委譲している。
+        /// 代入の時点で保留していた名前を流し込む（上の Name の注記を参照）。
+        /// </summary>
+        public MeshObject MeshObject
+        {
+            get => _meshObject;
+            set
+            {
+                _meshObject = value;
+                if (_meshObject != null && _pendingName != null)
+                {
+                    _meshObject.Name = _pendingName;
+                    _pendingName = null;
+                }
+            }
+        }
+
+        private MeshObject _meshObject;
+
         public Vector3[] OriginalPositions;         // 元の頂点位置（リセット用）
 
         /// <summary>
@@ -1048,7 +1093,7 @@ namespace Poly_Ling.Data
         /// モーフ差分を取得（エクスポート用）
         /// </summary>
         /// <returns>変化のある頂点とその差分のリスト</returns>
-        public List<(int VertexIndex, Vector3 Offset)> GetMorphOffsets(float threshold = 0.0001f)
+        public List<(int VertexIndex, Vector3 Offset)> GetMorphOffsets(float threshold = 0f)
         {
             if (!IsMorph || MeshObject == null)
                 return new List<(int, Vector3)>();
@@ -1060,7 +1105,7 @@ namespace Poly_Ling.Data
         /// UVモーフ差分を取得（エクスポート用）
         /// </summary>
         /// <returns>変化のあるUVとその差分のリスト</returns>
-        public List<(int VertexIndex, Vector2 Offset)> GetUVMorphOffsets(float threshold = 0.0001f)
+        public List<(int VertexIndex, Vector2 Offset)> GetUVMorphOffsets(float threshold = 0f)
         {
             if (!IsMorph || MeshObject == null || MorphBaseData == null)
                 return new List<(int, Vector2)>();

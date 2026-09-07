@@ -1025,9 +1025,12 @@ namespace Poly_Ling.Player
             Debug.Log($"[ObjectOrigin] CSV を読み込み: {names.Count} 行" +
                       (withRot ? $"（うち回転あり {rotRows} 行）" : "（回転は対象外）"));
 
+            ApplyObjectOriginsCommand.SplitRotations(
+                withRot ? rotations.ToArray() : null,
+                out var rotValues, out var hasRot);
             SendCommand(new ApplyObjectOriginsCommand(
                 GetModelIndex?.Invoke() ?? 0, names.ToArray(), positions.ToArray(),
-                withRot ? rotations.ToArray() : null));
+                rotValues, hasRot));
 
             OnRepaint?.Invoke();
         }
@@ -1326,7 +1329,8 @@ namespace Poly_Ling.Player
             }
 
             int modelIndex = GetModelIndex?.Invoke() ?? 0;
-            SendCommand(new ReorderMeshesCommand(modelIndex, MeshCategory.Bone, entries));
+            SendCommand(new ReorderMeshesCommand(
+                modelIndex, MeshCategory.Bone, ReorderMeshesCommand.ToEntryValues(entries)));
         }
 
         // ================================================================

@@ -3,7 +3,7 @@
 // Runtime/Poly_Ling_Player/View/SubPanels/Pipeline/ に配置
 //
 // 【既存のパイプライン自動検証との違い】
-//   PlayerPipelineTestSubPanel は保存済みプロジェクトの読み込みが起点で、
+//   保存済みプロジェクトの読み込みが起点の検証（旧パイプライン検証）は廃止した。
 //   保存は末尾の往復 1 回だけ。こちらは figure を置くところから始め、
 //   段が通るたびにフォルダへ保存する。途中経過をあとから追えるようにする。
 //
@@ -13,7 +13,7 @@
 //   表現できない。系統ごとに段の並びを持ち、親フォルダを分ける。
 //
 // 【なぜ実コマンドを送るか】
-//   PlayerPipelineTestSubPanel.cs 冒頭と同じ理由。Ops を直接叩くと
+//   PlayerStagedTestSubPanelBase.cs 冒頭と同じ理由。Ops を直接叩くと
 //   ディスパッチャ側の欠陥が検査を素通りする。パネルが押されたときに
 //   飛ぶのと同じ PanelCommand を送る。
 //

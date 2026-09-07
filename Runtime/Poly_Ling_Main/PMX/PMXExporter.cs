@@ -14,6 +14,8 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Context;
+using Poly_Ling.Materials;
+using Poly_Ling.MeshBridge;
 
 namespace Poly_Ling.PMX
 {
@@ -369,13 +371,26 @@ namespace Poly_Ling.PMX
             {
                 Version = 2.1f,
                 CharacterEncoding = 0,  // UTF-16
-                ModelInfo = new PMXModelInfo
-                {
-                    Name = model.Name ?? "Exported Model",
-                    NameEnglish = model.Name ?? "Exported Model",
-                    Comment = "Exported from SimpleMeshFactory",
-                    CommentEnglish = "Exported from SimpleMeshFactory"
-                }
+                // モデル情報は取り込み時に保持したものを使う。
+                // 無い場合（新規作成など）だけモデル名で埋める。
+                // モデル情報は取り込み時に保持したものをそのまま使う。
+                // 英語名も元が空なら空で書く（名前で埋めると往復で書き換わる）。
+                // PMX 由来でない場合（新規作成など）だけモデル名で埋める。
+                ModelInfo = model.PmxModelInfo != null
+                    ? new PMXModelInfo
+                    {
+                        Name           = model.PmxModelInfo.Name           ?? "",
+                        NameEnglish    = model.PmxModelInfo.NameEnglish    ?? "",
+                        Comment        = model.PmxModelInfo.Comment        ?? "",
+                        CommentEnglish = model.PmxModelInfo.CommentEnglish ?? ""
+                    }
+                    : new PMXModelInfo
+                    {
+                        Name           = model.Name ?? "Exported Model",
+                        NameEnglish    = model.Name ?? "Exported Model",
+                        Comment        = "",
+                        CommentEnglish = ""
+                    }
             };
 
             var meshContexts = model.MeshContextList;
@@ -398,17 +413,21 @@ namespace Poly_Ling.PMX
             // ボーンを変換
             if (settings.ExportBones)
             {
-                ConvertBones(boneContexts, document, settings);
+                ConvertBones(boneContexts, meshContexts, document, settings);
             }
 
             // マテリアルを変換
             if (settings.ExportMaterials)
             {
-                ConvertMaterials(model.Materials, document, settings);
+                ConvertMaterials(model.MaterialReferences, document, settings);
             }
 
             // メッシュを変換（頂点・面）
-            ConvertMeshes(meshOnlyContexts, document, boneNameToIndex, settings);
+            var vertexMaps = ConvertMeshes(meshOnlyContexts, document, boneNameToIndex, settings);
+
+            // モーフを出力する。取り込み時に保持した内容から作り直し、
+            // PolyLing が扱わない種類は元の PMX からそのまま写す。
+            ConvertMorphs(model, document, vertexMaps, settings);
 
             // 剛体・JOINT を MeshObject データから再構築（段階③）。
             // RigidBodyData/JointData を持つコンテキストが1つでも存在すれば
@@ -460,6 +479,7 @@ namespace Poly_Ling.PMX
 
         private static void ConvertBones(
             List<MeshContext> boneContexts,
+            List<MeshContext> allContexts,
             PMXDocument document,
             PMXExportSettings settings)
         {
@@ -470,31 +490,71 @@ namespace Poly_Ling.PMX
                 boneNameToIndex[boneContexts[i].Name] = i;
             }
 
+            // HierarchyParentIndex はモデル全体の MeshContextList 上の索引であって、
+            // ボーンだけを抜き出したリスト上の索引ではない（PMXImporter.cs:145-165 の
+            // ApplyMeshContextIndexOffset がメッシュ分のオフセットを足している）。
+            // 直接 boneContexts[] を引くと範囲外になり、親が全部 -1 になる。
+            var fullToBone = new Dictionary<int, int>();
+            if (allContexts != null)
+            {
+                for (int i = 0; i < allContexts.Count; i++)
+                {
+                    var ctx = allContexts[i];
+                    if (ctx == null || ctx.Type != MeshType.Bone) continue;
+                    int bi = boneContexts.IndexOf(ctx);
+                    if (bi >= 0) fullToBone[i] = bi;
+                }
+            }
+
             foreach (var ctx in boneContexts)
             {
                 // ワールド位置を計算（LocalMatrixの累積）
-                Vector3 worldPosition = ComputeBoneWorldPosition(ctx, boneContexts, boneNameToIndex);
+                Vector3 worldPosition = ComputeBoneWorldPosition(ctx, boneContexts, fullToBone);
 
                 // 座標変換
                 Vector3 pmxPosition = ConvertPosition(worldPosition, settings);
 
                 // 親ボーン名を取得
                 string parentName = "";
-                if (ctx.HierarchyParentIndex >= 0 && ctx.HierarchyParentIndex < boneContexts.Count)
+                if (fullToBone.TryGetValue(ctx.HierarchyParentIndex, out int parentBoneIdx))
                 {
+                    parentName = boneContexts[parentBoneIdx].Name;
+                }
+                else if (ctx.HierarchyParentIndex >= 0 && ctx.HierarchyParentIndex < boneContexts.Count)
+                {
+                    // 全体リストを渡せない経路のための保険
                     parentName = boneContexts[ctx.HierarchyParentIndex].Name;
                 }
+
+                // PMX 固有欄は取り込み時に保持したものを使う。
+                // 無い場合（PolyLing で作ったボーン）だけ従来の既定値で埋める。
+                var extra = ctx.MeshObject?.PmxBone;
 
                 var pmxBone = new PMXBone
                 {
                     Name = ctx.Name,
-                    NameEnglish = ctx.Name,
-                    Position = pmxPosition,
+                    NameEnglish    = extra?.NameEnglish ?? ctx.Name,
+                    Position       = pmxPosition,
                     ParentBoneName = parentName,
-                    TransformLevel = 0,
-                    Flags = 0x0001 | 0x0002 | 0x0004 | 0x0008,  // 基本フラグ
-                    ConnectOffset = Vector3.zero
+                    TransformLevel = extra?.TransformLevel ?? 0,
+                    Flags          = extra?.Flags ?? (0x0001 | 0x0002 | 0x0004 | 0x0008),
+                    ConnectOffset  = extra?.ConnectOffset ?? Vector3.zero
                 };
+
+                if (extra != null)
+                {
+                    pmxBone.ConnectBoneName           = extra.ConnectBoneName;
+                    pmxBone.GrantParentBoneName       = extra.GrantParentBoneName;
+                    pmxBone.GrantRate                 = extra.GrantRate;
+                    pmxBone.FixedAxis                 = extra.FixedAxis;
+                    pmxBone.LocalAxisX                = extra.LocalAxisX;
+                    pmxBone.LocalAxisZ                = extra.LocalAxisZ;
+                    pmxBone.IsLocalAxisAutoCalculated = extra.IsLocalAxisAutoCalculated;
+                    pmxBone.ExternalParentKey         = extra.ExternalParentKey;
+
+                    // IK ビットは IKData の有無で立て直す（下の IK 設定に任せる）。
+                    pmxBone.Flags &= ~0x0020;
+                }
 
                 // IK設定
                 if (ctx.IsIK && ctx.IKLinks != null && ctx.IKLinks.Count > 0)
@@ -541,13 +601,51 @@ namespace Poly_Ling.PMX
                 document.Bones.Add(pmxBone);
             }
 
+            // 名前で持っている参照を番号にも入れておく。
+            // ライタは名前で引き直すが、番号しか見ない読み手のために両方を埋める。
+            ResolveBoneReferences(document);
+
             Debug.Log($"[PMXExporter] Converted {document.Bones.Count} bones");
+        }
+
+        /// <summary>
+        /// ボーンが持つ他ボーンへの参照を、名前から番号へ解決する。
+        /// 名前を主、番号を従とする（JointData.cs の規約）。
+        /// </summary>
+        private static void ResolveBoneReferences(PMXDocument document)
+        {
+            var index = new Dictionary<string, int>();
+            for (int i = 0; i < document.Bones.Count; i++)
+            {
+                string n = document.Bones[i]?.Name;
+                if (!string.IsNullOrEmpty(n) && !index.ContainsKey(n)) index[n] = i;
+            }
+
+            int Lookup(string name, int fallback)
+                => (!string.IsNullOrEmpty(name) && index.TryGetValue(name, out int i)) ? i : fallback;
+
+            foreach (var bone in document.Bones)
+            {
+                if (bone == null) continue;
+
+                bone.ParentIndex       = Lookup(bone.ParentBoneName,      bone.ParentIndex);
+                bone.ConnectBoneIndex  = Lookup(bone.ConnectBoneName,     bone.ConnectBoneIndex);
+                bone.GrantParentIndex  = Lookup(bone.GrantParentBoneName, bone.GrantParentIndex);
+                bone.IKTargetIndex     = Lookup(bone.IKTargetBoneName,    bone.IKTargetIndex);
+
+                if (bone.IKLinks == null) continue;
+                foreach (var link in bone.IKLinks)
+                {
+                    if (link == null) continue;
+                    link.BoneIndex = Lookup(link.BoneName, link.BoneIndex);
+                }
+            }
         }
 
         private static Vector3 ComputeBoneWorldPosition(
             MeshContext ctx,
             List<MeshContext> boneContexts,
-            Dictionary<string, int> boneNameToIndex)
+            Dictionary<int, int> fullToBone)
         {
             // 累積位置を計算
             Vector3 worldPos = Vector3.zero;
@@ -560,10 +658,9 @@ namespace Poly_Ling.PMX
                     worldPos += current.BoneTransform.Position;
                 }
 
-                int parentIdx = current.HierarchyParentIndex;
-                if (parentIdx >= 0 && parentIdx < boneContexts.Count)
+                if (fullToBone.TryGetValue(current.HierarchyParentIndex, out int bi))
                 {
-                    current = boneContexts[parentIdx];
+                    current = boneContexts[bi];
                 }
                 else
                 {
@@ -579,54 +676,60 @@ namespace Poly_Ling.PMX
         // ================================================================
 
         private static void ConvertMaterials(
-            List<Material> materials,
+            List<MaterialReference> materialRefs,
             PMXDocument document,
             PMXExportSettings settings)
         {
-            if (materials == null) return;
+            if (materialRefs == null) return;
 
-            foreach (var mat in materials)
+            foreach (var matRef in materialRefs)
             {
-                if (mat == null) continue;
+                if (matRef == null) continue;
 
-                Color diffuse = Color.white;
-                string texturePath = "";
+                var data = matRef.Data;
+                string name = matRef.Name ?? "Material";
 
-                // BaseColorまたはColorを取得
-                if (mat.HasProperty("_BaseColor"))
-                    diffuse = mat.GetColor("_BaseColor");
-                else if (mat.HasProperty("_Color"))
-                    diffuse = mat.GetColor("_Color");
+                Color  diffuse     = data?.GetBaseColor() ?? Color.white;
+                string texturePath = data?.BaseMapPath ?? "";
 
-                // テクスチャパスを取得
-                Texture mainTex = null;
-                if (mat.HasProperty("_BaseMap"))
-                    mainTex = mat.GetTexture("_BaseMap");
-                else if (mat.HasProperty("_MainTex"))
-                    mainTex = mat.GetTexture("_MainTex");
-
-                if (mainTex != null)
+                // アセットパスしか持たない場合はそこからファイル名を作る
+                if (string.IsNullOrEmpty(texturePath) && !string.IsNullOrEmpty(data?.SourceTexturePath))
                 {
-                    string assetPath = Poly_Ling.EditorBridge.PLEditorBridge.I.GetAssetPath(mainTex);
-                    if (!string.IsNullOrEmpty(assetPath))
-                    {
-                        texturePath = settings.UseRelativeTexturePath
-                            ? Path.GetFileName(assetPath)
-                            : assetPath;
-                    }
+                    texturePath = settings.UseRelativeTexturePath
+                        ? Path.GetFileName(data.SourceTexturePath)
+                        : data.SourceTexturePath;
                 }
+                else if (!string.IsNullOrEmpty(texturePath) && settings.UseRelativeTexturePath == false)
+                {
+                    // 相対指定を切っている場合はそのまま使う
+                }
+
+                // PMX 固有欄は取り込み時に保持したものを使う。
+                // 無い場合（PolyLing で作った材質）だけ従来の既定値で埋める。
+                var extra = data?.Pmx;
 
                 var pmxMat = new PMXMaterial
                 {
-                    Name = mat.name,
-                    NameEnglish = mat.name,
-                    Diffuse = diffuse,
-                    Specular = Color.white,
-                    SpecularPower = 5f,
-                    Ambient = new Color(0.5f, 0.5f, 0.5f),
-                    TexturePath = texturePath,
-                    EdgeColor = Color.black,
-                    EdgeSize = 1f
+                    Name          = name,
+
+                    // 英語名は取り込み時の値をそのまま。元が空なら空で書く。
+                    // 名前で埋めると、英語名を持たない PMX が往復のたびに
+                    // 日本語名で上書きされる。PMX 由来でない材質だけ名前で埋める。
+                    NameEnglish   = extra != null ? (extra.NameEnglish ?? "") : name,
+                    Diffuse       = diffuse,
+                    Specular      = extra?.GetSpecular()  ?? Color.white,
+                    SpecularPower = extra?.SpecularPower  ?? 5f,
+                    Ambient       = extra?.GetAmbient()   ?? new Color(0.5f, 0.5f, 0.5f),
+                    DrawFlags     = extra?.DrawFlags      ?? 0,
+                    EdgeColor     = extra?.GetEdgeColor() ?? Color.black,
+                    EdgeSize      = extra?.EdgeSize       ?? 1f,
+                    TexturePath   = texturePath,
+
+                    SphereTexturePath = extra?.SphereTexturePath ?? "",
+                    SphereMode        = extra?.SphereMode        ?? 0,
+                    SharedToon        = extra?.SharedToon        ?? false,
+                    ToonTextureIndex  = extra?.ToonTextureIndex  ?? -1,
+                    ToonTexturePath   = extra?.ToonTexturePath   ?? ""
                 };
 
                 document.Materials.Add(pmxMat);
@@ -639,12 +742,19 @@ namespace Poly_Ling.PMX
         // メッシュ変換
         // ================================================================
 
-        private static void ConvertMeshes(
+        /// <summary>
+        /// メッシュを PMX 頂点・面へ変換する。
+        /// 戻り値: 描画オブジェクト名 → (vIdx, uvIdx) → PMX 頂点番号。
+        /// モーフのオフセットを頂点番号へ写すのに使う。
+        /// </summary>
+        private static Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> ConvertMeshes(
             List<MeshContext> meshContexts,
             PMXDocument document,
             Dictionary<string, int> boneNameToIndex,
             PMXExportSettings settings)
         {
+            var vertexMaps = new Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>>();
+
             // メッシュをObjectName別にグループ化
             // MeshContext.Name をObjectNameとして使用
             var objectGroups = new Dictionary<string, List<MeshContext>>();
@@ -677,50 +787,54 @@ namespace Poly_Ling.PMX
                 objectGroups[objectName].Add(ctx);
             }
 
-            // 実体側を先に、次にミラー側を出力（仕様通りの順序）
-            var realMeshes = new List<(MeshContext ctx, string objectName, bool isMirror)>();
-            var mirrorMeshes = new List<(MeshContext ctx, string objectName, bool isMirror)>();
+            // 頂点はオブジェクト順のまま出す（取り込み時の順序＝元の PMX の頂点順）。
+            // 面はいったん貯めておき、全オブジェクトを処理したあとで材質順に並べ替える。
+            //
+            // PMX は「材質 i の面は面配列の連続した区間」という前提で読まれるが、
+            // 1 つのオブジェクトが複数材質を持つ場合や、複数のオブジェクトが同じ材質を
+            // 参照する場合があるため、オブジェクト単位で面を出すと材質の区間が分断される。
+            // PMX 追加仕様の「面リストは並び替えてもよいが同一材質内での並び順は保持する」
+            // に従い、頂点順と面順を切り離す。
+            var pendingFaces = new List<(int matIndex, PMXFace face)>();
 
             foreach (var objectName in groupOrder)
             {
                 foreach (var ctx in objectGroups[objectName])
                 {
                     bool isMirror = ctx.IsBakedMirror || ctx.Type == MeshType.MirrorSide;
-                    if (isMirror)
-                        mirrorMeshes.Add((ctx, objectName, true));
-                    else
-                        realMeshes.Add((ctx, objectName, false));
+                    var map = ConvertSingleMeshWithObjectName(
+                        ctx, document, boneNameToIndex, settings, objectName, isMirror, pendingFaces);
+                    if (ctx?.Name != null) vertexMaps[ctx.Name] = map;
                 }
             }
 
-            // 実体側を出力
-            foreach (var (ctx, objectName, isMirror) in realMeshes)
+            // 材質番号で安定ソートして書き出す。
+            // OrderBy は安定なので、同一材質内ではオブジェクト順・面順がそのまま残る。
+            foreach (var (_, face) in pendingFaces.OrderBy(e => e.matIndex))
             {
-                ConvertSingleMeshWithObjectName(ctx, document, boneNameToIndex, settings, objectName, isMirror);
-            }
-
-            // ミラー側を出力
-            foreach (var (ctx, objectName, isMirror) in mirrorMeshes)
-            {
-                ConvertSingleMeshWithObjectName(ctx, document, boneNameToIndex, settings, objectName, isMirror);
+                face.FaceIndex = document.Faces.Count;
+                document.Faces.Add(face);
             }
 
             // 材質の面数を更新
             UpdateMaterialFaceCounts(document);
 
             Debug.Log($"[PMXExporter] Converted {document.Vertices.Count} vertices, {document.Faces.Count} faces");
+
+            return vertexMaps;
         }
 
         /// <summary>
         /// 単一MeshContextをPMX形式に変換（ObjectName対応）
         /// </summary>
-        private static void ConvertSingleMeshWithObjectName(
+        private static Dictionary<(int vIdx, int uvIdx), int> ConvertSingleMeshWithObjectName(
             MeshContext ctx,
             PMXDocument document,
             Dictionary<string, int> boneNameToIndex,
             PMXExportSettings settings,
             string objectName,
-            bool isMirror)
+            bool isMirror,
+            List<(int matIndex, PMXFace face)> pendingFaces)
         {
             var meshObject = ctx.MeshObject;
 
@@ -766,13 +880,13 @@ namespace Poly_Ling.PMX
                         {
                             MaterialName = materialName,
                             MaterialIndex = matIndex,
-                            FaceIndex = document.Faces.Count,
                             VertexIndex1 = v0,
                             VertexIndex2 = AxisFlipOps.ReverseWinding(settings.Flip) ? v2 : v1,
                             VertexIndex3 = AxisFlipOps.ReverseWinding(settings.Flip) ? v1 : v2
                         };
 
-                        document.Faces.Add(pmxFace);
+                        // FaceIndex は材質順に並べ替えたあとで振る
+                        pendingFaces.Add((matIndex, pmxFace));
                     }
                 }
 
@@ -793,6 +907,8 @@ namespace Poly_Ling.PMX
 
             // PolyLingメタUVモーフを生成（頂点ID・UVサブインデックス保存用）
             BuildPolyLingMetaMorph(ctx, document, vertexMapping, objectName);
+
+            return vertexMapping;
         }
 
         /// <summary>
@@ -813,31 +929,27 @@ namespace Poly_Ling.PMX
             foreach (var kv in localMap)
                 vertexMapping[kv.Key] = kv.Value + meshVertexStart;
 
-            // 孤立頂点除外
-            var nonIsolated = new HashSet<int>();
-            foreach (var face in meshObject.Faces)
+            // 展開順と孤立判定は MeshExpansion が唯一の実装（手書きしない）。
+            // localMap も MeshObject.BuildExpansionMap 経由で同じ規則を使っている。
+            MeshExpansion.Enumerate(meshObject, (vIdx, uvIdx, expIdx) =>
             {
-                if (face.VertexCount < 3) continue;
-                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
-            }
+                var vertex    = meshObject.Vertices[vIdx];
+                var pmxVertex = ConvertVertex(vertex, boneNameToIndex, settings);
 
-            // 展開順（vIdx→uvIdx）に頂点を追加（孤立頂点はスキップ）
-            for (int vIdx = 0; vIdx < meshObject.Vertices.Count; vIdx++)
-            {
-                if (!nonIsolated.Contains(vIdx)) continue;
-                var vertex = meshObject.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                Vector2 uv = uvIdx < vertex.UVs.Count ? vertex.UVs[uvIdx] : Vector2.zero;
+                if (settings.FlipUV_V) uv.y = 1f - uv.y;
 
-                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                {
-                    var pmxVertex = ConvertVertex(vertex, boneNameToIndex, settings);
-                    Vector2 uv = uvIdx < vertex.UVs.Count ? vertex.UVs[uvIdx] : Vector2.zero;
-                    if (settings.FlipUV_V) uv.y = 1f - uv.y;
-                    pmxVertex.UV = uv;
-                    pmxVertex.Index = document.Vertices.Count;
-                    document.Vertices.Add(pmxVertex);
-                }
-            }
+                // 法線は UV と対のスロット（基本データ仕様: UV Vector2[n] / Normal Vector3[n]）。
+                // ConvertVertex はスロット 0 で埋めるので、ここで uvIdx のものに差し替える。
+                // 差し替えないと、UV が分かれている頂点の 2 番目以降が
+                // スロット 0 の法線を受け取り、陰影が崩れる。
+                if (uvIdx < vertex.Normals.Count)
+                    pmxVertex.Normal = ConvertNormal(vertex.Normals[uvIdx], settings);
+
+                pmxVertex.UV    = uv;
+                pmxVertex.Index = document.Vertices.Count;
+                document.Vertices.Add(pmxVertex);
+            });
 
             return vertexMapping;
         }
@@ -1058,6 +1170,265 @@ namespace Poly_Ling.PMX
         private static Vector3 ConvertNormal(Vector3 normal, PMXExportSettings settings)
         {
             return AxisFlipOps.Normal(settings.Flip, normal);
+        }
+
+        // ================================================================
+        // モーフ エクスポート
+        //
+        // 【方針】
+        //   PolyLing が持つのは頂点モーフ・UVモーフ・グループモーフの 3 種類。
+        //   ボーンモーフ・材質モーフ・フリップ・インパルスは取り込んでいないので、
+        //   元の PMX（SourceDocument）からそのまま写す。
+        //
+        // 【並び順】
+        //   表示枠はモーフを番号で指す。元の PMX があるときは元の並び順を守り、
+        //   同名のモーフだけ作り直したもので差し替える。これで表示枠の番号が
+        //   ずれない。元の PMX が無いときは MorphExpressions の順で出す。
+        // ================================================================
+
+        private static void ConvertMorphs(
+            ModelContext model,
+            PMXDocument document,
+            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps,
+            PMXExportSettings settings)
+        {
+            var rebuilt = new Dictionary<string, PMXMorph>();
+            var order   = new List<string>();
+
+            var expressions = model.MorphExpressions;
+            if (expressions != null)
+            {
+                foreach (var expr in expressions)
+                {
+                    if (expr == null || string.IsNullOrEmpty(expr.Name)) continue;
+                    if (rebuilt.ContainsKey(expr.Name)) continue;
+
+                    PMXMorph morph = expr.Type == MorphType.Group
+                        ? BuildGroupMorph(expr)
+                        : BuildShapeMorph(expr, model, vertexMaps, settings);
+
+                    if (morph == null) continue;
+                    rebuilt[expr.Name] = morph;
+                    order.Add(expr.Name);
+                }
+            }
+
+            var emitted = new HashSet<string>();
+
+            if (model.SourceDocument is PMXDocument sourcePmx)
+            {
+                foreach (var srcMorph in sourcePmx.Morphs)
+                {
+                    if (srcMorph == null) continue;
+
+                    // 書き出し側が作るメタモーフは元のものを使わない
+                    if (srcMorph.Name != null && srcMorph.Name.StartsWith("__PLM_")) continue;
+
+                    if (srcMorph.Name != null && rebuilt.TryGetValue(srcMorph.Name, out var made))
+                    {
+                        document.Morphs.Add(made);
+                        emitted.Add(srcMorph.Name);
+                    }
+                    else
+                    {
+                        // PolyLing が扱わない種類（ボーン・材質・フリップ・インパルス）
+                        document.Morphs.Add(srcMorph);
+                        if (srcMorph.Name != null) emitted.Add(srcMorph.Name);
+                    }
+                }
+            }
+
+            // 元の PMX に無かったモーフ（PolyLing で足したもの）を後ろに足す
+            foreach (var name in order)
+            {
+                if (emitted.Contains(name)) continue;
+                document.Morphs.Add(rebuilt[name]);
+                emitted.Add(name);
+            }
+
+            ResolveMorphReferences(document);
+
+            Debug.Log($"[PMXExporter] Converted {document.Morphs.Count} morphs");
+        }
+
+        /// <summary>
+        /// モーフが持つ他要素への参照を名前から番号へ解決する。
+        /// PMXWriter は番号をそのまま書くので、ここで解決しないと -1 のまま出る
+        /// （JOINT の接続剛体で同じ失敗をしている）。
+        /// </summary>
+        private static void ResolveMorphReferences(PMXDocument document)
+        {
+            var morphIndex = new Dictionary<string, int>();
+            for (int i = 0; i < document.Morphs.Count; i++)
+            {
+                string n = document.Morphs[i]?.Name;
+                if (!string.IsNullOrEmpty(n) && !morphIndex.ContainsKey(n)) morphIndex[n] = i;
+            }
+
+            var materialIndex = new Dictionary<string, int>();
+            for (int i = 0; i < document.Materials.Count; i++)
+            {
+                string n = document.Materials[i]?.Name;
+                if (!string.IsNullOrEmpty(n) && !materialIndex.ContainsKey(n)) materialIndex[n] = i;
+            }
+
+            var boneIndex = new Dictionary<string, int>();
+            for (int i = 0; i < document.Bones.Count; i++)
+            {
+                string n = document.Bones[i]?.Name;
+                if (!string.IsNullOrEmpty(n) && !boneIndex.ContainsKey(n)) boneIndex[n] = i;
+            }
+
+            foreach (var morph in document.Morphs)
+            {
+                if (morph?.Offsets == null) continue;
+
+                foreach (var offset in morph.Offsets)
+                {
+                    switch (offset)
+                    {
+                        case PMXGroupMorphOffset g:
+                            if (!string.IsNullOrEmpty(g.MorphName) &&
+                                morphIndex.TryGetValue(g.MorphName, out int gi))
+                                g.MorphIndex = gi;
+                            break;
+
+                        case PMXMaterialMorphOffset m:
+                            if (!string.IsNullOrEmpty(m.MaterialName) &&
+                                materialIndex.TryGetValue(m.MaterialName, out int mi))
+                                m.MaterialIndex = mi;
+                            break;
+
+                        case PMXBoneMorphOffset b:
+                            if (!string.IsNullOrEmpty(b.BoneName) &&
+                                boneIndex.TryGetValue(b.BoneName, out int bi))
+                                b.BoneIndex = bi;
+                            break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>グループモーフを作る。子は名前で参照する。</summary>
+        private static PMXMorph BuildGroupMorph(MorphExpression expr)
+        {
+            if (expr.GroupChildren == null || expr.GroupChildren.Count == 0) return null;
+
+            var morph = new PMXMorph
+            {
+                Name        = expr.Name,
+                NameEnglish = expr.NameEnglish ?? "",
+                Panel       = expr.Panel,
+                MorphType   = 0
+            };
+
+            foreach (var child in expr.GroupChildren)
+            {
+                if (string.IsNullOrEmpty(child.Name)) continue;
+                morph.Offsets.Add(new PMXGroupMorphOffset
+                {
+                    Type       = 0,
+                    MorphIndex = -1,          // 名前主・番号従。書き出し直前に解決する
+                    MorphName  = child.Name,
+                    Weight     = child.Weight
+                });
+            }
+
+            return morph.Offsets.Count > 0 ? morph : null;
+        }
+
+        /// <summary>頂点モーフ / UVモーフを作る。</summary>
+        private static PMXMorph BuildShapeMorph(
+            MorphExpression expr,
+            ModelContext model,
+            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps,
+            PMXExportSettings settings)
+        {
+            bool isUV = expr.IsUVMorph;
+
+            var morph = new PMXMorph
+            {
+                Name        = expr.Name,
+                NameEnglish = expr.NameEnglish ?? "",
+                Panel       = expr.Panel,
+                MorphType   = isUV ? 3 : 1
+            };
+
+            foreach (var entry in expr.MeshEntries)
+            {
+                if (entry.MeshIndex < 0 || entry.MeshIndex >= model.MeshContextCount) continue;
+
+                var morphCtx = model.GetMeshContext(entry.MeshIndex);
+                var baseData = morphCtx?.MorphBaseData;
+                if (morphCtx?.MeshObject == null || baseData == null || !baseData.IsValid) continue;
+
+                // どの描画オブジェクトの展開範囲に載せるかを名前で引く
+                string baseName = !string.IsNullOrEmpty(baseData.BaseMeshName)
+                    ? baseData.BaseMeshName
+                    : FindBaseMeshName(morphCtx.Name, vertexMaps);
+
+                if (baseName == null || !vertexMaps.TryGetValue(baseName, out var map)) continue;
+
+                if (isUV)
+                {
+                    foreach (var (localIndex, offset) in baseData.GetSparseUVOffsets(morphCtx.MeshObject))
+                    {
+                        if (!map.TryGetValue((localIndex, 0), out int pmxIndex)) continue;
+
+                        Vector2 uv = offset;
+                        if (settings.FlipUV_V) uv.y = -uv.y;
+
+                        morph.Offsets.Add(new PMXUVMorphOffset
+                        {
+                            Type        = 3,
+                            VertexIndex = pmxIndex,
+                            Offset      = new Vector4(uv.x, uv.y, 0f, 0f)
+                        });
+                    }
+                }
+                else
+                {
+                    foreach (var (localIndex, offset) in baseData.GetSparseOffsets(morphCtx.MeshObject))
+                    {
+                        // 位置は UV スロット数ぶん複製されるので、同じ差分を全スロットへ配る。
+                        // 差分はスケールと軸反転をかけて PMX 座標へ戻す。
+                        Vector3 pmxOffset = AxisFlipOps.Position(settings.Flip, offset, settings.Scale);
+
+                        int uvIdx = 0;
+                        while (map.TryGetValue((localIndex, uvIdx), out int pmxIndex))
+                        {
+                            morph.Offsets.Add(new PMXVertexMorphOffset
+                            {
+                                Type        = 1,
+                                VertexIndex = pmxIndex,
+                                Offset      = pmxOffset
+                            });
+                            uvIdx++;
+                        }
+                    }
+                }
+            }
+
+            return morph.Offsets.Count > 0 ? morph : null;
+        }
+
+        /// <summary>
+        /// BaseMeshName が入っていない古いデータ向けの保険。
+        /// モーフメッシュ名は「元の名前_モーフ名」で作られるため前方一致で探す。
+        /// </summary>
+        private static string FindBaseMeshName(
+            string morphMeshName,
+            Dictionary<string, Dictionary<(int vIdx, int uvIdx), int>> vertexMaps)
+        {
+            if (string.IsNullOrEmpty(morphMeshName)) return null;
+
+            string best = null;
+            foreach (var name in vertexMaps.Keys)
+            {
+                if (!morphMeshName.StartsWith(name)) continue;
+                if (best == null || name.Length > best.Length) best = name;
+            }
+            return best;
         }
 
         // ================================================================

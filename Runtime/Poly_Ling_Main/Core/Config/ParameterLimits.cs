@@ -204,6 +204,20 @@ namespace Poly_Ling.Core
         public static int GetI(string key) => Mathf.RoundToInt(GetF(key));
 
         /// <summary>
+        /// 既知キーのときだけ値を返す。
+        ///
+        /// GetF は未登録キーでも 0 を返すため、「キーが無い」と「値が 0」を
+        /// 区別できない。スキーマ生成が上下限を出すかどうかの判定に使う。
+        /// </summary>
+        public static bool TryGetF(string key, out float value)
+        {
+            value = 0f;
+            if (string.IsNullOrEmpty(key) || !IsKnownKey(key)) return false;
+            value = GetF(key);
+            return true;
+        }
+
+        /// <summary>
         /// float値を設定してCSVへ即書き戻す（UI→CSV の逆経路。既知キーのみ受理）。
         /// これによりUI変更が永続化まで一本の経路で届く。
         /// </summary>

@@ -69,6 +69,15 @@ namespace Poly_Ling.Remote
         // [2B] ExpressionCount  [MorphExpression × ExpressionCount]
         //   MorphExpression: [string] Name  [string] NameEnglish  [1B] Panel  [1B] Type  [1B] IsSymmetric
         //                    [2B] EntryCount  ([2B] MeshIndex  [4B] Weight) × EntryCount
+        //   ※ Version 3 で末尾に ObjectGroup ブロックを追加。
+        //     [2B] GroupCount  [ObjectGroup × GroupCount]
+        //     ObjectGroup: [string] Name  [string] Action
+        //                  [8B] OutputObjectId  [8B] StashObjectId
+        //                  [1B] AutoUpdate  [string] SourceDigest
+        //                  [2B] ArgCount     ([string] Key [string] Value) × ArgCount
+        //                  [2B] MeshRefCount ([string] Key [2B] IdCount [8B × IdCount]) × MeshRefCount
+        //     参照は ObjectId なので受信側でメッシュ索引へ読み替える必要がない。
+        //     Version 2 の受信側とは非互換のため Editor/Player を同時更新すること。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -78,7 +87,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)2);   // version 2: MaterialData 拡張ブロック
+                w.Write((byte)3);   // version 3: ObjectGroup ブロック（v2: MaterialData 拡張ブロック）
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -111,6 +120,52 @@ namespace Poly_Ling.Remote
                     {
                         w.Write((short)expr.MeshEntries[j].MeshIndex);
                         w.Write(expr.MeshEntries[j].Weight);
+                    }
+                }
+
+                // ── ObjectGroups（version 3 で追加）
+                //    並びは保存と同じくキー順に固定する。Dictionary の列挙順は
+                //    保証されないため、固定しないと同じ内容でもバイト列が変わる。
+                var groups = model.ObjectGroups;
+                int groupCount = groups?.Count ?? 0;
+                w.Write((ushort)groupCount);
+                for (int i = 0; i < groupCount; i++)
+                {
+                    var g = groups[i];
+                    if (g == null)
+                    {
+                        // 空のグループとして詰めておく（件数と実体をずらさない）。
+                        WriteString(w, ""); WriteString(w, "");
+                        w.Write(0UL); w.Write(0UL);
+                        w.Write(false); WriteString(w, "");
+                        w.Write((ushort)0); w.Write((ushort)0);
+                        continue;
+                    }
+
+                    WriteString(w, g.Name ?? "");
+                    WriteString(w, g.Action ?? "");
+                    w.Write(g.OutputObjectId);
+                    w.Write(g.StashObjectId);
+                    w.Write(g.AutoUpdate);
+                    WriteString(w, g.SourceDigest ?? "");
+
+                    var sortedArgs = g.SortedArgs();
+                    w.Write((ushort)sortedArgs.Count);
+                    for (int j = 0; j < sortedArgs.Count; j++)
+                    {
+                        WriteString(w, sortedArgs[j].Key ?? "");
+                        WriteString(w, sortedArgs[j].Value ?? "");
+                    }
+
+                    var sortedRefs = g.SortedMeshRefIds();
+                    w.Write((ushort)sortedRefs.Count);
+                    for (int j = 0; j < sortedRefs.Count; j++)
+                    {
+                        WriteString(w, sortedRefs[j].Key ?? "");
+                        var ids = sortedRefs[j].Value;
+                        int n = ids?.Count ?? 0;
+                        w.Write((ushort)n);
+                        for (int k = 0; k < n; k++) w.Write(ids[k]);
                     }
                 }
 
@@ -192,6 +247,44 @@ namespace Poly_Ling.Remote
                         expr.MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
                     }
                     model.MorphExpressions.Add(expr);
+                }
+
+                // ── ObjectGroups（version 3 以降）
+                //    v2 以前の送信側はこのブロックを持たない。読まずに抜ける。
+                if (metaVersion >= 3)
+                {
+                    ushort groupCount = r.ReadUInt16();
+                    for (int i = 0; i < groupCount; i++)
+                    {
+                        var g = new Poly_Ling.Data.ObjectGroup(ReadString(r))
+                        {
+                            Action         = ReadString(r),
+                            OutputObjectId = r.ReadUInt64(),
+                            StashObjectId  = r.ReadUInt64(),
+                            AutoUpdate     = r.ReadBoolean(),
+                            SourceDigest   = ReadString(r),
+                        };
+
+                        ushort argCount = r.ReadUInt16();
+                        for (int j = 0; j < argCount; j++)
+                        {
+                            string k = ReadString(r);
+                            string v = ReadString(r);
+                            g.SetArg(k, v);
+                        }
+
+                        ushort refCount = r.ReadUInt16();
+                        for (int j = 0; j < refCount; j++)
+                        {
+                            string k = ReadString(r);
+                            ushort idCount = r.ReadUInt16();
+                            var ids = new List<ulong>(idCount);
+                            for (int m = 0; m < idCount; m++) ids.Add(r.ReadUInt64());
+                            g.SetMeshRefIds(k, ids);
+                        }
+
+                        model.ObjectGroups.Add(g);
+                    }
                 }
 
                 return (modelIndex, model);

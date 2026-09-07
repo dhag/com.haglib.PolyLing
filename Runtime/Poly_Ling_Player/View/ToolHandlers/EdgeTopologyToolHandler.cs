@@ -32,6 +32,13 @@ namespace Poly_Ling.Player
         /// <summary>GPU ホバー結果取得。FindEdgeAtPosition 等 CPU 側探索の代替。</summary>
         public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
+        /// <summary>
+        /// コマンド送信口。クリック確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
         // ================================================================
         // 設定公開API
         // ================================================================
@@ -50,14 +57,143 @@ namespace Poly_Ling.Player
         // IPlayerToolHandler
         // ================================================================
 
+        /// <summary>
+        /// クリック確定。
+        ///
+        /// 【1 クリック = 1 コマンド】
+        ///   送信口があるときは TryTakeEdgeActionFromClick で「何を実行するか」だけを
+        ///   決め、実行はコマンドの受け口へ寄せる。Split の 1 クリック目は段が
+        ///   進むだけで false が返るので何も送らない。
+        ///   TryTake は OnMouseDown と同じ段の更新を行うため、両方を呼ぶと
+        ///   二重に進む。どちらか一方だけを通すこと。
+        /// </summary>
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            if (HandlePressViaCommand()) return;
+
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
         }
+
+        /// <summary>
+        /// 押下 1 回ぶんをコマンド経路で処理する。
+        ///
+        /// クリックとドラッグ開始のどちらもこのツールでは「押した瞬間に確定」なので
+        /// （PlayerVertexInteractor はしきい値でどちらかへ振り分ける）、
+        /// 両方から同じここを通す。塞がないとドラッグ側だけ旧経路が走る。
+        /// </summary>
+        /// <returns>コマンド経路で処理したら true。呼び出し側は旧経路を通さない。</returns>
+        private bool HandlePressViaCommand()
+        {
+            if (SendCommand == null) return false;
+
+            var ctx = GetEnrichedCtx();
+            if (ctx == null) return true;   // 送信口はあるので旧経路は通さない
+
+            if (_tool.TryTakeEdgeActionFromClick(ctx, out var mode, out int a, out int b))
+            {
+                var cmd = BuildEdgeCommand(mode, a, b);
+                if (cmd != null) SendCommand(cmd);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = _project?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
+
+        private Poly_Ling.Data.PanelCommand BuildEdgeCommand(EdgeTopoMode mode, int a, int b)
+        {
+            var targets = ActiveMasterIndices();
+            if (targets == null) return null;
+
+            int mi = _project?.CurrentModelIndex ?? 0;
+            switch (mode)
+            {
+                case EdgeTopoMode.Flip:
+                    return new Poly_Ling.Data.EdgeTopologyFlipCommand(mi, targets, a, b);
+                case EdgeTopoMode.Dissolve:
+                    return new Poly_Ling.Data.EdgeTopologyDissolveCommand(mi, targets, a, b);
+                case EdgeTopoMode.Split:
+                    return new Poly_Ling.Data.EdgeTopologySplitCommand(mi, targets, a, b);
+            }
+            return null;
+        }
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 辺の入れ替えコマンドを実行する。
+        /// 実処理は EdgeTopologyTool.ExecuteFlipFromCommand が
+        /// マウス経路と同じ ExecuteFlip を通す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.EdgeTopologyFlipCommand cmd, out string reason)
+        {
+            if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+            return _tool.ExecuteFlipFromCommand(ctx, cmd.EdgeV1, cmd.EdgeV2, out reason);
+        }
+
+        /// <summary>
+        /// 辺の消去コマンドを実行する。
+        /// 実処理は EdgeTopologyTool.ExecuteDissolveFromCommand。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.EdgeTopologyDissolveCommand cmd, out string reason)
+        {
+            if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+            return _tool.ExecuteDissolveFromCommand(ctx, cmd.EdgeV1, cmd.EdgeV2, out reason);
+        }
+
+        /// <summary>
+        /// 四角形の対角分割コマンドを実行する。
+        /// 実処理は EdgeTopologyTool.ExecuteSplitFromCommand。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.EdgeTopologySplitCommand cmd, out string reason)
+        {
+            if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+            return _tool.ExecuteSplitFromCommand(ctx, cmd.VertexA, cmd.VertexB, out reason);
+        }
+
+        /// <summary>
+        /// 3 コマンド共通の前処理。対象の照合とコンテキストの組み立て。
+        /// </summary>
+        private bool PrepareCommand(int[] masterIndices, out ToolContext ctx, out string reason)
+        {
+            ctx    = null;
+            reason = null;
+
+            if (masterIndices == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, masterIndices, out reason))
+                return false;
+
+            ctx = GetEnrichedCtx();
+            if (ctx == null) { reason = "ビューポートがありません"; return false; }
+            return true;
+        }
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            if (HandlePressViaCommand()) return;
+
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
         }

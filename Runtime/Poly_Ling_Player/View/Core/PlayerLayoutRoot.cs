@@ -185,6 +185,9 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：新図形生成ボタン（機構部品）。同じ LivePrimitiveSection を開く。</summary>
         public Button LiveMechanismPrimitiveBtn { get; private set; }
 
+        /// <summary>左ペイン：新図形生成ボタン（揺れものボーン）。同じ LivePrimitiveSection を開く。</summary>
+        public Button LiveSpringBonePrimitiveBtn { get; private set; }
+
         /// <summary>左ペイン：ツール切り替えボタン群。</summary>
         public Button ToolVertexMoveBtn  { get; private set; }
         public Button ToolObjectMoveBtn  { get; private set; }
@@ -231,6 +234,12 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：下絵設定セクション（ScrollView内）。</summary>
         public VisualElement UnderlaySection { get; private set; }
+
+        /// <summary>左ペイン：作業フォルダ設定ボタン（その他）。</summary>
+        public Button WorkFolderBtn { get; private set; }
+
+        /// <summary>右ペイン：作業フォルダ設定セクション（ScrollView内）。</summary>
+        public VisualElement WorkFolderSection { get; private set; }
 
         /// <summary>左ペイン：軸/グリッドボタン（その他）。</summary>
         public Button GridAxisBtn { get; private set; }
@@ -299,6 +308,8 @@ namespace Poly_Ling.Player
         public Button        PartsSelectionSetBtn  { get; private set; }
         public VisualElement MeshSelectionSetSection  { get; private set; }
         public Button        MeshSelectionSetBtn   { get; private set; }
+        public VisualElement ObjectGroupSection    { get; private set; }
+        public Button        ObjectGroupBtn        { get; private set; }
         public VisualElement NormalExcludeSetSection { get; private set; }
         public Button        NormalExcludeSetBtn   { get; private set; }
         public VisualElement NormalEditSection     { get; private set; }
@@ -413,12 +424,20 @@ namespace Poly_Ling.Player
         public VisualElement VMDTestSection         { get; private set; }
         public Button        VMDTestBtn             { get; private set; }
         public VisualElement UnityClipTestSection    { get; private set; }
+        public VisualElement UnityClipToVrmaSection { get; private set; }
+        public VisualElement VmdToVrmaSection      { get; private set; }
+        public Button        VmdToVrmaBtn          { get; private set; }
         public Button        UnityClipTestBtn        { get; private set; }
+        public Button        UnityClipToVrmaBtn      { get; private set; }
         public VisualElement MotionClipTestSection   { get; private set; }
         public Button        MotionClipTestBtn        { get; private set; }
         /// <summary>パイプライン自動検証（読み込み→スキン→ウェイト→マッピング→保存往復）。</summary>
-        public VisualElement PipelineTestSection      { get; private set; }
-        public Button        PipelineTestBtn          { get; private set; }
+        /// <summary>右ペイン：コマンド定義の検査セクション（ScrollView内）。</summary>
+        public VisualElement CommandSchemaSection    { get; private set; }
+
+        /// <summary>左ペイン：コマンド定義の検査ボタン（システムデバッグ）。</summary>
+        public Button        CommandSchemaBtn        { get; private set; }
+
         public VisualElement OriginTestSection        { get; private set; }
         public Button        OriginTestBtn            { get; private set; }
         public VisualElement SkinTestSection          { get; private set; }
@@ -428,11 +447,72 @@ namespace Poly_Ling.Player
         public Button        SpringBoneTestBtn        { get; private set; }
 
         /// <summary>
+        /// 右ペイン：揺れもの編集（VRM SpringBone のオーサリング）。
+        /// 検証パネル（SpringBoneTest）とは別物で、こちらが通常の編集機能。
+        /// </summary>
+        public VisualElement SpringBoneSection        { get; private set; }
+
+        /// <summary>左ペイン：揺れもの編集ボタン（ボーン・モーフ）。</summary>
+        public Button        SpringBoneBtn            { get; private set; }
+
+        /// <summary>
+        /// 右ペイン：当たり判定（VRM SpringBone の collider）の作成と編集。
+        /// 揺れもの編集がまとまり（グループ）の名前しか扱えなかったため分けた。
+        /// </summary>
+        public VisualElement SpringBoneColliderSection { get; private set; }
+
+        /// <summary>左ペイン：当たり判定の作成と編集ボタン（ボーン・モーフ）。</summary>
+        public Button        SpringBoneColliderBtn     { get; private set; }
+
+        /// <summary>
+        /// 右ペイン：Humanoid マッスル可動域（HumanLimit）の編集。
+        /// Humanoid 割当と同じ「ボーンに属性を付ける」系なので隣に並べる。
+        /// </summary>
+        public VisualElement HumanLimitSection         { get; private set; }
+
+        /// <summary>左ペイン：マッスル可動域の編集ボタン（ボーン・モーフ）。</summary>
+        public Button        HumanLimitBtn             { get; private set; }
+
+        /// <summary>
+        /// 右ペイン：VRM 出力設定（作者情報・許諾・視線・一人称）。
+        /// 出力ごとの上書きは「エクスポート」側にあり、こちらは保存される値。
+        /// </summary>
+        public VisualElement VrmSettingsSection        { get; private set; }
+
+        /// <summary>左ペイン：VRM 出力設定ボタン（ファイル）。</summary>
+        public Button        VrmSettingsBtn            { get; private set; }
+
+
+        /// <summary>
         /// ロボ組み立て自動検証。基本図形の生成から VRM 書き出しまでを 5 系統ぶん流す。
         /// 段ごとにフォルダへ保存するので、途中経過をあとから追える。
         /// </summary>
         public VisualElement RobotBuildTestSection    { get; private set; }
         public Button        RobotBuildTestBtn        { get; private set; }
+        public VisualElement FrillSkirtTestSection    { get; private set; }
+        public Button        FrillSkirtTestBtn        { get; private set; }
+        public VisualElement PipeHairTestSection      { get; private set; }
+        public Button        PipeHairTestBtn          { get; private set; }
+        public VisualElement BarnacleTestSection      { get; private set; }
+        public Button        BarnacleTestBtn          { get; private set; }
+        public VisualElement RevolutionTestSection    { get; private set; }
+        public Button        RevolutionTestBtn        { get; private set; }
+        public VisualElement Profile2DTestSection     { get; private set; }
+        public Button        Profile2DTestBtn         { get; private set; }
+
+        /// <summary>
+        /// PMX位置→MQO保存 自動検証。PMX をソースにして MQO の頂点位置だけを
+        /// 差し替え、別名の MQO として書き出すまでを流す。
+        /// </summary>
+        public VisualElement PmxToMqoTestSection      { get; private set; }
+        public Button        PmxToMqoTestBtn          { get; private set; }
+
+        /// <summary>
+        /// MQO位置UV→PMX保存 自動検証。MQO をソースにして、頂点数の一致した
+        /// オブジェクトだけ頂点位置と UV を差し替え、別名の PMX として書き出す。
+        /// </summary>
+        public VisualElement MqoToPmxTestSection      { get; private set; }
+        public Button        MqoToPmxTestBtn          { get; private set; }
         public Button        SkinTestBtn              { get; private set; }
 
         /// <summary>左ペイン：現在のタブの全オブジェクトを選択する。処理はメッシュリスト側と同じ。</summary>
@@ -1098,6 +1178,11 @@ namespace Poly_Ling.Player
             fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn); fullExportRow.Add(FullExportVrmBtn);
             foFile.Add(fullExportRow);
 
+            // VRM に載せる作者情報・許諾・視線・一人称。保存されるモデルの値で、
+            // 出力ごとの上書きは「エクスポート」側にある。VRM 保存の隣に置く。
+            VrmSettingsBtn = MakeBtn("VRM出力設定");
+            foFile.Add(VrmSettingsBtn);
+
             foFile.Add(Separator());
 
             // ── 部分インポート／エクスポート（既定 折りたたみ） ──
@@ -1139,6 +1224,12 @@ namespace Poly_Ling.Player
             // 歯車まわり（かみ合う部品）はここへ集める。
             LiveMechanismPrimitiveBtn = MakeBtn("機構部品（3D連携）");
             foPrimitive.Add(LiveMechanismPrimitiveBtn);
+
+            // 揺れもの用のボーン鎖。作るのはボーンでメッシュではないが、
+            // 形の指定（1 本 / 円筒 / 回転体）とプロファイル編集は図形生成と同じなので
+            // 同じパネルのカテゴリとして置く。
+            LiveSpringBonePrimitiveBtn = MakeBtn("揺れものボーン（3D連携）");
+            foPrimitive.Add(LiveSpringBonePrimitiveBtn);
 
             // 配置ギズモのサブモード切替ボタンは
             // PlayerPrimitiveMeshSubPanel（3D連携インスタンス）の中へ移設済み。
@@ -1189,6 +1280,12 @@ namespace Poly_Ling.Player
             PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
             MeshSelectionSetBtn  = MakeBtn("オブジェクト選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
             rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foSelectMove.Add(rowSelSet);
+
+            // オブジェクトグループ（帯・断面・パラメータと出力先のまとまり）。
+            // 選択辞書と同じ「オブジェクトのまとまりを管理するもの」なので隣に置く。
+            ObjectGroupBtn = MakeBtn("オブジェクトグループ"); ObjectGroupBtn.style.flexGrow = 1;
+            var rowObjGroup = new VisualElement(); rowObjGroup.style.flexDirection = FlexDirection.Row; rowObjGroup.style.marginBottom = 2;
+            rowObjGroup.Add(ObjectGroupBtn); foSelectMove.Add(rowObjGroup);
 
             // ── トポロジー編集 ─────────────────────────────────────────
             var foTopology = MakeFoldout("トポロジー編集", "Topology");
@@ -1332,6 +1429,20 @@ namespace Poly_Ling.Player
             SkinWeightNumericBtn = MakeBtn("スキンW数値設定");
             foBoneMorph.Add(SkinWeightNumericBtn);
 
+            // 揺れもの（VRM SpringBone）の編集。Humanoid 割当・T ポーズと同じ
+            // 「ボーンに属性を付ける」系の操作なのでここに置く。
+            SpringBoneBtn = MakeBtn("揺れもの編集");
+            foBoneMorph.Add(SpringBoneBtn);
+
+            // 当たり判定そのものを作る画面。揺れもの編集からは
+            // まとまり（グループ）の名前しか触れないので、隣に並べる。
+            SpringBoneColliderBtn = MakeBtn("当たり判定の作成と編集");
+            foBoneMorph.Add(SpringBoneColliderBtn);
+
+            // マッスル可動域。Humanoid 割当が前提なので、その並びに置く。
+            HumanLimitBtn = MakeBtn("マッスル可動域編集");
+            foBoneMorph.Add(HumanLimitBtn);
+
             // ── UV・マテリアル ─────────────────────────────────────────
             var foUvMat = MakeFoldout("UV・マテリアル", "UvMat");
 
@@ -1364,6 +1475,13 @@ namespace Poly_Ling.Player
             // ── その他 ─────────────────────────────────────────────────
             var foOther = MakeFoldout("その他", "Other");
 
+            // 作業フォルダ（PLSandbox の根）。設定なので「その他」の先頭に置く。
+            // コマンド経由のファイル入出力はここを決めないと一切通らないため、
+            // 未設定時の拒否理由にもこの置き場所を書いてある（PLSandbox 参照）。
+            WorkFolderBtn = MakeBtn("作業フォルダ");
+            WorkFolderBtn.style.marginBottom = 2;
+            foOther.Add(WorkFolderBtn);
+
             var rowMisc = new VisualElement(); rowMisc.style.flexDirection = FlexDirection.Row; rowMisc.style.marginBottom = 2;
             MediaPipeBtn    = MakeBtn("MediaPipe");   MediaPipeBtn.style.flexGrow    = 1; MediaPipeBtn.style.marginRight    = 2;
             VMDTestBtn      = MakeBtn("VMDテスト");    VMDTestBtn.style.flexGrow      = 1; VMDTestBtn.style.marginRight      = 2;
@@ -1374,6 +1492,16 @@ namespace Poly_Ling.Player
             UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1; UnityClipTestBtn.style.marginRight = 2;
             MotionClipTestBtn = MakeBtn("Yet（統合モーション)"); MotionClipTestBtn.style.flexGrow = 1;
             rowMisc2.Add(UnityClipTestBtn); rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
+
+            // モデルを使わない変換専用の道具。名前が長いので 1 行使う。
+            UnityClipToVrmaBtn = MakeBtn("Unityクリップ→VRMA変換");
+            UnityClipToVrmaBtn.style.marginBottom = 2;
+            foOther.Add(UnityClipToVrmaBtn);
+
+            // こちらはモデルへ VMD を適用しながら書き出す。名前が長いので 1 行使う。
+            VmdToVrmaBtn = MakeBtn("VMD→VRMA書き出し");
+            VmdToVrmaBtn.style.marginBottom = 2;
+            foOther.Add(VmdToVrmaBtn);
 
             var rowMisc3 = new VisualElement(); rowMisc3.style.flexDirection = FlexDirection.Row; rowMisc3.style.marginBottom = 2;
             UnderlayBtn = MakeBtn("下絵");        UnderlayBtn.style.flexGrow = 1; UnderlayBtn.style.marginRight = 2;
@@ -1411,10 +1539,8 @@ namespace Poly_Ling.Player
             var foSysDebug = MakeFoldout("システムデバッグ", "SysDebug");
 
             var rowSysDebug = new VisualElement(); rowSysDebug.style.flexDirection = FlexDirection.Row; rowSysDebug.style.marginBottom = 2;
-            PipelineTestBtn = MakeBtn("パイプライン自動検証"); PipelineTestBtn.style.flexGrow = 1;
-            PipelineTestBtn.style.marginRight = 2;
             OriginTestBtn = MakeBtn("原点CSV自動検証"); OriginTestBtn.style.flexGrow = 1;
-            rowSysDebug.Add(PipelineTestBtn); rowSysDebug.Add(OriginTestBtn); foSysDebug.Add(rowSysDebug);
+            rowSysDebug.Add(OriginTestBtn); foSysDebug.Add(rowSysDebug);
 
             var rowSysDebug2 = new VisualElement(); rowSysDebug2.style.flexDirection = FlexDirection.Row; rowSysDebug2.style.marginBottom = 2;
             SkinTestBtn = MakeBtn("スキン生成自動検証"); SkinTestBtn.style.flexGrow = 1;
@@ -1424,7 +1550,39 @@ namespace Poly_Ling.Player
 
             var rowSysDebug3 = new VisualElement(); rowSysDebug3.style.flexDirection = FlexDirection.Row; rowSysDebug3.style.marginBottom = 2;
             RobotBuildTestBtn = MakeBtn("ロボ組み立て自動検証"); RobotBuildTestBtn.style.flexGrow = 1;
-            rowSysDebug3.Add(RobotBuildTestBtn); foSysDebug.Add(rowSysDebug3);
+            FrillSkirtTestBtn = MakeBtn("フリルスカート自動検証"); FrillSkirtTestBtn.style.flexGrow = 1;
+            FrillSkirtTestBtn.style.marginLeft = 2;
+            rowSysDebug3.Add(RobotBuildTestBtn); rowSysDebug3.Add(FrillSkirtTestBtn); foSysDebug.Add(rowSysDebug3);
+
+            var rowSysDebug3b = new VisualElement(); rowSysDebug3b.style.flexDirection = FlexDirection.Row; rowSysDebug3b.style.marginBottom = 2;
+            PipeHairTestBtn = MakeBtn("前髪パイプ自動検証"); PipeHairTestBtn.style.flexGrow = 1;
+            BarnacleTestBtn = MakeBtn("藤壺自動検証"); BarnacleTestBtn.style.flexGrow = 1;
+            BarnacleTestBtn.style.marginLeft = 2;
+            rowSysDebug3b.Add(PipeHairTestBtn); rowSysDebug3b.Add(BarnacleTestBtn); foSysDebug.Add(rowSysDebug3b);
+
+            var rowSysDebug3c = new VisualElement(); rowSysDebug3c.style.flexDirection = FlexDirection.Row; rowSysDebug3c.style.marginBottom = 2;
+            RevolutionTestBtn = MakeBtn("回転体自動検証"); RevolutionTestBtn.style.flexGrow = 1;
+            RevolutionTestBtn.style.marginRight = 2;
+            Profile2DTestBtn = MakeBtn("2D押し出し自動検証"); Profile2DTestBtn.style.flexGrow = 1;
+            rowSysDebug3c.Add(RevolutionTestBtn); rowSysDebug3c.Add(Profile2DTestBtn); foSysDebug.Add(rowSysDebug3c);
+
+            // PMX をソースにして MQO の頂点位置を差し替え、別名で保存する検証。
+            // 名前が長いので 1 行使う。
+            var rowSysDebug3d = new VisualElement(); rowSysDebug3d.style.flexDirection = FlexDirection.Row; rowSysDebug3d.style.marginBottom = 2;
+            PmxToMqoTestBtn = MakeBtn("PMX位置→MQO保存 自動検証"); PmxToMqoTestBtn.style.flexGrow = 1;
+            rowSysDebug3d.Add(PmxToMqoTestBtn); foSysDebug.Add(rowSysDebug3d);
+
+            // MQO をソースにして PMX の頂点位置と UV を差し替え、別名で保存する検証。
+            // 名前が長いので 1 行使う。
+            var rowSysDebug3e = new VisualElement(); rowSysDebug3e.style.flexDirection = FlexDirection.Row; rowSysDebug3e.style.marginBottom = 2;
+            MqoToPmxTestBtn = MakeBtn("MQO位置UV→PMX保存 自動検証"); MqoToPmxTestBtn.style.flexGrow = 1;
+            rowSysDebug3e.Add(MqoToPmxTestBtn); foSysDebug.Add(rowSysDebug3e);
+
+            // コマンド定義の検査。PLParam の付け忘れ・action 衝突・
+            // スキーマに出せない型を調べ、道具一覧（JSON）を書き出す。
+            var rowSysDebug4 = new VisualElement(); rowSysDebug4.style.flexDirection = FlexDirection.Row; rowSysDebug4.style.marginBottom = 2;
+            CommandSchemaBtn = MakeBtn("コマンド定義の検査"); CommandSchemaBtn.style.flexGrow = 1;
+            rowSysDebug4.Add(CommandSchemaBtn); foSysDebug.Add(rowSysDebug4);
 
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
@@ -1702,6 +1860,7 @@ namespace Poly_Ling.Player
             UVZSection                 = AddSection(visible: false);
             PartsSelectionSetSection   = AddSection(visible: false);
             MeshSelectionSetSection    = AddSection(visible: false);
+            ObjectGroupSection         = AddSection(visible: false);
             NormalExcludeSetSection    = AddSection(visible: false);
             NormalEditSection          = AddSection(visible: false);
             NormalTransplantSection    = AddSection(visible: false);
@@ -1750,14 +1909,28 @@ namespace Poly_Ling.Player
             MediaPipeSection           = AddSection(visible: false);
             VMDTestSection             = AddSection(visible: false);
             UnityClipTestSection       = AddSection(visible: false);
+            UnityClipToVrmaSection     = AddSection(visible: false);
+            VmdToVrmaSection           = AddSection(visible: false);
             MotionClipTestSection      = AddSection(visible: false);
-            PipelineTestSection        = AddSection(visible: false);
+            CommandSchemaSection       = AddSection(visible: false);
             OriginTestSection          = AddSection(visible: false);
             SkinTestSection            = AddSection(visible: false);
             SpringBoneTestSection      = AddSection(visible: false);
+            SpringBoneSection          = AddSection(visible: false);
+            SpringBoneColliderSection  = AddSection(visible: false);
+            HumanLimitSection          = AddSection(visible: false);
+            VrmSettingsSection         = AddSection(visible: false);
             RobotBuildTestSection      = AddSection(visible: false);
+            FrillSkirtTestSection      = AddSection(visible: false);
+            PipeHairTestSection        = AddSection(visible: false);
+            BarnacleTestSection        = AddSection(visible: false);
+            RevolutionTestSection      = AddSection(visible: false);
+            Profile2DTestSection       = AddSection(visible: false);
+            PmxToMqoTestSection        = AddSection(visible: false);
+            MqoToPmxTestSection        = AddSection(visible: false);
             UnderlaySection            = AddSection(visible: false);
             GridAxisSection            = AddSection(visible: false);
+            WorkFolderSection          = AddSection(visible: false);
             CameraSection              = AddSection(visible: false);
             CaptureSection             = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);

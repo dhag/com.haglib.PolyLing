@@ -11,6 +11,9 @@
 // 初期ファイル名が実際に反映されるのは Player 実装のみ。
 // Editor 実装（EditorUtility.OpenFilePanel）は初期ファイル名を受け取れないため無視される。
 //
+// 確定したパスは PLSandbox.AllowOnceFromDialog へ渡し、作業フォルダの外でも
+// そのパスだけを 1 回だけ使えるようにする。
+//
 // Runtime/Poly_Ling_Main/Core/Config/ に配置（RecentPaths と同じ場所）
 
 using System;
@@ -32,7 +35,12 @@ namespace Poly_Ling.Core
 
             string path = PLEditorBridge.I.OpenFilePanel(title, dir, name, extension);
             if (!string.IsNullOrEmpty(path))
+            {
                 RecentPaths.Set(recentKey, path);
+                // 利用者が選んだこと自体が許可の表明。作業フォルダの外でも
+                // このパスだけを 1 回通す（PLSandbox の説明を参照）。
+                PLSandbox.AllowOnceFromDialog(path);
+            }
             return path;
         }
 
@@ -49,7 +57,12 @@ namespace Poly_Ling.Core
 
             string path = PLEditorBridge.I.SaveFilePanel(title, dir, name, extension);
             if (!string.IsNullOrEmpty(path))
+            {
                 RecentPaths.Set(recentKey, path);
+                // 利用者が選んだこと自体が許可の表明。作業フォルダの外でも
+                // このパスだけを 1 回通す（PLSandbox の説明を参照）。
+                PLSandbox.AllowOnceFromDialog(path);
+            }
             return path;
         }
 
@@ -63,7 +76,12 @@ namespace Poly_Ling.Core
 
             string path = PLEditorBridge.I.OpenFolderPanel(title, dir, defaultName ?? "");
             if (!string.IsNullOrEmpty(path))
+            {
                 RecentPaths.Set(recentKey, path);
+                // 利用者が選んだこと自体が許可の表明。作業フォルダの外でも
+                // このパスだけを 1 回通す（PLSandbox の説明を参照）。
+                PLSandbox.AllowOnceFromDialog(path);
+            }
             return path;
         }
 
@@ -79,7 +97,12 @@ namespace Poly_Ling.Core
 
             string path = PLEditorBridge.I.OpenFilePanel(title, dir, name, extension);
             if (!string.IsNullOrEmpty(path))
+            {
                 RecentPaths.Set(recentKey, path);
+                // 利用者が選んだこと自体が許可の表明。作業フォルダの外でも
+                // このパスだけを 1 回通す（PLSandbox の説明を参照）。
+                PLSandbox.AllowOnceFromDialog(path);
+            }
             return path;
         }
 
@@ -97,7 +120,12 @@ namespace Poly_Ling.Core
 
             string path = PLEditorBridge.I.SaveFilePanel(title, dir, name, extension);
             if (!string.IsNullOrEmpty(path))
+            {
                 RecentPaths.Set(recentKey, path);
+                // 利用者が選んだこと自体が許可の表明。作業フォルダの外でも
+                // このパスだけを 1 回通す（PLSandbox の説明を参照）。
+                PLSandbox.AllowOnceFromDialog(path);
+            }
             return path;
         }
 

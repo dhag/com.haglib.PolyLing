@@ -38,6 +38,19 @@ using System;
 
 namespace Poly_Ling.Data
 {
+    /// <summary>プロファイル本体の値の形。PLParamAttribute.ProfileRole が使う。</summary>
+    public enum PLProfileRole
+    {
+        /// <summary>プロファイルではない。</summary>
+        None = 0,
+
+        /// <summary>Vector2[]。点列 1 本。</summary>
+        Points = 1,
+
+        /// <summary>float[]（x,y を 2 個ずつ）。ループの区切りは相棒のキーが持つ。</summary>
+        FlatLoops = 2,
+    }
+
     /// <summary>
     /// パラメータ1つぶんのメタデータ。
     /// 表示名の実体は文字列表（PrimitiveMeshTexts 等）に置き、ここには引くためのキーだけを持つ。
@@ -80,6 +93,75 @@ namespace Poly_Ling.Data
         /// 形状そのものを決めないものに付ける。
         /// </summary>
         public bool Ignore { get; set; }
+
+        /// <summary>
+        /// 値が MeshContextList の索引（int）または索引配列（int[]）であることを示す。
+        ///
+        /// 【何のために要るか】
+        ///   ObjectGroup は生成コマンドを ToArgs の文字列で保存し、あとで Create で
+        ///   組み直す。索引はリストの挿入・削除・並べ替えでずれるため、
+        ///   保存した値をそのまま使うと別のオブジェクトを指す。
+        ///   再構築の直前に、この印が付いたキーだけ ObjectId から索引を引き直す。
+        ///
+        /// 【付ける対象】
+        ///   「どの描画オブジェクトを対象にするか」を指すものだけ。
+        ///   マテリアルスロット番号やモーフパネル番号のような、
+        ///   MeshContextList とは無関係な整数には付けない。
+        ///
+        /// 【付けても意味が変わらないもの】
+        ///   スキーマ生成・ToArgs・Create の扱いは変わらない。読むのは
+        ///   ObjectGroup の再構築だけで、印が無いキーは従来どおり素通りする。
+        /// </summary>
+        public bool IsMeshRef { get; set; }
+
+        /// <summary>
+        /// IsMeshRef の索引が、コマンド自身の ModelIndex 以外のモデルを指しうるとき、
+        /// 同じ並びでモデル索引を持つプロパティ名を入れる。空＝自分のモデル内。
+        ///
+        /// 例: ApplyBlendCommand.SourceMasterIndices は SourceModelIndices と同じ並びで、
+        ///     ブレンド元は別モデルでもよい（BlendMatchMode.cs:70-74）。
+        ///     この場合 MeshRefModelKey = "SourceModelIndices" を入れる。
+        ///     再構築のときは 2 本を対で書き戻す。
+        ///
+        /// プロパティ名で書くこと。キーへの変換（先頭小文字・別名表）は読む側が行う。
+        /// </summary>
+        public string MeshRefModelKey { get; set; } = "";
+
+        /// <summary>MeshRefModelKey が指定されているか。</summary>
+        public bool HasMeshRefModelKey => !string.IsNullOrEmpty(MeshRefModelKey);
+
+        /// <summary>
+        /// このパラメータがプロファイル（断面の点列・輪郭のループ群）の本体であることを示す。
+        ///
+        /// 【何のために要るか】
+        ///   IsMeshRef と同じ考え方。ObjectGroup は生成コマンドを文字列で保存し、
+        ///   あとで組み直す。プロファイルを焼き込んだままだと、取り込み元の
+        ///   描画オブジェクトを直しても出力先は古いままになる。
+        ///   再構築の直前に、この印が付いたキーだけ取り込みを掛け直して差し替える。
+        ///
+        /// 【値の形】
+        ///   Points    … Vector2[]。点列 1 本
+        ///   FlatLoops … float[]（x,y を 2 個ずつ）。ループの区切りは
+        ///               ProfileLoopStartsKey / ProfileLoopIsHoleKey が指す相棒が持つ
+        /// </summary>
+        public PLProfileRole ProfileRole { get; set; } = PLProfileRole.None;
+
+        /// <summary>FlatLoops のとき、ループ開始位置を持つプロパティ名。</summary>
+        public string ProfileLoopStartsKey { get; set; } = "";
+
+        /// <summary>FlatLoops のとき、穴フラグを持つプロパティ名。</summary>
+        public string ProfileLoopIsHoleKey { get; set; } = "";
+
+        /// <summary>
+        /// 取り込んだ点列に「長辺を 1 にする等方スケール」を掛けるか。
+        ///
+        /// 帯系の断面（フリル・パイプ）は rung 長で正規化された系にあるので true。
+        /// 回転体・2D 押し出しはモデルのローカル座標をそのまま使うので false。
+        /// </summary>
+        public bool ProfileNormalize { get; set; }
+
+        /// <summary>プロファイルの印が付いているか。</summary>
+        public bool HasProfileRole => ProfileRole != PLProfileRole.None;
 
         /// <summary>Min が指定されているか。</summary>
         public bool HasMin => !double.IsNaN(Min);

@@ -39,6 +39,13 @@ namespace Poly_Ling.Player
         /// <summary>GLギズモ描画用: 描画対象カメラのツールコンテキストを返す</summary>
         public Func<Camera, ToolContext> GetGizmoContext;
 
+        /// <summary>
+        /// コマンド送信口。クリック確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
         /// <summary>GPU ホバー要素取得（Viewer から結線）。既存頂点スナップに使う。</summary>
         public Func<Poly_Ling.Selection.MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
@@ -109,6 +116,17 @@ namespace Poly_Ling.Player
         public bool FinishAsTriangle()
         {
             var ctx = GetEnrichedCtx(); if (ctx == null) return false;
+
+            if (SendCommand != null)
+            {
+                if (!_tool.TryTakePointsForTriangleFinish(out var pts)) return false;
+                var cmd = BuildAddFaceCommand(ctx, pts);
+                if (cmd == null) return false;
+                SendCommand(cmd);
+                OnPointPlaced?.Invoke();
+                return true;
+            }
+
             if (!_tool.FinishAsTriangle(ctx)) return false;
             OnPointPlaced?.Invoke();
             return true;
@@ -126,6 +144,44 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        /// <summary>
+        /// 線分モードの描画を終了し、次の描画を始められる状態へ戻す。
+        /// Escape / 右クリックから呼ぶ。終了するものが無ければ false。
+        /// </summary>
+        public bool FinishLineChain()
+        {
+            if (!_tool.FinishLineChain()) return false;
+            OnPointPlaced?.Invoke();
+            OnRepaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 連続線分で確定済みの線分を 1 本取り消す。Delete / Backspace から呼ぶ。
+        ///
+        /// 【Undo 1 回ぶんで戻す】
+        ///   線分は 1 本ごとに独立した Undo 記録になっている
+        ///   （MeshUndoController.RecordAddFaceOperation が EndGroup してから記録する）ので、
+        ///   面と新規頂点の削除は PerformUndoCommand に任せ、
+        ///   折れ線の状態合わせだけをこちらで行う。
+        ///   線分を引いた後に別の操作をしていると、その操作の方が戻る。
+        ///
+        /// 取り消せる線分が無ければ何もせず false。
+        /// </summary>
+        public bool UndoLastLineSegment()
+        {
+            if (SendCommand == null) return false;
+            if (!_tool.CanUndoLineSegment()) return false;
+
+            SendCommand(new Poly_Ling.Data.PerformUndoCommand());
+
+            // Undo でメッシュが変わった後の内容で終点を取り直す。
+            _tool.NotifyLineSegmentUndone(GetEnrichedCtx());
+            OnPointPlaced?.Invoke();
+            OnRepaint?.Invoke();
+            return true;
+        }
+
         // ================================================================
         // 初期化
         // ================================================================
@@ -137,20 +193,177 @@ namespace Poly_Ling.Player
         // IPlayerToolHandler
         // ================================================================
 
+        /// <summary>
+        /// クリック確定。
+        ///
+        /// 【1 クリック = 1 コマンド】
+        ///   送信口があるときは TryTakePointsFromClick で点の追加と確定判定だけを
+        ///   行い、面の生成はコマンドの受け口へ寄せる。点が揃っていないクリックでは
+        ///   何も送らない。
+        ///   TryTake は OnMouseDown と同じ点列の更新を行うため、両方を呼ぶと
+        ///   点が二重に入る。どちらか一方だけを通すこと。
+        /// </summary>
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             ResolveGpuHoverVertex();
+
+            if (HandlePressViaCommand(ctx, screenPos)) return;
+
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
             OnPointPlaced?.Invoke();
+        }
+
+        /// <summary>
+        /// 押下 1 回ぶんをコマンド経路で処理する。
+        ///
+        /// クリックとドラッグ開始のどちらも「押した瞬間に点を置く」ので
+        /// （PlayerVertexInteractor はしきい値でどちらかへ振り分ける）、
+        /// 両方から同じここを通す。塞がないとドラッグ側だけ旧経路が走り、
+        /// 点が二重に入る。
+        /// </summary>
+        /// <returns>コマンド経路で処理したら true。呼び出し側は旧経路を通さない。</returns>
+        private bool HandlePressViaCommand(ToolContext ctx, Vector2 screenPos)
+        {
+            if (SendCommand == null) return false;
+
+            if (_tool.TryTakePointsFromClick(ctx, ToImgui(screenPos, ctx), out var pts))
+            {
+                var cmd = BuildAddFaceCommand(ctx, pts);
+                if (cmd != null) SendCommand(cmd);
+            }
+            OnPointPlaced?.Invoke();
+            return true;
+        }
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = _project?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
+
+        /// <summary>
+        /// 取り出した点列からコマンドを組み立てる。
+        /// 巻き順の判定に使う視点は、確定した瞬間のカメラ位置をそのまま載せる。
+        /// </summary>
+        private Poly_Ling.Data.AddFaceCommand BuildAddFaceCommand(
+            ToolContext ctx, Poly_Ling.Tools.PointInfo[] points)
+        {
+            if (points == null || points.Length < 2) return null;
+
+            var targets = ActiveMasterIndices();
+            if (targets == null) return null;
+
+            var indices   = new int[points.Length];
+            var positions = new float[points.Length * 3];
+            for (int i = 0; i < points.Length; i++)
+            {
+                indices[i] = points[i].IsExistingVertex ? points[i].ExistingVertexIndex : -1;
+                positions[i * 3]     = points[i].Position.x;
+                positions[i * 3 + 1] = points[i].Position.y;
+                positions[i * 3 + 2] = points[i].Position.z;
+            }
+
+            return new Poly_Ling.Data.AddFaceCommand(
+                _project?.CurrentModelIndex ?? 0,
+                targets,
+                _tool.ModePublic,
+                indices, positions,
+                ctx.CurrentMaterialIndex,
+                ctx.CameraPosition);
+        }
+
+        /// <summary>
+        /// 面追加コマンドを実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   面の生成・頂点の追加・法線・Undo 記録は
+        ///   AddFaceTool.CreateFaceFromCommand がマウス経路と同じ CreateFace を通す。
+        ///
+        /// 【設定値はコマンドが正典】
+        ///   材質番号と視点は退避してからコマンド値を ctx へ入れ、終わったら戻す。
+        ///   1 呼び出しがパネルやカメラの状態に依存しないようにするため。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.AddFaceCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var idx = cmd.PointVertexIndices;
+            var pos = cmd.PointPositions;
+            if (idx == null || idx.Length < 2 || idx.Length > 4)
+            { reason = "点は 2〜4 個で指定してください"; return false; }
+            if (pos == null || pos.Length != idx.Length * 3)
+            { reason = $"PointPositions の長さは点数の 3 倍にしてください（{idx.Length * 3} 個）"; return false; }
+
+            int required = (int)cmd.Mode;
+            bool countOk = cmd.Mode == Poly_Ling.Tools.AddFaceMode.Quad
+                ? (idx.Length == 3 || idx.Length == 4)
+                : (idx.Length == required);
+            if (!countOk)
+            { reason = $"{cmd.Mode} には点が {required} 個要ります"; return false; }
+
+            var ctx = GetEnrichedCtx();
+            if (ctx == null) { reason = "ビューポートがありません"; return false; }
+
+            var points = new Poly_Ling.Tools.PointInfo[idx.Length];
+            for (int i = 0; i < idx.Length; i++)
+            {
+                var p = new Vector3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+                points[i] = idx[i] >= 0
+                    ? Poly_Ling.Tools.PointInfo.FromExisting(idx[i], p)
+                    : Poly_Ling.Tools.PointInfo.FromNew(p);
+            }
+
+            var savedMode     = _tool.ModePublic;
+            int savedMaterial = ctx.CurrentMaterialIndex;
+            var savedCamera   = ctx.CameraPosition;
+            try
+            {
+                _tool.ModePublic          = cmd.Mode;
+                ctx.CurrentMaterialIndex  = cmd.MaterialIndex;
+                ctx.CameraPosition        = cmd.ViewPosition;
+
+                if (!_tool.CreateFaceFromCommand(ctx, points, out reason)) return false;
+            }
+            finally
+            {
+                _tool.ModePublic         = savedMode;
+                ctx.CurrentMaterialIndex = savedMaterial;
+                ctx.CameraPosition       = savedCamera;
+            }
+
+            OnPointPlaced?.Invoke();
+            OnRepaint?.Invoke();
+            return true;
         }
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             ResolveGpuHoverVertex();
+
+            if (HandlePressViaCommand(ctx, screenPos)) return;
+
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
         }
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)

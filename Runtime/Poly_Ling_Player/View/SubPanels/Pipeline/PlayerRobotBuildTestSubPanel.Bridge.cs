@@ -800,7 +800,8 @@ namespace Poly_Ling.Player
             int mapped = mapping.AutoMapFromEmbeddedCSV(names);
             if (mapped == 0) return StageResult.Fail;
 
-            SendLogged(new ApplyHumanoidMappingCommand(ModelIndex(), mapping.Clone()));
+            ApplyHumanoidMappingCommand.SplitMapping(mapping, out var hmNames, out var hmIdx);
+            SendLogged(new ApplyHumanoidMappingCommand(ModelIndex(), hmNames, hmIdx));
             return StageResult.Ok;
         }
 

@@ -38,7 +38,7 @@
 // 【種頂点の決め方】
 //   穴つなぎ・頂点数合わせは種頂点で穴を指す。頂点番号は生成順に依存するので、
 //   番号を直に書かず「相手メッシュに最も近い境界頂点」を実データから選ぶ。
-//   PlayerPipelineTestSubPanel の CreateOneBridge と同じ考え方。
+//   穴つなぎを 1 本ずつ作る考え方は他の検証と同じ。
 
 using System;
 using System.Collections.Generic;
@@ -521,7 +521,8 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null || model.MaterialCount == 0) return StageResult.Fail;
 
-            SendLogged(new SetMaterialColorCommand(ModelIndex(), 0, GreyBlue));
+            SendLogged(new SetMaterialColorCommand(
+                ModelIndex(), 0, SetMaterialColorCommand.ToRgba(GreyBlue)));
 
             // 保存に乗るのは MaterialData 側なので、そちらの値で判定する。
             var matRef = model.GetMaterialReference(0);
@@ -643,7 +644,8 @@ namespace Poly_Ling.Player
             // 姿勢の段ではワールド絶対位置を入れてある。ここで親を張ると
             // PreserveWorldTransform により親からの相対値へ組み直される。
             SendLogged(new ReorderMeshesCommand(
-                ModelIndex(), MeshCategory.Mesh, entries.ToArray(),
+                ModelIndex(), MeshCategory.Mesh,
+                ReorderMeshesCommand.ToEntryValues(entries.ToArray()),
                 preserveWorldTransform: true));
 
             RefreshAfterTopologyChange?.Invoke();

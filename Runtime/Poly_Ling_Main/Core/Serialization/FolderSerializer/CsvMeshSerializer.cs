@@ -55,6 +55,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
         private const string VersionBone = "#PolyLing_Bone,version,1.0";
         private const string VersionMorph = "#PolyLing_Morph,version,1.0";
 
+        /// <summary>
+        /// PMX 物理（剛体 / JOINT）用のヘッダ。
+        /// 頂点ゼロのメタデータで、形状ファイル（mesh）とは性質が違うため分けてある。
+        /// </summary>
+        private const string VersionPmxPhysics = "#PolyLing_PmxPhysics,version,1.0";
+
         // ================================================================
         // Write
         // ================================================================
@@ -76,6 +82,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             {
                 case "bone": sb.AppendLine(VersionBone); break;
                 case "morph": sb.AppendLine(VersionMorph); break;
+                case "pmx_physics": sb.AppendLine(VersionPmxPhysics); break;
                 default: sb.AppendLine(VersionMesh); break;
             }
 
@@ -105,9 +112,23 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (mc.Type == MeshType.Bone)
                 {
                     WriteBoneData(sb, mc, useNameBased, indexToName);
-                    // SpringBone 付帯データ（規約4: CSV/JSON 対称）
-                    WriteSpringBoneData(sb, mc);
                 }
+
+                // SpringBone 付帯データ（規約4: CSV/JSON 対称）
+                //
+                // 【なぜ Bone 限定の中から出したか】
+                //   揺れデータの付帯先はボーンに限らない（MeshObject.cs の
+                //   SpringBone 節を参照）。読み込み側（sbCollider / sbJoint /
+                //   sbChain の case）は元から種別を見ていないため、
+                //   Bone の中で書いていると非ボーンのぶんだけ片道で消えていた。
+                WriteSpringBoneData(sb, mc);
+
+                // 一人称カメラでの扱い（VRM firstPerson）。
+                // 既定 Auto は「指定なし」と同義なので行を書かない。
+                // 書かないことで旧ファイルとの往復も対称になる。
+                var vrmFp = mc.MeshObject?.VrmFirstPerson ?? VrmFirstPersonType.Auto;
+                if (vrmFp != VrmFirstPersonType.Auto)
+                    sb.AppendLine($"vrmFirstPerson,{(int)vrmFp}");
 
                 // モーフ固有データ
                 if (mc.Type == MeshType.Morph)
@@ -400,13 +421,19 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             // ジョイント（非null=揺れチェーンのメンバー）
+            //   角度制限（列 8 以降）は後から足した。旧プロジェクトには
+            //   その列が無く、読み側が既定値で埋めるので互換は保たれる。
             var j = mo.SpringBoneJoint;
             if (j != null)
             {
-                // sbJoint,hitRadius,stiffness,gravityPower,gdX,gdY,gdZ,dragForce
+                // sbJoint,hitRadius,stiffness,gravityPower,gdX,gdY,gdZ,dragForce,
+                //         limitType,lrX,lrY,lrZ,lrW,pitch,yaw
                 sb.AppendLine(
                     $"sbJoint,{F(j.HitRadius)},{F(j.StiffnessForce)},{F(j.GravityPower)}," +
-                    $"{F(j.GravityDir.x)},{F(j.GravityDir.y)},{F(j.GravityDir.z)},{F(j.DragForce)}");
+                    $"{F(j.GravityDir.x)},{F(j.GravityDir.y)},{F(j.GravityDir.z)},{F(j.DragForce)}," +
+                    $"{(int)j.AngleLimitType}," +
+                    $"{F(j.LimitRotation.x)},{F(j.LimitRotation.y)},{F(j.LimitRotation.z)},{F(j.LimitRotation.w)}," +
+                    $"{F(j.Pitch)},{F(j.Yaw)}");
             }
 
             // チェーンルート（非null=このボーンがチェーン起点）
@@ -503,7 +530,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             foreach (var ss in mc.PartsSelectionSetList)
             {
-                // ss,name,mode,vertexCount,v0,v1,...,edgeCount,e0v1,e0v2,...,faceCount,f0,...,lineCount,l0,...
+                // ss,name,mode,vertexCount,v0,v1,...,edgeCount,e0v1,e0v2,...,
+                //    faceCount,f0,...,lineCount,l0,...,idCount,idx0,id0,parts0,sub0,...
+                // 識別子の控えは末尾に足してある。列並びは変えていない。
                 sb.Append($"ss,{EscapeCsv(ss.Name)},{ss.Mode}");
 
                 // Vertices
@@ -522,8 +551,24 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.Append($",{ss.Lines.Count}");
                 foreach (var l in ss.Lines) sb.Append($",{l}");
 
+                WriteSelectionSetVertexIds(sb, ss);
+
                 sb.AppendLine();
             }
+        }
+
+        /// <summary>
+        /// 選択セットが控えている識別子を行末へ足す。
+        /// idCount,idx,id,parts,sub の並びを件数ぶん繰り返す。
+        /// </summary>
+        private static void WriteSelectionSetVertexIds(StringBuilder sb, PartsSelectionSet ss)
+        {
+            var map = ss?.VertexIds;
+            if (map == null || map.Count == 0) { sb.Append(",0"); return; }
+
+            sb.Append($",{map.Count}");
+            foreach (var kv in map)
+                sb.Append($",{kv.Key},{kv.Value.Id},{kv.Value.PartsId},{kv.Value.SubId}");
         }
 
         // ================================================================
@@ -553,6 +598,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
                 sb.Append($",{ss.Lines.Count}");
                 foreach (var l in ss.Lines) sb.Append($",{l}");
+
+                WriteSelectionSetVertexIds(sb, ss);
 
                 sb.AppendLine();
             }
@@ -909,6 +956,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "sbChain":
                         meshObject.SpringBoneChainRoot = ReadSpringBoneChain(cols);
                         break;
+                    case "vrmFirstPerson":
+                        // vrmFirstPerson,<VrmFirstPersonType の値>。行が無い旧ファイルは Auto。
+                        meshObject.VrmFirstPerson =
+                            ModelSerializer.ToVrmFirstPersonType(ParseInt(cols, 1));
+                        break;
                     case "morphParentIndex":
                         mc.MorphParentIndex = ParseInt(cols, 1, -1);
                         break;
@@ -1156,14 +1208,28 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         private static SpringBoneJointData ReadSpringBoneJoint(string[] cols)
         {
-            // sbJoint,hitRadius,stiffness,gravityPower,gdX,gdY,gdZ,dragForce
+            // sbJoint,hitRadius,stiffness,gravityPower,gdX,gdY,gdZ,dragForce,
+            //         limitType,lrX,lrY,lrZ,lrW,pitch,yaw
+            //
+            // 列 8 以降は後から足したので、旧プロジェクトには無い。
+            // 既定値（制限なし・無回転・π・0）で埋める。
+            var rot = new Quaternion(
+                ParseFloat(cols, 9),  ParseFloat(cols, 10),
+                ParseFloat(cols, 11), ParseFloat(cols, 12, 1f));
+            if (rot.x * rot.x + rot.y * rot.y + rot.z * rot.z + rot.w * rot.w < 1e-12f)
+                rot = Quaternion.identity;
+
             return new SpringBoneJointData
             {
                 HitRadius      = ParseFloat(cols, 1, 0.02f),
                 StiffnessForce = ParseFloat(cols, 2, 1.0f),
                 GravityPower   = ParseFloat(cols, 3),
                 GravityDir     = new Vector3(ParseFloat(cols, 4), ParseFloat(cols, 5, -1f), ParseFloat(cols, 6)),
-                DragForce      = ParseFloat(cols, 7, 0.4f)
+                DragForce      = ParseFloat(cols, 7, 0.4f),
+                AngleLimitType = (SpringBoneAngleLimitType)ParseInt(cols, 8),
+                LimitRotation  = rot,
+                Pitch          = ParseFloat(cols, 13, Mathf.PI),
+                Yaw            = ParseFloat(cols, 14, 0f)
             };
         }
 
@@ -1484,6 +1550,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
             for (int l = 0; l < lCount; l++)
                 ss.Lines.Add(ParseInt(cols, idx++));
 
+            // 識別子の控え（行末）。列が無ければ ParseInt が 0 を返し、控え無しになる。
+            int idCount = ParseInt(cols, idx++);
+            for (int k = 0; k < idCount; k++)
+            {
+                int vi    = ParseInt(cols, idx++);
+                int id    = ParseInt(cols, idx++);
+                int parts = ParseInt(cols, idx++);
+                int sub   = ParseInt(cols, idx++);
+                ss.VertexIds[vi] = new VertexIdTriple(id, parts, sub);
+            }
+
             mc.PartsSelectionSetList.Add(ss);
         }
 
@@ -1525,6 +1602,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
             int lCount = ParseInt(cols, idx++);
             for (int l = 0; l < lCount; l++)
                 ss.Lines.Add(ParseInt(cols, idx++));
+
+            // 識別子の控え（行末）。ss 行と同じ並び。
+            int idCount = ParseInt(cols, idx++);
+            for (int k = 0; k < idCount; k++)
+            {
+                int vi    = ParseInt(cols, idx++);
+                int id    = ParseInt(cols, idx++);
+                int parts = ParseInt(cols, idx++);
+                int sub   = ParseInt(cols, idx++);
+                ss.VertexIds[vi] = new VertexIdTriple(id, parts, sub);
+            }
 
             meshObject.NormalRecalcExcludeList.Add(ss);
         }

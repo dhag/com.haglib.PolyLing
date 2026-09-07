@@ -83,6 +83,7 @@ namespace Poly_Ling.Commands
                 FilePath           = _filePath,
                 SourceDocument     = result.Document,
                 BoneWorldPositions = result.BoneWorldPositions,
+                PmxModelInfo       = result.ModelInfo,
             };
 
             // マテリアルを移送（テクスチャ・色含む）

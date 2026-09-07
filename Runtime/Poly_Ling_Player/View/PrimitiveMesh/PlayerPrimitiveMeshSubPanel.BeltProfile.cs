@@ -51,6 +51,11 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 取り込んだ基準ベルトのスナップショット。rung 順の左右レール位置（元メッシュのローカル座標）。
         /// 頂点インデックスではなく座標を保持するため、元メッシュの編集で古くならない。
+        ///
+        /// 座標に加えて「どのオブジェクトから、どうやって取り込んだか」を持つ。
+        /// ObjectGroup が作り直すときは、同じ手順をソースへ掛け直して梯子を取り直す。
+        /// 頂点IDや頂点番号は控えない（人が番号を管理する羽目になるため）。
+        /// CSV から読んだ梯子は取り込み方を持たない（＝追随できない）。
         /// </summary>
         private sealed class BeltSnapshot
         {
@@ -58,6 +63,22 @@ namespace Poly_Ling.Player
             public List<Vector3> Right;
             public bool          Closed;
             public bool          FlipWinding;
+
+            /// <summary>取り込み元の描画オブジェクトの索引。-1 = ひも付けなし。</summary>
+            public int SourceMasterIndex = -1;
+
+            /// <summary>取り込み方。作り直しで同じ手順を掛け直すために控える。</summary>
+            public BeltAcquireMethod AcquireMethod = BeltAcquireMethod.Baked;
+
+            /// <summary>取り込み時に上下へ横断して段グループにまとめたか。</summary>
+            public bool AcquireCrossRows;
+
+            /// <summary>SelectionSet のときの辞書名。</summary>
+            public string AcquireSetName = "";
+
+            /// <summary>取り込み元へひも付いているか。</summary>
+            public bool HasSource
+                => SourceMasterIndex >= 0 && AcquireMethod != BeltAcquireMethod.Baked;
 
             /// <summary>
             /// フリルの高さ倍率（断面プロファイル Y ＝ 法線方向成分に掛ける）。既定 1。
@@ -126,6 +147,12 @@ namespace Poly_Ling.Player
             public string CsvPath       = "";
             public string CsvRecentKey  = "Primitive.BeltProfile.Csv";
             public string CsvDefaultName = "profile.csv";
+
+            /// <summary>
+            /// 「取り込み(メッシュ→断面)」で読んだ元オブジェクトの索引。-1 = ひも付けなし。
+            /// 作り直しで同じ手順を掛け直すために控える。
+            /// </summary>
+            public int SourceMasterIndex = -1;
 
             /// <summary>「反映(→メッシュ)」で作る描画オブジェクトの名前。</summary>
             public string ObjectName = "Profile";
@@ -281,8 +308,11 @@ namespace Poly_Ling.Player
             var bases = new List<BeltAutoStrip>(1) { baseRow };
             var rows  = BeltStackExpander.ExpandAll(mesh, bases, crossRows, out _);
 
+            int srcIdx = ResolveMasterIndexOf(mesh);
+
             dst.Clear();
-            foreach (var st in rows) dst.Add(ToBeltSnapshot(mesh, st));
+            foreach (var st in rows)
+                dst.Add(ToBeltSnapshot(mesh, st, srcIdx, BeltAcquireMethod.SelectionSet, crossRows));
 
             SetBeltStatus(rows.Count > 1 ? $"{strip.Message} / 段 {rows.Count}" : strip.Message);
             D();
@@ -296,8 +326,11 @@ namespace Poly_Ling.Player
 
             var strips = BeltStackDetector.Detect(mesh, crossRows, out string message);
 
+            int srcIdx = ResolveMasterIndexOf(mesh);
+
             dst.Clear();
-            foreach (var st in strips) dst.Add(ToBeltSnapshot(mesh, st));
+            foreach (var st in strips)
+                dst.Add(ToBeltSnapshot(mesh, st, srcIdx, BeltAcquireMethod.AutoLadder, crossRows));
 
             SetBeltStatus(message);
             D();
@@ -312,8 +345,11 @@ namespace Poly_Ling.Player
             var rings = BeltRingDetector.Detect(mesh, out string message);
             var rows  = BeltStackExpander.ExpandAll(mesh, rings, crossRows, out int groupCount);
 
+            int srcIdx = ResolveMasterIndexOf(mesh);
+
             dst.Clear();
-            foreach (var st in rows) dst.Add(ToBeltSnapshot(mesh, st));
+            foreach (var st in rows)
+                dst.Add(ToBeltSnapshot(mesh, st, srcIdx, BeltAcquireMethod.AutoRing, crossRows));
 
             SetBeltStatus(crossRows
                 ? $"{message} → グループ {groupCount} / 段 {rows.Count}"
@@ -321,8 +357,15 @@ namespace Poly_Ling.Player
             D();
         }
 
-        /// <summary>検出結果（頂点インデックス）を座標スナップショットへ変換する。</summary>
-        private static BeltSnapshot ToBeltSnapshot(MeshObject mesh, BeltAutoStrip st)
+        /// <summary>
+        /// 検出結果（頂点インデックス）を座標スナップショットへ変換する。
+        ///
+        /// 座標と同時に「取り込み元」と「取り込み方」を控える。あとから同じ手順を
+        /// 掛け直せば、ソースを編集しても今の梯子が得られる。
+        /// </summary>
+        private static BeltSnapshot ToBeltSnapshot(
+            MeshObject mesh, BeltAutoStrip st, int sourceMasterIndex,
+            BeltAcquireMethod method, bool crossRows, string setName = "")
         {
             var snap = new BeltSnapshot
             {
@@ -333,6 +376,10 @@ namespace Poly_Ling.Player
                 GroupId     = st.GroupId,
                 RowIndex    = st.RowIndex,
                 RowCount    = st.RowCount,
+                SourceMasterIndex = sourceMasterIndex,
+                AcquireMethod     = sourceMasterIndex >= 0 ? method : BeltAcquireMethod.Baked,
+                AcquireCrossRows  = crossRows,
+                AcquireSetName    = setName ?? "",
             };
 
             for (int i = 0; i < st.RungCount; i++)
@@ -344,6 +391,84 @@ namespace Poly_Ling.Player
             if (st.StartPoint >= 0) snap.StartPoint = mesh.Vertices[st.StartPoint].Position;
             if (st.EndPoint   >= 0) snap.EndPoint   = mesh.Vertices[st.EndPoint].Position;
             return snap;
+        }
+
+        /// <summary>
+        /// MeshObject の実体から描画オブジェクトの索引を引く。見つからなければ -1。
+        ///
+        /// 一覧のピッカーは MeshObject しか持たないが、頂点IDのひも付けには
+        /// 「どのオブジェクトの ID か」が要る。参照一致で引き当てる
+        /// （名前は重複しうるので使わない）。
+        /// </summary>
+        private int ResolveMasterIndexOf(MeshObject mesh)
+        {
+            if (mesh == null) return -1;
+
+            var list = GetDrawableMeshEntryList?.Invoke();
+            if (list == null) return -1;
+
+            for (int i = 0; i < list.Count; i++)
+                if (ReferenceEquals(list[i].Mesh, mesh)) return list[i].MasterIndex;
+
+            return -1;
+        }
+
+        /// <summary>
+        /// 梯子群に共通する取り込み元の索引。全部が同じ索引にひも付いているときだけ
+        /// その値、そうでなければ -1（＝ひも付けなし扱い）。
+        /// 途中で別オブジェクトから取り込み直した梯子が混ざったまま
+        /// 片方の索引でソースを引くと、無関係な頂点を読むことになる。
+        /// </summary>
+        private static int BeltsSourceMasterIndex(List<BeltSnapshot> belts)
+        {
+            if (belts == null || belts.Count == 0) return -1;
+
+            int found = -1;
+            foreach (var b in belts)
+            {
+                if (b == null || !b.HasData) continue;
+                if (!b.HasSource) return -1;
+                if (found < 0) found = b.SourceMasterIndex;
+                else if (found != b.SourceMasterIndex) return -1;
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// 梯子群に共通する取り込み方。全部が同じ取り方でなければ Baked
+        /// （＝作り直しでは控えた点列をそのまま使う）。
+        /// </summary>
+        private static BeltAcquireMethod BeltsAcquireMethod(List<BeltSnapshot> belts)
+        {
+            if (BeltsSourceMasterIndex(belts) < 0) return BeltAcquireMethod.Baked;
+
+            var found = BeltAcquireMethod.Baked;
+            bool first = true;
+            foreach (var b in belts)
+            {
+                if (b == null || !b.HasData) continue;
+                if (first) { found = b.AcquireMethod; first = false; }
+                else if (found != b.AcquireMethod) return BeltAcquireMethod.Baked;
+            }
+            return found;
+        }
+
+        /// <summary>梯子群に共通する上下展開の有無。取り方が揃っていないときは false。</summary>
+        private static bool BeltsAcquireCrossRows(List<BeltSnapshot> belts)
+        {
+            if (BeltsAcquireMethod(belts) == BeltAcquireMethod.Baked) return false;
+            foreach (var b in belts)
+                if (b != null && b.HasData) return b.AcquireCrossRows;
+            return false;
+        }
+
+        /// <summary>梯子群に共通する選択辞書名。取り方が揃っていないときは空。</summary>
+        private static string BeltsAcquireSetName(List<BeltSnapshot> belts)
+        {
+            if (BeltsAcquireMethod(belts) != BeltAcquireMethod.SelectionSet) return "";
+            foreach (var b in belts)
+                if (b != null && b.HasData) return b.AcquireSetName ?? "";
+            return "";
         }
 
         private string BeltsInfoText(List<BeltSnapshot> belts)
@@ -381,7 +506,7 @@ namespace Poly_Ling.Player
             foreach (var b in belts)
             {
                 if (b == null || !b.HasData) continue;
-                list.Add(new BeltCsvEntry
+                var e = new BeltCsvEntry
                 {
                     Left        = new List<Vector3>(b.Left),
                     Right       = new List<Vector3>(b.Right),
@@ -393,7 +518,9 @@ namespace Poly_Ling.Player
                     GroupId     = b.GroupId,
                     RowIndex    = b.RowIndex,
                     RowCount    = b.RowCount,
-                });
+                };
+
+                list.Add(e);
             }
             return list;
         }
@@ -413,6 +540,8 @@ namespace Poly_Ling.Player
                 int cnt = Mathf.Max(1, e.RowCount);
                 int row = Mathf.Clamp(e.RowIndex, 0, cnt - 1);
 
+                // CSV は取り込み方を持たない。読み込んだ梯子はひも付けなし
+                // （SourceMasterIndex = -1 / Baked）になり、ソース追従の対象から外れる。
                 list.Add(new BeltSnapshot
                 {
                     Left        = new List<Vector3>(e.Left),
@@ -1598,6 +1727,10 @@ namespace Poly_Ling.Player
 
             if (pts == null || pts.Count < 2) { SetBeltStatus(T("NoLinesFound")); return; }
 
+            // 取り込み元を控える。オブジェクトグループが作り直すときに、
+            // 同じオブジェクトから同じ読み方で掛け直せるようにするため。
+            ed.SourceMasterIndex = ResolveMasterIndexOf(mesh);
+
             var norm = NormalizeBeltProfile(pts);
             if (norm == null) { SetBeltStatus(T("ProfileDegenerate")); return; }
 
@@ -1630,29 +1763,11 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// AABB の長辺が 1 になるよう等方スケールし、AABB の最小角を原点へ寄せる。
-        /// 長辺が 0（全点が同一位置）なら null。
+        /// 実体は LineProfileExtractor.NormalizeToUnitSpan。
+        /// 自動検証パネルも同じ規則で取り込むため、規則は 1 箇所に置く。
         /// </summary>
         private static List<Vector2> NormalizeBeltProfile(IReadOnlyList<Vector2> src)
-        {
-            if (src == null || src.Count < 2) return null;
-
-            float minX = float.MaxValue, minY = float.MaxValue;
-            float maxX = float.MinValue, maxY = float.MinValue;
-            for (int i = 0; i < src.Count; i++)
-            {
-                minX = Mathf.Min(minX, src[i].x); maxX = Mathf.Max(maxX, src[i].x);
-                minY = Mathf.Min(minY, src[i].y); maxY = Mathf.Max(maxY, src[i].y);
-            }
-
-            float span = Mathf.Max(maxX - minX, maxY - minY);
-            if (span <= 1e-6f) return null;
-
-            float k = 1f / span;
-            var dst = new List<Vector2>(src.Count);
-            for (int i = 0; i < src.Count; i++)
-                dst.Add(new Vector2((src[i].x - minX) * k, (src[i].y - minY) * k));
-            return dst;
-        }
+            => LineProfileExtractor.NormalizeToUnitSpan(src);
 
         // ================================================================
         // スプライン分割

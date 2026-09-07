@@ -172,7 +172,9 @@ namespace Poly_Ling.Player
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.marginTop     = 6;
 
-            _applyBtn = new Button(() => { GetH?.Invoke()?.Commit(); Refresh(); }) { text = "適用" };
+            // 確定はコマンド経由。CommitViaCommand が開始位置へ戻して
+            // ApplyLatticeDeformCommand を送り、その受け口が変形と Undo 記録を行う。
+            _applyBtn = new Button(() => { GetH?.Invoke()?.CommitViaCommand(); Refresh(); }) { text = "適用" };
             _applyBtn.style.flexGrow = 1; _applyBtn.style.marginRight = 2;
 
             _cancelBtn = new Button(() => { GetH?.Invoke()?.Cancel(); Refresh(); }) { text = "取消" };

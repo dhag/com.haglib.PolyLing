@@ -16,6 +16,7 @@ using Poly_Ling.Materials;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.PMX;
 using Poly_Ling.Symmetry;
+using Poly_Ling.MeshBridge;
 
 // MeshContextはSimpleMeshFactoryのネストクラス
 //using MeshContext = MeshContext;
@@ -2131,12 +2132,8 @@ namespace Poly_Ling.MQO
         {
             int originalVertexCount = mqoObj.Vertices.Count;
 
-            // 展開時の頂点数を計算（変換後のVertex.UVs.Countの合計）
-            int expandedVertexCount = 0;
-            foreach (var vertex in meshObject.Vertices)
-            {
-                expandedVertexCount += Math.Max(1, vertex.UVs.Count);
-            }
+            // 展開時の頂点数。数え方は MeshExpansion に一本化してある。
+            int expandedVertexCount = MeshExpansion.CountExpanded(meshObject);
 
             // MQOの面データから頂点ごとのUVを収集
             // Key: 頂点インデックス, Value: その頂点に割り当てられたUVのリスト

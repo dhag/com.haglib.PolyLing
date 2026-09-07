@@ -59,6 +59,13 @@ namespace Poly_Ling.Player
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
 
         /// <summary>
+        /// コマンド送信口。ドラッグ確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
+        /// <summary>
         /// ObjectMoveTool の ObjectMoveSettings を取得する。
         /// BoneEditor サブパネル側のチェックボックスと双方向同期させる際に使う。
         /// </summary>
@@ -186,7 +193,45 @@ namespace Poly_Ling.Player
                 {
                     var ctx = BuildToolContext(mods);
                     if (ctx == null) { _dragState = ObjDragState.None; return; }
+
+                    // 【1 ドラッグ = 1 コマンド】
+                    //   ドラッグ中の適用はプレビュー扱い。確定時に開始状態へ戻して
+                    //   総移動量または累計回転だけを取り出し、コマンドとして送る。
+                    //   実際の適用と Undo 記録は Apply*FromCommand が行う。
+                    //   送信口が無いときは取り出さず、ObjectMoveTool.OnMouseUp が
+                    //   従来どおり CommitUndo で確定させる。
+                    //   移動と回転は同時に立たない（移動中は回転の開始状態が空、
+                    //   回転中は総移動量が 0）ので、順に試してよい。
+                    Poly_Ling.Data.PanelCommand pending = null;
+
+                    if (SendCommand != null && _tool.ObjectMoveDragPending &&
+                        _tool.TryTakeObjectMoveDrag(ctx, out int[] mvTargets, out Vector3 mvWorldTotal))
+                    {
+                        pending = new Poly_Ling.Data.MoveObjectsCommand(
+                            _project?.CurrentModelIndex ?? 0,
+                            mvTargets,
+                            mvWorldTotal,
+                            Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World,
+                            _tool.GetSettings().MoveWithChildren,
+                            _tool.GetSettings().MoveMode);
+                    }
+                    else if (SendCommand != null && _tool.ObjectRotateDragPending &&
+                             _tool.TryTakeObjectRotateDrag(
+                                 ctx, out int[] rotTargets, out Vector3 rotPivot,
+                                 out Vector3 rotAxis, out float rotAngle))
+                    {
+                        pending = new Poly_Ling.Data.RotateObjectsCommand(
+                            _project?.CurrentModelIndex ?? 0,
+                            rotTargets,
+                            rotPivot, false,
+                            rotAxis, rotAngle,
+                            _tool.GetSettings().MoveWithChildren,
+                            _tool.GetSettings().MoveMode);
+                    }
+
                     _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+
+                    if (pending != null) SendCommand(pending);
                     break;
                 }
                 case ObjDragState.BoxSelecting:
@@ -207,6 +252,116 @@ namespace Poly_Ling.Player
                 }
             }
             _dragState = ObjDragState.None;
+        }
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 選択オブジェクトの移動コマンドを実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   移動・子補正・BindPose 更新・Undo 記録は
+        ///   ObjectMoveTool.ApplyMoveFromCommand がドラッグ確定時と同じ
+        ///   SaveSnapshots → ApplyWorldDelta → CommitUndo を通す。
+        ///
+        /// 【設定値はコマンドが正典】
+        ///   MoveWithChildren / MoveMode は退避してからコマンド値を代入し、
+        ///   終わったら戻す。1 呼び出しがパネルの状態に依存しないようにするため。
+        ///   ObjectMoveSettings は BoneEditor サブパネルと共有しているので、
+        ///   戻し忘れると UI のチェックが変わってしまう。
+        ///
+        /// 【Local の基準】
+        ///   Space == Local のとき、Delta は MasterIndices[0] のローカル量として
+        ///   解釈し、そのメッシュの WorldMatrix でワールドへ変換する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.MoveObjectsCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedObjects(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var indices = cmd.MasterIndices;
+            Vector3 worldDelta;
+            if (cmd.Space == Poly_Ling.Data.MoveSelectedVerticesCommand.CoordSpace.World)
+            {
+                worldDelta = cmd.Delta;
+            }
+            else
+            {
+                var baseMc = model.GetMeshContext(indices[0]);
+                if (baseMc == null)
+                { reason = $"masterIndex {indices[0]} のオブジェクトがありません"; return false; }
+                worldDelta = baseMc.WorldMatrix.MultiplyVector(cmd.Delta);
+            }
+
+            var ctx = BuildToolContext(default(ModifierKeys));
+            if (ctx == null) { reason = "モデルがありません"; return false; }
+
+            var settings = _tool.GetSettings();
+            bool         savedWithChildren = settings.MoveWithChildren;
+            BoneMoveMode savedMode         = settings.MoveMode;
+            try
+            {
+                settings.MoveWithChildren = cmd.MoveWithChildren;
+                settings.MoveMode         = cmd.MoveMode;
+                return _tool.ApplyMoveFromCommand(ctx, indices, worldDelta, out reason);
+            }
+            finally
+            {
+                settings.MoveWithChildren = savedWithChildren;
+                settings.MoveMode         = savedMode;
+            }
+        }
+
+        /// <summary>
+        /// 選択オブジェクトの回転コマンドを実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   ObjectMoveTool.ApplyRotateFromCommand が
+        ///   SaveRotationStart → SaveSnapshots → ApplyWorldRotation → CommitUndo を
+        ///   リングドラッグと同じ順序で通す。非一様スケールの祖先を持つ要素の除外も
+        ///   その中にある。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.RotateObjectsCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedObjects(model, cmd.MasterIndices, out reason))
+                return false;
+
+            var ctx = BuildToolContext(default(ModifierKeys));
+            if (ctx == null) { reason = "モデルがありません"; return false; }
+
+            var settings = _tool.GetSettings();
+            bool         savedWithChildren = settings.MoveWithChildren;
+            BoneMoveMode savedMode         = settings.MoveMode;
+            try
+            {
+                settings.MoveWithChildren = cmd.MoveWithChildren;
+                settings.MoveMode         = cmd.MoveMode;
+                return _tool.ApplyRotateFromCommand(
+                    ctx, cmd.MasterIndices,
+                    cmd.Pivot, cmd.UseSelectionCentroid,
+                    cmd.Axis, cmd.Angle, out reason);
+            }
+            finally
+            {
+                settings.MoveWithChildren = savedWithChildren;
+                settings.MoveMode         = savedMode;
+            }
         }
 
         // ================================================================

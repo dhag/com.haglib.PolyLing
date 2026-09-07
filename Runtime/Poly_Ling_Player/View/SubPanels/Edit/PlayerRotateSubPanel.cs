@@ -56,8 +56,10 @@ namespace Poly_Ling.Player
             _sliderX = MakeSlider("X", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotX = Snap(v); });
             _sliderY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotY = Snap(v); });
             _sliderZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotZ = Snap(v); });
+            // 確定はコマンド経由。CommitViaCommand が開始状態へ戻して
+            // RotateSelectionCommand を送り、その受け口がベイクと Undo 記録を行う。
             foreach (var s in new[] { _sliderX, _sliderY, _sliderZ })
-                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
+                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
 
             _fieldX = new FloatField(); _fieldY = new FloatField(); _fieldZ = new FloatField();
             _eulerGroup.Add(SliderWithField(_sliderX, _fieldX, -180f, 180f,
@@ -78,7 +80,7 @@ namespace Poly_Ling.Player
             axisRow.Add(_axisX); axisRow.Add(_axisY); axisRow.Add(_axisZ);
             _axisGroup.Add(axisRow);
             _axisAngle = MakeSlider("Angle", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.AxisAngle = Snap(v); });
-            _axisAngle.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
+            _axisAngle.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
             _fieldAngle = new FloatField();
             _axisGroup.Add(SliderWithField(_axisAngle, _fieldAngle, -180f, 180f,
                 v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.AxisAngle = Snap(v); }));
@@ -121,9 +123,10 @@ namespace Poly_Ling.Player
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.marginTop     = 4;
-            var applyBtn  = new Button(() => { GetH()?.EndSliderDrag(); Refresh(); }) { text = "Apply" };
+            var applyBtn  = new Button(() => { GetH()?.CommitViaCommand(); Refresh(); }) { text = "Apply" };
             applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
-            // 確定後は EndSliderDrag が角度を 0 に戻すので、Refresh で表示も 0 へ揃う。
+            // 確定後は角度が 0 に戻るので、Refresh で表示も 0 へ揃う
+            // （CommitViaCommand が取り出し時に 0 へ戻し、受け口も終了時に 0 へ戻す）。
             var revertBtn = new Button(() => { GetH()?.Revert(); Refresh(); }) { text = "Reset" };
             revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn);

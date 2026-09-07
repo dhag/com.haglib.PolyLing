@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Selection;
+// ExecuteEraseEdgeFromCommand が MeshObjectSnapshot を直接宣言するため。
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Tools
 {
@@ -206,6 +208,303 @@ namespace Poly_Ling.Tools
 
         public void OnActivate(ToolContext ctx) => Reset();
         public void OnDeactivate(ToolContext ctx) => Reset();
+
+        // ================================================================
+        // コマンド経路
+        //
+        // 【1 クリック = 1 コマンド】
+        //   クリックが何を実行するかだけを TryTakeCutFromClick で決め、実行は
+        //   コマンドの受け口（Execute*FromCommand）が行う。段の途中のクリックは
+        //   段だけ進めて false を返す。
+        //   TryTakeCutFromClick は Handle*Click と同じ段の更新を行うため、
+        //   呼び出し側はどちらか一方だけを使うこと。
+        // ================================================================
+
+        /// <summary>クリックで確定した切断の内容。モードごとに使うフィールドが違う。</summary>
+        public struct KnifeCutRequest
+        {
+            public KnifeMode Mode;
+
+            /// <summary>LadderCut の開始頂点。</summary>
+            public int StartVertex;
+            /// <summary>LadderCut の終了頂点。</summary>
+            public int EndVertex;
+            /// <summary>LadderCut のセグメント辺 / BeltLoop / Erase の辺。</summary>
+            public VertexPair Edge;
+            /// <summary>LadderCut / BeltLoop の辺上の切る位置（Edge.V1 起点）。</summary>
+            public float CutRatio;
+
+            /// <summary>SimpleCut の 1 点目（ビューポート座標、Y=0 下）。</summary>
+            public Vector2 ScreenP0;
+            /// <summary>SimpleCut の 2 点目。</summary>
+            public Vector2 ScreenP1;
+            /// <summary>SimpleCut の面カリングマスク。null で全面対象。</summary>
+            public bool[] FaceCulledMask;
+        }
+
+        /// <summary>
+        /// このクリックが実行する切断を決めて返す。実行はしない。
+        /// </summary>
+        /// <param name="mousePosImgui">IMGUI 系（Y=0 上）の位置。Ladder / Belt / Erase 用。</param>
+        /// <param name="screenPos">ビューポート座標（Y=0 下）。SimpleCut 用。</param>
+        /// <returns>実行すべき切断が決まったら true。</returns>
+        public bool TryTakeCutFromClick(
+            ToolContext ctx, Vector2 mousePosImgui, Vector2 screenPos, out KnifeCutRequest req)
+        {
+            req = default;
+            req.Mode = Mode;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) return false;
+
+            if (ctx.CurrentKeyCode == KeyCode.Escape)
+            {
+                Reset();
+                ctx.Repaint?.Invoke();
+                return false;
+            }
+
+            switch (Mode)
+            {
+                case KnifeMode.Erase:
+                {
+                    var e = FindNearestSharedEdge(ctx, mo, mousePosImgui, out var faces);
+                    if (!e.HasValue || faces == null || faces.Count != 2) return false;
+                    req.Edge = e.Value;
+                    return true;
+                }
+
+                case KnifeMode.BeltLoop:
+                {
+                    var e = ResolveEdge(ctx, mousePosImgui);
+                    if (!e.HasValue) return false;
+                    req.Edge     = e.Value;
+                    req.CutRatio = ComputeClickRatio(ctx, mo, e.Value, mousePosImgui);
+                    return true;
+                }
+
+                case KnifeMode.SimpleCut:
+                {
+                    if (_simpleStage == SimpleStage.Idle)
+                    {
+                        // 1 点目。HandleSimpleCutClick と同じ更新だけを行う。
+                        _simpleP0    = screenPos;
+                        _simpleStage = SimpleStage.HasP0;
+                        LastError    = "";
+                        ctx.Repaint?.Invoke();
+                        return false;
+                    }
+
+                    req.ScreenP0       = _simpleP0;
+                    req.ScreenP1       = screenPos;
+                    req.FaceCulledMask = _simpleFaceCulledMask;
+                    Reset();
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
+
+                default:
+                    return TryTakeLadderFromClick(ctx, mo, mousePosImgui, ref req);
+            }
+        }
+
+        /// <summary>
+        /// ラダー切断の段を進め、3 段目で確定内容を返す。
+        /// 段の進め方と検証は HandleLadderClick と同じ。
+        /// </summary>
+        private bool TryTakeLadderFromClick(
+            ToolContext ctx, MeshObject mo, Vector2 mousePos, ref KnifeCutRequest req)
+        {
+            switch (_stage)
+            {
+                case LadderStage.Idle:
+                {
+                    int v = ResolveVertex(ctx, mousePos);
+                    if (v < 0) return false;
+                    _startVertex = v;
+                    _stage = LadderStage.HasStart;
+                    LastError = "";
+                    ctx.Repaint?.Invoke();
+                    return false;
+                }
+                case LadderStage.HasStart:
+                {
+                    var e = ResolveEdge(ctx, mousePos);
+                    if (!e.HasValue) return false;
+                    if (e.Value.Contains(_startVertex))
+                    { LastError = T("ErrSegAdjacent"); ctx.Repaint?.Invoke(); return false; }
+                    if (!LadderCutResolver.IsSegmentReachable(mo, _startVertex, e.Value))
+                    { LastError = T("ErrSegUnreachable"); ctx.Repaint?.Invoke(); return false; }
+                    _segment = e.Value;
+                    _hasSegment = true;
+                    _cutRatio = ComputeClickRatio(ctx, mo, _segment, mousePos);
+                    _stage = LadderStage.HasSegment;
+                    LastError = "";
+                    ctx.Repaint?.Invoke();
+                    return false;
+                }
+                case LadderStage.HasSegment:
+                {
+                    int v = ResolveVertex(ctx, mousePos);
+                    if (v < 0) return false;
+
+                    // 解決できるかをここで確かめる。失敗しても段は維持する
+                    // （HandleLadderClick と同じく別の終了頂点を選べる）。
+                    var plan = LadderCutResolver.Resolve(mo, _startVertex, _segment, v, _cutRatio, _segment.V1);
+                    if (!plan.Ok)
+                    {
+                        LastError = plan.Error;
+                        ctx.Repaint?.Invoke();
+                        return false;
+                    }
+
+                    req.StartVertex = _startVertex;
+                    req.Edge        = _segment;
+                    req.EndVertex   = v;
+                    req.CutRatio    = _cutRatio;
+
+                    Reset();
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// ラダー切断をコマンドから実行する。マウス経路と同じ
+        /// LadderCutResolver.Resolve → NCutExecutor / LadderCutExecutor を通す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteLadderCutFromCommand(
+            ToolContext ctx, int startVertex, VertexPair segment, int endVertex,
+            float cutRatio, bool equalDivide, int divisions, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+            if (!InRange(mo, startVertex) || !InRange(mo, endVertex) ||
+                !InRange(mo, segment.V1) || !InRange(mo, segment.V2))
+            { reason = "頂点番号が範囲外です"; return false; }
+            if (segment.Contains(startVertex))
+            { reason = "セグメント辺は開始頂点に隣接しない辺を指定してください"; return false; }
+            if (!LadderCutResolver.IsSegmentReachable(mo, startVertex, segment))
+            { reason = "そのセグメント辺は開始頂点の四角形へ届きません"; return false; }
+            if (equalDivide && divisions < 2)
+            { reason = "Divisions は 2 以上にしてください"; return false; }
+
+            var plan = LadderCutResolver.Resolve(
+                mo, startVertex, segment, endVertex, Mathf.Clamp01(cutRatio), segment.V1);
+            if (!plan.Ok)
+            { reason = string.IsNullOrEmpty(plan.Error) ? "切断経路を解決できません" : plan.Error; return false; }
+
+            if (equalDivide) NCutExecutor.Execute(ctx, mo, plan, divisions);
+            else             LadderCutExecutor.Execute(ctx, mo, plan);
+
+            ctx.NotifyTopologyChanged?.Invoke();
+            ctx.Repaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 一意分割をコマンドから実行する。マウス経路と同じ
+        /// BeltCutResolver.Resolve → NCutExecutor / LadderCutExecutor を通す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteBeltLoopCutFromCommand(
+            ToolContext ctx, VertexPair edge, float cutRatio,
+            bool equalDivide, int divisions, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+            if (!InRange(mo, edge.V1) || !InRange(mo, edge.V2) || edge.V1 == edge.V2)
+            { reason = "頂点番号が不正です"; return false; }
+            if (equalDivide && divisions < 2)
+            { reason = "Divisions は 2 以上にしてください"; return false; }
+
+            var plan = BeltCutResolver.Resolve(mo, edge, Mathf.Clamp01(cutRatio), edge.V1);
+            if (!plan.Ok || plan.FaceCuts.Count == 0)
+            { reason = "その辺からベルト／ループをたどれません"; return false; }
+
+            if (equalDivide) NCutExecutor.Execute(ctx, mo, plan, divisions);
+            else             LadderCutExecutor.Execute(ctx, mo, plan);
+
+            ctx.NotifyTopologyChanged?.Invoke();
+            ctx.Repaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 辺消去をコマンドから実行する。
+        /// 対象の 2 面は辺から引き直す。Undo の取り方はマウス経路と同じ
+        /// （MeshObjectSnapshot の前後差分）。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteEraseEdgeFromCommand(
+            ToolContext ctx, VertexPair edge, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+            if (!InRange(mo, edge.V1) || !InRange(mo, edge.V2) || edge.V1 == edge.V2)
+            { reason = "頂点番号が不正です"; return false; }
+
+            var edgeToFaces = SelectionHelper.BuildEdgeToFacesMap(mo);
+            if (!edgeToFaces.TryGetValue(edge, out var faces) || faces == null || faces.Count != 2)
+            { reason = $"頂点 {edge.V1} と {edge.V2} を結ぶ辺が 2 面に共有されていません"; return false; }
+
+            MeshObjectSnapshot before = ctx.UndoController != null
+                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext)
+                : null;
+
+            MergeFaces(mo, faces[0], faces[1], edge);
+            ctx.SyncMesh?.Invoke();
+            ctx.NotifyTopologyChanged?.Invoke();
+
+            if (ctx.UndoController != null && before != null)
+            {
+                var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+                ctx.UndoController.RecordMeshTopologyChange(before, after, "Knife Erase Edge");
+            }
+
+            ctx.Repaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// シンプル切断をコマンドから実行する。
+        ///
+        /// p0 / p1 は「頂点投影と同じ座標系（Y=0 下・原点左下）」で渡すこと。
+        /// マウス経路と同じ SimpleCutExecutor.Execute を通す。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteSimpleCutFromCommand(
+            ToolContext ctx, Vector2 p0, Vector2 p1,
+            bool[] faceCulledMask, bool triQuad, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+
+            if (faceCulledMask != null && faceCulledMask.Length != 0 &&
+                faceCulledMask.Length != mo.FaceCount)
+            { reason = $"FaceCulledMask の長さは面数（{mo.FaceCount}）に合わせてください"; return false; }
+
+            bool[] mask = (faceCulledMask != null && faceCulledMask.Length == mo.FaceCount)
+                ? faceCulledMask : null;
+
+            SimpleCutExecutor.Execute(ctx, mo, p0, p1, mask, triQuad);
+            ctx.NotifyTopologyChanged?.Invoke();
+            ctx.Repaint?.Invoke();
+            return true;
+        }
+
+        private static bool InRange(MeshObject mo, int v) => v >= 0 && v < mo.VertexCount;
 
         public void Reset()
         {

@@ -108,7 +108,8 @@ namespace Poly_Ling.Revolution
         public float RotationY;
 
         // プロファイル（頂点リスト）
-        [PLParam(TextKey = "RevolutionProfile", Description = "回転させる断面の点列。生成器が実際に読むのはこの値", Required = true)]
+        [PLParam(TextKey = "RevolutionProfile", Description = "回転させる断面の点列。生成器が実際に読むのはこの値", Required = true,
+                 ProfileRole = PLProfileRole.Points, ProfileNormalize = false)]
         public Vector2[] Profile;
         [PLParam(Ignore = true, Description = "編集中の点の位置。形状には影響しない")]
         public int SelectedPointIndex;

@@ -29,6 +29,7 @@ namespace Poly_Ling.Player
             public string Basic;      // 基本図形カテゴリで最後に選んだ ShapeKind 名
             public string Advanced;   // 高度な図形カテゴリで最後に選んだ ShapeKind 名
             public string Mechanism;  // 機構部品カテゴリで最後に選んだ ShapeKind 名
+            public string SpringBone; // 揺れものボーンカテゴリで最後に選んだ ShapeKind 名
         }
 
         [Serializable]
@@ -128,9 +129,10 @@ namespace Poly_Ling.Player
 
                 switch (category)
                 {
-                    case ShapeCategory.Advanced:  entry.Advanced  = name; break;
-                    case ShapeCategory.Mechanism: entry.Mechanism = name; break;
-                    default:                      entry.Basic     = name; break;
+                    case ShapeCategory.Advanced:   entry.Advanced   = name; break;
+                    case ShapeCategory.Mechanism:  entry.Mechanism  = name; break;
+                    case ShapeCategory.SpringBone: entry.SpringBone = name; break;
+                    default:                       entry.Basic      = name; break;
                 }
 
                 Write();
@@ -144,9 +146,10 @@ namespace Poly_Ling.Player
 
             switch (category)
             {
-                case ShapeCategory.Advanced:  return entry.Advanced;
-                case ShapeCategory.Mechanism: return entry.Mechanism;
-                default:                      return entry.Basic;
+                case ShapeCategory.Advanced:   return entry.Advanced;
+                case ShapeCategory.Mechanism:  return entry.Mechanism;
+                case ShapeCategory.SpringBone: return entry.SpringBone;
+                default:                       return entry.Basic;
             }
         }
 

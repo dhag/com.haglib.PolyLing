@@ -601,7 +601,13 @@ namespace Poly_Ling.EditorIO
                         else
                         {
                             string avatarPath = $"{baseDir}/{modelName}.asset";
-                            var avatar = AvatarBuildCore.BuildAndSaveAvatar(root, avMap, avLimits, avatarPath,
+
+                            // リターゲット設定8項目はモデルが持つ（未設定なら Unity 既定）。
+                            // 以前はここで既定固定だったため、設定しても反映されなかった。
+                            var avRetarget = AvatarRetargetSettings.FromData(model.AvatarRetarget);
+
+                            var avatar = AvatarBuildCore.BuildAndSaveAvatar(
+                                root, avMap, avLimits, avRetarget, avatarPath,
                                 m => _report.Log(m));
 
                             _report.AvatarResult = avatar != null

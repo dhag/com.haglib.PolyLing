@@ -18,6 +18,7 @@ using Poly_Ling.Tools.ObjectPose;
 using Poly_Ling.Ops;
 using Poly_Ling.UI;
 using Poly_Ling.Diagnostics;
+using Poly_Ling.Serialization;
 
 namespace Poly_Ling.Player
 {
@@ -48,6 +49,13 @@ namespace Poly_Ling.Player
         /// </summary>
         public PartsIdAssignResult LastPartsIdResult { get; private set; }
 
+        /// <summary>
+        /// AssignPartsIdsByBoneWeightCommand の直近の実行結果。パネルが結果表示へ使う。
+        /// LastPartsIdResult とは持ち物が違う（群の数・予約値の頂点数・番号の開始値）ので
+        /// 別に持つ。失敗のときも理由を持たせて残す。
+        /// </summary>
+        public PartsIdByBoneWeightResult LastPartsIdByBoneWeightResult { get; private set; }
+
         // BoneTransformスライダーのUndo用スナップショット（Begin～End間で保持）
         private readonly Dictionary<int, BoneTransformSnapshot> _boneTransformBeforeSnapshots
             = new Dictionary<int, BoneTransformSnapshot>();
@@ -74,6 +82,9 @@ namespace Poly_Ling.Player
         // モードC: TRS の 1 フィールドを BonePoseData の "Manual" 層へ差分として書く
         private void ApplyPoseLayerField(MeshContext ctx, SetBoneTransformValueCommand.Field field, float value)
         {
+            // 呼び出し側（SetBoneTransformValueCommand の対象ループ）が
+            // 既に null を弾いているので、ここは保険。1 件飛ばすだけで
+            // コマンド全体の失敗にはしないため Fail は呼ばない。
             if (ctx == null) return;
             if (ctx.BonePoseData == null) ctx.BonePoseData = new BonePoseData();
             ctx.BonePoseData.IsActive = true;
@@ -198,17 +209,17 @@ namespace Poly_Ling.Player
         //   経路はコマンド 1 本になるので、パネルも自動検証も MCP も同じ道を通る。
         // ================================================================
 
-        /// <summary>図形生成コマンドの実行。</summary>
-        public Action<CreatePrimitiveMeshCommand> OnCreatePrimitiveMesh;
+        /// <summary>図形生成コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<CreatePrimitiveMeshCommand, string> OnCreatePrimitiveMesh;
 
-        /// <summary>出来上がったメッシュをそのまま置くコマンドの実行。</summary>
-        public Action<AddGeneratedMeshCommand> OnAddGeneratedMesh;
+        /// <summary>出来上がったメッシュをそのまま置くコマンドの実行。戻り値は失敗理由。</summary>
+        public Func<AddGeneratedMeshCommand, string> OnAddGeneratedMesh;
 
-        /// <summary>穴つなぎコマンドの実行。</summary>
-        public Action<CreateHoleBridgeCommand> OnCreateHoleBridge;
+        /// <summary>穴つなぎコマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<CreateHoleBridgeCommand, string> OnCreateHoleBridge;
 
-        /// <summary>辺群ブリッジコマンドの実行。</summary>
-        public Action<CreateEdgeBridgeCommand> OnCreateEdgeBridge;
+        /// <summary>辺群ブリッジコマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<CreateEdgeBridgeCommand, string> OnCreateEdgeBridge;
 
         /// <summary>
         /// 詳細選択コマンドの実行。
@@ -227,8 +238,9 @@ namespace Poly_Ling.Player
         /// <summary>
         /// スカルプトストロークコマンドの実行。
         /// 変形アルゴリズムは SculptTool が正典なので、ここでは持たずに委譲する。
+        /// 戻り値は失敗理由。成功時は null。
         /// </summary>
-        public Action<SculptStrokeCommand> OnSculptStroke;
+        public Func<SculptStrokeCommand, string> OnSculptStroke;
 
         /// <summary>
         /// 原点移動コマンドの実行。
@@ -252,8 +264,8 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<SelectElementsCommand, string> OnSelectElements;
 
-        /// <summary>面削除コマンドの実行。</summary>
-        public Action<DeleteFacesCommand> OnDeleteFaces;
+        /// <summary>面削除コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<DeleteFacesCommand, string> OnDeleteFaces;
 
         // ================================================================
         // 位相編集（パラメータを持たない実行系）
@@ -327,6 +339,15 @@ namespace Poly_Ling.Player
         /// <summary>面に張り付けコマンドの実行。</summary>
         public Func<SurfaceSnapCommand, string> OnSurfaceSnap;
 
+        /// <summary>VRM アニメーション（.vrma）書き出しコマンドの実行。</summary>
+        public Func<ExportVrmAnimationCommand, string> OnExportVrmAnimation;
+
+        /// <summary>Unity クリップ → VRMA 変換コマンドの実行（モデル非依存）。</summary>
+        public Func<ConvertUnityClipToVrmaCommand, string> OnConvertUnityClipToVrma;
+
+        /// <summary>VMD → VRMA 書き出しコマンドの実行。</summary>
+        public Func<ExportVmdToVrmaCommand, string> OnExportVmdToVrma;
+
         // ================================================================
         // ドラッグ確定（ベベル・押し出し）
         // ================================================================
@@ -344,6 +365,68 @@ namespace Poly_Ling.Player
         public Func<SkinWeightPaintCommand, string> OnSkinWeightPaint;
 
         // ================================================================
+        // 変形ギズモ（選択頂点の回転・スケール）
+        // ================================================================
+
+        /// <summary>選択頂点の回転コマンドの実行。</summary>
+        public Func<RotateSelectionCommand, string> OnRotateSelection;
+
+        /// <summary>選択頂点のスケールコマンドの実行。</summary>
+        public Func<ScaleSelectionCommand, string> OnScaleSelection;
+
+        // ================================================================
+        // オブジェクトごと移動・回転（ObjectMove ギズモ）
+        // ================================================================
+
+        /// <summary>選択オブジェクトの移動コマンドの実行。</summary>
+        public Func<MoveObjectsCommand, string> OnMoveObjects;
+
+        /// <summary>選択オブジェクトの回転コマンドの実行。</summary>
+        public Func<RotateObjectsCommand, string> OnRotateObjects;
+
+        // ================================================================
+        // デフォーマ
+        // ================================================================
+
+        /// <summary>変形コマンドの実行。派生 6 種をまとめて受ける。</summary>
+        public Func<ApplyDeformCommand, string> OnApplyDeform;
+
+        /// <summary>格子変形コマンドの実行。</summary>
+        public Func<ApplyLatticeDeformCommand, string> OnApplyLatticeDeform;
+
+        // ================================================================
+        // クリック確定（辺トポロジ・面追加）
+        // ================================================================
+
+        /// <summary>辺の入れ替えコマンドの実行。</summary>
+        public Func<EdgeTopologyFlipCommand, string> OnEdgeTopologyFlip;
+
+        /// <summary>辺の消去コマンドの実行。</summary>
+        public Func<EdgeTopologyDissolveCommand, string> OnEdgeTopologyDissolve;
+
+        /// <summary>四角形の対角分割コマンドの実行。</summary>
+        public Func<EdgeTopologySplitCommand, string> OnEdgeTopologySplit;
+
+        /// <summary>面追加コマンドの実行。</summary>
+        public Func<AddFaceCommand, string> OnAddFace;
+
+        // ================================================================
+        // ナイフ
+        // ================================================================
+
+        /// <summary>ラダー切断コマンドの実行。</summary>
+        public Func<KnifeLadderCutCommand, string> OnKnifeLadderCut;
+
+        /// <summary>一意分割コマンドの実行。</summary>
+        public Func<KnifeBeltLoopCutCommand, string> OnKnifeBeltLoopCut;
+
+        /// <summary>辺消去コマンドの実行。</summary>
+        public Func<KnifeEraseEdgeCommand, string> OnKnifeEraseEdge;
+
+        /// <summary>シンプル切断コマンドの実行。</summary>
+        public Func<KnifeSimpleCutCommand, string> OnKnifeSimpleCut;
+
+        // ================================================================
         // 作業軸
         //
         // モデルの頂点・選択は書き換えないので Undo も所有権判定も持たない。
@@ -355,14 +438,21 @@ namespace Poly_Ling.Player
         /// <summary>作業軸ライブラリ呼び出しコマンドの実行。</summary>
         public Func<RecallWorkAxisCommand, string> OnRecallWorkAxis;
 
-        /// <summary>穴点数合わせコマンドの実行。</summary>
-        public Action<MatchHoleRingCountCommand> OnMatchHoleRingCount;
+        /// <summary>穴点数合わせコマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<MatchHoleRingCountCommand, string> OnMatchHoleRingCount;
 
-        /// <summary>プロジェクト初期化コマンドの実行。</summary>
-        public Action<ResetProjectCommand> OnResetProject;
+        /// <summary>プロジェクト初期化コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<ResetProjectCommand, string> OnResetProject;
 
-        /// <summary>歪み複製コマンドの実行。</summary>
-        public Action<CreateObjectArrayCommand> OnCreateObjectArray;
+        /// <summary>歪み複製コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<CreateObjectArrayCommand, string> OnCreateObjectArray;
+
+        /// <summary>
+        /// パーツIDによる分解コマンドの実行。戻り値は失敗理由。成功時は null。
+        /// 描画オブジェクトの追加は Undo 記録とビュー再構築を伴うので、
+        /// 実行は Viewer 側が持つ（PolyLingPlayerViewerCore.CreateCommands.cs:4-8）。
+        /// </summary>
+        public Func<SplitObjectByPartsIdCommand, string> OnSplitObjectByPartsId;
 
         /// <summary>Undo の実行。1 段戻せたら true を返すこと。</summary>
         public Func<bool> OnUndo;
@@ -380,7 +470,20 @@ namespace Poly_Ling.Player
         /// </summary>
         private CommandResult _pendingResult;
 
-        /// <summary>ハンドラから失敗を報告する。設定後は通常どおり return してよい。</summary>
+        /// <summary>
+        /// ハンドラから失敗を報告する。設定後は通常どおり return してよい。
+        ///
+        /// 【どこから呼んでよいか】
+        ///   DispatchCore の switch と、そこから直接呼ばれるヘルパーまで。
+        ///   Undo 記録・ミラー同期などの後処理ヘルパーは、呼び出し側が既に検証を
+        ///   済ませているか、失敗しても利用者へ返す意味が無いので呼ばない
+        ///   （無言の return; が残っているのはそのため）。
+        ///   static メソッドからは呼べない（インスタンスの _pendingResult へ書くため）。
+        ///
+        /// 【二重に呼んだとき】
+        ///   後から呼んだ理由で上書きされる。呼んだ直後に return する規約なので
+        ///   実際には重ならない。
+        /// </summary>
         private void Fail(string reason) => _pendingResult = CommandResult.Fail(reason);
 
         /// <summary>
@@ -413,7 +516,9 @@ namespace Poly_Ling.Player
             // 下の null 門より前で捌かないと、初回に握り潰されて何も起きない。
             if (cmd is ResetProjectCommand reset)
             {
-                OnResetProject?.Invoke(reset);
+                if (OnResetProject == null) { Fail("reset project handler not wired"); return; }
+                string rpReason = OnResetProject.Invoke(reset);
+                if (rpReason != null) { Fail(rpReason); return; }
                 return;
             }
 
@@ -428,6 +533,27 @@ namespace Poly_Ling.Player
             if (cmd is PerformRedoCommand)
             {
                 if (OnRedo == null || !OnRedo()) Fail("nothing to redo");
+                return;
+            }
+
+            // Unity クリップ → VRMA 変換はモデルもプロジェクトも見ない。
+            // 下の null 門より前で捧かないと、何も読み込んでいない状態で
+            // "no project" になって黙って何も起きない。
+            if (cmd is ConvertUnityClipToVrmaCommand clipToVrmaCmd)
+            {
+                if (OnConvertUnityClipToVrma == null)
+                {
+                    Fail("vrma convert handler not wired");
+                    Debug.LogError("[PolyLing] VRMA 変換: 受け口が配線されていません");
+                    return;
+                }
+                string clipToVrmaReason = OnConvertUnityClipToVrma.Invoke(clipToVrmaCmd);
+                if (clipToVrmaReason != null)
+                {
+                    Fail(clipToVrmaReason);
+                    Debug.LogError($"[PolyLing] VRMA 変換に失敗: {clipToVrmaReason}");
+                    return;
+                }
                 return;
             }
 
@@ -505,7 +631,7 @@ namespace Poly_Ling.Player
                 // ── メッシュ追加（空メッシュ）
                 case AddMeshCommand _:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var addBefore = MeshFilterToSkinnedRecord.CaptureList(model);
                     var newMc = new MeshContext
                     {
@@ -535,7 +661,7 @@ namespace Poly_Ling.Player
 
                 // ── メッシュ選択
                 case SelectMeshCommand sel:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     {
                         // Undo 記録のため選択前のインデックスをキャプチャ
                         var __oldSelected = model.CaptureAllSelectedIndices();
@@ -689,13 +815,14 @@ namespace Poly_Ling.Player
                 // 削除して委譲に寄せた。GPU 反映と Undo 記録はハンドラ側が行う。
                 case SculptStrokeCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     if (OnSculptStroke == null)
                     {
                         Fail("sculpt handler not wired");
                         return;
                     }
-                    OnSculptStroke.Invoke(c);
+                    string ssoReason = OnSculptStroke.Invoke(c);
+                    if (ssoReason != null) { Fail(ssoReason); return; }
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -950,6 +1077,140 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── 変形ギズモ（選択頂点の回転・スケール）
+                case RotateSelectionCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnRotateSelection == null) { Fail("rotate selection handler not wired"); return; }
+                    string rsReason = OnRotateSelection.Invoke(c);
+                    if (rsReason != null) { Fail(rsReason); return; }
+                    return;
+                }
+
+                case ScaleSelectionCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnScaleSelection == null) { Fail("scale selection handler not wired"); return; }
+                    string scReason = OnScaleSelection.Invoke(c);
+                    if (scReason != null) { Fail(scReason); return; }
+                    return;
+                }
+
+                // ── オブジェクトごと移動・回転（ObjectMove ギズモ）
+                case MoveObjectsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnMoveObjects == null) { Fail("move objects handler not wired"); return; }
+                    string moReason = OnMoveObjects.Invoke(c);
+                    if (moReason != null) { Fail(moReason); return; }
+                    return;
+                }
+
+                case RotateObjectsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnRotateObjects == null) { Fail("rotate objects handler not wired"); return; }
+                    string roReason = OnRotateObjects.Invoke(c);
+                    if (roReason != null) { Fail(roReason); return; }
+                    return;
+                }
+
+                // ── デフォーマ
+                //
+                // 抽象基底で受ければ派生 6 種を拾える
+                // （case CreatePrimitiveMeshCommand と同じ形）。
+                case ApplyDeformCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnApplyDeform == null) { Fail("deform handler not wired"); return; }
+                    string adReason = OnApplyDeform.Invoke(c);
+                    if (adReason != null) { Fail(adReason); return; }
+                    return;
+                }
+
+                case ApplyLatticeDeformCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnApplyLatticeDeform == null) { Fail("lattice deform handler not wired"); return; }
+                    string aldReason = OnApplyLatticeDeform.Invoke(c);
+                    if (aldReason != null) { Fail(aldReason); return; }
+                    return;
+                }
+
+                // ── クリック確定（辺トポロジ・面追加）
+                case EdgeTopologyFlipCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnEdgeTopologyFlip == null) { Fail("edge flip handler not wired"); return; }
+                    string etfReason = OnEdgeTopologyFlip.Invoke(c);
+                    if (etfReason != null) { Fail(etfReason); return; }
+                    return;
+                }
+
+                case EdgeTopologyDissolveCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnEdgeTopologyDissolve == null) { Fail("edge dissolve handler not wired"); return; }
+                    string etdReason = OnEdgeTopologyDissolve.Invoke(c);
+                    if (etdReason != null) { Fail(etdReason); return; }
+                    return;
+                }
+
+                case EdgeTopologySplitCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnEdgeTopologySplit == null) { Fail("edge split handler not wired"); return; }
+                    string etsReason = OnEdgeTopologySplit.Invoke(c);
+                    if (etsReason != null) { Fail(etsReason); return; }
+                    return;
+                }
+
+                case AddFaceCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnAddFace == null) { Fail("add face handler not wired"); return; }
+                    string afReason = OnAddFace.Invoke(c);
+                    if (afReason != null) { Fail(afReason); return; }
+                    return;
+                }
+
+                // ── ナイフ
+                case KnifeLadderCutCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnKnifeLadderCut == null) { Fail("knife ladder cut handler not wired"); return; }
+                    string klcReason = OnKnifeLadderCut.Invoke(c);
+                    if (klcReason != null) { Fail(klcReason); return; }
+                    return;
+                }
+
+                case KnifeBeltLoopCutCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnKnifeBeltLoopCut == null) { Fail("knife belt loop handler not wired"); return; }
+                    string kblReason = OnKnifeBeltLoopCut.Invoke(c);
+                    if (kblReason != null) { Fail(kblReason); return; }
+                    return;
+                }
+
+                case KnifeEraseEdgeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnKnifeEraseEdge == null) { Fail("knife erase handler not wired"); return; }
+                    string keeReason = OnKnifeEraseEdge.Invoke(c);
+                    if (keeReason != null) { Fail(keeReason); return; }
+                    return;
+                }
+
+                case KnifeSimpleCutCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnKnifeSimpleCut == null) { Fail("knife simple cut handler not wired"); return; }
+                    string kscReason = OnKnifeSimpleCut.Invoke(c);
+                    if (kscReason != null) { Fail(kscReason); return; }
+                    return;
+                }
+
                 // ── 作業軸
                 //
                 // 作業軸はモデルに属さないので model の有無を条件にしない。
@@ -972,9 +1233,9 @@ namespace Poly_Ling.Player
                 // ── 可視性トグル
                 case ToggleVisibilityCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var visCtx = model.GetMeshContext(c.MasterIndex);
-                    if (visCtx == null) return;
+                    if (visCtx == null) { Fail($"masterIndex {c.MasterIndex} のオブジェクトがありません"); return; }
                     ApplyVisibility(model, new[] { c.MasterIndex }, !visCtx.IsVisible, "Toggle Visibility");
                     return;
                 }
@@ -982,7 +1243,7 @@ namespace Poly_Ling.Player
                 // ── 一括可視性
                 case SetBatchVisibilityCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     ApplyVisibility(model, c.MasterIndices, c.Visible,
                         $"Set Visibility: {(c.Visible ? "on" : "off")}");
                     return;
@@ -991,9 +1252,9 @@ namespace Poly_Ling.Player
                 // ── ロックトグル
                 case ToggleLockCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var lckCtx = model.GetMeshContext(c.MasterIndex);
-                    if (lckCtx == null) return;
+                    if (lckCtx == null) { Fail($"masterIndex {c.MasterIndex} のオブジェクトがありません"); return; }
                     ApplyLock(model, new[] { c.MasterIndex }, !lckCtx.IsLocked, "Toggle Lock");
                     return;
                 }
@@ -1001,7 +1262,7 @@ namespace Poly_Ling.Player
                 // ── 一括ロック
                 case SetBatchLockCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     ApplyLock(model, c.MasterIndices, c.Locked,
                         $"Set Lock: {(c.Locked ? "on" : "off")}");
                     return;
@@ -1009,7 +1270,7 @@ namespace Poly_Ling.Player
 
                 // ── IgnorePoseInArmature 設定
                 case SetIgnorePoseCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
@@ -1037,42 +1298,79 @@ namespace Poly_Ling.Player
                 // ── 生成系。実処理は Viewer 側にあるので委譲する
                 // モデルが無くても通す（実処理側が作る）。上の createsOwnModel を参照。
                 case CreatePrimitiveMeshCommand c:
-                    OnCreatePrimitiveMesh?.Invoke(c);
+                {
+                    if (OnCreatePrimitiveMesh == null) { Fail("primitive mesh handler not wired"); return; }
+
+                    // 「維持する」が立っているときだけ、実行前後の ObjectId を比べて
+                    // 出来た出力先を突き止める。立っていなければ従来どおり何も残さない。
+                    var __beforeIds = c.Placement.KeepAsGroup ? SnapshotObjectIds() : null;
+
+                    string cpmReason = OnCreatePrimitiveMesh.Invoke(c);
+                    if (cpmReason != null) { Fail(cpmReason); return; }
+
+                    if (c.Placement.KeepAsGroup)
+                        CaptureObjectGroup(c, __beforeIds, FallbackOutputIndex(c));
+
                     return;
+                }
 
                 case AddGeneratedMeshCommand c:
-                    OnAddGeneratedMesh?.Invoke(c);
+                {
+                    if (OnAddGeneratedMesh == null) { Fail("add generated mesh handler not wired"); return; }
+                    string agmReason = OnAddGeneratedMesh.Invoke(c);
+                    if (agmReason != null) { Fail(agmReason); return; }
                     return;
+                }
 
                 case CreateHoleBridgeCommand c:
-                    if (model == null) return;
-                    OnCreateHoleBridge?.Invoke(c);
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnCreateHoleBridge == null) { Fail("hole bridge handler not wired"); return; }
+                    string chbReason = OnCreateHoleBridge.Invoke(c);
+                    if (chbReason != null) { Fail(chbReason); return; }
                     return;
+                }
 
                 case CreateEdgeBridgeCommand c:
-                    if (model == null) return;
-                    OnCreateEdgeBridge?.Invoke(c);
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnCreateEdgeBridge == null) { Fail("edge bridge handler not wired"); return; }
+                    string cebReason = OnCreateEdgeBridge.Invoke(c);
+                    if (cebReason != null) { Fail(cebReason); return; }
                     return;
+                }
 
                 case DeleteFacesCommand c:
-                    if (model == null) return;
-                    OnDeleteFaces?.Invoke(c);
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnDeleteFaces == null) { Fail("delete faces handler not wired"); return; }
+                    string dfReason = OnDeleteFaces.Invoke(c);
+                    if (dfReason != null) { Fail(dfReason); return; }
                     return;
+                }
 
                 case MatchHoleRingCountCommand c:
-                    if (model == null) return;
-                    OnMatchHoleRingCount?.Invoke(c);
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnMatchHoleRingCount == null) { Fail("hole ring count handler not wired"); return; }
+                    string mhrReason = OnMatchHoleRingCount.Invoke(c);
+                    if (mhrReason != null) { Fail(mhrReason); return; }
                     return;
+                }
 
                 case CreateObjectArrayCommand c:
-                    if (model == null) return;
-                    OnCreateObjectArray?.Invoke(c);
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnCreateObjectArray == null) { Fail("object array handler not wired"); return; }
+                    string coaReason = OnCreateObjectArray.Invoke(c);
+                    if (coaReason != null) { Fail(coaReason); return; }
                     return;
+                }
 
                 // ── オブジェクト原点の一括設定（CSV読み込み）
                 case ApplyObjectOriginsCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     ApplyObjectOrigins(model, c);
                     return;
                 }
@@ -1080,7 +1378,7 @@ namespace Poly_Ling.Player
                 // ── 姿勢くさびの生成
                 case GenerateObjectPoseWedgesCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     GenerateObjectPoseWedges(project, model, c);
                     return;
                 }
@@ -1088,14 +1386,14 @@ namespace Poly_Ling.Player
                 // ── 姿勢くさびの取り込み
                 case ApplyObjectPoseWedgesCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     ApplyObjectPoseWedges(model, c);
                     return;
                 }
 
                 // ── PreserveNormals 設定
                 case SetPreserveNormalsCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                     {
                         var pnCtx = model.GetMeshContext(idx);
@@ -1107,7 +1405,7 @@ namespace Poly_Ling.Player
 
                 // ── ミラー分岐ルート設定
                 case SetMirrorBranchRootCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
@@ -1120,9 +1418,9 @@ namespace Poly_Ling.Player
                 // ── ミラータイプ
                 case CycleMirrorTypeCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var mirCtx = model.GetMeshContext(c.MasterIndex);
-                    if (mirCtx == null) return;
+                    if (mirCtx == null) { Fail($"masterIndex {c.MasterIndex} のオブジェクトがありません"); return; }
 
                     int mirOld = mirCtx.MirrorType;
                     // なし→分離→結合→なし。3 以上は MeshContext.MirrorType の定義に無く、
@@ -1141,8 +1439,8 @@ namespace Poly_Ling.Player
                 // ── ミラーの有無そのものを切り替える
                 case SetMirrorEnabledCommand c:
                 {
-                    if (model == null) return;
-                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return; }
                     ApplyMirrorEnabled(model, c.MasterIndices, c.Enabled);
                     return;
                 }
@@ -1150,7 +1448,7 @@ namespace Poly_Ling.Player
                 // ── 一括ミラータイプ
                 case SetBatchMirrorTypeCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     int mirValue = Poly_Ling.View.MirrorViewUtil.ClampType(c.MirrorType);
                     var mirOldList = new List<MeshAttributeChange>();
                     var mirNewList = new List<MeshAttributeChange>();
@@ -1164,7 +1462,7 @@ namespace Poly_Ling.Player
                         ctx.MirrorType = mirValue;
                         mirNewList.Add(new MeshAttributeChange { Index = mi, MirrorType = mirValue });
                     }
-                    if (mirOldList.Count == 0) return;
+                    if (mirOldList.Count == 0) { Fail("ミラー種別を変えられる対象がありません"); return; }
                     RecordAttributeChanges(mirOldList, mirNewList,
                         $"Set Mirror Type: {mirValue} x{mirOldList.Count}");
                     _notifyPanels(ChangeKind.Attributes);
@@ -1174,12 +1472,14 @@ namespace Poly_Ling.Player
                 // ── メッシュ名前変更
                 case RenameMeshCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var renCtx = model.GetMeshContext(c.MasterIndex);
-                    if (renCtx == null) return;
-                    if (string.IsNullOrEmpty(c.NewName)) return;
+                    if (renCtx == null) { Fail($"masterIndex {c.MasterIndex} のオブジェクトがありません"); return; }
+                    if (string.IsNullOrEmpty(c.NewName)) { Fail("NewName が空です"); return; }
                     string __oldName = renCtx.Name;
-                    if (__oldName == c.NewName) return; // 変更なし
+                    // 変更なし。何もしないが失敗ではないので Fail は呼ばない
+            // （同じ名前へ改名しただけでリモートがエラーを受け取らないようにする）。
+            if (__oldName == c.NewName) return;
                     renCtx.Name = c.NewName;
                     // Undo 記録 (MeshAttributesBatchChangeRecord は Name 属性に対応済み)
                     if (_undoController != null)
@@ -1205,8 +1505,8 @@ namespace Poly_Ling.Player
                 // 一意化してから適用する。Undo は1レコードにまとめる。
                 case RenameMeshesCommand c:
                 {
-                    if (model == null) return;
-                    if (c.MasterIndices == null || c.NewNames == null) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.NewNames == null) { Fail("MasterIndices と NewNames を指定してください"); return; }
 
                     var rnsResolved = MeshRenameCsvHelper.ResolveUniqueNames(
                         model, c.MasterIndices, c.NewNames);
@@ -1226,7 +1526,7 @@ namespace Poly_Ling.Player
                         rnsCtx.Name = rnsName;
                         rnsNewList.Add(new MeshAttributeChange { Index = rnsIndex, Name = rnsName });
                     }
-                    if (rnsOldList.Count == 0) return;
+                    if (rnsOldList.Count == 0) { Fail("改名できる対象がありません"); return; }
                     RecordAttributeChanges(rnsOldList, rnsNewList,
                         $"Rename Meshes: x{rnsOldList.Count}");
                     _notifyPanels(ChangeKind.Attributes);
@@ -1238,10 +1538,11 @@ namespace Poly_Ling.Player
                 // MeshAttributesBatchChangeRecord は IsFolding 属性に対応済み。
                 case SetMeshFoldingCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var fldCtx = model.GetMeshContext(c.MasterIndex);
-                    if (fldCtx == null) return;
-                    if (fldCtx.IsFolding == c.IsFolding) return; // 変更なし
+                    if (fldCtx == null) { Fail($"masterIndex {c.MasterIndex} のオブジェクトがありません"); return; }
+                    // 変更なし。上と同じ理由で Fail は呼ばない。
+            if (fldCtx.IsFolding == c.IsFolding) return;
                     bool __oldFolding = fldCtx.IsFolding;
                     fldCtx.IsFolding = c.IsFolding;
                     if (_undoController != null)
@@ -1264,8 +1565,8 @@ namespace Poly_Ling.Player
 
                 case DeleteMeshesCommand c:
                 {
-                    if (model == null) return;
-                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return; }
                     // 削除前の選択状態をキャプチャ
                     var __oldSel = model.CaptureAllSelectedIndices();
                     var __removed = new List<(int, MeshContext)>();
@@ -1290,22 +1591,30 @@ namespace Poly_Ling.Player
                 // ── メッシュ複製
                 case DuplicateMeshesCommand c:
                 {
-                    if (model == null) return;
-                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return; }
                     var __oldSel = model.CaptureAllSelectedIndices();
                     var __added = new List<(int, MeshContext)>();
                     foreach (int idx in c.MasterIndices)
                     {
                         var srcCtx = model.GetMeshContext(idx);
                         if (srcCtx == null) continue;
-                        var dup = new MeshContext
-                        {
-                            Name       = srcCtx.Name + "_copy",
-                            MeshObject = srcCtx.MeshObject?.Clone(),
-                            IsVisible  = srcCtx.IsVisible,
-                            IsLocked   = srcCtx.IsLocked,
-                            Depth      = srcCtx.Depth,
-                        };
+
+                        // 名前は必ずモデル内で一意にする。
+                        // 【以前の不具合】ここは new MeshContext { Name = ..., MeshObject = ... }
+                        //   と書いていた。MeshContext.Name は MeshObject への委譲プロパティで、
+                        //   MeshObject が null のとき setter は何もしない（MeshContext.cs:32-36）。
+                        //   オブジェクト初期化子は書いた順に走るので Name の代入が捨てられ、
+                        //   複製物は元と同名のまま出来ていた。名前で引く仕組み
+                        //   （MeshSelectionSet＝オブジェクト辞書）が複製物まで巻き込む。
+                        string __dupName = model.GenerateUniqueMeshName(srcCtx.Name + "_copy");
+
+                        // 別オブジェクトとしての複製。ObjectId と EditorName は引き継がず、
+                        // model.Add が新しい ObjectId を振る。
+                        var dup = Poly_Ling.Ops.MeshContextCloneOps.Clone(
+                            srcCtx, Poly_Ling.Ops.MeshContextCloneKind.NewObject, __dupName);
+                        if (dup == null) continue;
+
                         int __addedIdx = model.Add(dup);
                         __added.Add((__addedIdx, dup));
                     }
@@ -1323,10 +1632,13 @@ namespace Poly_Ling.Player
                 // Undo 記録 (MeshReorderChangeRecord) も内部で実行される。
                 case ReorderMeshesCommand c:
                 {
-                    if (model == null) return;
-                    if (c.Entries == null || c.Entries.Length == 0) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    // Entries は EntryValues から毎回組み立てる算出プロパティ。
+                    // 2 回読むと 2 回作るので、1 回だけ取る。
+                    var __entries = c.Entries;
+                    if (__entries == null || __entries.Length == 0) { Fail("Entries が空です"); return; }
                     var __ops = GetMeshListOps(model);
-                    __ops.ReorderMeshes(c.Category, c.Entries, c.PreserveWorldTransform);
+                    __ops.ReorderMeshes(c.Category, __entries, c.PreserveWorldTransform);
                     model.OnListChanged?.Invoke();
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
@@ -1334,7 +1646,7 @@ namespace Poly_Ling.Player
 
                 // ── BonePose 初期化
                 case InitBonePoseCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
@@ -1350,7 +1662,7 @@ namespace Poly_Ling.Player
 
                 // ── BonePose Active
                 case SetBonePoseActiveCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
@@ -1365,7 +1677,7 @@ namespace Poly_Ling.Player
 
                 // ── BonePose レイヤーリセット
                 case ResetBonePoseLayersCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                         model.GetMeshContext(idx)?.BonePoseData?.ClearAllLayers();
                     _notifyPanels(ChangeKind.Attributes);
@@ -1373,7 +1685,7 @@ namespace Poly_Ling.Player
 
                 // ── BonePose → BindPose ベイク
                 case BakePoseToBindPoseCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
@@ -1385,7 +1697,7 @@ namespace Poly_Ling.Player
 
                 // ── モーフ全選択 / 全解除
                 case SelectAllMorphsCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     model.ClearMorphSelection();
                     foreach (int idx in c.AllMorphIndices) model.AddToMorphSelection(idx);
                     _notifyPanels(ChangeKind.Selection);
@@ -1455,7 +1767,7 @@ namespace Poly_Ling.Player
 
                 // ── BoneTransform 値設定
                 case SetBoneTransformValueCommand c:
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
@@ -1537,7 +1849,7 @@ namespace Poly_Ling.Player
                 // ── UV展開
                 case ApplyUvUnwrapCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     // 先頭ターゲットを UndoController に設定（CaptureMeshObjectSnapshot に必要）
                     if (c.MasterIndices.Length > 0)
                     {
@@ -1559,7 +1871,7 @@ namespace Poly_Ling.Player
                 // ── マテリアルスロット追加
                 case AddMaterialSlotCommand _:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var addMc = model.ActiveMeshContext;
                     if (addMc?.MeshObject != null && _undoController != null)
                     {
@@ -1588,7 +1900,7 @@ namespace Poly_Ling.Player
                 // ── マテリアルスロット削除
                 case RemoveMaterialSlotCommand c:
                 {
-                    if (model == null || model.MaterialCount <= 1) return;
+                    if (model == null || model.MaterialCount <= 1) { Fail("材質が 1 つしかありません"); return; }
                     var remMc = model.ActiveMeshContext;
                     if (remMc?.MeshObject != null && _undoController != null)
                     {
@@ -1623,9 +1935,9 @@ namespace Poly_Ling.Player
                 // ── 選択面にマテリアル適用
                 case ApplyMaterialToFacesCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var matMc = model.GetMeshContext(c.MasterIndex);
-                    if (matMc?.MeshObject == null) return;
+                    if (matMc?.MeshObject == null) { Fail("対象メッシュがありません"); return; }
                     if (_undoController != null)
                     {
                         _undoController.SetMeshObject(matMc.MeshObject, matMc.UnityMesh);
@@ -1653,10 +1965,10 @@ namespace Poly_Ling.Player
                 // ── マテリアル色設定
                 case SetMaterialColorCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     var colRef = model.GetMaterialReference(c.SlotIndex);
-                    if (colRef == null) return;
+                    if (colRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return; }
 
                     // 永続データ側。保存に乗るのはこちら。
                     if (colRef.Data == null) colRef.Data = new Poly_Ling.Materials.MaterialData();
@@ -1685,9 +1997,9 @@ namespace Poly_Ling.Player
                 // ── LSCM UV 展開
                 case ApplyLscmUnwrapCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var lscmMc = model.GetMeshContext(c.MasterIndex);
-                    if (lscmMc?.MeshObject == null) return;
+                    if (lscmMc?.MeshObject == null) { Fail("対象メッシュがありません"); return; }
 
                     // UndoController に対象メッシュを設定
                     if (_undoController != null)
@@ -1728,7 +2040,7 @@ namespace Poly_Ling.Player
                 // ── UV→XYZ展開メッシュ生成
                 case UvToXyzCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     // 追加前のリストをスナップショット（MeshListStack Undo 用）
                     var uvzBefore = MeshFilterToSkinnedRecord.CaptureList(model);
@@ -1770,7 +2082,7 @@ namespace Poly_Ling.Player
                 // ── XYZ→UV書き戻し
                 case XyzToUvCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     // ターゲットメッシュに SetMeshObject（RecordTopologyChange に必要）
                     var xyzTargetMc = model.GetMeshContext(c.TargetMasterIndex);
                     if (xyzTargetMc?.MeshObject != null && _undoController != null)
@@ -1789,7 +2101,7 @@ namespace Poly_Ling.Player
                 // ── BoneTransform スライダー開始：スナップショット保存
                 case BeginBoneTransformSliderDragCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     _boneTransformBeforeSnapshots.Clear();
                     foreach (int idx in c.MasterIndices)
                     {
@@ -1853,8 +2165,8 @@ namespace Poly_Ling.Player
                 // ── BoneTransform スライダー終了：Undo記録
                 case EndBoneTransformSliderDragCommand c:
                 {
-                    if (model == null || _undoController == null) { _boneTransformBeforeSnapshots.Clear(); return; }
-                    if (_boneTransformBeforeSnapshots.Count == 0) return;
+                    if (model == null || _undoController == null) { _boneTransformBeforeSnapshots.Clear(); Fail("no current model"); return; }
+                    if (_boneTransformBeforeSnapshots.Count == 0) { Fail("ドラッグ開始が記録されていません"); return; }
 
                     // 原点だけ移動: 頂点 + BoneTransform を 1 グループで記録する。
                     // ObjectMoveTool.CommitUndo の OriginOnly 分岐と同じ構成。
@@ -2027,11 +2339,11 @@ namespace Poly_Ling.Player
                 case CreateBlendCloneCommand c:
                 {
                     var src = project.GetModel(c.ModelIndex);
-                    if (src == null) return;
+                    if (src == null) { Fail("複製元のオブジェクトがありません"); return; }
                     string uniqueName = project.GenerateUniqueModelName(
                         string.IsNullOrEmpty(c.CloneNameBase) ? src.Name + "_blend" : c.CloneNameBase);
                     var clone = DeepCloneModelContext(src, uniqueName);
-                    if (clone == null) return;
+                    if (clone == null) { Fail("複製を作れませんでした"); return; }
                     int cloneIndex = project.AddModel(clone);
                     // スキニング再計算（BoneTransform → WorldMatrix → BindPose）
                     clone.ComputeWorldAndBindPoses();
@@ -2122,10 +2434,10 @@ namespace Poly_Ling.Player
                 // ── メッシュブレンド適用
                 case ApplyBlendCommand c:
                 {
-                    if (model == null || project == null) return;
+                    if (model == null || project == null) { Fail("no current model"); return; }
 
                     var destCtx = model.GetMeshContext(c.DestMasterIndex);
-                    if (destCtx?.MeshObject == null) return;
+                    if (destCtx?.MeshObject == null) { Fail("書き込み先のメッシュがありません"); return; }
 
                     // ソースは別モデルを指せる。MasterIndex は必ずその
                     // BlendSourceSpec.ModelIndex のモデル内で引くこと。
@@ -2145,7 +2457,7 @@ namespace Poly_Ling.Player
                         if (spec.ModelIndex == c.ModelIndex && spec.MasterIndex != c.DestMasterIndex)
                             hideIndices.Add(spec.MasterIndex);
                     }
-                    if (sources.Count == 0) return;
+                    if (sources.Count == 0) { Fail("ブレンド元がありません"); return; }
 
                     // ToolContext 構築（UndoController・CommandQueue 接続済み）。
                     // Undo の対象メッシュ指定は BlendOperation が SetMeshObjectFor で行う。
@@ -2159,10 +2471,20 @@ namespace Poly_Ling.Player
                     var preview = new BlendPreviewState();
                     preview.Start(model, c.DestMasterIndex, hideIndices);
 
+                    var __blendBeforeIds = c.KeepAsGroup ? SnapshotObjectIds() : null;
+
                     BlendOperation.ApplyBlend(
                         model, preview, sources,
                         c.RecalculateNormals, c.SelectedVerticesOnly,
                         c.MatchMode, c.CreateNewObject, blendCtx);
+
+                    if (c.KeepAsGroup)
+                    {
+                        // 新規オブジェクトを作らない設定では宛先そのものが出力先になる。
+                        // 作る設定では新しく増えた ObjectId が出力先。
+                        CaptureObjectGroup(c, __blendBeforeIds,
+                            c.CreateNewObject ? -1 : c.DestMasterIndex);
+                    }
 
                     // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
                     _viewportManager.EnterTopologyChanged(project);
@@ -2170,12 +2492,193 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── オブジェクトグループ：作り直し
+                //
+                // 【出力先は作り直さず、中身だけ入れ替える】
+                //   新しいオブジェクトを作ると ObjectId が変わり、名前・階層・姿勢・
+                //   材質割当も引き継げない。出力先を指している参照が毎回切れる。
+                //   AddMode を ReplaceExisting にして、既存の出力先へ書き戻す。
+                //
+                // 【頂点IDは残らない】
+                //   中身の総入れ替えなので、出力先へ手で振った頂点IDは失われる。
+                //   出力先にIDを振るなら、先にグループを解除すること。
+                case RebuildObjectGroupCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return; }
+
+                    var g = model.FindObjectGroupByName(c.GroupName);
+                    if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return; }
+
+                    int gIndex = model.ObjectGroups.IndexOf(g);
+                    var oldSnapshot = g.Clone();
+
+                    var outCtx = ObjectGroupOps.Resolve(project, g.OutputObjectId);
+                    if (outCtx?.MeshObject == null)
+                    { Fail("出力先の描画オブジェクトが見つかりません"); return; }
+
+                    int outIndex = model.MeshContextList.IndexOf(outCtx);
+                    if (outIndex < 0)
+                    { Fail("出力先が現在のモデルにありません"); return; }
+
+                    // 退避は「中身を入れ替える前の複製」。人が出力先へ振った頂点IDを
+                    // 取り戻せるようにするためのもので、入れ替えより先に作る。
+                    if (c.KeepStash)
+                    {
+                        var prevStash = g.HasStash ? ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
+
+                        string stashName = model.GenerateUniqueMeshName(outCtx.Name + "_stash");
+                        var stash = MeshContextCloneOps.Clone(
+                            outCtx, MeshContextCloneKind.NewObject, stashName);
+                        if (stash != null)
+                        {
+                            stash.IsVisible = false;
+                            var __selBefore = model.CaptureAllSelectedIndices();
+                            int stashIdx = model.Add(stash);
+                            g.StashObjectId = stash.ObjectId;
+
+                            if (_undoController != null)
+                            {
+                                var __selAfter = model.CaptureAllSelectedIndices();
+                                _undoController.RecordMeshContextsAdd(
+                                    new List<(int, MeshContext)> { (stashIdx, stash) },
+                                    __selBefore, __selAfter);
+                            }
+
+                            // 退避は最新の 1 件だけ持つ。前回のものは片づける。
+                            if (prevStash != null && !ReferenceEquals(prevStash, stash))
+                            {
+                                int pi = model.MeshContextList.IndexOf(prevStash);
+                                if (pi >= 0)
+                                {
+                                    var __sel = model.CaptureAllSelectedIndices();
+                                    var __removed = new List<(int, MeshContext)> { (pi, prevStash) };
+                                    model.RemoveAt(pi);
+                                    _undoController?.RecordMeshContextsRemove(
+                                        __removed, __sel, model.CaptureAllSelectedIndices());
+                                    // 出力先の索引は退避の削除でずれうる。引き直す。
+                                    outIndex = model.MeshContextList.IndexOf(outCtx);
+                                }
+                            }
+                        }
+                    }
+
+                    var rebuilt = ObjectGroupOps.BuildCommand(project, c.ModelIndex, g, out string rbErr);
+                    if (rebuilt == null) { Fail(rbErr ?? "作り直すコマンドを組めませんでした"); return; }
+
+                    // 出力先へ書き戻す形へ差し替える。
+                    // AddMode / AddTargetIndex は PrimitivePlacement が持つので、
+                    // 図形生成コマンド以外（＝Placement を持たないもの）は対象外。
+                    if (!(rebuilt is CreatePrimitiveMeshCommand))
+                    { Fail("このグループは作り直しに対応していません"); return; }
+
+                    var rebuiltType = rebuilt.GetType();
+                    var rebuiltArgs = PanelCommandFactory.ToArgs(rebuilt);
+
+                    // 入れ子のキーはドット区切り。頭のキーは規則側から引く
+                    // （先頭小文字・別名表の規則を外で組み立てると必ずずれる）。
+                    string placeKey = PanelCommandFactory.KeyOfProperty(
+                        rebuiltType, nameof(CreatePrimitiveMeshCommand.Placement));
+                    if (string.IsNullOrEmpty(placeKey))
+                    { Fail("配置パラメータのキーを引けませんでした"); return; }
+
+                    var inv = System.Globalization.CultureInfo.InvariantCulture;
+                    rebuiltArgs[placeKey + ".addMode"] =
+                        ((int)Poly_Ling.Player.PrimitiveAddMode.ReplaceExisting).ToString(inv);
+                    rebuiltArgs[placeKey + ".addTargetIndex"] = outIndex.ToString(inv);
+
+                    var writeBack = PanelCommandFactory.Create(
+                        PanelCommandFactory.ActionOf(rebuiltType), c.ModelIndex,
+                        rebuiltArgs, out string wbErr);
+                    if (writeBack == null) { Fail(wbErr ?? "書き戻しコマンドを組めませんでした"); return; }
+
+                    int vertsBefore = outCtx.MeshObject.VertexCount;
+
+                    // Dispatch は _pendingResult を退避・復元するので、結果は
+                    // 戻り値で受け取ること（_pendingResult を見ても復元済みで分からない）。
+                    var rbResult = Dispatch(writeBack);
+                    if (rbResult != null && !rbResult.Success)
+                    { Fail(rbResult.Reason ?? "作り直しに失敗しました"); return; }
+
+                    int vertsAfter = outCtx.MeshObject.VertexCount;
+                    if (vertsAfter == 0)
+                    { Fail($"作り直しの結果が空になりました（{vertsBefore} → 0）"); return; }
+
+                    g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
+
+                    if (gIndex >= 0)
+                    {
+                        RecordObjectGroupUndo(
+                            new ObjectGroupChangeRecord
+                            {
+                                ReplacedIndex = gIndex,
+                                OldGroup      = oldSnapshot,
+                                NewGroup      = g.Clone(),
+                            },
+                            $"オブジェクトグループ作り直し: {g.Name}");
+                    }
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
+                // ── オブジェクトグループ：解除（描画オブジェクトは消さない）
+                case DeleteObjectGroupCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    var g = model.FindObjectGroupByName(c.GroupName);
+                    if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return; }
+
+                    int gIndex = model.ObjectGroups.IndexOf(g);
+                    RecordObjectGroupUndo(
+                        new ObjectGroupChangeRecord
+                        {
+                            RemovedGroup = g.Clone(),
+                            RemovedIndex = gIndex,
+                        },
+                        $"オブジェクトグループ解除: {g.Name}");
+
+                    model.RemoveObjectGroup(g);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
+                // ── オブジェクトグループ：自動更新の切り替え
+                case SetObjectGroupAutoUpdateCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    var g = model.FindObjectGroupByName(c.GroupName);
+                    if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return; }
+
+                    int gIndex = model.ObjectGroups.IndexOf(g);
+                    var before = g.Clone();
+                    g.AutoUpdate = c.AutoUpdate;
+
+                    if (gIndex >= 0)
+                    {
+                        RecordObjectGroupUndo(
+                            new ObjectGroupChangeRecord
+                            {
+                                ReplacedIndex = gIndex,
+                                OldGroup      = before,
+                                NewGroup      = g.Clone(),
+                            },
+                            $"オブジェクトグループ自動更新: {g.Name}");
+                    }
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
                 // ── シュリンカー適用
                 case ApplyShrinkCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var beforeCtx = model.GetMeshContext(c.BeforeMasterIndex);
-                    if (beforeCtx?.MeshObject == null) return;
+                    if (beforeCtx?.MeshObject == null) { Fail("変形前のメッシュがありません"); return; }
 
                     // 衝突計算に使うワールド座標をこの時点で1回だけ更新する。
                     _viewportManager.UpdateTransform();
@@ -2222,7 +2725,7 @@ namespace Poly_Ling.Player
                 // ── 法線移植適用
                 case ApplyNormalTransplantCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     // プリズムの構築に使うワールド座標をこの時点で1回だけ更新する。
                     _viewportManager.UpdateTransform();
@@ -2246,11 +2749,11 @@ namespace Poly_Ling.Player
 
                     // パネル側はコマンド送信前にプレビューを破棄して元法線へ戻している。
                     var ntPreview = new NormalTransplantPreviewState();
-                    if (!ntPreview.Start(model, ntSamples)) return;
+                    if (!ntPreview.Start(model, ntSamples)) { Fail("法線移植を開始できませんでした"); return; }
 
                     int ntApplied = NormalTransplantOperation.Apply(
                         model, ntPreview, c.Strength, ntCtx);
-                    if (ntApplied <= 0) return;
+                    if (ntApplied <= 0) { Fail("法線を移植できる頂点がありません"); return; }
 
                     // ミラー再ベイクで UnityMesh を作り直し得るため、再構築で揃える。
                     _viewportManager.EnterTopologyChanged(project);
@@ -2261,7 +2764,7 @@ namespace Poly_Ling.Player
                 // ── TPSモーフ適用
                 case ApplyThinPlateMorphCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     var tpsLocal = ThinPlateMorphOperation.ComputeWarpedLocalPositions(
                         model, c.BeforeMasterIndex, c.AfterMasterIndex, c.TargetMasterIndex,
@@ -2298,7 +2801,7 @@ namespace Poly_Ling.Player
                 // ── TPSモーフ 算出済み結果の適用（局所モードのバックグラウンド計算の受け口）
                 case ApplyThinPlateMorphResultCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     if (c.LocalPositions == null)
                     {
                         Debug.LogWarning("[ThinPlateMorph] 変形結果が空です");
@@ -2323,9 +2826,9 @@ namespace Poly_Ling.Player
                 // ── UV 変更（移動・一括変換）
                 case ApplyUVChangesCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var uvMc = model.GetMeshContext(c.MasterIndex);
-                    if (uvMc?.MeshObject == null) return;
+                    if (uvMc?.MeshObject == null) { Fail("対象メッシュがありません"); return; }
 
                     // UndoController にターゲットメッシュを設定
                     if (_undoController != null)
@@ -2402,10 +2905,10 @@ namespace Poly_Ling.Player
                 // ── MeshFilter → Skinned 変換
                 case ConvertMeshFilterToSkinnedCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     var entries = MeshFilterToSkinnedConverter.CollectMeshEntries(model);
-                    if (entries.Count == 0) return;
+                    if (entries.Count == 0) { Fail("変換できる対象がありません"); return; }
 
                     // 変換前スナップショット
                     var beforeList = MeshFilterToSkinnedRecord.CaptureList(model);
@@ -2447,8 +2950,8 @@ namespace Poly_Ling.Player
                 // ── 描画オブジェクト単位: SkinnedMesh 系 → MeshFilter 系
                 case ConvertToMeshFilterCommand c:
                 {
-                    if (model == null) return;
-                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return; }
 
                     var mfBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
@@ -2457,7 +2960,7 @@ namespace Poly_Ling.Player
 
                     int mfDone = 0;
                     foreach (var r in mfResults) if (r.Converted) mfDone++;
-                    if (mfDone == 0) return;
+                    if (mfDone == 0) { Fail("MeshFilter へ変換できる対象がありません"); return; }
 
                     RecordMeshListSnapshot(mfBefore, model,
                         $"ウェイト破棄 → MeshFilter x{mfDone}");
@@ -2473,8 +2976,8 @@ namespace Poly_Ling.Player
                 // ── 描画オブジェクト単位: MeshFilter 系 → SkinnedMesh 系
                 case ConvertToSkinnedCommand c:
                 {
-                    if (model == null) return;
-                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return; }
 
                     var skBone = model.GetMeshContext(c.BoneMasterIndex);
                     if (skBone == null || skBone.Type != MeshType.Bone)
@@ -2491,7 +2994,7 @@ namespace Poly_Ling.Player
 
                     int skDone = 0;
                     foreach (var r in skResults) if (r.Converted) skDone++;
-                    if (skDone == 0) return;
+                    if (skDone == 0) { Fail("Skinned へ変換できる対象がありません"); return; }
 
                     RecordMeshListSnapshot(skBefore, model,
                         $"スキンド化 → \"{skBone.Name}\" x{skDone}");
@@ -2506,12 +3009,12 @@ namespace Poly_Ling.Player
                 // ── ボーンの左右対応を名前から補完
                 case ResolveMirrorBoneIndexCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     var mbiBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
                     var mbiResult = MirrorBoneIndexResolver.Resolve(model);
-                    if (mbiResult.Resolved == 0) { _notifyPanels(ChangeKind.Attributes); return; }
+                    if (mbiResult.Resolved == 0) { _notifyPanels(ChangeKind.Attributes); Fail("対応するミラー側ボーンが見つかりません"); return; }
 
                     RecordMeshListSnapshot(mbiBefore, model,
                         $"左右ボーン対応の補完 x{mbiResult.Resolved}");
@@ -2523,19 +3026,30 @@ namespace Poly_Ling.Player
                 // ── MediaPipe フェイス変形
                 case MediaPipeFaceDeformCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var mpSrcMc = model.GetMeshContext(c.SourceMasterIndex);
                     var srcMesh = mpSrcMc?.MeshObject;
-                    if (srcMesh == null) return;
+                    if (srcMesh == null) { Fail("変形元のメッシュがありません"); return; }
+
+                    // 3 本とも読み込む前に関門を通す。
+                    if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                            c.BeforePath, out string mpBeforePath, out string mpSbReason))
+                    { Fail($"BeforePath: {mpSbReason}"); return; }
+                    if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                            c.AfterPath, out string mpAfterPath, out mpSbReason))
+                    { Fail($"AfterPath: {mpSbReason}"); return; }
+                    if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                            c.TrianglesPath, out string mpTriPath, out mpSbReason))
+                    { Fail($"TrianglesPath: {mpSbReason}"); return; }
 
                     try
                     {
                         var mpBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
-                        var beforeLM  = Poly_Ling.Tools.MediaPipe.MediaPipeFaceDeformer.LoadLandmarks(c.BeforePath);
-                        var afterLM   = Poly_Ling.Tools.MediaPipe.MediaPipeFaceDeformer.LoadLandmarks(c.AfterPath);
+                        var beforeLM  = Poly_Ling.Tools.MediaPipe.MediaPipeFaceDeformer.LoadLandmarks(mpBeforePath);
+                        var afterLM   = Poly_Ling.Tools.MediaPipe.MediaPipeFaceDeformer.LoadLandmarks(mpAfterPath);
                         var triangles = Poly_Ling.Tools.MediaPipe.MediaPipeFaceDeformer.ParseTrianglesJson(
-                            System.IO.File.ReadAllText(c.TrianglesPath));
+                            System.IO.File.ReadAllText(mpTriPath));
 
                         int vertexCount = srcMesh.VertexCount;
                         var positions   = new Vector3[vertexCount];
@@ -2580,7 +3094,7 @@ namespace Poly_Ling.Player
                     }
                     catch (Exception ex)
                     {
-                        UnityEngine.Debug.LogError($"[MediaPipeFaceDeformCommand] {ex.Message}");
+                        Fail($"MediaPipe 変形に失敗しました: {ex.Message}");
                     }
                     return;
                 }
@@ -2588,9 +3102,9 @@ namespace Poly_Ling.Player
                 // ── Quad減面
                 case QuadDecimateCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var qdSrcMc = model.GetMeshContext(c.SourceMasterIndex);
-                    if (qdSrcMc?.MeshObject == null) return;
+                    if (qdSrcMc?.MeshObject == null) { Fail("対象メッシュがありません"); return; }
 
                     var qdBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
@@ -2604,7 +3118,7 @@ namespace Poly_Ling.Player
                     };
                     var result = Poly_Ling.Tools.Panels.QuadDecimator.QuadPreservingDecimator.Decimate(
                         qdSrcMc.MeshObject, prms, out MeshObject resultMesh);
-                    if (resultMesh == null) return;
+                    if (resultMesh == null) { Fail("四角形化に失敗しました"); return; }
 
                     resultMesh.Name = qdSrcMc.MeshObject.Name + "_decimated";
                     var qdNewMc = new MeshContext
@@ -2641,7 +3155,7 @@ namespace Poly_Ling.Player
                 // ── Mirror Bake
                 case BakeMirrorCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var srcMc = model.GetMeshContext(c.SourceMasterIndex);
                     if (srcMc?.MeshObject == null)
                     {
@@ -2748,9 +3262,9 @@ namespace Poly_Ling.Player
                 // ── Mirror 実体化の解除（半身へ戻す）
                 case UnbakeMirrorCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var ubMc = model.GetMeshContext(c.SourceMasterIndex);
-                    if (ubMc?.MeshObject == null) return;
+                    if (ubMc?.MeshObject == null) { Fail("対象メッシュがありません"); return; }
 
                     var ubMo = ubMc.MeshObject;
                     var ubState = ubMo.MirrorBakeState;
@@ -2827,7 +3341,7 @@ namespace Poly_Ling.Player
                 // ── Humanoidマッピング適用
                 case ApplyHumanoidMappingCommand c:
                 {
-                    if (model == null || c.Mapping == null) return;
+                    if (model == null || c.Mapping == null) { Fail("Mapping が空です"); return; }
                     _undoController?.SetModelContext(model);
                     var hmBefore = model.HumanoidMapping.Clone();
                     model.HumanoidMapping.CopyFrom(c.Mapping);
@@ -2850,7 +3364,7 @@ namespace Poly_Ling.Player
                 // ── Humanoidマッピングクリア
                 case ClearHumanoidMappingCommand _:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     _undoController?.SetModelContext(model);
                     var hmcBefore = model.HumanoidMapping.Clone();
                     model.HumanoidMapping.ClearAll();
@@ -2870,13 +3384,253 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── マッスル可動域を書き込む
+                //   角度はコマンドが度、格納がラジアン。変換はここで行う
+                //   （SetHumanLimitCommand の「単位は度」を参照）。
+                case SetHumanLimitCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    // 下限が上限を超えていたら黙って入れ替えない。取り違えを隠すため。
+                    for (int axis = 0; axis < 3; axis++)
+                    {
+                        if (c.MinDegrees[axis] > c.MaxDegrees[axis])
+                        {
+                            Fail($"可動域の下限が上限を超えています（軸 {axis}: "
+                                 + $"{c.MinDegrees[axis]} > {c.MaxDegrees[axis]}）");
+                            return;
+                        }
+                    }
+
+                    var hlTargets = new List<int>(c.MasterIndices);
+                    _undoController?.SetModelContext(model);
+                    var hlBefore = CaptureHumanLimit(model, hlTargets);
+
+                    int hlDone = HumanLimitOps.SetLimit(
+                        model, hlTargets,
+                        c.MinDegrees    * Mathf.Deg2Rad,
+                        c.MaxDegrees    * Mathf.Deg2Rad,
+                        c.CenterDegrees * Mathf.Deg2Rad,
+                        c.AxisLength);
+
+                    if (hlDone == 0)
+                    { Fail("可動域を付けられる対象がありません（ボーンのみ）"); return; }
+
+                    RecordHumanLimitChange(model, hlTargets, hlBefore, $"マッスル可動域 x{hlDone}");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── マッスル可動域を外す（Unity 既定へ戻す）
+                case ClearHumanLimitCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    var hlcTargets = new List<int>(c.MasterIndices);
+                    _undoController?.SetModelContext(model);
+                    var hlcBefore = CaptureHumanLimit(model, hlcTargets);
+
+                    int hlcDone = HumanLimitOps.ClearLimit(model, hlcTargets);
+                    if (hlcDone == 0) { Fail("可動域を持つボーンがありません"); return; }
+
+                    RecordHumanLimitChange(model, hlcTargets, hlcBefore, $"マッスル可動域の解除 x{hlcDone}");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── VRM メタ情報を書き込む
+                case SetVrmMetaCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var vmBefore = VrmModelSettingsSnapshot.Capture(model);
+
+                    var meta = new VrmMetaData
+                    {
+                        Name                 = c.Name ?? "",
+                        Version              = c.Version ?? "",
+                        Authors              = new List<string>(c.Authors ?? Array.Empty<string>()),
+                        CopyrightInformation = c.CopyrightInformation ?? "",
+                        ContactInformation   = c.ContactInformation ?? "",
+                        References           = new List<string>(c.References ?? Array.Empty<string>()),
+                        ThirdPartyLicenses   = c.ThirdPartyLicenses ?? "",
+                        ThumbnailPath        = c.ThumbnailPath ?? "",
+
+                        AvatarPermission          = ModelSerializer.ToVrmAvatarPermission(c.AvatarPermission),
+                        ViolentUsage              = c.ViolentUsage,
+                        SexualUsage               = c.SexualUsage,
+                        CommercialUsage           = ModelSerializer.ToVrmCommercialUsage(c.CommercialUsage),
+                        PoliticalOrReligiousUsage = c.PoliticalOrReligiousUsage,
+                        AntisocialOrHateUsage     = c.AntisocialOrHateUsage,
+
+                        CreditNotation  = ModelSerializer.ToVrmCreditNotation(c.CreditNotation),
+                        Redistribution  = c.Redistribution,
+                        Modification    = ModelSerializer.ToVrmModification(c.Modification),
+                        OtherLicenseUrl = c.OtherLicenseUrl ?? "",
+                    };
+
+                    if (!VrmSettingsOps.SetMeta(model, meta))
+                    { Fail("VRM メタ情報を書き込めませんでした"); return; }
+
+                    RecordVrmModelSettings(vmBefore, model, "VRM メタ情報");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── VRM メタ情報を未設定へ戻す
+                case ClearVrmMetaCommand _:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var vmcBefore = VrmModelSettingsSnapshot.Capture(model);
+
+                    if (!VrmSettingsOps.ClearMeta(model))
+                    { Fail("VRM メタ情報は設定されていません"); return; }
+
+                    RecordVrmModelSettings(vmcBefore, model, "VRM メタ情報の解除");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── VRM 視線設定を書き込む
+                case SetVrmLookAtCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var vlBefore = VrmModelSettingsSnapshot.Capture(model);
+
+                    var lookAt = new VrmLookAtData
+                    {
+                        OffsetFromHead  = c.OffsetFromHead,
+                        LookAtType      = (c.LookAtType == 1) ? VrmLookAtType.Expression : VrmLookAtType.Bone,
+                        HorizontalInner = new VrmLookAtRangeMap(c.HorizontalInner.x, c.HorizontalInner.y),
+                        HorizontalOuter = new VrmLookAtRangeMap(c.HorizontalOuter.x, c.HorizontalOuter.y),
+                        VerticalDown    = new VrmLookAtRangeMap(c.VerticalDown.x,    c.VerticalDown.y),
+                        VerticalUp      = new VrmLookAtRangeMap(c.VerticalUp.x,      c.VerticalUp.y),
+                    };
+
+                    if (!VrmSettingsOps.SetLookAt(model, lookAt))
+                    { Fail("VRM 視線設定を書き込めませんでした"); return; }
+
+                    RecordVrmModelSettings(vlBefore, model, "VRM 視線設定");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── VRM 視線設定を未設定へ戻す
+                case ClearVrmLookAtCommand _:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var vlcBefore = VrmModelSettingsSnapshot.Capture(model);
+
+                    if (!VrmSettingsOps.ClearLookAt(model))
+                    { Fail("VRM 視線設定は設定されていません"); return; }
+
+                    RecordVrmModelSettings(vlcBefore, model, "VRM 視線設定の解除");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── 一人称カメラでの扱いを決める
+                case SetVrmFirstPersonCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    var fpTargets = new List<int>(c.MasterIndices);
+                    var fpType    = ModelSerializer.ToVrmFirstPersonType(c.FirstPersonType);
+
+                    _undoController?.SetModelContext(model);
+                    var fpBefore = CaptureVrmFirstPerson(model, fpTargets);
+
+                    int fpDone = VrmSettingsOps.SetFirstPerson(model, fpTargets, fpType);
+                    if (fpDone == 0)
+                    { Fail("一人称の指定を持てる対象がありません（描画オブジェクトのみ）"); return; }
+
+                    RecordVrmFirstPersonChange(model, fpTargets, fpBefore, $"一人称の扱い x{fpDone}");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── Avatar リターゲット設定を書き込む
+                case SetAvatarRetargetCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var arBefore = AvatarRetargetSnapshot.Capture(model);
+
+                    var data = new AvatarRetargetData
+                    {
+                        UpperArmTwist     = c.UpperArmTwist,
+                        LowerArmTwist     = c.LowerArmTwist,
+                        UpperLegTwist     = c.UpperLegTwist,
+                        LowerLegTwist     = c.LowerLegTwist,
+                        ArmStretch        = c.ArmStretch,
+                        LegStretch        = c.LegStretch,
+                        FeetSpacing       = c.FeetSpacing,
+                        HasTranslationDoF = c.HasTranslationDoF,
+                    };
+
+                    if (!AvatarRetargetOps.SetRetarget(model, data))
+                    { Fail("Avatar リターゲット設定を書き込めませんでした"); return; }
+
+                    RecordAvatarRetarget(arBefore, model, "Avatar リターゲット設定");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── Avatar リターゲット設定を未設定へ戻す
+                case ClearAvatarRetargetCommand _:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var arcBefore = AvatarRetargetSnapshot.Capture(model);
+
+                    if (!AvatarRetargetOps.ClearRetarget(model))
+                    { Fail("Avatar リターゲット設定は設定されていません"); return; }
+
+                    RecordAvatarRetarget(arcBefore, model, "Avatar リターゲット設定の解除");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
                 // ── スプリングボーン検証用ダミー装備の生成（システムデバッグ）
                 //   揺れデータのオーサリング UI が無いので、検証用に生成する。
                 //   トポロジが変わるので MeshFilterToSkinnedRecord で丸ごと記録する
                 //   （AddMeshCommand と同じ扱い）。
                 case BuildSpringBoneTestRigCommand sbtCmd:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     _undoController?.SetModelContext(model);
                     var sbtBefore = MeshFilterToSkinnedRecord.CaptureList(model);
@@ -2927,12 +3681,481 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ================================================================
+                // 揺れもの（VRM SpringBone）のオーサリング
+                // ================================================================
+                //
+                // 実処理は Core/Ops/SpringBoneOps.cs。ここは Undo 記録と通知だけを持つ。
+                // 付帯先はボーンに限らない（MeshObject.cs の SpringBone 節）。
+
+                // ── 評価設定（モデル全体で 1 組）
+                case SetSpringBoneSettingsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var sbsBefore = SpringBoneModelSettingsSnapshot.Capture(model);
+
+                    model.SpringBoneFixedDeltaTime = Mathf.Max(0f, c.FixedDeltaTime);
+                    model.SpringBoneWarmupFrames   = Mathf.Max(0, c.WarmupFrames);
+
+                    RecordSpringBoneModelSettings(sbsBefore, model, "揺れの評価設定");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── コライダーグループを足す
+                case AddSpringBoneColliderGroupCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var sbgBefore = SpringBoneModelSettingsSnapshot.Capture(model);
+
+                    int added = SpringBoneOps.EnsureGroup(model, c.GroupName);
+                    if (added < 0) { Fail("コライダーグループを足せませんでした"); return; }
+
+                    RecordSpringBoneModelSettings(sbgBefore, model, "コライダーグループの追加");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── コライダーグループの名前を変える
+                case RenameSpringBoneColliderGroupCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var sbrBefore = SpringBoneModelSettingsSnapshot.Capture(model);
+
+                    if (!SpringBoneOps.RenameGroup(model, c.GroupIndex, c.NewName))
+                    {
+                        Fail("コライダーグループの名前を変えられませんでした");
+                        return;
+                    }
+
+                    RecordSpringBoneModelSettings(sbrBefore, model, "コライダーグループの名前変更");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── コライダーグループを消す
+                //   参照索引の詰め直しを伴うので、モデル側と付帯側を
+                //   同じ UndoGroup に積む（SpringBoneUndoRecords.cs の指示）。
+                case DeleteSpringBoneColliderGroupCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+
+                    var sbdAll     = AllIndices(model);
+                    var sbdBeforeN = CaptureSpringBone(model, sbdAll);
+                    var sbdBeforeM = SpringBoneModelSettingsSnapshot.Capture(model);
+
+                    if (!SpringBoneOps.DeleteGroup(model, c.GroupIndex))
+                    {
+                        Fail("コライダーグループを消せませんでした");
+                        return;
+                    }
+
+                    if (_undoController != null)
+                    {
+                        _undoController.MeshListStack.BeginGroup("コライダーグループの削除");
+                        RecordSpringBoneModelSettings(sbdBeforeM, model, "コライダーグループの削除");
+                        RecordSpringBoneChange(model, sbdAll, sbdBeforeN, "参照索引の詰め直し");
+                        _undoController.MeshListStack.EndGroup();
+                    }
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── チェーンの起点にする
+                case SetSpringBoneChainRootCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    var sbcTargets = new List<int> { c.MasterIndex };
+                    _undoController?.SetModelContext(model);
+                    var sbcBefore = CaptureSpringBone(model, sbcTargets);
+
+                    if (!SpringBoneOps.SetChainRoot(
+                            model, c.MasterIndex, c.ChainName, c.CenterBoneName,
+                            c.ColliderGroupIndices, out string sbcReason))
+                    {
+                        Fail(sbcReason);
+                        return;
+                    }
+
+                    RecordSpringBoneChange(model, sbcTargets, sbcBefore, "揺れチェーンの起点");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── チェーンの起点指定を外す
+                case ClearSpringBoneChainRootCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    var sbxTargets = new List<int>(c.MasterIndices);
+                    _undoController?.SetModelContext(model);
+                    var sbxBefore = CaptureSpringBone(model, sbxTargets);
+
+                    int sbxDone = SpringBoneOps.ClearChainRoot(model, sbxTargets);
+                    if (sbxDone == 0) { Fail("起点になっているノードがありません"); return; }
+
+                    RecordSpringBoneChange(model, sbxTargets, sbxBefore, "揺れチェーンの起点解除");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── ジョイントを付ける
+                case SetSpringBoneJointCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    var sbjTargets = new List<int>(c.MasterIndices);
+                    _undoController?.SetModelContext(model);
+                    var sbjBefore = CaptureSpringBone(model, sbjTargets);
+
+                    int sbjDone = SpringBoneOps.SetJoint(
+                        model, sbjTargets,
+                        c.HitRadius, c.StiffnessForce, c.GravityPower, c.GravityDir, c.DragForce,
+                        c.AngleLimitType, Quaternion.Euler(c.LimitRotationEuler),
+                        c.Pitch, c.Yaw);
+
+                    if (sbjDone == 0)
+                    {
+                        Fail("揺れジョイントを付けられる対象がありません"
+                             + "（ボーンか非スキンドの描画オブジェクトのみ）");
+                        return;
+                    }
+
+                    RecordSpringBoneChange(model, sbjTargets, sbjBefore, $"揺れジョイント x{sbjDone}");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── ジョイントを外す
+                case ClearSpringBoneJointCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    var sbkTargets = new List<int>(c.MasterIndices);
+                    _undoController?.SetModelContext(model);
+                    var sbkBefore = CaptureSpringBone(model, sbkTargets);
+
+                    int sbkDone = SpringBoneOps.ClearJoint(model, sbkTargets);
+                    if (sbkDone == 0) { Fail("揺れジョイントを持つノードがありません"); return; }
+
+                    RecordSpringBoneChange(model, sbkTargets, sbkBefore, $"揺れジョイントの解除 x{sbkDone}");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── 末端ボーンを足す
+                //   ボーンが増えるのでリスト構造の変更として記録する。
+                case AddSpringBoneTailBoneCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var sbtlBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    int sbtlDone = 0;
+                    string sbtlLastReason = "";
+
+                    // 索引の大きい順に処理する。追加は末尾に積まれるので
+                    // 途中で既存の索引はずれないが、対象の重複だけは避ける。
+                    var sbtlTargets = new List<int>(new HashSet<int>(c.MasterIndices));
+                    sbtlTargets.Sort();
+
+                    foreach (int ti in sbtlTargets)
+                    {
+                        int made = SpringBoneOps.AddTailBone(
+                            model, ti, c.TailLength, c.NameSuffix, c.AddJoint, out string r);
+                        if (made >= 0) sbtlDone++;
+                        else if (!string.IsNullOrEmpty(r)) sbtlLastReason = r;
+                    }
+
+                    if (sbtlDone == 0)
+                    {
+                        Fail(string.IsNullOrEmpty(sbtlLastReason)
+                            ? "末端ボーンを足せる対象がありません"
+                            : sbtlLastReason);
+                        return;
+                    }
+
+                    model.OnListChanged?.Invoke();
+                    RecordMeshListSnapshot(sbtlBefore, model, $"末端ボーンの追加 x{sbtlDone}");
+
+                    model.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
+                // ── ボーンの親を付け替える
+                case SetBoneParentCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var bpBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    int bpDone = 0;
+                    foreach (int i in c.MasterIndices)
+                    {
+                        if (i < 0 || i >= model.MeshContextCount) continue;
+                        var mc = model.GetMeshContext(i);
+                        if (mc == null || mc.Type != MeshType.Bone) continue;
+                        if (i == c.ParentMasterIndex) continue;
+
+                        // ワールド位置を保つ。親のワールド行列の逆を掛けて
+                        // 新しい親から見たローカル位置に置き直す。
+                        Vector3 world = new Vector3(
+                            mc.WorldMatrix.m03, mc.WorldMatrix.m13, mc.WorldMatrix.m23);
+
+                        Vector3 parentWorld = Vector3.zero;
+                        if (c.ParentMasterIndex >= 0 && c.ParentMasterIndex < model.MeshContextCount)
+                        {
+                            var pmc = model.GetMeshContext(c.ParentMasterIndex);
+                            if (pmc != null)
+                                parentWorld = new Vector3(
+                                    pmc.WorldMatrix.m03, pmc.WorldMatrix.m13, pmc.WorldMatrix.m23);
+                        }
+
+                        mc.HierarchyParentIndex = c.ParentMasterIndex;
+                        if (mc.MeshObject != null)
+                            mc.MeshObject.HierarchyParentIndex = c.ParentMasterIndex;
+
+                        if (mc.BoneTransform != null)
+                            mc.BoneTransform.Position = world - parentWorld;
+
+                        bpDone++;
+                    }
+
+                    if (bpDone == 0) { Fail("親を変えられるボーンがありません"); return; }
+
+                    model.ComputeWorldMatrices();
+                    for (int k = 0; k < c.MasterIndices.Length; k++)
+                    {
+                        int i = c.MasterIndices[k];
+                        if (i < 0 || i >= model.MeshContextCount) continue;
+                        var mc = model.GetMeshContext(i);
+                        if (mc != null) mc.BindPose = mc.WorldMatrix.inverse;
+                    }
+
+                    model.OnListChanged?.Invoke();
+                    RecordMeshListSnapshot(bpBefore, model, $"ボーンの親を変える x{bpDone}");
+
+                    model.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
+                // ── 揺れものの当たり判定を足す
+                case AddSpringBoneColliderCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (!SpringBoneOps.IsCarrier(model, c.MasterIndex))
+                    { Fail("当たり判定を付けられないオブジェクトです"); return; }
+
+                    var scTargets = new List<int> { c.MasterIndex };
+                    _undoController?.SetModelContext(model);
+                    var scBefore = CaptureSpringBone(model, scTargets);
+
+                    var scMo = model.GetMeshContext(c.MasterIndex).MeshObject;
+                    if (scMo.SpringBoneColliders == null)
+                        scMo.SpringBoneColliders = new List<SpringBoneColliderData>();
+
+                    var scGroups = new List<int>();
+                    int scGroupCount = model.SpringBoneColliderGroupNames?.Count ?? 0;
+                    if (c.GroupIndices != null)
+                        foreach (int g in c.GroupIndices)
+                            if (g >= 0 && g < scGroupCount && !scGroups.Contains(g)) scGroups.Add(g);
+
+                    scMo.SpringBoneColliders.Add(new SpringBoneColliderData
+                    {
+                        Shape                 = c.Shape,
+                        Offset                = c.Offset,
+                        Radius                = Mathf.Max(0f, c.Radius),
+                        Tail                  = c.Tail,
+                        Normal                = c.Normal,
+                        SpringBoneGroupIndices = scGroups,
+                    });
+
+                    RecordSpringBoneChange(model, scTargets, scBefore, "当たり判定の追加");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── 当たり判定を書き換える
+                case UpdateSpringBoneColliderCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndex < 0 || c.MasterIndex >= model.MeshContextCount)
+                    { Fail("対象のノードがありません"); return; }
+
+                    var suMo = model.GetMeshContext(c.MasterIndex)?.MeshObject;
+                    var suList = suMo?.SpringBoneColliders;
+                    if (suList == null || c.ColliderIndex < 0 || c.ColliderIndex >= suList.Count)
+                    { Fail("その番号の当たり判定がありません"); return; }
+
+                    var suTargets = new List<int> { c.MasterIndex };
+                    _undoController?.SetModelContext(model);
+                    var suBefore = CaptureSpringBone(model, suTargets);
+
+                    var suGroups = new List<int>();
+                    int suGroupCount = model.SpringBoneColliderGroupNames?.Count ?? 0;
+                    if (c.GroupIndices != null)
+                        foreach (int g in c.GroupIndices)
+                            if (g >= 0 && g < suGroupCount && !suGroups.Contains(g)) suGroups.Add(g);
+
+                    var suTarget = suList[c.ColliderIndex];
+                    suTarget.Shape                  = c.Shape;
+                    suTarget.Offset                 = c.Offset;
+                    suTarget.Radius                 = Mathf.Max(0f, c.Radius);
+                    suTarget.Tail                   = c.Tail;
+                    suTarget.Normal                 = c.Normal;
+                    suTarget.SpringBoneGroupIndices = suGroups;
+
+                    RecordSpringBoneChange(model, suTargets, suBefore, "当たり判定の変更");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── 当たり判定を消す
+                //   同じボーンの後ろの当たり判定は 1 つずつ前へ詰まる。
+                //   まとまり（グループ）側は名前しか持たないので触らない。
+                case DeleteSpringBoneColliderCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndex < 0 || c.MasterIndex >= model.MeshContextCount)
+                    { Fail("対象のノードがありません"); return; }
+
+                    var sdMo = model.GetMeshContext(c.MasterIndex)?.MeshObject;
+                    var sdList = sdMo?.SpringBoneColliders;
+                    if (sdList == null || c.ColliderIndex < 0 || c.ColliderIndex >= sdList.Count)
+                    { Fail("その番号の当たり判定がありません"); return; }
+
+                    var sdTargets = new List<int> { c.MasterIndex };
+                    _undoController?.SetModelContext(model);
+                    var sdBefore = CaptureSpringBone(model, sdTargets);
+
+                    sdList.RemoveAt(c.ColliderIndex);
+                    if (sdList.Count == 0) sdMo.SpringBoneColliders = null;
+
+                    RecordSpringBoneChange(model, sdTargets, sdBefore, "当たり判定の削除");
+
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── 揺れもの用のボーン鎖を置く
+                //   ボーンが増えるのでリスト構造の変更として記録する。
+                case PlaceSpringBoneChainsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var sbpBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    var sbpResult = Poly_Ling.Tools.SpringBoneRig.SpringBoneChainPlacer.Place(
+                        model, c.Layout, c.AttachMasterIndex, c.NamePrefix,
+                        c.OriginMasterIndex,
+                        c.ChainCount, c.Segments,
+                        c.TopRadius, c.BottomRadius, c.Height, c.StartAngleDeg,
+                        c.Profile, c.AddTailBone, c.TailLength);
+
+                    if (sbpResult.BoneCount == 0)
+                    {
+                        Fail(string.IsNullOrEmpty(sbpResult.Message)
+                            ? "ボーンを作れませんでした"
+                            : sbpResult.Message);
+                        return;
+                    }
+
+                    model.OnListChanged?.Invoke();
+                    RecordMeshListSnapshot(sbpBefore, model, sbpResult.Message);
+
+                    Debug.Log("[PlaceSpringBoneChains] " + sbpResult.Message);
+
+                    model.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
+                // ── 階層を辿ってノード列を選ぶ
+                case SelectBoneChainCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    var sbchain = SpringBoneOps.CollectChain(model, c.RootMasterIndex, c.Walk);
+                    if (sbchain.Count == 0)
+                    {
+                        Fail("起点から辿れるノードがありません"
+                             + "（ボーンか非スキンドの描画オブジェクトのみ）");
+                        return;
+                    }
+
+                    ApplyBoneSelection(project, model, sbchain, c.Additive);
+                    return;
+                }
+
+                // ── 頂点に効いているボーンを選ぶ
+                case SelectBonesByVertexWeightCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0)
+                    { Fail("対象が指定されていません"); return; }
+
+                    var sbw = SpringBoneOps.CollectBonesByVertexWeight(
+                        model, c.MasterIndices, c.MinWeight);
+                    if (sbw.Count == 0) { Fail("ウェイトの掛かったボーンがありません"); return; }
+
+                    ApplyBoneSelection(project, model, sbw, c.Additive);
+                    return;
+                }
+
                 // ── Tポーズ変換
                 case ApplyTPoseCommand _:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var mapping = model.HumanoidMapping;
-                    if (mapping == null || mapping.IsEmpty) return;
+                    if (mapping == null || mapping.IsEmpty) { Fail("ボーン対応表が空です"); return; }
 
                     // SetModelContext（MeshListStack の context を現在のモデルに設定）
                     _undoController?.SetModelContext(model);
@@ -2970,7 +4193,7 @@ namespace Poly_Ling.Player
                 // ── この姿勢で確定（焼き込み）：現在のポーズを頂点へ焼き込み、ベースへリセット
                 case FreezeCurrentPoseCommand _:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     _undoController?.SetModelContext(model);
 
                     var beforeState = new TPoseBackup();
@@ -3022,7 +4245,7 @@ namespace Poly_Ling.Player
                 // ── Tポーズ復元
                 case RestoreTPoseCommand _:
                 {
-                    if (model?.TPoseBackup == null) return;
+                    if (model?.TPoseBackup == null) { Fail("T ポーズの控えがありません"); return; }
                     _undoController?.SetModelContext(model);
 
                     var restoreBefore = new TPoseBackup();
@@ -3057,7 +4280,7 @@ namespace Poly_Ling.Player
                 // ── Tポーズ Bake（Undo不可・バックアップ破棄のみ）
                 case BakeTPoseCommand _:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     model.TPoseBackup = null;
                     model.IsDirty = true;
                     _notifyPanels(ChangeKind.Attributes);
@@ -3067,8 +4290,8 @@ namespace Poly_Ling.Player
                 // ── メッシュマージ
                 case MergeMeshesCommand c:
                 {
-                    if (model == null) return;
-                    if (c.MasterIndices == null || c.MasterIndices.Length < 2) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length < 2) { Fail("結合には対象を 2 個以上指定してください"); return; }
 
                     // 対象 MeshContext を収集
                     var mergeTargets = new System.Collections.Generic.List<MeshContext>();
@@ -3077,10 +4300,10 @@ namespace Poly_Ling.Player
                         var mctx = model.GetMeshContext(mi);
                         if (mctx?.MeshObject != null) mergeTargets.Add(mctx);
                     }
-                    if (mergeTargets.Count < 2) return;
+                    if (mergeTargets.Count < 2) { Fail("結合できる対象が 2 個ありません"); return; }
 
                     var baseCtx = model.GetMeshContext(c.BaseMasterIndex);
-                    if (baseCtx?.MeshObject == null) return;
+                    if (baseCtx?.MeshObject == null) { Fail("基準オブジェクトのメッシュがありません"); return; }
 
                     // 変更前スナップショット（MeshListStack Undo 用）
                     var mergeBefore = MeshFilterToSkinnedRecord.CaptureList(model);
@@ -3214,12 +4437,12 @@ namespace Poly_Ling.Player
                 // ── ブーリアン
                 case BooleanMeshCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     var boolCtxA = model.GetMeshContext(c.AMasterIndex);
                     var boolCtxB = model.GetMeshContext(c.BMasterIndex);
-                    if (boolCtxA?.MeshObject == null || boolCtxB?.MeshObject == null) return;
-                    if (ReferenceEquals(boolCtxA, boolCtxB)) return;
+                    if (boolCtxA?.MeshObject == null || boolCtxB?.MeshObject == null) { Fail("対象メッシュが 2 つ揃っていません"); return; }
+                    if (ReferenceEquals(boolCtxA, boolCtxB)) { Fail("同じオブジェクト同士では計算できません"); return; }
 
                     // 演算そのものは BooleanOps に集約してある。
                     // 演算空間は A のローカル空間で、結果も A の姿勢を引き継ぐ。
@@ -3319,12 +4542,12 @@ namespace Poly_Ling.Player
                 case CreateMorphFromDiffCommand c:
                 {
                     var morphProject = _getProject();
-                    if (morphProject == null) return;
+                    if (morphProject == null) { Fail("no project"); return; }
                     var baseModel  = morphProject.GetModel(c.BaseModelIndex);
                     var morphModel = morphProject.GetModel(c.MorphModelIndex);
-                    if (baseModel == null || morphModel == null) return;
-                    if (c.BaseModelIndex == c.MorphModelIndex) return;
-                    if (baseModel.Count != morphModel.Count) return;
+                    if (baseModel == null || morphModel == null) { Fail("基準モデルかモーフ元モデルがありません"); return; }
+                    if (c.BaseModelIndex == c.MorphModelIndex) { Fail("基準モデルとモーフ元モデルが同じです"); return; }
+                    if (baseModel.Count != morphModel.Count) { Fail("2 つのモデルのオブジェクト数が違います"); return; }
 
                     // Phase 2a-2g-1: 設計 A - baseModel を CurrentModel に切り替えてから処理。
                     // これ以降 GPU は project.CurrentModel = baseModel で EnterTopologyChanged 経由で更新可能。
@@ -3382,7 +4605,7 @@ namespace Poly_Ling.Player
                         }
                     }
 
-                    if (morphCreated == 0) return;
+                    if (morphCreated == 0) { Fail("差分のあるオブジェクトがありません"); return; }
 
                     baseModel.MorphExpressions.Add(expression);
                     baseModel.OnListChanged?.Invoke();
@@ -3416,11 +4639,11 @@ namespace Poly_Ling.Player
                 // ── パーツ選択辞書 ─────────────────────────────────────────────
                 case SavePartsSetCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var psMc = model.ActiveMeshContext;
-                    if (psMc == null) return;
+                    if (psMc == null) { Fail("編集対象メッシュがありません"); return; }
                     var psSel = psMc.Selection;
-                    if (psSel == null || !psSel.HasAnySelection) return;
+                    if (psSel == null || !psSel.HasAnySelection) { Fail("選択がありません"); return; }
                     string psName = string.IsNullOrEmpty(c.SetName)
                         ? psMc.GenerateUniqueSelectionSetName("Selection")
                         : c.SetName;
@@ -3429,6 +4652,10 @@ namespace Poly_Ling.Player
                     var psSnap = psSel.CreateSnapshot();
                     var psSet  = Poly_Ling.Selection.PartsSelectionSet.FromCurrentSelection(
                         psName, psSnap.Vertices, psSnap.Edges, psSnap.Faces, psSnap.Lines, psSnap.Mode);
+
+                    // 索引がずれたときに引き直せるよう、作った時点で識別子を控える。
+                    psSet.CaptureVertexIds(psMc.MeshObject);
+
                     psMc.PartsSelectionSetList.Add(psSet);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
@@ -3448,21 +4675,58 @@ namespace Poly_Ling.Player
 
                 case DeletePartsSetCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var delMc = model.ActiveMeshContext;
                     var delSets = delMc?.PartsSelectionSetList;
-                    if (delSets == null || c.SetIndex < 0 || c.SetIndex >= delSets.Count) return;
+                    if (delSets == null || c.SetIndex < 0 || c.SetIndex >= delSets.Count) { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
                     delSets.RemoveAt(c.SetIndex);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                case CapturePartsSetVertexIdsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    var cvMc   = model.ActiveMeshContext;
+                    var cvSets = cvMc?.PartsSelectionSetList;
+                    if (cvSets == null || c.SetIndex < 0 || c.SetIndex >= cvSets.Count)
+                    { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
+                    if (cvMc.MeshObject == null) { Fail("編集対象メッシュがありません"); return; }
+
+                    int cvCount = cvSets[c.SetIndex].CaptureVertexIds(cvMc.MeshObject);
+                    if (cvCount == 0) { Fail("控える頂点がありません"); return; }
+
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                case ResolvePartsSetByVertexIdCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    var rvMc   = model.ActiveMeshContext;
+                    var rvSets = rvMc?.PartsSelectionSetList;
+                    if (rvSets == null || c.SetIndex < 0 || c.SetIndex >= rvSets.Count)
+                    { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
+                    if (rvMc.MeshObject == null) { Fail("編集対象メッシュがありません"); return; }
+
+                    bool rvDone = rvSets[c.SetIndex].ResolveByVertexId(
+                        rvMc.MeshObject, out int rvResolved, out int rvLost);
+
+                    if (!rvDone)
+                    { Fail("引き当てに使える頂点IDが控えられていません"); return; }
+                    if (rvResolved == 0)
+                    { Fail($"控えた頂点IDが 1 件も見つかりません（見失い {rvLost} 件）"); return; }
+
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
 
                 case RenamePartsSetCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var rnMc   = model.ActiveMeshContext;
                     var rnSets = rnMc?.PartsSelectionSetList;
-                    if (rnSets == null || c.SetIndex < 0 || c.SetIndex >= rnSets.Count) return;
+                    if (rnSets == null || c.SetIndex < 0 || c.SetIndex >= rnSets.Count) { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
                     string rnName = c.NewName;
                     if (rnMc.FindSelectionSetByName(rnName) != null && rnName != rnSets[c.SetIndex].Name)
                         rnName = rnMc.GenerateUniqueSelectionSetName(rnName);
@@ -3474,12 +4738,12 @@ namespace Poly_Ling.Player
                 // ── 法線再計算 除外辞書 ─────────────────────────────────────────
                 case SaveNormalExcludeSetCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var nxMc = model.ActiveMeshContext;
                     var nxMo = nxMc?.MeshObject;
-                    if (nxMo == null) return;
+                    if (nxMo == null) { Fail("編集対象メッシュがありません"); return; }
                     var nxSel = nxMc.Selection;
-                    if (nxSel == null || !nxSel.HasAnySelection) return;
+                    if (nxSel == null || !nxSel.HasAnySelection) { Fail("選択がありません"); return; }
                     if (nxMo.NormalRecalcExcludeList == null)
                         nxMo.NormalRecalcExcludeList = new List<PartsSelectionSet>();
                     string nxName = GenerateUniqueNormalExcludeName(
@@ -3498,9 +4762,9 @@ namespace Poly_Ling.Player
 
                 case DeleteNormalExcludeSetCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var nxdList = model.ActiveMeshContext?.MeshObject?.NormalRecalcExcludeList;
-                    if (nxdList == null || c.SetIndex < 0 || c.SetIndex >= nxdList.Count) return;
+                    if (nxdList == null || c.SetIndex < 0 || c.SetIndex >= nxdList.Count) { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
                     nxdList.RemoveAt(c.SetIndex);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
@@ -3508,11 +4772,11 @@ namespace Poly_Ling.Player
 
                 case RenameNormalExcludeSetCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var nxrMo   = model.ActiveMeshContext?.MeshObject;
                     var nxrList = nxrMo?.NormalRecalcExcludeList;
-                    if (nxrList == null || c.SetIndex < 0 || c.SetIndex >= nxrList.Count) return;
-                    if (string.IsNullOrEmpty(c.NewName)) return;
+                    if (nxrList == null || c.SetIndex < 0 || c.SetIndex >= nxrList.Count) { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
+                    if (string.IsNullOrEmpty(c.NewName)) { Fail("NewName が空です"); return; }
                     string nxrName = c.NewName;
                     if (nxrName != nxrList[c.SetIndex].Name)
                         nxrName = GenerateUniqueNormalExcludeName(nxrMo, nxrName);
@@ -3523,21 +4787,29 @@ namespace Poly_Ling.Player
 
                 case ExportPartsSetsCsvCommand c:
                 {
-                    if (model == null) return;
-                    if (string.IsNullOrEmpty(c.FolderPath)) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (string.IsNullOrEmpty(c.FolderPath)) { Fail("FolderPath が空です"); return; }
+                    // ファイルへ触る前に必ず関門を通す。ここを飛ばすと
+                    // 作業フォルダの外へ書けてしまう。
+                    if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                            c.FolderPath, out string exFolder, out string exSbReason))
+                    { Fail(exSbReason); return; }
                     var exTargets = CollectSelectedMeshContexts(model);
-                    if (exTargets.Count == 0) return;
-                    PartsSetCsvHelper.ExportSetsToFolder(exTargets, c.FolderPath);
+                    if (exTargets.Count == 0) { Fail("書き出す対象がありません"); return; }
+                    PartsSetCsvHelper.ExportSetsToFolder(exTargets, exFolder);
                     return;
                 }
 
                 case ImportPartsSetCsvCommand c:
                 {
-                    if (model == null) return;
-                    if (string.IsNullOrEmpty(c.FolderPath)) return;
+                    if (model == null) { Fail("no current model"); return; }
+                    if (string.IsNullOrEmpty(c.FolderPath)) { Fail("FolderPath が空です"); return; }
+                    if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                            c.FolderPath, out string imFolder, out string imSbReason))
+                    { Fail(imSbReason); return; }
                     var imTargets = c.ByObjectName ? null : CollectSelectedMeshContexts(model);
-                    if (!c.ByObjectName && imTargets.Count == 0) return;
-                    if (PartsSetCsvHelper.ImportSetsFromFolder(model, c.FolderPath, c.ByObjectName, imTargets) > 0)
+                    if (!c.ByObjectName && imTargets.Count == 0) { Fail("読み込む対象がありません"); return; }
+                    if (PartsSetCsvHelper.ImportSetsFromFolder(model, imFolder, c.ByObjectName, imTargets) > 0)
                         _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -3545,9 +4817,9 @@ namespace Poly_Ling.Player
                 // ── 面の表示・非表示 ───────────────────────────────────────────
                 case SetFaceHiddenCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var fhTargets = CollectSelectedMeshContexts(model);
-                    if (fhTargets.Count == 0) return;
+                    if (fhTargets.Count == 0) { Fail("対象がありません"); return; }
 
                     int fhTotal = 0;
                     var fhChanged = new List<MeshContext>();
@@ -3602,9 +4874,9 @@ namespace Poly_Ling.Player
                 // ── 法線編集 ───────────────────────────────────────────────────
                 case NormalEditCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var neTargets = CollectSelectedMeshContexts(model);
-                    if (neTargets.Count == 0) return;
+                    if (neTargets.Count == 0) { Fail("対象がありません"); return; }
 
                     // RecalcByAngle / Break はスロット数が変わり得る。その場合は
                     // Unity Mesh を作り直す必要があるので描画更新の段を分ける。
@@ -3693,9 +4965,9 @@ namespace Poly_Ling.Player
 
                 case RepairVertexIdsCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var idTargets = CollectSelectedMeshContexts(model);
-                    if (idTargets.Count == 0) return;
+                    if (idTargets.Count == 0) { Fail("対象がありません"); return; }
 
                     int totalChanged = 0;
                     foreach (var mc in idTargets)
@@ -3739,7 +5011,7 @@ namespace Poly_Ling.Player
 
                 case AssignPartsIdsCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
 
                     var partsMc = model.GetMeshContext(c.TargetMasterIndex);
                     if (partsMc?.MeshObject == null)
@@ -3828,15 +5100,80 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                case AssignPartsIdsByBoneWeightCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    var bwMc = model.GetMeshContext(c.TargetMasterIndex);
+                    if (bwMc?.MeshObject == null)
+                    {
+                        Debug.LogWarning(
+                            $"[PartsId] 対象メッシュが見つかりません masterIndex={c.TargetMasterIndex}");
+                        LastPartsIdByBoneWeightResult =
+                            PartsIdByBoneWeightResult.Fail("対象メッシュが見つかりません");
+                        return;
+                    }
+                    var bwMo = bwMc.MeshObject;
+
+                    // ボーン索引の定義域はモデルの MeshContextList の長さ
+                    // （MeshObject.cs:123「boneIndex = _meshContextList のインデックス」）。
+                    // 群の番号をボーン索引と衝突しない位置から始めるために渡す。
+                    int boneCount = model.MeshContextList?.Count ?? 0;
+
+                    // Undo は AssignPartsIdsCommand と同じ MeshObjectSnapshot 方式。
+                    // Vertex.Clone() が PartsId / SubId を引き継ぐ（MeshObject.cs:313-314）。
+                    if (_undoController != null)
+                    {
+                        _undoController.SetMeshObject(bwMo, bwMc.UnityMesh);
+                        _undoController.MeshUndoContext.ParentModelContext = model;
+                    }
+                    var bwBefore = _undoController?.CaptureMeshObjectSnapshot();
+
+                    var bwResult = PartsIdByBoneWeightOps.AssignByBoneWeight(bwMo, boneCount);
+
+                    if (!bwResult.Success)
+                    {
+                        Debug.LogWarning($"[PartsId] ボーンウェイト採番: {bwResult.Reason}");
+                        LastPartsIdByBoneWeightResult = bwResult;
+                        _notifyPanels(ChangeKind.Attributes);
+                        return;
+                    }
+
+                    if (_undoController != null && bwBefore != null)
+                    {
+                        var bwAfter = _undoController.CaptureMeshObjectSnapshot();
+                        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                            _undoController, bwBefore, bwAfter, "Assign Parts Ids (BoneWeight)"));
+                    }
+
+                    LastPartsIdByBoneWeightResult = bwResult;
+
+                    // パーツID / サブIDは描画に影響しないので GPU 再構築は不要。
+                    _notifyPanels(ChangeKind.Attributes);
+                    Debug.Log($"[PartsId] ボーンウェイト採番: \"{bwMc.Name}\" {bwResult.Summary}");
+                    return;
+                }
+
+                case SplitObjectByPartsIdCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnSplitObjectByPartsId == null)
+                    { Fail("parts id split handler not wired"); return; }
+
+                    string splitReason = OnSplitObjectByPartsId.Invoke(c);
+                    if (splitReason != null) { Fail(splitReason); return; }
+                    return;
+                }
+
                 case TransferVertexDataCommand c:
                 {
                     var srcModel = project?.GetModel(c.SourceModelIndex);
                     var dstModel = project?.GetModel(c.TargetModelIndex);
-                    if (srcModel == null || dstModel == null) return;
-                    if (c.SourceMeshIndices == null || c.TargetMeshIndices == null) return;
+                    if (srcModel == null || dstModel == null) { Fail("転送元か転送先のモデルがありません"); return; }
+                    if (c.SourceMeshIndices == null || c.TargetMeshIndices == null) { Fail("転送元と転送先を指定してください"); return; }
 
                     int pairCount = Math.Min(c.SourceMeshIndices.Length, c.TargetMeshIndices.Length);
-                    if (pairCount == 0) return;
+                    if (pairCount == 0) { Fail("転送できる組がありません"); return; }
 
                     int totalWritten = 0;
                     var syncedTargets = new List<MeshContext>();
@@ -3929,25 +5266,83 @@ namespace Poly_Ling.Player
 
                 case SaveMeshSelSetsCsvCommand c:
                 {
-                    if (model == null) return;
-                    if (string.IsNullOrEmpty(c.FilePath)) return;
-                    MeshSelSetCsvHelper.SaveToFile(model, c.FilePath);
+                    if (model == null) { Fail("no current model"); return; }
+                    if (string.IsNullOrEmpty(c.FilePath)) { Fail("FilePath が空です"); return; }
+                    if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                            c.FilePath, out string smsPath, out string smsSbReason))
+                    { Fail(smsSbReason); return; }
+                    MeshSelSetCsvHelper.SaveToFile(model, smsPath);
                     return;
                 }
 
                 case LoadMeshSelSetsCsvCommand c:
                 {
-                    if (model == null) return;
-                    if (string.IsNullOrEmpty(c.FilePath)) return;
-                    if (MeshSelSetCsvHelper.LoadFromFile(model, c.FilePath) > 0)
+                    if (model == null) { Fail("no current model"); return; }
+                    if (string.IsNullOrEmpty(c.FilePath)) { Fail("FilePath が空です"); return; }
+                    if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                            c.FilePath, out string lmsPath, out string lmsSbReason))
+                    { Fail(lmsSbReason); return; }
+                    if (MeshSelSetCsvHelper.LoadFromFile(model, lmsPath) > 0)
                         _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // Fail はコンソールへ出さず（Fail の定義を参照）、Dispatch の戻り値も
+                // DispatchPanelCommand が捨てる。書き出し系はパネル側も
+                // File.Exists でしか成否を見ないため、ここで出さないと理由が
+                // どこにも残らない。ConvertUnityClipToVrmaCommand と同じ形にそろえる。
+                case ExportVrmAnimationCommand c:
+                {
+                    if (model == null)
+                    {
+                        Fail("no current model");
+                        Debug.LogError("[PolyLing] VRMA 書き出し: モデルがありません");
+                        return;
+                    }
+                    if (OnExportVrmAnimation == null)
+                    {
+                        Fail("vrm animation export handler not wired");
+                        Debug.LogError("[PolyLing] VRMA 書き出し: 受け口が配線されていません");
+                        return;
+                    }
+                    string vaReason = OnExportVrmAnimation.Invoke(c);
+                    if (vaReason != null)
+                    {
+                        Fail(vaReason);
+                        Debug.LogError($"[PolyLing] VRMA 書き出しに失敗: {vaReason}");
+                        return;
+                    }
+                    return;
+                }
+
+                case ExportVmdToVrmaCommand c:
+                {
+                    if (model == null)
+                    {
+                        Fail("no current model");
+                        Debug.LogError("[PolyLing] VMD→VRMA: モデルがありません");
+                        return;
+                    }
+                    if (OnExportVmdToVrma == null)
+                    {
+                        Fail("vmd to vrma export handler not wired");
+                        Debug.LogError("[PolyLing] VMD→VRMA: 受け口が配線されていません");
+                        return;
+                    }
+                    string vvReason = OnExportVmdToVrma.Invoke(c);
+                    if (vvReason != null)
+                    {
+                        Fail(vvReason);
+                        Debug.LogError($"[PolyLing] VMD→VRMA 書き出しに失敗: {vvReason}");
+                        return;
+                    }
                     return;
                 }
 
                 // ── メッシュ選択辞書 ───────────────────────────────────────────
                 case SaveSelectionDictionaryCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var sdCategory = c.Category switch
                     {
                         MeshCategory.Bone  => ModelContext.SelectionCategory.Bone,
@@ -3970,9 +5365,9 @@ namespace Poly_Ling.Player
 
                 case ApplySelectionDictionaryCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var sdSets = model.MeshSelectionSets;
-                    if (c.SetIndex < 0 || c.SetIndex >= sdSets.Count) return;
+                    if (c.SetIndex < 0 || c.SetIndex >= sdSets.Count) { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
 
                     // Undo 用：適用前のメッシュ選択を記録
                     var sdOldSel = new System.Collections.Generic.List<int>(model.SelectedDrawableMeshIndices);
@@ -3999,9 +5394,9 @@ namespace Poly_Ling.Player
 
                 case DeleteSelectionDictionaryCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var dsdSets = model.MeshSelectionSets;
-                    if (c.SetIndex < 0 || c.SetIndex >= dsdSets.Count) return;
+                    if (c.SetIndex < 0 || c.SetIndex >= dsdSets.Count) { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
                     dsdSets.RemoveAt(c.SetIndex);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
@@ -4009,9 +5404,9 @@ namespace Poly_Ling.Player
 
                 case RenameSelectionDictionaryCommand c:
                 {
-                    if (model == null) return;
+                    if (model == null) { Fail("no current model"); return; }
                     var rsdSets = model.MeshSelectionSets;
-                    if (c.SetIndex < 0 || c.SetIndex >= rsdSets.Count) return;
+                    if (c.SetIndex < 0 || c.SetIndex >= rsdSets.Count) { Fail($"セット番号 {c.SetIndex} が範囲外です"); return; }
                     string rsdName = c.NewName;
                     if (model.FindMeshSelectionSetByName(rsdName) != null && rsdName != rsdSets[c.SetIndex].Name)
                         rsdName = model.GenerateUniqueMeshSelectionSetName(rsdName);
@@ -4341,6 +5736,233 @@ namespace Poly_Ling.Player
         /// MeshContextList の丸ごとスナップショットで Undo を 1 件記録する。
         /// before は操作前に CaptureList で取っておくこと。
         /// </summary>
+        // ================================================================
+        // 揺れもの（VRM SpringBone）用のヘルパ
+        // ================================================================
+
+        /// <summary>モデルの全索引。グループ削除のように全ノードへ波及する操作で使う。</summary>
+        private static List<int> AllIndices(ModelContext model)
+        {
+            int n = model?.MeshContextCount ?? 0;
+            var list = new List<int>(n);
+            for (int i = 0; i < n; i++) list.Add(i);
+            return list;
+        }
+
+        /// <summary>指定索引の揺れ付帯データを控える。indices と同じ並びで返す。</summary>
+        private static List<SpringBoneDataSnapshot> CaptureSpringBone(
+            ModelContext model, IReadOnlyList<int> indices)
+        {
+            var list = new List<SpringBoneDataSnapshot>(indices?.Count ?? 0);
+            if (model == null || indices == null) return list;
+
+            foreach (int i in indices)
+            {
+                var mc = (i >= 0 && i < model.MeshContextCount) ? model.GetMeshContext(i) : null;
+                list.Add(SpringBoneDataSnapshot.Capture(mc));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 揺れ付帯データの変更を Undo に積む。
+        /// before は CaptureSpringBone の戻り値で、indices と同じ並びであること。
+        /// </summary>
+        private void RecordSpringBoneChange(
+            ModelContext model, IReadOnlyList<int> indices,
+            List<SpringBoneDataSnapshot> before, string desc)
+        {
+            if (_undoController == null || model == null || indices == null || before == null) return;
+
+            var record = new MultiSpringBoneChangeRecord();
+
+            for (int k = 0; k < indices.Count && k < before.Count; k++)
+            {
+                int i = indices[k];
+                if (i < 0 || i >= model.MeshContextCount) continue;
+
+                record.Entries.Add(new MultiSpringBoneChangeRecord.Entry
+                {
+                    MasterIndex = i,
+                    OldSnapshot = before[k],
+                    NewSnapshot = SpringBoneDataSnapshot.Capture(model.GetMeshContext(i)),
+                });
+            }
+
+            if (record.Entries.Count == 0) return;
+
+            PLDiag.UndoRecord("MeshList", desc, record);
+            _undoController.MeshListStack.Record(record, desc);
+            _undoController.FocusMeshList();
+        }
+
+        /// <summary>
+        /// 可動域の変更前スナップショットを取る。
+        /// 並びは indices と 1 対 1。RecordHumanLimitChange へそのまま渡すこと。
+        /// </summary>
+        private static List<HumanLimitSnapshot> CaptureHumanLimit(
+            ModelContext model, IReadOnlyList<int> indices)
+        {
+            var list = new List<HumanLimitSnapshot>(indices?.Count ?? 0);
+            if (model == null || indices == null) return list;
+
+            foreach (int i in indices)
+            {
+                var mc = (i >= 0 && i < model.MeshContextCount) ? model.GetMeshContext(i) : null;
+                list.Add(HumanLimitSnapshot.Capture(mc));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 可動域の変更を Undo に積む。
+        /// before は CaptureHumanLimit の戻り値で、indices と同じ並びであること。
+        /// </summary>
+        private void RecordHumanLimitChange(
+            ModelContext model, IReadOnlyList<int> indices,
+            List<HumanLimitSnapshot> before, string desc)
+        {
+            if (_undoController == null || model == null || indices == null || before == null) return;
+
+            var record = new MultiHumanLimitChangeRecord();
+
+            for (int k = 0; k < indices.Count && k < before.Count; k++)
+            {
+                int i = indices[k];
+                if (i < 0 || i >= model.MeshContextCount) continue;
+
+                record.Entries.Add(new MultiHumanLimitChangeRecord.Entry
+                {
+                    MasterIndex = i,
+                    OldSnapshot = before[k],
+                    NewSnapshot = HumanLimitSnapshot.Capture(model.GetMeshContext(i)),
+                });
+            }
+
+            if (record.Entries.Count == 0) return;
+
+            PLDiag.UndoRecord("MeshList", desc, record);
+            _undoController.MeshListStack.Record(record, desc);
+            _undoController.FocusMeshList();
+        }
+
+        /// <summary>Avatar リターゲット設定の変更を Undo に積む。</summary>
+        private void RecordAvatarRetarget(
+            AvatarRetargetSnapshot before, ModelContext model, string desc)
+        {
+            if (_undoController == null || model == null || before == null) return;
+
+            var record = new AvatarRetargetChangeRecord(
+                before, AvatarRetargetSnapshot.Capture(model));
+
+            PLDiag.UndoRecord("MeshList", desc, record);
+            _undoController.MeshListStack.Record(record, desc);
+            _undoController.FocusMeshList();
+        }
+
+        /// <summary>モデルレベルの VRM 設定（メタ情報・視線）の変更を Undo に積む。</summary>
+        private void RecordVrmModelSettings(
+            VrmModelSettingsSnapshot before, ModelContext model, string desc)
+        {
+            if (_undoController == null || model == null || before == null) return;
+
+            var record = new VrmModelSettingsRecord(
+                before, VrmModelSettingsSnapshot.Capture(model));
+
+            PLDiag.UndoRecord("MeshList", desc, record);
+            _undoController.MeshListStack.Record(record, desc);
+            _undoController.FocusMeshList();
+        }
+
+        /// <summary>
+        /// 一人称指定の変更前の値を取る。並びは indices と 1 対 1。
+        /// </summary>
+        private static List<VrmFirstPersonType> CaptureVrmFirstPerson(
+            ModelContext model, IReadOnlyList<int> indices)
+        {
+            var list = new List<VrmFirstPersonType>(indices?.Count ?? 0);
+            if (model == null || indices == null) return list;
+
+            foreach (int i in indices)
+            {
+                var mo = (i >= 0 && i < model.MeshContextCount)
+                    ? model.GetMeshContext(i)?.MeshObject : null;
+                list.Add(mo?.VrmFirstPerson ?? VrmFirstPersonType.Auto);
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 一人称指定の変更を Undo に積む。
+        /// before は CaptureVrmFirstPerson の戻り値で、indices と同じ並びであること。
+        /// </summary>
+        private void RecordVrmFirstPersonChange(
+            ModelContext model, IReadOnlyList<int> indices,
+            List<VrmFirstPersonType> before, string desc)
+        {
+            if (_undoController == null || model == null || indices == null || before == null) return;
+
+            var record = new MultiVrmFirstPersonChangeRecord();
+
+            for (int k = 0; k < indices.Count && k < before.Count; k++)
+            {
+                int i = indices[k];
+                if (i < 0 || i >= model.MeshContextCount) continue;
+
+                var mo = model.GetMeshContext(i)?.MeshObject;
+                if (mo == null) continue;
+
+                record.Entries.Add(new MultiVrmFirstPersonChangeRecord.Entry
+                {
+                    MasterIndex = i,
+                    OldType     = before[k],
+                    NewType     = mo.VrmFirstPerson,
+                });
+            }
+
+            if (record.Entries.Count == 0) return;
+
+            PLDiag.UndoRecord("MeshList", desc, record);
+            _undoController.MeshListStack.Record(record, desc);
+            _undoController.FocusMeshList();
+        }
+
+        /// <summary>モデルレベルの揺れ設定（グループ名・評価設定）の変更を Undo に積む。</summary>
+        private void RecordSpringBoneModelSettings(
+            SpringBoneModelSettingsSnapshot before, ModelContext model, string desc)
+        {
+            if (_undoController == null || model == null || before == null) return;
+
+            var record = new SpringBoneModelSettingsRecord(
+                before, SpringBoneModelSettingsSnapshot.Capture(model));
+
+            PLDiag.UndoRecord("MeshList", desc, record);
+            _undoController.MeshListStack.Record(record, desc);
+            _undoController.FocusMeshList();
+        }
+
+        /// <summary>
+        /// ボーン選択を差し替える。SelectMeshCommand の Bone 分岐と同じ手順を通す。
+        /// 選択 Undo は 3 カテゴリまとめて CaptureAllSelectedIndices で記録する。
+        /// </summary>
+        private void ApplyBoneSelection(
+            ProjectContext project, ModelContext model, List<int> indices, bool additive)
+        {
+            var oldSelected = model.CaptureAllSelectedIndices();
+
+            if (!additive) model.ClearBoneSelection();
+            foreach (int i in indices) model.AddToBoneSelection(i);
+
+            _viewportManager.EnterSelectionChanged(project);
+
+            var newSelected = model.CaptureAllSelectedIndices();
+            PLDiag.Cmd($"SelectBoneChain old={PLDiag.Ids(oldSelected)} new={PLDiag.Ids(newSelected)}");
+            _undoController?.SetModelContext(model);
+            _undoController?.RecordMeshSelectionChange(oldSelected, newSelected);
+
+            _notifyPanels(ChangeKind.Selection);
+        }
+
         private void RecordMeshListSnapshot(
             List<MeshContext> before, ModelContext model, string desc)
         {
@@ -5085,12 +6707,13 @@ namespace Poly_Ling.Player
         /// </remarks>
         private void PartsSetApply(ModelContext model, int setIndex, bool additive, bool subtract)
         {
-            if (model == null) return;
+            if (model == null) { Fail("no current model"); return; }
             var mc   = model.ActiveMeshContext;
             var sets = mc?.PartsSelectionSetList;
-            if (sets == null || setIndex < 0 || setIndex >= sets.Count) return;
+            if (sets == null || setIndex < 0 || setIndex >= sets.Count)
+            { Fail($"セット番号 {setIndex} が範囲外です"); return; }
             var sel = mc.Selection;
-            if (sel == null) return;
+            if (sel == null) { Fail("編集対象メッシュに選択状態がありません"); return; }
 
             // Undo 用：適用前スナップショット
             SelectionSnapshot oldSnap = sel.CreateSnapshot();
@@ -5179,12 +6802,13 @@ namespace Poly_Ling.Player
         /// </summary>
         private void NormalExcludeSetApply(ModelContext model, int setIndex)
         {
-            if (model == null) return;
+            if (model == null) { Fail("no current model"); return; }
             var mc   = model.ActiveMeshContext;
             var list = mc?.MeshObject?.NormalRecalcExcludeList;
-            if (list == null || setIndex < 0 || setIndex >= list.Count) return;
+            if (list == null || setIndex < 0 || setIndex >= list.Count)
+            { Fail($"セット番号 {setIndex} が範囲外です"); return; }
             var sel = mc.Selection;
-            if (sel == null) return;
+            if (sel == null) { Fail("編集対象メッシュに選択状態がありません"); return; }
 
             SelectionSnapshot oldSnap = sel.CreateSnapshot();
 
@@ -6131,6 +7755,116 @@ namespace Poly_Ling.Player
                 default:
                     return 0;
             }
+        }
+
+        // ================================================================
+        // オブジェクトグループ
+        // ================================================================
+
+        /// <summary>
+        /// 今プロジェクトに居る全オブジェクトの ObjectId を控える。
+        /// 生成の前後で比べて「増えたのはどれか」を出すために使う。
+        /// 「維持する」が立っているときしか呼ばない（全モデル走査のため）。
+        /// </summary>
+        private HashSet<ulong> SnapshotObjectIds()
+        {
+            var set = new HashSet<ulong>();
+            var project = _getProject();
+            if (project == null) return set;
+
+            for (int m = 0; m < project.ModelCount; m++)
+            {
+                var model = project.GetModel(m);
+                if (model?.MeshContextList == null) continue;
+                for (int i = 0; i < model.MeshContextList.Count; i++)
+                {
+                    var mc = model.MeshContextList[i];
+                    if (mc != null && mc.ObjectId != 0UL) set.Add(mc.ObjectId);
+                }
+            }
+            return set;
+        }
+
+        /// <summary>
+        /// 「既存へ追加」のときの出力先索引。新規オブジェクトを作るモードでは -1。
+        /// 追加先が -1（＝選択の先頭）のときも -1 を返し、
+        /// 増えた ObjectId から探す側に任せる。
+        /// </summary>
+        private static int FallbackOutputIndex(CreatePrimitiveMeshCommand c)
+            => (c.Placement.AddMode == Poly_Ling.Player.PrimitiveAddMode.AddToExisting)
+                ? c.Placement.AddTargetIndex
+                : -1;
+
+        /// <summary>
+        /// 実行し終えたコマンドからオブジェクトグループを 1 件作り、モデルへ足す。
+        ///
+        /// 出力先の決め方は 2 通り。
+        ///   ・実行で ObjectId が増えていれば、その中で最も新しいものを出力先にする
+        ///     （ObjectId は単調増加なので最大値が最後に作られたもの）
+        ///   ・増えていなければ fallbackIndex のオブジェクト（既存へ追加・上書きブレンド）
+        ///
+        /// 出力先が決まらないときはグループを作らない。出力先の無いグループは
+        /// 作り直す先が無く、残しても使えないため。
+        /// </summary>
+        private void CaptureObjectGroup(
+            PanelCommand cmd, HashSet<ulong> beforeIds, int fallbackIndex)
+        {
+            var project = _getProject();
+            var model   = project?.CurrentModel;
+            if (project == null || model == null) return;
+
+            ulong outputId = 0UL;
+
+            if (beforeIds != null)
+            {
+                for (int m = 0; m < project.ModelCount; m++)
+                {
+                    var mdl = project.GetModel(m);
+                    if (mdl?.MeshContextList == null) continue;
+                    for (int i = 0; i < mdl.MeshContextList.Count; i++)
+                    {
+                        var mc = mdl.MeshContextList[i];
+                        if (mc == null || mc.ObjectId == 0UL) continue;
+                        if (beforeIds.Contains(mc.ObjectId)) continue;
+                        if (mc.ObjectId > outputId) outputId = mc.ObjectId;
+                    }
+                }
+            }
+
+            if (outputId == 0UL && fallbackIndex >= 0)
+                outputId = model.GetMeshContext(fallbackIndex)?.ObjectId ?? 0UL;
+
+            if (outputId == 0UL)
+            {
+                Debug.LogWarning("[ObjectGroup] 出力先を特定できないためグループを作りませんでした");
+                return;
+            }
+
+            var outCtx = ObjectGroupOps.Resolve(project, outputId);
+            string baseName = !string.IsNullOrEmpty(outCtx?.Name) ? outCtx.Name : "Group";
+
+            var group = ObjectGroupOps.Capture(
+                project, cmd.ModelIndex, cmd, outputId,
+                model.GenerateUniqueObjectGroupName(baseName));
+
+            if (group == null) return;
+
+            RecordObjectGroupUndo(
+                new ObjectGroupChangeRecord
+                {
+                    AddedGroup = group.Clone(),
+                    AddedIndex = model.ObjectGroupCount,
+                },
+                $"オブジェクトグループ追加: {group.Name}");
+
+            model.AddObjectGroup(group);
+        }
+
+        /// <summary>グループ変更を MeshList スタックへ記録する。</summary>
+        private void RecordObjectGroupUndo(ObjectGroupChangeRecord record, string description)
+        {
+            if (_undoController == null || record == null) return;
+            _undoController.MeshListStack.Record(record, description);
         }
 
         private static List<MeshContext> CollectSelectedMeshContexts(ModelContext model)

@@ -106,6 +106,16 @@ namespace Poly_Ling.Tools
         // 見るので、ここを差し替えるだけで 3 つとも同じ集合を対象にできる。
         private HashSet<int> _targetOverride;
 
+        // ドラッグ開始時点の対象集合（補償した子は含まない）。SaveSnapshots で作る。
+        // _beforeSnapshots には MoveWithChildren == false のとき直接の子も混ざるため、
+        // コマンドの MasterIndices にはこちらを使う。
+        private readonly HashSet<int> _dragTargets = new HashSet<int>();
+
+        // リングドラッグの累計角と、そのとき使ったワールド軸。UpdateRingDrag で更新する。
+        // 1 ドラッグ = 1 コマンドにするとき、確定時にこの 2 つがコマンドの値になる。
+        private float   _ringLastAngleDeg;
+        private Vector3 _ringLastAxisWorld;
+
         // 回転ドラッグ用: ドラッグ開始時の状態。
         // 回転はフレーム差分を累積せず「開始状態 + 累計ΔR」で毎フレーム再計算する。
         // (BoneTransform.Rotation はオイラー保持のため、差分を毎フレーム往復させると
@@ -268,6 +278,11 @@ namespace Poly_Ling.Tools
                     // 呼び出し側（PivotOffsetToolHandler.OnMouseUp）が
                     // TryTakeOriginOnlyDrag で結果を取り出してコマンドを送るので、
                     // ここでは確定しない。取り出されなかった場合のみ従来どおり積む。
+                    //
+                    // オブジェクトごと移動・回転も同じ形にしてあるが、そちらは
+                    // TryTake*Drag が _beforeSnapshots を空にするため CommitUndo が
+                    // 先頭で戻る。ガードを足すと、送信口が無いときに Undo が
+                    // 積まれなくなるので足さない。
                     if (!(_settings.OriginOnly && OriginOnlyDragPending))
                         CommitUndo(ctx);
                     handled = true;
@@ -428,6 +443,262 @@ namespace Poly_Ling.Tools
             }
 
             ctx.Repaint?.Invoke();
+            return true;
+        }
+
+        // ================================================================
+        // オブジェクトごと移動・回転（OriginOnly でない通常の ObjectMove）
+        //
+        // 1 ドラッグ = 1 コマンド。ドラッグ中の適用はプレビュー扱いで、
+        // 確定時に TryTake*Drag で開始状態へ戻し、Apply*FromCommand が
+        // マウス経路と同じ SaveSnapshots → Apply → CommitUndo を通す。
+        // ================================================================
+
+        /// <summary>
+        /// 開始状態を書き戻す。移動・回転どちらのドラッグでも材料は同じで、
+        /// SaveSnapshots が保存した BoneTransform と BindPose を戻すだけ。
+        /// 復元用の経路を別に作らない。
+        /// </summary>
+        private void RestoreDragStart(ModelContext model)
+        {
+            foreach (var kv in _beforeSnapshots)
+            {
+                var mc = model.GetMeshContext(kv.Key);
+                if (mc?.BoneTransform == null) continue;
+                mc.BoneTransform.ApplySnapshot(kv.Value);
+            }
+
+            // バインド連動（A）はドラッグ中に BindPose を書き換えるので、こちらも戻す。
+            foreach (var kv in _rebindStartBindPose)
+            {
+                var mc = model.GetMeshContext(kv.Key);
+                if (mc == null) continue;
+                mc.BindPose = kv.Value;
+            }
+
+            model.ComputeWorldMatrices();
+        }
+
+        /// <summary>ドラッグ開始状態を捨てる。TryTake*Drag の後始末。</summary>
+        private void ClearDragStart()
+        {
+            _beforeSnapshots.Clear();
+            _rebindStartSkinning.Clear();
+            _rebindStartBindPose.Clear();
+            _originStartPositions.Clear();
+            _originStartWorld.Clear();
+            _originWorldTotal = Vector3.zero;
+            _dragTargets.Clear();
+            _freezeBefore = null;
+        }
+
+        /// <summary>
+        /// 取り出せる「オブジェクトごと移動」のドラッグ結果があるか。
+        /// TryTakeObjectMoveDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool ObjectMoveDragPending
+            => !_settings.OriginOnly
+            && _dragTargets.Count > 0
+            && _beforeSnapshots.Count > 0
+            && _originWorldTotal.sqrMagnitude >= 1e-10f;
+
+        /// <summary>
+        /// 「オブジェクトごと移動」のドラッグ結果を取り出し、開始状態へ戻す。
+        /// ObjectMoveToolHandler が MoveObjectsCommand を送り、実際の移動と
+        /// Undo 記録は ApplyMoveFromCommand が行う。
+        /// TryTakeOriginOnlyDrag と同じ形。
+        /// </summary>
+        public bool TryTakeObjectMoveDrag(
+            ToolContext ctx, out int[] masterIndices, out Vector3 worldTotal)
+        {
+            masterIndices = System.Array.Empty<int>();
+            worldTotal    = Vector3.zero;
+
+            if (!ObjectMoveDragPending) return false;
+
+            var model = ctx?.Model;
+            if (model == null) return false;
+
+            worldTotal    = _originWorldTotal;
+            masterIndices = new List<int>(_dragTargets).ToArray();
+
+            RestoreDragStart(model);
+            ClearDragStart();
+
+            ctx.SyncBoneTransforms?.Invoke();
+            ctx.ExitTransformDragging?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 取り出せる回転リングのドラッグ結果があるか。
+        /// TryTakeObjectRotateDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool ObjectRotateDragPending
+            => _rotStartLocalRot.Count > 0
+            && _beforeSnapshots.Count > 0
+            && Mathf.Abs(_ringLastAngleDeg) > 1e-4f
+            && _ringLastAxisWorld.sqrMagnitude > 1e-8f;
+
+        /// <summary>
+        /// 回転リングのドラッグ結果を取り出し、開始状態へ戻す。
+        ///
+        /// 【ピボット】
+        ///   ドラッグ開始時の _rotPivotWorld（= _axisGizmo.Center = 対象の重心）を
+        ///   そのまま返す。受け口が計算し直すとドラッグ後の重心になってしまい、
+        ///   同じ結果にならない。
+        /// </summary>
+        public bool TryTakeObjectRotateDrag(
+            ToolContext ctx,
+            out int[] masterIndices, out Vector3 pivotWorld,
+            out Vector3 axisWorld, out float angleDeg)
+        {
+            masterIndices = System.Array.Empty<int>();
+            pivotWorld    = Vector3.zero;
+            axisWorld     = Vector3.up;
+            angleDeg      = 0f;
+
+            if (!ObjectRotateDragPending) return false;
+
+            var model = ctx?.Model;
+            if (model == null) return false;
+
+            pivotWorld    = _rotPivotWorld;
+            axisWorld     = _ringLastAxisWorld;
+            angleDeg      = _ringLastAngleDeg;
+            masterIndices = new List<int>(_dragTargets).ToArray();
+
+            RestoreDragStart(model);
+            ClearDragStart();
+            ClearRotationStart();
+            _ringLastAngleDeg = 0f;
+
+            ctx.SyncBoneTransforms?.Invoke();
+            ctx.ExitTransformDragging?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 「オブジェクトごと移動」をコマンドから実行する。
+        /// ApplyOriginOnlyFromCommand と同じ形で、OriginOnly でないことだけが違う。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ApplyMoveFromCommand(
+            ToolContext ctx, IReadOnlyList<int> masterIndices, Vector3 worldDelta, out string reason)
+        {
+            reason = null;
+
+            if (_settings.OriginOnly)
+            { reason = "このツールは原点だけ移動の設定です。MovePivotCommand を使ってください"; return false; }
+
+            if (!TryResolveTargets(ctx, masterIndices, out var targets, out reason))
+                return false;
+
+            if (worldDelta.sqrMagnitude < 1e-10f)
+            { reason = "移動量が 0 です"; return false; }
+
+            _targetOverride = targets;
+            try
+            {
+                ctx.EnterTransformDragging?.Invoke();
+                SaveSnapshots(ctx);
+                ApplyWorldDelta(worldDelta, ctx);
+                CommitUndo(ctx);
+            }
+            finally
+            {
+                _targetOverride = null;
+            }
+
+            ctx.Repaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// ピボット周りの回転をコマンドから実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   TryBeginRingDrag（SaveRotationStart → SaveSnapshots）と
+        ///   UpdateRingDrag（ApplyWorldRotation）と OnMouseUp（CommitUndo）を
+        ///   同じ順序で呼ぶ。非一様スケールの祖先を持つ要素の除外は
+        ///   SaveRotationStart の中にあるので、ここで書き足すものは無い。
+        ///
+        /// 【ピボット】
+        ///   useSelectionCentroid が true のときは UpdateGizmoCenter が出す
+        ///   対象の重心を使う。重心は対象だけで決まるので、隠れた状態には依存しない。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ApplyRotateFromCommand(
+            ToolContext ctx, IReadOnlyList<int> masterIndices,
+            Vector3 pivotWorld, bool useSelectionCentroid,
+            Vector3 axisWorld, float angleDeg, out string reason)
+        {
+            reason = null;
+
+            if (!TryResolveTargets(ctx, masterIndices, out var targets, out reason))
+                return false;
+
+            if (axisWorld.sqrMagnitude < 1e-8f)
+            { reason = "Axis が 0 ベクトルです"; return false; }
+            if (Mathf.Abs(angleDeg) < 1e-4f)
+            { reason = "回転角が 0 です"; return false; }
+
+            _targetOverride = targets;
+            try
+            {
+                if (useSelectionCentroid)
+                {
+                    UpdateGizmoCenter(ctx);
+                    pivotWorld = _axisGizmo.Center;
+                }
+
+                SaveRotationStart(ctx, pivotWorld);
+                if (_rotStartLocalRot.Count == 0)
+                {
+                    reason = "回転できる対象がありません（祖先に非一様スケールがある要素は除外されます）";
+                    return false;
+                }
+                SaveSnapshots(ctx);
+
+                ctx.EnterTransformDragging?.Invoke();
+                ApplyWorldRotation(
+                    Quaternion.AngleAxis(angleDeg, axisWorld.normalized), ctx);
+                CommitUndo(ctx);
+            }
+            finally
+            {
+                ClearRotationStart();
+                _targetOverride = null;
+            }
+
+            ctx.Repaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// コマンドの masterIndices を実在確認して集合にする。
+        /// ApplyOriginOnlyFromCommand の同じ処理と規則をそろえる。
+        /// </summary>
+        private static bool TryResolveTargets(
+            ToolContext ctx, IReadOnlyList<int> masterIndices,
+            out HashSet<int> targets, out string reason)
+        {
+            targets = null;
+            reason  = null;
+
+            var model = ctx?.Model;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (masterIndices == null || masterIndices.Count == 0)
+            { reason = "対象が指定されていません"; return false; }
+
+            targets = new HashSet<int>();
+            foreach (int idx in masterIndices)
+            {
+                if (model.GetMeshContext(idx) == null)
+                { reason = $"masterIndex {idx} のオブジェクトがありません"; return false; }
+                targets.Add(idx);
+            }
             return true;
         }
 
@@ -746,14 +1017,12 @@ namespace Poly_Ling.Tools
         private void ApplyFreeDelta(Vector2 screenDelta, ToolContext ctx)
         {
             Vector3 worldDelta = _axisGizmo.ComputeFreeDelta(screenDelta, ctx);
-            UnityEngine.Debug.Log($"[MoveDbg] FREE screenDelta={screenDelta} worldDelta={worldDelta} camDist={ctx.CameraDistance} display={(ctx.DisplayMatrix != UnityEngine.Matrix4x4.identity ? "nonId" : "id")}");
             ApplyWorldDelta(worldDelta, ctx);
         }
 
         private void ApplyAxisDelta(Vector2 screenDelta, ToolContext ctx)
         {
             Vector3 worldDelta = _axisGizmo.ComputeAxisDelta(screenDelta, _draggingAxis, ctx);
-            UnityEngine.Debug.Log($"[MoveDbg] AXIS axis={_draggingAxis} screenDelta={screenDelta} worldDelta={worldDelta} center={_axisGizmo.Center}");
             ApplyWorldDelta(worldDelta, ctx);
         }
 
@@ -797,26 +1066,12 @@ namespace Poly_Ling.Tools
             {
                 var mc = model.GetMeshContext(idx);
                 if (mc?.BoneTransform == null) continue;
-                var __wmB = mc.WorldMatrix;
-                UnityEngine.Vector3 __beforeLocal = mc.BoneTransform.Position;
-                UnityEngine.Vector3 __beforeWorld = new UnityEngine.Vector3(__wmB.m03, __wmB.m13, __wmB.m23);
-                bool __useLocalWas = mc.BoneTransform.UseLocalTransform;
-                UnityEngine.Debug.Log($"[MoveDbg] BEFORE idx={idx} useLocal={__useLocalWas} local={__beforeLocal} world={__beforeWorld} parent={mc.HierarchyParentIndex} worldDelta={worldDelta}");
-
                 mc.BoneTransform.UseLocalTransform = true;
                 mc.BoneTransform.Position += worldDelta;
-                UnityEngine.Debug.Log($"[MoveDbg] AFTER_POS idx={idx} local={mc.BoneTransform.Position}");
             }
 
             // 親の新 WorldMatrix を確定
             model.ComputeWorldMatrices();
-            foreach (int idx in selectedSet)
-            {
-                var mc = model.GetMeshContext(idx);
-                if (mc == null) continue;
-                var __wmC = mc.WorldMatrix;
-                UnityEngine.Debug.Log($"[MoveDbg] AFTER_COMPUTE idx={idx} world={new UnityEngine.Vector3(__wmC.m03, __wmC.m13, __wmC.m23)}");
-            }
 
             // 子補正: 新しい親 WorldMatrixInverse でワールド位置をローカルに逆算
             if (childSavedWorldPos != null && childSavedWorldPos.Count > 0)
@@ -883,13 +1138,6 @@ namespace Poly_Ling.Tools
             }
 
             ctx.SyncBoneTransforms?.Invoke();
-            foreach (int idx in selectedSet)
-            {
-                var mc = model.GetMeshContext(idx);
-                if (mc?.BoneTransform == null) continue;
-                var __wmS = mc.WorldMatrix;
-                UnityEngine.Debug.Log($"[MoveDbg] AFTER_SYNC idx={idx} useLocal={mc.BoneTransform.UseLocalTransform} local={mc.BoneTransform.Position} world={new UnityEngine.Vector3(__wmS.m03, __wmS.m13, __wmS.m23)}");
-            }
             ctx.Repaint?.Invoke();
         }
 
@@ -946,6 +1194,8 @@ namespace Poly_Ling.Tools
 
             _ringDragAxis = ringAxis;
             _ringGizmo.DraggingAxis = ringAxis;
+            _ringLastAngleDeg  = 0f;
+            _ringLastAxisWorld = RotateRingGizmo.AxisVector(ringAxis);
             _state = DragState.RingDragging;
             ctx.EnterTransformDragging?.Invoke();
             return true;
@@ -961,6 +1211,9 @@ namespace Poly_Ling.Tools
 
             float deltaDeg = _ringGizmo.ComputeAngleDeltaDeg(mousePos);
             Vector3 worldAxis = RotateRingGizmo.AxisVector(_ringDragAxis);
+            // 確定時にコマンドへ載せるため、実際に適用した角と軸を控える。
+            _ringLastAngleDeg  = deltaDeg;
+            _ringLastAxisWorld = worldAxis;
             ApplyWorldRotation(Quaternion.AngleAxis(deltaDeg, worldAxis), ctx);
         }
 
@@ -1235,6 +1488,7 @@ namespace Poly_Ling.Tools
             if (model == null) return;
 
             _originWorldTotal = Vector3.zero;
+            _dragTargets.Clear();
 
             // 選択アイテムのスナップショット
             foreach (int idx in AllSelectedIndices(ctx))
@@ -1242,6 +1496,8 @@ namespace Poly_Ling.Tools
                 var mc = model.GetMeshContext(idx);
                 if (mc?.BoneTransform == null) continue;
                 _beforeSnapshots[idx] = mc.BoneTransform.CreateSnapshot();
+                // 補償した子と混ざらないよう、対象だけを別に控える。
+                _dragTargets.Add(idx);
             }
 
             // MoveWithChildren == false の場合は直接の子も保存

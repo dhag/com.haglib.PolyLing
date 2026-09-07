@@ -98,7 +98,7 @@ namespace Poly_Ling.Tools
         public bool ContinuousLinePublic { get => ContinuousLine; set => ContinuousLine = value; }
         public int  PlacedPointCount     => _points.Count;
         public int  RequiredPointsPublic => RequiredPoints;
-        public void ClearPointsPublic()  { _points.Clear(); _lastLinePoint = null; }
+        public void ClearPointsPublic()  { _points.Clear(); _lastLinePoint = null; ClearLineChain(); }
 
         /// <summary>
         /// Quad モードで3点配置済みのとき、その3点で三角形を作って確定する。
@@ -123,6 +123,86 @@ namespace Poly_Ling.Tools
             if (_points.Count == 0) return false;
             _points.RemoveAt(_points.Count - 1);
             return true;
+        }
+
+        /// <summary>
+        /// 線分モードの描画を終了し、次の描画を始められる状態へ戻す。
+        /// Escape / 右クリックから呼ぶ。終了するものが無ければ何もせず false。
+        /// ここでは面を作らない（開始点へ戻ったときの線分追加はクリック経路が行う）。
+        /// </summary>
+        public bool FinishLineChain()
+        {
+            if (Mode != AddFaceMode.Line) return false;
+            if (_points.Count == 0 && !_lastLinePoint.HasValue && _lineChain.Count == 0)
+                return false;
+
+            _points.Clear();
+            _lastLinePoint = null;
+            ClearLineChain();
+            return true;
+        }
+
+        /// <summary>
+        /// 連続線分で確定済みの線分が 1 本以上あるか。Delete の取り消し可否判定に使う。
+        /// </summary>
+        public bool CanUndoLineSegment()
+            => Mode == AddFaceMode.Line && ContinuousLine && _lineChain.Count >= 2;
+
+        /// <summary>
+        /// 確定済みの線分 1 本を Undo で取り消した後に、折れ線の状態をそれへ合わせる。
+        /// 末尾を 1 つ落とし、終点を 1 つ手前へ戻す。
+        ///
+        /// 残りが開始点だけになったときは折れ線ごと捨てて描画開始前へ戻す。
+        /// 1 本目の Undo では開始点も一緒に消えている場合があり
+        /// （開始点が新規頂点だったとき）、番号を持ち続けると消えた頂点を指すため。
+        /// </summary>
+        public void NotifyLineSegmentUndone(ToolContext ctx)
+        {
+            if (_lineChain.Count == 0) return;
+            _lineChain.RemoveAt(_lineChain.Count - 1);
+
+            var mo = ctx?.ActiveMeshObject;
+            if (_lineChain.Count >= 2 && mo != null)
+            {
+                int idx = _lineChain[_lineChain.Count - 1];
+                if (idx >= 0 && idx < mo.VertexCount)
+                {
+                    _lastLinePoint = PointInfo.FromExisting(idx, mo.Vertices[idx].Position);
+                    return;
+                }
+            }
+
+            _points.Clear();
+            _lastLinePoint = null;
+            ClearLineChain();
+        }
+
+        /// <summary>
+        /// 指定した点が連続線分の開始点（折れ線の先頭頂点）かどうか。
+        /// 線分が 1 本も確定していないときは開始点が確定していないので false。
+        /// </summary>
+        private bool IsLineChainStart(PointInfo point)
+        {
+            if (_lineChain.Count < 2) return false;
+            return point.IsExistingVertex && point.ExistingVertexIndex == _lineChain[0];
+        }
+
+        /// <summary>
+        /// 確定した線分 1 本を折れ線へ記録する。1 本目のときは開始点も入れる。
+        /// created は CreateFace の戻り値（[0] が始点、末尾が終点）。
+        /// </summary>
+        private void RecordLineChainSegment(IReadOnlyList<int> created)
+        {
+            if (created == null || created.Count < 2) return;
+            if (_lineChain.Count == 0) _lineChain.Add(created[0]);
+            _lineChain.Add(created[created.Count - 1]);
+        }
+
+        /// <summary>折れ線の記録と閉じ待ちの目印をまとめて捨てる。</summary>
+        private void ClearLineChain()
+        {
+            _lineChain.Clear();
+            _finishChainAfterCreate = false;
         }
 
         // ================================================================
@@ -214,6 +294,18 @@ namespace Poly_Ling.Tools
         // === 状態 ===
         private List<PointInfo> _points = new List<PointInfo>();
         private PointInfo? _lastLinePoint = null;  // 連続線分の最後の点
+
+        // 連続線分で描いている折れ線の頂点番号。先頭が開始点、末尾が現在の終点。
+        // 線分が 1 本確定するたびに末尾へ 1 つ足す（本数は Count - 1）。
+        //   ・開始点に戻ったかの判定（IsLineChainStart）
+        //   ・Delete による線分 1 本ぶんの取り消し（NotifyLineSegmentUndone）
+        // の 2 つに使う。開始点は面の生成時に既存頂点になるので番号で照合できる。
+        private readonly List<int> _lineChain = new List<int>();
+
+        // 開始点へ戻って閉じる線分を作っている最中だけ true。
+        // 面の生成後（CreateFaceFromCommand）に折れ線を畳むための目印。
+        // これが無いと閉じる線分がそのまま次の折れ線の 1 本目として記録されてしまう。
+        private bool _finishChainAfterCreate = false;
         private Vector3 _previewPoint;          // 現在のマウス位置での候補点
         private bool _previewValid = false;
         private int _previewHitVertex = -1;     // プレビュー時に既存頂点にヒットしている場合
@@ -226,6 +318,196 @@ namespace Poly_Ling.Tools
         private static readonly AddFaceMode[] ModeValues = { AddFaceMode.Line, AddFaceMode.Triangle, AddFaceMode.Quad };
 
         public int RequiredPoints => (int)Mode;
+
+        // ================================================================
+        // コマンド経路
+        //
+        // 【1 クリック = 1 コマンド】
+        //   クリックで点列が揃ったかどうかだけを TryTakePointsFromClick で決め、
+        //   面の生成と Undo 記録はコマンドの受け口（CreateFaceFromCommand）が行う。
+        //   どちらも同じ CreateFace を通す。
+        // ================================================================
+
+        /// <summary>
+        /// このクリックで面を作るなら、その点列を取り出して返す。面は作らない。
+        ///
+        /// 【なぜ要るか】
+        ///   OnMouseDown は点が揃った瞬間にその場で CreateFace を呼ぶので、
+        ///   コマンド経由（自動検証・MCP）と経路が分かれる。ここで点の追加と
+        ///   確定判定だけを行い、生成はコマンドの受け口へ寄せる。
+        ///
+        /// 【OnMouseDown と同じ更新をここで行う】
+        ///   右クリックの取り消し、Quad 3 点で 1 点目へ戻ったときの三角形確定、
+        ///   連続線分の開始点差し替え、点数到達の 4 分岐はすべて同じ規則で通す。
+        ///   呼び出し側はこのメソッドと OnMouseDown のどちらか一方だけを使うこと。
+        ///
+        /// 【_lastLinePoint はここでは更新しない】
+        ///   更新には CreateFace が返す頂点番号が要るため、
+        ///   CreateFaceFromCommand の側で行う。
+        /// </summary>
+        /// <returns>面を作るべき点列が決まったら true。</returns>
+        public bool TryTakePointsFromClick(
+            ToolContext ctx, Vector2 mousePos, out PointInfo[] points)
+        {
+            points = System.Array.Empty<PointInfo>();
+            if (ctx?.ActiveMeshObject == null) return false;
+
+            // 閉じる線分がコマンドまで届かなかったときの取り残しを捨てる。
+            // 立てっぱなしだと次に確定した線分で折れ線が畳まれてしまう。
+            _finishChainAfterCreate = false;
+
+            // 右クリックは点を 1 つ戻す（OnMouseDown と同じ）。
+            if (ctx.CurrentButton == 1)
+            {
+                if (_points.Count > 0) _points.RemoveAt(_points.Count - 1);
+                else if (_lastLinePoint.HasValue) _lastLinePoint = null;
+                ctx.Repaint?.Invoke();
+                return false;
+            }
+
+            if (ctx.CurrentButton != 0) return false;
+
+            PointInfo point = GetPointAtScreenPos(ctx, mousePos);
+
+            // Quad で 3 点配置済み、4 点目が 1 点目と同じ既存頂点なら三角形として確定。
+            if (Mode == AddFaceMode.Quad && _points.Count == 3 &&
+                point.IsExistingVertex && _points[0].IsExistingVertex &&
+                point.ExistingVertexIndex == _points[0].ExistingVertexIndex)
+            {
+                points = _points.ToArray();
+                _points.Clear();
+                ctx.Repaint?.Invoke();
+                return true;
+            }
+
+            // 連続線分モード。前回の最後の点と今回の点で線分を作る。
+            if (Mode == AddFaceMode.Line && ContinuousLine && _lastLinePoint.HasValue)
+            {
+                // 開始点へ戻ったら描画を終了する。
+                //   線分が 2 本以上 … 終点→開始点の線分を足してから終了（閉じる）。
+                //   線分が 1 本だけ … 足しても同じ 2 点の往復になるだけなので足さずに終了。
+                if (IsLineChainStart(point))
+                {
+                    if (_lineChain.Count < 3)
+                    {
+                        _points.Clear();
+                        _lastLinePoint = null;
+                        ClearLineChain();
+                        ctx.Repaint?.Invoke();
+                        return false;
+                    }
+
+                    // 折れ線の後始末は面の生成後（CreateFaceFromCommand）に行う。
+                    // ここで畳むと、閉じる線分が次の折れ線の 1 本目として記録される。
+                    _finishChainAfterCreate = true;
+                    points = new[] { _lastLinePoint.Value, point };
+                    _points.Clear();
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
+
+                points = new[] { _lastLinePoint.Value, point };
+                _points.Clear();
+                ctx.Repaint?.Invoke();
+                return true;
+            }
+
+            _points.Add(point);
+
+            if (_points.Count >= RequiredPoints)
+            {
+                points = _points.ToArray();
+                _points.Clear();
+                ctx.Repaint?.Invoke();
+                return true;
+            }
+
+            ctx.Repaint?.Invoke();
+            return false;
+        }
+
+        /// <summary>
+        /// Quad モードで 3 点配置済みのとき、その点列を取り出して返す。面は作らない。
+        /// 右クリック／Escape のコマンド経路用。FinishAsTriangle と同じ条件。
+        /// </summary>
+        public bool TryTakePointsForTriangleFinish(out PointInfo[] points)
+        {
+            points = System.Array.Empty<PointInfo>();
+            if (Mode != AddFaceMode.Quad || _points.Count != 3) return false;
+
+            points = _points.ToArray();
+            _points.Clear();
+            return true;
+        }
+
+        /// <summary>
+        /// 点列から面を作る。マウス経路と同じ CreateFace を通す。
+        ///
+        /// 【設定値はコマンドが正典】
+        ///   材質番号と視点（巻き順の判定に使う）は呼び出し側が ctx へ入れてから
+        ///   呼ぶこと。CreateFace は ctx.CurrentMaterialIndex と
+        ///   ctx.CameraPosition を読む。
+        ///
+        /// 【連続線分の開始点】
+        ///   Mode == Line かつ ContinuousLine のときだけ、生成された最後の頂点を
+        ///   次の開始点として控える。マウス経路の OnMouseDown と同じ扱い。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool CreateFaceFromCommand(
+            ToolContext ctx, IReadOnlyList<PointInfo> points, out string reason)
+        {
+            reason = null;
+
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+            if (points == null || points.Count < 2)
+            { reason = "点は 2 個以上指定してください"; return false; }
+
+            foreach (var p in points)
+            {
+                if (!p.IsExistingVertex) continue;
+                if (p.ExistingVertexIndex < 0 || p.ExistingVertexIndex >= mo.VertexCount)
+                { reason = $"頂点番号 {p.ExistingVertexIndex} が範囲外です"; return false; }
+            }
+
+            var savedPoints = new List<PointInfo>(_points);
+            List<int> created;
+            try
+            {
+                _points.Clear();
+                _points.AddRange(points);
+                created = CreateFace(ctx);
+            }
+            finally
+            {
+                _points.Clear();
+                _points.AddRange(savedPoints);
+            }
+
+            if (created == null || created.Count == 0)
+            { reason = "面を作れませんでした"; return false; }
+
+            if (Mode == AddFaceMode.Line && ContinuousLine && created.Count >= 2)
+            {
+                if (_finishChainAfterCreate)
+                {
+                    // 開始点へ戻って閉じた線分。ここで折れ線を終わらせ次の描画に備える。
+                    _lastLinePoint = null;
+                    ClearLineChain();
+                }
+                else
+                {
+                    int lastIdx = created[created.Count - 1];
+                    if (lastIdx >= 0 && lastIdx < mo.VertexCount)
+                        _lastLinePoint = PointInfo.FromExisting(
+                            lastIdx, mo.Vertices[lastIdx].Position);
+
+                    RecordLineChainSegment(created);
+                }
+            }
+
+            return true;
+        }
 
         // === IEditTool実装 ===
 
@@ -280,6 +562,25 @@ namespace Poly_Ling.Tools
             // 連続線分モードの場合
             if (Mode == AddFaceMode.Line && ContinuousLine && _lastLinePoint.HasValue)
             {
+                // 開始点へ戻ったら描画を終了する。判定規則は
+                // TryTakePointsFromClick（コマンド経路）と同じにすること。
+                if (IsLineChainStart(point))
+                {
+                    if (_lineChain.Count >= 3)
+                    {
+                        _points.Clear();
+                        _points.Add(_lastLinePoint.Value);
+                        _points.Add(point);
+                        CreateFace(ctx);
+                    }
+
+                    _points.Clear();
+                    _lastLinePoint = null;
+                    ClearLineChain();
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
+
                 // 前回の最後の点と今回の点で線分を作成
                 _points.Clear();
                 _points.Add(_lastLinePoint.Value);
@@ -292,6 +593,7 @@ namespace Poly_Ling.Tools
                     int lastIdx = createdIndices[1];
                     Vector3 lastPos = ctx.ActiveMeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
+                    RecordLineChainSegment(createdIndices);
                     Debug.Log($"[AddFaceTool] Continuous line: next start = V{lastIdx}");
                 }
 
@@ -313,6 +615,7 @@ namespace Poly_Ling.Tools
                     int lastIdx = createdIndices[createdIndices.Count - 1];
                     Vector3 lastPos = ctx.ActiveMeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
+                    RecordLineChainSegment(createdIndices);
                 }
 
                 _points.Clear();
@@ -345,6 +648,7 @@ namespace Poly_Ling.Tools
             _points.Clear();
             _previewValid = false;
             _lastLinePoint = null;
+            ClearLineChain();
 
             // 選択された頂点を最初の点として使用
             if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.ActiveMeshObject != null)
@@ -373,6 +677,7 @@ namespace Poly_Ling.Tools
                             int lastIdx = createdIndices[1];
                             Vector3 lastPos = ctx.ActiveMeshObject.Vertices[lastIdx].Position;
                             _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
+                            RecordLineChainSegment(createdIndices);
                         }
                         _points.Clear();
                     }
@@ -392,6 +697,10 @@ namespace Poly_Ling.Tools
                         {
                             // 連続線分モードの場合は開始点として設定
                             _lastLinePoint = startPoint;
+                            // 折れ線の先頭としても控える。1 本目の確定時に
+                            // RecordLineChainSegment が終点を足して開始点が定まる。
+                            _lineChain.Clear();
+                            _lineChain.Add(selectedIdx);
                         }
                         else
                         {
@@ -408,6 +717,7 @@ namespace Poly_Ling.Tools
             _points.Clear();
             _previewValid = false;
             _lastLinePoint = null;
+            ClearLineChain();
             _gpuHoverVertex = -1;
             _gpuHoverSnapWorld = null;
             _previewSnappedOther = false;
@@ -420,6 +730,7 @@ namespace Poly_Ling.Tools
             _previewValid = false;
             _previewHitVertex = -1;
             _lastLinePoint = null;
+            ClearLineChain();
             _gpuHoverVertex = -1;
             _gpuHoverSnapWorld = null;
             _previewSnappedOther = false;

@@ -86,8 +86,97 @@ namespace Poly_Ling.Profile2DExtrude
         [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
                  Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
         public Vector3 Pivot;
-        [PLParam(TextKey = "Profile2DLoops", Description = "押し出す輪郭のループ列。生成器が実際に読むのはこの値", Required = true)]
+        /// <summary>
+        /// 押し出す輪郭のループ列。生成器が実際に読むのはこの値。
+        ///
+        /// LoopData[] は「要素が可変長の点列を持つ構造体の配列」で
+        /// スキーマに出せないため、外からは下の 3 本の平坦な列で受ける。
+        /// パネル経路はこれまでどおりここへ直接入れる。
+        /// 生成側は ResolveLoops() を通すこと（Loops が空なら平坦な列から起こす）。
+        /// </summary>
+        [PLParam(Ignore = true, Description = "輪郭のループ列。外からは LoopPoints ほかで指定する")]
         public LoopData[] Loops;
+
+        /// <summary>
+        /// 全ループの点を連結したもの。x,y を 2 個ずつ並べる。
+        /// Loops が空のときだけ使う。
+        /// </summary>
+        [PLParam(TextKey = "Profile2DLoopPointValues",
+                 Description = "全ループの点を連結したもの。x,y を 2 個ずつ並べる",
+                 ProfileRole = PLProfileRole.FlatLoops, ProfileNormalize = false,
+                 ProfileLoopStartsKey = "LoopStarts", ProfileLoopIsHoleKey = "LoopIsHole")]
+        public float[] LoopPointValues;
+
+        /// <summary>ループ i が何点目から始まるか。単調増加。長さがループ本数。</summary>
+        [PLParam(TextKey = "Profile2DLoopStarts",
+                 Description = "ループ i が何点目から始まるか。単調増加。長さがループ本数")]
+        public int[] LoopStarts;
+
+        /// <summary>ループ i を穴として扱うか。LoopStarts と同じ長さ。</summary>
+        [PLParam(TextKey = "Profile2DLoopIsHole",
+                 Description = "ループ i を穴として扱うか。LoopStarts と同じ長さ")]
+        public bool[] LoopIsHole;
+
+        /// <summary>
+        /// 生成に使うループ列を返す。
+        /// Loops が入っていればそれを、空なら平坦な列から起こす。
+        /// パネル経路とコマンド経路のどちらでも同じものが返る。
+        /// </summary>
+        public LoopData[] ResolveLoops()
+        {
+            if (Loops != null && Loops.Length > 0) return Loops;
+
+            int n = LoopStarts?.Length ?? 0;
+            if (n == 0) return System.Array.Empty<LoopData>();
+
+            int total = (LoopPointValues?.Length ?? 0) / 2;
+            var result = new LoopData[n];
+            for (int i = 0; i < n; i++)
+            {
+                int from = LoopStarts[i];
+                int to   = (i + 1 < n) ? LoopStarts[i + 1] : total;
+                if (from < 0) from = 0;
+                if (to > total) to = total;
+
+                int count = to - from;
+                if (count < 0) count = 0;
+                var pts = new Vector2[count];
+                for (int k = 0; k < count; k++)
+                    pts[k] = new Vector2(
+                        LoopPointValues[(from + k) * 2], LoopPointValues[(from + k) * 2 + 1]);
+
+                result[i] = new LoopData
+                {
+                    Points = pts,
+                    IsHole = LoopIsHole != null && i < LoopIsHole.Length && LoopIsHole[i],
+                };
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// LoopData[] を平坦な列へ分ける。外へ送るときの補助。
+        /// </summary>
+        public static void SplitLoops(
+            LoopData[] loops, out float[] pointValues, out int[] starts, out bool[] isHole)
+        {
+            int n = loops?.Length ?? 0;
+            starts = new int[n];
+            isHole = new bool[n];
+            var vals = new System.Collections.Generic.List<float>();
+
+            int cursor = 0;
+            for (int i = 0; i < n; i++)
+            {
+                starts[i] = cursor;
+                isHole[i] = loops[i].IsHole;
+                var pts = loops[i].Points;
+                if (pts != null)
+                    foreach (var q in pts) { vals.Add(q.x); vals.Add(q.y); }
+                cursor += pts?.Length ?? 0;
+            }
+            pointValues = vals.ToArray();
+        }
         [PLParam(Ignore = true, Description = "編集中のループの位置。形状には影響しない")]
         public int SelectedLoopIndex;
         [PLParam(Ignore = true, Description = "編集中の点の位置。形状には影響しない")]

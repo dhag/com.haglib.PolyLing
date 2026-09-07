@@ -90,6 +90,13 @@ namespace Poly_Ling.Player
 
         private int  _destMasterIndex      = -1;
         private bool _createNewObject      = false;
+
+        /// <summary>
+        /// ソースと重みをオブジェクトグループとして残すか。既定 false。
+        /// false のときは確定した時点でソース指定も重みも残らない
+        /// （＝ソースを直しても出力先は古いまま。混ぜ直すには同じ操作をやり直す）。
+        /// </summary>
+        private bool _keepAsGroup          = false;
         private bool _recalculateNormals   = true;
         private bool _selectedVerticesOnly = false;
 
@@ -361,6 +368,30 @@ namespace Poly_Ling.Player
             });
             _mainContent.Add(_toggleRecalcNormals);
             _mainContent.Add(_toggleSelectedOnly);
+
+            // ── グループとして残すか
+            //    毎回ダイアログを出すと確定の操作が重くなるので、
+            //    警告は常設のラベルにする。off のときだけ出す。
+            var toggleKeepGroup = new Toggle("オブジェクトグループとして残す")
+            { value = _keepAsGroup };
+            toggleKeepGroup.style.fontSize = 10;
+            _mainContent.Add(toggleKeepGroup);
+
+            var keepGroupWarn = new Label(
+                "オフのとき、ソース指定と重みは確定後に破棄されます。混ぜ直すには同じ操作をやり直すことになります。");
+            keepGroupWarn.style.whiteSpace   = WhiteSpace.Normal;
+            keepGroupWarn.style.fontSize     = 9;
+            keepGroupWarn.style.marginLeft   = 16;
+            keepGroupWarn.style.marginBottom = 2;
+            keepGroupWarn.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
+            keepGroupWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
+            _mainContent.Add(keepGroupWarn);
+
+            toggleKeepGroup.RegisterValueChangedCallback(e =>
+            {
+                _keepAsGroup = e.newValue;
+                keepGroupWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
+            });
 
             _dropdownMatchMode = new DropdownField("対応方式", MatchModeChoices, (int)_matchMode);
             _dropdownMatchMode.style.marginBottom = 2;
@@ -871,11 +902,13 @@ namespace Poly_Ling.Player
                 // こちらのプレビューは先に終了させてブレンド前の位置へ戻す。
                 // 戻さないと退避値が古いまま生き続け、次の操作で巻き戻る。
                 EndPreview();
+                ApplyBlendCommand.SplitSources(
+                    specs.ToArray(), out var srcModels, out var srcMasters, out var srcWeights);
                 _panelContext.SendCommand(new ApplyBlendCommand(
                     _getModelIndex?.Invoke() ?? 0,
-                    specs.ToArray(), _destMasterIndex,
+                    srcModels, srcMasters, srcWeights, _destMasterIndex,
                     _createNewObject, _recalculateNormals,
-                    _selectedVerticesOnly, _matchMode));
+                    _selectedVerticesOnly, _matchMode, _keepAsGroup));
             }
             else
             {

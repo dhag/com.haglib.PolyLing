@@ -407,8 +407,9 @@ namespace Poly_Ling.Player
             bool hasLeft  = mapping.GetArmBoneIndices(true,  out _, out _);
             bool hasRight = mapping.GetArmBoneIndices(false, out _, out _);
 
+            ApplyHumanoidMappingCommand.SplitMapping(mapping, out var hmNames, out var hmIdx);
             SendCommand?.Invoke(new ApplyHumanoidMappingCommand(
-                GetModelIndex?.Invoke() ?? 0, mapping.Clone()));
+                GetModelIndex?.Invoke() ?? 0, hmNames, hmIdx));
 
             string armInfo = (hasLeft && hasRight) ? ""
                 : $"（腕の解決: 左={(hasLeft ? "OK" : "不足")} / 右={(hasRight ? "OK" : "不足")}）";

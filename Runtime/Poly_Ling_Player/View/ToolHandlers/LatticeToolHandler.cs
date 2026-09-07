@@ -112,6 +112,16 @@ namespace Poly_Ling.Player
         /// <summary>適用完了後に呼ばれる。パネル通知に使う。</summary>
         public Action OnApplyCompleted;
 
+        /// <summary>対象モデルの索引。コマンドに載せる。</summary>
+        public Func<int> GetModelIndex;
+
+        /// <summary>
+        /// コマンド送信口。確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
         // ================================================================
         // 設定
         // ================================================================
@@ -379,6 +389,151 @@ namespace Poly_Ling.Player
             }
 
             EndSession();
+        }
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 変形を確定する。サブパネルの「適用」はここを通る。
+        ///
+        /// 【1 セッション = 1 コマンド】
+        ///   制御点の操作中の適用はプレビュー扱い。ここでセル数・範囲・
+        ///   基準からのずれを控えてから Cancel で開始位置へ戻し、コマンドとして
+        ///   送る。実際の変形と Undo 記録は ExecuteFromCommand が行う。
+        ///   送信口が無い・変形中でない・ずれが 1 つも無いときは、
+        ///   従来どおり Commit で確定させる（頂点が動いていなければ
+        ///   Commit も Undo を積まない）。
+        /// </summary>
+        public void CommitViaCommand()
+        {
+            if (SendCommand == null || State != LatticeState.Deform) { Commit(); return; }
+
+            var cmd = BuildApplyCommand();
+            if (cmd == null) { Commit(); return; }
+
+            Cancel();
+            SendCommand(cmd);
+        }
+
+        /// <summary>
+        /// 現在の格子からコマンドを組み立てる。
+        /// 基準からずれている制御点が 1 つも無いときは null
+        /// （呼び出し側が従来経路へ落ちる）。
+        /// </summary>
+        private Poly_Ling.Data.ApplyLatticeDeformCommand BuildApplyCommand()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null || !Grid.IsBuilt) return null;
+
+            var sel = model.SelectedDrawableMeshIndices;
+            if (sel == null || sel.Count == 0) return null;
+
+            var indices = new List<int>();
+            var offsets = new List<float>();
+
+            int n = Grid.ControlPointCount;
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 d = Grid.GetCurrent(i) - Grid.GetBase(i);
+                if (d.sqrMagnitude < 1e-12f) continue;
+                indices.Add(i);
+                offsets.Add(d.x); offsets.Add(d.y); offsets.Add(d.z);
+            }
+
+            if (indices.Count == 0) return null;
+
+            return new Poly_Ling.Data.ApplyLatticeDeformCommand(
+                GetModelIndex?.Invoke() ?? 0,
+                sel.ToArray(),
+                Grid.CellsX, Grid.CellsY, Grid.CellsZ,
+                Grid.BaseCenter, Grid.BaseSize,
+                indices.ToArray(), offsets.ToArray());
+        }
+
+        /// <summary>
+        /// 格子変形コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   状態遷移も変形も既存のものをそのまま順に呼ぶ。
+        ///   BeginPlacement → SetCells → SetBounds → BeginDeform →
+        ///   制御点を書く → ApplyDeform → Commit。
+        ///   Undo 記録は Commit の中にある。
+        ///
+        /// 【基準格子はセル数と範囲から作り直す】
+        ///   SetCells / SetBounds がどちらも LatticeGrid.Rebuild を通すので、
+        ///   基準制御点は等間隔で再生成される。コマンドが持つのは
+        ///   そこからのずれだけでよい。
+        ///
+        /// 【作業軸】
+        ///   格子フレームは現在の WorkAxisContext。コマンドには載せていないので、
+        ///   先に SetWorkAxisCommand / RecallWorkAxisCommand で決めておくこと。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.ApplyLatticeDeformCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = GetModel?.Invoke();
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
+                return false;
+
+            if (GetWorkAxis?.Invoke() == null)
+            { reason = "作業軸がありません。先に SetWorkAxisCommand で決めてください"; return false; }
+
+            var idx = cmd.PointIndices;
+            var off = cmd.PointOffsets;
+            if (idx == null || idx.Length == 0)
+            { reason = "PointIndices が空です"; return false; }
+            if (off == null || off.Length != idx.Length * 3)
+            { reason = $"PointOffsets の長さは PointIndices の 3 倍にしてください（{idx.Length * 3} 個）"; return false; }
+
+            // 途中まで進んでいるセッションが残っていたら捨てる。積み重ねないため。
+            if (State != LatticeState.Idle) Cancel();
+
+            if (!BeginPlacement())
+            { reason = "選択された頂点がありません"; return false; }
+
+            // 値が変わらないときは false が返るが、それは失敗ではない。
+            SetCells(cmd.CellsX, cmd.CellsY, cmd.CellsZ);
+            SetBounds(cmd.Center, cmd.Size);
+
+            if (!BeginDeform())
+            {
+                Cancel();
+                reason = "格子変形へ移れませんでした";
+                return false;
+            }
+
+            int pointCount = Grid.ControlPointCount;
+            for (int k = 0; k < idx.Length; k++)
+            {
+                int pi = idx[k];
+                if (pi < 0 || pi >= pointCount)
+                {
+                    Cancel();
+                    reason = $"PointIndices[{k}] = {pi} が範囲外です（0〜{pointCount - 1}）";
+                    return false;
+                }
+            }
+
+            for (int k = 0; k < idx.Length; k++)
+            {
+                int pi = idx[k];
+                var d  = new Vector3(off[k * 3], off[k * 3 + 1], off[k * 3 + 2]);
+                Grid.SetCurrent(pi, Grid.GetBase(pi) + d);
+            }
+
+            ApplyDeform();
+            Commit();
+
+            OnRepaint?.Invoke();
+            return true;
         }
 
         /// <summary>

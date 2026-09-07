@@ -41,6 +41,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnMatchHoleRingCount  = ExecuteMatchHoleRingCount;
             _commandDispatcher.OnResetProject        = ExecuteResetProject;
             _commandDispatcher.OnCreateObjectArray   = ExecuteCreateObjectArray;
+            _commandDispatcher.OnSplitObjectByPartsId = ExecuteSplitObjectByPartsId;
             _commandDispatcher.OnAdvancedSelect      = ExecuteAdvancedSelect;
             _commandDispatcher.OnSculptStroke        = ExecuteSculptStroke;
             _commandDispatcher.OnMovePivot           = ExecuteMovePivot;
@@ -65,10 +66,27 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnSolidify            = ExecuteSolidify;
             _commandDispatcher.OnLineExtrude         = ExecuteLineExtrude;
             _commandDispatcher.OnSurfaceSnap         = ExecuteSurfaceSnap;
+            _commandDispatcher.OnExportVrmAnimation  = ExecuteExportVrmAnimation;
+            _commandDispatcher.OnConvertUnityClipToVrma = ExecuteConvertUnityClipToVrma;
+            _commandDispatcher.OnExportVmdToVrma     = ExecuteExportVmdToVrma;
             _commandDispatcher.OnEdgeBevel           = ExecuteEdgeBevel;
             _commandDispatcher.OnEdgeExtrude         = ExecuteEdgeExtrude;
             _commandDispatcher.OnFaceExtrude         = ExecuteFaceExtrude;
             _commandDispatcher.OnSkinWeightPaint     = ExecuteSkinWeightPaint;
+            _commandDispatcher.OnRotateSelection     = ExecuteRotateSelection;
+            _commandDispatcher.OnScaleSelection      = ExecuteScaleSelection;
+            _commandDispatcher.OnMoveObjects         = ExecuteMoveObjects;
+            _commandDispatcher.OnRotateObjects       = ExecuteRotateObjects;
+            _commandDispatcher.OnApplyDeform         = ExecuteApplyDeform;
+            _commandDispatcher.OnApplyLatticeDeform  = ExecuteApplyLatticeDeform;
+            _commandDispatcher.OnEdgeTopologyFlip     = ExecuteEdgeTopologyFlip;
+            _commandDispatcher.OnEdgeTopologyDissolve = ExecuteEdgeTopologyDissolve;
+            _commandDispatcher.OnEdgeTopologySplit    = ExecuteEdgeTopologySplit;
+            _commandDispatcher.OnAddFace              = ExecuteAddFace;
+            _commandDispatcher.OnKnifeLadderCut       = ExecuteKnifeLadderCut;
+            _commandDispatcher.OnKnifeBeltLoopCut     = ExecuteKnifeBeltLoopCut;
+            _commandDispatcher.OnKnifeEraseEdge       = ExecuteKnifeEraseEdge;
+            _commandDispatcher.OnKnifeSimpleCut       = ExecuteKnifeSimpleCut;
             _commandDispatcher.OnSetWorkAxis         = ExecuteSetWorkAxis;
             _commandDispatcher.OnRecallWorkAxis      = ExecuteRecallWorkAxis;
             _commandDispatcher.OnUndo                = () => _editOps != null && _editOps.PerformUndo();
@@ -81,16 +99,17 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 図形生成コマンド。ファクトリでメッシュを作り、追加先ごとの処理へ渡す。
-        /// 生成できなかった（フォントが開けない・輪郭が 0 本など）ときは何もしない。
         /// </summary>
-        private void ExecuteCreatePrimitiveMesh(CreatePrimitiveMeshCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteCreatePrimitiveMesh(CreatePrimitiveMeshCommand cmd)
         {
-            if (cmd == null) return;
+            if (cmd == null) return "コマンドが null";
 
             var mo = PrimitiveMeshFactory.Build(cmd, forPreview: false, resolvePlaceSources: ResolvePlaceSourcesForCommand);
-            if (mo == null) return;
+            if (mo == null)
+                return $"{cmd.ShapeName} を生成できませんでした（フォントが開けない・輪郭が 0 本など）";
 
-            PlaceGeneratedMesh(mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale);
+            return PlaceGeneratedMesh(mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale);
         }
 
         /// <summary>
@@ -98,28 +117,31 @@ namespace Poly_Ling.Player
         /// PoseAlreadyBaked のときは姿勢を頂点へ入れ直さないので、
         /// 描画オブジェクトの姿勢へ入れる成分も無い。
         /// </summary>
-        private void ExecuteAddGeneratedMesh(AddGeneratedMeshCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteAddGeneratedMesh(AddGeneratedMeshCommand cmd)
         {
-            if (cmd?.Mesh == null) return;
+            if (cmd == null) return "コマンドが null";
+            if (cmd.Mesh == null) return "Mesh が指定されていません";
 
             Vector3 poseRot = cmd.PoseAlreadyBaked ? Vector3.zero : cmd.Placement.PlaceRotation;
             Vector3 poseScl = cmd.PoseAlreadyBaked ? Vector3.one  : cmd.Placement.PlaceScale;
 
-            PlaceGeneratedMesh(cmd.Mesh, cmd.MeshName, cmd.Placement, poseRot, poseScl);
+            return PlaceGeneratedMesh(cmd.Mesh, cmd.MeshName, cmd.Placement, poseRot, poseScl);
         }
 
         /// <summary>
         /// 追加先モードに従ってモデルへ入れる。Undo と再構築は各分岐が持つ。
         /// 分岐の中身は図形生成パネルから直接呼んでいたときと同じ。
         /// </summary>
-        private void PlaceGeneratedMesh(
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string PlaceGeneratedMesh(
             MeshObject meshObject, string meshName, PrimitivePlacement placement,
             Vector3 poseRotation, Vector3 poseScale)
         {
             PrepareHandlersForGeneratedMesh();
 
             var project = ActiveProject;
-            if (project == null) return;
+            if (project == null) return "プロジェクトを用意できませんでした";
             if (project.CurrentModel == null && project.ModelCount > 0)
                 project.SelectModel(0);
             ApplySelectMode();
@@ -142,7 +164,13 @@ namespace Poly_Ling.Player
                         placement.WorldPosition, poseRotation, poseScale,
                         placement.IgnorePoseInArmature, placement.MaterialIndex);
                     break;
+                case PrimitiveAddMode.ReplaceExisting:
+                    return PrimitiveMeshReplaceExisting(project, meshObject,
+                        placement.WorldPosition, poseRotation, poseScale,
+                        placement.AddTargetIndex, placement.MaterialIndex);
             }
+
+            return null;
         }
 
         /// <summary>
@@ -167,15 +195,17 @@ namespace Poly_Ling.Player
         ///   同じ処理を 2 つ持たないため、パネル状態へ入れてから呼ぶ。
         ///   パネルのボタン経路では、直前に自分が組んだ値がそのまま戻るだけになる。
         /// </summary>
-        private void ExecuteCreateHoleBridge(CreateHoleBridgeCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteCreateHoleBridge(CreateHoleBridgeCommand cmd)
         {
-            if (cmd == null) return;
+            if (cmd == null) return "コマンドが null";
 
             var panel = _primitiveSubPanel;
-            if (panel == null) return;
+            if (panel == null) return "図形生成パネルがありません";
 
             panel.ApplyHoleBridgeCommand(cmd);
             ExecuteBridge(panel);
+            return null;
         }
 
         // ================================================================
@@ -186,15 +216,15 @@ namespace Poly_Ling.Player
         /// スカルプトストロークコマンド。点列をハンドラへ入れ、
         /// マウスと同じブラシ処理を通す。変形アルゴリズムは SculptTool に一本化してある。
         /// </summary>
-        private void ExecuteSculptStroke(Poly_Ling.Data.SculptStrokeCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSculptStroke(Poly_Ling.Data.SculptStrokeCommand cmd)
         {
-            if (cmd == null) return;
+            if (cmd == null) return "コマンドが null";
 
             var h = _sculptHandler;
-            if (h == null) return;
+            if (h == null) return "スカルプトハンドラがありません";
 
-            if (!h.ExecuteFromCommand(cmd, out string reason))
-                Debug.LogWarning($"[SculptStroke] 実行できませんでした: {reason}");
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
         }
 
         /// <summary>
@@ -441,6 +471,176 @@ namespace Poly_Ling.Player
             return null;
         }
 
+        /// <summary>選択頂点の回転コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteRotateSelection(Poly_Ling.Data.RotateSelectionCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _rotateHandler;
+            if (h == null) return "回転ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _rotateSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>選択頂点のスケールコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteScaleSelection(Poly_Ling.Data.ScaleSelectionCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _scaleHandler;
+            if (h == null) return "スケールハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _scaleSubPanel?.Refresh();
+            return null;
+        }
+
+        /// <summary>変形（デフォーマ）コマンド。派生 6 種をまとめて受ける。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteApplyDeform(Poly_Ling.Data.ApplyDeformCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _deformHandler;
+            if (h == null) return "変形ハンドラがありません";
+
+            bool ok = h.ExecuteFromCommand(cmd, out string reason);
+
+            // 受け口はデフォーマ選択とパラメータを元へ戻すので、
+            // 表示を実体へ合わせ直す。
+            _deformSubPanel?.Refresh();
+
+            return ok ? null : reason;
+        }
+
+        /// <summary>ラダー切断コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteKnifeLadderCut(Poly_Ling.Data.KnifeLadderCutCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _knifeHandler;
+            if (h == null) return "ナイフハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>一意分割コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteKnifeBeltLoopCut(Poly_Ling.Data.KnifeBeltLoopCutCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _knifeHandler;
+            if (h == null) return "ナイフハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>辺消去コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteKnifeEraseEdge(Poly_Ling.Data.KnifeEraseEdgeCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _knifeHandler;
+            if (h == null) return "ナイフハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>シンプル切断コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteKnifeSimpleCut(Poly_Ling.Data.KnifeSimpleCutCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _knifeHandler;
+            if (h == null) return "ナイフハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>辺の入れ替えコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteEdgeTopologyFlip(Poly_Ling.Data.EdgeTopologyFlipCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _edgeTopologyHandler;
+            if (h == null) return "辺トポロジハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>辺の消去コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteEdgeTopologyDissolve(Poly_Ling.Data.EdgeTopologyDissolveCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _edgeTopologyHandler;
+            if (h == null) return "辺トポロジハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>四角形の対角分割コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteEdgeTopologySplit(Poly_Ling.Data.EdgeTopologySplitCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _edgeTopologyHandler;
+            if (h == null) return "辺トポロジハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>面追加コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteAddFace(Poly_Ling.Data.AddFaceCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            var h = _addFaceHandler;
+            if (h == null) return "面追加ハンドラがありません";
+            return h.ExecuteFromCommand(cmd, out string reason) ? null : reason;
+        }
+
+        /// <summary>格子変形コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteApplyLatticeDeform(Poly_Ling.Data.ApplyLatticeDeformCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _latticeHandler;
+            if (h == null) return "格子変形ハンドラがありません";
+
+            bool ok = h.ExecuteFromCommand(cmd, out string reason);
+
+            _latticeSubPanel?.Refresh();
+
+            return ok ? null : reason;
+        }
+
+        /// <summary>選択オブジェクトの移動コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteMoveObjects(Poly_Ling.Data.MoveObjectsCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _objectMoveHandler;
+            if (h == null) return "オブジェクト移動ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+            return null;
+        }
+
+        /// <summary>選択オブジェクトの回転コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteRotateObjects(Poly_Ling.Data.RotateObjectsCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _objectMoveHandler;
+            if (h == null) return "オブジェクト移動ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+            return null;
+        }
+
         /// <summary>ボーン平面への平面化コマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecutePlanarizeAlongBones(Poly_Ling.Data.PlanarizeAlongBonesCommand cmd)
@@ -560,6 +760,206 @@ namespace Poly_Ling.Player
             if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
 
             _surfaceSnapSubPanel?.Refresh();
+            return null;
+        }
+
+        // ================================================================
+        // VRM アニメーション（.vrma）書き出し
+        //
+        // 入力は Unity クリップの JSON。フレームごとにモデルへ適用しながら
+        // 骨格を写し取るので、終了後はパネルの表示フレームへ戻す。
+        // ================================================================
+
+        /// <summary>VRM アニメーション（.vrma）書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportVrmAnimation(Poly_Ling.Data.ExportVrmAnimationCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            if (string.IsNullOrEmpty(cmd.FilePath))     return "FilePath が空です";
+            if (string.IsNullOrEmpty(cmd.ClipFilePath)) return "ClipFilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string outPath, out string outReason))
+                return outReason;
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.ClipFilePath, out string clipPath, out string clipReason))
+                return clipReason;
+
+            string limitText = null;
+            if (!string.IsNullOrEmpty(cmd.MuscleLimitCsvPath))
+            {
+                if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                        cmd.MuscleLimitCsvPath, out string limitPath, out string limitReason))
+                    return limitReason;
+                limitText = System.IO.File.ReadAllText(limitPath);
+            }
+
+            Poly_Ling.UnityClip.UnityClipDTO clip;
+            try
+            {
+                clip = Poly_Ling.UnityClip.UnityClipSerializer.LoadJson(clipPath);
+            }
+            catch (System.Exception ex)
+            {
+                return $"クリップの読込みに失敗: {ex.Message}";
+            }
+            if (clip == null) return "クリップを読み取れません";
+
+            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
+            {
+                Scale    = cmd.Scale,
+                Fps      = cmd.Fps,
+                StartSec = cmd.StartSec,
+                EndSec   = cmd.EndSec,
+            };
+
+            var result = Poly_Ling.UnityClip.UnityClipVrmAnimationSource.ExportToFile(
+                model, clip, limitText, outPath, settings);
+
+            // 書き出しはモデルへ実際にフレームを適用する。
+            // ポーズ層は ExportToFile が戻すので、パネルの表示フレームを引き直す。
+            _unityClipTestSubPanel?.ReapplyCurrentFrame();
+            _viewportManager.UpdateTransform();
+            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+
+            if (result == null)     return "書き出し結果がありません";
+            if (!result.Success)    return result.ErrorMessage;
+
+            Debug.Log($"[PolyLing] VRMA 書き出し: {result.OutputPath} " +
+                      $"(Humanoid {result.HumanoidBoneCount} / {result.FrameCount} frames / {result.DurationSec:F2}s)");
+            return null;
+        }
+
+        /// <summary>Unity クリップ → VRMA 変換コマンド（モデル非依存）。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteConvertUnityClipToVrma(Poly_Ling.Data.ConvertUnityClipToVrmaCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            if (string.IsNullOrEmpty(cmd.FilePath))     return "FilePath が空です";
+            if (string.IsNullOrEmpty(cmd.ClipFilePath)) return "ClipFilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string outPath, out string outReason))
+                return outReason;
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.ClipFilePath, out string clipPath, out string clipReason))
+                return clipReason;
+
+            Poly_Ling.UnityClip.UnityClipDTO clip;
+            try
+            {
+                clip = Poly_Ling.UnityClip.UnityClipSerializer.LoadJson(clipPath);
+            }
+            catch (System.Exception ex)
+            {
+                return $"クリップの読込みに失敗: {ex.Message}";
+            }
+            if (clip == null) return "クリップを読み取れません";
+
+            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
+            {
+                Fps      = cmd.Fps,
+                StartSec = cmd.StartSec,
+                EndSec   = cmd.EndSec,
+            };
+
+            var result = Poly_Ling.UnityClip.UnityClipCanonVrmAnimation.ConvertToFile(
+                clip, outPath, settings, cmd.BoneLength);
+
+            if (result == null)  return "変換結果がありません";
+            if (!result.Success) return $"{result.ErrorMessage}（出力先: {outPath}）";
+
+            Debug.Log($"[PolyLing] VRMA 変換: {result.OutputPath} " +
+                      $"(Humanoid {result.HumanoidBoneCount} / {result.FrameCount} frames / {result.DurationSec:F2}s)");
+            return null;
+        }
+
+        /// <summary>VMD → VRMA 書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportVmdToVrma(Poly_Ling.Data.ExportVmdToVrmaCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            if (string.IsNullOrEmpty(cmd.FilePath))    return "FilePath が空です";
+            if (string.IsNullOrEmpty(cmd.VmdFilePath)) return "VmdFilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string outPath, out string outReason))
+                return outReason;
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.VmdFilePath, out string vmdPath, out string vmdReason))
+                return vmdReason;
+
+            Poly_Ling.VMD.VMDData vmd;
+            try
+            {
+                vmd = Poly_Ling.VMD.VMDData.LoadFromFile(vmdPath);
+            }
+            catch (System.Exception ex)
+            {
+                return $"VMD の読込みに失敗: {ex.Message}";
+            }
+            if (vmd == null) return "VMD を読み取れません";
+
+            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
+            {
+                Scale    = cmd.Scale,
+                Fps      = cmd.Fps,
+                StartSec = cmd.StartSec,
+                EndSec   = cmd.EndSec,
+            };
+
+            // 座標変換と位置倍率は EditorState を正本にする。
+            // PlayerVMDTestSubPanel.LoadVMD と同じ規則で、ここでは新しい変換を足さない。
+            var options = Poly_Ling.VMD.VmdVrmAnimationOptions.CreateDefault();
+            options.EnableIK          = cmd.EnableIK;
+            options.AlignScope        = cmd.AlignScope;
+            options.DiagnosticLog     = cmd.DiagnosticLog;
+            options.IgnoreAngleLimits = cmd.IgnoreAngleLimits;
+            options.KneePreBend       = cmd.KneePreBend;
+
+            // IK の残差 CSV の出力先。指定があるときだけ関門を通す。
+            if (!string.IsNullOrEmpty(cmd.IkTraceDirectory))
+            {
+                if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                        cmd.IkTraceDirectory, out string traceDir, out string traceReason))
+                    return traceReason;
+                options.IkTraceDirectory = traceDir;
+            }
+            var es = _editOps?.UndoController?.EditorState;
+            if (es != null)
+            {
+                options.PositionScale = es.PmxUnityRatio;
+                options.FlipX         = es.PmxFlipX;
+                options.FlipZ         = es.PmxFlipZ;
+            }
+
+            var result = Poly_Ling.VMD.VmdVrmAnimationExport.ExportToFile(
+                model, vmd, outPath, settings, options);
+
+            // 書き出しはモデルへ実際にフレームを適用する。
+            // ポーズ層は ExportToFile が戻すので、表示を引き直す。
+            _viewportManager.UpdateTransform();
+            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+
+            if (result == null)  return "書き出し結果がありません";
+            if (!result.Success) return $"{result.ErrorMessage}（出力先: {outPath}）";
+
+            Debug.Log($"[PolyLing] VMD→VRMA 書き出し: {result.OutputPath} " +
+                      $"(Humanoid {result.HumanoidBoneCount} / {result.FrameCount} frames / {result.DurationSec:F2}s)");
+            if (!string.IsNullOrEmpty(result.Warning))
+                Debug.LogWarning($"[PolyLing] VMD→VRMA: {result.Warning}");
             return null;
         }
 
@@ -703,13 +1103,14 @@ namespace Poly_Ling.Player
         /// 受理判定（境界辺のみ・同一オブジェクトのみ）は SetPicks が既存の
         /// AcceptEdge へ通すので、クリック経路と同じ規則が効く。
         /// </summary>
-        private void ExecuteCreateEdgeBridge(CreateEdgeBridgeCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteCreateEdgeBridge(CreateEdgeBridgeCommand cmd)
         {
-            if (cmd == null) return;
+            if (cmd == null) return "コマンドが null";
 
             var h     = _edgeBridgeHandler;
             var panel = _edgeBridgeSubPanel;
-            if (h == null) return;
+            if (h == null) return "辺群ブリッジハンドラがありません";
 
             h.AutoCorrespondence = cmd.AutoCorrespondence;
             h.FlipCorrespondence = cmd.FlipCorrespondence;
@@ -719,10 +1120,11 @@ namespace Poly_Ling.Player
             if (!h.SetPicks(cmd.MeshIndex, cmd.Edges ?? new VertexPair[0], out string reason))
             {
                 panel?.SetStatus(reason);
-                return;
+                return reason;
             }
 
             ExecuteEdgeBridge();
+            return null;
         }
 
         /// <summary>
@@ -758,15 +1160,19 @@ namespace Poly_Ling.Player
         /// 他のオブジェクトの選択を巻き込まないよう、選択中の全オブジェクトを一度空にする
         /// （面削除モードのクリック処理と同じ手順）。
         /// </summary>
-        private void ExecuteDeleteFaces(DeleteFacesCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteDeleteFaces(DeleteFacesCommand cmd)
         {
-            if (cmd?.FaceIndices == null || cmd.FaceIndices.Length == 0) return;
+            if (cmd == null) return "コマンドが null";
+            if (cmd.FaceIndices == null || cmd.FaceIndices.Length == 0)
+                return "FaceIndices が空です";
 
             var model = ActiveProject?.CurrentModel;
-            if (model == null) return;
+            if (model == null) return "no current model";
 
             var target = model.GetMeshContext(cmd.MeshIndex);
-            if (target?.Selection == null || target.MeshObject == null) return;
+            if (target?.Selection == null || target.MeshObject == null)
+                return $"masterIndex {cmd.MeshIndex} のメッシュがありません";
 
             foreach (int idx in model.SelectedDrawableMeshIndices)
                 model.GetMeshContext(idx)?.Selection?.ClearAll();
@@ -792,26 +1198,17 @@ namespace Poly_Ling.Player
                 target.Selection.SelectFace(f, additive: true);
                 any = true;
             }
-            if (!any) return;
+            if (!any) return $"FaceIndices に有効な面がありません（面数 {faceCount}）";
 
             // 削除そのものは DeleteSelectionToolHandler が正典。
             // ここから ExecuteDeleteSelection() を呼ぶと DeleteSelectionCommand の
             // 発行になり、コマンドがコマンドを呼ぶ形になるのでハンドラを直接呼ぶ。
-            //
-            // ExecuteDeleteFaces は void（OnDeleteFaces が Action）なので、
-            // 失敗理由はディスパッチャへ返せない。ここは他の void の受け口
-            // （ExecuteMatchHoleRingCount）と同じくログに出す。
             var h = _deleteSelectionHandler;
-            if (h == null)
-            {
-                Debug.LogWarning("[DeleteFaces] 選択削除ハンドラがありません");
-                return;
-            }
+            if (h == null) return "選択削除ハンドラがありません";
 
             var delCmd = new Poly_Ling.Data.DeleteSelectionCommand(
                 cmd.ModelIndex, model.SelectedDrawableMeshIndices.ToArray());
-            if (!h.ExecuteFromCommand(delCmd, out string delReason))
-                Debug.LogWarning($"[DeleteFaces] 削除できませんでした: {delReason}");
+            return h.ExecuteFromCommand(delCmd, out string delReason) ? null : delReason;
         }
 
         // ================================================================
@@ -861,12 +1258,13 @@ namespace Poly_Ling.Player
         /// （CsvProjectSerializer.cs:238-250）。前のモデルが残っていると、
         /// 保存したフォルダに関係ないモデルが同梱されて中身が読めなくなる。
         /// </summary>
-        private void ExecuteResetProject(ResetProjectCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteResetProject(ResetProjectCommand cmd)
         {
             _localLoader.EnsureProject();
 
             var project = ActiveProject;
-            if (project == null) return;
+            if (project == null) return "プロジェクトを用意できませんでした";
 
             // 後ろから消す。前から消すと索引がずれる。
             for (int i = project.ModelCount - 1; i >= 0; i--)
@@ -874,13 +1272,14 @@ namespace Poly_Ling.Player
 
             string name = string.IsNullOrEmpty(cmd?.ModelName) ? "Model" : cmd.ModelName;
             var model = project.CreateNewModel(name);
-            if (model == null) return;
+            if (model == null) return $"モデル \"{name}\" を作れませんでした";
 
             EnsureDefaultMaterialSlot(model);
 
             _viewportManager.EnterSceneReset(project, clearScene: true);
             RebuildModelList();
             NotifyPanels(ChangeKind.ListStructure);
+            return null;
         }
 
         /// <summary>
@@ -890,13 +1289,14 @@ namespace Poly_Ling.Player
         /// 同じ処理を 2 つ持たないようハンドラ経由で通す。
         /// 種の検証（縁が閉じているか等）は SetSeeds が Tool へ渡して行う。
         /// </summary>
-        private void ExecuteMatchHoleRingCount(MatchHoleRingCountCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteMatchHoleRingCount(MatchHoleRingCountCommand cmd)
         {
-            if (cmd == null) return;
+            if (cmd == null) return "コマンドが null";
 
             var h     = _holeRingCountHandler;
             var panel = _holeRingCountSubPanel;
-            if (h == null) return;
+            if (h == null) return "穴点数合わせハンドラがありません";
 
             // プロジェクトを配り直す。
             //
@@ -918,13 +1318,12 @@ namespace Poly_Ling.Player
                     out string reason))
             {
                 panel?.SetResult(reason);
-                return;
+                return reason;
             }
 
-            if (!h.Execute(out string message))
-                Debug.LogWarning($"[MatchHoleRingCount] 実行できませんでした: {message}");
-
+            bool ok = h.Execute(out string message);
             panel?.SetResult(message);
+            return ok ? null : message;
         }
 
         /// <summary>
@@ -976,17 +1375,89 @@ namespace Poly_Ling.Player
                 ActiveProject?.CurrentModelIndex ?? 0,
                 panel.Params,
                 panel.SelectedMasterIndices().ToArray(),
-                panel.Deformer));
+                panel.Deformer?.Name ?? ""));
         }
 
         /// <summary>
         /// 歪み複製コマンド。パネルの状態ではなくコマンドの内容で実行する。
         /// 生成と挿入の中身は ExecuteObjectArrayCore が持つ（パネル経路と同じ）。
         /// </summary>
-        private void ExecuteCreateObjectArray(CreateObjectArrayCommand cmd)
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteCreateObjectArray(CreateObjectArrayCommand cmd)
         {
-            if (cmd == null) return;
-            ExecuteObjectArrayCore(cmd.Params, cmd.SourceMasterIndices, cmd.Deformer);
+            if (cmd == null) return "コマンドが null";
+
+            // Deformer は DeformerName から毎回起こす算出プロパティ。
+            // 名前が解決できないと null が返るので、ここで弾く。
+            var deformer = cmd.Deformer;
+            if (deformer == null)
+                return $"歪み {cmd.DeformerName} がありません";
+
+            ExecuteObjectArrayCore(cmd.Params, cmd.SourceMasterIndices, deformer);
+            return null;
+        }
+
+        // ================================================================
+        // パーツIDによる分解
+        // ================================================================
+
+        /// <summary>
+        /// 直近の分解結果。パネルが結果表示へ使う。
+        /// 失敗のときも理由を持たせて残す。
+        /// </summary>
+        private PartsIdSplitResult _lastPartsIdSplitResult;
+
+        /// <summary>
+        /// パーツIDで描画オブジェクト 1 つを分解し、空のオブジェクトの子として並べる。
+        /// 切り出しは PartsIdSplitOps、挿入は PartsIdSplitInserter が持つ。
+        /// ここは Undo 記録とビュー再構築だけを受け持つ。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSplitObjectByPartsId(SplitObjectByPartsIdCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            var srcMc = model.GetMeshContext(cmd.TargetMasterIndex);
+            if (srcMc?.MeshObject == null)
+            {
+                _lastPartsIdSplitResult =
+                    PartsIdSplitResult.Fail("対象メッシュが見つかりません");
+                return _lastPartsIdSplitResult.Reason;
+            }
+
+            // 元メッシュは書き換えないので、Undo は追加ぶんだけを記録すればよい。
+            var result = PartsIdSplitOps.Split(srcMc.MeshObject, out var pieces);
+            _lastPartsIdSplitResult = result;
+            if (!result.Success) return result.Reason;
+
+            var oldSelected = model.CaptureAllSelectedIndices();
+
+            var added = PartsIdSplitInserter.Insert(model, cmd.TargetMasterIndex, pieces);
+            if (added.Count == 0)
+            {
+                _lastPartsIdSplitResult = PartsIdSplitResult.Fail("挿入できませんでした");
+                return _lastPartsIdSplitResult.Reason;
+            }
+
+            model.ComputeWorldMatrices();
+
+            model.ClearMeshSelection();
+            foreach (var e in added) model.AddToMeshSelection(e.Index);
+            var newSelected = model.CaptureAllSelectedIndices();
+
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetModelContext(model);
+                _editOps.UndoController.RecordMeshContextsAdd(added, oldSelected, newSelected);
+            }
+
+            PrimitiveMeshFinalize(model);
+
+            Debug.Log($"[PartsId] 分解: \"{srcMc.Name}\" {result.Summary}");
+            return null;
         }
     }
 }

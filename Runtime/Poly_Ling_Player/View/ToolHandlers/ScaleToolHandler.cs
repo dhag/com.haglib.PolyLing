@@ -30,6 +30,13 @@ namespace Poly_Ling.Player
         public Action                                     OnApplyCompleted;
         public Action                                     NotifyTopologyChanged;
 
+        /// <summary>
+        /// コマンド送信口。確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand>         SendCommand;
+
         // ビューポート・スケールギズモ（AxisGizmo 再利用）
         private readonly AxisGizmo _axisGizmo = new AxisGizmo();
         private AxisGizmo.AxisType _gizmoHoverAxis = AxisGizmo.AxisType.None;
@@ -57,6 +64,136 @@ namespace Poly_Ling.Player
         public void  BeginSliderDrag() => _tool.BeginSliderDrag();
         public void  EndSliderDrag()   { _tool.EndSliderDrag(); OnApplyCompleted?.Invoke(); }
         public void  Revert()          => _tool.RevertPublic();
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// スケールを確定する。パネルの Apply・スライダーのポインタアップ・
+        /// ギズモドラッグ確定はすべてここを通る。
+        ///
+        /// 【1 ドラッグ = 1 コマンド】
+        ///   ドラッグ中の適用はプレビュー扱い。ここで開始状態へ戻して倍率だけを
+        ///   取り出し、ScaleSelectionCommand として送る。実際の適用と Undo 記録は
+        ///   ExecuteFromCommand が行う。
+        ///   送信口が無い・対象が決まらない・取り出せる倍率が無いときは、
+        ///   従来どおり EndSliderDrag で確定させる。
+        /// </summary>
+        public void CommitViaCommand()
+        {
+            int[] targets = SelectedMasterIndices();
+
+            // 短絡順序に意味がある。送信口も対象も揃ったときだけ取り出す
+            // （TryTake は開始状態へ戻すので、送らないのに呼んではいけない）。
+            if (SendCommand == null || targets == null ||
+                !_tool.TryTakeScaleFromDrag(out Vector3 scale, out Vector3 scaleAxis))
+            {
+                EndSliderDrag();
+                return;
+            }
+
+            SendCommand(new Poly_Ling.Data.ScaleSelectionCommand(
+                _project?.CurrentModelIndex ?? 0,
+                targets,
+                scale, scaleAxis,
+                _tool.UseOriginPivot,
+                _tool.UseMagnet, _tool.MagnetRadius,
+                _tool.MagnetFalloff, _tool.MagnetDistanceMode));
+        }
+
+        /// <summary>
+        /// 選択頂点のスケールコマンドを実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   スケールそのものは ScaleTool が正典。ここは対象の照合と設定値の
+        ///   差し替えだけを行い、BeginSliderDrag → 値の代入 → EndSliderDrag という
+        ///   パネルと同じ順序で呼ぶ。ベイクと Undo 記録は ApplyScale の中にある。
+        ///
+        /// 【設定値はコマンドが正典】
+        ///   マグネット・ピボット・スケール軸は退避してからコマンド値を代入し、
+        ///   終わったら戻す。1 呼び出しがパネルの状態に依存しないようにするため。
+        ///
+        /// 【対象】
+        ///   ScaleTool は model.SelectedDrawableMeshIndices を走査する
+        ///   （ScaleTool.cs:113）ので、MasterIndices は選択集合との一致を要求する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.ScaleSelectionCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
+                return false;
+
+            // 実行時と同じコンテキストで対象を数えるため、先に Activate を通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) { reason = "ビューポートがありません"; return false; }
+            Activate(ctx);
+
+            if (_tool.GetTotalAffectedCountPublic() == 0)
+            { reason = "選択された要素がありません"; return false; }
+
+            float savedScaleX  = ScaleX,     savedScaleY = ScaleY,     savedScaleZ = ScaleZ;
+            float savedAxisX   = ScaleAxisX, savedAxisY  = ScaleAxisY, savedAxisZ  = ScaleAxisZ;
+            bool  savedOrigin  = UseOriginPivot;
+            bool  savedMagnet  = UseMagnet;
+            float savedRadius  = MagnetRadius;
+            var   savedFalloff = MagnetFalloff;
+            var   savedDistance = MagnetDistanceMode;
+
+            try
+            {
+                UseMagnet          = cmd.UseMagnet;
+                MagnetRadius       = cmd.MagnetRadius;
+                MagnetFalloff      = cmd.MagnetFalloff;
+                MagnetDistanceMode = cmd.MagnetDistanceMode;
+                UseOriginPivot     = cmd.UseOriginPivot;
+
+                BeginSliderDrag();
+                ScaleAxisX = cmd.ScaleAxis.x;
+                ScaleAxisY = cmd.ScaleAxis.y;
+                ScaleAxisZ = cmd.ScaleAxis.z;
+                ScaleX     = cmd.Scale.x;
+                ScaleY     = cmd.Scale.y;
+                ScaleZ     = cmd.Scale.z;
+                EndSliderDrag();
+            }
+            finally
+            {
+                ScaleX             = savedScaleX;
+                ScaleY             = savedScaleY;
+                ScaleZ             = savedScaleZ;
+                ScaleAxisX         = savedAxisX;
+                ScaleAxisY         = savedAxisY;
+                ScaleAxisZ         = savedAxisZ;
+                UseOriginPivot     = savedOrigin;
+                UseMagnet          = savedMagnet;
+                MagnetRadius       = savedRadius;
+                MagnetFalloff      = savedFalloff;
+                MagnetDistanceMode = savedDistance;
+            }
+
+            OnRepaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 実行時点の選択中の描画オブジェクトをコマンドの対象として返す。
+        /// 選択が無いときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] SelectedMasterIndices()
+        {
+            var model = _project?.CurrentModel;
+            var sel   = model?.SelectedDrawableMeshIndices;
+            if (sel == null || sel.Count == 0) return null;
+            return sel.ToArray();
+        }
 
         // ================================================================
         // 初期化
@@ -192,7 +329,7 @@ namespace Poly_Ling.Player
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
             _gizmoDragAxis = AxisGizmo.AxisType.None;
             _axisGizmo.EndScaleDrag();
-            EndSliderDrag();
+            CommitViaCommand();
         }
 
         private Vector2 ToImgui(Vector2 screenPosYDown)

@@ -10,7 +10,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.Materials;
-using Poly_Ling.Ops;
+using Poly_Ling.MeshBridge;
 using Poly_Ling.Ops;
 using Poly_Ling.Symmetry;
 
@@ -25,32 +25,47 @@ namespace Poly_Ling.MQO
     public class MQOPartialImportOps
     {
         // ================================================================
-        // 頂点位置インポート
-        // MQO側の頂点位置をモデル側に展開辞書ベースで転送。
-        // MQO頂点1個 → PMX展開頂点 UVs.Count 個に同一位置を設定。
+        // 頂点属性インポート（位置 / UV）
+        //
+        // MQO 側の頂点は非展開形で UV スロットを n 個持つ。モデル側は展開形で
+        // 1 頂点 1 UV。両者の対応は MeshExpansion の展開順で決まる。
+        //
+        // 位置は展開時にスロット数ぶん複製される値なので、同じ位置を n 個へ配る。
+        // UV はスロットごとに別の値なので、スロット u の値を展開頂点 u へ配る。
         // BakedMirrorPeer がある場合はミラー変換した位置も設定する。
+        //
+        // 展開順をここに手書きしてはならない（MeshExpansion.cs 冒頭の指示）。
         // ================================================================
 
         public int ExecuteVertexPositionImport(
             List<PartialMeshEntry> modelMeshes,
             List<PartialMQOEntry>  mqoObjects,
             float importScale,
-            AxisFlip flip)
+            AxisFlip flip,
+            bool  position = true,
+            bool  uv       = false,
+            bool  flipUV_V = false)
         {
+            if (!position && !uv) return 0;
+
             int totalUpdated = 0;
             int pairCount    = Math.Min(modelMeshes.Count, mqoObjects.Count);
 
             for (int p = 0; p < pairCount; p++)
-                totalUpdated += TransferVertexPositions(modelMeshes[p], mqoObjects[p], importScale, flip);
+                totalUpdated += TransferVertexAttributes(
+                    modelMeshes[p], mqoObjects[p], importScale, flip, position, uv, flipUV_V);
 
             return totalUpdated;
         }
 
-        private int TransferVertexPositions(
+        private int TransferVertexAttributes(
             PartialMeshEntry modelEntry,
             PartialMQOEntry  mqoEntry,
             float importScale,
-            AxisFlip flip)
+            AxisFlip flip,
+            bool  position,
+            bool  uv,
+            bool  flipUV_V)
         {
             var modelMo = modelEntry.Context?.MeshObject;
             var mqoMo   = mqoEntry.MeshContext?.MeshObject;
@@ -60,49 +75,56 @@ namespace Poly_Ling.MQO
             bool hasPeer    = modelEntry.BakedMirrorPeer != null;
             var  peerMo     = hasPeer ? modelEntry.BakedMirrorPeer.Context?.MeshObject : null;
 
-            var mqoUsed = BuildUsedVertexSet(mqoMo);
+            var mirrorAxis = (isMirrored && hasPeer && peerMo != null)
+                ? mqoEntry.MeshContext.GetMirrorSymmetryAxis() : 0;
 
-            int pmxOffset = 0;
-            int updated   = 0;
+            int updated = 0;
 
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
             {
-                if (!mqoUsed.Contains(vIdx)) continue;
+                var mqoVertex = mqoMo.Vertices[vIdx];
 
-                var    mqoVertex = mqoMo.Vertices[vIdx];
-                int    uvCount   = Math.Max(1, mqoVertex.UVs.Count);
-                Vector3 pos      = TransformPosition(mqoVertex.Position, importScale, flip);
-
-                for (int u = 0; u < uvCount; u++)
+                if (expIdx < modelMo.VertexCount)
                 {
-                    int idx = pmxOffset + u;
-                    if (idx < modelMo.VertexCount)
-                    {
-                        modelMo.Vertices[idx].Position = pos;
-                        updated++;
-                    }
+                    var dst = modelMo.Vertices[expIdx];
+
+                    if (position)
+                        dst.Position = TransformPosition(mqoVertex.Position, importScale, flip);
+
+                    if (uv) SetSingleUV(dst, mqoVertex, uvIdx, flipUV_V);
+
+                    updated++;
                 }
 
-                if (isMirrored && hasPeer && peerMo != null)
+                if (isMirrored && hasPeer && peerMo != null && expIdx < peerMo.VertexCount)
                 {
-                    var     mirrorAxis = mqoEntry.MeshContext.GetMirrorSymmetryAxis();
-                    Vector3 mirrorPos  = MirrorPosition(pos, mirrorAxis);
+                    var dst = peerMo.Vertices[expIdx];
 
-                    for (int u = 0; u < uvCount; u++)
+                    if (position)
                     {
-                        int idx = pmxOffset + u;
-                        if (idx < peerMo.VertexCount)
-                        {
-                            peerMo.Vertices[idx].Position = mirrorPos;
-                            updated++;
-                        }
+                        Vector3 pos = TransformPosition(mqoVertex.Position, importScale, flip);
+                        dst.Position = MirrorPosition(pos, mirrorAxis);
                     }
-                }
 
-                pmxOffset += uvCount;
-            }
+                    if (uv) SetSingleUV(dst, mqoVertex, uvIdx, flipUV_V);
+
+                    updated++;
+                }
+            });
 
             return updated;
+        }
+
+        /// <summary>
+        /// 展開先の頂点（UV スロットは 1 個）へ、MQO 頂点のスロット uvIdx の UV を入れる。
+        /// </summary>
+        private static void SetSingleUV(Vertex dst, Vertex mqoVertex, int uvIdx, bool flipUV_V)
+        {
+            Vector2 value = (uvIdx < mqoVertex.UVs.Count) ? mqoVertex.UVs[uvIdx] : Vector2.zero;
+            if (flipUV_V) value.y = 1f - value.y;
+
+            if (dst.UVs.Count == 0) dst.UVs.Add(value);
+            else                    dst.UVs[0] = value;
         }
 
         // ================================================================
@@ -129,34 +151,18 @@ namespace Poly_Ling.MQO
             var mqoMo   = mqoEntry.MeshContext?.MeshObject;
             if (modelMo == null || mqoMo == null) return 0;
 
-            var mqoUsed  = BuildUsedVertexSet(mqoMo);
-            int pmxOffset = 0;
-            int updated   = 0;
+            int updated = 0;
 
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
             {
-                if (!mqoUsed.Contains(vIdx)) continue;
+                int vertexId = mqoMo.Vertices[vIdx].Id;
+                if (vertexId < 0) return;
+                if (expIdx >= modelMo.VertexCount) return;
 
-                var mqoVertex = mqoMo.Vertices[vIdx];
-                int uvCount   = Math.Max(1, mqoVertex.UVs.Count);
-                int vertexId  = mqoVertex.Id;
-
-                if (vertexId >= 0)
-                {
-                    for (int u = 0; u < uvCount; u++)
-                    {
-                        int idx = pmxOffset + u;
-                        if (idx < modelMo.VertexCount)
-                        {
-                            modelMo.Vertices[idx].Id = vertexId;
-                            modelMo.RegisterVertexId(vertexId);
-                            updated++;
-                        }
-                    }
-                }
-
-                pmxOffset += uvCount;
-            }
+                modelMo.Vertices[expIdx].Id = vertexId;
+                modelMo.RegisterVertexId(vertexId);
+                updated++;
+            });
 
             return updated;
         }
@@ -287,16 +293,16 @@ namespace Poly_Ling.MQO
 
             // ── Step2: MQO非孤立頂点の展開辞書 ────────────────────────────
 
-            var mqoUsed      = BuildUsedVertexSet(mqoMo);
+            // 展開順と孤立判定は MeshExpansion が唯一の実装（MeshExpansion.cs 冒頭の指示）。
+            var mqoUsed       = MeshExpansion.BuildNonIsolatedSet(mqoMo);
             var expandedStart = new Dictionary<int, int>();
             int realVertexCount = 0;
 
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
             {
-                if (!mqoUsed.Contains(vIdx)) continue;
-                expandedStart[vIdx] = realVertexCount;
-                realVertexCount    += Math.Max(1, mqoMo.Vertices[vIdx].UVs.Count);
-            }
+                if (uvIdx == 0) expandedStart[vIdx] = expIdx;
+                realVertexCount = expIdx + 1;
+            }, mqoUsed);
 
             // ペアなし時、ミラー頂点の参照元オフセット
             int mirrorOffsetInOld = hasPeer ? 0 : realVertexCount;
@@ -306,40 +312,34 @@ namespace Poly_Ling.MQO
             var newRealVertices = new List<Vertex>();
             var newRealStartMap = new Dictionary<int, int>();
 
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
             {
-                if (!mqoUsed.Contains(vIdx)) continue;
-                newRealStartMap[vIdx] = newRealVertices.Count;
+                if (uvIdx == 0) newRealStartMap[vIdx] = newRealVertices.Count;
 
                 var mqoVertex = mqoMo.Vertices[vIdx];
-                int uvCount   = Math.Max(1, mqoVertex.UVs.Count);
-                int pmxStart  = expandedStart[vIdx];
+                int oldIdx    = expandedStart[vIdx] + uvIdx;
 
-                for (int u = 0; u < uvCount; u++)
+                Vertex newV = (oldIdx < oldRealVertices.Count)
+                    ? oldRealVertices[oldIdx].Clone() : new Vertex();
+
+                newV.UVs.Clear();
+                Vector2 uv = (uvIdx < mqoVertex.UVs.Count) ? mqoVertex.UVs[uvIdx] : Vector2.zero;
+                if (flipUV_V) uv.y = 1f - uv.y;
+                newV.UVs.Add(uv);
+
+                if (alsoImportPosition)
+                    newV.Position = TransformPosition(mqoVertex.Position, importScale, flip);
+
+                if (isMirrored && !bakeMirror)
                 {
-                    int    oldIdx = pmxStart + u;
-                    Vertex newV   = (oldIdx < oldRealVertices.Count)
-                        ? oldRealVertices[oldIdx].Clone() : new Vertex();
-
-                    newV.UVs.Clear();
-                    Vector2 uv = (u < mqoVertex.UVs.Count) ? mqoVertex.UVs[u] : Vector2.zero;
-                    if (flipUV_V) uv.y = 1f - uv.y;
-                    newV.UVs.Add(uv);
-
-                    if (alsoImportPosition)
-                        newV.Position = TransformPosition(mqoVertex.Position, importScale, flip);
-
-                    if (isMirrored && !bakeMirror)
-                    {
-                        var mirrorSrc  = hasPeer ? oldMirrorVertices : oldRealVertices;
-                        int mirrorIdx  = mirrorOffsetInOld + pmxStart + u;
-                        if (mirrorIdx < mirrorSrc.Count)
-                            newV.MirrorBoneWeight = mirrorSrc[mirrorIdx].BoneWeight;
-                    }
-
-                    newRealVertices.Add(newV);
+                    var mirrorSrc = hasPeer ? oldMirrorVertices : oldRealVertices;
+                    int mirrorIdx = mirrorOffsetInOld + oldIdx;
+                    if (mirrorIdx < mirrorSrc.Count)
+                        newV.MirrorBoneWeight = mirrorSrc[mirrorIdx].BoneWeight;
                 }
-            }
+
+                newRealVertices.Add(newV);
+            }, mqoUsed);
 
             // ── Step4: ミラー側の新頂点リスト構築（ベイク時のみ） ──────────
 
@@ -351,36 +351,30 @@ namespace Poly_Ling.MQO
                 var     mirrorAxis = mqoEntry.MeshContext.GetMirrorSymmetryAxis();
                 var     mirrorSrc  = hasPeer ? oldMirrorVertices : oldRealVertices;
 
-                for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+                MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
                 {
-                    if (!mqoUsed.Contains(vIdx)) continue;
-                    newMirrorStartMap[vIdx] = newMirrorVertices.Count;
+                    if (uvIdx == 0) newMirrorStartMap[vIdx] = newMirrorVertices.Count;
 
-                    var mqoVertex = mqoMo.Vertices[vIdx];
-                    int uvCount   = Math.Max(1, mqoVertex.UVs.Count);
-                    int pmxStart  = expandedStart[vIdx];
+                    var mqoVertex     = mqoMo.Vertices[vIdx];
+                    int oldMirrorIdx  = mirrorOffsetInOld + expandedStart[vIdx] + uvIdx;
 
-                    for (int u = 0; u < uvCount; u++)
+                    Vertex newV = (oldMirrorIdx < mirrorSrc.Count)
+                        ? mirrorSrc[oldMirrorIdx].Clone() : new Vertex();
+
+                    newV.UVs.Clear();
+                    Vector2 uv = (uvIdx < mqoVertex.UVs.Count) ? mqoVertex.UVs[uvIdx] : Vector2.zero;
+                    if (flipUV_V) uv.y = 1f - uv.y;
+                    newV.UVs.Add(uv);
+
+                    if (alsoImportPosition)
                     {
-                        int    oldMirrorIdx = mirrorOffsetInOld + pmxStart + u;
-                        Vertex newV         = (oldMirrorIdx < mirrorSrc.Count)
-                            ? mirrorSrc[oldMirrorIdx].Clone() : new Vertex();
-
-                        newV.UVs.Clear();
-                        Vector2 uv = (u < mqoVertex.UVs.Count) ? mqoVertex.UVs[u] : Vector2.zero;
-                        if (flipUV_V) uv.y = 1f - uv.y;
-                        newV.UVs.Add(uv);
-
-                        if (alsoImportPosition)
-                        {
-                            Vector3 pos = TransformPosition(mqoVertex.Position, importScale, flip);
-                            newV.Position = MirrorPosition(pos, mirrorAxis);
-                        }
-
-                        newV.MirrorBoneWeight = null;
-                        newMirrorVertices.Add(newV);
+                        Vector3 pos = TransformPosition(mqoVertex.Position, importScale, flip);
+                        newV.Position = MirrorPosition(pos, mirrorAxis);
                     }
-                }
+
+                    newV.MirrorBoneWeight = null;
+                    newMirrorVertices.Add(newV);
+                }, mqoUsed);
             }
 
             // ── Step5: 面のインデックスをリマップ ─────────────────────────
@@ -454,7 +448,7 @@ namespace Poly_Ling.MQO
                 int vIdx    = kvp.Key;
                 int oldBase = kvp.Value;
                 if (!newStartMap.TryGetValue(vIdx, out int newBase)) continue;
-                int uvCount = Math.Max(1, mqoMo.Vertices[vIdx].UVs.Count);
+                int uvCount = MeshExpansion.SlotCount(mqoMo.Vertices[vIdx]);
                 for (int u = 0; u < uvCount; u++)
                     map[oldBase + u] = newBase + u;
             }
@@ -468,6 +462,10 @@ namespace Poly_Ling.MQO
         public struct MQOMaterialMatch
         {
             public MQOMaterial       MqoMaterial;
+
+            /// <summary>MQODocument.Materials 上の index。面の M(i) はこの番号。</summary>
+            public int               MqoMaterialIndex;
+
             public MaterialReference ModelMaterialRef;
             public int               ModelMaterialIndex;
         }
@@ -482,8 +480,10 @@ namespace Poly_Ling.MQO
             var modelMatRefs = model.MaterialReferences;
             if (modelMatRefs == null) return matches;
 
-            foreach (var mqoMat in mqoDocument.Materials)
+            for (int m = 0; m < mqoDocument.Materials.Count; m++)
             {
+                var mqoMat = mqoDocument.Materials[m];
+
                 for (int i = 0; i < modelMatRefs.Count; i++)
                 {
                     var modelRef = modelMatRefs[i];
@@ -492,6 +492,7 @@ namespace Poly_Ling.MQO
                         matches.Add(new MQOMaterialMatch
                         {
                             MqoMaterial        = mqoMat,
+                            MqoMaterialIndex   = m,
                             ModelMaterialRef   = modelRef,
                             ModelMaterialIndex = i
                         });
@@ -682,14 +683,6 @@ namespace Poly_Ling.MQO
         // 内部ヘルパー
         // ================================================================
 
-        private static HashSet<int> BuildUsedVertexSet(MeshObject mo)
-        {
-            var used = new HashSet<int>();
-            foreach (var face in mo.Faces)
-                foreach (var vi in face.VertexIndices)
-                    used.Add(vi);
-            return used;
-        }
 
         private static Vector3 TransformPosition(Vector3 pos, float scale, AxisFlip flip)
         {

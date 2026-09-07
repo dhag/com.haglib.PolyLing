@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.MeshBridge;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Tools;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
@@ -178,26 +179,22 @@ namespace Poly_Ling.Tools
             }
             else
             {
-                // ToUnityMeshShared と同じ展開順: 頂点順 → UV順
+                // 展開順は ToUnityMeshShared と同じ MeshExpansion（手書きしない）
                 int colorIdx = 0;
-                for (int vIdx = 0; vIdx < mo.VertexCount && colorIdx < unityVertCount; vIdx++)
+                MeshExpansion.Enumerate(mo, (vIdx, uvIdx, expIdx) =>
                 {
+                    if (expIdx >= unityVertCount) return;
+
                     var vertex = mo.Vertices[vIdx];
-                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
 
                     float w = 0f;
                     if (vertex.HasBoneWeight)
                         w = GetWeightForBone(vertex.BoneWeight.Value, targetBone);
-                    if (w > 0f) weightedCount++;
+                    if (uvIdx == 0 && w > 0f) weightedCount++;
 
-                    Color col = WeightToHeatmapColor(w);
-
-                    for (int uvIdx = 0; uvIdx < uvCount && colorIdx < unityVertCount; uvIdx++)
-                    {
-                        colors[colorIdx] = col;
-                        colorIdx++;
-                    }
-                }
+                    colors[expIdx] = WeightToHeatmapColor(w);
+                    colorIdx = expIdx + 1;
+                });
 
                 // 残りはグレー
                 var greyFill = new Color(0.3f, 0.3f, 0.3f, 1f);
@@ -238,12 +235,13 @@ namespace Poly_Ling.Tools
             var colors         = new Color[unityVertCount];
             int weightedCount  = 0;
 
-            // ToUnityMeshShared と同じ展開順: 頂点順 → UV順
+            // 展開順は ToUnityMeshShared と同じ MeshExpansion（手書きしない）
             int colorIdx = 0;
-            for (int vIdx = 0; vIdx < mo.VertexCount && colorIdx < unityVertCount; vIdx++)
+            MeshExpansion.Enumerate(mo, (vIdx, uvIdx, expIdx) =>
             {
-                var vertex  = mo.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                if (expIdx >= unityVertCount) return;
+
+                var vertex = mo.Vertices[vIdx];
 
                 float w = 0f;
                 if (vertex.HasBoneWeight)
@@ -253,16 +251,11 @@ namespace Poly_Ling.Tools
                         w += GetWeightForBone(bw, bones[i]);
                 }
                 w = Mathf.Clamp01(w);
-                if (w > 0f) weightedCount++;
+                if (uvIdx == 0 && w > 0f) weightedCount++;
 
-                Color col = WeightToHeatmapColor(w);
-
-                for (int uvIdx = 0; uvIdx < uvCount && colorIdx < unityVertCount; uvIdx++)
-                {
-                    colors[colorIdx] = col;
-                    colorIdx++;
-                }
-            }
+                colors[expIdx] = WeightToHeatmapColor(w);
+                colorIdx = expIdx + 1;
+            });
 
             // 残りはグレー
             var greyFill = new Color(0.3f, 0.3f, 0.3f, 1f);

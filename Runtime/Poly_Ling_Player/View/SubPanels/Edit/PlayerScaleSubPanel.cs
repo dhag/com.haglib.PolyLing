@@ -46,8 +46,10 @@ namespace Poly_Ling.Player
             _sliderX = MakeSlider("X", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleX = v; });
             _sliderY = MakeSlider("Y", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleY = v; });
             _sliderZ = MakeSlider("Z", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleZ = v; });
+            // 確定はコマンド経由。CommitViaCommand が開始状態へ戻して
+            // ScaleSelectionCommand を送り、その受け口がベイクと Undo 記録を行う。
             foreach (var s in new[] { _sliderXYZ, _sliderX, _sliderY, _sliderZ })
-                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
+                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
 
             _fieldXYZ = new FloatField(); _fieldX = new FloatField();
             _fieldY   = new FloatField(); _fieldZ = new FloatField();
@@ -71,7 +73,7 @@ namespace Poly_Ling.Player
             _axisY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisY = v; });
             _axisZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisZ = v; });
             foreach (var s in new[] { _axisX, _axisY, _axisZ })
-                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.EndSliderDrag(); Refresh(); });
+                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
 
             _fieldAxisX = new FloatField(); _fieldAxisY = new FloatField(); _fieldAxisZ = new FloatField();
             _root.Add(SliderWithField(_axisX, _fieldAxisX, -180f, 180f,
@@ -98,8 +100,9 @@ namespace Poly_Ling.Player
             _root.Add(_magnetFalloff);
 
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginTop = 4;
-            var applyBtn = new Button(() => { GetH()?.EndSliderDrag(); Refresh(); }) { text = "Apply" }; applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
-            // 確定後は EndSliderDrag がスケールを 1 に戻すので、Refresh で表示も 1 へ揃う。
+            var applyBtn = new Button(() => { GetH()?.CommitViaCommand(); Refresh(); }) { text = "Apply" }; applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
+            // 確定後はスケールが 1 に戻るので、Refresh で表示も 1 へ揃う
+            // （CommitViaCommand が取り出し時に 1 へ戻し、受け口も終了時に 1 へ戻す）。
             var revertBtn = new Button(() => { GetH()?.Revert(); Refresh(); }) { text = "Reset" }; revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn); _root.Add(btnRow);
         }

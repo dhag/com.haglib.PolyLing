@@ -59,6 +59,13 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<int, int, bool[]> GetFaceCulledMask;
 
+        /// <summary>
+        /// コマンド送信口。クリック確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
         /// <summary>クリック確定時に発火（クリック点強調フラッシュ用）。</summary>
         public Action OnClicked;
 
@@ -111,25 +118,161 @@ namespace Poly_Ling.Player
         // IPlayerToolHandler
         // ================================================================
 
+        /// <summary>
+        /// クリック確定。
+        ///
+        /// 【1 クリック = 1 コマンド】
+        ///   送信口があるときは TryTakeCutFromClick で「何を切るか」だけを決め、
+        ///   実行はコマンドの受け口へ寄せる。段の途中のクリックは段が進むだけで
+        ///   false が返るので何も送らない。
+        ///   TryTake は Handle*Click と同じ段の更新を行うため、両方を呼ぶと
+        ///   段が二重に進む。どちらか一方だけを通すこと。
+        /// </summary>
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
             var ctx = BuildCtx(mods, screenPos); if (ctx == null) return;
             InjectGpuHover();
-            if (_tool.Mode == KnifeMode.SimpleCut)
+
+            // SimpleCut のマスクは 2 点目の直前に注入する。取り出したときに
+            // ツールから読んでコマンドへ載せるので、注入の位置は従来と同じでよい。
+            if (_tool.Mode == KnifeMode.SimpleCut && _tool.SimpleCutHasFirstPoint)
+                InjectSimpleCutMask(ctx);
+
+            if (SendCommand != null)
+            {
+                if (_tool.TryTakeCutFromClick(ctx, ToImgui(screenPos, ctx), screenPos, out var req))
+                {
+                    var cmd = BuildKnifeCommand(req);
+                    if (cmd != null) SendCommand(cmd);
+                }
+            }
+            else if (_tool.Mode == KnifeMode.SimpleCut)
             {
                 // クリック座標(ToViewportCoord 済み = Y=0 下)は頂点投影と同系。
                 // ToImgui を通すと二重反転で上下が狂うため、生の screenPos を渡す。
-                if (_tool.SimpleCutHasFirstPoint)
-                    InjectSimpleCutMask(ctx);
                 _tool.OnSimpleCutClickScreen(ctx, screenPos);
             }
             else
             {
                 _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             }
+
             ApplyHoverSelectionMode();   // 段遷移後の必要型に合わせて GPU ホバーモードを更新
             OnRepaint?.Invoke();
             OnClicked?.Invoke();
+        }
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 編集対象メッシュを 1 本だけコマンドの対象として載せる。
+        /// 対象が決まらないときは null。
+        /// </summary>
+        private int[] ActiveMasterIndices()
+        {
+            var model = _project?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc == null) return null;
+            return new[] { model.IndexOf(mc) };
+        }
+
+        /// <summary>取り出した切断内容からコマンドを組み立てる。</summary>
+        private Poly_Ling.Data.PanelCommand BuildKnifeCommand(KnifeTool.KnifeCutRequest req)
+        {
+            var targets = ActiveMasterIndices();
+            if (targets == null) return null;
+
+            int mi = _project?.CurrentModelIndex ?? 0;
+            switch (req.Mode)
+            {
+                case KnifeMode.Erase:
+                    return new Poly_Ling.Data.KnifeEraseEdgeCommand(
+                        mi, targets, req.Edge.V1, req.Edge.V2);
+
+                case KnifeMode.BeltLoop:
+                    return new Poly_Ling.Data.KnifeBeltLoopCutCommand(
+                        mi, targets, req.Edge.V1, req.Edge.V2,
+                        req.CutRatio, _tool.EqualDivide, _tool.Divisions);
+
+                case KnifeMode.SimpleCut:
+                    return new Poly_Ling.Data.KnifeSimpleCutCommand(
+                        mi, targets, req.ScreenP0, req.ScreenP1,
+                        req.FaceCulledMask, _tool.SimpleTriQuad);
+
+                case KnifeMode.LadderCut:
+                    return new Poly_Ling.Data.KnifeLadderCutCommand(
+                        mi, targets,
+                        req.StartVertex, req.Edge.V1, req.Edge.V2, req.EndVertex,
+                        req.CutRatio, _tool.EqualDivide, _tool.Divisions);
+            }
+            return null;
+        }
+
+        /// <summary>ラダー切断コマンドを実行する。</summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.KnifeLadderCutCommand cmd, out string reason)
+        {
+            if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+            return _tool.ExecuteLadderCutFromCommand(
+                ctx, cmd.StartVertex,
+                new VertexPair(cmd.SegmentV1, cmd.SegmentV2),
+                cmd.EndVertex, cmd.CutRatio, cmd.EqualDivide, cmd.Divisions, out reason);
+        }
+
+        /// <summary>一意分割コマンドを実行する。</summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.KnifeBeltLoopCutCommand cmd, out string reason)
+        {
+            if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+            return _tool.ExecuteBeltLoopCutFromCommand(
+                ctx, new VertexPair(cmd.EdgeV1, cmd.EdgeV2),
+                cmd.CutRatio, cmd.EqualDivide, cmd.Divisions, out reason);
+        }
+
+        /// <summary>辺消去コマンドを実行する。</summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.KnifeEraseEdgeCommand cmd, out string reason)
+        {
+            if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+            return _tool.ExecuteEraseEdgeFromCommand(
+                ctx, new VertexPair(cmd.EdgeV1, cmd.EdgeV2), out reason);
+        }
+
+        /// <summary>
+        /// シンプル切断コマンドを実行する。
+        /// ScreenP0 / ScreenP1 は実行時のアクティブビューポートの座標として解釈される。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.KnifeSimpleCutCommand cmd, out string reason)
+        {
+            if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+            return _tool.ExecuteSimpleCutFromCommand(
+                ctx, cmd.ScreenP0, cmd.ScreenP1, cmd.FaceCulledMask, cmd.TriQuad, out reason);
+        }
+
+        /// <summary>4 コマンド共通の前処理。対象の照合とコンテキストの組み立て。</summary>
+        private bool PrepareCommand(int[] masterIndices, out ToolContext ctx, out string reason)
+        {
+            ctx    = null;
+            reason = null;
+
+            if (masterIndices == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesActiveMesh(model, masterIndices, out reason))
+                return false;
+
+            ctx = BuildCtx(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) { reason = "ビューポートがありません"; return false; }
+            return true;
         }
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)

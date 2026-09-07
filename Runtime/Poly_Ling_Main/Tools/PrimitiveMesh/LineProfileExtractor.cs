@@ -34,6 +34,42 @@ namespace Poly_Ling.PrimitiveMesh
         }
 
         // ================================================================
+        // 正規化
+        // ================================================================
+
+        /// <summary>
+        /// AABB の長辺が 1 になるよう等方スケールし、AABB の最小角を原点へ寄せる。
+        /// 長辺が 0（全点が同一位置）なら null。
+        ///
+        /// 【なぜ要るか】
+        ///   フリル／パイプの断面座標は rung 長で正規化された系にある。
+        ///   描画オブジェクト（2頂点ライン）から取り込んだ点列は元メッシュの
+        ///   ローカル座標そのままなので、そのまま断面として使うと寸法が合わない。
+        ///   取り込みのときだけこれを掛ける（反映は生データのまま書き出す）。
+        /// </summary>
+        public static List<Vector2> NormalizeToUnitSpan(IReadOnlyList<Vector2> src)
+        {
+            if (src == null || src.Count < 2) return null;
+
+            float minX = float.MaxValue, minY = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue;
+            for (int i = 0; i < src.Count; i++)
+            {
+                minX = Mathf.Min(minX, src[i].x); maxX = Mathf.Max(maxX, src[i].x);
+                minY = Mathf.Min(minY, src[i].y); maxY = Mathf.Max(maxY, src[i].y);
+            }
+
+            float span = Mathf.Max(maxX - minX, maxY - minY);
+            if (span <= 1e-6f) return null;
+
+            float k = 1f / span;
+            var dst = new List<Vector2>(src.Count);
+            for (int i = 0; i < src.Count; i++)
+                dst.Add(new Vector2((src[i].x - minX) * k, (src[i].y - minY) * k));
+            return dst;
+        }
+
+        // ================================================================
         // メッシュ → プロファイル
         // ================================================================
 
@@ -65,7 +101,7 @@ namespace Poly_Ling.PrimitiveMesh
 
         /// <summary>
         /// 2頂点ライン群を閉ループ解析し、Profile2D 用の Loop 群として XY を返す。
-        /// hole 判定は Shoelace 符号(Y上向き前提)。
+        /// hole 判定は Shoelace 符号(Y上向き前提)。反時計回りが外周、時計回りが穴。
         /// </summary>
         public static List<Loop> ExtractLoops(MeshObject mesh, IEnumerable<int> lineFaceIndices)
         {
@@ -106,7 +142,18 @@ namespace Poly_Ling.PrimitiveMesh
                         Vector3 p = mesh.Vertices[vi].Position;
                         loop.Points.Add(new Vector2(p.x, p.y));
                     }
-                    loop.IsHole = !IsClockwise(mesh, vidx);
+                    // 反時計回りが外周、時計回りが穴。
+                    //
+                    // 【以前は逆だった】
+                    //   IsHole = !IsClockwise と書いていたため、外周を穴と判定していた。
+                    //   図形生成パネルが持つ 2D 押し出しの既定の外周
+                    //   （PlayerPrimitiveMeshSubPanel.cs:2916-2923 の
+                    //    (-r,-r)→(r,-r)→(r,r)→(-r,r)、IsHole = false）は反時計回りで、
+                    //   これを IsClockwise に掛けると false になる。
+                    //   反転すると true になり、パネル自身の既定の外周が穴として返っていた。
+                    //   「取り込み(メッシュ→プロファイル)」を通すたびに外周と穴が入れ替わり、
+                    //   出来上がりが裏返って見える原因になっていた。
+                    loop.IsHole = IsClockwise(mesh, vidx);
                     loops.Add(loop);
                 }
                 else
@@ -338,6 +385,10 @@ namespace Poly_Ling.PrimitiveMesh
         }
 
         /// <summary>ループが時計回りか(Shoelace, XY平面, Y上向き)。</summary>
+        /// <summary>
+        /// Y 上向きの系で時計回りか。Σ(x1-x0)(y1+y0) が正なら時計回り。
+        /// 反時計回りが外周、時計回りが穴（ExtractLoops の注記を参照）。
+        /// </summary>
         private static bool IsClockwise(MeshObject mesh, List<int> vertexIndices)
         {
             if (vertexIndices.Count < 3) return true;

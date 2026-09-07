@@ -156,6 +156,18 @@ namespace Poly_Ling.Core
         private static readonly Color MeshOriginColor    = new Color(0.4f, 1.0f, 0.4f, 0.8f);
         private static readonly Color MeshOriginSelColor = new Color(1.0f, 1.0f, 0.3f, 0.9f);
 
+        // 揺れもの編集の強調表示色。
+        //   鎖のメンバー … 紫。既存の水色（ボーン）・橙（選択）・緑（原点）と
+        //                   色相が衝突しないものを選ぶ。
+        //   編集中ノード … 白に近い明るい色。1 個しか出ないので最も目立たせる。
+        // 大きさも変える（ActiveHighlightScale 倍）ので、色が見分けにくい
+        // 環境でも「いまどこか」は分かる。
+        private static readonly Color SpringChainColor  = new Color(0.75f, 0.45f, 1.0f, 0.95f);
+        private static readonly Color SpringActiveColor = new Color(1.0f,  1.0f,  1.0f, 1.0f);
+
+        /// <summary>編集中ノードのくさびを何倍に描くか。</summary>
+        private const float SpringActiveScale = 2.2f;
+
         // 法線線分の色（灰青系）。根元を暗く、先端を明るくして向きが読めるようにする。
         // Poly_Ling/Bone3D_Overlay は頂点色をそのまま出力するため、線の 2 頂点に
         // 別の色を入れるだけでグラデーションになり、追加コストは無い。
@@ -683,7 +695,10 @@ namespace Poly_Ling.Core
 
             bool anyBone   = ShowSelectedBone       || ShowUnselectedBone;
             bool anyOrigin = ShowSelectedMeshOrigin || ShowUnselectedMeshOrigin;
-            if (!anyBone && !anyOrigin) return;
+
+            // 揺れもの編集の強調表示は、ボーン表示を全部切っていても出す。
+            // 「鎖がどこにあるか」を見るための表示なので、隠れていては用をなさない。
+            if (!anyBone && !anyOrigin && !HasSpringBoneHighlight(project)) return;
 
             for (int mi = 0; mi < project.ModelCount; mi++)
             {
@@ -697,13 +712,33 @@ namespace Poly_Ling.Core
                     if (ctx == null) continue;
 
                     Color col;
+                    float scale = BoneMarkerScale;
                     if (ctx.Type == MeshType.Bone)
                     {
-                        if (!anyBone) continue;
-                        bool isSelBone = selBones.Contains(ci);
-                        if ( isSelBone && !ShowSelectedBone)   continue;
-                        if (!isSelBone && !ShowUnselectedBone) continue;
-                        col = isSelBone ? BoneWireSelColor : BoneWireColor;
+                        // 揺れもの編集の強調表示。選択色より優先し、表示の
+                        // 絞り込みも通り越す。選択とは別の話（「いま触っている
+                        // 鎖はどれか」）を伝えるものなので、選択色に混ぜず上書きする。
+                        bool isActiveNode = ci == model.SpringBoneHighlightActiveIndex;
+                        bool isChainNode  = model.SpringBoneHighlightIndices != null &&
+                                            model.SpringBoneHighlightIndices.Contains(ci);
+
+                        if (isActiveNode)
+                        {
+                            col   = SpringActiveColor;
+                            scale = BoneMarkerScale * SpringActiveScale;
+                        }
+                        else if (isChainNode)
+                        {
+                            col = SpringChainColor;
+                        }
+                        else
+                        {
+                            if (!anyBone) continue;
+                            bool isSelBone = selBones.Contains(ci);
+                            if ( isSelBone && !ShowSelectedBone)   continue;
+                            if (!isSelBone && !ShowUnselectedBone) continue;
+                            col = isSelBone ? BoneWireSelColor : BoneWireColor;
+                        }
                     }
                     else
                     {
@@ -725,12 +760,12 @@ namespace Poly_Ling.Core
                     var key = (mi, ci);
                     if (!_boneMeshCache.TryGetValue(key, out var boneMesh) || boneMesh == null)
                     {
-                        boneMesh = BuildBoneLineMesh(pos, rot, col, BoneMarkerScale);
+                        boneMesh = BuildBoneLineMesh(pos, rot, col, scale);
                         _boneMeshCache[key] = boneMesh;
                     }
                     else
                     {
-                        UpdateBoneLineMesh(boneMesh, pos, rot, col, BoneMarkerScale);
+                        UpdateBoneLineMesh(boneMesh, pos, rot, col, scale);
                     }
                 }
             }
@@ -742,6 +777,21 @@ namespace Poly_Ling.Core
         /// </summary>
         private static bool IsMirrorSideType(MeshType t)
             => t == MeshType.MirrorSide || t == MeshType.BakedMirror;
+
+        /// <summary>どれかのモデルに揺れもの編集の強調表示が入っているか。</summary>
+        private static bool HasSpringBoneHighlight(ProjectContext project)
+        {
+            if (project == null) return false;
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var m = project.Models[mi];
+                if (m == null) continue;
+                if (m.SpringBoneHighlightActiveIndex >= 0) return true;
+                if (m.SpringBoneHighlightIndices != null &&
+                    m.SpringBoneHighlightIndices.Count > 0) return true;
+            }
+            return false;
+        }
 
         private static bool IsMeshOriginTarget(MeshType t)
         {
@@ -765,7 +815,7 @@ namespace Poly_Ling.Core
 
             bool anyBone   = ShowSelectedBone       || ShowUnselectedBone;
             bool anyOrigin = ShowSelectedMeshOrigin || ShowUnselectedMeshOrigin;
-            if (!anyBone && !anyOrigin) return;
+            if (!anyBone && !anyOrigin && !HasSpringBoneHighlight(project)) return;
 
             // Phase 2c-2: 選択/非選択で別マテリアル（global alpha が異なる）。
             var matSel   = GetBoneOverlayMaterial(isSelected: true);
@@ -788,8 +838,25 @@ namespace Poly_Ling.Core
                     {
                         if (!anyBone) continue;
                         isSel = selBones.Contains(ci);
-                        if ( isSel && !ShowSelectedBone)   continue;
-                        if (!isSel && !ShowUnselectedBone) continue;
+
+                        // 強調表示中のボーンは、表示の絞り込みに関わらず出す。
+                        // ここで落とすと、非選択ボーンを隠している状態では
+                        // 鎖の形がまったく見えなくなる。
+                        bool isHighlighted =
+                            ci == model.SpringBoneHighlightActiveIndex ||
+                            (model.SpringBoneHighlightIndices != null &&
+                             model.SpringBoneHighlightIndices.Contains(ci));
+
+                        if (!isHighlighted)
+                        {
+                            if ( isSel && !ShowSelectedBone)   continue;
+                            if (!isSel && !ShowUnselectedBone) continue;
+                        }
+                        else
+                        {
+                            // 強調表示は不透明側のマテリアルで描く。
+                            isSel = true;
+                        }
                     }
                     else
                     {

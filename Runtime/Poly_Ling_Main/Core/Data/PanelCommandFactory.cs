@@ -41,8 +41,15 @@ using UnityEngine;
 
 namespace Poly_Ling.Data
 {
-    /// <summary>action 名と文字列パラメータから PanelCommand を作る。</summary>
-    public static class PanelCommandFactory
+    /// <summary>
+    /// action 名と文字列パラメータから PanelCommand を作る。
+    ///
+    /// 【partial にしている理由】
+    ///   MCP のスキーマ生成（PanelCommandSchema.cs）が、ここの走査規則
+    ///   （PickConstructor / FindProperty / KeyOf / HasDefault）をそのまま使う。
+    ///   別クラスにすると同じ規則をもう一度書くことになり、必ずずれる。
+    /// </summary>
+    public static partial class PanelCommandFactory
     {
         // ================================================================
         // 別名表
@@ -58,8 +65,12 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// 規則から外れるパラメータ名。"型名.プロパティ名" → 実際に届くキー。
-        /// 既存クライアント（PanelCommandRouter / RemoteHtmlClient）が
-        /// 送っているキーをそのまま受けるために要る。
+        ///
+        /// 用途は 2 つ。
+        ///   1. 既存クライアント（PanelCommandRouter / RemoteHtmlClient）が
+        ///      送っているキーをそのまま受ける
+        ///   2. Camel() が頭字語をうまく崩せないものを直す
+        ///      （UVIndices → uVIndices になってしまう。下記の注記を参照）
         /// </summary>
         private static readonly Dictionary<string, string> ParamAliases =
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -69,6 +80,11 @@ namespace Poly_Ling.Data
             ["RenameModelCommand.NewName"]             = "name",
             ["ApplyBlendCommand.RecalculateNormals"]   = "recalcNormals",
             ["ApplyBlendCommand.SelectedVerticesOnly"] = "selectedOnly",
+
+            // 頭字語。Camel() は先頭 1 文字しか小文字にしないため
+            // "UVIndices" が "uVIndices" になる。コンストラクタ引数は
+            // 既に uvIndices なので、そちらへ合わせる。
+            ["ApplyUVChangesCommand.UVIndices"]        = "uvIndices",
         };
 
         // ================================================================
@@ -124,6 +140,16 @@ namespace Poly_Ling.Data
                ? name.Substring(0, name.Length - "Command".Length)
                : name;
 
+        /// <summary>
+        /// 先頭 1 文字だけを小文字にする。
+        ///
+        /// 【頭字語は直さない】
+        ///   "UVIndices" は "uVIndices" になる。先頭の連続する大文字をまとめて
+        ///   小文字にする規則へ変えると、道具名（ActionOf）も同じ関数を通るため
+        ///   179 本の名前が一斉に変わる。頭字語は数が少ないので、
+        ///   ParamAliases に 1 行足して個別に吸収する。
+        ///   同じ形の型を増やしたときは、そちらへ 1 行足すこと。
+        /// </summary>
         private static string Camel(string s)
             => string.IsNullOrEmpty(s) ? s : char.ToLowerInvariant(s[0]) + s.Substring(1);
 
@@ -179,6 +205,24 @@ namespace Poly_Ling.Data
                 }
 
                 string key = KeyOf(t, prop);
+
+                // 入れ子の構造体はドット区切りのキーから組み立てる。
+                // 図形のパラメータ構造体（CubeParams ほか）と PrimitivePlacement が該当する。
+                if (IsNestedType(p.ParameterType))
+                {
+                    if (!HasAnyKeyWithPrefix(args, key + "."))
+                    {
+                        // 子の指定が 1 つも無いときは既定値のまま。
+                        if (TryDefault(p, out values[i])) continue;
+                        if (!TryBuildNested(p.ParameterType, key, args, 1, out values[i], out string nreason))
+                        { error = $"{t.Name}.{prop.Name}: {nreason}"; return null; }
+                        continue;
+                    }
+                    if (!TryBuildNested(p.ParameterType, key, args, 1, out values[i], out string nwhy))
+                    { error = $"{t.Name}.{prop.Name}: {nwhy}"; return null; }
+                    continue;
+                }
+
                 if (args == null || !args.TryGetValue(key, out var raw) || raw == null)
                 {
                     if (attr.Required && !HasDefault(p))
@@ -225,6 +269,13 @@ namespace Poly_Ling.Data
                 try { v = prop.GetValue(cmd); }
                 catch (Exception) { continue; }
                 if (v == null) continue;
+
+                // 入れ子はドット区切りのキーへ展開する。Create の読み側と対で保つこと。
+                if (IsNestedType(prop.PropertyType))
+                {
+                    FlattenNested(v, prop.PropertyType, KeyOf(t, prop), 1, result);
+                    continue;
+                }
 
                 if (!TryFormat(v, out string s)) continue;
                 result[KeyOf(t, prop)] = s;
@@ -292,6 +343,24 @@ namespace Poly_Ling.Data
         // 文字列 → 値
         // ================================================================
 
+        /// <summary>
+        /// TryParse が直接扱える型か。入れ子として展開すべきかの判定に使う。
+        /// TryParse の分岐と必ず同じ集合にすること。
+        /// </summary>
+        private static bool IsDirectlyParsable(Type type)
+        {
+            if (type == null) return false;
+            if (type.IsEnum) return true;
+            return type == typeof(string)  || type == typeof(int)     || type == typeof(float)  ||
+                   type == typeof(bool)    || type == typeof(ulong)   ||
+                   type == typeof(Vector2) || type == typeof(Vector3) ||
+                   type == typeof(Vector2Int) || type == typeof(Vector3Int) ||
+                   type == typeof(Vector2[])  || type == typeof(Vector3[])  ||
+                   type == typeof(Poly_Ling.Selection.VertexPair[]) ||
+                   type == typeof(int[])   || type == typeof(float[]) || type == typeof(bool[]) ||
+                   type == typeof(ulong[]) || type == typeof(string[]);
+        }
+
         private static bool TryParse(string raw, Type type, out object value, out string why)
         {
             value = null;
@@ -336,6 +405,40 @@ namespace Poly_Ling.Data
             // （float[] と違い、足りない・多いのは指定ミスなので黙って通さない）。
             if (type == typeof(Vector2)) return TryParseVector(raw, 2, out value, out why);
             if (type == typeof(Vector3)) return TryParseVector(raw, 3, out value, out why);
+
+            // 整数ベクトル。図形の分割数（CubeParams.Subdivisions ほか）が使う。
+            if (type == typeof(Vector2Int) || type == typeof(Vector3Int))
+            {
+                int n = type == typeof(Vector2Int) ? 2 : 3;
+                if (!TryParseVector(raw, n, out object fv, out why)) return false;
+                value = n == 2
+                    ? (object)new Vector2Int(
+                        Mathf.RoundToInt(((Vector2)fv).x), Mathf.RoundToInt(((Vector2)fv).y))
+                    : (object)new Vector3Int(
+                        Mathf.RoundToInt(((Vector3)fv).x), Mathf.RoundToInt(((Vector3)fv).y),
+                        Mathf.RoundToInt(((Vector3)fv).z));
+                return true;
+            }
+
+            // 要素が固定長のベクトルの配列は、平たい数値列として受ける。
+            // "x1,y1,x2,y2,..." のように要素数ぶんずつ並べる。
+            // 長さが割り切れないときは指定ミスなので弾く。
+            if (type == typeof(Vector2[])) return TryParseVectorArray(raw, 2, out value, out why);
+            if (type == typeof(Vector3[])) return TryParseVectorArray(raw, 3, out value, out why);
+
+            // 辺の並び。頂点番号を 2 個ずつ並べる。
+            if (type == typeof(Poly_Ling.Selection.VertexPair[]))
+            {
+                if (!TryParseIntArray(raw, out object ia, out why)) return false;
+                var src = (int[])ia;
+                if ((src.Length % 2) != 0)
+                { why = $"要素が 2 の倍数でない（{src.Length} 個）"; return false; }
+                var pairs = new Poly_Ling.Selection.VertexPair[src.Length / 2];
+                for (int i = 0; i < pairs.Length; i++)
+                    pairs[i] = new Poly_Ling.Selection.VertexPair(src[i * 2], src[i * 2 + 1]);
+                value = pairs;
+                return true;
+            }
 
             if (type == typeof(int[]))    return TryParseIntArray(raw, out value, out why);
             if (type == typeof(float[]))  return TryParseFloatArray(raw, out value, out why);
@@ -392,6 +495,46 @@ namespace Poly_Ling.Data
             value = (count == 2)
                 ? (object)new Vector2(a[0], a[1])
                 : (object)new Vector3(a[0], a[1], a[2]);
+            return true;
+        }
+
+        /// <summary>
+        /// "x1,y1,x2,y2,..." を Vector2[] / Vector3[] として読む。
+        /// 要素数が count の倍数でなければ失敗させる。
+        /// </summary>
+        private static bool TryParseVectorArray(string raw, int count, out object value, out string why)
+        {
+            value = null;
+            why   = "";
+
+            var parts = SplitPlain(raw);
+            if (parts.Length == 1 && string.IsNullOrEmpty(parts[0].Trim()))
+            {
+                value = count == 2 ? (object)Array.Empty<Vector2>() : (object)Array.Empty<Vector3>();
+                return true;
+            }
+            if ((parts.Length % count) != 0)
+            { why = $"要素が {count} の倍数でない（{parts.Length} 個）"; return false; }
+
+            var f = new float[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+                if (!float.TryParse(parts[i].Trim(), NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out f[i]))
+                { why = $"{i} 番目が実数でない"; return false; }
+
+            int n = parts.Length / count;
+            if (count == 2)
+            {
+                var a = new Vector2[n];
+                for (int i = 0; i < n; i++) a[i] = new Vector2(f[i * 2], f[i * 2 + 1]);
+                value = a;
+            }
+            else
+            {
+                var a = new Vector3[n];
+                for (int i = 0; i < n; i++) a[i] = new Vector3(f[i * 3], f[i * 3 + 1], f[i * 3 + 2]);
+                value = a;
+            }
             return true;
         }
 
@@ -454,6 +597,11 @@ namespace Poly_Ling.Data
                                      .ToString("R", CultureInfo.InvariantCulture)); return true;
                 case Vector3 v3: s = JoinPlain(3, k => (k == 0 ? v3.x : k == 1 ? v3.y : v3.z)
                                      .ToString("R", CultureInfo.InvariantCulture)); return true;
+
+                case Vector2Int i2: s = JoinPlain(2, k => (k == 0 ? i2.x : i2.y)
+                                     .ToString(CultureInfo.InvariantCulture)); return true;
+                case Vector3Int i3: s = JoinPlain(3, k => (k == 0 ? i3.x : k == 1 ? i3.y : i3.z)
+                                     .ToString(CultureInfo.InvariantCulture)); return true;
             }
 
             if (v is Enum e)
@@ -464,6 +612,21 @@ namespace Poly_Ling.Data
 
             switch (v)
             {
+                // 読み側（TryParseVectorArray）と同じ平たい並びにする。
+                case Vector2[] v2a:
+                    s = JoinPlain(v2a.Length * 2, k => (k % 2 == 0 ? v2a[k / 2].x : v2a[k / 2].y)
+                            .ToString("R", CultureInfo.InvariantCulture));
+                    return true;
+                case Vector3[] v3a:
+                    s = JoinPlain(v3a.Length * 3, k =>
+                            (k % 3 == 0 ? v3a[k / 3].x : k % 3 == 1 ? v3a[k / 3].y : v3a[k / 3].z)
+                            .ToString("R", CultureInfo.InvariantCulture));
+                    return true;
+                case Poly_Ling.Selection.VertexPair[] vpa:
+                    s = JoinPlain(vpa.Length * 2, k => (k % 2 == 0 ? vpa[k / 2].V1 : vpa[k / 2].V2)
+                            .ToString(CultureInfo.InvariantCulture));
+                    return true;
+
                 case int[] ia:    s = JoinPlain(ia.Length, k => ia[k].ToString(CultureInfo.InvariantCulture)); return true;
                 case ulong[] ua:  s = JoinPlain(ua.Length, k => ua[k].ToString(CultureInfo.InvariantCulture)); return true;
                 case float[] fa:  s = JoinPlain(fa.Length, k => fa[k].ToString("R", CultureInfo.InvariantCulture)); return true;

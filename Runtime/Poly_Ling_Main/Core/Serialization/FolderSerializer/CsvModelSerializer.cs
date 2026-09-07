@@ -1,8 +1,9 @@
 // Assets/Editor/Poly_Ling/Serialization/FolderSerializer/CsvModelSerializer.cs
 // モデルフォルダ内のCSVファイル読み書き
-// model.csv, materials.csv, materialprops.csv, humanoid.csv, morphgroups.csv, editorstate.csv, workplane.csv
-// springbonegroups.csv, springbonesettings.csv
-// + mesh/bone/morph CSVの振り分け
+// model.csv, materials.csv, materialprops.csv, humanoid.export.csv, morphgroups.csv,
+// editorstate.csv, workplane.csv, springbonegroups.csv, previewsettings.csv
+// vrmmeta.csv, vrmlookat.csv, avatarsettings.csv, coordinate.csv
+// + mesh/bone/morph/pmx_physics CSVの振り分け
 
 using System;
 using System.Collections.Generic;
@@ -77,6 +78,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var boneEntries = new List<CsvMeshEntry>();
             var morphEntries = new List<CsvMeshEntry>();
 
+            // 剛体 / JOINT は PMX 物理のメタデータ（頂点ゼロ）。
+            // 形状ファイルに混ぜず専用ファイルへ振る。
+            var pmxPhysicsEntries = new List<CsvMeshEntry>();
+
             for (int i = 0; i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
@@ -91,6 +96,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case MeshType.Morph:
                         morphEntries.Add(entry);
+                        break;
+                    case MeshType.RigidBody:
+                    case MeshType.RigidBodyJoint:
+                        pmxPhysicsEntries.Add(entry);
                         break;
                     default:
                         meshEntries.Add(entry);
@@ -111,15 +120,18 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string meshFile = $"{modelName}.mesh.csv";
             string boneFile = $"{modelName}.bone.csv";
             string morphFile = $"{modelName}.morph.csv";
+            string pmxPhysicsFile = $"{modelName}.pmx_physics.csv";
 
             // 空の種別は書き出さないが、以前の保存で作られたファイルが残っていると
             // 読込時に index 空間が重なって上書きが起きる。書かない種別は削除する。
             WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, meshFile),  meshEntries,  "mesh",  useNameBased, indexToName);
             WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, boneFile),  boneEntries,  "bone",  useNameBased, indexToName);
             WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, morphFile), morphEntries, "morph", useNameBased, indexToName);
+            WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, pmxPhysicsFile), pmxPhysicsEntries, "pmx_physics", useNameBased, indexToName);
 
             // model.csv (順序マスター)
-            WriteModelCsv(modelFolderPath, model, meshEntries, boneEntries, morphEntries, useNameBased);
+            WriteModelCsv(modelFolderPath, model, meshEntries, boneEntries, morphEntries,
+                pmxPhysicsEntries, useNameBased);
 
             // materials.csv
             WriteMaterialsCsv(modelFolderPath, model);
@@ -127,7 +139,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // materialprops.csv（シェーダー固有プロパティ。materials.csv の列を伸ばさないため独立CSV）
             WriteMaterialPropsCsv(modelFolderPath, model);
 
-            // humanoid.csv
+            // humanoid.export.csv（書き出し専用の派生。読み戻さない）
             if (model.HumanoidMapping != null && !model.HumanoidMapping.IsEmpty)
                 WriteHumanoidCsv(modelFolderPath, model, useNameBased, indexToName);
 
@@ -138,6 +150,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // meshselsets.csv
             if (model.MeshSelectionSets != null && model.MeshSelectionSets.Count > 0)
                 WriteMeshSelSetsCsv(modelFolderPath, model);
+
+            // objectgroups.csv
+            if (model.ObjectGroups != null && model.ObjectGroups.Count > 0)
+                WriteObjectGroupsCsv(modelFolderPath, model);
 
             // mirrorpairs.csv
             if (model.MirrorPairs != null && model.MirrorPairs.Count > 0)
@@ -163,8 +179,22 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (model.SpringBoneColliderGroupNames != null && model.SpringBoneColliderGroupNames.Count > 0)
                 WriteSpringBoneGroupsCsv(modelFolderPath, model);
 
-            // springbonesettings.csv（SpringBone 評価設定。既定値でも往復対称のため常時出力）
-            WriteSpringBoneSettingsCsv(modelFolderPath, model);
+            // previewsettings.csv（PolyLing 内のプレビュー評価設定。
+            //   既定値でも往復対称のため常時出力）
+            WritePreviewSettingsCsv(modelFolderPath, model);
+
+            // vrmmeta.csv / vrmlookat.csv（VRM 出力用。未設定なら書かない）
+            //   未設定（null）とファイル無しを同じ意味にそろえるため、
+            //   null のときはファイルを消す。previewsettings.csv と違い
+            //   既定値と未設定で出力が変わる（VRM の既定に任せるかどうか）ため。
+            WriteOrDeleteVrmMetaCsv(modelFolderPath, model);
+            WriteOrDeleteVrmLookAtCsv(modelFolderPath, model);
+
+            // avatarsettings.csv（Avatar リターゲット設定。未設定なら書かない）
+            WriteOrDeleteAvatarRetargetCsv(modelFolderPath, model);
+
+            // coordinate.csv（PMX/MQO の座標規約。未設定なら書かない）
+            WriteOrDeleteCoordinateCsv(modelFolderPath, model);
 
             // textures フォルダにテクスチャをコピー
             string texturesFolder = Path.Combine(modelFolderPath, "textures");
@@ -203,7 +233,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // メッシュファイルを読み込み（自モデル / 追加を分離）
             var ownMeshEntries = new Dictionary<string, List<CsvMeshEntry>>();
 
-            foreach (var type in new[] { "mesh", "bone", "morph" })
+            // glob は "*.<type>.csv"。pmx_physics は mesh とは別の綴りなので衝突しない。
+            // mesh の走査はそのまま残すため、旧フォルダの mesh.csv に入っている
+            // 剛体 / JOINT もこれまでどおり読める。
+            foreach (var type in new[] { "mesh", "bone", "morph", "pmx_physics" })
             {
                 var csvFiles = Directory.GetFiles(modelFolderPath, $"*.{type}.csv");
                 var ownList = new List<CsvMeshEntry>();
@@ -328,6 +361,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // meshselsets.csv
             ReadMeshSelSetsCsv(modelFolderPath, model);
 
+            // objectgroups.csv
+            ReadObjectGroupsCsv(modelFolderPath, model);
+
             // mirrorpairs.csv
             ReadMirrorPairsCsv(modelFolderPath, model);
 
@@ -363,10 +399,29 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (File.Exists(sbgPath))
                 ReadSpringBoneGroupsCsv(sbgPath, model);
 
-            // springbonesettings.csv（SpringBone 評価設定。無い場合は既定値のまま）
-            string sbsPath = Path.Combine(modelFolderPath, "springbonesettings.csv");
-            if (File.Exists(sbsPath))
-                ReadSpringBoneSettingsCsv(sbsPath, model);
+            // previewsettings.csv（プレビュー評価設定。無い場合は既定値のまま）
+            string psPath = Path.Combine(modelFolderPath, "previewsettings.csv");
+            if (File.Exists(psPath))
+                ReadPreviewSettingsCsv(psPath, model);
+
+            // vrmmeta.csv / vrmlookat.csv（無ければ未設定のまま）
+            string vmPath = Path.Combine(modelFolderPath, "vrmmeta.csv");
+            if (File.Exists(vmPath))
+                ReadVrmMetaCsv(vmPath, model);
+
+            string vlPath = Path.Combine(modelFolderPath, "vrmlookat.csv");
+            if (File.Exists(vlPath))
+                ReadVrmLookAtCsv(vlPath, model);
+
+            // avatarsettings.csv（無ければ未設定のまま）
+            string arPath = Path.Combine(modelFolderPath, "avatarsettings.csv");
+            if (File.Exists(arPath))
+                ReadAvatarRetargetCsv(arPath, model);
+
+            // coordinate.csv（無ければ未設定のまま）
+            string ccPath = Path.Combine(modelFolderPath, "coordinate.csv");
+            if (File.Exists(ccPath))
+                ReadCoordinateCsv(ccPath, model);
 
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
             IKChainResolver.RebuildLinksFromPerBone(model);
@@ -416,6 +471,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             List<CsvMeshEntry> meshEntries,
             List<CsvMeshEntry> boneEntries,
             List<CsvMeshEntry> morphEntries,
+            List<CsvMeshEntry> pmxPhysicsEntries,
             bool useNameBased = false)
         {
             var sb = new StringBuilder();
@@ -442,6 +498,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             {
                 var e = morphEntries[o];
                 allEntries.Add((e.GlobalIndex, "morph", o, e.MeshContext.Type.ToString(), e.MeshContext.Name));
+            }
+            for (int o = 0; o < pmxPhysicsEntries.Count; o++)
+            {
+                var e = pmxPhysicsEntries[o];
+                allEntries.Add((e.GlobalIndex, "pmx_physics", o, e.MeshContext.Type.ToString(), e.MeshContext.Name));
             }
 
             // globalIndex順にソート（MeshContextListの復元順序）
@@ -777,14 +838,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
-        // humanoid.csv
+        // humanoid.export.csv（書き出し専用の派生ファイル）
+        //   正本は per-bone（bone.csv の humanBodyBone / humanLimit）で、
+        //   ここはそれを AvatarBuilder 向けに度へ直した写し。読み戻さない。
+        //   手で直しても無視されるので、名前で派生だと分かるようにしてある。
         // ================================================================
 
         private static void WriteHumanoidCsv(string folderPath, ModelContext model,
             bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("#PolyLing_Humanoid,version,1.0");
+            sb.AppendLine("#PolyLing_Humanoid,version,1.0,derived,write-only");
 
             var dict = model.HumanoidMapping.ToDictionary();
             foreach (var kvp in dict)
@@ -807,10 +871,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine(row);
             }
 
-            File.WriteAllText(Path.Combine(folderPath, "humanoid.csv"), sb.ToString(), Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(folderPath, "humanoid.export.csv"), sb.ToString(), Encoding.UTF8);
         }
 
-        // per-bone HumanLimit（ラジアン）→ humanoid.csv の可動域列（度）。
+        // per-bone HumanLimit（ラジアン）→ humanoid.export.csv の可動域列（度）。
         //   既定値／未保持なら空文字（＝2列のまま・加算互換）。axisLength は角度でないため無変換。
         private static string BuildHumanLimitColumnsDeg(ModelContext model, int boneIndex)
         {
@@ -829,8 +894,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                    $"{Fl(ce.x)},{Fl(ce.y)},{Fl(ce.z)},{Fl(hl.AxisLength)}";
         }
 
-        // ※#5b（案A）: ReadHumanoidCsv は撤去。humanoid.csv は書き出し専用の派生
-        //   エクスポート（AvatarBuilder 向け）で、canonical 読込は per-bone（bone.csv）。
+        // ※#5b（案A）: ReadHumanoidCsv は撤去。humanoid.export.csv は書き出し専用の
+        //   派生エクスポート（AvatarBuilder 向け）で、canonical 読込は per-bone（bone.csv）。
 
         // ================================================================
         // morphgroups.csv
@@ -990,6 +1055,108 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
+        // objectgroups.csv（オブジェクトグループ）
+        //
+        // 【行の形】
+        //   g,name,action,outputObjectId,stashObjectId,autoUpdate,sourceDigest
+        //   a,key,value                       … Args 1 件（直前の g に属する）
+        //   r,key,id0,id1,...                 … MeshRefIds 1 件
+        //
+        // 1 グループが Args を数十件持つので、1 行に詰めると列が伸びて読めない。
+        // 種別を先頭列に置いて行を分ける。
+        //
+        // 【索引を書かない】
+        //   参照は ObjectId（10 進）そのまま。名前ベース保存でも変換しない。
+        //   ObjectId はリスト位置にも名前にも依存しないため、
+        //   useNameBased の分岐が要らない。
+        // ================================================================
+
+        private static void WriteObjectGroupsCsv(string folderPath, ModelContext model)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_ObjectGroups,version,1.0");
+
+            foreach (var g in model.ObjectGroups)
+            {
+                if (g == null) continue;
+
+                sb.AppendLine(
+                    $"g,{Esc(g.Name ?? "")},{Esc(g.Action ?? "")}," +
+                    $"{g.OutputObjectId},{g.StashObjectId}," +
+                    $"{(g.AutoUpdate ? 1 : 0)},{Esc(g.SourceDigest ?? "")}");
+
+                foreach (var kv in g.SortedArgs())
+                    sb.AppendLine($"a,{Esc(kv.Key)},{Esc(kv.Value ?? "")}");
+
+                foreach (var kv in g.SortedMeshRefIds())
+                {
+                    sb.Append($"r,{Esc(kv.Key)}");
+                    if (kv.Value != null)
+                        foreach (ulong id in kv.Value) sb.Append($",{id}");
+                    sb.AppendLine();
+                }
+            }
+
+            File.WriteAllText(Path.Combine(folderPath, "objectgroups.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadObjectGroupsCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "objectgroups.csv");
+            if (!File.Exists(path)) return;
+
+            model.ObjectGroups = new List<Poly_Ling.Data.ObjectGroup>();
+
+            Poly_Ling.Data.ObjectGroup cur = null;
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                switch (cols[0])
+                {
+                    case "g":
+                        cur = new Poly_Ling.Data.ObjectGroup(Unesc(cols[1]))
+                        {
+                            Action         = cols.Length > 2 ? Unesc(cols[2]) : "",
+                            OutputObjectId = PULong(cols, 3),
+                            StashObjectId  = PULong(cols, 4),
+                            AutoUpdate     = PInt(cols, 5) != 0,
+                            SourceDigest   = cols.Length > 6 ? Unesc(cols[6]) : "",
+                        };
+                        model.ObjectGroups.Add(cur);
+                        break;
+
+                    case "a":
+                        // 先頭が g でないファイルは壊れている。捨てて次へ。
+                        if (cur == null) break;
+                        cur.SetArg(Unesc(cols[1]), cols.Length > 2 ? Unesc(cols[2]) : "");
+                        break;
+
+                    case "r":
+                    {
+                        if (cur == null) break;
+                        var ids = new List<ulong>();
+                        for (int i = 2; i < cols.Length; i++) ids.Add(PULong(cols, i));
+                        cur.SetMeshRefIds(Unesc(cols[1]), ids);
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>列を ulong として読む。読めなければ 0（＝参照なし）。</summary>
+        private static ulong PULong(string[] cols, int index)
+        {
+            if (cols == null || index < 0 || index >= cols.Length) return 0UL;
+            return ulong.TryParse(
+                cols[index], System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out ulong v) ? v : 0UL;
+        }
+
+        // ================================================================
         // mirrorpairs.csv（ミラーペア情報）
         // ================================================================
 
@@ -1108,22 +1275,310 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
-        // springbonesettings.csv（SpringBone 評価設定：モデルレベル）
-        //   fixedDeltaTime … 0=実時間、>0=固定タイムステップ[秒]
-        //   warmupFrames   … 評価開始直後の安定化フレーム数
+        // vrmmeta.csv（VRM 1.0 メタ情報：モデルレベル）
+        //   1行1項目の key,value 形式。作者と参照元は複数行になりうるので
+        //   author / reference を並べる。空欄の項目は行ごと省く。
+        //   未設定（ModelContext.VrmMeta == null）ならファイルを作らない。
         // ================================================================
 
-        private static void WriteSpringBoneSettingsCsv(string folderPath, ModelContext model)
+        private static void WriteOrDeleteVrmMetaCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "vrmmeta.csv");
+
+            var m = model.VrmMeta;
+            if (m == null)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_VrmMeta,version,1.0");
+
+            sb.AppendLine($"name,{Esc(m.Name ?? "")}");
+            sb.AppendLine($"version,{Esc(m.Version ?? "")}");
+            if (m.Authors != null)
+                foreach (var a in m.Authors)
+                    if (!string.IsNullOrEmpty(a)) sb.AppendLine($"author,{Esc(a)}");
+            sb.AppendLine($"copyrightInformation,{Esc(m.CopyrightInformation ?? "")}");
+            sb.AppendLine($"contactInformation,{Esc(m.ContactInformation ?? "")}");
+            if (m.References != null)
+                foreach (var r in m.References)
+                    if (!string.IsNullOrEmpty(r)) sb.AppendLine($"reference,{Esc(r)}");
+            sb.AppendLine($"thirdPartyLicenses,{Esc(m.ThirdPartyLicenses ?? "")}");
+            sb.AppendLine($"thumbnailPath,{Esc(m.ThumbnailPath ?? "")}");
+
+            sb.AppendLine($"avatarPermission,{(int)m.AvatarPermission}");
+            sb.AppendLine($"violentUsage,{m.ViolentUsage}");
+            sb.AppendLine($"sexualUsage,{m.SexualUsage}");
+            sb.AppendLine($"commercialUsage,{(int)m.CommercialUsage}");
+            sb.AppendLine($"politicalOrReligiousUsage,{m.PoliticalOrReligiousUsage}");
+            sb.AppendLine($"antisocialOrHateUsage,{m.AntisocialOrHateUsage}");
+
+            sb.AppendLine($"creditNotation,{(int)m.CreditNotation}");
+            sb.AppendLine($"redistribution,{m.Redistribution}");
+            sb.AppendLine($"modification,{(int)m.Modification}");
+            sb.AppendLine($"otherLicenseUrl,{Esc(m.OtherLicenseUrl ?? "")}");
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadVrmMetaCsv(string path, ModelContext model)
+        {
+            var m = new VrmMetaData
+            {
+                Authors    = new List<string>(),
+                References = new List<string>(),
+            };
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                switch (cols[0])
+                {
+                    case "name":                 m.Name                 = Unesc(cols[1]); break;
+                    case "version":              m.Version              = Unesc(cols[1]); break;
+                    case "author":               m.Authors.Add(Unesc(cols[1]));           break;
+                    case "copyrightInformation": m.CopyrightInformation = Unesc(cols[1]); break;
+                    case "contactInformation":   m.ContactInformation   = Unesc(cols[1]); break;
+                    case "reference":            m.References.Add(Unesc(cols[1]));        break;
+                    case "thirdPartyLicenses":   m.ThirdPartyLicenses   = Unesc(cols[1]); break;
+                    case "thumbnailPath":        m.ThumbnailPath        = Unesc(cols[1]); break;
+
+                    case "avatarPermission":
+                        m.AvatarPermission = ModelSerializer.ToVrmAvatarPermission(PInt(cols, 1));
+                        break;
+                    case "violentUsage":              m.ViolentUsage              = PBool(cols, 1); break;
+                    case "sexualUsage":               m.SexualUsage               = PBool(cols, 1); break;
+                    case "commercialUsage":
+                        m.CommercialUsage = ModelSerializer.ToVrmCommercialUsage(PInt(cols, 1));
+                        break;
+                    case "politicalOrReligiousUsage": m.PoliticalOrReligiousUsage = PBool(cols, 1); break;
+                    case "antisocialOrHateUsage":     m.AntisocialOrHateUsage     = PBool(cols, 1); break;
+
+                    case "creditNotation":
+                        m.CreditNotation = ModelSerializer.ToVrmCreditNotation(PInt(cols, 1));
+                        break;
+                    case "redistribution":  m.Redistribution  = PBool(cols, 1); break;
+                    case "modification":
+                        m.Modification = ModelSerializer.ToVrmModification(PInt(cols, 1));
+                        break;
+                    case "otherLicenseUrl": m.OtherLicenseUrl = Unesc(cols[1]); break;
+                }
+            }
+
+            model.VrmMeta = m;
+        }
+
+        // ================================================================
+        // vrmlookat.csv（VRM 1.0 視線設定：モデルレベル）
+        //   offsetFromHead は Unity 左手系のまま。系変換は VRM 出力側が行う。
+        //   4本の対応づけは rangeMap,<名前>,<入力上限[度]>,<出力量>。
+        // ================================================================
+
+        private static void WriteOrDeleteVrmLookAtCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "vrmlookat.csv");
+
+            var l = model.VrmLookAt;
+            if (l == null)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_VrmLookAt,version,1.0");
+            sb.AppendLine($"offsetFromHead,{Fl(l.OffsetFromHead.x)},{Fl(l.OffsetFromHead.y)},{Fl(l.OffsetFromHead.z)}");
+            sb.AppendLine($"lookAtType,{(int)l.LookAtType}");
+            AppendRangeMap(sb, "horizontalInner", l.HorizontalInner);
+            AppendRangeMap(sb, "horizontalOuter", l.HorizontalOuter);
+            AppendRangeMap(sb, "verticalDown",    l.VerticalDown);
+            AppendRangeMap(sb, "verticalUp",      l.VerticalUp);
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void AppendRangeMap(StringBuilder sb, string key, VrmLookAtRangeMap m)
+        {
+            var src = m ?? new VrmLookAtRangeMap();
+            sb.AppendLine($"rangeMap,{key},{Fl(src.InputMaxDegrees)},{Fl(src.OutputScale)}");
+        }
+
+        private static void ReadVrmLookAtCsv(string path, ModelContext model)
+        {
+            var l = new VrmLookAtData();
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                switch (cols[0])
+                {
+                    case "offsetFromHead":
+                        l.OffsetFromHead = new Vector3(PFl(cols, 1), PFl(cols, 2), PFl(cols, 3));
+                        break;
+                    case "lookAtType":
+                        l.LookAtType = (PInt(cols, 1) == 1) ? VrmLookAtType.Expression : VrmLookAtType.Bone;
+                        break;
+                    case "rangeMap":
+                    {
+                        if (cols.Length < 4) break;
+                        var m = new VrmLookAtRangeMap(PFl(cols, 2, 90f), PFl(cols, 3, 10f));
+                        switch (cols[1])
+                        {
+                            case "horizontalInner": l.HorizontalInner = m; break;
+                            case "horizontalOuter": l.HorizontalOuter = m; break;
+                            case "verticalDown":    l.VerticalDown    = m; break;
+                            case "verticalUp":      l.VerticalUp      = m; break;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            model.VrmLookAt = l;
+        }
+
+        // ================================================================
+        // coordinate.csv（PMX / MQO の座標規約：モデルレベル）
+        //   倍率と軸反転。捨てると座標が 10 倍ずれる規約なので、
+        //   捨てても表示が戻るだけの editorstate.csv とは分けてある。
+        //   未設定（ModelContext.CoordinateConvention == null）ならファイルを作らない。
+        // ================================================================
+
+        private static void WriteOrDeleteCoordinateCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "coordinate.csv");
+
+            var c = model.CoordinateConvention;
+            if (c == null)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_Coordinate,version,1.0");
+            sb.AppendLine($"pmxUnityRatio,{Fl(c.PmxUnityRatio)}");
+            sb.AppendLine($"pmxFlipX,{c.PmxFlipX}");
+            sb.AppendLine($"pmxFlipZ,{c.PmxFlipZ}");
+            sb.AppendLine($"mqoUnityRatio,{Fl(c.MqoUnityRatio)}");
+            sb.AppendLine($"mqoFlipX,{c.MqoFlipX}");
+            sb.AppendLine($"mqoFlipZ,{c.MqoFlipZ}");
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadCoordinateCsv(string path, ModelContext model)
+        {
+            var c = new CoordinateConventionData();
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                switch (cols[0])
+                {
+                    case "pmxUnityRatio": c.PmxUnityRatio = PFl(cols, 1, 0.1f);   break;
+                    case "pmxFlipX":      c.PmxFlipX      = PBool(cols, 1, true); break;
+                    case "pmxFlipZ":      c.PmxFlipZ      = PBool(cols, 1, true); break;
+                    case "mqoUnityRatio": c.MqoUnityRatio = PFl(cols, 1, 0.01f);  break;
+                    case "mqoFlipX":      c.MqoFlipX      = PBool(cols, 1, true); break;
+                    case "mqoFlipZ":      c.MqoFlipZ      = PBool(cols, 1);       break;
+                }
+            }
+
+            model.CoordinateConvention = c;
+        }
+
+        // ================================================================
+        // avatarsettings.csv（Avatar リターゲット設定：モデルレベル）
+        //   Unity の HumanDescription の 8 項目。1行1項目の key,value 形式。
+        //   使うのは Editor のプレファブ書き出しだけで、VRM 出力には出ない。
+        //   未設定（ModelContext.AvatarRetarget == null）ならファイルを作らない。
+        // ================================================================
+
+        private static void WriteOrDeleteAvatarRetargetCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "avatarsettings.csv");
+
+            var a = model.AvatarRetarget;
+            if (a == null)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_AvatarRetarget,version,1.0");
+            sb.AppendLine($"upperArmTwist,{Fl(a.UpperArmTwist)}");
+            sb.AppendLine($"lowerArmTwist,{Fl(a.LowerArmTwist)}");
+            sb.AppendLine($"upperLegTwist,{Fl(a.UpperLegTwist)}");
+            sb.AppendLine($"lowerLegTwist,{Fl(a.LowerLegTwist)}");
+            sb.AppendLine($"armStretch,{Fl(a.ArmStretch)}");
+            sb.AppendLine($"legStretch,{Fl(a.LegStretch)}");
+            sb.AppendLine($"feetSpacing,{Fl(a.FeetSpacing)}");
+            sb.AppendLine($"hasTranslationDoF,{a.HasTranslationDoF}");
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadAvatarRetargetCsv(string path, ModelContext model)
+        {
+            var a = new AvatarRetargetData();
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                switch (cols[0])
+                {
+                    case "upperArmTwist":     a.UpperArmTwist     = PFl(cols, 1, 0.5f);  break;
+                    case "lowerArmTwist":     a.LowerArmTwist     = PFl(cols, 1, 0.5f);  break;
+                    case "upperLegTwist":     a.UpperLegTwist     = PFl(cols, 1, 0.5f);  break;
+                    case "lowerLegTwist":     a.LowerLegTwist     = PFl(cols, 1, 0.5f);  break;
+                    case "armStretch":        a.ArmStretch        = PFl(cols, 1, 0.05f); break;
+                    case "legStretch":        a.LegStretch        = PFl(cols, 1, 0.05f); break;
+                    case "feetSpacing":       a.FeetSpacing       = PFl(cols, 1, 0f);    break;
+                    case "hasTranslationDoF": a.HasTranslationDoF = PBool(cols, 1);      break;
+                }
+            }
+
+            model.AvatarRetarget = a;
+        }
+
+        // ================================================================
+        // previewsettings.csv（PolyLing 内のプレビュー評価設定：モデルレベル）
+        //   fixedDeltaTime … 0=実時間、>0=固定タイムステップ[秒]
+        //   warmupFrames   … 評価開始直後の安定化フレーム数
+        //
+        //   VRM には出ない PolyLing 内部の値。springbonegroups.csv と並ぶ名前だと
+        //   VRM 出力用に見えるので、内部設定と分かる名前にしてある。
+        //   今後の内部設定もこのファイルへ集約する。
+        // ================================================================
+
+        private static void WritePreviewSettingsCsv(string folderPath, ModelContext model)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("#PolyLing_SpringBoneSettings,version,1.0");
+            sb.AppendLine("#PolyLing_PreviewSettings,version,1.0");
             sb.AppendLine($"fixedDeltaTime,{Fl(model.SpringBoneFixedDeltaTime)}");
             sb.AppendLine($"warmupFrames,{model.SpringBoneWarmupFrames.ToString(CultureInfo.InvariantCulture)}");
 
-            File.WriteAllText(Path.Combine(folderPath, "springbonesettings.csv"), sb.ToString(), Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(folderPath, "previewsettings.csv"), sb.ToString(), Encoding.UTF8);
         }
 
-        private static void ReadSpringBoneSettingsCsv(string path, ModelContext model)
+        private static void ReadPreviewSettingsCsv(string path, ModelContext model)
         {
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
@@ -1340,12 +1795,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine($"selectedVertexMorphIndex,{es.selectedVertexMorphIndex}");
             }
 
-            sb.AppendLine($"pmxUnityRatio,{Fl(es.pmxUnityRatio)}");
-            sb.AppendLine($"pmxFlipX,{es.pmxFlipX}");
-            sb.AppendLine($"pmxFlipZ,{es.pmxFlipZ}");
-            sb.AppendLine($"mqoFlipX,{es.mqoFlipX}");
-            sb.AppendLine($"mqoFlipZ,{es.mqoFlipZ}");
-            sb.AppendLine($"mqoUnityRatio,{Fl(es.mqoUnityRatio)}");
+            // 座標規約（pmx* / mqo*）はここには書かない。coordinate.csv が正本。
             sb.AppendLine($"showBones,{es.showBones}");
             sb.AppendLine($"showUnselectedBones,{es.showUnselectedBones}");
             sb.AppendLine($"boneDisplayAlongY,{es.boneDisplayAlongY}");
@@ -1362,11 +1812,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string selectedMeshName = null;
             string selectedBoneName = null;
             string selectedVertexMorphName = null;
-
-            // 旧形式（FlipX の記録が無い）判定用。
-            // FlipZ 単独時代の値は現在の規約と意味が違うため、そのまま復元できない。
-            bool sawPmxFlipX = false;
-            bool sawMqoFlipX = false;
 
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
@@ -1391,24 +1836,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "selectedMeshName": selectedMeshName = Unesc(cols[1]); break;
                     case "selectedBoneName": selectedBoneName = Unesc(cols[1]); break;
                     case "selectedVertexMorphName": selectedVertexMorphName = Unesc(cols[1]); break;
-                    case "pmxUnityRatio": case "coordinateScale": es.pmxUnityRatio = PFl(cols, 1, 0.1f); break;// 旧coordinateScale互換
-                    case "pmxFlipX": es.pmxFlipX = PBool(cols, 1, true); sawPmxFlipX = true; break;
-                    case "pmxFlipZ": es.pmxFlipZ = PBool(cols, 1, true); break;
-                    case "mqoFlipX": es.mqoFlipX = PBool(cols, 1, true); sawMqoFlipX = true; break;
-                    case "mqoFlipZ": es.mqoFlipZ = PBool(cols, 1); break;
-                    case "mqoUnityRatio": es.mqoUnityRatio = PFl(cols, 1, 0.01f); break;
-                    case "mqoPmxRatio": float oldRatio = PFl(cols, 1, 10f); es.mqoUnityRatio = oldRatio > 0f ? es.pmxUnityRatio / oldRatio : 0.01f; break; // 旧mqoPmxRatio互換
+                    // 座標規約（pmx* / mqo*）はここでは読まない。coordinate.csv が正本。
                     case "showBones": es.showBones = PBool(cols, 1, true); break;
                     case "showUnselectedBones": es.showUnselectedBones = PBool(cols, 1); break;
                     case "boneDisplayAlongY": es.boneDisplayAlongY = PBool(cols, 1); break;
                 }
             }
-
-            // 旧形式の editorstate.csv には FlipX の記録が無く、FlipZ 単独時代の値
-            // （pmxFlipZ=False / mqoFlipZ=True）が入っている。現在の規約とは意味が違い
-            // そのまま復元すると Unity 規約からずれるため、軸反転設定のみ既定値に戻す。
-            if (!sawPmxFlipX) { es.pmxFlipX = true; es.pmxFlipZ = true; }
-            if (!sawMqoFlipX) { es.mqoFlipX = true; es.mqoFlipZ = false; }
 
             // 名前ベース解決
             if (model != null && (selectedMeshName != null || selectedBoneName != null || selectedVertexMorphName != null))
@@ -1564,8 +1997,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
         {
             var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // 1. 命名規約ファイル (*.mesh.csv, *.bone.csv, *.morph.csv)
-            foreach (var type in new[] { "mesh", "bone", "morph" })
+            // 1. 命名規約ファイル (*.mesh.csv, *.bone.csv, *.morph.csv, *.pmx_physics.csv)
+            foreach (var type in new[] { "mesh", "bone", "morph", "pmx_physics" })
             {
                 var csvFiles = Directory.GetFiles(folder, $"*.{type}.csv");
                 foreach (var csvFile in csvFiles)
@@ -1591,7 +2024,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                             firstLine = firstLine.TrimStart('\uFEFF').Trim(); // BOM除去
                             if (firstLine.StartsWith("#PolyLing_Mesh") ||
                                 firstLine.StartsWith("#PolyLing_Bone") ||
-                                firstLine.StartsWith("#PolyLing_Morph"))
+                                firstLine.StartsWith("#PolyLing_Morph") ||
+                                firstLine.StartsWith("#PolyLing_PmxPhysics"))
                             {
                                 result.AddRange(CsvMeshSerializer.ReadFile(csvFile));
                             }

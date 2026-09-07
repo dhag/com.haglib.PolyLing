@@ -16,6 +16,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Diagnostics;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.Player
 {
@@ -48,6 +49,18 @@ namespace Poly_Ling.Player
         /// そのまま骨格として扱いたい実験用途のときだけ有効にする。
         /// </summary>
         private bool _includeNonBoneContexts = false;
+
+        // ── Avatar リターゲット設定8項目の入力欄 ──────────────────────
+        //   Avatar 生成（Editor のプレファブ書き出し）だけが使う値。
+        //   Humanoid 割当と同じく Avatar の入力なので、この画面へ置く。
+        private Slider     _upperArmTwist, _lowerArmTwist, _upperLegTwist, _lowerLegTwist;
+        private Slider     _armStretch, _legStretch;
+        private FloatField _feetSpacing;
+        private Toggle     _hasTranslationDoF;
+        private Label      _retargetStateLabel;
+
+        /// <summary>直前に欄へ読み込んだモデル。変わったら読み直す。</summary>
+        private ModelContext _retargetLoadedModel;
 
         private ModelContext Model => GetModel?.Invoke();
 
@@ -136,11 +149,145 @@ namespace Poly_Ling.Player
             applyRow.Add(_btnApply); applyRow.Add(_btnClear);
             root.Add(applyRow);
 
+            root.Add(MakeSep());
+            BuildRetargetSection(root);
+
             _statusLabel = new Label(); _statusLabel.style.fontSize = 10;
             _statusLabel.style.color = new StyleColor(PlayerIoUiKit.StatusColor);
             root.Add(_statusLabel);
 
             // 構築直後にも状態表示と候補範囲の自動設定を通す。
+            Refresh();
+        }
+
+        // ── Avatar リターゲット設定 ──────────────────────────────────
+        private void BuildRetargetSection(VisualElement root)
+        {
+            var fo = new Foldout { text = "Avatar リターゲット設定", value = false };
+
+            _retargetStateLabel = new Label();
+            _retargetStateLabel.style.fontSize   = 9;
+            _retargetStateLabel.style.whiteSpace = WhiteSpace.Normal;
+            _retargetStateLabel.style.color      = new StyleColor(PlayerIoUiKit.StatusColor);
+            fo.Add(_retargetStateLabel);
+
+            fo.Add(RetargetHint(
+                "Avatar を作るときの動きの馴染ませ方です。プレファブ書き出しのときだけ使います。\n"
+              + "VRM 出力と Player の表示には影響しません。"));
+
+            var d = new AvatarRetargetData();
+
+            _upperArmTwist = RetargetSlider("上腕のねじれ配分", d.UpperArmTwist);
+            _lowerArmTwist = RetargetSlider("前腕のねじれ配分", d.LowerArmTwist);
+            _upperLegTwist = RetargetSlider("大腿のねじれ配分", d.UpperLegTwist);
+            _lowerLegTwist = RetargetSlider("下腿のねじれ配分", d.LowerLegTwist);
+            fo.Add(_upperArmTwist); fo.Add(_lowerArmTwist);
+            fo.Add(_upperLegTwist); fo.Add(_lowerLegTwist);
+            fo.Add(RetargetHint(
+                "ねじりを、親のボーンと捩り用ボーンへどの割合で配るかです。既定 0.5。\n"
+              + "捩り用ボーンが無いモデルでは見た目が変わりません。"));
+
+            _armStretch = RetargetSlider("腕の伸び代", d.ArmStretch);
+            _legStretch = RetargetSlider("脚の伸び代", d.LegStretch);
+            fo.Add(_armStretch); fo.Add(_legStretch);
+            fo.Add(RetargetHint(
+                "体格の違うモーションを当てたとき、手足をどれだけ伸ばしてよいかです。既定 0.05。\n"
+              + "大きくすると届くようになりますが、腕や脚が伸びて見えます。"));
+
+            _feetSpacing = new FloatField("両足の間隔の補正") { value = d.FeetSpacing };
+            fo.Add(_feetSpacing);
+            fo.Add(RetargetHint("足が内股・がに股にずれるときに調整します。既定 0。"));
+
+            _hasTranslationDoF = new Toggle("移動の自由度を持たせる") { value = d.HasTranslationDoF };
+            fo.Add(_hasTranslationDoF);
+            fo.Add(RetargetHint(
+                "関節の位置そのものを動かすモーションを扱うときだけ入れます。既定はオフ。"));
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginTop = 4;
+
+            var btnLoad  = new Button(OnLoadRetarget)  { text = "モデルから読み込む" };
+            var btnApply = new Button(OnApplyRetarget) { text = "モデルへ書き込む" };
+            var btnClear = new Button(OnClearRetarget) { text = "既定に戻す" };
+            btnLoad.style.flexGrow = 1; btnLoad.style.marginRight = 2;
+            btnApply.style.flexGrow = 1; btnApply.style.marginRight = 2;
+            btnClear.style.flexGrow = 1;
+            row.Add(btnLoad); row.Add(btnApply); row.Add(btnClear);
+            fo.Add(row);
+
+            root.Add(fo);
+        }
+
+        private static Slider RetargetSlider(string label, float value)
+        {
+            var s = new Slider(label, 0f, 1f) { value = value };
+            s.showInputField = true;
+            return s;
+        }
+
+        private static Label RetargetHint(string text)
+        {
+            var l = new Label(text);
+            l.style.color        = new StyleColor(new Color(0.72f, 0.72f, 0.72f));
+            l.style.fontSize     = 9;
+            l.style.whiteSpace   = WhiteSpace.Normal;
+            l.style.marginBottom = 3;
+            return l;
+        }
+
+        /// <summary>
+        /// モデルの値を欄へ入れる。
+        /// Refresh からは「モデルが変わったとき」だけ呼ぶ。毎回入れると
+        /// 入力中のスライダーが戻ってしまう。
+        /// </summary>
+        private void LoadRetargetFields(ModelContext model)
+        {
+            var a = AvatarRetargetOps.GetRetargetOrNew(model);
+
+            _upperArmTwist?.SetValueWithoutNotify(a.UpperArmTwist);
+            _lowerArmTwist?.SetValueWithoutNotify(a.LowerArmTwist);
+            _upperLegTwist?.SetValueWithoutNotify(a.UpperLegTwist);
+            _lowerLegTwist?.SetValueWithoutNotify(a.LowerLegTwist);
+            _armStretch?.SetValueWithoutNotify(a.ArmStretch);
+            _legStretch?.SetValueWithoutNotify(a.LegStretch);
+            _feetSpacing?.SetValueWithoutNotify(a.FeetSpacing);
+            _hasTranslationDoF?.SetValueWithoutNotify(a.HasTranslationDoF);
+        }
+
+        private void OnLoadRetarget()
+        {
+            var model = Model;
+            if (model == null) { SetStatus("モデルがありません。"); return; }
+
+            LoadRetargetFields(model);
+            SetStatus("モデルのリターゲット設定を読み込みました。");
+        }
+
+        private void OnApplyRetarget()
+        {
+            if (Model == null) { SetStatus("モデルがありません。"); return; }
+
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            SendCommand?.Invoke(new SetAvatarRetargetCommand(
+                modelIdx,
+                _upperArmTwist.value, _lowerArmTwist.value,
+                _upperLegTwist.value, _lowerLegTwist.value,
+                _armStretch.value, _legStretch.value,
+                _feetSpacing.value, _hasTranslationDoF.value));
+
+            SetStatus("リターゲット設定をモデルへ書き込みました。");
+            Refresh();
+        }
+
+        private void OnClearRetarget()
+        {
+            if (Model == null) { SetStatus("モデルがありません。"); return; }
+
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            SendCommand?.Invoke(new ClearAvatarRetargetCommand(modelIdx));
+
+            SetStatus("リターゲット設定を未設定へ戻しました。");
             Refresh();
         }
 
@@ -164,6 +311,19 @@ namespace Poly_Ling.Player
             }
             _warningLabel.style.display = DisplayStyle.None;
             UpdateModelMappingLabel(model);
+
+            // リターゲット設定は、モデルが変わったときだけ欄へ読み直す。
+            if (!ReferenceEquals(_retargetLoadedModel, model))
+            {
+                _retargetLoadedModel = model;
+                LoadRetargetFields(model);
+            }
+            if (_retargetStateLabel != null)
+            {
+                _retargetStateLabel.text = (model.AvatarRetarget != null)
+                    ? "設定済み。Avatar 生成でこの値を使います。"
+                    : "未設定。Avatar 生成は Unity の既定値を使います。";
+            }
             SyncScopeToggleToBoneCount(model);
             UpdatePreviewUI();
         }
@@ -210,7 +370,8 @@ namespace Poly_Ling.Player
             int modelIdx = GetModelIndex?.Invoke() ?? 0;
             if (SendCommand != null)
             {
-                SendCommand.Invoke(new ApplyHumanoidMappingCommand(modelIdx, _previewMapping.Clone()));
+                ApplyHumanoidMappingCommand.SplitMapping(_previewMapping, out var hmNames, out var hmIdx);
+                SendCommand.Invoke(new ApplyHumanoidMappingCommand(modelIdx, hmNames, hmIdx));
                 SetStatus($"適用しました ({_previewMapping.Count} ボーン)");
                 Refresh();
                 return;

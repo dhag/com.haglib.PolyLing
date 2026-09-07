@@ -125,9 +125,14 @@ namespace Poly_Ling.PMX
         // 詳細設定
         // ================================================================
 
-        /// <summary>法線を再計算</summary>
-        [Tooltip("インポート後に法線を再計算する")]
-        public bool RecalculateNormals = true;
+        /// <summary>
+        /// 法線を再計算。
+        /// 既定は false。true にすると PMX が持っていた法線を捨てて計算し直すため、
+        /// 読み込んで書き出すだけで法線が別物になる（実測で 91555 頂点中 47212 頂点、
+        /// 最大でほぼ逆向きまで変化した）。
+        /// </summary>
+        [Tooltip("インポート後に法線を再計算する（PMX の法線は失われる）")]
+        public bool RecalculateNormals = false;
 
         /// <summary>スムージング角度（度）</summary>
         [Tooltip("法線スムージングの閾値角度")]

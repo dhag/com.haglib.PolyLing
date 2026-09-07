@@ -8,6 +8,7 @@ using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
+using Poly_Ling.MeshBridge;
 
 namespace Poly_Ling.MQO
 {
@@ -74,38 +75,40 @@ namespace Poly_Ling.MQO
             var mqoDocObj = mqoDocument.Objects.FirstOrDefault(o => o.Name == mqoEntry.Name);
             if (mqoDocObj == null) return 0;
 
-            var usedVertexIndices = BuildUsedVertexSet(mqoMo);
+            // 展開順と孤立判定は MeshExpansion が唯一の実装（MeshExpansion.cs 冒頭の指示）。
+            var usedVertexIndices = MeshExpansion.BuildNonIsolatedSet(mqoMo);
 
             int transferred = 0;
             int startOffset = modelVertexOffset;
+            int localCount  = 0;
 
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            if (writeBackPosition)
             {
-                var mqoVertex = mqoMo.Vertices[vIdx];
-                int uvCount   = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
-
-                // 孤立頂点はスキップ（モデル側オフセットも進めない）
-                if (!usedVertexIndices.Contains(vIdx)) continue;
-
-                if (writeBackPosition)
+                MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
                 {
-                    Vector3? newPos = GetModelVertexPosition(modelMeshes, modelVertexOffset);
-                    if (newPos.HasValue)
-                    {
-                        // 軸反転はインポートと同じ規則（自己逆元）。スケールは逆数。
-                        Vector3 pos = AxisFlipOps.Position(flip, newPos.Value);
-                        pos /= exportScale;
+                    localCount = expIdx + 1;
+                    if (uvIdx != 0) return;   // 位置はスロット間で共有
 
-                        mqoVertex.Position = pos;
-                        if (vIdx < mqoDocObj.Vertices.Count)
-                            mqoDocObj.Vertices[vIdx].Position = pos;
+                    Vector3? newPos = GetModelVertexPosition(modelMeshes, startOffset + expIdx);
+                    if (!newPos.HasValue) return;
 
-                        transferred++;
-                    }
-                }
+                    // 軸反転はインポートと同じ規則（自己逆元）。スケールは逆数。
+                    Vector3 pos = AxisFlipOps.Position(flip, newPos.Value);
+                    pos /= exportScale;
 
-                modelVertexOffset += uvCount;
+                    mqoMo.Vertices[vIdx].Position = pos;
+                    if (vIdx < mqoDocObj.Vertices.Count)
+                        mqoDocObj.Vertices[vIdx].Position = pos;
+
+                    transferred++;
+                }, usedVertexIndices);
             }
+            else
+            {
+                localCount = MeshExpansion.CountExpanded(mqoMo, usedVertexIndices);
+            }
+
+            modelVertexOffset += localCount;
 
             if (writeBackUV)
                 WriteBackUVsToMQO(mqoEntry, modelMeshes, startOffset, mqoDocObj, usedVertexIndices);
@@ -130,16 +133,12 @@ namespace Poly_Ling.MQO
             var mqoMo = mqoEntry.MeshContext?.MeshObject;
             if (mqoMo == null) return;
 
-            // 頂点→展開開始オフセット辞書（孤立点除外）
+            // 頂点→展開開始オフセット辞書。展開順は MeshExpansion に一本化。
             var vertexToExpandedStart = new Dictionary<int, int>();
-            int expandedIdx = 0;
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
             {
-                if (!usedVertexIndices.Contains(vIdx)) continue;
-                vertexToExpandedStart[vIdx] = expandedIdx;
-                expandedIdx += mqoMo.Vertices[vIdx].UVs.Count > 0
-                    ? mqoMo.Vertices[vIdx].UVs.Count : 1;
-            }
+                if (uvIdx == 0) vertexToExpandedStart[vIdx] = expIdx;
+            }, usedVertexIndices);
 
             int mqoFaceIdx = 0;
             foreach (var mqoDocFace in mqoDocObj.Faces)
@@ -189,15 +188,12 @@ namespace Poly_Ling.MQO
             // 既存の特殊面を削除
             mqoDocObj.Faces.RemoveAll(f => f.IsSpecialFace);
 
-            int localOffset = 0;
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount && vIdx < mqoDocObj.Vertices.Count; vIdx++)
+            MeshExpansion.Enumerate(mqoMo, (vIdx, uvIdx, expIdx) =>
             {
-                var mqoVertex = mqoMo.Vertices[vIdx];
-                int uvCount   = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
+                if (uvIdx != 0) return;                          // 特殊面は頂点ごとに 1 枚
+                if (vIdx >= mqoDocObj.Vertices.Count) return;
 
-                if (!usedVertexIndices.Contains(vIdx)) continue;
-
-                int    globalOffset = startOffset + localOffset;
+                int    globalOffset = startOffset + expIdx;
                 Vertex vertexInfo   = GetModelVertexInfo(modelMeshes, globalOffset);
 
                 if (vertexInfo != null)
@@ -221,9 +217,7 @@ namespace Poly_Ling.MQO
                             VertexIdHelper.CreateSpecialFaceForBoneWeight(vIdx, mbwd, true, 0));
                     }
                 }
-
-                localOffset += uvCount;
-            }
+            }, usedVertexIndices);
         }
 
         // ================================================================
@@ -240,37 +234,13 @@ namespace Poly_Ling.MQO
         private static Vector2? GetModelVertexUV(List<PartialMeshEntry> modelMeshes, int offset)
         {
             // offset は展開後グローバルインデックス（UVスロット込み）
-            int currentOffset = 0;
-            foreach (var model in modelMeshes)
-            {
-                var mo = model.Context?.MeshObject;
-                if (mo == null) continue;
+            var hit = NavigateToSlot(modelMeshes, offset);
+            if (hit.vertex == null) return null;
 
-                int meshVertCount = model.ExpandedVertexCount;
-                if (offset < currentOffset + meshVertCount)
-                {
-                    int localIdx    = offset - currentOffset;
-                    int expandedIdx = 0;
-
-                    for (int vIdx = 0; vIdx < mo.VertexCount; vIdx++)
-                    {
-                        var v      = mo.Vertices[vIdx];
-                        int uvCount = v.UVs.Count > 0 ? v.UVs.Count : 1;
-
-                        if (localIdx < expandedIdx + uvCount)
-                        {
-                            int uvSlot = localIdx - expandedIdx;
-                            if (uvSlot < v.UVs.Count)  return v.UVs[uvSlot];
-                            if (v.UVs.Count > 0)        return v.UVs[0];
-                            return Vector2.zero;
-                        }
-                        expandedIdx += uvCount;
-                    }
-                    return null;
-                }
-                currentOffset += meshVertCount;
-            }
-            return null;
+            var v = hit.vertex;
+            if (hit.uvIdx < v.UVs.Count) return v.UVs[hit.uvIdx];
+            if (v.UVs.Count > 0)         return v.UVs[0];
+            return Vector2.zero;
         }
 
         private static Vertex GetModelVertexInfo(List<PartialMeshEntry> modelMeshes, int offset)
@@ -281,6 +251,14 @@ namespace Poly_Ling.MQO
         /// UV スロット内では同一 Vertex を返す（Position / BoneWeight 共有のため）。
         /// </summary>
         private static Vertex NavigateToVertex(List<PartialMeshEntry> modelMeshes, int offset)
+            => NavigateToSlot(modelMeshes, offset).vertex;
+
+        /// <summary>
+        /// 展開後グローバルインデックス offset を (Vertex, UVスロット) へ解く。
+        /// 走査は MeshExpansion に一本化してある（MeshExpansion.cs 冒頭の指示）。
+        /// </summary>
+        private static (Vertex vertex, int uvIdx) NavigateToSlot(
+            List<PartialMeshEntry> modelMeshes, int offset)
         {
             int currentOffset = 0;
             foreach (var model in modelMeshes)
@@ -291,37 +269,24 @@ namespace Poly_Ling.MQO
                 int meshVertCount = model.ExpandedVertexCount;
                 if (offset < currentOffset + meshVertCount)
                 {
-                    int localIdx    = offset - currentOffset;
-                    int expandedIdx = 0;
+                    int localIdx = offset - currentOffset;
 
-                    for (int vIdx = 0; vIdx < mo.VertexCount; vIdx++)
+                    Vertex found     = null;
+                    int    foundSlot = 0;
+
+                    MeshExpansion.Enumerate(mo, (vIdx, uvIdx, expIdx) =>
                     {
-                        var v       = mo.Vertices[vIdx];
-                        int uvCount = v.UVs.Count > 0 ? v.UVs.Count : 1;
+                        if (found != null || expIdx != localIdx) return;
+                        found     = mo.Vertices[vIdx];
+                        foundSlot = uvIdx;
+                    });
 
-                        if (localIdx < expandedIdx + uvCount)
-                            return v;
-
-                        expandedIdx += uvCount;
-                    }
-                    return null;
+                    return (found, foundSlot);
                 }
                 currentOffset += meshVertCount;
             }
-            return null;
+            return (null, 0);
         }
 
-        // ================================================================
-        // 内部ヘルパー
-        // ================================================================
-
-        private static HashSet<int> BuildUsedVertexSet(MeshObject mo)
-        {
-            var used = new HashSet<int>();
-            foreach (var face in mo.Faces)
-                foreach (var vi in face.VertexIndices)
-                    used.Add(vi);
-            return used;
-        }
     }
 }

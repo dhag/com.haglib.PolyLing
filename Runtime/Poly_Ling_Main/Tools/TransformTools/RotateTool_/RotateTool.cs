@@ -102,6 +102,48 @@ namespace Poly_Ling.Tools
         /// <summary>回転をリセットして元の位置に戻す。</summary>
         public void RevertPublic() { RevertToStart(); _rotX = _rotY = _rotZ = 0f; _axisAngle = 0f; }
 
+        /// <summary>
+        /// 取り出せる回転プレビューがあるか。TryTakeRotationFromDrag が true を返す条件と同じ。
+        /// </summary>
+        public bool RotationDragPending
+            => _ctx != null && _isDirty && _multiMeshStartPositions.Count > 0;
+
+        /// <summary>
+        /// ドラッグ／スライダーの回転量を取り出し、開始状態へ戻す。
+        ///
+        /// 【なぜ要るか】
+        ///   1 ドラッグ = 1 コマンドにするため。ドラッグ中の適用はプレビューとして
+        ///   扱い、確定時はここで開始状態へ戻して回転量だけを返す。呼び出し側
+        ///   （RotateToolHandler）が RotateSelectionCommand を送り、実際の回転と
+        ///   Undo 記録は EndSliderDrag → ApplyRotation が行う。
+        ///   ObjectMoveTool.TryTakeOriginOnlyDrag と同じ形。
+        ///
+        /// 【戻す方法】
+        ///   ApplyRotation が Undo 記録に使うのと同じ _multiMeshStartPositions を
+        ///   書き戻す RevertToStart をそのまま使う。復元用の経路を別に作らない。
+        ///
+        /// 【何も返さない場合】
+        ///   プレビューが無いときは false を返し、状態も戻さない。
+        ///   呼び出し側は従来どおり EndSliderDrag で確定させる。
+        /// </summary>
+        /// <param name="axisMode">true なら axis と angleDeg、false なら euler が有効。</param>
+        public bool TryTakeRotationFromDrag(
+            out bool axisMode, out Vector3 euler, out Vector3 axis, out float angleDeg)
+        {
+            axisMode = _axisMode;
+            euler    = new Vector3(_rotX, _rotY, _rotZ);
+            axis     = _axisVec;
+            angleDeg = _axisAngle;
+
+            if (!RotationDragPending) return false;
+
+            RevertToStart();
+            ExitSliderDragging();
+            _rotX = _rotY = _rotZ = 0f;
+            _axisAngle = 0f;
+            return true;
+        }
+
         /// <summary>コンテキストを手動設定する（スライダーUI から使用）。</summary>
         public void SetContextPublic(ToolContext ctx) { _ctx = ctx; UpdateAffected(); UpdatePivot(); }
 

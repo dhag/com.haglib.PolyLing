@@ -90,6 +90,16 @@ namespace Poly_Ling.Player
         /// <summary>フェーズが変わったときに呼ばれる。Viewer が入力経路を張り替える。</summary>
         public Action OnPhaseChanged;
 
+        /// <summary>対象モデルの索引。コマンドに載せる。</summary>
+        public Func<int> GetModelIndex;
+
+        /// <summary>
+        /// コマンド送信口。確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
         // ================================================================
         // フェーズ
         // ================================================================
@@ -329,6 +339,219 @@ namespace Poly_Ling.Player
 
             ExitPreview();
             OnRepaint?.Invoke();
+        }
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 変形を確定する。サブパネルの「適用」はここを通る。
+        ///
+        /// 【1 セッション = 1 コマンド】
+        ///   スライダ・ハンドル操作中の適用はプレビュー扱い。ここで
+        ///   デフォーマ名とパラメータを控えてから Revert で開始位置へ戻し、
+        ///   コマンドとして送る。実際の変形と Undo 記録は
+        ///   ExecuteFromCommand が行う。
+        ///   送信口が無い・プレビュー中でない・コマンドに写せない
+        ///   デフォーマのときは、従来どおり Commit で確定させる。
+        /// </summary>
+        public void CommitViaCommand()
+        {
+            if (SendCommand == null || !_applier.IsActive) { Commit(); return; }
+
+            var cmd = BuildApplyCommand();
+            if (cmd == null) { Commit(); return; }
+
+            Revert();
+            SendCommand(cmd);
+        }
+
+        /// <summary>
+        /// 現在のデフォーマとパラメータからコマンドを組み立てる。
+        /// 対応する派生が無いデフォーマのときは null（呼び出し側が従来経路へ落ちる）。
+        ///
+        /// 【曲げのたわみ方向】
+        ///   UseCameraBendPlane が立っていても、ここで載せるのは解決済みの
+        ///   BendPlaneAngleDeg だけ。受け口はカメラ追従を切って実行するので、
+        ///   同じコマンドを送れば視点によらず同じ結果になる。
+        /// </summary>
+        private Poly_Ling.Data.ApplyDeformCommand BuildApplyCommand()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) return null;
+
+            var sel = model.SelectedDrawableMeshIndices;
+            if (sel == null || sel.Count == 0) return null;
+
+            int[] targets = sel.ToArray();
+            int   mi      = GetModelIndex?.Invoke() ?? 0;
+
+            switch (Deformer?.Params)
+            {
+                case RotateDeformerParams p:
+                    return new Poly_Ling.Data.ApplyRotateDeformCommand(
+                        mi, targets, p.AngleX, p.AngleY, p.AngleZ,
+                        UseMagnet, MagnetRadius, MagnetFalloff, MagnetDistanceMode);
+
+                case MoveDeformerParams p:
+                    return new Poly_Ling.Data.ApplyMoveDeformCommand(
+                        mi, targets, p.OffsetX, p.OffsetY, p.OffsetZ,
+                        UseMagnet, MagnetRadius, MagnetFalloff, MagnetDistanceMode);
+
+                case ScaleDeformerParams p:
+                    return new Poly_Ling.Data.ApplyScaleDeformCommand(
+                        mi, targets, p.ScaleX, p.ScaleY, p.ScaleZ,
+                        UseMagnet, MagnetRadius, MagnetFalloff, MagnetDistanceMode);
+
+                case BendDeformerParams p:
+                    return new Poly_Ling.Data.ApplyBendDeformCommand(
+                        mi, targets, p.TotalAngleDeg, p.BendPlaneAngleDeg, p.PivotAtAxisOrigin,
+                        UseMagnet, MagnetRadius, MagnetFalloff, MagnetDistanceMode);
+
+                case TwistDeformerParams p:
+                    return new Poly_Ling.Data.ApplyTwistDeformCommand(
+                        mi, targets, p.TotalAngleDeg, p.PivotAtAxisOrigin,
+                        UseMagnet, MagnetRadius, MagnetFalloff, MagnetDistanceMode);
+
+                case WaveDeformerParams p:
+                    return new Poly_Ling.Data.ApplyWaveDeformCommand(
+                        mi, targets,
+                        p.AmplitudeX, p.CyclesX, p.PhaseXDeg,
+                        p.AmplitudeZ, p.CyclesZ, p.PhaseZDeg,
+                        p.PivotAtAxisOrigin,
+                        UseMagnet, MagnetRadius, MagnetFalloff, MagnetDistanceMode);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 変形コマンドを実行する。
+        ///
+        /// 【マウス／パネル経路と同じ実装を通す】
+        ///   変形そのものは DeformApplier と IMeshDeformer が正典。ここは対象の
+        ///   照合と設定値の差し替えだけを行い、BeginPreview → ApplyPreview →
+        ///   Commit というパネルと同じ順序で呼ぶ。Undo 記録は Commit の中にある。
+        ///
+        /// 【設定値はコマンドが正典】
+        ///   デフォーマの選択・パラメータ・マグネットは退避してからコマンド値を
+        ///   代入し、終わったら戻す。1 呼び出しがパネルの状態に依存しないため。
+        ///
+        /// 【作業軸】
+        ///   変形の基準は現在の WorkAxisContext。コマンドには載せていないので、
+        ///   先に SetWorkAxisCommand / RecallWorkAxisCommand で決めておくこと。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(Poly_Ling.Data.ApplyDeformCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = GetModel?.Invoke();
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
+                return false;
+
+            if (GetWorkAxis?.Invoke() == null)
+            { reason = "作業軸がありません。先に SetWorkAxisCommand で決めてください"; return false; }
+
+            // 実行前に前回のプレビューが残っていたら捨てる。積み重ねないため。
+            if (_applier.IsActive) Revert();
+
+            var savedDeformer = _deformer;
+            var savedParams   = _deformer?.Params?.Clone();
+            bool         savedUseMagnet = UseMagnet;
+            float        savedRadius    = MagnetRadius;
+            FalloffType  savedFalloff   = MagnetFalloff;
+            DistanceMode savedDistance  = MagnetDistanceMode;
+
+            bool ok = false;
+            try
+            {
+                var next = DeformerRegistry.Create(cmd.DeformerName);
+                if (next == null)
+                { reason = $"デフォーマ {cmd.DeformerName} がありません"; return false; }
+
+                _deformer = next;
+                if (!WriteParams(cmd, next.Params, out reason)) return false;
+
+                UseMagnet          = cmd.UseMagnet;
+                MagnetRadius       = cmd.MagnetRadius;
+                MagnetFalloff      = cmd.MagnetFalloff;
+                MagnetDistanceMode = cmd.MagnetDistanceMode;
+
+                if (!BeginPreview())
+                { reason = "選択された頂点がありません"; return false; }
+
+                ApplyPreview();
+                Commit();
+                ok = true;
+            }
+            finally
+            {
+                if (!ok && _applier.IsActive) Revert();
+
+                _deformer = savedDeformer;
+                if (savedParams != null) _deformer?.Params?.CopyFrom(savedParams);
+                UseMagnet          = savedUseMagnet;
+                MagnetRadius       = savedRadius;
+                MagnetFalloff      = savedFalloff;
+                MagnetDistanceMode = savedDistance;
+            }
+
+            OnRepaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// コマンドの値をデフォーマのパラメータへ写す。
+        /// 型分岐はここ 1 か所だけに置く（PanelCommand.cs を
+        /// Poly_Ling.Tools.Deformers に依存させないため）。
+        /// </summary>
+        private static bool WriteParams(
+            Poly_Ling.Data.ApplyDeformCommand cmd, IDeformerParams dst, out string reason)
+        {
+            reason = null;
+
+            switch (cmd)
+            {
+                case Poly_Ling.Data.ApplyRotateDeformCommand c when dst is RotateDeformerParams p:
+                    p.AngleX = c.AngleX; p.AngleY = c.AngleY; p.AngleZ = c.AngleZ;
+                    return true;
+
+                case Poly_Ling.Data.ApplyMoveDeformCommand c when dst is MoveDeformerParams p:
+                    p.OffsetX = c.OffsetX; p.OffsetY = c.OffsetY; p.OffsetZ = c.OffsetZ;
+                    return true;
+
+                case Poly_Ling.Data.ApplyScaleDeformCommand c when dst is ScaleDeformerParams p:
+                    p.ScaleX = c.ScaleX; p.ScaleY = c.ScaleY; p.ScaleZ = c.ScaleZ;
+                    return true;
+
+                case Poly_Ling.Data.ApplyBendDeformCommand c when dst is BendDeformerParams p:
+                    // カメラ追従を切る。切らないと SyncCameraBendPlane が
+                    // BendPlaneAngleDeg を視点から上書きしてしまう。
+                    p.UseCameraBendPlane = false;
+                    p.TotalAngleDeg      = c.TotalAngleDeg;
+                    p.BendPlaneAngleDeg  = c.BendPlaneAngleDeg;
+                    p.PivotAtAxisOrigin  = c.PivotAtAxisOrigin;
+                    return true;
+
+                case Poly_Ling.Data.ApplyTwistDeformCommand c when dst is TwistDeformerParams p:
+                    p.TotalAngleDeg     = c.TotalAngleDeg;
+                    p.PivotAtAxisOrigin = c.PivotAtAxisOrigin;
+                    return true;
+
+                case Poly_Ling.Data.ApplyWaveDeformCommand c when dst is WaveDeformerParams p:
+                    p.AmplitudeX = c.AmplitudeX; p.CyclesX = c.CyclesX; p.PhaseXDeg = c.PhaseXDeg;
+                    p.AmplitudeZ = c.AmplitudeZ; p.CyclesZ = c.CyclesZ; p.PhaseZDeg = c.PhaseZDeg;
+                    p.PivotAtAxisOrigin = c.PivotAtAxisOrigin;
+                    return true;
+            }
+
+            reason = $"{cmd.DeformerName} のパラメータをコマンドから写せません";
+            return false;
         }
 
         /// <summary>

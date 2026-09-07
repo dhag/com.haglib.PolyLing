@@ -1068,13 +1068,21 @@ namespace Poly_Ling.Remote
                     int n = Math.Min(srcModels.Length, Math.Min(srcMasters.Length, srcWeights.Length));
                     if (n > ApplyBlendCommand.MaxSources) n = ApplyBlendCommand.MaxSources;
 
-                    var specs = new BlendSourceSpec[n];
+                    // ApplyBlendCommand は平行配列で受けるので、
+                    // ここで BlendSourceSpec[] へ束ねる必要はない。長さは n で揃える。
+                    var srcModelsN  = new int[n];
+                    var srcMastersN = new int[n];
+                    var srcWeightsN = new float[n];
                     for (int i = 0; i < n; i++)
-                        specs[i] = new BlendSourceSpec(srcModels[i], srcMasters[i], srcWeights[i]);
+                    {
+                        srcModelsN[i]  = srcModels[i];
+                        srcMastersN[i] = srcMasters[i];
+                        srcWeightsN[i] = srcWeights[i];
+                    }
 
                     return new ApplyBlendCommand(
                         modelIndex,
-                        specs,
+                        srcModelsN, srcMastersN, srcWeightsN,
                         GetParamInt(msg, "destMasterIndex", -1),
                         GetParamString(msg, "createNewObject", "false") == "true",
                         GetParamString(msg, "recalcNormals",   "true")  == "true",

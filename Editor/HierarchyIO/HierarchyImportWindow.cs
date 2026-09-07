@@ -245,6 +245,10 @@ namespace Poly_Ling.EditorIO
             var animator = workRoot.GetComponentInChildren<Animator>(true);
             if (animator == null || animator.avatar == null || !animator.avatar.isHuman) return 0;
 
+            // リターゲット設定8項目はモデルレベル。可動域と同じ humanDescription から取る。
+            model.AvatarRetarget =
+                AvatarRetargetSettings.ToData(animator.avatar.humanDescription);
+
             // 可動域を HumanTrait 名でマップ（度）
             var limitByTrait = new Dictionary<string, HumanLimit>();
             var human = animator.avatar.humanDescription.human;

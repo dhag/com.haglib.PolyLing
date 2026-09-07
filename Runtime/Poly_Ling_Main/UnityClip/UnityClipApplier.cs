@@ -91,6 +91,16 @@ namespace Poly_Ling.UnityClip
         //                        軸ごと Slerp して合成する。pre/post・sign を含む。
         //   二次骨（dto.bones：袖/髪/スカート等）は、どちらの方式でも常時適用する。
         //
+        //   可動端（Min/Max）の出所は、Muscle 経路で次の順に決まる:
+        //     1) 外部 UnityLimit CSV の実測（LoadMuscleLimitCsv 済みのボーン）
+        //     2) モデル側 per-bone 可動域（MeshObject.HumanLimit。
+        //        UseDefaultValues == false のボーンだけ）
+        //     3) CanonMuscleTable の定数
+        //   回転軸と muscle=0 の姿勢は常に定数側を使う。HumanLimitData は
+        //   可動端しか持たないため、そこだけを差し替える。
+        //   2) の控えは BuildMapping（→ BuildCanonAlignment）で作る。
+        //   可動域を編集したあとは BuildMapping を呼び直すまで反映されない。
+        //
         // BodyMode = Auto のとき、bakedBones があれば (a)、無ければ (b) を選ぶ。
         //
         // ■ 未対応（恒久メモ）
@@ -120,6 +130,12 @@ namespace Poly_Ling.UnityClip
         private ModelContext _mappedModel;
         private HumanoidBoneMapping _mapping;          // Unity名 → ノード索引
         private UnityClipVirtualSkeleton _skeleton;    // 実体ノード＋仮想ミラーノード
+
+        // 直近 ApplyFrame 時点のノードのワールド行列。
+        // 純仮想ミラー関節（ContextIndex < 0）は書き先の MeshContext を持たないため、
+        // SolveMirrorWorld の結果をここに控えないと外から知る手段が無い。
+        private Matrix4x4[] _nodeWorld;
+        private bool        _nodeWorldValid;
         private List<string> _boneNames;               // ノード名（_skeleton.NodeNames と同じ並び）
 
         // ノード単位のデルタ（ノード自身の枠）。
@@ -152,6 +168,7 @@ namespace Poly_Ling.UnityClip
             public Vector3 Min;                                   // 度（dof 0,1,2 の順）
             public Vector3 Max;                                   // 度
             public bool    Measured;                              // 実測列を持つか
+            public bool    FromModelLimit;                        // 可動端をモデル側 HumanLimit で置いたか
             public Quaternion Zero = Quaternion.identity;         // muscle 全 0 のローカル回転
             public readonly Quaternion[] MinQ = { Quaternion.identity, Quaternion.identity, Quaternion.identity };
             public readonly Quaternion[] MaxQ = { Quaternion.identity, Quaternion.identity, Quaternion.identity };
@@ -169,6 +186,27 @@ namespace Poly_Ling.UnityClip
         }
         private Dictionary<string, CanonFrame>       _canonFrame;       // Humanoid名 → 枠
         private Dictionary<string, MuscleLimitEntry> _canonEntryCache;  // Humanoid名 → 合成 entry
+
+        // ---- モデル側 per-bone 可動域（MeshObject.HumanLimit）-------------
+        // 正典は MeshObject.HumanLimit（ラジアン）。ここへは度で控える。
+        // UseDefaultValues == true のボーンは入れない。入れないことが
+        // 「定数（CanonMuscleTable）をそのまま使う」の意味になる。
+        //
+        // 【なぜ定数を丸ごと置き換えないか】
+        //   CanonMuscleTable の可動端は HumanTrait の可動域と一致しない
+        //   （ツイストが捩りボーンへ分配されるため実効がおよそ半分）。
+        //   既定のボーンまでモデル値へ替えると、これまで出ていた姿勢が変わる。
+        //   よって「明示的に既定を外したボーンだけ」差し替える。
+        //
+        // 【軸と Zero は差し替えない】
+        //   HumanLimitData が持つのは可動端だけで、回転軸と muscle=0 の姿勢は
+        //   持たない。軸 cb.Axis と Zero は定数のまま使う。
+        private struct ModelLimitDeg
+        {
+            public Vector3 Min;   // 度（dof 0,1,2 の順）
+            public Vector3 Max;   // 度
+        }
+        private Dictionary<string, ModelLimitDeg> _modelLimitDeg;
 
         /// <summary>UnityLimit CSV 読込済みなら true。</summary>
         public bool HasMuscleLimits => _muscleLimits != null && _muscleLimits.Count > 0;
@@ -211,6 +249,12 @@ namespace Poly_Ling.UnityClip
 
         /// <summary>解決できなかった clip.bones のパス末尾名。</summary>
         public List<string> UnresolvedPathTracks { get; } = new List<string>();
+
+        /// <summary>
+        /// 構築済みの仮想骨格（実体ノード＋仮想ミラーノード）。BuildMapping のあとに有効。
+        /// Humanoid の左右補完もここが持つ（UnityClipVirtualSkeleton.BuildHumanoidMap）。
+        /// </summary>
+        public UnityClipVirtualSkeleton Skeleton => _skeleton;
 
         /// <summary>クリップ適用対象のノード総数（実体＋仮想ミラー）。</summary>
         public int BoneNodeCount => _skeleton != null ? _skeleton.Nodes.Count : 0;
@@ -302,6 +346,7 @@ namespace Poly_Ling.UnityClip
 
             _canonFrame      = new Dictionary<string, CanonFrame>();
             _canonEntryCache = new Dictionary<string, MuscleLimitEntry>();
+            _modelLimitDeg   = new Dictionary<string, ModelLimitDeg>();
             if (model == null || _skeleton == null) return;
 
             // ターゲットの rest 位置（モデル空間）
@@ -314,6 +359,18 @@ namespace Poly_Ling.UnityClip
                 node[kv.Key] = n;
                 Matrix4x4 w = RestWorldOf(model, n);
                 tp[kv.Key] = new Vector3(w.m03, w.m13, w.m23);
+
+                // モデル側の可動域。姿勢と同じく実体側コンテキストから取る
+                // （ミラーノードは相方のボーンが正本）。
+                var hl = _skeleton.SourceContext(model, n)?.MeshObject?.HumanLimit;
+                if (hl != null && !hl.UseDefaultValues)
+                {
+                    _modelLimitDeg[kv.Key] = new ModelLimitDeg
+                    {
+                        Min = hl.Min * Mathf.Rad2Deg,
+                        Max = hl.Max * Mathf.Rad2Deg,
+                    };
+                }
             }
 
             foreach (var kv in _canonMuscle)
@@ -336,6 +393,27 @@ namespace Poly_Ling.UnityClip
 
                 _canonFrame[kv.Key] = fr;
             }
+        }
+
+        /// <summary>
+        /// 正準（T ポーズ）のボーン方向 → ターゲット rest 方向 の最短弧 A。
+        /// BuildMapping を通したあとだけ引ける。引けなければ false（恒等を返す）。
+        ///
+        /// VMD → VRMA の書き出し（VmdVrmAnimationExport）が、モデルのレスト姿勢を
+        /// 正準 T ポーズへ揃えるために読む。値の算出は BuildCanonAlignment が正本で、
+        /// ここでは複製しない。
+        /// </summary>
+        public bool TryGetCanonAlignment(string humanoidName, out Quaternion alignment)
+        {
+            alignment = Quaternion.identity;
+            if (_canonFrame == null || string.IsNullOrEmpty(humanoidName)) return false;
+
+            string key = UnityClipVirtualSkeleton.NormalizeHumanoidName(humanoidName);
+            if (string.IsNullOrEmpty(key)) return false;
+            if (!_canonFrame.TryGetValue(key, out var fr)) return false;
+
+            alignment = fr.A;
+            return true;
         }
 
         // ノードの rest ワールド行列。
@@ -388,8 +466,17 @@ namespace Poly_Ling.UnityClip
             Quaternion pi = Quaternion.Inverse(p);
             Quaternion wi = Quaternion.Inverse(w);
 
+            // 可動端だけモデル側の値へ差し替える（既定を外したボーンのみ）。
+            // 短絡評価の中で out var を宣言すると後段で確定代入にならないため、
+            // TryGetValue は if で分けて呼ぶ。
+            ModelLimitDeg ml = default;
+            bool useModelLimit = false;
+            if (_modelLimitDeg != null)
+                useModelLimit = _modelLimitDeg.TryGetValue(humanoidName, out ml);
+
             var e = new MuscleLimitEntry();
-            e.Measured = true;                       // 以後は実測ありと同じ経路を通す
+            e.Measured       = true;                 // 以後は実測ありと同じ経路を通す
+            e.FromModelLimit = useModelLimit;
             e.Zero     = QuatNorm(pi * (a * cb.Zero * ai) * p * dL);
 
             var mn = Vector3.zero;
@@ -398,10 +485,14 @@ namespace Poly_Ling.UnityClip
             {
                 if (!cb.Has[dof]) { e.MinQ[dof] = e.Zero; e.MaxQ[dof] = e.Zero; continue; }
                 Vector3 axis = wi * (a * cb.Axis[dof]);
-                e.MinQ[dof] = QuatNorm(e.Zero * Quaternion.AngleAxis(cb.MinDeg[dof], axis));
-                e.MaxQ[dof] = QuatNorm(e.Zero * Quaternion.AngleAxis(cb.MaxDeg[dof], axis));
-                mn[dof] = cb.MinDeg[dof];
-                mx[dof] = cb.MaxDeg[dof];
+
+                float minDeg = useModelLimit ? ml.Min[dof] : cb.MinDeg[dof];
+                float maxDeg = useModelLimit ? ml.Max[dof] : cb.MaxDeg[dof];
+
+                e.MinQ[dof] = QuatNorm(e.Zero * Quaternion.AngleAxis(minDeg, axis));
+                e.MaxQ[dof] = QuatNorm(e.Zero * Quaternion.AngleAxis(maxDeg, axis));
+                mn[dof] = minDeg;
+                mx[dof] = maxDeg;
             }
             e.Min = mn;
             e.Max = mx;
@@ -525,6 +616,8 @@ namespace Poly_Ling.UnityClip
             //           ミラー側コンテキストへ書き戻してからもう一度組み直す。
             if (ApplyVirtualMirror(model))
                 model.ComputeWorldMatrices();
+
+            CacheNodeWorlds(model);
         }
 
         // 1 トラックを timeSec でサンプルして適用。適用できたら 1。
@@ -655,7 +748,9 @@ namespace Poly_Ling.UnityClip
                     dsb = new System.Text.StringBuilder();
                     dsb.Append("[UnityClipApplier/muscle] ").Append(key)
                        .Append("  t=").Append(timeSec.ToString("F3"))
-                       .Append("  src=").Append(fromCsv ? "CSV実測" : "既定(Tポーズ基準)").Append('\n');
+                       .Append("  src=").Append(
+                            fromCsv ? "CSV実測"
+                                    : (lim.FromModelLimit ? "モデル可動域" : "既定(Tポーズ基準)")).Append('\n');
                     dsb.Append("   Zero  ").Append(AxAng(lim.Zero))
                        .Append("  min(deg)=").Append(lim.Min)
                        .Append(" max(deg)=").Append(lim.Max).Append('\n');
@@ -1009,6 +1104,121 @@ namespace Poly_Ling.UnityClip
                 d[col[0]] = v.normalized;
             }
             _canonDir = d;
+        }
+
+        // ================================================================
+        // 正準定数の公開（モデル非依存の変換用）
+        // ----------------------------------------------------------------
+        //   CanonMuscleTable / CanonDirTable / _canonParent は定義値であり、
+        //   このクラスが唯一の置き場である。モデル非依存の VRMA 変換
+        //   （UnityClipCanonVrmAnimation）は定数を複製せずここから引く。
+        // ================================================================
+
+        /// <summary>正準テーブルが持つ Humanoid 名（CanonMuscleTable の並び）。</summary>
+        public static IReadOnlyList<string> CanonHumanoidNames
+        {
+            get
+            {
+                if (_canonNames == null)
+                {
+                    var list = new List<string>(CanonMuscleTable.Length);
+                    foreach (var row in CanonMuscleTable)
+                    {
+                        int bar = row.IndexOf('|');
+                        if (bar > 0) list.Add(row.Substring(0, bar));
+                    }
+                    _canonNames = list;
+                }
+                return _canonNames;
+            }
+        }
+        private static List<string> _canonNames;
+
+        /// <summary>正準階層の親。Hips は null。名前が無ければ false。</summary>
+        public static bool TryGetCanonParent(string humanoidName, out string parent)
+        {
+            EnsureCanon();
+            return _canonParent.TryGetValue(humanoidName, out parent);
+        }
+
+        /// <summary>T ポーズでの「自ボーン → 正準子ボーン」方向（単位ベクトル）。</summary>
+        public static bool TryGetCanonDir(string humanoidName, out Vector3 dir)
+        {
+            EnsureCanonMuscle();
+            return _canonDir.TryGetValue(humanoidName, out dir);
+        }
+
+        // Humanoid 名（空白なし）→ HumanTrait のボーン索引。
+        private static Dictionary<string, int> _canonBoneIndex;
+
+        private static int CanonBoneIndex(string humanoidName)
+        {
+            if (_canonBoneIndex == null)
+            {
+                var d = new Dictionary<string, int>();
+                var names = HumanTrait.BoneName;
+                for (int i = 0; i < names.Length; i++)
+                    d[names[i].Replace(" ", string.Empty)] = i;
+                _canonBoneIndex = d;
+            }
+            return _canonBoneIndex.TryGetValue(humanoidName, out int bi) ? bi : -1;
+        }
+
+        /// <summary>
+        /// T ポーズ基準（モデル非依存）でマッスル値からローカル回転を作る。
+        ///
+        /// GetCanonEntry を A = RestW = RestL = 単位で通したのと同じ式であり、
+        /// 掛ける順序も ApplySelfMuscle と同じにしてある。
+        ///   Zero = cb.Zero
+        ///   ext  = Zero · AngleAxis(Min/MaxDeg[dof], Axis[dof])
+        ///   full = Zero⁻¹ · ext
+        ///   d    = Slerp(identity, full, |v|) を 3 dof 合成
+        ///   L    = Zero · d
+        /// レストが T ポーズなら L がそのまま正規化 Humanoid のローカル回転になる。
+        /// </summary>
+        /// <returns>クリップがそのボーンを 1 dof も駆動していなければ false。</returns>
+        public static bool TryGetCanonLocalRotation(
+            string humanoidName,
+            IReadOnlyDictionary<string, UnityMuscleTrackDTO> muscleByName,
+            float timeSec,
+            out Quaternion local)
+        {
+            local = Quaternion.identity;
+            if (string.IsNullOrEmpty(humanoidName) || muscleByName == null) return false;
+
+            EnsureCanonMuscle();
+            if (!_canonMuscle.TryGetValue(humanoidName, out var cb)) return false;
+
+            int bi = CanonBoneIndex(humanoidName);
+            if (bi < 0) return false;
+
+            var muscleNames = HumanTrait.MuscleName;
+            Quaternion zero  = cb.Zero;
+            Quaternion delta = Quaternion.identity;
+            bool any = false;
+
+            for (int dof = 0; dof < 3; dof++)
+            {
+                if (!cb.Has[dof]) continue;
+
+                int mi = HumanTrait.MuscleFromBone(bi, dof);
+                if (mi < 0 || muscleNames == null || mi >= muscleNames.Length) continue;
+                if (!muscleByName.TryGetValue(muscleNames[mi], out var mt)) continue;
+
+                float v = SampleWeight(mt, timeSec);
+
+                Quaternion ext  = zero * Quaternion.AngleAxis(
+                                      v >= 0f ? cb.MaxDeg[dof] : cb.MinDeg[dof], cb.Axis[dof]);
+                Quaternion full = Quaternion.Inverse(zero) * ext;
+                Quaternion d    = Quaternion.Slerp(Quaternion.identity, full, Mathf.Min(1f, Mathf.Abs(v)));
+                delta = delta * d;
+                any = true;
+            }
+
+            if (!any) return false;
+
+            local = QuatNorm(zero * delta);
+            return true;
         }
 
         // present で親をたどる（欠損はスキップ）
@@ -1481,6 +1691,53 @@ namespace Poly_Ling.UnityClip
             return solved[node];
         }
 
+        // ================================================================
+        // ノードのワールド行列
+        // ================================================================
+
+        // 実体ノードは MeshContext.WorldMatrix、ミラーノードは SolveMirrorWorld の
+        // 目標ワールド Ŵ を控える。ミラー側コンテキストを持つノードは
+        // ApplyVirtualMirror が ctx.WorldMatrix を Ŵ に一致させているので同値だが、
+        // 純仮想関節は ctx が無いためこちらでしか取れない。
+        private void CacheNodeWorlds(ModelContext model)
+        {
+            if (_skeleton == null) { _nodeWorldValid = false; return; }
+
+            int n = _skeleton.Nodes.Count;
+            if (_nodeWorld == null || _nodeWorld.Length != n) _nodeWorld = new Matrix4x4[n];
+
+            var solved = new Matrix4x4[n];
+            var done   = new bool[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                if (_skeleton.Nodes[i].IsMirror)
+                {
+                    _nodeWorld[i] = SolveMirrorWorld(model, i, solved, done);
+                    continue;
+                }
+                var ctx = _skeleton.TargetContext(model, i);
+                _nodeWorld[i] = ctx != null ? ctx.WorldMatrix : Matrix4x4.identity;
+            }
+
+            _nodeWorldValid = true;
+        }
+
+        /// <summary>
+        /// 直近の ApplyFrame 時点でのノードのワールド行列。
+        /// ApplyFrame をまだ通していない場合は false。
+        /// </summary>
+        public bool TryGetNodeWorldMatrix(int node, out Matrix4x4 world)
+        {
+            if (!_nodeWorldValid || _nodeWorld == null || node < 0 || node >= _nodeWorld.Length)
+            {
+                world = Matrix4x4.identity;
+                return false;
+            }
+            world = _nodeWorld[node];
+            return true;
+        }
+
         /// <summary>
         /// 適用した "UnityClip" レイヤーを全コンテキストから除去して復帰。
         /// ミラー側・MeshFilter メッシュにも書いているため、ボーンだけでなく全件を走査する。
@@ -1498,6 +1755,7 @@ namespace Poly_Ling.UnityClip
             }
             ClearNodeDeltas();
             model.ComputeWorldMatrices();
+            _nodeWorldValid = false;
         }
 
         // ================================================================

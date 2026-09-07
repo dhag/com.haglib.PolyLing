@@ -45,7 +45,8 @@ namespace Poly_Ling.MeshListV2
             }
             PLDiag.Cmd($"ReorderMeshes category={Category} modelIndex={ModelIndex} count={entries.Length}");
 
-            SendCommand?.Invoke(new ReorderMeshesCommand(ModelIndex, Category, entries));
+            SendCommand?.Invoke(new ReorderMeshesCommand(
+                ModelIndex, Category, ReorderMeshesCommand.ToEntryValues(entries)));
             OnChanged?.Invoke();
         }
 

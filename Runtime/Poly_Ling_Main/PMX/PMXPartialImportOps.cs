@@ -10,6 +10,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.Materials;
+using Poly_Ling.MeshBridge;
 using Poly_Ling.MQO;
 using Poly_Ling.UI;
 
@@ -63,8 +64,15 @@ namespace Poly_Ling.PMX
                 var mo = ctx.MeshObject;
                 if (mo.VertexCount == 0) continue;
 
-                var isolated      = MQOVertexExpandHelper.GetIsolatedVertices(mo);
-                int expandedCount = MQOVertexExpandHelper.CalculateExpandedVertexCount(mo, isolated);
+                // 展開規則は MeshExpansion が唯一の実装（MeshExpansion.cs 冒頭の規則）。
+                // PMX エクスポータも MeshObject.BuildExpansionMap() 経由で同じ規則を使うので、
+                // ここで別の数え方をすると AutoMatch が PMX の実頂点数と合わなくなる。
+                var nonIsolated   = MeshExpansion.BuildNonIsolatedSet(mo);
+                int expandedCount = MeshExpansion.CountExpanded(mo, nonIsolated);
+
+                var isolated = new HashSet<int>();
+                for (int v = 0; v < mo.VertexCount; v++)
+                    if (!nonIsolated.Contains(v)) isolated.Add(v);
 
                 ModelMeshes.Add(new PartialMeshEntry
                 {
@@ -166,8 +174,21 @@ namespace Poly_Ling.PMX
 
         // ================================================================
         // 頂点属性インポート（位置 / UV / BoneWeight 独立）
-        // PMX は展開済みなので 1:1 マッピング。
-        // 頂点数が異なる場合は min(N, M) 個を転送し Warning を出す。
+        //
+        // モデル側の頂点は非展開形（1 頂点が UV スロットを n 個持つ）。
+        // PMX 側は展開済み（1 頂点 1 UV）。両者の対応は
+        // MeshExpansion の展開順（頂点 index 昇順 → UV スロット昇順、
+        // 3 頂点以上の面から参照されない頂点は除外）で決まる。
+        // PMX エクスポータも MeshObject.BuildExpansionMap() 経由で同じ規則を使う。
+        //
+        // 位置とボーンウェイトは展開時にスロット数ぶん複製されるので、
+        // 逆方向はスロット 0 の 1 個だけを取る。
+        // UV はスロットごとに別の値なので、スロットごとに PMX 頂点から受け取る。
+        //
+        // モデルが PMX 由来の場合は全頂点が UV スロット 1 個で孤立も無いため、
+        // 展開は恒等写像になり、従来の 1:1 転送と同じ結果になる。
+        //
+        // 展開順をここに手書きしてはならない（MeshExpansion.cs 冒頭の指示）。
         // ================================================================
 
         public int ExecuteVertexAttributeImport(
@@ -188,39 +209,42 @@ namespace Poly_Ling.PMX
                 var pmxMo   = pmxMeshes[p].MeshContext?.MeshObject;
                 if (modelMo == null || pmxMo == null) continue;
 
-                int count = Math.Min(modelMo.VertexCount, pmxMo.VertexCount);
+                var nonIsolated  = MeshExpansion.BuildNonIsolatedSet(modelMo);
+                int expandedCount = MeshExpansion.CountExpanded(modelMo, nonIsolated);
 
-                if (modelMo.VertexCount != pmxMo.VertexCount)
+                if (expandedCount != pmxMo.VertexCount)
                 {
                     Debug.LogWarning(
                         $"[PMXPartialImport] '{modelMeshes[p].Name}' " +
-                        $"model={modelMo.VertexCount} ≠ pmx={pmxMo.VertexCount}, importing {count}");
+                        $"model expanded={expandedCount} ≠ pmx={pmxMo.VertexCount}, " +
+                        $"importing {Math.Min(expandedCount, pmxMo.VertexCount)}");
                 }
 
-                for (int i = 0; i < count; i++)
+                int updated = 0;
+
+                MeshExpansion.Enumerate(modelMo, (vIdx, uvIdx, expIdx) =>
                 {
-                    var dst = modelMo.Vertices[i];
-                    var src = pmxMo.Vertices[i];
+                    if (expIdx >= pmxMo.VertexCount) return;
 
-                    if (position)
-                        dst.Position = src.Position;
+                    var dst = modelMo.Vertices[vIdx];
+                    var src = pmxMo.Vertices[expIdx];
 
-                    if (uv)
+                    if (uvIdx == 0)
                     {
-                        dst.UVs.Clear();
-                        foreach (var v in src.UVs)
-                            dst.UVs.Add(v);
+                        if (position)   dst.Position   = src.Position;
+                        if (boneWeight) dst.BoneWeight = src.BoneWeight;
+                        updated++;
                     }
 
-                    if (boneWeight)
-                        dst.BoneWeight = src.BoneWeight;
-                }
+                    if (uv && uvIdx < dst.UVs.Count && src.UVs.Count > 0)
+                        dst.UVs[uvIdx] = src.UVs[0];
+                }, nonIsolated);
 
                 // ウェイトを取り込んだ場合は取り込み先の種別を確定させる。
                 if (boneWeight)
                     modelMo.RecomputeSkinKind();
 
-                totalUpdated += count;
+                totalUpdated += updated;
             }
 
             return totalUpdated;

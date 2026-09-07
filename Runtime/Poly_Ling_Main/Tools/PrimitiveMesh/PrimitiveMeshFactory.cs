@@ -160,9 +160,10 @@ namespace Poly_Ling.PrimitiveMesh
 
         private static MeshObject GenerateProfile2D(CreateProfile2DCommand c)
         {
+            // ResolveLoops は Loops が空なら平坦な列（LoopPointValues ほか）から起こす。
+            // パネル経路は Loops が入っているのでそのまま返る。
             var loops = new List<Loop>();
-            if (c.Params.Loops != null)
-                foreach (var ld in c.Params.Loops) loops.Add(ld.ToLoop());
+            foreach (var ld in c.Params.ResolveLoops()) loops.Add(ld.ToLoop());
 
             var mo = Profile2DExtrudeMeshGenerator.Generate(loops, c.Params.MeshName,
                 new Profile2DGenerateParams

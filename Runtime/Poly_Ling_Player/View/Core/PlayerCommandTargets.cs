@@ -64,6 +64,58 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// masterIndices が、実行時点の「選択中のオブジェクト」（ボーン ∪ 描画メッシュ）と
+        /// 集合として一致するかを確かめる。並び順は問わない。
+        ///
+        /// ObjectMoveTool は ObjectMoveTool.AllSelectedIndices で
+        /// SelectedBoneIndices と SelectedDrawableMeshIndices の和集合を走査するため、
+        /// 描画メッシュだけを見る MatchesSelectedDrawables では照合できない。
+        /// </summary>
+        /// <param name="reason">一致しなかった理由。一致したときは null。</param>
+        public static bool MatchesSelectedObjects(
+            ModelContext model, int[] masterIndices, out string reason)
+        {
+            reason = null;
+
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (masterIndices == null || masterIndices.Length == 0)
+            {
+                reason = "MasterIndices が空です";
+                return false;
+            }
+
+            var have = new HashSet<int>();
+            if (model.SelectedBoneIndices != null)
+                foreach (int i in model.SelectedBoneIndices) have.Add(i);
+            if (model.SelectedDrawableMeshIndices != null)
+                foreach (int i in model.SelectedDrawableMeshIndices) have.Add(i);
+
+            if (have.Count == 0)
+            {
+                reason = "選択中のオブジェクトがありません";
+                return false;
+            }
+
+            var want = new HashSet<int>(masterIndices);
+            if (want.Count != masterIndices.Length)
+            {
+                reason = "MasterIndices に重複があります";
+                return false;
+            }
+
+            if (!want.SetEquals(have))
+            {
+                reason = "MasterIndices が選択中のオブジェクトと一致しません"
+                       + $"（指定 [{Join(masterIndices)}] / 選択 [{Join(have)}]）。"
+                       + "先に SelectMeshCommand で選択を合わせてください";
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// masterIndices が 1 個で、それが編集対象メッシュ（ActiveMeshContext）と
         /// 一致するかを確かめる。単一メッシュにしか効かない実処理のために使う。
         /// </summary>

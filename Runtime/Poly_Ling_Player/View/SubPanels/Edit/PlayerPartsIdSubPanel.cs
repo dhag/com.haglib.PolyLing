@@ -35,6 +35,12 @@ namespace Poly_Ling.Player
         /// <summary>直近の採番結果。Viewer から設定する（PlayerCommandDispatcher が持つ）。</summary>
         public Func<PartsIdAssignResult> GetLastResult;
 
+        /// <summary>直近のボーンウェイト採番結果。Viewer から設定する。</summary>
+        public Func<PartsIdByBoneWeightResult> GetLastBoneWeightResult;
+
+        /// <summary>直近の分解結果。Viewer から設定する。</summary>
+        public Func<PartsIdSplitResult> GetLastSplitResult;
+
         // ── UI ───────────────────────────────────────────────────────
 
         private DropdownField _targetDrop;
@@ -130,6 +136,48 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.WideBtn("リファレンスの頂点数で採番",
                 () => Run(AssignPartsIdsCommand.PartsIdMode.ReferenceVertexCount,
                           "リファレンスの頂点数で採番")));
+
+            // ── ボーンウェイトで採番 ──────────────────────────────────
+            root.Add(PlayerIoUiKit.Divider());
+            root.Add(PlayerIoUiKit.SectionLabel("③ ボーンウェイトで採番"));
+
+            root.Add(new HelpBox(
+                "ウェイトが 0 より大きいスロットだけを数えて、パーツIDを振り直します。\n"
+              + "・効いているボーンが 1 本だけの頂点 → そのボーンの番号をそのまま入れます\n"
+              + "・効いているボーンが 2 本以上の頂点 → 同じ組み合わせの頂点をひとまとめにして、"
+              + "ボーン番号の後ろから続く番号を振ります（4と5 と 5と4 は同じ組み合わせです）\n"
+              + "・ウェイトが 1 本も入っていない頂点 → 予約番号 2147483647 を入れます\n"
+              + "この採番は面のつながりを見ません。①②とは別の分け方になります。",
+                HelpBoxMessageType.Info));
+
+            root.Add(Note(
+                "予約番号 2147483647 は「次の部品ID」の計算から外してあるので、"
+              + "採番したあとに図形を足しても番号は壊れません。"));
+
+            root.Add(PlayerIoUiKit.WideBtn("ボーンウェイトで採番", RunByBoneWeight));
+
+            // ── パーツIDで分解 ───────────────────────────────────────
+            root.Add(PlayerIoUiKit.Divider());
+            root.Add(PlayerIoUiKit.SectionLabel("④ パーツIDで分解"));
+
+            root.Add(new HelpBox(
+                "対象オブジェクトをパーツIDごとのオブジェクトへ分けます。\n"
+              + "空のオブジェクトを1つ作り、分けたオブジェクトをその子として並べます。\n"
+              + "・面はどれか1つのオブジェクトにだけ入ります（面が消えることも、"
+              + "2か所に増えることもありません）\n"
+              + "・面の相手側の頂点がよそのパーツIDでも、その面と一緒に複製します。"
+              + "頂点は複数のオブジェクトに重複して現れます\n"
+              + "・面が2つ以上のオブジェクトの候補になるときは、"
+              + "パーツID番号の大きいほうが先に取ります"
+              + "（ボーンの組み合わせのオブジェクトが境界の面を受け取ります）\n"
+              + "元のオブジェクトは消しません。残ったままです。",
+                HelpBoxMessageType.Info));
+
+            root.Add(Note(
+                "先に③で採番しておくと、ボーン1本ぶんのオブジェクトと、"
+              + "ボーンをまたぐ境目のオブジェクトに分かれます。"));
+
+            root.Add(PlayerIoUiKit.WideBtn("パーツIDで分解", RunSplit));
 
             // ── その他 ───────────────────────────────────────────────
             root.Add(PlayerIoUiKit.Divider());
@@ -289,6 +337,40 @@ namespace Poly_Ling.Player
                 ? $"{label}: パーツ {r.PartCount} / 頂点 {r.VertexCount}"
                   + (r.IsolatedVertexCount > 0 ? $" / 孤立頂点 {r.IsolatedVertexCount}" : "")
                 : $"{label}: 実行しませんでした"
+                  + $"（{(string.IsNullOrEmpty(r.Reason) ? "理由不明" : r.Reason)}）");
+        }
+
+        private void RunByBoneWeight()
+        {
+            int target = CurrentTargetMasterIndex();
+            if (target < 0) { SetStatus("対象オブジェクトを選んでください"); return; }
+
+            SendCommand?.Invoke(new AssignPartsIdsByBoneWeightCommand(ModelIndex, target));
+
+            // Dispatch は同期なので、実行後の状態をそのまま診断し直せる。
+            Refresh();
+
+            var r = GetLastBoneWeightResult != null ? GetLastBoneWeightResult() : default;
+            SetStatus(r.Success
+                ? "ボーンウェイトで採番: " + r.Summary
+                : "ボーンウェイトで採番: 実行しませんでした"
+                  + $"（{(string.IsNullOrEmpty(r.Reason) ? "理由不明" : r.Reason)}）");
+        }
+
+        private void RunSplit()
+        {
+            int target = CurrentTargetMasterIndex();
+            if (target < 0) { SetStatus("対象オブジェクトを選んでください"); return; }
+
+            SendCommand?.Invoke(new SplitObjectByPartsIdCommand(ModelIndex, target));
+
+            // Dispatch は同期なので、実行後の状態をそのまま診断し直せる。
+            Refresh();
+
+            var r = GetLastSplitResult != null ? GetLastSplitResult() : default;
+            SetStatus(r.Success
+                ? "パーツIDで分解: " + r.Summary
+                : "パーツIDで分解: 実行しませんでした"
                   + $"（{(string.IsNullOrEmpty(r.Reason) ? "理由不明" : r.Reason)}）");
         }
 

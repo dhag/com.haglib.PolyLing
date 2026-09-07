@@ -375,6 +375,26 @@ namespace Poly_Ling.PMX
         // ボーン
         // ================================================================
 
+        /// <summary>
+        /// ボーンへの参照を解決する。名前を主、番号を従とする（JointData.cs の規約）。
+        ///
+        /// 旧実装は「番号が 0 のときだけ名前で引く」だった。これには 2 つの誤りがある。
+        ///   - 番号の既定値が -1 の欄（ParentIndex など）では名前解決に入らず、
+        ///     エクスポータが名前しか埋めていない場合に -1 がそのまま書かれる。
+        ///     実測で 186 ボーン中 180 本の親が -1 になっていた。
+        ///   - 番号 0 は先頭ボーンを指す正当な値でもある。名前が入っていると
+        ///     本来 0 を指すべきものまで引き直してしまう。
+        /// </summary>
+        private static int ResolveBoneRef(PMXDocument document, string name, int index)
+        {
+            if (!string.IsNullOrEmpty(name))
+            {
+                int byName = document.GetBoneIndex(name);
+                if (byName >= 0) return byName;
+            }
+            return index;
+        }
+
         private static void WriteBones(BinaryWriter writer, PMXDocument document)
         {
             writer.Write(document.Bones.Count);
@@ -389,13 +409,8 @@ namespace Poly_Ling.PMX
                 // 位置
                 WriteVector3(writer, bone.Position);
 
-                // 親ボーンインデックス（読み込み時のインデックスを使用）
-                int parentIndex = bone.ParentIndex;
-                if (parentIndex == 0 && !string.IsNullOrEmpty(bone.ParentBoneName))
-                {
-                    // インデックスが0で名前が設定されている場合は名前から検索
-                    parentIndex = document.GetBoneIndex(bone.ParentBoneName);
-                }
+                // 親ボーン。名前が入っていれば名前で引く。
+                int parentIndex = ResolveBoneRef(document, bone.ParentBoneName, bone.ParentIndex);
                 WriteSignedIndex(writer, parentIndex, boneIndexSize);
 
                 // 変形階層
@@ -408,11 +423,7 @@ namespace Poly_Ling.PMX
                 bool connectByBone = (bone.Flags & 0x0001) != 0;
                 if (connectByBone)
                 {
-                    int connectIndex = bone.ConnectBoneIndex;
-                    if (connectIndex == 0 && !string.IsNullOrEmpty(bone.ConnectBoneName))
-                    {
-                        connectIndex = document.GetBoneIndex(bone.ConnectBoneName);
-                    }
+                    int connectIndex = ResolveBoneRef(document, bone.ConnectBoneName, bone.ConnectBoneIndex);
                     WriteSignedIndex(writer, connectIndex, boneIndexSize);
                 }
                 else
@@ -424,11 +435,7 @@ namespace Poly_Ling.PMX
                 bool hasGrant = (bone.Flags & 0x0100) != 0 || (bone.Flags & 0x0200) != 0;
                 if (hasGrant)
                 {
-                    int grantParentIndex = bone.GrantParentIndex;
-                    if (grantParentIndex == 0 && !string.IsNullOrEmpty(bone.GrantParentBoneName))
-                    {
-                        grantParentIndex = document.GetBoneIndex(bone.GrantParentBoneName);
-                    }
+                    int grantParentIndex = ResolveBoneRef(document, bone.GrantParentBoneName, bone.GrantParentIndex);
                     WriteSignedIndex(writer, grantParentIndex, boneIndexSize);
                     writer.Write(bone.GrantRate);
                 }
@@ -459,11 +466,7 @@ namespace Poly_Ling.PMX
                 bool hasIK = (bone.Flags & 0x0020) != 0;
                 if (hasIK)
                 {
-                    int ikTargetIndex = bone.IKTargetIndex;
-                    if (ikTargetIndex == 0 && !string.IsNullOrEmpty(bone.IKTargetBoneName))
-                    {
-                        ikTargetIndex = document.GetBoneIndex(bone.IKTargetBoneName);
-                    }
+                    int ikTargetIndex = ResolveBoneRef(document, bone.IKTargetBoneName, bone.IKTargetIndex);
                     WriteSignedIndex(writer, ikTargetIndex, boneIndexSize);
                     writer.Write(bone.IKLoopCount);
                     writer.Write(bone.IKLimitAngle);
@@ -471,11 +474,7 @@ namespace Poly_Ling.PMX
                     writer.Write(bone.IKLinks.Count);
                     foreach (var link in bone.IKLinks)
                     {
-                        int linkIndex = link.BoneIndex;
-                        if (linkIndex == 0 && !string.IsNullOrEmpty(link.BoneName))
-                        {
-                            linkIndex = document.GetBoneIndex(link.BoneName);
-                        }
+                        int linkIndex = ResolveBoneRef(document, link.BoneName, link.BoneIndex);
                         WriteSignedIndex(writer, linkIndex, boneIndexSize);
                         writer.Write((byte)(link.HasLimit ? 1 : 0));
                         if (link.HasLimit)
@@ -651,11 +650,8 @@ namespace Poly_Ling.PMX
                 WriteText(writer, body.NameEnglish ?? "");
 
                 // ボーンインデックス（読み込み時に保存したものを使用、なければ名前から検索）
-                int boneIndex = body.BoneIndex;
-                if (boneIndex < 0 && !string.IsNullOrEmpty(body.RelatedBoneName))
-                {
-                    boneIndex = document.GetBoneIndex(body.RelatedBoneName);
-                }
+                // 剛体の関連ボーンも名前を主とする（ボーンの並びが変わっても壊れない）。
+                int boneIndex = ResolveBoneRef(document, body.RelatedBoneName, body.BoneIndex);
                 WriteSignedIndex(writer, boneIndex, boneIndexSize);
 
                 writer.Write((byte)body.Group);

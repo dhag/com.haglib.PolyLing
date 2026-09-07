@@ -315,6 +315,43 @@ namespace Poly_Ling.Data
                 _blendedRotation = weightedDelta * _blendedRotation;
             }
 
+            // ============================================================
+            // 合成した回転を正規化してから行列にする（重要・削除禁止）
+            // ------------------------------------------------------------
+            //   四元数の積を重ねると float の丸め誤差が積もり、ノルムが 1 から離れる。
+            //   Matrix4x4.TRS はノルムが一定以上ずれた四元数を受け取ると
+            //     "Quaternion To Matrix conversion failed because input Quaternion is invalid"
+            //   を出し、変換を行わない。
+            //
+            //   実測（2026-09-07）: IK を有効にした VMD → VRMA 書き出し
+            //   （249 フレーム × IK 6 本 × 最大 40 反復）で 137 回発生。
+            //   そのときのノルムは 0.999818 〜 0.999990。
+            //   CCDIKSolver が反復ごとにリンクの回転を更新するため、
+            //   掛け合わせの回数が単純な再生とは桁で違う。
+            //
+            //   正規化はここ 1 か所で足りる。合成ループの各段で正規化しても
+            //   精度は変わらず、呼び出し回数だけが増える。
+            //   ノルムが 0 に潰れている場合は正規化すると NaN になるため単位回転に倒す。
+            // ============================================================
+            float sq = _blendedRotation.x * _blendedRotation.x
+                     + _blendedRotation.y * _blendedRotation.y
+                     + _blendedRotation.z * _blendedRotation.z
+                     + _blendedRotation.w * _blendedRotation.w;
+
+            if (sq <= 1e-12f)
+            {
+                _blendedRotation = Quaternion.identity;
+            }
+            else
+            {
+                float inv = 1f / Mathf.Sqrt(sq);
+                _blendedRotation = new Quaternion(
+                    _blendedRotation.x * inv,
+                    _blendedRotation.y * inv,
+                    _blendedRotation.z * inv,
+                    _blendedRotation.w * inv);
+            }
+
             _localMatrix = Matrix4x4.TRS(_blendedPosition, _blendedRotation, Vector3.one);
             _dirty = false;
         }

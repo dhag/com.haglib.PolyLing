@@ -248,12 +248,39 @@ namespace Poly_Ling.Player
         private PlayerThinPlateMorphSubPanel    _thinPlateMorphSubPanel;
         private PlayerFaceHideSubPanel          _faceHideSubPanel;
         private PlayerMeshSelectionSetSubPanel  _meshSelSetSubPanel;
+        private PlayerObjectGroupSubPanel       _objectGroupSubPanel;
         private PlayerMergeMeshesSubPanel    _mergeMeshesSubPanel;
         private PlayerBooleanSubPanel        _booleanSubPanel;
         private PlayerMorphSubPanel          _morphSubPanel;
         private PlayerMorphCreateSubPanel    _morphCreateSubPanel;
         private PlayerTPoseSubPanel          _tposeSubPanel;
         private PlayerHumanoidMappingSubPanel _humanoidMappingSubPanel;
+
+        /// <summary>
+        /// 揺れもの編集（VRM SpringBone のオーサリング）。
+        /// システムデバッグの「スプリングボーン検証」（_springBoneTestSubPanel）
+        /// とは別物で、こちらが通常の編集機能。
+        /// </summary>
+        private PlayerSpringBoneSubPanel     _springBoneSubPanel;
+
+        /// <summary>
+        /// 当たり判定（VRM SpringBone の collider）の作成と編集。
+        /// 揺れもの編集はまとまり（グループ）の名前だけを扱う。
+        /// </summary>
+        private PlayerSpringBoneColliderSubPanel _springBoneColliderSubPanel;
+
+        /// <summary>
+        /// Humanoid マッスル可動域（HumanLimit）の編集。
+        /// Humanoid 割当があるボーンにだけ効く。
+        /// </summary>
+        private PlayerHumanLimitSubPanel _humanLimitSubPanel;
+
+        /// <summary>
+        /// VRM 出力設定（作者情報・許諾・視線・一人称）。
+        /// 出力ごとの上書きは PlayerExportSubPanel 側が持つ。
+        /// </summary>
+        private PlayerVrmSettingsSubPanel _vrmSettingsSubPanel;
+
         private PlayerMirrorSubPanel         _mirrorSubPanel;
         private PlayerQuadDecimatorSubPanel  _quadDecimatorSubPanel;
         private PlayerAlignVerticesSubPanel       _alignVerticesSubPanel;
@@ -357,11 +384,20 @@ namespace Poly_Ling.Player
         private LineExtrudeToolHandler            _lineExtrudeHandler;
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
-        private PlayerPipelineTestSubPanel   _pipelineTestSubPanel;
+        private PlayerCommandSchemaSubPanel  _commandSchemaSubPanel;
         private PlayerOriginTestSubPanel     _originTestSubPanel;
         private PlayerSkinTestSubPanel       _skinTestSubPanel;
         private PlayerSpringBoneTestSubPanel _springBoneTestSubPanel;
+        private PlayerFrillSkirtTestSubPanel _frillSkirtTestSubPanel;
+        private PlayerPipeHairTestSubPanel   _pipeHairTestSubPanel;
+        private PlayerBarnacleTestSubPanel   _barnacleTestSubPanel;
+        private PlayerRevolutionTestSubPanel _revolutionTestSubPanel;
+        private PlayerProfile2DTestSubPanel  _profile2DTestSubPanel;
+        private PlayerPmxToMqoTestSubPanel   _pmxToMqoTestSubPanel;
+        private PlayerMqoToPmxTestSubPanel   _mqoToPmxTestSubPanel;
         private PlayerUnityClipTestSubPanel  _unityClipTestSubPanel;
+        private PlayerUnityClipToVrmaSubPanel _unityClipToVrmaSubPanel;
+        private PlayerVmdToVrmaSubPanel     _vmdToVrmaSubPanel;
         private PlayerMotionClipTestSubPanel _motionClipTestSubPanel;
 
         // 下絵（3D背面に敷く参照画像）
@@ -371,6 +407,7 @@ namespace Poly_Ling.Player
 
         // 軸 / グリッド平面（4面共通）
         private PlayerGridAxisSubPanel       _gridAxisSubPanel;
+        private PlayerWorkFolderSubPanel     _workFolderSubPanel;
 
         // 画面キャプチャ（PNG 保存）
         private PlayerCaptureSubPanel        _captureSubPanel;
@@ -1277,6 +1314,7 @@ namespace Poly_Ling.Player
             _viewportManager.OnApplySelectMode = ApplySelectMode;
 
             _objectMoveHandler = new ObjectMoveToolHandler();
+            _objectMoveHandler.SendCommand = DispatchPanelCommand;
             _objectMoveHandler.SetProject(ActiveProject);
             _objectMoveHandler.SetUndoController(_editOps?.UndoController);
             _objectMoveHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
@@ -1645,9 +1683,13 @@ namespace Poly_Ling.Player
                         _knifeSubPanel?.Refresh();
                     }
                     // 面追加（四角形）で3点配置済みなら三角形として確定する。
+                    // 線分モードは描画を終了し、次の描画を始められる状態へ戻す。
+                    // FinishAsTriangle が条件を満たさなかったときだけ線分側を見る
+                    // （両者はモードが違うので同時には成立しない）。
                     else if (_interactionMode == InteractionMode.AddFace)
                     {
-                        if (_addFaceHandler != null && _addFaceHandler.FinishAsTriangle())
+                        if (_addFaceHandler != null &&
+                            (_addFaceHandler.FinishAsTriangle() || _addFaceHandler.FinishLineChain()))
                             _addFaceSubPanel?.Refresh();
                     }
                     // 格子変形は進行中のセッションを取消して開始前へ戻す。
@@ -1677,8 +1719,7 @@ namespace Poly_Ling.Player
                 p.OnUndoPointKey += () =>
                 {
                     if (_interactionMode != InteractionMode.AddFace) return;
-                    if (_addFaceHandler != null && _addFaceHandler.RemoveLastPoint())
-                        _addFaceSubPanel?.Refresh();
+                    ExecuteAddFaceRemoveLastPoint();
                 };
             }
             ConnectUndoPointKey(_layoutRoot?.PerspectivePanel);
@@ -1687,6 +1728,7 @@ namespace Poly_Ling.Player
             ConnectUndoPointKey(_layoutRoot?.SidePanel);
 
             // 面追加（四角形）で3点配置済みのとき、右クリックで三角形として確定する。
+            // 線分モードは右クリックで描画を終了する（Escape と同じ扱い）。
             // 右ドラッグはカメラ回転だが、OnClick はドラッグ閾値未満のときだけ発火するため競合しない。
             void ConnectAddFaceRightClick(PlayerViewportPanel p)
             {
@@ -1695,7 +1737,8 @@ namespace Poly_Ling.Player
                 {
                     if (btn != 1) return;
                     if (_interactionMode != InteractionMode.AddFace) return;
-                    if (_addFaceHandler != null && _addFaceHandler.FinishAsTriangle())
+                    if (_addFaceHandler != null &&
+                        (_addFaceHandler.FinishAsTriangle() || _addFaceHandler.FinishLineChain()))
                         _addFaceSubPanel?.Refresh();
                 };
             }
@@ -3290,6 +3333,15 @@ namespace Poly_Ling.Player
             };
             _meshSelSetSubPanel.Build(_layoutRoot.MeshSelectionSetSection);
 
+            // オブジェクトグループ。参照の解決がモデルをまたぐので
+            // ModelContext ではなく ProjectContext を渡す。
+            _objectGroupSubPanel = new PlayerObjectGroupSubPanel
+            {
+                GetProject  = () => _localLoader.Project ?? _receiver?.Project,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
+            _objectGroupSubPanel.Build(_layoutRoot.ObjectGroupSection);
+
             _mergeMeshesSubPanel = new PlayerMergeMeshesSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
@@ -3354,6 +3406,44 @@ namespace Poly_Ling.Player
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _humanoidMappingSubPanel.Build(_layoutRoot.HumanoidMappingSection);
+
+            // 揺れもの編集。対象は選択（ボーン優先、無ければ描画オブジェクト）で決まるので
+            // ツールコンテキストは要らない。参照の解決はモデル内で閉じる。
+            _springBoneSubPanel = new PlayerSpringBoneSubPanel
+            {
+                GetProject  = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+
+                // 鎖の強調表示はボーンの線メッシュを作り直して描く。
+                // PrepareBones はスロットが dirty のときしか走らないので、
+                // 強調表示を書き換えたらここで dirty を立てる。
+                OnHighlightChanged = () => _viewportManager?.MarkAllSlotsDirty(),
+            };
+            _springBoneSubPanel.Build(_layoutRoot.SpringBoneSection);
+
+            // 当たり判定の作成と編集。対象は揺れもの編集と同じく「選択」で決まる。
+            _springBoneColliderSubPanel = new PlayerSpringBoneColliderSubPanel
+            {
+                GetProject  = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
+            _springBoneColliderSubPanel.Build(_layoutRoot.SpringBoneColliderSection);
+
+            // マッスル可動域の編集。対象はボーン選択で決まる。
+            _humanLimitSubPanel = new PlayerHumanLimitSubPanel
+            {
+                GetProject  = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
+            _humanLimitSubPanel.Build(_layoutRoot.HumanLimitSection);
+
+            // VRM 出力設定。対象はモデル全体（一人称だけメッシュ選択で決まる）。
+            _vrmSettingsSubPanel = new PlayerVrmSettingsSubPanel
+            {
+                GetProject  = () => ActiveProject,
+                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+            };
+            _vrmSettingsSubPanel.Build(_layoutRoot.VrmSettingsSection);
 
             _mirrorSubPanel = new PlayerMirrorSubPanel
             {
@@ -3826,6 +3916,10 @@ namespace Poly_Ling.Player
                 GetLastResult            = () => _commandDispatcher != null
                                                ? _commandDispatcher.LastPartsIdResult
                                                : default,
+                GetLastBoneWeightResult  = () => _commandDispatcher != null
+                                               ? _commandDispatcher.LastPartsIdByBoneWeightResult
+                                               : default,
+                GetLastSplitResult       = () => _lastPartsIdSplitResult,
             };
             _partsIdSubPanel.Build(_layoutRoot.PartsIdSection);
 
@@ -3991,6 +4085,7 @@ namespace Poly_Ling.Player
                     return true;
                 },
             };
+            _addFaceHandler.SendCommand = DispatchPanelCommand;
             _addFaceHandler.SetProject(ActiveProject);
             _addFaceHandler.SetUndoController(_editOps?.UndoController);
             _addFaceSubPanel = new PlayerAddFaceSubPanel
@@ -4062,6 +4157,7 @@ namespace Poly_Ling.Player
                 },
                 OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
+            _rotateHandler.SendCommand = DispatchPanelCommand;
             _rotateHandler.SetProject(ActiveProject);
             _rotateHandler.SetUndoController(_editOps?.UndoController);
             _rotateSubPanel = new PlayerRotateSubPanel { GetH = () => _rotateHandler };
@@ -4171,6 +4267,8 @@ namespace Poly_Ling.Player
                 },
                 GetWorkAxis    = () => CurrentWorkAxis(),
                 GetModel       = () => ActiveProject?.CurrentModel,
+                GetModelIndex  = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand    = DispatchPanelCommand,
                 OnSyncMeshPositions = mc =>
                 {
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
@@ -4224,6 +4322,8 @@ namespace Poly_Ling.Player
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
                 GetWorkAxis    = () => CurrentWorkAxis(),
                 GetModel       = () => ActiveProject?.CurrentModel,
+                GetModelIndex  = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand    = DispatchPanelCommand,
                 OnSyncMeshPositions = mc =>
                 {
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
@@ -4256,6 +4356,7 @@ namespace Poly_Ling.Player
                 },
                 OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
+            _scaleHandler.SendCommand = DispatchPanelCommand;
             _scaleHandler.SetProject(ActiveProject);
             _scaleHandler.SetUndoController(_editOps?.UndoController);
             _scaleSubPanel = new PlayerScaleSubPanel { GetH = () => _scaleHandler };
@@ -4387,6 +4488,7 @@ namespace Poly_Ling.Player
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
+            _edgeTopologyHandler.SendCommand = DispatchPanelCommand;
             _edgeTopologyHandler.SetProject(ActiveProject);
             _edgeTopologyHandler.SetUndoController(_editOps?.UndoController);
             _edgeTopologyHandler.SetCommandQueue(_editOps?.CommandQueue);
@@ -4446,6 +4548,7 @@ namespace Poly_Ling.Player
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
+            _knifeHandler.SendCommand = DispatchPanelCommand;
             _knifeHandler.SetProject(ActiveProject);
             _knifeHandler.SetUndoController(_editOps?.UndoController);
             _knifeHandler.SetCommandQueue(_editOps?.CommandQueue);
@@ -4551,21 +4654,11 @@ namespace Poly_Ling.Player
 
             // パイプライン自動検証。パネルが押されたときと同じ PanelCommand を送るので、
             // ディスパッチャ側の欠陥もそのまま検査に掛かる。
-            _pipelineTestSubPanel = new PlayerPipelineTestSubPanel
-            {
-                GetModel      = () => ActiveProject?.CurrentModel,
-                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
-                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
-                LoadProjectFolder = LoadProjectFolderForTest,
-                SaveProjectFolder = SaveProjectFolderForTest,
-                CreateBridge      = CreateBridgeForTest,
-                RefreshAfterTopologyChange = () =>
-                {
-                    _viewportManager.EnterTopologyChanged(ActiveProject);
-                    NotifyPanels(ChangeKind.ListStructure);
-                },
-            };
-            _pipelineTestSubPanel.Build(_layoutRoot.PipelineTestSection);
+
+            // コマンド定義の検査。実行時の状態（ParameterLimits / PLSandbox）を
+            // 含むため Editor のメニューではなくここへ置く。
+            _commandSchemaSubPanel = new PlayerCommandSchemaSubPanel();
+            _commandSchemaSubPanel.Build(_layoutRoot.CommandSchemaSection);
 
             // 原点CSV自動検証。MQO 読込も CSV 適用も実経路（ImportMqoCommand /
             // ApplyObjectOriginsCommand）へ流すので、ディスパッチャ側の欠陥も検査に掛かる。
@@ -4575,6 +4668,14 @@ namespace Poly_Ling.Player
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
                 SendCommand   = cmd => _panelContext?.SendCommand(cmd),
                 ImportMqo     = path => OnImportMqo(path, null, null),
+                // 書き出しはエクスポートパネルと同じ経路。検査に使うので結果をそのまま返す。
+                ExportVrm     = (path, settings) =>
+                {
+                    var m = ActiveProject?.CurrentModel;
+                    if (m == null)
+                        return Poly_Ling.Vrm.Vrm10ExportResult.Failed("モデルがありません");
+                    return Poly_Ling.Vrm.PLVrm10Bridge.I.Export(m, path, settings);
+                },
             };
             _originTestSubPanel.Build(_layoutRoot.OriginTestSection);
 
@@ -4586,6 +4687,14 @@ namespace Poly_Ling.Player
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
                 SendCommand   = cmd => _panelContext?.SendCommand(cmd),
                 ImportMqo     = path => OnImportMqo(path, null, null),
+                // 書き出しはエクスポートパネルと同じ経路。検査に使うので結果をそのまま返す。
+                ExportVrm     = (path, settings) =>
+                {
+                    var m = ActiveProject?.CurrentModel;
+                    if (m == null)
+                        return Poly_Ling.Vrm.Vrm10ExportResult.Failed("モデルがありません");
+                    return Poly_Ling.Vrm.PLVrm10Bridge.I.Export(m, path, settings);
+                },
             };
             _skinTestSubPanel.Build(_layoutRoot.SkinTestSection);
 
@@ -4610,6 +4719,126 @@ namespace Poly_Ling.Player
                 },
             };
             _springBoneTestSubPanel.Build(_layoutRoot.SpringBoneTestSection);
+
+            // フリルスカート自動検証。オブジェクトグループの使い方が UI からは
+            // 追いにくいので、同じ手順をコマンドだけで通してログに残す。
+            // 参照の解決がモデルをまたぐため ProjectContext を渡す。
+            _frillSkirtTestSubPanel = new PlayerFrillSkirtTestSubPanel
+            {
+                GetProject    = () => ActiveProject,
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _frillSkirtTestSubPanel.Build(_layoutRoot.FrillSkirtTestSection);
+
+            // 前髪パイプ自動検証。四分球を梯子にしてパイプを生やす。
+            // 開始タグ三角形・終了三角形を足して梯子の自動検出を通す経路の確認も兼ねる。
+            _pipeHairTestSubPanel = new PlayerPipeHairTestSubPanel
+            {
+                GetProject    = () => ActiveProject,
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _pipeHairTestSubPanel.Build(_layoutRoot.PipeHairTestSection);
+
+            // 藤壺自動検証。球を梯子にして、円錐＋土台を各 rung へ配置する。
+            // 梯子の元だけでなく配置元も ObjectId で追随することの確認を兼ねる。
+            _barnacleTestSubPanel = new PlayerBarnacleTestSubPanel
+            {
+                GetProject    = () => ActiveProject,
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _barnacleTestSubPanel.Build(_layoutRoot.BarnacleTestSection);
+
+            // 回転体・2D押し出しの自動検証。梯子を使わず、プロファイルの
+            // 線オブジェクトだけを入力にする経路の確認。
+            _revolutionTestSubPanel = new PlayerRevolutionTestSubPanel
+            {
+                GetProject    = () => ActiveProject,
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _revolutionTestSubPanel.Build(_layoutRoot.RevolutionTestSection);
+
+            _profile2DTestSubPanel = new PlayerProfile2DTestSubPanel
+            {
+                GetProject    = () => ActiveProject,
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _profile2DTestSubPanel.Build(_layoutRoot.Profile2DTestSection);
+
+            // PMX位置→MQO保存 自動検証。PMX はソースにするだけでモデルには載せない
+            // （載せると直後の MQO 読込で ModelContext ごと差し替わって消える）ため、
+            // ImportPmxCommand を自前でキューへ積み、onResult だけを受け取る。
+            _pmxToMqoTestSubPanel = new PlayerPmxToMqoTestSubPanel
+            {
+                GetModel          = () => ActiveProject?.CurrentModel,
+                EnqueueCommand    = cmd  => _editOps?.CommandQueue.Enqueue(cmd),
+                ImportMqo         = path => OnImportMqo(path, null, null),
+                GetUndoController = () => _editOps?.UndoController,
+
+                // 書き出しはエクスポートパネルと同じ経路。検査に使うので結果をそのまま返す。
+                ExportMqo = (path, settings) =>
+                {
+                    var m = ActiveProject?.CurrentModel;
+                    if (m == null)
+                        return new Poly_Ling.MQO.MQOExportResult
+                        { Success = false, ErrorMessage = "モデルがありません" };
+
+                    var r = Poly_Ling.MQO.MQOExporter.ExportFile(path, m, settings);
+                    if (r != null && r.Success) AuxiliaryBackupWriter.Save(m, path);
+                    return r;
+                },
+
+                // 頂点を書き換えたあとの再構築。部分インポート完了時と同じ処理。
+                RefreshAfterReplace = () =>
+                {
+                    var m = ActiveProject?.CurrentModel;
+                    if (m == null) return;
+                    _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+                },
+            };
+            _pmxToMqoTestSubPanel.Build(_layoutRoot.PmxToMqoTestSection);
+
+            // MQO位置UV→PMX保存 自動検証。土台の PMX はモデルに載せる。
+            // MQO は生座標のまま読む必要があるため（座標変換は転送側が掛ける）、
+            // ImportMqoCommand ではなく MQOPartialMatchHelper をパネル内で直接使う。
+            _mqoToPmxTestSubPanel = new PlayerMqoToPmxTestSubPanel
+            {
+                GetModel          = () => ActiveProject?.CurrentModel,
+                ImportPmx         = path => OnImportPmx(path, null, null),
+                GetUndoController = () => _editOps?.UndoController,
+
+                // 書き出しはエクスポートパネルと同じ経路。検査に使うので結果をそのまま返す。
+                ExportPmx = (path, settings) =>
+                {
+                    var m = ActiveProject?.CurrentModel;
+                    if (m == null)
+                        return new Poly_Ling.PMX.PMXExportResult
+                        { Success = false, ErrorMessage = "モデルがありません" };
+
+                    var r = Poly_Ling.PMX.PMXExporter.Export(m, path, settings);
+                    if (r != null && r.Success) AuxiliaryBackupWriter.Save(m, path);
+                    return r;
+                },
+
+                // 面まで作り直すので、部分インポート完了時と同じ再構築を通す。
+                RefreshAfterReplace = () =>
+                {
+                    var m = ActiveProject?.CurrentModel;
+                    if (m == null) return;
+                    _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _mqoToPmxTestSubPanel.Build(_layoutRoot.MqoToPmxTestSection);
 
             // ロボ組み立て自動検証。基本図形の生成から VRM 書き出しまでを
             // 5 系統ぶん流し、段ごとにフォルダへ保存する。
@@ -4641,6 +4870,8 @@ namespace Poly_Ling.Player
             _unityClipTestSubPanel = new PlayerUnityClipTestSubPanel
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
+                GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand       = cmd => _panelContext?.SendCommand(cmd),
                 GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 GetUndoController = () => _editOps?.UndoController,
                 OnFrameApplied    = () =>
@@ -4650,6 +4881,23 @@ namespace Poly_Ling.Player
                 },
             };
             _unityClipTestSubPanel.Build(_layoutRoot.UnityClipTestSection);
+
+            // モデルを見ない変換専用パネル。GetModel は持たせない。
+            _unityClipToVrmaSubPanel = new PlayerUnityClipToVrmaSubPanel
+            {
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _unityClipToVrmaSubPanel.Build(_layoutRoot.UnityClipToVrmaSection);
+
+            // VMD をモデルへ適用しながら書き出す。Humanoid 割り当てが要る。
+            _vmdToVrmaSubPanel = new PlayerVmdToVrmaSubPanel
+            {
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _vmdToVrmaSubPanel.Build(_layoutRoot.VmdToVrmaSection);
 
             _motionClipTestSubPanel = new PlayerMotionClipTestSubPanel
             {
@@ -4671,6 +4919,11 @@ namespace Poly_Ling.Player
                 () => _viewportManager.GetGridSettings(),
                 gs => _viewportManager.EnterDisplaySettingsChanged(gs));
             _gridAxisSubPanel.Build(_layoutRoot.GridAxisSection);
+
+            // 作業フォルダ（PLSandbox の根）。コマンドは通さない。
+            // リモートから根を書き換えられると境界の意味が消えるため。
+            _workFolderSubPanel = new PlayerWorkFolderSubPanel();
+            _workFolderSubPanel.Build(_layoutRoot.WorkFolderSection);
 
             _captureSubPanel = new PlayerCaptureSubPanel
             {
@@ -4810,6 +5063,9 @@ namespace Poly_Ling.Player
             // 最後に選んだ図形の保存キー。既存インスタンスとは別枠で記憶する。
             _livePrimitiveSubPanel.MemoryKey = "LivePrimitive";
 
+            // 揺れもの用ボーン鎖は、取り付け先ボーンの一覧を出すためにモデルを見る。
+            _livePrimitiveSubPanel.GetModelContext = () => ActiveProject?.CurrentModel;
+
             _livePrimitiveSubPanel.Build(_layoutRoot.LivePrimitiveSection, _sceneRoot);
             _livePrimitiveSubPanel.SendCommand  = cmd => _commandDispatcher?.Dispatch(cmd);
             _livePrimitiveSubPanel.GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0;
@@ -4872,6 +5128,7 @@ namespace Poly_Ling.Player
             _layoutRoot.LivePrimitiveBtn.clicked += ShowLivePrimitivePanel;
             _layoutRoot.LiveAdvancedPrimitiveBtn.clicked += ShowLiveAdvancedPrimitivePanel;
             _layoutRoot.LiveMechanismPrimitiveBtn.clicked += ShowLiveMechanismPrimitivePanel;
+            _layoutRoot.LiveSpringBonePrimitiveBtn.clicked += ShowLiveSpringBonePrimitivePanel;
 
             _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
             _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
@@ -4897,6 +5154,7 @@ namespace Poly_Ling.Player
             _layoutRoot.UVZBtn.clicked             += ShowUVZPanel;
             _layoutRoot.PartsSelectionSetBtn.clicked += ShowPartsSelectionSetPanel;
             _layoutRoot.MeshSelectionSetBtn.clicked  += ShowMeshSelectionSetPanel;
+            _layoutRoot.ObjectGroupBtn.clicked       += ShowObjectGroupPanel;
             _layoutRoot.NormalExcludeSetBtn.clicked  += ShowNormalExcludeSetPanel;
             _layoutRoot.NormalEditBtn.clicked        += ShowNormalEditPanel;
             _layoutRoot.NormalTransplantBtn.clicked  += ShowNormalTransplantPanel;
@@ -4906,6 +5164,10 @@ namespace Poly_Ling.Player
             _layoutRoot.BooleanBtn.clicked         += ShowBooleanPanel;
             _layoutRoot.TPoseBtn.clicked           += ShowTPosePanel;
             _layoutRoot.HumanoidMappingBtn.clicked += ShowHumanoidMappingPanel;
+            _layoutRoot.SpringBoneBtn.clicked      += ShowSpringBonePanel;
+            _layoutRoot.SpringBoneColliderBtn.clicked += ShowSpringBoneColliderPanel;
+            _layoutRoot.HumanLimitBtn.clicked         += ShowHumanLimitPanel;
+            _layoutRoot.VrmSettingsBtn.clicked       += ShowVrmSettingsPanel;
             _layoutRoot.MirrorBtn.clicked          += ShowMirrorPanel;
             _layoutRoot.QuadDecimatorBtn.clicked   += ShowQuadDecimatorPanel;
             _layoutRoot.AlignVerticesBtn.clicked       += ShowAlignVerticesPanel;
@@ -4961,17 +5223,34 @@ namespace Poly_Ling.Player
                 _layoutRoot.LineExtrudeBtn.clicked      += ShowLineExtrudePanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
-            if (_layoutRoot.PipelineTestBtn != null)
-                _layoutRoot.PipelineTestBtn.clicked += ShowPipelineTestPanel;
+            if (_layoutRoot.CommandSchemaBtn != null)
+                _layoutRoot.CommandSchemaBtn.clicked += ShowCommandSchemaPanel;
             if (_layoutRoot.OriginTestBtn != null)
                 _layoutRoot.OriginTestBtn.clicked += ShowOriginTestPanel;
             if (_layoutRoot.SkinTestBtn != null)
                 _layoutRoot.SkinTestBtn.clicked += ShowSkinTestPanel;
             if (_layoutRoot.SpringBoneTestBtn != null)
                 _layoutRoot.SpringBoneTestBtn.clicked += ShowSpringBoneTestPanel;
+            if (_layoutRoot.FrillSkirtTestBtn != null)
+                _layoutRoot.FrillSkirtTestBtn.clicked += ShowFrillSkirtTestPanel;
+            if (_layoutRoot.PipeHairTestBtn != null)
+                _layoutRoot.PipeHairTestBtn.clicked += ShowPipeHairTestPanel;
+            if (_layoutRoot.BarnacleTestBtn != null)
+                _layoutRoot.BarnacleTestBtn.clicked += ShowBarnacleTestPanel;
+            if (_layoutRoot.RevolutionTestBtn != null)
+                _layoutRoot.RevolutionTestBtn.clicked += ShowRevolutionTestPanel;
+            if (_layoutRoot.Profile2DTestBtn != null)
+                _layoutRoot.Profile2DTestBtn.clicked += ShowProfile2DTestPanel;
+            if (_layoutRoot.PmxToMqoTestBtn != null)
+                _layoutRoot.PmxToMqoTestBtn.clicked += ShowPmxToMqoTestPanel;
+            if (_layoutRoot.MqoToPmxTestBtn != null)
+                _layoutRoot.MqoToPmxTestBtn.clicked += ShowMqoToPmxTestPanel;
             if (_layoutRoot.RobotBuildTestBtn != null)
                 _layoutRoot.RobotBuildTestBtn.clicked += ShowRobotBuildTestPanel;
             _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
+            _layoutRoot.UnityClipToVrmaBtn.clicked  += ShowUnityClipToVrmaPanel;
+            if (_layoutRoot.VmdToVrmaBtn != null)
+                _layoutRoot.VmdToVrmaBtn.clicked    += ShowVmdToVrmaPanel;
             _layoutRoot.MotionClipTestBtn.clicked   += ShowMotionClipTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
             if (_layoutRoot.LogBtn != null)
@@ -4980,6 +5259,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.UnderlayBtn.clicked     += ShowUnderlayPanel;
             if (_layoutRoot.GridAxisBtn != null)
                 _layoutRoot.GridAxisBtn.clicked     += ShowGridAxisPanel;
+            if (_layoutRoot.WorkFolderBtn != null)
+                _layoutRoot.WorkFolderBtn.clicked   += ShowWorkFolderPanel;
             if (_layoutRoot.CameraBtn != null)
                 _layoutRoot.CameraBtn.clicked       += ShowCameraPanel;
             if (_layoutRoot.CaptureBtn != null)
@@ -5340,6 +5621,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.UVZSection,               () => _uvzSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PartsSelectionSetSection, () => _partsSelSetSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MeshSelectionSetSection,  () => _meshSelSetSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.ObjectGroupSection,       () => _objectGroupSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.NormalExcludeSetSection,  () => _normalExcludeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.NormalEditSection,        () => _normalEditSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FaceHideSection,          () => _faceHideSubPanel?.Refresh()));
@@ -5350,6 +5632,10 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.MorphCreateSection,       () => _morphCreateSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.TPoseSection,             () => _tposeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.HumanoidMappingSection,   () => _humanoidMappingSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SpringBoneSection,        () => _springBoneSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SpringBoneColliderSection, () => _springBoneColliderSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.HumanLimitSection,         () => _humanLimitSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.VrmSettingsSection,        () => _vrmSettingsSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MeshFilterToSkinnedSection, () => _mfToSkinnedSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SkinKindSection, () => _skinKindSubPanel?.SetModel(ActiveProject?.CurrentModel)));
             _sectionRefreshPairs.Add((_layoutRoot.QuadDecimatorSection,         () => _quadDecimatorSubPanel?.Refresh()));
@@ -5433,11 +5719,18 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.SolidifySection,          () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _solidifyHandler?.Activate(ctx); _solidifySubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.MediaPipeSection,         () => _mediaPipeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VMDTestSection,           () => _vmdTestSubPanel?.Refresh()));
-            _sectionRefreshPairs.Add((_layoutRoot.PipelineTestSection,      () => _pipelineTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.OriginTestSection,        () => _originTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SkinTestSection,          () => _skinTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SpringBoneTestSection,    () => _springBoneTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.FrillSkirtTestSection,    () => _frillSkirtTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.PipeHairTestSection,      () => _pipeHairTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.BarnacleTestSection,      () => _barnacleTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.RevolutionTestSection,    () => _revolutionTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.Profile2DTestSection,     () => _profile2DTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.PmxToMqoTestSection,      () => _pmxToMqoTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.MqoToPmxTestSection,      () => _mqoToPmxTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UnityClipTestSection,     () => _unityClipTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.UnityClipToVrmaSection,   () => _unityClipToVrmaSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.LogSection,               () => _logSubPanel?.Refresh()));
@@ -5491,14 +5784,16 @@ namespace Poly_Ling.Player
                 () => EnterSelectSubTool(false));
             _shortcutController.Register(ShortcutMap.CmdSubToolLassoSelect,
                 () => EnterSelectSubTool(true));
-            // Delete は面追加モードで点が置かれている間だけ「直前の点の取り消し」に使う。
-            // それ以外は従来どおり選択削除。
+            // Delete は面追加モードの間は常に「直前の点の取り消し」に使う。
+            // 取り消す対象が無いときは何もしない（選択削除へは落とさない）。
+            // 線分（連続）は _points が常に空で取り消し対象が無いように見えるため、
+            // ここで選択削除へ落とすと描画中に選択ジオメトリが消えていた。
+            // それ以外のモードは従来どおり選択削除。
             _shortcutController.Register(ShortcutMap.CmdSubToolDelete, () =>
             {
-                if (_interactionMode == InteractionMode.AddFace &&
-                    _addFaceHandler != null && _addFaceHandler.RemoveLastPoint())
+                if (_interactionMode == InteractionMode.AddFace)
                 {
-                    _addFaceSubPanel?.Refresh();
+                    ExecuteAddFaceRemoveLastPoint();
                     return;
                 }
                 ExecuteDeleteSelection();
@@ -5788,6 +6083,13 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Mechanism);
         }
 
+        private void ShowLiveSpringBonePrimitivePanel()
+        {
+            SetInteractionMode(InteractionMode.PrimitivePlace);
+            ShowRightPanel(_layoutRoot?.LivePrimitiveSection, _layoutRoot?.LiveSpringBonePrimitiveBtn);
+            _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.SpringBone);
+        }
+
         /// <summary>
         /// 配置ギズモの中心（ワールド座標）。
         /// NewObject / NewModel は _worldPos がそのままワールド座標になる。
@@ -5989,6 +6291,15 @@ namespace Poly_Ling.Player
             _meshSelSetSubPanel?.Refresh();
         }
 
+        private void ShowObjectGroupPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ObjectGroupSection, _layoutRoot?.ObjectGroupBtn);
+            // 要更新の判定はソースの全頂点を走査する。パネルを出したこの一度だけ行う。
+            _objectGroupSubPanel?.Refresh();
+        }
+
         private void ShowMergeMeshesPanel()
         {
             // カテゴリ 3
@@ -6055,6 +6366,66 @@ namespace Poly_Ling.Player
             if (hmModel != null && _editOps?.UndoController != null)
                 _editOps.UndoController.SetModelContext(hmModel);
             _humanoidMappingSubPanel?.Refresh();
+        }
+
+        private void ShowSpringBonePanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.SpringBoneSection, _layoutRoot?.SpringBoneBtn);
+            // MeshListStack のコンテキストを現在のモデルに設定
+            // （SpringBoneChangeRecord / SpringBoneModelSettingsRecord が参照するため）。
+            var sbModel = ActiveProject?.CurrentModel;
+            if (sbModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(sbModel);
+            _springBoneSubPanel?.Refresh();
+        }
+
+        private void ShowSpringBoneColliderPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.SpringBoneColliderSection, _layoutRoot?.SpringBoneColliderBtn);
+
+            // MeshListStack のコンテキストを現在のモデルに設定
+            // （当たり判定の変更も MultiSpringBoneChangeRecord で積まれるため）。
+            var scModel = ActiveProject?.CurrentModel;
+            if (scModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(scModel);
+
+            // 揺れもの編集から離れるので、鎖の強調表示は消す。
+            _springBoneSubPanel?.ClearHighlight();
+            _springBoneColliderSubPanel?.Refresh();
+        }
+
+        private void ShowHumanLimitPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.HumanLimitSection, _layoutRoot?.HumanLimitBtn);
+
+            // MeshListStack のコンテキストを現在のモデルに設定
+            // （可動域の変更は MultiHumanLimitChangeRecord で積まれるため）。
+            var hlModel = ActiveProject?.CurrentModel;
+            if (hlModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(hlModel);
+
+            _humanLimitSubPanel?.Refresh();
+        }
+
+        private void ShowVrmSettingsPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.VrmSettingsSection, _layoutRoot?.VrmSettingsBtn);
+
+            // MeshListStack のコンテキストを現在のモデルに設定
+            // （VrmModelSettingsRecord / MultiVrmFirstPersonChangeRecord が参照するため）。
+            var vsModel = ActiveProject?.CurrentModel;
+            if (vsModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(vsModel);
+
+            _vrmSettingsSubPanel?.Refresh();
         }
 
         private void ShowMirrorPanel()
@@ -6532,12 +6903,12 @@ namespace Poly_Ling.Player
             _vmdTestSubPanel?.Refresh();
         }
 
-        private void ShowPipelineTestPanel()
+        /// <summary>コマンド定義の検査パネルを開く。</summary>
+        private void ShowCommandSchemaPanel()
         {
-            // カテゴリ 3
             SetInteractionMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.PipelineTestSection, _layoutRoot?.PipelineTestBtn);
-            _pipelineTestSubPanel?.Refresh();
+            ShowRightPanel(_layoutRoot?.CommandSchemaSection, _layoutRoot?.CommandSchemaBtn);
+            _commandSchemaSubPanel?.Refresh();
         }
 
         private void ShowOriginTestPanel()
@@ -6562,6 +6933,62 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SpringBoneTestSection, _layoutRoot?.SpringBoneTestBtn);
             _springBoneTestSubPanel?.Refresh();
+        }
+
+        private void ShowRevolutionTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.RevolutionTestSection, _layoutRoot?.RevolutionTestBtn);
+            _revolutionTestSubPanel?.Refresh();
+        }
+
+        private void ShowProfile2DTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.Profile2DTestSection, _layoutRoot?.Profile2DTestBtn);
+            _profile2DTestSubPanel?.Refresh();
+        }
+
+        private void ShowPmxToMqoTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.PmxToMqoTestSection, _layoutRoot?.PmxToMqoTestBtn);
+            _pmxToMqoTestSubPanel?.Refresh();
+        }
+
+        private void ShowMqoToPmxTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MqoToPmxTestSection, _layoutRoot?.MqoToPmxTestBtn);
+            _mqoToPmxTestSubPanel?.Refresh();
+        }
+
+        private void ShowBarnacleTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.BarnacleTestSection, _layoutRoot?.BarnacleTestBtn);
+            _barnacleTestSubPanel?.Refresh();
+        }
+
+        private void ShowPipeHairTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.PipeHairTestSection, _layoutRoot?.PipeHairTestBtn);
+            _pipeHairTestSubPanel?.Refresh();
+        }
+
+        private void ShowFrillSkirtTestPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.FrillSkirtTestSection, _layoutRoot?.FrillSkirtTestBtn);
+            _frillSkirtTestSubPanel?.Refresh();
         }
 
         private void ShowRobotBuildTestPanel()
@@ -6652,6 +7079,20 @@ namespace Poly_Ling.Player
             _unityClipTestSubPanel?.Refresh();
         }
 
+        private void ShowUnityClipToVrmaPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.UnityClipToVrmaSection, _layoutRoot?.UnityClipToVrmaBtn);
+            _unityClipToVrmaSubPanel?.Refresh();
+        }
+
+        private void ShowVmdToVrmaPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.VmdToVrmaSection, _layoutRoot?.VmdToVrmaBtn);
+            _vmdToVrmaSubPanel?.Refresh();
+        }
+
         private void ShowMotionClipTestPanel()
         {
             SetInteractionMode(InteractionMode.None);
@@ -6686,6 +7127,14 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.GridAxisSection, _layoutRoot?.GridAxisBtn);
             _gridAxisSubPanel?.Refresh();
+        }
+
+        /// <summary>作業フォルダ設定パネルを開く。</summary>
+        private void ShowWorkFolderPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.WorkFolderSection, _layoutRoot?.WorkFolderBtn);
+            _workFolderSubPanel?.Refresh();
         }
 
         // ================================================================
@@ -6957,9 +7406,15 @@ namespace Poly_Ling.Player
 
         private void HideAllRightPanels()
         {
+            // 揺れもの編集の強調表示は、そのパネルを見ている間だけのもの。
+            // ここで消し、揺れもの編集へ戻ったときは Refresh が付け直す。
+            // 何も付いていないときは何もしないので、パネル切替の負担にならない。
+            _springBoneSubPanel?.ClearHighlight();
+
             if (_layoutRoot == null) return;
             void Hide(VisualElement e) { if (e != null) e.style.display = DisplayStyle.None; }
             Hide(_layoutRoot.ModelListSection);
+            Hide(_layoutRoot.CommandSchemaSection);
             Hide(_layoutRoot.MeshListSection);
             Hide(_layoutRoot.SkinWeightPaintSection);
             Hide(_layoutRoot.SkinWeightNumericSection);
@@ -6998,12 +7453,37 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.UVZSection);
             Hide(_layoutRoot.PartsSelectionSetSection);
             Hide(_layoutRoot.MeshSelectionSetSection);
+            Hide(_layoutRoot.ObjectGroupSection);
             Hide(_layoutRoot.MergeMeshesSection);
             Hide(_layoutRoot.BooleanSection);
             Hide(_layoutRoot.MorphSection);
             Hide(_layoutRoot.MorphCreateSection);
             Hide(_layoutRoot.TPoseSection);
             Hide(_layoutRoot.HumanoidMappingSection);
+            Hide(_layoutRoot.SpringBoneSection);
+            Hide(_layoutRoot.SpringBoneColliderSection);
+            Hide(_layoutRoot.HumanLimitSection);
+            Hide(_layoutRoot.VrmSettingsSection);
+            Hide(_layoutRoot.SpringBoneTestSection);
+
+            // 【登録漏れに注意】
+            //   ShowRightPanel は「全部隠してから 1 つ出す」方式なので、
+            //   AddSection で作ったセクションをここへ足し忘れると、
+            //   一度出したあと別のパネルへ切り替えても消えずに残る。
+            //   ボタンが増えたのに中身が同じに見える、という形で現れる。
+            Hide(_layoutRoot.NormalEditSection);
+            Hide(_layoutRoot.NormalExcludeSetSection);
+            Hide(_layoutRoot.FaceHideSection);
+            Hide(_layoutRoot.OriginTestSection);
+            Hide(_layoutRoot.SkinTestSection);
+            Hide(_layoutRoot.RobotBuildTestSection);
+            Hide(_layoutRoot.FrillSkirtTestSection);
+            Hide(_layoutRoot.PipeHairTestSection);
+            Hide(_layoutRoot.BarnacleTestSection);
+            Hide(_layoutRoot.RevolutionTestSection);
+            Hide(_layoutRoot.Profile2DTestSection);
+            Hide(_layoutRoot.PmxToMqoTestSection);
+            Hide(_layoutRoot.MqoToPmxTestSection);
             Hide(_layoutRoot.MirrorSection);
             Hide(_layoutRoot.QuadDecimatorSection);
             Hide(_layoutRoot.AlignVerticesSection);
@@ -7045,11 +7525,13 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.MediaPipeSection);
             Hide(_layoutRoot.VMDTestSection);
             Hide(_layoutRoot.UnityClipTestSection);
+            Hide(_layoutRoot.UnityClipToVrmaSection);
             Hide(_layoutRoot.MotionClipTestSection);
             Hide(_layoutRoot.RemoteServerSection);
             Hide(_layoutRoot.LogSection);
             Hide(_layoutRoot.UnderlaySection);
             Hide(_layoutRoot.GridAxisSection);
+            Hide(_layoutRoot.WorkFolderSection);
             Hide(_layoutRoot.CameraSection);
             Hide(_layoutRoot.CaptureSection);
             _underlayActive = false;   // 別パネルへ切替時は下絵ドラッグを無効化
@@ -8057,7 +8539,11 @@ namespace Poly_Ling.Player
             var pl = PrimitivePlacement.Default;
             pl.AddMode                = PrimitiveAddMode.NewModel;
             pl.MergeDuplicateVertices = false;
-            PlaceGeneratedMesh(mo, panel.BridgeMeshName, pl, Vector3.zero, Vector3.one);
+            // 失敗理由を捨てない。捨てると生成できていないのに
+            // 「新しいモデル」と表示されてしまう。
+            string placeReason = PlaceGeneratedMesh(
+                mo, panel.BridgeMeshName, pl, Vector3.zero, Vector3.one);
+            if (placeReason != null) { panel.SetBridgeStatus(placeReason); return; }
 
             panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} → 新しいモデル");
         }
@@ -8316,10 +8802,12 @@ namespace Poly_Ling.Player
             unityMesh.name      = meshName;
             unityMesh.hideFlags = HideFlags.HideAndDontSave;
 
+            // MeshObject を先に入れる。Name / Type などは MeshObject への委譲プロパティで、
+            // 順序を逆にすると（以前はそうだった）一意化した名前が捨てられていた。
             var ctx = new MeshContext
             {
-                Name      = meshName,
                 MeshObject = meshObject,
+                Name       = meshName,
                 UnityMesh  = unityMesh,
                 IsVisible  = true,
             };
@@ -8485,6 +8973,108 @@ namespace Poly_Ling.Player
 
             model.ComputeWorldMatrices();
             PrimitiveMeshFinalize(model);
+        }
+
+        /// <summary>
+        /// モード4: 既存の描画オブジェクトの中身を捨てて、生成物で置き換える。
+        ///
+        /// 【なぜ新規オブジェクトを作らないか】
+        ///   オブジェクトグループの作り直しで使う。新しく作ると
+        ///   ObjectId が変わり、名前・階層・姿勢・材質割当も引き継げない。
+        ///   出力先を指している参照（グループ自身・階層の子・ミラー元）が
+        ///   そのたびに切れることになる。中身だけ入れ替えれば全部そのまま残る。
+        ///
+        /// 【頂点IDは残らない】
+        ///   中身を総入れ替えするので、出力先へ手で振った頂点IDは失われる。
+        ///   出力先にIDを振るなら、先にグループを解除すること。
+        ///
+        /// 【姿勢の扱い】
+        ///   AddToExisting と同じく、対象の姿勢はそのまま使い、渡ってきた
+        ///   回転・拡大・平行移動は頂点へ焼き込む。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string PrimitiveMeshReplaceExisting(
+            ProjectContext project, MeshObject meshObject,
+            Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
+            int targetIndex, int materialIndex = -1)
+        {
+            var model = project?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            var targetMc = ResolveAddTargetMeshContext(model, targetIndex);
+            if (targetMc == null || targetMc.MeshObject == null)
+                return "置き換え先の描画オブジェクトが見つかりません";
+
+            // 渡ってきた姿勢は頂点へ焼き込む（対象の姿勢は変えない）。
+            var srcObject = meshObject;
+            bool hasPose = poseRotation != Vector3.zero || poseScale != Vector3.one;
+            if (hasPose)
+            {
+                srcObject = meshObject.Clone();
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshTransform.ApplyRotationScale(
+                    srcObject, poseRotation, poseScale);
+            }
+            if (worldPos != Vector3.zero)
+            {
+                if (ReferenceEquals(srcObject, meshObject)) srcObject = meshObject.Clone();
+                foreach (var v in srcObject.Vertices) v.Position += worldPos;
+            }
+
+            // UNDO: 変更前スナップショット
+            MeshObjectSnapshot before = null;
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
+                _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
+                before = _editOps.UndoController.CaptureMeshObjectSnapshot();
+            }
+
+            // マテリアル割当。MeshObjectSnapshot は Materials も保持するので、
+            // スロットを作る可能性のあるこの処理は必ず before 捕獲の後に行う。
+            ApplyGeneratedMaterialIndex(model, srcObject, materialIndex);
+
+            // ── 中身の入れ替え
+            //    MeshObject の実体は差し替えず、頂点と面だけを入れ替える。
+            //    実体を差し替えると Type / Depth / HierarchyParentIndex /
+            //    BoneTransform など MeshObject 側に委譲している属性まで
+            //    生成物のもの（既定値）になってしまう。
+            var dst = targetMc.MeshObject;
+            dst.Vertices.Clear();
+            dst.Faces.Clear();
+            foreach (var v in srcObject.Vertices) dst.Vertices.Add(v.Clone());
+            foreach (var f in srcObject.Faces)
+            {
+                var nf = new Face
+                {
+                    VertexIndices = new System.Collections.Generic.List<int>(f.VertexIndices),
+                    UVIndices     = new System.Collections.Generic.List<int>(f.UVIndices),
+                    NormalIndices = new System.Collections.Generic.List<int>(f.NormalIndices),
+                    MaterialIndex = f.MaterialIndex,
+                };
+                dst.Faces.Add(nf);
+            }
+            dst.RebuildIdSets();
+
+            // サブIDは入れ替え後の並びで、部品IDごとに 0 から振り直す。
+            Poly_Ling.Ops.PartsIdOps.AssignSubIdByPartsId(dst);
+
+            // UnityMesh 再構築
+            var newUnityMesh = dst.ToUnityMesh();
+            newUnityMesh.name      = targetMc.Name;
+            newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
+            targetMc.ReplaceUnityMesh(newUnityMesh);
+
+            // UNDO: 変更後スナップショット記録
+            if (_editOps?.UndoController != null && before != null)
+            {
+                var after = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                _editOps.UndoController.RecordTopologyChange(
+                    before, after, $"Replace Contents of {targetMc.Name}");
+            }
+
+            model.ComputeWorldMatrices();
+            PrimitiveMeshFinalize(model);
+            return null;
         }
 
         /// <summary>
@@ -8693,8 +9283,9 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            ApplyHumanoidMappingCommand.SplitMapping(mapping, out var hmNames, out var hmIdx);
             _panelContext?.SendCommand(new ApplyHumanoidMappingCommand(
-                ActiveProject?.CurrentModelIndex ?? 0, mapping.Clone()));
+                ActiveProject?.CurrentModelIndex ?? 0, hmNames, hmIdx));
 
             _status = $"ヒューマンマッピングを自動割当: {mapped} ボーン";
             UnityEngine.Debug.Log("[ImportPostOptions] " + _status);
@@ -8746,10 +9337,13 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            ApplyObjectOriginsCommand.SplitRotations(
+                withRot ? rotations.ToArray() : null,
+                out var rotValues, out var hasRot);
             _panelContext?.SendCommand(new ApplyObjectOriginsCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 names.ToArray(), positions.ToArray(),
-                withRot ? rotations.ToArray() : null));
+                rotValues, hasRot));
 
             _status = $"原点CSVを適用: {names.Count} 行" +
                       (withRot ? $"（うち回転あり {rotRows} 行）" : "（回転は対象外）");
@@ -8859,6 +9453,7 @@ namespace Poly_Ling.Player
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? dto.name, m);
             AdoptWorkAxisLibrary(loadedProject);
+            AdoptCoordinateConvention();
             _projectLoadSubPanel?.SetStatus($"読込完了: {dto.name}");
         }
 
@@ -8891,6 +9486,7 @@ namespace Poly_Ling.Player
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? loadedProject.Name, m);
             AdoptWorkAxisLibrary(loadedProject);
+            AdoptCoordinateConvention();
             _projectLoadSubPanel?.SetStatus($"CSV読込完了: {loadedProject.Name}");
         }
 
@@ -8917,6 +9513,33 @@ namespace Poly_Ling.Player
             }
 
             RefreshWorkAxisLibraryLists();
+        }
+
+        /// <summary>
+        /// 読み込んだモデルの座標規約を EditorStateContext へ流し込む。
+        ///
+        /// 【なぜ要るか】
+        ///   PMX/MQO の倍率と軸反転は ModelContext.CoordinateConvention が正本だが、
+        ///   実際に読むのは EditorState を見る側（PMX/MQO の読み書き、VMD・統合
+        ///   モーションの位置スケール）である。読み込み直後にここで移さないと、
+        ///   保存した規約が効かず既定値のまま動く。
+        ///
+        /// 【未設定なら触らない】
+        ///   CoordinateConvention == null は「規約を持たないモデル」。
+        ///   そのときは EditorState の現在値をそのまま使う。
+        /// </summary>
+        private void AdoptCoordinateConvention()
+        {
+            var c  = ActiveProject?.CurrentModel?.CoordinateConvention;
+            var es = _editOps?.UndoController?.EditorState;
+            if (c == null || es == null) return;
+
+            es.PmxUnityRatio = c.PmxUnityRatio;
+            es.PmxFlipX      = c.PmxFlipX;
+            es.PmxFlipZ      = c.PmxFlipZ;
+            es.MqoUnityRatio = c.MqoUnityRatio;
+            es.MqoFlipX      = c.MqoFlipX;
+            es.MqoFlipZ      = c.MqoFlipZ;
         }
 
         /// <summary>
@@ -9371,6 +9994,24 @@ namespace Poly_Ling.Player
             _commandDispatcher?.Dispatch(new DeleteSelectionCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 model.SelectedDrawableMeshIndices.ToArray()));
+        }
+
+        /// <summary>
+        /// 面追加モードでの「直前の点の取り消し」。Delete / Backspace の共通処理。
+        ///
+        ///   三角形・四角形・線分（非連続） … 未確定の点を 1 つ戻す。
+        ///   線分（連続）                   … 確定済みの線分を 1 本取り消す
+        ///                                    （Undo 1 回ぶん。面と新規頂点が戻る）。
+        ///
+        /// どちらの対象も無ければ何もしない。面追加モードの間は選択削除へ落とさない。
+        /// </summary>
+        private void ExecuteAddFaceRemoveLastPoint()
+        {
+            var h = _addFaceHandler;
+            if (h == null) return;
+
+            if (h.RemoveLastPoint() || h.UndoLastLineSegment())
+                _addFaceSubPanel?.Refresh();
         }
 
         // ================================================================

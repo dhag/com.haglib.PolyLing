@@ -351,7 +351,8 @@ namespace Poly_Ling.Player
             else if (_mqoImportPos && selectedModels.Count > 0 && selectedMQOs.Count > 0)
             {
                 int count = _mqoOps.ExecuteVertexPositionImport(
-                    selectedModels, selectedMQOs, _mqoScale, new AxisFlip(_mqoFlipX, _mqoFlipZ));
+                    selectedModels, selectedMQOs, _mqoScale, new AxisFlip(_mqoFlipX, _mqoFlipZ),
+                    position: true, uv: false, flipUV_V: _mqoFlipUV_V);
                 results.Add($"Pos:{count}verts");
                 if (_mqoRecalcNormals)
                 {

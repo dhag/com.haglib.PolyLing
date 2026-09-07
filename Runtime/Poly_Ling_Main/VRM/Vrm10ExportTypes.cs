@@ -28,14 +28,21 @@ namespace Poly_Ling.Vrm
         // Meta（VRMC_vrm.meta。空だと出力が仕様違反になる項目がある）
         // ================================================================
 
-        /// <summary>モデル名（VRM Meta の name）。空ならモデル名を使う。</summary>
+        // 【空欄は「指定なし」】
+        //   Meta 系の欄は出力ごとの上書きで、既定はすべて空にしてある。
+        //   空のときは ModelContext.VrmMeta（プロジェクトに保存される恒久値）が
+        //   使われ、それも空なら必須項目だけ既定で埋まる
+        //   （Vrm10ExporterImpl.BuildMeta が正典）。
+        //   ここに既定値を書くと、モデル側に入れた値が毎回上書きされる。
+
+        /// <summary>モデル名（VRM Meta の name）。空ならモデル側→モデル名の順で埋める。</summary>
         public string Title = "";
 
-        /// <summary>バージョン文字列（VRM Meta の version）。</summary>
-        public string Version = "1.0";
+        /// <summary>バージョン文字列（VRM Meta の version）。空ならモデル側→"1.0"。</summary>
+        public string Version = "";
 
-        /// <summary>作者（VRM Meta の authors）。最低1件必要。</summary>
-        public List<string> Authors = new List<string> { "Unknown" };
+        /// <summary>作者（VRM Meta の authors）。空ならモデル側→"Unknown"。</summary>
+        public List<string> Authors = new List<string>();
 
         /// <summary>著作権表記（VRM Meta の copyrightInformation）。</summary>
         public string CopyrightInformation = "";

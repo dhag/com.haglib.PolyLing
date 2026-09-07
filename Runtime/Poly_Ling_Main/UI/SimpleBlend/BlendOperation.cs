@@ -141,33 +141,26 @@ namespace Poly_Ling.UI
         /// <summary>
         /// MeshContext を複製する。
         ///
+        /// 写す項目は MeshContextCloneOps が持つ。
         /// BindPose / WorldMatrix / BonePoseData / MirrorGeometryDerived は
         /// MeshContext 側の実体で、MeshObject.Clone() では移らない
         /// （MeshContext.cs:466,481,486,493、BonePoseData は :423）。
         /// 引き継がないと、スキンドメッシュの複製を表示したときに
         /// SkinningMatrix = WorldMatrix × BindPose が単位行列基準になり形が飛ぶ。
+        ///
+        /// 別オブジェクトを作るので NewObject。ObjectId は ModelContext.Add が振る。
+        /// 出来た直後は隠しておく（呼び出し側が表示を決める）。
         /// </summary>
         public static MeshContext CloneContext(MeshContext src, string newName)
         {
-            var mo = src.MeshObject.Clone();
-            mo.Name = newName;
+            var ctx = Poly_Ling.Ops.MeshContextCloneOps.Clone(
+                src, Poly_Ling.Ops.MeshContextCloneKind.NewObject, newName);
+            if (ctx == null) return null;
 
-            var ctx = new MeshContext
-            {
-                MeshObject = mo,
-                Name       = newName,
-                Type       = src.Type,
-                IsVisible  = false,
-                IsLocked   = src.IsLocked,
-            };
+            ctx.IsVisible = false;
 
-            ctx.BindPose              = src.BindPose;
-            ctx.WorldMatrix           = src.WorldMatrix;
-            ctx.WorldMatrixInverse    = src.WorldMatrixInverse;
-            ctx.MirrorGeometryDerived = src.MirrorGeometryDerived;
-            // BonePoseData は可変オブジェクト。参照を共有すると、
-            // あとで元メッシュをポーズさせたとき複製も一緒に動く。
-            ctx.BonePoseData          = src.BonePoseData?.Clone();
+            var mo = ctx.MeshObject;
+            if (mo == null) return ctx;
 
             ctx.UnityMesh = mo.ToUnityMeshShared();
             if (ctx.UnityMesh != null)

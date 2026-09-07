@@ -30,6 +30,13 @@ namespace Poly_Ling.Player
         public Action                                     OnApplyCompleted;
         public Action                                     NotifyTopologyChanged;
 
+        /// <summary>
+        /// コマンド送信口。確定をコマンド発行に寄せるために使う。
+        /// PolyLingPlayerViewerCore が DispatchPanelCommand を刺す。
+        /// PivotOffsetToolHandler.SendCommand と同じ役割。
+        /// </summary>
+        public Action<Poly_Ling.Data.PanelCommand>         SendCommand;
+
         // ================================================================
         // 設定公開API
         // ================================================================
@@ -54,6 +61,152 @@ namespace Poly_Ling.Player
         public void  BeginSliderDrag() => _tool.BeginSliderDrag();
         public void  EndSliderDrag()   { _tool.EndSliderDrag(); OnApplyCompleted?.Invoke(); }
         public void  Revert()          => _tool.RevertPublic();
+
+        // ================================================================
+        // コマンド経路
+        // ================================================================
+
+        /// <summary>
+        /// 回転を確定する。パネルの Apply・スライダーのポインタアップ・
+        /// ギズモドラッグ確定はすべてここを通る。
+        ///
+        /// 【1 ドラッグ = 1 コマンド】
+        ///   ドラッグ中の適用はプレビュー扱い。ここで開始状態へ戻して回転量だけを
+        ///   取り出し、RotateSelectionCommand として送る。実際の回転と Undo 記録は
+        ///   ExecuteFromCommand が行う。
+        ///   送信口が無い・対象が決まらない・取り出せる回転が無いときは、
+        ///   従来どおり EndSliderDrag で確定させる。
+        /// </summary>
+        public void CommitViaCommand()
+        {
+            int[] targets = SelectedMasterIndices();
+
+            // 短絡順序に意味がある。送信口も対象も揃ったときだけ取り出す
+            // （TryTake は開始状態へ戻すので、送らないのに呼んではいけない）。
+            if (SendCommand == null || targets == null ||
+                !_tool.TryTakeRotationFromDrag(
+                    out bool axisMode, out Vector3 euler, out Vector3 axis, out float angleDeg))
+            {
+                EndSliderDrag();
+                return;
+            }
+
+            SendCommand(new Poly_Ling.Data.RotateSelectionCommand(
+                _project?.CurrentModelIndex ?? 0,
+                targets,
+                axisMode, euler, axis, angleDeg,
+                _tool.UseOriginPivot,
+                _tool.UseMagnet, _tool.MagnetRadius,
+                _tool.MagnetFalloff, _tool.MagnetDistanceMode));
+        }
+
+        /// <summary>
+        /// 選択頂点の回転コマンドを実行する。
+        ///
+        /// 【マウス経路と同じ実装を通す】
+        ///   回転そのものは RotateTool が正典。ここは対象の照合と設定値の
+        ///   差し替えだけを行い、BeginSliderDrag → 値の代入 → EndSliderDrag という
+        ///   パネルと同じ順序で呼ぶ。ベイクと Undo 記録は ApplyRotation の中にある。
+        ///
+        /// 【設定値はコマンドが正典】
+        ///   マグネット・ピボット・回転モードは退避してからコマンド値を代入し、
+        ///   終わったら戻す。1 呼び出しがパネルの状態に依存しないようにするため。
+        ///
+        /// 【対象】
+        ///   RotateTool は model.SelectedDrawableMeshIndices を走査する
+        ///   （RotateTool.cs:151）ので、MasterIndices は選択集合との一致を要求する。
+        /// </summary>
+        /// <param name="reason">実行できなかった理由。成功時は null。</param>
+        public bool ExecuteFromCommand(
+            Poly_Ling.Data.RotateSelectionCommand cmd, out string reason)
+        {
+            reason = null;
+            if (cmd == null) { reason = "コマンドが null"; return false; }
+
+            var model = _project?.CurrentModel;
+            if (model == null) { reason = "モデルがありません"; return false; }
+
+            if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
+                return false;
+
+            if (cmd.AxisMode && cmd.Axis.sqrMagnitude < 1e-8f)
+            { reason = "Axis が 0 ベクトルです"; return false; }
+
+            // 実行時と同じコンテキストで対象を数えるため、先に Activate を通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) { reason = "ビューポートがありません"; return false; }
+            Activate(ctx);
+
+            if (_tool.GetTotalAffectedCountPublic() == 0)
+            { reason = "選択された要素がありません"; return false; }
+
+            bool  savedAxisMode = AxisMode;
+            float savedRotX     = RotX,     savedRotY  = RotY,     savedRotZ = RotZ;
+            float savedAxisX    = AxisVecX, savedAxisY = AxisVecY, savedAxisZ = AxisVecZ;
+            float savedAngle    = AxisAngle;
+            bool  savedOrigin   = UseOriginPivot;
+            bool  savedMagnet   = UseMagnet;
+            float savedRadius   = MagnetRadius;
+            var   savedFalloff  = MagnetFalloff;
+            var   savedDistance = MagnetDistanceMode;
+
+            try
+            {
+                UseMagnet          = cmd.UseMagnet;
+                MagnetRadius       = cmd.MagnetRadius;
+                MagnetFalloff      = cmd.MagnetFalloff;
+                MagnetDistanceMode = cmd.MagnetDistanceMode;
+                UseOriginPivot     = cmd.UseOriginPivot;
+
+                BeginSliderDrag();
+                AxisMode = cmd.AxisMode;
+                if (cmd.AxisMode)
+                {
+                    AxisVecX  = cmd.Axis.x;
+                    AxisVecY  = cmd.Axis.y;
+                    AxisVecZ  = cmd.Axis.z;
+                    AxisAngle = cmd.Angle;
+                }
+                else
+                {
+                    RotX = cmd.Euler.x;
+                    RotY = cmd.Euler.y;
+                    RotZ = cmd.Euler.z;
+                }
+                EndSliderDrag();
+            }
+            finally
+            {
+                AxisMode           = savedAxisMode;
+                RotX               = savedRotX;
+                RotY               = savedRotY;
+                RotZ               = savedRotZ;
+                AxisVecX           = savedAxisX;
+                AxisVecY           = savedAxisY;
+                AxisVecZ           = savedAxisZ;
+                AxisAngle          = savedAngle;
+                UseOriginPivot     = savedOrigin;
+                UseMagnet          = savedMagnet;
+                MagnetRadius       = savedRadius;
+                MagnetFalloff      = savedFalloff;
+                MagnetDistanceMode = savedDistance;
+            }
+
+            OnRepaint?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 実行時点の選択中の描画オブジェクトをコマンドの対象として返す。
+        /// 選択が無いときは null（呼び出し側が送信を止める）。
+        /// </summary>
+        private int[] SelectedMasterIndices()
+        {
+            var model = _project?.CurrentModel;
+            var sel   = model?.SelectedDrawableMeshIndices;
+            if (sel == null || sel.Count == 0) return null;
+            return sel.ToArray();
+        }
 
         // ================================================================
         // 初期化
@@ -183,7 +336,9 @@ namespace Poly_Ling.Player
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
             _gizmoDragAxis = AxisGizmo.AxisType.None;
             _ringGizmo.EndAngleDrag();
-            EndSliderDrag();
+            // AxisMode を戻すより先に取り出す。BeginGizmoDrag が立てた
+            // AxisMode = true と軸ベクトルが、そのままコマンドの値になる。
+            CommitViaCommand();
             _tool.AxisMode  = _prevAxisMode;
             _tool.AxisAngle = 0f;
         }

@@ -48,6 +48,13 @@ namespace Poly_Ling.Context
         public object SourceDocument { get; set; }
 
         /// <summary>
+        /// PMX のモデル情報（名前・英語名・コメント）。null = PMX 由来でない。
+        /// ModelContext.Name はファイル名由来で上書きされるため、
+        /// PMX が持っていた表示名とコメントはここで保持する。
+        /// </summary>
+        public Poly_Ling.Data.PmxModelInfoData PmxModelInfo { get; set; }
+
+        /// <summary>
         /// 各ボーンのPMXワールド位置（インポート時の初期位置）
         /// MikuMikuFlexの「ローカル位置」に相当。CCDIKSolverで使用。
         /// </summary>
@@ -664,11 +671,96 @@ namespace Poly_Ling.Context
             return name;
         }
 
+        // ================================================================
+        // ObjectGroups（入力ソース＋生成パラメータ＋出力先のまとまり）
+        //
+        // 【索引の付け替えが要らない理由】
+        //   ObjectGroup は参照を MeshContext.ObjectId で持つ。挿入・削除・並べ替えで
+        //   値が変わらないので RemapIndexReferences の対象に入れない。
+        //   MorphExpressions が索引参照ゆえに AdjustIndicesOnInsert/OnRemove という
+        //   別経路を持っているのに対し、こちらはその経路自体が不要になる。
+        //
+        // 【削除時に勝手に消さない】
+        //   参照先の描画オブジェクトが消えてもグループはここへ残す。
+        //   RemoveAt の中で消すと、その削除は ObjectGroup の Undo レコードに
+        //   載らないため Undo で戻せなくなる。参照切れは
+        //   ModelInvariantChecker が報告し、後始末は明示操作
+        //   （ObjectGroupOps.PurgeMissing）で行う。
+        // ================================================================
+
+        /// <summary>オブジェクトグループのリスト。</summary>
+        public List<Poly_Ling.Data.ObjectGroup> ObjectGroups { get; set; }
+            = new List<Poly_Ling.Data.ObjectGroup>();
+
+        /// <summary>オブジェクトグループ数</summary>
+        public int ObjectGroupCount => ObjectGroups?.Count ?? 0;
+
+        /// <summary>オブジェクトグループがあるか</summary>
+        public bool HasObjectGroups => ObjectGroupCount > 0;
+
+        /// <summary>オブジェクトグループを追加する。</summary>
+        public void AddObjectGroup(Poly_Ling.Data.ObjectGroup group)
+        {
+            if (group == null) return;
+            if (ObjectGroups == null) ObjectGroups = new List<Poly_Ling.Data.ObjectGroup>();
+            ObjectGroups.Add(group);
+            IsDirty = true;
+        }
+
+        /// <summary>オブジェクトグループを削除する。</summary>
+        public bool RemoveObjectGroup(Poly_Ling.Data.ObjectGroup group)
+        {
+            if (group == null || ObjectGroups == null) return false;
+            bool ok = ObjectGroups.Remove(group);
+            if (ok) IsDirty = true;
+            return ok;
+        }
+
+        /// <summary>名前でオブジェクトグループを検索。見つからなければ null。</summary>
+        public Poly_Ling.Data.ObjectGroup FindObjectGroupByName(string name)
+        {
+            if (ObjectGroups == null || string.IsNullOrEmpty(name)) return null;
+            return ObjectGroups.Find(g => g != null && g.Name == name);
+        }
+
+        /// <summary>出力先の ObjectId でオブジェクトグループを検索。見つからなければ null。</summary>
+        public Poly_Ling.Data.ObjectGroup FindObjectGroupByOutput(ulong objectId)
+        {
+            if (ObjectGroups == null || objectId == 0UL) return null;
+            return ObjectGroups.Find(g => g != null && g.OutputObjectId == objectId);
+        }
+
+        /// <summary>一意なオブジェクトグループ名を生成する（規則は選択セット名と同じ）。</summary>
+        public string GenerateUniqueObjectGroupName(string baseName = "Group")
+        {
+            if (string.IsNullOrEmpty(baseName)) baseName = "Group";
+            string name = baseName;
+            int counter = 1;
+            while (FindObjectGroupByName(name) != null)
+            {
+                name = $"{baseName}_{counter}";
+                counter++;
+            }
+            return name;
+        }
+
         /// <summary>名前で描画オブジェクト(MeshContext)を検索。見つからなければ null。</summary>
         public MeshContext FindMeshContextByName(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
             return MeshContextList.Find(mc => mc != null && mc.Name == name);
+        }
+
+        /// <summary>ObjectId で描画オブジェクトを検索。見つからなければ null。</summary>
+        public MeshContext FindMeshContextByObjectId(ulong objectId)
+        {
+            if (objectId == 0UL || MeshContextList == null) return null;
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var mc = MeshContextList[i];
+                if (mc != null && mc.ObjectId == objectId) return mc;
+            }
+            return null;
         }
 
         /// <summary>
@@ -936,6 +1028,67 @@ namespace Poly_Ling.Context
         /// 揺れ評価開始直後に状態を安定化させるフレーム数。
         /// </summary>
         public int SpringBoneWarmupFrames { get; set; } = 3;
+
+        // ================================================================
+        // VRM 1.0 のモデルレベル設定
+        //   出力にだけ使う値で、編集中の見た目には影響しない。
+        //   どちらも null＝未設定で、その場合は VRM 側の既定が載る。
+        //   一人称カメラでの見え方だけは描画オブジェクトごとに決まるため、
+        //   MeshObject.VrmFirstPerson が持つ（ここには置かない）。
+        // ================================================================
+
+        /// <summary>VRM メタ情報（作者・ライセンス）。null=未設定。</summary>
+        public VrmMetaData VrmMeta { get; set; } = null;
+
+        /// <summary>VRM 視線設定。null=未設定（UniVRM の既定のまま出る）。</summary>
+        public VrmLookAtData VrmLookAt { get; set; } = null;
+
+        // ================================================================
+        // Humanoid Avatar のリターゲット設定
+        //   Avatar 生成（Editor のプレファブ書き出し）だけが使う値。
+        //   Player 内の表示にも VRM 出力にも影響しない。
+        //   VRM 1.0 にはこの設定を載せる場所が無い。
+        // ================================================================
+
+        /// <summary>Avatar リターゲット設定8項目。null=未設定（Unity の既定を使う）。</summary>
+        public AvatarRetargetData AvatarRetarget { get; set; } = null;
+
+        // ================================================================
+        // PMX / MQO の座標規約
+        //   倍率と軸反転。読み書きだけでなく VMD／統合モーションの位置スケールにも
+        //   効く。表示状態ではないので editorstate.csv とは別に持つ。
+        // ================================================================
+
+        /// <summary>PMX / MQO の座標規約。null=未設定（読み手の既定値を使う）。</summary>
+        public CoordinateConventionData CoordinateConvention { get; set; } = null;
+
+        // ================================================================
+        // 揺れもの編集の強調表示（表示専用。保存しない）
+        //   揺れもの編集パネルが「いまどの鎖のどのノードを触っているか」を
+        //   3D 画面へ伝えるためだけの一時データ。
+        //
+        //   【保存しない理由】
+        //     モデルの中身ではなく、パネルを開いている間だけの見え方の指定。
+        //     CSV/JSON どちらにも書き出さないこと（規約4 の対称性の対象外）。
+        //
+        //   【誰が読むか】
+        //     MeshSceneRenderer.PrepareBones / SubmitBones。
+        //     中身を変えたら、ビューポートへ作り直しを促すこと
+        //     （PlayerViewportManager.MarkAllSlotsDirty）。
+        // ================================================================
+
+        /// <summary>強調表示する鎖のメンバー（masterIndex）。空＝強調なし。</summary>
+        public List<int> SpringBoneHighlightIndices { get; set; } = new List<int>();
+
+        /// <summary>いま編集しているノード（masterIndex）。-1＝なし。</summary>
+        public int SpringBoneHighlightActiveIndex { get; set; } = -1;
+
+        /// <summary>強調表示を消す。</summary>
+        public void ClearSpringBoneHighlight()
+        {
+            SpringBoneHighlightIndices?.Clear();
+            SpringBoneHighlightActiveIndex = -1;
+        }
 
         /// <summary>
         /// 指定MeshContextが属するMirrorPairを取得（実体側・ミラー側どちらでも検索）
@@ -1625,6 +1778,11 @@ namespace Poly_Ling.Context
             SpringBoneColliderGroupNames.Clear();
             SpringBoneFixedDeltaTime = 0f;
             SpringBoneWarmupFrames = 3;
+            VrmMeta = null;
+            VrmLookAt = null;
+            AvatarRetarget = null;
+            CoordinateConvention = null;
+            ClearSpringBoneHighlight();
             ClearAllCategorySelection();
             InvalidateTypedIndices();
             IsDirty = true;

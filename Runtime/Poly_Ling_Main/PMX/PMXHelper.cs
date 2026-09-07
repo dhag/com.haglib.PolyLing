@@ -9,6 +9,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Context;
+using Poly_Ling.MeshBridge;
 
 namespace Poly_Ling.PMX
 {
@@ -763,22 +764,25 @@ namespace Poly_Ling.PMX
             foreach (var kv in localMap)
                 vertexMapping[kv.Key] = kv.Value + meshVertexStart;
 
-            // 展開順（vIdx→uvIdx）に頂点を追加
-            for (int vIdx = 0; vIdx < meshObject.Vertices.Count; vIdx++)
+            // 展開順は MeshExpansion が唯一の実装（手書きしない）。
+            // localMap も MeshObject.BuildExpansionMap 経由で同じ規則を使っている。
+            MeshExpansion.Enumerate(meshObject, (vIdx, uvIdx, expIdx) =>
             {
-                var vertex = meshObject.Vertices[vIdx];
-                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                var vertex    = meshObject.Vertices[vIdx];
+                var pmxVertex = ConvertVertexToPMX(vertex, boneNameToIndex, settings);
 
-                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
-                {
-                    var pmxVertex = ConvertVertexToPMX(vertex, boneNameToIndex, settings);
-                    Vector2 uv = uvIdx < vertex.UVs.Count ? vertex.UVs[uvIdx] : Vector2.zero;
-                    if (settings.FlipUV_V) uv.y = 1f - uv.y;
-                    pmxVertex.UV = uv;
-                    pmxVertex.Index = document.Vertices.Count;
-                    document.Vertices.Add(pmxVertex);
-                }
-            }
+                Vector2 uv = uvIdx < vertex.UVs.Count ? vertex.UVs[uvIdx] : Vector2.zero;
+                if (settings.FlipUV_V) uv.y = 1f - uv.y;
+
+                // 法線は UV と対のスロット（基本データ仕様: UV Vector2[n] / Normal Vector3[n]）。
+                // ConvertVertexToPMX はスロット 0 で埋めるので、ここで uvIdx のものに差し替える。
+                if (uvIdx < vertex.Normals.Count)
+                    pmxVertex.Normal = AxisFlipOps.Normal(settings.Flip, vertex.Normals[uvIdx]);
+
+                pmxVertex.UV    = uv;
+                pmxVertex.Index = document.Vertices.Count;
+                document.Vertices.Add(pmxVertex);
+            });
 
             return vertexMapping;
         }
