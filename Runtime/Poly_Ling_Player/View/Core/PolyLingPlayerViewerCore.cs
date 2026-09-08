@@ -116,6 +116,12 @@ namespace Poly_Ling.Player
         private PlayerPrimitiveMeshSubPanel    _primitiveSubPanel;
         // 検証用の2つ目のインスタンス。既存 _primitiveSubPanel とは状態を共有しない。
         private PlayerPrimitiveMeshSubPanel    _livePrimitiveSubPanel;
+
+    /// <summary>
+    /// MCP用サンドボックスのサブパネル。図形生成パネルとはクラスから別で、
+    /// 状態も配線も共有しない（試作が本番側に波及しないようにするため）。
+    /// </summary>
+    private PlayerMcpSandboxSubPanel       _mcpSandboxSubPanel;
         private MeshFilterToSkinnedSubPanel    _mfToSkinnedSubPanel;
         private PlayerSkinKindSubPanel         _skinKindSubPanel;
         private PanelContext                   _panelContext;
@@ -1152,6 +1158,8 @@ namespace Poly_Ling.Player
 
             _livePrimitiveSubPanel?.Dispose();
             _livePrimitiveSubPanel = null;
+            _mcpSandboxSubPanel?.Dispose();
+            _mcpSandboxSubPanel = null;
 
             if (_client != null)
             {
@@ -5087,6 +5095,24 @@ namespace Poly_Ling.Player
             // 穴つなぎ（ブリッジ）。既存インスタンスと同じ経路を通す。
             WireBridgeCallbacks(_livePrimitiveSubPanel);
 
+            // ── MCP用サンドボックス ────────────────────────────────
+            // 生成はコマンド経由なので、ディスパッチャとモデル索引だけ渡せば動く。
+            // 配置ギズモ・材質・追加先索引は持たないので注入しない。
+            _mcpSandboxSubPanel = new PlayerMcpSandboxSubPanel();
+
+            // メイン3Dウインドウへ生成予定形状の黄色ワイヤを描く（3D連携）。
+            // パネル内のプレビューRTはパネルの中にしか出ないので、
+            // 3Dウインドウで位置と形を見るにはこちらが要る。Build より前に立てる。
+            _mcpSandboxSubPanel.LiveWireInMainViewport = true;
+            _mcpSandboxSubPanel.IsMainViewportCamera =
+                cam => _viewportManager != null && _viewportManager.IsViewportCamera(cam);
+            _mcpSandboxSubPanel.GetAddTargetWorldMatrix =
+                () => ActiveProject?.CurrentModel?.ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+
+            _mcpSandboxSubPanel.Build(_layoutRoot.McpSandboxSection, _sceneRoot);
+            _mcpSandboxSubPanel.SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd);
+            _mcpSandboxSubPanel.GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0;
+
             // 配置ギズモ。モデルには触れず、サブパネルの TRS だけを読み書きする。
             _primitivePlaceHandler = new PrimitivePlaceToolHandler
             {
@@ -5129,6 +5155,9 @@ namespace Poly_Ling.Player
             _layoutRoot.LiveAdvancedPrimitiveBtn.clicked += ShowLiveAdvancedPrimitivePanel;
             _layoutRoot.LiveMechanismPrimitiveBtn.clicked += ShowLiveMechanismPrimitivePanel;
             _layoutRoot.LiveSpringBonePrimitiveBtn.clicked += ShowLiveSpringBonePrimitivePanel;
+
+            if (_layoutRoot.McpSandboxBtn != null)
+                _layoutRoot.McpSandboxBtn.clicked += ShowMcpSandboxPanel;
 
             _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
             _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
@@ -6057,6 +6086,16 @@ namespace Poly_Ling.Player
             // カテゴリ 3（選択許可チェック ON なら SelectOnly で開く）
             ShowRightPanelSelectable(_layoutRoot?.ImportSection, null, PanelSelectKeyImport);
             _importSubPanel?.SetMode(mode);
+        }
+
+        /// <summary>
+        /// MCP用サンドボックスの図形生成パネルを開く。
+        /// 配置ギズモを持たないので、図形生成のような InteractionMode の強制はしない。
+        /// </summary>
+        private void ShowMcpSandboxPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.McpSandboxSection, _layoutRoot?.McpSandboxBtn);
         }
 
         private void ShowLivePrimitivePanel()
@@ -7430,6 +7469,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.PartialExportSection);
             Hide(_layoutRoot.PrimitiveSection);
             Hide(_layoutRoot.LivePrimitiveSection);
+            Hide(_layoutRoot.McpSandboxSection);
             Hide(_layoutRoot.MeshFilterToSkinnedSection);
             Hide(_layoutRoot.SkinKindSection);
             // メッシュブレンドのプレビュー結果は MeshObject に書かれているため、

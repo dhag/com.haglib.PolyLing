@@ -81,10 +81,11 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public static bool ExportWithDialog(ProjectDTO projectDTO, string defaultName = "Project")
         {
-            // JsonFolderKey はフォルダだけを覚えるためファイル名が毎回消えていた。
-            // 初期値はフルパスのキーから取り、旧キーも従来どおり更新する。
-            string path = RecentFileDialog.AskSave(
-                "Export Project", JsonFileKey, defaultName, FileExtension);
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回 defaultName から始める。
+            // 以前はフルパスのキーを初期値にしていたため、前回保存したファイル名で
+            // ダイアログが開き、そのまま上書きする事故が起きていた。
+            string path = SaveDest.AskSavePath(
+                "Export Project", SaveDest.Keys.Project, "", defaultName, FileExtension);
 
             if (string.IsNullOrEmpty(path))
                 return false;

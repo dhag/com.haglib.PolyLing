@@ -107,11 +107,12 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // ファイル選択ダイアログ
+        // ファイル選択ダイアログ（読込・フォルダ選択のみ）
         //
-        // 読込パス欄と保存パス欄を兼ねる画面では、パスが埋まっているときに
-        // 保存ダイアログを省くと、読み込んだファイルを無確認で上書きしてしまう。
-        // 保存は必ず AskSavePath を通し、パス欄の値はダイアログの初期値としてだけ使う。
+        // 【保存はここに置かない】
+        //   保存先は PlayerSaveDestRow（欄はフォルダのみ）＋ SaveDest.AskSavePath が持つ。
+        //   ここにあった AskSavePath は履歴にフルパスを残していたため、
+        //   次回の書き込み先が前回のファイル名に引きずられていた。規約は SaveDest.cs を参照。
         //
         // 【recentKey が必須である理由】
         //   以前ここは PLEditorBridge を直接叩くだけで、履歴（RecentPaths）へ
@@ -122,16 +123,6 @@ namespace Poly_Ling.Player
         //   キーを必須引数にして RecentFileDialog へ一本化する。
         //   キーは他パネルと衝突しない固有名にすること（例 "Export.PMX"）。
         // ================================================================
-
-        /// <summary>
-        /// 保存先を保存ダイアログで確定する。
-        /// 初期値は currentPath を優先し、空なら recentKey の履歴を使う。
-        /// どちらからもファイル名が取れないときだけ defaultName を使う。
-        /// 確定したパスは履歴へ書き戻す。キャンセル時は空文字を返す。
-        /// </summary>
-        public static string AskSavePath(
-            string title, string recentKey, string currentPath, string defaultName, string extension)
-            => RecentFileDialog.AskSaveTo(title, recentKey, currentPath, defaultName, extension);
 
         /// <summary>
         /// 読込元をファイル選択ダイアログで確定する。

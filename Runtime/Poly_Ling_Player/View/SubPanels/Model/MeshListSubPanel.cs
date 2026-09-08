@@ -2056,12 +2056,12 @@ namespace Poly_Ling.MeshListV2
             var source = RenameSourceList();
             if (source == null || source.Count == 0) { RenameStatus("対象がありません"); return; }
 
-            // パス欄は読込用。書き出しは毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-            string cur = _renamePathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
-
-            string path = PlayerIoUiKit.AskSavePath(
-                "名称一括変更 対応表の書き出し", RenamePathKey(), cur, RenameDefaultFileName(), "csv");
+            // パス欄は読込用。書き出しは毎回ダイアログを出す。
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            // 読込パスを初期値にすると、読んだ対応表をそのまま上書きする事故になる。
+            string path = Poly_Ling.Core.SaveDest.AskSavePath(
+                "名称一括変更 対応表の書き出し", Poly_Ling.Core.SaveDest.Keys.Dictionary, "",
+                RenameDefaultFileName(), "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             _renamePathField.value = path;

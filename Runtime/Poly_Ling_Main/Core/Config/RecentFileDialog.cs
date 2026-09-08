@@ -1,5 +1,11 @@
 // RecentFileDialog.cs
-// パス入力欄を持たない読込／保存ボタン用のファイルダイアログ。
+// パス入力欄を持たない読込ボタン用のファイルダイアログ。
+//
+// 【保存には使わない】
+//   保存側は SaveDest（Core/Config/SaveDest.cs）が持つ。
+//   ここは履歴に「フルパス」を残すため、保存に使うと次回の書き込み先が
+//   前回のファイル名に引きずられ、上書き事故の原因になる。
+//   保存用だった AskSave / AskSaveTo は廃止した。
 //
 // 【なぜ必要か】
 //   パス欄のあるパネルは、その欄の値をダイアログの初期フォルダ／初期ファイル名に使える。
@@ -45,28 +51,6 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
-        /// 保存ダイアログ。初期フォルダ／初期ファイル名は recentKey の履歴から取る。
-        /// 履歴が無いときだけ defaultName を使う。確定したパスは履歴へ書き戻す。
-        /// キャンセル時は空文字を返す。
-        /// </summary>
-        public static string AskSave(string title, string recentKey, string defaultName, string extension)
-        {
-            string last = RecentPaths.Get(recentKey);
-            SplitPath(last, out string dir, out string name);
-            if (string.IsNullOrEmpty(name)) name = defaultName;
-
-            string path = PLEditorBridge.I.SaveFilePanel(title, dir, name, extension);
-            if (!string.IsNullOrEmpty(path))
-            {
-                RecentPaths.Set(recentKey, path);
-                // 利用者が選んだこと自体が許可の表明。作業フォルダの外でも
-                // このパスだけを 1 回通す（PLSandbox の説明を参照）。
-                PLSandbox.AllowOnceFromDialog(path);
-            }
-            return path;
-        }
-
-        /// <summary>
         /// フォルダ選択ダイアログ。初期フォルダは recentKey の履歴から取る。
         /// 確定したフォルダは履歴へ書き戻す。キャンセル時は空文字を返す。
         /// </summary>
@@ -96,29 +80,6 @@ namespace Poly_Ling.Core
             SplitPath(seed, out string dir, out string name);
 
             string path = PLEditorBridge.I.OpenFilePanel(title, dir, name, extension);
-            if (!string.IsNullOrEmpty(path))
-            {
-                RecentPaths.Set(recentKey, path);
-                // 利用者が選んだこと自体が許可の表明。作業フォルダの外でも
-                // このパスだけを 1 回通す（PLSandbox の説明を参照）。
-                PLSandbox.AllowOnceFromDialog(path);
-            }
-            return path;
-        }
-
-        /// <summary>
-        /// 保存ダイアログ。初期値は seedPath を優先し、空なら recentKey の履歴を使う。
-        /// どちらからもファイル名が取れないときだけ defaultName を使う。
-        /// 確定したパスは履歴へ書き戻す。キャンセル時は空文字を返す。
-        /// </summary>
-        public static string AskSaveTo(
-            string title, string recentKey, string seedPath, string defaultName, string extension)
-        {
-            string seed = !string.IsNullOrEmpty(seedPath) ? seedPath : RecentPaths.Get(recentKey);
-            SplitPath(seed, out string dir, out string name);
-            if (string.IsNullOrEmpty(name)) name = defaultName;
-
-            string path = PLEditorBridge.I.SaveFilePanel(title, dir, name, extension);
             if (!string.IsNullOrEmpty(path))
             {
                 RecentPaths.Set(recentKey, path);

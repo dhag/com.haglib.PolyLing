@@ -37,7 +37,9 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
+using Poly_Ling.EditorTools;
 using Poly_Ling.Serialization.FolderSerializer;
 using Poly_Ling.AssetIO;
 using Poly_Ling.HierarchyIO;
@@ -88,9 +90,11 @@ namespace Poly_Ling.EditorIO
         private const string PrefsKeyTolerantMirrorBranch = "PolyLing.HierarchyExport.TolerantMirrorBranch";
         private bool _tolerantMirrorBranch = true;
 
-        // --- プレファブ／アセットの出力ルート（Assets/ 以下・EditorPrefs で保持） ---
+        // --- プレファブ／アセットの書き込み先ルート（Assets/ 以下） ---
+        //   置き場は settings（RecentPaths）。規約は SaveDest.cs を参照。
+        //   EditorPrefs から移したのは、Player 側と設定の置き場が分かれていると
+        //   同じ「書き込み先」なのに窓を替えると別物になるため。
         private const string DefaultPrefabOutputRoot  = "Assets/PolyLing";
-        private const string PrefsKeyPrefabOutputRoot = "PolyLing.HierarchyExport.PrefabOutputRoot";
         private string _prefabOutputRoot = DefaultPrefabOutputRoot;
 
         // --- Animator Controller（任意・EditorPrefs にアセットパスで保持） ---
@@ -127,7 +131,7 @@ namespace Poly_Ling.EditorIO
         private void OnEnable()
         {
             _prefabOutputRoot = NormalizeOutputRoot(
-                EditorPrefs.GetString(PrefsKeyPrefabOutputRoot, DefaultPrefabOutputRoot));
+                EditorSaveDestField.Load(SaveDest.Keys.HierarchyPrefab, DefaultPrefabOutputRoot));
 
             string acPath = EditorPrefs.GetString(PrefsKeyAnimatorController, "");
             _animatorController = string.IsNullOrEmpty(acPath)
@@ -213,14 +217,13 @@ namespace Poly_Ling.EditorIO
             _saveAsPrefab      = EditorGUILayout.Toggle("プレファブとして保存", _saveAsPrefab);
             if (_saveAsPrefab)
             {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    EditorGUI.BeginChangeCheck();
-                    _prefabOutputRoot = EditorGUILayout.TextField("出力先フォルダ", _prefabOutputRoot);
-                    if (EditorGUI.EndChangeCheck()) SaveOutputRootPref();
-
-                    if (GUILayout.Button("...", GUILayout.Width(30))) BrowseOutputRoot();
-                }
+                // [...] は書き込み先フォルダを決めるだけ。ここで保存はしない。
+                // 出力するファイル名はモデル名から規約で決まるので、保存ダイアログで
+                // ファイル名を聞く形にはしない。
+                _prefabOutputRoot = EditorSaveDestField.Draw(
+                    "書き込み先フォルダ", _prefabOutputRoot, SaveDest.Keys.HierarchyPrefab,
+                    "プレファブの書き込み先（Assets 以下）", "model.prefab", "prefab",
+                    MapPickedOutputRoot);
 
                 _buildAvatar = EditorGUILayout.Toggle("Avatar も生成", _buildAvatar);
                 if (_buildAvatar)
@@ -861,30 +864,27 @@ namespace Poly_Ling.EditorIO
             return null;
         }
 
-        private void BrowseOutputRoot()
+        /// <summary>
+        /// [...] で選ばれたフォルダを Assets 相対へ直す。
+        /// Assets の外なら理由を出して採用しない（null を返す）。
+        /// </summary>
+        private string MapPickedOutputRoot(string absoluteFolder)
         {
-            string sel = EditorUtility.OpenFolderPanel(
-                "出力先フォルダを選択（Assets 以下）", NormalizeOutputRoot(_prefabOutputRoot), "");
-            if (string.IsNullOrEmpty(sel)) return;
-
-            string rel = ToAssetsRelative(sel);
+            string rel = ToAssetsRelative(absoluteFolder);
             if (rel == null)
             {
                 EditorUtility.DisplayDialog(
                     "エラー",
-                    "出力先はこのプロジェクトの Assets フォルダ以下を指定してください:\n" + sel,
+                    "書き込み先はこのプロジェクトの Assets フォルダ以下を指定してください:\n" + absoluteFolder,
                     "OK");
-                return;
+                return null;
             }
-
-            _prefabOutputRoot = rel;
-            SaveOutputRootPref();
-            GUI.changed = true;
+            return NormalizeOutputRoot(rel);
         }
 
         private void SaveOutputRootPref()
         {
-            EditorPrefs.SetString(PrefsKeyPrefabOutputRoot, NormalizeOutputRoot(_prefabOutputRoot));
+            SaveDest.SetFolder(SaveDest.Keys.HierarchyPrefab, NormalizeOutputRoot(_prefabOutputRoot));
         }
 
         private void SaveAnimatorControllerPref()

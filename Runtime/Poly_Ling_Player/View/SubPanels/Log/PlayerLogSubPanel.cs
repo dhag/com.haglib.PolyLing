@@ -43,9 +43,6 @@ namespace Poly_Ling.Player
         // 定数
         // ================================================================
 
-        /// <summary>保存先パスの永続化キー。</summary>
-        private const string SavePathKey = "Log.SavePath";
-
         /// <summary>TextField が抱える最大文字数。超過分は先頭から捨てる。</summary>
         private const int DisplayMaxChars = 60000;
 
@@ -60,7 +57,7 @@ namespace Poly_Ling.Player
         private Label         _countLabel;
         private ScrollView    _scroll;
         private TextField     _logField;
-        private TextField     _pathField;
+        private PlayerSaveDestRow _saveDest;
         private Label         _statusLabel;
         private Toggle        _autoScrollToggle;
 
@@ -161,12 +158,12 @@ namespace Poly_Ling.Player
             parent.Add(PlayerIoUiKit.Divider());
             parent.Add(PlayerIoUiKit.SectionLabel("ファイル保存"));
 
-            _pathField = new TextField();
-            _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(SavePathKey, e.newValue));
-            parent.Add(PlayerIoUiKit.PathRow(_pathField, OnBrowseSave));
-            _pathField.SetValueWithoutNotify(RecentPaths.Get(SavePathKey));
+            // [...] はフォルダを決めるだけ。ファイル名は「保存」のダイアログで決まる。
+            _saveDest = new PlayerSaveDestRow(
+                "書き込み先フォルダ", SaveDest.Keys.Log, "ログを保存", "txt", DefaultFileName);
+            parent.Add(_saveDest.Root);
 
-            parent.Add(PlayerIoUiKit.WideBtn("保存", OnSave));
+            parent.Add(PlayerIoUiKit.WideBtn("名前を付けて保存", OnSave));
 
             // ── ステータス ───────────────────────────────────────────
             _statusLabel = PlayerIoUiKit.StatusLabel();
@@ -278,6 +275,7 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
+            _saveDest?.Refresh();
             UpdateText();
         }
 
@@ -395,22 +393,12 @@ namespace Poly_Ling.Player
             SetStatus("クリアしました");
         }
 
-        private void OnBrowseSave()
-        {
-            string path = PlayerIoUiKit.AskSavePath(
-                "ログを保存", SavePathKey, _pathField?.value, DefaultFileName(), "txt");
-            if (!string.IsNullOrEmpty(path))
-                _pathField.value = path;
-        }
-
+        // 保存先は必ずダイアログで確定する。
+        // 以前は欄の値へ無確認で書いていたため、前回保存したファイルを黙って上書きしていた。
         private void OnSave()
         {
-            string path = _pathField?.value;
-            if (string.IsNullOrEmpty(path))
-            {
-                path = Path.Combine(Application.persistentDataPath, DefaultFileName());
-                _pathField.value = path;
-            }
+            string path = _saveDest?.AskSavePath() ?? "";
+            if (string.IsNullOrEmpty(path)) return;   // キャンセル
 
             try
             {

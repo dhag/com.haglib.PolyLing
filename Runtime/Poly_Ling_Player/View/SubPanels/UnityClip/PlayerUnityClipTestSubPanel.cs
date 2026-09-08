@@ -532,10 +532,10 @@ namespace Poly_Ling.Player
         //（PlayerMeshSelectionSetSubPanel の書き出しと同じ規則）。
         private string AskVrmaSavePath()
         {
-            string cur     = _vrmaPathField?.value?.Trim() ?? string.Empty;
+            // 書き込み先はフォルダだけを覚える。ファイル名は毎回この既定から始める。
             string defName = (_clip != null && !string.IsNullOrEmpty(_clip.name)) ? _clip.name : "motion";
-            return PlayerIoUiKit.AskSavePath(
-                "VRM アニメーションの書き出し", VrmaPathKey, cur, defName, "vrma");
+            return SaveDest.AskSavePath(
+                "VRM アニメーションの書き出し", SaveDest.Keys.Vrma, "", defName, "vrma");
         }
 
         private void OnExportVrma()

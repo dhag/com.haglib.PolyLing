@@ -88,7 +88,8 @@ namespace Poly_Ling.Player
         private int _mapCandidates;
         private int _meshCountBefore;
 
-        private const string VrmPathKey = "Export.VRM.Path";
+        /// <summary>実行のたびに保存ダイアログで確定した VRM の書き出し先。</summary>
+        private string _vrmPath = "";
 
         // ================================================================
         // UI
@@ -97,7 +98,6 @@ namespace Poly_Ling.Player
         private Label     _pathLabel;
         private Toggle    _doTPose;
         private Toggle    _doExport;
-        private TextField _vrmPathField;
 
         protected override string TitleText => "スキン生成自動検証";
 
@@ -127,10 +127,10 @@ namespace Poly_Ling.Player
             _doExport = new Toggle("最後に VRM を書き出す") { value = true };
             root.Add(_doExport);
 
-            _vrmPathField = new TextField("VRM パス");
-            _vrmPathField.style.fontSize = 10;
-            _vrmPathField.value = SafeGet(VrmPathKey);
-            root.Add(_vrmPathField);
+            root.Add(MakeOutDest("VRM の保存先", "vrm", () => "skin_test.vrm"));
+            root.Add(Hint(
+                "[...] は書き込み先フォルダを決めるだけです。ファイル名は「実行」を押したときの"
+              + "保存ダイアログで決めます。"));
 
             RefreshPathLabel();
         }
@@ -174,7 +174,12 @@ namespace Poly_Ling.Player
             if (_doExport.value)
             {
                 if (ExportVrm == null) { SetStatus("配線が足りません（ExportVrm）。"); return false; }
-                if (string.IsNullOrEmpty(_vrmPathField.value)) { SetStatus("VRM パスが空です。"); return false; }
+
+                // 書き出し先は毎回ここで確定する（「名前を付けて保存」）。
+                // 以前はエクスポートパネルと同じ履歴キーを読んでいたため、
+                // 「実行」がエクスポートパネルで最後に保存した VRM を黙って潰していた。
+                _vrmPath = AskOutPath();
+                if (string.IsNullOrEmpty(_vrmPath)) return false;   // キャンセル
             }
             return true;
         }
@@ -187,9 +192,7 @@ namespace Poly_Ling.Player
             _csvRows     = 0;
             _meshCountBefore = GetModel()?.MeshContextCount ?? 0;
 
-            _reportPath = Path.Combine(
-                Application.persistentDataPath, "PolyLing", "SkinTest",
-                DateTime.Now.ToString("yyyyMMdd_HHmmss"), "report.txt");
+            _reportPath = BuildReportPath("SkinTest");
         }
 
         protected override void CollectStages(List<(string Name, Func<StageResult> Run)> stages)
@@ -240,7 +243,7 @@ namespace Poly_Ling.Player
         /// <summary>VRM 書出。スキンド変換済みなのでスキニングが付く。</summary>
         private StageResult StageExportVrm()
         {
-            string path = _vrmPathField.value;
+            string path = _vrmPath;
 
             var settings = Poly_Ling.Vrm.Vrm10ExportSettings.CreateDefault();
             // 欠けている必須関節はダミーで補う。補わないと VRM 1.0 の必須ボーンが
@@ -256,8 +259,6 @@ namespace Poly_Ling.Player
             if (result.HumanoidBoneCount == 0)
                 return Ng("Humanoid ボーンが 0 件で出力された", null,
                     "VRM 1.0 は humanoid が必須。0 件のファイルはビューアが読めない。");
-
-            try { RecentPaths.Set(VrmPathKey, path); } catch { }
 
             return Ok(
                 $"「{Path.GetFileName(path)}」へ書き出した。"

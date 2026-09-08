@@ -2189,8 +2189,10 @@ namespace Poly_Ling.Player
             revCsvFold.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadRevCsv));
             revCsvFold.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
-                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), RevCsvKey, _revCsvPath, "revolution.csv", "csv");
+                // パス欄は読込用。保存は毎回ダイアログを出す。
+                // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+                string save = SaveDest.AskSavePath(
+                    T("SaveCSV"), SaveDest.Keys.ProfileCsv, "", "revolution.csv", "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 _revCsvPath = save;
                 csvPathField.SetValueWithoutNotify(_revCsvPath);
@@ -3316,8 +3318,10 @@ namespace Poly_Ling.Player
             {
                 if (_p2dLoops == null) return;
 
-                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), P2dCsvKey, _p2dCsvPath, "profile2d.csv", "csv");
+                // パス欄は読込用。保存は毎回ダイアログを出す。
+                // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+                string save = SaveDest.AskSavePath(
+                    T("SaveCSV"), SaveDest.Keys.ProfileCsv, "", "profile2d.csv", "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 _p2dCsvPath = save;
                 csvTf.SetValueWithoutNotify(_p2dCsvPath);
@@ -4418,8 +4422,9 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            string basePath = PlayerIoUiKit.AskSavePath(
-                "メッシュをJSON保存", NohSaveKey, null, "facemesh.json", "json");
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            string basePath = SaveDest.AskSavePath(
+                "メッシュをJSON保存", SaveDest.Keys.MeshJson, "", "facemesh.json", "json");
             if (string.IsNullOrEmpty(basePath)) return;
 
             string dir  = System.IO.Path.GetDirectoryName(basePath);

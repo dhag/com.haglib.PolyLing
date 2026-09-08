@@ -30,6 +30,8 @@ using System.IO;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.Core;
+using Poly_Ling.EditorTools;
 using Poly_Ling.UnityClip;
 
 namespace Poly_Ling.UnityClip.Editor
@@ -62,6 +64,14 @@ namespace Poly_Ling.UnityClip.Editor
             w.Show();
         }
 
+        // 書き込み先は settings（RecentPaths）に覚える。EditorPrefs は使わない。
+        // Player 側と設定の置き場を分けると、同じ操作なのに窓を替えると
+        // 保存先が変わる。規約は SaveDest.cs を参照。
+        private void OnEnable()
+        {
+            _outDir = EditorSaveDestField.Load(SaveDest.Keys.UnityClip);
+        }
+
         // ================================================================
         // UI
         // ================================================================
@@ -78,15 +88,13 @@ namespace Poly_Ling.UnityClip.Editor
                 "Avatar (Animator)", _animator, typeof(Animator), true);
 
             EditorGUILayout.Space();
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                _outDir = EditorGUILayout.TextField("出力フォルダ", _outDir);
-                if (GUILayout.Button("...", GUILayout.Width(30)))
-                {
-                    string sel = EditorUtility.SaveFolderPanel("出力フォルダを選択", _outDir, "");
-                    if (!string.IsNullOrEmpty(sel)) _outDir = sel;
-                }
-            }
+
+            // [...] は書き込み先フォルダを決めるだけ。ここで保存はしない。
+            // この窓は 1 回の書き出しで 3 つのファイルを作り、名前は入力から決まるので、
+            // 保存ダイアログでファイル名を聞く形にはしない（キャプチャと同じ扱い）。
+            _outDir = EditorSaveDestField.Draw(
+                "書き込み先フォルダ", _outDir, SaveDest.Keys.UnityClip,
+                "UnityClip の書き込み先", "clip.json", "json");
 
             EditorGUILayout.Space();
             _skinnedOnly    = EditorGUILayout.ToggleLeft("Skinned ボーン + Humanoid 骨のみ（推奨）", _skinnedOnly);
@@ -121,7 +129,7 @@ namespace Poly_Ling.UnityClip.Editor
         {
             if (string.IsNullOrEmpty(_outDir) || !Directory.Exists(_outDir))
             {
-                EditorUtility.DisplayDialog("エラー", "出力フォルダが存在しません:\n" + _outDir, "OK");
+                EditorUtility.DisplayDialog("エラー", "書き込み先フォルダが存在しません:\n" + _outDir, "OK");
                 return;
             }
 

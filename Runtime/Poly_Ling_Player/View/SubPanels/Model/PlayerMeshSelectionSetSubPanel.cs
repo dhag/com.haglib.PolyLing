@@ -279,12 +279,11 @@ namespace Poly_Ling.Player
             int setCount = model.MeshSelectionSets?.Count ?? 0;
             if (setCount == 0) { SetStatus("辞書が空です"); return; }
 
-            // パス欄は読込用。書き出しは毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-            string cur = _dicPathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
-
-            string path = PlayerIoUiKit.AskSavePath(
-                "辞書ファイルの書き出し", DicPathKey, cur,
+            // パス欄は読込用。書き出しは毎回ダイアログを出す。
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            // 読込パスを初期値にすると、読んだ辞書をそのまま上書きする事故になる。
+            string path = SaveDest.AskSavePath(
+                "辞書ファイルの書き出し", SaveDest.Keys.Dictionary, "",
                 PartsDictionaryPath.MeshSelSetsFileName, "csv");
             if (string.IsNullOrEmpty(path)) return;
 

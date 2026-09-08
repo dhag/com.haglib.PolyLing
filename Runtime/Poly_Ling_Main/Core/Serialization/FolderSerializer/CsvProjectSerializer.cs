@@ -71,8 +71,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string filePath = RecentFileDialog.AskSave(
-                "Export Project File", CsvFileKey, defaultName, ProjectFileExtension);
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回 defaultName から始める。
+            string filePath = SaveDest.AskSavePath(
+                "Export Project File", SaveDest.Keys.Project, "", defaultName, ProjectFileExtension);
 
             if (string.IsNullOrEmpty(filePath))
                 return false;
@@ -91,8 +92,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string filePath = RecentFileDialog.AskSave(
-                "Export Project File", CsvFileKey, defaultName, ProjectFileExtension);
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回 defaultName から始める。
+            string filePath = SaveDest.AskSavePath(
+                "Export Project File", SaveDest.Keys.Project, "", defaultName, ProjectFileExtension);
 
             if (string.IsNullOrEmpty(filePath))
                 return false;

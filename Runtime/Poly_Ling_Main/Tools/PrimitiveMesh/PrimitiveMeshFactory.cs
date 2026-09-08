@@ -110,6 +110,10 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateCubeCommand c:         return CubeMeshGenerator.Generate(c.Params);
                 case CreateSphereCommand c:       return SphereMeshGenerator.Generate(c.Params);
                 case CreateCylinderCommand c:     return CylinderMeshGenerator.Generate(c.Params);
+
+                // ── MCP用サンドボックス ──
+                case CreateMcpCylinderCommand c:  return McpCylinderMeshGenerator.Generate(c.Params);
+
                 case CreateCapsuleCommand c:      return CapsuleMeshGenerator.Generate(c.Params);
                 case CreatePlaneCommand c:        return PlaneMeshGenerator.Generate(c.Params);
                 case CreatePyramidCommand c:      return PyramidMeshGenerator.Generate(c.Params);

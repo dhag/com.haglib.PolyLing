@@ -411,9 +411,10 @@ namespace Poly_Ling.Player
 
             if (lib.Count == 0) { SetInfo("辞書が空です。"); return; }
 
-            // 以前は履歴を持たず、初期フォルダが毎回 Application.dataPath 固定だった。
-            string path = Poly_Ling.Player.PlayerIoUiKit.AskSavePath(
-                "作業軸辞書を保存", LibraryCsvKey, null, "workaxis_library.csv", "csv");
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            string path = Poly_Ling.Core.SaveDest.AskSavePath(
+                "作業軸辞書を保存", Poly_Ling.Core.SaveDest.Keys.Dictionary, "",
+                "workaxis_library.csv", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             SetInfo(WorkAxisLibraryCsvIO.Save(path, lib)

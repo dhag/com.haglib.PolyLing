@@ -129,6 +129,56 @@ namespace Poly_Ling.Player
         public virtual void Refresh()
         {
             if (_runButton != null) _runButton.SetEnabled(!_running);
+            OutDest?.Refresh();
+        }
+
+        // ================================================================
+        // 書き込み先
+        //
+        // 検証パネルは以前、出力先を「フルパスの欄」で持ち、実行ボタンが
+        // その値へ無確認で書いていた。欄の初期値は履歴か、読み込んだファイル名から
+        // 作った別名だったため、前回の出力や別パネルの出力を黙って潰していた。
+        // 他のパネルと同じ規約（SaveDest.cs）に揃える。
+        //   ・欄はフォルダだけ
+        //   ・ファイル名は実行のたびに保存ダイアログで確定する
+        //   ・レポートも同じフォルダの下に置く
+        // ================================================================
+
+        /// <summary>出力先フォルダ欄。BuildOptionsUI で MakeOutDest を呼んで作る。</summary>
+        protected PlayerSaveDestRow OutDest { get; private set; }
+
+        /// <summary>出力先フォルダ欄を 1 本作る。派生は戻り値を root へ Add する。</summary>
+        /// <param name="dialogTitle">保存ダイアログの見出し。</param>
+        /// <param name="extension">拡張子（ドット無し）。</param>
+        /// <param name="defaultName">ファイル名欄の初期値を返す関数。null 可。</param>
+        protected VisualElement MakeOutDest(string dialogTitle, string extension, Func<string> defaultName = null)
+        {
+            OutDest = new PlayerSaveDestRow(
+                "書き込み先フォルダ", Poly_Ling.Core.SaveDest.Keys.Pipeline,
+                dialogTitle, extension, defaultName);
+            return OutDest.Root;
+        }
+
+        /// <summary>
+        /// 実行前に出力先ファイルを確定する（「名前を付けて保存」）。
+        /// キャンセルなら空文字。CanRun から呼ぶこと。
+        /// </summary>
+        protected string AskOutPath() => OutDest?.AskSavePath() ?? "";
+
+        /// <summary>
+        /// レポートの書き出し先。出力先フォルダの下へ
+        /// <c>&lt;testName&gt;/&lt;yyyyMMdd_HHmmss&gt;/report.txt</c> で作る。
+        /// フォルダ欄が空のときだけ、従来どおり persistentDataPath 配下へ落とす。
+        /// </summary>
+        protected string BuildReportPath(string testName)
+        {
+            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+
+            string folder = OutDest?.Folder ?? "";
+            if (string.IsNullOrEmpty(folder))
+                folder = System.IO.Path.Combine(Application.persistentDataPath, "PolyLing");
+
+            return System.IO.Path.Combine(folder, testName, stamp, "report.txt");
         }
 
         // ================================================================

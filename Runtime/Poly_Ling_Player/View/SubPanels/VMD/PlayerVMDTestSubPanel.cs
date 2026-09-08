@@ -64,6 +64,7 @@ namespace Poly_Ling.Player
         private Toggle        _kneePreBendToggle;
         private TextField     _traceBonesField;
         private TextField     _ikTraceBonesField;
+        private PlayerSaveDestRow _traceDest;
         private Button        _btnTraceAll;
         private VisualElement _boneListContainer;
         private VisualElement _morphListContainer;
@@ -251,7 +252,7 @@ namespace Poly_Ling.Player
                     PushIkTraceBones();
                     _applier.TraceEnabled = true;
                     SetStatus(string.IsNullOrEmpty(_applier.TraceDirectory)
-                        ? "トレース出力先が特定できません（VMD 未読込み）"
+                        ? "書き込み先フォルダが未設定です。[...] で選んでください。"
                         : $"トレース出力: {Path.Combine(_applier.TraceDirectory, VMDApplier.TraceFileName)}");
                 }
                 else
@@ -295,6 +296,16 @@ namespace Poly_Ling.Player
             ikTraceRow.Add(ikTraceLbl); ikTraceRow.Add(_ikTraceBonesField);
             root.Add(ikTraceRow);
 
+            // トレース CSV の書き込み先。ファイル名は固定なので保存ダイアログは出さない。
+            // [...] はフォルダを決めるだけ、という点は他のパネルと同じ。
+            _traceDest = new PlayerSaveDestRow(
+                "トレース CSV の書き込み先フォルダ", SaveDest.Keys.VmdTrace,
+                "トレース CSV の保存先", "csv", () => VMDApplier.TraceFileName);
+            root.Add(_traceDest.Root);
+            root.Add(HintLabel(
+                "以前は読み込んだ VMD と同じフォルダへ、固定名で無確認に書いていました。"
+              + "書き込み先はここで指定します。空のままだとトレースは出しません。"));
+
             _btnTraceAll = new Button(RunTraceAllFrames) { text = "全フレーム一括トレース" };
             _btnTraceAll.style.marginBottom = 4;
             root.Add(_btnTraceAll);
@@ -336,6 +347,7 @@ namespace Poly_Ling.Player
 
         private void RefreshAll()
         {
+            _traceDest?.Refresh();
             var model = Model;
             if (_modelLabel != null)
                 _modelLabel.text = model != null
@@ -523,9 +535,16 @@ namespace Poly_Ling.Player
         // トレース
         // ================================================================
 
-        /// <summary>トレース CSV の出力フォルダ。VMD ファイルと同じ場所に出す。</summary>
+        /// <summary>
+        /// トレース CSV の出力フォルダ。書き込み先フォルダ欄の値をそのまま使う。
+        /// 空なら null を返し、トレースを出さない。
+        /// 読み込んだ VMD のフォルダへ勝手に書く経路は廃止した。
+        /// </summary>
         private string TraceDir()
-            => string.IsNullOrEmpty(_filePath) ? null : Path.GetDirectoryName(_filePath);
+        {
+            string folder = _traceDest?.Folder ?? "";
+            return string.IsNullOrEmpty(folder) ? null : folder;
+        }
 
         /// <summary>カンマ区切りのトレース対象ボーン名を applier へ渡す。</summary>
         private void PushTraceBones()
@@ -559,7 +578,8 @@ namespace Poly_Ling.Player
             if (_vmd == null || Model == null || _applier == null) { SetStatus("VMD を読み込んでください"); return; }
 
             string dir = TraceDir();
-            if (string.IsNullOrEmpty(dir)) { SetStatus("VMD のフォルダを特定できません"); return; }
+            if (string.IsNullOrEmpty(dir))
+            { SetStatus("書き込み先フォルダが未設定です。[...] で選んでください。"); return; }
 
             _applier.TraceDirectory = dir;
             PushTraceBones();
@@ -616,5 +636,15 @@ namespace Poly_Ling.Player
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
         private static void MkNavBtn(VisualElement row, string text, Action onClick) { var b = new Button(onClick) { text = text }; b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 9; row.Add(b); }
         private static Label SecLabel(string t) { var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f)); l.style.fontSize = 10; l.style.marginBottom = 3; return l; }
+
+        private static Label HintLabel(string t)
+        {
+            var l = new Label(t);
+            l.style.color        = new StyleColor(new Color(0.72f, 0.72f, 0.72f));
+            l.style.fontSize     = 9;
+            l.style.whiteSpace   = WhiteSpace.Normal;
+            l.style.marginBottom = 3;
+            return l;
+        }
     }
 }

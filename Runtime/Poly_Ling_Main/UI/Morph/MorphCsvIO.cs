@@ -99,8 +99,10 @@ namespace Poly_Ling.UI
             if (model == null || model.MorphExpressionCount == 0)
             { statusLog?.Invoke("保存するモーフエクスプレッションがありません"); return; }
 
-            string path = RecentFileDialog.AskSave(
-                "BlendShapeSync CSV保存", CsvRecentKey, "blendshape_sync.csv", "csv");
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            // 履歴にフルパスを残すと、次の保存が前回のファイル名で開いて上書き事故になる。
+            string path = SaveDest.AskSavePath(
+                "BlendShapeSync CSV保存", SaveDest.Keys.MorphCsv, "", "blendshape_sync.csv", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             try

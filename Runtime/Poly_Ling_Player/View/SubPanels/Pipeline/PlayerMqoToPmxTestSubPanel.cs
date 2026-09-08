@@ -71,9 +71,8 @@ namespace Poly_Ling.Player
 
         private const string PmxPathKey = "Import.PMX.Path";
         private const string MqoPathKey = "Import.MQO.Path";
-        private const string OutPathKey = "SysDebug.MqoToPmx.OutPath";
 
-        /// <summary>出力名を自動で作るときの接尾辞。</summary>
+        /// <summary>保存ダイアログのファイル名欄に出す既定名の接尾辞。</summary>
         private const string OutSuffix = "_frommqo";
 
         // ================================================================
@@ -90,7 +89,7 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private TextField  _pmxPathField, _mqoPathField, _outPathField;
+        private TextField  _pmxPathField, _mqoPathField;
         private FloatField _mqoScale, _smoothingAngle;
         private Toggle     _mqoFlipX, _mqoFlipZ, _mqoFlipUV_V;
         private Toggle     _skipNamedMirror, _recalcNormals, _importUV;
@@ -155,14 +154,11 @@ namespace Poly_Ling.Player
             _mqoPathField.RegisterValueChangedCallback(e => SafeSet(MqoPathKey, e.newValue));
             root.Add(_mqoPathField);
 
-            _outPathField = new TextField("出力 PMX パス（別名）");
-            _outPathField.style.fontSize = 10;
-            _outPathField.SetValueWithoutNotify(SafeGet(OutPathKey));
-            _outPathField.RegisterValueChangedCallback(e => SafeSet(OutPathKey, e.newValue));
-            root.Add(_outPathField);
+            root.Add(MakeOutDest("出力 PMX の保存先", "pmx", DefaultOutName));
 
             root.Add(Hint(
-                "出力パスを空にすると、PMX と同じフォルダに「元の名前" + OutSuffix + ".pmx」を作ります。"
+                "[...] は書き込み先フォルダを決めるだけです。ファイル名は「実行」を押したときの"
+              + "保存ダイアログで決めます。ファイル名欄の初期値は「元の名前" + OutSuffix + ".pmx」です。"
               + "読み込んだ PMX と同じパスは受け付けません（別名保存の検証のため）。"));
 
             root.Add(Hint(
@@ -205,7 +201,16 @@ namespace Poly_Ling.Player
 
             _pmxPathField?.SetValueWithoutNotify(SafeGet(PmxPathKey));
             _mqoPathField?.SetValueWithoutNotify(SafeGet(MqoPathKey));
-            _outPathField?.SetValueWithoutNotify(SafeGet(OutPathKey));
+        }
+
+        /// <summary>保存ダイアログのファイル名欄の初期値。土台 PMX の名前から作る。</summary>
+        private string DefaultOutName()
+        {
+            string stem = "";
+            try { stem = Path.GetFileNameWithoutExtension(_pmxPathField?.value ?? ""); }
+            catch (ArgumentException) { }
+
+            return string.IsNullOrEmpty(stem) ? "" : stem + OutSuffix + ".pmx";
         }
 
         private static string SafeGet(string key)
@@ -238,13 +243,10 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(_mqoPath) || !File.Exists(_mqoPath))
             { SetStatus("MQO パスが正しくありません。"); return false; }
 
-            _outPath = _outPathField?.value ?? "";
-            if (string.IsNullOrEmpty(_outPath))
-            {
-                _outPath = BuildDefaultOutPath(_pmxPath);
-                _outPathField?.SetValueWithoutNotify(_outPath);
-                SafeSet(OutPathKey, _outPath);
-            }
+            // 出力先は毎回ここで確定する（「名前を付けて保存」）。
+            // 履歴のフルパスや土台 PMX の名前がそのまま書き込み先になる経路は残さない。
+            _outPath = AskOutPath();
+            if (string.IsNullOrEmpty(_outPath)) return false;   // キャンセル
 
             if (SamePath(_outPath, _pmxPath))
             { SetStatus("出力パスが読み込む PMX と同じです。別名にしてください。"); return false; }
@@ -254,13 +256,6 @@ namespace Poly_Ling.Player
             { SetStatus($"出力先フォルダがありません: {outDir}"); return false; }
 
             return true;
-        }
-
-        private static string BuildDefaultOutPath(string pmxPath)
-        {
-            string dir  = Path.GetDirectoryName(pmxPath) ?? "";
-            string name = Path.GetFileNameWithoutExtension(pmxPath) + OutSuffix + ".pmx";
-            return string.IsNullOrEmpty(dir) ? name : Path.Combine(dir, name);
         }
 
         private static bool SamePath(string a, string b)
@@ -289,9 +284,7 @@ namespace Poly_Ling.Player
             _changedVertices = 0;
             _exportResult    = null;
 
-            _reportPath = Path.Combine(
-                Application.persistentDataPath, "PolyLing", "MqoToPmxTest",
-                DateTime.Now.ToString("yyyyMMdd_HHmmss"), "report.txt");
+            _reportPath = BuildReportPath("MqoToPmxTest");
         }
 
         protected override void CollectStages(List<(string Name, Func<StageResult> Run)> stages)

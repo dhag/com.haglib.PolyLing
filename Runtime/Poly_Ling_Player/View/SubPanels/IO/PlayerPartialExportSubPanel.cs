@@ -87,7 +87,7 @@ namespace Poly_Ling.Player
         private Label         _statusLabel;
         private VisualElement _settingsContainer;
         private VisualElement _listContainer;
-        private TextField     _outPathField;
+        private PlayerSaveDestRow _saveDest;
 
         // ================================================================
         // Build
@@ -103,22 +103,10 @@ namespace Poly_Ling.Player
             _panelNameLabel.style.marginBottom = 4;
             parent.Add(_panelNameLabel);
 
-            // 出力先パス行（[...] は保存先選択のみ・即実行しない）
-            var fileRow = new VisualElement();
-            fileRow.style.flexDirection = FlexDirection.Row;
-            fileRow.style.marginBottom  = 2;
-
-            var browseBtn = new Button(OnBrowseOut) { text = "..." };
-            browseBtn.style.width       = 28;
-            browseBtn.style.marginRight = 2;
-
-            _outPathField = new TextField();
-            _outPathField.style.flexGrow = 1;
-            _outPathField.RegisterValueChangedCallback(e => RecentPaths.Set(OutPathKey(), e.newValue));
-
-            fileRow.Add(browseBtn);
-            fileRow.Add(_outPathField);
-            parent.Add(fileRow);
+            // 書き込み先フォルダ行。[...] はフォルダを決めるだけで、保存はしない。
+            _saveDest = new PlayerSaveDestRow(
+                "書き込み先フォルダ", SaveDest.Keys.PartialExport, "Export PMX", "pmx", DefaultOutName);
+            parent.Add(_saveDest.Root);
 
             var exportBtn = new Button(OnExportClicked) { text = "エクスポート" };
             exportBtn.style.marginTop    = 2;
@@ -146,9 +134,29 @@ namespace Poly_Ling.Player
             if (_panelNameLabel != null)
                 _panelNameLabel.text = mode == Mode.PMX ? "PMX部分エクスポート" : "MQO部分エクスポート";
 
-            _outPathField?.SetValueWithoutNotify(RecentPaths.Get(OutPathKey()));
+            if (_saveDest != null)
+            {
+                _saveDest.DialogTitle = mode == Mode.PMX ? "Export PMX" : "Export MQO";
+                _saveDest.Extension   = mode == Mode.PMX ? "pmx" : "mqo";
+                _saveDest.Refresh();
+            }
             RestoreRefForMode();
             RebuildAll();
+        }
+
+        /// <summary>
+        /// 保存ダイアログのファイル名欄の初期値。参照元の名前を土台にする。
+        /// これは「初期値」であって書き込み先ではない。書き込み先は必ずダイアログで確定する。
+        /// </summary>
+        private string DefaultOutName()
+        {
+            string refPath = _mode == Mode.PMX ? _pmxRefPath : _mqoRefPath;
+            if (string.IsNullOrEmpty(refPath)) return "";
+
+            string stem = Path.GetFileNameWithoutExtension(refPath);
+            if (string.IsNullOrEmpty(stem)) return "";
+
+            return _mode == Mode.PMX ? stem + "_modified.pmx" : stem + "_partial.mqo";
         }
 
         /// <summary>現在モードの参照元パスを RecentPaths から復元・読込（未設定かつ実在時のみ）</summary>
@@ -208,8 +216,9 @@ namespace Poly_Ling.Player
             if (!_pmxMappings.Any(m => m.Selected && m.IsMatched))
             { SetStatus("エクスポートするメッシュを選択してください"); return; }
 
-            string savePath = _outPathField?.value ?? "";
-            if (string.IsNullOrEmpty(savePath)) { SetStatus("保存先が指定されていません"); return; }
+            // 保存先は必ずここで確定する（「名前を付けて保存」）。
+            string savePath = _saveDest?.AskSavePath() ?? "";
+            if (string.IsNullOrEmpty(savePath)) return;   // キャンセル
 
             int transferred = _pmxOps.ExecuteExport(
                 _pmxMappings, _pmxDocument,
@@ -234,8 +243,9 @@ namespace Poly_Ling.Player
             if (selectedModels.Count == 0 || selectedMQOs.Count == 0)
             { SetStatus("エクスポートするメッシュを選択してください"); return; }
 
-            string savePath = _outPathField?.value ?? "";
-            if (string.IsNullOrEmpty(savePath)) { SetStatus("保存先が指定されていません"); return; }
+            // 保存先は必ずここで確定する（「名前を付けて保存」）。
+            string savePath = _saveDest?.AskSavePath() ?? "";
+            if (string.IsNullOrEmpty(savePath)) return;   // キャンセル
 
             int transferred = _mqoOps.ExecuteExport(
                 selectedMQOs, selectedModels,
@@ -249,28 +259,6 @@ namespace Poly_Ling.Player
             SetStatus($"完了: {transferred}verts → {Path.GetFileName(savePath)}");
             _mqoHelper.LoadMQO(_mqoRefPath, visibleOnly: false);
         }
-
-        private void OnBrowseOut()
-        {
-            string ext     = _mode == Mode.PMX ? "pmx" : "mqo";
-            string title   = _mode == Mode.PMX ? "Export PMX" : "Export MQO";
-            string refPath = _mode == Mode.PMX ? _pmxRefPath : _mqoRefPath;
-            string defName = _mode == Mode.PMX
-                ? (Path.GetFileNameWithoutExtension(refPath) + "_modified.pmx")
-                : (Path.GetFileNameWithoutExtension(refPath) + "_partial.mqo");
-
-            // 初期値は出力先欄 → 参照元 → 履歴 の順で拾う。
-            string seed = _outPathField?.value;
-            if (string.IsNullOrEmpty(seed)) seed = refPath;
-
-            string savePath = PlayerIoUiKit.AskSavePath(title, OutPathKey(), seed, defName, ext);
-            if (!string.IsNullOrEmpty(savePath))
-                _outPathField.value = savePath;   // 選択のみ（即実行しない）
-        }
-
-        /// <summary>出力先パスの保存キー（モード別）</summary>
-        private string OutPathKey()
-            => "PartialExport." + (_mode == Mode.PMX ? "PMX" : "MQO") + ".OutPath";
 
         // ================================================================
         // UI 再構築

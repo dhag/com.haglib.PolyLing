@@ -20,16 +20,21 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public const string KeyFileName = "Capture.FileName";
-        public const string KeyFolder   = "Capture.Folder";
         public const string KeyTarget   = "Capture.Target";
 
-        /// <summary>保存済みのファイル名（未設定なら既定）。</summary>
+        /// <summary>書き込み先フォルダのキー。他のパネルと同じ規約（SaveDest.cs）に従う。</summary>
+        public const string KeyFolder = SaveDest.Keys.Capture;
+
+        /// <summary>
+        /// 保存済みのファイル名（未設定なら既定）。
+        /// ここは「書き込み先」ではなく連番の土台になる名前なので、フォルダ欄とは別に持つ。
+        /// </summary>
         public static string GetFileName()
             => RecentPaths.Get(KeyFileName, PlayerScreenCapture.DefaultFileName);
 
         /// <summary>保存済みの保存フォルダ（未設定なら既定）。</summary>
         public static string GetFolder()
-            => RecentPaths.Get(KeyFolder, PlayerScreenCapture.DefaultFolder);
+            => SaveDest.GetFolder(KeyFolder, PlayerScreenCapture.DefaultFolder);
 
         /// <summary>保存済みの対象（未設定・不正なら MainView）。</summary>
         public static CaptureTarget GetTarget()
@@ -53,9 +58,9 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private TextField     _nameField;
-        private TextField     _folderField;
-        private DropdownField _targetDropdown;
+        private TextField         _nameField;
+        private PlayerSaveDestRow _saveDest;
+        private DropdownField     _targetDropdown;
         private Label         _statusLabel;
 
         private static readonly List<string> TargetNames = new List<string>
@@ -96,13 +101,15 @@ namespace Poly_Ling.Player
             _nameField.RegisterValueChangedCallback(e => RecentPaths.Set(KeyFileName, e.newValue));
             parent.Add(_nameField);
 
-            // ── 保存フォルダ ───────────────────────────────────────
-            parent.Add(PlayerIoUiKit.SectionLabel("保存フォルダ"));
-
-            _folderField = new TextField { value = GetFolder() };
-            _folderField.style.marginBottom = 2;
-            _folderField.RegisterValueChangedCallback(e => RecentPaths.Set(KeyFolder, e.newValue));
-            parent.Add(_folderField);
+            // ── 書き込み先フォルダ ─────────────────────────────────
+            // キャプチャは連番を自動で付けるので保存ダイアログを出さない。
+            // [...] はフォルダを決めるだけ、という点は他のパネルと同じ。
+            _saveDest = new PlayerSaveDestRow(
+                "書き込み先フォルダ", KeyFolder, "キャプチャの保存先", "png",
+                () => GetFileName() + ".png");
+            if (string.IsNullOrEmpty(SaveDest.GetFolder(KeyFolder)))
+                _saveDest.SetFolder(PlayerScreenCapture.DefaultFolder);
+            parent.Add(_saveDest.Root);
 
             // ── 対象 ───────────────────────────────────────────────
             parent.Add(PlayerIoUiKit.SectionLabel("対象"));
@@ -140,7 +147,7 @@ namespace Poly_Ling.Player
         {
             if (_nameField == null) return;
             _nameField     .SetValueWithoutNotify(GetFileName());
-            _folderField   .SetValueWithoutNotify(GetFolder());
+            _saveDest      ?.Refresh();
             _targetDropdown.SetValueWithoutNotify(LabelOf(GetTarget()));
         }
 

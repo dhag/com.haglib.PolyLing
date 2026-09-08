@@ -5108,6 +5108,26 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
+    /// <summary>
+    /// MCP用サンドボックスの円筒。既存の円柱（CreateCylinderCommand）とは
+    /// パラメータ構造体から別にしてあり、片方をいじってももう片方は動かない。
+    /// </summary>
+    [PLCommand(Description = "MCP用サンドボックスの円筒を作る。")]
+    public sealed class CreateMcpCylinderCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "McpCylinder", Description = "MCP円筒のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.McpCylinderMeshGenerator.McpCylinderParams Params { get; }
+
+        public override string ShapeName => "McpCylinder";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateMcpCylinderCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.McpCylinderMeshGenerator.McpCylinderParams @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
     [PLCommand(Description = "円柱を作る。")]
     public sealed class CreateCylinderCommand : CreatePrimitiveMeshCommand
     {

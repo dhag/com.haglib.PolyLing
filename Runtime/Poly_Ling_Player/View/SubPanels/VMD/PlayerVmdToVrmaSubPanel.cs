@@ -356,12 +356,13 @@ namespace Poly_Ling.Player
         // 書き出しは必ず保存ダイアログを通す。パス欄の値は初期値としてだけ使う。
         private string AskVrmaSavePath()
         {
-            string cur     = _vrmaPathField?.value?.Trim() ?? string.Empty;
+            // 書き込み先はフォルダだけを覚える。ファイル名は毎回この既定から始める。
+            // 読み込んだ VMD の名前は「初期値」であって書き込み先ではない。
             string defName = !string.IsNullOrEmpty(_vmdPath)
                 ? Path.GetFileNameWithoutExtension(_vmdPath)
                 : "motion";
-            return PlayerIoUiKit.AskSavePath(
-                "VRM アニメーションの書き出し", VrmaPathKey, cur, defName, "vrma");
+            return SaveDest.AskSavePath(
+                "VRM アニメーションの書き出し", SaveDest.Keys.Vrma, "", defName, "vrma");
         }
 
         private void OnSave()

@@ -1,7 +1,7 @@
 // PlayerExportSubPanel.cs
 // プレイビュー右ペイン用 PMX / MQO / OBJ エクスポート設定パネル（UIToolkit）。
 // PlayerImportSubPanel と対称な設計。
-// 保存は必ず PlayerIoUiKit.AskSavePath（保存ダイアログ）を通す。パス欄への直接書き出しは行わない。
+// 書き込み先は PlayerSaveDestRow（フォルダのみ）＋保存ダイアログ。規約は SaveDest.cs を参照。
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
@@ -73,10 +73,10 @@ namespace Poly_Ling.Player
         // 内部 UI 参照
         // ================================================================
 
-        private Label         _panelNameLabel;
-        private Label         _statusLabel;
-        private VisualElement _settingsContainer;
-        private TextField     _pathField;
+        private Label             _panelNameLabel;
+        private Label             _statusLabel;
+        private VisualElement     _settingsContainer;
+        private PlayerSaveDestRow _saveDest;
 
         // ================================================================
         // Build
@@ -92,22 +92,10 @@ namespace Poly_Ling.Player
             _panelNameLabel.style.marginBottom = 4;
             parent.Add(_panelNameLabel);
 
-            // 出力先パス行（[...] は「エクスポート」と同一処理）
-            var fileRow = new VisualElement();
-            fileRow.style.flexDirection = FlexDirection.Row;
-            fileRow.style.marginBottom  = 2;
-
-            var browseBtn = new Button(OnExportClicked) { text = "..." };
-            browseBtn.style.width       = 28;
-            browseBtn.style.marginRight = 2;
-
-            _pathField = new TextField();
-            _pathField.style.flexGrow = 1;
-            _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(ExportPathKey(), e.newValue));
-
-            fileRow.Add(browseBtn);
-            fileRow.Add(_pathField);
-            parent.Add(fileRow);
+            // 書き込み先フォルダ行。[...] はフォルダを決めるだけで、保存はしない。
+            _saveDest = new PlayerSaveDestRow(
+                "書き込み先フォルダ", SaveDest.Keys.Export, "Export", "pmx");
+            parent.Add(_saveDest.Root);
 
             // Export ボタン
             var exportBtn = new Button(OnExportClicked) { text = "エクスポート" };
@@ -132,7 +120,15 @@ namespace Poly_Ling.Player
             _mode = mode;
             if (_panelNameLabel != null)
                 _panelNameLabel.text = ModeName(mode) + "エクスポータ";
-            _pathField?.SetValueWithoutNotify(RecentPaths.Get(ExportPathKey()));
+
+            // 書き込み先フォルダは 4 モード共通（SaveDest.Keys.Export）。
+            // モードで変わるのはダイアログの見出しと拡張子だけ。
+            if (_saveDest != null)
+            {
+                _saveDest.DialogTitle = "Export " + ModeName(mode);
+                _saveDest.Extension   = ModeName(mode).ToLowerInvariant();
+                _saveDest.Refresh();
+            }
             RebuildSettings();
         }
 
@@ -140,23 +136,17 @@ namespace Poly_Ling.Player
         // Export 実行
         // ================================================================
 
-        // 保存は必ず保存ダイアログを通す。
-        // パス欄の値へ無確認で書き出すと、読み込んだファイルを事故で上書きする。
-        // パス欄の値はダイアログの初期フォルダ／初期ファイル名としてだけ使い、
-        // 空欄のときは OS の現在フォルダに任せる。
+        // 保存は必ず保存ダイアログを通す（SaveDest の規約）。
+        // 欄が持っているのはフォルダだけなので、ファイル名は毎回ここで決まる。
+        // 前回のファイル名や読み込んだファイル名が書き込み先になることはない。
         private void OnExportClicked()
         {
             SetStatus("");
 
-            string name  = ModeName(_mode);
-            string ext   = name.ToLowerInvariant();
-            string title = "Export " + name;
+            if (_saveDest == null) return;
 
-            string savePath = PlayerIoUiKit.AskSavePath(
-                title, ExportPathKey(), _pathField?.value ?? "", "", ext);
+            string savePath = _saveDest.AskSavePath();
             if (string.IsNullOrEmpty(savePath)) return;   // キャンセル
-
-            _pathField.value = savePath;                  // RecentPaths へは値変更コールバックで反映される
 
             if (_mode == Mode.PMX)
                 OnExportPmx?.Invoke(savePath, ClonePmxSettings());
@@ -179,10 +169,6 @@ namespace Poly_Ling.Player
                 default:       return "MQO";
             }
         }
-
-        /// <summary>エクスポートパスの保存キー（モード別）</summary>
-        private string ExportPathKey()
-            => "Export." + ModeName(_mode) + ".Path";
 
         public void SetStatus(string msg)
         {

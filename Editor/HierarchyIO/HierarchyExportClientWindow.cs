@@ -35,6 +35,8 @@ using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.Core;
+using Poly_Ling.EditorTools;
 using Poly_Ling.ListClient;
 using Poly_Ling.Player;
 using Poly_Ling.Remote;
@@ -50,7 +52,8 @@ namespace Poly_Ling.EditorIO
         // サーバ側 RemoteServerCore.HierarchyClientType と一致させること。
         private const string ClientTypeId = "hierarchyExport";
 
-        private const string PrefsKeyDestRoot    = "PolyLing.HierarchyExportClient.DestRoot";
+        // 書き込み先だけは settings（RecentPaths）へ寄せる。規約は SaveDest.cs を参照。
+        // 接続まわりの設定はこの窓だけのものなので EditorPrefs のまま。
         private const string PrefsKeyUserName    = "PolyLing.HierarchyExportClient.UserName";
         private const string PrefsKeyAutoConnect = "PolyLing.HierarchyExportClient.AutoConnect";
         private const string PrefsKeyAutoExport  = "PolyLing.HierarchyExportClient.AutoExport";
@@ -79,7 +82,7 @@ namespace Poly_Ling.EditorIO
 
         private void OnEnable()
         {
-            _destRoot    = EditorPrefs.GetString(PrefsKeyDestRoot, DefaultDestRoot());
+            _destRoot    = EditorSaveDestField.Load(SaveDest.Keys.RemoteHierarchy, DefaultDestRoot());
             _userName    = EditorPrefs.GetString(PrefsKeyUserName, "");
             _autoConnect = EditorPrefs.GetBool(PrefsKeyAutoConnect, true);
             _autoExport  = EditorPrefs.GetBool(PrefsKeyAutoExport, true);
@@ -100,7 +103,7 @@ namespace Poly_Ling.EditorIO
 
         private void SavePrefs()
         {
-            EditorPrefs.SetString(PrefsKeyDestRoot, _destRoot ?? "");
+            SaveDest.SetFolder(SaveDest.Keys.RemoteHierarchy, _destRoot ?? "");
             EditorPrefs.SetString(PrefsKeyUserName, _userName ?? "");
             EditorPrefs.SetBool(PrefsKeyAutoConnect, _autoConnect);
             EditorPrefs.SetBool(PrefsKeyAutoExport, _autoExport);
@@ -195,12 +198,16 @@ namespace Poly_Ling.EditorIO
 
             EditorGUILayout.Space(6);
 
-            EditorGUILayout.LabelField("受信ファイルの保存先", EditorStyles.miniBoldLabel);
-            using (new EditorGUILayout.HorizontalScope())
+            // [...] は書き込み先フォルダを決めるだけ。ボタンの文言も他の窓と揃える。
+            _destRoot = EditorSaveDestField.Draw(
+                "書き込み先フォルダ", _destRoot, SaveDest.Keys.RemoteHierarchy,
+                "受信ファイルの書き込み先", "project.csv", "csv");
+
+            if (GUILayout.Button("既定に戻す", GUILayout.Width(90)))
             {
-                _destRoot = EditorGUILayout.TextField(_destRoot);
-                if (GUILayout.Button("参照", GUILayout.Width(60))) BrowseDestRoot();
-                if (GUILayout.Button("既定", GUILayout.Width(60))) _destRoot = DefaultDestRoot();
+                _destRoot = DefaultDestRoot();
+                SaveDest.SetFolder(SaveDest.Keys.RemoteHierarchy, _destRoot);
+                GUI.FocusControl(null);
             }
 
             EditorGUILayout.Space(8);
@@ -212,17 +219,6 @@ namespace Poly_Ling.EditorIO
             {
                 if (GUILayout.Button("受信フォルダから書き出す", GUILayout.Height(26)))
                     HierarchyExportWindow.ExportFromFolder(_lastFolder);
-            }
-        }
-
-        private void BrowseDestRoot()
-        {
-            string start = Directory.Exists(_destRoot) ? _destRoot : DefaultDestRoot();
-            string picked = EditorUtility.OpenFolderPanel("受信ファイルの保存先", start, "");
-            if (!string.IsNullOrEmpty(picked))
-            {
-                _destRoot = picked;
-                SavePrefs();
             }
         }
 

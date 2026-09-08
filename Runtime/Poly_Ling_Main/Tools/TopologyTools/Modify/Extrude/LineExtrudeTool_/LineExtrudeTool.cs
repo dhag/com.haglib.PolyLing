@@ -288,17 +288,14 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// CSVとして保存
         /// </summary>
-        /// <summary>線分CSVのパス履歴キー。</summary>
-        private const string LineCsvRecentKey = "LineExtrude.Csv.Path";
-
         public void SaveAsCSV()
         {
             if (_lastContext?.ActiveMeshObject == null || _detectedLoops.Count == 0)
                 return;
 
-            // 以前は履歴を持たず、初期フォルダが毎回 Application.dataPath 固定だった。
-            string path = Poly_Ling.Core.RecentFileDialog.AskSave(
-                "Save Lines as CSV", LineCsvRecentKey, "profile", "csv");
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            string path = Poly_Ling.Core.SaveDest.AskSavePath(
+                "Save Lines as CSV", Poly_Ling.Core.SaveDest.Keys.ProfileCsv, "", "profile.csv", "csv");
 
             if (string.IsNullOrEmpty(path))
                 return;

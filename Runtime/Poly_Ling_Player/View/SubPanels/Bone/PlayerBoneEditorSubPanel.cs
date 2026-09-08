@@ -1,4 +1,4 @@
-﻿// PlayerBoneEditorSubPanel.cs
+// PlayerBoneEditorSubPanel.cs
 // ボーン・描画メッシュ統合 TRS エディタ（旧 BoneEditorSubPanel + ObjectMoveTRSPanel の統合）
 // SubPanelScope でボーンのみ / 描画メッシュのみ / 両方 を切り替え可能。
 // Runtime/Poly_Ling_Player/View/ に配置
@@ -966,8 +966,12 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null) return;
 
-            string path = RecentFileDialog.AskSave(
-                "原点CSVの書き出し", OriginCsvRecentKey, SanitizeFileName(model.Name) + "_origin", "csv");
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            // 読込側の履歴（OriginCsvRecentKey）とは分ける。共有していたため、
+            // 「読み込んだ原点CSVをそのまま上書きする」経路になっていた。
+            string path = SaveDest.AskSavePath(
+                "原点CSVの書き出し", SaveDest.Keys.OriginCsv, "",
+                SanitizeFileName(model.Name) + "_origin", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             bool withRot = IncludeRotationInCsv;

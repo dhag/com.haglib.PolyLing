@@ -1,4 +1,4 @@
-﻿// PlayerTPoseSubPanel.cs
+// PlayerTPoseSubPanel.cs
 // TPosePanelV2 の Player 版サブパネル。
 // Runtime/Poly_Ling_Player/View/ に配置
 
@@ -317,8 +317,9 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null) { SetStatus("モデルがありません"); return; }
 
-            string path = RecentFileDialog.AskSave(
-                "原点CSVの書き出し", OriginCsvRecentKey,
+            // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+            string path = SaveDest.AskSavePath(
+                "原点CSVの書き出し", SaveDest.Keys.OriginCsv, "",
                 SanitizeFileName(model.Name) + "_tpose_origin", "csv");
             if (string.IsNullOrEmpty(path)) return;
 

@@ -2,7 +2,8 @@
     "name": "PolyLing.Editor",
     "rootNamespace": "",
     "references": [
-        "PolyLing.Runtime"
+        "PolyLing.Runtime",
+        "HagLib.NET.Duplex.Runtime"
     ],
     "includePlatforms": [
         "Editor"

@@ -83,7 +83,6 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private const string PmxPathKey = "Import.PMX.Path";
-        private const string VrmPathKey = "Export.VRM.Path";
 
         // ================================================================
         // VRM(UniVRM) のジョイント既定値
@@ -144,7 +143,6 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private TextField    _pmxPathField;
-        private TextField    _vrmPathField;
         private Toggle       _doImport;
         private Toggle       _doExport;
         private EnumField    _shapeField;
@@ -175,6 +173,9 @@ namespace Poly_Ling.Player
         private int _meshCountBeforeImport;
 
         private string _reportPath = "";
+
+        /// <summary>実行のたびに保存ダイアログで確定した VRM の書き出し先。</summary>
+        private string _vrmPath = "";
 
         private int _chains, _joints, _colliders, _groups, _mapped;
         private Poly_Ling.Vrm.Vrm10ExportResult _exportResult;
@@ -212,11 +213,10 @@ namespace Poly_Ling.Player
             _doExport = new Toggle("VRM を書き出す") { value = true };
             root.Add(_doExport);
 
-            _vrmPathField = new TextField("VRM パス");
-            _vrmPathField.style.fontSize = 10;
-            _vrmPathField.SetValueWithoutNotify(SafeGet(VrmPathKey));
-            _vrmPathField.RegisterValueChangedCallback(e => SafeSet(VrmPathKey, e.newValue));
-            root.Add(_vrmPathField);
+            root.Add(MakeOutDest("VRM の保存先", "vrm", () => "springbone_test.vrm"));
+            root.Add(Hint(
+                "[...] は書き込み先フォルダを決めるだけです。ファイル名は「実行」を押したときの"
+              + "保存ダイアログで決めます。"));
 
             // ── 形状 ──────────────────────────────────────────────────
             root.Add(Sec("生成する装備"));
@@ -345,7 +345,6 @@ namespace Poly_Ling.Player
             if (IsRunning) return;
 
             _pmxPathField?.SetValueWithoutNotify(SafeGet(PmxPathKey));
-            _vrmPathField?.SetValueWithoutNotify(SafeGet(VrmPathKey));
         }
 
         protected override bool CanRun()
@@ -370,8 +369,12 @@ namespace Poly_Ling.Player
             if (_doExport.value)
             {
                 if (ExportVrm == null) { SetStatus("配線が足りません（ExportVrm）。"); return false; }
-                if (string.IsNullOrEmpty(_vrmPathField.value))
-                { SetStatus("VRM パスが空です。"); return false; }
+
+                // 書き出し先は毎回ここで確定する（「名前を付けて保存」）。
+                // 以前はエクスポートパネルと同じ履歴キーを読んでいたため、
+                // 「実行」がエクスポートパネルで最後に保存した VRM を黙って潰していた。
+                _vrmPath = AskOutPath();
+                if (string.IsNullOrEmpty(_vrmPath)) return false;   // キャンセル
             }
 
             return true;
@@ -384,9 +387,7 @@ namespace Poly_Ling.Player
             _chains = _joints = _colliders = _groups = _mapped = 0;
             _exportResult = null;
 
-            _reportPath = Path.Combine(
-                Application.persistentDataPath, "PolyLing", "SpringBoneTest",
-                DateTime.Now.ToString("yyyyMMdd_HHmmss"), "report.txt");
+            _reportPath = BuildReportPath("SpringBoneTest");
         }
 
         protected override void CollectStages(List<(string Name, Func<StageResult> Run)> stages)
@@ -1057,7 +1058,7 @@ namespace Poly_Ling.Player
 
         private StageResult StageExportVrm()
         {
-            string path = _vrmPathField.value;
+            string path = _vrmPath;
 
             var settings = Poly_Ling.Vrm.Vrm10ExportSettings.CreateDefault();
             settings.SupplementHumanoid = true;
@@ -1074,7 +1075,6 @@ namespace Poly_Ling.Player
                 return Ng("Humanoid ボーンが 0 件で出力された", null,
                     "VRM 1.0 は humanoid が必須。0 件のファイルはビューアが読めない。");
 
-            SafeSet(VrmPathKey, path);
             WriteReport(null);
 
             if (result.SpringCount == 0)
@@ -1115,7 +1115,7 @@ namespace Poly_Ling.Player
                 + (abortReason != null ? "（中断）" : ""));
             sb.AppendLine("日時: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine("PMX: " + (_pmxPathField?.value ?? ""));
-            sb.AppendLine("VRM: " + (_vrmPathField?.value ?? ""));
+            sb.AppendLine("VRM: " + _vrmPath);
             if (abortReason != null) sb.AppendLine("中断理由: " + abortReason);
             sb.AppendLine();
 

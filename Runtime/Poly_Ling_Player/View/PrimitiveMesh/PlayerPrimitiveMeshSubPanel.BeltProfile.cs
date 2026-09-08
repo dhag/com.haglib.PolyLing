@@ -610,8 +610,10 @@ namespace Poly_Ling.Player
             {
                 if (belts.Count == 0) { SetBeltStatus(T("FrillNoBase")); return; }
 
-                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), recentKey, path, defaultName, "csv");
+                // パス欄は読込用。保存は毎回ダイアログを出す。
+                // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+                string save = SaveDest.AskSavePath(
+                    T("SaveCSV"), SaveDest.Keys.ProfileCsv, "", defaultName, "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 path = save;
                 pathField.value = path;
@@ -687,9 +689,10 @@ namespace Poly_Ling.Player
             {
                 EnsureBeltProfile(ed);
 
-                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
-                string save = PlayerIoUiKit.AskSavePath(
-                    T("SaveCSV"), ed.CsvRecentKey, ed.CsvPath, ed.CsvDefaultName, "csv");
+                // パス欄は読込用。保存は毎回ダイアログを出す。
+                // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
+                string save = SaveDest.AskSavePath(
+                    T("SaveCSV"), SaveDest.Keys.ProfileCsv, "", ed.CsvDefaultName, "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 ed.CsvPath = save;
                 pathField.value = ed.CsvPath;

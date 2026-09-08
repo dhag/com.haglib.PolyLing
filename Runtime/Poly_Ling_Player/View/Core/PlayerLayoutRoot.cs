@@ -438,6 +438,15 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：コマンド定義の検査ボタン（システムデバッグ）。</summary>
         public Button        CommandSchemaBtn        { get; private set; }
 
+        /// <summary>左ペイン：MCP用サンドボックスの図形生成を開くボタン。</summary>
+        public Button        McpSandboxBtn           { get; private set; }
+
+        /// <summary>
+        /// 右ペイン：MCP用サンドボックスのセクション
+        /// （PlayerMcpSandboxSubPanel を Build する対象）。
+        /// </summary>
+        public VisualElement McpSandboxSection       { get; private set; }
+
         public VisualElement OriginTestSection        { get; private set; }
         public Button        OriginTestBtn            { get; private set; }
         public VisualElement SkinTestSection          { get; private set; }
@@ -1584,6 +1593,14 @@ namespace Poly_Ling.Player
             CommandSchemaBtn = MakeBtn("コマンド定義の検査"); CommandSchemaBtn.style.flexGrow = 1;
             rowSysDebug4.Add(CommandSchemaBtn); foSysDebug.Add(rowSysDebug4);
 
+            // ── MCP用サンドボックス ───────────────────────────────────
+            // MCPサーバ経由で追加した動作確認用の置き場。中身はこれから。
+            var foMcpSandbox = MakeFoldout("MCP用サンドボックス", "McpSandbox");
+
+            var rowMcpSandbox = new VisualElement(); rowMcpSandbox.style.flexDirection = FlexDirection.Row; rowMcpSandbox.style.marginBottom = 2;
+            McpSandboxBtn = MakeBtn("MCPテスト"); McpSandboxBtn.style.flexGrow = 1;
+            rowMcpSandbox.Add(McpSandboxBtn); foMcpSandbox.Add(rowMcpSandbox);
+
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
             scroll.Add(foRemote);
@@ -1598,6 +1615,7 @@ namespace Poly_Ling.Player
             scroll.Add(foOther);
             scroll.Add(foMerge);
             scroll.Add(foSysDebug);
+            scroll.Add(foMcpSandbox);
 
             scroll.Add(Separator());
 
@@ -1963,6 +1981,9 @@ namespace Poly_Ling.Player
 
             // ── 新図形生成セクション（検証用の2つ目のインスタンス）
             LivePrimitiveSection = AddSection(visible: false);
+
+            // ── MCP用サンドボックス（図形生成とは独立した試作の置き場）
+            McpSandboxSection = AddSection(visible: false);
 
             // ── MeshFilter→Skinnedセクション（ScrollView内へ移動）
             MeshFilterToSkinnedSection = AddSection(visible: false);

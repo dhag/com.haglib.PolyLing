@@ -32,14 +32,14 @@ namespace Poly_Ling.Player
     /// <summary>コマンド定義の検査とスキーマ書き出し。</summary>
     public class PlayerCommandSchemaSubPanel
     {
-        /// <summary>書き出し先のファイル名。作業フォルダからの相対。</summary>
+        /// <summary>保存ダイアログのファイル名欄の初期値。</summary>
         private const string DefaultFileName = "tools.json";
 
-        private VisualElement _root;
-        private Label         _summaryLabel;
-        private Label         _statusLabel;
-        private TextField     _fileField;
-        private ScrollView    _resultView;
+        private VisualElement     _root;
+        private Label             _summaryLabel;
+        private Label             _statusLabel;
+        private PlayerSaveDestRow _saveDest;
+        private ScrollView        _resultView;
 
         public void Build(VisualElement parent)
         {
@@ -81,18 +81,20 @@ namespace Poly_Ling.Player
             _root.Add(exportHeader);
 
             var exportDesc = new Label(
-                "作業フォルダからの相対パスで指定します。絶対パスと \"..\" は拒否されます。");
+                "[...] は書き込み先フォルダを決めるだけです。"
+              + "ファイル名は「名前を付けて保存」のダイアログで決めます。");
             exportDesc.style.fontSize     = 10;
             exportDesc.style.whiteSpace   = WhiteSpace.Normal;
             exportDesc.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             exportDesc.style.marginBottom = 3;
             _root.Add(exportDesc);
 
-            _fileField = new TextField { value = DefaultFileName };
-            _fileField.style.marginBottom = 3;
-            _root.Add(_fileField);
+            _saveDest = new PlayerSaveDestRow(
+                "書き込み先フォルダ", SaveDest.Keys.Schema, "道具一覧の保存先", "json",
+                () => DefaultFileName);
+            _root.Add(_saveDest.Root);
 
-            var exportBtn = new Button(OnExport) { text = "スキーマを書き出す" };
+            var exportBtn = new Button(OnExport) { text = "名前を付けて保存" };
             exportBtn.style.height       = 26;
             exportBtn.style.marginBottom = 4;
             _root.Add(exportBtn);
@@ -115,6 +117,7 @@ namespace Poly_Ling.Player
         /// <summary>開くたびに呼ばれる。検査は自動で走らせない（重いため）。</summary>
         public void Refresh()
         {
+            _saveDest?.Refresh();
         }
 
         // ================================================================
@@ -153,14 +156,11 @@ namespace Poly_Ling.Player
         {
             SetStatus("");
 
-            string rel = _fileField?.value;
-            if (string.IsNullOrWhiteSpace(rel)) rel = DefaultFileName;
-
-            if (!PLSandbox.TryResolveWrite(rel, out string full, out string reason))
-            {
-                SetStatus(reason);
-                return;
-            }
+            // 保存先は必ずダイアログで確定する（他のパネルと同じ規約）。
+            // ダイアログで選んだパスは PLSandbox が 1 回だけ通すので、
+            // 作業フォルダの外でも書ける。
+            string full = _saveDest?.AskSavePath() ?? "";
+            if (string.IsNullOrEmpty(full)) return;   // キャンセル
 
             try
             {
