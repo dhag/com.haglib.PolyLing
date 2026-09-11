@@ -716,70 +716,70 @@ namespace Poly_Ling.Player
 
             // ── システムデバッグ ───────────────────────────────────────
             // 自動検証の入口。通常の編集操作ではないので独立させる。
-            var foSysDebug = MakeFoldout("参考手順・システムデバッグ", "SysDebug");
+            var foSysDebug = MakeFoldout("シナリオ・参考手順・システムデバッグ", "SysDebug");
 
             // 2 個並びの行は左ボタンに marginRight = 2 を付け、右ボタンには余白を付けない。
             // 単独行のボタンは flexGrow = 1 のみ。全行でこの規則にそろえること。
 
             // 1) ロボ組み立て（名前が長いので単独行）
             var rowSysDebug1 = new VisualElement(); rowSysDebug1.style.flexDirection = FlexDirection.Row; rowSysDebug1.style.marginBottom = 2;
-            RobotBuildTestBtn = MakeBtn("ロボ組み立て自動検証"); RobotBuildTestBtn.style.flexGrow = 1;
+            RobotBuildTestBtn = MakeBtn("ロボを組み立てる"); RobotBuildTestBtn.style.flexGrow = 1;
             rowSysDebug1.Add(RobotBuildTestBtn); foSysDebug.Add(rowSysDebug1);
 
             // 2) 回転体 / 2D押し出し
             var rowSysDebug2 = new VisualElement(); rowSysDebug2.style.flexDirection = FlexDirection.Row; rowSysDebug2.style.marginBottom = 2;
-            RevolutionTestBtn = MakeBtn("回転体生成自動検証");     RevolutionTestBtn.style.flexGrow = 1; RevolutionTestBtn.style.marginRight = 2;
-            Profile2DTestBtn  = MakeBtn("2D押し出し自動検証"); Profile2DTestBtn.style.flexGrow  = 1;
+            RevolutionTestBtn = MakeBtn("回転体を生成する");     RevolutionTestBtn.style.flexGrow = 1; RevolutionTestBtn.style.marginRight = 2;
+            Profile2DTestBtn  = MakeBtn("2D押し出し物体を作る"); Profile2DTestBtn.style.flexGrow  = 1;
             rowSysDebug2.Add(RevolutionTestBtn); rowSysDebug2.Add(Profile2DTestBtn); foSysDebug.Add(rowSysDebug2);
 
             // 3a) フリルスカート（名前が長いので単独行）
             var rowSysDebug3 = new VisualElement(); rowSysDebug3.style.flexDirection = FlexDirection.Row; rowSysDebug3.style.marginBottom = 2;
-            FrillSkirtTestBtn = MakeBtn("フリル・プリーツ自動検証"); FrillSkirtTestBtn.style.flexGrow = 1;
+            FrillSkirtTestBtn = MakeBtn("フリル・プリーツの基本"); FrillSkirtTestBtn.style.flexGrow = 1;
             rowSysDebug3.Add(FrillSkirtTestBtn); foSysDebug.Add(rowSysDebug3);
             // 3b) 前髪パイプ / 藤壺
             var rowSysDebug4 = new VisualElement(); rowSysDebug4.style.flexDirection = FlexDirection.Row; rowSysDebug4.style.marginBottom = 2;
-            PipeHairTestBtn = MakeBtn("前髪パイプ自動検証"); PipeHairTestBtn.style.flexGrow = 1; PipeHairTestBtn.style.marginRight = 2;
-            BarnacleTestBtn = MakeBtn("藤壺自動検証");       BarnacleTestBtn.style.flexGrow = 1;
+            PipeHairTestBtn = MakeBtn("前髪パイプの基本"); PipeHairTestBtn.style.flexGrow = 1; PipeHairTestBtn.style.marginRight = 2;
+            BarnacleTestBtn = MakeBtn("藤壺の基本");       BarnacleTestBtn.style.flexGrow = 1;
             rowSysDebug4.Add(PipeHairTestBtn); rowSysDebug4.Add(BarnacleTestBtn); foSysDebug.Add(rowSysDebug4);
 
             // 4a) 揺れもの→スキンド→VRM（名前が長いので単独行）
             var rowSysDebug3b = new VisualElement(); rowSysDebug3b.style.flexDirection = FlexDirection.Row; rowSysDebug3b.style.marginBottom = 2;
-            SpringSkinScenarioBtn = MakeBtn("揺れもの（フリル）→スキンド→VRM 自動検証"); SpringSkinScenarioBtn.style.flexGrow = 1;
+            SpringSkinScenarioBtn = MakeBtn("揺れもの（フリル）→スキンド→VRM "); SpringSkinScenarioBtn.style.flexGrow = 1;
             rowSysDebug3b.Add(SpringSkinScenarioBtn); foSysDebug.Add(rowSysDebug3b);
 
             // 4b) 揺れもの（パイプ）→スキンド→VRM（名前が長いので単独行）
             var rowSysDebug3c = new VisualElement(); rowSysDebug3c.style.flexDirection = FlexDirection.Row; rowSysDebug3c.style.marginBottom = 2;
-            SpringSkinPipeScenarioBtn = MakeBtn("揺れもの（パイプ）→スキンド→VRM 自動検証"); SpringSkinPipeScenarioBtn.style.flexGrow = 1;
+            SpringSkinPipeScenarioBtn = MakeBtn("揺れもの（パイプ）→スキンド→VRM "); SpringSkinPipeScenarioBtn.style.flexGrow = 1;
             rowSysDebug3c.Add(SpringSkinPipeScenarioBtn); foSysDebug.Add(rowSysDebug3c);
 
 
             // 5) 原点CSV / スキン生成
             var rowSysDebug5 = new VisualElement(); rowSysDebug5.style.flexDirection = FlexDirection.Row; rowSysDebug5.style.marginBottom = 2;
-            OriginTestBtn = MakeBtn("原点CSV自動検証");   OriginTestBtn.style.flexGrow = 1; OriginTestBtn.style.marginRight = 2;
-            SkinTestBtn   = MakeBtn("スキン生成自動検証"); SkinTestBtn.style.flexGrow   = 1;
+            OriginTestBtn = MakeBtn("原点CSVを取り込む");   OriginTestBtn.style.flexGrow = 1; OriginTestBtn.style.marginRight = 2;
+            SkinTestBtn   = MakeBtn("スキンを生成する"); SkinTestBtn.style.flexGrow   = 1;
             rowSysDebug5.Add(OriginTestBtn); rowSysDebug5.Add(SkinTestBtn); foSysDebug.Add(rowSysDebug5);
 
             // 6) スプリングボーン検証（単独行）
             var rowSysDebug6 = new VisualElement(); rowSysDebug6.style.flexDirection = FlexDirection.Row; rowSysDebug6.style.marginBottom = 2;
-            SpringBoneTestBtn = MakeBtn("スプリングボーン検証"); SpringBoneTestBtn.style.flexGrow = 1;
+            SpringBoneTestBtn = MakeBtn("スプリングボーンの基本"); SpringBoneTestBtn.style.flexGrow = 1;
             rowSysDebug6.Add(SpringBoneTestBtn); foSysDebug.Add(rowSysDebug6);
 
             // 7) PMX をソースにして MQO の頂点位置を差し替え、別名で保存する検証。
             // 名前が長いので 1 行使う。
             var rowSysDebug7 = new VisualElement(); rowSysDebug7.style.flexDirection = FlexDirection.Row; rowSysDebug7.style.marginBottom = 2;
-            PmxToMqoTestBtn = MakeBtn("PMX位置→MQO保存 自動検証"); PmxToMqoTestBtn.style.flexGrow = 1;
+            PmxToMqoTestBtn = MakeBtn("PMXの頂点位置→MQOを差し替える"); PmxToMqoTestBtn.style.flexGrow = 1;
             rowSysDebug7.Add(PmxToMqoTestBtn); foSysDebug.Add(rowSysDebug7);
 
             // 8) MQO をソースにして PMX の頂点位置と UV を差し替え、別名で保存する検証。
             // 名前が長いので 1 行使う。
             var rowSysDebug8 = new VisualElement(); rowSysDebug8.style.flexDirection = FlexDirection.Row; rowSysDebug8.style.marginBottom = 2;
-            MqoToPmxTestBtn = MakeBtn("MQO位置UV→PMX保存 自動検証"); MqoToPmxTestBtn.style.flexGrow = 1;
+            MqoToPmxTestBtn = MakeBtn("MQO位置とUV→PMXを差し替える"); MqoToPmxTestBtn.style.flexGrow = 1;
             rowSysDebug8.Add(MqoToPmxTestBtn); foSysDebug.Add(rowSysDebug8);
 
             // 9) コマンド定義の検査。PLParam の付け忘れ・action 衝突・
             // スキーマに出せない型を調べ、道具一覧（JSON）を書き出す。
             var rowSysDebug9 = new VisualElement(); rowSysDebug9.style.flexDirection = FlexDirection.Row; rowSysDebug9.style.marginBottom = 2;
-            CommandSchemaBtn = MakeBtn("コマンド定義の検査"); CommandSchemaBtn.style.flexGrow = 1;
+            CommandSchemaBtn = MakeBtn("コマンド定義の検査・登録"); CommandSchemaBtn.style.flexGrow = 1;
             rowSysDebug9.Add(CommandSchemaBtn); foSysDebug.Add(rowSysDebug9);
 
             // ── MCP用サンドボックス ───────────────────────────────────
