@@ -536,6 +536,57 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 【起動時専用入口】ビューポートの実サイズ確定後の 1 回リフレッシュ
+        // ================================================================
+
+        /// <summary>
+        /// ★★★【起動時専用・カテゴリ 9: ビューポート準備完了】★★★
+        ///
+        /// 使用場面（起動直後の 1 回限り）:
+        ///   - 4 つの PlayerViewportPanel が UIToolkit のレイアウトで実サイズを得て、
+        ///     RenderTexture が 1×1 から実寸へ Resize された直後。
+        ///
+        /// 使用してはならない場面:
+        ///   - 通常のカメラ操作 → EnterCameraChanged
+        ///   - モデルロード・図形生成 → EnterSceneReset
+        ///   - トポロジ変更・頂点移動 → EnterTopologyChanged / EnterVerticesMoved
+        ///   - ウィンドウリサイズのたびに呼ぶこと（毎回の再描画は既存経路の責務）
+        ///
+        /// 【この入口が要る理由】
+        ///   Initialize 直後は UIToolkit のレイアウトが未確定で、RT は
+        ///   PlayerViewport.Initialize の CreateRT(1,1) のまま。この状態では
+        ///   ・Unity Camera.transform が既定値（位置 0 / 回転 identity）のまま
+        ///   ・OrthoViewController の PendingResetHalfHeight が
+        ///     cam.pixelHeight > 1f を満たさず未解決のまま
+        ///   になる。Tick 廃止後は ApplyCameraTransform を走らせる契機が
+        ///   カメライベントしか無く、起動直後は誰も呼ばない。
+        ///
+        /// 【EnterCameraChanged で代替できない理由】
+        ///   NotifyCameraChanged は _renderer.GetAdapter(0) が null のとき早期 return し、
+        ///   vp.ApplyCameraTransform() に到達しない。モデル未ロード時は
+        ///   RebuildAdapter が未実行でアダプタが存在しないため、必ずこの経路に入る。
+        ///
+        /// 【EnterSceneReset で代替しない理由】
+        ///   あちらは RebuildAdapter / SetSelectionState / OnApplySelectMode を伴う
+        ///   重量級専用入口で、カメラ確定だけが欲しい起動時には過剰。
+        ///
+        /// 責務:
+        ///   1. 4 viewport 全ての Camera.transform をカメラパラメータへ同期
+        ///   2. 全 slot を内容 dirty にする（初回カリングを必ず計算させる）
+        ///   3. PresentAll で 4 slot 分の Prepare を実行
+        ///
+        /// 冪等。複数回呼んでも結果は変わらない。
+        /// </summary>
+        public void EnterViewportsReady()
+        {
+#pragma warning disable CS0618
+            ApplyAllViewportCameraTransforms();
+            MarkAllSlotsDirty();
+            PresentAll(_lastProjectForPresent);
+#pragma warning restore CS0618
+        }
+
+        // ================================================================
         // 描画（LateUpdate から呼ぶ）
         // ================================================================
 

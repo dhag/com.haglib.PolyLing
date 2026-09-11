@@ -268,12 +268,18 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // 既にボーンが居ても止めない。
+            //
+            // 変換本体は既にあるボーンを壊さない。Phase 2
+            // （MeshFilterToSkinnedConverter.cs:628-651）が、先頭へ挿した boneCount ぶん
+            // HierarchyParentIndex / MirrorBoneIndex / BoneWeight / MirrorBoneWeight を
+            // 漏れなくずらす。メッシュを親にしていたボーンは Phase 4a が
+            // そのメッシュのボーン配下へ付け替える。
+            //
+            // はしごから揺れボーンを先に作ってからスキンド化する手順を通すために、
+            // ここは知らせるだけにする。
             bool hasBones = _model.MeshContextList.Any(ctx => ctx?.Type == MeshType.Bone);
-            if (hasBones)
-            {
-                SetStatus(T("AlreadyHasBones"));
-                return;
-            }
+            if (hasBones) SetStatus(T("AlreadyHasBones"));
 
             // コマンド経由で変換（Undo記録あり）
             if (_panelContext != null)

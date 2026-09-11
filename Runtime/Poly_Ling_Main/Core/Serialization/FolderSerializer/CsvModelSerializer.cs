@@ -155,6 +155,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (model.ObjectGroups != null && model.ObjectGroups.Count > 0)
                 WriteObjectGroupsCsv(modelFolderPath, model);
 
+            // datastore.csv（コマンドが返した実データの辞書）
+            //   空のときはファイルを消す。残しておくと、前回の保存で作られた
+            //   項目が次の読込で復活する。
+            WriteOrDeleteDataStoreCsv(modelFolderPath, model);
+
             // mirrorpairs.csv
             if (model.MirrorPairs != null && model.MirrorPairs.Count > 0)
                 WriteMirrorPairsCsv(modelFolderPath, model, useNameBased);
@@ -363,6 +368,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // objectgroups.csv
             ReadObjectGroupsCsv(modelFolderPath, model);
+
+            // datastore.csv
+            ReadDataStoreCsv(modelFolderPath, model);
 
             // mirrorpairs.csv
             ReadMirrorPairsCsv(modelFolderPath, model);
@@ -1055,6 +1063,303 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
+        // datastore.csv（コマンドが返した実データの辞書）
+        //
+        // 【行の形】
+        //   e,name,kind,source,masterIndex,objectId,createdAt  … 項目 1 件の見出し
+        //   s,mode,vCount,v...,eCount,e1,e2,...,fCount,f...,
+        //     lCount,l...,idCount,idx,id,parts,sub,...          … IndexSet の中身
+        //   l,vCount,cx,cy,cz,v0,v1,...                         … ループ 1 本
+        //   v,key,isText,number,text                            … 値 1 件
+        //
+        //   s / l / v は直前の e に属する。項目 1 件がループを数十本持つので、
+        //   1 行に詰めると列が伸びて読めない。objectgroups.csv と同じく
+        //   種別を先頭列に置いて行を分ける。
+        //
+        // 【s 行の列並び】
+        //   CsvMeshSerializer の ss 行から名前だけを外したもの。
+        //   名前は e 行が持つので重複させない。並びを合わせてあるので、
+        //   片方を直すときはもう片方も見ること。
+        //
+        // 【ObjectId を書く】
+        //   参照は索引と ObjectId の両方で持つ。名前ベース保存でも
+        //   ObjectId は 10 進のまま（objectgroups.csv と同じ）。
+        // ================================================================
+
+        private static void WriteOrDeleteDataStoreCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "datastore.csv");
+
+            var store = model.DataStore;
+            if (store == null || store.Count == 0)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_DataStore,version,1.0");
+
+            foreach (var e in store.Entries)
+            {
+                if (e == null || string.IsNullOrEmpty(e.Name)) continue;
+
+                sb.Append("e,").Append(Esc(e.Name)).Append(',').Append(e.Kind).Append(',')
+                  .Append(Esc(e.Source)).Append(',').Append(e.MasterIndex).Append(',')
+                  .Append(e.ObjectId.ToString(CultureInfo.InvariantCulture)).Append(',')
+                  .Append(Esc(e.CreatedAt.ToString("o", CultureInfo.InvariantCulture)));
+                sb.AppendLine();
+
+                switch (e.Kind)
+                {
+                    case PLDataKind.IndexSet:
+                        WriteDataStoreIndexSet(sb, e.IndexSet);
+                        break;
+
+                    case PLDataKind.LoopSet:
+                        if (e.Loops != null)
+                            foreach (var loop in e.Loops) WriteDataStoreLoop(sb, loop);
+                        break;
+
+                    case PLDataKind.ValueSet:
+                        if (e.Values != null)
+                            foreach (var v in e.Values) WriteDataStoreValue(sb, v);
+                        break;
+                }
+            }
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void WriteDataStoreIndexSet(StringBuilder sb, Poly_Ling.Selection.PartsSelectionSet ss)
+        {
+            if (ss == null) return;
+
+            sb.Append("s,").Append(ss.Mode);
+
+            sb.Append(',').Append(ss.Vertices.Count);
+            foreach (var v in ss.Vertices) sb.Append(',').Append(v);
+
+            sb.Append(',').Append(ss.Edges.Count);
+            foreach (var e in ss.Edges) sb.Append(',').Append(e.V1).Append(',').Append(e.V2);
+
+            sb.Append(',').Append(ss.Faces.Count);
+            foreach (var f in ss.Faces) sb.Append(',').Append(f);
+
+            sb.Append(',').Append(ss.Lines.Count);
+            foreach (var l in ss.Lines) sb.Append(',').Append(l);
+
+            var map = ss.VertexIds;
+            if (map == null || map.Count == 0)
+            {
+                sb.Append(",0");
+            }
+            else
+            {
+                sb.Append(',').Append(map.Count);
+                foreach (var kv in map)
+                    sb.Append(',').Append(kv.Key).Append(',').Append(kv.Value.Id)
+                      .Append(',').Append(kv.Value.PartsId).Append(',').Append(kv.Value.SubId);
+            }
+
+            sb.AppendLine();
+        }
+
+        private static void WriteDataStoreLoop(StringBuilder sb, PLDataLoop loop)
+        {
+            if (loop == null) return;
+
+            int n = loop.Vertices?.Count ?? 0;
+            sb.Append("l,").Append(n).Append(',')
+              .Append(Fl(loop.Centroid.x)).Append(',')
+              .Append(Fl(loop.Centroid.y)).Append(',')
+              .Append(Fl(loop.Centroid.z));
+
+            for (int i = 0; i < n; i++) sb.Append(',').Append(loop.Vertices[i]);
+
+            sb.AppendLine();
+        }
+
+        private static void WriteDataStoreValue(StringBuilder sb, PLDataValue v)
+        {
+            sb.Append("v,").Append(Esc(v.Key)).Append(',').Append(v.IsText ? "true" : "false")
+              .Append(',').Append(v.IsText
+                  ? "0"
+                  : v.Number.ToString("R", CultureInfo.InvariantCulture))
+              .Append(',').Append(Esc(v.IsText ? (v.Text ?? "") : ""));
+            sb.AppendLine();
+        }
+
+        private static void ReadDataStoreCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "datastore.csv");
+
+            var store = model.DataStore;
+            if (store == null) return;
+
+            if (!File.Exists(path)) { store.Clear(); return; }
+
+            var entries = new List<PLDataEntry>();
+            PLDataEntry current = null;
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 1) continue;
+
+                switch (cols[0])
+                {
+                    case "e":
+                        current = ReadDataStoreEntryHead(cols);
+                        if (current != null) entries.Add(current);
+                        break;
+
+                    case "s":
+                        if (current != null && current.Kind == PLDataKind.IndexSet)
+                            current.IndexSet = ReadDataStoreIndexSet(cols, current.Name);
+                        break;
+
+                    case "l":
+                        if (current != null && current.Kind == PLDataKind.LoopSet)
+                        {
+                            if (current.Loops == null) current.Loops = new List<PLDataLoop>();
+                            current.Loops.Add(ReadDataStoreLoop(cols));
+                        }
+                        break;
+
+                    case "v":
+                        if (current != null && current.Kind == PLDataKind.ValueSet)
+                        {
+                            if (current.Values == null) current.Values = new List<PLDataValue>();
+                            current.Values.Add(ReadDataStoreValue(cols));
+                        }
+                        break;
+                }
+            }
+
+            store.ReplaceAll(entries);
+        }
+
+        /// <summary>e 行から項目の見出しを作る。中身は後続の行が埋める。</summary>
+        private static PLDataEntry ReadDataStoreEntryHead(string[] cols)
+        {
+            // e,name,kind,source,masterIndex,objectId,createdAt
+            string name = Unesc(SafeGet(cols, 1));
+            if (string.IsNullOrEmpty(name)) return null;
+
+            var e = new PLDataEntry
+            {
+                Name        = name,
+                Source      = Unesc(SafeGet(cols, 3)),
+                MasterIndex = PInt(cols, 4, -1),
+            };
+
+            if (Enum.TryParse<PLDataKind>(SafeGet(cols, 2), out var kind))
+                e.Kind = kind;
+
+            if (ulong.TryParse(SafeGet(cols, 5), NumberStyles.Integer,
+                               CultureInfo.InvariantCulture, out var oid))
+                e.ObjectId = oid;
+
+            string created = Unesc(SafeGet(cols, 6));
+            if (!string.IsNullOrEmpty(created) &&
+                DateTime.TryParse(created, CultureInfo.InvariantCulture,
+                                  DateTimeStyles.RoundtripKind, out var dt))
+                e.CreatedAt = dt;
+
+            // 中身の入れ物は種類ぶんだけ先に用意する。s / l / v 行が
+            // 1 本も無い（空の集合）ときでも null にしないため。
+            switch (e.Kind)
+            {
+                case PLDataKind.IndexSet:
+                    e.IndexSet = new Poly_Ling.Selection.PartsSelectionSet(name);
+                    break;
+                case PLDataKind.LoopSet:
+                    e.Loops = new List<PLDataLoop>();
+                    break;
+                case PLDataKind.ValueSet:
+                    e.Values = new List<PLDataValue>();
+                    break;
+            }
+
+            return e;
+        }
+
+        /// <summary>s 行を読む。列並びは CsvMeshSerializer.ReadSelectionSet と同じ（名前だけ無い）。</summary>
+        private static Poly_Ling.Selection.PartsSelectionSet ReadDataStoreIndexSet(string[] cols, string name)
+        {
+            var ss = new Poly_Ling.Selection.PartsSelectionSet(name ?? "");
+
+            int idx = 1;
+            if (Enum.TryParse<Poly_Ling.Selection.MeshSelectMode>(SafeGet(cols, idx), out var mode))
+                ss.Mode = mode;
+            idx++;
+
+            int vCount = PInt(cols, idx++);
+            for (int i = 0; i < vCount; i++) ss.Vertices.Add(PInt(cols, idx++));
+
+            int eCount = PInt(cols, idx++);
+            for (int i = 0; i < eCount; i++)
+            {
+                int v1 = PInt(cols, idx++);
+                int v2 = PInt(cols, idx++);
+                ss.Edges.Add(new Poly_Ling.Selection.VertexPair(v1, v2));
+            }
+
+            int fCount = PInt(cols, idx++);
+            for (int i = 0; i < fCount; i++) ss.Faces.Add(PInt(cols, idx++));
+
+            int lCount = PInt(cols, idx++);
+            for (int i = 0; i < lCount; i++) ss.Lines.Add(PInt(cols, idx++));
+
+            int idCount = PInt(cols, idx++);
+            for (int i = 0; i < idCount; i++)
+            {
+                int vi    = PInt(cols, idx++);
+                int id    = PInt(cols, idx++);
+                int parts = PInt(cols, idx++);
+                int sub   = PInt(cols, idx++);
+                ss.VertexIds[vi] = new VertexIdTriple(id, parts, sub);
+            }
+
+            return ss;
+        }
+
+        /// <summary>l 行を読む。</summary>
+        private static PLDataLoop ReadDataStoreLoop(string[] cols)
+        {
+            // l,vCount,cx,cy,cz,v0,v1,...
+            var loop = new PLDataLoop();
+
+            int n = PInt(cols, 1);
+            loop.Centroid = new Vector3(PFl(cols, 2), PFl(cols, 3), PFl(cols, 4));
+
+            for (int i = 0; i < n; i++)
+            {
+                int ci = 5 + i;
+                if (ci >= cols.Length) break;
+                loop.Vertices.Add(PInt(cols, ci));
+            }
+
+            return loop;
+        }
+
+        /// <summary>v 行を読む。</summary>
+        private static PLDataValue ReadDataStoreValue(string[] cols)
+        {
+            // v,key,isText,number,text
+            string key = Unesc(SafeGet(cols, 1));
+
+            if (PBool(cols, 2))
+                return PLDataValue.Str(key, Unesc(SafeGet(cols, 4)));
+
+            double.TryParse(SafeGet(cols, 3), NumberStyles.Float,
+                            CultureInfo.InvariantCulture, out double num);
+            return PLDataValue.Num(key, num);
+        }
+
+        // ================================================================
         // objectgroups.csv（オブジェクトグループ）
         //
         // 【行の形】
@@ -1071,10 +1376,21 @@ namespace Poly_Ling.Serialization.FolderSerializer
         //   useNameBased の分岐が要らない。
         // ================================================================
 
+        // 【行の形】
+        //   g … グループ 1 件の頭。action と出力先はステップ 0 の要約で、
+        //        version 1.0 の読み手がここだけを見て 1 ステップのグループとして
+        //        読めるようにしてある。
+        //   s … ステップの頭。以降の o / a / r はこのステップに付く
+        //   o … そのステップの出力先 ObjectId 列
+        //   a … パラメータ 1 件
+        //   r … 描画オブジェクト参照 1 件（キーと ObjectId 列）
+        //
+        //   s の無いファイル（version 1.0）は、a / r が来た時点で g の控えから
+        //   ステップ 0 を作って読む。
         private static void WriteObjectGroupsCsv(string folderPath, ModelContext model)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("#PolyLing_ObjectGroups,version,1.0");
+            sb.AppendLine("#PolyLing_ObjectGroups,version,1.1");
 
             foreach (var g in model.ObjectGroups)
             {
@@ -1085,15 +1401,31 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     $"{g.OutputObjectId},{g.StashObjectId}," +
                     $"{(g.AutoUpdate ? 1 : 0)},{Esc(g.SourceDigest ?? "")}");
 
-                foreach (var kv in g.SortedArgs())
-                    sb.AppendLine($"a,{Esc(kv.Key)},{Esc(kv.Value ?? "")}");
+                if (g.Steps == null) continue;
 
-                foreach (var kv in g.SortedMeshRefIds())
+                foreach (var st in g.Steps)
                 {
-                    sb.Append($"r,{Esc(kv.Key)}");
-                    if (kv.Value != null)
-                        foreach (ulong id in kv.Value) sb.Append($",{id}");
-                    sb.AppendLine();
+                    if (st == null) continue;
+
+                    sb.AppendLine($"s,{Esc(st.Action ?? "")}");
+
+                    if (st.OutputObjectIds != null && st.OutputObjectIds.Count > 0)
+                    {
+                        sb.Append("o");
+                        foreach (ulong id in st.OutputObjectIds) sb.Append($",{id}");
+                        sb.AppendLine();
+                    }
+
+                    foreach (var kv in st.SortedArgs())
+                        sb.AppendLine($"a,{Esc(kv.Key)},{Esc(kv.Value ?? "")}");
+
+                    foreach (var kv in st.SortedMeshRefIds())
+                    {
+                        sb.Append($"r,{Esc(kv.Key)}");
+                        if (kv.Value != null)
+                            foreach (ulong id in kv.Value) sb.Append($",{id}");
+                        sb.AppendLine();
+                    }
                 }
             }
 
@@ -1107,44 +1439,105 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             model.ObjectGroups = new List<Poly_Ling.Data.ObjectGroup>();
 
-            Poly_Ling.Data.ObjectGroup cur = null;
+            Poly_Ling.Data.ObjectGroup     cur     = null;
+            Poly_Ling.Data.ObjectGroupStep curStep = null;
+
+            // s 行が無いファイル（version 1.0）のために、g 行の値を控えておく。
+            string legacyAction = "";
+            ulong  legacyOutput = 0UL;
+
+            // s 行が無いまま o / a / r が来たら、g 行の控えからステップ 0 を作る。
+            Poly_Ling.Data.ObjectGroupStep EnsureStep()
+            {
+                if (curStep != null) return curStep;
+                if (cur == null) return null;
+
+                curStep = new Poly_Ling.Data.ObjectGroupStep { Action = legacyAction };
+                if (legacyOutput != 0UL) curStep.OutputObjectIds.Add(legacyOutput);
+                cur.Steps.Add(curStep);
+                return curStep;
+            }
+
+            // ステップが 1 つも書かれていないグループ（パラメータの無い 1 ステップ）。
+            void CloseGroup()
+            {
+                if (cur != null && cur.Steps.Count == 0) EnsureStep();
+            }
 
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
                 if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
                 var cols = Split(line);
-                if (cols.Length < 2) continue;
+
+                // Split は行末の空欄を落とす（"s," は 1 列になる）。
+                // action が空のステップがあるので、列数の下限は種別ごとに見る。
+                if (cols.Length < 1) continue;
 
                 switch (cols[0])
                 {
                     case "g":
+                        if (cols.Length < 2) break;
+                        CloseGroup();
+
+                        legacyAction = cols.Length > 2 ? Unesc(cols[2]) : "";
+                        legacyOutput = PULong(cols, 3);
+
                         cur = new Poly_Ling.Data.ObjectGroup(Unesc(cols[1]))
                         {
-                            Action         = cols.Length > 2 ? Unesc(cols[2]) : "",
-                            OutputObjectId = PULong(cols, 3),
-                            StashObjectId  = PULong(cols, 4),
-                            AutoUpdate     = PInt(cols, 5) != 0,
-                            SourceDigest   = cols.Length > 6 ? Unesc(cols[6]) : "",
+                            StashObjectId = PULong(cols, 4),
+                            AutoUpdate    = PInt(cols, 5) != 0,
+                            SourceDigest  = cols.Length > 6 ? Unesc(cols[6]) : "",
                         };
+                        cur.Steps.Clear();
+                        curStep = null;
                         model.ObjectGroups.Add(cur);
                         break;
 
-                    case "a":
+                    case "s":
                         // 先頭が g でないファイルは壊れている。捨てて次へ。
                         if (cur == null) break;
-                        cur.SetArg(Unesc(cols[1]), cols.Length > 2 ? Unesc(cols[2]) : "");
+                        curStep = new Poly_Ling.Data.ObjectGroupStep
+                        {
+                            Action = cols.Length > 1 ? Unesc(cols[1]) : "",
+                        };
+                        cur.Steps.Add(curStep);
                         break;
+
+                    case "o":
+                    {
+                        var st = EnsureStep();
+                        if (st == null) break;
+                        for (int i = 1; i < cols.Length; i++)
+                        {
+                            ulong id = PULong(cols, i);
+                            if (id != 0UL) st.OutputObjectIds.Add(id);
+                        }
+                        break;
+                    }
+
+                    case "a":
+                    {
+                        if (cols.Length < 2) break;
+                        var st = EnsureStep();
+                        if (st == null) break;
+                        st.SetArg(Unesc(cols[1]), cols.Length > 2 ? Unesc(cols[2]) : "");
+                        break;
+                    }
 
                     case "r":
                     {
-                        if (cur == null) break;
+                        if (cols.Length < 2) break;
+                        var st = EnsureStep();
+                        if (st == null) break;
                         var ids = new List<ulong>();
                         for (int i = 2; i < cols.Length; i++) ids.Add(PULong(cols, i));
-                        cur.SetMeshRefIds(Unesc(cols[1]), ids);
+                        st.SetMeshRefIds(Unesc(cols[1]), ids);
                         break;
                     }
                 }
             }
+
+            CloseGroup();
         }
 
         /// <summary>列を ulong として読む。読めなければ 0（＝参照なし）。</summary>

@@ -36,6 +36,8 @@ namespace Poly_Ling.Player
             BgSectionLabel = "フリル下絵A",
             CsvRecentKey   = "Primitive.Frill.ProfileCsv",
             CsvDefaultName = "frill_profile.csv",
+            CsvPairDefaultName = "frill_profile_ab.csv",
+            IsPairB        = false,
             ObjectName     = "FrillProfileA",
         };
 
@@ -49,6 +51,8 @@ namespace Poly_Ling.Player
             BgSectionLabel = "フリル下絵B",
             CsvRecentKey   = "Primitive.Frill.ProfileCsvB",
             CsvDefaultName = "frill_profile_b.csv",
+            CsvPairDefaultName = "frill_profile_ab.csv",
+            IsPairB        = true,
             ObjectName     = "FrillProfileB",
         };
 
@@ -60,6 +64,13 @@ namespace Poly_Ling.Player
         /// <summary>上下フリップ行。2プロファイルOFFのときは隠す。</summary>
         private VisualElement _frillFlipRow;
         private VisualElement _frillFlipHint;
+
+        /// <summary>鎖モード行。2プロファイルOFFのときは隠す。</summary>
+        private VisualElement _frillChainRow;
+        private VisualElement _frillChainHint;
+
+        /// <summary>2プロファイルのトグル。4列CSV読込で強制ONにしたとき表示を合わせる。</summary>
+        private Toggle _frillTwoProfilesToggle;
 
         /// <summary>梯子1本ごとの高さ倍率スライダを並べるコンテナ。梯子リストの変化で作り直す。</summary>
         private VisualElement _frillBeltScaleContainer;
@@ -177,10 +188,36 @@ namespace Poly_Ling.Player
             seamHint.style.marginBottom = 2;
             c.Add(seamHint);
 
+            // ── はしごのウェイトを引き継ぐ ──
+            c.Add(TR(T("BeltInheritWeights"), () => _frillP.InheritBeltWeights,
+                v => { _frillP.InheritBeltWeights = v; D(); }));
+
+            var inheritHint = new Label(
+                "取り込み元のはしごに塗ってあるボーンウェイトを、生成した頂点へ配ります。"
+                   + "頂点は線分の両端のウェイトを断面の x で混ぜたものになります。"
+                   + "はしごの点と位置が合う頂点から引くので、はしごを塗っていなければ何も起きません。"
+                   + "厚み付けと重複頂点の結合を越えて残ります。");
+            inheritHint.style.fontSize     = 10;
+            inheritHint.style.whiteSpace   = WhiteSpace.Normal;
+            inheritHint.style.marginBottom = 2;
+            c.Add(inheritHint);
+
+            // ── プリーツを広げる ──
+            c.Add(IR(T("FrillRungSpan"), FrillParams.RungSpanMin, FrillParams.RungSpanMax,
+                () => _frillP.RungSpan, v => { _frillP.RungSpan = v; D(); }));
+
+            var spanHint = new Label(T("FrillRungSpanHint"));
+            spanHint.style.fontSize     = 10;
+            spanHint.style.whiteSpace   = WhiteSpace.Normal;
+            spanHint.style.marginBottom = 2;
+            c.Add(spanHint);
+
             // ── 断面プロファイルを2本にする ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(TR(T("FrillTwoProfiles"), () => _frillP.TwoProfiles,
-                v => { _frillP.TwoProfiles = v; D(); RefreshFrillProfileVis(); RebuildFrillProfileEditor(); }));
+            var twoRow = TR(T("FrillTwoProfiles"), () => _frillP.TwoProfiles,
+                v => { _frillP.TwoProfiles = v; D(); RefreshFrillProfileVis(); RebuildFrillProfileEditor(); });
+            _frillTwoProfilesToggle = twoRow as Toggle;
+            c.Add(twoRow);
 
             var twoHint = new Label(T("FrillTwoProfilesHint"));
             twoHint.style.fontSize     = 10;
@@ -198,6 +235,18 @@ namespace Poly_Ling.Player
             flipHint.style.marginBottom = 2;
             _frillFlipHint = flipHint;
             c.Add(flipHint);
+
+            // ── 鎖に沿って A→B を配る ──
+            _frillChainRow = TR(T("FrillChainProfiles"), () => _frillP.ChainProfiles,
+                v => { _frillP.ChainProfiles = v; D(); });
+            c.Add(_frillChainRow);
+
+            var chainHint = new Label(T("FrillChainProfilesHint"));
+            chainHint.style.fontSize     = 10;
+            chainHint.style.whiteSpace   = WhiteSpace.Normal;
+            chainHint.style.marginBottom = 2;
+            _frillChainHint = chainHint;
+            c.Add(chainHint);
 
             RefreshFrillProfileVis();
 
@@ -251,12 +300,28 @@ namespace Poly_Ling.Player
             RebuildFrillProfileEditor();
         }
 
+        /// <summary>
+        /// 2プロファイルを強制的にONにする。4列CSV（XA,YA,XB,YB）を読んだときに使う。
+        /// エディタの組み直しは呼出し側（OnPairLoaded）が行う。
+        /// </summary>
+        private void EnableFrillTwoProfiles()
+        {
+            if (_frillP.TwoProfiles) return;
+
+            _frillP.TwoProfiles = true;
+            _frillTwoProfilesToggle?.SetValueWithoutNotify(true);
+            RefreshFrillProfileVis();
+            D();
+        }
+
         /// <summary>上下フリップ行の表示切替（2プロファイルON時のみ出す）。</summary>
         private void RefreshFrillProfileVis()
         {
             var d = _frillP.TwoProfiles ? DisplayStyle.Flex : DisplayStyle.None;
-            if (_frillFlipRow  != null) _frillFlipRow.style.display  = d;
-            if (_frillFlipHint != null) _frillFlipHint.style.display = d;
+            if (_frillFlipRow   != null) _frillFlipRow.style.display   = d;
+            if (_frillFlipHint  != null) _frillFlipHint.style.display  = d;
+            if (_frillChainRow  != null) _frillChainRow.style.display  = d;
+            if (_frillChainHint != null) _frillChainHint.style.display = d;
         }
 
         /// <summary>
@@ -272,6 +337,14 @@ namespace Poly_Ling.Player
 
             EnsureBeltProfile(_frillEdit);
             EnsureBeltProfile(_frillEditB);
+
+            // ペアの配線。フィールド初期化子では相互参照もインスタンス参照もできないため、
+            // ここで毎回入れ直す。
+            _frillEdit .PairOther    = _frillEditB;
+            _frillEditB.PairOther    = _frillEdit;
+            _frillEdit .PairEnabled  = _frillEditB.PairEnabled  = () => _frillP.TwoProfiles;
+            _frillEdit .EnablePair   = _frillEditB.EnablePair   = EnableFrillTwoProfiles;
+            _frillEdit .OnPairLoaded = _frillEditB.OnPairLoaded = RebuildFrillProfileEditor;
 
             bool two = _frillP.TwoProfiles;
             if (!two) _frillEditingB = false;
@@ -413,20 +486,24 @@ namespace Poly_Ling.Player
             // 融合ありはレール行ごと、融合なしは梯子ごとにパーツIDを 0 から連番にする。
             var partsIds = new Poly_Ling.PrimitiveMesh.PartsIdCounter();
 
+            var inputs = new List<FrillBeltInput>();
+            foreach (var belt in _frillBelts)
+            {
+                if (belt == null || !belt.HasData) continue;
+                inputs.Add(ToFrillInput(
+                    ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline),
+                    _frillP.HeightScale, _frillP.ProfileFlip));
+            }
+
+            // 鎖モードの t は梯子どうしの関係で決まるので、全部そろってから配り直す。
+            if (_frillP.TwoProfiles && _frillP.ChainProfiles)
+                FrillChainProfile.Assign(inputs, _frillP.ProfileFlip);
+
             if (_frillP.ConnectShared)
             {
-                var inputs = new List<FrillBeltInput>();
-                foreach (var belt in _frillBelts)
-                {
-                    if (belt == null || !belt.HasData) continue;
-                    inputs.Add(ToFrillInput(
-                        ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline),
-                        _frillP.HeightScale, _frillP.ProfileFlip));
-                }
-
                 var joined = FrillMeshGenerator.Generate(
                     inputs, _frillEdit.Points, _frillEditB.Points, _frillP.TwoProfiles,
-                    true, _frillP.RungSeam, _frillP.MeshName, partsIds);
+                    true, _frillP.RungSeam, _frillP.MeshName, partsIds, _frillP.RungSpan);
 
                 var solid = ApplySolidify(joined,
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
@@ -440,16 +517,13 @@ namespace Poly_Ling.Player
 
             var single = new List<FrillBeltInput>(1) { null };
             var mo = new MeshObject(_frillP.MeshName);
-            foreach (var belt in _frillBelts)
+            foreach (var input in inputs)
             {
-                if (belt == null || !belt.HasData) continue;
-                single[0] = ToFrillInput(
-                    ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline),
-                    _frillP.HeightScale, _frillP.ProfileFlip);
+                single[0] = input;
 
                 var part = FrillMeshGenerator.Generate(
                     single, _frillEdit.Points, _frillEditB.Points, _frillP.TwoProfiles,
-                    false, _frillP.RungSeam, _frillP.MeshName, partsIds);
+                    false, _frillP.RungSeam, _frillP.MeshName, partsIds, _frillP.RungSpan);
                 part = ApplySolidify(part,
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
                     _frillP.EdgeSizeFront, _frillP.EdgeSizeBack, _frillP.EdgeInward,

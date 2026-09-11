@@ -1762,6 +1762,15 @@ namespace Poly_Ling.UnityClip
         // サンプリング（スパースキー・線形補間）
         // ================================================================
 
+        /// <summary>
+        /// Animator トラック（マッスル・RootT / RootQ）を timeSec で線形補間して返す。
+        ///
+        /// サンプリングの規則をここ 1 か所に集める。Root 系を扱う
+        /// UnityClipRootMotion も同じ補間で読むため、実装を書き写さずここを呼ぶ。
+        /// </summary>
+        public static float SampleTrackValue(UnityMuscleTrackDTO track, float timeSec)
+            => SampleWeight(track, timeSec);
+
         // マッスル重み（正規化値）を timeSec で線形補間
         private static float SampleWeight(UnityMuscleTrackDTO track, float timeSec)
         {

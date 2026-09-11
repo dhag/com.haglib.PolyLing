@@ -322,6 +322,7 @@ namespace Poly_Ling.Player
         private PlayerVertexTransferSubPanel     _vertexTransferSubPanel;
         private SplitVerticesToolHandler          _splitVerticesHandler;
         private VertexHoleToolHandler             _vertexHoleHandler;
+        private EdgeRibbonFaceToolHandler        _edgeRibbonFaceHandler;
         private VertexDissolveToolHandler         _vertexDissolveHandler;
         private HoleRingCountToolHandler          _holeRingCountHandler;
         private Tri4To1ToolHandler                _tri4To1Handler;
@@ -395,6 +396,8 @@ namespace Poly_Ling.Player
         private PlayerSkinTestSubPanel       _skinTestSubPanel;
         private PlayerSpringBoneTestSubPanel _springBoneTestSubPanel;
         private PlayerFrillSkirtTestSubPanel _frillSkirtTestSubPanel;
+        private PlayerSpringSkinScenarioSubPanel _springSkinScenarioSubPanel;
+        private PlayerSpringSkinPipeScenarioSubPanel _springSkinPipeScenarioSubPanel;
         private PlayerPipeHairTestSubPanel   _pipeHairTestSubPanel;
         private PlayerBarnacleTestSubPanel   _barnacleTestSubPanel;
         private PlayerRevolutionTestSubPanel _revolutionTestSubPanel;
@@ -777,6 +780,10 @@ namespace Poly_Ling.Player
                 _editOps?.UndoController,
                 _editOps?.CommandQueue);
 
+            // MCP（名前付きパイプ）からの実行入口。RemoteMode に依存しない。
+            // 対の解除は Dispose 内。
+            PolyLingCommandGateway.Dispatch = cmd => _commandDispatcher.Dispatch(cmd);
+
             // 生成系コマンドの受け口。実処理は Viewer 側にあるので委譲する。
             WireCreateCommandHandlers();
 
@@ -884,6 +891,7 @@ namespace Poly_Ling.Player
                 _edgeBevelHandler?.SetProject(ActiveProject);
                 _edgeExtrudeHandler?.SetProject(ActiveProject);
                 _faceExtrudeHandler?.SetProject(ActiveProject);
+                _edgeRibbonFaceHandler?.SetProject(ActiveProject);
                 _edgeTopologyHandler?.SetProject(ActiveProject);
                 _knifeHandler?.SetProject(ActiveProject);
                 _solidifyHandler?.SetProject(ActiveProject);
@@ -1193,6 +1201,9 @@ namespace Poly_Ling.Player
             _logSubPanel?.Dispose();
             _logSubPanel = null;
             PlayerLog.Uninstall();
+
+            // MCP からの実行入口を外す。掴んだままだと破棄済みのディスパッチャを触る。
+            PolyLingCommandGateway.Dispatch = null;
         }
 
         // ================================================================
@@ -4078,6 +4089,7 @@ namespace Poly_Ling.Player
                     _edgeBevelHandler?.SetProject(ActiveProject);
                     _edgeExtrudeHandler?.SetProject(ActiveProject);
                     _faceExtrudeHandler?.SetProject(ActiveProject);
+                _edgeRibbonFaceHandler?.SetProject(ActiveProject);
                     _edgeTopologyHandler?.SetProject(ActiveProject);
                     _knifeHandler?.SetProject(ActiveProject);
                     _deleteSelectionHandler?.SetProject(ActiveProject);
@@ -4740,6 +4752,31 @@ namespace Poly_Ling.Player
             };
             _frillSkirtTestSubPanel.Build(_layoutRoot.FrillSkirtTestSection);
 
+            // 揺れもの→スキンド→VRM 自動検証。
+            // ボーンを先に作ってから一括スキンド化する順が通ることを見る。
+            // 塗りの契機がスキンド化 1 か所に集約されていることの検証も兼ねる。
+            _springSkinScenarioSubPanel = new PlayerSpringSkinScenarioSubPanel
+            {
+                GetProject    = () => ActiveProject,
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _springSkinScenarioSubPanel.Build(_layoutRoot.SpringSkinScenarioSection);
+
+            // 揺れもの（パイプ）→スキンド→VRM 自動検証。
+            // フリル版と同じ MQO・同じ順で、フリルの段だけをパイプへ置き換えたもの。
+            // パイプははしご 1 本ごとに作って Append で連結するので、
+            // 連結を越えてウェイトが残るかをここで見る。
+            _springSkinPipeScenarioSubPanel = new PlayerSpringSkinPipeScenarioSubPanel
+            {
+                GetProject    = () => ActiveProject,
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _springSkinPipeScenarioSubPanel.Build(_layoutRoot.SpringSkinPipeScenarioSection);
+
             // 前髪パイプ自動検証。四分球を梯子にしてパイプを生やす。
             // 開始タグ三角形・終了三角形を足して梯子の自動検出を通す経路の確認も兼ねる。
             _pipeHairTestSubPanel = new PlayerPipeHairTestSubPanel
@@ -4994,10 +5031,12 @@ namespace Poly_Ling.Player
 
             _exportSubPanel = new PlayerExportSubPanel();
             _exportSubPanel.Build(_layoutRoot.ExportSection);
-            _exportSubPanel.OnExportPmx = OnExportPmx;
-            _exportSubPanel.OnExportMqo = OnExportMqo;
-            _exportSubPanel.OnExportObj = OnExportObj;
-            _exportSubPanel.OnExportVrm = OnExportVrm;
+            // 受け口（Execute*ExportFile）が失敗理由を返せるよう、これらは string を返す。
+            // パネル経路では戻り値を使わないのでラムダで捨てる。
+            _exportSubPanel.OnExportPmx = (p, s) => OnExportPmx(p, s);
+            _exportSubPanel.OnExportMqo = (p, s) => OnExportMqo(p, s);
+            _exportSubPanel.OnExportObj = (p, s) => OnExportObj(p, s);
+            _exportSubPanel.OnExportVrm = (p, s) => OnExportVrm(p, s);
             AttachPanelSelectToggle(_layoutRoot.ExportSection, PanelSelectKeyExport);
 
             _projectSaveSubPanel = new PlayerProjectFileSubPanel
@@ -5005,8 +5044,8 @@ namespace Poly_Ling.Player
                 Mode = PlayerProjectFileSubPanel.PanelMode.Save,
             };
             _projectSaveSubPanel.Build(_layoutRoot.ProjectSaveSection);
-            _projectSaveSubPanel.OnSave    = OnSaveProject;
-            _projectSaveSubPanel.OnSaveCsv = OnSaveCsvProject;
+            _projectSaveSubPanel.OnSave    = p => OnSaveProject(p);
+            _projectSaveSubPanel.OnSaveCsv = p => OnSaveCsvProject(p);
             AttachPanelSelectToggle(_layoutRoot.ProjectSaveSection, PanelSelectKeyProjectSave);
 
             _projectLoadSubPanel = new PlayerProjectFileSubPanel
@@ -5014,8 +5053,8 @@ namespace Poly_Ling.Player
                 Mode = PlayerProjectFileSubPanel.PanelMode.Load,
             };
             _projectLoadSubPanel.Build(_layoutRoot.ProjectLoadSection);
-            _projectLoadSubPanel.OnLoad    = OnLoadProject;
-            _projectLoadSubPanel.OnLoadCsv = OnLoadCsvProject;
+            _projectLoadSubPanel.OnLoad    = p => OnLoadProject(p);
+            _projectLoadSubPanel.OnLoadCsv = (p, m) => OnLoadCsvProject(p, m);
             AttachPanelSelectToggle(_layoutRoot.ProjectLoadSection, PanelSelectKeyProjectLoad);
 
             _partialImportSubPanel = new PlayerPartialImportSubPanel();
@@ -5048,6 +5087,8 @@ namespace Poly_Ling.Player
             // 追加先ドロップダウン（名前欄の差し替え先）の既定選択。
             _primitiveSubPanel.GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1;
             _primitiveSubPanel.OnObjectArrayGenerate = SendObjectArrayCommand;
+            // 辺から帯面（高度な図形）。選択辺の本数と対象はモデル側から読む。
+            WireEdgeRibbonFaceCallbacks(_primitiveSubPanel);
             // 穴つなぎ（ブリッジ）。種の取り込みと実生成は Viewer 側が持つ。
             WireBridgeCallbacks(_primitiveSubPanel);
             AttachPanelSelectToggle(_layoutRoot.PrimitiveSection, PanelSelectKeyPrimitive);
@@ -5092,6 +5133,8 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
             _livePrimitiveSubPanel.GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1;
             _livePrimitiveSubPanel.OnObjectArrayGenerate = SendObjectArrayCommand;
+            // 辺から帯面（新しい高度）。既存インスタンスと同じ経路を通す。
+            WireEdgeRibbonFaceCallbacks(_livePrimitiveSubPanel);
             // 穴つなぎ（ブリッジ）。既存インスタンスと同じ経路を通す。
             WireBridgeCallbacks(_livePrimitiveSubPanel);
 
@@ -5262,6 +5305,10 @@ namespace Poly_Ling.Player
                 _layoutRoot.SpringBoneTestBtn.clicked += ShowSpringBoneTestPanel;
             if (_layoutRoot.FrillSkirtTestBtn != null)
                 _layoutRoot.FrillSkirtTestBtn.clicked += ShowFrillSkirtTestPanel;
+            if (_layoutRoot.SpringSkinScenarioBtn != null)
+                _layoutRoot.SpringSkinScenarioBtn.clicked += ShowSpringSkinScenarioPanel;
+            if (_layoutRoot.SpringSkinPipeScenarioBtn != null)
+                _layoutRoot.SpringSkinPipeScenarioBtn.clicked += ShowSpringSkinPipeScenarioPanel;
             if (_layoutRoot.PipeHairTestBtn != null)
                 _layoutRoot.PipeHairTestBtn.clicked += ShowPipeHairTestPanel;
             if (_layoutRoot.BarnacleTestBtn != null)
@@ -5513,6 +5560,39 @@ namespace Poly_Ling.Player
             _layoutRoot.FrontPanel      .SetViewport(_viewportManager.FrontViewport);
             _layoutRoot.SidePanel       .SetViewport(_viewportManager.SideViewport);
 
+            // ── 起動直後の 1 回リフレッシュ ──────────────────────────────
+            // BuildLayout の時点では UIToolkit のレイアウトが未確定で、
+            // 各ビューポートの RenderTexture は PlayerViewport.Initialize が作った
+            // 1×1 のまま。この状態では Camera.pixelHeight が 1 になり、
+            // OrthoViewController の遅延ズーム（PendingResetHalfHeight）も解決できない。
+            // 4 枚すべてが実サイズを得た時点で EnterViewportsReady を 1 回だけ呼び、
+            // 全ビューのカメラ確定と再描画を行う。以降はカメライベントに任せる。
+            {
+                var readyPanels = new[]
+                {
+                    _layoutRoot.PerspectivePanel,
+                    _layoutRoot.TopPanel,
+                    _layoutRoot.FrontPanel,
+                    _layoutRoot.SidePanel,
+                };
+                var readyHandlers = new System.Action[readyPanels.Length];
+                int readyCount = 0;
+                for (int i = 0; i < readyPanels.Length; i++)
+                {
+                    int idx = i;
+                    readyHandlers[idx] = () =>
+                    {
+                        // 自分の購読を外す（OnFirstRealSize は元々 1 回きりだが、
+                        // 参照を残さないことでパネル破棄時の取り残しを防ぐ）。
+                        readyPanels[idx].OnFirstRealSize -= readyHandlers[idx];
+                        readyCount++;
+                        if (readyCount < readyPanels.Length) return;
+                        _viewportManager.EnterViewportsReady();
+                    };
+                    readyPanels[idx].OnFirstRealSize += readyHandlers[idx];
+                }
+            }
+
             // ミラー系トグルの従属関係を UI に反映する。
             //
             //   ミラー（独立。非選Mesh に従属しないので常に操作可能）
@@ -5752,6 +5832,8 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.SkinTestSection,          () => _skinTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SpringBoneTestSection,    () => _springBoneTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FrillSkirtTestSection,    () => _frillSkirtTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SpringSkinScenarioSection, () => _springSkinScenarioSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SpringSkinPipeScenarioSection, () => _springSkinPipeScenarioSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PipeHairTestSection,      () => _pipeHairTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.BarnacleTestSection,      () => _barnacleTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RevolutionTestSection,    () => _revolutionTestSubPanel?.Refresh()));
@@ -7030,6 +7112,22 @@ namespace Poly_Ling.Player
             _frillSkirtTestSubPanel?.Refresh();
         }
 
+        private void ShowSpringSkinScenarioPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.SpringSkinScenarioSection, _layoutRoot?.SpringSkinScenarioBtn);
+            _springSkinScenarioSubPanel?.Refresh();
+        }
+
+        private void ShowSpringSkinPipeScenarioPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.SpringSkinPipeScenarioSection, _layoutRoot?.SpringSkinPipeScenarioBtn);
+            _springSkinPipeScenarioSubPanel?.Refresh();
+        }
+
         private void ShowRobotBuildTestPanel()
         {
             // カテゴリ 3
@@ -7518,6 +7616,8 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.SkinTestSection);
             Hide(_layoutRoot.RobotBuildTestSection);
             Hide(_layoutRoot.FrillSkirtTestSection);
+            Hide(_layoutRoot.SpringSkinScenarioSection);
+            Hide(_layoutRoot.SpringSkinPipeScenarioSection);
             Hide(_layoutRoot.PipeHairTestSection);
             Hide(_layoutRoot.BarnacleTestSection);
             Hide(_layoutRoot.RevolutionTestSection);
@@ -7957,6 +8057,60 @@ namespace Poly_Ling.Player
         /// 穴つなぎのコールバックを図形生成サブパネルへ配線する。
         /// 2つのインスタンスとも同じ処理を通す（状態はサブパネル側が個別に持つ）。
         /// </summary>
+        /// <summary>
+        /// 辺から帯面（高度な図形）のコールバックを図形生成パネルへ繋ぐ。
+        ///
+        /// ハンドラは 2 つのパネルで共有する。設定値（幅）はコマンドが持ち、
+        /// 受け口が実行のたびに差し替えて元へ戻すので、状態を分ける必要がない。
+        /// </summary>
+        private void WireEdgeRibbonFaceCallbacks(PlayerPrimitiveMeshSubPanel panel)
+        {
+            if (panel == null) return;
+
+            EnsureEdgeRibbonFaceHandler();
+
+            panel.GetSelectedDrawableIndices = () =>
+            {
+                var sel = ActiveProject?.CurrentModel?.SelectedDrawableMeshIndices;
+                return sel != null ? sel.ToArray() : System.Array.Empty<int>();
+            };
+
+            panel.GetSelectedEdgeCount = () =>
+                _edgeRibbonFaceHandler?.GetSelectedEdgeCount() ?? 0;
+
+            panel.BuildEdgeRibbonFaceMesh = width =>
+            {
+                if (_edgeRibbonFaceHandler == null) return null;
+                return _edgeRibbonFaceHandler.Build(width, out var mo, out _) ? mo : null;
+            };
+        }
+
+        /// <summary>
+        /// 辺から帯面のハンドラを用意する。パネルの配線から呼ぶので、
+        /// ハンドラ生成とパネル構築の順序に依存しない。
+        /// 中身は _vertexHoleHandler と同じ形。
+        /// </summary>
+        private void EnsureEdgeRibbonFaceHandler()
+        {
+            if (_edgeRibbonFaceHandler != null) return;
+
+            _edgeRibbonFaceHandler = new EdgeRibbonFaceToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _edgeRibbonFaceHandler.SetProject(ActiveProject);
+            _edgeRibbonFaceHandler.SetUndoController(_editOps?.UndoController);
+            _edgeRibbonFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _edgeRibbonFaceHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+        }
+
         private void WireBridgeCallbacks(PlayerPrimitiveMeshSubPanel panel)
         {
             if (panel == null) return;
@@ -8582,7 +8736,7 @@ namespace Poly_Ling.Player
             // 失敗理由を捨てない。捨てると生成できていないのに
             // 「新しいモデル」と表示されてしまう。
             string placeReason = PlaceGeneratedMesh(
-                mo, panel.BridgeMeshName, pl, Vector3.zero, Vector3.one);
+                mo, panel.BridgeMeshName, pl, Vector3.zero, Vector3.one, out _);
             if (placeReason != null) { panel.SetBridgeStatus(placeReason); return; }
 
             panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} → 新しいモデル");
@@ -8761,6 +8915,7 @@ namespace Poly_Ling.Player
             _edgeBevelHandler?.SetProject(ActiveProject);
             _edgeExtrudeHandler?.SetProject(ActiveProject);
             _faceExtrudeHandler?.SetProject(ActiveProject);
+            _edgeRibbonFaceHandler?.SetProject(ActiveProject);
             _edgeTopologyHandler?.SetProject(ActiveProject);
             _knifeHandler?.SetProject(ActiveProject);
             _solidifyHandler?.SetProject(ActiveProject);
@@ -8871,13 +9026,13 @@ namespace Poly_Ling.Player
         /// <summary>
         /// モード1: 新しい描画オブジェクトとして現在のモデルに追加。UNDO対応。
         /// </summary>
-        private void PrimitiveMeshCreateNewObject(
+        private int PrimitiveMeshCreateNewObject(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
             bool ignorePoseInArmature, int materialIndex = -1)
         {
             var model = project.CurrentModel;
-            if (model == null) return;
+            if (model == null) return -1;
 
             // 既存の描画オブジェクトと名前が衝突しないようにしてから作る。
             meshName = model.GenerateUniqueMeshName(meshName);
@@ -8915,28 +9070,30 @@ namespace Poly_Ling.Player
             }
 
             PrimitiveMeshFinalize(model);
+
+            // 生成物の位置。呼び出し側が CommandResult へ載せる。
+            return insertIndex;
         }
 
         /// <summary>
         /// モード2: 既存の選択中描画オブジェクトに頂点・面をマージ。UNDO対応。
         /// 描画オブジェクトが存在しない場合はモード1にフォールバック。
         /// </summary>
-        private void PrimitiveMeshAddToExisting(
+        private int PrimitiveMeshAddToExisting(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
             bool ignorePoseInArmature, int addTargetIndex = -1, int materialIndex = -1)
         {
             var model  = project.CurrentModel;
-            if (model == null) return;
+            if (model == null) return -1;
 
             // 追加先はパネルの名前欄ドロップダウンで選んだオブジェクト。
             // -1（未選択・未配線）のときだけ従来どおり選択オブジェクトリストの先頭。
             var targetMc = ResolveAddTargetMeshContext(model, addTargetIndex);
             if (targetMc == null || targetMc.MeshObject == null)
             {
-                PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
+                return PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
                     poseRotation, poseScale, ignorePoseInArmature, materialIndex);
-                return;
             }
 
             // 既存オブジェクトへのマージでは姿勢を持てないため、
@@ -9013,6 +9170,9 @@ namespace Poly_Ling.Player
 
             model.ComputeWorldMatrices();
             PrimitiveMeshFinalize(model);
+
+            // マージ先の位置。呼び出し側が CommandResult へ載せる。
+            return model.IndexOf(targetMc);
         }
 
         /// <summary>
@@ -9032,12 +9192,15 @@ namespace Poly_Ling.Player
         ///   AddToExisting と同じく、対象の姿勢はそのまま使い、渡ってきた
         ///   回転・拡大・平行移動は頂点へ焼き込む。
         /// </summary>
+        /// <param name="masterIndex">置き換えた描画オブジェクトの位置。失敗時は -1。</param>
         /// <returns>失敗理由。成功時は null。</returns>
         private string PrimitiveMeshReplaceExisting(
             ProjectContext project, MeshObject meshObject,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            int targetIndex, int materialIndex = -1)
+            int targetIndex, int materialIndex, out int masterIndex)
         {
+            masterIndex = -1;
+
             var model = project?.CurrentModel;
             if (model == null) return "モデルがありません";
 
@@ -9114,19 +9277,23 @@ namespace Poly_Ling.Player
 
             model.ComputeWorldMatrices();
             PrimitiveMeshFinalize(model);
+
+            // 置き換え先の位置。呼び出し側が CommandResult へ載せる。
+            masterIndex = model.IndexOf(targetMc);
             return null;
         }
 
         /// <summary>
         /// モード3: 新しいモデルを作って描画オブジェクトを追加。UNDO対応（メッシュ追加のみ）。
         /// </summary>
-        private void PrimitiveMeshCreateNewModel(
+        /// <returns>新モデル内での位置。作れなかったときは -1。</returns>
+        private int PrimitiveMeshCreateNewModel(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
             bool ignorePoseInArmature, int materialIndex = -1)
         {
             var newModel = project.CreateNewModel(meshName);
-            if (newModel == null) return;
+            if (newModel == null) return -1;
 
             // 新規モデルなので通常は衝突しないが、経路を揃えるため同じ一意化を通す。
             meshName = newModel.GenerateUniqueMeshName(meshName);
@@ -9169,6 +9336,9 @@ namespace Poly_Ling.Player
 
             PrimitiveMeshFinalize(newModel);
             RebuildModelList();
+
+            // 新モデル内での位置。呼び出し側が CommandResult へ載せる。
+            return insertIndex;
         }
 
         /// <summary>
@@ -9390,10 +9560,15 @@ namespace Poly_Ling.Player
             UnityEngine.Debug.Log("[ImportPostOptions] " + _status);
         }
 
-        private void OnExportObj(string outputPath, Poly_Ling.OBJ.ObjExportSettings settings)
+        /// <summary>
+        /// OBJ 書き出し。失敗理由を返す（成功時は null）。
+        /// パネル経路は戻り値を捨てる。コマンド経路（ExecuteExportObjFile）は
+        /// これをそのまま Fail() へ載せるため、状態表示だけでは足りない。
+        /// </summary>
+        private string OnExportObj(string outputPath, Poly_Ling.OBJ.ObjExportSettings settings)
         {
             var model = ActiveProject?.CurrentModel;
-            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return; }
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
                 var result = Poly_Ling.OBJ.ObjExporter.ExportFile(outputPath, model, settings);
@@ -9403,17 +9578,25 @@ namespace Poly_Ling.Player
                         ? ""
                         : $" + {System.IO.Path.GetFileName(result.MtlPath)}";
                     _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}{mtl}");
+                    return null;
                 }
-                else
-                    _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                return result.ErrorMessage;
             }
-            catch (Exception ex) { _exportSubPanel?.SetStatus($"例外: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                _exportSubPanel?.SetStatus($"例外: {ex.Message}");
+                return $"例外: {ex.Message}";
+            }
         }
 
-        private void OnExportVrm(string outputPath, Poly_Ling.Vrm.Vrm10ExportSettings settings)
+        /// <summary>
+        /// VRM 1.0 書き出し。失敗理由を返す（成功時は null）。警告は表示のみ。
+        /// </summary>
+        private string OnExportVrm(string outputPath, Poly_Ling.Vrm.Vrm10ExportSettings settings)
         {
             var model = ActiveProject?.CurrentModel;
-            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return; }
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
                 var result = Poly_Ling.Vrm.PLVrm10Bridge.I.Export(model, outputPath, settings);
@@ -9428,17 +9611,23 @@ namespace Poly_Ling.Player
                     if (!string.IsNullOrEmpty(result.Warning))
                         msg += "\n警告: " + result.Warning;
                     _exportSubPanel?.SetStatus(msg);
+                    return null;
                 }
-                else
-                    _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                return result.ErrorMessage;
             }
-            catch (Exception ex) { _exportSubPanel?.SetStatus($"例外: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                _exportSubPanel?.SetStatus($"例外: {ex.Message}");
+                return $"例外: {ex.Message}";
+            }
         }
 
-        private void OnExportPmx(string outputPath, PMXExportSettings settings)
+        /// <summary>PMX 書き出し。失敗理由を返す（成功時は null）。</summary>
+        private string OnExportPmx(string outputPath, PMXExportSettings settings)
         {
             var model = ActiveProject?.CurrentModel;
-            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return; }
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
                 var result = PMXExporter.Export(model, outputPath, settings);
@@ -9446,17 +9635,23 @@ namespace Poly_Ling.Player
                 {
                     AuxiliaryBackupWriter.Save(model, outputPath);
                     _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}");
+                    return null;
                 }
-                else
-                    _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                return result.ErrorMessage;
             }
-            catch (Exception ex) { _exportSubPanel?.SetStatus($"例外: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                _exportSubPanel?.SetStatus($"例外: {ex.Message}");
+                return $"例外: {ex.Message}";
+            }
         }
 
-        private void OnExportMqo(string outputPath, MQOExportSettings settings)
+        /// <summary>MQO 書き出し。失敗理由を返す（成功時は null）。</summary>
+        private string OnExportMqo(string outputPath, MQOExportSettings settings)
         {
             var model = ActiveProject?.CurrentModel;
-            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return; }
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
             try
             {
                 var result = MQOExporter.ExportFile(outputPath, model, settings);
@@ -9464,70 +9659,83 @@ namespace Poly_Ling.Player
                 {
                     AuxiliaryBackupWriter.Save(model, outputPath);
                     _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}");
+                    return null;
                 }
-                else
-                    _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                return result.ErrorMessage;
             }
-            catch (Exception ex) { _exportSubPanel?.SetStatus($"例外: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                _exportSubPanel?.SetStatus($"例外: {ex.Message}");
+                return $"例外: {ex.Message}";
+            }
         }
 
-        private void OnSaveProject(string path)
+        /// <summary>プロジェクト保存。失敗理由を返す（成功時は null）。</summary>
+        private string OnSaveProject(string path)
         {
-            if (string.IsNullOrEmpty(path)) { _projectSaveSubPanel?.SetStatus("パスが指定されていません"); return; }
+            if (string.IsNullOrEmpty(path)) { _projectSaveSubPanel?.SetStatus("パスが指定されていません"); return "パスが指定されていません"; }
             var project = ActiveProject;
-            if (project == null) { _projectSaveSubPanel?.SetStatus("プロジェクトがありません"); return; }
+            if (project == null) { _projectSaveSubPanel?.SetStatus("プロジェクトがありません"); return "プロジェクトがありません"; }
             var dto = ProjectSerializer.FromProjectContext(project);
-            if (dto == null) { _projectSaveSubPanel?.SetStatus("シリアライズ失敗"); return; }
+            if (dto == null) { _projectSaveSubPanel?.SetStatus("シリアライズ失敗"); return "シリアライズ失敗"; }
             bool ok = ProjectSerializer.Export(path, dto);
             _projectSaveSubPanel?.SetStatus(ok ? "保存完了" : "保存失敗");
+            return ok ? null : "保存失敗";
         }
 
-        private void OnLoadProject(string path)
+        /// <summary>プロジェクト読込。失敗理由を返す（成功時は null）。</summary>
+        private string OnLoadProject(string path)
         {
-            if (string.IsNullOrEmpty(path)) { _projectLoadSubPanel?.SetStatus("パスが指定されていません"); return; }
+            if (string.IsNullOrEmpty(path)) { _projectLoadSubPanel?.SetStatus("パスが指定されていません"); return "パスが指定されていません"; }
             var dto = ProjectSerializer.Import(path);
-            if (dto == null) { _projectLoadSubPanel?.SetStatus("読込失敗"); return; }
+            if (dto == null) { _projectLoadSubPanel?.SetStatus("読込失敗"); return "読込失敗"; }
             var loadedProject = ProjectSerializer.ToProjectContext(dto);
-            if (loadedProject == null) { _projectLoadSubPanel?.SetStatus("復元失敗"); return; }
+            if (loadedProject == null) { _projectLoadSubPanel?.SetStatus("復元失敗"); return "復元失敗"; }
             _localLoader.Clear();
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? dto.name, m);
             AdoptWorkAxisLibrary(loadedProject);
             AdoptCoordinateConvention();
             _projectLoadSubPanel?.SetStatus($"読込完了: {dto.name}");
+            return null;
         }
 
         // path はCSVプロジェクトファイル（任意名の .csv）。モデルフォルダは同ディレクトリ直下。
-        private void OnSaveCsvProject(string path)
+        /// <summary>プロジェクト CSV 保存。失敗理由を返す（成功時は null）。</summary>
+        private string OnSaveCsvProject(string path)
         {
-            if (string.IsNullOrEmpty(path)) { _projectSaveSubPanel?.SetStatus("パスが指定されていません"); return; }
+            if (string.IsNullOrEmpty(path)) { _projectSaveSubPanel?.SetStatus("パスが指定されていません"); return "パスが指定されていません"; }
             var project = ActiveProject;
-            if (project == null) { _projectSaveSubPanel?.SetStatus("プロジェクトがありません"); return; }
+            if (project == null) { _projectSaveSubPanel?.SetStatus("プロジェクトがありません"); return "プロジェクトがありません"; }
             bool ok = CsvProjectSerializer.ExportToFile(path, project);
             _projectSaveSubPanel?.SetStatus(ok ? "CSV保存完了" : "保存失敗");
+            return ok ? null : "保存失敗";
         }
 
         // path はCSVプロジェクトファイル（任意名の .csv）。
         // マージは指定ファイルと同じフォルダ内のメッシュCSVを対象にする。
-        private void OnLoadCsvProject(string path, bool merge)
+        /// <summary>プロジェクト CSV 読込。失敗理由を返す（成功時は null）。</summary>
+        private string OnLoadCsvProject(string path, bool merge)
         {
-            if (string.IsNullOrEmpty(path)) { _projectLoadSubPanel?.SetStatus("パスが指定されていません"); return; }
+            if (string.IsNullOrEmpty(path)) { _projectLoadSubPanel?.SetStatus("パスが指定されていません"); return "パスが指定されていません"; }
             if (merge)
             {
                 string mergeFolder = System.IO.Path.GetDirectoryName(path);
-                if (string.IsNullOrEmpty(mergeFolder)) { _projectLoadSubPanel?.SetStatus("パスが不正です"); return; }
+                if (string.IsNullOrEmpty(mergeFolder)) { _projectLoadSubPanel?.SetStatus("パスが不正です"); return "パスが不正です"; }
                 MergeCsvFromFolder(mergeFolder);
-                return;
+                return null;
             }
 
             var loadedProject = CsvProjectSerializer.ImportFromFile(path, out _, out _);
-            if (loadedProject == null) { _projectLoadSubPanel?.SetStatus("読込失敗"); return; }
+            if (loadedProject == null) { _projectLoadSubPanel?.SetStatus("読込失敗"); return "読込失敗"; }
             _localLoader.Clear();
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? loadedProject.Name, m);
             AdoptWorkAxisLibrary(loadedProject);
             AdoptCoordinateConvention();
             _projectLoadSubPanel?.SetStatus($"CSV読込完了: {loadedProject.Name}");
+            return null;
         }
 
         /// <summary>
@@ -11608,6 +11816,7 @@ namespace Poly_Ling.Player
                 _edgeBevelHandler?.SetProject(ActiveProject);
                 _edgeExtrudeHandler?.SetProject(ActiveProject);
                 _faceExtrudeHandler?.SetProject(ActiveProject);
+                _edgeRibbonFaceHandler?.SetProject(ActiveProject);
                 _edgeTopologyHandler?.SetProject(ActiveProject);
                 _knifeHandler?.SetProject(ActiveProject);
                 _solidifyHandler?.SetProject(ActiveProject);

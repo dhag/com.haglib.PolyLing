@@ -61,6 +61,31 @@ namespace Poly_Ling.PrimitiveMesh
             => new BeltAcquireResult { Ok = false, Message = message ?? "" };
     }
 
+    /// <summary>
+    /// 取り直しの結果（頂点索引つき）。
+    ///
+    /// BeltAcquireResult は点列（位置）に落としてしまうため、取り込み元メッシュの
+    /// どの頂点だったかが分からない。ウェイトを塗る側は頂点そのものが要るので、
+    /// 位置へ落とす前の検出結果をそのまま返す口を別に持つ。
+    /// </summary>
+    public sealed class BeltStripAcquireResult
+    {
+        /// <summary>取り直せたか。false のときは Strips が空。</summary>
+        public bool Ok;
+
+        /// <summary>取り直した梯子。頂点索引は取り込み元メッシュのもの。</summary>
+        public List<BeltAutoStrip> Strips = new List<BeltAutoStrip>();
+
+        /// <summary>段グループの数（上下展開したとき）。自動はしご検索では 0。</summary>
+        public int GroupCount;
+
+        /// <summary>人へ出す説明。成否にかかわらず入れる。</summary>
+        public string Message = "";
+
+        public static BeltStripAcquireResult Fail(string message)
+            => new BeltStripAcquireResult { Ok = false, Message = message ?? "" };
+    }
+
     /// <summary>梯子の取り込みを掛け直す。</summary>
     public static class BeltAcquire
     {
@@ -81,63 +106,12 @@ namespace Poly_Ling.PrimitiveMesh
             if (mesh == null)
                 return BeltAcquireResult.Fail("取り込み元のメッシュがない");
 
-            List<BeltAutoStrip> rows;
-            int groupCount = 0;
-            string message;
+            var picked = AcquireStrips(source, method, crossRows, setName);
+            if (!picked.Ok) return BeltAcquireResult.Fail(picked.Message);
 
-            switch (method)
-            {
-                case BeltAcquireMethod.AutoLadder:
-                {
-                    rows = BeltStackDetector.Detect(mesh, crossRows, out message);
-                    break;
-                }
-
-                case BeltAcquireMethod.AutoRing:
-                {
-                    var rings = BeltRingDetector.Detect(mesh, out message);
-                    if (rings == null || rings.Count == 0)
-                        return BeltAcquireResult.Fail($"円環を検出できない（{message}）");
-                    rows = BeltStackExpander.ExpandAll(mesh, rings, crossRows, out groupCount);
-                    break;
-                }
-
-                case BeltAcquireMethod.SelectionSet:
-                {
-                    if (string.IsNullOrEmpty(setName))
-                        return BeltAcquireResult.Fail("選択辞書の名前が記録されていない");
-
-                    var set = FindSet(source, setName);
-                    if (set == null)
-                        return BeltAcquireResult.Fail($"選択辞書「{setName}」が見つからない");
-                    if (set.Faces == null || set.Faces.Count == 0)
-                        return BeltAcquireResult.Fail($"選択辞書「{setName}」に面が入っていない");
-
-                    var strip = BeltStripExtractor.Extract(mesh, set.Faces);
-                    if (!strip.Ok)
-                        return BeltAcquireResult.Fail($"選択面から梯子を作れない（{strip.Message}）");
-
-                    var baseRow = new BeltAutoStrip
-                    {
-                        Closed      = strip.Closed,
-                        FlipWinding = strip.FlipWinding,
-                    };
-                    baseRow.Left .AddRange(strip.Left);
-                    baseRow.Right.AddRange(strip.Right);
-                    baseRow.Faces.AddRange(strip.Faces);
-
-                    rows    = BeltStackExpander.ExpandAll(
-                        mesh, new List<BeltAutoStrip>(1) { baseRow }, crossRows, out groupCount);
-                    message = strip.Message;
-                    break;
-                }
-
-                default:
-                    return BeltAcquireResult.Fail($"未対応の取り込み方: {method}");
-            }
-
-            if (rows == null || rows.Count == 0)
-                return BeltAcquireResult.Fail($"梯子を検出できない（{message}）");
+            List<BeltAutoStrip> rows = picked.Strips;
+            int    groupCount        = picked.GroupCount;
+            string message           = picked.Message;
 
             var result = new BeltAcquireResult
             {
@@ -181,6 +155,87 @@ namespace Poly_Ling.PrimitiveMesh
                 return BeltAcquireResult.Fail($"検出した梯子に使える点列がない（{message}）");
 
             return result;
+        }
+
+        /// <summary>
+        /// 記録した取り込み方で梯子を取り直し、頂点索引のまま返す。
+        /// Acquire はこの結果を点列へ落としたもの。
+        /// </summary>
+        public static BeltStripAcquireResult AcquireStrips(
+            MeshContext source, BeltAcquireMethod method, bool crossRows, string setName)
+        {
+            if (method == BeltAcquireMethod.Baked)
+                return BeltStripAcquireResult.Fail("取り込み方が記録されていない（控えた点列を使う）");
+
+            var mesh = source?.MeshObject;
+            if (mesh == null)
+                return BeltStripAcquireResult.Fail("取り込み元のメッシュがない");
+
+            List<BeltAutoStrip> rows;
+            int groupCount = 0;
+            string message;
+
+            switch (method)
+            {
+                case BeltAcquireMethod.AutoLadder:
+                {
+                    rows = BeltStackDetector.Detect(mesh, crossRows, out message);
+                    break;
+                }
+
+                case BeltAcquireMethod.AutoRing:
+                {
+                    var rings = BeltRingDetector.Detect(mesh, out message);
+                    if (rings == null || rings.Count == 0)
+                        return BeltStripAcquireResult.Fail($"円環を検出できない（{message}）");
+                    rows = BeltStackExpander.ExpandAll(mesh, rings, crossRows, out groupCount);
+                    break;
+                }
+
+                case BeltAcquireMethod.SelectionSet:
+                {
+                    if (string.IsNullOrEmpty(setName))
+                        return BeltStripAcquireResult.Fail("選択辞書の名前が記録されていない");
+
+                    var set = FindSet(source, setName);
+                    if (set == null)
+                        return BeltStripAcquireResult.Fail($"選択辞書「{setName}」が見つからない");
+                    if (set.Faces == null || set.Faces.Count == 0)
+                        return BeltStripAcquireResult.Fail($"選択辞書「{setName}」に面が入っていない");
+
+                    var strip = BeltStripExtractor.Extract(mesh, set.Faces);
+                    if (!strip.Ok)
+                        return BeltStripAcquireResult.Fail($"選択面から梯子を作れない（{strip.Message}）");
+
+                    var baseRow = new BeltAutoStrip
+                    {
+                        Closed      = strip.Closed,
+                        FlipWinding = strip.FlipWinding,
+                    };
+                    baseRow.Left .AddRange(strip.Left);
+                    baseRow.Right.AddRange(strip.Right);
+                    baseRow.Faces.AddRange(strip.Faces);
+
+                    rows    = BeltStackExpander.ExpandAll(
+                        mesh, new List<BeltAutoStrip>(1) { baseRow }, crossRows, out groupCount);
+                    message = strip.Message;
+                    break;
+                }
+
+                default:
+                    return BeltStripAcquireResult.Fail($"未対応の取り込み方: {method}");
+            }
+
+            if (rows == null || rows.Count == 0)
+                return BeltStripAcquireResult.Fail($"梯子を検出できない（{message}）");
+
+            return new BeltStripAcquireResult
+            {
+                Ok         = true,
+                Strips     = rows,
+                GroupCount = groupCount,
+                Message    = message ?? "",
+            };
         }
 
         /// <summary>

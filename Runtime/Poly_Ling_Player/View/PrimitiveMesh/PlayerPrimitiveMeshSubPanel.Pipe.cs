@@ -111,6 +111,20 @@ namespace Poly_Ling.Player
 
             c.Add(TR(T("PipeCapEnds"), () => _pipeP.CapEnds, v => { _pipeP.CapEnds = v; D(); }));
 
+            // ── はしごのウェイトを引き継ぐ ──
+            c.Add(TR(T("BeltInheritWeights"), () => _pipeP.InheritBeltWeights,
+                v => { _pipeP.InheritBeltWeights = v; D(); }));
+
+            var pipeInheritHint = new Label(
+                "取り込み元のはしごに塗ってあるボーンウェイトを、生成した頂点へ配ります。"
+                   + "頂点は線分の両端のウェイトを断面の x で混ぜたものになります。"
+                   + "はしごの点と位置が合う頂点から引くので、はしごを塗っていなければ何も起きません。"
+                   + "厚み付けと重複頂点の結合を越えて残ります。");
+            pipeInheritHint.style.fontSize     = 10;
+            pipeInheritHint.style.whiteSpace   = WhiteSpace.Normal;
+            pipeInheritHint.style.marginBottom = 2;
+            c.Add(pipeInheritHint);
+
             // ── 面の向き ──
             c.Add(TR(T("FlipFaces"), () => _pipeP.FlipFaces, v => { _pipeP.FlipFaces = v; D(); }));
 

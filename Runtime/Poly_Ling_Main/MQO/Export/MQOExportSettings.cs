@@ -3,6 +3,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Data;
 using Poly_Ling.Ops;
 
 namespace Poly_Ling.MQO
@@ -19,18 +20,22 @@ namespace Poly_Ling.MQO
 
         /// <summary>スケール係数（Unity→MQO: 1/MqoUnityRatio = 100）</summary>
         [Tooltip("エクスポート時のスケール係数")]
+        [PLParam(Description = "Unity 座標を MQO 座標へ直す倍率", Min = 0.0001, Max = 10000)]
         public float Scale = 100f;
 
         /// <summary>Y軸とZ軸を入れ替え（Unity Y-up → MQO Z-up）</summary>
         [Tooltip("Y軸とZ軸を入れ替え")]
+        [PLParam(Description = "Y 軸と Z 軸を入れ替える")]
         public bool SwapYZ = false;
 
         /// <summary>X軸反転</summary>
         [Tooltip("X軸を反転")]
+        [PLParam(Description = "X 軸を反転する")]
         public bool FlipX = true;
 
         /// <summary>Z軸反転</summary>
         [Tooltip("Z軸を反転")]
+        [PLParam(Description = "Z 軸を反転する")]
         public bool FlipZ = false;
 
         /// <summary>軸反転指定。インポート側と同一（自己逆元のため同じ設定が逆変換になる）。</summary>
@@ -38,6 +43,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>UV V座標反転</summary>
         [Tooltip("UV V座標を反転（1-V）")]
+        [PLParam(Description = "UV の V を反転する")]
         public bool FlipUV_V = true;
 
         // ================================================================
@@ -46,42 +52,52 @@ namespace Poly_Ling.MQO
 
         /// <summary>マテリアルをエクスポート</summary>
         [Tooltip("マテリアル情報をエクスポート")]
+        [PLParam(Description = "材質も書き出す")]
         public bool ExportMaterials = true;
 
         /// <summary>未使用のミラーマテリアルを除外</summary>
         [Tooltip("どのメッシュでも使用されていないミラーマテリアル（+付き）を除外")]
+        [PLParam(Description = "どのメッシュでも使われていないミラー材質（+ 付き）を外す")]
         public bool ExcludeUnusedMirrorMaterials = true;
 
         /// <summary>空のオブジェクトをスキップ</summary>
         [Tooltip("頂点や面を持たないオブジェクトをスキップ")]
+        [PLParam(Description = "頂点も面も無いオブジェクトを書き出さない")]
         public bool SkipEmptyObjects = false;
 
         /// <summary>選択中のメッシュのみエクスポート</summary>
         [Tooltip("選択中のメッシュのみエクスポート（OFFで全メッシュ）")]
+        [PLParam(Description = "選択中のメッシュだけを書き出す。切ると全メッシュ")]
         public bool ExportSelectedOnly = false;
 
         /// <summary>全メッシュを1つのオブジェクトに統合</summary>
         [Tooltip("全メッシュを1つのオブジェクトに統合")]
+        [PLParam(Description = "全メッシュを 1 つのオブジェクトへまとめる")]
         public bool MergeObjects = false;
 
         /// <summary>オブジェクト属性を保持（depth, visible, mirror等）</summary>
         [Tooltip("オブジェクトの階層・表示・ミラー設定を保持")]
+        [PLParam(Description = "階層・表示・ミラーの設定を残す")]
         public bool PreserveObjectAttributes = true;
 
         /// <summary>ベイクミラーを削除</summary>
         [Tooltip("ベイクされたミラーメッシュ（Type=BakedMirror）を出力しない")]
+        [PLParam(Description = "実体化済みのミラーメッシュを書き出さない")]
         public bool SkipBakedMirror = true;
 
         /// <summary>名前末尾+のメッシュをミラーとみなしスキップ</summary>
         [Tooltip("名前末尾が+のメッシュをベイクドミラーとみなし出力しない（ウェイトは実体側に保存）")]
+        [PLParam(Description = "名前の末尾が + のメッシュをミラーとみなして書き出さない")]
         public bool SkipNamedMirror = true;
 
         /// <summary>ボーンをMQOに出力</summary>
         [Tooltip("ボーン（Type=Bone）をMQOオブジェクトとして出力（__Armature__の下に配置）")]
+        [PLParam(Description = "ボーンを MQO オブジェクトとして __Armature__ の下へ書き出す")]
         public bool ExportBones = true;
 
         /// <summary>ローカルトランスフォームを出力</summary>
         [Tooltip("オブジェクトのローカルトランスフォーム（位置・回転・スケール）を出力")]
+        [PLParam(Description = "オブジェクトのローカル変換（位置・回転・倍率）を書き出す")]
         public bool ExportLocalTransform = true;
 
         /// <summary>
@@ -93,10 +109,12 @@ namespace Poly_Ling.MQO
         /// ローカル変換が単位のオブジェクトでは world == local なので出力は変わらない。
         /// </summary>
         [Tooltip("頂点をワールド座標で出力（メタセコイアのローカル座標はピボット扱いのため）")]
+        [PLParam(Description = "頂点をワールド座標で書き出す。メタセコイアのローカル座標はピボット扱いのため")]
         public bool ExportVerticesInWorldSpace = true;
 
         /// <summary>ボーンウェイトをMQOに埋め込む</summary>
         [Tooltip("ボーンウェイト情報を四角形特殊面としてMQOに埋め込む")]
+        [PLParam(Description = "ボーンウェイトを四角形の特殊面として MQO へ埋め込む")]
         public bool EmbedBoneWeightsInMQO = true;
 
         // ================================================================
@@ -105,6 +123,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>テクスチャフォルダパス（マテリアルのtexに付加）</summary>
         [Tooltip("テクスチャファイルのフォルダパス（例: textures/）")]
+        [PLParam(Description = "材質の tex に付けるテクスチャフォルダ（例 textures/）")]
         public string TextureFolder = "";
 
         // ================================================================
@@ -117,10 +136,12 @@ namespace Poly_Ling.MQO
         /// <summary>小数点以下の桁数</summary>
         [Tooltip("座標・UV等の小数点以下桁数")]
         [Range(1, 9)]
+        [PLParam(Description = "座標・UV などの小数点以下桁数", Min = 1, Max = 9)]
         public int DecimalPrecision = DefaultDecimalPrecision;
 
         /// <summary>Shift-JISエンコード</summary>
         [Tooltip("Shift-JISでエンコード（メタセコイア互換）")]
+        [PLParam(Description = "Shift-JIS で書き出す。メタセコイア互換")]
         public bool UseShiftJIS = true;
 
         // ================================================================

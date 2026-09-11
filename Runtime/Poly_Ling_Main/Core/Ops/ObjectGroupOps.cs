@@ -4,9 +4,16 @@
 //
 // 【役割】
 //   Capture     … 実行した生成コマンドと出来た出力先から、グループを 1 件作る
+//   CaptureStep … 同じものをステップ 1 つとして作る（グループへは足さない）
+//   AppendStep  … 既にあるグループの末尾へステップを足す
 //   IsStale     … ソースが前回ビルド時から変わったか
-//   BuildCommand… グループから今のモデルに合った生成コマンドを組み直す
+//   BuildCommand… グループのステップから今のモデルに合った生成コマンドを組み直す
 //   PurgeMissing… 参照先が消えたグループを片づける（明示操作からのみ呼ぶ）
+//
+// 【ステップ単位で働く】
+//   索引の引き直し・取り込みの掛け直しはコマンド 1 つぶんの仕事なので、
+//   中身はステップを受け取る形にしてある。グループを受け取る旧来の口は
+//   ステップ 0 を見る包みで、呼び出し側はそのままでよい。
 //
 // 【索引を保存しない】
 //   Args に入る「索引で描画オブジェクトを指す値」は保存した時点で古くなる。
@@ -106,17 +113,62 @@ namespace Poly_Ling.Ops
         public static ObjectGroup Capture(
             ProjectContext project, int modelIndex, PanelCommand cmd,
             ulong outputObjectId, string name)
+            => Capture(
+                project, modelIndex, cmd,
+                outputObjectId == 0UL ? null : new List<ulong> { outputObjectId },
+                name);
+
+        /// <summary>
+        /// 実行した生成コマンドから、出力先が複数のグループを作る。
+        /// 1 回の実行で何本もできるもの（はしごから作る鎖など）はこちらを使う。
+        /// outputObjectIds が空・null のときは「出力先未確定」のグループになる。
+        /// </summary>
+        public static ObjectGroup Capture(
+            ProjectContext project, int modelIndex, PanelCommand cmd,
+            IReadOnlyList<ulong> outputObjectIds, string name)
+        {
+            if (cmd == null) return null;
+
+            var step = CaptureStep(project, modelIndex, cmd, outputObjectIds);
+            if (step == null) return null;
+
+            var g = new ObjectGroup(name ?? "");
+            g.Steps.Clear();
+            g.AddStep(step);
+
+            g.SourceDigest = ComputeSourceDigest(project, g);
+            return g;
+        }
+
+        /// <summary>
+        /// 実行した生成コマンドからステップを 1 つ作る。グループへは足さない。
+        ///
+        /// Args は PanelCommandFactory.ToArgs で取る（新しい直列化機構は作らない）。
+        /// IsMeshRef が付いたキーは、そのときの索引を ObjectId へ置き換えて控える。
+        /// 引けなかった索引は 0（＝参照なし）で埋める。
+        ///
+        /// outputObjectIds は 0 を除いて控える。空でもよい（出力先未確定）。
+        /// </summary>
+        public static ObjectGroupStep CaptureStep(
+            ProjectContext project, int modelIndex, PanelCommand cmd,
+            IReadOnlyList<ulong> outputObjectIds)
         {
             if (cmd == null) return null;
 
             Type t = cmd.GetType();
 
-            var g = new ObjectGroup(name ?? "")
+            var step = new ObjectGroupStep
             {
-                Action         = PanelCommandFactory.ActionOf(t),
-                Args           = PanelCommandFactory.ToArgs(cmd),
-                OutputObjectId = outputObjectId,
+                Action = PanelCommandFactory.ActionOf(t),
+                Args   = PanelCommandFactory.ToArgs(cmd),
             };
+
+            if (outputObjectIds != null)
+            {
+                for (int i = 0; i < outputObjectIds.Count; i++)
+                    if (outputObjectIds[i] != 0UL)
+                        step.OutputObjectIds.Add(outputObjectIds[i]);
+            }
 
             var model = project?.GetModel(modelIndex);
 
@@ -124,8 +176,8 @@ namespace Poly_Ling.Ops
             {
                 var ids = new List<ulong>();
 
-                int[] indices  = ParseIntCsv(g.GetArg(mr.Key));
-                int[] modelIdx = mr.HasModelKey ? ParseIntCsv(g.GetArg(mr.ModelKey)) : null;
+                int[] indices  = ParseIntCsv(step.GetArg(mr.Key));
+                int[] modelIdx = mr.HasModelKey ? ParseIntCsv(step.GetArg(mr.ModelKey)) : null;
 
                 for (int k = 0; k < indices.Length; k++)
                 {
@@ -140,18 +192,54 @@ namespace Poly_Ling.Ops
                     ids.Add(mc?.ObjectId ?? 0UL);
                 }
 
-                g.SetMeshRefIds(mr.Key, ids);
+                step.SetMeshRefIds(mr.Key, ids);
             }
 
-            g.SourceDigest = ComputeSourceDigest(project, g);
-            return g;
+            return step;
         }
 
-        /// <summary>出力先を差し替える。ダイジェストは触らない。</summary>
+        /// <summary>
+        /// 実行した生成コマンドを、既にあるグループの末尾へステップとして足す。
+        /// ダイジェストは足したあとに取り直す（ソースの集合が変わりうるため）。
+        /// </summary>
+        public static ObjectGroupStep AppendStep(
+            ProjectContext project, int modelIndex, ObjectGroup group,
+            PanelCommand cmd, IReadOnlyList<ulong> outputObjectIds)
+        {
+            if (group == null || cmd == null) return null;
+
+            var step = CaptureStep(project, modelIndex, cmd, outputObjectIds);
+            if (step == null) return null;
+
+            group.AddStep(step);
+            group.SourceDigest = ComputeSourceDigest(project, group);
+            return step;
+        }
+
+        /// <summary>ステップ 0 の出力先を差し替える。ダイジェストは触らない。</summary>
         public static void SetOutput(ObjectGroup group, ulong outputObjectId)
         {
             if (group == null) return;
             group.OutputObjectId = outputObjectId;
+        }
+
+        /// <summary>
+        /// ステップの出力先を丸ごと差し替える。ダイジェストは触らない。
+        /// 0 は控えない（＝出力先なし）。
+        /// </summary>
+        public static void SetOutputs(
+            ObjectGroup group, int stepIndex, IReadOnlyList<ulong> outputObjectIds)
+        {
+            var step = group?.GetStep(stepIndex);
+            if (step == null) return;
+
+            if (step.OutputObjectIds == null) step.OutputObjectIds = new List<ulong>();
+            step.OutputObjectIds.Clear();
+
+            if (outputObjectIds == null) return;
+            for (int i = 0; i < outputObjectIds.Count; i++)
+                if (outputObjectIds[i] != 0UL)
+                    step.OutputObjectIds.Add(outputObjectIds[i]);
         }
 
         // ================================================================
@@ -247,26 +335,38 @@ namespace Poly_Ling.Ops
         /// </summary>
         public static PanelCommand BuildCommand(
             ProjectContext project, int modelIndex, ObjectGroup group, out string error)
+            => BuildCommand(project, modelIndex, group, 0, out error);
+
+        /// <summary>
+        /// グループの stepIndex 番目のステップから生成コマンドを組み直す。
+        /// やることは 1 ステップ版の BuildCommand と同じ。
+        /// </summary>
+        public static PanelCommand BuildCommand(
+            ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex,
+            out string error)
         {
             error = null;
 
             if (group == null)          { error = "グループがありません"; return null; }
             if (!group.IsValid)         { error = "グループに生成コマンドが記録されていません"; return null; }
 
-            Type t = PanelCommandFactory.ResolveType(group.Action);
-            if (t == null) { error = $"未対応の action: {group.Action}"; return null; }
+            var step = group.GetStep(stepIndex);
+            if (step == null) { error = $"ステップ {stepIndex} がありません"; return null; }
+
+            Type t = PanelCommandFactory.ResolveType(step.Action);
+            if (t == null) { error = $"未対応の action: {step.Action}"; return null; }
 
             var args = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var kv in group.Args) args[kv.Key] = kv.Value;
+            foreach (var kv in step.Args) args[kv.Key] = kv.Value;
 
             ClearKeepAsGroup(args);
 
-            if (!RewriteMeshRefs(project, modelIndex, t, group, args, out error)) return null;
+            if (!RewriteMeshRefs(project, modelIndex, t, step, args, out error)) return null;
 
             LastBeltMessage    = RefreshBelts(project, modelIndex, t, args);
             LastProfileMessage = RefreshProfile(project, modelIndex, t, args);
 
-            var cmd = PanelCommandFactory.Create(group.Action, modelIndex, args, out error);
+            var cmd = PanelCommandFactory.Create(step.Action, modelIndex, args, out error);
             return cmd;
         }
 
@@ -304,14 +404,14 @@ namespace Poly_Ling.Ops
         /// 出来上がり、ブレンドなら別のオブジェクトを宛先にしてしまう。
         /// </summary>
         private static bool RewriteMeshRefs(
-            ProjectContext project, int modelIndex, Type t, ObjectGroup group,
+            ProjectContext project, int modelIndex, Type t, ObjectGroupStep step,
             Dictionary<string, string> args, out string error)
         {
             error = null;
 
             foreach (var mr in PanelCommandFactory.MeshRefKeys(t))
             {
-                var ids = group.GetMeshRefIds(mr.Key);
+                var ids = step.GetMeshRefIds(mr.Key);
                 if (ids.Count == 0) continue;   // 控えが無いキーは触らない
 
                 var indices  = new List<int>(ids.Count);
@@ -526,8 +626,11 @@ namespace Poly_Ling.Ops
                 var g = model.ObjectGroups[i];
                 if (g == null) { model.ObjectGroups.RemoveAt(i); removed++; continue; }
 
-                bool outputAlive = g.HasOutput && Resolve(project, g.OutputObjectId) != null;
-                bool stashAlive  = g.HasStash  && Resolve(project, g.StashObjectId)  != null;
+                bool outputAlive = false;
+                foreach (ulong id in g.OutputObjectIds)
+                    if (Resolve(project, id) != null) { outputAlive = true; break; }
+
+                bool stashAlive = g.HasStash && Resolve(project, g.StashObjectId) != null;
 
                 bool anySourceAlive = false;
                 foreach (ulong id in g.SourceObjectIds)

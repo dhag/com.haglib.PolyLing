@@ -13,7 +13,7 @@
 
 | # | 場所 | 内容 |
 |---|---|---|
-| 1 | `Core/Data/PanelCommand.cs` | クラスに `[PLCommand(Description = "…")]`、全プロパティに `[PLParam]` |
+| 1 | `Core/Data/PanelCommand.cs` | クラスに `[PLCommand(Description = "…")]`、全プロパティに `[PLParam]`、返すものがあれば `[PLResult]` |
 | 2 | `Poly_Ling_Player/View/Core/PlayerCommandDispatcher.cs` | `Func<T, string>` のフック宣言と `switch` の `case` |
 | 3 | `Poly_Ling_Player/View/Core/PolyLingPlayerViewerCore.CreateCommands.cs` | `Execute*` の受け口と、`_commandDispatcher.OnXxx = ExecuteXxx;` の配線 |
 | 4 | `Poly_Ling_Remote/RemoteOwnership.cs` | `case` を足して所有権判定に載せる |
@@ -104,6 +104,10 @@ public SetBoneTransformValueCommand(int modelIndex, ..., Field targetField, ...)
 左ペイン「システムデバッグ → コマンド定義の検査」→ **検査する**。
 中身は `PanelCommandFactoryAudit.RunAll()`（`PanelCommandFactoryAudit.cs:214`）。
 
+MCP からは `polyling_call queryCommandAudit` で同じものを回せる。
+戻り値の `report` に全文、`toolsUsable` / `toolsSkipped` に数が入る。
+モデルもプロジェクトも見ないので、何も読み込んでいない状態でも動く。
+
 ```
 [PLParamAudit] コマンド N / 対象プロパティ N / 付与済み N / 付け忘れ 0 / 算出につき対象外 N
 [PanelCommandFactoryAudit] コマンド N / action 衝突 0 / 引数の対応なし 0 / PLParam 付け忘れ 0 / 未対応の型 0
@@ -119,7 +123,79 @@ public SetBoneTransformValueCommand(int modelIndex, ..., Field targetField, ...)
 
 ---
 
-## 4. 型の対応表を増やすとき
+## 4. 戻り値を返す
+
+コマンドが結果の値を返すときは 2 つ。
+
+| # | 場所 | 内容 |
+|---|---|---|
+| 1 | `Core/Data/PanelCommand.cs` | クラスへ `[PLResult("キー", PLResultKind.…)]` を返す項目の数だけ |
+| 2 | ディスパッチャの `case` | `ReportData(CommandDataJson.New()….Build())` |
+
+`PLResult` を 1 つも付けなければ `outputSchema` は出ない。
+戻り値を返さないコマンドは何も足さなくてよい。
+
+### 何を返してよいか
+
+**番号列・座標列は返さない。** 件数と要約だけを返す。
+量のあるものは `ModelContext.DataStore`（結果辞書）へ書き、
+戻り値には名前・種類・件数・要約だけを載せる。
+
+**例外は生データの 2 本だけ。** `getRawData` / `setRawData` は座標列・番号列を
+そのまま運ぶ。新しいコマンドをこの仲間に入れないこと。
+量のあるものが要るなら、まず結果辞書へ書けないかを考える。
+
+結果辞書の種類は 3 つに限る。任意 JSON を入れると出力スキーマが組めなくなる。
+
+| 種類 | 中身 |
+|---|---|
+| `IndexSet` | `PartsSelectionSet` をそのまま |
+| `LoopSet` | 頂点列＋重心 |
+| `ValueSet` | 名前と数値 or 文字列 |
+
+### 安定 ID は文字列で返す
+
+`ObjectId` は `DateTime.UtcNow.Ticks` から採番するので 10^17 台になる
+（`ObjectIdAllocator.cs:32`）。`double` の整数表現の上限 2^53 を超えるため、
+数値で返すと丸められる。`PLResultKind.Text` と `CommandDataBuilder.Text` を使う。
+`FileInfo.Length`（`long`）も同じ理由で文字列にする。
+
+### 既に対象を報告しているコマンド
+
+生成系は受け口が `ReportTargets` で masterIndices と安定 ID を報告済み。
+そこへ `ReportData` を呼ぶと対象が消える。`ReportDataKeepingTargets` を使うこと。
+
+### `PLResult` は継承される
+
+`Inherited = true`。図形生成のように基底 1 つが全 27 種の受け口を兼ねる系統は、
+基底へ 1 度書けば全具象へ効く。`PLCommand` を `Inherited = false` にしてあるのは
+説明文が 1 本ずつ違うためで、戻り値の形はそろっているので扱いを変えている。
+
+### 可変長のものは 2 本で持つ
+
+入れ子の配列は送れない。`JsonParser.ParseFlat` が `[` で始まる値を捨てる
+（`RemoteProtocol.cs:227`）。配列は `"1,2,3"` の文字列 1 個で送ること。
+
+そのため、頂点ごとに個数が違うようなものは「個数の列」と「連結した値の列」の
+2 本に分ける。取得側も同じ形にそろえる。
+
+```
+uvCounts / uvs           頂点ごとのスロット数 と u,v を 2 個ずつ連結
+faceSizes / faceVertices 面ごとの頂点数 と 頂点番号の連結列
+```
+
+飛び飛びの対象を返すときは、元の番号の列（`vertexIndices` / `faceIndices`）も
+必ず載せる。無いと呼び出し側が書き戻せない。
+
+### 応答のキーは `result`
+
+`PolyLingEditorControlServer.HandleCall` が `KeyRaw` で `"result"` に入れる。
+`"data"` は `ping` / `state` / `play` / `stop` が使う**文字列**の欄で、
+クライアントが `GetString()` で読むため、オブジェクトを入れると例外で落ちる。
+
+---
+
+## 5. 型の対応表を増やすとき
 
 新しい型を扱えるようにしたいときは、**3 か所を必ず一緒に直す**。
 片方だけ変えると往復しなくなるか、スキーマと実装が食い違う。
@@ -141,7 +217,7 @@ public SetBoneTransformValueCommand(int modelIndex, ..., Field targetField, ...)
 
 ---
 
-## 5. 型を選ぶときの目安
+## 6. 型を選ぶときの目安
 
 ### 構造体はそのまま持ってよい
 
@@ -205,9 +281,59 @@ public static float[] ToRgba(Color c) => new[] { c.r, c.g, c.b, c.a };
 `Ignore = true` を付け、コンストラクタに既定値を持たせる。
 道具一覧から外れるのが正しい。
 
+### 設定型に `Ignore` を付けた入力パスと `List<string>` はコマンドが持つ
+
+`PMXExportSettings` / `MQOImportSettings` / `Vrm10ExportSettings` のような設定型を
+そのまま引数にすると、`Ignore = true` を付けたメンバーは外から渡せない。
+渡す必要があるものは**コマンド側が別の引数として持ち、受け口で設定へ詰め替える**。
+
+対象は 2 種類ある。
+
+| 種類 | 理由 | コマンド側の型 |
+|---|---|---|
+| 入力パス | 関門（`PLSandbox`）を通してから入れる必要がある | `string` |
+| `List<string>` | `TryParse` の対応表に無い | `string[]` |
+
+```csharp
+// コマンド
+[PLParam(Description = "部分差し替えの元 PMX のパス。空にすると通常の書き出し")]
+public string SourcePmxPath { get; }
+
+// 受け口
+if (!string.IsNullOrEmpty(cmd.SourcePmxPath))
+{
+    if (!PLSandbox.TryResolveRead(cmd.SourcePmxPath, out string srcPath, out string srcReason))
+        return srcReason;
+    settings.SourcePMXPath = srcPath;
+}
+```
+
+**入力パスを素通しで設定へ入れないこと。** 関門を迂回できてしまう。
+
+実例は `ExportPmxFileCommand`（`SourcePmxPath` / `ReplaceMaterialNames`）、
+`ImportMqoFileCommand`（`BoneWeightCsvPath` / `BoneCsvPath`）、
+`ExportVrmFileCommand`（`Authors`）。
+
+### 入れ子の既定値は引数なしコンストラクタ
+
+コマンドのコンストラクタに書いた `settings ?? Xxx.CreateDefault()` は、
+**MCP 経路の既定値にはならない。** `CreateNestedDefault`（`PanelCommandNested.cs:131-143`）が
+`static Default` か引数なしコンストラクタを使うので、効くのはフィールド初期化子のほう。
+
+`??` が効くのは、同じプロセス内から `null` を渡して呼んだときだけ。
+
+```
+exportMqoFile の Scale
+  パネルの既定   0.01   （CreateFromCoordinate(0.01f, ...)）
+  MCP の既定    100     （MQOExportSettings.Scale = 100f の初期化子）
+```
+
+パネルの既定値と揃えたいなら、**フィールド初期化子のほうを直す**。
+コマンドのコンストラクタに書いても外からは見えない。
+
 ---
 
-## 6. 名前
+## 7. 名前
 
 ### 道具名
 
@@ -240,7 +366,7 @@ UVIndices → uVIndices   ← 正しくない
 
 ---
 
-## 7. 説明文の書き方
+## 8. 説明文の書き方
 
 ### コマンドの説明（`PLCommand`）
 
@@ -266,7 +392,7 @@ UVIndices → uVIndices   ← 正しくない
 
 ---
 
-## 8. コードを機械的に挿し込むときの注意
+## 9. コードを機械的に挿し込むときの注意
 
 過去に 2 度踏んだ誤りがある。どちらも構文としては正しいので、
 構文検査（tree-sitter）では拾えない。
@@ -295,21 +421,27 @@ if (mapped > 0)
 
 ---
 
-## 9. 現状（この文書を書いた時点）
+## 10. 現状（2026-09-09 実測）
 
 | 項目 | 値 |
 |---|---|
-| 具象 `PanelCommand` | 191 |
-| 道具として出せる | 190 |
+| 具象 `PanelCommand` | 245 |
+| 道具として出せる | 244 |
 | 出せない | 1（`AddGeneratedMesh`。外から送るものではないので正しい） |
+| `outputSchema` が付く道具 | 52 |
 | `PLParam` 未付与 | 0 |
 | `PLCommand` 未付与 | 0 |
-| `PlayerCommandDispatcher` の `Fail()` | 320 |
-| 同ファイルの無言 `return;` | 22（成功扱い 2 + 後処理ヘルパー 20） |
+| action 衝突 / 引数の対応なし / 未対応の型 | いずれも 0 |
+| `PlayerCommandDispatcher` の `Fail()` | 320（2026-09-04 時点。未再計測） |
+| 同ファイルの無言 `return;` | 22（同上。成功扱い 2 + 後処理ヘルパー 20） |
+
+道具の数は `polyling_tools`（MCP）、左ペイン「システムデバッグ → コマンド定義の検査」、
+または `polyling_call queryCommandAudit` で数え直せる。
+この表を書き換えるときは実測値を使うこと。
 
 ---
 
-## 10. 関連ファイル
+## 11. 関連ファイル
 
 | ファイル | 役割 |
 |---|---|

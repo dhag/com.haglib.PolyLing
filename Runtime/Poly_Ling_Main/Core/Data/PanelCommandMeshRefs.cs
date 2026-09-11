@@ -1,5 +1,5 @@
 // PanelCommandMeshRefs.cs
-// PLParam(IsMeshRef = true) が付いたパラメータのキーを列挙する。
+// PLParam の印（IsMeshRef / ProfileRole / RebuildRole）が付いたパラメータのキーを列挙する。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 【なぜ要るか】
@@ -262,6 +262,219 @@ namespace Poly_Ling.Data
             if (string.IsNullOrEmpty(propertyName)) return fallback;
             PropertyInfo prop = FindProperty(t, propertyName);
             return prop != null ? KeyOf(t, prop) : fallback;
+        }
+
+        /// <summary>
+        /// 作り直しで出力先へ書き戻すときに使うキー。
+        /// 1 コマンド型に 1 組（索引のキーと、形を切り替えるキー）。
+        /// </summary>
+        public readonly struct RebuildTarget
+        {
+            /// <summary>出力先の masterIndex を書くキー。空＝書き戻しに対応していない。</summary>
+            public readonly string TargetIndexKey;
+
+            /// <summary>
+            /// TargetIndexKey が索引の配列（int[]）か。
+            ///
+            /// true は「出力先が複数ある」ということ。はしごから作る鎖のように
+            /// 1 回の実行で何本もできるものがこれ。書き戻す側は索引を
+            /// カンマ区切りで書く。
+            /// </summary>
+            public readonly bool TargetIsArray;
+
+            /// <summary>書き戻す形へ切り替えるキー。空＝切り替えるものが無い。</summary>
+            public readonly string ModeKey;
+
+            /// <summary>ModeKey へ書く値（Args の文字列）。</summary>
+            public readonly string ModeArgValue;
+
+            public RebuildTarget(
+                string targetIndexKey, bool targetIsArray, string modeKey, string modeArgValue)
+            {
+                TargetIndexKey = targetIndexKey ?? "";
+                TargetIsArray  = targetIsArray;
+                ModeKey        = modeKey        ?? "";
+                ModeArgValue   = modeArgValue   ?? "";
+            }
+
+            /// <summary>このコマンドは出力先へ書き戻せるか。</summary>
+            public bool IsSupported => !string.IsNullOrEmpty(TargetIndexKey);
+
+            /// <summary>切り替えるキーを持つか。</summary>
+            public bool HasMode => !string.IsNullOrEmpty(ModeKey);
+
+            public override string ToString()
+                => IsSupported
+                    ? (HasMode ? $"{TargetIndexKey} ({ModeKey}={ModeArgValue})" : TargetIndexKey)
+                    : "(書き戻し不可)";
+        }
+
+        /// <summary>
+        /// このコマンド型で RebuildRole が付いたパラメータのキーを返す。
+        /// 印が無ければ IsSupported = false。走査規則は MeshRefKeys と同じ。
+        ///
+        /// TargetIndex / TargetMode が 2 つ以上あるときは、先に見つけた方を使い
+        /// 警告を出す（印の付け間違い）。
+        /// </summary>
+        public static RebuildTarget RebuildKeys(Type t)
+        {
+            string targetKey   = "";
+            bool   targetArray = false;
+            string modeKey     = "";
+            string modeValue   = "";
+
+            if (t == null) return new RebuildTarget("", false, "", "");
+
+            ConstructorInfo ctor = PickConstructor(t);
+            if (ctor == null) return new RebuildTarget("", false, "", "");
+
+            void Take(string key, Type memberType, PLParamAttribute a)
+            {
+                if (a.RebuildRole == PLRebuildRole.TargetIndex)
+                {
+                    if (memberType != typeof(int) && memberType != typeof(int[]))
+                    {
+                        UnityEngine.Debug.LogWarning(
+                            $"[PanelCommandFactory] {key}: RebuildRole=TargetIndex は int か int[] でなければならない");
+                        return;
+                    }
+                    if (!string.IsNullOrEmpty(targetKey))
+                    {
+                        UnityEngine.Debug.LogWarning(
+                            $"[PanelCommandFactory] {t.Name}: TargetIndex が 2 つ以上ある"
+                          + $"（{targetKey} / {key}）。先に見つけた方を使う");
+                        return;
+                    }
+                    targetKey   = key;
+                    targetArray = memberType == typeof(int[]);
+                    return;
+                }
+
+                if (a.RebuildRole == PLRebuildRole.TargetMode)
+                {
+                    if (!string.IsNullOrEmpty(modeKey))
+                    {
+                        UnityEngine.Debug.LogWarning(
+                            $"[PanelCommandFactory] {t.Name}: TargetMode が 2 つ以上ある"
+                          + $"（{modeKey} / {key}）。先に見つけた方を使う");
+                        return;
+                    }
+
+                    string v = FormatRebuildModeValue(memberType, a.RebuildModeValue, key);
+                    if (v == null) return;
+
+                    modeKey   = key;
+                    modeValue = v;
+                }
+            }
+
+            foreach (var p in ctor.GetParameters())
+            {
+                if (IsModelIndexParam(p)) continue;
+
+                PropertyInfo prop = FindProperty(t, p.Name);
+                if (prop == null) continue;
+
+                var attr = prop.GetCustomAttribute<PLParamAttribute>(inherit: true);
+                if (attr == null || attr.Ignore) continue;
+
+                if (IsNestedType(prop.PropertyType))
+                {
+                    CollectNestedRebuild(prop.PropertyType, KeyOf(t, prop), 1, Take);
+                    continue;
+                }
+
+                if (!attr.HasRebuildRole) continue;
+
+                Take(KeyOf(t, prop), prop.PropertyType, attr);
+            }
+
+            return new RebuildTarget(targetKey, targetArray, modeKey, modeValue);
+        }
+
+        /// <summary>入れ子の中の RebuildRole を、ドット区切りのキーで拾う。</summary>
+        private static void CollectNestedRebuild(
+            Type t, string prefix, int depth, Action<string, Type, PLParamAttribute> take)
+        {
+            if (t == null || depth > NestedMaxDepth) return;
+
+            foreach (var m in EnumerateNested(t))
+            {
+                if (m.Attr.Ignore) continue;
+
+                string key = prefix + "." + Camel(m.Name);
+
+                if (IsNestedType(m.Type))
+                {
+                    CollectNestedRebuild(m.Type, key, depth + 1, take);
+                    continue;
+                }
+
+                if (!m.Attr.HasRebuildRole) continue;
+
+                take(key, m.Type, m.Attr);
+            }
+        }
+
+        /// <summary>
+        /// TargetMode へ書く値を Args の文字列にする。
+        /// 変換は PanelCommandFactory.TryFormat と同じ規則にすること
+        ///   enum   … メンバー名 → int
+        ///   bool   … "true" / "false"
+        ///   int    … 10 進
+        ///   string … そのまま
+        /// 読めないときは警告して null を返す（印の付け間違い）。
+        /// </summary>
+        private static string FormatRebuildModeValue(Type memberType, string raw, string key)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+            if (memberType == null) return null;
+
+            if (string.IsNullOrEmpty(raw))
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"[PanelCommandFactory] {key}: RebuildModeValue が空");
+                return null;
+            }
+
+            if (memberType.IsEnum)
+            {
+                try
+                {
+                    object v = Enum.Parse(memberType, raw, ignoreCase: false);
+                    return Convert.ToInt32(v).ToString(inv);
+                }
+                catch (ArgumentException)
+                {
+                    UnityEngine.Debug.LogWarning(
+                        $"[PanelCommandFactory] {key}: {memberType.Name} に \"{raw}\" というメンバーが無い");
+                    return null;
+                }
+            }
+
+            if (memberType == typeof(bool))
+            {
+                if (bool.TryParse(raw, out bool b)) return b ? "true" : "false";
+                UnityEngine.Debug.LogWarning(
+                    $"[PanelCommandFactory] {key}: bool へ \"{raw}\" は読めない");
+                return null;
+            }
+
+            if (memberType == typeof(int))
+            {
+                if (int.TryParse(raw, System.Globalization.NumberStyles.Integer, inv, out int i))
+                    return i.ToString(inv);
+                UnityEngine.Debug.LogWarning(
+                    $"[PanelCommandFactory] {key}: int へ \"{raw}\" は読めない");
+                return null;
+            }
+
+            if (memberType == typeof(string)) return raw;
+
+            UnityEngine.Debug.LogWarning(
+                $"[PanelCommandFactory] {key}: RebuildRole=TargetMode を付けられない型 {memberType.Name}");
+            return null;
         }
 
         /// <summary>

@@ -324,6 +324,13 @@ namespace Poly_Ling.Remote
                 // ボーン鎖の配置も、既存を書き換えず末尾にボーンを足すだけ。
                 case PlaceSpringBoneChainsCommand   _: return Array.Empty<int>();
 
+                // はしごからのボーン鎖の配置。ボーンを足すのは同じだが、
+                // ウェイトを塗るときは取り込み元メッシュの BoneWeight を書き換えるので、
+                // そのときだけ取り込み元を担当判定の対象にする
+                // （SkinWeightPaintCommand と同じ理由）。
+                case PlaceSpringBoneLadderChainsCommand c:
+                    return c.PaintWeights ? One(c.SourceMasterIndex) : Array.Empty<int>();
+
                 // 末端ボーンの追加は既存ノードを書き換えず、末尾にボーンを足すだけ。
                 // 追加系（DuplicateMeshesCommand / AddMeshCommand）と同じ扱いにする。
                 case AddSpringBoneTailBoneCommand    _: return Array.Empty<int>();
@@ -421,6 +428,17 @@ namespace Poly_Ling.Remote
                 case SwitchModelCommand _:
                 case NotifyListStructureChangedCommand _:
                 case NotifyDictionaryChangedCommand _:
+                // 照会系。モデルを読むだけで書き換えない。
+                case QueryModelStructureCommand _:
+                case QueryDrawableStatsCommand _:
+                case QueryHolesCommand _:
+                case QuerySeedElementCommand _:
+                case QueryBoneSkinCommand _:
+                case QueryCommandAuditCommand _:
+                // 生データの取得。モデルを読むだけで書き換えない。
+                case GetRawDataCommand _:
+                // 選択の写しを結果辞書へ置くだけ。形状を変えない。
+                case SaveSelectionToDataStoreCommand _:
                     return true;
                 default:
                     return false;

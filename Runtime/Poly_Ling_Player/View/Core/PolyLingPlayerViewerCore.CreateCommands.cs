@@ -58,6 +58,18 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnFlipFace            = ExecuteFlipFace;
             _commandDispatcher.OnAlignVertices       = ExecuteAlignVertices;
             _commandDispatcher.OnSmoothEdges         = ExecuteSmoothEdges;
+            _commandDispatcher.OnEdgeRibbonFace      = ExecuteEdgeRibbonFace;
+            _commandDispatcher.OnImportPmxFile       = ExecuteImportPmxFile;
+            _commandDispatcher.OnExportPmxFile       = ExecuteExportPmxFile;
+            _commandDispatcher.OnImportMqoFile       = ExecuteImportMqoFile;
+            _commandDispatcher.OnExportMqoFile       = ExecuteExportMqoFile;
+            _commandDispatcher.OnImportObjFile       = ExecuteImportObjFile;
+            _commandDispatcher.OnExportObjFile       = ExecuteExportObjFile;
+            _commandDispatcher.OnExportVrmFile       = ExecuteExportVrmFile;
+            _commandDispatcher.OnSaveProjectFile     = ExecuteSaveProjectFile;
+            _commandDispatcher.OnLoadProjectFile     = ExecuteLoadProjectFile;
+            _commandDispatcher.OnSaveProjectCsv      = ExecuteSaveProjectCsv;
+            _commandDispatcher.OnLoadProjectCsv      = ExecuteLoadProjectCsv;
             _commandDispatcher.OnPlanarizeAlongBones = ExecutePlanarizeAlongBones;
             _commandDispatcher.OnMergeVertices       = ExecuteMergeVertices;
             _commandDispatcher.OnDeleteSelection     = ExecuteDeleteSelectionCommand;
@@ -105,11 +117,19 @@ namespace Poly_Ling.Player
         {
             if (cmd == null) return "コマンドが null";
 
-            var mo = PrimitiveMeshFactory.Build(cmd, forPreview: false, resolvePlaceSources: ResolvePlaceSourcesForCommand);
+            var mo = PrimitiveMeshFactory.Build(
+                cmd, forPreview: false,
+                resolvePlaceSources: ResolvePlaceSourcesForCommand,
+                resolveBeltSource:   ResolveBeltSourceForCommand);
             if (mo == null)
                 return $"{cmd.ShapeName} を生成できませんでした（フォントが開けない・輪郭が 0 本など）";
 
-            return PlaceGeneratedMesh(mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale);
+            string reason = PlaceGeneratedMesh(
+                mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale,
+                out int createdIndex);
+
+            if (reason == null) ReportCreatedMesh(createdIndex);
+            return reason;
         }
 
         /// <summary>
@@ -126,18 +146,47 @@ namespace Poly_Ling.Player
             Vector3 poseRot = cmd.PoseAlreadyBaked ? Vector3.zero : cmd.Placement.PlaceRotation;
             Vector3 poseScl = cmd.PoseAlreadyBaked ? Vector3.one  : cmd.Placement.PlaceScale;
 
-            return PlaceGeneratedMesh(cmd.Mesh, cmd.MeshName, cmd.Placement, poseRot, poseScl);
+            string reason = PlaceGeneratedMesh(
+                cmd.Mesh, cmd.MeshName, cmd.Placement, poseRot, poseScl,
+                out int createdIndex);
+
+            if (reason == null) ReportCreatedMesh(createdIndex);
+            return reason;
+        }
+
+        /// <summary>
+        /// 生成した描画オブジェクトの位置と安定 ID をディスパッチャへ報告する。
+        /// 索引が取れなかったとき（AddToExisting / NewModel / ReplaceExisting の経路）は
+        /// 何もしない。その場合は識別子なしの成功が返る。
+        /// </summary>
+        private void ReportCreatedMesh(int masterIndex)
+        {
+            if (masterIndex < 0 || _commandDispatcher == null) return;
+
+            var mc = ActiveProject?.CurrentModel?.GetMeshContext(masterIndex);
+
+            // ObjectId は 0 が「未割当」。割り当たっていないものは載せない。
+            ulong[] ids = (mc != null && mc.ObjectId != 0UL)
+                ? new[] { mc.ObjectId }
+                : null;
+
+            _commandDispatcher.ReportTargets(new[] { masterIndex }, ids);
         }
 
         /// <summary>
         /// 追加先モードに従ってモデルへ入れる。Undo と再構築は各分岐が持つ。
         /// 分岐の中身は図形生成パネルから直接呼んでいたときと同じ。
         /// </summary>
+        /// <param name="createdMasterIndex">
+        /// 生成した描画オブジェクトの位置。NewObject 以外の分岐は -1。
+        /// </param>
         /// <returns>失敗理由。成功時は null。</returns>
         private string PlaceGeneratedMesh(
             MeshObject meshObject, string meshName, PrimitivePlacement placement,
-            Vector3 poseRotation, Vector3 poseScale)
+            Vector3 poseRotation, Vector3 poseScale, out int createdMasterIndex)
         {
+            createdMasterIndex = -1;
+
             PrepareHandlersForGeneratedMesh();
 
             var project = ActiveProject;
@@ -149,25 +198,26 @@ namespace Poly_Ling.Player
             switch (placement.AddMode)
             {
                 case PrimitiveAddMode.NewObject:
-                    PrimitiveMeshCreateNewObject(project, meshObject, meshName,
+                    createdMasterIndex = PrimitiveMeshCreateNewObject(project, meshObject, meshName,
                         placement.WorldPosition, poseRotation, poseScale,
                         placement.IgnorePoseInArmature, placement.MaterialIndex);
                     break;
                 case PrimitiveAddMode.AddToExisting:
-                    PrimitiveMeshAddToExisting(project, meshObject, meshName,
+                    createdMasterIndex = PrimitiveMeshAddToExisting(project, meshObject, meshName,
                         placement.WorldPosition, poseRotation, poseScale,
                         placement.IgnorePoseInArmature, placement.AddTargetIndex,
                         placement.MaterialIndex);
                     break;
                 case PrimitiveAddMode.NewModel:
-                    PrimitiveMeshCreateNewModel(project, meshObject, meshName,
+                    createdMasterIndex = PrimitiveMeshCreateNewModel(project, meshObject, meshName,
                         placement.WorldPosition, poseRotation, poseScale,
                         placement.IgnorePoseInArmature, placement.MaterialIndex);
                     break;
                 case PrimitiveAddMode.ReplaceExisting:
                     return PrimitiveMeshReplaceExisting(project, meshObject,
                         placement.WorldPosition, poseRotation, poseScale,
-                        placement.AddTargetIndex, placement.MaterialIndex);
+                        placement.AddTargetIndex, placement.MaterialIndex,
+                        out createdMasterIndex);
             }
 
             return null;
@@ -181,6 +231,308 @@ namespace Poly_Ling.Player
             => MeshSourceMultiPick.Resolve(
                 masterIndices, includeChildren, BuildSubtreeMeshList,
                 idx => ActiveProject?.CurrentModel?.GetMeshContext(idx)?.MeshObject);
+
+        /// <summary>
+        /// 梯子の取り込み元を索引から引く。はしごのウェイトを引き継ぐときだけ呼ばれる。
+        ///
+        /// 【なぜコマンド経路にも要るか】
+        ///   引き継ぎは取り込み元のメッシュを位置で突き合わせて行う（BeltWeightBinder）。
+        ///   解決口を渡さないと引き当てるものが無く、生成物はウェイトを 1 つも持たない。
+        ///   オブジェクトグループの作り直しもこの経路を通るので、渡さないと
+        ///   作り直すたびに引き継ぎが消え、スキンド化が書いた値ごと上書きされる。
+        /// </summary>
+        private MeshObject ResolveBeltSourceForCommand(int masterIndex)
+            => ActiveProject?.CurrentModel?.GetMeshContext(masterIndex)?.MeshObject;
+
+        // ================================================================
+        // ファイル読み込み
+        // ================================================================
+
+        /// <summary>
+        /// PMX 読み込みコマンド。
+        ///
+        /// 【なぜ既存の OnImportPmx を呼ぶか】
+        ///   実処理（Poly_Ling.Commands.ImportPmxCommand の組み立てと
+        ///   CommandQueue への投入、読込後オプションの適用）は
+        ///   パネル経路が正典。第 2 実装を作らない。
+        ///
+        /// 【関門】
+        ///   PLSandbox.TryResolveRead を通す。作業フォルダの外は読めない。
+        ///   原点 CSV も指定があれば同じ関門を通す。
+        ///
+        /// 【非同期】
+        ///   実際の読み込みは CommandQueue が後で流す。ここでは投入の成否だけを返す。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportPmxFile(Poly_Ling.Data.ImportPmxFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportPmx(path, cmd.Settings, post);
+            return null;
+        }
+
+        /// <summary>
+        /// 読込後オプションを組む。原点 CSV の指定があれば関門を通す。
+        ///
+        /// PMX / MQO / OBJ の 3 経路で同じなので 1 本にまとめてある。
+        /// </summary>
+        /// <returns>組めたか。false のとき reason に理由が入る。</returns>
+        private static bool TryBuildImportPostOptions(
+            bool humanoidAutoMap, bool applyOriginCsv,
+            string originCsvPath, bool originCsvIncludeRotation,
+            out PlayerImportSubPanel.PostOptions post, out string reason)
+        {
+            post   = null;
+            reason = null;
+
+            string originCsv = "";
+            if (applyOriginCsv)
+            {
+                if (string.IsNullOrEmpty(originCsvPath))
+                {
+                    reason = "ApplyOriginCsv が true ですが OriginCsvPath が空です";
+                    return false;
+                }
+
+                if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                        originCsvPath, out originCsv, out reason))
+                    return false;
+            }
+
+            post = new PlayerImportSubPanel.PostOptions
+            {
+                HumanoidAutoMap          = humanoidAutoMap,
+                ApplyOriginCsv           = applyOriginCsv,
+                OriginCsvPath            = originCsv,
+                OriginCsvIncludeRotation = originCsvIncludeRotation,
+            };
+            return true;
+        }
+
+        // ================================================================
+        // ファイル書き出し・プロジェクト入出力
+        //
+        // 【なぜ既存の OnExport* / On*Project を呼ぶか】
+        //   エクスポータの呼び出し・状態表示・例外の扱いはパネル経路が正典。
+        //   第 2 実装を作らない。
+        //
+        // 【関門】
+        //   出力は PLSandbox.TryResolveWrite、入力は TryResolveRead を通す。
+        //   設定型で Ignore にしてある入力パスと List<string> は、コマンドが
+        //   持っているものをここで設定へ入れる。
+        // ================================================================
+
+        /// <summary>PMX 書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportPmxFile(Poly_Ling.Data.ExportPmxFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            var settings = cmd.Settings ?? Poly_Ling.PMX.PMXExportSettings.CreateFullExport();
+
+            settings.ReplaceMaterialNames = new List<string>(
+                cmd.ReplaceMaterialNames ?? System.Array.Empty<string>());
+
+            if (!string.IsNullOrEmpty(cmd.SourcePmxPath))
+            {
+                if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                        cmd.SourcePmxPath, out string srcPath, out string srcReason))
+                    return srcReason;
+                settings.SourcePMXPath = srcPath;
+            }
+
+            return OnExportPmx(path, settings);
+        }
+
+        /// <summary>MQO 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportMqoFile(Poly_Ling.Data.ImportMqoFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            var settings = cmd.Settings ?? Poly_Ling.MQO.MQOImportSettings.CreateDefault();
+
+            if (!string.IsNullOrEmpty(cmd.BoneWeightCsvPath))
+            {
+                if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                        cmd.BoneWeightCsvPath, out string bwPath, out string bwReason))
+                    return bwReason;
+                settings.BoneWeightCSVPath = bwPath;
+            }
+
+            if (!string.IsNullOrEmpty(cmd.BoneCsvPath))
+            {
+                if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                        cmd.BoneCsvPath, out string bcPath, out string bcReason))
+                    return bcReason;
+                settings.BoneCSVPath = bcPath;
+            }
+
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportMqo(path, settings, post);
+            return null;
+        }
+
+        /// <summary>MQO 書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportMqoFile(Poly_Ling.Data.ExportMqoFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnExportMqo(
+                path,
+                cmd.Settings ?? Poly_Ling.MQO.MQOExportSettings.CreateFromCoordinate(
+                    0.01f, flipZ: false, flipX: true));
+        }
+
+        /// <summary>OBJ 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportObjFile(Poly_Ling.Data.ImportObjFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportObj(path, cmd.Settings ?? Poly_Ling.OBJ.ObjImportSettings.CreateDefault(), post);
+            return null;
+        }
+
+        /// <summary>OBJ 書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportObjFile(Poly_Ling.Data.ExportObjFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnExportObj(
+                path, cmd.Settings ?? Poly_Ling.OBJ.ObjExportSettings.CreateDefault());
+        }
+
+        /// <summary>VRM 1.0 書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportVrmFile(Poly_Ling.Data.ExportVrmFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            var settings = cmd.Settings ?? Poly_Ling.Vrm.Vrm10ExportSettings.CreateDefault();
+
+            settings.Authors = new List<string>(cmd.Authors ?? System.Array.Empty<string>());
+
+            return OnExportVrm(path, settings);
+        }
+
+        /// <summary>プロジェクト（.mfproj）保存コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSaveProjectFile(Poly_Ling.Data.SaveProjectFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnSaveProject(path);
+        }
+
+        /// <summary>プロジェクト（.mfproj）読み込みコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteLoadProjectFile(Poly_Ling.Data.LoadProjectFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnLoadProject(path);
+        }
+
+        /// <summary>プロジェクト CSV 保存コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSaveProjectCsv(Poly_Ling.Data.SaveProjectCsvCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnSaveCsvProject(path);
+        }
+
+        /// <summary>
+        /// プロジェクト CSV 読み込みコマンド。
+        ///
+        /// Merge が true のときは、プロジェクトが無い状態では何も起きない。
+        /// MergeCsvFromFolder（PolyLingPlayerViewerCore.cs:9746-9747）が
+        /// CurrentModel を要求し、「モデルがありません」を返して戻る。
+        /// 足す先が無いのだから正しい挙動であり、門は通してよい。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteLoadProjectCsv(Poly_Ling.Data.LoadProjectCsvCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnLoadCsvProject(path, cmd.Merge);
+        }
 
         // ================================================================
         // 穴つなぎ
@@ -469,6 +821,30 @@ namespace Poly_Ling.Player
 
             _smoothEdgesSubPanel?.Refresh();
             return null;
+        }
+
+        /// <summary>
+        /// 選択辺から帯面を足すコマンド。
+        /// メッシュはハンドラが組み、置き方は他の図形生成と同じ PlaceGeneratedMesh を通す。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteEdgeRibbonFace(Poly_Ling.Data.EdgeRibbonFaceCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _edgeRibbonFaceHandler;
+            if (h == null) return "辺から帯面ハンドラがありません";
+
+            if (!h.BuildFromCommand(cmd, out var mo, out string reason)) return reason;
+
+            // 頂点はワールド座標。姿勢は持たないので回転・拡大は入れない。
+            string placeReason = PlaceGeneratedMesh(
+                mo, Poly_Ling.Tools.EdgeRibbonFaceTool.DefaultMeshName,
+                cmd.Placement, Vector3.zero, Vector3.one,
+                out int createdIndex);
+
+            if (placeReason == null) ReportCreatedMesh(createdIndex);
+            return placeReason;
         }
 
         /// <summary>選択頂点の回転コマンド。</summary>
@@ -871,7 +1247,7 @@ namespace Poly_Ling.Player
             };
 
             var result = Poly_Ling.UnityClip.UnityClipCanonVrmAnimation.ConvertToFile(
-                clip, outPath, settings, cmd.BoneLength);
+                clip, outPath, settings, cmd.BoneLength, cmd.UseRoot);
 
             if (result == null)  return "変換結果がありません";
             if (!result.Success) return $"{result.ErrorMessage}（出力先: {outPath}）";
@@ -1456,8 +1832,34 @@ namespace Poly_Ling.Player
 
             PrimitiveMeshFinalize(model);
 
+            // 分解して足した描画オブジェクトの位置と安定 ID を返す。
+            ReportMeshes(model, added.ConvertAll(e => e.Index));
+
             Debug.Log($"[PartsId] 分解: \"{srcMc.Name}\" {result.Summary}");
             return null;
+        }
+
+        /// <summary>
+        /// 複数の描画オブジェクトを成功結果として報告する。
+        /// ObjectId は 0（未割当）のものがあれば objectIds を丸ごと省く
+        /// （並びが masterIndices と 1 対 1 でなくなるため）。
+        /// </summary>
+        private void ReportMeshes(ModelContext model, List<int> masterIndices)
+        {
+            if (_commandDispatcher == null || model == null) return;
+            if (masterIndices == null || masterIndices.Count == 0) return;
+
+            var ids = new ulong[masterIndices.Count];
+            bool allAssigned = true;
+
+            for (int i = 0; i < masterIndices.Count; i++)
+            {
+                var mc = model.GetMeshContext(masterIndices[i]);
+                ids[i] = mc?.ObjectId ?? 0UL;
+                if (ids[i] == 0UL) allAssigned = false;
+            }
+
+            _commandDispatcher.ReportTargets(masterIndices.ToArray(), allAssigned ? ids : null);
         }
     }
 }

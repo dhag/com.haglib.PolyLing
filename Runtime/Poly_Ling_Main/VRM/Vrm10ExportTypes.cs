@@ -14,6 +14,7 @@
 
 using System;
 using System.Collections.Generic;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Vrm
 {
@@ -36,21 +37,29 @@ namespace Poly_Ling.Vrm
         //   ここに既定値を書くと、モデル側に入れた値が毎回上書きされる。
 
         /// <summary>モデル名（VRM Meta の name）。空ならモデル側→モデル名の順で埋める。</summary>
+        [PLParam(Description = "モデル名。空にするとモデル側の設定、それも空ならモデル名を使う")]
         public string Title = "";
 
         /// <summary>バージョン文字列（VRM Meta の version）。空ならモデル側→"1.0"。</summary>
+        [PLParam(Description = "バージョン文字列。空にするとモデル側の設定、それも空なら 1.0")]
         public string Version = "";
 
         /// <summary>作者（VRM Meta の authors）。空ならモデル側→"Unknown"。</summary>
+        // List<string> は Create の対応表に無い。コマンド側が string[] で受け、
+        // 受け口でここへ詰め替える。
+        [PLParam(Ignore = true)]
         public List<string> Authors = new List<string>();
 
         /// <summary>著作権表記（VRM Meta の copyrightInformation）。</summary>
+        [PLParam(Description = "著作権表記")]
         public string CopyrightInformation = "";
 
         /// <summary>連絡先（VRM Meta の contactInformation）。</summary>
+        [PLParam(Description = "連絡先")]
         public string ContactInformation = "";
 
         /// <summary>その他ライセンスURL（VRM Meta の otherLicenseUrl）。</summary>
+        [PLParam(Description = "その他ライセンスの URL")]
         public string OtherLicenseUrl = "";
 
         // ================================================================
@@ -58,21 +67,26 @@ namespace Poly_Ling.Vrm
         // ================================================================
 
         /// <summary>出力スケール（PolyLing のローカル座標に掛ける倍率）。</summary>
+        [PLParam(Description = "出力スケール。ローカル座標に掛ける倍率", Min = 0.0001, Max = 1000)]
         public float Scale = 1.0f;
 
         /// <summary>スキニング（ボーンウェイト）を出力するか。</summary>
+        [PLParam(Description = "スキニング（ボーンウェイト）を書き出す")]
         public bool ExportSkinning = true;
 
         /// <summary>法線を出力するか。</summary>
+        [PLParam(Description = "法線を書き出す")]
         public bool ExportNormals = true;
 
         /// <summary>UVを出力するか。</summary>
+        [PLParam(Description = "UV を書き出す")]
         public bool ExportUVs = true;
 
         /// <summary>
         /// 非表示メッシュ（IsVisible == false）も出力するか。
         /// 既定 false。名前と既定値は ObjExportSettings.ExportInvisibleObjects にそろえてある。
         /// </summary>
+        [PLParam(Description = "非表示のメッシュも書き出す")]
         public bool ExportInvisibleObjects = false;
 
         // ================================================================
@@ -84,22 +98,26 @@ namespace Poly_Ling.Vrm
         /// 表情（VRMC_vrm.expressions）はこれを前提にするので、
         /// false のとき ExportExpressions は無効になる。
         /// </summary>
+        [PLParam(Description = "モーフをブレンドシェイプとして書き出す。切ると表情も出せない")]
         public bool ExportMorphTargets = true;
 
         /// <summary>
         /// モーフエクスプレッションを VRM の表情として出力するか。
         /// </summary>
+        [PLParam(Description = "モーフエクスプレッションを VRM の表情として書き出す")]
         public bool ExportExpressions = true;
 
         /// <summary>
         /// スプリングボーン（VRMC_springBone）を出力するか。
         /// </summary>
+        [PLParam(Description = "揺れもの（スプリングボーン）を書き出す")]
         public bool ExportSpringBones = true;
 
         /// <summary>
         /// 表情名を VRM のプリセット（happy / aa / blink …）へ割り当てるか。
         /// false のときは全てカスタム表情として出力する。
         /// </summary>
+        [PLParam(Description = "表情名を VRM のプリセットへ割り当てる。切ると全部カスタム表情になる")]
         public bool MapExpressionPresets = true;
 
         // ================================================================
@@ -116,6 +134,7 @@ namespace Poly_Ling.Vrm
         /// 既定 false。プレファブ書き出し側（HierarchyExportWindow の
         /// 「不足関節を補完」）の既定と揃えてあり、既存の出力結果は変わらない。
         /// </summary>
+        [PLParam(Description = "Humanoid の必須関節が足りないとき、空ノードで補う")]
         public bool SupplementHumanoid = false;
 
         /// <summary>ディープコピー。</summary>

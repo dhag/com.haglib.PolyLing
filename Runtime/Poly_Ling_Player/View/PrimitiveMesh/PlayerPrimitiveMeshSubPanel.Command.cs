@@ -129,6 +129,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.SpringBoneSingle:
                 case ShapeKind.SpringBoneCylinder:
                 case ShapeKind.SpringBoneRevolution:
+                case ShapeKind.SpringBoneLadder:
                     return null;
                 case ShapeKind.Profile2D:    return BuildProfile2DCommand(mi, pl);
 
@@ -138,8 +139,10 @@ namespace Poly_Ling.Player
 
                 // 穴つなぎは書き込み先の既存頂点を参照する面を足す（CreateHoleBridgeCommand）。
                 // 歪み複製はモデルへ直接オブジェクトを挿入する（CreateObjectArrayCommand）。
+                // 辺から帯面は選択中の各オブジェクトへ面を足す（EdgeRibbonFaceCommand）。
                 case ShapeKind.Bridge:
                 case ShapeKind.ObjectArray:
+                case ShapeKind.EdgeRibbonFace:
                 default:
                     return null;
             }

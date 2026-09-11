@@ -65,6 +65,19 @@ namespace Poly_Ling.UndoSystem
             _redoStack.Count > 0 ? _redoStack[^1].Info : null;
 
         // === プロパティ: IUndoStack ===
+        /// <summary>
+        /// 記録を受け付けるか。false の間 Record() は捨てる。
+        ///
+        /// マクロ（オブジェクトグループの複数ステップ実行）のように、
+        /// 内側の操作を個別に積まず、外側でまとめて 1 件だけ積みたいときに使う。
+        /// CollapseToGroup では畳めない（UndoGroup._undoLog は既に積まれたぶんが
+        /// 残り、Undo の押下回数と巻き戻る量がずれる）ので、記録そのものを止める。
+        ///
+        /// 切り替えは MeshUndoController.SuspendRecording / ResumeRecording から行う。
+        /// 個々のスタックを直接触ると、止め忘れ・戻し忘れが起きる。
+        /// </summary>
+        public bool RecordingEnabled { get; set; } = true;
+
         public TContext Context { get; set; }
         public int UndoCount => _undoStack.Count;
         public int RedoCount => _redoStack.Count;
@@ -109,6 +122,10 @@ namespace Poly_Ling.UndoSystem
         {
             if (record == null)
                 throw new ArgumentNullException(nameof(record));
+
+            // 記録を止めている間は捨てる。キューにも積まない
+            // （積むと解除後に流れ出て、外側の 1 件と二重になる）。
+            if (!RecordingEnabled) return;
 
             // グループIDをRecord時点で確定（スレッドセーフ）
             int groupId;

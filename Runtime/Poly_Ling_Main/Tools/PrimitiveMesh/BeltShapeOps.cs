@@ -93,8 +93,10 @@ namespace Poly_Ling.PrimitiveMesh
             if (b == null) return null;
             return new BeltCsvEntry
             {
-                Left        = b.Left  != null ? new List<Vector3>(b.Left)  : new List<Vector3>(),
-                Right       = b.Right != null ? new List<Vector3>(b.Right) : new List<Vector3>(),
+                Left         = b.Left  != null ? new List<Vector3>(b.Left)  : new List<Vector3>(),
+                Right        = b.Right != null ? new List<Vector3>(b.Right) : new List<Vector3>(),
+                LeftWeights  = b.LeftWeights  != null ? new List<BoneWeight?>(b.LeftWeights)  : null,
+                RightWeights = b.RightWeights != null ? new List<BoneWeight?>(b.RightWeights) : null,
                 Closed      = b.Closed,
                 FlipWinding = b.FlipWinding,
                 HeightScale = b.HeightScale,
@@ -122,6 +124,12 @@ namespace Poly_Ling.PrimitiveMesh
 
             var left  = new List<Vector3>(belt.Left);
             var right = new List<Vector3>(belt.Right);
+
+            // ウェイト列も点列と同じ入替・反転を受ける。片方だけ掛けると
+            // 段とウェイトの対応がずれ、黙って別のボーンへ付く。
+            var leftW  = belt.LeftWeights  != null ? new List<BoneWeight?>(belt.LeftWeights)  : null;
+            var rightW = belt.RightWeights != null ? new List<BoneWeight?>(belt.RightWeights) : null;
+
             var start = belt.StartPoint;
             var end   = belt.EndPoint;
             bool flip = belt.FlipWinding;
@@ -131,6 +139,7 @@ namespace Poly_Ling.PrimitiveMesh
             if (opt.SwapSides)
             {
                 var tmp = left; left = right; right = tmp;
+                var tmpW = leftW; leftW = rightW; rightW = tmpW;
                 flip = !flip;
                 rowIndex = rowCount - 1 - rowIndex;
             }
@@ -139,14 +148,18 @@ namespace Poly_Ling.PrimitiveMesh
             {
                 left.Reverse();
                 right.Reverse();
+                leftW?.Reverse();
+                rightW?.Reverse();
                 var tmp = start; start = end; end = tmp;
                 flip = !flip;
             }
 
             return new BeltCsvEntry
             {
-                Left        = left,
-                Right       = right,
+                Left         = left,
+                Right        = right,
+                LeftWeights  = leftW,
+                RightWeights = rightW,
                 Closed      = belt.Closed,
                 FlipWinding = flip,
                 HeightScale = belt.HeightScale,
@@ -175,13 +188,20 @@ namespace Poly_Ling.PrimitiveMesh
             if (!BeltSplineSubdivider.Subdivide(
                     belt.Left, belt.Right, belt.StartPoint, belt.EndPoint,
                     opt.Segments, opt.UseFirst, opt.UseLast, opt.TrimStart, opt.TrimEnd,
-                    out var left, out var right))
+                    out var left, out var right, out var srcParams))
                 return belt;
+
+            // 細分で段が増えるので、ウェイトは「出力段が入力のどこから来たか」で補間する。
+            // srcParams[k] は入力段の位置（小数）。
+            var leftW  = ResampleWeights(belt.LeftWeights,  srcParams);
+            var rightW = ResampleWeights(belt.RightWeights, srcParams);
 
             return new BeltCsvEntry
             {
-                Left        = left,
-                Right       = right,
+                Left         = left,
+                Right        = right,
+                LeftWeights  = leftW,
+                RightWeights = rightW,
                 Closed      = false,
                 FlipWinding = belt.FlipWinding,
                 HeightScale = belt.HeightScale,
@@ -191,6 +211,31 @@ namespace Poly_Ling.PrimitiveMesh
                 RowIndex    = belt.RowIndex,
                 RowCount    = belt.RowCount,
             };
+        }
+
+        /// <summary>
+        /// 入力段のウェイト列を、出力段の位置（小数）で引き直す。
+        /// 端は詰め、間は挟む 2 段の線形補間（SkinWeightOps.LerpNullable）。
+        /// 入力が無いときは null を返す。
+        /// </summary>
+        private static List<BoneWeight?> ResampleWeights(
+            List<BoneWeight?> src, IReadOnlyList<float> srcParams)
+        {
+            if (src == null || src.Count == 0 || srcParams == null) return null;
+
+            var dst = new List<BoneWeight?>(srcParams.Count);
+
+            for (int k = 0; k < srcParams.Count; k++)
+            {
+                float t = Mathf.Clamp(srcParams[k], 0f, src.Count - 1);
+                int   i0 = Mathf.FloorToInt(t);
+                int   i1 = Mathf.Min(i0 + 1, src.Count - 1);
+                float f  = t - i0;
+
+                dst.Add(Poly_Ling.UI.SkinWeightOps.LerpNullable(src[i0], src[i1], f));
+            }
+
+            return dst;
         }
 
         /// <summary>向き補正 → スプライン分割の順で通す。</summary>

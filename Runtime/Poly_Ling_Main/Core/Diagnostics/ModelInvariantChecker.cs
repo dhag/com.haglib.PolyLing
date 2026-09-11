@@ -416,12 +416,15 @@ namespace Poly_Ling.Diagnostics
                     });
                 }
 
-                if (g.HasOutput && !alive.Contains(g.OutputObjectId))
+                // 出力先はステップごとに複数ありうる（はしごから作る鎖など）。
+                foreach (ulong outId in g.OutputObjectIds)
                 {
+                    if (alive.Contains(outId)) continue;
+
                     list.Add(new InvariantViolation
                     {
                         Rule   = "オブジェクトグループの出力先",
-                        Detail = $"\"{g.Name}\" の出力先 (ObjectId={g.OutputObjectId}) がこのモデルに無い",
+                        Detail = $"\"{g.Name}\" の出力先 (ObjectId={outId}) がこのモデルに無い",
                     });
                 }
 

@@ -178,10 +178,119 @@ namespace Poly_Ling.Data
                 }
                 sb.Append(']');
             }
-            sb.Append("}}");
+            sb.Append('}');
+
+            AppendOutputSchema(sb, t);
+
+            sb.Append('}');
 
             json = sb.ToString();
             return true;
+        }
+
+        // ================================================================
+        // 戻り値のスキーマ
+        // ================================================================
+
+        /// <summary>
+        /// コマンドに付いた PLResult から outputSchema を書き足す。
+        /// 1 つも付いていなければ何も書かない（戻り値を返さないコマンド）。
+        ///
+        /// 基底クラスに付けた宣言も拾う（PLResult は Inherited = true）。
+        /// 図形生成のように基底 1 つが全種の受け口を兼ねる系統は、
+        /// 基底へ 1 度書けば全具象へ効く。
+        ///
+        /// 走査順は属性の宣言順ではない（GetCustomAttributes の順は保証されない）ため、
+        /// Key の並びに意味を持たせないこと。JSON オブジェクトのキーは順不同。
+        /// 同じ Key が重なったときは先に見えたものを採る。
+        /// </summary>
+        private static void AppendOutputSchema(StringBuilder sb, Type t)
+        {
+            var attrs = t.GetCustomAttributes(typeof(PLResultAttribute), inherit: true);
+            if (attrs == null || attrs.Length == 0) return;
+
+            var props    = new List<string>();
+            var required = new List<string>();
+            var seen     = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var raw in attrs)
+            {
+                var a = raw as PLResultAttribute;
+                if (a == null || a.Ignore) continue;
+                if (string.IsNullOrEmpty(a.Key)) continue;
+                if (!seen.Add(a.Key)) continue;
+
+                props.Add(BuildResultPropertyJson(a));
+                if (!a.Optional) required.Add(a.Key);
+            }
+
+            if (props.Count == 0) return;
+
+            sb.Append(",\"outputSchema\":{\"type\":\"object\",\"properties\":{");
+            for (int i = 0; i < props.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(props[i]);
+            }
+            sb.Append('}');
+
+            if (required.Count > 0)
+            {
+                sb.Append(",\"required\":[");
+                for (int i = 0; i < required.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append(Quote(required[i]));
+                }
+                sb.Append(']');
+            }
+            sb.Append('}');
+        }
+
+        /// <summary>戻り値 1 項目ぶんのスキーマを組み立てる。</summary>
+        private static string BuildResultPropertyJson(PLResultAttribute a)
+        {
+            var sb = new StringBuilder();
+            sb.Append(Quote(a.Key)).Append(":{").Append(ResultKindFragment(a.Kind));
+
+            if (!string.IsNullOrEmpty(a.Description))
+                sb.Append(",\"description\":").Append(Quote(a.Description));
+
+            sb.Append('}');
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// PLResultKind に対応する JSON Schema の断片を返す。
+        ///
+        /// Entry の中身は CommandDataBuilder.Entry が書く形と対にしてある。
+        /// 片方だけ直すと、道具一覧と実際の応答が食い違う。
+        /// masterIndex と objectId は載らないことがあるので required に入れない。
+        /// </summary>
+        private static string ResultKindFragment(PLResultKind kind)
+        {
+            switch (kind)
+            {
+                case PLResultKind.Integer:      return "\"type\":\"integer\"";
+                case PLResultKind.Number:       return "\"type\":\"number\"";
+                case PLResultKind.Text:         return "\"type\":\"string\"";
+                case PLResultKind.Flag:         return "\"type\":\"boolean\"";
+                case PLResultKind.IntegerArray: return "\"type\":\"array\",\"items\":{\"type\":\"integer\"}";
+                case PLResultKind.TextArray:    return "\"type\":\"array\",\"items\":{\"type\":\"string\"}";
+                case PLResultKind.NumberArray:  return "\"type\":\"array\",\"items\":{\"type\":\"number\"}";
+
+                case PLResultKind.Entry:
+                    return "\"type\":\"object\",\"properties\":{"
+                         + "\"name\":{\"type\":\"string\"},"
+                         + "\"kind\":{\"type\":\"string\",\"enum\":[\"None\",\"IndexSet\",\"LoopSet\",\"ValueSet\"]},"
+                         + "\"count\":{\"type\":\"integer\"},"
+                         + "\"summary\":{\"type\":\"string\"},"
+                         + "\"masterIndex\":{\"type\":\"integer\"},"
+                         + "\"objectId\":{\"type\":\"integer\",\"minimum\":0}"
+                         + "},\"required\":[\"name\",\"kind\",\"count\",\"summary\"]";
+
+                default: return "\"type\":\"string\"";
+            }
         }
 
         // ================================================================

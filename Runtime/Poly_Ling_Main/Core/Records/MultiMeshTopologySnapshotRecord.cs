@@ -9,16 +9,17 @@
 //   MeshContextIndex をキーに持ち、Undo/Redo で ModelContext から自分で解決する。
 //   （MultiMeshVertexSnapshotRecord と同じ方式。あちらは座標のみ、こちらは位相ごと）
 //
-// 【UnityMesh】既存の単一メッシュ位相 Undo（MeshSnapshotRecord）と同じく触らない。
+// 【UnityMesh】復元した MeshContext の UnityMesh も本レコードが作り直す（RestoreTo）。
 //
-//   【誰が作り直すか】RebuildAdapter ではない。RebuildAdapter は GPU バッファの
-//   再構築と WritebackTransformedVertices しか行わない。UnityMesh を作り直すのは
-//     (1) PlayerViewportManager.RebuildSelectedUnityMeshes
-//         → 対象は SelectedDrawableMeshIndices に入っているメッシュだけ
-//     (2) UnifiedSystemAdapter.WritebackTransformedVertices の再生成分岐
-//         → 上で拾えなかったメッシュはここが唯一の復旧経路
-//   非選択メッシュを含む位相 Undo は (2) に依存している。(2) を「スキップして
-//   警告のみ」に変えるなら、先に本レコード側で UnityMesh を作り直すこと。
+//   【なぜ本レコードが持つか】Player の Undo 後の経路は EnterUndoApplied →
+//   RebuildAdapter → WritebackTransformedVertices で、RebuildSelectedUnityMeshes を
+//   通らない。Writeback は「UnityMesh の頂点数 == 展開頂点数」なら位置だけ書いて
+//   三角形を作り直さないので、展開頂点数が変わらない位相変更では MeshObject だけが
+//   戻り、画面は変更後の三角形のまま残る。選択状態にも依存させないため、
+//   復元した実体そのものの UnityMesh をここで作り直す。
+//   頂点はローカル座標のままでよい（直後の Writeback が展開ワールド座標で上書きする）。
+//
+//   単一メッシュ位相 Undo（MeshSnapshotRecord）は従来どおり UnityMesh を触らない。
 
 using System.Collections.Generic;
 using Poly_Ling.Data;
@@ -76,6 +77,12 @@ namespace Poly_Ling.UndoSystem
 
                 mc.MeshObject = kv.Value.Clone();
                 mc.MeshObject.InvalidatePositionCache();
+
+                // UnityMesh も同じ位相へ作り直す（冒頭の【UnityMesh】を参照）。
+                // ボーン表示用メッシュは MeshObject から作らない
+                // （PlayerViewportManager.RebuildSelectedUnityMeshes と同じ規則）。
+                if (mc.Type != MeshType.Bone)
+                    mc.ReplaceUnityMesh(mc.MeshObject.ToUnityMesh(model.MaterialCount));
             }
         }
     }

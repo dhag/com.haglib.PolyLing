@@ -723,11 +723,14 @@ namespace Poly_Ling.Context
             return ObjectGroups.Find(g => g != null && g.Name == name);
         }
 
-        /// <summary>出力先の ObjectId でオブジェクトグループを検索。見つからなければ null。</summary>
+        /// <summary>
+        /// 出力先の ObjectId でオブジェクトグループを検索。見つからなければ null。
+        /// どのステップの出力でも当たる（ステップ 0 に限らない）。
+        /// </summary>
         public Poly_Ling.Data.ObjectGroup FindObjectGroupByOutput(ulong objectId)
         {
             if (ObjectGroups == null || objectId == 0UL) return null;
-            return ObjectGroups.Find(g => g != null && g.OutputObjectId == objectId);
+            return ObjectGroups.Find(g => g != null && g.ContainsOutput(objectId));
         }
 
         /// <summary>一意なオブジェクトグループ名を生成する（規則は選択セット名と同じ）。</summary>
@@ -743,6 +746,33 @@ namespace Poly_Ling.Context
             }
             return name;
         }
+
+        // ================================================================
+        // DataStore（コマンドが返した実データの置き場）
+        //
+        // 【なぜモデルが持つか】
+        //   コマンドの戻り値は名前と件数だけにし、量のあるもの（頂点番号・
+        //   境界ループ・計測値）はここへ書く。呼び出し側は名前を次のコマンドへ
+        //   渡す。詳しくは PLDataStore.cs の冒頭注記。
+        //
+        // 【索引の付け替えが要らない理由】
+        //   項目は対象を MasterIndex と ObjectId の両方で持つ。並べ替えの後は
+        //   ObjectId で引き直せるので、ObjectGroups と同じく
+        //   RemapIndexReferences の対象に入れない。
+        //
+        // 【差し替えない】
+        //   読み込みは PLDataStore.ReplaceAll で中身だけを入れ替える。
+        //   参照を持ち替えると、既に取得した側と食い違う。
+        // ================================================================
+
+        /// <summary>コマンドが返した実データの辞書。常に非 null。</summary>
+        public Poly_Ling.Data.PLDataStore DataStore { get; } = new Poly_Ling.Data.PLDataStore();
+
+        /// <summary>辞書の項目数。</summary>
+        public int DataStoreCount => DataStore?.Count ?? 0;
+
+        /// <summary>辞書に項目があるか。</summary>
+        public bool HasDataStoreEntries => DataStoreCount > 0;
 
         /// <summary>名前で描画オブジェクト(MeshContext)を検索。見つからなければ null。</summary>
         public MeshContext FindMeshContextByName(string name)

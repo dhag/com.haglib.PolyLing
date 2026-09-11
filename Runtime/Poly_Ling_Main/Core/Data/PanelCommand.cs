@@ -1398,11 +1398,17 @@ namespace Poly_Ling.Data
                  Min = 0.001, Max = 10.0)]
         public float BoneLength { get; }
 
+        [PLParam(TextKey = "VrmaConvertUseRoot",
+                 Description = "RootT / RootQ（身体全体の移動と向き）を Hips へ載せる。切ると回転だけになり、以前の挙動に戻る")]
+        public bool UseRoot { get; }
+
         // 既定値の意味は ExportVrmAnimationCommand と同じ。
         // fps = 0 はクリップの frameRate、endSec = 0 はクリップ終端。
+        // useRoot の既定は true。Humanoid クリップの Root 情報は本来落とすものではない。
         public ConvertUnityClipToVrmaCommand(
             int modelIndex, string filePath, string clipFilePath,
-            float fps = 0f, float startSec = 0f, float endSec = 0f, float boneLength = 0.1f)
+            float fps = 0f, float startSec = 0f, float endSec = 0f, float boneLength = 0.1f,
+            bool useRoot = true)
             : base(modelIndex)
         {
             FilePath     = filePath;
@@ -1411,6 +1417,7 @@ namespace Poly_Ling.Data
             StartSec     = startSec;
             EndSec       = endSec;
             BoneLength   = boneLength;
+            UseRoot      = useRoot;
         }
     }
 
@@ -2039,6 +2046,10 @@ namespace Poly_Ling.Data
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
     [PLCommand(Description = "頂点・辺・面・線分をインデックス指定で選択する。")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている頂点の数")]
+    [PLResult("edges",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている辺の数")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている面の数")]
+    [PLResult("lines",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている線分の数")]
     public class SelectElementsCommand : PanelCommand
     {
         /// <summary>
@@ -2408,6 +2419,10 @@ namespace Poly_Ling.Data
     ///   ShortestPath: SeedVertexIndex（始点）+ EndVertexIndex（終点）
     /// </summary>
     [PLCommand(Description = "トポロジーベースの詳細選択を実行する。")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている頂点の数")]
+    [PLResult("edges",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている辺の数")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている面の数")]
+    [PLResult("lines",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている線分の数")]
     public class AdvancedSelectCommand : PanelCommand
     {
         /// <summary>
@@ -2540,6 +2555,10 @@ namespace Poly_Ling.Data
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
     [PLCommand(Description = "属性で頂点を選ぶ（クリック非依存）。")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている頂点の数")]
+    [PLResult("edges",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている辺の数")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている面の数")]
+    [PLResult("lines",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている線分の数")]
     public class AdvancedSelectByAttributeCommand : PanelCommand
     {
         /// <summary>
@@ -3020,6 +3039,38 @@ namespace Poly_Ling.Data
 
         public DeleteObjectGroupCommand(int modelIndex, string groupName)
             : base(modelIndex) { GroupName = groupName; }
+    }
+
+    /// <summary>
+    /// オブジェクトグループを 1 つにまとめる（マクロを組む）。
+    ///
+    /// ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。
+    /// 描画オブジェクトは 1 つも消さない。
+    ///
+    /// 【なぜ生成コマンド側で「どのグループへ足すか」を指定しないか】
+    ///   生成コマンドに足し先を持たせると、フリル・パイプ・藤壺・鎖の全部へ
+    ///   同じパラメータを足すことになり、往復と検査の面が広がる。
+    ///   1 コマンド＝1 グループとして作ってから順に足す形なら、
+    ///   足す側の知識はこのコマンド 1 つに収まる。
+    ///
+    /// 【並び順】
+    ///   ステップの実行順はリストの並びそのもの。足した順に実行される。
+    /// </summary>
+    [PLCommand(Description = "オブジェクトグループを 1 つにまとめる。ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。描画オブジェクトは消さない。")]
+    public class MergeObjectGroupCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ObjectGroupName", Description = "足し先のグループの名前", Required = true)]
+        public string TargetGroupName { get; }
+
+        [PLParam(TextKey = "ObjectGroupName", Description = "足すグループの名前。まとめたあと消える", Required = true)]
+        public string SourceGroupName { get; }
+
+        public MergeObjectGroupCommand(int modelIndex, string targetGroupName, string sourceGroupName)
+            : base(modelIndex)
+        {
+            TargetGroupName = targetGroupName;
+            SourceGroupName = sourceGroupName;
+        }
     }
 
     /// <summary>
@@ -3886,6 +3937,10 @@ namespace Poly_Ling.Data
     /// 階層を辿ってボーン列を選択する。揺れチェーンの対象を選ぶための入口。
     /// </summary>
     [PLCommand(Description = "起点から階層を辿ってノード列を選択する。揺れチェーンの対象を選ぶのに使う。")]
+    [PLResult("nodes",           PLResultKind.Integer, Description = "選んだノードの数")]
+    [PLResult("rootMasterIndex", PLResultKind.Integer, Description = "起点の masterIndex")]
+    [PLResult("walk",            PLResultKind.Text,    Description = "使った辿り方")]
+    [PLResult("additive",        PLResultKind.Flag,    Description = "既存の選択に足したか")]
     public class SelectBoneChainCommand : PanelCommand
     {
         [PLParam(TextKey = "SpringBoneChainRootIndex",
@@ -4946,8 +5001,15 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "IgnorePoseInArmature", Description = "アーマチュア内で姿勢を無視する")]
         public bool IgnorePoseInArmature;
 
-        /// <summary>追加先モード。</summary>
-        [PLParam(TextKey = "AddMode", Description = "新規オブジェクト / 既存へ追加 / 新規モデル")]
+        /// <summary>
+        /// 追加先モード。
+        ///
+        /// RebuildRole=TargetMode … オブジェクトグループの作り直しでは、
+        /// 新しいオブジェクトを作らず既存の出力先へ中身を書き戻す。
+        /// そのときここへ ReplaceExisting が書かれる（PLRebuildRole を参照）。
+        /// </summary>
+        [PLParam(TextKey = "AddMode", Description = "新規オブジェクト / 既存へ追加 / 新規モデル",
+                 RebuildRole = PLRebuildRole.TargetMode, RebuildModeValue = "ReplaceExisting")]
         public Poly_Ling.Player.PrimitiveAddMode AddMode;
 
         /// <summary>
@@ -4955,7 +5017,7 @@ namespace Poly_Ling.Data
         /// -1 なら選択オブジェクトリストの先頭。
         /// </summary>
         [PLParam(TextKey = "AddTargetIndex", Description = "追加先の索引。-1 で選択の先頭",
-                 IsMeshRef = true)]
+                 IsMeshRef = true, RebuildRole = PLRebuildRole.TargetIndex)]
         public int AddTargetIndex;
 
         /// <summary>
@@ -4998,6 +5060,10 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>図形生成コマンドの共通部分。</summary>
+    [PLResult("objects",  PLResultKind.Integer, Description = "生成後に数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "生成物の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "生成物の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "生成物の境界ループ（穴）の数の合計")]
     public abstract class CreatePrimitiveMeshCommand : PanelCommand
     {
         /// <summary>配置と後処理の指定。</summary>
@@ -5933,6 +5999,10 @@ namespace Poly_Ling.Data
     /// 穴は種頂点で指す。種から縁を復元するのは生成側。
     /// </summary>
     [PLCommand(Description = "穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class CreateHoleBridgeCommand : PanelCommand
     {
         // ── 値域 ─────────────────────────────────────────────────
@@ -6036,6 +6106,10 @@ namespace Poly_Ling.Data
     /// 辺は同一メッシュのものに限る（生成側が2群へ分けるため）。
     /// </summary>
     [PLCommand(Description = "辺群ブリッジ。拾った辺そのものを辺群として、その間に面を張る。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class CreateEdgeBridgeCommand : PanelCommand
     {
         // ── 値域 ─────────────────────────────────────────────────
@@ -6137,6 +6211,10 @@ namespace Poly_Ling.Data
     /// 基準と対象が同じメッシュにあってもよい。
     /// </summary>
     [PLCommand(Description = "穴の頂点数を基準の穴に合わせる。穴つなぎは 2 つの穴の頂点数が同じであることを要求するので、その前処理に使う。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class MatchHoleRingCountCommand : PanelCommand
     {
         /// <summary>基準穴のあるメッシュの MeshContextList インデックス。</summary>
@@ -6189,6 +6267,10 @@ namespace Poly_Ling.Data
     /// 消すのは指定メッシュの面だけで、他のオブジェクトの選択は巻き込まない。
     /// </summary>
     [PLCommand(Description = "面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class DeleteFacesCommand : PanelCommand
     {
         /// <summary>対象メッシュの MeshContextList インデックス。</summary>
@@ -6615,6 +6697,400 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// PMX ファイルを読み込む。
+    ///
+    /// 【なぜ ImportPmxCommand と別名か】
+    ///   Poly_Ling.Commands.ImportPmxCommand（ICommand）が既にある。
+    ///   あちらはコールバックを 2 本受け取る内部用で、外から送れない。
+    ///   本コマンドは受け口でそちらを組み立てて CommandQueue へ積む。
+    ///
+    /// 【読込後の処理】
+    ///   PlayerImportSubPanel.PostOptions の 4 項目を平坦化して持つ。
+    ///   Poly_Ling.Data から View 側の入れ子クラスへ依存しないため。
+    /// </summary>
+    [PLCommand(Description = "PMX ファイルを読み込む。作業フォルダの下だけを読める。")]
+    public class ImportPmxFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む PMX のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
+        public Poly_Ling.PMX.PMXImportSettings Settings { get; }
+
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
+        public ImportPmxFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.PMX.PMXImportSettings settings = null,
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
+            : base(modelIndex)
+        {
+            FilePath                 = filePath ?? "";
+            Settings                 = settings ?? Poly_Ling.PMX.PMXImportSettings.CreateDefault();
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
+        }
+    }
+
+    // ================================================================
+    // ファイル入出力（P8）
+    //
+    // 【名前】
+    //   Poly_Ling.Commands 側に ImportMqoCommand / ImportObjCommand（ICommand）が
+    //   既にある。あちらはコールバックを受け取る内部用なので、外から送るものは
+    //   〜FileCommand と別名にする（ImportPmxFileCommand と同じ規則）。
+    //
+    // 【関門】
+    //   受け口が PLSandbox を通す。出力は TryResolveWrite、入力は TryResolveRead。
+    //   Ignore を付けた入力パスと List<string> はコマンドが持ち、受け口が詰め替える。
+    // ================================================================
+
+    /// <summary>
+    /// PMX ファイルを書き出す。
+    ///
+    /// ReplaceMaterialNames と SourcePmxPath は PMXExportSettings 側で Ignore に
+    /// してあるものの受け皿。前者は List、後者は入力パスで、どちらも設定へ
+    /// 直接載せられない。
+    /// </summary>
+    [PLCommand(Description = "現在のモデルを PMX ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class ExportPmxFileCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出し先のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "書き出し設定。省いた項目は既定値のまま")]
+        public Poly_Ling.PMX.PMXExportSettings Settings { get; }
+
+        [PLParam(Description = "部分差し替えで対象にする材質名。空にすると全材質")]
+        public string[] ReplaceMaterialNames { get; }
+
+        [PLParam(Description = "部分差し替えの元 PMX のパス。空にすると通常の書き出し")]
+        public string SourcePmxPath { get; }
+
+        public ExportPmxFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.PMX.PMXExportSettings settings = null,
+            string[] replaceMaterialNames = null,
+            string sourcePmxPath = "")
+            : base(modelIndex)
+        {
+            FilePath             = filePath ?? "";
+            Settings             = settings ?? Poly_Ling.PMX.PMXExportSettings.CreateFullExport();
+            ReplaceMaterialNames = replaceMaterialNames ?? System.Array.Empty<string>();
+            SourcePmxPath        = sourcePmxPath ?? "";
+        }
+    }
+
+    /// <summary>
+    /// MQO ファイルを読み込む。
+    ///
+    /// BoneWeightCsvPath / BoneCsvPath は MQOImportSettings 側で Ignore に
+    /// してある入力パスの受け皿。BaseDir は読み込み側が実ファイルの位置から
+    /// 決めるので持たない。
+    /// </summary>
+    [PLCommand(Description = "MQO ファイルを読み込む。作業フォルダの下だけを読める。")]
+    public class ImportMqoFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む MQO のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
+        public Poly_Ling.MQO.MQOImportSettings Settings { get; }
+
+        [PLParam(Description = "ボーンウェイト CSV のパス。空にすると使わない")]
+        public string BoneWeightCsvPath { get; }
+
+        [PLParam(Description = "ボーン定義 CSV のパス。空にすると使わない")]
+        public string BoneCsvPath { get; }
+
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
+        public ImportMqoFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.MQO.MQOImportSettings settings = null,
+            string boneWeightCsvPath = "",
+            string boneCsvPath = "",
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
+            : base(modelIndex)
+        {
+            FilePath                 = filePath ?? "";
+            Settings                 = settings ?? Poly_Ling.MQO.MQOImportSettings.CreateDefault();
+            BoneWeightCsvPath        = boneWeightCsvPath ?? "";
+            BoneCsvPath              = boneCsvPath ?? "";
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
+        }
+    }
+
+    /// <summary>MQO ファイルを書き出す。</summary>
+    [PLCommand(Description = "現在のモデルを MQO ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class ExportMqoFileCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出し先のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "書き出し設定。省いた項目は既定値のまま")]
+        public Poly_Ling.MQO.MQOExportSettings Settings { get; }
+
+        public ExportMqoFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.MQO.MQOExportSettings settings = null)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            // パネルの既定と同じ。MQO⇔Unity は X のみ反転（AxisFlip.MqoToUnity）。
+            Settings = settings ?? Poly_Ling.MQO.MQOExportSettings.CreateFromCoordinate(
+                0.01f, flipZ: false, flipX: true);
+        }
+    }
+
+    /// <summary>
+    /// OBJ ファイルを読み込む。
+    /// BaseDir は読み込み側が実ファイルの位置から決めるので持たない。
+    /// </summary>
+    [PLCommand(Description = "OBJ ファイルを読み込む。作業フォルダの下だけを読める。")]
+    public class ImportObjFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む OBJ のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
+        public Poly_Ling.OBJ.ObjImportSettings Settings { get; }
+
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
+        public ImportObjFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.OBJ.ObjImportSettings settings = null,
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
+            : base(modelIndex)
+        {
+            FilePath                 = filePath ?? "";
+            Settings                 = settings ?? Poly_Ling.OBJ.ObjImportSettings.CreateDefault();
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
+        }
+    }
+
+    /// <summary>OBJ ファイルを書き出す。材質を出すときは同名の .mtl も隣に作られる。</summary>
+    [PLCommand(Description = "現在のモデルを OBJ ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class ExportObjFileCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出し先のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "書き出し設定。省いた項目は既定値のまま")]
+        public Poly_Ling.OBJ.ObjExportSettings Settings { get; }
+
+        public ExportObjFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.OBJ.ObjExportSettings settings = null)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Settings = settings ?? Poly_Ling.OBJ.ObjExportSettings.CreateDefault();
+        }
+    }
+
+    /// <summary>
+    /// VRM 1.0 ファイルを書き出す。
+    /// Authors は Vrm10ExportSettings 側で Ignore にしてある List の受け皿。
+    /// </summary>
+    [PLCommand(Description = "現在のモデルを VRM 1.0 ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class ExportVrmFileCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出し先のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "書き出し設定。省いた項目は既定値のまま")]
+        public Poly_Ling.Vrm.Vrm10ExportSettings Settings { get; }
+
+        [PLParam(Description = "作者名（VRM Meta の authors）。空にするとモデル側の値を使う")]
+        public string[] Authors { get; }
+
+        public ExportVrmFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.Vrm.Vrm10ExportSettings settings = null,
+            string[] authors = null)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Settings = settings ?? Poly_Ling.Vrm.Vrm10ExportSettings.CreateDefault();
+            Authors  = authors ?? System.Array.Empty<string>();
+        }
+    }
+
+    /// <summary>プロジェクトを .mfproj（JSON）へ保存する。</summary>
+    [PLCommand(Description = "プロジェクトを .mfproj ファイルへ保存する。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class SaveProjectFileCommand : PanelCommand
+    {
+        [PLParam(Description = "保存先の .mfproj のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        public SaveProjectFileCommand(int modelIndex, string filePath)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+        }
+    }
+
+    /// <summary>
+    /// .mfproj（JSON）からプロジェクトを読み込む。
+    /// 編集中のプロジェクトは置き換わる。
+    /// </summary>
+    [PLCommand(Description = ".mfproj ファイルからプロジェクトを読み込む。編集中のプロジェクトは置き換わる。")]
+    public class LoadProjectFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む .mfproj のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        public LoadProjectFileCommand(int modelIndex, string filePath)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+        }
+    }
+
+    /// <summary>
+    /// プロジェクトを CSV へ保存する。
+    /// FilePath はプロジェクトファイル（任意名の .csv）で、モデルフォルダは
+    /// 同じディレクトリ直下に作られる。
+    /// </summary>
+    [PLCommand(Description = "プロジェクトを CSV へ保存する。モデルフォルダは同じディレクトリ直下に作られる。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いたプロジェクト CSV の経路。モデルフォルダは同じディレクトリ直下に別途できる", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数。プロジェクト CSV の 1 本だけを数える")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "プロジェクト CSV の大きさ。10 進の文字列")]
+    public class SaveProjectCsvCommand : PanelCommand
+    {
+        [PLParam(Description = "保存先のプロジェクト CSV のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        public SaveProjectCsvCommand(int modelIndex, string filePath)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+        }
+    }
+
+    /// <summary>
+    /// CSV からプロジェクトを読み込む。
+    /// Merge を立てると、指定ファイルと同じフォルダのメッシュを現在の
+    /// プロジェクトへ足す（名前が重なるものは置き換える）。
+    /// </summary>
+    [PLCommand(Description = "CSV からプロジェクトを読み込む。追加マージにすると現在のプロジェクトへ足す。")]
+    public class LoadProjectCsvCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込むプロジェクト CSV のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "現在のプロジェクトへ足す。false にすると置き換える")]
+        public bool Merge { get; }
+
+        public LoadProjectCsvCommand(int modelIndex, string filePath, bool merge = false)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Merge    = merge;
+        }
+    }
+
+    /// <summary>
     /// 2 本のボーンが決める平面へ選択頂点を寄せる。実処理は PlanarizeAlongBonesTool。
     ///
     /// 実処理が編集対象メッシュ 1 本にしか効かない（PlanarizeAlongBonesTool.cs:140）ため、
@@ -6967,6 +7443,44 @@ namespace Poly_Ling.Data
             MeshName       = meshName ?? "Solidify";
             AddToExisting  = addToExisting;
             AddTargetIndex = addTargetIndex;
+        }
+    }
+
+    /// <summary>
+    /// 選択辺を中心線として、ワールド固定幅の帯面を足す。実処理は EdgeRibbonFaceTool。
+    ///
+    /// 元の辺は変えず、生成した頂点と四角形を末尾へ足すだけ。選択も消さない。
+    /// 対象は選択中の描画オブジェクト全部で、各オブジェクトの選択辺を使う。
+    /// </summary>
+    [PLCommand(Description = "選択辺を中心線として、ワールド固定幅の帯面を足す。")]
+    public class EdgeRibbonFaceCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。選択中のものと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(Description = "帯の幅。ワールド単位。0 より大きいこと", Min = 0.000001f)]
+        public float WidthWorld { get; }
+
+        [PLParam(Description = "生成物の置き方。追加先モード・材質スロットなど")]
+        public PrimitivePlacement Placement { get; }
+
+        public EdgeRibbonFaceCommand(
+            int modelIndex, int[] masterIndices,
+            float widthWorld  = 0.05f,
+            PrimitivePlacement placement = default,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            WidthWorld    = widthWorld;
+            Placement     = placement;
         }
     }
 
@@ -8403,6 +8917,10 @@ namespace Poly_Ling.Data
     ///   ・Resolve が Ok を返すこと
     /// </summary>
     [PLCommand(Description = "ラダー切断。開始頂点 → セグメント辺 → 終了頂点で切る。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeLadderCutCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices",
@@ -8469,6 +8987,10 @@ namespace Poly_Ling.Data
     ///   ・Resolve が Ok かつ FaceCuts が 1 件以上あること
     /// </summary>
     [PLCommand(Description = "一意分割。辺を 1 つ指定してベルト／ループ全体を切る。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeBeltLoopCutCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices",
@@ -8529,6 +9051,10 @@ namespace Poly_Ling.Data
     ///   ・2 頂点が辺を成し、ちょうど 2 面に共有されていること
     /// </summary>
     [PLCommand(Description = "辺消去。共有辺を消して 2 面を 1 面に統合する。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeEraseEdgeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices",
@@ -8571,6 +9097,10 @@ namespace Poly_Ling.Data
     ///   ・FaceCulledMask は空か、長さが面数と一致すること
     /// </summary>
     [PLCommand(Description = "シンプル切断。画面上の 2 点を結ぶ直線で切る。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeSimpleCutCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices",
@@ -8614,6 +9144,554 @@ namespace Poly_Ling.Data
             ScreenP1       = screenP1;
             FaceCulledMask = faceCulledMask ?? System.Array.Empty<bool>();
             TriQuad        = triQuad;
+        }
+    }
+
+    // ================================================================
+    // 照会（モデルを変えない）
+    //
+    // 【編集系と分けている点】
+    //   Undo に記録しない。RemoteOwnership の判定対象にしない
+    //   （RemoteOwnership.IsOwnershipExempt へ足す）。
+    //   ComputeWorldMatrices を呼ばない。
+    //
+    // 【結果の返し方】
+    //   量のあるものは ModelContext.DataStore へ書き、戻り値には
+    //   辞書の名前と件数だけを載せる（PLDataStore.cs の冒頭注記）。
+    // ================================================================
+
+    /// <summary>種を探す方法。QuerySeedElementCommand.Mode が使う。</summary>
+    public enum PLSeedMode
+    {
+        /// <summary>基準点に最も近い頂点。</summary>
+        NearestVertex = 0,
+
+        /// <summary>面の重心が基準点に最も近い面。</summary>
+        NearestFace = 1,
+
+        /// <summary>基準点に最も近い境界頂点。</summary>
+        NearestBoundaryVertex = 2,
+
+        /// <summary>基準点に最も近い境界辺。頂点 2 個を返す。</summary>
+        NearestBoundaryEdge = 3,
+
+        /// <summary>最初の境界ループの先頭頂点。基準点は使わない。</summary>
+        FirstBoundaryVertex = 4,
+    }
+
+    /// <summary>
+    /// 生データの取得・送信が対象にする範囲。
+    /// GetRawDataCommand / SetRawDataCommand が使う。
+    /// </summary>
+    public enum PLRawScope
+    {
+        /// <summary>masterIndex で指した描画オブジェクト 1 個。</summary>
+        Object = 0,
+
+        /// <summary>選択されている頂点・面だけ。辞書名があれば辞書の選択を使う。</summary>
+        SelectedParts = 1,
+
+        /// <summary>選択されている描画オブジェクト全部。辞書名があれば辞書の対象を使う。</summary>
+        SelectedObjects = 2,
+
+        /// <summary>モデル内の描画オブジェクト全部。</summary>
+        Model = 3,
+    }
+
+    /// <summary>
+    /// モデルの構成を数え、描画オブジェクトの索引・安定 ID・名前の対応を
+    /// 結果辞書へ書く。モデルは変えない。
+    /// </summary>
+    [PLCommand(Description = "モデルの構成を数え、描画オブジェクトの索引・安定 ID・名前の対応を結果辞書へ書く。モデルは変えない。")]
+    [PLResult("entry",        PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("modelIndex",   PLResultKind.Integer, Description = "読んだモデルの索引")]
+    [PLResult("meshContexts", PLResultKind.Integer, Description = "モデルが持つ要素の総数")]
+    [PLResult("drawables",    PLResultKind.Integer, Description = "描画オブジェクトの数")]
+    [PLResult("bones",        PLResultKind.Integer, Description = "ボーンの数")]
+    [PLResult("morphs",       PLResultKind.Integer, Description = "モーフの数")]
+    public class QueryModelStructureCommand : PanelCommand
+    {
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QueryModelStructureCommand(int modelIndex, string resultName = null)
+            : base(modelIndex)
+        {
+            ResultName = resultName;
+        }
+    }
+
+    /// <summary>
+    /// オブジェクトグループの状態を結果辞書へ書く。モデルは変えない。
+    ///
+    /// 【何のためにあるか】
+    ///   自動更新が流れなかった理由は、グループ側の 3 つで決まる
+    ///   （自動更新が立っているか / ソースを引けるか / 要更新か）。
+    ///   外から読めないと、パネルの画面を見るしか確かめる手が無い。
+    /// </summary>
+    [PLCommand(Description = "オブジェクトグループの状態（自動更新・要更新・参照の生死）を結果辞書へ書く。モデルは変えない。")]
+    [PLResult("entry",  PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("groups", PLResultKind.Integer, Description = "グループの数")]
+    [PLResult("stale",  PLResultKind.Integer, Description = "要更新のグループの数")]
+    public class QueryObjectGroupsCommand : PanelCommand
+    {
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QueryObjectGroupsCommand(int modelIndex, string resultName = null)
+            : base(modelIndex)
+        {
+            ResultName = resultName;
+        }
+    }
+
+    /// <summary>
+    /// 描画オブジェクト 1 個のボーンウェイトの行き先を数え、結果辞書へ書く。モデルは変えない。
+    ///
+    /// 【何のためにあるか】
+    ///   「塗り直されたか」は頂点数では判らない。どのボーンを指しているかで決まる。
+    ///   接頭辞を渡すと、その名前で始まるボーンを指す頂点だけを別に数える。
+    /// </summary>
+    [PLCommand(Description = "描画オブジェクト 1 個のボーンウェイトの行き先を数え、結果辞書へ書く。モデルは変えない。")]
+    [PLResult("entry",         PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("vertices",      PLResultKind.Integer, Description = "頂点数")]
+    [PLResult("weighted",      PLResultKind.Integer, Description = "ウェイトを持つ頂点の数")]
+    [PLResult("multiBone",     PLResultKind.Integer, Description = "2 本以上のボーンへ配られた頂点の数")]
+    [PLResult("toPrefix",      PLResultKind.Integer, Description = "接頭辞に一致するボーンを指す頂点の数")]
+    [PLResult("prefixBones",   PLResultKind.Integer, Description = "接頭辞に一致したボーンの本数")]
+    [PLResult("distinctBones", PLResultKind.Integer, Description = "指されているボーンの種類数")]
+    public class QuerySkinWeightSummaryCommand : PanelCommand
+    {
+        [PLParam(Description = "読む描画オブジェクトの masterIndex", Required = true, IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(Description = "別に数えるボーン名の接頭辞。空にすると数えない")]
+        public string BonePrefix { get; }
+
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QuerySkinWeightSummaryCommand(
+            int modelIndex, int masterIndex, string bonePrefix = "", string resultName = null)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            BonePrefix  = bonePrefix ?? "";
+            ResultName  = resultName;
+        }
+    }
+
+    /// <summary>
+    /// 描画オブジェクト 1 個の規模を数え、結果辞書へ書く。モデルは変えない。
+    /// </summary>
+    [PLCommand(Description = "描画オブジェクト 1 個の頂点数・面数・材質数・境界ループ数・バウンディングボックスを数え、結果辞書へ書く。モデルは変えない。")]
+    [PLResult("entry",         PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("masterIndex",   PLResultKind.Integer, Description = "読んだ描画オブジェクトの masterIndex")]
+    [PLResult("name",          PLResultKind.Text,    Description = "描画オブジェクトの名前")]
+    [PLResult("objectId",      PLResultKind.Text,    Description = "安定 ID。10 進の文字列")]
+    [PLResult("vertices",      PLResultKind.Integer, Description = "頂点数")]
+    [PLResult("faces",         PLResultKind.Integer, Description = "面数")]
+    [PLResult("triangles",     PLResultKind.Integer, Description = "三角形換算の面数")]
+    [PLResult("materialsUsed", PLResultKind.Integer, Description = "面が実際に使っている材質スロットの異なり数")]
+    [PLResult("boundaryLoops", PLResultKind.Integer, Description = "境界ループ（穴）の数")]
+    public class QueryDrawableStatsCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true,
+                 IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QueryDrawableStatsCommand(int modelIndex, int masterIndex, string resultName = null)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            ResultName  = resultName;
+        }
+    }
+
+    /// <summary>
+    /// 描画オブジェクトの穴（境界ループ）を集め、結果辞書へループ群として書く。
+    /// モデルは変えない。
+    /// </summary>
+    [PLCommand(Description = "描画オブジェクトの穴（境界ループ）を集め、各穴の頂点列と重心を結果辞書へ書く。モデルは変えない。")]
+    [PLResult("entry",            PLResultKind.Entry,        Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("masterIndex",      PLResultKind.Integer,      Description = "読んだ描画オブジェクトの masterIndex")]
+    [PLResult("holes",            PLResultKind.Integer,      Description = "穴の数")]
+    [PLResult("holeVertexCounts", PLResultKind.IntegerArray, Description = "穴ごとの頂点数。並びは結果辞書のループの並びと同じ")]
+    public class QueryHolesCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true,
+                 IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QueryHolesCommand(int modelIndex, int masterIndex, string resultName = null)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            ResultName  = resultName;
+        }
+    }
+
+    /// <summary>
+    /// 条件に合う要素を 1 個だけ返す。位相変更コマンドの種を決めるために使う。
+    /// モデルは変えない。
+    /// </summary>
+    [PLCommand(Description = "条件に合う頂点・面・境界辺を 1 個だけ返す。位相変更コマンドの種を決めるために使う。モデルは変えない。")]
+    [PLResult("entry",       PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("masterIndex", PLResultKind.Integer, Description = "読んだ描画オブジェクトの masterIndex")]
+    [PLResult("mode",        PLResultKind.Text,    Description = "使った探し方")]
+    [PLResult("found",       PLResultKind.Flag,    Description = "見つかったか")]
+    [PLResult("vertex",      PLResultKind.Integer, Description = "見つかった頂点番号。見つからなければ -1", Optional = true)]
+    [PLResult("vertex2",     PLResultKind.Integer, Description = "辺のもう一方の頂点番号。辺以外では -1", Optional = true)]
+    [PLResult("face",        PLResultKind.Integer, Description = "見つかった面番号。面以外では -1", Optional = true)]
+    [PLResult("distance",    PLResultKind.Number,  Description = "基準点からのワールド距離", Optional = true)]
+    public class QuerySeedElementCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex", Required = true,
+                 IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "QuerySeedMode",
+                 Description = "探し方", Required = true)]
+        public PLSeedMode Mode { get; }
+
+        [PLParam(TextKey = "QuerySeedPoint",
+                 Description = "基準点（ワールド座標）。先頭を取る探し方では使わない")]
+        public Vector3 WorldPosition { get; }
+
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QuerySeedElementCommand(
+            int modelIndex, int masterIndex, PLSeedMode mode,
+            Vector3 worldPosition = default, string resultName = null)
+            : base(modelIndex)
+        {
+            MasterIndex   = masterIndex;
+            Mode          = mode;
+            WorldPosition = worldPosition;
+            ResultName    = resultName;
+        }
+    }
+
+    /// <summary>
+    /// ボーン階層とスキンウェイトの分布を数え、結果辞書へ書く。モデルは変えない。
+    /// </summary>
+    [PLCommand(Description = "ボーン階層と Humanoid 割当、スキンウェイトの分布を数え、結果辞書へ書く。モデルは変えない。")]
+    [PLResult("entry",            PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("bones",            PLResultKind.Integer, Description = "ボーンの数")]
+    [PLResult("roots",            PLResultKind.Integer, Description = "親を持たないボーンの数")]
+    [PLResult("maxDepth",         PLResultKind.Integer, Description = "階層の最大の深さ。根が 0")]
+    [PLResult("humanoidAssigned", PLResultKind.Integer, Description = "Humanoid の骨名が入っているボーンの数")]
+    [PLResult("skinnedDrawables", PLResultKind.Integer, Description = "ウェイトを持つ描画オブジェクトの数")]
+    [PLResult("weightedVertices", PLResultKind.Integer, Description = "ウェイトを持つ頂点の数")]
+    [PLResult("usedBones",        PLResultKind.Integer, Description = "ウェイトから参照されているボーンの異なり数")]
+    public class QueryBoneSkinCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "ウェイトを数える描画オブジェクトの masterIndex。省くとモデル全体",
+                 IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        public QueryBoneSkinCommand(int modelIndex, int masterIndex = -1, string resultName = null)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            ResultName  = resultName;
+        }
+    }
+
+    /// <summary>
+    /// コマンド定義の検査（PanelCommandFactoryAudit.RunAll）を回して結果を返す。
+    /// モデルもプロジェクトも見ない。
+    /// </summary>
+    [PLCommand(Description = "コマンド定義の検査を回し、PLParam の付け忘れ・action 衝突・未対応の型・道具として出せた数を返す。モデルもプロジェクトも見ない。")]
+    [PLResult("report",       PLResultKind.Text,    Description = "検査結果の全文。複数行")]
+    [PLResult("toolsUsable",  PLResultKind.Integer, Description = "道具として出せた数")]
+    [PLResult("toolsSkipped", PLResultKind.Integer, Description = "道具として出せなかった数")]
+    public class QueryCommandAuditCommand : PanelCommand
+    {
+        public QueryCommandAuditCommand(int modelIndex = 0) : base(modelIndex) { }
+    }
+
+    /// <summary>
+    /// 現在の選択（またはパーツ選択セット）を結果辞書へ写す。形状は変えない。
+    /// </summary>
+    [PLCommand(Description = "現在の選択を結果辞書へ IndexSet として写す。getRawData / setRawData の setName から引ける。形状は変えない。")]
+    [PLResult("entry",       PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
+    [PLResult("masterIndex", PLResultKind.Integer, Description = "写した選択が属する描画オブジェクトの masterIndex")]
+    [PLResult("vertices",    PLResultKind.Integer, Description = "写した頂点の数")]
+    [PLResult("edges",       PLResultKind.Integer, Description = "写した辺の数")]
+    [PLResult("faces",       PLResultKind.Integer, Description = "写した面の数")]
+    [PLResult("lines",       PLResultKind.Integer, Description = "写した線分の数")]
+    public class SaveSelectionToDataStoreCommand : PanelCommand
+    {
+        [PLParam(TextKey = "QueryResultName",
+                 Description = "結果を書き込む辞書の名前。省くと自動で付ける")]
+        public string ResultName { get; }
+
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex。省くと現在の編集対象",
+                 IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "PartsSetIndex",
+                 Description = "写すパーツ選択セットの索引。省くと現在の選択を写す")]
+        public int PartsSetIndex { get; }
+
+        public SaveSelectionToDataStoreCommand(
+            int modelIndex, string resultName = null, int masterIndex = -1, int partsSetIndex = -1)
+            : base(modelIndex)
+        {
+            ResultName    = resultName;
+            MasterIndex   = masterIndex;
+            PartsSetIndex = partsSetIndex;
+        }
+    }
+
+    // ================================================================
+    // 生データの取得・送信
+    //
+    // 【原則の例外】
+    //   量のあるもの（番号列・座標列）は回線に乗せない、が原則。
+    //   この 2 本だけは生データそのものを載せる。
+    //
+    // 【平坦化】
+    //   可変長のものは「個数の列」と「連結した値の列」の 2 本で持つ。
+    //   入れ子の配列は JsonParser.ParseFlat が受け取れない
+    //   （'[' で始まる値を捨てる。RemoteProtocol.cs:227）。
+    //
+    // 【送信は位相を変えない】
+    //   SetRawData は座標・UV・法線・ID・ウェイト・フラグの書き戻しだけ。
+    //   頂点数・面数が合わなければ拒否する。面の作り替えは位相変更の
+    //   コマンド（knife* / deleteFaces / createHoleBridge ほか）を使うこと。
+    // ================================================================
+
+    /// <summary>生データを取得する。モデルは変えない。</summary>
+    [PLCommand(Description = "描画オブジェクトの生データ（座標・UV・法線・ID・面・ウェイト）を取得する。量があるので取る種別と範囲を絞って呼ぶこと。モデルは変えない。")]
+    [PLResult("objects",       PLResultKind.Integer,      Description = "読んだ描画オブジェクトの数")]
+    [PLResult("masterIndices", PLResultKind.IntegerArray, Description = "読んだ描画オブジェクトの masterIndex")]
+    [PLResult("objectIds",     PLResultKind.TextArray,    Description = "同じ並びの安定 ID。10 進の文字列")]
+    [PLResult("names",         PLResultKind.TextArray,    Description = "同じ並びの名前")]
+    [PLResult("vertexCounts",  PLResultKind.IntegerArray, Description = "オブジェクトごとに返した頂点の数")]
+    [PLResult("faceCounts",    PLResultKind.IntegerArray, Description = "オブジェクトごとに返した面の数")]
+    [PLResult("vertexIndices", PLResultKind.IntegerArray, Description = "返した頂点の元の番号。全オブジェクトぶんを連結")]
+    [PLResult("faceIndices",   PLResultKind.IntegerArray, Description = "返した面の元の番号。全オブジェクトぶんを連結", Optional = true)]
+    [PLResult("positions",     PLResultKind.NumberArray,  Description = "頂点座標。x,y,z の順に 3 個ずつ", Optional = true)]
+    [PLResult("vertexIds",     PLResultKind.IntegerArray, Description = "Id, PartsId, SubId の順に 3 個ずつ", Optional = true)]
+    [PLResult("vertexFlags",   PLResultKind.IntegerArray, Description = "頂点フラグ。1 頂点 1 個", Optional = true)]
+    [PLResult("uvCounts",      PLResultKind.IntegerArray, Description = "頂点ごとの UV スロット数", Optional = true)]
+    [PLResult("uvs",           PLResultKind.NumberArray,  Description = "UV。u,v の順に 2 個ずつ連結", Optional = true)]
+    [PLResult("normalCounts",  PLResultKind.IntegerArray, Description = "頂点ごとの法線スロット数", Optional = true)]
+    [PLResult("normals",       PLResultKind.NumberArray,  Description = "法線。x,y,z の順に 3 個ずつ連結", Optional = true)]
+    [PLResult("weightHas",     PLResultKind.IntegerArray, Description = "頂点がウェイトを持つか。1 頂点 1 個の 0/1", Optional = true)]
+    [PLResult("weightBones",   PLResultKind.IntegerArray, Description = "ウェイトのボーン masterIndex。1 頂点 4 個", Optional = true)]
+    [PLResult("weightValues",  PLResultKind.NumberArray,  Description = "ウェイトの重み。1 頂点 4 個", Optional = true)]
+    [PLResult("faceSizes",     PLResultKind.IntegerArray, Description = "面ごとの頂点数", Optional = true)]
+    [PLResult("faceVertices",  PLResultKind.IntegerArray, Description = "面の頂点番号。faceSizes の数だけ連結", Optional = true)]
+    [PLResult("faceUVs",       PLResultKind.IntegerArray, Description = "面の UV スロット番号。同じ並び", Optional = true)]
+    [PLResult("faceNormals",   PLResultKind.IntegerArray, Description = "面の法線スロット番号。同じ並び", Optional = true)]
+    [PLResult("faceMaterials", PLResultKind.IntegerArray, Description = "面の材質スロット番号。1 面 1 個", Optional = true)]
+    [PLResult("faceFlags",     PLResultKind.IntegerArray, Description = "面のフラグ。1 面 1 個", Optional = true)]
+    [PLResult("truncated",     PLResultKind.Flag,         Description = "limit で打ち切ったか")]
+    public class GetRawDataCommand : PanelCommand
+    {
+        [PLParam(TextKey = "RawScope", Description = "対象の範囲", Required = true)]
+        public PLRawScope Scope { get; }
+
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "Scope が Object のときの対象。省くと -1", IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "RawSetName",
+                 Description = "選択の代わりに使う結果辞書の項目名。省くと現在の選択を使う")]
+        public string SetName { get; }
+
+        [PLParam(TextKey = "RawIncludePositions", Description = "頂点座標を返す。既定は true")]
+        public bool IncludePositions { get; }
+
+        [PLParam(TextKey = "RawIncludeUVs", Description = "UV を返す")]
+        public bool IncludeUVs { get; }
+
+        [PLParam(TextKey = "RawIncludeNormals", Description = "法線を返す")]
+        public bool IncludeNormals { get; }
+
+        [PLParam(TextKey = "RawIncludeIds", Description = "頂点 ID・部品 ID・サブ ID を返す")]
+        public bool IncludeIds { get; }
+
+        [PLParam(TextKey = "RawIncludeFaces", Description = "面を返す")]
+        public bool IncludeFaces { get; }
+
+        [PLParam(TextKey = "RawIncludeWeights", Description = "ボーンウェイトを返す")]
+        public bool IncludeWeights { get; }
+
+        [PLParam(TextKey = "RawIncludeFlags", Description = "頂点と面のフラグを返す")]
+        public bool IncludeFlags { get; }
+
+        [PLParam(TextKey = "RawOffset", Description = "頂点・面を返し始める位置。既定は 0", Min = 0)]
+        public int Offset { get; }
+
+        [PLParam(TextKey = "RawLimit",
+                 Description = "オブジェクトごとに返す頂点・面の上限。0 で全件", Min = 0)]
+        public int Limit { get; }
+
+        public GetRawDataCommand(
+            int modelIndex, PLRawScope scope,
+            int masterIndex       = -1,
+            string setName        = null,
+            bool includePositions = true,
+            bool includeUVs       = false,
+            bool includeNormals   = false,
+            bool includeIds       = false,
+            bool includeFaces     = false,
+            bool includeWeights   = false,
+            bool includeFlags     = false,
+            int offset            = 0,
+            int limit             = 0)
+            : base(modelIndex)
+        {
+            Scope            = scope;
+            MasterIndex      = masterIndex;
+            SetName          = setName;
+            IncludePositions = includePositions;
+            IncludeUVs       = includeUVs;
+            IncludeNormals   = includeNormals;
+            IncludeIds       = includeIds;
+            IncludeFaces     = includeFaces;
+            IncludeWeights   = includeWeights;
+            IncludeFlags     = includeFlags;
+            Offset           = offset;
+            Limit            = limit;
+        }
+    }
+
+    /// <summary>
+    /// 生データを書き戻す。位相は変えない。
+    /// 対象は描画オブジェクト 1 個だけ。数が合わなければ拒否する。
+    /// </summary>
+    [PLCommand(Description = "描画オブジェクト 1 個へ生データ（座標・UV・法線・ID・ウェイト・フラグ・材質）を書き戻す。位相は変えない。数が合わなければ拒否する。")]
+    [PLResult("masterIndex",     PLResultKind.Integer, Description = "書き戻した描画オブジェクトの masterIndex")]
+    [PLResult("vertices",        PLResultKind.Integer, Description = "書き戻した頂点の数")]
+    [PLResult("faces",           PLResultKind.Integer, Description = "書き戻した面の数")]
+    [PLResult("positionsWritten", PLResultKind.Flag,   Description = "座標を書いたか")]
+    [PLResult("uvsWritten",      PLResultKind.Flag,    Description = "UV を書いたか")]
+    [PLResult("normalsWritten",  PLResultKind.Flag,    Description = "法線を書いたか")]
+    [PLResult("idsWritten",      PLResultKind.Flag,    Description = "ID を書いたか")]
+    [PLResult("weightsWritten",  PLResultKind.Flag,    Description = "ウェイトを書いたか")]
+    public class SetRawDataCommand : PanelCommand
+    {
+        [PLParam(TextKey = "RawScope", Description = "対象の範囲。解決した結果が 1 個でなければ拒否する", Required = true)]
+        public PLRawScope Scope { get; }
+
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "Scope が Object のときの対象。省くと -1", IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "RawSetName",
+                 Description = "選択の代わりに使う結果辞書の項目名。省くと現在の選択を使う")]
+        public string SetName { get; }
+
+        [PLParam(TextKey = "RawVertexIndices",
+                 Description = "書き戻す頂点の番号。省くと範囲が決めた並びをそのまま使う")]
+        public int[] VertexIndices { get; }
+
+        [PLParam(TextKey = "RawPositions",
+                 Description = "頂点座標。x,y,z の順に 3 個ずつ。数が合わなければ拒否する")]
+        public float[] Positions { get; }
+
+        [PLParam(TextKey = "RawVertexIds",
+                 Description = "Id, PartsId, SubId の順に 3 個ずつ")]
+        public int[] VertexIds { get; }
+
+        [PLParam(TextKey = "RawVertexFlags", Description = "頂点フラグ。1 頂点 1 個")]
+        public int[] VertexFlags { get; }
+
+        [PLParam(TextKey = "RawUvCounts", Description = "頂点ごとの UV スロット数")]
+        public int[] UvCounts { get; }
+
+        [PLParam(TextKey = "RawUvs", Description = "UV。u,v の順に 2 個ずつ連結")]
+        public float[] Uvs { get; }
+
+        [PLParam(TextKey = "RawNormalCounts", Description = "頂点ごとの法線スロット数")]
+        public int[] NormalCounts { get; }
+
+        [PLParam(TextKey = "RawNormals", Description = "法線。x,y,z の順に 3 個ずつ連結")]
+        public float[] Normals { get; }
+
+        [PLParam(TextKey = "RawWeightHas", Description = "頂点がウェイトを持つか。1 頂点 1 個の 0/1")]
+        public int[] WeightHas { get; }
+
+        [PLParam(TextKey = "RawWeightBones", Description = "ウェイトのボーン masterIndex。1 頂点 4 個")]
+        public int[] WeightBones { get; }
+
+        [PLParam(TextKey = "RawWeightValues", Description = "ウェイトの重み。1 頂点 4 個")]
+        public float[] WeightValues { get; }
+
+        [PLParam(TextKey = "RawFaceIndices",
+                 Description = "書き戻す面の番号。省くと材質・フラグは書かない")]
+        public int[] FaceIndices { get; }
+
+        [PLParam(TextKey = "RawFaceMaterials", Description = "面の材質スロット番号。1 面 1 個")]
+        public int[] FaceMaterials { get; }
+
+        [PLParam(TextKey = "RawFaceFlags", Description = "面のフラグ。1 面 1 個")]
+        public int[] FaceFlags { get; }
+
+        public SetRawDataCommand(
+            int modelIndex, PLRawScope scope,
+            int masterIndex      = -1,
+            string setName       = null,
+            int[] vertexIndices  = null,
+            float[] positions    = null,
+            int[] vertexIds      = null,
+            int[] vertexFlags    = null,
+            int[] uvCounts       = null,
+            float[] uvs          = null,
+            int[] normalCounts   = null,
+            float[] normals      = null,
+            int[] weightHas      = null,
+            int[] weightBones    = null,
+            float[] weightValues = null,
+            int[] faceIndices    = null,
+            int[] faceMaterials  = null,
+            int[] faceFlags      = null)
+            : base(modelIndex)
+        {
+            Scope         = scope;
+            MasterIndex   = masterIndex;
+            SetName       = setName;
+            VertexIndices = vertexIndices;
+            Positions     = positions;
+            VertexIds     = vertexIds;
+            VertexFlags   = vertexFlags;
+            UvCounts      = uvCounts;
+            Uvs           = uvs;
+            NormalCounts  = normalCounts;
+            Normals       = normals;
+            WeightHas     = weightHas;
+            WeightBones   = weightBones;
+            WeightValues  = weightValues;
+            FaceIndices   = faceIndices;
+            FaceMaterials = faceMaterials;
+            FaceFlags     = faceFlags;
         }
     }
 }

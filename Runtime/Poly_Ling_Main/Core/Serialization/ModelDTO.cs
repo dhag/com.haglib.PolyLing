@@ -106,6 +106,17 @@ namespace Poly_Ling.Serialization
         public List<ObjectGroupDTO> objectGroups = new List<ObjectGroupDTO>();
 
         // ================================================================
+        // DataStore（コマンドが返した実データの辞書）
+        // ================================================================
+
+        /// <summary>
+        /// 結果辞書の項目一覧。
+        /// 参照は ObjectGroups と同じく ObjectId を併せて持つので、
+        /// メッシュの並べ替えでは付け替えが要らない。
+        /// </summary>
+        public List<PLDataEntryDTO> dataStore = new List<PLDataEntryDTO>();
+
+        // ================================================================
         // MirrorPair（ミラーペア情報）
         // ================================================================
 

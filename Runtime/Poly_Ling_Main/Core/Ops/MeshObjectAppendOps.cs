@@ -38,6 +38,19 @@ namespace Poly_Ling.Ops
                 nv.PartsId = sv.PartsId;
                 nv.SubId   = sv.SubId;
 
+                // ボーンウェイトも連結で失わない。
+                //
+                // 【なぜ要るか】
+                //   はしごから作る図形は、取り込み元のウェイトを引き継いで頂点へ載せる
+                //   （BeltWeightBinder / PipeMeshGenerator / FrillMeshGenerator）。
+                //   パイプは梯子 1 本ごとに作ってここで連結するため、写さないと
+                //   引き継いだ値が連結の時点で全部消える。フリルも融合なし
+                //   （ConnectShared = false）のときは同じ経路を通る。
+                //
+                //   ミラー側の参照先も同じボーン索引空間なので一緒に写す。
+                nv.BoneWeight       = sv.BoneWeight;
+                nv.MirrorBoneWeight = sv.MirrorBoneWeight;
+
                 dst.Vertices.Add(nv);
             }
 

@@ -82,6 +82,26 @@ namespace Poly_Ling.Player
         /// </summary>
         public event Action OnPointerLeft;
 
+        /// <summary>
+        /// このパネルが UIToolkit のレイアウトで初めて実サイズ（幅・高さとも 2px 以上）を
+        /// 得て、RenderTexture が実寸へ Resize された直後に 1 回だけ発火する。以降は発火しない。
+        ///
+        /// 【用途】
+        ///   起動直後のカメラ確定（PlayerViewportManager.EnterViewportsReady）の契機。
+        ///   PlayerViewport.Initialize は RT を 1×1 で作るため、その状態では
+        ///   Camera.pixelHeight が 1 になり、OrthoViewController の遅延ズーム
+        ///   （PendingResetHalfHeight）が解決できない。実サイズ確定を待つ必要がある。
+        ///
+        /// 【リサイズのたびに発火させない理由】
+        ///   ウィンドウ伸縮時の再描画は既存のイベント経路の責務であり、
+        ///   ここから重い PresentAll を毎回起こすと GeometryChangedEvent の
+        ///   連鎖でフレームごとに全 slot の Prepare が走る。
+        /// </summary>
+        public event Action OnFirstRealSize;
+
+        /// <summary>OnFirstRealSize の一度きり判定。発火後は二度と立て直さない。</summary>
+        private bool _firstRealSizeFired;
+
         // ================================================================
         // 矩形選択オーバーレイ
         // ================================================================
@@ -727,6 +747,14 @@ namespace Poly_Ling.Player
             int h = Mathf.Max(1, Mathf.RoundToInt(resolvedStyle.height));
             Viewport.Resize(w, h);
             RefreshBackground();
+
+            // 実サイズが初めて確定した 1 回だけ通知する。
+            // w/h は上で Mathf.Max(1, …) 済みなので、1 は「まだ確定していない」を意味する。
+            if (!_firstRealSizeFired && w > 1 && h > 1)
+            {
+                _firstRealSizeFired = true;
+                OnFirstRealSize?.Invoke();
+            }
         }
 
         // ================================================================

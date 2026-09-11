@@ -12,6 +12,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Data;
 using Poly_Ling.Ops;
 
 namespace Poly_Ling.OBJ
@@ -41,14 +42,17 @@ namespace Poly_Ling.OBJ
 
         /// <summary>スケール係数（OBJ 1 単位 → Unity 何 m か）。</summary>
         [Tooltip("インポート時のスケール係数")]
+        [PLParam(Description = "インポート時のスケール係数")]
         public float Scale = 1f;
 
         /// <summary>X軸反転（OBJ 右手系 → Unity 左手系）。</summary>
         [Tooltip("X軸を反転（OBJ は右手系のため既定 ON）")]
+        [PLParam(Description = "X軸を反転（OBJ は右手系のため既定 ON）")]
         public bool FlipX = true;
 
         /// <summary>Z軸反転。</summary>
         [Tooltip("Z軸を反転")]
+        [PLParam(Description = "Z軸を反転")]
         public bool FlipZ = false;
 
         /// <summary>軸反転指定。エクスポート側と同一（自己逆元のため同じ設定が逆変換になる）。</summary>
@@ -56,6 +60,7 @@ namespace Poly_Ling.OBJ
 
         /// <summary>UV V座標反転（1-V）。</summary>
         [Tooltip("UV の V を反転（OBJ / Unity とも原点は左下のため既定 OFF）")]
+        [PLParam(Description = "UV の V を反転（OBJ / Unity とも原点は左下のため既定 OFF）")]
         public bool FlipUV_V = false;
 
         // ================================================================
@@ -64,14 +69,17 @@ namespace Poly_Ling.OBJ
 
         /// <summary>メッシュへの分割単位。</summary>
         [Tooltip("OBJ をどの単位で1オブジェクトにするか")]
+        [PLParam(Description = "OBJ をどの単位で1オブジェクトにするか")]
         public ObjGroupingMode Grouping = ObjGroupingMode.Object;
 
         /// <summary>面を持たないオブジェクトをスキップ。</summary>
         [Tooltip("面も線も無いオブジェクトを作らない")]
+        [PLParam(Description = "面も線も無いオブジェクトを作らない")]
         public bool SkipEmptyObjects = true;
 
         /// <summary>折れ線（l）を補助線として取り込む。</summary>
         [Tooltip("l 行を補助線（2頂点の面）として取り込む")]
+        [PLParam(Description = "l 行を補助線（2頂点の面）として取り込む")]
         public bool ImportLines = true;
 
         // ================================================================
@@ -83,11 +91,13 @@ namespace Poly_Ling.OBJ
         /// スムージング角から法線を作る（MQO 読込と同じ経路）。
         /// </summary>
         [Tooltip("OBJ の vn をそのまま使う（OFF なら角度で再計算）")]
+        [PLParam(Description = "OBJ の vn をそのまま使う（OFF なら角度で再計算）")]
         public bool UseFileNormals = true;
 
         /// <summary>vn が無い場合のスムージング角（度）。</summary>
         [Tooltip("法線を再計算するときのスムージング角")]
         [Range(0f, 180f)]
+        [PLParam(Description = "法線を再計算するときのスムージング角", Min = 0f, Max = 180f)]
         public float SmoothingAngle = 59.5f;
 
         // ================================================================
@@ -96,15 +106,21 @@ namespace Poly_Ling.OBJ
 
         /// <summary>mtllib を読み込む。</summary>
         [Tooltip("mtllib で指定された MTL を読み込む")]
+        [PLParam(Description = "mtllib で指定された MTL を読み込む")]
         public bool ImportMaterials = true;
 
         /// <summary>テクスチャを読み込む。</summary>
         [Tooltip("map_Kd などのテクスチャを読み込む")]
+        [PLParam(Description = "map_Kd などのテクスチャを読み込む")]
         public bool ImportTextures = true;
 
-        /// <summary>OBJ ファイルのあるフォルダ（MTL・テクスチャの相対パス基準）。</summary>
+        /// <summary>
+        /// OBJ ファイルのあるフォルダ（MTL・テクスチャの相対パス基準）。
+        /// 読み込み側が実ファイルの位置から決めるので、外から送るものではない。
+        /// </summary>
         [NonSerialized]
-        public string BaseDir;
+        [PLParam(Ignore = true)]
+        public string BaseDir = "";
 
         // ================================================================
         // 生成

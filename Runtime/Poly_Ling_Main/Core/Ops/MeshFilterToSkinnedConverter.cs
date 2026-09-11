@@ -23,7 +23,7 @@ namespace Poly_Ling.Ops
             ["WindowTitle"]       = new() { ["en"] = "MeshFilter → Skinned",                               ["ja"] = "MeshFilter → Skinned変換" },
             ["ModelNotAvailable"] = new() { ["en"] = "Model not available",                                 ["ja"] = "モデルがありません" },
             ["NoMeshFound"]       = new() { ["en"] = "No mesh objects found",                               ["ja"] = "メッシュオブジェクトがありません" },
-            ["AlreadyHasBones"]   = new() { ["en"] = "Model already has bones",                             ["ja"] = "既にボーンが存在します" },
+            ["AlreadyHasBones"]   = new() { ["en"] = "Existing bones are kept; bones are added for each mesh", ["ja"] = "既にあるボーンは残したまま、メッシュぶんのボーンを足します" },
             ["RootBone"]          = new() { ["en"] = "Root Bone (top mesh)",                               ["ja"] = "ルートボーン (トップメッシュ)" },
             ["Convert"]           = new() { ["en"] = "Convert",                                             ["ja"] = "変換実行" },
             ["ConvertWarning"]    = new() { ["en"] = "This operation cannot be undone.\nProceed?",          ["ja"] = "この操作は元に戻せません。\n変換を実行しますか？" },
@@ -756,6 +756,50 @@ namespace Poly_Ling.Ops
                 meshCtx.OriginalPositions = (Vector3[])meshObj.Positions.Clone();
             }
 
+            // Phase 4a: 変換前から居たボーンのうち、メッシュを親にしているものを
+            //           そのメッシュのボーンへ付け替える。
+            //
+            // 【なぜ要るか】
+            //   はしごから作った揺れボーンは、取り付け先にまだボーンが無い段階では
+            //   メッシュを親にして置かれる。そのままだと変換後も
+            //   「ボーン → メッシュ → 揺れボーン」という並びになり、
+            //   ボーン階層の外に揺れボーンがぶら下がる。
+            //
+            // 【位置は動かない】
+            //   Phase 1 で作るボーンはメッシュの局所 TRS をそのまま持ち（:510-516）、
+            //   Phase 4 でメッシュの局所変換は単位へ潰されて自分のボーン配下へ移る
+            //   （:698-712）。よってメッシュのワールドとボーンのワールドは一致し、
+            //   付け替えは数値としては何も変えない。BindPose も入れ直さなくてよい。
+            {
+                // 新しいメッシュ索引 → そのメッシュが結び付いたボーン索引。
+                var meshToBone = new Dictionary<int, int>();
+                foreach (var entry in meshEntries)
+                {
+                    int bn = effectiveBoneNumForEntry[entry.Index];
+                    if (bn >= 0) meshToBone[entry.Index + boneCount] = bn;
+                }
+
+                int reparented = 0;
+
+                for (int i = boneCount; i < model.MeshContextList.Count; i++)
+                {
+                    var ctx = model.MeshContextList[i];
+                    if (ctx == null || ctx.Type != MeshType.Bone) continue;
+
+                    int parent = ctx.HierarchyParentIndex;
+                    if (parent < 0) continue;
+                    if (!meshToBone.TryGetValue(parent, out int bone)) continue;
+
+                    ctx.HierarchyParentIndex = bone;
+                    ctx.ParentIndex          = bone;
+                    reparented++;
+                }
+
+                if (reparented > 0)
+                    Debug.Log($"[MeshFilterToSkinnedConverter] メッシュを親にしていたボーン {reparented} 本を、"
+                            + "そのメッシュのボーン配下へ付け替えました");
+            }
+
             // Phase 4b: Humanoid 割当の正本をボーン側へ寄せる。
             //   メッシュ側に残った HumanBodyBone は、変換後は「もうボーンではない
             //   ノードが Humanoid 名を主張している」状態になり、
@@ -767,6 +811,56 @@ namespace Poly_Ling.Ops
                 if (mo != null) mo.HumanBodyBone = "";
             }
             HumanoidMappingResolver.RebuildMappingFromPerBone(model);
+
+            // Phase 4c: ボーン名から Humanoid 割当をやり直す。
+            //
+            // 【なぜ要るか】
+            //   割当の持ち方は 2 つある。
+            //     ① モデルが持つ一覧表（HumanoidMapping）… 「Spine は 173 番目」と番号で持つ
+            //     ② ボーン自身が持つ札（MeshObject.HumanBodyBone）… "Spine" という文字列
+            //
+            //   読込時の自動割当（AUTO）は名前で照合するが、結果を ① にしか書かない
+            //   （ApplyHumanoidMappingCommand の受け口は HumanoidMapping.CopyFrom だけ。
+            //   PlayerCommandDispatcher.cs:3899-3919。② へ配る SyncPerBoneFromMapping は
+            //   どこからも呼ばれていない）。
+            //
+            //   ここまでの変換で ① は 2 度壊れる。
+            //     ・Phase 2 が先頭へ boneCount 本挿すので番号が全部ずれる（① はずらしていない）
+            //     ・直前の RebuildMappingFromPerBone が ② から ① を作り直す。
+            //       ② が空なら ① は空で上書きされる
+            //
+            //   ボーン名はメッシュ名をそのまま引き継いでいる（上半身 → 上半身）ので、
+            //   ここで名前から引き直せば正しい番号に戻る。
+            //
+            // 【既にある札を優先する】
+            //   AutoMapFromEmbeddedCSV は既に埋まっている Humanoid 名を飛ばす
+            //   （HumanoidBoneMapping.cs:513-515）。Phase 1 がメッシュから運んだ札や
+            //   PMX 由来の割当はそのまま残り、埋まっていないものだけが足される。
+            {
+                var mapping = model.HumanoidMapping;
+                if (mapping != null)
+                {
+                    // 索引 = MeshContextList の索引。ボーン以外は空文字にして、
+                    // 描画メッシュの名前が Humanoid 名に引っかからないようにする。
+                    var boneNames = new List<string>(model.MeshContextList.Count);
+                    for (int i = 0; i < model.MeshContextList.Count; i++)
+                    {
+                        var ctx = model.MeshContextList[i];
+                        boneNames.Add(ctx != null && ctx.Type == MeshType.Bone && !string.IsNullOrEmpty(ctx.Name)
+                            ? ctx.Name : "");
+                    }
+
+                    int added = mapping.AutoMapFromEmbeddedCSV(boneNames);
+
+                    // ① を直したら ② へも配る。次に RebuildMappingFromPerBone が
+                    // 走ったときに、また空で上書きされないようにするため。
+                    if (added > 0)
+                    {
+                        HumanoidMappingResolver.SyncPerBoneFromMapping(model);
+                        Debug.Log($"[MeshFilterToSkinnedConverter] ボーン名から Humanoid 割当を {added} 件引き直しました");
+                    }
+                }
+            }
 
             // ── ミラーペアの対応表を組み直す ───────────────────────────
             //   ペアは Execute の冒頭 MaterializeMissingBranchMirrors で作られる。

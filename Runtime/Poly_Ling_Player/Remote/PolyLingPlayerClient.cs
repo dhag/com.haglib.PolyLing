@@ -317,14 +317,25 @@ namespace Poly_Ling.Player
             Dictionary<string, string> parameters = null, Action<string> onResponse = null)
         {
             string id = NextId();
-            var sb = new StringBuilder();
-            sb.Append($"{{\"id\":\"{id}\",\"type\":\"command\",\"action\":\"{action}\"");
-            sb.Append($",\"params\":{{\"modelIndex\":\"{modelIndex}\"");
+
+            // 文字列は JsonBuilder で書く（\ と " をエスケープする）。
+            // 受け手の JsonParser（RemoteProtocol.cs）はエスケープを戻すので、
+            // 生のまま埋め込むと \ を含む値（名前・パス）が別の文字に変わる。
+            // null は従来どおり空文字列として送る。
+            var jb = new Poly_Ling.Remote.JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("id",     id);
+            jb.KeyValue("type",   "command");
+            jb.KeyValue("action", action ?? "");
+            jb.Key("params").BeginObject();
+            jb.KeyValue("modelIndex", modelIndex.ToString());
             if (parameters != null)
                 foreach (var kv in parameters)
-                    sb.Append($",\"{kv.Key}\":\"{kv.Value}\"");
-            sb.Append("}}");
-            string json = sb.ToString();
+                    jb.KeyValue(kv.Key, kv.Value ?? "");
+            jb.EndObject();
+            jb.EndObject();
+
+            string json = jb.ToString();
             if (onResponse != null) _textCallbacks[id] = onResponse;
             SendText(json);
         }
@@ -351,23 +362,24 @@ namespace Poly_Ling.Player
         public void SendQuery(string target, Dictionary<string, string> parameters, Action<string> onText)
         {
             string id = NextId();
-            var sb = new StringBuilder();
-            sb.Append($"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"{target}\"");
+
+            // SendCommand と同じく JsonBuilder で書く（エスケープのため）。
+            var jb = new Poly_Ling.Remote.JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("id",     id);
+            jb.KeyValue("type",   "query");
+            jb.KeyValue("target", target ?? "");
             if (parameters != null && parameters.Count > 0)
             {
-                sb.Append(",\"params\":{");
-                bool first = true;
+                jb.Key("params").BeginObject();
                 foreach (var kv in parameters)
-                {
-                    if (!first) sb.Append(',');
-                    sb.Append($"\"{kv.Key}\":\"{kv.Value}\"");
-                    first = false;
-                }
-                sb.Append('}');
+                    jb.KeyValue(kv.Key, kv.Value ?? "");
+                jb.EndObject();
             }
-            sb.Append('}');
+            jb.EndObject();
+
             if (onText != null) _textCallbacks[id] = onText;
-            SendText(sb.ToString());
+            SendText(jb.ToString());
         }
 
         // ================================================================

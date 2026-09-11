@@ -222,7 +222,7 @@ namespace Poly_Ling.Remote
                 {
                     int valueEnd = FindClosingQuote(json, valueStart + 1);
                     if (valueEnd < 0) break;
-                    result[key] = json.Substring(valueStart + 1, valueEnd - valueStart - 1);
+                    result[key] = Unescape(json.Substring(valueStart + 1, valueEnd - valueStart - 1));
                     i = valueEnd + 1;
                 }
                 else if (ch == '[' || ch == '{')
@@ -276,7 +276,7 @@ namespace Poly_Ling.Remote
                 if (qs < 0) break;
                 int qe = inner.IndexOf('"', qs + 1);
                 if (qe < 0) break;
-                list.Add(inner.Substring(qs + 1, qe - qs - 1));
+                list.Add(Unescape(inner.Substring(qs + 1, qe - qs - 1)));
                 i = qe + 1;
             }
             return list.Count > 0 ? list.ToArray() : null;
@@ -303,6 +303,84 @@ namespace Poly_Ling.Remote
 
             string sub = json.Substring(braceStart, j - braceStart);
             return ParseFlat(sub);
+        }
+
+        /// <summary>
+        /// JSON 文字列の中身（引用符の内側）をエスケープ規則どおりに戻す。
+        /// 対象は \" \\ \/ \b \f \n \r \t \uXXXX。
+        ///
+        /// 【なぜ要るか】
+        ///   送り手は \ を \\ に、" を \" に置き換えて送る。MCP サーバ
+        ///   （System.Text.Json）は日本語などの非 ASCII も \uXXXX にして送る。
+        ///   戻さずに使うと、日本語のパスが "\u30C7…" という別の文字列になり、
+        ///   PLSandbox で作業フォルダの外と判定される。
+        ///
+        /// 規則に無い並び（\ の後が上記以外、\u の後が 16 進 4 桁でない）は
+        /// 変えずにそのまま残す。
+        /// サロゲートペア（\uD83D\uDE00 など）は 2 文字をそのまま並べれば成立する。
+        /// </summary>
+        private static string Unescape(string s)
+        {
+            if (string.IsNullOrEmpty(s) || s.IndexOf('\\') < 0) return s;
+
+            var sb = new StringBuilder(s.Length);
+            int i = 0;
+            while (i < s.Length)
+            {
+                char c = s[i];
+                if (c != '\\' || i + 1 >= s.Length)
+                {
+                    sb.Append(c);
+                    i++;
+                    continue;
+                }
+
+                switch (s[i + 1])
+                {
+                    case '"':  sb.Append('"');  i += 2; break;
+                    case '\\': sb.Append('\\'); i += 2; break;
+                    case '/':  sb.Append('/');  i += 2; break;
+                    case 'b':  sb.Append('\b'); i += 2; break;
+                    case 'f':  sb.Append('\f'); i += 2; break;
+                    case 'n':  sb.Append('\n'); i += 2; break;
+                    case 'r':  sb.Append('\r'); i += 2; break;
+                    case 't':  sb.Append('\t'); i += 2; break;
+                    case 'u':
+                        if (i + 6 <= s.Length && TryParseHex4(s, i + 2, out int code))
+                        {
+                            sb.Append((char)code);
+                            i += 6;
+                        }
+                        else
+                        {
+                            sb.Append(c);
+                            i++;
+                        }
+                        break;
+                    default:
+                        sb.Append(c);
+                        i++;
+                        break;
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>s[start..start+3] を 16 進 4 桁として読む。1 桁でも外れたら false。</summary>
+        private static bool TryParseHex4(string s, int start, out int value)
+        {
+            value = 0;
+            for (int k = 0; k < 4; k++)
+            {
+                char ch = s[start + k];
+                int d;
+                if      (ch >= '0' && ch <= '9') d = ch - '0';
+                else if (ch >= 'a' && ch <= 'f') d = ch - 'a' + 10;
+                else if (ch >= 'A' && ch <= 'F') d = ch - 'A' + 10;
+                else { value = 0; return false; }
+                value = (value << 4) | d;
+            }
+            return true;
         }
 
         private static int FindClosingQuote(string s, int from)

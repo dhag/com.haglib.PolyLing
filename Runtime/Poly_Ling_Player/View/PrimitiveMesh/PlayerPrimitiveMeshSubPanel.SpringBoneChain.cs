@@ -88,18 +88,7 @@ namespace Poly_Ling.Player
             c.Add(SL("作るのはボーンです。メッシュとウェイトは作りません。"));
 
             // ── 取り付け先 ────────────────────────────────────────────
-            _sbAttachField = new DropdownField(T("SBAttach"));
-            _sbAttachField.RegisterValueChangedCallback(_ =>
-            {
-                int i = _sbAttachField.index;
-                _sbAttachIndex = (i >= 0 && i < _sbAttachMasters.Count) ? _sbAttachMasters[i] : -1;
-            });
-            c.Add(_sbAttachField);
-            RefreshSpringBoneAttach();
-
-            var prefix = new TextField(T("SBPrefix")) { value = _sbPrefix };
-            prefix.RegisterValueChangedCallback(e => { _sbPrefix = e.newValue; UpdateSpringBonePreview(); });
-            c.Add(prefix);
+            BuildSpringBoneAttachRow(c);
 
             // ── 形ごとの寸法 ──────────────────────────────────────────
             if (kind != ShapeKind.SpringBoneSingle)
@@ -123,44 +112,8 @@ namespace Poly_Ling.Player
                 c.Add(SL("上端と下端の半径を変えると円錐になります。蓋はありません（ボーンなので面がありません）。"));
             }
 
-            // ── 鎖の先 ────────────────────────────────────────────────
-            c.Add(TR(T("SBAddTail"), () => _sbAddTail, v => { _sbAddTail = v; UpdateSpringBonePreview(); }));
-            c.Add(SR(T("SBTailLength"), 0.01f, 0.3f, () => _sbTailLength, v => _sbTailLength = v));
-            c.Add(SL("鎖のいちばん先のボーンは、1 つ手前の向きを決めるためだけに使われ、自分は揺れません。"));
-
-            // ── 揺れ方 ────────────────────────────────────────────────
-            c.Add(TR(T("SBApplySpring"), () => _sbApplySpring, v => _sbApplySpring = v));
-            c.Add(SR(T("SBStiffTop"), 0f, 4f, () => _sbStiffTop, v => _sbStiffTop = v));
-            c.Add(SR(T("SBStiffTip"), 0f, 4f, () => _sbStiffTip, v => _sbStiffTip = v));
-            c.Add(SR(T("SBDragTop"),  0f, 1f, () => _sbDragTop,  v => _sbDragTop  = v));
-            c.Add(SR(T("SBDragTip"),  0f, 1f, () => _sbDragTip,  v => _sbDragTip  = v));
-            c.Add(SR(T("SBGravTop"),  0f, 2f, () => _sbGravTop,  v => _sbGravTop  = v));
-            c.Add(SR(T("SBGravTip"),  0f, 2f, () => _sbGravTip,  v => _sbGravTip  = v));
-            c.Add(SR(T("SBHitRadius"),    0f, 0.5f, () => _sbHitRadius,    v => _sbHitRadius    = v));
-            c.Add(SR(T("SBHitRadiusTip"), 0f, 0.5f, () => _sbHitRadiusTip, v => _sbHitRadiusTip = v));
-
-            // 配り方。根元 0、先 1 として途中をどう配るかを選ぶ。
-            // 中身は SpringBoneTaper（Gamma と折れ線）。
-            var taperDd = new DropdownField(
-                T("SBTaperShape"),
-                new List<string>
-                {
-                    "まっすぐ変える",
-                    "根元の値を長く残す",
-                    "先の値を長く効かせる",
-                    "中ほどで一気に変える",
-                },
-                Mathf.Clamp(_sbTaperShape, 0, 3));
-            taperDd.RegisterValueChangedCallback(_ => _sbTaperShape = taperDd.index);
-            c.Add(taperDd);
-
-            var groups = new TextField(T("SBGroups")) { value = _sbGroupIndices };
-            groups.RegisterValueChangedCallback(e => _sbGroupIndices = e.newValue);
-            c.Add(groups);
-            c.Add(SL("根元と先で違う値を入れると、段の位置に合わせて少しずつ変えて配ります。"
-                   + "同じ値なら全段同じになります。"));
-
-            c.Add(TR(T("SBMakeSets"), () => _sbMakeSets, v => _sbMakeSets = v));
+            // ── 鎖の先・揺れ方・段ごとのセット ────────────────────────
+            BuildSpringBoneMotionUI(c);
 
             // ── 折れ線（1 本 / 回転体）────────────────────────────────
             if (kind != ShapeKind.SpringBoneCylinder)
@@ -186,7 +139,16 @@ namespace Poly_Ling.Player
             UpdateSpringBonePreview();
         }
 
-        /// <summary>取り付け先の一覧を作り直す。ボーンだけを並べる。</summary>
+        /// <summary>
+        /// 取り付け先の一覧を作り直す。ボーンと、まだボーンでない描画メッシュを並べる。
+        ///
+        /// 【メッシュも並べる理由】
+        ///   MeshFilter 系のモデルにはボーンが 1 本も無い。はしごから揺れボーンを
+        ///   先に作る手順では、取り付け先に「これからボーンになるメッシュ」を
+        ///   指定できる必要がある。
+        ///   スキンド化のとき、そのメッシュのボーンへ自動で付け替わる
+        ///   （MeshFilterToSkinnedConverter の Phase 4a）。
+        /// </summary>
         private void RefreshSpringBoneAttach()
         {
             if (_sbAttachField == null) return;
@@ -198,6 +160,7 @@ namespace Poly_Ling.Player
             _sbAttachMasters.Add(-1);
 
             if (model != null)
+            {
                 for (int i = 0; i < model.MeshContextCount; i++)
                 {
                     var mc = model.GetMeshContext(i);
@@ -205,6 +168,16 @@ namespace Poly_Ling.Player
                     _sbAttachMasters.Add(i);
                     choices.Add($"[{i}] {mc.Name}");
                 }
+
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null || mc.Type != MeshType.Mesh) continue;
+                    if (mc.MeshObject == null) continue;
+                    _sbAttachMasters.Add(i);
+                    choices.Add($"[{i}] {mc.Name}（スキンド化でボーンになる）");
+                }
+            }
 
             _sbAttachField.choices = choices;
 
@@ -280,6 +253,19 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            ApplySpringToChains(mi, chains, prefix);
+            RefreshSpringBoneAttach();
+        }
+
+        /// <summary>
+        /// 作った鎖へ揺れ方・鎖の先頭・段ごとの名前付きセットを掛ける。
+        /// 数値から作る経路（GenerateSpringBoneChains）と、はしごから作る経路
+        /// （GenerateSpringBoneLadderChains）で同じものを使う。
+        /// </summary>
+        private void ApplySpringToChains(int mi, List<List<int>> chains, string prefix)
+        {
+            if (chains == null || chains.Count == 0) return;
+
             int maxLen = 0;
             foreach (var ch in chains) maxLen = Mathf.Max(maxLen, ch.Count);
 
@@ -342,8 +328,71 @@ namespace Poly_Ling.Player
             foreach (var ch in chains) total += ch.Count;
             SetSpringBoneStatus($"鎖 {chains.Count} 本 / ボーン {total} 本を作りました。"
                               + (_sbApplySpring ? " 揺れ方と鎖の先頭も設定しました。" : ""));
+        }
 
+        /// <summary>
+        /// 取り付け先と名前の接頭辞。数値から作る経路と、はしごから作る経路で共用する。
+        /// </summary>
+        private void BuildSpringBoneAttachRow(VisualElement c)
+        {
+            _sbAttachField = new DropdownField(T("SBAttach"));
+            _sbAttachField.RegisterValueChangedCallback(_ =>
+            {
+                int i = _sbAttachField.index;
+                _sbAttachIndex = (i >= 0 && i < _sbAttachMasters.Count) ? _sbAttachMasters[i] : -1;
+            });
+            c.Add(_sbAttachField);
             RefreshSpringBoneAttach();
+
+            var prefix = new TextField(T("SBPrefix")) { value = _sbPrefix };
+            prefix.RegisterValueChangedCallback(e => { _sbPrefix = e.newValue; UpdateSpringBonePreview(); });
+            c.Add(prefix);
+        }
+
+        /// <summary>
+        /// 鎖の先・揺れ方・配り方・段ごとのセット。
+        /// 数値から作る経路と、はしごから作る経路で共用する。
+        /// </summary>
+        private void BuildSpringBoneMotionUI(VisualElement c)
+        {
+            // ── 鎖の先 ────────────────────────────────────────────────
+            c.Add(TR(T("SBAddTail"), () => _sbAddTail, v => { _sbAddTail = v; UpdateSpringBonePreview(); }));
+            c.Add(SR(T("SBTailLength"), 0.01f, 0.3f, () => _sbTailLength, v => _sbTailLength = v));
+            c.Add(SL("鎖のいちばん先のボーンは、1 つ手前の向きを決めるためだけに使われ、自分は揺れません。"));
+
+            // ── 揺れ方 ────────────────────────────────────────────────
+            c.Add(TR(T("SBApplySpring"), () => _sbApplySpring, v => _sbApplySpring = v));
+            c.Add(SR(T("SBStiffTop"), 0f, 4f, () => _sbStiffTop, v => _sbStiffTop = v));
+            c.Add(SR(T("SBStiffTip"), 0f, 4f, () => _sbStiffTip, v => _sbStiffTip = v));
+            c.Add(SR(T("SBDragTop"),  0f, 1f, () => _sbDragTop,  v => _sbDragTop  = v));
+            c.Add(SR(T("SBDragTip"),  0f, 1f, () => _sbDragTip,  v => _sbDragTip  = v));
+            c.Add(SR(T("SBGravTop"),  0f, 2f, () => _sbGravTop,  v => _sbGravTop  = v));
+            c.Add(SR(T("SBGravTip"),  0f, 2f, () => _sbGravTip,  v => _sbGravTip  = v));
+            c.Add(SR(T("SBHitRadius"),    0f, 0.5f, () => _sbHitRadius,    v => _sbHitRadius    = v));
+            c.Add(SR(T("SBHitRadiusTip"), 0f, 0.5f, () => _sbHitRadiusTip, v => _sbHitRadiusTip = v));
+
+            // 配り方。根元 0、先 1 として途中をどう配るかを選ぶ。
+            // 中身は SpringBoneTaper（Gamma と折れ線）。
+            var taperDd = new DropdownField(
+                T("SBTaperShape"),
+                new List<string>
+                {
+                    "まっすぐ変える",
+                    "根元の値を長く残す",
+                    "先の値を長く効かせる",
+                    "中ほどで一気に変える",
+                },
+                Mathf.Clamp(_sbTaperShape, 0, 3));
+            taperDd.RegisterValueChangedCallback(_ => _sbTaperShape = taperDd.index);
+            c.Add(taperDd);
+
+            var groups = new TextField(T("SBGroups")) { value = _sbGroupIndices };
+            groups.RegisterValueChangedCallback(e => _sbGroupIndices = e.newValue);
+            c.Add(groups);
+            c.Add(SL("根元と先で違う値を入れると、段の位置に合わせて少しずつ変えて配ります。"
+                   + "同じ値なら全段同じになります。"));
+
+            c.Add(TR(T("SBMakeSets"), () => _sbMakeSets, v => _sbMakeSets = v));
         }
 
         /// <summary>

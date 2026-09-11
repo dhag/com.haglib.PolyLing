@@ -266,6 +266,8 @@ namespace Poly_Ling.Tools
                 var record = new MultiMeshTopologySnapshotRecord(before, after, desc);
                 PLDiag.UndoRecord("MeshList", desc, record);
                 undo.MeshListStack.Record(record, desc);
+                // ルートは FocusPriority。FocusedChildId が未設定だと Ctrl+Z が届かない。
+                undo.FocusMeshList();
             }
 
             Debug.Log($"[FaceMergeCollapseTool] 結合完了: オブジェクト {okMeshes} / 結合 {mergedTotal} 箇所 "

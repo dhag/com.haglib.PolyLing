@@ -44,6 +44,10 @@ namespace Poly_Ling.Frill
         public const float EdgeSizeMin = 0.001f;
         public const float EdgeSizeMax = 0.25f;
 
+        /// <summary>プリーツを広げる梯子本数の下限・上限</summary>
+        public const int RungSpanMin = 1;
+        public const int RungSpanMax = 8;
+
         [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
         public string MeshName;
 
@@ -72,6 +76,29 @@ namespace Poly_Ling.Frill
         /// </summary>
         [PLParam(TextKey = "FrillRungSeam", Description = "rung 境界の扱い（分ける / まとめる）")]
         public FrillRungSeam RungSeam;
+
+        // ── プリーツを広げる ──
+        /// <summary>
+        /// 断面プロファイル1周期を梯子いくつぶんに広げるか。
+        /// 1 で従来どおり rung 1区間に1周期。
+        /// 2 以上ではプロファイルを x で等分し、分けた断片を先頭から順に各ステップへ割り当てる。
+        /// 細かい円筒のままプリーツの数だけを減らすためのもの。
+        /// ステップ数が span で割り切れないとき、最後のグループは断片を使い切ったところで終わる。
+        /// </summary>
+        [PLParam(TextKey = "FrillRungSpan", Description = "断面プロファイル1周期を梯子いくつぶんに広げるか",
+                 Min = RungSpanMin, Max = RungSpanMax, Step = 1)]
+        public int RungSpan;
+
+        /// <summary>
+        /// 取り込み元のはしごへ塗ってあるボーンウェイトを、生成した頂点へ引き継ぐ。
+        ///
+        /// はしごの点は取り込み元の頂点の位置そのものなので、生成の直前に
+        /// 位置で突き合わせて引く（BeltWeightBinder）。頂点は線分の両端を
+        /// 断面 x で混ぜたウェイトを持つ。引けない点は何も持たない。
+        /// </summary>
+        [PLParam(TextKey = "BeltInheritWeights",
+                 Description = "取り込み元のはしごのボーンウェイトを生成した頂点へ引き継ぐ")]
+        public bool InheritBeltWeights;
 
         // ── 厚み付け（0 で厚み付けなし。ベベル規約は FaceGroupSolidifier と同じ） ──
         /// <summary>総厚み。各シェルは ±Thickness/2 移動する</summary>
@@ -117,6 +144,14 @@ namespace Poly_Ling.Frill
         [PLParam(TextKey = "FrillProfileFlip", Description = "A / B の割り当てを上下反転する")]
         public bool ProfileFlip;
 
+        /// <summary>
+        /// 共有レールでつながった梯子を1つの鎖とみなし、鎖の端から端へ A → B を配る。
+        /// 取り込み時の段グループ（RowIndex / RowCount）は使わない。
+        /// 2プロファイルが OFF のときは効かない。
+        /// </summary>
+        [PLParam(TextKey = "FrillChainProfiles", Description = "つながった梯子の鎖に沿って A → B を配る")]
+        public bool ChainProfiles;
+
         // ── ピボット ──
         /// <summary>AABB サイズ基準のピボット。生成後に -Pivot * サイズ だけ平行移動する</summary>
         [PLParam(TextKey = "PivotOffset", Description = "AABB サイズ基準のピボット。生成後に -Pivot × サイズ だけ平行移動する",
@@ -129,6 +164,8 @@ namespace Poly_Ling.Frill
             HeightScale   = 1f,
             ConnectShared = true,
             RungSeam      = FrillRungSeam.Merge,
+            RungSpan      = 1,
+            InheritBeltWeights = false,
             Thickness     = 0f,
             SegmentsFront = 0,
             SegmentsBack  = 0,
@@ -138,6 +175,7 @@ namespace Poly_Ling.Frill
             FlipFaces     = false,
             TwoProfiles   = false,
             ProfileFlip   = false,
+            ChainProfiles = false,
             Pivot         = Vector3.zero,
         };
 
@@ -146,6 +184,8 @@ namespace Poly_Ling.Frill
             && Mathf.Approximately(HeightScale, o.HeightScale)
             && ConnectShared == o.ConnectShared
             && RungSeam == o.RungSeam
+            && RungSpan == o.RungSpan
+            && InheritBeltWeights == o.InheritBeltWeights
             && Mathf.Approximately(Thickness, o.Thickness)
             && SegmentsFront == o.SegmentsFront
             && SegmentsBack  == o.SegmentsBack
@@ -155,6 +195,7 @@ namespace Poly_Ling.Frill
             && FlipFaces  == o.FlipFaces
             && TwoProfiles == o.TwoProfiles
             && ProfileFlip == o.ProfileFlip
+            && ChainProfiles == o.ChainProfiles
             && Pivot      == o.Pivot;
 
         public override bool Equals(object obj) => obj is FrillParams p && Equals(p);

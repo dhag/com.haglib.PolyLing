@@ -44,6 +44,13 @@ namespace Poly_Ling.PrimitiveMesh
     /// </summary>
     public delegate List<MeshObject> PlaceSourceResolver(int[] masterIndices, bool includeChildren);
 
+    /// <summary>
+    /// 梯子の取り込み元の索引を MeshObject へ解決する。
+    /// はしごのウェイトを引き継ぐときだけ使う（引き継がないなら呼ばない）。
+    /// 藤壺の配置元と同じく、索引 → MeshObject はモデルを持つ側が持つ。
+    /// </summary>
+    public delegate MeshObject BeltSourceResolver(int masterIndex);
+
     /// <summary>図形生成コマンド → MeshObject。</summary>
     public static class PrimitiveMeshFactory
     {
@@ -76,17 +83,22 @@ namespace Poly_Ling.PrimitiveMesh
         public static MeshObject Build(
             CreatePrimitiveMeshCommand cmd,
             bool forPreview = false,
-            PlaceSourceResolver resolvePlaceSources = null)
+            PlaceSourceResolver resolvePlaceSources = null,
+            BeltSourceResolver resolveBeltSource = null)
         {
             if (cmd == null) return null;
 
-            MeshObject mo = Generate(cmd, resolvePlaceSources);
+            MeshObject mo = Generate(cmd, resolvePlaceSources, resolveBeltSource);
             if (mo == null) return null;
 
             if (!forPreview && cmd.Placement.MergeDuplicateVertices && mo.VertexCount >= 2)
                 MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, MergeEpsilon);
 
             AssignPartsIds(mo, cmd.ShapeName);
+
+            // はしごのウェイトを引き継いだときは、種別を確定させる。
+            // 塗られた頂点だけがボーンの欄を引くので、無 → 有の遷移点で呼ぶ。
+            if (HasAnyBoneWeight(mo)) mo.RecomputeSkinKind();
 
             if (forPreview)
                 PrimitiveMeshTransform.ApplyRotationScale(
@@ -102,8 +114,18 @@ namespace Poly_Ling.PrimitiveMesh
         // 図形ごとの生成
         // ================================================================
 
+        /// <summary>1 頂点でもウェイトを持つか。</summary>
+        private static bool HasAnyBoneWeight(MeshObject mo)
+        {
+            if (mo == null) return false;
+            for (int i = 0; i < mo.VertexCount; i++)
+                if (mo.Vertices[i]?.BoneWeight != null) return true;
+            return false;
+        }
+
         private static MeshObject Generate(
-            CreatePrimitiveMeshCommand cmd, PlaceSourceResolver resolvePlaceSources)
+            CreatePrimitiveMeshCommand cmd, PlaceSourceResolver resolvePlaceSources,
+            BeltSourceResolver resolveBeltSource = null)
         {
             switch (cmd)
             {
@@ -140,8 +162,8 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateProfile2DCommand c:    return GenerateProfile2D(c);
                 case CreateTextMeshCommand c:     return GenerateText(c);
 
-                case CreateFrillCommand c:        return GenerateFrill(c);
-                case CreatePipeCommand c:         return GeneratePipe(c);
+                case CreateFrillCommand c:        return GenerateFrill(c, resolveBeltSource);
+                case CreatePipeCommand c:         return GeneratePipe(c, resolveBeltSource);
                 case CreatePlaceObjectCommand c:  return GeneratePlaceObject(c, resolvePlaceSources);
 
                 default:
@@ -230,7 +252,8 @@ namespace Poly_Ling.PrimitiveMesh
 
         // ── フリル ──────────────────────────────────────────────────
 
-        private static MeshObject GenerateFrill(CreateFrillCommand c)
+        private static MeshObject GenerateFrill(
+            CreateFrillCommand c, BeltSourceResolver resolveBeltSource)
         {
             var profileA = ToList(c.ProfileA);
             var profileB = ToList(c.ProfileB);
@@ -238,15 +261,21 @@ namespace Poly_Ling.PrimitiveMesh
             // 融合ありはレール行ごと、融合なしは梯子ごとにパーツIDを 0 から連番にする。
             var partsIds = new PartsIdCounter();
 
+            var beltSource = ResolveBeltSource(c, c.Params.InheritBeltWeights, resolveBeltSource);
+
+            var inputs = new List<FrillBeltInput>();
+            foreach (var belt in EachPreprocessedBelt(c, beltSource))
+                inputs.Add(ToFrillInput(belt, c.Params.HeightScale, c.Params.ProfileFlip));
+
+            // 鎖モードの t は梯子どうしの関係で決まるので、全部そろってから配り直す。
+            if (c.Params.TwoProfiles && c.Params.ChainProfiles)
+                FrillChainProfile.Assign(inputs, c.Params.ProfileFlip);
+
             if (c.Params.ConnectShared)
             {
-                var inputs = new List<FrillBeltInput>();
-                foreach (var belt in EachPreprocessedBelt(c))
-                    inputs.Add(ToFrillInput(belt, c.Params.HeightScale, c.Params.ProfileFlip));
-
                 var joined = FrillMeshGenerator.Generate(
                     inputs, profileA, profileB, c.Params.TwoProfiles,
-                    true, c.Params.RungSeam, c.Params.MeshName, partsIds);
+                    true, c.Params.RungSeam, c.Params.MeshName, partsIds, c.Params.RungSpan);
 
                 var solid = BeltShapeOps.ApplySolidify(joined,
                     c.Params.Thickness, c.Params.SegmentsFront, c.Params.SegmentsBack,
@@ -261,13 +290,13 @@ namespace Poly_Ling.PrimitiveMesh
             var single = new List<FrillBeltInput>(1) { null };
             var mo = new MeshObject(c.Params.MeshName);
 
-            foreach (var belt in EachPreprocessedBelt(c))
+            foreach (var input in inputs)
             {
-                single[0] = ToFrillInput(belt, c.Params.HeightScale, c.Params.ProfileFlip);
+                single[0] = input;
 
                 var part = FrillMeshGenerator.Generate(
                     single, profileA, profileB, c.Params.TwoProfiles,
-                    false, c.Params.RungSeam, c.Params.MeshName, partsIds);
+                    false, c.Params.RungSeam, c.Params.MeshName, partsIds, c.Params.RungSpan);
 
                 part = BeltShapeOps.ApplySolidify(part,
                     c.Params.Thickness, c.Params.SegmentsFront, c.Params.SegmentsBack,
@@ -300,8 +329,10 @@ namespace Poly_Ling.PrimitiveMesh
 
             return new FrillBeltInput
             {
-                Left        = b.Left,
-                Right       = b.Right,
+                Left         = b.Left,
+                Right        = b.Right,
+                LeftWeights  = b.LeftWeights,
+                RightWeights = b.RightWeights,
                 Closed      = b.Closed,
                 FlipWinding = b.FlipWinding,
                 HeightScale = globalHeightScale * b.HeightScale,
@@ -312,7 +343,8 @@ namespace Poly_Ling.PrimitiveMesh
 
         // ── パイプ ──────────────────────────────────────────────────
 
-        private static MeshObject GeneratePipe(CreatePipeCommand c)
+        private static MeshObject GeneratePipe(
+            CreatePipeCommand c, BeltSourceResolver resolveBeltSource)
         {
             var profile = ToList(c.Profile);
             var mo = new MeshObject(c.Params.MeshName);
@@ -320,13 +352,16 @@ namespace Poly_Ling.PrimitiveMesh
             // 梯子1本＝パーツ1つ。全ベルトで同じカウンタを共有し、0 から連番にする。
             var partsIds = new PartsIdCounter();
 
-            foreach (var b in EachPreprocessedBelt(c))
+            var beltSource = ResolveBeltSource(c, c.Params.InheritBeltWeights, resolveBeltSource);
+
+            foreach (var b in EachPreprocessedBelt(c, beltSource))
             {
                 var part = PipeMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
                     profile, c.ProfileClosed, c.Params.CapEnds,
                     b.StartPoint, b.EndPoint,
-                    c.Params.MeshName, partsIds);
+                    c.Params.MeshName, partsIds,
+                    b.LeftWeights, b.RightWeights);
 
                 part = BeltShapeOps.ApplySolidify(part,
                     c.Params.Thickness, c.Params.SegmentsFront, c.Params.SegmentsBack,
@@ -438,16 +473,36 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
 
         /// <summary>向き補正とスプライン分割を掛けた基準ベルトを順に返す。</summary>
-        private static IEnumerable<BeltCsvEntry> EachPreprocessedBelt(CreateBeltPrimitiveCommand c)
+        private static IEnumerable<BeltCsvEntry> EachPreprocessedBelt(
+            CreateBeltPrimitiveCommand c, MeshObject beltSource = null)
         {
             if (c.Belts == null) yield break;
+
+            // ウェイトは前処理の手前で載せる。前処理（向き補正・スプライン）が
+            // 点を動かすので、あとから位置で突き合わせても引けない。
+            var table = beltSource != null ? BeltWeightBinder.BuildTable(beltSource) : null;
+
             foreach (var raw in c.Belts)
             {
                 if (raw == null || !raw.HasData) continue;
+
+                if (table != null && table.Count > 0) BeltWeightBinder.Bind(raw, table);
+
                 var b = BeltShapeOps.Preprocess(raw, c.Orient, c.Spline);
                 if (b == null || !b.HasData) continue;
                 yield return b;
             }
+        }
+
+        /// <summary>
+        /// 梯子の取り込み元を引く。引き継がない指定・索引なし・解決器なしのときは null。
+        /// </summary>
+        private static MeshObject ResolveBeltSource(
+            CreateBeltPrimitiveCommand c, bool inherit, BeltSourceResolver resolve)
+        {
+            if (!inherit || resolve == null) return null;
+            if (c.BeltSourceIndex < 0) return null;
+            return resolve(c.BeltSourceIndex);
         }
 
         /// <summary>

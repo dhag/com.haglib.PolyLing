@@ -66,7 +66,7 @@ namespace Poly_Ling.Core
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 ".csv", ".json", ".txt",
-                ".pmx", ".mqo", ".obj", ".vrm", ".vrma", ".plrf",
+                ".pmx", ".mqo", ".obj", ".vrm", ".vrma", ".plrf", ".mfproj",
                 ".png", ".jpg", ".jpeg",
             };
 

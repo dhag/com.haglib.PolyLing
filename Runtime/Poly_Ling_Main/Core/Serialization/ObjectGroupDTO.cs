@@ -8,11 +8,18 @@
 //
 // 【並びを固定する】
 //   Dictionary の列挙順は保証されないので、書き出す前にキー順へ並べ替える
-//   （ObjectGroup.SortedArgs / SortedMeshRefIds）。並べ替えないと、
+//   （ObjectGroupStep.SortedArgs / SortedMeshRefIds）。並べ替えないと、
 //   中身が同じでも保存のたびにファイルの差分が出る。
 //
 // 【ObjectId は文字列で持つ】
 //   ulong は JsonUtility が扱えない。10 進の文字列にして往復させる。
+//
+// 【古い形との往復】
+//   ステップが導入される前は、グループが action / args / meshRefs /
+//   outputObjectId を 1 組だけ持っていた。読みでは steps が空のときに
+//   その 4 つをステップ 0 として読む。書きでは steps を必ず書き、
+//   ステップが 1 つのときだけ古い 4 つも埋める（1 ステップのグループは
+//   古い読み手でもそのまま開ける）。2 ステップ以上は古い読み手では開けない。
 
 using System;
 using System.Collections.Generic;
@@ -39,11 +46,89 @@ namespace Poly_Ling.Serialization
         public List<string> objectIds = new List<string>();
     }
 
+    /// <summary>ステップ 1 つぶん（生成コマンド 1 つ）。</summary>
+    [Serializable]
+    public class ObjectGroupStepDTO
+    {
+        public string action = "";
+
+        public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
+        public List<ObjectGroupMeshRefDTO> meshRefs = new List<ObjectGroupMeshRefDTO>();
+
+        /// <summary>出力先の ObjectId（10 進文字列）。空 = 出力先なし。</summary>
+        public List<string> outputObjectIds = new List<string>();
+
+        public static ObjectGroupStepDTO FromStep(ObjectGroupStep s)
+        {
+            if (s == null) return null;
+
+            var dto = new ObjectGroupStepDTO { action = s.Action ?? "" };
+
+            foreach (var kv in s.SortedArgs())
+                dto.args.Add(new ObjectGroupArgDTO { key = kv.Key, value = kv.Value ?? "" });
+
+            foreach (var kv in s.SortedMeshRefIds())
+            {
+                var e = new ObjectGroupMeshRefDTO { key = kv.Key };
+                if (kv.Value != null)
+                    foreach (ulong id in kv.Value)
+                        e.objectIds.Add(id.ToString(CultureInfo.InvariantCulture));
+                dto.meshRefs.Add(e);
+            }
+
+            if (s.OutputObjectIds != null)
+                foreach (ulong id in s.OutputObjectIds)
+                    if (id != 0UL)
+                        dto.outputObjectIds.Add(id.ToString(CultureInfo.InvariantCulture));
+
+            return dto;
+        }
+
+        public ObjectGroupStep ToStep()
+        {
+            var s = new ObjectGroupStep { Action = action ?? "" };
+
+            if (args != null)
+                foreach (var a in args)
+                    if (a != null && !string.IsNullOrEmpty(a.key)) s.SetArg(a.key, a.value);
+
+            if (meshRefs != null)
+            {
+                foreach (var r in meshRefs)
+                {
+                    if (r == null || string.IsNullOrEmpty(r.key)) continue;
+                    var ids = new List<ulong>();
+                    if (r.objectIds != null)
+                        foreach (var t in r.objectIds) ids.Add(ObjectGroupDTO.ParseId(t));
+                    s.SetMeshRefIds(r.key, ids);
+                }
+            }
+
+            if (outputObjectIds != null)
+            {
+                foreach (var t in outputObjectIds)
+                {
+                    ulong id = ObjectGroupDTO.ParseId(t);
+                    if (id != 0UL) s.OutputObjectIds.Add(id);
+                }
+            }
+
+            return s;
+        }
+    }
+
     /// <summary>オブジェクトグループのシリアライズ用。</summary>
     [Serializable]
     public class ObjectGroupDTO
     {
         public string name = "";
+
+        /// <summary>実行するコマンド列。並び順がそのまま実行順。</summary>
+        public List<ObjectGroupStepDTO> steps = new List<ObjectGroupStepDTO>();
+
+        // ── ここから下は古い形（1 ステップ前提）。読みの互換のために残す。
+        //    書きでは、ステップが 1 つのときだけ埋める。
+
         public string action = "";
 
         public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
@@ -51,6 +136,8 @@ namespace Poly_Ling.Serialization
 
         /// <summary>出力先の ObjectId（10 進文字列）。"0" = なし。</summary>
         public string outputObjectId = "0";
+
+        // ── ここから下はグループ単位の値。
 
         /// <summary>退避の ObjectId（10 進文字列）。"0" = なし。</summary>
         public string stashObjectId = "0";
@@ -71,25 +158,32 @@ namespace Poly_Ling.Serialization
 
             var dto = new ObjectGroupDTO
             {
-                name           = g.Name ?? "",
-                action         = g.Action ?? "",
-                outputObjectId = g.OutputObjectId.ToString(CultureInfo.InvariantCulture),
-                stashObjectId  = g.StashObjectId.ToString(CultureInfo.InvariantCulture),
-                sourceDigest   = g.SourceDigest ?? "",
-                autoUpdate     = g.AutoUpdate,
-                createdAt      = g.CreatedAt.ToString("o"),
+                name          = g.Name ?? "",
+                stashObjectId = g.StashObjectId.ToString(CultureInfo.InvariantCulture),
+                sourceDigest  = g.SourceDigest ?? "",
+                autoUpdate    = g.AutoUpdate,
+                createdAt     = g.CreatedAt.ToString("o"),
             };
 
-            foreach (var kv in g.SortedArgs())
-                dto.args.Add(new ObjectGroupArgDTO { key = kv.Key, value = kv.Value ?? "" });
-
-            foreach (var kv in g.SortedMeshRefIds())
+            if (g.Steps != null)
             {
-                var e = new ObjectGroupMeshRefDTO { key = kv.Key };
-                if (kv.Value != null)
-                    foreach (ulong id in kv.Value)
-                        e.objectIds.Add(id.ToString(CultureInfo.InvariantCulture));
-                dto.meshRefs.Add(e);
+                foreach (var s in g.Steps)
+                {
+                    var sd = ObjectGroupStepDTO.FromStep(s);
+                    if (sd != null) dto.steps.Add(sd);
+                }
+            }
+
+            // 1 ステップのグループは古い形でも書いておく。
+            if (dto.steps.Count == 1)
+            {
+                var only = dto.steps[0];
+                dto.action         = only.action;
+                dto.args           = only.args;
+                dto.meshRefs       = only.meshRefs;
+                dto.outputObjectId = only.outputObjectIds.Count > 0
+                    ? only.outputObjectIds[0]
+                    : "0";
             }
 
             return dto;
@@ -99,11 +193,9 @@ namespace Poly_Ling.Serialization
         {
             var g = new ObjectGroup(name ?? "")
             {
-                Action         = action ?? "",
-                OutputObjectId = ParseId(outputObjectId),
-                StashObjectId  = ParseId(stashObjectId),
-                SourceDigest   = sourceDigest ?? "",
-                AutoUpdate     = autoUpdate,
+                StashObjectId = ParseId(stashObjectId),
+                SourceDigest  = sourceDigest ?? "",
+                AutoUpdate    = autoUpdate,
             };
 
             if (!string.IsNullOrEmpty(createdAt) && DateTime.TryParse(
@@ -113,20 +205,33 @@ namespace Poly_Ling.Serialization
                 g.CreatedAt = t;
             }
 
-            if (args != null)
-                foreach (var a in args)
-                    if (a != null && !string.IsNullOrEmpty(a.key)) g.SetArg(a.key, a.value);
+            g.Steps.Clear();
 
-            if (meshRefs != null)
+            if (steps != null && steps.Count > 0)
             {
-                foreach (var r in meshRefs)
+                foreach (var sd in steps)
                 {
-                    if (r == null || string.IsNullOrEmpty(r.key)) continue;
-                    var ids = new List<ulong>();
-                    if (r.objectIds != null)
-                        foreach (var s in r.objectIds) ids.Add(ParseId(s));
-                    g.SetMeshRefIds(r.key, ids);
+                    if (sd == null) continue;
+                    var s = sd.ToStep();
+                    if (s != null) g.Steps.Add(s);
                 }
+            }
+
+            // steps が無い保存データ（ステップ導入前）は、古い 4 つをステップ 0 として読む。
+            if (g.Steps.Count == 0)
+            {
+                var legacy = new ObjectGroupStepDTO
+                {
+                    action   = action ?? "",
+                    args     = args     ?? new List<ObjectGroupArgDTO>(),
+                    meshRefs = meshRefs ?? new List<ObjectGroupMeshRefDTO>(),
+                };
+
+                ulong outId = ParseId(outputObjectId);
+                if (outId != 0UL)
+                    legacy.outputObjectIds.Add(outId.ToString(CultureInfo.InvariantCulture));
+
+                g.Steps.Add(legacy.ToStep());
             }
 
             return g;
@@ -136,7 +241,7 @@ namespace Poly_Ling.Serialization
         /// ObjectId の文字列を戻す。読めなければ 0（＝参照なし）。
         /// 0 を返すのは黙って別のオブジェクトを指すより安全なため。
         /// </summary>
-        private static ulong ParseId(string s)
+        internal static ulong ParseId(string s)
             => (!string.IsNullOrEmpty(s) &&
                 ulong.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong v))
                 ? v : 0UL;

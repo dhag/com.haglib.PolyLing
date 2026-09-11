@@ -60,6 +60,7 @@ namespace Poly_Ling.Player
         private FloatField _startField;
         private FloatField _endField;
         private FloatField _boneLenField;
+        private Toggle     _useRootToggle;
 
         private const string ClipPathKey = "UnityClipToVrma.Clip.Path";
         private const string VrmaPathKey = "UnityClipToVrma.Vrma.Path";
@@ -79,7 +80,8 @@ namespace Poly_Ling.Player
 
             var note = new Label(
                 "T ポーズ基準で変換します。モデルは使いません。\n" +
-                "出るのは Humanoid ボーンの回転だけです（表情・二次骨・移動は載りません）。");
+                "Humanoid ボーンの回転と、Root の移動・向き（RootT / RootQ）を VRMA にします。\n" +
+                "表情・視線・二次骨は対象外です。");
             note.style.fontSize   = 10;
             note.style.whiteSpace = WhiteSpace.Normal;
             note.style.marginBottom = 4;
@@ -131,6 +133,14 @@ namespace Poly_Ling.Player
             row2.Add(NumField("Start", out _startField, 0f));
             row2.Add(NumField("End", out _endField, 0f));
             root.Add(row2);
+
+            // RootT / RootQ を載せるか。
+            // 既定は載せる。切ると回転だけになり、Root 対応前と同じ結果になる。
+            // 移動が要らないクリップや、以前の出力と比べたいときに使う。
+            _useRootToggle = new Toggle("Root の移動・向き（RootT / RootQ）を載せる") { value = true };
+            _useRootToggle.style.fontSize     = 10;
+            _useRootToggle.style.marginBottom = 4;
+            root.Add(_useRootToggle);
 
             _btnSave = new Button(OnSave) { text = "保存" };
             _btnSave.style.height       = 24;
@@ -196,10 +206,17 @@ namespace Poly_Ling.Player
                 {
                     int muscles = _clip.muscles?.Count ?? 0;
                     int bones   = _clip.bones?.Count ?? 0;
+
+                    // Root 系は muscles の中に名前で入っている（RootT.x など）。
+                    // 何本あるかを出しておくと、移動が載らないときに
+                    // 「クリップに無い」のか「変換で落ちた」のかをここで切り分けられる。
+                    var rootNames = CollectRootTrackNames(_clip);
+
                     _clipInfoLabel.text =
                         $"Clip: {_clip.name}  ({_clip.clipType})\n" +
                         $"Length: {_maxTime:F2}s  (@ {(_clip.frameRate > 0f ? _clip.frameRate : 30f):F0}fps)\n" +
-                        $"Muscles: {muscles}   Bone tracks: {bones}（変換には muscles のみ使用）";
+                        $"Animator tracks: {muscles}   Bone tracks: {bones}（変換に使うのは Animator 側）\n" +
+                        $"Root: {(rootNames.Count > 0 ? string.Join(" ", rootNames.ToArray()) : "なし")}";
                 }
             }
 
@@ -304,7 +321,8 @@ namespace Poly_Ling.Player
                 _fpsField?.value     ?? 30f,
                 _startField?.value   ?? 0f,
                 _endField?.value     ?? 0f,
-                _boneLenField?.value ?? 0.1f));
+                _boneLenField?.value ?? 0.1f,
+                _useRootToggle?.value ?? true));
 
             // Dispatch は同期なので、書き出し結果をここで確かめる。
             bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
@@ -319,6 +337,30 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
+
+        /// <summary>
+        /// クリップに入っている Root 系トラック名を並べる。
+        /// 名前の正本は UnityClipRootMotion。ここで文字列を書き写さない。
+        /// </summary>
+        private static System.Collections.Generic.List<string> CollectRootTrackNames(UnityClipDTO clip)
+        {
+            var found = new System.Collections.Generic.List<string>();
+            if (clip?.muscles == null) return found;
+
+            string[] wanted =
+            {
+                UnityClipRootMotion.NameTx, UnityClipRootMotion.NameTy, UnityClipRootMotion.NameTz,
+                UnityClipRootMotion.NameQx, UnityClipRootMotion.NameQy,
+                UnityClipRootMotion.NameQz, UnityClipRootMotion.NameQw,
+            };
+
+            foreach (var name in wanted)
+                foreach (var m in clip.muscles)
+                    if (m != null && m.name == name && m.w != null && m.w.Count > 0)
+                    { found.Add(name); break; }
+
+            return found;
+        }
 
         private static Label SecLabel(string t)
         {

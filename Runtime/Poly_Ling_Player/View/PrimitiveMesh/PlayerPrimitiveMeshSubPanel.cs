@@ -216,7 +216,9 @@ namespace Poly_Ling.Player
         /// 原点マーカー・くさびの仮表示もこの条件に従う。
         /// </summary>
         public bool PoseApplicable
-            => _current != ShapeKind.ObjectArray && _current != ShapeKind.Bridge;
+            => _current != ShapeKind.ObjectArray
+            && _current != ShapeKind.EdgeRibbonFace
+            && _current != ShapeKind.Bridge;
 
         /// <summary>
         /// AddToExisting のときの追加先（MeshContextList インデックス）。
@@ -312,13 +314,15 @@ namespace Poly_Ling.Player
         // 保存内容に影響しないが、_shapeBtns は添字を (int)ShapeKind で引く。
         public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge, Ribbon, NGonGear, NGonStar, InvoluteGear, StadiumBox, PipeStadium, HairStrand,
                                HelicalGear, InternalGear, InvoluteRack, HelicalRack, StraightBevelGear, SpiralBevelGear, CylindricalWorm, WormWheel,
-                               SpringBoneSingle, SpringBoneCylinder, SpringBoneRevolution }
+                               SpringBoneSingle, SpringBoneCylinder, SpringBoneRevolution,
+                               EdgeRibbonFace, SpringBoneLadder }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
               "NGonGear","NGonStar","InvoluteGear","StadiumBox","PipeStadium","HairStrand",
               "HelicalGear","InternalGear","InvoluteRack","HelicalRack","StraightBevelGear","SpiralBevelGear","CylindricalWorm","WormWheel",
-              "SpringBoneSingle","SpringBoneCylinder","SpringBoneRevolution" };
+              "SpringBoneSingle","SpringBoneCylinder","SpringBoneRevolution",
+              "EdgeRibbonFace","SpringBoneLadder" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced, Mechanism, SpringBone }
@@ -331,13 +335,15 @@ namespace Poly_Ling.Player
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
               ShapeKind.NGonGear, ShapeKind.NGonStar,
               ShapeKind.PipeStadium, ShapeKind.HairStrand,
-              ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
+              ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge,
+              ShapeKind.EdgeRibbonFace };
 
         // 揺れもの用のボーン鎖。作るのはボーンで、メッシュではない。
         //   「回転体」と同じくプロファイル（断面の折れ線）を持ち、
         //   同じプロファイルエディタをそのまま使う。
         private static readonly ShapeKind[] SpringBoneShapes =
-            { ShapeKind.SpringBoneSingle, ShapeKind.SpringBoneCylinder, ShapeKind.SpringBoneRevolution };
+            { ShapeKind.SpringBoneSingle, ShapeKind.SpringBoneCylinder, ShapeKind.SpringBoneRevolution,
+              ShapeKind.SpringBoneLadder };
 
         // 機構部品。かみ合う歯車まわりをここへ集める。
         // インボリュート歯車は「高度な図形」からここへ移した。
@@ -480,7 +486,9 @@ namespace Poly_Ling.Player
         private void RefreshCommonUiVisibility()
         {
             bool useAddMode = _current != ShapeKind.ObjectArray;
-            bool usePose    = _current != ShapeKind.ObjectArray && _current != ShapeKind.Bridge;
+            bool usePose    = _current != ShapeKind.ObjectArray
+                           && _current != ShapeKind.EdgeRibbonFace
+                           && _current != ShapeKind.Bridge;
             bool useMaterial = ShapeUsesMaterialSlot
                             && _addMode != PrimitiveAddMode.NewModel;
 
@@ -1510,12 +1518,15 @@ namespace Poly_Ling.Player
                 case ShapeKind.SpringBoneCylinder:
                 case ShapeKind.SpringBoneRevolution:
                     BuildSpringBoneChainUI(_settingsContainer); break;
+                case ShapeKind.SpringBoneLadder:
+                    BuildSpringBoneLadderUI(_settingsContainer); break;
                 case ShapeKind.Profile2D:  BuildProfile2DUI(_settingsContainer);  break;
                 case ShapeKind.NohMask:    BuildNohMaskUI(_settingsContainer);    break;
                 case ShapeKind.Frill:      BuildFrillUI(_settingsContainer);      break;
                 case ShapeKind.Pipe:       BuildPipeUI(_settingsContainer);       break;
                 case ShapeKind.PlaceObject: BuildPlaceObjectUI(_settingsContainer); break;
                 case ShapeKind.ObjectArray: BuildObjectArrayUI(_settingsContainer); break;
+                case ShapeKind.EdgeRibbonFace: BuildEdgeRibbonFaceUI(_settingsContainer); break;
                 case ShapeKind.Text:        BuildTextUI(_settingsContainer);        break;
                 case ShapeKind.Bridge:      BuildBridgeUI(_settingsContainer);      break;
                 case ShapeKind.Ribbon:      BuildRibbonUI(_settingsContainer);      break;
@@ -4658,13 +4669,18 @@ namespace Poly_Ling.Player
             // プレビュー / ライブワイヤは出さないので null を返す。
             if (_current == ShapeKind.ObjectArray) return null;
 
+            // 辺から帯面は選択辺から組む。パラメータだけでは作れないので
+            // ファクトリではなくハンドラへ組ませる（プレビューも同じ実装を通る）。
+            if (_current == ShapeKind.EdgeRibbonFace) return GenerateEdgeRibbonFaceMesh();
+
             var cmd = BuildCreateCommand(applyTransform ? CurrentPlacement() : NeutralPlacement());
             if (cmd == null) return null;
 
             // 重複頂点の結合・パーツID の割当・回転/拡大の焼き込みはファクトリ側にある。
             // 図形種別の分岐がパネルとファクトリの 2 箇所に分かれないようにするため、
             // プレビューもボタンも同じコマンドを通す。
-            var mo = PrimitiveMeshFactory.Build(cmd, forPreview, ResolvePlaceSources);
+            var mo = PrimitiveMeshFactory.Build(
+                cmd, forPreview, ResolvePlaceSources, ResolveBeltSource);
 
             // 見つからなかった字数は生成の副産物なので、情報欄はここで更新する。
             if (_current == ShapeKind.Text)
@@ -4675,6 +4691,13 @@ namespace Poly_Ling.Player
 
             return mo;
         }
+
+        /// <summary>
+        /// 梯子の取り込み元を索引から解決する。ファクトリへ渡す。
+        /// はしごのウェイトを引き継ぐときだけファクトリが呼ぶ。
+        /// </summary>
+        private MeshObject ResolveBeltSource(int masterIndex)
+            => GetMeshObjectAt?.Invoke(masterIndex);
 
         /// <summary>
         /// 藤壺（配置）の配置元を索引から解決する。ファクトリへ渡す。
@@ -4754,6 +4777,8 @@ namespace Poly_Ling.Player
                 case ShapeKind.WormWheel:         return _wheelP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
+                // 辺から帯面は書き込み先の既存オブジェクトへ足すだけで、名前を使わない。
+                case ShapeKind.EdgeRibbonFace: return Poly_Ling.Tools.EdgeRibbonFaceTool.DefaultMeshName;
                 case ShapeKind.Bridge:     return BridgeMeshName;
                 default:                   return _current.ToString();
             }
@@ -4996,6 +5021,14 @@ namespace Poly_Ling.Player
                     // 単一 MeshObject を新規追加する経路は通らない。
                     if (_current == ShapeKind.Bridge) { InvokeBridgeGenerate(); return; }
 
+                    // 辺から帯面は選択辺から組むため、パラメータだけで作る
+                    // CreatePrimitiveMeshCommand には載らない。専用コマンドを送る。
+                    if (_current == ShapeKind.EdgeRibbonFace)
+                    {
+                        InvokeEdgeRibbonFaceGenerate();
+                        return;
+                    }
+
                     // 揺れもの用ボーン鎖は作るのがボーンで、メッシュではない。
                     // 単一 MeshObject を新規追加する経路は通らない。
                     if (_current == ShapeKind.SpringBoneSingle ||
@@ -5003,6 +5036,13 @@ namespace Poly_Ling.Player
                         _current == ShapeKind.SpringBoneRevolution)
                     {
                         GenerateSpringBoneChains();
+                        return;
+                    }
+
+                    // はしごから作る揺れものボーンも同じくボーンを作る。
+                    if (_current == ShapeKind.SpringBoneLadder)
+                    {
+                        GenerateSpringBoneLadderChains();
                         return;
                     }
 
@@ -5086,6 +5126,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.Bridge:
                     return SendCommand != null && BridgeSeedsReady;
 
+                // 選択辺が 1 本以上あり、コマンドの送り先が結線されていること。
+                case ShapeKind.EdgeRibbonFace:
+                    return SendCommand != null && EdgeRibbonFaceSelectedEdges > 0;
+
                 // 揺れもの用ボーン鎖。折れ線を使う 2 種は点が 2 個以上要る。
                 case ShapeKind.SpringBoneSingle:
                 case ShapeKind.SpringBoneRevolution:
@@ -5093,6 +5137,10 @@ namespace Poly_Ling.Player
 
                 case ShapeKind.SpringBoneCylinder:
                     return SendCommand != null;
+
+                // はしごから作る揺れものボーン。取り込み元が選ばれていること。
+                case ShapeKind.SpringBoneLadder:
+                    return SendCommand != null && _sbLadderPick.Current != null;
 
                 default: return true;
             }

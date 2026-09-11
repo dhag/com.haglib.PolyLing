@@ -39,6 +39,17 @@ namespace Poly_Ling.Pipe
 
         // ── 厚み付け（0 で厚み付けなし。ベベル規約は FaceGroupSolidifier と同じ） ──
         /// <summary>総厚み。各シェルは ±Thickness/2 移動する</summary>
+        /// <summary>
+        /// 取り込み元のはしごへ塗ってあるボーンウェイトを、生成した頂点へ引き継ぐ。
+        ///
+        /// はしごの点は取り込み元の頂点の位置そのものなので、生成の直前に
+        /// 位置で突き合わせて引く（BeltWeightBinder）。頂点は線分の両端を
+        /// 断面 x で混ぜたウェイトを持つ。引けない点は何も持たない。
+        /// </summary>
+        [PLParam(TextKey = "BeltInheritWeights",
+                 Description = "取り込み元のはしごのボーンウェイトを生成した頂点へ引き継ぐ")]
+        public bool InheritBeltWeights;
+
         [PLParam(TextKey = "Thickness", Description = "総厚み。0 で厚み付けなし", Min = ThicknessMin, Max = ThicknessMax)]
         public float Thickness;
         /// <summary>表側エッジ分割数（0=無効 / 1=面取り / 2以上=ラウンド）</summary>
@@ -87,6 +98,7 @@ namespace Poly_Ling.Pipe
         public bool Equals(PipeParams o)
             => MeshName == o.MeshName
             && CapEnds  == o.CapEnds
+            && InheritBeltWeights == o.InheritBeltWeights
             && Mathf.Approximately(Thickness, o.Thickness)
             && SegmentsFront == o.SegmentsFront
             && SegmentsBack  == o.SegmentsBack

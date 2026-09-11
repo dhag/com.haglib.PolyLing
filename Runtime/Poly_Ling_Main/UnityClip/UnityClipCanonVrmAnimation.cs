@@ -40,12 +40,27 @@
 //   CanonHumanoidNames を通して引くだけで、値を書き写さない。
 //
 // ============================================================
-// ■ Hips の平行移動
+// ■ Hips の平行移動と身体の向き（RootT / RootQ）
 // ============================================================
 //
-//   Humanoid クリップは Transform トラックを持たず、RootT 等は
-//   HumanTrait.MuscleName に含まれないため参照されない。
-//   したがって Hips はレスト位置で固定になる。モデル依存モードでも同じ。
+//   Humanoid クリップは Transform トラックを持たない。代わりに Animator 型の
+//   カーブとして RootT.x/y/z・RootQ.x/y/z/w を持ち、書き出し側はこれを
+//   dto.muscles へそのまま入れている（UnityClipExportWindow.cs:246-251）。
+//
+//   RootT / RootQ は HumanTrait.MuscleName に含まれないが、
+//   **含まれないことは不要を意味しない。** マッスルが関節の正規化自由度なのに対し、
+//   これらは身体全体の位置と向き（HumanPose.bodyPosition / bodyRotation）である。
+//   意味と単位は UnityClipRootMotion の冒頭に書いた。
+//
+//   反映先は 2 つとも Hips。
+//     ・平行移動 … 書き出し側は SetPositionBoneAndParent(hips, 正準骨格の根) で
+//       Hips の translation を出す（VrmAnimationExporterImpl.cs:109）。
+//       Hips の親は正準骨格の根なので、hips.localPosition がそのまま出る。
+//     ・向き … 回転チャンネルは Inverse(parent.rotation)·node.rotation なので
+//       （VrmAnimationExporterImpl.cs:120）、根を回しても打ち消されて出ない。
+//       Hips のローカル回転へ入れるしかない。
+//       Hips に対応するマッスルは無い（正準階層の根。UnityClipApplier.cs:903）ので、
+//       マッスル由来の回転と衝突しない。
 //
 // ============================================================
 
@@ -71,6 +86,17 @@ namespace Poly_Ling.UnityClip
         // 親から子の順。ローカル回転の代入に使う。
         private readonly List<string>    _orderedName = new List<string>();
         private readonly List<Transform> _ordered     = new List<Transform>();
+
+        /// <summary>Hips のレスト位置（根から見たローカル）。平行移動の基準。</summary>
+        public Vector3 HipsRestLocalPosition { get; private set; }
+
+        // Root の反映に使う持ち回り。
+        private UnityClipRootMotion _root;
+        private float              _rootScale = 1f;
+        private bool               _applyRootT;
+        private bool               _applyRootQ;
+        private Quaternion         _prevRootQ = Quaternion.identity;
+        private bool               _hasPrevRootQ;
 
         private UnityClipCanonVrmAnimation() { }
 
@@ -177,6 +203,11 @@ namespace Poly_Ling.UnityClip
                 src._ordered.Add(t);
             }
 
+            // Hips のレスト位置。RootT の倍率を決める基準になるので控えておく。
+            src.HipsRestLocalPosition = trOf.TryGetValue("Hips", out var hipsTr)
+                ? hipsTr.localPosition
+                : new Vector3(0f, len, 0f);
+
             return src;
         }
 
@@ -198,6 +229,83 @@ namespace Poly_Ling.UnityClip
                         _orderedName[i], muscleByName, timeSec, out Quaternion local)
                     ? local
                     : Quaternion.identity;
+            }
+        }
+
+        /// <summary>
+        /// Root 情報の反映を仕込む。ConvertToFile が 1 回だけ呼ぶ。
+        ///
+        /// referenceTimeSec は倍率の基準時刻（書き出しの開始時刻）。
+        /// 倍率を決められないときは平行移動を載せない。基準の無いまま掛けると
+        /// 寸法が化けるので、黙って 1 倍で掛けてはいけない。
+        /// </summary>
+        public void SetupRoot(UnityClipRootMotion root, float referenceTimeSec,
+                              bool useRoot, out string note)
+        {
+            _root         = root;
+            _applyRootT   = false;
+            _applyRootQ   = false;
+            _rootScale    = 1f;
+            _prevRootQ    = Quaternion.identity;
+            _hasPrevRootQ = false;
+
+            if (root == null)                       { note = "Root トラックなし";       return; }
+            if (!useRoot)                           { note = "Root を載せない指定";     return; }
+            if (!root.HasTranslation && !root.HasRotation)
+                                                    { note = "Root トラックなし";       return; }
+
+            var sb = new System.Text.StringBuilder();
+
+            if (root.HasTranslation)
+            {
+                _applyRootT = root.TryComputeTranslationScale(
+                    HipsRestLocalPosition.y, referenceTimeSec, out _rootScale, out string scaleNote);
+                sb.Append(_applyRootT ? "RootT: " : "RootT: 載せない（");
+                sb.Append(scaleNote);
+                if (!_applyRootT) sb.Append('）');
+            }
+            else sb.Append("RootT: 無し");
+
+            sb.Append(" / ");
+            _applyRootQ = root.HasRotation;
+            sb.Append(_applyRootQ ? "RootQ: 載せる" : "RootQ: 無し（4 本そろわない）");
+
+            note = sb.ToString();
+        }
+
+        /// <summary>
+        /// マッスルと Root を両方反映する。書き出しのフレームごとに呼ぶ。
+        /// 時刻の昇順で呼ぶこと（RootQ の符号を前フレームへ合わせるため）。
+        /// </summary>
+        public void Pose(
+            IReadOnlyDictionary<string, UnityMuscleTrackDTO> muscleByName, float timeSec)
+        {
+            PoseFromMuscles(muscleByName, timeSec);
+            PoseRoot(timeSec);
+        }
+
+        /// <summary>
+        /// Root 情報を Hips へ入れる。
+        ///   平行移動 … hips.localPosition = RootT(正規化) × 倍率
+        ///   向き     … hips.localRotation = RootQ
+        /// Hips に対応するマッスルは無いので、マッスル由来の回転を潰すことはない。
+        /// </summary>
+        public void PoseRoot(float timeSec)
+        {
+            if (_root == null) return;
+            if (!HumanBones.TryGetValue(HumanBodyBones.Hips, out var hips) || hips == null) return;
+
+            if (_applyRootT)
+                hips.localPosition = _root.SampleNormalizedTranslation(timeSec) * _rootScale;
+
+            if (_applyRootQ)
+            {
+                var q = _root.SampleRotation(timeSec);
+                if (_hasPrevRootQ) q = UnityClipRootMotion.MatchSign(q, _prevRootQ);
+                _prevRootQ    = q;
+                _hasPrevRootQ = true;
+
+                hips.localRotation = q;
             }
         }
 
@@ -223,7 +331,8 @@ namespace Poly_Ling.UnityClip
         /// ModelContext を一切参照しない。
         /// </summary>
         public static VrmAnimationExportResult ConvertToFile(
-            UnityClipDTO clip, string outputPath, VrmAnimationExportSettings settings, float boneLength)
+            UnityClipDTO clip, string outputPath, VrmAnimationExportSettings settings, float boneLength,
+            bool useRoot = true)
         {
             if (clip == null) return VrmAnimationExportResult.Failed("クリップがありません");
             if (string.IsNullOrEmpty(outputPath))
@@ -262,13 +371,22 @@ namespace Poly_Ling.UnityClip
                 src = Build(boneLength, out string buildReason);
                 if (src == null) return VrmAnimationExportResult.Failed(buildReason);
 
+                // Root 系はマッスルと別系統として抜き出す。
+                // 既存 JSON は Root も muscles に入っているので、同じ辞書から引く。
+                var root = UnityClipRootMotion.From(muscleByName);
+                src.SetupRoot(root, times[0], useRoot, out string rootNote);
+
+                // 何をどの倍率で載せたかを残す。載らなかったときの原因もここに出る。
+                Debug.Log($"[UnityClipCanonVrmAnimation] Root: {rootNote}"
+                        + $" / 基準 {root.Describe(times[0])}");
+
                 var localSrc = src;
                 var result = PLVrmAnimationBridge.I.Export(
                     src.Root,
                     src.HumanBones,
                     src.Root.transform,
                     times,
-                    i => localSrc.PoseFromMuscles(muscleByName, times[i]),
+                    i => localSrc.Pose(muscleByName, times[i]),
                     outputPath);
 
                 if (result != null && result.Success)

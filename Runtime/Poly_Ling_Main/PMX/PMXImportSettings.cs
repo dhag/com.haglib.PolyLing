@@ -4,6 +4,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Tools;
 
@@ -65,6 +66,7 @@ namespace Poly_Ling.PMX
 
         /// <summary>インポートモード</summary>
         [Tooltip("NewModel: 新規モデルとして追加, Append: 既存メッシュに追加, Replace: 既存メッシュを全削除してからインポート")]
+        [PLParam(Description = "読み込み方。NewModel は新しいモデルとして足す / Append は既存へ追加 / Replace は既存を消してから読む")]
         public PMXImportMode ImportMode = PMXImportMode.NewModel;
 
         // ================================================================
@@ -73,6 +75,7 @@ namespace Poly_Ling.PMX
 
         /// <summary>インポート対象フラグ</summary>
         [Tooltip("インポートする対象を選択（複数選択可）")]
+        [PLParam(Description = "読み込む対象。Default は全部。BonesOnly はボーンだけ、Physics は剛体とジョイントだけ")]
         public PMXImportTarget ImportTarget = PMXImportTarget.Default;
 
         // ヘルパープロパティ
@@ -88,14 +91,17 @@ namespace Poly_Ling.PMX
 
         /// <summary>スケール（PMX→Unity）デフォルト0.1（PmxUnityRatio）</summary>
         [Tooltip("PMX座標をUnity座標に変換するスケール（デフォルト: 0.1 = PmxUnityRatio）")]
+        [PLParam(Description = "PMX 座標を Unity 座標へ直す倍率", Min = 0.001f, Max = 10f)]
         public float Scale = 0.1f;
 
         /// <summary>X軸反転</summary>
         [Tooltip("X軸を反転する。FlipZ と併用すると Y軸180°回転になる（PMX正面 -Z → Unity正面 +Z）")]
+        [PLParam(Description = "X 軸を反転する。FlipZ と併せると Y 軸 180 度回転になる")]
         public bool FlipX = true;
 
         /// <summary>Z軸反転</summary>
         [Tooltip("Z軸を反転する。FlipX と併用すると Y軸180°回転になる（PMX正面 -Z → Unity正面 +Z）")]
+        [PLParam(Description = "Z 軸を反転する。FlipX と併せると Y 軸 180 度回転になる")]
         public bool FlipZ = true;
 
         /// <summary>
@@ -107,6 +113,7 @@ namespace Poly_Ling.PMX
 
         /// <summary>UV V座標反転（PMX→Unity変換で通常必要）</summary>
         [Tooltip("UV座標のV成分を反転する（PMXは上が0、Unityは下が0）")]
+        [PLParam(Description = "UV の V を反転する。PMX は上が 0、Unity は下が 0")]
         public bool FlipUV_V = true;
 
         // ================================================================
@@ -115,10 +122,12 @@ namespace Poly_Ling.PMX
 
         /// <summary>マテリアルをインポート（Mesh読み込み時のみ有効）</summary>
         [Tooltip("PMXマテリアルをUnityマテリアルに変換する")]
+        [PLParam(Description = "PMX の材質も読み込む。メッシュを読むときだけ効く")]
         public bool ImportMaterials = true;
 
         /// <summary>Tポーズに変換（Humanoid Avatar用）</summary>
         [Tooltip("AポーズをTポーズに変換する（Mecanimアニメーション用）")]
+        [PLParam(Description = "A ポーズを T ポーズへ直す")]
         public bool ConvertToTPose = false;
 
         // ================================================================
@@ -132,23 +141,28 @@ namespace Poly_Ling.PMX
         /// 最大でほぼ逆向きまで変化した）。
         /// </summary>
         [Tooltip("インポート後に法線を再計算する（PMX の法線は失われる）")]
+        [PLParam(Description = "読み込んだあと法線を計算し直す。PMX が持っていた法線は失われる")]
         public bool RecalculateNormals = false;
 
         /// <summary>スムージング角度（度）</summary>
         [Tooltip("法線スムージングの閾値角度")]
         [Range(0f, 180f)]
+        [PLParam(Description = "法線をならす角度のしきい値（度）", Min = 0f, Max = 180f)]
         public float SmoothingAngle = 60f;
 
         /// <summary>ObjectNameグループ化を使用</summary>
         [Tooltip("材質Memo欄のObjectNameでメッシュをグループ化（頂点順序保持）")]
+        [PLParam(Description = "材質メモ欄の ObjectName でメッシュをまとめる。頂点の並びは保つ")]
         public bool UseObjectNameGrouping = true;
 
         /// <summary>名前末尾+のメッシュもミラーとみなす</summary>
         [Tooltip("名前末尾が+のメッシュもミラーとみなす（OFFの場合はMemo欄IsMirrorのみ）")]
+        [PLParam(Description = "名前の末尾が + のメッシュもミラーとして扱う。切ると材質メモの IsMirror だけを見る")]
         public bool DetectNamedMirror = true;
 
         /// <summary>ミラーをベイク（OFFの場合はMirrorPair同期）</summary>
         [Tooltip("ONの場合はベイクドミラー、OFFの場合はMirrorPairで同期")]
+        [PLParam(Description = "ミラーを実体化して取り込む。切ると対の同期として持つ")]
         public bool BakeMirror = false;
 
         // ================================================================
@@ -158,10 +172,12 @@ namespace Poly_Ling.PMX
         /// <summary>アルファカットオフ値 (0-1)（テクスチャアルファのしきい値）</summary>
         [Tooltip("テクスチャアルファチャンネルのカットオフしきい値")]
         [Range(0f, 1f)]
+        [PLParam(Description = "テクスチャのアルファを切り捨てるしきい値", Min = 0f, Max = 1f)]
         public float AlphaCutoff = 0.5f;
 
         /// <summary>材質不透明度とテクスチャアルファが競合する場合の動作</summary>
         [Tooltip("Diffuse.a < 1.0 かつテクスチャがある場合の動作")]
+        [PLParam(Description = "材質の不透明度とテクスチャのアルファが食い違うときの扱い")]
         public AlphaConflictMode AlphaConflict = AlphaConflictMode.PreferTransparent;
 
         // ================================================================

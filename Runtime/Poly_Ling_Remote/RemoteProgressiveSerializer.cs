@@ -78,6 +78,17 @@ namespace Poly_Ling.Remote
         //                  [2B] MeshRefCount ([string] Key [2B] IdCount [8B × IdCount]) × MeshRefCount
         //     参照は ObjectId なので受信側でメッシュ索引へ読み替える必要がない。
         //     Version 2 の受信側とは非互換のため Editor/Player を同時更新すること。
+        //   ※ Version 4 で ObjectGroup をステップ列にした。
+        //     ObjectGroup: [string] Name  [8B] StashObjectId
+        //                  [1B] AutoUpdate  [string] SourceDigest
+        //                  [2B] StepCount  [Step × StepCount]
+        //     Step: [string] Action
+        //           [2B] OutCount     [8B × OutCount]
+        //           [2B] ArgCount     ([string] Key [string] Value) × ArgCount
+        //           [2B] MeshRefCount ([string] Key [2B] IdCount [8B × IdCount]) × MeshRefCount
+        //     出力先が複数ありうる（はしごから作る鎖は 1 回で何本もできる）ため
+        //     単数の OutputObjectId をやめた。読みは Version 3 の形も受ける。
+        //     Version 3 の受信側とは非互換のため Editor/Player を同時更新すること。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -87,7 +98,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)3);   // version 3: ObjectGroup ブロック（v2: MaterialData 拡張ブロック）
+                w.Write((byte)4);   // version 4: ObjectGroup のステップ列（v3: ObjectGroup ブロック）
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -123,7 +134,7 @@ namespace Poly_Ling.Remote
                     }
                 }
 
-                // ── ObjectGroups（version 3 で追加）
+                // ── ObjectGroups（version 3 で追加 / version 4 でステップ列へ）
                 //    並びは保存と同じくキー順に固定する。Dictionary の列挙順は
                 //    保証されないため、固定しないと同じ内容でもバイト列が変わる。
                 var groups = model.ObjectGroups;
@@ -135,37 +146,58 @@ namespace Poly_Ling.Remote
                     if (g == null)
                     {
                         // 空のグループとして詰めておく（件数と実体をずらさない）。
-                        WriteString(w, ""); WriteString(w, "");
-                        w.Write(0UL); w.Write(0UL);
+                        WriteString(w, "");
+                        w.Write(0UL);
                         w.Write(false); WriteString(w, "");
-                        w.Write((ushort)0); w.Write((ushort)0);
+                        w.Write((ushort)0);
                         continue;
                     }
 
                     WriteString(w, g.Name ?? "");
-                    WriteString(w, g.Action ?? "");
-                    w.Write(g.OutputObjectId);
                     w.Write(g.StashObjectId);
                     w.Write(g.AutoUpdate);
                     WriteString(w, g.SourceDigest ?? "");
 
-                    var sortedArgs = g.SortedArgs();
-                    w.Write((ushort)sortedArgs.Count);
-                    for (int j = 0; j < sortedArgs.Count; j++)
-                    {
-                        WriteString(w, sortedArgs[j].Key ?? "");
-                        WriteString(w, sortedArgs[j].Value ?? "");
-                    }
+                    var steps = g.Steps;
+                    int stepCount = steps?.Count ?? 0;
+                    w.Write((ushort)stepCount);
 
-                    var sortedRefs = g.SortedMeshRefIds();
-                    w.Write((ushort)sortedRefs.Count);
-                    for (int j = 0; j < sortedRefs.Count; j++)
+                    for (int si = 0; si < stepCount; si++)
                     {
-                        WriteString(w, sortedRefs[j].Key ?? "");
-                        var ids = sortedRefs[j].Value;
-                        int n = ids?.Count ?? 0;
-                        w.Write((ushort)n);
-                        for (int k = 0; k < n; k++) w.Write(ids[k]);
+                        var st = steps[si];
+                        if (st == null)
+                        {
+                            // 空のステップとして詰めておく。
+                            WriteString(w, "");
+                            w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)0);
+                            continue;
+                        }
+
+                        WriteString(w, st.Action ?? "");
+
+                        var outIds  = st.OutputObjectIds;
+                        int outCount = outIds?.Count ?? 0;
+                        w.Write((ushort)outCount);
+                        for (int j = 0; j < outCount; j++) w.Write(outIds[j]);
+
+                        var sortedArgs = st.SortedArgs();
+                        w.Write((ushort)sortedArgs.Count);
+                        for (int j = 0; j < sortedArgs.Count; j++)
+                        {
+                            WriteString(w, sortedArgs[j].Key ?? "");
+                            WriteString(w, sortedArgs[j].Value ?? "");
+                        }
+
+                        var sortedRefs = st.SortedMeshRefIds();
+                        w.Write((ushort)sortedRefs.Count);
+                        for (int j = 0; j < sortedRefs.Count; j++)
+                        {
+                            WriteString(w, sortedRefs[j].Key ?? "");
+                            var ids = sortedRefs[j].Value;
+                            int n = ids?.Count ?? 0;
+                            w.Write((ushort)n);
+                            for (int k = 0; k < n; k++) w.Write(ids[k]);
+                        }
                     }
                 }
 
@@ -251,12 +283,67 @@ namespace Poly_Ling.Remote
 
                 // ── ObjectGroups（version 3 以降）
                 //    v2 以前の送信側はこのブロックを持たない。読まずに抜ける。
+                //    v3 は 1 グループ 1 コマンド 1 出力。ステップ 0 として読む。
                 if (metaVersion >= 3)
                 {
                     ushort groupCount = r.ReadUInt16();
                     for (int i = 0; i < groupCount; i++)
                     {
-                        var g = new Poly_Ling.Data.ObjectGroup(ReadString(r))
+                        if (metaVersion >= 4)
+                        {
+                            var g = new Poly_Ling.Data.ObjectGroup(ReadString(r))
+                            {
+                                StashObjectId = r.ReadUInt64(),
+                                AutoUpdate    = r.ReadBoolean(),
+                                SourceDigest  = ReadString(r),
+                            };
+                            g.Steps.Clear();
+
+                            ushort stepCount = r.ReadUInt16();
+                            for (int si = 0; si < stepCount; si++)
+                            {
+                                var st = new Poly_Ling.Data.ObjectGroupStep
+                                {
+                                    Action = ReadString(r),
+                                };
+
+                                ushort outCount = r.ReadUInt16();
+                                for (int j = 0; j < outCount; j++)
+                                {
+                                    ulong id = r.ReadUInt64();
+                                    if (id != 0UL) st.OutputObjectIds.Add(id);
+                                }
+
+                                ushort argCount = r.ReadUInt16();
+                                for (int j = 0; j < argCount; j++)
+                                {
+                                    string k = ReadString(r);
+                                    string v = ReadString(r);
+                                    st.SetArg(k, v);
+                                }
+
+                                ushort refCount = r.ReadUInt16();
+                                for (int j = 0; j < refCount; j++)
+                                {
+                                    string k = ReadString(r);
+                                    ushort idCount = r.ReadUInt16();
+                                    var ids = new List<ulong>(idCount);
+                                    for (int m = 0; m < idCount; m++) ids.Add(r.ReadUInt64());
+                                    st.SetMeshRefIds(k, ids);
+                                }
+
+                                g.Steps.Add(st);
+                            }
+
+                            if (g.Steps.Count == 0)
+                                g.Steps.Add(new Poly_Ling.Data.ObjectGroupStep());
+
+                            model.ObjectGroups.Add(g);
+                            continue;
+                        }
+
+                        // version 3
+                        var g3 = new Poly_Ling.Data.ObjectGroup(ReadString(r))
                         {
                             Action         = ReadString(r),
                             OutputObjectId = r.ReadUInt64(),
@@ -265,25 +352,25 @@ namespace Poly_Ling.Remote
                             SourceDigest   = ReadString(r),
                         };
 
-                        ushort argCount = r.ReadUInt16();
-                        for (int j = 0; j < argCount; j++)
+                        ushort argCount3 = r.ReadUInt16();
+                        for (int j = 0; j < argCount3; j++)
                         {
                             string k = ReadString(r);
                             string v = ReadString(r);
-                            g.SetArg(k, v);
+                            g3.SetArg(k, v);
                         }
 
-                        ushort refCount = r.ReadUInt16();
-                        for (int j = 0; j < refCount; j++)
+                        ushort refCount3 = r.ReadUInt16();
+                        for (int j = 0; j < refCount3; j++)
                         {
                             string k = ReadString(r);
                             ushort idCount = r.ReadUInt16();
                             var ids = new List<ulong>(idCount);
                             for (int m = 0; m < idCount; m++) ids.Add(r.ReadUInt64());
-                            g.SetMeshRefIds(k, ids);
+                            g3.SetMeshRefIds(k, ids);
                         }
 
-                        model.ObjectGroups.Add(g);
+                        model.ObjectGroups.Add(g3);
                     }
                 }
 

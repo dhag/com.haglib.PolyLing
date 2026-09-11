@@ -34,6 +34,15 @@
 //   t はレールキーにも含めるため、位置が同じでも t が違うレールは溶接されない
 //   （縦に閉じた形では、そこが上下を分ける裂け目になる）。
 //
+// 【プリーツを広げる】rungSpan >= 2 のとき、プロファイル1周期を梯子 rungSpan 本ぶんへ広げる。
+//   FrillProfileSplit がプロファイルを x = d/span で等分し、断片 d をステップ s（s % span == d）
+//   へ割り当てる。断片は x=0..1 を張るので、rung 境界は従来どおりつながる。
+//   円筒を細かく割ったままプリーツの数だけを減らすためのもの。
+//   波の深さ（プロファイル y）の基準長は従来どおりステップごとのレール線分長なので、
+//   span を上げるとプリーツは横に広がり、深さは変わらない。
+//   位相（s % span）はレールキーにも含めるため、位相が違うレールは溶接されない。
+//   ステップ数が span で割り切れないとき、最後のグループは断片を使い切ったところで終わる。
+//
 // 【高さ倍率】FrillBeltInput.HeightScale は法線方向成分 (y * len) だけに掛ける。
 //   進行方向成分 (x) には掛けないため、レール上の位置は変えずに波の高さだけが変わる。
 //   connectShared で梯子どうしがレール線分を共有した場合、法線を合成するのと同じく
@@ -63,6 +72,15 @@ namespace Poly_Ling.Frill
 
         /// <summary>右レールのプロファイル補間パラメータ（0 = A / 1 = B）。</summary>
         public float TRight = 1f;
+
+        /// <summary>
+        /// 左レール各段のウェイト（取り込み元のはしごから引いたもの）。
+        /// null または要素 null で「引けなかった」。頂点へは書かない。
+        /// </summary>
+        public IReadOnlyList<BoneWeight?> LeftWeights;
+
+        /// <summary>右レール各段のウェイト。並びは Right と 1 対 1。</summary>
+        public IReadOnlyList<BoneWeight?> RightWeights;
     }
 
     public static class FrillMeshGenerator
@@ -144,7 +162,8 @@ namespace Poly_Ling.Frill
             bool connectShared,
             FrillRungSeam seam,
             string meshName,
-            PartsIdCounter partsIds)
+            PartsIdCounter partsIds,
+            int rungSpan = 1)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Frill" : meshName);
 
@@ -167,7 +186,30 @@ namespace Poly_Ling.Frill
             int m = (pa == null) ? 0 : pa.Count;
             if (belts == null || belts.Count == 0 || m < 2) return mo;
 
-            var steps = BuildSteps(belts);
+            // ── プリーツを梯子 span 本ぶんへ広げる ──
+            // 割れないときは span = 1 に落として従来と同じ1周期にする。
+            int span = Mathf.Max(1, rungSpan);
+            Vector2[][] pieceA = null;
+            Vector2[][] pieceB = null;
+
+            if (span >= 2)
+            {
+                if (!FrillProfileSplit.Split(pa, two ? pb : null, span, out pieceA, out pieceB)
+                    || (two && pieceB == null))
+                {
+                    pieceA = null;
+                    pieceB = null;
+                }
+            }
+
+            if (pieceA == null)
+            {
+                span   = 1;
+                pieceA = new[] { ToArray(pa) };
+                pieceB = two ? new[] { ToArray(pb) } : null;
+            }
+
+            var steps = BuildSteps(belts, span);
             if (steps.Count == 0) return mo;
 
             // ── パス1: レール記録を作り、面法線を合成する ──
@@ -184,9 +226,9 @@ namespace Poly_Ling.Frill
             {
                 var st = steps[i];
                 stepRailL[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.A0, st.A1, st, 0f, st.TA,
-                                            rowParts, partsIds, 0);
+                                            rowParts, partsIds, 0, st.WA0, st.WA1);
                 stepRailR[i] = GetOrAddRail(rails, railIndex, connectShared, two, st.B0, st.B1, st, 1f, st.TB,
-                                            rowParts, partsIds, 1);
+                                            rowParts, partsIds, 1, st.WB0, st.WB1);
             }
 
             foreach (var r in rails)
@@ -199,22 +241,37 @@ namespace Poly_Ling.Frill
             Dictionary<PosKey, Vector3> boundarySum   = null;
             Dictionary<PosKey, int>     boundaryCount = null;
 
+            // 境界のウェイトも同じ単位で平均する。位置だけ平均してウェイトを
+            // 片方から取ると、溶接した頂点が一方のレールへ偏る。
+            Dictionary<PosKey, BoneWeight?> boundaryW      = null;
+            Dictionary<PosKey, int>         boundaryWCount = null;
+
             if (seam == FrillRungSeam.Merge)
             {
                 boundarySum   = new Dictionary<PosKey, Vector3>();
                 boundaryCount = new Dictionary<PosKey, int>();
 
+                boundaryW      = new Dictionary<PosKey, BoneWeight?>();
+                boundaryWCount = new Dictionary<PosKey, int>();
+
                 foreach (var r in rails)
                 {
                     Vector3 dir = r.P1 - r.P0;
                     float   len = dir.magnitude;
+                    int     mk  = pieceA[r.Phase].Length;
 
-                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P0, r.Scope, r.TKey),
+                    var k0 = new PosKey(r.P0, r.Scope, r.TKey);
+                    var k1 = new PosKey(r.P1, r.Scope, r.TKey);
+
+                    AccumBoundary(boundarySum, boundaryCount, k0,
                                   ProfilePos(r.P0, dir, len, r.Normal,
-                                             ProfileAt(pa, pb, two, 0, r.T), r.HeightScale));
-                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P1, r.Scope, r.TKey),
+                                             ProfileAt(pieceA, pieceB, two, r.Phase, 0, r.T), r.HeightScale));
+                    AccumBoundary(boundarySum, boundaryCount, k1,
                                   ProfilePos(r.P0, dir, len, r.Normal,
-                                             ProfileAt(pa, pb, two, m - 1, r.T), r.HeightScale));
+                                             ProfileAt(pieceA, pieceB, two, r.Phase, mk - 1, r.T), r.HeightScale));
+
+                    AccumBoundaryWeight(boundaryW, boundaryWCount, k0, r.W0);
+                    AccumBoundaryWeight(boundaryW, boundaryWCount, k1, r.W1);
                 }
             }
 
@@ -223,18 +280,19 @@ namespace Poly_Ling.Frill
 
             foreach (var r in rails)
             {
-                r.Verts = new int[m];
+                int mk = pieceA[r.Phase].Length;
+                r.Verts = new int[mk];
 
                 Vector3 dir = r.P1 - r.P0;
                 float   len = dir.magnitude;
 
-                for (int k = 0; k < m; k++)
+                for (int k = 0; k < mk; k++)
                 {
-                    Vector2 p  = ProfileAt(pa, pb, two, k, r.T);
+                    Vector2 p  = ProfileAt(pieceA, pieceB, two, r.Phase, k, r.T);
                     Vector2 uv = new Vector2(r.U0 + p.x * r.UStep, r.V);
 
                     bool isStart = (k == 0);
-                    bool isEnd   = (k == m - 1);
+                    bool isEnd   = (k == mk - 1);
 
                     if (seam == FrillRungSeam.Merge && (isStart || isEnd))
                     {
@@ -245,6 +303,7 @@ namespace Poly_Ling.Frill
                         r.Verts[k] = mo.VertexCount;
                         var bv = new Vertex(avg, uv);
                         if (partsIds != null) bv.PartsId = r.PartsId;
+                        if (boundaryW.TryGetValue(bk, out var bw)) bv.BoneWeight = bw;
                         mo.Vertices.Add(bv);
                         boundaryVert[bk] = r.Verts[k];
                         continue;
@@ -253,6 +312,11 @@ namespace Poly_Ling.Frill
                     r.Verts[k] = mo.VertexCount;
                     var nv = new Vertex(ProfilePos(r.P0, dir, len, r.Normal, p, r.HeightScale), uv);
                     if (partsIds != null) nv.PartsId = r.PartsId;
+
+                    // はしごのウェイトを線分の両端から混ぜる。断片は必ず x = 0..1 を
+                    // 張るので、p.x がそのまま線分上の位置になる。
+                    nv.BoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(r.W0, r.W1, p.x);
+
                     mo.Vertices.Add(nv);
                 }
             }
@@ -264,7 +328,10 @@ namespace Poly_Ling.Frill
                 var ri = rails[stepRailR[i]].Verts;
                 bool flip = steps[i].FlipWinding;
 
-                for (int k = 0; k < m - 1; k++)
+                // 左右レールは同じ位相なので断片の点数は一致する。念のため短い方に合わせる。
+                int mk = Mathf.Min(li.Length, ri.Length);
+
+                for (int k = 0; k < mk - 1; k++)
                 {
                     if (flip) mo.AddQuad(li[k], li[k + 1], ri[k + 1], ri[k]);
                     else      mo.AddQuad(li[k], ri[k], ri[k + 1], li[k + 1]);
@@ -287,10 +354,23 @@ namespace Poly_Ling.Frill
             Vector3 p0, Vector3 dir, float len, Vector3 nrm, Vector2 p, float heightScale)
             => p0 + dir * p.x + nrm * (p.y * len * heightScale);
 
-        /// <summary>レールの補間パラメータ t で断面プロファイル点を解決する。</summary>
+        /// <summary>
+        /// レールの位相（どの断片を使うか）と補間パラメータ t で断面プロファイル点を解決する。
+        /// A と B の断片は切断位置をそろえてあるので点数は必ず一致する。
+        /// </summary>
         private static Vector2 ProfileAt(
-            IReadOnlyList<Vector2> a, IReadOnlyList<Vector2> b, bool two, int k, float t)
-            => two ? Vector2.Lerp(a[k], b[k], t) : a[k];
+            Vector2[][] a, Vector2[][] b, bool two, int phase, int k, float t)
+            => two ? Vector2.Lerp(a[phase][k], b[phase][k], t) : a[phase][k];
+
+        /// <summary>span = 1 のときの断片（＝プロファイルそのもの）を作る。</summary>
+        private static Vector2[] ToArray(IReadOnlyList<Vector2> src)
+        {
+            if (src == null) return new Vector2[0];
+
+            var a = new Vector2[src.Count];
+            for (int i = 0; i < src.Count; i++) a[i] = src[i];
+            return a;
+        }
 
         /// <summary>t の量子化。2プロファイル無効時は 0 固定にして従来と同じキーにする。</summary>
         private static long TKeyOf(bool two, float t) => two ? (long)Mathf.Round(t / TEps) : 0L;
@@ -303,10 +383,15 @@ namespace Poly_Ling.Frill
             public Vector3 Normal;   // このステップの基準面法線
             public float   HeightScale; // この梯子の高さ倍率
             public float   TA, TB;   // 左右レールのプロファイル補間パラメータ
+            public int     Phase;    // 使う断片の番号（ステップ番号 % span）
             public bool    FlipWinding;
             public float   U0;       // UV の u（プロファイル x=0 のとき）
             public float   UStep;    // UV の u の1ステップぶん
             public int     BeltIndex;
+
+            // レール線分の両端のウェイト。頂点はこの 2 つをプロファイル x で混ぜる。
+            public BoneWeight? WA0, WA1;   // 左レール
+            public BoneWeight? WB0, WB1;   // 右レール
         }
 
         /// <summary>レール線分1本ぶんの生成記録。</summary>
@@ -321,14 +406,23 @@ namespace Poly_Ling.Frill
             public float   HeightScale;  // 確定値（HeightSum / HeightCount）
             public float   T;            // プロファイル補間パラメータ
             public long    TKey;         // T の量子化値（キー用）
+            public int     Phase;        // 使う断片の番号（ステップ番号 % span）
             public float   U0, UStep, V;
             public int     Scope;    // 境界溶接のスコープ（共有あり=0 / 共有なし=梯子index）
             public int     PartsId;  // このレールの頂点へ書くパーツID
             public int[]   Verts;
+
+            // 線分の両端のウェイト。溶接で使い回すレールは最初に入れた値を保つ
+            // （同じ位置・同じ t のレールなので、はしご側のウェイトも同じ）。
+            public BoneWeight? W0, W1;
         }
 
-        /// <summary>全梯子のステップを1本のリストに展開する。</summary>
-        private static List<StepInfo> BuildSteps(IReadOnlyList<FrillBeltInput> belts)
+        /// <summary>
+        /// 全梯子のステップを1本のリストに展開する。
+        /// 位相は梯子ごとに先頭のステップから数える。
+        /// ステップ数が span で割り切れないときは、最後のグループが途中で終わる。
+        /// </summary>
+        private static List<StepInfo> BuildSteps(IReadOnlyList<FrillBeltInput> belts, int span)
         {
             var list = new List<StepInfo>();
 
@@ -352,6 +446,10 @@ namespace Poly_Ling.Frill
 
                     list.Add(new StepInfo
                     {
+                        WA0         = WeightAt(belt.LeftWeights,  s),
+                        WA1         = WeightAt(belt.LeftWeights,  j),
+                        WB0         = WeightAt(belt.RightWeights, s),
+                        WB1         = WeightAt(belt.RightWeights, j),
                         A0          = a0,
                         A1          = a1,
                         B0          = b0,
@@ -360,6 +458,7 @@ namespace Poly_Ling.Frill
                         HeightScale = belt.HeightScale,
                         TA          = belt.TLeft,
                         TB          = belt.TRight,
+                        Phase       = (span <= 1) ? 0 : (s % span),
                         FlipWinding = belt.FlipWinding,
                         U0          = (float)s / stepCount,
                         UStep       = 1f / stepCount,
@@ -371,6 +470,10 @@ namespace Poly_Ling.Frill
             return list;
         }
 
+        /// <summary>段のウェイトを引く。無ければ null。</summary>
+        private static BoneWeight? WeightAt(IReadOnlyList<BoneWeight?> list, int i)
+            => (list != null && i >= 0 && i < list.Count) ? list[i] : null;
+
         /// <summary>
         /// レール記録を取得または追加する。
         /// 共有ありのときは同一キーへ法線を加算し、既存の記録を使い回す。
@@ -378,7 +481,8 @@ namespace Poly_Ling.Frill
         private static int GetOrAddRail(
             List<RailRec> rails, Dictionary<RailKey, int> railIndex, bool connectShared, bool two,
             Vector3 p0, Vector3 p1, StepInfo st, float v, float t,
-            Dictionary<long, int> rowParts, PartsIdCounter partsIds, int side)
+            Dictionary<long, int> rowParts, PartsIdCounter partsIds, int side,
+            BoneWeight? w0, BoneWeight? w1)
         {
             long tKey = TKeyOf(two, t);
 
@@ -387,7 +491,8 @@ namespace Poly_Ling.Frill
 
             if (connectShared)
             {
-                var key = new RailKey(p0, p1, tKey);
+                // 位相が違えば使う断片が違うので、位置と t が同じでも溶接してはいけない。
+                var key = new RailKey(p0, p1, tKey, st.Phase);
                 if (railIndex.TryGetValue(key, out int idx))
                 {
                     rails[idx].NormalSum   += st.Normal;
@@ -403,14 +508,14 @@ namespace Poly_Ling.Frill
                 }
 
                 idx = rails.Count;
-                var newRec = NewRail(p0, p1, st, v, 0, t, tKey);
+                var newRec = NewRail(p0, p1, st, v, 0, t, tKey, w0, w1);
                 newRec.PartsId = ResolvePartsId(rowParts, partsIds, rowKey);
                 rails.Add(newRec);
                 railIndex[key] = idx;
                 return idx;
             }
 
-            var rec = NewRail(p0, p1, st, v, st.BeltIndex, t, tKey);
+            var rec = NewRail(p0, p1, st, v, st.BeltIndex, t, tKey, w0, w1);
             rec.PartsId = ResolvePartsId(rowParts, partsIds, rowKey);
             rails.Add(rec);
             return rails.Count - 1;
@@ -431,22 +536,44 @@ namespace Poly_Ling.Frill
         }
 
         private static RailRec NewRail(
-            Vector3 p0, Vector3 p1, StepInfo st, float v, int scope, float t, long tKey)
+            Vector3 p0, Vector3 p1, StepInfo st, float v, int scope, float t, long tKey,
+            BoneWeight? w0 = null, BoneWeight? w1 = null)
             => new RailRec
             {
                 P0          = p0,
                 P1          = p1,
+                W0          = w0,
+                W1          = w1,
                 NormalSum   = st.Normal,
                 FirstNormal = st.Normal,
                 HeightSum   = st.HeightScale,
                 HeightCount = 1,
                 T           = t,
                 TKey        = tKey,
+                Phase       = st.Phase,
                 U0          = st.U0,
                 UStep       = st.UStep,
                 V           = v,
                 Scope       = scope,
             };
+
+        /// <summary>
+        /// 境界のウェイトを走る平均で足す。
+        /// 件数 c まで入っているところへ 1 件足すので、比は 1/(c+1)。
+        /// </summary>
+        private static void AccumBoundaryWeight(
+            Dictionary<PosKey, BoneWeight?> acc, Dictionary<PosKey, int> count,
+            PosKey key, BoneWeight? w)
+        {
+            int c = count.TryGetValue(key, out int n) ? n : 0;
+
+            if (c == 0) acc[key] = w;
+            else        acc[key] = Poly_Ling.UI.SkinWeightOps.LerpNullable(
+                                       acc.TryGetValue(key, out var cur) ? cur : null,
+                                       w, 1f / (c + 1));
+
+            count[key] = c + 1;
+        }
 
         private static void AccumBoundary(
             Dictionary<PosKey, Vector3> sum, Dictionary<PosKey, int> count, PosKey key, Vector3 pos)
@@ -474,24 +601,27 @@ namespace Poly_Ling.Frill
         // ================================================================
 
         /// <summary>
-        /// 量子化した始点→終点の順序付きペア＋プロファイル補間パラメータ。
+        /// 量子化した始点→終点の順序付きペア＋プロファイル補間パラメータ＋位相。
         /// 向きが逆なら別キーになる。t が違うレールも別キーになる（裂け目）。
+        /// 位相が違うレールは使う断片が違うので、これも別キーにする。
         /// </summary>
         private readonly struct RailKey : System.IEquatable<RailKey>
         {
             private readonly long _x0, _y0, _z0, _x1, _y1, _z1, _t;
+            private readonly int  _ph;
 
-            public RailKey(Vector3 p0, Vector3 p1, long tKey)
+            public RailKey(Vector3 p0, Vector3 p1, long tKey, int phase)
             {
                 _x0 = Q(p0.x); _y0 = Q(p0.y); _z0 = Q(p0.z);
                 _x1 = Q(p1.x); _y1 = Q(p1.y); _z1 = Q(p1.z);
                 _t  = tKey;
+                _ph = phase;
             }
 
             public bool Equals(RailKey o)
                 => _x0 == o._x0 && _y0 == o._y0 && _z0 == o._z0
                 && _x1 == o._x1 && _y1 == o._y1 && _z1 == o._z1
-                && _t  == o._t;
+                && _t  == o._t  && _ph == o._ph;
 
             public override bool Equals(object obj) => obj is RailKey k && Equals(k);
 
@@ -506,6 +636,7 @@ namespace Poly_Ling.Frill
                     h = h * 31 + _y1;
                     h = h * 31 + _z1;
                     h = h * 31 + _t;
+                    h = h * 31 + _ph;
                     return (int)(h ^ (h >> 32));
                 }
             }

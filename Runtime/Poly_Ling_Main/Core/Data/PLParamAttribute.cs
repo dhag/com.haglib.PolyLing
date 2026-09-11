@@ -52,6 +52,25 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 作り直しで「出来たものを既存の出力先へ書き戻す」ときの役割。
+    /// PLParamAttribute.RebuildRole が使う。
+    /// </summary>
+    public enum PLRebuildRole
+    {
+        /// <summary>書き戻しには関わらない。</summary>
+        None = 0,
+
+        /// <summary>出力先の masterIndex を書くパラメータ（int）。</summary>
+        TargetIndex = 1,
+
+        /// <summary>
+        /// 書き戻す形へ切り替えるパラメータ。書く値は RebuildModeValue が持つ。
+        /// 例: PrimitivePlacement.AddMode へ ReplaceExisting。
+        /// </summary>
+        TargetMode = 2,
+    }
+
+    /// <summary>
     /// パラメータ1つぶんのメタデータ。
     /// 表示名の実体は文字列表（PrimitiveMeshTexts 等）に置き、ここには引くためのキーだけを持つ。
     /// </summary>
@@ -162,6 +181,35 @@ namespace Poly_Ling.Data
 
         /// <summary>プロファイルの印が付いているか。</summary>
         public bool HasProfileRole => ProfileRole != PLProfileRole.None;
+
+        /// <summary>
+        /// 作り直しで出力先へ書き戻すときの役割。
+        ///
+        /// 【何のために要るか】
+        ///   ObjectGroup の作り直しは、新しいオブジェクトを作らず既存の出力先へ
+        ///   中身を書き戻す。そのために「出力先の索引を書くキー」と
+        ///   「書き戻す形へ切り替えるキー」が要る。
+        ///   コマンド型で分岐すると、対応するコマンドを足すたびに分岐が伸びるので、
+        ///   印は属性側に持たせ、読む側は属性を読むだけにする
+        ///   （IsMeshRef / ProfileRole と同じ考え方）。
+        ///
+        /// 【付ける対象】
+        ///   1 つのコマンド型に TargetIndex と TargetMode を 1 つずつまで。
+        ///   TargetIndex は int でなければならない。
+        ///   入れ子の中（PrimitivePlacement など）に付けてもよい。
+        /// </summary>
+        public PLRebuildRole RebuildRole { get; set; } = PLRebuildRole.None;
+
+        /// <summary>
+        /// TargetMode のときに書く値。
+        /// enum はメンバー名（例 "ReplaceExisting"）、bool は "true" / "false"、
+        /// int は 10 進の文字列。読む側が Args の文字列へ直す
+        /// （変換の規則は PanelCommandFactory.TryFormat と同じ）。
+        /// </summary>
+        public string RebuildModeValue { get; set; } = "";
+
+        /// <summary>書き戻しの印が付いているか。</summary>
+        public bool HasRebuildRole => RebuildRole != PLRebuildRole.None;
 
         /// <summary>Min が指定されているか。</summary>
         public bool HasMin => !double.IsNaN(Min);

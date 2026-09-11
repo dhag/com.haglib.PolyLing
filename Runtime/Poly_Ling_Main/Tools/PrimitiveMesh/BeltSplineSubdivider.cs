@@ -25,9 +25,27 @@ namespace Poly_Ling.PrimitiveMesh
             Vector3? startPoint, Vector3? endPoint,
             int segments, bool useFirst, bool useLast, int trimStart, int trimEnd,
             out List<Vector3> outLeft, out List<Vector3> outRight)
+            => Subdivide(left, right, startPoint, endPoint,
+                         segments, useFirst, useLast, trimStart, trimEnd,
+                         out outLeft, out outRight, out _);
+
+        /// <summary>
+        /// 再サンプルに加えて、出力段が入力段のどこから来たかを返す。
+        ///
+        /// outSourceParams[k] は入力 rung 列（left / right）の位置で、小数を含む。
+        /// 先頭に足した先端点のぶんはここで差し引いてある。
+        /// ウェイトのように「点ではないが段に紐づく値」を一緒に運ぶために使う。
+        /// </summary>
+        public static bool Subdivide(
+            IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
+            Vector3? startPoint, Vector3? endPoint,
+            int segments, bool useFirst, bool useLast, int trimStart, int trimEnd,
+            out List<Vector3> outLeft, out List<Vector3> outRight,
+            out List<float> outSourceParams)
         {
-            outLeft  = null;
-            outRight = null;
+            outLeft         = null;
+            outRight        = null;
+            outSourceParams = null;
 
             if (left == null || right == null) return false;
             int n = Mathf.Min(left.Count, right.Count);
@@ -66,12 +84,19 @@ namespace Poly_Ling.PrimitiveMesh
             to   -= Mathf.Max(0, trimEnd);
             if (to - from < 2) return false;
 
-            outLeft  = new List<Vector3>(to - from);
-            outRight = new List<Vector3>(to - from);
+            outLeft         = new List<Vector3>(to - from);
+            outRight        = new List<Vector3>(to - from);
+            outSourceParams = new List<float>(to - from);
+
+            // ts は「先端点を足したあとの索引空間」の媒介変数。
+            // 先端点は rung ではないので、足したぶんを引いて入力 rung の位置へ直す。
+            float shift = addedFirst ? 1f : 0f;
+
             for (int i = from; i < to; i++)
             {
                 outLeft .Add(s0[i]);
                 outRight.Add(s1[i]);
+                outSourceParams.Add(ts[i] - shift);
             }
             return true;
         }

@@ -5,6 +5,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Tools;
 using Poly_Ling.PMX; // AlphaConflictMode
@@ -55,6 +56,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>インポートモード</summary>
         [Tooltip("NewModel: 新規モデルとして追加, Append: 既存メッシュに追加, Replace: 既存メッシュを全削除してからインポート")]
+        [PLParam(Description = "NewModel: 新規モデルとして追加 / Append: 既存メッシュに追加 / Replace: 既存メッシュを全削除してから読む")]
         public MQOImportMode ImportMode = MQOImportMode.NewModel;
 
         // ================================================================
@@ -63,14 +65,17 @@ namespace Poly_Ling.MQO
 
         /// <summary>スケール（MQO→Unity）デフォルト0.01（MqoUnityRatio）</summary>
         [Tooltip("MQO座標をUnity座標に変換するスケール（デフォルト: 0.01 = MqoUnityRatio）")]
+        [PLParam(Description = "MQO 座標を Unity 座標へ直す倍率", Min = 0.0001, Max = 100)]
         public float Scale = 0.01f;
 
         /// <summary>X軸反転</summary>
         [Tooltip("X軸を反転する（MQOは右手系・正面+Z、Unityは左手系・正面+Z。X反転だけで両者が揃う）")]
+        [PLParam(Description = "X 軸を反転する。MQO は右手系で正面 +Z、Unity は左手系で正面 +Z なので X 反転だけで揃う")]
         public bool FlipX = true;
 
         /// <summary>Z軸反転</summary>
         [Tooltip("Z軸を反転する。FlipX と併用すると正面が反転する")]
+        [PLParam(Description = "Z 軸を反転する。FlipX と併せると正面が反転する")]
         public bool FlipZ = false;
 
         /// <summary>
@@ -82,6 +87,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>UV V座標反転</summary>
         [Tooltip("UV座標のV成分を反転する")]
+        [PLParam(Description = "UV の V を反転する")]
         public bool FlipUV_V = true;
 
         // ================================================================
@@ -90,22 +96,27 @@ namespace Poly_Ling.MQO
 
         /// <summary>マテリアルをインポート</summary>
         [Tooltip("MQOマテリアルをUnityマテリアルに変換する")]
+        [PLParam(Description = "MQO の材質も読み込む")]
         public bool ImportMaterials = true;
 
         /// <summary>非表示オブジェクトをスキップ</summary>
         [Tooltip("MQOで非表示に設定されているオブジェクトをスキップする")]
+        [PLParam(Description = "MQO で非表示のオブジェクトを読み飛ばす")]
         public bool SkipHiddenObjects = false;
 
         /// <summary>空のオブジェクトをスキップ</summary>
         [Tooltip("頂点や面を持たないオブジェクト（グループ用ダミー等）をスキップする")]
+        [PLParam(Description = "頂点も面も無いオブジェクト（グループの入れ物など）を読み飛ばす")]
         public bool SkipEmptyObjects = false;
 
         /// <summary>全オブジェクトを統合</summary>
         [Tooltip("全てのオブジェクトを1つのメッシュに統合する")]
+        [PLParam(Description = "全オブジェクトを 1 つのメッシュへまとめる")]
         public bool MergeObjects = false;
 
         /// <summary>メッシュの親子を GameObject 階層（HierarchyParentIndex）にも設定</summary>
         [Tooltip("MQOのオブジェクト階層を、Transform の親子（HierarchyParentIndex）としても設定する")]
+        [PLParam(Description = "MQO のオブジェクト階層を親子関係としても設定する")]
         public bool SetMeshHierarchyParent = true;
 
         /// <summary>
@@ -116,18 +127,22 @@ namespace Poly_Ling.MQO
         /// ローカル変換が単位のオブジェクトでは何も変わらない。
         /// </summary>
         [Tooltip("MQOの頂点を絶対座標として読み込む（メタセコイアのローカル座標はピボット扱いのため）")]
+        [PLParam(Description = "MQO の頂点を絶対座標として読む。メタセコイアのローカル座標はピボット扱いのため")]
         public bool ImportVerticesAsWorldSpace = true;
 
         /// <summary>名前からミラー分岐ルートを自動設定</summary>
         [Tooltip("接頭句「@@」かつ接尾句「ミラー分岐ルート」を持つオブジェクトに、ミラー分岐ルートフラグを付ける")]
+        [PLParam(Description = "名前が @@ で始まりミラー分岐ルートで終わるオブジェクトに、その印を付ける")]
         public bool AutoDetectMirrorBranchRoot = true;
 
         /// <summary>MQOファイルからボーンインデックスを読み込まない</summary>
         [Tooltip("MQO特殊面からボーンインデックス情報を読み込まない")]
+        [PLParam(Description = "MQO の特殊面からボーン番号を読まない")]
         public bool SkipMqoBoneIndices = false;
 
         /// <summary>MQOファイルからウェイトを読み込まない</summary>
         [Tooltip("MQO特殊面からボーンウェイト情報を読み込まない")]
+        [PLParam(Description = "MQO の特殊面からボーンウェイトを読まない")]
         public bool SkipMqoBoneWeights = false;
 
         // ================================================================
@@ -137,10 +152,12 @@ namespace Poly_Ling.MQO
         /// <summary>アルファカットオフ値 (0-1)（テクスチャアルファのしきい値）</summary>
         [Tooltip("テクスチャアルファチャンネルのカットオフしきい値")]
         [Range(0f, 1f)]
+        [PLParam(Description = "テクスチャのアルファを切り捨てるしきい値", Min = 0, Max = 1)]
         public float AlphaCutoff = 0.5f;
 
         /// <summary>材質不透明度とテクスチャアルファが競合する場合の動作</summary>
         [Tooltip("Color.a < 1.0 かつテクスチャがある場合の動作")]
+        [PLParam(Description = "材質の不透明度とテクスチャのアルファが食い違うときの扱い")]
         public AlphaConflictMode AlphaConflict = AlphaConflictMode.PreferTransparent;
 
         // ================================================================
@@ -149,15 +166,18 @@ namespace Poly_Ling.MQO
 
         /// <summary>法線計算モード</summary>
         [Tooltip("FaceNormal: 面法線そのまま（フラット）, Smooth: スムージング")]
+        [PLParam(Description = "法線の作り方。FaceNormal は面法線そのまま / Smooth は角度でならす")]
         public NormalMode NormalMode = NormalMode.Smooth;
 
         /// <summary>スムージング角度（度）</summary>
         [Tooltip("法線スムージングの閾値角度（NormalMode=Smoothの時のみ有効）")]
         [Range(0f, 180f)]
+        [PLParam(Description = "法線をならす角度のしきい値。NormalMode が Smooth のときだけ効く", Min = 0, Max = 180)]
         public float SmoothingAngle = 60f;
 
         /// <summary>MQOオブジェクトの facet / shading 属性を使うか（NormalMode=SmoothFacetの時のみ有効）</summary>
         [Tooltip("ON: オブジェクト毎の facet 角と shading を使う / OFF: SmoothingAngle を全オブジェクトに適用")]
+        [PLParam(Description = "オブジェクトごとの facet 角と shading を使う。切ると SmoothingAngle を全体へ適用する")]
         public bool UseMqoFacet = true;
 
         // ================================================================
@@ -166,6 +186,8 @@ namespace Poly_Ling.MQO
 
         /// <summary>ボーンウェイトCSVファイルパス（空の場合は適用しない）</summary>
         [Tooltip("ボーンウェイト情報を含むCSVファイル（MqoObjectName,VertexID,VertexIndex,Bone0-3,Weight0-3）")]
+        // 入力パス。コマンドが持ち、受け口が PLSandbox を通して入れる。
+        [PLParam(Ignore = true)]
         public string BoneWeightCSVPath = "";
 
         /// <summary>ボーンウェイトCSVを使用するか</summary>
@@ -173,6 +195,8 @@ namespace Poly_Ling.MQO
 
         /// <summary>ボーン定義CSVファイルパス（PmxBone形式）</summary>
         [Tooltip("ボーン定義を含むCSVファイル（PmxBone形式）")]
+        // 入力パス。コマンドが持ち、受け口が PLSandbox を通して入れる。
+        [PLParam(Ignore = true)]
         public string BoneCSVPath = "";
 
         /// <summary>ボーンCSVを使用するか</summary>
@@ -180,6 +204,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>ボーンスケール（PMXボーン座標に適用、デフォルト1.0）</summary>
         [Tooltip("PMXボーン座標に適用するスケール（MQOと同じScaleを使う場合は1.0）")]
+        [PLParam(Description = "PMX 由来のボーン座標に掛ける倍率。MQO と同じ倍率にするなら 1.0", Min = 0.0001, Max = 1000)]
         public float BoneScale = 10.0f;//pmx由来のボーン位置をMQOスケールに合わせるためのデフォルト値
 
         // ================================================================
@@ -188,14 +213,17 @@ namespace Poly_Ling.MQO
 
         /// <summary>ミラーをベイク（実体化）</summary>
         [Tooltip("ミラー属性を持つメッシュのミラー側を実体メッシュとして生成する")]
+        [PLParam(Description = "ミラー属性のメッシュのミラー側を実体として作る")]
         public bool BakeMirror = false;
 
         /// <summary>__Armature__からボーンをインポート</summary>
         [Tooltip("MQO内の__Armature__オブジェクト以下をボーン構造としてインポートする")]
+        [PLParam(Description = "MQO 内の __Armature__ 以下をボーンとして読み込む")]
         public bool ImportBonesFromArmature = true;
 
         /// <summary>AポーズをTポーズに変換</summary>
         [Tooltip("腕ボーンを水平に回転させてTポーズに変換する（スキニング頂点も変換）")]
+        [PLParam(Description = "腕ボーンを水平に回して T ポーズへ直す。スキニング頂点も動く")]
         public bool ConvertToTPose = false;
 
         // ================================================================
@@ -204,11 +232,13 @@ namespace Poly_Ling.MQO
 
         /// <summary>頂点デバッグログを出力</summary>
         [Tooltip("メッシュオブジェクトごとの頂点情報をコンソールに出力する")]
+        [PLParam(Description = "メッシュごとの頂点情報をコンソールへ出す")]
         public bool DebugVertexInfo = false;
 
         /// <summary>同一頂点・近接UV検出時に出力する件数</summary>
         [Tooltip("同一頂点で異なるUVを持つペアの出力件数（近い順）")]
         [Range(1, 100)]
+        [PLParam(Description = "同じ頂点で UV が違う組の出力件数（近い順）", Min = 1, Max = 100)]
         public int DebugVertexNearUVCount = 10;
 
         // ================================================================
@@ -217,6 +247,8 @@ namespace Poly_Ling.MQO
 
         /// <summary>MQOファイルのベースディレクトリ（テクスチャ相対パス解決用）</summary>
         [NonSerialized]
+        // 読み込み側が実ファイルの位置から決める。外から送るものではない。
+        [PLParam(Ignore = true)]
         public string BaseDir = "";
 
         // ================================================================

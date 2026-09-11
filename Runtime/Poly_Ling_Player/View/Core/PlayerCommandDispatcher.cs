@@ -311,6 +311,42 @@ namespace Poly_Ling.Player
         /// <summary>辺の平滑化コマンドの実行。</summary>
         public Func<SmoothEdgesCommand, string> OnSmoothEdges;
 
+        /// <summary>選択辺から帯面を足すコマンドの実行。</summary>
+        public Func<EdgeRibbonFaceCommand, string> OnEdgeRibbonFace;
+
+        /// <summary>PMX ファイル読み込みコマンドの実行。</summary>
+        public Func<ImportPmxFileCommand, string> OnImportPmxFile;
+
+        /// <summary>PMX ファイル書き出しコマンドの実行。</summary>
+        public Func<ExportPmxFileCommand, string> OnExportPmxFile;
+
+        /// <summary>MQO ファイル読み込みコマンドの実行。</summary>
+        public Func<ImportMqoFileCommand, string> OnImportMqoFile;
+
+        /// <summary>MQO ファイル書き出しコマンドの実行。</summary>
+        public Func<ExportMqoFileCommand, string> OnExportMqoFile;
+
+        /// <summary>OBJ ファイル読み込みコマンドの実行。</summary>
+        public Func<ImportObjFileCommand, string> OnImportObjFile;
+
+        /// <summary>OBJ ファイル書き出しコマンドの実行。</summary>
+        public Func<ExportObjFileCommand, string> OnExportObjFile;
+
+        /// <summary>VRM 1.0 ファイル書き出しコマンドの実行。</summary>
+        public Func<ExportVrmFileCommand, string> OnExportVrmFile;
+
+        /// <summary>プロジェクト（.mfproj）保存コマンドの実行。</summary>
+        public Func<SaveProjectFileCommand, string> OnSaveProjectFile;
+
+        /// <summary>プロジェクト（.mfproj）読み込みコマンドの実行。</summary>
+        public Func<LoadProjectFileCommand, string> OnLoadProjectFile;
+
+        /// <summary>プロジェクト CSV 保存コマンドの実行。</summary>
+        public Func<SaveProjectCsvCommand, string> OnSaveProjectCsv;
+
+        /// <summary>プロジェクト CSV 読み込みコマンドの実行。</summary>
+        public Func<LoadProjectCsvCommand, string> OnLoadProjectCsv;
+
         /// <summary>ボーン平面への平面化コマンドの実行。</summary>
         public Func<PlanarizeAlongBonesCommand, string> OnPlanarizeAlongBones;
 
@@ -465,8 +501,8 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// 直近のコマンドの失敗内容。DispatchCore 内のハンドラが Fail() で設定する。
-        /// 未設定のまま DispatchCore を抜けたら成功とみなす。
+        /// 直近のコマンドの結果。DispatchCore 内のハンドラが Fail() / ReportTargets() で設定する。
+        /// 未設定のまま DispatchCore を抜けたら識別子なしの成功とみなす。
         /// </summary>
         private CommandResult _pendingResult;
 
@@ -485,6 +521,69 @@ namespace Poly_Ling.Player
         ///   実際には重ならない。
         /// </summary>
         private void Fail(string reason) => _pendingResult = CommandResult.Fail(reason);
+
+        /// <summary>
+        /// 生成・変更した対象を成功結果として報告する。
+        ///
+        /// 【なぜ要るか】
+        ///   受け口（PolyLingPlayerViewerCore の Execute*）は戻り値が string で、
+        ///   失敗理由しか返せない。生成物の位置と安定 ID を MCP・リモートへ返すには
+        ///   Fail と対になる口が要る。戻り値の型を変えると受け口 60 本以上に波及する。
+        ///
+        /// 【どこから呼んでよいか】
+        ///   Fail と同じ。DispatchCore の switch と、そこから直接呼ばれる受け口まで。
+        ///   受け口は別クラスにあるので internal にしてある。
+        ///
+        /// 【呼ばなかったとき】
+        ///   Dispatch が識別子なしの CommandResult.Ok() を返す。従来どおり。
+        ///
+        /// 【二重に呼んだとき】
+        ///   後から呼んだ内容で上書きされる。Fail と混ぜて呼ばないこと。
+        /// </summary>
+        internal void ReportTargets(int[] masterIndices, ulong[] objectIds = null)
+            => _pendingResult = CommandResult.Ok(masterIndices, objectIds);
+
+        /// <summary>
+        /// 実行結果の中身を成功結果として報告する。
+        ///
+        /// 【何を渡すか】
+        ///   json は JSON オブジェクト 1 個の文字列。組み立ては CommandDataJson を使う
+        ///   （CommandDataJson.cs）。番号列・座標列は載せない。量のあるものは
+        ///   ModelContext.DataStore へ書き、名前と件数だけを載せる。
+        ///
+        /// 【どこから呼んでよいか】
+        ///   Fail / ReportTargets と同じ。DispatchCore の switch と、
+        ///   そこから直接呼ばれる受け口まで。
+        ///
+        /// 【呼ばなかったとき】
+        ///   Dispatch が Data なしの CommandResult.Ok() を返す。従来どおり。
+        ///
+        /// 【二重に呼んだとき】
+        ///   後から呼んだ内容で上書きされる。ReportTargets と混ぜて呼ばず、
+        ///   識別子も返すなら masterIndices / objectIds をこちらへ渡すこと。
+        /// </summary>
+        internal void ReportData(string json, int[] masterIndices = null, ulong[] objectIds = null)
+            => _pendingResult = CommandResult.Ok(masterIndices, objectIds, json);
+
+        /// <summary>
+        /// 既に報告済みの対象を保ったまま、実データだけを足す。
+        ///
+        /// 【なぜ要るか】
+        ///   生成系は受け口（PolyLingPlayerViewerCore.ReportCreatedMesh）が
+        ///   ReportTargets で masterIndices と安定 ID を報告済み。
+        ///   そこへ ReportData をそのまま呼ぶと対象が消える。
+        ///
+        /// 【失敗が入っているとき】
+        ///   何もしない。Fail の直後は呼び出し側が return する規約なので、
+        ///   実際には通らない。
+        /// </summary>
+        private void ReportDataKeepingTargets(string json)
+        {
+            var prev = _pendingResult;
+            if (prev != null && !prev.Success) return;
+
+            _pendingResult = CommandResult.Ok(prev?.MasterIndices, prev?.ObjectIds, json);
+        }
 
         /// <summary>
         /// コマンドを実行し、結果を返す。
@@ -519,6 +618,22 @@ namespace Poly_Ling.Player
                 if (OnResetProject == null) { Fail("reset project handler not wired"); return; }
                 string rpReason = OnResetProject.Invoke(reset);
                 if (rpReason != null) { Fail(rpReason); return; }
+                return;
+            }
+
+            // コマンド定義の検査もプロジェクトの有無に関わらず受ける。
+            // 見るのはアセンブリ上の型だけで、モデルにもプロジェクトにも触れない。
+            // 下の null 門より前で捌かないと、何も読み込んでいない状態で
+            // "no project" になり、検査そのものができない。
+            if (cmd is QueryCommandAuditCommand)
+            {
+                PanelCommandFactory.CountTools(out int auditUsable, out int auditSkipped);
+
+                ReportData(CommandDataJson.New()
+                    .Text("report",       PanelCommandFactoryAudit.RunAll())
+                    .Int("toolsUsable",   auditUsable)
+                    .Int("toolsSkipped",  auditSkipped)
+                    .Build());
                 return;
             }
 
@@ -557,16 +672,28 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            // 生成系（図形生成・生成メッシュ追加）は、プロジェクトもモデルも無い状態から
-            // 呼べる。実処理側が
+            // 生成系（図形生成・生成メッシュ追加）と読み込み系は、プロジェクトも
+            // モデルも無い状態から呼べる。
+            //
+            // 生成系は実処理側が
             //   PlaceGeneratedMesh → PrepareHandlersForGeneratedMesh → EnsureProject
             // でプロジェクトとモデルを作り、PrimitiveMeshFinalize → EnsureDefaultMaterialSlot
-            // で材質スロットも作るため、ここで門を掛けると自動生成へ到達できない。
+            // で材質スロットも作る。
+            //
+            // 読み込み系は PlayerLocalLoader.FinishLoad（PlayerLocalLoader.cs:145-150）が
+            // _project == null のときにプロジェクトを作り、AddModel → SelectModel まで済ませる。
+            // ここで門を掛けると、何も読み込んでいない状態で "no project" になり、
+            // MCP から 1 本目のファイルを開けなくなる。
+            //
             // 診断ログは通したいので、ResetProjectCommand のような早期 return にはしない。
-            bool createsOwnModel = cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand;
+            bool createsOwnProject =
+                   cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand
+                || cmd is ImportPmxFileCommand       || cmd is ImportMqoFileCommand
+                || cmd is ImportObjFileCommand
+                || cmd is LoadProjectFileCommand     || cmd is LoadProjectCsvCommand;
 
             var project = _getProject();
-            if (project == null && !createsOwnModel) { Fail("no project"); return; }
+            if (project == null && !createsOwnProject) { Fail("no project"); return; }
             var model   = project?.CurrentModel;
 
             // DescribeCommand は補間文字列を作る。PLDiag.Cmd の中で捨てられる場合でも
@@ -580,6 +707,220 @@ namespace Poly_Ling.Player
 
             switch (cmd)
             {
+                // ── 照会（モデルを変えない）
+                //
+                // Undo に記録しない。RemoteOwnership の判定対象にしない
+                // （IsOwnershipExempt に載せてある）。ComputeWorldMatrices を呼ばない。
+                // パネルへの通知もしない。表示は何も変わらないため。
+                //
+                // 受け口（PolyLingPlayerViewerCore の Execute*）を置いていないのは、
+                // ModelContext を読んで DataStore へ書くだけで、外部ハンドラに
+                // 頼るものが無いため。フックを 1 本増やしても素通しになる。
+                //
+                // 中身はこのファイル末尾の「照会の組み立て」節にまとめてある。
+                // switch の中へ直接書くと、既に長いこのメソッドがさらに伸びる。
+                case QueryModelStructureCommand c:
+                {
+                    var qModel = project.GetModel(c.ModelIndex);
+                    if (qModel == null) { Fail($"no model at index {c.ModelIndex}"); return; }
+
+                    ReportData(BuildModelStructureData(project, qModel, c));
+                    return;
+                }
+
+                case QueryObjectGroupsCommand c:
+                {
+                    var qgModel = project.GetModel(c.ModelIndex);
+                    if (qgModel == null) { Fail($"no model at index {c.ModelIndex}"); return; }
+
+                    ReportData(BuildObjectGroupsData(project, qgModel, c));
+                    return;
+                }
+
+                case QuerySkinWeightSummaryCommand c:
+                {
+                    if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
+                                           out var qwModel, out var qwMc, out string qwReason))
+                    { Fail(qwReason); return; }
+
+                    ReportData(BuildSkinWeightSummaryData(qwModel, qwMc, c),
+                               new[] { c.MasterIndex }, new[] { qwMc.ObjectId });
+                    return;
+                }
+
+                case QueryDrawableStatsCommand c:
+                {
+                    if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
+                                           out var qsModel, out var qsMc, out string qsReason))
+                    { Fail(qsReason); return; }
+
+                    ReportData(BuildDrawableStatsData(qsModel, qsMc, c),
+                               new[] { c.MasterIndex }, new[] { qsMc.ObjectId });
+                    return;
+                }
+
+                case QueryHolesCommand c:
+                {
+                    if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
+                                           out var qhModel, out var qhMc, out string qhReason))
+                    { Fail(qhReason); return; }
+
+                    ReportData(BuildHolesData(qhModel, qhMc, c),
+                               new[] { c.MasterIndex }, new[] { qhMc.ObjectId });
+                    return;
+                }
+
+                case QuerySeedElementCommand c:
+                {
+                    if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
+                                           out var qeModel, out var qeMc, out string qeReason))
+                    { Fail(qeReason); return; }
+
+                    ReportData(BuildSeedElementData(qeModel, qeMc, c),
+                               new[] { c.MasterIndex }, new[] { qeMc.ObjectId });
+                    return;
+                }
+
+                case QueryBoneSkinCommand c:
+                {
+                    var qbModel = project.GetModel(c.ModelIndex);
+                    if (qbModel == null) { Fail($"no model at index {c.ModelIndex}"); return; }
+
+                    ReportData(BuildBoneSkinData(qbModel, c));
+                    return;
+                }
+
+                // ── 選択を結果辞書へ写す
+                //
+                // 行き先が MeshContext.PartsSelectionSetList ではなく
+                // ModelContext.DataStore である点が SavePartsSet と違う。
+                // 対象を項目に控えるので、getRawData / setRawData の setName から引ける。
+                case SaveSelectionToDataStoreCommand c:
+                {
+                    var ssModel = project.GetModel(c.ModelIndex);
+                    if (ssModel == null) { Fail($"no model at index {c.ModelIndex}"); return; }
+
+                    var ssMc = c.MasterIndex >= 0
+                        ? ssModel.GetMeshContext(c.MasterIndex)
+                        : ssModel.ActiveMeshContext;
+                    if (ssMc == null) { Fail("編集対象メッシュがありません"); return; }
+
+                    int ssIndex = ssModel.IndexOf(ssMc);
+                    if (ssIndex < 0) { Fail("対象がモデルに属していません"); return; }
+
+                    PartsSelectionSet ssSet;
+                    if (c.PartsSetIndex >= 0)
+                    {
+                        var ssList = ssMc.PartsSelectionSetList;
+                        if (ssList == null || c.PartsSetIndex >= ssList.Count)
+                        { Fail($"セット番号 {c.PartsSetIndex} が範囲外です"); return; }
+
+                        var ssSrc = ssList[c.PartsSetIndex];
+                        if (ssSrc == null) { Fail($"セット番号 {c.PartsSetIndex} が空です"); return; }
+
+                        // 辞書へ入れたものが後から書き換わらないよう写しを作る。
+                        ssSet = PartsSelectionSet.FromCurrentSelection(
+                            ssSrc.Name, ssSrc.Vertices, ssSrc.Edges, ssSrc.Faces, ssSrc.Lines, ssSrc.Mode);
+                    }
+                    else
+                    {
+                        var ssSel = ssMc.Selection;
+                        if (ssSel == null || !ssSel.HasAnySelection) { Fail("選択がありません"); return; }
+
+                        // 作り方は SavePartsSetCommand と同じ経路にそろえる。
+                        var ssSnap = ssSel.CreateSnapshot();
+                        ssSet = PartsSelectionSet.FromCurrentSelection(
+                            "Selection", ssSnap.Vertices, ssSnap.Edges, ssSnap.Faces, ssSnap.Lines, ssSnap.Mode);
+                    }
+
+                    // 索引がずれたときに引き直せるよう、作った時点で識別子を控える。
+                    if (ssMc.MeshObject != null) ssSet.CaptureVertexIds(ssMc.MeshObject);
+
+                    var ssStore = ssModel.DataStore;
+                    string ssName = string.IsNullOrEmpty(c.ResultName)
+                        ? ssStore.GenerateUniqueName("selection")
+                        : c.ResultName;
+                    ssSet.Name = ssName;
+
+                    var ssEntry = ssStore.Put(PLDataEntry.FromIndexSet(
+                        ssName, ssSet,
+                        masterIndex: ssIndex, objectId: ssMc.ObjectId,
+                        source: PanelCommandFactory.ActionOf(typeof(SaveSelectionToDataStoreCommand))));
+
+                    ReportData(CommandDataJson.New()
+                        .Entry("entry",     ssEntry)
+                        .Int("masterIndex", ssIndex)
+                        .Int("vertices",    ssSet.Vertices.Count)
+                        .Int("edges",       ssSet.Edges.Count)
+                        .Int("faces",       ssSet.Faces.Count)
+                        .Int("lines",       ssSet.Lines.Count)
+                        .Build(),
+                        new[] { ssIndex }, new[] { ssMc.ObjectId });
+                    return;
+                }
+
+                // ── 生データの取得・送信
+                //
+                // 量のあるものを回線に乗せる唯一の経路。取得はモデルを変えない。
+                // 送信は位相を変えず、数が合わなければ書く前に拒否する。
+                case GetRawDataCommand c:
+                {
+                    var grModel = project.GetModel(c.ModelIndex);
+                    if (grModel == null) { Fail($"no model at index {c.ModelIndex}"); return; }
+
+                    if (!RawDataOps.TryResolve(grModel, c.Scope, c.MasterIndex, c.SetName,
+                                               out var grTargets, out var grVerts, out var grFaces,
+                                               out string grReason))
+                    { Fail(grReason); return; }
+
+                    ReportData(RawDataOps.BuildGet(grModel, c, grTargets, grVerts, grFaces),
+                               grTargets.ToArray());
+                    return;
+                }
+
+                case SetRawDataCommand c:
+                {
+                    var srModel = project.GetModel(c.ModelIndex);
+                    if (srModel == null) { Fail($"no model at index {c.ModelIndex}"); return; }
+
+                    if (!RawDataOps.TryResolve(srModel, c.Scope, c.MasterIndex, c.SetName,
+                                               out var srTargets, out var srVerts, out var srFaces,
+                                               out string srReason))
+                    { Fail(srReason); return; }
+
+                    // 位相は変えないが、頂点の中身は総取り替えになる。
+                    // 属性だけの記録用スタックが無いので、位相変更と同じ
+                    // MeshListStack のスナップショットで残す。
+                    MultiMeshTopologySnapshot srBefore = null;
+                    if (_undoController != null)
+                    {
+                        srBefore = new MultiMeshTopologySnapshot();
+                        foreach (int idx in srTargets) srBefore.CaptureMesh(srModel, idx);
+                    }
+
+                    if (!RawDataOps.TryApplySet(srModel, c, srTargets, srVerts, srFaces,
+                                                out string srData, out string srFailure))
+                    { Fail(srFailure); return; }
+
+                    if (_undoController != null)
+                    {
+                        var srAfter = new MultiMeshTopologySnapshot();
+                        foreach (int idx in srTargets) srAfter.CaptureMesh(srModel, idx);
+
+                        const string srDesc = "Set Raw Data";
+                        var srRecord = new MultiMeshTopologySnapshotRecord(srBefore, srAfter, srDesc);
+                        PLDiag.UndoRecord("MeshList", srDesc, srRecord);
+                        _undoController.SetModelContext(srModel);
+                        _undoController.MeshListStack.Record(srRecord, srDesc);
+                    }
+
+                    srModel.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+
+                    ReportData(srData, srTargets.ToArray());
+                    return;
+                }
+
                 // ── モデル選択
                 case SwitchModelCommand c:
                 {
@@ -747,6 +1088,7 @@ namespace Poly_Ling.Player
                     // いずれも要素選択では不要（前 3 者は OnSelectionChanged 側で
                     // 足りる／メッシュ増減しか見ない。最後は選択署名に
                     // 要素選択を含まないため差分なしで早期 return する）。
+                    ReportData(BuildSelectionCountsData(model));
                     return;
                 }
 
@@ -846,6 +1188,7 @@ namespace Poly_Ling.Player
                     string advReason = OnAdvancedSelect.Invoke(c);
                     if (advReason != null) { Fail(advReason); return; }
                     _notifyPanels(ChangeKind.Selection);
+                    ReportData(BuildSelectionCountsData(model));
                     return;
                 }
 
@@ -864,6 +1207,7 @@ namespace Poly_Ling.Player
                     string attrReason = OnAdvancedSelectByAttribute.Invoke(c);
                     if (attrReason != null) { Fail(attrReason); return; }
                     _notifyPanels(ChangeKind.Selection);
+                    ReportData(BuildSelectionCountsData(model));
                     return;
                 }
 
@@ -963,6 +1307,126 @@ namespace Poly_Ling.Player
                     if (OnSmoothEdges == null) { Fail("smooth edges handler not wired"); return; }
                     string seReason = OnSmoothEdges.Invoke(c);
                     if (seReason != null) { Fail(seReason); return; }
+                    return;
+                }
+
+                case EdgeRibbonFaceCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnEdgeRibbonFace == null) { Fail("edge ribbon face handler not wired"); return; }
+                    string erfReason = OnEdgeRibbonFace.Invoke(c);
+                    if (erfReason != null) { Fail(erfReason); return; }
+                    return;
+                }
+
+                // 読み込みはモデルを作る操作なので、現在モデルが無くても通す。
+                case ImportPmxFileCommand c:
+                {
+                    if (OnImportPmxFile == null) { Fail("import pmx handler not wired"); return; }
+                    string ipReason = OnImportPmxFile.Invoke(c);
+                    if (ipReason != null) { Fail(ipReason); return; }
+                    return;
+                }
+
+                // 書き出しは現在のモデルを使うので、無ければここで弾く。
+                case ExportPmxFileCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnExportPmxFile == null) { Fail("export pmx handler not wired"); return; }
+                    string epReason = OnExportPmxFile.Invoke(c);
+                    if (epReason != null) { Fail(epReason); return; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return;
+                }
+
+                // 読み込みはモデルを作る操作なので、現在モデルが無くても通す。
+                case ImportMqoFileCommand c:
+                {
+                    if (OnImportMqoFile == null) { Fail("import mqo handler not wired"); return; }
+                    string imqReason = OnImportMqoFile.Invoke(c);
+                    if (imqReason != null) { Fail(imqReason); return; }
+                    return;
+                }
+
+                case ExportMqoFileCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnExportMqoFile == null) { Fail("export mqo handler not wired"); return; }
+                    string emqReason = OnExportMqoFile.Invoke(c);
+                    if (emqReason != null) { Fail(emqReason); return; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return;
+                }
+
+                // 読み込みはモデルを作る操作なので、現在モデルが無くても通す。
+                case ImportObjFileCommand c:
+                {
+                    if (OnImportObjFile == null) { Fail("import obj handler not wired"); return; }
+                    string iobjReason = OnImportObjFile.Invoke(c);
+                    if (iobjReason != null) { Fail(iobjReason); return; }
+                    return;
+                }
+
+                case ExportObjFileCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnExportObjFile == null) { Fail("export obj handler not wired"); return; }
+                    string eobjReason = OnExportObjFile.Invoke(c);
+                    if (eobjReason != null) { Fail(eobjReason); return; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return;
+                }
+
+                case ExportVrmFileCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+                    if (OnExportVrmFile == null) { Fail("export vrm handler not wired"); return; }
+                    string evrmReason = OnExportVrmFile.Invoke(c);
+                    if (evrmReason != null) { Fail(evrmReason); return; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return;
+                }
+
+                // プロジェクトの保存・読込はモデルではなくプロジェクトを見るので、
+                // 現在モデルの有無は問わない。判定は受け口が行う。
+                case SaveProjectFileCommand c:
+                {
+                    if (OnSaveProjectFile == null) { Fail("save project handler not wired"); return; }
+                    string spReason = OnSaveProjectFile.Invoke(c);
+                    if (spReason != null) { Fail(spReason); return; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return;
+                }
+
+                case LoadProjectFileCommand c:
+                {
+                    if (OnLoadProjectFile == null) { Fail("load project handler not wired"); return; }
+                    string lpReason = OnLoadProjectFile.Invoke(c);
+                    if (lpReason != null) { Fail(lpReason); return; }
+                    return;
+                }
+
+                case SaveProjectCsvCommand c:
+                {
+                    if (OnSaveProjectCsv == null) { Fail("save project csv handler not wired"); return; }
+                    string spcReason = OnSaveProjectCsv.Invoke(c);
+                    if (spcReason != null) { Fail(spcReason); return; }
+
+                    // CSV プロジェクトの経路はファイル（任意名の .csv）。
+                    // 受け口 ExecuteSaveProjectCsv が PLSandbox.TryResolveWrite を通し、
+                    // CsvProjectSerializer.ExportToFile へ渡す
+                    // （PolyLingPlayerViewerCore.CreateCommands.cs:489-498）。
+                    // モデルフォルダは同じディレクトリ直下に別途できるが、
+                    // ここで数えると無関係なファイルまで拾うので数えない。
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return;
+                }
+
+                case LoadProjectCsvCommand c:
+                {
+                    if (OnLoadProjectCsv == null) { Fail("load project csv handler not wired"); return; }
+                    string lpcReason = OnLoadProjectCsv.Invoke(c);
+                    if (lpcReason != null) { Fail(lpcReason); return; }
                     return;
                 }
 
@@ -1181,6 +1645,7 @@ namespace Poly_Ling.Player
                     if (OnKnifeLadderCut == null) { Fail("knife ladder cut handler not wired"); return; }
                     string klcReason = OnKnifeLadderCut.Invoke(c);
                     if (klcReason != null) { Fail(klcReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.MasterIndices));
                     return;
                 }
 
@@ -1190,6 +1655,7 @@ namespace Poly_Ling.Player
                     if (OnKnifeBeltLoopCut == null) { Fail("knife belt loop handler not wired"); return; }
                     string kblReason = OnKnifeBeltLoopCut.Invoke(c);
                     if (kblReason != null) { Fail(kblReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.MasterIndices));
                     return;
                 }
 
@@ -1199,6 +1665,7 @@ namespace Poly_Ling.Player
                     if (OnKnifeEraseEdge == null) { Fail("knife erase handler not wired"); return; }
                     string keeReason = OnKnifeEraseEdge.Invoke(c);
                     if (keeReason != null) { Fail(keeReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.MasterIndices));
                     return;
                 }
 
@@ -1208,6 +1675,7 @@ namespace Poly_Ling.Player
                     if (OnKnifeSimpleCut == null) { Fail("knife simple cut handler not wired"); return; }
                     string kscReason = OnKnifeSimpleCut.Invoke(c);
                     if (kscReason != null) { Fail(kscReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.MasterIndices));
                     return;
                 }
 
@@ -1296,7 +1764,7 @@ namespace Poly_Ling.Player
                     return;
 
                 // ── 生成系。実処理は Viewer 側にあるので委譲する
-                // モデルが無くても通す（実処理側が作る）。上の createsOwnModel を参照。
+                // モデルが無くても通す（実処理側が作る）。上の createsOwnProject を参照。
                 case CreatePrimitiveMeshCommand c:
                 {
                     if (OnCreatePrimitiveMesh == null) { Fail("primitive mesh handler not wired"); return; }
@@ -1311,6 +1779,15 @@ namespace Poly_Ling.Player
                     if (c.Placement.KeepAsGroup)
                         CaptureObjectGroup(c, __beforeIds, FallbackOutputIndex(c));
 
+                    // 生成系は受け口（PolyLingPlayerViewerCore.ReportCreatedMesh）が
+                    // ReportTargets で対象を報告済み。その対象を保ったまま、
+                    // 出来たものの規模だけを足す。
+                    //
+                    // モデルはここで初めて出来ていることがある（生成系は
+                    // プロジェクトを持たない状態から呼べる）ので、
+                    // 手前で取った model ではなく取り直す。
+                    ReportDataKeepingTargets(BuildTopologyCountsData(
+                        _getProject()?.CurrentModel, _pendingResult?.MasterIndices));
                     return;
                 }
 
@@ -1328,6 +1805,7 @@ namespace Poly_Ling.Player
                     if (OnCreateHoleBridge == null) { Fail("hole bridge handler not wired"); return; }
                     string chbReason = OnCreateHoleBridge.Invoke(c);
                     if (chbReason != null) { Fail(chbReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.MeshA, c.MeshB));
                     return;
                 }
 
@@ -1337,6 +1815,7 @@ namespace Poly_Ling.Player
                     if (OnCreateEdgeBridge == null) { Fail("edge bridge handler not wired"); return; }
                     string cebReason = OnCreateEdgeBridge.Invoke(c);
                     if (cebReason != null) { Fail(cebReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.MeshIndex));
                     return;
                 }
 
@@ -1346,6 +1825,7 @@ namespace Poly_Ling.Player
                     if (OnDeleteFaces == null) { Fail("delete faces handler not wired"); return; }
                     string dfReason = OnDeleteFaces.Invoke(c);
                     if (dfReason != null) { Fail(dfReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.MeshIndex));
                     return;
                 }
 
@@ -1355,6 +1835,7 @@ namespace Poly_Ling.Player
                     if (OnMatchHoleRingCount == null) { Fail("hole ring count handler not wired"); return; }
                     string mhrReason = OnMatchHoleRingCount.Invoke(c);
                     if (mhrReason != null) { Fail(mhrReason); return; }
+                    ReportData(BuildTopologyCountsData(model, c.BaseMeshIndex, c.TargetMeshIndex));
                     return;
                 }
 
@@ -2508,113 +2989,140 @@ namespace Poly_Ling.Player
 
                     var g = model.FindObjectGroupByName(c.GroupName);
                     if (g == null) { Fail($"グループが見つかりません: {c.GroupName}"); return; }
+                    if (g.StepCount == 0) { Fail($"グループにステップがありません: {c.GroupName}"); return; }
 
                     int gIndex = model.ObjectGroups.IndexOf(g);
                     var oldSnapshot = g.Clone();
 
-                    var outCtx = ObjectGroupOps.Resolve(project, g.OutputObjectId);
-                    if (outCtx?.MeshObject == null)
-                    { Fail("出力先の描画オブジェクトが見つかりません"); return; }
+                    // 【Undo はマクロ全体で 1 件】
+                    //   内側の記録は止め、終わってから MeshList へまとめて積む。
+                    //   MeshFilterToSkinnedRecord は MeshContextList を丸ごと控えるので、
+                    //   ボーンの追加・位置・はしごのウェイトまで 1 件で戻せる。
+                    //
+                    //   CollapseToGroup では畳めない。UndoGroup._undoLog は積んだぶんが
+                    //   残るので、押下回数と巻き戻る量がずれる（UndoGroup.cs:272-292）。
+                    _undoController?.SetModelContext(model);
+                    var rbListBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
-                    int outIndex = model.MeshContextList.IndexOf(outCtx);
-                    if (outIndex < 0)
-                    { Fail("出力先が現在のモデルにありません"); return; }
+                    string rbFail = null;
+                    int    rbDone = 0;
 
-                    // 退避は「中身を入れ替える前の複製」。人が出力先へ振った頂点IDを
-                    // 取り戻せるようにするためのもので、入れ替えより先に作る。
-                    if (c.KeepStash)
+                    _undoController?.SuspendRecording();
+                    try
                     {
-                        var prevStash = g.HasStash ? ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
-
-                        string stashName = model.GenerateUniqueMeshName(outCtx.Name + "_stash");
-                        var stash = MeshContextCloneOps.Clone(
-                            outCtx, MeshContextCloneKind.NewObject, stashName);
-                        if (stash != null)
+                        for (int si = 0; si < g.StepCount; si++)
                         {
-                            stash.IsVisible = false;
-                            var __selBefore = model.CaptureAllSelectedIndices();
-                            int stashIdx = model.Add(stash);
-                            g.StashObjectId = stash.ObjectId;
-
-                            if (_undoController != null)
-                            {
-                                var __selAfter = model.CaptureAllSelectedIndices();
-                                _undoController.RecordMeshContextsAdd(
-                                    new List<(int, MeshContext)> { (stashIdx, stash) },
-                                    __selBefore, __selAfter);
-                            }
-
-                            // 退避は最新の 1 件だけ持つ。前回のものは片づける。
-                            if (prevStash != null && !ReferenceEquals(prevStash, stash))
-                            {
-                                int pi = model.MeshContextList.IndexOf(prevStash);
-                                if (pi >= 0)
-                                {
-                                    var __sel = model.CaptureAllSelectedIndices();
-                                    var __removed = new List<(int, MeshContext)> { (pi, prevStash) };
-                                    model.RemoveAt(pi);
-                                    _undoController?.RecordMeshContextsRemove(
-                                        __removed, __sel, model.CaptureAllSelectedIndices());
-                                    // 出力先の索引は退避の削除でずれうる。引き直す。
-                                    outIndex = model.MeshContextList.IndexOf(outCtx);
-                                }
-                            }
+                            if (!RunObjectGroupStep(
+                                    project, model, c.ModelIndex, c.KeepStash, g, si, out string stepErr))
+                            { rbFail = stepErr; break; }
+                            rbDone++;
                         }
                     }
-
-                    var rebuilt = ObjectGroupOps.BuildCommand(project, c.ModelIndex, g, out string rbErr);
-                    if (rebuilt == null) { Fail(rbErr ?? "作り直すコマンドを組めませんでした"); return; }
-
-                    // 出力先へ書き戻す形へ差し替える。
-                    // AddMode / AddTargetIndex は PrimitivePlacement が持つので、
-                    // 図形生成コマンド以外（＝Placement を持たないもの）は対象外。
-                    if (!(rebuilt is CreatePrimitiveMeshCommand))
-                    { Fail("このグループは作り直しに対応していません"); return; }
-
-                    var rebuiltType = rebuilt.GetType();
-                    var rebuiltArgs = PanelCommandFactory.ToArgs(rebuilt);
-
-                    // 入れ子のキーはドット区切り。頭のキーは規則側から引く
-                    // （先頭小文字・別名表の規則を外で組み立てると必ずずれる）。
-                    string placeKey = PanelCommandFactory.KeyOfProperty(
-                        rebuiltType, nameof(CreatePrimitiveMeshCommand.Placement));
-                    if (string.IsNullOrEmpty(placeKey))
-                    { Fail("配置パラメータのキーを引けませんでした"); return; }
-
-                    var inv = System.Globalization.CultureInfo.InvariantCulture;
-                    rebuiltArgs[placeKey + ".addMode"] =
-                        ((int)Poly_Ling.Player.PrimitiveAddMode.ReplaceExisting).ToString(inv);
-                    rebuiltArgs[placeKey + ".addTargetIndex"] = outIndex.ToString(inv);
-
-                    var writeBack = PanelCommandFactory.Create(
-                        PanelCommandFactory.ActionOf(rebuiltType), c.ModelIndex,
-                        rebuiltArgs, out string wbErr);
-                    if (writeBack == null) { Fail(wbErr ?? "書き戻しコマンドを組めませんでした"); return; }
-
-                    int vertsBefore = outCtx.MeshObject.VertexCount;
-
-                    // Dispatch は _pendingResult を退避・復元するので、結果は
-                    // 戻り値で受け取ること（_pendingResult を見ても復元済みで分からない）。
-                    var rbResult = Dispatch(writeBack);
-                    if (rbResult != null && !rbResult.Success)
-                    { Fail(rbResult.Reason ?? "作り直しに失敗しました"); return; }
-
-                    int vertsAfter = outCtx.MeshObject.VertexCount;
-                    if (vertsAfter == 0)
-                    { Fail($"作り直しの結果が空になりました（{vertsBefore} → 0）"); return; }
+                    finally
+                    {
+                        _undoController?.ResumeRecording();
+                    }
 
                     g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
 
-                    if (gIndex >= 0)
+                    // 途中で落ちても記録は積む。そこまでの変更を Undo で戻せるようにする。
+                    // 同じスタックへ続けて積むので Undo のログは 1 件に集約される。
+                    if (_undoController != null)
                     {
-                        RecordObjectGroupUndo(
-                            new ObjectGroupChangeRecord
-                            {
-                                ReplacedIndex = gIndex,
-                                OldGroup      = oldSnapshot,
-                                NewGroup      = g.Clone(),
-                            },
-                            $"オブジェクトグループ作り直し: {g.Name}");
+                        _undoController.MeshListStack.BeginGroup($"オブジェクトグループ実行: {g.Name}");
+
+                        RecordMeshListSnapshot(
+                            rbListBefore, model, $"オブジェクトグループ実行: {g.Name}");
+
+                        if (gIndex >= 0)
+                        {
+                            RecordObjectGroupUndo(
+                                new ObjectGroupChangeRecord
+                                {
+                                    ReplacedIndex = gIndex,
+                                    OldGroup      = oldSnapshot,
+                                    NewGroup      = g.Clone(),
+                                },
+                                $"オブジェクトグループ実行: {g.Name}");
+                        }
+
+                        _undoController.MeshListStack.EndGroup();
+                    }
+
+                    model.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+
+                    if (rbFail != null)
+                    { Fail($"ステップ {rbDone} で止まりました: {rbFail}"); return; }
+
+                    return;
+                }
+
+                // ── オブジェクトグループ：まとめる（マクロを組む）
+                //
+                //   ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。
+                //   描画オブジェクトは 1 つも消さない。
+                case MergeObjectGroupCommand c:
+                {
+                    if (model == null || project == null) { Fail("no current model"); return; }
+
+                    if (string.Equals(c.TargetGroupName, c.SourceGroupName, System.StringComparison.Ordinal))
+                    { Fail("同じグループはまとめられません"); return; }
+
+                    var mgTarget = model.FindObjectGroupByName(c.TargetGroupName);
+                    if (mgTarget == null) { Fail($"グループが見つかりません: {c.TargetGroupName}"); return; }
+
+                    var mgSource = model.FindObjectGroupByName(c.SourceGroupName);
+                    if (mgSource == null) { Fail($"グループが見つかりません: {c.SourceGroupName}"); return; }
+                    if (mgSource.StepCount == 0)
+                    { Fail($"足すステップがありません: {c.SourceGroupName}"); return; }
+
+                    int mgSourceIndex = model.ObjectGroups.IndexOf(mgSource);
+                    var mgTargetBefore = mgTarget.Clone();
+                    var mgSourceBefore = mgSource.Clone();
+
+                    foreach (var mgStep in mgSource.Steps)
+                        if (mgStep != null) mgTarget.AddStep(mgStep.Clone());
+
+                    model.RemoveObjectGroup(mgSource);
+
+                    // ターゲットの索引はソースを消したあとに取る。先に取ると、
+                    // ソースがターゲットより前にあったときに 1 つずれる。
+                    int mgTargetIndex = model.ObjectGroups.IndexOf(mgTarget);
+
+                    mgTarget.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, mgTarget);
+
+                    // 記録は「消す → 差し替える」の順。Undo は後ろから戻すので、
+                    // 差し替え（消したあとの索引で有効）→ 挿し戻し の順に効く。
+                    if (_undoController != null)
+                    {
+                        _undoController.MeshListStack.BeginGroup($"オブジェクトグループ結合: {mgTarget.Name}");
+
+                        if (mgSourceIndex >= 0)
+                        {
+                            RecordObjectGroupUndo(
+                                new ObjectGroupChangeRecord
+                                {
+                                    RemovedGroup = mgSourceBefore,
+                                    RemovedIndex = mgSourceIndex,
+                                },
+                                $"オブジェクトグループ結合: {mgSource.Name} を畳む");
+                        }
+
+                        if (mgTargetIndex >= 0)
+                        {
+                            RecordObjectGroupUndo(
+                                new ObjectGroupChangeRecord
+                                {
+                                    ReplacedIndex = mgTargetIndex,
+                                    OldGroup      = mgTargetBefore,
+                                    NewGroup      = mgTarget.Clone(),
+                                },
+                                $"オブジェクトグループ結合: {mgTarget.Name}");
+                        }
+
+                        _undoController.MeshListStack.EndGroup();
                     }
 
                     model.IsDirty = true;
@@ -2913,14 +3421,39 @@ namespace Poly_Ling.Player
                     // 変換前スナップショット
                     var beforeList = MeshFilterToSkinnedRecord.CaptureList(model);
 
-                    // 変換実行
-                    MeshFilterToSkinnedConverter.Execute(
-                        model, entries, c.SwapAxisForRotated, c.SetAxisForIdentity,
-                        c.TolerantMirrorBranch
-                            ? MirrorBranchTolerance.Tolerant
-                            : MirrorBranchTolerance.Strict);
+                    // 変換する対象の ObjectId を先に控える。変換でボーンが増えて
+                    // 索引が組み替わるため、あとから索引で引くと別のものを指す。
+                    // MeshContext そのものは作り直されない（new MeshContext はボーンだけ）
+                    // ので ObjectId は保たれる。
+                    var mfsChangedIds = new List<ulong>(entries.Count);
+                    foreach (var mfsEntry in entries)
+                    {
+                        ulong oid = mfsEntry.Context?.ObjectId ?? 0UL;
+                        if (oid != 0UL) mfsChangedIds.Add(oid);
+                    }
 
-                    // 変換後スナップショット
+                    // 変換実行。内側の記録は止め、自動更新まで終わってから 1 件積む。
+                    _undoController?.SuspendRecording();
+                    try
+                    {
+                        MeshFilterToSkinnedConverter.Execute(
+                            model, entries, c.SwapAxisForRotated, c.SetAxisForIdentity,
+                            c.TolerantMirrorBranch
+                                ? MirrorBranchTolerance.Tolerant
+                                : MirrorBranchTolerance.Strict);
+
+                        // スキンド化はソースの頂点をワールドへ焼き直すので、
+                        // それを取り込むグループのダイジェストが変わる。
+                        // ウェイトを塗り直すのはここ（変換が {bone,1.0} を書いたあと）。
+                        RunAutoUpdateGroups(project, model, c.ModelIndex, mfsChangedIds);
+                    }
+                    finally
+                    {
+                        _undoController?.ResumeRecording();
+                    }
+
+                    // 変換後スナップショット。自動更新のあとに取る
+                    // （先に取ると自動更新ぶんが Undo で戻らない）。
                     var afterList = MeshFilterToSkinnedRecord.CaptureList(model);
 
                     // Undo 記録
@@ -2989,11 +3522,35 @@ namespace Poly_Ling.Player
 
                     var skBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
-                    var skResults = SkinKindConverter.ToSkinned(
-                        model, c.MasterIndices, c.BoneMasterIndex);
+                    // 変換する対象の ObjectId を先に控える。索引は変換で動きうる。
+                    var skChangedIds = new List<ulong>(c.MasterIndices.Length);
+                    foreach (int skIdx in c.MasterIndices)
+                    {
+                        ulong oid = model.GetMeshContext(skIdx)?.ObjectId ?? 0UL;
+                        if (oid != 0UL) skChangedIds.Add(oid);
+                    }
 
                     int skDone = 0;
-                    foreach (var r in skResults) if (r.Converted) skDone++;
+
+                    // 内側の記録は止め、自動更新まで終わってから 1 件積む。
+                    _undoController?.SuspendRecording();
+                    try
+                    {
+                        var skResults = SkinKindConverter.ToSkinned(
+                            model, c.MasterIndices, c.BoneMasterIndex);
+
+                        foreach (var r in skResults) if (r.Converted) skDone++;
+
+                        // ToSkinned は全頂点へ {bone, 1.0} を書く（SkinKindConverter.cs:284）。
+                        // ウェイトを塗り直すのはそのあと。
+                        if (skDone > 0)
+                            RunAutoUpdateGroups(project, model, c.ModelIndex, skChangedIds);
+                    }
+                    finally
+                    {
+                        _undoController?.ResumeRecording();
+                    }
+
                     if (skDone == 0) { Fail("Skinned へ変換できる対象がありません"); return; }
 
                     RecordMeshListSnapshot(skBefore, model,
@@ -4083,6 +4640,145 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── はしごから揺れもの用のボーン鎖を置く
+                //   ボーンが増えるのでリスト構造の変更として記録する。
+                case PlaceSpringBoneLadderChainsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return; }
+
+                    if (c.SourceMasterIndex < 0 || c.SourceMasterIndex >= model.MeshContextCount)
+                    { Fail("取り込み元の masterIndex が範囲外です"); return; }
+
+                    var sblSource = model.GetMeshContext(c.SourceMasterIndex);
+                    if (sblSource?.MeshObject == null)
+                    { Fail("取り込み元のメッシュが見つかりません"); return; }
+
+                    _undoController?.SetModelContext(model);
+                    var sblBefore = MeshFilterToSkinnedRecord.CaptureList(model);
+
+                    // ウェイトを塗るときは取り込み元メッシュの before を先に取る。
+                    // ボーンの追加はこのメッシュを書き換えないので、Place の前で取ってよい。
+                    // 記録の手順は ApplySkinWeightPerMesh と同じにする
+                    //   SetMeshObjectFor → before → 適用 → ミラーへ写す → after → 記録。
+                    // SetMeshObject(MeshObject,…) ではなく SetMeshObjectFor を使うこと
+                    // （前者は書き込み先が先頭の選択メッシュになる）。
+                    const string sblWeightLabel = "Paint Ladder Spring Weights";
+                    MeshObjectSnapshot sblMeshBefore = null;
+                    if (c.PaintWeights && _undoController != null)
+                    {
+                        _undoController.MeshUndoContext.ParentModelContext = model;
+                        _undoController.SetMeshObjectFor(sblSource, sblSource.UnityMesh);
+                        sblMeshBefore = _undoController.CaptureMeshObjectSnapshot();
+                    }
+
+                    // ミラー側にも鎖を作るときの写し行列。
+                    // 取り込み元がミラーペアの実体側でなければ null（作らない）。
+                    Matrix4x4? sblMirrorMatrix = null;
+                    var sblPair = c.MakeMirrorChains ? model.GetMirrorPair(sblSource) : null;
+
+                    if (sblPair != null && sblPair.Real == sblSource)
+                    {
+                        sblMirrorMatrix = Poly_Ling.Ops.MirrorBranchOps.MirrorMatrix(
+                            sblSource.MirrorAxis, sblSource.MirrorDistance);
+                    }
+                    else if (c.MakeMirrorChains)
+                    {
+                        Debug.LogWarning(
+                            "[PlaceSpringBoneLadderChains] 取り込み元がミラーペアの実体側ではないので、ミラー側の鎖は作りません");
+                    }
+
+                    // 鎖の根元を渡すとボーンを作らず位置だけ流し込む（冪等経路）。
+                    // 照合に落ちたときは Place の中で新規作成へ切り替わり、
+                    // 古い鎖はモデルに残る（Recreated が立つ）。
+                    var sblResult = Poly_Ling.Tools.SpringBoneRig.SpringBoneLadderPlacer.Place(
+                        model, sblSource, c.Method, c.SetName, c.Mode,
+                        c.AttachMasterIndex, c.NamePrefix,
+                        c.ReverseChain, c.AddTailBone, c.TailLength, c.PaintWeights,
+                        c.RungStride, c.ChainStride, c.BundleMode,
+                        c.ChainRootMasterIndices, sblMirrorMatrix);
+
+                    if (sblResult.BoneCount == 0)
+                    {
+                        _undoController?.ClearTargetMeshContext();
+                        Fail(string.IsNullOrEmpty(sblResult.Message)
+                            ? "ボーンを作れませんでした"
+                            : sblResult.Message);
+                        return;
+                    }
+
+                    // 左右の対を立て直したので、ミラーペアの対応表を作り直す。
+                    // 作り直さないと BonePairMap は鎖を知らないままで、
+                    // このあとの SyncSkinWeightToMirrors が何も写さない
+                    // （MirrorPair.BuildBonePairMap は MirrorBoneIndex を読むだけ）。
+                    if (sblPair != null && sblResult.MirrorChains.Count > 0)
+                        sblPair.Build(model.MeshContextList);
+
+                    var sblMirrors = new List<MeshContext>();
+                    if (sblMeshBefore != null && sblResult.WeightedVertexCount > 0)
+                    {
+                        // ミラー側へ写してから実体側の after を取る。後に回すと
+                        // Redo で実体側頂点の MirrorBoneWeight が古い値に戻る。
+                        SyncSkinWeightToMirrors(model, sblSource, sblMirrors, sblWeightLabel);
+
+                        _undoController.SetMeshObjectFor(sblSource, sblSource.UnityMesh);
+                        var sblMeshAfter = _undoController.CaptureMeshObjectSnapshot();
+                        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                            _undoController, sblMeshBefore, sblMeshAfter, sblWeightLabel));
+                    }
+                    _undoController?.ClearTargetMeshContext();
+
+                    model.OnListChanged?.Invoke();
+                    RecordMeshListSnapshot(sblBefore, model, sblResult.Message);
+
+                    // グループの出力は「鎖の根元ボーン」だけ。節点と tail は出力ではない。
+                    // 作り直しではこの ObjectId 列が ChainRootMasterIndices へ書き戻され、
+                    // ボーンを作らず位置だけ流し込む経路に入る。
+                    if (c.KeepAsGroup)
+                    {
+                        // 並びは「実体側 N 本 → ミラー側 N 本」。作り直しでは
+                        // この順のまま ChainRootMasterIndices へ書き戻される。
+                        var sblRootIds = new List<ulong>(
+                            sblResult.Chains.Count + sblResult.MirrorChains.Count);
+
+                        foreach (var sblChain in sblResult.Chains)
+                        {
+                            if (sblChain == null || sblChain.Count == 0) continue;
+                            ulong rid = model.GetMeshContext(sblChain[0])?.ObjectId ?? 0UL;
+                            if (rid != 0UL) sblRootIds.Add(rid);
+                        }
+
+                        foreach (var sblChain in sblResult.MirrorChains)
+                        {
+                            if (sblChain == null || sblChain.Count == 0) continue;
+                            ulong rid = model.GetMeshContext(sblChain[0])?.ObjectId ?? 0UL;
+                            if (rid != 0UL) sblRootIds.Add(rid);
+                        }
+
+                        if (sblRootIds.Count > 0)
+                            CaptureObjectGroup(c, null, -1, sblRootIds);
+                        else
+                            Debug.LogWarning("[ObjectGroup] 鎖の根元を引けないためグループを作りませんでした");
+                    }
+
+                    // 書き換えたウェイトを送る。ボーン追加ぶんの EnterTopologyChanged とは
+                    // 別に、対象を明示して部分転送する（ミラー側は別メッシュなので個別に要る）。
+                    if (sblResult.WeightedVertexCount > 0)
+                    {
+                        _viewportManager.EnterVertexAttributesChanged(
+                            project, sblSource, weights: true, uvs: false);
+                        foreach (var sblMirror in sblMirrors)
+                            _viewportManager.EnterVertexAttributesChanged(
+                                project, sblMirror, weights: true, uvs: false);
+                    }
+
+                    Debug.Log("[PlaceSpringBoneLadderChains] " + sblResult.Message);
+
+                    model.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
                 // ── 揺れもの用のボーン鎖を置く
                 //   ボーンが増えるのでリスト構造の変更として記録する。
                 case PlaceSpringBoneChainsCommand c:
@@ -4132,6 +4828,19 @@ namespace Poly_Ling.Player
                     }
 
                     ApplyBoneSelection(project, model, sbchain, c.Additive);
+
+                    var sbchainIds = new ulong[sbchain.Count];
+                    for (int i = 0; i < sbchain.Count; i++)
+                        sbchainIds[i] = model.GetMeshContext(sbchain[i])?.ObjectId ?? 0UL;
+
+                    ReportData(
+                        CommandDataJson.New()
+                            .Int("nodes",           sbchain.Count)
+                            .Int("rootMasterIndex", c.RootMasterIndex)
+                            .Text("walk",           c.Walk.ToString())
+                            .Flag("additive",       c.Additive)
+                            .Build(),
+                        sbchain.ToArray(), sbchainIds);
                     return;
                 }
 
@@ -7798,25 +8507,37 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 実行し終えたコマンドからオブジェクトグループを 1 件作り、モデルへ足す。
         ///
-        /// 出力先の決め方は 2 通り。
-        ///   ・実行で ObjectId が増えていれば、その中で最も新しいものを出力先にする
+        /// 出力先の決め方は 3 通り。
+        ///   ・explicitOutputIds を渡されたらそれをそのまま使う。
+        ///     はしごから作る鎖のように「増えたもの全部ではなく、その一部
+        ///     （鎖の根元だけ）が出力」になるものはこれで渡す
+        ///   ・渡されないときは、実行で増えた ObjectId のうち最も新しいもの 1 つ
         ///     （ObjectId は単調増加なので最大値が最後に作られたもの）
         ///   ・増えていなければ fallbackIndex のオブジェクト（既存へ追加・上書きブレンド）
         ///
-        /// 出力先が決まらないときはグループを作らない。出力先の無いグループは
-        /// 作り直す先が無く、残しても使えないため。
+        /// 出力先が決まらなくてもグループは作る。値を書くだけのコマンドのように
+        /// 出力先を持たないステップがあるため。作り直しはそのステップで止まる。
         /// </summary>
         private void CaptureObjectGroup(
-            PanelCommand cmd, HashSet<ulong> beforeIds, int fallbackIndex)
+            PanelCommand cmd, HashSet<ulong> beforeIds, int fallbackIndex,
+            IReadOnlyList<ulong> explicitOutputIds = null)
         {
             var project = _getProject();
             var model   = project?.CurrentModel;
             if (project == null || model == null) return;
 
-            ulong outputId = 0UL;
+            var outputIds = new List<ulong>();
 
-            if (beforeIds != null)
+            if (explicitOutputIds != null)
             {
+                for (int i = 0; i < explicitOutputIds.Count; i++)
+                    if (explicitOutputIds[i] != 0UL) outputIds.Add(explicitOutputIds[i]);
+            }
+            else if (beforeIds != null)
+            {
+                // 増えた ObjectId を拾う。ObjectId は単調増加なので最大値が最後に作られたもの。
+                ulong newest = 0UL;
+
                 for (int m = 0; m < project.ModelCount; m++)
                 {
                     var mdl = project.GetModel(m);
@@ -7826,25 +8547,26 @@ namespace Poly_Ling.Player
                         var mc = mdl.MeshContextList[i];
                         if (mc == null || mc.ObjectId == 0UL) continue;
                         if (beforeIds.Contains(mc.ObjectId)) continue;
-                        if (mc.ObjectId > outputId) outputId = mc.ObjectId;
+                        if (mc.ObjectId > newest) newest = mc.ObjectId;
                     }
                 }
+
+                if (newest != 0UL) outputIds.Add(newest);
             }
 
-            if (outputId == 0UL && fallbackIndex >= 0)
-                outputId = model.GetMeshContext(fallbackIndex)?.ObjectId ?? 0UL;
-
-            if (outputId == 0UL)
+            if (outputIds.Count == 0 && fallbackIndex >= 0)
             {
-                Debug.LogWarning("[ObjectGroup] 出力先を特定できないためグループを作りませんでした");
-                return;
+                ulong fallbackId = model.GetMeshContext(fallbackIndex)?.ObjectId ?? 0UL;
+                if (fallbackId != 0UL) outputIds.Add(fallbackId);
             }
 
-            var outCtx = ObjectGroupOps.Resolve(project, outputId);
+            var outCtx = outputIds.Count > 0
+                ? ObjectGroupOps.Resolve(project, outputIds[0])
+                : null;
             string baseName = !string.IsNullOrEmpty(outCtx?.Name) ? outCtx.Name : "Group";
 
             var group = ObjectGroupOps.Capture(
-                project, cmd.ModelIndex, cmd, outputId,
+                project, cmd.ModelIndex, cmd, outputIds,
                 model.GenerateUniqueObjectGroupName(baseName));
 
             if (group == null) return;
@@ -7858,6 +8580,248 @@ namespace Poly_Ling.Player
                 $"オブジェクトグループ追加: {group.Name}");
 
             model.AddObjectGroup(group);
+        }
+
+        /// <summary>入れ子で 2 周させないための印。</summary>
+        private bool _autoUpdateRunning;
+
+        /// <summary>
+        /// 「ソースが変わったら自動で作り直す」が立っているグループを流す。
+        ///
+        /// 【いつ呼ぶか】
+        ///   ソースの頂点を書き換える操作のあと。今はスキンド化の 2 経路
+        ///   （SkinKindConverter.ToSkinned / MeshFilterToSkinnedConverter.Execute）から。
+        ///   スキンド化は頂点をワールドへ焼き直すので、それを取り込むグループの
+        ///   ダイジェストが変わる（ObjectGroupOps.ComputeSourceDigest は位置を混ぜる）。
+        ///
+        /// 【出力に含むグループは流さない】
+        ///   ソースに含むものだけを対象にする。出力をスキンド化したあとに
+        ///   作り直すと、生成コマンドは MeshFilter 前提の空間で作り直すので、
+        ///   焼き直した頂点を壊す。
+        ///
+        /// 【ダイジェストでは絞らない】
+        ///   スキンド化は「ソースが変わった」ではなく「塗る契機」。
+        ///   WorldMatrix が単位のオブジェクトは焼いても位置が動かず、
+        ///   ダイジェストが変わらないため、絞ると永久に流れない。
+        ///
+        /// 【Undo】
+        ///   ここでは記録しない。呼び出し側が SuspendRecording の中で呼び、
+        ///   外で 1 件だけ積む。
+        /// </summary>
+        /// <returns>最後まで流せたグループの数</returns>
+        private int RunAutoUpdateGroups(
+            ProjectContext project, ModelContext model, int modelIndex,
+            IReadOnlyList<ulong> changedObjectIds)
+        {
+            if (project == null || model?.ObjectGroups == null) return 0;
+            if (changedObjectIds == null || changedObjectIds.Count == 0) return 0;
+            if (_autoUpdateRunning) return 0;
+
+            // 対象は先に決める。走らせながら選ぶと、実行でモデルが変わって
+            // 途中から条件が揺れる。
+            var targets = new List<Poly_Ling.Data.ObjectGroup>();
+
+            foreach (var g in model.ObjectGroups)
+            {
+                if (g == null || !g.AutoUpdate || g.StepCount == 0) continue;
+
+                bool hit = false;
+                for (int i = 0; i < changedObjectIds.Count; i++)
+                    if (g.ContainsSource(changedObjectIds[i])) { hit = true; break; }
+                if (!hit) continue;
+
+                // ダイジェストでは絞らない。
+                //
+                // 【なぜ絞ってはいけないか】
+                //   スキンド化は「ソースが変わった」ではなく「塗る契機」。
+                //   変換は頂点をワールドへ焼くが、WorldMatrix が単位のオブジェクトでは
+                //   位置が 1 つも動かないのでダイジェストは変わらない
+                //   （MeshFilterToSkinnedConverter.cs:705-707）。
+                //   IsStale で絞ると、そういうオブジェクトを取り込むグループが
+                //   永久に流れず、ウェイトが塗られないまま残る。
+                //
+                //   流す相手は ContainsSource で既に「変換の対象を取り込むもの」だけに
+                //   絞られている。冪等なので、要更新でなくても流して壊れない。
+
+                targets.Add(g);
+            }
+
+            if (targets.Count == 0) return 0;
+
+            int done = 0;
+            _autoUpdateRunning = true;
+            try
+            {
+                foreach (var g in targets)
+                {
+                    bool ok = true;
+
+                    for (int si = 0; si < g.StepCount; si++)
+                    {
+                        // 退避は作らない。自動で流れるものが実行のたびに
+                        // 複製を増やすと、モデルが静かに膨らむ。
+                        if (!RunObjectGroupStep(
+                                project, model, modelIndex, false, g, si, out string err))
+                        {
+                            Debug.LogWarning(
+                                $"[ObjectGroup] 自動更新が止まりました: {g.Name} ステップ {si}: {err}");
+                            ok = false;
+                            break;
+                        }
+                    }
+
+                    g.SourceDigest = ObjectGroupOps.ComputeSourceDigest(project, g);
+                    if (ok) done++;
+                }
+            }
+            finally
+            {
+                _autoUpdateRunning = false;
+            }
+
+            return done;
+        }
+
+        /// <summary>
+        /// オブジェクトグループの 1 ステップを実行する。
+        ///
+        /// やること
+        ///   1. そのステップの出力先を、控えの ObjectId から今の索引へ引き直す
+        ///   2. ステップから生成コマンドを組み直す
+        ///   3. 出力先があれば「そこへ書き戻す」形へ差し替える（PLParam.RebuildRole）
+        ///   4. 実行する
+        ///
+        /// 【出力先を持たないステップ】
+        ///   値を書くだけのコマンド（揺れ方の設定など）は出力先を持たない。
+        ///   そのときは書き戻しをせず、組み直したコマンドをそのまま実行する。
+        ///
+        /// 【退避】
+        ///   先頭ステップが単数の描画メッシュを出力するときだけ作る。
+        ///   ステップごとに作ると、実行のたびに複製がステップ数ぶん増える。
+        ///
+        /// 【Undo】
+        ///   ここでは記録しない。呼び出し側がマクロ全体で 1 件だけ積む。
+        /// </summary>
+        private bool RunObjectGroupStep(
+            ProjectContext project, ModelContext model,
+            int modelIndex, bool keepStash,
+            Poly_Ling.Data.ObjectGroup g, int stepIndex,
+            out string error)
+        {
+            error = null;
+
+            var step = g.GetStep(stepIndex);
+            if (step == null) { error = $"ステップ {stepIndex} がありません"; return false; }
+
+            System.Type stepType = PanelCommandFactory.ResolveType(step.Action);
+            if (stepType == null) { error = $"未対応の action: {step.Action}"; return false; }
+
+            var rbKeys = PanelCommandFactory.RebuildKeys(stepType);
+
+            // 出力先を控えの ObjectId から今の索引へ引き直す。
+            var outIndices = new List<int>();
+            MeshContext outCtx = null;
+
+            foreach (ulong outId in step.OutputObjectIds)
+            {
+                var mc = ObjectGroupOps.Resolve(project, outId);
+                if (mc == null)
+                { error = $"出力先の描画オブジェクトが見つかりません (ObjectId={outId})"; return false; }
+
+                int idx = model.MeshContextList.IndexOf(mc);
+                if (idx < 0) { error = "出力先が現在のモデルにありません"; return false; }
+
+                outIndices.Add(idx);
+                if (outCtx == null) outCtx = mc;
+            }
+
+            bool writeBack = outIndices.Count > 0;
+            if (writeBack && !rbKeys.IsSupported)
+            { error = "このステップは作り直しに対応していません"; return false; }
+
+            // 出力先が単数の描画メッシュのときだけ、退避と頂点数の検査をする。
+            // ボーンの MeshObject は頂点を持たないので、検査を通すと必ず落ちる。
+            bool singleMesh = writeBack && !rbKeys.TargetIsArray;
+            if (singleMesh && outCtx?.MeshObject == null)
+            { error = "出力先の描画オブジェクトが見つかりません"; return false; }
+
+            if (keepStash && stepIndex == 0 && singleMesh)
+            {
+                var prevStash = g.HasStash ? ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
+
+                string stashName = model.GenerateUniqueMeshName(outCtx.Name + "_stash");
+                var stash = MeshContextCloneOps.Clone(
+                    outCtx, MeshContextCloneKind.NewObject, stashName);
+                if (stash != null)
+                {
+                    stash.IsVisible = false;
+                    model.Add(stash);
+                    g.StashObjectId = stash.ObjectId;
+
+                    // 退避は最新の 1 件だけ持つ。前回のものは片づける。
+                    if (prevStash != null && !ReferenceEquals(prevStash, stash))
+                    {
+                        int pi = model.MeshContextList.IndexOf(prevStash);
+                        if (pi >= 0) model.RemoveAt(pi);
+                    }
+
+                    // 出力先の索引は退避の追加・削除でずれうる。引き直す。
+                    outIndices[0] = model.MeshContextList.IndexOf(outCtx);
+                    if (outIndices[0] < 0)
+                    { error = "退避のあとに出力先を引けませんでした"; return false; }
+                }
+            }
+
+            var rebuilt = ObjectGroupOps.BuildCommand(
+                project, modelIndex, g, stepIndex, out string rbErr);
+            if (rebuilt == null)
+            { error = rbErr ?? "作り直すコマンドを組めませんでした"; return false; }
+
+            // 出力先へ書き戻す形へ差し替える。
+            //
+            // どのキーへ何を書くかはコマンド側の印が持つ（PLParam.RebuildRole）。
+            // ここでコマンド型を見て分岐すると、書き戻せるコマンドを足すたびに
+            // 分岐が伸びる。キーの規則（先頭小文字・別名表・ドット区切り）も
+            // 外で組み立てると必ずずれるので、PanelCommandFactory から引く。
+            var rebuiltType = rebuilt.GetType();
+            var rebuiltArgs = PanelCommandFactory.ToArgs(rebuilt);
+
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+            if (writeBack)
+            {
+                if (rbKeys.TargetIsArray)
+                {
+                    var parts = new List<string>(outIndices.Count);
+                    foreach (int oi in outIndices) parts.Add(oi.ToString(inv));
+                    rebuiltArgs[rbKeys.TargetIndexKey] = string.Join(",", parts);
+                }
+                else
+                {
+                    rebuiltArgs[rbKeys.TargetIndexKey] = outIndices[0].ToString(inv);
+                }
+
+                if (rbKeys.HasMode) rebuiltArgs[rbKeys.ModeKey] = rbKeys.ModeArgValue;
+            }
+
+            var writeBackCmd = PanelCommandFactory.Create(
+                PanelCommandFactory.ActionOf(rebuiltType), modelIndex,
+                rebuiltArgs, out string wbErr);
+            if (writeBackCmd == null)
+            { error = wbErr ?? "書き戻しコマンドを組めませんでした"; return false; }
+
+            int vertsBefore = singleMesh ? outCtx.MeshObject.VertexCount : -1;
+
+            // Dispatch は _pendingResult を退避・復元するので、結果は
+            // 戻り値で受け取ること（_pendingResult を見ても復元済みで分からない）。
+            var stepResult = Dispatch(writeBackCmd);
+            if (stepResult != null && !stepResult.Success)
+            { error = stepResult.Reason ?? "作り直しに失敗しました"; return false; }
+
+            if (singleMesh && outCtx.MeshObject.VertexCount == 0)
+            { error = $"作り直しの結果が空になりました（{vertsBefore} → 0）"; return false; }
+
+            return true;
         }
 
         /// <summary>グループ変更を MeshList スタックへ記録する。</summary>
@@ -7883,6 +8847,729 @@ namespace Poly_Ling.Player
                 if (mc != null) list.Add(mc);
             }
             return list;
+        }
+
+        // ================================================================
+        // 照会の組み立て
+        // ================================================================
+        //
+        // 【置き場所】
+        //   DispatchCore の switch から呼ぶ。switch の中へ直接書くと
+        //   既に長い DispatchCore がさらに伸びるため、ここへ寄せてある。
+        //
+        // 【守ること】
+        //   ・モデルを書き換えない。書くのは ModelContext.DataStore だけ
+        //   ・Undo を記録しない。パネルへ通知しない
+        //   ・ComputeWorldMatrices を呼ばない。MeshContext.WorldMatrix を読むだけ
+        //   ・量のあるもの（番号列・座標列）は戻り値に載せず、DataStore へ書く
+        //
+        // 【安定 ID を文字列で持つ理由】
+        //   ObjectId は DateTime.UtcNow.Ticks から採番する（ObjectIdAllocator.cs:32）ので
+        //   10^17 台になる。double の整数表現の上限 2^53 を超えるため、
+        //   結果辞書（PLDataValue の数値は double）には文字列で入れる。
+        // ================================================================
+
+        /// <summary>
+        /// 書き出し先の実経路と大きさを数えて戻り値の JSON にする。
+        ///
+        /// 【なぜもう一度関門を通すか】
+        ///   受け口が使った実経路はディスパッチャへ返ってこない。
+        ///   PLSandbox.TryResolveWrite は副作用の無い純粋な解決なので、
+        ///   同じ引数でもう一度通せば同じ答えになる。
+        ///
+        /// 【フォルダを書くコマンドには使えない】
+        ///   関門は拡張子を要求する。CSV プロジェクトのように「.csv を指定すると
+        ///   同じディレクトリ直下にモデルフォルダができる」形でも、
+        ///   指定される経路はファイル。フォルダを数えると無関係なファイルまで拾う。
+        ///
+        /// 【bytes を文字列で持つ理由】
+        ///   FileInfo.Length は long。CommandDataBuilder の数値は int と double で、
+        ///   double では大きなファイルで丸めが起きる。10 進の文字列で返す。
+        /// </summary>
+        private static string BuildWriteResultData(string requestedPath)
+        {
+            bool resolved = PLSandbox.TryResolveWrite(requestedPath, out string full, out _);
+
+            var b = CommandDataJson.New()
+                .Text("requestedPath", requestedPath ?? "")
+                .Flag("resolved",      resolved);
+
+            if (!resolved)
+                return b.Flag("exists", false).Int("files", 0).Text("bytes", "0").Build();
+
+            b.Text("path", full);
+
+            long bytes  = 0;
+            int  files  = 0;
+            bool exists = false;
+
+            // 書けたかどうかの確認だけなので、読めない事情は結果へ返して握る。
+            try
+            {
+                if (System.IO.File.Exists(full))
+                {
+                    exists = true;
+                    files  = 1;
+                    bytes  = new System.IO.FileInfo(full).Length;
+                }
+            }
+            catch (System.IO.IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            return b
+                .Flag("exists", exists)
+                .Int("files",   files)
+                .Text("bytes",  bytes.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .Build();
+        }
+
+        /// <summary>
+        /// 位相変更の後で、対象の描画オブジェクトの規模を数えて戻り値の JSON にする。
+        /// 穴の数は BridgeAutoPairOps.CollectHoles を呼んで数える。
+        /// 同じ masterIndex が重複して渡っても二重に数えない。
+        /// </summary>
+        private static string BuildTopologyCountsData(ModelContext model, params int[] masterIndices)
+        {
+            int objects = 0, vertices = 0, faces = 0, holes = 0;
+
+            if (model != null && masterIndices != null)
+            {
+                var seen = new HashSet<int>();
+                foreach (int mi in masterIndices)
+                {
+                    if (mi < 0 || !seen.Add(mi)) continue;
+
+                    var mc   = model.GetMeshContext(mi);
+                    var mesh = mc?.MeshObject;
+                    if (mesh == null) continue;
+
+                    objects++;
+                    vertices += mesh.Vertices.Count;
+                    faces    += mesh.Faces.Count;
+                    holes    += BridgeAutoPairOps.CollectHoles(mesh, mc.WorldMatrix).Count;
+                }
+            }
+
+            return CommandDataJson.New()
+                .Int("objects",  objects)
+                .Int("vertices", vertices)
+                .Int("faces",    faces)
+                .Int("holes",    holes)
+                .Build();
+        }
+
+        /// <summary>
+        /// モデル全体の要素選択の件数を数え、戻り値の JSON にする。
+        /// 選択系コマンドが実行後に呼ぶ。選択そのものは書き換えない。
+        /// </summary>
+        private static string BuildSelectionCountsData(ModelContext model)
+        {
+            int v = 0, e = 0, f = 0, l = 0;
+            if (model != null)
+            {
+                foreach (var ent in model.DrawableMeshes)
+                {
+                    var sel = ent.Context?.Selection;
+                    if (sel == null) continue;
+                    v += sel.Vertices.Count;
+                    e += sel.Edges.Count;
+                    f += sel.Faces.Count;
+                    l += sel.Lines.Count;
+                }
+            }
+            return CommandDataJson.SelectionCounts(v, e, f, l);
+        }
+
+        /// <summary>不変文化圏の 10 進表記。安定 ID を文字列で持つときに使う。</summary>
+        private static string IdText(ulong id)
+            => id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// 照会の対象を引く。モデルと描画オブジェクトの両方が取れたときだけ true。
+        /// </summary>
+        private static bool TryGetQueryTarget(
+            ProjectContext project, int modelIndex, int masterIndex,
+            out ModelContext model, out MeshContext mc, out string reason)
+        {
+            model  = null;
+            mc     = null;
+            reason = null;
+
+            model = project?.GetModel(modelIndex);
+            if (model == null) { reason = $"no model at index {modelIndex}"; return false; }
+
+            mc = model.GetMeshContext(masterIndex);
+            if (mc == null) { reason = $"no object at masterIndex {masterIndex}"; return false; }
+
+            if (mc.MeshObject == null)
+            {
+                reason = $"masterIndex {masterIndex} has no mesh";
+                mc = null;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>結果辞書へ書き込む名前を決める。省略時は種別ごとの自動名。</summary>
+        private static string ResolveResultName(PLDataStore store, string requested, string fallback)
+            => string.IsNullOrEmpty(requested) ? store.GenerateUniqueName(fallback) : requested;
+
+        /// <summary>
+        /// オブジェクトグループの状態。
+        /// 自動更新が流れなかったときの判定材料だけを並べる。
+        /// </summary>
+        private static string BuildObjectGroupsData(
+            ProjectContext project, ModelContext model, QueryObjectGroupsCommand cmd)
+        {
+            var groups = model.ObjectGroups ?? new List<Poly_Ling.Data.ObjectGroup>();
+
+            var values = new List<PLDataValue>
+            {
+                PLDataValue.Num("modelIndex", cmd.ModelIndex),
+                PLDataValue.Num("groups",     groups.Count),
+            };
+
+            int staleCount = 0;
+
+            for (int i = 0; i < groups.Count; i++)
+            {
+                var g = groups[i];
+                string key = $"group.{i}";
+
+                if (g == null)
+                {
+                    values.Add(PLDataValue.Str(key + ".name", ""));
+                    continue;
+                }
+
+                var src  = g.SourceObjectIds;
+                var outs = g.OutputObjectIds;
+
+                int srcAlive = 0;
+                foreach (ulong id in src)
+                    if (ObjectGroupOps.Resolve(project, id) != null) srcAlive++;
+
+                int outAlive = 0;
+                foreach (ulong id in outs)
+                    if (ObjectGroupOps.Resolve(project, id) != null) outAlive++;
+
+                bool stale = ObjectGroupOps.IsStale(project, g);
+                if (stale) staleCount++;
+
+                values.Add(PLDataValue.Str(key + ".name",        g.Name ?? ""));
+                values.Add(PLDataValue.Str(key + ".action",      g.Action ?? ""));
+                values.Add(PLDataValue.Num(key + ".steps",       g.StepCount));
+                values.Add(PLDataValue.Num(key + ".autoUpdate", g.AutoUpdate ? 1 : 0));
+                values.Add(PLDataValue.Num(key + ".stale",      stale ? 1 : 0));
+                values.Add(PLDataValue.Num(key + ".hasDigest",  string.IsNullOrEmpty(g.SourceDigest) ? 0 : 1));
+                values.Add(PLDataValue.Num(key + ".sources",     src.Count));
+                values.Add(PLDataValue.Num(key + ".sourcesAlive", srcAlive));
+                values.Add(PLDataValue.Num(key + ".outputs",     outs.Count));
+                values.Add(PLDataValue.Num(key + ".outputsAlive", outAlive));
+            }
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromValues(
+                ResolveResultName(store, cmd.ResultName, "objectGroups"), values,
+                masterIndex: -1, objectId: 0UL,
+                source: PanelCommandFactory.ActionOf(typeof(QueryObjectGroupsCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",  entry)
+                .Int("groups",   groups.Count)
+                .Int("stale",    staleCount)
+                .Build();
+        }
+
+        /// <summary>
+        /// ボーンウェイトの行き先。
+        /// 「塗り直されたか」は頂点数では判らず、どのボーンを指しているかで決まる。
+        /// </summary>
+        private static string BuildSkinWeightSummaryData(
+            ModelContext model, MeshContext mc, QuerySkinWeightSummaryCommand cmd)
+        {
+            var mo = mc.MeshObject;
+
+            // 接頭辞に一致するボーンの索引。空なら数えない。
+            var prefixBones = new HashSet<int>();
+            if (!string.IsNullOrEmpty(cmd.BonePrefix))
+            {
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var b = model.GetMeshContext(i);
+                    if (b == null || b.Type != MeshType.Bone) continue;
+                    if (string.IsNullOrEmpty(b.Name)) continue;
+                    if (b.Name.StartsWith(cmd.BonePrefix, StringComparison.Ordinal))
+                        prefixBones.Add(i);
+                }
+            }
+
+            int vertices = mo?.VertexCount ?? 0;
+            int weighted = 0, multi = 0, toPrefix = 0;
+            var distinct = new HashSet<int>();
+
+            for (int i = 0; i < vertices; i++)
+            {
+                var bw = mo.Vertices[i]?.BoneWeight;
+                if (bw == null) continue;
+
+                weighted++;
+                var w = bw.Value;
+
+                int used = 0;
+                bool hitPrefix = false;
+
+                if (w.weight0 > 0.0001f) { used++; distinct.Add(w.boneIndex0); hitPrefix |= prefixBones.Contains(w.boneIndex0); }
+                if (w.weight1 > 0.0001f) { used++; distinct.Add(w.boneIndex1); hitPrefix |= prefixBones.Contains(w.boneIndex1); }
+                if (w.weight2 > 0.0001f) { used++; distinct.Add(w.boneIndex2); hitPrefix |= prefixBones.Contains(w.boneIndex2); }
+                if (w.weight3 > 0.0001f) { used++; distinct.Add(w.boneIndex3); hitPrefix |= prefixBones.Contains(w.boneIndex3); }
+
+                if (used >= 2)  multi++;
+                if (hitPrefix)  toPrefix++;
+            }
+
+            var values = new List<PLDataValue>
+            {
+                PLDataValue.Num("masterIndex",   cmd.MasterIndex),
+                PLDataValue.Str("name",          mc.Name ?? ""),
+                PLDataValue.Str("objectId",      IdText(mc.ObjectId)),
+                PLDataValue.Num("isSkinned",     mc.IsSkinned ? 1 : 0),
+                PLDataValue.Num("vertices",      vertices),
+                PLDataValue.Num("weighted",      weighted),
+                PLDataValue.Num("multiBone",     multi),
+                PLDataValue.Str("bonePrefix",    cmd.BonePrefix ?? ""),
+                PLDataValue.Num("prefixBones",   prefixBones.Count),
+                PLDataValue.Num("toPrefix",      toPrefix),
+                PLDataValue.Num("distinctBones", distinct.Count),
+            };
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromValues(
+                ResolveResultName(store, cmd.ResultName, "skinWeightSummary"), values,
+                masterIndex: cmd.MasterIndex, objectId: mc.ObjectId,
+                source: PanelCommandFactory.ActionOf(typeof(QuerySkinWeightSummaryCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",       entry)
+                .Int("vertices",      vertices)
+                .Int("weighted",      weighted)
+                .Int("multiBone",     multi)
+                .Int("toPrefix",      toPrefix)
+                .Int("prefixBones",   prefixBones.Count)
+                .Int("distinctBones", distinct.Count)
+                .Build();
+        }
+
+        /// <summary>モデルの構成。</summary>
+        private static string BuildModelStructureData(
+            ProjectContext project, ModelContext model, QueryModelStructureCommand cmd)
+        {
+            var values = new List<PLDataValue>
+            {
+                PLDataValue.Num("models",          project.ModelCount),
+                PLDataValue.Num("modelIndex",      cmd.ModelIndex),
+                PLDataValue.Str("modelName",       model.Name ?? ""),
+                PLDataValue.Num("meshContexts",    model.Count),
+                PLDataValue.Num("drawables",       model.DrawableCount),
+                PLDataValue.Num("bones",           model.BoneCount),
+                PLDataValue.Num("morphs",          model.Morphs.Count),
+                PLDataValue.Num("rigidBodies",     model.RigidBodies.Count),
+                PLDataValue.Num("rigidBodyJoints", model.RigidBodyJoints.Count),
+                PLDataValue.Num("helpers",         model.Helpers.Count),
+                PLDataValue.Num("groups",          model.Groups.Count),
+            };
+
+            var drawables = model.DrawableMeshes;
+            for (int i = 0; i < drawables.Count; i++)
+            {
+                var ent = drawables[i];
+                string key = $"drawable.{i}";
+
+                values.Add(PLDataValue.Num(key + ".masterIndex", ent.MasterIndex));
+                values.Add(PLDataValue.Str(key + ".objectId",    IdText(ent.Context?.ObjectId ?? 0UL)));
+                values.Add(PLDataValue.Str(key + ".name",        ent.Name ?? ""));
+            }
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromValues(
+                ResolveResultName(store, cmd.ResultName, "modelStructure"), values,
+                masterIndex: -1, objectId: 0UL,
+                source: PanelCommandFactory.ActionOf(typeof(QueryModelStructureCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",      entry)
+                .Int("modelIndex",   cmd.ModelIndex)
+                .Int("meshContexts", model.Count)
+                .Int("drawables",    model.DrawableCount)
+                .Int("bones",        model.BoneCount)
+                .Int("morphs",       model.Morphs.Count)
+                .Build();
+        }
+
+        /// <summary>描画オブジェクト 1 個の規模。</summary>
+        private static string BuildDrawableStatsData(
+            ModelContext model, MeshContext mc, QueryDrawableStatsCommand cmd)
+        {
+            var mesh    = mc.MeshObject;
+            var toWorld = mc.WorldMatrix;
+
+            int triangles = 0;
+            var usedMaterials = new HashSet<int>();
+            for (int i = 0; i < mesh.Faces.Count; i++)
+            {
+                var f = mesh.Faces[i];
+                if (f == null) continue;
+                triangles += f.TriangleCount;
+                usedMaterials.Add(f.MaterialIndex);
+            }
+
+            // バウンディングボックスはワールド空間。頂点が無ければ 0 のまま。
+            var min = Vector3.zero;
+            var max = Vector3.zero;
+            bool hasBounds = false;
+            for (int i = 0; i < mesh.Vertices.Count; i++)
+            {
+                var v = mesh.Vertices[i];
+                if (v == null) continue;
+                Vector3 p = toWorld.MultiplyPoint3x4(v.Position);
+                if (!hasBounds) { min = p; max = p; hasBounds = true; continue; }
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+            }
+            Vector3 size = hasBounds ? (max - min) : Vector3.zero;
+
+            var holes = BridgeAutoPairOps.CollectHoles(mesh, toWorld);
+            int boundaryVertices = 0;
+            for (int i = 0; i < holes.Count; i++) boundaryVertices += holes[i].Count;
+
+            var values = new List<PLDataValue>
+            {
+                PLDataValue.Num("masterIndex",      cmd.MasterIndex),
+                PLDataValue.Str("name",             mc.Name ?? ""),
+                PLDataValue.Str("objectId",         IdText(mc.ObjectId)),
+                PLDataValue.Num("vertices",         mesh.Vertices.Count),
+                PLDataValue.Num("faces",            mesh.Faces.Count),
+                PLDataValue.Num("triangles",        triangles),
+                PLDataValue.Num("materialSlots",    model.Materials?.Count ?? 0),
+                PLDataValue.Num("materialsUsed",    usedMaterials.Count),
+                PLDataValue.Num("boundaryLoops",    holes.Count),
+                PLDataValue.Num("boundaryVertices", boundaryVertices),
+                PLDataValue.Num("boundsMinX", min.x), PLDataValue.Num("boundsMinY", min.y), PLDataValue.Num("boundsMinZ", min.z),
+                PLDataValue.Num("boundsMaxX", max.x), PLDataValue.Num("boundsMaxY", max.y), PLDataValue.Num("boundsMaxZ", max.z),
+                PLDataValue.Num("boundsSizeX", size.x), PLDataValue.Num("boundsSizeY", size.y), PLDataValue.Num("boundsSizeZ", size.z),
+            };
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromValues(
+                ResolveResultName(store, cmd.ResultName, "drawableStats"), values,
+                masterIndex: cmd.MasterIndex, objectId: mc.ObjectId,
+                source: PanelCommandFactory.ActionOf(typeof(QueryDrawableStatsCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",         entry)
+                .Int("masterIndex",     cmd.MasterIndex)
+                .Text("name",           mc.Name ?? "")
+                .Text("objectId",       IdText(mc.ObjectId))
+                .Int("vertices",        mesh.Vertices.Count)
+                .Int("faces",           mesh.Faces.Count)
+                .Int("triangles",       triangles)
+                .Int("materialsUsed",   usedMaterials.Count)
+                .Int("boundaryLoops",   holes.Count)
+                .Build();
+        }
+
+        /// <summary>穴（境界ループ）の一覧。</summary>
+        private static string BuildHolesData(
+            ModelContext model, MeshContext mc, QueryHolesCommand cmd)
+        {
+            var holes = BridgeAutoPairOps.CollectHoles(mc.MeshObject, mc.WorldMatrix);
+
+            var loops  = new List<PLDataLoop>(holes.Count);
+            var counts = new List<int>(holes.Count);
+            for (int i = 0; i < holes.Count; i++)
+            {
+                var h = holes[i];
+                loops.Add(new PLDataLoop
+                {
+                    Vertices = new List<int>(h.Vertices),
+                    Centroid = h.WorldCentroid,
+                });
+                counts.Add(h.Count);
+            }
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromLoops(
+                ResolveResultName(store, cmd.ResultName, "holes"), loops,
+                masterIndex: cmd.MasterIndex, objectId: mc.ObjectId,
+                source: PanelCommandFactory.ActionOf(typeof(QueryHolesCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",             entry)
+                .Int("masterIndex",         cmd.MasterIndex)
+                .Int("holes",               holes.Count)
+                .Ints("holeVertexCounts",   counts)
+                .Build();
+        }
+
+        /// <summary>
+        /// 種にする要素を 1 個だけ探す。
+        /// 走査は素直な線形比較で、新しい探索アルゴリズムは持ち込まない。
+        /// </summary>
+        private static string BuildSeedElementData(
+            ModelContext model, MeshContext mc, QuerySeedElementCommand cmd)
+        {
+            var mesh    = mc.MeshObject;
+            var toWorld = mc.WorldMatrix;
+            Vector3 target = cmd.WorldPosition;
+
+            int   vertex   = -1;
+            int   vertex2  = -1;
+            int   face     = -1;
+            float distance = 0f;
+            bool  found    = false;
+
+            switch (cmd.Mode)
+            {
+                case PLSeedMode.NearestVertex:
+                {
+                    float best = float.MaxValue;
+                    for (int i = 0; i < mesh.Vertices.Count; i++)
+                    {
+                        var v = mesh.Vertices[i];
+                        if (v == null) continue;
+                        float d = Vector3.Distance(toWorld.MultiplyPoint3x4(v.Position), target);
+                        if (d >= best) continue;
+                        best = d; vertex = i; found = true;
+                    }
+                    distance = found ? best : 0f;
+                    break;
+                }
+
+                case PLSeedMode.NearestFace:
+                {
+                    float best = float.MaxValue;
+                    for (int i = 0; i < mesh.Faces.Count; i++)
+                    {
+                        var f = mesh.Faces[i];
+                        if (f == null || !f.IsValid) continue;
+
+                        var sum   = Vector3.zero;
+                        int taken = 0;
+                        for (int j = 0; j < f.VertexIndices.Count; j++)
+                        {
+                            int vi = f.VertexIndices[j];
+                            if (vi < 0 || vi >= mesh.Vertices.Count) continue;
+                            var v = mesh.Vertices[vi];
+                            if (v == null) continue;
+                            sum += toWorld.MultiplyPoint3x4(v.Position);
+                            taken++;
+                        }
+                        if (taken == 0) continue;
+
+                        float d = Vector3.Distance(sum / taken, target);
+                        if (d >= best) continue;
+                        best = d; face = i; found = true;
+                    }
+                    distance = found ? best : 0f;
+                    break;
+                }
+
+                case PLSeedMode.NearestBoundaryVertex:
+                {
+                    var holes = BridgeAutoPairOps.CollectHoles(mesh, toWorld);
+                    float best = float.MaxValue;
+                    for (int i = 0; i < holes.Count; i++)
+                    {
+                        var h = holes[i];
+                        for (int j = 0; j < h.Vertices.Count; j++)
+                        {
+                            float d = Vector3.Distance(h.WorldPositions[j], target);
+                            if (d >= best) continue;
+                            best = d; vertex = h.Vertices[j]; found = true;
+                        }
+                    }
+                    distance = found ? best : 0f;
+                    break;
+                }
+
+                case PLSeedMode.NearestBoundaryEdge:
+                {
+                    // 辺の代表点は 2 頂点の中点。境界辺は BoundaryEdgeOps が集める。
+                    var edges = BoundaryEdgeOps.CollectBoundaryEdges(mesh);
+                    float best = float.MaxValue;
+                    foreach (var e in edges)
+                    {
+                        if (e.V1 < 0 || e.V1 >= mesh.Vertices.Count) continue;
+                        if (e.V2 < 0 || e.V2 >= mesh.Vertices.Count) continue;
+                        var a = mesh.Vertices[e.V1];
+                        var b = mesh.Vertices[e.V2];
+                        if (a == null || b == null) continue;
+
+                        Vector3 pa = toWorld.MultiplyPoint3x4(a.Position);
+                        Vector3 pb = toWorld.MultiplyPoint3x4(b.Position);
+                        float d = Vector3.Distance((pa + pb) * 0.5f, target);
+                        if (d >= best) continue;
+                        best = d; vertex = e.V1; vertex2 = e.V2; found = true;
+                    }
+                    distance = found ? best : 0f;
+                    break;
+                }
+
+                case PLSeedMode.FirstBoundaryVertex:
+                {
+                    var holes = BridgeAutoPairOps.CollectHoles(mesh, toWorld);
+                    if (holes.Count > 0 && holes[0].Vertices.Count > 0)
+                    {
+                        vertex = holes[0].Vertices[0];
+                        found  = true;
+                    }
+                    break;
+                }
+            }
+
+            var values = new List<PLDataValue>
+            {
+                PLDataValue.Num("masterIndex", cmd.MasterIndex),
+                PLDataValue.Str("mode",        cmd.Mode.ToString()),
+                PLDataValue.Num("found",       found ? 1 : 0),
+                PLDataValue.Num("vertex",      vertex),
+                PLDataValue.Num("vertex2",     vertex2),
+                PLDataValue.Num("face",        face),
+                PLDataValue.Num("distance",    distance),
+            };
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromValues(
+                ResolveResultName(store, cmd.ResultName, "seed"), values,
+                masterIndex: cmd.MasterIndex, objectId: mc.ObjectId,
+                source: PanelCommandFactory.ActionOf(typeof(QuerySeedElementCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",     entry)
+                .Int("masterIndex", cmd.MasterIndex)
+                .Text("mode",       cmd.Mode.ToString())
+                .Flag("found",      found)
+                .Int("vertex",      vertex)
+                .Int("vertex2",     vertex2)
+                .Int("face",        face)
+                .Num("distance",    distance)
+                .Build();
+        }
+
+        /// <summary>ボーン階層とスキンウェイトの分布。</summary>
+        private static string BuildBoneSkinData(ModelContext model, QueryBoneSkinCommand cmd)
+        {
+            var bones  = model.Bones;
+            var values = new List<PLDataValue>();
+
+            int roots            = 0;
+            int maxDepth         = 0;
+            int humanoidAssigned = 0;
+
+            for (int i = 0; i < bones.Count; i++)
+            {
+                var ent    = bones[i];
+                var boneMc = ent.Context;
+                int parent = boneMc?.HierarchyParentIndex ?? -1;
+                string human = boneMc?.MeshObject?.HumanBodyBone ?? "";
+
+                if (parent < 0) roots++;
+                if (!string.IsNullOrEmpty(human)) humanoidAssigned++;
+
+                int depth = DepthOfBone(model, ent.MasterIndex);
+                if (depth > maxDepth) maxDepth = depth;
+
+                string key = $"bone.{i}";
+                values.Add(PLDataValue.Num(key + ".masterIndex",   ent.MasterIndex));
+                values.Add(PLDataValue.Str(key + ".objectId",      IdText(boneMc?.ObjectId ?? 0UL)));
+                values.Add(PLDataValue.Str(key + ".name",          ent.Name ?? ""));
+                values.Add(PLDataValue.Num(key + ".parentMasterIndex", parent));
+                values.Add(PLDataValue.Num(key + ".depth",         depth));
+                values.Add(PLDataValue.Str(key + ".humanBodyBone", human));
+            }
+
+            // ウェイトの分布。BoneWeight のボーン番号はマスター索引で入っている
+            // （TypedMeshIndices.ConvertBoneWeightToLocal が Unity へ渡す直前に
+            //  ボーンリスト索引へ直す）ので、そのまま数える。
+            var usedBones        = new HashSet<int>();
+            int weightedVertices = 0;
+            int skinnedDrawables = 0;
+
+            foreach (var ent in model.DrawableMeshes)
+            {
+                if (cmd.MasterIndex >= 0 && ent.MasterIndex != cmd.MasterIndex) continue;
+
+                var mesh = ent.Context?.MeshObject;
+                if (mesh == null) continue;
+
+                int hitsHere = 0;
+                for (int i = 0; i < mesh.Vertices.Count; i++)
+                {
+                    var v = mesh.Vertices[i];
+                    if (v == null || !v.HasBoneWeight) continue;
+
+                    var w = v.BoneWeight.Value;
+                    hitsHere++;
+
+                    if (w.weight0 > 0f) usedBones.Add(w.boneIndex0);
+                    if (w.weight1 > 0f) usedBones.Add(w.boneIndex1);
+                    if (w.weight2 > 0f) usedBones.Add(w.boneIndex2);
+                    if (w.weight3 > 0f) usedBones.Add(w.boneIndex3);
+                }
+
+                if (hitsHere == 0) continue;
+                weightedVertices += hitsHere;
+                skinnedDrawables++;
+            }
+
+            values.Add(PLDataValue.Num("bones",            bones.Count));
+            values.Add(PLDataValue.Num("roots",            roots));
+            values.Add(PLDataValue.Num("maxDepth",         maxDepth));
+            values.Add(PLDataValue.Num("humanoidAssigned", humanoidAssigned));
+            values.Add(PLDataValue.Num("skinnedDrawables", skinnedDrawables));
+            values.Add(PLDataValue.Num("weightedVertices", weightedVertices));
+            values.Add(PLDataValue.Num("usedBones",        usedBones.Count));
+
+            var store = model.DataStore;
+            var entry = store.Put(PLDataEntry.FromValues(
+                ResolveResultName(store, cmd.ResultName, "boneSkin"), values,
+                masterIndex: cmd.MasterIndex, objectId: 0UL,
+                source: PanelCommandFactory.ActionOf(typeof(QueryBoneSkinCommand))));
+
+            return CommandDataJson.New()
+                .Entry("entry",           entry)
+                .Int("bones",             bones.Count)
+                .Int("roots",             roots)
+                .Int("maxDepth",          maxDepth)
+                .Int("humanoidAssigned",  humanoidAssigned)
+                .Int("skinnedDrawables",  skinnedDrawables)
+                .Int("weightedVertices",  weightedVertices)
+                .Int("usedBones",         usedBones.Count)
+                .Build();
+        }
+
+        /// <summary>
+        /// 根からの深さ。根は 0。
+        /// 親をたどる回数は要素数で打ち切る。壊れたデータで環ができていても止まる。
+        /// </summary>
+        private static int DepthOfBone(ModelContext model, int masterIndex)
+        {
+            int depth = 0;
+            int cur   = masterIndex;
+            int guard = model.Count;
+
+            while (guard-- > 0)
+            {
+                var mc = model.GetMeshContext(cur);
+                if (mc == null) break;
+
+                int parent = mc.HierarchyParentIndex;
+                if (parent < 0 || parent == cur) break;
+
+                cur = parent;
+                depth++;
+            }
+            return depth;
         }
 
     }

@@ -4,10 +4,17 @@
 //
 // 【できること】
 //   ・グループの一覧と、ソースが変わっているか（要更新）の表示
-//   ・作り直し（退避を残すかを選べる）
-//   ・自動更新の切り替え
+//   ・作り直し（退避を残すかを選べる）。ステップが複数あるものは順に実行する
+//   ・1 つ上のグループへ足してマクロにする
+//   ・自動更新の切り替え（立てると、はしごなどのソースをスキンド化したときに流れる）
 //   ・解除（描画オブジェクトは消さない）
 //   ・参照切れのグループの片づけ
+//
+// 【マクロの組み方】
+//   生成コマンドは 1 つで 1 グループを作る。順に並べたいときは、
+//   下のグループを選んで「1つ上へ足す」を押す。上のグループの末尾へ
+//   ステップが移り、下のグループは消える（描画オブジェクトは残る）。
+//   実行順はステップの並びそのもの。
 //
 // 【要更新の判定を毎フレームやらない】
 //   ObjectGroupOps.IsStale はソースの全頂点を走査する。
@@ -57,7 +64,7 @@ namespace Poly_Ling.Player
         private Label     _statusLabel;
         private Toggle    _keepStashToggle;
         private Toggle    _autoUpdateToggle;
-        private Button    _btnRebuild, _btnRelease, _btnPurge;
+        private Button    _btnRebuild, _btnRelease, _btnPurge, _btnMerge;
 
         /// <summary>表示用の 1 行。Refresh のたびに作り直す。</summary>
         private struct Row
@@ -127,7 +134,9 @@ namespace Poly_Ling.Player
             _detailLabel.style.marginBottom = 4;
             root.Add(_detailLabel);
 
-            _autoUpdateToggle = new Toggle("ソースが変わったら自動で作り直す");
+            // 流れる契機は「ソースの頂点を書き換える操作の側」が持つ。
+            // 今はスキンド化の 2 経路から。編集のたびには流れない。
+            _autoUpdateToggle = new Toggle("ソースが変わったら自動で作り直す（スキンド化のとき）");
             _autoUpdateToggle.style.fontSize = 10;
             _autoUpdateToggle.RegisterValueChangedCallback(e =>
             {
@@ -150,6 +159,10 @@ namespace Poly_Ling.Player
             _btnRebuild = MkBtn("作り直す", OnRebuild); _btnRebuild.style.flexGrow = 1; opRow.Add(_btnRebuild);
             _btnRelease = MkBtn("解除",     OnRelease); _btnRelease.style.flexGrow = 1; opRow.Add(_btnRelease);
             root.Add(opRow);
+
+            _btnMerge = MkBtn("1つ上のグループへ足す（マクロにする）", OnMerge);
+            _btnMerge.style.marginBottom = 3;
+            root.Add(_btnMerge);
 
             _btnPurge = MkBtn("参照切れを片づける", OnPurge);
             _btnPurge.style.marginBottom = 3;
@@ -184,8 +197,13 @@ namespace Poly_Ling.Player
                 {
                     if (g == null) continue;
 
-                    bool outMissing = !g.HasOutput
-                        || ObjectGroupOps.Resolve(project, g.OutputObjectId) == null;
+                    // 出力先はステップごとに複数ありうる。1 つでも引けなければ印を立てる。
+                    bool outMissing = !g.HasOutput;
+                    if (!outMissing)
+                    {
+                        foreach (ulong oid in g.OutputObjectIds)
+                            if (ObjectGroupOps.Resolve(project, oid) == null) { outMissing = true; break; }
+                    }
 
                     var row = new Row
                     {
@@ -199,7 +217,8 @@ namespace Poly_Ling.Player
                     string mark = row.OutputMissing ? "[出力先なし] "
                                 : row.Stale        ? "[要更新] "
                                 : "";
-                    _labels.Add($"{mark}{row.Name}  ({row.Action})");
+                    string steps = g.StepCount > 1 ? $" [{g.StepCount} ステップ]" : "";
+                    _labels.Add($"{mark}{row.Name}  ({row.Action}){steps}");
                 }
             }
 
@@ -227,6 +246,9 @@ namespace Poly_Ling.Player
             if (_btnRebuild != null) _btnRebuild.SetEnabled(has);
             if (_btnRelease != null) _btnRelease.SetEnabled(has);
 
+            // 足し先は 1 つ上のグループ。先頭のグループには足し先が無い。
+            if (_btnMerge != null) _btnMerge.SetEnabled(has && _selected >= 1);
+
             if (!has)
             {
                 if (_detailLabel != null) _detailLabel.text = "";
@@ -237,7 +259,6 @@ namespace Poly_Ling.Player
             _autoUpdateToggle?.SetValueWithoutNotify(g.AutoUpdate);
 
             var project = Project;
-            var outCtx  = ObjectGroupOps.Resolve(project, g.OutputObjectId);
             var stashCtx = g.HasStash ? ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
 
             var srcNames = new List<string>();
@@ -247,11 +268,32 @@ namespace Poly_Ling.Player
                 srcNames.Add(mc != null ? mc.Name : $"(見つからない: {id})");
             }
 
+            // ステップごとに action と出力先を出す。実行順は並びそのもの。
+            var stepLines = new List<string>();
+            for (int i = 0; i < g.StepCount; i++)
+            {
+                var st = g.GetStep(i);
+                if (st == null) continue;
+
+                var outNames = new List<string>();
+                foreach (ulong oid in st.OutputObjectIds)
+                {
+                    var mc = ObjectGroupOps.Resolve(project, oid);
+                    outNames.Add(mc != null ? mc.Name : $"(見つからない: {oid})");
+                }
+
+                string outText = outNames.Count == 0 ? "なし"
+                    : outNames.Count <= 3 ? string.Join(", ", outNames)
+                    : $"{outNames[0]} ほか {outNames.Count - 1} 件";
+
+                stepLines.Add($"  {i + 1}. {st.Action} → {outText}  (パラメータ {st.Args.Count} 件)");
+            }
+
             _detailLabel.text =
-                  $"出力先: {(outCtx != null ? outCtx.Name : "なし")}\n"
+                  $"ステップ: {g.StepCount} 件\n"
+                + string.Join("\n", stepLines) + "\n"
                 + $"入力: {(srcNames.Count > 0 ? string.Join(", ", srcNames) : "なし")}\n"
-                + $"退避: {(stashCtx != null ? stashCtx.Name : "なし")}\n"
-                + $"パラメータ: {g.Args.Count} 件";
+                + $"退避: {(stashCtx != null ? stashCtx.Name : "なし")}";
         }
 
         private void SetStatus(string text)
@@ -270,7 +312,9 @@ namespace Poly_Ling.Player
 
             bool keepStash = _keepStashToggle != null && _keepStashToggle.value;
             SendCmd(new RebuildObjectGroupCommand(ModelIndex, g.Name, keepStash));
-            SetStatus($"「{g.Name}」を作り直しました");
+            SetStatus(g.StepCount > 1
+                ? $"「{g.Name}」を {g.StepCount} ステップ実行しました"
+                : $"「{g.Name}」を作り直しました");
             Refresh();
         }
 
@@ -292,6 +336,35 @@ namespace Poly_Ling.Player
 
             SendCmd(new DeleteObjectGroupCommand(ModelIndex, g.Name));
             SetStatus($"「{g.Name}」を解除しました");
+            _selected = -1;
+            Refresh();
+        }
+
+        /// <summary>
+        /// 選んだグループを 1 つ上のグループの末尾へ足す。
+        /// 足したあと、選んだグループは消える（描画オブジェクトは残る）。
+        /// </summary>
+        private void OnMerge()
+        {
+            var model = CurrentModel;
+            if (model == null) { SetStatus("モデルがありません"); return; }
+
+            if (_selected < 1 || _selected >= _rows.Count)
+            { SetStatus("2 番目以降のグループを選んでください"); return; }
+
+            string sourceName = _rows[_selected].Name;
+            string targetName = _rows[_selected - 1].Name;
+
+            bool ok = PLEditorBridge.I.DisplayDialogYesNo(
+                "グループ結合の確認",
+                $"「{sourceName}」を「{targetName}」の末尾へ足します。\n\n"
+              + $"「{sourceName}」のグループは消えます（描画オブジェクトは残ります）。\n"
+              + "実行順はステップの並びそのものです。",
+                "足す", "キャンセル");
+            if (!ok) return;
+
+            SendCmd(new MergeObjectGroupCommand(ModelIndex, targetName, sourceName));
+            SetStatus($"「{sourceName}」を「{targetName}」へ足しました");
             _selected = -1;
             Refresh();
         }

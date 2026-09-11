@@ -227,9 +227,30 @@ namespace Poly_Ling.Data
                 {
                     if (attr.Required && !HasDefault(p))
                     { error = $"{t.Name}: パラメータ \"{key}\" が要る"; return null; }
-                    if (!TryDefault(p, out values[i]))
-                    { error = $"{t.Name}: パラメータ \"{key}\" が要る"; return null; }
-                    continue;
+
+                    if (TryDefault(p, out values[i])) continue;
+
+                    // 任意の配列パラメータは、指定が無ければ空として受ける。
+                    //
+                    // 【なぜ要るか】
+                    //   ToArgs は値を文字列にできないものを書かない。配列に null を
+                    //   渡したコマンドは、そのキーが Args に載らないまま控えられる。
+                    //   これを「要る」と扱うと、Required の付いていないパラメータが
+                    //   実質必須になり、往復が成立しない。
+                    //   実例: CreateFrillCommand.ProfileB は「2 プロファイルを使わないなら
+                    //   使わない」任意の値だが、パネルは B の編集欄が無いとき null を渡す。
+                    //   そのため B を使わないフリルのグループが作り直せなかった。
+                    //
+                    //   空配列と null の違いは受け手が見ていない（点数 0 として扱う）ので、
+                    //   空で渡して意味は変わらない。
+                    if (p.ParameterType.IsArray)
+                    {
+                        values[i] = Array.CreateInstance(p.ParameterType.GetElementType(), 0);
+                        continue;
+                    }
+
+                    error = $"{t.Name}: パラメータ \"{key}\" が要る";
+                    return null;
                 }
 
                 if (!TryParse(raw, p.ParameterType, out values[i], out string why))

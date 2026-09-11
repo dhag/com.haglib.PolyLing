@@ -438,6 +438,12 @@ namespace Poly_Ling.Serialization
             SaveObjectGroupsToDTO(model, modelDTO);
 
             // ================================================================
+            // DataStore
+            // ================================================================
+
+            SaveDataStoreToDTO(model, modelDTO);
+
+            // ================================================================
             // MirrorPairs
             // ================================================================
 
@@ -646,6 +652,12 @@ namespace Poly_Ling.Serialization
             // ================================================================
 
             LoadObjectGroupsFromDTO(modelDTO, model);
+
+            // ================================================================
+            // DataStore復元
+            // ================================================================
+
+            LoadDataStoreFromDTO(modelDTO, model);
 
             // ================================================================
             // MirrorPairs復元
@@ -1485,6 +1497,58 @@ namespace Poly_Ling.Serialization
                         model.MeshSelectionSets.Add(set);
                 }
             }
+        }
+
+        // ================================================================
+        // DataStore シリアライズ
+        //
+        // 【索引の付け替えが要らない】
+        //   項目は対象を MasterIndex と ObjectId の両方で持つ。ObjectGroups と
+        //   同じく、読み込み後の索引補正を掛けない。
+        //
+        // 【差し替えではなく中身の入れ替え】
+        //   ModelContext.DataStore は読み取り専用のプロパティなので、
+        //   ReplaceAll で中身だけを入れ替える。
+        // ================================================================
+
+        /// <summary>ModelContextの結果辞書をModelDTOに保存</summary>
+        public static void SaveDataStoreToDTO(ModelContext model, ModelDTO modelDTO)
+        {
+            if (model == null || modelDTO == null) return;
+
+            modelDTO.dataStore = new List<PLDataEntryDTO>();
+
+            var store = model.DataStore;
+            if (store == null) return;
+
+            foreach (var entry in store.Entries)
+            {
+                var dto = PLDataEntryDTO.From(entry);
+                if (dto != null)
+                    modelDTO.dataStore.Add(dto);
+            }
+        }
+
+        /// <summary>ModelDTOの結果辞書をModelContextに復元</summary>
+        public static void LoadDataStoreFromDTO(ModelDTO modelDTO, ModelContext model)
+        {
+            if (modelDTO == null || model == null) return;
+
+            var store = model.DataStore;
+            if (store == null) return;
+
+            var entries = new List<Data.PLDataEntry>();
+            if (modelDTO.dataStore != null)
+            {
+                foreach (var dto in modelDTO.dataStore)
+                {
+                    var entry = dto?.ToEntry();
+                    if (entry != null)
+                        entries.Add(entry);
+                }
+            }
+
+            store.ReplaceAll(entries);
         }
 
         // ================================================================

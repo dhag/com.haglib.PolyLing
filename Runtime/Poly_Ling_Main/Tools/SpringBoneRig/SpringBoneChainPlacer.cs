@@ -208,13 +208,7 @@ namespace Poly_Ling.Tools.SpringBoneRig
             }
 
             // 親の姿勢が確定してから BindPose を入れ直す。
-            model.ComputeWorldMatrices();
-            foreach (var chain in result.Chains)
-                foreach (int i in chain)
-                {
-                    var mc = model.GetMeshContext(i);
-                    if (mc != null) mc.BindPose = mc.WorldMatrix.inverse;
-                }
+            FixBindPoses(model, result.Chains);
 
             result.Message =
                 $"鎖 {result.Chains.Count} 本 / ボーン {result.BoneCount} 本を作りました。";
@@ -263,10 +257,31 @@ namespace Poly_Ling.Tools.SpringBoneRig
         // ================================================================
 
         /// <summary>
+        /// 親の姿勢が確定してから BindPose を入れ直す。
+        /// 鎖を足したあとに 1 回だけ呼ぶ。SpringBoneTestRigBuilder.FixBindPoses と同じ手順。
+        /// </summary>
+        internal static void FixBindPoses(ModelContext model, IReadOnlyList<List<int>> chains)
+        {
+            if (model == null || chains == null) return;
+
+            model.ComputeWorldMatrices();
+
+            foreach (var chain in chains)
+            {
+                if (chain == null) continue;
+                foreach (int i in chain)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc != null) mc.BindPose = mc.WorldMatrix.inverse;
+                }
+            }
+        }
+
+        /// <summary>
         /// ボーンを 1 本足す。作り方は SpringBoneTestRigBuilder.AddBone にそろえる。
         /// BindPose は呼び出し側が全部足したあとに入れ直す。
         /// </summary>
-        private static int AddBone(
+        internal static int AddBone(
             ModelContext model, string name, int parentIndex, Vector3 localPos)
         {
             var bt = new BoneTransform

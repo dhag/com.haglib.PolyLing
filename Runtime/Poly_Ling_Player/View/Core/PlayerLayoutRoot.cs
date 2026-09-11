@@ -500,6 +500,16 @@ namespace Poly_Ling.Player
         public Button        RobotBuildTestBtn        { get; private set; }
         public VisualElement FrillSkirtTestSection    { get; private set; }
         public Button        FrillSkirtTestBtn        { get; private set; }
+        public VisualElement SpringSkinScenarioSection { get; private set; }
+        public Button        SpringSkinScenarioBtn     { get; private set; }
+
+        /// <summary>
+        /// 揺れもの（パイプ）→スキンド→VRM 自動検証。
+        /// フリル版と同じ MQO・同じ順で、フリルの段だけをパイプへ置き換えたもの。
+        /// </summary>
+        public VisualElement SpringSkinPipeScenarioSection { get; private set; }
+        public Button        SpringSkinPipeScenarioBtn     { get; private set; }
+
         public VisualElement PipeHairTestSection      { get; private set; }
         public Button        PipeHairTestBtn          { get; private set; }
         public VisualElement BarnacleTestSection      { get; private set; }
@@ -1093,33 +1103,7 @@ namespace Poly_Ling.Player
             OrbitCenterToSelectionBtn.style.marginBottom = 4;
             scroll.Add(OrbitCenterToSelectionBtn);
 
-            // 法線の自動計算（既定 OFF）と手動再計算。対象はどちらも選択メッシュ。
-            var normalRecalcRow = new VisualElement();
-            normalRecalcRow.style.flexDirection = FlexDirection.Row;
-            normalRecalcRow.style.alignItems    = Align.Center;
-            normalRecalcRow.style.marginBottom  = 4;
-
-            AutoRecalcNormalsToggle = new Toggle("法線自動計算") { value = false };
-            AutoRecalcNormalsToggle.style.color       = new StyleColor(Color.white);
-            AutoRecalcNormalsToggle.style.flexGrow    = 0;
-            AutoRecalcNormalsToggle.style.flexShrink  = 0;
-            AutoRecalcNormalsToggle.style.marginRight = 8;
-            // 既定の広い label min-width を解除し、ラベルとチェックの間隔を詰める
-            // （選択モードのトグル群と同じ処理）。
-            if (AutoRecalcNormalsToggle.labelElement != null)
-            {
-                AutoRecalcNormalsToggle.labelElement.style.minWidth    = 0;
-                AutoRecalcNormalsToggle.labelElement.style.flexGrow    = 0;
-                AutoRecalcNormalsToggle.labelElement.style.marginRight = 3;
-            }
-            normalRecalcRow.Add(AutoRecalcNormalsToggle);
-
-            RecalcNormalsBtn = MakeBtn("再計算");
-            RecalcNormalsBtn.style.flexGrow   = 0;
-            RecalcNormalsBtn.style.flexShrink = 0;
-            normalRecalcRow.Add(RecalcNormalsBtn);
-
-            scroll.Add(normalRecalcRow);
+            // 法線の自動計算トグルと手動再計算ボタンは「法線」折りたたみへ移動した。
 
             // 現在のタブの全オブジェクトを選択する。
             // メッシュリスト内の同名ボタンと同じ処理を呼ぶだけで、判定は増やさない。
@@ -1178,19 +1162,24 @@ namespace Poly_Ling.Player
             projectSaveRow.Add(ObjSaveBtn);
             foFile.Add(projectSaveRow);
 
+            // PMX / MQO は 1 行。VRM は「保存」と「出力設定」を対にして次の行へ置く。
             var fullExportRow = new VisualElement();
             fullExportRow.style.flexDirection = FlexDirection.Row;
             fullExportRow.style.marginBottom  = 2;
             FullExportPmxBtn = MakeBtn("PMX保存"); FullExportPmxBtn.style.flexGrow = 1; FullExportPmxBtn.style.marginRight = 2;
-            FullExportMqoBtn = MakeBtn("MQO保存"); FullExportMqoBtn.style.flexGrow = 1; FullExportMqoBtn.style.marginRight = 2;
-            FullExportVrmBtn = MakeBtn("VRM保存"); FullExportVrmBtn.style.flexGrow = 1;
-            fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn); fullExportRow.Add(FullExportVrmBtn);
+            FullExportMqoBtn = MakeBtn("MQO保存"); FullExportMqoBtn.style.flexGrow = 1;
+            fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn);
             foFile.Add(fullExportRow);
 
             // VRM に載せる作者情報・許諾・視線・一人称。保存されるモデルの値で、
             // 出力ごとの上書きは「エクスポート」側にある。VRM 保存の隣に置く。
-            VrmSettingsBtn = MakeBtn("VRM出力設定");
-            foFile.Add(VrmSettingsBtn);
+            var vrmRow = new VisualElement();
+            vrmRow.style.flexDirection = FlexDirection.Row;
+            vrmRow.style.marginBottom  = 2;
+            FullExportVrmBtn = MakeBtn("VRM保存");     FullExportVrmBtn.style.flexGrow = 1; FullExportVrmBtn.style.marginRight = 2;
+            VrmSettingsBtn   = MakeBtn("VRM出力設定"); VrmSettingsBtn.style.flexGrow   = 1;
+            vrmRow.Add(FullExportVrmBtn); vrmRow.Add(VrmSettingsBtn);
+            foFile.Add(vrmRow);
 
             foFile.Add(Separator());
 
@@ -1243,8 +1232,32 @@ namespace Poly_Ling.Player
             // 配置ギズモのサブモード切替ボタンは
             // PlayerPrimitiveMeshSubPanel（3D連携インスタンス）の中へ移設済み。
 
-            // ── 選択・移動 ─────────────────────────────────────────────
-            var foSelectMove = MakeFoldout("選択・移動/回転/拡大縮小", "SelectMove");
+            // ── 選択 ───────────────────────────────────────────────────
+            var foSelect = MakeFoldout("選択", "Select");
+
+            var rowAdvSel = new VisualElement(); rowAdvSel.style.flexDirection = FlexDirection.Row; rowAdvSel.style.marginBottom = 2;
+            ToolAdvancedSelBtn = MakeBtn("詳細選択"); ToolAdvancedSelBtn.style.flexGrow = 1;
+            rowAdvSel.Add(ToolAdvancedSelBtn); foSelect.Add(rowAdvSel);
+
+            // 一時選択サブツール (デバッグ用)。ショートカット R / G と同じ処理を呼ぶ。
+            var rowSubTool = new VisualElement(); rowSubTool.style.flexDirection = FlexDirection.Row; rowSubTool.style.marginBottom = 2;
+            SubToolBoxSelectBtn   = MakeBtn("矩形選択(一時) R");   SubToolBoxSelectBtn.style.flexGrow   = 1; SubToolBoxSelectBtn.style.marginRight = 2;
+            SubToolLassoSelectBtn = MakeBtn("投げ縄選択(一時) G"); SubToolLassoSelectBtn.style.flexGrow = 1;
+            rowSubTool.Add(SubToolBoxSelectBtn); rowSubTool.Add(SubToolLassoSelectBtn); foSelect.Add(rowSubTool);
+
+            var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
+            PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
+            MeshSelectionSetBtn  = MakeBtn("オブジェクト選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
+            rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foSelect.Add(rowSelSet);
+
+            // オブジェクトグループ（帯・断面・パラメータと出力先のまとまり）。
+            // 選択辞書と同じ「オブジェクトのまとまりを管理するもの」なので隣に置く。
+            ObjectGroupBtn = MakeBtn("オブジェクトグループ"); ObjectGroupBtn.style.flexGrow = 1;
+            var rowObjGroup = new VisualElement(); rowObjGroup.style.flexDirection = FlexDirection.Row; rowObjGroup.style.marginBottom = 2;
+            rowObjGroup.Add(ObjectGroupBtn); foSelect.Add(rowObjGroup);
+
+            // ── 移動/回転/拡大縮小 ─────────────────────────────────────
+            var foTransform = MakeFoldout("移動/回転/拡大縮小", "Transform");
 
             var toolRow = new VisualElement();
             toolRow.style.flexDirection = FlexDirection.Row;
@@ -1252,49 +1265,48 @@ namespace Poly_Ling.Player
             ToolVertexMoveBtn  = MakeBtn("頂点移動");     ToolVertexMoveBtn.style.flexGrow  = 1; ToolVertexMoveBtn.style.marginRight  = 2;
             ToolObjectMoveBtn  = MakeBtn("描画オブジェクトの姿勢"); ToolObjectMoveBtn.style.flexGrow  = 1;
             toolRow.Add(ToolVertexMoveBtn); toolRow.Add(ToolObjectMoveBtn);
-            foSelectMove.Add(toolRow);
+            foTransform.Add(toolRow);
 
             var toolRow2 = new VisualElement();
             toolRow2.style.flexDirection = FlexDirection.Row;
             toolRow2.style.marginBottom  = 2;
-            ToolPivotOffsetBtn = MakeBtn("ピボット位置");    ToolPivotOffsetBtn.style.flexGrow = 1; ToolPivotOffsetBtn.style.marginRight = 2;
-            ToolSculptBtn      = MakeBtn("スカルプト");  ToolSculptBtn.style.flexGrow      = 1; ToolSculptBtn.style.marginRight      = 2;
-            ToolAdvancedSelBtn = MakeBtn("詳細選択");    ToolAdvancedSelBtn.style.flexGrow = 1;
-            toolRow2.Add(ToolPivotOffsetBtn); toolRow2.Add(ToolSculptBtn); toolRow2.Add(ToolAdvancedSelBtn);
-            foSelectMove.Add(toolRow2);
+            ToolPivotOffsetBtn = MakeBtn("ピボット位置"); ToolPivotOffsetBtn.style.flexGrow = 1; ToolPivotOffsetBtn.style.marginRight = 2;
+            ToolSculptBtn      = MakeBtn("スカルプト");   ToolSculptBtn.style.flexGrow      = 1;
+            toolRow2.Add(ToolPivotOffsetBtn); toolRow2.Add(ToolSculptBtn);
+            foTransform.Add(toolRow2);
 
             var rowRotScale = new VisualElement(); rowRotScale.style.flexDirection = FlexDirection.Row; rowRotScale.style.marginBottom = 2;
             RotateBtn = MakeBtn("回転");     RotateBtn.style.flexGrow = 1; RotateBtn.style.marginRight = 2;
             ScaleBtn  = MakeBtn("スケール"); ScaleBtn.style.flexGrow  = 1;
-            rowRotScale.Add(RotateBtn); rowRotScale.Add(ScaleBtn); foSelectMove.Add(rowRotScale);
+            rowRotScale.Add(RotateBtn); rowRotScale.Add(ScaleBtn); foTransform.Add(rowRotScale);
 
             // 作業用ローカル軸。回転 / 曲げの基準フレームを操作するサブツール。
             var rowWorkAxis = new VisualElement(); rowWorkAxis.style.flexDirection = FlexDirection.Row; rowWorkAxis.style.marginBottom = 2;
             WorkAxisBtn = MakeBtn("作業軸"); WorkAxisBtn.style.flexGrow = 1; WorkAxisBtn.style.marginRight = 2;
             DeformBtn   = MakeBtn("変形");   DeformBtn.style.flexGrow   = 1;
-            rowWorkAxis.Add(WorkAxisBtn); rowWorkAxis.Add(DeformBtn); foSelectMove.Add(rowWorkAxis);
+            rowWorkAxis.Add(WorkAxisBtn); rowWorkAxis.Add(DeformBtn); foTransform.Add(rowWorkAxis);
 
-            // 格子変形。作業軸を格子フレームとして使う。
-            var rowLattice = new VisualElement(); rowLattice.style.flexDirection = FlexDirection.Row; rowLattice.style.marginBottom = 2;
-            LatticeBtn = MakeBtn("格子変形"); LatticeBtn.style.flexGrow = 1;
-            rowLattice.Add(LatticeBtn); foSelectMove.Add(rowLattice);
+            // ── 特殊な変形 ─────────────────────────────────────────────
+            // 頂点を「掴んで動かす」以外の変形。基準となる別の形（ブレンド先・
+            // 対応点・格子）を与えて全体を作り替えるものをここへ集める。
+            var foSpecialDeform = MakeFoldout("特殊な変形", "SpecialDeform");
 
-            // 一時選択サブツール (デバッグ用)。ショートカット R / G と同じ処理を呼ぶ。
-            var rowSubTool = new VisualElement(); rowSubTool.style.flexDirection = FlexDirection.Row; rowSubTool.style.marginBottom = 2;
-            SubToolBoxSelectBtn   = MakeBtn("矩形選択(一時) R");   SubToolBoxSelectBtn.style.flexGrow   = 1; SubToolBoxSelectBtn.style.marginRight = 2;
-            SubToolLassoSelectBtn = MakeBtn("投げ縄選択(一時) G"); SubToolLassoSelectBtn.style.flexGrow = 1;
-            rowSubTool.Add(SubToolBoxSelectBtn); rowSubTool.Add(SubToolLassoSelectBtn); foSelectMove.Add(rowSubTool);
+            var rowBlend = new VisualElement(); rowBlend.style.flexDirection = FlexDirection.Row; rowBlend.style.marginBottom = 2;
+            BlendBtn      = MakeBtn("メッシュブレンド"); BlendBtn.style.flexGrow      = 1; BlendBtn.style.marginRight = 2;
+            ModelBlendBtn = MakeBtn("モデルブレンド");   ModelBlendBtn.style.flexGrow = 1;
+            rowBlend.Add(BlendBtn); rowBlend.Add(ModelBlendBtn); foSpecialDeform.Add(rowBlend);
 
-            var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
-            PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
-            MeshSelectionSetBtn  = MakeBtn("オブジェクト選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
-            rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foSelectMove.Add(rowSelSet);
+            var rowShrink = new VisualElement(); rowShrink.style.flexDirection = FlexDirection.Row; rowShrink.style.marginBottom = 2;
+            ShrinkBtn     = MakeBtn("シュリンカー(頂点)"); ShrinkBtn.style.flexGrow     = 1; ShrinkBtn.style.marginRight = 2;
+            ShrinkFaceBtn = MakeBtn("シュリンカー(面)");   ShrinkFaceBtn.style.flexGrow = 1;
+            rowShrink.Add(ShrinkBtn); rowShrink.Add(ShrinkFaceBtn); foSpecialDeform.Add(rowShrink);
 
-            // オブジェクトグループ（帯・断面・パラメータと出力先のまとまり）。
-            // 選択辞書と同じ「オブジェクトのまとまりを管理するもの」なので隣に置く。
-            ObjectGroupBtn = MakeBtn("オブジェクトグループ"); ObjectGroupBtn.style.flexGrow = 1;
-            var rowObjGroup = new VisualElement(); rowObjGroup.style.flexDirection = FlexDirection.Row; rowObjGroup.style.marginBottom = 2;
-            rowObjGroup.Add(ObjectGroupBtn); foSelectMove.Add(rowObjGroup);
+            // 格子変形は作業軸を格子フレームとして使うが、操作の性質は
+            // 「与えた枠へ全体を追随させる」側なのでここへ置く。
+            var rowTpsLattice = new VisualElement(); rowTpsLattice.style.flexDirection = FlexDirection.Row; rowTpsLattice.style.marginBottom = 2;
+            ThinPlateMorphBtn = MakeBtn("TPSモーフ"); ThinPlateMorphBtn.style.flexGrow = 1; ThinPlateMorphBtn.style.marginRight = 2;
+            LatticeBtn        = MakeBtn("格子変形");  LatticeBtn.style.flexGrow        = 1;
+            rowTpsLattice.Add(ThinPlateMorphBtn); rowTpsLattice.Add(LatticeBtn); foSpecialDeform.Add(rowTpsLattice);
 
             // ── トポロジー編集 ─────────────────────────────────────────
             var foTopology = MakeFoldout("トポロジー編集", "Topology");
@@ -1332,6 +1344,12 @@ namespace Poly_Ling.Player
             EdgeBridgeBtn    = MakeBtn("辺群ブリッジ");   EdgeBridgeBtn.style.flexGrow    = 1;
             rowHoleRing.Add(HoleRingCountBtn); rowHoleRing.Add(EdgeBridgeBtn); foTopology.Add(rowHoleRing);
 
+            // ブーリアン。2 つのメッシュから新しい面構成を作り直す操作なので
+            // UV・マテリアルではなくトポロジー編集に置く。
+            var rowBoolean = new VisualElement(); rowBoolean.style.flexDirection = FlexDirection.Row; rowBoolean.style.marginBottom = 2;
+            BooleanBtn = MakeBtn("ブーリアン"); BooleanBtn.style.flexGrow = 1;
+            rowBoolean.Add(BooleanBtn); foTopology.Add(rowBoolean);
+
             // 削除系。面削除モードは進入中にボタンがハイライトされる
             // (破壊的モードなので表示は必須)。
             var rowDelete = new VisualElement(); rowDelete.style.flexDirection = FlexDirection.Row; rowDelete.style.marginBottom = 2;
@@ -1339,18 +1357,51 @@ namespace Poly_Ling.Player
             ToolDeleteFaceBtn = MakeBtn("面削除モード D"); ToolDeleteFaceBtn.style.flexGrow = 1;
             rowDelete.Add(SubToolDeleteBtn); rowDelete.Add(ToolDeleteFaceBtn); foTopology.Add(rowDelete);
 
-            var rowNormalExclude = new VisualElement(); rowNormalExclude.style.flexDirection = FlexDirection.Row; rowNormalExclude.style.marginBottom = 2;
-            NormalEditBtn = MakeBtn("法線編集"); NormalEditBtn.style.flexGrow = 1; NormalEditBtn.style.marginRight = 2;
-            NormalExcludeSetBtn = MakeBtn("法線再計算 除外辞書"); NormalExcludeSetBtn.style.flexGrow = 1;
-            rowNormalExclude.Add(NormalEditBtn); rowNormalExclude.Add(NormalExcludeSetBtn); foTopology.Add(rowNormalExclude);
-
-            var rowNormalTransplant = new VisualElement(); rowNormalTransplant.style.flexDirection = FlexDirection.Row; rowNormalTransplant.style.marginBottom = 2;
-            NormalTransplantBtn = MakeBtn("法線移植"); NormalTransplantBtn.style.flexGrow = 1;
-            rowNormalTransplant.Add(NormalTransplantBtn); foTopology.Add(rowNormalTransplant);
-
             var rowFaceHide = new VisualElement(); rowFaceHide.style.flexDirection = FlexDirection.Row; rowFaceHide.style.marginBottom = 2;
             FaceHideBtn = MakeBtn("面の表示・非表示"); FaceHideBtn.style.flexGrow = 1;
             rowFaceHide.Add(FaceHideBtn); foTopology.Add(rowFaceHide);
+
+            // ── 法線 ───────────────────────────────────────────────────
+            // 法線に関する操作と設定をここへ集める。自動計算トグルと手動再計算は
+            // 以前は左ペイン上部の常時表示部にあったが、他の法線機能と離れていた。
+            var foNormal = MakeFoldout("法線", "Normal");
+
+            // 法線の自動計算（既定 OFF）と手動再計算。対象はどちらも選択メッシュ。
+            var normalRecalcRow = new VisualElement();
+            normalRecalcRow.style.flexDirection = FlexDirection.Row;
+            normalRecalcRow.style.alignItems    = Align.Center;
+            normalRecalcRow.style.marginBottom  = 4;
+
+            AutoRecalcNormalsToggle = new Toggle("法線自動計算") { value = false };
+            AutoRecalcNormalsToggle.style.color       = new StyleColor(Color.white);
+            AutoRecalcNormalsToggle.style.flexGrow    = 0;
+            AutoRecalcNormalsToggle.style.flexShrink  = 0;
+            AutoRecalcNormalsToggle.style.marginRight = 8;
+            // 既定の広い label min-width を解除し、ラベルとチェックの間隔を詰める
+            // （選択モードのトグル群と同じ処理）。
+            if (AutoRecalcNormalsToggle.labelElement != null)
+            {
+                AutoRecalcNormalsToggle.labelElement.style.minWidth    = 0;
+                AutoRecalcNormalsToggle.labelElement.style.flexGrow    = 0;
+                AutoRecalcNormalsToggle.labelElement.style.marginRight = 3;
+            }
+            normalRecalcRow.Add(AutoRecalcNormalsToggle);
+
+            RecalcNormalsBtn = MakeBtn("再計算");
+            RecalcNormalsBtn.style.flexGrow   = 0;
+            RecalcNormalsBtn.style.flexShrink = 0;
+            normalRecalcRow.Add(RecalcNormalsBtn);
+
+            foNormal.Add(normalRecalcRow);
+
+            var rowNormalExclude = new VisualElement(); rowNormalExclude.style.flexDirection = FlexDirection.Row; rowNormalExclude.style.marginBottom = 2;
+            NormalEditBtn = MakeBtn("法線編集"); NormalEditBtn.style.flexGrow = 1; NormalEditBtn.style.marginRight = 2;
+            NormalExcludeSetBtn = MakeBtn("法線再計算 除外辞書"); NormalExcludeSetBtn.style.flexGrow = 1;
+            rowNormalExclude.Add(NormalEditBtn); rowNormalExclude.Add(NormalExcludeSetBtn); foNormal.Add(rowNormalExclude);
+
+            var rowNormalTransplant = new VisualElement(); rowNormalTransplant.style.flexDirection = FlexDirection.Row; rowNormalTransplant.style.marginBottom = 2;
+            NormalTransplantBtn = MakeBtn("法線移植"); NormalTransplantBtn.style.flexGrow = 1;
+            rowNormalTransplant.Add(NormalTransplantBtn); foNormal.Add(rowNormalTransplant);
 
             // ── 選択頂点位置 ───────────────────────────────────────────
             var foVertexPos = MakeFoldout("選択頂点位置", "VertexPos");
@@ -1417,26 +1468,20 @@ namespace Poly_Ling.Player
             TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1;
             rowTPoseHuman.Add(HumanoidMappingBtn); rowTPoseHuman.Add(TPoseBtn); foBoneMorph.Add(rowTPoseHuman);
 
-            var rowBlend = new VisualElement(); rowBlend.style.flexDirection = FlexDirection.Row; rowBlend.style.marginBottom = 2;
-            BlendBtn      = MakeBtn("メッシュブレンド"); BlendBtn.style.flexGrow      = 1; BlendBtn.style.marginRight      = 2;
-            ModelBlendBtn = MakeBtn("モデルブレンド");   ModelBlendBtn.style.flexGrow = 1;
-            rowBlend.Add(BlendBtn); rowBlend.Add(ModelBlendBtn); foBoneMorph.Add(rowBlend);
-
-            var rowShrink = new VisualElement(); rowShrink.style.flexDirection = FlexDirection.Row; rowShrink.style.marginBottom = 2;
-            ShrinkBtn     = MakeBtn("シュリンカー(頂点)"); ShrinkBtn.style.flexGrow     = 1; ShrinkBtn.style.marginRight = 2;
-            ShrinkFaceBtn = MakeBtn("シュリンカー(面)");   ShrinkFaceBtn.style.flexGrow = 1;
-            rowShrink.Add(ShrinkBtn); rowShrink.Add(ShrinkFaceBtn); foBoneMorph.Add(rowShrink);
-
-            ThinPlateMorphBtn = MakeBtn("TPSモーフ"); foBoneMorph.Add(ThinPlateMorphBtn);
-
-            MorphCreateBtn = MakeBtn("モーフ生成・差分から");         foBoneMorph.Add(MorphCreateBtn);
-            MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
+            // マッスル可動域。Humanoid 割当と T ポーズが前提なので、その直下に置く。
+            HumanLimitBtn = MakeBtn("マッスル可動域編集");
+            foBoneMorph.Add(HumanLimitBtn);
 
             ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
             foBoneMorph.Add(ToolSkinWeightPaintBtn);
 
             SkinWeightNumericBtn = MakeBtn("スキンW数値設定");
             foBoneMorph.Add(SkinWeightNumericBtn);
+
+            // ブレンド / シュリンカー / TPSモーフ / 格子変形は「特殊な変形」へ移動した。
+
+            MorphCreateBtn = MakeBtn("モーフ生成・差分から");         foBoneMorph.Add(MorphCreateBtn);
+            MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
 
             // 揺れもの（VRM SpringBone）の編集。Humanoid 割当・T ポーズと同じ
             // 「ボーンに属性を付ける」系の操作なのでここに置く。
@@ -1448,10 +1493,6 @@ namespace Poly_Ling.Player
             SpringBoneColliderBtn = MakeBtn("当たり判定の作成と編集");
             foBoneMorph.Add(SpringBoneColliderBtn);
 
-            // マッスル可動域。Humanoid 割当が前提なので、その並びに置く。
-            HumanLimitBtn = MakeBtn("マッスル可動域編集");
-            foBoneMorph.Add(HumanLimitBtn);
-
             // ── UV・マテリアル ─────────────────────────────────────────
             var foUvMat = MakeFoldout("UV・マテリアル", "UvMat");
 
@@ -1462,7 +1503,7 @@ namespace Poly_Ling.Player
             rowUv.Add(UVEditorBtn); rowUv.Add(UVUnwrapBtn); rowUv.Add(UVZBtn); foUvMat.Add(rowUv);
 
             MergeMeshesBtn  = MakeBtn("メッシュマージ");   foUvMat.Add(MergeMeshesBtn);
-            BooleanBtn      = MakeBtn("ブーリアン");       foUvMat.Add(BooleanBtn);
+            // ブーリアンは「トポロジー編集」へ移動した。
 
             // ── サーバと連携 ───────────────────────────────────────────
             // クライアントモードでのサーバとのやり取り。
@@ -1530,12 +1571,12 @@ namespace Poly_Ling.Player
             MirrorBtn = MakeBtn("一時ミラー"); foOther.Add(MirrorBtn);
 
             // ── 結合 ───────────────────────────────────────────────────
-            var foMerge = MakeFoldout("結合", "Merge");
+            var foMerge = MakeFoldout("面の結合", "Merge");
 
             var rowMerge = new VisualElement(); rowMerge.style.flexDirection = FlexDirection.Row; rowMerge.style.marginBottom = 2;
             VertexDissolveBtn = MakeBtn("頂点溶解"); VertexDissolveBtn.style.flexGrow = 1; VertexDissolveBtn.style.marginRight = 2;
             Tri4To1Btn        = MakeBtn("三角4→1"); Tri4To1Btn.style.flexGrow        = 1; Tri4To1Btn.style.marginRight        = 2;
-            FaceMergeBtn      = MakeBtn("面結合");   FaceMergeBtn.style.flexGrow      = 1;
+            FaceMergeBtn      = MakeBtn("面結合（頂点は削除しない）");   FaceMergeBtn.style.flexGrow      = 1;
             rowMerge.Add(VertexDissolveBtn); rowMerge.Add(Tri4To1Btn); rowMerge.Add(FaceMergeBtn); foMerge.Add(rowMerge);
 
             var rowMerge2 = new VisualElement(); rowMerge2.style.flexDirection = FlexDirection.Row; rowMerge2.style.marginBottom = 2;
@@ -1545,53 +1586,71 @@ namespace Poly_Ling.Player
 
             // ── システムデバッグ ───────────────────────────────────────
             // 自動検証の入口。通常の編集操作ではないので独立させる。
-            var foSysDebug = MakeFoldout("システムデバッグ", "SysDebug");
+            var foSysDebug = MakeFoldout("参考手順・システムデバッグ", "SysDebug");
 
-            var rowSysDebug = new VisualElement(); rowSysDebug.style.flexDirection = FlexDirection.Row; rowSysDebug.style.marginBottom = 2;
-            OriginTestBtn = MakeBtn("原点CSV自動検証"); OriginTestBtn.style.flexGrow = 1;
-            rowSysDebug.Add(OriginTestBtn); foSysDebug.Add(rowSysDebug);
+            // 2 個並びの行は左ボタンに marginRight = 2 を付け、右ボタンには余白を付けない。
+            // 単独行のボタンは flexGrow = 1 のみ。全行でこの規則にそろえること。
 
-            var rowSysDebug2 = new VisualElement(); rowSysDebug2.style.flexDirection = FlexDirection.Row; rowSysDebug2.style.marginBottom = 2;
-            SkinTestBtn = MakeBtn("スキン生成自動検証"); SkinTestBtn.style.flexGrow = 1;
-            SkinTestBtn.style.marginRight = 2;
-            SpringBoneTestBtn = MakeBtn("スプリングボーン検証"); SpringBoneTestBtn.style.flexGrow = 1;
-            rowSysDebug2.Add(SkinTestBtn); rowSysDebug2.Add(SpringBoneTestBtn); foSysDebug.Add(rowSysDebug2);
-
-            var rowSysDebug3 = new VisualElement(); rowSysDebug3.style.flexDirection = FlexDirection.Row; rowSysDebug3.style.marginBottom = 2;
+            // 1) ロボ組み立て（名前が長いので単独行）
+            var rowSysDebug1 = new VisualElement(); rowSysDebug1.style.flexDirection = FlexDirection.Row; rowSysDebug1.style.marginBottom = 2;
             RobotBuildTestBtn = MakeBtn("ロボ組み立て自動検証"); RobotBuildTestBtn.style.flexGrow = 1;
-            FrillSkirtTestBtn = MakeBtn("フリルスカート自動検証"); FrillSkirtTestBtn.style.flexGrow = 1;
-            FrillSkirtTestBtn.style.marginLeft = 2;
-            rowSysDebug3.Add(RobotBuildTestBtn); rowSysDebug3.Add(FrillSkirtTestBtn); foSysDebug.Add(rowSysDebug3);
+            rowSysDebug1.Add(RobotBuildTestBtn); foSysDebug.Add(rowSysDebug1);
 
-            var rowSysDebug3b = new VisualElement(); rowSysDebug3b.style.flexDirection = FlexDirection.Row; rowSysDebug3b.style.marginBottom = 2;
-            PipeHairTestBtn = MakeBtn("前髪パイプ自動検証"); PipeHairTestBtn.style.flexGrow = 1;
-            BarnacleTestBtn = MakeBtn("藤壺自動検証"); BarnacleTestBtn.style.flexGrow = 1;
-            BarnacleTestBtn.style.marginLeft = 2;
-            rowSysDebug3b.Add(PipeHairTestBtn); rowSysDebug3b.Add(BarnacleTestBtn); foSysDebug.Add(rowSysDebug3b);
+            // 2) 回転体 / 2D押し出し
+            var rowSysDebug2 = new VisualElement(); rowSysDebug2.style.flexDirection = FlexDirection.Row; rowSysDebug2.style.marginBottom = 2;
+            RevolutionTestBtn = MakeBtn("回転体生成自動検証");     RevolutionTestBtn.style.flexGrow = 1; RevolutionTestBtn.style.marginRight = 2;
+            Profile2DTestBtn  = MakeBtn("2D押し出し自動検証"); Profile2DTestBtn.style.flexGrow  = 1;
+            rowSysDebug2.Add(RevolutionTestBtn); rowSysDebug2.Add(Profile2DTestBtn); foSysDebug.Add(rowSysDebug2);
 
-            var rowSysDebug3c = new VisualElement(); rowSysDebug3c.style.flexDirection = FlexDirection.Row; rowSysDebug3c.style.marginBottom = 2;
-            RevolutionTestBtn = MakeBtn("回転体自動検証"); RevolutionTestBtn.style.flexGrow = 1;
-            RevolutionTestBtn.style.marginRight = 2;
-            Profile2DTestBtn = MakeBtn("2D押し出し自動検証"); Profile2DTestBtn.style.flexGrow = 1;
-            rowSysDebug3c.Add(RevolutionTestBtn); rowSysDebug3c.Add(Profile2DTestBtn); foSysDebug.Add(rowSysDebug3c);
-
-            // PMX をソースにして MQO の頂点位置を差し替え、別名で保存する検証。
-            // 名前が長いので 1 行使う。
-            var rowSysDebug3d = new VisualElement(); rowSysDebug3d.style.flexDirection = FlexDirection.Row; rowSysDebug3d.style.marginBottom = 2;
-            PmxToMqoTestBtn = MakeBtn("PMX位置→MQO保存 自動検証"); PmxToMqoTestBtn.style.flexGrow = 1;
-            rowSysDebug3d.Add(PmxToMqoTestBtn); foSysDebug.Add(rowSysDebug3d);
-
-            // MQO をソースにして PMX の頂点位置と UV を差し替え、別名で保存する検証。
-            // 名前が長いので 1 行使う。
-            var rowSysDebug3e = new VisualElement(); rowSysDebug3e.style.flexDirection = FlexDirection.Row; rowSysDebug3e.style.marginBottom = 2;
-            MqoToPmxTestBtn = MakeBtn("MQO位置UV→PMX保存 自動検証"); MqoToPmxTestBtn.style.flexGrow = 1;
-            rowSysDebug3e.Add(MqoToPmxTestBtn); foSysDebug.Add(rowSysDebug3e);
-
-            // コマンド定義の検査。PLParam の付け忘れ・action 衝突・
-            // スキーマに出せない型を調べ、道具一覧（JSON）を書き出す。
+            // 3a) フリルスカート（名前が長いので単独行）
+            var rowSysDebug3 = new VisualElement(); rowSysDebug3.style.flexDirection = FlexDirection.Row; rowSysDebug3.style.marginBottom = 2;
+            FrillSkirtTestBtn = MakeBtn("フリル・プリーツ自動検証"); FrillSkirtTestBtn.style.flexGrow = 1;
+            rowSysDebug3.Add(FrillSkirtTestBtn); foSysDebug.Add(rowSysDebug3);
+            // 3b) 前髪パイプ / 藤壺
             var rowSysDebug4 = new VisualElement(); rowSysDebug4.style.flexDirection = FlexDirection.Row; rowSysDebug4.style.marginBottom = 2;
+            PipeHairTestBtn = MakeBtn("前髪パイプ自動検証"); PipeHairTestBtn.style.flexGrow = 1; PipeHairTestBtn.style.marginRight = 2;
+            BarnacleTestBtn = MakeBtn("藤壺自動検証");       BarnacleTestBtn.style.flexGrow = 1;
+            rowSysDebug4.Add(PipeHairTestBtn); rowSysDebug4.Add(BarnacleTestBtn); foSysDebug.Add(rowSysDebug4);
+
+            // 4a) 揺れもの→スキンド→VRM（名前が長いので単独行）
+            var rowSysDebug3b = new VisualElement(); rowSysDebug3b.style.flexDirection = FlexDirection.Row; rowSysDebug3b.style.marginBottom = 2;
+            SpringSkinScenarioBtn = MakeBtn("揺れもの（フリル）→スキンド→VRM 自動検証"); SpringSkinScenarioBtn.style.flexGrow = 1;
+            rowSysDebug3b.Add(SpringSkinScenarioBtn); foSysDebug.Add(rowSysDebug3b);
+
+            // 4b) 揺れもの（パイプ）→スキンド→VRM（名前が長いので単独行）
+            var rowSysDebug3c = new VisualElement(); rowSysDebug3c.style.flexDirection = FlexDirection.Row; rowSysDebug3c.style.marginBottom = 2;
+            SpringSkinPipeScenarioBtn = MakeBtn("揺れもの（パイプ）→スキンド→VRM 自動検証"); SpringSkinPipeScenarioBtn.style.flexGrow = 1;
+            rowSysDebug3c.Add(SpringSkinPipeScenarioBtn); foSysDebug.Add(rowSysDebug3c);
+
+
+            // 5) 原点CSV / スキン生成
+            var rowSysDebug5 = new VisualElement(); rowSysDebug5.style.flexDirection = FlexDirection.Row; rowSysDebug5.style.marginBottom = 2;
+            OriginTestBtn = MakeBtn("原点CSV自動検証");   OriginTestBtn.style.flexGrow = 1; OriginTestBtn.style.marginRight = 2;
+            SkinTestBtn   = MakeBtn("スキン生成自動検証"); SkinTestBtn.style.flexGrow   = 1;
+            rowSysDebug5.Add(OriginTestBtn); rowSysDebug5.Add(SkinTestBtn); foSysDebug.Add(rowSysDebug5);
+
+            // 6) スプリングボーン検証（単独行）
+            var rowSysDebug6 = new VisualElement(); rowSysDebug6.style.flexDirection = FlexDirection.Row; rowSysDebug6.style.marginBottom = 2;
+            SpringBoneTestBtn = MakeBtn("スプリングボーン検証"); SpringBoneTestBtn.style.flexGrow = 1;
+            rowSysDebug6.Add(SpringBoneTestBtn); foSysDebug.Add(rowSysDebug6);
+
+            // 7) PMX をソースにして MQO の頂点位置を差し替え、別名で保存する検証。
+            // 名前が長いので 1 行使う。
+            var rowSysDebug7 = new VisualElement(); rowSysDebug7.style.flexDirection = FlexDirection.Row; rowSysDebug7.style.marginBottom = 2;
+            PmxToMqoTestBtn = MakeBtn("PMX位置→MQO保存 自動検証"); PmxToMqoTestBtn.style.flexGrow = 1;
+            rowSysDebug7.Add(PmxToMqoTestBtn); foSysDebug.Add(rowSysDebug7);
+
+            // 8) MQO をソースにして PMX の頂点位置と UV を差し替え、別名で保存する検証。
+            // 名前が長いので 1 行使う。
+            var rowSysDebug8 = new VisualElement(); rowSysDebug8.style.flexDirection = FlexDirection.Row; rowSysDebug8.style.marginBottom = 2;
+            MqoToPmxTestBtn = MakeBtn("MQO位置UV→PMX保存 自動検証"); MqoToPmxTestBtn.style.flexGrow = 1;
+            rowSysDebug8.Add(MqoToPmxTestBtn); foSysDebug.Add(rowSysDebug8);
+
+            // 9) コマンド定義の検査。PLParam の付け忘れ・action 衝突・
+            // スキーマに出せない型を調べ、道具一覧（JSON）を書き出す。
+            var rowSysDebug9 = new VisualElement(); rowSysDebug9.style.flexDirection = FlexDirection.Row; rowSysDebug9.style.marginBottom = 2;
             CommandSchemaBtn = MakeBtn("コマンド定義の検査"); CommandSchemaBtn.style.flexGrow = 1;
-            rowSysDebug4.Add(CommandSchemaBtn); foSysDebug.Add(rowSysDebug4);
+            rowSysDebug9.Add(CommandSchemaBtn); foSysDebug.Add(rowSysDebug9);
 
             // ── MCP用サンドボックス ───────────────────────────────────
             // MCPサーバ経由で追加した動作確認用の置き場。中身はこれから。
@@ -1606,9 +1665,12 @@ namespace Poly_Ling.Player
             scroll.Add(foRemote);
             scroll.Add(foFile);
             scroll.Add(foPrimitive);
-            scroll.Add(foSelectMove);
+            scroll.Add(foSelect);
+            scroll.Add(foTransform);
+            scroll.Add(foSpecialDeform);
             scroll.Add(foVertexPos);
             scroll.Add(foTopology);
+            scroll.Add(foNormal);
             scroll.Add(foVertexTopo);
             scroll.Add(foUvMat);
             scroll.Add(foBoneMorph);
@@ -1940,6 +2002,8 @@ namespace Poly_Ling.Player
             VrmSettingsSection         = AddSection(visible: false);
             RobotBuildTestSection      = AddSection(visible: false);
             FrillSkirtTestSection      = AddSection(visible: false);
+            SpringSkinScenarioSection  = AddSection(visible: false);
+            SpringSkinPipeScenarioSection = AddSection(visible: false);
             PipeHairTestSection        = AddSection(visible: false);
             BarnacleTestSection        = AddSection(visible: false);
             RevolutionTestSection      = AddSection(visible: false);

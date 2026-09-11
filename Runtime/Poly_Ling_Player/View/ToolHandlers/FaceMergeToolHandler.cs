@@ -121,7 +121,10 @@ namespace Poly_Ling.Player
                 ctx.CommandQueue     = _commandQueue;
                 ctx.Repaint          = OnRepaint;
                 ctx.NotifyTopologyChanged = NotifyTopologyChanged;
-                ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+                // トポロジ変更は NotifyTopologyChanged 一本で再構築する（KnifeToolHandler と同じ）。
+                // ToolContext.OnTopologyChanged は SyncMesh → NotifyTopologyChanged の順に
+                // 両方呼ぶため、同じコールバックを入れると EnterTopologyChanged が 2 回走る。
+                ctx.SyncMesh              = null;
                 if (_undoController?.MeshUndoContext != null && model != null)
                     _undoController.MeshUndoContext.ParentModelContext = model;
             }

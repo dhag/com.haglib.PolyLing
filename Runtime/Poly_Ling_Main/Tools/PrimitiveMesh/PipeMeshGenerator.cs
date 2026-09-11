@@ -57,6 +57,24 @@ namespace Poly_Ling.Pipe
             IReadOnlyList<Vector2> profile, bool profileClosed, bool capEnds,
             Vector3? startPoint, Vector3? endPoint,
             string meshName, PartsIdCounter partsIds)
+            => Generate(left, right, beltClosed, flipWinding,
+                        profile, profileClosed, capEnds, startPoint, endPoint,
+                        meshName, partsIds, null, null);
+
+        /// <summary>
+        /// はしごのウェイトを引き継ぐ版。
+        ///
+        /// 断面点の x は左レール（x=0）から右レール（x=1）への位置なので、
+        /// 頂点のウェイトは rung i の左右を x で混ぜたものになる。
+        /// leftWeights / rightWeights が null なら何も書かない（従来と同じ）。
+        /// </summary>
+        public static MeshObject Generate(
+            IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
+            bool beltClosed, bool flipWinding,
+            IReadOnlyList<Vector2> profile, bool profileClosed, bool capEnds,
+            Vector3? startPoint, Vector3? endPoint,
+            string meshName, PartsIdCounter partsIds,
+            IReadOnlyList<BoneWeight?> leftWeights, IReadOnlyList<BoneWeight?> rightWeights)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Pipe" : meshName);
 
@@ -83,12 +101,18 @@ namespace Poly_Ling.Pipe
             for (int i = 0; i < n; i++)
             {
                 float u = i / den;
+                BoneWeight? wl = WeightAt(leftWeights,  i);
+                BoneWeight? wr = WeightAt(rightWeights, i);
+
                 for (int k = 0; k < m; k++)
                 {
                     Vector2 p   = profile[k];
                     Vector3 pos = left[i] + xDir[i] * (p.x * len[i]) + yDir[i] * (p.y * len[i]);
                     float   v   = profileClosed ? k / (float)m : k / (float)(m - 1);
-                    mo.Vertices.Add(new Vertex(pos, new Vector2(u, v)));
+
+                    var vert = new Vertex(pos, new Vector2(u, v));
+                    vert.BoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(wl, wr, p.x);
+                    mo.Vertices.Add(vert);
                 }
             }
 
@@ -120,12 +144,25 @@ namespace Poly_Ling.Pipe
                 bool headReverse = !quadFlip;
                 bool tailReverse =  quadFlip;
 
-                // 先端が与えられていれば、その点へ収束させる三角ファンで閉じる
+                // 先端が与えられていれば、その点へ収束させる三角ファンで閉じる。
+                // 収束点は rung のどちらのレールでもないので、左右の真ん中を入れる。
+                int capFrom = mo.VertexCount;
+
                 if (startPoint.HasValue) AddPointCap(mo, 0,           m, startPoint.Value, headReverse);
                 else                     AddCap     (mo, 0,           m,                  headReverse);
 
+                FillCapWeights(mo, capFrom,
+                    Poly_Ling.UI.SkinWeightOps.LerpNullable(
+                        WeightAt(leftWeights, 0), WeightAt(rightWeights, 0), 0.5f));
+
+                capFrom = mo.VertexCount;
+
                 if (endPoint.HasValue)   AddPointCap(mo, (n - 1) * m, m, endPoint.Value,   tailReverse);
                 else                     AddCap     (mo, (n - 1) * m, m,                  tailReverse);
+
+                FillCapWeights(mo, capFrom,
+                    Poly_Ling.UI.SkinWeightOps.LerpNullable(
+                        WeightAt(leftWeights, n - 1), WeightAt(rightWeights, n - 1), 0.5f));
             }
 
             // この梯子で作った全頂点へ同じパーツIDを書く（側面・蓋をまとめて1パーツ）。
@@ -145,6 +182,17 @@ namespace Poly_Ling.Pipe
         // ================================================================
         // 断面
         // ================================================================
+
+        /// <summary>段のウェイトを引く。無ければ null。</summary>
+        private static BoneWeight? WeightAt(IReadOnlyList<BoneWeight?> list, int i)
+            => (list != null && i >= 0 && i < list.Count) ? list[i] : null;
+
+        /// <summary>蓋で増えた頂点（収束点）へウェイトを入れる。増えていなければ何もしない。</summary>
+        private static void FillCapWeights(MeshObject mo, int from, BoneWeight? w)
+        {
+            for (int v = from; v < mo.VertexCount; v++)
+                if (mo.Vertices[v] != null) mo.Vertices[v].BoneWeight = w;
+        }
 
         /// <summary>断面の符号付き面積。正 = 正の向き（この向きだと筒が内向きになる）。</summary>
         private static float SignedProfileArea(IReadOnlyList<Vector2> profile)

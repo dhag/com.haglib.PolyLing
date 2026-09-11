@@ -166,6 +166,28 @@ namespace Poly_Ling.Player
             /// <summary>参考表示するだけのプロファイル（A/B のもう一方）。null なら描かない。</summary>
             public List<Vector2> GhostPoints;
 
+            // ── A/B ペア（フリルの2プロファイル）──
+            // ペアを持たないエディタ（パイプ等）では PairOther が null のままで、
+            // CSV の扱いは 2 列書式だけになる。
+
+            /// <summary>ペアの相方。null ならペア無し。</summary>
+            public BeltProfileEdit PairOther;
+
+            /// <summary>自分が B 側か。CSV の列順（A が先）を決めるのに使う。</summary>
+            public bool IsPairB;
+
+            /// <summary>ペアモードが今ONか。保存を 4 列にするかの判定に使う。</summary>
+            public Func<bool> PairEnabled;
+
+            /// <summary>4 列CSVを読んだときにペアモードを立てる。</summary>
+            public Action EnablePair;
+
+            /// <summary>ペア保存時の既定ファイル名。</summary>
+            public string CsvPairDefaultName = "profile_ab.csv";
+
+            /// <summary>ペア読込のあとにエディタを組み直す。</summary>
+            public Action OnPairLoaded;
+
             public int           SelectedIndex = -1;
             public readonly HashSet<int> Sel   = new HashSet<int>();
 
@@ -644,6 +666,10 @@ namespace Poly_Ling.Player
         /// 断面プロファイルCSVの読み書きUIを組み立てる。
         /// $closedLoop は書き出すのみで、読込時に ed.ClosedLoop へは反映しない
         /// （フリル=開ループ／パイプ=閉ループが生成器側の前提のため）。
+        ///
+        /// ペア（A/B）を持つエディタでは 4 列書式（XA,YA,XB,YB）も扱う。
+        /// 読込は 4 列CSVなら A/B の両方を差し替え、ペアモードがOFFでもONにする。
+        /// 保存はペアモードがONのときだけ 4 列で書く。
         /// </summary>
         private void BuildBeltProfileCsvUI(VisualElement pe, BeltProfileEdit ed)
         {
@@ -668,11 +694,43 @@ namespace Poly_Ling.Player
                 pathField.value = sel;
                 ed.CsvPath = sel;
 
-                var result = ProfilePointsCsvIO.Load(ed.CsvPath, ed.ClosedLoop);
+                var result = ProfilePointsCsvIO.LoadPair(ed.CsvPath, ed.ClosedLoop);
                 if (!result.Success) { SetBeltStatus(result.ErrorMessage); return; }
 
+                var other = ed.PairOther;
+
+                // 4 列CSV（XA,YA,XB,YB）は A/B の両方を差し替える。
+                // ペアモードがOFFなら EnablePair で強制的にONにする。
+                if (result.HasB && other != null)
+                {
+                    var edA = ed.IsPairB ? other : ed;
+                    var edB = ed.IsPairB ? ed    : other;
+
+                    ed.EnablePair?.Invoke();
+
+                    BeltBegin(edA);
+                    edA.Points = result.PointsA;
+                    edA.Sel.Clear(); edA.SelectedIndex = -1;
+                    BeltCommit(edA, "CSV読込A");
+
+                    BeltBegin(edB);
+                    edB.Points = result.PointsB;
+                    edB.Sel.Clear(); edB.SelectedIndex = -1;
+                    BeltCommit(edB, "CSV読込B");
+
+                    // 読んだパスは A/B の双方へ控える。
+                    other.CsvPath = ed.CsvPath;
+                    RecentPaths.Set(other.CsvRecentKey, ed.CsvPath);
+
+                    SetBeltStatus($"A {T("ImportedPoints", edA.Points.Count)}"
+                                + $" / B {T("ImportedPoints", edB.Points.Count)}");
+                    D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
+                    ed.OnPairLoaded?.Invoke();
+                    return;
+                }
+
                 BeltBegin(ed);
-                ed.Points = result.Points;
+                ed.Points = result.PointsA;
                 ed.Sel.Clear(); ed.SelectedIndex = -1;
                 BeltCommit(ed, "CSV読込");
 
@@ -689,13 +747,30 @@ namespace Poly_Ling.Player
             {
                 EnsureBeltProfile(ed);
 
+                // ペアモードがONのときだけ 4 列書式で書く。OFF なら従来の 2 列。
+                var  other = ed.PairOther;
+                bool pair  = other != null && ed.PairEnabled != null && ed.PairEnabled();
+                if (pair) EnsureBeltProfile(other);
+
                 // パス欄は読込用。保存は毎回ダイアログを出す。
                 // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
                 string save = SaveDest.AskSavePath(
-                    T("SaveCSV"), SaveDest.Keys.ProfileCsv, "", ed.CsvDefaultName, "csv");
+                    T("SaveCSV"), SaveDest.Keys.ProfileCsv, "",
+                    pair ? ed.CsvPairDefaultName : ed.CsvDefaultName, "csv");
                 if (string.IsNullOrEmpty(save)) return;
                 ed.CsvPath = save;
                 pathField.value = ed.CsvPath;
+
+                if (pair)
+                {
+                    var ptsA = ed.IsPairB ? other.Points : ed.Points;
+                    var ptsB = ed.IsPairB ? ed.Points    : other.Points;
+
+                    if (ProfilePointsCsvIO.SavePair(ed.CsvPath, ptsA, ptsB, ed.ClosedLoop))
+                        SetBeltStatus($"A {T("ImportedPoints", ptsA.Count)}"
+                                    + $" / B {T("ImportedPoints", ptsB.Count)}");
+                    return;
+                }
 
                 if (ProfilePointsCsvIO.Save(ed.CsvPath, ed.Points, ed.ClosedLoop))
                     SetBeltStatus(T("ImportedPoints", ed.Points.Count));

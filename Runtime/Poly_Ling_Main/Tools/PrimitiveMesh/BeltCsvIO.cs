@@ -43,8 +43,26 @@ namespace Poly_Ling.PrimitiveMesh
         /// <summary>グループの段数。$rowCount が無い旧CSVでは 1。</summary>
         public int RowCount = 1;
 
+        /// <summary>
+        /// 左レール各段のウェイト。取り込み元の頂点から引いたもの。
+        ///
+        /// null（列そのもの）＝引いていない。要素の null ＝その段が引けなかった。
+        /// CSV には出さない。CSV は人が編集する形式で、ウェイトは生成のたびに
+        /// 取り込み元から引き直す（BeltWeightBinder）。
+        /// </summary>
+        public List<BoneWeight?> LeftWeights;
+
+        /// <summary>右レール各段のウェイト。並びは Right と 1 対 1。</summary>
+        public List<BoneWeight?> RightWeights;
+
         public bool HasData => Left != null && Right != null
                                && Left.Count >= 2 && Left.Count == Right.Count;
+
+        /// <summary>ウェイト列が点列と対で揃っているか。</summary>
+        public bool HasWeights => LeftWeights != null && RightWeights != null
+                                  && Left != null && Right != null
+                                  && LeftWeights.Count  == Left.Count
+                                  && RightWeights.Count == Right.Count;
     }
 
     /// <summary>CSV 読み込み結果。</summary>

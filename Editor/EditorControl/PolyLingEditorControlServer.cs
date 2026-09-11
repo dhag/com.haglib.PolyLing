@@ -4,8 +4,17 @@
 // ============================================================
 //
 // 【役割】
-//   名前付きパイプ 1 本を待ち受け、1 行 JSON の要求に 1 行 JSON で応答する。
-//   TCP ポートは一切開かない。
+//   ローカルループバックの TCP ポート 1 本を待ち受け、1 行 JSON の要求に
+//   1 行 JSON で応答する。
+//
+// 【なぜ名前付きパイプをやめたか】 2026-09-08
+//   PipeDuplexServer では 3 回に 2 回、クライアントの ConnectAsync は成功するのに
+//   サーバの WaitForConnectionAsync が返らず、要求が誰にも読まれない状態になった。
+//   accepted カウンタで受理数を数えて確定した（4 回呼んで受理 2 回）。
+//   受理前に次のリスナを立てる形へ直しても再現したため、
+//   バックログを持つ TCP へ移した。TcpDuplexServer は Listen(100) の
+//   バックログを持ち、AcceptAsync を繰り返すだけなので取りこぼしが起きない。
+//   PipeDuplex* は削除せず残してある。
 //
 // 【RemoteServerCore との違い】
 //   RemoteServerCore はモデル・選択・所有権に密結合したパネル用サーバで、
@@ -35,25 +44,30 @@
 // ============================================================
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using HagLib.NET.Duplex;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.Data;
 using Poly_Ling.Remote;
 
 namespace Poly_Ling.EditorControl
 {
-    /// <summary>外部プロセスからの Editor 操作要求を受け付ける名前付きパイプサーバ。</summary>
+    /// <summary>外部プロセスからの Editor 操作要求を受け付けるループバック TCP サーバ。</summary>
     public static class PolyLingEditorControlServer
     {
-        /// <summary>パイプ名。クライアント側（SimpleUnityMcpServer）と一致させること。</summary>
-        public const string PipeName = "PolyLing.EditorControl";
+        /// <summary>
+        /// 待ち受けポート。クライアント側（SimpleUnityMcpServer）と一致させること。
+        /// PolyLingPlayerServer（WebSocket）の既定 8765 と衝突しない値にしてある。
+        /// </summary>
+        public const int Port = 8770;
 
         /// <summary>コンソールログの共通接頭辞。</summary>
         private const string LogTag = "[PolyLingEditorControl]";
 
-        private static PipeDuplexServer      _server;
+        private static TcpDuplexServer       _server;
         private static SynchronizationContext _syncCtx;
 
         public static bool IsRunning => _server != null && _server.IsListening;
@@ -74,20 +88,21 @@ namespace Poly_Ling.EditorControl
             {
                 _syncCtx = SynchronizationContext.Current;
 
-                // PipeDuplexServer は SimpleMcpServer.csproj にも Link されており
+                // Tcp/PipeDuplex* は SimpleMcpServer.csproj にも Link されており
                 // UnityEngine に依存できないため、出力先をここで与える。
-                PipeDuplexServer.DiagnosticLog = message => Debug.Log(message);
-                PipeDuplexChannel.DiagnosticLog = message => Debug.Log(message);
+                TcpDuplexServer.DiagnosticLog = message => Debug.Log(message);
 
-                var server = new PipeDuplexServer(PipeName);
+                var server = new TcpDuplexServer();
                 server.OnReceived           += OnReceived;
                 server.OnClientConnected    += OnClientConnected;
                 server.OnClientDisconnected += OnClientDisconnected;
 
                 _server = server;
-                _ = server.StartAsync();
 
-                Debug.Log($"{LogTag} 起動: pipe={PipeName}");
+                // 外部から届かないようループバックだけを bind する。
+                _ = server.StartAsync(System.Net.IPAddress.Loopback, Port);
+
+                Debug.Log($"{LogTag} 起動: port={Port}（ループバックのみ）");
             }
             catch (Exception ex)
             {
@@ -98,10 +113,9 @@ namespace Poly_Ling.EditorControl
 
         /// <summary>
         /// 停止する。ドメインリロード直前に呼ぶため、await せず同期的に完了させる。
-        /// PipeDuplexServer.Dispose は CancellationTokenSource を Cancel し、
-        /// 接続中クライアントを破棄し、IsListening を false にする
-        /// （PipeDuplexServer.cs:152-167）。accept ループは
-        /// WaitForConnectionAsync のキャンセルで抜ける（同 :208-212）。
+        /// TcpDuplexServer.Dispose は CancellationTokenSource を Cancel し、
+        /// リスナを閉じ、接続中クライアントを破棄する。
+        /// accept ループは AcceptAsync の ObjectDisposedException で抜ける。
         /// </summary>
         public static void Stop()
         {
@@ -115,8 +129,7 @@ namespace Poly_Ling.EditorControl
             try { server.OnClientDisconnected -= OnClientDisconnected; } catch { }
             try { server.Dispose(); } catch { }
 
-            try { PipeDuplexServer.DiagnosticLog = null; } catch { }
-            try { PipeDuplexChannel.DiagnosticLog = null; } catch { }
+            try { TcpDuplexServer.DiagnosticLog = null; } catch { }
 
             Debug.Log($"{LogTag} 停止");
         }
@@ -126,7 +139,7 @@ namespace Poly_Ling.EditorControl
         // ================================================================
 
         /// <summary>
-        /// クライアント接続。PipeDuplexServer.AcceptLoopAsync の受理直後に
+        /// クライアント接続。TcpDuplexServer.AcceptLoopAsync の受理直後に
         /// 背景スレッドで発火するため、EditorApplication には触れない。
         /// </summary>
         private static void OnClientConnected(IDuplexChannel channel)
@@ -135,7 +148,7 @@ namespace Poly_Ling.EditorControl
         }
 
         /// <summary>
-        /// クライアント切断。PipeDuplexChannel.ReceiveLoopAsync の finally から
+        /// クライアント切断。TcpDuplexChannel.ReceiveLoopAsync の finally から
         /// 背景スレッドで発火するため、EditorApplication には触れない。
         /// </summary>
         private static void OnClientDisconnected(IDuplexChannel channel)
@@ -189,7 +202,7 @@ namespace Poly_Ling.EditorControl
         /// <summary>
         /// 応答を送出し、それが完了してから afterReply をメインスレッドで実行する。
         ///
-        /// play / stop はドメインリロードを引き起こし、その際 Stop() がパイプを閉じる。
+        /// play / stop はドメインリロードを引き起こし、その際 Stop() が接続を閉じる。
         /// 応答の書き込みが完了する前に遷移を起動すると、要求元は結果を受け取れない。
         /// そのため遷移は必ず ReplyAsync の完了後に回す。
         ///
@@ -261,9 +274,13 @@ namespace Poly_Ling.EditorControl
         // 要求の処理
         // ================================================================
         //
-        // 要求: {"type":"command","action":"ping"|"play"|"stop"|"state"}
+        // 要求: {"type":"command","action":"ping"|"play"|"stop"|"state"|"tools"|"call"}
+        //       call のみ "params" を伴う（HandleCall の注記を参照）
         // 応答: {"type":"response","success":true,"action":"...","data":"..."}
         //       {"type":"response","success":false,"action":"...","error":"..."}
+        //
+        // "data" は必ず文字列。call がコマンドの戻り値を返すときは、
+        // オブジェクトを入れる別のキー "result" を使う（HandleCall の注記を参照）。
         //
         // JSON は PolyLing.Runtime の JsonBuilder / JsonParser
         // （RemoteProtocol.cs:59,181）を使う。外部 JSON ライブラリは追加しない。
@@ -290,6 +307,12 @@ namespace Poly_Ling.EditorControl
                 case "state":
                     return LogResponse(BuildOk(op, DescribeState()));
 
+                case "tools":
+                    return LogResponse(HandleTools(op));
+
+                case "call":
+                    return LogResponse(HandleCall(op, msg));
+
                 case "play":
                     return LogResponse(HandlePlay(op, out afterReply));
 
@@ -306,6 +329,147 @@ namespace Poly_Ling.EditorControl
         {
             Debug.Log($"{LogTag} 応答生成: {responseJson}");
             return responseJson;
+        }
+
+        // ================================================================
+        // コマンド実行（MCP）
+        // ================================================================
+        //
+        // 要求: {"type":"command","action":"call",
+        //        "params":{"command":"smoothEdges","modelIndex":"0","strength":"0.5"}}
+        //
+        //   command    … 道具名（PanelCommandFactory.ActionOf が作る名前）
+        //   modelIndex … 対象モデル。省くと 0
+        //   それ以外   … コマンドの引数。入れ子はドット区切り（params.widthTop）
+        //
+        // JsonParser.ParseFlat は値が '[' や '{' で始まるものを辞書へ入れない
+        // （RemoteProtocol.cs の ParseFlat）。配列は "1,2,3" のように
+        // 文字列 1 個で送ること。
+        //
+        // 本サーバはモデルに触れない。実行は PolyLingCommandGateway 経由で、
+        // パネルが開いていなければ理由付きで失敗する。
+        // ================================================================
+
+        /// <summary>道具一覧（JSON Schema）をそのまま返す。</summary>
+        private static string HandleTools(string op)
+        {
+            try
+            {
+                string json = PanelCommandFactory.BuildToolsListJson();
+                PanelCommandFactory.CountTools(out int usable, out int skipped);
+
+                Debug.Log($"{LogTag} tools: 出せる {usable} / 出せない {skipped}");
+
+                var jb = new JsonBuilder();
+                jb.BeginObject();
+                jb.KeyValue("type",    "response");
+                jb.KeyValue("success", true);
+                jb.KeyValue("action",  op);
+                jb.KeyValue("usable",  usable);
+                jb.KeyValue("skipped", skipped);
+                jb.KeyRaw("tools", json);
+                jb.EndObject();
+                return jb.ToString();
+            }
+            catch (Exception ex)
+            {
+                return BuildError(op, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        /// <summary>コマンドを組み立てて実行する。メインスレッドで呼ばれる。</summary>
+        private static string HandleCall(string op, RemoteMessage msg)
+        {
+            var raw = msg?.Params;
+            if (raw == null || raw.Count == 0)
+                return BuildError(op, "params がありません");
+
+            if (!raw.TryGetValue("command", out string command) || string.IsNullOrEmpty(command))
+                return BuildError(op, "params.command がありません");
+
+            int modelIndex = 0;
+            if (raw.TryGetValue("modelIndex", out string mi) && !string.IsNullOrEmpty(mi))
+            {
+                if (!int.TryParse(mi, out modelIndex))
+                    return BuildError(op, $"modelIndex を整数にできません: {mi}");
+            }
+
+            // command / modelIndex はコマンドの引数ではないので外す。
+            var args = new Dictionary<string, string>();
+            foreach (var kv in raw)
+            {
+                if (kv.Key == "command" || kv.Key == "modelIndex") continue;
+                args[kv.Key] = kv.Value;
+            }
+
+            if (!PolyLingCommandGateway.IsReady)
+                return BuildError(op, "PolyLing のパネルが開いていません");
+
+            var cmd = PanelCommandFactory.Create(command, modelIndex, args, out string createError);
+            if (cmd == null)
+                return BuildError(op, createError ?? "コマンドを組み立てられませんでした");
+
+            Debug.Log($"{LogTag} call: {PanelCommandDump.Describe(cmd)}");
+
+            var result = PolyLingCommandGateway.Invoke(cmd);
+            if (result == null)
+                return BuildError(op, "結果がありません");
+
+            if (!result.Success)
+                return BuildError(op, result.Reason ?? "unknown error");
+
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("type",    "response");
+            jb.KeyValue("success", true);
+            jb.KeyValue("action",  op);
+            jb.KeyValue("command", command);
+            AppendIntArray(jb, "masterIndices", result.MasterIndices);
+            AppendUlongArray(jb, "objectIds",   result.ObjectIds);
+
+            // コマンドが返した実データ。既に JSON オブジェクトの文字列なので
+            // そのまま差し込む（tools と同じ KeyRaw の経路）。
+            //
+            // 【なぜ "data" ではないか】
+            //   "data" は BuildOk が文字列を入れる欄で、ping / state / play / stop が
+            //   使っている。クライアント側の EditorControlClient.Parse は
+            //   d.GetString() で無条件に文字列として読むため、同じ欄へ
+            //   オブジェクトを入れると InvalidOperationException で落ちる
+            //   （JsonElement.GetString は JSON 文字列以外を変換しない）。
+            //   call は生 JSON がそのまま呼び出し側へ渡るので、
+            //   Parse が触らない別のキーにしておけば型の食い違いが起きない。
+            //   C# 側のプロパティ名は CommandResult.Data のままにしてある。
+            if (!string.IsNullOrEmpty(result.Data)) jb.KeyRaw("result", result.Data);
+
+            jb.EndObject();
+            return jb.ToString();
+        }
+
+        /// <summary>int 配列を JSON 配列として足す。null・空なら足さない。</summary>
+        private static void AppendIntArray(JsonBuilder jb, string key, int[] values)
+        {
+            if (values == null || values.Length == 0) return;
+
+            jb.Key(key);
+            jb.BeginArray();
+            for (int i = 0; i < values.Length; i++) jb.Value(values[i]);
+            jb.EndArray();
+        }
+
+        /// <summary>
+        /// ulong 配列を JSON 配列として足す。null・空なら足さない。
+        /// JsonBuilder に ulong の Value が無いため、数値のまま RawValue で入れる
+        /// （文字列にすると受け側で型が変わる）。
+        /// </summary>
+        private static void AppendUlongArray(JsonBuilder jb, string key, ulong[] values)
+        {
+            if (values == null || values.Length == 0) return;
+
+            jb.Key(key);
+            jb.BeginArray();
+            for (int i = 0; i < values.Length; i++)
+                jb.RawValue(values[i].ToString(System.Globalization.CultureInfo.InvariantCulture));
+            jb.EndArray();
         }
 
         // ================================================================
@@ -430,7 +594,9 @@ namespace Poly_Ling.EditorControl
                 + $"isPlayingOrWillChangePlaymode={Flag(EditorApplication.isPlayingOrWillChangePlaymode)}; "
                 + $"isPaused={Flag(EditorApplication.isPaused)}; "
                 + $"isCompiling={Flag(EditorApplication.isCompiling)}; "
-                + $"isUpdating={Flag(EditorApplication.isUpdating)}";
+                + $"isUpdating={Flag(EditorApplication.isUpdating)}; "
+                + $"accepted={(_server != null ? _server.AcceptedCount : -1)}; "
+                + $"clients={ClientCount()}";
         }
 
         private static string Flag(bool value) => value ? "true" : "false";

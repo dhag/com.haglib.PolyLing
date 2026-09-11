@@ -98,6 +98,49 @@ namespace Poly_Ling.UndoSystem
         public UndoStack<ProjectContext> ProjectStack => _projectStack;
         public UndoGroup SubWindowGroup => _subWindowGroup;
 
+        // ================================================================
+        // 記録の一時停止
+        // ================================================================
+
+        /// <summary>入れ子の深さ。0 より大きい間は全スタックが記録を捨てる。</summary>
+        private int _suspendDepth;
+
+        /// <summary>記録を止めているか。</summary>
+        public bool IsRecordingSuspended => _suspendDepth > 0;
+
+        /// <summary>
+        /// 全スタックの記録を止める。
+        ///
+        /// マクロ（オブジェクトグループの複数ステップ実行）のように、
+        /// 内側の操作を個別に積まず、外側で 1 件だけ積みたいときに使う。
+        /// 必ず ResumeRecording と対で呼ぶこと。入れ子は数える。
+        ///
+        /// CommandQueue は enqueue 時に同期実行する（CommandQueue.cs:54-70）ので、
+        /// 止めている間に積まれるはずだった記録が、あとのフレームへ漏れることはない。
+        /// </summary>
+        public void SuspendRecording()
+        {
+            _suspendDepth++;
+            if (_suspendDepth == 1) SetRecordingEnabled(false);
+        }
+
+        /// <summary>記録を再開する。SuspendRecording と対で呼ぶ。</summary>
+        public void ResumeRecording()
+        {
+            if (_suspendDepth == 0) return;
+            _suspendDepth--;
+            if (_suspendDepth == 0) SetRecordingEnabled(true);
+        }
+
+        private void SetRecordingEnabled(bool enabled)
+        {
+            if (_vertexEditStack  != null) _vertexEditStack.RecordingEnabled  = enabled;
+            if (_editorStateStack != null) _editorStateStack.RecordingEnabled = enabled;
+            if (_workPlaneStack   != null) _workPlaneStack.RecordingEnabled   = enabled;
+            if (_meshListStack    != null) _meshListStack.RecordingEnabled    = enabled;
+            if (_projectStack     != null) _projectStack.RecordingEnabled     = enabled;
+        }
+
         // === プロジェクトレベルUndo プロパティ ===
         public bool CanUndoProject => _projectUndoStack.Count > 0;
         public bool CanRedoProject => _projectRedoStack.Count > 0;

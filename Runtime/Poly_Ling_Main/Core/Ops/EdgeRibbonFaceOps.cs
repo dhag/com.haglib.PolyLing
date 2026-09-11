@@ -1,6 +1,18 @@
 // EdgeRibbonFaceOps.cs
-// 選択辺を中心線として、ワールド固定幅の帯面を生成する。
-// 元の中心線は変更せず、生成頂点・四角形を末尾へ追加する。
+// 選択辺を中心線として、ワールド固定幅の帯面を組む。
+//
+// 【元オブジェクトは変更しない】
+//   組んだ頂点と四角形は引数 dest（新しい MeshObject）へ入れる。
+//   置き場所（新規オブジェクト / 既存へ追加 / 新規モデル）は呼び出し側が決める。
+//
+// 【座標系】
+//   dest の頂点はワールド座標。元頂点のワールド位置は MeshContext.VertexMatrix を
+//   通して求める（スキン付きでも同じ規則）。法線もワールドのまま入れる。
+//
+// 【材質】
+//   ここでは触らない。面の MaterialIndex は既定のままにして、
+//   配置側の ApplyGeneratedMaterialIndex が指定スロットを入れる
+//   （他の図形生成と同じ規則）。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -41,15 +53,19 @@ namespace Poly_Ling.Ops
             public Vector3 RightWorld;
         }
 
-        public static Result Append(
+        /// <summary>
+        /// mc の選択辺から帯面を組み、dest へ足す。mc は読むだけで変更しない。
+        /// 複数オブジェクトぶんを 1 つの dest へまとめられる。
+        /// </summary>
+        public static Result BuildInto(
             MeshContext mc,
             IEnumerable<VertexPair> selectedEdges,
             float widthWorld,
-            int materialIndex)
+            MeshObject dest)
         {
             var result = new Result();
             var mo = mc?.MeshObject;
-            if (mo == null || selectedEdges == null || widthWorld <= Eps)
+            if (mo == null || dest == null || selectedEdges == null || widthWorld <= Eps)
                 return result;
 
             var edges = new List<EdgeData>();
@@ -155,8 +171,8 @@ namespace Poly_Ling.Ops
                 Vector3 leftWorld = center - x * half;
                 Vector3 rightWorld = center + x * half;
 
-                int leftIndex = AppendDerivedVertex(mc, sourceIndex, leftWorld);
-                int rightIndex = AppendDerivedVertex(mc, sourceIndex, rightWorld);
+                int leftIndex = AppendRibbonVertex(dest, mo.Vertices[sourceIndex], leftWorld);
+                int rightIndex = AppendRibbonVertex(dest, mo.Vertices[sourceIndex], rightWorld);
 
                 generated[sourceIndex] = new RibbonVertexPair
                 {
@@ -168,8 +184,6 @@ namespace Poly_Ling.Ops
 
                 result.GeneratedVertices += 2;
             }
-
-            materialIndex = Mathf.Max(0, materialIndex);
 
             for (int i = 0; i < edges.Count; i++)
             {
@@ -183,11 +197,6 @@ namespace Poly_Ling.Ops
                     a.RightIndex,
                     b.RightIndex,
                     b.LeftIndex
-                };
-
-                int[] source =
-                {
-                    e.V1, e.V1, e.V2, e.V2
                 };
 
                 Vector3[] wp =
@@ -218,11 +227,6 @@ namespace Poly_Ling.Ops
                         b.RightIndex
                     };
 
-                    source = new[]
-                    {
-                        e.V1, e.V1, e.V2, e.V2
-                    };
-
                     wp = new[]
                     {
                         a.RightWorld,
@@ -242,26 +246,19 @@ namespace Poly_Ling.Ops
                     n = QuadNormal(wp[0], wp[1], wp[2], wp[3], e.Z);
                 }
 
-                var face = new Face
-                {
-                    MaterialIndex = materialIndex
-                };
-
+                var face = new Face();
                 face.VertexIndices.AddRange(vi);
 
                 for (int k = 0; k < 4; k++)
                 {
-                    Vector3 localNormal =
-                        WorldNormalToVertexLocal(mc, source[k], n);
-
-                    int slot =
-                        mo.Vertices[vi[k]].GetOrAddUVNormal(uv[k], localNormal);
+                    // dest はワールド座標なので法線もワールドのまま入れる。
+                    int slot = dest.Vertices[vi[k]].GetOrAddUVNormal(uv[k], n);
 
                     face.UVIndices.Add(slot);
                     face.NormalIndices.Add(slot);
                 }
 
-                mo.AddFace(face);
+                dest.AddFace(face);
                 result.GeneratedFaces++;
             }
 
@@ -425,19 +422,16 @@ namespace Poly_Ling.Ops
                      .MultiplyPoint3x4(local);
         }
 
-        private static int AppendDerivedVertex(
-            MeshContext mc,
-            int sourceIndex,
+        /// <summary>
+        /// 生成頂点を dest へ足す。位置はワールド座標のまま入れる。
+        /// パーツ ID とボーンウェイトは元頂点から写す。
+        /// </summary>
+        private static int AppendRibbonVertex(
+            MeshObject dest,
+            Vertex source,
             Vector3 worldPosition)
         {
-            var mo = mc.MeshObject;
-            Vertex source = mo.Vertices[sourceIndex];
-
-            Matrix4x4 vertexMatrix = mc.VertexMatrix(sourceIndex);
-            Vector3 local =
-                vertexMatrix.inverse.MultiplyPoint3x4(worldPosition);
-
-            var v = new Vertex(local)
+            var v = new Vertex(worldPosition)
             {
                 PartsId = source.PartsId,
                 SubId = source.SubId,
@@ -446,21 +440,7 @@ namespace Poly_Ling.Ops
                 Flags = VertexFlags.None
             };
 
-            return mo.AddVertex(v);
-        }
-
-        private static Vector3 WorldNormalToVertexLocal(
-            MeshContext mc,
-            int sourceIndex,
-            Vector3 worldNormal)
-        {
-            Matrix4x4 m = mc.VertexMatrix(sourceIndex);
-
-            // local normal -> world normal = inverse-transpose(M)
-            // よって逆変換は transpose(M)。
-            Vector3 n = m.transpose.MultiplyVector(worldNormal);
-
-            return SafeNormalize(n, Vector3.forward);
+            return dest.AddVertex(v);
         }
 
         private static Vector3 QuadNormal(
