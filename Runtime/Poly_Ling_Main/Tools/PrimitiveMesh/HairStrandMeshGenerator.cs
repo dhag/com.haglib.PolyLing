@@ -148,14 +148,24 @@ namespace Poly_Ling.HairStrand
                 }
             }
 
-            // 幅・厚み
+            // 幅・厚み。幅は方式で分岐し、厚みは従来方式のまま。
+            // SmoothHermite の接線は房ごとに 1 回だけ求める（中間幅は房ごとに変わるため）。
+            bool smoothWidth = p.WidthProfileMode == HairProfileMode.SmoothHermite;
+            float[] wx = null, wy = null, wm = null;
+            if (smoothWidth)
+                BuildSmoothProfile(p.WidthRoot, widthMid, p.WidthTip,
+                                   p.WidthStartT, p.WidthEndT, out wx, out wy, out wm);
+
             var widthAll = new float[rings];
             var thickAll = new float[rings];
             for (int i = 0; i < rings; i++)
             {
                 float t = (float)i / lengthSeg;
-                widthAll[i] = Mathf.Max(0f, Profile(p.WidthRoot, widthMid, p.WidthTip,
-                                                    p.WidthMidT, p.WidthPowRoot, p.WidthPowTip, t));
+                float w = smoothWidth
+                    ? HermiteEval(wx, wy, wm, t)
+                    : Profile(p.WidthRoot, widthMid, p.WidthTip,
+                              p.WidthMidT, p.WidthPowRoot, p.WidthPowTip, t);
+                widthAll[i] = Mathf.Max(0f, w);
                 thickAll[i] = Mathf.Max(0f, Profile(p.ThickRoot, thickMid, p.ThickTip,
                                                     p.ThickMidT, p.ThickPowRoot, p.ThickPowTip, t));
             }
@@ -374,8 +384,9 @@ namespace Poly_Ling.HairStrand
         // ================================================================
 
         /// <summary>
-        /// 根元 / 中間 / 末端 の 3 点を中間位置で 2 分割した冪で結ぶ。
+        /// LegacyPower。根元 / 中間 / 末端 の 3 点を中間位置で 2 分割した冪で結ぶ。
         /// t=0 で root、t=tm で mid、t=1 で tip をちょうど通る。
+        /// 値は連続するが、tm の左右で傾きは一般に一致しない。
         /// </summary>
         private static float Profile(
             float root, float mid, float tip, float midT, float powRoot, float powTip, float t)
@@ -392,6 +403,89 @@ namespace Poly_Ling.HairStrand
 
             float s2 = Mathf.Clamp01((t - tm) / (1f - tm));
             return tip + (mid - tip) * Mathf.Pow(1f - s2, pt);
+        }
+
+        /// <summary>
+        /// SmoothHermite の節点と接線を作る。節点は (0, root) (startT, body) (endT, body) (1, tip)。
+        /// 区間長 0 の割り算を避けるため、
+        /// ProfileTMin ≦ startT ≦ ProfileTMax − ProfileTGap、startT + ProfileTGap ≦ endT ≦ ProfileTMax へ丸める。
+        /// 中間部の両端が同じ値なので、その 2 節点の接線は 0 になり中間部は body の一定幅になる。
+        /// </summary>
+        private static void BuildSmoothProfile(
+            float root, float body, float tip, float startT, float endT,
+            out float[] x, out float[] y, out float[] m)
+        {
+            float t1 = Mathf.Clamp(startT, HairStrandParams.ProfileTMin,
+                                   HairStrandParams.ProfileTMax - HairStrandParams.ProfileTGap);
+            float t2 = Mathf.Clamp(endT, t1 + HairStrandParams.ProfileTGap, HairStrandParams.ProfileTMax);
+
+            x = new[] { 0f, t1, t2, 1f };
+            y = new[] { root, body, body, tip };
+            m = MonotoneHermiteTangents(x, y);
+        }
+
+        /// <summary>
+        /// 単調 3 次 Hermite の節点の接線（Fritsch–Carlson）。x は狭義単調増加、要素数 2 以上。
+        ///   1. 区間の傾き d_k を求める
+        ///   2. 内側の節点は隣り合う d の平均、両端は片側の d。d の符号が変わる（0 を含む）節点は 0
+        ///   3. d_k = 0 の区間は両端の接線を 0 にする（平らな区間を平らに保つ）
+        ///   4. α = m_k / d_k、β = m_{k+1} / d_k が α² + β² &gt; 9 なら 3 / √(α² + β²) 倍に縮める
+        /// これで各区間の曲線は単調になり、区間両端の値を超えない。
+        /// 同じ接線を左右の区間で共有するので、節点で傾きが連続する（C1）。
+        /// </summary>
+        private static float[] MonotoneHermiteTangents(float[] x, float[] y)
+        {
+            int n = x.Length;
+
+            var d = new float[n - 1];
+            for (int k = 0; k < n - 1; k++)
+                d[k] = (y[k + 1] - y[k]) / (x[k + 1] - x[k]);
+
+            var m = new float[n];
+            m[0]     = d[0];
+            m[n - 1] = d[n - 2];
+            for (int k = 1; k < n - 1; k++)
+                m[k] = d[k - 1] * d[k] <= 0f ? 0f : (d[k - 1] + d[k]) * 0.5f;
+
+            for (int k = 0; k < n - 1; k++)
+            {
+                if (d[k] == 0f) { m[k] = 0f; m[k + 1] = 0f; continue; }
+
+                float a = m[k]     / d[k];
+                float b = m[k + 1] / d[k];
+                float s = a * a + b * b;
+                if (s > 9f)
+                {
+                    float tau = 3f / Mathf.Sqrt(s);
+                    m[k]     = tau * a * d[k];
+                    m[k + 1] = tau * b * d[k];
+                }
+            }
+            return m;
+        }
+
+        /// <summary>
+        /// 節点 x / 値 y / 接線 m の 3 次 Hermite を t で評価する。t は [x0, x_last] へ丸める。
+        /// </summary>
+        private static float HermiteEval(float[] x, float[] y, float[] m, float t)
+        {
+            int n = x.Length;
+            t = Mathf.Clamp(t, x[0], x[n - 1]);
+
+            int k = 0;
+            while (k < n - 2 && t > x[k + 1]) k++;
+
+            float h  = x[k + 1] - x[k];
+            float u  = (t - x[k]) / h;
+            float u2 = u * u;
+            float u3 = u2 * u;
+
+            float h00 =  2f * u3 - 3f * u2 + 1f;
+            float h10 =       u3 - 2f * u2 + u;
+            float h01 = -2f * u3 + 3f * u2;
+            float h11 =       u3 -      u2;
+
+            return h00 * y[k] + h10 * h * m[k] + h01 * y[k + 1] + h11 * h * m[k + 1];
         }
 
         /// <summary>房インデックスに対する変化量。房が 1 本のときは 0。</summary>

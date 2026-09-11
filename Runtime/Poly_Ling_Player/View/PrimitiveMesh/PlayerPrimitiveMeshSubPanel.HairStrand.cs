@@ -11,6 +11,11 @@
 // 【幅配分】
 //   筒の本数を変えると等分で作り直す。個別に触った後でも「等分」で戻せる。
 //   行は本数で変わるので専用のコンテナへ入れ、本数の変更時にそこだけ作り直す。
+//
+// 【幅のつなぎ方】
+//   LegacyPower は中間の位置・根元側の冪・末端側の冪、SmoothHermite は中間部の始まり・終わりを使う。
+//   土台と同じく両方の行を作っておき、display の切り替えで見せ分ける。
+//   パネルの初期値だけ SmoothHermite にする（NewHairParams）。
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 
 using System.Collections.Generic;
@@ -28,12 +33,29 @@ namespace Poly_Ling.Player
         // 状態
         // ================================================================
 
-        private HairStrandParams _hairP = HairStrandParams.Default;
+        private HairStrandParams _hairP = NewHairParams();
 
         /// <summary>円筒のときだけ出す行。</summary>
         private readonly List<VisualElement> _hairCylinderRows = new List<VisualElement>();
         /// <summary>球のときだけ出す行。</summary>
         private readonly List<VisualElement> _hairSphereRows = new List<VisualElement>();
+
+        /// <summary>幅が LegacyPower のときだけ出す行。</summary>
+        private readonly List<VisualElement> _hairWidthLegacyRows = new List<VisualElement>();
+        /// <summary>幅が SmoothHermite のときだけ出す行。</summary>
+        private readonly List<VisualElement> _hairWidthSmoothRows = new List<VisualElement>();
+
+        /// <summary>
+        /// パネルの初期値。幅のつなぎ方だけ SmoothHermite にする（パネルからの新規作成は新方式）。
+        /// HairStrandParams.Default は LegacyPower のまま。保存済みの ObjectGroup を
+        /// 組み直すとき、無いキーが Default で埋まるため。
+        /// </summary>
+        private static HairStrandParams NewHairParams()
+        {
+            var p = HairStrandParams.Default;
+            p.WidthProfileMode = HairProfileMode.SmoothHermite;
+            return p;
+        }
 
         /// <summary>幅配分の行を入れるコンテナ。筒の本数が変わるたびに作り直す。</summary>
         private VisualElement _hairLobeWidthBox;
@@ -46,6 +68,8 @@ namespace Poly_Ling.Player
         {
             _hairCylinderRows.Clear();
             _hairSphereRows.Clear();
+            _hairWidthLegacyRows.Clear();
+            _hairWidthSmoothRows.Clear();
 
             c.Add(ShapeTitle(T("HairStrand")));
             c.Add(NF(() => _hairP.MeshName, v => _hairP.MeshName = v));
@@ -147,6 +171,8 @@ namespace Poly_Ling.Player
             c.Add(SL(T("HairWidth")));
             c.Add(GearHint(T("HairWidthHint")));
 
+            c.Add(HairWidthProfileModeDD());
+
             c.Add(SR(T("HairWidthRoot"),
                 HairStrandParams.WidthRootMin, HairStrandParams.WidthMax,
                 () => _hairP.WidthRoot, v => { _hairP.WidthRoot = v; D(); }));
@@ -156,15 +182,23 @@ namespace Poly_Ling.Player
             c.Add(SR(T("HairWidthTip"),
                 HairStrandParams.WidthMin, HairStrandParams.WidthMax,
                 () => _hairP.WidthTip, v => { _hairP.WidthTip = v; D(); }));
-            c.Add(SR(T("HairWidthMidT"),
+
+            AddHairWidthLegacyRow(c, SR(T("HairWidthMidT"),
                 HairStrandParams.MidTMin, HairStrandParams.MidTMax,
                 () => _hairP.WidthMidT, v => { _hairP.WidthMidT = v; D(); }));
-            c.Add(SR(T("HairWidthPowRoot"),
+            AddHairWidthLegacyRow(c, SR(T("HairWidthPowRoot"),
                 HairStrandParams.PowMin, HairStrandParams.PowMax,
                 () => _hairP.WidthPowRoot, v => { _hairP.WidthPowRoot = v; D(); }));
-            c.Add(SR(T("HairWidthPowTip"),
+            AddHairWidthLegacyRow(c, SR(T("HairWidthPowTip"),
                 HairStrandParams.PowMin, HairStrandParams.PowMax,
                 () => _hairP.WidthPowTip, v => { _hairP.WidthPowTip = v; D(); }));
+
+            AddHairWidthSmoothRow(c, SR(T("HairWidthStartT"),
+                HairStrandParams.ProfileTMin, HairStrandParams.ProfileTMax,
+                () => _hairP.WidthStartT, v => { _hairP.WidthStartT = v; D(); }));
+            AddHairWidthSmoothRow(c, SR(T("HairWidthEndT"),
+                HairStrandParams.ProfileTMin, HairStrandParams.ProfileTMax,
+                () => _hairP.WidthEndT, v => { _hairP.WidthEndT = v; D(); }));
 
             // ── 厚み ──
             c.Add(SL(T("HairThick")));
@@ -234,6 +268,7 @@ namespace Poly_Ling.Player
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
             RefreshHairBaseMode();
+            RefreshHairWidthMode();
         }
 
         // ================================================================
@@ -262,6 +297,30 @@ namespace Poly_Ling.Player
                 if (r != null) r.style.display = cyl ? DisplayStyle.Flex : DisplayStyle.None;
             foreach (var r in _hairSphereRows)
                 if (r != null) r.style.display = cyl ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        /// <summary>幅が LegacyPower のときだけ出す行を足す。</summary>
+        private void AddHairWidthLegacyRow(VisualElement c, VisualElement row)
+        {
+            c.Add(row);
+            _hairWidthLegacyRows.Add(row);
+        }
+
+        /// <summary>幅が SmoothHermite のときだけ出す行を足す。</summary>
+        private void AddHairWidthSmoothRow(VisualElement c, VisualElement row)
+        {
+            c.Add(row);
+            _hairWidthSmoothRows.Add(row);
+        }
+
+        /// <summary>幅のつなぎ方に合わせて行の表示を切り替える。</summary>
+        private void RefreshHairWidthMode()
+        {
+            bool smooth = _hairP.WidthProfileMode == HairProfileMode.SmoothHermite;
+            foreach (var r in _hairWidthLegacyRows)
+                if (r != null) r.style.display = smooth ? DisplayStyle.None : DisplayStyle.Flex;
+            foreach (var r in _hairWidthSmoothRows)
+                if (r != null) r.style.display = smooth ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         // ================================================================
@@ -320,6 +379,23 @@ namespace Poly_Ling.Player
             dd.label = T("HairBaseAxis");
             dd.style.marginBottom = 2;
             dd.RegisterValueChangedCallback(_ => { _hairP.Axis = (HairBaseAxis)dd.index; D(); });
+            return dd;
+        }
+
+        /// <summary>幅のつなぎ方（冪（従来） / 滑らか）。行の表示も切り替える。</summary>
+        private VisualElement HairWidthProfileModeDD()
+        {
+            var dd = new DropdownField(
+                new List<string> { T("HairProfileLegacy"), T("HairProfileSmooth") },
+                (int)_hairP.WidthProfileMode);
+            dd.label = T("HairWidthProfileMode");
+            dd.style.marginBottom = 2;
+            dd.RegisterValueChangedCallback(_ =>
+            {
+                _hairP.WidthProfileMode = (HairProfileMode)dd.index;
+                RefreshHairWidthMode();
+                D();
+            });
             return dd;
         }
 

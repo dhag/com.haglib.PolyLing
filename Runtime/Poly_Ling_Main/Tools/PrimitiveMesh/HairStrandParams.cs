@@ -18,9 +18,17 @@
 //   同じフィールドで単位が変わるので、パネルは土台に応じて行を出し分ける。
 //
 // 【幅・厚み】
-//   根元 / 中間 / 末端 の 3 点を独立に指定し、中間位置 tm で 2 分割した冪で結ぶ。
-//     t ≦ tm : root + (mid − root)·(t/tm)^pRoot
-//     t > tm : tip  + (mid − tip )·(1 − (t−tm)/(1−tm))^pTip
+//   根元 / 中間 / 末端 の 3 点を独立に指定する。つなぎ方は HairProfileMode で選ぶ。
+//   ・LegacyPower … 中間位置 tm で 2 分割した冪で結ぶ。値は連続するが tm で傾きが折れる。
+//       t ≦ tm : root + (mid − root)·(t/tm)^pRoot
+//       t > tm : tip  + (mid − tip )·(1 − (t−tm)/(1−tm))^pTip
+//   ・SmoothHermite … 節点 (0, root) (startT, mid) (endT, mid) (1, tip) を
+//       単調 3 次 Hermite（Fritsch–Carlson）で結ぶ。startT〜endT は mid の一定幅になり、
+//       節点で傾きも連続する。単調なので節点の値を超えず、負にもならない。
+//   方式の切り替えは今は幅だけが持つ（WidthProfileMode）。厚みは LegacyPower のまま。
+//   Default の WidthProfileMode は LegacyPower にしてある。保存済みの ObjectGroup は
+//   無いキーを Default の値で埋めて組み直す（PanelCommandNested.TryBuildNested）ので、
+//   Default を SmoothHermite にすると既存データの幅が変わる。
 //   根元幅の下限を正にしてあるので、根元が潰れることはない。
 //   末端幅を正にすると毛先が平ら（ぱっつん）、0 にすると尖る。
 
@@ -44,6 +52,15 @@ namespace Poly_Ling.HairStrand
         Linear,
         /// <summary>中央を基準に両端が対称に変化する（u = 2m/(M−1)−1、−1→+1）。</summary>
         Symmetric,
+    }
+
+    /// <summary>根元→毛先のプロファイル（幅など）のつなぎ方。</summary>
+    public enum HairProfileMode
+    {
+        /// <summary>中間位置で 2 分割した冪で結ぶ（従来方式）。中間位置で傾きが折れる。</summary>
+        LegacyPower,
+        /// <summary>根元・中間部の始まり・中間部の終わり・末端を単調 3 次 Hermite で結ぶ。傾きも連続する。</summary>
+        SmoothHermite,
     }
 
     /// <summary>髪の房生成パラメータ。</summary>
@@ -104,6 +121,13 @@ namespace Poly_Ling.HairStrand
         /// <summary>中間位置の下限・上限</summary>
         public const float MidTMin = 0.05f;
         public const float MidTMax = 0.95f;
+
+        /// <summary>中間部の始まり・終わりの位置の下限・上限（SmoothHermite）</summary>
+        public const float ProfileTMin = 0.01f;
+        public const float ProfileTMax = 0.99f;
+
+        /// <summary>中間部の最短の長さ。終わりは生成時に 始まり＋この値 以上へ寄せる。</summary>
+        public const float ProfileTGap = 0.01f;
 
         /// <summary>幅・厚みの冪の下限・上限</summary>
         public const float PowMin = 0.1f;
@@ -198,23 +222,41 @@ namespace Poly_Ling.HairStrand
 
         // ── 幅 ────────────────────────────────────────────────────
 
+        [PLParam(TextKey = "HairWidthProfileMode",
+                 Description = "幅のつなぎ方。LegacyPower は中間位置で 2 分割した冪、SmoothHermite は中間部の始まり・終わりを単調 3 次 Hermite で滑らかに結ぶ")]
+        public HairProfileMode WidthProfileMode;
+
         [PLParam(TextKey = "HairWidthRoot", Description = "根元の幅", Min = WidthRootMin, Max = WidthMax)]
         public float WidthRoot;
 
-        [PLParam(TextKey = "HairWidthMid", Description = "中間の幅", Min = WidthMin, Max = WidthMax)]
+        [PLParam(TextKey = "HairWidthMid", Description = "中間の幅。SmoothHermite では中間部（始まり〜終わり）の一定幅",
+                 Min = WidthMin, Max = WidthMax)]
         public float WidthMid;
 
         [PLParam(TextKey = "HairWidthTip", Description = "末端の幅。0 で毛先が尖る", Min = WidthMin, Max = WidthMax)]
         public float WidthTip;
 
-        [PLParam(TextKey = "HairWidthMidT", Description = "幅が中間値になる位置", Min = MidTMin, Max = MidTMax)]
+        [PLParam(TextKey = "HairWidthMidT", Description = "幅が中間値になる位置。LegacyPower のときだけ使う",
+                 Min = MidTMin, Max = MidTMax)]
         public float WidthMidT;
 
-        [PLParam(TextKey = "HairWidthPowRoot", Description = "根元側の幅の変化の冪", Min = PowMin, Max = PowMax)]
+        [PLParam(TextKey = "HairWidthPowRoot", Description = "根元側の幅の変化の冪。LegacyPower のときだけ使う",
+                 Min = PowMin, Max = PowMax)]
         public float WidthPowRoot;
 
-        [PLParam(TextKey = "HairWidthPowTip", Description = "末端側の幅の変化の冪", Min = PowMin, Max = PowMax)]
+        [PLParam(TextKey = "HairWidthPowTip", Description = "末端側の幅の変化の冪。LegacyPower のときだけ使う",
+                 Min = PowMin, Max = PowMax)]
         public float WidthPowTip;
+
+        [PLParam(TextKey = "HairWidthStartT",
+                 Description = "中間部（幅が中間値で一定の区間）の始まりの位置。SmoothHermite のときだけ使う",
+                 Min = ProfileTMin, Max = ProfileTMax)]
+        public float WidthStartT;
+
+        [PLParam(TextKey = "HairWidthEndT",
+                 Description = "中間部の終わりの位置。SmoothHermite のときだけ使う。始まり＋0.01 より手前なら生成時にそこへ寄せる",
+                 Min = ProfileTMin, Max = ProfileTMax)]
+        public float WidthEndT;
 
         // ── 厚み ──────────────────────────────────────────────────
 
@@ -312,12 +354,15 @@ namespace Poly_Ling.HairStrand
             LengthSegments  = 16,
             SectionSegments = 8,
 
+            WidthProfileMode = HairProfileMode.LegacyPower,   // 既存データの組み直しを変えないため
             WidthRoot       = 0.10f,
             WidthMid        = 0.12f,
             WidthTip        = 0.02f,
             WidthMidT       = 0.35f,
             WidthPowRoot    = 1f,
             WidthPowTip     = 1.5f,
+            WidthStartT     = 0.20f,
+            WidthEndT       = 0.70f,
 
             ThickRoot       = 0.03f,
             ThickMid        = 0.035f,
@@ -383,6 +428,9 @@ namespace Poly_Ling.HairStrand
             if (!Mathf.Approximately(WidthMidT,    o.WidthMidT))    return false;
             if (!Mathf.Approximately(WidthPowRoot, o.WidthPowRoot)) return false;
             if (!Mathf.Approximately(WidthPowTip,  o.WidthPowTip))  return false;
+            if (WidthProfileMode != o.WidthProfileMode) return false;
+            if (!Mathf.Approximately(WidthStartT,  o.WidthStartT))  return false;
+            if (!Mathf.Approximately(WidthEndT,    o.WidthEndT))    return false;
 
             if (!Mathf.Approximately(ThickRoot,    o.ThickRoot))    return false;
             if (!Mathf.Approximately(ThickMid,     o.ThickMid))     return false;
