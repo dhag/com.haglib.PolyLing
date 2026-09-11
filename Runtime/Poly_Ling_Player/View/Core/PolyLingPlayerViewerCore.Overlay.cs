@@ -404,6 +404,8 @@ namespace Poly_Ling.Player
                 case InteractionMode.AdvancedSelect:
                 case InteractionMode.SkinWeightPaint:
                 case InteractionMode.SkinWeightNumeric:
+                // 点指定図形は頂点を動かさないので移動ギズモを出さない。
+                case InteractionMode.PointDefinedPrimitive:
                 case InteractionMode.None:            return null;
 
                 default:                              return _moveToolHandler;

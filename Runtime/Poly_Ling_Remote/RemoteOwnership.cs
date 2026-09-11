@@ -355,6 +355,9 @@ namespace Poly_Ling.Remote
                 case EdgeTopologySplitCommand    c: return c.MasterIndices;
                 case AddFaceCommand              c: return c.MasterIndices;
 
+                // 点指定図形。編集対象へ頂点と面を足す（既存頂点も参照する）。
+                case CreatePointDefinedPrimitiveCommand c: return c.MasterIndices;
+
                 // ナイフ。対象メッシュの面と頂点を書き換える。
                 case KnifeLadderCutCommand       c: return c.MasterIndices;
                 case KnifeBeltLoopCutCommand     c: return c.MasterIndices;

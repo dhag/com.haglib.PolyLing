@@ -301,6 +301,81 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 点指定図形（線分：円筒・角柱 / 三角：板 / 四角：板）を編集対象へ足す。
+    /// 実処理は PointDefinedToolHandler（組み立ては PointDefinedMeshBuilder）。
+    ///
+    /// 【点】
+    ///   PointVertexIndices が 0 以上の点は、編集対象のその既存頂点をそのまま使う。
+    ///   -1 の点は PointPositions（ワールド座標）に新しい頂点を作る。
+    ///   三角・四角の辺の両端が既存頂点で、その間の既存の最短経路のエッジ数が
+    ///   辺の分割数と一致するときは、経路上の既存頂点をそのまま使う。
+    ///
+    /// 【ViewDirection】
+    ///   カメラの視線方向（ワールド）。表面をカメラ側へ向け、奥行きをこの向きへ付ける。
+    ///
+    /// 【型で守れない制約】受け口が実行時に確かめる。
+    ///   ・点の数が Mode の要求（Line 2 / Triangle 3 / Quad 4）と一致すること
+    ///   ・PointPositions.Length == PointVertexIndices.Length * 3
+    ///   ・既存頂点番号が編集対象の頂点数の範囲内であること
+    /// </summary>
+    [PLCommand(Description = "指定した点から円筒・角柱、三角形・四角形の板を編集対象へ足す。既存頂点を指す点と、分割数が一致する既存の辺列はそのまま共有する。")]
+    public class CreatePointDefinedPrimitiveCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
+        public ulong[] ObjectIds     { get; }
+
+        [PLParam(TextKey = "PointDefinedMode",
+                 Description = "作るもの。Line（2 点）/ Triangle（3 点）/ Quad（4 点。周回順）", Required = true)]
+        public Poly_Ling.PrimitiveMesh.PointPrimitiveMode Mode { get; }
+
+        [PLParam(TextKey = "PointDefinedPointVertices",
+                 Description = "各点が使う編集対象の既存頂点番号。新しい頂点を作る点は -1", Required = true)]
+        public int[]   PointVertexIndices { get; }
+
+        [PLParam(TextKey = "PointDefinedPointPositions",
+                 Description = "各点のワールド座標。x,y,z の順に 3 個ずつ並べる。既存頂点の点でも埋めること",
+                 Required = true)]
+        public float[] PointPositions { get; }
+
+        [PLParam(TextKey = "PointDefinedViewDirection",
+                 Description = "カメラの視線方向（ワールド）。表面をカメラ側へ向け、奥行きをこの向きへ付ける",
+                 Required = true)]
+        public Vector3 ViewDirection { get; }
+
+        [PLParam(Description = "形のパラメータ。分割数・奥行き・半径など")]
+        public Poly_Ling.PrimitiveMesh.PointDefinedParams Params { get; }
+
+        [PLParam(TextKey = "PointDefinedMaterialIndex", Description = "新しい面に付ける材質番号")]
+        public int     MaterialIndex { get; }
+
+        public CreatePointDefinedPrimitiveCommand(
+            int modelIndex, int[] masterIndices,
+            Poly_Ling.PrimitiveMesh.PointPrimitiveMode mode,
+            int[] pointVertexIndices, float[] pointPositions,
+            Vector3 viewDirection,
+            Poly_Ling.PrimitiveMesh.PointDefinedParams @params,
+            int materialIndex = 0,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices      = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds          = objectIds;
+            Mode               = mode;
+            PointVertexIndices = pointVertexIndices ?? System.Array.Empty<int>();
+            PointPositions     = pointPositions ?? System.Array.Empty<float>();
+            ViewDirection      = viewDirection;
+            Params             = @params;
+            MaterialIndex      = materialIndex;
+        }
+    }
+
+    /// <summary>
     /// 選択線分から検出した輪郭ループを押し出してメッシュを作る。
     /// 実処理は LineExtrudeTool + Profile2DExtrudeMeshGenerator。
     ///

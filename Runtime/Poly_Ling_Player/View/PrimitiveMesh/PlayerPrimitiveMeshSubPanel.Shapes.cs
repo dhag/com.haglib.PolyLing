@@ -34,7 +34,9 @@ namespace Poly_Ling.Player
                                SpringBoneSingle, SpringBoneCylinder, SpringBoneRevolution,
                                EdgeRibbonFace, SpringBoneLadder,
                                // ── MCP用サンドボックス（SandboxShapes にだけ載せる）
-                               McpCylinder }
+                               McpCylinder,
+                               // ── 点指定図形（高度な図形）
+                               PointDefined }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
@@ -42,7 +44,8 @@ namespace Poly_Ling.Player
               "HelicalGear","InternalGear","InvoluteRack","HelicalRack","StraightBevelGear","SpiralBevelGear","CylindricalWorm","WormWheel",
               "SpringBoneSingle","SpringBoneCylinder","SpringBoneRevolution",
               "EdgeRibbonFace","SpringBoneLadder",
-              "McpCylinder" };
+              "McpCylinder",
+              "PointDefined" };
 
         /// <summary>
         /// 図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品」/「揺れものボーン」、
@@ -59,7 +62,7 @@ namespace Poly_Ling.Player
               ShapeKind.NGonGear, ShapeKind.NGonStar,
               ShapeKind.PipeStadium, ShapeKind.HairStrand,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge,
-              ShapeKind.EdgeRibbonFace };
+              ShapeKind.EdgeRibbonFace, ShapeKind.PointDefined };
 
         // 揺れもの用のボーン鎖。作るのはボーンで、メッシュではない。
         //   「回転体」と同じくプロファイル（断面の折れ線）を持ち、
@@ -260,6 +263,9 @@ namespace Poly_Ling.Player
 
             // ブリッジへ入った / から出たときに種マーカーを出し入れする。
             OnBridgeSeedsChanged?.Invoke();
+
+            // 点指定図形を選んだ / 外したときに 3D 操作モードを切り替えさせる。
+            OnShapeSelected?.Invoke(k);
         }
 
         // ================================================================
@@ -296,6 +302,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.PlaceObject: BuildPlaceObjectUI(_settingsContainer); break;
                 case ShapeKind.ObjectArray: BuildObjectArrayUI(_settingsContainer); break;
                 case ShapeKind.EdgeRibbonFace: BuildEdgeRibbonFaceUI(_settingsContainer); break;
+                case ShapeKind.PointDefined:   BuildPointDefinedUI(_settingsContainer);   break;
                 case ShapeKind.Text:        BuildTextUI(_settingsContainer);        break;
                 case ShapeKind.Bridge:      BuildBridgeUI(_settingsContainer);      break;
                 case ShapeKind.Ribbon:      BuildRibbonUI(_settingsContainer);      break;
@@ -329,6 +336,9 @@ namespace Poly_Ling.Player
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
             if (_profileEditorContainer != null)
                 PlayerLayoutRoot.ApplyDarkTheme(_profileEditorContainer);
+
+            // 暗色テーマはボタンの背景を一律に塗るので、選択中の強調はその後で付け直す。
+            if (_current == ShapeKind.PointDefined) RefreshPointDefinedButtons();
 
             RefreshCreateButtonState();
         }

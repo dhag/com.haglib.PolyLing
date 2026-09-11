@@ -179,6 +179,8 @@ namespace Poly_Ling.Player
             {
                 // 面追加: 面を張る頂点だけを拾う。辺・面のホバーは有害。
                 case InteractionMode.AddFace:           return MeshSelectMode.Vertex;
+                // 点指定図形: 吸着先の頂点だけを拾う（面追加と同じ）。
+                case InteractionMode.PointDefinedPrimitive: return MeshSelectMode.Vertex;
 
                 // 辺を対象にするツール
                 case InteractionMode.EdgeBevel:         return MeshSelectMode.Edge;

@@ -139,7 +139,8 @@ namespace Poly_Ling.Player
         public bool PoseApplicable
             => _current != ShapeKind.ObjectArray
             && _current != ShapeKind.EdgeRibbonFace
-            && _current != ShapeKind.Bridge;
+            && _current != ShapeKind.Bridge
+            && _current != ShapeKind.PointDefined;
 
         /// <summary>
         /// AddToExisting のときの追加先（MeshContextList インデックス）。
@@ -292,12 +293,18 @@ namespace Poly_Ling.Player
         /// </summary>
         private void RefreshCommonUiVisibility()
         {
-            bool useAddMode = _current != ShapeKind.ObjectArray;
+            // 点指定図形の書き込み先は常に編集対象なので、追加先も姿勢も使わない。
+            // 材質はパネルの指定を使うので、追加先の値に関係なく出す。
+            bool pointDefined = _current == ShapeKind.PointDefined;
+
+            bool useAddMode = _current != ShapeKind.ObjectArray
+                           && !pointDefined;
             bool usePose    = _current != ShapeKind.ObjectArray
                            && _current != ShapeKind.EdgeRibbonFace
-                           && _current != ShapeKind.Bridge;
+                           && _current != ShapeKind.Bridge
+                           && !pointDefined;
             bool useMaterial = ShapeUsesMaterialSlot
-                            && _addMode != PrimitiveAddMode.NewModel;
+                            && (_addMode != PrimitiveAddMode.NewModel || pointDefined);
 
             if (_addModeDd != null)
                 _addModeDd.style.display = useAddMode ? DisplayStyle.Flex : DisplayStyle.None;

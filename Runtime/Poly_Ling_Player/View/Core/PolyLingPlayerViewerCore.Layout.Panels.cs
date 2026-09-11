@@ -574,6 +574,9 @@ namespace Poly_Ling.Player
         /// <summary>BuildLayout の段：図形生成（通常／3D連携／サンドボックス）・配置ギズモ・MeshFilter→Skinned・種別変換。</summary>
         private void BuildPrimitiveAndSkinPanels()
         {
+            // 点指定図形（高度な図形）のハンドラ。両インスタンスの配線より前に作る。
+            BuildPointDefinedHandler();
+
             _primitiveSubPanel = new PlayerPrimitiveMeshSubPanel();
             // 最後に選んだ図形の保存キー。Build 内で読み込むため Build より前に設定する。
             _primitiveSubPanel.MemoryKey = "Primitive";
@@ -601,6 +604,8 @@ namespace Poly_Ling.Player
             WireEdgeRibbonFaceCallbacks(_primitiveSubPanel);
             // 穴つなぎ（ブリッジ）。種の取り込みと実生成は Viewer 側が持つ。
             WireBridgeCallbacks(_primitiveSubPanel);
+            // 点指定図形（高度な図形）。点の指定と実生成は Viewer 側が持つ。
+            WirePointDefinedCallbacks(_primitiveSubPanel);
             AttachPanelSelectToggle(_layoutRoot.PrimitiveSection, PanelSelectKeyPrimitive);
 
             // 左ペインの「基本図形」「高度な図形」ボタンは廃止した。
@@ -647,6 +652,8 @@ namespace Poly_Ling.Player
             WireEdgeRibbonFaceCallbacks(_livePrimitiveSubPanel);
             // 穴つなぎ（ブリッジ）。既存インスタンスと同じ経路を通す。
             WireBridgeCallbacks(_livePrimitiveSubPanel);
+            // 点指定図形（高度な図形）。既存インスタンスと同じハンドラを通す。
+            WirePointDefinedCallbacks(_livePrimitiveSubPanel);
 
             // ── MCP用サンドボックス ────────────────────────────────
             // 専用のインスタンスは持たない。_livePrimitiveSubPanel を

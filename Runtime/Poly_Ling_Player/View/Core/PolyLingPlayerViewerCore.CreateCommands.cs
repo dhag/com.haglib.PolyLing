@@ -99,6 +99,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnEdgeTopologyDissolve = ExecuteEdgeTopologyDissolve;
             _commandDispatcher.OnEdgeTopologySplit    = ExecuteEdgeTopologySplit;
             _commandDispatcher.OnAddFace              = ExecuteAddFace;
+            _commandDispatcher.OnCreatePointDefinedPrimitive = ExecuteCreatePointDefinedPrimitive;
             _commandDispatcher.OnKnifeLadderCut       = ExecuteKnifeLadderCut;
             _commandDispatcher.OnKnifeBeltLoopCut     = ExecuteKnifeBeltLoopCut;
             _commandDispatcher.OnKnifeEraseEdge       = ExecuteKnifeEraseEdge;
@@ -247,6 +248,34 @@ namespace Poly_Ling.Player
         /// </summary>
         private MeshObject ResolveBeltSourceForCommand(int masterIndex)
             => ActiveProject?.CurrentModel?.GetMeshContext(masterIndex)?.MeshObject;
+
+        // ================================================================
+        // 点指定図形
+        // ================================================================
+
+        /// <summary>
+        /// 点指定図形コマンド。組み立てと編集対象への書き込み・Undo は
+        /// PointDefinedToolHandler.ExecuteFromCommand（プレビューと同じ計画を通す）。
+        /// 書き込み後のビュー更新は辺群ブリッジと同じ PrimitiveMeshFinalize。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteCreatePointDefinedPrimitive(CreatePointDefinedPrimitiveCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _pointDefinedHandler;
+            if (h == null) return "点指定図形ハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            var model = ActiveProject?.CurrentModel;
+            if (model != null)
+            {
+                model.ComputeWorldMatrices();
+                PrimitiveMeshFinalize(model);
+            }
+            return null;
+        }
 
         // ================================================================
         // 穴つなぎ

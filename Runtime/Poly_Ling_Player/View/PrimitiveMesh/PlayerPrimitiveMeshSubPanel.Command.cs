@@ -143,9 +143,11 @@ namespace Poly_Ling.Player
                 // 穴つなぎは書き込み先の既存頂点を参照する面を足す（CreateHoleBridgeCommand）。
                 // 歪み複製はモデルへ直接オブジェクトを挿入する（CreateObjectArrayCommand）。
                 // 辺から帯面は選択中の各オブジェクトへ面を足す（EdgeRibbonFaceCommand）。
+                // 点指定図形は編集対象の既存頂点を参照する面を足す（CreatePointDefinedPrimitiveCommand）。
                 case ShapeKind.Bridge:
                 case ShapeKind.ObjectArray:
                 case ShapeKind.EdgeRibbonFace:
+                case ShapeKind.PointDefined:
                 default:
                     return null;
             }

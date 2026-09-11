@@ -305,8 +305,8 @@ namespace Poly_Ling.Player
         /// </summary>
         private Matrix4x4 LiveWireMatrix()
         {
-            // 穴つなぎのプレビュー頂点はワールド空間で作ってあるので、行列は掛けない。
-            if (_current == ShapeKind.Bridge) return Matrix4x4.identity;
+            // 穴つなぎ・点指定図形のプレビュー頂点はワールド空間で作ってあるので、行列は掛けない。
+            if (_current == ShapeKind.Bridge || _current == ShapeKind.PointDefined) return Matrix4x4.identity;
 
             var local = Matrix4x4.Translate(_worldPos);
             if (_addMode != PrimitiveAddMode.AddToExisting) return local;

@@ -983,10 +983,10 @@ namespace Poly_Ling.Tools
                 else
                 {
                     int srcVertex = anyExisting
-                        ? FindSourceByRingDistance(wasExisting, existingIdx, i)
-                        : FindSourceByWorldDistance(ctx, meshObject, originalVertexCount, point.Position);
+                        ? NewVertexSourceRule.FindSourceByRingDistance(wasExisting, existingIdx, i)
+                        : NewVertexSourceRule.FindSourceByWorldDistance(ctx, meshObject, originalVertexCount, point.Position);
 
-                    Vector3 localPos = RebasePositionToSource(ctx, meshObject, srcVertex, point.Position);
+                    Vector3 localPos = NewVertexSourceRule.RebasePositionToSource(ctx, meshObject, srcVertex, point.Position);
 
                     // 新規頂点を作成
                     var vertex = new Vertex(localPos);
@@ -1140,87 +1140,9 @@ namespace Poly_Ling.Tools
             return createdIndices;
         }
 
-        /// <summary>
-        /// 面の法線を計算
-        /// </summary>
-        /// <summary>
-        /// 規則 (A)。生成する多角形の環に沿った段数が最小の既存頂点を返す。
-        /// 段数は min(|i-j|, n-|i-j|)。同数のときは _points 中で先に現れる方を選ぶ。
-        /// 既存頂点が 1 つも無い場合は -1。
-        /// </summary>
-        private static int FindSourceByRingDistance(bool[] wasExisting, int[] existingIdx, int pointIndex)
-        {
-            int n = wasExisting.Length;
-            if (n == 0) return -1;
-
-            int best = -1;
-            int bestStep = int.MaxValue;
-
-            for (int j = 0; j < n; j++)
-            {
-                if (!wasExisting[j]) continue;
-
-                int diff = Mathf.Abs(pointIndex - j);
-                int step = Mathf.Min(diff, n - diff);
-
-                if (step < bestStep)
-                {
-                    bestStep = step;
-                    best = existingIdx[j];
-                }
-            }
-
-            return best;
-        }
-
-        /// <summary>
-        /// 規則 (B)。メッシュ内の既存頂点のうちワールド空間で最も近いものを返す。
-        /// 比較対象は今回の呼び出しで追加する前の頂点のみ（originalVertexCount 未満）。
-        /// 座標は GPU が計算した値（ctx.GetVertexWorldPosition）を優先する。
-        /// 頂点が 1 つも無い場合は -1。
-        /// </summary>
-        private static int FindSourceByWorldDistance(
-            ToolContext ctx, MeshObject meshObject, int originalVertexCount, Vector3 newLocalPos)
-        {
-            if (originalVertexCount <= 0) return -1;
-
-            Matrix4x4 meshMat = ctx.ActiveWorldMatrix;
-            Vector3 targetWorld = meshMat.MultiplyPoint3x4(newLocalPos);
-
-            int best = -1;
-            float bestSqr = float.MaxValue;
-
-            for (int vi = 0; vi < originalVertexCount && vi < meshObject.Vertices.Count; vi++)
-            {
-                Vector3 w;
-                var gpu = ctx.GetVertexWorldPosition?.Invoke(vi);
-                if (gpu.HasValue) w = gpu.Value;
-                else               w = meshMat.MultiplyPoint3x4(meshObject.Vertices[vi].Position);
-
-                float sqr = (w - targetWorld).sqrMagnitude;
-                if (sqr < bestSqr) { bestSqr = sqr; best = vi; }
-            }
-
-            return best;
-        }
-
-        /// <summary>
-        /// point.Position（メッシュの WorldMatrix 基準のローカル座標）を、
-        /// 継承元頂点と同じ基準のローカル座標へ入れ直す。
-        /// ActiveWorldMatrix で一度ワールドへ戻し、継承元の行列の逆で戻す。
-        /// 継承元が無い、または継承元が BoneWeight を持たない場合は変換しない。
-        /// </summary>
-        private static Vector3 RebasePositionToSource(
-            ToolContext ctx, MeshObject meshObject, int srcVertex, Vector3 localPos)
-        {
-            if (srcVertex < 0 || srcVertex >= meshObject.Vertices.Count) return localPos;
-
-            var srcVtx = meshObject.Vertices[srcVertex];
-            if (srcVtx == null || !srcVtx.HasBoneWeight) return localPos;
-
-            Vector3 world = ctx.ActiveWorldMatrix.MultiplyPoint3x4(localPos);
-            return ctx.ActiveVertexMatrix(srcVertex).inverse.MultiplyPoint3x4(world);
-        }
+        // 継承元の決め方（FindSourceByRingDistance / FindSourceByWorldDistance）と
+        // 座標の基準の入れ直し（RebasePositionToSource）は NewVertexSourceRule へ移した。
+        // 点指定図形も同じ規則で頂点を足すため。
 
         /// <summary>
         /// 面の頂点のワールド座標を返す。

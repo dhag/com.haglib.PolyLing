@@ -465,6 +465,9 @@ namespace Poly_Ling.Player
         /// <summary>面追加コマンドの実行。</summary>
         public Func<AddFaceCommand, string> OnAddFace;
 
+        /// <summary>点指定図形コマンドの実行。</summary>
+        public Func<CreatePointDefinedPrimitiveCommand, string> OnCreatePointDefinedPrimitive;
+
         // ================================================================
         // ナイフ
         // ================================================================

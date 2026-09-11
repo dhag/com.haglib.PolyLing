@@ -49,6 +49,10 @@ namespace Poly_Ling.Player
             // ファクトリではなくハンドラへ組ませる（プレビューも同じ実装を通る）。
             if (_current == ShapeKind.EdgeRibbonFace) return GenerateEdgeRibbonFaceMesh();
 
+            // 点指定図形は指定点から組む（座標はワールド空間）。プレビューも実生成も
+            // PointDefinedToolHandler の同じ計画を通す。
+            if (_current == ShapeKind.PointDefined) return GeneratePointDefinedMesh();
+
             var cmd = BuildCreateCommand(applyTransform ? CurrentPlacement() : NeutralPlacement());
             if (cmd == null) return null;
 
@@ -141,6 +145,14 @@ namespace Poly_Ling.Player
                     if (_current == ShapeKind.EdgeRibbonFace)
                     {
                         InvokeEdgeRibbonFaceGenerate();
+                        return;
+                    }
+
+                    // 点指定図形は編集対象の既存頂点を参照する面を足すため、
+                    // 単一 MeshObject を新規追加する経路は通らない。専用コマンドを送る。
+                    if (_current == ShapeKind.PointDefined)
+                    {
+                        InvokePointDefinedGenerate();
                         return;
                     }
 
@@ -244,6 +256,10 @@ namespace Poly_Ling.Player
                 // 選択辺が 1 本以上あり、コマンドの送り先が結線されていること。
                 case ShapeKind.EdgeRibbonFace:
                     return SendCommand != null && EdgeRibbonFaceSelectedEdges > 0;
+
+                // 点が揃い、直近のプレビューで組めていること（仕様 11）。
+                case ShapeKind.PointDefined:
+                    return PointDefinedReady;
 
                 // 揺れもの用ボーン鎖。折れ線を使う 2 種は点が 2 個以上要る。
                 case ShapeKind.SpringBoneSingle:

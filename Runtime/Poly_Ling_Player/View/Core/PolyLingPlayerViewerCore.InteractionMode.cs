@@ -61,6 +61,11 @@ namespace Poly_Ling.Player
             if (_interactionMode == InteractionMode.AdvancedSelect && mode != InteractionMode.AdvancedSelect)
                 _activePanel?.HideAdvSelPreview();
 
+            // 点指定図形の指定点・共有経路の表示は、モードを抜けたら消す。
+            // 他パネルを開いた経路ではオーバーレイの更新が走らないため、ここで消す。
+            if (_interactionMode == InteractionMode.PointDefinedPrimitive && mode != InteractionMode.PointDefinedPrimitive)
+                _activePanel?.HideTopoToolOverlay();
+
             if (_interactionMode == InteractionMode.SkinWeightPaint && mode != InteractionMode.SkinWeightPaint)
             {
                 _skinWeightPaintHandler?.OnDeactivate();
@@ -179,8 +184,11 @@ namespace Poly_Ling.Player
             // ときだけ有効。有効な間はポインタ移動ごとに追加ディスパッチと
             // 頂点数ぶんの読み戻しが走るため、他モードでは必ず切る。
             _viewportManager?.SetSnapHitTestEnabled(
-                mode == InteractionMode.AddFace
-                && (_addFaceHandler?.SnapToUnselectedObjects ?? false));
+                (mode == InteractionMode.AddFace
+                 && (_addFaceHandler?.SnapToUnselectedObjects ?? false))
+                // 点指定図形もパネルのチェックが ON のときだけ非選択オブジェクトへ吸着する。
+                || (mode == InteractionMode.PointDefinedPrimitive
+                    && (_pointDefinedHandler?.SnapToUnselectedObjects ?? false)));
 
             // SelectOnly は毎回リセットし、下の SelectOnly case でのみ再有効化する
             // （他モードへ移ったら選択専用を確実に解除）。将来ギズモ用フックも同様にリセット。
@@ -275,6 +283,13 @@ namespace Poly_Ling.Player
                 case InteractionMode.AddFace:
                     _vertexInteractor?.SetToolHandler(_addFaceHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _addFaceHandler?.UpdateHover(pos, ctx));
+                    break;
+                case InteractionMode.PointDefinedPrimitive:
+                    // 点指定図形（高度な図形）。クリックで点を置く。選択は変えない。
+                    // 図形生成パネル（3D連携）で点指定図形を選んでいる間だけこのモードになる
+                    // （OnPrimitiveShapeSelected が PrimitivePlace と切り替える）。
+                    _vertexInteractor?.SetToolHandler(_pointDefinedHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _pointDefinedHandler?.UpdateHover(pos, ctx));
                     break;
                 case InteractionMode.EdgeBevel:
                     // MoveToolHandler の選択/矩形選択を流用。

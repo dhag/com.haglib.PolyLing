@@ -312,6 +312,10 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // ── 点指定図形 ─────────────────────────────────────────
+            // 指定点と、分割数が一致して共有できる既存経路はここで描く。
+            if (UpdatePointDefinedOverlay(panel, ctx)) return;
+
             // ── 穴の種マーカー（ブリッジ / 穴頂点数合わせ）─────────────
             // どちらも専用の InteractionMode を持たず、パネルを開いたままの
             // SelectOnly / None / PrimitivePlace で操作する。以降の分岐は

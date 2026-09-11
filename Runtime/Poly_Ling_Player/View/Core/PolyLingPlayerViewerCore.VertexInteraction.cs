@@ -547,6 +547,12 @@ namespace Poly_Ling.Player
                         UpdateTopologyToolsOverlay();
                         _edgeBridgeSubPanel?.Refresh();
                     }
+                    // 点指定図形は置いた点を全て捨てる（パネルの［点をクリア］と同じ）。
+                    // 表示の更新はハンドラの OnPointsChanged が行う。
+                    else if (_interactionMode == InteractionMode.PointDefinedPrimitive)
+                    {
+                        _pointDefinedHandler?.ClearPoints();
+                    }
                 };
             }
             ConnectCancelKey(_layoutRoot?.PerspectivePanel);
@@ -554,14 +560,21 @@ namespace Poly_Ling.Player
             ConnectCancelKey(_layoutRoot?.FrontPanel);
             ConnectCancelKey(_layoutRoot?.SidePanel);
 
-            // Backspace / Delete による「直前に指定した点」の取り消し（面追加のみ）。
+            // Backspace / Delete による「直前に指定した点」の取り消し（面追加・点指定図形）。
             void ConnectUndoPointKey(PlayerViewportPanel p)
             {
                 if (p == null) return;
                 p.OnUndoPointKey += () =>
                 {
-                    if (_interactionMode != InteractionMode.AddFace) return;
-                    ExecuteAddFaceRemoveLastPoint();
+                    if (_interactionMode == InteractionMode.AddFace)
+                    {
+                        ExecuteAddFaceRemoveLastPoint();
+                        return;
+                    }
+                    // 点指定図形はパネルの［1 点戻す］と同じ。
+                    // 表示の更新はハンドラの OnPointsChanged が行う。
+                    if (_interactionMode == InteractionMode.PointDefinedPrimitive)
+                        _pointDefinedHandler?.RemoveLastPoint();
                 };
             }
             ConnectUndoPointKey(_layoutRoot?.PerspectivePanel);

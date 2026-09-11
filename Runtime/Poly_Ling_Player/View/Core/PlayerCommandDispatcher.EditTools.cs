@@ -618,6 +618,15 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case CreatePointDefinedPrimitiveCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnCreatePointDefinedPrimitive == null) { Fail("point defined primitive handler not wired"); return true; }
+                    string pdReason = OnCreatePointDefinedPrimitive.Invoke(c);
+                    if (pdReason != null) { Fail(pdReason); return true; }
+                    return true;
+                }
+
                 // ── ナイフ
                 case KnifeLadderCutCommand c:
                 {
