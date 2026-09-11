@@ -121,6 +121,9 @@ namespace Poly_Ling.Player
                 case ShapeKind.NohMask:      return new CreateNohMaskCommand(mi, _nohP, pl);
                 case ShapeKind.Text:         return new CreateTextMeshCommand(mi, _textP, pl);
 
+                // ── MCP用サンドボックス ──
+                case ShapeKind.McpCylinder:  return new CreateMcpCylinderCommand(mi, _mcpCylP, pl);
+
                 case ShapeKind.Revolution:   return BuildRevolutionCommand(mi, pl);
 
                 // 揺れもの用ボーン鎖は作るのがボーンなので、

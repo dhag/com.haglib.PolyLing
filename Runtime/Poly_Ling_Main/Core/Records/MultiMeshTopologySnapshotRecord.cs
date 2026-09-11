@@ -20,10 +20,20 @@
 //   頂点はローカル座標のままでよい（直後の Writeback が展開ワールド座標で上書きする）。
 //
 //   単一メッシュ位相 Undo（MeshSnapshotRecord）は従来どおり UnityMesh を触らない。
+//
+// 【選択】各メッシュの選択（MeshContext.Selection）も MeshObject と同時に取り、同時に戻す。
+//
+//   【なぜ要るか】このレコードを使うツール（面結合・頂点溶解・三角4→1・四角4→1・
+//   穴あけ・選択削除・穴頂点数合わせ）は実行時に選択を消すが、その消去は記録されない。
+//   MeshObject だけを戻すと、Undo では選択が戻らず、Redo では Undo 後に選んだ選択
+//   （変更前の頂点番号）が変更後のメッシュに残る。Undo 後の画面更新（EnterUndoApplied）は
+//   「選択も Undo で復元済み」を前提に選択に触らないので、ここで戻す必要がある。
+//   単一メッシュの MeshObjectSnapshot が選択を持つのと同じ扱い（CreateSnapshot / RestoreFromSnapshot）。
 
 using System.Collections.Generic;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
+using Poly_Ling.Selection;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -43,13 +53,20 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public Dictionary<int, MeshContext> Contexts = new Dictionary<int, MeshContext>();
 
+        /// <summary>
+        /// MeshContext インデックス → 捕獲時の選択（冒頭の【選択】を参照）。
+        /// 選択は MeshObject と同じ時点で取るので、戻したときに頂点番号が食い違わない。
+        /// </summary>
+        public Dictionary<int, SelectionSnapshot> Selections = new Dictionary<int, SelectionSnapshot>();
+
         /// <summary>指定インデックスのメッシュを1つ取り込む。</summary>
         public void CaptureMesh(ModelContext model, int meshContextIndex)
         {
             var mc = model?.GetMeshContext(meshContextIndex);
             if (mc?.MeshObject == null) return;
-            Meshes[meshContextIndex]   = mc.MeshObject.Clone();
-            Contexts[meshContextIndex] = mc;
+            Meshes[meshContextIndex]     = mc.MeshObject.Clone();
+            Contexts[meshContextIndex]   = mc;
+            Selections[meshContextIndex] = mc.Selection?.CreateSnapshot();
         }
 
         /// <summary>保持しているメッシュを ModelContext へ戻す。</summary>
@@ -77,6 +94,10 @@ namespace Poly_Ling.UndoSystem
 
                 mc.MeshObject = kv.Value.Clone();
                 mc.MeshObject.InvalidatePositionCache();
+
+                // 選択も同じ時点のものへ戻す（冒頭の【選択】を参照）。
+                if (Selections.TryGetValue(kv.Key, out var sel) && sel != null)
+                    mc.Selection?.RestoreFromSnapshot(sel);
 
                 // UnityMesh も同じ位相へ作り直す（冒頭の【UnityMesh】を参照）。
                 // ボーン表示用メッシュは MeshObject から作らない

@@ -56,7 +56,7 @@
 | `AlignVerticesToolHandler` | `:75 TriggerAlign` / `:76 TriggerAutoSelect` | `AlignVerticesTool` | 単一（`ActiveMeshContext`） | Tool（`AlignVerticesTool.cs:192, 223`） | なし |
 | `DeleteSelectionToolHandler` | `:73 TriggerDelete` → `:85 _tool.Execute` | `DeleteSelectionTool` | 複数（`SelectedDrawableMeshIndices`） | Tool | `DeleteFacesCommand`（**面のみ**。受け口 `CreateCommands.cs:315`） |
 | `FaceMergeToolHandler` | `:45 TriggerMerge` | `FaceMergeTool` | 複数 | Tool | なし |
-| `FaceMergeCollapseToolHandler` | `:45 TriggerMerge` | `FaceMergeCollapseTool` | 複数 | Tool | なし |
+| （`FaceMergeCollapseToolHandler`） | — | — | — | — | `FaceMergeToolHandler` へ統合（`FaceMergeCommand.DeleteVertices = true`） |
 | `FlipFaceToolHandler` | `:36 FlipSelected` / `:37 FlipAll` | `FlipFaceTool` | 単一 | Tool（`FlipFaceTool.cs:111-112, 138`） | なし |
 | `HoleRingCountToolHandler` | `:89 SetSeeds` / `:122 Execute` | `HoleRingCountTool` | **明示**（種が `MeshIndex`+`Vertex`） | Tool | `MatchHoleRingCountCommand`（受け口 `CreateCommands.cs:430`）**発行済み** |
 | `LineExtrudeToolHandler` | `:54 ExecuteExtrude` | `LineExtrudeTool` + ハンドラ | 単一（選択線分） | **無し** | なし |
@@ -162,7 +162,7 @@
 
 | 段 | 対象 | 理由 |
 |---|---|---|
-| 4-a | A 群のうち「引数がパラメータだけ」の 12 本（`FaceMerge` / `FaceMergeCollapse` / `Quad4To1` / `Tri4To1` / `VertexDissolve` / `VertexHole` / `SplitVertices` / `FlipFace` / `AlignVertices` / `SmoothEdges` / `PlanarizeAlongBones` / `MergeVertices`） | 形が同じ。1 段でまとめて片付く。P6/P7 の `MasterIndices`+`ObjectIds` を最初から持たせる |
+| 4-a | A 群のうち「引数がパラメータだけ」の 12 本（`FaceMerge` / `FaceMergeCollapse`（のちに `FaceMerge` の `DeleteVertices` へ統合） / `Quad4To1` / `Tri4To1` / `VertexDissolve` / `VertexHole` / `SplitVertices` / `FlipFace` / `AlignVertices` / `SmoothEdges` / `PlanarizeAlongBones` / `MergeVertices`） | 形が同じ。1 段でまとめて片付く。P6/P7 の `MasterIndices`+`ObjectIds` を最初から持たせる |
 | 4-b | A 群の残り（`PipeAlign` / `PlaceObjectReshape` / `SurfaceSnap` / `Solidify` / `LineExtrude` / `DeleteSelection` の非面経路） | 参照メッシュ・プレビュー段・生成出力があり、1 本ずつ形が違う。`LineExtrude` の Undo 欠落もここで扱う |
 | 4-c | C 群 4 本 | 3-d / 3-e の型がそのまま使える |
 | 4-d | `WorkAxisToolHandler`（E 群） | D 群のピボット源。先に確定させる |

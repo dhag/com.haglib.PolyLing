@@ -1,5 +1,5 @@
 // FaceMergeToolHandler.cs
-// FaceMergeTool を Player の入力イベントに橋渡しする IPlayerToolHandler 実装。
+// FaceMergeTool（面結合（辺指定））を Player の入力イベントに橋渡しする IPlayerToolHandler 実装。
 // マウス操作は持たず、パネルからの実行のみを中継する。
 // Runtime/Poly_Ling_Player/View/ToolHandlers/ に配置
 
@@ -39,8 +39,19 @@ namespace Poly_Ling.Player
 
         public int SelectedEdgeCount => _tool.SelectedEdgeCount;
 
-        /// <summary>対象メッシュ全部を合わせた下調べ結果。</summary>
-        public FaceMergeTool.MergeSummary Inspect() => _tool.Inspect();
+        /// <summary>
+        /// 「頂点を削除する」の現在値（パネルのチェックボックス）。既定 true。
+        /// パネルの下調べ・ホバーの可否表示・ビューポートのクリック実行はこの値を使う。
+        /// コマンドからの実行はコマンドの DeleteVertices を使う（ExecuteFromCommand）。
+        /// </summary>
+        public bool DeleteVertices { get; set; } = true;
+
+        /// <summary>対象メッシュ全部を合わせた下調べ結果（DeleteVertices の現在値で調べる）。</summary>
+        public FaceMergeTool.MergeSummary Inspect()
+        {
+            _tool.DeleteVertices = DeleteVertices;
+            return _tool.Inspect();
+        }
 
         /// <summary>
         /// 面の結合を実行する。
@@ -77,7 +88,9 @@ namespace Poly_Ling.Player
             var ctx = GetToolContext?.Invoke();
             if (ctx != null) Activate(ctx);
 
-            var summary = Inspect();
+            // 下調べも実行もコマンドの値で行う（パネルのチェックボックスの値は使わない）。
+            _tool.DeleteVertices = cmd.DeleteVertices;
+            var summary = _tool.Inspect();
             if (!summary.CanExecute)
             {
                 reason = string.IsNullOrEmpty(summary.Reason)

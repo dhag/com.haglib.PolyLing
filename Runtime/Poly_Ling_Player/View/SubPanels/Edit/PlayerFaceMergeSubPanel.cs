@@ -1,5 +1,6 @@
 // PlayerFaceMergeSubPanel.cs
-// FaceMergeTool の Player 版サブパネル（UIToolkit）。
+// FaceMergeTool（面結合（辺指定））の Player 版サブパネル（UIToolkit）。
+// 旧「面結合（頂点削除）」は「頂点を削除する」チェックボックス（既定 ON）へ統合した。
 // Runtime/Poly_Ling_Player/View/SubPanels/Edit/ に配置
 
 using System;
@@ -38,6 +39,7 @@ namespace Poly_Ling.Player
         private Label         _targetLabel;
         private Label         _statusLabel;
         private Button        _mergeBtn;
+        private Toggle        _deleteVerticesToggle;
 
         // ================================================================
         // Build
@@ -52,14 +54,30 @@ namespace Poly_Ling.Player
             _root.style.paddingBottom = 4;
             parent.Add(_root);
 
-            _root.Add(Header("Face Merge / 面結合"));
+            _root.Add(Header("Face Merge (Edge) / 面結合（辺指定）"));
             _root.Add(new HelpBox(
                 "選択した辺を挟む2枚の面を1枚に結合します。\n" +
                 "辺に接する面が2枚でない場合、2枚が2辺以上を共有している場合は結合しません。\n" +
-                "共有頂点はほかの面が使っていなければ削除し、前後の点をつなぎます。\n" +
-                "削除すると面にならない場合は削除しません（三角形同士 → 四角形）。\n" +
+                "「頂点を削除する」ON：共有頂点2つを、ほかの面が使っていても新しい面から外します。" +
+                "外した頂点は、どの面からも使われなくなったときだけ消えます。\n" +
+                "「頂点を削除する」OFF：共有頂点のうち、ほかの面が使っていないものだけを外して消します" +
+                "（OFF でも、どの面からも使われなくなる頂点は消えます）。\n" +
+                "どちらも、外すと面にならない場合は外しません（三角形同士 → 四角形）。\n" +
                 "複数オブジェクト・複数辺に対応。同じ面に関わる辺どうしは干渉するため除外します。",
                 HelpBoxMessageType.Info));
+
+            _deleteVerticesToggle = new Toggle("頂点を削除する")
+            {
+                value = GetH?.Invoke()?.DeleteVertices ?? true,
+            };
+            _deleteVerticesToggle.style.marginTop = 4;
+            _deleteVerticesToggle.RegisterValueChangedCallback(e =>
+            {
+                var h = GetH?.Invoke();
+                if (h != null) h.DeleteVertices = e.newValue;
+                Refresh();
+            });
+            _root.Add(_deleteVerticesToggle);
 
             _targetLabel = InfoLabel();
             _root.Add(_targetLabel);
@@ -69,7 +87,8 @@ namespace Poly_Ling.Player
 
             _mergeBtn = new Button(() =>
             {
-                SendCommand?.Invoke(new FaceMergeCommand(ModelIndex, SelectedMasterIndices()));
+                bool deleteVertices = GetH?.Invoke()?.DeleteVertices ?? true;
+                SendCommand?.Invoke(new FaceMergeCommand(ModelIndex, SelectedMasterIndices(), deleteVertices));
                 Refresh();
             })
             { text = "面結合 実行" };
@@ -89,6 +108,7 @@ namespace Poly_Ling.Player
             var h = GetH?.Invoke();
             if (h == null) return;
 
+            _deleteVerticesToggle?.SetValueWithoutNotify(h.DeleteVertices);
             UpdateStats();
         }
 

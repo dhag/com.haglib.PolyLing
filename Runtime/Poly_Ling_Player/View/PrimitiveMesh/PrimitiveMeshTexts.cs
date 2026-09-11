@@ -1,13 +1,16 @@
 // PrimitiveMeshTexts.cs
 // 図形生成パネル用ローカライズ辞書
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
+//
+// MCP用サンドボックスの図形の文字列は PrimitiveMeshTexts.Sandbox.cs（View/McpSandbox/）にある。
+// T() はこのファイルの辞書を先に引き、キーが無いときだけサンドボックスの辞書を引く。
 
 using System.Collections.Generic;
 using Poly_Ling.Localization;
 
 namespace Poly_Ling.Player
 {
-    public static class PrimitiveMeshTexts
+    public static partial class PrimitiveMeshTexts
     {
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new()
         {
@@ -896,7 +899,11 @@ namespace Poly_Ling.Player
                                           ["hi"] = "あなが おおきすぎるので ちいさくして つくります。" },
         };
 
-        public static string T(string key) => L.GetFrom(Texts, key);
-        public static string T(string key, params object[] args) => L.GetFrom(Texts, key, args);
+        public static string T(string key) => L.GetFrom(DictOf(key), key);
+        public static string T(string key, params object[] args) => L.GetFrom(DictOf(key), key, args);
+
+        /// <summary>キーを持つ辞書。どちらにも無ければサンドボックス側（L.GetFrom がキーをそのまま返す）。</summary>
+        private static Dictionary<string, Dictionary<string, string>> DictOf(string key)
+            => Texts.ContainsKey(key) ? Texts : SandboxTexts;
     }
 }

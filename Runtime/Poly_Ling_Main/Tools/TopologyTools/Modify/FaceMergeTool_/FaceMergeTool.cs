@@ -1,9 +1,13 @@
 // FaceMergeTool.cs
-// 面結合ツール - 選択した辺を挟む2枚の面を1枚に結合する。
-// 実処理は FaceMergeOps。ここは対象の集約・Undo 記録・通知だけを担う。
+// 面結合（辺指定）ツール - 選択した辺を挟む2枚の面を1枚に結合する。
+// 実処理は DeleteVertices で選ぶ。
+//   true  … FaceMergeCollapseOps（共有頂点をほかの面が使っていても新しい面から外す）
+//   false … FaceMergeOps（ほかの面が使っていない共有頂点だけを外して消す）
+// ここは対象の集約・Undo 記録・通知だけを担う。
+// 旧「面結合（頂点削除）」（FaceMergeCollapseTool）はこのツールの DeleteVertices = true へ統合した。
 //
 // 【対象】選択中の描画オブジェクト全部（マルチセレクト対応）× 各オブジェクトの
-//   選択辺全部（複数対応）。同じ面に関わる辺どうしは FaceMergeOps 側で除外される。
+//   選択辺全部（複数対応）。同じ面に関わる辺どうしは Ops 側で除外される。
 //
 // 【トポロジカル変更の分類】
 // 削除を伴う変更に該当するため、実行後は ctx.OnTopologyChanged() で全選択をクリアする。
@@ -25,15 +29,21 @@ using Poly_Ling.UndoSystem;
 namespace Poly_Ling.Tools
 {
     /// <summary>
-    /// 面結合ツール。マウス操作は持たず、UI からの実行のみ。
+    /// 面結合（辺指定）ツール。マウス操作は持たず、UI からの実行のみ。
     /// </summary>
     public class FaceMergeTool : IEditTool
     {
         public string Name        => "FaceMerge";
-        public string DisplayName => "Face Merge";
+        public string DisplayName => "Face Merge (Edge)";
 
         /// <summary>設定は持たない。</summary>
         public IToolSettings Settings => null;
+
+        /// <summary>
+        /// 共有頂点を新しい面から外すか。true で FaceMergeCollapseOps、false で FaceMergeOps を使う。
+        /// 下調べ（Inspect）・実行・ミラー側への伝播のすべてがこの値に従う。
+        /// </summary>
+        public bool DeleteVertices { get; set; } = true;
 
         // ================================================================
         // コンテキスト
@@ -149,16 +159,28 @@ namespace Poly_Ling.Tools
 
             foreach (var t in targets)
             {
-                var info = FaceMergeOps.InspectMany(t.MeshContext.MeshObject, t.Edges);
+                int skipped, removedFaces, removedVerts, targetCount;
+                if (DeleteVertices)
+                {
+                    var info = FaceMergeCollapseOps.InspectMany(t.MeshContext.MeshObject, t.Edges);
+                    skipped = info.SkippedCount; removedFaces = info.RemovedFaceTotal;
+                    removedVerts = info.RemovedVertexTotal; targetCount = info.TargetCount;
+                }
+                else
+                {
+                    var info = FaceMergeOps.InspectMany(t.MeshContext.MeshObject, t.Edges);
+                    skipped = info.SkippedCount; removedFaces = info.RemovedFaceTotal;
+                    removedVerts = info.RemovedVertexTotal; targetCount = info.TargetCount;
+                }
 
-                sum.SkippedCount       += info.SkippedCount;
-                sum.RemovedFaceTotal   += info.RemovedFaceTotal;
-                sum.RemovedVertexTotal += info.RemovedVertexTotal;
+                sum.SkippedCount       += skipped;
+                sum.RemovedFaceTotal   += removedFaces;
+                sum.RemovedVertexTotal += removedVerts;
 
-                if (info.TargetCount <= 0) continue;
+                if (targetCount <= 0) continue;
 
                 sum.ObjectCount++;
-                sum.TargetCount += info.TargetCount;
+                sum.TargetCount += targetCount;
             }
 
             if (sum.TargetCount == 0)
@@ -187,6 +209,9 @@ namespace Poly_Ling.Tools
 
             var undo = _context.UndoController;
 
+            // 実行中に値が変わっても、実体側とミラー側で同じ Ops を使うように控える。
+            bool deleteVertices = DeleteVertices;
+
             // 生成ミラーは実体側から作り直すため、Undo の記録対象に含める。
             // 片側だけ記録すると Undo で実体とミラーが食い違う。
             var realIndices = new List<int>();
@@ -214,7 +239,7 @@ namespace Poly_Ling.Tools
 
             foreach (var t in targets)
             {
-                bool ok = FaceMergeOps.ExecuteMany(
+                bool ok = ExecuteOps(deleteVertices,
                     t.MeshContext.MeshObject, t.Edges,
                     out int merged, out int removedFaces, out int removedVerts,
                     out int skipped, out string reason);
@@ -247,7 +272,7 @@ namespace Poly_Ling.Tools
             int mirrorApplied = MirrorBranchOps.ApplyToMirrors(model, mirrorPlan, (realIdx, mirrorMo) =>
             {
                 if (!opInputs.TryGetValue(realIdx, out var src)) return false;
-                return FaceMergeOps.ExecuteMany(mirrorMo, src,
+                return ExecuteOps(deleteVertices, mirrorMo, src,
                     out _, out _, out _, out _, out _);
             });
 
@@ -261,7 +286,8 @@ namespace Poly_Ling.Tools
                 // MeshListStack の Context を今回のモデルに合わせる（Undo 時の復元先）。
                 undo.SetModelContext(model);
 
-                string desc = $"Face Merge ({okMeshes} objs / {mergedTotal} edges / {removedFaceTotal} faces)";
+                string desc = $"Face Merge ({(deleteVertices ? "delete verts" : "keep verts")} / "
+                            + $"{okMeshes} objs / {mergedTotal} edges / {removedFaceTotal} faces)";
                 var record = new MultiMeshTopologySnapshotRecord(before, after, desc);
                 PLDiag.UndoRecord("MeshList", desc, record);
                 undo.MeshListStack.Record(record, desc);
@@ -269,8 +295,21 @@ namespace Poly_Ling.Tools
                 undo.FocusMeshList();
             }
 
-            Debug.Log($"[FaceMergeTool] 結合完了: オブジェクト {okMeshes} / 結合 {mergedTotal} 箇所 "
+            Debug.Log($"[FaceMergeTool] 結合完了（頂点を削除する={deleteVertices}）: オブジェクト {okMeshes} / 結合 {mergedTotal} 箇所 "
                     + $"/ 消えた面 {removedFaceTotal} / 消えた頂点 {removedVertexTotal} / 除外 {skippedTotal} / ミラー伝播 {mirrorApplied} (対象 {mirrorPlan.Entries.Count} / 検証落ち {mirrorPlan.RejectedCount})");
+        }
+
+        /// <summary>DeleteVertices に応じた Ops で一括実行する（実体側・ミラー側で共用）。</summary>
+        private static bool ExecuteOps(
+            bool deleteVertices, MeshObject mo, IEnumerable<VertexPair> edges,
+            out int merged, out int removedFaces, out int removedVerts,
+            out int skipped, out string reason)
+        {
+            return deleteVertices
+                ? FaceMergeCollapseOps.ExecuteMany(mo, edges,
+                    out merged, out removedFaces, out removedVerts, out skipped, out reason)
+                : FaceMergeOps.ExecuteMany(mo, edges,
+                    out merged, out removedFaces, out removedVerts, out skipped, out reason);
         }
     }
 }

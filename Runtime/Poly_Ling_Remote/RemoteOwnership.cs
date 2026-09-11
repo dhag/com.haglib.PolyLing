@@ -257,7 +257,6 @@ namespace Poly_Ling.Remote
                 // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
                 // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
                 case FaceMergeCommand            c: return c.MasterIndices;
-                case FaceMergeCollapseCommand    c: return c.MasterIndices;
                 case Quad4To1Command             c: return c.MasterIndices;
                 case Tri4To1Command              c: return c.MasterIndices;
                 case VertexDissolveCommand       c: return c.MasterIndices;
