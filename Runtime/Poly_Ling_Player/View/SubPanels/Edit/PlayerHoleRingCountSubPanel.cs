@@ -21,14 +21,29 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "holeRingCount.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl(Ignore = true)]
         private VisualElement _sectionEl;
+        [UiControl("base", Safety = UiSafety.ReadOnly, Description = "取り込んだ基準穴の情報")]
         private Label         _baseLabel;
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "取り込んだ対象穴の情報")]
         private Label         _targetLabel;
+        [UiControl("diff", Safety = UiSafety.ReadOnly, Description = "基準穴と対象穴の頂点数と、対象をどう増減させるか")]
         private Label         _diffLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の実行結果")]
         private Label         _statusLabel;
+        [UiControl("splitTriangles", Description = "三角形は三角形 2 枚に割る（OFF は中点を入れた四角形のまま残す）")]
         private Toggle        _splitTriToggle;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "対象穴の頂点数を基準穴に合わせる")]
         private Button        _executeBtn;
+        [UiControl("importBase", Safety = UiSafety.SafeWrite, Description = "ビューポートの選択（エッジ上の頂点か辺）を基準穴として取り込む")]
+        private Button        _importBaseBtn;
+        [UiControl("importTarget", Safety = UiSafety.SafeWrite, Description = "ビューポートの選択（エッジ上の頂点か辺）を対象穴として取り込む")]
+        private Button        _importTargetBtn;
+        [UiControl("clearSeeds", Safety = UiSafety.SafeWrite, Description = "取り込んだ基準穴・対象穴を破棄する（メッシュは変えない）")]
+        private Button        _clearSeedsBtn;
 
         /// <summary>直近の実行結果。Refresh で消さずに残す。</summary>
         private string _lastResult = "";
@@ -65,7 +80,7 @@ namespace Poly_Ling.Player
 
             // ── 基準穴 ──
             _root.Add(SectionLabel("基準穴（変更しない）"));
-            _root.Add(ActionButton("基準穴を選択から取り込み", () =>
+            _root.Add(_importBaseBtn = ActionButton("基準穴を選択から取り込み", () =>
             {
                 GetH?.Invoke()?.ImportBase();
                 Refresh();
@@ -75,7 +90,7 @@ namespace Poly_Ling.Player
 
             // ── 対象穴 ──
             _root.Add(SectionLabel("対象穴（頂点数を増減させる）"));
-            _root.Add(ActionButton("対象穴を選択から取り込み", () =>
+            _root.Add(_importTargetBtn = ActionButton("対象穴を選択から取り込み", () =>
             {
                 GetH?.Invoke()?.ImportTarget();
                 Refresh();
@@ -83,7 +98,7 @@ namespace Poly_Ling.Player
             _targetLabel = InfoLabel();
             _root.Add(_targetLabel);
 
-            _root.Add(ActionButton("取り込みを破棄", () =>
+            _root.Add(_clearSeedsBtn = ActionButton("取り込みを破棄", () =>
             {
                 GetH?.Invoke()?.ClearSeeds();
                 _lastResult = "";

@@ -89,10 +89,29 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private TextField  _pmxPathField, _mqoPathField;
-        private FloatField _mqoScale, _smoothingAngle;
-        private Toggle     _mqoFlipX, _mqoFlipZ, _mqoFlipUV_V;
-        private Toggle     _skipNamedMirror, _recalcNormals, _importUV;
+        // UI 自動操作の ID は "mqoToPmxTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
+        [UiControl("pmxPath", Description = "PMX パス（土台）")]
+        private TextField  _pmxPathField;
+        [UiControl("mqoPath", Description = "MQO パス（ソース）")]
+        private TextField  _mqoPathField;
+        [UiControl("mqo.scale", Description = "MQO 読込の倍率")]
+        private FloatField _mqoScale;
+        [UiControl("smoothingAngle", Description = "スムージング角度")]
+        private FloatField _smoothingAngle;
+        [UiControl("mqo.flipX", Description = "MQO 読込の Flip X")]
+        private Toggle     _mqoFlipX;
+        [UiControl("mqo.flipZ", Description = "MQO 読込の Flip Z")]
+        private Toggle     _mqoFlipZ;
+        [UiControl("mqo.flipUvV", Description = "MQO 読込の Flip UV V")]
+        private Toggle     _mqoFlipUV_V;
+        [UiControl("skipNamedMirror", Description = "名前末尾が + のメッシュを対象から外す")]
+        private Toggle     _skipNamedMirror;
+        [UiControl("recalcNormals", Description = "法線を再計算する")]
+        private Toggle     _recalcNormals;
+        [UiControl("importUv", Description = "MQO の UV を書き込む")]
+        private Toggle     _importUV;
+        [UiControl("normalMode", Description = "法線の作り方")]
         private EnumField  _normalMode;
 
         // ================================================================

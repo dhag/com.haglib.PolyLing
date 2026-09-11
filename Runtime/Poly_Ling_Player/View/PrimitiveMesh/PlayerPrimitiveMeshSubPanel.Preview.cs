@@ -57,6 +57,7 @@ namespace Poly_Ling.Player
         /// Build に渡された右ペインセクション。表示中かどうかの判定にのみ使う。
         /// 複数インスタンスが同時に存在しても、表示中のものだけがプレビューを描画する。
         /// </summary>
+        [UiControl(Ignore = true)]
         private VisualElement _sectionEl;
 
         /// <summary>メイン3Dウインドウへ描く黄色ワイヤ用マテリアル。初回描画時に遅延生成する。</summary>

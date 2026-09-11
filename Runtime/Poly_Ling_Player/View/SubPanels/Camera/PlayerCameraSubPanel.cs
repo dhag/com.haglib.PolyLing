@@ -49,28 +49,109 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "camera.<下の Id>"（UiControlAttribute.cs）。
+        // 「調整対象」でメイン画面と 3 面図のどちらの欄を出すかが切り替わるので、
+        // それぞれの欄には対象を切り替える表示の下準備を付ける。
+        [UiControl("target", Description = "調整対象（メイン画面 / 3 面図）")]
         private DropdownField _targetDropdown;
+        [UiControl("gizmoOperation", Description = "ギズモ操作")]
         private DropdownField _gizmoOpDropdown;
 
+        [UiControl(Ignore = true)]
         private VisualElement _mainGroup;
+        [UiControl(Ignore = true)]
         private VisualElement _triGroup;
 
-        private Slider _mainTargetXS, _mainTargetYS, _mainTargetZS;
-        private FloatField _mainTargetXF, _mainTargetYF, _mainTargetZF;
-        private Slider _mainRotXS, _mainRotYS, _mainRotZS;
-        private FloatField _mainRotXF, _mainRotYF, _mainRotZF;
-        private Slider _mainDistS, _mainFovS;
-        private FloatField _mainDistF, _mainFovF;
+        [UiControl("main.targetX", Reveal = nameof(RevealMain), Description = "メイン画面の注視点 X（スライダー）")]
+        private Slider _mainTargetXS;
+        [UiControl("main.targetY", Reveal = nameof(RevealMain), Description = "メイン画面の注視点 Y（スライダー）")]
+        private Slider _mainTargetYS;
+        [UiControl("main.targetZ", Reveal = nameof(RevealMain), Description = "メイン画面の注視点 Z（スライダー）")]
+        private Slider _mainTargetZS;
+        [UiControl("main.targetXValue", Reveal = nameof(RevealMain), Description = "メイン画面の注視点 X（数値入力）")]
+        private FloatField _mainTargetXF;
+        [UiControl("main.targetYValue", Reveal = nameof(RevealMain), Description = "メイン画面の注視点 Y（数値入力）")]
+        private FloatField _mainTargetYF;
+        [UiControl("main.targetZValue", Reveal = nameof(RevealMain), Description = "メイン画面の注視点 Z（数値入力）")]
+        private FloatField _mainTargetZF;
+        [UiControl("main.rotationX", Reveal = nameof(RevealMain), Description = "メイン画面の回転 X（スライダー）")]
+        private Slider _mainRotXS;
+        [UiControl("main.rotationY", Reveal = nameof(RevealMain), Description = "メイン画面の回転 Y（スライダー）")]
+        private Slider _mainRotYS;
+        [UiControl("main.rotationZ", Reveal = nameof(RevealMain), Description = "メイン画面の回転 Z（スライダー）")]
+        private Slider _mainRotZS;
+        [UiControl("main.rotationXValue", Reveal = nameof(RevealMain), Description = "メイン画面の回転 X（数値入力）")]
+        private FloatField _mainRotXF;
+        [UiControl("main.rotationYValue", Reveal = nameof(RevealMain), Description = "メイン画面の回転 Y（数値入力）")]
+        private FloatField _mainRotYF;
+        [UiControl("main.rotationZValue", Reveal = nameof(RevealMain), Description = "メイン画面の回転 Z（数値入力）")]
+        private FloatField _mainRotZF;
+        [UiControl("main.distance", Reveal = nameof(RevealMain), Description = "メイン画面の距離（スライダー）")]
+        private Slider _mainDistS;
+        [UiControl("main.fov", Reveal = nameof(RevealMain), Description = "メイン画面の画角（スライダー）")]
+        private Slider _mainFovS;
+        [UiControl("main.distanceValue", Reveal = nameof(RevealMain), Description = "メイン画面の距離（数値入力）")]
+        private FloatField _mainDistF;
+        [UiControl("main.fovValue", Reveal = nameof(RevealMain), Description = "メイン画面の画角（数値入力）")]
+        private FloatField _mainFovF;
+        [UiControl("main.orthographic", Reveal = nameof(RevealMain), Description = "メイン画面をオルソ表示にする")]
         private Toggle _mainOrthoToggle;
+        [UiControl("main.flip", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMain), Description = "視線を反転する（反対側へ回り込む）")]
+        private Button _mainFlipBtn;
 
-        private Slider _triTargetXS, _triTargetYS, _triTargetZS;
-        private FloatField _triTargetXF, _triTargetYF, _triTargetZF;
-        private Slider _triRotXS, _triRotYS, _triRotZS;
-        private FloatField _triRotXF, _triRotYF, _triRotZF;
-        private Slider _triZoomS, _triFovS;
-        private FloatField _triZoomF, _triFovF;
+        [UiControl("tri.targetX", Reveal = nameof(RevealTri), Description = "3 面図の注視点 X（スライダー）")]
+        private Slider _triTargetXS;
+        [UiControl("tri.targetY", Reveal = nameof(RevealTri), Description = "3 面図の注視点 Y（スライダー）")]
+        private Slider _triTargetYS;
+        [UiControl("tri.targetZ", Reveal = nameof(RevealTri), Description = "3 面図の注視点 Z（スライダー）")]
+        private Slider _triTargetZS;
+        [UiControl("tri.targetXValue", Reveal = nameof(RevealTri), Description = "3 面図の注視点 X（数値入力）")]
+        private FloatField _triTargetXF;
+        [UiControl("tri.targetYValue", Reveal = nameof(RevealTri), Description = "3 面図の注視点 Y（数値入力）")]
+        private FloatField _triTargetYF;
+        [UiControl("tri.targetZValue", Reveal = nameof(RevealTri), Description = "3 面図の注視点 Z（数値入力）")]
+        private FloatField _triTargetZF;
+        [UiControl("tri.rotationX", Reveal = nameof(RevealTri), Description = "3 面図の回転 X（スライダー）")]
+        private Slider _triRotXS;
+        [UiControl("tri.rotationY", Reveal = nameof(RevealTri), Description = "3 面図の回転 Y（スライダー）")]
+        private Slider _triRotYS;
+        [UiControl("tri.rotationZ", Reveal = nameof(RevealTri), Description = "3 面図の回転 Z（スライダー）")]
+        private Slider _triRotZS;
+        [UiControl("tri.rotationXValue", Reveal = nameof(RevealTri), Description = "3 面図の回転 X（数値入力）")]
+        private FloatField _triRotXF;
+        [UiControl("tri.rotationYValue", Reveal = nameof(RevealTri), Description = "3 面図の回転 Y（数値入力）")]
+        private FloatField _triRotYF;
+        [UiControl("tri.rotationZValue", Reveal = nameof(RevealTri), Description = "3 面図の回転 Z（数値入力）")]
+        private FloatField _triRotZF;
+        [UiControl("tri.zoom", Reveal = nameof(RevealTri), Description = "3 面図のズーム（スライダー）")]
+        private Slider _triZoomS;
+        [UiControl("tri.fov", Reveal = nameof(RevealTri), Description = "3 面図の画角（スライダー）")]
+        private Slider _triFovS;
+        [UiControl("tri.zoomValue", Reveal = nameof(RevealTri), Description = "3 面図のズーム（数値入力）")]
+        private FloatField _triZoomF;
+        [UiControl("tri.fovValue", Reveal = nameof(RevealTri), Description = "3 面図の画角（数値入力）")]
+        private FloatField _triFovF;
+        [UiControl("tri.perspective", Reveal = nameof(RevealTri), Description = "3 面図をパース表示にする（3 台連動）")]
         private Toggle _triPerspToggle;
-        private Toggle _triFlipTop, _triFlipFront, _triFlipSide;
+        [UiControl("tri.flipTop", Reveal = nameof(RevealTri), Description = "上面図を反転する")]
+        private Toggle _triFlipTop;
+        [UiControl("tri.flipFront", Reveal = nameof(RevealTri), Description = "正面図を反転する")]
+        private Toggle _triFlipFront;
+        [UiControl("tri.flipSide", Reveal = nameof(RevealTri), Description = "側面図を反転する")]
+        private Toggle _triFlipSide;
+
+        /// <summary>UI 自動操作の表示の下準備。メイン画面の欄は「調整対象」がメイン画面のときだけ出る。</summary>
+        private bool RevealMain() => RevealTarget(0);
+
+        /// <summary>3 面図の欄は「調整対象」が 3 面図のときだけ出る。</summary>
+        private bool RevealTri() => RevealTarget(1);
+
+        private bool RevealTarget(int index)
+        {
+            if (_targetDropdown == null || _targetDropdown.index == index) return false;
+            _targetDropdown.index = index;
+            return true;
+        }
 
         private bool _suppress;
 
@@ -175,6 +256,7 @@ namespace Poly_Ling.Player
             flipBtn.style.marginTop = 4;
             flipBtn.style.height    = 24;
             _mainGroup.Add(flipBtn);
+            _mainFlipBtn = flipBtn;
         }
 
         private void SetMainTarget(int axis, float v)

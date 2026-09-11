@@ -40,7 +40,12 @@ namespace Poly_Ling.Player
         public static readonly DistanceMode[] DistanceModeValues =
             { DistanceMode.Euclidean, DistanceMode.Link };
 
+        // UI 自動操作では、ドロップダウンを自分のフィールドに持たないサブパネルが
+        // UiNested で取り込む（例 "skinWeightPaint.brush.falloff"）。自分のフィールドに
+        // 持つサブパネル（頂点移動・スカルプト）は UiControl(Ignore = true) で取り込まない。
+        [UiControl("falloff", Description = "フォールオフの形")]
         private DropdownField _falloffDropdown;
+        [UiControl("distanceMode", Description = "距離モード")]
         private DropdownField _distanceDropdown;
 
         private Func<FalloffType>   _getFalloff;

@@ -101,20 +101,39 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "normalTransplant.<下の Id>"（UiControlAttribute.cs）。
+        // ビフォー・アフター・対象のチェックはオブジェクトに合わせて作り直す行（Rows）。
+        // 強さ・決定・キャンセルは「法線を計算」の後だけ表示される。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label _warningLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _mainContent;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _beforeListContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _afterListContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _targetListContainer;
+        [UiControl("blendMode", Description = "法線の混ぜ方（選択肢は uiGetValue の choices）")]
         private RadioButtonGroup _blendModeGroup;
+        [UiControl("allowNearest", Description = "プリズム外の頂点は最も近いプリズムへ寄せる")]
         private Toggle _toggleAllowNearest;
+        [UiControl("compute", Safety = UiSafety.SafeWrite, Description = "法線を計算してプレビューを出す")]
         private Button _btnCompute;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label _statusLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _applySection;
+        [UiControl("strength", Description = "法線を移す強さ（「法線を計算」の後だけ表示）")]
         private Slider _sliderStrength;
+        [UiControl("strengthText", Safety = UiSafety.ReadOnly, Description = "強さの表示")]
         private Label _sliderValueLabel;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "法線の移植を決定する（「法線を計算」の後だけ表示）")]
         private Button _btnApply;
+        [UiControl("cancel", Safety = UiSafety.SafeWrite, Description = "法線の移植のプレビューを取り消す（「法線を計算」の後だけ表示）")]
+        private Button _btnCancel;
 
         // ================================================================
         // Build
@@ -246,6 +265,7 @@ namespace Poly_Ling.Player
             btnCancel.style.fontSize = 10;
             btnRow.Add(_btnApply);
             btnRow.Add(btnCancel);
+            _btnCancel = btnCancel;
         }
 
         // ================================================================

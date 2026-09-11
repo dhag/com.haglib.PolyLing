@@ -80,13 +80,25 @@ namespace Poly_Ling.Player
 
         // 添字は ShapeKind の値そのもの。図形を足したときに溢れないよう、
         // 長さは列挙の要素数から取る。
+        // UI 自動操作の ID は "<パネル ID>.<下の Id>"（UiControlAttribute.cs）。
+        // 図形ボタンと諸元欄は図形・カテゴリごとに作り直すので、_uiDynamicShapes / _uiDynamic が持つ。
+        [UiControl(Ignore = true)]
         private readonly Button[]  _shapeBtns =
             new Button[System.Enum.GetValues(typeof(ShapeKind)).Length];
+        [UiControl(Ignore = true)]
         private VisualElement      _shapeGrid;
+        [UiControl(Ignore = true)]
         private VisualElement      _settingsContainer;
+        [UiControl(Ignore = true)]
         private VisualElement      _profileEditorContainer;
+        [UiControl(Ignore = true)]
         private VisualElement      _previewEl;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label              _statusLabel;
+        [UiControl("mergeDuplicateVertices", Description = "重複頂点をマージする")]
+        private Toggle             _mergeToggle;
+        [UiControl("keepAsGroup", Description = "オブジェクトグループとして残す（オフだと作り直せない）")]
+        private Toggle             _keepAsGroupToggle;
 
         // ================================================================
         // Build
@@ -98,6 +110,12 @@ namespace Poly_Ling.Player
             _cubeP.LinkTopBottom = true;
             _sectionEl = parent;
             parent.Clear();
+
+            // ここから組む姿勢・材質などは図形に依らない固定部分。図形を選び直しても
+            // 消えないよう、行ヘルパの登録先を固定用の置き場にしておく。
+            // 諸元を作り直す RebuildSettings が、登録先を諸元用へ戻す。
+            _uiRowTarget = _uiDynamicFixed;
+            _uiDynamicFixed.Begin("");
 
             parent.Add(SL(T("PanelTitle"), bold: true));
             parent.Add(Sep());
@@ -349,6 +367,7 @@ namespace Poly_Ling.Player
             mergeToggle.style.color = new StyleColor(Color.white);
             mergeToggle.RegisterValueChangedCallback(e => { _mergeDuplicateVertices = e.newValue; _dirty = true; });
             pose.Add(mergeToggle);
+            _mergeToggle = mergeToggle;
 
             // ── グループとして残すか
             //    毎回ダイアログを出すと「ちょっと作るだけ」の操作が重くなるので、
@@ -356,6 +375,7 @@ namespace Poly_Ling.Player
             var keepToggle = new Toggle(T("KeepAsGroup")) { value = _keepAsGroup };
             keepToggle.style.color = new StyleColor(Color.white);
             pose.Add(keepToggle);
+            _keepAsGroupToggle = keepToggle;
 
             var keepWarn = new Label(T("KeepAsGroupWarn"));
             keepWarn.style.whiteSpace  = WhiteSpace.Normal;

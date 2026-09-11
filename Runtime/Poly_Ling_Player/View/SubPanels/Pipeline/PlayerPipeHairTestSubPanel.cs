@@ -50,10 +50,26 @@ namespace Poly_Ling.Player
         /// <summary>残す側。PMX のモデルは −Z を向くので既定は −Z。</summary>
         private enum FrontAxis { MinusZ = 0, PlusZ = 1 }
 
-        private FloatField    _radius, _profileFlatten, _dropForward;
-        private IntegerField  _strands, _latitude, _splineSegments;
+        // UI 自動操作の ID は "pipeHairTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        [UiControl("radius", Description = "四分球（頭）の半径")]
+        private FloatField    _radius;
+        [UiControl("profileFlatten", Description = "断面の Y 方向の倍率")]
+        private FloatField    _profileFlatten;
+        [UiControl("dropForward", Description = "毛先を前へ垂らす量（作り直しの検証用）")]
+        private FloatField    _dropForward;
+        [UiControl("strands", Description = "房の本数")]
+        private IntegerField  _strands;
+        [UiControl("latitude", Description = "緯線の分割（上下）")]
+        private IntegerField  _latitude;
+        [UiControl("splineSegments", Description = "段間の補間数（1 で rung ほぼ 2 倍）")]
+        private IntegerField  _splineSegments;
+        [UiControl("front", Description = "前の向き")]
         private EnumField     _front;
-        private Toggle        _profileClosed, _capEnds;
+        [UiControl("profileClosed", Description = "断面を閉ループにする（筒にする）")]
+        private Toggle        _profileClosed;
+        [UiControl("capEnds", Description = "開いた梯子の両端に蓋を張る")]
+        private Toggle        _capEnds;
 
         // 段をまたいで持ち回る
         private int   _expectedStrands;

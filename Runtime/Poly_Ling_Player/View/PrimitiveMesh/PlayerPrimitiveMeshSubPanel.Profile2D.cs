@@ -29,11 +29,19 @@ namespace Poly_Ling.Player
         private const string  P2dCsvKey  = "Primitive.Profile2D.Csv";
 
         // ── Profile2D キャンバス状態 ──────────────────────────────────────
+        // 2D 断面の編集はキャンバス上のポインタ操作が主なので、キャンバスと点の編集欄は
+        // 項目にしない。読み込み・書き出しなど押せるものだけ諸元と同じ置き場（_uiDynamic）に入る。
+        [UiControl(Ignore = true)]
         private VisualElement _p2dCanvas;
+        [UiControl(Ignore = true)]
         private VisualElement _p2dPtRow;
+        [UiControl(Ignore = true)]
         private Slider        _p2dPtXSlider;
+        [UiControl(Ignore = true)]
         private FloatField    _p2dPtXField;
+        [UiControl(Ignore = true)]
         private Slider        _p2dPtYSlider;
+        [UiControl(Ignore = true)]
         private FloatField    _p2dPtYField;
         private int           _p2dSelLoop = 0;
         private int           _p2dSelPt   = -1;
@@ -57,11 +65,29 @@ namespace Poly_Ling.Player
         private readonly Canvas2DAnchor _p2dAnchor = new Canvas2DAnchor();
         private bool          _p2dAnchorDrag;
         private bool          _p2dAnchorSuppress;
-        private Slider        _p2dAnchorXSlider, _p2dAnchorYSlider;
-        private FloatField    _p2dAnchorXField,  _p2dAnchorYField;
+        [UiControl(Ignore = true)]
+        private Slider        _p2dAnchorXSlider;
+        [UiControl(Ignore = true)]
+        private Slider        _p2dAnchorYSlider;
+        [UiControl(Ignore = true)]
+        private FloatField    _p2dAnchorXField;
+        [UiControl(Ignore = true)]
+        private FloatField    _p2dAnchorYField;
+        [UiControl(Ignore = true)]
         private Button        _p2dAnchorEnterBtn;
+        [UiControl(Ignore = true)]
         private VisualElement _p2dAnchorPanel;
-        private FloatField    _p2dTfMoveX, _p2dTfMoveY, _p2dTfScaleX, _p2dTfScaleY, _p2dTfRot;
+        [UiControl(Ignore = true)]
+        private FloatField    _p2dTfMoveX;
+        [UiControl(Ignore = true)]
+        private FloatField    _p2dTfMoveY;
+        [UiControl(Ignore = true)]
+        private FloatField    _p2dTfScaleX;
+        [UiControl(Ignore = true)]
+        private FloatField    _p2dTfScaleY;
+        [UiControl(Ignore = true)]
+        private FloatField    _p2dTfRot;
+        [UiControl(Ignore = true)]
         private FloatField    _p2dTfScaleAxis;
 
         // 回転/拡大縮小ハンドル（キャンバス上ドラッグ）
@@ -74,15 +100,28 @@ namespace Poly_Ling.Player
         private float   _p2dHandlePrevAngle;
         private float   _p2dHandleTotalDeg;
         // 角処理(ベベル)UI 要素（Thickness/Segments に応じて表示切替）
-        private VisualElement _p2dEdgeLabel, _p2dEdgeFrontSeg, _p2dEdgeFrontSize, _p2dEdgeBackSeg, _p2dEdgeBackSize, _p2dEdgeInward;
+        [UiControl(Ignore = true)]
+        private VisualElement _p2dEdgeLabel;
+        [UiControl(Ignore = true)]
+        private VisualElement _p2dEdgeFrontSeg;
+        [UiControl(Ignore = true)]
+        private VisualElement _p2dEdgeFrontSize;
+        [UiControl(Ignore = true)]
+        private VisualElement _p2dEdgeBackSeg;
+        [UiControl(Ignore = true)]
+        private VisualElement _p2dEdgeBackSize;
+        [UiControl(Ignore = true)]
+        private VisualElement _p2dEdgeInward;
 
         // マグネット（比例編集、Phase）
         private readonly Canvas2DMagnet _p2dMagnet = new Canvas2DMagnet();
         private readonly Dictionary<long, Vector2> _p2dMagnetStart = new Dictionary<long, Vector2>();
         private readonly Dictionary<long, float>   _p2dMagnetW     = new Dictionary<long, float>();
+        [UiControl(Ignore = true)]
         private Slider        _p2dMagnetRadius;
         private float         _p2dZoom    = 1f;
         private Vector2       _p2dOffset  = Vector2.zero;
+        [UiControl(Ignore = true)]
         private VisualElement _p2dViewLayer;
         private bool          _p2dPanDrag;
         private Vector2       _p2dPanStart;
@@ -92,12 +131,15 @@ namespace Poly_Ling.Player
         private string        _p2dCsvPath = "";
         // 下絵
         private Texture2D     _p2dBgTex;
+        [UiControl(Ignore = true)]
         private VisualElement _p2dBgEl;
         private string        _p2dBgPath   = "";
         private Vector2       _p2dBgOffset = Vector2.zero;
         private float         _p2dBgScale  = 8f;    // 画像高さ(ワールド単位)
         private Vector2       _p2dBgOrigin = Vector2.zero; // 拡大縮小の原点（画像px, 既定=中心）
+        [UiControl(Ignore = true)]
         private Slider        _p2dBgScaleSlider;
+        [UiControl(Ignore = true)]
         private Label         _p2dBgSizeLabel;
         private float         _p2dBgAlpha  = 0.4f;
         private bool          _p2dBgMode   = false;

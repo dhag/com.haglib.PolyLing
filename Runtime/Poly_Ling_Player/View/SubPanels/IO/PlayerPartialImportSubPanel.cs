@@ -101,11 +101,29 @@ namespace Poly_Ling.Player
         // 内部 UI 参照
         // ================================================================
 
+        // UI 自動操作の ID は "<partialImportPmx / partialImportMqo>.<下の Id>"（UiControlAttribute.cs）。
+        // 1 つのセクションをモードで切り替えるので、モードごとに別パネルとして登録する。
+        // 設定行は _uiDynamic、一覧の上のボタンは _uiDynamicList（一覧だけ作り直すことがあるため別）。
+        // 一覧の行（対応のチェック）はデータ行。読込は「...」「開く」どちらもファイル選択ダイアログを通す。
+        [UiControl("title", Safety = UiSafety.ReadOnly, Description = "部分インポータの名前（モード）")]
         private Label         _panelNameLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("path", Description = "読み込むファイルのパス（ダイアログの初期値として使う）")]
         private TextField     _filePathField;
+        [UiControl(Ignore = true)]
         private VisualElement _settingsContainer;
+        [UiControl(Ignore = true)]
         private VisualElement _listContainer;
+        [UiControl("browse", Safety = UiSafety.UserOnly, Description = "[...]。ファイル選択ダイアログを開き、選んだら読み込んで対応を取る")]
+        private Button        _browseBtn;
+        [UiControl("open", Safety = UiSafety.UserOnly, Description = "開く。ファイル選択ダイアログを開き、選んだら読み込んで対応を取る")]
+        private Button        _openBtn;
+
+        /// <summary>モードごとの設定行。</summary>
+        private readonly UiDynamicControls _uiDynamic     = new UiDynamicControls();
+        /// <summary>一覧の上のボタンと、一覧のデータ行。</summary>
+        private readonly UiDynamicControls _uiDynamicList = new UiDynamicControls();
 
         // ================================================================
         // Build
@@ -139,6 +157,7 @@ namespace Poly_Ling.Player
             fileRow.Add(browseBtn);
             fileRow.Add(_filePathField);
             parent.Add(fileRow);
+            _browseBtn = browseBtn;
 
             var importBtn = new Button(OnBrowse) { text = "開く" };
             importBtn.style.marginTop    = 2;
@@ -147,6 +166,7 @@ namespace Poly_Ling.Player
             importBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
             importBtn.style.color = new StyleColor(Color.white);
             parent.Add(importBtn);
+            _openBtn = importBtn;
 
             _statusLabel = new Label("");
             _statusLabel.style.color      = new StyleColor(new Color(1f, 0.7f, 0.4f));
@@ -394,6 +414,7 @@ namespace Poly_Ling.Player
         {
             if (_settingsContainer == null) return;
             _settingsContainer.Clear();
+            _uiDynamic.Begin(ModeGroup(_mode));
 
             if (_mode == Mode.PMX)
                 BuildPmxSettings(_settingsContainer);
@@ -406,12 +427,17 @@ namespace Poly_Ling.Player
         {
             if (_listContainer == null) return;
             _listContainer.Clear();
+            // 一覧は設定と別に作り直す（読込・全選択など）ので、別の置き場へ登録する。
+            _uiDynamicList.Begin(ModeGroup(_mode));
 
             if (_mode == Mode.PMX)
                 BuildPmxList(_listContainer);
             else
                 BuildMqoList(_listContainer);
         }
+
+        /// <summary>UI 自動操作の動的な項目の組（モードごとの設定行・一覧）。</summary>
+        public static string ModeGroup(Mode mode) => mode == Mode.PMX ? "pmx" : "mqo";
 
         // ================================================================
         // PMX 設定 UI
@@ -421,19 +447,19 @@ namespace Poly_Ling.Player
         {
             parent.Add(SectionLabel("インポート対象"));
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexWrap = Wrap.Wrap;
-            row.Add(ToggleCompact("頂点位置", () => _pmxImportPos,      v => _pmxImportPos      = v));
-            row.Add(ToggleCompact("UV",       () => _pmxImportUV,       v => _pmxImportUV       = v));
-            row.Add(ToggleCompact("BW",       () => _pmxImportBW,       v => _pmxImportBW       = v));
-            row.Add(ToggleCompact("面構成",   () => _pmxImportFace,     v => _pmxImportFace     = v));
-            row.Add(ToggleCompact("材質",     () => _pmxImportMaterial, v => { _pmxImportMaterial = v; }));
+            row.Add(ToggleCompact("target.positions", "頂点位置", () => _pmxImportPos,      v => _pmxImportPos      = v));
+            row.Add(ToggleCompact("target.uvs",       "UV",       () => _pmxImportUV,       v => _pmxImportUV       = v));
+            row.Add(ToggleCompact("target.boneWeights", "BW",     () => _pmxImportBW,       v => _pmxImportBW       = v));
+            row.Add(ToggleCompact("target.faces",     "面構成",   () => _pmxImportFace,     v => _pmxImportFace     = v));
+            row.Add(ToggleCompact("target.materials", "材質",     () => _pmxImportMaterial, v => { _pmxImportMaterial = v; }));
             parent.Add(row);
 
             parent.Add(Separator());
             parent.Add(SectionLabel("オプション"));
-            parent.Add(FloatRow("Scale", () => _pmxScale, v => _pmxScale = v));
-            parent.Add(ToggleRow("Flip X", () => _pmxFlipX, v => { _pmxFlipX = v; }));
-            parent.Add(ToggleRow("Flip Z", () => _pmxFlipZ, v => { _pmxFlipZ = v; }));
-            parent.Add(ToggleRow("表情移植", () => _pmxRebuildMorphBase, v => { _pmxRebuildMorphBase = v; }));
+            parent.Add(FloatRow("scale", "Scale", () => _pmxScale, v => _pmxScale = v));
+            parent.Add(ToggleRow("flipX", "Flip X", () => _pmxFlipX, v => { _pmxFlipX = v; }));
+            parent.Add(ToggleRow("flipZ", "Flip Z", () => _pmxFlipZ, v => { _pmxFlipZ = v; }));
+            parent.Add(ToggleRow("rebuildMorphBase", "表情移植", () => _pmxRebuildMorphBase, v => { _pmxRebuildMorphBase = v; }));
         }
 
         private void BuildPmxList(VisualElement parent)
@@ -444,9 +470,9 @@ namespace Poly_Ling.Player
 
             // Auto/全/無 ボタン行
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginBottom = 2;
-            AddSmallBtn(btnRow, "Auto", () => { _pmxOps.AutoMatch(); RebuildList(); });
-            AddSmallBtn(btnRow, "全",   () => { foreach (var e in _pmxOps.ModelMeshes) e.Selected = true;  foreach (var e in _pmxOps.PMXMeshes) e.Selected = true;  RebuildList(); });
-            AddSmallBtn(btnRow, "無",   () => { foreach (var e in _pmxOps.ModelMeshes) e.Selected = false; foreach (var e in _pmxOps.PMXMeshes) e.Selected = false; RebuildList(); });
+            AddSmallBtn("list.autoMatch",  btnRow, "Auto", () => { _pmxOps.AutoMatch(); RebuildList(); }, "自動で対応を取り直す");
+            AddSmallBtn("list.selectAll",  btnRow, "全",   () => { foreach (var e in _pmxOps.ModelMeshes) e.Selected = true;  foreach (var e in _pmxOps.PMXMeshes) e.Selected = true;  RebuildList(); }, "両方の一覧をすべて選ぶ");
+            AddSmallBtn("list.selectNone", btnRow, "無",   () => { foreach (var e in _pmxOps.ModelMeshes) e.Selected = false; foreach (var e in _pmxOps.PMXMeshes) e.Selected = false; RebuildList(); }, "両方の一覧の選択をすべて外す");
             parent.Add(btnRow);
 
             var cols = new VisualElement(); cols.style.flexDirection = FlexDirection.Row;
@@ -481,7 +507,8 @@ namespace Poly_Ling.Player
             }
             cols.Add(right);
 
-            parent.Add(cols);
+            // 左右の一覧のチェックはメッシュごとの行なので固定の ID を付けない（データ行）。
+            parent.Add(_uiDynamicList.AddRows(cols));
         }
 
         // ================================================================
@@ -492,40 +519,40 @@ namespace Poly_Ling.Player
         {
             parent.Add(SectionLabel("インポート対象"));
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexWrap = Wrap.Wrap;
-            row.Add(ToggleCompact("頂点位置", () => _mqoImportPos,      v => _mqoImportPos      = v));
-            row.Add(ToggleCompact("頂点ID",   () => _mqoImportVtxId,    v => _mqoImportVtxId    = v));
-            row.Add(ToggleCompact("メッシュ構造", () => _mqoImportMesh, v => { _mqoImportMesh   = v; RebuildSettings(); }));
-            row.Add(ToggleCompact("材質",     () => _mqoImportMaterial, v => _mqoImportMaterial = v));
+            row.Add(ToggleCompact("target.positions", "頂点位置", () => _mqoImportPos,      v => _mqoImportPos      = v));
+            row.Add(ToggleCompact("target.vertexIds", "頂点ID",   () => _mqoImportVtxId,    v => _mqoImportVtxId    = v));
+            row.Add(ToggleCompact("target.meshStructure", "メッシュ構造", () => _mqoImportMesh, v => { _mqoImportMesh   = v; RebuildSettings(); }));
+            row.Add(ToggleCompact("target.materials", "材質",     () => _mqoImportMaterial, v => _mqoImportMaterial = v));
             parent.Add(row);
 
             parent.Add(Separator());
             parent.Add(SectionLabel("オプション"));
-            parent.Add(FloatRow("Scale",    () => _mqoScale,    v => _mqoScale    = v));
-            parent.Add(ToggleRow("Flip X",  () => _mqoFlipX,    v => _mqoFlipX    = v));
-            parent.Add(ToggleRow("Flip Z",  () => _mqoFlipZ,    v => _mqoFlipZ    = v));
+            parent.Add(FloatRow("scale",   "Scale",    () => _mqoScale,    v => _mqoScale    = v));
+            parent.Add(ToggleRow("flipX",  "Flip X",  () => _mqoFlipX,    v => _mqoFlipX    = v));
+            parent.Add(ToggleRow("flipZ",  "Flip Z",  () => _mqoFlipZ,    v => _mqoFlipZ    = v));
 
             if (_mqoImportMesh)
             {
-                parent.Add(ToggleRow("Flip UV V",  () => _mqoFlipUV_V,   v => _mqoFlipUV_V   = v));
-                parent.Add(ToggleRow("ミラーベイク", () => _mqoBakeMirror, v => _mqoBakeMirror = v));
+                parent.Add(ToggleRow("flipUvV",    "Flip UV V",  () => _mqoFlipUV_V,   v => _mqoFlipUV_V   = v));
+                parent.Add(ToggleRow("bakeMirror", "ミラーベイク", () => _mqoBakeMirror, v => _mqoBakeMirror = v));
             }
 
             if (_mqoImportPos || _mqoImportMesh)
             {
-                parent.Add(ToggleRow("法線再計算", () => _mqoRecalcNormals, v => { _mqoRecalcNormals = v; RebuildSettings(); }));
+                parent.Add(ToggleRow("recalcNormals", "法線再計算", () => _mqoRecalcNormals, v => { _mqoRecalcNormals = v; RebuildSettings(); }));
                 if (_mqoRecalcNormals)
                 {
-                    parent.Add(EnumRow("法線モード",
+                    parent.Add(EnumRow("normalMode", "法線モード",
                         new[] { "FaceNormal", "Smooth", "Unity", "SmoothFacet" },
                         () => (int)_mqoNormalMode,
                         v  => { _mqoNormalMode = (NormalMode)v; RebuildSettings(); }));
                     if (_mqoNormalMode == NormalMode.Smooth || _mqoNormalMode == NormalMode.SmoothFacet)
-                        parent.Add(SliderRow("スムージング角度", 0f, 180f, () => _mqoSmoothingAngle, v => _mqoSmoothingAngle = v));
+                        parent.Add(SliderRow("smoothingAngle", "スムージング角度", 0f, 180f, () => _mqoSmoothingAngle, v => _mqoSmoothingAngle = v));
                 }
             }
 
             bool prevSkip = _mqoSkipNamedMirror;
-            parent.Add(ToggleRow("名前ミラー(+)をスキップ", () => _mqoSkipNamedMirror, v =>
+            parent.Add(ToggleRow("skipNamedMirror", "名前ミラー(+)をスキップ", () => _mqoSkipNamedMirror, v =>
             {
                 _mqoSkipNamedMirror = v;
                 _mqoHelper.BuildModelList(_model, true, _mqoSkipNamedMirror, pairMirrors: true);
@@ -541,9 +568,9 @@ namespace Poly_Ling.Player
             parent.Add(Separator());
 
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginBottom = 2;
-            AddSmallBtn(btnRow, "Auto", () => { _mqoHelper.AutoMatch(); RebuildList(); });
-            AddSmallBtn(btnRow, "全",   () => { foreach (var e in _mqoHelper.ModelMeshes) e.Selected = true;  foreach (var e in _mqoHelper.MQOObjects) e.Selected = true;  RebuildList(); });
-            AddSmallBtn(btnRow, "無",   () => { foreach (var e in _mqoHelper.ModelMeshes) e.Selected = false; foreach (var e in _mqoHelper.MQOObjects) e.Selected = false; RebuildList(); });
+            AddSmallBtn("list.autoMatch",  btnRow, "Auto", () => { _mqoHelper.AutoMatch(); RebuildList(); }, "自動で対応を取り直す");
+            AddSmallBtn("list.selectAll",  btnRow, "全",   () => { foreach (var e in _mqoHelper.ModelMeshes) e.Selected = true;  foreach (var e in _mqoHelper.MQOObjects) e.Selected = true;  RebuildList(); }, "両方の一覧をすべて選ぶ");
+            AddSmallBtn("list.selectNone", btnRow, "無",   () => { foreach (var e in _mqoHelper.ModelMeshes) e.Selected = false; foreach (var e in _mqoHelper.MQOObjects) e.Selected = false; RebuildList(); }, "両方の一覧の選択をすべて外す");
             parent.Add(btnRow);
 
             var cols = new VisualElement(); cols.style.flexDirection = FlexDirection.Row;
@@ -580,7 +607,8 @@ namespace Poly_Ling.Player
             }
             cols.Add(right);
 
-            parent.Add(cols);
+            // 左右の一覧のチェックはオブジェクト・メッシュごとの行なので固定の ID を付けない（データ行）。
+            parent.Add(_uiDynamicList.AddRows(cols));
         }
 
         // ================================================================
@@ -619,58 +647,59 @@ namespace Poly_Ling.Player
             return v;
         }
 
-        private static VisualElement ToggleRow(string label, Func<bool> get, Action<bool> set)
+        private VisualElement ToggleRow(string id, string label, Func<bool> get, Action<bool> set)
         {
             var t = new Toggle(label) { value = get() };
             t.RegisterValueChangedCallback(e => set(e.newValue));
-            return t;
+            return _uiDynamic.Add(id, t, label);
         }
 
-        private static VisualElement ToggleCompact(string label, Func<bool> get, Action<bool> set)
+        private VisualElement ToggleCompact(string id, string label, Func<bool> get, Action<bool> set)
         {
             var t = new Toggle(label) { value = get() };
             t.style.marginRight = 4; t.style.fontSize = 9;
             t.style.color = new StyleColor(Color.white);
             t.RegisterValueChangedCallback(e => set(e.newValue));
-            return t;
+            return _uiDynamic.Add(id, t, label);
         }
 
-        private static VisualElement FloatRow(string label, Func<float> get, Action<float> set)
+        private VisualElement FloatRow(string id, string label, Func<float> get, Action<float> set)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lbl = new Label(label); lbl.style.width = 80; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var field = new FloatField { value = get() }; field.style.flexGrow = 1;
             field.RegisterValueChangedCallback(e => set(e.newValue));
-            row.Add(lbl); row.Add(field);
+            row.Add(lbl); row.Add(_uiDynamic.Add(id, field, label));
             return row;
         }
 
-        private static VisualElement SliderRow(string label, float min, float max, Func<float> get, Action<float> set)
+        private VisualElement SliderRow(string id, string label, float min, float max, Func<float> get, Action<float> set)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lbl = new Label(label); lbl.style.width = 80; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var slider = new Slider(min, max) { value = get() }; slider.style.flexGrow = 1;
             slider.RegisterValueChangedCallback(e => set(e.newValue));
-            row.Add(lbl); row.Add(slider);
+            row.Add(lbl); row.Add(_uiDynamic.Add(id, slider, label));
             return row;
         }
 
-        private static VisualElement EnumRow(string label, string[] choices, Func<int> get, Action<int> set)
+        private VisualElement EnumRow(string id, string label, string[] choices, Func<int> get, Action<int> set)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lbl = new Label(label); lbl.style.width = 80; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var dd = new DropdownField(new List<string>(choices), get()); dd.style.flexGrow = 1;
             dd.RegisterValueChangedCallback(e => set(dd.index));
-            row.Add(lbl); row.Add(dd);
+            row.Add(lbl); row.Add(_uiDynamic.Add(id, dd, label));
             return row;
         }
 
-        private static void AddSmallBtn(VisualElement parent, string text, Action onClick)
+        /// <summary>一覧の上の小ボタン。一覧は設定と別に作り直すので _uiDynamicList へ登録する。</summary>
+        private void AddSmallBtn(string id, VisualElement parent, string text, Action onClick, string description)
         {
             var b = new Button(onClick) { text = text };
             b.style.flexGrow = 1; b.style.marginRight = 2; b.style.height = 18; b.style.fontSize = 9;
             b.style.color = new StyleColor(Color.white);
-            parent.Add(b);
+            parent.Add(_uiDynamicList.Add(id, b, description, UiSafety.SafeWrite));
         }
     }
 }

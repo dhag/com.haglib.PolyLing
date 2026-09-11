@@ -95,8 +95,13 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "skinTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
+        [UiControl("inputPaths", Safety = UiSafety.ReadOnly, Description = "使う入力（直前に使ったパス）")]
         private Label     _pathLabel;
+        [UiControl("convertToTPose", Description = "T ポーズ化してから書き出す")]
         private Toggle    _doTPose;
+        [UiControl("exportVrm", Description = "最後に VRM を書き出す")]
         private Toggle    _doExport;
 
         protected override string TitleText => "スキン生成自動検証";

@@ -31,6 +31,7 @@ namespace Poly_Ling.Player
         private PipeStadiumMeshGenerator.PipeStadiumParams _pipeStadiumP = DefaultPipeStadiumParams();
 
         /// <summary>長さ X / 奥行き Z の表示欄。パラメータを触るたびに書き直す。</summary>
+        [UiControl("pipeStadium.size", Safety = UiSafety.ReadOnly, Description = "スタジアム断面パイプの寸法の表示")]
         private Label _pipeStadiumSizeLabel;
 
         /// <summary>単段のときだけ出す行。</summary>

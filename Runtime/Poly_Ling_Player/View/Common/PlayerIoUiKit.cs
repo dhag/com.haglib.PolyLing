@@ -48,6 +48,13 @@ namespace Poly_Ling.Player
 
         /// <summary>[...]（左・幅28）＋パス用 TextField（右・flexGrow）の行。</summary>
         public static VisualElement PathRow(TextField field, Action onBrowse)
+            => PathRow(field, onBrowse, out _);
+
+        /// <summary>
+        /// [...]（左・幅28）＋パス用 TextField（右・flexGrow）の行。[...] ボタンも返す
+        /// （UI 自動操作でダイアログを開くボタンとして登録するため）。
+        /// </summary>
+        public static VisualElement PathRow(TextField field, Action onBrowse, out Button browseButton)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -61,6 +68,7 @@ namespace Poly_Ling.Player
 
             row.Add(browse);
             row.Add(field);
+            browseButton = browse;
             return row;
         }
 

@@ -33,12 +33,14 @@ namespace Poly_Ling.Player
         public Func<List<string>> GetExistingMeshNames;
 
         /// <summary>現在表示中の名前欄。RebuildSettings のたびに NF が差し替える。</summary>
+        [UiControl("name", Description = "作るオブジェクトの名前")]
         private TextField _nameField;
 
         /// <summary>
         /// 追加先が AddToExisting のときに名前欄の代わりに出す追加先オブジェクト選択。
         /// RebuildSettings のたびに NF が差し替える。
         /// </summary>
+        [UiControl("addTarget", Description = "作ったものを足す先")]
         private DropdownField _addTargetField;
 
         /// <summary>_addTargetField の選択肢に対応する MeshContextList インデックス。</summary>

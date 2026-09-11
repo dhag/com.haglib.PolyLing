@@ -38,6 +38,7 @@ namespace Poly_Ling.Player
             ObjectName     = "PipeProfile",
         };
 
+        [UiControl("pipe.info", Safety = UiSafety.ReadOnly, Description = "パイプの情報")]
         private Label _pipeInfoLabel;
 
         /// <summary>厚み付けの角処理(ベベル)UI 要素。</summary>

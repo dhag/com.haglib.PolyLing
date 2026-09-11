@@ -18,7 +18,13 @@ namespace Poly_Ling.Player
         public Func<ProjectContext>      GetView;
         public Action<PanelCommand>      SendCommand;
 
+        // UI 自動操作の ID は "flipFace.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("flipSelected", Safety = UiSafety.SafeWrite, Description = "選択面の裏表を反転する")]
+        private Button _flipSelectedBtn;
+        [UiControl("flipAll", Safety = UiSafety.SafeWrite, Description = "編集対象の描画オブジェクトの全面の裏表を反転する")]
+        private Button _flipAllBtn;
 
         /// <summary>コマンドに載せるモデル索引。</summary>
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
@@ -48,6 +54,8 @@ namespace Poly_Ling.Player
             var flipAllBtn = new Button(() => SendFlip(FlipFaceCommand.FlipScope.All))
                 { text = "Flip All" };
             _root.Add(flipAllBtn);
+            _flipSelectedBtn = flipSelBtn;
+            _flipAllBtn      = flipAllBtn;
         }
 
         public void Refresh() {}

@@ -80,6 +80,7 @@ namespace Poly_Ling.Player
         private bool   _sbLadderAutoAttach = true;
 
         /// <summary>ミラーのトグル。取り込み元がミラーペアの実体側のときだけ使える。</summary>
+        [UiControl(Ignore = true)]
         private VisualElement _sbLadderMirrorRow;
 
         /// <summary>段ストライド。1 で間引かない。</summary>
@@ -91,6 +92,7 @@ namespace Poly_Ling.Player
         /// <summary>本方向のやり方。Thin=間引く / Merge=まとめる。</summary>
         private SpringBoneLadderBundleMode _sbLadderBundle = SpringBoneLadderBundleMode.Thin;
 
+        [UiControl("springBoneLadder.info", Safety = UiSafety.ReadOnly, Description = "はしごから作る鎖の情報")]
         private Label _sbLadderInfo;
 
         /// <summary>取り込み方のドロップダウンに並べる順。表示名と対で持つ。</summary>

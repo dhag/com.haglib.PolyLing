@@ -96,10 +96,16 @@ namespace Poly_Ling.Player
         /// <summary>直近の自動選択の説明。結果表示欄に併記する。</summary>
         private string _bridgeAutoPickInfo = "";
 
+        /// <summary>橋渡しの情報（A 側）。</summary>
+        [UiControl("bridge.infoA", Safety = UiSafety.ReadOnly, Description = "橋渡しの種 A の情報")]
         private Label  _bridgeInfoA;
+        [UiControl("bridge.infoB", Safety = UiSafety.ReadOnly, Description = "橋渡しの種 B の情報")]
         private Label  _bridgeInfoB;
+        [UiControl("bridge.result", Safety = UiSafety.ReadOnly, Description = "橋渡しの自動選択の結果")]
         private Label  _bridgeInfoResult;
+        [UiControl(Ignore = true)]
         private Toggle _bridgeFlipCorrespToggle;
+        [UiControl(Ignore = true)]
         private Toggle _bridgeFlipFacesToggle;
 
         // ================================================================
@@ -542,7 +548,7 @@ namespace Poly_Ling.Player
                     meshA, loopA, meshB, loopB,
                     out bool fc, out bool ff, out string why))
             {
-                _bridgeAutoInfo = T("BridgeAutoFailed") + (string.IsNullOrEmpty(why) ? "" : " / " + why);
+                _bridgeAutoInfo = T("BridgeAutoFailed").Text + (string.IsNullOrEmpty(why) ? "" : " / " + why);
                 return;
             }
 

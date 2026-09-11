@@ -38,13 +38,27 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "alignVertices.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("stats.selected", Safety = UiSafety.ReadOnly, Description = "選択中の頂点数")]
         private Label         _selectedLabel;
+        [UiControl("stats.stdDev", Safety = UiSafety.ReadOnly, Description = "選択頂点の座標の軸ごとの標準偏差")]
         private Label         _stdDevLabel;
-        private Toggle        _toggleX, _toggleY, _toggleZ;
+        [UiControl("axis.x", Description = "X 座標を揃える")]
+        private Toggle        _toggleX;
+        [UiControl("axis.y", Description = "Y 座標を揃える")]
+        private Toggle        _toggleY;
+        [UiControl("axis.z", Description = "Z 座標を揃える")]
+        private Toggle        _toggleZ;
+        [UiControl("mode", Description = "揃える基準")]
         private DropdownField _modeDropdown;
+        [UiControl("preview", Safety = UiSafety.ReadOnly, Description = "揃えた後の座標（揃える軸だけ）")]
         private Label         _previewLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選択頂点の座標を揃える。軸を 1 つ以上選び、頂点 2 つ以上の選択が要る")]
         private Button        _alignBtn;
+        [UiControl("autoSelect", Safety = UiSafety.SafeWrite, Description = "揃える軸を自動で選ぶ")]
+        private Button        _autoSelectBtn;
 
         private static readonly List<string> ModeChoices = new List<string> { "Average", "Min", "Max" };
 
@@ -95,6 +109,7 @@ namespace Poly_Ling.Player
             }) { text = "Auto Select" };
             autoBtn.style.marginBottom = 4;
             _root.Add(autoBtn);
+            _autoSelectBtn = autoBtn;
 
             // 整列モード
             _root.Add(SmallHeader("基準:"));

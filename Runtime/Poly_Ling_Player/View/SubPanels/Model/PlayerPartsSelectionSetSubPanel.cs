@@ -18,19 +18,76 @@ namespace Poly_Ling.Player
         public Func<ProjectContext>   GetView;
         public Action<PanelCommand> SendCommand;
 
+        // UI 自動操作の ID は "partsSelectionSet.<下の Id>"（UiControlAttribute.cs）。
+        // CSV の入出力は辞書フォルダ（またはフォルダを直接指定したときのフォルダ）へダイアログなしで読み書きする。
+        // 直接指定のフォルダ欄は、外から変えるときは作業フォルダの関門（PLSandbox）を通す。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label       _warningLabel;
+        [UiControl("meshName", Safety = UiSafety.ReadOnly, Description = "対象メッシュ名")]
         private Label       _meshNameLabel;
+        [UiControl("currentSelection", Safety = UiSafety.ReadOnly, Description = "選択中の頂点・辺・面の数")]
         private Label       _currentSelLabel;
+        [UiControl("setName", Description = "辞書エントリ名（空欄なら自動）")]
         private TextField   _setNameField;
+        [UiControl("save", Safety = UiSafety.SafeWrite, Description = "今の選択を辞書に登録する")]
+        private Button      _btnSave;
+        [UiControl("sets", Description = "登録済みのパーツ選択セット（一覧の行番号）")]
         private ListView    _setListView;
-        private Button      _btnLoad, _btnAdd, _btnSubtract, _btnDelete;
-        private Button      _btnCaptureIds, _btnResolveIds;
+        [UiControl("load", Safety = UiSafety.SafeWrite, Description = "選んだセットを呼び出す（ボタン「呼出し」）")]
+        private Button      _btnLoad;
+        [UiControl("add", Safety = UiSafety.SafeWrite, Description = "選んだセットを追加する（ボタン「追加」）")]
+        private Button      _btnAdd;
+        [UiControl("subtract", Safety = UiSafety.SafeWrite, Description = "選んだセットを除外する（ボタン「除外」）")]
+        private Button      _btnSubtract;
+        [UiControl("delete", Safety = UiSafety.Destructive, Description = "選んだセットを削除する")]
+        private Button      _btnDelete;
+        [UiControl("captureIds", Safety = UiSafety.SafeWrite, Description = "選んだセットの頂点 ID を控える")]
+        private Button      _btnCaptureIds;
+        [UiControl("resolveIds", Safety = UiSafety.SafeWrite, Description = "控えた頂点 ID でセットを引き直す")]
+        private Button      _btnResolveIds;
+        [UiControl("idState", Safety = UiSafety.ReadOnly, Description = "選んだセットの頂点 ID の控えの状態")]
         private Label       _idStateLabel;
+        [UiControl("csvFolder", Reveal = nameof(RevealCustomFolder), Getter = nameof(GetCsvFolderForAutomation),
+                   Setter = nameof(SetCsvFolderByAutomation),
+                   Description = "Selected_*.csv を入出力するフォルダ（フォルダを直接指定するとき）。作業フォルダからの相対パスで指定する")]
         private TextField   _csvFolderField;
+        [UiControl("browseCsvFolder", Safety = UiSafety.UserOnly, Reveal = nameof(RevealCustomFolder), Description = "フォルダを選ぶダイアログを開く")]
+        private Button      _btnBrowseCsvFolder;
+        [UiControl("dictionaryFolder", Safety = UiSafety.ReadOnly, Description = "辞書フォルダ（直接指定しないとき）")]
         private Label       _dicFolderLabel;
+        [UiControl("useCustomFolder", Description = "フォルダを直接指定する")]
         private Toggle      _useCustomFolderToggle;
+        [UiControl(Ignore = true)]
         private VisualElement _customFolderRow;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label       _statusLabel;
+        [UiControl("exportCsv", Safety = UiSafety.FileOperation, Description = "選択オブジェクトの辞書を Selected_*.csv に書き出す")]
+        private Button      _btnExport;
+        [UiControl("importToCurrent", Safety = UiSafety.FileOperation, Description = "Selected_*.csv を現在のオブジェクトへ取り込む")]
+        private Button      _btnImportCurrent;
+        [UiControl("importByObjectName", Safety = UiSafety.FileOperation, Description = "Selected_*.csv を書込元のオブジェクトへ取り込む")]
+        private Button      _btnImportByName;
+
+        /// <summary>UI 自動操作の表示の下準備。フォルダ欄は「フォルダを直接指定」がオンのときだけ表示される。</summary>
+        private bool RevealCustomFolder()
+        {
+            if (_useCustomFolderToggle == null || _useCustomFolderToggle.value) return false;
+            _useCustomFolderToggle.value = true;
+            return true;
+        }
+
+        private string GetCsvFolderForAutomation() => _csvFolderField?.value ?? "";
+
+        /// <summary>
+        /// UI 自動操作からフォルダ欄を設定する。欄へ直接書くと任意の場所を指せるため、
+        /// 作業フォルダの関門（PLSandbox.TryResolveFolder）を通した実経路だけを入れる。
+        /// </summary>
+        private string SetCsvFolderByAutomation(string value)
+        {
+            if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(value, out string full, out string reason)) return reason;
+            if (_csvFolderField != null) _csvFolderField.value = full;
+            return null;
+        }
 
         // 「フォルダを直接指定」ON のときだけ使う手動パス。
         // OFF のときは PartsDictionaryPath が解決する partsDictionary を使う。
@@ -76,6 +133,7 @@ namespace Poly_Ling.Player
             _setNameField = new TextField(); _setNameField.style.flexGrow = 1;
             _setNameField.tooltip = "辞書エントリ名（空欄時は自動生成）";
             var btnSave = new Button(OnSave) { text = "辞書化" }; btnSave.style.width = 52;
+            _btnSave = btnSave;
             saveRow.Add(_setNameField); saveRow.Add(btnSave);
             root.Add(saveRow);
 
@@ -140,14 +198,14 @@ namespace Poly_Ling.Player
             _csvFolderField = new TextField();
             _csvFolderField.tooltip = "Selected_*.csv を入出力するフォルダ";
             _csvFolderField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvFolderKey, e.newValue));
-            _customFolderRow.Add(PlayerIoUiKit.PathRow(_csvFolderField, OnBrowseCsvFolder));
+            _customFolderRow.Add(PlayerIoUiKit.PathRow(_csvFolderField, OnBrowseCsvFolder, out _btnBrowseCsvFolder));
             _csvFolderField.SetValueWithoutNotify(RecentPaths.Get(CsvFolderKey));
             root.Add(_customFolderRow);
 
-            root.Add(PlayerIoUiKit.WideBtn("エクスポート", OnExport));
+            root.Add(_btnExport = PlayerIoUiKit.WideBtn("エクスポート", OnExport));
             root.Add(PlayerIoUiKit.Spacer());
-            root.Add(PlayerIoUiKit.WideBtn("インポート（現在のオブジェクトへ）",   () => OnImport(false)));
-            root.Add(PlayerIoUiKit.WideBtn("インポート（書込元のオブジェクトへ）", () => OnImport(true)));
+            root.Add(_btnImportCurrent = PlayerIoUiKit.WideBtn("インポート（現在のオブジェクトへ）",   () => OnImport(false)));
+            root.Add(_btnImportByName  = PlayerIoUiKit.WideBtn("インポート（書込元のオブジェクトへ）", () => OnImport(true)));
 
             ApplyCustomFolderVisibility(false);
             UpdateDicFolderLabel();

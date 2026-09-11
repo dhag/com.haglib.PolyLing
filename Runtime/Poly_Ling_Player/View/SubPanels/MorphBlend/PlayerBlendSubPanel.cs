@@ -129,29 +129,56 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "blend.<下の Id>"（UiControlAttribute.cs）。
+        // ソースは固定個数のスロット（1 始まり）。source.1.model のように番号で指す。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _mainContent;
 
+        [UiControl("destination", Description = "宛先オブジェクト")]
         private DropdownField _destDropdown;
+        [UiControl("createNew", Description = "新規オブジェクトを作る（元は変更しない）")]
         private Toggle        _toggleCreateNew;
+        [UiControl("destinationInfo", Safety = UiSafety.ReadOnly, Description = "宛先オブジェクトの情報")]
         private Label         _destInfoLabel;
 
+        [UiControl("source.{0}.model", Description = "ソース {0} のモデル")]
         private readonly DropdownField[] _srcModelDropdowns = new DropdownField[MaxSources];
+        [UiControl("source.{0}.object", Description = "ソース {0} のオブジェクト")]
         private readonly DropdownField[] _srcObjDropdowns   = new DropdownField[MaxSources];
+        [UiControl("source.{0}.weight", Description = "ソース {0} の重み（0〜1）")]
         private readonly Slider[]        _srcSliders        = new Slider[MaxSources];
+        [UiControl("source.{0}.weightText", Safety = UiSafety.ReadOnly, Description = "ソース {0} の重みの表示")]
         private readonly Label[]         _srcWeightLabels   = new Label[MaxSources];
+        [UiControl("source.{0}.stats", Safety = UiSafety.ReadOnly, Description = "ソース {0} の情報（指定したときだけ表示）")]
         private readonly Label[]         _srcStatsLabels    = new Label[MaxSources];
+        [UiControl("source.{0}.clear", Safety = UiSafety.SafeWrite, Description = "ソース {0} の指定を外す")]
+        private readonly Button[]        _srcClearBtns      = new Button[MaxSources];
 
+        [UiControl("recalcNormals", Description = "法線を再計算する")]
         private Toggle        _toggleRecalcNormals;
+        [UiControl("selectedOnly", Description = "選択頂点のみ")]
         private Toggle        _toggleSelectedOnly;
+        [UiControl("matchMode", Description = "頂点の対応方式")]
         private DropdownField _dropdownMatchMode;
+        [UiControl("matchModeHint", Safety = UiSafety.ReadOnly, Description = "対応方式についての注意（出ていないときは非表示）")]
         private Label         _matchModeHintLabel;
+        [UiControl("keepAsGroup", Description = "オブジェクトグループとして残す（オフのときソース指定と重みは確定後に破棄）")]
+        private Toggle        _toggleKeepGroup;
 
+        [UiControl("hideSources", Description = "ソースを隠す（面のみ・頂点/辺は残る）")]
         private Toggle _toggleHideSources;
+        [UiControl("totalWeight", Safety = UiSafety.ReadOnly, Description = "重みの合計")]
         private Label  _totalWeightLabel;
+        [UiControl("previewing", Safety = UiSafety.ReadOnly, Description = "プレビュー中の表示（プレビュー中だけ表示）")]
         private Label  _previewingLabel;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "ブレンドを決定する")]
         private Button _btnApply;
+        [UiControl("cancel", Safety = UiSafety.SafeWrite, Description = "ブレンドのプレビューを取り消す")]
+        private Button _btnCancel;
 
         /// <summary>対応方式の表示名。並びは BlendMatchMode の値順。</summary>
         private static readonly List<string> MatchModeChoices = new List<string>
@@ -320,6 +347,7 @@ namespace Poly_Ling.Player
                 clr.style.fontSize = 9;
                 clr.style.marginLeft = 2;
                 wRow.Add(clr);
+                _srcClearBtns[slot] = clr;
 
                 _srcStatsLabels[slot] = new Label();
                 _srcStatsLabels[slot].style.fontSize   = 9;
@@ -376,6 +404,7 @@ namespace Poly_Ling.Player
             { value = _keepAsGroup };
             toggleKeepGroup.style.fontSize = 10;
             _mainContent.Add(toggleKeepGroup);
+            _toggleKeepGroup = toggleKeepGroup;
 
             var keepGroupWarn = new Label(
                 "オフのとき、ソース指定と重みは確定後に破棄されます。混ぜ直すには同じ操作をやり直すことになります。");
@@ -440,6 +469,7 @@ namespace Poly_Ling.Player
             btnCancel.style.height   = 24;
             btnCancel.style.fontSize = 10;
             btnRow.Add(btnCancel);
+            _btnCancel = btnCancel;
         }
 
         // ================================================================

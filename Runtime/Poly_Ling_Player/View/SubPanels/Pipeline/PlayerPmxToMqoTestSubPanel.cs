@@ -97,11 +97,24 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private TextField _pmxPathField, _mqoPathField;
+        // UI 自動操作の ID は "pmxToMqoTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
+        [UiControl("pmxPath", Description = "PMX パス（ソース）")]
+        private TextField _pmxPathField;
+        [UiControl("mqoPath", Description = "MQO パス（差し替え先）")]
+        private TextField _mqoPathField;
+        [UiControl("pmx.scale", Description = "PMX 読込の倍率")]
         private FloatField _pmxScale;
-        private Toggle     _pmxFlipX, _pmxFlipZ;
+        [UiControl("pmx.flipX", Description = "PMX 読込の Flip X")]
+        private Toggle     _pmxFlipX;
+        [UiControl("pmx.flipZ", Description = "PMX 読込の Flip Z")]
+        private Toggle     _pmxFlipZ;
+        [UiControl("mqo.ratio", Description = "MQO 読込の倍率")]
         private FloatField _mqoRatio;
-        private Toggle     _mqoFlipX, _mqoFlipZ;
+        [UiControl("mqo.flipX", Description = "MQO 読込の Flip X")]
+        private Toggle     _mqoFlipX;
+        [UiControl("mqo.flipZ", Description = "MQO 読込の Flip Z")]
+        private Toggle     _mqoFlipZ;
 
         // ================================================================
         // 実行状態

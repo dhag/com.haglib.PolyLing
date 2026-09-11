@@ -27,11 +27,14 @@ namespace Poly_Ling.Player
         private const string TextFontDirKey = "Primitive.Text.FontDir";
 
         private List<PlyFontLibrary.Entry> _textFonts = new List<PlyFontLibrary.Entry>();
+        [UiControl("text.font", Description = "文字に使うフォント")]
         private DropdownField _textFontDrop;
+        [UiControl("text.info", Safety = UiSafety.ReadOnly, Description = "フォントの情報")]
         private Label _textInfoLabel;
         private SolidifyUI _textSolidUI;
 
         /// <summary>フォント置き場フォルダの行を並べる入れ物。</summary>
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _textFontDirList;
 
         /// <summary>直近の生成でフォントに存在せず飛ばした文字数。</summary>

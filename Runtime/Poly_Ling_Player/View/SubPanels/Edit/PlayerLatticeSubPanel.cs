@@ -34,26 +34,66 @@ namespace Poly_Ling.Player
         // ウィジェット
         // ================================================================
 
+        // UI 自動操作の ID は "lattice.<下の Id>"（UiControlAttribute.cs）。
+        // 手順は「格子の姿勢設定」→（分割数・中心・大きさ・選択フィット）→「変形開始」→
+        // 格子点を動かす →「適用」。各段で使えない項目は無効になる（uiSetValue / uiClick が拒否する）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
 
-        private IntegerField _cellsX, _cellsY, _cellsZ;
+        [UiControl("cells.x", Description = "格子の X 方向の分割数（姿勢設定中だけ変えられる）")]
+        private IntegerField _cellsX;
+        [UiControl("cells.y", Description = "格子の Y 方向の分割数（姿勢設定中だけ変えられる）")]
+        private IntegerField _cellsY;
+        [UiControl("cells.z", Description = "格子の Z 方向の分割数（姿勢設定中だけ変えられる）")]
+        private IntegerField _cellsZ;
+        [UiControl(Ignore = true)]
         private VisualElement _cellsRow;
 
         // 格子全体の位置と大きさ（作業軸ローカル）。Placement 中のみ編集できる。
-        private FloatField _centerX, _centerY, _centerZ;
-        private FloatField _sizeX,   _sizeY,   _sizeZ;
+        [UiControl("center.x", Description = "格子の中心 X（作業軸ローカル、姿勢設定中だけ変えられる）")]
+        private FloatField _centerX;
+        [UiControl("center.y", Description = "格子の中心 Y（作業軸ローカル、姿勢設定中だけ変えられる）")]
+        private FloatField _centerY;
+        [UiControl("center.z", Description = "格子の中心 Z（作業軸ローカル、姿勢設定中だけ変えられる）")]
+        private FloatField _centerZ;
+        [UiControl("size.x", Description = "格子の大きさ X（作業軸ローカル、姿勢設定中だけ変えられる）")]
+        private FloatField _sizeX;
+        [UiControl("size.y", Description = "格子の大きさ Y（作業軸ローカル、姿勢設定中だけ変えられる）")]
+        private FloatField _sizeY;
+        [UiControl("size.z", Description = "格子の大きさ Z（作業軸ローカル、姿勢設定中だけ変えられる）")]
+        private FloatField _sizeZ;
+        [UiControl(Ignore = true)]
         private VisualElement _boundsGroup;
 
         // Deform 中の格子点ギズモのサブモード。
+        [UiControl(Ignore = true)]
         private VisualElement _modeGroup;
-        private Button _modeMoveBtn, _modeScaleBtn, _modeRotateBtn;
+        [UiControl("gizmo.move", Safety = UiSafety.SafeWrite, Description = "格子点ギズモを移動にする（変形中だけ）")]
+        private Button _modeMoveBtn;
+        [UiControl("gizmo.scale", Safety = UiSafety.SafeWrite, Description = "格子点ギズモを拡大縮小にする（変形中だけ）")]
+        private Button _modeScaleBtn;
+        [UiControl("gizmo.rotate", Safety = UiSafety.SafeWrite, Description = "格子点ギズモを回転にする（変形中だけ）")]
+        private Button _modeRotateBtn;
 
-        private Button _beginBtn, _fitBtn, _deformBtn, _resetBtn, _applyBtn, _cancelBtn;
+        [UiControl("begin", Safety = UiSafety.SafeWrite, Description = "格子の姿勢設定を始める")]
+        private Button _beginBtn;
+        [UiControl("fitToSelection", Safety = UiSafety.SafeWrite, Description = "格子を選択に合わせる（姿勢設定中だけ）")]
+        private Button _fitBtn;
+        [UiControl("beginDeform", Safety = UiSafety.SafeWrite, Description = "変形を始める（姿勢設定中だけ）")]
+        private Button _deformBtn;
+        [UiControl("resetDeform", Safety = UiSafety.SafeWrite, Description = "格子点の変形をリセットする（変形中だけ）")]
+        private Button _resetBtn;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "適用する")]
+        private Button _applyBtn;
+        [UiControl("cancel", Safety = UiSafety.SafeWrite, Description = "取り消す")]
+        private Button _cancelBtn;
 
         private static readonly Color ActiveBtnColor   = new Color(0.20f, 0.45f, 0.25f);
         private static readonly Color InactiveBtnColor = new Color(0.25f, 0.25f, 0.25f);
 
+        [UiControl("state", Safety = UiSafety.ReadOnly, Description = "今の段階")]
         private Label _stateLabel;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "案内")]
         private Label _infoLabel;
 
         // スピナー → ハンドラ → Refresh の往復で無限ループしないようにする。

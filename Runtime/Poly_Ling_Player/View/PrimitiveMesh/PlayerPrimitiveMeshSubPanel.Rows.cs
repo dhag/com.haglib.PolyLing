@@ -173,7 +173,36 @@ namespace Poly_Ling.Player
             return v;
         }
 
-        private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set)
+        /// <summary>
+        /// 諸元 UI の動的な項目。図形を選ぶたびに作り直すので、固定のフィールドでは持てない。
+        /// 行ヘルパ（SR / IR / TR / V3F / SB）が、ローカライズのキーを ID にして登録する。
+        /// 組はカテゴリ名（ViewerCore がカテゴリごとに別パネルとして登録する）。
+        /// </summary>
+        private readonly UiDynamicControls _uiDynamic = new UiDynamicControls();
+
+        /// <summary>
+        /// 図形を選ぶボタン。カテゴリを変えるたびに作り直すので、諸元とは別の置き場に持つ。
+        /// ID は "shape.&lt;図形のキー&gt;"。
+        /// </summary>
+        private readonly UiDynamicControls _uiDynamicShapes = new UiDynamicControls();
+
+        /// <summary>
+        /// 図形に依らない固定部分（姿勢・材質・足し方など）の置き場。
+        /// Build のときに一度だけ作るので、図形を選び直しても消してはいけない。
+        /// </summary>
+        private readonly UiDynamicControls _uiDynamicFixed = new UiDynamicControls();
+
+        /// <summary>
+        /// 行ヘルパ（SR / IR / TR / V3F / SB）が今どちらへ登録するか。
+        /// Build の固定部分を組む間だけ _uiDynamicFixed を指し、それ以外は諸元用の _uiDynamic を指す。
+        /// これを分けないと、図形を選び直したときに固定部分の登録まで消える。
+        /// </summary>
+        private UiDynamicControls _uiRowTarget;
+
+        /// <summary>行ヘルパの登録先。まだ決まっていなければ諸元用。</summary>
+        private UiDynamicControls RowTarget => _uiRowTarget ?? _uiDynamic;
+
+        private VisualElement SR(Lx label, float min, float max, Func<float> get, Action<float> set)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             row.Add(ML(label));
@@ -181,11 +210,13 @@ namespace Poly_Ling.Player
             var nf = new FloatField { value = get() }; nf.style.width = 42;
             sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3)); set(e.newValue); });
             nf.RegisterValueChangedCallback(e => { float v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); set(v); });
-            row.Add(sl); row.Add(nf); return row;
+            row.Add(RowTarget.Add(label.Key, sl, label.Text));
+            row.Add(RowTarget.Add(label.Key + "Value", nf, label.Text + "（数値入力）"));
+            return row;
         }
 
         // out 版: 生成したスライダ/数値欄を呼び出し側へ返す（プリセットボタンからの同期用）。
-        private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set,
+        private VisualElement SR(Lx label, float min, float max, Func<float> get, Action<float> set,
             out Slider slOut, out FloatField nfOut)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
@@ -194,12 +225,13 @@ namespace Poly_Ling.Player
             var nf = new FloatField { value = get() }; nf.style.width = 42;
             sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3)); set(e.newValue); });
             nf.RegisterValueChangedCallback(e => { float v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); set(v); });
-            row.Add(sl); row.Add(nf);
+            row.Add(RowTarget.Add(label.Key, sl, label.Text));
+            row.Add(RowTarget.Add(label.Key + "Value", nf, label.Text + "（数値入力）"));
             slOut = sl; nfOut = nf;
             return row;
         }
 
-        private static VisualElement IR(string label, int min, int max, Func<int> get, Action<int> set)
+        private VisualElement IR(Lx label, int min, int max, Func<int> get, Action<int> set)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             row.Add(ML(label));
@@ -207,21 +239,24 @@ namespace Poly_Ling.Player
             var nf = new IntegerField { value = get() }; nf.style.width = 36;
             sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify(e.newValue); set(e.newValue); });
             nf.RegisterValueChangedCallback(e => { int v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); set(v); });
-            row.Add(sl); row.Add(nf); return row;
+            row.Add(RowTarget.Add(label.Key, sl, label.Text));
+            row.Add(RowTarget.Add(label.Key + "Value", nf, label.Text + "（数値入力）"));
+            return row;
         }
 
-        private static VisualElement TR(string label, Func<bool> get, Action<bool> set)
+        private VisualElement TR(Lx label, Func<bool> get, Action<bool> set)
         {
             var t = new Toggle(label) { value = get() }; t.style.marginBottom = 2;
-            t.RegisterValueChangedCallback(e => set(e.newValue)); return t;
+            t.RegisterValueChangedCallback(e => set(e.newValue));
+            return RowTarget.Add(label.Key, t, label.Text);
         }
 
         /// <summary>
         /// FloatField 3 連の行。参照を保持しない従来版。
         /// 実装は <see cref="V3FRef"/> に一本化してある（outFields = null）。
         /// </summary>
-        private static VisualElement V3F(
-            string lx, string ly, string lz,
+        private VisualElement V3F(
+            Lx lx, Lx ly, Lx lz,
             Func<float> gx, Action<float> sx,
             Func<float> gy, Action<float> sy,
             Func<float> gz, Action<float> sz)
@@ -231,21 +266,21 @@ namespace Poly_Ling.Player
         /// <see cref="V3F"/> と同一構造で、生成した FloatField を <paramref name="outFields"/>
         /// (長さ3) に保持する版。外部から <see cref="RefreshTrsFields"/> で値を書き戻すために使う。
         /// </summary>
-        private static VisualElement V3FRef(
-            string lx, string ly, string lz,
+        private VisualElement V3FRef(
+            Lx lx, Lx ly, Lx lz,
             Func<float> gx, Action<float> sx,
             Func<float> gy, Action<float> sy,
             Func<float> gz, Action<float> sz,
             FloatField[] outFields)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
-            void AddFF(int slot, string lbl, Func<float> g, Action<float> s)
+            void AddFF(int slot, Lx lbl, Func<float> g, Action<float> s)
             {
                 var sub = new VisualElement(); sub.style.flexDirection = FlexDirection.Row; sub.style.flexGrow = 1;
                 var l = new Label(lbl); l.style.width = 14; l.style.unityTextAlign = TextAnchor.MiddleLeft;
                 var f = new FloatField { value = g() }; f.style.flexGrow = 1;
                 f.RegisterValueChangedCallback(e => s(e.newValue));
-                sub.Add(l); sub.Add(f); row.Add(sub);
+                sub.Add(l); sub.Add(RowTarget.Add(lbl.Key, f, lbl.Text)); row.Add(sub);
                 if (outFields != null && slot >= 0 && slot < outFields.Length) outFields[slot] = f;
             }
             AddFF(0, lx, gx, sx); AddFF(1, ly, gy, sy); AddFF(2, lz, gz, sz);
@@ -259,10 +294,11 @@ namespace Poly_Ling.Player
             l.style.fontSize = 10; return l;
         }
 
-        private static void SB(VisualElement p, string t, Action onClick)
+        private void SB(VisualElement p, Lx t, Action onClick)
         {
             var b = new Button(onClick) { text = t }; b.style.flexGrow = 1; b.style.marginRight = 2;
-            b.style.height = 18; b.style.fontSize = 9; p.Add(b);
+            b.style.height = 18; b.style.fontSize = 9;
+            p.Add(RowTarget.Add(t.Key, b, t.Text, UiSafety.SafeWrite));
         }
     }
 }

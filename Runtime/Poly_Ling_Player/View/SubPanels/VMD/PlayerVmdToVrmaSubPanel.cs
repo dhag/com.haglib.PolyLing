@@ -59,23 +59,51 @@ namespace Poly_Ling.Player
         private string  _vmdPath;
         private float   _maxTime;
 
+        // UI 自動操作の ID は "vmdToVrma.<下の Id>"（UiControlAttribute.cs）。
+        // パス欄はどれもダイアログの初期値として使い、確定は [...] か「保存」のダイアログで行う。
+        [UiControl("vmdPath", Description = "読み込む VMD のパス（ダイアログの初期値として使う）")]
         private TextField  _vmdPathField;
+        [UiControl("vrmaPath", Description = "書き出す VRMA のパス（ダイアログの初期値として使う）")]
         private TextField  _vrmaPathField;
+        [UiControl("model", Safety = UiSafety.ReadOnly, Description = "対象モデル")]
         private Label      _modelLabel;
+        [UiControl("vmdInfo", Safety = UiSafety.ReadOnly, Description = "読み込んだ VMD の情報")]
         private Label      _vmdInfoLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label      _statusLabel;
+        [UiControl("availability", Safety = UiSafety.ReadOnly, Description = "書き出しが使えるかどうかの表示")]
         private Label      _availLabel;
+        [UiControl("save", Safety = UiSafety.UserOnly, Description = "VRMA を保存する（保存ダイアログを開く）")]
         private Button     _btnSave;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "読み込んだ VMD を外す")]
         private Button     _btnClear;
+        [UiControl("open", Safety = UiSafety.UserOnly, Description = "VMD を開く（ファイル選択ダイアログを開く）")]
+        private Button     _btnOpen;
+        [UiControl("browseVmd", Safety = UiSafety.UserOnly, Description = "VMD の [...]（ファイル選択ダイアログを開く）")]
+        private Button     _btnBrowseVmd;
+        [UiControl("browseVrma", Safety = UiSafety.UserOnly, Description = "VRMA の [...]（保存ダイアログを開く）")]
+        private Button     _btnBrowseVrma;
+        [UiControl("browseIkTraceDir", Safety = UiSafety.UserOnly, Description = "IK トレースの出力先の [...]（フォルダ選択ダイアログを開く）")]
+        private Button     _btnBrowseIkTraceDir;
+        [UiControl("solveIk", Description = "IK を解いてから採取する")]
         private Toggle     _ikToggle;
+        [UiControl("align", Description = "姿勢の合わせ方")]
         private EnumField  _alignField;
+        [UiControl("diagnostics", Description = "切り分けログを出す")]
         private Toggle     _diagToggle;
+        [UiControl("ikTraceDir", Description = "IK トレースの出力先（ダイアログの初期値として使う）")]
         private TextField  _ikTraceDirField;
+        [UiControl("ignoreAngleLimits", Description = "角度制限を無視する")]
         private Toggle     _ignoreLimitToggle;
+        [UiControl("kneePreBend", Description = "ひざを事前に曲げる")]
         private Toggle     _kneePreBendToggle;
+        [UiControl("fps", Description = "採取のフレームレート")]
         private FloatField _fpsField;
+        [UiControl("scale", Description = "取り込みの倍率")]
         private FloatField _scaleField;
+        [UiControl("startFrame", Description = "採取の開始フレーム")]
         private FloatField _startField;
+        [UiControl("endFrame", Description = "採取の終了フレーム")]
         private FloatField _endField;
 
         private const string VmdPathKey     = "VmdToVrma.Vmd.Path";
@@ -116,13 +144,14 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.SectionLabel("VMD"));
             _vmdPathField = new TextField();
             _vmdPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VmdPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_vmdPathField, OnBrowseVmd));
+            root.Add(PlayerIoUiKit.PathRow(_vmdPathField, OnBrowseVmd, out _btnBrowseVmd));
             _vmdPathField.SetValueWithoutNotify(RecentPaths.Get(VmdPathKey));
 
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
             opRow.style.marginBottom  = 3;
             var btnOpen = PlayerIoUiKit.OpenButton("開く", OnBrowseVmd);
+            _btnOpen = btnOpen;
             btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
             _btnClear = new Button(Clear) { text = "クリア" };
             _btnClear.style.width = 64;
@@ -139,7 +168,7 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.SectionLabel("書き出し先 (.vrma)"));
             _vrmaPathField = new TextField();
             _vrmaPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VrmaPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_vrmaPathField, OnBrowseVrma));
+            root.Add(PlayerIoUiKit.PathRow(_vrmaPathField, OnBrowseVrma, out _btnBrowseVrma));
             _vrmaPathField.SetValueWithoutNotify(RecentPaths.Get(VrmaPathKey));
 
             // ── 設定 ─────────────────────────────────────────────────
@@ -171,7 +200,7 @@ namespace Poly_Ling.Player
             _ikTraceDirField = new TextField();
             _ikTraceDirField.RegisterValueChangedCallback(
                 e => RecentPaths.Set(IkTraceDirKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_ikTraceDirField, OnBrowseIkTraceDir));
+            root.Add(PlayerIoUiKit.PathRow(_ikTraceDirField, OnBrowseIkTraceDir, out _btnBrowseIkTraceDir));
             _ikTraceDirField.SetValueWithoutNotify(RecentPaths.Get(IkTraceDirKey));
 
             _ignoreLimitToggle = new Toggle("角度制限を無視") { value = false };

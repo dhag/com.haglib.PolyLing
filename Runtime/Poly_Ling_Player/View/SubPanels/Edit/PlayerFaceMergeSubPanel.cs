@@ -35,10 +35,16 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "faceMerge.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("stats.target", Safety = UiSafety.ReadOnly, Description = "対象のオブジェクト数・辺数と除外数")]
         private Label         _targetLabel;
+        [UiControl("stats.status", Safety = UiSafety.ReadOnly, Description = "消える面・頂点の数、または実行できない理由")]
         private Label         _statusLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選択辺を挟む 2 面を 1 面に結合する")]
         private Button        _mergeBtn;
+        [UiControl("deleteVertices", Description = "共有頂点 2 つを、ほかの面が使っていても新しい面から外す")]
         private Toggle        _deleteVerticesToggle;
 
         // ================================================================

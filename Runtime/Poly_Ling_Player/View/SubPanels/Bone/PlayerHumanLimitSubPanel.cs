@@ -50,14 +50,41 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "humanLimit.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象のボーン")]
         private Label    _targetLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label    _statusLabel;
+        [UiControl("bones", Description = "いま可動域を持つボーン（一覧の行番号）")]
         private ListView _listView;
 
-        private FloatField _minX, _minY, _minZ;
-        private FloatField _maxX, _maxY, _maxZ;
-        private FloatField _cenX, _cenY, _cenZ;
+        [UiControl("min.x", Description = "可動域の下限 X（度）")]
+        private FloatField _minX;
+        [UiControl("min.y", Description = "可動域の下限 Y（度）")]
+        private FloatField _minY;
+        [UiControl("min.z", Description = "可動域の下限 Z（度）")]
+        private FloatField _minZ;
+        [UiControl("max.x", Description = "可動域の上限 X（度）")]
+        private FloatField _maxX;
+        [UiControl("max.y", Description = "可動域の上限 Y（度）")]
+        private FloatField _maxY;
+        [UiControl("max.z", Description = "可動域の上限 Z（度）")]
+        private FloatField _maxZ;
+        [UiControl("center.x", Description = "中央 X（Unity の Avatar 画面の「中央」）")]
+        private FloatField _cenX;
+        [UiControl("center.y", Description = "中央 Y")]
+        private FloatField _cenY;
+        [UiControl("center.z", Description = "中央 Z")]
+        private FloatField _cenZ;
+        [UiControl("axisLength", Description = "軸長（Unity HumanLimit.axisLength。度ではない）")]
         private FloatField _axisLengthField;
+
+        [UiControl("loadFromSelection", Safety = UiSafety.SafeWrite, Description = "選んだボーンの値を欄へ読み込む")]
+        private Button _btnLoadFromSelection;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "選んだボーンに書き込む（複数選択可）")]
+        private Button _btnApply;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "可動域を外して Unity 既定へ戻す（Undo で戻せる）")]
+        private Button _btnClear;
 
         // ================================================================
         // 表示用の控え（Refresh のたびに作り直す）
@@ -177,18 +204,18 @@ namespace Poly_Ling.Player
             var fo = new Foldout { text = "③ 読む・書く・戻す", value = true };
 
             var row1 = Row();
-            row1.Add(Btn("選んだボーンの値を読み込む", OnLoadFromSelection, grow: true));
+            row1.Add(_btnLoadFromSelection = Btn("選んだボーンの値を読み込む", OnLoadFromSelection, grow: true));
             fo.Add(row1);
             fo.Add(Hint(
                 "選択中のボーンが持つ値を欄へ入れます。持っていなければ 0 のままです。"));
 
             var row2 = Row();
-            row2.Add(Btn("選んだボーンに書き込む", OnApply, grow: true));
+            row2.Add(_btnApply = Btn("選んだボーンに書き込む", OnApply, grow: true));
             fo.Add(row2);
             fo.Add(Hint("メッシュリストか 3D 画面でボーンを選んでから押します。複数選択できます。"));
 
             var row3 = Row();
-            row3.Add(Btn("既定に戻す", OnClear, grow: true));
+            row3.Add(_btnClear = Btn("既定に戻す", OnClear, grow: true));
             fo.Add(row3);
             fo.Add(Hint(
                 "可動域を外して Unity 既定へ戻します。取り消し（Undo）で戻せます。"));

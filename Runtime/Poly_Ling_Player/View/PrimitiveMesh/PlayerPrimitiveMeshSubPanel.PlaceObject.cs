@@ -47,10 +47,14 @@ namespace Poly_Ling.Player
         // 段間引きはここで振られる RowIndex を使うため、段間引きを使うときは ON にする。
         private BeltStackOption _placeStack = new BeltStackOption { Enabled = false };
 
+        [UiControl("placeObject.info", Safety = UiSafety.ReadOnly, Description = "配置の情報")]
         private Label         _placeInfoLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _placeSeedRow;   // Random のときだけ表示する
 
+        [UiControl(Ignore = true)]
         private Label _placeScaleLabel;        // 方式で「倍率」／「サイズ」を切り替える
+        [UiControl(Ignore = true)]
         private Label _placeScaleHint;
 
         private const float PlaceScaleMin = 0.1f;

@@ -72,79 +72,175 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "boneEditor.<下の Id>"（UiControlAttribute.cs）。
+        // このパネルは「ボーン」と「描画オブジェクトの姿勢」の 2 タブで、出る欄が変わる。
+        // タブでだけ出る欄には、そのタブへ切り替える表示の下準備を付ける。
+
         // スコープタブ
-        private Button _tabBones, _tabMeshes;
+        [UiControl("tab.bones", Safety = UiSafety.SafeWrite, Description = "「ボーン」タブ")]
+        private Button _tabBones;
+        [UiControl("tab.meshes", Safety = UiSafety.SafeWrite, Description = "「描画オブジェクトの姿勢」タブ")]
+        private Button _tabMeshes;
+        [UiControl(Ignore = true)]
         private VisualElement _moveOptionsSection;      // ボーン専用: スキンモード A/B/C
+        [UiControl(Ignore = true)]
         private VisualElement _commonMoveSection;      // 両タブ共通: 子を一緒に移動
+        [UiControl(Ignore = true)]
         private VisualElement _meshMoveOptionsSection; // メッシュ専用: 原点だけ移動
 
         // 共通
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl("selectionCount", Safety = UiSafety.ReadOnly, Description = "選択数")]
         private Label         _selectionCountLabel;
 
         // ── 対象選択（スコープ追従・全タブ共通）────────────────────
         //   3D 上でピックしにくい対象をリストから選ぶための入口。
         //   選択は 3D ピックやメッシュリストと同じ SelectMeshCommand 経由で行う。
+        [UiControl(Ignore = true)]
         private VisualElement _targetSection;
+        [UiControl("target", Description = "対象（今のタブの範囲から選ぶ）")]
         private DropdownField _boneDropdown;             // 対象選択ドロップダウン
         private bool          _suppressBoneDropdown;
         private readonly List<int>          _targetChoiceMasters    = new List<int>();
         private readonly List<MeshCategory> _targetChoiceCategories = new List<MeshCategory>();
 
         // ── ボーン専用 ──────────────────────────────────────────────
+        [UiControl(Ignore = true)]
         private VisualElement _boneSection;
 
+        [UiControl("boneName", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealBonesTab), Description = "選択中のボーン名")]
         private Label         _boneNameLabel;
+        [UiControl("masterIndex", Reveal = nameof(RevealBonesTab), Description = "masterIndex")]
         private IntegerField  _masterIndexField;
+        [UiControl("boneIndex", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealBonesTab), Description = "boneIndex")]
         private Label         _boneIndexLabel;
+        [UiControl("parentBone", Reveal = nameof(RevealBonesTab), Description = "親ボーン")]
         private DropdownField _parentBoneDropdown;
         private List<int>     _parentChoiceMasters = new List<int>();
         private bool          _suppressBoneEdit;
+        [UiControl("worldPosition", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealBonesTab), Description = "ワールド座標")]
         private Label         _worldPosLabel;
 
+        [UiControl("pose.active", Reveal = nameof(RevealBonesTab), Description = "ポーズを有効にする")]
         private Toggle        _bonePoseActiveToggle;
+        [UiControl("pose.init", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealBonesTab), Description = "ポーズを初期化する")]
         private Button        _btnInitPose;
+        [UiControl("pose.resetLayers", Safety = UiSafety.Destructive, Reveal = nameof(RevealBonesTab), Description = "ポーズのレイヤーをクリアする")]
         private Button        _btnResetLayers;
+        [UiControl("pose.bakeToBindPose", Safety = UiSafety.Destructive, Reveal = nameof(RevealBonesTab), Description = "今のポーズを BindPose へベイクする")]
         private Button        _btnBakePose;
+        [UiControl("pose.freeze", Safety = UiSafety.Destructive, Reveal = nameof(RevealBonesTab), Description = "ポーズを固定する")]
         private Button        _btnFreezePose;
+        [UiControl(Ignore = true)]
         private VisualElement _bonePoseSection;
 
+        [UiControl("resetPose", Safety = UiSafety.SafeWrite, Description = "ポーズをリセットする")]
         private Button        _btnReset;
+        [UiControl("focus", Safety = UiSafety.SafeWrite, Description = "選択中の対象へカメラを寄せる")]
         private Button        _btnFocus;
 
         // ── 共通 TRS ────────────────────────────────────────────────
-        private FloatField _posX, _posY, _posZ;
-        private FloatField _rotX, _rotY, _rotZ;
-        private Slider     _rotSliderX, _rotSliderY, _rotSliderZ;
-        private FloatField _sclX, _sclY, _sclZ;
-        private VisualElement _rotSection, _sclSection;
+        [UiControl("position.x", Description = "位置 X")]
+        private FloatField _posX;
+        [UiControl("position.y", Description = "位置 Y")]
+        private FloatField _posY;
+        [UiControl("position.z", Description = "位置 Z")]
+        private FloatField _posZ;
+        [UiControl("rotation.x", Description = "回転 X（度）")]
+        private FloatField _rotX;
+        [UiControl("rotation.y", Description = "回転 Y（度）")]
+        private FloatField _rotY;
+        [UiControl("rotation.z", Description = "回転 Z（度）")]
+        private FloatField _rotZ;
+        [UiControl("rotation.sliderX", Description = "回転 X のスライダー")]
+        private Slider     _rotSliderX;
+        [UiControl("rotation.sliderY", Description = "回転 Y のスライダー")]
+        private Slider     _rotSliderY;
+        [UiControl("rotation.sliderZ", Description = "回転 Z のスライダー")]
+        private Slider     _rotSliderZ;
+        [UiControl("scale.x", Description = "拡大縮小 X")]
+        private FloatField _sclX;
+        [UiControl("scale.y", Description = "拡大縮小 Y")]
+        private FloatField _sclY;
+        [UiControl("scale.z", Description = "拡大縮小 Z")]
+        private FloatField _sclZ;
+        [UiControl(Ignore = true)]
+        private VisualElement _rotSection;
+        [UiControl(Ignore = true)]
+        private VisualElement _sclSection;
         private bool       _suppressTRS;
+        [UiControl("bakeScale", Safety = UiSafety.Destructive,
+                   Description = "ローカル拡大縮小を頂点位置へ畳み込み、スケールを 1,1,1 に戻す（「原点だけ移動」のときは非表示）")]
+        private Button     _btnBakeScale;
+        [UiControl("bakeScaleResult", Safety = UiSafety.ReadOnly, Description = "拡大縮小のベイクの結果")]
+        private Label _bakeScaleMsgLabel;
 
         // IgnorePose（描画メッシュ含む場合）
+        [UiControl("ignorePose", Description = "姿勢を無視する（描画メッシュを含むとき）")]
         private Toggle        _ignorePoseToggle;
+        [UiControl(Ignore = true)]
         private VisualElement _ignorePoseRow;
 
 
         // 原点CSV（オブジェクト姿勢タブ専用）
+        [UiControl("originCsv.includeRotation", Reveal = nameof(RevealMeshesTab), Description = "原点 CSV に回転も含める")]
         private Toggle        _originIncludeRotToggle;
+        [UiControl("originCsv.export", Safety = UiSafety.UserOnly, Reveal = nameof(RevealMeshesTab),
+                   Description = "全メッシュの原点を CSV に書き出す（保存ダイアログを開く）")]
+        private Button        _btnOriginCsvExport;
+        [UiControl("originCsv.import", Safety = UiSafety.UserOnly, Reveal = nameof(RevealMeshesTab),
+                   Description = "原点 CSV を読み込んで名前一致で適用する（ファイル選択ダイアログを開く）")]
+        private Button        _btnOriginCsvImport;
 
         // 姿勢くさび（オブジェクト姿勢タブ専用）
+        [UiControl("wedgeLength", Reveal = nameof(RevealMeshesTab), Description = "姿勢くさびの長さ")]
         private FloatField    _wedgeLengthField;
 
         // ── ObjectMoveSettings 連動チェックボックス ───────────────
         // BoneInputHandler 廃止に伴い、ObjectMoveTool のピック対象を
         // ここから操作する。GetObjectMoveSettings() 経由で同一インスタンスを共有。
+        [UiControl("moveWithChildren", Description = "子を一緒に移動する")]
         private Toggle        _toggleMoveWithChildren;
+        [UiControl("originOnly", Reveal = nameof(RevealMeshesTab), Description = "原点だけ移動する（描画オブジェクトの姿勢タブ）")]
         private Toggle        _toggleOriginOnly;
+        [UiControl("showMoveGizmo", Description = "移動ギズモを表示する")]
         private Toggle        _toggleShowMoveGizmo;
+        [UiControl("showRotationGizmo", Description = "回転ギズモを表示する")]
         private Toggle        _toggleShowRotationGizmo;
+        [UiControl("skinMode.bonesOnly", Reveal = nameof(RevealBonesTab), Description = "ボーンだけ動かす（スキン固定）")]
         private Toggle        _toggleModeA;
+        [UiControl("skinMode.bake", Reveal = nameof(RevealBonesTab), Description = "スキンごと動かして確定（焼き込み）")]
         private Toggle        _toggleModeB;
+        [UiControl("skinMode.pose", Reveal = nameof(RevealBonesTab), Description = "ポーズ（一時）")]
         private Toggle        _toggleModeC;
         private bool          _suppressMoveSettings;
 
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label _statusLabel;
-        private Label _bakeScaleMsgLabel;
+
+        [UiControl("quickRotateZPlus", Safety = UiSafety.SafeWrite, Description = "選択対象のローカル Z 回転に +90 度を足す")]
+        private Button _btnQuickRotZPlus;
+        [UiControl("quickMoveYPlus", Safety = UiSafety.SafeWrite, Description = "選択対象のローカル Y 位置に +0.1 を足す")]
+        private Button _btnQuickMoveYPlus;
+        [UiControl("quickRotateZMinus", Safety = UiSafety.SafeWrite, Description = "選択対象のローカル Z 回転に −90 度を足す")]
+        private Button _btnQuickRotZMinus;
+
+        /// <summary>UI 自動操作の表示の下準備。ボーンの欄は「ボーン」タブのときだけ出る。</summary>
+        private bool RevealBonesTab()
+        {
+            if (_scope == SubPanelScope.BonesOnly) return false;
+            SetScope(SubPanelScope.BonesOnly);
+            return true;
+        }
+
+        /// <summary>描画オブジェクト専用の欄は「描画オブジェクトの姿勢」タブのときだけ出る。</summary>
+        private bool RevealMeshesTab()
+        {
+            if (_scope == SubPanelScope.MeshesOnly) return false;
+            SetScope(SubPanelScope.MeshesOnly);
+            return true;
+        }
 
         // ================================================================
         // Build
@@ -450,6 +546,7 @@ namespace Poly_Ling.Player
                 "選択中メッシュのローカル拡大縮小を頂点位置へ畳み込み、スケールを 1,1,1 に戻す" +
                 "（子を持つメッシュ・スキンドメッシュは対象外）";
             _sclSection.Add(bakeScaleBtn);
+            _btnBakeScale = bakeScaleBtn;
 
             _bakeScaleMsgLabel = new Label();
             _bakeScaleMsgLabel.style.fontSize  = 10;
@@ -482,6 +579,8 @@ namespace Poly_Ling.Player
 
             var originExportBtn = new Button(ExportObjectOriginsCsv) { text = "原点CSV書出" };
             var originImportBtn = new Button(ImportObjectOriginsCsv) { text = "原点CSV読込" };
+            _btnOriginCsvExport = originExportBtn;
+            _btnOriginCsvImport = originImportBtn;
             originExportBtn.style.flexGrow = 1;
             originImportBtn.style.flexGrow = 1;
             originExportBtn.tooltip = "全メッシュの原点(位置)を CSV に書き出す（回転は下のチェックで任意）";

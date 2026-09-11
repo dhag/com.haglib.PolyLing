@@ -40,6 +40,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private PlayerObjectArraySubPanel _objArrayPanel;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement             _objArrayHolder;
 
         /// <summary>埋め込んでいる歪み複製サブパネル。未表示なら null。</summary>

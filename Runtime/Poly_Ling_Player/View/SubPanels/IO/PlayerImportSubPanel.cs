@@ -105,10 +105,25 @@ namespace Poly_Ling.Player
         // 内部 UI 参照
         // ================================================================
 
+        // UI 自動操作の ID は "<importPmx / importMqo / importObj / importVrm>.<下の Id>"（UiControlAttribute.cs）。
+        // 1 つのセクションをモードで切り替えるので、モードごとに別パネルとして登録する。
+        // モードごとの設定行は _uiDynamic（組 = ModeGroup）に ID 付きで入る。
+        // 読込は「開く」「...」どちらもファイル選択ダイアログを通す（パス欄はダイアログの初期値）。
+        [UiControl("path", Description = "読み込むファイルのパス（ダイアログの初期値として使う）")]
         private TextField    _pathField;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label        _statusLabel;
+        [UiControl("title", Safety = UiSafety.ReadOnly, Description = "インポータの名前（モード）")]
         private Label        _panelNameLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _settingsContainer;
+        [UiControl("browse", Safety = UiSafety.UserOnly, Description = "[...]。ファイル選択ダイアログを開き、選んだら読み込む")]
+        private Button       _browseBtn;
+        [UiControl("open", Safety = UiSafety.UserOnly, Description = "開く。ファイル選択ダイアログを開き、選んだら読み込む")]
+        private Button       _openBtn;
+
+        /// <summary>モードごとの設定行（ToggleRow などが登録する）。</summary>
+        private readonly UiDynamicControls _uiDynamic = new UiDynamicControls();
         private bool         _autoScale = false;
 
         // ── 読込後オプションの保持値（パネル再構築をまたいで残す）──
@@ -177,6 +192,7 @@ namespace Poly_Ling.Player
             fileRow.Add(browseBtn);
             fileRow.Add(_pathField);
             fileSection.Add(fileRow);
+            _browseBtn = browseBtn;
 
             // ── Import ボタン（パスフィールド直下）──
             var importBtn = new Button(OnBrowse) { text = "開く" };
@@ -185,6 +201,7 @@ namespace Poly_Ling.Player
             importBtn.style.height       = 28;
             importBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
             fileSection.Add(importBtn);
+            _openBtn = importBtn;
 
             _statusLabel = new Label("");
             _statusLabel.style.color      = new StyleColor(new Color(1f, 0.7f, 0.4f));
@@ -235,6 +252,9 @@ namespace Poly_Ling.Player
         /// <summary>インポートパスの保存キー（モード別）</summary>
         private string ImportPathKey()
             => "Import." + ModeName(_mode) + ".Path";
+
+        /// <summary>UI 自動操作の動的な項目の組（モードごとの設定行）。</summary>
+        public static string ModeGroup(Mode mode) => ModeName(mode).ToLowerInvariant();
 
         // ================================================================
         // ファイルブラウズ
@@ -326,6 +346,8 @@ namespace Poly_Ling.Player
         {
             if (_settingsContainer == null) return;
             _settingsContainer.Clear();
+            // 行を作る補助関数（ToggleRow など）がここへ ID 付きで登録する。組はモード名。
+            _uiDynamic.Begin(ModeGroup(_mode));
 
             if (_mode == Mode.PMX)
                 BuildPmxSettings(_settingsContainer);
@@ -354,58 +376,58 @@ namespace Poly_Ling.Player
                 (int)_pmxSettings.ImportMode);
             modeField.RegisterValueChangedCallback(e =>
                 _pmxSettings.ImportMode = (PMXImportMode)modeField.index);
-            parent.Add(modeField);
+            parent.Add(_uiDynamic.Add("importMode", modeField, TP("ImportMode")));
 
             // プリセット
             parent.Add(SectionLabel(TP("Preset")));
             var presetRow = new VisualElement();
             presetRow.style.flexDirection = FlexDirection.Row;
             presetRow.style.marginBottom  = 4;
-            AddSmallBtn(presetRow, TP("Default"),      () => _pmxSettings = PMXImportSettings.CreateDefault());
-            AddSmallBtn(presetRow, "MMD",               () => _pmxSettings = PMXImportSettings.CreateMMDCompatible());
-            AddSmallBtn(presetRow, TP("BonesOnly"),     () => _pmxSettings = PMXImportSettings.CreateBonesOnly());
+            AddSmallBtn("preset.default",   presetRow, TP("Default"),      () => _pmxSettings = PMXImportSettings.CreateDefault());
+            AddSmallBtn("preset.mmd",       presetRow, "MMD",               () => _pmxSettings = PMXImportSettings.CreateMMDCompatible());
+            AddSmallBtn("preset.bonesOnly", presetRow, TP("BonesOnly"),     () => _pmxSettings = PMXImportSettings.CreateBonesOnly());
             parent.Add(presetRow);
 
             parent.Add(Separator());
 
             // インポート対象
             parent.Add(SectionLabel(TP("ImportTarget")));
-            parent.Add(FlagToggle(TP("TargetMesh"),   () => _pmxSettings.ShouldImportMesh,
+            parent.Add(FlagToggle("target.mesh",   TP("TargetMesh"),   () => _pmxSettings.ShouldImportMesh,
                 v => SetPmxTarget(PMXImportTarget.Mesh, v)));
-            parent.Add(FlagToggle(TP("TargetBones"),  () => _pmxSettings.ShouldImportBones,
+            parent.Add(FlagToggle("target.bones",  TP("TargetBones"),  () => _pmxSettings.ShouldImportBones,
                 v => SetPmxTarget(PMXImportTarget.Bones, v)));
-            parent.Add(FlagToggle(TP("TargetMorphs"), () => _pmxSettings.ShouldImportMorphs,
+            parent.Add(FlagToggle("target.morphs", TP("TargetMorphs"), () => _pmxSettings.ShouldImportMorphs,
                 v => SetPmxTarget(PMXImportTarget.Morphs, v)));
-            parent.Add(FlagToggle("剛体", () => _pmxSettings.ShouldImportBodies,
+            parent.Add(FlagToggle("target.bodies", "剛体", () => _pmxSettings.ShouldImportBodies,
                 v => SetPmxTarget(PMXImportTarget.Bodies, v)));
-            parent.Add(FlagToggle("Joint", () => _pmxSettings.ShouldImportJoints,
+            parent.Add(FlagToggle("target.joints", "Joint", () => _pmxSettings.ShouldImportJoints,
                 v => SetPmxTarget(PMXImportTarget.Joints, v)));
 
             parent.Add(Separator());
 
             // 座標変換
             parent.Add(SectionLabel(TP("Coordinate")));
-            parent.Add(FloatRow(TP("Scale"),    () => _pmxSettings.Scale,    v => _pmxSettings.Scale    = v));
-            parent.Add(ToggleRow(TP("FlipXAxis"), () => _pmxSettings.FlipX,  v => _pmxSettings.FlipX    = v));
-            parent.Add(ToggleRow(TP("FlipZAxis"), () => _pmxSettings.FlipZ,  v => _pmxSettings.FlipZ    = v));
-            parent.Add(ToggleRow(TP("FlipUV_V"),  () => _pmxSettings.FlipUV_V, v => _pmxSettings.FlipUV_V = v));
-            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+            parent.Add(FloatRow("scale",     TP("Scale"),    () => _pmxSettings.Scale,    v => _pmxSettings.Scale    = v));
+            parent.Add(ToggleRow("flipX",    TP("FlipXAxis"), () => _pmxSettings.FlipX,  v => _pmxSettings.FlipX    = v));
+            parent.Add(ToggleRow("flipZ",    TP("FlipZAxis"), () => _pmxSettings.FlipZ,  v => _pmxSettings.FlipZ    = v));
+            parent.Add(ToggleRow("flipUvV",  TP("FlipUV_V"),  () => _pmxSettings.FlipUV_V, v => _pmxSettings.FlipUV_V = v));
+            parent.Add(ToggleRow("autoScaleView", "3D表示オートスケール", () => _autoScale, v => _autoScale = v));
 
             parent.Add(Separator());
 
             // オプション（メッシュ時のみ）
             parent.Add(SectionLabel(TP("Options")));
-            parent.Add(ToggleRow(TP("ImportMaterials"),   () => _pmxSettings.ImportMaterials,   v => _pmxSettings.ImportMaterials   = v));
-            parent.Add(ToggleRow(TP("DetectNamedMirror"), () => _pmxSettings.DetectNamedMirror, v => _pmxSettings.DetectNamedMirror = v));
-            parent.Add(ToggleRow(TP("BakeMirror"),        () => _pmxSettings.BakeMirror,        v => _pmxSettings.BakeMirror        = v));
-            parent.Add(ToggleRow(TP("ConvertToTPose"),    () => _pmxSettings.ConvertToTPose,    v => _pmxSettings.ConvertToTPose    = v));
+            parent.Add(ToggleRow("materials",         TP("ImportMaterials"),   () => _pmxSettings.ImportMaterials,   v => _pmxSettings.ImportMaterials   = v));
+            parent.Add(ToggleRow("detectNamedMirror", TP("DetectNamedMirror"), () => _pmxSettings.DetectNamedMirror, v => _pmxSettings.DetectNamedMirror = v));
+            parent.Add(ToggleRow("bakeMirror",        TP("BakeMirror"),        () => _pmxSettings.BakeMirror,        v => _pmxSettings.BakeMirror        = v));
+            parent.Add(ToggleRow("convertToTPose",    TP("ConvertToTPose"),    () => _pmxSettings.ConvertToTPose,    v => _pmxSettings.ConvertToTPose    = v));
 
             parent.Add(Separator());
 
             // アルファ
             parent.Add(SectionLabel(TP("AlphaSettings")));
-            parent.Add(SliderRow(TP("AlphaCutoff"), 0f, 1f, () => _pmxSettings.AlphaCutoff, v => _pmxSettings.AlphaCutoff = v));
-            parent.Add(EnumRow(
+            parent.Add(SliderRow("alphaCutoff", TP("AlphaCutoff"), 0f, 1f, () => _pmxSettings.AlphaCutoff, v => _pmxSettings.AlphaCutoff = v));
+            parent.Add(EnumRow("alphaConflict",
                 TP("AlphaConflict"),
                 new[] { TP("AlphaConflictTransparent"), TP("AlphaConflictAlphaClip") },
                 () => (int)_pmxSettings.AlphaConflict,
@@ -415,8 +437,8 @@ namespace Poly_Ling.Player
 
             // 法線
             parent.Add(SectionLabel(TP("Normals")));
-            parent.Add(ToggleRow(TP("RecalculateNormals"), () => _pmxSettings.RecalculateNormals, v => _pmxSettings.RecalculateNormals = v));
-            parent.Add(SliderRow(TP("SmoothingAngle"), 0f, 180f, () => _pmxSettings.SmoothingAngle, v => _pmxSettings.SmoothingAngle = v));
+            parent.Add(ToggleRow("recalculateNormals", TP("RecalculateNormals"), () => _pmxSettings.RecalculateNormals, v => _pmxSettings.RecalculateNormals = v));
+            parent.Add(SliderRow("smoothingAngle", TP("SmoothingAngle"), 0f, 180f, () => _pmxSettings.SmoothingAngle, v => _pmxSettings.SmoothingAngle = v));
 
             parent.Add(Separator());
 
@@ -454,46 +476,46 @@ namespace Poly_Ling.Player
                 (int)_mqoSettings.ImportMode);
             modeField.RegisterValueChangedCallback(e =>
                 _mqoSettings.ImportMode = (MQOImportMode)modeField.index);
-            parent.Add(modeField);
+            parent.Add(_uiDynamic.Add("importMode", modeField, TM("ImportMode")));
 
             // プリセット
             parent.Add(SectionLabel(TM("Preset")));
             var presetRow = new VisualElement();
             presetRow.style.flexDirection = FlexDirection.Row;
             presetRow.style.marginBottom  = 4;
-            AddSmallBtn(presetRow, TM("Default"), () => _mqoSettings = MQOImportSettings.CreateDefault());
-            AddSmallBtn(presetRow, "MMD",          () => _mqoSettings = MQOImportSettings.CreateMMDCompatible());
-            AddSmallBtn(presetRow, "1:1",          () => _mqoSettings = MQOImportSettings.CreateNoScale());
+            AddSmallBtn("preset.default", presetRow, TM("Default"), () => _mqoSettings = MQOImportSettings.CreateDefault());
+            AddSmallBtn("preset.mmd",     presetRow, "MMD",          () => _mqoSettings = MQOImportSettings.CreateMMDCompatible());
+            AddSmallBtn("preset.noScale", presetRow, "1:1",          () => _mqoSettings = MQOImportSettings.CreateNoScale());
             parent.Add(presetRow);
 
             parent.Add(Separator());
 
             // 座標変換
             parent.Add(SectionLabel(TM("Coordinate")));
-            parent.Add(FloatRow(TM("Scale"),    () => _mqoSettings.Scale,    v => _mqoSettings.Scale    = v));
-            parent.Add(ToggleRow(TM("FlipXAxis"), () => _mqoSettings.FlipX,  v => _mqoSettings.FlipX    = v));
-            parent.Add(ToggleRow(TM("FlipZAxis"), () => _mqoSettings.FlipZ,  v => _mqoSettings.FlipZ    = v));
-            parent.Add(ToggleRow(TM("FlipUV_V"),  () => _mqoSettings.FlipUV_V, v => _mqoSettings.FlipUV_V = v));
-            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+            parent.Add(FloatRow("scale",    TM("Scale"),    () => _mqoSettings.Scale,    v => _mqoSettings.Scale    = v));
+            parent.Add(ToggleRow("flipX",   TM("FlipXAxis"), () => _mqoSettings.FlipX,  v => _mqoSettings.FlipX    = v));
+            parent.Add(ToggleRow("flipZ",   TM("FlipZAxis"), () => _mqoSettings.FlipZ,  v => _mqoSettings.FlipZ    = v));
+            parent.Add(ToggleRow("flipUvV", TM("FlipUV_V"),  () => _mqoSettings.FlipUV_V, v => _mqoSettings.FlipUV_V = v));
+            parent.Add(ToggleRow("autoScaleView", "3D表示オートスケール", () => _autoScale, v => _autoScale = v));
 
             parent.Add(Separator());
 
             // オプション
             parent.Add(SectionLabel(TM("Options")));
-            parent.Add(ToggleRow(TM("ImportMaterials"),    () => _mqoSettings.ImportMaterials,    v => _mqoSettings.ImportMaterials    = v));
-            parent.Add(ToggleRow(TM("SkipHiddenObjects"),  () => _mqoSettings.SkipHiddenObjects,  v => _mqoSettings.SkipHiddenObjects  = v));
-            parent.Add(ToggleRow(TM("SkipEmptyObjects"),   () => _mqoSettings.SkipEmptyObjects,   v => _mqoSettings.SkipEmptyObjects   = v));
-            parent.Add(ToggleRow(TM("MergeAllObjects"),    () => _mqoSettings.MergeObjects,       v => _mqoSettings.MergeObjects       = v));
-            parent.Add(ToggleRow(TM("SetMeshHierarchyParent"), () => _mqoSettings.SetMeshHierarchyParent, v => _mqoSettings.SetMeshHierarchyParent = v));
-            parent.Add(ToggleRow(TM("AutoDetectMirrorBranchRoot"), () => _mqoSettings.AutoDetectMirrorBranchRoot, v => _mqoSettings.AutoDetectMirrorBranchRoot = v));
-            parent.Add(ToggleRow(TM("BakeMirror"),         () => _mqoSettings.BakeMirror,         v => _mqoSettings.BakeMirror         = v));
+            parent.Add(ToggleRow("materials",         TM("ImportMaterials"),    () => _mqoSettings.ImportMaterials,    v => _mqoSettings.ImportMaterials    = v));
+            parent.Add(ToggleRow("skipHiddenObjects", TM("SkipHiddenObjects"),  () => _mqoSettings.SkipHiddenObjects,  v => _mqoSettings.SkipHiddenObjects  = v));
+            parent.Add(ToggleRow("skipEmptyObjects",  TM("SkipEmptyObjects"),   () => _mqoSettings.SkipEmptyObjects,   v => _mqoSettings.SkipEmptyObjects   = v));
+            parent.Add(ToggleRow("mergeObjects",      TM("MergeAllObjects"),    () => _mqoSettings.MergeObjects,       v => _mqoSettings.MergeObjects       = v));
+            parent.Add(ToggleRow("setMeshHierarchyParent", TM("SetMeshHierarchyParent"), () => _mqoSettings.SetMeshHierarchyParent, v => _mqoSettings.SetMeshHierarchyParent = v));
+            parent.Add(ToggleRow("autoDetectMirrorBranchRoot", TM("AutoDetectMirrorBranchRoot"), () => _mqoSettings.AutoDetectMirrorBranchRoot, v => _mqoSettings.AutoDetectMirrorBranchRoot = v));
+            parent.Add(ToggleRow("bakeMirror",        TM("BakeMirror"),         () => _mqoSettings.BakeMirror,         v => _mqoSettings.BakeMirror         = v));
 
             parent.Add(Separator());
 
             // アルファ
             parent.Add(SectionLabel(TM("AlphaSettings")));
-            parent.Add(SliderRow(TM("AlphaCutoff"), 0f, 1f, () => _mqoSettings.AlphaCutoff, v => _mqoSettings.AlphaCutoff = v));
-            parent.Add(EnumRow(
+            parent.Add(SliderRow("alphaCutoff", TM("AlphaCutoff"), 0f, 1f, () => _mqoSettings.AlphaCutoff, v => _mqoSettings.AlphaCutoff = v));
+            parent.Add(EnumRow("alphaConflict",
                 TM("AlphaConflict"),
                 new[] { TM("AlphaConflictTransparent"), TM("AlphaConflictAlphaClip") },
                 () => (int)_mqoSettings.AlphaConflict,
@@ -503,29 +525,29 @@ namespace Poly_Ling.Player
 
             // 法線
             parent.Add(SectionLabel(TM("Normals")));
-            parent.Add(EnumRow(
+            parent.Add(EnumRow("normalMode",
                 TM("NormalMode"),
                 new[] { "FaceNormal", "Smooth", "Unity", "SmoothFacet" },
                 () => (int)_mqoSettings.NormalMode,
                 v  => _mqoSettings.NormalMode = (MQO.NormalMode)v));
-            parent.Add(SliderRow(TM("SmoothingAngle"), 0f, 180f, () => _mqoSettings.SmoothingAngle, v => _mqoSettings.SmoothingAngle = v));
-            parent.Add(ToggleRow(TM("UseMqoFacet"), () => _mqoSettings.UseMqoFacet, v => _mqoSettings.UseMqoFacet = v));
+            parent.Add(SliderRow("smoothingAngle", TM("SmoothingAngle"), 0f, 180f, () => _mqoSettings.SmoothingAngle, v => _mqoSettings.SmoothingAngle = v));
+            parent.Add(ToggleRow("useMqoFacet", TM("UseMqoFacet"), () => _mqoSettings.UseMqoFacet, v => _mqoSettings.UseMqoFacet = v));
 
             parent.Add(Separator());
 
             // ボーン/ウェイト
             parent.Add(SectionLabel(TM("BoneWeightSettings")));
             parent.Add(SectionLabel(TM("MqoSpecialFaces"), small: true));
-            parent.Add(ToggleRow(TM("SkipMqoBoneIndices"), () => _mqoSettings.SkipMqoBoneIndices, v => _mqoSettings.SkipMqoBoneIndices = v));
-            parent.Add(ToggleRow(TM("SkipMqoBoneWeights"), () => _mqoSettings.SkipMqoBoneWeights, v => _mqoSettings.SkipMqoBoneWeights = v));
+            parent.Add(ToggleRow("skipMqoBoneIndices", TM("SkipMqoBoneIndices"), () => _mqoSettings.SkipMqoBoneIndices, v => _mqoSettings.SkipMqoBoneIndices = v));
+            parent.Add(ToggleRow("skipMqoBoneWeights", TM("SkipMqoBoneWeights"), () => _mqoSettings.SkipMqoBoneWeights, v => _mqoSettings.SkipMqoBoneWeights = v));
 
             parent.Add(SectionLabel(TM("ArmatureBones"), small: true));
-            parent.Add(ToggleRow(TM("ImportBonesFromArmature"), () => _mqoSettings.ImportBonesFromArmature, v => _mqoSettings.ImportBonesFromArmature = v));
-            parent.Add(ToggleRow(TM("ConvertToTPose"),           () => _mqoSettings.ConvertToTPose,          v => _mqoSettings.ConvertToTPose          = v));
+            parent.Add(ToggleRow("importBonesFromArmature", TM("ImportBonesFromArmature"), () => _mqoSettings.ImportBonesFromArmature, v => _mqoSettings.ImportBonesFromArmature = v));
+            parent.Add(ToggleRow("convertToTPose",          TM("ConvertToTPose"),          () => _mqoSettings.ConvertToTPose,          v => _mqoSettings.ConvertToTPose          = v));
 
             parent.Add(SectionLabel(TM("ExternalCSV"), small: true));
-            parent.Add(CsvPathRow(TM("BoneWeightCSV"), () => _mqoSettings.BoneWeightCSVPath, v => _mqoSettings.BoneWeightCSVPath = v, "csv", "Import.MQO.BoneWeightCSV"));
-            parent.Add(CsvPathRow(TM("BoneCSV"),       () => _mqoSettings.BoneCSVPath,       v => _mqoSettings.BoneCSVPath       = v, "csv", "Import.MQO.BoneCSV"));
+            parent.Add(CsvPathRow("boneWeightCsv", TM("BoneWeightCSV"), () => _mqoSettings.BoneWeightCSVPath, v => _mqoSettings.BoneWeightCSVPath = v, "csv", "Import.MQO.BoneWeightCSV"));
+            parent.Add(CsvPathRow("boneCsv",       TM("BoneCSV"),       () => _mqoSettings.BoneCSVPath,       v => _mqoSettings.BoneCSVPath       = v, "csv", "Import.MQO.BoneCSV"));
 
             parent.Add(Separator());
 
@@ -558,7 +580,7 @@ namespace Poly_Ling.Player
                       + "一致する名前が無ければ何もしない。";
             t.style.marginBottom = 2;
             t.RegisterValueChangedCallback(e => _humanoidAutoMap = e.newValue);
-            return t;
+            return _uiDynamic.Add("post.humanoidAutoMap", t, "読込後にボーン名から Humanoid 割当を作って適用する");
         }
 
         /// <summary>
@@ -588,7 +610,9 @@ namespace Poly_Ling.Player
                 _applyOriginCsv     = e.newValue;
                 detail.style.display = e.newValue ? DisplayStyle.Flex : DisplayStyle.None;
             });
-            container.Add(t);
+            container.Add(_uiDynamic.Add("post.applyOriginCsv", t,
+                "読込後に原点 CSV を名前一致で適用する（オンで CSV 欄と回転の欄が出る）"));
+            _applyOriginCsvToggle = t;
 
             detail.Add(OriginCsvPathRow());
 
@@ -597,7 +621,9 @@ namespace Poly_Ling.Player
                 "読込: 回転列がある行だけ回転も適用する（列が無い行・オフのときは位置だけ）";
             rotToggle.style.marginTop = 2;
             rotToggle.RegisterValueChangedCallback(e => _originCsvIncludeRot = e.newValue);
-            detail.Add(rotToggle);
+            detail.Add(_uiDynamic.Add("post.originCsvIncludeRotation", rotToggle,
+                "原点 CSV の回転（度）も適用する（「オブジェクトのローカル姿勢」オンのときだけ表示）",
+                UiSafety.Unspecified, RevealOriginCsv));
 
             container.Add(detail);
             return container;
@@ -658,7 +684,25 @@ namespace Poly_Ling.Player
             row.Add(browseBtn);
             row.Add(clearBtn);
             container.Add(row);
+            _uiDynamic.Add("post.originCsv.path", pathLbl, "原点 CSV（選んだファイル名）", UiSafety.ReadOnly, RevealOriginCsv);
+            _uiDynamic.Add("post.originCsv.browse", browseBtn, "原点 CSV を選ぶ（ファイル選択ダイアログを開く）", UiSafety.UserOnly, RevealOriginCsv);
+            _uiDynamic.Add("post.originCsv.clear", clearBtn, "原点 CSV の選択を外す（保存された設定は変えない）", UiSafety.SafeWrite, RevealOriginCsv);
             return container;
+        }
+
+        /// <summary>「オブジェクトのローカル姿勢（原点）」のチェック。原点 CSV の欄の表示の下準備に使う。</summary>
+        [UiControl(Ignore = true)]
+        private Toggle _applyOriginCsvToggle;
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備。原点 CSV の欄は「オブジェクトのローカル姿勢（原点）」が
+        /// オンのときだけ表示されるので、利用者と同じくチェックを入れる。既にオンなら false。
+        /// </summary>
+        private bool RevealOriginCsv()
+        {
+            if (_applyOriginCsvToggle == null || _applyOriginCsvToggle.value) return false;
+            _applyOriginCsvToggle.value = true;
+            return true;
         }
 
         private static string PathLabelText(string path)
@@ -686,11 +730,11 @@ namespace Poly_Ling.Player
         private void BuildObjSettings(VisualElement parent)
         {
             parent.Add(SectionLabel("座標変換"));
-            parent.Add(FloatRow("Scale",      () => _objSettings.Scale,    v => _objSettings.Scale    = v));
-            parent.Add(ToggleRow("Flip X",    () => _objSettings.FlipX,    v => _objSettings.FlipX    = v));
-            parent.Add(ToggleRow("Flip Z",    () => _objSettings.FlipZ,    v => _objSettings.FlipZ    = v));
-            parent.Add(ToggleRow("Flip UV V", () => _objSettings.FlipUV_V, v => _objSettings.FlipUV_V = v));
-            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+            parent.Add(FloatRow("scale",     "Scale",      () => _objSettings.Scale,    v => _objSettings.Scale    = v));
+            parent.Add(ToggleRow("flipX",    "Flip X",    () => _objSettings.FlipX,    v => _objSettings.FlipX    = v));
+            parent.Add(ToggleRow("flipZ",    "Flip Z",    () => _objSettings.FlipZ,    v => _objSettings.FlipZ    = v));
+            parent.Add(ToggleRow("flipUvV",  "Flip UV V", () => _objSettings.FlipUV_V, v => _objSettings.FlipUV_V = v));
+            parent.Add(ToggleRow("autoScaleView", "3D表示オートスケール", () => _autoScale, v => _autoScale = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("分割"));
@@ -705,25 +749,25 @@ namespace Poly_Ling.Player
             groupingField.style.marginBottom = 2;
             groupingField.RegisterValueChangedCallback(
                 e => _objSettings.Grouping = (ObjGroupingMode)groupingField.index);
-            parent.Add(groupingField);
+            parent.Add(_uiDynamic.Add("grouping", groupingField, "OBJ をどの単位で 1 オブジェクトにするか"));
 
-            parent.Add(ToggleRow("空のオブジェクトをスキップ",
+            parent.Add(ToggleRow("skipEmptyObjects", "空のオブジェクトをスキップ",
                 () => _objSettings.SkipEmptyObjects, v => _objSettings.SkipEmptyObjects = v));
-            parent.Add(ToggleRow("折れ線(l)を補助線として読む",
+            parent.Add(ToggleRow("importLines", "折れ線(l)を補助線として読む",
                 () => _objSettings.ImportLines, v => _objSettings.ImportLines = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("法線"));
-            parent.Add(ToggleRow("ファイルの法線(vn)を使う",
+            parent.Add(ToggleRow("useFileNormals", "ファイルの法線(vn)を使う",
                 () => _objSettings.UseFileNormals, v => _objSettings.UseFileNormals = v));
-            parent.Add(FloatRow("スムージング角",
+            parent.Add(FloatRow("smoothingAngle", "スムージング角",
                 () => _objSettings.SmoothingAngle, v => _objSettings.SmoothingAngle = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("マテリアル"));
-            parent.Add(ToggleRow("MTL を読み込む",
+            parent.Add(ToggleRow("materials", "MTL を読み込む",
                 () => _objSettings.ImportMaterials, v => _objSettings.ImportMaterials = v));
-            parent.Add(ToggleRow("テクスチャを読み込む",
+            parent.Add(ToggleRow("textures", "テクスチャを読み込む",
                 () => _objSettings.ImportTextures, v => _objSettings.ImportTextures = v));
 
             parent.Add(Separator());
@@ -752,24 +796,24 @@ namespace Poly_Ling.Player
             }
 
             parent.Add(SectionLabel("読み込む内容"));
-            parent.Add(ToggleRow("モーフ（ブレンドシェイプ）",
+            parent.Add(ToggleRow("morphs", "モーフ（ブレンドシェイプ）",
                 () => _vrmSettings.ImportMorphs, v => _vrmSettings.ImportMorphs = v));
-            parent.Add(ToggleRow("表情",
+            parent.Add(ToggleRow("expressions", "表情",
                 () => _vrmSettings.ImportExpressions, v => _vrmSettings.ImportExpressions = v));
-            parent.Add(ToggleRow("揺れもの（スプリングボーン）",
+            parent.Add(ToggleRow("springBones", "揺れもの（スプリングボーン）",
                 () => _vrmSettings.ImportSpringBones, v => _vrmSettings.ImportSpringBones = v));
-            parent.Add(ToggleRow("ノード制約",
+            parent.Add(ToggleRow("constraints", "ノード制約",
                 () => _vrmSettings.ImportConstraints, v => _vrmSettings.ImportConstraints = v));
-            parent.Add(ToggleRow("VRM 0.x を 1.0 へ移行して読む",
+            parent.Add(ToggleRow("allowVrm0", "VRM 0.x を 1.0 へ移行して読む",
                 () => _vrmSettings.AllowVrm0, v => _vrmSettings.AllowVrm0 = v));
-            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+            parent.Add(ToggleRow("autoScaleView", "3D表示オートスケール", () => _autoScale, v => _autoScale = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("マテリアル"));
-            parent.Add(ToggleRow("材質を読み込む",
+            parent.Add(ToggleRow("materials", "材質を読み込む",
                 () => _vrmSettings.ImportMaterials, v => _vrmSettings.ImportMaterials = v));
 
-            var tex = ToggleRow("埋め込みテクスチャを書き出す",
+            var tex = ToggleRow("extractTextures", "埋め込みテクスチャを書き出す",
                 () => _vrmSettings.ExtractTextures, v => _vrmSettings.ExtractTextures = v);
             tex.tooltip = "VRM と同じフォルダの「VRM名_textures」へ画像を書き出し、材質から参照する。\n"
                         + "切ると材質にテクスチャは付かない。";
@@ -802,21 +846,21 @@ namespace Poly_Ling.Player
             return v;
         }
 
-        /// <summary>Toggle 行（ラベル + Toggle）</summary>
-        private static VisualElement ToggleRow(string label, Func<bool> get, Action<bool> set)
+        /// <summary>Toggle 行（ラベル + Toggle）。id は UI 自動操作の ID（_uiDynamic へ登録）。</summary>
+        private VisualElement ToggleRow(string id, string label, Func<bool> get, Action<bool> set)
         {
             var t = new Toggle(label) { value = get() };
             t.style.marginBottom = 2;
             t.RegisterValueChangedCallback(e => set(e.newValue));
-            return t;
+            return _uiDynamic.Add(id, t, label);
         }
 
         /// <summary>Flag Toggle（PMXImportTarget 用）</summary>
-        private static VisualElement FlagToggle(string label, Func<bool> get, Action<bool> set)
-            => ToggleRow(label, get, set);
+        private VisualElement FlagToggle(string id, string label, Func<bool> get, Action<bool> set)
+            => ToggleRow(id, label, get, set);
 
         /// <summary>Float 入力行（ラベル + FloatField）</summary>
-        private static VisualElement FloatRow(string label, Func<float> get, Action<float> set)
+        private VisualElement FloatRow(string id, string label, Func<float> get, Action<float> set)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -832,12 +876,12 @@ namespace Poly_Ling.Player
             field.RegisterValueChangedCallback(e => set(e.newValue));
 
             row.Add(lbl);
-            row.Add(field);
+            row.Add(_uiDynamic.Add(id, field, label));
             return row;
         }
 
         /// <summary>Slider 行</summary>
-        private static VisualElement SliderRow(string label, float min, float max, Func<float> get, Action<float> set)
+        private VisualElement SliderRow(string id, string label, float min, float max, Func<float> get, Action<float> set)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -853,12 +897,12 @@ namespace Poly_Ling.Player
             slider.RegisterValueChangedCallback(e => set(e.newValue));
 
             row.Add(lbl);
-            row.Add(slider);
+            row.Add(_uiDynamic.Add(id, slider, label));
             return row;
         }
 
         /// <summary>DropdownField 行</summary>
-        private static VisualElement EnumRow(string label, string[] choices, Func<int> get, Action<int> set)
+        private VisualElement EnumRow(string id, string label, string[] choices, Func<int> get, Action<int> set)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -876,12 +920,15 @@ namespace Poly_Ling.Player
             dropdown.RegisterValueChangedCallback(e => set(dropdown.index));
 
             row.Add(lbl);
-            row.Add(dropdown);
+            row.Add(_uiDynamic.Add(id, dropdown, label));
             return row;
         }
 
-        /// <summary>CSVパス行（ラベル + パス表示 + Browse + Clear）</summary>
-        private VisualElement CsvPathRow(string label, Func<string> get, Action<string> set, string ext, string recentKey = null)
+        /// <summary>
+        /// CSVパス行（ラベル + パス表示 + Browse + Clear）。
+        /// UI 自動操作では "<id>.path"（表示）・"<id>.browse"（ダイアログ）・"<id>.clear" を登録する。
+        /// </summary>
+        private VisualElement CsvPathRow(string id, string label, Func<string> get, Action<string> set, string ext, string recentKey = null)
         {
             var container = new VisualElement();
             container.style.marginBottom = 3;
@@ -936,17 +983,20 @@ namespace Poly_Ling.Player
             row.Add(browseBtn);
             row.Add(clearBtn);
             container.Add(row);
+            _uiDynamic.Add(id + ".path", pathLbl, label + "（選んだファイル名）", UiSafety.ReadOnly);
+            _uiDynamic.Add(id + ".browse", browseBtn, label + "を選ぶ（ファイル選択ダイアログを開く）", UiSafety.UserOnly);
+            _uiDynamic.Add(id + ".clear", clearBtn, label + "の指定を外す", UiSafety.SafeWrite);
             return container;
         }
 
-        private static void AddSmallBtn(VisualElement parent, string text, Action onClick)
+        private void AddSmallBtn(string id, VisualElement parent, string text, Action onClick)
         {
             var b = new Button(onClick) { text = text };
             b.style.flexGrow     = 1;
             b.style.marginRight  = 2;
             b.style.height       = 18;
             b.style.fontSize     = 9;
-            parent.Add(b);
+            parent.Add(_uiDynamic.Add(id, b, "プリセット「" + text + "」を設定に入れる", UiSafety.SafeWrite));
         }
     }
 }

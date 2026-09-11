@@ -58,9 +58,16 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "<パネル ID>.<下の Id>"（UiControlAttribute.cs）。
+        // 段階テストのパネルはこの基底クラスを継承するので、ここに付けた項目は
+        // どの検証パネルにも共通で入る。段ごとの設定欄は各パネルの BuildOptionsUI が作る。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行の状態")]
         private Label         _status;
+        [UiControl(Ignore = true, Rows = true)]
         private ScrollView    _logView;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "この検証を実行する")]
         private Button        _runButton;
 
         /// <summary>3 行ログの平文。レポートへ落とすために持つ。</summary>
@@ -145,7 +152,14 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>出力先フォルダ欄。BuildOptionsUI で MakeOutDest を呼んで作る。</summary>
-        protected PlayerSaveDestRow OutDest { get; private set; }
+        /// <remarks>
+        /// UI 自動操作の UiNested はフィールドを見るので、自動実装プロパティではなく
+        /// 明示のフィールドで持つ。作らないパネルもあるので Optional。
+        /// </remarks>
+        [UiNested("outDest", Optional = true)]
+        private PlayerSaveDestRow _outDest;
+
+        protected PlayerSaveDestRow OutDest => _outDest;
 
         /// <summary>出力先フォルダ欄を 1 本作る。派生は戻り値を root へ Add する。</summary>
         /// <param name="dialogTitle">保存ダイアログの見出し。</param>
@@ -153,10 +167,10 @@ namespace Poly_Ling.Player
         /// <param name="defaultName">ファイル名欄の初期値を返す関数。null 可。</param>
         protected VisualElement MakeOutDest(string dialogTitle, string extension, Func<string> defaultName = null)
         {
-            OutDest = new PlayerSaveDestRow(
+            _outDest = new PlayerSaveDestRow(
                 "書き込み先フォルダ", Poly_Ling.Core.SaveDest.Keys.Pipeline,
                 dialogTitle, extension, defaultName);
-            return OutDest.Root;
+            return _outDest.Root;
         }
 
         /// <summary>

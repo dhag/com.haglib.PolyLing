@@ -19,6 +19,8 @@ using ParameterLimits      = Poly_Ling.Core.ParameterLimits;
 using RecentPaths          = Poly_Ling.Core.RecentPaths;
 using PartsDictionaryPath  = Poly_Ling.Core.PartsDictionaryPath;
 using MeshRenameCsvHelper  = Poly_Ling.UI.MeshRenameCsvHelper;
+using UiControl            = Poly_Ling.Player.UiControlAttribute;
+using UiSafety             = Poly_Ling.Player.UiSafety;
 
 namespace Poly_Ling.MeshListV2
 {
@@ -48,6 +50,8 @@ namespace Poly_Ling.MeshListV2
         // 縦操作中は横スクロールバーの出入りを止める。
         // 既定の Auto は内容幅の変化で出たり消えたりし、そのたびに
         // 表示領域の高さが変わってリストが揺れる。
+        /// <summary>ツリーを入れているスクロール。中身はツリーが作る行なので項目にしない。</summary>
+        [UiControl(Ignore = true)]
         private ScrollView _treeScroll;
         private bool _hScrollerLocked;
         private IVisualElementScheduledItem _hScrollerUnlock;

@@ -38,21 +38,36 @@ namespace Poly_Ling.Player
         private void SendCmd(PanelCommand cmd) => _panelContext?.SendCommand(cmd);
 
         // ── UI ────────────────────────────────────────────────────────────
+        // UI 自動操作の ID は "materialList.<下の Id>"（UiControlAttribute.cs）。
+        // マテリアルの行と、選んだマテリアルのパラメータ欄（テクスチャ・スライダー・色・サーフェス）は
+        // マテリアルとシェーダーに合わせて作り直すので、固定の項目としては登録しない（Rows）。
+        // シェーダーの選択と名前欄はフィールドに持つので登録する。
+        [UiControl("count", Safety = UiSafety.ReadOnly, Description = "マテリアル数")]
         private Label         _countLabel;
+        [UiControl(Ignore = true, Rows = true)]
         private ScrollView    _list;
+        [UiControl("add", Safety = UiSafety.SafeWrite, Description = "新規マテリアルを作成する")]
+        private Button        _btnAdd;
 
         // リスト高さ（下端ドラッグで手動リサイズ）: MeshListSubPanel と同方式
         private float _matListHeight = 180f;
         private const float MatListMinHeight = 60f;
         private const float MatListMaxHeight = 600f;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _paramSection;
+        [UiControl(Ignore = true)]
         private VisualElement _applySection;
+        [UiControl("applyToSelection", Safety = UiSafety.SafeWrite, Description = "カレントマテリアルを選択面に適用する（面の選択が要る）")]
         private Button        _btnApply;
+        [UiControl("selectionInfo", Safety = UiSafety.ReadOnly, Description = "選択面の情報")]
         private Label         _selInfoLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
         private const string  TexPathKey = "Material.TexPath";
 
+        [UiControl("shader", Description = "選んだマテリアルのシェーダー（マテリアルを選んだときだけ表示）")]
         private DropdownField _shaderDropdown;
+        [UiControl("customShaderName", Description = "シェーダー名（シェーダーが Custom のときだけ表示）")]
         private TextField     _customShaderField;
 
         // ── 状態 ──────────────────────────────────────────────────────────
@@ -100,6 +115,7 @@ namespace Poly_Ling.Player
             var addBtn = new Button(OnAdd) { text = "+ 新規マテリアルを作成" };
             addBtn.style.marginBottom = 4;
             root.Add(addBtn);
+            _btnAdd = addBtn;
 
             // パラメータ編集エリア（選択時に展開）
             _paramSection = new VisualElement();

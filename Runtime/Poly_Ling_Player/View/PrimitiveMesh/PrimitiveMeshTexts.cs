@@ -941,7 +941,36 @@ namespace Poly_Ling.Player
                                           ["hi"] = "あなが おおきすぎるので ちいさくして つくります。" },
         };
 
-        public static string T(string key) => L.GetFrom(DictOf(key), key);
+        /// <summary>
+        /// ローカライズした表示文字と、その元のキーの組。
+        ///
+        /// 【なぜ組にするか】
+        ///   UI 自動操作の項目 ID には、言語で変わらないものが要る。表示文字は言語で変わるので使えない。
+        ///   一方、諸元 UI を組む行ヘルパ（SR / IR / TR / V3F / SB）の呼び出しは
+        ///   どれも第 1 引数が T("キー") なので、T が表示文字だけでなくキーも返せば、
+        ///   呼び出し側を 1 か所も書き換えずに ID を取り出せる。
+        ///
+        /// 【文字列として使えること】
+        ///   文字列への暗黙変換を持つので、これまで T() を文字列として渡していた箇所は
+        ///   そのまま通る。文字列からの暗黙変換もあるので、行ヘルパへ文字列を直書きしてもよい
+        ///   （そのときはキー＝その文字列になる）。
+        ///   ただし「T(...) + 文字列」の連結だけは曖昧になりうるので、.Text を明示すること。
+        /// </summary>
+        public readonly struct Lx
+        {
+            /// <summary>辞書のキー。UI 自動操作の項目 ID に使う。</summary>
+            public readonly string Key;
+            /// <summary>今の言語での表示文字。</summary>
+            public readonly string Text;
+
+            public Lx(string key, string text) { Key = key; Text = text; }
+
+            public static implicit operator string(Lx v) => v.Text;
+            public static implicit operator Lx(string s) => new Lx(s, s);
+            public override string ToString() => Text;
+        }
+
+        public static Lx T(string key) => new Lx(key, L.GetFrom(DictOf(key), key));
         public static string T(string key, params object[] args) => L.GetFrom(DictOf(key), key, args);
 
         /// <summary>キーを持つ辞書。どちらにも無ければサンドボックス側（L.GetFrom がキーをそのまま返す）。</summary>

@@ -96,15 +96,35 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "uvEditor.<下の Id>"（UiControlAttribute.cs）。
+        // UV キャンバス（点の選択・ドラッグ）はポインタ操作なので項目にしない。
+        // アンカー調整の欄は「アンカー設定」を押したときだけ表示される。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("meshMaterial", Safety = UiSafety.ReadOnly, Description = "対象メッシュとマテリアル")]
         private Label         _meshMatLabel;
+        [UiControl("material", Description = "背景に使うマテリアル")]
         private DropdownField _materialDropdown;
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "UV の情報")]
         private Label         _infoLabel;
         private Texture2D     _bgTexture;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _canvas;
+        [UiControl(Ignore = true)]
         private VisualElement _transformSection;
+
+        [UiControl("fit", Safety = UiSafety.SafeWrite, Description = "キャンバスを UV の範囲に合わせる")]
+        private Button _fitBtn;
+        [UiControl("selectAll", Safety = UiSafety.SafeWrite, Description = "UV をすべて選択する")]
+        private Button _selectAllBtn;
+        [UiControl("clearSelection", Safety = UiSafety.SafeWrite, Description = "UV の選択を解除する")]
+        private Button _clearSelectionBtn;
+        [UiControl("lasso", Description = "キャンバスのドラッグ選択を投げ縄にする")]
+        private Toggle _lassoToggle;
 
         // プレビューキャンバスの縦サイズ（ドラッグで変更）
         private float _uvCanvasHeight = 300f;
@@ -113,23 +133,70 @@ namespace Poly_Ling.Player
         private float _uvResizeStartHeight;
         private const float UvCanvasMinHeight = 160f;
         private const float UvCanvasMaxHeight = 1000f;
-        private FloatField    _moveU, _moveV, _scaleU, _scaleV, _rotateDeg;
+        [UiControl("move.u", Description = "移動 U")]
+        private FloatField    _moveU;
+        [UiControl("move.v", Description = "移動 V")]
+        private FloatField    _moveV;
+        [UiControl("scale.u", Description = "スケール U")]
+        private FloatField    _scaleU;
+        [UiControl("scale.v", Description = "スケール V")]
+        private FloatField    _scaleV;
+        [UiControl("rotation", Description = "回転（度）")]
+        private FloatField    _rotateDeg;
+        [UiControl("scaleAxis", Description = "スケール軸の回転角（度）")]
         private FloatField    _scaleAxisDeg;   // スケール軸の回転角(°)
+        [UiControl("applyTransform", Safety = UiSafety.SafeWrite, Description = "UV 変換を適用する")]
+        private Button        _applyTransformBtn;
+        [UiControl("resetParams", Safety = UiSafety.SafeWrite, Description = "変換の入力欄をリセットする")]
+        private Button        _resetParamsBtn;
 
         // マグネット（比例編集）
         private readonly Canvas2DMagnet _uvMagnet = new Canvas2DMagnet();
         private readonly Dictionary<UVVertexId, float> _uvMagnetW = new Dictionary<UVVertexId, float>();
+        [UiControl("magnet.radius", Description = "マグネットの半径（スライダー）")]
         private Slider        _uvMagnetRadius;
+        [UiControl("magnet.radiusValue", Description = "マグネットの半径（数値入力）")]
+        private FloatField    _uvMagnetRadiusField;
+        [UiControl("magnet.enabled", Description = "マグネット（比例編集）を使う")]
+        private Toggle        _uvMagnetToggle;
+        [UiControl("magnet.falloff", Description = "マグネットの減衰")]
+        private EnumField     _uvMagnetFalloff;
 
         // 回転/拡大縮小アンカー（UV空間 0-1）
         private Vector2       _anchor = new Vector2(0.5f, 0.5f);
         private bool          _anchorManual;   // true=手動固定（重心へ自動追従しない）
         private bool          _anchorMode;     // アンカー設定サブモード
-        private Slider        _anchorXSlider, _anchorYSlider;
-        private FloatField    _anchorXField,  _anchorYField;
+        [UiControl("anchor.x", Reveal = nameof(RevealAnchorPanel), Description = "アンカー X（UV 空間 0〜1、スライダー）")]
+        private Slider        _anchorXSlider;
+        [UiControl("anchor.y", Reveal = nameof(RevealAnchorPanel), Description = "アンカー Y（UV 空間 0〜1、スライダー）")]
+        private Slider        _anchorYSlider;
+        [UiControl("anchor.xValue", Reveal = nameof(RevealAnchorPanel), Description = "アンカー X の数値入力")]
+        private FloatField    _anchorXField;
+        [UiControl("anchor.yValue", Reveal = nameof(RevealAnchorPanel), Description = "アンカー Y の数値入力")]
+        private FloatField    _anchorYField;
+        [UiControl("anchor.begin", Safety = UiSafety.SafeWrite, Description = "アンカー設定を始める（キャンバスのドラッグでアンカーを動かす）")]
         private Button        _anchorEnterBtn;
+        [UiControl("anchor.done", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealAnchorPanel), Description = "アンカー設定を終える")]
+        private Button        _anchorDoneBtn;
+        [UiControl("anchor.presetCentroid", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealAnchorPanel), Description = "アンカーを選択の重心にする")]
+        private Button        _anchorCentroidBtn;
+        [UiControl("anchor.presetCenter", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealAnchorPanel), Description = "アンカーを中心にする")]
+        private Button        _anchorCenterBtn;
+        [UiControl("anchor.presetTopLeft", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealAnchorPanel), Description = "アンカーを左上にする")]
+        private Button        _anchorTopLeftBtn;
+        [UiControl("anchor.presetBottomLeft", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealAnchorPanel), Description = "アンカーを左下にする")]
+        private Button        _anchorBottomLeftBtn;
+        [UiControl(Ignore = true)]
         private VisualElement _anchorPanel;
         private bool          _anchorSuppress; // フィールド更新中の通知抑制
+
+        /// <summary>UI 自動操作の表示の下準備。アンカー調整の欄は「アンカー設定」中だけ表示される。</summary>
+        private bool RevealAnchorPanel()
+        {
+            if (_anchorMode) return false;
+            SetAnchorMode(true);
+            return true;
+        }
 
         // 回転/拡大縮小ハンドル（キャンバス上ドラッグ）
         private readonly Canvas2DHandle _uvHandle = new Canvas2DHandle();
@@ -220,14 +287,15 @@ namespace Poly_Ling.Player
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.marginBottom  = 4;
-            MkBtn("フィット",      btnRow, FitToUVBounds);
-            MkBtn("全選択",        btnRow, SelectAll);
-            MkBtn("選択解除",      btnRow, ClearSelection);
+            _fitBtn            = MkBtn("フィット",      btnRow, FitToUVBounds);
+            _selectAllBtn      = MkBtn("全選択",        btnRow, SelectAll);
+            _clearSelectionBtn = MkBtn("選択解除",      btnRow, ClearSelection);
             var lassoToggle = new Toggle("投げ縄") { value = false };
             lassoToggle.style.marginLeft = 4;
             lassoToggle.RegisterValueChangedCallback(e => _lassoMode = e.newValue);
             btnRow.Add(lassoToggle);
             _root.Add(btnRow);
+            _lassoToggle = lassoToggle;
 
             // 変換セクション
             _transformSection = new VisualElement();
@@ -257,12 +325,13 @@ namespace Poly_Ling.Player
                 doneBtn.style.width = 60; doneBtn.style.height = 22; doneBtn.style.fontSize = 10;
                 headRow.Add(adjLbl); headRow.Add(doneBtn);
                 _anchorPanel.Add(headRow);
+                _anchorDoneBtn = doneBtn;
 
                 var presetRow = new VisualElement(); presetRow.style.flexDirection = FlexDirection.Row; presetRow.style.marginBottom = 2;
-                MkBtn("重心", presetRow, () => ApplyAnchorPreset(AnchorPreset.Centroid));
-                MkBtn("中心", presetRow, () => ApplyAnchorPreset(AnchorPreset.Center));
-                MkBtn("左上", presetRow, () => ApplyAnchorPreset(AnchorPreset.TopLeft));
-                MkBtn("左下", presetRow, () => ApplyAnchorPreset(AnchorPreset.BottomLeft));
+                _anchorCentroidBtn   = MkBtn("重心", presetRow, () => ApplyAnchorPreset(AnchorPreset.Centroid));
+                _anchorCenterBtn     = MkBtn("中心", presetRow, () => ApplyAnchorPreset(AnchorPreset.Center));
+                _anchorTopLeftBtn    = MkBtn("左上", presetRow, () => ApplyAnchorPreset(AnchorPreset.TopLeft));
+                _anchorBottomLeftBtn = MkBtn("左下", presetRow, () => ApplyAnchorPreset(AnchorPreset.BottomLeft));
                 _anchorPanel.Add(presetRow);
 
                 _anchorPanel.Add(BuildAnchorRow("X", 0f, out _anchorXSlider, out _anchorXField,
@@ -284,14 +353,16 @@ namespace Poly_Ling.Player
             uvFalloff.RegisterValueChangedCallback(ev => _uvMagnet.Falloff = (FalloffType)ev.newValue);
             uvMagRow.Add(uvMagToggle); uvMagRow.Add(uvFalloff);
             _transformSection.Add(uvMagRow);
-            _transformSection.Add(BuildAnchorRow("半径", 0.15f, out _uvMagnetRadius, out _,
+            _uvMagnetToggle  = uvMagToggle;
+            _uvMagnetFalloff = uvFalloff;
+            _transformSection.Add(BuildAnchorRow("半径", 0.15f, out _uvMagnetRadius, out _uvMagnetRadiusField,
                 v => { _uvMagnet.Radius = v; _canvas.MarkDirtyRepaint(); }));
 
             var applyRow = new VisualElement();
             applyRow.style.flexDirection = FlexDirection.Row;
             applyRow.style.marginTop     = 4;
-            MkBtn("変換適用",  applyRow, ApplyTransform);
-            MkBtn("パラメータリセット", applyRow, ResetParams);
+            _applyTransformBtn = MkBtn("変換適用",  applyRow, ApplyTransform);
+            _resetParamsBtn    = MkBtn("パラメータリセット", applyRow, ResetParams);
             _transformSection.Add(applyRow);
 
             // ステータス

@@ -36,27 +36,54 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "vertexMove.<下の Id>"（UiControlAttribute.cs）。
+        // マグネットの詳細（半径・距離モード・フォールオフ・半径範囲）はマグネットを
+        // 有効にしたときだけ表示されるので、表示の下準備に RevealMagnetParams を使う。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("magnet.enabled", Description = "マグネット（周囲の頂点も減衰付きで動かす）を使う")]
         private Toggle        _magnetToggle;
+        [UiControl("magnet.radius", Reveal = nameof(RevealMagnetParams), Description = "マグネットの半径（スライダー）")]
         private Slider        _magnetRadiusSlider;
+        [UiControl("magnet.radiusValue", Reveal = nameof(RevealMagnetParams),
+                   Description = "マグネットの半径（数値）。上下限の外の値を入れると上下限を広げる")]
         private FloatField    _magnetRadiusField;
+        [UiControl("magnet.falloff", Reveal = nameof(RevealMagnetParams), Description = "マグネットの減衰の形")]
         private DropdownField _falloffDropdown;
+        [UiControl("magnet.distanceMode", Reveal = nameof(RevealMagnetParams), Description = "マグネットの距離の測り方")]
         private DropdownField _distanceModeDropdown;
+        [UiControl(Ignore = true)]
         private VisualElement _magnetParamsGroup;
+        [UiControl("gizmo.offsetX", Description = "ギズモを出す位置の画面上のずらし量 X")]
         private Slider        _gizmoOffsetXSlider;
+        [UiControl("gizmo.offsetY", Description = "ギズモを出す位置の画面上のずらし量 Y")]
         private Slider        _gizmoOffsetYSlider;
+        [UiControl("targetCount", Safety = UiSafety.ReadOnly, Description = "移動対象の頂点数。対象が無いときは表示されない")]
         private Label         _targetLabel;
+        [UiControl("select.lasso", Description = "ドラッグ選択を投げ縄にする（OFF で矩形）")]
         private Toggle        _lassoToggle;
+        [UiControl("magnet.radiusDrag", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealMagnetParams),
+                   Description = "ビューポートのドラッグでマグネット半径を決めるモードに入る")]
         private Button        _radiusDragButton;
 
         // 詳細設定
+        [UiControl("magnet.radiusMin", Reveal = nameof(RevealMagnetParams), Description = "マグネット半径の下限")]
         private FloatField _minRadiusField;
+        [UiControl("magnet.radiusMax", Reveal = nameof(RevealMagnetParams), Description = "マグネット半径の上限")]
         private FloatField _maxRadiusField;
 
         // 数値移動 (ワールド空間の増分)
+        [UiControl("move.x", Description = "数値移動のワールド増分 X。「移動」を押すまで適用しない")]
         private FloatField _moveXField;
+        [UiControl("move.y", Description = "数値移動のワールド増分 Y。「移動」を押すまで適用しない")]
         private FloatField _moveYField;
+        [UiControl("move.z", Description = "数値移動のワールド増分 Z。「移動」を押すまで適用しない")]
         private FloatField _moveZField;
+        [UiControl("move.apply", Safety = UiSafety.SafeWrite,
+                   Description = "選択頂点を数値移動の増分だけ動かす（Undo できる）。描画オブジェクトの選択が要る")]
+        private Button     _moveApplyBtn;
+        [UiControl("move.clear", Safety = UiSafety.SafeWrite, Description = "数値移動の入力欄を 0 に戻す。適用済みの移動は戻さない")]
+        private Button     _moveClearBtn;
 
         private bool _suppressSync;
 
@@ -67,7 +94,8 @@ namespace Poly_Ling.Player
         private static string[]      DistanceModeLabels => BrushFalloffControls.DistanceModeLabels;
         private static DistanceMode[] DistanceModeValues => BrushFalloffControls.DistanceModeValues;
 
-        /// <summary>距離モード／フォールオフの共通 UI。</summary>
+        /// <summary>距離モード／フォールオフの共通 UI。ドロップダウンは自分のフィールドで登録するので取り込まない。</summary>
+        [UiControl(Ignore = true)]
         private readonly BrushFalloffControls _falloffControls = new BrushFalloffControls();
 
         // ================================================================
@@ -291,6 +319,7 @@ namespace Poly_Ling.Player
             }) { text = "移動" };
             applyMoveBtn.style.flexGrow = 1; applyMoveBtn.style.marginRight = 2;
             moveBtnRow.Add(applyMoveBtn);
+            _moveApplyBtn = applyMoveBtn;
 
             // 入力欄を 0 に戻すだけ。適用済みの移動は取り消さない（Undo を使うこと）。
             var clearMoveBtn = new Button(() =>
@@ -301,6 +330,7 @@ namespace Poly_Ling.Player
             }) { text = "クリア" };
             clearMoveBtn.style.flexGrow = 1;
             moveBtnRow.Add(clearMoveBtn);
+            _moveClearBtn = clearMoveBtn;
 
             // ── ギズモ ───────────────────────────────────────────────
             AddHeader("Gizmo");
@@ -396,6 +426,18 @@ namespace Poly_Ling.Player
         {
             if (_magnetParamsGroup != null)
                 _magnetParamsGroup.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。マグネットの詳細は
+        /// マグネットを有効にしたときだけ表示されるので、利用者と同じくトグルを ON にする。
+        /// 既に ON なら何もせず false。
+        /// </summary>
+        private bool RevealMagnetParams()
+        {
+            if (_magnetToggle == null || _magnetToggle.value) return false;
+            _magnetToggle.value = true;
+            return true;
         }
 
         private void UpdateRadiusDragButtonStyle(bool active)

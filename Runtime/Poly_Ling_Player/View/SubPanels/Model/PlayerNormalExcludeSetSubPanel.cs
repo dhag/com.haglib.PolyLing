@@ -20,12 +20,24 @@ namespace Poly_Ling.Player
         public Func<ProjectContext> GetView;
         public Action<PanelCommand> SendCommand;
 
+        // UI 自動操作の ID は "normalExcludeSet.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "メッシュが選択されていないときの警告（それ以外は非表示）")]
         private Label     _warningLabel;
+        [UiControl("meshName", Safety = UiSafety.ReadOnly, Description = "対象メッシュ名")]
         private Label     _meshNameLabel;
+        [UiControl("currentSelection", Safety = UiSafety.ReadOnly, Description = "選択中の頂点・辺・面の数")]
         private Label     _currentSelLabel;
+        [UiControl("setName", Description = "辞書エントリ名（空欄なら自動）")]
         private TextField _setNameField;
+        [UiControl("sets", Description = "登録済みの法線除外セット（一覧の行番号）")]
         private ListView  _setListView;
-        private Button    _btnLoad, _btnDelete;
+        [UiControl("save", Safety = UiSafety.SafeWrite, Description = "今の選択を法線除外セットとして登録する")]
+        private Button    _btnSave;
+        [UiControl("load", Safety = UiSafety.SafeWrite, Description = "選んだセットを呼び出す")]
+        private Button    _btnLoad;
+        [UiControl("delete", Safety = UiSafety.Destructive, Description = "選んだセットを削除する")]
+        private Button    _btnDelete;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label     _statusLabel;
 
         private int _selectedSetIndex = -1;
@@ -85,6 +97,7 @@ namespace Poly_Ling.Player
             saveRow.Add(_setNameField);
             saveRow.Add(btnSave);
             root.Add(saveRow);
+            _btnSave = btnSave;
 
             // 辞書リスト
             _setListView = new ListView(_setNames, 22, MakeItem, BindItem);

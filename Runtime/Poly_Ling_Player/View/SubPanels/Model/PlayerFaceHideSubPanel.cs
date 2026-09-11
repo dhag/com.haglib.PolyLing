@@ -19,11 +19,23 @@ namespace Poly_Ling.Player
         public Func<ProjectContext> GetView;
         public Action<PanelCommand> SendCommand;
 
+        // UI 自動操作の ID は "faceHide.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "メッシュが選択されていないときの警告（それ以外は非表示）")]
         private Label  _warningLabel;
+        [UiControl("meshName", Safety = UiSafety.ReadOnly, Description = "対象メッシュ名")]
         private Label  _meshNameLabel;
+        [UiControl("counts", Safety = UiSafety.ReadOnly, Description = "面数・非表示面数・選択面数")]
         private Label  _countLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行できない理由、または直近の実行")]
         private Label  _statusLabel;
-        private Button _btnHideSelected, _btnHideUnselected;
+        [UiControl("hideSelected", Safety = UiSafety.SafeWrite, Description = "選択面を隠す（面は消さない）")]
+        private Button _btnHideSelected;
+        [UiControl("hideUnselected", Safety = UiSafety.SafeWrite, Description = "選択面以外を隠す（面は消さない）")]
+        private Button _btnHideUnselected;
+        [UiControl("showAll", Safety = UiSafety.SafeWrite, Description = "隠した面をすべて表示する")]
+        private Button _btnShowAll;
+        [UiControl("invert", Safety = UiSafety.SafeWrite, Description = "表示・非表示を反転する")]
+        private Button _btnInvertHidden;
 
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
@@ -79,10 +91,10 @@ namespace Poly_Ling.Player
             root.Add(rowHide);
 
             var rowShow = MkRow();
-            rowShow.Add(MkBtn("すべて表示",
+            rowShow.Add(_btnShowAll = MkBtn("すべて表示",
                 () => Send(SetFaceHiddenCommand.Mode.ShowAll),
                 "隠した面をすべて元に戻す。"));
-            rowShow.Add(MkBtn("表示を反転",
+            rowShow.Add(_btnInvertHidden = MkBtn("表示を反転",
                 () => Send(SetFaceHiddenCommand.Mode.InvertHidden),
                 "表示中の面を隠し、隠した面を表示に戻す。"));
             root.Add(rowShow);

@@ -34,9 +34,14 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "vertexDissolve.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("stats.target", Safety = UiSafety.ReadOnly, Description = "対象のオブジェクト数・頂点数と除外数")]
         private Label         _targetLabel;
+        [UiControl("stats.status", Safety = UiSafety.ReadOnly, Description = "統合する面の数、または実行できない理由")]
         private Label         _statusLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選択頂点を消し、囲む面を 1 枚に張り替える")]
         private Button        _dissolveBtn;
 
         // ================================================================

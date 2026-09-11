@@ -38,15 +38,26 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "planarizeAlongBones.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("stats.selected", Safety = UiSafety.ReadOnly, Description = "選択中の頂点数")]
         private Label         _selectedLabel;
+        [UiControl("boneA", Description = "ボーン A（平面基点）")]
         private DropdownField _boneADropdown;
+        [UiControl("boneB", Description = "ボーン B（方向）")]
         private DropdownField _boneBDropdown;
+        [UiControl("sameBoneWarning", Safety = UiSafety.ReadOnly, Description = "A と B が同じボーンのときの警告（それ以外は非表示）")]
         private Label         _sameBoneWarning;
+        [UiControl("planeMode", Description = "平面位置")]
         private DropdownField _planeModeDropdown;
+        [UiControl("blend", Description = "ブレンド（0=なし、1=完全）")]
         private Slider        _blendSlider;
+        [UiControl("blendValue", Description = "ブレンドの数値入力")]
         private FloatField    _blendField;
+        [UiControl("preview", Safety = UiSafety.ReadOnly, Description = "ボーン A・B のワールド位置と距離")]
         private Label         _previewLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "平面化を実行する")]
         private Button        _planarizeBtn;
 
         private static readonly List<string> PlaneModeChoices =

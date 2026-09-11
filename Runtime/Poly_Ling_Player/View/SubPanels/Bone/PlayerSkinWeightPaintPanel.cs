@@ -74,17 +74,50 @@ namespace Poly_Ling.Player
         // 内部 UI
         // ================================================================
 
+        // UI 自動操作の ID は "skinWeightPaint.<下の Id>"（UiControlAttribute.cs）。
+        // 距離モードとフォールオフは共通 UI（BrushFalloffControls）の中にあり、UiNested("brush") で取り込む。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
 
         // ターゲットボーン
+        [UiControl("targetBone", Description = "ペイントするボーン")]
         private DropdownField  _boneDropdown;
         private List<string>   _boneNames  = new List<string>();
         private List<int>      _boneMasterIndices = new List<int>();
 
         // Prune
         private float      _pruneThreshold = 0.01f;
+        [UiControl("pruneThreshold", Description = "Prune のしきい値")]
         private FloatField _pruneThreshField;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label      _statusLabel;
+
+        [UiControl("mode.replace", Safety = UiSafety.SafeWrite, Description = "ペイントモードを Replace にする")]
+        private Button _modeReplaceBtn;
+        [UiControl("mode.add", Safety = UiSafety.SafeWrite, Description = "ペイントモードを Add にする")]
+        private Button _modeAddBtn;
+        [UiControl("mode.scale", Safety = UiSafety.SafeWrite, Description = "ペイントモードを Scale にする")]
+        private Button _modeScaleBtn;
+        [UiControl("mode.smooth", Safety = UiSafety.SafeWrite, Description = "ペイントモードを Smooth にする")]
+        private Button _modeSmoothBtn;
+        [UiControl("brush.radius", Description = "ブラシ半径（スライダー）")]
+        private Slider     _radiusSlider;
+        [UiControl("brush.radiusValue", Description = "ブラシ半径（数値入力）")]
+        private FloatField _radiusField;
+        [UiControl("brush.strength", Description = "強度（スライダー）")]
+        private Slider     _strengthSlider;
+        [UiControl("brush.strengthValue", Description = "強度（数値入力）")]
+        private FloatField _strengthField;
+        [UiControl("brush.value", Description = "書き込むウェイト値（スライダー）")]
+        private Slider     _valueSlider;
+        [UiControl("brush.valueValue", Description = "書き込むウェイト値（数値入力）")]
+        private FloatField _valueField;
+        [UiControl("flood", Safety = UiSafety.SafeWrite, Description = "Flood（選択中の描画オブジェクト全件）")]
+        private Button     _floodBtn;
+        [UiControl("normalize", Safety = UiSafety.SafeWrite, Description = "Normalize（選択中の描画オブジェクト全件）")]
+        private Button     _normalizeBtn;
+        [UiControl("prune", Safety = UiSafety.SafeWrite, Description = "Prune（Threshold の値を使う。選択中の描画オブジェクト全件）")]
+        private Button     _pruneBtn;
 
         // ================================================================
         // Build
@@ -129,6 +162,10 @@ namespace Poly_Ling.Player
             AddModeBtn(modeRow, "Smooth",  SkinWeightPaintMode.Smooth);
             _root.Add(modeRow);
             UpdateModeBtns();
+            _modeReplaceBtn = _modeBtns[(int)SkinWeightPaintMode.Replace];
+            _modeAddBtn     = _modeBtns[(int)SkinWeightPaintMode.Add];
+            _modeScaleBtn   = _modeBtns[(int)SkinWeightPaintMode.Scale];
+            _modeSmoothBtn  = _modeBtns[(int)SkinWeightPaintMode.Smooth];
 
             AddSep();
 
@@ -136,9 +173,12 @@ namespace Poly_Ling.Player
             AddSectionLabel("ブラシ");
             // 半径のみ刻みなし（step: 0f）。強度・値は SliderStep 刻み。
             _root.Add(SR("半径",  MagnetRadiusMin, MagnetRadiusMax,
-                () => CurrentBrushRadius, v => { CurrentBrushRadius = v; OnRepaint?.Invoke(); }, 0f));
-            _root.Add(SR("強度",  0.01f, 1.0f, () => CurrentStrength,    v => { CurrentStrength    = v; }, SliderStep));
-            _root.Add(SR("値",    0f,    1.0f, () => CurrentWeightValue,  v => { CurrentWeightValue  = v; }, SliderStep));
+                () => CurrentBrushRadius, v => { CurrentBrushRadius = v; OnRepaint?.Invoke(); }, 0f,
+                out _radiusSlider, out _radiusField));
+            _root.Add(SR("強度",  0.01f, 1.0f, () => CurrentStrength,    v => { CurrentStrength    = v; }, SliderStep,
+                out _strengthSlider, out _strengthField));
+            _root.Add(SR("値",    0f,    1.0f, () => CurrentWeightValue,  v => { CurrentWeightValue  = v; }, SliderStep,
+                out _valueSlider, out _valueField));
 
             AddSep();
 
@@ -157,6 +197,7 @@ namespace Poly_Ling.Player
             floodBtn.style.height       = 24;
             floodBtn.style.marginBottom = 3;
             _root.Add(floodBtn);
+            _floodBtn = floodBtn;
 
             var normRow = new VisualElement();
             normRow.style.flexDirection = FlexDirection.Row;
@@ -169,6 +210,8 @@ namespace Poly_Ling.Player
             normRow.Add(normBtn);
             normRow.Add(pruneBtn);
             _root.Add(normRow);
+            _normalizeBtn = normBtn;
+            _pruneBtn     = pruneBtn;
 
             // Prune しきい値フィールド
             var pruneRow = new VisualElement();
@@ -285,6 +328,7 @@ namespace Poly_Ling.Player
         private readonly Button[] _modeBtns  = new Button[4];
 
         /// <summary>フォールオフ／距離モードの共通 UI（マグネット・スカルプトと共有）。</summary>
+        [UiNested("brush")]
         private readonly BrushFalloffControls _falloffControls = new BrushFalloffControls();
 
         // ブラシ半径の範囲。マグネット（MoveSettings.MIN/MAX_MAGNET_RADIUS）と同じ
@@ -365,7 +409,8 @@ namespace Poly_Ling.Player
         }
 
         /// <param name="step">スライダのドラッグ時の刻み幅。0 のとき刻みなし。</param>
-        private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set, float step = 0f)
+        private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set, float step,
+            out Slider slider, out FloatField field)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -405,6 +450,8 @@ namespace Poly_Ling.Player
             });
             row.Add(sl);
             row.Add(nf);
+            slider = sl;
+            field  = nf;
             return row;
         }
     }

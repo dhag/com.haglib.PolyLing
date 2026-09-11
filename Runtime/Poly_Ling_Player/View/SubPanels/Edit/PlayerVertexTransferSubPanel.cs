@@ -48,11 +48,50 @@ namespace Poly_Ling.Player
         private VertexDataKind  _kinds     = VertexDataKind.Position;
 
         // UI
-        private DropdownField _srcModelDrop, _dstModelDrop;
+        // UI 自動操作の ID は "vertexTransfer.<下の Id>"（UiControlAttribute.cs）。
+        // メッシュのペアの行（行ごとのドロップダウンと×）は行数が変わるので、項目として登録しない。
+        [UiControl("sourceModel", Description = "転送元のモデル")]
+        private DropdownField _srcModelDrop;
+        [UiControl("destinationModel", Description = "転送先のモデル")]
+        private DropdownField _dstModelDrop;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _pairRows;
+        [UiControl(Ignore = true)]
         private VisualElement _previewBox;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
         private readonly Dictionary<VertexDataKind, Toggle> _kindToggles = new Dictionary<VertexDataKind, Toggle>();
+
+        [UiControl("pairs.add", Safety = UiSafety.SafeWrite, Description = "メッシュのペアの行を 1 行足す")]
+        private Button _addPairBtn;
+        [UiControl("pairs.autoMatch", Safety = UiSafety.SafeWrite, Description = "メッシュのペアを自動で組む")]
+        private Button _autoMatchBtn;
+        [UiControl("pairs.clear", Safety = UiSafety.SafeWrite, Description = "メッシュのペアの行を全部消す（モデルは変えない）")]
+        private Button _clearPairsBtn;
+        [UiControl("matchMode", Description = "頂点の対応付けの方式（インデックス / 頂点ID）")]
+        private DropdownField _matchModeDropdown;
+        [UiControl("kind.position", Description = "頂点位置を転送する")]
+        private Toggle _kindPositionToggle;
+        [UiControl("kind.uvs", Description = "UV を転送する（GPU バッファの再構築を伴う）")]
+        private Toggle _kindUVsToggle;
+        [UiControl("kind.normals", Description = "法線を転送する（GPU バッファの再構築を伴う）")]
+        private Toggle _kindNormalsToggle;
+        [UiControl("kind.flags", Description = "頂点フラグを転送する（GPU バッファの再構築を伴う）")]
+        private Toggle _kindFlagsToggle;
+        [UiControl("kind.boneWeight", Description = "ボーンウェイトをボーン名で引き直して転送する（GPU バッファの再構築を伴う）")]
+        private Toggle _kindBoneWeightToggle;
+        [UiControl("kind.mirrorBoneWeight", Description = "ミラーウェイトを転送する（GPU バッファの再構築を伴う）")]
+        private Toggle _kindMirrorBoneWeightToggle;
+        [UiControl("kind.vertexId", Description = "頂点 ID を転送する（インデックス対応のときだけ意味がある）")]
+        private Toggle _kindVertexIdToggle;
+        [UiControl("kind.morphBase", Description = "モーフ基準データを転送する")]
+        private Toggle _kindMorphBaseToggle;
+        [UiControl("kind.partsSelectionSet", Description = "パーツ選択辞書を転送する（頂点・辺のみ）")]
+        private Toggle _kindPartsSelectionSetToggle;
+        [UiControl("preview", Safety = UiSafety.SafeWrite, Description = "対応を確認する（モデルは変えない）")]
+        private Button _previewBtn;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "転送を実行する（転送先の頂点データを書き換える）")]
+        private Button _executeBtn;
 
         private ProjectContext GetProject() => GetView?.Invoke();
 
@@ -105,9 +144,9 @@ namespace Poly_Ling.Player
             var pairBtnRow = new VisualElement();
             pairBtnRow.style.flexDirection = FlexDirection.Row;
             pairBtnRow.style.marginBottom  = 2;
-            AddSmallBtn(pairBtnRow, "行を追加", () => { _pairs.Add(new Pair()); RebuildPairRows(); UpdatePreview(); });
-            AddSmallBtn(pairBtnRow, "自動マッチ", AutoMatch);
-            AddSmallBtn(pairBtnRow, "全消去",  () => { _pairs.Clear(); RebuildPairRows(); UpdatePreview(); });
+            _addPairBtn   = AddSmallBtn(pairBtnRow, "行を追加", () => { _pairs.Add(new Pair()); RebuildPairRows(); UpdatePreview(); });
+            _autoMatchBtn = AddSmallBtn(pairBtnRow, "自動マッチ", AutoMatch);
+            _clearPairsBtn = AddSmallBtn(pairBtnRow, "全消去",  () => { _pairs.Clear(); RebuildPairRows(); UpdatePreview(); });
             root.Add(pairBtnRow);
 
             _pairRows = new VisualElement();
@@ -127,6 +166,7 @@ namespace Poly_Ling.Player
                 UpdatePreview();
             });
             root.Add(matchDrop);
+            _matchModeDropdown = matchDrop;
 
             var matchNote = new Label(
                 "頂点IDは未設定・重複があると対応が取れません。"
@@ -141,26 +181,26 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.Divider());
             root.Add(PlayerIoUiKit.SectionLabel("転送する項目"));
 
-            AddKindToggle(root, VertexDataKind.Position,        "頂点位置", null);
-            AddKindToggle(root, VertexDataKind.UVs,             "UV ※重い",
+            _kindPositionToggle = AddKindToggle(root, VertexDataKind.Position,        "頂点位置", null);
+            _kindUVsToggle = AddKindToggle(root, VertexDataKind.UVs,             "UV ※重い",
                 "面が参照するUVスロット番号が範囲外になった場合は 0 に補正します。"
               + "GPUバッファの再構築を伴います");
-            AddKindToggle(root, VertexDataKind.Normals,         "法線 ※重い",
+            _kindNormalsToggle = AddKindToggle(root, VertexDataKind.Normals,         "法線 ※重い",
                 "面が参照する法線スロット番号が範囲外になった場合は 0 に補正します。"
               + "GPUバッファの再構築を伴います");
-            AddKindToggle(root, VertexDataKind.Flags,           "頂点フラグ ※重い",
+            _kindFlagsToggle = AddKindToggle(root, VertexDataKind.Flags,           "頂点フラグ ※重い",
                 "GPUバッファの再構築を伴います");
-            AddKindToggle(root, VertexDataKind.BoneWeight,      "ボーンウェイト ※重い",
+            _kindBoneWeightToggle = AddKindToggle(root, VertexDataKind.BoneWeight,      "ボーンウェイト ※重い",
                 "ボーン番号はモデルごとに異なるため、ボーン名で引き直します。"
               + "名前が一致しないボーンを含む頂点は転送しません。"
               + "GPUバッファの再構築を伴います");
-            AddKindToggle(root, VertexDataKind.MirrorBoneWeight,"ミラーウェイト ※重い",
+            _kindMirrorBoneWeightToggle = AddKindToggle(root, VertexDataKind.MirrorBoneWeight,"ミラーウェイト ※重い",
                 "GPUバッファの再構築を伴います");
-            AddKindToggle(root, VertexDataKind.VertexId,        "頂点ID",
+            _kindVertexIdToggle = AddKindToggle(root, VertexDataKind.VertexId,        "頂点ID",
                 "インデックス対応のときだけ意味があります。転送後に重複が出れば警告します");
-            AddKindToggle(root, VertexDataKind.MorphBase,       "モーフ基準データ",
+            _kindMorphBaseToggle = AddKindToggle(root, VertexDataKind.MorphBase,       "モーフ基準データ",
                 "対応の取れなかった頂点は転送先の現在値を保ちます");
-            AddKindToggle(root, VertexDataKind.PartsSelectionSet, "パーツ選択辞書",
+            _kindPartsSelectionSetToggle = AddKindToggle(root, VertexDataKind.PartsSelectionSet, "パーツ選択辞書",
                 "頂点・辺のみ引き継ぎます。面/線分ベースの辞書は読み替えられないため除外します");
 
             var costNote = new Label(
@@ -179,9 +219,9 @@ namespace Poly_Ling.Player
             _previewBox = new VisualElement();
             root.Add(_previewBox);
 
-            root.Add(PlayerIoUiKit.WideBtn("対応を確認", UpdatePreview));
+            root.Add(_previewBtn = PlayerIoUiKit.WideBtn("対応を確認", UpdatePreview));
             root.Add(PlayerIoUiKit.Spacer());
-            root.Add(PlayerIoUiKit.WideBtn("転送を実行", Execute));
+            root.Add(_executeBtn = PlayerIoUiKit.WideBtn("転送を実行", Execute));
 
             _statusLabel = PlayerIoUiKit.StatusLabel();
             root.Add(_statusLabel);
@@ -491,7 +531,7 @@ namespace Poly_Ling.Player
             return at >= 0 ? at : 0;
         }
 
-        private void AddKindToggle(VisualElement parent, VertexDataKind kind, string label, string tooltip)
+        private Toggle AddKindToggle(VisualElement parent, VertexDataKind kind, string label, string tooltip)
         {
             var tog = new Toggle(label) { value = _kinds.HasFlag(kind) };
             if (!string.IsNullOrEmpty(tooltip)) tog.tooltip = tooltip;
@@ -502,15 +542,17 @@ namespace Poly_Ling.Player
             });
             _kindToggles[kind] = tog;
             parent.Add(tog);
+            return tog;
         }
 
-        private static void AddSmallBtn(VisualElement parent, string text, Action onClick)
+        private static Button AddSmallBtn(VisualElement parent, string text, Action onClick)
         {
             var b = new Button(onClick) { text = text };
             b.style.flexGrow    = 1;
             b.style.fontSize    = 9;
             b.style.marginRight = 2;
             parent.Add(b);
+            return b;
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }

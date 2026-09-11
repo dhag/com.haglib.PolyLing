@@ -17,10 +17,16 @@ namespace Poly_Ling.Player
         public Func<ProjectContext>   GetView;
         public Action<PanelCommand> SendCommand;
 
+        // UI 自動操作の ID は "mergeMeshes.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("selection", Safety = UiSafety.ReadOnly, Description = "選択中のメッシュの数")]
         private Label         _selectionLabel;
+        [UiControl("baseObject", Description = "結合の基準にするオブジェクト（一覧の行番号）")]
         private ListView      _baseObjectList;
+        [UiControl("createNewMesh", Description = "結合結果を新しいメッシュオブジェクトに格納する")]
         private Toggle        _createNewMeshToggle;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選択メッシュを結合する")]
         private Button        _mergeButton;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行できない理由、または実行結果")]
         private Label         _statusLabel;
 
         private readonly List<IMeshView> _selectedMeshViews = new List<IMeshView>();

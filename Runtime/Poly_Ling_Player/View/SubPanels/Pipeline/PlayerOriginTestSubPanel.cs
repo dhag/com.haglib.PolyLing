@@ -77,7 +77,11 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "originTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
+        [UiControl("inputPaths", Safety = UiSafety.ReadOnly, Description = "使う入力（直前に使った MQO と原点 CSV のパス）")]
         private Label     _pathLabel;
+        [UiControl("exportVrm", Description = "最後に VRM を書き出す")]
         private Toggle    _doExport;
 
         /// <summary>実行のたびに保存ダイアログで確定した VRM の書き出し先。</summary>

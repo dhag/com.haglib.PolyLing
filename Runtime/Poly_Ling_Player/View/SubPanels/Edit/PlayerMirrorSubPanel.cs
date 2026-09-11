@@ -72,11 +72,44 @@ namespace Poly_Ling.Player
         }
 
         // ── UI ────────────────────────────────────────────────────────────
+        // UI 自動操作の ID は "mirror.<下の Id>"（UiControlAttribute.cs）。
+        // 境界閾値は「境界の決め方」がしきい値のときだけ表示される。
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行できない理由、または直近の実行結果")]
         private Label         _statusLabel;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "対象メッシュ名・選択頂点数・実体化の状態")]
         private Label         _infoLabel;
-        private Button        _btnBake, _btnUnbake;
+        [UiControl("bake", Safety = UiSafety.SafeWrite, Description = "ミラーを実体化する（反対側の頂点・面を同じメッシュに入れる）")]
+        private Button        _btnBake;
+        [UiControl("unbake", Safety = UiSafety.Destructive,
+                   Description = "実体化を解除して半身に戻す。「残す編集結果」で選ばなかった側の編集は捨てる")]
+        private Button        _btnUnbake;
+        [UiControl(Ignore = true)]
         private VisualElement _threshRow;
+        [UiControl("projectBoundary", Description = "境界頂点をミラー平面へ寄せる")]
         private Toggle        _projectToggle;
+        [UiControl("axis", Description = "ミラー軸")]
+        private DropdownField _axisDropdown;
+        [UiControl("planeOffset", Description = "ミラー平面をローカル座標でずらす量")]
+        private FloatField    _planeOffsetField;
+        [UiControl("boundaryMode", Description = "境界の決め方（しきい値 / 選択頂点）")]
+        private DropdownField _boundaryModeDropdown;
+        [UiControl("threshold", Reveal = nameof(RevealThreshold), Description = "境界閾値（ミラー平面からの距離）")]
+        private FloatField    _thresholdField;
+        [UiControl("flipU", Description = "UV の U を反転する")]
+        private Toggle        _flipUToggle;
+        [UiControl("writeBack", Description = "解除のときに残す編集結果（元側 / ミラー側 / 両側の平均）")]
+        private DropdownField _writeBackDropdown;
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。境界閾値は「境界の決め方」が
+        /// しきい値のときだけ表示されるので、利用者と同じく切り替える。既にしきい値なら false。
+        /// </summary>
+        private bool RevealThreshold()
+        {
+            if (_boundaryModeDropdown == null || _boundaryModeDropdown.value == "しきい値") return false;
+            _boundaryModeDropdown.value = "しきい値";
+            return true;
+        }
 
         private MeshContext ActiveMeshContext
             => GetToolContext?.Invoke()?.ActiveMeshContext ?? GetModel?.Invoke()?.ActiveMeshContext;
@@ -106,6 +139,7 @@ namespace Poly_Ling.Player
             axisDd.style.color = new StyleColor(Color.white);
             axisDd.RegisterValueChangedCallback(e => _mirrorAxis = axisChoices.IndexOf(e.newValue));
             root.Add(axisDd);
+            _axisDropdown = axisDd;
 
             var offsetRow = new VisualElement(); offsetRow.style.flexDirection = FlexDirection.Row; offsetRow.style.marginBottom = 3;
             var offsetLbl = new Label("平面オフセット"); offsetLbl.style.width = 90; offsetLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
@@ -115,6 +149,7 @@ namespace Poly_Ling.Player
             offsetField.RegisterValueChangedCallback(e => _planeOffset = e.newValue);
             offsetRow.Add(offsetLbl); offsetRow.Add(offsetField);
             root.Add(offsetRow);
+            _planeOffsetField = offsetField;
 
             var bmChoices = new List<string> { "しきい値", "選択頂点" };
             var bmValues  = new[] { MirrorBoundaryMode.Threshold, MirrorBoundaryMode.SelectedVertices };
@@ -134,6 +169,7 @@ namespace Poly_Ling.Player
                 Refresh();
             });
             root.Add(bmDd);
+            _boundaryModeDropdown = bmDd;
 
             _threshRow = new VisualElement(); _threshRow.style.flexDirection = FlexDirection.Row; _threshRow.style.marginBottom = 3;
             var threshLbl = new Label("境界閾値"); threshLbl.style.width = 90; threshLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
@@ -142,6 +178,7 @@ namespace Poly_Ling.Player
             threshField.RegisterValueChangedCallback(e => _threshold = Mathf.Max(ThresholdMin, e.newValue));
             _threshRow.Add(threshLbl); _threshRow.Add(threshField);
             root.Add(_threshRow);
+            _thresholdField = threshField;
 
             _projectToggle = new Toggle("境界頂点をミラー平面へ寄せる") { value = _projectBoundary };
             _projectToggle.style.color = new StyleColor(Color.white);
@@ -153,6 +190,7 @@ namespace Poly_Ling.Player
             flipUToggle.style.color = new StyleColor(Color.white);
             flipUToggle.RegisterValueChangedCallback(e => _flipU = e.newValue);
             root.Add(flipUToggle);
+            _flipUToggle = flipUToggle;
 
             _btnBake = new Button(OnBakeMirror) { text = "ミラー実体化" };
             _btnBake.style.height = 28; _btnBake.style.marginTop = 4; _btnBake.style.marginBottom = 8;
@@ -180,6 +218,7 @@ namespace Poly_Ling.Player
             wbDd.tooltip = "解除して半身に戻すとき、どちら側で行った編集を採用するか。";
             wbDd.RegisterValueChangedCallback(e => { int i = wbChoices.IndexOf(e.newValue); if (i >= 0) _writeBackMode = wbValues[i]; });
             root.Add(wbDd);
+            _writeBackDropdown = wbDd;
 
             var unbakeHelp = new HelpBox(
                 "解除すると強制的に見た目・エクスポート用のミラーモード（結合）になります。",

@@ -59,12 +59,26 @@ namespace Poly_Ling.Player
         // 内部状態
         // ================================================================
 
+        // UI 自動操作の ID は "objectGroup.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("groups", Description = "オブジェクトグループ（一覧の行番号）")]
         private ListView  _listView;
+        [UiControl("detail", Safety = UiSafety.ReadOnly, Description = "選んだグループの詳細")]
         private Label     _detailLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label     _statusLabel;
+        [UiControl("keepStash", Description = "作り直す前の出力先を退避として残す")]
         private Toggle    _keepStashToggle;
+        [UiControl("autoUpdate", Description = "ソースが変わったら自動で作り直す（スキンド化のとき）")]
         private Toggle    _autoUpdateToggle;
-        private Button    _btnRebuild, _btnRelease, _btnPurge, _btnMerge;
+        [UiControl("rebuild", Safety = UiSafety.Destructive,
+                   Description = "選んだグループの出力を作り直す（「退避として残す」がオフなら前の出力は残らない）")]
+        private Button    _btnRebuild;
+        [UiControl("release", Safety = UiSafety.Destructive, Description = "選んだグループを解除する")]
+        private Button    _btnRelease;
+        [UiControl("purge", Safety = UiSafety.Destructive, Description = "参照切れを片づける")]
+        private Button    _btnPurge;
+        [UiControl("mergeUp", Safety = UiSafety.SafeWrite, Description = "1 つ上のグループへ足す（マクロにする）")]
+        private Button    _btnMerge;
 
         /// <summary>表示用の 1 行。Refresh のたびに作り直す。</summary>
         private struct Row

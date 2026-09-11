@@ -34,17 +34,59 @@ namespace Poly_Ling.Player
         private readonly MorphPreviewState _previewState = new MorphPreviewState();
 
         // UI
+        // UI 自動操作の ID は "morph.<下の Id>"（UiControlAttribute.cs）。
+        // セット詳細はセットを選んだときだけ表示される（sets で行を選ぶ）。
+        // 名前欄はフォーカスが外れたときに確定する作りなので、外からは確定まで行う Setter を通す。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("sets", Description = "モーフエクスプレッションのセット（一覧の行番号）")]
         private ListView      _setListView;
+        [UiControl(Ignore = true)]
         private VisualElement _setDetail;
-        private TextField     _setName, _setNameEn;
+        [UiControl("set.name", Setter = nameof(SetNameByAutomation), Description = "選んだセットの名前（JP）")]
+        private TextField     _setName;
+        [UiControl("set.nameEn", Setter = nameof(SetNameEnByAutomation), Description = "選んだセットの名前（EN）")]
+        private TextField     _setNameEn;
+        [UiControl("set.panel", Description = "選んだセットのパネル（眉 / 目 / 口 / その他）")]
         private DropdownField _panelPopup;
+        [UiControl("set.type", Safety = UiSafety.ReadOnly, Description = "選んだセットのタイプ")]
         private Label         _setTypeLabel;
+        [UiControl("set.entries", Description = "選んだセットのエントリ（モーフメッシュ / ウェイト。一覧の行番号）")]
         private ListView      _entryListView;
+        [UiControl(Ignore = true)]
         private VisualElement _previewSection;
+        [UiControl("preview.info", Safety = UiSafety.ReadOnly, Description = "プレビューの情報（プレビュー中だけ表示）")]
         private Label         _previewInfo;
+        [UiControl("preview.weight", Description = "プレビューのウェイト（プレビュー中だけ表示）")]
         private Slider        _previewWeight;
+        [UiControl("preview.end", Safety = UiSafety.SafeWrite, Description = "プレビューを終える")]
+        private Button        _btnEndPreview;
+        [UiControl("importCsv", Safety = UiSafety.UserOnly, Description = "CSV を読み込む（ファイル選択ダイアログを開く）")]
+        private Button        _btnCsvImport;
+        [UiControl("exportCsv", Safety = UiSafety.UserOnly, Description = "CSV に保存する（保存ダイアログを開く）")]
+        private Button        _btnCsvExport;
+        [UiControl("set.delete", Safety = UiSafety.UserOnly, Description = "選んだセットを削除する（確認ダイアログを開く）")]
+        private Button        _btnDeleteSet;
+
+        /// <summary>UI 自動操作から名前（JP）を設定する。フォーカスが外れたときと同じく確定まで行う。</summary>
+        private string SetNameByAutomation(string value)
+        {
+            if (_setName == null) return "名前欄がありません";
+            _setName.value = value;
+            OnSetDetailChanged();
+            return null;
+        }
+
+        /// <summary>UI 自動操作から名前（EN）を設定する。フォーカスが外れたときと同じく確定まで行う。</summary>
+        private string SetNameEnByAutomation(string value)
+        {
+            if (_setNameEn == null) return "名前欄がありません";
+            _setNameEn.value = value;
+            OnSetDetailChanged();
+            return null;
+        }
 
         public void Build(VisualElement parent)
         {
@@ -74,6 +116,8 @@ namespace Poly_Ling.Player
             var btnExport = new Button(OnCsvExport) { text = "CSV保存" }; btnExport.style.flexGrow = 1;
             csvRow.Add(btnImport); csvRow.Add(btnExport);
             root.Add(csvRow);
+            _btnCsvImport = btnImport;
+            _btnCsvExport = btnExport;
 
             // セット詳細
             _setDetail = new VisualElement();
@@ -117,6 +161,7 @@ namespace Poly_Ling.Player
             var btnDelete = new Button(OnDeleteSet) { text = "このセットを削除" };
             btnDelete.style.marginBottom = 6;
             parent.Add(btnDelete);
+            _btnDeleteSet = btnDelete;
 
             parent.Add(SecLabel("エントリ (モーフメッシュ / ウェイト)"));
 
@@ -146,6 +191,7 @@ namespace Poly_Ling.Player
             var btnEnd = new Button(OnEndPreview) { text = "プレビュー終了" };
             btnEnd.style.marginBottom = 4;
             parent.Add(btnEnd);
+            _btnEndPreview = btnEnd;
         }
 
         // ── ListView helpers ─────────────────────────────────────────────

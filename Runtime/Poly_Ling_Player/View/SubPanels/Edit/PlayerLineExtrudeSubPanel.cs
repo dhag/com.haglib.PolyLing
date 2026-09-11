@@ -37,25 +37,55 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "lineExtrude.<下の Id>"（UiControlAttribute.cs）。
+        // エッジ（分割数・サイズ・向き）は厚みが 0.001 より大きいときだけ表示される。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "選択ライン数と検出ループ数")]
         private Label         _infoLabel;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _loopListContainer;
+        [UiControl("noLoopsHint", Safety = UiSafety.ReadOnly, Description = "ループが未検出のときの案内")]
         private Label         _noLoopsHint;
+        [UiControl("analyze", Safety = UiSafety.SafeWrite, Description = "選択ラインからループを検出する（メッシュは変えない）")]
+        private Button        _analyzeBtn;
 
         // パラメータ
+        [UiControl("thickness", Description = "厚み")]
         private FloatField    _thicknessField;
+        [UiControl("scale", Description = "スケール")]
         private FloatField    _scaleField;
+        [UiControl("flipY", Description = "Y 軸を反転する")]
         private Toggle        _flipYToggle;
+        [UiControl("addToCurrent", Description = "現在のメッシュに追加する")]
         private Toggle        _addToCurrentToggle;
+        [UiControl(Ignore = true)]
         private VisualElement _edgeParamsGroup;
+        [UiControl("segmentsFront", Reveal = nameof(RevealEdgeParams), Description = "前面エッジの分割数")]
         private SliderInt     _segFrontSlider;
+        [UiControl("segmentsBack", Reveal = nameof(RevealEdgeParams), Description = "背面エッジの分割数")]
         private SliderInt     _segBackSlider;
+        [UiControl("edgeSizeFront", Reveal = nameof(RevealEdgeParams), Description = "前面エッジサイズ")]
         private FloatField    _edgeFrontField;
+        [UiControl("edgeSizeBack", Reveal = nameof(RevealEdgeParams), Description = "背面エッジサイズ")]
         private FloatField    _edgeBackField;
+        [UiControl("edgeInward", Reveal = nameof(RevealEdgeParams), Description = "内向きエッジ")]
         private Toggle        _edgeInwardToggle;
 
         // 実行
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "押し出しを実行する")]
         private Button        _executeBtn;
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。エッジの欄は厚みが 0.001 より
+        /// 大きいときだけ表示されるので、利用者と同じく厚みを 0.1 にする。表示中なら false。
+        /// </summary>
+        private bool RevealEdgeParams()
+        {
+            if (_thicknessField == null || _thicknessField.value > 0.001f) return false;
+            _thicknessField.value = 0.1f;
+            return true;
+        }
 
         // ================================================================
         // Build
@@ -82,6 +112,7 @@ namespace Poly_Ling.Player
                 { text = "Analyze Loops" };
             analyzeBtn.style.marginTop = 3; analyzeBtn.style.marginBottom = 4;
             _root.Add(analyzeBtn);
+            _analyzeBtn = analyzeBtn;
 
             // ループ詳細リスト
             _loopListContainer = new VisualElement();

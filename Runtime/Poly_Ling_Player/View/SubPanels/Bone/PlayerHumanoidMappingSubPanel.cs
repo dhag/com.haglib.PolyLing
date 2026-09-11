@@ -27,16 +27,37 @@ namespace Poly_Ling.Player
         public Action<PanelCommand> SendCommand;
         public Func<int>            GetModelIndex;
 
+        // UI 自動操作の ID は "humanoidMapping.<下の Id>"（UiControlAttribute.cs）。
+        // マッピングの詳細（ボーンごとの行）はマッピングに合わせて作り直す行（Rows）。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label       _warningLabel;
+        [UiControl("modelMapping", Safety = UiSafety.ReadOnly, Description = "モデルに設定済みのマッピング")]
         private Label       _modelMappingLabel;
+        [UiControl("includeNonBone", Description = "ボーン以外も候補に含める（MeshFilter 用）")]
         private Toggle      _scopeToggle;
+        [UiControl("csvPath", Description = "マッピング CSV のパス（ダイアログの初期パスとして使う）")]
         private TextField   _csvPathField;
+        [UiControl("browseCsv", Safety = UiSafety.UserOnly, Description = "マッピング CSV を選ぶダイアログを開く")]
+        private Button      _btnBrowseCsv;
+        [UiControl("csvHint", Safety = UiSafety.ReadOnly, Description = "CSV についての案内（ファイルがあるときは非表示）")]
         private Label       _csvHintLabel;
-        private Button      _btnAutoMap, _btnLoadCsv, _btnApply, _btnClear;
+        [UiControl("autoMap", Safety = UiSafety.SafeWrite, Description = "Auto Map (PMX)")]
+        private Button      _btnAutoMap;
+        [UiControl("loadCsv", Safety = UiSafety.UserOnly, Description = "CSV から読み込む（ファイル選択ダイアログを開く）")]
+        private Button      _btnLoadCsv;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "プレビュー中のマッピングをモデルに適用する")]
+        private Button      _btnApply;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "モデルのマッピングをクリアする")]
+        private Button      _btnClear;
+        [UiControl("mappedCount", Safety = UiSafety.ReadOnly, Description = "マッピング済みのボーン数")]
         private Label       _mappedCountLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _previewContent;
+        [UiControl("previewEmpty", Safety = UiSafety.ReadOnly, Description = "プレビューが無いときの表示")]
         private Label       _previewEmptyLabel;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _mappingDetailContainer;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label       _statusLabel;
 
         private string             _csvFilePath   = "";
@@ -53,11 +74,30 @@ namespace Poly_Ling.Player
         // ── Avatar リターゲット設定8項目の入力欄 ──────────────────────
         //   Avatar 生成（Editor のプレファブ書き出し）だけが使う値。
         //   Humanoid 割当と同じく Avatar の入力なので、この画面へ置く。
-        private Slider     _upperArmTwist, _lowerArmTwist, _upperLegTwist, _lowerLegTwist;
-        private Slider     _armStretch, _legStretch;
+        [UiControl("retarget.upperArmTwist", Description = "上腕のねじれ配分（Avatar リターゲット設定）")]
+        private Slider     _upperArmTwist;
+        [UiControl("retarget.lowerArmTwist", Description = "前腕のねじれ配分")]
+        private Slider     _lowerArmTwist;
+        [UiControl("retarget.upperLegTwist", Description = "大腿のねじれ配分")]
+        private Slider     _upperLegTwist;
+        [UiControl("retarget.lowerLegTwist", Description = "下腿のねじれ配分")]
+        private Slider     _lowerLegTwist;
+        [UiControl("retarget.armStretch", Description = "腕の伸び代")]
+        private Slider     _armStretch;
+        [UiControl("retarget.legStretch", Description = "脚の伸び代")]
+        private Slider     _legStretch;
+        [UiControl("retarget.feetSpacing", Description = "両足の間隔の補正")]
         private FloatField _feetSpacing;
+        [UiControl("retarget.hasTranslationDoF", Description = "移動の自由度を持たせる")]
         private Toggle     _hasTranslationDoF;
+        [UiControl("retarget.state", Safety = UiSafety.ReadOnly, Description = "リターゲット設定の状態")]
         private Label      _retargetStateLabel;
+        [UiControl("retarget.load", Safety = UiSafety.SafeWrite, Description = "リターゲット設定をモデルから欄へ読み込む")]
+        private Button     _btnLoadRetarget;
+        [UiControl("retarget.apply", Safety = UiSafety.SafeWrite, Description = "リターゲット設定をモデルへ書き込む")]
+        private Button     _btnApplyRetarget;
+        [UiControl("retarget.clear", Safety = UiSafety.Destructive, Description = "リターゲット設定を未設定へ戻す")]
+        private Button     _btnClearRetarget;
 
         /// <summary>直前に欄へ読み込んだモデル。変わったら読み直す。</summary>
         private ModelContext _retargetLoadedModel;
@@ -91,7 +131,7 @@ namespace Poly_Ling.Player
             root.Add(SecLabel("CSV ファイル"));
             _csvPathField = new TextField();
             _csvPathField.RegisterValueChangedCallback(e => { _csvFilePath = e.newValue; RecentPaths.Set(CsvPathKey, e.newValue); });
-            root.Add(PlayerIoUiKit.PathRow(_csvPathField, OnBrowseCSV));
+            root.Add(PlayerIoUiKit.PathRow(_csvPathField, OnBrowseCSV, out _btnBrowseCsv));
             _csvFilePath = RecentPaths.Get(CsvPathKey);
             _csvPathField.SetValueWithoutNotify(_csvFilePath);
 
@@ -215,6 +255,9 @@ namespace Poly_Ling.Player
             btnClear.style.flexGrow = 1;
             row.Add(btnLoad); row.Add(btnApply); row.Add(btnClear);
             fo.Add(row);
+            _btnLoadRetarget  = btnLoad;
+            _btnApplyRetarget = btnApply;
+            _btnClearRetarget = btnClear;
 
             root.Add(fo);
         }

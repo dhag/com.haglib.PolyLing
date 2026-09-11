@@ -45,6 +45,18 @@ namespace Poly_Ling.Player
         /// ファイル名・保存フォルダはパネル未表示でも効くよう RecentPaths から読む。
         /// </summary>
         private void ExecuteCapture(CaptureTarget target)
+            => StartCapture(target, null, PlayerCaptureSubPanel.GetFileName(), null);
+
+        /// <summary>
+        /// 撮影の本体。ExecuteCapture と UI 自動操作（uiCapture）の共通経路。
+        /// folder が空ならキャプチャパネルの設定フォルダ。呼び出し側で検査済みの実経路を渡すこと
+        /// （uiCapture は PLSandbox.TryResolveFolder を通してから渡す）。
+        /// baseName が空なら PlayerScreenCapture の既定名。
+        /// onDone は撮影後（フレーム終端）に呼ばれる。切り出し範囲が取れないときは
+        /// この呼び出しの中で同期的に呼ばれる。キャプチャパネルの状態表示はどちらの場合も更新する。
+        /// </summary>
+        private void StartCapture(
+            CaptureTarget target, string folder, string baseName, Action<bool, string> onDone)
         {
             VisualElement crop = null;
             switch (target)
@@ -56,9 +68,13 @@ namespace Poly_Ling.Player
 
             PlayerScreenCapture.Capture(
                 crop,
-                PlayerCaptureSubPanel.GetFolder(),
-                PlayerCaptureSubPanel.GetFileName(),
-                (ok, msg) => _captureSubPanel?.SetStatus(ok ? $"保存しました: {msg}" : $"失敗: {msg}"));
+                string.IsNullOrEmpty(folder) ? PlayerCaptureSubPanel.GetFolder() : folder,
+                baseName,
+                (ok, msg) =>
+                {
+                    _captureSubPanel?.SetStatus(ok ? $"保存しました: {msg}" : $"失敗: {msg}");
+                    onDone?.Invoke(ok, msg);
+                });
         }
 
         // ================================================================
@@ -302,6 +318,9 @@ namespace Poly_Ling.Player
             // ここで消し、揺れもの編集へ戻ったときは Refresh が付け直す。
             // 何も付いていないときは何もしないので、パネル切替の負担にならない。
             _springBoneSubPanel?.ClearHighlight();
+
+            // UI 自動操作の強調枠と保留中のスクロールも同じ扱い（そのパネルを見ている間だけ）。
+            _uiAutomation?.OnRightPanelsHidden();
 
             if (_layoutRoot == null) return;
             void Hide(VisualElement e) { if (e != null) e.style.display = DisplayStyle.None; }

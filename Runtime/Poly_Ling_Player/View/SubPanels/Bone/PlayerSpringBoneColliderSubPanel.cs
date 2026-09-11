@@ -45,18 +45,48 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "springBoneCollider.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象のボーン")]
         private Label    _targetLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label    _statusLabel;
+        [UiControl("colliders", Description = "いまある当たり判定（一覧の行番号）")]
         private ListView _listView;
 
+        [UiControl("shape", Description = "当たり判定の形")]
         private DropdownField _shapeField;
-        private FloatField _offX, _offY, _offZ;
+        [UiControl("offset.x", Description = "中心 X")]
+        private FloatField _offX;
+        [UiControl("offset.y", Description = "中心 Y")]
+        private FloatField _offY;
+        [UiControl("offset.z", Description = "中心 Z")]
+        private FloatField _offZ;
+        [UiControl("radius", Description = "半径（m）")]
         private FloatField _radiusField;
-        private FloatField _tailX, _tailY, _tailZ;
-        private FloatField _normX, _normY, _normZ;
+        [UiControl("tail.x", Description = "もう一方の端 X")]
+        private FloatField _tailX;
+        [UiControl("tail.y", Description = "もう一方の端 Y")]
+        private FloatField _tailY;
+        [UiControl("tail.z", Description = "もう一方の端 Z")]
+        private FloatField _tailZ;
+        [UiControl("normal.x", Description = "法線 X")]
+        private FloatField _normX;
+        [UiControl("normal.y", Description = "法線 Y")]
+        private FloatField _normY;
+        [UiControl("normal.z", Description = "法線 Z")]
+        private FloatField _normZ;
+        [UiControl("groups", Description = "入れるまとまり（カンマ区切りの番号。空ならどこにも入らない）")]
         private TextField  _groupsField;
 
+        [UiControl("groupList", Safety = UiSafety.ReadOnly, Description = "まとまりの一覧")]
         private Label _groupListLabel;
+
+        [UiControl("add", Safety = UiSafety.SafeWrite, Description = "選んだボーンに当たり判定を作る")]
+        private Button _btnAdd;
+        [UiControl("update", Safety = UiSafety.SafeWrite, Description = "選んだ行の当たり判定を書き換える")]
+        private Button _btnUpdate;
+        [UiControl("delete", Safety = UiSafety.Destructive, Description = "選んだ行の当たり判定を消す")]
+        private Button _btnDelete;
 
         // ================================================================
         // 表示用の控え（Refresh のたびに作り直す）
@@ -218,13 +248,13 @@ namespace Poly_Ling.Player
             var fo = new Foldout { text = "③ 作る・直す・消す", value = true };
 
             var row1 = Row();
-            row1.Add(Btn("選んだボーンに作る", OnAdd, grow: true));
+            row1.Add(_btnAdd = Btn("選んだボーンに作る", OnAdd, grow: true));
             fo.Add(row1);
             fo.Add(Hint("メッシュリストか 3D 画面でボーンを選んでから押します。"));
 
             var row2 = Row();
-            row2.Add(Btn("選んだ行を書き換える", OnUpdate, grow: true));
-            row2.Add(Btn("選んだ行を消す",       OnDelete, grow: true));
+            row2.Add(_btnUpdate = Btn("選んだ行を書き換える", OnUpdate, grow: true));
+            row2.Add(_btnDelete = Btn("選んだ行を消す",       OnDelete, grow: true));
             fo.Add(row2);
 
             root.Add(fo);

@@ -13,8 +13,16 @@ namespace Poly_Ling.Player
     public class PlayerEdgeExtrudeSubPanel
     {
         public Func<EdgeExtrudeToolHandler> GetH;
+
+        // UI 自動操作の ID は "edgeExtrude.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("dragSensitivity", Description = "ドラッグ量に対する押し出し量の比例係数")]
         private FloatField _dragSensField;
+        [UiControl("mode", Description = "押し出す方向（ViewPlane / Normal / Free）")]
+        private DropdownField _modeDropdown;
+        [UiControl("snapToAxis", Description = "軸方向へ吸着する")]
+        private Toggle _snapToggle;
 
         public void Build(VisualElement parent)
         {
@@ -31,10 +39,12 @@ namespace Poly_Ling.Player
                 if (idx >= 0 && GetH() != null) GetH().Mode = modeValues[idx];
             });
             _root.Add(modeDD);
+            _modeDropdown = modeDD;
             var snapToggle = new Toggle("Snap to Axis") { value = false };
             snapToggle.style.color = new StyleColor(Color.white);
             snapToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().SnapToAxis = e.newValue; });
             _root.Add(snapToggle);
+            _snapToggle = snapToggle;
 
             // Drag Sensitivity — テキストボックス（カメラ平面での実ドラッグ距離への比例係数）
             var sensRow = new VisualElement();

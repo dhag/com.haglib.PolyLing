@@ -41,23 +41,41 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "surfaceSnap.<下の Id>"（UiControlAttribute.cs）。
+        // プレビュー（スライダー・決定・キャンセル）は「計算」を押した後だけ表示される。
+        // 参照オブジェクトのチェックは対象ごとに作り直す行なので、項目として登録しない。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "ターゲット（選択中のオブジェクト）の数")]
         private Label         _targetLabel;
 
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _referenceListContainer;
 
+        [UiControl("camera", Description = "カメラの扱い（選択肢は uiGetValue の choices）")]
         private RadioButtonGroup _cameraGroup;
+        [UiControl("backface", Description = "裏面の扱い（選択肢は uiGetValue の choices）")]
         private RadioButtonGroup _backfaceGroup;
+        [UiControl("selectedOnly", Description = "選択頂点のみを対象にする")]
         private Toggle           _selectedOnlyToggle;
+        [UiControl("offset", Description = "面からの余白")]
         private FloatField       _offsetField;
 
+        [UiControl("compute", Safety = UiSafety.SafeWrite, Description = "計算してプレビュー（寄せ具合・決定・キャンセル）を出す")]
         private Button _computeBtn;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "状態表示")]
         private Label  _statusLabel;
 
+        [UiControl(Ignore = true)]
         private VisualElement _previewSection;
+        [UiControl("preview.amount", Description = "プレビューの寄せ具合（0〜1）。「計算」の後だけ表示")]
         private Slider        _slider;
+        [UiControl("preview.amountText", Safety = UiSafety.ReadOnly, Description = "寄せ具合の表示")]
         private Label         _sliderValueLabel;
+        [UiControl("preview.apply", Safety = UiSafety.SafeWrite, Description = "プレビューを決定する。「計算」の後だけ表示")]
         private Button        _applyBtn;
+        [UiControl("preview.cancel", Safety = UiSafety.SafeWrite, Description = "プレビューを取り消す。「計算」の後だけ表示")]
+        private Button        _cancelBtn;
 
         private readonly List<(int index, string name, int vertexCount)> _candidates
             = new List<(int, string, int)>();
@@ -209,6 +227,7 @@ namespace Poly_Ling.Player
 
             btnRow.Add(_applyBtn);
             btnRow.Add(cancelBtn);
+            _cancelBtn = cancelBtn;
 
             PlayerLayoutRoot.ApplyDarkTheme(_root);
         }

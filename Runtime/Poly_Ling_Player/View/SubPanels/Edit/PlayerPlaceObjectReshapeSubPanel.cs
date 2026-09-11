@@ -45,24 +45,54 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "placeObjectReshape.<下の Id>"（UiControlAttribute.cs）。
+        // 原型オブジェクトのチェックは一覧を取り直すたびに作り直す行なので、項目として登録しない。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象オブジェクトの数")]
         private Label         _targetLabel;
 
+        [UiControl("mode", Description = "0=アフィン変換 / 1=薄板スプライン")]
         private RadioButtonGroup _modeGroup;
 
         // 原型
         private readonly MeshSourceMultiPick _srcPick = new MeshSourceMultiPick();
+
+        /// <summary>原型オブジェクトのチェック行の箱。一覧を取り直すたびに作り直すので検査の対象外。</summary>
+        [UiControl(Ignore = true, Rows = true)]
+        private VisualElement SourceListRows => _srcPick?.ListContainer;
+        [UiControl("prototype", Safety = UiSafety.ReadOnly, Description = "チェックした原型オブジェクトの状況")]
         private Label _prototypeLabel;
+        [UiControl("refreshSources", Safety = UiSafety.SafeWrite, Description = "原型オブジェクトの一覧を取り直す")]
+        private Button _refreshSourceBtn;
 
         // 対象パーツ
+        [UiControl("targetParts", Description = "対象パーツ ID（空欄で全部）")]
         private TextField _targetField;
+        [UiControl("targetPartsFromSelection", Safety = UiSafety.SafeWrite, Description = "選択頂点から対象パーツ ID を取得する")]
+        private Button _pickTargetFromSelectionBtn;
 
         // 薄板スプライン専用
+        [UiControl(Ignore = true)]
         private VisualElement _tpsBox;
+        [UiControl("tps.lambda", Reveal = nameof(RevealTps), Description = "平滑化係数 lambda（薄板スプラインのときだけ表示）")]
         private FloatField    _lambdaField;
 
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "開始。配置済みの部品を、パーツ ID ごとに推定した変換で原型の形へ張り直す")]
         private Button _executeBtn;
+        [UiControl("result", Safety = UiSafety.ReadOnly, Description = "直近の実行結果")]
         private Label  _resultLabel;
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。lambda は薄板スプラインのときだけ
+        /// 表示されるので、利用者と同じくモードを切り替える。既に薄板スプラインなら false。
+        /// </summary>
+        private bool RevealTps()
+        {
+            if (_modeGroup == null || _modeGroup.value == 1) return false;
+            _modeGroup.value = 1;
+            return true;
+        }
 
         private static readonly List<string> ModeChoices =
             new List<string> { "アフィン変換", "薄板スプライン" };
@@ -136,7 +166,7 @@ namespace Poly_Ling.Player
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 4;
-            row.Add(SmallBtn("一覧を再取得", RefreshSourcePick));
+            row.Add(_refreshSourceBtn = SmallBtn("一覧を再取得", RefreshSourcePick));
             _root.Add(row);
 
             _prototypeLabel = InfoLabel();
@@ -163,7 +193,7 @@ namespace Poly_Ling.Player
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 4;
-            row.Add(SmallBtn("選択頂点から取得", () =>
+            row.Add(_pickTargetFromSelectionBtn = SmallBtn("選択頂点から取得", () =>
             {
                 var h = GetH();
                 if (h == null) return;

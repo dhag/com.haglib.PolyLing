@@ -28,14 +28,29 @@ namespace Poly_Ling.Player
         private const string AfterPathKey  = "MediaPipe.After";
         private const string TriPathKey    = "MediaPipe.Triangles";
 
+        // UI 自動操作の ID は "mediaPipe.<下の Id>"（UiControlAttribute.cs）。
+        // 3 つの JSON はどれもダイアログの初期値として使う。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl("fileStatus", Safety = UiSafety.ReadOnly, Description = "指定した 3 つのファイルの状態")]
         private Label         _fileStatusLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "ランドマークの差でモデルを変形する")]
         private Button        _btnExecute;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
 
+        [UiControl("beforePath", Description = "変形前ランドマーク JSON のパス")]
         private TextField     _beforeField;
+        [UiControl("afterPath", Description = "変形後ランドマーク JSON のパス")]
         private TextField     _afterField;
+        [UiControl("triPath", Description = "面インデックス JSON のパス")]
         private TextField     _triField;
+        [UiControl("browseBefore", Safety = UiSafety.UserOnly, Description = "変形前ランドマーク JSON の [...]（ファイル選択ダイアログを開く）")]
+        private Button        _btnBrowseBefore;
+        [UiControl("browseAfter", Safety = UiSafety.UserOnly, Description = "変形後ランドマーク JSON の [...]（ファイル選択ダイアログを開く）")]
+        private Button        _btnBrowseAfter;
+        [UiControl("browseTri", Safety = UiSafety.UserOnly, Description = "面インデックス JSON の [...]（ファイル選択ダイアログを開く）")]
+        private Button        _btnBrowseTri;
 
         public void Build(VisualElement parent)
         {
@@ -60,9 +75,9 @@ namespace Poly_Ling.Player
                 HelpBoxMessageType.None));
 
             // ── ファイル指定（他のIOパネルと同じ [...] + パス欄 + RecentPaths） ──
-            _beforeField = AddPathRow(root, "変形前ランドマークJSON", BeforePathKey, "変形前ランドマークJSONを選択");
-            _afterField  = AddPathRow(root, "変形後ランドマークJSON", AfterPathKey,  "変形後ランドマークJSONを選択");
-            _triField    = AddPathRow(root, "面インデックスJSON",     TriPathKey,    "面インデックスJSONを選択");
+            _beforeField = AddPathRow(root, "変形前ランドマークJSON", BeforePathKey, "変形前ランドマークJSONを選択", out _btnBrowseBefore);
+            _afterField  = AddPathRow(root, "変形後ランドマークJSON", AfterPathKey,  "変形後ランドマークJSONを選択", out _btnBrowseAfter);
+            _triField    = AddPathRow(root, "面インデックスJSON",     TriPathKey,    "面インデックスJSONを選択",     out _btnBrowseTri);
 
             _fileStatusLabel = new Label();
             _fileStatusLabel.style.color = new StyleColor(Color.white);
@@ -124,7 +139,8 @@ namespace Poly_Ling.Player
         /// 他のIOパネルと同じ「セクション見出し + [...] + パス欄」の1組を追加する。
         /// 値は RecentPaths に write-through し、変更時にファイル存在表示を更新する。
         /// </summary>
-        private TextField AddPathRow(VisualElement parent, string label, string prefKey, string dialogTitle)
+        private TextField AddPathRow(VisualElement parent, string label, string prefKey, string dialogTitle,
+                                     out Button browseButton)
         {
             parent.Add(PlayerIoUiKit.SectionLabel(label));
 
@@ -139,7 +155,7 @@ namespace Poly_Ling.Player
             {
                 string path = PlayerIoUiKit.AskLoadPath(dialogTitle, prefKey, field.value, "json");
                 if (!string.IsNullOrEmpty(path)) field.value = path;
-            }));
+            }, out browseButton));
 
             field.SetValueWithoutNotify(RecentPaths.Get(prefKey));
             return field;

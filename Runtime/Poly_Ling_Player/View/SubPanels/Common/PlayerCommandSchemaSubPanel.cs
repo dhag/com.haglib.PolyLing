@@ -35,11 +35,28 @@ namespace Poly_Ling.Player
         /// <summary>保存ダイアログのファイル名欄の初期値。</summary>
         private const string DefaultFileName = "tools.json";
 
+        // UI 自動操作の ID は "commandSchema.<下の Id>"（UiControlAttribute.cs）。
+        // 検査の結果は行を並べて作り直すので、結果の入れ物はデータ行（Rows）にする。
+        [UiControl(Ignore = true)]
         private VisualElement     _root;
+        [UiControl("summary", Safety = UiSafety.ReadOnly, Description = "検査の要約")]
         private Label             _summaryLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label             _statusLabel;
+        [UiNested("saveDest")]
         private PlayerSaveDestRow _saveDest;
+        [UiControl(Ignore = true, Rows = true)]
         private ScrollView        _resultView;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "コマンドの宣言を検査する")]
+        private Button            _runBtn;
+        [UiControl("export", Safety = UiSafety.UserOnly, Description = "検査の結果を名前を付けて保存する（保存ダイアログを開く）")]
+        private Button            _exportBtn;
+        [UiControl(Ignore = true)]
+        private VisualElement     _uiAuditBox;
+        [UiControl("uiAudit.result", Safety = UiSafety.ReadOnly, Description = "UI 自動操作の登録で直すべきものの件数（無いときは非表示）")]
+        private Label             _uiAuditLabel;
+        [UiControl("uiAudit.run", Safety = UiSafety.SafeWrite, Description = "UI 自動操作の登録状況を検査し直す")]
+        private Button            _uiAuditBtn;
 
         public void Build(VisualElement parent)
         {
@@ -48,6 +65,8 @@ namespace Poly_Ling.Player
             _root.style.paddingLeft  = 4;
             _root.style.paddingRight = 4;
             parent.Add(_root);
+
+            BuildUiAuditSection(_root);
 
             var header = new Label("コマンド定義の検査");
             header.style.marginTop    = 4;
@@ -70,6 +89,7 @@ namespace Poly_Ling.Player
             _root.Add(_summaryLabel);
 
             var runBtn = new Button(OnRun) { text = "検査する" };
+            _runBtn = runBtn;
             runBtn.style.height       = 26;
             runBtn.style.marginBottom = 6;
             _root.Add(runBtn);
@@ -95,6 +115,7 @@ namespace Poly_Ling.Player
             _root.Add(_saveDest.Root);
 
             var exportBtn = new Button(OnExport) { text = "名前を付けて保存" };
+            _exportBtn = exportBtn;
             exportBtn.style.height       = 26;
             exportBtn.style.marginBottom = 4;
             _root.Add(exportBtn);
@@ -113,6 +134,75 @@ namespace Poly_Ling.Player
 
             PlayerLayoutRoot.ApplyDarkTheme(_root);
         }
+
+        // ================================================================
+        // UI 自動操作の登録状況
+        // ================================================================
+
+        /// <summary>
+        /// UI 自動操作の登録状況。再生開始時の検査で問題があったときだけ出す。
+        ///
+        /// 【なぜここに出すか】
+        ///   属性の付け忘れや未登録の部品はコンパイルを通ってしまうので、
+        ///   人が queryUiAutomationAudit を呼ぶまで気づけない。ログだけだと流れるため、
+        ///   コマンド定義の検査と同じ場所に、直すべきものが残っている間ずっと出しておく。
+        /// </summary>
+        private void BuildUiAuditSection(VisualElement root)
+        {
+            _uiAuditBox = new VisualElement();
+            _uiAuditBox.style.marginBottom    = 6;
+            _uiAuditBox.style.paddingTop      = 4;
+            _uiAuditBox.style.paddingBottom   = 4;
+            _uiAuditBox.style.paddingLeft     = 6;
+            _uiAuditBox.style.paddingRight    = 6;
+            _uiAuditBox.style.backgroundColor = new StyleColor(new Color(0.35f, 0.22f, 0.05f));
+            _uiAuditBox.style.display         = DisplayStyle.None;
+
+            var head = new Label("UI 自動操作の登録に直すべきものがあります");
+            head.style.unityFontStyleAndWeight = FontStyle.Bold;
+            head.style.color      = new StyleColor(new Color(1f, 0.82f, 0.45f));
+            head.style.whiteSpace = WhiteSpace.Normal;
+            _uiAuditBox.Add(head);
+
+            _uiAuditLabel = new Label("");
+            _uiAuditLabel.style.fontSize   = 10;
+            _uiAuditLabel.style.whiteSpace = WhiteSpace.Normal;
+            _uiAuditLabel.style.marginTop  = 2;
+            _uiAuditBox.Add(_uiAuditLabel);
+
+            root.Add(_uiAuditBox);
+
+            var btn = new Button(OnRunUiAudit) { text = "UI 登録を検査" };
+            btn.style.height       = 24;
+            btn.style.marginBottom = 6;
+            root.Add(btn);
+            _uiAuditBtn = btn;
+        }
+
+        private void OnRunUiAudit() => ShowUiAuditResult(RunUiAutomationAudit?.Invoke());
+
+        /// <summary>
+        /// 検査の結果を表示する。問題が無ければ枠ごと隠す。
+        /// 再生開始時の結果を ViewerCore から渡すときにも使う。
+        /// </summary>
+        public void ShowUiAuditResult(UiAutomationAudit.Result r)
+        {
+            if (_uiAuditBox == null) return;
+
+            if (r == null || !r.HasProblems)
+            {
+                _uiAuditBox.style.display = DisplayStyle.None;
+                if (_uiAuditLabel != null) _uiAuditLabel.text = "";
+                return;
+            }
+
+            _uiAuditBox.style.display = DisplayStyle.Flex;
+            _uiAuditLabel.text = r.ProblemSummary()
+                               + "\n直し方は queryUiAutomationAudit の結果を見てください。";
+        }
+
+        /// <summary>今の登録状況を検査し直す。ViewerCore が配線する。</summary>
+        public Func<UiAutomationAudit.Result> RunUiAutomationAudit;
 
         /// <summary>開くたびに呼ばれる。検査は自動で走らせない（重いため）。</summary>
         public void Refresh()

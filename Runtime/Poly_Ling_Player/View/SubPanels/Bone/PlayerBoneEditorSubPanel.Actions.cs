@@ -47,13 +47,14 @@ namespace Poly_Ling.Player
                 return b;
             }
 
-            Make("Z90度回転", "選択対象のローカル Z 回転に +90 度を足す",
+            _btnQuickRotZPlus = Make("Z90度回転", "選択対象のローカル Z 回転に +90 度を足す",
                  () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, 90f, "Z+90度回転"));
-            Make("Y0.1移動", "選択対象のローカル Y 位置に +0.1 を足す",
+            _btnQuickMoveYPlus = Make("Y0.1移動", "選択対象のローカル Y 位置に +0.1 を足す",
                  () => OffsetTransform(SetBoneTransformValueCommand.Field.PositionY, 0.1f, "Y+0.1移動"));
             var last = Make("Z-90度回転", "選択対象のローカル Z 回転に −90 度を足す",
                  () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, -90f, "Z-90度回転"));
             last.style.marginRight = 0;
+            _btnQuickRotZMinus = last;
 
             return row;
         }

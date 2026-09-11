@@ -60,23 +60,68 @@ namespace Poly_Ling.Player
         private int              _sourceKind;    // 0=VMD, 1=UnityClip JSON, 2=統合JSON
 
         // ── UI 要素 ───────────────────────────────────────────────────────
+        // UI 自動操作の ID は "motionClipTest.<下の Id>"（UiControlAttribute.cs）。
+        // ボーンの一覧は読み込んだクリップに合わせて作り直す行（Rows）。
+        [UiControl("model", Safety = UiSafety.ReadOnly, Description = "対象モデル")]
         private Label         _modelLabel;
+        [UiControl("file", Safety = UiSafety.ReadOnly, Description = "読み込んだクリップ")]
         private Label         _fileLabel;
+        [UiControl("bindPoseFile", Safety = UiSafety.ReadOnly, Description = "読み込んだバインドポーズ")]
         private Label         _bindPoseLabel;
+        [UiControl("source", Description = "読み込む種類")]
         private DropdownField _sourceField;
+        [UiControl("path", Description = "クリップのパス（ダイアログの初期値として使う）")]
         private TextField     _pathField;
+        [UiControl("bindPosePath", Description = "バインドポーズのパス（ダイアログの初期値として使う）")]
         private TextField     _bindPathField;
-        private Button        _btnClear, _btnReload;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "読み込んだクリップを外す")]
+        private Button        _btnClear;
+        [UiControl("reload", Safety = UiSafety.SafeWrite, Description = "クリップを読み直す")]
+        private Button        _btnReload;
+        [UiControl("open", Safety = UiSafety.UserOnly, Description = "クリップを開く（ファイル選択ダイアログを開く）")]
+        private Button        _btnOpen;
+        [UiControl("openBindPose", Safety = UiSafety.UserOnly, Description = "バインドポーズを開く（ファイル選択ダイアログを開く）")]
+        private Button        _btnOpenBind;
+        [UiControl("browse", Safety = UiSafety.UserOnly, Description = "クリップの [...]（ファイル選択ダイアログを開く）")]
+        private Button        _btnBrowse;
+        [UiControl("browseBindPose", Safety = UiSafety.UserOnly, Description = "バインドポーズの [...]（ファイル選択ダイアログを開く）")]
+        private Button        _btnBrowseBind;
+        [UiControl(Ignore = true)]
         private VisualElement _clipSection;
+        [UiControl("clipInfo", Safety = UiSafety.ReadOnly, Description = "クリップの情報")]
         private Label         _clipInfoLabel;
+        [UiControl("matchedBones", Safety = UiSafety.ReadOnly, Description = "名前が一致したボーン数")]
         private Label         _clipMatchLabel;
+        [UiControl("time", Description = "現在の時刻（スライダー）")]
         private Slider        _timeSlider;
+        [UiControl("timeText", Safety = UiSafety.ReadOnly, Description = "現在の時刻の表示")]
         private Label         _timeLabel;
+        [UiControl("timeValue", Description = "現在の時刻（数値入力）")]
         private FloatField    _timeInput;
+        [UiControl("scale", Description = "取り込みの倍率")]
         private FloatField    _scaleField;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _boneListContainer;
+        [UiControl(Ignore = true)]
         private Foldout       _boneListFoldout;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("time.first", Safety = UiSafety.SafeWrite, Description = "先頭へ（|◀）")]
+        private Button        _btnTimeFirst;
+        [UiControl("time.previous", Safety = UiSafety.SafeWrite, Description = "1 コマ戻る（◀1）")]
+        private Button        _btnTimePrev;
+        [UiControl("time.at25Percent", Safety = UiSafety.SafeWrite, Description = "25% の位置へ")]
+        private Button        _btnTime25;
+        [UiControl("time.at50Percent", Safety = UiSafety.SafeWrite, Description = "50% の位置へ")]
+        private Button        _btnTime50;
+        [UiControl("time.at75Percent", Safety = UiSafety.SafeWrite, Description = "75% の位置へ")]
+        private Button        _btnTime75;
+        [UiControl("time.next", Safety = UiSafety.SafeWrite, Description = "1 コマ進む（1▶）")]
+        private Button        _btnTimeNext;
+        [UiControl("time.last", Safety = UiSafety.SafeWrite, Description = "末尾へ（▶|）")]
+        private Button        _btnTimeLast;
+        [UiControl("resetPose", Safety = UiSafety.SafeWrite, Description = "ポーズをリセットする")]
+        private Button        _btnResetPose;
 
         private const string PathKey     = "MotionClip.Path";
         private const string BindPathKey = "MotionClip.Bind.Path";
@@ -119,13 +164,14 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.SectionLabel("モーションファイル"));
             _pathField = new TextField();
             _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(PathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_pathField, OnBrowse));
+            root.Add(PlayerIoUiKit.PathRow(_pathField, OnBrowse, out _btnBrowse));
             _pathField.SetValueWithoutNotify(RecentPaths.Get(PathKey));
 
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
             opRow.style.marginBottom  = 3;
             var btnOpen = PlayerIoUiKit.OpenButton("開く", OnBrowse);
+            _btnOpen = btnOpen;
             btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
             _btnClear  = new Button(Clear)  { text = "クリア" };  _btnClear.style.width  = 52; _btnClear.style.marginRight = 2;
             _btnReload = new Button(Reload) { text = "再読込" }; _btnReload.style.width  = 52;
@@ -141,10 +187,11 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.SectionLabel("バインドポーズ CSV（UnityBone v2）"));
             _bindPathField = new TextField();
             _bindPathField.RegisterValueChangedCallback(e => RecentPaths.Set(BindPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_bindPathField, OnBrowseBind));
+            root.Add(PlayerIoUiKit.PathRow(_bindPathField, OnBrowseBind, out _btnBrowseBind));
             _bindPathField.SetValueWithoutNotify(RecentPaths.Get(BindPathKey));
 
             var btnBindPose = PlayerIoUiKit.OpenButton("開く", OnBrowseBind);
+            _btnOpenBind = btnBindPose;
             root.Add(btnBindPose);
             _bindPoseLabel = new Label("(未読込)");
             _bindPoseLabel.style.fontSize = 10;
@@ -212,18 +259,19 @@ namespace Poly_Ling.Player
             root.Add(frameRow);
 
             var nav1 = new VisualElement(); nav1.style.flexDirection = FlexDirection.Row; nav1.style.marginBottom = 2;
-            MkNavBtn(nav1, "|◀",  () => { _currentTime = 0; Sync(); });
-            MkNavBtn(nav1, "◀1", () => { if (_dto != null) { _currentTime = Mathf.Max(0f, _currentTime - Step()); Sync(); } });
-            MkNavBtn(nav1, "25%", () => { if (_dto != null) { _currentTime = _maxTime * 0.25f; Sync(); } });
-            MkNavBtn(nav1, "50%", () => { if (_dto != null) { _currentTime = _maxTime * 0.5f;  Sync(); } });
-            MkNavBtn(nav1, "75%", () => { if (_dto != null) { _currentTime = _maxTime * 0.75f; Sync(); } });
-            MkNavBtn(nav1, "1▶", () => { if (_dto != null) { _currentTime = Mathf.Min(_maxTime, _currentTime + Step()); Sync(); } });
-            MkNavBtn(nav1, "▶|", () => { if (_dto != null) { _currentTime = _maxTime; Sync(); } });
+            _btnTimeFirst = MkNavBtn(nav1, "|◀",  () => { _currentTime = 0; Sync(); });
+            _btnTimePrev  = MkNavBtn(nav1, "◀1", () => { if (_dto != null) { _currentTime = Mathf.Max(0f, _currentTime - Step()); Sync(); } });
+            _btnTime25    = MkNavBtn(nav1, "25%", () => { if (_dto != null) { _currentTime = _maxTime * 0.25f; Sync(); } });
+            _btnTime50    = MkNavBtn(nav1, "50%", () => { if (_dto != null) { _currentTime = _maxTime * 0.5f;  Sync(); } });
+            _btnTime75    = MkNavBtn(nav1, "75%", () => { if (_dto != null) { _currentTime = _maxTime * 0.75f; Sync(); } });
+            _btnTimeNext  = MkNavBtn(nav1, "1▶", () => { if (_dto != null) { _currentTime = Mathf.Min(_maxTime, _currentTime + Step()); Sync(); } });
+            _btnTimeLast  = MkNavBtn(nav1, "▶|", () => { if (_dto != null) { _currentTime = _maxTime; Sync(); } });
             root.Add(nav1);
 
             var resetBtn = new Button(ResetPose) { text = "ポーズリセット" };
             resetBtn.style.marginBottom = 4;
             root.Add(resetBtn);
+            _btnResetPose = resetBtn;
 
             root.Add(SecLabel("オプション"));
 
@@ -566,7 +614,7 @@ namespace Poly_Ling.Player
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
-        private static void MkNavBtn(VisualElement row, string text, Action onClick) { var b = new Button(onClick) { text = text }; b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 9; row.Add(b); }
+        private static Button MkNavBtn(VisualElement row, string text, Action onClick) { var b = new Button(onClick) { text = text }; b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 9; row.Add(b); return b; }
         private static Label SecLabel(string t) { var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f)); l.style.fontSize = 10; l.style.marginBottom = 3; return l; }
     }
 }

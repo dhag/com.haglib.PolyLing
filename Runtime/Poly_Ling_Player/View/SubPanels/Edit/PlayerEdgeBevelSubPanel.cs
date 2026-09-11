@@ -13,12 +13,25 @@ namespace Poly_Ling.Player
     {
         public Func<EdgeBevelToolHandler> GetH;
 
+        // UI 自動操作の ID は "edgeBevel.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("amount", Description = "ベベルの幅")]
         private FloatField    _amountField;
+        [UiControl("dragSensitivity", Description = "ドラッグ量に対する幅の変化の比例係数")]
         private FloatField    _dragSensField;
+        [UiControl("segments", Description = "ベベルの分割数")]
         private SliderInt     _segmentsSlider;
+        [UiControl("fillet", Reveal = nameof(RevealFillet), Description = "丸める（分割数 2 以上のときだけ表示）")]
         private Toggle        _filletToggle;
+        [UiControl(Ignore = true)]
         private VisualElement _filletRow;
+        [UiControl("amountPreset.small", Safety = UiSafety.SafeWrite, Description = "幅を 0.05 にする")]
+        private Button        _amountPreset005Btn;
+        [UiControl("amountPreset.medium", Safety = UiSafety.SafeWrite, Description = "幅を 0.1 にする")]
+        private Button        _amountPreset01Btn;
+        [UiControl("amountPreset.large", Safety = UiSafety.SafeWrite, Description = "幅を 0.2 にする")]
+        private Button        _amountPreset02Btn;
 
         public void Build(VisualElement parent)
         {
@@ -53,13 +66,19 @@ namespace Poly_Ling.Player
             var presetRow = new VisualElement();
             presetRow.style.flexDirection = FlexDirection.Row;
             presetRow.style.marginBottom  = 4;
+            var presetBtns = new Button[3];
+            int presetIdx = 0;
             foreach (var (label, val) in new[] { ("0.05", 0.05f), ("0.1", 0.1f), ("0.2", 0.2f) })
             {
                 float v = val;
                 var b = new Button(() => { _amountField?.SetValueWithoutNotify(v); var h = GetH(); if (h != null) h.Amount = v; }) { text = label };
                 b.style.flexGrow = 1;
                 presetRow.Add(b);
+                presetBtns[presetIdx++] = b;
             }
+            _amountPreset005Btn = presetBtns[0];
+            _amountPreset01Btn  = presetBtns[1];
+            _amountPreset02Btn  = presetBtns[2];
             _root.Add(presetRow);
 
             // Drag Sensitivity — テキストボックス（カメラ平面での実ドラッグ距離への比例係数）
@@ -117,6 +136,17 @@ namespace Poly_Ling.Player
         {
             if (_filletRow != null)
                 _filletRow.style.display = segs >= 2 ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。Fillet は分割数 2 以上のときだけ
+        /// 表示されるので、利用者と同じく分割数を 2 にする。既に 2 以上なら何もせず false。
+        /// </summary>
+        private bool RevealFillet()
+        {
+            if (_segmentsSlider == null || _segmentsSlider.value >= 2) return false;
+            _segmentsSlider.value = 2;
+            return true;
         }
 
         private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; return l; }

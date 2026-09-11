@@ -26,9 +26,23 @@ namespace Poly_Ling.Player
         public Func<ProjectContext>  GetView;
         public Action<PanelCommand>  SendCommand;
 
+        // UI 自動操作の ID は "vertexId.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _reportList;
+        [UiControl("stats.total", Safety = UiSafety.ReadOnly, Description = "選択中オブジェクトの頂点 ID の診断結果（件数・未設定・重複）")]
         private Label         _totalLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の修復操作の結果")]
         private Label         _statusLabel;
+        [UiControl("rediagnose", Safety = UiSafety.SafeWrite, Description = "診断をやり直す（データは変えない）")]
+        private Button        _rediagnoseBtn;
+        [UiControl("assignMissing", Safety = UiSafety.SafeWrite, Description = "未設定の頂点 ID を付与する（既存の ID は保つ）")]
+        private Button        _assignMissingBtn;
+        [UiControl("resolveDuplicates", Safety = UiSafety.SafeWrite, Description = "重複した頂点 ID を振り直す（既存の ID は保つ）")]
+        private Button        _resolveDuplicatesBtn;
+        [UiControl("reassignAll", Safety = UiSafety.Destructive, Description = "全頂点 ID を連番で振り直す。既存の ID による対応付けが失われる")]
+        private Button        _reassignAllBtn;
+        [UiControl("clearAll", Safety = UiSafety.Destructive, Description = "全頂点 ID を消去する。既存の ID による対応付けが失われる")]
+        private Button        _clearAllBtn;
 
         private ProjectContext GetProject() => GetView?.Invoke();
 
@@ -71,23 +85,23 @@ namespace Poly_Ling.Player
             _reportList = new VisualElement();
             root.Add(_reportList);
 
-            root.Add(PlayerIoUiKit.WideBtn("再診断", Refresh));
+            root.Add(_rediagnoseBtn = PlayerIoUiKit.WideBtn("再診断", Refresh));
 
             // ── 修復 ─────────────────────────────────────────────────
             root.Add(PlayerIoUiKit.Divider());
             root.Add(PlayerIoUiKit.SectionLabel("修復（選択中のオブジェクトに適用）"));
 
             root.Add(Note("既存のIDを保つ操作："));
-            root.Add(PlayerIoUiKit.WideBtn("未設定IDを付与",
+            root.Add(_assignMissingBtn = PlayerIoUiKit.WideBtn("未設定IDを付与",
                 () => Repair(RepairVertexIdsCommand.RepairMode.AssignMissing, "未設定IDを付与")));
-            root.Add(PlayerIoUiKit.WideBtn("重複IDを振り直し",
+            root.Add(_resolveDuplicatesBtn = PlayerIoUiKit.WideBtn("重複IDを振り直し",
                 () => Repair(RepairVertexIdsCommand.RepairMode.ResolveDuplicates, "重複IDを振り直し")));
 
             root.Add(PlayerIoUiKit.Spacer());
             root.Add(Note("既存のIDによる対応付けが失われる操作："));
-            root.Add(PlayerIoUiKit.WideBtn("全IDを連番で振り直し",
+            root.Add(_reassignAllBtn = PlayerIoUiKit.WideBtn("全IDを連番で振り直し",
                 () => Repair(RepairVertexIdsCommand.RepairMode.ReassignSequential, "全IDを連番で振り直し")));
-            root.Add(PlayerIoUiKit.WideBtn("全IDを消去",
+            root.Add(_clearAllBtn = PlayerIoUiKit.WideBtn("全IDを消去",
                 () => Repair(RepairVertexIdsCommand.RepairMode.ClearAll, "全IDを消去")));
 
             _statusLabel = PlayerIoUiKit.StatusLabel();

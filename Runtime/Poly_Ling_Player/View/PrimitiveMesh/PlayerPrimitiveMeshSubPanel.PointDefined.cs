@@ -59,10 +59,16 @@ namespace Poly_Ling.Player
         private PointPrimitiveMode _pdMode = PointPrimitiveMode.Quad;
         private PointDefinedParams _pdP    = PointDefinedParams.Default;
 
+        // 点指定のボタンは選んだ形で数が変わるので、諸元と同じく作り直す行に置く。
+        [UiControl(Ignore = true)]
         private readonly Button[] _pdModeBtns = new Button[3];
+        [UiControl(Ignore = true)]
         private readonly Button[] _pdApexBtns = new Button[3];
+        [UiControl("pointDefined.points", Safety = UiSafety.ReadOnly, Description = "点指定の点の情報")]
         private Label _pdPointsLabel;
+        [UiControl("pointDefined.share", Safety = UiSafety.ReadOnly, Description = "点指定の共有の情報")]
         private Label _pdShareLabel;
+        [UiControl("pointDefined.reason", Safety = UiSafety.ReadOnly, Description = "点指定で作れないときの理由")]
         private Label _pdReasonLabel;
 
         private static readonly Color PdSelectedColor = new Color(0.25f, 0.45f, 0.65f);

@@ -184,12 +184,19 @@ namespace Poly_Ling.Player
         /// </summary>
         private void AttachPanelSelectToggle(VisualElement section, string key)
         {
-            PanelSelectToggle.Attach(section, key, on =>
+            var toggle = PanelSelectToggle.Attach(section, key, on =>
             {
                 if (section == null || _activeRightSection != section) return;
                 SetInteractionMode(on ? InteractionMode.SelectOnly : InteractionMode.None);
             });
+            // UI 自動操作で "<パネル ID>.selectInViewport" として登録するために覚えておく
+            // （PolyLingPlayerViewerCore.UiAutomation.cs の RegisterUiPanel）。
+            if (section != null && toggle != null) _panelSelectToggles[section] = toggle;
         }
+
+        /// <summary>セクション → そのセクションに付けた「ビューポートで選択する」トグル。</summary>
+        private readonly System.Collections.Generic.Dictionary<VisualElement, Toggle> _panelSelectToggles
+            = new System.Collections.Generic.Dictionary<VisualElement, Toggle>();
 
         /// <summary>
         /// カテゴリ3のパネルを、選択許可チェック付きで開く。

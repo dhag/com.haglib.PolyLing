@@ -45,32 +45,81 @@ namespace Poly_Ling.Player
         private string _ikTraceBoneList = "";       // 空なら全 IK ボーン
 
         // ── UI 要素 ───────────────────────────────────────────────────────
+        // UI 自動操作の ID は "vmdTest.<下の Id>"（UiControlAttribute.cs）。
+        // ボーン・モーフの一覧は読み込んだ VMD に合わせて作り直す行（Rows）。
+        [UiControl("model", Safety = UiSafety.ReadOnly, Description = "対象モデル")]
         private Label         _modelLabel;
+        [UiControl("file", Safety = UiSafety.ReadOnly, Description = "読み込んだ VMD")]
         private Label         _fileLabel;
+        [UiControl("vmdPath", Description = "VMD のパス（ダイアログの初期値として使う）")]
         private TextField     _vmdPathField;
         private const string  VmdPathKey = "VMD.Path";
-        private Button        _btnClear, _btnReload;
+        [UiControl("open", Safety = UiSafety.UserOnly, Description = "VMD を開く（ファイル選択ダイアログを開く）")]
+        private Button        _btnOpen;
+        [UiControl("browse", Safety = UiSafety.UserOnly, Description = "[...]。VMD を選ぶダイアログを開き、選んだら読み込む")]
+        private Button        _btnBrowseVmd;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "読み込んだ VMD を外す")]
+        private Button        _btnClear;
+        [UiControl("reload", Safety = UiSafety.SafeWrite, Description = "VMD を読み直す")]
+        private Button        _btnReload;
+        [UiControl(Ignore = true)]
         private VisualElement _vmdSection;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "VMD の情報（モデル名・フレーム数・長さ）")]
         private Label         _vmdInfoLabel;   // Model Name / Frames / Duration
+        [UiControl("matchedBones", Safety = UiSafety.ReadOnly, Description = "名前が一致したボーン数")]
         private Label         _vmdMatchLabel;  // Matched bones
+        [UiControl("frame", Description = "現在のフレーム（スライダー）")]
         private Slider        _frameSlider;
+        [UiControl("frameText", Safety = UiSafety.ReadOnly, Description = "現在のフレームの表示")]
         private Label         _frameLabel;
+        [UiControl("frameValue", Description = "現在のフレーム（数値入力）")]
         private IntegerField  _frameInput;
+        [UiControl("scale", Description = "取り込みの倍率")]
         private FloatField    _scaleField;
+        [UiControl("coordinateConversion", Description = "座標変換（Z 反転）")]
         private Toggle        _coordToggle;
+        [UiControl("enableIk", Description = "IK を有効にする")]
         private Toggle        _ikToggle;
+        [UiControl("trace", Description = "トレース出力")]
         private Toggle        _traceToggle;
+        [UiControl("ignoreAngleLimits", Description = "角度制限を無視する")]
         private Toggle        _ignoreLimitToggle;
+        [UiControl("kneePreBend", Description = "ひざ初期屈曲（KneePreBend）")]
         private Toggle        _kneePreBendToggle;
+        [UiControl("traceBones", Description = "トレースするボーン名（カンマ区切り）")]
         private TextField     _traceBonesField;
+        [UiControl("ikTraceBones", Description = "IK トレースするボーン名（カンマ区切り）")]
         private TextField     _ikTraceBonesField;
+        [UiNested("traceDest")]
         private PlayerSaveDestRow _traceDest;
+        [UiControl("traceAllFrames", Safety = UiSafety.FileOperation, Description = "全フレームを一括トレースして書き出す")]
         private Button        _btnTraceAll;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _boneListContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _morphListContainer;
+        [UiControl(Ignore = true)]
         private Foldout       _boneListFoldout;
+        [UiControl(Ignore = true)]
         private Foldout       _morphListFoldout;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("frame.first", Safety = UiSafety.SafeWrite, Description = "先頭のフレームへ（|◀）")]
+        private Button        _btnFrameFirst;
+        [UiControl("frame.previous", Safety = UiSafety.SafeWrite, Description = "1 フレーム戻る（◀1）")]
+        private Button        _btnFramePrev;
+        [UiControl("frame.at25Percent", Safety = UiSafety.SafeWrite, Description = "25% の位置へ")]
+        private Button        _btnFrame25;
+        [UiControl("frame.at50Percent", Safety = UiSafety.SafeWrite, Description = "50% の位置へ")]
+        private Button        _btnFrame50;
+        [UiControl("frame.at75Percent", Safety = UiSafety.SafeWrite, Description = "75% の位置へ")]
+        private Button        _btnFrame75;
+        [UiControl("frame.next", Safety = UiSafety.SafeWrite, Description = "1 フレーム進む（1▶）")]
+        private Button        _btnFrameNext;
+        [UiControl("frame.last", Safety = UiSafety.SafeWrite, Description = "末尾のフレームへ（▶|）")]
+        private Button        _btnFrameLast;
+        [UiControl("resetPose", Safety = UiSafety.SafeWrite, Description = "ポーズをリセットする")]
+        private Button        _btnResetPose;
 
         private ModelContext Model => GetModel?.Invoke();
 
@@ -97,13 +146,14 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.SectionLabel("VMD ファイル"));
             _vmdPathField = new TextField();
             _vmdPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VmdPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_vmdPathField, OnBrowseVmd));
+            root.Add(PlayerIoUiKit.PathRow(_vmdPathField, OnBrowseVmd, out _btnBrowseVmd));
             _vmdPathField.SetValueWithoutNotify(RecentPaths.Get(VmdPathKey));
 
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
             opRow.style.marginBottom  = 3;
             var btnOpen = PlayerIoUiKit.OpenButton("開く", OnBrowseVmd);
+            _btnOpen = btnOpen;
             btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
             _btnClear  = new Button(ClearVMD)  { text = "クリア" };  _btnClear.style.width  = 52; _btnClear.style.marginRight = 2;
             _btnReload = new Button(ReloadVMD) { text = "再読込" }; _btnReload.style.width  = 52;
@@ -179,18 +229,19 @@ namespace Poly_Ling.Player
 
             // ── ナビゲーションボタン ───────────────────────────────────────
             var nav1 = new VisualElement(); nav1.style.flexDirection = FlexDirection.Row; nav1.style.marginBottom = 2;
-            MkNavBtn(nav1, "|◀",  () => { _currentFrame = 0; Sync(); });
-            MkNavBtn(nav1, "◀1", () => { if (_vmd != null) { _currentFrame = Mathf.Max(0, _currentFrame - 1); Sync(); } });
-            MkNavBtn(nav1, "25%", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber * 0.25f; Sync(); } });
-            MkNavBtn(nav1, "50%", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber * 0.5f;  Sync(); } });
-            MkNavBtn(nav1, "75%", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber * 0.75f; Sync(); } });
-            MkNavBtn(nav1, "1▶", () => { if (_vmd != null) { _currentFrame = Mathf.Min(_vmd.MaxFrameNumber, _currentFrame + 1); Sync(); } });
-            MkNavBtn(nav1, "▶|", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber; Sync(); } });
+            _btnFrameFirst   = MkNavBtn(nav1, "|◀",  () => { _currentFrame = 0; Sync(); });
+            _btnFramePrev    = MkNavBtn(nav1, "◀1", () => { if (_vmd != null) { _currentFrame = Mathf.Max(0, _currentFrame - 1); Sync(); } });
+            _btnFrame25      = MkNavBtn(nav1, "25%", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber * 0.25f; Sync(); } });
+            _btnFrame50      = MkNavBtn(nav1, "50%", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber * 0.5f;  Sync(); } });
+            _btnFrame75      = MkNavBtn(nav1, "75%", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber * 0.75f; Sync(); } });
+            _btnFrameNext    = MkNavBtn(nav1, "1▶", () => { if (_vmd != null) { _currentFrame = Mathf.Min(_vmd.MaxFrameNumber, _currentFrame + 1); Sync(); } });
+            _btnFrameLast    = MkNavBtn(nav1, "▶|", () => { if (_vmd != null) { _currentFrame = _vmd.MaxFrameNumber; Sync(); } });
             root.Add(nav1);
 
             var resetBtn = new Button(ResetPose) { text = "ポーズリセット" };
             resetBtn.style.marginBottom = 4;
             root.Add(resetBtn);
+            _btnResetPose = resetBtn;
 
             // ── オプション ─────────────────────────────────────────────────
             root.Add(SecLabel("オプション"));
@@ -634,7 +685,7 @@ namespace Poly_Ling.Player
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
-        private static void MkNavBtn(VisualElement row, string text, Action onClick) { var b = new Button(onClick) { text = text }; b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 9; row.Add(b); }
+        private static Button MkNavBtn(VisualElement row, string text, Action onClick) { var b = new Button(onClick) { text = text }; b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 9; row.Add(b); return b; }
         private static Label SecLabel(string t) { var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f)); l.style.fontSize = 10; l.style.marginBottom = 3; return l; }
 
         private static Label HintLabel(string t)

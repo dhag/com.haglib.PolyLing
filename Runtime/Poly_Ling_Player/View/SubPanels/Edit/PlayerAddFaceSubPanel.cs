@@ -30,15 +30,29 @@ namespace Poly_Ling.Player
         /// <summary>マテリアルスロットを切り替える。</summary>
         public Action<int>  OnSelectMaterial;
 
+        // UI 自動操作の ID は "addFace.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("progress", Safety = UiSafety.ReadOnly, Description = "配置済みの点の数と、面になるまでの残り")]
         private Label         _progressLabel;
+        [UiControl("placedHeader", Safety = UiSafety.ReadOnly, Description = "配置済み点の見出し")]
         private Label         _placedHeader;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _placedList;
+        [UiControl("continuousLine", Reveal = nameof(RevealContinuous), Description = "線を続けて引く（Mode が Line のときだけ表示）")]
         private Toggle        _continuousToggle;
+        [UiControl(Ignore = true)]
         private VisualElement _continuousRow;
+        [UiControl("snapUnselected", Description = "非選択オブジェクトの頂点にも吸着する")]
         private Toggle        _snapUnselectedToggle;
+        [UiControl("targetMesh", Description = "面を追加する先のオブジェクト")]
         private DropdownField _meshDD;
+        [UiControl("material", Description = "追加する面のマテリアル（マテリアルリストのカレントと連動）")]
         private DropdownField _materialDD;
+        [UiControl("mode", Description = "Line / Triangle / Quad")]
+        private DropdownField _modeDropdown;
+        [UiControl("clearPoints", Safety = UiSafety.SafeWrite, Description = "配置途中の点を捨てる（作成済みの面は消さない）")]
+        private Button        _clearPointsBtn;
 
         // ドロップダウンの表示名 → 実インデックスの対応。
         // 表示名は "[3] 名前" 形式で重複し得るので、選択は index で解決する。
@@ -72,6 +86,7 @@ namespace Poly_Ling.Player
                 UpdateConditionals();
             });
             _root.Add(modeDD);
+            _modeDropdown = modeDD;
 
             // 追加先オブジェクト（1つだけ選ぶ）
             _meshDD = new DropdownField("追加先", new List<string>(), -1);
@@ -130,6 +145,7 @@ namespace Poly_Ling.Player
             var clearBtn = new Button(() => { GetH()?.ClearPointsPublic(); Refresh(); }) { text = "Clear Points" };
             clearBtn.style.marginTop = 3;
             _root.Add(clearBtn);
+            _clearPointsBtn = clearBtn;
 
             var helpBox = new HelpBox("クリックで点を配置して面を作成します。", HelpBoxMessageType.Info);
             helpBox.style.color = new StyleColor(Color.white);
@@ -228,6 +244,17 @@ namespace Poly_Ling.Player
             bool isLine = h?.ModePublic == AddFaceMode.Line;
             if (_continuousRow != null)
                 _continuousRow.style.display = isLine ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。Continuous Line は Mode が Line の
+        /// ときだけ表示されるので、利用者と同じく Mode を Line にする。既に Line なら false。
+        /// </summary>
+        private bool RevealContinuous()
+        {
+            if (_modeDropdown == null || _modeDropdown.value == "Line") return false;
+            _modeDropdown.value = "Line";
+            return true;
         }
 
         private static Label Header(string t)

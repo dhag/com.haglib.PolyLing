@@ -62,11 +62,60 @@ namespace Poly_Ling.Player
         // 入力
         // ================================================================
 
-        private TextField    _mqoPath, _originCsvPath, _ladderName, _profileObjectName, _prefix, _vrmPath;
-        private Toggle       _useOriginCsv, _originRotation, _profileClosed, _capEnds, _hideLadder;
-        private IntegerField _rungStride, _chainStride;
+        // UI 自動操作の ID は "springSkinPipeScenario.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ）は基底クラス側で登録する。
+        // VRM の書き出し先はこのパネルがそのまま書き込むので、外から変えるときは関門を通す。
+        [UiControl("mqoPath", Description = "読み込む MQO のパス")]
+        private TextField    _mqoPath;
+        [UiControl("originCsvPath", Description = "原点 CSV のパス")]
+        private TextField    _originCsvPath;
+        [UiControl("ladderName", Description = "梯子オブジェクト名")]
+        private TextField    _ladderName;
+        [UiControl("profileObjectName", Description = "断面オブジェクト名")]
+        private TextField    _profileObjectName;
+        [UiControl("bonePrefix", Description = "ボーン名の接頭辞")]
+        private TextField    _prefix;
+        [UiControl("vrmPath", Getter = nameof(GetVrmPathForAutomation), Setter = nameof(SetVrmPathByAutomation),
+                   Description = "VRM の書き出し先。作業フォルダからの相対パスで指定する")]
+        private TextField    _vrmPath;
+        [UiControl("useOriginCsv", Description = "オブジェクトローカル姿勢を別ファイルから読む")]
+        private Toggle       _useOriginCsv;
+        [UiControl("originRotation", Description = "原点 CSV の回転列も使う")]
+        private Toggle       _originRotation;
+        [UiControl("profileClosed", Description = "断面を閉ループとして扱う（筒にする）")]
+        private Toggle       _profileClosed;
+        [UiControl("capEnds", Description = "開いた梯子の両端に蓋を張る")]
+        private Toggle       _capEnds;
+        [UiControl("hideLadder", Description = "VRM へ書き出す前にはしごを隠す")]
+        private Toggle       _hideLadder;
+        [UiControl("rungStride", Description = "段ストライド")]
+        private IntegerField _rungStride;
+        [UiControl("chainStride", Description = "本ストライド")]
+        private IntegerField _chainStride;
+        [UiControl("thickness", Description = "厚み（0 で厚み付けなし）")]
         private FloatField   _thickness;
-        private FloatField   _springStiffness, _springDrag, _springGravity, _springHitRadius;
+        [UiControl("spring.stiffness", Description = "揺れ方のかたさ")]
+        private FloatField   _springStiffness;
+        [UiControl("spring.drag", Description = "揺れ方の抵抗")]
+        private FloatField   _springDrag;
+        [UiControl("spring.gravityPower", Description = "揺れ方の重力の強さ")]
+        private FloatField   _springGravity;
+        [UiControl("spring.hitRadius", Description = "揺れ方の当たり半径")]
+        private FloatField   _springHitRadius;
+
+        private string GetVrmPathForAutomation() => _vrmPath?.value ?? "";
+
+        /// <summary>
+        /// UI 自動操作から VRM の書き出し先を設定する。実行がこの場所へ書き込むので、
+        /// 作業フォルダの関門（PLSandbox.TryResolveWrite）を通した実経路だけを入れる。
+        /// </summary>
+        private string SetVrmPathByAutomation(string value)
+        {
+            if (_vrmPath == null) return "VRM の書き出し先の欄がありません";
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(value, out string full, out string reason)) return reason;
+            _vrmPath.value = full;
+            return null;
+        }
 
         // ================================================================
         // 持ち回り

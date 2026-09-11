@@ -23,9 +23,14 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "splitVertices.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("stats.selected", Safety = UiSafety.ReadOnly, Description = "選択中の頂点数")]
         private Label         _selectedLabel;
+        [UiControl("stats.splittable", Safety = UiSafety.ReadOnly, Description = "分割対象（2 面以上に共有）の頂点数")]
         private Label         _splittableLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選択頂点を面ごとの独立したコピーに分割する")]
         private Button        _splitBtn;
 
         // ================================================================

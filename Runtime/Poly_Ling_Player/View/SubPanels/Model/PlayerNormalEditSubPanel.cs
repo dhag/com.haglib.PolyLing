@@ -31,16 +31,69 @@ namespace Poly_Ling.Player
 
         private static readonly List<string> AxisNames = new List<string> { "X", "Y", "Z" };
 
+        // UI 自動操作の ID は "normalEdit.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "メッシュが選択されていないときの警告（それ以外は非表示）")]
         private Label          _warningLabel;
+        [UiControl("meshName", Safety = UiSafety.ReadOnly, Description = "対象メッシュ名")]
         private Label          _meshNameLabel;
+        [UiControl("currentSelection", Safety = UiSafety.ReadOnly, Description = "選択中の頂点・辺・面の数と、操作の対象範囲")]
         private Label          _currentSelLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label          _statusLabel;
+        [UiControl("weight", Description = "面法線を平均するときの重み付け")]
         private DropdownField  _weightDropdown;
+        [UiControl("axis", Description = "軸（軸への整列・軸成分を 0 にするときの軸）")]
         private DropdownField  _axisDropdown;
-        private FloatField     _targetX, _targetY, _targetZ;
+        [UiControl("target.x", Description = "ターゲット指向の座標 X")]
+        private FloatField     _targetX;
+        [UiControl("target.y", Description = "ターゲット指向の座標 Y")]
+        private FloatField     _targetY;
+        [UiControl("target.z", Description = "ターゲット指向の座標 Z")]
+        private FloatField     _targetZ;
+        [UiControl("sphereizeUseSelectionCenter", Description = "球状化の中心に選択の重心を使う")]
         private Toggle         _useCenterToggle;
+        [UiControl("pointToTargetSingleVector", Description = "ターゲット指向を 1 本のベクトルに揃える")]
         private Toggle         _alignVectorsToggle;
+        [UiControl("mirrorThreshold", Description = "中央とみなす範囲（|X 座標| がこの値以下の頂点が対象）")]
         private FloatField     _mirrorThresholdField;
+
+        [UiControl("angle", Description = "再計算のスムージング角（スライダー）")]
+        private Slider         _angleSlider;
+        [UiControl("angleValue", Description = "再計算のスムージング角（数値入力）")]
+        private FloatField     _angleField;
+        [UiControl("smoothStrength", Description = "平滑強度（スライダー）")]
+        private Slider         _strengthSlider;
+        [UiControl("smoothStrengthValue", Description = "平滑強度（数値入力）")]
+        private FloatField     _strengthField;
+
+        [UiControl("recalcByAngle", Safety = UiSafety.SafeWrite, Description = "スムージング角でメッシュ全体の法線を作り直す")]
+        private Button _recalcByAngleBtn;
+        [UiControl("setFromFaces", Safety = UiSafety.SafeWrite, Description = "対象コーナーの法線を面法線にする（フラット化）")]
+        private Button _setFromFacesBtn;
+        [UiControl("averageFromFaces", Safety = UiSafety.SafeWrite, Description = "対象コーナーの面法線だけを頂点ごとに平均する")]
+        private Button _averageFromFacesBtn;
+        [UiControl("unify", Safety = UiSafety.SafeWrite, Description = "頂点上のスロット法線を平均で同一値にする")]
+        private Button _unifyBtn;
+        [UiControl("break", Safety = UiSafety.SafeWrite, Description = "面ごとに別スロットへ分けて面法線を入れる")]
+        private Button _breakBtn;
+        [UiControl("averageAll", Safety = UiSafety.SafeWrite, Description = "対象法線をまとめて 1 方向に揃える")]
+        private Button _averageAllBtn;
+        [UiControl("smooth", Safety = UiSafety.SafeWrite, Description = "隣接頂点の法線と補間する")]
+        private Button _smoothBtn;
+        [UiControl("sphereize", Safety = UiSafety.SafeWrite, Description = "中心から頂点へ向かう方向を法線にする")]
+        private Button _sphereizeBtn;
+        [UiControl("pointToTarget", Safety = UiSafety.SafeWrite, Description = "座標へ向かう方向を法線にする")]
+        private Button _pointToTargetBtn;
+        [UiControl("alignToAxisPositive", Safety = UiSafety.SafeWrite, Description = "選択軸の正方向へ法線を向ける")]
+        private Button _alignPositiveBtn;
+        [UiControl("alignToAxisNegative", Safety = UiSafety.SafeWrite, Description = "選択軸の負方向へ法線を向ける")]
+        private Button _alignNegativeBtn;
+        [UiControl("flattenOnAxis", Safety = UiSafety.SafeWrite, Description = "選択軸の成分をゼロにして正規化する")]
+        private Button _flattenOnAxisBtn;
+        [UiControl("flip", Safety = UiSafety.SafeWrite, Description = "対象法線の向きを反転する")]
+        private Button _flipBtn;
+        [UiControl("mirrorFlattenSeamX", Safety = UiSafety.SafeWrite, Description = "|X 座標| がしきい値以下の頂点の法線 X 成分をゼロにする")]
+        private Button _mirrorFlattenSeamXBtn;
 
         private float _angleDeg = 59.5f;
         private float _strength = 0.5f;
@@ -124,17 +177,18 @@ namespace Poly_Ling.Player
 
             // ── A. 再計算 ──────────────────────────────────────────────
             root.Add(SecLabel("再計算"));
-            root.Add(MkSliderRow("角度", AngleDegMin, AngleDegMax, _angleDeg, v => _angleDeg = v));
+            root.Add(MkSliderRow("角度", AngleDegMin, AngleDegMax, _angleDeg, v => _angleDeg = v,
+                out _angleSlider, out _angleField));
 
             var rowRecalc = MkRow();
-            rowRecalc.Add(MkBtn("角度で再計算", () => Send(NormalEditCommand.Op.RecalcByAngle),
+            rowRecalc.Add(_recalcByAngleBtn = MkBtn("角度で再計算", () => Send(NormalEditCommand.Op.RecalcByAngle),
                 "スムージング角でメッシュ全体の法線を作り直す。ハードエッジ分スロットが増える。"));
-            rowRecalc.Add(MkBtn("面法線にする", () => Send(NormalEditCommand.Op.SetFromFaces),
+            rowRecalc.Add(_setFromFacesBtn = MkBtn("面法線にする", () => Send(NormalEditCommand.Op.SetFromFaces),
                 "対象コーナーの法線をその面の面法線にする（フラット化）。"));
             root.Add(rowRecalc);
 
             var rowAvgFaces = MkRow();
-            rowAvgFaces.Add(MkBtn("選択面で平均", () => Send(NormalEditCommand.Op.AverageFromFaces),
+            rowAvgFaces.Add(_averageFromFacesBtn = MkBtn("選択面で平均", () => Send(NormalEditCommand.Op.AverageFromFaces),
                 "対象コーナーの面法線だけを頂点ごとに平均して書き込む。"
                 + "選択した面だけを使った頂点法線が得られる。スロット数は変わらない。"));
             root.Add(rowAvgFaces);
@@ -142,20 +196,21 @@ namespace Poly_Ling.Player
             // ── B. スロット操作 ────────────────────────────────────────
             root.Add(SecLabel("スロット"));
             var rowSlot = MkRow();
-            rowSlot.Add(MkBtn("統合", () => Send(NormalEditCommand.Op.Unify),
+            rowSlot.Add(_unifyBtn = MkBtn("統合", () => Send(NormalEditCommand.Op.Unify),
                 "頂点上のスロット法線を平均で同一値にする。スロット数は変わらない。"));
-            rowSlot.Add(MkBtn("分離", () => Send(NormalEditCommand.Op.Break),
+            rowSlot.Add(_breakBtn = MkBtn("分離", () => Send(NormalEditCommand.Op.Break),
                 "面ごとに別スロットへ分けて面法線を入れる。スロットが増える。"));
             root.Add(rowSlot);
 
             // ── C. 平均・平滑 ──────────────────────────────────────────
             root.Add(SecLabel("平均・平滑"));
-            root.Add(MkSliderRow("平滑強度", StrengthMin, StrengthMax, _strength, v => _strength = v));
+            root.Add(MkSliderRow("平滑強度", StrengthMin, StrengthMax, _strength, v => _strength = v,
+                out _strengthSlider, out _strengthField));
 
             var rowAvg = MkRow();
-            rowAvg.Add(MkBtn("1方向に平均", () => Send(NormalEditCommand.Op.AverageAll),
+            rowAvg.Add(_averageAllBtn = MkBtn("1方向に平均", () => Send(NormalEditCommand.Op.AverageAll),
                 "対象法線を全部まとめて1方向に揃える。凹凸の陰影を平らにする。"));
-            rowAvg.Add(MkBtn("平滑化", () => Send(NormalEditCommand.Op.Smooth),
+            rowAvg.Add(_smoothBtn = MkBtn("平滑化", () => Send(NormalEditCommand.Op.Smooth),
                 "辺で繋がった隣接頂点の法線と補間する。"));
             root.Add(rowAvg);
 
@@ -183,9 +238,9 @@ namespace Poly_Ling.Player
             root.Add(_alignVectorsToggle);
 
             var rowDir = MkRow();
-            rowDir.Add(MkBtn("球状化", () => Send(NormalEditCommand.Op.Sphereize),
+            rowDir.Add(_sphereizeBtn = MkBtn("球状化", () => Send(NormalEditCommand.Op.Sphereize),
                 "中心から頂点へ向かう方向を法線にする。丸みのある部位向け。"));
-            rowDir.Add(MkBtn("ターゲット指向", () => Send(NormalEditCommand.Op.PointToTarget),
+            rowDir.Add(_pointToTargetBtn = MkBtn("ターゲット指向", () => Send(NormalEditCommand.Op.PointToTarget),
                 "座標へ向かう方向を法線にする。凹んだ部位向け。"));
             root.Add(rowDir);
 
@@ -194,16 +249,16 @@ namespace Poly_Ling.Player
             root.Add(_axisDropdown);
 
             var rowAxis = MkRow();
-            rowAxis.Add(MkBtn("軸+へ整列", () => Send(NormalEditCommand.Op.AlignToAxis, negative: false),
+            rowAxis.Add(_alignPositiveBtn = MkBtn("軸+へ整列", () => Send(NormalEditCommand.Op.AlignToAxis, negative: false),
                 "選択軸の正方向へ法線を向ける。"));
-            rowAxis.Add(MkBtn("軸-へ整列", () => Send(NormalEditCommand.Op.AlignToAxis, negative: true),
+            rowAxis.Add(_alignNegativeBtn = MkBtn("軸-へ整列", () => Send(NormalEditCommand.Op.AlignToAxis, negative: true),
                 "選択軸の負方向へ法線を向ける。"));
             root.Add(rowAxis);
 
             var rowFlat = MkRow();
-            rowFlat.Add(MkBtn("軸成分を0に", () => Send(NormalEditCommand.Op.FlattenOnAxis),
+            rowFlat.Add(_flattenOnAxisBtn = MkBtn("軸成分を0に", () => Send(NormalEditCommand.Op.FlattenOnAxis),
                 "選択軸の成分をゼロにして正規化する。"));
-            rowFlat.Add(MkBtn("反転", () => Send(NormalEditCommand.Op.Flip),
+            rowFlat.Add(_flipBtn = MkBtn("反転", () => Send(NormalEditCommand.Op.Flip),
                 "対象法線の向きを反転する。"));
             root.Add(rowFlat);
 
@@ -225,7 +280,7 @@ namespace Poly_Ling.Player
             root.Add(rowMirrorTh);
 
             var rowMirror = MkRow();
-            rowMirror.Add(MkBtn("中央の法線Xを0に",
+            rowMirror.Add(_mirrorFlattenSeamXBtn = MkBtn("中央の法線Xを0に",
                 () => Send(NormalEditCommand.Op.MirrorFlattenSeamX),
                 "対象のうち |X座標| がしきい値以下の頂点だけ、法線の X 成分をゼロにして"
                 + "正規化する。左右の合わせ目に出る陰影の段差を消す。"));
@@ -341,7 +396,8 @@ namespace Poly_Ling.Player
         }
 
         private static VisualElement MkSliderRow(
-            string label, float min, float max, float val, Action<float> onChange)
+            string label, float min, float max, float val, Action<float> onChange,
+            out Slider slider, out FloatField field)
         {
             var row = MkRow();
 
@@ -369,6 +425,8 @@ namespace Poly_Ling.Player
             });
 
             row.Add(lb); row.Add(sl); row.Add(nf);
+            slider = sl;
+            field  = nf;
             return row;
         }
     }

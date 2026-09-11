@@ -13,21 +13,68 @@ namespace Poly_Ling.Player
     public class PlayerScaleSubPanel
     {
         public Func<ScaleToolHandler> GetH;
+        // UI 自動操作の ID は "scale.<下の Id>"（UiControlAttribute.cs）。
+        // 倍率の変更はプレビューで、確定は「Apply」。Uniform オンは XYZ、オフは X/Y/Z を表示する。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
-        private Slider _sliderX, _sliderY, _sliderZ, _sliderXYZ;
-        private Toggle _uniformToggle, _originToggle;
+        [UiControl("factor.x", Reveal = nameof(RevealPerAxis), Description = "X 方向の倍率。プレビューで、Apply で確定")]
+        private Slider _sliderX;
+        [UiControl("factor.y", Reveal = nameof(RevealPerAxis), Description = "Y 方向の倍率。プレビューで、Apply で確定")]
+        private Slider _sliderY;
+        [UiControl("factor.z", Reveal = nameof(RevealPerAxis), Description = "Z 方向の倍率。プレビューで、Apply で確定")]
+        private Slider _sliderZ;
+        [UiControl("factor.xyz", Reveal = nameof(RevealUniform), Description = "XYZ 共通の倍率。プレビューで、Apply で確定")]
+        private Slider _sliderXYZ;
+        [UiControl("uniform", Description = "XYZ を同じ倍率にする")]
+        private Toggle _uniformToggle;
+        [UiControl("aroundOrigin", Description = "オブジェクトの原点を中心に拡大縮小する")]
+        private Toggle _originToggle;
+        [UiControl("magnet.enabled", Description = "マグネット（周囲の頂点も減衰付きで拡大縮小する）を使う")]
         private Toggle _magnetToggle;
+        [UiControl("magnet.radius", Description = "マグネットの半径")]
         private Slider _magnetRadius;
-        private EnumField _magnetFalloff, _magnetDistance;
-        private Slider _axisX, _axisY, _axisZ;
+        [UiControl("magnet.falloff", Description = "マグネットの減衰の形")]
+        private EnumField _magnetFalloff;
+        [UiControl("magnet.distanceMode", Description = "マグネットの距離の測り方")]
+        private EnumField _magnetDistance;
+        [UiControl("axis.x", Description = "スケール軸（フレーム）の X 回転（度）")]
+        private Slider _axisX;
+        [UiControl("axis.y", Description = "スケール軸（フレーム）の Y 回転（度）")]
+        private Slider _axisY;
+        [UiControl("axis.z", Description = "スケール軸（フレーム）の Z 回転（度）")]
+        private Slider _axisZ;
+        [UiControl("targetCount", Safety = UiSafety.ReadOnly, Description = "拡大縮小の影響を受ける頂点数")]
         private Label _targetLabel;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "プレビュー中の拡大縮小を確定する")]
+        private Button _applyBtn;
+        [UiControl("reset", Safety = UiSafety.SafeWrite, Description = "確定していないプレビューの拡大縮小を戻す")]
+        private Button _revertBtn;
 
         // スライダー併設の数値入力欄。スライダーと双方向同期する。
-        private FloatField _fieldXYZ, _fieldX, _fieldY, _fieldZ;
-        private FloatField _fieldAxisX, _fieldAxisY, _fieldAxisZ;
+        [UiControl("factor.xyzValue", Reveal = nameof(RevealUniform), Description = "XYZ 共通の倍率の数値入力")]
+        private FloatField _fieldXYZ;
+        [UiControl("factor.xValue", Reveal = nameof(RevealPerAxis), Description = "X 方向の倍率の数値入力")]
+        private FloatField _fieldX;
+        [UiControl("factor.yValue", Reveal = nameof(RevealPerAxis), Description = "Y 方向の倍率の数値入力")]
+        private FloatField _fieldY;
+        [UiControl("factor.zValue", Reveal = nameof(RevealPerAxis), Description = "Z 方向の倍率の数値入力")]
+        private FloatField _fieldZ;
+        [UiControl("axis.xValue", Description = "スケール軸の X 回転の数値入力（度）")]
+        private FloatField _fieldAxisX;
+        [UiControl("axis.yValue", Description = "スケール軸の Y 回転の数値入力（度）")]
+        private FloatField _fieldAxisY;
+        [UiControl("axis.zValue", Description = "スケール軸の Z 回転の数値入力（度）")]
+        private FloatField _fieldAxisZ;
 
         // スライダー行のコンテナ（Uniform 切替で表示を出し分けるため保持する）。
-        private VisualElement _rowXYZ, _rowX, _rowY, _rowZ;
+        [UiControl(Ignore = true)]
+        private VisualElement _rowXYZ;
+        [UiControl(Ignore = true)]
+        private VisualElement _rowX;
+        [UiControl(Ignore = true)]
+        private VisualElement _rowY;
+        [UiControl(Ignore = true)]
+        private VisualElement _rowZ;
 
         // スライダー ⇔ 数値欄の相互更新による再入を防ぐ。
         private bool _suppressSync;
@@ -105,6 +152,8 @@ namespace Poly_Ling.Player
             // （CommitViaCommand が取り出し時に 1 へ戻し、受け口も終了時に 1 へ戻す）。
             var revertBtn = new Button(() => { GetH()?.Revert(); Refresh(); }) { text = "Reset" }; revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn); _root.Add(btnRow);
+            _applyBtn  = applyBtn;
+            _revertBtn = revertBtn;
         }
 
         public void Refresh()
@@ -168,6 +217,25 @@ namespace Poly_Ling.Player
         /// 入力途中の桁がそのまま確定・ベイクされ、続く入力がその上に積まれていた。
         /// スライダーは従来どおりポインタアップで確定する（終端が明確なため）。
         /// </summary>
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。XYZ の行は Uniform がオンのときだけ
+        /// 表示されるので、利用者と同じくチェックを入れる。既にオンなら false。
+        /// </summary>
+        private bool RevealUniform()
+        {
+            if (_uniformToggle == null || _uniformToggle.value) return false;
+            _uniformToggle.value = true;
+            return true;
+        }
+
+        /// <summary>X/Y/Z の行は Uniform がオフのときだけ表示される。既にオフなら false。</summary>
+        private bool RevealPerAxis()
+        {
+            if (_uniformToggle == null || !_uniformToggle.value) return false;
+            _uniformToggle.value = false;
+            return true;
+        }
+
         private VisualElement SliderWithField(Slider slider, FloatField field, float min, float max, Action<float> onPreview)
         {
             var row = new VisualElement();

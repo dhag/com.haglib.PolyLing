@@ -15,12 +15,21 @@ namespace Poly_Ling.Player
     {
         public Func<KnifeToolHandler> GetH;
 
+        // UI 自動操作の ID は "knife.<下の Id>"（UiControlAttribute.cs）。
+        // 等分割は「シンプル」以外、分割数は等分割オンのとき、三角+四角は「シンプル」のときだけ表示される。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("mode", Description = "はしごカット / シンプル / 一意分割")]
         private DropdownField _modeDD;
+        [UiControl("equalDivide", Reveal = nameof(RevealEqualDivide), Description = "分割数だけ等分する（オフはクリック位置で 1 本）")]
         private Toggle        _equalToggle;
+        [UiControl("simpleTriQuad", Reveal = nameof(RevealTriQuad), Description = "シンプル切断で 5 角以上を三角形＋四角形に分ける")]
         private Toggle        _triQuadToggle;
+        [UiControl(Ignore = true)]
         private VisualElement _divRow;
+        [UiControl("divisions", Reveal = nameof(RevealDivisions), Description = "等分割の分割数（2 以上）")]
         private IntegerField  _divField;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "開始頂点・通過線分などの進み具合と案内")]
         private Label         _statusLabel;
 
         private static readonly List<string> ModeChoices =
@@ -102,6 +111,38 @@ namespace Poly_Ling.Player
                 HelpBoxMessageType.Info));
 
             Refresh();
+        }
+
+        // ================================================================
+        // UI 自動操作の表示の下準備（UiControl の Reveal）。利用者と同じくモード・チェックを切り替える。
+        // ================================================================
+
+        /// <summary>等分割は「シンプル」以外で表示される。シンプルなら「はしごカット」へ切り替える。</summary>
+        private bool RevealEqualDivide()
+        {
+            if (_modeDD == null || _modeDD.value != ModeChoices[1]) return false;
+            _modeDD.value = ModeChoices[0];
+            return true;
+        }
+
+        /// <summary>分割数は「シンプル」以外かつ等分割オンで表示される。</summary>
+        private bool RevealDivisions()
+        {
+            bool changed = RevealEqualDivide();
+            if (_equalToggle != null && !_equalToggle.value)
+            {
+                _equalToggle.value = true;
+                changed = true;
+            }
+            return changed;
+        }
+
+        /// <summary>三角+四角は「シンプル」のときだけ表示される。</summary>
+        private bool RevealTriQuad()
+        {
+            if (_modeDD == null || _modeDD.value == ModeChoices[1]) return false;
+            _modeDD.value = ModeChoices[1];
+            return true;
         }
 
         public void Refresh()

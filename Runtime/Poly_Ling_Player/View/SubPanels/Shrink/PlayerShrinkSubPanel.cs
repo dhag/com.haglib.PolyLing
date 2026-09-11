@@ -118,23 +118,47 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "<shrink / shrinkFace>.<下の Id>"（UiControlAttribute.cs）。
+        // このクラスは頂点方式（shrink）と面方式（shrinkFace）の 2 か所で使う。反復上限は面方式、
+        // 裏面判定は頂点方式でだけ作る（作らない側では未構築）。
+        // シュリンク量・決定・キャンセルは「衝突計算」の後だけ表示される。
+        // ビフォー・アフター・衝突対象のチェックはオブジェクトに合わせて作り直す行（Rows）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _mainContent;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _beforeListContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _afterListContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _colliderListContainer;
+        [UiControl("offset", Description = "面からの余白")]
         private FloatField    _offsetField;
+        [UiControl("maxPasses", Description = "反復上限（面方式だけ）")]
         private IntegerField  _maxPassesField;
+        [UiControl("backfaceMode", Description = "衝突対象の裏面の扱い（頂点方式だけ。選択肢は uiGetValue の choices）")]
         private RadioButtonGroup _backfaceModeGroup;
+        [UiControl("recalcNormals", Description = "法線を再計算する")]
         private Toggle        _toggleRecalcNormals;
+        [UiControl("resultMode", Description = "生成物の扱い（選択肢は uiGetValue の choices）")]
         private RadioButtonGroup _resultModeGroup;
+        [UiControl("compute", Safety = UiSafety.SafeWrite, Description = "衝突計算をしてシュリンク量のプレビューを出す")]
         private Button        _btnCompute;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "計算の結果（停止する頂点数・反復回数）またはエラー")]
         private Label         _statusLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _shrinkSection;
+        [UiControl("amount", Description = "シュリンク量（「衝突計算」の後だけ表示）")]
         private Slider        _sliderShrink;
+        [UiControl("amountText", Safety = UiSafety.ReadOnly, Description = "シュリンク量の表示")]
         private Label         _sliderValueLabel;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "シュリンクを決定する（「衝突計算」の後だけ表示）")]
         private Button        _btnApply;
+        [UiControl("cancel", Safety = UiSafety.SafeWrite, Description = "シュリンクのプレビューを取り消す（「衝突計算」の後だけ表示）")]
+        private Button        _btnCancel;
 
         // ================================================================
         // Build
@@ -301,6 +325,7 @@ namespace Poly_Ling.Player
             btnCancel.style.fontSize = 10;
             btnRow.Add(_btnApply);
             btnRow.Add(btnCancel);
+            _btnCancel = btnCancel;
         }
 
         // ================================================================

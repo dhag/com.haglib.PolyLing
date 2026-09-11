@@ -32,8 +32,23 @@ namespace Poly_Ling.Player
         private const string ProfileName = "RT_Profile";
         private const string OutputName  = "RT_Bottle";
 
-        private FloatField   _height, _bulge, _neck, _lipFlare, _shoulder, _widen;
+        // UI 自動操作の ID は "revolutionTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        [UiControl("height", Description = "全体の高さ")]
+        private FloatField   _height;
+        [UiControl("bulge", Description = "胴の最大半径")]
+        private FloatField   _bulge;
+        [UiControl("neck", Description = "首の半径")]
+        private FloatField   _neck;
+        [UiControl("lipFlare", Description = "口の広がり（首の倍率）")]
+        private FloatField   _lipFlare;
+        [UiControl("shoulder", Description = "肩の位置（0〜1）")]
+        private FloatField   _shoulder;
+        [UiControl("widen", Description = "胴を横へ膨らませる量（作り直しの検証用）")]
+        private FloatField   _widen;
+        [UiControl("segments", Description = "円周の分割")]
         private IntegerField _segments;
+        [UiControl("capEnds", Description = "上下にフタを張る")]
         private Toggle       _capEnds;
 
         // ================================================================

@@ -48,12 +48,73 @@ namespace Poly_Ling.Player
         private int  _maxIterations         = 3000;
 
         // UI
+        // UI 自動操作の ID は "uvUnwrap.<下の Id>"（UiControlAttribute.cs）。
+        // 投影展開と LSCM 展開はタブで切り替わるので、各タブの欄の表示の下準備はタブを切り替える。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl("targetInfo", Safety = UiSafety.ReadOnly, Description = "対象メッシュの情報")]
         private Label         _targetInfo;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
-        private Button        _tabProjBtn, _tabLscmBtn;
-        private VisualElement _projContent, _lscmContent;
+        [UiControl("tab.projection", Safety = UiSafety.SafeWrite, Description = "投影展開のタブ")]
+        private Button        _tabProjBtn;
+        [UiControl("tab.lscm", Safety = UiSafety.SafeWrite, Description = "LSCM 展開のタブ")]
+        private Button        _tabLscmBtn;
+        [UiControl(Ignore = true)]
+        private VisualElement _projContent;
+        [UiControl(Ignore = true)]
+        private VisualElement _lscmContent;
+        [UiControl("lscm.seamInfo", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealLscm), Description = "シームの情報")]
         private Label         _seamInfo;
+
+        [UiControl("projection.planarXY", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを PlanarXY にする")]
+        private Button _projPlanarXYBtn;
+        [UiControl("projection.planarXZ", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを PlanarXZ にする")]
+        private Button _projPlanarXZBtn;
+        [UiControl("projection.planarYZ", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを PlanarYZ にする")]
+        private Button _projPlanarYZBtn;
+        [UiControl("projection.box", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを Box にする")]
+        private Button _projBoxBtn;
+        [UiControl("projection.cylindrical", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを Cylindrical にする")]
+        private Button _projCylindricalBtn;
+        [UiControl("projection.spherical", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを Spherical にする")]
+        private Button _projSphericalBtn;
+        [UiControl("projection.scale", Reveal = nameof(RevealProjection), Description = "スケール（スライダー）")]
+        private Slider     _scaleSlider;
+        [UiControl("projection.scaleValue", Reveal = nameof(RevealProjection), Description = "スケール（数値入力）")]
+        private FloatField _scaleField;
+        [UiControl("projection.offsetU", Reveal = nameof(RevealProjection), Description = "オフセット U（スライダー）")]
+        private Slider     _offsetUSlider;
+        [UiControl("projection.offsetUValue", Reveal = nameof(RevealProjection), Description = "オフセット U（数値入力）")]
+        private FloatField _offsetUField;
+        [UiControl("projection.offsetV", Reveal = nameof(RevealProjection), Description = "オフセット V（スライダー）")]
+        private Slider     _offsetVSlider;
+        [UiControl("projection.offsetVValue", Reveal = nameof(RevealProjection), Description = "オフセット V（数値入力）")]
+        private FloatField _offsetVField;
+        [UiControl("projection.run", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影 UV 展開を実行する")]
+        private Button     _applyProjectionBtn;
+        [UiControl("lscm.includeBoundaryAsSeam", Reveal = nameof(RevealLscm), Description = "バウンダリをシームに含める")]
+        private Toggle       _includeBoundaryToggle;
+        [UiControl("lscm.maxIterations", Reveal = nameof(RevealLscm), Description = "最大反復数")]
+        private IntegerField _maxIterationsField;
+        [UiControl("lscm.run", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealLscm), Description = "LSCM 展開を実行する（選択エッジをシームにする）")]
+        private Button       _applyLscmBtn;
+
+        /// <summary>UI 自動操作の表示の下準備。投影展開の欄は投影展開のタブのときだけ表示される。</summary>
+        private bool RevealProjection()
+        {
+            if (_projContent == null || _projContent.style.display.value != DisplayStyle.None) return false;
+            SwitchTab(Tab.Projection);
+            return true;
+        }
+
+        /// <summary>LSCM の欄は LSCM 展開のタブのときだけ表示される。</summary>
+        private bool RevealLscm()
+        {
+            if (_lscmContent == null || _lscmContent.style.display.value != DisplayStyle.None) return false;
+            SwitchTab(Tab.Lscm);
+            return true;
+        }
 
         public void Build(VisualElement parent)
         {
@@ -127,15 +188,25 @@ namespace Poly_Ling.Player
             }
             root.Add(row1); root.Add(row2);
             UpdateProjBtns();
+            _projPlanarXYBtn    = _projBtns[0];
+            _projPlanarXZBtn    = _projBtns[1];
+            _projPlanarYZBtn    = _projBtns[2];
+            _projBoxBtn         = _projBtns[3];
+            _projCylindricalBtn = _projBtns[4];
+            _projSphericalBtn   = _projBtns[5];
 
             root.Add(SecLabel("パラメータ"));
-            root.Add(MkSliderRow("スケール",     ScaleMin,  ScaleMax,  _scale,   v => _scale   = v));
-            root.Add(MkSliderRow("オフセット U", OffsetMin, OffsetMax, _offsetU, v => _offsetU = v));
-            root.Add(MkSliderRow("オフセット V", OffsetMin, OffsetMax, _offsetV, v => _offsetV = v));
+            root.Add(MkSliderRow("スケール",     ScaleMin,  ScaleMax,  _scale,   v => _scale   = v,
+                out _scaleSlider, out _scaleField));
+            root.Add(MkSliderRow("オフセット U", OffsetMin, OffsetMax, _offsetU, v => _offsetU = v,
+                out _offsetUSlider, out _offsetUField));
+            root.Add(MkSliderRow("オフセット V", OffsetMin, OffsetMax, _offsetV, v => _offsetV = v,
+                out _offsetVSlider, out _offsetVField));
 
             var btn = new Button(OnApplyProjection) { text = "UV展開を実行" };
             btn.style.height = 28; btn.style.marginTop = 6; btn.style.fontSize = 11;
             root.Add(btn);
+            _applyProjectionBtn = btn;
         }
 
         private void BuildLscmContent(VisualElement root)
@@ -154,6 +225,7 @@ namespace Poly_Ling.Player
             boundaryToggle.style.color = new StyleColor(Color.white);
             boundaryToggle.RegisterValueChangedCallback(e => _includeBoundaryAsSeam = e.newValue);
             root.Add(boundaryToggle);
+            _includeBoundaryToggle = boundaryToggle;
 
             var maxIterRow = new VisualElement();
             maxIterRow.style.flexDirection = FlexDirection.Row;
@@ -169,10 +241,12 @@ namespace Poly_Ling.Player
                 e => _maxIterations = Mathf.Clamp(e.newValue, MaxIterationsMin, MaxIterationsMax));
             maxIterRow.Add(maxIterLbl); maxIterRow.Add(maxIterField);
             root.Add(maxIterRow);
+            _maxIterationsField = maxIterField;
 
             var btn = new Button(OnApplyLscm) { text = "LSCM展開を実行" };
             btn.style.height = 28; btn.style.marginTop = 4; btn.style.fontSize = 11;
             root.Add(btn);
+            _applyLscmBtn = btn;
         }
 
         public void Refresh()
@@ -293,7 +367,8 @@ namespace Poly_Ling.Player
         private static int   MaxIterationsMin => ParameterLimits.GetI("LscmUnwrap.MaxIterations.Min");
         private static int   MaxIterationsMax => ParameterLimits.GetI("LscmUnwrap.MaxIterations.Max");
 
-        private static VisualElement MkSliderRow(string label, float min, float max, float val, Action<float> onChange)
+        private static VisualElement MkSliderRow(string label, float min, float max, float val, Action<float> onChange,
+            out Slider slider, out FloatField field)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lb = new Label(label); lb.style.width = 80; lb.style.fontSize = 10; lb.style.unityTextAlign = TextAnchor.MiddleLeft;
@@ -304,6 +379,8 @@ namespace Poly_Ling.Player
             sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3)); onChange(e.newValue); });
             nf.RegisterValueChangedCallback(e => { float v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); onChange(v); });
             row.Add(lb); row.Add(sl); row.Add(nf);
+            slider = sl;
+            field  = nf;
             return row;
         }
     }

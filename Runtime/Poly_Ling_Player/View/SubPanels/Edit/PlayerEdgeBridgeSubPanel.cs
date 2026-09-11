@@ -23,19 +23,33 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "edgeBridge.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl(Ignore = true)]
         private VisualElement _sectionEl;
 
+        [UiControl("boundaryOnly", Description = "境界辺のみを対象にする")]
         private Toggle       _boundaryOnlyToggle;
+        [UiControl("autoCorrespondence", Description = "2 つの辺群の対応を自動で合わせる")]
         private Toggle       _autoCorrespToggle;
+        [UiControl("flipCorrespondence", Description = "対応を反転する")]
         private Toggle       _flipCorrespToggle;
+        [UiControl("flipFaces", Description = "張る面の裏表を反転する")]
         private Toggle       _flipFacesToggle;
+        [UiControl("subdivisions", Description = "ブリッジ面の分割数")]
         private IntegerField _subdivField;
 
+        [UiControl("picks", Safety = UiSafety.ReadOnly, Description = "拾った辺の数")]
         private Label  _pickLabel;
+        [UiControl("groups", Safety = UiSafety.ReadOnly, Description = "拾った辺のまとまりの判定結果")]
         private Label  _groupLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行できない理由、または直近の実行結果")]
         private Label  _statusLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "拾った 2 か所の辺群の間に面を張る")]
         private Button _executeBtn;
+        [UiControl("clearPicks", Safety = UiSafety.SafeWrite, Description = "拾った辺を捨てる（メッシュは変えない）")]
+        private Button _clearPicksBtn;
 
         /// <summary>直近の実行結果。Refresh で消さずに残す。</summary>
         private string _lastResult = "";
@@ -99,7 +113,7 @@ namespace Poly_Ling.Player
             _groupLabel = InfoLabel();
             _root.Add(_groupLabel);
 
-            _root.Add(ActionButton("拾った辺を捨てる", () =>
+            _root.Add(_clearPicksBtn = ActionButton("拾った辺を捨てる", () =>
             {
                 GetH?.Invoke()?.ClearPicks();
                 _lastResult = "";

@@ -363,6 +363,10 @@ namespace Poly_Ling.Player
             // 生成系コマンドの受け口。実処理は Viewer 側にあるので委譲する。
             WireCreateCommandHandlers();
 
+            // UI 自動操作（パネル・項目の登録と受け口）。サブパネルと
+            // _commandDispatcher の両方が揃った後に作る。
+            BuildUiAutomation();
+
             _fetchFlow = new PlayerRemoteFetchFlow(
                 _client,
                 _receiver,
@@ -716,6 +720,10 @@ namespace Poly_Ling.Player
             _logSubPanel?.Dispose();
             _logSubPanel = null;
             PlayerLog.Uninstall();
+
+            // 強調枠を root から外し、ScrollView・対象へ登録した通知を外す。
+            _uiAutomation?.Dispose();
+            _uiAutomation = null;
 
             // MCP からの実行入口を外す。掴んだままだと破棄済みのディスパッチャを触る。
             PolyLingCommandGateway.Dispatch = null;

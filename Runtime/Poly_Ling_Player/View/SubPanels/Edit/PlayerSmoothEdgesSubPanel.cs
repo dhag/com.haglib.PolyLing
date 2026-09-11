@@ -36,13 +36,26 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "smoothEdges.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("stats.segments", Safety = UiSafety.ReadOnly, Description = "選択中の辺・線分の本数とチェーン頂点数")]
         private Label         _segmentLabel;
+        [UiControl("stats.vertices", Safety = UiSafety.ReadOnly, Description = "端点の数と移動対象の頂点数")]
         private Label         _vertexLabel;
+        [UiControl("strength", Description = "1 反復あたり隣接平均へ寄せる量。0 で変化なし")]
         private Slider        _strengthSlider;
+        [UiControl("iterations", Description = "反復回数")]
         private SliderInt     _iterationsSlider;
+        [UiControl("fixEndpoints", Description = "選択チェーンの開始点・終了点を動かさない")]
         private Toggle        _fixEndpointsToggle;
-        private Toggle        _lockX, _lockY, _lockZ;
+        [UiControl("lock.x", Description = "X 方向へは動かさない")]
+        private Toggle        _lockX;
+        [UiControl("lock.y", Description = "Y 方向へは動かさない")]
+        private Toggle        _lockY;
+        [UiControl("lock.z", Description = "Z 方向へは動かさない")]
+        private Toggle        _lockZ;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "平滑化を実行する（Undo できる）。辺か線分の選択が要る")]
         private Button        _smoothBtn;
 
         // ================================================================

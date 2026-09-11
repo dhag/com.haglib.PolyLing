@@ -142,28 +142,81 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "springBoneTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
+        // 形状（スカート／ポニーテール）で出る欄が変わるので、それぞれ形状を切り替える下準備を付ける。
+        [UiControl("pmxPath", Description = "読み込む PMX のパス")]
         private TextField    _pmxPathField;
+        [UiControl("importPmx", Description = "PMX を読み込む")]
         private Toggle       _doImport;
+        [UiControl("exportVrm", Description = "VRM を書き出す")]
         private Toggle       _doExport;
+        [UiControl("shape", Description = "作る形（スカート / ポニーテール）")]
         private EnumField    _shapeField;
+        [UiControl("applyHumanoidMapping", Description = "Humanoid 自動割当を実行する")]
         private Toggle       _applyMapping;
+        [UiControl("applyTPose", Description = "T ポーズ化を実行する")]
         private Toggle       _applyTPose;
 
         // 揺れ方の値は形状ごとに別に持つ。
         //   スカートは脚に当てながら重く垂らす、ポニーテールは頭の後ろで軽く振れる、と
         //   要る値が違う。1 組しか無いと形状を切り替えるたびに入れ直しになる。
-        private FloatField _skStiffTop, _skStiffTip, _skDrag, _skGravity, _skHitRadius;
-        private FloatField _ptStiffTop, _ptStiffTip, _ptDrag, _ptGravity, _ptHitRadius;
+        [UiControl("skirt.stiffnessTop", Reveal = nameof(RevealSkirt), Description = "スカートのかたさ（根元）")]
+        private FloatField _skStiffTop;
+        [UiControl("skirt.stiffnessTip", Reveal = nameof(RevealSkirt), Description = "スカートのかたさ（末端）")]
+        private FloatField _skStiffTip;
+        [UiControl("skirt.drag", Reveal = nameof(RevealSkirt), Description = "スカートの減衰")]
+        private FloatField _skDrag;
+        [UiControl("skirt.gravityPower", Reveal = nameof(RevealSkirt), Description = "スカートの重力の強さ")]
+        private FloatField _skGravity;
+        [UiControl("skirt.hitRadius", Reveal = nameof(RevealSkirt), Description = "スカートの当たり半径")]
+        private FloatField _skHitRadius;
+        [UiControl("ponytail.stiffnessTop", Reveal = nameof(RevealPonytail), Description = "ポニーテールのかたさ（根元）")]
+        private FloatField _ptStiffTop;
+        [UiControl("ponytail.stiffnessTip", Reveal = nameof(RevealPonytail), Description = "ポニーテールのかたさ（末端）")]
+        private FloatField _ptStiffTip;
+        [UiControl("ponytail.drag", Reveal = nameof(RevealPonytail), Description = "ポニーテールの減衰")]
+        private FloatField _ptDrag;
+        [UiControl("ponytail.gravityPower", Reveal = nameof(RevealPonytail), Description = "ポニーテールの重力の強さ")]
+        private FloatField _ptGravity;
+        [UiControl("ponytail.hitRadius", Reveal = nameof(RevealPonytail), Description = "ポニーテールの当たり半径")]
+        private FloatField _ptHitRadius;
+        [UiControl("skirt.autoHeight", Reveal = nameof(RevealSkirt), Description = "腰高さを股関節に合わせる")]
         private Toggle       _autoSkirtHeight;
-        private FloatField   _skirtLift, _ponytailBack;
-        private IntegerField _strands, _segments, _ponytailSegments;
+        [UiControl("skirt.lift", Reveal = nameof(RevealSkirt), Description = "腰高さの補正[m]")]
+        private FloatField   _skirtLift;
+        [UiControl("ponytail.back", Reveal = nameof(RevealPonytail), Description = "頭から後ろへ[m]")]
+        private FloatField   _ponytailBack;
+        [UiControl("skirt.strands", Reveal = nameof(RevealSkirt), Description = "鎖の本数")]
+        private IntegerField _strands;
+        [UiControl("skirt.segments", Reveal = nameof(RevealSkirt), Description = "1 本あたりの段数")]
+        private IntegerField _segments;
+        [UiControl("ponytail.segments", Reveal = nameof(RevealPonytail), Description = "ポニーテールの段数")]
+        private IntegerField _ponytailSegments;
+
+        /// <summary>UI 自動操作の表示の下準備。スカートの欄は形が Skirt のときだけ出る。</summary>
+        private bool RevealSkirt() => RevealShape(RigShape.Skirt);
+
+        /// <summary>ポニーテールの欄は形が Ponytail のときだけ出る。</summary>
+        private bool RevealPonytail() => RevealShape(RigShape.Ponytail);
+
+        private bool RevealShape(RigShape shape)
+        {
+            if (_shapeField == null || (RigShape)_shapeField.value == shape) return false;
+            _shapeField.value = shape;
+            SyncShapeParams();
+            return true;
+        }
 
         /// <summary>
         /// 形状ごとの入力欄のまとまり。選んだ形状の側だけを出す。
         /// 両方を常に出していたため、Skirt でポニテの欄が、Ponytail で
         /// スカートの欄が並び、どれが効くのか判らない状態になっていた。
         /// </summary>
-        private VisualElement _skirtParams, _ponytailParams;
+        [UiControl(Ignore = true)]
+        private VisualElement _skirtParams;
+        [UiControl(Ignore = true)]
+        private VisualElement _ponytailParams;
 
         // ================================================================
         // 実行中に持ち回る値

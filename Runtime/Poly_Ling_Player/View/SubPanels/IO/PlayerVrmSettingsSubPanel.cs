@@ -49,37 +49,120 @@ namespace Poly_Ling.Player
         // ================================================================
         // UI（メタ情報）
         // ================================================================
-
+        // UI 自動操作の ID は "vrmSettings.<下の Id>"（UiControlAttribute.cs）。
+        // サムネイル画像はファイルのパスなので、外から変えるときは作業フォルダの関門を通す。
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label     _statusLabel;
+        [UiControl("state", Safety = UiSafety.ReadOnly, Description = "作者情報の設定状態")]
         private Label     _stateLabel;
 
-        private TextField _nameField, _versionField, _authorsField;
-        private TextField _copyrightField, _contactField, _referencesField;
-        private TextField _thirdPartyField, _thumbnailField;
+        [UiControl("meta.name", Description = "モデル名")]
+        private TextField _nameField;
+        [UiControl("meta.version", Description = "バージョン")]
+        private TextField _versionField;
+        [UiControl("meta.authors", Description = "作者（複数はカンマ区切り）")]
+        private TextField _authorsField;
+        [UiControl("meta.copyright", Description = "著作権表記")]
+        private TextField _copyrightField;
+        [UiControl("meta.contact", Description = "連絡先")]
+        private TextField _contactField;
+        [UiControl("meta.references", Description = "参照元（複数はカンマ区切り）")]
+        private TextField _referencesField;
+        [UiControl("meta.thirdPartyLicenses", Description = "第三者ライセンス")]
+        private TextField _thirdPartyField;
+        [UiControl("meta.thumbnail", Getter = nameof(GetThumbnailForAutomation), Setter = nameof(SetThumbnailByAutomation),
+                   Description = "サムネイル画像のパス（空ならなし）。作業フォルダからの相対パスで指定する")]
+        private TextField _thumbnailField;
 
-        private DropdownField _permissionField, _commercialField;
-        private DropdownField _creditField, _modificationField;
-        private Toggle _violentToggle, _sexualToggle, _politicalToggle, _antisocialToggle;
+        [UiControl("license.avatarPermission", Description = "演じてよい人")]
+        private DropdownField _permissionField;
+        [UiControl("license.commercialUsage", Description = "商用利用")]
+        private DropdownField _commercialField;
+        [UiControl("license.creditNotation", Description = "クレジット表記")]
+        private DropdownField _creditField;
+        [UiControl("license.modification", Description = "改変")]
+        private DropdownField _modificationField;
+        [UiControl("license.allowViolent", Description = "暴力表現に使ってよい")]
+        private Toggle _violentToggle;
+        [UiControl("license.allowSexual", Description = "性的表現に使ってよい")]
+        private Toggle _sexualToggle;
+        [UiControl("license.allowPolitical", Description = "政治・宗教用途に使ってよい")]
+        private Toggle _politicalToggle;
+        [UiControl("license.allowAntisocial", Description = "反社会的・憎悪表現に使ってよい")]
+        private Toggle _antisocialToggle;
+        [UiControl("license.allowRedistribution", Description = "再配布してよい")]
         private Toggle _redistributionToggle;
+        [UiControl("license.otherLicenseUrl", Description = "その他ライセンス URL")]
         private TextField _otherLicenseField;
+        [UiControl("meta.loadFromModel", Safety = UiSafety.SafeWrite, Description = "作者情報・許諾をモデルから欄へ読み込む")]
+        private Button _btnLoadMeta;
+        [UiControl("meta.apply", Safety = UiSafety.SafeWrite, Description = "作者情報・許諾をモデルへ書き込む")]
+        private Button _btnApplyMeta;
+        [UiControl("meta.clear", Safety = UiSafety.Destructive, Description = "作者情報を未設定に戻す")]
+        private Button _btnClearMeta;
 
         // ================================================================
         // UI（視線）
         // ================================================================
 
-        private FloatField _offX, _offY, _offZ;
+        [UiControl("lookAt.offset.x", Description = "目の位置 X")]
+        private FloatField _offX;
+        [UiControl("lookAt.offset.y", Description = "目の位置 Y")]
+        private FloatField _offY;
+        [UiControl("lookAt.offset.z", Description = "目の位置 Z")]
+        private FloatField _offZ;
+        [UiControl("lookAt.type", Description = "視線の表し方")]
         private DropdownField _lookAtTypeField;
-        private FloatField _hiIn, _hiOut, _hoIn, _hoOut;
-        private FloatField _vdIn, _vdOut, _vuIn, _vuOut;
+        [UiControl("lookAt.horizontalInner.inputMaxDegrees", Description = "鼻側 振り切る角度（度）")]
+        private FloatField _hiIn;
+        [UiControl("lookAt.horizontalInner.outputScale", Description = "鼻側 出力量")]
+        private FloatField _hiOut;
+        [UiControl("lookAt.horizontalOuter.inputMaxDegrees", Description = "外側 振り切る角度（度）")]
+        private FloatField _hoIn;
+        [UiControl("lookAt.horizontalOuter.outputScale", Description = "外側 出力量")]
+        private FloatField _hoOut;
+        [UiControl("lookAt.verticalDown.inputMaxDegrees", Description = "下 振り切る角度（度）")]
+        private FloatField _vdIn;
+        [UiControl("lookAt.verticalDown.outputScale", Description = "下 出力量")]
+        private FloatField _vdOut;
+        [UiControl("lookAt.verticalUp.inputMaxDegrees", Description = "上 振り切る角度（度）")]
+        private FloatField _vuIn;
+        [UiControl("lookAt.verticalUp.outputScale", Description = "上 出力量")]
+        private FloatField _vuOut;
+        [UiControl("lookAt.state", Safety = UiSafety.ReadOnly, Description = "視線の設定状態")]
         private Label _lookAtStateLabel;
+        [UiControl("lookAt.apply", Safety = UiSafety.SafeWrite, Description = "視線の設定をモデルへ書き込む")]
+        private Button _btnApplyLookAt;
+        [UiControl("lookAt.clear", Safety = UiSafety.Destructive, Description = "視線の設定を未設定に戻す")]
+        private Button _btnClearLookAt;
 
         // ================================================================
         // UI（一人称）
         // ================================================================
 
+        [UiControl("firstPerson.target", Safety = UiSafety.ReadOnly, Description = "一人称設定の対象メッシュ")]
         private Label         _fpTargetLabel;
+        [UiControl("firstPerson.type", Description = "一人称カメラでの扱い")]
         private DropdownField _fpTypeField;
+        [UiControl("firstPerson.list", Description = "一人称設定の一覧（一覧の行番号）")]
         private ListView      _fpListView;
+        [UiControl("firstPerson.apply", Safety = UiSafety.SafeWrite, Description = "選んだメッシュに一人称の扱いを設定する")]
+        private Button        _btnApplyFirstPerson;
+
+        private string GetThumbnailForAutomation() => _thumbnailField?.value ?? "";
+
+        /// <summary>
+        /// UI 自動操作からサムネイル画像のパスを設定する。任意の場所を指せないよう、
+        /// 作業フォルダの関門（PLSandbox.TryResolveRead）を通した実経路だけを入れる。空は「なし」。
+        /// </summary>
+        private string SetThumbnailByAutomation(string value)
+        {
+            if (_thumbnailField == null) return "サムネイル欄がありません";
+            if (string.IsNullOrEmpty(value)) { _thumbnailField.value = ""; return null; }
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(value, out string full, out string reason)) return reason;
+            _thumbnailField.value = full;
+            return null;
+        }
 
         private readonly List<string> _fpRows = new List<string>();
         private readonly List<int>    _fpRowRefs = new List<int>();
@@ -219,12 +302,12 @@ namespace Poly_Ling.Player
               + "配布するなら、意図した許諾に合わせて必ず見直してください。"));
 
             var row = Row();
-            row.Add(Btn("モデルから読み込む", OnLoadFromModel, grow: true));
-            row.Add(Btn("モデルへ書き込む", OnApplyMeta, grow: true));
+            row.Add(_btnLoadMeta  = Btn("モデルから読み込む", OnLoadFromModel, grow: true));
+            row.Add(_btnApplyMeta = Btn("モデルへ書き込む", OnApplyMeta, grow: true));
             fo.Add(row);
 
             var row2 = Row();
-            row2.Add(Btn("作者情報を未設定に戻す", OnClearMeta, grow: true));
+            row2.Add(_btnClearMeta = Btn("作者情報を未設定に戻す", OnClearMeta, grow: true));
             fo.Add(row2);
 
             root.Add(fo);
@@ -273,8 +356,8 @@ namespace Poly_Ling.Player
               + "既定は 90 度で振り切って 10 度動く、という設定です。"));
 
             var row = Row();
-            row.Add(Btn("モデルへ書き込む", OnApplyLookAt, grow: true));
-            row.Add(Btn("未設定に戻す",     OnClearLookAt, grow: true));
+            row.Add(_btnApplyLookAt = Btn("モデルへ書き込む", OnApplyLookAt, grow: true));
+            row.Add(_btnClearLookAt = Btn("未設定に戻す",     OnClearLookAt, grow: true));
             fo.Add(row);
 
             root.Add(fo);
@@ -301,7 +384,7 @@ namespace Poly_Ling.Player
             fo.Add(_fpTypeField);
 
             var row = Row();
-            row.Add(Btn("選んだメッシュに設定", OnApplyFirstPerson, grow: true));
+            row.Add(_btnApplyFirstPerson = Btn("選んだメッシュに設定", OnApplyFirstPerson, grow: true));
             fo.Add(row);
 
             _fpListView = new ListView(_fpRows, 20,

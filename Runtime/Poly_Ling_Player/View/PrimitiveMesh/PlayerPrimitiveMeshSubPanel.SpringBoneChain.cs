@@ -71,8 +71,10 @@ namespace Poly_Ling.Player
 
         private bool _sbMakeSets = true;
 
+        [UiControl("springBoneChain.attach", Description = "鎖の取り付け先")]
         private DropdownField _sbAttachField;
         private readonly List<int> _sbAttachMasters = new List<int>();
+        [UiControl("springBoneChain.preview", Safety = UiSafety.ReadOnly, Description = "作られる鎖とボーンの見込み")]
         private Label _sbPreview;
 
         // ================================================================

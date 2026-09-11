@@ -28,23 +28,52 @@ namespace Poly_Ling.Player
         /// <summary>モデルインデックスを返すデリゲート。</summary>
         public Func<int>             GetModelIndex;
 
+        // UI 自動操作の ID は "tpose.<下の Id>"（UiControlAttribute.cs）。
+        // バックアップの欄はバックアップがあるときだけ、Bake ボタンは「元の姿勢にベイク」オンのときだけ表示される。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _mainContent;
+        [UiControl("mappingInfo", Safety = UiSafety.ReadOnly, Description = "Humanoid マッピングの情報")]
         private Label         _mappingInfoLabel;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "T ポーズに変換する")]
         private Button        _btnApplyTPose;
+        [UiControl(Ignore = true)]
         private VisualElement _backupSection;
+        [UiControl("backupStatus", Safety = UiSafety.ReadOnly, Description = "元の姿勢のバックアップの状態（バックアップがあるときだけ表示）")]
         private Label         _backupStatusLabel;
+        [UiControl("restore", Safety = UiSafety.SafeWrite, Description = "元の姿勢に戻す（バックアップがあるときだけ表示）")]
         private Button        _btnRestore;
+        [UiControl("bakeEnabled", Description = "元の姿勢にベイクする（バックアップを破棄）。オンで Bake ボタンが出る")]
         private Toggle        _toggleBake;
+        [UiControl("bake", Safety = UiSafety.UserOnly, Reveal = nameof(RevealBake),
+                   Description = "元の姿勢のバックアップを破棄する（確認ダイアログを開く）")]
         private Button        _btnBake;
+        [UiControl("noBackup", Safety = UiSafety.ReadOnly, Description = "バックアップが無いときの表示")]
         private Label         _noBackupLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("saveOriginCsv", Safety = UiSafety.UserOnly, Description = "現在の姿勢を原点 CSV に保存する（保存ダイアログを開く）")]
         private Button        _btnSaveOriginCsv;
+        [UiControl("bakeRotationToPosition", Description = "回転を位置に変換して保存する")]
         private Toggle        _toggleBakeRotToPos;
 
         // ボーンを持たないモデル（MeshFilter 相当）用のマッピング読み込み
+        [UiControl(Ignore = true)]
         private VisualElement _csvSection;
+        [UiControl("csvStatus", Safety = UiSafety.ReadOnly, Description = "マッピング CSV 読み込みの結果")]
         private Label         _csvStatusLabel;
+        [UiControl("loadMappingCsv", Safety = UiSafety.UserOnly,
+                   Description = "CSV を読み込んでオブジェクト名一致でマッピングする（ファイル選択ダイアログを開く）")]
+        private Button        _btnLoadMappingCsv;
+
+        /// <summary>UI 自動操作の表示の下準備。Bake ボタンは「元の姿勢にベイク」オンのときだけ表示される。</summary>
+        private bool RevealBake()
+        {
+            if (_toggleBake == null || _toggleBake.value) return false;
+            _toggleBake.value = true;
+            return true;
+        }
 
         /// <summary>Humanoidマッピング CSV の最近使ったパス。</summary>
         private const string MappingCsvRecentKey = "TPose.MappingCsv.Path";
@@ -78,6 +107,7 @@ namespace Poly_Ling.Player
             _csvSection.Add(SecLabel("マッピングCSV（ボーンが無いモデルでも可）"));
 
             var btnLoadCsv = new Button(OnLoadMappingCsv) { text = "CSVを読み込んでマッピング" };
+            _btnLoadMappingCsv = btnLoadCsv;
             btnLoadCsv.style.height = 24;
             btnLoadCsv.tooltip =
                 "UnityHumanoidName,Alias1,... 形式のCSVを読み込み、モデル内の全オブジェクト名と\n" +

@@ -189,12 +189,36 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "robotBuildTest.<下の Id>"（UiControlAttribute.cs）。
+        // このパネルは段階テストの基底クラスを使わず自前で組んでいるので、共通の項目もここで登録する。
+        // 「出力ルート」は実行がそのまま書き込む先なので、外から変えるときは作業フォルダの関門を通す。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("outputRoot", Getter = nameof(GetOutputRootForAutomation), Setter = nameof(SetOutputRootByAutomation),
+                   Description = "出力ルート（実行がここへ書き込む）。作業フォルダからの相対パスで指定する")]
         private TextField     _outputField;
+        [UiControl("variant.{0}", Description = "流す系統 {0} を実行対象にする")]
         private Toggle[]      _variantToggles;
+        [UiControl("run", Safety = UiSafety.FileOperation, Description = "選んだ系統を通しで流し、出力ルートへ書き出す")]
         private Button        _runButton;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行の状態")]
         private Label         _status;
+        [UiControl(Ignore = true, Rows = true)]
         private ScrollView    _resultView;
+
+        private string GetOutputRootForAutomation() => _outputField?.value ?? "";
+
+        /// <summary>
+        /// UI 自動操作から出力ルートを設定する。実行がこの場所へ書き込むので、
+        /// 作業フォルダの関門（PLSandbox.TryResolveFolder）を通した実経路だけを入れる。
+        /// </summary>
+        private string SetOutputRootByAutomation(string value)
+        {
+            if (_outputField == null) return "出力ルートの欄がありません";
+            if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(value, out string full, out string reason)) return reason;
+            _outputField.value = full;
+            return null;
+        }
 
         public void Build(VisualElement parent)
         {

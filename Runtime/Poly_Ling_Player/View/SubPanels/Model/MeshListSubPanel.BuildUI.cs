@@ -114,7 +114,7 @@ namespace Poly_Ling.MeshListV2
             var selectAllRow = new VisualElement();
             selectAllRow.style.flexDirection = FlexDirection.Row;
             selectAllRow.style.marginBottom  = 3;
-            selectAllRow.Add(MakeSmallBtn("すべてのオブジェクトを選択", "btn-select-all",
+            selectAllRow.Add(_btnSelectAllObjects = MakeSmallBtn("すべてのオブジェクトを選択", "btn-select-all",
                                           "リストにある全オブジェクトを選択する"));
             root.Add(selectAllRow);
 
@@ -150,21 +150,21 @@ namespace Poly_Ling.MeshListV2
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.flexWrap     = Wrap.Wrap;
             btnRow.style.marginTop    = 3;
-            btnRow.Add(MakeSmallBtn("+",   "btn-add"));
-            btnRow.Add(MakeSmallBtn("▲",  "btn-up"));
-            btnRow.Add(MakeSmallBtn("▼",  "btn-down"));
-            btnRow.Add(MakeSmallBtn("←",  "btn-outdent"));
-            btnRow.Add(MakeSmallBtn("→",  "btn-indent"));
-            btnRow.Add(MakeSmallBtn("Dup", "btn-duplicate"));
-            btnRow.Add(MakeSmallBtn("Del", "btn-delete"));
+            btnRow.Add(_btnAdd       = MakeSmallBtn("+",   "btn-add"));
+            btnRow.Add(_btnMoveUp    = MakeSmallBtn("▲",  "btn-up"));
+            btnRow.Add(_btnMoveDown  = MakeSmallBtn("▼",  "btn-down"));
+            btnRow.Add(_btnOutdent   = MakeSmallBtn("←",  "btn-outdent"));
+            btnRow.Add(_btnIndent    = MakeSmallBtn("→",  "btn-indent"));
+            btnRow.Add(_btnDuplicate = MakeSmallBtn("Dup", "btn-duplicate"));
+            btnRow.Add(_btnDelete    = MakeSmallBtn("Del", "btn-delete"));
             // 一括操作。対象は「選択されている行すべて」。
             // 行内のボタンは押した行 1 件だけなので、押す場所で対象が分かれる。
-            btnRow.Add(MakeSmallBtn("◉",  "btn-show",        "選択を可視にする"));
-            btnRow.Add(MakeSmallBtn("−",   "btn-hide",        "選択を不可視にする"));
-            btnRow.Add(MakeSmallBtn("■",  "btn-lock",        "選択をロックする"));
-            btnRow.Add(MakeSmallBtn("□",  "btn-unlock",      "選択のロックを解除する"));
-            btnRow.Add(MakeSmallBtn("⇆",   "btn-mirror-on",   "選択のミラーを有効にする"));
-            btnRow.Add(MakeSmallBtn("⇆×",   "btn-mirror-off",  "選択のミラーを無効にする"));
+            btnRow.Add(_btnShow      = MakeSmallBtn("◉",  "btn-show",        "選択を可視にする"));
+            btnRow.Add(_btnHide      = MakeSmallBtn("−",   "btn-hide",        "選択を不可視にする"));
+            btnRow.Add(_btnLock      = MakeSmallBtn("■",  "btn-lock",        "選択をロックする"));
+            btnRow.Add(_btnUnlock    = MakeSmallBtn("□",  "btn-unlock",      "選択のロックを解除する"));
+            btnRow.Add(_btnMirrorOn  = MakeSmallBtn("⇆",   "btn-mirror-on",   "選択のミラーを有効にする"));
+            btnRow.Add(_btnMirrorOff = MakeSmallBtn("⇆×",   "btn-mirror-off",  "選択のミラーを無効にする"));
             _mainContent.Add(btnRow);
 
             // ── 選択辞書（オブジェクト選択辞書）からの読み込み
@@ -395,13 +395,14 @@ namespace Poly_Ling.MeshListV2
                 return b;
             }
 
-            Make("Z90度回転", "選択対象のローカル Z 回転に +90 度を足す",
+            _btnQuickRotZPlus = Make("Z90度回転", "選択対象のローカル Z 回転に +90 度を足す",
                  () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, 90f, "Z+90度回転"));
-            Make("Y0.1移動", "選択対象のローカル Y 位置に +0.1 を足す",
+            _btnQuickMoveYPlus = Make("Y0.1移動", "選択対象のローカル Y 位置に +0.1 を足す",
                  () => OffsetTransform(SetBoneTransformValueCommand.Field.PositionY, 0.1f, "Y+0.1移動"));
             var last = Make("Z-90度回転", "選択対象のローカル Z 回転に −90 度を足す",
                  () => OffsetTransform(SetBoneTransformValueCommand.Field.RotationZ, -90f, "Z-90度回転"));
             last.style.marginRight = 0;
+            _btnQuickRotZMinus = last;
 
             return row;
         }
@@ -524,6 +525,7 @@ namespace Poly_Ling.MeshListV2
             applyBtn.style.paddingTop  = 0;
             applyBtn.style.paddingBottom = 0;
             nameRow.Add(applyBtn);
+            _btnApplyMeshName = applyBtn;
 
             c.Add(nameRow);
             _vertexCountLabel = MakeInfoLabel("vertex-count-label"); c.Add(_vertexCountLabel);
@@ -624,7 +626,7 @@ namespace Poly_Ling.MeshListV2
 
             _renamePathField = new TextField { name = "rename-path-field" };
             _renamePathField.RegisterValueChangedCallback(e => RecentPaths.Set(RenamePathKey(), e.newValue));
-            c.Add(PlayerIoUiKit.PathRow(_renamePathField, OnRenameBrowse));
+            c.Add(PlayerIoUiKit.PathRow(_renamePathField, OnRenameBrowse, out _btnRenameBrowse));
             _renamePathField.SetValueWithoutNotify(ResolveRenamePath());
 
             var row = new VisualElement();
@@ -677,9 +679,9 @@ namespace Poly_Ling.MeshListV2
 
             // 選択操作ボタン
             var selRow = new VisualElement(); selRow.style.flexDirection = FlexDirection.Row; selRow.style.marginTop = 3;
-            selRow.Add(MakeSmallBtn("全選択",   "btn-morph-test-select-all"));
-            selRow.Add(MakeSmallBtn("全解除",   "btn-morph-test-deselect-all"));
-            selRow.Add(MakeSmallBtn("リセット", "btn-morph-test-reset"));
+            selRow.Add(_btnMorphTestSelectAll   = MakeSmallBtn("全選択",   "btn-morph-test-select-all"));
+            selRow.Add(_btnMorphTestDeselectAll = MakeSmallBtn("全解除",   "btn-morph-test-deselect-all"));
+            selRow.Add(_btnMorphTestReset       = MakeSmallBtn("リセット", "btn-morph-test-reset"));
             parent.Add(selRow);
 
             parent.Add(Separator());

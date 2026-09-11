@@ -64,14 +64,34 @@ namespace Poly_Ling.Player
         // 内部 UI 参照
         // ================================================================
 
+        // UI 自動操作の ID は "<projectSave / projectLoad>.<下の Id>"（UiControlAttribute.cs）。
+        // このクラスは保存（Save）と読込（Load）の 2 か所で使い、モードで作る欄が違う（作らない側は未構築）。
+        // 保存・読込はどれもダイアログを通す。
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label     _statusLabel;
+        [UiControl("json.path", Description = ".mfproj のパス（読込。ダイアログの初期パスとして使う）")]
         private TextField _jsonPathField;
+        [UiControl("csv.path", Description = "プロジェクト CSV のパス（読込。ダイアログの初期パスとして使う）")]
         private TextField _csvPathField;
+        [UiControl("csv.merge", Description = "追加マージ（オフは現在のプロジェクトを置き換える）")]
         private Toggle    _csvMergeToggle;
+        [UiControl("csv.saveAs", Safety = UiSafety.UserOnly, Description = "プロジェクト CSV を名前を付けて保存する（保存ダイアログを開く）")]
+        private Button    _btnSaveAsCsv;
+        [UiControl("csv.open", Safety = UiSafety.UserOnly, Description = "プロジェクト CSV を開く（ファイル選択ダイアログを開く）")]
+        private Button    _btnOpenCsv;
+        [UiControl("csv.browse", Safety = UiSafety.UserOnly, Description = "プロジェクト CSV の [...]（ファイル選択ダイアログを開く）")]
+        private Button    _btnBrowseCsv;
+        [UiControl("json.saveAs", Safety = UiSafety.UserOnly, Description = ".mfproj を名前を付けて保存する（保存ダイアログを開く）")]
+        private Button    _btnSaveAsJson;
+        [UiControl("json.open", Safety = UiSafety.UserOnly, Description = ".mfproj を開く（ファイル選択ダイアログを開く）")]
+        private Button    _btnOpenJson;
+        [UiControl("json.browse", Safety = UiSafety.UserOnly, Description = ".mfproj の [...]（ファイル選択ダイアログを開く）")]
+        private Button    _btnBrowseJson;
 
         // 保存側の書き込み先。CSV と .mfproj で 1 つを共有する。
         // 「保存先フォルダ」は 1 つで足りるので、欄を 2 本置くと
         // どちらが効いているのか分からなくなる。
+        [UiNested("saveDest", Optional = true)]
         private PlayerSaveDestRow _saveDest;
 
         // 読込側のパス欄のキー。保存側は SaveDest.Keys.Project を使うので共有しない。
@@ -120,14 +140,14 @@ namespace Poly_Ling.Player
 
             if (IsSave)
             {
-                parent.Add(MakeWideBtn("名前を付けて保存", OnSaveAsCsvFile));
+                parent.Add(_btnSaveAsCsv = MakeWideBtn("名前を付けて保存", OnSaveAsCsvFile));
             }
             else
             {
                 _csvPathField = new TextField();
                 _csvPathField.tooltip = "プロジェクトCSVのファイルパス（任意名）。モデルフォルダは同じディレクトリ直下に置かれる。";
                 _csvPathField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvPathKey, e.newValue));
-                parent.Add(MakePathRow(_csvPathField, OnOpenCsv));
+                parent.Add(MakePathRow(_csvPathField, OnOpenCsv, out _btnBrowseCsv));
                 _csvPathField.SetValueWithoutNotify(RecentPaths.Get(CsvPathKey));
 
                 _csvMergeToggle = new Toggle("追加マージ");
@@ -136,7 +156,7 @@ namespace Poly_Ling.Player
                 _csvMergeToggle.style.marginBottom = 2;
                 parent.Add(_csvMergeToggle);
 
-                parent.Add(MakeWideBtn("開く", OnOpenCsv));
+                parent.Add(_btnOpenCsv = MakeWideBtn("開く", OnOpenCsv));
             }
 
             // ── 区切り線 ──────────────────────────────────────────────
@@ -147,16 +167,16 @@ namespace Poly_Ling.Player
 
             if (IsSave)
             {
-                parent.Add(MakeWideBtn("名前を付けて保存", OnSaveAsJson));
+                parent.Add(_btnSaveAsJson = MakeWideBtn("名前を付けて保存", OnSaveAsJson));
             }
             else
             {
                 _jsonPathField = new TextField();
                 _jsonPathField.RegisterValueChangedCallback(e => RecentPaths.Set(JsonPathKey, e.newValue));
-                parent.Add(MakePathRow(_jsonPathField, OnOpenJson));
+                parent.Add(MakePathRow(_jsonPathField, OnOpenJson, out _btnBrowseJson));
                 _jsonPathField.SetValueWithoutNotify(RecentPaths.Get(JsonPathKey));
 
-                parent.Add(MakeWideBtn("開く", OnOpenJson));
+                parent.Add(_btnOpenJson = MakeWideBtn("開く", OnOpenJson));
             }
 
             // ── ステータス ───────────────────────────────────────────
@@ -252,7 +272,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>[...]（左）＋パス用 TextField（右）の行。</summary>
-        private static VisualElement MakePathRow(TextField field, Action onBrowse)
+        private static VisualElement MakePathRow(TextField field, Action onBrowse, out Button browseButton)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -266,6 +286,7 @@ namespace Poly_Ling.Player
 
             row.Add(browse);
             row.Add(field);
+            browseButton = browse;
             return row;
         }
 

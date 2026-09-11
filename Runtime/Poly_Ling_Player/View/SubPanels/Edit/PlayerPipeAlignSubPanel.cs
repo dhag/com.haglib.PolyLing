@@ -37,30 +37,77 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "pipeAlign.<下の Id>"（UiControlAttribute.cs）。
+        // モード（自動ペア / 手動ペア / スムージング）で表示される欄が変わるので、
+        // 各欄の表示の下準備はモードを切り替える。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象オブジェクトの数")]
         private Label         _targetLabel;
 
+        [UiControl("mode", Description = "0=自動ペア / 1=手動ペア / 2=スムージング")]
         private RadioButtonGroup _modeGroup;
 
         // 対称化（自動ペア / 手動ペア 共通）
+        [UiControl(Ignore = true)]
         private VisualElement    _symBox;
+        [UiControl("sym.ringSize", Reveal = nameof(RevealSym), Description = "1 段の頂点数 M")]
         private IntegerField     _ringField;
+        [UiControl("sym.capStart", Reveal = nameof(RevealSym), Description = "開始側が閉じている")]
         private Toggle           _capStartToggle;
+        [UiControl("sym.capEnd", Reveal = nameof(RevealSym), Description = "終了側が閉じている")]
         private Toggle           _capEndToggle;
+        [UiControl("sym.direction", Reveal = nameof(RevealSym), Description = "0=+X 側 → -X 側 / 1=-X 側 → +X 側")]
         private RadioButtonGroup _directionGroup;
 
         // 手動ペア専用
+        [UiControl(Ignore = true)]
         private VisualElement _pairBox;
+        [UiControl("manual.pairs", Reveal = nameof(RevealManual), Description = "手動ペアの指定（複数行）")]
         private TextField     _pairField;
 
         // スムージング専用
+        [UiControl(Ignore = true)]
         private VisualElement    _smoothBox;
+        [UiControl("smooth.weights", Reveal = nameof(RevealSmooth), Description = "重み（カンマ区切り、個数は奇数）")]
         private TextField        _weightField;
+        [UiControl("smooth.targetParts", Reveal = nameof(RevealSmooth), Description = "対象パーツ ID（空欄で全部）")]
         private TextField        _smoothTargetField;
+        [UiControl("smooth.edge", Reveal = nameof(RevealSmooth), Description = "0=端はスムージングしない / 1=端は片側だけでスムージング")]
         private RadioButtonGroup _edgeGroup;
 
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選んだモードで実行する")]
         private Button _executeBtn;
+        [UiControl("result", Safety = UiSafety.ReadOnly, Description = "直近の実行結果")]
         private Label  _resultLabel;
+
+        // ================================================================
+        // UI 自動操作の表示の下準備（UiControl の Reveal）。利用者と同じくモードを切り替える。
+        // ================================================================
+
+        /// <summary>対称化の欄は自動ペアか手動ペアのときに表示される。スムージングなら自動ペアへ。</summary>
+        private bool RevealSym()
+        {
+            if (_modeGroup == null || _modeGroup.value != 2) return false;
+            _modeGroup.value = 0;
+            return true;
+        }
+
+        /// <summary>手動ペアの欄は手動ペアのときだけ表示される。</summary>
+        private bool RevealManual()
+        {
+            if (_modeGroup == null || _modeGroup.value == 1) return false;
+            _modeGroup.value = 1;
+            return true;
+        }
+
+        /// <summary>スムージングの欄はスムージングのときだけ表示される。</summary>
+        private bool RevealSmooth()
+        {
+            if (_modeGroup == null || _modeGroup.value == 2) return false;
+            _modeGroup.value = 2;
+            return true;
+        }
 
         private static readonly List<string> ModeChoices =
             new List<string> { "自動ペア", "手動ペア", "スムージング" };

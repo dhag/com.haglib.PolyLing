@@ -129,26 +129,49 @@ namespace Poly_Ling.Player
         // 内部状態
         // ================================================================
 
+        // UI 自動操作の ID は "skinWeightNumeric.<下の Id>"（UiControlAttribute.cs）。
+        // スロットは固定個数（1 始まり）。slot.1.bone のように番号で指す。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
 
         // ボーン候補（先頭「（未選択）」は choices 側にのみ存在し、下記リストには含めない）
         private readonly List<string> _boneNames         = new List<string>();
         private readonly List<int>    _boneMasterIndices = new List<int>();
 
+        [UiControl("slot.{0}.bone", Description = "スロット {0} のボーン")]
         private readonly DropdownField[] _boneDropdowns = new DropdownField[SlotCount];
+        [UiControl("slot.{0}.weight", Description = "スロット {0} のウェイト（スライダー）")]
         private readonly Slider[]        _sliders       = new Slider[SlotCount];
+        [UiControl("slot.{0}.weightValue", Description = "スロット {0} のウェイト（数値入力）")]
         private readonly FloatField[]    _fields        = new FloatField[SlotCount];
+        [UiControl("slot.{0}.visualize", Safety = UiSafety.SafeWrite, Description = "スロット {0} のボーンのウェイトを色で表示する（切り替え）")]
         private readonly Button[]        _visButtons    = new Button[SlotCount];
 
         // スロットの現在値（UI と同期）
         private readonly int[]   _slotBoneMaster = new int[SlotCount];
         private readonly float[] _slotWeight     = new float[SlotCount];
 
+        [UiControl("total", Safety = UiSafety.ReadOnly, Description = "ウェイトの合計")]
         private Label _totalLabel;
+        [UiControl("checkResult", Safety = UiSafety.ReadOnly, Description = "ウェイト合計の検査結果")]
         private Label _checkLabel;
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象")]
         private Label _targetLabel;
+        [UiControl("selectedCount", Safety = UiSafety.ReadOnly, Description = "選択数の表示")]
         private Label _selCountLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label _statusLabel;
+
+        [UiControl("gather", Safety = UiSafety.SafeWrite, Description = "現在値を取り込む")]
+        private Button _gatherBtn;
+        [UiControl("normalize", Safety = UiSafety.SafeWrite, Description = "スロットのウェイトを正規化する")]
+        private Button _normalizeBtn;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "適用する")]
+        private Button _applyBtn;
+        [UiControl("checkSums", Safety = UiSafety.SafeWrite, Description = "ウェイト合計を検査する（データは変えない）")]
+        private Button _checkSumsBtn;
+        [UiControl("normalizeAll", Safety = UiSafety.SafeWrite, Description = "全頂点のウェイトを正規化する")]
+        private Button _normalizeAllBtn;
 
         public PlayerSkinWeightNumericSubPanel()
         {
@@ -212,11 +235,14 @@ namespace Poly_Ling.Player
             rowOps.Add(normBtn);
 
             _root.Add(rowOps);
+            _gatherBtn    = gatherBtn;
+            _normalizeBtn = normBtn;
 
             var applyBtn = new Button(OnApply) { text = "適用" };
             applyBtn.style.height    = 30;
             applyBtn.style.marginTop = 4;
             _root.Add(applyBtn);
+            _applyBtn = applyBtn;
 
             AddSep();
             AddSectionLabel("ウェイト合計の検査");
@@ -240,6 +266,8 @@ namespace Poly_Ling.Player
             rowCheck.Add(normAllBtn);
 
             _root.Add(rowCheck);
+            _checkSumsBtn    = checkBtn;
+            _normalizeAllBtn = normAllBtn;
 
             _checkLabel = InfoLabel();
             _checkLabel.style.whiteSpace = WhiteSpace.Normal;

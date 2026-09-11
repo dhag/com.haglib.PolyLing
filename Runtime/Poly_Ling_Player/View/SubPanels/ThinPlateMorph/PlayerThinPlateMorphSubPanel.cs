@@ -117,28 +117,78 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "thinPlateMorph.<下の Id>"（UiControlAttribute.cs）。
+        // ビフォー・アフター・対象のチェックはオブジェクトに合わせて作り直す行（Rows）。
+        // 制御点の選び方はクリックで選ぶ行（Label）なので、専用の読み書き（mode）で扱う。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _mainContent;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _beforeListContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _afterListContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _targetListContainer;
+        [UiControl("selectedOnly", Description = "選択頂点のみを制御点にする")]
         private Toggle        _toggleSelectedOnly;
+        [UiControl("mode", Getter = nameof(GetModeForAutomation), Setter = nameof(SetModeByAutomation),
+                   Description = "制御点の選び方（表示されている選び方の名前）")]
         private VisualElement _modeListContainer;
+        [UiControl("neighborCount", Description = "N（近傍数）。局所モード（距離しきい値以外）のときだけ表示")]
         private IntegerField  _fieldNeighborCount;
+        [UiControl("radius", Description = "L（距離しきい値）。局所モードの距離しきい値のときだけ表示")]
         private FloatField    _fieldRadius;
+        [UiControl("localCap", Description = "制御点数の上限。局所モードのときだけ表示")]
         private IntegerField  _fieldLocalCap;
+        [UiControl("lambda", Description = "λ（平滑化）")]
         private FloatField    _fieldLambda;
+        [UiControl("recalcNormals", Description = "法線を再計算する")]
         private Toggle        _toggleRecalc;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "制御点などの情報")]
         private Label         _infoLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "薄板スプライン変形を実行する")]
         private Button        _btnApply;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
 
+        [UiControl(Ignore = true)]
         private VisualElement _progressRow;
+        [UiControl(Ignore = true)]
         private VisualElement _progressTrack;
+        [UiControl(Ignore = true)]
         private VisualElement _progressFill;
+        [UiControl("progress", Safety = UiSafety.ReadOnly, Description = "実行中の進み具合（実行中だけ表示）")]
         private Label         _progressLabel;
+        [UiControl("cancel", Safety = UiSafety.SafeWrite, Description = "実行を中止する（実行中だけ表示）")]
         private Button        _btnCancel;
+
+        private string GetModeForAutomation()
+        {
+            foreach (var c in ModeChoices)
+                if (c.mode.Equals(_mode)) return c.label;
+            return _mode.ToString();
+        }
+
+        /// <summary>
+        /// UI 自動操作から制御点の選び方を選ぶ。行のクリックと同じ OnModePicked を通す。
+        /// 選べない（ビフォーに面が無い）ときは理由を返す。
+        /// </summary>
+        private string SetModeByAutomation(string value)
+        {
+            var names = new List<string>();
+            foreach (var c in ModeChoices)
+            {
+                names.Add(c.label);
+                if (c.label != value) continue;
+                if (IsLinkMode(c.mode) && !HasBeforeFaces()) return "ビフォーに面が無いため選べません";
+                OnModePicked(c.mode);
+                return null;
+            }
+            return $"mode not found: {value}（choices: {string.Join(" / ", names)}）";
+        }
 
         // ================================================================
         // Build

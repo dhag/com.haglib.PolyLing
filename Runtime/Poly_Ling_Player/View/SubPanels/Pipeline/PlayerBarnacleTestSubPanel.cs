@@ -43,9 +43,31 @@ namespace Poly_Ling.Player
         private const string BaseName    = "BT_Base";
         private const string PlaceName   = "BT_Barnacle";
 
-        private FloatField   _ballRadius, _coneRadius, _coneHeight, _baseHeight, _placeScale;
-        private FloatField   _squash, _coneGrow;
-        private IntegerField _longitude, _latitude, _rungStride, _rollSteps;
+        // UI 自動操作の ID は "barnacleTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        [UiControl("ballRadius", Description = "球（梯子の元）の半径")]
+        private FloatField   _ballRadius;
+        [UiControl("coneRadius", Description = "円錐の底面半径")]
+        private FloatField   _coneRadius;
+        [UiControl("coneHeight", Description = "円錐の高さ")]
+        private FloatField   _coneHeight;
+        [UiControl("baseHeight", Description = "土台の高さ")]
+        private FloatField   _baseHeight;
+        [UiControl("placeScale", Description = "配置の倍率")]
+        private FloatField   _placeScale;
+        [UiControl("squash", Description = "球を上下に潰す率（0 で潰さない。作り直しの検証用）")]
+        private FloatField   _squash;
+        [UiControl("coneGrow", Description = "円錐を伸ばす率（0 で伸ばさない。作り直しの検証用）")]
+        private FloatField   _coneGrow;
+        [UiControl("longitude", Description = "経線の分割（＝房の本数）")]
+        private IntegerField _longitude;
+        [UiControl("latitude", Description = "緯線の分割")]
+        private IntegerField _latitude;
+        [UiControl("rungStride", Description = "rung の間引き間隔（1 で全部）")]
+        private IntegerField _rungStride;
+        [UiControl("rollSteps", Description = "ロール段数（90°単位・0〜3）")]
+        private IntegerField _rollSteps;
+        [UiControl("uniformScale", Description = "倍率を一定にする（rung 長に比例させない）")]
         private Toggle       _uniformScale;
 
         private int _coneIndex = -1;

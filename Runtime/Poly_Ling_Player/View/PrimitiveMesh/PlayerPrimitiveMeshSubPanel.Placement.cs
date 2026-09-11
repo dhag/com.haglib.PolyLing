@@ -35,6 +35,7 @@ namespace Poly_Ling.Player
         public Func<List<string>> GetMaterialNames;
 
         /// <summary>マテリアル指定ドロップダウン。図形と追加先によって隠す。</summary>
+        [UiControl("material", Description = "作るものに付ける材質")]
         private DropdownField _materialDd;
 
         /// <summary>生成面へ割り当てるマテリアルスロット番号。</summary>
@@ -168,10 +169,16 @@ namespace Poly_Ling.Player
         /// 拡大縮小は PrimitivePlaceSettings.ShowScaleGizmo に機能だけ残し、
         /// チェックは出さない（表示・操作を封印）。
         /// </summary>
-        private Toggle _togShowMoveGizmo, _togShowRotationGizmo;
+        [UiControl("showMoveGizmo", Description = "移動ギズモを表示する")]
+        private Toggle _togShowMoveGizmo;
+        [UiControl("showRotationGizmo", Description = "回転ギズモを表示する")]
+        private Toggle _togShowRotationGizmo;
 
         /// <summary>姿勢仮表示チェック（原点マーカー / くさび）。</summary>
-        private Toggle _togShowOriginMarker, _togShowWedge;
+        [UiControl("showOriginMarker", Description = "原点の目印を表示する")]
+        private Toggle _togShowOriginMarker;
+        [UiControl("showWedge", Description = "姿勢くさびを表示する")]
+        private Toggle _togShowWedge;
 
         /// <summary>RefreshPlaceToggles で書き戻す間、変更コールバックを止める。</summary>
         private bool _suppressPlaceToggles;
@@ -246,7 +253,9 @@ namespace Poly_Ling.Player
         private bool BakeScaleEffective    => _bakeScale    || _addMode == PrimitiveAddMode.AddToExisting;
 
         /// <summary>姿勢フォールド内の「ベイク」チェックボックス（回転・スケール）。</summary>
+        [UiControl("bakeRotation", Description = "回転を頂点に焼き込む")]
         private Toggle _bakeRotToggle;
+        [UiControl("bakeScale", Description = "拡大縮小を頂点に焼き込む")]
         private Toggle _bakeScaleToggle;
 
         /// <summary>
@@ -321,14 +330,20 @@ namespace Poly_Ling.Player
         private Vector3 PoseScale    => BakeScaleEffective    ? Vector3.one  : _scale;
 
         /// <summary>追加先ドロップダウン。図形別に表示を切り替えるため保持する。</summary>
+        [UiControl("addMode", Description = "作ったものの足し方")]
         private DropdownField _addModeDd;
 
         /// <summary>姿勢フォールド。図形別に表示を切り替えるため保持する。</summary>
+        [UiControl(Ignore = true)]
         private Foldout _poseFold;
 
         // TRS 行の FloatField 参照。外部（将来のギズモ）から値を書き戻すために保持する。
+        // 姿勢欄そのものは V3FRef が _uiDynamic へ登録する。ここはプリセットからの書き戻し用の控え。
+        [UiControl(Ignore = true)]
         private readonly FloatField[] _posFields = new FloatField[3];
+        [UiControl(Ignore = true)]
         private readonly FloatField[] _rotFields = new FloatField[3];
+        [UiControl(Ignore = true)]
         private readonly FloatField[] _sclFields = new FloatField[3];
 
         // ================================================================

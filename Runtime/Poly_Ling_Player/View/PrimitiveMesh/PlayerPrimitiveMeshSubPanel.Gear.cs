@@ -24,10 +24,13 @@ namespace Poly_Ling.Player
             InvoluteTrochoidGearMeshGenerator.InvoluteGearParams.Default;
 
         /// <summary>簡易歯車の θS（自動計算）表示ラベル。</summary>
+        [UiControl("gear.ngonThetaS", Safety = UiSafety.ReadOnly, Description = "多角形歯車の θS の表示")]
         private Label _ngonGearThetaSLabel;
 
         /// <summary>インボリュート歯車の派生諸元・警告ラベル。</summary>
+        [UiControl("gear.involuteInfo", Safety = UiSafety.ReadOnly, Description = "インボリュート歯車の情報")]
         private Label _involInfoLabel;
+        [UiControl("gear.involuteWarning", Safety = UiSafety.ReadOnly, Description = "インボリュート歯車の警告")]
         private Label _involWarnLabel;
 
         // ================================================================

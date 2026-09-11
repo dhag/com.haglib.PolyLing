@@ -28,8 +28,11 @@ namespace Poly_Ling.Player
         private StadiumBoxMeshGenerator.StadiumBoxParams _stadiumP = DefaultStadiumBoxParams();
 
         /// <summary>フタ指定の行。「上下も丸める」ON のときは隠す。</summary>
+        [UiControl(Ignore = true)]
         private VisualElement _stadiumCapTopRow;
+        [UiControl(Ignore = true)]
         private VisualElement _stadiumCapBottomRow;
+        [UiControl(Ignore = true)]
         private VisualElement _stadiumCapHint;
 
         // ================================================================

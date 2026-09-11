@@ -88,6 +88,11 @@ namespace Poly_Ling.Remote
         {
             if (cmd == null) return OwnershipVerdict.Deny("コマンドがありません");
 
+            // UI 自動操作はホストの画面を動かす。リモートの参加者からは受けない。
+            // MCP の経路（PolyLingCommandGateway）はこの判定を通らない。
+            if (IsUiAutomation(cmd))
+                return OwnershipVerdict.Deny("UI 自動操作はリモート接続からは実行できません");
+
             // 編集者の設定・解放そのものは専用判定へ
             if (cmd is SetObjectEditorCommand sec)
                 return AuthorizeSetEditor(project, sec, requesterName, objectIds);
@@ -417,6 +422,27 @@ namespace Poly_Ling.Remote
                         + $"{cmd.GetType().Name} はモデル全体に影響するため実行できません。");
             }
             return OwnershipVerdict.Ok;
+        }
+
+        /// <summary>UI 自動操作のコマンドか（PanelCommand.UiAutomation.cs）。</summary>
+        private static bool IsUiAutomation(PanelCommand cmd)
+        {
+            switch (cmd)
+            {
+                case UiDescribeCommand _:
+                case UiShowPanelCommand _:
+                case UiRevealCommand _:
+                case UiGetValueCommand _:
+                case UiSetValueCommand _:
+                case UiHighlightCommand _:
+                case UiCaptureCommand _:
+                case UiCaptureStatusCommand _:
+                case UiClickCommand _:
+                case QueryUiAutomationAuditCommand _:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         /// <summary>所有権判定を通す必要のないコマンドか。</summary>

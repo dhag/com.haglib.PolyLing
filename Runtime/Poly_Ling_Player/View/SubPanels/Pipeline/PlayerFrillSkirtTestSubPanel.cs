@@ -32,8 +32,22 @@ namespace Poly_Ling.Player
         private const string ProfileName = "FT_Profile";
         private const string FrillName   = "FT_Frill";
 
-        private FloatField   _radiusTop, _radiusBottom, _height, _frillHeight, _bulge;
-        private IntegerField _radial, _lateral;
+        // UI 自動操作の ID は "frillSkirtTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        [UiControl("radiusTop", Description = "スカート円筒の上の半径")]
+        private FloatField   _radiusTop;
+        [UiControl("radiusBottom", Description = "スカート円筒の下の半径")]
+        private FloatField   _radiusBottom;
+        [UiControl("height", Description = "スカート円筒の高さ")]
+        private FloatField   _height;
+        [UiControl("frillHeight", Description = "フリルの高さ倍率")]
+        private FloatField   _frillHeight;
+        [UiControl("bulge", Description = "裾を外へ広げる量（作り直しの検証用）")]
+        private FloatField   _bulge;
+        [UiControl("radialSegments", Description = "円周の分割")]
+        private IntegerField _radial;
+        [UiControl("lateralSegments", Description = "高さの分割")]
+        private IntegerField _lateral;
 
         // ================================================================
         // 派生が決めるもの

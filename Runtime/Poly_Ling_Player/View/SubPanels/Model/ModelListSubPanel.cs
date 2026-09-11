@@ -25,21 +25,46 @@ namespace Poly_Ling.Player
         // UI要素
         // ================================================================
 
+        // UI 自動操作の ID は "modelList.<下の Id>"（UiControlAttribute.cs）。
+        // モデルの行（選択・削除）はモデルに合わせて作り直す行（Rows）。
+        // 名前の変更は「変更」を押すと入力欄に変わるので、入力欄側には表示の下準備を付ける。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _renameSection;
+        [UiControl(Ignore = true)]
         private VisualElement _renameDisplay;
+        [UiControl(Ignore = true)]
         private VisualElement _renameEdit;
+        [UiControl("currentName", Safety = UiSafety.ReadOnly, Description = "カレントモデルの名前")]
         private Label         _currentNameLabel;
+        [UiControl("newName", Reveal = nameof(RevealRenameEdit), Description = "変更後の名前（「変更」を押すと出る入力欄）")]
         private TextField     _renameField;
-        private Button        _btnStartRename, _btnConfirmRename, _btnCancelRename;
+        [UiControl("rename", Safety = UiSafety.SafeWrite, Description = "名前の変更を始める（入力欄に切り替える）")]
+        private Button        _btnStartRename;
+        [UiControl("confirmRename", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealRenameEdit), Description = "名前の変更を確定する")]
+        private Button        _btnConfirmRename;
+        [UiControl("cancelRename", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealRenameEdit), Description = "名前の変更をやめる")]
+        private Button        _btnCancelRename;
+        [UiControl(Ignore = true, Rows = true)]
         private ScrollView    _modelListContainer;
 
         // リスト高さ（下端ドラッグで手動リサイズ）: MeshListSubPanel/PlayerMaterialListSubPanel と同方式
         private float _modelListHeight = 180f;
         private const float ModelListMinHeight = 60f;
         private const float ModelListMaxHeight = 600f;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+
+        /// <summary>UI 自動操作の表示の下準備。名前の入力欄は「変更」を押したときだけ出る。</summary>
+        private bool RevealRenameEdit()
+        {
+            if (_renameEdit == null || _renameEdit.style.display.value != DisplayStyle.None) return false;
+            OnStartRename();
+            return true;
+        }
 
         // ================================================================
         // Build / SetContext

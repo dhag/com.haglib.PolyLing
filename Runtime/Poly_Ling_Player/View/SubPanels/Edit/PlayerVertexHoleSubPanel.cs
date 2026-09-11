@@ -34,10 +34,16 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "vertexHole.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("ratio", Description = "新しい頂点の位置比率。1 が選択頂点の位置、0 が辺の反対側。小さいほど穴が大きい")]
         private Slider        _ratioSlider;
+        [UiControl("stats.target", Safety = UiSafety.ReadOnly, Description = "対象のオブジェクト数・頂点数と除外数")]
         private Label         _targetLabel;
+        [UiControl("stats.status", Safety = UiSafety.ReadOnly, Description = "作る頂点・張り替える面の数、または実行できない理由")]
         private Label         _statusLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選択頂点を消して穴を開ける")]
         private Button        _holeBtn;
 
         // ================================================================

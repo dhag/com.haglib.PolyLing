@@ -47,14 +47,26 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "morphCreate.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("baseModel", Description = "基準モデル")]
         private DropdownField _baseModelDropdown;
+        [UiControl("morphModel", Description = "モーフモデル")]
         private DropdownField _morphModelDropdown;
+        [UiControl("morphName", Description = "作るモーフの名前")]
         private TextField     _morphNameField;
+        [UiControl("panel", Description = "作るモーフのパネル（眉 / 目 / 口 / その他）")]
         private DropdownField _panelDropdown;
+        [UiControl("createStatus", Safety = UiSafety.ReadOnly, Description = "モーフ作成の結果")]
         private Label         _createStatus;
+        [UiControl("create", Safety = UiSafety.SafeWrite, Description = "基準モデルとモーフモデルからモーフを作成する")]
+        private Button        _btnCreate;
 
+        [UiControl("expressions", Description = "モデルに展開するモーフ（一覧の行番号）")]
         private ListView      _expressionList;
+        [UiControl("expandStatus", Safety = UiSafety.ReadOnly, Description = "モデルへの展開の結果")]
         private Label         _expandStatus;
+        [UiControl("expand", Safety = UiSafety.SafeWrite, Description = "選択したモーフをモデルに展開する")]
+        private Button        _btnExpand;
 
         private readonly List<(int modelIndex, string label)> _modelChoices
             = new List<(int, string)>();
@@ -95,6 +107,7 @@ namespace Poly_Ling.Player
             var btnCreate = new Button(OnCreateMorph) { text = "モーフ作成" };
             btnCreate.style.marginTop = 4;
             root.Add(btnCreate);
+            _btnCreate = btnCreate;
 
             _createStatus = new Label();
             _createStatus.style.fontSize   = 10;
@@ -115,6 +128,7 @@ namespace Poly_Ling.Player
 
             var btnExpand = new Button(OnExpandToModel) { text = "選択したモーフをモデルに展開" };
             root.Add(btnExpand);
+            _btnExpand = btnExpand;
 
             _expandStatus = new Label();
             _expandStatus.style.fontSize   = 10;

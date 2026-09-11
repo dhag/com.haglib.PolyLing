@@ -21,7 +21,10 @@ namespace Poly_Ling.Player
     /// </summary>
     public class TempMirrorControls
     {
+        // UI 自動操作では、このブロックを持つサブパネルが UiNested("tempMirror") で取り込む。
+        [UiControl("toggle", Safety = UiSafety.SafeWrite, Description = "一時ミラーの実体化を切り替える（軸などは左ペインの「一時ミラー」パネルの設定）")]
         private Button _button;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "一時ミラーの状態")]
         private Label  _statusLabel;
 
         private Func<TempMirrorController> _getController;

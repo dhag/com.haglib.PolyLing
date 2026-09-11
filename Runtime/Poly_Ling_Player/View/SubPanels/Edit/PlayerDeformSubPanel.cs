@@ -42,17 +42,34 @@ namespace Poly_Ling.Player
         /// 右ペイン先頭へ埋め込む作業軸パネル。Viewer が Build 前に設定する。
         /// 左ペインの「作業軸」ツールが持つものとは別インスタンス。
         /// </summary>
+        // UI 自動操作では "deform.workAxis.*"。作業軸フェーズのときだけ表示されるので、
+        // 表示の下準備（RevealAxisPhase）でフェーズを「作業軸設定」に切り替える。
+        [UiNested("workAxis", Reveal = nameof(RevealAxisPhase))]
         public PlayerWorkAxisSubPanel WorkAxisPanel;
 
+        // UI 自動操作の ID は "deform.<下の Id>"（UiControlAttribute.cs）。
+        // 変形の欄は変形フェーズのときだけ、種類ごとの欄はその種類のデフォーマのときだけ表示される。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("deformer", Description = "デフォーマの種類（表示名。選択肢は uiGetValue の choices）")]
         private DropdownField _deformerDropdown;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealDeformPhase), Description = "対象頂点数と軸ローカルの範囲")]
         private Label         _infoLabel;
 
         // フェーズ切替。2つのボタンで排他選択する（作業軸パネルの 移動/回転 と同じ作り）。
-        private Button _phaseAxisBtn, _phaseDeformBtn;
+        [UiControl("phase.workAxis", Safety = UiSafety.SafeWrite, Description = "作業軸設定のフェーズにする")]
+        private Button _phaseAxisBtn;
+        [UiControl("phase.deform", Safety = UiSafety.SafeWrite, Description = "変形のフェーズにする（文言はデフォーマ名から作る。例「曲げ開始」）")]
+        private Button _phaseDeformBtn;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealDeformPhase), Description = "変形を適用する")]
+        private Button _applyBtn;
+        [UiControl("revert", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealDeformPhase), Description = "適用していない変形を取り消す")]
+        private Button _revertBtn;
 
         // フェーズごとに出し分ける本体。見出し・説明・種類は共通で常に出す。
+        [UiControl(Ignore = true)]
         private VisualElement _workAxisBody;
+        [UiControl(Ignore = true)]
         private VisualElement _deformBody;
 
         private static readonly Color ActiveBtnColor   = new Color(0.20f, 0.40f, 0.62f);
@@ -63,39 +80,142 @@ namespace Poly_Ling.Player
         private readonly List<string> _deformerIds = new List<string>();
 
         // 形状プレビュー表示
+        [UiControl("shapePreview", Reveal = nameof(RevealDeformPhase), Description = "軸の形状プレビューを表示する")]
         private Toggle _shapePreviewToggle;
 
         // Rotate
+        [UiControl(Ignore = true)]
         private VisualElement _rotateGroup;
-        private Slider        _rotSliderX, _rotSliderY, _rotSliderZ;
-        private FloatField    _rotFieldX,  _rotFieldY,  _rotFieldZ;
+        [UiControl("rotate.x", Reveal = nameof(RevealRotate), Description = "回転角 X（度）")]
+        private Slider        _rotSliderX;
+        [UiControl("rotate.y", Reveal = nameof(RevealRotate), Description = "回転角 Y（度）")]
+        private Slider        _rotSliderY;
+        [UiControl("rotate.z", Reveal = nameof(RevealRotate), Description = "回転角 Z（度）")]
+        private Slider        _rotSliderZ;
+        [UiControl("rotate.xValue", Reveal = nameof(RevealRotate), Description = "回転角 X の数値入力")]
+        private FloatField    _rotFieldX;
+        [UiControl("rotate.yValue", Reveal = nameof(RevealRotate), Description = "回転角 Y の数値入力")]
+        private FloatField    _rotFieldY;
+        [UiControl("rotate.zValue", Reveal = nameof(RevealRotate), Description = "回転角 Z の数値入力")]
+        private FloatField    _rotFieldZ;
 
         // Bend
+        [UiControl(Ignore = true)]
         private VisualElement _bendGroup;
-        private Slider        _bendAngleSlider, _bendPlaneSlider;
-        private FloatField    _bendAngleField,  _bendPlaneField;
-        private Toggle        _bendPivotToggle, _bendCameraPlaneToggle;
+        [UiControl("bend.angle", Reveal = nameof(RevealBend), Description = "曲げ角度（度）")]
+        private Slider        _bendAngleSlider;
+        [UiControl("bend.direction", Reveal = nameof(RevealBend), Description = "まげ方向（度）")]
+        private Slider        _bendPlaneSlider;
+        [UiControl("bend.angleValue", Reveal = nameof(RevealBend), Description = "曲げ角度の数値入力")]
+        private FloatField    _bendAngleField;
+        [UiControl("bend.directionValue", Reveal = nameof(RevealBend), Description = "まげ方向の数値入力")]
+        private FloatField    _bendPlaneField;
+        [UiControl("bend.fromWorkAxisOrigin", Reveal = nameof(RevealBend), Description = "作業軸の原点を起点にする")]
+        private Toggle        _bendPivotToggle;
+        [UiControl("bend.cameraDepthAxis", Reveal = nameof(RevealBend), Description = "カメラ奥行軸で曲げる")]
+        private Toggle        _bendCameraPlaneToggle;
 
         // Move
+        [UiControl(Ignore = true)]
         private VisualElement _moveGroup;
-        private Slider        _movSliderX, _movSliderY, _movSliderZ;
-        private FloatField    _movFieldX,  _movFieldY,  _movFieldZ;
+        [UiControl("move.x", Reveal = nameof(RevealMove), Description = "移動量 X（作業軸ローカル）")]
+        private Slider        _movSliderX;
+        [UiControl("move.y", Reveal = nameof(RevealMove), Description = "移動量 Y（作業軸ローカル）")]
+        private Slider        _movSliderY;
+        [UiControl("move.z", Reveal = nameof(RevealMove), Description = "移動量 Z（作業軸ローカル）")]
+        private Slider        _movSliderZ;
+        [UiControl("move.xValue", Reveal = nameof(RevealMove), Description = "移動量 X の数値入力")]
+        private FloatField    _movFieldX;
+        [UiControl("move.yValue", Reveal = nameof(RevealMove), Description = "移動量 Y の数値入力")]
+        private FloatField    _movFieldY;
+        [UiControl("move.zValue", Reveal = nameof(RevealMove), Description = "移動量 Z の数値入力")]
+        private FloatField    _movFieldZ;
 
         // Scale
+        [UiControl(Ignore = true)]
         private VisualElement _scaleGroup;
-        private Slider        _sclSliderX, _sclSliderY, _sclSliderZ;
-        private FloatField    _sclFieldX,  _sclFieldY,  _sclFieldZ;
+        [UiControl("scale.x", Reveal = nameof(RevealScale), Description = "倍率 X（作業軸ローカル）")]
+        private Slider        _sclSliderX;
+        [UiControl("scale.y", Reveal = nameof(RevealScale), Description = "倍率 Y（作業軸ローカル）")]
+        private Slider        _sclSliderY;
+        [UiControl("scale.z", Reveal = nameof(RevealScale), Description = "倍率 Z（作業軸ローカル）")]
+        private Slider        _sclSliderZ;
+        [UiControl("scale.xValue", Reveal = nameof(RevealScale), Description = "倍率 X の数値入力")]
+        private FloatField    _sclFieldX;
+        [UiControl("scale.yValue", Reveal = nameof(RevealScale), Description = "倍率 Y の数値入力")]
+        private FloatField    _sclFieldY;
+        [UiControl("scale.zValue", Reveal = nameof(RevealScale), Description = "倍率 Z の数値入力")]
+        private FloatField    _sclFieldZ;
 
         // Twist
+        [UiControl(Ignore = true)]
         private VisualElement _twistGroup;
+        [UiControl("twist.angle", Reveal = nameof(RevealTwist), Description = "ねじり角度（度）")]
         private Slider        _twistAngleSlider;
+        [UiControl("twist.angleValue", Reveal = nameof(RevealTwist), Description = "ねじり角度の数値入力")]
         private FloatField    _twistAngleField;
+        [UiControl("twist.fromWorkAxisOrigin", Reveal = nameof(RevealTwist), Description = "作業軸の原点を起点にする")]
         private Toggle        _twistPivotToggle;
 
         // Magnet
+        [UiControl("magnet.enabled", Reveal = nameof(RevealDeformPhase), Description = "マグネット（比例編集）を使う")]
         private Toggle    _magnetToggle;
+        [UiControl("magnet.radius", Reveal = nameof(RevealDeformPhase), Description = "マグネットの半径")]
         private Slider    _magnetRadius;
-        private EnumField _magnetFalloff, _magnetDistance;
+        [UiControl("magnet.falloff", Reveal = nameof(RevealDeformPhase), Description = "マグネットの減衰")]
+        private EnumField _magnetFalloff;
+        [UiControl("magnet.distanceMode", Reveal = nameof(RevealDeformPhase), Description = "マグネットの距離")]
+        private EnumField _magnetDistance;
+
+        // ================================================================
+        // UI 自動操作の表示の下準備（UiControl / UiNested の Reveal）。
+        // 利用者と同じくフェーズボタン・種類のドロップダウンで切り替える。
+        // ================================================================
+
+        private bool RevealAxisPhase()
+        {
+            var h = GetH?.Invoke();
+            if (h == null || h.Phase == DeformToolHandler.DeformPhase.WorkAxis) return false;
+            SetPhase(DeformToolHandler.DeformPhase.WorkAxis);
+            return true;
+        }
+
+        private bool RevealDeformPhase()
+        {
+            var h = GetH?.Invoke();
+            if (h == null || h.Phase == DeformToolHandler.DeformPhase.Deform) return false;
+            SetPhase(DeformToolHandler.DeformPhase.Deform);
+            return true;
+        }
+
+        /// <summary>
+        /// 変形フェーズにし、Params が TParams のデフォーマを選ぶ。
+        /// 候補は種類のドロップダウンと同じ並び（_deformerIds）で、DeformerRegistry.Create で
+        /// 作った既定インスタンスの Params の型で見分ける。選ぶのはドロップダウンの index 代入
+        /// （利用者の選択と同じ ChangeEvent を通る）。
+        /// </summary>
+        private bool RevealDeformer<TParams>() where TParams : class
+        {
+            bool changed = RevealDeformPhase();
+            if (GetH?.Invoke()?.Deformer?.Params is TParams) return changed;
+            if (_deformerDropdown == null) return changed;
+
+            for (int i = 0; i < _deformerIds.Count; i++)
+            {
+                if (DeformerRegistry.Create(_deformerIds[i])?.Params is TParams)
+                {
+                    _deformerDropdown.index = i;
+                    return true;
+                }
+            }
+            return changed;
+        }
+
+        private bool RevealRotate() => RevealDeformer<RotateDeformerParams>();
+        private bool RevealMove()   => RevealDeformer<MoveDeformerParams>();
+        private bool RevealScale()  => RevealDeformer<ScaleDeformerParams>();
+        private bool RevealBend()   => RevealDeformer<BendDeformerParams>();
+        private bool RevealTwist()  => RevealDeformer<TwistDeformerParams>();
 
         // 再入防止。スライダ→フィールドの書き戻しで無限ループしないようにする。
         private bool _suppressCallback;
@@ -204,6 +324,8 @@ namespace Poly_Ling.Player
             revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn);
             _deformBody.Add(btnRow);
+            _applyBtn  = applyBtn;
+            _revertBtn = revertBtn;
 
             _infoLabel = new Label();
             _infoLabel.style.fontSize  = 10;

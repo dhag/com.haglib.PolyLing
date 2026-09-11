@@ -53,13 +53,52 @@ namespace Poly_Ling.Player
         // 内部 UI 参照
         // ================================================================
 
+        // UI 自動操作の ID は "log.<下の Id>"（UiControlAttribute.cs）。
+        // ログ本文は読み取り専用の欄。診断のスイッチは出力量を変えるだけ。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("count", Safety = UiSafety.ReadOnly, Description = "ログの件数")]
         private Label         _countLabel;
+        [UiControl(Ignore = true)]
         private ScrollView    _scroll;
+        [UiControl("text", Safety = UiSafety.ReadOnly, Description = "ログ本文")]
         private TextField     _logField;
+        [UiNested("saveDest")]
         private PlayerSaveDestRow _saveDest;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("autoScroll", Description = "末尾に追従する")]
         private Toggle        _autoScrollToggle;
+        [UiControl("copyAll", Safety = UiSafety.SafeWrite, Description = "ログを全部クリップボードへコピーする")]
+        private Button        _btnCopyAll;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "ログをクリアする")]
+        private Button        _btnClear;
+        [UiControl("save", Safety = UiSafety.UserOnly, Description = "ログを名前を付けて保存する（保存ダイアログを開く）")]
+        private Button        _btnSave;
+        [UiControl("diag.enabled", Description = "診断ログ: 全体有効 (Enabled)")]
+        private Toggle        _diagEnabledToggle;
+        [UiControl("diag.command", Description = "診断ログ: コマンド (Cmd)")]
+        private Toggle        _diagCommandToggle;
+        [UiControl("diag.notify", Description = "診断ログ: 通知 (Notify)")]
+        private Toggle        _diagNotifyToggle;
+        [UiControl("diag.viewport", Description = "診断ログ: 描画入口 (Viewport)")]
+        private Toggle        _diagViewportToggle;
+        [UiControl("diag.attr", Description = "診断ログ: 属性 (Attr)")]
+        private Toggle        _diagAttrToggle;
+        [UiControl("diag.undo", Description = "診断ログ: Undo")]
+        private Toggle        _diagUndoToggle;
+        [UiControl("diag.pick", Description = "診断ログ: 逐次出力 (Pick)")]
+        private Toggle        _diagPickToggle;
+        [UiControl("diag.pickAutoDump", Description = "診断ログ: 自動ダンプ (PickAutoDump)")]
+        private Toggle        _diagPickAutoDumpToggle;
+        [UiControl("diag.editSync", Description = "診断ログ: 頂点同期 (EditSync)")]
+        private Toggle        _diagEditSyncToggle;
+        [UiControl("diag.undoVerbose", Description = "診断ログ: Undo 詳細 (UndoVerbose)")]
+        private Toggle        _diagUndoVerboseToggle;
+        [UiControl("diag.dumpNow", Safety = UiSafety.SafeWrite, Description = "いまダンプする")]
+        private Button        _btnPickDumpNow;
+        [UiControl("diag.resetDumpBudget", Safety = UiSafety.SafeWrite, Description = "ダンプ回数をリセットする")]
+        private Button        _btnResetDumpBudget;
 
         private bool _subscribed;
 
@@ -150,6 +189,8 @@ namespace Poly_Ling.Player
             btnRow.Add(btnCopy);
             btnRow.Add(btnClear);
             parent.Add(btnRow);
+            _btnCopyAll = btnCopy;
+            _btnClear   = btnClear;
 
             // ── 診断ログのスイッチ ───────────────────────────────────
             BuildDiagSection(parent);
@@ -163,7 +204,7 @@ namespace Poly_Ling.Player
                 "書き込み先フォルダ", SaveDest.Keys.Log, "ログを保存", "txt", DefaultFileName);
             parent.Add(_saveDest.Root);
 
-            parent.Add(PlayerIoUiKit.WideBtn("名前を付けて保存", OnSave));
+            parent.Add(_btnSave = PlayerIoUiKit.WideBtn("名前を付けて保存", OnSave));
 
             // ── ステータス ───────────────────────────────────────────
             _statusLabel = PlayerIoUiKit.StatusLabel();
@@ -209,17 +250,17 @@ namespace Poly_Ling.Player
             parent.Add(PlayerIoUiKit.Divider());
             parent.Add(PlayerIoUiKit.SectionLabel("診断ログ（既定は全て OFF）"));
 
-            parent.Add(DiagToggle("全体有効 (Enabled)", () => PLDiag.Enabled,  v => PLDiag.Enabled  = v));
-            parent.Add(DiagToggle("コマンド (Cmd)",     () => PLDiag.Command,  v => PLDiag.Command  = v));
-            parent.Add(DiagToggle("通知 (Notify)",      () => PLDiag.Notify,   v => PLDiag.Notify   = v));
-            parent.Add(DiagToggle("描画入口 (Viewport)", () => PLDiag.Viewport, v => PLDiag.Viewport = v));
-            parent.Add(DiagToggle("属性 (Attr)",        () => PLDiag.Attr,     v => PLDiag.Attr     = v));
-            parent.Add(DiagToggle("Undo",               () => PLDiag.Undo,     v => PLDiag.Undo     = v));
+            parent.Add(_diagEnabledToggle  = DiagToggle("全体有効 (Enabled)", () => PLDiag.Enabled,  v => PLDiag.Enabled  = v));
+            parent.Add(_diagCommandToggle  = DiagToggle("コマンド (Cmd)",     () => PLDiag.Command,  v => PLDiag.Command  = v));
+            parent.Add(_diagNotifyToggle   = DiagToggle("通知 (Notify)",      () => PLDiag.Notify,   v => PLDiag.Notify   = v));
+            parent.Add(_diagViewportToggle = DiagToggle("描画入口 (Viewport)", () => PLDiag.Viewport, v => PLDiag.Viewport = v));
+            parent.Add(_diagAttrToggle     = DiagToggle("属性 (Attr)",        () => PLDiag.Attr,     v => PLDiag.Attr     = v));
+            parent.Add(_diagUndoToggle     = DiagToggle("Undo",               () => PLDiag.Undo,     v => PLDiag.Undo     = v));
 
             parent.Add(PlayerIoUiKit.SectionLabel("ピック／移動"));
 
-            parent.Add(DiagToggle("逐次出力 (Pick)", () => PLDiag.Pick, v => PLDiag.Pick = v));
-            parent.Add(DiagToggle("自動ダンプ (PickAutoDump)",
+            parent.Add(_diagPickToggle = DiagToggle("逐次出力 (Pick)", () => PLDiag.Pick, v => PLDiag.Pick = v));
+            parent.Add(_diagPickAutoDumpToggle = DiagToggle("自動ダンプ (PickAutoDump)",
                                   () => PLDiag.PickAutoDump,
                                   v =>
                                   {
@@ -227,8 +268,8 @@ namespace Poly_Ling.Player
                                       if (v) PLDiag.ResetPickDumpBudget();
                                   }));
 
-            parent.Add(DiagToggle("頂点同期 (EditSync)",   () => PLDiag.EditSync,    v => PLDiag.EditSync    = v));
-            parent.Add(DiagToggle("Undo 詳細 (UndoVerbose)", () => PLDiag.UndoVerbose, v => PLDiag.UndoVerbose = v));
+            parent.Add(_diagEditSyncToggle    = DiagToggle("頂点同期 (EditSync)",   () => PLDiag.EditSync,    v => PLDiag.EditSync    = v));
+            parent.Add(_diagUndoVerboseToggle = DiagToggle("Undo 詳細 (UndoVerbose)", () => PLDiag.UndoVerbose, v => PLDiag.UndoVerbose = v));
 
             var diagRow = new VisualElement();
             diagRow.style.flexDirection = FlexDirection.Row;
@@ -246,6 +287,8 @@ namespace Poly_Ling.Player
             diagRow.Add(btnDump);
             diagRow.Add(btnReset);
             parent.Add(diagRow);
+            _btnPickDumpNow    = btnDump;
+            _btnResetDumpBudget = btnReset;
         }
 
         /// <summary>PLDiag のフィールド 1 個ぶんのトグル行。</summary>

@@ -29,15 +29,32 @@ namespace Poly_Ling.Player
         private float _uvSeamThreshold = 0.01f;
 
         // UI
+        // UI 自動操作の ID は "quadDecimator.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl("meshInfo", Safety = UiSafety.ReadOnly, Description = "総面数・Quad 数・Tri 数（対象が無いときは非表示）")]
         private Label         _meshInfoLabel;
+        [UiControl("noMesh", Safety = UiSafety.ReadOnly, Description = "対象が無いときの案内（対象があるときは非表示）")]
         private Label         _noMeshLabel;
-        private Slider        _sliderTargetRatio, _sliderNormalAngle, _sliderHardAngle, _sliderUvSeam;
+        [UiControl("targetRatio", Description = "目標比率")]
+        private Slider        _sliderTargetRatio;
+        [UiControl("normalAngle", Description = "法線角度（度）")]
+        private Slider        _sliderNormalAngle;
+        [UiControl("hardAngle", Description = "ハードエッジ角度（度）")]
+        private Slider        _sliderHardAngle;
+        [UiControl("uvSeam", Description = "UV シーム閾値")]
+        private Slider        _sliderUvSeam;
+        [UiControl("maxPasses", Description = "最大パス数")]
         private SliderInt     _sliderMaxPasses;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "減数化を実行する")]
         private Button        _btnExecute;
+        [UiControl("noQuads", Safety = UiSafety.ReadOnly, Description = "Quad が無いときの案内（Quad があるときは非表示）")]
         private Label         _noQuadsLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _resultSection;
+        [UiControl("resultSummary", Safety = UiSafety.ReadOnly, Description = "直近の実行結果の要約（実行前は非表示）")]
         private Label         _resultSummary;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _passLogsContainer;
 
         private DecimatorResult _lastResult;

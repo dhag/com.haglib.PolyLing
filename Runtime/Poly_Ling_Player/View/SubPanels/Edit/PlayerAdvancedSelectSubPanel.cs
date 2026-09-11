@@ -33,36 +33,84 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "advancedSelect.<下の Id>"（UiControlAttribute.cs）。
+        // モードごとに表示される欄が変わるので、各欄の表示の下準備はモードを切り替える。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("mode", Description = "接続 / ベルト / 辺ループ / 最短 / UV/法線数 / 軸近傍 / エッジ群 / 選択内エッジ")]
         private DropdownField _modeDropdown;
+        [UiControl("help", Safety = UiSafety.ReadOnly, Description = "今のモードの操作説明")]
         private HelpBox       _helpBox;
+        [UiControl("edgeLoop.threshold", Reveal = nameof(RevealEdgeLoop), Description = "辺ループの方向しきい値（辺ループのときだけ表示）")]
         private Slider        _edgeLoopThresholdSlider;
+        [UiControl(Ignore = true)]
         private VisualElement _edgeLoopGroup;
+        [UiControl(Ignore = true)]
         private VisualElement _addRemoveRow;
+        [UiControl("action.add", Safety = UiSafety.SafeWrite, Description = "クリックで選択に追加する動作にする")]
         private Button        _addBtn;
+        [UiControl("action.remove", Safety = UiSafety.SafeWrite, Description = "クリックで選択から外す動作にする（メッシュは消さない）")]
         private Button        _removeBtn;
+        [UiControl("clearAll", Safety = UiSafety.SafeWrite, Description = "選択を全部解除する（メッシュは消さない）")]
         private Button        _clearAllBtn;
+        [UiControl(Ignore = true)]
         private VisualElement _shortestPathGroup;
+        [UiControl("shortestPath.first", Safety = UiSafety.ReadOnly, Reveal = nameof(RevealShortestPath),
+                   Description = "最短の始点の頂点番号（最短のときだけ表示）")]
         private Label         _firstVertexLabel;
+        [UiControl("shortestPath.clearFirst", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealShortestPath),
+                   Description = "最短の始点をクリアする（始点があるときだけ表示）")]
         private Button        _clearFirstBtn;
 
         // 属性選択（UV/法線数・軸近傍）
+        [UiControl(Ignore = true)]
         private VisualElement _attrGroup;
+        [UiControl(Ignore = true)]
         private VisualElement _uvNormalGroup;
+        [UiControl("uvNormal.threshold", Reveal = nameof(RevealUvNormal), Description = "UV/法線のデータ数しきい値（UV/法線数のときだけ表示）")]
         private IntegerField  _uvNormalThresholdField;
+        [UiControl(Ignore = true)]
         private VisualElement _nearAxisGroup;
+        [UiControl("nearAxis.axis", Reveal = nameof(RevealNearAxis), Description = "軸（軸近傍のときだけ表示）")]
         private DropdownField _axisDropdown;
+        [UiControl("nearAxis.threshold", Reveal = nameof(RevealNearAxis), Description = "軸からの距離しきい値（軸近傍のときだけ表示）")]
         private FloatField    _axisThresholdField;
+        [UiControl("attribute.limitToSelection", Reveal = nameof(RevealUvNormal), Description = "選択中の頂点内から選ぶ（UV/法線数・軸近傍のときに表示）")]
         private Toggle        _limitToSelectionToggle;
+        [UiControl("attribute.run", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealUvNormal), Description = "属性選択を実行する（UV/法線数・軸近傍のときに表示）")]
         private Button        _executeBtn;
 
         // エッジ（1面だけが使う辺）選択
+        [UiControl(Ignore = true)]
         private VisualElement _boundaryEdgeGroup;
+        [UiControl("boundaryEdgeInSelection.run", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealBoundaryEdgeInSelection),
+                   Description = "両端点が選択済みのエッジを選択する（選択内エッジのときだけ表示）")]
         private Button        _boundaryEdgeExecuteBtn;
 
         // 反転 / 辞書化
+        [UiControl("invert", Safety = UiSafety.SafeWrite, Description = "有効な選択モード（頂点/辺/面/線）の選択を反転する")]
         private Button        _invertBtn;
+        [UiControl("saveSet.name", Description = "辞書エントリ名（空欄なら自動）")]
         private TextField     _setNameField;
+        [UiControl("saveSet.run", Safety = UiSafety.SafeWrite, Description = "現在の選択をパーツ選択辞書に登録する")]
+        private Button        _saveSetBtn;
+
+        // ================================================================
+        // UI 自動操作の表示の下準備（UiControl の Reveal）。利用者と同じくモードを切り替える。
+        // ================================================================
+
+        private bool RevealMode(string label)
+        {
+            if (_modeDropdown == null || _modeDropdown.value == label) return false;
+            _modeDropdown.value = label;
+            return true;
+        }
+
+        private bool RevealEdgeLoop()               => RevealMode("辺ループ");
+        private bool RevealShortestPath()           => RevealMode("最短");
+        private bool RevealUvNormal()               => RevealMode("UV/法線数");
+        private bool RevealNearAxis()               => RevealMode("軸近傍");
+        private bool RevealBoundaryEdgeInSelection() => RevealMode("選択内エッジ");
 
         private static readonly SymmetryAxis[] AxisValues =
         {
@@ -325,6 +373,7 @@ namespace Poly_Ling.Player
                     new SavePartsSetCommand(ModelIndex, _setNameField?.value?.Trim() ?? ""));
             };
             dictRow.Add(dictBtn);
+            _saveSetBtn = dictBtn;
 
             // ── ShortestPath 始点情報（ShortestPath モード時のみ表示）
             _shortestPathGroup = new VisualElement();

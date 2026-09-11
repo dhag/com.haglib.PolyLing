@@ -34,9 +34,14 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "tri4To1.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("stats.target", Safety = UiSafety.ReadOnly, Description = "対象のオブジェクト数・面数と除外数")]
         private Label         _targetLabel;
+        [UiControl("stats.status", Safety = UiSafety.ReadOnly, Description = "消える面・頂点の数、または実行できない理由")]
         private Label         _statusLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "選択三角形と囲む 3 枚を外側の 3 頂点を結ぶ 1 枚に張り替える")]
         private Button        _mergeBtn;
 
         // ================================================================

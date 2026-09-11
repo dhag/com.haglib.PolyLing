@@ -20,14 +20,31 @@ namespace Poly_Ling.Player
         private const string AutoStartPortKey = "PolyLing.RemoteServer.Port";
 
         // UI
+        // UI 自動操作の ID は "remoteServer.<下の Id>"（UiControlAttribute.cs）。
+        // 外部と通信するサーバなので、開始・停止と送信のボタンは利用者の操作に限る（UserOnly）。
+        [UiControl("missing", Safety = UiSafety.ReadOnly, Description = "サーバが使えないときの表示")]
         private Label         _missingLabel;
+        [UiControl(Ignore = true)]
         private VisualElement _mainContent;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "サーバの状態")]
         private Label         _statusInfo;
+        [UiControl("port", Description = "待ち受けポート")]
         private IntegerField  _portField;
+        [UiControl("autoStart", Description = "アプリ起動時に自動開始する")]
         private Toggle        _autoStartToggle;
-        private Button        _btnStart, _btnStop;
+        [UiControl("start", Safety = UiSafety.UserOnly, Description = "サーバを開始する（外部から接続できるようになる）")]
+        private Button        _btnStart;
+        [UiControl("stop", Safety = UiSafety.UserOnly, Description = "サーバを停止する")]
+        private Button        _btnStop;
+        [UiControl("capturedInfo", Safety = UiSafety.ReadOnly, Description = "撮った画像の情報")]
         private Label         _capturedInfo;
-        private Button        _btnSendImages, _btnClearImages, _btnSendHeader;
+        [UiControl("sendImages", Safety = UiSafety.UserOnly, Description = "画像を外部へ送る")]
+        private Button        _btnSendImages;
+        [UiControl("clearImages", Safety = UiSafety.Destructive, Description = "撮った画像を捨てる")]
+        private Button        _btnClearImages;
+        [UiControl("sendHeader", Safety = UiSafety.UserOnly, Description = "ヘッダを外部へ送る")]
+        private Button        _btnSendHeader;
+        [UiControl("sendHierarchy", Safety = UiSafety.UserOnly, Description = "プロジェクトの階層を外部へ送る")]
         private Button        _btnSendHierarchy;
 
         // 表示更新イベントの購読先（多重購読防止）

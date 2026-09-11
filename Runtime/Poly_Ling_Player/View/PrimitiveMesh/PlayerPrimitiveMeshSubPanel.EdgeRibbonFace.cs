@@ -46,6 +46,7 @@ namespace Poly_Ling.Player
         private const float RibbonFaceWidthMin = 0.001f;
         private const float RibbonFaceWidthMax = 1.0f;
 
+        [UiControl("edgeRibbonFace.info", Safety = UiSafety.ReadOnly, Description = "辺リボン面の情報")]
         private Label _ribbonFaceInfo;
 
         // ================================================================

@@ -33,12 +33,29 @@ namespace Poly_Ling.Player
             return new[] { model.IndexOf(mc) };
         }
 
+        // UI 自動操作の ID は "mergeVertices.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("threshold", Description = "結合する頂点どうしの距離のしきい値")]
         private FloatField    _threshField;
+        [UiControl("showPreview", Description = "結合候補をビューポートに表示する")]
         private Toggle        _previewToggle;
+        [UiControl("stats.groups", Safety = UiSafety.ReadOnly, Description = "結合グループの数")]
         private Label         _groupsLabel;
+        [UiControl("stats.vertices", Safety = UiSafety.ReadOnly, Description = "結合で消える頂点の数")]
         private Label         _vertsLabel;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _detailList;
+        [UiControl("thresholdPreset.small", Safety = UiSafety.SafeWrite, Description = "しきい値を 0.001 にする")]
+        private Button        _thresholdPreset0001Btn;
+        [UiControl("thresholdPreset.medium", Safety = UiSafety.SafeWrite, Description = "しきい値を 0.01 にする")]
+        private Button        _thresholdPreset001Btn;
+        [UiControl("thresholdPreset.large", Safety = UiSafety.SafeWrite, Description = "しきい値を 0.1 にする")]
+        private Button        _thresholdPreset01Btn;
+        [UiControl("mergeByThreshold", Safety = UiSafety.SafeWrite, Description = "しきい値以内の頂点を結合する（Ctrl+Shift+J と同じ）")]
+        private Button        _mergeThresholdBtn;
+        [UiControl("mergeAll", Safety = UiSafety.SafeWrite, Description = "距離を無視して重心へ結合する（Ctrl+J と同じ）")]
+        private Button        _mergeCentroidBtn;
 
         public void Build(VisualElement parent)
         {
@@ -75,6 +92,8 @@ namespace Poly_Ling.Player
             var presetRow = new VisualElement();
             presetRow.style.flexDirection = FlexDirection.Row;
             presetRow.style.marginBottom  = 4;
+            var presetBtns = new Button[3];
+            int presetIdx = 0;
             foreach (var (label, val) in new[] { ("0.001", 0.001f), ("0.01", 0.01f), ("0.1", 0.1f) })
             {
                 float v = val;
@@ -85,7 +104,11 @@ namespace Poly_Ling.Player
                 }) { text = label };
                 b.style.flexGrow = 1;
                 presetRow.Add(b);
+                presetBtns[presetIdx++] = b;
             }
+            _thresholdPreset0001Btn = presetBtns[0];
+            _thresholdPreset001Btn  = presetBtns[1];
+            _thresholdPreset01Btn   = presetBtns[2];
             _root.Add(presetRow);
 
             _previewToggle = new Toggle("Show Preview") { value = true };
@@ -112,6 +135,9 @@ namespace Poly_Ling.Player
             mergeCentroidBtn.style.height    = 30;
             mergeCentroidBtn.style.marginTop = 4;
             _root.Add(mergeCentroidBtn);
+
+            _mergeThresholdBtn = mergeThreshBtn;
+            _mergeCentroidBtn  = mergeCentroidBtn;
         }
 
         /// <summary>

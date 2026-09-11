@@ -23,15 +23,43 @@ namespace Poly_Ling.Player
         private enum TabType { Drawable, Bone, Morph }
         private TabType _currentTab = TabType.Drawable;
 
-        private Button      _tabDrawable, _tabBone, _tabMorph;
+        // UI 自動操作の ID は "meshSelectionSet.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("tab.drawable", Safety = UiSafety.SafeWrite, Description = "描画オブジェクトのタブ")]
+        private Button      _tabDrawable;
+        [UiControl("tab.bone", Safety = UiSafety.SafeWrite, Description = "ボーンのタブ")]
+        private Button      _tabBone;
+        [UiControl("tab.morph", Safety = UiSafety.SafeWrite, Description = "モーフのタブ")]
+        private Button      _tabMorph;
+        [UiControl("filter", Description = "メッシュ名でフィルタ")]
         private TextField   _filterField;
+        [UiControl("clearFilter", Safety = UiSafety.SafeWrite, Description = "フィルタを空にする")]
+        private Button      _btnClearFilter;
         private readonly string[] _filterTexts = new string[3]; // Drawable/Bone/Morph
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label       _warningLabel;
+        [UiControl("setName", Description = "辞書エントリ名")]
         private TextField   _setNameField;
+        [UiControl("saveSet", Safety = UiSafety.SafeWrite, Description = "今の選択を辞書に登録する")]
+        private Button      _btnSaveSet;
+        [UiControl("sets", Description = "登録済みの選択セット（一覧の行番号）")]
         private ListView    _setListView;
-        private Button      _btnApply, _btnAddSet, _btnRename, _btnDelete;
-        private Button      _btnSaveDic, _btnLoadDic;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "選んだセットを適用する（ボタン「適用」）")]
+        private Button      _btnApply;
+        [UiControl("add", Safety = UiSafety.SafeWrite, Description = "選んだセットを追加する（ボタン「追加」）")]
+        private Button      _btnAddSet;
+        [UiControl("rename", Safety = UiSafety.SafeWrite, Description = "選んだセットの名前を辞書エントリ名の欄の値に変える")]
+        private Button      _btnRename;
+        [UiControl("delete", Safety = UiSafety.Destructive, Description = "選んだセットを削除する")]
+        private Button      _btnDelete;
+        [UiControl("exportCsv", Safety = UiSafety.UserOnly, Description = "辞書を CSV にエクスポートする（保存ダイアログを開く）")]
+        private Button      _btnSaveDic;
+        [UiControl("importCsv", Safety = UiSafety.UserOnly, Description = "CSV から辞書を追加インポートする（ファイル選択ダイアログを開く）")]
+        private Button      _btnLoadDic;
+        [UiControl("csvPath", Description = "辞書 CSV のパス（ダイアログの初期フォルダ・ファイル名として使う）")]
         private TextField   _dicPathField;
+        [UiControl("browseCsv", Safety = UiSafety.UserOnly, Description = "辞書 CSV を選ぶダイアログを開く")]
+        private Button      _btnBrowseDic;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label       _statusLabel;
 
         private const string DicPathKey = "MeshSet.DicPath";
@@ -81,6 +109,7 @@ namespace Poly_Ling.Player
             var btnClearFilter = new Button(() => { _filterField.SetValueWithoutNotify(""); _filterTexts[(int)_currentTab] = ""; _setListView?.RefreshItems(); }) { text = "×" };
             btnClearFilter.style.width = 22;
             filterRow.Add(_filterField); filterRow.Add(btnClearFilter);
+            _btnClearFilter = btnClearFilter;
             root.Add(filterRow);
 
             _warningLabel = new Label();
@@ -92,6 +121,7 @@ namespace Poly_Ling.Player
             var saveRow = new VisualElement(); saveRow.style.flexDirection = FlexDirection.Row; saveRow.style.marginBottom = 4;
             _setNameField = new TextField(); _setNameField.style.flexGrow = 1;
             var btnSave = new Button(OnSaveSet) { text = "辞書化" }; btnSave.style.width = 52;
+            _btnSaveSet = btnSave;
             saveRow.Add(_setNameField); saveRow.Add(btnSave);
             root.Add(saveRow);
 
@@ -126,7 +156,7 @@ namespace Poly_Ling.Player
             _dicPathField = new TextField();
             _dicPathField.tooltip = "オブジェクト選択辞書の CSV ファイル";
             _dicPathField.RegisterValueChangedCallback(e => RecentPaths.Set(DicPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_dicPathField, OnBrowseDicFile));
+            root.Add(PlayerIoUiKit.PathRow(_dicPathField, OnBrowseDicFile, out _btnBrowseDic));
             _dicPathField.SetValueWithoutNotify(ResolveDicPath());
 
             _btnSaveDic = PlayerIoUiKit.WideBtn("エクスポート",   OnSaveDicFile); root.Add(_btnSaveDic);

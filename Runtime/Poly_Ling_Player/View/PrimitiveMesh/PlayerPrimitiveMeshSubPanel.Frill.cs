@@ -59,20 +59,27 @@ namespace Poly_Ling.Player
         /// <summary>断面プロファイルエディタで B 側を編集中なら true（メモリ保持・非永続）。</summary>
         private bool _frillEditingB;
 
+        [UiControl("frill.info", Safety = UiSafety.ReadOnly, Description = "フリルの情報")]
         private Label _frillInfoLabel;
 
         /// <summary>上下フリップ行。2プロファイルOFFのときは隠す。</summary>
+        [UiControl(Ignore = true)]
         private VisualElement _frillFlipRow;
+        [UiControl(Ignore = true)]
         private VisualElement _frillFlipHint;
 
         /// <summary>鎖モード行。2プロファイルOFFのときは隠す。</summary>
+        [UiControl(Ignore = true)]
         private VisualElement _frillChainRow;
+        [UiControl(Ignore = true)]
         private VisualElement _frillChainHint;
 
         /// <summary>2プロファイルのトグル。4列CSV読込で強制ONにしたとき表示を合わせる。</summary>
+        [UiControl(Ignore = true)]
         private Toggle _frillTwoProfilesToggle;
 
         /// <summary>梯子1本ごとの高さ倍率スライダを並べるコンテナ。梯子リストの変化で作り直す。</summary>
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _frillBeltScaleContainer;
 
         /// <summary>厚み付けの角処理(ベベル)UI 要素。</summary>

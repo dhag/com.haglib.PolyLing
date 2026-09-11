@@ -32,16 +32,28 @@ namespace Poly_Ling.Player
             return new[] { model.IndexOf(mc) };
         }
 
+        // UI 自動操作の ID は "solidify.<下の Id>"（UiControlAttribute.cs）。
+        // 名前欄は「既存の描画オブジェクトに追加」オフ、追加先はオンのときだけ表示される。
+        // エッジサイズと内向きエッジは分割数が 1 以上のときだけ表示される。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "選択面の数")]
         private Label         _infoLabel;
+        [UiControl("result", Safety = UiSafety.ReadOnly, Description = "直近の実行結果")]
         private Label         _resultLabel;
+        [UiControl("run", Safety = UiSafety.SafeWrite, Description = "厚み付けを実行する")]
+        private Button        _runBtn;
 
+        [UiControl("thickness", Description = "厚み")]
         private FloatField    _thicknessField;
+        [UiControl("addToExisting", Description = "結果を既存の描画オブジェクトに追加する（オフは新しいオブジェクト）")]
         private Toggle        _addToExistingToggle;
 
         // 名前欄。「既存メッシュに追加」のときは追加先ドロップダウンへ差し替える
         // （図形生成パネルの名前欄と同じ扱い）。
+        [UiControl("meshName", Reveal = nameof(RevealNewMesh), Description = "新しいオブジェクトの名前")]
         private TextField     _nameField;
+        [UiControl("addTarget", Reveal = nameof(RevealAddTarget), Description = "追加先の描画オブジェクト")]
         private DropdownField _addTargetField;
         private readonly System.Collections.Generic.List<int> _addTargetIndices =
             new System.Collections.Generic.List<int>();
@@ -52,12 +64,46 @@ namespace Poly_Ling.Player
         /// <summary>選択オブジェクトリストの先頭。追加先ドロップダウンの既定選択に使う。</summary>
         public Func<int> GetFirstSelectedDrawableIndex;
 
+        [UiControl("segmentsFront", Description = "前面エッジの分割数（0=無効 / 1=面取り / 2 以上=ラウンド）")]
         private SliderInt     _segFrontSlider;
+        [UiControl("segmentsBack", Description = "背面エッジの分割数（0=無効 / 1=面取り / 2 以上=ラウンド）")]
         private SliderInt     _segBackSlider;
+        [UiControl(Ignore = true)]
         private VisualElement _edgeParamsGroup;
+        [UiControl("edgeSizeFront", Reveal = nameof(RevealEdgeParams), Description = "前面エッジサイズ（厚みの半分未満に丸める）")]
         private FloatField    _edgeFrontField;
+        [UiControl("edgeSizeBack", Reveal = nameof(RevealEdgeParams), Description = "背面エッジサイズ（厚みの半分未満に丸める）")]
         private FloatField    _edgeBackField;
+        [UiControl("edgeInward", Reveal = nameof(RevealEdgeParams), Description = "内向きエッジ")]
         private Toggle        _edgeInwardToggle;
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。利用者と同じくチェック・分割数を切り替える。
+        /// 名前欄は「既存の描画オブジェクトに追加」オフのときだけ表示される。
+        /// </summary>
+        private bool RevealNewMesh()
+        {
+            if (_addToExistingToggle == null || !_addToExistingToggle.value) return false;
+            _addToExistingToggle.value = false;
+            return true;
+        }
+
+        /// <summary>追加先は「既存の描画オブジェクトに追加」オンのときだけ表示される。</summary>
+        private bool RevealAddTarget()
+        {
+            if (_addToExistingToggle == null || _addToExistingToggle.value) return false;
+            _addToExistingToggle.value = true;
+            return true;
+        }
+
+        /// <summary>エッジのサイズと向きは、前面か背面の分割数が 1 以上のときだけ表示される。</summary>
+        private bool RevealEdgeParams()
+        {
+            if (_segFrontSlider == null) return false;
+            if (_segFrontSlider.value > 0 || (_segBackSlider != null && _segBackSlider.value > 0)) return false;
+            _segFrontSlider.value = 1;
+            return true;
+        }
 
         // ================================================================
         // Build
@@ -228,6 +274,7 @@ namespace Poly_Ling.Player
             execBtn.style.height    = 30;
             execBtn.style.marginTop = 6;
             _root.Add(execBtn);
+            _runBtn = execBtn;
 
             _resultLabel = InfoLabel("");
             _root.Add(_resultLabel);

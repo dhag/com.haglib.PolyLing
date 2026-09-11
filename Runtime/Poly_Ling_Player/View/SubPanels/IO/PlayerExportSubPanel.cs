@@ -73,10 +73,22 @@ namespace Poly_Ling.Player
         // 内部 UI 参照
         // ================================================================
 
+        // UI 自動操作の ID は "<exportPmx / exportMqo / exportObj / exportVrm>.<下の Id>"（UiControlAttribute.cs）。
+        // 1 つのセクションをモードで切り替えるので、モードごとに別パネルとして登録する。
+        // モードごとの設定行は _uiDynamic（組 = ModeGroup）に ID 付きで入る。保存は必ずダイアログを通す。
+        [UiControl("title", Safety = UiSafety.ReadOnly, Description = "エクスポータの名前（モード）")]
         private Label             _panelNameLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label             _statusLabel;
+        [UiControl(Ignore = true)]
         private VisualElement     _settingsContainer;
+        [UiNested("saveDest")]
         private PlayerSaveDestRow _saveDest;
+        [UiControl("run", Safety = UiSafety.UserOnly, Description = "エクスポートする（保存ダイアログを開く）")]
+        private Button            _exportBtn;
+
+        /// <summary>モードごとの設定行（ToggleRow / FloatRow / TextRow が登録する）。</summary>
+        private readonly UiDynamicControls _uiDynamic = new UiDynamicControls();
 
         // ================================================================
         // Build
@@ -104,6 +116,7 @@ namespace Poly_Ling.Player
             exportBtn.style.height       = 28;
             exportBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
             parent.Add(exportBtn);
+            _exportBtn = exportBtn;
 
             _statusLabel = new Label("");
             _statusLabel.style.color      = new StyleColor(new Color(1f, 0.7f, 0.4f));
@@ -170,6 +183,12 @@ namespace Poly_Ling.Player
             }
         }
 
+        /// <summary>
+        /// UI 自動操作の動的な項目の組（モードごとの設定行）。ViewerCore が
+        /// exportPmx / exportMqo / exportObj / exportVrm の各パネルに同じ名前を渡す。
+        /// </summary>
+        public static string ModeGroup(Mode mode) => ModeName(mode).ToLowerInvariant();
+
         public void SetStatus(string msg)
         {
             if (_statusLabel != null) _statusLabel.text = msg;
@@ -183,6 +202,8 @@ namespace Poly_Ling.Player
         {
             if (_settingsContainer == null) return;
             _settingsContainer.Clear();
+            // 行を作る補助関数（ToggleRow など）がここへ ID 付きで登録する。組はモード名。
+            _uiDynamic.Begin(ModeGroup(_mode));
 
             if (_mode == Mode.PMX)
                 BuildPmxSettings(_settingsContainer);
@@ -202,23 +223,23 @@ namespace Poly_Ling.Player
         private void BuildPmxSettings(VisualElement parent)
         {
             parent.Add(SectionLabel("座標変換"));
-            parent.Add(FloatRow("Scale",    () => _pmxSettings.Scale,    v => _pmxSettings.Scale    = v));
-            parent.Add(ToggleRow("Flip X",  () => _pmxSettings.FlipX,    v => _pmxSettings.FlipX    = v));
-            parent.Add(ToggleRow("Flip Z",  () => _pmxSettings.FlipZ,    v => _pmxSettings.FlipZ    = v));
-            parent.Add(ToggleRow("Flip UV V", () => _pmxSettings.FlipUV_V, v => _pmxSettings.FlipUV_V = v));
+            parent.Add(FloatRow("scale",     "Scale",    () => _pmxSettings.Scale,    v => _pmxSettings.Scale    = v));
+            parent.Add(ToggleRow("flipX",    "Flip X",  () => _pmxSettings.FlipX,    v => _pmxSettings.FlipX    = v));
+            parent.Add(ToggleRow("flipZ",    "Flip Z",  () => _pmxSettings.FlipZ,    v => _pmxSettings.FlipZ    = v));
+            parent.Add(ToggleRow("flipUvV",  "Flip UV V", () => _pmxSettings.FlipUV_V, v => _pmxSettings.FlipUV_V = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力対象"));
-            parent.Add(ToggleRow("材質",   () => _pmxSettings.ExportMaterials, v => _pmxSettings.ExportMaterials = v));
-            parent.Add(ToggleRow("ボーン", () => _pmxSettings.ExportBones,     v => _pmxSettings.ExportBones     = v));
-            parent.Add(ToggleRow("モーフ", () => _pmxSettings.ExportMorphs,    v => _pmxSettings.ExportMorphs    = v));
-            parent.Add(ToggleRow("剛体",   () => _pmxSettings.ExportBodies,    v => _pmxSettings.ExportBodies    = v));
-            parent.Add(ToggleRow("ジョイント", () => _pmxSettings.ExportJoints, v => _pmxSettings.ExportJoints  = v));
+            parent.Add(ToggleRow("materials", "材質",   () => _pmxSettings.ExportMaterials, v => _pmxSettings.ExportMaterials = v));
+            parent.Add(ToggleRow("bones",     "ボーン", () => _pmxSettings.ExportBones,     v => _pmxSettings.ExportBones     = v));
+            parent.Add(ToggleRow("morphs",    "モーフ", () => _pmxSettings.ExportMorphs,    v => _pmxSettings.ExportMorphs    = v));
+            parent.Add(ToggleRow("bodies",    "剛体",   () => _pmxSettings.ExportBodies,    v => _pmxSettings.ExportBodies    = v));
+            parent.Add(ToggleRow("joints",    "ジョイント", () => _pmxSettings.ExportJoints, v => _pmxSettings.ExportJoints  = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力形式"));
-            parent.Add(ToggleRow("バイナリ PMX", () => _pmxSettings.OutputBinaryPMX, v => _pmxSettings.OutputBinaryPMX = v));
-            parent.Add(ToggleRow("CSV も出力",   () => _pmxSettings.OutputCSV,        v => _pmxSettings.OutputCSV        = v));
+            parent.Add(ToggleRow("binary",    "バイナリ PMX", () => _pmxSettings.OutputBinaryPMX, v => _pmxSettings.OutputBinaryPMX = v));
+            parent.Add(ToggleRow("csv",       "CSV も出力",   () => _pmxSettings.OutputCSV,        v => _pmxSettings.OutputCSV        = v));
         }
 
         private PMXExportSettings ClonePmxSettings()
@@ -249,18 +270,18 @@ namespace Poly_Ling.Player
         private void BuildMqoSettings(VisualElement parent)
         {
             parent.Add(SectionLabel("座標変換"));
-            parent.Add(FloatRow("Scale",    () => _mqoSettings.Scale,    v => _mqoSettings.Scale    = v));
-            parent.Add(ToggleRow("Flip X",  () => _mqoSettings.FlipX,    v => _mqoSettings.FlipX    = v));
-            parent.Add(ToggleRow("Flip Z",  () => _mqoSettings.FlipZ,    v => _mqoSettings.FlipZ    = v));
-            parent.Add(ToggleRow("Flip UV V", () => _mqoSettings.FlipUV_V, v => _mqoSettings.FlipUV_V = v));
+            parent.Add(FloatRow("scale",     "Scale",    () => _mqoSettings.Scale,    v => _mqoSettings.Scale    = v));
+            parent.Add(ToggleRow("flipX",    "Flip X",  () => _mqoSettings.FlipX,    v => _mqoSettings.FlipX    = v));
+            parent.Add(ToggleRow("flipZ",    "Flip Z",  () => _mqoSettings.FlipZ,    v => _mqoSettings.FlipZ    = v));
+            parent.Add(ToggleRow("flipUvV",  "Flip UV V", () => _mqoSettings.FlipUV_V, v => _mqoSettings.FlipUV_V = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力対象"));
-            parent.Add(ToggleRow("材質",            () => _mqoSettings.ExportMaterials,       v => _mqoSettings.ExportMaterials       = v));
-            parent.Add(ToggleRow("ボーン",          () => _mqoSettings.ExportBones,           v => _mqoSettings.ExportBones           = v));
-            parent.Add(ToggleRow("BWを埋め込む",    () => _mqoSettings.EmbedBoneWeightsInMQO, v => _mqoSettings.EmbedBoneWeightsInMQO = v));
-            parent.Add(ToggleRow("BakedMirrorをスキップ", () => _mqoSettings.SkipBakedMirror, v => _mqoSettings.SkipBakedMirror       = v));
-            parent.Add(ToggleRow("名前ミラー(+)をスキップ", () => _mqoSettings.SkipNamedMirror, v => _mqoSettings.SkipNamedMirror    = v));
+            parent.Add(ToggleRow("materials",        "材質",            () => _mqoSettings.ExportMaterials,       v => _mqoSettings.ExportMaterials       = v));
+            parent.Add(ToggleRow("bones",            "ボーン",          () => _mqoSettings.ExportBones,           v => _mqoSettings.ExportBones           = v));
+            parent.Add(ToggleRow("embedBoneWeights", "BWを埋め込む",    () => _mqoSettings.EmbedBoneWeightsInMQO, v => _mqoSettings.EmbedBoneWeightsInMQO = v));
+            parent.Add(ToggleRow("skipBakedMirror",  "BakedMirrorをスキップ", () => _mqoSettings.SkipBakedMirror, v => _mqoSettings.SkipBakedMirror       = v));
+            parent.Add(ToggleRow("skipNamedMirror",  "名前ミラー(+)をスキップ", () => _mqoSettings.SkipNamedMirror, v => _mqoSettings.SkipNamedMirror    = v));
         }
 
         private MQOExportSettings CloneMqoSettings() => _mqoSettings.Clone();
@@ -275,30 +296,30 @@ namespace Poly_Ling.Player
         private void BuildObjSettings(VisualElement parent)
         {
             parent.Add(SectionLabel("座標変換"));
-            parent.Add(FloatRow("Scale",      () => _objSettings.Scale,    v => _objSettings.Scale    = v));
-            parent.Add(ToggleRow("Flip X",    () => _objSettings.FlipX,    v => _objSettings.FlipX    = v));
-            parent.Add(ToggleRow("Flip Z",    () => _objSettings.FlipZ,    v => _objSettings.FlipZ    = v));
-            parent.Add(ToggleRow("Flip UV V", () => _objSettings.FlipUV_V, v => _objSettings.FlipUV_V = v));
+            parent.Add(FloatRow("scale",      "Scale",      () => _objSettings.Scale,    v => _objSettings.Scale    = v));
+            parent.Add(ToggleRow("flipX",     "Flip X",    () => _objSettings.FlipX,    v => _objSettings.FlipX    = v));
+            parent.Add(ToggleRow("flipZ",     "Flip Z",    () => _objSettings.FlipZ,    v => _objSettings.FlipZ    = v));
+            parent.Add(ToggleRow("flipUvV",   "Flip UV V", () => _objSettings.FlipUV_V, v => _objSettings.FlipUV_V = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力対象"));
-            parent.Add(ToggleRow("UV",   () => _objSettings.ExportUVs,     v => _objSettings.ExportUVs     = v));
-            parent.Add(ToggleRow("法線", () => _objSettings.ExportNormals, v => _objSettings.ExportNormals = v));
-            parent.Add(ToggleRow("材質（.mtl も出力）",
+            parent.Add(ToggleRow("uvs",     "UV",   () => _objSettings.ExportUVs,     v => _objSettings.ExportUVs     = v));
+            parent.Add(ToggleRow("normals", "法線", () => _objSettings.ExportNormals, v => _objSettings.ExportNormals = v));
+            parent.Add(ToggleRow("materials", "材質（.mtl も出力）",
                 () => _objSettings.ExportMaterials, v => _objSettings.ExportMaterials = v));
-            parent.Add(ToggleRow("非表示メッシュも出力",
+            parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
                 () => _objSettings.ExportInvisibleObjects, v => _objSettings.ExportInvisibleObjects = v));
-            parent.Add(ToggleRow("非表示面も出力",
+            parent.Add(ToggleRow("hiddenFaces", "非表示面も出力",
                 () => _objSettings.ExportHiddenFaces, v => _objSettings.ExportHiddenFaces = v));
-            parent.Add(ToggleRow("補助線を l 行で出力",
+            parent.Add(ToggleRow("lines", "補助線を l 行で出力",
                 () => _objSettings.ExportLines, v => _objSettings.ExportLines = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力形式"));
-            parent.Add(ToggleRow("ワールド座標で出力",
+            parent.Add(ToggleRow("worldSpace", "ワールド座標で出力",
                 () => _objSettings.ExportVerticesInWorldSpace,
                 v => _objSettings.ExportVerticesInWorldSpace = v));
-            parent.Add(FloatRow("小数桁数",
+            parent.Add(FloatRow("decimalPrecision", "小数桁数",
                 () => _objSettings.DecimalPrecision,
                 v => _objSettings.DecimalPrecision = Mathf.Clamp(Mathf.RoundToInt(v), 1, 9)));
         }
@@ -322,45 +343,45 @@ namespace Poly_Ling.Player
             }
 
             parent.Add(SectionLabel("メタ情報（VRM 仕様で必須）"));
-            parent.Add(TextRow("モデル名", () => _vrmSettings.Title,   v => _vrmSettings.Title   = v));
-            parent.Add(TextRow("バージョン", () => _vrmSettings.Version, v => _vrmSettings.Version = v));
-            parent.Add(TextRow("作者", () => FirstAuthor(_vrmSettings), v => SetFirstAuthor(_vrmSettings, v)));
-            parent.Add(TextRow("連絡先",
+            parent.Add(TextRow("meta.title",   "モデル名", () => _vrmSettings.Title,   v => _vrmSettings.Title   = v));
+            parent.Add(TextRow("meta.version", "バージョン", () => _vrmSettings.Version, v => _vrmSettings.Version = v));
+            parent.Add(TextRow("meta.author",  "作者", () => FirstAuthor(_vrmSettings), v => SetFirstAuthor(_vrmSettings, v)));
+            parent.Add(TextRow("meta.contact", "連絡先",
                 () => _vrmSettings.ContactInformation, v => _vrmSettings.ContactInformation = v));
-            parent.Add(TextRow("ライセンスURL",
+            parent.Add(TextRow("meta.licenseUrl", "ライセンスURL",
                 () => _vrmSettings.OtherLicenseUrl, v => _vrmSettings.OtherLicenseUrl = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("出力対象"));
-            parent.Add(FloatRow("Scale", () => _vrmSettings.Scale, v => _vrmSettings.Scale = v));
+            parent.Add(FloatRow("scale", "Scale", () => _vrmSettings.Scale, v => _vrmSettings.Scale = v));
             // UV・法線のトグルは置かない。VRM 出力は常に両方を含む。
             //   UniVRM の ModelExporter.CreateMesh が法線・UV を常に載せるうえ、
             //   MeshWriter.ExportMeshDivided は VertexBuffer.Normals / TexCoords を
             //   null チェックせずに読むため、外すと出力が落ちる。
             //   切れないものをトグルで見せると「切ったのに出る」ことになるので出さない。
-            parent.Add(ToggleRow("スキニング", () => _vrmSettings.ExportSkinning, v => _vrmSettings.ExportSkinning = v));
-            parent.Add(ToggleRow("非表示メッシュも出力",
+            parent.Add(ToggleRow("skinning", "スキニング", () => _vrmSettings.ExportSkinning, v => _vrmSettings.ExportSkinning = v));
+            parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
                 () => _vrmSettings.ExportInvisibleObjects,
                 v => _vrmSettings.ExportInvisibleObjects = v));
 
             // 必須関節が欠けると VRM ビューアは読み込みを拒否する。
             // 上半身だけ・片側だけのモデルを確認したいときに使う。
-            parent.Add(ToggleRow("不足関節を補完",
+            parent.Add(ToggleRow("supplementHumanoid", "不足関節を補完",
                 () => _vrmSettings.SupplementHumanoid,
                 v => _vrmSettings.SupplementHumanoid = v));
 
             parent.Add(Separator());
             parent.Add(SectionLabel("モーフ・表情・揺れ"));
-            parent.Add(ToggleRow("モーフ（ブレンドシェイプ）",
+            parent.Add(ToggleRow("morphTargets", "モーフ（ブレンドシェイプ）",
                 () => _vrmSettings.ExportMorphTargets,
                 v => _vrmSettings.ExportMorphTargets = v));
-            parent.Add(ToggleRow("表情（モーフエクスプレッション）",
+            parent.Add(ToggleRow("expressions", "表情（モーフエクスプレッション）",
                 () => _vrmSettings.ExportExpressions,
                 v => _vrmSettings.ExportExpressions = v));
-            parent.Add(ToggleRow("表情名をプリセットへ割当",
+            parent.Add(ToggleRow("mapExpressionPresets", "表情名をプリセットへ割当",
                 () => _vrmSettings.MapExpressionPresets,
                 v => _vrmSettings.MapExpressionPresets = v));
-            parent.Add(ToggleRow("スプリングボーン",
+            parent.Add(ToggleRow("springBones", "スプリングボーン",
                 () => _vrmSettings.ExportSpringBones,
                 v => _vrmSettings.ExportSpringBones = v));
 
@@ -384,7 +405,7 @@ namespace Poly_Ling.Player
             else                      s.Authors[0] = value;
         }
 
-        private static VisualElement TextRow(string label, Func<string> get, Action<string> set)
+        private VisualElement TextRow(string id, string label, Func<string> get, Action<string> set)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -400,7 +421,7 @@ namespace Poly_Ling.Player
             field.RegisterValueChangedCallback(e => set(e.newValue));
 
             row.Add(lbl);
-            row.Add(field);
+            row.Add(_uiDynamic.Add(id, field, label));
             return row;
         }
 
@@ -428,15 +449,15 @@ namespace Poly_Ling.Player
             return v;
         }
 
-        private static VisualElement ToggleRow(string label, Func<bool> get, Action<bool> set)
+        private VisualElement ToggleRow(string id, string label, Func<bool> get, Action<bool> set)
         {
             var t = new Toggle(label) { value = get() };
             t.style.marginBottom = 2;
             t.RegisterValueChangedCallback(e => set(e.newValue));
-            return t;
+            return _uiDynamic.Add(id, t, label);
         }
 
-        private static VisualElement FloatRow(string label, Func<float> get, Action<float> set)
+        private VisualElement FloatRow(string id, string label, Func<float> get, Action<float> set)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -452,7 +473,7 @@ namespace Poly_Ling.Player
             field.RegisterValueChangedCallback(e => set(e.newValue));
 
             row.Add(lbl);
-            row.Add(field);
+            row.Add(_uiDynamic.Add(id, field, label));
             return row;
         }
     }

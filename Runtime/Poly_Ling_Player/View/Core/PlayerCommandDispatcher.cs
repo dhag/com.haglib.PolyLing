@@ -21,6 +21,7 @@
 //     SelectionSets.cs            パーツ選択辞書・除外辞書・面の表示／非表示・メッシュ選択辞書
 //     NormalEdit.cs               法線編集
 //     ObjectOrigin.cs             オブジェクト原点の一括設定・姿勢くさび
+//     UiAutomation.cs             UI 自動操作（DispatchUiAutomation）。プロジェクトの null 門より前で呼ぶ
 
 using System;
 using System.Collections.Generic;
@@ -693,6 +694,11 @@ namespace Poly_Ling.Player
                 }
                 return;
             }
+
+            // UI 自動操作（パネル表示・値の読み書き・強調・キャプチャ）もモデルと
+            // プロジェクトを見ない。下の null 門より前で捌かないと、何も読み込んでいない
+            // 状態で "no project" になり、UI を操作できない。
+            if (DispatchUiAutomation(cmd)) return;
 
             // 生成系（図形生成・生成メッシュ追加）と読み込み系は、プロジェクトも
             // モデルも無い状態から呼べる。

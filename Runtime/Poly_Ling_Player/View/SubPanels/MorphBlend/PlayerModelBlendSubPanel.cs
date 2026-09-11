@@ -49,21 +49,45 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "modelBlend.<下の Id>"（UiControlAttribute.cs）。
+        // ブレンド対象メッシュのチェックとモデルごとの重みスライダーは、モデル・メッシュに合わせて
+        // 作り直す行（Rows）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label         _warningLabel;
+        [UiControl("targetInfo", Safety = UiSafety.ReadOnly, Description = "対象の情報")]
         private Label         _targetInfoLabel;
+        [UiControl("cloneInfo", Safety = UiSafety.ReadOnly, Description = "クローンの情報")]
         private Label         _cloneInfoLabel;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _meshToggleContainer;
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _sliderContainer;
+        [UiControl("recalcNormals", Description = "法線を再計算する")]
         private Toggle        _toggleRecalc;
+        [UiControl("realtime", Description = "リアルタイム（プレビュー）")]
         private Toggle        _toggleRealtime;
+        [UiControl("blendBones", Description = "ボーン")]
         private Toggle        _toggleBlendBones;
+        [UiControl("selectedOnly", Description = "選択のみ（選択メッシュだけ）")]
         private Toggle        _toggleSelectedOnly;
+        [UiControl("visibleOnly", Description = "可視のみ")]
         private Toggle        _toggleVisibleOnly;
+        [UiControl("totalWeight", Safety = UiSafety.ReadOnly, Description = "重みの合計")]
         private Label         _totalWeightLabel;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "クローンに適用する")]
         private Button        _btnApply;
+        [UiControl("deleteClone", Safety = UiSafety.Destructive, Description = "クローンを削除する")]
         private Button        _btnCancel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("weights.equal", Safety = UiSafety.SafeWrite, Description = "重みを均等にする")]
+        private Button        _btnEqual;
+        [UiControl("weights.normalize", Safety = UiSafety.SafeWrite, Description = "重みを正規化する")]
+        private Button        _btnNormalize;
+        [UiControl("weights.resetToSource", Safety = UiSafety.SafeWrite, Description = "重みをソースにリセットする")]
+        private Button        _btnResetFirst;
 
         // ================================================================
         // Build
@@ -148,9 +172,9 @@ namespace Poly_Ling.Player
             var wRow = new VisualElement();
             wRow.style.flexDirection = FlexDirection.Row;
             wRow.style.marginBottom  = 6;
-            wRow.Add(MkBtn("均等",           () => OnEqualWeights()));
-            wRow.Add(MkBtn("正規化",          () => OnNormalize()));
-            wRow.Add(MkBtn("ソースにリセット", () => OnResetFirst()));
+            wRow.Add(_btnEqual     = MkBtn("均等",           () => OnEqualWeights()));
+            wRow.Add(_btnNormalize = MkBtn("正規化",          () => OnNormalize()));
+            wRow.Add(_btnResetFirst = MkBtn("ソースにリセット", () => OnResetFirst()));
             _root.Add(wRow);
 
             // ── 適用ボタン

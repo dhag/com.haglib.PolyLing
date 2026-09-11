@@ -43,13 +43,35 @@ namespace Poly_Ling.Player
 
         // ── UI ───────────────────────────────────────────────────────
 
+        // UI 自動操作の ID は "partsId.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("target", Description = "対象オブジェクト（1 つだけ）")]
         private DropdownField _targetDrop;
+        [UiControl("reference", Description = "② のリファレンスオブジェクト（1 パーツの頂点数を取る）")]
         private DropdownField _referenceDrop;
+        [UiControl("isolatedVertices", Description = "① で面にも線にも属さない孤立頂点の扱い（選択肢は uiGetValue の choices）")]
         private RadioButtonGroup _isolatedGroup;
 
+        [UiControl("diagnosis", Safety = UiSafety.ReadOnly, Description = "対象オブジェクトのパーツ ID の診断結果")]
         private Label _diagLabel;
+        [UiControl("referenceInfo", Safety = UiSafety.ReadOnly, Description = "リファレンスオブジェクトの情報")]
         private Label _referenceLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label _statusLabel;
+
+        [UiControl("refresh", Safety = UiSafety.SafeWrite, Description = "一覧を取り直して診断し直す（データは変えない）")]
+        private Button _refreshBtn;
+        [UiControl("assignByConnectivity", Safety = UiSafety.SafeWrite, Description = "① 面と線のつながりでパーツ ID を振る")]
+        private Button _assignByConnectivityBtn;
+        [UiControl("assignByReference", Safety = UiSafety.SafeWrite, Description = "② リファレンスの頂点数で対象の頂点列を等分してパーツ ID を振る")]
+        private Button _assignByReferenceBtn;
+        [UiControl("assignByBoneWeight", Safety = UiSafety.SafeWrite, Description = "③ ボーンウェイトでパーツ ID を振り直す")]
+        private Button _assignByBoneWeightBtn;
+        [UiControl("split", Safety = UiSafety.SafeWrite, Description = "④ パーツ ID ごとのオブジェクトに分ける（元のオブジェクトは残す）")]
+        private Button _splitBtn;
+        [UiControl("reassignSubId", Safety = UiSafety.SafeWrite, Description = "サブ ID だけ振り直す")]
+        private Button _reassignSubIdBtn;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "パーツ ID とサブ ID を消去する")]
+        private Button _clearIdsBtn;
 
         // ドロップダウンの表示名 → masterIndex。表示名は "[masterIndex] 名前" 形式で
         // 一意になるが、辞書で持って添字ずれを起こさないようにする。
@@ -93,7 +115,7 @@ namespace Poly_Ling.Player
             _diagLabel = Info();
             root.Add(_diagLabel);
 
-            root.Add(PlayerIoUiKit.WideBtn("一覧を再取得 / 再診断", Refresh));
+            root.Add(_refreshBtn = PlayerIoUiKit.WideBtn("一覧を再取得 / 再診断", Refresh));
 
             // ── つながりで採番 ────────────────────────────────────────
             root.Add(PlayerIoUiKit.Divider());
@@ -111,7 +133,7 @@ namespace Poly_Ling.Player
             _isolatedGroup.style.marginBottom = 3;
             root.Add(_isolatedGroup);
 
-            root.Add(PlayerIoUiKit.WideBtn("つながりで採番",
+            root.Add(_assignByConnectivityBtn = PlayerIoUiKit.WideBtn("つながりで採番",
                 () => Run(AssignPartsIdsCommand.PartsIdMode.Connectivity, "つながりで採番")));
 
             // ── リファレンスの頂点数で採番 ──────────────────────────
@@ -133,7 +155,7 @@ namespace Poly_Ling.Player
             _referenceLabel = Info();
             root.Add(_referenceLabel);
 
-            root.Add(PlayerIoUiKit.WideBtn("リファレンスの頂点数で採番",
+            root.Add(_assignByReferenceBtn = PlayerIoUiKit.WideBtn("リファレンスの頂点数で採番",
                 () => Run(AssignPartsIdsCommand.PartsIdMode.ReferenceVertexCount,
                           "リファレンスの頂点数で採番")));
 
@@ -154,7 +176,7 @@ namespace Poly_Ling.Player
                 "予約番号 2147483647 は「次の部品ID」の計算から外してあるので、"
               + "採番したあとに図形を足しても番号は壊れません。"));
 
-            root.Add(PlayerIoUiKit.WideBtn("ボーンウェイトで採番", RunByBoneWeight));
+            root.Add(_assignByBoneWeightBtn = PlayerIoUiKit.WideBtn("ボーンウェイトで採番", RunByBoneWeight));
 
             // ── パーツIDで分解 ───────────────────────────────────────
             root.Add(PlayerIoUiKit.Divider());
@@ -177,15 +199,15 @@ namespace Poly_Ling.Player
                 "先に③で採番しておくと、ボーン1本ぶんのオブジェクトと、"
               + "ボーンをまたぐ境目のオブジェクトに分かれます。"));
 
-            root.Add(PlayerIoUiKit.WideBtn("パーツIDで分解", RunSplit));
+            root.Add(_splitBtn = PlayerIoUiKit.WideBtn("パーツIDで分解", RunSplit));
 
             // ── その他 ───────────────────────────────────────────────
             root.Add(PlayerIoUiKit.Divider());
             root.Add(PlayerIoUiKit.SectionLabel("その他"));
 
-            root.Add(PlayerIoUiKit.WideBtn("サブIDだけ振り直し",
+            root.Add(_reassignSubIdBtn = PlayerIoUiKit.WideBtn("サブIDだけ振り直し",
                 () => Run(AssignPartsIdsCommand.PartsIdMode.SubIdOnly, "サブIDだけ振り直し")));
-            root.Add(PlayerIoUiKit.WideBtn("パーツID / サブIDを消去",
+            root.Add(_clearIdsBtn = PlayerIoUiKit.WideBtn("パーツID / サブIDを消去",
                 () => Run(AssignPartsIdsCommand.PartsIdMode.Clear, "パーツID / サブIDを消去")));
 
             _statusLabel = PlayerIoUiKit.StatusLabel();

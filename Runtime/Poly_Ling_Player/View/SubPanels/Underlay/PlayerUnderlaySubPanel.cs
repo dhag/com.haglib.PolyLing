@@ -20,14 +20,43 @@ namespace Poly_Ling.Player
         private readonly UnderlayConfig _config;
         private readonly Action         _onChanged;  // 値変更時に呼ぶ（再適用要求）
 
+        // UI 自動操作の ID は "underlay.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("direction", Description = "設定する方向（8 方向のスロット）。切り替えると他の欄がその方向の値に変わる")]
         private DropdownField _dirDropdown;
+        [UiControl("file", Safety = UiSafety.ReadOnly, Description = "読み込んだ画像のファイル名。未設定なら (未設定)")]
         private Label         _fileLabel;
+        [UiControl("path", Safety = UiSafety.FileOperation, Setter = nameof(SetPathByAutomation),
+                   Description = "下絵画像のパス。設定すると画像を読み込む。作業フォルダからの相対パスで指定する")]
         private TextField     _pathField;
+        [UiControl("size", Safety = UiSafety.ReadOnly, Description = "画像の縦横画素数")]
         private Label         _sizeLabel;      // 画像の縦横画素数
+        [UiControl("scale", Description = "X/Y 同時の拡大率。2D スケールの X・Y も同じ値になる")]
         private Slider        _scaleSlider;    // XY同時スケール
-        private FloatField    _tlX, _tlY;      // 左上位置
-        private FloatField    _orgX, _orgY;    // 拡大縮小の原点
-        private FloatField    _sclX, _sclY;    // 2Dスケール
+        [UiControl("topLeft.x", Description = "左上位置の X")]
+        private FloatField    _tlX;
+        [UiControl("topLeft.y", Description = "左上位置の Y")]
+        private FloatField    _tlY;            // 左上位置
+        [UiControl("origin.x", Description = "拡大縮小の原点の X（画像の画素基準）")]
+        private FloatField    _orgX;
+        [UiControl("origin.y", Description = "拡大縮小の原点の Y（画像の画素基準・下向き）")]
+        private FloatField    _orgY;           // 拡大縮小の原点
+        [UiControl("scale2d.x", Description = "2D スケールの X")]
+        private FloatField    _sclX;
+        [UiControl("scale2d.y", Description = "2D スケールの Y")]
+        private FloatField    _sclY;           // 2Dスケール
+
+        [UiControl("open", Safety = UiSafety.UserOnly, Description = "画像ファイルを選ぶダイアログを開く")]
+        private Button _openBtn;
+        [UiControl("browse", Safety = UiSafety.UserOnly, Description = "パス欄の [...]。画像ファイルを選ぶダイアログを開く")]
+        private Button _browseBtn;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "この方向の下絵画像を外す")]
+        private Button _clearBtn;
+        [UiControl("originPreset.center", Safety = UiSafety.SafeWrite, Description = "原点を画像の中心にする")]
+        private Button _originCenterBtn;
+        [UiControl("originPreset.topLeft", Safety = UiSafety.SafeWrite, Description = "原点を画像の左上にする")]
+        private Button _originTopLeftBtn;
+        [UiControl("originPreset.bottomLeft", Safety = UiSafety.SafeWrite, Description = "原点を画像の左下にする")]
+        private Button _originBottomLeftBtn;
 
         private const float ScaleMin = 0.1f;
         private const float ScaleMax = 10f;
@@ -76,7 +105,7 @@ namespace Poly_Ling.Player
             parent.Add(PlayerIoUiKit.SectionLabel("画像ファイル"));
             _pathField = new TextField();
             _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(PathKey, e.newValue));
-            parent.Add(PlayerIoUiKit.PathRow(_pathField, OnBrowseFile));
+            parent.Add(PlayerIoUiKit.PathRow(_pathField, OnBrowseFile, out _browseBtn));
             _pathField.SetValueWithoutNotify(RecentPaths.Get(PathKey));
 
             var fileRow = new VisualElement();
@@ -88,6 +117,8 @@ namespace Poly_Ling.Player
             clearBtn.style.width = 60;
             fileRow.Add(loadBtn); fileRow.Add(clearBtn);
             parent.Add(fileRow);
+            _openBtn  = loadBtn;
+            _clearBtn = clearBtn;
 
             _fileLabel = new Label("(未設定)");
             _fileLabel.style.marginBottom = 2;
@@ -112,6 +143,9 @@ namespace Poly_Ling.Player
             var btnCenter = new Button(() => ApplyOriginPreset(OriginAnchor.Center))    { text = "中心" };
             var btnTL     = new Button(() => ApplyOriginPreset(OriginAnchor.TopLeft))    { text = "左上" };
             var btnBL     = new Button(() => ApplyOriginPreset(OriginAnchor.BottomLeft)) { text = "左下" };
+            _originCenterBtn     = btnCenter;
+            _originTopLeftBtn    = btnTL;
+            _originBottomLeftBtn = btnBL;
             btnCenter.style.flexGrow = 1; btnCenter.style.marginRight = 2;
             btnTL.style.flexGrow     = 1; btnTL.style.marginRight     = 2;
             btnBL.style.flexGrow     = 1;
@@ -136,6 +170,26 @@ namespace Poly_Ling.Player
             AddXYRow(parent, "2Dスケール", out _sclX, out _sclY);
 
             LoadSlotToFields();
+        }
+
+        /// <summary>
+        /// UI 自動操作からパス欄を設定する（UiControl "path" の Setter）。
+        /// パス欄の値変更は RecentPaths への記録だけで、画像の読み込みは LoadFromPath が行う。
+        /// 外からのパスは作業フォルダの関門（PLSandbox）を通してから読む。
+        /// 成功で null、失敗で理由。
+        /// </summary>
+        private string SetPathByAutomation(string value)
+        {
+            if (!PLSandbox.TryResolveRead(value, out string full, out string reason)) return reason;
+            if (!File.Exists(full)) return $"ファイルがありません: {value}";
+
+            _pathField.value = full;   // [...] で選んだときと同じく RecentPaths へ記録する
+            LoadFromPath(full);
+
+            var s = _config.Get(CurrentDir);
+            if (s == null || !s.HasImage || s.FilePath != full)
+                return $"画像を読み込めませんでした: {value}";
+            return null;
         }
 
         private void AddXYRow(VisualElement parent, string label, out FloatField fx, out FloatField fy)

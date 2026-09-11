@@ -23,15 +23,26 @@ namespace Poly_Ling.Player
         public Func<ProjectContext> GetView;
         public Action<PanelCommand> SendCommand;
 
+        // UI 自動操作の ID は "boolean.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("selection", Safety = UiSafety.ReadOnly, Description = "選択中のメッシュの数")]
         private Label      _selectionLabel;
+        [UiControl("baseObject", Description = "A（基準／差では削られる側）にするオブジェクト（選択メッシュの一覧の行番号）")]
         private ListView   _baseObjectList;
+        [UiControl("operation", Description = "ブーリアン演算の種類")]
         private EnumField  _opField;
+        [UiControl("createNewMesh", Description = "結果を新しいメッシュオブジェクトに格納する")]
         private Toggle     _createNewMeshToggle;
+        [UiControl("deleteB", Description = "実行後に B を削除する")]
         private Toggle     _deleteBToggle;
+        [UiControl("mergeVertices", Description = "同一位置の頂点をマージする")]
         private Toggle     _mergeVerticesToggle;
+        [UiControl("mergeThreshold", Description = "頂点マージのしきい値")]
         private FloatField _mergeThresholdField;
+        [UiControl("epsilon", Description = "演算に渡す epsilon")]
         private FloatField _epsilonField;
+        [UiControl("run", Safety = UiSafety.Destructive, Description = "ブーリアン演算を実行する。「B を削除する」がオンなら B を削除する")]
         private Button     _executeButton;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行できない理由、または実行結果")]
         private Label      _statusLabel;
 
         private readonly List<IMeshView> _selectedMeshViews = new List<IMeshView>();

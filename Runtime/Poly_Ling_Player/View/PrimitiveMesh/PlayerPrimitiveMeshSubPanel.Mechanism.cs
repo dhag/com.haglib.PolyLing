@@ -48,8 +48,10 @@ namespace Poly_Ling.Player
             WormWheelMeshGenerator.WormWheelParams.Default;
 
         /// <summary>機構部品の派生諸元ラベル。設定 UI を組み直すたびに差し替わる。</summary>
+        [UiControl("mechanism.info", Safety = UiSafety.ReadOnly, Description = "機構部品の情報")]
         private Label _mechInfoLabel;
         /// <summary>機構部品の警告ラベル。</summary>
+        [UiControl("mechanism.warning", Safety = UiSafety.ReadOnly, Description = "機構部品の警告")]
         private Label _mechWarnLabel;
 
         private static readonly Color MechInfoColor = new Color(0.75f, 0.75f, 0.75f);

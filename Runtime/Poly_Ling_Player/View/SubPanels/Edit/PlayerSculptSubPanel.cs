@@ -29,22 +29,39 @@ namespace Poly_Ling.Player
         // UI 要素
         // ================================================================
 
+        // UI 自動操作の ID は "sculpt.<下の Id>"（UiControlAttribute.cs）。
+        // 詳細設定（半径・強度の上下限）は Foldout の中。uiReveal が Foldout を開く。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("mode", Description = "0=盛り上げ / 1=なめらか / 2=膨らみ / 3=平ら")]
         private RadioButtonGroup _modeGroup;
+        [UiControl("brush.radius", Description = "ブラシ半径（スライダー）")]
         private Slider      _brushRadiusSlider;
+        [UiControl("brush.radiusValue", Description = "ブラシ半径（数値入力）")]
         private FloatField  _brushRadiusField;
+        [UiControl("brush.falloff", Description = "フォールオフの形")]
         private DropdownField _falloffDropdown;
+        [UiControl("brush.distanceMode", Description = "距離モード")]
         private DropdownField _distanceModeDropdown;
+        [UiControl("brush.strength", Description = "強度（スライダー）")]
         private Slider      _strengthSlider;
+        [UiControl("brush.strengthValue", Description = "強度（数値入力）")]
         private FloatField  _strengthField;
+        [UiControl("brush.invert", Description = "反転（Invert）")]
         private Toggle      _invertToggle;
+        [UiControl("help", Safety = UiSafety.ReadOnly, Description = "今のモードの説明")]
         private HelpBox     _helpBox;
+        [UiControl("brush.radiusDrag", Safety = UiSafety.SafeWrite, Description = "ビューポートのドラッグでブラシ半径を決めるモードに入る")]
         private Button      _radiusDragButton;
 
         // 詳細設定
+        [UiControl("brush.radiusMin", Description = "ブラシ半径の下限")]
         private FloatField  _minRadiusField;
+        [UiControl("brush.radiusMax", Description = "ブラシ半径の上限")]
         private FloatField  _maxRadiusField;
+        [UiControl("brush.strengthMin", Description = "強度の下限")]
         private FloatField  _minStrengthField;
+        [UiControl("brush.strengthMax", Description = "強度の上限")]
         private FloatField  _maxStrengthField;
 
         private bool _suppressSync;
@@ -65,10 +82,12 @@ namespace Poly_Ling.Player
         private static string[]       DistanceModeLabels => BrushFalloffControls.DistanceModeLabels;
         private static DistanceMode[] DistanceModeValues => BrushFalloffControls.DistanceModeValues;
 
-        /// <summary>距離モード／フォールオフの共通 UI。</summary>
+        /// <summary>距離モード／フォールオフの共通 UI。ドロップダウンは自分のフィールドで登録するので取り込まない。</summary>
+        [UiControl(Ignore = true)]
         private readonly BrushFalloffControls _falloffControls = new BrushFalloffControls();
 
-        /// <summary>一時ミラーのトグルボタン（共通 UI）。</summary>
+        /// <summary>一時ミラーのトグルボタン（共通 UI）。UI 自動操作では "sculpt.tempMirror.*"。</summary>
+        [UiNested("tempMirror")]
         private readonly TempMirrorControls _tempMirrorControls = new TempMirrorControls();
 
         // ================================================================

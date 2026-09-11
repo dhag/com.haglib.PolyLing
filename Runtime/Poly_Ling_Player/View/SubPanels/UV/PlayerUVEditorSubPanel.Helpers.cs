@@ -147,11 +147,12 @@ namespace Poly_Ling.Player
             return l;
         }
 
-        private static void MkBtn(string text, VisualElement row, Action click)
+        private static Button MkBtn(string text, VisualElement row, Action click)
         {
             var b = new Button(click) { text = text };
             b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 10;
             row.Add(b);
+            return b;
         }
 
         private static VisualElement FR2(string l1, string l2, float v1, float v2,

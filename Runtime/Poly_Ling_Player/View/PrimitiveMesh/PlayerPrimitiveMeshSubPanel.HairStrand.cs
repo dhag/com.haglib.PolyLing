@@ -58,6 +58,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>幅配分の行を入れるコンテナ。筒の本数が変わるたびに作り直す。</summary>
+        [UiControl(Ignore = true)]
         private VisualElement _hairLobeWidthBox;
 
         // ================================================================

@@ -47,9 +47,20 @@ namespace Poly_Ling.Player
         private bool _tolerantMirrorBranch = true;
 
         // UI
+        // UI 自動操作の ID は "meshFilterToSkinned.<下の Id>"（UiControlAttribute.cs）。
+        // 階層プレビューの行（行ごとの「変換対象」）はモデルに合わせて作り直す行（Rows）。
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _hierarchyContainer;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "変換の状態・結果")]
         private Label         _statusLabel;
+        [UiControl("convert", Safety = UiSafety.SafeWrite, Description = "MeshFilter 構成をスキンドメッシュに変換する")]
         private Button        _convertBtn;
+        [UiControl("swapAxisRotated", Description = "回転ありボーン: PMX 軸に入替（Y→X）")]
+        private Toggle        _swapAxisToggle;
+        [UiControl("setAxisIdentity", Description = "回転なしボーン: X 軸上向き・Y 軸横向きに設定")]
+        private Toggle        _setAxisIdentityToggle;
+        [UiControl("tolerantMirror", Description = "ミラー設定漏れを許容")]
+        private Toggle        _tolerantMirrorToggle;
 
         // 現在表示対象のモデル
         private ModelContext  _model;
@@ -89,10 +100,12 @@ namespace Poly_Ling.Player
             var swapToggle = new Toggle(T("SwapAxisRotated")) { value = _swapAxisForRotated };
             swapToggle.style.marginBottom = 2;            swapToggle.RegisterValueChangedCallback(e => _swapAxisForRotated = e.newValue);
             parent.Add(swapToggle);
+            _swapAxisToggle = swapToggle;
 
             var identToggle = new Toggle(T("SetAxisIdentity")) { value = _setAxisForIdentity };
             identToggle.style.marginBottom = 6;            identToggle.RegisterValueChangedCallback(e => _setAxisForIdentity = e.newValue);
             parent.Add(identToggle);
+            _setAxisIdentityToggle = identToggle;
 
             parent.Add(Sep());
 
@@ -108,6 +121,7 @@ namespace Poly_Ling.Player
             tolerantToggle.style.marginBottom = 6;
             tolerantToggle.RegisterValueChangedCallback(e => _tolerantMirrorBranch = e.newValue);
             parent.Add(tolerantToggle);
+            _tolerantMirrorToggle = tolerantToggle;
 
             parent.Add(Sep());
 

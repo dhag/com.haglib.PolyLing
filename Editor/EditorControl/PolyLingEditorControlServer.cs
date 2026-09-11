@@ -41,6 +41,9 @@
 //   Debug.Log は背景スレッドからも呼べるが、EditorApplication を読む
 //   DescribeState() はメインスレッドで実行される箇所からのみ呼ぶこと。
 //
+// 【アセット更新・再コンパイル】 2026-09-11
+//   refresh / recompile を受ける。完了の判定方法は「アセット更新・再コンパイル」節の注記を参照。
+//
 // ============================================================
 
 using System;
@@ -274,7 +277,8 @@ namespace Poly_Ling.EditorControl
         // 要求の処理
         // ================================================================
         //
-        // 要求: {"type":"command","action":"ping"|"play"|"stop"|"state"|"tools"|"call"}
+        // 要求: {"type":"command","action":"ping"|"play"|"stop"|"state"|"tools"|"call"
+        //                                  |"refresh"|"recompile"}
         //       call のみ "params" を伴う（HandleCall の注記を参照）
         // 応答: {"type":"response","success":true,"action":"...","data":"..."}
         //       {"type":"response","success":false,"action":"...","error":"..."}
@@ -318,6 +322,12 @@ namespace Poly_Ling.EditorControl
 
                 case "stop":
                     return LogResponse(HandleStop(op, out afterReply));
+
+                case "refresh":
+                    return LogResponse(HandleRefresh(op, false, out afterReply));
+
+                case "recompile":
+                    return LogResponse(HandleRefresh(op, true, out afterReply));
 
                 default:
                     return LogResponse(BuildError(op, $"unknown action: {op}"));
@@ -563,6 +573,116 @@ namespace Poly_Ling.EditorControl
                 + "結果の確認には state を使ってください。");
         }
 
+        // ================================================================
+        // アセット更新・再コンパイル
+        // ================================================================
+        //
+        // refresh   … AssetDatabase.Refresh() のあと CompilationPipeline.RequestScriptCompilation()。
+        // recompile … CompilationPipeline.RequestScriptCompilation(CleanBuildCache)。
+        //             変更が無くても全スクリプトを再コンパイルする。
+        //
+        // 【なぜ refresh でも RequestScriptCompilation を呼ぶか】
+        //   AssetDatabase.Refresh は取り込みを同期で、スクリプトのコンパイルを非同期で行う
+        //   （Unity 6 スクリプトリファレンス AssetDatabase.Refresh）。Refresh が戻った時点で
+        //   コンパイルが終わっている保証は無く、isCompiling だけでは完了を判定できない。
+        //   RequestScriptCompilation はコンパイル要求をその場で立て、isCompiling は
+        //   要求が立っている間も true を返す（UnityCsReference 6000.0：
+        //   CompilationPipeline.cs:674-675、EditorCompilation.cs:199-207, 1062-1069）。
+        //   よって「refreshDone が受付番号に達し、isCompiling と isUpdating がともに false」
+        //   になった時点で、取り込みとコンパイルは終わっている。
+        //
+        // 【受付番号と結果】
+        //   受付時に番号を振って応答で返し、afterReply の最後に refreshDone として記録する。
+        //   結果（executed / skipped / failed）は refreshResult に残す。
+        //   どちらも state の末尾に載る。
+        //   置き場は SessionState。静的フィールドはドメインリロードで初期化されるが、
+        //   SessionState はリロードをまたいで残る（Unity の終了で消える）。
+        //
+        // 【Play 中は受けない】
+        //   再生中の再コンパイルでドメインリロードが走り、PolyLing の実行入口が
+        //   失われたことがある。受付時と実行直前の 2 回、Play 中かどうかを見る。
+        //
+        // 【実行は応答の後】
+        //   コンパイルが終わるとドメインリロードで本サーバが止まる。
+        //   play / stop と同じく、応答を送り終えてから afterReply で実行する。
+        // ================================================================
+
+        private const string RefreshRequestedKey = "PolyLing.EditorControl.RefreshRequested";
+        private const string RefreshDoneKey      = "PolyLing.EditorControl.RefreshDone";
+        private const string RefreshResultKey    = "PolyLing.EditorControl.RefreshResult";
+
+        /// <param name="clean">true で recompile（ビルドキャッシュを捨てて全スクリプトを再コンパイル）。</param>
+        private static string HandleRefresh(string op, bool clean, out Action afterReply)
+        {
+            afterReply = null;
+
+            if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogWarning($"{LogTag} {op} 拒否: Play モード中です。{DescribeState()}");
+                return BuildError(op, "Play モード中は受け付けません。先に stop してください。" + DescribeState());
+            }
+
+            if (!IsEditorIdle(out var reason))
+            {
+                Debug.LogWarning($"{LogTag} {op} 拒否: {reason}{DescribeState()}");
+                return BuildError(op, reason + DescribeState());
+            }
+
+            int id = SessionState.GetInt(RefreshRequestedKey, 0) + 1;
+            SessionState.SetInt(RefreshRequestedKey, id);
+
+            afterReply = () =>
+            {
+                Debug.Log($"{LogTag} {op} afterReply 開始: id={id}; {DescribeState()}");
+
+                string result;
+
+                if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
+                {
+                    // 応答を返してからここまでの間に Play が始まった。
+                    result = "skipped: 実行前に Play モードへ入ったため実行しませんでした。";
+                    Debug.LogWarning($"{LogTag} {op} afterReply 中止: id={id}; {DescribeState()}");
+                }
+                else
+                {
+                    try
+                    {
+                        if (clean)
+                        {
+                            UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation(
+                                UnityEditor.Compilation.RequestScriptCompilationOptions.CleanBuildCache);
+                        }
+                        else
+                        {
+                            AssetDatabase.Refresh();
+                            UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+                        }
+
+                        result = "executed";
+                    }
+                    catch (Exception ex)
+                    {
+                        result = $"failed: {ex.GetType().Name}: {ex.Message}";
+                        Debug.LogWarning($"{LogTag} {op} afterReply 例外: id={id}; {ex}");
+                    }
+                }
+
+                // 結果を先に書き、refreshDone を最後に書く。
+                // どちらもメインスレッドで書き、state もメインスレッドで読むので、
+                // refreshDone が id に達していれば refreshResult はこの要求のもの。
+                SessionState.SetString(RefreshResultKey, result);
+                SessionState.SetInt(RefreshDoneKey, id);
+
+                Debug.Log($"{LogTag} {op} afterReply 終了: id={id}; {DescribeState()}");
+            };
+
+            return BuildOk(op,
+                $"id={id}; "
+                + (clean ? "全スクリプトの再コンパイルを受理しました。" : "アセット更新を受理しました。")
+                + "この応答は実行前に返ります。完了は state の refreshDone が id 以上になり、"
+                + "isCompiling と isUpdating がともに false になったことで確認してください。");
+        }
+
         /// <summary>
         /// いま Play モードを開始してよいか。不可なら理由を返す（可なら reason は空）。
         /// 判定条件は HierarchyExportClientWindow.cs:123-144 の CanExportNow に揃えている。
@@ -596,8 +716,16 @@ namespace Poly_Ling.EditorControl
                 + $"isCompiling={Flag(EditorApplication.isCompiling)}; "
                 + $"isUpdating={Flag(EditorApplication.isUpdating)}; "
                 + $"accepted={(_server != null ? _server.AcceptedCount : -1)}; "
-                + $"clients={ClientCount()}";
+                + $"clients={ClientCount()}; "
+                + $"refreshDone={SessionState.GetInt(RefreshDoneKey, 0)}; "
+                // refreshResult は例外文を含みうるので末尾に置き、改行だけ潰す。
+                // 読む側は refreshResult= から行末までを 1 つの値として扱う。
+                + $"refreshResult={OneLine(SessionState.GetString(RefreshResultKey, string.Empty))}";
         }
+
+        /// <summary>改行を空白にして 1 行にする。</summary>
+        private static string OneLine(string text)
+            => string.IsNullOrEmpty(text) ? string.Empty : text.Replace("\r", " ").Replace("\n", " ");
 
         private static string Flag(bool value) => value ? "true" : "false";
 

@@ -28,11 +28,24 @@ namespace Poly_Ling.Player
         private readonly string _key;
         private readonly Func<string> _defaultName;
 
+        // UI 自動操作では、保存をダイアログで確定するパネルが UiNested("saveDest") で取り込む。
+        // 欄のフォルダへダイアログなしで書き込むパネル（キャプチャ）は取り込まず、
+        // FolderField / BrowseButton を作業フォルダの関門付きで自分で登録する。
+        [UiControl(Ignore = true)]
         private readonly VisualElement _root;
+        [UiControl("folder", Description = "書き込み先フォルダ（保存ダイアログの初期フォルダ）")]
         private readonly TextField     _folderField;
+        [UiControl("browse", Safety = UiSafety.UserOnly, Description = "書き込み先フォルダを選ぶダイアログを開く")]
+        private readonly Button        _browseBtn;
 
         /// <summary>この行の UI。パネルの親要素へ Add する。</summary>
         public VisualElement Root => _root;
+
+        /// <summary>フォルダ欄。UI 自動操作で関門付きの項目として登録するパネルが使う。</summary>
+        public TextField FolderField => _folderField;
+
+        /// <summary>フォルダを選ぶ [...] ボタン。</summary>
+        public Button BrowseButton => _browseBtn;
 
         /// <summary>ダイアログのタイトル。モードで変わるパネルは実行時に差し替える。</summary>
         public string DialogTitle { get; set; }
@@ -75,7 +88,7 @@ namespace Poly_Ling.Player
             _folderField.SetValueWithoutNotify(SaveDest.GetFolder(_key));
             _folderField.RegisterValueChangedCallback(e => SaveDest.SetFolder(_key, e.newValue));
 
-            _root.Add(PlayerIoUiKit.PathRow(_folderField, OnBrowse));
+            _root.Add(PlayerIoUiKit.PathRow(_folderField, OnBrowse, out _browseBtn));
         }
 
         /// <summary>settings から読み直す。パネルの Refresh から呼ぶ。</summary>

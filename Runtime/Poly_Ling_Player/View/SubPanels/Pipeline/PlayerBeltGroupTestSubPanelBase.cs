@@ -119,15 +119,19 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>作り直しのときに退避を残すか。派生の設定 UI の下に置く。</summary>
-        protected Toggle KeepStashToggle { get; private set; }
+        /// <remarks>UI 自動操作の属性はフィールドに付けるので、明示のフィールドで持つ。</remarks>
+        [UiControl("keepStash", Description = "作り直す前の出力先を退避として残す")]
+        private Toggle _keepStashToggle;
+
+        protected Toggle KeepStashToggle => _keepStashToggle;
 
         /// <summary>
         /// 退避トグルを足す。派生の BuildOptionsUI の末尾で呼ぶこと。
         /// </summary>
         protected void AddKeepStashToggle(VisualElement root)
         {
-            KeepStashToggle = new Toggle("作り直す前の出力先を退避として残す") { value = true };
-            root.Add(KeepStashToggle);
+            _keepStashToggle = new Toggle("作り直す前の出力先を退避として残す") { value = true };
+            root.Add(_keepStashToggle);
         }
 
         protected override void ResetRunState()

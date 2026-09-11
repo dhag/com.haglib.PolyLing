@@ -58,10 +58,43 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "capture.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("fileName", Description = "ファイル名の土台。連番と .png が付く")]
         private TextField         _nameField;
+        /// <summary>
+        /// 保存先フォルダの行。キャプチャはこのフォルダへダイアログなしで書き込むので、
+        /// 行の中身をそのまま取り込まず（Ignore）、下の folder / browse で関門付きに登録する。
+        /// </summary>
+        [UiControl(Ignore = true)]
         private PlayerSaveDestRow _saveDest;
+        [UiControl("target", Description = "撮影範囲")]
         private DropdownField     _targetDropdown;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の保存先、または失敗理由")]
         private Label         _statusLabel;
+        [UiControl("run", Safety = UiSafety.FileOperation, Description = "設定どおりに撮影して PNG を保存する")]
+        private Button        _runBtn;
+
+        /// <summary>保存先フォルダ欄。値の読み書きは作業フォルダの関門を通す。</summary>
+        [UiControl("folder", Getter = nameof(GetFolderForAutomation), Setter = nameof(SetFolderByAutomation),
+                   Description = "保存先フォルダ。作業フォルダからの相対パスで指定する")]
+        private TextField SaveDestFolderField => _saveDest?.FolderField;
+
+        /// <summary>保存先フォルダを選ぶ [...]。</summary>
+        [UiControl("browse", Safety = UiSafety.UserOnly, Description = "保存先フォルダを選ぶダイアログを開く")]
+        private Button SaveDestBrowseButton => _saveDest?.BrowseButton;
+
+        private string GetFolderForAutomation() => GetFolder();
+
+        /// <summary>
+        /// UI 自動操作から保存先フォルダを設定する。欄へ直接書くと任意の場所を指せるため、
+        /// 作業フォルダの関門（PLSandbox.TryResolveFolder）を通した実経路だけを入れる。
+        /// </summary>
+        private string SetFolderByAutomation(string value)
+        {
+            if (!PLSandbox.TryResolveFolder(value, out string full, out string reason)) return reason;
+            _saveDest?.SetFolder(full);
+            return null;
+        }
 
         private static readonly List<string> TargetNames = new List<string>
         {
@@ -125,6 +158,7 @@ namespace Poly_Ling.Player
             {
                 text = "キャプチャ"
             };
+            _runBtn = runBtn;
             runBtn.style.height    = 28;
             runBtn.style.marginTop = 2;
             runBtn.style.unityFontStyleAndWeight = FontStyle.Bold;

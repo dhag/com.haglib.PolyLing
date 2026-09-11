@@ -26,8 +26,14 @@ namespace Poly_Ling.Player
         /// 追加する場合は OnModeChanged の型引数だけ拡張すれば足りる)。
         /// </summary>
         public Action<EdgeTopoMode> OnModeChanged;
+
+        // UI 自動操作の ID は "edgeTopology.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("help", Safety = UiSafety.ReadOnly, Description = "今のモードの操作説明")]
         private HelpBox       _help;
+        [UiControl("mode", Description = "Flip（対角線の入れ替え）/ Split（四角形の分割）/ Dissolve（2 面の結合）")]
+        private DropdownField _modeDropdown;
 
         private static readonly string[] HelpTexts =
         {
@@ -52,6 +58,7 @@ namespace Poly_Ling.Player
                 if (idx >= 0) OnModeChanged?.Invoke(modeValues[idx]);
             });
             _root.Add(modeDD);
+            _modeDropdown = modeDD;
             _help = new HelpBox(HelpTexts[0], HelpBoxMessageType.Info);
             _help.style.color = new StyleColor(Color.white);
             _help.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));

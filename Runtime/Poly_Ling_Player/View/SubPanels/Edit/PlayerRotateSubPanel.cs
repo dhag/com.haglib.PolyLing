@@ -13,22 +13,63 @@ namespace Poly_Ling.Player
     {
         public Func<RotateToolHandler> GetH;
 
+        // UI 自動操作の ID は "rotate.<下の Id>"（UiControlAttribute.cs）。
+        // 角度の変更はプレビューで、確定は「Apply」（またはスライダーを離したとき）。
+        // Euler と Axis-Angle は「Axis-Angle」のオン・オフで切り替わる。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
-        private Slider        _sliderX, _sliderY, _sliderZ;
-        private Toggle        _snapToggle, _originToggle;
+        [UiControl("euler.x", Reveal = nameof(RevealEuler), Description = "X 軸まわりの角度（度）。プレビューで、Apply で確定")]
+        private Slider        _sliderX;
+        [UiControl("euler.y", Reveal = nameof(RevealEuler), Description = "Y 軸まわりの角度（度）。プレビューで、Apply で確定")]
+        private Slider        _sliderY;
+        [UiControl("euler.z", Reveal = nameof(RevealEuler), Description = "Z 軸まわりの角度（度）。プレビューで、Apply で確定")]
+        private Slider        _sliderZ;
+        [UiControl("snap.enabled", Description = "角度をスナップ刻みに丸める")]
+        private Toggle        _snapToggle;
+        [UiControl("aroundOrigin", Description = "オブジェクトの原点を中心に回す")]
+        private Toggle        _originToggle;
+        [UiControl("snap.step", Description = "スナップ刻み（度）")]
         private FloatField    _snapField;
+        [UiControl("magnet.enabled", Description = "マグネット（周囲の頂点も減衰付きで回す）を使う")]
         private Toggle        _magnetToggle;
+        [UiControl("magnet.radius", Description = "マグネットの半径")]
         private Slider        _magnetRadius;
-        private EnumField     _magnetFalloff, _magnetDistance;
+        [UiControl("magnet.falloff", Description = "マグネットの減衰の形")]
+        private EnumField     _magnetFalloff;
+        [UiControl("magnet.distanceMode", Description = "マグネットの距離の測り方")]
+        private EnumField     _magnetDistance;
+        [UiControl("axisAngle.enabled", Description = "Axis-Angle（軸と角度）で回す。オフは Euler")]
         private Toggle        _axisToggle;
-        private FloatField    _axisX, _axisY, _axisZ;
+        [UiControl("axisAngle.axis.x", Reveal = nameof(RevealAxisAngle), Description = "回転軸の X")]
+        private FloatField    _axisX;
+        [UiControl("axisAngle.axis.y", Reveal = nameof(RevealAxisAngle), Description = "回転軸の Y")]
+        private FloatField    _axisY;
+        [UiControl("axisAngle.axis.z", Reveal = nameof(RevealAxisAngle), Description = "回転軸の Z")]
+        private FloatField    _axisZ;
+        [UiControl("axisAngle.angle", Reveal = nameof(RevealAxisAngle), Description = "軸まわりの角度（度）。プレビューで、Apply で確定")]
         private Slider        _axisAngle;
-        private VisualElement _eulerGroup, _axisGroup;
+        [UiControl(Ignore = true)]
+        private VisualElement _eulerGroup;
+        [UiControl(Ignore = true)]
+        private VisualElement _axisGroup;
+        [UiControl("targetCount", Safety = UiSafety.ReadOnly, Description = "回転の影響を受ける頂点数")]
         private Label         _targetLabel;
+        [UiControl("pivot", Safety = UiSafety.ReadOnly, Description = "回転の中心座標")]
         private Label         _pivotLabel;
+        [UiControl("apply", Safety = UiSafety.SafeWrite, Description = "プレビュー中の回転を確定する")]
+        private Button        _applyBtn;
+        [UiControl("reset", Safety = UiSafety.SafeWrite, Description = "確定していないプレビューの回転を戻す")]
+        private Button        _revertBtn;
 
         // スライダー併設の数値入力欄。スライダーと双方向同期する。
-        private FloatField    _fieldX, _fieldY, _fieldZ, _fieldAngle;
+        [UiControl("euler.xValue", Reveal = nameof(RevealEuler), Description = "X 軸まわりの角度の数値入力（-180〜180 に丸める）")]
+        private FloatField    _fieldX;
+        [UiControl("euler.yValue", Reveal = nameof(RevealEuler), Description = "Y 軸まわりの角度の数値入力（-180〜180 に丸める）")]
+        private FloatField    _fieldY;
+        [UiControl("euler.zValue", Reveal = nameof(RevealEuler), Description = "Z 軸まわりの角度の数値入力（-180〜180 に丸める）")]
+        private FloatField    _fieldZ;
+        [UiControl("axisAngle.angleValue", Reveal = nameof(RevealAxisAngle), Description = "軸まわりの角度の数値入力（-180〜180 に丸める）")]
+        private FloatField    _fieldAngle;
 
         // スライダー ⇔ 数値欄の相互更新による再入を防ぐ。
         private bool          _suppressSync;
@@ -131,6 +172,27 @@ namespace Poly_Ling.Player
             revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn);
             _root.Add(btnRow);
+            _applyBtn  = applyBtn;
+            _revertBtn = revertBtn;
+        }
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。Euler の欄は「Axis-Angle」がオフの
+        /// ときだけ表示されるので、利用者と同じくチェックを外す。既にオフなら false。
+        /// </summary>
+        private bool RevealEuler()
+        {
+            if (_axisToggle == null || !_axisToggle.value) return false;
+            _axisToggle.value = false;
+            return true;
+        }
+
+        /// <summary>Axis-Angle の欄は「Axis-Angle」がオンのときだけ表示される。既にオンなら false。</summary>
+        private bool RevealAxisAngle()
+        {
+            if (_axisToggle == null || _axisToggle.value) return false;
+            _axisToggle.value = true;
+            return true;
         }
 
         public void Refresh()

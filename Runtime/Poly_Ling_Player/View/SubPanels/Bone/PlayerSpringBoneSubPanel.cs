@@ -72,43 +72,112 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
+        // UI 自動操作の ID は "springBone.<下の Id>"（UiControlAttribute.cs）。
+        // 一覧（揺れる鎖・まとまり・気になるところ）は行を選ぶと選択コマンドを送る作りなので、
+        // 一覧そのものを項目にする（行番号で選ぶ）。
+        [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象")]
         private Label _targetLabel;
+        [UiControl("place", Safety = UiSafety.ReadOnly, Description = "選んでいるところ")]
         private Label _placeLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label _statusLabel;
 
+        [UiControl("chains", Description = "揺れる鎖の一覧（一覧の行番号）")]
         private ListView _chainListView;
+        [UiControl("groups", Description = "まとまりの一覧（一覧の行番号）")]
         private ListView _groupListView;
+        [UiControl("issues", Description = "気になるところの一覧（一覧の行番号）")]
         private ListView _issueListView;
 
+        [UiControl("chain.name", Description = "揺れる鎖の名前")]
         private TextField _chainNameField;
+        [UiControl("chain.centerBone", Description = "揺れの基準にするボーン")]
         private TextField _centerBoneField;
+        [UiControl("chain.groups", Description = "この鎖が当たるまとまり（カンマ区切り）")]
         private TextField _chainGroupsField;
 
-        private FloatField _hitRadiusField,     _hitRadiusTipField;
-        private FloatField _stiffnessField,     _stiffnessTipField;
-        private FloatField _gravityPowerField,  _gravityPowerTipField;
-        private FloatField _dragField,          _dragTipField;
+        [UiControl("joint.hitRadius", Description = "当たりの半径（根元）")]
+        private FloatField _hitRadiusField;
+        [UiControl("joint.hitRadiusTip", Description = "当たりの半径（末端）")]
+        private FloatField _hitRadiusTipField;
+        [UiControl("joint.stiffness", Description = "戻る強さ（根元）")]
+        private FloatField _stiffnessField;
+        [UiControl("joint.stiffnessTip", Description = "戻る強さ（末端）")]
+        private FloatField _stiffnessTipField;
+        [UiControl("joint.gravityPower", Description = "重力の強さ（根元）")]
+        private FloatField _gravityPowerField;
+        [UiControl("joint.gravityPowerTip", Description = "重力の強さ（末端）")]
+        private FloatField _gravityPowerTipField;
+        [UiControl("joint.drag", Description = "動きの抵抗（根元）")]
+        private FloatField _dragField;
+        [UiControl("joint.dragTip", Description = "動きの抵抗（末端）")]
+        private FloatField _dragTipField;
 
-        private FloatField _gravityDirX, _gravityDirY, _gravityDirZ;
+        [UiControl("joint.gravityDirectionX", Description = "重力の向き X")]
+        private FloatField _gravityDirX;
+        [UiControl("joint.gravityDirectionY", Description = "重力の向き Y")]
+        private FloatField _gravityDirY;
+        [UiControl("joint.gravityDirectionZ", Description = "重力の向き Z")]
+        private FloatField _gravityDirZ;
 
+        [UiControl("joint.taperShape", Description = "根元から末端への配り方")]
         private DropdownField _taperShapeField;
+        [UiControl("joint.taperEnabled", Description = "根元と末端で値を変える")]
         private Toggle        _taperEnabled;
 
+        [UiControl("joint.angleLimit", Description = "揺れる向きの制限のしかた")]
         private DropdownField _angleLimitField;
-        private FloatField _pitchDegField, _yawDegField;
+        [UiControl("joint.pitchDegrees", Description = "制限の角度（ピッチ、度）")]
+        private FloatField _pitchDegField;
+        [UiControl("joint.yawDegrees", Description = "制限の角度（ヨー、度）")]
+        private FloatField _yawDegField;
 
+        [UiControl("tail.length", Description = "足す末端ボーンの長さ")]
         private FloatField _tailLengthField;
+        [UiControl("tail.suffix", Description = "足す末端ボーンの名前の後ろに付ける文字")]
         private TextField  _tailSuffixField;
+        [UiControl("tail.addJoint", Description = "足した末端ボーンにも設定を付ける")]
         private Toggle     _tailJointToggle;
 
+        [UiControl("group.name", Description = "まとまりの名前")]
         private TextField _groupNameField;
 
+        [UiControl("sim.fixedDeltaTime", Description = "計算の刻み幅")]
         private FloatField   _fixedDtField;
+        [UiControl("sim.warmupSteps", Description = "落ち着かせる回数")]
         private IntegerField _warmupField;
 
+        [UiControl("apply.walk", Description = "適用する範囲のたどり方")]
         private DropdownField _walkField;
+        [UiControl("apply.additive", Description = "今ある設定に足す")]
         private Toggle        _additiveToggle;
+        [UiControl("apply.minWeight", Description = "対象にする最小のウェイト")]
         private FloatField    _minWeightField;
+
+        [UiControl("selectChain", Safety = UiSafety.SafeWrite, Description = "選んだボーンから下をまとめて選ぶ")]
+        private Button _btnSelectChain;
+        [UiControl("selectByWeight", Safety = UiSafety.SafeWrite, Description = "選んだメッシュを動かしているボーンを選ぶ")]
+        private Button _btnSelectByWeight;
+        [UiControl("chain.setRoot", Safety = UiSafety.SafeWrite, Description = "ここから揺らす（鎖の根元にする）")]
+        private Button _btnSetChainRoot;
+        [UiControl("chain.clearRoot", Safety = UiSafety.Destructive, Description = "揺れをやめる（鎖を外す）")]
+        private Button _btnClearChainRoot;
+        [UiControl("joint.apply", Safety = UiSafety.SafeWrite, Description = "選んだところへ設定を適用する")]
+        private Button _btnSetJoint;
+        [UiControl("joint.clear", Safety = UiSafety.Destructive, Description = "選んだところから設定を外す")]
+        private Button _btnClearJoint;
+        [UiControl("joint.applyGradient", Safety = UiSafety.SafeWrite, Description = "根元から末端へ配って適用する")]
+        private Button _btnApplyJointGradient;
+        [UiControl("tail.add", Safety = UiSafety.SafeWrite, Description = "選んだボーンの先に末端ボーンを足す")]
+        private Button _btnAddTailBone;
+        [UiControl("group.add", Safety = UiSafety.SafeWrite, Description = "まとまりを追加する")]
+        private Button _btnAddGroup;
+        [UiControl("group.rename", Safety = UiSafety.SafeWrite, Description = "まとまりの名前を変える")]
+        private Button _btnRenameGroup;
+        [UiControl("group.delete", Safety = UiSafety.Destructive, Description = "まとまりを削除する")]
+        private Button _btnDeleteGroup;
+        [UiControl("applySettings", Safety = UiSafety.SafeWrite, Description = "計算と適用の設定を適用する")]
+        private Button _btnApplySettings;
 
         // ================================================================
         // 表示用の控え（Refresh のたびに作り直す）
@@ -239,14 +308,14 @@ namespace Poly_Ling.Player
             fo.Add(_additiveToggle);
 
             var rowChain = Row();
-            rowChain.Add(Btn("選んだボーンから下をまとめて選ぶ", OnSelectChain, grow: true));
+            rowChain.Add(_btnSelectChain = Btn("選んだボーンから下をまとめて選ぶ", OnSelectChain, grow: true));
             fo.Add(rowChain);
 
             _minWeightField = new FloatField("無視するウェイトの下限") { value = 0.01f };
             fo.Add(_minWeightField);
 
             var rowWeight = Row();
-            rowWeight.Add(Btn("選んだメッシュを動かしているボーンを選ぶ", OnSelectByWeight, grow: true));
+            rowWeight.Add(_btnSelectByWeight = Btn("選んだメッシュを動かしているボーンを選ぶ", OnSelectByWeight, grow: true));
             fo.Add(rowWeight);
 
             fo.Add(Hint(
@@ -284,8 +353,8 @@ namespace Poly_Ling.Player
               + " [0] [1] の数字を、カンマ区切りで入れます。空欄だと何にもぶつからず、体を突き抜けます。"));
 
             var row = Row();
-            row.Add(Btn("ここから揺らす", OnSetChainRoot,   grow: true));
-            row.Add(Btn("揺れをやめる",   OnClearChainRoot, grow: true));
+            row.Add(_btnSetChainRoot   = Btn("ここから揺らす", OnSetChainRoot,   grow: true));
+            row.Add(_btnClearChainRoot = Btn("揺れをやめる",   OnClearChainRoot, grow: true));
             fo.Add(row);
 
             root.Add(fo);
@@ -380,12 +449,12 @@ namespace Poly_Ling.Player
               + "「中ほどで一気に変える」…根元と先をはっきり分けたいときに使います。"));
 
             var row = Row();
-            row.Add(Btn("選んだところへ適用",   OnSetJoint,   grow: true));
-            row.Add(Btn("選んだところから外す", OnClearJoint, grow: true));
+            row.Add(_btnSetJoint   = Btn("選んだところへ適用",   OnSetJoint,   grow: true));
+            row.Add(_btnClearJoint = Btn("選んだところから外す", OnClearJoint, grow: true));
             fo.Add(row);
 
             var row2 = Row();
-            row2.Add(Btn("根元から末端へ配って適用", OnApplyJointGradient, grow: true));
+            row2.Add(_btnApplyJointGradient = Btn("根元から末端へ配って適用", OnApplyJointGradient, grow: true));
             fo.Add(row2);
             fo.Add(Hint(
                 "配る順は「① 揺らすボーンを選ぶ」で選んだ順（＝親から子への順）です。\n"
@@ -549,7 +618,7 @@ namespace Poly_Ling.Player
             fo.Add(_tailJointToggle);
 
             var row = Row();
-            row.Add(Btn("選んだボーンの先に足す", OnAddTailBone, grow: true));
+            row.Add(_btnAddTailBone = Btn("選んだボーンの先に足す", OnAddTailBone, grow: true));
             fo.Add(row);
 
             root.Add(fo);
@@ -573,9 +642,9 @@ namespace Poly_Ling.Player
               + "当たり判定そのものを作る・直すのは、左の「当たり判定の作成と編集」です。"));
 
             var row = Row();
-            row.Add(Btn("追加",     OnAddGroup,    grow: true));
-            row.Add(Btn("名前変更", OnRenameGroup, grow: true));
-            row.Add(Btn("削除",     OnDeleteGroup, grow: true));
+            row.Add(_btnAddGroup    = Btn("追加",     OnAddGroup,    grow: true));
+            row.Add(_btnRenameGroup = Btn("名前変更", OnRenameGroup, grow: true));
+            row.Add(_btnDeleteGroup = Btn("削除",     OnDeleteGroup, grow: true));
             fo.Add(row);
 
             root.Add(fo);
@@ -599,7 +668,7 @@ namespace Poly_Ling.Player
               + "0 にすると、表示した瞬間に髪が落下してから戻る動きが見えます。"));
 
             var row = Row();
-            row.Add(Btn("適用", OnApplySettings, grow: true));
+            row.Add(_btnApplySettings = Btn("適用", OnApplySettings, grow: true));
             fo.Add(row);
 
             root.Add(fo);

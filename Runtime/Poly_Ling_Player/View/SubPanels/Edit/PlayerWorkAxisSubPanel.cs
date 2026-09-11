@@ -95,23 +95,69 @@ namespace Poly_Ling.Player
         // ウィジェット
         // ================================================================
 
+        // UI 自動操作の ID は "<パネル ID>.<下の Id>"（UiControlAttribute.cs）。
+        // このクラスは作業軸パネル（workAxis）と変形パネルの作業軸（deform.workAxis）の 2 か所で使う。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
-        private FloatField _posX, _posY, _posZ;
-        private FloatField _rotX, _rotY, _rotZ;
+        [UiControl("origin.x", Description = "作業軸の原点 X（ワールド）")]
+        private FloatField _posX;
+        [UiControl("origin.y", Description = "作業軸の原点 Y（ワールド）")]
+        private FloatField _posY;
+        [UiControl("origin.z", Description = "作業軸の原点 Z（ワールド）")]
+        private FloatField _posZ;
+        [UiControl("rotation.x", Description = "作業軸の回転 X（オイラー角・度）")]
+        private FloatField _rotX;
+        [UiControl("rotation.y", Description = "作業軸の回転 Y（オイラー角・度）")]
+        private FloatField _rotY;
+        [UiControl("rotation.z", Description = "作業軸の回転 Z（オイラー角・度）")]
+        private FloatField _rotZ;
+        [UiControl("length", Description = "作業軸ギズモの長さ（ワールド）")]
         private FloatField _lengthField;
+        [UiControl("gizmoVisible", Description = "ギズモを表示する")]
         private Toggle     _visibleToggle;
+        [UiControl("angleSnap.step", Description = "角度スナップの刻み（度）")]
         private FloatField _snapField;
+        [UiControl("angleSnap.enabled", Description = "角度スナップを使う")]
         private Toggle     _snapToggle;
-        private Button     _modeMoveBtn, _modeRotateBtn;
+        [UiControl("gizmo.move", Safety = UiSafety.SafeWrite, Description = "ギズモを移動にする")]
+        private Button     _modeMoveBtn;
+        [UiControl("gizmo.rotate", Safety = UiSafety.SafeWrite, Description = "ギズモを回転にする")]
+        private Button     _modeRotateBtn;
+        [UiControl("info", Safety = UiSafety.ReadOnly, Description = "直近の操作の案内")]
         private Label      _infoLabel;
 
         // 吸着対象
-        private Toggle _snapVertexToggle, _snapBoneToggle, _snapObjectToggle;
+        [UiControl("snap.vertex", Description = "頂点にスナップする")]
+        private Toggle _snapVertexToggle;
+        [UiControl("snap.bone", Description = "ボーンにスナップする")]
+        private Toggle _snapBoneToggle;
+        [UiControl("snap.object", Description = "描画オブジェクトにスナップする")]
+        private Toggle _snapObjectToggle;
+
+        // 操作ボタン
+        [UiControl("moveToSelectionCentroid", Safety = UiSafety.SafeWrite, Description = "原点を選択頂点の重心へ移す")]
+        private Button _toCentroidBtn;
+        [UiControl("alignToWorld", Safety = UiSafety.SafeWrite, Description = "回転をワールド軸へ揃える")]
+        private Button _alignWorldBtn;
+        [UiControl("reset", Safety = UiSafety.SafeWrite, Description = "作業軸をリセットする")]
+        private Button _resetBtn;
 
         // 辞書
+        [UiControl("library.name", Description = "辞書に登録する名前")]
         private TextField    _libNameField;
+        [UiControl("library.entry", Description = "登録済みの作業軸")]
         private DropdownField _libDropdown;
         private readonly List<string> _libNames = new List<string>();
+        [UiControl("library.register", Safety = UiSafety.SafeWrite, Description = "今の作業軸を辞書に登録する")]
+        private Button _libAddBtn;
+        [UiControl("library.recall", Safety = UiSafety.SafeWrite, Description = "選んだ作業軸を呼び出す")]
+        private Button _libRecallBtn;
+        [UiControl("library.remove", Safety = UiSafety.Destructive, Description = "選んだ作業軸を辞書から削除する")]
+        private Button _libRemoveBtn;
+        [UiControl("library.saveCsv", Safety = UiSafety.UserOnly, Description = "辞書を CSV に保存する（保存ダイアログを開く）")]
+        private Button _libSaveCsvBtn;
+        [UiControl("library.loadCsv", Safety = UiSafety.UserOnly, Description = "辞書を CSV から読み込む（ファイル選択ダイアログを開く）")]
+        private Button _libLoadCsvBtn;
 
         private static readonly Color ActiveBtnColor   = new Color(0.20f, 0.45f, 0.25f);
         private static readonly Color InactiveBtnColor = new Color(0.25f, 0.25f, 0.25f);
@@ -236,6 +282,7 @@ namespace Poly_Ling.Player
             toCentroid.style.flexGrow = 1;
             cmdRow1.Add(toCentroid);
             _root.Add(cmdRow1);
+            _toCentroidBtn = toCentroid;
 
             var cmdRow2 = new VisualElement();
             cmdRow2.style.flexDirection = FlexDirection.Row;
@@ -246,6 +293,8 @@ namespace Poly_Ling.Player
             resetBtn.style.flexGrow = 1;
             cmdRow2.Add(alignWorld); cmdRow2.Add(resetBtn);
             _root.Add(cmdRow2);
+            _alignWorldBtn = alignWorld;
+            _resetBtn      = resetBtn;
 
             BuildLibrarySection();
 
@@ -295,6 +344,7 @@ namespace Poly_Ling.Player
             addBtn.style.width = 56;
             addRow.Add(addBtn);
             _root.Add(addRow);
+            _libAddBtn = addBtn;
 
             // 呼び出し / 削除
             _libDropdown = new DropdownField("登録済み", new List<string>(), -1);
@@ -311,6 +361,8 @@ namespace Poly_Ling.Player
             delBtn.style.flexGrow = 1;
             useRow.Add(recallBtn); useRow.Add(delBtn);
             _root.Add(useRow);
+            _libRecallBtn = recallBtn;
+            _libRemoveBtn = delBtn;
 
             // CSV
             var csvRow = new VisualElement();
@@ -322,6 +374,8 @@ namespace Poly_Ling.Player
             loadBtn.style.flexGrow = 1;
             csvRow.Add(saveBtn); csvRow.Add(loadBtn);
             _root.Add(csvRow);
+            _libSaveCsvBtn = saveBtn;
+            _libLoadCsvBtn = loadBtn;
 
             RefreshLibraryList();
         }

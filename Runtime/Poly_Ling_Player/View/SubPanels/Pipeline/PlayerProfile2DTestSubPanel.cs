@@ -39,7 +39,19 @@ namespace Poly_Ling.Player
         private const string ProfileName = "PT_Outline";
         private const string OutputName  = "PT_Plate";
 
-        private FloatField   _outerSize, _holeSize, _thickness, _edgeSize, _shrinkHole;
+        // UI 自動操作の ID は "profile2DTest.<下の Id>"（UiControlAttribute.cs）。
+        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        [UiControl("outerSize", Description = "外周の一辺（正六角形の外接半径）")]
+        private FloatField   _outerSize;
+        [UiControl("holeSize", Description = "穴の半径")]
+        private FloatField   _holeSize;
+        [UiControl("thickness", Description = "押し出しの厚み")]
+        private FloatField   _thickness;
+        [UiControl("edgeSize", Description = "エッジのサイズ")]
+        private FloatField   _edgeSize;
+        [UiControl("shrinkHole", Description = "穴を広げる量（作り直しの検証用）")]
+        private FloatField   _shrinkHole;
+        [UiControl("edgeSegments", Description = "エッジの分割")]
         private IntegerField _edgeSegments;
 
         // ================================================================

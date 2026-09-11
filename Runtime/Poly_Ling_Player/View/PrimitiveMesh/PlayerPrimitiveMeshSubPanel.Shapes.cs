@@ -93,6 +93,12 @@ namespace Poly_Ling.Player
         private ShapeKind _current = ShapeKind.Cube;
         private ShapeCategory _category = ShapeCategory.Basic;
 
+        /// <summary>
+        /// いま選んでいる図形。右ペインの図形生成セクションを開く入口は
+        /// 「図形を指定して開く」しかないので、開き直すときの指定に使う。
+        /// </summary>
+        public ShapeKind CurrentShape => _current;
+
         // カテゴリ別に「最後に選んだ図形」を保持する。パネルを開き直したときは
         // カテゴリ先頭ではなくこの値を選び直す。MemoryKey があれば起動をまたいで
         // PrimitiveShapeMemory（JSON）にも保存する。
@@ -115,6 +121,13 @@ namespace Poly_Ling.Player
         // 現在カテゴリに属する図形リスト。
         private ShapeKind[] CurrentCategoryShapes() => ShapesOf(_category);
 
+        /// <summary>
+        /// UI 自動操作の動的な項目の組。図形ごとに諸元が違うので、図形の名前を組にする。
+        /// ViewerCore はカテゴリごとに別パネルとして登録するが、組は図形単位なので、
+        /// カテゴリを切り替えても選んでいる図形の諸元だけが引ける。
+        /// </summary>
+        private static string ShapeGroup(ShapeKind kind) => ShapeKeys[(int)kind];
+
         private static ShapeKind[] ShapesOf(ShapeCategory cat)
         {
             switch (cat)
@@ -133,6 +146,8 @@ namespace Poly_Ling.Player
         {
             if (_shapeGrid == null) return;
             _shapeGrid.Clear();
+            // 図形ボタンはカテゴリを変えるたびに作り直す。ID は "shape.<図形のキー>"。
+            _uiDynamicShapes.Begin("");
             for (int i = 0; i < _shapeBtns.Length; i++) _shapeBtns[i] = null;
 
             foreach (var kind in CurrentCategoryShapes())
@@ -142,7 +157,8 @@ namespace Poly_Ling.Player
                 btn.style.width = new StyleLength(new Length(33.3f, LengthUnit.Percent));
                 btn.style.height = 26; btn.style.marginBottom = 2; btn.style.fontSize = 10;
                 _shapeBtns[idx] = btn;
-                _shapeGrid.Add(btn);
+                _shapeGrid.Add(_uiDynamicShapes.Add(
+                    "shape." + ShapeKeys[idx], btn, T(ShapeKeys[idx]).Text + " を選ぶ", UiSafety.SafeWrite));
             }
         }
 
@@ -280,6 +296,10 @@ namespace Poly_Ling.Player
 
             _profileEditorContainer?.Clear();
             _settingsContainer?.Clear();
+            // 諸元 UI はここから作り直す。行ヘルパ（SR / IR / TR / V3F / SB）が
+            // ローカライズのキーを ID にして _uiDynamic へ登録する。組は今の図形の名前。
+            _uiRowTarget = _uiDynamic;
+            _uiDynamic.Begin(ShapeGroup(_current));
             switch (_current)
             {
                 case ShapeKind.Cube:       BuildCubeUI(_settingsContainer);       break;

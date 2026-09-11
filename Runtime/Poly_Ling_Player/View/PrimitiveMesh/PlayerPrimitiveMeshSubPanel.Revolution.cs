@@ -56,11 +56,31 @@ namespace Poly_Ling.Player
         private readonly Canvas2DAnchor _revAnchor = new Canvas2DAnchor();
         private bool          _revAnchorDrag;
         private bool          _revAnchorSuppress;
-        private Slider        _revAnchorXSlider, _revAnchorYSlider;
-        private FloatField    _revAnchorXField,  _revAnchorYField;
+        // 回転体の断面編集も 2D 断面と同じく、キャンバス上のポインタ操作が主。
+        // キャンバスと点の編集欄は項目にしない。
+        [UiControl(Ignore = true)]
+        private Slider        _revAnchorXSlider;
+        [UiControl(Ignore = true)]
+        private Slider        _revAnchorYSlider;
+        [UiControl(Ignore = true)]
+        private FloatField    _revAnchorXField;
+        [UiControl(Ignore = true)]
+        private FloatField    _revAnchorYField;
+        [UiControl(Ignore = true)]
         private Button        _revAnchorEnterBtn;
+        [UiControl(Ignore = true)]
         private VisualElement _revAnchorPanel;
-        private FloatField    _revTfMoveX, _revTfMoveY, _revTfScaleX, _revTfScaleY, _revTfRot;
+        [UiControl(Ignore = true)]
+        private FloatField    _revTfMoveX;
+        [UiControl(Ignore = true)]
+        private FloatField    _revTfMoveY;
+        [UiControl(Ignore = true)]
+        private FloatField    _revTfScaleX;
+        [UiControl(Ignore = true)]
+        private FloatField    _revTfScaleY;
+        [UiControl(Ignore = true)]
+        private FloatField    _revTfRot;
+        [UiControl(Ignore = true)]
         private FloatField    _revTfScaleAxis;
 
         // 回転/拡大縮小ハンドル（キャンバス上ドラッグ）
@@ -79,26 +99,37 @@ namespace Poly_Ling.Player
         private readonly Canvas2DMagnet _revMagnet = new Canvas2DMagnet();
         private readonly Dictionary<int, Vector2> _revMagnetStart = new Dictionary<int, Vector2>();
         private readonly Dictionary<int, float>   _revMagnetW     = new Dictionary<int, float>();
+        [UiControl(Ignore = true)]
         private Slider        _revMagnetRadius;
         private int           _revHoverEI   = -1;
+        [UiControl(Ignore = true)]
         private VisualElement _revCanvas;
+        [UiControl(Ignore = true)]
         private VisualElement _revPtRow;
+        [UiControl(Ignore = true)]
         private Label         _revPtLabel;
+        [UiControl(Ignore = true)]
         private Slider        _revPtXSlider;
+        [UiControl(Ignore = true)]
         private FloatField    _revPtXField;
+        [UiControl(Ignore = true)]
         private Slider        _revPtYSlider;
+        [UiControl(Ignore = true)]
         private FloatField    _revPtYField;
         private string        _revCsvPath   = "";
         private const string  RevCsvKey  = "Primitive.Revolution.Csv";
 
         // 下絵
         private Texture2D     _revBgTex;
+        [UiControl(Ignore = true)]
         private VisualElement _revBgEl;
         private string        _revBgPath    = "";
         private Vector2       _revBgOffset  = Vector2.zero;
         private float         _revBgScale   = 3f;   // 画像高さ(ワールド単位)
         private Vector2       _revBgOrigin  = Vector2.zero; // 拡大縮小の原点（画像px, 既定=中心）
+        [UiControl(Ignore = true)]
         private Slider        _revBgScaleSlider;
+        [UiControl(Ignore = true)]
         private Label         _revBgSizeLabel;
         private float         _revBgAlpha   = 0.4f;
         private bool          _revBgMode    = false; // true=下絵移動モード
@@ -109,6 +140,7 @@ namespace Poly_Ling.Player
         // プロファイルビュー（ズーム/パン）
         private float         _revZoom      = 1f;
         private Vector2       _revOffset    = Vector2.zero;
+        [UiControl(Ignore = true)]
         private VisualElement _revViewLayer;          // 下絵を view 変換で追従させる層
         private bool          _revPanDrag;            // 中ボタンパン中
         private Vector2       _revPanStart;

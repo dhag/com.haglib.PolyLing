@@ -50,21 +50,31 @@ namespace Poly_Ling.Player
         // ================================================================
         // UI
         // ================================================================
-
+        // UI 自動操作の ID は "skinKind.<下の Id>"（UiControlAttribute.cs）。
+        // 対象オブジェクトの一覧はモデルに合わせて作り直す行（Rows）。
+        [UiControl(Ignore = true, Rows = true)]
         private VisualElement _targetList;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
 
         // MeshFilter へ戻す
+        [UiControl("keepParent", Description = "親（ボーン）のまま残す")]
         private Toggle _keepParentToggle;
+        [UiControl("toMeshFilter", Safety = UiSafety.SafeWrite, Description = "MeshFilter 系へ戻す")]
         private Button _toMeshFilterBtn;
 
         // スキンド化
+        [UiControl("bindBone", Description = "バインド先ボーン")]
         private DropdownField _boneDropdown;
+        [UiControl("toSkinned", Safety = UiSafety.SafeWrite, Description = "スキンド化する")]
         private Button        _toSkinnedBtn;
 
         // 左右ボーン対応 / ミラー
+        [UiControl("mirrorBone", Safety = UiSafety.ReadOnly, Description = "左右ボーン対応の状態")]
         private Label  _mirrorBoneLabel;
+        [UiControl("resolveMirrorBone", Safety = UiSafety.SafeWrite, Description = "左右ボーン対応を名前から補完する")]
         private Button _resolveMirrorBoneBtn;
+        [UiControl("createMirror", Safety = UiSafety.SafeWrite, Description = "ミラーを生成する")]
         private Button _createMirrorBtn;
 
         /// <summary>ドロップダウンの並び順に対応する MeshContextList 索引。</summary>

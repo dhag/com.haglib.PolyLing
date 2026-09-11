@@ -16,13 +16,23 @@ namespace Poly_Ling.Player
         private readonly Func<ViewportGridSettings>   _get;
         private readonly Action<ViewportGridSettings> _set;
 
+        // UI 自動操作の ID は "gridAxis.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("showAxis", Description = "軸を表示する")]
         private Toggle        _axisToggle;
+        [UiControl("axisLength", Description = "軸の長さ")]
         private FloatField    _axisLength;
+        [UiControl("showGrid", Description = "グリッドを表示する")]
         private Toggle        _gridToggle;
+        [UiControl("plane", Description = "グリッドの平面")]
         private DropdownField _planeDropdown;
+        [UiControl("cellSize", Description = "マスの大きさ")]
         private FloatField    _cellSize;
+        [UiControl("halfCount", Description = "分割数（片側）")]
         private IntegerField  _halfCount;
+        [UiControl("boneMarkerScale", Description = "ボーンの目印の大きさ")]
         private FloatField    _boneMarkerScale;
+        [UiControl("reset", Safety = UiSafety.SafeWrite, Description = "既定値に戻す")]
+        private Button        _resetBtn;
 
         private bool _suppress;   // フィールド→設定 反映の一時抑止（同期時）
 
@@ -96,6 +106,7 @@ namespace Poly_Ling.Player
             resetBtn.style.marginTop = 6;
             resetBtn.style.height    = 24;
             parent.Add(resetBtn);
+            _resetBtn = resetBtn;
 
             Refresh();
         }

@@ -49,17 +49,37 @@ namespace Poly_Ling.Player
         private string       _clipPath;
         private float        _maxTime;
 
+        // UI 自動操作の ID は "unityClipToVrma.<下の Id>"（UiControlAttribute.cs）。
+        // パス欄はダイアログの初期値として使い、確定は [...] か「保存」のダイアログで行う。
+        [UiControl("clipPath", Description = "読み込むクリップのパス（ダイアログの初期値として使う）")]
         private TextField  _clipPathField;
+        [UiControl("vrmaPath", Description = "書き出す VRMA のパス（ダイアログの初期値として使う）")]
         private TextField  _vrmaPathField;
+        [UiControl("clipInfo", Safety = UiSafety.ReadOnly, Description = "読み込んだクリップの情報")]
         private Label      _clipInfoLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label      _statusLabel;
+        [UiControl("availability", Safety = UiSafety.ReadOnly, Description = "書き出しが使えるかどうかの表示")]
         private Label      _availLabel;
+        [UiControl("save", Safety = UiSafety.UserOnly, Description = "VRMA を保存する（保存ダイアログを開く）")]
         private Button     _btnSave;
+        [UiControl("clear", Safety = UiSafety.Destructive, Description = "読み込んだクリップを外す")]
         private Button     _btnClear;
+        [UiControl("open", Safety = UiSafety.UserOnly, Description = "クリップを開く（ファイル選択ダイアログを開く）")]
+        private Button     _btnOpen;
+        [UiControl("browseClip", Safety = UiSafety.UserOnly, Description = "クリップの [...]（ファイル選択ダイアログを開く）")]
+        private Button     _btnBrowseClip;
+        [UiControl("browseVrma", Safety = UiSafety.UserOnly, Description = "VRMA の [...]（保存ダイアログを開く）")]
+        private Button     _btnBrowseVrma;
+        [UiControl("fps", Description = "採取のフレームレート")]
         private FloatField _fpsField;
+        [UiControl("startTime", Description = "採取の開始時刻")]
         private FloatField _startField;
+        [UiControl("endTime", Description = "採取の終了時刻")]
         private FloatField _endField;
+        [UiControl("boneLength", Description = "ボーンの長さ")]
         private FloatField _boneLenField;
+        [UiControl("useRoot", Description = "Root の移動・向き（RootT / RootQ）を載せる")]
         private Toggle     _useRootToggle;
 
         private const string ClipPathKey = "UnityClipToVrma.Clip.Path";
@@ -91,13 +111,14 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.SectionLabel("Unity Clip (JSON)"));
             _clipPathField = new TextField();
             _clipPathField.RegisterValueChangedCallback(e => RecentPaths.Set(ClipPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_clipPathField, OnBrowseClip));
+            root.Add(PlayerIoUiKit.PathRow(_clipPathField, OnBrowseClip, out _btnBrowseClip));
             _clipPathField.SetValueWithoutNotify(RecentPaths.Get(ClipPathKey));
 
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
             opRow.style.marginBottom  = 3;
             var btnOpen = PlayerIoUiKit.OpenButton("開く", OnBrowseClip);
+            _btnOpen = btnOpen;
             btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
             _btnClear = new Button(Clear) { text = "クリア" };
             _btnClear.style.width = 64;
@@ -114,7 +135,7 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.SectionLabel("書き出し先 (.vrma)"));
             _vrmaPathField = new TextField();
             _vrmaPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VrmaPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_vrmaPathField, OnBrowseVrma));
+            root.Add(PlayerIoUiKit.PathRow(_vrmaPathField, OnBrowseVrma, out _btnBrowseVrma));
             _vrmaPathField.SetValueWithoutNotify(RecentPaths.Get(VrmaPathKey));
 
             // ── 設定 ─────────────────────────────────────────────────

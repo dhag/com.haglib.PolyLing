@@ -206,6 +206,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>生成ボタン本体。条件が揃うまでグレーアウトさせるため保持する。</summary>
+        [UiControl("create", Safety = UiSafety.SafeWrite, Description = "今の諸元で図形を作る")]
         private Button _createBtn;
 
         /// <summary>ベルトを1本でも取り込めているか。フリル／パイプ／接地の共通判定。</summary>

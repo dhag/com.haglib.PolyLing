@@ -26,10 +26,19 @@ namespace Poly_Ling.Player
         /// <summary>RecentFileDialog / PLSandbox が使う保存キー。</summary>
         private const string RecentKey = PLSandbox.WorkFolderKey;
 
+        // UI 自動操作の ID は "workFolder.<下の Id>"（UiControlAttribute.cs）。
+        // 作業フォルダは、外部から読み書きできる範囲そのものを決める設定なので、
+        // 変える操作は利用者のダイアログを通す（UserOnly）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("path", Safety = UiSafety.ReadOnly, Description = "今の作業フォルダ")]
         private Label         _pathLabel;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label         _statusLabel;
+        [UiControl("clear", Safety = UiSafety.UserOnly, Description = "作業フォルダの指定を解除する")]
         private Button        _clearBtn;
+        [UiControl("select", Safety = UiSafety.UserOnly, Description = "作業フォルダを選ぶ（フォルダ選択ダイアログを開く）")]
+        private Button        _selectBtn;
 
         public void Build(VisualElement parent)
         {
@@ -64,6 +73,7 @@ namespace Poly_Ling.Player
             btnRow.style.marginBottom  = 4;
 
             var selectBtn = new Button(OnSelect) { text = "選択…" };
+            _selectBtn = selectBtn;
             selectBtn.style.flexGrow    = 1;
             selectBtn.style.marginRight = 2;
 

@@ -46,10 +46,27 @@ namespace Poly_Ling.Player
         private float _depthScale = 1f;
 
         // ── UI ────────────────────────────────────────────────────────────
+        // UI 自動操作の ID は "uvz.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl("warning", Safety = UiSafety.ReadOnly, Description = "警告（出ていないときは非表示）")]
         private Label          _warningLabel;
+        [UiControl("targetInfo", Safety = UiSafety.ReadOnly, Description = "対象メッシュの情報")]
         private Label          _targetInfo;
+        [UiControl("writebackTarget", Description = "XYZ→UV 書き戻しのターゲット")]
         private DropdownField  _writebackTarget;
+        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label          _statusLabel;
+        [UiControl("enterUvEditMode", Safety = UiSafety.SafeWrite, Description = "UV 編集モードを始める")]
+        private Button         _enterUvEditBtn;
+        [UiControl("exitUvEditMode", Safety = UiSafety.SafeWrite, Description = "UV 編集モードを終了して書き戻す")]
+        private Button         _exitUvEditBtn;
+        [UiControl("uvScale", Description = "UV スケール")]
+        private FloatField     _uvScaleField;
+        [UiControl("depthScale", Description = "深度スケール")]
+        private FloatField     _depthScaleField;
+        [UiControl("uvToXyz", Safety = UiSafety.SafeWrite, Description = "選択メッシュの UV を XY、カメラ深度を Z とする新メッシュを生成する")]
+        private Button         _uvToXyzBtn;
+        [UiControl("xyzToUv", Safety = UiSafety.SafeWrite, Description = "選択メッシュ（UVZ）の XY 座標をターゲットの UV として書き戻す")]
+        private Button         _xyzToUvBtn;
 
         // 書き戻し候補: (masterIndex, label)
         private readonly List<(int, string)> _writebackCandidates = new List<(int, string)>();
@@ -89,11 +106,13 @@ namespace Poly_Ling.Player
             exitBtn.style.flexGrow = 1; exitBtn.style.height = 28; exitBtn.style.marginLeft = 4;
             modeRow.Add(enterBtn); modeRow.Add(exitBtn);
             root.Add(modeRow);
+            _enterUvEditBtn = enterBtn;
+            _exitUvEditBtn  = exitBtn;
 
             // スケール
             root.Add(SecLabel("スケール"));
-            root.Add(MakeFloatRow("UV スケール", 10f, v => _uvScale    = Mathf.Max(UvScaleMin,    v)));
-            root.Add(MakeFloatRow("深度スケール", 1f, v => _depthScale = Mathf.Max(DepthScaleMin, v)));
+            root.Add(MakeFloatRow("UV スケール", 10f, v => _uvScale    = Mathf.Max(UvScaleMin,    v), out _uvScaleField));
+            root.Add(MakeFloatRow("深度スケール", 1f, v => _depthScale = Mathf.Max(DepthScaleMin, v), out _depthScaleField));
 
             // UV → XYZ
             root.Add(SecLabel("UV → XYZ（展開）"));
@@ -101,6 +120,7 @@ namespace Poly_Ling.Player
             var uvToXyzBtn = new Button(OnUvToXyz) { text = "UVZ メッシュ生成" };
             uvToXyzBtn.style.height = 28; uvToXyzBtn.style.marginTop = 4; uvToXyzBtn.style.marginBottom = 8;
             root.Add(uvToXyzBtn);
+            _uvToXyzBtn = uvToXyzBtn;
 
             // XYZ → UV
             root.Add(SecLabel("XYZ → UV（書き戻し）"));
@@ -114,6 +134,7 @@ namespace Poly_Ling.Player
             var xyzToUvBtn = new Button(OnXyzToUv) { text = "XYZ→UV 書き戻し" };
             xyzToUvBtn.style.height = 28; xyzToUvBtn.style.marginBottom = 4;
             root.Add(xyzToUvBtn);
+            _xyzToUvBtn = xyzToUvBtn;
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
@@ -208,7 +229,7 @@ namespace Poly_Ling.Player
             return l;
         }
 
-        private static VisualElement MakeFloatRow(string label, float initVal, Action<float> onChange)
+        private static VisualElement MakeFloatRow(string label, float initVal, Action<float> onChange, out FloatField field)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -219,6 +240,7 @@ namespace Poly_Ling.Player
             var f = new FloatField { value = initVal }; f.style.flexGrow = 1;
             f.RegisterValueChangedCallback(e => onChange(e.newValue));
             row.Add(lbl); row.Add(f);
+            field = f;
             return row;
         }
     }

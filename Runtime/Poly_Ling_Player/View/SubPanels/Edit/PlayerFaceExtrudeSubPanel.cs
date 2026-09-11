@@ -13,10 +13,20 @@ namespace Poly_Ling.Player
     public class PlayerFaceExtrudeSubPanel
     {
         public Func<FaceExtrudeToolHandler> GetH;
+
+        // UI 自動操作の ID は "faceExtrude.<下の Id>"（UiControlAttribute.cs）。
+        [UiControl(Ignore = true)]
         private VisualElement _root;
+        [UiControl("bevelScale", Reveal = nameof(RevealBevel), Description = "ベベルの縮小率（Type が Bevel のときだけ表示）")]
         private Slider _bevelSlider;
+        [UiControl(Ignore = true)]
         private VisualElement _bevelGroup;
+        [UiControl("dragSensitivity", Description = "ドラッグ量に対する押し出し量の比例係数")]
         private FloatField _dragSensField;
+        [UiControl("type", Description = "押し出しの種類（Normal / Bevel）")]
+        private DropdownField _typeDropdown;
+        [UiControl("individualNormals", Description = "面ごとの法線方向へ押し出す")]
+        private Toggle _individualNormalsToggle;
 
         public void Build(VisualElement parent)
         {
@@ -34,6 +44,7 @@ namespace Poly_Ling.Player
                 if (_bevelGroup != null) _bevelGroup.style.display = idx == 1 ? DisplayStyle.Flex : DisplayStyle.None;
             });
             _root.Add(typeDD);
+            _typeDropdown = typeDD;
             _bevelGroup = new VisualElement(); _bevelGroup.style.display = DisplayStyle.None;
             _bevelSlider = MakeSlider("Bevel Scale", 0.01f, 1f, 0.8f, v => { if (GetH() != null) GetH().BevelScale = v; });
             _bevelGroup.Add(_bevelSlider); _root.Add(_bevelGroup);
@@ -41,6 +52,7 @@ namespace Poly_Ling.Player
             normalToggle.style.color = new StyleColor(Color.white);
             normalToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().IndividualNormals = e.newValue; });
             _root.Add(normalToggle);
+            _individualNormalsToggle = normalToggle;
 
             // Drag Sensitivity — テキストボックス（カメラ平面での実ドラッグ距離への比例係数）
             var sensRow = new VisualElement();
@@ -65,6 +77,17 @@ namespace Poly_Ling.Player
         {
             var h = GetH(); if (h == null) return;
             _dragSensField?.SetValueWithoutNotify(h.DragSensitivity);
+        }
+
+        /// <summary>
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。Bevel Scale は Type が Bevel の
+        /// ときだけ表示されるので、利用者と同じく Type を Bevel にする。既に Bevel なら false。
+        /// </summary>
+        private bool RevealBevel()
+        {
+            if (_typeDropdown == null || _typeDropdown.value == "Bevel") return false;
+            _typeDropdown.value = "Bevel";
+            return true;
         }
 
         // ── ヘルパー ──────────────────────────────────────────────────────
