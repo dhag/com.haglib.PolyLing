@@ -107,6 +107,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (vrmFp != VrmFirstPersonType.Auto)
                     sb.AppendLine($"vrmFirstPerson,{(int)vrmFp}");
 
+                // ノード制約（VRMC_node_constraint）。null は行を書かない。
+                // vrmConstraint,kind,sourceName,weight,rollAxis,aimAxis
+                var vrmCon = mc.MeshObject?.VrmConstraint;
+                if (vrmCon != null)
+                    sb.AppendLine(
+                        $"vrmConstraint,{(int)vrmCon.Kind},{EscapeCsv(vrmCon.SourceName ?? "")}," +
+                        $"{F(vrmCon.Weight)},{(int)vrmCon.RollAxis},{(int)vrmCon.AimAxis}");
+
                 // モーフ固有データ
                 if (mc.Type == MeshType.Morph)
                 {

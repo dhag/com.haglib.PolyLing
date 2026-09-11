@@ -198,6 +198,9 @@ namespace Poly_Ling.Vrm10Impl
                     $"ブレンドシェイプ {report.MorphShapeCount}, " +
                     $"表情 {report.ExpressionCount}, " +
                     $"揺れ {report.SpringCount} チェーン / コライダー {report.SpringBoneColliderCount}" +
+                    (report.ConstraintCount > 0
+                        ? $", ノード制約 {report.ConstraintCount}"
+                        : "") +
                     (built.SkippedInvisibleCount > 0
                         ? $", 非表示 {built.SkippedInvisibleCount} メッシュを除外"
                         : "") +

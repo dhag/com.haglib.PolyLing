@@ -93,6 +93,9 @@ namespace Poly_Ling.Vrm10Impl
         /// <summary>載せたブレンドシェイプの総数。</summary>
         public int MorphShapeCount;
 
+        /// <summary>付けたノード制約の数。</summary>
+        public int ConstraintCount;
+
         /// <summary>警告（呼び出し側がログへ流す）。</summary>
         public readonly List<string> Warnings = new List<string>();
 
@@ -206,6 +209,13 @@ namespace Poly_Ling.Vrm10Impl
             // ----------------------------------------------------------------
             if (settings.ExportSpringBones)
                 BuildSpringBones(model, hierarchy, instance, report);
+
+            // ----------------------------------------------------------------
+            // ノード制約（VRMC_node_constraint）
+            //   Vrm10Exporter は root 配下の IVrm10Constraint を拾って書き出す
+            //   （Vrm10Exporter.cs:623-673）。コンポーネントを付けるだけでよい。
+            // ----------------------------------------------------------------
+            BuildConstraints(model, hierarchy, report);
 
             // ----------------------------------------------------------------
             // 視線・一人称
@@ -408,7 +418,12 @@ namespace Poly_Ling.Vrm10Impl
 
             foreach (var expr in expressions)
             {
-                if (expr == null || !expr.IsValid) continue;
+                if (expr == null || string.IsNullOrEmpty(expr.Name)) continue;
+
+                // 材質色・UV バインドだけの表情（MeshEntries が空）も VRM では成立する。
+                // MorphExpression.IsValid は MeshEntries を要求するので、ここでは使わない。
+                bool hasMaterialBinds = expr.Vrm != null && expr.Vrm.HasMaterialBinds;
+                if (expr.MeshEntries.Count == 0 && !hasMaterialBinds) continue;
 
                 // 頂点モーフとグループモーフだけを扱う。
                 // UV・材質・ボーンモーフは PolyLing 側に対応するデータが無い。
@@ -435,7 +450,7 @@ namespace Poly_Ling.Vrm10Impl
                     }
                 }
 
-                if (bindings.Count == 0)
+                if (bindings.Count == 0 && !hasMaterialBinds)
                 {
                     report.Warnings.Add(
                         $"表情 \"{expr.Name}\" に対応するブレンドシェイプが見つかりません"
@@ -447,6 +462,7 @@ namespace Poly_Ling.Vrm10Impl
                 clip.name = string.IsNullOrEmpty(expr.Name) ? "Expression" : expr.Name;
                 clip.hideFlags = HideFlags.HideAndDontSave;
                 clip.MorphTargetBindings = bindings.ToArray();
+                ApplyVrmExpressionData(clip, expr, model);
                 _created.Add(clip);
 
                 ExpressionPreset preset = ExpressionPreset.custom;
@@ -469,6 +485,101 @@ namespace Poly_Ling.Vrm10Impl
             }
 
             return count;
+        }
+
+        /// <summary>
+        /// MorphExpression.Vrm（IsBinary / Override / 材質色 / UV）を VRM10Expression へ写す。
+        /// 規約は VrmExpressionData.cs 冒頭を正典とする。
+        ///
+        /// 【材質名】
+        ///   UniVRM は材質を Material.name で引く（Vrm10Exporter.cs:817-828）。
+        ///   出力階層に載る材質は MaterialReference.Material（HierarchyBuilder.cs:1186）なので、
+        ///   保持している名前と一致する MaterialReference を探し、その Material の name を使う。
+        ///   見つからなければ保持している名前をそのまま渡す（UniVRM 側が警告して飛ばす）。
+        /// </summary>
+        private static void ApplyVrmExpressionData(
+            VRM10Expression clip, MorphExpression expr, ModelContext model)
+        {
+            var v = expr?.Vrm;
+            if (clip == null || v == null) return;
+
+            clip.IsBinary       = v.IsBinary;
+            clip.OverrideBlink  = ToOverrideType(v.OverrideBlink);
+            clip.OverrideLookAt = ToOverrideType(v.OverrideLookAt);
+            clip.OverrideMouth  = ToOverrideType(v.OverrideMouth);
+
+            var colors = new List<MaterialColorBinding>();
+            if (v.MaterialColorBinds != null)
+            {
+                foreach (var b in v.MaterialColorBinds)
+                {
+                    if (b == null) continue;
+                    colors.Add(new MaterialColorBinding
+                    {
+                        MaterialName = ResolveUnityMaterialName(model, b.MaterialName),
+                        BindType     = ToMaterialColorType(b.BindType),
+                        TargetValue  = b.TargetValue,
+                    });
+                }
+            }
+            clip.MaterialColorBindings = colors.ToArray();
+
+            var uvs = new List<MaterialUVBinding>();
+            if (v.TextureTransformBinds != null)
+            {
+                foreach (var b in v.TextureTransformBinds)
+                {
+                    if (b == null) continue;
+                    uvs.Add(new MaterialUVBinding
+                    {
+                        MaterialName = ResolveUnityMaterialName(model, b.MaterialName),
+                        Scaling      = b.Scaling,
+                        Offset       = b.Offset,
+                    });
+                }
+            }
+            clip.MaterialUVBindings = uvs.ToArray();
+        }
+
+        /// <summary>保持している材質名 → 出力階層に載る Material の name。</summary>
+        private static string ResolveUnityMaterialName(ModelContext model, string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name ?? "";
+            var refs = model?.MaterialReferences;
+            if (refs == null) return name;
+
+            foreach (var r in refs)
+            {
+                if (r == null || r.Name != name) continue;
+                var mat = r.Material;
+                return (mat != null && !string.IsNullOrEmpty(mat.name)) ? mat.name : name;
+            }
+            return name;
+        }
+
+        private static UniGLTF.Extensions.VRMC_vrm.ExpressionOverrideType ToOverrideType(
+            VrmExpressionOverride o)
+        {
+            switch (o)
+            {
+                case VrmExpressionOverride.Block: return UniGLTF.Extensions.VRMC_vrm.ExpressionOverrideType.block;
+                case VrmExpressionOverride.Blend: return UniGLTF.Extensions.VRMC_vrm.ExpressionOverrideType.blend;
+                default:                          return UniGLTF.Extensions.VRMC_vrm.ExpressionOverrideType.none;
+            }
+        }
+
+        private static UniGLTF.Extensions.VRMC_vrm.MaterialColorType ToMaterialColorType(
+            VrmMaterialColorType t)
+        {
+            switch (t)
+            {
+                case VrmMaterialColorType.EmissionColor: return UniGLTF.Extensions.VRMC_vrm.MaterialColorType.emissionColor;
+                case VrmMaterialColorType.ShadeColor:    return UniGLTF.Extensions.VRMC_vrm.MaterialColorType.shadeColor;
+                case VrmMaterialColorType.MatcapColor:   return UniGLTF.Extensions.VRMC_vrm.MaterialColorType.matcapColor;
+                case VrmMaterialColorType.RimColor:      return UniGLTF.Extensions.VRMC_vrm.MaterialColorType.rimColor;
+                case VrmMaterialColorType.OutlineColor:  return UniGLTF.Extensions.VRMC_vrm.MaterialColorType.outlineColor;
+                default:                                 return UniGLTF.Extensions.VRMC_vrm.MaterialColorType.color;
+            }
         }
 
         /// <summary>
@@ -679,18 +790,16 @@ namespace Poly_Ling.Vrm10Impl
                 comp.m_gravityDir     = j.GravityDir;
                 comp.m_dragForce      = j.DragForce;
 
-                // 【角度制限（VRMC_springBone_limit）を写していない理由】
-                //   VRM10SpringBoneJoint.m_anglelimitType の型
-                //   UniGLTF.SpringBoneJobs.AnglelimitTypes は、
-                //   PolyLing.Vrm10.asmdef が参照していないアセンブリにある。
-                //   参照を足せば写せるが、そのアセンブリ名が未確認のため保留。
-                //   写していないことは下で警告として出す（黙って落とさない）。
-                if (j.AngleLimitType != SpringBoneAngleLimitType.None)
-                {
-                    report.Warnings.Add(
-                        $"\"{mc.Name}\" の揺れの角度制限は、この版では VRM に書き出しません。"
-                      + "読み込んだ側では制限なしとして動きます。");
-                }
+                // 角度制限（VRMC_springBone_limit）。
+                //   m_anglelimitType の型 UniGLTF.SpringBoneJobs.AnglelimitTypes は
+                //   SpringBoneJobs アセンブリにある（asmdef で参照済み）。
+                //   向きは Unity 側の値のまま渡す。右手系への反転は UniVRM の
+                //   ExportJoint が ReverseX で行う（Vrm10Exporter.cs:464, :482）。
+                //   開きはどちらもラジアン（VRM10SpringBoneJoint.cs:35-39）。
+                comp.m_anglelimitType    = ToAngleLimitType(j.AngleLimitType);
+                comp.m_limitSpaceOffset  = j.LimitRotation;
+                comp.m_pitch             = j.Pitch;
+                comp.m_yaw               = j.Yaw;
 
                 jointComp[i] = comp;
             }
@@ -815,6 +924,139 @@ namespace Poly_Ling.Vrm10Impl
                 case SpringBoneColliderShape.InsideCapsule: return VRM10SpringBoneColliderTypes.CapsuleInside;
                 case SpringBoneColliderShape.Plane:         return VRM10SpringBoneColliderTypes.Plane;
                 default:                                    return VRM10SpringBoneColliderTypes.Sphere;
+            }
+        }
+
+        /// <summary>PolyLing の角度制限の形 → UniVRM の種別（並びに依存せず switch で写す）。</summary>
+        private static UniGLTF.SpringBoneJobs.AnglelimitTypes ToAngleLimitType(SpringBoneAngleLimitType t)
+        {
+            switch (t)
+            {
+                case SpringBoneAngleLimitType.Cone:      return UniGLTF.SpringBoneJobs.AnglelimitTypes.Cone;
+                case SpringBoneAngleLimitType.Hinge:     return UniGLTF.SpringBoneJobs.AnglelimitTypes.Hinge;
+                case SpringBoneAngleLimitType.Spherical: return UniGLTF.SpringBoneJobs.AnglelimitTypes.Spherical;
+                default:                                 return UniGLTF.SpringBoneJobs.AnglelimitTypes.None;
+            }
+        }
+
+        // ================================================================
+        // ノード制約
+        // ================================================================
+
+        /// <summary>
+        /// MeshObject.VrmConstraint を Vrm10Roll/Aim/RotationConstraint へ写す。
+        /// 規約は VrmNodeConstraintData.cs 冒頭を正典とする。
+        ///
+        /// 【実体側だけを見る】
+        ///   揺れと同じく RealTransformByIndex を使う（ミラー枝は対象外）。
+        ///   Source も名前で RealTransformByIndex から引く。
+        ///
+        /// 【座標系】
+        ///   AimAxis は Unity 側の値のまま渡す。右手系への反転は
+        ///   UniVRM の ExportConstraints が行う（Vrm10Exporter.cs:643）。
+        ///
+        /// 【書き出し中に骨は動かない】
+        ///   3 種とも Update を持たず、Vrm10Instance（無効化済み）の実行時処理からしか
+        ///   呼ばれない（Vrm10RollConstraint.cs / Vrm10AimConstraint.cs /
+        ///   Vrm10RotationConstraint.cs）。
+        /// </summary>
+        private static void BuildConstraints(
+            ModelContext model, HierarchyBuildResult hierarchy, AssembleReport report)
+        {
+            var nodeTf = hierarchy.RealTransformByIndex;
+            if (nodeTf.Count == 0) return;
+
+            // ノード名 → Transform（先勝ち）
+            var tfByName = new Dictionary<string, Transform>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || string.IsNullOrEmpty(mc.Name)) continue;
+                if (!nodeTf.TryGetValue(i, out var tf) || tf == null) continue;
+                if (!tfByName.ContainsKey(mc.Name)) tfByName[mc.Name] = tf;
+            }
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                var c = mc?.MeshObject?.VrmConstraint;
+                if (c == null) continue;
+
+                if (!nodeTf.TryGetValue(i, out var target) || target == null)
+                {
+                    report.Warnings.Add(
+                        $"\"{mc.Name}\" のノード制約は、出力ノードが無いため落とします。");
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(c.SourceName) ||
+                    !tfByName.TryGetValue(c.SourceName, out var source) || source == null)
+                {
+                    report.Warnings.Add(
+                        $"\"{mc.Name}\" のノード制約は、制約元 \"{c.SourceName}\" が出力に無いため落とします。");
+                    continue;
+                }
+
+                if (source == target)
+                {
+                    report.Warnings.Add(
+                        $"\"{mc.Name}\" のノード制約は、制約元が自分自身のため落とします。");
+                    continue;
+                }
+
+                float weight = Mathf.Clamp01(c.Weight);
+
+                switch (c.Kind)
+                {
+                    case VrmConstraintKind.Roll:
+                    {
+                        var comp = target.gameObject.AddComponent<Vrm10RollConstraint>();
+                        comp.Source   = source;
+                        comp.Weight   = weight;
+                        comp.RollAxis = ToRollAxis(c.RollAxis);
+                        break;
+                    }
+                    case VrmConstraintKind.Aim:
+                    {
+                        var comp = target.gameObject.AddComponent<Vrm10AimConstraint>();
+                        comp.Source  = source;
+                        comp.Weight  = weight;
+                        comp.AimAxis = ToAimAxis(c.AimAxis);
+                        break;
+                    }
+                    default:
+                    {
+                        var comp = target.gameObject.AddComponent<Vrm10RotationConstraint>();
+                        comp.Source = source;
+                        comp.Weight = weight;
+                        break;
+                    }
+                }
+
+                report.ConstraintCount++;
+            }
+        }
+
+        private static UniGLTF.Extensions.VRMC_node_constraint.RollAxis ToRollAxis(VrmRollAxis a)
+        {
+            switch (a)
+            {
+                case VrmRollAxis.Y: return UniGLTF.Extensions.VRMC_node_constraint.RollAxis.Y;
+                case VrmRollAxis.Z: return UniGLTF.Extensions.VRMC_node_constraint.RollAxis.Z;
+                default:            return UniGLTF.Extensions.VRMC_node_constraint.RollAxis.X;
+            }
+        }
+
+        private static UniGLTF.Extensions.VRMC_node_constraint.AimAxis ToAimAxis(VrmAimAxis a)
+        {
+            switch (a)
+            {
+                case VrmAimAxis.NegativeX: return UniGLTF.Extensions.VRMC_node_constraint.AimAxis.NegativeX;
+                case VrmAimAxis.PositiveY: return UniGLTF.Extensions.VRMC_node_constraint.AimAxis.PositiveY;
+                case VrmAimAxis.NegativeY: return UniGLTF.Extensions.VRMC_node_constraint.AimAxis.NegativeY;
+                case VrmAimAxis.PositiveZ: return UniGLTF.Extensions.VRMC_node_constraint.AimAxis.PositiveZ;
+                case VrmAimAxis.NegativeZ: return UniGLTF.Extensions.VRMC_node_constraint.AimAxis.NegativeZ;
+                default:                   return UniGLTF.Extensions.VRMC_node_constraint.AimAxis.PositiveX;
             }
         }
 

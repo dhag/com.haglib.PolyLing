@@ -3,6 +3,7 @@
 // アセットパス + パラメータデータ + ランタイムキャッシュ
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.MaterialBridge;
@@ -40,6 +41,12 @@ namespace Poly_Ling.Materials
         // アセットテクスチャはここに入れない（共有アセットを破棄しないため）。
         [NonSerialized]
         private Texture2D _ownedTexture;
+
+        // 複数のテクスチャを所有する場合（VRM の MToon のように 1 材質が
+        // 複数のテクスチャを使うもの）。AttachRuntimeMaterial(mat, IList) で登録し、
+        // DestroyRuntimeMaterial() で _ownedTexture と合わせて破棄する。
+        [NonSerialized]
+        private List<Texture2D> _ownedTextures;
         
         [NonSerialized]
         private bool _cacheValid;
@@ -203,6 +210,27 @@ namespace Poly_Ling.Materials
         }
 
         /// <summary>
+        /// ランタイム生成済みの Material と、その Material が使う「本参照所有」の Texture2D 群を付与する。
+        /// 1 材質が複数のテクスチャを使う場合（VRM の MToon など）に使う。
+        /// ownedTextures は DestroyRuntimeMaterial() でまとめて破棄される。
+        /// 同じ Texture2D を複数の MaterialReference に渡さないこと（二重破棄になる）。
+        /// アセット由来の Texture は渡さないこと（共有アセットを破棄しないため）。
+        /// </summary>
+        public void AttachRuntimeMaterial(Material material, IList<Texture2D> ownedTextures)
+        {
+            _cachedMaterial = material;
+            _cacheValid = material != null;
+            _ownedTexture = null;
+            _ownedTextures = null;
+
+            if (ownedTextures == null || ownedTextures.Count == 0) return;
+
+            _ownedTextures = new List<Texture2D>(ownedTextures.Count);
+            foreach (var t in ownedTextures)
+                if (t != null && !_ownedTextures.Contains(t)) _ownedTextures.Add(t);
+        }
+
+        /// <summary>
         /// ランタイムで生成した Material / 所有 Texture2D を破棄する。
         /// アセット材質（HasAssetPath）は共有アセットのため破棄しない（キャッシュ参照を外すのみ）。
         /// 破棄タイミングは呼び出し側の責任。GPU レンダラ（アダプタの _pendingMaterialsBySlot）が
@@ -214,6 +242,12 @@ namespace Poly_Ling.Materials
             {
                 DestroyObj(_ownedTexture);
                 _ownedTexture = null;
+            }
+            if (_ownedTextures != null)
+            {
+                foreach (var t in _ownedTextures)
+                    DestroyObj(t);
+                _ownedTextures = null;
             }
             // アセット材質は破棄しない。runtime 生成材質のみ破棄。
             if (!HasAssetPath && _cachedMaterial != null)

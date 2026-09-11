@@ -358,6 +358,15 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // 読み込みはモデルを作る操作なので、現在モデルが無くても通す。
+                case ImportVrmFileCommand c:
+                {
+                    if (OnImportVrmFile == null) { Fail("import vrm handler not wired"); return true; }
+                    string ivrmReason = OnImportVrmFile.Invoke(c);
+                    if (ivrmReason != null) { Fail(ivrmReason); return true; }
+                    return true;
+                }
+
                 // プロジェクトの保存・読込はモデルではなくプロジェクトを見るので、
                 // 現在モデルの有無は問わない。判定は受け口が行う。
                 case SaveProjectFileCommand c:

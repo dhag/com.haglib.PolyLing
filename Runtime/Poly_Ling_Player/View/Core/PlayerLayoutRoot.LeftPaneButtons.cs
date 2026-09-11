@@ -211,6 +211,9 @@ namespace Poly_Ling.Player
         public Button ObjLoadBtn { get; private set; }
         public Button ObjSaveBtn { get; private set; }
 
+        /// <summary>左ペイン：VRM 読み込みボタン。インポータのセクションを VRM モードで開く。</summary>
+        public Button VrmLoadBtn { get; private set; }
+
         /// <summary>左ペイン：PMX部分インポートボタン。</summary>
         public Button PartialImportPmxBtn { get; private set; }
 
@@ -266,6 +269,11 @@ namespace Poly_Ling.Player
 
             // PMX読み込み / MQO読み込み（PlayerLocalLoader.BuildUI が中身を作る）。
             foFile.Add(LocalLoaderSection);
+
+            // VRM 読み込み（VRM 1.0 / 0.x）。インポータのセクションを VRM モードで開く。
+            VrmLoadBtn = MakeBtn(".VRMファイル読込");
+            VrmLoadBtn.style.marginBottom = 2;
+            foFile.Add(VrmLoadBtn);
 
             foFile.Add(Separator());
 

@@ -400,6 +400,17 @@ namespace Poly_Ling.Data
         /// <summary>一人称カメラでの扱い（既定 Auto＝VRM の既定に任せる）。</summary>
         public VrmFirstPersonType VrmFirstPerson { get; set; } = VrmFirstPersonType.Auto;
 
+        // ------------------------------------------------------------
+        // ノード制約（VRMC_node_constraint）
+        //   このノードの回転を別ノード（Source）に連動させる設定。
+        //   付帯先は階層に載るノード（ボーン・描画オブジェクト）。
+        //   PolyLing は評価しない。保持と書き戻しのみ。
+        //   規約は VrmNodeConstraintData.cs 冒頭を正典とする。
+        // ------------------------------------------------------------
+
+        /// <summary>ノード制約（null＝なし）。</summary>
+        public VrmNodeConstraintData VrmConstraint { get; set; } = null;
+
         // === プロパティ ===
 
         /// <summary>頂点数</summary>

@@ -220,6 +220,18 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         meshObject.VrmFirstPerson =
                             ModelSerializer.ToVrmFirstPersonType(ParseInt(cols, 1));
                         break;
+                    case "vrmConstraint":
+                        // vrmConstraint,kind,sourceName,weight,rollAxis,aimAxis
+                        // 行が無い旧ファイルは null（制約なし）。
+                        meshObject.VrmConstraint = new VrmNodeConstraintData
+                        {
+                            Kind       = (VrmConstraintKind)ParseInt(cols, 1, (int)VrmConstraintKind.Rotation),
+                            SourceName = cols.Length > 2 ? UnescapeCsv(cols[2]) : "",
+                            Weight     = ParseFloat(cols, 3, 1f),
+                            RollAxis   = (VrmRollAxis)ParseInt(cols, 4, 0),
+                            AimAxis    = (VrmAimAxis)ParseInt(cols, 5, 0),
+                        };
+                        break;
                     case "morphParentIndex":
                         mc.MorphParentIndex = ParseInt(cols, 1, -1);
                         break;

@@ -69,6 +69,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnImportObjFile       = ExecuteImportObjFile;
             _commandDispatcher.OnExportObjFile       = ExecuteExportObjFile;
             _commandDispatcher.OnExportVrmFile       = ExecuteExportVrmFile;
+            _commandDispatcher.OnImportVrmFile       = ExecuteImportVrmFile;
             _commandDispatcher.OnSaveProjectFile     = ExecuteSaveProjectFile;
             _commandDispatcher.OnLoadProjectFile     = ExecuteLoadProjectFile;
             _commandDispatcher.OnSaveProjectCsv      = ExecuteSaveProjectCsv;

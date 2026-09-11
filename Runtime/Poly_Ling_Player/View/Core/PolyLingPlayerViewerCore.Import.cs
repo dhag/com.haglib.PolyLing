@@ -73,6 +73,26 @@ namespace Poly_Ling.Player
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
+        private void OnImportVrm(string filePath, Poly_Ling.Vrm.Vrm10ImportSettings settings,
+                                 PlayerImportSubPanel.PostOptions post)
+        {
+            var cmd = new ImportVrmCommand(
+                filePath, settings,
+                onResult: (model, result) =>
+                {
+                    _localLoader.LoadModel(filePath, model);
+                    ApplyImportPostOptions(post);
+                    _status =
+                        $"VRM読込完了: {System.IO.Path.GetFileName(filePath)}" +
+                        (result.SourceIsVrm0 ? "（VRM 0.x から移行）" : "") +
+                        $" ({result.MeshCount}メッシュ / {result.VertexCount}頂点 / " +
+                        $"Humanoid {result.HumanoidBoneCount}ボーン / 表情 {result.ExpressionCount})" +
+                        (result.Warnings.Count > 0 ? $" 警告 {result.Warnings.Count} 件（コンソール参照）" : "");
+                },
+                onError:  msg       => _status = $"VRM読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
         // ================================================================
         // 読込後オプション（インポータパネルのチェック）
         // ================================================================

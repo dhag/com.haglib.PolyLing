@@ -43,6 +43,14 @@
 //       （BuildMirrorSideMesh の平行移動は全頂点一律なので差分に影響しない）
 //
 // ============================================================
+// 差分が 0 件のモーフ
+// ============================================================
+//
+//   1 頂点も動いていないモーフも、全頂点 0 の差分でブレンドシェイプにする。
+//   予約枠として置かれている場合があり、書き出しで消えると利用者が混乱する。
+//   頂点数の不一致など、警告付きで飛ばす経路は従来どおり。
+//
+// ============================================================
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -117,12 +125,24 @@ namespace Poly_Ling.HierarchyIO
                 if (morphCtx == null) continue;
 
                 var offsets = morphCtx.GetMorphOffsets();
-                if (offsets == null || offsets.Count == 0) continue;
 
-                var delta = BuildDelta(
-                    shapeSource, baseVerts, offsets, mirrorDelta, mirrorAxis,
-                    morphCtx.Name, warnings);
-                if (delta == null) continue;
+                // 差分が 0 件（1 頂点も動いていない）のモーフも落とさない。
+                // 予約枠として置かれている場合があり、黙って消すと利用者が混乱する。
+                // 全頂点 0 の差分でブレンドシェイプを作る。
+                // 受け側の確認：UniVRM はブレンドシェイプを全部書き出し（ModelExporter.cs:268-289）、
+                // 全部 0 のときは疎な形式をやめて通常の形式で書く（BlendShapeExporter.cs:17-32）。
+                Vector3[] delta;
+                if (offsets == null || offsets.Count == 0)
+                {
+                    delta = new Vector3[baseVerts.Length];
+                }
+                else
+                {
+                    delta = BuildDelta(
+                        shapeSource, baseVerts, offsets, mirrorDelta, mirrorAxis,
+                        morphCtx.Name, warnings);
+                    if (delta == null) continue;
+                }
 
                 string shapeName = HierarchyBuilder.MakeUniqueName(
                     string.IsNullOrEmpty(morphCtx.Name) ? $"Morph_{morphIndex}" : morphCtx.Name,

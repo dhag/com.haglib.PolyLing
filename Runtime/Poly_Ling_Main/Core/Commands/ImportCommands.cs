@@ -301,4 +301,108 @@ namespace Poly_Ling.Commands
             _onResult?.Invoke(model, result);
         }
     }
+
+    /// <summary>
+    /// VRM（1.0 / 0.x）ファイルをインポートするコマンド。
+    /// Execute() が同期でインポートを実行し、onResult にModelContextを返す。
+    /// 失敗時は onError にエラーメッセージを返す。
+    ///
+    /// 実処理は PLVrm10ImportBridge（PolyLing.Vrm10 の実装）が行う。
+    /// VRM パッケージが無い環境では Vrm10ImporterNull が失敗を返す。
+    /// </summary>
+    public class ImportVrmCommand : ICommand
+    {
+        private readonly string                     _filePath;
+        private readonly Poly_Ling.Vrm.Vrm10ImportSettings _settings;
+        private readonly Action<ModelContext, Poly_Ling.Vrm.Vrm10ImportResult> _onResult;
+        private readonly Action<string>             _onError;
+
+        public string         Description  => $"Import VRM: {Path.GetFileName(_filePath)}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        /// <param name="filePath">VRMファイルパス</param>
+        /// <param name="settings">インポート設定（nullの場合デフォルト使用）</param>
+        /// <param name="onResult">成功時コールバック (ModelContext, Vrm10ImportResult)</param>
+        /// <param name="onError">失敗時コールバック (エラーメッセージ)</param>
+        public ImportVrmCommand(
+            string                      filePath,
+            Poly_Ling.Vrm.Vrm10ImportSettings settings,
+            Action<ModelContext, Poly_Ling.Vrm.Vrm10ImportResult> onResult,
+            Action<string>              onError = null)
+        {
+            _filePath = filePath;
+            _settings = settings ?? Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault();
+            _onResult = onResult;
+            _onError  = onError;
+        }
+
+        public void Execute()
+        {
+            if (string.IsNullOrEmpty(_filePath))
+            {
+                _onError?.Invoke("ファイルパスが空です");
+                return;
+            }
+
+            if (!File.Exists(_filePath))
+            {
+                _onError?.Invoke($"ファイルが見つかりません: {_filePath}");
+                return;
+            }
+
+            var importer = Poly_Ling.Vrm.PLVrm10ImportBridge.I;
+            if (!importer.IsAvailable)
+            {
+                _onError?.Invoke("VRM インポータが利用できません（VRM パッケージ未導入、または Play 中でない）");
+                return;
+            }
+
+            Poly_Ling.Vrm.Vrm10ImportResult result;
+            try
+            {
+                result = importer.Import(_filePath, _settings);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ImportVrmCommand] {e.Message}");
+                _onError?.Invoke(e.Message);
+                return;
+            }
+
+            if (result == null || !result.Success)
+            {
+                _onError?.Invoke(result?.ErrorMessage ?? "読み込み結果がありません");
+                return;
+            }
+
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileNameWithoutExtension(_filePath),
+                FilePath = _filePath,
+            };
+
+            if (result.MaterialReferences.Count > 0)
+                model.MaterialReferences = result.MaterialReferences;
+
+            foreach (var mc in result.MeshContexts)
+                model.Add(mc);
+
+            foreach (var morph in result.MorphExpressions)
+                model.MorphExpressions.Add(morph);
+
+            model.SpringBoneColliderGroupNames = new System.Collections.Generic.List<string>(
+                result.SpringBoneColliderGroupNames);
+            model.VrmMeta   = result.VrmMeta;
+            model.VrmLookAt = result.VrmLookAt;
+
+            // Humanoid: per-bone（MeshObject.HumanBodyBone）が正。読込境界で Dict を再構築する
+            // （HumanoidMappingResolver.cs 冒頭の同期規約）。
+            Poly_Ling.Ops.HumanoidMappingResolver.RebuildMappingFromPerBone(model);
+
+            // ボーン階層の WorldMatrix を確定させる（PMX / MQO と同じ理由）。
+            model.ComputeWorldMatrices();
+
+            _onResult?.Invoke(model, result);
+        }
+    }
 }

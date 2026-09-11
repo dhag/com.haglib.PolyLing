@@ -602,6 +602,42 @@ namespace Poly_Ling.Serialization
             };
         }
 
+        // ================================================================
+        // ノード制約（VRMC_node_constraint）POCO⇔DTO 変換
+        //   規約は VrmNodeConstraintData.cs 冒頭を正典とする。
+        //   null＝制約なし。旧 JSON は欄を持たず null のまま。
+        // ================================================================
+
+        public static void SaveVrmConstraintToDTO(MeshContext mc, MeshDTO dto)
+        {
+            if (dto == null) return;
+            var c = mc?.MeshObject?.VrmConstraint;
+            dto.vrmConstraint = (c == null) ? null : new VrmNodeConstraintDTO
+            {
+                kind       = (int)c.Kind,
+                sourceName = c.SourceName ?? "",
+                weight     = c.Weight,
+                rollAxis   = (int)c.RollAxis,
+                aimAxis    = (int)c.AimAxis,
+            };
+        }
+
+        public static void LoadVrmConstraintFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            var mo = mc?.MeshObject;
+            if (dto == null || mo == null) return;
+
+            var d = dto.vrmConstraint;
+            mo.VrmConstraint = (d == null) ? null : new VrmNodeConstraintData
+            {
+                Kind       = (VrmConstraintKind)d.kind,
+                SourceName = d.sourceName ?? "",
+                Weight     = d.weight,
+                RollAxis   = (VrmRollAxis)d.rollAxis,
+                AimAxis    = (VrmAimAxis)d.aimAxis,
+            };
+        }
+
         // Vector3 ⇔ float[3]（本拡張専用の小ヘルパ）
         private static float[] SerVec3(Vector3 v) => new[] { v.x, v.y, v.z };
         private static Vector3 SerVec3(float[] a) =>

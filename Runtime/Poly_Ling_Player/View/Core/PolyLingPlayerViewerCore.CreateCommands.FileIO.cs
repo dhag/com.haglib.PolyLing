@@ -242,6 +242,43 @@ namespace Poly_Ling.Player
             return OnExportVrm(path, settings);
         }
 
+        /// <summary>
+        /// VRM 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。
+        ///
+        /// 【関門】
+        ///   入力は TryResolveRead。テクスチャを書き出す場合は、書き出し先フォルダ
+        ///   （VRM と同じフォルダの「VRM名_textures」）も TryResolveFolder に通す。
+        ///   外から書き出し先は指定させない（Vrm10ImportSettings.TextureFolder は Ignore）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportVrmFile(Poly_Ling.Data.ImportVrmFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Vrm.PLVrm10ImportBridge.I.IsAvailable)
+                return "VRM インポータが利用できません（VRM パッケージ未導入、または Play 中でない）";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            var settings = (cmd.Settings ?? Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault()).Clone();
+            settings.TextureFolder = "";
+
+            if (settings.ExtractTextures)
+            {
+                string texFolder = Poly_Ling.Vrm.Vrm10ImportSettings.DefaultTextureFolder(path);
+                if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                        texFolder, out string texResolved, out string texReason))
+                    return texReason;
+                settings.TextureFolder = texResolved;
+            }
+
+            OnImportVrm(path, settings, new PlayerImportSubPanel.PostOptions());
+            return null;
+        }
+
         /// <summary>プロジェクト（.mfproj）保存コマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteSaveProjectFile(Poly_Ling.Data.SaveProjectFileCommand cmd)

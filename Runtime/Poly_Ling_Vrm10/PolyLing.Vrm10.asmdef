@@ -6,7 +6,8 @@
         "UniGLTF",
         "UniHumanoid",
         "VrmLib",
-        "VRM10"
+        "VRM10",
+        "SpringBoneJobs"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

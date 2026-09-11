@@ -587,5 +587,130 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 }
             }
         }
+
+        // ================================================================
+        // vrmexpressions.csv（VRM 表情の付帯データ：独立CSV）
+        //   morphgroups.csv は位置固定列のため、件数が変わるバインドは
+        //   列を伸ばさずこちらへ縦持ちで格納する（materialprops.csv と同じ考え方）。
+        //   規約は VrmExpressionData.cs 冒頭を正典とする。
+        //   行形式:
+        //     vrmExpr,<exprIndex>,<isBinary>,<overrideBlink>,<overrideLookAt>,<overrideMouth>
+        //     vrmColor,<exprIndex>,<materialName>,<bindType>,<r>,<g>,<b>,<a>
+        //     vrmUV,<exprIndex>,<materialName>,<scaleX>,<scaleY>,<offsetX>,<offsetY>
+        //     exprIndex … morphgroups.csv の並び（＝ MorphExpressions の索引）
+        //   ファイルが無い＝VRM 固有の値なし（MorphExpression.Vrm は null のまま）。
+        //   読みは morphgroups.csv の後に行う。
+        // ================================================================
+
+        private static void WriteVrmExpressionsCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "vrmexpressions.csv");
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_VrmExpressions,version,1.0");
+
+            int written = 0;
+            var list = model.MorphExpressions;
+            for (int i = 0; list != null && i < list.Count; i++)
+            {
+                var v = list[i]?.Vrm;
+                if (v == null) continue;
+
+                sb.AppendLine(
+                    $"vrmExpr,{i},{(v.IsBinary ? 1 : 0)},{(int)v.OverrideBlink}," +
+                    $"{(int)v.OverrideLookAt},{(int)v.OverrideMouth}");
+
+                if (v.MaterialColorBinds != null)
+                {
+                    foreach (var b in v.MaterialColorBinds)
+                    {
+                        if (b == null) continue;
+                        var t = b.TargetValue;
+                        sb.AppendLine(
+                            $"vrmColor,{i},{Esc(b.MaterialName ?? "")},{(int)b.BindType}," +
+                            $"{Fl(t.x)},{Fl(t.y)},{Fl(t.z)},{Fl(t.w)}");
+                    }
+                }
+
+                if (v.TextureTransformBinds != null)
+                {
+                    foreach (var b in v.TextureTransformBinds)
+                    {
+                        if (b == null) continue;
+                        sb.AppendLine(
+                            $"vrmUV,{i},{Esc(b.MaterialName ?? "")}," +
+                            $"{Fl(b.Scaling.x)},{Fl(b.Scaling.y)},{Fl(b.Offset.x)},{Fl(b.Offset.y)}");
+                    }
+                }
+
+                written++;
+            }
+
+            // 1 件も無ければファイルを置かない。前回の保存で残った古いファイルは消す
+            // （残すと、VRM 固有の値を消したつもりでも読み込みで復活する）。
+            if (written == 0)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadVrmExpressionsCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "vrmexpressions.csv");
+            if (!File.Exists(path)) return;
+
+            var list = model.MorphExpressions;
+            if (list == null || list.Count == 0) return;
+
+            VrmExpressionData Get(int index)
+            {
+                if (index < 0 || index >= list.Count || list[index] == null) return null;
+                if (list[index].Vrm == null) list[index].Vrm = new VrmExpressionData();
+                return list[index].Vrm;
+            }
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+
+                var cols = Split(line);
+                if (cols.Length < 2) continue;
+
+                var v = Get(PInt(cols, 1, -1));
+                if (v == null) continue;
+
+                switch (cols[0])
+                {
+                    case "vrmExpr":
+                        v.IsBinary       = PInt(cols, 2) != 0;
+                        v.OverrideBlink  = (VrmExpressionOverride)PInt(cols, 3);
+                        v.OverrideLookAt = (VrmExpressionOverride)PInt(cols, 4);
+                        v.OverrideMouth  = (VrmExpressionOverride)PInt(cols, 5);
+                        break;
+
+                    case "vrmColor":
+                        v.MaterialColorBinds.Add(new VrmMaterialColorBind
+                        {
+                            MaterialName = Unesc(SafeGet(cols, 2)),
+                            BindType     = (VrmMaterialColorType)PInt(cols, 3),
+                            TargetValue  = new Vector4(
+                                PFl(cols, 4), PFl(cols, 5), PFl(cols, 6), PFl(cols, 7)),
+                        });
+                        break;
+
+                    case "vrmUV":
+                        v.TextureTransformBinds.Add(new VrmTextureTransformBind
+                        {
+                            MaterialName = Unesc(SafeGet(cols, 2)),
+                            Scaling      = new Vector2(PFl(cols, 3, 1f), PFl(cols, 4, 1f)),
+                            Offset       = new Vector2(PFl(cols, 5), PFl(cols, 6)),
+                        });
+                        break;
+                }
+            }
+        }
     }
 }

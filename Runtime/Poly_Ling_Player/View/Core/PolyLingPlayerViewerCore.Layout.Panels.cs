@@ -532,6 +532,7 @@ namespace Poly_Ling.Player
             _importSubPanel.OnImportPmx = OnImportPmx;
             _importSubPanel.OnImportMqo = OnImportMqo;
             _importSubPanel.OnImportObj = OnImportObj;
+            _importSubPanel.OnImportVrm = OnImportVrm;
             AttachPanelSelectToggle(_layoutRoot.ImportSection, PanelSelectKeyImport);
 
             _exportSubPanel = new PlayerExportSubPanel();

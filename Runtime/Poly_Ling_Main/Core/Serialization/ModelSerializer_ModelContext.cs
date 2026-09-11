@@ -488,6 +488,9 @@ namespace Poly_Ling.Serialization
                 // 一人称カメラでの扱い（per-mesh）
                 contextData.vrmFirstPersonType =
                     (int)(meshContext.MeshObject?.VrmFirstPerson ?? VrmFirstPersonType.Auto);
+
+                // ノード制約（VRMC_node_constraint）
+                SaveVrmConstraintToDTO(meshContext, contextData);
             }
 
             return contextData;
@@ -579,6 +582,9 @@ namespace Poly_Ling.Serialization
             if (meshContext.MeshObject != null)
                 meshContext.MeshObject.VrmFirstPerson =
                     ToVrmFirstPersonType(meshDTO.vrmFirstPersonType);
+
+            // ノード制約（VRMC_node_constraint）。欄を持たない旧データは null。
+            LoadVrmConstraintFromDTO(meshDTO, meshContext);
 
             return meshContext;
         }

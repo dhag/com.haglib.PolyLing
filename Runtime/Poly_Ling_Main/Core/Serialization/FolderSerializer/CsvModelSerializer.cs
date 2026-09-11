@@ -143,6 +143,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (model.MorphExpressions != null && model.MorphExpressions.Count > 0)
                 WriteMorphGroupsCsv(modelFolderPath, model, useNameBased, indexToName);
 
+            // vrmexpressions.csv（VRM 表情の付帯データ。無ければ古いファイルを消す）
+            WriteVrmExpressionsCsv(modelFolderPath, model);
+
             // meshselsets.csv
             if (model.MeshSelectionSets != null && model.MeshSelectionSets.Count > 0)
                 WriteMeshSelSetsCsv(modelFolderPath, model);
@@ -358,6 +361,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // morphgroups.csv
             ReadMorphGroupsCsv(modelFolderPath, model);
+
+            // vrmexpressions.csv（morphgroups.csv の並びを索引に使うので、その後に読む）
+            ReadVrmExpressionsCsv(modelFolderPath, model);
 
             // meshselsets.csv
             ReadMeshSelSetsCsv(modelFolderPath, model);

@@ -266,6 +266,34 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// VRM（1.0 / 0.x）ファイルを読み込む。
+    ///
+    /// テクスチャの書き出し先は Vrm10ImportSettings 側で Ignore にしてある。
+    /// 受け口が「VRM と同じフォルダの VRM名_textures」を関門（TryResolveFolder）に
+    /// 通してから設定へ入れる。
+    /// </summary>
+    [PLCommand(Description = "VRM（1.0 / 0.x）ファイルを読み込む。作業フォルダの下だけを読める。埋め込みテクスチャは VRM と同じフォルダの「VRM名_textures」へ書き出す。")]
+    public class ImportVrmFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む VRM のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
+        public Poly_Ling.Vrm.Vrm10ImportSettings Settings { get; }
+
+        public ImportVrmFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.Vrm.Vrm10ImportSettings settings = null)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Settings = settings ?? Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault();
+        }
+    }
+
     /// <summary>プロジェクトを .mfproj（JSON）へ保存する。</summary>
     [PLCommand(Description = "プロジェクトを .mfproj ファイルへ保存する。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]

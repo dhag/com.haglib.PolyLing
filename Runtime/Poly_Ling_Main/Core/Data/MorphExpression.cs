@@ -131,6 +131,14 @@ namespace Poly_Ling.Data
         /// </summary>
         public List<MorphGroupChild> GroupChildren = new List<MorphGroupChild>();
 
+        /// <summary>
+        /// VRM 1.0 表情の付帯データ（null = VRM 固有の値なし）。
+        /// IsBinary / Override / 材質色バインド / UV バインドを保持する。
+        /// PolyLing は評価しないが、読み書きで失ってはいけない値。
+        /// 規約は VrmExpressionData.cs 冒頭を正典とする。
+        /// </summary>
+        public VrmExpressionData Vrm = null;
+
         // ================================================================
         // コンストラクタ
         // ================================================================
@@ -260,6 +268,7 @@ namespace Poly_Ling.Data
                 IsSymmetric = this.IsSymmetric,
                 MeshEntries = this.MeshEntries.Select(e => new MorphMeshEntry(e.MeshIndex, e.Weight)).ToList(),
                 GroupChildren = this.GroupChildren.Select(c => new MorphGroupChild(c.Name, c.Weight)).ToList(),
+                Vrm = this.Vrm?.Clone(),
                 CreatedAt = this.CreatedAt
             };
         }

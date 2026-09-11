@@ -351,6 +351,9 @@ namespace Poly_Ling.Player
         /// <summary>VRM 1.0 ファイル書き出しコマンドの実行。</summary>
         public Func<ExportVrmFileCommand, string> OnExportVrmFile;
 
+        /// <summary>VRM（1.0 / 0.x）ファイル読み込みコマンドの実行。</summary>
+        public Func<ImportVrmFileCommand, string> OnImportVrmFile;
+
         /// <summary>プロジェクト（.mfproj）保存コマンドの実行。</summary>
         public Func<SaveProjectFileCommand, string> OnSaveProjectFile;
 
@@ -705,7 +708,7 @@ namespace Poly_Ling.Player
             bool createsOwnProject =
                    cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand
                 || cmd is ImportPmxFileCommand       || cmd is ImportMqoFileCommand
-                || cmd is ImportObjFileCommand
+                || cmd is ImportObjFileCommand       || cmd is ImportVrmFileCommand
                 || cmd is LoadProjectFileCommand     || cmd is LoadProjectCsvCommand;
 
             var project = _getProject();

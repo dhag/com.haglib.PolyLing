@@ -195,6 +195,20 @@ namespace Poly_Ling.Serialization
         public VrmLookAtRangeMapDTO verticalUp;
     }
 
+    /// <summary>
+    /// VRM ノード制約DTO（VRMC_node_constraint）。
+    /// 規約は VrmNodeConstraintData.cs 冒頭を正典とする。
+    /// </summary>
+    [Serializable]
+    public class VrmNodeConstraintDTO
+    {
+        public int kind = 2;                        // VrmConstraintKind（既定 Rotation）
+        public string sourceName = "";              // name主
+        public float weight = 1f;
+        public int rollAxis = 0;                    // VrmRollAxis
+        public int aimAxis = 0;                     // VrmAimAxis（Unity 側の値）
+    }
+
     // ================================================================
     // Avatar リターゲット設定用DTO（フィールド型・[Serializable]）
     //   既定値は Unity の既定と同じ。旧データで欄が無いときは

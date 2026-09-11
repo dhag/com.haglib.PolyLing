@@ -231,6 +231,7 @@ namespace Poly_Ling.Data
             copy.MirrorBoneIndex = this.MirrorBoneIndex;
             copy.HumanLimit = this.HumanLimit?.Clone();
             copy.VrmFirstPerson = this.VrmFirstPerson;
+            copy.VrmConstraint = this.VrmConstraint?.Clone();
 
             // ID管理セットを再構築
             copy.RebuildIdSets();
@@ -280,6 +281,7 @@ namespace Poly_Ling.Data
             copy.MirrorBoneIndex = this.MirrorBoneIndex;
             copy.HumanLimit = this.HumanLimit?.Clone();
             copy.VrmFirstPerson = this.VrmFirstPerson;
+            copy.VrmConstraint = this.VrmConstraint?.Clone();
 
             // 頂点をコピー（新しいID）
             foreach (var v in Vertices)

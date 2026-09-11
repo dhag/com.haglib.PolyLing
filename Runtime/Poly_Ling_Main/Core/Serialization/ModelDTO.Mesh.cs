@@ -261,6 +261,9 @@ namespace Poly_Ling.Serialization
         /// 旧データはこの欄を持たず 0 になり、従来どおり VRM の既定に任せる。
         /// </summary>
         public int vrmFirstPersonType = 0;
+
+        /// <summary>ノード制約（VRMC_node_constraint。null=なし）。</summary>
+        public VrmNodeConstraintDTO vrmConstraint;
     }
 
     // ================================================================

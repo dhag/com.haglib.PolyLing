@@ -29,7 +29,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO, OBJ }
+        public enum Mode { PMX, MQO, OBJ, VRM }
 
         private Mode _mode;
 
@@ -67,6 +67,7 @@ namespace Poly_Ling.Player
         private PMXImportSettings _pmxSettings = PMXImportSettings.CreateDefault();
         private MQOImportSettings _mqoSettings = MQOImportSettings.CreateDefault();
         private ObjImportSettings _objSettings = ObjImportSettings.CreateDefault();
+        private Poly_Ling.Vrm.Vrm10ImportSettings _vrmSettings = Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault();
 
         // ================================================================
         // コールバック
@@ -90,6 +91,12 @@ namespace Poly_Ling.Player
         /// 引数は (filePath, settings のコピー, 読込後オプション)。
         /// </summary>
         public Action<string, ObjImportSettings, PostOptions> OnImportObj;
+
+        /// <summary>
+        /// VRM Import ボタン押下時に呼ばれる。
+        /// 引数は (filePath, settings のコピー, 読込後オプション)。
+        /// </summary>
+        public Action<string, Poly_Ling.Vrm.Vrm10ImportSettings, PostOptions> OnImportVrm;
 
         /// <summary>インポート後に3D表示をオートスケールするか</summary>
         public bool AutoScale => _autoScale;
@@ -220,6 +227,7 @@ namespace Poly_Ling.Player
             {
                 case Mode.PMX: return "PMX";
                 case Mode.OBJ: return "OBJ";
+                case Mode.VRM: return "VRM";
                 default:       return "MQO";
             }
         }
@@ -271,6 +279,15 @@ namespace Poly_Ling.Player
                 OnImportPmx?.Invoke(path, ClonePmxSettings(), BuildPostOptions());
             else if (_mode == Mode.OBJ)
                 OnImportObj?.Invoke(path, _objSettings.Clone(), BuildPostOptions());
+            else if (_mode == Mode.VRM)
+            {
+                if (!Poly_Ling.Vrm.PLVrm10ImportBridge.I.IsAvailable)
+                {
+                    SetStatus("VRM インポータが利用できません（VRM パッケージ未導入、または Play 中でない）");
+                    return;
+                }
+                OnImportVrm?.Invoke(path, _vrmSettings.Clone(), BuildPostOptions());
+            }
             else
                 OnImportMqo?.Invoke(path, CloneMqoSettings(), BuildPostOptions());
         }
@@ -278,9 +295,13 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 現在のチェック状態から読込後オプションを作る。
         /// 原点CSVは MQO / OBJ だけの機能なので PMX では常に無効にする。
+        /// VRM は Humanoid をファイルに持つので、名前からの自動割当も原点CSVも無効にする。
         /// </summary>
         private PostOptions BuildPostOptions()
         {
+            if (_mode == Mode.VRM)
+                return new PostOptions();
+
             bool originCsv = _applyOriginCsv && _mode != Mode.PMX;
             return new PostOptions
             {
@@ -310,6 +331,8 @@ namespace Poly_Ling.Player
                 BuildPmxSettings(_settingsContainer);
             else if (_mode == Mode.OBJ)
                 BuildObjSettings(_settingsContainer);
+            else if (_mode == Mode.VRM)
+                BuildVrmSettings(_settingsContainer);
             else
                 BuildMqoSettings(_settingsContainer);
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
@@ -709,6 +732,48 @@ namespace Poly_Ling.Player
             parent.Add(SectionLabel("読込後オプション"));
             parent.Add(HumanoidAutoMapToggle());
             parent.Add(OriginCsvOptionBlock());
+        }
+
+        // ────────────────────────────────────────────────────────
+        // VRM 設定
+        //   座標は UniVRM が Unity 座標へ直すので、軸反転・倍率の欄は持たない。
+        //   Humanoid は VRM に入っているので、名前からの自動割当も出さない。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildVrmSettings(VisualElement parent)
+        {
+            if (!Poly_Ling.Vrm.PLVrm10ImportBridge.I.IsAvailable)
+            {
+                var warn = new Label("VRM インポータが利用できません（VRM パッケージ未導入、または Play 中でない）");
+                warn.style.whiteSpace = WhiteSpace.Normal;
+                warn.style.color      = new StyleColor(new Color(1f, 0.6f, 0.4f));
+                parent.Add(warn);
+                return;
+            }
+
+            parent.Add(SectionLabel("読み込む内容"));
+            parent.Add(ToggleRow("モーフ（ブレンドシェイプ）",
+                () => _vrmSettings.ImportMorphs, v => _vrmSettings.ImportMorphs = v));
+            parent.Add(ToggleRow("表情",
+                () => _vrmSettings.ImportExpressions, v => _vrmSettings.ImportExpressions = v));
+            parent.Add(ToggleRow("揺れもの（スプリングボーン）",
+                () => _vrmSettings.ImportSpringBones, v => _vrmSettings.ImportSpringBones = v));
+            parent.Add(ToggleRow("ノード制約",
+                () => _vrmSettings.ImportConstraints, v => _vrmSettings.ImportConstraints = v));
+            parent.Add(ToggleRow("VRM 0.x を 1.0 へ移行して読む",
+                () => _vrmSettings.AllowVrm0, v => _vrmSettings.AllowVrm0 = v));
+            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("マテリアル"));
+            parent.Add(ToggleRow("材質を読み込む",
+                () => _vrmSettings.ImportMaterials, v => _vrmSettings.ImportMaterials = v));
+
+            var tex = ToggleRow("埋め込みテクスチャを書き出す",
+                () => _vrmSettings.ExtractTextures, v => _vrmSettings.ExtractTextures = v);
+            tex.tooltip = "VRM と同じフォルダの「VRM名_textures」へ画像を書き出し、材質から参照する。\n"
+                        + "切ると材質にテクスチャは付かない。";
+            parent.Add(tex);
         }
 
         // ================================================================

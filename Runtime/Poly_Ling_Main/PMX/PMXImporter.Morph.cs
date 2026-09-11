@@ -262,18 +262,29 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            if (groupOffsets.Count == 0)
-            {
-                //Debug.LogWarning($"[PMXImporter] Vertex morph '{pmxMorph.Name}' has no valid offsets");
-                return;
-            }
-
             // MorphExpressionを作成
             var morphExpression = new MorphExpression(pmxMorph.Name, MorphType.Vertex)
             {
                 NameEnglish = pmxMorph.NameEnglish ?? "",
                 Panel = pmxMorph.Panel
             };
+
+            // 差分が 0 件でも表情は残す（モーフを持たない表情になる）。
+            // 予約枠として置かれている場合があり、黙って消すと利用者が混乱する。
+            // 書き出しではオフセット 0 件のモーフとして出る（PMXExporter.BuildShapeMorph）。
+            // オフセットはあったのに 1 件も当たらなかったとき（面に使われない頂点だけを
+            // 指している等）は、件数を付けて警告する。
+            if (groupOffsets.Count == 0)
+            {
+                if (pmxMorph.Offsets != null && pmxMorph.Offsets.Count > 0)
+                {
+                    Debug.LogWarning(
+                        $"[PMXImporter] 頂点モーフ '{pmxMorph.Name}' のオフセット {pmxMorph.Offsets.Count} 件は、"
+                      + "面に使われている頂点に当たらないため捨てました（表情は差分なしで残します）。");
+                }
+                result.MorphExpressions.Add(morphExpression);
+                return;
+            }
 
             // 影響する各グループについてモーフメッシュを作成
             foreach (var kvp in groupOffsets)
@@ -329,10 +340,8 @@ namespace Poly_Ling.PMX
                 morphExpression.AddMesh(morphMeshIndex);
             }
 
-            if (morphExpression.MeshCount > 0)
-            {
-                result.MorphExpressions.Add(morphExpression);
-            }
+            // モーフを 1 つも作れなかった場合も表情は残す（上の差分 0 件と同じ理由）。
+            result.MorphExpressions.Add(morphExpression);
         }
 
         /// <summary>
@@ -376,12 +385,6 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            if (groupOffsets.Count == 0)
-            {
-                Debug.LogWarning($"[PMXImporter] UV morph '{pmxMorph.Name}' has no valid offsets");
-                return;
-            }
-
             // MorphTypeを決定
             MorphType morphType = pmxMorph.MorphType switch
             {
@@ -399,6 +402,19 @@ namespace Poly_Ling.PMX
                 NameEnglish = pmxMorph.NameEnglish ?? "",
                 Panel = pmxMorph.Panel
             };
+
+            // 差分が 0 件でも表情は残す（頂点モーフと同じ扱い：ConvertVertexMorph）。
+            if (groupOffsets.Count == 0)
+            {
+                if (pmxMorph.Offsets != null && pmxMorph.Offsets.Count > 0)
+                {
+                    Debug.LogWarning(
+                        $"[PMXImporter] UVモーフ '{pmxMorph.Name}' のオフセット {pmxMorph.Offsets.Count} 件は、"
+                      + "面に使われている頂点に当たらないため捨てました（表情は差分なしで残します）。");
+                }
+                result.MorphExpressions.Add(MorphExpression);
+                return;
+            }
 
             // 影響する各グループについてモーフメッシュを作成
             foreach (var kvp in groupOffsets)
@@ -458,10 +474,8 @@ namespace Poly_Ling.PMX
                 MorphExpression.AddMesh(morphMeshIndex);
             }
 
-            if (MorphExpression.MeshCount > 0)
-            {
-                result.MorphExpressions.Add(MorphExpression);
-            }
+            // モーフを 1 つも作れなかった場合も表情は残す（頂点モーフと同じ扱い）。
+            result.MorphExpressions.Add(MorphExpression);
         }
 
         // ================================================================
