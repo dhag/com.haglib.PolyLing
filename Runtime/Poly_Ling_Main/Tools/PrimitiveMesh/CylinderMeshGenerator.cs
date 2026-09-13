@@ -23,8 +23,16 @@ namespace Poly_Ling.PrimitiveMesh
             public const float RadiusMin = 0f;
             public const float RadiusMax = 5f;
 
-            /// <summary>高さの下限・上限</summary>
-            public const float HeightMin = 0.1f;
+            /// <summary>
+            /// 高さの下限・上限。
+            ///
+            /// 下限を 0.1 にしていたが、それでは作れない部品があった。
+            /// ロボット組み立ての手順では首が 0.08、手首が 0.095 で、どちらも入らない。
+            /// スライダーは下限で丸めるので、数値欄に 0.095 と打っても 0.1 になり、
+            /// しかも欄の表示は 0.095 のまま残るため、入ったように見えてしまう。
+            /// 小さい部品を作れるよう下げる。
+            /// </summary>
+            public const float HeightMin = 0.01f;
             public const float HeightMax = 10f;
 
             /// <summary>円周方向の分割数の下限・上限</summary>

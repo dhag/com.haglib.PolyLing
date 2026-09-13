@@ -741,6 +741,26 @@ namespace Poly_Ling.EditorControl
             return jb.ToString();
         }
 
+        // ================================================================
+        // 【外から動かすときに画面が止まる件・調査済み】
+        //
+        //   症状: MCP からモデルを作っても、Unity のウインドウが前面でないと
+        //         画面に出ない。作ったものが見えず、動いていないように見える。
+        //
+        //   原因: Player Settings の Run In Background がオフだと、
+        //         Editor は再生中でも背面ではフレームを進めない。
+        //         これを有効にすれば背面のままでも正しく描かれる（確認済み）。
+        //
+        //   ここでフレームを進める仕掛けは持たないこと。試した結果は次のとおり。
+        //     - EditorApplication.QueuePlayerLoopUpdate()
+        //         Run In Background がオフのときは効かなかった。
+        //         オンなら不要なので、どちらにせよ置く意味が無い。
+        //     - UnityEditorInternal.InternalEditorUtility.RepaintAllViews()
+        //         全ビューの描き直しを同期的に要求する。コマンドを受け付けて
+        //         いる最中から呼ぶと絡んで Editor が応答しなくなる（実際に固めた）。
+        //         呼んではいけない。
+        // ================================================================
+
         private static string BuildError(string action, string error)
         {
             var jb = new JsonBuilder();

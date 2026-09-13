@@ -64,6 +64,11 @@ MQO スキニングしない場合（メカ人間）
 または
 Tポーズ変換-CSVを読みこんでマッピング-Tポーズに変換
 
+
+--------------------------
+Run In Background を有効にする(推奨)
+Project Settings → Player → Resolution and Presentation → Run In Background。
+
 ---
 ライセンスは人工知能に下記のようにおすすめされたのでそうしました。
 「本体のライセンス: MIT。同梱の pb_CSG と、依存先の UniVRM・Newtonsoft.Json と同じで、利用者の手間が最も少ないためです。」
