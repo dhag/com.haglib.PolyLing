@@ -20,6 +20,13 @@
 //   その 4 つをステップ 0 として読む。書きでは steps を必ず書き、
 //   ステップが 1 つのときだけ古い 4 つも埋める（1 ステップのグループは
 //   古い読み手でもそのまま開ける）。2 ステップ以上は古い読み手では開けない。
+//
+// 【後から足した欄】
+//   elementId / kind / purpose（段）と goal / preconditions / successCriteria /
+//   tags / prov*（グループ）は、いずれも既定が空か 0。JsonUtility は無い欄を
+//   既定のまま残すので、これらを持たない保存データもそのまま読める。
+//   ElementId だけは空のままにできない（段を ID で指すため）ので、
+//   読みの最後に ObjectGroup.EnsureElementIds が振る。
 
 using System;
 using System.Collections.Generic;
@@ -52,6 +59,15 @@ namespace Poly_Ling.Serialization
     {
         public string action = "";
 
+        /// <summary>段を指す名前。グループ内で一意。空の古いデータは読みで振る。</summary>
+        public string elementId = "";
+
+        /// <summary>段の種別（ObjectGroupStepKind の数値）。0 = 実行する段。</summary>
+        public int kind = 0;
+
+        /// <summary>この段が要る理由。</summary>
+        public string purpose = "";
+
         public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
         public List<ObjectGroupMeshRefDTO> meshRefs = new List<ObjectGroupMeshRefDTO>();
 
@@ -62,7 +78,13 @@ namespace Poly_Ling.Serialization
         {
             if (s == null) return null;
 
-            var dto = new ObjectGroupStepDTO { action = s.Action ?? "" };
+            var dto = new ObjectGroupStepDTO
+            {
+                action    = s.Action ?? "",
+                elementId = s.ElementId ?? "",
+                kind      = (int)s.Kind,
+                purpose   = s.Purpose ?? "",
+            };
 
             foreach (var kv in s.SortedArgs())
                 dto.args.Add(new ObjectGroupArgDTO { key = kv.Key, value = kv.Value ?? "" });
@@ -86,7 +108,15 @@ namespace Poly_Ling.Serialization
 
         public ObjectGroupStep ToStep()
         {
-            var s = new ObjectGroupStep { Action = action ?? "" };
+            var s = new ObjectGroupStep
+            {
+                Action    = action ?? "",
+                ElementId = elementId ?? "",
+                Kind      = System.Enum.IsDefined(typeof(ObjectGroupStepKind), kind)
+                            ? (ObjectGroupStepKind)kind
+                            : ObjectGroupStepKind.Command,
+                Purpose   = purpose ?? "",
+            };
 
             if (args != null)
                 foreach (var a in args)
@@ -148,6 +178,29 @@ namespace Poly_Ling.Serialization
         /// <summary>作成日時（ISO 8601 形式）。</summary>
         public string createdAt = "";
 
+        // ── 意味情報。空でよい。古い保存データは空のまま読める。
+
+        /// <summary>この手順で達成したいこと。</summary>
+        public string goal = "";
+
+        /// <summary>使う前に満たしているべきこと。</summary>
+        public List<string> preconditions = new List<string>();
+
+        /// <summary>終わったときに確かめること。</summary>
+        public List<string> successCriteria = new List<string>();
+
+        /// <summary>探すための札。</summary>
+        public List<string> tags = new List<string>();
+
+        /// <summary>由来。元にしたグループの名前。</summary>
+        public string provParentName = "";
+
+        /// <summary>由来。元から何を変えたか。</summary>
+        public string provChangeSummary = "";
+
+        /// <summary>由来。作った者。</summary>
+        public string provCreatedBy = "";
+
         // ================================================================
         // 変換
         // ================================================================
@@ -163,7 +216,19 @@ namespace Poly_Ling.Serialization
                 sourceDigest  = g.SourceDigest ?? "",
                 autoUpdate    = g.AutoUpdate,
                 createdAt     = g.CreatedAt.ToString("o"),
+                goal          = g.Goal ?? "",
             };
+
+            if (g.Preconditions   != null) dto.preconditions   = new List<string>(g.Preconditions);
+            if (g.SuccessCriteria != null) dto.successCriteria = new List<string>(g.SuccessCriteria);
+            if (g.Tags            != null) dto.tags            = new List<string>(g.Tags);
+
+            if (g.Provenance != null)
+            {
+                dto.provParentName    = g.Provenance.ParentName    ?? "";
+                dto.provChangeSummary = g.Provenance.ChangeSummary ?? "";
+                dto.provCreatedBy     = g.Provenance.CreatedBy     ?? "";
+            }
 
             if (g.Steps != null)
             {
@@ -196,6 +261,18 @@ namespace Poly_Ling.Serialization
                 StashObjectId = ParseId(stashObjectId),
                 SourceDigest  = sourceDigest ?? "",
                 AutoUpdate    = autoUpdate,
+                Goal          = goal ?? "",
+            };
+
+            if (preconditions   != null) g.Preconditions   = new List<string>(preconditions);
+            if (successCriteria != null) g.SuccessCriteria = new List<string>(successCriteria);
+            if (tags            != null) g.Tags            = new List<string>(tags);
+
+            g.Provenance = new ObjectGroupProvenance
+            {
+                ParentName    = provParentName    ?? "",
+                ChangeSummary = provChangeSummary ?? "",
+                CreatedBy     = provCreatedBy     ?? "",
             };
 
             if (!string.IsNullOrEmpty(createdAt) && DateTime.TryParse(
@@ -234,6 +311,8 @@ namespace Poly_Ling.Serialization
                 g.Steps.Add(legacy.ToStep());
             }
 
+            // ステップ導入前・ElementId 導入前の保存データには ID が無い。
+            g.EnsureElementIds();
             return g;
         }
 

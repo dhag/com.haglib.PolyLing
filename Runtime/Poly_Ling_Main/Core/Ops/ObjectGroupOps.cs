@@ -353,6 +353,11 @@ namespace Poly_Ling.Ops
             var step = group.GetStep(stepIndex);
             if (step == null) { error = $"ステップ {stepIndex} がありません"; return null; }
 
+            // 実行しない段（説明・指示・確認）はコマンドにならない。
+            // 飛ばすかどうかは呼ぶ側が決める（RunObjectGroupStep は飛ばす）。
+            if (!step.IsExecutable)
+            { error = $"ステップ {stepIndex} は {step.Kind} で、実行する段ではありません"; return null; }
+
             Type t = PanelCommandFactory.ResolveType(step.Action);
             if (t == null) { error = $"未対応の action: {step.Action}"; return null; }
 

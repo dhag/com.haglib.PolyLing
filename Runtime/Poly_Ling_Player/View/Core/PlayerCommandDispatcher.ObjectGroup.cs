@@ -453,6 +453,10 @@ namespace Poly_Ling.Player
             var step = g.GetStep(stepIndex);
             if (step == null) { error = $"ステップ {stepIndex} がありません"; return false; }
 
+            // 実行しない段（説明・指示・確認）は何もせず通す。
+            // 失敗にすると、手本から起こしたマクロが説明 1 行で止まる。
+            if (!step.IsExecutable) return true;
+
             System.Type stepType = PanelCommandFactory.ResolveType(step.Action);
             if (stepType == null) { error = $"未対応の action: {step.Action}"; return false; }
 

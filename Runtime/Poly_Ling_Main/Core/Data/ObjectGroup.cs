@@ -43,6 +43,17 @@
 //   ModelContext.ObjectGroups へ入れなければ、保存・転送・Undo・不変条件検査の
 //   どれにも触れない。「ちょっと作るだけ」はグループを組んで実行し、そのまま
 //   参照を捨てる。捨てたグループは復元できない（生成物からパラメータは逆算できない）。
+//
+// 【手順の知識として使う】
+//   同じ型を 2 通りに使う。
+//     実体付き … ModelContext.ObjectGroups に入るもの。ステップの参照が
+//                実在の ObjectId を指し、作り直しで出力先へ書き戻す。今までどおり。
+//     手本     … ScenarioLibrary に入るもの。モデルに属さず、参照は空でよい。
+//                目的・前提・成功条件・由来を持ち、元を残したまま派生を増やす。
+//   両者の違いは置き場と参照の埋まり方だけで、型は分けない。分けると
+//   ステップ列の器が 2 つになり、CaptureStep の出力先も 2 つになる。
+
+
 
 using System;
 using System.Collections.Generic;
@@ -50,11 +61,84 @@ using System.Collections.Generic;
 namespace Poly_Ling.Data
 {
     /// <summary>
+    /// ステップの種別。
+    ///
+    /// 【なぜ実行しない段を同じリストに置くか】
+    ///   手順の知識には「なぜこの段が要るか」「ここは対象を見て人が決める」
+    ///   「この段のあとに何を確かめるか」が混ざる。別のリストに分けると
+    ///   並び順の対応を二重に管理することになり、必ずずれる。
+    ///   実行側（ObjectGroupOps.BuildCommand /
+    ///   PlayerCommandDispatcher.RunObjectGroupStep）が Command 以外を飛ばす。
+    /// </summary>
+    public enum ObjectGroupStepKind
+    {
+        /// <summary>生成コマンドを実行する段。既定。</summary>
+        Command = 0,
+
+        /// <summary>理由・注意・設計意図。実行しない。</summary>
+        Note = 1,
+
+        /// <summary>人または AI への作業指示。実行しない。</summary>
+        Instruction = 2,
+
+        /// <summary>実行後に確かめること。実行しない。</summary>
+        Observe = 3,
+    }
+
+    /// <summary>
+    /// グループの由来。どれを元に、何を変えて作ったか。
+    ///
+    /// 元を書き換えずに派生を増やす使い方をするので、たどれるようにしておく。
+    /// 全部空でもよい（手で組んだ最初の 1 件）。
+    /// </summary>
+    [Serializable]
+    public class ObjectGroupProvenance
+    {
+        /// <summary>元にしたグループの名前。空 = 元がない。</summary>
+        public string ParentName = "";
+
+        /// <summary>元から何を変えたか。</summary>
+        public string ChangeSummary = "";
+
+        /// <summary>作った者。人の名前でも AI の名でもよい。</summary>
+        public string CreatedBy = "";
+
+        /// <summary>3 つとも空か。</summary>
+        public bool IsEmpty
+            => string.IsNullOrEmpty(ParentName)
+            && string.IsNullOrEmpty(ChangeSummary)
+            && string.IsNullOrEmpty(CreatedBy);
+
+        public ObjectGroupProvenance Clone() => new ObjectGroupProvenance
+        {
+            ParentName    = ParentName,
+            ChangeSummary = ChangeSummary,
+            CreatedBy     = CreatedBy,
+        };
+    }
+
+    /// <summary>
     /// グループの 1 ステップ。生成コマンド 1 つぶんのパラメータと出力先。
     /// </summary>
     [Serializable]
     public class ObjectGroupStep
     {
+        /// <summary>
+        /// この段を指す名前。グループ内で一意。
+        ///
+        /// 【なぜ番号で指さないか】
+        ///   「3 番目の段を差し替える」は、前に 1 段挿すだけで別の段を指す。
+        ///   段を足す・消す・並べ替える使い方をするので、位置ではなく
+        ///   この ID で指す。読み込み時に空なら ObjectGroup.EnsureElementIds が振る。
+        /// </summary>
+        public string ElementId = "";
+
+        /// <summary>段の種別。既定は実行する段。</summary>
+        public ObjectGroupStepKind Kind = ObjectGroupStepKind.Command;
+
+        /// <summary>この段が要る理由。空でもよい。</summary>
+        public string Purpose = "";
+
         /// <summary>
         /// 生成コマンドの action 名（PanelCommandFactory.ActionOf の結果）。
         /// 例: "createFrill" / "createPipe" / "createPlaceObject" / "applyBlend"。
@@ -88,8 +172,15 @@ namespace Poly_Ling.Data
         /// </summary>
         public List<ulong> OutputObjectIds = new List<ulong>();
 
-        /// <summary>再構築に必要なものが揃っているか。</summary>
-        public bool IsValid => !string.IsNullOrEmpty(Action) && Args != null;
+        /// <summary>実行する段か（Kind が Command）。</summary>
+        public bool IsExecutable => Kind == ObjectGroupStepKind.Command;
+
+        /// <summary>
+        /// 再構築に必要なものが揃っているか。
+        /// 実行しない段（Note / Instruction / Observe）は action を持たないので常に真。
+        /// </summary>
+        public bool IsValid
+            => !IsExecutable || (!string.IsNullOrEmpty(Action) && Args != null);
 
         /// <summary>出力先を 1 つでも持っているか。</summary>
         public bool HasOutput
@@ -195,6 +286,9 @@ namespace Poly_Ling.Data
         {
             var c = new ObjectGroupStep
             {
+                ElementId       = ElementId,
+                Kind            = Kind,
+                Purpose         = Purpose,
                 Action          = Action,
                 Args            = new Dictionary<string, string>(StringComparer.Ordinal),
                 MeshRefIds      = new Dictionary<string, List<ulong>>(StringComparer.Ordinal),
@@ -210,7 +304,7 @@ namespace Poly_Ling.Data
         }
 
         public override string ToString()
-            => $"ObjectGroupStep[{Action}] out={(OutputObjectIds?.Count ?? 0)}";
+            => $"ObjectGroupStep[{Kind}:{ElementId}:{Action}] out={(OutputObjectIds?.Count ?? 0)}";
     }
 
     /// <summary>入力ソース・生成パラメータ・出力先をまとめた 1 件。</summary>
@@ -229,6 +323,31 @@ namespace Poly_Ling.Data
         /// 必ず 1 件以上ある（新しく作った時点で 1 件）。
         /// </summary>
         public List<ObjectGroupStep> Steps = new List<ObjectGroupStep>();
+
+        // ================================================================
+        // 意味情報
+        //
+        // 【何を手で書くか】
+        //   action・引数・型・戻り値は属性と実装から取れる。ここに置くのは
+        //   機械的に取れないものだけ。何のための手順か、いつ使えるか、
+        //   終わったとき何が言えれば成功か、どれを元にどこを変えたか。
+        //   全部空でよい。既存の保存データは空のまま読める。
+        // ================================================================
+
+        /// <summary>この手順で達成したいこと。空でもよい。</summary>
+        public string Goal = "";
+
+        /// <summary>使う前に満たしているべきこと。1 件 1 行。</summary>
+        public List<string> Preconditions = new List<string>();
+
+        /// <summary>終わったときに確かめること。1 件 1 行。</summary>
+        public List<string> SuccessCriteria = new List<string>();
+
+        /// <summary>探すための札。</summary>
+        public List<string> Tags = new List<string>();
+
+        /// <summary>どれを元に、何を変えて作ったか。null にはしない。</summary>
+        public ObjectGroupProvenance Provenance = new ObjectGroupProvenance();
 
         // ================================================================
         // 参照（すべて MeshContext.ObjectId）
@@ -283,7 +402,7 @@ namespace Poly_Ling.Data
 
         public ObjectGroup()
         {
-            Steps.Add(new ObjectGroupStep());
+            AddStep(new ObjectGroupStep());
         }
 
         public ObjectGroup(string name) : this() { Name = name ?? ""; }
@@ -304,7 +423,7 @@ namespace Poly_Ling.Data
             get
             {
                 if (Steps == null) Steps = new List<ObjectGroupStep>();
-                if (Steps.Count == 0) Steps.Add(new ObjectGroupStep());
+                if (Steps.Count == 0) AddStep(new ObjectGroupStep());
                 return Steps[0];
             }
         }
@@ -313,13 +432,79 @@ namespace Poly_Ling.Data
         public ObjectGroupStep GetStep(int index)
             => (Steps != null && index >= 0 && index < Steps.Count) ? Steps[index] : null;
 
-        /// <summary>末尾へステップを 1 つ足す。</summary>
+        /// <summary>末尾へステップを 1 つ足す。ElementId が空なら振る。</summary>
         public ObjectGroupStep AddStep(ObjectGroupStep step)
         {
             if (step == null) return null;
             if (Steps == null) Steps = new List<ObjectGroupStep>();
             Steps.Add(step);
+            if (string.IsNullOrEmpty(step.ElementId)) step.ElementId = NextElementId();
             return step;
+        }
+
+        /// <summary>ElementId でステップを引く。無ければ null。</summary>
+        public ObjectGroupStep FindStep(string elementId)
+        {
+            int i = IndexOfStep(elementId);
+            return i >= 0 ? Steps[i] : null;
+        }
+
+        /// <summary>ElementId でステップの位置を引く。無ければ -1。</summary>
+        public int IndexOfStep(string elementId)
+        {
+            if (Steps == null || string.IsNullOrEmpty(elementId)) return -1;
+            for (int i = 0; i < Steps.Count; i++)
+                if (Steps[i] != null && string.Equals(Steps[i].ElementId, elementId, StringComparison.Ordinal))
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// ElementId が空のステップへ振る。既にある ID とは重ならない。
+        ///
+        /// ステップ導入より前の保存データには ID が無いので、読み込みの最後に呼ぶ。
+        /// 既に入っている ID は書き換えない（書き換えると、その ID を指している
+        /// 派生グループの参照が切れる）。
+        /// </summary>
+        public void EnsureElementIds()
+        {
+            if (Steps == null) return;
+
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < Steps.Count; i++)
+            {
+                var s = Steps[i];
+                if (s == null || string.IsNullOrEmpty(s.ElementId)) continue;
+
+                // 重複していたら後ろの方を空に戻して振り直す。
+                if (!used.Add(s.ElementId)) s.ElementId = "";
+            }
+
+            for (int i = 0; i < Steps.Count; i++)
+            {
+                var s = Steps[i];
+                if (s == null || !string.IsNullOrEmpty(s.ElementId)) continue;
+                s.ElementId = NextElementId(used);
+                used.Add(s.ElementId);
+            }
+        }
+
+        /// <summary>まだ使っていない ElementId を 1 つ作る。</summary>
+        private string NextElementId(HashSet<string> used = null)
+        {
+            if (used == null)
+            {
+                used = new HashSet<string>(StringComparer.Ordinal);
+                if (Steps != null)
+                    foreach (var s in Steps)
+                        if (s != null && !string.IsNullOrEmpty(s.ElementId)) used.Add(s.ElementId);
+            }
+
+            for (int n = 1; ; n++)
+            {
+                string id = "e" + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (!used.Contains(id)) return id;
+            }
         }
 
         // ================================================================
@@ -533,12 +718,19 @@ namespace Poly_Ling.Data
                 SourceDigest  = SourceDigest,
                 AutoUpdate    = AutoUpdate,
                 CreatedAt     = CreatedAt,
+                Goal          = Goal,
                 Steps         = new List<ObjectGroupStep>(),
             };
+
+            c.Preconditions   = Preconditions   != null ? new List<string>(Preconditions)   : new List<string>();
+            c.SuccessCriteria = SuccessCriteria != null ? new List<string>(SuccessCriteria) : new List<string>();
+            c.Tags            = Tags            != null ? new List<string>(Tags)            : new List<string>();
+            c.Provenance      = Provenance      != null ? Provenance.Clone() : new ObjectGroupProvenance();
+
             if (Steps != null)
                 foreach (var s in Steps)
                     if (s != null) c.Steps.Add(s.Clone());
-            if (c.Steps.Count == 0) c.Steps.Add(new ObjectGroupStep());
+            if (c.Steps.Count == 0) c.AddStep(new ObjectGroupStep());
             return c;
         }
 

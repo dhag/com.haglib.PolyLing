@@ -89,6 +89,20 @@ namespace Poly_Ling.Remote
         //     出力先が複数ありうる（はしごから作る鎖は 1 回で何本もできる）ため
         //     単数の OutputObjectId をやめた。読みは Version 3 の形も受ける。
         //     Version 3 の受信側とは非互換のため Editor/Player を同時更新すること。
+        //   ※ Version 5 で意味情報を追加した。足したものはすべて既存の欄の直後で、
+        //     ObjectGroup と Step のそれぞれに固まって入る。
+        //     ObjectGroup: … [string] SourceDigest
+        //                  [string] Goal
+        //                  [2B] PreconditionCount  [string × N]
+        //                  [2B] SuccessCriterionCount [string × N]
+        //                  [2B] TagCount           [string × N]
+        //                  [string] ProvParentName [string] ProvChangeSummary [string] ProvCreatedBy
+        //                  [2B] StepCount  [Step × StepCount]
+        //     Step: [string] Action  [string] ElementId  [1B] Kind  [string] Purpose
+        //           [2B] OutCount … （以下 Version 4 と同じ）
+        //     Kind は ObjectGroupStepKind。0 = 実行する段で、Version 4 以前は全部 0。
+        //     読みは Version 3 / 4 の形も受ける。
+        //     Version 4 の受信側とは非互換のため Editor/Player を同時更新すること。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -98,7 +112,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)4);   // version 4: ObjectGroup のステップ列（v3: ObjectGroup ブロック）
+                w.Write((byte)5);   // version 5: ObjectGroup / Step の意味情報（v4: ステップ列、v3: ObjectGroup ブロック）
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -149,6 +163,9 @@ namespace Poly_Ling.Remote
                         WriteString(w, "");
                         w.Write(0UL);
                         w.Write(false); WriteString(w, "");
+                        WriteString(w, "");                                     // Goal
+                        w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)0); // 前提 / 成功条件 / 札
+                        WriteString(w, ""); WriteString(w, ""); WriteString(w, ""); // 由来
                         w.Write((ushort)0);
                         continue;
                     }
@@ -157,6 +174,16 @@ namespace Poly_Ling.Remote
                     w.Write(g.StashObjectId);
                     w.Write(g.AutoUpdate);
                     WriteString(w, g.SourceDigest ?? "");
+
+                    WriteString(w, g.Goal ?? "");
+                    WriteStringList(w, g.Preconditions);
+                    WriteStringList(w, g.SuccessCriteria);
+                    WriteStringList(w, g.Tags);
+
+                    var prov = g.Provenance;
+                    WriteString(w, prov?.ParentName    ?? "");
+                    WriteString(w, prov?.ChangeSummary ?? "");
+                    WriteString(w, prov?.CreatedBy     ?? "");
 
                     var steps = g.Steps;
                     int stepCount = steps?.Count ?? 0;
@@ -169,11 +196,17 @@ namespace Poly_Ling.Remote
                         {
                             // 空のステップとして詰めておく。
                             WriteString(w, "");
+                            WriteString(w, "");                 // ElementId
+                            w.Write((byte)0);                   // Kind = Command
+                            WriteString(w, "");                 // Purpose
                             w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)0);
                             continue;
                         }
 
                         WriteString(w, st.Action ?? "");
+                        WriteString(w, st.ElementId ?? "");
+                        w.Write((byte)st.Kind);
+                        WriteString(w, st.Purpose ?? "");
 
                         var outIds  = st.OutputObjectIds;
                         int outCount = outIds?.Count ?? 0;
@@ -299,6 +332,20 @@ namespace Poly_Ling.Remote
                             };
                             g.Steps.Clear();
 
+                            if (metaVersion >= 5)
+                            {
+                                g.Goal            = ReadString(r);
+                                g.Preconditions   = ReadStringList(r);
+                                g.SuccessCriteria = ReadStringList(r);
+                                g.Tags            = ReadStringList(r);
+                                g.Provenance = new Poly_Ling.Data.ObjectGroupProvenance
+                                {
+                                    ParentName    = ReadString(r),
+                                    ChangeSummary = ReadString(r),
+                                    CreatedBy     = ReadString(r),
+                                };
+                            }
+
                             ushort stepCount = r.ReadUInt16();
                             for (int si = 0; si < stepCount; si++)
                             {
@@ -306,6 +353,19 @@ namespace Poly_Ling.Remote
                                 {
                                     Action = ReadString(r),
                                 };
+
+                                if (metaVersion >= 5)
+                                {
+                                    st.ElementId = ReadString(r);
+
+                                    byte kindByte = r.ReadByte();
+                                    st.Kind = System.Enum.IsDefined(
+                                                  typeof(Poly_Ling.Data.ObjectGroupStepKind), (int)kindByte)
+                                        ? (Poly_Ling.Data.ObjectGroupStepKind)kindByte
+                                        : Poly_Ling.Data.ObjectGroupStepKind.Command;
+
+                                    st.Purpose = ReadString(r);
+                                }
 
                                 ushort outCount = r.ReadUInt16();
                                 for (int j = 0; j < outCount; j++)
@@ -338,6 +398,8 @@ namespace Poly_Ling.Remote
                             if (g.Steps.Count == 0)
                                 g.Steps.Add(new Poly_Ling.Data.ObjectGroupStep());
 
+                            // Version 4 以前には ElementId が無い。
+                            g.EnsureElementIds();
                             model.ObjectGroups.Add(g);
                             continue;
                         }
@@ -370,6 +432,7 @@ namespace Poly_Ling.Remote
                             g3.SetMeshRefIds(k, ids);
                         }
 
+                        g3.EnsureElementIds();
                         model.ObjectGroups.Add(g3);
                     }
                 }
@@ -870,6 +933,23 @@ namespace Poly_Ling.Remote
             ushort len = r.ReadUInt16();
             if (len == 0) return "";
             return System.Text.Encoding.UTF8.GetString(r.ReadBytes(len));
+        }
+
+        /// <summary>件数付きの文字列列を書く。null は 0 件。</summary>
+        private static void WriteStringList(BinaryWriter w, List<string> list)
+        {
+            int n = list?.Count ?? 0;
+            w.Write((ushort)n);
+            for (int i = 0; i < n; i++) WriteString(w, list[i] ?? "");
+        }
+
+        /// <summary>件数付きの文字列列を読む。</summary>
+        private static List<string> ReadStringList(BinaryReader r)
+        {
+            ushort n = r.ReadUInt16();
+            var list = new List<string>(n);
+            for (int i = 0; i < n; i++) list.Add(ReadString(r));
+            return list;
         }
 
         private static void WriteVector3(BinaryWriter w, Vector3 v) { w.Write(v.x); w.Write(v.y); w.Write(v.z); }

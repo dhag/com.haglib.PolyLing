@@ -376,13 +376,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
         // objectgroups.csv（オブジェクトグループ）
         //
-        // 【行の形】
-        //   g,name,action,outputObjectId,stashObjectId,autoUpdate,sourceDigest
-        //   a,key,value                       … Args 1 件（直前の g に属する）
-        //   r,key,id0,id1,...                 … MeshRefIds 1 件
-        //
-        // 1 グループが Args を数十件持つので、1 行に詰めると列が伸びて読めない。
-        // 種別を先頭列に置いて行を分ける。
+        // 行の形と版の扱いは ObjectGroupCsv.cs を正典とする。
         //
         // 【索引を書かない】
         //   参照は ObjectId（10 進）そのまま。名前ベース保存でも変換しない。
@@ -390,60 +384,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
         //   useNameBased の分岐が要らない。
         // ================================================================
 
-        // 【行の形】
-        //   g … グループ 1 件の頭。action と出力先はステップ 0 の要約で、
-        //        version 1.0 の読み手がここだけを見て 1 ステップのグループとして
-        //        読めるようにしてある。
-        //   s … ステップの頭。以降の o / a / r はこのステップに付く
-        //   o … そのステップの出力先 ObjectId 列
-        //   a … パラメータ 1 件
-        //   r … 描画オブジェクト参照 1 件（キーと ObjectId 列）
-        //
-        //   s の無いファイル（version 1.0）は、a / r が来た時点で g の控えから
-        //   ステップ 0 を作って読む。
+        // 本文の組み立てと読み取りは ObjectGroupCsv が持つ。ここはファイルの
+        // 入出力だけ。手本のグループ（ScenarioLibrary）が同じ形のファイルを
+        // 読み書きするので、構文解析を 2 か所に置かない。
         private static void WriteObjectGroupsCsv(string folderPath, ModelContext model)
         {
-            var sb = new StringBuilder();
-            sb.AppendLine("#PolyLing_ObjectGroups,version,1.1");
-
-            foreach (var g in model.ObjectGroups)
-            {
-                if (g == null) continue;
-
-                sb.AppendLine(
-                    $"g,{Esc(g.Name ?? "")},{Esc(g.Action ?? "")}," +
-                    $"{g.OutputObjectId},{g.StashObjectId}," +
-                    $"{(g.AutoUpdate ? 1 : 0)},{Esc(g.SourceDigest ?? "")}");
-
-                if (g.Steps == null) continue;
-
-                foreach (var st in g.Steps)
-                {
-                    if (st == null) continue;
-
-                    sb.AppendLine($"s,{Esc(st.Action ?? "")}");
-
-                    if (st.OutputObjectIds != null && st.OutputObjectIds.Count > 0)
-                    {
-                        sb.Append("o");
-                        foreach (ulong id in st.OutputObjectIds) sb.Append($",{id}");
-                        sb.AppendLine();
-                    }
-
-                    foreach (var kv in st.SortedArgs())
-                        sb.AppendLine($"a,{Esc(kv.Key)},{Esc(kv.Value ?? "")}");
-
-                    foreach (var kv in st.SortedMeshRefIds())
-                    {
-                        sb.Append($"r,{Esc(kv.Key)}");
-                        if (kv.Value != null)
-                            foreach (ulong id in kv.Value) sb.Append($",{id}");
-                        sb.AppendLine();
-                    }
-                }
-            }
-
-            File.WriteAllText(Path.Combine(folderPath, "objectgroups.csv"), sb.ToString(), Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(folderPath, "objectgroups.csv"),
+                ObjectGroupCsv.Build(model.ObjectGroups),
+                Encoding.UTF8);
         }
 
         private static void ReadObjectGroupsCsv(string folderPath, ModelContext model)
@@ -451,116 +400,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string path = Path.Combine(folderPath, "objectgroups.csv");
             if (!File.Exists(path)) return;
 
-            model.ObjectGroups = new List<Poly_Ling.Data.ObjectGroup>();
-
-            Poly_Ling.Data.ObjectGroup     cur     = null;
-            Poly_Ling.Data.ObjectGroupStep curStep = null;
-
-            // s 行が無いファイル（version 1.0）のために、g 行の値を控えておく。
-            string legacyAction = "";
-            ulong  legacyOutput = 0UL;
-
-            // s 行が無いまま o / a / r が来たら、g 行の控えからステップ 0 を作る。
-            Poly_Ling.Data.ObjectGroupStep EnsureStep()
-            {
-                if (curStep != null) return curStep;
-                if (cur == null) return null;
-
-                curStep = new Poly_Ling.Data.ObjectGroupStep { Action = legacyAction };
-                if (legacyOutput != 0UL) curStep.OutputObjectIds.Add(legacyOutput);
-                cur.Steps.Add(curStep);
-                return curStep;
-            }
-
-            // ステップが 1 つも書かれていないグループ（パラメータの無い 1 ステップ）。
-            void CloseGroup()
-            {
-                if (cur != null && cur.Steps.Count == 0) EnsureStep();
-            }
-
-            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
-            {
-                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
-                var cols = Split(line);
-
-                // Split は行末の空欄を落とす（"s," は 1 列になる）。
-                // action が空のステップがあるので、列数の下限は種別ごとに見る。
-                if (cols.Length < 1) continue;
-
-                switch (cols[0])
-                {
-                    case "g":
-                        if (cols.Length < 2) break;
-                        CloseGroup();
-
-                        legacyAction = cols.Length > 2 ? Unesc(cols[2]) : "";
-                        legacyOutput = PULong(cols, 3);
-
-                        cur = new Poly_Ling.Data.ObjectGroup(Unesc(cols[1]))
-                        {
-                            StashObjectId = PULong(cols, 4),
-                            AutoUpdate    = PInt(cols, 5) != 0,
-                            SourceDigest  = cols.Length > 6 ? Unesc(cols[6]) : "",
-                        };
-                        cur.Steps.Clear();
-                        curStep = null;
-                        model.ObjectGroups.Add(cur);
-                        break;
-
-                    case "s":
-                        // 先頭が g でないファイルは壊れている。捨てて次へ。
-                        if (cur == null) break;
-                        curStep = new Poly_Ling.Data.ObjectGroupStep
-                        {
-                            Action = cols.Length > 1 ? Unesc(cols[1]) : "",
-                        };
-                        cur.Steps.Add(curStep);
-                        break;
-
-                    case "o":
-                    {
-                        var st = EnsureStep();
-                        if (st == null) break;
-                        for (int i = 1; i < cols.Length; i++)
-                        {
-                            ulong id = PULong(cols, i);
-                            if (id != 0UL) st.OutputObjectIds.Add(id);
-                        }
-                        break;
-                    }
-
-                    case "a":
-                    {
-                        if (cols.Length < 2) break;
-                        var st = EnsureStep();
-                        if (st == null) break;
-                        st.SetArg(Unesc(cols[1]), cols.Length > 2 ? Unesc(cols[2]) : "");
-                        break;
-                    }
-
-                    case "r":
-                    {
-                        if (cols.Length < 2) break;
-                        var st = EnsureStep();
-                        if (st == null) break;
-                        var ids = new List<ulong>();
-                        for (int i = 2; i < cols.Length; i++) ids.Add(PULong(cols, i));
-                        st.SetMeshRefIds(Unesc(cols[1]), ids);
-                        break;
-                    }
-                }
-            }
-
-            CloseGroup();
-        }
-
-        /// <summary>列を ulong として読む。読めなければ 0（＝参照なし）。</summary>
-        private static ulong PULong(string[] cols, int index)
-        {
-            if (cols == null || index < 0 || index >= cols.Length) return 0UL;
-            return ulong.TryParse(
-                cols[index], System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture, out ulong v) ? v : 0UL;
+            model.ObjectGroups = ObjectGroupCsv.Parse(File.ReadAllLines(path, Encoding.UTF8));
         }
 
         // ================================================================
