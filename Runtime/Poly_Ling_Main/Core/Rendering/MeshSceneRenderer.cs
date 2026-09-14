@@ -799,7 +799,8 @@ namespace Poly_Ling.Core
                 && t != MeshType.Morph
                 && t != MeshType.RigidBody
                 && t != MeshType.RigidBodyJoint
-                && t != MeshType.Group;
+                && t != MeshType.Group
+                && t != MeshType.WorkAxis;
         }
 
         /// <summary>

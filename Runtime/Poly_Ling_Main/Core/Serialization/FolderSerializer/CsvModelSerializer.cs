@@ -171,9 +171,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (workPlane != null)
                 WriteWorkPlaneCsv(modelFolderPath, workPlane);
 
-            // workaxis.csv（作業用ローカル軸。引数ではなく model から直接読む）
-            if (model.WorkAxis != null)
-                WriteWorkAxisCsv(modelFolderPath, model.WorkAxis);
+            // workaxis.csv は書かない。
+            //   作業軸は作業軸オブジェクト（MeshType.WorkAxis）が正典になり、
+            //   軸値はオブジェクトの行（MeshDTO.workAxis）に載る。
+            //   読み込み側は旧データのためにだけ workaxis.csv を見る。
 
             // tposebackup.csv
             if (model.TPoseBackup != null)
@@ -391,13 +392,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (File.Exists(wpPath))
                 workPlane = ReadWorkPlaneCsv(wpPath);
 
-            // workaxis.csv（作業用ローカル軸。out 引数ではなく model へ直接入れる）
-            if (model.WorkAxis == null) model.WorkAxis = new WorkAxisContext();
+            // workaxis.csv（旧データの移行。作業軸オブジェクトが 1 本も無いときだけ作る）
             string waPath = Path.Combine(modelFolderPath, "workaxis.csv");
             if (File.Exists(waPath))
-                ReadWorkAxisCsv(waPath, model.WorkAxis);
-            else
-                model.WorkAxis.Reset();
+            {
+                var legacyAxis = new WorkAxisContext();
+                ReadWorkAxisCsv(waPath, legacyAxis);
+                Poly_Ling.Ops.WorkAxisObjectOps.MigrateLegacy(model, legacyAxis);
+            }
 
             // tposebackup.csv
             string tpPath = Path.Combine(modelFolderPath, "tposebackup.csv");

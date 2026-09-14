@@ -129,7 +129,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>選択中の描画メッシュ全頂点に指定ウェイトを一括塗りつぶす（Flood）</summary>
-    [PLCommand(Description = "選択中の描画メッシュ全頂点に指定ウェイトを一括塗りつぶす（Flood）</summary>")]
+    [PLCommand(Description = "選択中の描画メッシュの全頂点へ、指定したウェイトを一括で塗る。")]
     public class FloodSkinWeightCommand : PanelCommand
     {
         [PLParam(TextKey = "SkinWeightTargetBone",
@@ -160,14 +160,14 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択中の描画メッシュ全頂点のボーンウェイトを正規化する（Normalize）</summary>
-    [PLCommand(Description = "選択中の描画メッシュ全頂点のボーンウェイトを正規化する（Normalize）</summary>")]
+    [PLCommand(Description = "選択中の描画メッシュの全頂点のボーンウェイトを、合計が 1 になるよう揃える。")]
     public class NormalizeSkinWeightCommand : PanelCommand
     {
         public NormalizeSkinWeightCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>選択中の描画メッシュ全頂点の微小ウェイトを除去する（Prune）</summary>
-    [PLCommand(Description = "選択中の描画メッシュ全頂点の微小ウェイトを除去する（Prune）</summary>")]
+    [PLCommand(Description = "選択中の描画メッシュの全頂点から、ごく小さいボーンウェイトを取り除く。")]
     public class PruneSkinWeightCommand : PanelCommand
     {
         [PLParam(TextKey = "SkinWeightPruneThreshold",

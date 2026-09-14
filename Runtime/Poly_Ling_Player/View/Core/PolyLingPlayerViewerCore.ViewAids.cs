@@ -391,6 +391,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.FrillSkirtTestSection);
             Hide(_layoutRoot.SpringSkinScenarioSection);
             Hide(_layoutRoot.SpringSkinPipeScenarioSection);
+            Hide(_layoutRoot.ScenarioSection);
             Hide(_layoutRoot.PipeHairTestSection);
             Hide(_layoutRoot.BarnacleTestSection);
             Hide(_layoutRoot.RevolutionTestSection);

@@ -30,12 +30,52 @@ namespace Poly_Ling.Data
             : base(modelIndex) { Category = category; Indices = indices; }
     }
 
+    /// <summary>
+    /// 名前で描画オブジェクトを選ぶ。
+    ///
+    /// 【何のためにあるか】
+    ///   編集系のコマンドは対象を masterIndex で指す。索引は追加・削除・並べ替えで
+    ///   動くので、手順の記録（手本）に焼き込めない。名前は生成した側が決めるので
+    ///   実行のたびに同じになる。名前 → 索引の 1 手をここが埋める。
+    ///
+    /// 【選択も同時に動く】
+    ///   変形・回転・スケールは masterIndices を持つが、実処理は
+    ///   model.SelectedDrawableMeshIndices を走査し、引数は実行時点の選択と
+    ///   一致することを要求する（PanelCommand.Deform.cs / PanelCommand.Transform.cs の注記）。
+    ///   よって選択と masterIndices の両方が要る。ここは両方を一度に埋める。
+    /// </summary>
+    [PLCommand(Description = "名前で描画オブジェクトを選ぶ。選択状態を書き換え、選んだものの masterIndex と安定 ID を返す。")]
+    [PLResult("count",         PLResultKind.Integer,      Description = "選んだ描画オブジェクトの数")]
+    [PLResult("masterIndices", PLResultKind.IntegerArray, Description = "選んだ描画オブジェクトの masterIndex", Optional = true)]
+    [PLResult("objectIds",     PLResultKind.TextArray,    Description = "masterIndices と同じ並びの安定 ID。10 進の文字列", Optional = true)]
+    [PLResult("names",         PLResultKind.TextArray,    Description = "masterIndices と同じ並びの名前", Optional = true)]
+    public class SelectDrawablesByNameCommand : PanelCommand
+    {
+        [PLParam(Description = "選ぶ描画オブジェクトの名前。完全一致。namePrefix と併せて指定してもよい")]
+        public string[] Names { get; }
+
+        [PLParam(Description = "この文字列で始まる名前の描画オブジェクトも選ぶ")]
+        public string NamePrefix { get; }
+
+        [PLParam(Description = "既存の選択に足す。省くと置き換える")]
+        public bool Additive { get; }
+
+        public SelectDrawablesByNameCommand(
+            int modelIndex, string[] names = null, string namePrefix = "", bool additive = false)
+            : base(modelIndex)
+        {
+            Names      = names ?? new string[0];
+            NamePrefix = namePrefix ?? "";
+            Additive   = additive;
+        }
+    }
+
     // ================================================================
     // パーツ選択辞書
     // ================================================================
 
     /// <summary>現在のパーツ選択をセットとして保存</summary>
-    [PLCommand(Description = "現在のパーツ選択をセットとして保存</summary>")]
+    [PLCommand(Description = "現在のパーツ選択を選択辞書のセットとして保存する。")]
     public class SavePartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetName",
@@ -46,7 +86,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを現在の選択に適用（置き換え）</summary>
-    [PLCommand(Description = "選択辞書エントリを現在の選択に適用（置き換え）</summary>")]
+    [PLCommand(Description = "選択辞書の項目を現在の選択へ置き換えて入れる。")]
     public class LoadPartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -57,7 +97,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを現在の選択に追加（Union）</summary>
-    [PLCommand(Description = "選択辞書エントリを現在の選択に追加（Union）</summary>")]
+    [PLCommand(Description = "選択辞書の項目を現在の選択へ足す（和）。")]
     public class AddPartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -68,7 +108,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>現在の選択から辞書エントリを除外（Subtract）</summary>
-    [PLCommand(Description = "現在の選択から辞書エントリを除外（Subtract）</summary>")]
+    [PLCommand(Description = "現在の選択から選択辞書の項目を除く（差）。")]
     public class SubtractPartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -79,7 +119,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを削除</summary>
-    [PLCommand(Description = "選択辞書エントリを削除</summary>")]
+    [PLCommand(Description = "メッシュ選択辞書の項目を消す。")]
     public class DeletePartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -90,7 +130,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリの名前を変更</summary>
-    [PLCommand(Description = "選択辞書エントリの名前を変更</summary>")]
+    [PLCommand(Description = "パーツ選択セットの名前を変える。")]
     public class RenamePartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -147,7 +187,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>選択中のメッシュを選択辞書エントリとして保存</summary>
-    [PLCommand(Description = "選択中のメッシュを選択辞書エントリとして保存</summary>")]
+    [PLCommand(Description = "選択中のメッシュをメッシュ選択辞書の項目として保存する。")]
     public class SaveSelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionaryCategory",
@@ -166,7 +206,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを選択に適用（置き換えまたは追加）</summary>
-    [PLCommand(Description = "選択辞書エントリを選択に適用（置き換えまたは追加）</summary>")]
+    [PLCommand(Description = "メッシュ選択辞書の項目を選択へ入れる（置き換えるか足すかを選べる）。")]
     public class ApplySelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionarySetIndex",
@@ -181,7 +221,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを削除</summary>
-    [PLCommand(Description = "選択辞書エントリを削除</summary>")]
+    [PLCommand(Description = "選択辞書の項目を消す。")]
     public class DeleteSelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionarySetIndex",
@@ -192,7 +232,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリの名前を変更</summary>
-    [PLCommand(Description = "選択辞書エントリの名前を変更</summary>")]
+    [PLCommand(Description = "メッシュ選択辞書の項目の名前を変える。")]
     public class RenameSelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionarySetIndex",

@@ -39,6 +39,10 @@ namespace Poly_Ling.Player
                 PLDataValue.Num("groups",     groups.Count),
             };
 
+            var names       = new List<string>(groups.Count);
+            var actions     = new List<string>(groups.Count);
+            var staleFlags  = new List<int>(groups.Count);
+
             int staleCount = 0;
 
             for (int i = 0; i < groups.Count; i++)
@@ -49,6 +53,9 @@ namespace Poly_Ling.Player
                 if (g == null)
                 {
                     values.Add(PLDataValue.Str(key + ".name", ""));
+                    names.Add("");
+                    actions.Add("");
+                    staleFlags.Add(0);
                     continue;
                 }
 
@@ -76,6 +83,13 @@ namespace Poly_Ling.Player
                 values.Add(PLDataValue.Num(key + ".sourcesAlive", srcAlive));
                 values.Add(PLDataValue.Num(key + ".outputs",     outs.Count));
                 values.Add(PLDataValue.Num(key + ".outputsAlive", outAlive));
+
+                // 名前は戻り値にも載せる。グループを名前で指すコマンド
+                // （rebuildObjectGroup / saveScenarioFromGroup）を撃つのに要るが、
+                // 結果辞書を読む口が無いため、ここに無いと名前を知る術がない。
+                names.Add(g.Name ?? "");
+                actions.Add(g.Steps != null && g.Steps.Count > 0 ? (g.Steps[0].Action ?? "") : "");
+                staleFlags.Add(stale ? 1 : 0);
             }
 
             var store = model.DataStore;
@@ -85,9 +99,12 @@ namespace Poly_Ling.Player
                 source: PanelCommandFactory.ActionOf(typeof(QueryObjectGroupsCommand))));
 
             return CommandDataJson.New()
-                .Entry("entry",  entry)
-                .Int("groups",   groups.Count)
-                .Int("stale",    staleCount)
+                .Entry("entry",   entry)
+                .Int("groups",    groups.Count)
+                .Int("stale",     staleCount)
+                .Texts("names",   names)
+                .Texts("actions", actions)
+                .Ints("staleFlags", staleFlags)
                 .Build();
         }
 

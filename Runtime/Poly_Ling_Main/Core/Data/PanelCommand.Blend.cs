@@ -33,7 +33,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ブレンドをクローンモデルに適用する</summary>
-    [PLCommand(Description = "ブレンドをクローンモデルに適用する</summary>")]
+    [PLCommand(Description = "ブレンドをクローンモデルに適用する。")]
     public class ApplyModelBlendCommand : PanelCommand
     {
         /// <summary>クローン先モデルインデックス</summary>
@@ -70,7 +70,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ブレンドプレビュー（Undo記録なし）</summary>
-    [PLCommand(Description = "ブレンドプレビュー（Undo記録なし）</summary>")]
+    [PLCommand(Description = "ブレンドの見た目だけを更新する（Undo 記録なし）。")]
     public class PreviewModelBlendCommand : PanelCommand
     {
         [PLParam(TextKey = "BlendCloneModelIndex",

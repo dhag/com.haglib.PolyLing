@@ -317,17 +317,84 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "WorkAxisVisible", Description = "ギズモを表示するか")]
         public bool IsVisible { get; }
 
+        /// <summary>
+        /// 対象の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸。
+        /// </summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸")]
+        public int MasterIndex { get; }
+
         public SetWorkAxisCommand(
             int modelIndex,
             Vector3 origin, Vector3 eulerAngles,
             float length   = Poly_Ling.Context.WorkAxisContext.DefaultLength,
-            bool isVisible = true)
+            bool isVisible = true,
+            int masterIndex = -1)
             : base(modelIndex)
         {
             Origin      = origin;
             EulerAngles = eulerAngles;
             Length      = length;
             IsVisible   = isVisible;
+            MasterIndex = masterIndex;
+        }
+    }
+
+    /// <summary>
+    /// 使う作業軸オブジェクトを切り替える（ModelContext.ActiveWorkAxisObjectId を書く）。
+    ///
+    /// 作業軸オブジェクトは選択リスト（SelectedDrawableMeshIndices）へ入らないので、
+    /// どれを使うかはこのコマンドで決める。頂点・選択は書き換えない。
+    /// </summary>
+    [PLCommand(Description = "使う作業軸オブジェクトを切り替える。")]
+    public class SetActiveWorkAxisCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "アクティブにする作業軸オブジェクトの masterIndex", Required = true)]
+        public int MasterIndex { get; }
+
+        public SetActiveWorkAxisCommand(int modelIndex, int masterIndex)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+        }
+    }
+
+    /// <summary>
+    /// 作業軸オブジェクト（MeshType.WorkAxis）を 1 個作ってモデルの末尾へ足す。
+    ///
+    /// 作った軸はアクティブ（ModelContext.ActiveWorkAxisObjectId）になる。
+    /// 値の変更は SetWorkAxisCommand、削除は DeleteMeshesCommand を使う。
+    /// </summary>
+    [PLCommand(Description = "作業軸オブジェクトを 1 個作ってモデルへ足す。")]
+    [PLResult("masterIndex", PLResultKind.Integer, Description = "作った作業軸オブジェクトの masterIndex")]
+    public class CreateWorkAxisObjectCommand : PanelCommand
+    {
+        [PLParam(TextKey = "WorkAxisName", Description = "作るオブジェクトの名前。省くと既定名")]
+        public string Name { get; }
+
+        [PLParam(TextKey = "WorkAxisOrigin", Description = "軸の原点（ワールド座標）")]
+        public Vector3 Origin { get; }
+
+        [PLParam(TextKey = "WorkAxisEulerAngles", Description = "軸の回転（度）")]
+        public Vector3 EulerAngles { get; }
+
+        [PLParam(TextKey = "WorkAxisLength",
+                 Description = "軸長（ワールド単位）。下限は WorkAxisContext.MinLength でクランプされる")]
+        public float Length { get; }
+
+        public CreateWorkAxisObjectCommand(
+            int modelIndex,
+            string name      = "",
+            Vector3 origin   = default,
+            Vector3 eulerAngles = default,
+            float length     = Poly_Ling.Context.WorkAxisContext.DefaultLength)
+            : base(modelIndex)
+        {
+            Name        = name ?? "";
+            Origin      = origin;
+            EulerAngles = eulerAngles;
+            Length      = length;
         }
     }
 
@@ -342,10 +409,18 @@ namespace Poly_Ling.Data
                  Description = "作業軸ライブラリの登録名", Required = true)]
         public string Name { get; }
 
-        public RecallWorkAxisCommand(int modelIndex, string name)
+        /// <summary>
+        /// 書き込み先の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸。
+        /// </summary>
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "書き込み先の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸")]
+        public int MasterIndex { get; }
+
+        public RecallWorkAxisCommand(int modelIndex, string name, int masterIndex = -1)
             : base(modelIndex)
         {
-            Name = name ?? "";
+            Name        = name ?? "";
+            MasterIndex = masterIndex;
         }
     }
 

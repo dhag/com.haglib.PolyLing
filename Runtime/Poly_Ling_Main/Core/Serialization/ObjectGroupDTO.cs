@@ -22,7 +22,8 @@
 //   古い読み手でもそのまま開ける）。2 ステップ以上は古い読み手では開けない。
 //
 // 【後から足した欄】
-//   elementId / kind / purpose（段）と goal / preconditions / successCriteria /
+//   elementId / kind / purpose / refName / expansionPolicy（段）と
+//   goal / preconditions / successCriteria /
 //   tags / prov*（グループ）は、いずれも既定が空か 0。JsonUtility は無い欄を
 //   既定のまま残すので、これらを持たない保存データもそのまま読める。
 //   ElementId だけは空のままにできない（段を ID で指すため）ので、
@@ -68,6 +69,12 @@ namespace Poly_Ling.Serialization
         /// <summary>この段が要る理由。</summary>
         public string purpose = "";
 
+        /// <summary>参照先の手本の名前。Kind が ScenarioRef のときだけ使う。</summary>
+        public string refName = "";
+
+        /// <summary>参照段の扱い方（ScenarioExpansionPolicy の数値）。0 = Reference。</summary>
+        public int expansionPolicy = 0;
+
         public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
         public List<ObjectGroupMeshRefDTO> meshRefs = new List<ObjectGroupMeshRefDTO>();
 
@@ -80,10 +87,12 @@ namespace Poly_Ling.Serialization
 
             var dto = new ObjectGroupStepDTO
             {
-                action    = s.Action ?? "",
-                elementId = s.ElementId ?? "",
-                kind      = (int)s.Kind,
-                purpose   = s.Purpose ?? "",
+                action          = s.Action ?? "",
+                elementId       = s.ElementId ?? "",
+                kind            = (int)s.Kind,
+                purpose         = s.Purpose ?? "",
+                refName         = s.RefName ?? "",
+                expansionPolicy = (int)s.ExpansionPolicy,
             };
 
             foreach (var kv in s.SortedArgs())
@@ -116,6 +125,10 @@ namespace Poly_Ling.Serialization
                             ? (ObjectGroupStepKind)kind
                             : ObjectGroupStepKind.Command,
                 Purpose   = purpose ?? "",
+                RefName   = refName ?? "",
+                ExpansionPolicy = System.Enum.IsDefined(typeof(ScenarioExpansionPolicy), expansionPolicy)
+                            ? (ScenarioExpansionPolicy)expansionPolicy
+                            : ScenarioExpansionPolicy.Reference,
             };
 
             if (args != null)

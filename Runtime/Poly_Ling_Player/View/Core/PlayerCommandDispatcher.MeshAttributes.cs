@@ -129,6 +129,71 @@ namespace Poly_Ling.Player
                     }
                     _notifyPanels(ChangeKind.Selection);
                     return true;
+
+                // ── 名前で描画オブジェクトを選ぶ
+                //
+                // 選択の書き換えと Undo 記録は selectMesh が持つ。ここで同じ処理を
+                // 書くと経路が 2 本になり、片方だけ直して必ず食い違う。名前を索引へ
+                // 直したあとは selectMesh を通す（Dispatch は再入しても安全）。
+                case SelectDrawablesByNameCommand byName:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+
+                    bool hasNames  = byName.Names != null && byName.Names.Length > 0;
+                    bool hasPrefix = !string.IsNullOrEmpty(byName.NamePrefix);
+                    if (!hasNames && !hasPrefix)
+                    { Fail("names か namePrefix のどちらかが要ります"); return true; }
+
+                    var pickedIdx   = new List<int>();
+                    var pickedIds   = new List<ulong>();
+                    var pickedIdStr = new List<string>();
+                    var pickedNames = new List<string>();
+
+                    var drawables = model.DrawableMeshes;
+                    for (int i = 0; i < drawables.Count; i++)
+                    {
+                        var ent = drawables[i];
+                        string nm = ent.Name ?? "";
+
+                        bool hit = false;
+                        if (hasNames)
+                        {
+                            foreach (var want in byName.Names)
+                                if (string.Equals(nm, want, System.StringComparison.Ordinal)) { hit = true; break; }
+                        }
+                        if (!hit && hasPrefix
+                            && nm.StartsWith(byName.NamePrefix, System.StringComparison.Ordinal))
+                            hit = true;
+                        if (!hit) continue;
+
+                        ulong oid = ent.Context?.ObjectId ?? 0UL;
+                        pickedIdx.Add(ent.MasterIndex);
+                        pickedIds.Add(oid);
+                        pickedIdStr.Add(oid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        pickedNames.Add(nm);
+                    }
+
+                    if (pickedIdx.Count == 0)
+                    { Fail("名前の合う描画オブジェクトがありません"); return true; }
+
+                    var wanted = new List<int>();
+                    if (byName.Additive) wanted.AddRange(model.SelectedDrawableMeshIndices);
+                    foreach (int idx in pickedIdx) if (!wanted.Contains(idx)) wanted.Add(idx);
+
+                    var selResult = Dispatch(
+                        new SelectMeshCommand(byName.ModelIndex, MeshCategory.Drawable, wanted.ToArray()));
+                    if (selResult != null && !selResult.Success) { Fail(selResult.Reason); return true; }
+
+                    // 対象としても報告する。runScenarioStep の @prev がこれを読む。
+                    ReportData(CommandDataJson.New()
+                        .Int  ("count",         pickedIdx.Count)
+                        .Ints ("masterIndices", pickedIdx)
+                        .Texts("objectIds",     pickedIdStr)
+                        .Texts("names",         pickedNames)
+                        .Build(),
+                        pickedIdx.ToArray(), pickedIds.ToArray());
+                    return true;
+                }
             }
             return false;
         }

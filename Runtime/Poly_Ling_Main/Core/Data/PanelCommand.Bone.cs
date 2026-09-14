@@ -65,7 +65,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>BoneTransform の Position/Rotation/Scale 単一軸値変更</summary>
-    [PLCommand(Description = "BoneTransform の Position/Rotation/Scale 単一軸値変更</summary>")]
+    [PLCommand(Description = "BoneTransform の Position / Rotation / Scale の 1 軸だけを変える。")]
     public class SetBoneTransformValueCommand : PanelCommand
     {
         public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }
@@ -88,7 +88,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>BoneTransform スライダードラッグ開始（Undo スナップショット取得）</summary>
-    [PLCommand(Description = "BoneTransform スライダードラッグ開始（Undo スナップショット取得）</summary>")]
+    [PLCommand(Description = "BoneTransform のスライダー操作を始める（Undo のスナップショットを取る）。")]
     public class BeginBoneTransformSliderDragCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices",
@@ -112,7 +112,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>BoneTransform スライダードラッグ終了（Undo 記録コミット）</summary>
-    [PLCommand(Description = "BoneTransform スライダードラッグ終了（Undo 記録コミット）</summary>")]
+    [PLCommand(Description = "BoneTransform のスライダー操作を終える（Undo を記録する）。")]
     public class EndBoneTransformSliderDragCommand : PanelCommand
     {
         [PLParam(TextKey = "BoneDragDescription",
@@ -133,10 +133,9 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
-    // Tポーズ変換
+    // スプリングボーン検証リグ
     // ================================================================
 
-    /// <summary>Humanoidマッピングを使用してTポーズに変換する</summary>
     /// <summary>
     /// スプリングボーン検証用のダミー装備を生成する（システムデバッグ）。
     ///
@@ -145,7 +144,7 @@ namespace Poly_Ling.Data
     /// このコマンドは既存モデルへボーン鎖・スキンドメッシュ・揺れ付帯データ・
     /// コライダーを一度に足す。生成規則は SpringBoneTestRigBuilder が正典。
     /// </summary>
-    [PLCommand(Description = "Humanoidマッピングを使用してTポーズに変換する</summary> スプリングボーン検証用のダミー装備を生成する（システムデバッグ）。")]
+    [PLCommand(Description = "スプリングボーン検証用のダミー装備（ボーン鎖・スキンドメッシュ・揺れ付帯データ・コライダー）を一度に生成する。")]
     public class BuildSpringBoneTestRigCommand : PanelCommand
     {
         /// <summary>生成パラメータ。null なら既定値。</summary>
@@ -173,8 +172,8 @@ namespace Poly_Ling.Data
     // Humanoidボーンマッピング
     // ================================================================
 
-    /// <summary>プレビューマッピングをモデルに適用する</summary>
-    [PLCommand(Description = "プレビューマッピングをモデルに適用する</summary>")]
+    /// <summary>プレビューのマッピングをモデルへ適用する。</summary>
+    [PLCommand(Description = "Humanoid ボーンの割当（プレビューのマッピング）をモデルへ適用する。")]
     public class ApplyHumanoidMappingCommand : PanelCommand
     {
         /// <summary>
@@ -238,7 +237,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>モデルのHumanoidマッピングをクリアする</summary>
-    [PLCommand(Description = "モデルのHumanoidマッピングをクリアする</summary>")]
+    [PLCommand(Description = "モデルの Humanoid ボーン割当を消す。")]
     public class ClearHumanoidMappingCommand : PanelCommand
     {
         public ClearHumanoidMappingCommand(int modelIndex) : base(modelIndex) { }

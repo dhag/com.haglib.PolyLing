@@ -20,7 +20,12 @@ namespace Poly_Ling.Ops
     public static class MeshObjectAppendOps
     {
         /// <summary>src の頂点・面を dst へ連結する（UVスロットとマテリアルは元のまま）。</summary>
-        public static void Append(MeshObject dst, MeshObject src)
+        /// <param name="copyNormals">
+        /// true のとき、頂点の法線スロットと面の NormalIndices を写す。
+        /// 生成器が法線を入れている図形（文字）はこれが要る。
+        /// 既定 false は従来どおり法線を捨て、面の NormalIndices を 0 にする。
+        /// </param>
+        public static void Append(MeshObject dst, MeshObject src, bool copyNormals = false)
         {
             if (dst == null || src == null || src.VertexCount == 0) return;
 
@@ -33,6 +38,9 @@ namespace Poly_Ling.Ops
                 if (sv.UVs != null)
                     for (int k = 0; k < sv.UVs.Count; k++) nv.UVs.Add(sv.UVs[k]);
                 if (nv.UVs.Count == 0) nv.UVs.Add(Vector2.zero);
+
+                if (copyNormals && sv.Normals != null)
+                    for (int k = 0; k < sv.Normals.Count; k++) nv.Normals.Add(sv.Normals[k]);
 
                 // 部品ID / サブIDは連結で失わない。
                 nv.PartsId = sv.PartsId;
@@ -64,7 +72,9 @@ namespace Poly_Ling.Ops
                 {
                     nf.VertexIndices.Add(baseIdx + sf.VertexIndices[k]);
                     nf.UVIndices.Add(sf.UVIndices != null && k < sf.UVIndices.Count ? sf.UVIndices[k] : 0);
-                    nf.NormalIndices.Add(0);
+                    nf.NormalIndices.Add(
+                        copyNormals && sf.NormalIndices != null && k < sf.NormalIndices.Count
+                            ? sf.NormalIndices[k] : 0);
                 }
                 dst.AddFace(nf);
             }

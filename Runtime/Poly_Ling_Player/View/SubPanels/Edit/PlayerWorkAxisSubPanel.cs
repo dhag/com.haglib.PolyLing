@@ -25,6 +25,11 @@ namespace Poly_Ling.Player
         // 外部コールバック（Viewer から設定）
         // ================================================================
 
+        /// <summary>
+        /// 対象モデル。使う軸の一覧を出すために読む。null なら一覧を出さない。
+        /// </summary>
+        public Func<Poly_Ling.Context.ModelContext> GetModel;
+
         /// <summary>操作対象の作業軸。null なら入力を無視する。</summary>
         public Func<WorkAxisContext> GetWorkAxis;
 
@@ -115,6 +120,10 @@ namespace Poly_Ling.Player
         private FloatField _lengthField;
         [UiControl("gizmoVisible", Description = "ギズモを表示する")]
         private Toggle     _visibleToggle;
+        [UiControl("createAxis", Safety = UiSafety.SafeWrite, Description = "作業軸オブジェクトを 1 個作る")]
+        private Button     _createAxisBtn;
+        [UiControl("activeAxis", Safety = UiSafety.SafeWrite, Description = "使う作業軸オブジェクトを選ぶ")]
+        private DropdownField _activeAxisDropdown;
         [UiControl("angleSnap.step", Description = "角度スナップの刻み（度）")]
         private FloatField _snapField;
         [UiControl("angleSnap.enabled", Description = "角度スナップを使う")]
@@ -298,11 +307,39 @@ namespace Poly_Ling.Player
 
             BuildLibrarySection();
 
+            // 使う作業軸の選択。作業軸オブジェクトは選択リストへ入らないので、
+            // ここで選んで SetActiveWorkAxisCommand を送る。
+            _activeAxisDropdown = new DropdownField("使う軸");
+            _activeAxisDropdown.style.marginTop = 2;
+            _activeAxisDropdown.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressAxisDropdown) return;
+                int idx = _activeAxisDropdown.index;
+                if (idx < 0 || _axisMasterIndices == null || idx >= _axisMasterIndices.Count) return;
+
+                SendCommand?.Invoke(new SetActiveWorkAxisCommand(
+                    GetModelIndex?.Invoke() ?? 0, _axisMasterIndices[idx]));
+                Refresh();
+            });
+            _root.Add(_activeAxisDropdown);
+
             _infoLabel = new Label();
             _infoLabel.style.fontSize    = 10;
             _infoLabel.style.marginTop   = 4;
             _infoLabel.style.color       = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _root.Add(_infoLabel);
+
+            // 作業軸オブジェクトが 1 本も無いときだけ出すボタン。
+            // 表示切替は Refresh が行う。
+            _createAxisBtn = new Button(() =>
+            {
+                SendCommand?.Invoke(new CreateWorkAxisObjectCommand(GetModelIndex?.Invoke() ?? 0));
+                Refresh();
+            }) { text = "作業軸オブジェクトを作る" };
+            _createAxisBtn.style.height    = 26;
+            _createAxisBtn.style.marginTop = 4;
+            _createAxisBtn.style.display   = DisplayStyle.None;
+            _root.Add(_createAxisBtn);
 
             RepaintModeButtons();
         }
@@ -505,12 +542,67 @@ namespace Poly_Ling.Player
         // Refresh（Viewer から呼ぶ）
         // ================================================================
 
+        // ================================================================
+        // 使う軸の一覧
+        // ================================================================
+
+        /// <summary>一覧に並べた作業軸オブジェクトの masterIndex。表示順と対。</summary>
+        private System.Collections.Generic.List<int> _axisMasterIndices;
+
+        /// <summary>書き戻し中にコマンドを送らないための抑止。</summary>
+        private bool _suppressAxisDropdown;
+
+        /// <summary>
+        /// 作業軸オブジェクトの一覧を作り直し、今使っている軸を選んだ状態にする。
+        /// 軸が 1 本も無ければ一覧を隠す。
+        /// </summary>
+        private void RefreshAxisList(WorkAxisContext active)
+        {
+            if (_activeAxisDropdown == null) return;
+
+            var model = GetModel?.Invoke();
+            var names = new System.Collections.Generic.List<string>();
+            _axisMasterIndices = new System.Collections.Generic.List<int>();
+            int activeIdx = -1;
+
+            var list = model?.MeshContextList;
+            if (list != null)
+            {
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var mc = list[i];
+                    if (mc == null || !mc.IsWorkAxis) continue;
+
+                    if (ReferenceEquals(mc.WorkAxis, active)) activeIdx = names.Count;
+                    names.Add(mc.Name);
+                    _axisMasterIndices.Add(i);
+                }
+            }
+
+            _activeAxisDropdown.style.display = names.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            if (names.Count == 0) return;
+
+            _suppressAxisDropdown = true;
+            _activeAxisDropdown.choices = names;
+            _activeAxisDropdown.index   = activeIdx >= 0 ? activeIdx : 0;
+            _suppressAxisDropdown = false;
+        }
+
         public void Refresh()
         {
             var wa = GetWorkAxis?.Invoke();
+
+            RefreshAxisList(wa);
+
+            // 作業軸オブジェクトが 1 本も無いときは作成ボタンだけを出す。
+            // 作業軸は MeshType.WorkAxis のオブジェクトが正典なので、
+            // ここで勝手に作らず CreateWorkAxisObjectCommand を送らせる。
+            if (_createAxisBtn != null)
+                _createAxisBtn.style.display = wa == null ? DisplayStyle.Flex : DisplayStyle.None;
+
             if (wa == null)
             {
-                if (_infoLabel != null) _infoLabel.text = "作業軸なし（モデル未選択）";
+                if (_infoLabel != null) _infoLabel.text = "作業軸オブジェクトがありません";
                 return;
             }
 

@@ -556,16 +556,101 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
+        /// 作業軸オブジェクト生成コマンド。
+        /// 実処理は WorkAxisObjectOps.Append（生成規則はそちらが正典）。
+        /// 作った軸はアクティブになる。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteCreateWorkAxisObject(Poly_Ling.Data.CreateWorkAxisObjectCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            var value = new Poly_Ling.Context.WorkAxisContext();
+            value.ApplySnapshot(new Poly_Ling.Context.WorkAxisSnapshot
+            {
+                Origin    = cmd.Origin,
+                Rotation  = UnityEngine.Quaternion.Euler(cmd.EulerAngles),
+                Length    = cmd.Length,
+                IsVisible = true,
+            });
+
+            int index = Poly_Ling.Ops.WorkAxisObjectOps.Append(model, cmd.Name, value);
+            if (index < 0) return "作業軸オブジェクトを作れませんでした";
+
+            // 追加後の後処理は分解（splitObjectByPartsId）の経路と同じ形にそろえる。
+            model.ComputeWorldMatrices();
+            PrimitiveMeshFinalize(model);
+
+            ReportMeshes(model, new System.Collections.Generic.List<int> { index });
+
+            NotifyWorkAxisChanged();
+            return null;
+        }
+
+        /// <summary>
+        /// コマンドが指す作業軸を解決する。
+        /// masterIndex が負ならアクティブな作業軸（ModelContext.ResolveWorkAxis）。
+        /// 指定があるときは、その索引が作業軸オブジェクトであることを要求する。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null で axis に値が入る。</returns>
+        private string ResolveCommandWorkAxis(int masterIndex, out Poly_Ling.Context.WorkAxisContext axis)
+        {
+            axis = null;
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            if (masterIndex < 0)
+            {
+                axis = model.ResolveWorkAxis();
+                return axis == null ? "作業軸オブジェクトがありません" : null;
+            }
+
+            var mc = model.GetMeshContext(masterIndex);
+            if (mc == null) return $"masterIndex {masterIndex} のオブジェクトがありません";
+            if (!mc.IsWorkAxis) return $"masterIndex {masterIndex} は作業軸オブジェクトではありません";
+
+            axis = mc.WorkAxis;
+            return null;
+        }
+
+        /// <summary>
+        /// 使う作業軸オブジェクトの切り替えコマンド。
+        /// 書き込むのは ModelContext.ActiveWorkAxisObjectId だけ。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSetActiveWorkAxis(Poly_Ling.Data.SetActiveWorkAxisCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            var mc = model.GetMeshContext(cmd.MasterIndex);
+            if (mc == null) return $"masterIndex {cmd.MasterIndex} のオブジェクトがありません";
+            if (!mc.IsWorkAxis) return $"masterIndex {cmd.MasterIndex} は作業軸オブジェクトではありません";
+
+            model.ActiveWorkAxisObjectId = mc.ObjectId;
+
+            NotifyWorkAxisChanged();
+            return null;
+        }
+
+        /// <summary>
         /// 作業軸の状態差し替えコマンド。
         /// 書き込みは WorkAxisContext.ApplySnapshot に通す（下限クランプを含めて正典）。
+        /// 対象は cmd.MasterIndex（-1 でアクティブな作業軸）。
         /// </summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteSetWorkAxis(Poly_Ling.Data.SetWorkAxisCommand cmd)
         {
             if (cmd == null) return "コマンドが null";
 
-            var wa = CurrentWorkAxis();
-            if (wa == null) return "作業軸がありません";
+            string reason = ResolveCommandWorkAxis(cmd.MasterIndex, out var wa);
+            if (reason != null) return reason;
 
             wa.ApplySnapshot(new Poly_Ling.Context.WorkAxisSnapshot
             {
@@ -582,14 +667,15 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 作業軸ライブラリ呼び出しコマンド。
         /// 表示フラグは変えない（WorkAxisEntry.ApplyTo と同じ）。
+        /// 書き込み先は cmd.MasterIndex（-1 でアクティブな作業軸）。
         /// </summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteRecallWorkAxis(Poly_Ling.Data.RecallWorkAxisCommand cmd)
         {
             if (cmd == null) return "コマンドが null";
 
-            var wa = CurrentWorkAxis();
-            if (wa == null) return "作業軸がありません";
+            string reason = ResolveCommandWorkAxis(cmd.MasterIndex, out var wa);
+            if (reason != null) return reason;
 
             var lib = ActiveProject?.WorkAxes;
             if (lib == null) return "作業軸ライブラリがありません";

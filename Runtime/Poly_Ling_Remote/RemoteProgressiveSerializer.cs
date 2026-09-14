@@ -103,6 +103,13 @@ namespace Poly_Ling.Remote
         //     Kind は ObjectGroupStepKind。0 = 実行する段で、Version 4 以前は全部 0。
         //     読みは Version 3 / 4 の形も受ける。
         //     Version 4 の受信側とは非互換のため Editor/Player を同時更新すること。
+        //   ※ Version 6 で参照段を追加した。Step の Purpose の直後に足す。
+        //     Step: … [string] Purpose  [string] RefName  [1B] ExpansionPolicy
+        //           [2B] OutCount … （以下 Version 5 と同じ）
+        //     RefName は Kind = ScenarioRef の段だけが使う。ExpansionPolicy は
+        //     ScenarioExpansionPolicy で、0 = Reference。Version 5 以前は全部 0。
+        //     読みは Version 3 / 4 / 5 の形も受ける。
+        //     Version 5 の受信側とは非互換のため Editor/Player を同時更新すること。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -112,7 +119,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)5);   // version 5: ObjectGroup / Step の意味情報（v4: ステップ列、v3: ObjectGroup ブロック）
+                w.Write((byte)6);   // version 6: 参照段（RefName / ExpansionPolicy）。v5: 意味情報、v4: ステップ列、v3: ObjectGroup ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -199,6 +206,8 @@ namespace Poly_Ling.Remote
                             WriteString(w, "");                 // ElementId
                             w.Write((byte)0);                   // Kind = Command
                             WriteString(w, "");                 // Purpose
+                            WriteString(w, "");                 // RefName
+                            w.Write((byte)0);                   // ExpansionPolicy = Reference
                             w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)0);
                             continue;
                         }
@@ -207,6 +216,8 @@ namespace Poly_Ling.Remote
                         WriteString(w, st.ElementId ?? "");
                         w.Write((byte)st.Kind);
                         WriteString(w, st.Purpose ?? "");
+                        WriteString(w, st.RefName ?? "");
+                        w.Write((byte)st.ExpansionPolicy);
 
                         var outIds  = st.OutputObjectIds;
                         int outCount = outIds?.Count ?? 0;
@@ -365,6 +376,18 @@ namespace Poly_Ling.Remote
                                         : Poly_Ling.Data.ObjectGroupStepKind.Command;
 
                                     st.Purpose = ReadString(r);
+
+                                    if (metaVersion >= 6)
+                                    {
+                                        st.RefName = ReadString(r);
+
+                                        byte policyByte = r.ReadByte();
+                                        st.ExpansionPolicy = System.Enum.IsDefined(
+                                                                 typeof(Poly_Ling.Data.ScenarioExpansionPolicy),
+                                                                 (int)policyByte)
+                                            ? (Poly_Ling.Data.ScenarioExpansionPolicy)policyByte
+                                            : Poly_Ling.Data.ScenarioExpansionPolicy.Reference;
+                                    }
                                 }
 
                                 ushort outCount = r.ReadUInt16();

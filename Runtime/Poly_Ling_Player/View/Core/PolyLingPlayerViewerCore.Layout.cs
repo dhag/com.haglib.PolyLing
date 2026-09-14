@@ -200,6 +200,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.SpringSkinScenarioBtn.clicked += ShowSpringSkinScenarioPanel;
             if (_layoutRoot.SpringSkinPipeScenarioBtn != null)
                 _layoutRoot.SpringSkinPipeScenarioBtn.clicked += ShowSpringSkinPipeScenarioPanel;
+            if (_layoutRoot.ScenarioBtn != null)
+                _layoutRoot.ScenarioBtn.clicked += ShowScenarioPanel;
             if (_layoutRoot.PipeHairTestBtn != null)
                 _layoutRoot.PipeHairTestBtn.clicked += ShowPipeHairTestPanel;
             if (_layoutRoot.BarnacleTestBtn != null)
@@ -720,6 +722,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.FrillSkirtTestSection,    () => _frillSkirtTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SpringSkinScenarioSection, () => _springSkinScenarioSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SpringSkinPipeScenarioSection, () => _springSkinPipeScenarioSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.ScenarioSection, () => _scenarioSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PipeHairTestSection,      () => _pipeHairTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.BarnacleTestSection,      () => _barnacleTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RevolutionTestSection,    () => _revolutionTestSubPanel?.Refresh()));

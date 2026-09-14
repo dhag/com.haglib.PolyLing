@@ -225,12 +225,23 @@ namespace Poly_Ling.Data
               .Append(" / 出せなかった ").Append(skipped);
 
             // 説明が無い道具は MCP のクライアントが選べない。件数と名前を出す。
-            var noDesc = new List<string>();
+            // あわせて説明の中身も見る。[PLCommand] を後から付けた際に
+            // <summary> の中身を切り出す過程で閉じタグが残ったものが多数あり、
+            // 道具一覧にそのまま出ていた。説明はあるので「無い」では拾えない。
+            var noDesc  = new List<string>();
+            var badDesc = new List<string>();
             foreach (var t in PLParamAudit.FindCommandTypes())
             {
                 if (!PanelCommandFactory.TryBuildToolJson(t, out _, out _)) continue;
                 var a = t.GetCustomAttribute<PLCommandAttribute>(inherit: false);
-                if (a == null || string.IsNullOrEmpty(a.Description)) noDesc.Add(t.Name);
+                if (a == null || string.IsNullOrEmpty(a.Description)) { noDesc.Add(t.Name); continue; }
+
+                string d = a.Description;
+                if (d.IndexOf("</", StringComparison.Ordinal) >= 0 ||
+                    d.IndexOf("<summary", StringComparison.Ordinal) >= 0 ||
+                    d.IndexOf("<param", StringComparison.Ordinal) >= 0 ||
+                    d.IndexOf("<returns", StringComparison.Ordinal) >= 0)
+                    badDesc.Add(t.Name + " : " + d);
             }
             sb.Append('\n')
               .Append("[PLCommand] 説明が無い道具 ").Append(noDesc.Count);
@@ -238,6 +249,14 @@ namespace Poly_Ling.Data
             {
                 sb.Append('\n').Append("── PLCommand が無い / 説明が空 ──");
                 foreach (var n in noDesc) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            sb.Append('\n')
+              .Append("[PLCommand] 説明に XML タグが混じった道具 ").Append(badDesc.Count);
+            if (badDesc.Count > 0)
+            {
+                sb.Append('\n').Append("── 説明が壊れている ──");
+                foreach (var n in badDesc) sb.Append('\n').Append("  ").Append(n);
             }
 
             if (skipped > 0)

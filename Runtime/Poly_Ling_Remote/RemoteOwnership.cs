@@ -93,6 +93,12 @@ namespace Poly_Ling.Remote
             if (IsUiAutomation(cmd))
                 return OwnershipVerdict.Deny("UI 自動操作はリモート接続からは実行できません");
 
+            // 手本（シナリオ）の置き場はホストの持ち物で、モデルにも属さない。
+            // リモートの参加者が書き換える筋合いがないので同じく受けない。
+            if (IsScenario(cmd))
+                return OwnershipVerdict.Deny("手本の操作はリモート接続からは実行できません");
+
+
             // 編集者の設定・解放そのものは専用判定へ
             if (cmd is SetObjectEditorCommand sec)
                 return AuthorizeSetEditor(project, sec, requesterName, objectIds);
@@ -391,6 +397,7 @@ namespace Poly_Ling.Remote
                 case ExportVmdToVrmaCommand _: return Array.Empty<int>();
 
                 case SelectMeshCommand      _: return Array.Empty<int>();
+                case SelectDrawablesByNameCommand _: return Array.Empty<int>();
                 case SelectElementsCommand  _: return Array.Empty<int>();
                 case AdvancedSelectCommand  _: return Array.Empty<int>();
                 case AdvancedSelectByAttributeCommand _: return Array.Empty<int>();
@@ -445,6 +452,31 @@ namespace Poly_Ling.Remote
             }
         }
 
+        /// <summary>手本（シナリオ）のコマンドか（PanelCommand.Scenario.cs）。</summary>
+        private static bool IsScenario(PanelCommand cmd)
+        {
+            switch (cmd)
+            {
+                case QueryScenariosCommand _:
+                case DescribeScenarioCommand _:
+                case CreateScenarioCommand _:
+                case DeleteScenarioCommand _:
+                case ForkScenarioCommand _:
+                case SaveScenarioFromGroupCommand _:
+                case SetScenarioMetaCommand _:
+                case AddScenarioStepCommand _:
+                case SetScenarioStepCommand _:
+                case RemoveScenarioStepCommand _:
+                case SetScenarioStepArgCommand _:
+                case MoveScenarioStepCommand _:
+                case ExpandScenarioRefCommand _:
+                case RunScenarioStepCommand _:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         /// <summary>所有権判定を通す必要のないコマンドか。</summary>
         private static bool IsOwnershipExempt(PanelCommand cmd)
         {
@@ -463,6 +495,15 @@ namespace Poly_Ling.Remote
                 case QuerySeedElementCommand _:
                 case QueryBoneSkinCommand _:
                 case QueryCommandAuditCommand _:
+                case AcquireBeltStripsCommand _:
+                case QueryMqoSourceObjectsCommand _:
+                case MatchMqoSourceByVertexCountCommand _:
+                case QueryPmxSourceObjectsCommand _:
+                case MatchPmxSourceCommand _:
+                case QueryBoneCommand _:
+                case QueryBoundaryEdgesCommand _:
+                case QueryFacesInBoxCommand _:
+                case QueryNearestBoundaryVertexCommand _:
                 // 生データの取得。モデルを読むだけで書き換えない。
                 case GetRawDataCommand _:
                 // 選択の写しを結果辞書へ置くだけ。形状を変えない。

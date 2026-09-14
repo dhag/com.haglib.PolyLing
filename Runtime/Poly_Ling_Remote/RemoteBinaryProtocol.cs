@@ -25,9 +25,9 @@
 // ■ PLRM フォーマット（S→C ModelMeta）
 // [Header 8B+]
 //   Magic      : 4B "PLRM"
-//   Version    : 1B (現在 5。2 で MaterialData に拡張ブロック、3 で ObjectGroup、
-//                4 で ObjectGroup のステップ列、5 で ObjectGroup / Step の意味情報。
-//                読みは 3 / 4 も受ける)
+//   Version    : 1B (現在 6。2 で MaterialData に拡張ブロック、3 で ObjectGroup、
+//                4 で ObjectGroup のステップ列、5 で ObjectGroup / Step の意味情報、
+//                6 で参照段（RefName / ExpansionPolicy）。読みは 3 / 4 / 5 も受ける)
 //   Padding    : 1B
 //   ModelIndex : 2B (int16)
 //   ModelName  : string

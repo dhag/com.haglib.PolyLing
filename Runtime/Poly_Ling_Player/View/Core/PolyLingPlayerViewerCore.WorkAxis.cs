@@ -34,16 +34,18 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// 現在のモデルの作業軸。モデル未選択なら null。
-        /// ModelContext.WorkAxis は既定でインスタンスを持つが、
-        /// 旧データから復元した ModelContext は null のことがあるためここで補う。
+        /// 使用する作業軸。作業軸オブジェクトが 1 本も無ければ null。
+        ///
+        /// どの 1 本を使うかの規則は ModelContext.ResolveWorkAxisObject が正典
+        /// （選択中 → ActiveWorkAxisObjectId → 先頭 → 無し）。
+        /// ここで作らないので、null のときは呼び出し側が「作業軸オブジェクトが無い」
+        /// として扱うこと。
         /// </summary>
         private Poly_Ling.Context.WorkAxisContext CurrentWorkAxis()
         {
             var model = ActiveProject?.CurrentModel;
             if (model == null) return null;
-            if (model.WorkAxis == null) model.WorkAxis = new Poly_Ling.Context.WorkAxisContext();
-            return model.WorkAxis;
+            return model.ResolveWorkAxis();
         }
 
         /// <summary>作業軸ハンドルがボーンへ吸着する当たり半径（px）。</summary>
@@ -506,6 +508,14 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SpringSkinPipeScenarioSection, _layoutRoot?.SpringSkinPipeScenarioBtn);
             _springSkinPipeScenarioSubPanel?.Refresh();
+        }
+
+        private void ShowScenarioPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ScenarioSection, _layoutRoot?.ScenarioBtn);
+            _scenarioSubPanel?.Refresh();
         }
 
         private void ShowRobotBuildTestPanel()

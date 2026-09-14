@@ -94,11 +94,49 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
+    // T 字接合の解消
+    // ================================================================
+
+    /// <summary>
+    /// 辺の途中に乗っている頂点を、その辺を持つ面へ挿入する。
+    ///
+    /// ブーリアン（pb_CSG）は BSP で多角形を切るとき、切った側にだけ
+    /// 頂点を足して隣の面に知らせないため、辺の途中に頂点が乗った状態が残る。
+    /// その辺は隣と共有されないので境界として扱われ、結果が水密にならない。
+    /// 立方体から立方体を引くだけでも境界ループが 1 つ残る。
+    ///
+    /// ブーリアン専用ではない。同じ状態は穴つなぎや面削除の後にも起きる。
+    /// </summary>
+    [PLCommand(Description = "辺の途中に乗っている頂点を、その辺を持つ面へ挿入して T 字接合を解消する。ブーリアンの後に使うと境界が閉じる。頂点も面も増えない。")]
+    [PLResult("inserted",      PLResultKind.Integer, Description = "挿入した点の数")]
+    [PLResult("touchedFaces",  PLResultKind.Integer, Description = "点を挿入した面の数")]
+    [PLResult("vertices",      PLResultKind.Integer, Description = "解消後の頂点数")]
+    [PLResult("faces",         PLResultKind.Integer, Description = "解消後の面数")]
+    [PLResult("boundaryLoops", PLResultKind.Integer, Description = "解消後の境界ループ数。閉じた形なら 0")]
+    public class ResolveTJunctionsCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "対象の描画オブジェクトの masterIndex。省くと現在の編集対象",
+                 IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(Description = "辺に乗っているとみなす距離[m]。大きくすると乗っていない頂点まで拾って面がねじれる", Min = 0.0)]
+        public float Tolerance { get; }
+
+        public ResolveTJunctionsCommand(int modelIndex, int masterIndex = -1, float tolerance = 1e-4f)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            Tolerance   = tolerance;
+        }
+    }
+
+    // ================================================================
     // Quad減面
     // ================================================================
 
     /// <summary>Quad保持減数化を実行して結果メッシュをモデルに追加する</summary>
-    [PLCommand(Description = "Quad保持減数化を実行して結果メッシュをモデルに追加する</summary>")]
+    [PLCommand(Description = "四角面を保ったまま面数を減らし、結果のメッシュをモデルへ足す。")]
     public class QuadDecimateCommand : PanelCommand
     {
         [PLParam(TextKey = "QuadDecimateSourceMasterIndex",

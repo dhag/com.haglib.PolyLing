@@ -64,6 +64,9 @@ namespace Poly_Ling.UndoSystem
         public ulong ObjectId;
         public string EditorName;
 
+        /// <summary>作業軸オブジェクトの軸値。それ以外は null。</summary>
+        public Poly_Ling.Context.WorkAxisContext WorkAxis;
+
         // ミラー設定
         public int MirrorType;
         public int MirrorAxis;
@@ -148,6 +151,10 @@ namespace Poly_Ling.UndoSystem
                 // 協働編集
                 ObjectId = meshContext.ObjectId,
                 EditorName = meshContext.EditorName,
+                // 作業軸オブジェクトの軸値（値のコピー。参照は持ち回さない）
+                WorkAxis = meshContext.WorkAxis != null
+                    ? new Poly_Ling.Context.WorkAxisContext(meshContext.WorkAxis)
+                    : null,
                 // ミラー設定
                 MirrorType = meshContext.MirrorType,
                 MirrorAxis = meshContext.MirrorAxis,
@@ -232,6 +239,10 @@ namespace Poly_Ling.UndoSystem
                 // 協働編集（復元は同一オブジェクトなのでIDを維持する）
                 ObjectId = ObjectId,
                 EditorName = EditorName ?? "",
+                // 作業軸オブジェクトの軸値（値のコピー）
+                WorkAxis = WorkAxis != null
+                    ? new Poly_Ling.Context.WorkAxisContext(WorkAxis)
+                    : null,
                 // ミラー設定
                 MirrorType = MirrorType,
                 MirrorAxis = MirrorAxis,

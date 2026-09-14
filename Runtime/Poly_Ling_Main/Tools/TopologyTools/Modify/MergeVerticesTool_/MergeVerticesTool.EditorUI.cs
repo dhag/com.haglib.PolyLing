@@ -42,6 +42,9 @@ namespace Poly_Ling.Tools
             // プレビュー表示切替
             ShowPreview = EditorGUILayout.Toggle(T("ShowPreview"), ShowPreview);
 
+            // 閉じた面（おもて面同士が重なる面）を削除
+            RemoveClosedFaces = EditorGUILayout.Toggle(T("RemoveClosedFaces"), RemoveClosedFaces);
+
             EditorGUILayout.Space(5);
 
             // プレビュー情報

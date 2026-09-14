@@ -71,9 +71,10 @@ namespace Poly_Ling.Serialization
             }
 
             // WorkAxisContext（作業用ローカル軸）
-            //   WorkPlane と違い引数では受け取らず model から直接読む。
-            //   引数渡しにすると呼び出し側が null を渡したときに黙って失われるため。
-            modelDTO.workAxis = ToWorkAxisData(model.WorkAxis);
+            //   作業軸は作業軸オブジェクトが正典になったので、ここでは書かない。
+            //   modelDTO.workAxis は旧データを読むためだけに残してある
+            //   （復元側 ModelSerializer_ModelContext.cs の WorkAxis 移行を参照）。
+            modelDTO.workAxis = null;
 
             // EditorState
             modelDTO.editorStateDTO = editorStateDTO;
@@ -245,6 +246,11 @@ namespace Poly_Ling.Serialization
                     IsVisible = meshContextData.isVisible,
                     IsLocked = meshContextData.isLocked,
                     IsFolding = meshContextData.isFolding,
+                    // 協働編集。0 以外なら model.Add は採番せずそのまま保つ。
+                    ObjectId = meshContextData.objectId,
+                    EditorName = meshContextData.editorName ?? "",
+                    // 作業軸オブジェクトの軸値。それ以外は null。
+                    WorkAxis = FromWorkAxisData(meshContextData.workAxis),
                     // ミラー設定
                     MirrorType = meshContextData.mirrorType,
                     MirrorAxis = meshContextData.mirrorAxis,
@@ -268,6 +274,10 @@ namespace Poly_Ling.Serialization
 
                 model.Add(context);
             }
+
+            // 安定 ID の整合。未割当への発行と重複の振り直しを済ませてから使い始める。
+            // CSV 側（CsvModelSerializer.cs の ReadModelFolder）と同じ扱いに揃える。
+            Poly_Ling.Data.ObjectIdAllocator.ResolveDuplicates(model.MeshContextList);
 
             // ================================================================
             // Materials 復元（Phase 1: モデル単位に集約）
@@ -402,14 +412,19 @@ namespace Poly_Ling.Serialization
             model.CoordinateConvention = FromCoordinateConventionDTO(modelDTO.coordinateConvention);
 
             // ================================================================
-            // WorkAxis復元（作業用ローカル軸。規約4：CSV/JSON 対称）
+            // WorkAxis 復元（旧データの移行）
+            //
+            // 作業軸は作業軸オブジェクト（MeshType.WorkAxis）が正典になったので、
+            // modelDTO.workAxis は旧データを読むためだけに残してある。
+            // 作業軸オブジェクトが 1 本も無いモデルにだけ 1 個作って値を移す。
             // ================================================================
 
-            if (model.WorkAxis == null) model.WorkAxis = new WorkAxisContext();
             if (modelDTO.workAxis != null)
-                ApplyToWorkAxis(modelDTO.workAxis, model.WorkAxis);
-            else
-                model.WorkAxis.Reset();
+            {
+                var legacy = new WorkAxisContext();
+                ApplyToWorkAxis(modelDTO.workAxis, legacy);
+                Poly_Ling.Ops.WorkAxisObjectOps.MigrateLegacy(model, legacy);
+            }
 
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
             Poly_Ling.Ops.IKChainResolver.RebuildLinksFromPerBone(model);
@@ -447,6 +462,13 @@ namespace Poly_Ling.Serialization
                 contextData.isVisible = meshContext.IsVisible;
                 contextData.isLocked = meshContext.IsLocked;
                 contextData.isFolding = meshContext.IsFolding;
+
+                // 協働編集。ここで写さないと CSV 書き出しの往復で 0 / 空に落ちる。
+                contextData.objectId   = meshContext.ObjectId;
+                contextData.editorName = meshContext.EditorName ?? "";
+
+                // 作業軸オブジェクトの軸値。ここで写さないと CSV 往復で落ちる。
+                contextData.workAxis   = ToMeshWorkAxisData(meshContext);
 
                 // ミラー設定
                 contextData.mirrorType = meshContext.MirrorType;
@@ -540,6 +562,11 @@ namespace Poly_Ling.Serialization
                 IsVisible = meshDTO.isVisible,
                 IsLocked = meshDTO.isLocked,
                 IsFolding = meshDTO.isFolding,
+                // 協働編集
+                ObjectId = meshDTO.objectId,
+                EditorName = meshDTO.editorName ?? "",
+                // 作業軸オブジェクトの軸値。それ以外は null。
+                WorkAxis = FromWorkAxisData(meshDTO.workAxis),
                 // ミラー設定
                 MirrorType = meshDTO.mirrorType,
                 MirrorAxis = meshDTO.mirrorAxis,

@@ -40,6 +40,8 @@ namespace Poly_Ling.Player
         private FloatField    _threshField;
         [UiControl("showPreview", Description = "結合候補をビューポートに表示する")]
         private Toggle        _previewToggle;
+        [UiControl("removeClosedFaces", Description = "閉じた面（おもて面同士が重なる面）を結合後に削除する")]
+        private Toggle        _removeClosedFacesToggle;
         [UiControl("stats.groups", Safety = UiSafety.ReadOnly, Description = "結合グループの数")]
         private Label         _groupsLabel;
         [UiControl("stats.vertices", Safety = UiSafety.ReadOnly, Description = "結合で消える頂点の数")]
@@ -115,6 +117,11 @@ namespace Poly_Ling.Player
             _previewToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.ShowPreview = e.newValue; });
             _root.Add(_previewToggle);
 
+            // 閉じた面＝頂点索引の並びが一致し、巻き順だけが逆の重なり面。両方とも消す。
+            _removeClosedFacesToggle = new Toggle("閉じた面（おもて面同士が重なる面）を削除") { value = false };
+            _removeClosedFacesToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.RemoveClosedFaces = e.newValue; });
+            _root.Add(_removeClosedFacesToggle);
+
             _groupsLabel = InfoLabel(); _root.Add(_groupsLabel);
             _vertsLabel  = InfoLabel(); _root.Add(_vertsLabel);
 
@@ -151,7 +158,7 @@ namespace Poly_Ling.Player
             if (h == null || targets == null) return;
 
             SendCommand?.Invoke(new MergeVerticesCommand(
-                ModelIndex, targets, mode, h.Threshold));
+                ModelIndex, targets, mode, h.Threshold, h.RemoveClosedFaces));
             Refresh();
         }
 
@@ -160,6 +167,7 @@ namespace Poly_Ling.Player
             var h = GetH(); if (h == null) return;
             _threshField?.SetValueWithoutNotify(h.Threshold);
             _previewToggle?.SetValueWithoutNotify(h.ShowPreview);
+            _removeClosedFacesToggle?.SetValueWithoutNotify(h.RemoveClosedFaces);
 
             var info = h.PreviewInfo;
             if (info.GroupCount > 0)

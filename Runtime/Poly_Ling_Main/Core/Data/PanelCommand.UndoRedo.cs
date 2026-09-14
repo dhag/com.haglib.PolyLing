@@ -27,7 +27,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>戻した操作を 1 段やり直す。</summary>
-    [PLCommand(Description = "戻した操作を 1 段やり直す。</summary>")]
+    [PLCommand(Description = "戻した操作を 1 段やり直す。")]
     public class PerformRedoCommand : PanelCommand
     {
         public PerformRedoCommand() : base(0) { }

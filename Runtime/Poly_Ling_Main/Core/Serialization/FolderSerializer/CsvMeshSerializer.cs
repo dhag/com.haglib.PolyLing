@@ -74,6 +74,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // 既存writerで書き出す。既存writerは不変のため出力フォーマットは保たれ、
                 // MeshDTO往復が無損失（構造=R1.5 / population=R1.6）なので出力はバイト一致。
                 // buildUnityMesh=false で保存時の不要なUnityメッシュ生成を回避する。
+                //
+                // 【MeshContext に欄を足したら MeshDTO にも足すこと】
+                //   ここを通すので、MeshDTO に無い欄は書き出しの時点で既定値に落ちる。
+                //   objectId / editorName がこれで長らく 0 と空になっていた。
+                //   書き出し側（CsvMeshSerializer.Write.cs）を直しても効かない。
                 var roundTripDTO = ModelSerializer.FromMeshContext(mc);
                 if (roundTripDTO != null)
                 {

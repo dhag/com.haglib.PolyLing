@@ -484,9 +484,10 @@ namespace Poly_Ling.Tools
 
             var t = mc.Type;
 
-            // モーフ・剛体・ジョイント・グループは常に除外
+            // モーフ・剛体・ジョイント・グループ・作業軸は常に除外
             if (t == MeshType.Morph || t == MeshType.RigidBody ||
-                t == MeshType.RigidBodyJoint || t == MeshType.Group)
+                t == MeshType.RigidBodyJoint || t == MeshType.Group ||
+                t == MeshType.WorkAxis)
                 return false;
 
             // ミラー側は実体側と原点が重なるため既定で除外

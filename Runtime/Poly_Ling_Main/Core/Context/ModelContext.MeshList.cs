@@ -257,7 +257,9 @@ namespace Poly_Ling.Context
             FilePath = null;
             IsDirty = false;
             WorkPlane?.Reset();
-            WorkAxis?.Reset();
+            // 作業軸はオブジェクトなので Clear() でリストごと消える。
+            // 残るのはアクティブ指定だけなので、ここで戻す。
+            ActiveWorkAxisObjectId = 0;
             SymmetrySettings?.Reset();
             _humanoidMapping?.ClearAll();
         }
@@ -487,11 +489,11 @@ namespace Poly_Ling.Context
                 var ctx = MeshContextList[i];
                 if (ctx == null) continue;
 
-                // ボーン・モーフ・剛体・ジョイント・グループは対象外
+                // ボーン・モーフ・剛体・ジョイント・グループ・作業軸は対象外
                 var t = ctx.Type;
                 if (t == MeshType.Bone     || t == MeshType.Morph       ||
                     t == MeshType.RigidBody || t == MeshType.RigidBodyJoint ||
-                    t == MeshType.Group)
+                    t == MeshType.Group     || t == MeshType.WorkAxis)
                     continue;
 
                 // スキンド頂点を持つ場合はインポート時BindPoseを維持する

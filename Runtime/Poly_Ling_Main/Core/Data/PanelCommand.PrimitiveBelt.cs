@@ -12,6 +12,71 @@ using Poly_Ling.Symmetry;
 
 namespace Poly_Ling.Data
 {
+    /// <summary>
+    /// 描画オブジェクトから梯子（基準ベルト）を取り込み、点列を返す。モデルは変えない。
+    ///
+    /// 【何のためにあるか】
+    ///   フリル・パイプ・藤壺の生成は、梯子の点列（beltLeftPoints ほか）を
+    ///   引数として受ける。パネルは BeltAcquire.Acquire と SplitBelts を
+    ///   C# の中で呼んでいるため、外からは同じ手順を踏めなかった。
+    ///   ここが同じ 2 つを呼んで、生成コマンドへそのまま渡せる形で返す。
+    ///
+    /// 【量のあるものを返す例外】
+    ///   点列は量がある。通常は結果辞書へ書いて件数だけ返す約束だが、
+    ///   これは次の段の引数に入れるためのものなので、getRawData と同じ扱いで
+    ///   値そのものを返す。新しいコマンドをこの仲間に増やさないこと。
+    ///
+    /// 【真偽の列を整数で返す】
+    ///   PLResultKind に真偽の配列が無い。0 と 1 で返す。
+    ///   受け側の beltClosed / beltFlipWinding は bool[] なので、
+    ///   "true,false" でも "1,0" でも TryParse が受ける。
+    /// </summary>
+    [PLCommand(Description = "描画オブジェクトから梯子（基準ベルト）を取り込み、生成コマンドへ渡せる点列として返す。モデルは変えない。")]
+    [PLResult("ok",              PLResultKind.Flag,        Description = "取り込めたか")]
+    [PLResult("message",         PLResultKind.Text,        Description = "取り込みの説明。失敗した理由もここに入る")]
+    [PLResult("belts",           PLResultKind.Integer,     Description = "取り込んだ梯子の本数")]
+    [PLResult("points",          PLResultKind.Integer,     Description = "全梯子の点数の合計")]
+    [PLResult("beltLeftPoints",  PLResultKind.NumberArray, Description = "全ベルトの左点列を連結したもの。x,y,z を 3 個ずつ", Optional = true)]
+    [PLResult("beltRightPoints", PLResultKind.NumberArray, Description = "同じ点数の右点列", Optional = true)]
+    [PLResult("beltStarts",      PLResultKind.IntegerArray, Description = "ベルト i が何点目から始まるか。長さがベルト本数", Optional = true)]
+    [PLResult("beltClosed",      PLResultKind.IntegerArray, Description = "ベルトごとに閉じているか。1 = 閉じている", Optional = true)]
+    [PLResult("beltFlipWinding", PLResultKind.IntegerArray, Description = "ベルトごとに巻き順を反転するか。1 = 反転", Optional = true)]
+    [PLResult("beltHeightScale", PLResultKind.NumberArray, Description = "ベルトごとの高さ倍率。フリル以外では使わない", Optional = true)]
+    [PLResult("rungCounts",      PLResultKind.IntegerArray, Description = "ベルトごとの段数（点数）", Optional = true)]
+    public class AcquireBeltStripsCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex",
+                 Description = "取り込み元の描画オブジェクトの masterIndex。省くと現在の編集対象",
+                 IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(TextKey = "BeltAcquireMethod",
+                 Description = "梯子の取り込み方")]
+        public Poly_Ling.PrimitiveMesh.BeltAcquireMethod Method { get; }
+
+        [PLParam(TextKey = "BeltAcquireCrossRows",
+                 Description = "上下へ横断して段グループにまとめる")]
+        public bool CrossRows { get; }
+
+        [PLParam(TextKey = "BeltAcquireSetName",
+                 Description = "選択辞書から取り込むときの辞書名")]
+        public string SetName { get; }
+
+        public AcquireBeltStripsCommand(
+            int modelIndex,
+            int masterIndex = -1,
+            Poly_Ling.PrimitiveMesh.BeltAcquireMethod method = Poly_Ling.PrimitiveMesh.BeltAcquireMethod.AutoLadder,
+            bool crossRows = false,
+            string setName = "")
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            Method      = method;
+            CrossRows   = crossRows;
+            SetName     = setName ?? "";
+        }
+    }
+
     // ── 基準ベルトを使う図形 ─────────────────────────────────────
 
     /// <summary>

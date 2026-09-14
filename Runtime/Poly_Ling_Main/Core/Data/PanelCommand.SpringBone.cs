@@ -606,14 +606,14 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>バックアップから元の姿勢に戻す</summary>
-    [PLCommand(Description = "バックアップから元の姿勢に戻す</summary>")]
+    [PLCommand(Description = "控えておいた姿勢へ戻す。")]
     public class RestoreTPoseCommand : PanelCommand
     {
         public RestoreTPoseCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>現在の姿勢をベースとしてバックアップを破棄する（Undo不可）</summary>
-    [PLCommand(Description = "現在の姿勢をベースとしてバックアップを破棄する（Undo不可）</summary>")]
+    [PLCommand(Description = "今の姿勢を基準として確定し、控えを捨てる。Undo では戻せない。")]
     public class BakeTPoseCommand : PanelCommand
     {
         public BakeTPoseCommand(int modelIndex) : base(modelIndex) { }

@@ -212,6 +212,9 @@ namespace Poly_Ling.Player
         public VisualElement FrillSkirtTestSection    { get; private set; }
         public VisualElement SpringSkinScenarioSection { get; private set; }
 
+        /// <summary>手本（シナリオ）の一覧と中身。段を 1 つ選んで実行する。</summary>
+        public VisualElement ScenarioSection          { get; private set; }
+
         /// <summary>
         /// 揺れもの（パイプ）→スキンド→VRM 自動検証。
         /// フリル版と同じ MQO・同じ順で、フリルの段だけをパイプへ置き換えたもの。
@@ -407,6 +410,7 @@ namespace Poly_Ling.Player
             HumanLimitSection          = AddSection(visible: false);
             VrmSettingsSection         = AddSection(visible: false);
             RobotBuildTestSection      = AddSection(visible: false);
+            ScenarioSection            = AddSection(visible: false);
             FrillSkirtTestSection      = AddSection(visible: false);
             SpringSkinScenarioSection  = AddSection(visible: false);
             SpringSkinPipeScenarioSection = AddSection(visible: false);

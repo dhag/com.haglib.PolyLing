@@ -191,6 +191,27 @@ namespace Poly_Ling.Serialization
             if (data.length > 0f) workAxis.Length = data.length;
         }
 
+        /// <summary>
+        /// 作業軸オブジェクト用。DTO から WorkAxisContext を起こす。
+        /// data が null なら null を返す（＝作業軸オブジェクトではない）。
+        /// </summary>
+        public static WorkAxisContext FromWorkAxisData(WorkAxisDTO data)
+        {
+            if (data == null) return null;
+
+            var wa = new WorkAxisContext();
+            ApplyToWorkAxis(data, wa);
+            return wa;
+        }
+
+        /// <summary>
+        /// 作業軸オブジェクト用。作業軸オブジェクトでなければ null を返す。
+        /// </summary>
+        public static WorkAxisDTO ToMeshWorkAxisData(MeshContext meshContext)
+            => meshContext != null && meshContext.IsWorkAxis
+                ? ToWorkAxisData(meshContext.WorkAxis)
+                : null;
+
         // ================================================================
         // 変換: MeshDTO → MeshObject
         // ================================================================
@@ -350,6 +371,9 @@ namespace Poly_Ling.Serialization
                 isVisible               = mc.IsVisible,
                 isLocked                = mc.IsLocked,
                 isFolding               = mc.IsFolding,
+                objectId                = mc.ObjectId,
+                editorName              = mc.EditorName ?? "",
+                workAxis                = ToMeshWorkAxisData(mc),
                 depth                   = mc.Depth,
                 parentIndex             = mc.ParentIndex,
                 hierarchyParentIndex    = mc.HierarchyParentIndex,
@@ -411,6 +435,9 @@ namespace Poly_Ling.Serialization
                 IsVisible              = meta.isVisible,
                 IsLocked               = meta.isLocked,
                 IsFolding              = meta.isFolding,
+                ObjectId               = meta.objectId,
+                EditorName             = meta.editorName ?? "",
+                WorkAxis               = FromWorkAxisData(meta.workAxis),
                 Depth                  = meta.depth,
                 ParentIndex            = meta.parentIndex,
                 HierarchyParentIndex   = meta.hierarchyParentIndex,

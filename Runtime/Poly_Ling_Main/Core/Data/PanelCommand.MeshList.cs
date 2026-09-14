@@ -140,7 +140,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>カレントモデルを切り替える</summary>
-    [PLCommand(Description = "カレントモデルを切り替える</summary>")]
+    [PLCommand(Description = "編集対象のモデルを切り替える。")]
     public class SwitchModelCommand : PanelCommand
     {
         [PLParam(TextKey = "TargetModelIndex",
@@ -151,7 +151,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>モデルの名前を変更する</summary>
-    [PLCommand(Description = "モデルの名前を変更する</summary>")]
+    [PLCommand(Description = "モデルの名前を変える。")]
     public class RenameModelCommand : PanelCommand
     {
         [PLParam(TextKey = "ModelNewName",
@@ -162,7 +162,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>モデルを削除する</summary>
-    [PLCommand(Description = "モデルを削除する</summary>")]
+    [PLCommand(Description = "モデルを消す。")]
     public class DeleteModelCommand : PanelCommand
     {
         public DeleteModelCommand(int modelIndex) : base(modelIndex) { }

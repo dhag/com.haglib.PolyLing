@@ -215,13 +215,19 @@ namespace Poly_Ling.PrimitiveMesh
         /// <summary>
         /// 見つからなかった字数はここでは持ち帰らない（パネルの情報欄はパネル側が更新する）。
         /// フォントが開けない・輪郭が0本のときは null を返す。
+        ///
+        /// 文字ごとに生成して連結し、パーツIDを文字ごとに振る。
+        /// 穴判定はグリフ内で閉じており（TextOutlineBuilder.AppendGlyph）、
+        /// エッジオフセットもループ単位（Profile2DExtrudeMeshGenerator.ApplyEdgeOffset）なので、
+        /// 文字単位に分けても形は変わらない。
+        /// パーツIDは輪郭を生成できた文字の 0 起点連番（空白など輪郭 0 本の文字は番号を消費しない）。
         /// </summary>
         private static MeshObject GenerateText(CreateTextMeshCommand c)
         {
             var font = PlyFontLibrary.Open(c.Params.FontFamily);
             if (font == null) { LastTextMissingGlyphs = 0; return null; }
 
-            var loops = TextOutlineBuilder.Build(font, c.Params.Text ?? "",
+            var glyphs = TextOutlineBuilder.BuildPerGlyph(font, c.Params.Text ?? "",
                 new TextLayoutParams
                 {
                     Segment       = c.Params.Segment,
@@ -232,22 +238,38 @@ namespace Poly_Ling.PrimitiveMesh
 
             LastTextMissingGlyphs = missing;
 
-            if (loops == null || loops.Count == 0) return null;
+            if (glyphs == null || glyphs.Count == 0) return null;
 
-            return Profile2DExtrudeMeshGenerator.Generate(loops, c.Params.MeshName,
-                new Profile2DGenerateParams
-                {
-                    Scale         = c.Params.Size,
-                    Offset        = Vector2.zero,
-                    FlipY         = false,
-                    Thickness     = c.Params.Thickness,
-                    SegmentsFront = c.Params.SegmentsFront,
-                    SegmentsBack  = c.Params.SegmentsBack,
-                    EdgeSizeFront = c.Params.EdgeSizeFront,
-                    EdgeSizeBack  = c.Params.EdgeSizeBack,
-                    EdgeInward    = c.Params.EdgeInward,
-                    SymmetryMode  = false,
-                });
+            var gp = new Profile2DGenerateParams
+            {
+                Scale         = c.Params.Size,
+                Offset        = Vector2.zero,
+                FlipY         = false,
+                Thickness     = c.Params.Thickness,
+                SegmentsFront = c.Params.SegmentsFront,
+                SegmentsBack  = c.Params.SegmentsBack,
+                EdgeSizeFront = c.Params.EdgeSizeFront,
+                EdgeSizeBack  = c.Params.EdgeSizeBack,
+                EdgeInward    = c.Params.EdgeInward,
+                SymmetryMode  = false,
+            };
+
+            MeshObject result = null;
+            int partsId = 0;
+
+            foreach (var g in glyphs)
+            {
+                var one = Profile2DExtrudeMeshGenerator.Generate(g.Loops, c.Params.MeshName, gp);
+                if (one == null || one.VertexCount == 0) continue;
+
+                PartsIdOps.SetPartsId(one, partsId);
+                partsId++;
+
+                if (result == null) result = one;
+                else MeshObjectAppendOps.Append(result, one, copyNormals: true);
+            }
+
+            return result;
         }
 
         // ── フリル ──────────────────────────────────────────────────
@@ -528,6 +550,11 @@ namespace Poly_Ling.PrimitiveMesh
                 case "Frill":
                 case "Pipe":
                 case "HairStrand":
+                    PartsIdOps.AssignSubIdByPartsId(mo);
+                    return;
+
+                // 文字は生成器が文字ごとにパーツIDを振っているので、サブIDだけ振り直す。
+                case "Text":
                     PartsIdOps.AssignSubIdByPartsId(mo);
                     return;
 

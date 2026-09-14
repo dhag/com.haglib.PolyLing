@@ -357,7 +357,7 @@ namespace Poly_Ling.Player
                 return null;
             }
 
-            var loops = TextOutlineBuilder.Build(font, _textP.Text ?? "",
+            var glyphs = TextOutlineBuilder.BuildPerGlyph(font, _textP.Text ?? "",
                 new TextLayoutParams
                 {
                     Segment       = _textP.Segment,
@@ -369,22 +369,40 @@ namespace Poly_Ling.Player
             _textMissing = missing;
             RefreshTextInfo();
 
-            if (loops.Count == 0) return null;
+            if (glyphs.Count == 0) return null;
 
-            return Profile2DExtrudeMeshGenerator.Generate(loops, _textP.MeshName,
-                new Profile2DGenerateParams
-                {
-                    Scale         = _textP.Size,
-                    Offset        = Vector2.zero,
-                    FlipY         = false,
-                    Thickness     = _textP.Thickness,
-                    SegmentsFront = _textP.SegmentsFront,
-                    SegmentsBack  = _textP.SegmentsBack,
-                    EdgeSizeFront = _textP.EdgeSizeFront,
-                    EdgeSizeBack  = _textP.EdgeSizeBack,
-                    EdgeInward    = _textP.EdgeInward,
-                    SymmetryMode  = false,
-                });
+            // 確定側（PrimitiveMeshFactory.GenerateText）と同じく文字ごとに生成して連結する。
+            // プレビューと確定結果の形をそろえるため。パーツIDもここで文字ごとに振る。
+            var gp = new Profile2DGenerateParams
+            {
+                Scale         = _textP.Size,
+                Offset        = Vector2.zero,
+                FlipY         = false,
+                Thickness     = _textP.Thickness,
+                SegmentsFront = _textP.SegmentsFront,
+                SegmentsBack  = _textP.SegmentsBack,
+                EdgeSizeFront = _textP.EdgeSizeFront,
+                EdgeSizeBack  = _textP.EdgeSizeBack,
+                EdgeInward    = _textP.EdgeInward,
+                SymmetryMode  = false,
+            };
+
+            MeshObject result = null;
+            int partsId = 0;
+
+            foreach (var g in glyphs)
+            {
+                var one = Profile2DExtrudeMeshGenerator.Generate(g.Loops, _textP.MeshName, gp);
+                if (one == null || one.VertexCount == 0) continue;
+
+                Poly_Ling.Ops.PartsIdOps.SetPartsId(one, partsId);
+                partsId++;
+
+                if (result == null) result = one;
+                else Poly_Ling.Ops.MeshObjectAppendOps.Append(result, one, copyNormals: true);
+            }
+
+            return result;
         }
     }
 }

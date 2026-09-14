@@ -35,8 +35,9 @@ namespace Poly_Ling.Ops
         /// <param name="meshObject">対象メッシュ</param>
         /// <param name="targetVertices">マージ対象の頂点インデックス</param>
         /// <param name="threshold">距離しきい値</param>
+        /// <param name="removeClosedFaces">true のとき、結合後に閉じた面ペア（逆巻きの重なり面）を削除する</param>
         /// <returns>マージ結果</returns>
-        public static MergeResult MergeVerticesAtSamePosition(MeshObject meshObject, HashSet<int> targetVertices, float threshold = 0.001f)
+        public static MergeResult MergeVerticesAtSamePosition(MeshObject meshObject, HashSet<int> targetVertices, float threshold = 0.001f, bool removeClosedFaces = false)
         {
             var result = new MergeResult { Success = false };
 
@@ -113,10 +114,12 @@ namespace Poly_Ling.Ops
             // 頂点リマップを構築
             var vertexRemap = new Dictionary<int, int>();
             var verticesToRemove = new HashSet<int>();
+            var mergedRepresentatives = new HashSet<int>();
 
             foreach (var group in mergeGroups)
             {
                 int representative = group.Min();
+                mergedRepresentatives.Add(representative);
 
                 // 重心を計算
                 Vector3 centroid = Vector3.zero;
@@ -149,6 +152,12 @@ namespace Poly_Ling.Ops
             // figure-8型自己交差面を分割してから縮退面を削除
             SplitSelfIntersectingFaces(meshObject);
             RemoveDegenerateFaces(meshObject);
+
+            // 閉じた面ペア（逆巻きの重なり面）を削除。
+            // 結合に関与した頂点（各グループの代表）を含む面だけを見る。
+            // 索引は RemoveVertices の前なので代表索引がそのまま通じる。
+            if (removeClosedFaces)
+                RemoveClosedFacePairs(meshObject, mergedRepresentatives);
 
             // 不要頂点を削除
             if (verticesToRemove.Count > 0)
@@ -555,6 +564,105 @@ namespace Poly_Ling.Ops
                 Debug.Log($"[MeshMergeHelper] Removed {toRemove.Count} degenerate faces");
 
             return toRemove.Count;
+        }
+
+        // ================================================================
+        // 閉じた面ペアの削除
+        // ================================================================
+
+        /// <summary>
+        /// 閉じた面ペア（頂点索引の並びが一致し、巻き順だけが逆の面 2 枚）を両方削除する。
+        ///
+        /// 面の表裏は巻き順だけで決まる（NormalHelper.CalculateFaceNormal）。
+        /// 並びの回転ずれ（[0,1,2,3] と [2,3,0,1] など）は吸収する。
+        /// 巻き順が同じ完全重複面は対象にしない。
+        /// 同じ組み合わせが 3 枚以上あるときは、組にできる分だけ削除して余りは残す。
+        /// </summary>
+        /// <param name="meshObject">対象メッシュ</param>
+        /// <param name="touchedVertices">
+        /// この頂点索引を 1 つ以上含む面だけを見る。結合に関与した頂点を渡すこと。
+        /// null なら全面を見る。対になる 2 面は頂点集合が同じなので、片方が含めば両方含む。
+        /// </param>
+        /// <returns>削除した面の数</returns>
+        public static int RemoveClosedFacePairs(MeshObject meshObject, HashSet<int> touchedVertices)
+        {
+            if (meshObject == null || meshObject.FaceCount < 2) return 0;
+
+            // 正規化キー → まだ相方が見つかっていない面の索引
+            var pending  = new Dictionary<string, List<int>>();
+            var toRemove = new HashSet<int>();
+
+            for (int i = 0; i < meshObject.FaceCount; i++)
+            {
+                var verts = meshObject.Faces[i].VertexIndices;
+                if (verts == null || verts.Count < 3) continue;
+                if (touchedVertices != null && !ContainsAny(verts, touchedVertices)) continue;
+
+                // 先に来ている面のうち、この面の逆巻きと一致するものがあれば組にする
+                string reversedKey = BuildFaceCycleKey(verts, true);
+                if (pending.TryGetValue(reversedKey, out var waiting) && waiting.Count > 0)
+                {
+                    int partner = waiting[waiting.Count - 1];
+                    waiting.RemoveAt(waiting.Count - 1);
+                    toRemove.Add(partner);
+                    toRemove.Add(i);
+                    continue;
+                }
+
+                string key = BuildFaceCycleKey(verts, false);
+                if (!pending.TryGetValue(key, out var list))
+                {
+                    list = new List<int>();
+                    pending[key] = list;
+                }
+                list.Add(i);
+            }
+
+            if (toRemove.Count == 0) return 0;
+
+            for (int i = meshObject.FaceCount - 1; i >= 0; i--)
+            {
+                if (toRemove.Contains(i))
+                    meshObject.Faces.RemoveAt(i);
+            }
+
+            Debug.Log($"[MeshMergeHelper] Removed {toRemove.Count} closed faces");
+            return toRemove.Count;
+        }
+
+        /// <summary>
+        /// 面の頂点索引列が、指定した集合の要素を 1 つでも含むか。
+        /// </summary>
+        private static bool ContainsAny(List<int> verts, HashSet<int> set)
+        {
+            for (int i = 0; i < verts.Count; i++)
+                if (set.Contains(verts[i])) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 面の頂点索引列を、巻き順を保ったまま最小索引が先頭に来るよう回転した文字列にする。
+        /// reversed が true のときは列を反転してから回転する（逆巻き照合用）。
+        /// </summary>
+        private static string BuildFaceCycleKey(List<int> verts, bool reversed)
+        {
+            int n = verts.Count;
+            var seq = new int[n];
+            for (int i = 0; i < n; i++)
+                seq[i] = reversed ? verts[n - 1 - i] : verts[i];
+
+            int start = 0;
+            for (int i = 1; i < n; i++)
+                if (seq[i] < seq[start]) start = i;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append(n).Append(':');
+            for (int i = 0; i < n; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(seq[(start + i) % n]);
+            }
+            return sb.ToString();
         }
 
         // ================================================================

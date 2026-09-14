@@ -100,6 +100,35 @@ namespace Poly_Ling.Serialization
         /// <summary>折りたたみ状態（MQO互換）</summary>
         public bool isFolding = false;
 
+        // ================================================================
+        // 協働編集（安定オブジェクトID と 担当者名）
+        //
+        // 【なぜ DTO に要るか】
+        //   CsvMeshSerializer は書き出しの前に MeshContext を
+        //   MeshDTO 経由で往復させる（CsvMeshSerializer.cs の注記）。
+        //   ここに欄が無いと往復で 0 に落ち、objectId 行は常に 0 になる。
+        //   .mfproj も MeshDTO をそのまま直列化するので同じく落ちる。
+        //   ObjectGroup の参照は ObjectId なので、落ちると保存を跨いだ
+        //   作り直しが必ず失敗する。
+        // ================================================================
+
+        /// <summary>
+        /// 位置非依存の安定オブジェクトID（MeshContext.ObjectId）。
+        /// 0 = 未割当。読み込み側は ObjectIdAllocator が追い越し・重複解決を行う。
+        /// </summary>
+        public ulong objectId = 0;
+
+        /// <summary>現在の編集者名（MeshContext.EditorName）。空 = 担当者なし。</summary>
+        public string editorName = "";
+
+        /// <summary>
+        /// 作業軸の値（MeshContext.WorkAxis）。
+        /// type == MeshType.WorkAxis のオブジェクトだけが持つ。それ以外は null。
+        /// この欄が無い旧データでは null になり、作業軸オブジェクトは作られない
+        /// （旧データの作業軸は ModelDTO.workAxis から移行する）。
+        /// </summary>
+        public WorkAxisDTO workAxis = null;
+
         /// <summary>
         /// 頂点が三角形化済みか（PMX形式）
         /// true: 各頂点が1つのUV/法線を持ち、すべての面が三角形 (PMX互換)
@@ -530,6 +559,15 @@ namespace Poly_Ling.Serialization
         public bool   isVisible  = true;
         public bool   isLocked   = false;
         public bool   isFolding  = false;
+        /// <summary>安定オブジェクトID（MeshContext.ObjectId）。0 = 未割当。</summary>
+        public ulong  objectId   = 0;
+        /// <summary>編集者名（MeshContext.EditorName）。空 = 担当者なし。</summary>
+        public string editorName = "";
+        /// <summary>
+        /// 作業軸の値（MeshContext.WorkAxis）。type が WorkAxis のときだけ入る。
+        /// 無い旧データでは null。
+        /// </summary>
+        public WorkAxisDTO workAxis = null;
         public int    depth      = 0;
         public int    parentIndex = -1;
         public int    hierarchyParentIndex = -1;

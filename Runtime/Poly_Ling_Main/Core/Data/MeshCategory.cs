@@ -38,6 +38,9 @@ namespace Poly_Ling.Data
         /// <summary>グループのみ (MeshType.Group)</summary>
         Group,
 
+        /// <summary>作業軸のみ (MeshType.WorkAxis)</summary>
+        WorkAxis,
+
         /// <summary>全てのオブジェクト</summary>
         All
     }

@@ -64,6 +64,43 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 名前か Humanoid の割当からボーンを 1 本引く。モデルは変えない。
+    ///
+    /// 【何のためにあるか】
+    ///   鎖や装飾の取り付け先は「腰」「頭」のようなボーンで決まるが、
+    ///   その索引とワールド座標はモデルを読んで割り当てるまで決まらない。
+    ///   手本に索引を焼くと別のモデルで壊れる。ここが名前から引き直す。
+    ///
+    /// 【名前を先に見る理由】
+    ///   PMX の Humanoid 自動割当は Hips に「センター」を当てることがある。
+    ///   センターは腰とは限らず、モデルによって膝や足元の高さにある。
+    ///   スカートの取り付け先としては「下半身」の方が確実なので、
+    ///   名前での一致を先に試し、無いときだけ Humanoid の割当へ落とす
+    ///   （PlayerSpringBoneTestSubPanel.cs:963-967 と同じ判断）。
+    /// </summary>
+    [PLCommand(Description = "名前か Humanoid の割当からボーンを 1 本引き、索引・名前・ワールド座標を返す。名前を先に試し、無ければ Humanoid の割当へ落とす。モデルは変えない。")]
+    [PLResult("found",         PLResultKind.Flag,        Description = "引けたか")]
+    [PLResult("boneIndex",     PLResultKind.Integer,     Description = "ボーンの masterIndex。引けなかったときは -1")]
+    [PLResult("boneName",      PLResultKind.Text,        Description = "ボーンの名前")]
+    [PLResult("matchedBy",     PLResultKind.Text,        Description = "どちらで引けたか。name か humanoid")]
+    [PLResult("worldPosition", PLResultKind.NumberArray, Description = "ボーンのワールド座標。x,y,z の 3 つ", Optional = true)]
+    public class QueryBoneCommand : PanelCommand
+    {
+        [PLParam(Description = "先に試すボーンの名前。並べた順に完全一致で探す")]
+        public string[] Names { get; }
+
+        [PLParam(Description = "名前で見つからなかったときに引く Humanoid のボーン名（Hips / Head など）")]
+        public string HumanoidBone { get; }
+
+        public QueryBoneCommand(int modelIndex, string[] names = null, string humanoidBone = "")
+            : base(modelIndex)
+        {
+            Names        = names ?? new string[0];
+            HumanoidBone = humanoidBone ?? "";
+        }
+    }
+
+    /// <summary>
     /// モデルの構成を数え、描画オブジェクトの索引・安定 ID・名前の対応を
     /// 結果辞書へ書く。モデルは変えない。
     /// </summary>
@@ -99,6 +136,9 @@ namespace Poly_Ling.Data
     [PLResult("entry",  PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("groups", PLResultKind.Integer, Description = "グループの数")]
     [PLResult("stale",  PLResultKind.Integer, Description = "要更新のグループの数")]
+    [PLResult("names",      PLResultKind.TextArray,    Description = "グループの名前。rebuildObjectGroup や saveScenarioFromGroup へ渡す", Optional = true)]
+    [PLResult("actions",    PLResultKind.TextArray,    Description = "各グループの先頭の段のコマンド名。names と同じ並び", Optional = true)]
+    [PLResult("staleFlags", PLResultKind.IntegerArray, Description = "各グループが要更新か。1 = 要更新。names と同じ並び", Optional = true)]
     public class QueryObjectGroupsCommand : PanelCommand
     {
         [PLParam(TextKey = "QueryResultName",

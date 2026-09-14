@@ -170,6 +170,102 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
+        // 参照段
+        // ================================================================
+
+        /// <summary>参照を辿る深さの上限。これを超えたら組み方を疑う。</summary>
+        public const int MaxRefDepth = 8;
+
+        /// <summary>平たくした段 1 つ。どの手本の何段目から来たかを添える。</summary>
+        public sealed class FlatStep
+        {
+            /// <summary>この段が載っている手本の名前。</summary>
+            public string ScenarioName;
+
+            /// <summary>参照の深さ。0 = 起点の手本。</summary>
+            public int Depth;
+
+            /// <summary>段そのもの（複製）。</summary>
+            public ObjectGroupStep Step;
+        }
+
+        private static ObjectGroup FindIn(List<ObjectGroup> items, string name)
+        {
+            if (items == null || string.IsNullOrEmpty(name)) return null;
+            for (int i = 0; i < items.Count; i++)
+                if (items[i] != null && string.Equals(items[i].Name, name, StringComparison.Ordinal))
+                    return items[i];
+            return null;
+        }
+
+        /// <summary>今たどっている経路に同じ名前があるか。</summary>
+        private static bool Contains(List<string> path, string name)
+        {
+            for (int i = 0; i < path.Count; i++)
+                if (string.Equals(path[i], name, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 参照段を辿って平たい段の列にする。参照段そのものは列に入れず、
+        /// 参照先の段に置き換える。
+        /// </summary>
+        public static bool TryFlatten(string name, out List<FlatStep> steps, out string error)
+        {
+            steps = new List<FlatStep>();
+            error = null;
+
+            EnsureLoaded();
+
+            var root = FindInternal(name);
+            if (root == null) { error = $"手本がありません: {name}"; return false; }
+
+            return Walk(_items, name, 0, new List<string>(), steps, out error);
+        }
+
+        private static bool Walk(
+            List<ObjectGroup> items, string name, int depth,
+            List<string> path, List<FlatStep> into, out string error)
+        {
+            error = null;
+
+            if (depth > MaxRefDepth)
+            { error = $"参照が {MaxRefDepth} 段より深くなりました: {string.Join(" → ", path)} → {name}"; return false; }
+
+            if (Contains(path, name))
+            { error = $"参照が循環しています: {string.Join(" → ", path)} → {name}"; return false; }
+
+            var g = FindIn(items, name);
+            if (g == null)
+            { error = $"参照先の手本がありません: {name}"; return false; }
+
+            path.Add(name);
+            try
+            {
+                if (g.Steps == null) return true;
+
+                foreach (var step in g.Steps)
+                {
+                    if (step == null) continue;
+
+                    if (step.IsScenarioRef)
+                    {
+                        if (!Walk(items, step.RefName, depth + 1, path, into, out error)) return false;
+                        continue;
+                    }
+
+                    into.Add(new FlatStep { ScenarioName = name, Depth = depth, Step = step.Clone() });
+                }
+            }
+            finally
+            {
+                path.RemoveAt(path.Count - 1);
+            }
+
+            return true;
+        }
+
+        // ================================================================
         // 登録・削除
         // ================================================================
 
@@ -185,7 +281,18 @@ namespace Poly_Ling.Data
 
             if (group == null)                     { error = "手本がありません";       return false; }
             if (string.IsNullOrEmpty(group.Name))  { error = "手本の名前が空です";     return false; }
-            if (!group.IsValid)                    { error = "実行する段に action が入っていません"; return false; }
+
+            // ObjectGroup.IsValid は「段が 1 つ以上ある」ことも要求するが、
+            // 手本は段 0 本から組み始める。ここでは各段の中身だけを見る。
+            if (group.Steps != null)
+            {
+                for (int i = 0; i < group.Steps.Count; i++)
+                {
+                    var step = group.Steps[i];
+                    if (step == null)  { error = $"段 {i} がありません"; return false; }
+                    if (!step.IsValid) { error = $"段 {i}（{step.ElementId}）は実行する段なのに action が空です"; return false; }
+                }
+            }
 
             EnsureLoaded();
             lock (_lock)
@@ -197,36 +304,74 @@ namespace Poly_Ling.Data
                 for (int i = 0; i < _items.Count; i++)
                     if (string.Equals(_items[i].Name, copy.Name, StringComparison.Ordinal)) { at = i; break; }
 
-                if (at >= 0)
-                {
-                    if (!overwrite) { error = $"同じ名前の手本が既にあります: {copy.Name}"; return false; }
-                    _items[at] = copy;
-                }
-                else
-                {
-                    _items.Add(copy);
-                }
+                if (at >= 0 && !overwrite)
+                { error = $"同じ名前の手本が既にあります: {copy.Name}"; return false; }
+
+                // 参照先の不在と循環は、入れる前に見る。入れてしまうと
+                // TryFlatten が回らなくなり、直す口も参照で詰まる。
+                var probe = new List<ObjectGroup>(_items);
+                if (at >= 0) probe[at] = copy;
+                else         probe.Add(copy);
+
+                var drain = new List<FlatStep>();
+                if (!Walk(probe, copy.Name, 0, new List<string>(), drain, out error)) return false;
+
+                if (at >= 0) _items[at] = copy;
+                else         _items.Add(copy);
 
                 WriteFile(_items);
             }
             return true;
         }
 
-        /// <summary>手本を消す。消したらファイルへ書く。</summary>
-        public static bool Remove(string name)
+        /// <summary>
+        /// 手本を消す。消したらファイルへ書く。
+        /// 他の手本から参照されているものは消さない。消すと参照が宙に浮き、
+        /// 参照している側を直そうとしても登録の検査で止まる。
+        /// </summary>
+        /// <param name="error">消さなかった理由。消したときは null。</param>
+        public static bool Remove(string name, out string error)
         {
+            error = null;
+
             EnsureLoaded();
             lock (_lock)
             {
                 for (int i = 0; i < _items.Count; i++)
                 {
                     if (!string.Equals(_items[i].Name, name, StringComparison.Ordinal)) continue;
+
+                    string user = FirstReferrer(name);
+                    if (user != null)
+                    {
+                        error = $"{name} は {user} から参照されているので消せません";
+                        return false;
+                    }
+
                     _items.RemoveAt(i);
                     WriteFile(_items);
                     return true;
                 }
             }
+
+            error = $"手本がありません: {name}";
             return false;
+        }
+
+        /// <summary>この手本を参照している手本の名前。無ければ null。</summary>
+        private static string FirstReferrer(string name)
+        {
+            foreach (var g in _items)
+            {
+                if (g == null || g.Steps == null) continue;
+                if (string.Equals(g.Name, name, StringComparison.Ordinal)) continue;
+
+                foreach (var step in g.Steps)
+                    if (step != null && step.IsScenarioRef
+                        && string.Equals(step.RefName, name, StringComparison.Ordinal))
+                        return g.Name;
+            }
+            return null;
         }
     }
 }

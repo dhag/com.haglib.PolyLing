@@ -670,7 +670,23 @@ namespace Poly_Ling.Player
 
                 // ── 作業軸
                 //
-                // 作業軸はモデルに属さないので model の有無を条件にしない。
+                // 作業軸オブジェクトはモデルの中に入るが、頂点・選択は書き換えない。
+                case CreateWorkAxisObjectCommand c:
+                {
+                    if (OnCreateWorkAxisObject == null) { Fail("work axis create handler not wired"); return true; }
+                    string cwaReason = OnCreateWorkAxisObject.Invoke(c);
+                    if (cwaReason != null) { Fail(cwaReason); return true; }
+                    return true;
+                }
+
+                case SetActiveWorkAxisCommand c:
+                {
+                    if (OnSetActiveWorkAxis == null) { Fail("work axis active handler not wired"); return true; }
+                    string sawReason = OnSetActiveWorkAxis.Invoke(c);
+                    if (sawReason != null) { Fail(sawReason); return true; }
+                    return true;
+                }
+
                 case SetWorkAxisCommand c:
                 {
                     if (OnSetWorkAxis == null) { Fail("work axis handler not wired"); return true; }

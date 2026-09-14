@@ -35,6 +35,7 @@ namespace Poly_Ling.Player
 
         public float Threshold   { get => _tool.Threshold;   set => _tool.Threshold   = value; }
         public bool  ShowPreview { get => _tool.ShowPreview; set => _tool.ShowPreview = value; }
+        public bool  RemoveClosedFaces { get => _tool.RemoveClosedFaces; set => _tool.RemoveClosedFaces = value; }
         public MergePreviewInfo PreviewInfo => _tool.PreviewInfo;
 
         /// <summary>
@@ -157,9 +158,11 @@ namespace Poly_Ling.Player
             }
 
             float savedThreshold = Threshold;
+            bool  savedClosed    = RemoveClosedFaces;
             try
             {
-                Threshold = cmd.Threshold;
+                Threshold         = cmd.Threshold;
+                RemoveClosedFaces = cmd.RemoveClosedFaces;
 
                 if (cmd.Mode == Poly_Ling.Data.MergeVerticesCommand.MergeMode.Centroid)
                     TriggerMergeToCentroidNow();
@@ -168,7 +171,8 @@ namespace Poly_Ling.Player
             }
             finally
             {
-                Threshold = savedThreshold;
+                Threshold         = savedThreshold;
+                RemoveClosedFaces = savedClosed;
             }
 
             return true;

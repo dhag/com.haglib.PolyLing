@@ -17,7 +17,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>選択メッシュに投影UV展開を適用する</summary>
-    [PLCommand(Description = "選択メッシュに投影UV展開を適用する</summary>")]
+    [PLCommand(Description = "選択したメッシュへ投影による UV 展開を入れる。")]
     public class ApplyUvUnwrapCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices",
@@ -56,7 +56,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>UV→XYZ展開メッシュを新規生成してリストに追加する</summary>
-    [PLCommand(Description = "UV→XYZ展開メッシュを新規生成してリストに追加する</summary>")]
+    [PLCommand(Description = "UV を XYZ に展開したメッシュを新しく作り、一覧へ足す。")]
     public class UvToXyzCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex",
@@ -94,7 +94,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ソースメッシュのXYZ座標をターゲットメッシュのUVに書き戻す</summary>
-    [PLCommand(Description = "ソースメッシュのXYZ座標をターゲットメッシュのUVに書き戻す</summary>")]
+    [PLCommand(Description = "元メッシュの XYZ 座標を、対象メッシュの UV へ書き戻す。")]
     public class XyzToUvCommand : PanelCommand
     {
         [PLParam(TextKey = "XyzToUvSourceMasterIndex",
@@ -218,14 +218,14 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>マテリアルスロットを末尾に追加する</summary>
-    [PLCommand(Description = "マテリアルスロットを末尾に追加する</summary>")]
+    [PLCommand(Description = "マテリアルの枠を末尾へ足す。")]
     public class AddMaterialSlotCommand : PanelCommand
     {
         public AddMaterialSlotCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>指定インデックスのマテリアルスロットを削除する</summary>
-    [PLCommand(Description = "指定インデックスのマテリアルスロットを削除する</summary>")]
+    [PLCommand(Description = "指定した番号のマテリアルの枠を消す。")]
     public class RemoveMaterialSlotCommand : PanelCommand
     {
         [PLParam(TextKey = "RemoveMaterialSlotIndex",
@@ -236,7 +236,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択面に指定マテリアルスロットを適用する</summary>
-    [PLCommand(Description = "選択面に指定マテリアルスロットを適用する</summary>")]
+    [PLCommand(Description = "選択した面へ、指定したマテリアルの枠を割り当てる。")]
     public class ApplyMaterialToFacesCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>

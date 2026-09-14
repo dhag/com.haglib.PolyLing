@@ -12,11 +12,21 @@
 //   - Polygon 生成時の material (Material) を materialIndex (int) に追随。
 // 詳細は同フォルダの LICENSE.txt を参照。
 //
-// 【Plane の法線を正規化していない点について】
-// Plane(a,b,c) は Vector3.Cross(b-a, c-a) をそのまま法線に使う（元コードのまま）。
-// このため SplitPolygon 内の t は三角形の面積に比例した量になり、
-// CSG.epsilon の実効的な許容量は三角形の大きさに依存する。
-// 挙動を変えないためここは元のままとし、BooleanOps 側で epsilon を可変にしている。
+// 【Plane の法線を正規化する（元コードからの変更）】
+// 元コードは Vector3.Cross(b-a, c-a) をそのまま法線に使っていた。
+// その場合 SplitPolygon 内の t は「平面からの距離 × 三角形の面積の 2 倍」になり、
+// CSG.epsilon の実効的な許容量が三角形の大きさに依存する。
+//
+// 実測（球 738 頂点 − 円柱 170 頂点、差）:
+//   正規化前 epsilon 1e-5 … 2920 面 / 境界 32（96 面が落ちる）
+//   正規化後 epsilon 1e-5 … 3016 面 / 境界 23（落ちない）
+// 大きめの epsilon を指定したときに面が落ちる問題は、これで解消した。
+//
+// ただし epsilon 1e-6 での結果は正規化の前後で変わらない。
+// そこで残る三角形 8 枚の脱落は同一平面の誤判定ではなく、別の原因による。
+// epsilon を 1e-9 まで下げても、法線を正規化しても、同じ 8 枚が落ちる。
+//
+// w の意味は「原点から平面までの距離」に変わる。平方根のぶん僅かに遅くなる。
 
 using UnityEngine;
 using System.Collections.Generic;
@@ -49,7 +59,8 @@ namespace Poly_Ling.CSG
 
         public Plane(Vector3 a, Vector3 b, Vector3 c)
         {
-            normal = Vector3.Cross(b - a, c - a);//.normalized;
+            // 正規化する理由はファイル冒頭の注記を参照。
+            normal = Vector3.Cross(b - a, c - a).normalized;
             w = Vector3.Dot(normal, a);
         }
 

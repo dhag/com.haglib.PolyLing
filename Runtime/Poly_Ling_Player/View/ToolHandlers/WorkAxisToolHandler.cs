@@ -55,6 +55,12 @@ namespace Poly_Ling.Player
         /// <summary>操作対象の作業軸。null なら何もしない。</summary>
         public Func<WorkAxisContext> GetWorkAxis;
 
+        /// <summary>
+        /// 対象モデル。非アクティブな作業軸オブジェクトを減光して添えるために読む。
+        /// null なら添えない（アクティブな 1 本だけ描く）。
+        /// </summary>
+        public Func<Poly_Ling.Context.ModelContext> GetModel;
+
         /// <summary>ドラッグで値が変わったときに呼ぶ。UI 書き戻しとギズモ再描画に使う。</summary>
         public Action OnValueChanged;
 
@@ -643,6 +649,48 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 非アクティブな作業軸オブジェクトの六角錐を減光して足す。
+        ///
+        /// 掴めるのはアクティブな 1 本だけなので、ハンドル（Y 先端・吸着候補）は
+        /// 出さない。非表示（MeshContext.IsVisible = false）の軸は描かない。
+        /// </summary>
+        private PlayerViewportPanel.ScreenPolyline[] AppendOtherAxes(
+            PlayerViewportPanel.ScreenPolyline[] body, WorkAxisContext active, ToolContext ctx)
+        {
+            var model = GetModel?.Invoke();
+            if (model?.MeshContextList == null) return body;
+
+            System.Collections.Generic.List<PlayerViewportPanel.ScreenPolyline> extra = null;
+
+            for (int i = 0; i < model.MeshContextList.Count; i++)
+            {
+                var mc = model.MeshContextList[i];
+                if (mc == null || !mc.IsWorkAxis) continue;
+                if (ReferenceEquals(mc.WorkAxis, active)) continue;
+                if (!mc.IsVisible) continue;
+
+                var lines = WorkAxisGizmoShape.Build(
+                    mc.WorkAxis, ctx, AxisGizmo.AxisType.None, false, null, null, false);
+                if (lines == null || lines.Length == 0) continue;
+
+                extra ??= new System.Collections.Generic.List<PlayerViewportPanel.ScreenPolyline>();
+                for (int k = 0; k < lines.Length; k++)
+                {
+                    var pl = lines[k];
+                    pl.Color = new Color(pl.Color.r, pl.Color.g, pl.Color.b, pl.Color.a * DimmedAxisAlpha);
+                    extra.Add(pl);
+                }
+            }
+
+            if (extra == null) return body;
+            if (body != null) extra.AddRange(body);
+            return extra.ToArray();
+        }
+
+        /// <summary>非アクティブな作業軸の減光率。</summary>
+        private const float DimmedAxisAlpha = 0.35f;
+
+        /// <summary>
         /// 六角錐ワイヤ（＋ Y 先端ハンドル、吸着候補）を組み立てる。
         /// ExtraLines は軸／リングの描画分岐より前に無条件で描かれるため、
         /// 移動モードでも回転モードでも同じものを渡してよい。
@@ -659,6 +707,10 @@ namespace Poly_Ling.Player
             // 作業軸ツールでは Y 先端ハンドルを掴めるので表示する。
             var body = WorkAxisGizmoShape.Build(
                 wa, ctx, shownAxis, tipHi, _tipDragWorld, _snapTarget, true);
+
+            // アクティブでない作業軸オブジェクトも減光して添える。
+            // 掴めるのはアクティブな 1 本だけなので、ハンドル類は出さない。
+            body = AppendOtherAxes(body, wa, ctx);
 
             // ロールハンドルは移動モードのみ。X/Z の向きだけを回す。
             if (Mode != WorkAxisGizmoMode.Move) return body;

@@ -241,13 +241,17 @@ namespace Poly_Ling.Player
             _rotateSubPanel = new PlayerRotateSubPanel { GetH = () => _rotateHandler };
             _rotateSubPanel.Build(_layoutRoot.RotateSection);
 
-            // 作業用ローカル軸。ModelContext.WorkAxis だけを読み書きし、頂点には触れない。
+            // 作業用ローカル軸。作業軸オブジェクト（MeshType.WorkAxis）の値だけを
+            // 読み書きし、頂点には触れない。どの 1 本を使うかは
+            // ModelContext.ResolveWorkAxisObject が決める。
             _workAxisHandler = new WorkAxisToolHandler
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
                 GetWorkAxis    = () => CurrentWorkAxis(),
+                // 非アクティブな作業軸を減光して添えるために読む。
+                GetModel       = () => ActiveProject?.CurrentModel,
                 SendCommand    = DispatchPanelCommand,
                 GetModelIndex  = () => ActiveProject?.CurrentModelIndex ?? 0,
                 // 原点 / Y 先端ハンドルの吸着先。頂点は GPU 吸着ヒットテスト、
@@ -272,6 +276,8 @@ namespace Poly_Ling.Player
             _workAxisSubPanel = new PlayerWorkAxisSubPanel
             {
                 GetWorkAxis               = () => CurrentWorkAxis(),
+                // 使う軸の一覧を出すために読む。
+                GetModel                  = () => ActiveProject?.CurrentModel,
                 GetH                      = () => _workAxisHandler,
                 SendCommand               = cmd => _commandDispatcher?.Dispatch(cmd),
                 GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,
@@ -375,6 +381,7 @@ namespace Poly_Ling.Player
             _deformWorkAxisSubPanel = new PlayerWorkAxisSubPanel
             {
                 GetWorkAxis               = () => CurrentWorkAxis(),
+                GetModel                  = () => ActiveProject?.CurrentModel,
                 GetH                      = () => _workAxisHandler,
                 SendCommand               = cmd => _commandDispatcher?.Dispatch(cmd),
                 GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,

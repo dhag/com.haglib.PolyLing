@@ -181,6 +181,9 @@ namespace Poly_Ling.Player
         public Button        FrillSkirtTestBtn        { get; private set; }
         public Button        SpringSkinScenarioBtn     { get; private set; }
         public Button        SpringSkinPipeScenarioBtn     { get; private set; }
+
+        /// <summary>手本（シナリオ）の一覧と中身。段を 1 つ選んで実行する。</summary>
+        public Button        ScenarioBtn               { get; private set; }
         public Button        PipeHairTestBtn          { get; private set; }
         public Button        BarnacleTestBtn          { get; private set; }
         public Button        RevolutionTestBtn        { get; private set; }
@@ -720,6 +723,13 @@ namespace Poly_Ling.Player
 
             // 2 個並びの行は左ボタンに marginRight = 2 を付け、右ボタンには余白を付けない。
             // 単独行のボタンは flexGrow = 1 のみ。全行でこの規則にそろえること。
+
+            // 0) 手本（シナリオ）。この節の先頭に置く。
+            //    下に並ぶ検証パネルは段が C# のラムダで固定だが、こちらは
+            //    scenarios.csv から読んだ手本を並べ、段を 1 つ選んで実行する。
+            var rowSysDebug0 = new VisualElement(); rowSysDebug0.style.flexDirection = FlexDirection.Row; rowSysDebug0.style.marginBottom = 2;
+            ScenarioBtn = MakeBtn("シナリオ"); ScenarioBtn.style.flexGrow = 1;
+            rowSysDebug0.Add(ScenarioBtn); foSysDebug.Add(rowSysDebug0);
 
             // 1) ロボ組み立て（名前が長いので単独行）
             var rowSysDebug1 = new VisualElement(); rowSysDebug1.style.flexDirection = FlexDirection.Row; rowSysDebug1.style.marginBottom = 2;

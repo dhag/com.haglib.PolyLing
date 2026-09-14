@@ -20,6 +20,9 @@ namespace Poly_Ling.Tools
         /// <summary>プレビュー表示</summary>
         public bool ShowPreview = true;
 
+        /// <summary>閉じた面（おもて面同士が重なる面＝逆巻きの重なり面）を削除する</summary>
+        public bool RemoveClosedFaces = false;
+
         // ================================================================
         // IToolSettings 実装
         // ================================================================
@@ -29,7 +32,8 @@ namespace Poly_Ling.Tools
             return new MergeVerticesSettings
             {
                 Threshold = this.Threshold,
-                ShowPreview = this.ShowPreview
+                ShowPreview = this.ShowPreview,
+                RemoveClosedFaces = this.RemoveClosedFaces
             };
         }
 
@@ -39,6 +43,7 @@ namespace Poly_Ling.Tools
             {
                 Threshold = src.Threshold;
                 ShowPreview = src.ShowPreview;
+                RemoveClosedFaces = src.RemoveClosedFaces;
             }
         }
 
@@ -47,7 +52,8 @@ namespace Poly_Ling.Tools
             if (other is MergeVerticesSettings src)
             {
                 return !Mathf.Approximately(Threshold, src.Threshold) ||
-                       ShowPreview != src.ShowPreview;
+                       ShowPreview != src.ShowPreview ||
+                       RemoveClosedFaces != src.RemoveClosedFaces;
             }
             return true;
         }

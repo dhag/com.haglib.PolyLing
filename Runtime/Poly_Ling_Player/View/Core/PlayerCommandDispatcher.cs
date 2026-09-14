@@ -491,6 +491,12 @@ namespace Poly_Ling.Player
         // モデルの頂点・選択は書き換えないので Undo も所有権判定も持たない。
         // ================================================================
 
+        /// <summary>作業軸オブジェクト生成コマンドの実行。</summary>
+        public Func<CreateWorkAxisObjectCommand, string> OnCreateWorkAxisObject;
+
+        /// <summary>使う作業軸オブジェクトの切り替えコマンドの実行。</summary>
+        public Func<SetActiveWorkAxisCommand, string> OnSetActiveWorkAxis;
+
         /// <summary>作業軸の状態差し替えコマンドの実行。</summary>
         public Func<SetWorkAxisCommand, string> OnSetWorkAxis;
 
@@ -700,6 +706,10 @@ namespace Poly_Ling.Player
             // 状態で "no project" になり、UI を操作できない。
             if (DispatchUiAutomation(cmd)) return;
 
+            // 手本（シナリオ）もモデルとプロジェクトを見ない。同じ理由でここで捌く。
+            // 例外は saveScenarioFromGroup で、受け口の中で現在のモデルを見る。
+            if (DispatchScenario(cmd)) return;
+
             // 生成系（図形生成・生成メッシュ追加）と読み込み系は、プロジェクトも
             // モデルも無い状態から呼べる。
             //
@@ -737,6 +747,10 @@ namespace Poly_Ling.Player
             // 区画をそのまま移してある。型パターンは上から順に当たるので、この呼び出し順は
             // 元の switch の並びと同じにしてあり、入れ替えてはいけない。
             if (DispatchQuery(cmd, project, model))             return;
+            if (DispatchPartialImport(cmd, project, model))     return;
+            if (DispatchPmxPartialImport(cmd, project, model))  return;
+            if (DispatchTopologyQuery(cmd, project, model))     return;
+            if (DispatchBridgeByName(cmd, project, model))      return;
             if (DispatchModel(cmd, project, model))             return;
             if (DispatchEditTools(cmd, project, model))         return;
             if (DispatchMeshAttributes(cmd, project, model))    return;

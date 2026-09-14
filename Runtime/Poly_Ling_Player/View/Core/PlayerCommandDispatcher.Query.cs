@@ -62,6 +62,69 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case QueryBoneCommand c:
+                {
+                    var qbModel = project.GetModel(c.ModelIndex);
+                    if (qbModel == null) { Fail($"no model at index {c.ModelIndex}"); return true; }
+
+                    int found = -1;
+                    string matchedBy = "";
+
+                    // 名前を先に見る。理由は QueryBoneCommand の注記。
+                    if (c.Names != null)
+                    {
+                        foreach (string n in c.Names)
+                        {
+                            if (string.IsNullOrEmpty(n)) continue;
+                            for (int i = 0; i < qbModel.MeshContextCount; i++)
+                            {
+                                var mc = qbModel.GetMeshContext(i);
+                                if (mc == null || mc.Type != MeshType.Bone) continue;
+                                // 比べるのは Name。EditorName は表示用の別名で、
+                                // 空のことがある（PlayerSpringBoneTestSubPanel.cs:995 と同じ）。
+                                if (!string.Equals(mc.Name, n, StringComparison.Ordinal)) continue;
+                                found = i; matchedBy = "name"; break;
+                            }
+                            if (found >= 0) break;
+                        }
+                    }
+
+                    if (found < 0 && !string.IsNullOrEmpty(c.HumanoidBone))
+                    {
+                        var mapping = qbModel.HumanoidMapping;
+                        if (mapping != null && !mapping.IsEmpty)
+                        {
+                            int idx = mapping.Get(c.HumanoidBone);
+                            if (idx >= 0 && idx < qbModel.MeshContextCount &&
+                                qbModel.GetMeshContext(idx)?.Type == MeshType.Bone)
+                            { found = idx; matchedBy = "humanoid"; }
+                        }
+                    }
+
+                    if (found < 0)
+                    {
+                        ReportData(CommandDataJson.New()
+                            .Flag("found",     false)
+                            .Int ("boneIndex", -1)
+                            .Text("boneName",  "")
+                            .Text("matchedBy", "")
+                            .Build());
+                        return true;
+                    }
+
+                    var w = qbModel.GetMeshContext(found).WorldMatrix;
+
+                    ReportData(CommandDataJson.New()
+                        .Flag("found",         true)
+                        .Int ("boneIndex",     found)
+                        .Text("boneName",      qbModel.GetMeshContext(found).Name ?? "")
+                        .Text("matchedBy",     matchedBy)
+                        .Nums("worldPosition", new float[] { w.m03, w.m13, w.m23 })
+                        .Build(),
+                        new[] { found }, new[] { qbModel.GetMeshContext(found).ObjectId });
+                    return true;
+                }
+
                 case QuerySkinWeightSummaryCommand c:
                 {
                     if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
@@ -95,9 +158,63 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
-                case QuerySeedElementCommand c:
+                case AcquireBeltStripsCommand c:
                 {
                     if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
+                                           out var abModel, out var abMc, out string abReason))
+                    { Fail(abReason); return true; }
+
+                    // パネルが C# の中で呼んでいる 2 つを、そのままここで呼ぶ。
+                    // 取り込み（BeltAcquire）と平坦化（SplitBelts）を別の場所へ
+                    // 書き写すと、生成コマンドが受ける形と必ず食い違う。
+                    var acquired = Poly_Ling.PrimitiveMesh.BeltAcquire.Acquire(
+                        abMc, c.Method, c.CrossRows, c.SetName);
+
+                    if (!acquired.Ok || acquired.Belts == null || acquired.Belts.Count == 0)
+                    {
+                        ReportData(CommandDataJson.New()
+                            .Flag("ok",      false)
+                            .Text("message", acquired.Message ?? "")
+                            .Int ("belts",   0)
+                            .Int ("points",  0)
+                            .Build(),
+                            new[] { abMc == null ? -1 : abModel.MeshContextList.IndexOf(abMc) },
+                            new[] { abMc?.ObjectId ?? 0UL });
+                        return true;
+                    }
+
+                    CreateBeltPrimitiveCommand.SplitBelts(
+                        acquired.Belts.ToArray(),
+                        out var bLeft, out var bRight, out var bStarts,
+                        out var bClosed, out var bFlip, out var bHeight);
+
+                    var rungs = new List<int>();
+                    for (int i = 0; i < bStarts.Length; i++)
+                    {
+                        int end = (i + 1 < bStarts.Length) ? bStarts[i + 1] : (bLeft.Length / 3);
+                        rungs.Add(end - bStarts[i]);
+                    }
+
+                    ReportData(CommandDataJson.New()
+                        .Flag ("ok",              true)
+                        .Text ("message",         acquired.Message ?? "")
+                        .Int  ("belts",           bStarts.Length)
+                        .Int  ("points",          bLeft.Length / 3)
+                        .Nums ("beltLeftPoints",  bLeft)
+                        .Nums ("beltRightPoints", bRight)
+                        .Ints ("beltStarts",      bStarts)
+                        .Ints ("beltClosed",      BoolsToInts(bClosed))
+                        .Ints ("beltFlipWinding", BoolsToInts(bFlip))
+                        .Nums ("beltHeightScale", bHeight)
+                        .Ints ("rungCounts",      rungs)
+                        .Build(),
+                        new[] { abModel.MeshContextList.IndexOf(abMc) },
+                        new[] { abMc.ObjectId });
+                    return true;
+                }
+
+                case QuerySeedElementCommand c:
+                {                    if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
                                            out var qeModel, out var qeMc, out string qeReason))
                     { Fail(qeReason); return true; }
 
@@ -447,5 +564,18 @@ namespace Poly_Ling.Player
         /// <summary>結果辞書へ書き込む名前を決める。省略時は種別ごとの自動名。</summary>
         private static string ResolveResultName(PLDataStore store, string requested, string fallback)
             => string.IsNullOrEmpty(requested) ? store.GenerateUniqueName(fallback) : requested;
+
+        /// <summary>
+        /// 真偽の列を 0 / 1 の整数列にする。
+        /// PLResultKind に真偽の配列が無いため。受け側の bool[] は
+        /// "1,0" でも "true,false" でも TryParse が受ける。
+        /// </summary>
+        private static List<int> BoolsToInts(bool[] values)
+        {
+            var list = new List<int>(values?.Length ?? 0);
+            if (values == null) return list;
+            foreach (bool b in values) list.Add(b ? 1 : 0);
+            return list;
+        }
     }
 }

@@ -365,7 +365,8 @@ namespace Poly_Ling.Player
                 ActiveProject?.CurrentModelIndex ?? 0,
                 new[] { model.IndexOf(mc) },
                 mode,
-                _mergeVerticesHandler?.Threshold ?? 0.001f));
+                _mergeVerticesHandler?.Threshold ?? 0.001f,
+                _mergeVerticesHandler?.RemoveClosedFaces ?? false));
 
             _mergeVerticesSubPanel?.Refresh();
         }

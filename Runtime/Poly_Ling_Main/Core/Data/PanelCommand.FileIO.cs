@@ -473,17 +473,27 @@ namespace Poly_Ling.Data
                  Min = 0.0001)]
         public float     Threshold { get; }
 
+        /// <summary>
+        /// 閉じた面（頂点索引の並びが一致し、巻き順だけが逆の重なり面）を結合後に削除するか。
+        /// 巻き順が同じ完全重複面は対象にしない。
+        /// </summary>
+        [PLParam(TextKey = "MergeVerticesRemoveClosedFaces",
+                 Description = "閉じた面（おもて面同士が重なる面）を結合後に削除する。既定は false")]
+        public bool      RemoveClosedFaces { get; }
+
         public MergeVerticesCommand(
             int modelIndex, int[] masterIndices,
             MergeMode mode,
-            float threshold   = 0.001f,
-            ulong[] objectIds = null)
+            float threshold        = 0.001f,
+            bool removeClosedFaces = false,
+            ulong[] objectIds      = null)
             : base(modelIndex)
         {
-            MasterIndices = masterIndices ?? System.Array.Empty<int>();
-            ObjectIds     = objectIds;
-            Mode          = mode;
-            Threshold     = threshold;
+            MasterIndices     = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds         = objectIds;
+            Mode              = mode;
+            Threshold         = threshold;
+            RemoveClosedFaces = removeClosedFaces;
         }
     }
 }

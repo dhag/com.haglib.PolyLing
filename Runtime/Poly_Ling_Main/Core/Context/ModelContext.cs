@@ -568,14 +568,63 @@ namespace Poly_Ling.Context
         public WorkPlaneContext WorkPlane { get; set; }
 
         // ================================================================
-        // WorkAxisContext（作業用ローカル軸）
+        // 作業用ローカル軸（作業軸オブジェクト）
+        // ================================================================
+        //
+        // 軸値の正典は MeshType.WorkAxis のオブジェクト（MeshContext.WorkAxis）で、
+        // モデル内に何本あってもよい。ModelContext 自身は軸値を持たない。
+        // 旧データ（ModelDTO.workAxis / workaxis.csv）は読み込み時に
+        // 作業軸オブジェクト 1 個へ移す。
         // ================================================================
 
         /// <summary>
-        /// 作業用ローカル軸。回転 / 曲げの基準フレーム。Origin はワールド座標。
-        /// null にはせず常にインスタンスを持たせる（呼び出し側の null 判定を減らすため）。
+        /// アクティブな作業軸オブジェクトの安定 ID。0 は未指定。
+        /// 解決規則は ResolveWorkAxis を参照（そこが唯一の正典）。
         /// </summary>
-        public WorkAxisContext WorkAxis { get; set; } = new WorkAxisContext();
+        public ulong ActiveWorkAxisObjectId { get; set; } = 0;
+
+        /// <summary>
+        /// 使用する作業軸を 1 本に決める。
+        ///
+        /// 規則（この順で最初に見つかったもの）:
+        ///   1. ActiveWorkAxisObjectId が指す作業軸オブジェクト
+        ///   2. モデル内の先頭の作業軸オブジェクト
+        ///   3. 1 本も無ければ null
+        ///
+        /// 【選択を見ない理由】
+        ///   SelectedDrawableMeshIndices は Mesh / BakedMirror だけを入れるリストで
+        ///   （このファイルの SelectedDrawableMeshIndices の注記）、作業軸オブジェクトは
+        ///   そこへ入らない。使う軸の切り替えは SetActiveWorkAxisCommand で行う。
+        /// </summary>
+        public MeshContext ResolveWorkAxisObject()
+        {
+            var list = MeshContextList;
+            if (list == null || list.Count == 0) return null;
+
+            // 1. 記憶している ID
+            if (ActiveWorkAxisObjectId != 0)
+            {
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var mc = list[i];
+                    if (mc != null && mc.IsWorkAxis && mc.ObjectId == ActiveWorkAxisObjectId)
+                        return mc;
+                }
+            }
+
+            // 2. 先頭
+            for (int i = 0; i < list.Count; i++)
+            {
+                var mc = list[i];
+                if (mc != null && mc.IsWorkAxis) return mc;
+            }
+
+            // 3. 無し
+            return null;
+        }
+
+        /// <summary>使用する作業軸の値。作業軸オブジェクトが 1 本も無ければ null。</summary>
+        public WorkAxisContext ResolveWorkAxis() => ResolveWorkAxisObject()?.WorkAxis;
 
         // ================================================================
         // コンストラクタ

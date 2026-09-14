@@ -250,7 +250,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>MediaPipe ランドマークJSONを使ってカレントメッシュを変形した新メッシュを追加する</summary>
-    [PLCommand(Description = "MediaPipe ランドマークJSONを使ってカレントメッシュを変形した新メッシュを追加する</summary>")]
+    [PLCommand(Description = "MediaPipe のランドマーク JSON で現在のメッシュを変形し、新しいメッシュとして足す。")]
     public class MediaPipeFaceDeformCommand : PanelCommand
     {
         [PLParam(TextKey = "MediaPipeSourceMaster",

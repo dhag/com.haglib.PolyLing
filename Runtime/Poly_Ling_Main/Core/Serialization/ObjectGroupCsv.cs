@@ -19,7 +19,7 @@
 //   gc … 成功条件 1 件
 //   gt … 札 1 件
 //   gv … 由来（gv,parentName,changeSummary,createdBy）
-//   s  … ステップの頭（s,action,elementId,kind,purpose）。以降の o / a / r はこの段に付く
+//   s  … ステップの頭（s,action,elementId,kind,purpose,refName,expansionPolicy）。以降の o / a / r はこの段に付く
 //   o  … その段の出力先 ObjectId 列
 //   a  … パラメータ 1 件
 //   r  … 描画オブジェクト参照 1 件（キーと ObjectId 列）
@@ -31,7 +31,8 @@
 //   1.0 … g / a / r のみ。1 グループ 1 コマンド。
 //   1.1 … s / o を追加。ステップ列。
 //   1.2 … g に goal、s に elementId / kind / purpose、gp / gc / gt / gv を追加。
-//   足した列はすべて行の末尾なので、1.0 / 1.1 の本文もそのまま読める
+//   1.3 … s に refName / expansionPolicy を追加（Kind = ScenarioRef 用）。
+//   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 の本文もそのまま読める
 //   （Split は行末の空欄を落とすため、列数は種別ごとに下限だけ見る）。
 //
 // 【並びを固定する】
@@ -55,7 +56,7 @@ namespace Poly_Ling.Serialization
     public static class ObjectGroupCsv
     {
         /// <summary>書き出す版。</summary>
-        public const string Version = "1.2";
+        public const string Version = "1.3";
 
         // ================================================================
         // 書き
@@ -74,9 +75,15 @@ namespace Poly_Ling.Serialization
             {
                 if (g == null) continue;
 
+                // g 行の action と出力先はステップ 0 の要約。
+                // ObjectGroup.Action / OutputObjectId は Step0 を通るが、
+                // あの getter は段が無いときに空の段を作る。書き出しで対象を
+                // 書き換えてしまうので、ここでは段の有無を自分で見る。
+                var first = (g.Steps != null && g.Steps.Count > 0) ? g.Steps[0] : null;
+
                 sb.AppendLine(
-                    $"g,{Esc(g.Name ?? "")},{Esc(g.Action ?? "")}," +
-                    $"{g.OutputObjectId},{g.StashObjectId}," +
+                    $"g,{Esc(g.Name ?? "")},{Esc(first?.Action ?? "")}," +
+                    $"{(first?.FirstOutputId ?? 0UL)},{g.StashObjectId}," +
                     $"{(g.AutoUpdate ? 1 : 0)},{Esc(g.SourceDigest ?? "")},{Esc(g.Goal ?? "")}");
 
                 if (g.Preconditions != null)
@@ -105,7 +112,8 @@ namespace Poly_Ling.Serialization
 
                     sb.AppendLine(
                         $"s,{Esc(st.Action ?? "")},{Esc(st.ElementId ?? "")}," +
-                        $"{st.Kind},{Esc(st.Purpose ?? "")}");
+                        $"{st.Kind},{Esc(st.Purpose ?? "")}," +
+                        $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy}");
 
                     if (st.OutputObjectIds != null && st.OutputObjectIds.Count > 0)
                     {
@@ -159,11 +167,17 @@ namespace Poly_Ling.Serialization
                 return curStep;
             }
 
-            // ステップが 1 つも書かれていないグループ（パラメータの無い 1 ステップ）。
+            // ステップが 1 つも書かれていないグループ。
+            //
+            // version 1.0 の形（g 行に action と出力先を持ち、s 行が無い）だけを
+            // 1 段として起こす。段 0 本の手本（createScenario で作ったもの）を
+            // 読んだときに空の段が生えないよう、g 行の控えが空なら何もしない。
             void CloseGroup()
             {
                 if (cur == null) return;
-                if (cur.Steps.Count == 0) EnsureStep();
+                if (cur.Steps.Count == 0
+                    && (!string.IsNullOrEmpty(legacyAction) || legacyOutput != 0UL))
+                    EnsureStep();
                 cur.EnsureElementIds();
             }
 
@@ -227,10 +241,12 @@ namespace Poly_Ling.Serialization
                         if (cur == null) break;
                         curStep = new ObjectGroupStep
                         {
-                            Action    = cols.Length > 1 ? Unesc(cols[1]) : "",
-                            ElementId = cols.Length > 2 ? Unesc(cols[2]) : "",
-                            Kind      = ParseKind(cols, 3),
-                            Purpose   = cols.Length > 4 ? Unesc(cols[4]) : "",
+                            Action          = cols.Length > 1 ? Unesc(cols[1]) : "",
+                            ElementId       = cols.Length > 2 ? Unesc(cols[2]) : "",
+                            Kind            = ParseKind(cols, 3),
+                            Purpose         = cols.Length > 4 ? Unesc(cols[4]) : "",
+                            RefName         = cols.Length > 5 ? Unesc(cols[5]) : "",
+                            ExpansionPolicy = ParsePolicy(cols, 6),
                         };
                         cur.Steps.Add(curStep);
                         break;
@@ -288,6 +304,18 @@ namespace Poly_Ling.Serialization
             if (string.IsNullOrEmpty(s)) return ObjectGroupStepKind.Command;
             return Enum.TryParse(s, ignoreCase: true, out ObjectGroupStepKind k)
                 ? k : ObjectGroupStepKind.Command;
+        }
+
+        /// <summary>
+        /// 参照段の扱い方を読む。名前でも数字でも受ける。読めなければ Reference。
+        /// </summary>
+        private static ScenarioExpansionPolicy ParsePolicy(string[] cols, int index)
+        {
+            if (cols == null || index < 0 || index >= cols.Length) return ScenarioExpansionPolicy.Reference;
+            string s = Unesc(cols[index]);
+            if (string.IsNullOrEmpty(s)) return ScenarioExpansionPolicy.Reference;
+            return Enum.TryParse(s, ignoreCase: true, out ScenarioExpansionPolicy p)
+                ? p : ScenarioExpansionPolicy.Reference;
         }
 
         /// <summary>列を ulong として読む。読めなければ 0（＝参照なし）。</summary>

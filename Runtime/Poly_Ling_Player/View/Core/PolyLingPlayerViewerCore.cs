@@ -413,6 +413,9 @@ namespace Poly_Ling.Player
         private PlayerFrillSkirtTestSubPanel _frillSkirtTestSubPanel;
         private PlayerSpringSkinScenarioSubPanel _springSkinScenarioSubPanel;
         private PlayerSpringSkinPipeScenarioSubPanel _springSkinPipeScenarioSubPanel;
+
+        /// <summary>手本（シナリオ）の一覧と中身。段を 1 つ選んで実行する。</summary>
+        private PlayerScenarioSubPanel _scenarioSubPanel;
         private PlayerPipeHairTestSubPanel   _pipeHairTestSubPanel;
         private PlayerBarnacleTestSubPanel   _barnacleTestSubPanel;
         private PlayerRevolutionTestSubPanel _revolutionTestSubPanel;

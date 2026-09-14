@@ -307,6 +307,10 @@ namespace Poly_Ling.Data
                     case MeshType.Group:
                         _cache[MeshCategory.Group].Add(entry);
                         break;
+
+                    case MeshType.WorkAxis:
+                        _cache[MeshCategory.WorkAxis].Add(entry);
+                        break;
                 }
             }
         }

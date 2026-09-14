@@ -25,20 +25,33 @@ namespace Poly_Ling.GlyphText
         public float LineSpacing;
     }
 
+    /// <summary>1 文字分の輪郭ループ。穴判定はこの中で閉じている。</summary>
+    public struct GlyphLoops
+    {
+        /// <summary>この文字のコードポイント。</summary>
+        public int CodePoint;
+
+        /// <summary>この文字のループ群。1 本以上入っている。</summary>
+        public List<Loop> Loops;
+    }
+
     public static class TextOutlineBuilder
     {
         /// <summary>
-        /// 文字列を 2D ループ群へ変換する。
+        /// 文字列を、文字ごとに分けた 2D ループ群へ変換する。
         /// 座標は 1em = 1 単位。ベースラインは y = descent/unitsPerEm。
+        /// 字送り・行送りはここだけで計算する（Build もこれを使う）。
+        /// 輪郭を 1 本も持たない文字（空白など）は結果に入らない。
         /// </summary>
         /// <param name="missingCount">フォントに存在せず飛ばした文字数。</param>
-        public static List<Loop> Build(PlyGlyphFile font, string text, TextLayoutParams p, out int missingCount)
+        public static List<GlyphLoops> BuildPerGlyph(PlyGlyphFile font, string text, TextLayoutParams p,
+            out int missingCount)
         {
             missingCount = 0;
-            var loops = new List<Loop>();
+            var glyphs = new List<GlyphLoops>();
 
             if (font == null || string.IsNullOrEmpty(text))
-                return loops;
+                return glyphs;
 
             int segment = Mathf.Max(1, p.Segment);
             float inv = 1f / font.UnitsPerEm;
@@ -79,11 +92,28 @@ namespace Poly_Ling.GlyphText
                         continue;
                     }
 
-                    AppendGlyph(loops, glyph, font, segment, mergeEps, inv, penX, lineY);
+                    var one = new List<Loop>();
+                    AppendGlyph(one, glyph, font, segment, mergeEps, inv, penX, lineY);
+                    if (one.Count > 0)
+                        glyphs.Add(new GlyphLoops { CodePoint = cp, Loops = one });
+
                     penX += glyph.Advance * inv + p.LetterSpacing;
                 }
             }
 
+            return glyphs;
+        }
+
+        /// <summary>
+        /// 文字列を 2D ループ群へ変換する。
+        /// 座標は 1em = 1 単位。ベースラインは y = descent/unitsPerEm。
+        /// </summary>
+        /// <param name="missingCount">フォントに存在せず飛ばした文字数。</param>
+        public static List<Loop> Build(PlyGlyphFile font, string text, TextLayoutParams p, out int missingCount)
+        {
+            var loops = new List<Loop>();
+            foreach (var g in BuildPerGlyph(font, text, p, out missingCount))
+                loops.AddRange(g.Loops);
             return loops;
         }
 

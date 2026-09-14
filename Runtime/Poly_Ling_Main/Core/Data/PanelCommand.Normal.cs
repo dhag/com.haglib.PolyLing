@@ -17,7 +17,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>現在の選択を法線再計算の除外セットとして保存</summary>
-    [PLCommand(Description = "現在の選択を法線再計算の除外セットとして保存</summary>")]
+    [PLCommand(Description = "現在の選択を、法線再計算から外す頂点の集合として保存する。")]
     public class SaveNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetName",
@@ -28,7 +28,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>除外セットを現在の選択に適用（置き換え）</summary>
-    [PLCommand(Description = "除外セットを現在の選択に適用（置き換え）</summary>")]
+    [PLCommand(Description = "保存した除外セットを現在の選択へ置き換えて入れる。")]
     public class LoadNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetIndex",
@@ -39,7 +39,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>除外セットを削除</summary>
-    [PLCommand(Description = "除外セットを削除</summary>")]
+    [PLCommand(Description = "法線再計算の除外セットを消す。")]
     public class DeleteNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetIndex",
@@ -50,7 +50,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>除外セットの名前を変更</summary>
-    [PLCommand(Description = "除外セットの名前を変更</summary>")]
+    [PLCommand(Description = "法線再計算の除外セットの名前を変える。")]
     public class RenameNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetIndex",
@@ -413,7 +413,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>メッシュ選択辞書をCSVファイルへ保存</summary>
-    [PLCommand(Description = "メッシュ選択辞書をCSVファイルへ保存</summary>")]
+    [PLCommand(Description = "メッシュ選択辞書を CSV ファイルへ保存する。")]
     public class SaveMeshSelSetsCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshSelSetsSavePath",
@@ -424,7 +424,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>メッシュ選択辞書をCSVファイルから読込み、既存リストへ追加</summary>
-    [PLCommand(Description = "メッシュ選択辞書をCSVファイルから読込み、既存リストへ追加</summary>")]
+    [PLCommand(Description = "メッシュ選択辞書を CSV ファイルから読み、既存の一覧へ足す。")]
     public class LoadMeshSelSetsCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshSelSetsLoadPath",

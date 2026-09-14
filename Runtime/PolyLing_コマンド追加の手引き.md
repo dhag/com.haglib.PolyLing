@@ -1,9 +1,18 @@
-# PolyLing コマンド追加の手引き
+# PolyLing コマンド追加の参照
 
-新しい `PanelCommand` を 1 本足すときの手順と、MCP の道具一覧（JSON Schema）へ
-自動で載るための条件をまとめる。
+**まず `PolyLing_追加作業の必読.md` を読むこと。** あちらが手順書で、ここは参照。
+必読の側で足りないとき、つまり次のような場面だけ引く。
 
+- 新しい型を引数に使いたい（型の対応表を増やす）
+- 構造体や配列を引数に持たせたい
+- 道具名や引数名の決まり方を確かめたい
+- 説明文の書き方に迷った
+
+自動で道具一覧に載るための条件と、その裏側の仕組みをまとめてある。
 対象読者はこのパッケージを触る開発者。MCP 側の仕様には踏み込まない。
+
+**数字は書かない。** コマンド数や検査の結果は `queryCommandAudit` が返す。
+文書に書くと必ず古びる。
 
 ---
 
@@ -18,7 +27,9 @@
 | 3 | `Poly_Ling_Player/View/Core/PolyLingPlayerViewerCore.CreateCommands.cs` | `Execute*` の受け口と、`_commandDispatcher.OnXxx = ExecuteXxx;` の配線 |
 | 4 | `Poly_Ling_Remote/RemoteOwnership.cs` | `case` を足して所有権判定に載せる |
 | 5 | 発行側 | パネルまたはツールハンドラから `SendCommand` |
-| 6 | 検証 | 左ペイン「システムデバッグ → コマンド定義の検査」で **検査する** |
+| 6 | 検証 | `polyling_call queryCommandAudit` が全項目 0 |
+
+**この手順の要約は `PolyLing_追加作業の必読.md` にある。** ここでは裏側を説明する。
 
 **スキーマ生成器への登録は要らない。**
 `PLParamAudit.FindCommandTypes()` がアセンブリを走査して `PanelCommand` の
@@ -421,27 +432,7 @@ if (mapped > 0)
 
 ---
 
-## 10. 現状（2026-09-09 実測）
-
-| 項目 | 値 |
-|---|---|
-| 具象 `PanelCommand` | 245 |
-| 道具として出せる | 244 |
-| 出せない | 1（`AddGeneratedMesh`。外から送るものではないので正しい） |
-| `outputSchema` が付く道具 | 52 |
-| `PLParam` 未付与 | 0 |
-| `PLCommand` 未付与 | 0 |
-| action 衝突 / 引数の対応なし / 未対応の型 | いずれも 0 |
-| `PlayerCommandDispatcher` の `Fail()` | 320（2026-09-04 時点。未再計測） |
-| 同ファイルの無言 `return;` | 22（同上。成功扱い 2 + 後処理ヘルパー 20） |
-
-道具の数は `polyling_tools`（MCP）、左ペイン「システムデバッグ → コマンド定義の検査」、
-または `polyling_call queryCommandAudit` で数え直せる。
-この表を書き換えるときは実測値を使うこと。
-
----
-
-## 11. 関連ファイル
+## 10. 関連ファイル
 
 | ファイル | 役割 |
 |---|---|
@@ -454,5 +445,7 @@ if (mapped > 0)
 | `Core/Data/PLParamAudit.cs` | `PLParam` 付け忘れの検査 |
 | `Core/Data/PanelCommandFactoryAudit.cs` | 往復検査・網羅検査・まとめて回す `RunAll` |
 | `Core/Config/PLSandbox.cs` | ファイル入出力を作業フォルダの下へ閉じ込める関門 |
+
+数は載せない。`polyling_call queryCommandAudit` が実測値を返す。
 | `Poly_Ling_Player/View/Core/PlayerCommandDispatcher.cs` | コマンドの振り分け |
 | `Poly_Ling_Player/View/SubPanels/Common/PlayerCommandSchemaSubPanel.cs` | 検査と書き出しの UI |

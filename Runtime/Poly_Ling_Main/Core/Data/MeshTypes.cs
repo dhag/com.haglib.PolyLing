@@ -39,7 +39,9 @@ namespace Poly_Ling.Data
         /// <summary>ベイクされたミラーメッシュ</summary>
         BakedMirror = 7,
         /// <summary>MirrorPairのミラー側（サーフェス描画のみ、頂点・辺・ヒットテスト対象外）</summary>
-        MirrorSide = 8
+        MirrorSide = 8,
+        /// <summary>作業軸（メッシュを持たない。軸値は MeshContext.WorkAxis が持つ）</summary>
+        WorkAxis = 9
     }
 
     // ============================================================

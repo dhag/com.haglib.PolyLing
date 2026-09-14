@@ -83,6 +83,29 @@ namespace Poly_Ling.Data
 
         /// <summary>実行後に確かめること。実行しない。</summary>
         Observe = 3,
+
+        /// <summary>
+        /// 別の手本への参照。実行しない。
+        ///
+        /// 参照先は RefName、扱い方は ExpansionPolicy が持つ。
+        /// 循環は ScenarioLibrary が登録時に拒否する。
+        /// </summary>
+        ScenarioRef = 4,
+    }
+
+    /// <summary>
+    /// 参照段の扱い方。
+    ///
+    /// 方針案の inline（編集時に要素列へ展開する）は段の状態ではなく操作なので、
+    /// ここには入れない。expandScenarioRef コマンドが行う。
+    /// </summary>
+    public enum ScenarioExpansionPolicy
+    {
+        /// <summary>参照のまま扱う。参照先を直すとこちらにも効く。既定。</summary>
+        Reference = 0,
+
+        /// <summary>参照した時点の内容を写したものとして扱う。参照先の変更は効かない。</summary>
+        Snapshot = 1,
     }
 
     /// <summary>
@@ -140,6 +163,15 @@ namespace Poly_Ling.Data
         public string Purpose = "";
 
         /// <summary>
+        /// 参照先の手本の名前。Kind が ScenarioRef のときだけ使う。
+        /// それ以外の段では空。
+        /// </summary>
+        public string RefName = "";
+
+        /// <summary>参照段の扱い方。Kind が ScenarioRef のときだけ使う。</summary>
+        public ScenarioExpansionPolicy ExpansionPolicy = ScenarioExpansionPolicy.Reference;
+
+        /// <summary>
         /// 生成コマンドの action 名（PanelCommandFactory.ActionOf の結果）。
         /// 例: "createFrill" / "createPipe" / "createPlaceObject" / "applyBlend"。
         /// </summary>
@@ -175,12 +207,23 @@ namespace Poly_Ling.Data
         /// <summary>実行する段か（Kind が Command）。</summary>
         public bool IsExecutable => Kind == ObjectGroupStepKind.Command;
 
+        /// <summary>別の手本を指す段か。</summary>
+        public bool IsScenarioRef => Kind == ObjectGroupStepKind.ScenarioRef;
+
         /// <summary>
         /// 再構築に必要なものが揃っているか。
         /// 実行しない段（Note / Instruction / Observe）は action を持たないので常に真。
+        /// 参照段は参照先の名前を持っていること。
         /// </summary>
         public bool IsValid
-            => !IsExecutable || (!string.IsNullOrEmpty(Action) && Args != null);
+        {
+            get
+            {
+                if (IsExecutable) return !string.IsNullOrEmpty(Action) && Args != null;
+                if (IsScenarioRef) return !string.IsNullOrEmpty(RefName);
+                return true;
+            }
+        }
 
         /// <summary>出力先を 1 つでも持っているか。</summary>
         public bool HasOutput
@@ -289,6 +332,8 @@ namespace Poly_Ling.Data
                 ElementId       = ElementId,
                 Kind            = Kind,
                 Purpose         = Purpose,
+                RefName         = RefName,
+                ExpansionPolicy = ExpansionPolicy,
                 Action          = Action,
                 Args            = new Dictionary<string, string>(StringComparer.Ordinal),
                 MeshRefIds      = new Dictionary<string, List<ulong>>(StringComparer.Ordinal),
@@ -304,7 +349,8 @@ namespace Poly_Ling.Data
         }
 
         public override string ToString()
-            => $"ObjectGroupStep[{Kind}:{ElementId}:{Action}] out={(OutputObjectIds?.Count ?? 0)}";
+            => $"ObjectGroupStep[{Kind}:{ElementId}:{(IsScenarioRef ? RefName : Action)}] "
+             + $"out={(OutputObjectIds?.Count ?? 0)}";
     }
 
     /// <summary>入力ソース・生成パラメータ・出力先をまとめた 1 件。</summary>
@@ -730,7 +776,12 @@ namespace Poly_Ling.Data
             if (Steps != null)
                 foreach (var s in Steps)
                     if (s != null) c.Steps.Add(s.Clone());
-            if (c.Steps.Count == 0) c.AddStep(new ObjectGroupStep());
+
+            // 段の無いグループ（組み立て途中の手本）はそのまま写す。
+            // ここで空の段を足すと、ScenarioLibrary へ登録した時点で
+            // action の無い実行段が 1 つ生える。
+            // 実体付きのグループが段 0 本になることはなく、
+            // 万一なっても Step0 が要るときに作る。
             return c;
         }
 

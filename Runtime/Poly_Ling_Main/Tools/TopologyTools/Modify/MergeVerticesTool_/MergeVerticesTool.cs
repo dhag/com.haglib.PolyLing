@@ -48,6 +48,13 @@ namespace Poly_Ling.Tools
             set => _settings.ShowPreview = value;
         }
 
+        /// <summary>閉じた面（逆巻きの重なり面）を結合後に削除するか。</summary>
+        public bool RemoveClosedFaces
+        {
+            get => _settings.RemoveClosedFaces;
+            set => _settings.RemoveClosedFaces = value;
+        }
+
         // Player ビュー用公開 API
         public void TriggerMerge()
         {
@@ -165,7 +172,8 @@ namespace Poly_Ling.Tools
                 : default;
 
             // MeshMergeHelper使用
-            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.ActiveMeshObject, ctx.SelectedVertices, Threshold);
+            var result = MeshMergeHelper.MergeVerticesAtSamePosition(
+                ctx.ActiveMeshObject, ctx.SelectedVertices, Threshold, RemoveClosedFaces);
 
             if (result.Success)
             {
@@ -217,6 +225,13 @@ namespace Poly_Ling.Tools
                 Debug.LogWarning("[MergeTool] 結合に失敗しました（有効な選択頂点が 2 未満）");
                 return;
             }
+
+            // 閉じた面ペア（逆巻きの重なり面）を削除する。
+            // 結合でできた頂点を含む面だけを見る。
+            // Undo スナップショット after より前に行い、1 回の Undo で戻るようにする。
+            if (RemoveClosedFaces)
+                MeshMergeHelper.RemoveClosedFacePairs(
+                    ctx.ActiveMeshObject, new HashSet<int> { mergedVertex });
 
             // トポロジカル変更後の標準処理（削除を伴うため選択クリア）
             ctx.OnTopologyChanged();

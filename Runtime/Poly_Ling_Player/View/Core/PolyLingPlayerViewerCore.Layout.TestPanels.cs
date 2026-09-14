@@ -159,6 +159,15 @@ namespace Poly_Ling.Player
             };
             _springSkinPipeScenarioSubPanel.Build(_layoutRoot.SpringSkinPipeScenarioSection);
 
+            // 手本（シナリオ）。上の 2 つと違い、段は scenarios.csv から読んだデータで、
+            // 実行は段 1 つずつ。まとめて流す口は置かない。
+            _scenarioSubPanel = new PlayerScenarioSubPanel
+            {
+                GetProject  = () => ActiveProject,
+                SendCommand = cmd => _panelContext?.SendCommand(cmd),
+            };
+            _scenarioSubPanel.Build(_layoutRoot.ScenarioSection);
+
             // 前髪パイプ自動検証。四分球を梯子にしてパイプを生やす。
             // 開始タグ三角形・終了三角形を足して梯子の自動検出を通す経路の確認も兼ねる。
             _pipeHairTestSubPanel = new PlayerPipeHairTestSubPanel

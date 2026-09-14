@@ -35,6 +35,23 @@ namespace Poly_Ling.Data
         }
 
         // ----------------------------------------------------------------
+        // 作業軸オブジェクト
+        // ----------------------------------------------------------------
+        // Type == MeshType.WorkAxis のオブジェクトだけが軸値を持つ。
+        // 軸値（原点・回転・長さ）の正典はこの WorkAxisContext で、
+        // BoneTransform は使わない（原点はワールド座標のまま。
+        // 規約は WorkAxisContext.cs:7-10）。
+        // 表示するかどうかは MeshContext.IsVisible を使う。
+        // WorkAxisContext.IsVisible は旧データの移行でだけ読む。
+        // ----------------------------------------------------------------
+
+        /// <summary>作業軸の値。Type == MeshType.WorkAxis のときだけ非 null。</summary>
+        public WorkAxisContext WorkAxis { get; set; }
+
+        /// <summary>作業軸オブジェクトか（種別と軸値の両方がそろっている）。</summary>
+        public bool IsWorkAxis => Type == MeshType.WorkAxis && WorkAxis != null;
+
+        // ----------------------------------------------------------------
         // 親子関係について
         // ----------------------------------------------------------------
         // MQOでは「depth」値で親子関係を表現する（リスト順序に依存）。
