@@ -399,6 +399,8 @@ namespace Poly_Ling.Core
                 bool vertexVisible = isVisible && vertexVisibleByFace[v];
 
                 _positions[globalIdx] = vertex.Position;
+                DbgWriteBuild++;
+                DbgNotePositions("Build", (int)globalIdx, 1);
                 // Normalsリストの最初の要素を使用（なければゼロ）
                 _normals[globalIdx] = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
                 // UVsリストの最初の要素を使用（なければゼロ）
@@ -743,6 +745,8 @@ namespace Poly_Ling.Core
             // GPU転送前にキャッシュを必ず再構築して最新データを取得する
             meshObject.InvalidatePositionCache();
             Array.Copy(meshObject.Positions, 0, _positions, (int)baseOffset, count);
+            DbgWriteUpdBase++;
+            DbgNotePositions("UpdatePositions(mo)/Copy", (int)baseOffset, count);
 
             // GPUにアップロード
             Poly_Ling.Diagnostics.PLCamDbg.Wr("_positionBuffer", _positionBuffer, 0);
@@ -775,6 +779,9 @@ namespace Poly_Ling.Core
                 // WorkingPositions より多い頂点はベース座標のみ
                 for (int i = wCount; i < count; i++)
                     _positions[(int)baseOffset + i] = basePositions[i];
+
+                DbgWriteUpdWorking++;
+                DbgNotePositions("UpdatePositions(mc)/Working", (int)baseOffset, count);
 
                 Poly_Ling.Diagnostics.PLCamDbg.Wr("_positionBuffer", _positionBuffer, 0);
                 _positionBuffer.SetData(_positions, (int)baseOffset, (int)baseOffset, (int)meshInfo.VertexCount);
@@ -820,6 +827,8 @@ namespace Poly_Ling.Core
                         _positions[(int)baseOffset + i] = basePositions[i] + mc.WorkingPositions[i];
                     for (int i = wCount; i < count; i++)
                         _positions[(int)baseOffset + i] = basePositions[i];
+                    DbgWriteAllWorking++;
+                    DbgNotePositions("UpdateAllPositions/Working", (int)baseOffset, count);
                 }
                 else
                 {
@@ -827,6 +836,9 @@ namespace Poly_Ling.Core
                     // GPU転送前にキャッシュを必ず再構築して最新データを取得する
                     meshObject.InvalidatePositionCache();
                     Array.Copy(meshObject.Positions, 0, _positions, (int)baseOffset, count);
+                    DbgWriteAllCopy++;
+                    DbgNoteWriter(contextIdx, unifiedMeshIdx, (int)baseOffset, count, meshObject.Name);
+                    DbgNotePositions("UpdateAllPositions/Copy", (int)baseOffset, count);
                 }
             }
 

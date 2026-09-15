@@ -232,6 +232,10 @@ namespace Poly_Ling.Player
             if (model == null || axis == null) return false;
 
             float radius = UseMagnet ? MagnetRadius : 0f;
+            // 前方向は GPU の値を使う（規約 10.6）。表示姿勢の正典は ProjectContext.ShowBindPose。
+            var dctx = GetToolContext?.Invoke();
+            _applier.GetMeshWorldPositions = dctx?.GetMeshWorldPositions;
+            _applier.GetShowBindPose       = () => dctx?.ShowBindPose ?? false;
             if (!_applier.Begin(model, axis, radius, MagnetFalloff, MagnetDistanceMode))
                 return false;
 

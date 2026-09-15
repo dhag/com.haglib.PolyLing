@@ -81,7 +81,6 @@ namespace Poly_Ling.Tools
         /// 直近に受け取った ToolContext。
         /// エディタ版 DrawSettingsUI() は引数で ToolContext を受け取れないため、
         /// ボタン実行（属性選択／選択反転）用にここへ保持する。
-        /// ToolManager は _toolContext を 1 個だけ生成して使い回すので参照は安定している。
         /// Player はハンドラが毎回 ToolContext を組み立てて渡すため、この参照は使わない。
         /// </summary>
         private ToolContext _lastToolCtx;

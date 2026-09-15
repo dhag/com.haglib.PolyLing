@@ -246,9 +246,11 @@ PMX（スキンド・対象 `顔肌+`、ポーズは `頭` ボーンへ 30°）�
 （`verifyBindMove` は候補が 1 つも無ければ失敗させる）。
 
 **この試験の限界。** 見ているのは `MeshObject.Vertices` の格納値と `MeshContext.VertexMatrix`
-だけで、GPU が実際に描いた位置（`UnifiedBufferManager.GetWorldPositions`）とは突き合わせていない。
-CPU 側の規則が一貫していることまでしか言えない。**画面に出ているかは別問題で、
-実際 2026-09-15 まで出ていなかった（10.5）。数値で合否を書く前に必ずキャプチャを撮ること。**
+だけで、GPU が実際に描いた位置とは突き合わせていない。
+ただし `VertexMatrix` が GPU の規則と一致することは別途確認済み
+（PMX スキンドの全 2585 頂点で 1e-07 台。残件メモ「検証が済んだもの」）。
+**画面に出ているかは別問題で、実際 2026-09-15 まで出ていなかった（10.5）。
+数値で合否を書く前に必ずキャプチャを撮ること。**
 
 ## 10.6 前方向は GPU、逆方向だけ CPU
 
@@ -298,15 +300,29 @@ CPU で計算し直してはならない（`MeshContext.Transform.cs:436-455` �
 `PivotWorld()` と `RotateToolHandler.WorldPivot()` / `ScaleToolHandler.WorldPivot()` は
 素通しにしてある。`UseOriginPivot` は「基準メッシュのローカル原点をワールドへ直した点」。
 
-確認済み（2026-09-15・`verifyBindRotate`）：
+確認済み（2026-09-15・`verifyBindRotate`・試験回転 X 35°）：
 
-| 試験 | 対象 | bindMaxError | poseMaxError | pass |
-|---|---|---|---|---|
-| 回転 | PMX スキンド `顔肌+`（ポーズは `頭`） | 1.8e-07 | 2.6e-07 | true |
-| 回転 | MQO 非スキンド `obj63あたま_old` | 1.8e-07 | 2.0e-07 | true |
+| 試験 | 対象 | bindMaxError | bindLegacyError | poseMaxError | poseLegacyError |
+|---|---|---|---|---|---|
+| 回転 | MQO 非スキンド `obj63あたま_old` | 1.0e-07 | **0.0305** | 8.9e-08 | 8.9e-08 |
+| 回転 | PMX スキンド `顔肌+`（ポーズは `頭`） | 1.8e-07 | 1.8e-07 | 2.6e-07 | **0.0214** |
 
-修正前のスキンド・現在ポーズ表示は `poseMaxError = 0.0214`（試験回転 X 35°）だった。
-`RotateTool` が `meshContext.LocalToWorld` でメッシュ 1 個の行列を使っていたため。
+`legacyError` は「旧コード（メッシュ 1 個の `LocalToWorld` / `WorldToLocal`）なら
+こうなった値」と正解の差。**旧コードは非スキンドのバインド表示でも、
+スキンドの現在ポーズ表示でも壊れていた。** 無事だったのは残り 2 組だけ。
+
+### 10.6.4 試験の軸はポーズと交換可能にしないこと
+
+往路と復路で同じ行列を使う実装は、その行列が変形と交換可能なら打ち消し合って通る。
+ポーズが Z 回転のときに試験も Z 回転にすると、旧コードでも誤差が消えて
+`legacyError` が 0 になり、**何も測れていないのに合格に見える**。
+
+実測：MQO 非スキンド・ポーズ Z 30° に対し
+
+- 試験回転 Z 25° … `bindLegacyError = 2.3e-07` → `discriminating = false`（無意味）
+- 試験回転 X 35° … `bindLegacyError = 0.0305` → `discriminating = true`（有効）
+
+`discriminating` が false のときの `pass` は読まないこと。
 
 ## 11. 頂点を直接書いたら位置キャッシュを捨てる
 

@@ -215,6 +215,7 @@ namespace Poly_Ling.Player
             if (model == null || axis == null) return false;
 
             _applier.Reset();
+            WireApplierWorldReaders();
             if (!_applier.Begin(model, axis)) return false;
 
             if (!_deformer.FitToSelection(_applier.Context))
@@ -246,6 +247,7 @@ namespace Poly_Ling.Player
             if (model == null || axis == null) return false;
 
             _applier.Reset();
+            WireApplierWorldReaders();
             if (!_applier.Begin(model, axis))
             {
                 NotifyChanged();
@@ -307,6 +309,7 @@ namespace Poly_Ling.Player
             if (model == null || axis == null) return false;
 
             _applier.Reset();
+            WireApplierWorldReaders();
             if (!_applier.Begin(model, axis))
             {
                 NotifyChanged();
@@ -593,7 +596,19 @@ namespace Poly_Ling.Player
             }
         }
 
+        /// <summary>
+        /// DeformApplier へ GPU のワールド座標読み口と表示姿勢を挿す。
+        /// 前方向は GPU の値を使う決まり（規約 10.6）。Begin の直前に毎回呼ぶ。
+        /// </summary>
+        private void WireApplierWorldReaders()
+        {
+            var lctx = GetToolContext?.Invoke();
+            _applier.GetMeshWorldPositions = lctx?.GetMeshWorldPositions;
+            _applier.GetShowBindPose       = () => lctx?.ShowBindPose ?? false;
+        }
+
         private void NotifyChanged()
+
         {
             OnStateChanged?.Invoke();
             OnRefreshOverlay?.Invoke();

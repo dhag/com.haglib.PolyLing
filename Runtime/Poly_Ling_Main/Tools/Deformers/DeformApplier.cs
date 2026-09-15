@@ -1,15 +1,16 @@
 // Runtime/Poly_Ling_Main/Tools/Deformers/DeformApplier.cs
 // デフォーマ適用パイプライン。複数メッシュ横断で選択頂点に IMeshDeformer を適用する。
 //
-// 【座標往復】RotateTool.UpdatePreview (RotateTool.cs:341,344) と同じ経路で
-//   メッシュローカル ⇔ ワールドを往復し、さらに作業軸ローカルへ入れる。
+// 【座標往復】メッシュローカル ⇔ ワールドを往復し、さらに作業軸ローカルへ入れる。
 //
 //     メッシュローカル p
-//       → meshContext.LocalToWorld(p)
+//       → 前方向は GPU が出したワールド座標（ToolContext.GetMeshWorldPositions）
 //       → workAxis.WorldToLocal(...)      ← ここから先が作業軸ローカル
 //       → deformer.Evaluate(...)
 //       → workAxis.LocalToWorld(...)
-//       → meshContext.WorldToLocal(...)
+//       → meshContext.VertexMatrix(i, showBindPose).inverse   ← 書き戻し
+//
+//   前方向を CPU で計算し直さないこと。逆方向だけ CPU 行列を使う（規約 10.6）。
 //
 // 【絶対計算】Begin で記録した開始位置から毎回計算し直す。フレーム差分を
 //   積み上げないため、パラメータを往復させても誤差が溜まらない。
@@ -21,6 +22,7 @@
 //
 // Runtime/Poly_Ling_Main/Tools/Deformers/ に配置
 
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
@@ -42,6 +44,26 @@ namespace Poly_Ling.Tools.Deformers
         // meshContextIndex -> (vertexIndex -> 開始位置。メッシュローカル座標)
         private readonly Dictionary<int, Dictionary<int, Vector3>> _startPositions
             = new Dictionary<int, Dictionary<int, Vector3>>();
+
+        // meshContextIndex -> (vertexIndex -> 開始時の表示ワールド座標)
+        //
+        // 【なぜローカルと別に持つか】
+        //   _startPositions（ローカル）は DeformContext の元になり、
+        //   LatticeDeformer.FitToSelection など外から参照される。意味を変えられない。
+        //   前方向（ローカル→ワールド）は GPU が出した値を使う決まりなので
+        //   （規約 10.6）、ワールド版をここに別で持つ。
+        private readonly Dictionary<int, Dictionary<int, Vector3>> _startWorld
+            = new Dictionary<int, Dictionary<int, Vector3>>();
+
+        /// <summary>
+        /// 指定メッシュの全頂点について、GPU が計算したワールド座標を返す口。
+        /// 呼び出し元が ToolContext.GetMeshWorldPositions を挿す。
+        /// 未配線なら CPU の頂点単位行列に落ちる（保険。Begin の注記を参照）。
+        /// </summary>
+        public Func<int, Vector3[]> GetMeshWorldPositions { get; set; }
+
+        /// <summary>バインド表示中か。前方向・書き戻しの両方がこの値に従う。</summary>
+        public Func<bool> GetShowBindPose { get; set; }
 
         // meshContextIndex -> (vertexIndex -> 重み 0..1)。選択頂点は 1、
         // マグネット影響頂点のみ 1 未満。マグネット未使用なら空。
@@ -126,6 +148,7 @@ namespace Poly_Ling.Tools.Deformers
                 if (start.Count > 0)
                 {
                     _startPositions[meshIdx] = start;
+                    _startWorld[meshIdx]     = CaptureStartWorld(mc, meshIdx, start);
                     AffectedCount += start.Count;
                 }
             }
@@ -139,6 +162,37 @@ namespace Poly_Ling.Tools.Deformers
             _context = BuildContext();
             IsActive = true;
             return true;
+        }
+
+        /// <summary>
+        /// 【前方向は GPU の値を使う】
+        /// 開始時の表示ワールド座標を写す。参照するのは GPU が _worldPositionBuffer に
+        /// 出した値（ToolContext.GetMeshWorldPositions）。スキンド頂点に実際に適用される
+        /// 行列はメッシュの WorldMatrix ではなくボーンの SkinningMatrix のブレンドなので、
+        /// mc.LocalToWorld で代用してはならない（規約 10.6）。
+        ///
+        /// 【保険】GPU 値が取れないときだけ CPU 行列に落ちる。
+        ///   通る条件はバッファ未構築・口が未配線など、GPU 値が null の場合のみ。
+        ///   落ち先は VertexMatrix(i, showBindPose) で、描画と同じ規則・同じ表示モード。
+        ///   これは CPU 独自計算であり、本来は残すべきでないものを承知のうえで
+        ///   保険として置いている（2026-09-15・利用者の指示による）。
+        ///   新しいコードでこの分岐を真似しないこと。
+        /// </summary>
+        private Dictionary<int, Vector3> CaptureStartWorld(
+            MeshContext mc, int meshIdx, Dictionary<int, Vector3> startLocal)
+        {
+            var gpu = GetMeshWorldPositions?.Invoke(meshIdx);
+            bool showBind = GetShowBindPose?.Invoke() ?? false;
+            var map = new Dictionary<int, Vector3>(startLocal.Count);
+
+            foreach (var kv in startLocal)
+            {
+                int i = kv.Key;
+                if (gpu != null && i >= 0 && i < gpu.Length) map[i] = gpu[i];
+                // 【保険】GPU 値が無いときだけの CPU 経路。上の注記を参照。
+                else map[i] = mc.VertexMatrix(i, showBind).MultiplyPoint3x4(kv.Value);
+            }
+            return map;
         }
 
         // ================================================================
@@ -168,14 +222,20 @@ namespace Poly_Ling.Tools.Deformers
                 if (mo == null) continue;
 
                 _weights.TryGetValue(meshKv.Key, out var wmap);
+                _startWorld.TryGetValue(meshKv.Key, out var worldMap);
+                bool showBindPose = GetShowBindPose?.Invoke() ?? false;
 
                 foreach (var posKv in meshKv.Value)
                 {
                     int i = posKv.Key;
                     if (i < 0 || i >= mo.VertexCount) continue;
 
-                    // メッシュローカル → ワールド → 作業軸ローカル
-                    Vector3 world = mc.LocalToWorld(posKv.Value);
+                    // メッシュローカル → ワールド → 作業軸ローカル。
+                    // 前方向は開始時に GPU から写した表示ワールド座標を使う。
+                    // 【保険】写せていない頂点だけ CPU 行列に落ちる（CaptureStartWorld の注記）。
+                    Vector3 world = (worldMap != null && worldMap.TryGetValue(i, out var sw))
+                        ? sw
+                        : mc.VertexMatrix(i, showBindPose).MultiplyPoint3x4(posKv.Value);
                     Vector3 local = _axis.WorldToLocal(world);
 
                     float w = 1f;
@@ -199,11 +259,13 @@ namespace Poly_Ling.Tools.Deformers
                         deformed = Vector3.Lerp(local, deformer.Evaluate(local), w);
                     }
 
-                    // 作業軸ローカル → ワールド → メッシュローカル
+                    // 作業軸ローカル → ワールド → メッシュローカル。
+                    // 書き戻しだけ頂点単位の逆行列を使う（GPU 側に逆行列は無い）。
                     Vector3 outWorld = _axis.LocalToWorld(deformed);
 
                     var v = mo.Vertices[i];
-                    v.Position = mc.WorldToLocal(outWorld);
+                    v.Position = mc.VertexMatrix(i, showBindPose).inverse
+                                   .MultiplyPoint3x4(outWorld);
                     mo.Vertices[i] = v;
                 }
 
@@ -324,6 +386,7 @@ namespace Poly_Ling.Tools.Deformers
             _model = null;
             _axis  = null;
             _startPositions.Clear();
+            _startWorld.Clear();
             _weights.Clear();
             _context = default;
             AffectedCount = 0;

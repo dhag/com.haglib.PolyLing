@@ -137,8 +137,9 @@ namespace Poly_Ling.Tools
                         positions[i] = meshObject.Vertices[i].Position;
                     _originalPositions[meshIdx] = positions;
 
-                    // キャッシュ構築
-                    BuildCachesForMesh(meshIdx, meshObject);
+                    // キャッシュ構築。法線はワールドで作る（GPU のワールド座標を渡す）。
+                    BuildCachesForMesh(meshIdx, meshObject,
+                                       GetWorldPositions(ctx, meshContext, meshIdx));
                 }
 
                 ApplyBrush(ctx, mousePos);
@@ -292,12 +293,13 @@ namespace Poly_Ling.Tools
                 var meshContext = model.GetMeshContext(meshIdx);
                 if (meshContext?.MeshObject == null) continue;
 
-                // Vertices[].Position はローカル座標。ブラシ中心とレイ方向を
-                // このメッシュのローカル空間に変換してから距離判定・変形を行う。
-                Vector3 brushCenter = meshContext.WorldToLocal(brushCenterWorld);
-                Vector3 rayDirLocal = meshContext.WorldMatrixInverse.MultiplyVector(ray.direction).normalized;
+                // 当たり判定・変形ともワールド空間。書き戻しだけ頂点単位の逆行列を使う。
+                var worldPos = GetWorldPositions(ctx, meshContext, meshIdx);
+                _workMeshIdx = meshIdx;
 
-                if (ApplyStrokeToMesh(meshIdx, meshContext.MeshObject, brushCenter, rayDirLocal))
+                if (ApplyStrokeToMesh(meshIdx, meshContext.MeshObject, meshContext,
+                                      brushCenterWorld, ray.direction.normalized,
+                                      worldPos, ctx?.ShowBindPose ?? false))
                     anyAffected = true;
             }
 
@@ -323,7 +325,9 @@ namespace Poly_Ling.Tools
         /// </param>
         /// <returns>1 頂点でも範囲に入れば true。</returns>
         private bool ApplyStrokeToMesh(
-            int meshIdx, MeshObject meshObject, Vector3 brushCenter, Vector3? viewDirLocal)
+            int meshIdx, MeshObject meshObject, MeshContext meshContext,
+            Vector3 brushCenterWorld, Vector3? viewDirWorld,
+            Vector3[] worldPositions, bool showBindPose)
         {
             if (meshObject == null) return false;
 
@@ -333,29 +337,83 @@ namespace Poly_Ling.Tools
             _adjacencyCachePerMesh?.TryGetValue(meshIdx, out adjacencyCache);
             _vertexNormalsCachePerMesh?.TryGetValue(meshIdx, out vertexNormalsCache);
 
-            // ブラシ範囲内の頂点を収集
-            var affectedVertices = GetVerticesInBrushRadius(meshObject, brushCenter, adjacencyCache);
+            // ブラシ範囲内の頂点を収集（当たり判定はワールド空間）
+            var affectedVertices = GetVerticesInBrushRadius(
+                meshObject, brushCenterWorld, Vector3.zero, adjacencyCache, worldPositions);
             if (affectedVertices.Count == 0) return false;
 
-            // モードに応じて変形
+            // 変形はワールド空間で行い、結果だけ頂点単位の逆行列でローカルへ戻す。
+            // 法線キャッシュも BuildCachesForMesh がワールドで作っている。
+            var work = BuildWorkWorld(meshObject, meshContext, affectedVertices,
+                                      worldPositions, showBindPose);
+
             switch (Mode)
             {
                 case SculptMode.Draw:
-                    ApplyDraw(meshObject, affectedVertices, brushCenter, viewDirLocal, vertexNormalsCache);
+                    ApplyDraw(work, affectedVertices, viewDirWorld, vertexNormalsCache);
                     break;
                 case SculptMode.Smooth:
-                    ApplySmooth(meshObject, affectedVertices, brushCenter, adjacencyCache);
+                    ApplySmooth(work, affectedVertices, adjacencyCache);
                     break;
                 case SculptMode.Inflate:
-                    ApplyInflate(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
+                    ApplyInflate(work, affectedVertices, vertexNormalsCache);
                     break;
                 case SculptMode.Flatten:
-                    ApplyFlatten(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
+                    ApplyFlatten(work, affectedVertices, vertexNormalsCache);
                     break;
             }
 
+            WriteBackWorld(meshObject, meshContext, work, showBindPose);
             return true;
         }
+
+        /// <summary>
+        /// 【臨時の作業配列】影響頂点とその隣接について、いまの表示ワールド座標を集める。
+        /// Smooth が隣接を読むので、影響頂点だけでなく隣接も入れる。
+        /// </summary>
+        private Dictionary<int, Vector3> BuildWorkWorld(
+            MeshObject mo, MeshContext mc,
+            List<(int index, float weight)> affected,
+            Vector3[] worldPositions, bool showBindPose)
+        {
+            var work = new Dictionary<int, Vector3>(affected.Count * 2);
+            Dictionary<int, HashSet<int>> adj = null;
+            _adjacencyCachePerMesh?.TryGetValue(_workMeshIdx, out adj);
+
+            void Put(int i)
+            {
+                if (i < 0 || i >= mo.VertexCount || work.ContainsKey(i)) return;
+                work[i] = (worldPositions != null && i < worldPositions.Length)
+                    ? worldPositions[i]
+                    // 【保険】GPU 値が無いときだけの CPU 経路（GetWorldPositions の注記）。
+                    : mc.VertexMatrix(i, showBindPose).MultiplyPoint3x4(mo.Vertices[i].Position);
+            }
+
+            foreach (var (idx, _) in affected)
+            {
+                Put(idx);
+                if (adj != null && adj.TryGetValue(idx, out var ns))
+                    foreach (int n in ns) Put(n);
+            }
+            return work;
+        }
+
+        /// <summary>変形後のワールド座標を、頂点単位の逆行列でローカルへ戻して書き込む。</summary>
+        private void WriteBackWorld(
+            MeshObject mo, MeshContext mc, Dictionary<int, Vector3> work, bool showBindPose)
+        {
+            foreach (var kv in work)
+            {
+                int i = kv.Key;
+                if (i < 0 || i >= mo.VertexCount) continue;
+                mo.Vertices[i].Position =
+                    mc.VertexMatrix(i, showBindPose).inverse.MultiplyPoint3x4(kv.Value);
+            }
+            mo.InvalidatePositionCache();
+        }
+
+        /// <summary>BuildWorkWorld が隣接キャッシュを引くための現在のメッシュ索引。</summary>
+        private int _workMeshIdx = -1;
 
         /// <summary>
         /// コマンドで指定された点列にブラシを掛ける。
@@ -405,7 +463,7 @@ namespace Poly_Ling.Tools
                     positions[i] = mo.Vertices[i].Position;
                 _originalPositions[meshIdx] = positions;
 
-                BuildCachesForMesh(meshIdx, mo);
+                BuildCachesForMesh(meshIdx, mo, GetWorldPositions(ctx, mc, meshIdx));
                 targets.Add(meshIdx);
             }
             if (targets.Count == 0) return false;
@@ -425,12 +483,11 @@ namespace Poly_Ling.Tools
                     var mo = mc?.MeshObject;
                     if (mo == null) continue;
 
-                    Vector3 localCenter = mc.WorldToLocal(worldCenters[i]);
-                    Vector3? localDir = worldDir.HasValue
-                        ? mc.WorldMatrixInverse.MultiplyVector(worldDir.Value).normalized
-                        : (Vector3?)null;
+                    var worldPos = GetWorldPositions(ctx, mc, meshIdx);
+                    _workMeshIdx = meshIdx;
 
-                    if (ApplyStrokeToMesh(meshIdx, mo, localCenter, localDir))
+                    if (ApplyStrokeToMesh(meshIdx, mo, mc, worldCenters[i], worldDir,
+                                          worldPos, ctx?.ShowBindPose ?? false))
                         anyAffected = true;
                 }
             }
@@ -502,8 +559,12 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// ワールド空間のレイと全選択メッシュの交点のうち、カメラに最も近い点を
-        /// 「ワールド座標」で返す。三角形はローカル座標なので、レイをメッシュごとの
-        /// ローカル空間へ変換して交差判定し、ヒット点をワールドへ戻して比較する。
+        /// 「ワールド座標」で返す。
+        ///
+        /// 交差判定はワールド空間で行う（2026-09-15 変更）。三角形の頂点には
+        /// GPU が出したワールド座標を使う。以前はレイをメッシュ 1 個の
+        /// WorldMatrixInverse でローカルへ落としていたが、それはスキンド頂点が
+        /// 実際に受ける行列ではないので、画面で指した面とは別の場所に当たっていた。
         /// </summary>
         private Vector3 FindBrushCenter(ToolContext ctx, Ray ray)
         {
@@ -517,21 +578,22 @@ namespace Poly_Ling.Tools
                 if (meshContext?.MeshObject == null) continue;
                 var meshObject = meshContext.MeshObject;
 
-                Matrix4x4 inv = meshContext.WorldMatrixInverse;
-                Ray localRay = new Ray(inv.MultiplyPoint3x4(ray.origin),
-                                       inv.MultiplyVector(ray.direction));
+                var wp = GetWorldPositions(ctx, meshContext, meshIdx);
+                if (wp == null) continue;
 
                 foreach (var face in meshObject.Faces)
                 {
                     if (face.VertexIndices.Count < 3) continue;
                     for (int i = 1; i < face.VertexIndices.Count - 1; i++)
                     {
-                        Vector3 v0 = meshObject.Vertices[face.VertexIndices[0]].Position;
-                        Vector3 v1 = meshObject.Vertices[face.VertexIndices[i]].Position;
-                        Vector3 v2 = meshObject.Vertices[face.VertexIndices[i + 1]].Position;
-                        if (RayTriangleIntersection(localRay, v0, v1, v2, out float t) && t > 0)
+                        int i0 = face.VertexIndices[0];
+                        int i1 = face.VertexIndices[i];
+                        int i2 = face.VertexIndices[i + 1];
+                        if (i0 >= wp.Length || i1 >= wp.Length || i2 >= wp.Length) continue;
+
+                        if (RayTriangleIntersection(ray, wp[i0], wp[i1], wp[i2], out float t) && t > 0)
                         {
-                            Vector3 hitWorld = meshContext.LocalToWorld(localRay.origin + localRay.direction * t);
+                            Vector3 hitWorld = ray.origin + ray.direction * t;
                             float distWorld = Vector3.Distance(ray.origin, hitWorld);
                             if (distWorld < closestDist)
                             {
@@ -565,23 +627,63 @@ namespace Poly_Ling.Tools
         }
 
 
-        private List<(int index, float weight)> GetVerticesInBrushRadius(
-            MeshObject meshObject, Vector3 brushCenter, Dictionary<int, HashSet<int>> adjacencyCache)
+        /// <summary>
+        /// 【前方向は GPU の値を使う】
+        /// 指定メッシュの全頂点について、いま画面に見えているワールド座標を返す。
+        /// 取れないときは null。参照先は GPU が _worldPositionBuffer に出した値
+        /// （ToolContext.GetMeshWorldPositions）。
+        ///
+        /// 【保険】GPU 値が取れないときだけ CPU 行列に落ちる。
+        ///   通る条件はバッファ未構築・ビューポート未配線など、GPU 値が null の場合のみ。
+        ///   落ち先は VertexMatrix(i, showBindPose) で、描画と同じ規則・同じ表示モード。
+        ///   これは CPU 独自計算であり、本来は残すべきでないものを承知のうえで
+        ///   保険として置いている（2026-09-15・利用者の指示による）。
+        ///   新しいコードでこの分岐を真似しないこと。
+        /// </summary>
+        private Vector3[] GetWorldPositions(ToolContext ctx, MeshContext mc, int meshIdx)
         {
-            if (_settings.DistanceMode == DistanceMode.Link && adjacencyCache != null)
-                return GetVerticesInBrushRadiusLink(meshObject, brushCenter, adjacencyCache);
+            var mo = mc?.MeshObject;
+            if (mo == null) return null;
 
-            return GetVerticesInBrushRadiusEuclidean(meshObject, brushCenter);
+            var gpu = ctx?.GetMeshWorldPositions?.Invoke(meshIdx);
+            if (gpu != null && gpu.Length >= mo.VertexCount) return gpu;
+
+            // 【保険】GPU 値が無いときだけの CPU 経路。上の注記を参照。
+            bool showBind = ctx?.ShowBindPose ?? false;
+            var arr = new Vector3[mo.VertexCount];
+            for (int i = 0; i < mo.VertexCount; i++)
+                arr[i] = mc.VertexMatrix(i, showBind).MultiplyPoint3x4(mo.Vertices[i].Position);
+            return arr;
+        }
+
+        private List<(int index, float weight)> GetVerticesInBrushRadius(
+            MeshObject meshObject, Vector3 brushCenterWorld, Vector3 brushCenterLocal,
+            Dictionary<int, HashSet<int>> adjacencyCache, Vector3[] worldPositions)
+        {
+            // 当たり判定はワールド空間で行う（2026-09-15 変更）。
+            // ブラシ中心は画面のレイから決まるワールドの値なので、メッシュ 1 個の
+            // 行列でローカルへ落とすと、スキンド頂点や姿勢付きの非スキンドで
+            // 画面で狙った場所と違うところに当たる。
+            // BrushRadius の尺度もローカルからワールドへ変わる。
+            bool useWorld = worldPositions != null && worldPositions.Length >= meshObject.VertexCount;
+            Vector3 center = useWorld ? brushCenterWorld : brushCenterLocal;
+            Vector3[] pos  = useWorld ? worldPositions   : meshObject.Positions;
+
+            if (_settings.DistanceMode == DistanceMode.Link && adjacencyCache != null)
+                return GetVerticesInBrushRadiusLink(meshObject, center, adjacencyCache, pos);
+
+            return GetVerticesInBrushRadiusEuclidean(meshObject, center, pos);
         }
 
         // ユークリッド直線距離（従来）
-        private List<(int index, float weight)> GetVerticesInBrushRadiusEuclidean(MeshObject meshObject, Vector3 brushCenter)
+        private List<(int index, float weight)> GetVerticesInBrushRadiusEuclidean(
+            MeshObject meshObject, Vector3 brushCenter, Vector3[] pos)
         {
             var result = new List<(int, float)>();
 
-            for (int i = 0; i < meshObject.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount && i < pos.Length; i++)
             {
-                float dist = Vector3.Distance(meshObject.Vertices[i].Position, brushCenter);
+                float dist = Vector3.Distance(pos[i], brushCenter);
                 if (dist <= BrushRadius)
                 {
                     float t = BrushRadius > 0f ? dist / BrushRadius : 0f;
@@ -595,16 +697,17 @@ namespace Poly_Ling.Tools
 
         // リンク距離（ブラシ中心の最近傍頂点を始点に辺をたどった距離）
         private List<(int index, float weight)> GetVerticesInBrushRadiusLink(
-            MeshObject meshObject, Vector3 brushCenter, Dictionary<int, HashSet<int>> adjacencyCache)
+            MeshObject meshObject, Vector3 brushCenter,
+            Dictionary<int, HashSet<int>> adjacencyCache, Vector3[] pos)
         {
             var result = new List<(int, float)>();
 
             // ブラシ中心に最も近い頂点を始点とする
             int seed = -1;
             float minDist = float.MaxValue;
-            for (int i = 0; i < meshObject.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount && i < pos.Length; i++)
             {
-                float dist = Vector3.Distance(meshObject.Vertices[i].Position, brushCenter);
+                float dist = Vector3.Distance(pos[i], brushCenter);
                 if (dist < minDist)
                 {
                     minDist = dist;
@@ -614,7 +717,7 @@ namespace Poly_Ling.Tools
 
             if (seed < 0) return result;
 
-            var field = LinkDistanceField.Compute(adjacencyCache, meshObject.Positions, new[] { seed }, BrushRadius);
+            var field = LinkDistanceField.Compute(adjacencyCache, pos, new[] { seed }, BrushRadius);
 
             foreach (var kvp in field)
             {
@@ -638,7 +741,7 @@ namespace Poly_Ling.Tools
         /// null のときは補正せず、幾何法線の向きにそのまま従う。
         /// コマンド経由（SculptStrokeCommand）は視点を持たないので null が入る。
         /// </param>
-        private void ApplyDraw(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Vector3? viewDir, Dictionary<int, Vector3> vertexNormalsCache)
+        private void ApplyDraw(Dictionary<int, Vector3> work, List<(int index, float weight)> vertices, Vector3? viewDir, Dictionary<int, Vector3> vertexNormalsCache)
         {
             if (vertexNormalsCache == null) return;
 
@@ -663,15 +766,15 @@ namespace Poly_Ling.Tools
 
             foreach (var (idx, weight) in vertices)
             {
-                Vector3 offset = avgNormal * Strength * weight * direction;
-                meshObject.Vertices[idx].Position += offset;
+                if (!work.ContainsKey(idx)) continue;
+                work[idx] += avgNormal * Strength * weight * direction;
             }
         }
 
         /// <summary>
         /// Smooth: 滑らかにする
         /// </summary>
-        private void ApplySmooth(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Dictionary<int, HashSet<int>> adjacencyCache)
+        private void ApplySmooth(Dictionary<int, Vector3> work, List<(int index, float weight)> vertices, Dictionary<int, HashSet<int>> adjacencyCache)
         {
             if (adjacencyCache == null) return;
 
@@ -680,31 +783,30 @@ namespace Poly_Ling.Tools
 
             foreach (var (idx, weight) in vertices)
             {
+                if (!work.ContainsKey(idx)) continue;
                 if (adjacencyCache.TryGetValue(idx, out var neighbors) && neighbors.Count > 0)
                 {
                     Vector3 avgPos = Vector3.zero;
+                    int n = 0;
                     foreach (int neighbor in neighbors)
                     {
-                        avgPos += meshObject.Vertices[neighbor].Position;
+                        if (!work.TryGetValue(neighbor, out var np)) continue;
+                        avgPos += np; n++;
                     }
-                    avgPos /= neighbors.Count;
+                    if (n == 0) continue;
+                    avgPos /= n;
 
-                    Vector3 currentPos = meshObject.Vertices[idx].Position;
-                    Vector3 targetPos = Vector3.Lerp(currentPos, avgPos, Strength * weight);
-                    newPositions[idx] = targetPos;
+                    newPositions[idx] = Vector3.Lerp(work[idx], avgPos, Strength * weight);
                 }
             }
 
-            foreach (var kvp in newPositions)
-            {
-                meshObject.Vertices[kvp.Key].Position = kvp.Value;
-            }
+            foreach (var kvp in newPositions) work[kvp.Key] = kvp.Value;
         }
 
         /// <summary>
         /// Inflate: 膨らます
         /// </summary>
-        private void ApplyInflate(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Dictionary<int, Vector3> vertexNormalsCache)
+        private void ApplyInflate(Dictionary<int, Vector3> work, List<(int index, float weight)> vertices, Dictionary<int, Vector3> vertexNormalsCache)
         {
             if (vertexNormalsCache == null) return;
 
@@ -712,18 +814,16 @@ namespace Poly_Ling.Tools
 
             foreach (var (idx, weight) in vertices)
             {
+                if (!work.ContainsKey(idx)) continue;
                 if (vertexNormalsCache.TryGetValue(idx, out var normal))
-                {
-                    Vector3 offset = normal * Strength * weight * direction;
-                    meshObject.Vertices[idx].Position += offset;
-                }
+                    work[idx] += normal * Strength * weight * direction;
             }
         }
 
         /// <summary>
         /// Flatten: 平らにする
         /// </summary>
-        private void ApplyFlatten(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Dictionary<int, Vector3> vertexNormalsCache)
+        private void ApplyFlatten(Dictionary<int, Vector3> work, List<(int index, float weight)> vertices, Dictionary<int, Vector3> vertexNormalsCache)
         {
             if (vertices.Count == 0 || vertexNormalsCache == null) return;
 
@@ -734,7 +834,8 @@ namespace Poly_Ling.Tools
 
             foreach (var (idx, weight) in vertices)
             {
-                avgPos += meshObject.Vertices[idx].Position * weight;
+                if (!work.TryGetValue(idx, out var wp)) continue;
+                avgPos += wp * weight;
                 totalWeight += weight;
 
                 if (vertexNormalsCache.TryGetValue(idx, out var normal))
@@ -752,17 +853,16 @@ namespace Poly_Ling.Tools
             // 各頂点を平面に投影
             foreach (var (idx, weight) in vertices)
             {
-                Vector3 pos = meshObject.Vertices[idx].Position;
-                
+                if (!work.TryGetValue(idx, out var pos)) continue;
+
                 // 平面への距離
                 float distToPlane = Vector3.Dot(pos - avgPos, avgNormal);
-                
+
                 // 平面上の位置
                 Vector3 projectedPos = pos - avgNormal * distToPlane;
-                
+
                 // 補間
-                Vector3 targetPos = Vector3.Lerp(pos, projectedPos, Strength * weight);
-                meshObject.Vertices[idx].Position = targetPos;
+                work[idx] = Vector3.Lerp(pos, projectedPos, Strength * weight);
             }
         }
 
@@ -770,7 +870,18 @@ namespace Poly_Ling.Tools
         // キャッシュ構築
         // ================================================================
 
-        private void BuildCachesForMesh(int meshIdx, MeshObject meshObject)
+        /// <summary>
+        /// 隣接と頂点法線のキャッシュを作る。
+        ///
+        /// 【法線はワールドで作る】（2026-09-15 変更）
+        ///   変形はワールド空間で行うので、法線もワールドで要る。
+        ///   面法線はその場の 3 頂点から作る派生値なので、渡す座標さえ GPU 由来なら
+        ///   ここで作り直しても二重計算にならない。GPU の _WorldNormalBuffer は
+        ///   _TransformNormals=0 で運用されており書かれていない
+        ///   （UnifiedSystemAdapter.cs:454）。
+        ///   worldPositions が null のときだけローカル座標で作る（保険）。
+        /// </summary>
+        private void BuildCachesForMesh(int meshIdx, MeshObject meshObject, Vector3[] worldPositions = null)
         {
             // 隣接頂点キャッシュ
             var adjacencyCache = new Dictionary<int, HashSet<int>>();
@@ -795,14 +906,17 @@ namespace Poly_Ling.Tools
             var vertexNormalsCache = new Dictionary<int, Vector3>();
             var vertexFaceNormals = new Dictionary<int, List<Vector3>>();
 
+            bool useWorld = worldPositions != null && worldPositions.Length >= meshObject.VertexCount;
+            Vector3 P(int idx) => useWorld ? worldPositions[idx] : meshObject.Vertices[idx].Position;
+
             foreach (var face in meshObject.Faces)
             {
                 if (face.VertexIndices.Count < 3) continue;
 
                 // 面の法線を計算
-                Vector3 v0 = meshObject.Vertices[face.VertexIndices[0]].Position;
-                Vector3 v1 = meshObject.Vertices[face.VertexIndices[1]].Position;
-                Vector3 v2 = meshObject.Vertices[face.VertexIndices[2]].Position;
+                Vector3 v0 = P(face.VertexIndices[0]);
+                Vector3 v1 = P(face.VertexIndices[1]);
+                Vector3 v2 = P(face.VertexIndices[2]);
                 Vector3 faceNormal = NormalHelper.CalculateFaceNormal(v0, v1, v2);
 
                 foreach (int vIdx in face.VertexIndices)

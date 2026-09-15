@@ -1,6 +1,5 @@
 // Runtime/Poly_Ling_Main/Tools/Deformers/DeformerRegistry.cs
-// 全デフォーマの登録を一箇所で管理する。
-// ToolRegistry.ToolFactories と同じ配列登録方式。追加は DeformerFactories へ1行。
+// 全デフォーマの登録を一箇所で管理する。追加は DeformerFactories へ1行。
 //
 // 【拡張の指針】
 //   新しい変形は「作業軸ローカル空間で θ(s) や scale(s) をどう与えるか」に

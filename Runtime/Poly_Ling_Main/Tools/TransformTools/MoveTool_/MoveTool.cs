@@ -29,9 +29,9 @@ namespace Poly_Ling.Tools
     /// フォールバックとしてのみ使用する。
     ///
     /// 【現状、マウス入力の呼び出し元が存在しない】
-    /// OnMouseDown / OnMouseDrag / OnMouseUp は ToolManager.OnMouseDown 等
-    /// （ToolManager.cs）からのみ呼ばれる想定だが、その ToolManager のマウス
-    /// 委譲メソッドを呼ぶコードは Runtime にも Editor にも存在しない。
+    /// OnMouseDown / OnMouseDrag / OnMouseUp を呼ぶコードは Runtime にも
+    /// Editor にも存在しない（呼び出し元だった ToolManager は未使用クラスとして
+    /// 2026-09-15 に削除した）。
     /// また ToolContext を組み立てる PolyLingCore.Initialize に渡される
     /// PolyLingCoreConfig は PolyLingCoreConfig.CreateStub() のみで、
     /// WorldToScreenPos / ScreenDeltaToWorldDelta はゼロを返すスタブである。

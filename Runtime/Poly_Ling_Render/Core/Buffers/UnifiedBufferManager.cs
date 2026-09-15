@@ -547,6 +547,57 @@ namespace Poly_Ling.Core
         /// <summary>メッシュコンテキスト順の変換行列（読み取り専用参照）。</summary>
         public Matrix4x4[] TransformMatrices => _transformMatrices;
 
+        // ================================================================
+        // 【臨時・調査用】_positions を書いた経路を記録する。製品の機能ではない。
+        // ================================================================
+        //   CPU の Vertices[].Position と GPU の _positions が食い違って見えた件の
+        //   切り分けのために 2026-09-15 に入れたもの。結論はその食い違いが
+        //   存在しなかったこと（試験側の後始末の不備だった）。
+        //
+        //   ・製品の機能から呼ばないこと。参考実装として真似しないこと。
+        //   ・DbgNoteWriter は今日より前から仕込まれていたもので、
+        //     呼び出しだけあって読み出し口が無かった。過去に同じ場所を疑った形跡。
+        //   ・読み口は PlayerViewportManager.GpuSelect の *ForVerify 系（これも臨時）。
+        //
+        //   残件は PolyLing_姿勢_残件.md の「臨時コマンドと調査用コードの後始末」。
+        //   PanelCommand.TempVerify.cs を消すときに、このブロックと
+        //   UnifiedBufferManager_Build.cs の DbgWrite* / DbgNote* 呼び出しも一緒に消す。
+        // ================================================================
+        public int DbgWriteBuild, DbgWriteUpdWorking, DbgWriteUpdBase, DbgWriteAllWorking, DbgWriteAllCopy;
+        /// <summary>記録したいグローバル頂点索引。-1 で記録しない。</summary>
+        public int DbgProbeIndex = -1;
+        /// <summary>その索引を最後に書いた経路の名前。</summary>
+        public string DbgProbeLastPath = "";
+        /// <summary>そのとき書き込まれた値。</summary>
+        public Vector3 DbgProbeLastValue;
+        /// <summary>その索引が書かれた回数。</summary>
+        public int DbgProbeWriteCount;
+        /// <summary>【臨時】probe 索引の枠へ書いた側の情報（context 索引・unified 索引・baseOffset・名前）。</summary>
+        public int DbgProbeSrcContext = -1, DbgProbeSrcUnified = -1, DbgProbeSrcBase = -1;
+        public string DbgProbeSrcName = "";
+
+        /// <summary>【臨時】probe 索引の枠へ書いた側を控える。</summary>
+        public void DbgNoteWriter(int contextIdx, int unifiedIdx, int baseOffset, int count, string name)
+        {
+            if (DbgProbeIndex < 0) return;
+            if (DbgProbeIndex < baseOffset || DbgProbeIndex >= baseOffset + count) return;
+            DbgProbeSrcContext = contextIdx;
+            DbgProbeSrcUnified = unifiedIdx;
+            DbgProbeSrcBase    = baseOffset;
+            DbgProbeSrcName    = name ?? "";
+        }
+
+        /// <summary>【臨時】probe 索引がこの範囲に入っていれば、経路と値を控える。</summary>
+        private void DbgNotePositions(string path, int baseOffset, int count)
+        {
+            if (DbgProbeIndex < 0) return;
+            if (DbgProbeIndex < baseOffset || DbgProbeIndex >= baseOffset + count) return;
+            if (_positions == null || DbgProbeIndex >= _positions.Length) return;
+            DbgProbeLastPath  = path;
+            DbgProbeLastValue = _positions[DbgProbeIndex];
+            DbgProbeWriteCount++;
+        }
+
         /// <summary>頂点ごとのボーンウェイト（読み取り専用参照）。</summary>
         public Vector4[] BoneWeights => _boneWeights;
 

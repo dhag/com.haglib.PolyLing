@@ -604,6 +604,11 @@ namespace Poly_Ling.Player
         {
             var ctx = new ToolContext();
             ctx.Model          = model;
+            // 表示姿勢の正典は ProjectContext.ShowBindPose（規約 10.1）。
+            // ToolContext.ShowBindPose は Project?.ShowBindPose を返すので、
+            // ここを埋めないと常に false になり、Active* 系の変換が
+            // バインド表示に追従しない（規約 10.6.1）。
+            ctx.Project        = _getProject();
             ctx.UndoController = _undoController;
             ctx.SyncMeshContextPositionsOnly = mc =>
             {

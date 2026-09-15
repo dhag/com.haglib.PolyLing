@@ -58,62 +58,157 @@
 
 未確認：`PolyLingPlayerViewerCore.*`（生成メッシュ・ブリッジ・読み込み）側は見ていない。
 
+## `GetVertexWorldPosition` の二重配線は意図的（2026-09-15 に整理）
+
+GPU のワールド座標の読み口は 2 系統ある。**どちらも残すこと。**
+
+**中央配線**（`PlayerViewportManager.WireGpuWorldReaders`）
+`GetCurrentToolContext` / `GetToolContextForCamera` の両方から呼ばれ、
+`Project` / `GetVertexWorldPosition` / `GetMeshWorldPositions` を埋める。
+新しいツールは何もしなくてもここで口が埋まる。
+
+**個別配線**（各ツールハンドラの `ctx.GetVertexWorldPosition = GetVertexWorldPosition;`）
+`AddFaceToolHandler.cs:520`、`EdgeBevelToolHandler.cs:169, 195, 228`、
+`EdgeExtrudeToolHandler.cs:169, 195, 228`、`FaceExtrudeToolHandler.cs:166, 192, 227` の 10 か所。
+
+一度は「中央配線と同じ値だから重複、消してよい」と判断したが**誤り**。
+各ハンドラは
+
+```
+var ctx = GetToolContext?.Invoke() ?? new ToolContext();
+```
+
+の形で、`GetToolContext` が null のときや、カメラが取れず
+`GetCurrentToolContext` が null を返したときに `new ToolContext()` へ落ちる。
+その場合は中央配線を通らない。個別配線はそこを埋める**保険**として働いている。
+ハンドラ側の `GetVertexWorldPosition` は `_viewportManager.TryGetVertexWorld` を
+直接呼ぶので、`ToolContext` の生成失敗とは無関係に動く。
+
+消すなら先に `?? new ToolContext()` の側を潰すこと。順序を逆にすると、
+カメラが取れない状況で GPU 値が読めなくなる。
+
+`PointDefinedToolHandler.cs:628` は別物。中央配線が `ActiveMeshContext` 固定なのに対し
+`targetIndex` 指定へ差し替える**意図的な上書き**なので、これも消してはならない。
+
 ## 残件 A ― 検証が付いていないもの
 
-1. **済（2026-09-15）**。バインド表示中の頂点移動は掴んだ位置と厳密に一致する。
-   非スキンド・スキンドとも合格。`verifyBindMove` を `delta=(7,0,0)` / `poseRotationZ=30` で実行。
+**番号は 2026-09-15 に振り直した。**
 
-   | | MQO `obj63あたま_old`（非スキンド） | PMX `顔肌+`（スキンド・ポーズは `頭`） |
-   |---|---|---|
-   | posedVertices / testedVertices | 50 / 50 | 50 / 50 |
-   | matrixMaxDiff | 0.500 | 0.841 |
-   | bindMaxError | 0 | 0 |
-   | poseMaxError | 9.5e-07 | 9.5e-07 |
-   | legacyBindError | 3.500（効く） | 0（効かない） |
-   | legacyPoseError | 3.2e-07（効かない） | 3.500（効く） |
-   | pass | true | true |
+1. **拡大縮小が未測定。** 回転とまったく同じ形に直したが、一度も動かしていない。
+   `verifyBindRotate` と同じ作りで `verifyBindScale` を足せば測れる。
+2. **`ctx.Project` 配線後の 5 経路は自動試験に向かない。実地で気づいたら直す。**
+   面追加・新規頂点のウェイト継承・面押し出し・ナイフ・点指定図形。
+   コマンド（`AddFaceCommand` ほか）は点を**メッシュローカル座標**で受け取る設計で
+   （`PanelCommand.ToolConfirm.cs:354-356`）、`Active*` 系を通らない。
+   `Active*` を通るのは `AddFaceTool.GetLocalPositionFromScreen`（`:846-873`）のような
+   **画面のレイからローカル位置を作る箇所**で、そこはマウス経路専用。
+   ナイフ・点指定図形も同じ構造。
+   因果は明快（`ToolContext.cs:488` が `Project?.ShowBindPose` を返す ／
+   `WireGpuWorldReaders` が `Project` を挿す）なので、測定の価値は低いと判断した。
+   **バインド表示でスキンドメッシュに面を追加してずれるようなら、ここを疑うこと。**
+3. **済（2026-09-15）。スカルプトの変形 4 種をワールド空間へ移した。**
+   法線キャッシュは `BuildCachesForMesh` に GPU のワールド座標を渡して作る
+   （面法線はその場の 3 頂点から作る派生値なので二重計算にならない。
+   GPU の `_WorldNormalBuffer` は `_TransformNormals=0` で書かれていない）。
+   変形は共通の作業配列（頂点索引 → ワールド座標）を Draw / Smooth / Inflate /
+   Flatten が書き換える形に統一し、書き戻しは `WriteBackWorld` で
+   `VertexMatrix(i, showBindPose).inverse` を通す。Smooth が隣接を読むので
+   `BuildWorkWorld` は隣接も作業配列に入れる。
+   `SculptTool` の前方向から `WorldMatrixInverse` / `WorldToLocal` は消えた。
+   **`BrushRadius` に加えて `Strength` の尺度もワールドになった。**
+   メッシュにスケールが入っていれば効き方が変わる。
+4. **済（2026-09-15）。`DeformApplier` の前方向を GPU 値へ。**
+   `_startWorld`（ワールド）を新設し、`_startPositions`（ローカル）はそのまま残した。
+   後者は `DeformContext` の元で `LatticeDeformer.FitToSelection` が参照するため、
+   意味を変えられない。書き戻しは `VertexMatrix(i, showBindPose).inverse`。
+   口は `GetMeshWorldPositions` / `GetShowBindPose` で、`Begin` の引数は変えていない。
+   呼び出し元は `DeformToolHandler.cs:235` と `LatticeToolHandler` の 3 か所
+   （後者は `WireApplierWorldReaders()` にまとめた）。
+5. **済（2026-09-15）。**左ペイン「バインドポーズ表示」トグルは
+   `SetPoseDisplayModeCommand` を送るだけ（`PlayerLayoutRoot.LeftPane.cs:88, 271`）。
+   そのコマンドは絵で確認済み（規約 10.5）なので、トグル単独の目視確認は要らない。
+6. **MQO の階層の未確認部分。** `BakedMirror` の件数、depth 5 以上の末端、
+   `obj1`（index 0・`センター` とは別ルート）の中身。
+7. **臨時コマンドと調査用コードの後始末。** 検証が済んだら削除する。
+    - `verifyBindMove` / `verifyBindRotate` / `verifyBindSculpt`
+      （`PanelCommand.TempVerify.cs` と `PlayerCommandDispatcher.TempVerify.cs`）
+    - `UnifiedBufferManager` の `Dbg*` 一式（`:550-588`）と
+      `UnifiedBufferManager_Build.cs` の `DbgWrite*` / `DbgNote*` 呼び出し
+    - `PlayerViewportManager.GpuSelect.cs` の `*ForVerify` 系の読み口
+    - `DbgNoteWriter`（`:569`）は今日より前から仕込まれていたもの。呼び出しだけあって
+      読み出し口が無かった。過去に同じ場所を疑った形跡。
+8. **保険として残した CPU 経路。** `RotateTool` / `ScaleTool` / `SculptTool` /
+    `DeformApplier` の `CaptureStartWorld` / `GetWorldPositions` と、その周辺。
+    GPU 値が取れないときだけ
+    `VertexMatrix(i, showBindPose)` に落ちる。利用者の指示で承知のうえ残したもので、
+    コードに「新しいコードでこの分岐を真似しないこと」と明記済み（規約 10.6.2）。
+9. 旧データ（`workaxis.csv` / `ModelDTO.workAxis` を含むプロジェクト）の移行確認。
 
-   旧コードとの差は、非スキンドならバインド表示、スキンドなら現在ポーズ表示にしか出ない。
-   理由と限界は規約 10.4 を参照。OBJ を書き出して座標を検索する手順は使わなかった。
-2. 左ペイン「バインドポーズ表示」トグルの目視・操作確認。**画面操作が要る**。
-   `uiGetValue` では引けない（`PlayerLayoutRoot` のトグルは `[UiControl]` を持たない流儀）。
-   コマンド経由（`setPoseDisplayMode`）で絵が切り替わることは確認済み（規約 10.5）。
-   残るのはトグルを人が押したときに同じ経路を通るかの確認。
-3. 旧データ（`workaxis.csv` / `ModelDTO.workAxis` を含むプロジェクト）の移行確認。
-5. **`ctx.Project` 配線後の 5 経路の実測**。面追加・新規頂点のウェイト継承・面押し出し・
-   ナイフ・点指定図形が、バインド表示で掴んだ位置と一致するか。
-   いずれもクリック位置・ホバーを起点にするためコマンドから再現しにくい。
-   自動試験を作るなら面追加が一番作りやすい。
-6. **`GetCurrentToolContext` を経由しない `ToolContext` 2 か所**。
-   `ToolManager.cs:70` と `PlayerCommandDispatcher.Blend.cs:603`（`BuildMinimalToolCtx`）は
-   `Project` が入らないので `ShowBindPose` が常に false。
-   バインド表示に関わる変換を使っているかは未確認。
-7. **既存ハンドラに散っている `GetVertexWorldPosition` の個別配線**
-   （`AddFaceToolHandler.cs:520`、`EdgeBevelToolHandler.cs:169, 195, 228`、
-   `EdgeExtrudeToolHandler.cs:169, 195`、`FaceExtrudeToolHandler.cs:227` ほか）は
-   中央配線と同じ値なので重複。動作確認が済んだら消す。
-   ただし `PointDefinedToolHandler.cs:628` は `targetIndex` 指定への**意図的な上書き**。
-   中央配線は `ActiveMeshContext` 固定なので、ここは消してはならない。
-8. `SculptTool.cs:298, 430, 520` と `DeformApplier.cs:203` の前方向も
-   `WorldMatrixInverse` / `WorldToLocal` のまま。回転・拡大縮小と同じ形へ寄せる。**未着手。**
-4. MQO の階層の親子付け。**済（2026-09-15）。切れていない。**
-   `センター` は index 19・`depth 0`・`hierarchyParentIndex -1` のルートで、子は
-   `@うえ側`（20）と `@した側`（174）の 2 つ。`センター` にポーズ層で `PositionY=0.6` を
-   入れると、頭・腕・胴・脚が丸ごと持ち上がり、取り残される部品は無い（キャプチャで確認）。
-   ミラー側（`type,MirrorSide`）は実体側と同じ親・同じ `depth` を持ち、親に追従する
-   （`MeshHierarchyOps.RecalculateParentIndicesFromDepth:47-53` の規則どおり）。
-   最初に「`ワーク` にポーズを入れても動かない」と見えたのは、`ワーク`（index 1）と
-   その子が `isVisible False` だったため。階層の問題ではなかった。
-   未確認：`BakedMirror` の件数、depth 5 以上の末端、`obj1`（index 0・別ルート）の中身。
+**取り下げ**：以前ここに「`MeshInfos` が 256 固定で伸長されない」と書いたが誤り。
+`EnsureCapacity`（`UnifiedBufferManager.cs:809-823`）が 256 を超えたときに
+`_meshInfos` / `_meshExpandedStart` / `_meshExpandedCount` を一緒に伸長し、
+`_meshInfoBuffer` も作り直している。`:648-652` の 256 は初期確保の値。
+`_transformMatrices` が別の場所で伸びるのは、そちらが `contextCount`、
+`_meshInfos` が `meshCount` という別の数え方だから。
+
+## 検証が済んだもの（2026-09-15）
+
+- **移動**：バインド・現在ポーズ表示とも表示どおり。非スキンド／スキンドの 4 組。
+  `bindMaxError = 0` / `poseMaxError = 9.5e-07`。**GPU 基準でも一致**
+  （`poseGpuMaxError = 1.4e-06`、`cpuGpuGap = 6.7e-07`）。
+- **回転**：同じく 4 組。試験回転 X 35° で `bindLegacyError = 0.0305`（非スキンド）、
+  `poseLegacyError = 0.0214`（スキンド）の条件下で誤差 1e-07 台。
+- **スカルプトの当たり判定**（A-1 の範囲）：バインド・現在ポーズ表示とも中心に当たる。
+  旧コードはバインド表示で 1 頂点も拾えていなかった（`bindLegacyHit = 0`）。
+- **スカルプト（当たり判定・変形・法線とも）はワールド空間。** 前方向は GPU 値、
+  書き戻しのみ `VertexMatrix(i, showBindPose).inverse`。MQO・PMX の 4 組で
+  `bindGapCount = poseGapCount = 0`、中心に置いた頂点が両表示とも動く。
+  旧コードとの差は両表示で検出できている（MQO `bindLegacyHit = 0`、
+  PMX `poseLegacyHit ≠ poseHit`）。
+- **`DeformApplier` の前方向も GPU 値。** 書き戻しは頂点単位の逆行列。**未測定。**
+- **`MeshContext.VertexMatrix` は GPU の規則と一致する。**
+  PMX スキンド `顔肌` の全 2585 頂点で、CPU の `VertexMatrix × Vertices[].Position` と
+  GPU の `_worldPositions` が 1e-07 台で一致（`poseGapCount = 0`）。
+  読み込み直後の入力座標も全頂点一致（`loadInputGapCount = 0`）。
+  規約 10.6 に書いた「GPU と突き合わせていない」という限界は、この範囲で解消。
+
+  **註**：この確認の途中で「CPU と GPU が 2100 頂点でずれる」と何度か報告したが、
+  すべて誤りだった。原因は `verifyBindSculpt` の後始末で、`RunOneSculpt` の巻き戻しが
+  `Vertices[]` を戻すだけで GPU の `_positions` へ送り直していなかったため、
+  1 回目（バインド側）のブラシ結果を 2 回目（ポーズ側）の測定が拾っていた。
+  **試験で状態を戻すときは GPU 側も戻すこと。**
+- **MQO の階層は切れていない。** `センター`（index 19）はルート、子は `@うえ側`（20）と
+  `@した側`（174）。ポーズを入れると本体が丸ごと追従する（キャプチャ）。
+  ミラー側は実体側と同じ親・同じ depth。
+  最初に「`ワーク` にポーズを入れても動かない」と見えたのは、`ワーク`（index 1）と
+  その子が `isVisible False` だったため。階層の問題ではなかった。
 
 ## 2026-09-15 に直したもの
 
+- **`ToolManager` / `ToolRegistry` を未使用クラスとして削除した**（2026-09-15）。
+  `new ToolManager()` の呼び出しも `ToolRegistry` の参照もパッケージ全体で 0 件だった。
+  `ToolRegistry.ToolFactories` に登録されていた 15 ツールは、すべて
+  `PolyLingPlayerViewerCore.Layout.EditTools.cs` のハンドラ方式に置き換わっており、
+  ハンドラ側に無いツールは混じっていなかった。
+  参照していた注記 3 か所（`DeformerRegistry.cs:3`、`AdvancedSelectTool.cs:84`、
+  `MoveTool.cs:32-34`）も直した。
+- **`BuildMinimalToolCtx` に `ctx.Project` を挿した**（`PlayerCommandDispatcher.Blend.cs:603`）。
+  呼び出し元は UV 展開・UV↔XYZ・スキンウェイト一括・法線移植・薄板モーフ・
+  シュリンクの 8 か所。これらが `Active*` 系を使うかは未確認だが、挿しておけば害がない。
+- **スカルプトの当たり判定がローカル空間だった**（`SculptTool.cs`）。ブラシ中心とレイを
+  メッシュ 1 個の行列でローカルへ落としていたため、画面で指した場所と違うところに当たっていた。
+  `FindBrushCenter` の交差判定と `GetVerticesInBrushRadius` をワールド空間へ移し、
+  頂点座標に GPU の値を使うようにした（A-1 の範囲。変形 4 種はローカルのまま）。
+  非スキンドのバインド表示では旧コードが 1 頂点も拾えていなかった（`bindLegacyHit = 0`）。
+  `BrushRadius` の尺度がローカルからワールドへ変わる。
 - **回転・拡大縮小がスキンドの現在ポーズ表示で壊れていた**。`RotateTool.cs:389, 392` /
   `ScaleTool.cs:289, 293` がメッシュ 1 個の `LocalToWorld` / `WorldToLocal` を使っており、
   スキンド頂点の表示位置（`Σ(w·SkinningMatrix)`）と食い違っていた。
   前方向を GPU 値（`ToolContext.GetMeshWorldPositions`）へ、書き戻しを
   `VertexMatrix(vi, showBindPose).inverse` へ変更。`_pivot` はワールド保持に変更。
-  `poseMaxError` が 0.0214 → 2.6e-07。規約 10.6 を参照。
+  **非スキンドのバインド表示でも壊れていた**（legacy 比較を足して判明。
+  試験回転 X 35° で `bindLegacyError = 0.0305`）。規約 10.6 を参照。
+  拡大縮小は同じ形に直したが**未測定**。
 - **`ctx.Project` が未配線で `ToolContext.ShowBindPose` が常に false だった**。
   `PlayerToolContext.ToToolContext`（`:129-147`）も `GetCurrentToolContext`
   （`PlayerViewportManager.cs:443`）も埋めておらず、埋めていたのは
@@ -203,6 +298,10 @@
   `verifyBindMove` はポーズを入れたあと全頂点を走査し、2 つの行列が tolerance を超えて違う
   頂点だけを候補にする（候補が 0 なら失敗）。拾った頂点が全て候補であることは
   `posedVertices == testedVertices` で確認する。
+- **試験の軸はポーズと交換可能にしない**。往路と復路で同じ行列を使う実装は、
+  その行列が変形と交換可能なら打ち消し合って通る。ポーズが Z 回転のときに試験も
+  Z 回転にすると、旧コードでも誤差が消えて `legacyError` が 0 になり、
+  何も測れていないのに合格に見える。ポーズ Z 30° なら試験は X 軸で回すこと。
 - **`discriminating` は構造で効く側が入れ替わる**。旧コードとの差は、非スキンドなら
   `legacyBindError`（バインド表示）、スキンドなら `legacyPoseError`（現在ポーズ表示）にしか
   出ない。片方が 0 でも異常ではない。`bindDiscriminating` / `poseDiscriminating` を見ること。

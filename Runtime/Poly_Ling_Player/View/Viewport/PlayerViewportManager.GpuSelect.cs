@@ -273,6 +273,136 @@ namespace Poly_Ling.Player
             return new Vector2(screenX, screenY);
         }
 
+        // ================================================================
+        // 【臨時・調査用】以下の *ForVerify / *Probe 系は検証専用。製品の機能ではない。
+        // ================================================================
+        //   PanelCommand.TempVerify.cs の 3 コマンドが GPU 側の実値を読むための口。
+        //   2026-09-15 に追加した。
+        //
+        //   ・製品の機能から呼ばないこと。参考実装として真似しないこと。
+        //   ・GPU の内部配列（_positions / _boneIndices / _transformMatrices）を
+        //     そのまま外へ出す。通常の経路は GetVertexWorldPosition /
+        //     GetMeshWorldPositions（ToolContext 経由）を使うこと。
+        //
+        //   残件は PolyLing_姿勢_残件.md の「臨時コマンドと調査用コードの後始末」。
+        //   PanelCommand.TempVerify.cs を消すときに一緒に消す。
+        // ================================================================
+
+        /// <summary>
+        /// 【臨時】GPU バッファの中身を頂点 1 つぶん取り出す。
+        /// 索引の起点・入力ローカル座標・ボーン索引・重み・展開範囲を返す。
+        /// UV 展開の食い違い（TryGetExpandedRange の注記）を含めて調べるため。
+        /// </summary>
+        public bool TryGetVertexBufferProbe(
+            Poly_Ling.Context.ModelContext model,
+            Poly_Ling.Data.MeshContext mc,
+            int localVertexIndex,
+            out int globalIdx, out UnityEngine.Vector3 inputLocal,
+            out int[] boneIds, out float[] boneWts,
+            out int expandStart, out int expandCount, out int bufMeshCount)
+        {
+            globalIdx = -1; inputLocal = UnityEngine.Vector3.zero;
+            boneIds = System.Array.Empty<int>(); boneWts = System.Array.Empty<float>();
+            expandStart = -1; expandCount = -1; bufMeshCount = -1;
+
+            var adapter2 = _renderer?.GetAdapter(0);
+            var bm = adapter2?.BufferManager;
+            if (model == null || mc == null || bm == null) return false;
+
+            int ctxIdx2 = model.MeshContextList.IndexOf(mc);
+            if (ctxIdx2 < 0) return false;
+            int unifiedIdx2 = adapter2.ContextToUnifiedMeshIndex(ctxIdx2);
+            if (unifiedIdx2 < 0) return false;
+
+            var infos = bm.MeshInfos;
+            if (infos == null || unifiedIdx2 >= infos.Length) return false;
+
+            globalIdx = (int)infos[unifiedIdx2].VertexStart + localVertexIndex;
+
+            var pos = bm.Positions;
+            if (pos != null && globalIdx >= 0 && globalIdx < pos.Length) inputLocal = pos[globalIdx];
+
+            var bi = bm.BoneIndices;
+            var bw = bm.BoneWeights;
+            if (bi != null && globalIdx < bi.Length)
+                boneIds = new[] { (int)bi[globalIdx].x, (int)bi[globalIdx].y,
+                                  (int)bi[globalIdx].z, (int)bi[globalIdx].w };
+            if (bw != null && globalIdx < bw.Length)
+                boneWts = new[] { bw[globalIdx].x, bw[globalIdx].y, bw[globalIdx].z, bw[globalIdx].w };
+
+            if (bm.TryGetExpandedRange(unifiedIdx2, out int st, out int cnt))
+            { expandStart = st; expandCount = cnt; }
+
+            bufMeshCount = infos.Length;
+            return true;
+        }
+
+        /// <summary>
+        /// 【臨時】_positions を書いた経路の記録を読む。調査が済んだら削除する。
+        /// </summary>
+        public bool TryGetPositionWriteLog(
+            out string lastPath, out UnityEngine.Vector3 lastValue, out int writeCount,
+            out int cBuild, out int cUpdWorking, out int cUpdBase, out int cAllWorking, out int cAllCopy)
+        {
+            lastPath = ""; lastValue = UnityEngine.Vector3.zero; writeCount = 0;
+            cBuild = cUpdWorking = cUpdBase = cAllWorking = cAllCopy = 0;
+            var bm = _renderer?.GetAdapter(0)?.BufferManager;
+            if (bm == null) return false;
+            lastPath   = bm.DbgProbeLastPath;
+            lastValue  = bm.DbgProbeLastValue;
+            writeCount = bm.DbgProbeWriteCount;
+            cBuild       = bm.DbgWriteBuild;
+            cUpdWorking  = bm.DbgWriteUpdWorking;
+            cUpdBase     = bm.DbgWriteUpdBase;
+            cAllWorking  = bm.DbgWriteAllWorking;
+            cAllCopy     = bm.DbgWriteAllCopy;
+            return true;
+        }
+
+        /// <summary>【臨時】GPU へ渡した入力ローカル座標配列を返す。取れないときは null。</summary>
+        public UnityEngine.Vector3[] GetBufferPositionsForVerify()
+            => _renderer?.GetAdapter(0)?.BufferManager?.Positions;
+
+        /// <summary>【臨時】記録したいグローバル頂点索引を設定し、記録をリセットする。</summary>
+        public void SetPositionWriteProbe(int globalIndex)
+        {
+            var bm = _renderer?.GetAdapter(0)?.BufferManager;
+            if (bm == null) return;
+            bm.DbgProbeIndex      = globalIndex;
+            bm.DbgProbeLastPath   = "";
+            bm.DbgProbeWriteCount = 0;
+            bm.DbgProbeSrcContext = -1;
+            bm.DbgProbeSrcUnified = -1;
+            bm.DbgProbeSrcBase    = -1;
+            bm.DbgProbeSrcName    = "";
+            bm.DbgWriteBuild = bm.DbgWriteUpdWorking = bm.DbgWriteUpdBase =
+                bm.DbgWriteAllWorking = bm.DbgWriteAllCopy = 0;
+        }
+
+        /// <summary>
+        /// 【臨時】probe 索引の枠へ書いた側（DbgNoteWriter が控えたもの）を読む。
+        /// この仕掛けは以前から仕込まれていたが読み出し口が無かった。
+        /// </summary>
+        public bool TryGetPositionWriter(
+            out int srcContext, out int srcUnified, out int srcBase, out string srcName)
+        {
+            srcContext = -1; srcUnified = -1; srcBase = -1; srcName = "";
+            var bm = _renderer?.GetAdapter(0)?.BufferManager;
+            if (bm == null) return false;
+            srcContext = bm.DbgProbeSrcContext;
+            srcUnified = bm.DbgProbeSrcUnified;
+            srcBase    = bm.DbgProbeSrcBase;
+            srcName    = bm.DbgProbeSrcName;
+            return true;
+        }
+
+        /// <summary>
+        /// 【臨時】GPU へ送った変換行列表（MeshContextList 順）を返す。取れないときは null。
+        /// CPU の SkinningMatrix と突き合わせるための読み口。
+        /// </summary>
+        public Matrix4x4[] GetTransformMatricesForVerify()
+            => _renderer?.GetAdapter(0)?.BufferManager?.TransformMatrices;
+
         /// <summary>
         /// 指定メッシュの指定頂点について、GPU が計算したワールド座標を返す。
         ///
