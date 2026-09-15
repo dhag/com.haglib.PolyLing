@@ -600,7 +600,7 @@ namespace Poly_Ling.Tools.SpringBoneTest
             {
                 var mc = model.GetMeshContext(i);
                 if (mc == null || mc.Type != MeshType.Bone) continue;
-                mc.BindPose = mc.WorldMatrix.inverse;
+                Poly_Ling.Ops.BindPoseOps.RebindToBind(mc);
             }
         }
 

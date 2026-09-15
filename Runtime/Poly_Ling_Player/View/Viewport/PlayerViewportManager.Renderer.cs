@@ -44,6 +44,14 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
+        /// 表示の姿勢を切り替える（現在ポーズ / バインドポーズ）。
+        /// 行列表を作る側（MeshSceneRenderer → UnifiedSystemAdapter）へ配るだけ。
+        /// 反映には呼び出し側で UpdateTransform を回すこと。
+        /// 規約は PolyLing_姿勢の規約.md の 10 章。
+        /// </summary>
+        public void SetShowBindPose(bool on) => _renderer?.SetShowBindPose(on);
+
+        /// <summary>
         /// 展開済み UnityMesh（UV分割で頂点数 > MeshObject.VertexCount）の
         /// 頂点座標を MeshObject.Vertices から直接更新する。
         ///

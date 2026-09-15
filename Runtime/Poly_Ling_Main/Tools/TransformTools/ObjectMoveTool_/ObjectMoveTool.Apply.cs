@@ -636,7 +636,9 @@ namespace Poly_Ling.Tools
                 {
                     var mc = model.GetMeshContext(i);
                     if (mc == null || mc.Type != MeshType.Bone) continue;
-                    mc.BindPose = mc.WorldMatrix.inverse;
+                    // 直前に BakeSkinnedVertices で頂点を今の姿勢へ焼いているので、
+                    // バインドもポーズ込みで撮る（スキンごと確定と同じ形）。
+                    Poly_Ling.Ops.BindPoseOps.BakeCurrentPoseToBind(mc);
                 }
 
                 if (_freezeBefore != null)

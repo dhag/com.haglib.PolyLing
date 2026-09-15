@@ -70,6 +70,20 @@ namespace Poly_Ling.Context
         public WorkAxisLibrary WorkAxes { get; set; } = new WorkAxisLibrary();
 
         // ================================================================
+        // 姿勢の表示切替
+        // ================================================================
+
+        /// <summary>
+        /// バインドポーズで見せるか。表示だけの切替で、データ（BonePoseData や
+        /// BoneTransform）は変えない。保存しない（起動時は常に現在ポーズ表示）。
+        ///
+        /// 効かせ先は 2 つあり、必ず両方をそろえること（規約 PolyLing_姿勢の規約.md 10.1）。
+        ///   描画     … UnifiedBufferManager.UpdateTransformMatrices の showBindPose
+        ///   書き戻し … ToolContext のワールド⇔ローカル変換
+        /// </summary>
+        public bool ShowBindPose { get; set; } = false;
+
+        // ================================================================
         // カレントモデル（シリアライズしない）
         // ================================================================
 

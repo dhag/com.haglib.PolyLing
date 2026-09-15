@@ -113,6 +113,10 @@ namespace Poly_Ling.Player
                     }
 
                     var w = qbModel.GetMeshContext(found).WorldMatrix;
+                    var wb = qbModel.GetMeshContext(found).BindWorldMatrix;
+                    // 撮られている BindPose が示すワールド位置。bindPosition と食い違うときは
+                    // ポーズ中に撮った（取り違えた）ことを意味する。
+                    var bp = qbModel.GetMeshContext(found).BindPose.inverse;
 
                     ReportData(CommandDataJson.New()
                         .Flag("found",         true)
@@ -120,6 +124,8 @@ namespace Poly_Ling.Player
                         .Text("boneName",      qbModel.GetMeshContext(found).Name ?? "")
                         .Text("matchedBy",     matchedBy)
                         .Nums("worldPosition", new float[] { w.m03, w.m13, w.m23 })
+                        .Nums("bindPosition",  new float[] { wb.m03, wb.m13, wb.m23 })
+                        .Nums("bindPosePosition", new float[] { bp.m03, bp.m13, bp.m23 })
                         .Build(),
                         new[] { found }, new[] { qbModel.GetMeshContext(found).ObjectId });
                     return true;

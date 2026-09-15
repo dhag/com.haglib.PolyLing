@@ -448,7 +448,45 @@ namespace Poly_Ling.Player
             SyncToolCtx(target);
             var ctx = _toolCtx.ToToolContext(cam);
             if (ctx != null) ctx.SetSuppressHover = SetSuppressHover;
+            WireGpuWorldReaders(ctx);
             return ctx;
+        }
+
+        /// <summary>
+        /// GPU が計算したワールド座標の読み口を ToolContext に配線する。
+        ///
+        /// ここ 1 か所に集める。以前は各ツールハンドラが同じラムダを個別に代入しており、
+        /// 配線を持たないハンドラ（Move / Rotate / Scale）では口が null のままだった。
+        /// そのため前方向の変換を CPU で計算し直す実装が残り、スキンド頂点で
+        /// 画面の位置とツールの基準が食い違っていた。
+        /// スキニング規則を CPU 側で再実装してはならない（規約 10.6）。
+        /// </summary>
+        private void WireGpuWorldReaders(ToolContext ctx)
+        {
+            if (ctx == null) return;
+
+            // 表示姿勢の正典は ProjectContext.ShowBindPose（規約 10.1）。
+            // ToolContext.ShowBindPose は Project?.ShowBindPose を返すので、
+            // ここを埋めないと常に false になり、Active* 系のワールド⇄ローカル変換が
+            // バインド表示に追従しない。2026-09-15 まで未配線だった。
+            ctx.Project = _lastProjectForPresent;
+
+            ctx.GetVertexWorldPosition = vi =>
+            {
+                var m  = _lastProjectForPresent?.CurrentModel;
+                var mc = m?.ActiveMeshContext;
+                if (m == null || mc == null) return null;
+                return TryGetVertexWorld(m, mc, vi, out var w) ? (Vector3?)w : null;
+            };
+
+            ctx.GetMeshWorldPositions = ctxIdx =>
+            {
+                var m = _lastProjectForPresent?.CurrentModel;
+                if (m == null || ctxIdx < 0) return null;
+                var mc = m.GetMeshContext(ctxIdx);
+                if (mc == null) return null;
+                return TryGetMeshWorldPositions(m, mc, out var arr) ? arr : null;
+            };
         }
 
         /// <summary>
@@ -465,7 +503,9 @@ namespace Poly_Ling.Player
             else if (SideViewport?.Cam        == cam) vp = SideViewport;
             else return null;
             SyncToolCtx(vp);
-            return _toolCtx.ToToolContext(cam);
+            var ctx = _toolCtx.ToToolContext(cam);
+            WireGpuWorldReaders(ctx);
+            return ctx;
         }
 
         // 【DrawViewport を撤去した理由】 2026-08-28

@@ -327,6 +327,11 @@ namespace Poly_Ling.Player
         private void UpdateGizmoState(ToolContext ctx)
         {
             var model = _project?.CurrentModel;
+            // 表示の姿勢。正典は ProjectContext.ShowBindPose。
+            // 表示に使った行列とギズモの基準は同じものにする（規約 10.1）。
+            // ここを現在ポーズ固定にすると、バインド表示中にギズモだけが
+            // ポーズ込みの位置へ出る。
+            bool showBindPose = _project?.ShowBindPose ?? false;
             Vector3 sum = Vector3.zero; int count = 0;
             foreach (var kv in _affectedVertices)
             {
@@ -341,9 +346,41 @@ namespace Poly_Ling.Player
                 // 親ボーンのワールド移動量ぶんずれる。
                 foreach (int vi in kv.Value)
                     if (vi >= 0 && vi < mc.MeshObject.VertexCount)
-                    { sum += mc.LocalToWorld(vi, mc.MeshObject.Vertices[vi].Position); count++; }
+                    {
+                        sum += mc.VertexMatrix(vi, showBindPose)
+                                 .MultiplyPoint3x4(mc.MeshObject.Vertices[vi].Position);
+                        count++;
+                    }
             }
             _axisGizmo.Center = count > 0 ? sum / count : Vector3.zero;
+        }
+
+        /// <summary>
+        /// ワールド移動量を頂点ローカル移動量へ落とす関数を作る。
+        ///
+        /// 【なぜ頂点単位か】
+        ///   描画は頂点ごとに行列を選ぶ（MeshContext.VertexMatrix）。表示に使った
+        ///   行列と書き戻しの逆行列がずれると、画面で掴んだ位置と書き込む値が
+        ///   食い違う。規約 PolyLing_姿勢の規約.md 9 章・10.1。
+        ///   メッシュ 1 個の WorldMatrixInverse で済ませてはならない。
+        ///
+        /// 【逆行列の作り直しを避ける】
+        ///   ドラッグ中は毎フレーム呼ばれる。頂点ごとの逆行列は初回だけ作って
+        ///   辞書へ残す。マグネットの影響頂点は Begin の中で決まるので、
+        ///   先にそろえず引かれた時点で作る。
+        /// </summary>
+        private static Func<int, Vector3, Vector3> MakeWorldToLocal(MeshContext mc, bool showBindPose)
+        {
+            var cache = new Dictionary<int, Matrix4x4>();
+            return (vertexIndex, worldDelta) =>
+            {
+                if (!cache.TryGetValue(vertexIndex, out var inv))
+                {
+                    inv = mc.VertexMatrix(vertexIndex, showBindPose).inverse;
+                    cache[vertexIndex] = inv;
+                }
+                return inv.MultiplyVector(worldDelta);
+            };
         }
 
         private void BeginMove()
@@ -353,16 +390,33 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) return;
 
+            // 表示の姿勢。正典は ProjectContext.ShowBindPose。
+            bool showBindPose = _project?.ShowBindPose ?? false;
+
             foreach (var kv in _affectedVertices)
             {
                 var mc = model.GetMeshContext(kv.Key);
                 if (mc?.MeshObject == null) continue;
 
                 var startPos = (Vector3[])mc.MeshObject.Positions.Clone();
-                IVertexTransform t = UseMagnet
-                    ? (IVertexTransform)new MagnetMoveTransform(MagnetRadius, MagnetFalloff, MagnetDistanceMode)
-                    : new SimpleMoveTransform();
-                t.Begin(mc.MeshObject, kv.Value, startPos);
+                var toLocal  = MakeWorldToLocal(mc, showBindPose);
+
+                IVertexTransform t;
+                if (UseMagnet)
+                {
+                    var magnet = new MagnetMoveTransform(MagnetRadius, MagnetFalloff, MagnetDistanceMode);
+                    magnet.SetWorldToLocal(toLocal);
+                    magnet.Begin(mc.MeshObject, kv.Value, startPos);
+                    t = magnet;
+                }
+                else
+                {
+                    var simple = new SimpleMoveTransform();
+                    simple.SetWorldToLocal(toLocal);
+                    simple.Begin(mc.MeshObject, kv.Value, startPos);
+                    t = simple;
+                }
+
                 _meshTransforms[kv.Key] = t;
             }
         }
@@ -390,13 +444,10 @@ namespace Poly_Ling.Player
             foreach (var kv in _meshTransforms)
             {
                 var mc = model?.GetMeshContext(kv.Key);
-                // IVertexTransform.Apply は Vertices[].Position（ローカル座標）に直接加算する。
-                // ワールドデルタをそのまま渡すと、WorldMatrix に回転／スケールがある場合に
-                // ギズモの指す向きと実際の移動方向がずれる。メッシュごとにローカル化する。
-                Vector3 localDelta = mc != null
-                    ? mc.WorldMatrixInverse.MultiplyVector(worldDelta)
-                    : worldDelta;
-                kv.Value.Apply(localDelta);
+                // ローカル化は IVertexTransform の中で頂点ごとに行う
+                // （BeginMove が差し込んだ MakeWorldToLocal）。ここでメッシュ 1 個の
+                // 行列を掛けると、スキンド頂点で表示と書き戻しの基準がずれる。
+                kv.Value.Apply(worldDelta);
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             }
             OnRepaint?.Invoke();

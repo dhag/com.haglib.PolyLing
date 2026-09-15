@@ -422,6 +422,12 @@ namespace Poly_Ling.Player
                     if (model == null) { Fail("no current model"); return true; }
                     if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return true; }
                     ApplyMirrorEnabled(model, c.MasterIndices, c.Enabled);
+                    // ミラー側 MeshContext を作る／消すのでリスト構造が変わる。
+                    // ApplyMirrorEnabled は ComputeWorldMatrices と _notifyPanels しか
+                    // 呼ばないため、ここで配らないと GPU のバッファが古いまま残る。
+                    // 同じファイル群の他のミラー系コマンド
+                    // （MirrorHumanoidVrm.cs:137, 216, 559）と同じ扱いにそろえる。
+                    _viewportManager?.EnterTopologyChanged(project);
                     return true;
                 }
 

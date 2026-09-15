@@ -84,6 +84,8 @@ namespace Poly_Ling.Data
     [PLResult("boneName",      PLResultKind.Text,        Description = "ボーンの名前")]
     [PLResult("matchedBy",     PLResultKind.Text,        Description = "どちらで引けたか。name か humanoid")]
     [PLResult("worldPosition", PLResultKind.NumberArray, Description = "ボーンのワールド座標。x,y,z の 3 つ", Optional = true)]
+    [PLResult("bindPosition",  PLResultKind.NumberArray, Description = "ボーンのバインド姿勢でのワールド座標。x,y,z の 3 つ。ポーズが入っていなければ worldPosition と一致する", Optional = true)]
+    [PLResult("bindPosePosition", PLResultKind.NumberArray, Description = "撮られている BindPose（スキニング基準行列）の逆行列が示すワールド座標。x,y,z の 3 つ。撮り直しの取り違えはこれと bindPosition の差で分かる", Optional = true)]
     public class QueryBoneCommand : PanelCommand
     {
         [PLParam(Description = "先に試すボーンの名前。並べた順に完全一致で探す")]

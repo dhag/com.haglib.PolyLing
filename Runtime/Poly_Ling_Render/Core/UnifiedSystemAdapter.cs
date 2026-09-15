@@ -422,6 +422,13 @@ namespace Poly_Ling.Core
         //   CPU ヒットテストへ戻す経路をここに復活させてはならない。
 
         /// <summary>
+        /// バインドポーズで見せるか（表示だけの切替）。
+        /// 正典は ProjectContext.ShowBindPose で、Viewer がここへ書き写す。
+        /// 規約は PolyLing_姿勢の規約.md の 10 章。
+        /// </summary>
+        public bool ShowBindPose { get; set; } = false;
+
+        /// <summary>
         /// 変換行列を更新してGPUで頂点変換を実行
         /// </summary>
         /// <param name="useWorldTransform">ワールド変換を使用するか</param>
@@ -435,7 +442,12 @@ namespace Poly_Ling.Core
                 return;
 
             // 変換行列をGPUにアップロード
-            bufferManager.UpdateTransformMatrices(_modelContext.MeshContextList, useWorldTransform);
+            //
+            // バインド表示の切替はプロジェクト単位の設定（ProjectContext.ShowBindPose）。
+            // ModelContext から親プロジェクトを引けないため、Viewer が
+            // UnifiedSystemAdapter.ShowBindPose へ書き写す。
+            bufferManager.UpdateTransformMatrices(
+                _modelContext.MeshContextList, useWorldTransform, ShowBindPose);
 
             // TransformVerticesカーネルを実行
             // ReadBackは必要（ワイヤフレーム・頂点描画がGetDisplayPositions()を使うため）

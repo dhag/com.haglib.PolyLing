@@ -597,7 +597,6 @@ namespace Poly_Ling.Player
 
             var toggle = _layoutRoot?.PerfLogToggle;
             if (toggle == null) return;
-
             toggle.RegisterValueChangedCallback(e =>
             {
                 PlayerUiPrefs.SetBool(PerfLogPrefKey, e.newValue);
@@ -607,6 +606,34 @@ namespace Poly_Ling.Player
             bool on = PlayerUiPrefs.GetBool(PerfLogPrefKey, false);
             toggle.SetValueWithoutNotify(on);
             if (on) ApplyPerfLogEnabled(true);
+
+            WireShowBindPoseToggle();
+        }
+
+        /// <summary>
+        /// 左ペインのバインドポーズ表示トグルを結線する。
+        /// 値が変わったら SetPoseDisplayModeCommand を送るだけ。正典は
+        /// ProjectContext.ShowBindPose（規約 PolyLing_姿勢の規約.md 10 章）。
+        /// </summary>
+        private void WireShowBindPoseToggle()
+        {
+            var bindToggle = _layoutRoot?.ShowBindPoseToggle;
+            if (bindToggle == null) return;
+
+            bindToggle.RegisterValueChangedCallback(e =>
+            {
+                _commandDispatcher?.Dispatch(new Poly_Ling.Data.SetPoseDisplayModeCommand(
+                    ActiveProject?.CurrentModelIndex ?? 0, e.newValue));
+            });
+
+            bindToggle.SetValueWithoutNotify(ActiveProject?.ShowBindPose ?? false);
+
+            // コマンド経由で切り替わったときの書き戻し口。
+            if (_commandDispatcher != null)
+            {
+                _commandDispatcher._syncShowBindPoseToggle =
+                    on2 => bindToggle.SetValueWithoutNotify(on2);
+            }
         }
 
         /// <summary>性能ログの開始／停止。開始時は出力先をログパネルへ通知する。</summary>

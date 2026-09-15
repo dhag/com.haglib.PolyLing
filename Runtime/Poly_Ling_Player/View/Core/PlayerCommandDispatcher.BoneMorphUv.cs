@@ -47,11 +47,119 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
 
+                // ── 表示の姿勢切替（現在ポーズ / バインドポーズ）
+                //
+                // データは変えない。描画の行列表と書き戻しの両方を同じ値にそろえる
+                // （規約 PolyLing_姿勢の規約.md 10.1）。
+                case SetPoseDisplayModeCommand c:
+                {
+                    if (project == null) { Fail("no project"); return true; }
+
+                    project.ShowBindPose = c.ShowBindPose;
+                    _viewportManager?.SetShowBindPose(c.ShowBindPose);
+                    // コマンドや他経路で切り替わったとき、左ペインのトグルを合わせる。
+                    _syncShowBindPoseToggle?.Invoke(c.ShowBindPose);
+                    // 行列表を作り直して配る。2 つ要る。
+                    //   EnterVerticesMoved … 全ビューポートの再描画準備（PresentAll）
+                    //   UpdateTransform    … GPU の変換行列表の作り直し
+                    // PresentAll 経路は transform 行列を push しないので、片方だけでは
+                    // 画面がバインドのまま動かない（同ファイル :310-317 と同じ理由）。
+                    _viewportManager?.EnterVerticesMoved(project, VerticesMovedPhase.DragEnd);
+#pragma warning disable CS0618
+                    _viewportManager?.UpdateTransform();
+#pragma warning restore CS0618
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
+                // ── ポーズ層（Manual）の 1 軸だけを書く
+                //
+                // BoneTransform（バインド側）は触らない。バインド階層と現在ポーズが
+                // 分かれる唯一のコマンド経路（規約は PolyLing_姿勢の規約.md）。
+                case SetBonePoseValueCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+
+                    if (c.TargetField == SetBoneTransformValueCommand.Field.ScaleX ||
+                        c.TargetField == SetBoneTransformValueCommand.Field.ScaleY ||
+                        c.TargetField == SetBoneTransformValueCommand.Field.ScaleZ)
+                    { Fail("拡大率はポーズ層の対象外です"); return true; }
+
+                    var poseBefore = new Dictionary<int, BonePoseDataSnapshot>();
+                    int applied = 0;
+
+                    foreach (int idx in c.MasterIndices ?? System.Array.Empty<int>())
+                    {
+                        var ctx = model.GetMeshContext(idx);
+                        // 型で弾かない。ポーズ層は MeshContext 一般の持ちもので、
+                        // LocalMatrix / BindLocalMatrix（MeshContext.Transform.cs:193-209,
+                        // 263-271）は Type を見ずに BonePoseData を評価する。
+                        // 描画メッシュ自体がボーンと同じ階層構造を持つ（メッシュフィルタ相当）
+                        // ため、ここで Bone 限定にすると非スキンドへポーズを入れられない。
+                        // 同じ層へ書く SetBonePoseActive（:41）と
+                        // SetBoneTransformValue の PoseLayer 経路（:224）も型を見ない。
+                        if (ctx == null) continue;
+
+                        if (ctx.BonePoseData == null) ctx.BonePoseData = new BonePoseData();
+                        poseBefore[idx] = ctx.BonePoseData.CreateSnapshot();
+
+                        ApplyPoseLayerField(ctx, c.TargetField, c.Value);
+                        applied++;
+                    }
+
+                    if (applied == 0) { Fail("対象のオブジェクトがありません"); return true; }
+
+                    model.ComputeWorldMatrices();
+
+                    // 階層行列が変わったので画面へ配る。2 つ要る。
+                    //   EnterVerticesMoved … 全ビューポートの再描画準備（PresentAll）
+                    //   UpdateTransform    … GPU の変換行列表の作り直し
+                    // PresentAll 経路は transform 行列を push しない（同ファイル :310-317）。
+                    // ここを省くと BonePoseData も WorldMatrix も正しいのに GPU の
+                    // 行列表が古いままで、画面はバインドのまま動かない。
+                    _viewportManager?.EnterVerticesMoved(project, VerticesMovedPhase.Dragging);
+#pragma warning disable CS0618
+                    _viewportManager?.UpdateTransform();
+#pragma warning restore CS0618
+
+                    if (_undoController != null)
+                    {
+                        var prec = new MultiBonePoseChangeRecord();
+                        foreach (var kv in poseBefore)
+                        {
+                            var mc = model.GetMeshContext(kv.Key);
+                            if (mc?.BonePoseData == null) continue;
+                            prec.Entries.Add(new MultiBonePoseChangeRecord.Entry
+                            {
+                                MasterIndex = kv.Key,
+                                OldSnapshot = kv.Value,
+                                NewSnapshot = mc.BonePoseData.CreateSnapshot(),
+                            });
+                        }
+                        if (prec.Entries.Count > 0)
+                        {
+                            _undoController.MeshListStack.Record(prec, "ボーンポーズ変更");
+                            _undoController.FocusMeshList();
+                        }
+                    }
+
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
                 // ── BonePose レイヤーリセット
                 case ResetBonePoseLayersCommand c:
                     if (model == null) { Fail("no current model"); return true; }
                     foreach (int idx in c.MasterIndices)
                         model.GetMeshContext(idx)?.BonePoseData?.ClearAllLayers();
+                    // ポーズを消したら階層行列を組み直す。ここを省くと WorldMatrix が
+                    // 古いまま残り、queryBone などが消す前の位置を返す。
+                    model.ComputeWorldMatrices();
+                    // 組み直した行列を画面へ配る（SetBonePoseValue と同じ理由。2 つ要る）。
+                    _viewportManager?.EnterVerticesMoved(project, VerticesMovedPhase.Dragging);
+#pragma warning disable CS0618
+                    _viewportManager?.UpdateTransform();
+#pragma warning restore CS0618
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
 
@@ -62,8 +170,14 @@ namespace Poly_Ling.Player
                     {
                         var ctx = model.GetMeshContext(idx);
                         if (ctx?.BonePoseData == null) continue;
-                        ctx.BindPose = ctx.WorldMatrix.inverse;
+                        // ポーズ込みの姿勢をバインドとして焼き込む（このコマンドの意味）。
+                        Poly_Ling.Ops.BindPoseOps.BakeCurrentPoseToBind(ctx);
                     }
+                    // 焼き込みでバインド階層が変わる。画面へ配る（同上。2 つ要る）。
+                    _viewportManager?.EnterVerticesMoved(project, VerticesMovedPhase.Dragging);
+#pragma warning disable CS0618
+                    _viewportManager?.UpdateTransform();
+#pragma warning restore CS0618
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
 
@@ -624,7 +738,8 @@ namespace Poly_Ling.Player
                         {
                             var bmc = model.GetMeshContext(i);
                             if (bmc == null || bmc.Type != MeshType.Bone) continue;
-                            bmc.BindPose = bmc.WorldMatrix.inverse;
+                            // 頂点を今の姿勢で焼いた直後なので、バインドもポーズ込みで撮る。
+                            Poly_Ling.Ops.BindPoseOps.BakeCurrentPoseToBind(bmc);
                         }
                         var afterBackup = new TPoseBackup();
                         TPoseConverter.CaptureBackup(model.MeshContextList, afterBackup);

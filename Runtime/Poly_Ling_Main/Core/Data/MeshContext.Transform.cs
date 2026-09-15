@@ -245,6 +245,41 @@ namespace Poly_Ling.Data
         /// </summary>
         public Matrix4x4 WorldMatrixInverse { get; set; } = Matrix4x4.identity;
 
+        // ================================================================
+        // バインド階層（ポーズを含まない累積）
+        //
+        // WorldMatrix は BonePoseData を含む「そのときの姿勢」。
+        // レスト（バインド）を要る側が毎回組み直していたのを、ここへ保存して
+        // 1 か所にする。規約は PolyLing_姿勢の規約.md を参照。
+        //   BindLocalMatrix  … LocalMatrix から BonePoseData を除いたもの
+        //   BindWorldMatrix  … 親の BindWorldMatrix × BindLocalMatrix
+        //                      （ComputeWorldMatrices が WorldMatrix と同時に書く）
+        // ================================================================
+
+        /// <summary>
+        /// ポーズを含まないローカル変換行列。
+        /// UseLocalTransform が false のときは単位行列（LocalMatrix と同じ規則）。
+        /// </summary>
+        public Matrix4x4 BindLocalMatrix
+        {
+            get
+            {
+                if (BoneTransform == null || !BoneTransform.UseLocalTransform)
+                    return Matrix4x4.identity;
+                return BoneTransform.TransformMatrix;
+            }
+        }
+
+        /// <summary>
+        /// バインド姿勢のワールド変換行列（親から BindLocalMatrix を積んだもの）。
+        /// ComputeWorldMatrices() が WorldMatrix と同時に書く。
+        /// ポーズが 1 つも入っていないモデルでは WorldMatrix と一致する。
+        /// </summary>
+        public Matrix4x4 BindWorldMatrix { get; set; } = Matrix4x4.identity;
+
+        /// <summary>バインド姿勢のワールド変換行列の逆行列（キャッシュ）。</summary>
+        public Matrix4x4 BindWorldMatrixInverse { get; set; } = Matrix4x4.identity;
+
         /// <summary>
         /// バインドポーズ行列（スキンドメッシュ用）
         /// インポート時のボーンのワールド位置の逆行列
@@ -423,15 +458,32 @@ namespace Poly_Ling.Data
         /// 指定頂点に GPU が実際に適用する変換行列を返す。
         /// BoneWeight を持たない頂点、および解決できない場合は WorldMatrix を返す。
         /// </summary>
-        public Matrix4x4 VertexMatrix(int vertexIndex)
+        public Matrix4x4 VertexMatrix(int vertexIndex) => VertexMatrix(vertexIndex, false);
+
+        /// <summary>
+        /// 指定頂点に GPU が実際に適用する変換行列を返す。
+        ///
+        /// showBindPose が true のときはバインド表示の行列を返す。
+        /// 描画側（UnifiedBufferManager.UpdateTransformMatrices）と同じ規則にすること。
+        /// 表示に使った行列と書き戻しの逆行列がずれると、画面で掴んだ位置と
+        /// 書き込む値が食い違う（規約 PolyLing_姿勢の規約.md 10.1）。
+        ///   ウェイトあり … 単位行列（頂点はバインド空間にあるのでそのまま）
+        ///   ウェイトなし … BindWorldMatrix（ポーズを含まない階層）
+        /// </summary>
+        public Matrix4x4 VertexMatrix(int vertexIndex, bool showBindPose)
         {
             var mo = MeshObject;
             if (mo == null || vertexIndex < 0 || vertexIndex >= mo.Vertices.Count)
-                return WorldMatrix;
+                return showBindPose ? BindWorldMatrix : WorldMatrix;
 
             var vtx = mo.Vertices[vertexIndex];
             if (vtx == null || !vtx.HasBoneWeight)
-                return WorldMatrix;
+                return showBindPose ? BindWorldMatrix : WorldMatrix;
+
+            // ウェイトありの頂点はバインド空間に焼かれている。
+            // バインド表示では単位行列（描画側の行列表と同じ扱い）。
+            if (showBindPose)
+                return Matrix4x4.identity;
 
             var list = ParentModelContext?.MeshContextList;
             if (list == null || list.Count == 0)

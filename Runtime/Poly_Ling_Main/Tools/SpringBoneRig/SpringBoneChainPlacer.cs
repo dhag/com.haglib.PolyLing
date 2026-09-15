@@ -272,7 +272,7 @@ namespace Poly_Ling.Tools.SpringBoneRig
                 foreach (int i in chain)
                 {
                     var mc = model.GetMeshContext(i);
-                    if (mc != null) mc.BindPose = mc.WorldMatrix.inverse;
+                    if (mc != null) Poly_Ling.Ops.BindPoseOps.RebindToBind(mc);
                 }
             }
         }

@@ -353,6 +353,12 @@ namespace Poly_Ling.Context
             var hierarchyWorld = new Matrix4x4[MeshContextList.Count];
             for (int i = 0; i < hierarchyWorld.Length; i++) hierarchyWorld[i] = Matrix4x4.identity;
 
+            // バインド階層（ポーズを含まない累積）。同じ積み方で並走させる。
+            // 要る側が毎回組み直していたレストをここへ保存する
+            // （規約は PolyLing_姿勢の規約.md）。
+            var hierarchyBind = new Matrix4x4[MeshContextList.Count];
+            for (int i = 0; i < hierarchyBind.Length; i++) hierarchyBind[i] = Matrix4x4.identity;
+
             // トポロジカルソートして親から順に処理
             var sortedIndices = TopologicalSortByHierarchy();
 
@@ -362,13 +368,21 @@ namespace Poly_Ling.Context
                 if (ctx == null) continue;
 
                 Matrix4x4 localMatrix = ctx.LocalMatrix;
+                Matrix4x4 bindLocal   = ctx.BindLocalMatrix;
                 int parentIndex = ctx.HierarchyParentIndex;
 
-                Matrix4x4 h = (parentIndex >= 0 && parentIndex < MeshContextList.Count)
+                bool hasParent = parentIndex >= 0 && parentIndex < MeshContextList.Count;
+
+                Matrix4x4 h = hasParent
                     ? hierarchyWorld[parentIndex] * localMatrix   // 親のワールド × 自身のローカル
                     : localMatrix;                                // ルート
 
+                Matrix4x4 hb = hasParent
+                    ? hierarchyBind[parentIndex] * bindLocal
+                    : bindLocal;
+
                 hierarchyWorld[index] = h;
+                hierarchyBind[index]  = hb;
 
                 // ミラー側は実効ワールドを共役 S·H·S にする。
                 //
@@ -386,8 +400,15 @@ namespace Poly_Ling.Context
                     ? ApplyMirrorConjugate(h, ctx)
                     : h;
 
+                // バインド階層にも同じ共役を掛ける。掛け方を変えると
+                // 「ポーズ無しのとき BindWorldMatrix == WorldMatrix」が崩れる。
+                ctx.BindWorldMatrix = (ctx.MirrorGeometryDerived && MirrorBranchOps.IsMirrorSideContext(ctx))
+                    ? ApplyMirrorConjugate(hb, ctx)
+                    : hb;
+
                 // 逆行列をキャッシュ
-                ctx.WorldMatrixInverse = ctx.WorldMatrix.inverse;
+                ctx.WorldMatrixInverse     = ctx.WorldMatrix.inverse;
+                ctx.BindWorldMatrixInverse = ctx.BindWorldMatrix.inverse;
             }
         }
 
@@ -445,8 +466,9 @@ namespace Poly_Ling.Context
         }
 
         /// <summary>
-        /// 全ボーンのBindPoseを計算（WorldMatrix.inverse）
-        /// ComputeWorldMatrices()の後に呼ぶこと
+        /// 全ボーンの BindPose を計算（BindWorldMatrix.inverse＝ポーズを含めない）。
+        /// ComputeWorldMatrices() の後に呼ぶこと。
+        /// ポーズ込みで撮りたいときは BindPoseOps.BakeCurrentPoseToBind を使う。
         /// </summary>
         public void ComputeBindPoses()
         {
@@ -457,7 +479,7 @@ namespace Poly_Ling.Context
                 var ctx = MeshContextList[i];
                 if (ctx == null || ctx.Type != MeshType.Bone) continue;
 
-                ctx.BindPose = ctx.WorldMatrix.inverse;
+                Poly_Ling.Ops.BindPoseOps.RebindToBind(ctx);
             }
         }
 
@@ -500,7 +522,7 @@ namespace Poly_Ling.Context
                 if (ctx.IsSkinned)
                     continue;
 
-                ctx.BindPose = ctx.WorldMatrix.inverse;
+                Poly_Ling.Ops.BindPoseOps.RebindToBind(ctx);
             }
         }
 
@@ -591,6 +613,14 @@ namespace Poly_Ling.Context
         /// <summary>
         /// MeshContextリストのBindPoseを一括計算（静的メソッド・インポート時用）
         /// CalculateWorldMatrices + BindPose = inverse を一括実行
+        ///
+        /// 【ポーズの扱い・未整理】
+        ///   CalculateWorldMatrices は MeshContext.LocalMatrix を積むので、
+        ///   ポーズ層が入っていればその分を含む。取込直後はポーズが無いため
+        ///   実害は出ていないが、意味としては RebindToBind 側にそろえるべき。
+        ///   この静的経路は MeshContext.BindWorldMatrix を書かない（インスタンス側の
+        ///   ComputeWorldMatrices を通らない）ため、寄せるにはこのメソッド自体を
+        ///   バインド階層で組み直す必要がある。規約は PolyLing_姿勢の規約.md。
         /// </summary>
         public static void ComputeBindPosesFromList(List<MeshContext> meshContexts)
         {

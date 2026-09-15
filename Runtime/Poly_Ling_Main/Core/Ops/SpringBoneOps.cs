@@ -582,7 +582,7 @@ namespace Poly_Ling.Ops
             // 親の姿勢が確定してからでないと BindPose を入れられない。
             model.ComputeWorldMatrices();
             var addedMc = model.GetMeshContext(added);
-            if (addedMc != null) addedMc.BindPose = addedMc.WorldMatrix.inverse;
+            if (addedMc != null) Poly_Ling.Ops.BindPoseOps.RebindToBind(addedMc);
 
             return added;
         }

@@ -396,6 +396,21 @@ namespace Poly_Ling.Tools
         public Func<int, Vector3?> GetVertexWorldPosition { get; set; }
 
         /// <summary>
+        /// 指定メッシュ（MeshContextList の索引）の全頂点について、
+        /// GPU が計算したワールド座標を一括で返す。未配線・未解決は null。
+        ///
+        /// 1 頂点版（GetVertexWorldPosition）は操作対象メッシュ固定なので、
+        /// 複数メッシュをまたぐ操作には使えない。こちらは索引で指定する。
+        /// 回転・拡大縮小のように「操作の開始時に全頂点の表示位置が要る」用途で使う。
+        /// 参照先は同じ _worldPositions で、GPU 同期は伴わない
+        /// （PlayerViewportManager.TryGetMeshWorldPositions / GpuSelect.cs:333-366）。
+        /// 鮮度が要るときは呼び出し前に UpdateTransform() を 1 回だけ呼ぶこと。
+        ///
+        /// スキニング規則を CPU 側で再実装してはならない。
+        /// </summary>
+        public Func<int, Vector3[]> GetMeshWorldPositions { get; set; }
+
+        /// <summary>
         /// 操作対象メッシュの指定頂点のクリップ空間 w を返す。未配線・未解決は null。
         /// スクリーン上の線形パラメータを 3D 上の線形パラメータへ変換するのに使う。
         /// 配線は PlayerViewportManager.TryGetVertexClipW。
@@ -463,11 +478,35 @@ namespace Poly_Ling.Tools
         /// <summary>編集対象メッシュの MeshContextList インデックス。未解決は -1。</summary>
         public int ActiveMeshIndex => Model?.ActiveMeshIndex ?? -1;
 
-        /// <summary>操作対象メッシュの WorldMatrix（未解決なら identity）</summary>
-        public Matrix4x4 ActiveWorldMatrix => ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+        /// <summary>
+        /// バインドポーズで見せているか。正典は ProjectContext.ShowBindPose。
+        ///
+        /// 表示に使った行列と、書き戻しに使う逆行列は同じものにすること
+        /// （規約 PolyLing_姿勢の規約.md 10.1）。ここから下のワールド⇔ローカル変換は
+        /// すべてこの値に従う。
+        /// </summary>
+        public bool ShowBindPose => Project?.ShowBindPose ?? false;
 
-        /// <summary>操作対象メッシュの WorldMatrix 逆行列（未解決なら identity）</summary>
-        public Matrix4x4 ActiveWorldMatrixInverse => ActiveMeshContext?.WorldMatrixInverse ?? Matrix4x4.identity;
+        /// <summary>操作対象メッシュの WorldMatrix（未解決なら identity）。バインド表示中は BindWorldMatrix。</summary>
+        public Matrix4x4 ActiveWorldMatrix
+        {
+            get
+            {
+                var mc = ActiveMeshContext;
+                if (mc == null) return Matrix4x4.identity;
+                return ShowBindPose ? mc.BindWorldMatrix : mc.WorldMatrix;
+            }
+        }
+        /// <summary>操作対象メッシュの WorldMatrix 逆行列（未解決なら identity）。バインド表示中は BindWorldMatrixInverse。</summary>
+        public Matrix4x4 ActiveWorldMatrixInverse
+        {
+            get
+            {
+                var mc = ActiveMeshContext;
+                if (mc == null) return Matrix4x4.identity;
+                return ShowBindPose ? mc.BindWorldMatrixInverse : mc.WorldMatrixInverse;
+            }
+        }
 
         /// <summary>ローカル座標 → ワールド座標（操作対象メッシュ基準）</summary>
         public Vector3 ActiveLocalToWorld(Vector3 localPos) => ActiveWorldMatrix.MultiplyPoint3x4(localPos);
@@ -509,7 +548,7 @@ namespace Poly_Ling.Tools
         {
             var mc = ActiveMeshContext;
             if (mc == null) return Matrix4x4.identity;
-            return mc.VertexMatrix(vertexIndex);
+            return mc.VertexMatrix(vertexIndex, ShowBindPose);
         }
 
         /// <summary>

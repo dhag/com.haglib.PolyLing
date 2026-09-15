@@ -345,11 +345,9 @@ namespace Poly_Ling.Player
             foreach (var kv in _meshTransforms)
             {
                 var mc = model?.GetMeshContext(kv.Key);
-                // IVertexTransform はローカル座標へ加算するため、メッシュごとにローカル化する。
-                Vector3 localTotal = mc != null
-                    ? mc.WorldMatrixInverse.MultiplyVector(worldTotal)
-                    : worldTotal;
-                kv.Value.SetTotalDelta(localTotal);
+                // ローカル化は IVertexTransform の中で頂点ごとに行う
+                // （BeginMove が差し込んだ MakeWorldToLocal）。規約 9 章・10.1。
+                kv.Value.SetTotalDelta(worldTotal);
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             }
             OnRepaint?.Invoke();

@@ -536,7 +536,8 @@ namespace Poly_Ling.Ops
                 if (ctx?.BonePoseData == null) continue;
                 var beforePose = ctx.BonePoseData.CreateSnapshot();
                 Matrix4x4 oldBindPose = ctx.BindPose;
-                ctx.BindPose = ctx.WorldMatrix.inverse;
+                // ポーズを畳む操作なので、バインドはポーズ込みで撮る。
+                Poly_Ling.Ops.BindPoseOps.BakeCurrentPoseToBind(ctx);
                 record.Entries.Add(new MultiBonePoseChangeRecord.Entry
                 {
                     MasterIndex = idx,

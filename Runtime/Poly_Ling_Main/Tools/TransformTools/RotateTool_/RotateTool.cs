@@ -34,6 +34,9 @@ namespace Poly_Ling.Tools
         // 全選択メッシュの影響頂点と開始位置
         private Dictionary<int, HashSet<int>> _multiMeshAffected = new Dictionary<int, HashSet<int>>();
         private Dictionary<int, Dictionary<int, Vector3>> _multiMeshStartPositions = new Dictionary<int, Dictionary<int, Vector3>>();
+        // 開始時の「画面に見えているワールド座標」。GPU が出した値をドラッグ開始時に一度だけ写す。
+        // 前方向（ローカル→ワールド）を CPU で計算し直してはならない（規約 10.6）。
+        private Dictionary<int, Dictionary<int, Vector3>> _multiMeshStartWorld = new Dictionary<int, Dictionary<int, Vector3>>();
         // マグネット影響（非選択）: meshKey -> (vertexIndex -> weight)
         private Dictionary<int, Dictionary<int, float>> _multiMeshMagnetW = new Dictionary<int, Dictionary<int, float>>();
 
@@ -173,6 +176,7 @@ namespace Poly_Ling.Tools
             _isSliderDragging = false;
             _multiMeshAffected.Clear();
             _multiMeshStartPositions.Clear();
+            _multiMeshStartWorld.Clear();
             _multiMeshMagnetW.Clear();
         }
 
@@ -245,20 +249,57 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
-        /// _pivot（ローカル座標）のワールド座標。基準メッシュの解決規則は
-        /// RotateToolHandler.WorldPivot() と一致させること。
+        /// 【前方向は GPU の値を使う】
+        /// 指定メッシュの頂点について、いま画面に見えているワールド座標を返す。
+        /// 参照するのは GPU が _worldPositionBuffer に出した値
+        /// （ToolContext.GetMeshWorldPositions）。スキンド頂点に実際に適用される行列は
+        /// メッシュの WorldMatrix ではなくボーンの SkinningMatrix のブレンドなので、
+        /// meshContext.LocalToWorld で代用してはならない。
+        ///
+        /// 【保険】GPU 値が取れないときだけ CPU 行列に落ちる。
+        ///   通る条件はバッファ未構築・ビューポート未配線など、GPU 値が null の場合のみ。
+        ///   落ち先は VertexMatrix(i, showBindPose) で、描画と同じ規則・同じ表示モード。
+        ///   これは CPU 独自計算であり、本来は残すべきでないものを承知のうえで
+        ///   保険として置いている（2026-09-15・利用者の指示による）。
+        ///   外すと、GPU 値が取れない条件で回転が無反応になる。
+        ///   新しいコードでこの分岐を真似しないこと。
         /// </summary>
-        private Vector3 PivotWorld()
+        private Dictionary<int, Vector3> CaptureStartWorld(
+            MeshContext meshContext, int meshKey, Dictionary<int, Vector3> startLocal)
         {
-            var mc = _ctx?.Model?.ActiveMeshContext;
-            return mc != null ? mc.LocalToWorld(_pivot) : _pivot;
+            var gpu = _ctx?.GetMeshWorldPositions?.Invoke(meshKey);
+            var map = new Dictionary<int, Vector3>(startLocal.Count);
+            bool showBind = _ctx?.ShowBindPose ?? false;
+
+            foreach (var kv in startLocal)
+            {
+                int i = kv.Key;
+                if (gpu != null && i >= 0 && i < gpu.Length) map[i] = gpu[i];
+                // 【保険】GPU 値が無いときだけの CPU 経路。上の注記を参照。
+                else map[i] = meshContext.VertexMatrix(i, showBind).MultiplyPoint3x4(kv.Value);
+            }
+            return map;
         }
+
+        /// <summary>
+        /// _pivot はワールド座標で保持する（2026-09-15 変更）。
+        /// 以前は基準メッシュのローカル座標で持ち、使うたびに LocalToWorld で戻していたが、
+        /// その往復に入るのはメッシュ 1 個の WorldMatrix で、スキンド頂点の表示位置とは
+        /// 別物だった。GPU から取った重心をローカルへ畳むと壊れるため、ワールドのまま持つ。
+        /// </summary>
+        private Vector3 PivotWorld() => _pivot;
 
         private void UpdatePivot()
         {
             if (_useOriginPivot)
             {
-                _pivot = Vector3.zero;
+                // 基準メッシュのローカル原点。_pivot はワールド保持なので、ここでワールドへ直す。
+                var originMc = _ctx?.Model?.ActiveMeshContext;
+                _pivot = originMc != null
+                    ? (_ctx?.ShowBindPose ?? false
+                        ? originMc.BindWorldMatrix.MultiplyPoint3x4(Vector3.zero)
+                        : originMc.WorldMatrix.MultiplyPoint3x4(Vector3.zero))
+                    : Vector3.zero;
                 return;
             }
 
@@ -271,6 +312,7 @@ namespace Poly_Ling.Tools
             Vector3 sum = Vector3.zero;
             int totalCount = 0;
             var model = _ctx?.Model;
+            bool showBind = _ctx?.ShowBindPose ?? false;
 
             foreach (var kv in _multiMeshAffected)
             {
@@ -278,12 +320,19 @@ namespace Poly_Ling.Tools
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
 
+                // 前方向は GPU が出した値を使う（CPU で計算し直さない）。
+                var gpu = _ctx?.GetMeshWorldPositions?.Invoke(kv.Key);
+
                 foreach (int i in kv.Value)
                 {
                     if (i >= 0 && i < meshObject.VertexCount)
                     {
-                        // メッシュごとにローカル座標系が異なるため、いったんワールドで平均する。
-                        sum += meshContext.LocalToWorld(meshObject.Vertices[i].Position);
+                        // メッシュごとにローカル座標系が異なるため、ワールドで平均する。
+                        // 【保険】GPU 値が無いときだけ CPU 行列に落ちる（CaptureStartWorld の注記を参照）。
+                        sum += (gpu != null && i < gpu.Length)
+                             ? gpu[i]
+                             : meshContext.VertexMatrix(i, showBind)
+                                          .MultiplyPoint3x4(meshObject.Vertices[i].Position);
                         totalCount++;
                     }
                 }
@@ -295,10 +344,8 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            // _pivot は「基準メッシュのローカル座標」で保持する（PivotPublic の契約）。
-            Vector3 pivotWorld = sum / totalCount;
-            var pivotMc = model?.ActiveMeshContext;
-            _pivot = pivotMc != null ? pivotMc.WorldToLocal(pivotWorld) : pivotWorld;
+            // _pivot はワールド座標で保持する（PivotWorld / PivotPublic の契約）。
+            _pivot = sum / totalCount;
         }
 
         private void UpdatePreview()
@@ -313,6 +360,7 @@ namespace Poly_Ling.Tools
             {
                 UpdatePivot();
                 _multiMeshMagnetW.Clear();
+                _multiMeshStartWorld.Clear();
                 foreach (var kv in _multiMeshAffected)
                 {
                     var meshContext = model.GetMeshContext(kv.Key);
@@ -347,6 +395,8 @@ namespace Poly_Ling.Tools
                     }
 
                     _multiMeshStartPositions[kv.Key] = startPos;
+                    // 開始時の表示ワールド座標を GPU から写す。以後この値を基準に回す。
+                    _multiMeshStartWorld[kv.Key] = CaptureStartWorld(meshContext, kv.Key, startPos);
                 }
             }
 
@@ -367,6 +417,7 @@ namespace Poly_Ling.Tools
             // これによりメッシュの WorldMatrix に回転／スケールがあっても
             // ギズモの見た目と実際の回転が一致する。
             Vector3 pivotWorld = PivotWorld();
+            bool showBindPose = _ctx?.ShowBindPose ?? false;
 
             foreach (var kv in _multiMeshStartPositions)
             {
@@ -375,6 +426,7 @@ namespace Poly_Ling.Tools
                 if (meshObject == null) continue;
 
                 _multiMeshMagnetW.TryGetValue(kv.Key, out var wmap);
+                _multiMeshStartWorld.TryGetValue(kv.Key, out var startWorldMap);
 
                 foreach (var posKv in kv.Value)
                 {
@@ -386,10 +438,16 @@ namespace Poly_Ling.Tools
                         if (wmap != null && wmap.TryGetValue(i, out float wt))
                             rq = Quaternion.Slerp(Quaternion.identity, rot, wt);
 
-                        Vector3 startWorld = meshContext.LocalToWorld(posKv.Value);
+                        // 前方向は開始時に GPU から写した表示ワールド座標。
+                        // 書き戻しだけ頂点単位の逆行列を使う（GPU 側に逆行列は無い）。
+                        // 【保険】写せていない頂点だけ CPU 行列に落ちる（CaptureStartWorld の注記を参照）。
+                        Vector3 startWorld = (startWorldMap != null && startWorldMap.TryGetValue(i, out var sw))
+                            ? sw
+                            : meshContext.VertexMatrix(i, showBindPose).MultiplyPoint3x4(posKv.Value);
                         Vector3 rotWorld   = pivotWorld + rq * (startWorld - pivotWorld);
                         var v = meshObject.Vertices[i];
-                        v.Position = meshContext.WorldToLocal(rotWorld);
+                        v.Position = meshContext.VertexMatrix(i, showBindPose).inverse
+                                                .MultiplyPoint3x4(rotWorld);
                         meshObject.Vertices[i] = v;
                     }
                     meshObject.InvalidatePositionCache();
@@ -465,6 +523,7 @@ namespace Poly_Ling.Tools
             }
 
             _multiMeshStartPositions.Clear();
+            _multiMeshStartWorld.Clear();
             _multiMeshMagnetW.Clear();
             _isDirty = false;
         }
@@ -497,6 +556,7 @@ namespace Poly_Ling.Tools
                 mo2?.InvalidatePositionCache();
             }
             _multiMeshStartPositions.Clear();
+            _multiMeshStartWorld.Clear();
             _multiMeshMagnetW.Clear();
             _isDirty = false;
             _ctx.SyncMesh?.Invoke();

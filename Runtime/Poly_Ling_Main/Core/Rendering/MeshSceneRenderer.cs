@@ -66,6 +66,26 @@ namespace Poly_Ling.Core
         private readonly List<int>                  _selectedMeshIndexForDraw = new List<int>();
 
         private readonly List<UnifiedSystemAdapter> _adapters       = new List<UnifiedSystemAdapter>();
+
+        /// <summary>
+        /// バインドポーズで見せるか（表示だけの切替）。
+        /// 正典は ProjectContext.ShowBindPose。ここは各アダプタへ配るための控え。
+        /// 規約は PolyLing_姿勢の規約.md の 10 章。
+        /// </summary>
+        public bool ShowBindPose { get; private set; }
+
+        /// <summary>
+        /// 表示の姿勢を切り替え、生きているアダプタ全部へ配る。
+        /// 呼び出し側は このあと変換を回し直すこと（UpdateTransform）。
+        /// </summary>
+        public void SetShowBindPose(bool on)
+        {
+            ShowBindPose = on;
+            for (int i = 0; i < _adapters.Count; i++)
+            {
+                if (_adapters[i] != null) _adapters[i].ShowBindPose = on;
+            }
+        }
         private readonly Dictionary<(int, int), Mesh> _boneMeshCache= new Dictionary<(int, int), Mesh>();
 
         // 法線表示用のラインメッシュ（モデル単位で 1 本にまとめる）。
@@ -422,6 +442,8 @@ namespace Poly_Ling.Core
             // [CamDbg] xform=1 のとき GPU 変換と書き戻しを止める。診断専用。
             if (!Poly_Ling.Diagnostics.PLCamDbg.SwNoXform)
             {
+                // 作った直後のアダプタにも今の表示姿勢を配る。
+                adapter.ShowBindPose = ShowBindPose;
                 adapter.UpdateTransform(useWorldTransform: true);
                 adapter.WritebackTransformedVertices();
             }

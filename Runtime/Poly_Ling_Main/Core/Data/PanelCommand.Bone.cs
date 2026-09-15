@@ -87,6 +87,63 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; TargetField = targetField; Value = value; }
     }
 
+    /// <summary>
+    /// 表示の姿勢を切り替える（現在ポーズ / バインドポーズ）。
+    ///
+    /// 表示だけの切替で、BonePoseData も BoneTransform も BindPose も変えない。
+    /// 効かせ先は描画（UnifiedBufferManager の行列表）と書き戻し（ToolContext）の 2 つ。
+    /// 規約は PolyLing_姿勢の規約.md の 10 章。
+    /// </summary>
+    [PLCommand(Description = "表示の姿勢を切り替える。true でバインドポーズ表示。データは変えない。")]
+    public class SetPoseDisplayModeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ShowBindPose",
+                 Description = "true でバインドポーズ表示、false で現在ポーズ表示", Required = true)]
+        public bool ShowBindPose { get; }
+
+        public SetPoseDisplayModeCommand(int modelIndex, bool showBindPose)
+            : base(modelIndex) { ShowBindPose = showBindPose; }
+    }
+
+    /// <summary>
+    /// ポーズ層（BonePoseData の "Manual" 層）の Position / Rotation を 1 軸だけ変える。
+    ///
+    /// SetBoneTransformValueCommand との違いは書き込み先。
+    ///   SetBoneTransformValue … BoneTransform（＝バインド側。バインド階層も動く）
+    ///   SetBonePoseValue      … BonePoseData のポーズ層（＝現在ポーズだけが動く）
+    /// 規約は PolyLing_姿勢の規約.md を参照。
+    ///
+    /// スケールはポーズ層の対象外なので受け付けない（指定すると失敗する）。
+    ///
+    /// 対象はボーンに限らない。描画メッシュ自体がボーンと同じ階層構造を持つ
+    /// （メッシュフィルタ相当）ため、非スキンドの描画オブジェクトへも入る。
+    /// </summary>
+    [PLCommand(Description = "ポーズ層（Manual）の Position / Rotation の 1 軸だけを変える。バインド側は動かさない。")]
+    public class SetBonePoseValueCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の masterIndex 配列。ボーンでも描画オブジェクトでもよい", Required = true)]
+        public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "BoneTransformField",
+                 Description = "書き換える軸。位置 / 回転の X・Y・Z。拡大率は受け付けない", Required = true)]
+        public SetBoneTransformValueCommand.Field TargetField { get; }
+
+        [PLParam(TextKey = "BoneTransformValue",
+                 Description = "TargetField へ入れる値。回転は度", Required = true)]
+        public float Value { get; }
+
+        public SetBonePoseValueCommand(
+            int modelIndex, int[] masterIndices,
+            SetBoneTransformValueCommand.Field targetField, float value)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices;
+            TargetField   = targetField;
+            Value         = value;
+        }
+    }
+
     /// <summary>BoneTransform スライダードラッグ開始（Undo スナップショット取得）</summary>
     [PLCommand(Description = "BoneTransform のスライダー操作を始める（Undo のスナップショットを取る）。")]
     public class BeginBoneTransformSliderDragCommand : PanelCommand

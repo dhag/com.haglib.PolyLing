@@ -427,36 +427,32 @@ namespace Poly_Ling.UnityClip
         /// <summary>
         /// ノードのレスト・ワールド行列（BonePoseData を含まない累積）。
         /// ミラーノードは共役 S·H·S を掛けた値を返す（＝右半身の実位置）。
+        ///
+        /// 実体は MeshContext.BindWorldMatrix（ModelContext.ComputeWorldMatrices が
+        /// WorldMatrix と同時に書く）。以前はここで BoneTransform を親から積み直して
+        /// いたが、同じ値の作り方が 2 つある状態を避けるため参照に変えた
+        /// （規約は PolyLing_姿勢の規約.md）。
+        ///
+        /// 【前提】BoneTransform を変えたあとは ComputeWorldMatrices を通しておくこと。
+        /// 通っていないと BindWorldMatrix が古いままになる。
         /// </summary>
         public Matrix4x4 RestWorldMatrix(ModelContext model, int node)
         {
             if (node < 0 || node >= Nodes.Count) return Matrix4x4.identity;
             var list = model.MeshContextList;
 
-            var chain = new List<int>();
-            int cur   = Nodes[node].SourceContextIndex;
-            int guard = 0;
-            while (cur >= 0 && cur < list.Count && guard++ < 512)
-            {
-                chain.Add(cur);
-                var c = list[cur];
-                if (c == null) break;
-                cur = c.HierarchyParentIndex;
-            }
+            int si = Nodes[node].SourceContextIndex;
+            if (si < 0 || si >= list.Count) return Matrix4x4.identity;
 
-            Matrix4x4 w = Matrix4x4.identity;
-            for (int i = chain.Count - 1; i >= 0; i--)
-            {
-                var bt = list[chain[i]]?.BoneTransform;
-                Matrix4x4 l = (bt != null && bt.UseLocalTransform) ? bt.TransformMatrix : Matrix4x4.identity;
-                w = w * l;
-            }
+            var src = list[si];
+            if (src == null) return Matrix4x4.identity;
+
+            Matrix4x4 w = src.BindWorldMatrix;
 
             if (Nodes[node].IsMirror)
             {
-                var src = list[Nodes[node].SourceContextIndex];
                 Matrix4x4 s = MirrorBranchOps.MirrorMatrix(
-                    src?.MirrorAxis ?? 1, src?.MirrorDistance ?? 0f);
+                    src.MirrorAxis, src.MirrorDistance);
                 w = s * w * s;
             }
             return w;

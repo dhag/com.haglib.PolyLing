@@ -426,6 +426,13 @@ namespace Poly_Ling.UnityClip
         //   MeshFilter 骨格は BindPose を持たない（mesh.csv に bindPose 行が無く単位行列のまま）ため、
         //   BoneTransform を階層に沿って累積して組む。ここを BindPose のままにすると
         //   全ボーンの rest 位置が原点になり、方向整列 A が丸ごと壊れる。
+        //
+        // 【一本化の候補・未着手】
+        //   下の BindPose.inverse は RestWorldMatrix（＝ MeshContext.BindWorldMatrix）と
+        //   同じ意味の値で、レストの出どころが 2 つある状態になっている。
+        //   BindPose がいつ撮られた値かに依存するため、撮り直しの整理
+        //   （BindPoseOps.RebindToBind への置き換え）が済んでから寄せること。
+        //   規約は PolyLing_姿勢の規約.md を参照。
         private Matrix4x4 RestWorldOf(ModelContext model, int node)
         {
             if (!_skeleton.MeshFilterSkeleton)

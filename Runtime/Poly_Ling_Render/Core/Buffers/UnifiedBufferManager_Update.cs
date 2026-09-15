@@ -27,7 +27,15 @@ namespace Poly_Ling.Core
         /// ModelContext.ComputeWorldMatrices() 呼び出し後に使用
         /// ボーンを含む全MeshContextの行列をアップロード
         /// </summary>
-        public void UpdateTransformMatrices(List<MeshContext> meshContexts, bool useWorldTransform)
+        /// <param name="showBindPose">
+        /// true のときバインドポーズで見せる。表示だけの切替で、データは変えない。
+        ///   非スキンド … BindWorldMatrix（ポーズを含まない階層）
+        ///   ボーン・スキンド … 単位行列（頂点はバインド空間にあるのでそのまま出る）
+        /// 規約は PolyLing_姿勢の規約.md の 10 章。
+        /// 書き戻し側（ToolContext）も同じ切替に従わせること。
+        /// </param>
+        public void UpdateTransformMatrices(
+            List<MeshContext> meshContexts, bool useWorldTransform, bool showBindPose = false)
         {
             if (meshContexts == null || _transformMatrixBuffer == null)
                 return;
@@ -79,11 +87,23 @@ namespace Poly_Ling.Core
                          ctx.Type == MeshType.MirrorSide ||
                          ctx.Type == MeshType.BakedMirror) &&
                         !ctx.IsSkinned;
-                    _transformMatrices[i] = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
+
+                    if (showBindPose)
+                    {
+                        // バインド表示。非スキンドはポーズを含まない階層、
+                        // ボーン・スキンドは単位行列（＝頂点のバインド空間をそのまま出す）。
+                        _transformMatrices[i] = usesWorldMatrixDirect
+                            ? ctx.BindWorldMatrix
+                            : Matrix4x4.identity;
+                    }
+                    else
+                    {
+                        _transformMatrices[i] = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
+                    }
                 }
                 else
                 {
-                    _transformMatrices[i] = ctx.LocalMatrix;
+                    _transformMatrices[i] = showBindPose ? ctx.BindLocalMatrix : ctx.LocalMatrix;
                 }
             }
 

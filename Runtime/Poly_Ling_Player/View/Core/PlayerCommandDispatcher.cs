@@ -497,6 +497,12 @@ namespace Poly_Ling.Player
         /// <summary>使う作業軸オブジェクトの切り替えコマンドの実行。</summary>
         public Func<SetActiveWorkAxisCommand, string> OnSetActiveWorkAxis;
 
+        /// <summary>
+        /// バインドポーズ表示の切替を左ペインのトグルへ書き戻す口。
+        /// 通知を出さずに値だけ合わせること（無限ループを避けるため）。
+        /// </summary>
+        public Action<bool> _syncShowBindPoseToggle;
+
         /// <summary>作業軸の状態差し替えコマンドの実行。</summary>
         public Func<SetWorkAxisCommand, string> OnSetWorkAxis;
 
@@ -764,6 +770,8 @@ namespace Poly_Ling.Player
             if (DispatchSelectionSets(cmd, project, model))     return;
             if (DispatchNormalEdit(cmd, project, model))        return;
             if (DispatchMeshSelectionSets(cmd, project, model)) return;
+            // 【臨時】姿勢検証。検証が済んだらこの行と PlayerCommandDispatcher.TempVerify.cs を消す。
+            if (DispatchTempVerify(cmd, project, model))       return;
 
             // ── その他（モーフ変換・プレビュー等）は Player では未実装
             Debug.LogWarning($"[PlayerCommandDispatcher] Unhandled PanelCommand: {cmd.GetType().Name}");

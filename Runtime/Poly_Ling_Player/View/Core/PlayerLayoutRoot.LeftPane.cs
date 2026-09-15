@@ -81,6 +81,15 @@ namespace Poly_Ling.Player
         public Toggle PerfLogToggle { get; private set; }
 
         /// <summary>
+        /// 左ペイン：バインドポーズ表示トグル。既定 OFF。
+        ///
+        /// ON にすると、ポーズ層（BonePoseData）を入れたままバインド姿勢で表示する。
+        /// 表示だけの切替でデータは変えない。正典は ProjectContext.ShowBindPose で、
+        /// このトグルは SetPoseDisplayModeCommand を送るだけ。永続化しない。
+        /// </summary>
+        public Toggle ShowBindPoseToggle { get; private set; }
+
+        /// <summary>
         /// 左ペイン：軌道回転の中心をローカル原点（＝ピボット）にするトグル。既定 ON。
         ///
         /// ON のとき、メインビュー（透視ビューポート）の右ドラッグ回転は
@@ -253,6 +262,22 @@ namespace Poly_Ling.Player
                 PerfLogToggle.labelElement.style.marginRight = 3;
             }
             scroll.Add(PerfLogToggle);
+
+            // バインドポーズ表示。ポーズ層を入れたまま「ポーズを解いた形」を見るための切替。
+            // 表示だけで、BonePoseData も BoneTransform も BindPose も変えない。
+            // VD_* のグリッドへは入れない（あちらはビューポート単位の表示ビットで
+            // ViewportDisplaySettings が永続化する。こちらはプロジェクト単位で保存しない）。
+            // 規約は PolyLing_姿勢の規約.md の 10 章。
+            ShowBindPoseToggle = new Toggle("バインドポーズ表示") { value = false };
+            ShowBindPoseToggle.style.color        = new StyleColor(Color.white);
+            ShowBindPoseToggle.style.marginBottom = 4;
+            if (ShowBindPoseToggle.labelElement != null)
+            {
+                ShowBindPoseToggle.labelElement.style.minWidth    = 0;
+                ShowBindPoseToggle.labelElement.style.flexGrow    = 0;
+                ShowBindPoseToggle.labelElement.style.marginRight = 3;
+            }
+            scroll.Add(ShowBindPoseToggle);
 
             // 軌道回転の中心（既定＝ローカル原点）。Lasso Select の直下に置く。
             OrbitAroundLocalOriginToggle = new Toggle("回転はローカル原点中心") { value = true };

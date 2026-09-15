@@ -212,17 +212,12 @@ namespace Poly_Ling.Player
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods) {}
 
         /// <summary>
-        /// スケールピボット(_tool.PivotPublic はローカル空間)を対象メッシュの WorldMatrix で
-        /// ワールド変換して返す。WorldToScreenPos はワールド空間を期待するため、この変換が
-        /// 無いと Player（WorldMatrix 非 identity）でギズモが実頂点から離れて描画される。
-        /// 内部のスケール数学が使うローカル _pivot は変更しない。移動/回転ハンドルと同一方式。
+        /// スケールピボット。_tool.PivotPublic は 2026-09-15 からワールド座標なので、
+        /// ここでの変換は不要になった。以前はメッシュ 1 個の WorldMatrix を掛けており、
+        /// スキンド頂点では画面の位置とギズモの位置が食い違っていた。
+        /// 解決規則は ScaleTool.PivotWorld() と一致させること。
         /// </summary>
-        private Vector3 WorldPivot()
-        {
-            var mc = _project?.CurrentModel?.ActiveMeshContext;
-            var local = _tool.PivotPublic;
-            return mc != null ? mc.LocalToWorld(local) : local;
-        }
+        private Vector3 WorldPivot() => _tool.PivotPublic;
 
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {

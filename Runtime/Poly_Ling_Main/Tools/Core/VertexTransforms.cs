@@ -127,6 +127,28 @@ namespace Poly_Ling.Tools
         private Vector3[] _originalPositions;
         private Vector3 _totalDelta;
 
+        // ワールド移動量 → 頂点ローカル移動量の変換。null のときは変換せずそのまま足す。
+        //
+        // 【なぜ頂点索引を受け取るか】
+        //   描画は頂点ごとに行列を選ぶ（MeshContext.VertexMatrix）。メッシュ 1 個に
+        //   行列 1 個という前提はスキンド頂点で成立しない。
+        //   規約 PolyLing_姿勢の規約.md 9 章・10.1。
+        private Func<int, Vector3, Vector3> _worldToLocal;
+
+        /// <summary>
+        /// ワールド移動量を頂点ローカル移動量へ落とす関数を差し込む。
+        /// 設定しないとワールド量をそのままローカルへ足す（従来の挙動）。
+        /// </summary>
+        public void SetWorldToLocal(Func<int, Vector3, Vector3> convert)
+        {
+            _worldToLocal = convert;
+        }
+
+        private Vector3 ToLocal(int vertexIndex, Vector3 worldDelta)
+        {
+            return _worldToLocal != null ? _worldToLocal(vertexIndex, worldDelta) : worldDelta;
+        }
+
         public void Begin(MeshObject meshObject, HashSet<int> selectedIndices, Vector3[] originalPositions)
         {
             _meshObject = meshObject;
@@ -148,9 +170,15 @@ namespace Poly_Ling.Tools
             {
                 if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
-                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + _totalDelta;
+                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + ToLocal(idx, _totalDelta);
                 }
             }
+
+            // Vertices[i].Position を直接書いたので位置キャッシュを捨てる
+            // （MeshObject.cs:118 の約束）。これを省くと MeshObject.Positions が
+            // 古いまま残り、次の移動が開始スナップショットに前回の結果を含まない
+            // 位置を取り、1 つ前の移動が消える。
+            _meshObject.InvalidatePositionCache();
         }
 
         public void End()
@@ -195,6 +223,24 @@ namespace Poly_Ling.Tools
 
         // 全影響頂点（選択 + マグネット影響）
         private HashSet<int> _allAffectedIndices;
+
+        // ワールド移動量 → 頂点ローカル移動量の変換。null のときは変換せずそのまま足す。
+        // 意味と理由は SimpleMoveTransform._worldToLocal と同じ。
+        private Func<int, Vector3, Vector3> _worldToLocal;
+
+        /// <summary>
+        /// ワールド移動量を頂点ローカル移動量へ落とす関数を差し込む。
+        /// 設定しないとワールド量をそのままローカルへ足す（従来の挙動）。
+        /// </summary>
+        public void SetWorldToLocal(Func<int, Vector3, Vector3> convert)
+        {
+            _worldToLocal = convert;
+        }
+
+        private Vector3 ToLocal(int vertexIndex, Vector3 worldDelta)
+        {
+            return _worldToLocal != null ? _worldToLocal(vertexIndex, worldDelta) : worldDelta;
+        }
 
         public MagnetMoveTransform(float radius, FalloffType falloffType)
             : this(radius, falloffType, DistanceMode.Euclidean)
@@ -335,11 +381,12 @@ namespace Poly_Ling.Tools
             {
                 if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
-                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + _totalDelta;
+                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + ToLocal(idx, _totalDelta);
                 }
             }
 
             // 非選択だが影響を受ける頂点: 減衰付き移動
+            // 減衰はローカル化した移動量へ掛ける（掛ける順序を変えない）。
             foreach (var kvp in _affectedNonSelected)
             {
                 int idx = kvp.Key;
@@ -347,9 +394,12 @@ namespace Poly_Ling.Tools
 
                 if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
-                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + _totalDelta * falloff;
+                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + ToLocal(idx, _totalDelta) * falloff;
                 }
             }
+
+            // 直接書いた分の位置キャッシュを捨てる。理由は SimpleMoveTransform と同じ。
+            _meshObject.InvalidatePositionCache();
         }
 
         public void End()
