@@ -174,6 +174,8 @@ namespace Poly_Ling.MeshListV2
         private Toggle _ignorePoseToggle;
         [UiControl("detail.preserveNormals", Description = "法線を保持する（再計算しない）")]
         private Toggle _preserveNormalsToggle;
+        [UiControl("detail.billboard", Description = "ビルボード表示（基準カメラへ正対させる）")]
+        private Toggle _billboardToggle;
         [UiControl("detail.mirrorBranchRoot", Description = "ミラー分岐ルートにする")]
         private Toggle _mirrorBranchRootToggle;
         // ミラーモード（なし/分離/結合）。⇆ ボタンは有無だけを切り替えるので、

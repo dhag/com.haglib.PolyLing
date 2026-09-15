@@ -298,16 +298,14 @@ namespace Poly_Ling.Player
             return l;
         }
 
-        /// <summary>板を置く平面のドロップダウン（平面と同じ XY / XZ / YZ）。</summary>
+        /// <summary>
+        /// 板を置く平面のドロップダウン（平面と同じ XY / XZ / YZ）。
+        /// 行ヘルパ DD を通すので UiDynamicControls へ "Orientation" で登録される。
+        /// </summary>
         private VisualElement OrientationDD(
             System.Func<PlaneOrientation> get, System.Action<PlaneOrientation> set)
-        {
-            var dd = new DropdownField(
-                new List<string> { T("PlaneXY"), T("PlaneXZ"), T("PlaneYZ") }, (int)get());
-            dd.label = T("Orientation");
-            dd.style.marginBottom = 2;
-            dd.RegisterValueChangedCallback(_ => set((PlaneOrientation)dd.index));
-            return dd;
-        }
+            => DD(T("Orientation"),
+                  new List<string> { T("PlaneXY"), T("PlaneXZ"), T("PlaneYZ") },
+                  () => (int)get(), i => set((PlaneOrientation)i));
     }
 }

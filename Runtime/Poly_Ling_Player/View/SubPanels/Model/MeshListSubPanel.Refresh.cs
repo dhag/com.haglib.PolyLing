@@ -274,6 +274,8 @@ namespace Poly_Ling.MeshListV2
                 SL(_boneIndexLabel, "ボーンIdx: -"); SL(_masterIndexLabel, "マスターIdx: -");
                 _ignorePoseToggle?.SetValueWithoutNotify(false);
                 _preserveNormalsToggle?.SetValueWithoutNotify(false);
+                _billboardToggle?.SetValueWithoutNotify(false);
+                _billboardToggle?.SetEnabled(false);
                 _mirrorBranchRootToggle?.SetValueWithoutNotify(false);
                 _mirrorBranchRootToggle?.SetEnabled(false);
                 SetMirrorMode(0, false);
@@ -292,6 +294,8 @@ namespace Poly_Ling.MeshListV2
                 _ignorePoseToggle?.SetEnabled(true);
                 _preserveNormalsToggle?.SetValueWithoutNotify(s.PreserveNormals);
                 _preserveNormalsToggle?.SetEnabled(true);
+                _billboardToggle?.SetValueWithoutNotify(s.Billboard != BillboardMode.Off);
+                _billboardToggle?.SetEnabled(true);
                 _mirrorBranchRootToggle?.SetValueWithoutNotify(s.IsMirrorBranchRoot);
                 _mirrorBranchRootToggle?.SetEnabled(true);
                 // ミラー側と PMX 由来のミラーは変更させない
@@ -309,6 +313,10 @@ namespace Poly_Ling.MeshListV2
                 bool pnAllSame = _selectedAdapters.All(a => a.MeshView.PreserveNormals == _selectedAdapters[0].MeshView.PreserveNormals);
                 _preserveNormalsToggle?.SetValueWithoutNotify(pnAllSame && _selectedAdapters[0].MeshView.PreserveNormals);
                 _preserveNormalsToggle?.SetEnabled(true);
+                bool bbAllSame = _selectedAdapters.All(a => a.MeshView.Billboard == _selectedAdapters[0].MeshView.Billboard);
+                _billboardToggle?.SetValueWithoutNotify(
+                    bbAllSame && _selectedAdapters[0].MeshView.Billboard != BillboardMode.Off);
+                _billboardToggle?.SetEnabled(true);
                 bool mbAllSame = _selectedAdapters.All(a => a.MeshView.IsMirrorBranchRoot == _selectedAdapters[0].MeshView.IsMirrorBranchRoot);
                 _mirrorBranchRootToggle?.SetValueWithoutNotify(mbAllSame && _selectedAdapters[0].MeshView.IsMirrorBranchRoot);
                 _mirrorBranchRootToggle?.SetEnabled(true);

@@ -83,6 +83,15 @@ namespace Poly_Ling.Context
         /// </summary>
         public bool ShowBindPose { get; set; } = false;
 
+        /// <summary>
+        /// ビルボード（MeshObject.Billboard）の基準にするビュー。
+        /// 表示だけの設定で、保存しない。
+        ///
+        /// 行列表はモデル単位で 1 本しかなく 4 面が共有するため、基準は 1 つに決まる。
+        /// 既定を Current にすると、クリックでアクティブ面が変わるたびに板が回る。
+        /// </summary>
+        public BillboardViewKind BillboardView { get; set; } = BillboardViewKind.Perspective;
+
         // ================================================================
         // カレントモデル（シリアライズしない）
         // ================================================================

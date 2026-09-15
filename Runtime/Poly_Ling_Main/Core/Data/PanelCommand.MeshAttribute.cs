@@ -333,6 +333,25 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
     }
 
+    /// <summary>
+    /// ビルボード表示（カメラへ正対させる）を設定するコマンド。
+    /// 表示と書き戻しだけの切替で、頂点も姿勢データも変えない。保存もしない。
+    /// </summary>
+    [PLCommand(Description = "描画オブジェクトをカメラへ正対させる（ビルボード）表示を設定する。表示だけの切替で、頂点も姿勢も変えない。UV を XYZ へ展開した板のような 2D の面を、視点を問わず正面から編集するために使う。")]
+    public class SetMeshBillboardCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices",
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
+        public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "MeshBillboardMode",
+                 Description = "ビルボードの種類（Off / ScreenAligned）", Required = true)]
+        public BillboardMode Mode { get; }
+
+        public SetMeshBillboardCommand(int modelIndex, int[] masterIndices, BillboardMode mode)
+            : base(modelIndex) { MasterIndices = masterIndices; Mode = mode; }
+    }
+
     /// <summary>ミラー分岐ルートのフラグを設定するコマンド。</summary>
     [PLCommand(Description = "ミラー分岐ルートのフラグを設定するコマンド。")]
     public class SetMirrorBranchRootCommand : PanelCommand

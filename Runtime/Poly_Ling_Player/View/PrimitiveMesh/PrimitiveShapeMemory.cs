@@ -28,7 +28,8 @@ namespace Poly_Ling.Player
             public string Panel;      // パネル識別子（"Primitive" / "LivePrimitive"）
             public string Basic;      // 基本図形カテゴリで最後に選んだ ShapeKind 名
             public string Advanced;   // 高度な図形カテゴリで最後に選んだ ShapeKind 名
-            public string Mechanism;  // 機構部品カテゴリで最後に選んだ ShapeKind 名
+            public string Mechanism;  // 機構部品Aカテゴリで最後に選んだ ShapeKind 名
+            public string MechanismB; // 機構部品Bカテゴリで最後に選んだ ShapeKind 名
             public string SpringBone; // 揺れものボーンカテゴリで最後に選んだ ShapeKind 名
             public string Sandbox;    // MCP用サンドボックスで最後に選んだ ShapeKind 名
         }
@@ -132,6 +133,7 @@ namespace Poly_Ling.Player
                 {
                     case ShapeCategory.Advanced:   entry.Advanced   = name; break;
                     case ShapeCategory.Mechanism:  entry.Mechanism  = name; break;
+                    case ShapeCategory.MechanismB: entry.MechanismB = name; break;
                     case ShapeCategory.SpringBone: entry.SpringBone = name; break;
                     case ShapeCategory.Sandbox:    entry.Sandbox    = name; break;
                     default:                       entry.Basic      = name; break;
@@ -150,6 +152,7 @@ namespace Poly_Ling.Player
             {
                 case ShapeCategory.Advanced:   return entry.Advanced;
                 case ShapeCategory.Mechanism:  return entry.Mechanism;
+                case ShapeCategory.MechanismB: return entry.MechanismB;
                 case ShapeCategory.SpringBone: return entry.SpringBone;
                 case ShapeCategory.Sandbox:    return entry.Sandbox;
                 default:                       return entry.Basic;

@@ -701,6 +701,7 @@ namespace Poly_Ling.Player
             _layoutRoot.LivePrimitiveBtn.clicked += ShowLivePrimitivePanel;
             _layoutRoot.LiveAdvancedPrimitiveBtn.clicked += ShowLiveAdvancedPrimitivePanel;
             _layoutRoot.LiveMechanismPrimitiveBtn.clicked += ShowLiveMechanismPrimitivePanel;
+            _layoutRoot.LiveMechanismBPrimitiveBtn.clicked += ShowLiveMechanismBPrimitivePanel;
             _layoutRoot.LiveSpringBonePrimitiveBtn.clicked += ShowLiveSpringBonePrimitivePanel;
 
             if (_layoutRoot.McpSandboxBtn != null)

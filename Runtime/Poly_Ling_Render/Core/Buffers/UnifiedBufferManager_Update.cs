@@ -98,7 +98,10 @@ namespace Poly_Ling.Core
                     }
                     else
                     {
-                        _transformMatrices[i] = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
+                        // ビルボード指定のある非スキンドメッシュは DisplayWorldMatrix。
+                        // 指定が無ければ WorldMatrix と同じ値が返る。
+                        // 書き戻し側（ToolContext）も同じ行列を使うこと（規約 10.1）。
+                        _transformMatrices[i] = usesWorldMatrixDirect ? ctx.DisplayWorldMatrix : ctx.SkinningMatrix;
                     }
                 }
                 else

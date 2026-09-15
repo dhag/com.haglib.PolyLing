@@ -75,6 +75,62 @@ namespace Poly_Ling.Data
     }
 
     // ============================================================
+    // ビルボード（表示だけの姿勢差し替え）
+    // ============================================================
+
+    /// <summary>
+    /// 描画オブジェクトをカメラへ正対させるか。表示と書き戻しだけの切替で、
+    /// データ（BoneTransform / WorldMatrix）は変えない。
+    ///
+    /// 【用途】
+    ///   UV を XYZ へ展開した板（UvUnwrapOps.BuildUvzMesh）のような 2D の面を、
+    ///   視点を問わず正面から編集するため。
+    ///
+    /// 【効かせ先は 2 つ】必ず両方をそろえること（規約 PolyLing_姿勢の規約.md 10.1）。
+    ///   描画     … UnifiedBufferManager.UpdateTransformMatrices の行列表
+    ///   書き戻し … ToolContext のワールド⇔ローカル変換（MeshContext.DisplayWorldMatrix）
+    ///
+    /// 【保存しない】表示・編集の補助であり、プロジェクト保存の対象外。
+    /// </summary>
+    public enum BillboardMode
+    {
+        /// <summary>ビルボードしない（既定）。</summary>
+        Off = 0,
+
+        /// <summary>
+        /// 基準カメラの姿勢へ丸ごと差し替える。ローカル +X が画面右、
+        /// +Y が画面上、+Z が奥になる。原点（ワールド平行移動）は動かさない。
+        /// </summary>
+        ScreenAligned = 1
+    }
+
+    /// <summary>
+    /// ビルボードの基準にするビュー。
+    ///
+    /// 【既定が Perspective である理由】
+    ///   行列表はモデル単位で 1 本しかなく、4 面のビューポートが共有する
+    ///   （UnifiedSystemAdapter は ModelContext ごと）。Current にすると、
+    ///   クリックでアクティブ面が変わるたびに板が回ってしまう。
+    ///
+    /// 【SurfaceSnapCameraKind と共通化しない理由】
+    ///   同じ並びだが、あちらは Poly_Ling.Tools にあるツール固有の型。
+    ///   Context 側から参照しない。
+    /// </summary>
+    public enum BillboardViewKind
+    {
+        /// <summary>透視ビュー（既定）。</summary>
+        Perspective = 0,
+        /// <summary>上面ビュー。</summary>
+        Top = 1,
+        /// <summary>正面ビュー。</summary>
+        Front = 2,
+        /// <summary>側面ビュー。</summary>
+        Side = 3,
+        /// <summary>カレント（直前に操作したビューポート）。</summary>
+        Current = 4
+    }
+
+    // ============================================================
     // 描画オブジェクトの種別（MeshFilter 系 / SkinnedMesh 系）
     // ============================================================
 

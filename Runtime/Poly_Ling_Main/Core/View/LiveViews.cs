@@ -177,6 +177,7 @@ namespace Poly_Ling.View
         public bool IgnorePoseInArmature => _ctx.IgnorePoseInArmature;
         public bool IsMirrorBranchRoot => _ctx.IsMirrorBranchRoot;
         public bool PreserveNormals => _ctx.PreserveNormals;
+        public Poly_Ling.Data.BillboardMode Billboard => _ctx.Billboard;
 
         // 表示用計算プロパティ
         public string InfoString => $"V:{VertexCount} F:{FaceCount}";

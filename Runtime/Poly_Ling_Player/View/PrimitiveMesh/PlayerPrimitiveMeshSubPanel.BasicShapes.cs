@@ -177,10 +177,8 @@ namespace Poly_Ling.Player
             c.Add(SL(T("Segments")));
             c.Add(IR(T("Width"), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.WidthSegments,  v => { _planeP.WidthSegments  = v; D(); }));
             c.Add(IR(T("Height"), PlaneMeshGenerator.PlaneParams.SegmentsMin, PlaneMeshGenerator.PlaneParams.SegmentsMax, () => _planeP.HeightSegments, v => { _planeP.HeightSegments = v; D(); }));
-            var dd = new DropdownField(new List<string>{ T("PlaneXY"), T("PlaneXZ"), T("PlaneYZ") }, (int)_planeP.Orientation);
-            dd.label = T("Orientation"); dd.style.marginBottom = 2;
-            dd.RegisterValueChangedCallback(e => { _planeP.Orientation = (PlaneOrientation)dd.index; D(); });
-            c.Add(dd);
+            c.Add(DD(T("Orientation"), new List<string> { T("PlaneXY"), T("PlaneXZ"), T("PlaneYZ") },
+                () => (int)_planeP.Orientation, i => { _planeP.Orientation = (PlaneOrientation)i; D(); }));
             c.Add(TR(T("FaceFront"),   () => _planeP.FaceFront,   v => { _planeP.FaceFront   = v; D(); }));
             c.Add(TR(T("DoubleSided"), () => _planeP.DoubleSided, v => { _planeP.DoubleSided = v; D(); }));
 

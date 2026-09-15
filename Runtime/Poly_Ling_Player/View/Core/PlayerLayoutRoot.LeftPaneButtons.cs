@@ -37,8 +37,11 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：新図形生成ボタン（新しい高度）。新しい基本と同じ LivePrimitiveSection を開く。</summary>
         public Button LiveAdvancedPrimitiveBtn { get; private set; }
 
-        /// <summary>左ペイン：新図形生成ボタン（機構部品）。同じ LivePrimitiveSection を開く。</summary>
+        /// <summary>左ペイン：新図形生成ボタン（機構部品A）。同じ LivePrimitiveSection を開く。</summary>
         public Button LiveMechanismPrimitiveBtn { get; private set; }
+
+        /// <summary>左ペイン：新図形生成ボタン（機構部品B）。同じ LivePrimitiveSection を開く。</summary>
+        public Button LiveMechanismBPrimitiveBtn { get; private set; }
 
         /// <summary>左ペイン：新図形生成ボタン（揺れものボーン）。同じ LivePrimitiveSection を開く。</summary>
         public Button LiveSpringBonePrimitiveBtn { get; private set; }
@@ -352,8 +355,12 @@ namespace Poly_Ling.Player
             foPrimitive.Add(LiveAdvancedPrimitiveBtn);
 
             // 歯車まわり（かみ合う部品）はここへ集める。
-            LiveMechanismPrimitiveBtn = MakeBtn("機構部品（3D連携）");
+            LiveMechanismPrimitiveBtn = MakeBtn("機構部品A（3D連携）");
             foPrimitive.Add(LiveMechanismPrimitiveBtn);
+
+            // 締結・支持・伝達の部品（留める・受ける・つなぐもの）はここへ集める。
+            LiveMechanismBPrimitiveBtn = MakeBtn("機構部品B（3D連携）");
+            foPrimitive.Add(LiveMechanismBPrimitiveBtn);
 
             // 揺れもの用のボーン鎖。作るのはボーンでメッシュではないが、
             // 形の指定（1 本 / 円筒 / 回転体）とプロファイル編集は図形生成と同じなので

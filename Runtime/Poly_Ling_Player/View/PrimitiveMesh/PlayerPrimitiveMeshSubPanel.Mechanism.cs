@@ -992,6 +992,18 @@ namespace Poly_Ling.Player
 
             switch (_current)
             {
+                case ShapeKind.RotorBlade:        RefreshRotorBladeInfo();        break;
+
+                case ShapeKind.Nut:               RefreshNutInfo();               break;
+                case ShapeKind.ShaftHolder:       RefreshShaftHolderInfo();       break;
+                case ShapeKind.BearingUnit:       RefreshBearingUnitInfo();       break;
+                case ShapeKind.UniversalJoint:    RefreshUniversalJointInfo();    break;
+                case ShapeKind.MotorBracket:      RefreshMotorBracketInfo();      break;
+                case ShapeKind.RodEnd:            RefreshRodEndInfo();            break;
+                case ShapeKind.MotorCoupling:     RefreshMotorCouplingInfo();     break;
+                case ShapeKind.TrapezoidalThread: RefreshTrapezoidalThreadInfo(); break;
+                case ShapeKind.Spline:            RefreshSplineInfo();            break;
+
                 case ShapeKind.HelicalGear:       RefreshHelicalGearInfo();       break;
                 case ShapeKind.InternalGear:      RefreshInternalGearInfo();      break;
                 case ShapeKind.InvoluteRack:      RefreshInvoluteRackInfo();      break;

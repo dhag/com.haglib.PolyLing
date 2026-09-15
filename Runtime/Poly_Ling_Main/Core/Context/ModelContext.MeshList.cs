@@ -412,6 +412,88 @@ namespace Poly_Ling.Context
             }
         }
 
+        // ================================================================
+        // ビルボード行列（表示だけの姿勢差し替え）
+        // ================================================================
+
+        /// <summary>
+        /// ビルボード指定のある描画オブジェクトへ、基準カメラの姿勢を割り当てる。
+        /// 適用した個数を返す（0 なら誰もビルボードしていない）。
+        ///
+        /// 【WorldMatrix を書き換えない】
+        ///   WorldMatrix はエクスポート（MQOExporter が頂点へ焼く）・階層・
+        ///   スキニングが読む値。カメラ由来の回転をここへ混ぜると保存結果が変わる。
+        ///   表示と書き戻しだけが見る BillboardMatrix を別に持つ。
+        ///
+        /// 【いつ呼ぶか】
+        ///   行列表を GPU へ上げる直前（PlayerViewportManager.UpdateTransform）に
+        ///   毎回 1 回。ComputeWorldMatrices の後であること。
+        ///   毎フレームのポーリングでは呼ばない。
+        ///
+        /// 【式】
+        ///   p   = WorldMatrix の平行移動（オブジェクト原点）
+        ///   R_w = WorldMatrix の回転
+        ///   B   = T(p)·(R_cam·R_w⁻¹)·T(-p)
+        ///   ⇒ B·WorldMatrix = T(p)·R_cam·S となり、原点と拡縮は保たれ、
+        ///     姿勢だけがカメラ基準に置き換わる。
+        ///
+        /// 【対象外】
+        ///   ボーン・スキンド（頂点がバインド空間にあり、行列表はボーンの欄を引く）、
+        ///   ミラー側（実効ワールドが S·H·S で det の符号が反転しており、
+        ///   Matrix4x4.rotation で回転を取り出せない）。
+        /// </summary>
+        public int ComputeBillboardMatrices(Quaternion cameraRotation)
+        {
+            if (MeshContextList == null) return 0;
+
+            int applied = 0;
+
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var ctx = MeshContextList[i];
+                if (ctx == null) continue;
+
+                if (!IsBillboardTarget(ctx))
+                {
+                    ctx.IsBillboardActive      = false;
+                    ctx.BillboardMatrix        = Matrix4x4.identity;
+                    ctx.BillboardMatrixInverse = Matrix4x4.identity;
+                    continue;
+                }
+
+                Matrix4x4 w = ctx.WorldMatrix;
+                Vector3    p = w.GetColumn(3);
+                Quaternion rw = w.rotation;
+
+                Quaternion delta = cameraRotation * Quaternion.Inverse(rw);
+
+                Matrix4x4 b = Matrix4x4.Translate(p)
+                            * Matrix4x4.Rotate(delta)
+                            * Matrix4x4.Translate(-p);
+
+                ctx.BillboardMatrix        = b;
+                ctx.BillboardMatrixInverse = Matrix4x4.Translate(p)
+                                           * Matrix4x4.Rotate(Quaternion.Inverse(delta))
+                                           * Matrix4x4.Translate(-p);
+                ctx.IsBillboardActive      = true;
+                applied++;
+            }
+
+            return applied;
+        }
+
+        /// <summary>
+        /// ビルボードを掛けてよい描画オブジェクトか。
+        /// 判定はここ 1 か所だけに置く。
+        /// </summary>
+        private static bool IsBillboardTarget(MeshContext ctx)
+        {
+            if (ctx.Billboard == BillboardMode.Off) return false;
+            if (ctx.Type != MeshType.Mesh)          return false;
+            if (ctx.IsSkinned)                      return false;
+            return true;
+        }
+
         /// <summary>
         /// 生成ミラー（MirrorGeometryDerived）の姿勢と親を、実体側から引き写す。
         ///

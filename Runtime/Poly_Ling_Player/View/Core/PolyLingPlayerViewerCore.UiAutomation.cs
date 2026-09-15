@@ -351,8 +351,10 @@ namespace Poly_Ling.Player
                 _layoutRoot.LivePrimitiveSection, ShowLivePrimitivePanel, _livePrimitiveSubPanel);
             RegisterUiPanel("primitiveAdvanced", "図形生成：高度な図形",
                 _layoutRoot.LivePrimitiveSection, ShowLiveAdvancedPrimitivePanel, _livePrimitiveSubPanel);
-            RegisterUiPanel("primitiveMechanism", "図形生成：機構部品",
+            RegisterUiPanel("primitiveMechanism", "図形生成：機構部品A",
                 _layoutRoot.LivePrimitiveSection, ShowLiveMechanismPrimitivePanel, _livePrimitiveSubPanel);
+            RegisterUiPanel("primitiveMechanismB", "図形生成：機構部品B",
+                _layoutRoot.LivePrimitiveSection, ShowLiveMechanismBPrimitivePanel, _livePrimitiveSubPanel);
             RegisterUiPanel("primitiveSpringBone", "図形生成：揺れもののボーン鎖",
                 _layoutRoot.LivePrimitiveSection, ShowLiveSpringBonePrimitivePanel, _livePrimitiveSubPanel);
             RegisterUiPanel("primitiveSandbox", "図形生成：サンドボックス",

@@ -92,6 +92,18 @@ namespace Poly_Ling.Player
                 case ShapeKind.CylindricalWorm:   return _wormP.MeshName;
                 case ShapeKind.WormWheel:         return _wheelP.MeshName;
 
+                case ShapeKind.RotorBlade:        return _rotorBladeP.MeshName;
+
+                case ShapeKind.Nut:               return _nutP.MeshName;
+                case ShapeKind.ShaftHolder:       return _shaftHolderP.MeshName;
+                case ShapeKind.BearingUnit:       return _bearingUnitP.MeshName;
+                case ShapeKind.UniversalJoint:    return _uJointP.MeshName;
+                case ShapeKind.MotorBracket:      return _motorBracketP.MeshName;
+                case ShapeKind.RodEnd:            return _rodEndP.MeshName;
+                case ShapeKind.MotorCoupling:     return _motorCouplingP.MeshName;
+                case ShapeKind.TrapezoidalThread: return _trapP.MeshName;
+                case ShapeKind.Spline:            return _splineP.MeshName;
+
                 case ShapeKind.McpCylinder:       return _mcpCylP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
@@ -136,6 +148,18 @@ namespace Poly_Ling.Player
                 case ShapeKind.SpiralBevelGear:   _spiBevelP.MeshName = name; break;
                 case ShapeKind.CylindricalWorm:   _wormP.MeshName     = name; break;
                 case ShapeKind.WormWheel:         _wheelP.MeshName    = name; break;
+
+                case ShapeKind.RotorBlade:        _rotorBladeP.MeshName   = name; break;
+
+                case ShapeKind.Nut:               _nutP.MeshName          = name; break;
+                case ShapeKind.ShaftHolder:       _shaftHolderP.MeshName  = name; break;
+                case ShapeKind.BearingUnit:       _bearingUnitP.MeshName  = name; break;
+                case ShapeKind.UniversalJoint:    _uJointP.MeshName       = name; break;
+                case ShapeKind.MotorBracket:      _motorBracketP.MeshName = name; break;
+                case ShapeKind.RodEnd:            _rodEndP.MeshName        = name; break;
+                case ShapeKind.MotorCoupling:     _motorCouplingP.MeshName = name; break;
+                case ShapeKind.TrapezoidalThread: _trapP.MeshName          = name; break;
+                case ShapeKind.Spline:            _splineP.MeshName        = name; break;
 
                 case ShapeKind.McpCylinder:       _mcpCylP.MeshName   = name; break;
                 // 穴つなぎも非重複候補の対象にする（Name() は BridgeMeshName を返すため、

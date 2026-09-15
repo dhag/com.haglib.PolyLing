@@ -146,7 +146,7 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateNGonStarCommand c:     return NGonStarMeshGenerator.Generate(c.Params);
                 case CreateInvoluteGearCommand c: return InvoluteTrochoidGearMeshGenerator.Generate(c.Params);
 
-                // ── 機構部品（Gears/ 配下） ──
+                // ── 機構部品A（Gears/ 配下） ──
                 case CreateHelicalGearCommand c:       return HelicalGearMeshGenerator.Generate(c.Params);
                 case CreateInternalGearCommand c:      return InternalGearMeshGenerator.Generate(c.Params);
                 case CreateInvoluteRackCommand c:      return InvoluteRackMeshGenerator.Generate(c.Params);
@@ -155,6 +155,21 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateSpiralBevelGearCommand c:   return SpiralBevelGearMeshGenerator.Generate(c.Params);
                 case CreateCylindricalWormCommand c:   return CylindricalWormMeshGenerator.Generate(c.Params);
                 case CreateWormWheelCommand c:         return WormWheelMeshGenerator.Generate(c.Params);
+
+                // ── プロペラ・ファン（Gears/ 配下） ──
+                case CreateRotorBladeCommand c:        return RotorBladeMeshGenerator.Generate(c.Params);
+
+                // ── 機構部品B（Gears/ 配下） ──
+                case CreateNutCommand c:               return NutMeshGenerator.Generate(c.Params);
+                case CreateShaftHolderCommand c:       return ShaftHolderMeshGenerator.Generate(c.Params);
+                case CreateBearingUnitCommand c:       return BearingUnitMeshGenerator.Generate(c.Params);
+                case CreateUniversalJointCommand c:    return UniversalJointMeshGenerator.Generate(c.Params);
+                case CreateMotorBracketCommand c:      return MotorBracketMeshGenerator.Generate(c.Params);
+                case CreateRodEndCommand c:            return RodEndMeshGenerator.Generate(c.Params);
+                case CreateMotorCouplingCommand c:     return MotorCouplingMeshGenerator.Generate(c.Params);
+                case CreateTrapezoidalThreadCommand c: return TrapezoidalThreadMeshGenerator.Generate(c.Params);
+                case CreateSplineCommand c:            return SplineMeshGenerator.Generate(c.Params);
+
                 case CreateRibbonBowCommand c:    return RibbonBowMeshGenerator.Generate(c.Params);
                 case CreateNohMaskCommand c:      return NohMaskMeshGenerator.GenerateFromFiles(c.Params);
 

@@ -108,7 +108,21 @@ namespace Poly_Ling.Player
                 case ShapeKind.NGonStar:     return new CreateNGonStarCommand(mi, _ngonStarP, pl);
                 case ShapeKind.InvoluteGear: return new CreateInvoluteGearCommand(mi, _involGearP, pl);
 
-                // ── 機構部品 ──
+                // ── プロペラ・ファン ──
+                case ShapeKind.RotorBlade:        return new CreateRotorBladeCommand(mi, _rotorBladeP, pl);
+
+                // ── 機構部品B ──
+                case ShapeKind.Nut:               return new CreateNutCommand(mi, _nutP, pl);
+                case ShapeKind.ShaftHolder:       return new CreateShaftHolderCommand(mi, _shaftHolderP, pl);
+                case ShapeKind.BearingUnit:       return new CreateBearingUnitCommand(mi, _bearingUnitP, pl);
+                case ShapeKind.UniversalJoint:    return new CreateUniversalJointCommand(mi, _uJointP, pl);
+                case ShapeKind.MotorBracket:      return new CreateMotorBracketCommand(mi, _motorBracketP, pl);
+                case ShapeKind.RodEnd:            return new CreateRodEndCommand(mi, _rodEndP, pl);
+                case ShapeKind.MotorCoupling:     return new CreateMotorCouplingCommand(mi, _motorCouplingP, pl);
+                case ShapeKind.TrapezoidalThread: return new CreateTrapezoidalThreadCommand(mi, _trapP, pl);
+                case ShapeKind.Spline:            return new CreateSplineCommand(mi, _splineP, pl);
+
+                // ── 機構部品A ──
                 case ShapeKind.HelicalGear:       return new CreateHelicalGearCommand(mi, _helGearP, pl);
                 case ShapeKind.InternalGear:      return new CreateInternalGearCommand(mi, _intGearP, pl);
                 case ShapeKind.InvoluteRack:      return new CreateInvoluteRackCommand(mi, _rackP, pl);

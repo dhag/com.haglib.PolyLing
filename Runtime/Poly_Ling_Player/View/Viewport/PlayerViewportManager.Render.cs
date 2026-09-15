@@ -416,6 +416,15 @@ namespace Poly_Ling.Player
                     NotifyCameraChanged(vp);
                     break;
             }
+
+            // ビルボード指定のある描画オブジェクトは、カメラが動くとワールド位置が変わる。
+            // このカテゴリは本来「頂点位置不変」なので、指定が 1 つも無いときは
+            // 従来どおり何もしない。1 つでもあるときだけ行列表を作り直して描き直す。
+            if (ApplyBillboardMatrices() > 0)
+            {
+                UpdateTransform();
+                PresentAll(_lastProjectForPresent);
+            }
 #pragma warning restore CS0618
             OnRefreshFaceHoverOverlay?.Invoke();
             OnRefreshSelectedFacesOverlay?.Invoke();

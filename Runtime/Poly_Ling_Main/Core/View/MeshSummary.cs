@@ -95,6 +95,12 @@ namespace Poly_Ling.View
         public bool PreserveNormals { get; }
         public bool IsMirrorBranchRoot { get; }
 
+        /// <summary>
+        /// ビルボード表示。保存も転送もしない設定なので、スナップショット経由
+        /// （リモート）では常に Off になる。ローカルは LiveViews が実値を返す。
+        /// </summary>
+        public BillboardMode Billboard { get; }
+
         // IMeshView.BonePose（IBonePoseViewとして返す）
         IBonePoseView IMeshView.BonePose => BonePoseData;
 
@@ -134,6 +140,7 @@ namespace Poly_Ling.View
             BoneIndex = -1; BonePoseData = BonePoseSummary.Empty;
             IsMorph = false; MorphParentIndex = -1; MorphName = ""; ExcludeFromExport = false; IgnorePoseInArmature = false;
             PreserveNormals = false; IsMirrorBranchRoot = false;
+            Billboard = BillboardMode.Off;
             ObjectId = 0UL; EditorName = "";
         }
 
@@ -153,7 +160,8 @@ namespace Poly_Ling.View
             string editorName = null,
             int mirrorAxis = 1,
             bool isMirrorBranchRoot = false,
-            bool mirrorGeometryDerived = false)
+            bool mirrorGeometryDerived = false,
+            BillboardMode billboard = BillboardMode.Off)
         {
             MasterIndex = masterIndex; Name = name ?? "Untitled"; Type = type;
             VertexCount = vertexCount; FaceCount = faceCount;
@@ -170,6 +178,7 @@ namespace Poly_Ling.View
             IgnorePoseInArmature = ignorePoseInArmature;
             PreserveNormals = preserveNormals;
             IsMirrorBranchRoot = isMirrorBranchRoot;
+            Billboard = billboard;
             ObjectId = objectId; EditorName = editorName ?? "";
         }
 
@@ -228,7 +237,8 @@ namespace Poly_Ling.View
                 ctx.EditorName,
                 ctx.MirrorAxis,
                 ctx.IsMirrorBranchRoot,
-                ctx.MirrorGeometryDerived);
+                ctx.MirrorGeometryDerived,
+                ctx.Billboard);
         }
 
         public override string ToString() => $"[{MasterIndex}] {Name} ({Type}) V:{VertexCount} F:{FaceCount}";

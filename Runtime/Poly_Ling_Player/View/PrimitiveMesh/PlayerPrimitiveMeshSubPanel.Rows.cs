@@ -252,6 +252,27 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 選択式の行。選択肢は表示文字の列で渡し、set には選んだ番号を渡す。
+        ///
+        /// 【なぜヘルパにするか】
+        ///   DropdownField を直に作って親へ足すと UiDynamicControls へ載らず、
+        ///   MCP の uiSetValue から触れない（queryUiAutomationAudit の「未登録の部品」に出る）。
+        ///   諸元 UI の部品はこのヘルパ群だけで組むこと。
+        /// </summary>
+        private VisualElement DD(Lx label, List<string> choices, Func<int> get, Action<int> set)
+        {
+            int index = get();
+            if (choices == null || choices.Count == 0) choices = new List<string> { "" };
+            if (index < 0 || index >= choices.Count) index = 0;
+
+            var dd = new DropdownField(choices, index);
+            dd.label = label.Text;
+            dd.style.marginBottom = 2;
+            dd.RegisterValueChangedCallback(_ => set(dd.index));
+            return RowTarget.Add(label.Key, dd, label.Text);
+        }
+
+        /// <summary>
         /// FloatField 3 連の行。参照を保持しない従来版。
         /// 実装は <see cref="V3FRef"/> に一本化してある（outFields = null）。
         /// </summary>

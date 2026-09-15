@@ -557,6 +557,170 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
+    // ── プロペラ・ファン ────────────────────────────────────────
+
+    [PLCommand(Description = "プロペラ・ファンを作る。ハブ・翼・任意のダクトからなる。")]
+    public sealed class CreateRotorBladeCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "RotorBlade", Description = "プロペラ・ファンのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.RotorBladeMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "RotorBlade";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateRotorBladeCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.RotorBladeMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    // ── 機構部品B（締結・支持・伝達） ───────────────────────────
+
+    [PLCommand(Description = "ナットを作る。六角・四角・丸の外形と雌ねじを持つ。")]
+    public sealed class CreateNutCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Nut", Description = "ナットのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.NutMeshGenerator.NutParams Params { get; }
+
+        public override string ShapeName => "Nut";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateNutCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.NutMeshGenerator.NutParams @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "軸受ホルダを作る。ボスとフランジ、取付穴、締結部からなる。")]
+    public sealed class CreateShaftHolderCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "ShaftHolder", Description = "軸受ホルダのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.ShaftHolderMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "ShaftHolder";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateShaftHolderCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.ShaftHolderMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "軸受ユニットを作る。ハウジング・外輪・内輪と、任意で玉を持つ。")]
+    public sealed class CreateBearingUnitCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "BearingUnit", Description = "軸受ユニットのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.BearingUnitMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "BearingUnit";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateBearingUnitCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.BearingUnitMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "自在継手を作る。単一カルダンとダブルカルダンを選べる。")]
+    public sealed class CreateUniversalJointCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "UniversalJoint", Description = "自在継手のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.UniversalJointMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "UniversalJoint";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateUniversalJointCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.UniversalJointMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "モータ取付ブラケットを作る。丸クランプ・面板・L 形・U 形を選べる。")]
+    public sealed class CreateMotorBracketCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "MotorBracket", Description = "モータ取付ブラケットのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.MotorBracketMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "MotorBracket";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateMotorBracketCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.MotorBracketMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "ロッドエンドを作る。雄ねじ・雌ねじ・ボールスタッドを選べる。")]
+    public sealed class CreateRodEndCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "RodEnd", Description = "ロッドエンドのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.RodEndMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "RodEnd";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateRodEndCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.RodEndMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "軸継手を作る。剛性スリーブ・クランプ・ジョー・オルダム・ベローズを選べる。")]
+    public sealed class CreateMotorCouplingCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "MotorCoupling", Description = "軸継手のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.MotorCouplingMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "MotorCoupling";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateMotorCouplingCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.MotorCouplingMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "台形ねじを作る。雄ねじ軸と、かみ合うナットを選べる。")]
+    public sealed class CreateTrapezoidalThreadCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "TrapezoidalThread", Description = "台形ねじのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.TrapezoidalThreadMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "TrapezoidalThread";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateTrapezoidalThreadCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.TrapezoidalThreadMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Description = "平行歯面スプラインを作る。軸と、かみ合うナットを選べる。")]
+    public sealed class CreateSplineCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Spline", Description = "スプラインのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.SplineMeshGenerator.Params Params { get; }
+
+        public override string ShapeName => "Spline";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateSplineCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.SplineMeshGenerator.Params @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
     [PLCommand(Description = "リボンの蝶結びを作る。輪・端・結び目を別々に指定できる。")]
     public sealed class CreateRibbonBowCommand : CreatePrimitiveMeshCommand
     {

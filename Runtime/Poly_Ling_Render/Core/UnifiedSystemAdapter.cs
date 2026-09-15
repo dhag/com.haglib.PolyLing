@@ -709,7 +709,9 @@ namespace Poly_Ling.Core
                 // UnifiedBufferManager.UpdateTransformMatrices と同一にする。
                 // 対象の型は明示する。ウェイトの有無の判定だけ MeshContext.IsSkinned へ寄せる。
                 bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh && !ctx.IsSkinned;
-                Matrix4x4 xform = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
+                // ビルボードは DisplayWorldMatrix に入っている（指定が無ければ WorldMatrix と同値）。
+                // 行列表と違う値をここで入れると、この経路を通ったメッシュだけ姿勢がずれる。
+                Matrix4x4 xform = usesWorldMatrixDirect ? ctx.DisplayWorldMatrix : ctx.SkinningMatrix;
 
                 // 【ToUnityMesh(xform) を使わない理由】
                 //   行列版は面駆動で (頂点, UVスロット, 法線スロット) の組で名寄せする

@@ -383,6 +383,28 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
 
+                // ── ビルボード表示設定
+                case SetMeshBillboardCommand c:
+                    if (model == null) { Fail("no current model"); return true; }
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var bbCtx = model.GetMeshContext(idx);
+                        if (bbCtx == null) continue;
+                        bbCtx.Billboard = c.Mode;
+                    }
+                    // 表示の姿勢が変わる＝ワールド位置が変わる。2 つ要る。
+                    //   EnterVerticesMoved … 全ビューポートの再描画準備（PresentAll）
+                    //   UpdateTransform    … GPU の変換行列表の作り直し
+                    // PresentAll 経路は transform 行列を push しないので、片方だけでは
+                    // 画面が動かない（SetPoseDisplayModeCommand と同じ理由）。
+                    // Off へ戻したときも、ビルボードを外した位置へ戻すために要る。
+                    _viewportManager?.EnterVerticesMoved(project, VerticesMovedPhase.DragEnd);
+#pragma warning disable CS0618
+                    _viewportManager?.UpdateTransform();
+#pragma warning restore CS0618
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+
                 // ── ミラー分岐ルート設定
                 case SetMirrorBranchRootCommand c:
                     if (model == null) { Fail("no current model"); return true; }

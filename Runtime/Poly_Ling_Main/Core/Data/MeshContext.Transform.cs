@@ -156,6 +156,17 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
+        /// ビルボード表示の指定。実体は MeshObject 側。
+        /// 立てるだけでは効かず、ModelContext.ComputeBillboardMatrices が
+        /// BillboardMatrix を作ってはじめて表示へ出る。
+        /// </summary>
+        public BillboardMode Billboard
+        {
+            get => MeshObject?.Billboard ?? BillboardMode.Off;
+            set { if (MeshObject != null) MeshObject.Billboard = value; }
+        }
+
+        /// <summary>
         /// 法線の自動再計算から除外するセット一覧。実体は MeshObject 側。
         /// </summary>
         public List<PartsSelectionSet> NormalRecalcExcludeList
@@ -244,6 +255,51 @@ namespace Poly_Ling.Data
         /// ワールド変換行列の逆行列（キャッシュ）
         /// </summary>
         public Matrix4x4 WorldMatrixInverse { get; set; } = Matrix4x4.identity;
+
+        // ================================================================
+        // ビルボード（表示だけの姿勢差し替え）
+        //
+        // WorldMatrix は書き換えない。エクスポート（MQOExporter が
+        // WorldMatrix を頂点へ焼く）・階層・スキニングへ漏らさないため、
+        // 表示用の行列を別に持ち、効かせ先を限定する。
+        //
+        //   描画     … UnifiedBufferManager.UpdateTransformMatrices の行列表
+        //   書き戻し … ToolContext.ActiveWorldMatrix / VertexMatrix
+        //
+        // 値を作るのは ModelContext.ComputeBillboardMatrices だけ。
+        // 行列表を上げる直前（PlayerViewportManager.UpdateTransform）に
+        // 毎回作り直すので、WorldMatrix との食い違いは残らない。
+        // ================================================================
+
+        /// <summary>
+        /// ビルボードが効いているか。ComputeBillboardMatrices が書く。
+        /// false のとき BillboardMatrix は単位で、下の Display* は
+        /// WorldMatrix / WorldMatrixInverse をそのまま返す。
+        /// </summary>
+        public bool IsBillboardActive { get; set; } = false;
+
+        /// <summary>
+        /// ワールド行列へ左から掛ける、表示だけのビルボード回転。
+        /// 原点まわりの回転なので平行移動は変わらない。
+        /// </summary>
+        public Matrix4x4 BillboardMatrix { get; set; } = Matrix4x4.identity;
+
+        /// <summary>BillboardMatrix の逆行列（キャッシュ）。</summary>
+        public Matrix4x4 BillboardMatrixInverse { get; set; } = Matrix4x4.identity;
+
+        /// <summary>
+        /// 画面に出ている姿勢のワールド変換行列。ビルボードが効いていなければ
+        /// WorldMatrix と同じ。表示と書き戻しは必ずこちらを使うこと。
+        /// </summary>
+        public Matrix4x4 DisplayWorldMatrix
+            => IsBillboardActive ? BillboardMatrix * WorldMatrix : WorldMatrix;
+
+        /// <summary>
+        /// DisplayWorldMatrix の逆行列。(B·W)⁻¹ = W⁻¹·B⁻¹ で、
+        /// どちらもキャッシュ済みの値から組む。
+        /// </summary>
+        public Matrix4x4 DisplayWorldMatrixInverse
+            => IsBillboardActive ? WorldMatrixInverse * BillboardMatrixInverse : WorldMatrixInverse;
 
         // ================================================================
         // バインド階層（ポーズを含まない累積）
@@ -469,16 +525,20 @@ namespace Poly_Ling.Data
         /// 書き込む値が食い違う（規約 PolyLing_姿勢の規約.md 10.1）。
         ///   ウェイトあり … 単位行列（頂点はバインド空間にあるのでそのまま）
         ///   ウェイトなし … BindWorldMatrix（ポーズを含まない階層）
+        ///
+        /// バインド表示でないときはビルボードを含む DisplayWorldMatrix を返す。
+        /// バインド表示中はビルボードを掛けない（バインド表示を優先する）。
+        /// 描画側の行列表と同じ規則にしてある。
         /// </summary>
         public Matrix4x4 VertexMatrix(int vertexIndex, bool showBindPose)
         {
             var mo = MeshObject;
             if (mo == null || vertexIndex < 0 || vertexIndex >= mo.Vertices.Count)
-                return showBindPose ? BindWorldMatrix : WorldMatrix;
+                return showBindPose ? BindWorldMatrix : DisplayWorldMatrix;
 
             var vtx = mo.Vertices[vertexIndex];
             if (vtx == null || !vtx.HasBoneWeight)
-                return showBindPose ? BindWorldMatrix : WorldMatrix;
+                return showBindPose ? BindWorldMatrix : DisplayWorldMatrix;
 
             // ウェイトありの頂点はバインド空間に焼かれている。
             // バインド表示では単位行列（描画側の行列表と同じ扱い）。

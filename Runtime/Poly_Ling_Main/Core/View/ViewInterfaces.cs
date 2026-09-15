@@ -101,6 +101,9 @@ namespace Poly_Ling.View
         bool IgnorePoseInArmature { get; }
         bool PreserveNormals { get; }
 
+        /// <summary>ビルボード表示（表示だけの姿勢差し替え。保存しない）。</summary>
+        Poly_Ling.Data.BillboardMode Billboard { get; }
+
         // 表示用（計算プロパティ）
         string InfoString { get; }
         string MirrorTypeDisplay { get; }

@@ -75,6 +75,13 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Mechanism);
         }
 
+        private void ShowLiveMechanismBPrimitivePanel()
+        {
+            SetInteractionMode(InteractionMode.PrimitivePlace);
+            ShowRightPanel(_layoutRoot?.LivePrimitiveSection, _layoutRoot?.LiveMechanismBPrimitiveBtn);
+            _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.MechanismB);
+        }
+
         private void ShowLiveSpringBonePrimitivePanel()
         {
             SetInteractionMode(InteractionMode.PrimitivePlace);

@@ -487,14 +487,19 @@ namespace Poly_Ling.Tools
         /// </summary>
         public bool ShowBindPose => Project?.ShowBindPose ?? false;
 
-        /// <summary>操作対象メッシュの WorldMatrix（未解決なら identity）。バインド表示中は BindWorldMatrix。</summary>
+        /// <summary>
+        /// 操作対象メッシュの WorldMatrix（未解決なら identity）。
+        /// バインド表示中は BindWorldMatrix、それ以外はビルボードを含む DisplayWorldMatrix
+        /// （ビルボード指定が無ければ WorldMatrix と同値）。
+        /// 描画側の行列表と同じ値にすること（規約 10.1）。
+        /// </summary>
         public Matrix4x4 ActiveWorldMatrix
         {
             get
             {
                 var mc = ActiveMeshContext;
                 if (mc == null) return Matrix4x4.identity;
-                return ShowBindPose ? mc.BindWorldMatrix : mc.WorldMatrix;
+                return ShowBindPose ? mc.BindWorldMatrix : mc.DisplayWorldMatrix;
             }
         }
         /// <summary>操作対象メッシュの WorldMatrix 逆行列（未解決なら identity）。バインド表示中は BindWorldMatrixInverse。</summary>
@@ -504,7 +509,7 @@ namespace Poly_Ling.Tools
             {
                 var mc = ActiveMeshContext;
                 if (mc == null) return Matrix4x4.identity;
-                return ShowBindPose ? mc.BindWorldMatrixInverse : mc.WorldMatrixInverse;
+                return ShowBindPose ? mc.BindWorldMatrixInverse : mc.DisplayWorldMatrixInverse;
             }
         }
 

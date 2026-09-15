@@ -204,6 +204,19 @@ namespace Poly_Ling.Data
         public bool PreserveNormals { get; set; } = true;
 
         /// <summary>
+        /// ビルボード表示（カメラへ正対させる）。表示と書き戻しだけの切替で、
+        /// 頂点も BoneTransform も WorldMatrix も変えない。
+        ///
+        /// 【保存しない】.mfproj / CSV / リモートのいずれにも書かない。
+        /// 編集中の見え方の設定であり、保存対象を増やすと CSV と
+        /// リモートバイナリの版を上げる必要が出るため。
+        ///
+        /// 【対象外】スキンド、およびミラー側（MirrorSide / BakedMirror）。
+        /// 判定は ModelContext.ComputeBillboardMatrices に集約してある。
+        /// </summary>
+        public BillboardMode Billboard { get; set; } = BillboardMode.Off;
+
+        /// <summary>
         /// 法線の自動再計算から除外するセット一覧（パーツ選択辞書と同じ構造）。
         /// リストに載っているセットが指す要素は、RecalculateNormals /
         /// RecalculateSmoothNormals の直前に法線を退避し、計算後に書き戻す。

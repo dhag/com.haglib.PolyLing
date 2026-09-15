@@ -609,6 +609,28 @@ namespace Poly_Ling.MeshListV2
                     SendCmd(new SetPreserveNormalsCommand(ModelIndex, indices, e.newValue));
             });
             c.Add(_preserveNormalsToggle);
+
+            // ── ビルボード表示 ────────────────────────────────────────
+            //   表示と書き戻しだけの切替。頂点も姿勢データも変えず、保存もしない。
+            //   基準は ProjectContext.BillboardView（既定は透視ビュー）。
+            _billboardToggle = new Toggle("ビルボード(カメラへ正対)") { name = "billboard-toggle" };
+            _billboardToggle.style.color     = new StyleColor(Color.white);
+            _billboardToggle.style.marginTop = 2;
+            _billboardToggle.tooltip =
+                "基準カメラへ正対させて表示する。表示と編集だけの切替で、頂点も姿勢も保存内容も変えない。\n"
+                + "UV を XYZ へ展開した板のような 2D の面を、視点を問わず正面から編集するために使う。\n"
+                + "行列表は 4 面で共有するため、正対するのは基準ビューだけ。他の面では斜めに見える。\n"
+                + "スキンドメッシュとミラー側には効かない。";
+            _billboardToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_isReceiving || _ctx == null) return;
+                var indices = SelIndices();
+                if (indices.Length > 0)
+                    SendCmd(new SetMeshBillboardCommand(
+                        ModelIndex, indices,
+                        e.newValue ? BillboardMode.ScreenAligned : BillboardMode.Off));
+            });
+            c.Add(_billboardToggle);
         }
 
         // ================================================================

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Core;
+using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Selection;
 using Poly_Ling.Diagnostics;
@@ -35,8 +36,67 @@ namespace Poly_Ling.Player
         {
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized) return;
+
+            // 行列表を作る唯一の入口。ここでビルボード行列を作り直しておけば、
+            // どの経路から来ても古いカメラ姿勢のまま上がることがない。
+            ApplyBillboardMatrices();
+
             adapter.UpdateTransform(useWorldTransform: true);
             adapter.WritebackTransformedVertices();
+        }
+
+        // ================================================================
+        // ビルボード（表示だけの姿勢差し替え）
+        // ================================================================
+
+        /// <summary>
+        /// 基準カメラの姿勢を、ビルボード指定のある描画オブジェクトへ割り当てる。
+        /// 適用個数を返す（0 なら誰もビルボードしていない）。
+        ///
+        /// 行列を作るのは ModelContext.ComputeBillboardMatrices。ここは
+        /// 「どのビューポートを基準にするか」を解くだけ。
+        /// </summary>
+        public int ApplyBillboardMatrices()
+        {
+            var project = _lastProjectForPresent;
+            var model   = project?.CurrentModel;
+            if (model == null) return 0;
+
+            var vp = BillboardReferenceViewport(project.BillboardView);
+            if (vp == null || !vp.IsReady) return 0;
+
+            var cam = vp.Cam;
+            if (cam == null) return 0;
+
+            // Tick 廃止で ApplyCameraTransform は毎フレーム走らない。
+            // コントローラの値を Unity Camera へ反映してから姿勢を読む。
+            vp.ApplyCameraTransform();
+
+            return model.ComputeBillboardMatrices(cam.transform.rotation);
+        }
+
+        /// <summary>ビルボードの基準にするビューポートを解決する。</summary>
+        private PlayerViewport BillboardReferenceViewport(BillboardViewKind kind)
+        {
+            switch (kind)
+            {
+                case BillboardViewKind.Top:   return TopViewport;
+                case BillboardViewKind.Front: return FrontViewport;
+                case BillboardViewKind.Side:  return SideViewport;
+
+                case BillboardViewKind.Current:
+                    // 直前にカメラが確定したビューポート。特定できなければ透視。
+                    if (_lastCamera != null)
+                    {
+                        if (PerspectiveViewport?.Cam == _lastCamera) return PerspectiveViewport;
+                        if (TopViewport?.Cam         == _lastCamera) return TopViewport;
+                        if (FrontViewport?.Cam       == _lastCamera) return FrontViewport;
+                        if (SideViewport?.Cam        == _lastCamera) return SideViewport;
+                    }
+                    return PerspectiveViewport;
+
+                default: return PerspectiveViewport;
+            }
         }
 
         // ================================================================

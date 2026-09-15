@@ -36,7 +36,12 @@ namespace Poly_Ling.Player
                                // ── MCP用サンドボックス（SandboxShapes にだけ載せる）
                                McpCylinder,
                                // ── 点指定図形（高度な図形）
-                               PointDefined }
+                               PointDefined,
+                               // ── プロペラ・ファン（高度な図形）
+                               RotorBlade,
+                               // ── 機構部品B（締結・支持・伝達）
+                               Nut, ShaftHolder, BearingUnit, UniversalJoint, MotorBracket,
+                               RodEnd, MotorCoupling, TrapezoidalThread, Spline }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
@@ -45,13 +50,19 @@ namespace Poly_Ling.Player
               "SpringBoneSingle","SpringBoneCylinder","SpringBoneRevolution",
               "EdgeRibbonFace","SpringBoneLadder",
               "McpCylinder",
-              "PointDefined" };
+              "PointDefined",
+              "RotorBlade",
+              "Nut","ShaftHolder","BearingUnit","UniversalJoint","MotorBracket",
+              "RodEnd","MotorCoupling","TrapezoidalThread","Spline" };
 
         /// <summary>
-        /// 図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品」/「揺れものボーン」、
-        /// および「MCP用サンドボックス」に対応）。
+        /// 図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品A」/「機構部品B」/
+        /// 「揺れものボーン」、および「MCP用サンドボックス」に対応）。
+        ///
+        /// Mechanism は表示名を「機構部品A」へ変えたが、列挙値の名前は
+        /// PrimitiveShapeMemory の保存欄（JSON のキー）と一致させる必要があるので変えない。
         /// </summary>
-        public enum ShapeCategory { Basic, Advanced, Mechanism, SpringBone, Sandbox }
+        public enum ShapeCategory { Basic, Advanced, Mechanism, SpringBone, Sandbox, MechanismB }
 
         // カテゴリ別の図形リスト。グリッドはこの内容だけを表示する。
         private static readonly ShapeKind[] BasicShapes =
@@ -62,7 +73,7 @@ namespace Poly_Ling.Player
               ShapeKind.NGonGear, ShapeKind.NGonStar,
               ShapeKind.PipeStadium, ShapeKind.HairStrand,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge,
-              ShapeKind.EdgeRibbonFace, ShapeKind.PointDefined };
+              ShapeKind.EdgeRibbonFace, ShapeKind.PointDefined, ShapeKind.RotorBlade };
 
         // 揺れもの用のボーン鎖。作るのはボーンで、メッシュではない。
         //   「回転体」と同じくプロファイル（断面の折れ線）を持ち、
@@ -71,13 +82,24 @@ namespace Poly_Ling.Player
             { ShapeKind.SpringBoneSingle, ShapeKind.SpringBoneCylinder, ShapeKind.SpringBoneRevolution,
               ShapeKind.SpringBoneLadder };
 
-        // 機構部品。かみ合う歯車まわりをここへ集める。
+        // 機構部品A。かみ合う歯車まわりをここへ集める。
         // インボリュート歯車は「高度な図形」からここへ移した。
         private static readonly ShapeKind[] MechanismShapes =
             { ShapeKind.InvoluteGear, ShapeKind.HelicalGear, ShapeKind.InternalGear,
               ShapeKind.InvoluteRack, ShapeKind.HelicalRack,
               ShapeKind.StraightBevelGear, ShapeKind.SpiralBevelGear,
               ShapeKind.CylindricalWorm, ShapeKind.WormWheel };
+
+        // 機構部品B。締結・支持・伝達の部品をここへ集める。
+        // かみ合って回すもの（機構部品A）ではなく、留める・受ける・つなぐものが入る。
+        //
+        // 未実装の図形はここへ載せない（載せるとボタンだけ出て諸元 UI が無い状態になる）。
+        // 図形を足すたびにこの配列へ 1 行足す。
+        private static readonly ShapeKind[] MechanismBShapes =
+            { ShapeKind.Nut, ShapeKind.ShaftHolder, ShapeKind.BearingUnit,
+              ShapeKind.UniversalJoint, ShapeKind.MotorBracket,
+              ShapeKind.RodEnd, ShapeKind.MotorCoupling,
+              ShapeKind.TrapezoidalThread, ShapeKind.Spline };
 
         // MCP用サンドボックス。試作中の図形はここにだけ載せる。
         // 登録（ShapeKind・ShapeKeys・RebuildSettings・Name/SetName・BuildCreateCommand）は
@@ -106,6 +128,7 @@ namespace Poly_Ling.Player
         private ShapeKind _lastAdvanced  = ShapeKind.Revolution;
         private ShapeKind _lastSpringBone = ShapeKind.SpringBoneCylinder;
         private ShapeKind _lastMechanism = ShapeKind.InvoluteGear;
+        private ShapeKind _lastMechanismB = ShapeKind.Nut;
         private ShapeKind _lastSandbox   = ShapeKind.McpCylinder;
 
         /// <summary>
@@ -134,6 +157,7 @@ namespace Poly_Ling.Player
             {
                 case ShapeCategory.Advanced:   return AdvancedShapes;
                 case ShapeCategory.Mechanism:  return MechanismShapes;
+                case ShapeCategory.MechanismB: return MechanismBShapes;
                 case ShapeCategory.SpringBone: return SpringBoneShapes;
                 case ShapeCategory.Sandbox:    return SandboxShapes;
                 default:                       return BasicShapes;
@@ -186,6 +210,7 @@ namespace Poly_Ling.Player
             {
                 case ShapeCategory.Advanced:   kind = _lastAdvanced;   break;
                 case ShapeCategory.Mechanism:  kind = _lastMechanism;  break;
+                case ShapeCategory.MechanismB: kind = _lastMechanismB; break;
                 case ShapeCategory.SpringBone: kind = _lastSpringBone; break;
                 case ShapeCategory.Sandbox:    kind = _lastSandbox;    break;
                 default:                       kind = _lastBasic;      break;
@@ -212,6 +237,10 @@ namespace Poly_Ling.Player
             if (mech.HasValue && System.Array.IndexOf(MechanismShapes, mech.Value) >= 0)
                 _lastMechanism = mech.Value;
 
+            var mechB = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.MechanismB);
+            if (mechB.HasValue && System.Array.IndexOf(MechanismBShapes, mechB.Value) >= 0)
+                _lastMechanismB = mechB.Value;
+
             var sb = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.SpringBone);
             if (sb.HasValue && System.Array.IndexOf(SpringBoneShapes, sb.Value) >= 0)
                 _lastSpringBone = sb.Value;
@@ -227,6 +256,7 @@ namespace Poly_Ling.Player
             if (System.Array.IndexOf(SandboxShapes,    k) >= 0) return ShapeCategory.Sandbox;
             if (System.Array.IndexOf(SpringBoneShapes, k) >= 0) return ShapeCategory.SpringBone;
             if (System.Array.IndexOf(MechanismShapes,  k) >= 0) return ShapeCategory.Mechanism;
+            if (System.Array.IndexOf(MechanismBShapes, k) >= 0) return ShapeCategory.MechanismB;
             if (System.Array.IndexOf(AdvancedShapes,   k) >= 0) return ShapeCategory.Advanced;
             return ShapeCategory.Basic;
         }
@@ -256,6 +286,7 @@ namespace Poly_Ling.Player
             {
                 case ShapeCategory.Advanced:   _lastAdvanced   = k; break;
                 case ShapeCategory.Mechanism:  _lastMechanism  = k; break;
+                case ShapeCategory.MechanismB: _lastMechanismB = k; break;
                 case ShapeCategory.SpringBone: _lastSpringBone = k; break;
                 case ShapeCategory.Sandbox:    _lastSandbox    = k; break;
                 default:                       _lastBasic      = k; break;
@@ -333,7 +364,21 @@ namespace Poly_Ling.Player
                 case ShapeKind.PipeStadium:  BuildPipeStadiumUI(_settingsContainer);  break;
                 case ShapeKind.HairStrand:   BuildHairStrandUI(_settingsContainer);   break;
 
-                // ── 機構部品（PlayerPrimitiveMeshSubPanel.Mechanism.cs） ──
+                // ── プロペラ・ファン（PlayerPrimitiveMeshSubPanel.RotorBlade.cs） ──
+                case ShapeKind.RotorBlade:        BuildRotorBladeUI(_settingsContainer);        break;
+
+                // ── 機構部品B（PlayerPrimitiveMeshSubPanel.<図形名>.cs） ──
+                case ShapeKind.Nut:               BuildNutUI(_settingsContainer);               break;
+                case ShapeKind.ShaftHolder:       BuildShaftHolderUI(_settingsContainer);       break;
+                case ShapeKind.BearingUnit:       BuildBearingUnitUI(_settingsContainer);       break;
+                case ShapeKind.UniversalJoint:    BuildUniversalJointUI(_settingsContainer);    break;
+                case ShapeKind.MotorBracket:      BuildMotorBracketUI(_settingsContainer);      break;
+                case ShapeKind.RodEnd:            BuildRodEndUI(_settingsContainer);            break;
+                case ShapeKind.MotorCoupling:     BuildMotorCouplingUI(_settingsContainer);     break;
+                case ShapeKind.TrapezoidalThread: BuildTrapezoidalThreadUI(_settingsContainer); break;
+                case ShapeKind.Spline:            BuildSplineUI(_settingsContainer);            break;
+
+                // ── 機構部品A（PlayerPrimitiveMeshSubPanel.Mechanism.cs） ──
                 case ShapeKind.HelicalGear:       BuildHelicalGearUI(_settingsContainer);       break;
                 case ShapeKind.InternalGear:      BuildInternalGearUI(_settingsContainer);      break;
                 case ShapeKind.InvoluteRack:      BuildInvoluteRackUI(_settingsContainer);      break;
