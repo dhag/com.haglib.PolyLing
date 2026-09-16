@@ -245,6 +245,10 @@ namespace Poly_Ling.Player
                 _layoutRoot.VrmLoadBtn.clicked     += () => ShowImportPanel(PlayerImportSubPanel.Mode.VRM);
             if (_layoutRoot.ObjSaveBtn != null)
                 _layoutRoot.ObjSaveBtn.clicked     += () => ShowExportPanel(PlayerExportSubPanel.Mode.OBJ);
+            if (_layoutRoot.StlLoadBtn != null)
+                _layoutRoot.StlLoadBtn.clicked     += () => ShowImportPanel(PlayerImportSubPanel.Mode.STL);
+            if (_layoutRoot.StlSaveBtn != null)
+                _layoutRoot.StlSaveBtn.clicked     += () => ShowExportPanel(PlayerExportSubPanel.Mode.STL);
             _layoutRoot.PartialImportPmxBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.PMX);
             _layoutRoot.PartialImportMqoBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.MQO);
             _layoutRoot.PartialExportPmxBtn.clicked += () => ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode.PMX);

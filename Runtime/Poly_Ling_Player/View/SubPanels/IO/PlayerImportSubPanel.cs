@@ -29,7 +29,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO, OBJ, VRM }
+        public enum Mode { PMX, MQO, OBJ, VRM, STL }
 
         private Mode _mode;
 
@@ -67,6 +67,7 @@ namespace Poly_Ling.Player
         private PMXImportSettings _pmxSettings = PMXImportSettings.CreateDefault();
         private MQOImportSettings _mqoSettings = MQOImportSettings.CreateDefault();
         private ObjImportSettings _objSettings = ObjImportSettings.CreateDefault();
+        private Poly_Ling.STL.StlImportSettings _stlSettings = Poly_Ling.STL.StlImportSettings.CreateDefault();
         private Poly_Ling.Vrm.Vrm10ImportSettings _vrmSettings = Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault();
 
         // ================================================================
@@ -91,6 +92,12 @@ namespace Poly_Ling.Player
         /// 引数は (filePath, settings のコピー, 読込後オプション)。
         /// </summary>
         public Action<string, ObjImportSettings, PostOptions> OnImportObj;
+
+        /// <summary>
+        /// STL Import ボタン押下時に呼ばれる。
+        /// 引数は (filePath, settings のコピー, 読込後オプション)。
+        /// </summary>
+        public Action<string, Poly_Ling.STL.StlImportSettings, PostOptions> OnImportStl;
 
         /// <summary>
         /// VRM Import ボタン押下時に呼ばれる。
@@ -245,6 +252,7 @@ namespace Poly_Ling.Player
                 case Mode.PMX: return "PMX";
                 case Mode.OBJ: return "OBJ";
                 case Mode.VRM: return "VRM";
+                case Mode.STL: return "STL";
                 default:       return "MQO";
             }
         }
@@ -299,6 +307,8 @@ namespace Poly_Ling.Player
                 OnImportPmx?.Invoke(path, ClonePmxSettings(), BuildPostOptions());
             else if (_mode == Mode.OBJ)
                 OnImportObj?.Invoke(path, _objSettings.Clone(), BuildPostOptions());
+            else if (_mode == Mode.STL)
+                OnImportStl?.Invoke(path, _stlSettings.Clone(), BuildPostOptions());
             else if (_mode == Mode.VRM)
             {
                 if (!Poly_Ling.Vrm.PLVrm10ImportBridge.I.IsAvailable)
@@ -314,7 +324,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 現在のチェック状態から読込後オプションを作る。
-        /// 原点CSVは MQO / OBJ だけの機能なので PMX では常に無効にする。
+        /// 原点CSVは MQO / OBJ / STL だけの機能なので PMX では常に無効にする。
         /// VRM は Humanoid をファイルに持つので、名前からの自動割当も原点CSVも無効にする。
         /// </summary>
         private PostOptions BuildPostOptions()
@@ -353,6 +363,8 @@ namespace Poly_Ling.Player
                 BuildPmxSettings(_settingsContainer);
             else if (_mode == Mode.OBJ)
                 BuildObjSettings(_settingsContainer);
+            else if (_mode == Mode.STL)
+                BuildStlSettings(_settingsContainer);
             else if (_mode == Mode.VRM)
                 BuildVrmSettings(_settingsContainer);
             else
@@ -769,6 +781,41 @@ namespace Poly_Ling.Player
                 () => _objSettings.ImportMaterials, v => _objSettings.ImportMaterials = v));
             parent.Add(ToggleRow("textures", "テクスチャを読み込む",
                 () => _objSettings.ImportTextures, v => _objSettings.ImportTextures = v));
+
+            parent.Add(Separator());
+
+            // 読込後オプション（インポータ本体の設定ではない）
+            parent.Add(SectionLabel("読込後オプション"));
+            parent.Add(HumanoidAutoMapToggle());
+            parent.Add(OriginCsvOptionBlock());
+        }
+
+        // ────────────────────────────────────────────────────────
+        // STL 設定
+        //
+        // STL は右手系で上方向は規格に無い。上方向を Y へ回転で揃えたあと、
+        // OBJ と同じく X のみ反転で Unity へ揃う（既定 Flip X = ON）。
+        // UV・材質・分割の単位を持たないので、その欄は出さない。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildStlSettings(VisualElement parent)
+        {
+            parent.Add(SectionLabel("座標変換"));
+            parent.Add(FloatRow("scale", "Scale", () => _stlSettings.Scale, v => _stlSettings.Scale = v));
+            parent.Add(EnumRow("upAxis", "上方向",
+                new[] { "Y 上", "Z 上（正面 -Y）" },
+                () => (int)_stlSettings.UpAxis,
+                v  => _stlSettings.UpAxis = (Poly_Ling.STL.StlUpAxis)v));
+            parent.Add(ToggleRow("flipX", "Flip X", () => _stlSettings.FlipX, v => _stlSettings.FlipX = v));
+            parent.Add(ToggleRow("flipZ", "Flip Z", () => _stlSettings.FlipZ, v => _stlSettings.FlipZ = v));
+            parent.Add(ToggleRow("autoScaleView", "3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("頂点・法線"));
+            parent.Add(ToggleRow("weldVertices", "同じ座標の頂点を共有する",
+                () => _stlSettings.WeldVertices, v => _stlSettings.WeldVertices = v));
+            parent.Add(FloatRow("smoothingAngle", "スムージング角",
+                () => _stlSettings.SmoothingAngle, v => _stlSettings.SmoothingAngle = v));
 
             parent.Add(Separator());
 

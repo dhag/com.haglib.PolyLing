@@ -348,6 +348,25 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // 読み込みはモデルを作る操作なので、現在モデルが無くても通す。
+                case ImportStlFileCommand c:
+                {
+                    if (OnImportStlFile == null) { Fail("import stl handler not wired"); return true; }
+                    string istlReason = OnImportStlFile.Invoke(c);
+                    if (istlReason != null) { Fail(istlReason); return true; }
+                    return true;
+                }
+
+                case ExportStlFileCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnExportStlFile == null) { Fail("export stl handler not wired"); return true; }
+                    string estlReason = OnExportStlFile.Invoke(c);
+                    if (estlReason != null) { Fail(estlReason); return true; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return true;
+                }
+
                 case ExportVrmFileCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }

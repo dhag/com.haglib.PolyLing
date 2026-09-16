@@ -28,7 +28,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO, OBJ, VRM }
+        public enum Mode { PMX, MQO, OBJ, VRM, STL }
 
         private Mode _mode;
 
@@ -48,6 +48,9 @@ namespace Poly_Ling.Player
         // 単位は決まっていないので等倍を既定にする。
         private ObjExportSettings _objSettings = ObjExportSettings.CreateDefault();
 
+        // STL は右手系。上方向を回転で戻したうえで OBJ と同じく X のみ反転（StlExportSettings.cs）。
+        private Poly_Ling.STL.StlExportSettings _stlSettings = Poly_Ling.STL.StlExportSettings.CreateDefault();
+
         // VRM 1.0。実装は PolyLing.Vrm10 アセンブリ側にあり、
         // VRM パッケージが無い環境では PLVrm10Bridge.I.IsAvailable が false になる。
         // 規約は IVrm10Exporter.cs 冒頭のコメントを正典とする。
@@ -65,6 +68,9 @@ namespace Poly_Ling.Player
 
         /// <summary>OBJ Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
         public Action<string, ObjExportSettings> OnExportObj;
+
+        /// <summary>STL Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
+        public Action<string, Poly_Ling.STL.StlExportSettings> OnExportStl;
 
         /// <summary>VRM Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
         public Action<string, Vrm10ExportSettings> OnExportVrm;
@@ -165,6 +171,8 @@ namespace Poly_Ling.Player
                 OnExportPmx?.Invoke(savePath, ClonePmxSettings());
             else if (_mode == Mode.OBJ)
                 OnExportObj?.Invoke(savePath, _objSettings.Clone());
+            else if (_mode == Mode.STL)
+                OnExportStl?.Invoke(savePath, _stlSettings.Clone());
             else if (_mode == Mode.VRM)
                 OnExportVrm?.Invoke(savePath, _vrmSettings.Clone());
             else
@@ -179,6 +187,7 @@ namespace Poly_Ling.Player
                 case Mode.PMX: return "PMX";
                 case Mode.OBJ: return "OBJ";
                 case Mode.VRM: return "VRM";
+                case Mode.STL: return "STL";
                 default:       return "MQO";
             }
         }
@@ -209,6 +218,8 @@ namespace Poly_Ling.Player
                 BuildPmxSettings(_settingsContainer);
             else if (_mode == Mode.OBJ)
                 BuildObjSettings(_settingsContainer);
+            else if (_mode == Mode.STL)
+                BuildStlSettings(_settingsContainer);
             else if (_mode == Mode.VRM)
                 BuildVrmSettings(_settingsContainer);
             else
@@ -322,6 +333,57 @@ namespace Poly_Ling.Player
             parent.Add(FloatRow("decimalPrecision", "小数桁数",
                 () => _objSettings.DecimalPrecision,
                 v => _objSettings.DecimalPrecision = Mathf.Clamp(Mathf.RoundToInt(v), 1, 9)));
+        }
+
+        // ────────────────────────────────────────────────────────
+        // STL 設定
+        //
+        // STL は三角形だけを持つ。UV・法線（facet 法線は書き出す三角形から計算）・
+        // 材質・補助線の欄は出さない。頂点はワールド座標へ畳んで書く。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildStlSettings(VisualElement parent)
+        {
+            parent.Add(SectionLabel("座標変換"));
+            parent.Add(FloatRow("scale", "Scale", () => _stlSettings.Scale, v => _stlSettings.Scale = v));
+
+            var upRow = new VisualElement();
+            upRow.style.flexDirection = FlexDirection.Row;
+            upRow.style.marginBottom  = 2;
+            var upLbl = new Label("上方向");
+            upLbl.style.width          = 80;
+            upLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            upLbl.style.fontSize       = 10;
+            var upField = new DropdownField(
+                new System.Collections.Generic.List<string> { "Y 上", "Z 上（正面 -Y）" },
+                (int)_stlSettings.UpAxis);
+            upField.style.flexGrow = 1;
+            upField.RegisterValueChangedCallback(
+                e => _stlSettings.UpAxis = (Poly_Ling.STL.StlUpAxis)upField.index);
+            upRow.Add(upLbl);
+            upRow.Add(_uiDynamic.Add("upAxis", upField, "上方向"));
+            parent.Add(upRow);
+
+            parent.Add(ToggleRow("flipX", "Flip X", () => _stlSettings.FlipX, v => _stlSettings.FlipX = v));
+            parent.Add(ToggleRow("flipZ", "Flip Z", () => _stlSettings.FlipZ, v => _stlSettings.FlipZ = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("出力対象"));
+            parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
+                () => _stlSettings.ExportInvisibleObjects, v => _stlSettings.ExportInvisibleObjects = v));
+            parent.Add(ToggleRow("hiddenFaces", "非表示面も出力",
+                () => _stlSettings.ExportHiddenFaces, v => _stlSettings.ExportHiddenFaces = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("出力形式"));
+            parent.Add(ToggleRow("binary", "バイナリ STL（OFF で ASCII）",
+                () => _stlSettings.Binary, v => _stlSettings.Binary = v));
+            parent.Add(ToggleRow("worldSpace", "ワールド座標で出力",
+                () => _stlSettings.ExportVerticesInWorldSpace,
+                v => _stlSettings.ExportVerticesInWorldSpace = v));
+            parent.Add(FloatRow("decimalPrecision", "小数桁数（ASCII）",
+                () => _stlSettings.DecimalPrecision,
+                v => _stlSettings.DecimalPrecision = Mathf.Clamp(Mathf.RoundToInt(v), 1, 9)));
         }
 
         // ────────────────────────────────────────────────────────

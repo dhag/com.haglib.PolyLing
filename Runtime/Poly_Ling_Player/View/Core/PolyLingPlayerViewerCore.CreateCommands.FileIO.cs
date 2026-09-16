@@ -57,7 +57,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 読込後オプションを組む。原点 CSV の指定があれば関門を通す。
         ///
-        /// PMX / MQO / OBJ の 3 経路で同じなので 1 本にまとめてある。
+        /// PMX / MQO / OBJ / STL の 4 経路で同じなので 1 本にまとめてある。
         /// </summary>
         /// <returns>組めたか。false のとき reason に理由が入る。</returns>
         private static bool TryBuildImportPostOptions(
@@ -222,6 +222,42 @@ namespace Poly_Ling.Player
 
             return OnExportObj(
                 path, cmd.Settings ?? Poly_Ling.OBJ.ObjExportSettings.CreateDefault());
+        }
+
+        /// <summary>STL 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportStlFile(Poly_Ling.Data.ImportStlFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportStl(path, cmd.Settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault(), post);
+            return null;
+        }
+
+        /// <summary>STL 書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportStlFile(Poly_Ling.Data.ExportStlFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnExportStl(
+                path, cmd.Settings ?? Poly_Ling.STL.StlExportSettings.CreateDefault());
         }
 
         /// <summary>VRM 1.0 書き出しコマンド。</summary>

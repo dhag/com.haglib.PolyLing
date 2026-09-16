@@ -367,6 +367,12 @@ namespace Poly_Ling.Player
         /// <summary>OBJ ファイル書き出しコマンドの実行。</summary>
         public Func<ExportObjFileCommand, string> OnExportObjFile;
 
+        /// <summary>STL ファイル読み込みコマンドの実行。</summary>
+        public Func<ImportStlFileCommand, string> OnImportStlFile;
+
+        /// <summary>STL ファイル書き出しコマンドの実行。</summary>
+        public Func<ExportStlFileCommand, string> OnExportStlFile;
+
         /// <summary>VRM 1.0 ファイル書き出しコマンドの実行。</summary>
         public Func<ExportVrmFileCommand, string> OnExportVrmFile;
 
@@ -892,6 +898,7 @@ namespace Poly_Ling.Player
                    cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand
                 || cmd is ImportPmxFileCommand       || cmd is ImportMqoFileCommand
                 || cmd is ImportObjFileCommand       || cmd is ImportVrmFileCommand
+                || cmd is ImportStlFileCommand
                 || cmd is LoadProjectFileCommand     || cmd is LoadProjectCsvCommand;
 
             var project = _getProject();

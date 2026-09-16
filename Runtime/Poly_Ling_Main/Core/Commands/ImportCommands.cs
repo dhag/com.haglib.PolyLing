@@ -1,5 +1,5 @@
 // ImportCommands.cs
-// PMX / MQO / OBJ インポートのコマンド化。
+// PMX / MQO / OBJ / STL インポートのコマンド化。
 // UndoなしのICommand実装（インポートはプロジェクトロード操作であり編集操作ではないため）。
 // Runtime/Poly_Ling_Main/Core/Commands/ に配置
 
@@ -9,6 +9,7 @@ using UnityEngine;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
 using Poly_Ling.OBJ;
+using Poly_Ling.STL;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
 
@@ -291,6 +292,88 @@ namespace Poly_Ling.Commands
 
             if (result.MaterialReferences != null && result.MaterialReferences.Count > 0)
                 model.MaterialReferences = result.MaterialReferences;
+
+            foreach (var mc in result.MeshContexts)
+                model.Add(mc);
+
+            // 階層は無いが、WorldMatrix を単位で確定させておく（描画側が参照するため）。
+            model.ComputeWorldMatrices();
+
+            _onResult?.Invoke(model, result);
+        }
+    }
+
+    /// <summary>
+    /// STLファイルをインポートするコマンド。
+    /// Execute() が同期でインポートを実行し、onResult にModelContextを返す。
+    /// 失敗時は onError にエラーメッセージを返す。
+    ///
+    /// STL は三角形だけを持つ（材質・ボーン・モーフ・階層なし）。
+    /// 生成するのはメッシュだけで、親子関係は設定しない。
+    /// </summary>
+    public class ImportStlCommand : ICommand
+    {
+        private readonly string            _filePath;
+        private readonly StlImportSettings _settings;
+        private readonly Action<ModelContext, StlImportResult> _onResult;
+        private readonly Action<string>    _onError;
+
+        public string         Description  => $"Import STL: {Path.GetFileName(_filePath)}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        /// <param name="filePath">STLファイルパス</param>
+        /// <param name="settings">インポート設定（nullの場合デフォルト使用）</param>
+        /// <param name="onResult">成功時コールバック (ModelContext, StlImportResult)</param>
+        /// <param name="onError">失敗時コールバック (エラーメッセージ)</param>
+        public ImportStlCommand(
+            string            filePath,
+            StlImportSettings settings,
+            Action<ModelContext, StlImportResult> onResult,
+            Action<string>    onError = null)
+        {
+            _filePath = filePath;
+            _settings = settings ?? StlImportSettings.CreateDefault();
+            _onError  = onError;
+            _onResult = onResult;
+        }
+
+        public void Execute()
+        {
+            if (string.IsNullOrEmpty(_filePath))
+            {
+                _onError?.Invoke("ファイルパスが空です");
+                return;
+            }
+
+            if (!File.Exists(_filePath))
+            {
+                _onError?.Invoke($"ファイルが見つかりません: {_filePath}");
+                return;
+            }
+
+            StlImportResult result;
+            try
+            {
+                result = StlImporter.ImportFile(_filePath, _settings);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ImportStlCommand] {e.Message}");
+                _onError?.Invoke(e.Message);
+                return;
+            }
+
+            if (!result.Success)
+            {
+                _onError?.Invoke(result.ErrorMessage);
+                return;
+            }
+
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileNameWithoutExtension(_filePath),
+                FilePath = _filePath,
+            };
 
             foreach (var mc in result.MeshContexts)
                 model.Add(mc);

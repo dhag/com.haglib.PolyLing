@@ -1,5 +1,5 @@
 // PanelCommand.FileIO.cs
-// ファイル入出力（PMX / MQO / OBJ / VRM・プロジェクト）の操作要求。
+// ファイル入出力（PMX / MQO / OBJ / STL / VRM・プロジェクト）の操作要求。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置（PanelCommand.cs と同じ名前空間。PanelCommand.cs から分割）
 
 using System.Collections.Generic;
@@ -227,6 +227,78 @@ namespace Poly_Ling.Data
         {
             FilePath = filePath ?? "";
             Settings = settings ?? Poly_Ling.OBJ.ObjExportSettings.CreateDefault();
+        }
+    }
+
+    /// <summary>
+    /// STL ファイル（バイナリ / ASCII）を読み込む。形式はファイルの中身から判定する。
+    /// </summary>
+    [PLCommand(Description = "STL ファイル（バイナリ / ASCII）を読み込む。作業フォルダの下だけを読める。")]
+    public class ImportStlFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む STL のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
+        public Poly_Ling.STL.StlImportSettings Settings { get; }
+
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
+        public ImportStlFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.STL.StlImportSettings settings = null,
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
+            : base(modelIndex)
+        {
+            FilePath                 = filePath ?? "";
+            Settings                 = settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault();
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
+        }
+    }
+
+    /// <summary>STL ファイルを書き出す。バイナリか ASCII かは設定の Binary で決める。</summary>
+    [PLCommand(Description = "現在のモデルを STL ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class ExportStlFileCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出し先のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "書き出し設定。省いた項目は既定値のまま")]
+        public Poly_Ling.STL.StlExportSettings Settings { get; }
+
+        public ExportStlFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.STL.StlExportSettings settings = null)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Settings = settings ?? Poly_Ling.STL.StlExportSettings.CreateDefault();
         }
     }
 

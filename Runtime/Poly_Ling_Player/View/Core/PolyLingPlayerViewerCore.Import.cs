@@ -73,6 +73,26 @@ namespace Poly_Ling.Player
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
+        private void OnImportStl(string filePath, Poly_Ling.STL.StlImportSettings settings,
+                                 PlayerImportSubPanel.PostOptions post)
+        {
+            var cmd = new ImportStlCommand(
+                filePath, settings,
+                onResult: (model, result) =>
+                {
+                    _localLoader.LoadModel(filePath, model);
+                    // 読込後オプションが状態表示を書くので、その前に置く。
+                    _status =
+                        $"STL読込完了: {System.IO.Path.GetFileName(filePath)}" +
+                        $" ({(result.IsBinary ? "バイナリ" : "ASCII")} / {result.MeshContexts.Count}オブジェクト / " +
+                        $"{result.TotalVertices}頂点 / {result.TotalFaces}面" +
+                        (result.DroppedDegenerateFaces > 0 ? $" / 縮退で除外 {result.DroppedDegenerateFaces}面" : "") + ")";
+                    ApplyImportPostOptions(post);
+                },
+                onError:  msg       => _status = $"STL読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
         private void OnImportVrm(string filePath, Poly_Ling.Vrm.Vrm10ImportSettings settings,
                                  PlayerImportSubPanel.PostOptions post)
         {
@@ -248,6 +268,34 @@ namespace Poly_Ling.Player
                         ? ""
                         : $" + {System.IO.Path.GetFileName(result.MtlPath)}";
                     _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}{mtl}");
+                    return null;
+                }
+                _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                return result.ErrorMessage;
+            }
+            catch (Exception ex)
+            {
+                _exportSubPanel?.SetStatus($"例外: {ex.Message}");
+                return $"例外: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// STL 書き出し。失敗理由を返す（成功時は null）。
+        /// パネル経路は戻り値を捨て、コマンド経路（ExecuteExportStlFile）は Fail() へ載せる。
+        /// </summary>
+        private string OnExportStl(string outputPath, Poly_Ling.STL.StlExportSettings settings)
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
+            try
+            {
+                var result = Poly_Ling.STL.StlExporter.ExportFile(outputPath, model, settings);
+                if (result.Success)
+                {
+                    _exportSubPanel?.SetStatus(
+                        $"完了: {System.IO.Path.GetFileName(outputPath)} " +
+                        $"({(result.IsBinary ? "バイナリ" : "ASCII")} / {result.ObjectCount}オブジェクト / {result.TriangleCount}三角形)");
                     return null;
                 }
                 _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");

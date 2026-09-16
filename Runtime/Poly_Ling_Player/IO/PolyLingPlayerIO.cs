@@ -11,6 +11,7 @@ using Poly_Ling.Context;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
 using Poly_Ling.OBJ;
+using Poly_Ling.STL;
 
 namespace Poly_Ling.Player
 {
@@ -192,12 +193,75 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // STL
+        // ================================================================
+
+        /// <summary>
+        /// STL ファイル（バイナリ / ASCII）をデフォルト設定でインポートし ModelContext を返す。
+        /// 失敗時は null を返し errorMessage にエラー内容を格納する。
+        /// </summary>
+        public static ModelContext ImportStl(string filePath, out string errorMessage)
+            => ImportStl(filePath, null, out errorMessage);
+
+        /// <summary>
+        /// STL ファイルを指定設定でインポートし ModelContext を返す。
+        /// 失敗時は null を返し errorMessage にエラー内容を格納する。
+        /// </summary>
+        public static ModelContext ImportStl(string filePath, StlImportSettings settings, out string errorMessage)
+        {
+            errorMessage = null;
+
+            if (string.IsNullOrEmpty(filePath))
+            {
+                errorMessage = "ファイルパスが空です";
+                return null;
+            }
+
+            if (!File.Exists(filePath))
+            {
+                errorMessage = $"ファイルが見つかりません: {filePath}";
+                return null;
+            }
+
+            StlImportResult result;
+            try
+            {
+                result = StlImporter.ImportFile(filePath, settings);
+            }
+            catch (Exception e)
+            {
+                errorMessage = e.Message;
+                return null;
+            }
+
+            if (!result.Success)
+            {
+                errorMessage = result.ErrorMessage;
+                return null;
+            }
+
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileNameWithoutExtension(filePath),
+                FilePath = filePath,
+            };
+
+            foreach (var mc in result.MeshContexts)
+                model.Add(mc);
+
+            // STL は階層を持たない。WorldMatrix を単位で確定させておく。
+            model.ComputeWorldMatrices();
+
+            return model;
+        }
+
+        // ================================================================
         // 拡張子ルーティング
         // ================================================================
 
         /// <summary>
-        /// 拡張子から PMX / MQO / OBJ を判定してインポートする。
-        /// 対応拡張子は .pmx / .mqo / .obj のみ。
+        /// 拡張子から PMX / MQO / OBJ / STL を判定してインポートする。
+        /// 対応拡張子は .pmx / .mqo / .obj / .stl のみ。
         /// </summary>
         public static ModelContext ImportAuto(string filePath, out string errorMessage)
         {
@@ -209,6 +273,7 @@ namespace Poly_Ling.Player
                 case ".pmx": return ImportPmx(filePath, out errorMessage);
                 case ".mqo": return ImportMqo(filePath, out errorMessage);
                 case ".obj": return ImportObj(filePath, out errorMessage);
+                case ".stl": return ImportStl(filePath, out errorMessage);
                 default:
                     errorMessage = $"非対応の拡張子です: {ext}";
                     return null;

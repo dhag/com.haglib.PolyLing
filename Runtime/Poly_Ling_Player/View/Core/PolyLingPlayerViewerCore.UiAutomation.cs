@@ -254,6 +254,9 @@ namespace Poly_Ling.Player
             RegisterUiPanelGrouped("exportVrm", "VRM エクスポート（保存はダイアログで確定）",
                 _layoutRoot.ExportSection, () => ShowExportPanel(PlayerExportSubPanel.Mode.VRM),
                 PlayerExportSubPanel.ModeGroup(PlayerExportSubPanel.Mode.VRM), _exportSubPanel);
+            RegisterUiPanelGrouped("exportStl", "STL エクスポート（保存はダイアログで確定）",
+                _layoutRoot.ExportSection, () => ShowExportPanel(PlayerExportSubPanel.Mode.STL),
+                PlayerExportSubPanel.ModeGroup(PlayerExportSubPanel.Mode.STL), _exportSubPanel);
 
             // 読込も 1 つのセクションを 4 モードで切り替える。
             RegisterUiPanelGrouped("importPmx", "PMX インポート（読込はファイル選択ダイアログで確定）",
@@ -268,6 +271,9 @@ namespace Poly_Ling.Player
             RegisterUiPanelGrouped("importVrm", "VRM インポート（読込はファイル選択ダイアログで確定）",
                 _layoutRoot.ImportSection, () => ShowImportPanel(PlayerImportSubPanel.Mode.VRM),
                 PlayerImportSubPanel.ModeGroup(PlayerImportSubPanel.Mode.VRM), _importSubPanel);
+            RegisterUiPanelGrouped("importStl", "STL インポート（読込はファイル選択ダイアログで確定）",
+                _layoutRoot.ImportSection, () => ShowImportPanel(PlayerImportSubPanel.Mode.STL),
+                PlayerImportSubPanel.ModeGroup(PlayerImportSubPanel.Mode.STL), _importSubPanel);
 
             // ── 常に見えるパネル ─────────────────────────────────────
             RegisterUiPanel("modelList", "モデル一覧（カレントの切り替え・名前の変更・削除）",

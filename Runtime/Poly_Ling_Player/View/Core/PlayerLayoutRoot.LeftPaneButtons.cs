@@ -220,6 +220,11 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：VRM 読み込みボタン。インポータのセクションを VRM モードで開く。</summary>
         public Button VrmLoadBtn { get; private set; }
 
+        /// <summary>左ペイン：STL 読み込み / 保存ボタン。
+        /// インポータ / エクスポータのセクションを STL モードで開く。</summary>
+        public Button StlLoadBtn { get; private set; }
+        public Button StlSaveBtn { get; private set; }
+
         /// <summary>左ペイン：PMX部分インポートボタン。</summary>
         public Button PartialImportPmxBtn { get; private set; }
 
@@ -276,10 +281,19 @@ namespace Poly_Ling.Player
             // PMX読み込み / MQO読み込み（PlayerLocalLoader.BuildUI が中身を作る）。
             foFile.Add(LocalLoaderSection);
 
-            // VRM 読み込み（VRM 1.0 / 0.x）。インポータのセクションを VRM モードで開く。
+            // VRM 読み込み（VRM 1.0 / 0.x）と STL 読み込みを 1 行に並べる。
+            // どちらもインポータのセクションをそれぞれのモードで開く。
+            var vrmStlLoadRow = new VisualElement();
+            vrmStlLoadRow.style.flexDirection = FlexDirection.Row;
+            vrmStlLoadRow.style.marginBottom  = 2;
             VrmLoadBtn = MakeBtn(".VRMファイル読込");
-            VrmLoadBtn.style.marginBottom = 2;
-            foFile.Add(VrmLoadBtn);
+            VrmLoadBtn.style.flexGrow    = 1;
+            VrmLoadBtn.style.marginRight = 2;
+            StlLoadBtn = MakeBtn(".STLファイル読込");
+            StlLoadBtn.style.flexGrow = 1;
+            vrmStlLoadRow.Add(VrmLoadBtn);
+            vrmStlLoadRow.Add(StlLoadBtn);
+            foFile.Add(vrmStlLoadRow);
 
             foFile.Add(Separator());
 
@@ -302,8 +316,9 @@ namespace Poly_Ling.Player
             fullExportRow.style.flexDirection = FlexDirection.Row;
             fullExportRow.style.marginBottom  = 2;
             FullExportPmxBtn = MakeBtn("PMX保存"); FullExportPmxBtn.style.flexGrow = 1; FullExportPmxBtn.style.marginRight = 2;
-            FullExportMqoBtn = MakeBtn("MQO保存"); FullExportMqoBtn.style.flexGrow = 1;
-            fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn);
+            FullExportMqoBtn = MakeBtn("MQO保存"); FullExportMqoBtn.style.flexGrow = 1; FullExportMqoBtn.style.marginRight = 2;
+            StlSaveBtn       = MakeBtn(".STL保存"); StlSaveBtn.style.flexGrow = 1;
+            fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn); fullExportRow.Add(StlSaveBtn);
             foFile.Add(fullExportRow);
 
             // VRM に載せる作者情報・許諾・視線・一人称。保存されるモデルの値で、

@@ -221,6 +221,7 @@ namespace Poly_Ling.Player
             {
                 case PlayerExportSubPanel.Mode.PMX: btn = _layoutRoot?.FullExportPmxBtn; break;
                 case PlayerExportSubPanel.Mode.OBJ: btn = _layoutRoot?.ObjSaveBtn;       break;
+                case PlayerExportSubPanel.Mode.STL: btn = _layoutRoot?.StlSaveBtn;       break;
                 case PlayerExportSubPanel.Mode.VRM: btn = _layoutRoot?.FullExportVrmBtn; break;
                 default:                            btn = _layoutRoot?.FullExportMqoBtn; break;
             }
