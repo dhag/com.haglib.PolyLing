@@ -282,7 +282,7 @@ namespace Poly_Ling.Player
                     }
 
                     // 索引がずれたときに引き直せるよう、作った時点で識別子を控える。
-                    if (ssMc.MeshObject != null) ssSet.CaptureVertexIds(ssMc.MeshObject);
+                    if (ssMc.MeshObject != null) ssSet.CaptureIds(ssMc.MeshObject);
 
                     var ssStore = ssModel.DataStore;
                     string ssName = string.IsNullOrEmpty(c.ResultName)

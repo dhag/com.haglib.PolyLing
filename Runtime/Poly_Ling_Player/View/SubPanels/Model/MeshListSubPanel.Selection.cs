@@ -225,6 +225,9 @@ namespace Poly_Ling.MeshListV2
             _lastSyncedSelIds.Clear();
             _lastSyncedSelIds.AddRange(ids);
 
+            // 選択が変われば塗り直す（選択色の固定用）。
+            ScheduleSelectionColorRefresh();
+
             RebuildSelectedAdaptersFromCurrentModel();
         }
 

@@ -423,11 +423,20 @@ namespace Poly_Ling.Player
             return count > 0 ? (Vector3?)(sum / count) : null;
         }
 
+        /// <summary>
+        /// 構造通知（ListStructure / ModelSwitch）を実際に流した回数。
+        /// PlayerCommandDispatcher が「コマンド実行中に構造通知が出たか」を
+        /// この値の変化だけで判定する。増やすだけで巻き戻さない。
+        /// </summary>
+        private int _structureNotifyCount;
+
         private void NotifyPanels(ChangeKind kind)
         {
             var project = ActiveProject;
             if (project == null || _panelContext == null) return;
             var view = new PlayerProjectView(project);
+            if (kind == ChangeKind.ListStructure || kind == ChangeKind.ModelSwitch)
+                _structureNotifyCount++;
             _panelContext.Notify(view, kind);
 
             // リモートサーバ稼働時、本体の選択/モデル変更を接続クライアントへ配信する。

@@ -166,6 +166,7 @@ namespace Poly_Ling.MeshListV2
 
             _applyTreeGeneration++;
             ApplyAutoTreeHeight();
+            ScheduleSelectionColorRefresh();
 
             if (scroll != null && (keep.x > 0f || keep.y > 0f))
             {

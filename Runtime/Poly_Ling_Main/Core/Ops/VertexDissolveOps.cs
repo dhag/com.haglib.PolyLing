@@ -245,14 +245,12 @@ namespace Poly_Ling.Ops
             baseFace.UVIndices     = ringUV;
             baseFace.NormalIndices = ringNormal;
 
-            // 残りの面を降順で削除する。baseFaceIndex は最小なのでずれない。
+            // 残りの面を削除する。索引の詰めは MeshObject.RemoveFaces が行う。
             var removeList = new List<int>();
             foreach (int fi in order)
                 if (fi != baseFaceIndex) removeList.Add(fi);
-            removeList.Sort();
 
-            for (int k = removeList.Count - 1; k >= 0; k--)
-                mo.Faces.RemoveAt(removeList[k]);
+            mo.RemoveFaces(removeList);
 
             removedFaceCount = removeList.Count;
             ringCount        = ring.Count;
@@ -266,15 +264,9 @@ namespace Poly_Ling.Ops
                 return false;
             }
 
-            // A を削除し、残存面の頂点インデックスを詰める。
-            foreach (var f in mo.Faces)
-            {
-                var vidx = f.VertexIndices;
-                for (int j = 0; j < vidx.Count; j++)
-                    if (vidx[j] > apex) vidx[j] = vidx[j] - 1;
-            }
-            mo.Vertices.RemoveAt(apex);
-            mo.InvalidatePositionCache();
+            // A を削除する。残存面の頂点索引の詰めと、選択・パーツ選択辞書への
+            // 付け替えは MeshObject.RemoveVertices が行う。
+            mo.RemoveVertices(new[] { apex });
 
             reason = null;
             return true;

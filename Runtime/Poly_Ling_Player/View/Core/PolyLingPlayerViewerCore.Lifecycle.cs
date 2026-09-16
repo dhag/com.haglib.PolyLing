@@ -354,7 +354,8 @@ namespace Poly_Ling.Player
                 NotifyPanels,
                 RebuildModelList,
                 _editOps?.UndoController,
-                _editOps?.CommandQueue);
+                _editOps?.CommandQueue,
+                () => _structureNotifyCount);
 
             // MCP（名前付きパイプ）からの実行入口。RemoteMode に依存しない。
             // 対の解除は Dispose 内。

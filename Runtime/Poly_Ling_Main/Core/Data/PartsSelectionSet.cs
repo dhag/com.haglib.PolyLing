@@ -55,6 +55,23 @@ namespace Poly_Ling.Selection
         /// <summary>選択中の線分インデックス</summary>
         public HashSet<int> Lines { get; set; } = new HashSet<int>();
 
+        /// <summary>
+        /// 面索引 → Face.Id の控え。Faces の各要素に対応する。
+        /// 頂点の VertexIds と同じ役割で、索引が詰められたあとの引き直しに使う。
+        /// 後付けなので欠けを許す（控えていない索引は引き直しの対象外）。
+        /// </summary>
+        public Dictionary<int, int> FaceIds { get; set; } = new Dictionary<int, int>();
+
+        /// <summary>線分（2 頂点の面）の索引 → Face.Id の控え。Lines に対応する。</summary>
+        public Dictionary<int, int> LineIds { get; set; } = new Dictionary<int, int>();
+
+        /// <summary>
+        /// 辺（頂点索引の対）→ 両端の頂点 ID の対。
+        /// 辺そのものには ID が無いので、両端の頂点 ID で引き直す。
+        /// </summary>
+        public Dictionary<VertexPair, VertexPair> EdgeVertexIds { get; set; }
+            = new Dictionary<VertexPair, VertexPair>();
+
         /// <summary>色（UI表示用、オプション）</summary>
         public Color Color { get; set; } = Color.yellow;
 
@@ -184,6 +201,9 @@ namespace Poly_Ling.Selection
                 Faces = new HashSet<int>(Faces),
                 Lines = new HashSet<int>(Lines),
                 VertexIds = new Dictionary<int, VertexIdTriple>(VertexIds),
+                FaceIds   = new Dictionary<int, int>(FaceIds),
+                LineIds   = new Dictionary<int, int>(LineIds),
+                EdgeVertexIds = new Dictionary<VertexPair, VertexPair>(EdgeVertexIds),
                 Color = Color
             };
         }
@@ -252,6 +272,9 @@ namespace Poly_Ling.Selection
             Faces.Clear();
             Lines.Clear();
             VertexIds.Clear();
+            FaceIds.Clear();
+            LineIds.Clear();
+            EdgeVertexIds.Clear();
         }
 
         /// <summary>Vertices に無い索引の控えを落とす。</summary>
@@ -396,6 +419,173 @@ namespace Poly_Ling.Selection
             VertexIds = newIds;
             return true;
         }
+
+        // ================================================================
+        // 面・線分・辺の控えと引き直し
+        // ================================================================
+
+        /// <summary>
+        /// いま Faces / Lines が指している面から Face.Id を読んで控え直す。
+        /// 既存の控えは捨てる。控えた件数の合計を返す。
+        /// </summary>
+        public int CaptureFaceIds(MeshObject meshObject)
+        {
+            FaceIds.Clear();
+            LineIds.Clear();
+            if (meshObject == null) return 0;
+
+            var faces = meshObject.Faces;
+            foreach (int i in Faces)
+            {
+                if (i < 0 || i >= faces.Count) continue;
+                int id = faces[i].Id;
+                if (MeshObject.IsUnsetId(id)) continue;   // 引き当てに使えない
+                FaceIds[i] = id;
+            }
+            foreach (int i in Lines)
+            {
+                if (i < 0 || i >= faces.Count) continue;
+                int id = faces[i].Id;
+                if (MeshObject.IsUnsetId(id)) continue;
+                LineIds[i] = id;
+            }
+            return FaceIds.Count + LineIds.Count;
+        }
+
+        /// <summary>
+        /// いま Edges が指している辺の両端から頂点 ID を読んで控え直す。
+        /// 既存の控えは捨てる。控えた件数を返す。
+        /// 片端でも未設定 ID なら控えない（引き当てに使えないため）。
+        /// </summary>
+        public int CaptureEdgeVertexIds(MeshObject meshObject)
+        {
+            EdgeVertexIds.Clear();
+            if (meshObject == null) return 0;
+
+            var list = meshObject.Vertices;
+            foreach (var e in Edges)
+            {
+                if (e.V1 < 0 || e.V1 >= list.Count) continue;
+                if (e.V2 < 0 || e.V2 >= list.Count) continue;
+
+                int id1 = list[e.V1].Id;
+                int id2 = list[e.V2].Id;
+                if (MeshObject.IsUnsetId(id1) || MeshObject.IsUnsetId(id2)) continue;
+
+                EdgeVertexIds[e] = new VertexPair(id1, id2);
+            }
+            return EdgeVertexIds.Count;
+        }
+
+        /// <summary>頂点・面・線分・辺の控えをまとめて取り直す。控えた件数の合計を返す。</summary>
+        public int CaptureIds(MeshObject meshObject)
+            => CaptureVertexIds(meshObject)
+             + CaptureFaceIds(meshObject)
+             + CaptureEdgeVertexIds(meshObject);
+
+        /// <summary>
+        /// 控えた ID から頂点・面・線分・辺をまとめて引き直す。
+        ///
+        /// 頂点は ResolveByVertexId と同じ規則。面・線分は Face.Id、
+        /// 辺は両端の頂点 ID で引く。引き当てられなかったものは落とす
+        /// （面と辺は「索引が空いていれば残す」ができない。面 ID は
+        /// 1 メッシュ内で一意なので、見つからない＝その面はもう無い）。
+        /// </summary>
+        /// <param name="resolved">引き当てられた控えの件数（頂点・面・線分・辺の合計）。</param>
+        /// <param name="lost">引き当てられなかった控えの件数。</param>
+        /// <returns>引き当てを実行したら true。控えが 1 件も無ければ false。</returns>
+        public bool ResolveByIds(MeshObject meshObject, out int resolved, out int lost)
+        {
+            resolved = 0;
+            lost     = 0;
+            if (meshObject == null) return false;
+
+            bool any = false;
+
+            if (ResolveByVertexId(meshObject, out int vResolved, out int vLost))
+            {
+                any       = true;
+                resolved += vResolved;
+                lost     += vLost;
+            }
+
+            // ── 面・線分 ─────────────────────────────────────────────
+            if (FaceIds.Count > 0 || LineIds.Count > 0)
+            {
+                any = true;
+
+                var byFaceId = new Dictionary<int, int>();
+                var faces    = meshObject.Faces;
+                for (int i = 0; i < faces.Count; i++)
+                {
+                    int id = faces[i].Id;
+                    if (MeshObject.IsUnsetId(id)) continue;
+                    if (!byFaceId.ContainsKey(id)) byFaceId[id] = i;
+                }
+
+                ResolveFaceSet(Faces, FaceIds, byFaceId, ref resolved, ref lost);
+                ResolveFaceSet(Lines, LineIds, byFaceId, ref resolved, ref lost);
+            }
+
+            // ── 辺 ───────────────────────────────────────────────────
+            if (EdgeVertexIds.Count > 0)
+            {
+                any = true;
+
+                var byVertexId = new Dictionary<int, int>();
+                var list       = meshObject.Vertices;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    int id = list[i].Id;
+                    if (MeshObject.IsUnsetId(id)) continue;
+                    if (!byVertexId.ContainsKey(id)) byVertexId[id] = i;
+                }
+
+                var newEdges = new HashSet<VertexPair>();
+                var newIds   = new Dictionary<VertexPair, VertexPair>();
+                foreach (var kv in EdgeVertexIds)
+                {
+                    if (!byVertexId.TryGetValue(kv.Value.V1, out int a) ||
+                        !byVertexId.TryGetValue(kv.Value.V2, out int b) ||
+                        a == b)
+                    {
+                        lost++;
+                        continue;
+                    }
+                    var edge = new VertexPair(a, b);
+                    newEdges.Add(edge);
+                    newIds[edge] = kv.Value;
+                    resolved++;
+                }
+                Edges         = newEdges;
+                EdgeVertexIds = newIds;
+            }
+
+            return any;
+        }
+
+        /// <summary>面（または線分）の集合を Face.Id で引き直す。</summary>
+        private static void ResolveFaceSet(
+            HashSet<int> target, Dictionary<int, int> ids,
+            Dictionary<int, int> byFaceId, ref int resolved, ref int lost)
+        {
+            if (ids == null || ids.Count == 0) return;
+
+            var newSet = new HashSet<int>();
+            var newIds = new Dictionary<int, int>();
+            foreach (var kv in ids)
+            {
+                if (!byFaceId.TryGetValue(kv.Value, out int fi)) { lost++; continue; }
+                newSet.Add(fi);
+                newIds[fi] = kv.Value;
+                resolved++;
+            }
+            target.Clear();
+            target.UnionWith(newSet);
+
+            ids.Clear();
+            foreach (var kv in newIds) ids[kv.Key] = kv.Value;
+        }
     }
 
     // ================================================================
@@ -423,6 +613,17 @@ namespace Poly_Ling.Selection
         public List<int> vertexIds;         // Vertex.Id
         public List<int> vertexPartsIds;    // Vertex.PartsId
         public List<int> vertexSubIds;      // Vertex.SubId
+
+        // 面・線分・辺の控え。頂点と同じく平行配列で持つ。
+        // 欄が無い旧データは null になり、控え無しとして読む。
+        public List<int> faceIdIndices;     // 対応する面インデックス（Faces 用）
+        public List<int> faceIdValues;      // Face.Id
+        public List<int> lineIdIndices;     // 対応する面インデックス（Lines 用）
+        public List<int> lineIdValues;      // Face.Id
+        public List<int> edgeV1;            // 辺の頂点インデックス 1
+        public List<int> edgeV2;            // 辺の頂点インデックス 2
+        public List<int> edgeVertexId1;     // 辺の端 1 の Vertex.Id
+        public List<int> edgeVertexId2;     // 辺の端 2 の Vertex.Id
 
         /// <summary>
         /// SelectionSetからDTOを作成
@@ -459,7 +660,76 @@ namespace Poly_Ling.Selection
                 }
             }
 
+            // 面・線分・辺の控え
+            FillIdBackups(dto, set);
+
             return dto;
+        }
+
+        /// <summary>面・線分・辺の控えを DTO へ写す。</summary>
+        private static void FillIdBackups(SelectionSetDTO dto, PartsSelectionSet set)
+        {
+            dto.faceIdIndices = new List<int>();
+            dto.faceIdValues  = new List<int>();
+            if (set.FaceIds != null)
+                foreach (var kv in set.FaceIds)
+                {
+                    dto.faceIdIndices.Add(kv.Key);
+                    dto.faceIdValues.Add(kv.Value);
+                }
+
+            dto.lineIdIndices = new List<int>();
+            dto.lineIdValues  = new List<int>();
+            if (set.LineIds != null)
+                foreach (var kv in set.LineIds)
+                {
+                    dto.lineIdIndices.Add(kv.Key);
+                    dto.lineIdValues.Add(kv.Value);
+                }
+
+            dto.edgeV1        = new List<int>();
+            dto.edgeV2        = new List<int>();
+            dto.edgeVertexId1 = new List<int>();
+            dto.edgeVertexId2 = new List<int>();
+            if (set.EdgeVertexIds != null)
+                foreach (var kv in set.EdgeVertexIds)
+                {
+                    dto.edgeV1.Add(kv.Key.V1);
+                    dto.edgeV2.Add(kv.Key.V2);
+                    dto.edgeVertexId1.Add(kv.Value.V1);
+                    dto.edgeVertexId2.Add(kv.Value.V2);
+                }
+        }
+
+        /// <summary>面・線分・辺の控えを DTO から読み戻す。</summary>
+        private void RestoreIdBackups(PartsSelectionSet set)
+        {
+            if (faceIdIndices != null && faceIdValues != null)
+            {
+                int n = System.Math.Min(faceIdIndices.Count, faceIdValues.Count);
+                set.FaceIds = new Dictionary<int, int>(n);
+                for (int i = 0; i < n; i++) set.FaceIds[faceIdIndices[i]] = faceIdValues[i];
+            }
+
+            if (lineIdIndices != null && lineIdValues != null)
+            {
+                int n = System.Math.Min(lineIdIndices.Count, lineIdValues.Count);
+                set.LineIds = new Dictionary<int, int>(n);
+                for (int i = 0; i < n; i++) set.LineIds[lineIdIndices[i]] = lineIdValues[i];
+            }
+
+            if (edgeV1 != null && edgeV2 != null && edgeVertexId1 != null && edgeVertexId2 != null)
+            {
+                int n = edgeV1.Count;
+                if (edgeV2.Count        < n) n = edgeV2.Count;
+                if (edgeVertexId1.Count < n) n = edgeVertexId1.Count;
+                if (edgeVertexId2.Count < n) n = edgeVertexId2.Count;
+
+                set.EdgeVertexIds = new Dictionary<VertexPair, VertexPair>(n);
+                for (int i = 0; i < n; i++)
+                    set.EdgeVertexIds[new VertexPair(edgeV1[i], edgeV2[i])] =
+                        new VertexPair(edgeVertexId1[i], edgeVertexId2[i]);
+            }
         }
 
         /// <summary>
@@ -534,6 +804,9 @@ namespace Poly_Ling.Selection
                         new VertexIdTriple(vertexIds[i], vertexPartsIds[i], vertexSubIds[i]);
                 }
             }
+
+            // 面・線分・辺の控え
+            RestoreIdBackups(set);
 
             return set;
         }

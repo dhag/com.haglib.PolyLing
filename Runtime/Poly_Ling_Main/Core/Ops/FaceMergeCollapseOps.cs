@@ -301,7 +301,9 @@ namespace Poly_Ling.Ops
             keep.UVIndices     = ringUV;
             keep.NormalIndices = ringNormal;
 
-            mo.Faces.RemoveAt(removeIndex);
+            // 索引の詰めと、選択・パーツ選択辞書への付け替えは
+            // MeshObject.RemoveFaces が行う（MeshObject.Removal.cs）。
+            mo.RemoveFaces(new[] { removeIndex });
 
             resultVertexCount = ring.Count;
 
@@ -322,33 +324,10 @@ namespace Poly_Ling.Ops
 
             if (killed.Count > 0)
             {
-                var kill = new HashSet<int>(killed);
-
-                int originalCount = mo.Vertices.Count;
-                var indexMap = new int[originalCount];
-                int newIndex = 0;
-                for (int i = 0; i < originalCount; i++)
-                    indexMap[i] = kill.Contains(i) ? -1 : newIndex++;
-
-                foreach (var face in mo.Faces)
-                {
-                    var vidx = face.VertexIndices;
-                    for (int j = 0; j < vidx.Count; j++)
-                    {
-                        int old = vidx[j];
-                        if (old >= 0 && old < originalCount && indexMap[old] >= 0)
-                            vidx[j] = indexMap[old];
-                    }
-                }
-
-                for (int k = killed.Count - 1; k >= 0; k--)
-                {
-                    if (killed[k] >= 0 && killed[k] < mo.Vertices.Count)
-                        mo.Vertices.RemoveAt(killed[k]);
-                }
-
+                // 索引の詰めと、選択・パーツ選択辞書への付け替えは
+                // MeshObject.RemoveVertices が行う。
+                mo.RemoveVertices(killed);
                 removedVertices = killed;
-                mo.InvalidatePositionCache();
             }
 
             reason = null;

@@ -262,45 +262,18 @@ namespace Poly_Ling.Ops
             target.UVIndices     = new List<int>(outerUV);
             target.NormalIndices = new List<int>(outerNormal);
 
-            // 囲む3面を降順で削除する（target は Face オブジェクトなので影響を受けない）。
+            // 囲む3面を削除する（target は Face オブジェクトなので影響を受けない）。
             var removeList = new List<int>(neighbors);
-            removeList.Sort();
-            for (int k = removeList.Count - 1; k >= 0; k--)
-                mo.Faces.RemoveAt(removeList[k]);
+            mo.RemoveFaces(removeList);
 
             removedFaceCount = removeList.Count;
 
-            // どの面からも参照されなくなった頂点だけを削除し、インデックスを詰める。
+            // どの面からも参照されなくなった頂点だけを削除する。索引の詰めと
+            // 選択・パーツ選択辞書への付け替えは MeshObject.RemoveVertices が行う。
             if (orphans.Count > 0)
             {
-                var kill = new HashSet<int>(orphans);
-
-                int originalCount = mo.Vertices.Count;
-                var indexMap = new int[originalCount];
-                int newIndex = 0;
-                for (int i = 0; i < originalCount; i++)
-                    indexMap[i] = kill.Contains(i) ? -1 : newIndex++;
-
-                foreach (var face in mo.Faces)
-                {
-                    var vidx = face.VertexIndices;
-                    for (int j = 0; j < vidx.Count; j++)
-                    {
-                        int old = vidx[j];
-                        if (old >= 0 && old < originalCount && indexMap[old] >= 0)
-                            vidx[j] = indexMap[old];
-                    }
-                }
-
-                orphans.Sort();
-                for (int k = orphans.Count - 1; k >= 0; k--)
-                {
-                    if (orphans[k] >= 0 && orphans[k] < mo.Vertices.Count)
-                        mo.Vertices.RemoveAt(orphans[k]);
-                }
-
+                mo.RemoveVertices(orphans);
                 removedVertexCount = orphans.Count;
-                mo.InvalidatePositionCache();
             }
 
             reason = null;

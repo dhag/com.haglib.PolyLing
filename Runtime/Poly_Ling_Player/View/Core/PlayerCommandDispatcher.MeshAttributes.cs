@@ -579,6 +579,8 @@ namespace Poly_Ling.Player
                     var __oldSel = model.CaptureAllSelectedIndices();
                     var __removed = new List<(int, MeshContext)>();
                     // 降順で削除 (上位 index の削除で下位 index がずれないように)
+                    // ボーンウェイトの控えはモデルが預かり、Undo 記録側
+                    // （MeshUndoController.RecordMeshContextsRemove）が引き取る。
                     foreach (int idx in c.MasterIndices.OrderByDescending(i => i))
                     {
                         if (idx < 0 || idx >= model.MeshContextCount) continue;

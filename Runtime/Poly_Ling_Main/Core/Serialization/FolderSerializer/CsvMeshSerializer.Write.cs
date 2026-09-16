@@ -357,8 +357,43 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 foreach (var l in ss.Lines) sb.Append($",{l}");
 
                 WriteSelectionSetVertexIds(sb, ss);
+                WriteSelectionSetFaceEdgeIds(sb, ss);
 
                 sb.AppendLine();
+            }
+        }
+
+        /// <summary>
+        /// 選択セットが控えている面・線分・辺の識別子を行末へ足す。
+        /// faceIdCount,(idx,id)... / lineIdCount,(idx,id)... /
+        /// edgeIdCount,(v1,v2,id1,id2)... の順。
+        /// 旧データはこの欄が無いので、読み側は列が尽きたら控え無しとして扱う。
+        /// </summary>
+        private static void WriteSelectionSetFaceEdgeIds(StringBuilder sb, PartsSelectionSet ss)
+        {
+            var faceIds = ss?.FaceIds;
+            if (faceIds == null || faceIds.Count == 0) sb.Append(",0");
+            else
+            {
+                sb.Append($",{faceIds.Count}");
+                foreach (var kv in faceIds) sb.Append($",{kv.Key},{kv.Value}");
+            }
+
+            var lineIds = ss?.LineIds;
+            if (lineIds == null || lineIds.Count == 0) sb.Append(",0");
+            else
+            {
+                sb.Append($",{lineIds.Count}");
+                foreach (var kv in lineIds) sb.Append($",{kv.Key},{kv.Value}");
+            }
+
+            var edgeIds = ss?.EdgeVertexIds;
+            if (edgeIds == null || edgeIds.Count == 0) sb.Append(",0");
+            else
+            {
+                sb.Append($",{edgeIds.Count}");
+                foreach (var kv in edgeIds)
+                    sb.Append($",{kv.Key.V1},{kv.Key.V2},{kv.Value.V1},{kv.Value.V2}");
             }
         }
 

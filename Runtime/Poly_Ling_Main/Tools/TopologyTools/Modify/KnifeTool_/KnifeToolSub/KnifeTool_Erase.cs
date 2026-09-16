@@ -146,10 +146,10 @@ namespace Poly_Ling.Tools
                 MaterialIndex = face1.MaterialIndex
             };
 
-            int maxIdx = Mathf.Max(faceIdx1, faceIdx2);
-            int minIdx = Mathf.Min(faceIdx1, faceIdx2);
-            mo.Faces.RemoveAt(maxIdx);
-            mo.Faces.RemoveAt(minIdx);
+            // 面の索引の詰めは MeshObject.RemoveFaces が行う。ここで自前に
+            // 消すと、選択とパーツ選択辞書への付け替えが届かない
+            // （MeshObject.Removal.cs）。
+            mo.RemoveFaces(new[] { faceIdx1, faceIdx2 });
             mo.Faces.Add(newFace);
         }
 

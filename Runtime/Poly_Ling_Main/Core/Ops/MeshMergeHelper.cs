@@ -248,6 +248,10 @@ namespace Poly_Ling.Ops
             }
 
             // 3. 面を処理
+            //    消す面はここでは控えるだけにして、実際の削除は
+            //    MeshObject.RemoveFaces にまとめて任せる（索引の詰めと
+            //    選択・パーツ選択辞書への付け替えがそこで行われる）。
+            var facesToRemove = new List<int>();
             for (int f = meshObject.FaceCount - 1; f >= 0; f--)
             {
                 var face = meshObject.Faces[f];
@@ -282,8 +286,8 @@ namespace Poly_Ling.Ops
 
                 if (newVertexIndices.Count < 3)
                 {
-                    // 頂点数が3未満なら面を削除
-                    meshObject.Faces.RemoveAt(f);
+                    // 頂点数が3未満なら面を削除（控えるだけ）
+                    facesToRemove.Add(f);
                 }
                 else
                 {
@@ -294,19 +298,17 @@ namespace Poly_Ling.Ops
                 }
             }
 
-            // 4. 頂点を削除（マージ先以外、降順で）
+            meshObject.RemoveFaces(facesToRemove);
+
+            // 4. 頂点を削除（マージ先以外）
+            //    面は上で新しい索引へ書き換え済みなので、面を触らない入口を使う。
+            //    表（indexMap）をそのまま渡すことで、選択とパーツ選択辞書は
+            //    マージ先の索引へ寄る（MeshObject.Removal.cs）。
             var verticesToRemove = verticesToMerge
                 .Where(i => i != targetVertex && i >= 0 && i < meshObject.VertexCount)
-                .OrderByDescending(i => i)
                 .ToList();
 
-            foreach (var idx in verticesToRemove)
-            {
-                if (idx >= 0 && idx < meshObject.VertexCount)
-                {
-                    meshObject.Vertices.RemoveAt(idx);
-                }
-            }
+            meshObject.RemoveVerticesWithMap(verticesToRemove, indexMap);
 
             return targetNewIndex;
         }
@@ -355,6 +357,8 @@ namespace Poly_Ling.Ops
             }
 
             // 2. 面を処理（インデックス更新＆無効な面の削除）
+            //    消す面は控えるだけにして、削除は MeshObject.RemoveFaces に任せる。
+            var facesToRemove2 = new List<int>();
             for (int f = meshObject.FaceCount - 1; f >= 0; f--)
             {
                 var face = meshObject.Faces[f];
@@ -379,8 +383,8 @@ namespace Poly_Ling.Ops
 
                 if (newVertexIndices.Count < 3)
                 {
-                    // 頂点数が3未満なら面を削除
-                    meshObject.Faces.RemoveAt(f);
+                    // 頂点数が3未満なら面を削除（控えるだけ）
+                    facesToRemove2.Add(f);
                 }
                 else
                 {
@@ -391,15 +395,12 @@ namespace Poly_Ling.Ops
                 }
             }
 
-            // 3. 頂点を削除（降順で）
-            var sortedIndices = verticesToDelete.OrderByDescending(i => i).ToList();
-            foreach (var idx in sortedIndices)
-            {
-                if (idx >= 0 && idx < meshObject.VertexCount)
-                {
-                    meshObject.Vertices.RemoveAt(idx);
-                }
-            }
+            meshObject.RemoveFaces(facesToRemove2);
+
+            // 3. 頂点を削除
+            //    面は上で新しい索引へ書き換え済みなので、面を触らない入口を使う。
+            //    表を渡すことで選択とパーツ選択辞書も追随する（MeshObject.Removal.cs）。
+            meshObject.RemoveVerticesWithMap(verticesToDelete, indexMap);
         }
 
         /// <summary>
@@ -515,7 +516,8 @@ namespace Poly_Ling.Ops
                 for (int k = 0;        k < splitStart; k++)            { loop2V.Add(verts[k]); if (k < uvs.Count)   loop2U.Add(uvs[k]);   if (k < norms.Count) loop2N.Add(norms[k]); }
 
                 // 元の面を削除して2面を末尾に追加（後続のwhileループで再検査される）
-                meshObject.Faces.RemoveAt(i);
+                // 索引の詰めと辞書への付け替えは MeshObject.RemoveFaces が行う。
+                meshObject.RemoveFaces(new[] { i });
 
                 if (loop1V.Count >= 3)
                 {
@@ -557,8 +559,7 @@ namespace Poly_Ling.Ops
                     toRemove.Add(i);
             }
 
-            for (int i = toRemove.Count - 1; i >= 0; i--)
-                meshObject.Faces.RemoveAt(toRemove[i]);
+            meshObject.RemoveFaces(toRemove);
 
             if (toRemove.Count > 0)
                 Debug.Log($"[MeshMergeHelper] Removed {toRemove.Count} degenerate faces");
@@ -620,11 +621,7 @@ namespace Poly_Ling.Ops
 
             if (toRemove.Count == 0) return 0;
 
-            for (int i = meshObject.FaceCount - 1; i >= 0; i--)
-            {
-                if (toRemove.Contains(i))
-                    meshObject.Faces.RemoveAt(i);
-            }
+            meshObject.RemoveFaces(toRemove);
 
             Debug.Log($"[MeshMergeHelper] Removed {toRemove.Count} closed faces");
             return toRemove.Count;
@@ -695,6 +692,8 @@ namespace Poly_Ling.Ops
         {
             if (meshObject == null || remap == null) return;
 
+            // 消す面は控えるだけにして、削除は MeshObject.RemoveFaces に任せる。
+            var facesToRemove = new List<int>();
             for (int f = meshObject.FaceCount - 1; f >= 0; f--)
             {
                 var face = meshObject.Faces[f];
@@ -715,7 +714,7 @@ namespace Poly_Ling.Ops
 
                 if (newVertexIndices.Count < 3)
                 {
-                    meshObject.Faces.RemoveAt(f);
+                    facesToRemove.Add(f);
                 }
                 else
                 {
@@ -724,6 +723,8 @@ namespace Poly_Ling.Ops
                     face.NormalIndices = newNormalIndices;
                 }
             }
+
+            meshObject.RemoveFaces(facesToRemove);
         }
     }
 }

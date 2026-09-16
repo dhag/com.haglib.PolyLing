@@ -356,51 +356,22 @@ namespace Poly_Ling.Tools
         /// 面の UVIndices / NormalIndices は頂点内のスロット番号なので触らない。
         /// 生き残った頂点オブジェクトはそのまま残るため、位置・UV・法線・
         /// ボーンウェイトは自動的に保存される。
+        ///
+        /// 索引を詰めるのは MeshObject.RemoveFaces / RemoveVertices の仕事
+        /// （MeshObject.Removal.cs）。ここで自前に詰めると、選択状態や
+        /// パーツ選択辞書への付け替えが届かない。
         /// </summary>
         private static void ApplyKill(MeshObject mo, KillSet kill)
         {
             if (mo == null || kill.Faces == null || kill.Vertices == null) return;
 
-            // ------------------------------------------------------------
-            // 面を降順で削除 (先頭から消すと後続インデックスがずれる)
-            // ------------------------------------------------------------
-            foreach (int fi in kill.Faces.OrderByDescending(i => i))
-            {
-                if (fi >= 0 && fi < mo.FaceCount) mo.Faces.RemoveAt(fi);
-            }
+            // 面を先に消す。手順 2 により、残る面は kill.Vertices の頂点を
+            // 一切参照しないので、頂点側は純粋な索引のシフトになる。
+            if (kill.Faces.Count > 0) mo.RemoveFaces(kill.Faces.ToList());
 
             if (kill.Vertices.Count == 0) return;
 
-            // ------------------------------------------------------------
-            // 頂点を降順で削除し、残存面の頂点インデックスを再マップ
-            //    手順 2 により残存面は kill.Vertices の頂点を一切参照しないため、
-            //    ここは純粋なインデックスのシフトになる。面の部分的な作り直し
-            //    (UVIndices / NormalIndices の詰め直し) は発生しない。
-            // ------------------------------------------------------------
-            int originalCount = mo.VertexCount;
-            var indexMap = new int[originalCount];
-            int newIndex = 0;
-            for (int i = 0; i < originalCount; i++)
-                indexMap[i] = kill.Vertices.Contains(i) ? -1 : newIndex++;
-
-            foreach (var face in mo.Faces)
-            {
-                var vidx = face.VertexIndices;
-                for (int j = 0; j < vidx.Count; j++)
-                {
-                    int old = vidx[j];
-                    if (old >= 0 && old < originalCount && indexMap[old] >= 0)
-                        vidx[j] = indexMap[old];
-                }
-            }
-
-            foreach (int vi in kill.Vertices.OrderByDescending(i => i))
-            {
-                if (vi >= 0 && vi < mo.VertexCount) mo.Vertices.RemoveAt(vi);
-            }
-
-            // Vertices を直接操作したので Position 配列キャッシュを無効化する。
-            mo.InvalidatePositionCache();
+            mo.RemoveVertices(kill.Vertices.ToList());
         }
     }
 }

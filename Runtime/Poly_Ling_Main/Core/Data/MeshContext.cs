@@ -75,13 +75,93 @@ namespace Poly_Ling.Data
             get => _meshObject;
             set
             {
+                // 索引の詰め直しを選択・辞書へ届けるための購読を付け替える。
+                // 付け外しをここでやらないと、差し替え後の MeshObject の削除が
+                // 辞書へ届かない（MeshObject.Removal.cs の注記を参照）。
+                if (_meshObject != null)
+                {
+                    _meshObject.VerticesRemoved -= OnMeshVerticesRemoved;
+                    _meshObject.FacesRemoved    -= OnMeshFacesRemoved;
+                }
+
                 _meshObject = value;
+
+                if (_meshObject != null)
+                {
+                    _meshObject.VerticesRemoved += OnMeshVerticesRemoved;
+                    _meshObject.FacesRemoved    += OnMeshFacesRemoved;
+                }
+
                 if (_meshObject != null && _pendingName != null)
                 {
                     _meshObject.Name = _pendingName;
                     _pendingName = null;
                 }
             }
+        }
+
+        // ================================================================
+        // パーツ選択辞書の控え（Undo 用）
+        //
+        //   位相を変える操作で辞書が書き換わる直前に、1 度だけ複製を控える。
+        //   これを Undo 記録が引き取って、Undo のときに書き戻す
+        //   （MeshUndoStack が記録へ詰める）。引き取られなければ次の操作で
+        //   上書きされる。
+        // ================================================================
+
+        private List<PartsSelectionSet> _pendingPartsSetsBackup;
+
+        /// <summary>辞書を書き換える直前に、まだ控えが無ければ控える。</summary>
+        private void CapturePartsSetsBackupIfNeeded()
+        {
+            if (_pendingPartsSetsBackup != null) return;
+            if (PartsSelectionSetList == null) return;
+
+            _pendingPartsSetsBackup = PartsSelectionSetList
+                .Select(s => s?.Clone())
+                .ToList();
+        }
+
+        /// <summary>控えを取り出して手放す。控えが無ければ null。</summary>
+        public List<PartsSelectionSet> TakePendingPartsSetsBackup()
+        {
+            var b = _pendingPartsSetsBackup;
+            _pendingPartsSetsBackup = null;
+            return b;
+        }
+
+        /// <summary>今の辞書の複製を返す。Undo 記録の「操作後」用。</summary>
+        public List<PartsSelectionSet> ClonePartsSets()
+            => PartsSelectionSetList?.Select(s => s?.Clone()).ToList();
+
+        /// <summary>控えを辞書へ書き戻す。</summary>
+        public void RestorePartsSets(List<PartsSelectionSet> sets)
+        {
+            if (sets == null) return;
+            PartsSelectionSetList = sets.Select(s => s?.Clone()).ToList();
+        }
+
+        /// <summary>
+        /// 頂点が消えて索引が詰まったときの追随。現在の選択とパーツ選択辞書を
+        /// 同じ表で付け替える。消えた要素は落とす。
+        /// </summary>
+        private void OnMeshVerticesRemoved(int[] map)
+        {
+            CapturePartsSetsBackupIfNeeded();
+            Poly_Ling.Selection.PartsIndexRemap.ApplyVertexMap(Selection, map);
+            if (PartsSelectionSetList == null) return;
+            foreach (var set in PartsSelectionSetList)
+                Poly_Ling.Selection.PartsIndexRemap.ApplyVertexMap(set, map);
+        }
+
+        /// <summary>面（線分を含む）が消えたときの追随。</summary>
+        private void OnMeshFacesRemoved(int[] map)
+        {
+            CapturePartsSetsBackupIfNeeded();
+            Poly_Ling.Selection.PartsIndexRemap.ApplyFaceMap(Selection, map);
+            if (PartsSelectionSetList == null) return;
+            foreach (var set in PartsSelectionSetList)
+                Poly_Ling.Selection.PartsIndexRemap.ApplyFaceMap(set, map);
         }
 
         private MeshObject _meshObject;

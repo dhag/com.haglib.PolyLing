@@ -57,6 +57,22 @@ namespace Poly_Ling.Player
         private readonly MeshUndoController     _undoController;
         private readonly CommandQueue           _commandQueue;
 
+        // ── 構造変化の取りこぼし止め ───────────────────────────────
+        // Dispatch はコマンドの唯一の入口（パネル・UI 自動操作・MCP の 3 経路とも
+        // ここを通る）。ハンドラが構造通知を出し忘れると、オブジェクトリストは
+        // 追加・削除・並べ替えを取りこぼす。そこで Dispatch の前後で構造署名を比べ、
+        // 「構造が変わったのに構造通知が出ていない」ときだけ 1 回だけ通知する。
+        //
+        // _structureNotifyCount は Viewer 側の NotifyPanels が数える回数を読む口。
+        // null のときはこの後始末を行わない（従来どおりの動作）。
+        private readonly Func<int>              _structureNotifyCount;
+
+        // Dispatch の入れ子深さ。生成系はハンドラの中で別のコマンドを発行するため、
+        // 一番外側の呼び出しでだけ署名を比べる。
+        private int  _dispatchDepth;
+        private int  _dispatchEntrySignature;
+        private int  _dispatchEntryNotifyCount;
+
         // MeshListOps はモーフプレビューとスライダードラッグの途中経過を
         // インスタンス内に持つ（MeshListOps.cs:29-35）。Start→Apply→End が
         // 同一インスタンスで揃わないと成立しないため、ここで 1 個だけ保持する。
@@ -176,7 +192,8 @@ namespace Poly_Ling.Player
             Action<ChangeKind>    notifyPanels,
             Action                rebuildModelList,
             MeshUndoController    undoController = null,
-            CommandQueue          commandQueue   = null)
+            CommandQueue          commandQueue   = null,
+            Func<int>             structureNotifyCount = null)
         {
             _getProject       = getProject       ?? throw new ArgumentNullException(nameof(getProject));
             _renderer         = renderer         ?? throw new ArgumentNullException(nameof(renderer));
@@ -186,6 +203,7 @@ namespace Poly_Ling.Player
             _rebuildModelList = rebuildModelList ?? throw new ArgumentNullException(nameof(rebuildModelList));
             _undoController   = undoController;
             _commandQueue     = commandQueue;
+            _structureNotifyCount = structureNotifyCount;
         }
 
         /// <summary>
@@ -631,6 +649,16 @@ namespace Poly_Ling.Player
             var saved = _pendingResult;
             _pendingResult = null;
 
+            // 一番外側の呼び出しだけが、実行前の構造署名と構造通知の回数を控える。
+            bool outermost = _dispatchDepth == 0 && _structureNotifyCount != null;
+            if (outermost)
+            {
+                _dispatchEntrySignature   = CaptureStructureSignature();
+                _dispatchEntryNotifyCount = _structureNotifyCount();
+                _dispatchEntryTopology    = CaptureTopology();
+            }
+            _dispatchDepth++;
+
             CommandResult result;
             try
             {
@@ -640,8 +668,125 @@ namespace Poly_Ling.Player
             finally
             {
                 _pendingResult = saved;
+                _dispatchDepth--;
+                if (outermost)
+                {
+                    ResolvePartsSetsIfTopologyChanged();
+                    NotifyStructureIfMissed();
+                }
             }
             return result;
+        }
+
+        // ================================================================
+        // パーツ選択辞書の引き直し
+        // ================================================================
+
+        /// <summary>実行前の「オブジェクトごとの頂点数・面数」。ObjectId で引く。</summary>
+        private Dictionary<ulong, (int V, int F)> _dispatchEntryTopology;
+
+        /// <summary>カレントモデルの各オブジェクトの頂点数・面数を控える。</summary>
+        private Dictionary<ulong, (int V, int F)> CaptureTopology()
+        {
+            var model = _getProject()?.CurrentModel;
+            if (model == null) return null;
+
+            var map = new Dictionary<ulong, (int, int)>(model.MeshContextCount);
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+                map[mc.ObjectId] = (mo.Vertices.Count, mo.Faces.Count);
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// 位相が変わったオブジェクトのパーツ選択辞書を、控えた ID で引き直す。
+        ///
+        /// 削除の索引詰めは MeshObject.RemoveVertices / RemoveFaces が辞書まで
+        /// 面倒を見る（MeshObject.Removal.cs）。ここはその経路に乗らないもの
+        /// ―― Undo/Redo の巻き戻し、頂点マージ、作り直し ―― の受け皿。
+        /// 控えが無いセット（古いデータ）は ResolveByIds が false を返し、中身は触らない。
+        /// </summary>
+        private void ResolvePartsSetsIfTopologyChanged()
+        {
+            var before = _dispatchEntryTopology;
+            _dispatchEntryTopology = null;
+            if (before == null) return;
+
+            var model = _getProject()?.CurrentModel;
+            if (model == null) return;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+
+                // 実行中に増えたオブジェクトは比べる相手が無いので対象外。
+                if (!before.TryGetValue(mc.ObjectId, out var old)) continue;
+                if (old.V == mo.Vertices.Count && old.F == mo.Faces.Count) continue;
+
+                var sets = mc.PartsSelectionSetList;
+                if (sets == null || sets.Count == 0) continue;
+
+                foreach (var set in sets)
+                    set?.ResolveByIds(mo, out _, out _);
+            }
+        }
+
+        /// <summary>
+        /// 構造が変わったのに構造通知が出ていなければ、ここで 1 回だけ出す。
+        /// ハンドラが既に出していれば何もしない（ListStructure は GPU バッファの
+        /// 全再構築を伴うため、二重に出さない）。
+        /// </summary>
+        private void NotifyStructureIfMissed()
+        {
+            if (_structureNotifyCount == null) return;
+            if (_structureNotifyCount() != _dispatchEntryNotifyCount) return;
+            if (CaptureStructureSignature() == _dispatchEntrySignature) return;
+
+            PLDiag.NotifyKind("ListStructure(missed)", "Dispatch");
+            _notifyPanels(ChangeKind.ListStructure);
+        }
+
+        /// <summary>
+        /// オブジェクトリストの並びを決める値だけを畳んだ署名（FNV-1a）。
+        /// 割り当てを作らないよう、数値だけを混ぜる。
+        ///
+        /// 名前は入れない。改名は ChangeKind.Attributes で行の表示が更新されるので、
+        /// 入れると不要な全再構築を呼ぶことになる。
+        /// </summary>
+        private int CaptureStructureSignature()
+        {
+            unchecked
+            {
+                const int Prime = 16777619;
+                int h = (int)2166136261;
+
+                var project = _getProject();
+                if (project == null) return h;
+
+                h = (h ^ project.ModelCount)        * Prime;
+                h = (h ^ project.CurrentModelIndex) * Prime;
+
+                var model = project.CurrentModel;
+                if (model == null) return h;
+
+                int count = model.MeshContextCount;
+                h = (h ^ count) * Prime;
+                for (int i = 0; i < count; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null) { h = (h ^ -1) * Prime; continue; }
+                    h = (h ^ (int)mc.Type)            * Prime;
+                    h = (h ^ mc.Depth)                * Prime;
+                    h = (h ^ mc.HierarchyParentIndex) * Prime;
+                }
+                return h;
+            }
         }
 
         private void DispatchCore(PanelCommand cmd)

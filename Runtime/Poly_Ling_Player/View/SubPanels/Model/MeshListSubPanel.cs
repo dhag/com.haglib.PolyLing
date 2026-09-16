@@ -69,6 +69,9 @@ namespace Poly_Ling.MeshListV2
 
         private const string ViewportOpModeKey = "MeshList.ViewportOpMode";
 
+        /// <summary>選択色を固定するか（既定 true）。</summary>
+        private const string KeepSelectionColorKey = "MeshList.KeepSelectionColor";
+
         private ViewportOpMode _viewportOpMode = ViewportOpMode.ObjectPose;
         [UiControl("viewportOp.none", Safety = UiSafety.SafeWrite, Description = "ビューポート操作なし（視点操作だけ）")]
         private Button _btnOpNone;
@@ -151,6 +154,8 @@ namespace Poly_Ling.MeshListV2
         private Toggle _showInfoToggle;
         [UiControl("showMirrorSide", Description = "ミラーも表示する")]
         private Toggle _showMirrorSideToggle;
+        [UiControl("keepSelectionColor", Description = "選択色を固定する（フォーカスが外れても白くしない）")]
+        private Toggle _keepSelectionColorToggle;
         [UiControl("filter", Description = "一覧の絞り込み")]
         private TextField _filterField;
 

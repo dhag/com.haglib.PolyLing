@@ -64,8 +64,9 @@ namespace Poly_Ling.Player
                     { Fail($"セット番号 {c.SetIndex} が範囲外です"); return true; }
                     if (cvMc.MeshObject == null) { Fail("編集対象メッシュがありません"); return true; }
 
-                    int cvCount = cvSets[c.SetIndex].CaptureVertexIds(cvMc.MeshObject);
-                    if (cvCount == 0) { Fail("控える頂点がありません"); return true; }
+                    // 頂点だけでなく面・線分・辺も控える（PartsSelectionSet.CaptureIds）。
+                    int cvCount = cvSets[c.SetIndex].CaptureIds(cvMc.MeshObject);
+                    if (cvCount == 0) { Fail("控える要素がありません"); return true; }
 
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
@@ -80,13 +81,14 @@ namespace Poly_Ling.Player
                     { Fail($"セット番号 {c.SetIndex} が範囲外です"); return true; }
                     if (rvMc.MeshObject == null) { Fail("編集対象メッシュがありません"); return true; }
 
-                    bool rvDone = rvSets[c.SetIndex].ResolveByVertexId(
+                    // 頂点だけでなく面・線分・辺もまとめて引き直す。
+                    bool rvDone = rvSets[c.SetIndex].ResolveByIds(
                         rvMc.MeshObject, out int rvResolved, out int rvLost);
 
                     if (!rvDone)
-                    { Fail("引き当てに使える頂点IDが控えられていません"); return true; }
+                    { Fail("引き当てに使える控えがありません"); return true; }
                     if (rvResolved == 0)
-                    { Fail($"控えた頂点IDが 1 件も見つかりません（見失い {rvLost} 件）"); return true; }
+                    { Fail($"控えた ID が 1 件も見つかりません（見失い {rvLost} 件）"); return true; }
 
                     _notifyPanels(ChangeKind.Attributes);
                     return true;

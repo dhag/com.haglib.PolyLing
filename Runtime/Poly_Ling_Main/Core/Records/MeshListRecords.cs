@@ -356,6 +356,16 @@ namespace Poly_Ling.UndoSystem
 
         public List<int> OldSelectedIndices = new List<int>();
         public List<int> NewSelectedIndices = new List<int>();
+
+        /// <summary>
+        /// 削除・挿入で頂点ウェイトの参照先ボーン索引を付け替えたときの、
+        /// 付け替え前（Before）と後（After）の控え。付け替えが無ければ null。
+        ///
+        /// 削除は「消したボーンのウェイトを親へ寄せる」ため逆写像で戻せない
+        /// （ModelContext.RemapBoneWeights）。Undo/Redo はこの控えで書き戻す。
+        /// </summary>
+        public List<BoneWeightBackupEntry> BeforeBoneWeights;
+        public List<BoneWeightBackupEntry> AfterBoneWeights;
         
         /// <summary>変更前のカメラ状態</summary>
         public CameraSnapshot? OldCameraState;
@@ -394,6 +404,9 @@ namespace Poly_Ling.UndoSystem
             // 選択状態を復元
             ctx.RestoreSelectionFromIndices(OldSelectedIndices);
             ctx.ValidateSelection();
+
+            // 付け替えで書き換えた頂点ウェイトを戻す（リストを戻した後に行う）。
+            BoneWeightBackup.Apply(ctx, BeforeBoneWeights);
             
             // カメラ状態を復元
             if (OldCameraState.HasValue)
@@ -438,6 +451,9 @@ namespace Poly_Ling.UndoSystem
             // 選択状態を復元
             ctx.RestoreSelectionFromIndices(NewSelectedIndices);
             ctx.ValidateSelection();
+
+            // 付け替え後の頂点ウェイトへ戻す（リストを戻した後に行う）。
+            BoneWeightBackup.Apply(ctx, AfterBoneWeights);
             
             // カメラ状態を復元
             if (NewCameraState.HasValue)

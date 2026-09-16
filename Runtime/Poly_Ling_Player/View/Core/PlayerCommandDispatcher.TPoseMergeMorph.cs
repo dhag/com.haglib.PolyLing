@@ -496,7 +496,8 @@ namespace Poly_Ling.Player
                         psName, psSnap.Vertices, psSnap.Edges, psSnap.Faces, psSnap.Lines, psSnap.Mode);
 
                     // 索引がずれたときに引き直せるよう、作った時点で識別子を控える。
-                    psSet.CaptureVertexIds(psMc.MeshObject);
+                    // 頂点だけでなく面・線分・辺も控える（PartsSelectionSet.CaptureIds）。
+                    psSet.CaptureIds(psMc.MeshObject);
 
                     psMc.PartsSelectionSetList.Add(psSet);
                     _notifyPanels(ChangeKind.Attributes);

@@ -185,7 +185,7 @@ namespace Poly_Ling.UndoSystem
 
             // 頂点編集スタック
             _meshContext = new MeshUndoContext();
-            _vertexEditStack = new UndoStack<MeshUndoContext>(
+            _vertexEditStack = new MeshUndoStack(
                 $"{windowId}/VertexEdit",
                 "Vertex Edit",
                 _meshContext
@@ -212,7 +212,7 @@ namespace Poly_Ling.UndoSystem
 
             // MeshListスタック（ModelContextを使用）
             _modelContext = new ModelContext();
-            _meshListStack = new UndoStack<ModelContext>(
+            _meshListStack = new ModelUndoStack(
                 $"{windowId}/MeshContextList",
                 "UnityMesh List",
                 _modelContext

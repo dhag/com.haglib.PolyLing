@@ -41,6 +41,12 @@ namespace Poly_Ling.MeshListV2
             _treeView.selectionType      = SelectionType.Multiple;
             _treeView.selectionChanged   += OnSelectionChanged;
             _treeView.itemExpandedChanged += OnItemExpandedChanged;
+
+            // 選択色の固定：フォーカスの出入りと選択の変化で塗り直す。
+            // 監視は登録した事象のときだけで、毎フレームは見ない。
+            _treeView.RegisterCallback<FocusInEvent>(_  => ScheduleSelectionColorRefresh());
+            _treeView.RegisterCallback<FocusOutEvent>(_ => ScheduleSelectionColorRefresh());
+            ScheduleSelectionColorRefresh();
         }
 
         // ================================================================
@@ -290,6 +296,76 @@ namespace Poly_Ling.MeshListV2
             return b;
         }
 
+        // ================================================================
+        // 選択色の固定（白い薄色を出さない）
+        // ================================================================
+
+        /// <summary>行コンテナのクラス（組み込み）。実測で確認したもの。</summary>
+        private const string RowClass         = "unity-collection-view__item";
+        /// <summary>選択中の行に付くクラス（組み込み）。実測で確認したもの。</summary>
+        private const string RowSelectedClass = "unity-collection-view__item--selected";
+
+        /// <summary>
+        /// フォーカスがあるときに組み込みテーマが選択行へ塗る青。
+        /// 実測値 resolvedStyle.backgroundColor = RGBA(0.227, 0.447, 0.690, 1)。
+        /// フォーカスが無いときは同じ行が RGBA(0.682, 0.682, 0.682, 1) の
+        /// 白っぽい灰になり、それがビューポート操作後も残って紛らわしい。
+        /// </summary>
+        private static readonly Color SelectedFocusedColor = new Color(0.227f, 0.447f, 0.690f, 1f);
+
+        private bool _selColorRefreshScheduled;
+
+        /// <summary>ツリー（またはその中の要素）がフォーカスを持っているか。</summary>
+        private bool TreeHasFocus()
+        {
+            var f = _treeView?.focusController?.focusedElement as VisualElement;
+            for (var e = f; e != null; e = e.hierarchy.parent)
+                if (e == _treeView) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 選択行の色を塗り直す。次のフレームに 1 回だけ走らせる
+        /// （選択クラスはツリー側が後から付けるため、その場で見ても間に合わない）。
+        /// </summary>
+        private void ScheduleSelectionColorRefresh()
+        {
+            if (_treeView == null || _root == null || _selColorRefreshScheduled) return;
+            _selColorRefreshScheduled = true;
+            _root.schedule.Execute(() =>
+            {
+                _selColorRefreshScheduled = false;
+                ApplySelectionColorMode();
+            });
+        }
+
+        /// <summary>
+        /// トグルがオンで、かつツリーにフォーカスが無いときだけ、選択行へ
+        /// フォーカスありと同じ青をインラインで塗る。それ以外はインラインを外し、
+        /// 組み込みテーマの描き分けに戻す。
+        /// </summary>
+        private void ApplySelectionColorMode()
+        {
+            if (_treeView == null) return;
+            bool paint = (_keepSelectionColorToggle?.value ?? true) && !TreeHasFocus();
+
+            foreach (var row in _treeView.Query<VisualElement>(className: RowClass).ToList())
+            {
+                if (paint && row.ClassListContains(RowSelectedClass))
+                    row.style.backgroundColor = new StyleColor(SelectedFocusedColor);
+                else
+                    row.style.backgroundColor = StyleKeyword.Null;
+            }
+        }
+
+        /// <summary>行の中身から、組み込みの行コンテナまで遡る。</summary>
+        private static VisualElement FindRowContainer(VisualElement content)
+        {
+            for (var e = content; e != null; e = e.hierarchy.parent)
+                if (e.ClassListContains(RowClass)) return e;
+            return null;
+        }
+
         private void BindTreeItem(VisualElement element, int index)
         {
             var adapter = _treeView.GetItemDataForIndex<SummaryTreeAdapter>(index);
@@ -297,6 +373,12 @@ namespace Poly_Ling.MeshListV2
             var cache = element.userData as TreeItemCache;
             if (cache == null) return;
             cache.Adapter = adapter;
+
+            // 行は使い回される。前に選択行だった名残のインライン色をここで外し、
+            // 塗り直しは次のフレームにまとめて行う。
+            var rowContainer = FindRowContainer(element);
+            if (rowContainer != null) rowContainer.style.backgroundColor = StyleKeyword.Null;
+            ScheduleSelectionColorRefresh();
 
             if (cache.NameLabel != null)
             {

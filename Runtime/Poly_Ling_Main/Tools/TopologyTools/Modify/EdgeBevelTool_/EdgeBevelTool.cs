@@ -895,32 +895,14 @@ namespace Poly_Ling.Tools
             }
 
             var toRemove = candidates.Where(v => !usedVertices.Contains(v) && v >= 0 && v < meshObject.VertexCount)
-                                     .OrderByDescending(v => v)
                                      .ToList();
 
-            foreach (int vertexIdx in toRemove)
-            {
-                meshObject.Vertices.RemoveAt(vertexIdx);
-
-                foreach (var face in meshObject.Faces)
-                {
-                    for (int i = 0; i < face.VertexIndices.Count; i++)
-                    {
-                        if (face.VertexIndices[i] > vertexIdx)
-                            face.VertexIndices[i]--;
-                    }
-                    for (int i = 0; i < face.UVIndices.Count; i++)
-                    {
-                        if (face.UVIndices[i] > vertexIdx)
-                            face.UVIndices[i]--;
-                    }
-                    for (int i = 0; i < face.NormalIndices.Count; i++)
-                    {
-                        if (face.NormalIndices[i] > vertexIdx)
-                            face.NormalIndices[i]--;
-                    }
-                }
-            }
+            // 索引の詰めと、選択・パーツ選択辞書への付け替えは
+            // MeshObject.RemoveVertices が行う（MeshObject.Removal.cs）。
+            // 以前はここで UVIndices / NormalIndices も一緒に減らしていたが、
+            // それらは頂点内のスロット番号であって頂点索引ではないため触らない
+            // （DeleteSelectionTool.ApplyKill の注記と同じ扱い）。
+            meshObject.RemoveVertices(toRemove);
 
             // 呼び出し元がインデックスシフト補正に使えるよう昇順で返す
             toRemove.Sort();

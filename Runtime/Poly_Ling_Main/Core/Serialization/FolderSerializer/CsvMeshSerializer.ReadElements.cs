@@ -309,6 +309,34 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 ss.VertexIds[vi] = new VertexIdTriple(id, parts, sub);
             }
 
+            // 面・線分・辺の控え（行末）。旧データはこの欄が無く、
+            // ParseInt が 0 を返すので控え無しとして読まれる。
+            int faceIdCount = ParseInt(cols, idx++);
+            for (int k = 0; k < faceIdCount; k++)
+            {
+                int fi = ParseInt(cols, idx++);
+                int id = ParseInt(cols, idx++);
+                ss.FaceIds[fi] = id;
+            }
+
+            int lineIdCount = ParseInt(cols, idx++);
+            for (int k = 0; k < lineIdCount; k++)
+            {
+                int li = ParseInt(cols, idx++);
+                int id = ParseInt(cols, idx++);
+                ss.LineIds[li] = id;
+            }
+
+            int edgeIdCount = ParseInt(cols, idx++);
+            for (int k = 0; k < edgeIdCount; k++)
+            {
+                int v1  = ParseInt(cols, idx++);
+                int v2  = ParseInt(cols, idx++);
+                int id1 = ParseInt(cols, idx++);
+                int id2 = ParseInt(cols, idx++);
+                ss.EdgeVertexIds[new VertexPair(v1, v2)] = new VertexPair(id1, id2);
+            }
+
             mc.PartsSelectionSetList.Add(ss);
         }
 

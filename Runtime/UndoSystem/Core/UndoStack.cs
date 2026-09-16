@@ -136,6 +136,9 @@ namespace Poly_Ling.UndoSystem
 
             //Debug.Log($"[UndoStack.Record] Stack={Id}, Desc={description}, GroupId={groupId}, ActiveGroupId={_activeGroupId}, RecordType={record.GetType().Name}");
 
+            // 派生スタック用のフック。記録へ追加の控えを詰める場所。
+            OnRecording(record);
+
             // キューに追加（スレッドセーフ）
             _pendingQueue.Enqueue(new PendingRecord<TContext>
             {
@@ -146,6 +149,21 @@ namespace Poly_Ling.UndoSystem
                 Sequence = UndoManager.NextSequence()
             });
         }
+
+        // ================================================================
+        // 派生スタック用のフック
+        //   汎用スタックは中身を知らないまま、記録の前後で呼ぶだけにする。
+        //   メッシュ固有の控え（パーツ選択辞書）は MeshUndoStack が扱う。
+        // ================================================================
+
+        /// <summary>記録がキューへ入る直前。記録へ追加の控えを詰める。</summary>
+        protected virtual void OnRecording(IUndoRecord<TContext> record) { }
+
+        /// <summary>1 件の Undo を実行した直後。</summary>
+        protected virtual void OnUndone(IUndoRecord<TContext> record) { }
+
+        /// <summary>1 件の Redo を実行した直後。</summary>
+        protected virtual void OnRedone(IUndoRecord<TContext> record) { }
 
         /// <summary>
         /// グループを開始（複数操作を1つのUndoにまとめる）
@@ -318,6 +336,7 @@ namespace Poly_Ling.UndoSystem
                 // Debug.Log($"[UndoStack.PerformUndo] Stack={Id}, Undoing: {record.GetType().Name}, GroupId={record.Info.GroupId}, Desc={record.Info.Description}");
                 
                 record.Undo(Context);
+                OnUndone(record);
                 undoneRecords.Add(record);
             }
 
@@ -359,6 +378,7 @@ namespace Poly_Ling.UndoSystem
                 _redoStack.RemoveAt(_redoStack.Count - 1);
                 
                 record.Redo(Context);
+                OnRedone(record);
                 redoneRecords.Add(record);
             }
 

@@ -37,6 +37,41 @@ namespace Poly_Ling.UndoSystem
         public abstract void Undo(MeshUndoContext context);
         public abstract void Redo(MeshUndoContext context);
 
+        // ============================================================
+        // パーツ選択辞書の控え
+        //
+        //   位相を変える操作は、索引が詰まるぶんだけ辞書（PartsSelectionSetList）
+        //   も書き換わる（MeshObject.Removal.cs → MeshContext の購読）。
+        //   記録そのものは頂点と面しか持たないので、戻す先をここに置く。
+        //   詰め込むのは MeshUndoStack で、記録クラス側は何もしなくてよい。
+        //
+        //   1 操作で複数のメッシュが書き換わることがある（複数選択への一括処理、
+        //   実体とミラー側の対など）ので、メッシュごとに 1 件ずつ持つ。
+        //   辞書が動かなかった操作では null のままになる。
+        // ============================================================
+
+        /// <summary>1 メッシュぶんの、辞書の操作前後。</summary>
+        public sealed class PartsSetsBackup
+        {
+            /// <summary>控えの持ち主。Undo/Redo のときに書き戻す相手。</summary>
+            public MeshContext Owner;
+
+            /// <summary>操作前の辞書（Undo で戻す）。</summary>
+            public List<Poly_Ling.Selection.PartsSelectionSet> Before;
+
+            /// <summary>操作後の辞書（Redo で戻す）。</summary>
+            public List<Poly_Ling.Selection.PartsSelectionSet> After;
+
+            /// <summary>操作前の法線再計算 除外セット（Undo で戻す）。</summary>
+            public List<Poly_Ling.Selection.PartsSelectionSet> NormalExcludeBefore;
+
+            /// <summary>操作後の法線再計算 除外セット（Redo で戻す）。</summary>
+            public List<Poly_Ling.Selection.PartsSelectionSet> NormalExcludeAfter;
+        }
+
+        /// <summary>書き換わったメッシュぶんの控え。無ければ null。</summary>
+        public List<PartsSetsBackup> PartsSetsBackups;
+
         /// <summary>
         /// この操作のUndo/Redo後に必要な更新レベル
         /// デフォルトはTopology（フル更新）- 安全側に倒す

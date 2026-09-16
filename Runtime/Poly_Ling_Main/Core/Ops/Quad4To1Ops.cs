@@ -281,48 +281,21 @@ namespace Poly_Ling.Ops
             baseFace.UVIndices     = new List<int>(cornerUV);
             baseFace.NormalIndices = new List<int>(cornerNormal);
 
-            // 残り3枚を降順で削除する。baseFaceIndex は最小なのでずれない。
+            // 残り3枚を削除する。索引の詰めは MeshObject.RemoveFaces が行う。
             var removeList = new List<int>();
             foreach (int fi in order)
                 if (fi != baseFaceIndex) removeList.Add(fi);
-            removeList.Sort();
 
-            for (int k = removeList.Count - 1; k >= 0; k--)
-                mo.Faces.RemoveAt(removeList[k]);
+            mo.RemoveFaces(removeList);
 
             removedFaceCount = removeList.Count;
 
-            // どの面からも参照されなくなった頂点を削除し、インデックスを詰める。
+            // どの面からも参照されなくなった頂点を削除する。索引の詰めと
+            // 選択・パーツ選択辞書への付け替えは MeshObject.RemoveVertices が行う。
             if (orphans.Count > 0)
             {
-                var kill = new HashSet<int>(orphans);
-
-                int originalCount = mo.Vertices.Count;
-                var indexMap = new int[originalCount];
-                int newIndex = 0;
-                for (int i = 0; i < originalCount; i++)
-                    indexMap[i] = kill.Contains(i) ? -1 : newIndex++;
-
-                foreach (var face in mo.Faces)
-                {
-                    var vidx = face.VertexIndices;
-                    for (int j = 0; j < vidx.Count; j++)
-                    {
-                        int old = vidx[j];
-                        if (old >= 0 && old < originalCount && indexMap[old] >= 0)
-                            vidx[j] = indexMap[old];
-                    }
-                }
-
-                orphans.Sort();
-                for (int k = orphans.Count - 1; k >= 0; k--)
-                {
-                    if (orphans[k] >= 0 && orphans[k] < mo.Vertices.Count)
-                        mo.Vertices.RemoveAt(orphans[k]);
-                }
-
+                mo.RemoveVertices(orphans);
                 removedVertices = orphans;
-                mo.InvalidatePositionCache();
             }
 
             reason = null;

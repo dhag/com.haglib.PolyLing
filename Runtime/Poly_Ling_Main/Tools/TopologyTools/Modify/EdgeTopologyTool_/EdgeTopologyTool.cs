@@ -1060,12 +1060,9 @@ namespace Poly_Ling.Tools
                 NormalIndices = Enumerable.Repeat(0, mergedVertices.Count).ToList()
             };
 
-            // 面を削除（大きいインデックスから）
-            int removeFirst = Math.Max(edge.FaceIndex1, edge.FaceIndex2);
-            int removeSecond = Math.Min(edge.FaceIndex1, edge.FaceIndex2);
-
-            ctx.ActiveMeshObject.Faces.RemoveAt(removeFirst);
-            ctx.ActiveMeshObject.Faces.RemoveAt(removeSecond);
+            // 面を削除。索引の詰めと、選択・パーツ選択辞書への付け替えは
+            // MeshObject.RemoveFaces が行う（MeshObject.Removal.cs）。
+            ctx.ActiveMeshObject.RemoveFaces(new[] { edge.FaceIndex1, edge.FaceIndex2 });
 
             // 新しい面を追加
             ctx.ActiveMeshObject.Faces.Add(newFace);

@@ -263,6 +263,123 @@ namespace Poly_Ling.Context
 
             // 3) T ポーズ退避（索引をキーに持つ Dictionary 群）
             TPoseBackup?.RemapIndices(Map);
+
+            // 4) 頂点のボーンウェイト（boneIndex は MeshContextList の索引）
+            RemapBoneWeights(map);
         }
+
+        /// <summary>
+        /// まだ Undo 記録へ引き取られていない、ウェイト書き換え前の控え。
+        /// 1 操作で複数回の削除・挿入が起きても、同じオブジェクトについては
+        /// 最初の控え（＝本当の操作前）を残して積み増す。
+        /// 引き取りは TakePendingBoneWeightBackup。
+        /// </summary>
+        private List<BoneWeightBackupEntry> _pendingBoneWeightBackup;
+
+        /// <summary>控えを取り出して手放す。控えが無ければ null。</summary>
+        public List<BoneWeightBackupEntry> TakePendingBoneWeightBackup()
+        {
+            var b = _pendingBoneWeightBackup;
+            _pendingBoneWeightBackup = null;
+            return b;
+        }
+
+        /// <summary>
+        /// 全描画オブジェクトの頂点ウェイトの参照先ボーン索引を付け替える。
+        ///
+        /// 対応表が恒等（末尾への追加・末尾の削除）のときは何もしない。
+        /// 行き先が無い（map が -1）スロットは索引 0・重み 0 にして無効化する。
+        /// 重み 0 のスロットは未使用の印なので索引 0 に揃える（既存の書き方に合わせる）。
+        /// </summary>
+        private void RemapBoneWeights(int[] map)
+        {
+            if (map == null || MeshContextList == null) return;
+
+            bool identity = true;
+            for (int i = 0; i < map.Length; i++)
+                if (map[i] != i) { identity = false; break; }
+            if (identity) return;
+
+            for (int m = 0; m < MeshContextList.Count; m++)
+            {
+                var mc    = MeshContextList[m];
+                var verts = mc?.MeshObject?.Vertices;
+                if (verts == null) continue;
+
+                bool captured = false;
+
+                for (int i = 0; i < verts.Count; i++)
+                {
+                    var v = verts[i];
+                    if (v == null) continue;
+                    if (!v.HasBoneWeight && !v.HasMirrorBoneWeight) continue;
+
+                    BoneWeight? newW = v.HasBoneWeight
+                        ? RemapWeight(v.BoneWeight.Value, map) : (BoneWeight?)null;
+                    BoneWeight? newM = v.HasMirrorBoneWeight
+                        ? RemapWeight(v.MirrorBoneWeight.Value, map) : (BoneWeight?)null;
+
+                    bool changed =
+                        (v.HasBoneWeight       && !SameWeight(v.BoneWeight.Value,       newW.Value)) ||
+                        (v.HasMirrorBoneWeight && !SameWeight(v.MirrorBoneWeight.Value, newM.Value));
+                    if (!changed) continue;
+
+                    // 控えはそのオブジェクトを最初に書き換える直前に取る
+                    // （それより前の頂点は書き換えていないので、これで変更前の姿になる）。
+                    if (!captured)
+                    {
+                        captured = true;
+                        // 同じオブジェクトの控えが既にあれば、それが本当の操作前。
+                        if (_pendingBoneWeightBackup == null ||
+                            !_pendingBoneWeightBackup.Exists(e => e.ObjectId == mc.ObjectId))
+                        {
+                            var entry = BoneWeightBackup.Capture(mc);
+                            if (entry != null)
+                                (_pendingBoneWeightBackup ??= new List<BoneWeightBackupEntry>())
+                                    .Add(entry);
+                        }
+                    }
+
+                    if (v.HasBoneWeight)       v.BoneWeight       = newW;
+                    if (v.HasMirrorBoneWeight) v.MirrorBoneWeight = newM;
+                }
+            }
+        }
+
+        /// <summary>1 頂点ぶんのウェイトを付け替える。</summary>
+        private static BoneWeight RemapWeight(BoneWeight bw, int[] map)
+        {
+            RemapSlot(map, bw.boneIndex0, bw.weight0, out int i0, out float w0);
+            RemapSlot(map, bw.boneIndex1, bw.weight1, out int i1, out float w1);
+            RemapSlot(map, bw.boneIndex2, bw.weight2, out int i2, out float w2);
+            RemapSlot(map, bw.boneIndex3, bw.weight3, out int i3, out float w3);
+
+            return new BoneWeight
+            {
+                boneIndex0 = i0, weight0 = w0,
+                boneIndex1 = i1, weight1 = w1,
+                boneIndex2 = i2, weight2 = w2,
+                boneIndex3 = i3, weight3 = w3,
+            };
+        }
+
+        /// <summary>スロット 1 つぶん。重み 0 と行き先無しは索引 0・重み 0 にする。</summary>
+        private static void RemapSlot(int[] map, int index, float weight,
+                                      out int newIndex, out float newWeight)
+        {
+            if (weight <= 0f) { newIndex = 0; newWeight = 0f; return; }
+
+            int ni = (index < 0 || index >= map.Length) ? -1 : map[index];
+            if (ni < 0)       { newIndex = 0; newWeight = 0f; return; }
+
+            newIndex  = ni;
+            newWeight = weight;
+        }
+
+        private static bool SameWeight(BoneWeight a, BoneWeight b)
+            => a.boneIndex0 == b.boneIndex0 && a.weight0 == b.weight0
+            && a.boneIndex1 == b.boneIndex1 && a.weight1 == b.weight1
+            && a.boneIndex2 == b.boneIndex2 && a.weight2 == b.weight2
+            && a.boneIndex3 == b.boneIndex3 && a.weight3 == b.weight3;
     }
 }

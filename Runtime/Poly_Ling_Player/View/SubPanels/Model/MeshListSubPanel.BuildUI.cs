@@ -84,6 +84,27 @@ namespace Poly_Ling.MeshListV2
             topRow.Add(_showMirrorSideToggle);
             root.Add(topRow);
 
+            // ── 選択色の固定
+            //    組み込みテーマは選択行をフォーカスの有無で描き分ける
+            //    （あり=青 rgb(58,114,176) / なし=白っぽい灰 rgb(174,174,174)）。
+            //    ビューポートを触ると灰に変わり、選択が消えたように見えて紛らわしい。
+            //    オンの間はフォーカスが外れても青のままにする。既定オン。
+            _keepSelectionColorToggle = new Toggle("選択色を固定")
+            {
+                name  = "keep-selection-color-toggle",
+                value = PlayerUiPrefs.GetBool(KeepSelectionColorKey, true),
+            };
+            _keepSelectionColorToggle.style.color = new StyleColor(Color.white);
+            _keepSelectionColorToggle.tooltip =
+                "オフにすると、リストからフォーカスが外れた選択行が白っぽい灰になる（組み込みの既定）。";
+            _keepSelectionColorToggle.style.marginBottom = 3;
+            _keepSelectionColorToggle.RegisterValueChangedCallback(evt =>
+            {
+                PlayerUiPrefs.SetBool(KeepSelectionColorKey, evt.newValue);
+                ScheduleSelectionColorRefresh();
+            });
+            root.Add(_keepSelectionColorToggle);
+
             // ── インデント幅
             var indentRow = new VisualElement();
             indentRow.style.flexDirection = FlexDirection.Row;
