@@ -184,7 +184,7 @@ namespace Poly_Ling.Player
                         new SelectMeshCommand(byName.ModelIndex, MeshCategory.Drawable, wanted.ToArray()));
                     if (selResult != null && !selResult.Success) { Fail(selResult.Reason); return true; }
 
-                    // 対象としても報告する。runScenarioStep の @prev がこれを読む。
+                    // 対象としても報告する。手本を流すときの @prev がこれを読む。
                     ReportData(CommandDataJson.New()
                         .Int  ("count",         pickedIdx.Count)
                         .Ints ("masterIndices", pickedIdx)

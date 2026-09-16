@@ -87,6 +87,9 @@ namespace Poly_Ling.Player
         private int  _retryCount;
         private bool _running;
 
+        /// <summary>手本の記録へ始まりを知らせた段。-1 はまだ無し。</summary>
+        private int  _markedStage = -1;
+
         /// <summary>段の間に空けるミリ秒。コマンドキューが捌けるのを待つ。</summary>
         protected virtual long StageIntervalMs => 120;
 
@@ -249,11 +252,21 @@ namespace Poly_Ling.Player
         protected string CurrentStageName
             => (_stageIndex >= 0 && _stageIndex < _stages.Count) ? _stages[_stageIndex].Name : "?";
 
+        // 手本の記録中（startScenarioRecording）は、段の文言も記録へ渡す。
+        // 「UI でやるなら」は Instruction、「なぜ」は Note として段の頭に入る。
         protected StageResult Ok(string did, string ui, string why)
-        { Log(CurrentStageName, true, did, ui, why); return StageResult.Ok; }
+        {
+            Log(CurrentStageName, true, did, ui, why);
+            Poly_Ling.Data.ScenarioRecorder.AnnotateStage(CurrentStageName, did, ui, why, failed: false);
+            return StageResult.Ok;
+        }
 
         protected StageResult Ng(string did, string ui, string why)
-        { Log(CurrentStageName, false, did, ui, why); return StageResult.Fail; }
+        {
+            Log(CurrentStageName, false, did, ui, why);
+            Poly_Ling.Data.ScenarioRecorder.AnnotateStage(CurrentStageName, did, ui, why, failed: true);
+            return StageResult.Fail;
+        }
 
         // ================================================================
         // 実行
@@ -267,9 +280,10 @@ namespace Poly_Ling.Player
             _logView.Clear();
             PlainLog.Clear();
             _stages.Clear();
-            _stageIndex = 0;
-            _retryCount = 0;
-            _running    = true;
+            _stageIndex  = 0;
+            _retryCount  = 0;
+            _markedStage = -1;
+            _running     = true;
             _runButton?.SetEnabled(false);
 
             ResetRunState();
@@ -288,6 +302,14 @@ namespace Poly_Ling.Player
             if (_stageIndex >= _stages.Count) { Finish(false, "完了しました。"); return; }
 
             var (name, run) = _stages[_stageIndex];
+
+            // 手本の記録へ段の始まりを知らせる。Retry で同じ段を呼び直すときは知らせない
+            // （最初の呼び出しで送ったコマンドも、この段のものとして数えるため）。
+            if (_markedStage != _stageIndex)
+            {
+                _markedStage = _stageIndex;
+                Poly_Ling.Data.ScenarioRecorder.BeginStage();
+            }
 
             StageResult r;
             try { r = run(); }

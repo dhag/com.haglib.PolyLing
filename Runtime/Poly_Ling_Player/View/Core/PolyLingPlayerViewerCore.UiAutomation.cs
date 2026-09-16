@@ -321,7 +321,7 @@ namespace Poly_Ling.Player
                 _layoutRoot.SpringSkinScenarioSection, ShowSpringSkinScenarioPanel, _springSkinScenarioSubPanel);
             RegisterUiPanel("springSkinPipeScenario", "揺れもの＋スキンの通し検証（パイプ）",
                 _layoutRoot.SpringSkinPipeScenarioSection, ShowSpringSkinPipeScenarioPanel, _springSkinPipeScenarioSubPanel);
-            RegisterUiPanel("scenario", "手本（シナリオ）の一覧と中身。段を 1 つ選んで実行する",
+            RegisterUiPanel("scenario", "手本（シナリオ）を選んで先頭から流す。指示・確認の段と失敗で止まる",
                 _layoutRoot.ScenarioSection, ShowScenarioPanel, _scenarioSubPanel);
 
             // ── モーション（SubPanels/VMD ほか）──────────────────────

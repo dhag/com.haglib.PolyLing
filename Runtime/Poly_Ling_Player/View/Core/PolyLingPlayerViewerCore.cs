@@ -414,7 +414,7 @@ namespace Poly_Ling.Player
         private PlayerSpringSkinScenarioSubPanel _springSkinScenarioSubPanel;
         private PlayerSpringSkinPipeScenarioSubPanel _springSkinPipeScenarioSubPanel;
 
-        /// <summary>手本（シナリオ）の一覧と中身。段を 1 つ選んで実行する。</summary>
+        /// <summary>手本（シナリオ）を選んで先頭から流す。指示・確認の段と失敗で止まる。</summary>
         private PlayerScenarioSubPanel _scenarioSubPanel;
         private PlayerPipeHairTestSubPanel   _pipeHairTestSubPanel;
         private PlayerBarnacleTestSubPanel   _barnacleTestSubPanel;

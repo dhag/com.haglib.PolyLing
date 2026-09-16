@@ -470,7 +470,13 @@ namespace Poly_Ling.Remote
                 case SetScenarioStepArgCommand _:
                 case MoveScenarioStepCommand _:
                 case ExpandScenarioRefCommand _:
-                case RunScenarioStepCommand _:
+                case RunScenarioCommand _:
+                case ContinueScenarioCommand _:
+                case QueryScenarioRunCommand _:
+                case StopScenarioRunCommand _:
+                case StartScenarioRecordingCommand _:
+                case StopScenarioRecordingCommand _:
+                case QueryScenarioAuditCommand _:
                     return true;
                 default:
                     return false;

@@ -496,6 +496,92 @@ namespace Poly_Ling.Data
         /// IsMeshRef を付けてよい型か。int と int[] だけ。
         /// 他の型に付いていたら付け間違いなので拾わない。
         /// </summary>
+        // ================================================================
+        // 印の付け忘れ（参考）
+        // ================================================================
+
+        /// <summary>
+        /// 名前が描画オブジェクトの索引を示すのに IsMeshRef が付いていない
+        /// int / int[] パラメータのキーを返す。走査規則は MeshRefKeys と同じ。
+        ///
+        /// 【何のために要るか】
+        ///   queryScenarioAudit は IsMeshRef の印で「焼いてはいけない索引」を見分ける。
+        ///   印の無い引数は点検を素通りするので、どれだけ漏れているかを数で出す。
+        ///
+        /// 【名前で見る理由と限界】
+        ///   型だけでは索引と他の整数（段数・スロット番号）を区別できない。
+        ///   名前が *MasterIndex / *MasterIndices / *MeshIndex / *MeshIndices で終わるものに絞る。
+        ///   別の名前で索引を持つ引数は拾えない。
+        ///
+        /// 【ここは付け足さない】
+        ///   IsMeshRef を付けると ObjectGroup の作り直しで索引の引き直しが入る
+        ///   （PLParamAttribute.IsMeshRef の注記）。一覧を見て、コマンドごとに判断して付ける。
+        /// </summary>
+        public static List<string> UnmarkedMeshIndexKeys(Type t)
+        {
+            var result = new List<string>();
+            if (t == null) return result;
+
+            ConstructorInfo ctor = PickConstructor(t);
+            if (ctor == null) return result;
+
+            foreach (var p in ctor.GetParameters())
+            {
+                if (IsModelIndexParam(p)) continue;
+
+                PropertyInfo prop = FindProperty(t, p.Name);
+                if (prop == null) continue;
+
+                var attr = prop.GetCustomAttribute<PLParamAttribute>(inherit: true);
+                if (attr == null || attr.Ignore) continue;
+
+                if (IsNestedType(prop.PropertyType))
+                {
+                    CollectNestedUnmarked(prop.PropertyType, KeyOf(t, prop), 1, result);
+                    continue;
+                }
+
+                if (attr.IsMeshRef) continue;
+                if (!IsMeshRefType(prop.PropertyType)) continue;
+                if (!LooksLikeMeshIndexName(prop.Name)) continue;
+
+                result.Add(KeyOf(t, prop));
+            }
+
+            return result;
+        }
+
+        private static void CollectNestedUnmarked(Type t, string prefix, int depth, List<string> dst)
+        {
+            if (t == null || depth > NestedMaxDepth) return;
+
+            foreach (var m in EnumerateNested(t))
+            {
+                if (m.Attr.Ignore) continue;
+
+                string key = prefix + "." + Camel(m.Name);
+
+                if (IsNestedType(m.Type))
+                {
+                    CollectNestedUnmarked(m.Type, key, depth + 1, dst);
+                    continue;
+                }
+
+                if (m.Attr.IsMeshRef) continue;
+                if (!IsMeshRefType(m.Type)) continue;
+                if (!LooksLikeMeshIndexName(m.Name)) continue;
+
+                dst.Add(key);
+            }
+        }
+
+        private static bool LooksLikeMeshIndexName(string n)
+            => n != null &&
+               (n.EndsWith("MasterIndex",   StringComparison.OrdinalIgnoreCase) ||
+                n.EndsWith("MasterIndices", StringComparison.OrdinalIgnoreCase) ||
+                n.EndsWith("MeshIndex",     StringComparison.OrdinalIgnoreCase) ||
+                n.EndsWith("MeshIndices",   StringComparison.OrdinalIgnoreCase));
+
         private static bool IsMeshRefType(Type t)
             => t == typeof(int) || t == typeof(int[]);
     }

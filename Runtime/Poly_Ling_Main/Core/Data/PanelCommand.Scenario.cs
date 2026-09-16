@@ -485,45 +485,168 @@ namespace Poly_Ling.Data
     // 実行する
     // ================================================================
 
-    /// <summary>手本の段を 1 つ実行する。</summary>
-    [PLCommand(Description = "手本の段を 1 つ実行する。引数は手本のものを使い、argKeys と argValues で一部だけ差し替えられる。引数の値に @prev.masterIndices / @prev.objectIds と書くと直前に実行した段の対象に、@prev.<キー> と書くと直前の段の戻り値に置き換わる。実行しない段は何もせず種別と理由を返す。全段を通す口は無く、段は呼ぶ側が 1 つずつ選ぶ。")]
-    [PLResult("name",         PLResultKind.Text,      Description = "手本の名前")]
-    [PLResult("elementId",    PLResultKind.Text,      Description = "段の名前")]
-    [PLResult("kind",         PLResultKind.Text,      Description = "段の種別")]
-    [PLResult("purpose",      PLResultKind.Text,      Description = "その段が要る理由")]
-    [PLResult("action",       PLResultKind.Text,      Description = "実行したコマンド名。実行しない段では空")]
-    [PLResult("executed",     PLResultKind.Flag,      Description = "実際に実行したか。実行しない段と dryRun では false")]
-    [PLResult("argKeys",      PLResultKind.TextArray, Description = "組み立てた引数のキー", Optional = true)]
-    [PLResult("argValues",    PLResultKind.TextArray, Description = "argKeys と同じ並びの値", Optional = true)]
-    [PLResult("prevMasterIndices", PLResultKind.IntegerArray, Description = "実行後に @prev として覚えている masterIndex", Optional = true)]
-    [PLResult("prevObjectIds",     PLResultKind.TextArray,    Description = "実行後に @prev として覚えている安定 ID。10 進の文字列", Optional = true)]
-    public sealed class RunScenarioStepCommand : PanelCommand
+    /// <summary>手本を先頭から流す。</summary>
+    [PLCommand(Description = "手本を先頭の段から順に実行する。指示（Instruction）・確認（Observe）の段と、失敗した段で止まる。注意（Note）の段は止まらずに読み飛ばし、別の手本を呼ぶ段（ScenarioRef）では呼ばれた手本をその場で流す。止まったら stop と stopMessage を読み、continueScenario で続ける。@prev と @<段の名前> は、この流れの中で実行した段の結果だけを指す。途中の段だけを選んで実行する口は無い。")]
+    [PLResult("rootName",         PLResultKind.Text,      Description = "流している手本の名前")]
+    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none（段数の上限で一旦返した）/ judgment（指示・確認の段）/ failed（段が失敗）/ finished（最後まで終わった）")]
+    [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった段の内容、または失敗の理由")]
+    [PLResult("scenario",         PLResultKind.Text,      Description = "いま居る手本の名前。別の手本を呼んでいる間はそちら")]
+    [PLResult("elementId",        PLResultKind.Text,      Description = "いま居る段の名前（次に処理する段、または止まった段）")]
+    [PLResult("stepNumber",       PLResultKind.Integer,   Description = "いま居る段が何段目か。1 始まり")]
+    [PLResult("stepCount",        PLResultKind.Integer,   Description = "いま居る手本の段の数")]
+    [PLResult("stepKind",         PLResultKind.Text,      Description = "いま居る段の種別")]
+    [PLResult("purpose",          PLResultKind.Text,      Description = "いま居る段の目的・内容")]
+    [PLResult("executedCommands", PLResultKind.Integer,   Description = "この流れで実行したコマンドの数")]
+    [PLResult("newLog",           PLResultKind.TextArray, Description = "この呼び出しで処理した段の記録。1 段 1 行", Optional = true)]
+    public sealed class RunScenarioCommand : PanelCommand
     {
-        [PLParam(Description = "手本の名前", Required = true)]
+        [PLParam(Description = "流す手本の名前", Required = true)]
         public string Name { get; }
 
-        [PLParam(Description = "実行する段の名前。describeScenario の elementIds のどれか", Required = true)]
-        public string ElementId { get; }
+        [PLParam(Description = "1 回の呼び出しで処理する段の上限。0 は止まるまで。パネルが 1 段ずつ画面を更新するために使う。MCP からは省く", Min = 0)]
+        public int MaxSteps { get; }
 
-        [PLParam(Description = "差し替える引数のキー。argValues と同じ長さにすること。手本に無いキーは足す")]
+        public RunScenarioCommand(int modelIndex, string name, int maxSteps = 0)
+            : base(modelIndex)
+        {
+            Name     = name ?? "";
+            MaxSteps = maxSteps;
+        }
+    }
+
+    /// <summary>止まった所から続ける。</summary>
+    [PLCommand(Description = "runScenario で止まった所から続ける。指示・確認の段で止まっていたときはその段を越えて進み、失敗で止まっていたときは同じ段をやり直す。argKeys / argValues を渡すと、次に実行するコマンドの段の値だけを差し替える（指示の段で決めた値を渡すため）。戻り値は runScenario と同じ。")]
+    [PLResult("rootName",         PLResultKind.Text,      Description = "流している手本の名前")]
+    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / finished")]
+    [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった段の内容、または失敗の理由")]
+    [PLResult("scenario",         PLResultKind.Text,      Description = "いま居る手本の名前")]
+    [PLResult("elementId",        PLResultKind.Text,      Description = "いま居る段の名前")]
+    [PLResult("stepNumber",       PLResultKind.Integer,   Description = "いま居る段が何段目か。1 始まり")]
+    [PLResult("stepCount",        PLResultKind.Integer,   Description = "いま居る手本の段の数")]
+    [PLResult("stepKind",         PLResultKind.Text,      Description = "いま居る段の種別")]
+    [PLResult("purpose",          PLResultKind.Text,      Description = "いま居る段の目的・内容")]
+    [PLResult("executedCommands", PLResultKind.Integer,   Description = "この流れで実行したコマンドの数")]
+    [PLResult("newLog",           PLResultKind.TextArray, Description = "この呼び出しで処理した段の記録。1 段 1 行", Optional = true)]
+    public sealed class ContinueScenarioCommand : PanelCommand
+    {
+        [PLParam(Description = "1 回の呼び出しで処理する段の上限。0 は止まるまで。MCP からは省く", Min = 0)]
+        public int MaxSteps { get; }
+
+        [PLParam(Description = "次に実行するコマンドの段で差し替える引数のキー。argValues と同じ長さにすること")]
         public string[] ArgKeys { get; }
 
-        [PLParam(Description = "argKeys と同じ並びの値。@prev.masterIndices / @prev.objectIds と書くと直前に実行した段の対象に、@prev.<キー> と書くと直前の段の戻り値に置き換わる（例: @prev.faceIndices）")]
+        [PLParam(Description = "argKeys と同じ並びの値。@prev.<キー> / @<段の名前>.<キー> も書ける")]
         public string[] ArgValues { get; }
 
-        [PLParam(Description = "組み立てた引数を返すだけで実行しない")]
-        public bool DryRun { get; }
+        public ContinueScenarioCommand(
+            int modelIndex, int maxSteps = 0, string[] argKeys = null, string[] argValues = null)
+            : base(modelIndex)
+        {
+            MaxSteps  = maxSteps;
+            ArgKeys   = argKeys   ?? new string[0];
+            ArgValues = argValues ?? new string[0];
+        }
+    }
 
-        public RunScenarioStepCommand(
-            int modelIndex, string name, string elementId,
-            string[] argKeys = null, string[] argValues = null, bool dryRun = false)
+    /// <summary>流している手本の状態を返す。</summary>
+    [PLCommand(Description = "流している手本の状態を返す。戻り値は runScenario と同じで、log にはこの流れの記録がすべて入る。流していなければ rootName が空。")]
+    [PLResult("rootName",         PLResultKind.Text,      Description = "流している手本の名前。流していなければ空")]
+    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / finished")]
+    [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった段の内容、または失敗の理由")]
+    [PLResult("scenario",         PLResultKind.Text,      Description = "いま居る手本の名前")]
+    [PLResult("elementId",        PLResultKind.Text,      Description = "いま居る段の名前")]
+    [PLResult("stepNumber",       PLResultKind.Integer,   Description = "いま居る段が何段目か。1 始まり")]
+    [PLResult("stepCount",        PLResultKind.Integer,   Description = "いま居る手本の段の数")]
+    [PLResult("stepKind",         PLResultKind.Text,      Description = "いま居る段の種別")]
+    [PLResult("purpose",          PLResultKind.Text,      Description = "いま居る段の目的・内容")]
+    [PLResult("executedCommands", PLResultKind.Integer,   Description = "この流れで実行したコマンドの数")]
+    [PLResult("log",              PLResultKind.TextArray, Description = "この流れの記録。1 段 1 行", Optional = true)]
+    public sealed class QueryScenarioRunCommand : PanelCommand
+    {
+        public QueryScenarioRunCommand(int modelIndex = 0)
+            : base(modelIndex)
+        {
+        }
+    }
+
+    /// <summary>流すのをやめる。</summary>
+    [PLCommand(Description = "流している手本をやめる。それまでに実行した段の結果はモデルに残る（元に戻すのは Undo）。")]
+    [PLResult("stopped", PLResultKind.Flag, Description = "流していたものをやめたか")]
+    public sealed class StopScenarioRunCommand : PanelCommand
+    {
+        public StopScenarioRunCommand(int modelIndex = 0)
+            : base(modelIndex)
+        {
+        }
+    }
+
+    // ================================================================
+    // 記録する（ScenarioRecorder）
+    // ================================================================
+
+    /// <summary>実行したコマンドを手本の下書きとして控え始める。</summary>
+    [PLCommand(Description = "実行したコマンドを手本の下書きとして控え始める。止めるまでに実行したコマンド（パネル・MCP・UI のどこから撃ったものでも）を、計算済みの引数ごと 1 段ずつ控える。検証パネルを流すと、段名・UI での手順・理由も Instruction / Note として入る。手本コマンドと UI 自動操作は控えない。")]
+    [PLResult("recording", PLResultKind.Flag, Description = "記録中になったか")]
+    public sealed class StartScenarioRecordingCommand : PanelCommand
+    {
+        public StartScenarioRecordingCommand(int modelIndex = 0)
+            : base(modelIndex)
+        {
+        }
+    }
+
+    /// <summary>記録を止め、控えたものを手本として登録する。</summary>
+    [PLCommand(Description = "記録を止め、控えた段を手本として登録する。discard を立てると登録せずに捨てる。登録に失敗したときは記録を続けるので、名前を変えて止め直せる。登録したら queryScenarioAudit で、焼いたままの索引が残っていないか確かめること。")]
+    [PLResult("name",      PLResultKind.Text,    Description = "登録した手本の名前。捨てたときは空")]
+    [PLResult("steps",     PLResultKind.Integer, Description = "登録した段の数")]
+    [PLResult("count",     PLResultKind.Integer, Description = "登録後の手本の数")]
+    [PLResult("discarded", PLResultKind.Flag,    Description = "登録せずに捨てたか")]
+    public sealed class StopScenarioRecordingCommand : PanelCommand
+    {
+        [PLParam(Description = "登録する手本の名前。discard を立てたときは要らない")]
+        public string Name { get; }
+
+        [PLParam(Description = "この手本で達成したいこと")]
+        public string Goal { get; }
+
+        [PLParam(Description = "同じ名前の手本があるとき差し替える")]
+        public bool Overwrite { get; }
+
+        [PLParam(Description = "登録せずに、控えたものを捨てる")]
+        public bool Discard { get; }
+
+        public StopScenarioRecordingCommand(
+            int modelIndex, string name = "", string goal = "", bool overwrite = false, bool discard = false)
             : base(modelIndex)
         {
             Name      = name ?? "";
-            ElementId = elementId ?? "";
-            ArgKeys   = argKeys   ?? new string[0];
-            ArgValues = argValues ?? new string[0];
-            DryRun    = dryRun;
+            Goal      = goal ?? "";
+            Overwrite = overwrite;
+            Discard   = discard;
+        }
+    }
+
+    // ================================================================
+    // 点検する
+    // ================================================================
+
+    /// <summary>手本の段を点検する。</summary>
+    [PLCommand(Description = "手本の段を点検し、撃ち直すと壊れる箇所を返す。literalMeshIndex は IsMeshRef の印が付いた引数に索引が直接入っている段（名前から引く照会と @ 参照に置き換える）、unknownAction は action を解決できない段、badRef / missingRef / forwardRef は @<段の名前>.<キー> の書き方違い・存在しない段・後ろの段を指している参照。頂点や面の番号は印が無いので点検の対象外。")]
+    [PLResult("name",       PLResultKind.Text,      Description = "手本の名前")]
+    [PLResult("issues",     PLResultKind.Integer,   Description = "指摘の数")]
+    [PLResult("elementIds", PLResultKind.TextArray, Description = "指摘した段の名前", Optional = true)]
+    [PLResult("issueKinds", PLResultKind.TextArray, Description = "指摘の種類。elementIds と同じ並び", Optional = true)]
+    [PLResult("keys",       PLResultKind.TextArray, Description = "指摘した引数のキー。段そのものの指摘では空。elementIds と同じ並び", Optional = true)]
+    [PLResult("details",    PLResultKind.TextArray, Description = "指摘の中身。elementIds と同じ並び", Optional = true)]
+    public sealed class QueryScenarioAuditCommand : PanelCommand
+    {
+        [PLParam(Description = "点検する手本の名前", Required = true)]
+        public string Name { get; }
+
+        public QueryScenarioAuditCommand(int modelIndex, string name)
+            : base(modelIndex)
+        {
+            Name = name ?? "";
         }
     }
 }

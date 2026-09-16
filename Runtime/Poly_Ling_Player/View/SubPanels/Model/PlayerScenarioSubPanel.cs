@@ -1,28 +1,29 @@
 // PlayerScenarioSubPanel.cs
-// 手本（シナリオ）の一覧と中身の表示、段 1 つの実行。
+// 手本（シナリオ）を選んで流し、いま何をしているかを表示する。
 // Runtime/Poly_Ling_Player/View/SubPanels/Model/ に配置
 //
-// 【下に並ぶ検証パネルとの違い】
-//   「揺れもの→スキンド→VRM」などの検証パネルは段が C# のラムダで、
-//   PlayerStagedTestSubPanelBase が上から順に流す。
-//   こちらは ScenarioLibrary が読んだ scenarios.csv の手本を並べ、
-//   段を 1 つ選んで実行する。段はデータなので編集できる。
+// 【流し方は 2 通りだけ】
+//   「流す」は先頭の段から、「続きを流す」は止まった所から。
+//   途中の段を選んで実行する口は置かない。@prev と @<段の名前> は
+//   前の段の結果を指すので、途中だけ撃つと別の流れの値を黙って掴む。
 //
-// 【全部実行を置かない】
-//   方針案「Scenario を固定実行手段にしない」「Scenario の自動実行は対象外」。
-//   手本は記載どおりに完走させるものではなく、目的に合わせて読み替えるもの。
-//   段を選ぶのは人（か AI）で、判断点はそちらに残す。
+// 【止まる所】
+//   指示・確認の段と、失敗した段（ObjectGroupStep.RequiresJudgment と実行結果）。
+//   判定と実行は runScenario / continueScenario（PlayerCommandDispatcher.ScenarioRun.cs）が持つ。
+//   パネルは送って結果を表示するだけ。ここで組み立て直すと MCP と挙動が割れる。
 //
-// 【実行はコマンドを送るだけ】
-//   段の組み立て・引数の検査・実行は RunScenarioStepCommand が持つ。
-//   ここで組み立て直すと、MCP から撃った場合と挙動が割れる。
+// 【1 段ずつ描き直す】
+//   maxSteps=1 で呼び、呼ぶたびに画面を更新してから次を予約する。
+//   まとめて流すと終わるまで画面が固まり、いま何をしているか見えない。
+//   毎フレーム駆動は置かない規約なので、UIToolkit の schedule で次を予約する。
 //
-// 【読み直し】
-//   手本はファイルが正典。MCP や手編集で外から変わるので、
-//   パネルを開いたときと「読み直す」を押したときに ScenarioLibrary.Reload を通す。
+// 【結果を見る】
+//   コマンドは RunCommand（Dispatch の戻り値が返る口）で送る。
+//   SendCommand は戻り値を捨てるので、失敗しても成功と区別が付かない。
 
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
@@ -40,10 +41,11 @@ namespace Poly_Ling.Player
         /// <summary>プロジェクト取得。modelIndex を封筒へ入れるために要る。</summary>
         public Func<ProjectContext> GetProject;
 
-        /// <summary>コマンド送信。</summary>
-        public Action<PanelCommand> SendCommand;
+        /// <summary>コマンドを実行して結果を返す口。</summary>
+        public Func<PanelCommand, CommandResult> RunCommand;
 
-        private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
+        /// <summary>流している途中の状態。流していなければ null。</summary>
+        public Func<ScenarioRunState> GetRun;
 
         private int ModelIndex => GetProject?.Invoke()?.CurrentModelIndex ?? 0;
 
@@ -54,27 +56,39 @@ namespace Poly_Ling.Player
         // UI 自動操作の ID は "scenario.<下の Id>"（UiControlAttribute.cs）。
         [UiControl("list", Description = "手本の一覧（行番号）")]
         private ListView _listView;
-        [UiControl("steps", Description = "選んだ手本の段（行番号）")]
-        private ListView _stepView;
-        [UiControl("detail", Safety = UiSafety.ReadOnly, Description = "選んだ手本の目的・前提・成功条件・由来")]
+        [UiControl("detail", Safety = UiSafety.ReadOnly, Description = "選んだ手本の目的・前提・成功条件")]
         private Label    _detailLabel;
-        [UiControl("stepDetail", Safety = UiSafety.ReadOnly, Description = "選んだ段の中身")]
+        [UiControl("run", Safety = UiSafety.Destructive, Description = "選んだ手本を先頭の段から流す")]
+        private Button   _btnRun;
+        [UiControl("continue", Safety = UiSafety.Destructive, Description = "止まった所から続きを流す")]
+        private Button   _btnContinue;
+        [UiControl("stop", Safety = UiSafety.SafeWrite, Description = "流すのをやめる")]
+        private Button   _btnStop;
+        [UiControl("now", Safety = UiSafety.ReadOnly, Description = "いま居る手本と段")]
+        private Label    _nowLabel;
+        [UiControl("stopInfo", Safety = UiSafety.ReadOnly, Description = "止まった理由と次にすること")]
+        private Label    _stopLabel;
+        [UiControl("steps", Safety = UiSafety.ReadOnly, Description = "段の一覧と状態（表示だけ）")]
+        private ListView _stepView;
+        [UiControl("stepDetail", Safety = UiSafety.ReadOnly, Description = "いま居る段の中身")]
         private Label    _stepDetailLabel;
-        [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
-        private Label    _statusLabel;
-        [UiControl("reload", Safety = UiSafety.SafeWrite, Description = "手本をファイルから読み直す")]
-        private Button   _btnReload;
-        [UiControl("runStep", Safety = UiSafety.Destructive, Description = "選んだ段を 1 つ実行する")]
-        private Button   _btnRunStep;
-        [UiControl("expand", Safety = UiSafety.SafeWrite, Description = "選んだ参照段を参照先の段の列で置き換える")]
-        private Button   _btnExpand;
+        [UiControl(Ignore = true)]
+        private ScrollView _logScroll;
+        [UiControl("log", Safety = UiSafety.ReadOnly, Description = "流した段の記録")]
+        private Label    _logLabel;
 
         private readonly List<ObjectGroup> _scenarios  = new List<ObjectGroup>();
         private readonly List<string>      _labels     = new List<string>();
         private readonly List<string>      _stepLabels = new List<string>();
+        private readonly List<ScenarioStepRunStatus> _stepStatus = new List<ScenarioStepRunStatus>();
 
-        private int _selected     = -1;
-        private int _selectedStep = -1;
+        [UiControl(Ignore = true)]
+        private VisualElement _root;
+        private int  _selected = -1;
+        private bool _ticking;
+
+        /// <summary>1 段処理してから次を予約するまでの間。</summary>
+        private const long TickIntervalMs = 60;
 
         // ================================================================
         // 組み立て
@@ -82,23 +96,20 @@ namespace Poly_Ling.Player
 
         public void Build(VisualElement parent)
         {
-            var root = new VisualElement();
-            root.style.paddingLeft = root.style.paddingRight =
-            root.style.paddingTop  = root.style.paddingBottom = 4;
-            parent.Add(root);
+            _root = new VisualElement();
+            _root.style.paddingLeft = _root.style.paddingRight =
+            _root.style.paddingTop  = _root.style.paddingBottom = 4;
+            parent.Add(_root);
 
-            root.Add(SecLabel("シナリオ（手本）"));
+            _root.Add(SecLabel("シナリオ（手本）"));
 
             var hint = new Label(
-                "目的つきの操作レシピです。段には実行するもの（Command）と、"
-              + "実行しないもの（Note・Instruction・Observe）、別の手本への参照（ScenarioRef）があります。\n"
-              + "段を 1 つ選んで「ステップ実行」を押します。まとめて流す口はありません。"
-              + "手本は記載どおりに完走させるものではなく、対象に合わせて読み替えるものだからです。\n"
-              + "中身の編集は MCP から行います（createScenario / addScenarioStep ほか）。");
+                "手本を選んで「流す」を押すと、上の段から順に実行します。\n"
+              + "「指示」「確認」の段と、失敗した段で止まります。止まったら内容を読み、「続きを流す」を押してください。");
             hint.style.whiteSpace   = WhiteSpace.Normal;
             hint.style.fontSize     = 10;
             hint.style.marginBottom = 4;
-            root.Add(hint);
+            _root.Add(hint);
 
             _listView = new ListView(_labels, 22,
                 () => { var l = new Label(); l.style.paddingLeft = 4; l.style.unityTextAlign = TextAnchor.MiddleLeft; return l; },
@@ -113,66 +124,69 @@ namespace Poly_Ling.Player
             _listView.style.marginBottom = 4;
             _listView.selectionChanged += _ =>
             {
-                _selected     = _listView.selectedIndex;
-                _selectedStep = -1;
-                RefreshSteps();
+                _selected = _listView.selectedIndex;
+                UpdateView();
             };
-            root.Add(_listView);
+            _root.Add(_listView);
 
             _detailLabel = new Label();
             _detailLabel.style.whiteSpace   = WhiteSpace.Normal;
             _detailLabel.style.fontSize     = 10;
             _detailLabel.style.marginBottom = 4;
-            root.Add(_detailLabel);
+            _root.Add(_detailLabel);
 
-            root.Add(SecLabel("段"));
+            var opRow = new VisualElement();
+            opRow.style.flexDirection = FlexDirection.Row;
+            opRow.style.marginBottom  = 4;
+            _btnRun      = MkBtn("流す",       OnRun);      _btnRun.style.flexGrow      = 1; _btnRun.style.marginRight      = 2;
+            _btnContinue = MkBtn("続きを流す", OnContinue); _btnContinue.style.flexGrow = 1; _btnContinue.style.marginRight = 2;
+            _btnStop     = MkBtn("やめる",     OnStop);     _btnStop.style.flexGrow     = 1;
+            opRow.Add(_btnRun); opRow.Add(_btnContinue); opRow.Add(_btnStop);
+            _root.Add(opRow);
 
-            _stepView = new ListView(_stepLabels, 22,
+            _nowLabel = new Label();
+            _nowLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _nowLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _nowLabel.style.marginBottom = 2;
+            _root.Add(_nowLabel);
+
+            _stopLabel = new Label();
+            _stopLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _stopLabel.style.marginBottom = 4;
+            _root.Add(_stopLabel);
+
+            _root.Add(SecLabel("段"));
+
+            _stepView = new ListView(_stepLabels, 20,
                 () => { var l = new Label(); l.style.paddingLeft = 4; l.style.unityTextAlign = TextAnchor.MiddleLeft; return l; },
                 (e, i) =>
                 {
                     if (!(e is Label l) || i < 0 || i >= _stepLabels.Count) return;
                     l.text = _stepLabels[i];
-
-                    // 実行できる段だけ白。実行しない段は落とす。
-                    var st = StepAt(i);
-                    l.style.color = new StyleColor(
-                        st != null && st.IsExecutable ? Color.white : new Color(0.68f, 0.68f, 0.68f));
+                    l.style.color = new StyleColor(StatusColor(i < _stepStatus.Count ? _stepStatus[i] : ScenarioStepRunStatus.NotRun));
                 });
-            _stepView.selectionType   = SelectionType.Single;
-            _stepView.style.minHeight = 70;
-            _stepView.style.maxHeight = 160;
+            _stepView.selectionType   = SelectionType.None;
+            _stepView.style.minHeight = 90;
+            _stepView.style.maxHeight = 200;
             _stepView.style.marginBottom = 4;
-            _stepView.selectionChanged += _ =>
-            {
-                _selectedStep = _stepView.selectedIndex;
-                UpdateStepDetail();
-            };
-            root.Add(_stepView);
+            _root.Add(_stepView);
 
             _stepDetailLabel = new Label();
             _stepDetailLabel.style.whiteSpace   = WhiteSpace.Normal;
             _stepDetailLabel.style.fontSize     = 10;
             _stepDetailLabel.style.marginBottom = 4;
-            root.Add(_stepDetailLabel);
+            _root.Add(_stepDetailLabel);
 
-            var opRow = new VisualElement();
-            opRow.style.flexDirection = FlexDirection.Row;
-            opRow.style.marginBottom  = 3;
+            _root.Add(SecLabel("記録"));
 
-            _btnRunStep = MkBtn("ステップ実行", OnRunStep); _btnRunStep.style.flexGrow = 1; _btnRunStep.style.marginRight = 2;
-            _btnExpand  = MkBtn("参照を展開",   OnExpand);  _btnExpand.style.flexGrow  = 1;
-            opRow.Add(_btnRunStep); opRow.Add(_btnExpand);
-            root.Add(opRow);
-
-            _btnReload = MkBtn("読み直す", OnReload);
-            _btnReload.style.marginBottom = 3;
-            root.Add(_btnReload);
-
-            _statusLabel = new Label();
-            _statusLabel.style.whiteSpace = WhiteSpace.Normal;
-            _statusLabel.style.fontSize   = 10;
-            root.Add(_statusLabel);
+            _logScroll = new ScrollView(ScrollViewMode.Vertical);
+            _logScroll.style.minHeight = 80;
+            _logScroll.style.maxHeight = 200;
+            _logLabel = new Label();
+            _logLabel.style.whiteSpace = WhiteSpace.Normal;
+            _logLabel.style.fontSize   = 10;
+            _logScroll.Add(_logLabel);
+            _root.Add(_logScroll);
 
             Refresh();
         }
@@ -182,31 +196,24 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// 一覧を作り直す。手本はファイルが正典で、MCP や手編集で外から変わるため、
-        /// パネルを開くたびに読み直す。
+        /// 手本を読み直して表示を作り直す。手本はファイルが正典で外から変わるので、
+        /// パネルを開くたびに読み直す。流している途中の状態は写しを使うので影響しない。
         /// </summary>
         public void Refresh()
         {
             ScenarioLibrary.Reload();
-            RefreshFromLibrary();
-        }
 
-        private void RefreshFromLibrary()
-        {
             string keep = (_selected >= 0 && _selected < _scenarios.Count) ? _scenarios[_selected].Name : null;
 
             _scenarios.Clear();
             _labels.Clear();
-
             foreach (var g in ScenarioLibrary.GetAll())
             {
                 if (g == null) continue;
                 _scenarios.Add(g);
-                _labels.Add($"{g.Name}  [{g.StepCount} 段]"
-                          + (string.IsNullOrEmpty(g.Goal) ? "" : $"  {g.Goal}"));
+                _labels.Add($"{g.Name}  [{g.StepCount} 段]" + (string.IsNullOrEmpty(g.Goal) ? "" : $"  {g.Goal}"));
             }
 
-            // 選択は名前で取り直す。並びが変わっても同じ手本を指し続ける。
             _selected = -1;
             if (keep != null)
                 for (int i = 0; i < _scenarios.Count; i++)
@@ -215,160 +222,240 @@ namespace Poly_Ling.Player
             _listView?.Rebuild();
             if (_listView != null) _listView.selectedIndex = _selected;
 
-            RefreshSteps();
+            UpdateView();
         }
 
         private ObjectGroup Selected()
             => (_selected >= 0 && _selected < _scenarios.Count) ? _scenarios[_selected] : null;
 
-        private ObjectGroupStep StepAt(int index)
+        /// <summary>流している状態（無ければ選んだ手本）から表示を全部作り直す。</summary>
+        private void UpdateView()
         {
-            var g = Selected();
-            if (g?.Steps == null) return null;
-            return (index >= 0 && index < g.Steps.Count) ? g.Steps[index] : null;
-        }
+            if (_root == null) return;
 
-        private ObjectGroupStep SelectedStep() => StepAt(_selectedStep);
+            var run = GetRun?.Invoke();
+            var sel = Selected();
 
-        private void RefreshSteps()
-        {
-            _stepLabels.Clear();
+            // ── 手本の説明 ──
+            if (sel == null) _detailLabel.text = "";
+            else _detailLabel.text =
+                  $"目的: {Or(sel.Goal, "（無し）")}\n"
+                + $"前提: {Join(sel.Preconditions)}\n"
+                + $"成功条件: {Join(sel.SuccessCriteria)}";
 
-            var g = Selected();
-            if (g?.Steps != null)
+            // ── いま ──
+            ObjectGroup shown;
+            if (run != null)
             {
-                for (int i = 0; i < g.Steps.Count; i++)
+                shown = run.CurrentGroup;
+                var st = run.CurrentStep;
+
+                string where = string.Join(" → ", run.StackNames);
+                if (run.Stop == ScenarioRunStop.Finished || st == null)
+                    _nowLabel.text = $"「{run.RootName}」を流し終えました（実行したコマンド {run.ExecutedCommands} 本）";
+                else
+                    _nowLabel.text =
+                          $"いま: {where}　{run.CurrentIndex + 1} / {shown?.StepCount ?? 0} 段目\n"
+                        + $"［{KindText(st.Kind)}］ {Or(st.Purpose, st.Action)}";
+
+                _stopLabel.text = StopText(run);
+                _stopLabel.style.color = new StyleColor(StopColor(run.Stop));
+            }
+            else
+            {
+                shown = sel;
+                _nowLabel.text  = sel == null ? "手本を選んでください" : $"「{sel.Name}」はまだ流していません";
+                _stopLabel.text = "";
+            }
+
+            // ── 段の一覧 ──
+            _stepLabels.Clear();
+            _stepStatus.Clear();
+            if (shown?.Steps != null)
+            {
+                string scenarioName = run != null ? run.CurrentScenario : shown.Name;
+                for (int i = 0; i < shown.Steps.Count; i++)
                 {
-                    var st = g.Steps[i];
+                    var st = shown.Steps[i];
                     if (st == null) continue;
 
-                    string what = st.IsScenarioRef ? $"→ {st.RefName}"
-                                : st.IsExecutable  ? st.Action
-                                : "";
+                    var status = run != null ? run.StatusOf(scenarioName, st.ElementId) : ScenarioStepRunStatus.NotRun;
+                    bool here  = run != null && i == run.CurrentIndex && run.Stop != ScenarioRunStop.Finished;
 
-                    _stepLabels.Add($"{i + 1}. [{st.Kind}] {st.ElementId}"
-                                  + (string.IsNullOrEmpty(what) ? "" : $"  {what}"));
+                    string what = st.IsScenarioRef ? $"「{st.RefName}」を呼ぶ" : Or(st.Purpose, st.Action);
+                    _stepLabels.Add($"{(here ? "▶" : "　")}{StatusText(status)} {i + 1}. ［{KindText(st.Kind)}］ {Shorten(what, 48)}");
+                    _stepStatus.Add(here && status == ScenarioStepRunStatus.NotRun ? ScenarioStepRunStatus.Running : status);
                 }
             }
+            _stepView.Rebuild();
+            if (run != null && run.CurrentIndex >= 0 && run.CurrentIndex < _stepLabels.Count)
+                _stepView.ScrollToItem(run.CurrentIndex);
 
-            if (_selectedStep >= _stepLabels.Count) _selectedStep = -1;
-
-            _stepView?.Rebuild();
-            if (_stepView != null) _stepView.selectedIndex = _selectedStep;
-
-            UpdateDetail();
-            UpdateStepDetail();
-        }
-
-        private void UpdateDetail()
-        {
-            var g = Selected();
-            if (g == null)
+            // ── いま居る段の中身 ──
+            var cur = run?.CurrentStep;
+            if (cur == null) _stepDetailLabel.text = "";
+            else
             {
-                if (_detailLabel != null) _detailLabel.text = "";
-                return;
+                var sb = new StringBuilder();
+                sb.Append("種類: ").Append(KindText(cur.Kind)).Append('\n');
+                sb.Append("内容: ").Append(Or(cur.Purpose, "（無し）"));
+                if (cur.IsScenarioRef) sb.Append('\n').Append("呼ぶ手本: ").Append(cur.RefName);
+                if (cur.IsExecutable)
+                {
+                    sb.Append('\n').Append("コマンド: ").Append(cur.Action);
+                    foreach (var kv in cur.SortedArgs())
+                        sb.Append('\n').Append("  ").Append(kv.Key).Append(" = ").Append(Shorten(kv.Value, 80));
+                }
+                _stepDetailLabel.text = sb.ToString();
             }
 
-            var prov = g.Provenance ?? new ObjectGroupProvenance();
-
-            _detailLabel.text =
-                  $"目的: {Or(g.Goal, "（無し）")}\n"
-                + $"前提: {Join(g.Preconditions)}\n"
-                + $"成功条件: {Join(g.SuccessCriteria)}\n"
-                + $"札: {Join(g.Tags)}\n"
-                + $"由来: {Or(prov.ParentName, "（元なし）")}"
-                + (string.IsNullOrEmpty(prov.ChangeSummary) ? "" : $" / {prov.ChangeSummary}")
-                + (string.IsNullOrEmpty(prov.CreatedBy)     ? "" : $" / {prov.CreatedBy}");
-        }
-
-        private void UpdateStepDetail()
-        {
-            var st = SelectedStep();
-
-            bool canRun    = st != null && st.IsExecutable;
-            bool canExpand = st != null && st.IsScenarioRef;
-
-            _btnRunStep?.SetEnabled(canRun);
-            _btnExpand?.SetEnabled(canExpand);
-
-            if (st == null)
+            // ── 記録 ──
+            if (run == null) _logLabel.text = "";
+            else
             {
-                if (_stepDetailLabel != null) _stepDetailLabel.text = "";
-                return;
+                var log   = run.Log;
+                int start = Math.Max(0, log.Count - 200);
+                var sb    = new StringBuilder();
+                for (int i = start; i < log.Count; i++) { if (sb.Length > 0) sb.Append('\n'); sb.Append(log[i]); }
+                _logLabel.text = sb.ToString();
+                _logScroll.schedule.Execute(() => _logScroll.scrollOffset = new Vector2(0, float.MaxValue));
             }
 
-            var lines = new List<string>
-            {
-                $"種別: {st.Kind}",
-                $"理由: {Or(st.Purpose, "（無し）")}",
-            };
-
-            if (st.IsScenarioRef)
-                lines.Add($"参照先: {st.RefName}  ({st.ExpansionPolicy})");
-
-            if (st.IsExecutable)
-            {
-                lines.Add($"コマンド: {st.Action}");
-                foreach (var kv in st.SortedArgs())
-                    lines.Add($"  {kv.Key} = {kv.Value}");
-            }
-
-            _stepDetailLabel.text = string.Join("\n", lines);
-        }
-
-        private void SetStatus(string text)
-        {
-            if (_statusLabel != null) _statusLabel.text = text ?? "";
+            // ── ボタン ──
+            bool canContinue = run != null && !_ticking && run.Stop != ScenarioRunStop.Finished;
+            _btnRun.SetEnabled(!_ticking && sel != null);
+            _btnContinue.SetEnabled(canContinue);
+            _btnStop.SetEnabled(run != null);
         }
 
         // ================================================================
         // 操作
         // ================================================================
 
-        private void OnReload()
+        private void OnRun()
         {
-            Refresh();
-            SetStatus($"{ScenarioLibrary.Count} 件を読み直しました（{ScenarioLibrary.StorePath}）");
+            var sel = Selected();
+            if (sel == null) { SetStop("手本を選んでください"); return; }
+
+            var r = RunCommand?.Invoke(new RunScenarioCommand(ModelIndex, sel.Name, 1));
+            if (r == null || !r.Success) { SetStop($"流せませんでした: {r?.Reason ?? "実行の口が配線されていません"}"); return; }
+
+            AfterStep();
         }
 
-        /// <summary>
-        /// 選んだ段を 1 つ実行する。
-        /// 組み立てと検査は RunScenarioStepCommand が持つので、ここは送るだけ。
-        /// </summary>
-        private void OnRunStep()
+        private void OnContinue()
         {
-            var g  = Selected();
-            var st = SelectedStep();
-            if (g == null || st == null) { SetStatus("段を選んでください"); return; }
+            var r = RunCommand?.Invoke(new ContinueScenarioCommand(ModelIndex, 1));
+            if (r == null || !r.Success) { SetStop($"続けられませんでした: {r?.Reason ?? "実行の口が配線されていません"}"); return; }
 
-            if (!st.IsExecutable)
-            {
-                SetStatus($"{st.ElementId} は {st.Kind} の段です。実行するものではありません: {st.Purpose}");
-                return;
-            }
-
-            SendCmd(new RunScenarioStepCommand(ModelIndex, g.Name, st.ElementId));
-            SetStatus($"「{g.Name}」の {st.ElementId}（{st.Action}）を実行しました");
+            AfterStep();
         }
 
-        private void OnExpand()
+        private void OnStop()
         {
-            var g  = Selected();
-            var st = SelectedStep();
-            if (g == null || st == null) { SetStatus("段を選んでください"); return; }
+            _ticking = false;
+            RunCommand?.Invoke(new StopScenarioRunCommand(ModelIndex));
+            UpdateView();
+        }
 
-            if (!st.IsScenarioRef)
+        /// <summary>1 段処理したあと。止まっていなければ次の 1 段を予約する。</summary>
+        private void AfterStep()
+        {
+            var run = GetRun?.Invoke();
+            _ticking = run != null && run.Stop == ScenarioRunStop.None;
+            UpdateView();
+            if (_ticking) _root.schedule.Execute(Tick).StartingIn(TickIntervalMs);
+        }
+
+        private void Tick()
+        {
+            if (!_ticking) return;
+
+            var r = RunCommand?.Invoke(new ContinueScenarioCommand(ModelIndex, 1));
+            if (r == null || !r.Success)
             {
-                SetStatus($"{st.ElementId} は {st.Kind} の段で、参照段ではありません");
+                _ticking = false;
+                UpdateView();
+                SetStop($"続けられませんでした: {r?.Reason ?? "実行の口が配線されていません"}");
                 return;
             }
+            AfterStep();
+        }
 
-            string refName = st.RefName;
-            SendCmd(new ExpandScenarioRefCommand(ModelIndex, g.Name, st.ElementId));
-            SetStatus($"「{g.Name}」の {st.ElementId} を {refName} の段で置き換えました");
+        private void SetStop(string text)
+        {
+            if (_stopLabel == null) return;
+            _stopLabel.text = text ?? "";
+            _stopLabel.style.color = new StyleColor(new Color(1f, 0.55f, 0.45f));
+        }
 
-            _selectedStep = -1;
-            Refresh();
+        // ================================================================
+        // 表示の文言
+        // ================================================================
+
+        private static string StopText(ScenarioRunState run)
+        {
+            switch (run.Stop)
+            {
+                case ScenarioRunStop.Judgment:
+                    return run.StopStepKind == ObjectGroupStepKind.Observe
+                        ? $"確認の段で止まっています。\n確かめること: {run.StopMessage}\n→ 画面で確かめてから「続きを流す」を押してください。おかしければ「やめる」を押してください。"
+                        : $"指示の段で止まっています。\n指示: {run.StopMessage}\n→ 指示の作業を済ませてから「続きを流す」を押してください。次の段の値を変えるときは MCP の continueScenario を使います。";
+                case ScenarioRunStop.Failed:
+                    return $"失敗して止まっています。\n理由: {run.StopMessage}\n→ 原因を直してから「続きを流す」を押すと、同じ段をやり直します。";
+                case ScenarioRunStop.Finished:
+                    return "最後の段まで終わりました。";
+                default:
+                    return "流しています…";
+            }
+        }
+
+        private static Color StopColor(ScenarioRunStop s)
+        {
+            switch (s)
+            {
+                case ScenarioRunStop.Judgment: return new Color(1f, 0.85f, 0.4f);
+                case ScenarioRunStop.Failed:   return new Color(1f, 0.55f, 0.45f);
+                case ScenarioRunStop.Finished: return new Color(0.6f, 0.9f, 0.6f);
+                default:                       return new Color(0.75f, 0.85f, 1f);
+            }
+        }
+
+        private static string KindText(ObjectGroupStepKind k)
+        {
+            switch (k)
+            {
+                case ObjectGroupStepKind.Command:     return "実行";
+                case ObjectGroupStepKind.Note:        return "注意";
+                case ObjectGroupStepKind.Instruction: return "指示・止まる";
+                case ObjectGroupStepKind.Observe:     return "確認・止まる";
+                case ObjectGroupStepKind.ScenarioRef: return "別の手本";
+                default:                              return k.ToString();
+            }
+        }
+
+        private static string StatusText(ScenarioStepRunStatus s)
+        {
+            switch (s)
+            {
+                case ScenarioStepRunStatus.Done:    return "済";
+                case ScenarioStepRunStatus.Running: return "中";
+                case ScenarioStepRunStatus.Stopped: return "止";
+                case ScenarioStepRunStatus.Failed:  return "×";
+                default:                            return "・";
+            }
+        }
+
+        private static Color StatusColor(ScenarioStepRunStatus s)
+        {
+            switch (s)
+            {
+                case ScenarioStepRunStatus.Done:    return new Color(0.6f, 0.9f, 0.6f);
+                case ScenarioStepRunStatus.Running: return new Color(0.75f, 0.85f, 1f);
+                case ScenarioStepRunStatus.Stopped: return new Color(1f, 0.85f, 0.4f);
+                case ScenarioStepRunStatus.Failed:  return new Color(1f, 0.55f, 0.45f);
+                default:                            return new Color(0.75f, 0.75f, 0.75f);
+            }
         }
 
         // ================================================================
@@ -377,6 +464,9 @@ namespace Poly_Ling.Player
 
         private static string Or(string s, string fallback)
             => string.IsNullOrEmpty(s) ? fallback : s;
+
+        private static string Shorten(string s, int max)
+            => string.IsNullOrEmpty(s) || s.Length <= max ? (s ?? "") : s.Substring(0, max) + "…";
 
         private static string Join(List<string> values)
             => (values == null || values.Count == 0) ? "（無し）" : string.Join(" / ", values);

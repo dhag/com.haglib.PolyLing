@@ -211,6 +211,17 @@ namespace Poly_Ling.Data
         public bool IsScenarioRef => Kind == ObjectGroupStepKind.ScenarioRef;
 
         /// <summary>
+        /// 手本を流すとき、ここで止めて人か AI の判断を待つ段か。
+        ///
+        /// 指示（Instruction）は「人または AI への作業指示」、確認（Observe）は
+        /// 「実行後に確かめること」で、どちらも読んだ者が決めないと先へ進めない。
+        /// 注意（Note）は読むだけで決めることが無いので止めない。
+        /// 止める条件はここ 1 か所だけに置く（パネルと MCP で割れないように）。
+        /// </summary>
+        public bool RequiresJudgment =>
+            Kind == ObjectGroupStepKind.Instruction || Kind == ObjectGroupStepKind.Observe;
+
+        /// <summary>
         /// 再構築に必要なものが揃っているか。
         /// 実行しない段（Note / Instruction / Observe）は action を持たないので常に真。
         /// 参照段は参照先の名前を持っていること。

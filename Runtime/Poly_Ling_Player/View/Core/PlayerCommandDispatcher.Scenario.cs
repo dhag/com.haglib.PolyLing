@@ -44,9 +44,177 @@ namespace Poly_Ling.Player
                 case SetScenarioStepArgCommand c:    RunSetScenarioStepArg(c);    return true;
                 case MoveScenarioStepCommand c:      RunMoveScenarioStep(c);      return true;
                 case ExpandScenarioRefCommand c:     RunExpandScenarioRef(c);     return true;
-                case RunScenarioStepCommand c:       RunRunScenarioStep(c);       return true;
+                case RunScenarioCommand c:           RunRunScenario(c);           return true;
+                case ContinueScenarioCommand c:      RunContinueScenario(c);      return true;
+                case QueryScenarioRunCommand c:      RunQueryScenarioRun(c);      return true;
+                case StopScenarioRunCommand c:       RunStopScenarioRun(c);       return true;
+                case StartScenarioRecordingCommand c: RunStartScenarioRecording(c); return true;
+                case StopScenarioRecordingCommand c:  RunStopScenarioRecording(c);  return true;
+                case QueryScenarioAuditCommand c:     RunQueryScenarioAudit(c);     return true;
                 default: return false;
             }
+        }
+
+        // ================================================================
+        // 記録する（ScenarioRecorder）
+        // ================================================================
+
+        /// <summary>
+        /// Dispatch の一番外側で捌いたコマンドが、記録の対象外の口（手本・UI 自動操作・
+        /// コマンド定義の検査）で処理されたか。Dispatch が一番外側に入るたびに下ろす。
+        /// </summary>
+        private bool _dispatchNotRecorded;
+
+        /// <summary>今の一番外側のコマンドを記録の対象外にする。入れ子からは立てない。</summary>
+        private void MarkNotRecorded()
+        {
+            if (_dispatchDepth == 1) _dispatchNotRecorded = true;
+        }
+
+        private void RunStartScenarioRecording(StartScenarioRecordingCommand cmd)
+        {
+            if (!ScenarioRecorder.Start(out string error)) { Fail(error); return; }
+
+            ReportData(CommandDataJson.New()
+                .Flag("recording", true)
+                .Build());
+        }
+
+        private void RunStopScenarioRecording(StopScenarioRecordingCommand cmd)
+        {
+            if (!ScenarioRecorder.IsRecording) { Fail("記録していません"); return; }
+
+            if (cmd.Discard)
+            {
+                ScenarioRecorder.Discard();
+                ReportData(CommandDataJson.New()
+                    .Text("name",      "")
+                    .Int ("steps",     0)
+                    .Int ("count",     ScenarioLibrary.Count)
+                    .Flag("discarded", true)
+                    .Build());
+                return;
+            }
+
+            if (!ScenarioRecorder.Stop(cmd.Name, cmd.Goal, cmd.Overwrite, out int steps, out string error))
+            { Fail(error); return; }
+
+            ReportData(CommandDataJson.New()
+                .Text("name",      cmd.Name)
+                .Int ("steps",     steps)
+                .Int ("count",     ScenarioLibrary.Count)
+                .Flag("discarded", false)
+                .Build());
+        }
+
+        // ================================================================
+        // 点検する
+        // ================================================================
+
+        /// <summary>
+        /// 手本の段を点検する。
+        ///
+        /// 【見るもの】
+        ///   literalMeshIndex … IsMeshRef の印が付いた引数に 0 以上の索引が直に入っている。
+        ///                      索引は描画オブジェクトの増減でずれるので、撃ち直すと別物を指す。
+        ///   unknownAction    … action を型へ解決できない。
+        ///   badRef / missingRef / forwardRef
+        ///                    … @&lt;段の名前&gt;.&lt;キー&gt; の書き方違い・存在しない段・後ろの段。
+        ///                      判定は TryExpandPrev と同じ規則で行う（あちらが読めない値を指摘する）。
+        ///
+        /// 【見ないもの】
+        ///   頂点・面の番号。印が無いので、ここでは数値か索引かを区別できない。
+        /// </summary>
+        private void RunQueryScenarioAudit(QueryScenarioAuditCommand cmd)
+        {
+            var g = ScenarioLibrary.Get(cmd.Name);
+            if (g == null) { Fail($"手本がありません: {cmd.Name}"); return; }
+
+            var elementIds = new List<string>();
+            var issueKinds = new List<string>();
+            var keys       = new List<string>();
+            var details    = new List<string>();
+
+            void Add(string id, string kind, string key, string detail)
+            {
+                elementIds.Add(id ?? "");
+                issueKinds.Add(kind);
+                keys.Add(key ?? "");
+                details.Add(detail ?? "");
+            }
+
+            for (int i = 0; i < g.StepCount; i++)
+            {
+                var step = g.Steps[i];
+                if (step == null) continue;
+                string id = step.ElementId ?? "";
+
+                if (step.IsExecutable)
+                {
+                    Type t = PanelCommandFactory.ResolveType(step.Action);
+                    if (t == null)
+                    {
+                        Add(id, "unknownAction", "", $"action {step.Action} を解決できない");
+                    }
+                    else
+                    {
+                        foreach (var mr in PanelCommandFactory.MeshRefKeys(t))
+                        {
+                            string v = step.GetArg(mr.Key);
+                            if (string.IsNullOrEmpty(v) || v[0] == '@') continue;
+                            if (!HasNonNegativeIndex(v)) continue;
+
+                            Add(id, "literalMeshIndex", mr.Key,
+                                $"索引 {v} が直に入っている。名前から引く照会（selectDrawablesByName など）と @ 参照に置き換える");
+                        }
+                    }
+                }
+
+                if (step.Args == null) continue;
+
+                foreach (var kv in step.SortedArgs())
+                {
+                    string v = kv.Value;
+                    if (string.IsNullOrEmpty(v) || v.Length < 2 || v[0] != '@') continue;
+                    if (v.StartsWith(PrevPrefix, StringComparison.Ordinal)) continue;
+
+                    int dot = v.IndexOf('.');
+                    if (dot <= 1)
+                    {
+                        Add(id, "badRef", kv.Key,
+                            $"{v} は @ で始まるので、流したとき参照として読まれるが、@prev.<キー> か @<段の名前>.<キー> の形になっていない");
+                        continue;
+                    }
+
+                    string refId = v.Substring(1, dot - 1);
+                    int at = g.IndexOfStep(refId);
+                    if (at < 0)
+                        Add(id, "missingRef", kv.Key, $"{v} が指す段 {refId} がこの手本に無い");
+                    else if (at >= i)
+                        Add(id, "forwardRef", kv.Key, $"{v} が指す段 {refId} はこの段より後ろにある");
+                }
+            }
+
+            ReportData(CommandDataJson.New()
+                .Text ("name",       g.Name ?? "")
+                .Int  ("issues",     elementIds.Count)
+                .Texts("elementIds", elementIds)
+                .Texts("issueKinds", issueKinds)
+                .Texts("keys",       keys)
+                .Texts("details",    details)
+                .Build());
+        }
+
+        /// <summary>カンマ区切りの整数列に 0 以上の値が 1 つでもあるか。-1 は「対象なし」なので数えない。</summary>
+        private static bool HasNonNegativeIndex(string csv)
+        {
+            foreach (var part in csv.Split(','))
+            {
+                if (int.TryParse(part.Trim(), System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out int n) && n >= 0)
+                    return true;
+            }
+            return false;
         }
 
         // ================================================================
@@ -527,174 +695,27 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // 実行する
+        // 流す（PlayerCommandDispatcher.ScenarioRun.cs）
         // ================================================================
 
-        /// <summary>
-        /// 手本の段を 1 つ実行する。
-        ///
-        /// 全段を通す口は作らない（方針案「Scenario を固定実行手段にしない」）。
-        /// 段を選ぶのは呼ぶ側で、判断点はそちらに残る。
-        ///
-        /// 実行は Dispatch を再入して行う。Dispatch は _pendingResult を
-        /// 退避・復元するので（PlayerCommandDispatcher.cs の注記）、
-        /// 内側の結果がこちらの応答を壊すことはない。
-        /// </summary>
-        private void RunRunScenarioStep(RunScenarioStepCommand cmd)
-        {
-            var g = ScenarioLibrary.Get(cmd.Name);
-            if (g == null) { Fail($"手本がありません: {cmd.Name}"); return; }
-
-            int at = g.IndexOfStep(cmd.ElementId);
-            if (at < 0) { Fail($"段がありません: {cmd.ElementId}"); return; }
-
-            var step = g.Steps[at];
-
-            // 実行しない段。失敗ではないので、種別と理由を返して終わる。
-            if (!step.IsExecutable)
-            {
-                ReportData(CommandDataJson.New()
-                    .Text("name",      g.Name)
-                    .Text("elementId", step.ElementId ?? "")
-                    .Text("kind",      step.Kind.ToString())
-                    .Text("purpose",   step.Purpose ?? "")
-                    .Text("action",    "")
-                    .Flag("executed",  false)
-                    .Build());
-                return;
-            }
-
-            var overrideKeys   = cmd.ArgKeys   ?? new string[0];
-            var overrideValues = cmd.ArgValues ?? new string[0];
-
-            if (overrideKeys.Length != overrideValues.Length)
-            {
-                Fail($"argKeys が {overrideKeys.Length} 件、argValues が {overrideValues.Length} 件で長さが合いません");
-                return;
-            }
-
-            var args = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var kv in step.SortedArgs()) args[kv.Key] = kv.Value ?? "";
-            for (int i = 0; i < overrideKeys.Length; i++)
-            {
-                if (string.IsNullOrEmpty(overrideKeys[i])) continue;
-                args[overrideKeys[i]] = overrideValues[i] ?? "";
-            }
-
-            var usedKeys   = new List<string>();
-            var usedValues = new List<string>();
-            foreach (var kv in args) { usedKeys.Add(kv.Key); usedValues.Add(kv.Value); }
-
-            // @prev を実際の値へ直す。直したあとの値を報告に載せるので、
-            // 何を撃ったのかが後から分かる。
-            for (int i = 0; i < usedKeys.Count; i++)
-            {
-                if (!TryExpandPrev(usedValues[i], cmd.Name, out string expanded, out string prevReason))
-                { Fail(prevReason); return; }
-
-                usedValues[i] = expanded;
-                args[usedKeys[i]] = expanded;
-            }
-
-            if (cmd.DryRun)
-            {
-                ReportData(CommandDataJson.New()
-                    .Text ("name",              g.Name)
-                    .Text ("elementId",         step.ElementId ?? "")
-                    .Text ("kind",              step.Kind.ToString())
-                    .Text ("purpose",           step.Purpose ?? "")
-                    .Text ("action",            step.Action ?? "")
-                    .Flag ("executed",          false)
-                    .Texts("argKeys",           usedKeys)
-                    .Texts("argValues",         usedValues)
-                    .Ints ("prevMasterIndices", _prevMasterIndices)
-                    .Texts("prevObjectIds",     IdTexts(_prevObjectIds))
-                    .Build());
-                return;
-            }
-
-            var inner = PanelCommandFactory.Create(step.Action, cmd.ModelIndex, args, out string createError);
-            if (inner == null) { Fail($"{step.Action} を組み立てられません: {createError}"); return; }
-
-            var result = Dispatch(inner);
-            if (result != null && !result.Success)
-            { Fail($"{step.Action} が失敗しました: {result.Reason}"); return; }
-
-            // 実行できた段の対象だけを覚える。実行しない段と dryRun は触らない。
-            _prevMasterIndices = result?.MasterIndices;
-            _prevObjectIds     = result?.ObjectIds;
-            _prevData          = result?.Data;
-
-            // 段を名指しで引けるよう、段ごとにも控える。
-            _stepResults[StepResultKey(cmd.Name, step.ElementId)] =
-                (result?.MasterIndices, result?.ObjectIds, result?.Data);
-
-            ReportData(CommandDataJson.New()
-                .Text ("name",              g.Name)
-                .Text ("elementId",         step.ElementId ?? "")
-                .Text ("kind",              step.Kind.ToString())
-                .Text ("purpose",           step.Purpose ?? "")
-                .Text ("action",            step.Action ?? "")
-                .Flag ("executed",          true)
-                .Texts("argKeys",           usedKeys)
-                .Texts("argValues",         usedValues)
-                .Ints ("prevMasterIndices", _prevMasterIndices)
-                .Texts("prevObjectIds",     IdTexts(_prevObjectIds))
-                .Build());
-        }
-
         // ================================================================
-        // @prev
+        // @prev / @<段の名前>
         // ================================================================
 
-        /// <summary>
-        /// 直前に runScenarioStep が実行したコマンドの対象。
-        ///
-        /// 【なぜ 1 個だけか】
-        ///   段 ID を指した任意参照（e2 の出力）を持たせると、実行 1 回ぶんの
-        ///   器が要り、手本の側にも参照の欄が要る。手順は上から順に並ぶので、
-        ///   直前 1 個で足りる場面が大半。足りないときは名前で引き直す
-        ///   （selectDrawablesByName）。
-        ///
-        /// 【いつ更新するか】
-        ///   実行できた段のあとだけ。実行しない段（Note / Observe / ScenarioRef）と
-        ///   dryRun では触らない。押した段が何もしていないのに控えが変わると、
-        ///   次の段が黙って別の対象を掴む。
-        /// </summary>
-        private int[]   _prevMasterIndices;
-        private ulong[] _prevObjectIds;
-
-        /// <summary>
-        /// 直前に runScenarioStep が実行したコマンドの戻り値（PLResult の JSON）。
-        /// @prev.&lt;キー&gt; はここから引く。masterIndices / objectIds は
-        /// 対象としての報告を優先し、無いときだけここを見る。
-        /// </summary>
-        private string _prevData;
-
-        /// <summary>
-        /// 段ごとの戻り値の控え。鍵は「手本名/段の名前」。
-        /// @e3.faceIndices のように段を名指しで引くために持つ。
-        ///
-        /// @prev は直前 1 個しか覚えないので、照会と使用の間に
-        /// Observe を挟めず、2 本の値を同時に渡せなかった。
-        /// 手本の側には何も足さず、ここに辞書 1 本を置くだけで解く。
-        ///
-        /// 消さない。次の実行で同じ段を撃てば上書きされる。
-        /// 古い値が残っていても、指した段を撃ち直せば新しくなる。
-        /// </summary>
-        private readonly Dictionary<string, (int[] Master, ulong[] Ids, string Data)> _stepResults
-            = new Dictionary<string, (int[], ulong[], string)>(StringComparer.Ordinal);
+        // 控え（直前の段の対象・戻り値、段ごとの戻り値）は ScenarioRunState が持つ。
+        // 流れ 1 回ぶんの器に閉じ込め、別の流れや別の手本の結果が混ざらないようにする。
 
         private const string PrevPrefix            = "@prev.";
         private const string PrevMasterIndicesToken = "@prev.masterIndices";
         private const string PrevObjectIdsToken     = "@prev.objectIds";
 
         /// <summary>
-        /// 引数の値が @prev なら実際の値へ直す。@prev でなければそのまま返す。
+        /// 引数の値が @prev / @&lt;段の名前&gt; なら、流れの控えから実際の値へ直す。
+        /// どちらでもなければそのまま返す。
         /// 控えが空のときは失敗にする。空文字を黙って入れると、対象なしで
         /// 実行されて原因が見えなくなる。
         /// </summary>
-        private bool TryExpandPrev(string value, string scenarioName, out string expanded, out string reason)
+        private static bool TryExpandPrev(ScenarioRunState run, string value, string scenarioName, out string expanded, out string reason)
         {
             expanded = value;
             reason   = null;
@@ -703,11 +724,11 @@ namespace Poly_Ling.Player
 
             if (string.Equals(value, PrevMasterIndicesToken, StringComparison.Ordinal))
             {
-                if (_prevMasterIndices == null || _prevMasterIndices.Length == 0)
+                if (run.PrevMaster == null || run.PrevMaster.Length == 0)
                 { reason = $"{PrevMasterIndicesToken} を使いましたが、直前に実行した段の対象がありません"; return false; }
 
-                var parts = new List<string>(_prevMasterIndices.Length);
-                foreach (int i in _prevMasterIndices)
+                var parts = new List<string>(run.PrevMaster.Length);
+                foreach (int i in run.PrevMaster)
                     parts.Add(i.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 expanded = string.Join(",", parts);
                 return true;
@@ -715,10 +736,10 @@ namespace Poly_Ling.Player
 
             if (string.Equals(value, PrevObjectIdsToken, StringComparison.Ordinal))
             {
-                if (_prevObjectIds == null || _prevObjectIds.Length == 0)
+                if (run.PrevIds == null || run.PrevIds.Length == 0)
                 { reason = $"{PrevObjectIdsToken} を使いましたが、直前に実行した段の対象がありません"; return false; }
 
-                expanded = string.Join(",", IdTexts(_prevObjectIds));
+                expanded = string.Join(",", IdTexts(run.PrevIds));
                 return true;
             }
 
@@ -732,10 +753,10 @@ namespace Poly_Ling.Player
                 if (string.IsNullOrEmpty(key))
                 { reason = "@prev. の後ろにキーがありません"; return false; }
 
-                if (string.IsNullOrEmpty(_prevData))
+                if (string.IsNullOrEmpty(run.PrevData))
                 { reason = $"{value} を使いましたが、直前に実行した段が戻り値を返していません"; return false; }
 
-                if (!TryReadJsonValue(_prevData, key, out string got))
+                if (!TryReadJsonValue(run.PrevData, key, out string got))
                 { reason = $"{value} を使いましたが、直前の戻り値に {key} がありません"; return false; }
 
                 expanded = got;
@@ -755,8 +776,8 @@ namespace Poly_Ling.Player
                 if (string.IsNullOrEmpty(k2))
                 { reason = $"{value} にキーがありません"; return false; }
 
-                if (!_stepResults.TryGetValue(StepResultKey(scenarioName, id), out var rec))
-                { reason = $"{value} を使いましたが、段 {id} をまだ実行していません"; return false; }
+                if (!run.Results.TryGetValue(StepResultKey(scenarioName, id), out var rec))
+                { reason = $"{value} を使いましたが、この流れで段 {id} をまだ実行していません"; return false; }
 
                 if (string.Equals(k2, "masterIndices", StringComparison.Ordinal))
                 {

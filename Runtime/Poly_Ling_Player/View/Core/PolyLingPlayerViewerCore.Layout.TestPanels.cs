@@ -159,12 +159,14 @@ namespace Poly_Ling.Player
             };
             _springSkinPipeScenarioSubPanel.Build(_layoutRoot.SpringSkinPipeScenarioSection);
 
-            // 手本（シナリオ）。上の 2 つと違い、段は scenarios.csv から読んだデータで、
-            // 実行は段 1 つずつ。まとめて流す口は置かない。
+            // 手本（シナリオ）。上の 2 つと違い、段は scenarios.csv から読んだデータ。
+            // 先頭から流し、指示・確認の段と失敗で止まる（PlayerCommandDispatcher.ScenarioRun.cs）。
+            // 失敗を表示するため、戻り値を捨てる SendCommand ではなく Dispatch を直に渡す。
             _scenarioSubPanel = new PlayerScenarioSubPanel
             {
-                GetProject  = () => ActiveProject,
-                SendCommand = cmd => _panelContext?.SendCommand(cmd),
+                GetProject = () => ActiveProject,
+                RunCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetRun     = () => _commandDispatcher?.ScenarioRun,
             };
             _scenarioSubPanel.Build(_layoutRoot.ScenarioSection);
 

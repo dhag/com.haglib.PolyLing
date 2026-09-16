@@ -185,7 +185,7 @@ namespace Poly_Ling.Player
         public Button        SpringSkinScenarioBtn     { get; private set; }
         public Button        SpringSkinPipeScenarioBtn     { get; private set; }
 
-        /// <summary>手本（シナリオ）の一覧と中身。段を 1 つ選んで実行する。</summary>
+        /// <summary>手本（シナリオ）を選んで先頭から流す。指示・確認の段と失敗で止まる。</summary>
         public Button        ScenarioBtn               { get; private set; }
         public Button        PipeHairTestBtn          { get; private set; }
         public Button        BarnacleTestBtn          { get; private set; }
@@ -733,7 +733,7 @@ namespace Poly_Ling.Player
 
             // 0) 手本（シナリオ）。この節の先頭に置く。
             //    下に並ぶ検証パネルは段が C# のラムダで固定だが、こちらは
-            //    scenarios.csv から読んだ手本を並べ、段を 1 つ選んで実行する。
+            //    scenarios.csv から読んだ手本を並べ、先頭から流す（指示・確認の段と失敗で止まる）。
             var rowSysDebug0 = new VisualElement(); rowSysDebug0.style.flexDirection = FlexDirection.Row; rowSysDebug0.style.marginBottom = 2;
             ScenarioBtn = MakeBtn("シナリオ"); ScenarioBtn.style.flexGrow = 1;
             rowSysDebug0.Add(ScenarioBtn); foSysDebug.Add(rowSysDebug0);

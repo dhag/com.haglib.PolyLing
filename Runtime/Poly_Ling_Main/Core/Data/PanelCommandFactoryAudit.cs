@@ -259,6 +259,24 @@ namespace Poly_Ling.Data
                 foreach (var n in badDesc) sb.Append('\n').Append("  ").Append(n);
             }
 
+            // 【参考】索引の印（IsMeshRef）の付け忘れ。完了条件（全項目 0）には入れない。
+            // queryScenarioAudit はこの印で焼いてはいけない索引を見分けるので、
+            // 印の無い引数は点検を素通りする。どれだけ漏れているかを出す。
+            // 印を付けると ObjectGroup の作り直しの挙動が変わるため、一覧を見て個別に付ける。
+            var unmarked = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+                foreach (var key in PanelCommandFactory.UnmarkedMeshIndexKeys(t))
+                    unmarked.Add(t.Name + "." + key);
+
+            sb.Append('\n')
+              .Append("[参考] 索引の印（IsMeshRef）が無い引数 ").Append(unmarked.Count)
+              .Append("（完了条件ではない。queryScenarioAudit の点検から漏れる）");
+            if (unmarked.Count > 0)
+            {
+                sb.Append('\n').Append("── 名前が索引なのに IsMeshRef が無い ──");
+                foreach (var n in unmarked) sb.Append('\n').Append("  ").Append(n);
+            }
+
             if (skipped > 0)
             {
                 sb.Append('\n').Append("── スキーマに出せないコマンド ──");

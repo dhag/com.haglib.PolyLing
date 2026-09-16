@@ -657,6 +657,12 @@ namespace Poly_Ling.Player
                 _dispatchEntryNotifyCount = _structureNotifyCount();
                 _dispatchEntryTopology    = CaptureTopology();
             }
+
+            // 手本の記録は一番外側の 1 本だけを控える。入れ子は外側の結果に含まれる。
+            // outermost は構造通知の受け口が無いと立たないので、深さだけで別に見る。
+            bool topLevel = _dispatchDepth == 0;
+            if (topLevel) _dispatchNotRecorded = false;
+
             _dispatchDepth++;
 
             CommandResult result;
@@ -675,6 +681,10 @@ namespace Poly_Ling.Player
                     NotifyStructureIfMissed();
                 }
             }
+
+            if (topLevel && !_dispatchNotRecorded && ScenarioRecorder.IsRecording)
+                ScenarioRecorder.RecordCommand(cmd, result);
+
             return result;
         }
 
@@ -807,6 +817,7 @@ namespace Poly_Ling.Player
             // "no project" になり、検査そのものができない。
             if (cmd is QueryCommandAuditCommand)
             {
+                MarkNotRecorded();
                 PanelCommandFactory.CountTools(out int auditUsable, out int auditSkipped);
 
                 ReportData(CommandDataJson.New()
@@ -855,11 +866,13 @@ namespace Poly_Ling.Player
             // UI 自動操作（パネル表示・値の読み書き・強調・キャプチャ）もモデルと
             // プロジェクトを見ない。下の null 門より前で捌かないと、何も読み込んでいない
             // 状態で "no project" になり、UI を操作できない。
-            if (DispatchUiAutomation(cmd)) return;
+            // 記録（ScenarioRecorder）の対象外。手順ではなく道具の操作なので。
+            if (DispatchUiAutomation(cmd)) { MarkNotRecorded(); return; }
 
             // 手本（シナリオ）もモデルとプロジェクトを見ない。同じ理由でここで捌く。
             // 例外は saveScenarioFromGroup で、受け口の中で現在のモデルを見る。
-            if (DispatchScenario(cmd)) return;
+            // 記録の対象外（手本を記録すると、記録の開始・停止まで段に入る）。
+            if (DispatchScenario(cmd)) { MarkNotRecorded(); return; }
 
             // 生成系（図形生成・生成メッシュ追加）と読み込み系は、プロジェクトも
             // モデルも無い状態から呼べる。
