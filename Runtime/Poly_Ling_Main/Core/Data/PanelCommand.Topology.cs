@@ -26,16 +26,18 @@ namespace Poly_Ling.Data
     ///
     /// スキンドメッシュは対象にできない（ボーンウェイトが失われるため）。
     /// </summary>
-    [PLCommand(Description = "2 つのメッシュオブジェクトにブーリアン演算（和 / 差 / 積）を行う。")]
+    [PLCommand(Description = "2 つのメッシュオブジェクトにブーリアン演算（和 / 差 / 積）を行う。結果を入れたオブジェクトを対象として返す（新規なら追加したもの、置き換えなら A）。失敗したら失敗を返す。")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "結果の頂点数")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "結果の面数")]
     public class BooleanMeshCommand : PanelCommand
     {
         /// <summary>左辺（基準）オブジェクトの MasterIndex。差では削られる側。</summary>
-        [PLParam(TextKey = "BooleanAMasterIndex",
+        [PLParam(TextKey = "BooleanAMasterIndex", IsMeshRef = true,
                  Description = "左辺（基準）オブジェクトの masterIndex。差では削られる側", Required = true)]
         public int AMasterIndex { get; }
 
         /// <summary>右辺オブジェクトの MasterIndex。差では削る側。</summary>
-        [PLParam(TextKey = "BooleanBMasterIndex",
+        [PLParam(TextKey = "BooleanBMasterIndex", IsMeshRef = true,
                  Description = "右辺オブジェクトの masterIndex。差では削る側", Required = true)]
         public int BMasterIndex { get; }
 
@@ -93,6 +95,85 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// ブーリアン演算で面が欠ける箇所を段階ごとに数える。モデルは変えない。
+    /// 計測の中身は BooleanDiagnostics.cs の冒頭注記を参照。
+    /// </summary>
+    [PLCommand(Description = "ブーリアン演算を結果を捨てて実行し、面が欠ける箇所を段階ごとに数える。モデルは変えない。入力の穴、BSP の手順ごとの多角形数、多角形の平面の質（無効・先頭 3 頂点の法線のずれ）、結果の穴（頂点をほぼ完全一致でまとめた場合と mergeThreshold でまとめた場合。どちらも T 字解消後）、結果の頂点数を返す。")]
+    [PLResult("inputHolesA",         PLResultKind.Integer,      Description = "入力 A の穴の数")]
+    [PLResult("inputHolesB",         PLResultKind.Integer,      Description = "入力 B の穴の数")]
+    [PLResult("polygonsA",           PLResultKind.Integer,      Description = "入力 A の多角形数")]
+    [PLResult("polygonsB",           PLResultKind.Integer,      Description = "入力 B の多角形数")]
+    [PLResult("invalidPlanesA",      PLResultKind.Integer,      Description = "入力 A で平面が無効な多角形の数")]
+    [PLResult("invalidPlanesB",      PLResultKind.Integer,      Description = "入力 B で平面が無効な多角形の数")]
+    [PLResult("stepNames",           PLResultKind.TextArray,    Description = "BSP の手順名")]
+    [PLResult("stepCounts",          PLResultKind.IntegerArray, Description = "stepNames の各手順の直後に木に残る多角形の数")]
+    [PLResult("resultPolygons",      PLResultKind.Integer,      Description = "結果の多角形数")]
+    [PLResult("resultInvalidPlanes", PLResultKind.Integer,      Description = "結果で平面が無効な多角形の数")]
+    [PLResult("resultSkewedPlanes",  PLResultKind.Integer,      Description = "結果で先頭 3 頂点の法線が多角形全体の法線から 1 度以上ずれた多角形の数")]
+    [PLResult("resultVertices",      PLResultKind.Integer,      Description = "結果の頂点数（三角形ごとにばらばら）")]
+    [PLResult("holesExact",          PLResultKind.Integer,      Description = "頂点をほぼ完全一致（1e-7）でまとめ、T 字解消した後の穴の数")]
+    [PLResult("holesMerged",         PLResultKind.Integer,      Description = "頂点を mergeThreshold でまとめ、T 字解消した後の穴の数")]
+    [PLResult("holeExactSizes",      PLResultKind.IntegerArray, Description = "holesExact の穴ごとの頂点数（先頭 40 個まで）", Optional = true)]
+    [PLResult("holeExactCentroids",  PLResultKind.NumberArray,  Description = "holesExact の穴ごとの重心。A のローカル。x,y,z を 3 個ずつ", Optional = true)]
+    [PLResult("holeMergedSizes",     PLResultKind.IntegerArray, Description = "holesMerged の穴ごとの頂点数（先頭 40 個まで）", Optional = true)]
+    [PLResult("holeMergedCentroids", PLResultKind.NumberArray,  Description = "holesMerged の穴ごとの重心。A のローカル。x,y,z を 3 個ずつ", Optional = true)]
+    [PLResult("timingNames",         PLResultKind.TextArray,    Description = "段階名")]
+    [PLResult("timingMs",            PLResultKind.IntegerArray, Description = "timingNames の各段階の所要時間（ミリ秒）")]
+    [PLResult("holeExactAreas",        PLResultKind.NumberArray,  Description = "holesExact の穴ごとの面積（輪をたどれないときは -1）", Optional = true)]
+    [PLResult("holeExactInvalidTouch", PLResultKind.IntegerArray, Description = "holesExact の穴ごとに、平面が無効な多角形の頂点と重なる穴の頂点の数", Optional = true)]
+    [PLResult("replicaPolygons",       PLResultKind.Integer,      Description = "写した BSP の結果の多角形数")]
+    [PLResult("replicaInvalidPlanes",  PLResultKind.Integer,      Description = "写した BSP の結果で平面が無効な多角形の数")]
+    [PLResult("replicaMatches",        PLResultKind.Flag,         Description = "写した BSP の結果が元の結果と一致したか（多角形数・無効数・頂点位置の和）。false なら下の分岐の数は信用できない")]
+    [PLResult("leafDiscardValid",      PLResultKind.Integer,      Description = "葉で捨てた多角形のうち平面が有効なもの")]
+    [PLResult("leafDiscardInvalid",    PLResultKind.Integer,      Description = "葉で捨てた多角形のうち平面が無効なもの")]
+    [PLResult("coplanarBackInvalid",   PLResultKind.Integer,      Description = "平面が無効なまま同一平面・裏向きに振り分けられた多角形の数")]
+    [PLResult("invalidNodeReturns",    PLResultKind.Integer,      Description = "平面が無効な節で下の節を見ずに返した回数")]
+    [PLResult("invalidNodePassed",     PLResultKind.Integer,      Description = "そのとき素通りした多角形の数")]
+    [PLResult("fixedPolygons",         PLResultKind.Integer,      Description = "無効な平面を作り直して演算した結果の多角形数（fixInvalidPlanes のとき）")]
+    [PLResult("fixedInvalidPlanes",    PLResultKind.Integer,      Description = "そのとき残った無効な平面の数")]
+    [PLResult("fixedPlanesRebuilt",    PLResultKind.Integer,      Description = "作り直した平面の数")]
+    [PLResult("fixedHolesExact",       PLResultKind.Integer,      Description = "そのときの穴（ほぼ完全一致でまとめる）。試していなければ -1")]
+    [PLResult("fixedHolesMerged",      PLResultKind.Integer,      Description = "そのときの穴（mergeThreshold でまとめる）。試していなければ -1")]
+    public class DiagnoseBooleanCommand : PanelCommand
+    {
+        [PLParam(Description = "左辺（基準）オブジェクトの masterIndex。差では削られる側", Required = true, IsMeshRef = true)]
+        public int AMasterIndex { get; }
+
+        [PLParam(Description = "右辺オブジェクトの masterIndex。差では削る側", Required = true, IsMeshRef = true)]
+        public int BMasterIndex { get; }
+
+        [PLParam(Description = "和 / 差 / 積のどれを行うか", Required = true)]
+        public Poly_Ling.Ops.BooleanOpKind Op { get; }
+
+        [PLParam(Description = "頂点をまとめる距離のしきい値（booleanMesh の mergeThreshold と同じ）", Required = true)]
+        public float MergeThreshold { get; }
+
+        [PLParam(Description = "平面の同一判定の許容量。0 以下で BooleanOps.DefaultEpsilon", Required = true)]
+        public float Epsilon { get; }
+
+        [PLParam(Description = "T 字解消の許容量（resolveTJunctions の tolerance と同じ）")]
+        public float TJunctionTolerance { get; }
+
+        [PLParam(Description = "計測用の試し。平面が無効な多角形の法線を頂点全体から求め直して演算し、穴の数が変わるかを返す。本体の演算は変えない")]
+        public bool FixInvalidPlanes { get; }
+
+        public DiagnoseBooleanCommand(
+            int modelIndex, int aMasterIndex, int bMasterIndex,
+            Poly_Ling.Ops.BooleanOpKind op, float mergeThreshold, float epsilon,
+            float tJunctionTolerance = 0.0001f, bool fixInvalidPlanes = false)
+            : base(modelIndex)
+        {
+            AMasterIndex       = aMasterIndex;
+            BMasterIndex       = bMasterIndex;
+            Op                 = op;
+            MergeThreshold     = mergeThreshold;
+            Epsilon            = epsilon;
+            TJunctionTolerance = tJunctionTolerance;
+            FixInvalidPlanes   = fixInvalidPlanes;
+        }
+    }
+
     // ================================================================
     // T 字接合の解消
     // ================================================================
@@ -139,7 +220,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "四角面を保ったまま面数を減らし、結果のメッシュをモデルへ足す。")]
     public class QuadDecimateCommand : PanelCommand
     {
-        [PLParam(TextKey = "QuadDecimateSourceMasterIndex",
+        [PLParam(TextKey = "QuadDecimateSourceMasterIndex", IsMeshRef = true,
                  Description = "減面する描画オブジェクトの masterIndex", Required = true)]
         public int   SourceMasterIndex { get; }
 
@@ -214,7 +295,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "面結合（辺指定）。選択辺を挟む 2 枚の面を 1 枚へ結合する。DeleteVertices で共有頂点を新しい面から外すかを選ぶ。")]
     public class FaceMergeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices  { get; }
@@ -245,7 +326,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択頂点を共有する四角形 4 枚を、四隅を結ぶ四角形 1 枚へ張り替える。")]
     public class Quad4To1Command : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -269,7 +350,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択した三角形とそれを囲む三角形 3 枚を、外側の 3 頂点を結ぶ三角形 1 枚へ張り替える。")]
     public class Tri4To1Command : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -294,7 +375,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択頂点を消して、その頂点を囲む面を 1 枚の面へ張り替える。")]
     public class VertexDissolveCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -321,7 +402,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択頂点を面ごとに独立したコピーへ分離する。")]
     public class SplitVerticesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -354,7 +435,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択頂点を消して穴を開ける。頂点につながる各辺の上に新しい頂点を作り、 元の面を張り替える。")]
     public class VertexHoleCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -402,7 +483,7 @@ namespace Poly_Ling.Data
             All
         }
 
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -436,7 +517,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択頂点を軸ごとに整列する。")]
     public class AlignVerticesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -484,7 +565,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択した辺・線分のつながりを平滑化する。")]
     public class SmoothEdgesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }

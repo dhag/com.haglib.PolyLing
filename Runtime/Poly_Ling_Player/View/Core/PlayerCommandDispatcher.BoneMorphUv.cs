@@ -364,12 +364,12 @@ namespace Poly_Ling.Player
                         _undoController.SetMeshObject(addMc.MeshObject, addMc.UnityMesh);
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    var addBefore = _undoController?.CaptureMeshObjectSnapshot();
+                    var addBefore = _undoController?.CaptureMeshObjectSnapshotOf(addMc);
                     model.AddMaterial(null);
                     model.CurrentMaterialIndex = model.MaterialCount - 1;
                     if (_undoController != null && addBefore != null)
                     {
-                        var addAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var addAfter = _undoController.CaptureMeshObjectSnapshotOf(addMc);
                         _undoController.RecordTopologyChange(addBefore, addAfter, "Add Material Slot");
                     }
                     if (model.AutoSetDefaultMaterials)
@@ -393,7 +393,7 @@ namespace Poly_Ling.Player
                         _undoController.SetMeshObject(remMc.MeshObject, remMc.UnityMesh);
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    var remBefore = _undoController?.CaptureMeshObjectSnapshot();
+                    var remBefore = _undoController?.CaptureMeshObjectSnapshotOf(remMc);
                     if (remMc?.MeshObject != null)
                         foreach (var face in remMc.MeshObject.Faces)
                         {
@@ -405,7 +405,7 @@ namespace Poly_Ling.Player
                         model.CurrentMaterialIndex = model.MaterialCount - 1;
                     if (_undoController != null && remBefore != null)
                     {
-                        var remAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var remAfter = _undoController.CaptureMeshObjectSnapshotOf(remMc);
                         _undoController.RecordTopologyChange(remBefore, remAfter, $"Remove Material Slot [{c.SlotIndex}]");
                     }
                     if (remMc?.UnityMesh != null && remMc.MeshObject != null)
@@ -429,13 +429,13 @@ namespace Poly_Ling.Player
                         _undoController.SetMeshObject(matMc.MeshObject, matMc.UnityMesh);
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    var matBefore = _undoController?.CaptureMeshObjectSnapshot();
+                    var matBefore = _undoController?.CaptureMeshObjectSnapshotOf(matMc);
                     foreach (int fi in c.FaceIndices)
                         if (fi >= 0 && fi < matMc.MeshObject.FaceCount)
                             matMc.MeshObject.Faces[fi].MaterialIndex = c.MaterialSlot;
                     if (_undoController != null && matBefore != null)
                     {
-                        var matAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var matAfter = _undoController.CaptureMeshObjectSnapshotOf(matMc);
                         _undoController.RecordTopologyChange(matBefore, matAfter, $"Apply Material [{c.MaterialSlot}]");
                     }
                     // テクスチャ表面(ctx.UnityMesh)は MaterialIndex 別サブメッシュで描画されるため、
@@ -494,7 +494,7 @@ namespace Poly_Ling.Player
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
 
-                    var before = _undoController?.CaptureMeshObjectSnapshot();
+                    var before = _undoController?.CaptureMeshObjectSnapshotOf(lscmMc);
 
                     // Seam エッジは実行時点の SelectedEdges から取得
                     var seamEdges = lscmMc.SelectedEdges
@@ -508,7 +508,7 @@ namespace Poly_Ling.Player
                     {
                         if (_undoController != null && before != null)
                         {
-                            var after = _undoController.CaptureMeshObjectSnapshot();
+                            var after = _undoController.CaptureMeshObjectSnapshotOf(lscmMc);
                             _undoController.RecordTopologyChange(before, after, "LSCM UV展開");
                         }
                         lscmMc.ReplaceUnityMesh(lscmMc.MeshObject.ToUnityMesh());

@@ -28,7 +28,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択されている頂点・面・線分を削除する。")]
     public class DeleteSelectionCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -56,7 +56,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "パイプ状の部品どうしで断面の頂点位置をそろえる。")]
     public class PipeAlignCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -138,7 +138,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "配置済みの部品を原型メッシュの形へ張り直す。")]
     public class PlaceObjectReshapeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -147,7 +147,7 @@ namespace Poly_Ling.Data
                  Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
         public ulong[] ObjectIds     { get; }
 
-        [PLParam(TextKey = "PlaceObjectReshapePrototypes",
+        [PLParam(TextKey = "PlaceObjectReshapePrototypes", IsMeshRef = true,
                  Description = "原型にする描画オブジェクトの masterIndex 配列。並び順に結合する",
                  Required = true)]
         public int[] PrototypeMasterIndices { get; }
@@ -192,7 +192,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択面に厚みを付けて別メッシュとして生成する。")]
     public class SolidifyCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -271,7 +271,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択辺を中心線として、ワールド固定幅の帯面を足す。")]
     public class EdgeRibbonFaceCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。選択中のものと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -321,7 +321,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定した点から円筒・角柱、三角形・四角形の板を編集対象へ足す。既存頂点を指す点と、分割数が一致する既存の辺列はそのまま共有する。")]
     public class CreatePointDefinedPrimitiveCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -385,7 +385,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択線分から検出した輪郭ループを押し出してメッシュを作る。")]
     public class LineExtrudeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -473,7 +473,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "対象オブジェクトの頂点を、リファレンスオブジェクトの面へ視線方向に張り付ける。")]
     public class SurfaceSnapCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -482,7 +482,7 @@ namespace Poly_Ling.Data
                  Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
         public ulong[] ObjectIds     { get; }
 
-        [PLParam(TextKey = "SurfaceSnapReferences",
+        [PLParam(TextKey = "SurfaceSnapReferences", IsMeshRef = true,
                  Description = "張り付け先にする描画オブジェクトの masterIndex 配列",
                  Required = true)]
         public int[] ReferenceMasterIndices { get; }

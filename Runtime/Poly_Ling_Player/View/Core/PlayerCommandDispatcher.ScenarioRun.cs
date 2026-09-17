@@ -232,9 +232,35 @@ namespace Poly_Ling.Player
 
         private void RunStopScenarioRun(StopScenarioRunCommand cmd)
         {
-            bool had = _scenarioRun != null;
+            var run = _scenarioRun;
+            bool had = run != null;
+
+            // やめた位置を返す。流しを消すと queryScenarioRun からは見えなくなるので、ここで残す。
+            string root = "", scen = "", elem = "";
+            int stepNo = 0, executed = 0;
+            if (had)
+            {
+                root     = run.RootName ?? "";
+                executed = run.ExecutedCommands;
+                var fr   = run.Top;
+                if (fr != null)
+                {
+                    scen   = fr.Group?.Name ?? "";
+                    stepNo = fr.Index + 1;
+                    if (fr.Group?.Steps != null && fr.Index >= 0 && fr.Index < fr.Group.Steps.Count)
+                        elem = fr.Group.Steps[fr.Index]?.ElementId ?? "";
+                }
+            }
+
             _scenarioRun = null;
-            ReportData(CommandDataJson.New().Flag("stopped", had).Build());
+            ReportData(CommandDataJson.New()
+                .Flag("stopped",          had)
+                .Text("rootName",         root)
+                .Text("scenario",         scen)
+                .Text("elementId",        elem)
+                .Int ("stepNumber",       stepNo)
+                .Int ("executedCommands", executed)
+                .Build());
         }
 
         // ================================================================

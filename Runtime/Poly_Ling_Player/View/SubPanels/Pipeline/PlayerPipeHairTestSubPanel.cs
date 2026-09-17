@@ -541,8 +541,8 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// 毛先を前へ垂らす。コマンドではなく頂点を直接動かす検証用の段。
-        /// 確かめたいのは「ソースが変わったことをグループが気づけるか」だけなので経路は問わない。
+        /// 毛先を前へ垂らす。位置はここで計算し、書き込みは SetVertexPositionsCommand に通す。
+        /// 確かめたいのは「ソースが変わったことをグループが気づけるか」。
         /// </summary>
         protected override StageResult StageEditSource()
         {
@@ -562,19 +562,23 @@ namespace Poly_Ling.Player
             }
             float span = Mathf.Max(1e-6f, maxY - minY);
 
-            int moved = 0;
+            // 位置はここで計算し、書き込みは SetVertexPositionsCommand に通す（記録と Undo に残すため）。
+            var idx = new List<int>();
+            var pos = new List<float>();
             for (int i = 0; i < mo.VertexCount; i++)
             {
-                var v = mo.Vertices[i];
-                var p = v.Position;
+                var p = mo.Vertices[i].Position;
 
                 // 下ほど強く前へ。毛先が顔の前へ垂れる。
                 float t = 1f - (p.y - minY) / span;
                 if (t <= 0f) continue;
 
-                v.Position = p + new Vector3(0f, 0f, amount * t * t);
-                moved++;
+                var np = p + new Vector3(0f, 0f, amount * t * t);
+                idx.Add(i); pos.Add(np.x); pos.Add(np.y); pos.Add(np.z);
             }
+            if (idx.Count > 0)
+                SendCommand(new SetVertexPositionsCommand(ModelIndex, SourceIndex, idx.ToArray(), pos.ToArray()));
+            int moved = idx.Count;
 
             return Ok(
                 $"四分球の頂点 {moved} 個を前へ最大 {Mathf.Abs(amount):0.###} 倒した"

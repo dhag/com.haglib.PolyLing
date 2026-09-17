@@ -963,6 +963,8 @@ namespace Poly_Ling.Player
             ["RotorBladeSection"]   = new() { ["en"] = "Blade section", ["ja"] = "翼の断面",     ["hi"] = "はねの かたち" },
             ["RotorRootChord"]      = new() { ["en"] = "Root chord",    ["ja"] = "翼根の弦長",   ["hi"] = "ねもとの はば" },
             ["RotorTipChord"]       = new() { ["en"] = "Tip chord",     ["ja"] = "翼端の弦長",   ["hi"] = "さきの はば" },
+            ["RotorRootRoundness"] = new() { ["en"] = "Root roundness", ["ja"] = "翼根の丸み",   ["hi"] = "ねもとの まるみ" },
+            ["RotorTipRoundness"]  = new() { ["en"] = "Tip roundness",  ["ja"] = "翼端の丸み",   ["hi"] = "さきの まるみ" },
             ["RotorRootPitch"]      = new() { ["en"] = "Root pitch",    ["ja"] = "翼根のピッチ角", ["hi"] = "ねもとの かたむき" },
             ["RotorTipPitch"]       = new() { ["en"] = "Tip pitch",     ["ja"] = "翼端のピッチ角", ["hi"] = "さきの かたむき" },
             ["RotorThickness"]      = new() { ["en"] = "Thickness",     ["ja"] = "翼厚比",       ["hi"] = "あつみ" },

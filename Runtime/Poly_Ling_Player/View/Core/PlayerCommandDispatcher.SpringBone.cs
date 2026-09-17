@@ -149,6 +149,46 @@ namespace Poly_Ling.Player
                 }
 
                 // ── ジョイントを付ける
+                case ApplySpringBoneByPrefixCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var chains = Poly_Ling.Tools.SpringBoneRig.SpringBoneChainNaming.CollectChainsByName(model, c.NamePrefix);
+                    if (chains.Count == 0) { Fail($"接頭辞「{c.NamePrefix}」の鎖を見つけられません"); return true; }
+
+                    int maxLen = 0;
+                    foreach (var ch in chains) maxLen = Mathf.Max(maxLen, ch.Count);
+
+                    // 段ごとに同じ値を入れる（検証パネルがしていたのと同じ分け方）。
+                    for (int step = 0; step < maxLen; step++)
+                    {
+                        var atStep = new List<int>();
+                        foreach (var ch in chains) if (step < ch.Count) atStep.Add(ch[step]);
+                        if (atStep.Count == 0) continue;
+                        var r = Dispatch(new SetSpringBoneJointCommand(
+                            c.ModelIndex, atStep.ToArray(), c.HitRadius, c.Stiffness, c.GravityPower,
+                            new Vector3(0f, -1f, 0f), c.DragForce));
+                        if (r != null && !r.Success) { Fail($"setSpringBoneJoint が失敗しました: {r.Reason}"); return true; }
+                    }
+
+                    // 鎖の先頭。これが無いと VRM 側で 1 本の鎖として束ねられない。
+                    var roots = new List<int>(chains.Count);
+                    for (int i = 0; i < chains.Count; i++)
+                    {
+                        string chainName = Poly_Ling.Tools.SpringBoneRig.SpringBoneChainNaming.ChainName(c.NamePrefix, i, chains.Count);
+                        var r = Dispatch(new SetSpringBoneChainRootCommand(
+                            c.ModelIndex, chains[i][0], chainName, "", System.Array.Empty<int>()));
+                        if (r != null && !r.Success) { Fail($"setSpringBoneChainRoot が失敗しました: {r.Reason}"); return true; }
+                        roots.Add(chains[i][0]);
+                    }
+
+                    ReportData(CommandDataJson.New()
+                        .Int ("chains",      chains.Count)
+                        .Int ("levels",      maxLen)
+                        .Ints("rootIndices", roots)
+                        .Build());
+                    return true;
+                }
+
                 case SetSpringBoneJointCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
@@ -437,7 +477,7 @@ namespace Poly_Ling.Player
                     {
                         _undoController.MeshUndoContext.ParentModelContext = model;
                         _undoController.SetMeshObjectFor(sblSource, sblSource.UnityMesh);
-                        sblMeshBefore = _undoController.CaptureMeshObjectSnapshot();
+                        sblMeshBefore = _undoController.CaptureMeshObjectSnapshotOf(sblSource);
                     }
 
                     // ミラー側にも鎖を作るときの写し行列。
@@ -461,7 +501,7 @@ namespace Poly_Ling.Player
                     // 古い鎖はモデルに残る（Recreated が立つ）。
                     var sblResult = Poly_Ling.Tools.SpringBoneRig.SpringBoneLadderPlacer.Place(
                         model, sblSource, c.Method, c.SetName, c.Mode,
-                        c.AttachMasterIndex, c.NamePrefix,
+                        c.AttachToSourceParent ? (sblSource?.HierarchyParentIndex ?? -1) : c.AttachMasterIndex, c.NamePrefix,
                         c.ReverseChain, c.AddTailBone, c.TailLength, c.PaintWeights,
                         c.RungStride, c.ChainStride, c.BundleMode,
                         c.ChainRootMasterIndices, sblMirrorMatrix);
@@ -490,7 +530,7 @@ namespace Poly_Ling.Player
                         SyncSkinWeightToMirrors(model, sblSource, sblMirrors, sblWeightLabel);
 
                         _undoController.SetMeshObjectFor(sblSource, sblSource.UnityMesh);
-                        var sblMeshAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var sblMeshAfter = _undoController.CaptureMeshObjectSnapshotOf(sblSource);
                         _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                             _undoController, sblMeshBefore, sblMeshAfter, sblWeightLabel));
                     }

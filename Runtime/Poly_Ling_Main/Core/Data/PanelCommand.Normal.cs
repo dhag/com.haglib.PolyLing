@@ -265,7 +265,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>採番する描画オブジェクトの masterIndex。</summary>
-        [PLParam(TextKey = "PartsIdTargetMasterIndex",
+        [PLParam(TextKey = "PartsIdTargetMasterIndex", IsMeshRef = true,
                  Description = "採番する描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
 
@@ -277,7 +277,7 @@ namespace Poly_Ling.Data
         /// 1 パーツの頂点数を取る描画オブジェクトの masterIndex。-1 で未指定。
         /// ReferenceVertexCount 以外のモードでは無視する。
         /// </summary>
-        [PLParam(TextKey = "PartsIdReferenceMasterIndex",
+        [PLParam(TextKey = "PartsIdReferenceMasterIndex", IsMeshRef = true,
                  Description = "1 パーツの頂点数を取るオブジェクトの masterIndex。-1 で未指定")]
         public int ReferenceMasterIndex { get; }
 
@@ -324,7 +324,7 @@ namespace Poly_Ling.Data
     public class AssignPartsIdsByBoneWeightCommand : PanelCommand
     {
         /// <summary>採番する描画オブジェクトの masterIndex。</summary>
-        [PLParam(TextKey = "PartsIdByBoneWeightTargetMasterIndex",
+        [PLParam(TextKey = "PartsIdByBoneWeightTargetMasterIndex", IsMeshRef = true,
                  Description = "採番する描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
 
@@ -353,7 +353,7 @@ namespace Poly_Ling.Data
     public class SplitObjectByPartsIdCommand : PanelCommand
     {
         /// <summary>分解する描画オブジェクトの masterIndex。</summary>
-        [PLParam(TextKey = "PartsIdSplitTargetMasterIndex",
+        [PLParam(TextKey = "PartsIdSplitTargetMasterIndex", IsMeshRef = true,
                  Description = "分解する描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
 
@@ -382,11 +382,11 @@ namespace Poly_Ling.Data
                  Description = "転送先モデルの索引", Required = true)]
         public int   TargetModelIndex  { get; }
 
-        [PLParam(TextKey = "TransferSourceMeshIndices",
+        [PLParam(TextKey = "TransferSourceMeshIndices", IsMeshRef = true,
                  Description = "転送元メッシュの索引。TargetMeshIndices と同じ長さ", Required = true)]
         public int[] SourceMeshIndices { get; }
 
-        [PLParam(TextKey = "TransferTargetMeshIndices",
+        [PLParam(TextKey = "TransferTargetMeshIndices", IsMeshRef = true, MeshRefModelKey = "TargetModelIndex",
                  Description = "転送先メッシュの索引。SourceMeshIndices と同じ長さ", Required = true)]
         public int[] TargetMeshIndices { get; }
 
@@ -452,17 +452,17 @@ namespace Poly_Ling.Data
     public class ApplyNormalTransplantCommand : PanelCommand
     {
         /// <summary>ビフォー（内側の面）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "TransplantBeforeMasterIndex",
+        [PLParam(TextKey = "TransplantBeforeMasterIndex", IsMeshRef = true,
                  Description = "ビフォー（内側の面）の masterIndex", Required = true)]
         public int   BeforeMasterIndex   { get; }
 
         /// <summary>アフター（外側の面）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "TransplantAfterMasterIndex",
+        [PLParam(TextKey = "TransplantAfterMasterIndex", IsMeshRef = true,
                  Description = "アフター（外側の面）の masterIndex", Required = true)]
         public int   AfterMasterIndex    { get; }
 
         /// <summary>法線を差し替える MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "TransplantTargetMasterIndices",
+        [PLParam(TextKey = "TransplantTargetMasterIndices", IsMeshRef = true,
                  Description = "法線を差し替える描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] TargetMasterIndices { get; }
 

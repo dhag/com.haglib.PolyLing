@@ -323,7 +323,7 @@ namespace Poly_Ling.Player
             {
                 _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
-                before = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                before = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
             }
 
             // マテリアル割当。MeshObjectSnapshot は Materials も保持するので、
@@ -366,7 +366,7 @@ namespace Poly_Ling.Player
             // UNDO: 変更後スナップショット記録
             if (_editOps?.UndoController != null && before != null)
             {
-                var after = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                var after = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
                 _editOps.UndoController.RecordTopologyChange(before, after, $"Add Primitive to {targetMc.Name}");
             }
 
@@ -431,7 +431,7 @@ namespace Poly_Ling.Player
             {
                 _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
-                before = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                before = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
             }
 
             // マテリアル割当。MeshObjectSnapshot は Materials も保持するので、
@@ -472,7 +472,7 @@ namespace Poly_Ling.Player
             // UNDO: 変更後スナップショット記録
             if (_editOps?.UndoController != null && before != null)
             {
-                var after = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                var after = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
                 _editOps.UndoController.RecordTopologyChange(
                     before, after, $"Replace Contents of {targetMc.Name}");
             }

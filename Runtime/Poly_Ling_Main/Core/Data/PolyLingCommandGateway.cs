@@ -56,6 +56,8 @@ namespace Poly_Ling.Data
             }
             catch (Exception ex)
             {
+                // 呼んだ側には型と文言しか返らないので、どこで落ちたかをログに残す。
+                UnityEngine.Debug.LogException(ex);
                 return CommandResult.Fail($"{ex.GetType().Name}: {ex.Message}");
             }
         }

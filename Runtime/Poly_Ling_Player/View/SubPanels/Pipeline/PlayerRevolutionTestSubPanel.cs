@@ -248,11 +248,12 @@ namespace Poly_Ling.Player
             }
             float span = Mathf.Max(1e-6f, maxY - minY);
 
-            int moved = 0;
+            // 位置はここで計算し、書き込みは SetVertexPositionsCommand に通す（記録と Undo に残すため）。
+            var idx = new List<int>();
+            var pos = new List<float>();
             for (int i = 0; i < mo.VertexCount; i++)
             {
-                var v = mo.Vertices[i];
-                var p = v.Position;
+                var p = mo.Vertices[i].Position;
 
                 // 高さの中ほどが最も強い山型の重み。底と口は動かさない。
                 float t = (p.y - minY) / span;
@@ -262,9 +263,11 @@ namespace Poly_Ling.Player
                 // 軸上（x≒0）の点は動かさない。動かすと底が抜ける。
                 if (p.x < 1e-4f) continue;
 
-                v.Position = new Vector3(p.x + widen * w, p.y, p.z);
-                moved++;
+                idx.Add(i); pos.Add(p.x + widen * w); pos.Add(p.y); pos.Add(p.z);
             }
+            if (idx.Count > 0)
+                SendCommand(new SetVertexPositionsCommand(ModelIndex, ProfileIndex, idx.ToArray(), pos.ToArray()));
+            int moved = idx.Count;
 
             if (moved == 0)
                 return Ng("動かせる点が無かった", null,

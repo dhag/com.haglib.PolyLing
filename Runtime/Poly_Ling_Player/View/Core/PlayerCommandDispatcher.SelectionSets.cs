@@ -209,7 +209,7 @@ namespace Poly_Ling.Player
                             _undoController.SetMeshObject(mo, mc.UnityMesh);
                             _undoController.MeshUndoContext.ParentModelContext = model;
                         }
-                        var fhBefore = _undoController?.CaptureMeshObjectSnapshot();
+                        var fhBefore = _undoController?.CaptureMeshObjectSnapshotOf(mc);
 
                         int changed = ApplyFaceHidden(mc, c.Operation);
                         if (changed <= 0) continue;
@@ -219,7 +219,7 @@ namespace Poly_Ling.Player
 
                         if (_undoController != null && fhBefore != null)
                         {
-                            var fhAfter = _undoController.CaptureMeshObjectSnapshot();
+                            var fhAfter = _undoController.CaptureMeshObjectSnapshotOf(mc);
                             _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                                 _undoController, fhBefore, fhAfter, $"Face Hide ({c.Operation})"));
                         }
@@ -272,7 +272,7 @@ namespace Poly_Ling.Player
                             _undoController.SetMeshObject(mo, mc.UnityMesh);
                             _undoController.MeshUndoContext.ParentModelContext = model;
                         }
-                        var neBefore = _undoController?.CaptureMeshObjectSnapshot();
+                        var neBefore = _undoController?.CaptureMeshObjectSnapshotOf(mc);
 
                         int changed = ApplyNormalEdit(mc, c);
                         if (changed <= 0) continue;
@@ -286,7 +286,7 @@ namespace Poly_Ling.Player
 
                         if (_undoController != null && neBefore != null)
                         {
-                            var neAfter = _undoController.CaptureMeshObjectSnapshot();
+                            var neAfter = _undoController.CaptureMeshObjectSnapshotOf(mc);
                             _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                                 _undoController, neBefore, neAfter, $"Normal Edit ({c.Operation})"));
                         }

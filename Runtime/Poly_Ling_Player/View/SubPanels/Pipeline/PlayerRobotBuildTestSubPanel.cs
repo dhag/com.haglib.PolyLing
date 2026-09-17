@@ -467,8 +467,41 @@ namespace Poly_Ling.Player
         {
             _running = false;
             _runButton?.SetEnabled(true);
+            FlushRecorderStage();
             AddHeading("すべての系統を終えました");
+            FlushRecorderStage();
             SetStatus($"完了。保存 {_savedCount} 件。");
+        }
+
+        // ================================================================
+        // 手本の記録（ScenarioRecorder）へ段の文言を渡す
+        // ================================================================
+        //
+        // この検証パネルは PlayerStagedTestSubPanelBase を継いでいないので、基底の Ok / Ng が
+        // 記録器へ段の文言を渡す経路（BeginStage / AnnotateStage）を通らない。
+        // 見出し（AddHeading）を段の始まり、結果行（AddLine）と注記（AddNote）を段の中身として、
+        // 次の見出しか終了で段を閉じて記録器へ渡す。
+
+        private string _recStage;
+        private readonly System.Text.StringBuilder _recDid = new System.Text.StringBuilder();
+        private readonly System.Text.StringBuilder _recWhy = new System.Text.StringBuilder();
+        private bool _recFailed;
+
+        private void BeginRecorderStage(string stage)
+        {
+            FlushRecorderStage();
+            _recStage = stage;
+            ScenarioRecorder.BeginStage();
+        }
+
+        private void FlushRecorderStage()
+        {
+            if (string.IsNullOrEmpty(_recStage)) return;
+            ScenarioRecorder.AnnotateStage(_recStage, _recDid.ToString(), "", _recWhy.ToString(), _recFailed);
+            _recStage = null;
+            _recDid.Clear();
+            _recWhy.Clear();
+            _recFailed = false;
         }
 
         /// <summary>フォルダ名に使えない字を置き換える。</summary>
@@ -488,6 +521,7 @@ namespace Poly_Ling.Player
 
         private void AddHeading(string text)
         {
+            BeginRecorderStage(text);
             if (_resultView == null) return;
             var l = new Label("■ " + text);
             l.style.marginTop = 6;
@@ -499,6 +533,10 @@ namespace Poly_Ling.Player
         private void AddLine(string name, bool ok, string detail)
         {
             _log.Add((name, ok, detail));
+            if (_recDid.Length > 0) _recDid.Append(" / ");
+            _recDid.Append(ok ? "○ " : "× ").Append(name);
+            if (!string.IsNullOrEmpty(detail)) _recDid.Append("（").Append(detail).Append("）");
+            if (!ok) _recFailed = true;
             if (_resultView == null) return;
 
             var l = new Label($"  {(ok ? "○" : "×")} {name}" +
@@ -583,6 +621,8 @@ namespace Poly_Ling.Player
         {
             if (string.IsNullOrEmpty(text)) return;
             _commandLog.Add("[結果] " + text);
+            if (_recWhy.Length > 0) _recWhy.Append(" / ");
+            _recWhy.Append(text);
         }
 
         /// <summary>

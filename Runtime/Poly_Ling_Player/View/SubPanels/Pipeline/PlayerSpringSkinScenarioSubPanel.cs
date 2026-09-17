@@ -627,7 +627,7 @@ namespace Poly_Ling.Player
                 _ladderIndex,
                 BeltAcquireMethod.AutoRing,
                 SpringBoneLadderMode.Stack,
-                _attachIndex,
+                -1,   // 取り付け先は attachToSourceParent で決める
                 string.IsNullOrWhiteSpace(_prefix.value) ? "SpringLadder" : _prefix.value.Trim(),
                 setName: "",
                 reverseChain: false,
@@ -638,7 +638,8 @@ namespace Poly_Ling.Player
                 chainStride: Mathf.Max(1, _chainStride.value),
                 bundleMode: SpringBoneLadderBundleMode.Thin,
                 chainRootMasterIndices: null,
-                keepAsGroup: true));
+                keepAsGroup: true,
+                attachToSourceParent: true));   // 取り付け先は梯子の親。索引を焼かない（手本に記録したとき直書きにならない）
 
             return Ok(
                 "PlaceSpringBoneLadderChainsCommand を送った"
@@ -719,7 +720,7 @@ namespace Poly_Ling.Player
 
             string prefix = string.IsNullOrWhiteSpace(_prefix.value) ? "SpringLadder" : _prefix.value.Trim();
 
-            var chains = CollectChainsByName(model, prefix);
+            var chains = Poly_Ling.Tools.SpringBoneRig.SpringBoneChainNaming.CollectChainsByName(model, prefix);
             if (chains.Count == 0)
             {
                 if (Waited() < StageWaitLimit) return StageResult.Retry;
@@ -731,30 +732,14 @@ namespace Poly_Ling.Player
             int maxLen = 0;
             foreach (var ch in chains) maxLen = Mathf.Max(maxLen, ch.Count);
 
-            // 段ごとに同じ値を入れる。根元から先へ変化させたいときはパネル側の
-            // 「揺れもの（数値から）」と同じ taper を使うこと。ここでは一定。
-            for (int step = 0; step < maxLen; step++)
-            {
-                var atStep = new List<int>();
-                foreach (var ch in chains) if (step < ch.Count) atStep.Add(ch[step]);
-                if (atStep.Count == 0) continue;
-
-                SendCommand(new SetSpringBoneJointCommand(
-                    ModelIndex, atStep.ToArray(),
-                    _springHitRadius.value,
-                    _springStiffness.value,
-                    _springGravity.value,
-                    new Vector3(0f, -1f, 0f),
-                    _springDrag.value));
-            }
-
-            // 鎖の先頭。これが無いと VRM 側で 1 本の鎖として束ねられない。
-            for (int i = 0; i < chains.Count; i++)
-            {
-                string chainName = chains.Count > 1 ? $"{prefix}_{i:00}" : prefix;
-                SendCommand(new SetSpringBoneChainRootCommand(
-                    ModelIndex, chains[i][0], chainName, "", System.Array.Empty<int>()));
-            }
+            // 揺れ方と鎖の先頭は applySpringBoneByPrefix にまとめて渡す。
+            // 索引を 1 本ずつ撃つと、手本に記録したとき索引の直書きが数十段並ぶ。
+            SendCommand(new ApplySpringBoneByPrefixCommand(
+                ModelIndex, prefix,
+                _springHitRadius.value,
+                _springStiffness.value,
+                _springGravity.value,
+                _springDrag.value));
 
             return Ok(
                 $"鎖 {chains.Count} 本 / 段 {maxLen} へ揺れ方を入れ、鎖の先頭を指定した"
@@ -765,50 +750,7 @@ namespace Poly_Ling.Player
               + "出ず、ボーンとして動くだけで揺れない。");
         }
 
-        /// <summary>
-        /// 名前から鎖を組み立てる。{接頭辞}_{番号:00}_top → _1 → _2 … → _end の順。
-        /// 鎖が 1 本のときは番号が付かない（placer の命名と同じ）。
-        /// </summary>
-        private static List<List<int>> CollectChainsByName(ModelContext model, string prefix)
-        {
-            var byName = new Dictionary<string, int>(StringComparer.Ordinal);
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.Bone) continue;
-                if (string.IsNullOrEmpty(mc.Name)) continue;
-                if (!byName.ContainsKey(mc.Name)) byName[mc.Name] = i;
-            }
-
-            var chains = new List<List<int>>();
-
-            // 鎖 1 本だけの形も、番号付きの形も同じ手順で拾う。
-            var heads = new List<string>();
-            if (byName.ContainsKey(prefix + "_top")) heads.Add(prefix);
-            for (int c = 0; c < 1000; c++)
-            {
-                string name = $"{prefix}_{c:00}";
-                if (!byName.ContainsKey(name + "_top")) break;
-                heads.Add(name);
-            }
-
-            foreach (string head in heads)
-            {
-                var chain = new List<int> { byName[head + "_top"] };
-
-                for (int k = 1; k < 4096; k++)
-                {
-                    if (!byName.TryGetValue($"{head}_{k}", out int idx)) break;
-                    chain.Add(idx);
-                }
-
-                if (byName.TryGetValue(head + "_end", out int tail)) chain.Add(tail);
-
-                chains.Add(chain);
-            }
-
-            return chains;
-        }
+        // 鎖の組み立ては SpringBoneChainNaming.CollectChainsByName に寄せた（applySpringBoneByPrefix と共有）。
 
         // ================================================================
         // 段 8-10: フリル
@@ -1130,8 +1072,7 @@ namespace Poly_Ling.Player
                 $"ExportVrmFileCommand を送った（{_vrmPath.value}）",
                 "ファイルパネル → VRM 書き出し",
                 "スキンド系になっていて Humanoid の割当があることが前提。"
-              + "揺れ方（SpringBoneJoint）はこの検証では付けていないので、"
-              + "VRM 側の揺れ設定は空になる。");
+              + "揺れ方は段 7b（applySpringBoneByPrefix）で入れてあるので、VRM に VRMC_springBone が出る。");
         }
 
         // ================================================================

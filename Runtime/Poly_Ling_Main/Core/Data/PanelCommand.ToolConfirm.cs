@@ -29,7 +29,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定した辺をベベルする。")]
     public class EdgeBevelCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -87,7 +87,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定した辺または線分を押し出す。")]
     public class EdgeExtrudeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -134,7 +134,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定した面を押し出す。")]
     public class FaceExtrudeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -202,7 +202,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "2 つの三角形が共有する辺を入れ替える（対角線の切り替え）。")]
     public class EdgeTopologyFlipCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -239,7 +239,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "共有辺を消して 2 面を 1 面に結合する。")]
     public class EdgeTopologyDissolveCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -279,7 +279,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "四角形を対角線で 2 つの三角形に分割する。")]
     public class EdgeTopologySplitCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -334,7 +334,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "点列から線分・三角形・四角形を作る。")]
     public class AddFaceCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -407,7 +407,7 @@ namespace Poly_Ling.Data
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeLadderCutCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -477,7 +477,7 @@ namespace Poly_Ling.Data
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeBeltLoopCutCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -541,7 +541,7 @@ namespace Poly_Ling.Data
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeEraseEdgeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -587,7 +587,7 @@ namespace Poly_Ling.Data
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeSimpleCutCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }

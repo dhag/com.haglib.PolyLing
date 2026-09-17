@@ -102,13 +102,13 @@ namespace Poly_Ling.Data
         [PLParam(Description = "適用するローカル原点 CSV のパス。空なら適用しない")]
         public string OriginCsvPath { get; }
 
-        [PLParam(Description = "検証する描画オブジェクトの masterIndex。-1 で非スキンドのものを自動で選ぶ")]
+        [PLParam(Description = "検証する描画オブジェクトの masterIndex。-1 で非スキンドのものを自動で選ぶ", IsMeshRef = true)]
         public int MasterIndex { get; }
 
         [PLParam(Description = "検査する頂点の数。姿勢が動いた頂点の中から等間隔に拾う。既定 50")]
         public int SampleCount { get; }
 
-        [PLParam(Description = "ポーズ層を入れる対象の masterIndex。-1 で検証対象そのものへ入れる")]
+        [PLParam(Description = "ポーズ層を入れる対象の masterIndex。-1 で検証対象そのものへ入れる", IsMeshRef = true)]
         public int PoseBoneMasterIndex { get; }
 
         [PLParam(Description = "ポーズ層へ入れる Z 回転[度]")]
@@ -202,13 +202,13 @@ namespace Poly_Ling.Data
         [PLParam(Description = "適用するローカル原点 CSV のパス。空なら適用しない")]
         public string OriginCsvPath { get; }
 
-        [PLParam(Description = "検証する描画オブジェクトの masterIndex。-1 で非スキンドのものを自動で選ぶ")]
+        [PLParam(Description = "検証する描画オブジェクトの masterIndex。-1 で非スキンドのものを自動で選ぶ", IsMeshRef = true)]
         public int MasterIndex { get; }
 
         [PLParam(Description = "検査する頂点の数。姿勢が動いた頂点の中から等間隔に拾う。既定 50")]
         public int SampleCount { get; }
 
-        [PLParam(Description = "ポーズ層を入れる対象の masterIndex。-1 で検証対象そのものへ入れる")]
+        [PLParam(Description = "ポーズ層を入れる対象の masterIndex。-1 で検証対象そのものへ入れる", IsMeshRef = true)]
         public int PoseBoneMasterIndex { get; }
 
         [PLParam(Description = "ポーズ層へ入れる Z 回転[度]")]
@@ -293,10 +293,10 @@ namespace Poly_Ling.Data
         [PLParam(Description = "適用するローカル原点 CSV のパス。空なら適用しない")]
         public string OriginCsvPath { get; }
 
-        [PLParam(Description = "検証する描画オブジェクトの masterIndex。-1 で非スキンドのものを自動で選ぶ")]
+        [PLParam(Description = "検証する描画オブジェクトの masterIndex。-1 で非スキンドのものを自動で選ぶ", IsMeshRef = true)]
         public int MasterIndex { get; }
 
-        [PLParam(Description = "ポーズ層を入れる対象の masterIndex。-1 で検証対象そのものへ入れる")]
+        [PLParam(Description = "ポーズ層を入れる対象の masterIndex。-1 で検証対象そのものへ入れる", IsMeshRef = true)]
         public int PoseBoneMasterIndex { get; }
 
         [PLParam(Description = "ポーズ層へ入れる Z 回転[度]")]

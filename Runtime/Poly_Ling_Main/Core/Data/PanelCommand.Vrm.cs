@@ -396,7 +396,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "描画オブジェクトの一人称カメラでの扱いを決める。0=自動 1=両方 2=三人称のみ 3=一人称のみ。")]
     public class SetVrmFirstPersonCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 

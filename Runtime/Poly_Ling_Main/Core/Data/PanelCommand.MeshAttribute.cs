@@ -19,7 +19,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "オブジェクト 1 つの表示・非表示を切り替える。")]
     public class ToggleVisibilityCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
         public ToggleVisibilityCommand(int modelIndex, int masterIndex)
@@ -29,7 +29,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "複数オブジェクトの表示・非表示を一括で設定する。")]
     public class SetBatchVisibilityCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -43,7 +43,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "オブジェクト 1 つのロックを切り替える。ロック中は編集できない。")]
     public class ToggleLockCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
         public ToggleLockCommand(int modelIndex, int masterIndex)
@@ -57,7 +57,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "複数オブジェクトのロック状態を一括設定する。")]
     public class SetBatchLockCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -86,7 +86,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ミラーの有無そのものを切り替える。種別を変えるだけの操作と違い、ミラー側のオブジェクトを作る／片付ける。")]
     public class SetMirrorEnabledCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -106,7 +106,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "複数オブジェクトのミラータイプを一括設定する。")]
     public class SetBatchMirrorTypeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -133,7 +133,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "オブジェクトの編集者（担当者）を設定・解放するコマンド。")]
     public class SetObjectEditorCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]   MasterIndices { get; }
 
@@ -168,7 +168,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "IgnorePoseInArmature フラグを設定するコマンド。")]
     public class SetIgnorePoseCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -303,7 +303,7 @@ namespace Poly_Ling.Data
     public class ApplyObjectPoseWedgesCommand : PanelCommand
     {
         /// <summary>コンテナの MeshContextList 索引。-1 なら名前で自動検出。</summary>
-        [PLParam(TextKey = "WedgeContainerMasterIndex",
+        [PLParam(TextKey = "WedgeContainerMasterIndex", IsMeshRef = true,
                  Description = "くさびコンテナの masterIndex。-1 で名前から自動検出", Required = true)]
         public int ContainerMasterIndex { get; }
 
@@ -322,7 +322,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "PreserveNormals フラグ（頂点法線を自動再計算しない）を設定するコマンド。")]
     public class SetPreserveNormalsCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -340,7 +340,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "描画オブジェクトをカメラへ正対させる（ビルボード）表示を設定する。表示だけの切替で、頂点も姿勢も変えない。UV を XYZ へ展開した板のような 2D の面を、視点を問わず正面から編集するために使う。")]
     public class SetMeshBillboardCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -356,7 +356,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ミラー分岐ルートのフラグを設定するコマンド。")]
     public class SetMirrorBranchRootCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -370,7 +370,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "オブジェクト 1 つのミラー種別を次の値へ送る。")]
     public class CycleMirrorTypeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
         public CycleMirrorTypeCommand(int modelIndex, int masterIndex)
@@ -380,7 +380,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "オブジェクト 1 つの名前を変える。")]
     public class RenameMeshCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -402,7 +402,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "複数オブジェクトの名前を一括変更する（名称一括変更 CSV 用）。")]
     public class RenameMeshesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]    MasterIndices { get; }
 
@@ -419,7 +419,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "メッシュの TreeView 折りたたみ状態変更")]
     public class SetMeshFoldingCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
 

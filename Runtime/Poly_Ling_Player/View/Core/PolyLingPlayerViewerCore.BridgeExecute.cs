@@ -72,7 +72,7 @@ namespace Poly_Ling.Player
             {
                 _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
-                before = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                before = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
             }
 
             // 両端とも同じオブジェクトの既存頂点なので reuse。追加されるのは中間頂点だけ。
@@ -90,7 +90,7 @@ namespace Poly_Ling.Player
 
             if (_editOps?.UndoController != null && before != null)
             {
-                var after = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                var after = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
                 _editOps.UndoController.RecordTopologyChange(
                     before, after, $"Edge Bridge in {targetMc.Name}");
             }
@@ -164,7 +164,7 @@ namespace Poly_Ling.Player
             {
                 _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
-                before = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                before = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
             }
 
             // 書き込み先自身の座標系へ落とす。スキンドなら頂点はワールド空間なので恒等。
@@ -183,7 +183,7 @@ namespace Poly_Ling.Player
 
             if (_editOps?.UndoController != null && before != null)
             {
-                var after = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                var after = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
                 _editOps.UndoController.RecordTopologyChange(
                     before, after, $"Bridge into {targetMc.Name}");
             }

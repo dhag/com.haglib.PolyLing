@@ -43,6 +43,26 @@
 - **コンストラクタは 1 つだけ。** 多重定義すると引数の多い方が選ばれる
 - **入れ子の配列は送れない。** 可変長は平坦な列 2 本で持つ（値の列と区切りの列）
 - **説明に XML タグを混ぜない。** `</summary>` の混入が過去 39 件あった
+- **描画オブジェクトの索引を受ける引数には `IsMeshRef = true` を付ける。** 付けないと
+  `queryScenarioAudit` が直書きを見逃す。付け忘れは `queryCommandAudit` の「[参考]」に出る
+- **対象を変えたコマンドは、変えたオブジェクトを `ReportData(..., masterIndices, objectIds)` で返す。**
+  返さないと手本の次の段が `@prev.masterIndices` を引けない（`booleanMesh` がこれで e5 を落としていた）。
+  索引を報告するときは引数の値ではなく、解決した実体から `MeshContextList.IndexOf` で引き直す
+- **失敗は `Fail` で返す。** ログに警告を出して `return true` だけにすると、呼んだ側には成功に見える
+- **面や頂点を書き換えるなら Undo を残す。** 形は `applyLscmUnwrap` と同じ
+  （`SetMeshObject` → 前後で `CaptureMeshObjectSnapshotOf(対象の MeshContext)` → `RecordTopologyChange`）。
+  引数なしの `CaptureMeshObjectSnapshot()` は捕獲元を持たず、取り消しが「その時点で先頭に選ばれているメッシュ」へ
+  書き戻される。索引で対象を受けるコマンドでは選択と対象が一致しないので使わない
+- **頂点 ID・面 ID を自動で振らない（`AssignMissingIds` を呼ばない）。**
+
+### 既にある口（作る前に探す）
+
+| したいこと | 口 |
+|---|---|
+| 名前から索引を引く | `selectDrawablesByName`（戻り値の `masterIndices` を `@` で渡す） |
+| 描画オブジェクトの親子を名前で張る | `setParentsByName(names[], parentNames[])`。深さは自動、ワールド姿勢は保つ。ボーンは `setBoneParent` |
+| 照会の対象を省く | `queryBoundaryEdges` / `queryFacesInBox` / `queryNearestBoundaryVertex` / `acquireBeltStrips` / `resolveTJunctions` / `saveSelectionToDataStore` は `masterIndex` を省くと編集対象 |
+| ブーリアンで面が欠ける箇所を調べる | `diagnoseBoolean`（モデルは変えない。段階ごとの穴・BSP の分岐の回数・所要時間を返す） |
 
 ---
 

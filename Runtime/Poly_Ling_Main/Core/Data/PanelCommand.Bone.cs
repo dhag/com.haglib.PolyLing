@@ -19,7 +19,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定ボーンのポーズ層を作り直して初期状態にする。")]
     public class InitBonePoseCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public InitBonePoseCommand(int modelIndex, int[] masterIndices)
@@ -29,7 +29,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定ボーンのポーズ層を有効・無効にする。")]
     public class SetBonePoseActiveCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -43,7 +43,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定ボーンのポーズ層をすべて空にする。姿勢は既定へ戻る。")]
     public class ResetBonePoseLayersCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public ResetBonePoseLayersCommand(int modelIndex, int[] masterIndices)
@@ -53,7 +53,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "今のポーズをバインドポーズへ焼き込み、ポーズ層を空にする。")]
     public class BakePoseToBindPoseCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public BakePoseToBindPoseCommand(int modelIndex, int[] masterIndices)
@@ -70,7 +70,7 @@ namespace Poly_Ling.Data
     {
         public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }
 
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -121,7 +121,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ポーズ層（Manual）の Position / Rotation の 1 軸だけを変える。バインド側は動かさない。")]
     public class SetBonePoseValueCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の masterIndex 配列。ボーンでも描画オブジェクトでもよい", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -148,7 +148,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "BoneTransform のスライダー操作を始める（Undo のスナップショットを取る）。")]
     public class BeginBoneTransformSliderDragCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -245,7 +245,7 @@ namespace Poly_Ling.Data
         public string[] BoneNames   { get; }
 
         [PLParam(TextKey = "HumanoidBoneIndices",
-                 Description = "対応するボーンの masterIndex。BoneNames と同じ並び", Required = true)]
+                 Description = "対応するボーンの masterIndex。BoneNames と同じ並び。boneObjectNames を渡すときは省く")]
         public int[]    BoneIndices { get; }
 
         /// <summary>平行配列から起こしたマッピング。受け口はこちらを使う。</summary>
@@ -285,12 +285,21 @@ namespace Poly_Ling.Data
             boneIndices = idx.ToArray();
         }
 
-        public ApplyHumanoidMappingCommand(int modelIndex, string[] boneNames, int[] boneIndices)
+        public ApplyHumanoidMappingCommand(int modelIndex, string[] boneNames, int[] boneIndices = null, string[] boneObjectNames = null)
             : base(modelIndex)
         {
-            BoneNames   = boneNames   ?? System.Array.Empty<string>();
-            BoneIndices = boneIndices ?? System.Array.Empty<int>();
+            BoneNames       = boneNames       ?? System.Array.Empty<string>();
+            BoneIndices     = boneIndices     ?? System.Array.Empty<int>();
+            BoneObjectNames = boneObjectNames ?? System.Array.Empty<string>();
         }
+
+        /// <summary>
+        /// 対応するボーンをオブジェクト名で渡す。BoneNames と同じ並び。
+        /// 渡したときは BoneIndices を使わず、実行時に名前から索引を引く
+        /// （手本に索引を焼かないため。robot_build_skin の e7）。
+        /// </summary>
+        [PLParam(Description = "対応するボーンのオブジェクト名。BoneNames と同じ並び。渡すと boneIndices の代わりに名前から索引を引く")]
+        public string[] BoneObjectNames { get; }
     }
 
     /// <summary>モデルのHumanoidマッピングをクリアする</summary>
@@ -316,7 +325,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選んだボーンへ Humanoid マッスル可動域を書き込む。角度は度。既にあれば上書きする。")]
     public class SetHumanLimitCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象ボーンの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -358,7 +367,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選んだボーンから Humanoid マッスル可動域を外し、Unity 既定へ戻す。")]
     public class ClearHumanLimitCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象ボーンの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 

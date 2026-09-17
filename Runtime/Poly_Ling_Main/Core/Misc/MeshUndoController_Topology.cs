@@ -27,9 +27,23 @@ namespace Poly_Ling.UndoSystem
         /// 【注意】この版ではEdge/Line選択は保存されない
         /// Edge/Line選択も保存したい場合はselectionState付きの版を使用
         /// </summary>
+        [System.Obsolete("捕獲元を持たないので、取り消しが取り消し時点の先頭の選択メッシュへ書き戻される。CaptureMeshObjectSnapshotOf(対象の MeshContext) を使う")]
         public MeshObjectSnapshot CaptureMeshObjectSnapshot()
         {
             return MeshObjectSnapshot.Capture(_meshContext);
+        }
+
+        /// <summary>
+        /// 対象の MeshContext を控えてスナップショットを取る。
+        ///
+        /// 引数なしの版は捕獲元（SourceMeshContext）を持たないので、取り消しの書き戻し先が
+        /// 「取り消した時点で先頭に選ばれているメッシュ」になる（MeshObjectSnapshot.WriteMeshObjectTo）。
+        /// コマンドが索引で対象を受ける場合、選択と対象は一致しないことがあるので、こちらを使う。
+        /// mc が null のときは引数なしの版と同じ。
+        /// </summary>
+        public MeshObjectSnapshot CaptureMeshObjectSnapshotOf(MeshContext mc)
+        {
+            return mc != null ? MeshObjectSnapshot.Capture(mc, _meshContext) : MeshObjectSnapshot.Capture(_meshContext);
         }
 
         /// <summary>

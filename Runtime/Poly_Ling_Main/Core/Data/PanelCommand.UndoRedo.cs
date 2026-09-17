@@ -48,7 +48,7 @@ namespace Poly_Ling.Data
     public class MatchHoleRingCountCommand : PanelCommand
     {
         /// <summary>基準穴のあるメッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "HoleRingBaseMesh", Description = "基準穴のメッシュ索引", Required = true)]
+        [PLParam(TextKey = "HoleRingBaseMesh", IsMeshRef = true, Description = "基準穴のメッシュ索引", Required = true)]
         public int BaseMeshIndex { get; }
 
         /// <summary>基準穴の種頂点。</summary>
@@ -60,7 +60,7 @@ namespace Poly_Ling.Data
         public int BaseDirectionHint { get; }
 
         /// <summary>対象穴のあるメッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "HoleRingTargetMesh", Description = "対象穴のメッシュ索引", Required = true)]
+        [PLParam(TextKey = "HoleRingTargetMesh", IsMeshRef = true, Description = "対象穴のメッシュ索引", Required = true)]
         public int TargetMeshIndex { get; }
 
         /// <summary>対象穴の種頂点。</summary>
@@ -104,7 +104,7 @@ namespace Poly_Ling.Data
     public class DeleteFacesCommand : PanelCommand
     {
         /// <summary>対象メッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "DeleteFacesMesh", Description = "対象メッシュの索引", Required = true)]
+        [PLParam(TextKey = "DeleteFacesMesh", IsMeshRef = true, Description = "対象メッシュの索引", Required = true)]
         public int MeshIndex { get; }
 
         /// <summary>消す面の番号。</summary>
@@ -132,7 +132,7 @@ namespace Poly_Ling.Data
         public Poly_Ling.Tools.ObjectArray.ObjectArrayParams Params { get; }
 
         /// <summary>複製元の MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "ObjectArraySources", Description = "複製元オブジェクトの索引", Required = true)]
+        [PLParam(TextKey = "ObjectArraySources", IsMeshRef = true, Description = "複製元オブジェクトの索引", Required = true)]
         public int[] SourceMasterIndices { get; }
 
         /// <summary>

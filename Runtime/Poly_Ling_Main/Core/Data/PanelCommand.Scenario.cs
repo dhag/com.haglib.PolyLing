@@ -572,6 +572,11 @@ namespace Poly_Ling.Data
     /// <summary>流すのをやめる。</summary>
     [PLCommand(Description = "流している手本をやめる。それまでに実行した段の結果はモデルに残る（元に戻すのは Undo）。")]
     [PLResult("stopped", PLResultKind.Flag, Description = "流していたものをやめたか")]
+    [PLResult("rootName",         PLResultKind.Text,    Description = "やめた流しの先頭の手本")]
+    [PLResult("scenario",         PLResultKind.Text,    Description = "やめたときに居た手本（呼ばれた手本の中ならその名前）")]
+    [PLResult("elementId",        PLResultKind.Text,    Description = "やめたときに次に処理するはずだった段")]
+    [PLResult("stepNumber",       PLResultKind.Integer, Description = "その段の番号（1 始まり）")]
+    [PLResult("executedCommands", PLResultKind.Integer, Description = "やめるまでに実行したコマンドの数")]
     public sealed class StopScenarioRunCommand : PanelCommand
     {
         public StopScenarioRunCommand(int modelIndex = 0)

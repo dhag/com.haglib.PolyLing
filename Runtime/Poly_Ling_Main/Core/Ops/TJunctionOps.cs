@@ -57,7 +57,13 @@ namespace Poly_Ling.Ops
 
             // 位置で引けるよう、粗い格子に頂点を入れておく。
             // 全頂点を総当たりすると面数×辺数×頂点数になって重い。
-            float cell = Mathf.Max(tol * 8f, 1e-3f);
+            //
+            // 格子の一辺は辺の長さの平均に合わせる。CollectNear は辺を囲む箱の中の
+            // 格子を 3 重ループで全部引くので、一辺を許容量から決めると
+            // （以前は max(tol×8, 1e-3)）長さ 0.1 の辺 1 本で数万〜数十万回辞書を引き、
+            // 738 頂点の球で 13 秒かかっていた。辺の長さに合わせれば 1 本あたり数個で済む。
+            // 候補の集め方が変わるだけで、挿入の判定（下のループ）は変わらない。
+            float cell = Mathf.Max(tol * 8f, AverageEdgeLength(mesh));
             var grid = new Dictionary<(int, int, int), List<int>>();
 
             for (int v = 0; v < mesh.VertexCount; v++)
@@ -132,6 +138,26 @@ namespace Poly_Ling.Ops
 
         private static (int, int, int) CellOf(Vector3 p, float cell)
             => (Mathf.FloorToInt(p.x / cell), Mathf.FloorToInt(p.y / cell), Mathf.FloorToInt(p.z / cell));
+
+        /// <summary>面の辺の長さの平均。辺が無ければ 0。</summary>
+        private static float AverageEdgeLength(MeshObject mesh)
+        {
+            double sum = 0;
+            long count = 0;
+            for (int f = 0; f < mesh.FaceCount; f++)
+            {
+                var idx = mesh.Faces[f]?.VertexIndices;
+                if (idx == null || idx.Count < 2) continue;
+                for (int e = 0; e < idx.Count; e++)
+                {
+                    Vector3 p1 = mesh.Vertices[idx[e]].Position;
+                    Vector3 p2 = mesh.Vertices[idx[(e + 1) % idx.Count]].Position;
+                    sum += (p2 - p1).magnitude;
+                    count++;
+                }
+            }
+            return count > 0 ? (float)(sum / count) : 0f;
+        }
 
         /// <summary>辺の通る格子と、その周り 1 つぶんの頂点を集める。</summary>
         private static void CollectNear(

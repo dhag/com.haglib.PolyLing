@@ -543,6 +543,14 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 照会の対象を引く。モデルと描画オブジェクトの両方が取れたときだけ true。
+        ///
+        /// masterIndex が負なら、編集対象（ActiveMeshContext）を使う。
+        /// 引数の説明に「省くと現在の編集対象」と書いたコマンドがここを通るため
+        /// （acquireBeltStrips / resolveTJunctions / queryBoundaryEdges /
+        ///   queryFacesInBox / queryNearestBoundaryVertex）。
+        /// 規則は saveSelectionToDataStore と同じ。
+        /// 呼び出し側は、報告する対象の索引を c.MasterIndex ではなく
+        /// model.MeshContextList.IndexOf(mc) から取ること（負のまま報告しないため）。
         /// </summary>
         private static bool TryGetQueryTarget(
             ProjectContext project, int modelIndex, int masterIndex,
@@ -555,8 +563,16 @@ namespace Poly_Ling.Player
             model = project?.GetModel(modelIndex);
             if (model == null) { reason = $"no model at index {modelIndex}"; return false; }
 
-            mc = model.GetMeshContext(masterIndex);
-            if (mc == null) { reason = $"no object at masterIndex {masterIndex}"; return false; }
+            if (masterIndex < 0)
+            {
+                mc = model.ActiveMeshContext;
+                if (mc == null) { reason = "masterIndex を省きましたが、編集対象がありません"; return false; }
+            }
+            else
+            {
+                mc = model.GetMeshContext(masterIndex);
+                if (mc == null) { reason = $"no object at masterIndex {masterIndex}"; return false; }
+            }
 
             if (mc.MeshObject == null)
             {

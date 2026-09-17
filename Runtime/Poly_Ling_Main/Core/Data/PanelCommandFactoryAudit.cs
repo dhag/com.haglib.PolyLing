@@ -259,6 +259,17 @@ namespace Poly_Ling.Data
                 foreach (var n in badDesc) sb.Append('\n').Append("  ").Append(n);
             }
 
+            // コンストラクタの多重定義。PickConstructor は引数の多い方を選ぶので、
+            // 少ない方で既定値を補うつもりの引数まで MCP から必須になる（BakeMirrorCommand で起きた）。
+            // 既定値付きの引数を持つコンストラクタ 1 つにまとめること。
+            var multiCtor = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+                if (t.GetConstructors().Length > 1) multiCtor.Add(t.Name);
+
+            sb.Append('\n')
+              .Append("[PanelCommandFactoryAudit] コンストラクタが複数あるコマンド ").Append(multiCtor.Count);
+            foreach (var n in multiCtor) sb.Append('\n').Append("  ").Append(n);
+
             // 【参考】索引の印（IsMeshRef）の付け忘れ。完了条件（全項目 0）には入れない。
             // queryScenarioAudit はこの印で焼いてはいけない索引を見分けるので、
             // 印の無い引数は点検を素通りする。どれだけ漏れているかを出す。

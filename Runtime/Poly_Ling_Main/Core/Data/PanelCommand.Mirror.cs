@@ -42,7 +42,7 @@ namespace Poly_Ling.Data
         /// </summary>
         public const int MirrorAxisCount = 3;
 
-        [PLParam(TextKey = "BakeMirrorSourceMasterIndex",
+        [PLParam(TextKey = "BakeMirrorSourceMasterIndex", IsMeshRef = true,
                  Description = "ミラーを実体化する描画オブジェクトの masterIndex", Required = true)]
         public int   SourceMasterIndex { get; }
 
@@ -76,21 +76,15 @@ namespace Poly_Ling.Data
                  Description = "境界頂点をミラー平面へ射影する。既定は true")]
         public bool ProjectBoundaryToPlane { get; }
 
-        public BakeMirrorCommand(int modelIndex, int sourceMasterIndex, int mirrorAxis, float threshold, bool flipU)
-            : this(modelIndex, sourceMasterIndex, mirrorAxis, threshold, flipU,
-                   0f, MirrorBoundaryMode.Threshold, true)
-        {
-        }
-
         public BakeMirrorCommand(
             int modelIndex,
             int sourceMasterIndex,
             int mirrorAxis,
             float threshold,
             bool flipU,
-            float planeOffset,
-            MirrorBoundaryMode boundaryMode,
-            bool projectBoundaryToPlane)
+            float planeOffset = 0f,
+            MirrorBoundaryMode boundaryMode = MirrorBoundaryMode.Threshold,
+            bool projectBoundaryToPlane = true)
             : base(modelIndex)
         {
             SourceMasterIndex      = sourceMasterIndex;
@@ -111,7 +105,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ミラー実体化を解除して半身へ戻す（in-place）。")]
     public class UnbakeMirrorCommand : PanelCommand
     {
-        [PLParam(TextKey = "UnbakeSourceMasterIndex",
+        [PLParam(TextKey = "UnbakeSourceMasterIndex", IsMeshRef = true,
                  Description = "ミラーを解除する描画オブジェクトの masterIndex", Required = true)]
         public int SourceMasterIndex { get; }
 
@@ -129,16 +123,11 @@ namespace Poly_Ling.Data
                  Description = "実体化前のミラー設定へ戻す。false で MirrorType = 2 を強制する")]
         public bool RestoreSavedMirrorSettings { get; }
 
-        public UnbakeMirrorCommand(int modelIndex, int sourceMasterIndex, Poly_Ling.Tools.WriteBackMode mode)
-            : this(modelIndex, sourceMasterIndex, mode, false)
-        {
-        }
-
         public UnbakeMirrorCommand(
             int modelIndex,
             int sourceMasterIndex,
             Poly_Ling.Tools.WriteBackMode mode,
-            bool restoreSavedMirrorSettings)
+            bool restoreSavedMirrorSettings = false)
             : base(modelIndex)
         {
             SourceMasterIndex          = sourceMasterIndex;

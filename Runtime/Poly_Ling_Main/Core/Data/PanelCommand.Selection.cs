@@ -156,8 +156,7 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "PartsSetExportFolder",
                  Description = "書き出し先フォルダ。作業フォルダからの相対経路。絶対経路と \"..\" は拒否される（ダイアログで選んだ直後のパスだけは例外）")]
         public string FolderPath { get; }
-        public ExportPartsSetsCsvCommand(int modelIndex) : base(modelIndex) { FolderPath = null; }
-        public ExportPartsSetsCsvCommand(int modelIndex, string folderPath)
+        public ExportPartsSetsCsvCommand(int modelIndex, string folderPath = null)
             : base(modelIndex) { FolderPath = folderPath; }
     }
 
@@ -176,9 +175,7 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "PartsSetImportByObjectName",
                  Description = "ファイル内の \"# object\" 名と一致するオブジェクトへ読み込む。既定は false")]
         public bool   ByObjectName { get; }
-        public ImportPartsSetCsvCommand(int modelIndex)
-            : base(modelIndex) { FolderPath = null; ByObjectName = false; }
-        public ImportPartsSetCsvCommand(int modelIndex, string folderPath, bool byObjectName)
+        public ImportPartsSetCsvCommand(int modelIndex, string folderPath = null, bool byObjectName = false)
             : base(modelIndex) { FolderPath = folderPath; ByObjectName = byObjectName; }
     }
 
@@ -321,7 +318,7 @@ namespace Poly_Ling.Data
         public enum SelectOp { Replace, Add, Remove, Toggle }
 
         /// <summary>Replace のときに選択を消す対象メッシュの範囲</summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "非加算のときに選択を消す対象の masterIndex 配列", Required = true)]
         public int[]   MasterIndices     { get; }
 
@@ -335,7 +332,7 @@ namespace Poly_Ling.Data
         public int[]   VertexIndices     { get; }
 
         /// <summary>VertexIndices と同じ並び・同じ長さ。各頂点が属する masterIndex</summary>
-        [PLParam(TextKey = "SelectVertexMeshIndices",
+        [PLParam(TextKey = "SelectVertexMeshIndices", IsMeshRef = true,
                  Description = "VertexIndices と同じ並び・同じ長さの masterIndex", Required = true)]
         public int[]   VertexMeshIndices { get; }
 
@@ -345,7 +342,7 @@ namespace Poly_Ling.Data
         public int[]   EdgePairs         { get; }
 
         /// <summary>EdgePairs の組ごとの masterIndex。長さは EdgePairs の半分</summary>
-        [PLParam(TextKey = "SelectEdgeMeshIndices",
+        [PLParam(TextKey = "SelectEdgeMeshIndices", IsMeshRef = true,
                  Description = "EdgePairs の組ごとの masterIndex。長さは EdgePairs の半分", Required = true)]
         public int[]   EdgeMeshIndices   { get; }
 
@@ -355,7 +352,7 @@ namespace Poly_Ling.Data
         public int[]   FaceIndices       { get; }
 
         /// <summary>FaceIndices と同じ並び・同じ長さ。各面が属する masterIndex</summary>
-        [PLParam(TextKey = "SelectFaceMeshIndices",
+        [PLParam(TextKey = "SelectFaceMeshIndices", IsMeshRef = true,
                  Description = "FaceIndices と同じ並び・同じ長さの masterIndex", Required = true)]
         public int[]   FaceMeshIndices   { get; }
 
@@ -365,7 +362,7 @@ namespace Poly_Ling.Data
         public int[]   LineIndices       { get; }
 
         /// <summary>LineIndices と同じ並び・同じ長さ。各線分が属する masterIndex</summary>
-        [PLParam(TextKey = "SelectLineMeshIndices",
+        [PLParam(TextKey = "SelectLineMeshIndices", IsMeshRef = true,
                  Description = "LineIndices と同じ並び・同じ長さの masterIndex", Required = true)]
         public int[]   LineMeshIndices   { get; }
 
@@ -425,7 +422,7 @@ namespace Poly_Ling.Data
         /// 受け口は「1 個で、それが編集対象と一致すること」を要求する。
         /// 配列にしてあるのは他コマンドと形を揃えて ObjectIds と対にするため。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個", Required = true)]
         public int[]              MasterIndices     { get; }
 
@@ -560,7 +557,7 @@ namespace Poly_Ling.Data
         /// 実処理は編集対象メッシュ 1 本にしか効かないため、受け口は
         /// 「1 個で、それが編集対象と一致すること」を要求する。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個", Required = true)]
         public int[]              MasterIndices           { get; }
 

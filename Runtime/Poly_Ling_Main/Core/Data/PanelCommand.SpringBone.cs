@@ -104,7 +104,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定したノードを揺れチェーンの起点にする。ジョイントが無ければ同時に付ける。")]
     public class SetSpringBoneChainRootCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "起点にするノードの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -136,7 +136,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "揺れチェーンの起点指定を外す。ジョイントは残る。")]
     public class ClearSpringBoneChainRootCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象ノードの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -151,7 +151,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選んだノードへ揺れジョイントを付ける。既に付いていれば値を上書きする。")]
     public class SetSpringBoneJointCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象ノードの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -225,7 +225,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選んだノードから揺れジョイントを外す。起点指定も一緒に外れる。")]
     public class ClearSpringBoneJointCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象ノードの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -245,7 +245,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "揺れチェーンの末端に子ボーンを 1 本足す。末端は tail 扱いで揺れないための手当て。")]
     public class AddSpringBoneTailBoneCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "末端ボーンの masterIndex 配列。子ボーンを持つものは飛ばす", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -283,7 +283,7 @@ namespace Poly_Ling.Data
     [PLResult("additive",        PLResultKind.Flag,    Description = "既存の選択に足したか")]
     public class SelectBoneChainCommand : PanelCommand
     {
-        [PLParam(TextKey = "SpringBoneChainRootIndex",
+        [PLParam(TextKey = "SpringBoneChainRootIndex", IsMeshRef = true,
                  Description = "辿り始めるノードの masterIndex", Required = true)]
         public int RootMasterIndex { get; }
 
@@ -314,7 +314,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "描画オブジェクトの頂点に効いているボーンを選択する。頂点選択があればその範囲だけを見る。")]
     public class SelectBonesByVertexWeightCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -352,7 +352,7 @@ namespace Poly_Ling.Data
                  Required = true)]
         public SpringBoneChainLayout Layout { get; }
 
-        [PLParam(TextKey = "SpringBoneAttachIndex",
+        [PLParam(TextKey = "SpringBoneAttachIndex", IsMeshRef = true,
                  Description = "親にするボーンの masterIndex。-1 で親を付けない")]
         public int AttachMasterIndex { get; }
 
@@ -367,7 +367,7 @@ namespace Poly_Ling.Data
         /// 当たり前なので、あとから親を付け替えて位置を直すことはできない。
         /// 作る時点で正しい場所に置くために、基準だけを別に指定する。
         /// </summary>
-        [PLParam(TextKey = "SpringBoneOriginIndex",
+        [PLParam(TextKey = "SpringBoneOriginIndex", IsMeshRef = true,
                  Description = "位置の基準にするボーンの masterIndex。-1 でワールド原点。親にはしない")]
         public int OriginMasterIndex { get; }
 
@@ -448,11 +448,11 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ボーンの親を付け替える。ワールド位置は保つ。")]
     public class SetBoneParentCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "親を変えるボーンの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
-        [PLParam(TextKey = "BoneNewParentIndex",
+        [PLParam(TextKey = "BoneNewParentIndex", IsMeshRef = true,
                  Description = "新しい親の masterIndex。-1 でモデル直下", Required = true)]
         public int ParentMasterIndex { get; }
 
@@ -470,7 +470,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "揺れものの当たり判定をボーンへ 1 つ足す。")]
     public class AddSpringBoneColliderCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "付ける先のボーンの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -525,7 +525,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ボーンに付いている当たり判定を 1 つ書き換える。")]
     public class UpdateSpringBoneColliderCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "当たり判定が付いているボーンの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -582,7 +582,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ボーンに付いている当たり判定を 1 つ消す。後ろの番号は詰まる。")]
     public class DeleteSpringBoneColliderCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "当たり判定が付いているボーンの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -617,5 +617,44 @@ namespace Poly_Ling.Data
     public class BakeTPoseCommand : PanelCommand
     {
         public BakeTPoseCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    /// <summary>
+    /// 接頭辞で名前の付いた揺れもの鎖へ、揺れ方と鎖の先頭をまとめて入れる。
+    /// 鎖の組み立ては SpringBoneChainNaming.CollectChainsByName。
+    /// 中で setSpringBoneJoint（段ごと）と setSpringBoneChainRoot（鎖ごと）を撃つ。
+    /// 手本に索引を 1 本ずつ焼かないための口。
+    /// </summary>
+    [PLCommand(Description = "接頭辞で名前の付いた揺れもの鎖（{接頭辞}_{番号}_top → _1 … → _end）を名前から組み立て、全ボーンへ同じ揺れ方を入れ、鎖ごとに先頭を指定する。")]
+    [PLResult("chains", PLResultKind.Integer, Description = "見つけた鎖の本数")]
+    [PLResult("levels", PLResultKind.Integer, Description = "いちばん長い鎖の段数")]
+    [PLResult("rootIndices", PLResultKind.IntegerArray, Description = "鎖の先頭ボーンの masterIndex")]
+    public class ApplySpringBoneByPrefixCommand : PanelCommand
+    {
+        [PLParam(Description = "鎖のボーン名の接頭辞（placeSpringBoneLadderChains の namePrefix）", Required = true)]
+        public string NamePrefix { get; }
+
+        [PLParam(Description = "当たり半径", Required = true)]
+        public float HitRadius { get; }
+
+        [PLParam(Description = "かたさ", Required = true)]
+        public float Stiffness { get; }
+
+        [PLParam(Description = "重力の強さ", Required = true)]
+        public float GravityPower { get; }
+
+        [PLParam(Description = "抵抗", Required = true)]
+        public float DragForce { get; }
+
+        public ApplySpringBoneByPrefixCommand(int modelIndex, string namePrefix,
+            float hitRadius, float stiffness, float gravityPower, float dragForce)
+            : base(modelIndex)
+        {
+            NamePrefix   = namePrefix ?? "";
+            HitRadius    = hitRadius;
+            Stiffness    = stiffness;
+            GravityPower = gravityPower;
+            DragForce    = dragForce;
+        }
     }
 }

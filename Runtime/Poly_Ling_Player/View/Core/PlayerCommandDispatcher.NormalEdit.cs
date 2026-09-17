@@ -51,7 +51,7 @@ namespace Poly_Ling.Player
                             _undoController.SetMeshObject(mc.MeshObject, mc.UnityMesh);
                             _undoController.MeshUndoContext.ParentModelContext = model;
                         }
-                        var idBefore = _undoController?.CaptureMeshObjectSnapshot();
+                        var idBefore = _undoController?.CaptureMeshObjectSnapshotOf(mc);
 
                         int changed = c.Mode switch
                         {
@@ -65,7 +65,7 @@ namespace Poly_Ling.Player
 
                         if (changed > 0 && _undoController != null && idBefore != null)
                         {
-                            var idAfter = _undoController.CaptureMeshObjectSnapshot();
+                            var idAfter = _undoController.CaptureMeshObjectSnapshotOf(mc);
                             _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                                 _undoController, idBefore, idAfter, $"Repair Vertex Ids ({c.Mode})"));
                         }
@@ -122,7 +122,7 @@ namespace Poly_Ling.Player
                         _undoController.SetMeshObject(partsMo, partsMc.UnityMesh);
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    var partsBefore = _undoController?.CaptureMeshObjectSnapshot();
+                    var partsBefore = _undoController?.CaptureMeshObjectSnapshotOf(partsMc);
 
                     PartsIdAssignResult partsResult;
                     switch (c.Mode)
@@ -154,7 +154,7 @@ namespace Poly_Ling.Player
 
                     if (_undoController != null && partsBefore != null)
                     {
-                        var partsAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var partsAfter = _undoController.CaptureMeshObjectSnapshotOf(partsMc);
                         _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                             _undoController, partsBefore, partsAfter, $"Assign Parts Ids ({c.Mode})"));
                     }
@@ -196,7 +196,7 @@ namespace Poly_Ling.Player
                         _undoController.SetMeshObject(bwMo, bwMc.UnityMesh);
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    var bwBefore = _undoController?.CaptureMeshObjectSnapshot();
+                    var bwBefore = _undoController?.CaptureMeshObjectSnapshotOf(bwMc);
 
                     var bwResult = PartsIdByBoneWeightOps.AssignByBoneWeight(bwMo, boneCount);
 
@@ -210,7 +210,7 @@ namespace Poly_Ling.Player
 
                     if (_undoController != null && bwBefore != null)
                     {
-                        var bwAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var bwAfter = _undoController.CaptureMeshObjectSnapshotOf(bwMc);
                         _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                             _undoController, bwBefore, bwAfter, "Assign Parts Ids (BoneWeight)"));
                     }
@@ -260,7 +260,7 @@ namespace Poly_Ling.Player
                             _undoController.SetMeshObject(dstMc.MeshObject, dstMc.UnityMesh);
                             _undoController.MeshUndoContext.ParentModelContext = dstModel;
                         }
-                        var tvBefore = _undoController?.CaptureMeshObjectSnapshot();
+                        var tvBefore = _undoController?.CaptureMeshObjectSnapshotOf(dstMc);
 
                         var r = VertexDataTransferOps.Transfer(
                             srcModel, srcMc, dstModel, dstMc, c.MatchMode, c.Kinds);
@@ -275,7 +275,7 @@ namespace Poly_Ling.Player
                             syncedTargets.Add(dstMc);
                             if (_undoController != null && tvBefore != null)
                             {
-                                var tvAfter = _undoController.CaptureMeshObjectSnapshot();
+                                var tvAfter = _undoController.CaptureMeshObjectSnapshotOf(dstMc);
                                 _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                                     _undoController, tvBefore, tvAfter, "Transfer Vertex Data"));
                             }

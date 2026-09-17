@@ -413,7 +413,7 @@ namespace Poly_Ling.Player
             {
                 undo.SetMeshObject(mo, mc.UnityMesh);
                 undo.MeshUndoContext.ParentModelContext = model;
-                before = undo.CaptureMeshObjectSnapshot();
+                before = undo.CaptureMeshObjectSnapshotOf(mc);
             }
 
             int originalCount = mo.VertexCount;
@@ -437,7 +437,7 @@ namespace Poly_Ling.Player
 
             if (undo != null && before != null)
             {
-                var after = undo.CaptureMeshObjectSnapshot();
+                var after = undo.CaptureMeshObjectSnapshotOf(mc);
                 undo.RecordTopologyChange(before, after, $"Point Defined {cmd.Mode} in {mc.Name}");
             }
 

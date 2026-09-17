@@ -68,7 +68,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選んだ描画オブジェクトのウェイトを破棄して MeshFilter 系へ戻す。")]
     public class ConvertToMeshFilterCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -94,12 +94,12 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選んだ描画オブジェクトを、指定ボーンへウェイト 1.0 でバインドして SkinnedMesh 系にする。")]
     public class ConvertToSkinnedCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
         /// <summary>バインド先ボーンの MeshContextList 索引。</summary>
-        [PLParam(TextKey = "BindBoneMasterIndex",
+        [PLParam(TextKey = "BindBoneMasterIndex", IsMeshRef = true,
                  Description = "ウェイト 1.0 でバインドする先のボーンの masterIndex", Required = true)]
         public int BoneMasterIndex { get; }
 
@@ -242,7 +242,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "ブラシで塗ったスキンウェイトを適用する。")]
     public class SkinWeightPaintCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "ステップが触る描画オブジェクトの masterIndex 配列。実行時点の塗り対象に含まれること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -256,7 +256,7 @@ namespace Poly_Ling.Data
                  Required = true)]
         public int[]   StepStarts { get; }
 
-        [PLParam(TextKey = "SkinPaintStepMeshIndices",
+        [PLParam(TextKey = "SkinPaintStepMeshIndices", IsMeshRef = true,
                  Description = "各ステップの対象メッシュ masterIndex。StepStarts と同じ長さ",
                  Required = true)]
         public int[]   StepMeshIndices { get; }

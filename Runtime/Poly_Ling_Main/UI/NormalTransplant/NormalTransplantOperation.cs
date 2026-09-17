@@ -189,7 +189,7 @@ namespace Poly_Ling.UI
 
                     undo.SetMeshObject(ctx.MeshObject, ctx.UnityMesh);
                     undo.MeshUndoContext.ParentModelContext = model;
-                    beforeSnapshots[i] = undo.CaptureMeshObjectSnapshot();
+                    beforeSnapshots[i] = undo.CaptureMeshObjectSnapshotOf(ctx);
                 }
             }
 
@@ -218,7 +218,7 @@ namespace Poly_Ling.UI
                 {
                     undo.SetMeshObject(mo, ctx.UnityMesh);
                     undo.MeshUndoContext.ParentModelContext = model;
-                    var after = undo.CaptureMeshObjectSnapshot();
+                    var after = undo.CaptureMeshObjectSnapshotOf(ctx);
 
                     toolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                         undo, beforeSnapshots[i], after, "Normal Transplant"));

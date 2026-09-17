@@ -194,7 +194,8 @@ namespace Poly_Ling.Ops
             newMeshObj.Vertices = newVertices;
             newMeshObj.Faces    = newFaces;
             newMeshObj.Type     = MeshType.Mesh;
-            newMeshObj.AssignMissingIds();
+            // 頂点 ID・面 ID は付けない（AssignMissingIds を勝手に呼ばない規約）。
+            // 書き戻し（WritebackXyzToUv）は頂点の並び順で対応を取り、ID を読まない。
 
             // UV 展開作業用の平面メッシュ。頂点は新規生成でウェイトを持たないため
             // 種別は既定の MeshFilter のままでよい。念のため実データから確認する。

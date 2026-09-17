@@ -148,7 +148,7 @@ namespace Poly_Ling.Player
                     }
 
                     // before スナップショット（AfterUVs を MeshObject に書き込む前に取得）
-                    var before = _undoController?.CaptureMeshObjectSnapshot();
+                    var before = _undoController?.CaptureMeshObjectSnapshotOf(uvMc);
 
                     // AfterUVs を MeshObject に適用
                     var mo = uvMc.MeshObject;
@@ -165,7 +165,7 @@ namespace Poly_Ling.Player
                     // after スナップショット → VertexEditStack に記録
                     if (_undoController != null && before != null)
                     {
-                        var after = _undoController.CaptureMeshObjectSnapshot();
+                        var after = _undoController.CaptureMeshObjectSnapshotOf(uvMc);
                         _commandQueue?.Enqueue(
                             new RecordTopologyChangeCommand(
                                 _undoController, before, after, c.OperationName));

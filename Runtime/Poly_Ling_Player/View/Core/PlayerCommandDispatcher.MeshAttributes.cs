@@ -654,6 +654,47 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── 名前で親子を張る（中で reorderMeshes を撃つ）
+                case SetParentsByNameCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    RunSetParentsByName(model, c);
+                    return true;
+                }
+
+                // ── 頂点位置を直接書く（検証パネルの編集を Dispatch に通すための口）
+                case SetVertexPositionsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var svMc = model.GetMeshContext(c.MasterIndex);
+                    var svMo = svMc?.MeshObject;
+                    if (svMo == null) { Fail($"no object at masterIndex {c.MasterIndex}"); return true; }
+                    if (c.Positions.Length != c.VertexIndices.Length * 3)
+                    { Fail($"positions は vertexIndices の 3 倍（{c.VertexIndices.Length * 3} 個）が要りますが {c.Positions.Length} 個です"); return true; }
+                    foreach (int vi in c.VertexIndices)
+                        if (vi < 0 || vi >= svMo.VertexCount) { Fail($"頂点番号が範囲外です: {vi}（頂点数 {svMo.VertexCount}）"); return true; }
+
+                    if (_undoController != null)
+                    {
+                        _undoController.SetMeshObject(svMo, svMc.UnityMesh);
+                        _undoController.MeshUndoContext.ParentModelContext = model;
+                    }
+                    var svBefore = _undoController?.CaptureMeshObjectSnapshotOf(svMc);
+
+                    for (int k = 0; k < c.VertexIndices.Length; k++)
+                        svMo.Vertices[c.VertexIndices[k]].Position =
+                            new Vector3(c.Positions[k * 3], c.Positions[k * 3 + 1], c.Positions[k * 3 + 2]);
+
+                    if (_undoController != null && svBefore != null)
+                        _undoController.RecordTopologyChange(svBefore, _undoController.CaptureMeshObjectSnapshotOf(svMc), "頂点位置の書き込み");
+
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    ReportData(CommandDataJson.New().Int("written", c.VertexIndices.Length).Build(),
+                        new[] { c.MasterIndex }, new[] { svMc.ObjectId });
+                    return true;
+                }
+
                 // ── BonePose 初期化
                 case InitBonePoseCommand c:
                     if (model == null) { Fail("no current model"); return true; }
@@ -671,6 +712,201 @@ namespace Poly_Ling.Player
                     return true;
             }
             return false;
+        }
+
+        // ================================================================
+        // 名前で親子を張る
+        // ================================================================
+
+        /// <summary>
+        /// setParentsByName の実処理。
+        ///
+        /// 【手順】
+        ///   1. 名前を描画オブジェクトから完全一致で引く（selectDrawablesByName と同じ規則）。
+        ///      見つからない・同じ名前が複数あるときは失敗にする。どれを掴んだか分からなくなるため。
+        ///   2. 親子が輪にならないか、新しい親から上へたどって確かめる。
+        ///   3. 深さは親の深さ+1。親が一覧に無ければ、その親のいまの深さから数える。
+        ///   4. 行は親→子の順（深さ優先）に並べる。reorderMeshes は渡した行の
+        ///      オブジェクトが占めていた位置へ、行の順に詰め直す（MeshListOps.cs:265-298）。
+        ///      子を親より先に渡すと、リストで子が親より前に来る。
+        ///      一覧に無い親も、位置を揃えるため今の親・深さのまま行に入れる。
+        ///   5. reorderMeshes（Drawable、ワールド姿勢を保つ）を内側で撃つ。
+        ///      並べ替え・親の書き換え・姿勢の組み直しを 2 か所に書かないため。
+        ///   6. 実行後にモデルから読み直した索引・親・深さを返す。
+        ///
+        /// 【子孫】
+        ///   一覧に入れなかった子孫も行に入れ、親の深さ+1 で深さを揃える（親は今のまま）。
+        /// </summary>
+        private void RunSetParentsByName(ModelContext model, SetParentsByNameCommand c)
+        {
+            var names   = c.Names       ?? System.Array.Empty<string>();
+            var parents = c.ParentNames ?? System.Array.Empty<string>();
+
+            if (names.Length == 0) { Fail("names が空です"); return; }
+            if (names.Length != parents.Length)
+            { Fail($"names が {names.Length} 件、parentNames が {parents.Length} 件で長さが合いません"); return; }
+
+            // ── 1. 名前 → 索引 ──
+            var byName = new Dictionary<string, List<int>>(System.StringComparer.Ordinal);
+            foreach (var ent in model.DrawableMeshes)
+            {
+                string nm = ent.Name ?? "";
+                if (!byName.TryGetValue(nm, out var list)) byName[nm] = list = new List<int>();
+                list.Add(ent.MasterIndex);
+            }
+
+            bool TryResolve(string name, out int index, out string reason)
+            {
+                index  = -1;
+                reason = null;
+                if (!byName.TryGetValue(name ?? "", out var hits) || hits.Count == 0)
+                { reason = $"名前の合う描画オブジェクトがありません: {name}"; return false; }
+                if (hits.Count > 1)
+                { reason = $"同じ名前の描画オブジェクトが {hits.Count} 個あります: {name}"; return false; }
+                index = hits[0];
+                return true;
+            }
+
+            var newParent = new Dictionary<int, int>();
+            var childIdx  = new List<int>();
+
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (!TryResolve(names[i], out int child, out string why)) { Fail(why); return; }
+
+                int parent = -1;
+                if (!string.IsNullOrEmpty(parents[i]))
+                {
+                    if (!TryResolve(parents[i], out parent, out why)) { Fail(why); return; }
+                }
+
+                if (child == parent) { Fail($"{names[i]} の親に自分自身を指定しています"); return; }
+                if (newParent.ContainsKey(child)) { Fail($"{names[i]} が 2 回指定されています"); return; }
+
+                newParent[child] = parent;
+                childIdx.Add(child);
+            }
+
+            int ParentOf(int idx)
+                => newParent.TryGetValue(idx, out int p) ? p : (model.GetMeshContext(idx)?.HierarchyParentIndex ?? -1);
+
+            // ── 2. 輪の検出 ──
+            foreach (int child in childIdx)
+            {
+                int cur = ParentOf(child);
+                for (int step = 0; cur >= 0 && step <= model.MeshContextCount; step++)
+                {
+                    if (cur == child)
+                    { Fail($"{model.GetMeshContext(child)?.Name} の親子が輪になります"); return; }
+                    cur = ParentOf(cur);
+                }
+            }
+
+            // ── 3. 深さ ──
+            // 一覧に入れなかった子孫も、親の深さが変われば深さが変わる。下の 4 で集めて行に入れる。
+            var descendants = new HashSet<int>();
+            var depth = new Dictionary<int, int>();
+            int DepthOf(int idx)
+            {
+                if (depth.TryGetValue(idx, out int d)) return d;
+                if (newParent.TryGetValue(idx, out int p))
+                    d = p < 0 ? 0 : DepthOf(p) + 1;
+                else if (descendants.Contains(idx))
+                {
+                    int cp = model.GetMeshContext(idx)?.HierarchyParentIndex ?? -1;
+                    d = cp < 0 ? 0 : DepthOf(cp) + 1;
+                }
+                else
+                    d = model.GetMeshContext(idx)?.Depth ?? 0;
+                depth[idx] = d;
+                return d;
+            }
+
+            // ── 4. 親→子の順に並べる ──
+            var involved = new HashSet<int>(childIdx);
+            foreach (int child in childIdx)
+            {
+                int p = newParent[child];
+                if (p >= 0) involved.Add(p);
+            }
+
+            // 張り替えた子の、いまの子孫を足す（親が一覧の外でも深さを揃えるため）。
+            var stack = new Stack<int>(childIdx);
+            while (stack.Count > 0)
+            {
+                int cur = stack.Pop();
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    if (newParent.ContainsKey(i) || descendants.Contains(i)) continue;
+                    var mci = model.GetMeshContext(i);
+                    if (mci == null || mci.HierarchyParentIndex != cur) continue;
+                    descendants.Add(i);
+                    involved.Add(i);
+                    stack.Push(i);
+                }
+            }
+
+            var kids = new Dictionary<int, List<int>>();
+            var roots = new List<int>();
+            foreach (int idx in involved)
+            {
+                int p = ParentOf(idx);
+                if (p >= 0 && involved.Contains(p))
+                {
+                    if (!kids.TryGetValue(p, out var list)) kids[p] = list = new List<int>();
+                    list.Add(idx);
+                }
+                else roots.Add(idx);
+            }
+            roots.Sort();
+            foreach (var list in kids.Values) list.Sort();
+
+            var entries = new List<ReorderMeshesCommand.ReorderEntry>();
+            void Emit(int idx)
+            {
+                entries.Add(new ReorderMeshesCommand.ReorderEntry
+                {
+                    MasterIndex          = idx,
+                    NewDepth             = DepthOf(idx),
+                    NewParentMasterIndex = ParentOf(idx),
+                });
+                if (kids.TryGetValue(idx, out var list))
+                    foreach (int k in list) Emit(k);
+            }
+            foreach (int r in roots) Emit(r);
+
+            // 並べ替えで索引が動くので、実体を先に控える。
+            var childCtx = new List<MeshContext>(childIdx.Count);
+            foreach (int idx in childIdx) childCtx.Add(model.GetMeshContext(idx));
+
+            // ── 5. reorderMeshes ──
+            var result = Dispatch(new ReorderMeshesCommand(
+                c.ModelIndex, MeshCategory.Drawable,
+                ReorderMeshesCommand.ToEntryValues(entries.ToArray()),
+                preserveWorldTransform: true));
+            if (result != null && !result.Success)
+            { Fail($"reorderMeshes が失敗しました: {result.Reason}"); return; }
+
+            // ── 6. 読み直す ──
+            var outIdx    = new List<int>(childCtx.Count);
+            var outParent = new List<int>(childCtx.Count);
+            var outDepth  = new List<int>(childCtx.Count);
+            var outIds    = new List<ulong>(childCtx.Count);
+            foreach (var mc in childCtx)
+            {
+                outIdx.Add(mc == null ? -1 : model.MeshContextList.IndexOf(mc));
+                outParent.Add(mc?.HierarchyParentIndex ?? -1);
+                outDepth.Add(mc?.Depth ?? 0);
+                outIds.Add(mc?.ObjectId ?? 0UL);
+            }
+
+            ReportData(CommandDataJson.New()
+                .Texts("names",               names)
+                .Ints ("masterIndices",       outIdx)
+                .Ints ("parentMasterIndices", outParent)
+                .Ints ("depths",              outDepth)
+                .Build(),
+                outIdx.ToArray(), outIds.ToArray());
         }
 
         // ================================================================

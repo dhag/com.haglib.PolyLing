@@ -27,13 +27,13 @@ namespace Poly_Ling.Player
             if (mc?.MeshObject == null) return;
 
             var undo   = GetUndoController?.Invoke();
-            var before = undo?.CaptureMeshObjectSnapshot();
+            var before = undo?.CaptureMeshObjectSnapshotOf(mc);
 
             action(mc.MeshObject);
 
             if (undo != null && before != null)
             {
-                var after = undo.CaptureMeshObjectSnapshot();
+                var after = undo.CaptureMeshObjectSnapshotOf(mc);
                 GetCommandQueue?.Invoke()?.Enqueue(
                     new RecordTopologyChangeCommand(undo, before, after, opName));
             }

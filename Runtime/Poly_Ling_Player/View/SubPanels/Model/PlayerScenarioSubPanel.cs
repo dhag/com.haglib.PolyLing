@@ -354,8 +354,25 @@ namespace Poly_Ling.Player
         private void OnStop()
         {
             _ticking = false;
+
+            // やめると流しが消えて UpdateView からは位置が見えなくなるので、消す前に控えて表示する。
+            var run = GetRun?.Invoke();
+            string where = null;
+            if (run != null)
+            {
+                var fr = run.Top;
+                string scen = fr?.Group?.Name ?? run.RootName;
+                int no = fr != null ? fr.Index + 1 : 0;
+                int count = fr?.Group?.Steps?.Count ?? 0;
+                string elem = (fr?.Group?.Steps != null && fr.Index >= 0 && fr.Index < count)
+                    ? fr.Group.Steps[fr.Index]?.ElementId : "";
+                where = $"やめました: 「{scen}」 {no} / {count} 段目（{elem}）の手前。実行したコマンド {run.ExecutedCommands} 本。"
+                      + "それまでの結果はモデルに残っています（戻すなら Undo）。";
+            }
+
             RunCommand?.Invoke(new StopScenarioRunCommand(ModelIndex));
             UpdateView();
+            if (where != null && _stopLabel != null) _stopLabel.text = where;
         }
 
         /// <summary>1 段処理したあと。止まっていなければ次の 1 段を予約する。</summary>

@@ -665,12 +665,14 @@ namespace Poly_Ling.Player
             // 参照先の段をそのまま写す。参照先がさらに参照段を持つ場合は
             // 参照段のまま入る。深い段を開くにはもう一度この口を使う。
             var inserted = new List<ObjectGroupStep>();
+            var oldIds   = new List<string>();
             if (src.Steps != null)
             {
                 foreach (var s in src.Steps)
                 {
                     if (s == null) continue;
                     var copy = s.Clone();
+                    oldIds.Add(copy.ElementId ?? "");
                     copy.ElementId = "";   // 名前は入れた先で振り直す
                     inserted.Add(copy);
                 }
@@ -679,6 +681,27 @@ namespace Poly_Ling.Player
             g.Steps.RemoveAt(at);
             g.Steps.InsertRange(at, inserted);
             g.EnsureElementIds();
+
+            // 写した段どうしの @<段の名前> 参照を、振り直した名前へ付け替える。
+            // 付け替えないと参照先での名前のまま残り、入れた先の別の段を指すか、無い段を指す。
+            var rename = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (int i = 0; i < inserted.Count; i++)
+                if (!string.IsNullOrEmpty(oldIds[i])) rename[oldIds[i]] = inserted[i].ElementId;
+
+            foreach (var copy in inserted)
+            {
+                if (copy.Args == null) continue;
+                var args = new List<KeyValuePair<string, string>>(copy.SortedArgs());
+                foreach (var kv in args)
+                {
+                    string v = kv.Value;
+                    if (string.IsNullOrEmpty(v) || v.Length < 2 || v[0] != '@' || v.StartsWith(PrevPrefix, StringComparison.Ordinal)) continue;
+                    int dot = v.IndexOf('.');
+                    if (dot <= 1) continue;
+                    if (rename.TryGetValue(v.Substring(1, dot - 1), out string newId))
+                        copy.SetArg(kv.Key, "@" + newId + v.Substring(dot));
+                }
+            }
 
             if (!ScenarioLibrary.Register(g, overwrite: true, out string error)) { Fail(error); return; }
 

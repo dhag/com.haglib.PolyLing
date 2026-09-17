@@ -29,10 +29,24 @@ namespace Poly_Ling.Player
                     { Fail(tjReason); return true; }
 
                     var mo = tjMc.MeshObject;
+
+                    // 面の頂点列を書き換えるので Undo に残す（applyLscmUnwrap と同じ形）。
+                    if (_undoController != null)
+                    {
+                        _undoController.SetMeshObject(mo, tjMc.UnityMesh);
+                        _undoController.MeshUndoContext.ParentModelContext = tjModel;
+                    }
+                    var tjBefore = _undoController?.CaptureMeshObjectSnapshotOf(tjMc);
+
                     var res = Poly_Ling.Ops.TJunctionOps.Resolve(mo, c.Tolerance);
 
                     if (res.Inserted > 0)
                     {
+                        if (_undoController != null && tjBefore != null)
+                        {
+                            var tjAfter = _undoController.CaptureMeshObjectSnapshotOf(tjMc);
+                            _undoController.RecordTopologyChange(tjBefore, tjAfter, "T 字接合の解消");
+                        }
                         _viewportManager.EnterTopologyChanged(project);
                         _notifyPanels(ChangeKind.Attributes);
                     }
@@ -46,7 +60,7 @@ namespace Poly_Ling.Player
                         .Int("faces",         mo.FaceCount)
                         .Int("boundaryLoops", loops)
                         .Build(),
-                        new[] { c.MasterIndex }, new[] { tjMc.ObjectId });
+                        new[] { tjModel.MeshContextList.IndexOf(tjMc) }, new[] { tjMc.ObjectId });
                     return true;
                 }
 
@@ -104,7 +118,7 @@ namespace Poly_Ling.Player
                         .Nums ("midY",  my)
                         .Nums ("midZ",  mz)
                         .Build(),
-                        new[] { c.MasterIndex }, new[] { beMc.ObjectId });
+                        new[] { beModel.MeshContextList.IndexOf(beMc) }, new[] { beMc.ObjectId });
                     return true;
                 }
 
@@ -156,7 +170,7 @@ namespace Poly_Ling.Player
                         .Nums ("centerY",     cy)
                         .Nums ("centerZ",     cz)
                         .Build(),
-                        new[] { c.MasterIndex }, new[] { fbMc.ObjectId });
+                        new[] { fbModel.MeshContextList.IndexOf(fbMc) }, new[] { fbMc.ObjectId });
                     return true;
                 }
 
@@ -214,7 +228,7 @@ namespace Poly_Ling.Player
                         .Num ("distance",    bestDist)
                         .Nums("position",    new float[] { bestPos.x, bestPos.y, bestPos.z })
                         .Build(),
-                        new[] { c.MasterIndex }, new[] { nvMc.ObjectId });
+                        new[] { nvModel.MeshContextList.IndexOf(nvMc) }, new[] { nvMc.ObjectId });
                     return true;
                 }
 

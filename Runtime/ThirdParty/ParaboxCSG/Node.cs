@@ -7,7 +7,13 @@
 // C# port by Karl Henkel (parabox.co), under MIT license.
 // GitHub: https://github.com/karl-/pb_CSG
 //
-// PolyLing 改変: namespace のみ Parabox.CSG -> Poly_Ling.CSG。
+// PolyLing 改変:
+//   - namespace のみ Parabox.CSG -> Poly_Ling.CSG。
+//   - 空の木で落ちないようにした。元コードは Node(list) に空のリストを渡すと
+//     polygons と plane が null のまま残り、AllPolygons（list.AddRange）・
+//     ClipPolygons（plane.Valid()）・Invert（plane.Flip()）が NullReferenceException になった
+//     （交わらない 2 つの積で結果が 0 枚になると CSG.Intersect で落ちる）。
+//     csg.js 本家に合わせ、polygons は空のリストで始め、plane が無い節では何もしない。
 // 詳細は同フォルダの LICENSE.txt を参照。
 
 using UnityEngine;
@@ -30,10 +36,12 @@ namespace Poly_Ling.CSG
         {
             front = null;
             back = null;
+            polygons = new List<Polygon>();
         }
 
         public Node(List<Polygon> list)
         {
+            polygons = new List<Polygon>();
             Build(list);
         }
 
@@ -75,7 +83,8 @@ namespace Poly_Ling.CSG
             for (int i = 0; i < this.polygons.Count; i++)
                 this.polygons[i].Flip();
 
-            this.plane.Flip();
+            if (this.plane != null)
+                this.plane.Flip();
 
             if (this.front != null)
             {
@@ -143,7 +152,7 @@ namespace Poly_Ling.CSG
         // Recursively remove all polygons in `polygons` that are inside this BSP tree.
         public List<Polygon> ClipPolygons(List<Polygon> list)
         {
-            if (!this.plane.Valid())
+            if (this.plane == null || !this.plane.Valid())
             {
                 return list;
             }

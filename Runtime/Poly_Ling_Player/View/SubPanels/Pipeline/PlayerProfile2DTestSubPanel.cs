@@ -321,20 +321,23 @@ namespace Poly_Ling.Player
             float hole  = Mathf.Clamp(_holeSize.value, 0.01f, outer * 0.8f);
             float border = (outer + hole) * 0.5f;   // 外周と穴の中間で見分ける
 
-            int moved = 0;
+            // 位置はここで計算し、書き込みは SetVertexPositionsCommand に通す（記録と Undo に残すため）。
+            var idx = new List<int>();
+            var pos = new List<float>();
             for (int i = 0; i < mo.VertexCount; i++)
             {
-                var v = mo.Vertices[i];
-                var p = v.Position;
+                var p = mo.Vertices[i].Position;
 
                 var radial = new Vector2(p.x, p.y);
                 float r = radial.magnitude;
                 if (r >= border || r < 1e-5f) continue;   // 外周側は動かさない
 
                 var dir = radial / r;
-                v.Position = new Vector3(p.x + dir.x * grow, p.y + dir.y * grow, p.z);
-                moved++;
+                idx.Add(i); pos.Add(p.x + dir.x * grow); pos.Add(p.y + dir.y * grow); pos.Add(p.z);
             }
+            if (idx.Count > 0)
+                SendCommand(new SetVertexPositionsCommand(ModelIndex, ProfileIndex, idx.ToArray(), pos.ToArray()));
+            int moved = idx.Count;
 
             if (moved == 0)
                 return Ng("動かせる点が無かった", null,

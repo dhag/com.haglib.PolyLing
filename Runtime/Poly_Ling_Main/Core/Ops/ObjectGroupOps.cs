@@ -182,7 +182,10 @@ namespace Poly_Ling.Ops
                 for (int k = 0; k < indices.Length; k++)
                 {
                     ModelContext owner = model;
-                    if (modelIdx != null && k < modelIdx.Length)
+                    // モデル索引は、索引と同じ並びの配列か、全部に効く 1 個（TransferVertexDataCommand.TargetModelIndex）。
+                    if (modelIdx != null && modelIdx.Length == 1)
+                        owner = project?.GetModel(modelIdx[0]);
+                    else if (modelIdx != null && k < modelIdx.Length)
                         owner = project?.GetModel(modelIdx[k]);
 
                     var mc = (owner != null && indices[k] >= 0)
@@ -450,7 +453,20 @@ namespace Poly_Ling.Ops
 
                 args[mr.Key] = JoinInts(indices);
                 if (modelIds != null && !string.IsNullOrEmpty(mr.ModelKey))
-                    args[mr.ModelKey] = JoinInts(modelIds);
+                {
+                    // モデル索引が 1 個の引数（TransferVertexDataCommand.TargetModelIndex）には 1 個で書き戻す。
+                    string orig = step.GetArg(mr.ModelKey) ?? "";
+                    bool scalar = orig.IndexOf(',') < 0 && indices.Count > 1;
+                    if (scalar)
+                    {
+                        for (int k = 1; k < modelIds.Count; k++)
+                            if (modelIds[k] != modelIds[0])
+                            { error = $"{mr.Key}: 参照先が複数のモデルにまたがり、{mr.ModelKey} 1 個では表せません"; return false; }
+                        args[mr.ModelKey] = modelIds.Count > 0 ? modelIds[0].ToString(System.Globalization.CultureInfo.InvariantCulture) : orig;
+                    }
+                    else
+                        args[mr.ModelKey] = JoinInts(modelIds);
+                }
             }
 
             return true;

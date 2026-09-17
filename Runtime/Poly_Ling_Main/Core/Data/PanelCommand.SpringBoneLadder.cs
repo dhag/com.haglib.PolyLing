@@ -109,6 +109,13 @@ namespace Poly_Ling.Data
         [PLParam(Description = "ミラー側にも鎖を作り、左右のボーンを対にする。取り込み元がミラーペアの実体側のときだけ効く")]
         public bool MakeMirrorChains { get; }
 
+        /// <summary>
+        /// 取り付け先を取り込み元の親（HierarchyParentIndex）から決める。true のとき attachMasterIndex は使わない。
+        /// UI の「取り付け先を取り込み元の親から決める」と同じ。手本に取り付け先の索引を焼かないため。
+        /// </summary>
+        [PLParam(Description = "取り付け先を取り込み元の親から決める。true のとき attachMasterIndex は使わない")]
+        public bool AttachToSourceParent { get; }
+
         public PlaceSpringBoneLadderChainsCommand(
             int modelIndex,
             int sourceMasterIndex,
@@ -126,9 +133,11 @@ namespace Poly_Ling.Data
             SpringBoneLadderBundleMode bundleMode = SpringBoneLadderBundleMode.Thin,
             int[] chainRootMasterIndices = null,
             bool keepAsGroup = false,
-            bool makeMirrorChains = false)
+            bool makeMirrorChains = false,
+            bool attachToSourceParent = false)
             : base(modelIndex)
         {
+            AttachToSourceParent = attachToSourceParent;
             SourceMasterIndex = sourceMasterIndex;
             Method            = method;
             Mode              = mode;

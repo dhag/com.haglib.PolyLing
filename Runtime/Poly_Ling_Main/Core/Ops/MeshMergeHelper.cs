@@ -78,17 +78,29 @@ namespace Poly_Ling.Ops
             }
 
             // 距離計算
-            for (int i = 0; i < validSelected.Count; i++)
-            {
-                for (int j = i + 1; j < validSelected.Count; j++)
-                {
-                    float dist = Vector3.Distance(
-                        meshObject.Vertices[validSelected[i]].Position,
-                        meshObject.Vertices[validSelected[j]].Position);
+            // 総当たり（n²）だと 1 万頂点で数秒かかるので、一辺 threshold の格子に入れ、
+            // 隣り合う 27 格子の中だけを比べる。threshold 以内の組はかならず隣接格子に入るので、
+            // 結ばれる組は総当たりと同じ。
+            float cellSize = Mathf.Max(threshold, 1e-7f);
+            var grid = new Dictionary<(int, int, int), List<int>>();
+            (int, int, int) CellOf(Vector3 p)
+                => (Mathf.FloorToInt(p.x / cellSize), Mathf.FloorToInt(p.y / cellSize), Mathf.FloorToInt(p.z / cellSize));
 
-                    if (dist <= threshold)
-                        Unite(validSelected[i], validSelected[j]);
+            foreach (int vi in validSelected)
+            {
+                Vector3 p = meshObject.Vertices[vi].Position;
+                var c = CellOf(p);
+                for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -1; dy <= 1; dy++)
+                for (int dz = -1; dz <= 1; dz++)
+                {
+                    if (!grid.TryGetValue((c.Item1 + dx, c.Item2 + dy, c.Item3 + dz), out var cellList)) continue;
+                    foreach (int vj in cellList)
+                        if (Vector3.Distance(p, meshObject.Vertices[vj].Position) <= threshold)
+                            Unite(vi, vj);
                 }
+                if (!grid.TryGetValue(c, out var own)) grid[c] = own = new List<int>();
+                own.Add(vi);
             }
 
             // グループ収集

@@ -806,7 +806,7 @@ namespace Poly_Ling.Player
             else
             {
                 var tc = GetToolContext?.Invoke();
-                var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
+                var before = tc?.UndoController?.CaptureMeshObjectSnapshotOf(m.ActiveMeshContext);
                 m.AddMaterial(null);
                 m.CurrentMaterialIndex = m.MaterialCount - 1;
                 RecordChange(before, "Add Material Slot");
@@ -828,7 +828,7 @@ namespace Poly_Ling.Player
             else
             {
                 var tc = GetToolContext?.Invoke();
-                var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
+                var before = tc?.UndoController?.CaptureMeshObjectSnapshotOf(m.ActiveMeshContext);
                 var mc = m.ActiveMeshContext;
                 if (mc?.MeshObject != null)
                     foreach (var face in mc.MeshObject.Faces)
@@ -865,7 +865,7 @@ namespace Poly_Ling.Player
             }
             else
             {
-                var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
+                var before = tc?.UndoController?.CaptureMeshObjectSnapshotOf(mc);
                 bool changed = false;
                 foreach (int fi in sel.Faces)
                     if (fi >= 0 && fi < mc.MeshObject.FaceCount)
@@ -884,7 +884,7 @@ namespace Poly_Ling.Player
         {
             var tc = GetToolContext?.Invoke();
             if (before == null || tc?.UndoController == null) return;
-            var after = tc.UndoController.CaptureMeshObjectSnapshot();
+            var after = tc.UndoController.CaptureMeshObjectSnapshotOf(GetModel?.Invoke()?.ActiveMeshContext);
             tc.UndoController.RecordTopologyChange(before, after, desc);
         }
 

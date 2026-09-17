@@ -370,7 +370,7 @@ namespace Poly_Ling.Tools
                     // ループの2件目以降で先頭メッシュの MeshObject が壊れる。
                     undo.MeshUndoContext.ParentModelContext = model;
                     undo.SetMeshObjectFor(mc, mc.UnityMesh);
-                    var snap = undo.CaptureMeshObjectSnapshot();
+                    var snap = undo.CaptureMeshObjectSnapshotOf(mc);
                     if (snap != null) _beforeSnapshots[mc] = snap;
                 }
 
@@ -413,7 +413,7 @@ namespace Poly_Ling.Tools
 
                     undo.MeshUndoContext.ParentModelContext = ctx.Model;
                     undo.SetMeshObjectFor(mc, mc.UnityMesh);
-                    var after = undo.CaptureMeshObjectSnapshot();
+                    var after = undo.CaptureMeshObjectSnapshotOf(mc);
                     ctx.CommandQueue?.Enqueue(new Commands.RecordTopologyChangeCommand(
                         undo, before, after, "Paint Skin Weight"));
                 }
@@ -528,7 +528,7 @@ namespace Poly_Ling.Tools
                 {
                     undo.MeshUndoContext.ParentModelContext = model;
                     undo.SetMeshObjectFor(mc, mc.UnityMesh);
-                    var snap = undo.CaptureMeshObjectSnapshot();
+                    var snap = undo.CaptureMeshObjectSnapshotOf(mc);
                     if (snap != null) _beforeSnapshots[mc] = snap;
                 }
 
@@ -571,7 +571,7 @@ namespace Poly_Ling.Tools
 
                     undo.MeshUndoContext.ParentModelContext = model;
                     undo.SetMeshObjectFor(mc, mc.UnityMesh);
-                    var after = undo.CaptureMeshObjectSnapshot();
+                    var after = undo.CaptureMeshObjectSnapshotOf(mc);
                     ctx.CommandQueue?.Enqueue(new Commands.RecordTopologyChangeCommand(
                         undo, before, after, "Paint Skin Weight"));
                 }

@@ -610,7 +610,7 @@ namespace Poly_Ling.Data
         public const int SubdivisionsMax = 32;
 
         /// <summary>辺のあるメッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "EdgeBridgeMesh", Description = "対象メッシュの索引", Required = true)]
+        [PLParam(TextKey = "EdgeBridgeMesh", IsMeshRef = true, Description = "対象メッシュの索引", Required = true)]
         public int MeshIndex { get; }
 
         /// <summary>拾った辺。両端の頂点番号の組で表す。</summary>

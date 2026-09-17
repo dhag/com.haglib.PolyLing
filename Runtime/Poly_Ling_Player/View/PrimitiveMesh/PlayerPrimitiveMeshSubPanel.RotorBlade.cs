@@ -69,6 +69,10 @@ namespace Poly_Ling.Player
                 () => _rotorBladeP.RootChord, v => { _rotorBladeP.RootChord = v; DM(); }));
             c.Add(SR(T("RotorTipChord"), RotorBladeMeshGenerator.Params.PartMin, RotorBladeMeshGenerator.Params.PartMax,
                 () => _rotorBladeP.TipChord, v => { _rotorBladeP.TipChord = v; DM(); }));
+            c.Add(SR(T("RotorRootRoundness"), 0f, 1f,
+                () => _rotorBladeP.RootRoundness, v => { _rotorBladeP.RootRoundness = v; D(); }));
+            c.Add(SR(T("RotorTipRoundness"), 0f, 1f,
+                () => _rotorBladeP.TipRoundness, v => { _rotorBladeP.TipRoundness = v; D(); }));
             c.Add(SR(T("RotorRootPitch"), -80f, 80f,
                 () => _rotorBladeP.RootPitchDeg, v => { _rotorBladeP.RootPitchDeg = v; D(); }));
             c.Add(SR(T("RotorTipPitch"), -80f, 80f,

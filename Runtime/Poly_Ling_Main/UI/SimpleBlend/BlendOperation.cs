@@ -95,7 +95,7 @@ namespace Poly_Ling.UI
                 {
                     undo.SetMeshObjectFor(writeCtx);
                     undo.MeshUndoContext.ParentModelContext = model;
-                    before = undo.CaptureMeshObjectSnapshot();
+                    before = undo.CaptureMeshObjectSnapshotOf(writeCtx);
                 }
             }
 
@@ -112,7 +112,7 @@ namespace Poly_Ling.UI
             // ── Undo after（既存メッシュを書き換えたときのみ）
             if (!createNewObject && undo != null && before != null)
             {
-                var after = undo.CaptureMeshObjectSnapshot();
+                var after = undo.CaptureMeshObjectSnapshotOf(writeCtx);
                 toolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                     undo, before, after, "Mesh Blend"));
                 undo.ClearTargetMeshContext();

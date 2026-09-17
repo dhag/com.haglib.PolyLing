@@ -267,11 +267,12 @@ namespace Poly_Ling.Player
             }
             float span = Mathf.Max(1e-6f, maxY - minY);
 
-            int moved = 0;
+            // 位置はここで計算し、書き込みは SetVertexPositionsCommand に通す（記録と Undo に残すため）。
+            var idx = new List<int>();
+            var pos = new List<float>();
             for (int i = 0; i < skirt.VertexCount; i++)
             {
-                var v = skirt.Vertices[i];
-                var p = v.Position;
+                var p = skirt.Vertices[i].Position;
 
                 // 下ほど強く外へ。裾が広がったスカートになる。
                 float t = 1f - (p.y - minY) / span;
@@ -280,9 +281,12 @@ namespace Poly_Ling.Player
                 var radial = new Vector3(p.x, 0f, p.z);
                 if (radial.sqrMagnitude < 1e-12f) continue;
 
-                v.Position = p + radial.normalized * (bulge * t);
-                moved++;
+                var np = p + radial.normalized * (bulge * t);
+                idx.Add(i); pos.Add(np.x); pos.Add(np.y); pos.Add(np.z);
             }
+            if (idx.Count > 0)
+                SendCommand(new SetVertexPositionsCommand(ModelIndex, SourceIndex, idx.ToArray(), pos.ToArray()));
+            int moved = idx.Count;
 
             return Ok(
                 $"円筒の頂点 {moved} 個を半径方向へ最大 {bulge:0.###} 広げた",

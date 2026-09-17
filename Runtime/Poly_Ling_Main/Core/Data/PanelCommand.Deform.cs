@@ -25,17 +25,17 @@ namespace Poly_Ling.Data
     public class ApplyShrinkCommand : PanelCommand
     {
         /// <summary>ビフォー（変形対象）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ShrinkBeforeMasterIndex",
+        [PLParam(TextKey = "ShrinkBeforeMasterIndex", IsMeshRef = true,
                  Description = "変形させる描画オブジェクトの masterIndex", Required = true)]
         public int   BeforeMasterIndex     { get; }
 
         /// <summary>アフター（目標形状）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ShrinkAfterMasterIndex",
+        [PLParam(TextKey = "ShrinkAfterMasterIndex", IsMeshRef = true,
                  Description = "目標形状の描画オブジェクトの masterIndex", Required = true)]
         public int   AfterMasterIndex      { get; }
 
         /// <summary>衝突対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "ShrinkColliderMasterIndices",
+        [PLParam(TextKey = "ShrinkColliderMasterIndices", IsMeshRef = true,
                  Description = "衝突対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] ColliderMasterIndices { get; }
 
@@ -157,17 +157,17 @@ namespace Poly_Ling.Data
     public class ApplyThinPlateMorphCommand : PanelCommand
     {
         /// <summary>ビフォー（変形前の対応点）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateBeforeMasterIndex",
+        [PLParam(TextKey = "ThinPlateBeforeMasterIndex", IsMeshRef = true,
                  Description = "変形前の対応点を持つオブジェクトの masterIndex", Required = true)]
         public int   BeforeMasterIndex         { get; }
 
         /// <summary>アフター（変形後の対応点）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateAfterMasterIndex",
+        [PLParam(TextKey = "ThinPlateAfterMasterIndex", IsMeshRef = true,
                  Description = "変形後の対応点を持つオブジェクトの masterIndex", Required = true)]
         public int   AfterMasterIndex          { get; }
 
         /// <summary>変形させる MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateSourceMasterIndex",
+        [PLParam(TextKey = "ThinPlateSourceMasterIndex", IsMeshRef = true,
                  Description = "変形させる描画オブジェクトの masterIndex", Required = true)]
         public int   TargetMasterIndex         { get; }
 
@@ -220,7 +220,7 @@ namespace Poly_Ling.Data
     public class ApplyThinPlateMorphResultCommand : PanelCommand
     {
         /// <summary>変形させた MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateTargetMasterIndex",
+        [PLParam(TextKey = "ThinPlateTargetMasterIndex", IsMeshRef = true,
                  Description = "変形結果を書き込む描画オブジェクトの masterIndex", Required = true)]
         public int       TargetMasterIndex  { get; }
 
@@ -253,7 +253,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "MediaPipe のランドマーク JSON で現在のメッシュを変形し、新しいメッシュとして足す。")]
     public class MediaPipeFaceDeformCommand : PanelCommand
     {
-        [PLParam(TextKey = "MediaPipeSourceMaster",
+        [PLParam(TextKey = "MediaPipeSourceMaster", IsMeshRef = true,
                  Description = "変形元の描画オブジェクトの masterIndex", Required = true)]
         public int    SourceMasterIndex { get; }
 
@@ -307,7 +307,7 @@ namespace Poly_Ling.Data
     /// </summary>
     public abstract class ApplyDeformCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -619,7 +619,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "作業軸を格子フレームとして選択頂点を格子変形する。")]
     public class ApplyLatticeDeformCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }

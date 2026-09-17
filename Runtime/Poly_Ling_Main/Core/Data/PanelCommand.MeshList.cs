@@ -25,7 +25,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定したオブジェクトをモデルから消す。")]
     public class DeleteMeshesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public DeleteMeshesCommand(int modelIndex, int[] masterIndices)
@@ -35,7 +35,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "指定したオブジェクトを複製してモデルへ足す。")]
     public class DuplicateMeshesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public DuplicateMeshesCommand(int modelIndex, int[] masterIndices)
@@ -135,6 +135,39 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// 名前で親子を張る。
+    ///
+    /// 【なぜ要るか】
+    ///   reorderMeshes は索引・深さ・親の索引を 3 個ずつ並べて渡す。索引は
+    ///   描画オブジェクトの増減でずれ、深さは親の深さから数える必要があるので、
+    ///   手本に書くと流すたびに手で計算し直すことになる（robot_build_hierarchy の e3）。
+    ///   名前の組だけを受け取り、索引と深さはここで引く。
+    ///
+    /// 【ボーンには使わない】
+    ///   ボーンの付け替えは setBoneParent（ボーン以外は飛ばす）。
+    /// </summary>
+    [PLCommand(Description = "名前の組で描画オブジェクトの親子を張る。names[i] の親を parentNames[i] にする（空で親なし）。名前は完全一致で引き、見つからない・同じ名前が複数ある・親子が輪になるときは失敗する。深さは親の深さ+1 で数え、親→子の順に並べて reorderMeshes（ワールド姿勢を保つ）で張る。")]
+    [PLResult("names",               PLResultKind.TextArray,    Description = "親を張ったオブジェクトの名前")]
+    [PLResult("masterIndices",       PLResultKind.IntegerArray, Description = "実行後の masterIndex。names と同じ並び")]
+    [PLResult("parentMasterIndices", PLResultKind.IntegerArray, Description = "実行後に読み直した親の masterIndex。親なしは -1。names と同じ並び")]
+    [PLResult("depths",              PLResultKind.IntegerArray, Description = "実行後に読み直した深さ。names と同じ並び")]
+    public class SetParentsByNameCommand : PanelCommand
+    {
+        [PLParam(Description = "親を張る描画オブジェクトの名前", Required = true)]
+        public string[] Names { get; }
+
+        [PLParam(Description = "names と同じ並びの親の名前。親なしは空の要素（引用符で囲んだ \"\"。例: 上半身,\"\" ）", Required = true)]
+        public string[] ParentNames { get; }
+
+        public SetParentsByNameCommand(int modelIndex, string[] names, string[] parentNames)
+            : base(modelIndex)
+        {
+            Names       = names       ?? System.Array.Empty<string>();
+            ParentNames = parentNames ?? System.Array.Empty<string>();
+        }
+    }
+
     // ================================================================
     // モデル操作
     // ================================================================
@@ -182,12 +215,12 @@ namespace Poly_Ling.Data
     public class MergeMeshesCommand : PanelCommand
     {
         /// <summary>マージ対象の MasterIndex 配列（基準オブジェクトを含む）</summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
         /// <summary>基準オブジェクトの MasterIndex</summary>
-        [PLParam(TextKey = "MergeBaseMasterIndex",
+        [PLParam(TextKey = "MergeBaseMasterIndex", IsMeshRef = true,
                  Description = "結合の基準になるオブジェクトの masterIndex", Required = true)]
         public int BaseMasterIndex { get; }
 

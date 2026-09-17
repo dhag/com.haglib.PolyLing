@@ -465,7 +465,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "2 本のボーンが決める平面へ選択頂点を寄せる。")]
     public class PlanarizeAlongBonesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -526,7 +526,7 @@ namespace Poly_Ling.Data
             Threshold
         }
 
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }

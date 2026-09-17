@@ -13,8 +13,9 @@
 //             パネルの SendCommand も MCP も UI も同じ入口を通る。
 //             入れ子（実処理の中で撃たれるもの）は外側 1 本に含まれるので控えない。
 //   段の文言 … PlayerStagedTestSubPanelBase の Ok / Ng。
-//             「UI でやるなら」を Instruction、「なぜ」を Note にして、
-//             その段で控えたコマンドの前へ置く。
+//             「UI でやるなら」と「なぜ」を Note にして、
+//             その段で控えたコマンドの前へ置く。UI の操作説明は流すときにやることが無いので、
+//             止まる段（Instruction）にはしない。
 //
 // 【控えないもの】
 //   手本コマンド・UI 自動操作・コマンド定義の検査。手順ではなく道具の操作なので。
@@ -167,7 +168,7 @@ namespace Poly_Ling.Data
             if (failed)
                 head.Add(NoteStep($"{stage}: 記録したときこの段で失敗した（{did}）"));
             if (!string.IsNullOrWhiteSpace(ui))
-                head.Add(new ObjectGroupStep { Kind = ObjectGroupStepKind.Instruction, Purpose = $"{stage}: {ui}" });
+                head.Add(NoteStep($"{stage}: UI でやるなら {ui}"));
             if (!string.IsNullOrWhiteSpace(why))
                 head.Add(NoteStep($"{stage}: {why}"));
 

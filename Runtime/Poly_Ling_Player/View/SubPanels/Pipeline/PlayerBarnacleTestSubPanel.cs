@@ -500,17 +500,21 @@ namespace Poly_Ling.Player
             float squash = Mathf.Clamp01(_squash.value);
             float grow   = Mathf.Max(0f, _coneGrow.value);
 
+            // 位置はここで計算し、書き込みは SetVertexPositionsCommand に通す。
+            // 直接書き換えると Dispatch を通らず、手本の記録にも Undo にも残らない。
             int ballMoved = 0;
             if (squash > 0f)
             {
                 float k = 1f - squash;
+                var idx = new List<int>(ball.VertexCount);
+                var pos = new List<float>(ball.VertexCount * 3);
                 for (int i = 0; i < ball.VertexCount; i++)
                 {
-                    var v = ball.Vertices[i];
-                    var p = v.Position;
-                    v.Position = new Vector3(p.x, p.y * k, p.z);
-                    ballMoved++;
+                    var p = ball.Vertices[i].Position;
+                    idx.Add(i); pos.Add(p.x); pos.Add(p.y * k); pos.Add(p.z);
                 }
+                SendCommand(new SetVertexPositionsCommand(ModelIndex, SourceIndex, idx.ToArray(), pos.ToArray()));
+                ballMoved = idx.Count;
             }
 
             // 円錐は先端（+Z 側）だけを伸ばす。底面（z=0）は動かさない。
@@ -523,14 +527,17 @@ namespace Poly_Ling.Player
 
                 if (maxZ > 1e-6f)
                 {
+                    var idx = new List<int>();
+                    var pos = new List<float>();
                     for (int i = 0; i < cone.VertexCount; i++)
                     {
-                        var v = cone.Vertices[i];
-                        var p = v.Position;
+                        var p = cone.Vertices[i].Position;
                         if (p.z <= 1e-6f) continue;
-                        v.Position = new Vector3(p.x, p.y, p.z * (1f + grow));
-                        coneMoved++;
+                        idx.Add(i); pos.Add(p.x); pos.Add(p.y); pos.Add(p.z * (1f + grow));
                     }
+                    if (idx.Count > 0)
+                        SendCommand(new SetVertexPositionsCommand(ModelIndex, _coneIndex, idx.ToArray(), pos.ToArray()));
+                    coneMoved = idx.Count;
                 }
             }
 

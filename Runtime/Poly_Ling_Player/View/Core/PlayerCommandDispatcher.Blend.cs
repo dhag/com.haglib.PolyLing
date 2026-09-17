@@ -685,7 +685,7 @@ namespace Poly_Ling.Player
                     _undoController.MeshUndoContext.ParentModelContext = model;
                     _undoController.SetMeshObjectFor(mc, mc.UnityMesh);
                 }
-                var before = _undoController?.CaptureMeshObjectSnapshot();
+                var before = _undoController?.CaptureMeshObjectSnapshotOf(mc);
 
                 int changed = apply(mc);
                 if (changed <= 0) continue;
@@ -703,7 +703,7 @@ namespace Poly_Ling.Player
                 {
                     // ミラー側の記録で対象が移っているので戻す。
                     _undoController.SetMeshObjectFor(mc, mc.UnityMesh);
-                    var after = _undoController.CaptureMeshObjectSnapshot();
+                    var after = _undoController.CaptureMeshObjectSnapshotOf(mc);
                     _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                         _undoController, before, after, undoLabel));
                 }
@@ -753,7 +753,7 @@ namespace Poly_Ling.Player
                 {
                     _undoController.MeshUndoContext.ParentModelContext = model;
                     _undoController.SetMeshObjectFor(peer, peer.UnityMesh);
-                    before = _undoController.CaptureMeshObjectSnapshot();
+                    before = _undoController.CaptureMeshObjectSnapshotOf(peer);
                 }
 
                 if (fromReal) pair.SyncBoneWeights();
@@ -763,7 +763,7 @@ namespace Poly_Ling.Player
 
                 if (_undoController != null && before != null)
                 {
-                    var after = _undoController.CaptureMeshObjectSnapshot();
+                    var after = _undoController.CaptureMeshObjectSnapshotOf(peer);
                     _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                         _undoController, before, after, undoLabel + " (mirror)"));
                 }

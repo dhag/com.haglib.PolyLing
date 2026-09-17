@@ -143,6 +143,8 @@ namespace Poly_Ling.Data
         ///     再構築のときは 2 本を対で書き戻す。
         ///
         /// プロパティ名で書くこと。キーへの変換（先頭小文字・別名表）は読む側が行う。
+        /// モデル索引が 1 個の int（全部の索引に同じモデルが効く）でもよい
+        /// （例: TransferVertexDataCommand.TargetMeshIndices と TargetModelIndex）。
         /// </summary>
         public string MeshRefModelKey { get; set; } = "";
 

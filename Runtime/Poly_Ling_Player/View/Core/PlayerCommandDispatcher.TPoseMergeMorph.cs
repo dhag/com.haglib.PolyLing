@@ -277,6 +277,65 @@ namespace Poly_Ling.Player
                 }
 
                 // ── ブーリアン
+                case DiagnoseBooleanCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+
+                    var dgA = model.GetMeshContext(c.AMasterIndex);
+                    var dgB = model.GetMeshContext(c.BMasterIndex);
+                    if (dgA?.MeshObject == null || dgB?.MeshObject == null) { Fail("対象メッシュが 2 つ揃っていません"); return true; }
+                    if (ReferenceEquals(dgA, dgB)) { Fail("同じオブジェクト同士では計算できません"); return true; }
+
+                    // booleanMesh と同じ演算空間（A のローカル）で測る。
+                    var rep = BooleanDiagnostics.Run(
+                        c.Op,
+                        dgA.MeshObject, dgA.WorldMatrix,
+                        dgB.MeshObject, dgB.WorldMatrix,
+                        dgA.WorldMatrixInverse,
+                        c.Epsilon, c.MergeThreshold, c.TJunctionTolerance, c.FixInvalidPlanes);
+
+                    if (!rep.Success) { Fail(rep.Message); return true; }
+
+                    ReportData(CommandDataJson.New()
+                        .Int  ("inputHolesA",         rep.InputHolesA)
+                        .Int  ("inputHolesB",         rep.InputHolesB)
+                        .Int  ("polygonsA",           rep.PolygonsA)
+                        .Int  ("polygonsB",           rep.PolygonsB)
+                        .Int  ("invalidPlanesA",      rep.InvalidPlanesA)
+                        .Int  ("invalidPlanesB",      rep.InvalidPlanesB)
+                        .Texts("stepNames",           rep.StepNames)
+                        .Ints ("stepCounts",          rep.StepCounts)
+                        .Int  ("resultPolygons",      rep.ResultPolygons)
+                        .Int  ("resultInvalidPlanes", rep.ResultInvalidPlanes)
+                        .Int  ("resultSkewedPlanes",  rep.ResultSkewedPlanes)
+                        .Int  ("resultVertices",      rep.ResultVertices)
+                        .Int  ("holesExact",          rep.HolesExact)
+                        .Int  ("holesMerged",         rep.HolesMerged)
+                        .Ints ("holeExactSizes",      rep.HoleExactSizes)
+                        .Nums ("holeExactCentroids",  rep.HoleExactCentroids.ToArray())
+                        .Ints ("holeMergedSizes",     rep.HoleMergedSizes)
+                        .Nums ("holeMergedCentroids", rep.HoleMergedCentroids.ToArray())
+                        .Texts("timingNames",         rep.TimingNames)
+                        .Ints ("timingMs",            rep.TimingMs)
+                        .Nums ("holeExactAreas",        rep.HoleExactAreas.ToArray())
+                        .Ints ("holeExactInvalidTouch", rep.HoleExactInvalidTouch)
+                        .Int  ("replicaPolygons",       rep.ReplicaPolygons)
+                        .Int  ("replicaInvalidPlanes",  rep.ReplicaInvalidPlanes)
+                        .Flag ("replicaMatches",        rep.ReplicaMatches)
+                        .Int  ("leafDiscardValid",      rep.LeafDiscardValid)
+                        .Int  ("leafDiscardInvalid",    rep.LeafDiscardInvalid)
+                        .Int  ("coplanarBackInvalid",   rep.CoplanarBackInvalid)
+                        .Int  ("invalidNodeReturns",    rep.InvalidNodeReturns)
+                        .Int  ("invalidNodePassed",     rep.InvalidNodePassed)
+                        .Int  ("fixedPolygons",         rep.FixedPolygons)
+                        .Int  ("fixedInvalidPlanes",    rep.FixedInvalidPlanes)
+                        .Int  ("fixedPlanesRebuilt",    rep.FixedPlanesRebuilt)
+                        .Int  ("fixedHolesExact",       rep.FixedHolesExact)
+                        .Int  ("fixedHolesMerged",      rep.FixedHolesMerged)
+                        .Build());
+                    return true;
+                }
+
                 case BooleanMeshCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
@@ -300,7 +359,7 @@ namespace Poly_Ling.Player
 
                     if (!boolResult.Success || boolResult.Mesh == null)
                     {
-                        Debug.LogWarning("[PolyLing] ブーリアン失敗: " + boolResult.Message);
+                        Fail("ブーリアン失敗: " + boolResult.Message);
                         return true;
                     }
 
@@ -310,6 +369,7 @@ namespace Poly_Ling.Player
                     var boolBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
                     MeshObject boolMesh = boolResult.Mesh;
+                    MeshContext boolOut;
 
                     if (c.CreateNewMesh)
                     {
@@ -334,6 +394,7 @@ namespace Poly_Ling.Player
 
                         destCtx.ParentModelContext = model;
                         model.Add(destCtx);
+                        boolOut = destCtx;
                     }
                     else
                     {
@@ -341,6 +402,7 @@ namespace Poly_Ling.Player
                         boolMesh.Name = boolCtxA.MeshObject.Name;
                         boolCtxA.MeshObject = boolMesh;
                         boolCtxA.ClearSelection();
+                        boolOut = boolCtxA;
 
                         var aUnityMesh       = boolMesh.ToUnityMesh();
                         aUnityMesh.name      = boolMesh.Name;
@@ -377,6 +439,15 @@ namespace Poly_Ling.Player
                     // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
+
+                    // 結果を入れた先を対象として返す。手本の次の段が @prev で引けるように。
+                    // B を消すと索引がずれるので、ここで引き直す。
+                    int boolOutIdx = model.IndexOf(boolOut);
+                    ReportData(CommandDataJson.New()
+                        .Int("vertices", boolMesh.VertexCount)
+                        .Int("faces",    boolMesh.FaceCount)
+                        .Build(),
+                        new[] { boolOutIdx }, new[] { boolOut.ObjectId });
                     return true;
                 }
 

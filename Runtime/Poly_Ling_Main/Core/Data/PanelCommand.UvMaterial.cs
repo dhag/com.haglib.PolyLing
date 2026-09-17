@@ -20,7 +20,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択したメッシュへ投影による UV 展開を入れる。")]
     public class ApplyUvUnwrapCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -59,7 +59,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "UV を XYZ に展開したメッシュを新しく作り、一覧へ足す。")]
     public class UvToXyzCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -97,11 +97,11 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "元メッシュの XYZ 座標を、対象メッシュの UV へ書き戻す。")]
     public class XyzToUvCommand : PanelCommand
     {
-        [PLParam(TextKey = "XyzToUvSourceMasterIndex",
+        [PLParam(TextKey = "XyzToUvSourceMasterIndex", IsMeshRef = true,
                  Description = "XYZ を読む描画オブジェクトの masterIndex", Required = true)]
         public int SourceMasterIndex { get; }
 
-        [PLParam(TextKey = "XyzToUvTargetMasterIndex",
+        [PLParam(TextKey = "XyzToUvTargetMasterIndex", IsMeshRef = true,
                  Description = "UV を書き戻す描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
 
@@ -131,7 +131,7 @@ namespace Poly_Ling.Data
     public class ApplyUVChangesCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int       MasterIndex   { get; }
 
@@ -188,7 +188,7 @@ namespace Poly_Ling.Data
     public class ApplyLscmUnwrapCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int  MasterIndex            { get; }
 
@@ -240,7 +240,7 @@ namespace Poly_Ling.Data
     public class ApplyMaterialToFacesCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "MasterIndex",
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex", Required = true)]
         public int   MasterIndex  { get; }
 

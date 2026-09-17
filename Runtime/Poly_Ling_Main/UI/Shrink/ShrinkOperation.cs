@@ -277,7 +277,7 @@ namespace Poly_Ling.UI
             var existingNames = CollectNames(model);
 
             var undo   = toolCtx?.UndoController;
-            var before = undo?.CaptureMeshObjectSnapshot();
+            var before = undo?.CaptureMeshObjectSnapshotOf(ctx);
 
             // バックアップメッシュ（シュリンク前の形状）
             var backupMo = mo.Clone();
@@ -312,7 +312,7 @@ namespace Poly_Ling.UI
 
             if (undo != null && before != null)
             {
-                var after = undo.CaptureMeshObjectSnapshot();
+                var after = undo.CaptureMeshObjectSnapshotOf(ctx);
                 toolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                     undo, before, after, "Shrink"));
             }

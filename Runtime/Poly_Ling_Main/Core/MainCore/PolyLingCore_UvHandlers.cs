@@ -26,6 +26,7 @@ namespace Poly_Ling.Core
 
             bool firstDone = false;
             MeshObjectSnapshot before = null;
+            MeshContext firstCtx = null;
 
             foreach (int masterIdx in cmd.MasterIndices)
             {
@@ -35,7 +36,8 @@ namespace Poly_Ling.Core
 
                 if (!firstDone)
                 {
-                    before = undoController?.CaptureMeshObjectSnapshot();
+                    firstCtx = ctx;
+                    before = undoController?.CaptureMeshObjectSnapshotOf(firstCtx);
                     firstDone = true;
                 }
 
@@ -46,7 +48,7 @@ namespace Poly_Ling.Core
 
             if (undoController != null && before != null)
             {
-                var after = undoController.CaptureMeshObjectSnapshot();
+                var after = undoController.CaptureMeshObjectSnapshotOf(firstCtx);
                 undoController.RecordTopologyChange(before, after,
                     $"UV Unwrap ({cmd.Projection})");
             }
@@ -98,7 +100,7 @@ namespace Poly_Ling.Core
             var targetMeshObj = targetCtx?.MeshObject;
             if (srcMeshObj == null || targetMeshObj == null) return;
 
-            var before = undoController?.CaptureMeshObjectSnapshot();
+            var before = undoController?.CaptureMeshObjectSnapshotOf(targetCtx);
 
             UvUnwrapOps.WritebackXyzToUv(srcMeshObj, targetMeshObj, cmd.UvScale);
 
@@ -117,7 +119,7 @@ namespace Poly_Ling.Core
 
             if (undoController != null && before != null)
             {
-                var after = undoController.CaptureMeshObjectSnapshot();
+                var after = undoController.CaptureMeshObjectSnapshotOf(targetCtx);
                 undoController.RecordTopologyChange(before, after, "XYZ→UV書き戻し");
             }
 

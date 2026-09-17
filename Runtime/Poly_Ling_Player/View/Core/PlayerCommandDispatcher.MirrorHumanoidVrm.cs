@@ -87,7 +87,7 @@ namespace Poly_Ling.Player
                         _undoController.SetMeshObject(bakeMo, srcMc.UnityMesh);
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    var bakeBefore = _undoController?.CaptureMeshObjectSnapshot();
+                    var bakeBefore = _undoController?.CaptureMeshObjectSnapshotOf(srcMc);
 
                     var bakeResult = MirrorBaker.BakeInPlace(
                         bakeMo, bakeAxis, bakeOffset, bakeThreshold, c.FlipU,
@@ -115,7 +115,7 @@ namespace Poly_Ling.Player
 
                     if (_undoController != null && bakeBefore != null)
                     {
-                        var bakeAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var bakeAfter = _undoController.CaptureMeshObjectSnapshotOf(srcMc);
                         _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                             _undoController, bakeBefore, bakeAfter, "ミラー実体化"));
                     }
@@ -162,7 +162,7 @@ namespace Poly_Ling.Player
                         _undoController.SetMeshObject(ubMo, ubMc.UnityMesh);
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    var ubBefore = _undoController?.CaptureMeshObjectSnapshot();
+                    var ubBefore = _undoController?.CaptureMeshObjectSnapshotOf(ubMc);
 
                     if (!MirrorBaker.UnbakeInPlace(ubMo, ubState, c.Mode))
                     {
@@ -201,7 +201,7 @@ namespace Poly_Ling.Player
 
                     if (_undoController != null && ubBefore != null)
                     {
-                        var ubAfter = _undoController.CaptureMeshObjectSnapshot();
+                        var ubAfter = _undoController.CaptureMeshObjectSnapshotOf(ubMc);
                         _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
                             _undoController, ubBefore, ubAfter, "ミラー実体化の解除"));
                     }
@@ -221,7 +221,33 @@ namespace Poly_Ling.Player
                 // ── Humanoidマッピング適用
                 case ApplyHumanoidMappingCommand c:
                 {
-                    if (model == null || c.Mapping == null) { Fail("Mapping が空です"); return true; }
+                    if (model == null) { Fail("no current model"); return true; }
+
+                    // オブジェクト名で渡されたら、ここで索引を引いて差し替える。
+                    if (c.BoneObjectNames != null && c.BoneObjectNames.Length > 0)
+                    {
+                        if (c.BoneObjectNames.Length != c.BoneNames.Length)
+                        { Fail($"boneNames が {c.BoneNames.Length} 件、boneObjectNames が {c.BoneObjectNames.Length} 件で長さが合いません"); return true; }
+
+                        var resolved = new int[c.BoneObjectNames.Length];
+                        for (int i = 0; i < resolved.Length; i++)
+                        {
+                            int hit = -1, hits = 0;
+                            for (int m = 0; m < model.MeshContextCount; m++)
+                            {
+                                var bmc = model.GetMeshContext(m);
+                                if (bmc == null || bmc.Type != MeshType.Bone) continue;
+                                if (!string.Equals(bmc.Name, c.BoneObjectNames[i], System.StringComparison.Ordinal)) continue;
+                                hit = m; hits++;
+                            }
+                            if (hits == 0) { Fail($"名前の合うボーンがありません: {c.BoneObjectNames[i]}"); return true; }
+                            if (hits > 1)  { Fail($"同じ名前のボーンが {hits} 本あります: {c.BoneObjectNames[i]}"); return true; }
+                            resolved[i] = hit;
+                        }
+                        c = new ApplyHumanoidMappingCommand(c.ModelIndex, c.BoneNames, resolved);
+                    }
+
+                    if (c.Mapping == null) { Fail("Mapping が空です"); return true; }
                     _undoController?.SetModelContext(model);
                     var hmBefore = model.HumanoidMapping.Clone();
                     model.HumanoidMapping.CopyFrom(c.Mapping);

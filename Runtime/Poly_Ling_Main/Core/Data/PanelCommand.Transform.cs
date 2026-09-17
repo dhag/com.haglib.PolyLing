@@ -41,7 +41,7 @@ namespace Poly_Ling.Data
         public enum CoordSpace { Local, World }
 
         /// <summary>対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]        MasterIndices      { get; }
 
@@ -138,7 +138,7 @@ namespace Poly_Ling.Data
     public class MovePivotCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]      MasterIndices { get; }
 
@@ -203,7 +203,7 @@ namespace Poly_Ling.Data
     public class SculptStrokeCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]        MasterIndices  { get; }
 
@@ -320,7 +320,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 対象の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸")]
         public int MasterIndex { get; }
 
@@ -349,7 +349,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "使う作業軸オブジェクトを切り替える。")]
     public class SetActiveWorkAxisCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "アクティブにする作業軸オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -412,7 +412,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 書き込み先の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "書き込み先の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸")]
         public int MasterIndex { get; }
 
@@ -449,7 +449,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択頂点をピボット周りに回転させる。")]
     public class RotateSelectionCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -539,7 +539,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択頂点をピボット中心に拡大縮小する。")]
     public class ScaleSelectionCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -625,7 +625,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択オブジェクト（ボーン / メッシュ）の原点を移動する。")]
     public class MoveObjectsCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象のオブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -690,7 +690,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "選択オブジェクト（ボーン / メッシュ）をピボット周りに回転させる。")]
     public class RotateObjectsCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象のオブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -741,6 +741,34 @@ namespace Poly_Ling.Data
             Angle                = angle;
             MoveWithChildren     = moveWithChildren;
             MoveMode             = moveMode;
+        }
+    }
+
+    /// <summary>
+    /// 頂点位置を直接書く（ローカル座標）。
+    ///
+    /// 【なぜ要るか】
+    ///   検証パネルが頂点を直接書き換えると Dispatch を通らず、手本の記録にも Undo にも残らない
+    ///   （藤壺検証の段 11、フリル検証の段 8）。位置の計算はパネル側に残し、書き込みだけをこの口に通す。
+    /// </summary>
+    [PLCommand(Description = "描画オブジェクトの頂点位置をローカル座標で書く。vertexIndices と positions（x,y,z を 3 個ずつ）は同じ並び。Undo に残る。")]
+    public class SetVertexPositionsCommand : PanelCommand
+    {
+        [PLParam(Description = "対象の描画オブジェクトの masterIndex", Required = true, IsMeshRef = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(Description = "書き込む頂点の番号", Required = true)]
+        public int[] VertexIndices { get; }
+
+        [PLParam(Description = "新しい位置（ローカル座標）。x,y,z を 3 個ずつ、vertexIndices と同じ並び", Required = true)]
+        public float[] Positions { get; }
+
+        public SetVertexPositionsCommand(int modelIndex, int masterIndex, int[] vertexIndices, float[] positions)
+            : base(modelIndex)
+        {
+            MasterIndex   = masterIndex;
+            VertexIndices = vertexIndices ?? System.Array.Empty<int>();
+            Positions     = positions     ?? System.Array.Empty<float>();
         }
     }
 }

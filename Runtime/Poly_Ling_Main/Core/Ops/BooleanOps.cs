@@ -177,7 +177,9 @@ namespace Poly_Ling.Ops
                 if (mergeVertices)
                     MeshMergeHelper.MergeAllVerticesAtSamePosition(result, mergeThreshold);
 
-                result.AssignMissingIds();
+                // 頂点 ID・面 ID は付けない。ID は他モデルとのモーフ等の対応付けに使うもので、
+                // 自動で振ると一意性がメッシュ内にしか無い番号が混ざる（AssignMissingIds を勝手に呼ばない規約）。
+                // 結果の受け口（booleanMesh）も ID を読まない。
 
                 return new BooleanResult
                 {

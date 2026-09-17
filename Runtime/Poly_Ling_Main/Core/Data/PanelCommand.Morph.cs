@@ -50,7 +50,7 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "モーフを描画オブジェクトへ戻す。")]
     public class ConvertMorphToMeshCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices",
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public ConvertMorphToMeshCommand(int modelIndex, int[] masterIndices)
