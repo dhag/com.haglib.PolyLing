@@ -340,6 +340,8 @@ namespace Poly_Ling.Player
             _motionClipTestSubPanel = new PlayerMotionClipTestSubPanel
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
+                GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand       = cmd => _panelContext?.SendCommand(cmd),
                 GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 GetUndoController = () => _editOps?.UndoController,
                 OnFrameApplied    = () =>

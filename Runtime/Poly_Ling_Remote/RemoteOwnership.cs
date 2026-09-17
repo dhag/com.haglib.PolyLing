@@ -497,6 +497,9 @@ namespace Poly_Ling.Remote
             {
                 // モデルを一切参照しない（クリップ JSON → .vrma の変換のみ）。
                 case ConvertUnityClipToVrmaCommand _:
+                // モデルを一切参照しない（モーションファイルの書き出し・検査のみ）。
+                case ExportMotionJsonCommand _:
+                case QueryMotionJsonCommand _:
                 case SelectMeshCommand _:
                 case SwitchModelCommand _:
                 case NotifyListStructureChangedCommand _:

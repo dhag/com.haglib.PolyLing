@@ -44,6 +44,12 @@ namespace Poly_Ling.Player
         public Func<ToolContext>   GetToolContext;
         public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
 
+        /// <summary>現在のモデル番号（コマンドの宛先）。</summary>
+        public Func<int> GetModelIndex;
+
+        /// <summary>コマンドの発行口（JSON 保存は ExportMotionJsonCommand を通す）。</summary>
+        public Action<Poly_Ling.Data.PanelCommand> SendCommand;
+
         /// <summary>フレーム適用後に呼ぶ。GPU メッシュ再スキンを core 側で起こすため。</summary>
         public Action OnFrameApplied;
 
@@ -122,6 +128,13 @@ namespace Poly_Ling.Player
         private Button        _btnTimeLast;
         [UiControl("resetPose", Safety = UiSafety.SafeWrite, Description = "ポーズをリセットする")]
         private Button        _btnResetPose;
+        [UiControl("saveJson", Safety = UiSafety.UserOnly, Description = "読み込んだクリップを PolyLing モーション JSON として保存する（保存ダイアログを開く）")]
+        private Button        _btnSaveJson;
+        [UiControl("report", Safety = UiSafety.ReadOnly, Description = "読込の検査結果と、モデルとの結び付き状況")]
+        private Label         _reportLabel;
+
+        // 直近の読込の検査結果（統合JSON のときだけ）。
+        private MotionClipLoadResult _loadResult;
 
         private const string PathKey     = "MotionClip.Path";
         private const string BindPathKey = "MotionClip.Bind.Path";
@@ -228,6 +241,12 @@ namespace Poly_Ling.Player
             _clipMatchLabel.style.marginBottom = 4;
             root.Add(_clipMatchLabel);
 
+            _reportLabel = new Label();
+            _reportLabel.style.fontSize     = 10;
+            _reportLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _reportLabel.style.marginBottom = 4;
+            root.Add(_reportLabel);
+
             // ── 時刻スライダー（秒）─────────────────────────────────────────
             _timeSlider = new Slider(0f, 1f) { value = 0f };
             _timeSlider.style.marginBottom = 2;
@@ -272,6 +291,10 @@ namespace Poly_Ling.Player
             resetBtn.style.marginBottom = 4;
             root.Add(resetBtn);
             _btnResetPose = resetBtn;
+
+            _btnSaveJson = new Button(OnSaveJson) { text = "JSON保存" };
+            _btnSaveJson.style.marginBottom = 4;
+            root.Add(_btnSaveJson);
 
             root.Add(SecLabel("オプション"));
 
@@ -327,12 +350,22 @@ namespace Poly_Ling.Player
                     $"Clip: {_dto.name}\n" +
                     $"Length: {_maxTime:F2}s  (@ {FrameRate:F0}fps)\n" +
                     $"Bone: {(_dto.bones?.Count ?? 0)}  Baked: {(_dto.bakedBones?.Count ?? 0)}  " +
-                    $"Muscle: {(_dto.muscles?.Count ?? 0)}  Morph: {(_dto.morphs?.Count ?? 0)}";
+                    $"Muscle: {(_dto.muscles?.Count ?? 0)}  Expr: {(_dto.expressions?.Count ?? 0)}";
 
             if (_clipMatchLabel != null && model != null && _applier != null)
             {
                 float rate = trackCount > 0 ? (float)_applier.MatchedTrackCount / trackCount : 0f;
                 _clipMatchLabel.text = $"Matched: {_applier.MatchedTrackCount}/{trackCount} ({rate:P0})";
+            }
+
+            if (_reportLabel != null)
+            {
+                string text = "";
+                if (_loadResult != null && _loadResult.Issues.Count > 0)
+                    text = $"検査: エラー {_loadResult.ErrorCount} / 警告 {_loadResult.WarningCount}\n{_loadResult.FormatIssues(8)}\n";
+                if (_applier != null)
+                    text += _applier.BindingReport.ToText(8);
+                _reportLabel.text = text;
             }
 
             UpdateSlider();
@@ -353,8 +386,9 @@ namespace Poly_Ling.Player
             {
                 if (track == null) continue;
                 bool matched = Model != null && _applier != null && _applier.IsTrackMatched(track);
+                bool conflicted = _applier != null && _applier.IsTrackConflicted(track);
                 int keys = track.keys?.Count ?? 0;
-                var lbl = new Label($"{(matched ? "✓" : "✗")} [{track.targetKind}] {track.id} ({keys} keys)");
+                var lbl = new Label($"{(matched ? "✓" : conflicted ? "⚠" : "✗")} [{track.targetKind}] {track.id} ({keys} keys){(conflicted ? " 競合" : "")}");
                 lbl.style.fontSize = 10;
                 lbl.style.color    = new StyleColor(matched ? new Color(0.5f, 0.9f, 0.5f) : new Color(0.8f, 0.4f, 0.4f));
                 _boneListContainer.Add(lbl);
@@ -390,7 +424,7 @@ namespace Poly_Ling.Player
                 _filePath    = path;
                 _currentTime = 0f;
                 _maxTime     = ComputeMaxTime(_dto);
-                if (_applier == null) _applier = new MotionClipApplier();
+                EnsureApplier();
                 ApplySourceDefaults();
                 _applier.SetClip(_dto);
 
@@ -437,8 +471,10 @@ namespace Poly_Ling.Player
         }
 
         // ソース種別に応じて読み込み、MotionClipDTO へ変換する。
+        // 統合JSON は検査結果を _loadResult に残し、エラーがあれば例外にする。
         private MotionClipDTO LoadDtoBySource(string path)
         {
+            _loadResult = null;
             switch (_sourceKind)
             {
                 case 0: // VMD
@@ -446,8 +482,52 @@ namespace Poly_Ling.Player
                 case 1: // UnityClip JSON
                     return MotionClipConverters.FromUnityClipDTO(UnityClipSerializer.LoadJson(path));
                 default: // 統合JSON
-                    return MotionClipSerializer.LoadJson(path);
+                {
+                    _loadResult = MotionClipSerializer.Load(path);
+                    if (_loadResult.Dto == null)
+                        throw new InvalidDataException(_loadResult.FormatIssues(8));
+                    return _loadResult.Dto;
+                }
             }
+        }
+
+        // 表情適用で WorkingPositions を変えた基準メッシュの表示を更新させる。
+        private void EnsureApplier()
+        {
+            if (_applier == null) _applier = new MotionClipApplier();
+            _applier.SyncMeshPositions = ctx => GetToolContext?.Invoke()?.SyncMeshContextPositionsOnly?.Invoke(ctx);
+        }
+
+        // 「JSON保存」: 読み込んだ元ファイルを ExportMotionJsonCommand で変換・書き出す。
+        // パネル内の DTO は元ファイルから決まるので、コマンドの結果と同じものになる。
+        private void OnSaveJson()
+        {
+            if (_dto == null || string.IsNullOrEmpty(_filePath)) { SetStatus("クリップを読み込んでください"); return; }
+            if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
+
+            string defName = !string.IsNullOrEmpty(_dto.name) ? _dto.name : Path.GetFileNameWithoutExtension(_filePath);
+            string outPath = SaveDest.AskSavePath(
+                "PolyLing モーション JSON の保存", SaveDest.Keys.Motion, "", defName + ".plmotion.json", "json");
+            if (string.IsNullOrEmpty(outPath)) return;
+
+            // 元ファイルはこのパネルのダイアログで利用者が選んだもの。1 回許可を付け直す。
+            PLSandbox.AllowOnceFromDialog(_filePath);
+
+            var since = DateTime.Now.AddSeconds(-2);
+            var kind  = _sourceKind == 0 ? Poly_Ling.Data.MotionSourceKind.Vmd
+                      : _sourceKind == 1 ? Poly_Ling.Data.MotionSourceKind.UnityClipJson
+                      :                    Poly_Ling.Data.MotionSourceKind.PolyLingMotionJson;
+
+            SendCommand(new Poly_Ling.Data.ExportMotionJsonCommand(GetModelIndex?.Invoke() ?? 0, outPath, _filePath, kind));
+
+            // Dispatch は同期なので、書き出し結果をここで確かめる。
+            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
+            if (!ok) { SetStatus("保存に失敗しました。理由はコンソールログに出ています"); return; }
+
+            var check = MotionClipSerializer.Load(outPath);
+            SetStatus(check.Success
+                ? $"保存しました: {Path.GetFileName(outPath)}（警告 {check.WarningCount}）"
+                : $"保存したファイルを読み戻せません: {check.FormatIssues(3)}");
         }
 
         // 外部 UnityBone CSV v2（ソース rest）を読み、リターゲット経路を有効化。
@@ -467,7 +547,7 @@ namespace Poly_Ling.Player
             try
             {
                 string text = File.ReadAllText(path);
-                if (_applier == null) _applier = new MotionClipApplier();
+                EnsureApplier();
                 int n = _applier.LoadSourceRestCsv(text);
 
                 var model = Model;
@@ -508,7 +588,7 @@ namespace Poly_Ling.Player
                 _dto = LoadDtoBySource(path); _filePath = path;
                 _maxTime = ComputeMaxTime(_dto);
                 _currentTime = Mathf.Clamp(time, 0f, _maxTime);
-                if (_applier == null) _applier = new MotionClipApplier();
+                EnsureApplier();
                 ApplySourceDefaults();
                 _applier.SetClip(_dto);
                 var model = Model;
@@ -567,46 +647,8 @@ namespace Poly_Ling.Player
             return (dto.bones?.Count ?? 0) + (dto.bakedBones?.Count ?? 0);
         }
 
-        private static float ComputeMaxTime(MotionClipDTO dto)
-        {
-            float max = 0f;
-            if (dto == null) return 0f;
-            max = Mathf.Max(max, MaxTimeTracks(dto.bones));
-            max = Mathf.Max(max, MaxTimeTracks(dto.bakedBones));
-            if (dto.body != null) max = Mathf.Max(max, MaxTimeKeys(dto.body.keys));
-            max = Mathf.Max(max, MaxTimeScalar(dto.morphs));
-            max = Mathf.Max(max, MaxTimeScalar(dto.muscles));
-            return max;
-        }
-
-        private static float MaxTimeTracks(List<MotionTrackDTO> tracks)
-        {
-            float max = 0f;
-            if (tracks == null) return 0f;
-            foreach (var t in tracks)
-                if (t != null) max = Mathf.Max(max, MaxTimeKeys(t.keys));
-            return max;
-        }
-
-        private static float MaxTimeKeys(List<MotionKeyDTO> keys)
-        {
-            float max = 0f;
-            if (keys == null) return 0f;
-            foreach (var k in keys)
-                if (k != null && k.t > max) max = k.t;
-            return max;
-        }
-
-        private static float MaxTimeScalar(List<MotionScalarTrackDTO> tracks)
-        {
-            float max = 0f;
-            if (tracks == null) return 0f;
-            foreach (var t in tracks)
-                if (t?.keys != null)
-                    foreach (var k in t.keys)
-                        if (k != null && k.t > max) max = k.t;
-            return max;
-        }
+        // 長さの正本は MotionClipSerializer.Length（duration とキー時刻の最大値の大きい方）。
+        private static float ComputeMaxTime(MotionClipDTO dto) => MotionClipSerializer.Length(dto);
 
         private static int ParseInt(string s, int fallback)
         {

@@ -71,6 +71,9 @@ namespace Poly_Ling.Core
             /// <summary>VRM アニメーション（.vrma）。</summary>
             public const string Vrma = "Save.Vrma.Folder";
 
+            /// <summary>PolyLing モーション JSON（.plmotion.json）。</summary>
+            public const string Motion = "Save.Motion.Folder";
+
             /// <summary>辞書・対応表の CSV（部品辞書 / 名称一括変更 / 作業軸辞書）。</summary>
             public const string Dictionary = "Save.Dictionary.Folder";
 

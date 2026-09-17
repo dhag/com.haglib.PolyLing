@@ -63,16 +63,17 @@ namespace Poly_Ling.Motion
                 }
             }
 
+            // VMD のモーフは PMX のモーフ名そのもの。表情としては MorphExpression の名前で解決する。
             if (src.morphs != null)
             {
                 foreach (var mt in src.morphs)
                 {
                     if (mt == null) continue;
-                    var track = new MotionScalarTrackDTO { name = mt.name };
+                    var track = new MotionExpressionTrackDTO { name = mt.name, provider = "generic" };
                     if (mt.w != null)
                         foreach (var k in mt.w)
                             if (k != null) track.keys.Add(new MotionScalarKeyDTO { t = k.f / fps, v = k.v });
-                    dst.morphs.Add(track);
+                    dst.expressions.Add(track);
                 }
             }
 

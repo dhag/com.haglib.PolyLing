@@ -872,6 +872,9 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // PolyLing モーション JSON の書き出し・検査もファイルだけを扱う。同じ理由でここで捌く。
+            if (DispatchMotionFile(cmd)) return;
+
             // UI 自動操作（パネル表示・値の読み書き・強調・キャプチャ）もモデルと
             // プロジェクトを見ない。下の null 門より前で捌かないと、何も読み込んでいない
             // 状態で "no project" になり、UI を操作できない。
