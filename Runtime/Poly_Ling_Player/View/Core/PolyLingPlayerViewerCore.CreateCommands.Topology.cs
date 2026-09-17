@@ -192,6 +192,37 @@ namespace Poly_Ling.Player
             return placeReason;
         }
 
+        /// <summary>
+        /// 頂点へ藤壺のコマンド。
+        /// メッシュはハンドラが組み（位置は GPU のワールド座標、向きはコマンドのカメラ）、
+        /// 置き方は他の図形生成と同じ PlaceGeneratedMesh を通す。姿勢は入れない。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteVertexBillboardPlace(Poly_Ling.Data.CreateVertexBillboardPlaceCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            EnsureVertexBillboardPlaceHandler();
+            var h = _vertexBillboardPlaceHandler;
+            if (h == null) return "頂点へ藤壺ハンドラがありません";
+
+            // 頂点の座標は GPU のワールド位置から読む。読む前に 1 回だけ更新する。
+            _viewportManager?.UpdateTransform();
+
+            if (!h.BuildFromCommand(cmd, out var mo, out string reason)) return reason;
+
+            string meshName = string.IsNullOrEmpty(cmd.MeshName)
+                ? VertexBillboardPlaceDefaultName
+                : cmd.MeshName;
+
+            string placeReason = PlaceGeneratedMesh(
+                mo, meshName, cmd.Placement, Vector3.zero, Vector3.one,
+                out int createdIndex);
+
+            if (placeReason == null) ReportCreatedMesh(createdIndex);
+            return placeReason;
+        }
+
         /// <summary>選択頂点の回転コマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteRotateSelection(Poly_Ling.Data.RotateSelectionCommand cmd)

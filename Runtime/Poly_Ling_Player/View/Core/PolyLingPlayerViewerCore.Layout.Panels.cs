@@ -604,6 +604,8 @@ namespace Poly_Ling.Player
             _primitiveSubPanel.OnObjectArrayGenerate = SendObjectArrayCommand;
             // 辺から帯面（高度な図形）。選択辺の本数と対象はモデル側から読む。
             WireEdgeRibbonFaceCallbacks(_primitiveSubPanel);
+            // 頂点へ藤壺（高度な図形）。頂点の位置とカメラの向きは Viewer 側から読む。
+            WireVertexBillboardPlaceCallbacks(_primitiveSubPanel);
             // 穴つなぎ（ブリッジ）。種の取り込みと実生成は Viewer 側が持つ。
             WireBridgeCallbacks(_primitiveSubPanel);
             // 点指定図形（高度な図形）。点の指定と実生成は Viewer 側が持つ。
@@ -652,6 +654,8 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.OnObjectArrayGenerate = SendObjectArrayCommand;
             // 辺から帯面（新しい高度）。既存インスタンスと同じ経路を通す。
             WireEdgeRibbonFaceCallbacks(_livePrimitiveSubPanel);
+            // 頂点へ藤壺（新しい高度）。既存インスタンスと同じハンドラを通す。
+            WireVertexBillboardPlaceCallbacks(_livePrimitiveSubPanel);
             // 穴つなぎ（ブリッジ）。既存インスタンスと同じ経路を通す。
             WireBridgeCallbacks(_livePrimitiveSubPanel);
             // 点指定図形（高度な図形）。既存インスタンスと同じハンドラを通す。

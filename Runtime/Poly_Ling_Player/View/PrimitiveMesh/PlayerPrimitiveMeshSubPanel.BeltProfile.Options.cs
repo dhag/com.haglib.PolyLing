@@ -273,7 +273,9 @@ namespace Poly_Ling.Player
 
             pick.ListContainer = new VisualElement();
             pick.ListContainer.style.marginBottom = 2;
-            c.Add(pick.ListContainer);
+            // 候補はモデルのオブジェクト名で変わるので固定の ID を付けられない。
+            // データ行のコンテナとして登録する（中の Toggle は検査の対象外）。
+            c.Add(RowTarget.AddRows(pick.ListContainer));
 
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;

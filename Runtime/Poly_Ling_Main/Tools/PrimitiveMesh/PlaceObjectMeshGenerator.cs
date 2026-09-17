@@ -171,7 +171,12 @@ namespace Poly_Ling.PlaceObject
         // 複製
         // ================================================================
 
-        private static void AppendInstance(
+        /// <summary>
+        /// src をフレーム (center, x, y, z) と倍率で dst の末尾へ複製する。
+        /// 法線は写さない（呼び出し側が最後に RecalculateNormals する）。
+        /// 頂点へ藤壺（VertexBillboardPlaceOps）もこれを使う。
+        /// </summary>
+        public static void AppendInstance(
             MeshObject dst, MeshObject src,
             Vector3 center, Vector3 x, Vector3 y, Vector3 z, float scale,
             bool assignParts, int partsId)

@@ -161,6 +161,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Bridge:
                 case ShapeKind.ObjectArray:
                 case ShapeKind.EdgeRibbonFace:
+                case ShapeKind.VertexBillboardPlace:
                 case ShapeKind.PointDefined:
                 default:
                     return null;

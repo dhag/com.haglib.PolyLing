@@ -37,6 +37,9 @@ namespace Poly_Ling.Player
         /// <summary>選択辺を保存する辞書の名前の元。</summary>
         private const string EdgeSetBaseName = "EdgeRibbonEdges";
 
+        /// <summary>選択頂点を保存する辞書の名前の元。</summary>
+        private const string VertexSetBaseName = "VertexBillboardVertices";
+
         /// <summary>
         /// DispatchCore の分担：辺のパイプ化。
         /// 該当するコマンドなら処理して true を返す。
@@ -264,11 +267,44 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 対象それぞれの選択辺を、全対象で同じ名前のパーツ選択辞書へ保存する。
-        /// 名前はどの対象にも無いものを選ぶ。選択辺を持たない対象には作らない。
-        /// 索引がずれたときに引き直せるよう、識別子も控える（PartsSelectionSet.CaptureIds）。
+        /// 選択辺を持たない対象には作らない。
         /// </summary>
         private static bool TryCreateEdgeSelectionSets(
             ModelContext model, int[] masterIndices, out string setName, out string reason)
+            => TryCreateSelectionSets(
+                model, masterIndices, EdgeSetBaseName, "選択辺がありません",
+                mc => mc.Selection?.Edges != null && mc.Selection.Edges.Count > 0,
+                (mc, name) => PartsSelectionSet.FromCurrentSelection(
+                    name, null, new HashSet<VertexPair>(mc.Selection.Edges),
+                    null, null, MeshSelectMode.Edge),
+                out setName, out reason);
+
+        /// <summary>
+        /// 対象それぞれの選択頂点を、全対象で同じ名前のパーツ選択辞書へ保存する。
+        /// 選択頂点を持たない対象には作らない。
+        /// </summary>
+        private static bool TryCreateVertexSelectionSets(
+            ModelContext model, int[] masterIndices, out string setName, out string reason)
+            => TryCreateSelectionSets(
+                model, masterIndices, VertexSetBaseName, "選択頂点がありません",
+                mc => mc.Selection?.Vertices != null && mc.Selection.Vertices.Count > 0,
+                (mc, name) => PartsSelectionSet.FromCurrentSelection(
+                    name, new HashSet<int>(mc.Selection.Vertices), null,
+                    null, null, MeshSelectMode.Vertex),
+                out setName, out reason);
+
+        /// <summary>
+        /// 対象それぞれへ、全対象で同じ名前のパーツ選択辞書を足す。
+        /// 名前は baseName（重複時は _2, _3 …）のうち、どの対象にも無いものを選ぶ。
+        /// hasElements が false の対象には作らない。
+        /// 索引がずれたときに引き直せるよう、識別子も控える（PartsSelectionSet.CaptureIds）。
+        /// 失敗したときは何も足していない。
+        /// </summary>
+        private static bool TryCreateSelectionSets(
+            ModelContext model, int[] masterIndices, string baseName, string emptyReason,
+            Func<MeshContext, bool> hasElements,
+            Func<MeshContext, string, PartsSelectionSet> makeSet,
+            out string setName, out string reason)
         {
             setName = null;
             reason  = null;
@@ -283,15 +319,15 @@ namespace Poly_Ling.Player
                 var mc = model.GetMeshContext(idx);
                 if (mc?.MeshObject == null) continue;
                 if (mc.Type == MeshType.Bone) continue;
-                if (mc.Selection?.Edges == null || mc.Selection.Edges.Count == 0) continue;
+                if (!hasElements(mc)) continue;
                 targets.Add(mc);
             }
 
-            if (targets.Count == 0) { reason = "選択辺がありません"; return false; }
+            if (targets.Count == 0) { reason = emptyReason; return false; }
 
             for (int n = 1; n < 100000; n++)
             {
-                string candidate = n == 1 ? EdgeSetBaseName : $"{EdgeSetBaseName}_{n}";
+                string candidate = n == 1 ? baseName : $"{baseName}_{n}";
 
                 bool used = false;
                 foreach (var mc in targets)
@@ -304,9 +340,7 @@ namespace Poly_Ling.Player
 
             foreach (var mc in targets)
             {
-                var set = PartsSelectionSet.FromCurrentSelection(
-                    setName, null, new HashSet<VertexPair>(mc.Selection.Edges),
-                    null, null, MeshSelectMode.Edge);
+                var set = makeSet(mc, setName);
                 set.CaptureIds(mc.MeshObject);
                 mc.PartsSelectionSetList.Add(set);
             }

@@ -93,6 +93,24 @@ namespace Poly_Ling.Player
                                               ["hi"] = "「パイプ」で きめた かたちで パイプを つくります。はじまりのめじるしが いります。" },
             ["EdgeRibbonFacePipeNeedsStartTag"] = new() { ["en"] = "Making a pipe requires the start tag.", ["ja"] = "パイプにするには開始タグが必要です", ["hi"] = "はじまりのめじるしが いります" },
 
+            // ── 頂点へ藤壺 ──
+            ["VertexBillboardPlace"]     = new() { ["en"] = "Vertex Barnacle", ["ja"] = "頂点へ藤壺", ["hi"] = "ちょうてんにふじつぼ" },
+            ["VertexBillboardPlaceHint"] = new() { ["en"] = "Places the source objects on each selected vertex, facing the camera the pointer was last over. The spikes are the source object's +Z.",
+                                                ["ja"] = "選択した頂点それぞれへ配置元オブジェクトを置き、直前にポインタが乗ったビューのカメラへ向けます。とげは配置元の +Z です。",
+                                                ["hi"] = "えらんだ ちょうてんに ものを おいて、カメラのほうへ むけます。" },
+            ["VertexBillboardScale"]      = new() { ["en"] = "Scale", ["ja"] = "倍率", ["hi"] = "おおきさ" },
+            ["VertexBillboardZDirection"] = new() { ["en"] = "Spike (+Z) Direction", ["ja"] = "とげ（+Z）の向き", ["hi"] = "とげのむき" },
+            ["VertexBillboardZToward"]    = new() { ["en"] = "Toward camera", ["ja"] = "前（カメラ側）", ["hi"] = "まえ" },
+            ["VertexBillboardZUp"]        = new() { ["en"] = "Screen up", ["ja"] = "上（画面の上）", ["hi"] = "うえ" },
+            ["VertexBillboardCameraHint"] = new() { ["en"] = "The camera direction at creation is stored. Rebuilding the object group uses that stored direction.",
+                                                ["ja"] = "生成したときのカメラの向きを控えます。オブジェクトグループの作り直しでも、控えた向きを使います。",
+                                                ["hi"] = "つくったときの カメラのむきを おぼえます。" },
+            ["VertexBillboardSelected"]   = new() { ["en"] = "Selected vertices: {0} / Sources: {1}", ["ja"] = "選択頂点: {0} 個 / 配置元: {1} 個", ["hi"] = "えらんだちょうてん: {0} / おくもの: {1}" },
+            ["VertexBillboardNoCamera"]   = new() { ["en"] = "No camera is available.", ["ja"] = "カメラを取れません", ["hi"] = "カメラが ありません" },
+            ["VertexBillboardModeCombine"]  = new() { ["en"] = "Combine all on every vertex", ["ja"] = "全部を結合して各頂点へ", ["hi"] = "ぜんぶ まとめて おく" },
+            ["VertexBillboardModeSequence"] = new() { ["en"] = "In order per vertex", ["ja"] = "頂点ごとに順番", ["hi"] = "ちょうてんごとに じゅんばん" },
+            ["VertexBillboardModeRandom"]   = new() { ["en"] = "Random per vertex", ["ja"] = "頂点ごとにランダム", ["hi"] = "ちょうてんごとに ランダム" },
+
             // ── 点指定図形 ──
             ["PointDefined"]      = new() { ["en"] = "Point Shape", ["ja"] = "点指定図形", ["hi"] = "てんしていずけい" },
             ["PointDefinedHint"]  = new() { ["en"] = "Click points in the 3D view in order (line 2, triangle 3, quad 4 in loop order). Points snap to existing vertices. A point snapped to the edited object reuses that vertex, and an edge whose subdivision count matches the existing edge path shares those vertices (shown in green). Depth goes along the view direction. Backspace / Delete removes the last point, Escape clears all points.",

@@ -109,6 +109,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.ObjectArray: return "ObjectArray";
                 // 辺から帯面は書き込み先の既存オブジェクトへ足すだけで、名前を使わない。
                 case ShapeKind.EdgeRibbonFace: return Poly_Ling.Tools.EdgeRibbonFaceTool.DefaultMeshName;
+                case ShapeKind.VertexBillboardPlace: return _vbpMeshName;
                 case ShapeKind.Bridge:     return BridgeMeshName;
                 default:                   return _current.ToString();
             }
@@ -162,6 +163,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Spline:            _splineP.MeshName        = name; break;
 
                 case ShapeKind.McpCylinder:       _mcpCylP.MeshName   = name; break;
+                case ShapeKind.VertexBillboardPlace: _vbpMeshName     = name; break;
                 // 穴つなぎも非重複候補の対象にする（Name() は BridgeMeshName を返すため、
                 // ここを欠かすと RefreshMeshNameCandidate が名前を書き戻せない）。
                 case ShapeKind.Bridge:      SetBridgeMeshName(name); break;

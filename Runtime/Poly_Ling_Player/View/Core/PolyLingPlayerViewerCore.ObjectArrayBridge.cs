@@ -265,6 +265,76 @@ namespace Poly_Ling.Player
                 };
         }
 
+        // ================================================================
+        // 頂点へ藤壺
+        // ================================================================
+
+        /// <summary>頂点へ藤壺で名前が空のときの生成物の名前。</summary>
+        private const string VertexBillboardPlaceDefaultName = "VertexBillboardPlace";
+
+        /// <summary>
+        /// 頂点へ藤壺（高度な図形）のコールバックを図形生成パネルへ繋ぐ。
+        /// ハンドラは 2 つのパネルで共有する（設定値はコマンドが持つ）。
+        /// </summary>
+        private void WireVertexBillboardPlaceCallbacks(PlayerPrimitiveMeshSubPanel panel)
+        {
+            if (panel == null) return;
+
+            EnsureVertexBillboardPlaceHandler();
+
+            panel.GetSelectedVertexCount = () =>
+                _vertexBillboardPlaceHandler?.GetSelectedVertexCount() ?? 0;
+
+            // 直前にポインタが乗ったビューポートのカメラ。視線と上方向（ワールド）。
+            panel.GetActiveCameraFrame = () =>
+            {
+                var cam = _activeViewport?.Cam;
+                if (cam == null) return null;
+                return new[] { cam.transform.forward, cam.transform.up };
+            };
+
+            panel.BuildVertexBillboardPlaceMesh = cmd =>
+            {
+                var h = _vertexBillboardPlaceHandler;
+                if (h == null) return null;
+                return h.BuildPreview(cmd, out var mo, out _) ? mo : null;
+            };
+        }
+
+        /// <summary>
+        /// 頂点へ藤壺のハンドラを用意する。パネルの配線と受け口の両方から呼ぶので、
+        /// 生成とパネル構築の順序に依存しない。
+        /// </summary>
+        private void EnsureVertexBillboardPlaceHandler()
+        {
+            if (_vertexBillboardPlaceHandler != null) return;
+
+            _vertexBillboardPlaceHandler = new VertexBillboardPlaceToolHandler
+            {
+                GetProject = () => ActiveProject,
+            };
+
+            // 頂点の位置は GPU が計算したワールド位置から読む（CPU で行列を掛けない）。
+            _vertexBillboardPlaceHandler.GetWorldPositions = mc =>
+            {
+                var model = ActiveProject?.CurrentModel;
+                if (model == null || mc == null || _viewportManager == null) return null;
+                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
+            };
+
+            _vertexBillboardPlaceHandler.ResolveSources = ResolvePlaceSourcesForCommand;
+        }
+
+        /// <summary>
+        /// カメラ変更の通知（オーバーレイ更新）から呼ぶ。
+        /// 頂点へ藤壺のプレビューを作ったときとカメラの向きが違えば、パネルに作り直させる。
+        /// </summary>
+        private void NotifyVertexBillboardCameraChanged()
+        {
+            _livePrimitiveSubPanel?.NotifyVertexBillboardCameraChanged();
+            _primitiveSubPanel?.NotifyVertexBillboardCameraChanged();
+        }
+
         private void WireBridgeCallbacks(PlayerPrimitiveMeshSubPanel panel)
         {
             if (panel == null) return;

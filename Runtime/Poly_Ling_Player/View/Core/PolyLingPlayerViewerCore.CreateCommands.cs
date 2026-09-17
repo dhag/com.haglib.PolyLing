@@ -62,6 +62,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnAlignVertices       = ExecuteAlignVertices;
             _commandDispatcher.OnSmoothEdges         = ExecuteSmoothEdges;
             _commandDispatcher.OnEdgeRibbonFace      = ExecuteEdgeRibbonFace;
+            _commandDispatcher.OnCreateVertexBillboardPlace = ExecuteVertexBillboardPlace;
             _commandDispatcher.OnImportPmxFile       = ExecuteImportPmxFile;
             _commandDispatcher.OnExportPmxFile       = ExecuteExportPmxFile;
             _commandDispatcher.OnImportMqoFile       = ExecuteImportMqoFile;

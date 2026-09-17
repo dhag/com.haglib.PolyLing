@@ -420,6 +420,104 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 頂点へ藤壺。対象の頂点それぞれの位置へ配置元オブジェクトを複製し、
+    /// カメラに向けたビルボードとして置く。実処理は VertexBillboardPlaceToolHandler。
+    ///
+    /// 【頂点の読み方】
+    ///   VertexSetName が空なら、対象は選択中の描画オブジェクトで、各オブジェクトの選択頂点を使う。
+    ///   指定されていれば、MasterIndices の各オブジェクトが持つその名前のパーツ選択辞書の頂点を使う。
+    ///   「オブジェクトグループとして残す」が立っていて辞書名が空のときは、
+    ///   受け口が選択頂点を辞書へ保存し、その名前を控えたコマンドをグループに残す。
+    ///
+    /// 【向き】ViewDirection / ViewUp（ワールド）から作る。作り直しでもこの値を使うので、
+    ///   向きは作ったときのカメラに固定される。
+    /// </summary>
+    [PLCommand(Description = "頂点へ藤壺。対象の頂点それぞれへ配置元オブジェクトを複製し、カメラに向けて置く。")]
+    public class CreateVertexBillboardPlaceCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+                 Description = "頂点を持つ描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
+                 Required = true)]
+        public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
+        public ulong[] ObjectIds { get; }
+
+        [PLParam(Description = "頂点を読むパーツ選択辞書の名前。空にすると選択中の頂点を使う")]
+        public string VertexSetName { get; }
+
+        [PLParam(TextKey = "PlaceSourceIndices", IsMeshRef = true,
+                 Description = "配置元オブジェクトの masterIndex 配列", Required = true)]
+        public int[] SourceMasterIndices { get; }
+
+        [PLParam(TextKey = "PlaceIncludeChildren", Description = "配置元の子孫も配置元に加える")]
+        public bool IncludeChildren { get; }
+
+        [PLParam(TextKey = "PlaceMode", Description = "配置元が複数のときの割り当て方式")]
+        public Poly_Ling.PlaceObject.PlaceSourceMode Mode { get; }
+
+        [PLParam(TextKey = "PlaceSeed", Description = "抽選の乱数シード。割り当て方式が Random のときだけ使う")]
+        public int RandomSeed { get; }
+
+        [PLParam(Description = "配置元に掛ける倍率。0 より大きいこと", Min = 0.000001f)]
+        public float Scale { get; }
+
+        [PLParam(Description = "配置元の +Z をどちらへ向けるか。TowardCamera = カメラ側 / ScreenUp = 画面の上")]
+        public Poly_Ling.PlaceObject.BillboardZDirection ZDirection { get; }
+
+        [PLParam(Description = "カメラの視線方向（ワールド）。0 にしないこと", Required = true)]
+        public Vector3 ViewDirection { get; }
+
+        [PLParam(Description = "カメラの上方向（ワールド）。視線と平行にしないこと", Required = true)]
+        public Vector3 ViewUp { get; }
+
+        [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
+        public string MeshName { get; }
+
+        [PLParam(Description = "生成物の置き方。追加先モード・材質スロットなど。姿勢は使わない")]
+        public PrimitivePlacement Placement { get; }
+
+        public CreateVertexBillboardPlaceCommand(
+            int modelIndex, int[] masterIndices,
+            string vertexSetName,
+            int[] sourceMasterIndices,
+            bool includeChildren,
+            Poly_Ling.PlaceObject.PlaceSourceMode mode,
+            int randomSeed,
+            float scale,
+            Poly_Ling.PlaceObject.BillboardZDirection zDirection,
+            Vector3 viewDirection,
+            Vector3 viewUp,
+            string meshName,
+            PrimitivePlacement placement,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices       = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds           = objectIds;
+            VertexSetName       = vertexSetName ?? "";
+            SourceMasterIndices = sourceMasterIndices ?? System.Array.Empty<int>();
+            IncludeChildren     = includeChildren;
+            Mode                = mode;
+            RandomSeed          = randomSeed;
+            Scale               = scale;
+            ZDirection          = zDirection;
+            ViewDirection       = viewDirection;
+            ViewUp              = viewUp;
+            MeshName            = meshName ?? "";
+            Placement           = placement;
+        }
+
+        /// <summary>辞書名だけを差し替えた写しを作る。</summary>
+        public CreateVertexBillboardPlaceCommand WithVertexSetName(string vertexSetName)
+            => new CreateVertexBillboardPlaceCommand(
+                ModelIndex, MasterIndices, vertexSetName, SourceMasterIndices, IncludeChildren,
+                Mode, RandomSeed, Scale, ZDirection, ViewDirection, ViewUp, MeshName, Placement,
+                ObjectIds);
+    }
+
+    /// <summary>
     /// 点指定図形（線分：円筒・角柱 / 三角：板 / 四角：板）を編集対象へ足す。
     /// 実処理は PointDefinedToolHandler（組み立ては PointDefinedMeshBuilder）。
     ///

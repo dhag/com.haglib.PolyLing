@@ -349,6 +349,9 @@ namespace Poly_Ling.Player
         /// <summary>選択辺から帯面を足すコマンドの実行。</summary>
         public Func<EdgeRibbonFaceCommand, string> OnEdgeRibbonFace;
 
+        /// <summary>頂点へ藤壺を置くコマンドの実行。</summary>
+        public Func<CreateVertexBillboardPlaceCommand, string> OnCreateVertexBillboardPlace;
+
         /// <summary>PMX ファイル読み込みコマンドの実行。</summary>
         public Func<ImportPmxFileCommand, string> OnImportPmxFile;
 
@@ -929,6 +932,7 @@ namespace Poly_Ling.Player
             if (DispatchBlend(cmd, project, model))             return;
             if (DispatchObjectGroup(cmd, project, model))       return;
             if (DispatchEdgePipe(cmd, project, model))          return;
+            if (DispatchVertexBillboard(cmd, project, model))   return;
             if (DispatchDeformSkin(cmd, project, model))        return;
             if (DispatchMirrorHumanoidVrm(cmd, project, model)) return;
             if (DispatchSpringBone(cmd, project, model))        return;

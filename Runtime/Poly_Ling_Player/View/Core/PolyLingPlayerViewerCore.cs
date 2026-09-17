@@ -339,6 +339,7 @@ namespace Poly_Ling.Player
         private SplitVerticesToolHandler          _splitVerticesHandler;
         private VertexHoleToolHandler             _vertexHoleHandler;
         private EdgeRibbonFaceToolHandler        _edgeRibbonFaceHandler;
+        private VertexBillboardPlaceToolHandler  _vertexBillboardPlaceHandler;
         private VertexDissolveToolHandler         _vertexDissolveHandler;
         private HoleRingCountToolHandler          _holeRingCountHandler;
         private Tri4To1ToolHandler                _tri4To1Handler;

@@ -295,6 +295,9 @@ namespace Poly_Ling.Remote
                 case EdgeRibbonFaceCommand       c: return c.MasterIndices;
                 case CreateEdgePipeCommand       c: return c.MasterIndices;
 
+                // 頂点へ藤壺。グループとして残すときは対象へ頂点の選択辞書を足す。
+                case CreateVertexBillboardPlaceCommand c: return c.MasterIndices;
+
                 // ドラッグ確定（ベベル・押し出し）。対象メッシュの頂点と面を書き換える。
                 case EdgeBevelCommand            c: return c.MasterIndices;
                 case EdgeExtrudeCommand          c: return c.MasterIndices;

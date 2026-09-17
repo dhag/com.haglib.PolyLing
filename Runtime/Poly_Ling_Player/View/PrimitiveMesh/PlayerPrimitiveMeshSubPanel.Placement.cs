@@ -140,6 +140,7 @@ namespace Poly_Ling.Player
         public bool PoseApplicable
             => _current != ShapeKind.ObjectArray
             && _current != ShapeKind.EdgeRibbonFace
+            && _current != ShapeKind.VertexBillboardPlace
             && _current != ShapeKind.Bridge
             && _current != ShapeKind.PointDefined;
 
@@ -310,6 +311,7 @@ namespace Poly_Ling.Player
                            && !pointDefined;
             bool usePose    = _current != ShapeKind.ObjectArray
                            && _current != ShapeKind.EdgeRibbonFace
+                           && _current != ShapeKind.VertexBillboardPlace
                            && _current != ShapeKind.Bridge
                            && !pointDefined;
             bool useMaterial = ShapeUsesMaterialSlot

@@ -41,7 +41,9 @@ namespace Poly_Ling.Player
                                RotorBlade,
                                // ── 機構部品B（締結・支持・伝達）
                                Nut, ShaftHolder, BearingUnit, UniversalJoint, MotorBracket,
-                               RodEnd, MotorCoupling, TrapezoidalThread, Spline }
+                               RodEnd, MotorCoupling, TrapezoidalThread, Spline,
+                               // ── 頂点へ藤壺（高度な図形）
+                               VertexBillboardPlace }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
@@ -53,7 +55,8 @@ namespace Poly_Ling.Player
               "PointDefined",
               "RotorBlade",
               "Nut","ShaftHolder","BearingUnit","UniversalJoint","MotorBracket",
-              "RodEnd","MotorCoupling","TrapezoidalThread","Spline" };
+              "RodEnd","MotorCoupling","TrapezoidalThread","Spline",
+              "VertexBillboardPlace" };
 
         /// <summary>
         /// 図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品A」/「機構部品B」/
@@ -73,7 +76,8 @@ namespace Poly_Ling.Player
               ShapeKind.NGonGear, ShapeKind.NGonStar,
               ShapeKind.PipeStadium, ShapeKind.HairStrand,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge,
-              ShapeKind.EdgeRibbonFace, ShapeKind.PointDefined, ShapeKind.RotorBlade };
+              ShapeKind.EdgeRibbonFace, ShapeKind.PointDefined, ShapeKind.RotorBlade,
+              ShapeKind.VertexBillboardPlace };
 
         // 揺れもの用のボーン鎖。作るのはボーンで、メッシュではない。
         //   「回転体」と同じくプロファイル（断面の折れ線）を持ち、
@@ -353,6 +357,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.PlaceObject: BuildPlaceObjectUI(_settingsContainer); break;
                 case ShapeKind.ObjectArray: BuildObjectArrayUI(_settingsContainer); break;
                 case ShapeKind.EdgeRibbonFace: BuildEdgeRibbonFaceUI(_settingsContainer); break;
+                case ShapeKind.VertexBillboardPlace: BuildVertexBillboardPlaceUI(_settingsContainer); break;
                 case ShapeKind.PointDefined:   BuildPointDefinedUI(_settingsContainer);   break;
                 case ShapeKind.Text:        BuildTextUI(_settingsContainer);        break;
                 case ShapeKind.Bridge:      BuildBridgeUI(_settingsContainer);      break;

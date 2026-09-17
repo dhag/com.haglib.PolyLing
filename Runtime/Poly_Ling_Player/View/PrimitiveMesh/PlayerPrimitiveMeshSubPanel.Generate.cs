@@ -49,6 +49,9 @@ namespace Poly_Ling.Player
             // ファクトリではなくハンドラへ組ませる（プレビューも同じ実装を通る）。
             if (_current == ShapeKind.EdgeRibbonFace) return GenerateEdgeRibbonFaceMesh();
 
+            // 頂点へ藤壺は選択頂点の GPU 座標とカメラの向きから組む。ハンドラへ組ませる。
+            if (_current == ShapeKind.VertexBillboardPlace) return GenerateVertexBillboardPlaceMesh();
+
             // 点指定図形は指定点から組む（座標はワールド空間）。プレビューも実生成も
             // PointDefinedToolHandler の同じ計画を通す。
             if (_current == ShapeKind.PointDefined) return GeneratePointDefinedMesh();
@@ -145,6 +148,13 @@ namespace Poly_Ling.Player
                     if (_current == ShapeKind.EdgeRibbonFace)
                     {
                         InvokeEdgeRibbonFaceGenerate();
+                        return;
+                    }
+
+                    // 頂点へ藤壺も専用コマンドを送る（カメラの向きをコマンドに載せる）。
+                    if (_current == ShapeKind.VertexBillboardPlace)
+                    {
+                        InvokeVertexBillboardPlaceGenerate();
                         return;
                     }
 
@@ -258,6 +268,10 @@ namespace Poly_Ling.Player
                 // パイプ化するときは開始タグも要る。
                 case ShapeKind.EdgeRibbonFace:
                     return EdgeRibbonFaceReady;
+
+                // 選択頂点と配置元が揃い、コマンドの送り先が結線されていること。
+                case ShapeKind.VertexBillboardPlace:
+                    return VertexBillboardPlaceReady;
 
                 // 点が揃い、直近のプレビューで組めていること（仕様 11）。
                 case ShapeKind.PointDefined:
