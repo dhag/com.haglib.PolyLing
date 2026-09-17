@@ -278,8 +278,9 @@ namespace Poly_Ling.EditorControl
         // ================================================================
         //
         // 要求: {"type":"command","action":"ping"|"play"|"stop"|"state"|"tools"|"call"
-        //                                  |"refresh"|"recompile"}
-        //       call のみ "params" を伴う（HandleCall の注記を参照）
+        //                                  |"refresh"|"recompile"
+        //                                  |"prefab_export"|"prefab_instantiate"|"prefab_import"}
+        //       call と prefab_* は "params" を伴う（HandleCall・「プレファブ」節の注記を参照）
         // 応答: {"type":"response","success":true,"action":"...","data":"..."}
         //       {"type":"response","success":false,"action":"...","error":"..."}
         //
@@ -328,6 +329,15 @@ namespace Poly_Ling.EditorControl
 
                 case "recompile":
                     return LogResponse(HandleRefresh(op, true, out afterReply));
+
+                case "prefab_export":
+                    return LogResponse(HandlePrefabExport(op, msg));
+
+                case "prefab_instantiate":
+                    return LogResponse(HandlePrefabInstantiate(op, msg));
+
+                case "prefab_import":
+                    return LogResponse(HandlePrefabImport(op, msg));
 
                 default:
                     return LogResponse(BuildError(op, $"unknown action: {op}"));
@@ -681,6 +691,276 @@ namespace Poly_Ling.EditorControl
                 + (clean ? "全スクリプトの再コンパイルを受理しました。" : "アセット更新を受理しました。")
                 + "この応答は実行前に返ります。完了は state の refreshDone が id 以上になり、"
                 + "isCompiling と isUpdating がともに false になったことで確認してください。");
+        }
+
+        // ================================================================
+        // プレファブ（書き出し・ヒエラルキーへの登録・取り込み）
+        // ================================================================
+        //
+        // prefab_export      … プロジェクトファイル → プレファブ
+        //   params: modelFolder（必須。作業フォルダ基準。PLSandbox を通す）
+        //           outputRoot（任意。Assets/ 以下）
+        //           createArmature / useBindpose / exportVisibleOnly / includeInvisibleAncestors /
+        //           exportMeshOnly / exportPhysics / buildAvatar / attachAnimator /
+        //           supplementHumanoid / writeAttach / tolerantMirrorBranch（任意。true/false）
+        //           rendererMode（任意。Auto / ForceMeshFilter）
+        //           animatorController（任意。Assets/ 以下のアセットパス）
+        //   省いたオプションは HierarchyExportOptions の既定値。
+        //
+        // prefab_instantiate … プレファブ → シーンのヒエラルキー
+        //   params: prefabPath（必須。Assets/... .prefab）
+        //           parentPath（任意。"Root/Child" 形式）
+        //           position（任意。"x,y,z"。親からの位置）
+        //
+        // prefab_import      … プレファブ → プロジェクトファイル
+        //   params: prefabPath（必須。Assets/... .prefab）
+        //           outputFolder（必須。作業フォルダ基準。PLSandbox を通す）
+        //           detectNamedMirror / restoreHumanoid（任意。true/false。既定 true）
+        //
+        // 【Play 中は受けない】
+        //   Play 中に作った GameObject は Play 終了で破棄される
+        //   （HierarchyExportClientWindow.CanExportNow と同じ理由）。
+        //   Play 中なら先に stop するのは要求元（MCP サーバ）の役目。
+        //
+        // 【ダイアログを出さない】
+        //   メインスレッドがダイアログで止まると応答が返らない。
+        //   本体（HierarchyPrefabExporter / HierarchyImportWindow.ImportToProjectFile /
+        //   PrefabInstantiateOps）はダイアログを出さず、文言を返す。
+        // ================================================================
+
+        private static string HandlePrefabExport(string op, RemoteMessage msg)
+        {
+            if (!CheckEditModeIdle(op, out string busy)) return busy;
+
+            var raw = msg?.Params;
+
+            if (!TryGetParam(raw, "modelFolder", out string modelFolder))
+                return BuildError(op, "params.modelFolder がありません");
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(modelFolder, out string modelFull, out string reason))
+                return BuildError(op, "modelFolder: " + reason);
+
+            var opt = new Poly_Ling.EditorIO.HierarchyExportOptions { SaveAsPrefab = true };
+
+            if (TryGetParam(raw, "outputRoot", out string outputRoot))
+            {
+                if (!TryNormalizeAssetsPath(outputRoot, null, out string normalizedRoot, out reason))
+                    return BuildError(op, "outputRoot: " + reason);
+                opt.PrefabOutputRoot = normalizedRoot;
+            }
+
+            string err = null;
+            ReadBool(raw, "createArmature",            ref opt.CreateArmature,            ref err);
+            ReadBool(raw, "useBindpose",               ref opt.UseBindpose,               ref err);
+            ReadBool(raw, "exportVisibleOnly",         ref opt.ExportVisibleOnly,         ref err);
+            ReadBool(raw, "includeInvisibleAncestors", ref opt.IncludeInvisibleAncestors, ref err);
+            ReadBool(raw, "exportMeshOnly",            ref opt.ExportMeshOnly,            ref err);
+            ReadBool(raw, "exportPhysics",             ref opt.ExportPhysics,             ref err);
+            ReadBool(raw, "buildAvatar",               ref opt.BuildAvatar,               ref err);
+            ReadBool(raw, "attachAnimator",            ref opt.AttachAnimator,            ref err);
+            ReadBool(raw, "supplementHumanoid",        ref opt.SupplementHumanoid,        ref err);
+            ReadBool(raw, "writeAttach",               ref opt.WriteAttach,               ref err);
+            ReadBool(raw, "tolerantMirrorBranch",      ref opt.TolerantMirrorBranch,      ref err);
+            if (err != null) return BuildError(op, err);
+
+            if (TryGetParam(raw, "rendererMode", out string rendererMode))
+            {
+                if (!Enum.TryParse(rendererMode, true, out Poly_Ling.HierarchyIO.HierarchyRendererMode mode)
+                    || !Enum.IsDefined(typeof(Poly_Ling.HierarchyIO.HierarchyRendererMode), mode))
+                    return BuildError(op, "rendererMode は Auto / ForceMeshFilter のどちらかです: " + rendererMode);
+                opt.RendererMode = mode;
+            }
+
+            if (TryGetParam(raw, "animatorController", out string controllerPath))
+            {
+                if (!TryNormalizeAssetsPath(controllerPath, null, out string normalizedController, out reason))
+                    return BuildError(op, "animatorController: " + reason);
+
+                opt.AnimatorController =
+                    AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(normalizedController);
+                if (opt.AnimatorController == null)
+                    return BuildError(op, "Animator Controller を読み込めません: " + normalizedController);
+            }
+
+            var outcome = new Poly_Ling.EditorIO.HierarchyPrefabExporter(opt).ExportFolder(modelFull);
+
+            string text =
+                $"{outcome.Title}\nprefabs={string.Join(",", outcome.PrefabPaths)}\n{outcome.Text}";
+
+            return outcome.Success ? BuildOk(op, text) : BuildError(op, text);
+        }
+
+        private static string HandlePrefabInstantiate(string op, RemoteMessage msg)
+        {
+            if (!CheckEditModeIdle(op, out string busy)) return busy;
+
+            var raw = msg?.Params;
+
+            if (!TryGetParam(raw, "prefabPath", out string prefabPath))
+                return BuildError(op, "params.prefabPath がありません");
+
+            if (!TryNormalizeAssetsPath(prefabPath, ".prefab", out string normalizedPrefab, out string reason))
+                return BuildError(op, "prefabPath: " + reason);
+
+            TryGetParam(raw, "parentPath", out string parentPath);
+
+            Vector3? position = null;
+            if (TryGetParam(raw, "position", out string positionText))
+            {
+                if (!TryParseVector3(positionText, out Vector3 p))
+                    return BuildError(op, "position は \"x,y,z\" の形で指定してください: " + positionText);
+                position = p;
+            }
+
+            bool ok = Poly_Ling.EditorIO.PrefabInstantiateOps.Instantiate(
+                normalizedPrefab, parentPath, position, out _, out string message);
+
+            return ok ? BuildOk(op, message) : BuildError(op, message);
+        }
+
+        private static string HandlePrefabImport(string op, RemoteMessage msg)
+        {
+            if (!CheckEditModeIdle(op, out string busy)) return busy;
+
+            var raw = msg?.Params;
+
+            if (!TryGetParam(raw, "prefabPath", out string prefabPath))
+                return BuildError(op, "params.prefabPath がありません");
+
+            if (!TryNormalizeAssetsPath(prefabPath, ".prefab", out string normalizedPrefab, out string reason))
+                return BuildError(op, "prefabPath: " + reason);
+
+            if (!TryGetParam(raw, "outputFolder", out string outputFolder))
+                return BuildError(op, "params.outputFolder がありません");
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(outputFolder, out string outputFull, out reason))
+                return BuildError(op, "outputFolder: " + reason);
+
+            bool detectNamedMirror = true;
+            bool restoreHumanoid   = true;
+            string err = null;
+            ReadBool(raw, "detectNamedMirror", ref detectNamedMirror, ref err);
+            ReadBool(raw, "restoreHumanoid",   ref restoreHumanoid,   ref err);
+            if (err != null) return BuildError(op, err);
+
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(normalizedPrefab);
+            if (prefab == null)
+                return BuildError(op, "プレファブを読み込めません: " + normalizedPrefab);
+
+            bool ok = Poly_Ling.EditorIO.HierarchyImportWindow.ImportToProjectFile(
+                prefab, null, outputFull, detectNamedMirror, restoreHumanoid,
+                out string title, out string message);
+
+            string text = $"{title}\n{message}";
+            return ok ? BuildOk(op, text) : BuildError(op, text);
+        }
+
+        /// <summary>Edit モードで、コンパイル中・インポート中でなければ true。不可なら応答 JSON を返す。</summary>
+        private static bool CheckEditModeIdle(string op, out string errorResponse)
+        {
+            errorResponse = null;
+
+            if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogWarning($"{LogTag} {op} 拒否: Play モード中です。{DescribeState()}");
+                errorResponse = BuildError(op, "Play モード中は受け付けません。先に stop してください。" + DescribeState());
+                return false;
+            }
+
+            if (!IsEditorIdle(out var reason))
+            {
+                Debug.LogWarning($"{LogTag} {op} 拒否: {reason}{DescribeState()}");
+                errorResponse = BuildError(op, reason + DescribeState());
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>空でない値があれば true。</summary>
+        private static bool TryGetParam(Dictionary<string, string> raw, string key, out string value)
+        {
+            value = null;
+            if (raw == null) return false;
+            if (!raw.TryGetValue(key, out value)) return false;
+            if (string.IsNullOrWhiteSpace(value)) { value = null; return false; }
+            value = value.Trim();
+            return true;
+        }
+
+        /// <summary>
+        /// true / false を読む。キーが無ければ target を変えない。
+        /// 解釈できなければ err に理由を入れる（先に入った理由は上書きしない）。
+        /// </summary>
+        private static void ReadBool(Dictionary<string, string> raw, string key, ref bool target, ref string err)
+        {
+            if (!TryGetParam(raw, key, out string text)) return;
+
+            if (bool.TryParse(text, out bool value))
+            {
+                target = value;
+                return;
+            }
+
+            if (err == null) err = $"{key} は true / false で指定してください: {text}";
+        }
+
+        /// <summary>
+        /// "Assets" 以下のアセットパスへ正規化する。
+        /// 区切りを '/' にそろえ、".." を含むもの・Assets の外を拒否する。
+        /// requiredExtension を渡した場合は拡張子も検査する。
+        /// </summary>
+        private static bool TryNormalizeAssetsPath(
+            string path, string requiredExtension, out string normalized, out string reason)
+        {
+            normalized = null;
+            reason     = null;
+
+            string p = (path ?? string.Empty).Replace('\\', '/').Trim().TrimEnd('/');
+
+            if (p != "Assets" && !p.StartsWith("Assets/", StringComparison.Ordinal))
+            {
+                reason = "Assets/ 以下のパスを指定してください: " + path;
+                return false;
+            }
+
+            foreach (string segment in p.Split('/'))
+            {
+                if (segment == ".." || segment == "." || segment.Length == 0)
+                {
+                    reason = "パスに空・\".\"・\"..\" の要素は使えません: " + path;
+                    return false;
+                }
+            }
+
+            if (requiredExtension != null
+                && !p.EndsWith(requiredExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = $"拡張子は {requiredExtension} にしてください: {path}";
+                return false;
+            }
+
+            normalized = p;
+            return true;
+        }
+
+        /// <summary>"x,y,z" を読む。</summary>
+        private static bool TryParseVector3(string text, out Vector3 value)
+        {
+            value = Vector3.zero;
+
+            string[] parts = text.Split(',');
+            if (parts.Length != 3) return false;
+
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var style = System.Globalization.NumberStyles.Float;
+
+            if (!float.TryParse(parts[0].Trim(), style, inv, out float x)) return false;
+            if (!float.TryParse(parts[1].Trim(), style, inv, out float y)) return false;
+            if (!float.TryParse(parts[2].Trim(), style, inv, out float z)) return false;
+
+            value = new Vector3(x, y, z);
+            return true;
         }
 
         /// <summary>

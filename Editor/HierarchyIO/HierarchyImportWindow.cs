@@ -114,63 +114,90 @@ namespace Poly_Ling.EditorIO
 
         private void ImportAndSave()
         {
-            if (_rootObject == null)
+            ImportToProjectFile(
+                _rootObject, _boneRoot, _outputFolder, _detectNamedMirror, _restoreHumanoid,
+                out string title, out string message);
+
+            EditorUtility.DisplayDialog(title, message, "OK");
+        }
+
+        /// <summary>
+        /// ヒエラルキー（またはプレファブ資産）を取り込み、プロジェクトファイル（フォルダ形式）へ保存する。
+        /// ダイアログは出さない。出す文言を title / message で返す。
+        /// ウィンドウのボタンと MCP（PolyLingEditorControlServer の prefab_import）の共通入口。
+        /// </summary>
+        /// <param name="rootObject">シーン上の GameObject、またはプレファブ資産。</param>
+        /// <param name="boneRoot">任意。null なら自動検出。</param>
+        /// <param name="outputFolder">保存先フォルダ（絶対パス）。</param>
+        /// <returns>保存まで完了したら true。</returns>
+        public static bool ImportToProjectFile(
+            GameObject rootObject,
+            Transform  boneRoot,
+            string     outputFolder,
+            bool       detectNamedMirror,
+            bool       restoreHumanoid,
+            out string title,
+            out string message)
+        {
+            title = "エラー";
+
+            if (rootObject == null)
             {
-                EditorUtility.DisplayDialog("エラー", "ルート GameObject が未指定です。", "OK");
-                return;
+                message = "ルート GameObject が未指定です。";
+                return false;
             }
-            if (string.IsNullOrEmpty(_outputFolder))
+            if (string.IsNullOrEmpty(outputFolder))
             {
-                EditorUtility.DisplayDialog("エラー", "保存先フォルダが未指定です。", "OK");
-                return;
+                message = "保存先フォルダが未指定です。";
+                return false;
             }
 
             // プレファブ資産が指定された場合はシーンへ一時インスタンス化して読む
             //   （BindPose フォールバックの worldToLocalMatrix や剛体の world 位置は
             //     「原点評価」を前提とするため、資産直読みでは不正確になりうる。
             //     一時インスタンスを原点に置いて読取り、後で破棄する）。
-            bool isAsset = EditorUtility.IsPersistent(_rootObject);
-            GameObject workRoot = _rootObject;
-            Transform boneRootHint = _boneRoot;
+            bool isAsset = EditorUtility.IsPersistent(rootObject);
+            GameObject workRoot = rootObject;
+            Transform boneRootHint = boneRoot;
             bool temp = false;
             if (isAsset)
             {
-                workRoot = PrefabUtility.InstantiatePrefab(_rootObject) as GameObject;
-                if (workRoot == null) workRoot = Instantiate(_rootObject);
+                workRoot = PrefabUtility.InstantiatePrefab(rootObject) as GameObject;
+                if (workRoot == null) workRoot = UnityEngine.Object.Instantiate(rootObject);
                 temp = true;
                 // 原点評価にするため一時インスタンスを原点・無回転へ
                 workRoot.transform.position = Vector3.zero;
                 workRoot.transform.rotation = Quaternion.identity;
-                // 資産上の _boneRoot はインスタンスの Transform と別物なのでパスで再解決
-                boneRootHint = RemapToInstance(_rootObject.transform, _boneRoot, workRoot.transform);
+                // 資産上の boneRoot はインスタンスの Transform と別物なのでパスで再解決
+                boneRootHint = RemapToInstance(rootObject.transform, boneRoot, workRoot.transform);
             }
 
             try
             {
-                Transform boneRoot = boneRootHint != null ? boneRootHint : AutoDetectBoneRoot(workRoot);
+                Transform resolvedBoneRoot = boneRootHint != null ? boneRootHint : AutoDetectBoneRoot(workRoot);
 
                 ModelContext model;
                 try
                 {
-                    model = BuildModelFromHierarchy(workRoot, boneRoot, _detectNamedMirror);
+                    model = BuildModelFromHierarchy(workRoot, resolvedBoneRoot, detectNamedMirror);
                 }
                 catch (Exception e)
                 {
-                    EditorUtility.DisplayDialog("エラー", "取り込みに失敗しました:\n" + e.Message, "OK");
                     Debug.LogException(e);
-                    return;
+                    message = "取り込みに失敗しました:\n" + e.Message;
+                    return false;
                 }
 
                 if (model == null || model.MeshContextCount == 0)
                 {
-                    EditorUtility.DisplayDialog("エラー", "取り込み対象（メッシュ/ボーン）が見つかりませんでした。", "OK");
-                    return;
+                    message = "取り込み対象（メッシュ/ボーン）が見つかりませんでした。";
+                    return false;
                 }
 
                 // Avatar から Humanoid + 可動域を復元（案X: Avatar が Humanoid の正本）。
                 // ※ per-bone へ復元後、Dict を整合してから保存する（SaveModel の Sync が
                 //   Dict→per-bone のため、Dict を先に埋めないと復元が消える）。
-                if (_restoreHumanoid)
+                if (restoreHumanoid)
                 {
                     int n = RestoreHumanoidFromAvatar(model, workRoot);
                     if (n > 0)
@@ -180,7 +207,7 @@ namespace Poly_Ling.EditorIO
                 // IK 付帯を attach.csv（プレファブ同居）から復元（プレファブ資産入力時のみ）
                 if (isAsset)
                 {
-                    string assetPath = AssetDatabase.GetAssetPath(_rootObject);
+                    string assetPath = AssetDatabase.GetAssetPath(rootObject);
                     if (!string.IsNullOrEmpty(assetPath))
                     {
                         string dir = Path.GetDirectoryName(assetPath);
@@ -194,21 +221,20 @@ namespace Poly_Ling.EditorIO
                     }
                 }
 
-                Directory.CreateDirectory(_outputFolder);
-                CsvModelSerializer.SaveModel(_outputFolder, model);
+                Directory.CreateDirectory(outputFolder);
+                CsvModelSerializer.SaveModel(outputFolder, model);
 
                 // Assets 配下に保存した場合は反映
-                if (_outputFolder.Replace("\\", "/").Contains("/Assets"))
+                if (outputFolder.Replace("\\", "/").Contains("/Assets"))
                     AssetDatabase.Refresh();
 
-                EditorUtility.DisplayDialog(
-                    "完了",
-                    $"保存しました:\n{_outputFolder}\n(コンテキスト数: {model.MeshContextCount})",
-                    "OK");
+                title   = "完了";
+                message = $"保存しました:\n{outputFolder}\n(コンテキスト数: {model.MeshContextCount})";
+                return true;
             }
             finally
             {
-                if (temp && workRoot != null) DestroyImmediate(workRoot);   // 一時インスタンスを後片付け
+                if (temp && workRoot != null) UnityEngine.Object.DestroyImmediate(workRoot);   // 一時インスタンスを後片付け
             }
         }
 
