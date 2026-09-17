@@ -17,6 +17,45 @@ namespace Poly_Ling.Ops
 {
     public static class BoundaryEdgeOps
     {
+        /// <summary>穴の連結成分数だけでは見落とす辺の接続不良を数える。</summary>
+        public struct TopologyCounts
+        {
+            public int BoundaryEdges;
+            public int NonManifoldEdges;
+            public int InconsistentWindingEdges;
+        }
+
+        /// <summary>
+        /// 境界（使用1回）、非多様体（使用3回以上）、同方向の共有（使用2回）を別々に数える。
+        /// 境界が0でも、後二者が0とは限らない。頂点でのみ接する殻や自己交差は検査しない。
+        /// </summary>
+        public static TopologyCounts AnalyzeTopology(MeshObject mesh)
+        {
+            var result = new TopologyCounts();
+            if (mesh == null) return result;
+            var counts = new Dictionary<(int, int), (int Count, int Balance)>();
+            foreach (var face in mesh.Faces)
+            {
+                var indices = face?.VertexIndices;
+                if (indices == null || indices.Count < 3) continue;
+                for (int i = 0; i < indices.Count; i++)
+                {
+                    int a = indices[i], b = indices[(i + 1) % indices.Count];
+                    if (a == b) continue;
+                    var key = a < b ? (a, b) : (b, a);
+                    counts.TryGetValue(key, out var use);
+                    counts[key] = (use.Count + 1, use.Balance + (a < b ? 1 : -1));
+                }
+            }
+            foreach (var use in counts.Values)
+            {
+                if (use.Count == 1) result.BoundaryEdges++;
+                else if (use.Count > 2) result.NonManifoldEdges++;
+                else if (use.Balance != 0) result.InconsistentWindingEdges++;
+            }
+            return result;
+        }
+
         // ================================================================
         // 抽出
         // ================================================================

@@ -29,6 +29,8 @@ namespace Poly_Ling.Data
     [PLCommand(Description = "2 つのメッシュオブジェクトにブーリアン演算（和 / 差 / 積）を行う。結果を入れたオブジェクトを対象として返す（新規なら追加したもの、置き換えなら A）。失敗したら失敗を返す。")]
     [PLResult("vertices", PLResultKind.Integer, Description = "結果の頂点数")]
     [PLResult("faces",    PLResultKind.Integer, Description = "結果の面数")]
+    [PLResult("actualMergeThreshold", PLResultKind.Number, Description = "実際に採用した頂点結合距離。結合しない場合は0")]
+    [PLResult("postprocessAttempts", PLResultKind.Integer, Description = "後処理の試行回数。接続不良が残れば距離を1/10にして最大4回試す。結合しない場合は0")]
     public class BooleanMeshCommand : PanelCommand
     {
         /// <summary>左辺（基準）オブジェクトの MasterIndex。差では削られる側。</summary>
@@ -58,12 +60,12 @@ namespace Poly_Ling.Data
 
         /// <summary>true: 演算後に同一位置頂点をマージする</summary>
         [PLParam(TextKey = "BooleanMergeVertices",
-                 Description = "演算後に同一位置の頂点を結合する", Required = true)]
+                 Description = "演算後に同一位置の頂点を結合し、T字解消と辺の接続検証を行う", Required = true)]
         public bool MergeVertices { get; }
 
         /// <summary>同一位置頂点マージのしきい値</summary>
         [PLParam(TextKey = "BooleanMergeThreshold",
-                 Description = "同一位置とみなす距離のしきい値",
+                 Description = "同一位置とみなす距離の上限。接続が壊れる場合は距離を小さくして再試行する",
                  LimitKey = "Boolean.MergeThreshold", Required = true)]
         public float MergeThreshold { get; }
 
@@ -114,6 +116,10 @@ namespace Poly_Ling.Data
     [PLResult("resultVertices",      PLResultKind.Integer,      Description = "結果の頂点数（三角形ごとにばらばら）")]
     [PLResult("holesExact",          PLResultKind.Integer,      Description = "頂点をほぼ完全一致（1e-7）でまとめ、T 字解消した後の穴の数")]
     [PLResult("holesMerged",         PLResultKind.Integer,      Description = "頂点を mergeThreshold でまとめ、T 字解消した後の穴の数")]
+    [PLResult("topologyStages", PLResultKind.TextArray, Description = "exact/merged の頂点結合直後とT字解消後。辺カウント各配列と添字が対応")]
+    [PLResult("boundaryEdgeCounts", PLResultKind.IntegerArray, Description = "段階ごとの使用1回の境界辺数")]
+    [PLResult("nonManifoldEdgeCounts", PLResultKind.IntegerArray, Description = "段階ごとの使用3回以上の辺数")]
+    [PLResult("inconsistentWindingEdgeCounts", PLResultKind.IntegerArray, Description = "段階ごとの2面が同方向に使う辺数")]
     [PLResult("holeExactSizes",      PLResultKind.IntegerArray, Description = "holesExact の穴ごとの頂点数（先頭 40 個まで）", Optional = true)]
     [PLResult("holeExactCentroids",  PLResultKind.NumberArray,  Description = "holesExact の穴ごとの重心。A のローカル。x,y,z を 3 個ずつ", Optional = true)]
     [PLResult("holeMergedSizes",     PLResultKind.IntegerArray, Description = "holesMerged の穴ごとの頂点数（先頭 40 個まで）", Optional = true)]
@@ -188,12 +194,12 @@ namespace Poly_Ling.Data
     ///
     /// ブーリアン専用ではない。同じ状態は穴つなぎや面削除の後にも起きる。
     /// </summary>
-    [PLCommand(Description = "辺の途中に乗っている頂点を、その辺を持つ面へ挿入して T 字接合を解消する。ブーリアンの後に使うと境界が閉じる。頂点も面も増えない。")]
+    [PLCommand(Description = "境界辺を、端点でつながる逆向きの境界辺に合わせて分割し、T字接合を解消する。正常な共有辺や無関係な頂点は対象外。頂点位置・頂点数・面数は変えず、UV/法線の隅参照を補間する。真の欠損面は補わない。")]
     [PLResult("inserted",      PLResultKind.Integer, Description = "挿入した点の数")]
     [PLResult("touchedFaces",  PLResultKind.Integer, Description = "点を挿入した面の数")]
     [PLResult("vertices",      PLResultKind.Integer, Description = "解消後の頂点数")]
     [PLResult("faces",         PLResultKind.Integer, Description = "解消後の面数")]
-    [PLResult("boundaryLoops", PLResultKind.Integer, Description = "解消後の境界ループ数。閉じた形なら 0")]
+    [PLResult("boundaryLoops", PLResultKind.Integer, Description = "解消後の境界辺の連結成分数。閉じたループとは限らない")]
     public class ResolveTJunctionsCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex",

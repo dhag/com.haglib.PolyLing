@@ -1,182 +1,248 @@
 // TJunctionOps.cs
-// T 字接合（辺の途中に他の面の頂点が乗っている状態）を解消する。
-// Runtime/Poly_Ling_Main/Core/Ops/ に配置
-//
-// 【何のためにあるか】
-//   ブーリアン（BooleanOps → pb_CSG）は BSP で多角形を切るとき、
-//   切った側にだけ頂点を足し、辺を共有する隣の面には知らせない。
-//   そのため辺の途中に頂点が乗った状態（T 字）が残り、
-//   その辺は隣と共有されないので境界として扱われる。
-//   立方体から立方体を引くだけでも境界ループが 1 つ残る（実測）。
-//
-//   ここは「辺の上に乗っている頂点を、その辺を持つ面へ挿入する」だけを行う。
-//   頂点も面も増やさず、面の頂点列に点を足すので、平面性は崩れない。
-//
-// 【ブーリアン専用にしない理由】
-//   同じ状態は穴つなぎや面削除の後にも起きる。位相をつなぎ直す道具として
-//   独立させ、どの工程からでも呼べるようにする。
-//
-// 【限界】
-//   辺に乗っているかを距離で見る。しきい値を大きくすると、
-//   乗っていない頂点まで拾って面をねじる。既定は小さめにしてある。
-//   面の向き（巻き順）は変えない。
+// 境界の辺を、逆向きの境界辺と接続するように分割して T 字接合を解消する。
+// 距離だけで全ての面へ頂点を挿入すると、細い面の反対側や、既に2面で共有される
+// 辺まで分割して非多様体を作る。境界の接続と巻き順を必ず併用する。
 
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 
 namespace Poly_Ling.Ops
 {
-    /// <summary>T 字接合の解消。</summary>
     public static class TJunctionOps
     {
-        /// <summary>辺に乗っているとみなす距離の既定値[m]。</summary>
         public const float DefaultTolerance = 1e-4f;
 
-        /// <summary>解消の結果。</summary>
         public struct Result
         {
-            /// <summary>点を挿入した回数。</summary>
             public int Inserted;
-
-            /// <summary>点を挿入した面の数。</summary>
             public int TouchedFaces;
         }
 
         /// <summary>
-        /// 辺の上に乗っている頂点を、その辺を持つ面へ挿入する。
-        /// 頂点の位置は変えない。面の数も変えない。
+        /// 境界辺 A→B に対し、B→V または V→A という別の面の境界辺があり、
+        /// V が線分 AB 上（tolerance 以内）なら A→V→B に分割する。
+        /// 新しい2辺は未使用、または逆向きに1回だけ使われている場合に限る。
+        /// 1回の分割で境界辺が必ず1本以上減るため、連鎖する T 字も有限回で解消する。
+        /// 頂点位置・頂点数・面数・面の巻き順は変えない。UV/法線の隅参照も補間する。
+        /// 孤立頂点の挿入や、接続の手掛かりが無い開いた隙間の補修は行わない。
         /// </summary>
         public static Result Resolve(MeshObject mesh, float tolerance = DefaultTolerance)
         {
-            var r = new Result();
-            if (mesh == null || mesh.FaceCount == 0 || mesh.VertexCount == 0) return r;
+            if (mesh == null || mesh.FaceCount == 0 || mesh.VertexCount == 0)
+                return new Result();
+            if (float.IsNaN(tolerance) || float.IsInfinity(tolerance) || tolerance < 0f)
+                throw new ArgumentOutOfRangeException(nameof(tolerance));
+            return new Resolver(mesh, Math.Max(tolerance, 1e-7f)).Run();
+        }
 
-            float tol   = Mathf.Max(tolerance, 1e-7f);
-            float tolSq = tol * tol;
+        private sealed class Edge
+        {
+            public int A, B, Face, Order;
+            public double LengthSquared;
+        }
 
-            // 位置で引けるよう、粗い格子に頂点を入れておく。
-            // 全頂点を総当たりすると面数×辺数×頂点数になって重い。
-            //
-            // 格子の一辺は辺の長さの平均に合わせる。CollectNear は辺を囲む箱の中の
-            // 格子を 3 重ループで全部引くので、一辺を許容量から決めると
-            // （以前は max(tol×8, 1e-3)）長さ 0.1 の辺 1 本で数万〜数十万回辞書を引き、
-            // 738 頂点の球で 13 秒かかっていた。辺の長さに合わせれば 1 本あたり数個で済む。
-            // 候補の集め方が変わるだけで、挿入の判定（下のループ）は変わらない。
-            float cell = Mathf.Max(tol * 8f, AverageEdgeLength(mesh));
-            var grid = new Dictionary<(int, int, int), List<int>>();
-
-            for (int v = 0; v < mesh.VertexCount; v++)
+        private sealed class EdgeOrder : IComparer<Edge>
+        {
+            public int Compare(Edge a, Edge b)
             {
-                var key = CellOf(mesh.Vertices[v].Position, cell);
-                if (!grid.TryGetValue(key, out var list)) { list = new List<int>(); grid[key] = list; }
-                list.Add(v);
+                int c = b.LengthSquared.CompareTo(a.LengthSquared);
+                return c != 0 ? c : a.Order.CompareTo(b.Order);
+            }
+        }
+
+        private sealed class Resolver
+        {
+            private readonly MeshObject mesh;
+            private readonly double toleranceSquared;
+            private readonly Dictionary<(int, int), List<Edge>> uses = new Dictionary<(int, int), List<Edge>>();
+            private readonly Dictionary<int, HashSet<Edge>> incoming = new Dictionary<int, HashSet<Edge>>();
+            private readonly Dictionary<int, HashSet<Edge>> outgoing = new Dictionary<int, HashSet<Edge>>();
+            private readonly SortedSet<Edge> pending = new SortedSet<Edge>(new EdgeOrder());
+            private int nextOrder;
+
+            public Resolver(MeshObject mesh, double tolerance)
+            {
+                this.mesh = mesh;
+                toleranceSquared = tolerance * tolerance;
             }
 
-            var near = new List<int>();
-            var hits = new List<(int Vertex, float T)>();
+            private static (int, int) Key(int a, int b) => a < b ? (a, b) : (b, a);
 
-            for (int f = 0; f < mesh.FaceCount; f++)
+            public Result Run()
             {
-                var face = mesh.Faces[f];
-                if (face?.VertexIndices == null || face.VertexIndices.Count < 3) continue;
-
-                bool touched = false;
-
-                // 挿入すると添字がずれるので、後ろの辺から見る。
-                for (int e = face.VertexIndices.Count - 1; e >= 0; e--)
+                for (int fi = 0; fi < mesh.FaceCount; fi++)
                 {
-                    int i1 = face.VertexIndices[e];
-                    int i2 = face.VertexIndices[(e + 1) % face.VertexIndices.Count];
-
-                    Vector3 p1 = mesh.Vertices[i1].Position;
-                    Vector3 p2 = mesh.Vertices[i2].Position;
-                    Vector3 d  = p2 - p1;
-
-                    float lenSq = d.sqrMagnitude;
-                    if (lenSq < tolSq) continue;
-
-                    CollectNear(grid, cell, p1, p2, tol, near);
-
-                    hits.Clear();
-                    foreach (int v in near)
+                    var indices = mesh.Faces[fi]?.VertexIndices;
+                    if (indices == null || indices.Count < 3) continue;
+                    for (int i = 0; i < indices.Count; i++)
                     {
-                        if (v == i1 || v == i2) continue;
-                        if (face.VertexIndices.Contains(v)) continue;
-
-                        Vector3 p = mesh.Vertices[v].Position;
-                        float t = Vector3.Dot(p - p1, d) / lenSq;
-
-                        // 端は除く。端に乗っているなら別の頂点が重なっているだけで、
-                        // それは頂点の統合で扱うべきもの。
-                        if (t <= 0f || t >= 1f) continue;
-
-                        Vector3 foot = p1 + d * t;
-                        if ((p - foot).sqrMagnitude > tolSq) continue;
-
-                        hits.Add((v, t));
+                        int a = indices[i], b = indices[(i + 1) % indices.Count];
+                        if (a == b) continue;
+                        var key = Key(a, b);
+                        if (!uses.TryGetValue(key, out var list)) uses[key] = list = new List<Edge>(2);
+                        list.Add(NewEdge(a, b, fi));
                     }
-
-                    if (hits.Count == 0) continue;
-
-                    // 辺に沿った順に並べてから入れる。
-                    hits.Sort((x, y) => x.T.CompareTo(y.T));
-
-                    for (int k = hits.Count - 1; k >= 0; k--)
-                        face.VertexIndices.Insert(e + 1, hits[k].Vertex);
-
-                    r.Inserted += hits.Count;
-                    touched = true;
                 }
+                foreach (var list in uses.Values)
+                    if (list.Count == 1) AddBoundary(list[0]);
 
-                if (touched) r.TouchedFaces++;
-            }
-
-            // 面の頂点列を書き換えただけなので、描画の作り直しは呼ぶ側に任せる。
-            return r;
-        }
-
-        private static (int, int, int) CellOf(Vector3 p, float cell)
-            => (Mathf.FloorToInt(p.x / cell), Mathf.FloorToInt(p.y / cell), Mathf.FloorToInt(p.z / cell));
-
-        /// <summary>面の辺の長さの平均。辺が無ければ 0。</summary>
-        private static float AverageEdgeLength(MeshObject mesh)
-        {
-            double sum = 0;
-            long count = 0;
-            for (int f = 0; f < mesh.FaceCount; f++)
-            {
-                var idx = mesh.Faces[f]?.VertexIndices;
-                if (idx == null || idx.Count < 2) continue;
-                for (int e = 0; e < idx.Count; e++)
+                var result = new Result();
+                var touched = new HashSet<int>();
+                while (pending.Count > 0)
                 {
-                    Vector3 p1 = mesh.Vertices[idx[e]].Position;
-                    Vector3 p2 = mesh.Vertices[idx[(e + 1) % idx.Count]].Position;
-                    sum += (p2 - p1).magnitude;
-                    count++;
+                    Edge edge = pending.Min;
+                    pending.Remove(edge);
+                    if (!IsBoundary(edge)) continue;
+
+                    int vertex = -1;
+                    double bestDistance = double.PositiveInfinity, parameter = 0;
+                    if (outgoing.TryGetValue(edge.B, out var fromB))
+                        foreach (var other in fromB)
+                            Consider(edge, other, other.B, ref vertex, ref parameter, ref bestDistance);
+                    if (incoming.TryGetValue(edge.A, out var toA))
+                        foreach (var other in toA)
+                            Consider(edge, other, other.A, ref vertex, ref parameter, ref bestDistance);
+                    if (vertex < 0) continue;
+
+                    var face = mesh.Faces[edge.Face];
+                    int corner = FindCorner(face, edge.A, edge.B);
+                    if (corner < 0) continue;
+                    InsertCorner(face, corner, mesh.Vertices[vertex], vertex, (float)parameter);
+
+                    RemoveBoundary(edge);
+                    uses.Remove(Key(edge.A, edge.B)); // 分割対象は1面だけが使う辺
+                    AddEdge(NewEdge(edge.A, vertex, edge.Face));
+                    AddEdge(NewEdge(vertex, edge.B, edge.Face));
+                    result.Inserted++;
+                    touched.Add(edge.Face);
+                }
+                result.TouchedFaces = touched.Count;
+                return result;
+            }
+
+            private Edge NewEdge(int a, int b, int face)
+            {
+                Vector3 p = mesh.Vertices[a].Position, q = mesh.Vertices[b].Position;
+                double x = (double)q.x - p.x, y = (double)q.y - p.y, z = (double)q.z - p.z;
+                return new Edge { A = a, B = b, Face = face, Order = nextOrder++, LengthSquared = x*x + y*y + z*z };
+            }
+
+            private bool IsBoundary(Edge edge)
+                => uses.TryGetValue(Key(edge.A, edge.B), out var list) && list.Count == 1 && ReferenceEquals(list[0], edge);
+
+            private bool CanPair(int a, int b)
+            {
+                if (!uses.TryGetValue(Key(a, b), out var list)) return true;
+                return list.Count == 1 && list[0].A == b && list[0].B == a;
+            }
+
+            private void Consider(Edge edge, Edge other, int v, ref int vertex, ref double parameter, ref double bestDistance)
+            {
+                if (other.Face == edge.Face || edge.LengthSquared <= 0 || !IsBoundary(other)) return;
+                if (mesh.Faces[edge.Face].VertexIndices.Contains(v)) return;
+                if (!CanPair(edge.A, v) || !CanPair(v, edge.B)) return;
+
+                // float の位置を double にしてから差と射影を求める。
+                Vector3 a = mesh.Vertices[edge.A].Position, b = mesh.Vertices[edge.B].Position, p = mesh.Vertices[v].Position;
+                double dx = (double)b.x - a.x, dy = (double)b.y - a.y, dz = (double)b.z - a.z;
+                double px = (double)p.x - a.x, py = (double)p.y - a.y, pz = (double)p.z - a.z;
+                double t = (px*dx + py*dy + pz*dz) / edge.LengthSquared;
+                if (t <= 0 || t >= 1) return;
+                double x = px-t*dx, y = py-t*dy, z = pz-t*dz;
+                double distance = x*x + y*y + z*z;
+                if (distance > toleranceSquared) return;
+                // HashSet の走査順に依存させない。
+                if (distance > bestDistance || (distance == bestDistance && vertex >= 0 && v >= vertex)) return;
+                vertex = v;
+                parameter = t;
+                bestDistance = distance;
+            }
+
+            private static void AddAt(Dictionary<int, HashSet<Edge>> map, int vertex, Edge edge)
+            {
+                if (!map.TryGetValue(vertex, out var set)) map[vertex] = set = new HashSet<Edge>();
+                set.Add(edge);
+            }
+
+            private void AddBoundary(Edge edge)
+            {
+                AddAt(outgoing, edge.A, edge);
+                AddAt(incoming, edge.B, edge);
+                pending.Add(edge);
+                // 新しい逆向きの隣接辺ができた端点では、以前分割できなかった辺も再検査する。
+                if (incoming.TryGetValue(edge.A, out var toA))
+                    foreach (var adjacent in toA) pending.Add(adjacent);
+                if (outgoing.TryGetValue(edge.B, out var fromB))
+                    foreach (var adjacent in fromB) pending.Add(adjacent);
+            }
+
+            private void RemoveBoundary(Edge edge)
+            {
+                if (outgoing.TryGetValue(edge.A, out var from)) from.Remove(edge);
+                if (incoming.TryGetValue(edge.B, out var to)) to.Remove(edge);
+                pending.Remove(edge);
+            }
+
+            private void AddEdge(Edge edge)
+            {
+                var key = Key(edge.A, edge.B);
+                if (!uses.TryGetValue(key, out var list))
+                {
+                    uses[key] = new List<Edge> { edge };
+                    AddBoundary(edge);
+                }
+                else
+                {
+                    // Consider が、相手が逆向きの境界辺1本だけであることを検査済み。
+                    RemoveBoundary(list[0]);
+                    list.Add(edge);
                 }
             }
-            return count > 0 ? (float)(sum / count) : 0f;
-        }
 
-        /// <summary>辺の通る格子と、その周り 1 つぶんの頂点を集める。</summary>
-        private static void CollectNear(
-            Dictionary<(int, int, int), List<int>> grid, float cell,
-            Vector3 p1, Vector3 p2, float tol, List<int> into)
-        {
-            into.Clear();
+            private static int FindCorner(Face face, int a, int b)
+            {
+                for (int i = 0; i < face.VertexCount; i++)
+                    if (face.VertexIndices[i] == a && face.VertexIndices[(i + 1) % face.VertexCount] == b) return i;
+                return -1;
+            }
 
-            Vector3 lo = Vector3.Min(p1, p2) - Vector3.one * tol;
-            Vector3 hi = Vector3.Max(p1, p2) + Vector3.one * tol;
+            private void InsertCorner(Face face, int corner, Vertex vertex, int vertexIndex, float t)
+            {
+                int count = face.VertexCount, next = (corner + 1) % count;
+                var a = mesh.Vertices[face.VertexIndices[corner]];
+                var b = mesh.Vertices[face.VertexIndices[next]];
+                Vector2 uv = Vector2.LerpUnclamped(ReadUV(a, face, corner), ReadUV(b, face, next), t);
+                Vector3 normal = Vector3.LerpUnclamped(ReadNormal(a, face, corner), ReadNormal(b, face, next), t).normalized;
 
-            var a = CellOf(lo, cell);
-            var b = CellOf(hi, cell);
+                // 描画は UV と法線を同じスロットで展開するため、ペアで追加する。
+                int slotCount = Math.Max(vertex.UVs.Count, vertex.Normals.Count);
+                while (vertex.UVs.Count < slotCount) vertex.UVs.Add(Vector2.zero);
+                while (vertex.Normals.Count < slotCount) vertex.Normals.Add(Vector3.zero);
+                int slot = slotCount;
+                for (int i = 0; i < slotCount; i++)
+                    if (vertex.UVs[i].Equals(uv) && vertex.Normals[i].Equals(normal)) { slot = i; break; }
+                if (slot == slotCount) { vertex.UVs.Add(uv); vertex.Normals.Add(normal); }
 
-            for (int x = a.Item1; x <= b.Item1; x++)
-                for (int y = a.Item2; y <= b.Item2; y++)
-                    for (int z = a.Item3; z <= b.Item3; z++)
-                        if (grid.TryGetValue((x, y, z), out var list))
-                            into.AddRange(list);
+                while (face.UVIndices.Count < count) face.UVIndices.Add(0);
+                while (face.NormalIndices.Count < count) face.NormalIndices.Add(0);
+                face.VertexIndices.Insert(corner + 1, vertexIndex);
+                face.UVIndices.Insert(corner + 1, slot);
+                face.NormalIndices.Insert(corner + 1, slot);
+            }
+
+            private static Vector2 ReadUV(Vertex v, Face face, int corner)
+            {
+                int slot = corner < face.UVIndices.Count ? face.UVIndices[corner] : 0;
+                return slot >= 0 && slot < v.UVs.Count ? v.UVs[slot] : Vector2.zero;
+            }
+
+            private static Vector3 ReadNormal(Vertex v, Face face, int corner)
+            {
+                int slot = corner < face.NormalIndices.Count ? face.NormalIndices[corner] : 0;
+                return slot >= 0 && slot < v.Normals.Count ? v.Normals[slot] : Vector3.zero;
+            }
         }
     }
 }

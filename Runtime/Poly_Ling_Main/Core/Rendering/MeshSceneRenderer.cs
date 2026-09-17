@@ -88,6 +88,9 @@ namespace Poly_Ling.Core
         }
         private readonly Dictionary<(int, int), Mesh> _boneMeshCache= new Dictionary<(int, int), Mesh>();
 
+        /// <summary>当たり判定の線メッシュ（キー＝モデル番号。1モデル1本）。</summary>
+        private readonly Dictionary<int, Mesh> _colliderMeshCache = new Dictionary<int, Mesh>();
+
         // 法線表示用のラインメッシュ（モデル単位で 1 本にまとめる）。
         // キーはモデルインデックス。選択メッシュが変わっても丸ごと作り直すため、
         // メッシュ単位でキャッシュを持つ場合のような取り残しが起きない。
@@ -349,6 +352,10 @@ namespace Poly_Ling.Core
             foreach (var mesh in _normalMeshCache.Values)
                 if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
             _normalMeshCache.Clear();
+
+            foreach (var mesh in _colliderMeshCache.Values)
+                if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
+            _colliderMeshCache.Clear();
         }
 
         public void RebuildAdapter(int mi, ModelContext model)
@@ -909,6 +916,228 @@ namespace Poly_Ling.Core
         {
             PrepareBones(project);
             SubmitBones(project, cam);
+        }
+
+        // ================================================================
+        // 当たり判定（SpringBone collider）の線表示
+        //   ModelContext.SpringBoneColliderDisplay が立っているモデルだけ描く。
+        //   位置・向きはボーン表示と同じ ExtractBoneTransform(WorldMatrix)
+        //   （スケールは除く。Offset/Tail/Normal は付帯ボーンのローカル）。
+        // ================================================================
+
+        private static readonly Color ColliderColor          = new Color(0.25f, 1.0f, 0.45f, 0.9f);
+        private static readonly Color ColliderInsideColor    = new Color(1.0f, 0.6f, 0.2f, 0.9f);
+        private static readonly Color ColliderHighlightColor = new Color(1.0f, 1.0f, 0.2f, 1.0f);
+
+        /// <summary>円・弧の分割数。</summary>
+        private const int ColliderCircleSegments = 32;
+
+        /// <summary>平面は無限なので、中心から一辺の半分をこの長さ[m]で描く。</summary>
+        private const float ColliderPlaneHalfSize = 0.3f;
+
+        /// <summary>平面の法線を示す線の長さ[m]。</summary>
+        private const float ColliderPlaneNormalLength = 0.1f;
+
+        /// <summary>
+        /// 【event 駆動で呼ぶ】当たり判定の線メッシュを事前構築する。
+        /// 毎フレーム呼ぶのは禁止（PrepareBones と同じ扱い）。
+        /// </summary>
+        public void PrepareSpringBoneColliders(ProjectContext project)
+        {
+            if (project == null) return;
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.Models[mi];
+                var verts  = new List<Vector3>();
+                var colors = new List<Color>();
+
+                if (model != null && model.SpringBoneColliderDisplay)
+                {
+                    for (int ci = 0; ci < model.MeshContextCount; ci++)
+                    {
+                        var mc = model.GetMeshContext(ci);
+                        var list = mc?.MeshObject?.SpringBoneColliders;
+                        if (list == null || list.Count == 0) continue;
+                        if (!ExtractBoneTransform(mc.WorldMatrix, out Vector3 pos, out Quaternion rot)) continue;
+
+                        for (int k = 0; k < list.Count; k++)
+                        {
+                            var c = list[k];
+                            if (c == null) continue;
+
+                            bool hl = ci == model.SpringBoneColliderHighlightMaster
+                                   && k  == model.SpringBoneColliderHighlightSlot;
+                            bool inside = c.Shape == SpringBoneColliderShape.InsideSphere
+                                       || c.Shape == SpringBoneColliderShape.InsideCapsule;
+                            Color col = hl ? ColliderHighlightColor
+                                      : inside ? ColliderInsideColor : ColliderColor;
+
+                            AppendColliderWire(verts, colors, c, pos, rot, col);
+                        }
+                    }
+                }
+
+                _colliderMeshCache.TryGetValue(mi, out var mesh);
+                if (verts.Count == 0)
+                {
+                    if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
+                    _colliderMeshCache.Remove(mi);
+                    continue;
+                }
+
+                if (mesh == null)
+                {
+                    mesh = new Mesh { hideFlags = HideFlags.HideAndDontSave };
+                    mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+                    _colliderMeshCache[mi] = mesh;
+                }
+                else
+                {
+                    mesh.Clear();
+                }
+
+                var uvs     = new Vector2[verts.Count];
+                var indices = new int[verts.Count];
+                for (int i = 0; i < indices.Length; i++) indices[i] = i;
+
+                mesh.SetVertices(verts);
+                mesh.SetColors(colors);
+                mesh.SetUVs(0, uvs);
+                mesh.SetIndices(indices, MeshTopology.Lines, 0);
+            }
+
+            // モデル数が減った場合の残りを捨てる。
+            if (_colliderMeshCache.Count > 0)
+            {
+                var stale = new List<int>();
+                foreach (var key in _colliderMeshCache.Keys)
+                    if (key >= project.ModelCount) stale.Add(key);
+                foreach (var key in stale)
+                {
+                    var m = _colliderMeshCache[key];
+                    if (m != null) UnityEngine.Object.DestroyImmediate(m);
+                    _colliderMeshCache.Remove(key);
+                }
+            }
+        }
+
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// 全ての準備は PrepareSpringBoneColliders で完了させておくこと。
+        /// </summary>
+        public void SubmitSpringBoneColliders(ProjectContext project, Camera cam)
+        {
+            if (project == null || cam == null) return;
+            if (_colliderMeshCache.Count == 0) return;
+
+            var mat = GetBoneOverlayMaterial(isSelected: true);
+            if (mat == null) return;
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.Models[mi];
+                if (model == null || !model.SpringBoneColliderDisplay) continue;
+                if (_colliderMeshCache.TryGetValue(mi, out var mesh) && mesh != null)
+                    Graphics.DrawMesh(mesh, Matrix4x4.identity, mat, 0, cam);
+            }
+        }
+
+        /// <summary>当たり判定 1 個ぶんの線分（2 頂点ずつ）を積む。</summary>
+        private static void AppendColliderWire(
+            List<Vector3> verts, List<Color> colors,
+            SpringBoneColliderData c, Vector3 pos, Quaternion rot, Color col)
+        {
+            Vector3 center = pos + rot * c.Offset;
+            float   r      = Mathf.Max(0f, c.Radius);
+
+            void Line(Vector3 a, Vector3 b)
+            {
+                verts.Add(a); verts.Add(b);
+                colors.Add(col); colors.Add(col);
+            }
+
+            // 中心 o、面内の直交単位ベクトル u,v、角度 a0..a1 の弧。
+            void Arc(Vector3 o, Vector3 u, Vector3 v, float rad, float a0, float a1)
+            {
+                int seg = Mathf.Max(2, Mathf.CeilToInt(ColliderCircleSegments * Mathf.Abs(a1 - a0) / (Mathf.PI * 2f)));
+                Vector3 prev = o + (u * Mathf.Cos(a0) + v * Mathf.Sin(a0)) * rad;
+                for (int i = 1; i <= seg; i++)
+                {
+                    float a = Mathf.Lerp(a0, a1, (float)i / seg);
+                    Vector3 p = o + (u * Mathf.Cos(a) + v * Mathf.Sin(a)) * rad;
+                    Line(prev, p);
+                    prev = p;
+                }
+            }
+
+            Vector3 ax = rot * Vector3.right;
+            Vector3 ay = rot * Vector3.up;
+            Vector3 az = rot * Vector3.forward;
+
+            void Sphere(Vector3 o)
+            {
+                Arc(o, ax, ay, r, 0f, Mathf.PI * 2f);
+                Arc(o, ay, az, r, 0f, Mathf.PI * 2f);
+                Arc(o, az, ax, r, 0f, Mathf.PI * 2f);
+            }
+
+            switch (c.Shape)
+            {
+                case SpringBoneColliderShape.Capsule:
+                case SpringBoneColliderShape.InsideCapsule:
+                {
+                    Vector3 tail = pos + rot * c.Tail;
+                    Vector3 dir  = tail - center;
+                    float   len  = dir.magnitude;
+                    if (len < 1e-6f) { Sphere(center); break; }
+
+                    Vector3 d = dir / len;
+                    Vector3 refAxis = Mathf.Abs(Vector3.Dot(d, ay)) < 0.99f ? ay : ax;
+                    Vector3 u = Vector3.Cross(d, refAxis).normalized;
+                    Vector3 v = Vector3.Cross(d, u);
+
+                    // 両端の輪
+                    Arc(center, u, v, r, 0f, Mathf.PI * 2f);
+                    Arc(tail,   u, v, r, 0f, Mathf.PI * 2f);
+                    // 母線 4 本
+                    Line(center + u * r, tail + u * r);
+                    Line(center - u * r, tail - u * r);
+                    Line(center + v * r, tail + v * r);
+                    Line(center - v * r, tail - v * r);
+                    // 端の半球（2 方向の半円）
+                    Arc(tail,   u,  d, r, 0f, Mathf.PI);
+                    Arc(tail,   v,  d, r, 0f, Mathf.PI);
+                    Arc(center, u, -d, r, 0f, Mathf.PI);
+                    Arc(center, v, -d, r, 0f, Mathf.PI);
+                    break;
+                }
+
+                case SpringBoneColliderShape.Plane:
+                {
+                    Vector3 n = rot * c.Normal;
+                    if (n.sqrMagnitude < 1e-12f) n = ay;
+                    n.Normalize();
+                    Vector3 refAxis = Mathf.Abs(Vector3.Dot(n, ay)) < 0.99f ? ay : ax;
+                    Vector3 u = Vector3.Cross(n, refAxis).normalized;
+                    Vector3 v = Vector3.Cross(n, u);
+                    float s = ColliderPlaneHalfSize;
+
+                    Vector3 p0 = center + ( u + v) * s;
+                    Vector3 p1 = center + (-u + v) * s;
+                    Vector3 p2 = center + (-u - v) * s;
+                    Vector3 p3 = center + ( u - v) * s;
+                    Line(p0, p1); Line(p1, p2); Line(p2, p3); Line(p3, p0);
+                    Line(center - u * s, center + u * s);
+                    Line(center - v * s, center + v * s);
+                    Line(center, center + n * ColliderPlaneNormalLength);
+                    break;
+                }
+
+                default: // Sphere / InsideSphere
+                    Sphere(center);
+                    break;
+            }
         }
 
         // ================================================================

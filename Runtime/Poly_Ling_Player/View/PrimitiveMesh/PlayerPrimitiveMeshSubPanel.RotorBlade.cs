@@ -21,6 +21,16 @@ namespace Poly_Ling.Player
     {
         private RotorBladeMeshGenerator.Params _rotorBladeP = RotorBladeMeshGenerator.Params.Default;
 
+        /// <summary>
+        /// 用途メニューの表示順。列挙の数値は Args に int で書かれるので並べ替えず、
+        /// 表示の番号とはこの配列で対応させる。
+        /// </summary>
+        private static readonly RotorBladeType[] RotorTypeMenuOrder =
+        {
+            RotorBladeType.AircraftPropeller, RotorBladeType.AxialFan,
+            RotorBladeType.MarineScrew,       RotorBladeType.DuctedJetFan,
+        };
+
         private void BuildRotorBladeUI(VisualElement c)
         {
             c.Add(ShapeTitle(T("RotorBlade")));
@@ -30,17 +40,18 @@ namespace Poly_Ling.Player
             // 用途を変えると諸元がその用途の既定値へ入れ替わる。
             // 名前・姿勢・向き・面の反転は利用者が決めた値なので引き継ぐ。
             c.Add(DD(T("RotorBladeTypeLabel"),
-                new List<string> { T("RotorAxialFan"), T("RotorAircraftProp"),
+                new List<string> { T("RotorAircraftProp"), T("RotorAxialFan"),
                                    T("RotorMarineScrew"), T("RotorJetFan") },
-                () => (int)_rotorBladeP.Type,
+                () => System.Array.IndexOf(RotorTypeMenuOrder, _rotorBladeP.Type),
                 i =>
                 {
+                    if (i < 0 || i >= RotorTypeMenuOrder.Length) return;
                     var name        = _rotorBladeP.MeshName;
                     var pivot       = _rotorBladeP.Pivot;
                     var orientation = _rotorBladeP.Orientation;
                     var flip        = _rotorBladeP.FlipFaces;
 
-                    _rotorBladeP = RotorBladeMeshGenerator.Params.Preset((RotorBladeType)i);
+                    _rotorBladeP = RotorBladeMeshGenerator.Params.Preset(RotorTypeMenuOrder[i]);
 
                     _rotorBladeP.MeshName    = name;
                     _rotorBladeP.Pivot       = pivot;
@@ -64,15 +75,21 @@ namespace Poly_Ling.Player
             c.Add(SR(T("RotorShaftBore"), 0f, RotorBladeMeshGenerator.Params.PartMax,
                 () => _rotorBladeP.ShaftBore, v => { _rotorBladeP.ShaftBore = v; DM(); }));
 
-            c.Add(SL(T("RotorBladeSection")));
+            c.Add(SL(T("RotorBladePlanform")));
             c.Add(SR(T("RotorRootChord"), RotorBladeMeshGenerator.Params.PartMin, RotorBladeMeshGenerator.Params.PartMax,
                 () => _rotorBladeP.RootChord, v => { _rotorBladeP.RootChord = v; DM(); }));
-            c.Add(SR(T("RotorTipChord"), RotorBladeMeshGenerator.Params.PartMin, RotorBladeMeshGenerator.Params.PartMax,
-                () => _rotorBladeP.TipChord, v => { _rotorBladeP.TipChord = v; DM(); }));
-            c.Add(SR(T("RotorRootRoundness"), 0f, 1f,
-                () => _rotorBladeP.RootRoundness, v => { _rotorBladeP.RootRoundness = v; D(); }));
-            c.Add(SR(T("RotorTipRoundness"), 0f, 1f,
-                () => _rotorBladeP.TipRoundness, v => { _rotorBladeP.TipRoundness = v; D(); }));
+            c.Add(SR(T("RotorMaxChord"), RotorBladeMeshGenerator.Params.PartMin, RotorBladeMeshGenerator.Params.PartMax,
+                () => _rotorBladeP.MaxChord, v => { _rotorBladeP.MaxChord = v; DM(); }));
+            c.Add(SR(T("RotorMaxChordPosition"), 0.05f, 0.95f,
+                () => _rotorBladeP.MaxChordPosition, v => { _rotorBladeP.MaxChordPosition = v; DM(); }));
+            c.Add(SR(T("RotorChordReference"), 0f, 1f,
+                () => _rotorBladeP.ChordReference, v => { _rotorBladeP.ChordReference = v; D(); }));
+            c.Add(SR(T("RotorTipApexPosition"), 0.05f, 0.95f,
+                () => _rotorBladeP.TipApexPosition, v => { _rotorBladeP.TipApexPosition = v; D(); }));
+            c.Add(SR(T("RotorTipCapShape"), 1.1f, 5f,
+                () => _rotorBladeP.TipCapShape, v => { _rotorBladeP.TipCapShape = v; DM(); }));
+
+            c.Add(SL(T("RotorBladeSection")));
             c.Add(SR(T("RotorRootPitch"), -80f, 80f,
                 () => _rotorBladeP.RootPitchDeg, v => { _rotorBladeP.RootPitchDeg = v; D(); }));
             c.Add(SR(T("RotorTipPitch"), -80f, 80f,

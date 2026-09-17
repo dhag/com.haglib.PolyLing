@@ -47,6 +47,30 @@ namespace Poly_Ling.Context
             SpringBoneHighlightActiveIndex = -1;
         }
 
+        // ================================================================
+        // 当たり判定（SpringBone collider）の表示（表示専用。保存しない）
+        //   当たり判定パネルを開いている間だけ、全当たり判定を線で描く。
+        //   読むのは MeshSceneRenderer.PrepareSpringBoneColliders /
+        //   SubmitSpringBoneColliders。変えたら MarkAllSlotsDirty を促すこと。
+        // ================================================================
+
+        /// <summary>当たり判定を 3D 画面へ描くか。</summary>
+        public bool SpringBoneColliderDisplay { get; set; } = false;
+
+        /// <summary>強調する当たり判定の付帯先ボーン（masterIndex）。-1＝なし。</summary>
+        public int SpringBoneColliderHighlightMaster { get; set; } = -1;
+
+        /// <summary>強調する当たり判定の、そのボーン内での番号。-1＝なし。</summary>
+        public int SpringBoneColliderHighlightSlot { get; set; } = -1;
+
+        /// <summary>当たり判定の表示を消す。</summary>
+        public void ClearSpringBoneColliderDisplay()
+        {
+            SpringBoneColliderDisplay = false;
+            SpringBoneColliderHighlightMaster = -1;
+            SpringBoneColliderHighlightSlot = -1;
+        }
+
         /// <summary>
         /// 指定MeshContextが属するMirrorPairを取得（実体側・ミラー側どちらでも検索）
         /// </summary>

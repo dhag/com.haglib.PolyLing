@@ -15,8 +15,10 @@
 //   d. 結果の穴             … 頂点をほぼ完全一致（MergeExactThreshold）でまとめた場合と、
 //                              指定の mergeThreshold でまとめた場合の 2 通り。
 //                              どちらも T 字を解消してから数える。
-//                              2 通りの差が頂点まとめで生じた穴になる。
+//                              差には頂点まとめと後続の T 字解消の両方が影響する。
 //   e. 結果の頂点数         … Unity Mesh の 16 ビット索引の上限と比べるため
+//   f. 辺の接続             … 頂点まとめ直後と T 字解消後を分け、境界・3面以上の共有・
+//                              同方向の共有を数える。境界の連結成分は閉じた穴とは限らない。
 //
 // 【BSP の手順を自前で並べる理由】
 //   Node の各手順の途中の数は外から取れない。Node.cs（取り込んだ外部コード）へ
@@ -63,6 +65,12 @@ namespace Poly_Ling.Ops
 
         public int HolesExact;
         public int HolesMerged;
+
+        /// <summary>頂点まとめ直後／T字解消後の接続。各配列は同じ添字で対応する。</summary>
+        public readonly List<string> TopologyStages = new List<string>();
+        public readonly List<int> BoundaryEdgeCounts = new List<int>();
+        public readonly List<int> NonManifoldEdgeCounts = new List<int>();
+        public readonly List<int> InconsistentWindingEdgeCounts = new List<int>();
 
         /// <summary>段階名と所要時間（ミリ秒）。</summary>
         public readonly List<string> TimingNames = new List<string>();
@@ -228,11 +236,11 @@ namespace Poly_Ling.Ops
 
                 rep.HolesExact  = CountHoles(meshResult, MergeExactThreshold, tJunctionTolerance,
                                              rep.HoleExactSizes, rep.HoleExactCentroids,
-                                             out MeshObject exactMesh, out var exactHoles);
+                                             out MeshObject exactMesh, out var exactHoles, rep, "exact");
                 Lap("結果の穴（ほぼ完全一致）");
                 rep.HolesMerged = CountHoles(meshResult, mergeThreshold, tJunctionTolerance,
                                              rep.HoleMergedSizes, rep.HoleMergedCentroids,
-                                             out _, out _);
+                                             out _, out _, rep, "merged");
                 Lap("結果の穴（mergeThreshold）");
 
                 // ── f. 穴ごとの性質（ほぼ完全一致でまとめた穴）──
@@ -469,7 +477,8 @@ namespace Poly_Ling.Ops
         private static int CountHoles(
             Mesh mesh, float threshold, float tJunctionTolerance,
             List<int> sizes, List<float> centroids,
-            out MeshObject resolved, out List<BridgeAutoPairOps.HoleInfo> holeList)
+            out MeshObject resolved, out List<BridgeAutoPairOps.HoleInfo> holeList,
+            BooleanDiagnosticReport report = null, string stage = null)
         {
             resolved = null;
             holeList = new List<BridgeAutoPairOps.HoleInfo>();
@@ -485,10 +494,12 @@ namespace Poly_Ling.Ops
             MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, threshold);
             long msMerge = sw.ElapsedMilliseconds;
             int afterMerge = mo.VertexCount;
+            RecordTopology(report, stage + ":afterMerge", mo);
 
             sw.Restart();
             TJunctionOps.Resolve(mo, tJunctionTolerance);
             long msTJ = sw.ElapsedMilliseconds;
+            RecordTopology(report, stage + ":afterTJunction", mo);
 
             sw.Restart();
             var holes = BridgeAutoPairOps.CollectHoles(mo, Matrix4x4.identity);
@@ -508,6 +519,16 @@ namespace Poly_Ling.Ops
                 }
             }
             return holes.Count;
+        }
+
+        private static void RecordTopology(BooleanDiagnosticReport report, string stage, MeshObject mesh)
+        {
+            if (report == null) return;
+            var counts = BoundaryEdgeOps.AnalyzeTopology(mesh);
+            report.TopologyStages.Add(stage);
+            report.BoundaryEdgeCounts.Add(counts.BoundaryEdges);
+            report.NonManifoldEdgeCounts.Add(counts.NonManifoldEdges);
+            report.InconsistentWindingEdgeCounts.Add(counts.InconsistentWindingEdges);
         }
     }
 }

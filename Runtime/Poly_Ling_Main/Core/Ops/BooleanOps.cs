@@ -47,9 +47,13 @@ namespace Poly_Ling.Ops
 
         /// <summary>成功時のみ非 null。演算空間のローカル座標を持つ新規メッシュ。</summary>
         public MeshObject Mesh;
+
+        /// <summary>実際に採用した頂点結合距離と後処理の試行回数。結合しない場合は0。</summary>
+        public float ActualMergeThreshold;
+        public int PostprocessAttempts;
     }
 
-    public static class BooleanOps
+    public static partial class BooleanOps
     {
         /// <summary>epsilon の既定値。pb_CSG の既定と同じ。</summary>
         public const float DefaultEpsilon = 0.00001f;
@@ -72,11 +76,10 @@ namespace Poly_Ling.Ops
         /// <param name="bToWorld">b のローカル → ワールド行列。</param>
         /// <param name="worldToResult">ワールド → 結果のローカル行列。</param>
         /// <param name="epsilon">
-        /// 平面の同一判定の許容量。pb_CSG の Plane は法線を正規化しないため、
-        /// 実効的な許容量は三角形の面積に依存する（元実装のまま）。
+        /// 正規化した平面からの符号付き距離に対する許容量（演算空間の単位）。
         /// </param>
         /// <param name="mergeVertices">演算後に同一位置頂点をマージするか。</param>
-        /// <param name="mergeThreshold">マージのしきい値。</param>
+        /// <param name="mergeThreshold">マージのしきい値の上限。接続が壊れる場合は小さくして再試行する。</param>
         /// <param name="resultName">結果メッシュの名前。null なら自動生成。</param>
         public static BooleanResult Perform(
             BooleanOpKind op,
@@ -99,6 +102,9 @@ namespace Poly_Ling.Ops
 
             if (a.IsSkinnedKind || b.IsSkinnedKind)
                 return Fail("スキンドメッシュは対象にできない（ボーンウェイトが失われるため）");
+
+            if (mergeVertices && (float.IsNaN(mergeThreshold) || float.IsInfinity(mergeThreshold) || mergeThreshold < 0f))
+                return Fail("頂点結合距離は有限の非負値で指定する");
 
             // ------------------------------------------------------------
             // 2. 演算空間への変換行列
@@ -174,8 +180,37 @@ namespace Poly_Ling.Ops
                 if (result.VertexCount == 0 || result.FaceCount == 0)
                     return Fail("結果が空になった（交差していない可能性がある）");
 
+                float actualMergeThreshold = mergeVertices ? mergeThreshold : 0f;
+                int postprocessAttempts = 0;
                 if (mergeVertices)
-                    MeshMergeHelper.MergeAllVerticesAtSamePosition(result, mergeThreshold);
+                {
+                    while (true)
+                    {
+                        postprocessAttempts++;
+                        MeshMergeHelper.MergeAllVerticesAtSamePosition(result, actualMergeThreshold);
+                        TJunctionOps.Resolve(result, actualMergeThreshold);
+                        // Face.Triangulate の扇形分割では、辺上の分割点が縮退三角形に
+                        // 含まれてしまう。次の描画/CSG変換でも接続を保つよう確定する。
+                        bool triangulated = TriangulateResult(result);
+                        var topology = BoundaryEdgeOps.AnalyzeTopology(result);
+                        if (triangulated && result.FaceCount > 0 && topology.BoundaryEdges == 0 &&
+                            topology.NonManifoldEdges == 0 && topology.InconsistentWindingEdges == 0)
+                            break;
+
+                        // 大きすぎる結合距離は別の頂点まで潰してしまう。
+                        // BSPを再演算せず、未結合の結果から後処理だけを最大4回試す。
+                        // 破れた結果を正常扱いして A を置き換えたり B を削除したりしない。
+                        if (postprocessAttempts >= 4 || actualMergeThreshold <= 1e-7f)
+                            return Fail($"接続検証に失敗: 三角形分割 {(triangulated ? "成功" : "失敗")} / 境界辺 {topology.BoundaryEdges} / " +
+                                $"3面以上の共有辺 {topology.NonManifoldEdges} / " +
+                                $"同方向の共有辺 {topology.InconsistentWindingEdges} " +
+                                $"（結合距離 {actualMergeThreshold:G6}）");
+
+                        actualMergeThreshold = Mathf.Max(1e-7f, actualMergeThreshold * 0.1f);
+                        result = new MeshObject(name);
+                        result.FromUnityMesh(meshResult, mergeVertices: false, includeBoneWeights: false);
+                    }
+                }
 
                 // 頂点 ID・面 ID は付けない。ID は他モデルとのモーフ等の対応付けに使うもので、
                 // 自動で振ると一意性がメッシュ内にしか無い番号が混ざる（AssignMissingIds を勝手に呼ばない規約）。
@@ -186,6 +221,8 @@ namespace Poly_Ling.Ops
                     Success = true,
                     Message = $"頂点 {result.VertexCount} / 面 {result.FaceCount}",
                     Mesh = result,
+                    ActualMergeThreshold = actualMergeThreshold,
+                    PostprocessAttempts = postprocessAttempts,
                 };
             }
             finally

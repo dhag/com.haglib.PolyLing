@@ -204,6 +204,7 @@ namespace Poly_Ling.Player
                 _renderer.SubmitWireframeAndVertices(cam, slot);
             if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S3 bones slot=" + slot);
             _renderer.SubmitBones(project, cam);
+            _renderer.SubmitSpringBoneColliders(project, cam);
             if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S4 normals slot=" + slot);
             _renderer.SubmitNormals(project, cam);
             if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S5 weightVis slot=" + slot);

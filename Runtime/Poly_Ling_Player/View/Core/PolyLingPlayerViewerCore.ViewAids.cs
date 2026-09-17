@@ -320,6 +320,9 @@ namespace Poly_Ling.Player
             // 何も付いていないときは何もしないので、パネル切替の負担にならない。
             _springBoneSubPanel?.ClearHighlight();
 
+            // 当たり判定の表示も同じ扱い（当たり判定パネルを見ている間だけ）。
+            _springBoneColliderSubPanel?.ClearDisplay();
+
             // UI 自動操作の強調枠と保留中のスクロールも同じ扱い（そのパネルを見ている間だけ）。
             _uiAutomation?.OnRightPanelsHidden();
 

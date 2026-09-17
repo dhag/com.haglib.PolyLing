@@ -421,6 +421,7 @@ namespace Poly_Ling.Player
             {
                 GetProject  = () => ActiveProject,
                 SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                OnDisplayChanged = () => _viewportManager?.EnterOverlayContentChanged(),
             };
             _springBoneColliderSubPanel.Build(_layoutRoot.SpringBoneColliderSection);
 

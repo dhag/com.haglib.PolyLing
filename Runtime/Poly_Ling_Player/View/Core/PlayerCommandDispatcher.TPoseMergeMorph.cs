@@ -310,6 +310,10 @@ namespace Poly_Ling.Player
                         .Int  ("resultSkewedPlanes",  rep.ResultSkewedPlanes)
                         .Int  ("resultVertices",      rep.ResultVertices)
                         .Int  ("holesExact",          rep.HolesExact)
+                        .Texts("topologyStages",      rep.TopologyStages)
+                        .Ints ("boundaryEdgeCounts",  rep.BoundaryEdgeCounts)
+                        .Ints ("nonManifoldEdgeCounts", rep.NonManifoldEdgeCounts)
+                        .Ints ("inconsistentWindingEdgeCounts", rep.InconsistentWindingEdgeCounts)
                         .Int  ("holesMerged",         rep.HolesMerged)
                         .Ints ("holeExactSizes",      rep.HoleExactSizes)
                         .Nums ("holeExactCentroids",  rep.HoleExactCentroids.ToArray())
@@ -446,6 +450,8 @@ namespace Poly_Ling.Player
                     ReportData(CommandDataJson.New()
                         .Int("vertices", boolMesh.VertexCount)
                         .Int("faces",    boolMesh.FaceCount)
+                        .Num("actualMergeThreshold", boolResult.ActualMergeThreshold)
+                        .Int("postprocessAttempts", boolResult.PostprocessAttempts)
                         .Build(),
                         new[] { boolOutIdx }, new[] { boolOut.ObjectId });
                     return true;

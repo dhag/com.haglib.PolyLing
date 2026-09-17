@@ -6,6 +6,10 @@
 // 【作り方】
 //   ハブとダクトは「閉じた断面を Z へ積む」形（GearLoftBuilder）。
 //   翼は翼弦方向 × 翼幅方向の格子を上下 2 面ぶん張り、前後縁と根元・先端を閉じる。
+//   平面形は、翼根から最大翼弦位置までを RootChord → MaxChord の SmoothStep、
+//   最大翼弦位置から翼端までを 1 つのスーパー楕円で作る。スーパー楕円は最大翼弦位置で
+//   接線が翼幅方向を向き、翼端頂点で閉じるので、輪郭は継ぎ目なく凸になる。
+//   外側区間の格子は、スーパー楕円を 4 辺に分けたクーンズ面で張る。
 //   翼型は NACA 4 桁系の厚み分布に、単純な円弧キャンバを足したもの。
 //
 // 【生成経路】
@@ -52,12 +56,16 @@ namespace Poly_Ling.PrimitiveMesh
 
             [PLParam(TextKey = "RotorRootChord", Description = "翼根の翼弦長", Min = PartMin, Max = PartMax)]
             public float RootChord;
-            [PLParam(TextKey = "RotorTipChord", Description = "翼端の翼弦長", Min = PartMin, Max = PartMax)]
-            public float TipChord;
-            [PLParam(TextKey = "RotorRootRoundness", Description = "翼根端の丸み。0 で直線、1 で半楕円", Min = 0, Max = 1)]
-            public float RootRoundness;
-            [PLParam(TextKey = "RotorTipRoundness", Description = "翼端の丸み。0 で直線、1 で半楕円", Min = 0, Max = 1)]
-            public float TipRoundness;
+            [PLParam(TextKey = "RotorMaxChord", Description = "翼幅途中の最大翼弦長", Min = PartMin, Max = PartMax)]
+            public float MaxChord;
+            [PLParam(TextKey = "RotorMaxChordPosition", Description = "最大翼弦位置（翼根0～翼端1）", Min = 0.05, Max = 0.95)]
+            public float MaxChordPosition;
+            [PLParam(TextKey = "RotorChordReference", Description = "翼弦基準位置（前縁0～後縁1）。この位置が翼幅方向の基準線とピッチ回転軸になる", Min = 0, Max = 1)]
+            public float ChordReference;
+            [PLParam(TextKey = "RotorTipApexPosition", Description = "翼端頂点の前後位置（最大翼弦に対して前縁0～後縁1）", Min = 0.05, Max = 0.95)]
+            public float TipApexPosition;
+            [PLParam(TextKey = "RotorTipCapShape", Description = "最大翼弦位置から翼端までの輪郭の指数。2 で楕円、小さいほど尖り、大きいほど角張る", Min = 1.1, Max = 5)]
+            public float TipCapShape;
             [PLParam(TextKey = "RotorRootPitch", Description = "翼根のピッチ角", Min = -80, Max = 80)]
             public float RootPitchDeg;
             [PLParam(TextKey = "RotorTipPitch", Description = "翼端のピッチ角", Min = -80, Max = 80)]
@@ -93,7 +101,7 @@ namespace Poly_Ling.PrimitiveMesh
                      Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
             public Vector3 Pivot;
 
-            public static Params Default => Preset(RotorBladeType.AxialFan);
+            public static Params Default => Preset(RotorBladeType.AircraftPropeller);
 
             /// <summary>用途ごとの既定値。翼の枚数・弦長・ピッチ・スキューが大きく違う。</summary>
             public static Params Preset(RotorBladeType t)
@@ -108,9 +116,11 @@ namespace Poly_Ling.PrimitiveMesh
                     HubLength = 0.34f,
                     ShaftBore = 0.16f,
                     RootChord = 0.42f,
-                    TipChord = 0.24f,
-                    RootRoundness = 0.3f,
-                    TipRoundness = 0.9f,
+                    MaxChord = 0.46f,
+                    MaxChordPosition = 0.38f,
+                    ChordReference = 0.28f,
+                    TipApexPosition = 0.43f,
+                    TipCapShape = 2.4f,
                     RootPitchDeg = 38f,
                     TipPitchDeg = 18f,
                     ThicknessRatio = 0.12f,
@@ -129,22 +139,26 @@ namespace Poly_Ling.PrimitiveMesh
 
                 if (t == RotorBladeType.AircraftPropeller)
                 {
-                    p.BladeCount = 3; p.RootChord = 0.3f; p.TipChord = 0.16f;
-                    p.RootRoundness = 0.45f; p.TipRoundness = 1f;
+                    p.BladeCount = 3; p.RotorDiameter = 5.7f; p.RootChord = 0.20f; p.MaxChord = 0.36f;
+                    p.MaxChordPosition = 0.48f;
+                    p.ChordReference = 0.45f;
+                    p.TipApexPosition = 0.4f; p.TipCapShape = 2.0f;
                     p.RootPitchDeg = 48f; p.TipPitchDeg = 17f; p.SkewDeg = 6f; p.RakeDeg = 3f;
                 }
                 else if (t == RotorBladeType.MarineScrew)
                 {
-                    p.BladeCount = 5; p.RootChord = 0.5f; p.TipChord = 0.3f;
-                    p.RootRoundness = 0.25f; p.TipRoundness = 0.75f;
+                    p.BladeCount = 5; p.RootChord = 0.5f; p.MaxChord = 0.58f;
+                    p.MaxChordPosition = 0.58f;
+                    p.TipApexPosition = 0.36f; p.TipCapShape = 2.7f;
                     p.RootPitchDeg = 45f; p.TipPitchDeg = 24f;
                     p.ThicknessRatio = 0.16f; p.CamberRatio = 0.06f;
                     p.SkewDeg = 34f; p.RakeDeg = 12f;
                 }
                 else if (t == RotorBladeType.DuctedJetFan)
                 {
-                    p.BladeCount = 12; p.RootChord = 0.28f; p.TipChord = 0.2f;
-                    p.RootRoundness = 0.2f; p.TipRoundness = 0.35f;
+                    p.BladeCount = 12; p.RootChord = 0.28f; p.MaxChord = 0.3f;
+                    p.MaxChordPosition = 0.35f;
+                    p.TipApexPosition = 0.5f; p.TipCapShape = 3.2f;
                     p.RootPitchDeg = 42f; p.TipPitchDeg = 28f;
                     p.ThicknessRatio = 0.09f; p.CamberRatio = 0.025f;
                     p.SkewDeg = 12f; p.ShowDuct = true;
@@ -159,9 +173,11 @@ namespace Poly_Ling.PrimitiveMesh
                 Mathf.Approximately(HubLength, o.HubLength) &&
                 Mathf.Approximately(ShaftBore, o.ShaftBore) &&
                 Mathf.Approximately(RootChord, o.RootChord) &&
-                Mathf.Approximately(TipChord, o.TipChord) &&
-                Mathf.Approximately(RootRoundness, o.RootRoundness) &&
-                Mathf.Approximately(TipRoundness, o.TipRoundness) &&
+                Mathf.Approximately(MaxChord, o.MaxChord) &&
+                Mathf.Approximately(MaxChordPosition, o.MaxChordPosition) &&
+                Mathf.Approximately(ChordReference, o.ChordReference) &&
+                Mathf.Approximately(TipApexPosition, o.TipApexPosition) &&
+                Mathf.Approximately(TipCapShape, o.TipCapShape) &&
                 Mathf.Approximately(RootPitchDeg, o.RootPitchDeg) &&
                 Mathf.Approximately(TipPitchDeg, o.TipPitchDeg) &&
                 Mathf.Approximately(ThicknessRatio, o.ThicknessRatio) &&
@@ -195,7 +211,10 @@ namespace Poly_Ling.PrimitiveMesh
                       && rt > rh
                       && p.HubDiameter > p.ShaftBore
                       && p.HubLength > 0f
-                      && p.RootChord > 0f && p.TipChord > 0f
+                      && p.RootChord > 0f && p.MaxChord > 0f
+                      && p.MaxChordPosition > 0f && p.MaxChordPosition < 1f
+                      && p.ChordReference >= 0f && p.ChordReference <= 1f
+                      && p.TipCapShape > 1f
                       && p.ThicknessRatio > 0f
                       && p.SpanSegments  >= Params.SpanSegmentsMin
                       && p.ChordSegments >= Params.ChordSegmentsMin
@@ -205,8 +224,7 @@ namespace Poly_Ling.PrimitiveMesh
             {
                 Valid        = valid,
                 TipClearance = p.ShowDuct ? p.DuctThickness * 0.35f : 0f,
-                Solidity     = p.BladeCount * (p.RootChord + p.TipChord) * 0.5f
-                             / (Mathf.PI * (rt + rh)),
+                Solidity     = p.BladeCount * MeanChord(p) / (Mathf.PI * (rt + rh)),
             };
         }
 
@@ -238,6 +256,63 @@ namespace Poly_Ling.PrimitiveMesh
             return m;
         }
 
+        /// <summary>平面形の面積 ÷ 翼幅。派生諸元のソリディティに使う。</summary>
+        private static float MeanChord(Params p)
+        {
+            float r0 = p.HubDiameter   * 0.47f;
+            float r1 = p.RotorDiameter * 0.5f;
+            float span = r1 - r0;
+            if (span <= 0f) return 0f;
+
+            float peak = Mathf.Clamp(p.MaxChordPosition, 0.05f, 0.95f);
+            // 内側区間：SmoothStep の 0～1 の積分は 1/2。
+            float inner = span * peak * (p.RootChord + p.MaxChord) * 0.5f;
+            // 外側区間：幅 MaxChord、高さ span×(1-peak) のスーパー楕円の半分。
+            float outer = span * (1f - peak) * p.MaxChord * SuperEllipseAreaFactor(TipExponent(p));
+            return (inner + outer) / span;
+        }
+
+        private static float TipExponent(Params p) => Mathf.Max(1.01f, p.TipCapShape);
+
+        /// <summary>∫0..1 (1 - h^e)^(1/e) dh を中点則で求める。</summary>
+        private static float SuperEllipseAreaFactor(float e)
+        {
+            const int n = 64;
+            float sum = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float h = (i + 0.5f) / n;
+                sum += Mathf.Pow(Mathf.Max(0f, 1f - Mathf.Pow(h, e)), 1f / e);
+            }
+            return sum / n;
+        }
+
+        /// <summary>
+        /// 最大翼弦位置から翼端までの輪郭（翼弦方向 s、半径 R の平面）。
+        /// 媒介変数 psi = 0 が最大翼弦の前縁、π/2 が翼端頂点、π が最大翼弦の後縁。
+        /// </summary>
+        private struct TipOutline
+        {
+            public float ApexS;      // 翼端頂点の翼弦方向位置（基準線から）
+            public float LeadHalf;   // 頂点から前縁側への幅
+            public float TrailHalf;  // 頂点から後縁側への幅
+            public float BaseRadius; // 最大翼弦位置の半径
+            public float Height;     // 翼端までの半径方向の長さ
+            public float Exponent;
+
+            public Vector2 Arc(float psi)
+            {
+                float c = Mathf.Cos(psi);
+                float w = Mathf.Pow(Mathf.Abs(c), 2f / Exponent);
+                float s = c >= 0f ? ApexS - LeadHalf * w : ApexS + TrailHalf * w;
+                float h = Mathf.Pow(Mathf.Abs(Mathf.Sin(psi)), 2f / Exponent);
+                return new Vector2(s, BaseRadius + Height * h);
+            }
+        }
+
+        /// <summary>外側区間を 4 辺に分ける媒介変数。翼端の行が π/4～3π/4 を受け持つ。</summary>
+        private const float TipSplitPsi = Mathf.PI * 0.25f;
+
         /// <summary>方位角 az に翼を 1 枚張る。</summary>
         private static void AddBlade(MeshObject m, Params p, float az)
         {
@@ -252,53 +327,96 @@ namespace Poly_Ling.PrimitiveMesh
 
             float r0 = p.HubDiameter   * 0.47f;
             float r1 = p.RotorDiameter * 0.5f;
-
-            // 翼弦の中央が最も遠く、前縁・後縁ほど内側へ入る半楕円端を作る。
-            // 翼根側は丸めた後も全幅がハブへ埋まるよう、基準半径を内側へ移す。
             float span = r1 - r0;
-            float rootRoundDepth = Mathf.Min(
-                p.RootChord * 0.5f * Mathf.Clamp01(p.RootRoundness),
-                Mathf.Min(p.HubDiameter * 0.18f, span * 0.35f));
-            float tipRoundDepth = Mathf.Min(
-                p.TipChord * 0.5f * Mathf.Clamp01(p.TipRoundness),
-                span * 0.45f);
-            r0 -= rootRoundDepth;
+
+            // 翼弦のこの位置を基準線（ピッチ回転軸）へ置き、幅をその前後へ振り分ける。
+            float chordRef = Mathf.Clamp01(p.ChordReference);
+
+            // 翼根～最大翼弦位置を k 行、最大翼弦位置～翼端を ns - k 行で張る。
+            float peak = Mathf.Clamp(p.MaxChordPosition, 0.05f, 0.95f);
+            int k = Mathf.Clamp(Mathf.RoundToInt(ns * peak), 1, ns - 1);
+
+            float apex = Mathf.Clamp(p.TipApexPosition, 0.05f, 0.95f);
+            var tip = new TipOutline
+            {
+                ApexS      = (apex - chordRef) * p.MaxChord,
+                LeadHalf   = apex * p.MaxChord,
+                TrailHalf  = (1f - apex) * p.MaxChord,
+                BaseRadius = r0 + span * peak,
+                Height     = span * (1f - peak),
+                Exponent   = TipExponent(p),
+            };
+
+            // クーンズ面の角と、翼端の行の両端。
+            Vector2 base0 = new Vector2(-chordRef * p.MaxChord,        tip.BaseRadius);
+            Vector2 base1 = new Vector2((1f - chordRef) * p.MaxChord,  tip.BaseRadius);
+            Vector2 top0  = tip.Arc(TipSplitPsi);
+            Vector2 top1  = tip.Arc(Mathf.PI - TipSplitPsi);
 
             // side 0 = 正圧面側、side 1 = 負圧面側。同じ格子を 2 枚張る。
             for (int side = 0; side < 2; side++)
             {
                 for (int j = 0; j <= ns; j++)
                 {
-                    float t = (float)j / ns;
-                    float s = t * t * (3f - 2f * t);            // 根元・先端をなだらかにする
-                    float r = Mathf.Lerp(r0, r1, t);
-                    float chord = Mathf.Lerp(p.RootChord, p.TipChord, s);
-                    float pitch = Mathf.Lerp(p.RootPitchDeg, p.TipPitchDeg, s) * Mathf.Deg2Rad;
-
-                    Vector3 chordDir = (tan * Mathf.Cos(pitch) + axis * Mathf.Sin(pitch)).normalized;
-                    Vector3 normal   = Vector3.Cross(radial, chordDir).normalized;
-
-                    float skew = Mathf.Tan(p.SkewDeg * Mathf.Deg2Rad) * r1 * t * t * 0.42f;
-                    float rake = Mathf.Tan(p.RakeDeg * Mathf.Deg2Rad) * (r - r0);
-                    Vector3 center = radial * r + tan * skew + axis * rake;
+                    // 内側区間は行ごとの翼弦長、外側区間は前縁点と後縁点の間の幅。
+                    float rowChord;
+                    float v = 0f;
+                    Vector2 lead = default, trail = default;
+                    if (j <= k)
+                    {
+                        float tIn = peak * j / k;
+                        rowChord = Mathf.Lerp(p.RootChord, p.MaxChord, Mathf.SmoothStep(0f, 1f, tIn / peak));
+                    }
+                    else
+                    {
+                        v = (float)(j - k) / (ns - k);
+                        lead  = tip.Arc(TipSplitPsi * v);
+                        trail = tip.Arc(Mathf.PI - TipSplitPsi * v);
+                        rowChord = trail.x - lead.x;
+                    }
 
                     for (int i = 0; i <= nc; i++)
                     {
                         float x = (float)i / nc;
-                        float endInset = EllipseEndInset(x);
-                        float rootRadius = r0 + rootRoundDepth * endInset;
-                        float tipRadius  = r1 - tipRoundDepth  * endInset;
-                        float sampleRadius = Mathf.Lerp(rootRadius, tipRadius, t);
+
+                        // 平面形上の点（s = 基準線からの翼弦方向位置、R = 半径）。
+                        Vector2 pt;
+                        if (j <= k)
+                        {
+                            float tIn = peak * j / k;
+                            pt = new Vector2((x - chordRef) * rowChord, r0 + span * tIn);
+                        }
+                        else
+                        {
+                            Vector2 bottom = new Vector2((x - chordRef) * p.MaxChord, tip.BaseRadius);
+                            Vector2 top    = tip.Arc(TipSplitPsi + (Mathf.PI - 2f * TipSplitPsi) * x);
+                            pt = (1f - v) * bottom + v * top + (1f - x) * lead + x * trail
+                               - ((1f - x) * (1f - v) * base0 + x * (1f - v) * base1
+                                  + (1f - x) * v * top0 + x * v * top1);
+                        }
+
+                        float sPos = pt.x;
+                        float r    = pt.y;
+
+                        // ピッチ・スキュー・レーキは頂点の半径で決める。
+                        float t = span > 0f ? Mathf.Clamp01((r - r0) / span) : 0f;
+                        float sp = t * t * (3f - 2f * t);            // 根元・先端をなだらかにする
+                        float pitch = Mathf.Lerp(p.RootPitchDeg, p.TipPitchDeg, sp) * Mathf.Deg2Rad;
+
+                        Vector3 chordDir = (tan * Mathf.Cos(pitch) + axis * Mathf.Sin(pitch)).normalized;
+                        Vector3 normal   = Vector3.Cross(radial, chordDir).normalized;
+
+                        float skew = Mathf.Tan(p.SkewDeg * Mathf.Deg2Rad) * r1 * t * t * 0.42f;
+                        float rake = Mathf.Tan(p.RakeDeg * Mathf.Deg2Rad) * (r - r0);
+
                         float yt = 5f * p.ThicknessRatio *
                                    (0.2969f * Mathf.Sqrt(x) - 0.126f * x - 0.3516f * x * x
                                     + 0.2843f * x * x * x - 0.1015f * x * x * x * x);
                         float camber = 4f * p.CamberRatio * x * (1f - x);
-                        float y = (camber + (side == 0 ? yt : -yt)) * chord;
+                        float y = (camber + (side == 0 ? yt : -yt)) * rowChord;
 
-                        // center の半径成分だけを翼弦位置別の半楕円境界へ置き換える。
-                        Vector3 roundedCenter = center + radial * (sampleRadius - r);
-                        Vector3 pos = roundedCenter + chordDir * ((x - 0.28f) * chord) + normal * y;
-                        m.Vertices.Add(new Vertex(pos, new Vector2(t, x), side == 0 ? normal : -normal));
+                        Vector3 pos = radial * r + tan * skew + axis * rake + chordDir * sPos + normal * y;
+                        m.Vertices.Add(new Vertex(pos, new Vector2((float)j / ns, x), side == 0 ? normal : -normal));
                     }
                 }
             }
@@ -341,15 +459,6 @@ namespace Poly_Ling.PrimitiveMesh
                     else          m.AddQuad(a, c, d, b);
                 }
             }
-        }
-
-        /// <summary>
-        /// 半楕円端の半径方向インセット係数。翼弦中央で 0、前縁・後縁で 1。
-        /// </summary>
-        private static float EllipseEndInset(float chordPosition)
-        {
-            float u = Mathf.Clamp(chordPosition * 2f - 1f, -1f, 1f);
-            return 1f - Mathf.Sqrt(Mathf.Max(0f, 1f - u * u));
         }
 
         private static Vector2[] Circle(float r, int n)

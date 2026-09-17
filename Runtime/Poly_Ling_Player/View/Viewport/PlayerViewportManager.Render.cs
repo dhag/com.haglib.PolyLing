@@ -554,6 +554,19 @@ namespace Poly_Ling.Player
 #pragma warning restore CS0618
         }
 
+        /// <summary>
+        /// カテゴリ 6: 表示専用の上乗せ描画の中身が変わった。
+        /// 契機: 当たり判定パネルの表示フラグ・強調対象の書き換え、
+        ///       当たり判定の追加・変更・削除の後の再表示。
+        /// 線メッシュは PresentAll 内の Prepare でしか作られないため、ここで呼ぶ。
+        /// </summary>
+        public void EnterOverlayContentChanged()
+        {
+#pragma warning disable CS0618
+            PresentAll(_lastProjectForPresent);
+#pragma warning restore CS0618
+        }
+
         // ================================================================
         // 【重量級専用入口】Phase 2a-2b-2 Batch 3 で追加
         //

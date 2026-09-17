@@ -502,6 +502,7 @@ namespace Poly_Ling.Player
             _renderer.PrepareNormals(project);
             _renderer.PrepareWireframeAndVertices(cam, project, slot);
             _renderer.PrepareBones(project);
+            _renderer.PrepareSpringBoneColliders(project);
         }
     }
 }

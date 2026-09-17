@@ -35,6 +35,12 @@ namespace Poly_Ling.Player
         public Func<ProjectContext> GetProject;
         public Action<PanelCommand> SendCommand;
 
+        /// <summary>
+        /// 当たり判定の表示（ModelContext.SpringBoneCollider*）を書き換えた後に呼ぶ。
+        /// ビューポートへ作り直しを促す。
+        /// </summary>
+        public Action OnDisplayChanged;
+
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
         private ProjectContext GetProj      => GetProject?.Invoke();
@@ -351,6 +357,44 @@ namespace Poly_Ling.Player
             }
 
             RebuildList();
+            UpdateDisplay(model);
+        }
+
+        // ================================================================
+        // 3D 画面への表示
+        // ================================================================
+
+        /// <summary>
+        /// 当たり判定を 3D 画面へ出し、選択行の当たり判定を強調する。
+        /// 当たり判定の追加・変更・削除でも線を作り直す必要があるため、
+        /// 呼ばれるたびに OnDisplayChanged でビューポートへ作り直しを促す。
+        /// </summary>
+        private void UpdateDisplay(ModelContext model)
+        {
+            if (model == null) return;
+
+            TryGetSelectedRef(out int master, out int slot);
+
+            model.SpringBoneColliderDisplay         = true;
+            model.SpringBoneColliderHighlightMaster = master;
+            model.SpringBoneColliderHighlightSlot   = slot;
+
+            OnDisplayChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// パネルを離れるときに表示を消す。
+        /// 何も付いていなければ何もしない（パネル切替のたびに
+        /// ビューポートを作り直させないため）。
+        /// </summary>
+        public void ClearDisplay()
+        {
+            var model = CurrentModel;
+            if (model == null) return;
+            if (!model.SpringBoneColliderDisplay) return;
+
+            model.ClearSpringBoneColliderDisplay();
+            OnDisplayChanged?.Invoke();
         }
 
         private void RebuildList()
