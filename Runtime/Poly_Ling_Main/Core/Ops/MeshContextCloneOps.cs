@@ -33,8 +33,15 @@
 //   ・WorkingPositions   … モーフ等の一時オーバーライド。複製へ持ち越さない
 //   ・選択状態           … 複製した先で選び直す
 //   ・ParentModelContext … ModelContext.Add / Insert が入れる
+//
+// 【パーツ選択辞書】
+//   StateSnapshot のときだけ要素ごとに複製して写す。Undo/Redo は MeshContextList を
+//   この複製で丸ごと置き換える（MeshFilterToSkinnedRecord.RestoreList）ので、
+//   写さないと戻すたびに全オブジェクトの辞書が消える。
+//   NewObject では写さない（従来どおり）。
 
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 
@@ -86,6 +93,11 @@ namespace Poly_Ling.Ops
             {
                 dst.ObjectId   = src.ObjectId;
                 dst.EditorName = src.EditorName;
+
+                // 同一オブジェクトの状態なので、パーツ選択辞書も写す。
+                dst.PartsSelectionSetList = src.PartsSelectionSetList != null
+                    ? src.PartsSelectionSetList.Where(s => s != null).Select(s => s.Clone()).ToList()
+                    : new List<Poly_Ling.Selection.PartsSelectionSet>();
             }
 
             // ── 表示・編集状態

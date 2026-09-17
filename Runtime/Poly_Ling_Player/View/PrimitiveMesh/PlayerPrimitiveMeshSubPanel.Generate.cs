@@ -255,8 +255,9 @@ namespace Poly_Ling.Player
                     return SendCommand != null && BridgeSeedsReady;
 
                 // 選択辺が 1 本以上あり、コマンドの送り先が結線されていること。
+                // パイプ化するときは開始タグも要る。
                 case ShapeKind.EdgeRibbonFace:
-                    return SendCommand != null && EdgeRibbonFaceSelectedEdges > 0;
+                    return EdgeRibbonFaceReady;
 
                 // 点が揃い、直近のプレビューで組めていること（仕様 11）。
                 case ShapeKind.PointDefined:

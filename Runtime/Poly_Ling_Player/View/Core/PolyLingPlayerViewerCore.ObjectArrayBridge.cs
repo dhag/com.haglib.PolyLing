@@ -223,10 +223,10 @@ namespace Poly_Ling.Player
             panel.GetSelectedEdgeCount = () =>
                 _edgeRibbonFaceHandler?.GetSelectedEdgeCount() ?? 0;
 
-            panel.BuildEdgeRibbonFaceMesh = width =>
+            panel.BuildEdgeRibbonFaceMesh = (width, startTag, endTag) =>
             {
                 if (_edgeRibbonFaceHandler == null) return null;
-                return _edgeRibbonFaceHandler.Build(width, out var mo, out _) ? mo : null;
+                return _edgeRibbonFaceHandler.Build(width, startTag, endTag, out var mo, out _) ? mo : null;
             };
         }
 
@@ -247,6 +247,15 @@ namespace Poly_Ling.Player
             _edgeRibbonFaceHandler.SetProject(ActiveProject);
             _edgeRibbonFaceHandler.SetUndoController(_editOps?.UndoController);
             _edgeRibbonFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
+
+            // 帯の座標は GPU が計算したワールド位置から組む（CPU で行列を掛けない）。
+            _edgeRibbonFaceHandler.GetWorldPositions = mc =>
+            {
+                var model = ActiveProject?.CurrentModel;
+                if (model == null || mc == null || _viewportManager == null) return null;
+                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
+            };
+
             _edgeRibbonFaceHandler.NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;

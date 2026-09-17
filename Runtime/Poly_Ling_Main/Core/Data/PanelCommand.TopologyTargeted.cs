@@ -266,13 +266,23 @@ namespace Poly_Ling.Data
     /// 選択辺を中心線として、ワールド固定幅の帯面を足す。実処理は EdgeRibbonFaceTool。
     ///
     /// 元の辺は変えず、生成した頂点と四角形を末尾へ足すだけ。選択も消さない。
-    /// 対象は選択中の描画オブジェクト全部で、各オブジェクトの選択辺を使う。
+    ///
+    /// 【辺の読み方】
+    ///   EdgeSetName が空なら、対象は選択中の描画オブジェクト全部で、各オブジェクトの選択辺を使う。
+    ///   指定されていれば、MasterIndices の各オブジェクトが持つその名前のパーツ選択辞書の辺を使う
+    ///   （選択とは照合しない）。オブジェクトグループの作り直しはこちらで同じ帯を組む。
+    ///   「オブジェクトグループとして残す」が立っていて辞書名が空のときは、
+    ///   受け口が選択辺を辞書へ保存し、その名前を控えたコマンドをグループに残す。
+    ///
+    /// 【梯子タグ】
+    ///   分岐の無い開いた連なりの端に、梯子の自動検索（BeltStackDetector）の目印を付ける。
+    ///   開始側は 上(+Y)→下、同じなら 手前(-Z)→奥、同じなら 左(-X)→右 で決める。
     /// </summary>
-    [PLCommand(Description = "選択辺を中心線として、ワールド固定幅の帯面を足す。")]
+    [PLCommand(Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
     public class EdgeRibbonFaceCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
-                 Description = "対象の描画オブジェクトの masterIndex 配列。選択中のものと一致すること",
+                 Description = "対象の描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
 
@@ -286,17 +296,126 @@ namespace Poly_Ling.Data
         [PLParam(Description = "生成物の置き方。追加先モード・材質スロットなど")]
         public PrimitivePlacement Placement { get; }
 
+        [PLParam(Description = "分岐の無い開いた連なりの開始端に、開始三角と開始タグ三角を付ける。開始側は上→下、同じなら手前→奥、同じなら左→右")]
+        public bool AddStartTag { get; }
+
+        [PLParam(Description = "分岐の無い開いた連なりの終了端に、終了三角を付ける")]
+        public bool AddEndTag { get; }
+
+        [PLParam(Description = "辺を読むパーツ選択辞書の名前。空にすると選択中の辺を使う")]
+        public string EdgeSetName { get; }
+
         public EdgeRibbonFaceCommand(
             int modelIndex, int[] masterIndices,
             float widthWorld  = 0.05f,
             PrimitivePlacement placement = default,
-            ulong[] objectIds = null)
+            ulong[] objectIds = null,
+            bool addStartTag = false,
+            bool addEndTag = false,
+            string edgeSetName = "")
             : base(modelIndex)
         {
             MasterIndices = masterIndices ?? System.Array.Empty<int>();
             ObjectIds     = objectIds;
             WidthWorld    = widthWorld;
             Placement     = placement;
+            AddStartTag   = addStartTag;
+            AddEndTag     = addEndTag;
+            EdgeSetName   = edgeSetName ?? "";
+        }
+
+        /// <summary>辞書名だけを差し替えた写しを作る。</summary>
+        public EdgeRibbonFaceCommand WithEdgeSetName(string edgeSetName)
+            => new EdgeRibbonFaceCommand(
+                ModelIndex, MasterIndices, WidthWorld, Placement, ObjectIds,
+                AddStartTag, AddEndTag, edgeSetName);
+    }
+
+    /// <summary>
+    /// 辺をパイプにする。辺から帯面（開始タグ付き）を作り、その帯を梯子として
+    /// 自動検索で取り込んでパイプを作り、帯を隠す。
+    ///
+    /// 【オブジェクトグループ】
+    ///   帯面の生成（EdgeRibbonFaceCommand）とパイプの生成（CreatePipeCommand）を
+    ///   それぞれ 1 ステップとして 1 つのグループに残す。作り直しでは帯を作り直してから
+    ///   梯子を取り直すので、元の辺を動かせばパイプが追随する。このコマンド自体は残さない。
+    ///
+    /// 【辺】
+    ///   EdgeSetName が空なら選択辺を新しいパーツ選択辞書へ保存して使う
+    ///   （対象は選択中の描画オブジェクトと一致すること）。
+    /// </summary>
+    [PLCommand(Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのオブジェクトグループになる。")]
+    [PLResult("groupName", PLResultKind.Text,    Description = "作ったオブジェクトグループの名前")]
+    [PLResult("ladders",   PLResultKind.Integer, Description = "帯から取り込んだ梯子の本数")]
+    [PLResult("edgeSetName", PLResultKind.Text,  Description = "辺を読んだパーツ選択辞書の名前")]
+    public class CreateEdgePipeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+                 Description = "辺を持つ描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
+                 Required = true)]
+        public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
+        public ulong[] ObjectIds { get; }
+
+        [PLParam(Description = "帯（梯子）の幅。ワールド単位。0 より大きいこと", Min = 0.000001f)]
+        public float WidthWorld { get; }
+
+        [PLParam(Description = "開始三角と開始タグ三角を付ける。梯子の自動検索の起点なので、パイプにするには必須")]
+        public bool AddStartTag { get; }
+
+        [PLParam(Description = "終了三角を付ける")]
+        public bool AddEndTag { get; }
+
+        [PLParam(Description = "辺を読むパーツ選択辞書の名前。空にすると選択中の辺を新しい辞書へ保存して使う")]
+        public string EdgeSetName { get; }
+
+        [PLParam(Description = "パイプの置き方。追加先モードは新規オブジェクトか既存へ追加。姿勢は使わない")]
+        public PrimitivePlacement Placement { get; }
+
+        [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ。ピボットは使わない", Required = true)]
+        public Poly_Ling.Pipe.PipeParams Params { get; }
+
+        [PLParam(TextKey = "PipeProfile", Description = "断面プロファイル", Required = true)]
+        public Vector2[] Profile { get; }
+
+        [PLParam(TextKey = "PipeProfileClosed", Description = "断面を閉ループとして扱う")]
+        public bool ProfileClosed { get; }
+
+        [PLParam(TextKey = "BeltOrient", Description = "梯子の向き補正")]
+        public Poly_Ling.PrimitiveMesh.BeltOrientOptions Orient { get; }
+
+        [PLParam(TextKey = "BeltSpline", Description = "梯子のスプライン分割")]
+        public Poly_Ling.PrimitiveMesh.BeltSplineOptions Spline { get; }
+
+        public CreateEdgePipeCommand(
+            int modelIndex, int[] masterIndices,
+            float widthWorld,
+            bool addStartTag,
+            bool addEndTag,
+            string edgeSetName,
+            PrimitivePlacement placement,
+            Poly_Ling.Pipe.PipeParams @params,
+            Vector2[] profile,
+            bool profileClosed,
+            Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
+            Poly_Ling.PrimitiveMesh.BeltSplineOptions spline,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            WidthWorld    = widthWorld;
+            AddStartTag   = addStartTag;
+            AddEndTag     = addEndTag;
+            EdgeSetName   = edgeSetName ?? "";
+            Placement     = placement;
+            Params        = @params;
+            Profile       = profile ?? System.Array.Empty<Vector2>();
+            ProfileClosed = profileClosed;
+            Orient        = orient;
+            Spline        = spline;
         }
     }
 

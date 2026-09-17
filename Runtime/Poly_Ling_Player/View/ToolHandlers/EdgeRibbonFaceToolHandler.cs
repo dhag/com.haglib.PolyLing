@@ -30,6 +30,12 @@ namespace Poly_Ling.Player
         public Action OnRepaint;
         public Action NotifyTopologyChanged;
 
+        /// <summary>
+        /// 描画オブジェクトの全頂点のワールド位置を GPU から読む口。読めなければ null。
+        /// Viewer が配線する。帯の座標はこの値だけから組む。
+        /// </summary>
+        public Func<MeshContext, Vector3[]> GetWorldPositions;
+
         public EdgeRibbonFaceSettings Settings =>
             _tool.RibbonSettings;
 
@@ -55,28 +61,20 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 帯面のメッシュを組む。プレビューと実生成で同じ実装を通す。
+        /// 選択中の描画オブジェクトの選択辺から帯面のメッシュを組む。プレビューが使う。
         /// </summary>
         /// <param name="widthWorld">帯の幅。実行中だけ差し替え、終わったら元へ戻す。</param>
         /// <param name="meshObject">組んだメッシュ。失敗時は null。</param>
         /// <param name="reason">組めなかった理由。成功時は null。</param>
-        public bool Build(float widthWorld, out MeshObject meshObject, out string reason)
-        {
-            float saved = Settings.WidthWorld;
-            try
-            {
-                Settings.WidthWorld = widthWorld;
-                return _tool.Build(_project?.CurrentModel, out meshObject, out reason);
-            }
-            finally
-            {
-                Settings.WidthWorld = saved;
-            }
-        }
+        public bool Build(
+            float widthWorld, bool addStartTag, bool addEndTag,
+            out MeshObject meshObject, out string reason)
+            => BuildCore(widthWorld, null, "", addStartTag, addEndTag, out meshObject, out reason);
 
         /// <summary>
         /// 帯面コマンドからメッシュを組む。
-        /// 対象は選択中の描画オブジェクトなので、コマンドの MasterIndices と照合する。
+        /// 辞書名が空なら対象は選択中の描画オブジェクトなので、コマンドの MasterIndices と照合する。
+        /// 辞書名があれば MasterIndices の各オブジェクトの辞書から辺を読み、選択とは照合しない。
         /// </summary>
         /// <param name="meshObject">組んだメッシュ。失敗時は null。</param>
         /// <param name="reason">組めなかった理由。成功時は null。</param>
@@ -92,11 +90,48 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) { reason = "モデルがありません"; return false; }
 
-            if (!PlayerCommandTargets.MatchesSelectedDrawables(
-                    model, cmd.MasterIndices, out reason))
-                return false;
+            if (string.IsNullOrEmpty(cmd.EdgeSetName))
+            {
+                if (!PlayerCommandTargets.MatchesSelectedDrawables(
+                        model, cmd.MasterIndices, out reason))
+                    return false;
 
-            return Build(cmd.WidthWorld, out meshObject, out reason);
+                return BuildCore(
+                    cmd.WidthWorld, null, "", cmd.AddStartTag, cmd.AddEndTag,
+                    out meshObject, out reason);
+            }
+
+            if (cmd.MasterIndices == null || cmd.MasterIndices.Length == 0)
+            { reason = "MasterIndices が空です"; return false; }
+
+            foreach (int idx in cmd.MasterIndices)
+            {
+                if (model.GetMeshContext(idx) == null)
+                { reason = $"描画オブジェクトが見つかりません (masterIndex={idx})"; return false; }
+            }
+
+            return BuildCore(
+                cmd.WidthWorld, cmd.MasterIndices, cmd.EdgeSetName,
+                cmd.AddStartTag, cmd.AddEndTag, out meshObject, out reason);
+        }
+
+        private bool BuildCore(
+            float widthWorld, int[] targetIndices, string edgeSetName,
+            bool addStartTag, bool addEndTag,
+            out MeshObject meshObject, out string reason)
+        {
+            float saved = Settings.WidthWorld;
+            try
+            {
+                Settings.WidthWorld = widthWorld;
+                return _tool.Build(
+                    _project?.CurrentModel, targetIndices, edgeSetName, GetWorldPositions,
+                    addStartTag, addEndTag, out meshObject, out reason);
+            }
+            finally
+            {
+                Settings.WidthWorld = saved;
+            }
         }
 
         // 即時実行ツールなのでマウス入力は使用しない。

@@ -285,8 +285,71 @@ namespace Poly_Ling.Player
                 {
                     if (model == null) { Fail("no current model"); return true; }
                     if (OnEdgeRibbonFace == null) { Fail("edge ribbon face handler not wired"); return true; }
-                    string erfReason = OnEdgeRibbonFace.Invoke(c);
-                    if (erfReason != null) { Fail(erfReason); return true; }
+
+                    int erfFallback = c.Placement.AddMode == PrimitiveAddMode.AddToExisting
+                        ? c.Placement.AddTargetIndex
+                        : -1;
+
+                    // 辞書を作らない経路（グループに残さない／辞書名が指定済み）。
+                    if (!c.Placement.KeepAsGroup || !string.IsNullOrEmpty(c.EdgeSetName))
+                    {
+                        var erfBeforeIds = c.Placement.KeepAsGroup ? SnapshotObjectIds() : null;
+
+                        string erfReason = OnEdgeRibbonFace.Invoke(c);
+                        if (erfReason != null) { Fail(erfReason); return true; }
+
+                        if (c.Placement.KeepAsGroup)
+                            CaptureObjectGroup(c, erfBeforeIds, erfFallback);
+                        return true;
+                    }
+
+                    // 「維持する」が立っていて辞書名が無い。選択辺のままでは作り直しのときに
+                    // 同じ辺を読めないので、選択辺を辞書へ保存し、その名前を控えたコマンドで
+                    // 実行してグループに残す。辞書の追加・帯・グループを Undo 1 件にまとめる。
+                    if (project == null) { Fail("no current project"); return true; }
+
+                    if (!PlayerCommandTargets.MatchesSelectedDrawables(model, c.MasterIndices, out string erfSelReason))
+                    { Fail(erfSelReason); return true; }
+
+                    _undoController?.SetModelContext(model);
+                    var erfListBefore   = MeshFilterToSkinnedRecord.CaptureList(model);
+                    int erfGroupsBefore = model.ObjectGroupCount;
+
+                    string erfFail = null;
+                    bool   erfSetFailed = false;
+
+                    _undoController?.SuspendRecording();
+                    try
+                    {
+                        if (!TryCreateEdgeSelectionSets(model, c.MasterIndices, out string erfSetName, out string erfSetReason))
+                        {
+                            erfFail = erfSetReason;
+                            erfSetFailed = true;   // 何も足していない
+                        }
+                        else
+                        {
+                            var erfCmd      = c.WithEdgeSetName(erfSetName);
+                            var erfBeforeId = SnapshotObjectIds();
+
+                            erfFail = OnEdgeRibbonFace.Invoke(erfCmd);
+                            if (erfFail == null)
+                                CaptureObjectGroup(erfCmd, erfBeforeId, erfFallback);
+                        }
+                    }
+                    finally
+                    {
+                        _undoController?.ResumeRecording();
+                    }
+
+                    if (erfSetFailed) { Fail(erfFail); return true; }
+
+                    RecordEdgeOperationUndo(model, erfListBefore, erfGroupsBefore, "辺から帯面");
+
+                    model.IsDirty = true;
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+
+                    if (erfFail != null) { Fail(erfFail); return true; }
                     return true;
                 }
 

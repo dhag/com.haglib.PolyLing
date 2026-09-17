@@ -928,6 +928,7 @@ namespace Poly_Ling.Player
             if (DispatchBoneMorphUv(cmd, project, model))       return;
             if (DispatchBlend(cmd, project, model))             return;
             if (DispatchObjectGroup(cmd, project, model))       return;
+            if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchDeformSkin(cmd, project, model))        return;
             if (DispatchMirrorHumanoidVrm(cmd, project, model)) return;
             if (DispatchSpringBone(cmd, project, model))        return;

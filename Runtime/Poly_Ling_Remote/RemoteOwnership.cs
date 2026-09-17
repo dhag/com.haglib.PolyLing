@@ -291,6 +291,10 @@ namespace Poly_Ling.Remote
                 case LineExtrudeCommand          c: return c.MasterIndices;
                 case SurfaceSnapCommand          c: return c.MasterIndices;
 
+                // 辺から帯面・パイプ化。グループとして残すときは対象へ辺の選択辞書を足す。
+                case EdgeRibbonFaceCommand       c: return c.MasterIndices;
+                case CreateEdgePipeCommand       c: return c.MasterIndices;
+
                 // ドラッグ確定（ベベル・押し出し）。対象メッシュの頂点と面を書き換える。
                 case EdgeBevelCommand            c: return c.MasterIndices;
                 case EdgeExtrudeCommand          c: return c.MasterIndices;

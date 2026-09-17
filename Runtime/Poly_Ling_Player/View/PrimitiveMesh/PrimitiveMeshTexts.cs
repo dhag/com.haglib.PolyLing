@@ -82,6 +82,16 @@ namespace Poly_Ling.Player
             ["EdgeRibbonFaceWidth"]    = new() { ["en"] = "Width",  ["ja"] = "帯の幅",  ["hi"] = "おびのはば" },
             ["EdgeRibbonFaceSelected"] = new() { ["en"] = "Selected edges: {0}", ["ja"] = "選択辺: {0} 本", ["hi"] = "えらんだへん: {0} ほん" },
             ["EdgeRibbonFaceNoTarget"] = new() { ["en"] = "No drawable object is selected.", ["ja"] = "描画オブジェクトが選択されていません", ["hi"] = "えらんだものが ありません" },
+            ["EdgeRibbonFaceStartTag"] = new() { ["en"] = "Start Tag", ["ja"] = "開始タグを付ける", ["hi"] = "はじまりのめじるし" },
+            ["EdgeRibbonFaceEndTag"]   = new() { ["en"] = "End Triangle", ["ja"] = "終了タグを付ける", ["hi"] = "おわりのめじるし" },
+            ["EdgeRibbonFaceTagHint"]  = new() { ["en"] = "Marks for ladder auto-detection, added only to open chains without branches. The start end is the upper one; if level, the nearer (-Z) one; if still level, the left (-X) one.",
+                                              ["ja"] = "梯子の自動検索の目印です。分岐の無い開いた辺の連なりにだけ付きます。開始側は上の端、高さが同じなら手前（-Z）の端、それも同じなら左（-X）の端です。",
+                                              ["hi"] = "はしごを さがすときの めじるしです。うえのはしが はじまりです。" },
+            ["EdgeRibbonFacePipe"]     = new() { ["en"] = "Make Pipe", ["ja"] = "パイプにする", ["hi"] = "パイプにする" },
+            ["EdgeRibbonFacePipeHint"] = new() { ["en"] = "Uses the cross-section, pipe settings, ladder orientation and spline set in the Pipe shape. The ribbon and the pipe become one object group and the ribbon is hidden. Requires the start tag.",
+                                              ["ja"] = "「パイプ」図形で設定した断面・諸元・はしごの向き・スプラインを使ってパイプを作ります。帯とパイプは 1 つのオブジェクトグループになり、帯は非表示になります。開始タグが必要です。",
+                                              ["hi"] = "「パイプ」で きめた かたちで パイプを つくります。はじまりのめじるしが いります。" },
+            ["EdgeRibbonFacePipeNeedsStartTag"] = new() { ["en"] = "Making a pipe requires the start tag.", ["ja"] = "パイプにするには開始タグが必要です", ["hi"] = "はじまりのめじるしが いります" },
 
             // ── 点指定図形 ──
             ["PointDefined"]      = new() { ["en"] = "Point Shape", ["ja"] = "点指定図形", ["hi"] = "てんしていずけい" },

@@ -177,6 +177,9 @@ namespace Poly_Ling.Player
             var h = _edgeRibbonFaceHandler;
             if (h == null) return "辺から帯面ハンドラがありません";
 
+            // 帯の座標は GPU のワールド位置から読む。読む前に 1 回だけ更新する。
+            _viewportManager?.UpdateTransform();
+
             if (!h.BuildFromCommand(cmd, out var mo, out string reason)) return reason;
 
             // 頂点はワールド座標。姿勢は持たないので回転・拡大は入れない。

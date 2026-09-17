@@ -10,6 +10,15 @@
 //   組んだメッシュはワールド座標。追加先モードと材質スロットは他の図形と同じ。
 //   姿勢（位置・回転・拡大）は持たない。座標が選択辺の既存頂点で決まるため。
 //
+// 【梯子タグ】
+//   分岐の無い開いた辺の連なりの端に、梯子の自動検索の目印（開始タグ・終了三角）を付ける。
+//   開始側は 上→下、同じなら 手前→奥、同じなら 左→右。
+//
+// 【パイプ化】
+//   オンのときは CreateEdgePipeCommand を送る。断面・パイプの諸元・梯子の向き・
+//   スプラインは「パイプ」図形で設定したもの（_pipeP / _pipeEdit / _pipeOrient / _pipeSpline）を使う。
+//   帯とパイプは 1 つのオブジェクトグループになり、帯は隠れる。
+//
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 
 using System;
@@ -32,8 +41,10 @@ namespace Poly_Ling.Player
         /// <summary>選択中の描画オブジェクトが持つ選択辺の合計本数。</summary>
         public Func<int> GetSelectedEdgeCount;
 
-        /// <summary>帯面のメッシュを組む。引数は帯の幅。組めないときは null。</summary>
-        public Func<float, MeshObject> BuildEdgeRibbonFaceMesh;
+        /// <summary>
+        /// 帯面のメッシュを組む。引数は帯の幅・開始タグ・終了タグ。組めないときは null。
+        /// </summary>
+        public Func<float, bool, bool, MeshObject> BuildEdgeRibbonFaceMesh;
 
         // ================================================================
         // 状態
@@ -41,6 +52,15 @@ namespace Poly_Ling.Player
 
         /// <summary>帯の幅（ワールド単位）。既定は EdgeRibbonFaceSettings と同じ。</summary>
         private float _ribbonFaceWidth = 0.05f;
+
+        /// <summary>開始タグ（開始三角＋開始タグ三角）を付けるか。</summary>
+        private bool _ribbonFaceStartTag;
+
+        /// <summary>終了三角を付けるか。</summary>
+        private bool _ribbonFaceEndTag;
+
+        /// <summary>パイプにするか。</summary>
+        private bool _ribbonFacePipe;
 
         /// <summary>幅の入力範囲。ワールド単位なので上限は控えめに取る。</summary>
         private const float RibbonFaceWidthMin = 0.001f;
@@ -65,6 +85,21 @@ namespace Poly_Ling.Player
                 () => _ribbonFaceWidth,
                 v => { _ribbonFaceWidth = v; D(); RefreshEdgeRibbonFaceInfo(); }));
 
+            // ── 梯子タグ ──
+            c.Add(TR(T("EdgeRibbonFaceStartTag"),
+                () => _ribbonFaceStartTag,
+                v => { _ribbonFaceStartTag = v; D(); RefreshCreateButtonState(); }));
+            c.Add(TR(T("EdgeRibbonFaceEndTag"),
+                () => _ribbonFaceEndTag,
+                v => { _ribbonFaceEndTag = v; D(); }));
+            c.Add(GearHint(T("EdgeRibbonFaceTagHint")));
+
+            // ── パイプ化 ──
+            c.Add(TR(T("EdgeRibbonFacePipe"),
+                () => _ribbonFacePipe,
+                v => { _ribbonFacePipe = v; RefreshCreateButtonState(); }));
+            c.Add(GearHint(T("EdgeRibbonFacePipeHint")));
+
             _ribbonFaceInfo = SL("");
             c.Add(_ribbonFaceInfo);
 
@@ -81,16 +116,22 @@ namespace Poly_Ling.Player
         /// <summary>選択辺の本数。結線が無いときは 0。</summary>
         private int EdgeRibbonFaceSelectedEdges => GetSelectedEdgeCount?.Invoke() ?? 0;
 
+        /// <summary>今の設定で生成ボタンを押せるか。パイプ化には開始タグが要る。</summary>
+        private bool EdgeRibbonFaceReady
+            => SendCommand != null
+            && EdgeRibbonFaceSelectedEdges > 0
+            && (!_ribbonFacePipe || _ribbonFaceStartTag);
+
         // ================================================================
         // 生成
         // ================================================================
 
         /// <summary>
         /// プレビュー・ライブワイヤ・生成前確認で使うメッシュ。
-        /// 実生成と同じ EdgeRibbonFaceTool を通すので、見えているものがそのまま出る。
+        /// 実生成と同じ EdgeRibbonFaceTool を通すので、見えている帯がそのまま出る。
         /// </summary>
         private MeshObject GenerateEdgeRibbonFaceMesh()
-            => BuildEdgeRibbonFaceMesh?.Invoke(_ribbonFaceWidth);
+            => BuildEdgeRibbonFaceMesh?.Invoke(_ribbonFaceWidth, _ribbonFaceStartTag, _ribbonFaceEndTag);
 
         /// <summary>生成ボタンから呼ぶ。置き方は他の図形と同じ配置経路へ載せる。</summary>
         private void InvokeEdgeRibbonFaceGenerate()
@@ -116,8 +157,31 @@ namespace Poly_Ling.Player
             pl.PlaceRotation = Vector3.zero;
             pl.PlaceScale    = Vector3.one;
 
-            SendCommand(new EdgeRibbonFaceCommand(
-                ModelIndex(), targets, _ribbonFaceWidth, pl));
+            if (_ribbonFacePipe)
+            {
+                if (!_ribbonFaceStartTag)
+                {
+                    if (_statusLabel != null) _statusLabel.text = T("EdgeRibbonFacePipeNeedsStartTag");
+                    return;
+                }
+
+                EnsureBeltProfile(_pipeEdit);
+
+                SendCommand(new CreateEdgePipeCommand(
+                    ModelIndex(), targets, _ribbonFaceWidth,
+                    true, _ribbonFaceEndTag, "",
+                    pl, _pipeP,
+                    _pipeEdit?.Points?.ToArray(),
+                    _pipeEdit != null && _pipeEdit.ClosedLoop,
+                    ToOrientOptions(_pipeOrient),
+                    ToSplineOptions(_pipeSpline)));
+            }
+            else
+            {
+                SendCommand(new EdgeRibbonFaceCommand(
+                    ModelIndex(), targets, _ribbonFaceWidth, pl, null,
+                    _ribbonFaceStartTag, _ribbonFaceEndTag, ""));
+            }
 
             RefreshEdgeRibbonFaceInfo();
         }
