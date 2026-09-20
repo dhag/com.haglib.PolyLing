@@ -351,6 +351,7 @@ namespace Poly_Ling.Player
             // 非表示にするだけでは未確定の形状が残ったままになる。
             _blendSubPanel?.CancelIfActive();
             Hide(_layoutRoot.BlendSection);
+            Hide(_layoutRoot.ReferenceSymmetrySection);
             // シュリンカーのプレビュー結果も MeshObject に書かれている。
             // 頂点方式と面方式が同じ MeshObject を触るため、切り替え時に破棄しないと
             // もう一方が変形後の座標をバックアップに取り込む。
