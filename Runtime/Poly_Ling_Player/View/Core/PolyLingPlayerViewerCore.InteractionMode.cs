@@ -66,6 +66,10 @@ namespace Poly_Ling.Player
             if (_interactionMode == InteractionMode.PointDefinedPrimitive && mode != InteractionMode.PointDefinedPrimitive)
                 _activePanel?.HideTopoToolOverlay();
 
+            // 線分群の編集を抜けたら、描きかけの折れ線を終える（描いた分は確定済み）。
+            if (_interactionMode == InteractionMode.BillboardProfile && mode != InteractionMode.BillboardProfile)
+                _billboardProfileHandler?.FinishChain();
+
             if (_interactionMode == InteractionMode.SkinWeightPaint && mode != InteractionMode.SkinWeightPaint)
             {
                 _skinWeightPaintHandler?.OnDeactivate();
@@ -291,6 +295,11 @@ namespace Poly_Ling.Player
                     _vertexInteractor?.SetToolHandler(_pointDefinedHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _pointDefinedHandler?.UpdateHover(pos, ctx));
                     break;
+                case InteractionMode.BillboardProfile:
+                    // 線分群の編集（ビルボード上の 2D プロファイル）。選択は変えない。
+                    _vertexInteractor?.SetToolHandler(_billboardProfileHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _billboardProfileHandler?.UpdateHover(pos, ctx));
+                    break;
                 case InteractionMode.EdgeBevel:
                     // MoveToolHandler の選択/矩形選択を流用。
                     // ドラッグ開始フックで EdgeBevel の開始、継続ドラッグで幅調整、
@@ -301,6 +310,8 @@ namespace Poly_Ling.Player
                     {
                         // Edge ヒットのみベベル発火。要素なし or 型違いは通常の矩形選択等に任せる
                         if (elem.Kind != PlayerHoverKind.Edge) return false;
+                        // 対象の担当者判定とロック取得。止められたら何もしない（操作経路統一計画.md H-2）。
+                        if (!TryBeginHostPreview(new[] { elem.MeshIndex })) return true;
                         // 開始原点は実マウスダウン座標を渡す（zero だと _mouseDownScreenPos が
                         // 画面隅になり量がマウス移動と連動しない）。Handler 側で ToImgui される。
                         _edgeBevelHandler?.OnLeftDragBegin(
@@ -319,6 +330,8 @@ namespace Poly_Ling.Player
                     {
                         // Edge / Line（2点面）ヒットで押し出し発火。要素なし or 型違いは通常の矩形選択等に任せる
                         if (elem.Kind != PlayerHoverKind.Edge && elem.Kind != PlayerHoverKind.Line) return false;
+                        // 対象の担当者判定とロック取得。止められたら何もしない（操作経路統一計画.md H-2）。
+                        if (!TryBeginHostPreview(new[] { elem.MeshIndex })) return true;
                         // 開始原点は実マウスダウン座標を渡す（zero だと画面隅基準になり非連動）。
                         _edgeExtrudeHandler?.OnLeftDragBegin(
                             new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
@@ -336,6 +349,8 @@ namespace Poly_Ling.Player
                     {
                         // Face ヒットのみ押し出し発火
                         if (elem.Kind != PlayerHoverKind.Face) return false;
+                        // 対象の担当者判定とロック取得。止められたら何もしない（操作経路統一計画.md H-2）。
+                        if (!TryBeginHostPreview(new[] { elem.MeshIndex })) return true;
                         // 開始原点は実マウスダウン座標を渡す（zero だと画面隅基準になり非連動）。
                         _faceExtrudeHandler?.OnLeftDragBegin(
                             new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },

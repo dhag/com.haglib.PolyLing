@@ -37,6 +37,19 @@ namespace Poly_Ling.PlaceObject
         /// <summary>+Z を画面の上方向へ向ける。</summary>
         ScreenUp = 1,
     }
+
+    /// <summary>頂点へ藤壺で、配置元を置く位置をどこから取るか。</summary>
+    public enum BillboardPlaceTarget
+    {
+        /// <summary>描画オブジェクトの選択頂点（または選択辞書の頂点）。GPU のワールド座標。</summary>
+        Vertices = 0,
+
+        /// <summary>ボーンの位置（WorldMatrix の平行移動成分。ボーンマーカーと同じ値）。</summary>
+        Bones = 1,
+
+        /// <summary>描画オブジェクトの原点（WorldMatrix の平行移動成分。原点マーカーと同じ値）。</summary>
+        ObjectOrigins = 2,
+    }
 }
 
 namespace Poly_Ling.Ops

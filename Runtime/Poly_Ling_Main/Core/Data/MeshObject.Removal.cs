@@ -143,6 +143,9 @@ namespace Poly_Ling.Data
                     PartsIndexRemap.ApplyVertexMap(set, map);
             }
 
+            // 自分が持つ線分群
+            ApplyVertexMapToLineGroups(map);
+
             VerticesRemoved?.Invoke(map);
 
             // コーナーが減って成立しなくなった面を始末する
@@ -180,7 +183,20 @@ namespace Poly_Ling.Data
                 foreach (var set in NormalRecalcExcludeList)
                     PartsIndexRemap.ApplyVertexMap(set, map);
 
+            ApplyVertexMapToLineGroups(map);
+
             VerticesRemoved?.Invoke(map);
+        }
+
+        /// <summary>
+        /// 線分群の頂点索引を旧索引→新索引の表で付け替える。
+        ///
+        /// 消えた点（-1）のところで線分群を切る（前後をつながない。そこに 2 頂点の面は無い）。
+        /// 規則の本体は LineGroupOps.ApplyVertexMap。
+        /// </summary>
+        private void ApplyVertexMapToLineGroups(int[] map)
+        {
+            Poly_Ling.Ops.LineGroupOps.ApplyVertexMap(this, map);
         }
 
         /// <summary>
@@ -200,6 +216,9 @@ namespace Poly_Ling.Data
             var map = new int[n];
             int w = 0;
             for (int i = 0; i < n; i++) map[i] = kill.Contains(i) ? -1 : w++;
+
+            // 消える 2 頂点の面（線分）の区間で線分群を切る。面の索引が変わる前に行う。
+            Poly_Ling.Ops.LineGroupOps.SplitAtRemovedFaces(this, kill);
 
             for (int i = n - 1; i >= 0; i--)
                 if (map[i] < 0) Faces.RemoveAt(i);

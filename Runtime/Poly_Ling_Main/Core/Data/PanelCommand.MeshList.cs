@@ -16,26 +16,26 @@ namespace Poly_Ling.Data
     // リスト操作
     // ================================================================
 
-    [PLCommand(Description = "空の描画オブジェクトをモデルへ 1 つ足す。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "空の描画オブジェクトをモデルへ 1 つ足す。")]
     public class AddMeshCommand : PanelCommand
     {
         public AddMeshCommand(int modelIndex) : base(modelIndex) { }
     }
 
-    [PLCommand(Description = "指定したオブジェクトをモデルから消す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定したオブジェクトをモデルから消す。")]
     public class DeleteMeshesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public DeleteMeshesCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
 
-    [PLCommand(Description = "指定したオブジェクトを複製してモデルへ足す。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "指定したオブジェクトを複製してモデルへ足す。")]
     public class DuplicateMeshesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public DuplicateMeshesCommand(int modelIndex, int[] masterIndices)
@@ -45,7 +45,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// メッシュリスト順序変更（D&D/上下移動/Indent/Outdent/先頭末尾移動）
     /// </summary>
-    [PLCommand(Description = "メッシュリスト順序変更（D&D/上下移動/Indent/Outdent/先頭末尾移動）")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "メッシュリスト順序変更（D&D/上下移動/Indent/Outdent/先頭末尾移動）")]
     public class ReorderMeshesCommand : PanelCommand
     {
         public struct ReorderEntry
@@ -147,7 +147,7 @@ namespace Poly_Ling.Data
     /// 【ボーンには使わない】
     ///   ボーンの付け替えは setBoneParent（ボーン以外は飛ばす）。
     /// </summary>
-    [PLCommand(Description = "名前の組で描画オブジェクトの親子を張る。names[i] の親を parentNames[i] にする（空で親なし）。名前は完全一致で引き、見つからない・同じ名前が複数ある・親子が輪になるときは失敗する。深さは親の深さ+1 で数え、親→子の順に並べて reorderMeshes（ワールド姿勢を保つ）で張る。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "名前の組で描画オブジェクトの親子を張る。names[i] の親を parentNames[i] にする（空で親なし）。名前は完全一致で引き、見つからない・同じ名前が複数ある・親子が輪になるときは失敗する。深さは親の深さ+1 で数え、親→子の順に並べて reorderMeshes（ワールド姿勢を保つ）で張る。")]
     [PLResult("names",               PLResultKind.TextArray,    Description = "親を張ったオブジェクトの名前")]
     [PLResult("masterIndices",       PLResultKind.IntegerArray, Description = "実行後の masterIndex。names と同じ並び")]
     [PLResult("parentMasterIndices", PLResultKind.IntegerArray, Description = "実行後に読み直した親の masterIndex。親なしは -1。names と同じ並び")]
@@ -173,7 +173,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>カレントモデルを切り替える</summary>
-    [PLCommand(Description = "編集対象のモデルを切り替える。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "編集対象のモデルを切り替える。")]
     public class SwitchModelCommand : PanelCommand
     {
         [PLParam(TextKey = "TargetModelIndex",
@@ -184,7 +184,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>モデルの名前を変更する</summary>
-    [PLCommand(Description = "モデルの名前を変える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モデルの名前を変える。")]
     public class RenameModelCommand : PanelCommand
     {
         [PLParam(TextKey = "ModelNewName",
@@ -195,7 +195,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>モデルを削除する</summary>
-    [PLCommand(Description = "モデルを消す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モデルを消す。")]
     public class DeleteModelCommand : PanelCommand
     {
         public DeleteModelCommand(int modelIndex) : base(modelIndex) { }
@@ -211,16 +211,18 @@ namespace Poly_Ling.Data
     /// CreateNewMesh が true の場合は新規メッシュオブジェクトを作成して結果を格納する。
     /// false の場合は BaseMasterIndex のメッシュオブジェクトに直接結合する。
     /// </summary>
-    [PLCommand(Description = "選択メッシュオブジェクト群をひとつにマージする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択メッシュオブジェクト群をひとつにマージする。")]
     public class MergeMeshesCommand : PanelCommand
     {
         /// <summary>マージ対象の MasterIndex 配列（基準オブジェクトを含む）</summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 WriteWhen = "createNewMesh=false",
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
         /// <summary>基準オブジェクトの MasterIndex</summary>
-        [PLParam(TextKey = "MergeBaseMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "MergeBaseMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 WriteWhen = "createNewMesh=false",
                  Description = "結合の基準になるオブジェクトの masterIndex", Required = true)]
         public int BaseMasterIndex { get; }
 
@@ -250,7 +252,7 @@ namespace Poly_Ling.Data
     /// 同じオブジェクトを指す。ソースが編集されていれば、梯子の位置は
     /// 頂点IDから引き直されるので新しい形になる。
     /// </summary>
-    [PLCommand(Description = "オブジェクトグループを作り直す。ソースの編集が出力先へ反映される。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを作り直す。ソースの編集が出力先へ反映される。")]
     public class RebuildObjectGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "ObjectGroupName", Description = "作り直すグループの名前", Required = true)]
@@ -270,7 +272,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// オブジェクトグループを解除する。描画オブジェクトは消さない。
     /// </summary>
-    [PLCommand(Description = "オブジェクトグループを解除する。出力先の描画オブジェクトは残る。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを解除する。出力先の描画オブジェクトは残る。")]
     public class DeleteObjectGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "ObjectGroupName", Description = "解除するグループの名前", Required = true)]
@@ -295,7 +297,7 @@ namespace Poly_Ling.Data
     /// 【並び順】
     ///   ステップの実行順はリストの並びそのもの。足した順に実行される。
     /// </summary>
-    [PLCommand(Description = "オブジェクトグループを 1 つにまとめる。ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。描画オブジェクトは消さない。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを 1 つにまとめる。ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。描画オブジェクトは消さない。")]
     public class MergeObjectGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "ObjectGroupName", Description = "足し先のグループの名前", Required = true)]
@@ -315,7 +317,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// オブジェクトグループの自動更新の可否を切り替える。
     /// </summary>
-    [PLCommand(Description = "オブジェクトグループの自動更新の可否を切り替える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループの自動更新の可否を切り替える。")]
     public class SetObjectGroupAutoUpdateCommand : PanelCommand
     {
         [PLParam(TextKey = "ObjectGroupName", Description = "対象のグループ名", Required = true)]

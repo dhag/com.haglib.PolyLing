@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using Poly_Ling.Data;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -22,7 +23,9 @@ namespace Poly_Ling.Player
         // 外部コールバック（Viewer から設定）
         // ================================================================
 
-        public Func<CameraToolHandler>     GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "camera";
         public Func<OrbitCameraController> GetOrbit;
         public Func<OrthoViewController>   GetTri;
 
@@ -371,13 +374,9 @@ namespace Poly_Ling.Player
         private void OnTargetKindChanged()
         {
             if (_suppress) return;
-            var h = GetH?.Invoke();
-            if (h != null)
-            {
-                h.TargetKind = _targetDropdown.index == 1
-                    ? CameraToolHandler.CameraTargetKind.Tri
-                    : CameraToolHandler.CameraTargetKind.Main;
-            }
+            Surface.Set(Tool, "targetKind", _targetDropdown.index == 1
+                ? CameraToolHandler.CameraTargetKind.Tri
+                : CameraToolHandler.CameraTargetKind.Main);
             Refresh();
             OnGizmoChanged?.Invoke();
         }
@@ -385,13 +384,9 @@ namespace Poly_Ling.Player
         private void OnGizmoOpChanged()
         {
             if (_suppress) return;
-            var h = GetH?.Invoke();
-            if (h != null)
-            {
-                h.GizmoOp = _gizmoOpDropdown.index == 1
-                    ? CameraToolHandler.CameraGizmoOp.LookAt
-                    : CameraToolHandler.CameraGizmoOp.Camera;
-            }
+            Surface.Set(Tool, "gizmoOp", _gizmoOpDropdown.index == 1
+                ? CameraToolHandler.CameraGizmoOp.LookAt
+                : CameraToolHandler.CameraGizmoOp.Camera);
             OnGizmoChanged?.Invoke();
         }
 
@@ -404,15 +399,17 @@ namespace Poly_Ling.Player
         {
             if (_targetDropdown == null) return;
 
-            var h    = GetH?.Invoke();
-            bool tri = h != null && h.TargetKind == CameraToolHandler.CameraTargetKind.Tri;
+            bool tri    = Surface.Get(Tool, "targetKind", CameraToolHandler.CameraTargetKind.Main)
+                          == CameraToolHandler.CameraTargetKind.Tri;
+            bool lookAt = Surface.Get(Tool, "gizmoOp", CameraToolHandler.CameraGizmoOp.Camera)
+                          == CameraToolHandler.CameraGizmoOp.LookAt;
 
             _suppress = true;
             try
             {
                 _targetDropdown.SetValueWithoutNotify(TargetNames[tri ? 1 : 0]);
                 _gizmoOpDropdown.SetValueWithoutNotify(
-                    GizmoOpNames[(h != null && h.GizmoOp == CameraToolHandler.CameraGizmoOp.LookAt) ? 1 : 0]);
+                    GizmoOpNames[lookAt ? 1 : 0]);
 
                 _mainGroup.style.display = tri ? DisplayStyle.None : DisplayStyle.Flex;
                 _triGroup .style.display = tri ? DisplayStyle.Flex : DisplayStyle.None;

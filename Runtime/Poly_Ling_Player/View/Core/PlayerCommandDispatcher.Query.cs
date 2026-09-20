@@ -32,10 +32,123 @@ namespace Poly_Ling.Player
         {
             switch (cmd)
             {
+                // ── ツールの公開層（操作経路統一計画.md B・C・D）
+                case QueryToolStateCommand qts:
+                {
+                    MarkNotRecorded();
+                    if (string.IsNullOrEmpty(qts.ToolId))
+                    {
+                        var ids = new List<string>(ListTools?.Invoke() ?? Array.Empty<string>());
+                        ReportData(CommandDataJson.New().Texts("tools", ids).Build());
+                        return true;
+                    }
+                    var th = ResolveTool?.Invoke(qts.ToolId);
+                    if (th == null) { Fail($"ツールがありません: {qts.ToolId}"); return true; }
+                    var ps = PLToolSurface.Params(th);
+                    var ss = PLToolSurface.States(th);
+                    var acts = PLToolSurface.Actions(th);
+                    ReportData(CommandDataJson.New()
+                        .Texts("paramNames",  ps.ConvertAll(e => e.Name))
+                        .Texts("paramTypes",  ps.ConvertAll(e => e.Type))
+                        .Texts("paramValues", ps.ConvertAll(e => e.Value))
+                        .Texts("stateNames",  ss.ConvertAll(e => e.Name))
+                        .Texts("stateValues", ss.ConvertAll(e => e.Value))
+                        .Texts("actions",     acts.ConvertAll(e => e.Name))
+                        .Build());
+                    return true;
+                }
+
+                case SetToolParamCommand stp:
+                {
+                    MarkNotRecorded();
+                    var th = ResolveTool?.Invoke(stp.ToolId);
+                    if (th == null) { Fail($"ツールがありません: {stp.ToolId}"); return true; }
+                    if (!PLToolSurface.TrySet(th, stp.Name, stp.Value, out string actual, out string why))
+                    { Fail(why); return true; }
+                    // パネルへの通知はしない。スライダーのドラッグ中は 1 目盛りごとにここを通り、
+                    // 通知するとパネルの Refresh が毎回走って、プレビュー中の回転中心などを
+                    // 読み直す（読み取りが計算を伴うハンドラがある）。変化の通知は別途（push）扱う。
+                    ReportData(CommandDataJson.New().Text("value", actual ?? "").Build());
+                    return true;
+                }
+
+                case InvokeToolActionCommand ita:
+                {
+                    // 操作そのものは Undo に積まない（操作の中で送られるコマンドがそれぞれ積む）。
+                    // パネルへの通知もしない。統計の再計算のようにパネルの再描画から呼ばれる操作があり、
+                    // ここで通知すると再描画 → 操作 → 通知 … と回り続ける。
+                    MarkNotRecorded();
+                    var th = ResolveTool?.Invoke(ita.ToolId);
+                    if (th == null) { Fail($"ツールがありません: {ita.ToolId}"); return true; }
+                    if (!PLToolSurface.TryInvoke(th, ita.Action, ita.ArgKeys, ita.ArgValues, out string why)) { Fail(why); return true; }
+                    return true;
+                }
+
+                // ── 担当者判定の照会（実行しない）
+                //   RemoteOwnership.TryAuthorize をそのまま呼ぶ。照会対象は組み立てるだけで
+                //   Dispatch しないので、モデルも Undo も変わらない。
+                case QueryOwnershipVerdictCommand qov:
+                {
+                    MarkNotRecorded();
+                    if (project == null) { Fail("no project"); return true; }
+
+                    int n = Math.Min(qov.TargetArgKeys?.Length ?? 0, qov.TargetArgValues?.Length ?? 0);
+                    if ((qov.TargetArgKeys?.Length ?? 0) != (qov.TargetArgValues?.Length ?? 0))
+                    { Fail("targetArgKeys と targetArgValues の長さが違います"); return true; }
+
+                    var qovArgs = new Dictionary<string, string>(StringComparer.Ordinal);
+                    for (int i = 0; i < n; i++) qovArgs[qov.TargetArgKeys[i]] = qov.TargetArgValues[i];
+
+                    var target = PanelCommandFactory.Create(
+                        qov.TargetAction, qov.ModelIndex, qovArgs, out string qovErr);
+                    if (target == null) { Fail(qovErr ?? "コマンドを組み立てられません"); return true; }
+
+                    ulong[] qovIds = null;
+                    if (qov.ObjectIds != null && qov.ObjectIds.Length > 0)
+                    {
+                        qovIds = new ulong[qov.ObjectIds.Length];
+                        for (int i = 0; i < qovIds.Length; i++)
+                            if (!ulong.TryParse(qov.ObjectIds[i], System.Globalization.NumberStyles.Integer,
+                                    System.Globalization.CultureInfo.InvariantCulture, out qovIds[i]))
+                            { Fail($"objectIds[{i}] を整数にできません: {qov.ObjectIds[i]}"); return true; }
+                    }
+
+                    var verdict = Poly_Ling.Remote.RemoteOwnership.TryAuthorize(
+                        project, target,
+                        new CommandActor(qov.RequesterName, qov.ActorKind, qovIds));
+
+                    var scope = Poly_Ling.Remote.RemoteOwnership.WriteScopeOf(target);
+                    var primaryTargets = new List<int>();
+                    var checkedTargets = new List<int>();
+                    bool resolved = false;
+                    if (scope == PLWriteScope.Targets &&
+                        Poly_Ling.Remote.RemoteOwnership.TryCollectWriteTargets(
+                            project, target, out var prim, out var byModel))
+                    {
+                        resolved = true;
+                        primaryTargets.AddRange(prim);
+                        var mainModel = project.GetModel(qov.ModelIndex);
+                        if (mainModel != null && byModel.TryGetValue(mainModel, out var mainList))
+                            checkedTargets.AddRange(Poly_Ling.Remote.RemoteOwnership.WritesMirrorSide(target)
+                                ? MirrorBranchOps.CollectMirrorCaptureIndices(mainModel, mainList)
+                                : mainList);
+                    }
+
+                    ReportData(CommandDataJson.New()
+                        .Flag ("allowed",         verdict.Allowed)
+                        .Flag ("staleView",       verdict.StaleView)
+                        .Text ("reason",          verdict.Reason ?? "")
+                        .Text ("writeScope",      scope.ToString())
+                        .Flag ("targetsResolved", resolved)
+                        .Ints ("primaryTargets",  primaryTargets)
+                        .Ints ("checkedTargets",  checkedTargets)
+                        .Build());
+                    return true;
+                }
                 // ── 照会（モデルを変えない）
                 //
-                // Undo に記録しない。RemoteOwnership の判定対象にしない
-                // （IsOwnershipExempt に載せてある）。ComputeWorldMatrices を呼ばない。
+                // Undo に記録しない。RemoteOwnership の判定では素通し
+                // （PLCommand.Writes = None）。ComputeWorldMatrices を呼ばない。
                 // パネルへの通知もしない。表示は何も変わらないため。
                 //
                 // 受け口（PolyLingPlayerViewerCore の Execute*）を置いていないのは、
@@ -161,6 +274,81 @@ namespace Poly_Ling.Player
 
                     ReportData(BuildHolesData(qhModel, qhMc, c),
                                new[] { c.MasterIndex }, new[] { qhMc.ObjectId });
+                    return true;
+                }
+
+                case QueryLineGroupsCommand c:
+                {
+                    if (!TryGetQueryTarget(project, c.ModelIndex, c.MasterIndex,
+                                           out var qlModel, out var qlMc, out string qlReason))
+                    { Fail(qlReason); return true; }
+
+                    var qlMo = qlMc.MeshObject;
+                    var names   = new List<string>();
+                    var counts  = new List<int>();
+                    var closed  = new List<int>();
+                    var parents = new List<int>();
+                    var order   = new List<int>();
+
+                    // 2 頂点の面の組（向きを問わない）
+                    var linePairs = new HashSet<long>();
+                    int lineFaces = 0;
+                    if (qlMo != null)
+                        foreach (var f in qlMo.Faces)
+                        {
+                            if (f?.VertexIndices == null || f.VertexIndices.Count != 2) continue;
+                            lineFaces++;
+                            linePairs.Add(Poly_Ling.Ops.LineGroupOps.PairKey(f.VertexIndices[0], f.VertexIndices[1]));
+                        }
+
+                    int missing = 0;
+                    var hasHandles = new List<int>();
+                    var hOffsets   = new List<float>();
+                    var hCons      = new List<int>();
+                    var lgCounts   = new List<int>();
+                    if (qlMo?.LineGroups != null)
+                        foreach (var g in qlMo.LineGroups)
+                        {
+                            if (g?.Order == null) continue;
+                            names.Add(g.Name ?? "");
+                            counts.Add(g.Order.Count);
+                            closed.Add(g.Closed ? 1 : 0);
+                            parents.Add(g.ParentVertex);
+                            order.AddRange(g.Order);
+                            hasHandles.Add(g.HasHandles ? 1 : 0);
+                            lgCounts.Add(g.LengthGroups?.Count ?? 0);
+                            if (g.HasHandles)
+                                foreach (var h in g.PointHandles)
+                                {
+                                    hOffsets.Add(h.InOffset.x);  hOffsets.Add(h.InOffset.y);  hOffsets.Add(h.InOffset.z);
+                                    hOffsets.Add(h.OutOffset.x); hOffsets.Add(h.OutOffset.y); hOffsets.Add(h.OutOffset.z);
+                                    hCons.Add((int)h.InConstraint.Direction);  hCons.Add((int)h.InConstraint.Length);  hCons.Add(h.InConstraint.LengthGroupId);
+                                    hCons.Add((int)h.OutConstraint.Direction); hCons.Add((int)h.OutConstraint.Length); hCons.Add(h.OutConstraint.LengthGroupId);
+                                }
+
+                            int n = g.Order.Count;
+                            int segs = g.Closed ? n : n - 1;
+                            for (int k = 0; k < segs; k++)
+                                if (!linePairs.Contains(Poly_Ling.Ops.LineGroupOps.PairKey(g.Order[k], g.Order[(k + 1) % n])))
+                                    missing++;
+                        }
+
+                    ReportData(CommandDataJson.New()
+                        .Int  ("masterIndex",  c.MasterIndex)
+                        .Int  ("groups",       names.Count)
+                        .Texts("names",        names)
+                        .Ints ("counts",       counts)
+                        .Ints ("closed",       closed)
+                        .Ints ("parents",      parents)
+                        .Ints ("order",        order)
+                        .Int  ("lineFaces",    lineFaces)
+                        .Int  ("missingFaces", missing)
+                        .Ints ("hasHandles",   hasHandles)
+                        .Nums ("handleOffsets", hOffsets)
+                        .Ints ("handleConstraints", hCons)
+                        .Ints ("lengthGroupCounts", lgCounts)
+                        .Build(),
+                        new[] { c.MasterIndex }, new[] { qlMc.ObjectId });
                     return true;
                 }
 

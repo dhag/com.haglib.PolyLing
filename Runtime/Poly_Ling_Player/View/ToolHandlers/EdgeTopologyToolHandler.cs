@@ -12,6 +12,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("edgeTopology", Description = "EdgeTopologyTool（確定は EdgeTopology*Command）")]
     public class EdgeTopologyToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -43,6 +44,7 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeTopologyTool.ModePublic")]
         public EdgeTopoMode ModePublic { get => _tool.ModePublic; set => _tool.ModePublic = value; }
 
         // ================================================================

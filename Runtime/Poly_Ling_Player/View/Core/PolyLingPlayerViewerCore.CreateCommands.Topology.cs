@@ -783,7 +783,7 @@ namespace Poly_Ling.Player
             // PickedEdges は IReadOnlyCollection なので CopyTo は無い。
             var edges = new List<VertexPair>(h.PickedEdges).ToArray();
 
-            _commandDispatcher?.Dispatch(new CreateEdgeBridgeCommand(
+            DispatchHost(new CreateEdgeBridgeCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 h.PickedMeshIndex, edges,
                 h.AutoCorrespondence, h.FlipCorrespondence, h.FlipFaces, h.Subdivisions));
@@ -942,7 +942,7 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            _commandDispatcher?.Dispatch(new MatchHoleRingCountCommand(
+            DispatchHost(new MatchHoleRingCountCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 b.MeshIndex, b.Vertex, b.DirectionHint,
                 t.MeshIndex, t.Vertex, t.DirectionHint,

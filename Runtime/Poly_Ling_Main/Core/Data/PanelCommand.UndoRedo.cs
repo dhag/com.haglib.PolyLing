@@ -20,14 +20,14 @@ namespace Poly_Ling.Data
     /// 直前の操作を 1 段戻す。モデル非依存なので ModelIndex は 0 固定。
     /// 戻せる履歴が無いときは失敗として返る。
     /// </summary>
-    [PLCommand(Description = "直前の操作を 1 段戻す。モデル非依存なので ModelIndex は 0 固定。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "直前の操作を 1 段戻す。モデル非依存なので ModelIndex は 0 固定。")]
     public class PerformUndoCommand : PanelCommand
     {
         public PerformUndoCommand() : base(0) { }
     }
 
     /// <summary>戻した操作を 1 段やり直す。</summary>
-    [PLCommand(Description = "戻した操作を 1 段やり直す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "戻した操作を 1 段やり直す。")]
     public class PerformRedoCommand : PanelCommand
     {
         public PerformRedoCommand() : base(0) { }
@@ -40,7 +40,7 @@ namespace Poly_Ling.Data
     /// 変更されるのは対象穴のメッシュだけで、基準穴は頂点数を読むだけ。
     /// 基準と対象が同じメッシュにあってもよい。
     /// </summary>
-    [PLCommand(Description = "穴の頂点数を基準の穴に合わせる。穴つなぎは 2 つの穴の頂点数が同じであることを要求するので、その前処理に使う。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "穴の頂点数を基準の穴に合わせる。穴つなぎは 2 つの穴の頂点数が同じであることを要求するので、その前処理に使う。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -48,7 +48,7 @@ namespace Poly_Ling.Data
     public class MatchHoleRingCountCommand : PanelCommand
     {
         /// <summary>基準穴のあるメッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "HoleRingBaseMesh", IsMeshRef = true, Description = "基準穴のメッシュ索引", Required = true)]
+        [PLParam(TextKey = "HoleRingBaseMesh", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, Description = "基準穴のメッシュ索引", Required = true)]
         public int BaseMeshIndex { get; }
 
         /// <summary>基準穴の種頂点。</summary>
@@ -60,7 +60,7 @@ namespace Poly_Ling.Data
         public int BaseDirectionHint { get; }
 
         /// <summary>対象穴のあるメッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "HoleRingTargetMesh", IsMeshRef = true, Description = "対象穴のメッシュ索引", Required = true)]
+        [PLParam(TextKey = "HoleRingTargetMesh", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Description = "対象穴のメッシュ索引", Required = true)]
         public int TargetMeshIndex { get; }
 
         /// <summary>対象穴の種頂点。</summary>
@@ -96,7 +96,7 @@ namespace Poly_Ling.Data
     /// 面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。
     /// 消すのは指定メッシュの面だけで、他のオブジェクトの選択は巻き込まない。
     /// </summary>
-    [PLCommand(Description = "面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -104,7 +104,7 @@ namespace Poly_Ling.Data
     public class DeleteFacesCommand : PanelCommand
     {
         /// <summary>対象メッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "DeleteFacesMesh", IsMeshRef = true, Description = "対象メッシュの索引", Required = true)]
+        [PLParam(TextKey = "DeleteFacesMesh", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Description = "対象メッシュの索引", Required = true)]
         public int MeshIndex { get; }
 
         /// <summary>消す面の番号。</summary>
@@ -124,7 +124,7 @@ namespace Poly_Ling.Data
     /// 単一のメッシュを返さないので図形生成コマンドとは別系統にする。
     /// 作業軸はモデル側の状態なのでディスパッチャが解決する。
     /// </summary>
-    [PLCommand(Description = "歪み複製。複製元を歪ませながら複数組つくり、モデルへ挿入する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "歪み複製。複製元を歪ませながら複数組つくり、モデルへ挿入する。")]
     public class CreateObjectArrayCommand : PanelCommand
     {
         /// <summary>生成パラメータ。</summary>
@@ -132,7 +132,7 @@ namespace Poly_Ling.Data
         public Poly_Ling.Tools.ObjectArray.ObjectArrayParams Params { get; }
 
         /// <summary>複製元の MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "ObjectArraySources", IsMeshRef = true, Description = "複製元オブジェクトの索引", Required = true)]
+        [PLParam(TextKey = "ObjectArraySources", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read, Description = "複製元オブジェクトの索引", Required = true)]
         public int[] SourceMasterIndices { get; }
 
         /// <summary>

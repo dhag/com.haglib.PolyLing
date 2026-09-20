@@ -8,12 +8,15 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerKnifeSubPanel
     {
-        public Func<KnifeToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface Surface;
+        private const string Tool = "knife";
 
         // UI 自動操作の ID は "knife.<下の Id>"（UiControlAttribute.cs）。
         // 等分割は「シンプル」以外、分割数は等分割オンのとき、三角+四角は「シンプル」のときだけ表示される。
@@ -52,8 +55,8 @@ namespace Poly_Ling.Player
             _modeDD.RegisterValueChangedCallback(e =>
             {
                 int idx = ModeChoices.IndexOf(e.newValue);
-                var h = GetH(); if (h == null || idx < 0) return;
-                h.Mode = ModeValues[idx];
+                if (Surface == null || idx < 0) return;
+                Surface.Set(Tool, "mode", ModeValues[idx]);
                 Refresh();
             });
             _root.Add(_modeDD);
@@ -64,8 +67,8 @@ namespace Poly_Ling.Player
             _equalToggle.style.marginTop = 2;
             _equalToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH(); if (h == null) return;
-                h.EqualDivide = e.newValue;
+                if (Surface == null) return;
+                Surface.Set(Tool, "equalDivide", e.newValue);
                 Refresh();
             });
             _root.Add(_equalToggle);
@@ -79,9 +82,9 @@ namespace Poly_Ling.Player
             _divField.style.color = new StyleColor(Color.white);
             _divField.RegisterValueChangedCallback(e =>
             {
-                var h = GetH(); if (h == null) return;
+                if (Surface == null) return;
                 int n = e.newValue < 2 ? 2 : e.newValue;
-                h.Divisions = n;
+                Surface.Set(Tool, "divisions", n);
                 if (n != e.newValue) _divField.SetValueWithoutNotify(n);
                 Refresh();
             });
@@ -92,11 +95,7 @@ namespace Poly_Ling.Player
             _triQuadToggle = new Toggle("5角以上を三角+四角に分割");
             _triQuadToggle.style.color = new StyleColor(Color.white);
             _triQuadToggle.style.marginTop = 2;
-            _triQuadToggle.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH(); if (h == null) return;
-                h.SimpleTriQuad = e.newValue;
-            });
+            _triQuadToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "simpleTriQuad", e.newValue));
             _root.Add(_triQuadToggle);
 
             _statusLabel = new Label();
@@ -147,21 +146,25 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH(); if (h == null) return;
-            int modeIdx = Array.IndexOf(ModeValues, h.Mode);
+            if (Surface == null) return;
+            var mode      = Surface.Get(Tool, "mode", KnifeMode.LadderCut);
+            bool equal    = Surface.GetBool(Tool, "equalDivide");
+            int divisions = Surface.GetInt(Tool, "divisions", 2);
+
+            int modeIdx = Array.IndexOf(ModeValues, mode);
             _modeDD?.SetValueWithoutNotify(modeIdx >= 0 ? ModeChoices[modeIdx] : ModeChoices[0]);
 
-            bool isSimple = h.Mode == KnifeMode.SimpleCut;
+            bool isSimple = mode == KnifeMode.SimpleCut;
             if (_equalToggle != null)
                 _equalToggle.style.display = isSimple ? DisplayStyle.None : DisplayStyle.Flex;
-            _equalToggle?.SetValueWithoutNotify(h.EqualDivide);
+            _equalToggle?.SetValueWithoutNotify(equal);
             if (_divRow != null)
-                _divRow.style.display = (h.EqualDivide && !isSimple) ? DisplayStyle.Flex : DisplayStyle.None;
-            _divField?.SetValueWithoutNotify(h.Divisions);
+                _divRow.style.display = (equal && !isSimple) ? DisplayStyle.Flex : DisplayStyle.None;
+            _divField?.SetValueWithoutNotify(divisions);
             if (_triQuadToggle != null)
             {
                 _triQuadToggle.style.display = isSimple ? DisplayStyle.Flex : DisplayStyle.None;
-                _triQuadToggle.SetValueWithoutNotify(h.SimpleTriQuad);
+                _triQuadToggle.SetValueWithoutNotify(Surface.GetBool(Tool, "simpleTriQuad", true));
             }
 
             if (_statusLabel == null) return;
@@ -169,23 +172,23 @@ namespace Poly_Ling.Player
             // 開始頂点／通過線分が確定していれば具体情報を表示。
             // 未確定（キャンセル・終了/実行後）は案内文のみ＝情報行はクリアされる。
             string info;
-            if (h.Mode == KnifeMode.LadderCut && h.HasStart)
+            if (mode == KnifeMode.LadderCut && Surface.GetBool(Tool, "hasStart"))
             {
-                info = $"開始頂点: v{h.StartVertex}";
-                if (h.HasSegment)
+                info = $"開始頂点: v{Surface.GetInt(Tool, "startVertex")}";
+                if (Surface.GetBool(Tool, "hasSegment"))
                 {
-                    info += $"\n通過線分: v{h.Segment.V1}–v{h.Segment.V2}";
-                    if (!h.EqualDivide)
-                        info += $"（切断比率 {h.CutRatio:0.00}）";
+                    info += $"\n通過線分: v{Surface.GetInt(Tool, "segmentV1")}–v{Surface.GetInt(Tool, "segmentV2")}";
+                    if (!equal)
+                        info += $"（切断比率 {Surface.GetFloat(Tool, "cutRatio"):0.00}）";
                 }
             }
             else
             {
-                info = h.StageText();
+                info = Surface.GetString(Tool, "stage");
             }
 
-            if (h.EqualDivide && !isSimple)
-                info += $"\n分割数: {h.Divisions}";
+            if (equal && !isSimple)
+                info += $"\n分割数: {divisions}";
             _statusLabel.text = info;
         }
 

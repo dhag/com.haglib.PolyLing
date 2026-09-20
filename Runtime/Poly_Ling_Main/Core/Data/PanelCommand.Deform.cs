@@ -21,21 +21,21 @@ namespace Poly_Ling.Data
     /// 衝突対象オブジェクト群と交差した頂点はその位置で停止する。
     /// バックアップ作成 + Undo 記録付き。
     /// </summary>
-    [PLCommand(Description = "ビフォーオブジェクトの頂点をアフターオブジェクトへ向けて移動する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ビフォーオブジェクトの頂点をアフターオブジェクトへ向けて移動する。")]
     public class ApplyShrinkCommand : PanelCommand
     {
         /// <summary>ビフォー（変形対象）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ShrinkBeforeMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "ShrinkBeforeMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "変形させる描画オブジェクトの masterIndex", Required = true)]
         public int   BeforeMasterIndex     { get; }
 
         /// <summary>アフター（目標形状）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ShrinkAfterMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "ShrinkAfterMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "目標形状の描画オブジェクトの masterIndex", Required = true)]
         public int   AfterMasterIndex      { get; }
 
         /// <summary>衝突対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "ShrinkColliderMasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "ShrinkColliderMasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "衝突対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] ColliderMasterIndices { get; }
 
@@ -153,21 +153,21 @@ namespace Poly_Ling.Data
     /// スキニング無しを前提とする。空間変換はオブジェクト単位の
     /// MeshContext.WorldMatrix だけを使う。
     /// </summary>
-    [PLCommand(Description = "ビフォー／アフター2オブジェクトの頂点対応から 3D Thin Plate Spline を解き、 ターゲットオブジェクトを変形した結果を新規オブジェクトとして追加する。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "ビフォー／アフター2オブジェクトの頂点対応から 3D Thin Plate Spline を解き、 ターゲットオブジェクトを変形した結果を新規オブジェクトとして追加する。")]
     public class ApplyThinPlateMorphCommand : PanelCommand
     {
         /// <summary>ビフォー（変形前の対応点）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateBeforeMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "ThinPlateBeforeMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "変形前の対応点を持つオブジェクトの masterIndex", Required = true)]
         public int   BeforeMasterIndex         { get; }
 
         /// <summary>アフター（変形後の対応点）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateAfterMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "ThinPlateAfterMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "変形後の対応点を持つオブジェクトの masterIndex", Required = true)]
         public int   AfterMasterIndex          { get; }
 
         /// <summary>変形させる MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateSourceMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "ThinPlateSourceMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "変形させる描画オブジェクトの masterIndex", Required = true)]
         public int   TargetMasterIndex         { get; }
 
@@ -216,11 +216,11 @@ namespace Poly_Ling.Data
     /// 全域モードは ApplyThinPlateMorphCommand が同期実行するため、
     /// このコマンドを経由しない。
     /// </summary>
-    [PLCommand(Description = "算出済みの変形結果を新規オブジェクトとして追加する。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "算出済みの変形結果を新規オブジェクトとして追加する。")]
     public class ApplyThinPlateMorphResultCommand : PanelCommand
     {
         /// <summary>変形させた MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "ThinPlateTargetMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "ThinPlateTargetMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "変形結果を書き込む描画オブジェクトの masterIndex", Required = true)]
         public int       TargetMasterIndex  { get; }
 
@@ -250,10 +250,10 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>MediaPipe ランドマークJSONを使ってカレントメッシュを変形した新メッシュを追加する</summary>
-    [PLCommand(Description = "MediaPipe のランドマーク JSON で現在のメッシュを変形し、新しいメッシュとして足す。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "MediaPipe のランドマーク JSON で現在のメッシュを変形し、新しいメッシュとして足す。")]
     public class MediaPipeFaceDeformCommand : PanelCommand
     {
-        [PLParam(TextKey = "MediaPipeSourceMaster", IsMeshRef = true,
+        [PLParam(TextKey = "MediaPipeSourceMaster", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "変形元の描画オブジェクトの masterIndex", Required = true)]
         public int    SourceMasterIndex { get; }
 
@@ -307,7 +307,7 @@ namespace Poly_Ling.Data
     /// </summary>
     public abstract class ApplyDeformCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -354,7 +354,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>作業軸まわりに一様回転させる。RotateDeformer。</summary>
-    [PLCommand(Description = "作業軸まわりに一様回転させる。RotateDeformer。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸まわりに一様回転させる。RotateDeformer。")]
     public sealed class ApplyRotateDeformCommand : ApplyDeformCommand
     {
         public override string DeformerName => "Rotate";
@@ -389,7 +389,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>作業軸ローカルで平行移動させる。MoveDeformer。</summary>
-    [PLCommand(Description = "作業軸ローカルで平行移動させる。MoveDeformer。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸ローカルで平行移動させる。MoveDeformer。")]
     public sealed class ApplyMoveDeformCommand : ApplyDeformCommand
     {
         public override string DeformerName => "Move";
@@ -421,7 +421,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>作業軸ローカルで拡大縮小させる。ScaleDeformer。</summary>
-    [PLCommand(Description = "作業軸ローカルで拡大縮小させる。ScaleDeformer。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸ローカルで拡大縮小させる。ScaleDeformer。")]
     public sealed class ApplyScaleDeformCommand : ApplyDeformCommand
     {
         public override string DeformerName => "Scale";
@@ -464,7 +464,7 @@ namespace Poly_Ling.Data
     ///   結果が変わる。ここには解決済みの角度だけを載せ、受け口は
     ///   UseCameraBendPlane を false にして実行する。
     /// </summary>
-    [PLCommand(Description = "作業軸ラインに沿って曲げる。BendDeformer。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸ラインに沿って曲げる。BendDeformer。")]
     public sealed class ApplyBendDeformCommand : ApplyDeformCommand
     {
         public override string DeformerName => "Bend";
@@ -503,7 +503,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>作業軸ラインまわりにねじる。TwistDeformer。</summary>
-    [PLCommand(Description = "作業軸ラインまわりにねじる。TwistDeformer。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸ラインまわりにねじる。TwistDeformer。")]
     public sealed class ApplyTwistDeformCommand : ApplyDeformCommand
     {
         public override string DeformerName => "Twist";
@@ -535,7 +535,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>作業軸ラインに沿って波打たせる。WaveDeformer。</summary>
-    [PLCommand(Description = "作業軸ラインに沿って波打たせる。WaveDeformer。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸ラインに沿って波打たせる。WaveDeformer。")]
     public sealed class ApplyWaveDeformCommand : ApplyDeformCommand
     {
         public override string DeformerName => "Wave";
@@ -616,10 +616,10 @@ namespace Poly_Ling.Data
     ///   ・PointOffsets.Length == PointIndices.Length * 3
     ///   ・PointIndices の各要素が 0 〜 制御点数-1 の範囲内
     /// </summary>
-    [PLCommand(Description = "作業軸を格子フレームとして選択頂点を格子変形する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸を格子フレームとして選択頂点を格子変形する。")]
     public class ApplyLatticeDeformCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }

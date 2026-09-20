@@ -5,6 +5,7 @@
 // Runtime/Poly_Ling_Player/View/SubPanels/Edit/ に配置
 
 using System;
+using Poly_Ling.Data;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -12,7 +13,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerHoleRingCountSubPanel : IHoleSeedSource
     {
-        public Func<HoleRingCountToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "holeRingCount";
 
         /// <summary>「頂点数を合わせる」の実行。コマンドの組み立てと送信は Viewer 側が持つ。</summary>
         public Action OnExecute;
@@ -82,7 +85,7 @@ namespace Poly_Ling.Player
             _root.Add(SectionLabel("基準穴（変更しない）"));
             _root.Add(_importBaseBtn = ActionButton("基準穴を選択から取り込み", () =>
             {
-                GetH?.Invoke()?.ImportBase();
+                Surface?.Invoke(Tool, "importBase");
                 Refresh();
             }));
             _baseLabel = InfoLabel();
@@ -92,7 +95,7 @@ namespace Poly_Ling.Player
             _root.Add(SectionLabel("対象穴（頂点数を増減させる）"));
             _root.Add(_importTargetBtn = ActionButton("対象穴を選択から取り込み", () =>
             {
-                GetH?.Invoke()?.ImportTarget();
+                Surface?.Invoke(Tool, "importTarget");
                 Refresh();
             }));
             _targetLabel = InfoLabel();
@@ -100,7 +103,7 @@ namespace Poly_Ling.Player
 
             _root.Add(_clearSeedsBtn = ActionButton("取り込みを破棄", () =>
             {
-                GetH?.Invoke()?.ClearSeeds();
+                Surface?.Invoke(Tool, "clearSeeds");
                 _lastResult = "";
                 Refresh();
             }));
@@ -118,8 +121,7 @@ namespace Poly_Ling.Player
             _splitTriToggle.style.marginTop = 4;
             _splitTriToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h != null) h.SplitTriangleIntoTriangles = e.newValue;
+                Surface.Set(Tool, "splitTriangleIntoTriangles", e.newValue);
             });
             _root.Add(_splitTriToggle);
 
@@ -158,31 +160,30 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            _splitTriToggle?.SetValueWithoutNotify(h.SplitTriangleIntoTriangles);
-
-            var baseSeed   = h.BaseSeed;
-            var targetSeed = h.TargetSeed;
+            _splitTriToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "splitTriangleIntoTriangles"));
 
             if (_baseLabel != null)
-                _baseLabel.text = SeedText(baseSeed, "未取り込み");
+                _baseLabel.text = SeedText(Surface.GetGroup(Tool, "baseSeed"), "未取り込み");
             if (_targetLabel != null)
-                _targetLabel.text = SeedText(targetSeed, "未取り込み");
+                _targetLabel.text = SeedText(Surface.GetGroup(Tool, "targetSeed"), "未取り込み");
 
-            var sum = h.Inspect();
+            var sum = Surface.GetGroup(Tool, "inspect");
+            int baseCount   = sum.Item("baseCount", 0);
+            int targetCount = sum.Item("targetCount", 0);
+            int delta       = sum.Item("delta", 0);
 
             if (_diffLabel != null)
             {
-                if (sum.BaseCount > 0 && sum.TargetCount > 0)
+                if (baseCount > 0 && targetCount > 0)
                 {
-                    string arrow = sum.Delta == 0 ? "一致" : (sum.Delta > 0 ? $"+{sum.Delta}" : sum.Delta.ToString());
-                    _diffLabel.text = $"基準 {sum.BaseCount} 頂点 / 対象 {sum.TargetCount} 頂点 → 対象を {arrow}";
+                    string arrow = delta == 0 ? "一致" : (delta > 0 ? $"+{delta}" : delta.ToString());
+                    _diffLabel.text = $"基準 {baseCount} 頂点 / 対象 {targetCount} 頂点 → 対象を {arrow}";
                 }
-                else if (sum.BaseCount > 0)
+                else if (baseCount > 0)
                 {
-                    _diffLabel.text = $"基準 {sum.BaseCount} 頂点";
+                    _diffLabel.text = $"基準 {baseCount} 頂点";
                 }
                 else
                 {
@@ -193,18 +194,20 @@ namespace Poly_Ling.Player
             if (_statusLabel != null)
             {
                 _statusLabel.text = string.IsNullOrEmpty(_lastResult)
-                    ? (sum.Reason ?? "")
+                    ? sum.Item("reason", "")
                     : _lastResult;
             }
 
-            _executeBtn?.SetEnabled(sum.CanExecute);
+            _executeBtn?.SetEnabled(sum.Item("canExecute", false));
         }
 
-        private static string SeedText(Poly_Ling.Tools.HoleRingCountTool.Seed seed, string emptyText)
+        /// <summary>起点のまとまり（HoleRingCountTool.Seed の中身）を表示文字列にする。未取り込みは空のまとまり。</summary>
+        private static string SeedText(System.Collections.Generic.IReadOnlyDictionary<string, string> seed, string emptyText)
         {
-            if (seed == null) return emptyText;
-            if (seed.Valid)   return seed.Info;
-            return string.IsNullOrEmpty(seed.Info) ? emptyText : seed.Info;
+            if (seed == null || seed.Count == 0) return emptyText;
+            string info = seed.Item("info", "");
+            if (seed.Item("valid", false)) return info;
+            return string.IsNullOrEmpty(info) ? emptyText : info;
         }
 
         // ================================================================
@@ -220,15 +223,21 @@ namespace Poly_Ling.Player
 
         public bool HoleSeedOverlayActive => IsSectionVisible();
 
-        public int HoleSeedMeshIndexA => Valid(GetH?.Invoke()?.BaseSeed)   ? GetH.Invoke().BaseSeed.MeshIndex     : -1;
-        public int HoleSeedVertexA    => Valid(GetH?.Invoke()?.BaseSeed)   ? GetH.Invoke().BaseSeed.Vertex        : -1;
-        public int HoleSeedDirHintA   => Valid(GetH?.Invoke()?.BaseSeed)   ? GetH.Invoke().BaseSeed.DirectionHint : -1;
+        public int HoleSeedMeshIndexA => SeedValue("baseSeed",   "meshIndex");
+        public int HoleSeedVertexA    => SeedValue("baseSeed",   "vertex");
+        public int HoleSeedDirHintA   => SeedValue("baseSeed",   "directionHint");
 
-        public int HoleSeedMeshIndexB => Valid(GetH?.Invoke()?.TargetSeed) ? GetH.Invoke().TargetSeed.MeshIndex     : -1;
-        public int HoleSeedVertexB    => Valid(GetH?.Invoke()?.TargetSeed) ? GetH.Invoke().TargetSeed.Vertex        : -1;
-        public int HoleSeedDirHintB   => Valid(GetH?.Invoke()?.TargetSeed) ? GetH.Invoke().TargetSeed.DirectionHint : -1;
+        public int HoleSeedMeshIndexB => SeedValue("targetSeed", "meshIndex");
+        public int HoleSeedVertexB    => SeedValue("targetSeed", "vertex");
+        public int HoleSeedDirHintB   => SeedValue("targetSeed", "directionHint");
 
-        private static bool Valid(Poly_Ling.Tools.HoleRingCountTool.Seed seed) => seed != null && seed.Valid;
+        /// <summary>起点の 1 項目。起点が無い・有効でなければ -1。</summary>
+        private int SeedValue(string seedGroup, string member)
+        {
+            var seed = Surface?.GetGroup(Tool, seedGroup);
+            if (seed == null || !seed.Item("valid", false)) return -1;
+            return seed.Item(member, -1);
+        }
 
         // ================================================================
         // ウィジェットファクトリ

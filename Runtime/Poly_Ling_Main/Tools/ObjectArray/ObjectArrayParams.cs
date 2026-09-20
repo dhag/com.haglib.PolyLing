@@ -49,7 +49,8 @@ namespace Poly_Ling.Tools.ObjectArray
         public ObjectArrayOutputMode OutputMode = ObjectArrayOutputMode.AsChild;
 
         /// <summary>出力先オブジェクトの MasterIndex。-1 でルート。</summary>
-        [PLParam(TextKey = "ObjectArrayTargetMaster", IsMeshRef = true,
+        [PLParam(TextKey = "ObjectArrayTargetMaster", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 WriteWhen = "outputMode=Inside",
                  Description = "出力先オブジェクトの masterIndex。-1 でルート")]
         public int TargetMasterIndex = -1;
 

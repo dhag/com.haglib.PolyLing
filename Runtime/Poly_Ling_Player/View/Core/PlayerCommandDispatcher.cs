@@ -648,12 +648,114 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// コマンドを実行し、結果を返す。
+        /// 一番外側の呼び出しで受け取った操作者。入れ子の呼び出しはこれを引き継ぐ。
+        /// 一番外側の実行が終われば null に戻す。
+        /// </summary>
+        private CommandActor _currentActor;
+
+        /// <summary>
+        /// 実行中のコマンドの操作者（一番外側で受け取ったもの）。コマンドの実行中でなければ null。
+        /// 窓口の操作としてプレビューが始まる場合に、ロックをその操作者の名前で掛けるため。
+        /// </summary>
+        public CommandActor CurrentActor => _currentActor;
+
+        /// <summary>
+        /// 担当者判定で拒否したときに呼ぶ（コマンド・操作者・理由）。
+        /// Core はホストの操作が拒否されたとき状態表示へ出す（L-5）。
+        /// </summary>
+        public Action<PanelCommand, CommandActor, string> OnOwnershipDenied;
+
+        /// <summary>ツール名 → ハンドラ（[PLTool] の付いたもの）。Core が登録簿から引く（操作経路統一計画.md B・C・D）。</summary>
+        public Func<string, object> ResolveTool;
+
+        /// <summary>登録されているツール名の一覧。</summary>
+        public Func<IEnumerable<string>> ListTools;
+
+        /// <summary>
+        /// 入れ子の呼び出し用。一番外側（深さ 0）から呼ぶと操作者が無いので失敗を返す。
+        /// 一番外側からは Dispatch(cmd, actor) を使う（操作経路統一計画.md G-2）。
+        /// </summary>
+        public CommandResult Dispatch(PanelCommand cmd) => Dispatch(cmd, null);
+
+        /// <summary>
+        /// コマンドを操作者つきで実行し、結果を返す。
+        ///
+        /// 【操作者】
+        ///   一番外側の呼び出しで操作者を控え、入れ子の呼び出しでは渡された操作者を使わず
+        ///   外側の操作者を引き継ぐ。MCP の UI 自動操作から呼ばれたパネルのコマンドも
+        ///   MCP の操作として扱うため。
+        ///
+        /// 【担当者判定】
+        ///   各段で RemoteOwnership.TryAuthorize を通す。安定 ID の照合は一番外側だけ。
+        ///   プロジェクトが無いときは担当者がいないので判定しない。
+        /// </summary>
+        public CommandResult Dispatch(PanelCommand cmd, CommandActor actor)
+        {
+            bool isTop = _dispatchDepth == 0;
+            if (isTop)
+            {
+                if (actor == null)
+                {
+                    // 一番外側から操作者なしで呼ばれた＝配線漏れ。黙って失敗させず見えるようにする。
+                    Debug.LogError($"[PolyLing] 操作者なしで Dispatch されました: {cmd?.GetType().Name}");
+                    return CommandResult.Fail("操作者がありません");
+                }
+                _currentActor = actor;
+            }
+
+            try
+            {
+                var authProject = _getProject();
+
+                // 期限切れの一時ロックを外してから判定する（L-2）。
+                if (isTop && authProject != null &&
+                    Poly_Ling.Remote.RemoteOwnership.ReleaseExpiredLocks(authProject))
+                    _notifyPanels(ChangeKind.Attributes);
+
+                if (authProject != null && _currentActor != null)
+                {
+                    var verdict = Poly_Ling.Remote.RemoteOwnership.TryAuthorize(
+                        authProject, cmd, _currentActor, verifyIds: isTop);
+                    if (!verdict.Allowed)
+                    {
+                        Debug.LogWarning(
+                            $"[PolyLing] 拒否: {cmd?.GetType().Name} actor={_currentActor} → {verdict.Reason}");
+                        OnOwnershipDenied?.Invoke(cmd, _currentActor, verdict.Reason);
+                        return verdict.StaleView
+                            ? CommandResult.FailStale(verdict.Reason)
+                            : CommandResult.Fail(verdict.Reason);
+                    }
+                }
+
+                var r = DispatchAuthorized(cmd);
+
+                // 実行できたら、操作者のロックを延ばす。MCP は書き込み先を自動でロックする（L-2・L-3）。
+                if (r != null && r.Success && _currentActor != null)
+                {
+                    var after = _getProject();
+                    Poly_Ling.Remote.RemoteOwnership.RenewLocksAfter(
+                        after, cmd, _currentActor,
+                        autoClaim: _currentActor.Kind == CommandActorKind.Mcp);
+                }
+
+                if (isTop && PLDiag.Enabled && PLDiag.Command)
+                    PLDiag.Cmd($"actor={_currentActor} cmd={cmd?.GetType().Name} → {r}");
+
+                return r;
+            }
+            finally
+            {
+                if (isTop) _currentActor = null;
+            }
+        }
+
+        /// <summary>
+        /// コマンドを実行し、結果を返す。担当者判定は済んでいる前提（Dispatch(cmd, actor) から呼ぶ）。
         /// 本体（DispatchCore）は void のままなので、結果は _pendingResult 経由で受け取る。
         /// 実行中に別のコマンドが発行されることがある（生成系が Viewer 側へ委譲した先など）ため、
         /// 呼び出しごとに退避・復元する。catch は付けない（例外の伝播を変えないため）。
         /// </summary>
-        public CommandResult Dispatch(PanelCommand cmd)
+        private CommandResult DispatchAuthorized(PanelCommand cmd)
         {
             var saved = _pendingResult;
             _pendingResult = null;
@@ -936,6 +1038,7 @@ namespace Poly_Ling.Player
             if (DispatchObjectGroup(cmd, project, model))       return;
             if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchVertexBillboard(cmd, project, model))   return;
+            if (DispatchLineGroup(cmd, project, model))         return;
             if (DispatchDeformSkin(cmd, project, model))        return;
             if (DispatchMirrorHumanoidVrm(cmd, project, model)) return;
             if (DispatchSpringBone(cmd, project, model))        return;

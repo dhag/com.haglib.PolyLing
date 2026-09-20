@@ -318,10 +318,14 @@ namespace Poly_Ling.Player
             }
 
             // UNDO: 変更前スナップショット
+            //   書き込み先は targetMc を明示する（SetMeshObjectFor）。SetMeshObject は
+            //   書き込み先が先頭の選択メッシュになるため、選択中の別オブジェクトの
+            //   MeshContext へ targetMc の MeshObject を入れてしまい、2 つの描画
+            //   オブジェクトが同じ MeshObject を共有する。明示は記録の後で解除する。
             MeshObjectSnapshot before = null;
             if (_editOps?.UndoController != null)
             {
-                _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
+                _editOps.UndoController.SetMeshObjectFor(targetMc, targetMc.UnityMesh);
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
                 before = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
             }
@@ -369,6 +373,7 @@ namespace Poly_Ling.Player
                 var after = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
                 _editOps.UndoController.RecordTopologyChange(before, after, $"Add Primitive to {targetMc.Name}");
             }
+            _editOps?.UndoController?.ClearTargetMeshContext();
 
             model.ComputeWorldMatrices();
             PrimitiveMeshFinalize(model);
@@ -426,10 +431,14 @@ namespace Poly_Ling.Player
             }
 
             // UNDO: 変更前スナップショット
+            //   書き込み先は targetMc を明示する（SetMeshObjectFor）。SetMeshObject は
+            //   書き込み先が先頭の選択メッシュになるため、選択中の別オブジェクトの
+            //   MeshContext へ targetMc の MeshObject を入れてしまい、2 つの描画
+            //   オブジェクトが同じ MeshObject を共有する。明示は記録の後で解除する。
             MeshObjectSnapshot before = null;
             if (_editOps?.UndoController != null)
             {
-                _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
+                _editOps.UndoController.SetMeshObjectFor(targetMc, targetMc.UnityMesh);
                 _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
                 before = _editOps.UndoController.CaptureMeshObjectSnapshotOf(targetMc);
             }
@@ -458,6 +467,8 @@ namespace Poly_Ling.Player
                 };
                 dst.Faces.Add(nf);
             }
+            // 線分群も生成物のものへ入れ替える（面と連携しているため、古いものを残さない）。
+            dst.LineGroups = Poly_Ling.Ops.LineGroupOps.CloneList(srcObject);
             dst.RebuildIdSets();
 
             // サブIDは入れ替え後の並びで、部品IDごとに 0 から振り直す。
@@ -476,6 +487,7 @@ namespace Poly_Ling.Player
                 _editOps.UndoController.RecordTopologyChange(
                     before, after, $"Replace Contents of {targetMc.Name}");
             }
+            _editOps?.UndoController?.ClearTargetMeshContext();
 
             model.ComputeWorldMatrices();
             PrimitiveMeshFinalize(model);

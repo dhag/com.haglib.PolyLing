@@ -77,7 +77,8 @@ namespace Poly_Ling.Data
         /// -1 なら選択オブジェクトリストの先頭。
         /// </summary>
         [PLParam(TextKey = "AddTargetIndex", Description = "追加先の索引。-1 で選択の先頭",
-                 IsMeshRef = true, RebuildRole = PLRebuildRole.TargetIndex)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, WriteWhen = "addMode=AddToExisting|ReplaceExisting",
+                 RebuildRole = PLRebuildRole.TargetIndex)]
         public int AddTargetIndex;
 
         /// <summary>
@@ -144,7 +145,7 @@ namespace Poly_Ling.Data
         /// </summary>
         [PLParam(TextKey = "ProfileSourceIndex",
                  Description = "プロファイルの取り込み元オブジェクトの索引。-1 でひも付けなし",
-                 IsMeshRef = true)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
         public int ProfileSourceIndex { get; }
 
         /// <summary>
@@ -202,7 +203,7 @@ namespace Poly_Ling.Data
 
     // ── 基本図形 ────────────────────────────────────────────────
 
-    [PLCommand(Description = "直方体を作る。角丸と軸ごとの分割を指定できる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "直方体を作る。角丸と軸ごとの分割を指定できる。")]
     public sealed class CreateCubeCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Cube", Description = "直方体のパラメータ", Required = true)]
@@ -218,7 +219,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "球を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "球を作る。")]
     public sealed class CreateSphereCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Sphere", Description = "球のパラメータ", Required = true)]
@@ -238,7 +239,7 @@ namespace Poly_Ling.Data
     /// MCP用サンドボックスの円筒。既存の円柱（CreateCylinderCommand）とは
     /// パラメータ構造体から別にしてあり、片方をいじってももう片方は動かない。
     /// </summary>
-    [PLCommand(Description = "MCP用サンドボックスの円筒を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "MCP用サンドボックスの円筒を作る。")]
     public sealed class CreateMcpCylinderCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "McpCylinder", Description = "MCP円筒のパラメータ", Required = true)]
@@ -254,7 +255,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "円柱を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "円柱を作る。")]
     public sealed class CreateCylinderCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Cylinder", Description = "円柱のパラメータ", Required = true)]
@@ -270,7 +271,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "カプセルを作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "カプセルを作る。")]
     public sealed class CreateCapsuleCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Capsule", Description = "カプセルのパラメータ", Required = true)]
@@ -286,7 +287,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "平面を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "平面を作る。")]
     public sealed class CreatePlaneCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Plane", Description = "平面のパラメータ", Required = true)]
@@ -302,7 +303,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "角錐を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "角錐を作る。")]
     public sealed class CreatePyramidCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Pyramid", Description = "角錐のパラメータ", Required = true)]
@@ -318,7 +319,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "角丸の長円柱（スタジアム形）を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "角丸の長円柱（スタジアム形）を作る。")]
     public sealed class CreateStadiumBoxCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "StadiumBox", Description = "小判型のパラメータ", Required = true)]
@@ -340,7 +341,7 @@ namespace Poly_Ling.Data
     /// パイプ接続用小判型（手のひらのもと）。
     /// 長さ X と奥行き Z は指定ではなく、円の個数・半径・矩形部の幅から決まる。
     /// </summary>
-    [PLCommand(Description = "パイプ接続用小判型（手のひらのもと）。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "パイプ接続用小判型（手のひらのもと）。")]
     public sealed class CreatePipeStadiumCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "PipeStadium", Description = "パイプ接続用小判型のパラメータ", Required = true)]
@@ -360,7 +361,7 @@ namespace Poly_Ling.Data
     /// 髪の房。房 M 個 × 筒 N 本 の独立したチューブを 1 つの描画オブジェクトに入れる。
     /// 筒 1 本が部品 1 個になる（フリル・パイプと同じ扱い）。
     /// </summary>
-    [PLCommand(Description = "髪の房。房 M 個 × 筒 N 本 の独立したチューブを 1 つの描画オブジェクトに入れる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "髪の房。房 M 個 × 筒 N 本 の独立したチューブを 1 つの描画オブジェクトに入れる。")]
     public sealed class CreateHairStrandCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "HairStrand", Description = "髪の房のパラメータ", Required = true)]
@@ -376,7 +377,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "多角形の歯を持つ歯車を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "多角形の歯を持つ歯車を作る。")]
     public sealed class CreateNGonGearCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "NGonGear", Description = "多角形歯車のパラメータ", Required = true)]
@@ -392,7 +393,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "多角形の星形を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "多角形の星形を作る。")]
     public sealed class CreateNGonStarCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "NGonStar", Description = "星形のパラメータ", Required = true)]
@@ -408,7 +409,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "インボリュート平歯車を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "インボリュート平歯車を作る。")]
     public sealed class CreateInvoluteGearCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "InvoluteGear", Description = "インボリュート歯車のパラメータ", Required = true)]
@@ -429,7 +430,7 @@ namespace Poly_Ling.Data
     // 歯車まわりの生成器は Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/Gears/ にある。
     // どれもパラメータ構造体だけで形が決まるので、コマンドは値を運ぶだけでよい。
 
-    [PLCommand(Description = "はすば歯車を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "はすば歯車を作る。")]
     public sealed class CreateHelicalGearCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "HelicalGear", Description = "はすば歯車のパラメータ", Required = true)]
@@ -445,7 +446,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "内歯車を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "内歯車を作る。")]
     public sealed class CreateInternalGearCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "InternalGear", Description = "内歯車のパラメータ", Required = true)]
@@ -461,7 +462,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "インボリュートのラック（直線歯）を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "インボリュートのラック（直線歯）を作る。")]
     public sealed class CreateInvoluteRackCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "InvoluteRack", Description = "ラックのパラメータ", Required = true)]
@@ -477,7 +478,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "はすばのラックを作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "はすばのラックを作る。")]
     public sealed class CreateHelicalRackCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "HelicalRack", Description = "はすばラックのパラメータ", Required = true)]
@@ -493,7 +494,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "すぐばかさ歯車を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "すぐばかさ歯車を作る。")]
     public sealed class CreateStraightBevelGearCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "StraightBevelGear", Description = "すぐばかさ歯車のパラメータ", Required = true)]
@@ -509,7 +510,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "まがりばかさ歯車を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "まがりばかさ歯車を作る。")]
     public sealed class CreateSpiralBevelGearCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "SpiralBevelGear", Description = "まがりばかさ歯車のパラメータ", Required = true)]
@@ -525,7 +526,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "円筒ウォームを作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "円筒ウォームを作る。")]
     public sealed class CreateCylindricalWormCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "CylindricalWorm", Description = "円筒ウォームのパラメータ", Required = true)]
@@ -541,7 +542,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "ウォームホイールを作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ウォームホイールを作る。")]
     public sealed class CreateWormWheelCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "WormWheel", Description = "ウォームホイールのパラメータ", Required = true)]
@@ -559,7 +560,7 @@ namespace Poly_Ling.Data
 
     // ── プロペラ・ファン ────────────────────────────────────────
 
-    [PLCommand(Description = "プロペラ・ファンを作る。ハブ・翼・任意のダクトからなる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "プロペラ・ファンを作る。ハブ・翼・任意のダクトからなる。")]
     public sealed class CreateRotorBladeCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "RotorBlade", Description = "プロペラ・ファンのパラメータ", Required = true)]
@@ -577,7 +578,7 @@ namespace Poly_Ling.Data
 
     // ── 機構部品B（締結・支持・伝達） ───────────────────────────
 
-    [PLCommand(Description = "ナットを作る。六角・四角・丸の外形と雌ねじを持つ。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ナットを作る。六角・四角・丸の外形と雌ねじを持つ。")]
     public sealed class CreateNutCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Nut", Description = "ナットのパラメータ", Required = true)]
@@ -593,7 +594,38 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "軸受ホルダを作る。ボスとフランジ、取付穴、締結部からなる。")]
+    /// <summary>
+    /// ネジ配置。配置元オブジェクト（ネジなど）を円周上（PCD）または長方形の周上へ複製する。
+    /// 中心は Placement.WorldPosition、全体の向きは Placement.PlaceRotation。頂点は読まない。
+    /// 配置元の索引から MeshObject への解決はディスパッチャ側が行う（藤壺と同じ口）。
+    /// </summary>
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ネジ配置。配置元オブジェクトを円周上（PCD）または長方形の周上へ複製する。")]
+    public sealed class CreateBoltPatternCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "BoltPattern", Description = "ネジ配置のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.BoltPatternMeshGenerator.BoltPatternParams Params { get; }
+
+        /// <summary>配置元の MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "PlaceSourceIndices", Description = "配置元オブジェクトの索引", Required = true,
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+        public int[] SourceMasterIndices { get; }
+
+        public override string ShapeName => "BoltPattern";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateBoltPatternCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.BoltPatternMeshGenerator.BoltPatternParams @params,
+            int[] sourceMasterIndices,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement)
+        {
+            Params              = @params;
+            SourceMasterIndices = sourceMasterIndices ?? System.Array.Empty<int>();
+        }
+    }
+
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "軸受ホルダを作る。ボスとフランジ、取付穴、締結部からなる。")]
     public sealed class CreateShaftHolderCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "ShaftHolder", Description = "軸受ホルダのパラメータ", Required = true)]
@@ -609,7 +641,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "軸受ユニットを作る。ハウジング・外輪・内輪と、任意で玉を持つ。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "軸受ユニットを作る。ハウジング・外輪・内輪と、任意で玉を持つ。")]
     public sealed class CreateBearingUnitCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "BearingUnit", Description = "軸受ユニットのパラメータ", Required = true)]
@@ -625,7 +657,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "自在継手を作る。単一カルダンとダブルカルダンを選べる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "自在継手を作る。単一カルダンとダブルカルダンを選べる。")]
     public sealed class CreateUniversalJointCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "UniversalJoint", Description = "自在継手のパラメータ", Required = true)]
@@ -641,7 +673,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "モータ取付ブラケットを作る。丸クランプ・面板・L 形・U 形を選べる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "モータ取付ブラケットを作る。丸クランプ・面板・L 形・U 形を選べる。")]
     public sealed class CreateMotorBracketCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "MotorBracket", Description = "モータ取付ブラケットのパラメータ", Required = true)]
@@ -657,7 +689,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "ロッドエンドを作る。雄ねじ・雌ねじ・ボールスタッドを選べる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ロッドエンドを作る。雄ねじ・雌ねじ・ボールスタッドを選べる。")]
     public sealed class CreateRodEndCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "RodEnd", Description = "ロッドエンドのパラメータ", Required = true)]
@@ -673,7 +705,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "軸継手を作る。剛性スリーブ・クランプ・ジョー・オルダム・ベローズを選べる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "軸継手を作る。剛性スリーブ・クランプ・ジョー・オルダム・ベローズを選べる。")]
     public sealed class CreateMotorCouplingCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "MotorCoupling", Description = "軸継手のパラメータ", Required = true)]
@@ -689,7 +721,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "台形ねじを作る。雄ねじ軸と、かみ合うナットを選べる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "台形ねじを作る。雄ねじ軸と、かみ合うナットを選べる。")]
     public sealed class CreateTrapezoidalThreadCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "TrapezoidalThread", Description = "台形ねじのパラメータ", Required = true)]
@@ -705,7 +737,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "平行歯面スプラインを作る。軸と、かみ合うナットを選べる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "平行歯面スプラインを作る。軸と、かみ合うナットを選べる。")]
     public sealed class CreateSplineCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Spline", Description = "スプラインのパラメータ", Required = true)]
@@ -721,7 +753,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "リボンの蝶結びを作る。輪・端・結び目を別々に指定できる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "リボンの蝶結びを作る。輪・端・結び目を別々に指定できる。")]
     public sealed class CreateRibbonBowCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Ribbon", Description = "リボンのパラメータ", Required = true)]
@@ -740,7 +772,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 回転体。プロファイル（断面の点列）は RevolutionParams.Profile が持つ。
     /// </summary>
-    [PLCommand(Description = "回転体。プロファイル（断面の点列）は RevolutionParams.Profile が持つ。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "回転体。プロファイル（断面の点列）は RevolutionParams.Profile が持つ。")]
     public sealed class CreateRevolutionCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Revolution", Description = "回転体のパラメータ", Required = true)]
@@ -762,7 +794,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 2D 押し出し。ループ（輪郭の点列）は Profile2DParams.Loops が持つ。
     /// </summary>
-    [PLCommand(Description = "2D 押し出し。ループ（輪郭の点列）は Profile2DParams.Loops が持つ。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "2D 押し出し。ループ（輪郭の点列）は Profile2DParams.Loops が持つ。")]
     public sealed class CreateProfile2DCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Profile2D", Description = "2D押し出しのパラメータ", Required = true)]
@@ -781,7 +813,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement, profileSourceIndex, profileAcquire) { Params = @params; }
     }
 
-    [PLCommand(Description = "文字列からメッシュを作る。フォントの輪郭を押し出す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "文字列からメッシュを作る。フォントの輪郭を押し出す。")]
     public sealed class CreateTextMeshCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "Text", Description = "文字のパラメータ", Required = true)]
@@ -797,7 +829,7 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Description = "能面のメッシュを作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "能面のメッシュを作る。")]
     public sealed class CreateNohMaskCommand : CreatePrimitiveMeshCommand
     {
         [PLParam(TextKey = "NohMask", Description = "面（能面）のパラメータ", Required = true)]

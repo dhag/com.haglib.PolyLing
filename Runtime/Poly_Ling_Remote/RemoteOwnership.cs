@@ -2,20 +2,17 @@
 // 協働編集（グループワーク）のための所有権判定。
 //
 // 【真値の所在】
-//   「誰が担当か」は MeshContext.EditorName が単一の真値（Single Source of Truth）。
-//   サーバは別レジストリを持たない。理由:
-//     - 担当はプロジェクト保存に含まれる永続情報であり、接続状態と寿命が違う
-//     - 二重管理にすると保存/読込・Undo とレジストリがずれる
-//   サーバが持つ揮発情報は「どのチャネルがどのユーザー名で register したか」だけで、
-//   これは既存の RemoteServerCore._clientRegistry が担う。
+//   「誰が作業中か」は MeshContext.EditorName が単一の真値。
+//   担当は作業中だけの一時ロックで、プロジェクト保存にも Undo にも含めない
+//   （操作経路統一計画.md L-1）。期限の控え（最終操作時刻）はこのクラスが実行時に持つ。
 //
 // 【判定規則】
 //   書き込み可 ⟺ EditorName が空（担当者なし） または EditorName == 要求者名
 //   担当者なしの編集を禁止したい運用では AllowUnownedEdit=false にする。
 //
-// 【切断時】
-//   担当は解放しない（手動 claim / release 運用のため）。
-//   放置された担当は ホスト側の「強制解放」または本人の release で外す。
+// 【ロックが外れるとき】
+//   本人の解放、LockTimeoutSeconds 秒操作が無いとき（L-2）、リモートの切断（L-4）、
+//   ホストの強制解放。MCP は書き込み先を自動でロックする（L-3）。
 //
 // 【ズレ検出】
 //   クライアントは masterIndices と対にして objectIds（安定ID）を送る。
@@ -26,9 +23,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Reflection;
 using System.Text;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.Remote
 {
@@ -66,6 +66,202 @@ namespace Poly_Ling.Remote
         /// </summary>
         public static bool AllowUnownedEdit = true;
 
+        // ================================================================
+        // 一時ロックの期限（操作経路統一計画.md L-2）
+        // ================================================================
+
+        /// <summary>
+        /// 担当（EditorName）を一時ロックとして保つ秒数。
+        /// ロックを持つ本人の操作があるたびに延び、この秒数操作が無ければ外れる。
+        /// </summary>
+        public static float LockTimeoutSeconds = 10f;
+
+        /// <summary>ObjectId → ロックの最終操作時刻。保存しない実行時の控え。</summary>
+        private static readonly Dictionary<ulong, DateTime> _lockActivity = new Dictionary<ulong, DateTime>();
+
+        // ================================================================
+        // プレビュー中のロック（操作経路統一計画.md H-1）
+        // ================================================================
+
+        /// <summary>プレビュー中の対象（期限で外さない）。</summary>
+        private static readonly HashSet<ulong> _previewHeld = new HashSet<ulong>();
+
+        /// <summary>プレビューのために新たに掛けたロック（終了時に外す）と、その名前。</summary>
+        private static readonly Dictionary<ulong, string> _previewClaimed = new Dictionary<ulong, string>();
+
+        /// <summary>
+        /// プレビューを始める前に、対象（ミラー側を含む）へ書き込めるかを判定し、
+        /// 通ればプレビューが終わるまで操作者のロックにしておく。
+        ///
+        /// 【何のために要るか】
+        ///   プレビューはコマンドを通らずに対象を直接動かし、確定時に索引で書き戻す。
+        ///   その間に他の操作者が同じ対象を変えると上書き・取り違えが起きる（8.5）。
+        ///   開始時に判定してロックを保持すれば、他の操作者の書き込みは判定で止まる。
+        /// </summary>
+        /// <returns>始めてよいか。false のとき reason に理由が入る。</returns>
+        public static bool TryBeginPreview(
+            ProjectContext project, int modelIndex, IList<int> targets, CommandActor actor, out string reason)
+        {
+            reason = null;
+            if (project == null || actor == null || targets == null || targets.Count == 0) return true;
+            var model = GetModel(project, modelIndex);
+            if (model == null) return true;
+
+            var list = MirrorBranchOps.CollectMirrorCaptureIndices(model, new List<int>(targets));
+            var blocked = new List<string>();
+            foreach (int idx in list)
+            {
+                var mc = GetMesh(model, idx);
+                if (mc == null) continue;
+                if (!AllowUnownedEdit && !mc.HasEditor) { blocked.Add($"{mc.Name}（担当者未設定）"); continue; }
+                if (!mc.IsEditableBy(actor.Name)) blocked.Add($"{mc.Name}（担当: {mc.EditorName}）");
+            }
+            if (blocked.Count > 0)
+            {
+                reason = "編集できません → " + Join(blocked, 3);
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(actor.Name)) return true;
+            foreach (int idx in list)
+            {
+                var mc = GetMesh(model, idx);
+                if (mc == null) continue;
+                if (!mc.HasEditor)
+                {
+                    mc.EditorName = actor.Name;
+                    _previewClaimed[mc.ObjectId] = actor.Name;
+                }
+                _previewHeld.Add(mc.ObjectId);
+                TouchLock(mc);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// プレビューを終える。プレビューのために掛けたロックを外し、
+        /// 元から持っていたロックは期限の数え直しから再開する。
+        /// </summary>
+        public static void EndPreview(ProjectContext project)
+        {
+            if (project != null)
+            {
+                for (int mi = 0; mi < project.ModelCount; mi++)
+                {
+                    var model = project.GetModel(mi);
+                    if (model == null) continue;
+                    for (int i = 0; i < model.MeshContextCount; i++)
+                    {
+                        var mc = model.GetMeshContext(i);
+                        if (mc == null || !_previewHeld.Contains(mc.ObjectId)) continue;
+                        if (_previewClaimed.TryGetValue(mc.ObjectId, out var name) &&
+                            string.Equals(mc.EditorName, name, StringComparison.Ordinal))
+                        {
+                            mc.EditorName = "";
+                            _lockActivity.Remove(mc.ObjectId);
+                        }
+                        else
+                        {
+                            TouchLock(mc);
+                        }
+                    }
+                }
+            }
+            _previewHeld.Clear();
+            _previewClaimed.Clear();
+        }
+
+        /// <summary>ロックの最終操作時刻を今にする（期限を延ばす）。</summary>
+        public static void TouchLock(MeshContext mc)
+        {
+            if (mc == null || !mc.HasEditor) return;
+            _lockActivity[mc.ObjectId] = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// 期限切れのロックを外す。外したら true。
+        /// 最終操作時刻の控えが無いロック（控えを取る前に掛かったもの）は、今から期限を数える。
+        /// </summary>
+        public static bool ReleaseExpiredLocks(ProjectContext project)
+        {
+            if (project == null) return false;
+            var now = DateTime.UtcNow;
+            var limit = TimeSpan.FromSeconds(Math.Max(0.1f, LockTimeoutSeconds));
+            bool released = false;
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.GetModel(mi);
+                if (model == null) continue;
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null || !mc.HasEditor) continue;
+
+                    if (!_lockActivity.TryGetValue(mc.ObjectId, out var last))
+                    {
+                        _lockActivity[mc.ObjectId] = now;
+                        continue;
+                    }
+                    // プレビュー中は期限で外さない（H-1）。
+                    if (_previewHeld.Contains(mc.ObjectId)) continue;
+                    if (now - last < limit) continue;
+
+                    mc.EditorName = "";
+                    _lockActivity.Remove(mc.ObjectId);
+                    released = true;
+                }
+            }
+            return released;
+        }
+
+        /// <summary>指定した名前のロックをすべて外す（切断時）。外したら true。</summary>
+        public static bool ReleaseLocksOf(ProjectContext project, string editorName)
+        {
+            if (project == null || string.IsNullOrEmpty(editorName)) return false;
+            bool released = false;
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.GetModel(mi);
+                if (model == null) continue;
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null || !string.Equals(mc.EditorName, editorName, StringComparison.Ordinal)) continue;
+                    mc.EditorName = "";
+                    _lockActivity.Remove(mc.ObjectId);
+                    released = true;
+                }
+            }
+            return released;
+        }
+
+        /// <summary>
+        /// 実行が済んだコマンドの書き込み先について、操作者のロックを延ばす。
+        /// autoClaim が true なら、担当者なしの書き込み先を操作者のロックにする（MCP 用、L-3）。
+        /// </summary>
+        public static void RenewLocksAfter(ProjectContext project, PanelCommand cmd, CommandActor actor, bool autoClaim)
+        {
+            if (project == null || cmd == null || actor == null || string.IsNullOrEmpty(actor.Name)) return;
+            if (WriteScopeOf(cmd) != PLWriteScope.Targets) return;
+            if (!TryCollectWriteTargets(project, cmd, out _, out var byModel)) return;
+
+            bool withMirror = WritesMirrorSide(cmd);
+            foreach (var kv in byModel)
+            {
+                var m = kv.Key;
+                var list = withMirror ? MirrorBranchOps.CollectMirrorCaptureIndices(m, kv.Value) : kv.Value;
+                foreach (int idx in list)
+                {
+                    var mc = GetMesh(m, idx);
+                    if (mc == null) continue;
+                    if (!mc.HasEditor && autoClaim) mc.EditorName = actor.Name;
+                    if (string.Equals(mc.EditorName, actor.Name, StringComparison.Ordinal))
+                        TouchLock(mc);
+                }
+            }
+        }
+
         /// <summary>
         /// ユーザー名未登録（register で userName を送っていない）クライアントの
         /// 書き込みを許可するか。false 推奨（名無しの編集は追跡できないため）。
@@ -81,30 +277,40 @@ namespace Poly_Ling.Remote
         /// </summary>
         /// <param name="project">サーバが保持する権威プロジェクト</param>
         /// <param name="cmd">実行しようとしているコマンド</param>
-        /// <param name="requesterName">register 済みユーザー名（空＝名無し）</param>
-        /// <param name="objectIds">クライアントが申告した安定ID（順序は cmd の masterIndices と対応、null 可）</param>
+        /// <param name="actor">操作者。名前（空＝名無し）と種別、封筒の安定 ID を持つ</param>
+        /// <param name="verifyIds">
+        /// 安定 ID の照合をするか。一番外側のコマンドだけ true にする
+        /// （入れ子のコマンドには封筒の ID が対応しない）。
+        /// </param>
         public static OwnershipVerdict TryAuthorize(
-            ProjectContext project, PanelCommand cmd, string requesterName, ulong[] objectIds)
+            ProjectContext project, PanelCommand cmd, CommandActor actor, bool verifyIds = true)
         {
             if (cmd == null) return OwnershipVerdict.Deny("コマンドがありません");
+            if (actor == null) return OwnershipVerdict.Deny("操作者がありません");
+
+            string requesterName = actor.Name;
+            ulong[] objectIds = verifyIds ? actor.ObjectIds : null;
+            bool isRemote = actor.Kind == CommandActorKind.Remote;
 
             // UI 自動操作はホストの画面を動かす。リモートの参加者からは受けない。
-            // MCP の経路（PolyLingCommandGateway）はこの判定を通らない。
-            if (IsUiAutomation(cmd))
+            if (isRemote && IsUiAutomation(cmd))
                 return OwnershipVerdict.Deny("UI 自動操作はリモート接続からは実行できません");
 
             // 手本（シナリオ）の置き場はホストの持ち物で、モデルにも属さない。
             // リモートの参加者が書き換える筋合いがないので同じく受けない。
-            if (IsScenario(cmd))
+            if (isRemote && IsScenario(cmd))
                 return OwnershipVerdict.Deny("手本の操作はリモート接続からは実行できません");
-
 
             // 編集者の設定・解放そのものは専用判定へ
             if (cmd is SetObjectEditorCommand sec)
-                return AuthorizeSetEditor(project, sec, requesterName, objectIds);
+                return AuthorizeSetEditor(project, sec, actor, objectIds);
 
-            // 読み取り専用・所有権と無関係なコマンドは素通し
-            if (IsOwnershipExempt(cmd)) return OwnershipVerdict.Ok;
+            // 書き込み範囲はコマンド定義の属性（PLCommand.Writes）から引く。
+            // コマンド種別ごとの手書き表は持たない（PanelCommandMeshRefs.cs 冒頭と同じ方針）。
+            var scope = WriteScopeOf(cmd);
+
+            // モデルを書き換えないものは素通し。
+            if (scope == PLWriteScope.None) return OwnershipVerdict.Ok;
 
             if (string.IsNullOrEmpty(requesterName) && !AllowAnonymousEdit)
                 return OwnershipVerdict.Deny(
@@ -113,33 +319,45 @@ namespace Poly_Ling.Remote
             var model = GetModel(project, cmd.ModelIndex);
             if (model == null) return OwnershipVerdict.Deny($"モデルがありません: {cmd.ModelIndex}");
 
-            int[] targets = ResolveTargets(model, cmd);
+            // 既存オブジェクトを書き換えず新規に足すだけのものは担当と無関係。
+            if (scope == PLWriteScope.AddOnly) return OwnershipVerdict.Ok;
 
-            // 対象を特定できないコマンド（モデル全体に効くもの等）は
+            // 対象を引数から特定できないもの（未宣言を含む）は
             // 「そのモデルに他人の担当が1つでもあれば拒否」の保守的判定にする。
-            if (targets == null)
+            if (scope != PLWriteScope.Targets)
                 return AuthorizeModelWide(model, cmd, requesterName);
 
-            if (targets.Length == 0) return OwnershipVerdict.Ok;
+            if (!TryCollectWriteTargets(project, cmd, out var primary, out var byModel))
+                return AuthorizeModelWide(model, cmd, requesterName);
 
-            // 安定IDの照合（ズレ検出）
-            var stale = VerifyObjectIds(model, targets, objectIds);
+            if (byModel.Count == 0) return OwnershipVerdict.Ok;
+
+            // 安定IDの照合（ズレ検出）。クライアントは主モデルの対象（ミラー追加前）の並びで送る。
+            var stale = VerifyObjectIds(model, primary.ToArray(), objectIds);
             if (!stale.Allowed) return stale;
 
-            // 担当者チェック
+            // 担当者チェック。ミラー側も書き換わるコマンドはミラー側を含める。
+            bool withMirror = WritesMirrorSide(cmd);
             var blocked = new List<string>();
-            foreach (int idx in targets)
+            foreach (var kv in byModel)
             {
-                var mc = GetMesh(model, idx);
-                if (mc == null) continue;
-
-                if (!AllowUnownedEdit && !mc.HasEditor)
+                var m = kv.Key;
+                var checkList = withMirror
+                    ? MirrorBranchOps.CollectMirrorCaptureIndices(m, kv.Value)
+                    : kv.Value;
+                foreach (int idx in checkList)
                 {
-                    blocked.Add($"{mc.Name}（担当者未設定）");
-                    continue;
+                    var mc = GetMesh(m, idx);
+                    if (mc == null) continue;
+
+                    if (!AllowUnownedEdit && !mc.HasEditor)
+                    {
+                        blocked.Add($"{mc.Name}（担当者未設定）");
+                        continue;
+                    }
+                    if (!mc.IsEditableBy(requesterName))
+                        blocked.Add($"{mc.Name}（担当: {mc.EditorName}）");
                 }
-                if (!mc.IsEditableBy(requesterName))
-                    blocked.Add($"{mc.Name}（担当: {mc.EditorName}）");
             }
 
             if (blocked.Count > 0)
@@ -153,8 +371,13 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         private static OwnershipVerdict AuthorizeSetEditor(
-            ProjectContext project, SetObjectEditorCommand cmd, string requesterName, ulong[] objectIds)
+            ProjectContext project, SetObjectEditorCommand cmd, CommandActor actor, ulong[] objectIds)
         {
+            // ホストは担当の割り当て・強制解放を行う管理者。規則を掛けない
+            // （ディスパッチャは force で適用する：PlayerCommandDispatcher.MeshAttributes.cs）。
+            if (actor.Kind == CommandActorKind.Host) return OwnershipVerdict.Ok;
+
+            string requesterName = actor.Name;
             if (string.IsNullOrEmpty(requesterName) && !AllowAnonymousEdit)
                 return OwnershipVerdict.Deny(
                     "ユーザー名が未登録です。名前を設定して接続し直してください。");
@@ -162,7 +385,7 @@ namespace Poly_Ling.Remote
             var model = GetModel(project, cmd.ModelIndex);
             if (model == null) return OwnershipVerdict.Deny($"モデルがありません: {cmd.ModelIndex}");
 
-            // リモートからの強制上書きは認めない（ホストのローカル操作のみ）
+            // 強制上書きはホストだけ
             if (cmd.Force)
                 return OwnershipVerdict.Deny("強制解放はホスト側でのみ実行できます。");
 
@@ -228,193 +451,99 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         /// <summary>
-        /// コマンドが書き換える対象の MasterIndex 配列を返す。
-        /// 対象を静的に決められないコマンドは null（＝モデル全体判定へ回す）。
-        /// 空配列は「対象なし＝素通し」。
+        /// コマンドの書き込み範囲（PLCommand.Writes）。属性が無ければ Unspecified。
         /// </summary>
-        public static int[] ResolveTargets(ModelContext model, PanelCommand cmd)
+        public static PLWriteScope WriteScopeOf(PanelCommand cmd)
         {
-            switch (cmd)
+            if (cmd == null) return PLWriteScope.Unspecified;
+            var a = cmd.GetType().GetCustomAttribute<PLCommandAttribute>(inherit: false);
+            return a?.Writes ?? PLWriteScope.Unspecified;
+        }
+
+        /// <summary>
+        /// 対象のミラー側オブジェクトも書き換えるコマンドか（PLCommand.WritesMirrorSide）。
+        /// 属性が無ければ true（安全側）。
+        /// </summary>
+        public static bool WritesMirrorSide(PanelCommand cmd)
+        {
+            if (cmd == null) return true;
+            var a = cmd.GetType().GetCustomAttribute<PLCommandAttribute>(inherit: false);
+            return a?.WritesMirrorSide ?? true;
+        }
+
+        /// <summary>
+        /// Writes = Targets のコマンドについて、書き換える対象を引数の属性から集める。
+        ///
+        /// 【集め方】
+        ///   PLParam(IsMeshRef, MeshRefAccess = Write) の引数のうち、WriteWhen が無いもの、
+        ///   または WriteWhen がこのコマンドの値で成り立つものの値を対象にする。
+        ///   別モデルを指す引数（MeshRefModelKey）はそのモデルの対象として分けて持つ。
+        ///
+        /// 【false を返すとき（呼び出し側はモデル全体判定へ回す）】
+        ///   書き込み先の値に負数（-1 = 実行時の選択・編集対象・アクティブで決まる）が
+        ///   含まれるとき。引数だけでは対象を決められない。
+        ///
+        /// primary は主モデル（cmd.ModelIndex）の対象を引数の並び順で持つ。
+        /// クライアントはこの並びで objectIds を送る（VerifyObjectIds が照合する）。
+        /// </summary>
+        public static bool TryCollectWriteTargets(
+            ProjectContext project, PanelCommand cmd,
+            out List<int> primary, out Dictionary<ModelContext, List<int>> byModel)
+        {
+            primary = new List<int>();
+            byModel = new Dictionary<ModelContext, List<int>>();
+            if (cmd == null) return false;
+
+            var mainModel = GetModel(project, cmd.ModelIndex);
+            if (mainModel == null) return false;
+
+            var args = PanelCommandFactory.ToArgs(cmd);
+
+            foreach (var k in PanelCommandFactory.MeshRefKeys(cmd.GetType()))
             {
-                // ── 単体指定 ──────────────────────────────────────────
-                case ToggleVisibilityCommand c: return One(c.MasterIndex);
-                case ToggleLockCommand       c: return One(c.MasterIndex);
-                case CycleMirrorTypeCommand  c: return One(c.MasterIndex);
-                case RenameMeshCommand       c: return One(c.MasterIndex);
-                case SetMeshFoldingCommand   c: return One(c.MasterIndex);
+                if (!PanelCommandFactory.IsWriteActive(cmd.GetType(), k, args)) continue;
+                if (!args.TryGetValue(k.Key, out string raw) || string.IsNullOrEmpty(raw)) continue;
 
-                // ── 複数指定 ──────────────────────────────────────────
-                case SetBatchVisibilityCommand   c: return c.MasterIndices;
-                case DeleteMeshesCommand         c: return c.MasterIndices;
-                case InitBonePoseCommand         c: return c.MasterIndices;
-                case SetBonePoseActiveCommand    c: return c.MasterIndices;
-                case ResetBonePoseLayersCommand  c: return c.MasterIndices;
-                case BakePoseToBindPoseCommand   c: return c.MasterIndices;
-                case SetIgnorePoseCommand        c: return c.MasterIndices;
+                int[] values = ParseIntCsv(raw);
+                if (values == null) return false;
 
-                // 原点だけ移動。対象の頂点と BoneTransform を書き換えるので担当判定が要る。
-                // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
-                // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
-                case MovePivotCommand            c: return c.MasterIndices;
+                int[] modelIdx = null;
+                if (!string.IsNullOrEmpty(k.ModelKey))
+                {
+                    if (!args.TryGetValue(k.ModelKey, out string mraw)) return false;
+                    modelIdx = ParseIntCsv(mraw);
+                    if (modelIdx == null || modelIdx.Length != values.Length) return false;
+                }
 
-                // 選択頂点の移動。対象メッシュの頂点を書き換えるので担当判定が要る。
-                case MoveSelectedVerticesCommand c: return c.MasterIndices;
+                for (int i = 0; i < values.Length; i++)
+                {
+                    if (values[i] < 0) return false;
 
-                // スカルプトストローク。対象メッシュの頂点を書き換える。
-                case SculptStrokeCommand         c: return c.MasterIndices;
+                    var m = modelIdx != null ? GetModel(project, modelIdx[i]) : mainModel;
+                    if (m == null) return false;
 
-                // 位相編集（パラメータを持たない実行系）。
-                // 対象メッシュの面・頂点を書き換えるので担当判定が要る。
-                // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
-                // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
-                case FaceMergeCommand            c: return c.MasterIndices;
-                case Quad4To1Command             c: return c.MasterIndices;
-                case Tri4To1Command              c: return c.MasterIndices;
-                case VertexDissolveCommand       c: return c.MasterIndices;
-                case SplitVerticesCommand        c: return c.MasterIndices;
-
-                // 位相・頂点編集（パラメータを持つ実行系）。同上。
-                case VertexHoleCommand           c: return c.MasterIndices;
-                case FlipFaceCommand             c: return c.MasterIndices;
-                case AlignVerticesCommand        c: return c.MasterIndices;
-                case SmoothEdgesCommand          c: return c.MasterIndices;
-                case PlanarizeAlongBonesCommand  c: return c.MasterIndices;
-                case MergeVerticesCommand        c: return c.MasterIndices;
-
-                // 位相・頂点編集（対象や生成先の指定を伴う実行系）。同上。
-                // SurfaceSnap のリファレンスは読むだけなので担当判定に含めない。
-                // PlaceObjectReshape の原型も同じく読むだけ。
-                case DeleteSelectionCommand      c: return c.MasterIndices;
-                case PipeAlignCommand            c: return c.MasterIndices;
-                case PlaceObjectReshapeCommand   c: return c.MasterIndices;
-                case SolidifyCommand             c: return c.MasterIndices;
-                case LineExtrudeCommand          c: return c.MasterIndices;
-                case SurfaceSnapCommand          c: return c.MasterIndices;
-
-                // 辺から帯面・パイプ化。グループとして残すときは対象へ辺の選択辞書を足す。
-                case EdgeRibbonFaceCommand       c: return c.MasterIndices;
-                case CreateEdgePipeCommand       c: return c.MasterIndices;
-
-                // 頂点へ藤壺。グループとして残すときは対象へ頂点の選択辞書を足す。
-                case CreateVertexBillboardPlaceCommand c: return c.MasterIndices;
-
-                // ドラッグ確定（ベベル・押し出し）。対象メッシュの頂点と面を書き換える。
-                case EdgeBevelCommand            c: return c.MasterIndices;
-                case EdgeExtrudeCommand          c: return c.MasterIndices;
-                case FaceExtrudeCommand          c: return c.MasterIndices;
-
-                // スキンウェイト塗り。対象メッシュの BoneWeight を書き換える。
-                case SkinWeightPaintCommand      c: return c.MasterIndices;
-
-                // 変形ギズモ（選択頂点の回転・スケール）。対象メッシュの頂点を書き換える。
-                case RotateSelectionCommand      c: return c.MasterIndices;
-                case ScaleSelectionCommand       c: return c.MasterIndices;
-
-                // オブジェクトごと移動・回転。対象の BoneTransform を書き換える。
-                case MoveObjectsCommand          c: return c.MasterIndices;
-                case RotateObjectsCommand        c: return c.MasterIndices;
-
-                // 揺れもの（VRM SpringBone）の付帯データ。対象ノードだけを書き換える。
-                case SetSpringBoneChainRootCommand   c: return One(c.MasterIndex);
-                case ClearSpringBoneChainRootCommand c: return c.MasterIndices;
-                case SetSpringBoneJointCommand       c: return c.MasterIndices;
-                case ClearSpringBoneJointCommand     c: return c.MasterIndices;
-
-                // 一人称カメラでの扱い。対象の描画オブジェクトだけを書き換える。
-                case SetVrmFirstPersonCommand       c: return c.MasterIndices;
-
-                // VRM のメタ情報と視線、Avatar のリターゲット設定はモデル固有の値。
-                // 対象ノードを持たないのでモデル全体判定（default）へ落とす。
-                //   → ここには書かない。書くと空配列＝「誰の担当でもない」になり、
-                //     リモートの別クライアントと同時に書き換えられる。
-
-                // マッスル可動域（HumanLimit）。対象ボーンの付帯データだけを書き換える。
-                case SetHumanLimitCommand           c: return c.MasterIndices;
-                case ClearHumanLimitCommand         c: return c.MasterIndices;
-
-                // ボーンの親付け替えは対象ボーンを書き換える。
-                case SetBoneParentCommand           c: return c.MasterIndices;
-
-                // 当たり判定の追加は付ける先のボーンだけを書き換える。
-                case AddSpringBoneColliderCommand   c: return One(c.MasterIndex);
-
-                // ボーン鎖の配置も、既存を書き換えず末尾にボーンを足すだけ。
-                case PlaceSpringBoneChainsCommand   _: return Array.Empty<int>();
-
-                // はしごからのボーン鎖の配置。ボーンを足すのは同じだが、
-                // ウェイトを塗るときは取り込み元メッシュの BoneWeight を書き換えるので、
-                // そのときだけ取り込み元を担当判定の対象にする
-                // （SkinWeightPaintCommand と同じ理由）。
-                case PlaceSpringBoneLadderChainsCommand c:
-                    return c.PaintWeights ? One(c.SourceMasterIndex) : Array.Empty<int>();
-
-                // 末端ボーンの追加は既存ノードを書き換えず、末尾にボーンを足すだけ。
-                // 追加系（DuplicateMeshesCommand / AddMeshCommand）と同じ扱いにする。
-                case AddSpringBoneTailBoneCommand    _: return Array.Empty<int>();
-
-                // 選択を変えるだけ。形状も付帯データも書き換えない。
-                case SelectBoneChainCommand          _: return Array.Empty<int>();
-                case SelectBonesByVertexWeightCommand _: return Array.Empty<int>();
-
-                // コライダーグループと評価設定はモデル固有の値。
-                // 参照索引の詰め直しで全ノードに波及しうるので、
-                // 対象を特定せずモデル全体判定（default）へ落とす。
-
-                // デフォーマ。対象メッシュの頂点を書き換える。
-                // 抽象基底で受ければ派生 6 種を拾える。
-                case ApplyDeformCommand          c: return c.MasterIndices;
-
-                // 格子変形。対象メッシュの頂点を書き換える。
-                case ApplyLatticeDeformCommand   c: return c.MasterIndices;
-
-                // クリック確定（辺トポロジ・面追加）。対象メッシュの面と頂点を書き換える。
-                case EdgeTopologyFlipCommand     c: return c.MasterIndices;
-                case EdgeTopologyDissolveCommand c: return c.MasterIndices;
-                case EdgeTopologySplitCommand    c: return c.MasterIndices;
-                case AddFaceCommand              c: return c.MasterIndices;
-
-                // 点指定図形。編集対象へ頂点と面を足す（既存頂点も参照する）。
-                case CreatePointDefinedPrimitiveCommand c: return c.MasterIndices;
-
-                // ナイフ。対象メッシュの面と頂点を書き換える。
-                case KnifeLadderCutCommand       c: return c.MasterIndices;
-                case KnifeBeltLoopCutCommand     c: return c.MasterIndices;
-                case KnifeEraseEdgeCommand       c: return c.MasterIndices;
-                case KnifeSimpleCutCommand       c: return c.MasterIndices;
-
-                // メッシュブレンドの書き込み先は宛先 1 件。
-                // 登録しないと default に落ちて AuthorizeModelWide 送りになり、
-                // 同じモデル内に他人の担当が 1 つあるだけで実行できなくなる。
-                // ソースは読むだけなので担当判定の対象に含めない（別モデルも指せる）。
-                // CreateNewObject のときは既存メッシュを書き換えず複製を足すだけなので、
-                // 追加系（DuplicateMeshesCommand）と同じく担当と無関係とみなす。
-                case ApplyBlendCommand           c:
-                    return c.CreateNewObject ? Array.Empty<int>() : One(c.DestMasterIndex);
-
-                // ── 読むだけ／新規作成なので担当と無関係 ──────────────
-                // 作業軸はモデルの頂点・選択を書き換えない。
-                case SetWorkAxisCommand     _: return Array.Empty<int>();
-                case RecallWorkAxisCommand  _: return Array.Empty<int>();
-
-                // VRMA 書き出しはフレームを一時適用するが、終了時に
-                // UnityClipApplier.ResetAllBones でポーズ層を戻す。形状は変えない。
-                case ExportVrmAnimationCommand _: return Array.Empty<int>();
-
-                // VMD → VRMA も同じ。VMDApplier.ResetAllBones でポーズ層を戻す。
-                case ExportVmdToVrmaCommand _: return Array.Empty<int>();
-
-                case SelectMeshCommand      _: return Array.Empty<int>();
-                case SelectDrawablesByNameCommand _: return Array.Empty<int>();
-                case SelectElementsCommand  _: return Array.Empty<int>();
-                case AdvancedSelectCommand  _: return Array.Empty<int>();
-                case AdvancedSelectByAttributeCommand _: return Array.Empty<int>();
-                case DuplicateMeshesCommand _: return Array.Empty<int>();
-                case AddMeshCommand         _: return Array.Empty<int>();
-                case SwitchModelCommand     _: return Array.Empty<int>();
-
-                default:
-                    return null;   // 不明＝モデル全体判定
+                    if (!byModel.TryGetValue(m, out var list))
+                    {
+                        list = new List<int>();
+                        byModel[m] = list;
+                    }
+                    if (!list.Contains(values[i])) list.Add(values[i]);
+                    if (ReferenceEquals(m, mainModel) && !primary.Contains(values[i]))
+                        primary.Add(values[i]);
+                }
             }
+            return true;
+        }
+
+        private static int[] ParseIntCsv(string csv)
+        {
+            if (string.IsNullOrEmpty(csv)) return Array.Empty<int>();
+            var parts = csv.Split(',');
+            var r = new int[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+                if (!int.TryParse(parts[i].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out r[i]))
+                    return null;
+            return r;
         }
 
         /// <summary>
@@ -490,46 +619,6 @@ namespace Poly_Ling.Remote
             }
         }
 
-        /// <summary>所有権判定を通す必要のないコマンドか。</summary>
-        private static bool IsOwnershipExempt(PanelCommand cmd)
-        {
-            switch (cmd)
-            {
-                // モデルを一切参照しない（クリップ JSON → .vrma の変換のみ）。
-                case ConvertUnityClipToVrmaCommand _:
-                // モデルを一切参照しない（モーションファイルの書き出し・検査のみ）。
-                case ExportMotionJsonCommand _:
-                case QueryMotionJsonCommand _:
-                case SelectMeshCommand _:
-                case SwitchModelCommand _:
-                case NotifyListStructureChangedCommand _:
-                case NotifyDictionaryChangedCommand _:
-                // 照会系。モデルを読むだけで書き換えない。
-                case QueryModelStructureCommand _:
-                case QueryDrawableStatsCommand _:
-                case QueryHolesCommand _:
-                case QuerySeedElementCommand _:
-                case QueryBoneSkinCommand _:
-                case QueryCommandAuditCommand _:
-                case AcquireBeltStripsCommand _:
-                case QueryMqoSourceObjectsCommand _:
-                case MatchMqoSourceByVertexCountCommand _:
-                case QueryPmxSourceObjectsCommand _:
-                case MatchPmxSourceCommand _:
-                case QueryBoneCommand _:
-                case QueryBoundaryEdgesCommand _:
-                case QueryFacesInBoxCommand _:
-                case QueryNearestBoundaryVertexCommand _:
-                // 生データの取得。モデルを読むだけで書き換えない。
-                case GetRawDataCommand _:
-                // 選択の写しを結果辞書へ置くだけ。形状を変えない。
-                case SaveSelectionToDataStoreCommand _:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
         // ================================================================
         // 担当状況のスナップショット（push 用）
         // ================================================================
@@ -589,7 +678,6 @@ namespace Poly_Ling.Remote
         // ヘルパー
         // ================================================================
 
-        private static int[] One(int i) => new[] { i };
 
         private static ModelContext GetModel(ProjectContext project, int modelIndex)
         {

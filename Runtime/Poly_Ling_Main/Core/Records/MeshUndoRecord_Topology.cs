@@ -143,10 +143,21 @@ namespace Poly_Ling.UndoSystem
         public Face AddedFace;
         public int FaceIndex;
 
-        public AddFaceOperationRecord(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices)
+        /// <summary>
+        /// 線分群の変更前・変更後（線分を足したときだけ。null なら線分群に触らない）。
+        /// 線分を足すと線分群が伸びる／新しく作られる（LineGroupOps.AddSegment）ため、
+        /// 面と一緒に戻す。
+        /// </summary>
+        public List<LineGroup> LineGroupsBefore;
+        public List<LineGroup> LineGroupsAfter;
+
+        public AddFaceOperationRecord(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices,
+            List<LineGroup> lineGroupsBefore = null, List<LineGroup> lineGroupsAfter = null)
         {
             AddedFace = face?.Clone();
             FaceIndex = faceIndex;
+            LineGroupsBefore = lineGroupsBefore;
+            LineGroupsAfter  = lineGroupsAfter;
 
             foreach (var (idx, vtx) in addedVertices)
             {
@@ -172,6 +183,10 @@ namespace Poly_Ling.UndoSystem
                     AdjustFaceIndicesAfterVertexRemoval(ctx.MeshObject, idx);
                 }
             }
+
+            // 線分群は変更前へ戻す（頂点を消した後。控えは消す前の索引で書かれている）。
+            if (LineGroupsBefore != null)
+                Poly_Ling.Ops.LineGroupOps.RestoreList(ctx.MeshObject, LineGroupsBefore);
 
             if (ctx.OnTopologyChanged != null) ctx.OnTopologyChanged.Invoke();
             else ctx.ApplyToMesh();
@@ -206,6 +221,9 @@ namespace Poly_Ling.UndoSystem
                     ctx.MeshObject.Faces.Insert(FaceIndex, AddedFace.Clone());
                 }
             }
+
+            if (LineGroupsAfter != null)
+                Poly_Ling.Ops.LineGroupOps.RestoreList(ctx.MeshObject, LineGroupsAfter);
 
             if (ctx.OnTopologyChanged != null) ctx.OnTopologyChanged.Invoke();
             else ctx.ApplyToMesh();

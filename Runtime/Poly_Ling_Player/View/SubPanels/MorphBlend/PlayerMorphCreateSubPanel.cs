@@ -31,8 +31,6 @@ namespace Poly_Ling.Player
         /// <summary>モデルリスト再構築要求（プロジェクトにモデルを追加した後に呼ぶ）。</summary>
         public Action OnRebuildModelList;
 
-        /// <summary>Undo 記録用 UndoController を返すデリゲート。</summary>
-        public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
 
         /// <summary>PanelCommand を送信するコールバック。</summary>
         public Action<PanelCommand> SendCommand;
@@ -242,185 +240,13 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(morphName)) morphName = "NewMorph";
             int panel = _panelDropdown.index;
 
-            if (SendCommand != null)
-            {
-                // コマンド経由（Dispatcher 側でUndo記録）
-                SendCommand.Invoke(new CreateMorphFromDiffCommand(baseIdx, morphIdx, morphName, panel));
-                SetCreateStatus("モーフ作成コマンドを送信しました", false);
-                RefreshExpressionList();
-                OnRepaint?.Invoke();
-                return;
-            }
-
-            // フォールバック（SendCommand 未設定時：直接実行 + Undo記録）
-            var undo       = GetUndoController?.Invoke();
-            var beforeList = Poly_Ling.UndoSystem.MeshFilterToSkinnedRecord.CaptureList(baseModel);
-            var beforeExpr = baseModel.MorphExpressions.Select(e => e.Clone()).ToList();
-
-            var expression   = new MorphExpression(morphName, MorphType.Vertex) { Panel = panel };
-            int morphCreated = 0;
-            int meshSkipped  = 0;
-
-            for (int mi = 0; mi < baseModel.Count; mi++)
-            {
-                var baseCtx  = baseModel.GetMeshContext(mi);
-                var morphCtx = morphModel.GetMeshContext(mi);
-                if (baseCtx == null || morphCtx == null) continue;
-                if (baseCtx.MeshObject == null || morphCtx.MeshObject == null) continue;
-                if (baseCtx.Type != MeshType.Mesh && baseCtx.Type != MeshType.BakedMirror) continue;
-                if (baseCtx.MeshObject.VertexCount != morphCtx.MeshObject.VertexCount) continue;
-                if (!HasDiff(baseCtx.MeshObject, morphCtx.MeshObject)) { meshSkipped++; continue; }
-                if (baseModel.IsMirrorSide(baseCtx)) continue;
-
-                int newMorphIdx = CreateMorphMeshContext(
-                    baseModel, baseCtx, mi, morphCtx.MeshObject, morphName, panel, expression);
-                morphCreated++;
-
-                var pair = baseModel.GetMirrorPair(baseCtx);
-                if (pair != null && pair.Real == baseCtx && pair.Mirror != null)
-                {
-                    int mirrorParentIdx = baseModel.MeshContextList.IndexOf(pair.Mirror);
-                    if (mirrorParentIdx >= 0)
-                        CreateMirrorMorphMeshContext(
-                            baseModel, pair, mirrorParentIdx, newMorphIdx,
-                            baseCtx.MeshObject, morphCtx.MeshObject,
-                            morphName, panel, expression);
-                }
-            }
-
-            if (morphCreated == 0)
-            { SetCreateStatus($"差分のあるメッシュがありませんでした（{meshSkipped}メッシュ確認済み）", true); return; }
-
-            baseModel.MorphExpressions.Add(expression);
-
-            if (undo != null)
-            {
-                var afterList = Poly_Ling.UndoSystem.MeshFilterToSkinnedRecord.CaptureList(baseModel);
-                var afterExpr = baseModel.MorphExpressions.Select(e => e.Clone()).ToList();
-                var __rec = new Poly_Ling.UndoSystem.MorphCreateRecord
-                {
-                    BeforeList = beforeList, AfterList = afterList,
-                    BeforeExpressions = beforeExpr, AfterExpressions = afterExpr,
-                };
-                string __dbgDesc = $"モーフ作成: {morphName}";
-                PLDiag.UndoRecord("MeshList", __dbgDesc, __rec);
-                undo.MeshListStack.Record(__rec, __dbgDesc);
-                undo.FocusMeshList();
-            }
-
-            SetCreateStatus($"完了: {morphCreated}メッシュのモーフを作成しました（{meshSkipped}メッシュはスキップ）", false);
+            // 作成はコマンドだけで行う（ディスパッチャ側で Undo 記録）。本体も SendCommand を渡すので
+            // パネル内で直接作る経路は持たない（操作経路統一計画.md J）。
+            if (SendCommand == null) return;
+            SendCommand.Invoke(new CreateMorphFromDiffCommand(baseIdx, morphIdx, morphName, panel));
+            SetCreateStatus("モーフ作成コマンドを送信しました", false);
             RefreshExpressionList();
             OnRepaint?.Invoke();
-        }
-
-        // ----------------------------------------------------------------
-        // Real 側モーフ MeshContext を生成して baseModel に追加し expression に登録
-        // ----------------------------------------------------------------
-
-        private int CreateMorphMeshContext(
-            ModelContext baseModel,
-            MeshContext  baseCtx,
-            int          parentIdx,
-            MeshObject   morphMeshObj,
-            string       morphName,
-            int          panel,
-            MorphExpression expression)
-        {
-            // 基準 MeshObject をクローンしてモーフ MeshContext を作る
-            var morphObj = baseCtx.MeshObject.Clone();
-            morphObj.Type = MeshType.Morph;
-
-            // モーフ後位置をコピー
-            for (int vi = 0; vi < morphObj.VertexCount; vi++)
-                morphObj.Vertices[vi].Position = morphMeshObj.Vertices[vi].Position;
-
-            var newCtx = new MeshContext
-            {
-                // モーフ実体の名前はシステムが決める（PMXImporter と同じ「{親名}_{モーフ名}」）。
-                // ユーザーが管理する名前は MorphExpression.Name ひとつだけにする。
-                Name      = $"{baseCtx.Name}_{morphName}",
-                MeshObject = morphObj,
-                IsVisible = false,
-            };
-
-            // SetAsMorph: baseCtx.MeshObject を基準位置として MorphBaseData を構築
-            newCtx.SetAsMorph(morphName, baseCtx.MeshObject);
-            newCtx.MorphBaseData.Panel = panel;
-            newCtx.MorphParentIndex   = parentIdx;
-
-            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）
-            newCtx.InheritMirrorSettingsFrom(baseCtx);
-
-            int newIdx = baseModel.Add(newCtx);
-            expression.AddMesh(newIdx);
-            return newIdx;
-        }
-
-        // ----------------------------------------------------------------
-        // Mirror 側モーフ MeshContext を生成して baseModel に追加し expression に登録
-        // ----------------------------------------------------------------
-
-        private void CreateMirrorMorphMeshContext(
-            ModelContext    baseModel,
-            MirrorPair      pair,
-            int             mirrorParentIdx,
-            int             realMorphIdx,
-            MeshObject      realBaseMeshObj,
-            MeshObject      realMorphMeshObj,
-            string          morphName,
-            int             panel,
-            MorphExpression expression)
-        {
-            var mirrorBaseCtx = pair.Mirror;
-            if (mirrorBaseCtx?.MeshObject == null) return;
-
-            var morphObj = mirrorBaseCtx.MeshObject.Clone();
-            morphObj.Type = MeshType.Morph;
-
-            // Real 側の差分を Mirror 変換して Mirror 側の基準位置に加算
-            for (int vi = 0; vi < morphObj.VertexCount; vi++)
-            {
-                int ri = pair.VertexMap != null && vi < pair.VertexMap.Length
-                    ? pair.VertexMap[vi]
-                    : vi;
-
-                if (ri < 0 || ri >= realBaseMeshObj.VertexCount) continue;
-
-                Vector3 realDiff   = realMorphMeshObj.Vertices[ri].Position
-                                   - realBaseMeshObj.Vertices[ri].Position;
-                Vector3 mirrorDiff = pair.MirrorDirection(realDiff);
-
-                morphObj.Vertices[vi].Position =
-                    mirrorBaseCtx.MeshObject.Vertices[vi].Position + mirrorDiff;
-            }
-
-            var newCtx = new MeshContext
-            {
-                // モーフ実体の名前はシステムが決める（「{親名}_{モーフ名}」）。
-                // ミラー側は親名が違うので、Real 側モーフと自然に別名になる。
-                Name       = $"{mirrorBaseCtx.Name}_{morphName}",
-                MeshObject = morphObj,
-                IsVisible  = false,
-            };
-
-            newCtx.SetAsMorph(morphName, mirrorBaseCtx.MeshObject);
-            newCtx.MorphBaseData.Panel = panel;
-            newCtx.MorphParentIndex   = mirrorParentIdx;
-
-            // モーフは親のミラー機構に乗る（規約は MorphMirrorPolicy.cs を正典とする）
-            newCtx.InheritMirrorSettingsFrom(mirrorBaseCtx);
-
-            // 親が生成ミラー（実体側から作られた形状）なら、モーフ側にも同じ連結を張る。
-            // これで既存の MirrorBranchOps.RebakeDerivedMirrorVertices が
-            // Real 側モーフ → Mirror 側モーフ の追随を担当できる。
-            if (mirrorBaseCtx.MirrorGeometryDerived && realMorphIdx >= 0)
-            {
-                newCtx.MirrorGeometryDerived  = true;
-                newCtx.BakedMirrorSourceIndex = realMorphIdx;
-            }
-
-            int newIdx = baseModel.Add(newCtx);
-            expression.AddMesh(newIdx);
         }
 
         // ================================================================
@@ -497,19 +323,6 @@ namespace Poly_Ling.Player
         // ================================================================
         // ヘルパー
         // ================================================================
-
-        /// <summary>2つの MeshObject 間に差分があるか（閾値以上の移動頂点が1つでもあれば true）。</summary>
-        private static bool HasDiff(MeshObject baseMesh, MeshObject morphMesh)
-        {
-            float thSq = DiffThreshold * DiffThreshold;
-            int count = Mathf.Min(baseMesh.VertexCount, morphMesh.VertexCount);
-            for (int i = 0; i < count; i++)
-            {
-                Vector3 d = morphMesh.Vertices[i].Position - baseMesh.Vertices[i].Position;
-                if (d.sqrMagnitude > thSq) return true;
-            }
-            return false;
-        }
 
         private void SetCreateStatus(string msg, bool isError)
         {

@@ -3,6 +3,7 @@
 //
 // 【形の決まり方】
 //   選択中の描画オブジェクトそれぞれの選択頂点の位置へ、配置元オブジェクトを複製する。
+//   配置先を切り替えると、選択ボーンの位置／選択描画オブジェクトの原点へ置く。
 //   向きは直前にポインタが乗ったビューポートのカメラに向けたビルボード。
 //   配置元の +Z（とげ）をカメラ側へ向けるか、画面の上へ向けるかを選ぶ。
 //   位置は GPU のワールド座標から読むので、生成は PrimitiveMeshFactory ではなく
@@ -34,8 +35,11 @@ namespace Poly_Ling.Player
         // 外部コールバック（Viewer から設定）
         // ================================================================
 
-        /// <summary>選択中の描画オブジェクトが持つ選択頂点の合計数。</summary>
-        public Func<int> GetSelectedVertexCount;
+        /// <summary>配置先ごとの対象の数（選択頂点の合計／選択ボーン数／選択描画オブジェクト数）。</summary>
+        public Func<BillboardPlaceTarget, int> GetVertexBillboardTargetCount;
+
+        /// <summary>配置先ごとの対象索引（選択描画オブジェクト／選択ボーン）。</summary>
+        public Func<BillboardPlaceTarget, int[]> GetVertexBillboardTargetIndices;
 
         /// <summary>
         /// 直前にポインタが乗ったビューポートのカメラの [視線, 上方向]（ワールド）。取れなければ null。
@@ -56,6 +60,7 @@ namespace Poly_Ling.Player
         private int                 _vbpSeed;
         private float               _vbpScale           = 1f;
         private BillboardZDirection _vbpZDirection      = BillboardZDirection.TowardCamera;
+        private BillboardPlaceTarget _vbpTarget         = BillboardPlaceTarget.Vertices;
 
         /// <summary>直近のプレビューを作ったときのカメラの向き。</summary>
         private Vector3 _vbpPreviewForward;
@@ -81,6 +86,12 @@ namespace Poly_Ling.Player
             c.Add(ShapeTitle(T("VertexBillboardPlace")));
             c.Add(GearHint(T("VertexBillboardPlaceHint")));
             c.Add(NF(() => _vbpMeshName, v => _vbpMeshName = v));
+
+            // ── 配置先（選択頂点／選択ボーン／選択オブジェクトの原点） ──
+            c.Add(DD(T("VertexBillboardTarget"),
+                new List<string> { T("VertexBillboardTargetVertices"), T("VertexBillboardTargetBones"), T("VertexBillboardTargetOrigins") },
+                () => (int)_vbpTarget,
+                i => { _vbpTarget = (BillboardPlaceTarget)i; D(); RefreshVertexBillboardPlaceInfo(); }));
 
             // ── 配置元オブジェクト（複数選択可） ──
             BuildMeshSourceMultiRow(c, _vbpSrcPick, T("PlaceSource"));
@@ -118,21 +129,25 @@ namespace Poly_Ling.Player
             RefreshVertexBillboardPlaceInfo();
         }
 
-        /// <summary>選択頂点の数と配置元の数の表示を引き直す。</summary>
+        /// <summary>配置先の対象の数と配置元の数の表示を引き直す。</summary>
         private void RefreshVertexBillboardPlaceInfo()
         {
             if (_vbpInfo == null) return;
             _vbpInfo.text = T("VertexBillboardSelected",
-                VertexBillboardSelectedVertices, _vbpSrcPick.SelectedMasterIndices().Count);
+                VertexBillboardTargetCount, _vbpSrcPick.SelectedMasterIndices().Count);
         }
 
-        /// <summary>選択頂点の数。結線が無いときは 0。</summary>
-        private int VertexBillboardSelectedVertices => GetSelectedVertexCount?.Invoke() ?? 0;
+        /// <summary>配置先の対象の数。結線が無いときは 0。</summary>
+        private int VertexBillboardTargetCount => GetVertexBillboardTargetCount?.Invoke(_vbpTarget) ?? 0;
+
+        /// <summary>配置先の対象索引。結線が無いときは空。</summary>
+        private int[] VertexBillboardTargetIndices
+            => GetVertexBillboardTargetIndices?.Invoke(_vbpTarget) ?? Array.Empty<int>();
 
         /// <summary>今の設定で生成ボタンを押せるか。</summary>
         private bool VertexBillboardPlaceReady
             => SendCommand != null
-            && VertexBillboardSelectedVertices > 0
+            && VertexBillboardTargetCount > 0
             && _vbpSrcPick.SelectedMasterIndices().Count > 0;
 
         /// <summary>
@@ -175,13 +190,13 @@ namespace Poly_Ling.Player
                 ModelIndex(), targets ?? Array.Empty<int>(), "",
                 _vbpSrcPick.SelectedMasterIndices().ToArray(),
                 _vbpIncludeChildren, _vbpMode, _vbpSeed, _vbpScale, _vbpZDirection,
-                frame[0], frame[1], _vbpMeshName, pl);
+                frame[0], frame[1], _vbpMeshName, pl, null, _vbpTarget);
         }
 
         /// <summary>プレビュー・ライブワイヤで使うメッシュ。実生成と同じハンドラを通す。</summary>
         private MeshObject GenerateVertexBillboardPlaceMesh()
         {
-            int[] targets = GetSelectedDrawableIndices?.Invoke() ?? Array.Empty<int>();
+            int[] targets = VertexBillboardTargetIndices;
             var cmd = BuildVertexBillboardPlaceCommand(targets);
             if (cmd == null) return null;
 
@@ -201,7 +216,7 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            int[] targets = GetSelectedDrawableIndices?.Invoke() ?? Array.Empty<int>();
+            int[] targets = VertexBillboardTargetIndices;
             if (targets.Length == 0)
             {
                 if (_statusLabel != null) _statusLabel.text = T("EdgeRibbonFaceNoTarget");

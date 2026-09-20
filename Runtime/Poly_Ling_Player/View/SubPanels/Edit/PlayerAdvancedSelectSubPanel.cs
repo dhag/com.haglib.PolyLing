@@ -25,7 +25,9 @@ namespace Poly_Ling.Player
         // 外部注入（Viewer から設定）
         // ================================================================
 
-        public Func<AdvancedSelectToolHandler> GetHandler;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                    Surface;
+        private const string Tool = "advancedSelect";
         public Func<ProjectContext>            GetView;
         public Action<PanelCommand>            SendCommand;
 
@@ -165,8 +167,7 @@ namespace Poly_Ling.Player
             {
                 int idx = System.Array.IndexOf(ModeLabels, e.newValue);
                 if (idx < 0) return;
-                var h = GetHandler?.Invoke();
-                if (h != null) h.Mode = ModeValues[idx];
+                Surface.Set(Tool, "mode", ModeValues[idx]);
                 UpdateModeUI(ModeValues[idx]);
             });
             _root.Add(_modeDropdown);
@@ -187,8 +188,7 @@ namespace Poly_Ling.Player
             _edgeLoopThresholdSlider.style.marginBottom = 3;
             _edgeLoopThresholdSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetHandler?.Invoke();
-                if (h != null) h.EdgeLoopThreshold = e.newValue;
+                Surface.Set(Tool, "edgeLoopThreshold", e.newValue);
             });
             _edgeLoopGroup.Add(_edgeLoopThresholdSlider);
 
@@ -207,8 +207,7 @@ namespace Poly_Ling.Player
                 "頂点の UV/法線スロット数がこの値より大きい頂点を選択します。";
             _uvNormalThresholdField.RegisterValueChangedCallback(e =>
             {
-                var h = GetHandler?.Invoke();
-                if (h != null) h.UvNormalCountThreshold = e.newValue;
+                Surface.Set(Tool, "uvNormalCountThreshold", e.newValue);
             });
             _uvNormalGroup.Add(_uvNormalThresholdField);
 
@@ -224,8 +223,7 @@ namespace Poly_Ling.Player
             {
                 int idx = System.Array.IndexOf(AxisLabels, e.newValue);
                 if (idx < 0) return;
-                var h = GetHandler?.Invoke();
-                if (h != null) h.AxisKind = AxisValues[idx];
+                Surface.Set(Tool, "axisKind", AxisValues[idx]);
             });
             _nearAxisGroup.Add(_axisDropdown);
 
@@ -236,8 +234,7 @@ namespace Poly_Ling.Player
                 "軸に対応する平面までの距離がこの値未満の頂点を選択します。";
             _axisThresholdField.RegisterValueChangedCallback(e =>
             {
-                var h = GetHandler?.Invoke();
-                if (h != null) h.AxisDistanceThreshold = e.newValue;
+                Surface.Set(Tool, "axisDistanceThreshold", e.newValue);
             });
             _nearAxisGroup.Add(_axisThresholdField);
 
@@ -249,8 +246,7 @@ namespace Poly_Ling.Player
                 + "ON かつ動作=削除 のとき、条件に合った頂点を選択から外します。";
             _limitToSelectionToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetHandler?.Invoke();
-                if (h != null) h.LimitToCurrentSelection = e.newValue;
+                Surface.Set(Tool, "limitToCurrentSelection", e.newValue);
             });
             _attrGroup.Add(_limitToSelectionToggle);
 
@@ -258,8 +254,7 @@ namespace Poly_Ling.Player
             _executeBtn.style.marginBottom = 4;
             _executeBtn.clicked += () =>
             {
-                var h = GetHandler?.Invoke();
-                if (h == null) return;
+                if (Surface == null) return;
 
                 var model = GetView?.Invoke()?.CurrentModel;
                 var mc    = model?.ActiveMeshContext;
@@ -270,12 +265,12 @@ namespace Poly_Ling.Player
                 SendCommand?.Invoke(new AdvancedSelectByAttributeCommand(
                     ModelIndex,
                     new[] { model.IndexOf(mc) },
-                    h.Mode,
-                    addToSelection:          h.AddToSelection,
-                    uvNormalCountThreshold:  h.UvNormalCountThreshold,
-                    axisKind:                h.AxisKind,
-                    axisDistanceThreshold:   h.AxisDistanceThreshold,
-                    limitToCurrentSelection: h.LimitToCurrentSelection));
+                    Surface.Get(Tool, "mode", default(AdvancedSelectMode)),
+                    addToSelection:          Surface.GetBool(Tool, "addToSelection", true),
+                    uvNormalCountThreshold:  Surface.GetInt(Tool, "uvNormalCountThreshold"),
+                    axisKind:                Surface.Get(Tool, "axisKind", default(SymmetryAxis)),
+                    axisDistanceThreshold:   Surface.GetFloat(Tool, "axisDistanceThreshold"),
+                    limitToCurrentSelection: Surface.GetBool(Tool, "limitToCurrentSelection")));
                 Refresh();
             };
             _attrGroup.Add(_executeBtn);
@@ -290,7 +285,7 @@ namespace Poly_Ling.Player
                 "両端点が現在の頂点選択に含まれるエッジ（1つの面だけが使う辺）を、動作（追加/削除）に従って辺選択に反映します。";
             _boundaryEdgeExecuteBtn.clicked += () =>
             {
-                GetHandler?.Invoke()?.ExecuteBoundaryEdgeInSelection();
+                Surface?.Invoke(Tool, "executeBoundaryEdgeInSelection");
                 Refresh();
             };
             _boundaryEdgeGroup.Add(_boundaryEdgeExecuteBtn);
@@ -313,8 +308,7 @@ namespace Poly_Ling.Player
             _addBtn.style.marginRight = 2;
             _addBtn.clicked += () =>
             {
-                var h = GetHandler?.Invoke();
-                if (h != null) h.AddToSelection = true;
+                Surface.Set(Tool, "addToSelection", true);
                 UpdateAddRemoveStyle();
             };
             _addRemoveRow.Add(_addBtn);
@@ -323,8 +317,7 @@ namespace Poly_Ling.Player
             _removeBtn.style.flexGrow = 1;
             _removeBtn.clicked += () =>
             {
-                var h = GetHandler?.Invoke();
-                if (h != null) h.AddToSelection = false;
+                Surface.Set(Tool, "addToSelection", false);
                 UpdateAddRemoveStyle();
             };
             _addRemoveRow.Add(_removeBtn);
@@ -335,7 +328,7 @@ namespace Poly_Ling.Player
             _clearAllBtn.style.marginBottom = 4;
             _clearAllBtn.clicked += () =>
             {
-                GetHandler?.Invoke()?.ClearAllSelection();
+                Surface?.Invoke(Tool, "clearAllSelection");
                 Refresh();
             };
             _root.Add(_clearAllBtn);
@@ -348,7 +341,7 @@ namespace Poly_Ling.Player
                 "有効な選択モード（頂点/辺/面/線）だけを反転します。無効なモードの選択は変更しません。";
             _invertBtn.clicked += () =>
             {
-                GetHandler?.Invoke()?.InvertSelection();
+                Surface?.Invoke(Tool, "invertSelection");
                 Refresh();
             };
             _root.Add(_invertBtn);
@@ -389,7 +382,7 @@ namespace Poly_Ling.Player
             _clearFirstBtn.style.marginBottom = 3;
             _clearFirstBtn.clicked += () =>
             {
-                GetHandler?.Invoke()?.ClearShortestPathFirst();
+                Surface?.Invoke(Tool, "clearShortestPathFirst");
                 Refresh();
             };
             _shortestPathGroup.Add(_clearFirstBtn);
@@ -404,30 +397,30 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetHandler?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
+            var mode = Surface.Get(Tool, "mode", default(AdvancedSelectMode));
 
-            int modeIdx = System.Array.IndexOf(ModeValues, h.Mode);
+            int modeIdx = System.Array.IndexOf(ModeValues, mode);
             _modeDropdown?.SetValueWithoutNotify(
                 modeIdx >= 0 ? ModeLabels[modeIdx] : ModeLabels[0]);
 
-            _edgeLoopThresholdSlider?.SetValueWithoutNotify(h.EdgeLoopThreshold);
+            _edgeLoopThresholdSlider?.SetValueWithoutNotify(Surface.GetFloat(Tool, "edgeLoopThreshold"));
 
-            _uvNormalThresholdField?.SetValueWithoutNotify(h.UvNormalCountThreshold);
-            _axisThresholdField?.SetValueWithoutNotify(h.AxisDistanceThreshold);
-            _limitToSelectionToggle?.SetValueWithoutNotify(h.LimitToCurrentSelection);
+            _uvNormalThresholdField?.SetValueWithoutNotify(Surface.GetInt(Tool, "uvNormalCountThreshold"));
+            _axisThresholdField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "axisDistanceThreshold"));
+            _limitToSelectionToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "limitToCurrentSelection"));
 
-            int axisIdx = System.Array.IndexOf(AxisValues, h.AxisKind);
+            int axisIdx = System.Array.IndexOf(AxisValues, Surface.Get(Tool, "axisKind", default(SymmetryAxis)));
             _axisDropdown?.SetValueWithoutNotify(
                 axisIdx >= 0 ? AxisLabels[axisIdx] : AxisLabels[0]);
 
-            UpdateModeUI(h.Mode);
+            UpdateModeUI(mode);
             UpdateAddRemoveStyle();
 
             // ShortestPath 始点表示
-            if (h.Mode == AdvancedSelectMode.ShortestPath && _firstVertexLabel != null)
+            if (mode == AdvancedSelectMode.ShortestPath && _firstVertexLabel != null)
             {
-                int fv = h.GetShortestPathFirstVertex();
+                int fv = Surface.GetInt(Tool, "shortestPathFirstVertex", -1);
                 _firstVertexLabel.text    = fv >= 0 ? $"始点: {fv}" : "";
                 _clearFirstBtn.style.display =
                     fv >= 0 ? DisplayStyle.Flex : DisplayStyle.None;
@@ -495,7 +488,7 @@ namespace Poly_Ling.Player
 
                 if (show && _firstVertexLabel != null)
                 {
-                    int fv = GetHandler?.Invoke()?.GetShortestPathFirstVertex() ?? -1;
+                    int fv = Surface?.GetInt(Tool, "shortestPathFirstVertex", -1) ?? -1;
                     _firstVertexLabel.text = fv >= 0 ? $"始点: {fv}" : "";
                     if (_clearFirstBtn != null)
                         _clearFirstBtn.style.display =
@@ -506,8 +499,7 @@ namespace Poly_Ling.Player
 
         private void UpdateAddRemoveStyle()
         {
-            var h = GetHandler?.Invoke();
-            bool adding = h?.AddToSelection ?? true;
+            bool adding = Surface?.GetBool(Tool, "addToSelection", true) ?? true;
 
             // active に Color.white、非 active に StyleKeyword.Null を入れると、
             // ApplyDarkTheme が入れた白文字がどちらの背景でも読めなくなる

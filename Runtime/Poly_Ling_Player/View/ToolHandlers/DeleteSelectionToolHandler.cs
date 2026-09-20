@@ -18,6 +18,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("deleteSelection", Description = "選択要素の削除（確定は DeleteSelectionCommand）")]
     public class DeleteSelectionToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -66,6 +67,9 @@ namespace Poly_Ling.Player
         {
             return DeleteSelectionTool.GetDeletableCount(_project?.CurrentModel);
         }
+
+        [Poly_Ling.Data.PLToolState(Description = "削除対象の要素数（頂点 + 面 + 線分）。選択中の描画オブジェクト全部の合計")]
+        public int DeletableCount => GetDeletableCount();
 
         /// <summary>
         /// 選択されている頂点 / 面 / 線分を削除する。

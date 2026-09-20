@@ -16,7 +16,7 @@ namespace Poly_Ling.Data
     // モーフ
     // ================================================================
 
-    [PLCommand(Description = "描画オブジェクトをモーフへ変換し、指定した親の下へ入れる。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "描画オブジェクトをモーフへ変換し、指定した親の下へ入れる。")]
     public class ConvertMeshToMorphCommand : PanelCommand
     {
         /// <summary>
@@ -47,17 +47,17 @@ namespace Poly_Ling.Data
             : base(modelIndex) { SourceIndex = sourceIndex; ParentIndex = parentIndex; MorphName = morphName; Panel = panel; }
     }
 
-    [PLCommand(Description = "モーフを描画オブジェクトへ戻す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "モーフを描画オブジェクトへ戻す。")]
     public class ConvertMorphToMeshCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public ConvertMorphToMeshCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
 
-    [PLCommand(Description = "指定したモーフをまとめた表示グループを作る。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定したモーフをまとめた表示グループを作る。")]
     public class CreateMorphSetCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphSetName",
@@ -79,7 +79,7 @@ namespace Poly_Ling.Data
     // モーフプレビュー
     // ================================================================
 
-    [PLCommand(Description = "指定モーフの試し表示を始める。確定するまで頂点は元へ戻せる。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定モーフの試し表示を始める。確定するまで頂点は元へ戻せる。")]
     public class StartMorphPreviewCommand : PanelCommand
     {
         [PLParam(TextKey = "PreviewMorphIndices",
@@ -89,7 +89,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MorphIndices = morphIndices; }
     }
 
-    [PLCommand(Description = "試し表示中のモーフの効き具合を変える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "試し表示中のモーフの効き具合を変える。")]
     public class ApplyMorphPreviewCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphPreviewWeight",
@@ -100,7 +100,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { Weight = weight; }
     }
 
-    [PLCommand(Description = "モーフの試し表示を終え、その時点の形で確定する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフの試し表示を終え、その時点の形で確定する。")]
     public class EndMorphPreviewCommand : PanelCommand
     {
         public EndMorphPreviewCommand(int modelIndex) : base(modelIndex) { }
@@ -110,7 +110,7 @@ namespace Poly_Ling.Data
     // モーフ全選択/全解除
     // ================================================================
 
-    [PLCommand(Description = "モーフをすべて選択する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "モーフをすべて選択する。")]
     public class SelectAllMorphsCommand : PanelCommand
     {
         [PLParam(TextKey = "AllMorphIndices",
@@ -120,7 +120,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { AllMorphIndices = allMorphIndices; }
     }
 
-    [PLCommand(Description = "モーフの選択をすべて解除する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "モーフの選択をすべて解除する。")]
     public class DeselectAllMorphsCommand : PanelCommand
     {
         public DeselectAllMorphsCommand(int modelIndex) : base(modelIndex) { }
@@ -135,7 +135,7 @@ namespace Poly_Ling.Data
     /// 基準モデルに MorphExpression として登録する。
     /// Undo 記録付き。
     /// </summary>
-    [PLCommand(Description = "基準モデルとモーフモデルの差分から頂点モーフを生成し、 基準モデルに MorphExpression として登録する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "基準モデルとモーフモデルの差分から頂点モーフを生成し、 基準モデルに MorphExpression として登録する。")]
     public class CreateMorphFromDiffCommand : PanelCommand
     {
         /// <summary>基準モデルのインデックス（プロジェクト内）</summary>

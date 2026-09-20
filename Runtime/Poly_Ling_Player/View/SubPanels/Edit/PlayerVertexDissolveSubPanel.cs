@@ -12,7 +12,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerVertexDissolveSubPanel
     {
-        public Func<VertexDissolveToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface Surface;
+        private const string Tool = "vertexDissolve";
         public Func<ProjectContext>  GetView;
         public Action<PanelCommand>  SendCommand;
 
@@ -90,8 +92,7 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
             UpdateStats();
         }
@@ -102,26 +103,26 @@ namespace Poly_Ling.Player
 
         private void UpdateStats()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            var info = h.Inspect();
+            var info = Surface.GetGroup(Tool, "inspect");
+            int skipped = info.Item("skippedCount", 0);
 
-            if (!info.CanExecute)
+            if (!info.Item("canExecute", false))
             {
                 if (_targetLabel != null)
-                    _targetLabel.text = $"選択中: {h.SelectedVertexCount} 頂点  /  除外: {info.SkippedCount} 頂点";
-                if (_statusLabel != null) _statusLabel.text = info.Reason ?? "";
+                    _targetLabel.text = $"選択中: {Surface.GetInt(Tool, "selectedVertexCount")} 頂点  /  除外: {skipped} 頂点";
+                if (_statusLabel != null) _statusLabel.text = info.Item("reason", "");
                 _dissolveBtn?.SetEnabled(false);
                 return;
             }
 
             if (_targetLabel != null)
-                _targetLabel.text = $"対象: {info.ObjectCount} オブジェクト / {info.TargetCount} 頂点"
-                                  + (info.SkippedCount > 0 ? $"　（除外 {info.SkippedCount}）" : "");
+                _targetLabel.text = $"対象: {info.Item("objectCount", 0)} オブジェクト / {info.Item("targetCount", 0)} 頂点"
+                                  + (skipped > 0 ? $"　（除外 {skipped}）" : "");
 
             if (_statusLabel != null)
-                _statusLabel.text = $"{info.FaceTotal} 面を統合し、合計 {info.RingTotal} 頂点ぶんの面を作ります";
+                _statusLabel.text = $"{info.Item("faceTotal", 0)} 面を統合し、合計 {info.Item("ringTotal", 0)} 頂点ぶんの面を作ります";
 
             _dissolveBtn?.SetEnabled(true);
         }

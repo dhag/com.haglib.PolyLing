@@ -33,6 +33,7 @@ namespace Poly_Ling.Player
     /// 軸ギズモ＝拡大縮小表示中なら拡大縮小、そうでなければ移動。
     /// </para>
     /// </summary>
+    [Poly_Ling.Data.PLTool("primitivePlace", Description = "図形のビューポート配置（PrimitivePlaceToolHandler）")]
     public class PrimitivePlaceToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         /// <summary>ドラッグ中の操作種別。</summary>
@@ -81,6 +82,7 @@ namespace Poly_Ling.Player
         /// 表示設定。Viewer が生成した 1 個をサブパネルと共有する。
         /// 未設定にしないため既定インスタンスを持たせておく。
         /// </summary>
+        [Poly_Ling.Data.PLToolSettings(Name = "settings", Description = "PrimitivePlaceSettings")]
         public PrimitivePlaceSettings Settings { get; set; } = new PrimitivePlaceSettings();
 
         /// <summary>軸ギズモ（矢印またはキューブ）を出すか。</summary>

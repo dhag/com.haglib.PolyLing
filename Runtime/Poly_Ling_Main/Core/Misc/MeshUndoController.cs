@@ -282,14 +282,61 @@ namespace Poly_Ling.UndoSystem
 
         /// <summary>
         /// MeshObjectを直接設定
+        ///
+        /// 【書き込み先】渡された MeshObject を持っている MeshContext へ書く。
+        ///   MeshUndoContext の書き込み先は既定で「先頭の選択メッシュ」なので、
+        ///   そのまま書くと、選択中の別オブジェクトの MeshContext へ渡した MeshObject が
+        ///   入り、2 つの描画オブジェクトが同じ MeshObject を共有してしまう
+        ///   （名前も MeshObject 側にあるため道連れで変わる）。
+        ///   持ち主を ParentModelContext から探し、書く間だけ ExplicitMeshContext を
+        ///   持ち主へ切り替えて元へ戻す（指定を残すと、SetMeshObject を呼ばない
+        ///   Undo 記録が古い指定先へ解決されるため）。
+        ///   持ち主が見つからず、既定の解決先も別の MeshObject を持つ場合は、
+        ///   MeshObject を書かない（共有を作らない）。
         /// </summary>
         public void SetMeshObject(MeshObject meshObject, Mesh targetMesh = null)
+        {
+            var owner = FindOwnerMeshContext(meshObject);
+            var resolved = _meshContext.ResolvedMeshContext;
+
+            if (owner != null && !ReferenceEquals(owner, resolved))
+            {
+                var prevExplicit = _meshContext.ExplicitMeshContext;
+                _meshContext.ExplicitMeshContext = owner;
+                try
+                {
+                    WriteMeshObjectState(meshObject, targetMesh);
+                }
+                finally
+                {
+                    _meshContext.ExplicitMeshContext = prevExplicit;
+                }
+            }
+            else if (owner != null || resolved == null || ReferenceEquals(resolved.MeshObject, meshObject))
+            {
+                WriteMeshObjectState(meshObject, targetMesh);
+            }
+
+            _meshContext.SelectedVertices.Clear();
+            _vertexEditStack.Clear();
+        }
+
+        /// <summary>SetMeshObject の書き込み本体（解決先へ書く）。</summary>
+        private void WriteMeshObjectState(MeshObject meshObject, Mesh targetMesh)
         {
             _meshContext.MeshObject = meshObject;
             _meshContext.TargetMesh = targetMesh;
             _meshContext.OriginalPositions = (Vector3[])meshObject.Positions.Clone();
-            _meshContext.SelectedVertices.Clear();
-            _vertexEditStack.Clear();
+        }
+
+        /// <summary>ParentModelContext のメッシュ一覧から、その MeshObject を持つ MeshContext を探す。</summary>
+        private MeshContext FindOwnerMeshContext(MeshObject meshObject)
+        {
+            var list = _meshContext.ParentModelContext?.MeshContextList;
+            if (meshObject == null || list == null) return null;
+            foreach (var mc in list)
+                if (mc != null && ReferenceEquals(mc.MeshObject, meshObject)) return mc;
+            return null;
         }
 
         /// <summary>

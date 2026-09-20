@@ -546,6 +546,10 @@ namespace Poly_Ling.Ops
 
                 // --- 面を作り直す（頂点順を反転） ---
                 mirrorMo.Faces.Clear();
+                // 頂点の索引は実体と同じなので、線分群は実体のものをそのまま写す。
+                mirrorMo.LineGroups = LineGroupOps.CloneList(realMo);
+                // ハンドルのずれも頂点と同じ鏡映で写す。
+                LineGroupOps.MirrorHandles(mirrorMo.LineGroups, v => MirrorNormal(axis, v));
                 foreach (var rf in realMo.Faces)
                 {
                     if (rf == null) continue;

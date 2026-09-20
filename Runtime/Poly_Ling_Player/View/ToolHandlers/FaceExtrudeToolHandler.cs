@@ -12,6 +12,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("faceExtrude", Description = "FaceExtrudeTool（確定は FaceExtrudeCommand）")]
     public class FaceExtrudeToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -39,9 +40,13 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "FaceExtrudeTool.Type")]
         public FaceExtrudeSettings.ExtrudeType Type { get => _tool.Type; set => _tool.Type = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "FaceExtrudeTool.BevelScale")]
         public float BevelScale        { get => _tool.BevelScale;        set => _tool.BevelScale = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "FaceExtrudeTool.IndividualNormals")]
         public bool  IndividualNormals { get => _tool.IndividualNormals; set => _tool.IndividualNormals = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "FaceExtrudeTool.DragSensitivity")]
         public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
 
         // ================================================================

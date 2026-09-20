@@ -14,7 +14,6 @@ namespace Poly_Ling.Player
 {
     public class PlayerFlipFaceSubPanel
     {
-        public Func<FlipFaceToolHandler> GetH;
         public Func<ProjectContext>      GetView;
         public Action<PanelCommand>      SendCommand;
 

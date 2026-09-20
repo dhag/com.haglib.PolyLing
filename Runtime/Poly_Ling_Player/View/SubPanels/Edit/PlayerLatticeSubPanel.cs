@@ -17,6 +17,7 @@
 // Runtime/Poly_Ling_Player/View/SubPanels/Edit/ に配置
 
 using System;
+using Poly_Ling.Data;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -28,7 +29,9 @@ namespace Poly_Ling.Player
         // 外部コールバック（Viewer から設定）
         // ================================================================
 
-        public Func<LatticeToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "lattice";
 
         // ================================================================
         // ウィジェット
@@ -145,7 +148,7 @@ namespace Poly_Ling.Player
             _cellsRow.Add(_cellsX); _cellsRow.Add(_cellsY); _cellsRow.Add(_cellsZ);
             _root.Add(_cellsRow);
 
-            _fitBtn = new Button(() => { GetH?.Invoke()?.FitToSelection(); Refresh(); })
+            _fitBtn = new Button(() => { Surface?.Invoke(Tool, "fitToSelection"); Refresh(); })
             { text = "選択フィット" };
             _fitBtn.style.marginBottom = 2;
             _root.Add(_fitBtn);
@@ -174,16 +177,16 @@ namespace Poly_Ling.Player
             _root.Add(_boundsGroup);
 
             // ── 状態遷移 ──────────────────────────────────────────────
-            _beginBtn = new Button(() => { GetH?.Invoke()?.BeginPlacement(); Refresh(); })
+            _beginBtn = new Button(() => { Surface?.Invoke(Tool, "beginPlacement"); Refresh(); })
             { text = "格子の姿勢設定" };
             _beginBtn.style.marginTop = 6;
             _root.Add(_beginBtn);
 
-            _deformBtn = new Button(() => { GetH?.Invoke()?.BeginDeform(); Refresh(); })
+            _deformBtn = new Button(() => { Surface?.Invoke(Tool, "beginDeform"); Refresh(); })
             { text = "変形開始" };
             _root.Add(_deformBtn);
 
-            _resetBtn = new Button(() => { GetH?.Invoke()?.ResetDeformation(); Refresh(); })
+            _resetBtn = new Button(() => { Surface?.Invoke(Tool, "resetDeformation"); Refresh(); })
             { text = "変形リセット" };
             _root.Add(_resetBtn);
 
@@ -214,10 +217,10 @@ namespace Poly_Ling.Player
 
             // 確定はコマンド経由。CommitViaCommand が開始位置へ戻して
             // ApplyLatticeDeformCommand を送り、その受け口が変形と Undo 記録を行う。
-            _applyBtn = new Button(() => { GetH?.Invoke()?.CommitViaCommand(); Refresh(); }) { text = "適用" };
+            _applyBtn = new Button(() => { Surface?.Invoke(Tool, "commitViaCommand"); Refresh(); }) { text = "適用" };
             _applyBtn.style.flexGrow = 1; _applyBtn.style.marginRight = 2;
 
-            _cancelBtn = new Button(() => { GetH?.Invoke()?.Cancel(); Refresh(); }) { text = "取消" };
+            _cancelBtn = new Button(() => { Surface?.Invoke(Tool, "cancel"); Refresh(); }) { text = "取消" };
             _cancelBtn.style.flexGrow = 1;
 
             btnRow.Add(_applyBtn); btnRow.Add(_cancelBtn);
@@ -248,10 +251,9 @@ namespace Poly_Ling.Player
 
         private void ApplyCells()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            h.SetCells(_cellsX.value, _cellsY.value, _cellsZ.value);
+            Surface.Invoke(Tool, "setCells", ("x", _cellsX.value), ("y", _cellsY.value), ("z", _cellsZ.value));
             Refresh();
         }
 
@@ -274,19 +276,17 @@ namespace Poly_Ling.Player
         /// </summary>
         private void ApplyBounds()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            h.SetBounds(
-                new Vector3(_centerX.value, _centerY.value, _centerZ.value),
-                new Vector3(_sizeX.value,   _sizeY.value,   _sizeZ.value));
+            Surface.Invoke(Tool, "setBounds",
+                ("center", new Vector3(_centerX.value, _centerY.value, _centerZ.value)),
+                ("size",   new Vector3(_sizeX.value,   _sizeY.value,   _sizeZ.value)));
             Refresh();
         }
 
         private void SetMode(LatticeToolHandler.PointGizmoMode mode)
         {
-            var h = GetH?.Invoke();
-            if (h != null) h.Mode = mode;
+            Surface?.Set(Tool, "mode", mode);
             Refresh();
         }
 
@@ -296,10 +296,10 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH?.Invoke();
             if (_root == null) return;
 
-            var state = h?.State ?? LatticeToolHandler.LatticeState.Idle;
+            var state = Surface?.Get(Tool, "state", LatticeToolHandler.LatticeState.Idle)
+                        ?? LatticeToolHandler.LatticeState.Idle;
             bool idle      = state == LatticeToolHandler.LatticeState.Idle;
             bool placement = state == LatticeToolHandler.LatticeState.Placement;
             bool deform    = state == LatticeToolHandler.LatticeState.Deform;
@@ -307,14 +307,14 @@ namespace Poly_Ling.Player
             _suppressCallback = true;
             try
             {
-                if (h != null)
+                if (Surface != null)
                 {
-                    _cellsX?.SetValueWithoutNotify(h.Grid.CellsX);
-                    _cellsY?.SetValueWithoutNotify(h.Grid.CellsY);
-                    _cellsZ?.SetValueWithoutNotify(h.Grid.CellsZ);
+                    _cellsX?.SetValueWithoutNotify(Surface.GetInt(Tool, "gridCellsX"));
+                    _cellsY?.SetValueWithoutNotify(Surface.GetInt(Tool, "gridCellsY"));
+                    _cellsZ?.SetValueWithoutNotify(Surface.GetInt(Tool, "gridCellsZ"));
 
-                    Vector3 c = h.Grid.BaseCenter;
-                    Vector3 sz = h.Grid.BaseSize;
+                    Vector3 c  = Surface.Get(Tool, "gridBaseCenter", Vector3.zero);
+                    Vector3 sz = Surface.Get(Tool, "gridBaseSize", Vector3.zero);
                     _centerX?.SetValueWithoutNotify(c.x);
                     _centerY?.SetValueWithoutNotify(c.y);
                     _centerZ?.SetValueWithoutNotify(c.z);
@@ -349,16 +349,16 @@ namespace Poly_Ling.Player
 
             if (_infoLabel != null)
             {
-                if (h == null || idle)
+                if (Surface == null || idle)
                 {
                     _infoLabel.text = "頂点を選択してから開始してください。";
                 }
                 else
                 {
                     _infoLabel.text =
-                        $"対象 {h.AffectedCount} 頂点 / 格子点 {h.ControlPointCount} 個"
+                        $"対象 {Surface.GetInt(Tool, "affectedCount")} 頂点 / 格子点 {Surface.GetInt(Tool, "controlPointCount")} 個"
                         + (deform
-                            ? $" / 選択 {h.SelectedPointCount} 個"
+                            ? $" / 選択 {Surface.GetInt(Tool, "selectedPointCount")} 個"
                             : "（対象頂点は「選択フィット」か「変形開始」で取り直します）");
                 }
             }
@@ -366,7 +366,8 @@ namespace Poly_Ling.Player
 
         private void RepaintModeButtons()
         {
-            var cur = GetH?.Invoke()?.Mode ?? LatticeToolHandler.PointGizmoMode.Move;
+            var cur = Surface?.Get(Tool, "mode", LatticeToolHandler.PointGizmoMode.Move)
+                      ?? LatticeToolHandler.PointGizmoMode.Move;
 
             if (_modeMoveBtn != null)
                 _modeMoveBtn.style.backgroundColor =

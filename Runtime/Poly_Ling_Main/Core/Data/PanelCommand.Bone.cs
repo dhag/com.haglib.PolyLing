@@ -16,20 +16,20 @@ namespace Poly_Ling.Data
     // BonePose
     // ================================================================
 
-    [PLCommand(Description = "指定ボーンのポーズ層を作り直して初期状態にする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定ボーンのポーズ層を作り直して初期状態にする。")]
     public class InitBonePoseCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public InitBonePoseCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
 
-    [PLCommand(Description = "指定ボーンのポーズ層を有効・無効にする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定ボーンのポーズ層を有効・無効にする。")]
     public class SetBonePoseActiveCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -40,20 +40,20 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; Active = active; }
     }
 
-    [PLCommand(Description = "指定ボーンのポーズ層をすべて空にする。姿勢は既定へ戻る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定ボーンのポーズ層をすべて空にする。姿勢は既定へ戻る。")]
     public class ResetBonePoseLayersCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public ResetBonePoseLayersCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
 
-    [PLCommand(Description = "今のポーズをバインドポーズへ焼き込み、ポーズ層を空にする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "今のポーズをバインドポーズへ焼き込み、ポーズ層を空にする。")]
     public class BakePoseToBindPoseCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
         public BakePoseToBindPoseCommand(int modelIndex, int[] masterIndices)
@@ -65,12 +65,12 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>BoneTransform の Position/Rotation/Scale 単一軸値変更</summary>
-    [PLCommand(Description = "BoneTransform の Position / Rotation / Scale の 1 軸だけを変える。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "BoneTransform の Position / Rotation / Scale の 1 軸だけを変える。")]
     public class SetBoneTransformValueCommand : PanelCommand
     {
         public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }
 
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -94,7 +94,7 @@ namespace Poly_Ling.Data
     /// 効かせ先は描画（UnifiedBufferManager の行列表）と書き戻し（ToolContext）の 2 つ。
     /// 規約は PolyLing_姿勢の規約.md の 10 章。
     /// </summary>
-    [PLCommand(Description = "表示の姿勢を切り替える。true でバインドポーズ表示。データは変えない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "表示の姿勢を切り替える。true でバインドポーズ表示。データは変えない。")]
     public class SetPoseDisplayModeCommand : PanelCommand
     {
         [PLParam(TextKey = "ShowBindPose",
@@ -118,10 +118,10 @@ namespace Poly_Ling.Data
     /// 対象はボーンに限らない。描画メッシュ自体がボーンと同じ階層構造を持つ
     /// （メッシュフィルタ相当）ため、非スキンドの描画オブジェクトへも入る。
     /// </summary>
-    [PLCommand(Description = "ポーズ層（Manual）の Position / Rotation の 1 軸だけを変える。バインド側は動かさない。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ポーズ層（Manual）の Position / Rotation の 1 軸だけを変える。バインド側は動かさない。")]
     public class SetBonePoseValueCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の masterIndex 配列。ボーンでも描画オブジェクトでもよい", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -145,10 +145,10 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>BoneTransform スライダードラッグ開始（Undo スナップショット取得）</summary>
-    [PLCommand(Description = "BoneTransform のスライダー操作を始める（Undo のスナップショットを取る）。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "BoneTransform のスライダー操作を始める（Undo のスナップショットを取る）。")]
     public class BeginBoneTransformSliderDragCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -169,7 +169,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>BoneTransform スライダードラッグ終了（Undo 記録コミット）</summary>
-    [PLCommand(Description = "BoneTransform のスライダー操作を終える（Undo を記録する）。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "BoneTransform のスライダー操作を終える（Undo を記録する）。")]
     public class EndBoneTransformSliderDragCommand : PanelCommand
     {
         [PLParam(TextKey = "BoneDragDescription",
@@ -183,7 +183,7 @@ namespace Poly_Ling.Data
     /// 現在表示中のポーズ（BonePoseData 合成）を頂点へ焼き込み、ポーズ層をクリアして
     /// 焼き込み後の状態を新しいデフォルト・バインドにリセットする（この姿勢で確定）。
     /// </summary>
-    [PLCommand(Description = "現在表示中のポーズ（BonePoseData 合成）を頂点へ焼き込み、ポーズ層をクリアして 焼き込み後の状態を新しいデフォルト・バインドにリセットする（この姿勢で確定）。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "現在表示中のポーズ（BonePoseData 合成）を頂点へ焼き込み、ポーズ層をクリアして 焼き込み後の状態を新しいデフォルト・バインドにリセットする（この姿勢で確定）。")]
     public class FreezeCurrentPoseCommand : PanelCommand
     {
         public FreezeCurrentPoseCommand(int modelIndex) : base(modelIndex) { }
@@ -201,7 +201,7 @@ namespace Poly_Ling.Data
     /// このコマンドは既存モデルへボーン鎖・スキンドメッシュ・揺れ付帯データ・
     /// コライダーを一度に足す。生成規則は SpringBoneTestRigBuilder が正典。
     /// </summary>
-    [PLCommand(Description = "スプリングボーン検証用のダミー装備（ボーン鎖・スキンドメッシュ・揺れ付帯データ・コライダー）を一度に生成する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "スプリングボーン検証用のダミー装備（ボーン鎖・スキンドメッシュ・揺れ付帯データ・コライダー）を一度に生成する。")]
     public class BuildSpringBoneTestRigCommand : PanelCommand
     {
         /// <summary>生成パラメータ。null なら既定値。</summary>
@@ -230,7 +230,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>プレビューのマッピングをモデルへ適用する。</summary>
-    [PLCommand(Description = "Humanoid ボーンの割当（プレビューのマッピング）をモデルへ適用する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "Humanoid ボーンの割当（プレビューのマッピング）をモデルへ適用する。")]
     public class ApplyHumanoidMappingCommand : PanelCommand
     {
         /// <summary>
@@ -303,7 +303,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>モデルのHumanoidマッピングをクリアする</summary>
-    [PLCommand(Description = "モデルの Humanoid ボーン割当を消す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モデルの Humanoid ボーン割当を消す。")]
     public class ClearHumanoidMappingCommand : PanelCommand
     {
         public ClearHumanoidMappingCommand(int modelIndex) : base(modelIndex) { }
@@ -322,10 +322,10 @@ namespace Poly_Ling.Data
     ///   ラジアンへの変換はディスパッチャで行う。
     ///   AxisLength だけは角度ではないので変換しない。
     /// </summary>
-    [PLCommand(Description = "選んだボーンへ Humanoid マッスル可動域を書き込む。角度は度。既にあれば上書きする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選んだボーンへ Humanoid マッスル可動域を書き込む。角度は度。既にあれば上書きする。")]
     public class SetHumanLimitCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象ボーンの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -364,10 +364,10 @@ namespace Poly_Ling.Data
     /// マッスル可動域を外して Unity 既定へ戻す。
     /// 外すと、そのボーンは CanonMuscleTable の定義値で駆動される。
     /// </summary>
-    [PLCommand(Description = "選んだボーンから Humanoid マッスル可動域を外し、Unity 既定へ戻す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選んだボーンから Humanoid マッスル可動域を外し、Unity 既定へ戻す。")]
     public class ClearHumanLimitCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象ボーンの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -387,7 +387,7 @@ namespace Poly_Ling.Data
     /// 使うのは Editor のプレファブ書き出し（Avatar 生成）だけで、
     /// Player 内の表示にも VRM 出力にも影響しない。
     /// </summary>
-    [PLCommand(Description = "Humanoid Avatar のリターゲット設定8項目をモデルへ書き込む。Avatar 生成にだけ効く。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "Humanoid Avatar のリターゲット設定8項目をモデルへ書き込む。Avatar 生成にだけ効く。")]
     public class SetAvatarRetargetCommand : PanelCommand
     {
         [PLParam(TextKey = "AvatarUpperArmTwist",
@@ -442,7 +442,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>Avatar リターゲット設定を未設定へ戻す。</summary>
-    [PLCommand(Description = "Avatar リターゲット設定を未設定へ戻す。Avatar 生成は Unity の既定を使う。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "Avatar リターゲット設定を未設定へ戻す。Avatar 生成は Unity の既定を使う。")]
     public class ClearAvatarRetargetCommand : PanelCommand
     {
         public ClearAvatarRetargetCommand(int modelIndex) : base(modelIndex) { }

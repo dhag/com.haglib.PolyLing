@@ -14,7 +14,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerLineExtrudeSubPanel
     {
-        public Func<LineExtrudeToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                 Surface;
+        private const string Tool = "lineExtrude";
         public Func<ProjectContext>         GetView;
         public Action<PanelCommand>         SendCommand;
 
@@ -108,7 +110,7 @@ namespace Poly_Ling.Player
             _infoLabel = InfoLabel("選択ライン: 0  /  検出ループ: 0");
             _root.Add(_infoLabel);
 
-            var analyzeBtn = new Button(() => { GetH()?.AnalyzeLoops(); Refresh(); })
+            var analyzeBtn = new Button(() => { Surface?.Invoke(Tool, "analyzeLoops"); Refresh(); })
                 { text = "Analyze Loops" };
             analyzeBtn.style.marginTop = 3; analyzeBtn.style.marginBottom = 4;
             _root.Add(analyzeBtn);
@@ -133,7 +135,7 @@ namespace Poly_Ling.Player
             _thicknessField.style.flexGrow = 1;
             _thicknessField.RegisterValueChangedCallback(e =>
             {
-                var h = GetH(); if (h != null) h.Thickness = Mathf.Max(0f, e.newValue);
+                Surface?.Set(Tool, "thickness", Mathf.Max(0f, e.newValue));
                 _thicknessField.SetValueWithoutNotify(Mathf.Max(0f, e.newValue));
                 UpdateEdgeParamVisibility();
             });
@@ -147,7 +149,7 @@ namespace Poly_Ling.Player
             _scaleField.RegisterValueChangedCallback(e =>
             {
                 float v = Mathf.Max(0.001f, e.newValue);
-                var h = GetH(); if (h != null) h.Scale = v;
+                Surface?.Set(Tool, "scale", v);
                 _scaleField.SetValueWithoutNotify(v);
             });
             scaleRow.Add(_scaleField);
@@ -155,7 +157,7 @@ namespace Poly_Ling.Player
 
             // FlipY
             _flipYToggle = new Toggle("Y軸反転") { value = false };
-            _flipYToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.FlipY = e.newValue; });
+            _flipYToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "flipY", e.newValue));
             _root.Add(_flipYToggle);
 
             // エッジ設定（Thickness > 0 のときのみ表示）
@@ -166,7 +168,7 @@ namespace Poly_Ling.Player
             _segFrontSlider = new SliderInt(0, 8) { value = 0 };
             _segFrontSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetH(); if (h != null) h.SegmentsFront = e.newValue;
+                Surface?.Set(Tool, "segmentsFront", e.newValue);
             });
             _edgeParamsGroup.Add(_segFrontSlider);
 
@@ -176,7 +178,7 @@ namespace Poly_Ling.Player
             _edgeFrontField.RegisterValueChangedCallback(e =>
             {
                 float v = Mathf.Max(0.001f, e.newValue);
-                var h = GetH(); if (h != null) h.EdgeSizeFront = v;
+                Surface?.Set(Tool, "edgeSizeFront", v);
                 _edgeFrontField.SetValueWithoutNotify(v);
             });
             efRow.Add(_edgeFrontField);
@@ -186,7 +188,7 @@ namespace Poly_Ling.Player
             _segBackSlider = new SliderInt(0, 8) { value = 0 };
             _segBackSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetH(); if (h != null) h.SegmentsBack = e.newValue;
+                Surface?.Set(Tool, "segmentsBack", e.newValue);
             });
             _edgeParamsGroup.Add(_segBackSlider);
 
@@ -196,14 +198,14 @@ namespace Poly_Ling.Player
             _edgeBackField.RegisterValueChangedCallback(e =>
             {
                 float v = Mathf.Max(0.001f, e.newValue);
-                var h = GetH(); if (h != null) h.EdgeSizeBack = v;
+                Surface?.Set(Tool, "edgeSizeBack", v);
                 _edgeBackField.SetValueWithoutNotify(v);
             });
             ebRow.Add(_edgeBackField);
             _edgeParamsGroup.Add(ebRow);
 
             _edgeInwardToggle = new Toggle("内向きエッジ") { value = false };
-            _edgeInwardToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.EdgeInward = e.newValue; });
+            _edgeInwardToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "edgeInward", e.newValue));
             _edgeParamsGroup.Add(_edgeInwardToggle);
 
             UpdateEdgeParamVisibility();
@@ -216,23 +218,22 @@ namespace Poly_Ling.Player
 
             _executeBtn = new Button(() =>
             {
-                var h = GetH();
                 var targets = ActiveMasterIndices();
-                if (h == null || targets == null) return;
+                if (Surface == null || targets == null) return;
 
                 SendCommand?.Invoke(new LineExtrudeCommand(
                     ModelIndex, targets,
                     meshName:      "LineExtrude",
                     addToCurrent:  _addToCurrentToggle?.value ?? false,
-                    thickness:     h.Thickness,
-                    scale:         h.Scale,
-                    offset:        h.Offset,
-                    flipY:         h.FlipY,
-                    segmentsFront: h.SegmentsFront,
-                    segmentsBack:  h.SegmentsBack,
-                    edgeSizeFront: h.EdgeSizeFront,
-                    edgeSizeBack:  h.EdgeSizeBack,
-                    edgeInward:    h.EdgeInward));
+                    thickness:     Surface.GetFloat(Tool, "thickness"),
+                    scale:         Surface.GetFloat(Tool, "scale"),
+                    offset:        Surface.Get(Tool, "offset", Vector2.zero),
+                    flipY:         Surface.GetBool(Tool, "flipY"),
+                    segmentsFront: Surface.GetInt(Tool, "segmentsFront"),
+                    segmentsBack:  Surface.GetInt(Tool, "segmentsBack"),
+                    edgeSizeFront: Surface.GetFloat(Tool, "edgeSizeFront"),
+                    edgeSizeBack:  Surface.GetFloat(Tool, "edgeSizeBack"),
+                    edgeInward:    Surface.GetBool(Tool, "edgeInward")));
                 Refresh();
             }) { text = "押し出し実行" };
             _executeBtn.style.height    = 30;
@@ -248,41 +249,39 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            int lineCount = h.SelectedLineCount;
-            int loopCount = h.DetectedLoopCount;
+            int lineCount = Surface.GetInt(Tool, "selectedLineCount");
+            int loopCount = Surface.GetInt(Tool, "detectedLoopCount");
             _infoLabel.text = $"選択ライン: {lineCount}  /  検出ループ: {loopCount}";
 
-            // ループ詳細リスト更新
+            // ループ詳細リスト更新（行の文言はハンドラが作る）
             _loopListContainer?.Clear();
-            var summaries = h.GetLoopSummaries();
-            bool hasLoops = summaries != null && summaries.Count > 0;
+            var loopLines = Surface.Get(Tool, "loopLines", System.Array.Empty<string>());
+            bool hasLoops = loopLines.Length > 0;
 
             if (_noLoopsHint != null)
                 _noLoopsHint.style.display = hasLoops ? DisplayStyle.None : DisplayStyle.Flex;
 
             if (hasLoops)
             {
-                foreach (var loop in summaries)
+                foreach (var line in loopLines)
                 {
-                    string t = loop.IsHole ? "Hole" : "Outer";
-                    var lbl = new Label($"  Loop {loop.Index + 1}: {loop.VertexCount} verts ({t})");
+                    var lbl = new Label("  " + line);
                     lbl.style.fontSize = 10;
                     _loopListContainer.Add(lbl);
                 }
             }
 
             // パラメータ同期
-            _thicknessField?.SetValueWithoutNotify(h.Thickness);
-            _scaleField?.SetValueWithoutNotify(h.Scale);
-            _flipYToggle?.SetValueWithoutNotify(h.FlipY);
-            _segFrontSlider?.SetValueWithoutNotify(h.SegmentsFront);
-            _segBackSlider?.SetValueWithoutNotify(h.SegmentsBack);
-            _edgeFrontField?.SetValueWithoutNotify(h.EdgeSizeFront);
-            _edgeBackField?.SetValueWithoutNotify(h.EdgeSizeBack);
-            _edgeInwardToggle?.SetValueWithoutNotify(h.EdgeInward);
+            _thicknessField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "thickness"));
+            _scaleField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "scale"));
+            _flipYToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "flipY"));
+            _segFrontSlider?.SetValueWithoutNotify(Surface.GetInt(Tool, "segmentsFront"));
+            _segBackSlider?.SetValueWithoutNotify(Surface.GetInt(Tool, "segmentsBack"));
+            _edgeFrontField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "edgeSizeFront"));
+            _edgeBackField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "edgeSizeBack"));
+            _edgeInwardToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "edgeInward"));
 
             UpdateEdgeParamVisibility();
 
@@ -299,7 +298,7 @@ namespace Poly_Ling.Player
         private void UpdateEdgeParamVisibility()
         {
             if (_edgeParamsGroup == null) return;
-            float thickness = GetH()?.Thickness ?? _thicknessField?.value ?? 0f;
+            float thickness = Surface?.GetFloat(Tool, "thickness") ?? _thicknessField?.value ?? 0f;
             _edgeParamsGroup.style.display = thickness > 0.001f ? DisplayStyle.Flex : DisplayStyle.None;
         }
 

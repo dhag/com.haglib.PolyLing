@@ -472,8 +472,22 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // プレビューは対象の法線を直接書き換えるので、始める前に担当者判定とロック取得（H-2）。
+            if (!_previewLocked && TryLockForPreview != null)
+            {
+                if (!TryLockForPreview(new List<int>(_targetIndices)))
+                {
+                    _statusLabel.style.color = new StyleColor(new Color(1f, 0.4f, 0.4f));
+                    _statusLabel.text = "他の操作者が作業中のため開始できません";
+                    _applySection.style.display = DisplayStyle.None;
+                    return;
+                }
+                _previewLocked = true;
+            }
+
             if (!_preview.Start(_model, samples))
             {
+                if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
                 _statusLabel.style.color = new StyleColor(new Color(1f, 0.4f, 0.4f));
                 _statusLabel.text = "プレビューを開始できません";
                 _applySection.style.display = DisplayStyle.None;
@@ -556,34 +570,11 @@ namespace Poly_Ling.Player
             // 元法線へ戻しておく（二重適用の防止）。
             EndPreview();
 
-            if (_panelContext != null)
-            {
-                _panelContext.SendCommand(new ApplyNormalTransplantCommand(
-                    _getModelIndex?.Invoke() ?? 0,
-                    beforeIndex, afterIndex, targets,
-                    strength, _spherical, _allowNearest));
-            }
-            else
-            {
-                // フォールバック（PanelContext未設定時）
-                OnRequestUpdateTransform?.Invoke();
-                var samples = NormalTransplantOperation.ComputeSamples(
-                    _model, beforeIndex, afterIndex, targets,
-                    _spherical
-                        ? NormalPrismSolver.TriangleBlendMode.Spherical
-                        : NormalPrismSolver.TriangleBlendMode.Linear,
-                    _allowNearest, GetWorldPositions, out _);
-
-                if (samples != null)
-                {
-                    var pv = new NormalTransplantPreviewState();
-                    if (pv.Start(_model, samples))
-                    {
-                        NormalTransplantOperation.Apply(_model, pv, strength, BuildToolCtx());
-                        OnNotifyTopologyChanged?.Invoke();
-                    }
-                }
-            }
+            // 確定はコマンドだけで行う（本体も SetCommandContext を渡す。操作経路統一計画.md J）。
+            _panelContext?.SendCommand(new ApplyNormalTransplantCommand(
+                _getModelIndex?.Invoke() ?? 0,
+                beforeIndex, afterIndex, targets,
+                strength, _spherical, _allowNearest));
 
             _strength = 1f;
             Refresh();
@@ -601,6 +592,7 @@ namespace Poly_Ling.Player
 
         private void EndPreview()
         {
+            if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
             if (!_preview.IsActive) return;
 
             _preview.Restore(_model);
@@ -608,6 +600,18 @@ namespace Poly_Ling.Player
             _preview.End(_model);
             OnRepaint?.Invoke();
         }
+
+        // ================================================================
+        // プレビュー中のロック（操作経路統一計画.md H-2）
+        // ================================================================
+
+        /// <summary>プレビューを始める前に、対象の担当者判定とロック取得を行う。null なら常に許可。</summary>
+        public Func<IList<int>, bool> TryLockForPreview;
+
+        /// <summary>プレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action UnlockAfterPreview;
+
+        private bool _previewLocked;
 
         // ================================================================
         // ToolContext 生成（最小構成）

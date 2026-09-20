@@ -59,8 +59,9 @@ namespace Poly_Ling.Remote
         /// <summary>
         /// PanelCommandディスパッチコールバック。実行結果を返す。
         /// PolyLingPlayerServer.Initialize が PlayerCommandDispatcher.Dispatch を渡す。
+        /// 担当者判定はディスパッチャ側が操作者（CommandActor）を見て行う。
         /// </summary>
-        public Func<PanelCommand, CommandResult> DispatchCommand;
+        public Func<PanelCommand, CommandActor, CommandResult> DispatchCommand;
 
         // ================================================================
         // コンテキスト注入
@@ -130,7 +131,7 @@ namespace Poly_Ling.Remote
         /// クライアントが同名で register するとホストと選択を共有してしまうため、
         /// 運用上は重複しない名前にすること。
         /// </summary>
-        public string HostUserName { get; set; } = "(host)";
+        public string HostUserName { get; set; } = CommandActor.DefaultHostUserName;
 
         /// <summary>
         /// ホスト側パネルの再同期要求。
@@ -177,7 +178,17 @@ namespace Poly_Ling.Remote
                 // 切断時、選択スロット(_selectionStore)は消さない。
                 // 再接続したときに作業対象が消えていると使い勝手が悪いため、
                 // ユーザー名をキーに保持し続ける（担当 EditorName と同じ扱い）。
-                _wsServer.OnClientDisconnected += ch => RunOnMainThread(() => { _clientRegistry.Remove(ch); Log("クライアント切断"); OnRepaint?.Invoke(); });
+                _wsServer.OnClientDisconnected += ch => RunOnMainThread(() =>
+                {
+                    // 切断した作業者の一時ロックを外す（操作経路統一計画.md L-4）。
+                    // 名前は登録簿から消す前に引く。
+                    string leftUser = ResolveUserName(ch);
+                    _clientRegistry.Remove(ch);
+                    Log("クライアント切断");
+                    if (RemoteOwnership.ReleaseLocksOf(GetProjectContext(), leftUser))
+                        CheckOwnershipChanged();
+                    OnRepaint?.Invoke();
+                });
 
                 IsRunning = true;
                 SubscribeModel();
@@ -461,30 +472,40 @@ namespace Poly_Ling.Remote
             {
                 case BinaryMessageType.MeshData:
                 {
+                    // クライアントから届いたメッシュを新規オブジェクトとして足す。
+                    // 直接足さず、AddGeneratedMeshCommand を要求者の操作としてディスパッチャへ流す
+                    // （担当者判定・Undo・操作者の記録を他のコマンドと揃える。操作経路統一計画.md R-3）。
                     var meshObject = RemoteBinarySerializer.Deserialize(data);
-                    if (meshObject != null && Context != null)
-                    {
-                        Context.CreateNewMeshContext?.Invoke(meshObject, "RemoteMesh");
-                        Context.Repaint?.Invoke();
-                        Log($"メッシュ作成: V={meshObject.VertexCount} F={meshObject.FaceCount}");
-                    }
+                    var proj = Context?.Project;
+                    if (meshObject == null || proj == null) return null;
+
+                    var placement = PrimitivePlacement.Default;
+                    placement.AddMode     = Poly_Ling.Player.PrimitiveAddMode.NewObject;
+                    placement.KeepAsGroup = false;
+
+                    var addCmd = new AddGeneratedMeshCommand(
+                        proj.CurrentModelIndex, meshObject, "RemoteMesh", placement, poseAlreadyBaked: true);
+                    var addResult = DispatchWithSelectionOf(
+                        requesterName, addCmd, CommandActor.Remote(requesterName, null));
+
+                    Log($"メッシュ作成: V={meshObject.VertexCount} F={meshObject.FaceCount} user=\"{requesterName}\" → {addResult}");
+                    CheckOwnershipChanged();
                     return null;
                 }
                 case BinaryMessageType.PositionsOnly:
                 {
-                    // v2 ヘッダの ObjectId で対象を確定する。
-                    // v1（ObjectId=0）は後方互換として先頭描画メッシュへ適用する。
+                    // 安定 ID の無い旧形式（v1）は対象を運べない。先頭描画メッシュへ当てると
+                    // 取り違えて書き込むため受けない（操作経路統一計画.md R-2）。
+                    if (!h.HasTarget)
+                    {
+                        Log("位置更新を拒否: 対象の安定 ID が無い旧形式です");
+                        return null;
+                    }
+
                     var targetCtx = ResolveBinaryTarget(h, out string resolveNote);
                     if (targetCtx?.MeshObject == null)
                     {
                         Log($"位置更新: 対象を解決できません（{resolveNote}）");
-                        return null;
-                    }
-
-                    if (!targetCtx.IsEditableBy(requesterName))
-                    {
-                        Log($"位置更新を拒否: {targetCtx.Name} は {targetCtx.EditorName} が担当中"
-                            + $"（要求者=\"{requesterName}\"）");
                         return null;
                     }
 
@@ -497,10 +518,33 @@ namespace Poly_Ling.Remote
                         return null;
                     }
 
-                    RemoteBinarySerializer.Deserialize(data, targetCtx.MeshObject);
-                    Context.SyncMesh?.Invoke();
-                    Context.Repaint?.Invoke();
-                    Log($"位置更新適用: {targetCtx.Name} ({resolveNote})");
+                    if (!TryFindMeshIndex(targetCtx, out int posModel, out int posIndex))
+                    {
+                        Log($"位置更新: 対象の索引を引けません（{targetCtx.Name}）");
+                        return null;
+                    }
+
+                    // 届いた位置を写しへ読み、SetVertexPositionsCommand として要求者の操作で流す
+                    // （担当者判定・ミラー側・ロックの延長・Undo・記録を他のコマンドと揃える。R-1）。
+                    var received = targetCtx.MeshObject.Clone();
+                    RemoteBinarySerializer.Deserialize(data, received);
+                    int vc = received.VertexCount;
+                    var vIdx = new int[vc];
+                    var pos  = new float[vc * 3];
+                    for (int i = 0; i < vc; i++)
+                    {
+                        vIdx[i] = i;
+                        var p = received.Vertices[i].Position;
+                        pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
+                    }
+
+                    var posCmd = new SetVertexPositionsCommand(posModel, posIndex, vIdx, pos);
+                    var posResult = DispatchWithSelectionOf(
+                        requesterName, posCmd,
+                        CommandActor.Remote(requesterName, new[] { targetCtx.ObjectId }));
+
+                    Log($"位置更新: {targetCtx.Name} ({resolveNote}) user=\"{requesterName}\" → {posResult}");
+                    CheckOwnershipChanged();
                     return null;
                 }
                 case BinaryMessageType.RawFile:
@@ -517,20 +561,43 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
+        /// MeshContext が属するモデルの番号と、そのモデル内の masterIndex を引く。
+        /// </summary>
+        private bool TryFindMeshIndex(MeshContext target, out int modelIndex, out int masterIndex)
+        {
+            modelIndex = -1; masterIndex = -1;
+            var proj = Context?.Project;
+            if (proj == null || target == null) return false;
+            for (int mi = 0; mi < proj.ModelCount; mi++)
+            {
+                var m = proj.GetModel(mi);
+                if (m == null) continue;
+                for (int i = 0; i < m.MeshContextCount; i++)
+                {
+                    if (!ReferenceEquals(m.GetMeshContext(i), target)) continue;
+                    modelIndex = mi; masterIndex = i;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// バイナリヘッダから適用対象の MeshContext を解決する。
         ///
         /// v2 かつ ObjectId!=0 → 安定IDで検索（ModelIndex を優先し、外れたら全モデル走査）。
-        /// それ以外              → 先頭描画メッシュ（v1 クライアント互換のフォールバック）。
+        /// それ以外              → null（対象を決められない）。
         ///
         /// 全モデル走査まで行うのは、送信側と受信側で CurrentModelIndex がずれていても
         /// オブジェクトさえ一致すれば正しく当てられるようにするため。
         /// </summary>
         private MeshContext ResolveBinaryTarget(BinaryHeader h, out string note)
         {
+            // 安定 ID の無いものは対象を決められない（先頭描画メッシュへ当てる代替は廃止。R-2）。
             if (!h.HasTarget)
             {
-                note = h.Version >= 2 ? "対象未指定→先頭描画メッシュ" : "v1ヘッダ→先頭描画メッシュ";
-                return Context?.FirstDrawableMeshContext;
+                note = "対象の安定 ID なし";
+                return null;
             }
 
             var proj = GetProjectContext();

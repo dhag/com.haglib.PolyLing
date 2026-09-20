@@ -12,6 +12,8 @@
 //   （巡回・抽選の順を決めるため）。
 //
 // 【位置】GetWorldPositions（GPU が計算したワールド座標）から読む。
+// 【ボーン・原点】Target が Bones / ObjectOrigins のときは、MasterIndices の各ボーン位置／
+//   描画オブジェクト原点へ置く。値はマーカー表示と同じ WorldMatrix の平行移動成分。
 
 using System;
 using System.Collections.Generic;
@@ -24,6 +26,7 @@ using Poly_Ling.Tools;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("vertexBillboardPlace", Description = "頂点へ藤壺（確定は CreateVertexBillboardPlaceCommand）")]
     public class VertexBillboardPlaceToolHandler
     {
         /// <summary>
@@ -39,6 +42,10 @@ namespace Poly_Ling.Player
 
         /// <summary>配置元の索引列を MeshObject 列へ解決する口（子孫の展開を含む）。</summary>
         public Func<int[], bool, List<MeshObject>> ResolveSources;
+
+        /// <summary>選択中の描画オブジェクトが持つ選択頂点の合計数。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "選択中の描画オブジェクトが持つ選択頂点の合計数")]
+        public int SelectedVertexCount => GetSelectedVertexCount();
 
         /// <summary>選択中の描画オブジェクトが持つ選択頂点の合計数。</summary>
         public int GetSelectedVertexCount()
@@ -57,7 +64,37 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// プレビュー用。選択中の描画オブジェクトの選択頂点から組む（選択とは照合しない）。
+        /// 配置先ごとの対象の数。Vertices は選択頂点の合計、Bones は選択ボーン数、
+        /// ObjectOrigins は選択描画オブジェクト数。
+        /// </summary>
+        public int GetTargetCount(BillboardPlaceTarget target)
+        {
+            var model = _project?.CurrentModel;
+            if (model == null) return 0;
+
+            switch (target)
+            {
+                case BillboardPlaceTarget.Bones:
+                    return CollectPointIndices(model, model.SelectedBoneIndices, target).Count;
+                case BillboardPlaceTarget.ObjectOrigins:
+                    return CollectPointIndices(model, model.SelectedDrawableMeshIndices, target).Count;
+                default:
+                    return GetSelectedVertexCount();
+            }
+        }
+
+        /// <summary>配置先ごとに、今の選択から対象の索引を返す。</summary>
+        public int[] GetSelectedTargetIndices(BillboardPlaceTarget target)
+        {
+            var model = _project?.CurrentModel;
+            if (model == null) return Array.Empty<int>();
+            return target == BillboardPlaceTarget.Bones
+                ? model.SelectedBoneIndices.ToArray()
+                : model.SelectedDrawableMeshIndices.ToArray();
+        }
+
+        /// <summary>
+        /// プレビュー用。今の選択から組む（選択とは照合しない）。
         /// </summary>
         public bool BuildPreview(
             CreateVertexBillboardPlaceCommand cmd, out MeshObject meshObject, out string reason)
@@ -69,12 +106,13 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) { reason = "モデルがありません"; return false; }
 
-            var targets = new List<int>(model.SelectedDrawableMeshIndices);
+            var targets = new List<int>(GetSelectedTargetIndices(cmd.Target));
             return BuildCore(model, cmd, targets, "", out meshObject, out reason);
         }
 
         /// <summary>
-        /// コマンドから組む。辞書名が空なら MasterIndices が選択中の描画オブジェクトと一致すること。
+        /// コマンドから組む。Vertices で辞書名が空なら MasterIndices が選択中の描画オブジェクトと一致すること。
+        /// Bones / ObjectOrigins は位置が MasterIndices だけで決まるので選択とは照合しない。
         /// </summary>
         public bool BuildFromCommand(
             CreateVertexBillboardPlaceCommand cmd, out MeshObject meshObject, out string reason)
@@ -86,7 +124,7 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) { reason = "モデルがありません"; return false; }
 
-            if (string.IsNullOrEmpty(cmd.VertexSetName))
+            if (cmd.Target == BillboardPlaceTarget.Vertices && string.IsNullOrEmpty(cmd.VertexSetName))
             {
                 if (!PlayerCommandTargets.MatchesSelectedDrawables(model, cmd.MasterIndices, out reason))
                     return false;
@@ -98,14 +136,39 @@ namespace Poly_Ling.Player
 
                 foreach (int idx in cmd.MasterIndices)
                 {
-                    if (model.GetMeshContext(idx) == null)
-                    { reason = $"描画オブジェクトが見つかりません (masterIndex={idx})"; return false; }
+                    var mc = model.GetMeshContext(idx);
+                    if (mc == null)
+                    { reason = $"オブジェクトが見つかりません (masterIndex={idx})"; return false; }
+                    if (cmd.Target == BillboardPlaceTarget.Bones && mc.Type != MeshType.Bone)
+                    { reason = $"ボーンではありません (masterIndex={idx})"; return false; }
+                    if (cmd.Target == BillboardPlaceTarget.ObjectOrigins && mc.Type != MeshType.Mesh)
+                    { reason = $"描画オブジェクトではありません (masterIndex={idx})"; return false; }
                 }
             }
 
             return BuildCore(
                 model, cmd, new List<int>(cmd.MasterIndices), cmd.VertexSetName,
                 out meshObject, out reason);
+        }
+
+        /// <summary>
+        /// ボーン／原点モードで対象にする索引を、昇順・重複なしで返す。
+        /// Bones は MeshType.Bone、ObjectOrigins は MeshType.Mesh だけを通す。
+        /// </summary>
+        private static List<int> CollectPointIndices(
+            ModelContext model, IEnumerable<int> indices, BillboardPlaceTarget target)
+        {
+            var set = new SortedSet<int>();
+            if (indices == null) return new List<int>();
+            foreach (int idx in indices)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc == null) continue;
+                if (target == BillboardPlaceTarget.Bones ? mc.Type != MeshType.Bone
+                                                         : mc.Type != MeshType.Mesh) continue;
+                set.Add(idx);
+            }
+            return new List<int>(set);
         }
 
         private bool BuildCore(
@@ -116,7 +179,6 @@ namespace Poly_Ling.Player
             meshObject = null;
             reason = null;
 
-            if (GetWorldPositions == null) { reason = "GPU のワールド座標を読む口が配線されていません"; return false; }
             if (ResolveSources == null) { reason = "配置元を解決する口が配線されていません"; return false; }
             if (cmd.Scale <= 0f) { reason = "倍率は 0 より大きい値にしてください"; return false; }
 
@@ -128,38 +190,62 @@ namespace Poly_Ling.Player
             var sources = ResolveSources(cmd.SourceMasterIndices ?? Array.Empty<int>(), cmd.IncludeChildren);
             if (sources == null || sources.Count == 0) { reason = "配置元がありません"; return false; }
 
-            bool fromSet = !string.IsNullOrEmpty(vertexSetName);
             var positions = new List<Vector3>();
 
-            foreach (int index in targetIndices)
+            if (cmd.Target != BillboardPlaceTarget.Vertices)
             {
-                var mc = model.GetMeshContext(index);
-                if (mc?.MeshObject == null || mc.Type == MeshType.Bone) continue;
-
-                var vertices = fromSet
-                    ? mc.FindSelectionSetByName(vertexSetName)?.Vertices
-                    : mc.Selection?.Vertices;
-                if (vertices == null || vertices.Count == 0) continue;
-
-                var world = GetWorldPositions(mc);
-                if (world == null || world.Length < mc.MeshObject.VertexCount)
-                { reason = $"GPU のワールド座標を読めません（{mc.Name}）"; return false; }
-
-                var sorted = new List<int>(vertices);
-                sorted.Sort();
-                foreach (int vi in sorted)
+                // ボーン位置／原点。マーカー表示（UpdateBoneOverlayFor）と同じく
+                // WorldMatrix の平行移動成分を使う。索引の昇順（巡回・抽選の順）。
+                foreach (int index in CollectPointIndices(model, targetIndices, cmd.Target))
                 {
-                    if (vi < 0 || vi >= mc.MeshObject.VertexCount) continue;
-                    positions.Add(world[vi]);
+                    var wm = model.GetMeshContext(index).WorldMatrix;
+                    positions.Add(new Vector3(wm.m03, wm.m13, wm.m23));
+                }
+
+                if (positions.Count == 0)
+                {
+                    reason = cmd.Target == BillboardPlaceTarget.Bones
+                        ? "対象のボーンがありません"
+                        : "対象の描画オブジェクトがありません";
+                    return false;
                 }
             }
-
-            if (positions.Count == 0)
+            else
             {
-                reason = fromSet
-                    ? $"選択辞書「{vertexSetName}」に頂点が入っていません"
-                    : "選択頂点がありません";
-                return false;
+                if (GetWorldPositions == null) { reason = "GPU のワールド座標を読む口が配線されていません"; return false; }
+
+                bool fromSet = !string.IsNullOrEmpty(vertexSetName);
+
+                foreach (int index in targetIndices)
+                {
+                    var mc = model.GetMeshContext(index);
+                    if (mc?.MeshObject == null || mc.Type == MeshType.Bone) continue;
+
+                    var vertices = fromSet
+                        ? mc.FindSelectionSetByName(vertexSetName)?.Vertices
+                        : mc.Selection?.Vertices;
+                    if (vertices == null || vertices.Count == 0) continue;
+
+                    var world = GetWorldPositions(mc);
+                    if (world == null || world.Length < mc.MeshObject.VertexCount)
+                    { reason = $"GPU のワールド座標を読めません（{mc.Name}）"; return false; }
+
+                    var sorted = new List<int>(vertices);
+                    sorted.Sort();
+                    foreach (int vi in sorted)
+                    {
+                        if (vi < 0 || vi >= mc.MeshObject.VertexCount) continue;
+                        positions.Add(world[vi]);
+                    }
+                }
+
+                if (positions.Count == 0)
+                {
+                    reason = fromSet
+                        ? $"選択辞書「{vertexSetName}」に頂点が入っていません"
+                        : "選択頂点がありません";
+                    return false;
+                }
             }
 
             meshObject = VertexBillboardPlaceOps.Build(

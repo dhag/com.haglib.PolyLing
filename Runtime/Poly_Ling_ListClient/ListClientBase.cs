@@ -108,11 +108,12 @@ namespace Poly_Ling.ListClient
             _client.OnDisconnected += HandleDisconnected;
             _client.OnPushReceived += HandlePush;
 
-            // パネル操作をサーバへ送るルータ。サーバ対応コマンドのみ送信。
+            // パネル操作をサーバへ送るルータ。action と引数は PanelCommandFactory の規則で汎用に作る。
             _router = new PanelCommandRouter(_client);
-            // 送信コマンドに安定ObjectIdを添えるための解決子。
+            // 送信コマンドに安定ObjectIdを添えるための解決子と、書き込み先を集めるための Project。
             // サーバはこれで「古いビュー由来のインデックス」を検出して弾く。
             _router.ResolveObjectId = ResolveObjectId;
+            _router.GetProject      = () => Project;
             _panelContext = new PanelContext(cmd => _router?.Send(cmd));
         }
 

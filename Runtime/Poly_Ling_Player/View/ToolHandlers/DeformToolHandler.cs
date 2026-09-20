@@ -53,6 +53,7 @@ using Poly_Ling.UndoSystem;
 namespace Poly_Ling.Player
 {
     /// <summary>デフォーマ適用ハンドラ。</summary>
+    [Poly_Ling.Data.PLTool("deform", Description = "デフォーマ（確定は Apply*DeformCommand）")]
     public class DeformToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
@@ -167,24 +168,32 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>デフォーマ名。未選択時は空文字。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "デフォーマ名。未選択時は空文字")]
         public string DeformerName => Deformer?.Name ?? string.Empty;
 
         /// <summary>
         /// 曲げ・ねじりの形状プレビュー六角柱を描くか。既定は表示。
         /// 回転には形状プレビューが無いのでこの値は影響しない。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "曲げ・ねじりの形状プレビュー六角柱を描くか。既定は表示")]
         public bool ShowShapePreview { get; set; } = true;
 
         // マグネット（比例編集）
+        [Poly_Ling.Data.PLToolParam(Description = "マグネット（比例編集）を使うか")]
         public bool         UseMagnet          { get; set; } = false;
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの半径")]
         public float        MagnetRadius       { get; set; } = 0.5f;
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの減衰の形")]
         public FalloffType  MagnetFalloff      { get; set; } = FalloffType.Smooth;
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの距離の測り方")]
         public DistanceMode MagnetDistanceMode { get; set; } = DistanceMode.Euclidean;
 
         /// <summary>プレビュー中か。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "プレビュー中か")]
         public bool IsPreviewing => _applier.IsActive;
 
         /// <summary>対象頂点数。プレビュー外は 0。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "対象頂点数。プレビュー外は 0")]
         public int AffectedCount => _applier.AffectedCount;
 
         /// <summary>作業軸ローカルでの s（= y）範囲。UI 表示用。</summary>
@@ -232,12 +241,22 @@ namespace Poly_Ling.Player
             if (model == null || axis == null) return false;
 
             float radius = UseMagnet ? MagnetRadius : 0f;
+
+            // パネル操作からの開始は、選択の担当者判定とロック取得を先に通す（H-2）。
+            if (!_inCommand && TryBeginPreview != null)
+            {
+                if (!TryBeginPreview()) return false;
+                _panelPreview = true;
+            }
             // 前方向は GPU の値を使う（規約 10.6）。表示姿勢の正典は ProjectContext.ShowBindPose。
             var dctx = GetToolContext?.Invoke();
             _applier.GetMeshWorldPositions = dctx?.GetMeshWorldPositions;
             _applier.GetShowBindPose       = () => dctx?.ShowBindPose ?? false;
             if (!_applier.Begin(model, axis, radius, MagnetFalloff, MagnetDistanceMode))
+            {
+                if (_panelPreview) { _panelPreview = false; EndPreview?.Invoke(); }
                 return false;
+            }
 
             GetToolContext?.Invoke()?.EnterTransformDragging?.Invoke();
             return true;
@@ -472,6 +491,7 @@ namespace Poly_Ling.Player
             DistanceMode savedDistance  = MagnetDistanceMode;
 
             bool ok = false;
+            _inCommand = true;
             try
             {
                 var next = DeformerRegistry.Create(cmd.DeformerName);
@@ -496,6 +516,7 @@ namespace Poly_Ling.Player
             finally
             {
                 if (!ok && _applier.IsActive) Revert();
+                _inCommand = false;
 
                 _deformer = savedDeformer;
                 if (savedParams != null) _deformer?.Params?.CopyFrom(savedParams);
@@ -579,7 +600,23 @@ namespace Poly_Ling.Player
         {
             _applier.Reset();
             GetToolContext?.Invoke()?.ExitTransformDragging?.Invoke();
+            if (_panelPreview) { _panelPreview = false; EndPreview?.Invoke(); }
         }
+
+        // ================================================================
+        // パネルからのプレビュー（操作経路統一計画.md H-2）
+        // ================================================================
+
+        /// <summary>パネル操作でプレビューを始めてよいか（選択の担当者判定とロック取得）。</summary>
+        public Func<bool> TryBeginPreview;
+
+        /// <summary>パネルのプレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action EndPreview;
+
+        private bool _panelPreview;
+
+        /// <summary>ExecuteFromCommand の実行中か（判定済みなのでプレビューの関門を通さない）。</summary>
+        private bool _inCommand;
 
         // ================================================================
         // IPlayerToolHandler（ドラッグ操作は持たない）

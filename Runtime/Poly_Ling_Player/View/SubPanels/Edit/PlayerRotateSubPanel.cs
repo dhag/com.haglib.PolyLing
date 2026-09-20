@@ -6,12 +6,15 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerRotateSubPanel
     {
-        public Func<RotateToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "rotate";
 
         // UI 自動操作の ID は "rotate.<下の Id>"（UiControlAttribute.cs）。
         // 角度の変更はプレビューで、確定は「Apply」（またはスライダーを離したとき）。
@@ -89,42 +92,42 @@ namespace Poly_Ling.Player
             // 軸-角度 / Euler 切替
             _axisToggle = new Toggle("Axis-Angle") { value = false };
             _axisToggle.style.color = new StyleColor(Color.white);
-            _axisToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.AxisMode = e.newValue; UpdateModeVisibility(e.newValue); });
+            _axisToggle.RegisterValueChangedCallback(e => { Surface?.Set(Tool, "axisMode", e.newValue); UpdateModeVisibility(e.newValue); });
             _root.Add(_axisToggle);
 
             // Euler グループ
             _eulerGroup = new VisualElement();
-            _sliderX = MakeSlider("X", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotX = Snap(v); });
-            _sliderY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotY = Snap(v); });
-            _sliderZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotZ = Snap(v); });
-            // 確定はコマンド経由。CommitViaCommand が開始状態へ戻して
+            _sliderX = MakeSlider("X", -180f, 180f, 0f, v => Preview("rotX", Snap(v)));
+            _sliderY = MakeSlider("Y", -180f, 180f, 0f, v => Preview("rotY", Snap(v)));
+            _sliderZ = MakeSlider("Z", -180f, 180f, 0f, v => Preview("rotZ", Snap(v)));
+            // 確定はコマンド経由。commitViaCommand が開始状態へ戻して
             // RotateSelectionCommand を送り、その受け口がベイクと Undo 記録を行う。
             foreach (var s in new[] { _sliderX, _sliderY, _sliderZ })
-                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
+                s.RegisterCallback<PointerUpEvent>(_ => Commit());
 
             _fieldX = new FloatField(); _fieldY = new FloatField(); _fieldZ = new FloatField();
-            _eulerGroup.Add(SliderWithField(_sliderX, _fieldX, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotX = Snap(v); }));
-            _eulerGroup.Add(SliderWithField(_sliderY, _fieldY, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotY = Snap(v); }));
-            _eulerGroup.Add(SliderWithField(_sliderZ, _fieldZ, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotZ = Snap(v); }));
+            _eulerGroup.Add(SliderWithField(_sliderX, _fieldX, -180f, 180f, v => Preview("rotX", Snap(v))));
+            _eulerGroup.Add(SliderWithField(_sliderY, _fieldY, -180f, 180f, v => Preview("rotY", Snap(v))));
+            _eulerGroup.Add(SliderWithField(_sliderZ, _fieldZ, -180f, 180f, v => Preview("rotZ", Snap(v))));
             _root.Add(_eulerGroup);
 
             // 軸-角度 グループ
             _axisGroup = new VisualElement();
             var axisRow = new VisualElement(); axisRow.style.flexDirection = FlexDirection.Row; axisRow.style.marginBottom = 3;
-            _axisX = MakeAxisField("X", v => { var h = GetH(); if (h != null) h.AxisVecX = v; if (GetH() != null && GetH().AxisMode) GetH().BeginSliderDrag(); });
-            _axisY = MakeAxisField("Y", v => { var h = GetH(); if (h != null) h.AxisVecY = v; });
-            _axisZ = MakeAxisField("Z", v => { var h = GetH(); if (h != null) h.AxisVecZ = v; });
+            _axisX = MakeAxisField("X", v =>
+            {
+                Surface?.Set(Tool, "axisVecX", v);
+                if (Surface != null && Surface.GetBool(Tool, "axisMode")) Surface.Invoke(Tool, "beginSliderDragFromPanel");
+            });
+            _axisY = MakeAxisField("Y", v => Surface?.Set(Tool, "axisVecY", v));
+            _axisZ = MakeAxisField("Z", v => Surface?.Set(Tool, "axisVecZ", v));
             _axisY.value = 1f;
             axisRow.Add(_axisX); axisRow.Add(_axisY); axisRow.Add(_axisZ);
             _axisGroup.Add(axisRow);
-            _axisAngle = MakeSlider("Angle", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.AxisAngle = Snap(v); });
-            _axisAngle.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
+            _axisAngle = MakeSlider("Angle", -180f, 180f, 0f, v => Preview("axisAngle", Snap(v)));
+            _axisAngle.RegisterCallback<PointerUpEvent>(_ => Commit());
             _fieldAngle = new FloatField();
-            _axisGroup.Add(SliderWithField(_axisAngle, _fieldAngle, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.AxisAngle = Snap(v); }));
+            _axisGroup.Add(SliderWithField(_axisAngle, _fieldAngle, -180f, 180f, v => Preview("axisAngle", Snap(v))));
             _root.Add(_axisGroup);
             UpdateModeVisibility(false);
 
@@ -133,42 +136,42 @@ namespace Poly_Ling.Player
             snapRow.style.marginBottom  = 3;
             _snapToggle = new Toggle("Snap") { value = false };
             _snapToggle.style.color = new StyleColor(Color.white);
-            _snapToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.UseSnap = e.newValue; });
+            _snapToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "useSnap", e.newValue));
             _snapField = new FloatField { value = 15f };
             _snapField.style.width = 50; _snapField.style.marginLeft = 4;
-            _snapField.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.SnapAngle = Mathf.Max(0.1f, e.newValue); });
+            _snapField.RegisterValueChangedCallback(e => Surface?.Set(Tool, "snapAngle", Mathf.Max(0.1f, e.newValue)));
             snapRow.Add(_snapToggle); snapRow.Add(_snapField);
             _root.Add(snapRow);
 
             _originToggle = new Toggle("オブジェクトの原点を中心に") { value = false };
             _originToggle.style.color = new StyleColor(Color.white);
-            _originToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.UseOriginPivot = e.newValue; });
+            _originToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "useOriginPivot", e.newValue));
             _root.Add(_originToggle);
 
             // マグネット（比例編集）
             _magnetToggle = new Toggle("Magnet") { value = false };
             _magnetToggle.style.color = new StyleColor(Color.white);
-            _magnetToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.UseMagnet = e.newValue; });
+            _magnetToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "useMagnet", e.newValue));
             _root.Add(_magnetToggle);
-            _magnetRadius = MakeSlider("Radius", 0.01f, 1f, 0.5f, v => { var h = GetH(); if (h != null) h.MagnetRadius = v; });
+            _magnetRadius = MakeSlider("Radius", 0.01f, 1f, 0.5f, v => Surface?.Set(Tool, "magnetRadius", v));
             _root.Add(_magnetRadius);
             _magnetDistance = new EnumField("Distance", DistanceMode.Euclidean);
             _magnetDistance.style.color = new StyleColor(Color.white);
-            _magnetDistance.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.MagnetDistanceMode = (DistanceMode)e.newValue; });
+            _magnetDistance.RegisterValueChangedCallback(e => Surface?.Set(Tool, "magnetDistanceMode", (DistanceMode)e.newValue));
             _root.Add(_magnetDistance);
             _magnetFalloff = new EnumField("Falloff", FalloffType.Smooth);
             _magnetFalloff.style.color = new StyleColor(Color.white);
-            _magnetFalloff.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.MagnetFalloff = (FalloffType)e.newValue; });
+            _magnetFalloff.RegisterValueChangedCallback(e => Surface?.Set(Tool, "magnetFalloff", (FalloffType)e.newValue));
             _root.Add(_magnetFalloff);
 
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.marginTop     = 4;
-            var applyBtn  = new Button(() => { GetH()?.CommitViaCommand(); Refresh(); }) { text = "Apply" };
+            var applyBtn  = new Button(Commit) { text = "Apply" };
             applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
             // 確定後は角度が 0 に戻るので、Refresh で表示も 0 へ揃う
-            // （CommitViaCommand が取り出し時に 0 へ戻し、受け口も終了時に 0 へ戻す）。
-            var revertBtn = new Button(() => { GetH()?.Revert(); Refresh(); }) { text = "Reset" };
+            // （commitViaCommand が取り出し時に 0 へ戻し、受け口も終了時に 0 へ戻す）。
+            var revertBtn = new Button(() => { Surface?.Invoke(Tool, "revert"); Refresh(); }) { text = "Reset" };
             revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn);
             _root.Add(btnRow);
@@ -197,38 +200,60 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH(); if (h == null) return;
-            _targetLabel.text = $"Target: {h.GetTotalAffectedCount()} vertices";
-            var p = h.PivotPublic;
+            if (Surface == null) return;
+            _targetLabel.text = $"Target: {Surface.GetInt(Tool, "affectedCount")} vertices";
+            var p = Surface.Get(Tool, "pivotPublic", Vector3.zero);
             _pivotLabel.text  = $"Pivot: ({p.x:F2}, {p.y:F2}, {p.z:F2})";
+            float rx = Surface.GetFloat(Tool, "rotX"), ry = Surface.GetFloat(Tool, "rotY"), rz = Surface.GetFloat(Tool, "rotZ");
             _suppressSync = true;
-            _sliderX?.SetValueWithoutNotify(h.RotX);
-            _sliderY?.SetValueWithoutNotify(h.RotY);
-            _sliderZ?.SetValueWithoutNotify(h.RotZ);
-            _fieldX?.SetValueWithoutNotify(h.RotX);
-            _fieldY?.SetValueWithoutNotify(h.RotY);
-            _fieldZ?.SetValueWithoutNotify(h.RotZ);
+            _sliderX?.SetValueWithoutNotify(rx);
+            _sliderY?.SetValueWithoutNotify(ry);
+            _sliderZ?.SetValueWithoutNotify(rz);
+            _fieldX?.SetValueWithoutNotify(rx);
+            _fieldY?.SetValueWithoutNotify(ry);
+            _fieldZ?.SetValueWithoutNotify(rz);
             _suppressSync = false;
-            _snapToggle?.SetValueWithoutNotify(h.UseSnap);
-            _snapField?.SetValueWithoutNotify(h.SnapAngle);
-            _originToggle?.SetValueWithoutNotify(h.UseOriginPivot);
-            _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
-            _magnetRadius?.SetValueWithoutNotify(h.MagnetRadius);
-            _magnetFalloff?.SetValueWithoutNotify(h.MagnetFalloff);
-            _magnetDistance?.SetValueWithoutNotify(h.MagnetDistanceMode);
-            bool axisMode = h.AxisMode;
+            _snapToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "useSnap"));
+            _snapField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "snapAngle"));
+            _originToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "useOriginPivot"));
+            _magnetToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "useMagnet"));
+            _magnetRadius?.SetValueWithoutNotify(Surface.GetFloat(Tool, "magnetRadius"));
+            _magnetFalloff?.SetValueWithoutNotify(Surface.Get(Tool, "magnetFalloff", FalloffType.Smooth));
+            _magnetDistance?.SetValueWithoutNotify(Surface.Get(Tool, "magnetDistanceMode", DistanceMode.Euclidean));
+            bool axisMode = Surface.GetBool(Tool, "axisMode");
             _axisToggle?.SetValueWithoutNotify(axisMode);
             UpdateModeVisibility(axisMode);
-            _axisX?.SetValueWithoutNotify(h.AxisVecX);
-            _axisY?.SetValueWithoutNotify(h.AxisVecY);
-            _axisZ?.SetValueWithoutNotify(h.AxisVecZ);
+            _axisX?.SetValueWithoutNotify(Surface.GetFloat(Tool, "axisVecX"));
+            _axisY?.SetValueWithoutNotify(Surface.GetFloat(Tool, "axisVecY"));
+            _axisZ?.SetValueWithoutNotify(Surface.GetFloat(Tool, "axisVecZ"));
+            float angle = Surface.GetFloat(Tool, "axisAngle");
             _suppressSync = true;
-            _axisAngle?.SetValueWithoutNotify(h.AxisAngle);
-            _fieldAngle?.SetValueWithoutNotify(h.AxisAngle);
+            _axisAngle?.SetValueWithoutNotify(angle);
+            _fieldAngle?.SetValueWithoutNotify(angle);
             _suppressSync = false;
         }
 
-        private float Snap(float v) { var h = GetH(); if (h == null || !h.UseSnap) return v; return Mathf.Round(v / h.SnapAngle) * h.SnapAngle; }
+        /// <summary>スライダー操作：プレビューを始めて（ロックを取り）値を入れる。</summary>
+        private void Preview(string param, float v)
+        {
+            if (Surface == null) return;
+            Surface.Invoke(Tool, "beginSliderDragFromPanel");
+            Surface.Set(Tool, param, v);
+        }
+
+        /// <summary>確定：プレビュー中の回転を RotateSelectionCommand として送る。</summary>
+        private void Commit()
+        {
+            Surface?.Invoke(Tool, "commitViaCommand");
+            Refresh();
+        }
+
+        private float Snap(float v)
+        {
+            if (Surface == null || !Surface.GetBool(Tool, "useSnap")) return v;
+            float step = Surface.GetFloat(Tool, "snapAngle");
+            return Mathf.Round(v / step) * step;
+        }
 
         private void UpdateModeVisibility(bool axis)
         {

@@ -95,6 +95,12 @@ namespace Poly_Ling.Player
             ["PointDefinedUndoPoint"]    = new() { ["en"] = "Undo Point", ["ja"] = "1 点戻す",   ["hi"] = "1てん もどす" },
             ["PointDefinedClear"]        = new() { ["en"] = "Clear",      ["ja"] = "点をクリア", ["hi"] = "てんを けす" },
             ["PointDefinedSnapUnselected"] = new() { ["en"] = "Snap to unselected objects", ["ja"] = "非選択オブジェクトにも吸着", ["hi"] = "えらんでないものにも すいつく" },
+            ["PointDefinedSnapBones"]    = new() { ["en"] = "Snap to bones",          ["ja"] = "ボーンにも吸着",           ["hi"] = "ほねにも すいつく" },
+            ["PointDefinedSnapOrigins"]  = new() { ["en"] = "Snap to object origins", ["ja"] = "オブジェクト原点にも吸着", ["hi"] = "ものの まんなかにも すいつく" },
+            ["VertexBillboardTarget"]         = new() { ["en"] = "Place at",           ["ja"] = "配置先",                 ["hi"] = "おくばしょ" },
+            ["VertexBillboardTargetVertices"] = new() { ["en"] = "Selected vertices",  ["ja"] = "選択頂点",               ["hi"] = "えらんだ てん" },
+            ["VertexBillboardTargetBones"]    = new() { ["en"] = "Selected bones",     ["ja"] = "選択ボーン",             ["hi"] = "えらんだ ほね" },
+            ["VertexBillboardTargetOrigins"]  = new() { ["en"] = "Selected object origins", ["ja"] = "選択オブジェクトの原点", ["hi"] = "えらんだ ものの まんなか" },
             ["PointDefinedRadius"]       = new() { ["en"] = "Radius",      ["ja"] = "半径",         ["hi"] = "はんけい" },
             ["PointDefinedSides"]        = new() { ["en"] = "Sides",       ["ja"] = "断面画数",     ["hi"] = "かどのかず" },
             ["PointDefinedLengthSeg"]    = new() { ["en"] = "Length Seg",  ["ja"] = "縦方向分割",   ["hi"] = "たてのわけかた" },
@@ -990,6 +996,27 @@ namespace Poly_Ling.Player
             // ================================================================
             // 機構部品B（締結・支持・伝達）
             // ================================================================
+
+            // ── ネジ配置 ──
+            ["BoltPattern"]      = new() { ["en"] = "Bolt Pattern",   ["ja"] = "ネジ配置",     ["hi"] = "ネジをならべる" },
+            ["BoltPatternHint"]  = new() { ["en"] = "Copies the source objects onto a circle (PCD) or around a rectangle. The center is the placement position; the whole pattern turns with the placement rotation. The sources are not rotated.",
+                                           ["ja"] = "配置元を円周上（PCD）または長方形の周上へ複製します。中心は配置位置、全体の向きは配置の回転で決まります。配置元は回転させません。",
+                                           ["hi"] = "えらんだものを まるや しかくの まわりに ならべます。" },
+            ["BoltLayout"]       = new() { ["en"] = "Layout",          ["ja"] = "並べ方",         ["hi"] = "ならべかた" },
+            ["BoltLayoutCircle"] = new() { ["en"] = "Circle (PCD)",    ["ja"] = "円周（PCD）",    ["hi"] = "まる" },
+            ["BoltLayoutRect"]   = new() { ["en"] = "Rectangle",       ["ja"] = "長方形",         ["hi"] = "しかく" },
+            ["BoltCount"]        = new() { ["en"] = "Count",           ["ja"] = "個数",           ["hi"] = "かず" },
+            ["BoltPcdRadius"]    = new() { ["en"] = "PCD Radius",      ["ja"] = "PCD 半径",       ["hi"] = "まるのはんけい" },
+            ["BoltStartAngle"]   = new() { ["en"] = "Start Angle",     ["ja"] = "1 個目の角度",   ["hi"] = "さいしょのかくど" },
+            ["BoltRectWidth"]    = new() { ["en"] = "Width",           ["ja"] = "幅",             ["hi"] = "はば" },
+            ["BoltRectHeight"]   = new() { ["en"] = "Height",          ["ja"] = "高さ",           ["hi"] = "たかさ" },
+            ["BoltCountX"]       = new() { ["en"] = "Per Width Side",  ["ja"] = "幅の辺の個数（角を含む）",   ["hi"] = "よこのへんのかず" },
+            ["BoltCountY"]       = new() { ["en"] = "Per Height Side", ["ja"] = "高さの辺の個数（角を含む）", ["hi"] = "たてのへんのかず" },
+            ["BoltScale"]        = new() { ["en"] = "Scale",           ["ja"] = "倍率",           ["hi"] = "ばいりつ" },
+            ["BoltModeCombine"]  = new() { ["en"] = "Combine all",     ["ja"] = "全部を結合して配置", ["hi"] = "ぜんぶくっつける" },
+            ["BoltModeSequence"] = new() { ["en"] = "Sequential",      ["ja"] = "順番",           ["hi"] = "じゅんばん" },
+            ["BoltModeRandom"]   = new() { ["en"] = "Random",          ["ja"] = "ランダム",       ["hi"] = "ランダム" },
+            ["BoltInfo"]         = new() { ["en"] = "Places {0}",      ["ja"] = "{0} 個を置きます", ["hi"] = "{0} こ おきます" },
 
             // ── ナット ──
             ["Nut"]                    = new() { ["en"] = "Nut",            ["ja"] = "ナット",       ["hi"] = "ナット" },

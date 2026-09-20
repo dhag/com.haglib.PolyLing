@@ -248,7 +248,7 @@ namespace Poly_Ling.Serialization
                     IsFolding = meshContextData.isFolding,
                     // 協働編集。0 以外なら model.Add は採番せずそのまま保つ。
                     ObjectId = meshContextData.objectId,
-                    EditorName = meshContextData.editorName ?? "",
+                    // EditorName は作業中だけの一時ロックなので読み込まない（操作経路統一計画.md L-1）。
                     // 作業軸オブジェクトの軸値。それ以外は null。
                     WorkAxis = FromWorkAxisData(meshContextData.workAxis),
                     // ミラー設定
@@ -265,6 +265,9 @@ namespace Poly_Ling.Serialization
 
                 // 選択セットを復元
                 LoadSelectionSetsFromDTO(meshContextData, context);
+
+                // 線分群を復元
+                LoadLineGroupsFromDTO(meshContextData, context);
 
                 // モーフデータを復元（Phase Morph追加）
                 LoadMorphDataFromDTO(meshContextData, context);
@@ -465,7 +468,8 @@ namespace Poly_Ling.Serialization
 
                 // 協働編集。ここで写さないと CSV 書き出しの往復で 0 / 空に落ちる。
                 contextData.objectId   = meshContext.ObjectId;
-                contextData.editorName = meshContext.EditorName ?? "";
+                // EditorName は作業中だけの一時ロックなので保存しない（操作経路統一計画.md L-1）。
+                contextData.editorName = "";
 
                 // 作業軸オブジェクトの軸値。ここで写さないと CSV 往復で落ちる。
                 contextData.workAxis   = ToMeshWorkAxisData(meshContext);
@@ -484,6 +488,9 @@ namespace Poly_Ling.Serialization
 
                 // 選択セット
                 SaveSelectionSetsToDTO(meshContext, contextData);
+
+                // 線分群
+                SaveLineGroupsToDTO(meshContext, contextData);
 
                 // モーフデータ（Phase Morph追加）
                 SaveMorphDataToDTO(meshContext, contextData);
@@ -564,7 +571,7 @@ namespace Poly_Ling.Serialization
                 IsFolding = meshDTO.isFolding,
                 // 協働編集
                 ObjectId = meshDTO.objectId,
-                EditorName = meshDTO.editorName ?? "",
+                // EditorName は作業中だけの一時ロックなので読み込まない（操作経路統一計画.md L-1）。
                 // 作業軸オブジェクトの軸値。それ以外は null。
                 WorkAxis = FromWorkAxisData(meshDTO.workAxis),
                 // ミラー設定
@@ -581,6 +588,9 @@ namespace Poly_Ling.Serialization
 
             // 選択セットを復元
             LoadSelectionSetsFromDTO(meshDTO, meshContext);
+
+            // 線分群を復元
+            LoadLineGroupsFromDTO(meshDTO, meshContext);
 
             // モーフデータを復元（Phase Morph追加）
             LoadMorphDataFromDTO(meshDTO, meshContext);

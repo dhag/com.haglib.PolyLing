@@ -13,6 +13,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("vertexHole", Description = "VertexHoleTool（確定は VertexHoleCommand）")]
     public class VertexHoleToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -37,15 +38,18 @@ namespace Poly_Ling.Player
         // 公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "VertexHoleTool.Ratio")]
         public float Ratio
         {
             get => _tool.Ratio;
             set => _tool.Ratio = value;
         }
 
+        [Poly_Ling.Data.PLToolState(Description = "VertexHoleTool.SelectedVertexCount")]
         public int SelectedVertexCount => _tool.SelectedVertexCount;
 
         /// <summary>対象メッシュ全部を合わせた下調べ結果。</summary>
+        [Poly_Ling.Data.PLToolStateGroup(Name = "inspect", Description = "実行前の下調べ（VertexHoleTool.HoleSummary）")]
         public VertexHoleTool.HoleSummary Inspect() => _tool.Inspect();
 
         /// <summary>

@@ -601,6 +601,13 @@ namespace Poly_Ling.Data
         // 片方だけ変えると往復しなくなる。
         // ================================================================
 
+        /// <summary>文字列 → 型の値（ToArgs／Create と同じ規則）。ツールの公開層（PLToolSurface）が使う。</summary>
+        public static bool TryParseValue(string raw, Type type, out object value, out string why)
+            => TryParse(raw, type, out value, out why);
+
+        /// <summary>値 → 文字列（ToArgs と同じ規則）。ツールの公開層（PLToolSurface）が使う。</summary>
+        public static bool TryFormatValue(object v, out string s) => TryFormat(v, out s);
+
         private static bool TryFormat(object v, out string s)
         {
             s = null;

@@ -272,6 +272,8 @@ namespace Poly_Ling.PMX
                 modelMo.Faces.Clear();
                 foreach (var f in pmxMo.Faces)
                     modelMo.Faces.Add(f.Clone());
+                // 面だけを入れ替えたので、線分が無くなった区間で線分群を切る。
+                Poly_Ling.Ops.LineGroupOps.ReconcileWithFaces(modelMo);
 
                 Debug.Log(
                     $"[PMXPartialImport] FaceStructure '{modelMeshes[p].Name}': {oldFaces} → {modelMo.FaceCount} faces");

@@ -18,6 +18,7 @@ namespace Poly_Ling.Player
     /// SyncBoneTransforms 等）を PlayerToolContext 経由で補完する。
     /// </para>
     /// </summary>
+    [Poly_Ling.Data.PLTool("objectMove", Description = "オブジェクト移動（確定は MoveObjectsCommand／RotateObjectsCommand）")]
     public class ObjectMoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
@@ -69,6 +70,7 @@ namespace Poly_Ling.Player
         /// ObjectMoveTool の ObjectMoveSettings を取得する。
         /// BoneEditor サブパネル側のチェックボックスと双方向同期させる際に使う。
         /// </summary>
+        [Poly_Ling.Data.PLToolSettings(Name = "settings", Description = "ObjectMoveSettings")]
         public Poly_Ling.Tools.ObjectMoveSettings GetSettings() => _tool.GetSettings();
 
         // ================================================================
@@ -82,6 +84,7 @@ namespace Poly_Ling.Player
         /// 現在のドラッグ選択モード。MoveToolHandler の DragSelectMode と同等。
         /// 外部 (ViewerCore 等) から設定される想定。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ObjectMoveToolHandler.DragSelectMode")]
         public SelectionDragMode DragSelectMode = SelectionDragMode.Box;
 
         // ObjectMove 内部のドラッグ状態

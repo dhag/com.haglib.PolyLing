@@ -47,6 +47,7 @@ using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("move", Description = "選択頂点の移動（確定は MoveSelectedVerticesCommand）")]
     public partial class MoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider, IPlayerPressHandler
     {
         // ================================================================
@@ -156,9 +157,13 @@ namespace Poly_Ling.Player
         // ================================================================
         // マグネット設定
         // ================================================================
+        [Poly_Ling.Data.PLToolParam(Description = "マグネット（周辺へ減衰して波及）を使うか")]
         public bool        UseMagnet     { get; set; } = false;
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの半径")]
         public float       MagnetRadius  { get; set; } = 0.5f;
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの減衰の形")]
         public FalloffType MagnetFalloff { get; set; } = FalloffType.Smooth;
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの距離の測り方")]
         public DistanceMode MagnetDistanceMode { get; set; } = DistanceMode.Euclidean;
 
         // ================================================================
@@ -335,6 +340,7 @@ namespace Poly_Ling.Player
         // ドラッグ選択モード（Box / Lasso）
         // ================================================================
         public enum SelectionDragMode { Box, Lasso }
+        [Poly_Ling.Data.PLToolParam(Description = "MoveToolHandler.DragSelectMode")]
         public SelectionDragMode DragSelectMode { get; set; } = SelectionDragMode.Box;
 
         // ================================================================
@@ -361,7 +367,9 @@ namespace Poly_Ling.Player
         // ================================================================
         // マグネット半径範囲・ドラッグ指定モード
         // ================================================================
+        [Poly_Ling.Data.PLToolParam(Description = "MoveToolHandler.MinMagnetRadius")]
         public float MinMagnetRadius { get; set; } = 0.01f;
+        [Poly_Ling.Data.PLToolParam(Description = "MoveToolHandler.MaxMagnetRadius")]
         public float MaxMagnetRadius { get; set; } = 1.0f;
 
         /// <summary>

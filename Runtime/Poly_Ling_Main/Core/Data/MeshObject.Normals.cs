@@ -210,6 +210,8 @@ namespace Poly_Ling.Data
             copy.MirrorBakeState      = this.MirrorBakeState?.Clone();
             copy.NormalRecalcExcludeList = this.NormalRecalcExcludeList?.Select(s => s.Clone()).ToList()
                                            ?? new List<Poly_Ling.Selection.PartsSelectionSet>();
+            copy.LineGroups = this.LineGroups?.Select(g => g?.Clone()).ToList()
+                              ?? new List<LineGroup>();
 
             if(this.BoneTransform != null)
             {
@@ -259,6 +261,8 @@ namespace Poly_Ling.Data
             copy.MirrorBakeState      = this.MirrorBakeState?.Clone();
             copy.NormalRecalcExcludeList = this.NormalRecalcExcludeList?.Select(s => s.Clone()).ToList()
                                            ?? new List<Poly_Ling.Selection.PartsSelectionSet>();
+            copy.LineGroups = this.LineGroups?.Select(g => g?.Clone()).ToList()
+                              ?? new List<LineGroup>();
 
             if (this.BoneTransform != null)
             {

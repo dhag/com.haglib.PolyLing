@@ -12,6 +12,7 @@ using Poly_Ling.Selection;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("edgeBevel", Description = "EdgeBevelTool（確定は EdgeBevelCommand）")]
     public class EdgeBevelToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -37,9 +38,13 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeBevelTool.Amount")]
         public float Amount   { get => _tool.Amount;   set => _tool.Amount   = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeBevelTool.Segments")]
         public int   Segments { get => _tool.Segments; set => _tool.Segments = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeBevelTool.Fillet")]
         public bool  Fillet   { get => _tool.Fillet;   set => _tool.Fillet   = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeBevelTool.DragSensitivity")]
         public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
 
         // ================================================================

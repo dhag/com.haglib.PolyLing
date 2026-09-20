@@ -11,6 +11,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("splitVertices", Description = "頂点分離（確定は SplitVerticesCommand）")]
     public class SplitVerticesToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -32,7 +33,10 @@ namespace Poly_Ling.Player
         // 公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolState(Description = "SplitVerticesTool.SelectedVertexCount")]
         public int  SelectedVertexCount  => _tool.SelectedVertexCount;
+        [Poly_Ling.Data.PLToolState(Description = "分離できる頂点の数（2 面以上に共有されている選択頂点）")]
+        public int  SplittableCount      => _tool.GetSplittableCount();
         public int  GetSplittableCount() => _tool.GetSplittableCount();
 
         /// <summary>

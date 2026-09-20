@@ -43,7 +43,9 @@ namespace Poly_Ling.Player
                                Nut, ShaftHolder, BearingUnit, UniversalJoint, MotorBracket,
                                RodEnd, MotorCoupling, TrapezoidalThread, Spline,
                                // ── 頂点へ藤壺（高度な図形）
-                               VertexBillboardPlace }
+                               VertexBillboardPlace,
+                               // ── ネジ配置（機構部品B）
+                               BoltPattern }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
@@ -56,7 +58,8 @@ namespace Poly_Ling.Player
               "RotorBlade",
               "Nut","ShaftHolder","BearingUnit","UniversalJoint","MotorBracket",
               "RodEnd","MotorCoupling","TrapezoidalThread","Spline",
-              "VertexBillboardPlace" };
+              "VertexBillboardPlace",
+              "BoltPattern" };
 
         /// <summary>
         /// 図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品A」/「機構部品B」/
@@ -103,7 +106,8 @@ namespace Poly_Ling.Player
             { ShapeKind.Nut, ShapeKind.ShaftHolder, ShapeKind.BearingUnit,
               ShapeKind.UniversalJoint, ShapeKind.MotorBracket,
               ShapeKind.RodEnd, ShapeKind.MotorCoupling,
-              ShapeKind.TrapezoidalThread, ShapeKind.Spline };
+              ShapeKind.TrapezoidalThread, ShapeKind.Spline,
+              ShapeKind.BoltPattern };
 
         // MCP用サンドボックス。試作中の図形はここにだけ載せる。
         // 登録（ShapeKind・ShapeKeys・RebuildSettings・Name/SetName・BuildCreateCommand）は
@@ -382,6 +386,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.MotorCoupling:     BuildMotorCouplingUI(_settingsContainer);     break;
                 case ShapeKind.TrapezoidalThread: BuildTrapezoidalThreadUI(_settingsContainer); break;
                 case ShapeKind.Spline:            BuildSplineUI(_settingsContainer);            break;
+                case ShapeKind.BoltPattern:       BuildBoltPatternUI(_settingsContainer);       break;
 
                 // ── 機構部品A（PlayerPrimitiveMeshSubPanel.Mechanism.cs） ──
                 case ShapeKind.HelicalGear:       BuildHelicalGearUI(_settingsContainer);       break;

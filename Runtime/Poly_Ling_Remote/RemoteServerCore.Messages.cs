@@ -296,10 +296,10 @@ namespace Poly_Ling.Remote
 
         /// <summary>
         /// PanelCommand経由のコマンド処理。
-        /// JSON → PanelCommand に変換し、所有権判定を通してから DispatchCommand に流す。
+        /// JSON → PanelCommand に変換し、要求者を操作者（CommandActor）として DispatchCommand に流す。
         /// DispatchPanelCommand（SummaryNotify）が実処理を担う。
         ///
-        /// ここが唯一の書き込み入口なので、協働編集の認可ゲートもここ1箇所に置く。
+        /// 協働編集の認可（担当者判定）はディスパッチャの入口で全経路共通に行う。
         /// </summary>
         private string ProcessCommandViaPanelCommand(RemoteMessage msg, IDuplexChannel channel)
         {
@@ -322,29 +322,22 @@ namespace Poly_Ling.Remote
             if (cmd is SelectMeshCommand sel)
                 return HandleRemoteSelect(msg, channel, requester, sel);
 
-            // ── 所有権ゲート ────────────────────────────────────────
+            // ── 所有権ゲートはディスパッチャが操作者を見て行う ──────────
             ulong[] objectIds = RemoteOwnership.ParseIdCsv(GetParamString(msg, "objectIds", null));
-
-            var verdict = RemoteOwnership.TryAuthorize(GetProjectContext(), cmd, requester, objectIds);
-            if (!verdict.Allowed)
-            {
-                Log($"拒否: {msg.Action} user=\"{requester}\" → {verdict.Reason}");
-
-                // 構造ズレの場合は当該クライアントへ再取得を促す
-                if (verdict.StaleView)
-                    SendToChannel(channel,
-                        TypedPayload.FromJson(BuildPushMessage("refreshRequired", "{}")),
-                        WebSocketFrameKind.Text);
-
-                return BuildErrorResponse(msg.Id, verdict.Reason);
-            }
+            var actor = CommandActor.Remote(requester, objectIds);
 
             // ── 選択スコープを差し替えてから実行 ────────────────────
             // MasterIndex を持たないコマンド（PartsSet系・SkinWeight系など）は
             // 「今の選択」を見て動くため、要求者の選択を一時的に流し込む。
-            CommandResult result = DispatchWithSelectionOf(requester, cmd);
+            CommandResult result = DispatchWithSelectionOf(requester, cmd, actor);
 
             Log($"cmd: {msg.Action} model={modelIndex} user=\"{requester}\" → {result}");
+
+            // 構造ズレで拒否された場合は当該クライアントへ再取得を促す
+            if (!result.Success && result.StaleView)
+                SendToChannel(channel,
+                    TypedPayload.FromJson(BuildPushMessage("refreshRequired", "{}")),
+                    WebSocketFrameKind.Text);
 
             // 担当が動いた可能性があるので差分があれば全体へ通知
             CheckOwnershipChanged();
@@ -378,16 +371,16 @@ namespace Poly_Ling.Remote
         /// DispatchCommand を呼び、結果を必ず非 null で返す。
         /// null が返るのは配線側の不備なので、成功に丸めず失敗として扱う。
         /// </summary>
-        private CommandResult Invoke(PanelCommand cmd)
-            => DispatchCommand(cmd) ?? CommandResult.Fail("dispatcher returned no result");
+        private CommandResult Invoke(PanelCommand cmd, CommandActor actor)
+            => DispatchCommand(cmd, actor) ?? CommandResult.Fail("dispatcher returned no result");
 
-        private CommandResult DispatchWithSelectionOf(string userName, PanelCommand cmd)
+        private CommandResult DispatchWithSelectionOf(string userName, PanelCommand cmd, CommandActor actor)
         {
             var model = Context?.Model;
             var slot  = _selectionStore.Find(userName);
 
             if (model == null || slot == null)
-                return Invoke(cmd);
+                return Invoke(cmd, actor);
 
             var proj = Context?.Project;
             int mi = proj?.CurrentModelIndex ?? 0;
@@ -397,7 +390,7 @@ namespace Poly_Ling.Remote
             using (var scope = SelectionScope.Apply(model, mi, slot))
             {
                 swapped = scope.Swapped;
-                result  = Invoke(cmd);
+                result  = Invoke(cmd, actor);
             }
 
             if (swapped)
@@ -485,11 +478,11 @@ namespace Poly_Ling.Remote
         /// PanelCommandFactory がリフレクションで行う。コマンドを 1 本足しても
         /// ここは触らなくてよい。
         ///
-        /// ここに手書きで残すのは、規則で書けない 2 件だけ。
+        /// ここに手書きで残すのは、規則で書けない 1 件だけ。
         ///   selectMesh … 単数の index を受ける後方互換がある
         ///                （RemoteHtmlClient.cs:284-285 が index だけを送る）
-        ///   applyBlend … BlendSourceSpec[] 1 本を 3 列に分けて送っている
-        ///                （PanelCommandRouter.cs:145-147）
+        /// applyBlend はクライアント（PanelCommandRouter）が ToArgs の規則で送るようになったので
+        /// 一般化した経路で組み立てる。
         ///
         /// undo / redo は型名と action 名がずれるだけなので、
         /// PanelCommandFactory.ActionAliases が引き受ける。
@@ -512,41 +505,6 @@ namespace Poly_Ling.Remote
                     }
                     var category = (MeshCategory)GetParamInt(msg, "category", (int)MeshCategory.Drawable);
                     return new SelectMeshCommand(modelIndex, category, indices);
-                }
-
-                // ── メッシュブレンド（ソース 3 列の組み直し） ──────────
-                // ソースの 3 列は同じ並びで届く。長さが揃わない要求は
-                // 対応関係が決まらないので短いほうに合わせて切る。
-                case "applyBlend":
-                {
-                    var srcModels  = GetIndices(msg, "srcModelIndices");
-                    var srcMasters = GetIndices(msg, "srcMasterIndices");
-                    var srcWeights = GetFloats(msg, "srcWeights");
-
-                    int n = Math.Min(srcModels.Length, Math.Min(srcMasters.Length, srcWeights.Length));
-                    if (n > ApplyBlendCommand.MaxSources) n = ApplyBlendCommand.MaxSources;
-
-                    // ApplyBlendCommand は平行配列で受けるので、
-                    // ここで BlendSourceSpec[] へ束ねる必要はない。長さは n で揃える。
-                    var srcModelsN  = new int[n];
-                    var srcMastersN = new int[n];
-                    var srcWeightsN = new float[n];
-                    for (int i = 0; i < n; i++)
-                    {
-                        srcModelsN[i]  = srcModels[i];
-                        srcMastersN[i] = srcMasters[i];
-                        srcWeightsN[i] = srcWeights[i];
-                    }
-
-                    return new ApplyBlendCommand(
-                        modelIndex,
-                        srcModelsN, srcMastersN, srcWeightsN,
-                        GetParamInt(msg, "destMasterIndex", -1),
-                        GetParamString(msg, "createNewObject", "false") == "true",
-                        GetParamString(msg, "recalcNormals",   "true")  == "true",
-                        GetParamString(msg, "selectedOnly",    "false") == "true",
-                        (Poly_Ling.UI.BlendMatchMode)GetParamInt(
-                            msg, "matchMode", (int)Poly_Ling.UI.BlendMatchMode.Index));
                 }
             }
 

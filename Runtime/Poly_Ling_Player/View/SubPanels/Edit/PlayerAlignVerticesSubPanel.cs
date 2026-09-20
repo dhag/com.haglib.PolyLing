@@ -15,7 +15,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerAlignVerticesSubPanel
     {
-        public Func<AlignVerticesToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                   Surface;
+        private const string Tool = "alignVertices";
         public Func<ProjectContext>           GetView;
         public Action<PanelCommand>           SendCommand;
 
@@ -92,9 +94,9 @@ namespace Poly_Ling.Player
             axisRow.style.flexDirection = FlexDirection.Row;
             axisRow.style.marginBottom  = 4;
 
-            _toggleX = MakeToggle("X", v => { var h = GetH(); if (h != null) h.AlignX = v; UpdatePreview(); });
-            _toggleY = MakeToggle("Y", v => { var h = GetH(); if (h != null) h.AlignY = v; UpdatePreview(); });
-            _toggleZ = MakeToggle("Z", v => { var h = GetH(); if (h != null) h.AlignZ = v; UpdatePreview(); });
+            _toggleX = MakeToggle("X", v => { Surface.Set(Tool, "alignX", v); UpdatePreview(); });
+            _toggleY = MakeToggle("Y", v => { Surface.Set(Tool, "alignY", v); UpdatePreview(); });
+            _toggleZ = MakeToggle("Z", v => { Surface.Set(Tool, "alignZ", v); UpdatePreview(); });
             axisRow.Add(_toggleX);
             axisRow.Add(_toggleY);
             axisRow.Add(_toggleZ);
@@ -103,7 +105,7 @@ namespace Poly_Ling.Player
             // 自動選択ボタン
             var autoBtn = new Button(() =>
             {
-                GetH()?.TriggerAutoSelect();
+                Surface?.Invoke(Tool, "triggerAutoSelect");
                 RefreshToggles();
                 UpdatePreview();
             }) { text = "Auto Select" };
@@ -117,9 +119,8 @@ namespace Poly_Ling.Player
             _modeDropdown.style.marginBottom = 4;
             _modeDropdown.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
-                h.Mode = (AlignMode)ModeChoices.IndexOf(e.newValue);
+                if (Surface == null) return;
+                Surface.Set(Tool, "mode", (AlignMode)ModeChoices.IndexOf(e.newValue));
                 UpdatePreview();
             });
             _root.Add(_modeDropdown);
@@ -131,14 +132,15 @@ namespace Poly_Ling.Player
             // 整列実行ボタン
             _alignBtn = new Button(() =>
             {
-                var h = GetH();
                 var targets = ActiveMasterIndices();
-                if (h == null || targets == null) return;
+                if (Surface == null || targets == null) return;
 
                 // 設定値はコマンドが正典。パネルの現在値を載せて送る。
                 // ハンドラ側は実行後に元の値へ戻すので、表示は変わらない。
                 SendCommand?.Invoke(new AlignVerticesCommand(
-                    ModelIndex, targets, h.AlignX, h.AlignY, h.AlignZ, h.Mode));
+                    ModelIndex, targets,
+                    Surface.GetBool(Tool, "alignX"), Surface.GetBool(Tool, "alignY"), Surface.GetBool(Tool, "alignZ"),
+                    Surface.Get(Tool, "mode", default(AlignMode))));
                 Refresh();
             })
             { text = "整列実行" };
@@ -155,16 +157,15 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            int selCount = h.SelectedVertexCount;
+            int selCount = Surface.GetInt(Tool, "selectedVertexCount");
             _selectedLabel.text = $"選択中: {selCount} 頂点";
 
-            if (h.StatsCalculated)
+            if (Surface.GetBool(Tool, "statsCalculated"))
             {
                 _stdDevLabel.text =
-                    $"標準偏差  X:{h.StdDevX:F4}  Y:{h.StdDevY:F4}  Z:{h.StdDevZ:F4}";
+                    $"標準偏差  X:{Surface.GetFloat(Tool, "stdDevX"):F4}  Y:{Surface.GetFloat(Tool, "stdDevY"):F4}  Z:{Surface.GetFloat(Tool, "stdDevZ"):F4}";
             }
             else
             {
@@ -174,9 +175,9 @@ namespace Poly_Ling.Player
             RefreshToggles();
             UpdatePreview();
 
-            bool canAlign = (h.AlignX || h.AlignY || h.AlignZ) && selCount >= 2;
+            bool anyAxis = Surface.GetBool(Tool, "alignX") || Surface.GetBool(Tool, "alignY") || Surface.GetBool(Tool, "alignZ");
             if (_alignBtn != null)
-                _alignBtn.SetEnabled(canAlign);
+                _alignBtn.SetEnabled(anyAxis && selCount >= 2);
         }
 
         // ================================================================
@@ -185,28 +186,30 @@ namespace Poly_Ling.Player
 
         private void RefreshToggles()
         {
-            var h = GetH();
-            if (h == null) return;
-            _toggleX?.SetValueWithoutNotify(h.AlignX);
-            _toggleY?.SetValueWithoutNotify(h.AlignY);
-            _toggleZ?.SetValueWithoutNotify(h.AlignZ);
-            _modeDropdown?.SetValueWithoutNotify(ModeChoices[(int)h.Mode]);
+            if (Surface == null) return;
+            _toggleX?.SetValueWithoutNotify(Surface.GetBool(Tool, "alignX"));
+            _toggleY?.SetValueWithoutNotify(Surface.GetBool(Tool, "alignY"));
+            _toggleZ?.SetValueWithoutNotify(Surface.GetBool(Tool, "alignZ"));
+            _modeDropdown?.SetValueWithoutNotify(ModeChoices[(int)Surface.Get(Tool, "mode", default(AlignMode))]);
         }
 
         private void UpdatePreview()
         {
             if (_previewLabel == null) return;
-            var h = GetH();
-            if (h == null || (!h.AlignX && !h.AlignY && !h.AlignZ) || h.SelectedVertexCount < 2)
+            if (Surface == null) { _previewLabel.text = ""; return; }
+            bool ax = Surface.GetBool(Tool, "alignX");
+            bool ay = Surface.GetBool(Tool, "alignY");
+            bool az = Surface.GetBool(Tool, "alignZ");
+            if ((!ax && !ay && !az) || Surface.GetInt(Tool, "selectedVertexCount") < 2)
             {
                 _previewLabel.text = "";
                 return;
             }
-            var t    = h.GetAlignTarget();
+            var t    = Surface.Get(Tool, "alignTarget", Vector3.zero);
             var parts = new List<string>();
-            if (h.AlignX) parts.Add($"X={t.x:F3}");
-            if (h.AlignY) parts.Add($"Y={t.y:F3}");
-            if (h.AlignZ) parts.Add($"Z={t.z:F3}");
+            if (ax) parts.Add($"X={t.x:F3}");
+            if (ay) parts.Add($"Y={t.y:F3}");
+            if (az) parts.Add($"Z={t.z:F3}");
             _previewLabel.text = "-> " + string.Join("  ", parts);
         }
 

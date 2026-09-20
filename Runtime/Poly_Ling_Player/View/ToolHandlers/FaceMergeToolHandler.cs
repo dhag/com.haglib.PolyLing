@@ -13,6 +13,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("faceMerge", Description = "FaceMergeTool（確定は FaceMergeCommand）")]
     public class FaceMergeToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -37,6 +38,7 @@ namespace Poly_Ling.Player
         // 公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolState(Description = "FaceMergeTool.SelectedEdgeCount")]
         public int SelectedEdgeCount => _tool.SelectedEdgeCount;
 
         /// <summary>
@@ -44,9 +46,11 @@ namespace Poly_Ling.Player
         /// パネルの下調べ・ホバーの可否表示・ビューポートのクリック実行はこの値を使う。
         /// コマンドからの実行はコマンドの DeleteVertices を使う（ExecuteFromCommand）。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "「頂点を削除する」の現在値（パネルのチェックボックス）。既定 true")]
         public bool DeleteVertices { get; set; } = true;
 
         /// <summary>対象メッシュ全部を合わせた下調べ結果（DeleteVertices の現在値で調べる）。</summary>
+        [Poly_Ling.Data.PLToolStateGroup(Name = "inspect", Description = "実行前の下調べ（FaceMergeTool.MergeSummary）")]
         public FaceMergeTool.MergeSummary Inspect()
         {
             _tool.DeleteVertices = DeleteVertices;

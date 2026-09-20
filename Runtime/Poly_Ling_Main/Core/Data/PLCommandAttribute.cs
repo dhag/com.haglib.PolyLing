@@ -35,8 +35,53 @@ namespace Poly_Ling.Data
         /// </summary>
         public string TextKey { get; set; } = "";
 
+        /// <summary>
+        /// コマンドがモデルのどこを書き換えるか。担当者判定（RemoteOwnership）の対象解決に使う。
+        /// 既定は Unspecified で、PanelCommandFactoryAudit.RunAll が数える。
+        /// </summary>
+        public PLWriteScope Writes { get; set; } = PLWriteScope.Unspecified;
+
+        /// <summary>
+        /// Writes = Targets のとき、対象のミラー側オブジェクトも書き換えるか。既定は true。
+        ///
+        /// 頂点位置は描画同期でミラー側へ写り（PlayerViewportManager.Renderer.cs）、
+        /// 表示・ロックはミラー側へ広げ（PlayerCommandDispatcher.MeshAttributes.cs の
+        /// ExpandToMirrorPeers）、位相変更はミラー側を作り直す。担当者判定は既定で
+        /// ミラー側も対象に含める。処理を読んでミラー側へ書かないと確かめたコマンドだけ
+        /// false にする。
+        /// </summary>
+        public bool WritesMirrorSide { get; set; } = true;
+
         public PLCommandAttribute() { }
 
         public PLCommandAttribute(string description) { Description = description; }
+    }
+
+    /// <summary>
+    /// コマンドの書き込み範囲。PLCommandAttribute.Writes が使う。
+    ///
+    /// 【判定での扱い】
+    ///   None      … 担当者判定をしない（モデルを書き換えない）
+    ///   Targets   … PLParam(IsMeshRef, MeshRefAccess = Write) の付いた引数が指す
+    ///                オブジェクトについて担当者判定をする
+    ///   AddOnly   … 既存オブジェクトを書き換えず新規に足すだけ。担当者判定をしない
+    ///   ModelWide … モデル内に他人の担当が 1 つでもあれば拒否する
+    /// </summary>
+    public enum PLWriteScope
+    {
+        /// <summary>未宣言。PanelCommandFactoryAudit.RunAll が数える。</summary>
+        Unspecified = 0,
+
+        /// <summary>モデルを書き換えない（照会・書き出し・表示だけの切り替えなど）。</summary>
+        None = 1,
+
+        /// <summary>引数で示したオブジェクトだけを書き換える。</summary>
+        Targets = 2,
+
+        /// <summary>既存オブジェクトを書き換えず、新規に足すだけ。</summary>
+        AddOnly = 3,
+
+        /// <summary>モデル全体に効く、または対象を引数から特定できない。</summary>
+        ModelWide = 4,
     }
 }

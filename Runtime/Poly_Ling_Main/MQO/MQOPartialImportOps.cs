@@ -764,6 +764,8 @@ namespace Poly_Ling.MQO
             mo.Vertices.AddRange(vertices);
             mo.Faces.Clear();
             mo.Faces.AddRange(faces);
+            // 旧トポロジーの線分群は索引が合わなくなるので捨てる（取り込み元は線分群を持たない）。
+            mo.LineGroups = new List<LineGroup>();
 
             if (recalcNormals)
                 RecalculateNormals(mo, normalMode, smoothingAngle);

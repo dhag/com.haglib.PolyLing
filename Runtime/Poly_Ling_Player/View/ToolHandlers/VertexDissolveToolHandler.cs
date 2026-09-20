@@ -13,6 +13,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("vertexDissolve", Description = "VertexDissolveTool（確定は VertexDissolveCommand）")]
     public class VertexDissolveToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -37,9 +38,11 @@ namespace Poly_Ling.Player
         // 公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolState(Description = "VertexDissolveTool.SelectedVertexCount")]
         public int SelectedVertexCount => _tool.SelectedVertexCount;
 
         /// <summary>対象メッシュ全部を合わせた下調べ結果。</summary>
+        [Poly_Ling.Data.PLToolStateGroup(Name = "inspect", Description = "実行前の下調べ（VertexDissolveTool.DissolveSummary）")]
         public VertexDissolveTool.DissolveSummary Inspect() => _tool.Inspect();
 
         /// <summary>

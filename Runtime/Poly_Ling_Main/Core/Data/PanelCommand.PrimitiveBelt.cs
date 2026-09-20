@@ -31,7 +31,7 @@ namespace Poly_Ling.Data
     ///   受け側の beltClosed / beltFlipWinding は bool[] なので、
     ///   "true,false" でも "1,0" でも TryParse が受ける。
     /// </summary>
-    [PLCommand(Description = "描画オブジェクトから梯子（基準ベルト）を取り込み、生成コマンドへ渡せる点列として返す。モデルは変えない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクトから梯子（基準ベルト）を取り込み、生成コマンドへ渡せる点列として返す。モデルは変えない。")]
     [PLResult("ok",              PLResultKind.Flag,        Description = "取り込めたか")]
     [PLResult("message",         PLResultKind.Text,        Description = "取り込みの説明。失敗した理由もここに入る")]
     [PLResult("belts",           PLResultKind.Integer,     Description = "取り込んだ梯子の本数")]
@@ -47,7 +47,7 @@ namespace Poly_Ling.Data
     {
         [PLParam(TextKey = "MasterIndex",
                  Description = "取り込み元の描画オブジェクトの masterIndex。省くと現在の編集対象",
-                 IsMeshRef = true)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
         public int MasterIndex { get; }
 
         [PLParam(TextKey = "BeltAcquireMethod",
@@ -132,7 +132,7 @@ namespace Poly_Ling.Data
         /// </summary>
         [PLParam(TextKey = "BeltSourceIndex",
                  Description = "梯子の取り込み元オブジェクトの索引。-1 でひも付けなし",
-                 IsMeshRef = true)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
         public int BeltSourceIndex { get; }
 
         /// <summary>
@@ -293,7 +293,7 @@ namespace Poly_Ling.Data
     /// フリル。断面プロファイルは A / B の2本まで持てる。
     /// TwoProfiles が false のときは A だけを使う。
     /// </summary>
-    [PLCommand(Description = "フリル。断面プロファイルは A / B の2本まで持てる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "フリル。断面プロファイルは A / B の2本まで持てる。")]
     public sealed class CreateFrillCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Frill", Description = "フリルのパラメータ", Required = true)]
@@ -341,7 +341,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。</summary>
-    [PLCommand(Description = "パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。")]
     public sealed class CreatePipeCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ", Required = true)]
@@ -390,7 +390,7 @@ namespace Poly_Ling.Data
     /// 藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。
     /// 索引から MeshObject への解決はディスパッチャ側が行う。
     /// </summary>
-    [PLCommand(Description = "藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。")]
     public sealed class CreatePlaceObjectCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "PlaceObject", Description = "配置のパラメータ", Required = true)]
@@ -398,7 +398,7 @@ namespace Poly_Ling.Data
 
         /// <summary>配置元の MeshContextList インデックス。</summary>
         [PLParam(TextKey = "PlaceSourceIndices", Description = "配置元オブジェクトの索引", Required = true,
-                 IsMeshRef = true)]
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
         public int[] SourceMasterIndices { get; }
 
         public override string ShapeName => "PlaceObject";
@@ -444,7 +444,7 @@ namespace Poly_Ling.Data
     ///   Mesh はスキーマにできないため Ignore を付けてある。
     ///   MCP からの生成には図形ごとの CreatePrimitiveMeshCommand を使う。
     /// </summary>
-    [PLCommand(Description = "出来上がったメッシュをそのままモデルへ置く。内部用で、外からは使えない。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "出来上がったメッシュをそのままモデルへ置く。内部用で、外からは使えない。")]
     public class AddGeneratedMeshCommand : PanelCommand
     {
         /// <summary>置くメッシュ。呼出し側が作った実体をそのまま渡す。</summary>
@@ -486,7 +486,7 @@ namespace Poly_Ling.Data
     /// 穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。
     /// 穴は種頂点で指す。種から縁を復元するのは生成側。
     /// </summary>
-    [PLCommand(Description = "穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -593,7 +593,7 @@ namespace Poly_Ling.Data
     /// 開いた辺の連なりも扱える点が穴つなぎと違う。
     /// 辺は同一メッシュのものに限る（生成側が2群へ分けるため）。
     /// </summary>
-    [PLCommand(Description = "辺群ブリッジ。拾った辺そのものを辺群として、その間に面を張る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "辺群ブリッジ。拾った辺そのものを辺群として、その間に面を張る。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -610,7 +610,7 @@ namespace Poly_Ling.Data
         public const int SubdivisionsMax = 32;
 
         /// <summary>辺のあるメッシュの MeshContextList インデックス。</summary>
-        [PLParam(TextKey = "EdgeBridgeMesh", IsMeshRef = true, Description = "対象メッシュの索引", Required = true)]
+        [PLParam(TextKey = "EdgeBridgeMesh", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Description = "対象メッシュの索引", Required = true)]
         public int MeshIndex { get; }
 
         /// <summary>拾った辺。両端の頂点番号の組で表す。</summary>
@@ -659,7 +659,7 @@ namespace Poly_Ling.Data
     ///   開いているモデルを全部捨てる。Undo では戻せない。
     ///   UI のボタンには出さず、自動検証とリモートからのみ使う。
     /// </summary>
-    [PLCommand(Description = "プロジェクトを空にして、モデルを 1 つだけ作り直す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "プロジェクトを空にして、モデルを 1 つだけ作り直す。")]
     public class ResetProjectCommand : PanelCommand
     {
         /// <summary>作り直すモデルの名前。空なら "Model"。</summary>

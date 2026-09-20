@@ -11,6 +11,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("mergeVertices", Description = "MergeVerticesTool（確定は MergeVerticesCommand）")]
     public class MergeVerticesToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -33,10 +34,44 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "MergeVerticesTool.Threshold")]
         public float Threshold   { get => _tool.Threshold;   set => _tool.Threshold   = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "MergeVerticesTool.ShowPreview")]
         public bool  ShowPreview { get => _tool.ShowPreview; set => _tool.ShowPreview = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "MergeVerticesTool.RemoveClosedFaces")]
         public bool  RemoveClosedFaces { get => _tool.RemoveClosedFaces; set => _tool.RemoveClosedFaces = value; }
         public MergePreviewInfo PreviewInfo => _tool.PreviewInfo;
+
+        [Poly_Ling.Data.PLToolState(Description = "結合候補のグループ数")]
+        public int PreviewGroupCount => _tool.PreviewInfo.GroupCount;
+
+        [Poly_Ling.Data.PLToolState(Description = "結合で消える頂点数")]
+        public int PreviewVerticesToMerge => _tool.PreviewInfo.TotalVerticesToMerge;
+
+        /// <summary>
+        /// 結合候補の先頭 5 グループの説明行（各グループの頂点数と先頭 8 個の頂点番号）。
+        /// パネルの詳細表示と同じ文言。6 グループ以上あれば最後に残り件数の行を付ける。
+        /// </summary>
+        [Poly_Ling.Data.PLToolState(Description = "結合候補の先頭 5 グループの説明行")]
+        public string[] PreviewGroupLines
+        {
+            get
+            {
+                var info  = _tool.PreviewInfo;
+                var lines = new System.Collections.Generic.List<string>();
+                if (info.Groups == null) return lines.ToArray();
+                int showCount = Mathf.Min(info.Groups.Count, 5);
+                for (int i = 0; i < showCount; i++)
+                {
+                    var group = info.Groups[i];
+                    var take  = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Take(group, 8));
+                    string indices = string.Join(", ", take) + (group.Count > 8 ? "..." : "");
+                    lines.Add($"[{i}] {group.Count} verts: {indices}");
+                }
+                if (info.Groups.Count > 5) lines.Add($"...他 {info.Groups.Count - 5} グループ");
+                return lines.ToArray();
+            }
+        }
 
         /// <summary>
         /// 旧経路（遅延実行）。_lastContext が無ければ _pendingMerge を立て、

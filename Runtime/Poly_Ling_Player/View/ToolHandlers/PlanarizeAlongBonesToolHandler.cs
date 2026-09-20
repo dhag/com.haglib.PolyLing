@@ -11,6 +11,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("planarizeAlongBones", Description = "PlanarizeAlongBonesTool（確定は PlanarizeAlongBonesCommand）")]
     public class PlanarizeAlongBonesToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -32,12 +33,18 @@ namespace Poly_Ling.Player
         // 設定公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "PlanarizeAlongBonesTool.BoneIndexA")]
         public int               BoneIndexA { get => _tool.BoneIndexA; set => _tool.BoneIndexA = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PlanarizeAlongBonesTool.BoneIndexB")]
         public int               BoneIndexB { get => _tool.BoneIndexB; set => _tool.BoneIndexB = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PlanarizeAlongBonesTool.PlaneMode")]
         public PlanePlacementMode PlaneMode  { get => _tool.PlaneMode;  set => _tool.PlaneMode  = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PlanarizeAlongBonesTool.Blend")]
         public float             Blend       { get => _tool.Blend;      set => _tool.Blend      = value; }
 
+        [Poly_Ling.Data.PLToolState(Description = "PlanarizeAlongBonesTool.BoneNames")]
         public string[] BoneNames         => _tool.BoneNames;
+        [Poly_Ling.Data.PLToolState(Description = "PlanarizeAlongBonesTool.SelectedVertexCount")]
         public int      SelectedVertexCount => _tool.SelectedVertexCount;
 
         public Vector3 GetBoneWorldPosition(int listIndex) => _tool.GetBoneWorldPosition(listIndex);

@@ -33,6 +33,7 @@ namespace Poly_Ling.Player
     /// <summary>
     /// カメラ調整ギズモ。調整対象（メイン / 3面）と操作種別（カメラ / 注視点）を切り替える。
     /// </summary>
+    [Poly_Ling.Data.PLTool("camera", Description = "カメラ・注視点ギズモ")]
     public class CameraToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         /// <summary>調整対象のカメラ。</summary>
@@ -86,7 +87,9 @@ namespace Poly_Ling.Player
         // 状態
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "CameraToolHandler.TargetKind")]
         public CameraTargetKind TargetKind { get; set; } = CameraTargetKind.Main;
+        [Poly_Ling.Data.PLToolParam(Description = "CameraToolHandler.GizmoOp")]
         public CameraGizmoOp    GizmoOp    { get; set; } = CameraGizmoOp.Camera;
 
         // カメラ位置・注視点そのものが編集対象の値なので、ScreenOffset は
@@ -102,6 +105,7 @@ namespace Poly_Ling.Player
         private Quaternion _startRotation = Quaternion.identity;
 
         /// <summary>回転スナップ（度）。0 以下でスナップ無効。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "回転スナップ（度）。0 以下でスナップ無効")]
         public float RotateSnapDeg { get; set; } = 0f;
 
         // ================================================================

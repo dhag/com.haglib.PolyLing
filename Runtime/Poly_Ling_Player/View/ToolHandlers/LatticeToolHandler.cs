@@ -56,6 +56,7 @@ using Poly_Ling.UndoSystem;
 namespace Poly_Ling.Player
 {
     /// <summary>格子変形ハンドラ。</summary>
+    [Poly_Ling.Data.PLTool("lattice", Description = "格子変形（確定は ApplyLatticeDeformCommand）")]
     public class LatticeToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         /// <summary>Deform 中の格子点ギズモのサブモード。</summary>
@@ -130,6 +131,7 @@ namespace Poly_Ling.Player
         public void SetUndoController(MeshUndoController ctrl) { _undoController = ctrl; }
 
         /// <summary>制御点のヒット判定半径（ピクセル）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "制御点のヒット判定半径（ピクセル）")]
         public float PointHitRadius { get; set; } = 10f;
 
         // ================================================================
@@ -140,19 +142,34 @@ namespace Poly_Ling.Player
         private readonly LatticeDeformer _deformer = new LatticeDeformer();
 
         /// <summary>現在の状態。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "現在の状態")]
         public LatticeState State { get; private set; } = LatticeState.Idle;
 
         /// <summary>格子データ。パネルが分割数の表示に使う。</summary>
         public LatticeGrid Grid => _deformer.Grid;
 
         /// <summary>変形対象の頂点数。未開始は 0。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "変形対象の頂点数。未開始は 0")]
         public int AffectedCount => _applier.AffectedCount;
 
         /// <summary>選択中の制御点数。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "選択中の制御点数")]
         public int SelectedPointCount => _selectedPoints.Count;
 
         /// <summary>制御点の総数。未構築は 0。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "制御点の総数。未構築は 0")]
         public int ControlPointCount => Grid.IsBuilt ? Grid.ControlPointCount : 0;
+
+        [Poly_Ling.Data.PLToolState(Description = "格子の X 方向の分割数（LatticeGrid.CellsX）")]
+        public int GridCellsX => Grid.CellsX;
+        [Poly_Ling.Data.PLToolState(Description = "格子の Y 方向の分割数（LatticeGrid.CellsY）")]
+        public int GridCellsY => Grid.CellsY;
+        [Poly_Ling.Data.PLToolState(Description = "格子の Z 方向の分割数（LatticeGrid.CellsZ）")]
+        public int GridCellsZ => Grid.CellsZ;
+        [Poly_Ling.Data.PLToolState(Description = "LatticeGrid.BaseCenter")]
+        public Vector3 GridBaseCenter => Grid.BaseCenter;
+        [Poly_Ling.Data.PLToolState(Description = "LatticeGrid.BaseSize")]
+        public Vector3 GridBaseSize => Grid.BaseSize;
 
         // 格子制御点の選択。メッシュ頂点の SelectionState とは別に持つ。
         private readonly HashSet<int> _selectedPoints = new HashSet<int>();
@@ -171,6 +188,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// Deform 中のギズモのサブモード。切り替えるとホバー・ドラッグ状態は破棄する。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "Deform 中のギズモのサブモード。切り替えるとホバー・ドラッグ状態は破棄する")]
         public PointGizmoMode Mode
         {
             get => _pointMode;
@@ -206,6 +224,7 @@ namespace Poly_Ling.Player
         /// 対象頂点の開始位置を記録し、その AABB へ格子を合わせる。
         /// この時点でメッシュは変形しない。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "格子の配置を始める（頂点は動かさない）")]
         public bool BeginPlacement()
         {
             if (State != LatticeState.Idle) return false;
@@ -238,6 +257,7 @@ namespace Poly_Ling.Player
         /// 選択が空のときは配置中のまま何も変えない（頂点はまだ触っていないため、
         /// 選び直しの途中でセッションを畳まない）。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "格子を選択範囲に合わせる")]
         public bool FitToSelection()
         {
             if (State != LatticeState.Placement) return false;
@@ -265,6 +285,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 分割数を変更する。Placement 中のみ受け付ける（変形中の変更は禁止）。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "格子の分割数を設定する（配置中のみ）")]
         public bool SetCells(int x, int y, int z)
         {
             if (State != LatticeState.Placement) return false;
@@ -281,6 +302,7 @@ namespace Poly_Ling.Player
         /// 格子の中心と大きさを設定する。格子全体の移動・拡大縮小にあたる。
         /// 制御点が作り直されるため、分割数の変更と同じく Placement 中のみ受け付ける。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "格子の中心と大きさを設定する（配置中のみ）")]
         public bool SetBounds(Vector3 center, Vector3 size)
         {
             if (State != LatticeState.Placement) return false;
@@ -300,6 +322,7 @@ namespace Poly_Ling.Player
         /// 格子の範囲と分割数は触らない（合わせ直しは FitToSelection の役目）。
         /// 選択が空になっていたら移らずに false を返す。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "変形（頂点を動かすプレビュー）を始める。対象のロックを取る")]
         public bool BeginDeform()
         {
             if (State != LatticeState.Placement || !Grid.IsBuilt) return false;
@@ -308,10 +331,18 @@ namespace Poly_Ling.Player
             var axis  = GetWorkAxis?.Invoke();
             if (model == null || axis == null) return false;
 
+            // 変形（頂点を動かすプレビュー）の開始前に、選択の担当者判定とロック取得（H-2）。
+            if (!_inCommand && TryBeginPreview != null && !_panelPreview)
+            {
+                if (!TryBeginPreview()) return false;
+                _panelPreview = true;
+            }
+
             _applier.Reset();
             WireApplierWorldReaders();
             if (!_applier.Begin(model, axis))
             {
+                EndPanelPreview();
                 NotifyChanged();
                 return false;
             }
@@ -342,6 +373,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 制御点を基準位置へ戻す。格子の範囲と分割数は保つ。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "格子の変形を元に戻す")]
         public void ResetDeformation()
         {
             if (State != LatticeState.Deform) return;
@@ -381,6 +413,7 @@ namespace Poly_Ling.Player
         /// 変形を捨てて開始前の頂点位置へ戻す。Placement 中は頂点を触っていないので
         /// 格子を捨てるだけ。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "セッションを捨てて開始状態へ戻す")]
         public void Cancel()
         {
             if (State == LatticeState.Idle) return;
@@ -409,6 +442,7 @@ namespace Poly_Ling.Player
         ///   従来どおり Commit で確定させる（頂点が動いていなければ
         ///   Commit も Undo を積まない）。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "変形を ApplyLatticeDeformCommand として確定する")]
         public void CommitViaCommand()
         {
             if (SendCommand == null || State != LatticeState.Deform) { Commit(); return; }
@@ -499,6 +533,10 @@ namespace Poly_Ling.Player
             // 途中まで進んでいるセッションが残っていたら捨てる。積み重ねないため。
             if (State != LatticeState.Idle) Cancel();
 
+            // コマンド実行中は判定済みなので、パネル用のプレビュー関門を通さない（H-2）。
+            _inCommand = true;
+            try
+            {
             if (!BeginPlacement())
             { reason = "選択された頂点がありません"; return false; }
 
@@ -537,6 +575,33 @@ namespace Poly_Ling.Player
 
             OnRepaint?.Invoke();
             return true;
+            }
+            finally
+            {
+                _inCommand = false;
+            }
+        }
+
+        // ================================================================
+        // パネルからのプレビュー（操作経路統一計画.md H-2）
+        // ================================================================
+
+        /// <summary>パネル操作で変形プレビューを始めてよいか（選択の担当者判定とロック取得）。</summary>
+        public Func<bool> TryBeginPreview;
+
+        /// <summary>パネルのプレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action EndPreview;
+
+        private bool _panelPreview;
+
+        /// <summary>ExecuteFromCommand の実行中か。</summary>
+        private bool _inCommand;
+
+        private void EndPanelPreview()
+        {
+            if (!_panelPreview) return;
+            _panelPreview = false;
+            EndPreview?.Invoke();
         }
 
         /// <summary>
@@ -546,6 +611,7 @@ namespace Poly_Ling.Player
         private void EndSession()
         {
             bool wasDeform = State == LatticeState.Deform;
+            EndPanelPreview();
 
             _applier.Reset();
             _deformer.ResetDeformation();

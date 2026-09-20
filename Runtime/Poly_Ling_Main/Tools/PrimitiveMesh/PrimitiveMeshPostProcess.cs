@@ -62,6 +62,9 @@ namespace Poly_Ling.PrimitiveMesh
             // ウェイトの有無は変わらず、SkinKind の再計算は不要。
             mo.Vertices = newVerts;
 
+            // 線分群の頂点索引も同じ表で付け替える（並べ替えなので切れる区間は無い）。
+            LineGroupOps.ApplyVertexMap(mo, oldToNew);
+
             if (mo.Faces == null) return;
             foreach (var f in mo.Faces)
             {

@@ -70,6 +70,14 @@ namespace Poly_Ling.Player
             _getModelIndex = getModelIndex;
         }
 
+        /// <summary>プレビューを始める前に、対象の担当者判定とロック取得を行う（操作経路統一計画.md H-2）。null なら常に許可。</summary>
+        public Func<IList<int>, bool> TryLockForPreview;
+
+        /// <summary>プレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action UnlockAfterPreview;
+
+        private bool _previewLocked;
+
         // ================================================================
         // 内部状態
         // ================================================================
@@ -822,8 +830,21 @@ namespace Poly_Ling.Player
 
             if (!_blendPreview.IsActive)
             {
-                _blendPreview.Start(_model, _destMasterIndex, BuildHideIndices());
+                var hide = BuildHideIndices();
+
+                // プレビューは宛先の頂点と、隠すソースの表示を書き換えるので、
+                // 始める前に担当者判定とロック取得（操作経路統一計画.md H-2）。
+                if (!_previewLocked && TryLockForPreview != null)
+                {
+                    var lockTargets = new List<int> { _destMasterIndex };
+                    foreach (var hi in hide) if (!lockTargets.Contains(hi)) lockTargets.Add(hi);
+                    if (!TryLockForPreview(lockTargets)) return;
+                    _previewLocked = true;
+                }
+
+                _blendPreview.Start(_model, _destMasterIndex, hide);
                 if (_blendPreview.IsActive) OnMeshVisibilityChanged?.Invoke();
+                else if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
             }
 
             ApplyPreview();
@@ -925,32 +946,18 @@ namespace Poly_Ling.Player
             }
             if (specs.Count == 0) return;
 
-            if (_panelContext != null)
-            {
-                // コマンド経由（Undo記録はDispatcher側で行う）。
-                // Dispatcher は自前の BlendPreviewState を作り直すため、
-                // こちらのプレビューは先に終了させてブレンド前の位置へ戻す。
-                // 戻さないと退避値が古いまま生き続け、次の操作で巻き戻る。
-                EndPreview();
-                ApplyBlendCommand.SplitSources(
-                    specs.ToArray(), out var srcModels, out var srcMasters, out var srcWeights);
-                _panelContext.SendCommand(new ApplyBlendCommand(
-                    _getModelIndex?.Invoke() ?? 0,
-                    srcModels, srcMasters, srcWeights, _destMasterIndex,
-                    _createNewObject, _recalculateNormals,
-                    _selectedVerticesOnly, _matchMode, _keepAsGroup));
-            }
-            else
-            {
-                // フォールバック（PanelContext未設定時）。
-                // ApplyBlend は内部でバックアップ位置へ戻してから確定する。
-                var sources = ResolveSources(null);
-                BlendOperation.ApplyBlend(
-                    _model, _blendPreview, sources,
-                    _recalculateNormals, _selectedVerticesOnly,
-                    _matchMode, _createNewObject, BuildToolCtx());
-                _blendPreview.End(_model, BuildToolCtx());
-            }
+            // 確定はコマンドだけで行う（本体も SetCommandContext を渡す。操作経路統一計画.md J）。
+            // Undo 記録はディスパッチャ側で行う。ディスパッチャは自前の BlendPreviewState を
+            // 作り直すため、こちらのプレビューは先に終了させてブレンド前の位置へ戻す。
+            // 戻さないと退避値が古いまま生き続け、次の操作で巻き戻る。
+            EndPreview();
+            ApplyBlendCommand.SplitSources(
+                specs.ToArray(), out var srcModels, out var srcMasters, out var srcWeights);
+            _panelContext?.SendCommand(new ApplyBlendCommand(
+                _getModelIndex?.Invoke() ?? 0,
+                srcModels, srcMasters, srcWeights, _destMasterIndex,
+                _createNewObject, _recalculateNormals,
+                _selectedVerticesOnly, _matchMode, _keepAsGroup));
 
             ClearAllSlots(applyPreview: false);
             Refresh();
@@ -1018,6 +1025,7 @@ namespace Poly_Ling.Player
 
         private void EndPreview()
         {
+            if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
             bool wasActive = _blendPreview.IsActive;
             _blendPreview.End(_model, BuildToolCtx());
             if (wasActive) OnMeshVisibilityChanged?.Invoke();

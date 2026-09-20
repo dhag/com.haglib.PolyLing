@@ -52,7 +52,7 @@ namespace Poly_Ling.Player
 
             // UVZメッシュ生成（depthScale=0＝完全平面）。model.Add は末尾追加。
             int beforeCount = model.MeshContextCount;
-            _commandDispatcher?.Dispatch(new UvToXyzCommand(
+            DispatchHost(new UvToXyzCommand(
                 modelIdx, srcMaster, _uvEditUvScale, 0f, camPos, camFwd));
             if (model.MeshContextCount <= beforeCount) return; // 生成失敗
             int uvzMaster = model.MeshContextCount - 1;
@@ -104,11 +104,11 @@ namespace Poly_Ling.Player
                 && uvzMaster < model.MeshContextCount && srcMaster < model.MeshContextCount)
             {
                 // XY→UV 書き戻し（ソース側Undo記録）。src=UVZ, target=元メッシュ。
-                _commandDispatcher?.Dispatch(new XyzToUvCommand(
+                DispatchHost(new XyzToUvCommand(
                     modelIdx, uvzMaster, srcMaster, _uvEditUvScale));
 
                 // UVZメッシュ破棄（末尾indexなので他indexはずれない）
-                _commandDispatcher?.Dispatch(new DeleteMeshesCommand(
+                DispatchHost(new DeleteMeshesCommand(
                     modelIdx, new[] { uvzMaster }));
 
                 // 元メッシュを選択へ復元

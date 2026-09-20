@@ -16,7 +16,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerPipeAlignSubPanel
     {
-        public Func<PipeAlignToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface               Surface;
+        private const string Tool = "pipeAlign";
         public Func<ProjectContext>       GetView;
         public Action<PanelCommand>       SendCommand;
 
@@ -142,8 +144,7 @@ namespace Poly_Ling.Player
             _modeGroup.style.marginBottom = 4;
             _modeGroup.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h != null) h.Mode = ToMode(e.newValue);
+                Surface.Set(Tool, "mode", ToMode(e.newValue));
                 ApplyModeVisibility(ToMode(e.newValue));
                 RefreshExecuteEnabled();
             });
@@ -156,20 +157,19 @@ namespace Poly_Ling.Player
             // ── 実行 ───────────────────────────────────────────────────
             _executeBtn = new Button(() =>
             {
-                var h = GetH();
-                if (h == null) return;
+                if (Surface == null) return;
 
                 // 設定値はコマンドが正典。パネルの現在値を載せて送る。
                 SendCommand?.Invoke(new PipeAlignCommand(
-                    ModelIndex, SelectedMasterIndices(), h.Mode,
-                    direction:       h.Direction,
-                    edgeMode:        h.EdgeMode,
-                    ringVertexCount: h.RingVertexCount,
-                    capStart:        h.CapStart,
-                    capEnd:          h.CapEnd,
-                    pairText:        h.PairText,
-                    weightText:      h.WeightText,
-                    targetText:      h.TargetText));
+                    ModelIndex, SelectedMasterIndices(), CurMode,
+                    direction:       Surface.Get(Tool, "direction", PipeAlignDirection.PlusToMinus),
+                    edgeMode:        Surface.Get(Tool, "edgeMode", PipeSmoothEdgeMode.Skip),
+                    ringVertexCount: Surface.GetInt(Tool, "ringVertexCount"),
+                    capStart:        Surface.GetBool(Tool, "capStart"),
+                    capEnd:          Surface.GetBool(Tool, "capEnd"),
+                    pairText:        Surface.GetString(Tool, "pairText"),
+                    weightText:      Surface.GetString(Tool, "weightText"),
+                    targetText:      Surface.GetString(Tool, "targetText")));
                 Refresh();
             }) { text = "開始" };
             _executeBtn.style.height    = 30;
@@ -200,10 +200,9 @@ namespace Poly_Ling.Player
             _ringField.style.marginBottom = 3;
             _ringField.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
+                if (Surface == null) return;
                 int v = e.newValue < 3 ? 3 : e.newValue;
-                h.RingVertexCount = v;
+                Surface.Set(Tool, "ringVertexCount", v);
                 _ringField.SetValueWithoutNotify(v);
                 RefreshExecuteEnabled();
             });
@@ -211,31 +210,19 @@ namespace Poly_Ling.Player
 
             _symBox.Add(SmallHeader("端の閉じ方（先端頂点があるか）:"));
 
-            _capStartToggle = MakeToggle("開始側が閉じている", v =>
-            {
-                var h = GetH();
-                if (h != null) h.CapStart = v;
-            });
+            _capStartToggle = MakeToggle("開始側が閉じている", v => Surface.Set(Tool, "capStart", v));
             _symBox.Add(_capStartToggle);
 
-            _capEndToggle = MakeToggle("終了側が閉じている", v =>
-            {
-                var h = GetH();
-                if (h != null) h.CapEnd = v;
-            });
+            _capEndToggle = MakeToggle("終了側が閉じている", v => Surface.Set(Tool, "capEnd", v));
             _symBox.Add(_capEndToggle);
 
             _symBox.Add(SmallHeader("コピーの向き:"));
             _directionGroup = new RadioButtonGroup(null, DirectionChoices) { value = 0 };
             _directionGroup.style.marginBottom = 4;
             _directionGroup.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h == null) return;
-                h.Direction = e.newValue == 1
+                Surface.Set(Tool, "direction", e.newValue == 1
                     ? PipeAlignDirection.MinusToPlus
-                    : PipeAlignDirection.PlusToMinus;
-            });
+                    : PipeAlignDirection.PlusToMinus));
             _symBox.Add(_directionGroup);
         }
 
@@ -256,11 +243,7 @@ namespace Poly_Ling.Player
             _pairField = new TextField { multiline = true, isDelayed = true, value = "" };
             _pairField.style.minHeight    = 90;
             _pairField.style.marginBottom = 3;
-            _pairField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h != null) h.PairText = e.newValue;
-            });
+            _pairField.RegisterValueChangedCallback(e => Surface.Set(Tool, "pairText", e.newValue));
             _pairBox.Add(_pairField);
         }
 
@@ -278,20 +261,12 @@ namespace Poly_Ling.Player
 
             _weightField = new TextField("重み（個数は奇数）") { isDelayed = true, value = "1,2,4,2,1" };
             _weightField.style.marginBottom = 3;
-            _weightField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h != null) h.WeightText = e.newValue;
-            });
+            _weightField.RegisterValueChangedCallback(e => Surface.Set(Tool, "weightText", e.newValue));
             _smoothBox.Add(_weightField);
 
             _smoothTargetField = new TextField("対象パーツID（空欄で全部）") { isDelayed = true, value = "" };
             _smoothTargetField.style.marginBottom = 3;
-            _smoothTargetField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h != null) h.TargetText = e.newValue;
-            });
+            _smoothTargetField.RegisterValueChangedCallback(e => Surface.Set(Tool, "targetText", e.newValue));
             _smoothBox.Add(_smoothTargetField);
 
             _smoothBox.Add(SmallHeader("「5,6,7」や「5-7」の形式。窓の入力には対象外のパーツも使います。"));
@@ -300,15 +275,14 @@ namespace Poly_Ling.Player
             _edgeGroup = new RadioButtonGroup(null, EdgeChoices) { value = 0 };
             _edgeGroup.style.marginBottom = 4;
             _edgeGroup.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h == null) return;
-                h.EdgeMode = e.newValue == 1
+                Surface.Set(Tool, "edgeMode", e.newValue == 1
                     ? PipeSmoothEdgeMode.Partial
-                    : PipeSmoothEdgeMode.Skip;
-            });
+                    : PipeSmoothEdgeMode.Skip));
             _smoothBox.Add(_edgeGroup);
         }
+
+        /// <summary>今のモード（窓口から読む）。</summary>
+        private PipeAlignMode CurMode => Surface?.Get(Tool, "mode", PipeAlignMode.Auto) ?? PipeAlignMode.Auto;
 
         // ================================================================
         // Refresh
@@ -316,31 +290,31 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            int targets = h.TargetMeshCount;
+            int targets = Surface.GetInt(Tool, "targetMeshCount");
             _targetLabel.text = targets > 0
                 ? $"対象オブジェクト: {targets} 個"
                 : "対象オブジェクトなし（オブジェクトを選択してください）";
 
-            _modeGroup?.SetValueWithoutNotify(ToIndex(h.Mode));
+            var mode = CurMode;
+            _modeGroup?.SetValueWithoutNotify(ToIndex(mode));
 
-            _ringField?.SetValueWithoutNotify(h.RingVertexCount);
-            _capStartToggle?.SetValueWithoutNotify(h.CapStart);
-            _capEndToggle?.SetValueWithoutNotify(h.CapEnd);
+            _ringField?.SetValueWithoutNotify(Surface.GetInt(Tool, "ringVertexCount"));
+            _capStartToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "capStart"));
+            _capEndToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "capEnd"));
             _directionGroup?.SetValueWithoutNotify(
-                h.Direction == PipeAlignDirection.MinusToPlus ? 1 : 0);
+                Surface.Get(Tool, "direction", PipeAlignDirection.PlusToMinus) == PipeAlignDirection.MinusToPlus ? 1 : 0);
 
-            _pairField?.SetValueWithoutNotify(h.PairText ?? "");
-            _weightField?.SetValueWithoutNotify(h.WeightText ?? "");
-            _smoothTargetField?.SetValueWithoutNotify(h.TargetText ?? "");
+            _pairField?.SetValueWithoutNotify(Surface.GetString(Tool, "pairText"));
+            _weightField?.SetValueWithoutNotify(Surface.GetString(Tool, "weightText"));
+            _smoothTargetField?.SetValueWithoutNotify(Surface.GetString(Tool, "targetText"));
             _edgeGroup?.SetValueWithoutNotify(
-                h.EdgeMode == PipeSmoothEdgeMode.Partial ? 1 : 0);
+                Surface.Get(Tool, "edgeMode", PipeSmoothEdgeMode.Skip) == PipeSmoothEdgeMode.Partial ? 1 : 0);
 
-            if (_resultLabel != null) _resultLabel.text = h.LastResult ?? "";
+            if (_resultLabel != null) _resultLabel.text = Surface.GetString(Tool, "lastResult");
 
-            ApplyModeVisibility(h.Mode);
+            ApplyModeVisibility(mode);
             RefreshExecuteEnabled();
         }
 
@@ -365,11 +339,10 @@ namespace Poly_Ling.Player
         {
             if (_executeBtn == null) return;
 
-            var h = GetH();
-            if (h == null) { _executeBtn.SetEnabled(false); return; }
+            if (Surface == null) { _executeBtn.SetEnabled(false); return; }
 
-            bool can = h.TargetMeshCount > 0;
-            if (h.Mode != PipeAlignMode.Smooth) can = can && h.RingVertexCount >= 3;
+            bool can = Surface.GetInt(Tool, "targetMeshCount") > 0;
+            if (CurMode != PipeAlignMode.Smooth) can = can && Surface.GetInt(Tool, "ringVertexCount") >= 3;
 
             _executeBtn.SetEnabled(can);
         }

@@ -7,12 +7,16 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerEdgeExtrudeSubPanel
     {
-        public Func<EdgeExtrudeToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface Surface;
+
+        private const string Tool = "edgeExtrude";
 
         // UI 自動操作の ID は "edgeExtrude.<下の Id>"（UiControlAttribute.cs）。
         [UiControl(Ignore = true)]
@@ -36,13 +40,13 @@ namespace Poly_Ling.Player
             modeDD.style.color = new StyleColor(Color.white);
             modeDD.RegisterValueChangedCallback(e => {
                 int idx = modeChoices.IndexOf(e.newValue);
-                if (idx >= 0 && GetH() != null) GetH().Mode = modeValues[idx];
+                if (idx >= 0) Surface.Set(Tool, "mode", modeValues[idx]);
             });
             _root.Add(modeDD);
             _modeDropdown = modeDD;
             var snapToggle = new Toggle("Snap to Axis") { value = false };
             snapToggle.style.color = new StyleColor(Color.white);
-            snapToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().SnapToAxis = e.newValue; });
+            snapToggle.RegisterValueChangedCallback(e => Surface.Set(Tool, "snapToAxis", e.newValue));
             _root.Add(snapToggle);
             _snapToggle = snapToggle;
 
@@ -59,7 +63,7 @@ namespace Poly_Ling.Player
             {
                 float v = Mathf.Max(0.001f, e.newValue);
                 _dragSensField.SetValueWithoutNotify(v);
-                var h = GetH(); if (h != null) h.DragSensitivity = v;
+                Surface.Set(Tool, "dragSensitivity", v);
             });
             sensRow.Add(sensLbl); sensRow.Add(_dragSensField);
             _root.Add(sensRow);
@@ -67,8 +71,8 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH(); if (h == null) return;
-            _dragSensField?.SetValueWithoutNotify(h.DragSensitivity);
+            if (Surface == null) return;
+            _dragSensField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "dragSensitivity", 1f));
         }
 
         // ── ヘルパー ──────────────────────────────────────────────────────

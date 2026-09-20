@@ -3,10 +3,13 @@
 // 図形生成パネルの「取り込み(メッシュ→プロファイル)」「反映(プロファイル→メッシュ)」用。
 // 方針: Z を破棄し XY をそのまま扱う(座標変換なし)。
 // 連結・ループ解析はこのクラス内で独立実装している(旧 LineExtrudeTool は廃止済み)。
+// 【線分群】線分群（MeshObject.LineGroups）があれば取り込みはそれを正典として読み、
+//   無いときだけ 2 頂点の面をつなぎ直す。反映は面と同じ並びの線分群も作る（LineGroupOps）。
 
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Profile2DExtrude;
 
 namespace Poly_Ling.PrimitiveMesh
@@ -82,6 +85,21 @@ namespace Poly_Ling.PrimitiveMesh
             var result = new List<Vector2>();
             if (mesh == null) return result;
 
+            // 線分群があれば、それが順序の正典なので線分群から読む（点数が最多の群）。
+            if (HasLineGroups(mesh))
+            {
+                LineGroup bestGroup = null;
+                foreach (var g in mesh.LineGroups)
+                {
+                    if (g?.Order == null || g.Order.Count < 2) continue;
+                    if (bestGroup == null || g.Order.Count > bestGroup.Order.Count) bestGroup = g;
+                }
+                if (bestGroup != null)
+                    foreach (var p in LineCurveSampler.SampleLocal(mesh, bestGroup, LineCurveSampler.DefaultSegmentsPerSpan))
+                        result.Add(new Vector2(p.x, p.y));
+                return result;
+            }
+
             var chains = BuildChains(mesh, lineFaceIndices);
             List<int> best = null;
             foreach (var c in chains)
@@ -107,6 +125,34 @@ namespace Poly_Ling.PrimitiveMesh
         {
             var loops = new List<Loop>();
             if (mesh == null) return loops;
+
+            // 線分群があれば、閉じた群をそのままループとして読む。
+            if (HasLineGroups(mesh))
+            {
+                foreach (var g in mesh.LineGroups)
+                {
+                    if (g?.Order == null || !g.Closed || g.Order.Count < 3) continue;
+                    var vidxG = new List<int>();
+                    foreach (int vi in g.Order)
+                        if (vi >= 0 && vi < mesh.Vertices.Count) vidxG.Add(vi);
+                    if (vidxG.Count < 3) continue;
+
+                    var loopG = new Loop();
+                    foreach (var p in LineCurveSampler.SampleLocal(mesh, g, LineCurveSampler.DefaultSegmentsPerSpan))
+                        loopG.Points.Add(new Vector2(p.x, p.y));
+                    // 向きは曲線に分割した点列の符号付き面積で決める（負 = 時計回り = 穴）。
+                    float area2 = 0f;
+                    for (int i = 0; i < loopG.Points.Count; i++)
+                    {
+                        var a = loopG.Points[i];
+                        var b = loopG.Points[(i + 1) % loopG.Points.Count];
+                        area2 += a.x * b.y - b.x * a.y;
+                    }
+                    loopG.IsHole = area2 < 0f;
+                    loops.Add(loopG);
+                }
+                return loops;
+            }
 
             var lineIdx = new List<int>();
             foreach (int fi in lineFaceIndices)
@@ -186,6 +232,11 @@ namespace Poly_Ling.PrimitiveMesh
             if (closed && points.Count >= 3)
                 mo.Faces.Add(NewLineFace(points.Count - 1, 0));
 
+            // 2 頂点の面と同じ並びの線分群を作る（面と線分群は連携させる。LineGroupOps）。
+            var order = new List<int>(points.Count);
+            for (int i = 0; i < points.Count; i++) order.Add(i);
+            LineGroupOps.AddGroup(mo, order, closed && points.Count >= 3);
+
             return mo;
         }
 
@@ -211,8 +262,22 @@ namespace Poly_Ling.PrimitiveMesh
 
                 if (lp.Points.Count >= 3)
                     mo.Faces.Add(NewLineFace(baseIdx + lp.Points.Count - 1, baseIdx));
+
+                // 面と同じ並びの線分群（閉じたループ）を作る。
+                var order = new List<int>(lp.Points.Count);
+                for (int i = 0; i < lp.Points.Count; i++) order.Add(baseIdx + i);
+                LineGroupOps.AddGroup(mo, order, lp.Points.Count >= 3);
             }
             return mo;
+        }
+
+        /// <summary>線分（2 点以上）を持つ線分群が 1 本でもあるか。</summary>
+        private static bool HasLineGroups(MeshObject mesh)
+        {
+            if (mesh?.LineGroups == null) return false;
+            foreach (var g in mesh.LineGroups)
+                if (g?.Order != null && g.Order.Count >= 2) return true;
+            return false;
         }
 
         // ================================================================

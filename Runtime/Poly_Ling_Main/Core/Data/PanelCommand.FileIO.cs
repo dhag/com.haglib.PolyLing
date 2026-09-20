@@ -32,7 +32,7 @@ namespace Poly_Ling.Data
     /// してあるものの受け皿。前者は List、後者は入力パスで、どちらも設定へ
     /// 直接載せられない。
     /// </summary>
-    [PLCommand(Description = "現在のモデルを PMX ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "現在のモデルを PMX ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
     [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
     [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
@@ -76,7 +76,7 @@ namespace Poly_Ling.Data
     /// してある入力パスの受け皿。BaseDir は読み込み側が実ファイルの位置から
     /// 決めるので持たない。
     /// </summary>
-    [PLCommand(Description = "MQO ファイルを読み込む。作業フォルダの下だけを読める。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "MQO ファイルを読み込む。作業フォルダの下だけを読める。")]
     public class ImportMqoFileCommand : PanelCommand
     {
         [PLParam(Description = "読み込む MQO のパス。作業フォルダからの相対でも絶対でもよい",
@@ -128,7 +128,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>MQO ファイルを書き出す。</summary>
-    [PLCommand(Description = "現在のモデルを MQO ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "現在のモデルを MQO ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
     [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
     [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
@@ -161,7 +161,7 @@ namespace Poly_Ling.Data
     /// OBJ ファイルを読み込む。
     /// BaseDir は読み込み側が実ファイルの位置から決めるので持たない。
     /// </summary>
-    [PLCommand(Description = "OBJ ファイルを読み込む。作業フォルダの下だけを読める。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "OBJ ファイルを読み込む。作業フォルダの下だけを読める。")]
     public class ImportObjFileCommand : PanelCommand
     {
         [PLParam(Description = "読み込む OBJ のパス。作業フォルダからの相対でも絶対でもよい",
@@ -203,7 +203,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>OBJ ファイルを書き出す。材質を出すときは同名の .mtl も隣に作られる。</summary>
-    [PLCommand(Description = "現在のモデルを OBJ ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "現在のモデルを OBJ ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
     [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
     [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
@@ -233,7 +233,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// STL ファイル（バイナリ / ASCII）を読み込む。形式はファイルの中身から判定する。
     /// </summary>
-    [PLCommand(Description = "STL ファイル（バイナリ / ASCII）を読み込む。作業フォルダの下だけを読める。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "STL ファイル（バイナリ / ASCII）を読み込む。作業フォルダの下だけを読める。")]
     public class ImportStlFileCommand : PanelCommand
     {
         [PLParam(Description = "読み込む STL のパス。作業フォルダからの相対でも絶対でもよい",
@@ -275,7 +275,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>STL ファイルを書き出す。バイナリか ASCII かは設定の Binary で決める。</summary>
-    [PLCommand(Description = "現在のモデルを STL ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "現在のモデルを STL ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
     [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
     [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
@@ -306,7 +306,7 @@ namespace Poly_Ling.Data
     /// VRM 1.0 ファイルを書き出す。
     /// Authors は Vrm10ExportSettings 側で Ignore にしてある List の受け皿。
     /// </summary>
-    [PLCommand(Description = "現在のモデルを VRM 1.0 ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "現在のモデルを VRM 1.0 ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
     [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
     [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
@@ -345,7 +345,7 @@ namespace Poly_Ling.Data
     /// 受け口が「VRM と同じフォルダの VRM名_textures」を関門（TryResolveFolder）に
     /// 通してから設定へ入れる。
     /// </summary>
-    [PLCommand(Description = "VRM（1.0 / 0.x）ファイルを読み込む。作業フォルダの下だけを読める。埋め込みテクスチャは VRM と同じフォルダの「VRM名_textures」へ書き出す。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "VRM（1.0 / 0.x）ファイルを読み込む。作業フォルダの下だけを読める。埋め込みテクスチャは VRM と同じフォルダの「VRM名_textures」へ書き出す。")]
     public class ImportVrmFileCommand : PanelCommand
     {
         [PLParam(Description = "読み込む VRM のパス。作業フォルダからの相対でも絶対でもよい",
@@ -355,19 +355,39 @@ namespace Poly_Ling.Data
         [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
         public Poly_Ling.Vrm.Vrm10ImportSettings Settings { get; }
 
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
         public ImportVrmFileCommand(
             int modelIndex,
             string filePath,
-            Poly_Ling.Vrm.Vrm10ImportSettings settings = null)
+            Poly_Ling.Vrm.Vrm10ImportSettings settings = null,
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
             : base(modelIndex)
         {
-            FilePath = filePath ?? "";
-            Settings = settings ?? Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault();
+            FilePath                 = filePath ?? "";
+            Settings                 = settings ?? Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault();
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
         }
     }
 
     /// <summary>プロジェクトを .mfproj（JSON）へ保存する。</summary>
-    [PLCommand(Description = "プロジェクトを .mfproj ファイルへ保存する。作業フォルダの下だけへ書ける。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "プロジェクトを .mfproj ファイルへ保存する。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
     [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
     [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
@@ -391,7 +411,7 @@ namespace Poly_Ling.Data
     /// .mfproj（JSON）からプロジェクトを読み込む。
     /// 編集中のプロジェクトは置き換わる。
     /// </summary>
-    [PLCommand(Description = ".mfproj ファイルからプロジェクトを読み込む。編集中のプロジェクトは置き換わる。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = ".mfproj ファイルからプロジェクトを読み込む。編集中のプロジェクトは置き換わる。")]
     public class LoadProjectFileCommand : PanelCommand
     {
         [PLParam(Description = "読み込む .mfproj のパス。作業フォルダからの相対でも絶対でもよい",
@@ -410,7 +430,7 @@ namespace Poly_Ling.Data
     /// FilePath はプロジェクトファイル（任意名の .csv）で、モデルフォルダは
     /// 同じディレクトリ直下に作られる。
     /// </summary>
-    [PLCommand(Description = "プロジェクトを CSV へ保存する。モデルフォルダは同じディレクトリ直下に作られる。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "プロジェクトを CSV へ保存する。モデルフォルダは同じディレクトリ直下に作られる。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
     [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
     [PLResult("path",          PLResultKind.Text,    Description = "実際に書いたプロジェクト CSV の経路。モデルフォルダは同じディレクトリ直下に別途できる", Optional = true)]
@@ -435,7 +455,7 @@ namespace Poly_Ling.Data
     /// Merge を立てると、指定ファイルと同じフォルダのメッシュを現在の
     /// プロジェクトへ足す（名前が重なるものは置き換える）。
     /// </summary>
-    [PLCommand(Description = "CSV からプロジェクトを読み込む。追加マージにすると現在のプロジェクトへ足す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "CSV からプロジェクトを読み込む。追加マージにすると現在のプロジェクトへ足す。")]
     public class LoadProjectCsvCommand : PanelCommand
     {
         [PLParam(Description = "読み込むプロジェクト CSV のパス。作業フォルダからの相対でも絶対でもよい",
@@ -462,10 +482,10 @@ namespace Poly_Ling.Data
     /// BoneIndexA / BoneIndexB は BoneNames の並び（ツールが組むボーン一覧）の索引で、
     /// MeshContextList の索引ではない。
     /// </summary>
-    [PLCommand(Description = "2 本のボーンが決める平面へ選択頂点を寄せる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "2 本のボーンが決める平面へ選択頂点を寄せる。")]
     public class PlanarizeAlongBonesCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -514,7 +534,7 @@ namespace Poly_Ling.Data
     /// 実処理が編集対象メッシュ 1 本にしか効かない（MergeVerticesTool.cs:119）ため、
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// </summary>
-    [PLCommand(Description = "選択頂点を結合する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点を結合する。")]
     public class MergeVerticesCommand : PanelCommand
     {
         /// <summary>結合の仕方。</summary>
@@ -526,7 +546,7 @@ namespace Poly_Ling.Data
             Threshold
         }
 
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }

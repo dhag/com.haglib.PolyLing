@@ -24,7 +24,7 @@
 namespace Poly_Ling.Data
 {
     /// <summary>MQO ファイルの中身を一覧する。モデルは変えない。</summary>
-    [PLCommand(Description = "MQO ファイルを読んで、取り込める（可視・頂点あり）オブジェクトを一覧する。モデルは変えない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "MQO ファイルを読んで、取り込める（可視・頂点あり）オブジェクトを一覧する。モデルは変えない。")]
     [PLResult("count",                PLResultKind.Integer,      Description = "取り込めるオブジェクトの数")]
     [PLResult("names",                PLResultKind.TextArray,    Description = "オブジェクトの名前。並びが mqoIndices の番号になる", Optional = true)]
     [PLResult("expandedVertexCounts", PLResultKind.IntegerArray, Description = "展開後の頂点数。ミラー指定は 2 倍で数える。names と同じ並び", Optional = true)]
@@ -46,7 +46,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>展開頂点数の一致でモデルと MQO を組む。モデルは変えない。</summary>
-    [PLCommand(Description = "展開頂点数の一致で、モデルの描画オブジェクトと MQO のオブジェクトを組む。組を返すだけでモデルは変えない。同じ頂点数のものが複数あると別物と組むので、返った組を必ず見ること。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "展開頂点数の一致で、モデルの描画オブジェクトと MQO のオブジェクトを組む。組を返すだけでモデルは変えない。同じ頂点数のものが複数あると別物と組むので、返った組を必ず見ること。")]
     [PLResult("pairs",         PLResultKind.Integer,      Description = "組めた数")]
     [PLResult("unmatched",     PLResultKind.Integer,      Description = "組めなかったモデル側オブジェクトの数。触らないのが正しい")]
     [PLResult("modelIndices",  PLResultKind.IntegerArray, Description = "組んだモデル側の描画オブジェクト索引。importMqoVertexPositions へそのまま渡す", Optional = true)]
@@ -81,7 +81,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定した組で、MQO の頂点位置（と UV）をモデルへ差し替える。</summary>
-    [PLCommand(Description = "指定した組で、MQO の頂点位置（と UV）をモデルの描画オブジェクトへ差し替える。頂点数も索引も変わらない。組は modelIndices と mqoIndices の同じ位置どうし。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定した組で、MQO の頂点位置（と UV）をモデルの描画オブジェクトへ差し替える。頂点数も索引も変わらない。組は modelIndices と mqoIndices の同じ位置どうし。")]
     [PLResult("pairs",       PLResultKind.Integer, Description = "転送した組の数")]
     [PLResult("transferred", PLResultKind.Integer, Description = "書き換えた頂点の数")]
     public class ImportMqoVertexPositionsCommand : PanelCommand

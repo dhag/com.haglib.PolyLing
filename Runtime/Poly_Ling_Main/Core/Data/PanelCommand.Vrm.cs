@@ -20,7 +20,7 @@ namespace Poly_Ling.Data
     /// Unity クリップ（UnityClipDTO の JSON）を現在のモデルへ適用しながら
     /// VRM アニメーション（.vrma）として書き出す。
     /// </summary>
-    [PLCommand(Description = "Unity クリップの JSON をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "Unity クリップの JSON をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
     public class ExportVrmAnimationCommand : PanelCommand
     {
         [PLParam(TextKey = "VrmAnimationSavePath",
@@ -79,7 +79,7 @@ namespace Poly_Ling.Data
     /// Unity クリップ（UnityClipDTO の JSON）を T ポーズ基準の正準骨格へ載せて
     /// VRM アニメーション（.vrma）へ変換する。モデルを参照しない。
     /// </summary>
-    [PLCommand(Description = "Unity クリップの JSON を T ポーズ基準で VRM アニメーション（.vrma）へ変換する。モデルは参照しない。作業フォルダが要る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "Unity クリップの JSON を T ポーズ基準で VRM アニメーション（.vrma）へ変換する。モデルは参照しない。作業フォルダが要る。")]
     public class ConvertUnityClipToVrmaCommand : PanelCommand
     {
         [PLParam(TextKey = "VrmaConvertSavePath",
@@ -136,7 +136,7 @@ namespace Poly_Ling.Data
     /// VMD モーションを現在のモデルへ適用しながら
     /// VRM アニメーション（.vrma）として書き出す。
     /// </summary>
-    [PLCommand(Description = "VMD をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "VMD をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
     public class ExportVmdToVrmaCommand : PanelCommand
     {
         [PLParam(TextKey = "VmdToVrmaSavePath",
@@ -227,7 +227,7 @@ namespace Poly_Ling.Data
     ///   PanelCommandFactory が読める型に限っているため、許諾の 4 項目は
     ///   int（enum の値）で受ける。並びは Poly_Ling.Data の各 enum と同じ。
     /// </summary>
-    [PLCommand(Description = "VRM メタ情報（作者・ライセンス）をモデルへ書き込む。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "VRM メタ情報（作者・ライセンス）をモデルへ書き込む。")]
     public class SetVrmMetaCommand : PanelCommand
     {
         [PLParam(TextKey = "VrmMetaName", Description = "モデル名。空ならモデル名を使う")]
@@ -330,7 +330,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>VRM メタ情報を未設定へ戻す。</summary>
-    [PLCommand(Description = "VRM メタ情報を未設定へ戻す。出力には VRM の既定だけが載る。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "VRM メタ情報を未設定へ戻す。出力には VRM の既定だけが載る。")]
     public class ClearVrmMetaCommand : PanelCommand
     {
         public ClearVrmMetaCommand(int modelIndex) : base(modelIndex) { }
@@ -340,7 +340,7 @@ namespace Poly_Ling.Data
     /// VRM 視線設定（lookAt）を書き込む。
     /// 4本の対応づけは「振り切る頭の角度[度]」と「そのときの出力量」の 2 値ずつ。
     /// </summary>
-    [PLCommand(Description = "VRM 視線設定（目の基準点と頭の向き→目の動きの対応）をモデルへ書き込む。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "VRM 視線設定（目の基準点と頭の向き→目の動きの対応）をモデルへ書き込む。")]
     public class SetVrmLookAtCommand : PanelCommand
     {
         [PLParam(TextKey = "VrmLookAtOffsetFromHead",
@@ -383,7 +383,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>VRM 視線設定を未設定へ戻す。</summary>
-    [PLCommand(Description = "VRM 視線設定を未設定へ戻す。出力には VRM の既定だけが載る。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "VRM 視線設定を未設定へ戻す。出力には VRM の既定だけが載る。")]
     public class ClearVrmLookAtCommand : PanelCommand
     {
         public ClearVrmLookAtCommand(int modelIndex) : base(modelIndex) { }
@@ -393,10 +393,10 @@ namespace Poly_Ling.Data
     /// 描画オブジェクトの一人称カメラでの扱いを決める。
     /// Auto は「指定なし」で、保存にも出力にも出なくなる。
     /// </summary>
-    [PLCommand(Description = "描画オブジェクトの一人称カメラでの扱いを決める。0=自動 1=両方 2=三人称のみ 3=一人称のみ。")]
+    [PLCommand(Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "描画オブジェクトの一人称カメラでの扱いを決める。0=自動 1=両方 2=三人称のみ 3=一人称のみ。")]
     public class SetVrmFirstPersonCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 

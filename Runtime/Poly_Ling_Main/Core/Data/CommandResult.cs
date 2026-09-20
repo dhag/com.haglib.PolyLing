@@ -40,14 +40,21 @@ namespace Poly_Ling.Data
         /// </summary>
         public string Data { get; }
 
+        /// <summary>
+        /// 担当者判定のズレ検出（索引と安定 ID の食い違い）で拒否されたか。
+        /// リモート経路はこれを見て、送り手へ再取得（refreshRequired）を促す。
+        /// </summary>
+        public bool StaleView { get; }
+
         private CommandResult(bool success, string reason, int[] masterIndices, ulong[] objectIds,
-                              string data)
+                              string data, bool staleView = false)
         {
             Success       = success;
             Reason        = reason;
             MasterIndices = masterIndices;
             ObjectIds     = objectIds;
             Data          = data;
+            StaleView     = staleView;
         }
 
         public static CommandResult Ok(int[] masterIndices = null, ulong[] objectIds = null,
@@ -56,6 +63,10 @@ namespace Poly_Ling.Data
 
         public static CommandResult Fail(string reason)
             => new CommandResult(false, reason ?? "unknown error", null, null, null);
+
+        /// <summary>担当者判定のズレ検出で拒否した結果。</summary>
+        public static CommandResult FailStale(string reason)
+            => new CommandResult(false, reason ?? "unknown error", null, null, null, staleView: true);
 
         public override string ToString()
             => Success ? "ok" : $"fail: {Reason}";

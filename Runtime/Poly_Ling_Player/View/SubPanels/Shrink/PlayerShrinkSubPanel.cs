@@ -540,8 +540,24 @@ namespace Poly_Ling.Player
             _stopParams = stops;
             _lastFaceStats = stats;
 
+            // プレビューは対象（変形元・目標形状・衝突対象）を直接書き換えるので、
+            // 始める前に担当者判定とロック取得を通す（H-2）。
+            if (!_previewLocked && TryLockForPreview != null)
+            {
+                var lockTargets = new List<int> { _beforeIndex, _afterIndex };
+                lockTargets.AddRange(_colliderIndices);
+                if (!TryLockForPreview(lockTargets))
+                {
+                    _statusLabel.style.color = new StyleColor(new Color(1f, 0.4f, 0.4f));
+                    _statusLabel.text        = "他の操作者が作業中のため開始できません";
+                    return;
+                }
+                _previewLocked = true;
+            }
+
             if (!_preview.Start(_model, _beforeIndex, _afterIndex, _stopParams))
             {
+                if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
                 _statusLabel.style.color = new StyleColor(new Color(1f, 0.4f, 0.4f));
                 _statusLabel.text        = "プレビューを開始できません";
                 return;
@@ -636,32 +652,13 @@ namespace Poly_Ling.Player
             // 元座標へ戻しておく（二重適用の防止）。
             EndPreview();
 
-            if (_panelContext != null)
-            {
-                _panelContext.SendCommand(new ApplyShrinkCommand(
-                    _getModelIndex?.Invoke() ?? 0,
-                    beforeIndex, afterIndex, colliders,
-                    slider, _surfaceOffset, _frontFaceOnly, _recalculateNormals,
-                    _createNewObject, _mode, _maxPasses));
-            }
-            else
-            {
-                // フォールバック（PanelContext未設定時）
-                OnRequestUpdateTransform?.Invoke();
-                var stops = ShrinkOperation.ComputeStopParams(
-                    _model, beforeIndex, afterIndex, colliders,
-                    _surfaceOffset, _frontFaceOnly, _mode, _maxPasses,
-                    GetWorldPositions, out _);
-
-                var ctx = BuildToolCtx();
-                var pv  = new ShrinkPreviewState();
-                if (pv.Start(_model, beforeIndex, afterIndex, stops, hideAfter: false))
-                {
-                    pv.Apply(_model, slider, ctx);
-                    ShrinkOperation.Apply(
-                        _model, pv, colliders, _createNewObject, _recalculateNormals, ctx);
-                }
-            }
+            // 確定はコマンドだけで行う。本体（ホスト）も SetCommandContext を渡すので
+            // パネル内で直接適用する経路は持たない（操作経路統一計画.md J）。
+            _panelContext?.SendCommand(new ApplyShrinkCommand(
+                _getModelIndex?.Invoke() ?? 0,
+                beforeIndex, afterIndex, colliders,
+                slider, _surfaceOffset, _frontFaceOnly, _recalculateNormals,
+                _createNewObject, _mode, _maxPasses));
 
             _stopParams = null;
             _slider     = 0f;
@@ -699,11 +696,24 @@ namespace Poly_Ling.Player
 
         private void EndPreview()
         {
+            if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
             if (!_preview.IsActive) return;
             _preview.End(_model, BuildToolCtx());
             // 可視状態を戻した結果を GPU バッファへ反映する。
             OnNotifyTopologyChanged?.Invoke();
         }
+
+        // ================================================================
+        // プレビュー中のロック（操作経路統一計画.md H-2）
+        // ================================================================
+
+        /// <summary>プレビューを始める前に、対象の担当者判定とロック取得を行う。null なら常に許可。</summary>
+        public Func<IList<int>, bool> TryLockForPreview;
+
+        /// <summary>プレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action UnlockAfterPreview;
+
+        private bool _previewLocked;
 
         // ================================================================
         // ToolContext 生成（最小構成）

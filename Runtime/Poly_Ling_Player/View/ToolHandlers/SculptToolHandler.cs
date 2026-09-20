@@ -10,6 +10,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("sculpt", Description = "スカルプト（確定は SculptStrokeCommand）")]
     public class SculptToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -71,12 +72,14 @@ namespace Poly_Ling.Player
         // ブラシ設定公開
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "SculptSettings.Mode")]
         public SculptMode Mode
         {
             get => ((SculptSettings)_tool.Settings)?.Mode ?? SculptMode.Draw;
             set { if (_tool.Settings is SculptSettings s) s.Mode = value; }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SculptSettings.BrushRadius（MinBrushRadius〜MaxBrushRadius に丸める）")]
         public float BrushRadius
         {
             get => ((SculptSettings)_tool.Settings)?.BrushRadius ?? 0.5f;
@@ -87,6 +90,7 @@ namespace Poly_Ling.Player
             }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SculptSettings.Strength（MinStrength〜MaxStrength に丸める）")]
         public float Strength
         {
             get => ((SculptSettings)_tool.Settings)?.Strength ?? 0.1f;
@@ -105,18 +109,21 @@ namespace Poly_Ling.Player
             set { if (_tool.Settings is SculptSettings s) s.MaxStrength = Mathf.Max(MinStrength + 0.001f, value); }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SculptSettings.Invert")]
         public bool Invert
         {
             get => ((SculptSettings)_tool.Settings)?.Invert ?? false;
             set { if (_tool.Settings is SculptSettings s) s.Invert = value; }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SculptSettings.Falloff")]
         public FalloffType Falloff
         {
             get => ((SculptSettings)_tool.Settings)?.Falloff ?? FalloffType.Gaussian;
             set { if (_tool.Settings is SculptSettings s) s.Falloff = value; }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SculptSettings.DistanceMode")]
         public DistanceMode DistanceMode
         {
             get => ((SculptSettings)_tool.Settings)?.DistanceMode ?? Poly_Ling.Tools.DistanceMode.Euclidean;

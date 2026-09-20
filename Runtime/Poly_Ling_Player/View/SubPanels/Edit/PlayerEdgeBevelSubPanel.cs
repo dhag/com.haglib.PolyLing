@@ -6,12 +6,16 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerEdgeBevelSubPanel
     {
-        public Func<EdgeBevelToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface Surface;
+
+        private const string Tool = "edgeBevel";
 
         // UI 自動操作の ID は "edgeBevel.<下の Id>"（UiControlAttribute.cs）。
         [UiControl(Ignore = true)]
@@ -57,7 +61,7 @@ namespace Poly_Ling.Player
             {
                 float v = Mathf.Max(0.001f, e.newValue);
                 _amountField.SetValueWithoutNotify(v);
-                var h = GetH(); if (h != null) h.Amount = v;
+                Surface.Set(Tool, "amount", v);
             });
             amountRow.Add(amountLbl); amountRow.Add(_amountField);
             _root.Add(amountRow);
@@ -71,7 +75,7 @@ namespace Poly_Ling.Player
             foreach (var (label, val) in new[] { ("0.05", 0.05f), ("0.1", 0.1f), ("0.2", 0.2f) })
             {
                 float v = val;
-                var b = new Button(() => { _amountField?.SetValueWithoutNotify(v); var h = GetH(); if (h != null) h.Amount = v; }) { text = label };
+                var b = new Button(() => { _amountField?.SetValueWithoutNotify(v); Surface.Set(Tool, "amount", v); }) { text = label };
                 b.style.flexGrow = 1;
                 presetRow.Add(b);
                 presetBtns[presetIdx++] = b;
@@ -94,7 +98,7 @@ namespace Poly_Ling.Player
             {
                 float v = Mathf.Max(0.001f, e.newValue);
                 _dragSensField.SetValueWithoutNotify(v);
-                var h = GetH(); if (h != null) h.DragSensitivity = v;
+                Surface.Set(Tool, "dragSensitivity", v);
             });
             sensRow.Add(sensLbl); sensRow.Add(_dragSensField);
             _root.Add(sensRow);
@@ -106,7 +110,7 @@ namespace Poly_Ling.Player
             _segmentsSlider.style.marginBottom = 3;
             _segmentsSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetH(); if (h != null) h.Segments = e.newValue;
+                Surface.Set(Tool, "segments", e.newValue);
                 UpdateFilletVisibility(e.newValue);
             });
             _root.Add(_segmentsSlider);
@@ -115,7 +119,7 @@ namespace Poly_Ling.Player
             _filletRow = new VisualElement();
             _filletToggle = new Toggle("Fillet (Round)") { value = true };
             _filletToggle.style.color = new StyleColor(Color.white);
-            _filletToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.Fillet = e.newValue; });
+            _filletToggle.RegisterValueChangedCallback(e => { Surface.Set(Tool, "fillet", e.newValue); });
             _filletRow.Add(_filletToggle);
             _root.Add(_filletRow);
 
@@ -124,12 +128,13 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH(); if (h == null) return;
-            _amountField?.SetValueWithoutNotify(h.Amount);
-            _dragSensField?.SetValueWithoutNotify(h.DragSensitivity);
-            _segmentsSlider?.SetValueWithoutNotify(h.Segments);
-            _filletToggle?.SetValueWithoutNotify(h.Fillet);
-            UpdateFilletVisibility(h.Segments);
+            if (Surface == null) return;
+            int segs = Surface.GetInt(Tool, "segments", 1);
+            _amountField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "amount", 0.1f));
+            _dragSensField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "dragSensitivity", 1f));
+            _segmentsSlider?.SetValueWithoutNotify(segs);
+            _filletToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "fillet", true));
+            UpdateFilletVisibility(segs);
         }
 
         private void UpdateFilletVisibility(int segs)

@@ -24,6 +24,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 
 namespace Poly_Ling.Data
@@ -45,8 +46,18 @@ namespace Poly_Ling.Data
             /// </summary>
             public readonly string ModelKey;
 
-            public MeshRefKey(string key, bool isArray, string modelKey)
-            { Key = key; IsArray = isArray; ModelKey = modelKey ?? ""; }
+            /// <summary>
+            /// 指すオブジェクトを書き換えるか読むだけか（PLParam.MeshRefAccess）。
+            /// </summary>
+            public readonly PLMeshRefAccess Access;
+
+            /// <summary>
+            /// Access = Write のとき、書き込み先になる条件（PLParam.WriteWhen）。空なら無条件。
+            /// </summary>
+            public readonly string WriteWhen;
+
+            public MeshRefKey(string key, bool isArray, string modelKey, PLMeshRefAccess access, string writeWhen)
+            { Key = key; IsArray = isArray; ModelKey = modelKey ?? ""; Access = access; WriteWhen = writeWhen ?? ""; }
 
             /// <summary>別モデルを指しうるか。</summary>
             public bool HasModelKey => !string.IsNullOrEmpty(ModelKey);
@@ -88,7 +99,9 @@ namespace Poly_Ling.Data
                 result.Add(new MeshRefKey(
                     KeyOf(t, prop),
                     prop.PropertyType == typeof(int[]),
-                    ResolveModelKey(t, attr)));
+                    ResolveModelKey(t, attr),
+                    attr.MeshRefAccess,
+                    attr.WriteWhen));
             }
 
             return result;
@@ -148,7 +161,8 @@ namespace Poly_Ling.Data
                         $"[PanelCommandFactory] {key}: 入れ子では MeshRefModelKey を使えない");
                 }
 
-                dst.Add(new MeshRefKey(key, m.Type == typeof(int[]), ""));
+                string ww = m.Attr.HasWriteWhen ? prefix + "." + m.Attr.WriteWhen : "";
+                dst.Add(new MeshRefKey(key, m.Type == typeof(int[]), "", m.Attr.MeshRefAccess, ww));
             }
         }
 
@@ -584,5 +598,125 @@ namespace Poly_Ling.Data
 
         private static bool IsMeshRefType(Type t)
             => t == typeof(int) || t == typeof(int[]);
+
+        // ================================================================
+        // 書き込み条件（PLParam.WriteWhen）
+        // ================================================================
+
+        /// <summary>
+        /// "キー=値1|値2" を分解する。形が正しくなければ false。
+        /// </summary>
+        public static bool TryParseWriteWhen(string writeWhen, out string key, out string[] values)
+        {
+            key = null; values = null;
+            if (string.IsNullOrEmpty(writeWhen)) return false;
+            int eq = writeWhen.IndexOf('=');
+            if (eq <= 0 || eq == writeWhen.Length - 1) return false;
+            key = writeWhen.Substring(0, eq).Trim();
+            values = writeWhen.Substring(eq + 1).Split('|');
+            for (int i = 0; i < values.Length; i++) values[i] = values[i].Trim();
+            return key.Length > 0;
+        }
+
+        /// <summary>
+        /// Write 引数がこのコマンドの値で実際に書き込み先になるか。
+        /// args は ToArgs(cmd) の結果。WriteWhen が空なら常に true。
+        /// 条件のキーが args に無いとき（既定値のまま等）は、書き込み先とみなす（安全側）。
+        ///
+        /// 【enum の比べ方】
+        ///   ToArgs は enum を整数の文字列で出す（TryFormat）。WriteWhen は名前で書くので、
+        ///   条件のキーの型が enum なら名前を整数へ直してから比べる。
+        /// </summary>
+        public static bool IsWriteActive(Type t, MeshRefKey k, IReadOnlyDictionary<string, string> args)
+        {
+            if (k.Access != PLMeshRefAccess.Write) return false;
+            if (string.IsNullOrEmpty(k.WriteWhen)) return true;
+            if (!TryParseWriteWhen(k.WriteWhen, out string key, out string[] values)) return true;
+            if (args == null || !args.TryGetValue(key, out string actual)) return true;
+
+            Type argType = null;
+            TryResolveArgType(t, key, out argType);
+
+            foreach (var v in values)
+            {
+                string want = v;
+                if (argType != null && argType.IsEnum)
+                {
+                    string name = Enum.GetNames(argType)
+                        .FirstOrDefault(n => string.Equals(n, v, StringComparison.OrdinalIgnoreCase));
+                    if (name == null) continue;
+                    want = Convert.ToInt32(Enum.Parse(argType, name)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                if (string.Equals(want, actual, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// WriteWhen の書き間違いを数える（検査用）。
+        /// キーがそのコマンドの引数に無い、値がその型として読めない、形が崩れている、を拾う。
+        /// </summary>
+        public static List<string> InvalidWriteWhens(Type t)
+        {
+            var bad = new List<string>();
+            foreach (var k in MeshRefKeys(t))
+            {
+                if (string.IsNullOrEmpty(k.WriteWhen)) continue;
+                string at = t.Name + "." + k.Key + " \"" + k.WriteWhen + "\"";
+
+                if (k.Access != PLMeshRefAccess.Write)
+                { bad.Add(at + "：Write 以外に付いている"); continue; }
+                if (!TryParseWriteWhen(k.WriteWhen, out string key, out string[] values))
+                { bad.Add(at + "：\"キー=値\" の形ではない"); continue; }
+                if (!TryResolveArgType(t, key, out Type argType))
+                { bad.Add(at + $"：キー {key} が引数に無い"); continue; }
+
+                foreach (var v in values)
+                {
+                    bool ok = argType == typeof(bool)
+                        ? (string.Equals(v, "true", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(v, "false", StringComparison.OrdinalIgnoreCase))
+                        : argType.IsEnum
+                            ? Enum.GetNames(argType).Any(n => string.Equals(n, v, StringComparison.OrdinalIgnoreCase))
+                            : false;
+                    if (!ok) bad.Add(at + $"：値 {v} は {argType.Name} として読めない（bool と enum だけを受ける）");
+                }
+            }
+            return bad;
+        }
+
+        /// <summary>
+        /// ToArgs のキー（入れ子はドット区切り）から、その引数の型を引く。
+        /// </summary>
+        private static bool TryResolveArgType(Type t, string key, out Type argType)
+        {
+            argType = null;
+            if (t == null || string.IsNullOrEmpty(key)) return false;
+            string[] parts = key.Split('.');
+
+            ConstructorInfo ctor = PickConstructor(t);
+            if (ctor == null) return false;
+
+            Type cur = null;
+            foreach (var p in ctor.GetParameters())
+            {
+                PropertyInfo prop = FindProperty(t, p.Name);
+                if (prop == null) continue;
+                if (KeyOf(t, prop) == parts[0]) { cur = prop.PropertyType; break; }
+            }
+            if (cur == null) return false;
+
+            for (int i = 1; i < parts.Length; i++)
+            {
+                if (!IsNestedType(cur)) return false;
+                Type next = null;
+                foreach (var m in EnumerateNested(cur))
+                    if (Camel(m.Name) == parts[i]) { next = m.Type; break; }
+                if (next == null) return false;
+                cur = next;
+            }
+            argType = cur;
+            return true;
+        }
     }
 }

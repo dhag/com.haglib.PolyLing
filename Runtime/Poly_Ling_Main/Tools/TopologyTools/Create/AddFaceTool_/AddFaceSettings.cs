@@ -23,6 +23,12 @@ namespace Poly_Ling.Tools
         /// <summary>連続線分モード</summary>
         public bool ContinuousLine = true;
 
+        /// <summary>
+        /// 線分の描き始めが既存の線分群の端点なら、その群を伸ばすか。
+        /// 既定 false（新しい群を作り、始点を親にする）。LineGroupOps.AddSegment を参照。
+        /// </summary>
+        public bool ExtendLineGroup = false;
+
         // ================================================================
         // IToolSettings 実装
         // ================================================================
@@ -33,7 +39,8 @@ namespace Poly_Ling.Tools
             {
                 Mode = this.Mode,
                 DefaultDistance = this.DefaultDistance,
-                ContinuousLine = this.ContinuousLine
+                ContinuousLine = this.ContinuousLine,
+                ExtendLineGroup = this.ExtendLineGroup
             };
         }
 
@@ -44,6 +51,7 @@ namespace Poly_Ling.Tools
                 Mode = src.Mode;
                 DefaultDistance = src.DefaultDistance;
                 ContinuousLine = src.ContinuousLine;
+                ExtendLineGroup = src.ExtendLineGroup;
             }
         }
 
@@ -53,7 +61,8 @@ namespace Poly_Ling.Tools
             {
                 return Mode != src.Mode ||
                        !Mathf.Approximately(DefaultDistance, src.DefaultDistance) ||
-                       ContinuousLine != src.ContinuousLine;
+                       ContinuousLine != src.ContinuousLine ||
+                       ExtendLineGroup != src.ExtendLineGroup;
             }
             return true;
         }

@@ -21,6 +21,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("surfaceSnap", Description = "面に張り付け（確定は SurfaceSnapCommand）")]
     public class SurfaceSnapToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -69,24 +70,28 @@ namespace Poly_Ling.Player
         // 設定公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "SurfaceSnapTool.CameraKind")]
         public SurfaceSnapCameraKind CameraKind
         {
             get => _tool.CameraKind;
             set => _tool.CameraKind = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SurfaceSnapTool.SelectedVerticesOnly")]
         public bool SelectedVerticesOnly
         {
             get => _tool.SelectedVerticesOnly;
             set => _tool.SelectedVerticesOnly = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SurfaceSnapTool.SurfaceOffset")]
         public float SurfaceOffset
         {
             get => _tool.SurfaceOffset;
             set => _tool.SurfaceOffset = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SurfaceSnapTool.Backface")]
         public SurfaceSnapBackface Backface
         {
             get => _tool.Backface;
@@ -98,8 +103,11 @@ namespace Poly_Ling.Player
         public void SetReference(int meshIndex, bool on)  => _tool.SetReference(meshIndex, on);
         public void PruneReferences(Func<int, bool> exists) => _tool.PruneReferences(exists);
 
+        [Poly_Ling.Data.PLToolState(Description = "SurfaceSnapTool.LastResult")]
         public string LastResult      => _tool.LastResult;
+        [Poly_Ling.Data.PLToolState(Description = "SurfaceSnapTool.IsPreviewing")]
         public bool   IsPreviewing    => _tool.IsPreviewing;
+        [Poly_Ling.Data.PLToolState(Description = "SurfaceSnapTool.Slider")]
         public float  Slider          => _tool.Slider;
         public int    TargetMeshCount => _tool.TargetMeshCount;
 
@@ -109,10 +117,36 @@ namespace Poly_Ling.Player
         // プレビュー操作（計算・スライダー・取り消し）は画面上の確認であって
         // 確定操作ではないため、コマンド化せず public のまま残す。
         // 確定（TriggerApply）だけが Undo を積む（SurfaceSnapTool.cs:439-453）。
-        public void TriggerCompute()      => _tool.TriggerCompute();
+        // プレビューは対象を直接動かすので、計算の前に担当者判定とロック取得を通し、
+        // プレビューが終わったら外す（操作経路統一計画.md H-2）。
+        public void TriggerCompute()
+        {
+            if (!_panelPreview && TryBeginPreview != null)
+            {
+                if (!TryBeginPreview()) return;
+                _panelPreview = true;
+            }
+            _tool.TriggerCompute();
+            if (!_tool.IsPreviewing) EndPanelPreview();
+        }
         public void SetSlider(float v)    => _tool.SetSlider(v);
-        public void TriggerCancel()       => _tool.TriggerCancel();
-        public void CancelIfActive()      => _tool.CancelIfActive();
+        public void TriggerCancel()       { _tool.TriggerCancel(); EndPanelPreview(); }
+        public void CancelIfActive()      { _tool.CancelIfActive(); EndPanelPreview(); }
+
+        /// <summary>パネル操作でプレビューを始めてよいか（選択の担当者判定とロック取得）。</summary>
+        public Func<bool> TryBeginPreview;
+
+        /// <summary>パネルのプレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action EndPreview;
+
+        private bool _panelPreview;
+
+        private void EndPanelPreview()
+        {
+            if (!_panelPreview) return;
+            _panelPreview = false;
+            EndPreview?.Invoke();
+        }
 
         /// <summary>
         /// プレビューを確定する。
@@ -182,7 +216,8 @@ namespace Poly_Ling.Player
                 SurfaceOffset        = cmd.SurfaceOffset;
                 Backface             = cmd.Backface;
 
-                TriggerCompute();
+                // コマンド実行は判定済みなので、パネル用のプレビュー関門（TriggerCompute）を通さない。
+                _tool.TriggerCompute();
                 if (!IsPreviewing)
                 {
                     reason = string.IsNullOrEmpty(LastResult) ? "計算できませんでした" : LastResult;

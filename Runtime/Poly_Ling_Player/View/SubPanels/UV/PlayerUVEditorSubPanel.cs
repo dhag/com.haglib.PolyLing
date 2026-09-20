@@ -33,8 +33,6 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<ModelContext>        GetModel;
-        public Func<MeshUndoController>  GetUndoController;
-        public Func<CommandQueue>        GetCommandQueue;
         public Action                    OnRepaint;
 
         // コマンド送信

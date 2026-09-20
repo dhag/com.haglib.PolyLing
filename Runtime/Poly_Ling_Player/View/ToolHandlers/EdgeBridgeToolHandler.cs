@@ -31,6 +31,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("edgeBridge", Description = "EdgeBridge（確定は CreateEdgeBridgeCommand）")]
     public class EdgeBridgeToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -94,6 +95,7 @@ namespace Poly_Ling.Player
         /// 境界辺（1 面だけが使う辺）だけを拾う。既定 ON。
         /// OFF にすると内部辺（2 面が共有する辺）も拾える。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "境界辺（1 面だけが使う辺）だけを拾う。既定 ON")]
         public bool BoundaryEdgeOnly
         {
             get => _boundaryEdgeOnly;
@@ -109,14 +111,17 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>辺群Bの並びを反転する。自動判定の上書き用。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "辺群Bの並びを反転する。自動判定の上書き用")]
         public bool FlipCorrespondence { get; set; }
 
         /// <summary>生成面の巻き方向を反転する。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "生成面の巻き方向を反転する")]
         public bool FlipFaces { get; set; }
 
         private int _subdivisions = 0;
 
         /// <summary>A→B 方向の分割数（0 で分割なし）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "A→B 方向の分割数（0 で分割なし）")]
         public int Subdivisions
         {
             get => _subdivisions;
@@ -129,6 +134,7 @@ namespace Poly_Ling.Player
         /// 対応の始点と向きを自動で決めるか。既定 ON。
         /// OFF のときは拾った順（頂点番号順）のまま FlipCorrespondence だけで調整する。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "対応の始点と向きを自動で決めるか。既定 ON")]
         public bool AutoCorrespondence { get; set; } = true;
 
         // ================================================================
@@ -136,6 +142,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>拾った辺が属する描画オブジェクト（MeshContextList インデックス）。未確定は -1。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "拾った辺が属する描画オブジェクト（MeshContextList インデックス）。未確定は -1")]
         public int PickedMeshIndex { get; private set; } = -1;
 
         private readonly HashSet<VertexPair> _picked = new HashSet<VertexPair>();
@@ -143,6 +150,7 @@ namespace Poly_Ling.Player
         /// <summary>拾った辺（読み取り専用）。オーバーレイ描画に使う。</summary>
         public IReadOnlyCollection<VertexPair> PickedEdges => _picked;
 
+        [Poly_Ling.Data.PLToolState(Description = "拾った辺の数")]
         public int PickedEdgeCount => _picked.Count;
 
         /// <summary>
@@ -156,6 +164,7 @@ namespace Poly_Ling.Player
         private HashSet<VertexPair> _allEdgeCache;
 
         /// <summary>拾った辺を全て捨てる。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "拾った辺を捨てる")]
         public void ClearPicks()
         {
             _lastRejectReason = null;
@@ -259,6 +268,7 @@ namespace Poly_Ling.Player
         private bool    _summaryDirty = true;
 
         /// <summary>拾った辺を 2 群に分けられるかを調べる。実行はしない。</summary>
+        [Poly_Ling.Data.PLToolStateGroup(Name = "inspect", Description = "実行前の下調べ（EdgeBridgeToolHandler.Summary）")]
         public Summary Inspect()
         {
             PrunePicks();
@@ -609,6 +619,7 @@ namespace Poly_Ling.Player
         private string _lastRejectReason;
 
         /// <summary>直近に拾えなかった理由。拾えたときは null。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "EdgeBridgeToolHandler.LastRejectReason")]
         public string LastRejectReason => _lastRejectReason;
 
         private bool AcceptEdge(int meshIndex, VertexPair pair, out string reason)

@@ -133,6 +133,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.HoleRingCountSection, ShowHoleRingCountPanel, _holeRingCountSubPanel);
             RegisterUiPanel("edgeBridge", "辺ブリッジ（2 か所の辺群の間に面を張る）",
                 _layoutRoot.EdgeBridgeSection, ShowEdgeBridgePanel, _edgeBridgeSubPanel);
+            RegisterUiPanel("billboardProfile", "線分群の編集（ビルボード上の 2D プロファイル）",
+                _layoutRoot.BillboardProfileSection, ShowBillboardProfilePanel, _billboardProfileSubPanel);
             RegisterUiPanel("rotate", "回転（Euler / Axis-Angle、プレビューして Apply で確定）",
                 _layoutRoot.RotateSection, ShowRotatePanel, _rotateSubPanel);
             RegisterUiPanel("scale", "拡大縮小（プレビューして Apply で確定）",

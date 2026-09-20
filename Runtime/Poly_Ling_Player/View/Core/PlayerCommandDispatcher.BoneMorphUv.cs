@@ -149,9 +149,38 @@ namespace Poly_Ling.Player
 
                 // ── BonePose レイヤーリセット
                 case ResetBonePoseLayersCommand c:
+                {
                     if (model == null) { Fail("no current model"); return true; }
+
+                    // ポーズ層を空にし、Undo へ積む（画面のボーン編集パネルの「リセット」もこの
+                    // コマンドを送る。操作経路統一計画.md J）。
+                    var rbRecord = new MultiBonePoseChangeRecord();
                     foreach (int idx in c.MasterIndices)
-                        model.GetMeshContext(idx)?.BonePoseData?.ClearAllLayers();
+                    {
+                        var ctx = model.GetMeshContext(idx);
+                        if (ctx == null) continue;
+                        BonePoseDataSnapshot? before = ctx.BonePoseData?.CreateSnapshot();
+                        if (ctx.BonePoseData == null)
+                        {
+                            ctx.BonePoseData = new BonePoseData();
+                            ctx.BonePoseData.IsActive = true;
+                        }
+                        ctx.BonePoseData.ClearAllLayers();
+                        ctx.BonePoseData.SetDirty();
+                        rbRecord.Entries.Add(new MultiBonePoseChangeRecord.Entry
+                        {
+                            MasterIndex = idx,
+                            OldSnapshot = before,
+                            NewSnapshot = ctx.BonePoseData.CreateSnapshot(),
+                        });
+                    }
+                    if (_undoController != null && rbRecord.Entries.Count > 0)
+                    {
+                        PLDiag.UndoRecord("MeshList", "ボーンポーズリセット", rbRecord);
+                        _undoController.MeshListStack.Record(rbRecord, "ボーンポーズリセット");
+                        _undoController.FocusMeshList();
+                    }
+
                     // ポーズを消したら階層行列を組み直す。ここを省くと WorldMatrix が
                     // 古いまま残り、queryBone などが消す前の位置を返す。
                     model.ComputeWorldMatrices();
@@ -162,6 +191,7 @@ namespace Poly_Ling.Player
 #pragma warning restore CS0618
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
+                }
 
                 // ── BonePose → BindPose ベイク
                 case BakePoseToBindPoseCommand c:
@@ -456,18 +486,8 @@ namespace Poly_Ling.Player
                     var colRef = model.GetMaterialReference(c.SlotIndex);
                     if (colRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
 
-                    // 永続データ側。保存に乗るのはこちら。
-                    if (colRef.Data == null) colRef.Data = new Poly_Ling.Materials.MaterialData();
-                    colRef.Data.SetBaseColor(c.BaseColor);
-
-                    // 起きている Material 側。Data を書いてもキャッシュは作り直されないので、
-                    // ここへ入れないと画面の色が変わらない。
-                    var colMat = colRef.Material;
-                    if (colMat != null)
-                    {
-                        if (colMat.HasProperty("_BaseColor")) colMat.SetColor("_BaseColor", c.BaseColor);
-                        if (colMat.HasProperty("_Color"))     colMat.SetColor("_Color",     c.BaseColor);
-                    }
+                    // 永続データ（保存に乗る）と、起きている Material（画面）の両方を書く。
+                    Poly_Ling.Materials.MaterialEditOps.ApplyColor(colRef, c.BaseColor);
 
                     model.IsDirty = true;
                     model.OnListChanged?.Invoke();
@@ -475,6 +495,66 @@ namespace Poly_Ling.Player
                     // 色だけの変更なので載せる集合は変わらない。
                     // EnterMeshAttributesChanged は集合が同じなら再構築せず、
                     // 描き直しだけを回す（PlayerViewportManager.cs:735-760）。
+                    _viewportManager.EnterMeshAttributesChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
+                // ── マテリアルのシェーダー・不透明／半透明・テクスチャ（操作経路統一計画.md H-3b）
+                case SetMaterialShaderCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var shRef = model.GetMaterialReference(c.SlotIndex);
+                    if (shRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
+                    string shReason = Poly_Ling.Materials.MaterialEditOps.ApplyShader(
+                        shRef, c.ShaderType, c.CustomShaderName);
+                    if (shReason != null) { Fail(shReason); return true; }
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
+                    _viewportManager.EnterMeshAttributesChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
+                case SetMaterialScalarCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var scRef = model.GetMaterialReference(c.SlotIndex);
+                    if (scRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
+                    Poly_Ling.Materials.MaterialEditOps.ApplyScalar(scRef, c.Kind, c.Value);
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
+                    _viewportManager.EnterMeshAttributesChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
+                case SetMaterialSurfaceCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var sfRef = model.GetMaterialReference(c.SlotIndex);
+                    if (sfRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
+                    if (sfRef.Material == null) { Fail("マテリアルが割り当てられていません"); return true; }
+                    Poly_Ling.Materials.MaterialEditOps.ApplySurface(sfRef, c.Transparent);
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
+                    _viewportManager.EnterMeshAttributesChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
+                case SetMaterialTextureCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var txRef = model.GetMaterialReference(c.SlotIndex);
+                    if (txRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
+                    if (!PLSandbox.TryResolveRead(c.FilePath, out string txPath, out string txSandbox))
+                    { Fail(txSandbox); return true; }
+                    string txReason = Poly_Ling.Materials.MaterialEditOps.ApplyTextureFile(
+                        txRef, c.PropertyName, txPath, out _);
+                    if (txReason != null) { Fail(txReason); return true; }
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
                     _viewportManager.EnterMeshAttributesChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return true;

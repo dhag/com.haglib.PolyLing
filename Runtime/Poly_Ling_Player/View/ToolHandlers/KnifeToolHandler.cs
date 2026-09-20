@@ -13,6 +13,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("knife", Description = "KnifeTool（確定は Knife*Command）")]
     public class KnifeToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -79,25 +80,40 @@ namespace Poly_Ling.Player
         // 設定公開 API（サブパネル用）
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "KnifeTool.Mode")]
         public KnifeMode Mode { get => _tool.Mode; set => _tool.Mode = value; }
 
         /// <summary>等分割オン（各モードで N 等分。オフは自由比率1本）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "等分割オン（各モードで N 等分。オフは自由比率1本）")]
         public bool EqualDivide { get => _tool.EqualDivide; set => _tool.EqualDivide = value; }
 
         /// <summary>等分割の分割ピース数（≥2）。EqualDivide=true のとき使用。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "等分割の分割ピース数（≥2）。EqualDivide=true のとき使用")]
         public int Divisions { get => _tool.Divisions; set => _tool.Divisions = value; }
 
         /// <summary>SimpleCut: 5角以上の面を三角形＋四角形へ再分解（既定 ON）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "SimpleCut: 5角以上の面を三角形＋四角形へ再分解（既定 ON）")]
         public bool SimpleTriQuad { get => _tool.SimpleTriQuad; set => _tool.SimpleTriQuad = value; }
 
         /// <summary>状態説明テキスト（サブパネル用）。</summary>
         public string StageText() => _tool.StageText();
 
+        [Poly_Ling.Data.PLToolState(Description = "状態説明テキスト（KnifeTool.StageText）")]
+        public string Stage => _tool.StageText();
+
         // ---- 状態パススルー（サブパネル情報表示用） ----
+        [Poly_Ling.Data.PLToolState(Description = "KnifeTool.HasStartVertex")]
         public bool  HasStart    => _tool.HasStartVertex;
+        [Poly_Ling.Data.PLToolState(Description = "KnifeTool.CurrentStartVertex")]
         public int   StartVertex => _tool.CurrentStartVertex;
+        [Poly_Ling.Data.PLToolState(Description = "KnifeTool.HasSegmentEdge")]
         public bool  HasSegment  => _tool.HasSegmentEdge;
         public Poly_Ling.Selection.VertexPair Segment => _tool.CurrentSegment;
+        [Poly_Ling.Data.PLToolState(Description = "通過線分の一端（KnifeTool.CurrentSegment.V1）")]
+        public int   SegmentV1   => _tool.CurrentSegment.V1;
+        [Poly_Ling.Data.PLToolState(Description = "通過線分のもう一端（KnifeTool.CurrentSegment.V2）")]
+        public int   SegmentV2   => _tool.CurrentSegment.V2;
+        [Poly_Ling.Data.PLToolState(Description = "KnifeTool.CutRatio")]
         public float CutRatio    => _tool.CutRatio;
 
         /// <summary>プレビュー（オーバーレイ描画用）。</summary>

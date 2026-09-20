@@ -39,6 +39,7 @@ namespace Poly_Ling.Player
     /// <summary>
     /// 作業軸ギズモ。移動 / 回転をサブモードで切り替える。
     /// </summary>
+    [Poly_Ling.Data.PLTool("workAxis", Description = "作業軸ギズモ（WorkAxisToolHandler）")]
     public class WorkAxisToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         /// <summary>作業軸ギズモのサブモード。</summary>
@@ -89,6 +90,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>現在のサブモード。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "現在のサブモード")]
         public WorkAxisGizmoMode Mode { get; set; } = WorkAxisGizmoMode.Move;
 
         // ScreenOffset は既定 (60,-60) だが、作業軸は「原点そのもの」が編集対象の
@@ -128,9 +130,11 @@ namespace Poly_Ling.Player
         private Poly_Ling.Context.WorkAxisSnapshot _dragBefore;
 
         // 回転スナップ（度）。0 以下でスナップ無効。
+        [Poly_Ling.Data.PLToolParam(Description = "回転スナップ（度）。0 以下でスナップ無効")]
         public float RotateSnapDeg { get; set; } = 0f;
 
         /// <summary>Y 先端ハンドルの当たり半径（px）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "Y 先端ハンドルの当たり半径（px）")]
         public float TipHitRadius { get; set; } = 10f;
 
         // ================================================================
@@ -138,12 +142,15 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>頂点へ吸着するか。GPU 吸着ヒットテストを使う。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "頂点へ吸着するか")]
         public bool SnapToVertex { get; set; } = false;
 
         /// <summary>ボーンへ吸着するか。ボーンの原点（WorldMatrix の平行移動成分）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ボーンへ吸着するか（ボーンの原点）")]
         public bool SnapToBone { get; set; } = true;
 
         /// <summary>描画オブジェクトへ吸着するか。オブジェクトの原点。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "描画オブジェクトへ吸着するか（オブジェクトの原点）")]
         public bool SnapToObject { get; set; } = false;
 
         /// <summary>吸着先が1つでも選ばれているか。</summary>

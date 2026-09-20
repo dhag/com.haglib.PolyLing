@@ -13,7 +13,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerSolidifySubPanel
     {
-        public Func<SolidifyToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface              Surface;
+        private const string Tool = "solidify";
         public Func<ProjectContext>      GetView;
         public Action<PanelCommand>      SendCommand;
 
@@ -130,12 +132,7 @@ namespace Poly_Ling.Player
             _thicknessField = new FloatField { value = 0.1f };
             _thicknessField.style.flexGrow = 1;
             _thicknessField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h == null) return;
-                h.Thickness = e.newValue;
-                _thicknessField.SetValueWithoutNotify(h.Thickness);
-            });
+                _thicknessField.SetValueWithoutNotify(Surface.Set(Tool, "thickness", e.newValue)));
             thickRow.Add(_thicknessField);
             _root.Add(thickRow);
 
@@ -146,8 +143,7 @@ namespace Poly_Ling.Player
             _addToExistingToggle.style.marginTop = 3;
             _addToExistingToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h != null) h.AddToExisting = e.newValue;
+                Surface.Set(Tool, "addToExisting", e.newValue);
                 RefreshAddTargetChoices();
                 RefreshNameFieldMode();
             });
@@ -156,23 +152,17 @@ namespace Poly_Ling.Player
             // 名前欄と追加先ドロップダウンは同じ行に置き、display で見せ分ける。
             var nameRow = MakeLabeledRow("名前:");
 
-            _nameField = new TextField { value = GetH()?.MeshName ?? "Solidify" };
+            _nameField = new TextField { value = Surface?.GetString(Tool, "meshName", "Solidify") ?? "Solidify" };
             _nameField.style.flexGrow = 1;
-            _nameField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h != null) h.MeshName = e.newValue;
-            });
+            _nameField.RegisterValueChangedCallback(e => Surface.Set(Tool, "meshName", e.newValue));
             nameRow.Add(_nameField);
 
             _addTargetField = new DropdownField(new System.Collections.Generic.List<string>(), -1);
             _addTargetField.style.flexGrow = 1;
             _addTargetField.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
                 int i = _addTargetField.index;
-                h.AddTargetIndex = (i >= 0 && i < _addTargetIndices.Count) ? _addTargetIndices[i] : -1;
+                Surface.Set(Tool, "addTargetIndex", (i >= 0 && i < _addTargetIndices.Count) ? _addTargetIndices[i] : -1);
             });
             nameRow.Add(_addTargetField);
 
@@ -188,10 +178,7 @@ namespace Poly_Ling.Player
             _segFrontSlider = new SliderInt(0, 8) { value = 0 };
             _segFrontSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
-                h.SegmentsFront = e.newValue;
-                _segFrontSlider.SetValueWithoutNotify(h.SegmentsFront);
+                _segFrontSlider.SetValueWithoutNotify(Surface.Set(Tool, "segmentsFront", e.newValue));
                 UpdateEdgeParamVisibility();
             });
             _root.Add(_segFrontSlider);
@@ -200,10 +187,7 @@ namespace Poly_Ling.Player
             _segBackSlider = new SliderInt(0, 8) { value = 0 };
             _segBackSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
-                h.SegmentsBack = e.newValue;
-                _segBackSlider.SetValueWithoutNotify(h.SegmentsBack);
+                _segBackSlider.SetValueWithoutNotify(Surface.Set(Tool, "segmentsBack", e.newValue));
                 UpdateEdgeParamVisibility();
             });
             _root.Add(_segBackSlider);
@@ -216,12 +200,7 @@ namespace Poly_Ling.Player
             _edgeFrontField = new FloatField { value = 0.02f };
             _edgeFrontField.style.flexGrow = 1;
             _edgeFrontField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h == null) return;
-                h.EdgeSizeFront = e.newValue;
-                _edgeFrontField.SetValueWithoutNotify(h.EdgeSizeFront);
-            });
+                _edgeFrontField.SetValueWithoutNotify(Surface.Set(Tool, "edgeSizeFront", e.newValue)));
             efRow.Add(_edgeFrontField);
             _edgeParamsGroup.Add(efRow);
 
@@ -229,22 +208,13 @@ namespace Poly_Ling.Player
             _edgeBackField = new FloatField { value = 0.02f };
             _edgeBackField.style.flexGrow = 1;
             _edgeBackField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h == null) return;
-                h.EdgeSizeBack = e.newValue;
-                _edgeBackField.SetValueWithoutNotify(h.EdgeSizeBack);
-            });
+                _edgeBackField.SetValueWithoutNotify(Surface.Set(Tool, "edgeSizeBack", e.newValue)));
             ebRow.Add(_edgeBackField);
             _edgeParamsGroup.Add(ebRow);
 
             _edgeInwardToggle = new Toggle("内向きエッジ") { value = false };
             _edgeInwardToggle.style.marginTop = 3;
-            _edgeInwardToggle.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h != null) h.EdgeInward = e.newValue;
-            });
+            _edgeInwardToggle.RegisterValueChangedCallback(e => Surface.Set(Tool, "edgeInward", e.newValue));
             _edgeParamsGroup.Add(_edgeInwardToggle);
 
             _edgeParamsGroup.Add(SmallLabel(
@@ -255,20 +225,19 @@ namespace Poly_Ling.Player
             // ── 実行 ───────────────────────────────────────────────────
             var execBtn = new Button(() =>
             {
-                var h = GetH();
                 var targets = ActiveMasterIndices();
-                if (h == null || targets == null) return;
+                if (Surface == null || targets == null) return;
 
                 SendCommand?.Invoke(new SolidifyCommand(
-                    ModelIndex, targets, h.Thickness,
-                    segmentsFront:  h.SegmentsFront,
-                    segmentsBack:   h.SegmentsBack,
-                    edgeSizeFront:  h.EdgeSizeFront,
-                    edgeSizeBack:   h.EdgeSizeBack,
-                    edgeInward:     h.EdgeInward,
-                    meshName:       h.MeshName,
-                    addToExisting:  h.AddToExisting,
-                    addTargetIndex: h.AddTargetIndex));
+                    ModelIndex, targets, Surface.GetFloat(Tool, "thickness"),
+                    segmentsFront:  Surface.GetInt(Tool, "segmentsFront"),
+                    segmentsBack:   Surface.GetInt(Tool, "segmentsBack"),
+                    edgeSizeFront:  Surface.GetFloat(Tool, "edgeSizeFront"),
+                    edgeSizeBack:   Surface.GetFloat(Tool, "edgeSizeBack"),
+                    edgeInward:     Surface.GetBool(Tool, "edgeInward"),
+                    meshName:       Surface.GetString(Tool, "meshName"),
+                    addToExisting:  Surface.GetBool(Tool, "addToExisting"),
+                    addTargetIndex: Surface.GetInt(Tool, "addTargetIndex", -1)));
                 Refresh();
             }) { text = "厚み付け実行" };
             execBtn.style.height    = 30;
@@ -288,25 +257,24 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
             if (_infoLabel != null)
-                _infoLabel.text = $"選択面: {h.SelectedFaceCount}";
+                _infoLabel.text = $"選択面: {Surface.GetInt(Tool, "selectedFaceCount")}";
 
             if (_resultLabel != null)
-                _resultLabel.text = h.LastMessage ?? "";
+                _resultLabel.text = Surface.GetString(Tool, "lastMessage");
 
-            _thicknessField?.SetValueWithoutNotify(h.Thickness);
-            _addToExistingToggle?.SetValueWithoutNotify(h.AddToExisting);
-            _nameField?.SetValueWithoutNotify(h.MeshName ?? "");
+            _thicknessField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "thickness"));
+            _addToExistingToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "addToExisting"));
+            _nameField?.SetValueWithoutNotify(Surface.GetString(Tool, "meshName"));
             RefreshAddTargetChoices();
             RefreshNameFieldMode();
-            _segFrontSlider?.SetValueWithoutNotify(h.SegmentsFront);
-            _segBackSlider?.SetValueWithoutNotify(h.SegmentsBack);
-            _edgeFrontField?.SetValueWithoutNotify(h.EdgeSizeFront);
-            _edgeBackField?.SetValueWithoutNotify(h.EdgeSizeBack);
-            _edgeInwardToggle?.SetValueWithoutNotify(h.EdgeInward);
+            _segFrontSlider?.SetValueWithoutNotify(Surface.GetInt(Tool, "segmentsFront"));
+            _segBackSlider?.SetValueWithoutNotify(Surface.GetInt(Tool, "segmentsBack"));
+            _edgeFrontField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "edgeSizeFront"));
+            _edgeBackField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "edgeSizeBack"));
+            _edgeInwardToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "edgeInward"));
 
             UpdateEdgeParamVisibility();
         }
@@ -323,8 +291,6 @@ namespace Poly_Ling.Player
         {
             if (_addTargetField == null) return;
 
-            var h = GetH();
-
             _addTargetIndices.Clear();
             var labels = new System.Collections.Generic.List<string>();
 
@@ -340,14 +306,18 @@ namespace Poly_Ling.Player
 
             _addTargetField.choices = labels;
 
+            // 設定は値が変わるときだけ送る。Refresh から呼ばれるので、毎回送ると
+            // 設定 → パネルへの通知 → Refresh → 設定 … と回り続ける。
+            int current = Surface?.GetInt(Tool, "addTargetIndex", -1) ?? -1;
+
             if (labels.Count == 0)
             {
-                if (h != null) h.AddTargetIndex = -1;
+                if (current != -1) Surface?.Set(Tool, "addTargetIndex", -1);
                 _addTargetField.SetValueWithoutNotify(string.Empty);
                 return;
             }
 
-            int want = (h != null) ? _addTargetIndices.IndexOf(h.AddTargetIndex) : -1;
+            int want = _addTargetIndices.IndexOf(current);
             if (want < 0)
             {
                 int first = GetFirstSelectedDrawableIndex?.Invoke() ?? -1;
@@ -355,14 +325,14 @@ namespace Poly_Ling.Player
             }
             if (want < 0) want = 0;
 
-            if (h != null) h.AddTargetIndex = _addTargetIndices[want];
+            if (current != _addTargetIndices[want]) Surface?.Set(Tool, "addTargetIndex", _addTargetIndices[want]);
             _addTargetField.SetValueWithoutNotify(labels[want]);
         }
 
         /// <summary>名前欄と追加先ドロップダウンの見せ分けを現在の追加先へ合わせる。</summary>
         private void RefreshNameFieldMode()
         {
-            bool existing = GetH()?.AddToExisting ?? false;
+            bool existing = Surface?.GetBool(Tool, "addToExisting") ?? false;
             if (_nameField      != null) _nameField.style.display      = existing ? DisplayStyle.None : DisplayStyle.Flex;
             if (_addTargetField != null) _addTargetField.style.display = existing ? DisplayStyle.Flex : DisplayStyle.None;
         }
@@ -371,9 +341,8 @@ namespace Poly_Ling.Player
         {
             if (_edgeParamsGroup == null) return;
 
-            var h = GetH();
-            int segF = h?.SegmentsFront ?? (_segFrontSlider?.value ?? 0);
-            int segB = h?.SegmentsBack  ?? (_segBackSlider?.value  ?? 0);
+            int segF = Surface?.GetInt(Tool, "segmentsFront") ?? (_segFrontSlider?.value ?? 0);
+            int segB = Surface?.GetInt(Tool, "segmentsBack")  ?? (_segBackSlider?.value  ?? 0);
 
             bool show = segF > 0 || segB > 0;
             _edgeParamsGroup.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;

@@ -35,7 +35,7 @@ namespace Poly_Ling.Player
             _mediaPipeSubPanel = new PlayerMediaPipeFaceDeformSubPanel
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
-                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand   = cmd => DispatchHost(cmd),
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
@@ -165,7 +165,7 @@ namespace Poly_Ling.Player
             _scenarioSubPanel = new PlayerScenarioSubPanel
             {
                 GetProject = () => ActiveProject,
-                RunCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                RunCommand = cmd => DispatchHost(cmd),
                 GetRun     = () => _commandDispatcher?.ScenarioRun,
             };
             _scenarioSubPanel.Build(_layoutRoot.ScenarioSection);
@@ -285,7 +285,7 @@ namespace Poly_Ling.Player
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
                 GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
-                SendCommand       = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand       = cmd => DispatchHost(cmd),
                 SaveProjectFolder = SaveProjectFolderForTest,
 
                 // 書き出しはエクスポートパネルと同じ経路。

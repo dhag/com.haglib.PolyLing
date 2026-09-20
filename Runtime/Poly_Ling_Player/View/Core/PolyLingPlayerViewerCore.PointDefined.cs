@@ -60,6 +60,10 @@ namespace Poly_Ling.Player
                         ? (Vector3?)w : null;
                 },
 
+                // ボーン位置・描画オブジェクト原点への吸着（作業軸・面追加と同じ実装）。
+                GetSnapPointWorld = (imguiPos, toBone, toOrigin) =>
+                    SnapPointWorld(imguiPos, toBone, toOrigin),
+
                 // 吸着用ヒットテストは点指定モードの間だけ有効にする。
                 OnSnapHitTestEnabledChanged = on =>
                     _viewportManager.SetSnapHitTestEnabled(
@@ -108,6 +112,17 @@ namespace Poly_Ling.Player
             panel.SetPointDefinedSnapUnselected = on =>
             {
                 if (_pointDefinedHandler != null) _pointDefinedHandler.SnapToUnselectedObjects = on;
+            };
+
+            panel.GetPointDefinedSnapBones = () => _pointDefinedHandler?.SnapToBones ?? false;
+            panel.SetPointDefinedSnapBones = on =>
+            {
+                if (_pointDefinedHandler != null) _pointDefinedHandler.SnapToBones = on;
+            };
+            panel.GetPointDefinedSnapOrigins = () => _pointDefinedHandler?.SnapToObjectOrigins ?? false;
+            panel.SetPointDefinedSnapOrigins = on =>
+            {
+                if (_pointDefinedHandler != null) _pointDefinedHandler.SnapToObjectOrigins = on;
             };
 
             panel.BuildPointDefinedCommand = materialIndex =>

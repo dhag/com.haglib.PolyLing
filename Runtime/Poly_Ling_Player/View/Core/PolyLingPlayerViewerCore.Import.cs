@@ -570,38 +570,24 @@ namespace Poly_Ling.Player
             // 原点は不変のまま、全頂点を −Δ 相当だけローカルにシフト
             Vector3 localShift = mc.WorldMatrix.inverse.MultiplyVector(-deltaWorld);
 
+            // 書き込みは SetVertexPositionsCommand としてホストの操作で流す
+            // （担当者判定・Undo・操作者の記録を他のコマンドと揃える。操作経路統一計画.md F）。
+            int mcIndex = model.MeshContextList.IndexOf(mc);
             int count = mo.VertexCount;
             var indices = new int[count];
-            var oldPos  = new Vector3[count];
-            var newPos  = new Vector3[count];
+            var positions = new float[count * 3];
             for (int i = 0; i < count; i++)
             {
                 indices[i] = i;
-                var v = mo.Vertices[i];
-                oldPos[i] = v.Position;
-                v.Position += localShift;
-                mo.Vertices[i] = v;
-                newPos[i] = v.Position;
+                var p = mo.Vertices[i].Position + localShift;
+                positions[i * 3] = p.x; positions[i * 3 + 1] = p.y; positions[i * 3 + 2] = p.z;
             }
 
-            // Undo 記録
-            if (_editOps?.UndoController != null)
-            {
-                int mcIndex = model.MeshContextList.IndexOf(mc);
-                var entry = new MeshMoveEntry
-                {
-                    MeshContextIndex = mcIndex,
-                    Indices = indices,
-                    OldPositions = oldPos,
-                    NewPositions = newPos
-                };
-                var record = new MultiMeshVertexMoveRecord(new[] { entry });
-                _editOps.UndoController.FocusVertexEdit();
-                _editOps.UndoController.VertexEditStack.Record(record, useBones ? "Pivot→ボーン重心" : "Pivot→頂点重心");
-            }
+            var r = DispatchHost(new SetVertexPositionsCommand(
+                ActiveProject.CurrentModelIndex, mcIndex, indices, positions));
+            if (r == null || !r.Success) return;
 
-            // 同期＋カメラ逆移動（Target を −Δ 動かして見た目静止）
-            _viewportManager.SyncMeshPositionsAndTransform(mc, model);
+            // カメラ逆移動（Target を −Δ 動かして見た目静止）
             var orbit = _activeViewport?.Orbit;
             if (orbit != null) orbit.SetTarget(orbit.Target - deltaWorld);
             _activePanel?.MarkDirtyRepaint();

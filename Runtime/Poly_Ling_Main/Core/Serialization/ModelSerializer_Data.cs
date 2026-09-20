@@ -291,6 +291,54 @@ namespace Poly_Ling.Serialization
         }
 
         // ================================================================
+        // LineGroups シリアライズ
+        // ================================================================
+
+        /// <summary>
+        /// MeshObject の線分群を MeshDTO に保存
+        /// </summary>
+        public static void SaveLineGroupsToDTO(MeshContext meshContext, MeshDTO meshDTO)
+        {
+            if (meshContext == null || meshDTO == null) return;
+
+            meshDTO.lineGroups = new List<LineGroupDTO>();
+
+            var list = meshContext.MeshObject?.LineGroups;
+            if (list == null) return;
+
+            foreach (var g in list)
+            {
+                var dto = LineGroupDTO.FromLineGroup(g);
+                if (dto != null)
+                {
+                    meshDTO.lineGroups.Add(dto);
+                }
+            }
+        }
+
+        /// <summary>
+        /// MeshDTO の線分群を MeshObject に復元
+        /// </summary>
+        public static void LoadLineGroupsFromDTO(MeshDTO meshDTO, MeshContext meshContext)
+        {
+            if (meshDTO == null || meshContext == null) return;
+            if (meshContext.MeshObject == null) return;
+
+            meshContext.MeshObject.LineGroups = new List<LineGroup>();
+
+            if (meshDTO.lineGroups == null) return;
+
+            foreach (var dto in meshDTO.lineGroups)
+            {
+                var g = dto?.ToLineGroup();
+                if (g != null)
+                {
+                    meshContext.MeshObject.LineGroups.Add(g);
+                }
+            }
+        }
+
+        // ================================================================
         // MorphBaseData シリアライズ（Phase: Morph対応）
         // ================================================================
 

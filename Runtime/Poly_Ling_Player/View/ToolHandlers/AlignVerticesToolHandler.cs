@@ -38,6 +38,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("alignVertices", Description = "AlignVerticesTool（確定は AlignVerticesCommand）")]
     public class AlignVerticesToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -59,18 +60,30 @@ namespace Poly_Ling.Player
         // 設定公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "AlignVerticesTool.AlignX")]
         public bool      AlignX          { get => _tool.AlignX;          set => _tool.AlignX = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "AlignVerticesTool.AlignY")]
         public bool      AlignY          { get => _tool.AlignY;          set => _tool.AlignY = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "AlignVerticesTool.AlignZ")]
         public bool      AlignZ          { get => _tool.AlignZ;          set => _tool.AlignZ = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "AlignVerticesTool.Mode")]
         public AlignMode Mode            { get => _tool.Mode;            set => _tool.Mode   = value; }
 
+        [Poly_Ling.Data.PLToolState(Description = "AlignVerticesTool.StdDevX")]
         public float StdDevX         => _tool.StdDevX;
+        [Poly_Ling.Data.PLToolState(Description = "AlignVerticesTool.StdDevY")]
         public float StdDevY         => _tool.StdDevY;
+        [Poly_Ling.Data.PLToolState(Description = "AlignVerticesTool.StdDevZ")]
         public float StdDevZ         => _tool.StdDevZ;
+        [Poly_Ling.Data.PLToolState(Description = "AlignVerticesTool.StatsCalculated")]
         public bool  StatsCalculated => _tool.StatsCalculated;
 
+        [Poly_Ling.Data.PLToolState(Description = "AlignVerticesTool.SelectedVertexCount")]
         public int     SelectedVertexCount => _tool.SelectedVertexCount;
         public Vector3 GetAlignTarget()    => _tool.GetAlignTarget();
+
+        [Poly_Ling.Data.PLToolState(Description = "揃える先の座標（AlignVerticesTool.GetAlignTarget）")]
+        public Vector3 AlignTarget => _tool.GetAlignTarget();
 
         /// <summary>
         /// 整列を実行する。
@@ -84,6 +97,7 @@ namespace Poly_Ling.Player
         /// 統計から整列軸を推定してトグルへ入れる。メッシュも選択も書き換えない
         /// （AlignVerticesTool.cs:95-137）ので public のまま残す。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "統計から整列軸を推定して alignX/Y/Z へ入れる（メッシュも選択も書き換えない）")]
         public void TriggerAutoSelect() => _tool.TriggerAutoSelect();
 
         /// <summary>

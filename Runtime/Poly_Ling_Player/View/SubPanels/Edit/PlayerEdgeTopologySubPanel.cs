@@ -7,12 +7,16 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerEdgeTopologySubPanel
     {
-        public Func<EdgeTopologyToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface Surface;
+
+        private const string Tool = "edgeTopology";
         /// <summary>
         /// サブモード (Flip/Split/Dissolve) 変更通知。ViewerCore 側で Selection.Mode を
         /// 切り替えてホバー有効範囲 (頂点/辺) を調整するために使われる。
@@ -53,7 +57,7 @@ namespace Poly_Ling.Player
             modeDD.style.color = new StyleColor(Color.white);
             modeDD.RegisterValueChangedCallback(e => {
                 int idx = modeChoices.IndexOf(e.newValue);
-                if (idx >= 0 && GetH() != null) GetH().ModePublic = modeValues[idx];
+                if (idx >= 0) Surface.Set(Tool, "modePublic", modeValues[idx]);
                 UpdateHelp(idx);
                 if (idx >= 0) OnModeChanged?.Invoke(modeValues[idx]);
             });

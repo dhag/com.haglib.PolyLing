@@ -44,7 +44,7 @@ namespace Poly_Ling.Player
             // 問題: 従来ここで project.SelectModel() + EnterSceneReset を直接行い
             // Undo 記録を伴わない経路だった。SwitchModelCommand ハンドラに統一して
             // Undo 記録 (RecordModelSwitch) + SetModelContext 同期を経由させる。
-            _commandDispatcher?.Dispatch(new SwitchModelCommand(index));
+            DispatchHost(new SwitchModelCommand(index));
 
             var model = project.CurrentModel;
             if (model == null) return;
@@ -147,7 +147,117 @@ namespace Poly_Ling.Player
 
         private void DispatchPanelCommand(PanelCommand cmd)
         {
-            _commandDispatcher?.Dispatch(cmd);
+            DispatchHost(cmd);
+        }
+
+        /// <summary>
+        /// 本体（ホスト）の画面操作としてコマンドを実行する（操作経路統一計画.md G-6）。
+        /// 担当者判定はホストの名前で行う。MCP の UI 自動操作など別の操作者の
+        /// 実行中に呼ばれた場合は、ディスパッチャが外側の操作者を引き継ぐ。
+        /// ディスパッチャが無ければ null。
+        /// </summary>
+        private CommandResult DispatchHost(PanelCommand cmd)
+            => _commandDispatcher?.Dispatch(cmd, HostActor());
+
+        /// <summary>
+        /// パネル（人の画面操作）からコマンドを流し、失敗理由を返す（成功なら null）。
+        /// パネルの受け口が失敗理由の文字列を返す形なので、それに合わせる。
+        /// </summary>
+        private string DispatchFromPanel(PanelCommand cmd)
+        {
+            var r = DispatchHost(cmd);
+            if (r == null) return "コマンドを実行できません";
+            return r.Success ? null : r.Reason;
+        }
+
+        /// <summary>
+        /// 利用者が画面で選んだパスを 1 回だけ作業フォルダの外でも許可する
+        /// （PLSandbox.AllowOnceFromDialog）。空ならそのまま返す。
+        /// </summary>
+        private static string AllowPanelPath(string path)
+            => string.IsNullOrEmpty(path) ? path : Poly_Ling.Core.PLSandbox.AllowOnceFromDialog(path);
+
+        /// <summary>パネルから出すコマンドのモデル番号（現在のモデル）。</summary>
+        private int PanelModelIndex() => ActiveProject?.CurrentModelIndex ?? 0;
+
+        /// <summary>
+        /// 本体（人の画面操作）のプレビュー開始。対象（ミラー側を含む）を担当者判定し、
+        /// 通ればプレビュー終了までロックにする（操作経路統一計画.md H-1）。
+        /// コマンドの実行中（窓口の操作として MCP・リモートから呼ばれた場合）は、その操作者の名前で掛ける
+        /// （操作経路統一計画.md C-1）。
+        /// 止められたら状態表示へ理由を出して false。
+        /// </summary>
+        private bool TryBeginHostPreview(IList<int> targets)
+        {
+            var project = ActiveProject;
+            if (project == null) return true;
+            var actor = _commandDispatcher?.CurrentActor ?? HostActor();
+            if (Poly_Ling.Remote.RemoteOwnership.TryBeginPreview(
+                    project, project.CurrentModelIndex, targets, actor, out string reason))
+                return true;
+            _status = $"編集できません（{reason}）";
+            return false;
+        }
+
+        /// <summary>選択中の描画オブジェクトとボーンを対象にプレビューを始める（ツール用）。</summary>
+        private bool TryBeginHostPreviewOfSelection()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return true;
+            var targets = new List<int>(model.SelectedDrawableMeshIndices);
+            foreach (int b in model.SelectedBoneIndices)
+                if (!targets.Contains(b)) targets.Add(b);
+            return TryBeginHostPreview(targets);
+        }
+
+        /// <summary>本体のプレビュー終了。プレビューのために掛けたロックを外す。</summary>
+        private void EndHostPreview()
+            => Poly_Ling.Remote.RemoteOwnership.EndPreview(ActiveProject);
+
+        /// <summary>
+        /// ツールの登録簿：Core が持つハンドラのフィールドのうち、型に [PLTool] が付いたもの。
+        /// ハンドラは初期化の途中で順に作られるので、呼ばれるたびに組み直す。
+        /// </summary>
+        private Dictionary<string, object> ToolRegistry()
+        {
+            var map = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (var f in GetType().GetFields(
+                         System.Reflection.BindingFlags.Instance |
+                         System.Reflection.BindingFlags.NonPublic |
+                         System.Reflection.BindingFlags.Public))
+            {
+                string id = PLToolSurface.ToolIdOf(f.FieldType);
+                if (string.IsNullOrEmpty(id)) continue;
+                var h = f.GetValue(this);
+                if (h != null && !map.ContainsKey(id)) map[id] = h;
+            }
+            return map;
+        }
+
+        /// <summary>ボーン編集中のオブジェクトドラッグを担当者判定で許可したか（H-2）。</summary>
+        private bool _boneDragAllowed = true;
+
+        private HostToolSurface _toolSurface;
+
+        /// <summary>
+        /// パネルがツールハンドラへ届くための窓口（操作経路統一計画.md E-2）。
+        /// 読み取りは登録簿のハンドラから、設定・操作はホストの操作としてコマンドで送る。
+        /// </summary>
+        private IToolSurface ToolSurface => _toolSurface ??= new HostToolSurface(
+            id => ToolRegistry().TryGetValue(id ?? "", out var h) ? h : null,
+            DispatchHost,
+            PanelModelIndex);
+
+        /// <summary>ボーン編集中のオブジェクトドラッグで TryBeginHostPreview を呼んだか。</summary>
+        private bool _boneDragBegun;
+
+        /// <summary>
+        /// ホストの操作者。名前はリモートサーバの HostUserName（未起動なら既定の "(host)"）。
+        /// </summary>
+        private CommandActor HostActor()
+        {
+            string name = _playerServer?.HostUserName;
+            return CommandActor.Host(string.IsNullOrEmpty(name) ? CommandActor.DefaultHostUserName : name);
         }
 
         /// <summary>

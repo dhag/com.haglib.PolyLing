@@ -13,7 +13,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerVertexHoleSubPanel
     {
-        public Func<VertexHoleToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface Surface;
+        private const string Tool = "vertexHole";
         public Func<ProjectContext>        GetView;
         public Action<PanelCommand>        SendCommand;
 
@@ -74,8 +76,7 @@ namespace Poly_Ling.Player
             _ratioSlider.tooltip = "1.00 が選択頂点の位置、0 が辺の反対側（根元）の位置。小さいほど穴が大きくなります。";
             _ratioSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h != null) h.Ratio = e.newValue;
+                Surface.Set(Tool, "ratio", e.newValue);
                 UpdateStats();
             });
             _root.Add(_ratioSlider);
@@ -88,10 +89,9 @@ namespace Poly_Ling.Player
 
             _holeBtn = new Button(() =>
             {
-                var h = GetH?.Invoke();
-                if (h == null) return;
+                if (Surface == null) return;
                 SendCommand?.Invoke(new VertexHoleCommand(
-                    ModelIndex, SelectedMasterIndices(), h.Ratio));
+                    ModelIndex, SelectedMasterIndices(), Surface.GetFloat(Tool, "ratio")));
                 Refresh();
             })
             { text = "穴あけ実行" };
@@ -108,10 +108,9 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            _ratioSlider?.SetValueWithoutNotify(h.Ratio);
+            _ratioSlider?.SetValueWithoutNotify(Surface.GetFloat(Tool, "ratio"));
             UpdateStats();
         }
 
@@ -121,29 +120,29 @@ namespace Poly_Ling.Player
 
         private void UpdateStats()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            var info = h.Inspect();
+            var info = Surface.GetGroup(Tool, "inspect");
+            int skipped = info.Item("skippedCount", 0);
 
             if (_ratioSlider != null)
-                _ratioSlider.label = $"位置比率 ({h.Ratio:F2})";
+                _ratioSlider.label = $"位置比率 ({Surface.GetFloat(Tool, "ratio"):F2})";
 
-            if (!info.CanExecute)
+            if (!info.Item("canExecute", false))
             {
                 if (_targetLabel != null)
-                    _targetLabel.text = $"選択中: {h.SelectedVertexCount} 頂点  /  除外: {info.SkippedCount} 頂点";
-                if (_statusLabel != null) _statusLabel.text = info.Reason ?? "";
+                    _targetLabel.text = $"選択中: {Surface.GetInt(Tool, "selectedVertexCount")} 頂点  /  除外: {skipped} 頂点";
+                if (_statusLabel != null) _statusLabel.text = info.Item("reason", "");
                 _holeBtn?.SetEnabled(false);
                 return;
             }
 
             if (_targetLabel != null)
-                _targetLabel.text = $"対象: {info.ObjectCount} オブジェクト / {info.TargetCount} 頂点"
-                                  + (info.SkippedCount > 0 ? $"  （干渉で除外 {info.SkippedCount}）" : "");
+                _targetLabel.text = $"対象: {info.Item("objectCount", 0)} オブジェクト / {info.Item("targetCount", 0)} 頂点"
+                                  + (skipped > 0 ? $"  （干渉で除外 {skipped}）" : "");
 
             if (_statusLabel != null)
-                _statusLabel.text = $"新しい頂点を {info.NeighborTotal} 個作り、{info.FaceTotal} 面を張り替えます";
+                _statusLabel.text = $"新しい頂点を {info.Item("neighborTotal", 0)} 個作り、{info.Item("faceTotal", 0)} 面を張り替えます";
 
             _holeBtn?.SetEnabled(true);
         }

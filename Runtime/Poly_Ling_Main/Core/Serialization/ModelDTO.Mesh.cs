@@ -62,6 +62,9 @@ namespace Poly_Ling.Serialization
         /// <summary>法線の自動再計算から除外するセット</summary>
         public List<SelectionSetDTO> normalExcludeSets = new List<SelectionSetDTO>();
 
+        /// <summary>線分群（MeshObject.LineGroups）</summary>
+        public List<LineGroupDTO> lineGroups = new List<LineGroupDTO>();
+
         // ================================================================
         // マテリアル [廃止セクション]
         // マテリアルはModelDTO.materialReferencesで一元管理されます
@@ -600,6 +603,144 @@ namespace Poly_Ling.Serialization
         public BoneTransformDTO  exportSettingsDTO;
         public BonePoseDataDTO   bonePoseData;
         public List<SelectionSetDTO> selectionSets = new List<SelectionSetDTO>();
+    }
+
+    // ================================================================
+    // LineGroupDTO（線分群）
+    // ================================================================
+
+    /// <summary>
+    /// 線分群 1 本分の DTO。実体は MeshObject.LineGroups（LineGroup.cs）。
+    /// </summary>
+    [Serializable]
+    public class LineGroupDTO
+    {
+        public string name = "LineGroup";
+        public bool   closed = false;
+        public int    parentVertex = -1;
+        public int    parentVertexId = 0;
+
+        /// <summary>開始点 → 終了点の順に並んだ頂点索引。</summary>
+        public List<int> order = new List<int>();
+
+        /// <summary>order と同順・同数の頂点 ID 控え（0 = 控え無し）。</summary>
+        public List<int> orderVertexIds = new List<int>();
+
+        // ── ハンドル（LineGroup.PointHandles）。空なら折れ線 ──
+        /// <summary>点ごとに 6 個（入り xyz・出 xyz のずれ）。</summary>
+        public List<float> handleOffsets = new List<float>();
+        /// <summary>点ごとに 6 個（入りの向き・長さ・組 ID、出の向き・長さ・組 ID）。</summary>
+        public List<int>   handleConstraints = new List<int>();
+        /// <summary>点ごとに 2 個（入りの比率・出の比率）。</summary>
+        public List<float> handleRatios = new List<float>();
+        /// <summary>長さの組の ID。lengthGroupValues と同順・同数。</summary>
+        public List<int>   lengthGroupIds = new List<int>();
+        /// <summary>長さの組の共有値。</summary>
+        public List<float> lengthGroupValues = new List<float>();
+
+        public static LineGroupDTO FromLineGroup(LineGroup g)
+        {
+            if (g == null) return null;
+            var dto = new LineGroupDTO
+            {
+                name           = g.Name ?? "",
+                closed         = g.Closed,
+                parentVertex   = g.ParentVertex,
+                parentVertexId = g.ParentVertexId,
+            };
+            if (g.Order != null) dto.order = new List<int>(g.Order);
+
+            // 控えは order と同順・同数で書く。欠けている分は 0（控え無し）で埋める。
+            int n = dto.order.Count;
+            dto.orderVertexIds = new List<int>(n);
+            for (int k = 0; k < n; k++)
+            {
+                dto.orderVertexIds.Add(
+                    (g.OrderVertexIds != null && k < g.OrderVertexIds.Count) ? g.OrderVertexIds[k] : 0);
+            }
+
+            if (g.HasHandles)
+            {
+                foreach (var h in g.PointHandles)
+                {
+                    var hh = h ?? LinePointHandle.CreateDefault();
+                    dto.handleOffsets.Add(hh.InOffset.x);  dto.handleOffsets.Add(hh.InOffset.y);  dto.handleOffsets.Add(hh.InOffset.z);
+                    dto.handleOffsets.Add(hh.OutOffset.x); dto.handleOffsets.Add(hh.OutOffset.y); dto.handleOffsets.Add(hh.OutOffset.z);
+                    dto.handleConstraints.Add((int)hh.InConstraint.Direction);
+                    dto.handleConstraints.Add((int)hh.InConstraint.Length);
+                    dto.handleConstraints.Add(hh.InConstraint.LengthGroupId);
+                    dto.handleConstraints.Add((int)hh.OutConstraint.Direction);
+                    dto.handleConstraints.Add((int)hh.OutConstraint.Length);
+                    dto.handleConstraints.Add(hh.OutConstraint.LengthGroupId);
+                    dto.handleRatios.Add(hh.InConstraint.Ratio);
+                    dto.handleRatios.Add(hh.OutConstraint.Ratio);
+                }
+            }
+            if (g.LengthGroups != null)
+                foreach (var lg in g.LengthGroups)
+                {
+                    if (lg == null) continue;
+                    dto.lengthGroupIds.Add(lg.Id);
+                    dto.lengthGroupValues.Add(lg.Length);
+                }
+            return dto;
+        }
+
+        public LineGroup ToLineGroup()
+        {
+            var g = new LineGroup(string.IsNullOrEmpty(name) ? "LineGroup" : name)
+            {
+                Closed         = closed,
+                ParentVertex   = parentVertex,
+                ParentVertexId = parentVertexId,
+            };
+            if (order != null) g.Order = new List<int>(order);
+
+            int n = g.Order.Count;
+            g.OrderVertexIds = new List<int>(n);
+            for (int k = 0; k < n; k++)
+            {
+                g.OrderVertexIds.Add(
+                    (orderVertexIds != null && k < orderVertexIds.Count) ? orderVertexIds[k] : 0);
+            }
+
+            // ハンドル。点数ぶん揃っているときだけ読む（古いファイルには無い）。
+            g.PointHandles = new List<LinePointHandle>();
+            if (n > 0 && handleOffsets != null && handleOffsets.Count == n * 6
+                && handleConstraints != null && handleConstraints.Count == n * 6
+                && handleRatios != null && handleRatios.Count == n * 2)
+            {
+                for (int k = 0; k < n; k++)
+                {
+                    var h = new LinePointHandle
+                    {
+                        InOffset  = new UnityEngine.Vector3(handleOffsets[k * 6],     handleOffsets[k * 6 + 1], handleOffsets[k * 6 + 2]),
+                        OutOffset = new UnityEngine.Vector3(handleOffsets[k * 6 + 3], handleOffsets[k * 6 + 4], handleOffsets[k * 6 + 5]),
+                        InConstraint = new HandleConstraint
+                        {
+                            Direction     = (HandleDirection)handleConstraints[k * 6],
+                            Length        = (HandleLength)handleConstraints[k * 6 + 1],
+                            LengthGroupId = handleConstraints[k * 6 + 2],
+                            Ratio         = handleRatios[k * 2],
+                        },
+                        OutConstraint = new HandleConstraint
+                        {
+                            Direction     = (HandleDirection)handleConstraints[k * 6 + 3],
+                            Length        = (HandleLength)handleConstraints[k * 6 + 4],
+                            LengthGroupId = handleConstraints[k * 6 + 5],
+                            Ratio         = handleRatios[k * 2 + 1],
+                        },
+                    };
+                    g.PointHandles.Add(h);
+                }
+            }
+
+            g.LengthGroups = new List<LineLengthGroup>();
+            if (lengthGroupIds != null && lengthGroupValues != null)
+                for (int k = 0; k < lengthGroupIds.Count && k < lengthGroupValues.Count; k++)
+                    g.LengthGroups.Add(new LineLengthGroup { Id = lengthGroupIds[k], Length = lengthGroupValues[k] });
+            return g;
+        }
     }
 
     // ================================================================

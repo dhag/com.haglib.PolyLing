@@ -13,7 +13,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerFaceMergeSubPanel
     {
-        public Func<FaceMergeToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface          Surface;
+        private const string Tool = "faceMerge";
         public Func<ProjectContext>  GetView;
         public Action<PanelCommand>  SendCommand;
 
@@ -74,13 +76,12 @@ namespace Poly_Ling.Player
 
             _deleteVerticesToggle = new Toggle("頂点を削除する")
             {
-                value = GetH?.Invoke()?.DeleteVertices ?? true,
+                value = Surface?.GetBool(Tool, "deleteVertices", true) ?? true,
             };
             _deleteVerticesToggle.style.marginTop = 4;
             _deleteVerticesToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h != null) h.DeleteVertices = e.newValue;
+                Surface.Set(Tool, "deleteVertices", e.newValue);
                 Refresh();
             });
             _root.Add(_deleteVerticesToggle);
@@ -93,7 +94,7 @@ namespace Poly_Ling.Player
 
             _mergeBtn = new Button(() =>
             {
-                bool deleteVertices = GetH?.Invoke()?.DeleteVertices ?? true;
+                bool deleteVertices = Surface?.GetBool(Tool, "deleteVertices", true) ?? true;
                 SendCommand?.Invoke(new FaceMergeCommand(ModelIndex, SelectedMasterIndices(), deleteVertices));
                 Refresh();
             })
@@ -111,10 +112,9 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            _deleteVerticesToggle?.SetValueWithoutNotify(h.DeleteVertices);
+            _deleteVerticesToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "deleteVertices", true));
             UpdateStats();
         }
 
@@ -124,26 +124,26 @@ namespace Poly_Ling.Player
 
         private void UpdateStats()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            var info = h.Inspect();
+            var info = Surface.GetGroup(Tool, "inspect");
+            int skipped = info.Item("skippedCount", 0);
 
-            if (!info.CanExecute)
+            if (!info.Item("canExecute", false))
             {
                 if (_targetLabel != null)
-                    _targetLabel.text = $"選択中: {h.SelectedEdgeCount} 辺  /  除外: {info.SkippedCount} 辺";
-                if (_statusLabel != null) _statusLabel.text = info.Reason ?? "";
+                    _targetLabel.text = $"選択中: {Surface.GetInt(Tool, "selectedEdgeCount")} 辺  /  除外: {skipped} 辺";
+                if (_statusLabel != null) _statusLabel.text = info.Item("reason", "");
                 _mergeBtn?.SetEnabled(false);
                 return;
             }
 
             if (_targetLabel != null)
-                _targetLabel.text = $"対象: {info.ObjectCount} オブジェクト / {info.TargetCount} 辺"
-                                  + (info.SkippedCount > 0 ? $"　（除外 {info.SkippedCount}）" : "");
+                _targetLabel.text = $"対象: {info.Item("objectCount", 0)} オブジェクト / {info.Item("targetCount", 0)} 辺"
+                                  + (skipped > 0 ? $"　（除外 {skipped}）" : "");
 
             if (_statusLabel != null)
-                _statusLabel.text = $"{info.RemovedFaceTotal} 面と {info.RemovedVertexTotal} 頂点が消えます";
+                _statusLabel.text = $"{info.Item("removedFaceTotal", 0)} 面と {info.Item("removedVertexTotal", 0)} 頂点が消えます";
 
             _mergeBtn?.SetEnabled(true);
         }

@@ -103,6 +103,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.MotorCoupling:     return _motorCouplingP.MeshName;
                 case ShapeKind.TrapezoidalThread: return _trapP.MeshName;
                 case ShapeKind.Spline:            return _splineP.MeshName;
+                case ShapeKind.BoltPattern:       return _boltP.MeshName;
 
                 case ShapeKind.McpCylinder:       return _mcpCylP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
@@ -161,6 +162,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.MotorCoupling:     _motorCouplingP.MeshName = name; break;
                 case ShapeKind.TrapezoidalThread: _trapP.MeshName          = name; break;
                 case ShapeKind.Spline:            _splineP.MeshName        = name; break;
+                case ShapeKind.BoltPattern:       _boltP.MeshName          = name; break;
 
                 case ShapeKind.McpCylinder:       _mcpCylP.MeshName   = name; break;
                 case ShapeKind.VertexBillboardPlace: _vbpMeshName     = name; break;

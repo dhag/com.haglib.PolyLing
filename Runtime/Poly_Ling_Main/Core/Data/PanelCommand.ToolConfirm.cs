@@ -26,10 +26,10 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 指定した辺をベベルする。実処理は EdgeBevelTool。
     /// </summary>
-    [PLCommand(Description = "指定した辺をベベルする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定した辺をベベルする。")]
     public class EdgeBevelCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -84,10 +84,10 @@ namespace Poly_Ling.Data
     /// 押し出し量は対象メッシュのローカル空間のベクトル。マウス経路の累積
     /// （EdgeExtrudeTool.cs:296-298）がローカル空間で積まれるのに合わせている。
     /// </summary>
-    [PLCommand(Description = "指定した辺または線分を押し出す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定した辺または線分を押し出す。")]
     public class EdgeExtrudeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -131,10 +131,10 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 指定した面を押し出す。実処理は FaceExtrudeTool。
     /// </summary>
-    [PLCommand(Description = "指定した面を押し出す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定した面を押し出す。")]
     public class FaceExtrudeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -199,10 +199,10 @@ namespace Poly_Ling.Data
     ///   ・EdgeV1 と EdgeV2 が辺を成すこと
     ///   ・その辺が 2 面に共有され、両側が三角形であること
     /// </summary>
-    [PLCommand(Description = "2 つの三角形が共有する辺を入れ替える（対角線の切り替え）。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "2 つの三角形が共有する辺を入れ替える（対角線の切り替え）。")]
     public class EdgeTopologyFlipCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -236,10 +236,10 @@ namespace Poly_Ling.Data
     ///   ・EdgeV1 と EdgeV2 が辺を成すこと
     ///   ・その辺が 2 面に共有されていること（境界辺は消せない）
     /// </summary>
-    [PLCommand(Description = "共有辺を消して 2 面を 1 面に結合する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "共有辺を消して 2 面を 1 面に結合する。")]
     public class EdgeTopologyDissolveCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -276,10 +276,10 @@ namespace Poly_Ling.Data
     /// 【型で守れない制約】受け口が実行時に確かめる。
     ///   ・VertexA と VertexB が同一の 4 頂点面の対角であること
     /// </summary>
-    [PLCommand(Description = "四角形を対角線で 2 つの三角形に分割する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "四角形を対角線で 2 つの三角形に分割する。")]
     public class EdgeTopologySplitCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -331,10 +331,10 @@ namespace Poly_Ling.Data
     ///     （Line は 2、Triangle は 3、Quad は 3 か 4）
     ///   ・既存頂点番号が頂点数の範囲内であること
     /// </summary>
-    [PLCommand(Description = "点列から線分・三角形・四角形を作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "点列から線分・三角形・四角形を作る。")]
     public class AddFaceCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -364,12 +364,16 @@ namespace Poly_Ling.Data
                  Required = true)]
         public Vector3 ViewPosition { get; }
 
+        [PLParam(Description = "線分（Line）の描き始めが既存の線分群の端点なら、その群を伸ばす。false なら新しい群を作り始点を親にする")]
+        public bool ExtendLineGroup { get; }
+
         public AddFaceCommand(
             int modelIndex, int[] masterIndices,
             AddFaceMode mode,
             int[] pointVertexIndices, float[] pointPositions,
             int materialIndex, Vector3 viewPosition,
-            ulong[] objectIds = null)
+            ulong[] objectIds = null,
+            bool extendLineGroup = false)
             : base(modelIndex)
         {
             MasterIndices      = masterIndices ?? System.Array.Empty<int>();
@@ -379,6 +383,7 @@ namespace Poly_Ling.Data
             PointPositions     = pointPositions ?? System.Array.Empty<float>();
             MaterialIndex      = materialIndex;
             ViewPosition       = viewPosition;
+            ExtendLineGroup    = extendLineGroup;
         }
     }
 
@@ -400,14 +405,14 @@ namespace Poly_Ling.Data
     ///   ・LadderCutResolver.IsSegmentReachable が通ること
     ///   ・Resolve が Ok を返すこと
     /// </summary>
-    [PLCommand(Description = "ラダー切断。開始頂点 → セグメント辺 → 終了頂点で切る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ラダー切断。開始頂点 → セグメント辺 → 終了頂点で切る。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeLadderCutCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -470,14 +475,14 @@ namespace Poly_Ling.Data
     /// 【型で守れない制約】受け口が実行時に確かめる。
     ///   ・Resolve が Ok かつ FaceCuts が 1 件以上あること
     /// </summary>
-    [PLCommand(Description = "一意分割。辺を 1 つ指定してベルト／ループ全体を切る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "一意分割。辺を 1 つ指定してベルト／ループ全体を切る。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeBeltLoopCutCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -534,14 +539,14 @@ namespace Poly_Ling.Data
     /// 【型で守れない制約】受け口が実行時に確かめる。
     ///   ・2 頂点が辺を成し、ちょうど 2 面に共有されていること
     /// </summary>
-    [PLCommand(Description = "辺消去。共有辺を消して 2 面を 1 面に統合する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "辺消去。共有辺を消して 2 面を 1 面に統合する。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeEraseEdgeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -580,14 +585,14 @@ namespace Poly_Ling.Data
     /// 【型で守れない制約】受け口が実行時に確かめる。
     ///   ・FaceCulledMask は空か、長さが面数と一致すること
     /// </summary>
-    [PLCommand(Description = "シンプル切断。画面上の 2 点を結ぶ直線で切る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "シンプル切断。画面上の 2 点を結ぶ直線で切る。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
     public class KnifeSimpleCutCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }

@@ -96,6 +96,9 @@ namespace Poly_Ling.Tools
         // ================================================================
         public AddFaceMode ModePublic    { get => Mode; set { Mode = value; } }
         public bool ContinuousLinePublic { get => ContinuousLine; set => ContinuousLine = value; }
+
+        /// <summary>描き始めが既存の線分群の端点ならその群を伸ばすか（AddFaceSettings.ExtendLineGroup）。</summary>
+        public bool ExtendLineGroupPublic { get => _settings.ExtendLineGroup; set => _settings.ExtendLineGroup = value; }
         public int  PlacedPointCount     => _points.Count;
         public int  RequiredPointsPublic => RequiredPoints;
         public void ClearPointsPublic()  { _points.Clear(); _lastLinePoint = null; ClearLineChain(); }
@@ -202,6 +205,7 @@ namespace Poly_Ling.Tools
         private void ClearLineChain()
         {
             _lineChain.Clear();
+            _chainGroupIndex = -1;
             _finishChainAfterCreate = false;
         }
 
@@ -301,6 +305,11 @@ namespace Poly_Ling.Tools
         //   ・Delete による線分 1 本ぶんの取り消し（NotifyLineSegmentUndone）
         // の 2 つに使う。開始点は面の生成時に既存頂点になるので番号で照合できる。
         private readonly List<int> _lineChain = new List<int>();
+
+        // 連続線分で描いている折れ線を入れている線分群の索引（無ければ -1）。
+        // LineGroupOps.AddSegment に渡し、同じ折れ線の続きをその群へ足す。
+        // 群の端点が一致しなければ使われない（Undo 等で合わなくなっても誤って伸ばさない）。
+        private int _chainGroupIndex = -1;
 
         // 開始点へ戻って閉じる線分を作っている最中だけ true。
         // 面の生成後（CreateFaceFromCommand）に折れ線を畳むための目印。
@@ -701,6 +710,7 @@ namespace Poly_Ling.Tools
                             // RecordLineChainSegment が終点を足して開始点が定まる。
                             _lineChain.Clear();
                             _lineChain.Add(selectedIdx);
+                            _chainGroupIndex = -1;
                         }
                         else
                         {
@@ -1121,7 +1131,27 @@ namespace Poly_Ling.Tools
                 }
 
                 int faceIndex = meshObject.Faces.Count;
+
+                // 線分なら線分群へ反映する（LineGroupOps.AddSegment）。Undo 用に前後を控える。
+                List<LineGroup> lineGroupsBefore = null, lineGroupsAfter = null;
+                bool isLineSegment = Mode == AddFaceMode.Line && newFace.VertexCount == 2;
+                if (isLineSegment)
+                    lineGroupsBefore = Poly_Ling.Ops.LineGroupOps.CloneList(meshObject);
+
                 meshObject.Faces.Add(newFace);
+
+                if (isLineSegment)
+                {
+                    int a = newFace.VertexIndices[0], b = newFace.VertexIndices[1];
+                    // 連続線分で直前の終点から描いているときだけ、同じ折れ線の群を渡す。
+                    bool continuing = ContinuousLine && _lineChain.Count > 0
+                                      && _lineChain[_lineChain.Count - 1] == a;
+                    _chainGroupIndex = Poly_Ling.Ops.LineGroupOps.AddSegment(
+                        meshObject, a, b,
+                        continuing ? _chainGroupIndex : -1,
+                        _settings.ExtendLineGroup);
+                    lineGroupsAfter = Poly_Ling.Ops.LineGroupOps.CloneList(meshObject);
+                }
 
                 Debug.Log($"[AddFaceTool] Created {Mode}: VertexCount={newFace.VertexCount}, MaterialIndex={newFace.MaterialIndex}");
 
@@ -1131,7 +1161,8 @@ namespace Poly_Ling.Tools
                 // Undo記録
                 if (ctx.UndoController != null)
                 {
-                    ctx.UndoController.RecordAddFaceOperation(newFace, faceIndex, addedVertices);
+                    ctx.UndoController.RecordAddFaceOperation(
+                        newFace, faceIndex, addedVertices, lineGroupsBefore, lineGroupsAfter);
                 }
             }
 

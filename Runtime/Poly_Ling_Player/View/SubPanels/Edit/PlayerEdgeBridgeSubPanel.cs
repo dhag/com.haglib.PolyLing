@@ -7,6 +7,7 @@
 // （EdgeChainOps.SplitIntoTwoChains）。3 群以上・分岐ありは実行できない。
 
 using System;
+using Poly_Ling.Data;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -14,7 +15,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerEdgeBridgeSubPanel
     {
-        public Func<EdgeBridgeToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "edgeBridge";
 
         /// <summary>「面を張る」を押したときに Viewer が実行する。</summary>
         public Action OnExecute;
@@ -92,8 +95,7 @@ namespace Poly_Ling.Player
             _boundaryOnlyToggle.style.fontSize = 11;
             _boundaryOnlyToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h != null) h.BoundaryEdgeOnly = e.newValue;
+                Surface.Set(Tool, "boundaryEdgeOnly", e.newValue);
                 Refresh();
             });
             _root.Add(_boundaryOnlyToggle);
@@ -115,7 +117,7 @@ namespace Poly_Ling.Player
 
             _root.Add(_clearPicksBtn = ActionButton("拾った辺を捨てる", () =>
             {
-                GetH?.Invoke()?.ClearPicks();
+                Surface?.Invoke(Tool, "clearPicks");
                 _lastResult = "";
                 Refresh();
             }));
@@ -127,8 +129,7 @@ namespace Poly_Ling.Player
             _autoCorrespToggle.style.fontSize = 11;
             _autoCorrespToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h != null) h.AutoCorrespondence = e.newValue;
+                Surface.Set(Tool, "autoCorrespondence", e.newValue);
                 Refresh();
             });
             _root.Add(_autoCorrespToggle);
@@ -145,8 +146,7 @@ namespace Poly_Ling.Player
             _flipCorrespToggle.style.fontSize = 11;
             _flipCorrespToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h != null) h.FlipCorrespondence = e.newValue;
+                Surface.Set(Tool, "flipCorrespondence", e.newValue);
                 Refresh();
             });
             _root.Add(_flipCorrespToggle);
@@ -155,8 +155,7 @@ namespace Poly_Ling.Player
             _flipFacesToggle.style.fontSize = 11;
             _flipFacesToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h != null) h.FlipFaces = e.newValue;
+                Surface.Set(Tool, "flipFaces", e.newValue);
                 Refresh();
             });
             _root.Add(_flipFacesToggle);
@@ -171,10 +170,8 @@ namespace Poly_Ling.Player
             }
             _subdivField.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h == null) return;
-                h.Subdivisions = e.newValue;
-                _subdivField.SetValueWithoutNotify(h.Subdivisions);
+                if (Surface == null) return;
+                _subdivField.SetValueWithoutNotify(Surface.Set(Tool, "subdivisions", e.newValue));
                 Refresh();
             });
             _root.Add(_subdivField);
@@ -210,40 +207,44 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            _boundaryOnlyToggle?.SetValueWithoutNotify(h.BoundaryEdgeOnly);
-            _autoCorrespToggle ?.SetValueWithoutNotify(h.AutoCorrespondence);
-            _flipCorrespToggle ?.SetValueWithoutNotify(h.FlipCorrespondence);
-            _flipFacesToggle   ?.SetValueWithoutNotify(h.FlipFaces);
-            _subdivField       ?.SetValueWithoutNotify(h.Subdivisions);
+            bool auto = Surface.GetBool(Tool, "autoCorrespondence", true);
+            int picked = Surface.GetInt(Tool, "pickedEdgeCount");
+
+            _boundaryOnlyToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "boundaryEdgeOnly", true));
+            _autoCorrespToggle ?.SetValueWithoutNotify(auto);
+            _flipCorrespToggle ?.SetValueWithoutNotify(Surface.GetBool(Tool, "flipCorrespondence"));
+            _flipFacesToggle   ?.SetValueWithoutNotify(Surface.GetBool(Tool, "flipFaces"));
+            _subdivField       ?.SetValueWithoutNotify(Surface.GetInt(Tool, "subdivisions"));
 
             // 自動判定は境界辺でしか効かない面反転を含まないため、
             // 内部辺を含む場合でも自動対応そのものは使える。表示だけ補足する。
             if (_flipCorrespToggle != null)
-                _flipCorrespToggle.label = h.AutoCorrespondence ? "対応を反転（自動判定の上書き）" : "対応を反転";
+                _flipCorrespToggle.label = auto ? "対応を反転（自動判定の上書き）" : "対応を反転";
 
             if (_pickLabel != null)
-                _pickLabel.text = h.PickedEdgeCount == 0
+                _pickLabel.text = picked == 0
                     ? "拾った辺：なし"
-                    : $"拾った辺：{h.PickedEdgeCount} 本";
+                    : $"拾った辺：{picked} 本";
 
-            var sum = h.Inspect();
+            var sum = Surface.GetGroup(Tool, "inspect");
+            bool ok = sum.Item("ok", false);
+            string message = sum.Item("message", "");
 
             if (_groupLabel != null)
-                _groupLabel.text = sum.Ok ? sum.Message : "";
+                _groupLabel.text = ok ? message : "";
 
             if (_statusLabel != null)
             {
-                string reject = h.LastRejectReason;
+                string reject = Surface.GetString(Tool, "lastRejectReason");
                 if (!string.IsNullOrEmpty(reject))          _statusLabel.text = reject;
                 else if (!string.IsNullOrEmpty(_lastResult)) _statusLabel.text = _lastResult;
-                else if (!sum.Ok)                            _statusLabel.text = sum.Message;
+                else if (!ok)                                _statusLabel.text = message;
                 else                                         _statusLabel.text = "";
             }
 
-            _executeBtn?.SetEnabled(sum.Ok);
+            _executeBtn?.SetEnabled(ok);
         }
 
         // ================================================================

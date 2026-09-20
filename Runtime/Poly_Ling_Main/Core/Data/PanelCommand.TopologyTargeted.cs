@@ -25,10 +25,10 @@ namespace Poly_Ling.Data
     ///
     /// 面だけを消す DeleteFacesCommand と違い、消す要素は各メッシュの Selection が持つ。
     /// </summary>
-    [PLCommand(Description = "選択されている頂点・面・線分を削除する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択されている頂点・面・線分を削除する。")]
     public class DeleteSelectionCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -53,10 +53,10 @@ namespace Poly_Ling.Data
     /// （PipeAlignOps.ParsePairs / PipeSmoothOps.ParseWeights / ParseTargets）が読む
     /// 書式そのまま。読めなければ受け口が失敗理由を返す。
     /// </summary>
-    [PLCommand(Description = "パイプ状の部品どうしで断面の頂点位置をそろえる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "パイプ状の部品どうしで断面の頂点位置をそろえる。")]
     public class PipeAlignCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -135,10 +135,10 @@ namespace Poly_Ling.Data
     /// masterIndex 配列で指定する。受け口が MeshObjectAppendOps.Combine で
     /// 並び順どおりに 1 つへ結合する（パネルの「複数チェックで上から結合」と同じ）。
     /// </summary>
-    [PLCommand(Description = "配置済みの部品を原型メッシュの形へ張り直す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "配置済みの部品を原型メッシュの形へ張り直す。")]
     public class PlaceObjectReshapeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -147,7 +147,7 @@ namespace Poly_Ling.Data
                  Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
         public ulong[] ObjectIds     { get; }
 
-        [PLParam(TextKey = "PlaceObjectReshapePrototypes", IsMeshRef = true,
+        [PLParam(TextKey = "PlaceObjectReshapePrototypes", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "原型にする描画オブジェクトの masterIndex 配列。並び順に結合する",
                  Required = true)]
         public int[] PrototypeMasterIndices { get; }
@@ -189,10 +189,10 @@ namespace Poly_Ling.Data
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// 生成物の追加は AddGeneratedMeshCommand が担う（ここでは作るところまで）。
     /// </summary>
-    [PLCommand(Description = "選択面に厚みを付けて別メッシュとして生成する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択面に厚みを付けて別メッシュとして生成する。")]
     public class SolidifyCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -278,10 +278,10 @@ namespace Poly_Ling.Data
     ///   分岐の無い開いた連なりの端に、梯子の自動検索（BeltStackDetector）の目印を付ける。
     ///   開始側は 上(+Y)→下、同じなら 手前(-Z)→奥、同じなら 左(-X)→右 で決める。
     /// </summary>
-    [PLCommand(Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
     public class EdgeRibbonFaceCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -344,13 +344,13 @@ namespace Poly_Ling.Data
     ///   EdgeSetName が空なら選択辺を新しいパーツ選択辞書へ保存して使う
     ///   （対象は選択中の描画オブジェクトと一致すること）。
     /// </summary>
-    [PLCommand(Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのオブジェクトグループになる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのオブジェクトグループになる。")]
     [PLResult("groupName", PLResultKind.Text,    Description = "作ったオブジェクトグループの名前")]
     [PLResult("ladders",   PLResultKind.Integer, Description = "帯から取り込んだ梯子の本数")]
     [PLResult("edgeSetName", PLResultKind.Text,  Description = "辺を読んだパーツ選択辞書の名前")]
     public class CreateEdgePipeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "辺を持つ描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
         public int[] MasterIndices { get; }
@@ -428,14 +428,20 @@ namespace Poly_Ling.Data
     ///   指定されていれば、MasterIndices の各オブジェクトが持つその名前のパーツ選択辞書の頂点を使う。
     ///   「オブジェクトグループとして残す」が立っていて辞書名が空のときは、
     ///   受け口が選択頂点を辞書へ保存し、その名前を控えたコマンドをグループに残す。
+    ///   以上は Target = Vertices のとき。
+    ///
+    /// 【ボーン・原点】Target = Bones なら MasterIndices の各ボーンの位置、
+    ///   ObjectOrigins なら各描画オブジェクトの原点へ置く（WorldMatrix の平行移動成分。
+    ///   マーカー表示と同じ値）。辞書は使わない。位置は MasterIndices だけで決まるので、
+    ///   選択とは照合しない（グループの作り直しでもそのまま再現できる）。
     ///
     /// 【向き】ViewDirection / ViewUp（ワールド）から作る。作り直しでもこの値を使うので、
     ///   向きは作ったときのカメラに固定される。
     /// </summary>
-    [PLCommand(Description = "頂点へ藤壺。対象の頂点それぞれへ配置元オブジェクトを複製し、カメラに向けて置く。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "頂点へ藤壺。対象の頂点それぞれへ配置元オブジェクトを複製し、カメラに向けて置く。")]
     public class CreateVertexBillboardPlaceCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "頂点を持つ描画オブジェクトの masterIndex 配列。辞書名を省くときは選択中のものと一致すること",
                  Required = true)]
         public int[] MasterIndices { get; }
@@ -447,7 +453,7 @@ namespace Poly_Ling.Data
         [PLParam(Description = "頂点を読むパーツ選択辞書の名前。空にすると選択中の頂点を使う")]
         public string VertexSetName { get; }
 
-        [PLParam(TextKey = "PlaceSourceIndices", IsMeshRef = true,
+        [PLParam(TextKey = "PlaceSourceIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "配置元オブジェクトの masterIndex 配列", Required = true)]
         public int[] SourceMasterIndices { get; }
 
@@ -478,6 +484,9 @@ namespace Poly_Ling.Data
         [PLParam(Description = "生成物の置き方。追加先モード・材質スロットなど。姿勢は使わない")]
         public PrimitivePlacement Placement { get; }
 
+        [PLParam(Description = "置く位置の取り方。Vertices = 選択頂点（または辞書） / Bones = MasterIndices のボーンの位置 / ObjectOrigins = MasterIndices の描画オブジェクトの原点")]
+        public Poly_Ling.PlaceObject.BillboardPlaceTarget Target { get; }
+
         public CreateVertexBillboardPlaceCommand(
             int modelIndex, int[] masterIndices,
             string vertexSetName,
@@ -491,11 +500,13 @@ namespace Poly_Ling.Data
             Vector3 viewUp,
             string meshName,
             PrimitivePlacement placement,
-            ulong[] objectIds = null)
+            ulong[] objectIds = null,
+            Poly_Ling.PlaceObject.BillboardPlaceTarget target = Poly_Ling.PlaceObject.BillboardPlaceTarget.Vertices)
             : base(modelIndex)
         {
             MasterIndices       = masterIndices ?? System.Array.Empty<int>();
             ObjectIds           = objectIds;
+            Target              = target;
             VertexSetName       = vertexSetName ?? "";
             SourceMasterIndices = sourceMasterIndices ?? System.Array.Empty<int>();
             IncludeChildren     = includeChildren;
@@ -514,7 +525,7 @@ namespace Poly_Ling.Data
             => new CreateVertexBillboardPlaceCommand(
                 ModelIndex, MasterIndices, vertexSetName, SourceMasterIndices, IncludeChildren,
                 Mode, RandomSeed, Scale, ZDirection, ViewDirection, ViewUp, MeshName, Placement,
-                ObjectIds);
+                ObjectIds, Target);
     }
 
     /// <summary>
@@ -535,10 +546,10 @@ namespace Poly_Ling.Data
     ///   ・PointPositions.Length == PointVertexIndices.Length * 3
     ///   ・既存頂点番号が編集対象の頂点数の範囲内であること
     /// </summary>
-    [PLCommand(Description = "指定した点から円筒・角柱、三角形・四角形の板を編集対象へ足す。既存頂点を指す点と、分割数が一致する既存の辺列はそのまま共有する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定した点から円筒・角柱、三角形・四角形の板を編集対象へ足す。既存頂点を指す点と、分割数が一致する既存の辺列はそのまま共有する。")]
     public class CreatePointDefinedPrimitiveCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -599,10 +610,10 @@ namespace Poly_Ling.Data
     /// 実処理が編集対象メッシュ 1 本の選択線分しか見ないため、
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// </summary>
-    [PLCommand(Description = "選択線分から検出した輪郭ループを押し出してメッシュを作る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択線分から検出した輪郭ループを押し出してメッシュを作る。")]
     public class LineExtrudeCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -687,10 +698,10 @@ namespace Poly_Ling.Data
     ///   SurfaceSnapTool.cs:439-453）。よって受け口は計算・スライダー・決定を続けて呼ぶ。
     ///   Slider は最終的な補間量（0 = 動かさない、1 = 完全に張り付く）。
     /// </summary>
-    [PLCommand(Description = "対象オブジェクトの頂点を、リファレンスオブジェクトの面へ視線方向に張り付ける。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "対象オブジェクトの頂点を、リファレンスオブジェクトの面へ視線方向に張り付ける。")]
     public class SurfaceSnapCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -699,7 +710,7 @@ namespace Poly_Ling.Data
                  Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
         public ulong[] ObjectIds     { get; }
 
-        [PLParam(TextKey = "SurfaceSnapReferences", IsMeshRef = true,
+        [PLParam(TextKey = "SurfaceSnapReferences", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "張り付け先にする描画オブジェクトの masterIndex 配列",
                  Required = true)]
         public int[] ReferenceMasterIndices { get; }

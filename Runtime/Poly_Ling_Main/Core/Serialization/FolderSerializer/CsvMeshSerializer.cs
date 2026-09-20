@@ -139,6 +139,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // 法線再計算 除外セット
                 WriteNormalExcludeSets(sb, mc);
 
+                // 線分群
+                WriteLineGroups(sb, mc);
+
                 // 剛体 / JOINT（Type=RigidBody/RigidBodyJoint の頂点ゼロ・メタデータ）
                 WriteRigidJointData(sb, mc);
 

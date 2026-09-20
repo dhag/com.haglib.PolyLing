@@ -14,6 +14,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("solidify", Description = "SolidifyTool（確定は SolidifyCommand）")]
     public class SolidifyToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -44,6 +45,7 @@ namespace Poly_Ling.Player
         /// AddToExisting のときの追加先。パネルの名前欄ドロップダウンが書き込む。
         /// -1 は選択オブジェクトリストの先頭。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "AddToExisting のときの追加先。-1 は選択オブジェクトリストの先頭")]
         public int AddTargetIndex { get; set; } = -1;
 
         public SolidifyToolHandler()
@@ -68,55 +70,65 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.Thickness")]
         public float Thickness
         {
             get => _tool.Thickness;
             set => _tool.Thickness = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.AddToExisting")]
         public bool AddToExisting
         {
             get => _tool.AddToExisting;
             set => _tool.AddToExisting = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.MeshName")]
         public string MeshName
         {
             get => _tool.MeshName;
             set => _tool.MeshName = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.SegmentsFront")]
         public int SegmentsFront
         {
             get => _tool.SegmentsFront;
             set => _tool.SegmentsFront = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.SegmentsBack")]
         public int SegmentsBack
         {
             get => _tool.SegmentsBack;
             set => _tool.SegmentsBack = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.EdgeSizeFront")]
         public float EdgeSizeFront
         {
             get => _tool.EdgeSizeFront;
             set => _tool.EdgeSizeFront = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.EdgeSizeBack")]
         public float EdgeSizeBack
         {
             get => _tool.EdgeSizeBack;
             set => _tool.EdgeSizeBack = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "SolidifyTool.EdgeInward")]
         public bool EdgeInward
         {
             get => _tool.EdgeInward;
             set => _tool.EdgeInward = value;
         }
 
+        [Poly_Ling.Data.PLToolState(Description = "SolidifyTool.SelectedFaceCount")]
         public int    SelectedFaceCount => _tool.SelectedFaceCount;
+        [Poly_Ling.Data.PLToolState(Description = "SolidifyTool.LastMessage")]
         public string LastMessage       => _tool.LastMessage;
 
         /// <summary>

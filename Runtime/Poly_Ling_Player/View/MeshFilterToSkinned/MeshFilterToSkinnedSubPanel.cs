@@ -295,37 +295,16 @@ namespace Poly_Ling.Player
             bool hasBones = _model.MeshContextList.Any(ctx => ctx?.Type == MeshType.Bone);
             if (hasBones) SetStatus(T("AlreadyHasBones"));
 
-            // コマンド経由で変換（Undo記録あり）
-            if (_panelContext != null)
-            {
-                int modelIdx = _getModelIndex?.Invoke() ?? 0;
-                // コマンドは非同期に処理されるため、この時点ではボーン本数が確定していない。
-                // リテラル "?" を書式引数に渡すと「変換完了: ?個のボーンを作成」と表示されてしまう。
-                // 完了メッセージは NotifyPanels → Refresh() 側で実本数を使って出す。
-                _conversionPending = true;
-                _panelContext.SendCommand(new ConvertMeshFilterToSkinnedCommand(
-                    modelIdx, _swapAxisForRotated, _setAxisForIdentity, _tolerantMirrorBranch));
-            }
-            else
-            {
-                // フォールバック（PanelContext未設定時）
-                try
-                {
-                    int boneCount = MeshFilterToSkinnedConverter.Execute(
-                        _model, entries, _swapAxisForRotated, _setAxisForIdentity,
-                        _tolerantMirrorBranch
-                            ? MirrorBranchTolerance.Tolerant
-                            : MirrorBranchTolerance.Strict);
-                    SetStatus(T("ConvertSuccess", boneCount));
-                    RefreshHierarchy();
-                    OnConversionComplete?.Invoke();
-                }
-                catch (Exception ex)
-                {
-                    SetStatus($"Error: {ex.Message}");
-                    Debug.LogException(ex);
-                }
-            }
+            // コマンド経由で変換（Undo記録あり）。本体も SetContext を渡すので、パネル内で直接
+            // 変換する経路は持たない（操作経路統一計画.md J）。
+            // コマンドは非同期に処理されるため、この時点ではボーン本数が確定していない。
+            // リテラル "?" を書式引数に渡すと「変換完了: ?個のボーンを作成」と表示されてしまう。
+            // 完了メッセージは NotifyPanels → Refresh() 側で実本数を使って出す。
+            if (_panelContext == null) return;
+            _conversionPending = true;
+            _panelContext.SendCommand(new ConvertMeshFilterToSkinnedCommand(
+                _getModelIndex?.Invoke() ?? 0,
+                _swapAxisForRotated, _setAxisForIdentity, _tolerantMirrorBranch));
         }
 
         // ================================================================

@@ -12,6 +12,7 @@ using Poly_Ling.Profile2DExtrude;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("lineExtrude", Description = "線分押し出し（確定は LineExtrudeCommand）")]
     public class LineExtrudeToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -34,14 +35,23 @@ namespace Poly_Ling.Player
         // 押し出しパラメータ
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.Thickness")]
         public float Thickness       = 0.1f;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.Scale")]
         public float Scale           = 1.0f;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.Offset")]
         public Vector2 Offset        = Vector2.zero;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.FlipY")]
         public bool  FlipY           = false;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.SegmentsFront")]
         public int   SegmentsFront   = 0;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.SegmentsBack")]
         public int   SegmentsBack    = 0;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.EdgeSizeFront")]
         public float EdgeSizeFront   = 0.1f;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.EdgeSizeBack")]
         public float EdgeSizeBack    = 0.1f;
+        [Poly_Ling.Data.PLToolParam(Description = "LineExtrudeToolHandler.EdgeInward")]
         public bool  EdgeInward      = false;
 
         // ================================================================
@@ -199,11 +209,32 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        [Poly_Ling.Data.PLToolState(Description = "LineExtrudeTool.GetSelectedLineCount")]
         public int  SelectedLineCount => _tool.GetSelectedLineCount();
+        [Poly_Ling.Data.PLToolState(Description = "LineExtrudeTool.GetDetectedLoopCount")]
         public int  DetectedLoopCount => _tool.GetDetectedLoopCount();
+        [Poly_Ling.Data.PLToolAction(Description = "選択線分から閉じたループを検出する")]
         public void AnalyzeLoops()    => _tool.AnalyzeLoops();
         public System.Collections.Generic.List<Poly_Ling.Tools.LineExtrudeTool.LoopSummary>
             GetLoopSummaries()  => _tool.GetLoopSummaries();
+
+        /// <summary>検出したループの説明行（パネルの一覧と同じ文言："Loop 番号: 頂点数 verts (Hole/Outer)"）。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "検出したループの説明行")]
+        public string[] LoopLines
+        {
+            get
+            {
+                var list = _tool.GetLoopSummaries();
+                if (list == null) return System.Array.Empty<string>();
+                var lines = new string[list.Count];
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var loop = list[i];
+                    lines[i] = $"Loop {loop.Index + 1}: {loop.VertexCount} verts ({(loop.IsHole ? "Hole" : "Outer")})";
+                }
+                return lines;
+            }
+        }
         public void SaveAsCSV()       => _tool.SaveAsCSV();
 
         // ================================================================

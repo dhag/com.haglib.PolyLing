@@ -57,7 +57,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 読込後オプションを組む。原点 CSV の指定があれば関門を通す。
         ///
-        /// PMX / MQO / OBJ / STL の 4 経路で同じなので 1 本にまとめてある。
+        /// PMX / MQO / OBJ / STL / VRM の 5 経路で同じなので 1 本にまとめてある。
         /// </summary>
         /// <returns>組めたか。false のとき reason に理由が入る。</returns>
         private static bool TryBuildImportPostOptions(
@@ -311,7 +311,13 @@ namespace Poly_Ling.Player
                 settings.TextureFolder = texResolved;
             }
 
-            OnImportVrm(path, settings, new PlayerImportSubPanel.PostOptions());
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportVrm(path, settings, post);
             return null;
         }
 

@@ -54,9 +54,9 @@ namespace Poly_Ling.Player
 
             // コマンドID → 実行内容。対応するツールボタンと同じ処理を割り当てる。
             _shortcutController.Register(ShortcutMap.CmdUndo,
-                () => _commandDispatcher?.Dispatch(new PerformUndoCommand()));
+                () => DispatchHost(new PerformUndoCommand()));
             _shortcutController.Register(ShortcutMap.CmdRedo,
-                () => _commandDispatcher?.Dispatch(new PerformRedoCommand()));
+                () => DispatchHost(new PerformRedoCommand()));
             _shortcutController.Register(ShortcutMap.CmdToolVertexMove,
                 () => ShowCategory1Panel(InteractionMode.VertexMove));
             _shortcutController.Register(ShortcutMap.CmdToolObjectMove,

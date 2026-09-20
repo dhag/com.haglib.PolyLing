@@ -58,6 +58,9 @@ namespace Poly_Ling.Player
         /// </summary>
         public event Action OnUndoPointKey;
 
+        /// <summary>Enter キー（確定）。自由曲線の描画を確定するのに使う。</summary>
+        public event Action OnConfirmKey;
+
         /// <summary>
         /// ポインターがこのパネル（RenderTexture領域）内を移動したときに発火する。
         /// 引数は UIToolkit のパネルローカル座標（Y=0が上）のまま渡す。
@@ -514,6 +517,152 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 線分群の曲線オーバーレイ（ハンドルを持つ群のベジェ曲線とハンドル）
+        // ================================================================
+
+        /// <summary>曲線オーバーレイの描画データ（スクリーン座標、Y=0 上）。</summary>
+        public struct LineCurveData
+        {
+            /// <summary>曲線ごとの点列。</summary>
+            public List<Vector2[]> Curves;
+            /// <summary>ハンドル：点とハンドル先の組。</summary>
+            public List<(Vector2 Point, Vector2 Handle, bool Bad)> Handles;
+            /// <summary>編集中の対象の点（線分群の編集モードで描く）。</summary>
+            public List<Vector2> Points;
+            /// <summary>描いている折れ線の最後の点からポインタまでの仮の線分。</summary>
+            public Vector2[] Preview;
+            /// <summary>選択中の点（強調して描く）。</summary>
+            public List<Vector2> SelectedPoints;
+            /// <summary>ドラッグ中の仮の折れ線（点・ハンドルを動かした後の形）。</summary>
+            public List<Vector2[]> DragPreview;
+            /// <summary>矩形選択の枠（Y=0 上）。</summary>
+            public Rect? Marquee;
+        }
+        private LineCurveData _lineCurveData;
+        private VisualElement _lineCurveOverlay;
+
+        /// <summary>線分群の曲線とハンドルを描く（スクリーン座標、Y=0 上）。</summary>
+        public void UpdateLineCurves(LineCurveData data)
+        {
+            _lineCurveData = data;
+            _lineCurveOverlay?.MarkDirtyRepaint();
+        }
+
+        /// <summary>線分群の曲線を消す。</summary>
+        public void HideLineCurves()
+        {
+            _lineCurveData = default;
+            _lineCurveOverlay?.MarkDirtyRepaint();
+        }
+
+        private void OnGenerateLineCurveOverlay(MeshGenerationContext ctx)
+        {
+            var data = _lineCurveData;
+            var painter = ctx.painter2D;
+
+            if (data.Curves != null)
+            {
+                painter.strokeColor = new Color(1f, 0.85f, 0.2f, 0.95f);
+                painter.lineWidth   = 2f;
+                foreach (var c in data.Curves)
+                {
+                    if (c == null || c.Length < 2) continue;
+                    painter.BeginPath();
+                    painter.MoveTo(c[0]);
+                    for (int i = 1; i < c.Length; i++) painter.LineTo(c[i]);
+                    painter.Stroke();
+                }
+            }
+
+            if (data.Handles != null)
+            {
+                const float r = 3.5f;
+                foreach (var (p, h, bad) in data.Handles)
+                {
+                    Color col = bad ? new Color(1f, 0.25f, 0.25f, 0.95f) : new Color(0.4f, 0.9f, 1f, 0.9f);
+                    painter.strokeColor = col;
+                    painter.lineWidth   = 1f;
+                    painter.BeginPath();
+                    painter.MoveTo(p);
+                    painter.LineTo(h);
+                    painter.Stroke();
+
+                    painter.fillColor = col;
+                    painter.BeginPath();
+                    painter.MoveTo(new Vector2(h.x - r, h.y - r));
+                    painter.LineTo(new Vector2(h.x + r, h.y - r));
+                    painter.LineTo(new Vector2(h.x + r, h.y + r));
+                    painter.LineTo(new Vector2(h.x - r, h.y + r));
+                    painter.ClosePath();
+                    painter.Fill();
+                }
+            }
+
+            if (data.Preview != null && data.Preview.Length >= 2)
+            {
+                painter.strokeColor = new Color(1f, 1f, 1f, 0.8f);
+                painter.lineWidth   = 1.5f;
+                painter.BeginPath();
+                painter.MoveTo(data.Preview[0]);
+                for (int i = 1; i < data.Preview.Length; i++) painter.LineTo(data.Preview[i]);
+                painter.Stroke();
+            }
+
+            if (data.Points != null)
+            {
+                const float pr = 4f;
+                painter.fillColor = new Color(1f, 0.95f, 0.3f, 0.95f);
+                foreach (var p in data.Points)
+                {
+                    painter.BeginPath();
+                    painter.Arc(p, pr, 0f, 360f);
+                    painter.ClosePath();
+                    painter.Fill();
+                }
+            }
+
+            if (data.SelectedPoints != null)
+            {
+                painter.fillColor = new Color(1f, 0.45f, 0.1f, 1f);
+                foreach (var p in data.SelectedPoints)
+                {
+                    painter.BeginPath();
+                    painter.Arc(p, 5.5f, 0f, 360f);
+                    painter.ClosePath();
+                    painter.Fill();
+                }
+            }
+
+            if (data.DragPreview != null)
+            {
+                painter.strokeColor = new Color(1f, 0.6f, 0.2f, 0.9f);
+                painter.lineWidth   = 1.5f;
+                foreach (var c in data.DragPreview)
+                {
+                    if (c == null || c.Length < 2) continue;
+                    painter.BeginPath();
+                    painter.MoveTo(c[0]);
+                    for (int i = 1; i < c.Length; i++) painter.LineTo(c[i]);
+                    painter.Stroke();
+                }
+            }
+
+            if (data.Marquee.HasValue)
+            {
+                var r = data.Marquee.Value;
+                painter.strokeColor = new Color(1f, 1f, 1f, 0.8f);
+                painter.lineWidth   = 1f;
+                painter.BeginPath();
+                painter.MoveTo(new Vector2(r.xMin, r.yMin));
+                painter.LineTo(new Vector2(r.xMax, r.yMin));
+                painter.LineTo(new Vector2(r.xMax, r.yMax));
+                painter.LineTo(new Vector2(r.xMin, r.yMax));
+                painter.ClosePath();
+                painter.Stroke();
+            }
+        }
+
+        // ================================================================
         // 設定
         // ================================================================
 
@@ -672,6 +821,15 @@ namespace Poly_Ling.Player
             _boneOverlay.pickingMode = PickingMode.Ignore;
             _boneOverlay.generateVisualContent += OnGenerateBoneOverlay;
             Add(_boneOverlay);
+
+            // 線分群の曲線オーバーレイ
+            _lineCurveOverlay = new VisualElement();
+            _lineCurveOverlay.style.position = Position.Absolute;
+            _lineCurveOverlay.style.left = _lineCurveOverlay.style.top =
+            _lineCurveOverlay.style.right = _lineCurveOverlay.style.bottom = 0;
+            _lineCurveOverlay.pickingMode = PickingMode.Ignore;
+            _lineCurveOverlay.generateVisualContent += OnGenerateLineCurveOverlay;
+            Add(_lineCurveOverlay);
         }
 
         // ================================================================
@@ -807,6 +965,10 @@ namespace Poly_Ling.Player
             {
                 OnUndoPointKey?.Invoke();
                 evt.StopPropagation();
+            }
+            else if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+            {
+                if (OnConfirmKey != null) { OnConfirmKey.Invoke(); evt.StopPropagation(); }
             }
         }
 

@@ -13,6 +13,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("holeRingCount", Description = "穴の頂点数合わせ（確定は MatchHoleRingCountCommand）")]
     public class HoleRingCountToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -49,24 +50,31 @@ namespace Poly_Ling.Player
         // 公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolStateGroup(Name = "baseSeed", Description = "基準の起点（未取り込みなら空）")]
         public HoleRingCountTool.Seed BaseSeed   => _tool.BaseSeed;
+        [Poly_Ling.Data.PLToolStateGroup(Name = "targetSeed", Description = "対象の起点（未取り込みなら空）")]
         public HoleRingCountTool.Seed TargetSeed => _tool.TargetSeed;
 
+        [Poly_Ling.Data.PLToolParam(Description = "HoleRingCountTool.SplitTriangleIntoTriangles")]
         public bool SplitTriangleIntoTriangles
         {
             get => _tool.SplitTriangleIntoTriangles;
             set => _tool.SplitTriangleIntoTriangles = value;
         }
 
+        [Poly_Ling.Data.PLToolStateGroup(Name = "inspect", Description = "実行前の下調べ（HoleRingCountTool.Summary）")]
         public HoleRingCountTool.Summary Inspect() => _tool.Inspect();
 
         /// <summary>基準穴を現在の選択から取り込む。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択から基準の起点を取り込む")]
         public bool ImportBase() => Import(isBase: true);
 
         /// <summary>対象穴を現在の選択から取り込む。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択から対象の起点を取り込む")]
         public bool ImportTarget() => Import(isBase: false);
 
         /// <summary>取り込み済みの種を捨てる。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "基準・対象の起点を捨てる")]
         public void ClearSeeds()
         {
             _tool.ClearSeeds();

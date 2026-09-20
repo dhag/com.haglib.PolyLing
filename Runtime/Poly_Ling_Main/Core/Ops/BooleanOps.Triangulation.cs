@@ -78,6 +78,8 @@ namespace Poly_Ling.Ops
             }
             mesh.Faces = triangles;
             mesh.IsTriangulated = true;
+            // 面を入れ替えたので、線分が無くなった区間で線分群を切る（頂点索引は不変）。
+            LineGroupOps.ReconcileWithFaces(mesh);
             return true;
         }
 

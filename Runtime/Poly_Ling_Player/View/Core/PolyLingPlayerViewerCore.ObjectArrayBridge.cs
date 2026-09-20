@@ -282,8 +282,10 @@ namespace Poly_Ling.Player
 
             EnsureVertexBillboardPlaceHandler();
 
-            panel.GetSelectedVertexCount = () =>
-                _vertexBillboardPlaceHandler?.GetSelectedVertexCount() ?? 0;
+            panel.GetVertexBillboardTargetCount = target =>
+                _vertexBillboardPlaceHandler?.GetTargetCount(target) ?? 0;
+            panel.GetVertexBillboardTargetIndices = target =>
+                _vertexBillboardPlaceHandler?.GetSelectedTargetIndices(target) ?? System.Array.Empty<int>();
 
             // 直前にポインタが乗ったビューポートのカメラ。視線と上方向（ワールド）。
             panel.GetActiveCameraFrame = () =>

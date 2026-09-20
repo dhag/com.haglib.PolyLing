@@ -60,6 +60,9 @@ namespace Poly_Ling.Player
                 // 通常ホバー（GetHoverElement）は選択メッシュしか返さない。
                 GetSnapHoverElement = () =>
                     _viewportManager.GetSnapHoverElement(ActiveProject?.CurrentModel),
+                // ボーン位置・描画オブジェクト原点への吸着（作業軸と同じ実装）。
+                GetSnapPointWorld = (imguiPos, toBone, toOrigin) =>
+                    SnapPointWorld(imguiPos, toBone, toOrigin),
                 // 吸着用ヒットテストの有効化。面追加モードでない間は必ず切る
                 // （有効な間はポインタ移動ごとに頂点数ぶんの読み戻しが増えるため）。
                 OnSnapHitTestEnabledChanged = on =>
@@ -168,7 +171,7 @@ namespace Poly_Ling.Player
             _addFaceHandler.SetUndoController(_editOps?.UndoController);
             _addFaceSubPanel = new PlayerAddFaceSubPanel
             {
-                GetH = () => _addFaceHandler,
+                Surface = ToolSurface,
 
                 // 追加先オブジェクト。編集対象は ActiveMeshIndex（＝ SelectedDrawableMeshIndices[0]）
                 // なので、切り替えは通常のメッシュ選択と同じ SelectMeshCommand で行う。
@@ -177,7 +180,7 @@ namespace Poly_Ling.Player
                 OnSelectMesh       = idx =>
                 {
                     if (idx < 0) return;
-                    _commandDispatcher?.Dispatch(new SelectMeshCommand(
+                    DispatchHost(new SelectMeshCommand(
                         ActiveProject?.CurrentModelIndex ?? 0,
                         MeshCategory.Drawable,
                         new[] { idx }));
@@ -217,9 +220,8 @@ namespace Poly_Ling.Player
             _flipFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
             _flipFaceSubPanel = new PlayerFlipFaceSubPanel
             {
-                GetH        = () => _flipFaceHandler,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _flipFaceSubPanel.Build(_layoutRoot.FlipFaceSection);
             _rotateHandler = new RotateToolHandler
@@ -236,9 +238,11 @@ namespace Poly_Ling.Player
                 OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
             _rotateHandler.SendCommand = DispatchPanelCommand;
+            _rotateHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
+            _rotateHandler.EndPreview      = EndHostPreview;
             _rotateHandler.SetProject(ActiveProject);
             _rotateHandler.SetUndoController(_editOps?.UndoController);
-            _rotateSubPanel = new PlayerRotateSubPanel { GetH = () => _rotateHandler };
+            _rotateSubPanel = new PlayerRotateSubPanel { Surface = ToolSurface };
             _rotateSubPanel.Build(_layoutRoot.RotateSection);
 
             // 作業用ローカル軸。作業軸オブジェクト（MeshType.WorkAxis）の値だけを
@@ -278,8 +282,8 @@ namespace Poly_Ling.Player
                 GetWorkAxis               = () => CurrentWorkAxis(),
                 // 使う軸の一覧を出すために読む。
                 GetModel                  = () => ActiveProject?.CurrentModel,
-                GetH                      = () => _workAxisHandler,
-                SendCommand               = cmd => _commandDispatcher?.Dispatch(cmd),
+                Surface                   = ToolSurface,
+                SendCommand               = cmd => DispatchHost(cmd),
                 GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,
                 OnValueChanged            = () =>
                 {
@@ -320,7 +324,7 @@ namespace Poly_Ling.Player
             };
             _cameraSubPanel = new PlayerCameraSubPanel
             {
-                GetH       = () => _cameraHandler,
+                Surface    = ToolSurface,
                 GetOrbit   = () => _viewportManager.PerspectiveViewport?.Orbit,
                 GetTri     = () => _viewportManager.FrontViewport?.Ortho,
                 GetTriFlip = idx =>
@@ -369,6 +373,8 @@ namespace Poly_Ling.Player
 
             // 作業軸フェーズでは作業軸ツールと同じギズモを出す。
             _deformHandler.WorkAxisGizmoProvider = _workAxisHandler;
+            _deformHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
+            _deformHandler.EndPreview      = EndHostPreview;
             // フェーズが変わったら入力経路を張り替える。
             _deformHandler.OnPhaseChanged = () =>
             {
@@ -382,8 +388,8 @@ namespace Poly_Ling.Player
             {
                 GetWorkAxis               = () => CurrentWorkAxis(),
                 GetModel                  = () => ActiveProject?.CurrentModel,
-                GetH                      = () => _workAxisHandler,
-                SendCommand               = cmd => _commandDispatcher?.Dispatch(cmd),
+                Surface                   = ToolSurface,
+                SendCommand               = cmd => DispatchHost(cmd),
                 GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,
                 OnValueChanged            = () =>
                 {
@@ -413,6 +419,8 @@ namespace Poly_Ling.Player
                 GetModel       = () => ActiveProject?.CurrentModel,
                 GetModelIndex  = () => ActiveProject?.CurrentModelIndex ?? 0,
                 SendCommand    = DispatchPanelCommand,
+                TryBeginPreview = TryBeginHostPreviewOfSelection,
+                EndPreview      = EndHostPreview,
                 OnSyncMeshPositions = mc =>
                 {
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
@@ -446,9 +454,11 @@ namespace Poly_Ling.Player
                 OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
             _scaleHandler.SendCommand = DispatchPanelCommand;
+            _scaleHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
+            _scaleHandler.EndPreview      = EndHostPreview;
             _scaleHandler.SetProject(ActiveProject);
             _scaleHandler.SetUndoController(_editOps?.UndoController);
-            _scaleSubPanel = new PlayerScaleSubPanel { GetH = () => _scaleHandler };
+            _scaleSubPanel = new PlayerScaleSubPanel { Surface = ToolSurface };
             _scaleSubPanel.Build(_layoutRoot.ScaleSection);
             _edgeBevelHandler = new EdgeBevelToolHandler
             {
@@ -484,7 +494,7 @@ namespace Poly_Ling.Player
             _edgeBevelHandler.SetUndoController(_editOps?.UndoController);
             _edgeBevelHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeBevelHandler.SendCommand = DispatchPanelCommand;
-            _edgeBevelSubPanel = new PlayerEdgeBevelSubPanel { GetH = () => _edgeBevelHandler };
+            _edgeBevelSubPanel = new PlayerEdgeBevelSubPanel { Surface = ToolSurface };
             _edgeBevelSubPanel.Build(_layoutRoot.EdgeBevelSection);
             _edgeExtrudeHandler = new EdgeExtrudeToolHandler
             {
@@ -520,7 +530,7 @@ namespace Poly_Ling.Player
             _edgeExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _edgeExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeExtrudeHandler.SendCommand = DispatchPanelCommand;
-            _edgeExtrudeSubPanel = new PlayerEdgeExtrudeSubPanel { GetH = () => _edgeExtrudeHandler };
+            _edgeExtrudeSubPanel = new PlayerEdgeExtrudeSubPanel { Surface = ToolSurface };
             _edgeExtrudeSubPanel.Build(_layoutRoot.EdgeExtrudeSection);
             _faceExtrudeHandler = new FaceExtrudeToolHandler
             {
@@ -558,7 +568,7 @@ namespace Poly_Ling.Player
             _faceExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _faceExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _faceExtrudeHandler.SendCommand = DispatchPanelCommand;
-            _faceExtrudeSubPanel = new PlayerFaceExtrudeSubPanel { GetH = () => _faceExtrudeHandler };
+            _faceExtrudeSubPanel = new PlayerFaceExtrudeSubPanel { Surface = ToolSurface };
             _faceExtrudeSubPanel.Build(_layoutRoot.FaceExtrudeSection);
             _edgeTopologyHandler = new EdgeTopologyToolHandler
             {
@@ -581,7 +591,7 @@ namespace Poly_Ling.Player
             _edgeTopologyHandler.SetProject(ActiveProject);
             _edgeTopologyHandler.SetUndoController(_editOps?.UndoController);
             _edgeTopologyHandler.SetCommandQueue(_editOps?.CommandQueue);
-            _edgeTopologySubPanel = new PlayerEdgeTopologySubPanel { GetH = () => _edgeTopologyHandler };
+            _edgeTopologySubPanel = new PlayerEdgeTopologySubPanel { Surface = ToolSurface };
             // サブパネル上のモード切替 (Flip/Split/Dissolve ドロップダウン) に連動して
             // Selection.Mode (ホバー有効範囲) を切り替える。
             _edgeTopologySubPanel.OnModeChanged = m => ApplySelectionModeForEdgeTopology(m);
@@ -641,7 +651,7 @@ namespace Poly_Ling.Player
             _knifeHandler.SetProject(ActiveProject);
             _knifeHandler.SetUndoController(_editOps?.UndoController);
             _knifeHandler.SetCommandQueue(_editOps?.CommandQueue);
-            _knifeSubPanel = new PlayerKnifeSubPanel { GetH = () => _knifeHandler };
+            _knifeSubPanel = new PlayerKnifeSubPanel { Surface = ToolSurface };
             _knifeSubPanel.Build(_layoutRoot.KnifeSection);
 
             _solidifyHandler = new SolidifyToolHandler
@@ -660,7 +670,7 @@ namespace Poly_Ling.Player
                 // 決まらないので、出来上がったメッシュをそのまま置くコマンドを使う。
                 // 頂点は元メッシュのローカル座標で生成済みなので姿勢は入れ直させない。
                 OnMeshCreated = (mo, name, pos, rot, scl, ign, mode, target) =>
-                    _commandDispatcher?.Dispatch(new AddGeneratedMeshCommand(
+                    DispatchHost(new AddGeneratedMeshCommand(
                         ActiveProject?.CurrentModelIndex ?? 0, mo, name,
                         new PrimitivePlacement
                         {
@@ -682,11 +692,11 @@ namespace Poly_Ling.Player
             _solidifyHandler.SetCommandQueue(_editOps?.CommandQueue);
             _solidifySubPanel = new PlayerSolidifySubPanel
             {
-                GetH = () => _solidifyHandler,
+                Surface = ToolSurface,
                 GetDrawableIndexList          = BuildDrawableIndexList,
                 GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1,
                 GetView                       = () => ActiveProject,
-                SendCommand                   = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand                   = cmd => DispatchHost(cmd),
             };
             _solidifySubPanel.Build(_layoutRoot.SolidifySection);
 
@@ -713,9 +723,9 @@ namespace Poly_Ling.Player
             _lineExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _lineExtrudeSubPanel = new PlayerLineExtrudeSubPanel
             {
-                GetH        = () => _lineExtrudeHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _lineExtrudeSubPanel.Build(_layoutRoot.LineExtrudeSection);
         }

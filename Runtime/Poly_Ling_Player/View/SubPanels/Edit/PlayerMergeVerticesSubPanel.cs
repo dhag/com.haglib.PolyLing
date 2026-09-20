@@ -14,7 +14,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerMergeVerticesSubPanel
     {
-        public Func<MergeVerticesToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                   Surface;
+        private const string Tool = "mergeVertices";
         public Func<ProjectContext>           GetView;
         public Action<PanelCommand>           SendCommand;
 
@@ -85,7 +87,7 @@ namespace Poly_Ling.Player
             {
                 float v = Mathf.Max(0.0001f, e.newValue);
                 _threshField.SetValueWithoutNotify(v);
-                var h = GetH(); if (h != null) h.Threshold = v;
+                Surface.Set(Tool, "threshold", v);
             });
             threshRow.Add(threshLbl); threshRow.Add(_threshField);
             _root.Add(threshRow);
@@ -102,7 +104,7 @@ namespace Poly_Ling.Player
                 var b = new Button(() =>
                 {
                     _threshField?.SetValueWithoutNotify(v);
-                    var h = GetH(); if (h != null) h.Threshold = v;
+                    Surface.Set(Tool, "threshold", v);
                 }) { text = label };
                 b.style.flexGrow = 1;
                 presetRow.Add(b);
@@ -114,12 +116,12 @@ namespace Poly_Ling.Player
             _root.Add(presetRow);
 
             _previewToggle = new Toggle("Show Preview") { value = true };
-            _previewToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.ShowPreview = e.newValue; });
+            _previewToggle.RegisterValueChangedCallback(e => Surface.Set(Tool, "showPreview", e.newValue));
             _root.Add(_previewToggle);
 
             // 閉じた面＝頂点索引の並びが一致し、巻き順だけが逆の重なり面。両方とも消す。
             _removeClosedFacesToggle = new Toggle("閉じた面（おもて面同士が重なる面）を削除") { value = false };
-            _removeClosedFacesToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.RemoveClosedFaces = e.newValue; });
+            _removeClosedFacesToggle.RegisterValueChangedCallback(e => Surface.Set(Tool, "removeClosedFaces", e.newValue));
             _root.Add(_removeClosedFacesToggle);
 
             _groupsLabel = InfoLabel(); _root.Add(_groupsLabel);
@@ -153,47 +155,36 @@ namespace Poly_Ling.Player
         /// </summary>
         private void SendMerge(MergeVerticesCommand.MergeMode mode)
         {
-            var h = GetH();
             var targets = ActiveMasterIndices();
-            if (h == null || targets == null) return;
+            if (Surface == null || targets == null) return;
 
             SendCommand?.Invoke(new MergeVerticesCommand(
-                ModelIndex, targets, mode, h.Threshold, h.RemoveClosedFaces));
+                ModelIndex, targets, mode,
+                Surface.GetFloat(Tool, "threshold"), Surface.GetBool(Tool, "removeClosedFaces")));
             Refresh();
         }
 
         public void Refresh()
         {
-            var h = GetH(); if (h == null) return;
-            _threshField?.SetValueWithoutNotify(h.Threshold);
-            _previewToggle?.SetValueWithoutNotify(h.ShowPreview);
-            _removeClosedFacesToggle?.SetValueWithoutNotify(h.RemoveClosedFaces);
+            if (Surface == null) return;
+            _threshField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "threshold"));
+            _previewToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "showPreview"));
+            _removeClosedFacesToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "removeClosedFaces"));
 
-            var info = h.PreviewInfo;
-            if (info.GroupCount > 0)
+            int groupCount = Surface.GetInt(Tool, "previewGroupCount");
+            if (groupCount > 0)
             {
-                _groupsLabel.text = $"Groups: {info.GroupCount}";
-                _vertsLabel.text  = $"Vertices to remove: {info.TotalVerticesToMerge}";
+                _groupsLabel.text = $"Groups: {groupCount}";
+                _vertsLabel.text  = $"Vertices to remove: {Surface.GetInt(Tool, "previewVerticesToMerge")}";
 
-                // 詳細リスト（最大5グループ）
+                // 詳細リスト（最大5グループ。行の文言はハンドラが作る）
                 _detailList.Clear();
-                int showCount = Mathf.Min(info.Groups.Count, 5);
-                for (int i = 0; i < showCount; i++)
+                foreach (var line in Surface.Get(Tool, "previewGroupLines", System.Array.Empty<string>()))
                 {
-                    var group = info.Groups[i];
-                    var take  = group.Take(8).ToArray();
-                    string indices = string.Join(", ", take) + (group.Count > 8 ? "..." : "");
-                    var lbl = new Label($"  [{i}] {group.Count} verts: {indices}");
+                    var lbl = new Label("  " + line);
                     lbl.style.fontSize = 9;
                     lbl.style.color    = new StyleColor(Color.white);
                     _detailList.Add(lbl);
-                }
-                if (info.Groups.Count > 5)
-                {
-                    var more = new Label($"  ...他 {info.Groups.Count - 5} グループ");
-                    more.style.fontSize = 9;
-                    more.style.color    = new StyleColor(Color.white);
-                    _detailList.Add(more);
                 }
             }
             else

@@ -49,6 +49,11 @@ namespace Poly_Ling.Player
         public Func<bool>   GetPointDefinedSnapUnselected;
         public Action<bool> SetPointDefinedSnapUnselected;
 
+        public Func<bool>   GetPointDefinedSnapBones;
+        public Action<bool> SetPointDefinedSnapBones;
+        public Func<bool>   GetPointDefinedSnapOrigins;
+        public Action<bool> SetPointDefinedSnapOrigins;
+
         /// <summary>引数は材質番号。組めないときは cmd が null で reason に理由。</summary>
         public Func<int, (CreatePointDefinedPrimitiveCommand cmd, string reason)> BuildPointDefinedCommand;
 
@@ -113,6 +118,23 @@ namespace Poly_Ling.Player
             snap.style.marginBottom = 2;
             snap.RegisterValueChangedCallback(e => SetPointDefinedSnapUnselected?.Invoke(e.newValue));
             c.Add(snap);
+
+            // ボーン位置・描画オブジェクト原点（頂点に当たらなかったときだけ）
+            var snapBones = new Toggle(T("PointDefinedSnapBones"))
+            {
+                value = GetPointDefinedSnapBones?.Invoke() ?? false,
+            };
+            snapBones.style.marginBottom = 2;
+            snapBones.RegisterValueChangedCallback(e => SetPointDefinedSnapBones?.Invoke(e.newValue));
+            c.Add(snapBones);
+
+            var snapOrigins = new Toggle(T("PointDefinedSnapOrigins"))
+            {
+                value = GetPointDefinedSnapOrigins?.Invoke() ?? false,
+            };
+            snapOrigins.style.marginBottom = 2;
+            snapOrigins.RegisterValueChangedCallback(e => SetPointDefinedSnapOrigins?.Invoke(e.newValue));
+            c.Add(snapOrigins);
 
             // ── 図形ごとの諸元 ──
             for (int i = 0; i < _pdApexBtns.Length; i++) _pdApexBtns[i] = null;

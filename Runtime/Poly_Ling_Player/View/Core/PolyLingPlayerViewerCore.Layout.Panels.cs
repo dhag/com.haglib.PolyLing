@@ -121,6 +121,8 @@ namespace Poly_Ling.Player
             _blendSubPanel.GetModelContext    = mi =>
                 mi >= 0 ? ActiveProject?.GetModel(mi) : null;
             _blendSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _blendSubPanel.TryLockForPreview  = TryBeginHostPreview;
+            _blendSubPanel.UnlockAfterPreview = EndHostPreview;
             _blendSubPanel.Build(_layoutRoot.BlendSection);
 
             _shrinkSubPanel = new PlayerShrinkSubPanel(Poly_Ling.UI.ShrinkCollisionMode.VertexSegment);
@@ -148,6 +150,8 @@ namespace Poly_Ling.Player
             // ワールド座標が要るのは衝突計算の直前だけ。毎フレームは呼ばない。
             _shrinkSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
             _shrinkSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _shrinkSubPanel.TryLockForPreview  = TryBeginHostPreview;
+            _shrinkSubPanel.UnlockAfterPreview = EndHostPreview;
             _shrinkSubPanel.Build(_layoutRoot.ShrinkSection);
 
             // 面方式。頂点方式と同じ配線を、別インスタンス・別セクションに対して行う。
@@ -174,6 +178,8 @@ namespace Poly_Ling.Player
             };
             _shrinkFaceSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
             _shrinkFaceSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _shrinkFaceSubPanel.TryLockForPreview  = TryBeginHostPreview;
+            _shrinkFaceSubPanel.UnlockAfterPreview = EndHostPreview;
             _shrinkFaceSubPanel.Build(_layoutRoot.ShrinkFaceSection);
 
             _normalTransplantSubPanel = new PlayerNormalTransplantSubPanel();
@@ -209,6 +215,8 @@ namespace Poly_Ling.Player
             // ワールド座標が要るのは法線計算の直前だけ。毎フレームは呼ばない。
             _normalTransplantSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
             _normalTransplantSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _normalTransplantSubPanel.TryLockForPreview  = TryBeginHostPreview;
+            _normalTransplantSubPanel.UnlockAfterPreview = EndHostPreview;
             _normalTransplantSubPanel.Build(_layoutRoot.NormalTransplantSection);
 
             // TPSモーフ。制御点にビューポートの選択頂点を使えるため、
@@ -220,7 +228,7 @@ namespace Poly_Ling.Player
             AttachPanelSelectToggle(_layoutRoot.ThinPlateMorphSection, PanelSelectKeyThinPlateMorph);
 
             _modelBlendSubPanel = new PlayerModelBlendSubPanel();
-            _modelBlendSubPanel.SendCommand    = cmd => _commandDispatcher?.Dispatch(cmd);
+            _modelBlendSubPanel.SendCommand    = cmd => DispatchHost(cmd);
             _modelBlendSubPanel.GetProjectView = () => ActiveProject != null
                 ? new PlayerProjectView(ActiveProject) : null;
             _modelBlendSubPanel.Build(_layoutRoot.ModelBlendSection);
@@ -231,7 +239,6 @@ namespace Poly_Ling.Player
         {
             _boneEditorSubPanel = new PlayerBoneEditorSubPanel();
             _boneEditorSubPanel.GetModel          = () => ActiveProject?.CurrentModel;
-            _boneEditorSubPanel.GetUndoController = () => _editOps?.UndoController;
             _boneEditorSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
             _boneEditorSubPanel.SetContext(_panelContext);
             _boneEditorSubPanel.GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0;
@@ -252,8 +259,8 @@ namespace Poly_Ling.Player
 
             _uvEditorSubPanel = new PlayerUVEditorSubPanel();
             _uvEditorSubPanel.GetModel          = () => ActiveProject?.CurrentModel;
-            _uvEditorSubPanel.GetUndoController = () => _editOps?.UndoController;
-            _uvEditorSubPanel.GetCommandQueue   = () => _editOps?.CommandQueue;
+            _uvEditorSubPanel.TryLockForPreview  = TryBeginHostPreview;
+            _uvEditorSubPanel.UnlockAfterPreview = EndHostPreview;
             _uvEditorSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
             _uvEditorSubPanel.SetCommandContext(
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
@@ -261,7 +268,7 @@ namespace Poly_Ling.Player
 
             _uvUnwrapSubPanel = new PlayerUVUnwrapSubPanel();
             _uvUnwrapSubPanel.GetModel    = () => ActiveProject?.CurrentModel;
-            _uvUnwrapSubPanel.SendCommand = cmd => _commandDispatcher?.Dispatch(cmd);
+            _uvUnwrapSubPanel.SendCommand = cmd => DispatchHost(cmd);
             _uvUnwrapSubPanel.OnRepaint   = () => _activePanel?.MarkDirtyRepaint();
             _uvUnwrapSubPanel.SetCommandContext(
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
@@ -280,7 +287,7 @@ namespace Poly_Ling.Player
             _uvzSubPanel = new PlayerUVZSubPanel
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
-                SendCommand       = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand       = cmd => DispatchHost(cmd),
                 GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
                 GetCameraPosition = () => _viewportManager.GetCurrentToolContext(_activeViewport)?.CameraPosition ?? Vector3.zero,
                 GetCameraForward  = () =>
@@ -296,35 +303,35 @@ namespace Poly_Ling.Player
             _partsSelSetSubPanel = new PlayerPartsSelectionSetSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _partsSelSetSubPanel.Build(_layoutRoot.PartsSelectionSetSection);
 
             _normalExcludeSubPanel = new PlayerNormalExcludeSetSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _normalExcludeSubPanel.Build(_layoutRoot.NormalExcludeSetSection);
 
             _normalEditSubPanel = new PlayerNormalEditSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _normalEditSubPanel.Build(_layoutRoot.NormalEditSection);
 
             _faceHideSubPanel = new PlayerFaceHideSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _faceHideSubPanel.Build(_layoutRoot.FaceHideSection);
 
             _meshSelSetSubPanel = new PlayerMeshSelectionSetSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _meshSelSetSubPanel.Build(_layoutRoot.MeshSelectionSetSection);
 
@@ -333,21 +340,21 @@ namespace Poly_Ling.Player
             _objectGroupSubPanel = new PlayerObjectGroupSubPanel
             {
                 GetProject  = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _objectGroupSubPanel.Build(_layoutRoot.ObjectGroupSection);
 
             _mergeMeshesSubPanel = new PlayerMergeMeshesSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _mergeMeshesSubPanel.Build(_layoutRoot.MergeMeshesSection);
 
             _booleanSubPanel = new PlayerBooleanSubPanel
             {
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _booleanSubPanel.Build(_layoutRoot.BooleanSection);
 
@@ -379,8 +386,7 @@ namespace Poly_Ling.Player
             {
                 GetProject          = () => ActiveProject,
                 OnRebuildModelList  = RebuildModelList,
-                GetUndoController   = () => _editOps?.UndoController,
-                SendCommand         = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand         = cmd => DispatchHost(cmd),
             };
             _morphCreateSubPanel.Build(_layoutRoot.MorphCreateSection);
 
@@ -388,7 +394,7 @@ namespace Poly_Ling.Player
             {
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
-                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand   = cmd => DispatchHost(cmd),
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _tposeSubPanel.Build(_layoutRoot.TPoseSection);
@@ -397,7 +403,7 @@ namespace Poly_Ling.Player
             {
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
-                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand   = cmd => DispatchHost(cmd),
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _humanoidMappingSubPanel.Build(_layoutRoot.HumanoidMappingSection);
@@ -407,7 +413,7 @@ namespace Poly_Ling.Player
             _springBoneSubPanel = new PlayerSpringBoneSubPanel
             {
                 GetProject  = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
 
                 // 鎖の強調表示はボーンの線メッシュを作り直して描く。
                 // PrepareBones はスロットが dirty のときしか走らないので、
@@ -420,7 +426,7 @@ namespace Poly_Ling.Player
             _springBoneColliderSubPanel = new PlayerSpringBoneColliderSubPanel
             {
                 GetProject  = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
                 OnDisplayChanged = () => _viewportManager?.EnterOverlayContentChanged(),
             };
             _springBoneColliderSubPanel.Build(_layoutRoot.SpringBoneColliderSection);
@@ -429,7 +435,7 @@ namespace Poly_Ling.Player
             _humanLimitSubPanel = new PlayerHumanLimitSubPanel
             {
                 GetProject  = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _humanLimitSubPanel.Build(_layoutRoot.HumanLimitSection);
 
@@ -437,14 +443,14 @@ namespace Poly_Ling.Player
             _vrmSettingsSubPanel = new PlayerVrmSettingsSubPanel
             {
                 GetProject  = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _vrmSettingsSubPanel.Build(_layoutRoot.VrmSettingsSection);
 
             _mirrorSubPanel = new PlayerMirrorSubPanel
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
-                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand   = cmd => DispatchHost(cmd),
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
@@ -453,7 +459,7 @@ namespace Poly_Ling.Player
             _quadDecimatorSubPanel = new PlayerQuadDecimatorSubPanel
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
-                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand   = cmd => DispatchHost(cmd),
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
@@ -520,9 +526,9 @@ namespace Poly_Ling.Player
 
             _advancedSelectSubPanel = new PlayerAdvancedSelectSubPanel
             {
-                GetHandler  = () => _advancedSelectHandler,
+                Surface     = ToolSurface,
                 GetView     = () => _localLoader.Project ?? _receiver?.Project,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _advancedSelectSubPanel.Build(_layoutRoot.AdvancedSelectSection);
 
@@ -530,22 +536,61 @@ namespace Poly_Ling.Player
 
             _importSubPanel = new PlayerImportSubPanel();
             _importSubPanel.Build(_layoutRoot.ImportSection);
-            _importSubPanel.OnImportPmx = OnImportPmx;
-            _importSubPanel.OnImportMqo = OnImportMqo;
-            _importSubPanel.OnImportObj = OnImportObj;
-            _importSubPanel.OnImportStl = OnImportStl;
-            _importSubPanel.OnImportVrm = OnImportVrm;
+            // パネル（人の画面操作）もコマンド経由で読み込む（操作経路統一計画.md F）。
+            // 利用者が選んだパスは PLSandbox.AllowOnceFromDialog で 1 回だけ許可してから流す。
+            _importSubPanel.OnImportPmx = (p, s, post) => DispatchFromPanel(new ImportPmxFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s,
+                humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            _importSubPanel.OnImportMqo = (p, s, post) => DispatchFromPanel(new ImportMqoFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s,
+                humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            _importSubPanel.OnImportObj = (p, s, post) => DispatchFromPanel(new ImportObjFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s,
+                humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            _importSubPanel.OnImportStl = (p, s, post) => DispatchFromPanel(new ImportStlFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s,
+                humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            _importSubPanel.OnImportVrm = (p, s, post) =>
+            {
+                // テクスチャを書き出す場合は、書き出し先（VRM と同じフォルダの「VRM名_textures」）も許可する。
+                if (s != null && s.ExtractTextures && !string.IsNullOrEmpty(p))
+                    AllowPanelPath(Poly_Ling.Vrm.Vrm10ImportSettings.DefaultTextureFolder(p));
+                DispatchFromPanel(new ImportVrmFileCommand(
+                    PanelModelIndex(), AllowPanelPath(p), s,
+                    humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                    applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                    originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                    originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            };
             AttachPanelSelectToggle(_layoutRoot.ImportSection, PanelSelectKeyImport);
 
             _exportSubPanel = new PlayerExportSubPanel();
             _exportSubPanel.Build(_layoutRoot.ExportSection);
-            // 受け口（Execute*ExportFile）が失敗理由を返せるよう、これらは string を返す。
-            // パネル経路では戻り値を使わないのでラムダで捨てる。
-            _exportSubPanel.OnExportPmx = (p, s) => OnExportPmx(p, s);
-            _exportSubPanel.OnExportMqo = (p, s) => OnExportMqo(p, s);
-            _exportSubPanel.OnExportObj = (p, s) => OnExportObj(p, s);
-            _exportSubPanel.OnExportStl = (p, s) => OnExportStl(p, s);
-            _exportSubPanel.OnExportVrm = (p, s) => OnExportVrm(p, s);
+            // パネル（人の画面操作）もコマンド経由で書き出す（操作経路統一計画.md F）。
+            // 利用者が選んだパスは PLSandbox.AllowOnceFromDialog で 1 回だけ許可してから流す。
+            _exportSubPanel.OnExportPmx = (p, s) => DispatchFromPanel(new ExportPmxFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s,
+                s?.ReplaceMaterialNames?.ToArray(), AllowPanelPath(s?.SourcePMXPath)));
+            _exportSubPanel.OnExportMqo = (p, s) => DispatchFromPanel(new ExportMqoFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s));
+            _exportSubPanel.OnExportObj = (p, s) => DispatchFromPanel(new ExportObjFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s));
+            _exportSubPanel.OnExportStl = (p, s) => DispatchFromPanel(new ExportStlFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s));
+            _exportSubPanel.OnExportVrm = (p, s) => DispatchFromPanel(new ExportVrmFileCommand(
+                PanelModelIndex(), AllowPanelPath(p), s, s?.Authors?.ToArray()));
             AttachPanelSelectToggle(_layoutRoot.ExportSection, PanelSelectKeyExport);
 
             _projectSaveSubPanel = new PlayerProjectFileSubPanel
@@ -553,8 +598,8 @@ namespace Poly_Ling.Player
                 Mode = PlayerProjectFileSubPanel.PanelMode.Save,
             };
             _projectSaveSubPanel.Build(_layoutRoot.ProjectSaveSection);
-            _projectSaveSubPanel.OnSave    = p => OnSaveProject(p);
-            _projectSaveSubPanel.OnSaveCsv = p => OnSaveCsvProject(p);
+            _projectSaveSubPanel.OnSave    = p => DispatchFromPanel(new SaveProjectFileCommand(PanelModelIndex(), AllowPanelPath(p)));
+            _projectSaveSubPanel.OnSaveCsv = p => DispatchFromPanel(new SaveProjectCsvCommand(PanelModelIndex(), AllowPanelPath(p)));
             AttachPanelSelectToggle(_layoutRoot.ProjectSaveSection, PanelSelectKeyProjectSave);
 
             _projectLoadSubPanel = new PlayerProjectFileSubPanel
@@ -562,8 +607,8 @@ namespace Poly_Ling.Player
                 Mode = PlayerProjectFileSubPanel.PanelMode.Load,
             };
             _projectLoadSubPanel.Build(_layoutRoot.ProjectLoadSection);
-            _projectLoadSubPanel.OnLoad    = p => OnLoadProject(p);
-            _projectLoadSubPanel.OnLoadCsv = (p, m) => OnLoadCsvProject(p, m);
+            _projectLoadSubPanel.OnLoad    = p => DispatchFromPanel(new LoadProjectFileCommand(PanelModelIndex(), AllowPanelPath(p)));
+            _projectLoadSubPanel.OnLoadCsv = (p, m) => DispatchFromPanel(new LoadProjectCsvCommand(PanelModelIndex(), AllowPanelPath(p), m));
             AttachPanelSelectToggle(_layoutRoot.ProjectLoadSection, PanelSelectKeyProjectLoad);
 
             _partialImportSubPanel = new PlayerPartialImportSubPanel();
@@ -585,7 +630,7 @@ namespace Poly_Ling.Player
             _primitiveSubPanel.MemoryKey = "Primitive";
             _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
             // 生成はコマンドへ流す。モデルへの反映はディスパッチャの受け口が行う。
-            _primitiveSubPanel.SendCommand  = cmd => _commandDispatcher?.Dispatch(cmd);
+            _primitiveSubPanel.SendCommand  = cmd => DispatchHost(cmd);
             _primitiveSubPanel.GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0;
             _primitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;
@@ -636,7 +681,7 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.GetModelContext = () => ActiveProject?.CurrentModel;
 
             _livePrimitiveSubPanel.Build(_layoutRoot.LivePrimitiveSection, _sceneRoot);
-            _livePrimitiveSubPanel.SendCommand  = cmd => _commandDispatcher?.Dispatch(cmd);
+            _livePrimitiveSubPanel.SendCommand  = cmd => DispatchHost(cmd);
             _livePrimitiveSubPanel.GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0;
             _livePrimitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;

@@ -22,6 +22,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("placeObjectReshape", Description = "PlaceObjectReshapeTool（確定は PlaceObjectReshapeCommand）")]
     public class PlaceObjectReshapeToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -52,20 +53,29 @@ namespace Poly_Ling.Player
         // 設定公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "PlaceObjectReshapeTool.Mode")]
         public PlaceObjectReshapeMode Mode
         {
             get => _tool.Mode;
             set => _tool.Mode = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "PlaceObjectReshapeTool.Lambda")]
         public float  Lambda     { get => _tool.Lambda;     set => _tool.Lambda     = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PlaceObjectReshapeTool.TargetText")]
         public string TargetText { get => _tool.TargetText; set => _tool.TargetText = value; }
 
+        [Poly_Ling.Data.PLToolState(Description = "PlaceObjectReshapeTool.LastResult")]
         public string LastResult      => _tool.LastResult;
+        [Poly_Ling.Data.PLToolState(Description = "PlaceObjectReshapeTool.TargetMeshCount")]
         public int    TargetMeshCount => _tool.TargetMeshCount;
 
         /// <summary>選択頂点が属するパーツIDを「1,3,5」形式で返す。</summary>
         public string CollectSelectedPartsIdText() => _tool.CollectSelectedPartsIdText();
+
+        /// <summary>選択頂点のパーツ ID を集めて対象テキスト（TargetText）へ入れる。パネルの「選択頂点から取得」。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択頂点のパーツ ID を集めて targetText へ入れる")]
+        public void CollectSelectedPartsIdIntoTarget() => TargetText = CollectSelectedPartsIdText();
 
         /// <summary>
         /// 整形を実行する。

@@ -10,6 +10,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("addFace", Description = "AddFaceTool（確定は AddFaceCommand）")]
     public class AddFaceToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -80,12 +81,28 @@ namespace Poly_Ling.Player
         /// </summary>
         public Action<bool> OnSnapHitTestEnabledChanged;
 
+        /// <summary>
+        /// ボーン位置・描画オブジェクト原点への吸着先ワールド座標を返す
+        /// （Viewer の SnapPointWorld を結線）。引数は (IMGUI 座標, ボーン, 原点)。
+        /// 無ければ null。
+        /// </summary>
+        public Func<Vector2, bool, bool, UnityEngine.Vector3?> GetSnapPointWorld;
+
+        /// <summary>ボーン位置にも吸着するか。既定 false。頂点に当たらなかったときだけ見る。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ボーン位置にも吸着するか。既定 false。頂点に当たらなかったときだけ見る")]
+        public bool SnapToBones { get; set; }
+
+        /// <summary>描画オブジェクトの原点にも吸着するか。既定 false。頂点に当たらなかったときだけ見る。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "描画オブジェクトの原点にも吸着するか。既定 false。頂点に当たらなかったときだけ見る")]
+        public bool SnapToObjectOrigins { get; set; }
+
         private bool _snapToUnselected;
 
         /// <summary>
         /// 非選択オブジェクトの頂点にも吸着するか。既定 false。
         /// true の間だけ GPU 側で追加のヒットテストと頂点数ぶんの読み戻しが走る。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "非選択オブジェクトの頂点にも吸着するか。既定 false")]
         public bool SnapToUnselectedObjects
         {
             get => _snapToUnselected;
@@ -101,12 +118,22 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "AddFaceTool.ModePublic")]
         public AddFaceMode ModePublic    { get => _tool.ModePublic;    set => _tool.ModePublic = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "AddFaceTool.ContinuousLinePublic")]
         public bool ContinuousLinePublic { get => _tool.ContinuousLinePublic; set => _tool.ContinuousLinePublic = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "AddFaceTool.ExtendLineGroupPublic")]
+        public bool ExtendLineGroupPublic { get => _tool.ExtendLineGroupPublic; set => _tool.ExtendLineGroupPublic = value; }
+        [Poly_Ling.Data.PLToolState(Description = "置いた点の数")]
         public int  PlacedPointCount     => _tool.PlacedPointCount;
+        [Poly_Ling.Data.PLToolState(Description = "AddFaceTool.RequiredPointsPublic")]
         public int  RequiredPointsPublic => _tool.RequiredPointsPublic;
+        [Poly_Ling.Data.PLToolAction(Description = "置いた点を捨てる")]
         public void ClearPointsPublic()  => _tool.ClearPointsPublic();
         public System.Collections.Generic.List<string> GetPointLabels() => _tool.GetPointLabels();
+
+        [Poly_Ling.Data.PLToolState(Description = "置いた点の説明（AddFaceTool.GetPointLabels）")]
+        public string[] PointLabels => _tool.GetPointLabels()?.ToArray() ?? System.Array.Empty<string>();
         public AddFaceTool.AddFacePreviewData GetPreviewData() => _tool.GetPreviewData();
 
         /// <summary>
@@ -207,7 +234,7 @@ namespace Poly_Ling.Player
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            ResolveGpuHoverVertex();
+            ResolveGpuHoverVertex(ToImgui(screenPos, ctx));
 
             if (HandlePressViaCommand(ctx, screenPos)) return;
 
@@ -282,7 +309,8 @@ namespace Poly_Ling.Player
                 _tool.ModePublic,
                 indices, positions,
                 ctx.CurrentMaterialIndex,
-                ctx.CameraPosition);
+                ctx.CameraPosition,
+                extendLineGroup: _tool.ExtendLineGroupPublic);
         }
 
         /// <summary>
@@ -335,21 +363,24 @@ namespace Poly_Ling.Player
             }
 
             var savedMode     = _tool.ModePublic;
+            bool savedExtend  = _tool.ExtendLineGroupPublic;
             int savedMaterial = ctx.CurrentMaterialIndex;
             var savedCamera   = ctx.CameraPosition;
             try
             {
-                _tool.ModePublic          = cmd.Mode;
-                ctx.CurrentMaterialIndex  = cmd.MaterialIndex;
-                ctx.CameraPosition        = cmd.ViewPosition;
+                _tool.ModePublic            = cmd.Mode;
+                _tool.ExtendLineGroupPublic = cmd.ExtendLineGroup;
+                ctx.CurrentMaterialIndex    = cmd.MaterialIndex;
+                ctx.CameraPosition          = cmd.ViewPosition;
 
                 if (!_tool.CreateFaceFromCommand(ctx, points, out reason)) return false;
             }
             finally
             {
-                _tool.ModePublic         = savedMode;
-                ctx.CurrentMaterialIndex = savedMaterial;
-                ctx.CameraPosition       = savedCamera;
+                _tool.ModePublic            = savedMode;
+                _tool.ExtendLineGroupPublic = savedExtend;
+                ctx.CurrentMaterialIndex    = savedMaterial;
+                ctx.CameraPosition          = savedCamera;
             }
 
             OnPointPlaced?.Invoke();
@@ -360,7 +391,7 @@ namespace Poly_Ling.Player
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            ResolveGpuHoverVertex();
+            ResolveGpuHoverVertex(ToImgui(screenPos, ctx));
 
             if (HandlePressViaCommand(ctx, screenPos)) return;
 
@@ -380,7 +411,7 @@ namespace Poly_Ling.Player
         {
             if (ctx == null) return;
             EnrichCtxForHover(ctx);
-            ResolveGpuHoverVertex();
+            ResolveGpuHoverVertex(ToImgui(screenPos, ctx));
             // UpdateHover に渡される screenPos は GPU Y（Y=0下）。
             // PlayerViewportManager.NotifyPointerHover が ToHandlerHoverPos で
             // パネルローカル（Y=0上）から反転してから渡してくるため、
@@ -438,6 +469,9 @@ namespace Poly_Ling.Player
         ///       操作対象メッシュ側には新規頂点が作られる（座標のみ一致）。
         ///   非選択オブジェクトにヒット（GetSnapHoverElement 経路）
         ///     → 通常ホバーが未ヒットのときだけ参照する。扱いは上と同じくワールド座標のみ。
+        ///   ボーン位置・描画オブジェクト原点（チェックが ON のとき）
+        ///     → 頂点がどれにも当たらなかったときだけ参照する。ワールド座標のみ。
+        ///       プレビュー色は非選択オブジェクトへの吸着と同じ扱いにする。
         ///   未ヒット
         ///     → -1 / null（スナップせず WorkPlane 交点）。
         ///
@@ -445,7 +479,8 @@ namespace Poly_Ling.Player
         /// ツール本体が使う ctx.ActiveMeshObject の取得元が ActiveMeshContext であり、
         /// ActiveCategory が Bone のとき FirstSelectedIndex はボーンを指してしまうため。
         /// </summary>
-        private void ResolveGpuHoverVertex()
+        /// <param name="imguiPos">ポインタ位置（IMGUI Y、Y=0 上）。</param>
+        private void ResolveGpuHoverVertex(Vector2 imguiPos)
         {
             int gpuVertex = -1;
             UnityEngine.Vector3? snapWorld = null;
@@ -472,6 +507,14 @@ namespace Poly_Ling.Player
                         GetSnapHoverElement(),
                         activeIdx, ref gpuVertex, ref snapWorld);
                     // この経路で取れた吸着座標だけが非選択オブジェクト由来。
+                    fromUnselected = snapWorld.HasValue;
+                }
+
+                // 頂点がどれにも当たらなかったときだけボーン位置・原点を見る。
+                if ((SnapToBones || SnapToObjectOrigins) && gpuVertex < 0 && !snapWorld.HasValue
+                    && GetSnapPointWorld != null)
+                {
+                    snapWorld = GetSnapPointWorld(imguiPos, SnapToBones, SnapToObjectOrigins);
                     fromUnselected = snapWorld.HasValue;
                 }
             }

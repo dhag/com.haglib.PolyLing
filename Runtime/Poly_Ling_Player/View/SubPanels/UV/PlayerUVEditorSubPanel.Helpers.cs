@@ -17,29 +17,6 @@ namespace Poly_Ling.Player
     public partial class PlayerUVEditorSubPanel
     {
         // ================================================================
-        // Undo
-        // ================================================================
-
-        private void RecordTopologyChange(string opName, Action<MeshObject> action)
-        {
-            var model = GetModel?.Invoke();
-            var mc    = model?.ActiveMeshContext;
-            if (mc?.MeshObject == null) return;
-
-            var undo   = GetUndoController?.Invoke();
-            var before = undo?.CaptureMeshObjectSnapshotOf(mc);
-
-            action(mc.MeshObject);
-
-            if (undo != null && before != null)
-            {
-                var after = undo.CaptureMeshObjectSnapshotOf(mc);
-                GetCommandQueue?.Invoke()?.Enqueue(
-                    new RecordTopologyChangeCommand(undo, before, after, opName));
-            }
-        }
-
-        // ================================================================
         // ヘルパー
         // ================================================================
 

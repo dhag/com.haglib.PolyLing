@@ -12,7 +12,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerSplitVerticesSubPanel
     {
-        public Func<SplitVerticesToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                   Surface;
+        private const string Tool = "splitVertices";
         public Func<ProjectContext>           GetView;
         public Action<PanelCommand>           SendCommand;
 
@@ -82,11 +84,10 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            int selCount       = h.SelectedVertexCount;
-            int splittableCount = h.GetSplittableCount();
+            int selCount        = Surface.GetInt(Tool, "selectedVertexCount");
+            int splittableCount = Surface.GetInt(Tool, "splittableCount");
 
             _selectedLabel.text  = $"選択中: {selCount} 頂点";
             _splittableLabel.text = splittableCount > 0

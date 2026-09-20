@@ -35,13 +35,13 @@ namespace Poly_Ling.Data
     /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
-    [PLCommand(Description = "現在の選択頂点をデルタ値で移動する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "現在の選択頂点をデルタ値で移動する。")]
     public class MoveSelectedVerticesCommand : PanelCommand
     {
         public enum CoordSpace { Local, World }
 
         /// <summary>対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]        MasterIndices      { get; }
 
@@ -134,11 +134,11 @@ namespace Poly_Ling.Data
     /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
-    [PLCommand(Description = "ピボット（原点）をデルタ値で移動する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ピボット（原点）をデルタ値で移動する。")]
     public class MovePivotCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]      MasterIndices { get; }
 
@@ -199,11 +199,11 @@ namespace Poly_Ling.Data
     /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
-    [PLCommand(Description = "スカルプトブラシを一連のワールド座標に沿って適用する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "スカルプトブラシを一連のワールド座標に沿って適用する。")]
     public class SculptStrokeCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[]        MasterIndices  { get; }
 
@@ -296,7 +296,7 @@ namespace Poly_Ling.Data
     ///
     /// Length は WorkAxisContext.Length が下限（MinLength）でクランプする。
     /// </summary>
-    [PLCommand(Description = "作業軸の状態を指定した値へ差し替える。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸の状態を指定した値へ差し替える。")]
     public class SetWorkAxisCommand : PanelCommand
     {
         [PLParam(TextKey = "WorkAxisOrigin",
@@ -320,7 +320,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 対象の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸")]
         public int MasterIndex { get; }
 
@@ -346,10 +346,10 @@ namespace Poly_Ling.Data
     /// 作業軸オブジェクトは選択リスト（SelectedDrawableMeshIndices）へ入らないので、
     /// どれを使うかはこのコマンドで決める。頂点・選択は書き換えない。
     /// </summary>
-    [PLCommand(Description = "使う作業軸オブジェクトを切り替える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "使う作業軸オブジェクトを切り替える。")]
     public class SetActiveWorkAxisCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "アクティブにする作業軸オブジェクトの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -366,7 +366,7 @@ namespace Poly_Ling.Data
     /// 作った軸はアクティブ（ModelContext.ActiveWorkAxisObjectId）になる。
     /// 値の変更は SetWorkAxisCommand、削除は DeleteMeshesCommand を使う。
     /// </summary>
-    [PLCommand(Description = "作業軸オブジェクトを 1 個作ってモデルへ足す。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "作業軸オブジェクトを 1 個作ってモデルへ足す。")]
     [PLResult("masterIndex", PLResultKind.Integer, Description = "作った作業軸オブジェクトの masterIndex")]
     public class CreateWorkAxisObjectCommand : PanelCommand
     {
@@ -402,7 +402,7 @@ namespace Poly_Ling.Data
     /// 作業軸ライブラリの登録名を呼び出して作業軸へ入れる。
     /// 表示フラグは変えない（WorkAxisEntry.ApplyTo と同じ）。
     /// </summary>
-    [PLCommand(Description = "作業軸ライブラリの登録名を呼び出して作業軸へ入れる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "作業軸ライブラリの登録名を呼び出して作業軸へ入れる。")]
     public class RecallWorkAxisCommand : PanelCommand
     {
         [PLParam(TextKey = "WorkAxisName",
@@ -412,7 +412,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 書き込み先の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "書き込み先の作業軸オブジェクトの masterIndex。-1 でアクティブな作業軸")]
         public int MasterIndex { get; }
 
@@ -446,10 +446,10 @@ namespace Poly_Ling.Data
     ///   どちらの軸もワールド基準で、ピボットは対象の重心（UseOriginPivot が
     ///   true のときは基準メッシュのローカル原点）。
     /// </summary>
-    [PLCommand(Description = "選択頂点をピボット周りに回転させる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点をピボット周りに回転させる。")]
     public class RotateSelectionCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -536,10 +536,10 @@ namespace Poly_Ling.Data
     ///   拡大縮小を行うフレームの回転（度）。ScaleTool.cs:229 が
     ///   Quaternion.Euler で解釈し、R⁻¹ → スケール → R の順で適用する。
     /// </summary>
-    [PLCommand(Description = "選択頂点をピボット中心に拡大縮小する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点をピボット中心に拡大縮小する。")]
     public class ScaleSelectionCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -622,10 +622,10 @@ namespace Poly_Ling.Data
     ///   BoneOnlyRebind は BindPose を更新してメッシュの見た目を固定する。
     ///   SkinBakeRebind は確定時に頂点を焼き込んで再バインドする。
     /// </summary>
-    [PLCommand(Description = "選択オブジェクト（ボーン / メッシュ）の原点を移動する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択オブジェクト（ボーン / メッシュ）の原点を移動する。")]
     public class MoveObjectsCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象のオブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -687,10 +687,10 @@ namespace Poly_Ling.Data
     ///   祖先チェーンに非一様スケールを持つ要素は除外される
     ///   （BoneTransform が TRS 分離保持のため、シアーを表現できない）。
     /// </summary>
-    [PLCommand(Description = "選択オブジェクト（ボーン / メッシュ）をピボット周りに回転させる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択オブジェクト（ボーン / メッシュ）をピボット周りに回転させる。")]
     public class RotateObjectsCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象のオブジェクトの masterIndex 配列。実行時点の選択と集合として一致すること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -751,10 +751,10 @@ namespace Poly_Ling.Data
     ///   検証パネルが頂点を直接書き換えると Dispatch を通らず、手本の記録にも Undo にも残らない
     ///   （藤壺検証の段 11、フリル検証の段 8）。位置の計算はパネル側に残し、書き込みだけをこの口に通す。
     /// </summary>
-    [PLCommand(Description = "描画オブジェクトの頂点位置をローカル座標で書く。vertexIndices と positions（x,y,z を 3 個ずつ）は同じ並び。Undo に残る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "描画オブジェクトの頂点位置をローカル座標で書く。vertexIndices と positions（x,y,z を 3 個ずつ）は同じ並び。Undo に残る。")]
     public class SetVertexPositionsCommand : PanelCommand
     {
-        [PLParam(Description = "対象の描画オブジェクトの masterIndex", Required = true, IsMeshRef = true)]
+        [PLParam(Description = "対象の描画オブジェクトの masterIndex", Required = true, IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write)]
         public int MasterIndex { get; }
 
         [PLParam(Description = "書き込む頂点の番号", Required = true)]

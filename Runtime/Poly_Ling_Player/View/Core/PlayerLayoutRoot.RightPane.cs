@@ -126,6 +126,7 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：辺群ブリッジ（2 か所の辺群の間に面を張る）セクション。</summary>
         public VisualElement EdgeBridgeSection          { get; private set; }
+        public VisualElement BillboardProfileSection    { get; private set; }
 
         public VisualElement Tri4To1Section             { get; private set; }
         public VisualElement FaceMergeSection           { get; private set; }
@@ -375,6 +376,7 @@ namespace Poly_Ling.Player
             VertexDissolveSection      = AddSection(visible: false);
             HoleRingCountSection       = AddSection(visible: false);
             EdgeBridgeSection          = AddSection(visible: false);
+            BillboardProfileSection    = AddSection(visible: false);
             Tri4To1Section             = AddSection(visible: false);
             FaceMergeSection           = AddSection(visible: false);
             Quad4To1Section            = AddSection(visible: false);

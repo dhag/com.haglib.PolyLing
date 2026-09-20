@@ -17,6 +17,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("pipeAlign", Description = "PipeAlignTool（確定は PipeAlignCommand）")]
     public class PipeAlignToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -38,33 +39,44 @@ namespace Poly_Ling.Player
         // 設定公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.RingVertexCount")]
         public int  RingVertexCount { get => _tool.RingVertexCount; set => _tool.RingVertexCount = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.CapStart")]
         public bool CapStart        { get => _tool.CapStart;        set => _tool.CapStart        = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.CapEnd")]
         public bool CapEnd          { get => _tool.CapEnd;          set => _tool.CapEnd          = value; }
 
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.PairText")]
         public string PairText   { get => _tool.PairText;   set => _tool.PairText   = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.WeightText")]
         public string WeightText { get => _tool.WeightText; set => _tool.WeightText = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.TargetText")]
         public string TargetText { get => _tool.TargetText; set => _tool.TargetText = value; }
 
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.Mode")]
         public PipeAlignMode Mode
         {
             get => _tool.Mode;
             set => _tool.Mode = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.Direction")]
         public PipeAlignDirection Direction
         {
             get => _tool.Direction;
             set => _tool.Direction = value;
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "PipeAlignTool.EdgeMode")]
         public PipeSmoothEdgeMode EdgeMode
         {
             get => _tool.EdgeMode;
             set => _tool.EdgeMode = value;
         }
 
+        [Poly_Ling.Data.PLToolState(Description = "PipeAlignTool.LastResult")]
         public string LastResult      => _tool.LastResult;
+        [Poly_Ling.Data.PLToolState(Description = "PipeAlignTool.TargetMeshCount")]
         public int    TargetMeshCount => _tool.TargetMeshCount;
 
         /// <summary>

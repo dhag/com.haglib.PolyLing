@@ -190,6 +190,97 @@ namespace Poly_Ling.Player
             panel.UpdateBoneWire(positions.ToArray(), selected.ToArray());
         }
 
+        // ================================================================
+        // 線分群の曲線オーバーレイ
+        // ================================================================
+
+        /// <summary>
+        /// ハンドルを持つ線分群のベジェ曲線とハンドルを全ビューポートへ描く。
+        ///
+        /// 【座標】点のワールド位置は GPU の値（TryGetVertexWorld）。ハンドルは GPU の描画要素
+        ///   ではないので、ずれを DisplayWorldMatrix で向きだけ変換して点に足す（ボーン・原点
+        ///   マーカーが WorldMatrix から描くのと同じ扱い）。ビルボードも DisplayWorldMatrix で追従する。
+        /// 満たせない拘束は解いて求め（LineHandleSolver は群を書き換えるので複製で解く）、赤で描く。
+        /// </summary>
+        private void UpdateLineCurveOverlay()
+        {
+            var model = ActiveProject?.CurrentModel;
+            UpdateLineCurveOverlayFor(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport, model);
+            UpdateLineCurveOverlayFor(_layoutRoot?.TopPanel,         _viewportManager.TopViewport,         model);
+            UpdateLineCurveOverlayFor(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport,       model);
+            UpdateLineCurveOverlayFor(_layoutRoot?.SidePanel,        _viewportManager.SideViewport,        model);
+        }
+
+        private void UpdateLineCurveOverlayFor(PlayerViewportPanel panel, PlayerViewport vp, ModelContext model)
+        {
+            if (panel == null) return;
+            var ctx = model != null ? _viewportManager.GetCurrentToolContext(vp) : null;
+            if (ctx == null) { panel.HideLineCurves(); return; }
+
+            var data = new PlayerViewportPanel.LineCurveData
+            {
+                Curves  = new System.Collections.Generic.List<Vector2[]>(),
+                Handles = new System.Collections.Generic.List<(Vector2, Vector2, bool)>(),
+            };
+
+            for (int mi = 0; mi < model.MeshContextCount; mi++)
+            {
+                var mc = model.GetMeshContext(mi);
+                var mo = mc?.MeshObject;
+                if (mo?.LineGroups == null || mo.LineGroups.Count == 0 || !mc.IsVisible) continue;
+
+                Matrix4x4 dm = mc.DisplayWorldMatrix;
+                foreach (var g in mo.LineGroups)
+                {
+                    if (g == null || !g.HasHandles) continue;
+                    int n = g.Order.Count;
+
+                    // 満たせない拘束（複製で解いて調べる）
+                    var probe = g.Clone();
+                    var bad = Poly_Ling.Ops.LineHandleSolver.Solve(mo, probe);
+
+                    var pos  = new Vector3[n];
+                    var ins  = new Vector3[n];
+                    var outs = new Vector3[n];
+                    bool ok = true;
+                    for (int k = 0; k < n; k++)
+                    {
+                        if (!_viewportManager.TryGetVertexWorld(model, mc, g.Order[k], out pos[k])) { ok = false; break; }
+                        var h = g.PointHandles[k];
+                        ins[k]  = dm.MultiplyVector(h?.InOffset  ?? Vector3.zero);
+                        outs[k] = dm.MultiplyVector(h?.OutOffset ?? Vector3.zero);
+                    }
+                    if (!ok) continue;
+
+                    var world = Poly_Ling.Ops.LineCurveSampler.Sample(
+                        pos, ins, outs, g.Closed, Poly_Ling.Ops.LineCurveSampler.DefaultSegmentsPerSpan * 2);
+                    if (g.Closed && world.Count > 0) world.Add(world[0]);
+                    var sc = new Vector2[world.Count];
+                    for (int k = 0; k < world.Count; k++) sc[k] = ctx.WorldToScreen(world[k]);
+                    data.Curves.Add(sc);
+
+                    for (int k = 0; k < n; k++)
+                    {
+                        Vector2 p = ctx.WorldToScreen(pos[k]);
+                        bool badIn = false, badOut = false;
+                        foreach (var b in bad)
+                            if (b.PointIndex == k) { if (b.IsOut) badOut = true; else badIn = true; }
+                        if (ins[k].sqrMagnitude  > 1e-12f) data.Handles.Add((p, ctx.WorldToScreen(pos[k] + ins[k]),  badIn));
+                        if (outs[k].sqrMagnitude > 1e-12f) data.Handles.Add((p, ctx.WorldToScreen(pos[k] + outs[k]), badOut));
+                    }
+                }
+            }
+
+            AppendBillboardProfileOverlay(model, ctx, ref data);
+
+            bool empty = data.Curves.Count == 0 && data.Handles.Count == 0
+                         && (data.Points == null || data.Points.Count == 0) && data.Preview == null
+                         && (data.SelectedPoints == null || data.SelectedPoints.Count == 0)
+                         && data.DragPreview == null && !data.Marquee.HasValue;
+            if (empty) panel.HideLineCurves();
+            else panel.UpdateLineCurves(data);
+        }
+
         private int HitTestOverlayIndicator(Vector2 screenPos)
         {
             float minDist = OverlayHitRadius;

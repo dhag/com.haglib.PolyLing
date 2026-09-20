@@ -127,7 +127,15 @@ namespace Poly_Ling.Ops
             }
 
             if (changes.Count == 0) return 0;
-            return ApplyAttributeChanges(changes) ? changes.Count : 0;
+
+            // 担当者は作業中だけの一時ロック（操作経路統一計画.md L-1）。
+            // Undo には積まない。積むと Undo でロックが戻り、作業の履歴にロック操作が混ざる。
+            foreach (var change in changes)
+            {
+                var ctx = GetMeshContext(change.Index);
+                if (ctx != null) ctx.EditorName = change.EditorName;
+            }
+            return changes.Count;
         }
 
         /// <summary>指定ユーザーが担当している全オブジェクトを解放する（ホスト側の一括解放用）。</summary>

@@ -33,8 +33,10 @@ namespace Poly_Ling.Player
                         ? c.Placement.AddTargetIndex
                         : -1;
 
-                    // 辞書を作らない経路（グループに残さない／辞書名が指定済み）。
-                    if (!c.Placement.KeepAsGroup || !string.IsNullOrEmpty(c.VertexSetName))
+                    // 辞書を作らない経路（グループに残さない／辞書名が指定済み／ボーン・原点）。
+                    // ボーン・原点は位置が MasterIndices だけで決まるので、辞書は要らない。
+                    if (!c.Placement.KeepAsGroup || !string.IsNullOrEmpty(c.VertexSetName)
+                        || c.Target != Poly_Ling.PlaceObject.BillboardPlaceTarget.Vertices)
                     {
                         var vbBeforeIds = c.Placement.KeepAsGroup ? SnapshotObjectIds() : null;
 

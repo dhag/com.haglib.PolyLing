@@ -28,6 +28,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("pointDefined", Description = "点指定図形（確定は CreatePointDefinedPrimitiveCommand）")]
     public class PointDefinedToolHandler : IPlayerToolHandler
     {
         /// <summary>吸着しない点をカメラから置く距離（カメラ距離に対する倍率）。面追加と同じ値。</summary>
@@ -53,6 +54,12 @@ namespace Poly_Ling.Player
 
         /// <summary>吸着用ヒットテストの有効/無効を Viewer へ伝える。</summary>
         public Action<bool> OnSnapHitTestEnabledChanged;
+
+        /// <summary>
+        /// ボーン位置・描画オブジェクト原点への吸着先ワールド座標
+        /// （Viewer の SnapPointWorld を結線）。引数は (IMGUI 座標, ボーン, 原点)。無ければ null。
+        /// </summary>
+        public Func<Vector2, bool, bool, Vector3?> GetSnapPointWorld;
 
         /// <summary>編集対象が無ければ空の描画オブジェクトを作る（面追加と同じもの）。</summary>
         public Func<bool> EnsureDrawableMesh;
@@ -84,19 +91,24 @@ namespace Poly_Ling.Player
         // 公開
         // ================================================================
 
+        [Poly_Ling.Data.PLToolState(Description = "点指定図形の種類")]
         public PointPrimitiveMode Mode => _mode;
+        [Poly_Ling.Data.PLToolState(Description = "この種類に必要な点の数")]
         public int RequiredPoints => PointDefinedMeshBuilder.RequiredPoints(_mode);
+        [Poly_Ling.Data.PLToolState(Description = "置いた点の数")]
         public int PlacedCount => _picks.Count;
         public IReadOnlyList<PointPick> Picks => _picks;
         public PointPick? HoverPick => _hoverPick;
 
         /// <summary>直近のプレビュー生成の結果。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "直近のプレビュー生成の結果")]
         public PointDefinedStatus Status => _status;
 
         /// <summary>
         /// 非選択オブジェクトの頂点にも吸着するか。既定 false。
         /// true の間だけ GPU 側で追加のヒットテストが走る。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "非選択オブジェクトの頂点にも吸着するか。既定 false")]
         public bool SnapToUnselectedObjects
         {
             get => _snapToUnselected;
@@ -107,6 +119,14 @@ namespace Poly_Ling.Player
                 OnSnapHitTestEnabledChanged?.Invoke(value);
             }
         }
+
+        /// <summary>ボーン位置にも吸着するか。既定 false。頂点に当たらなかったときだけ見る。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ボーン位置にも吸着するか。既定 false")]
+        public bool SnapToBones { get; set; }
+
+        /// <summary>描画オブジェクトの原点にも吸着するか。既定 false。頂点に当たらなかったときだけ見る。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "描画オブジェクトの原点にも吸着するか。既定 false")]
+        public bool SnapToObjectOrigins { get; set; }
 
         /// <summary>
         /// パネルの図形種類とパラメータを受け取る。種類が変わったら点をクリアする。
@@ -181,7 +201,8 @@ namespace Poly_Ling.Player
         /// 画面位置から点を決める。優先順は面追加と同じ。
         ///   1. 選択メッシュの頂点（GPU ホバー）
         ///   2. 非選択オブジェクトの頂点（チェックが ON のときだけ）
-        ///   3. カメラ平行の作業面との交点（原点は直前の点、無ければワールド原点）
+        ///   3. ボーン位置・描画オブジェクト原点（チェックが ON のときだけ。位置のみ合わせる）
+        ///   4. カメラ平行の作業面との交点（原点は直前の点、無ければワールド原点）
         /// </summary>
         private PointPick ResolvePickAt(Vector2 screenPos, ToolContext ctx)
         {
@@ -193,12 +214,20 @@ namespace Poly_Ling.Player
                 && TryPickFromHover(GetSnapHoverElement(), out p))
                 return p;
 
+            // UpdateHover / クリックの screenPos は GPU Y。ScreenPosToRay は IMGUI Y（Y=0 上）を取る。
+            var imgui = new Vector2(screenPos.x, ctx.PreviewRect.height - screenPos.y);
+
+            if ((SnapToBones || SnapToObjectOrigins) && GetSnapPointWorld != null)
+            {
+                var sw = GetSnapPointWorld(imgui, SnapToBones, SnapToObjectOrigins);
+                if (sw.HasValue)
+                    return new PointPick { WorldPosition = sw.Value, MeshIndex = -1, VertexIndex = -1 };
+            }
+
             var wp = new WorkPlaneContext();
             wp.UpdateFromCamera(ctx.CameraPosition, ctx.CameraTarget);
             wp.Origin = _picks.Count > 0 ? _picks[_picks.Count - 1].WorldPosition : Vector3.zero;
 
-            // UpdateHover / クリックの screenPos は GPU Y。ScreenPosToRay は IMGUI Y（Y=0 上）を取る。
-            var imgui = new Vector2(screenPos.x, ctx.PreviewRect.height - screenPos.y);
             Ray ray = ctx.ScreenPosToRay != null
                 ? ctx.ScreenPosToRay(imgui)
                 : new Ray(ctx.CameraPosition, (ctx.CameraTarget - ctx.CameraPosition).normalized);

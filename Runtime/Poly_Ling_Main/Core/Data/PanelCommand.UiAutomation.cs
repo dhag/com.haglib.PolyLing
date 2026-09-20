@@ -18,7 +18,7 @@
 namespace Poly_Ling.Data
 {
     /// <summary>登録済みのパネル・項目の一覧を返す。</summary>
-    [PLCommand(Description = "操作できる UI のパネルと項目の一覧を返す。項目の情報は controlIds と同じ並びの配列で返す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "操作できる UI のパネルと項目の一覧を返す。項目の情報は controlIds と同じ並びの配列で返す。")]
     [PLResult("panelIds",            PLResultKind.TextArray,    Description = "パネル ID")]
     [PLResult("panelDescriptions",   PLResultKind.TextArray,    Description = "パネルの説明。panelIds と同じ並び")]
     [PLResult("controlIds",          PLResultKind.TextArray,    Description = "項目 ID", Optional = true)]
@@ -40,7 +40,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定したパネルを右ペインに表示する。</summary>
-    [PLCommand(Description = "指定したパネルを右ペインに表示する。ボタンで開いたときと同じ処理を通る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "指定したパネルを右ペインに表示する。ボタンで開いたときと同じ処理を通る。")]
     public sealed class UiShowPanelCommand : PanelCommand
     {
         [PLParam(Description = "パネル ID。uiDescribe の panelIds のどれか", Required = true)]
@@ -54,7 +54,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定した項目が見える状態にする。</summary>
-    [PLCommand(Description = "指定した項目が見える状態にする。所属パネルを開き、折り畳みを開き、項目が見える位置までスクロールする。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "指定した項目が見える状態にする。所属パネルを開き、折り畳みを開き、項目が見える位置までスクロールする。")]
     public sealed class UiRevealCommand : PanelCommand
     {
         [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
@@ -72,7 +72,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定した項目の現在値を返す。</summary>
-    [PLCommand(Description = "指定した項目の現在値を返す。パネルが表示されていなくても読める。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "指定した項目の現在値を返す。パネルが表示されていなくても読める。")]
     [PLResult("controlId", PLResultKind.Text,      Description = "項目 ID")]
     [PLResult("type",      PLResultKind.Text,      Description = "項目の UI 型名")]
     [PLResult("value",     PLResultKind.Text,      Description = "現在値の文字列。数値は不変文化圏の書式")]
@@ -92,7 +92,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定した項目の値を変更する。</summary>
-    [PLCommand(Description = "指定した項目の値を変更する。利用者が操作したときと同じ処理を通る。範囲を超えた値は項目側で丸められ、丸めた後の値を返す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定した項目の値を変更する。利用者が操作したときと同じ処理を通る。範囲を超えた値は項目側で丸められ、丸めた後の値を返す。")]
     [PLResult("controlId", PLResultKind.Text, Description = "項目 ID")]
     [PLResult("value",     PLResultKind.Text, Description = "変更後に読み戻した値")]
     public sealed class UiSetValueCommand : PanelCommand
@@ -116,7 +116,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定したボタンを押す。</summary>
-    [PLCommand(Description = "指定したボタンを押す。利用者が押したときと同じ処理を通る。表示されていないボタン・無効なボタンは押せない（先に uiReveal を使う）。安全度が destructive / fileOperation のボタンは allowDestructive を true にしたときだけ押す。readOnly / userOnly / unspecified のボタンは押さない。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定したボタンを押す。利用者が押したときと同じ処理を通る。表示されていないボタン・無効なボタンは押せない（先に uiReveal を使う）。安全度が destructive / fileOperation のボタンは allowDestructive を true にしたときだけ押す。readOnly / userOnly / unspecified のボタンは押さない。")]
     [PLResult("controlId", PLResultKind.Text, Description = "押した項目の ID")]
     public sealed class UiClickCommand : PanelCommand
     {
@@ -135,7 +135,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>UI 自動操作の登録状況を検査する。</summary>
-    [PLCommand(Description = "UI 自動操作の登録状況を検査する。未登録のセクション・属性の付け忘れ・登録失敗・安全度が未指定のボタン・未対応の型・登録済みパネル内の未登録の部品の数を返す。すべて 0 なら右ペインの全項目が登録されている。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "UI 自動操作の登録状況を検査する。未登録のセクション・属性の付け忘れ・登録失敗・安全度が未指定のボタン・未対応の型・登録済みパネル内の未登録の部品の数を返す。すべて 0 なら右ペインの全項目が登録されている。")]
     [PLResult("report",               PLResultKind.Text,    Description = "検査結果の全文。複数行")]
     [PLResult("sections",             PLResultKind.Integer, Description = "右ペインのセクションの数")]
     [PLResult("panels",               PLResultKind.Integer, Description = "登録済みパネルの数")]
@@ -152,7 +152,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定した項目を枠で強調する。</summary>
-    [PLCommand(Description = "指定した項目を枠で強調する。強調は 1 か所だけで、別のパネルへ切り替えると消える。項目が表示されていないときは失敗する（先に uiReveal を使う）。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "指定した項目を枠で強調する。強調は 1 か所だけで、別のパネルへ切り替えると消える。項目が表示されていないときは失敗する（先に uiReveal を使う）。")]
     public sealed class UiHighlightCommand : PanelCommand
     {
         [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
@@ -170,7 +170,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>画面キャプチャを始める。</summary>
-    [PLCommand(Description = "画面キャプチャを始める。撮影はフレーム終端で行うため、完了と保存先は uiCaptureStatus で captureId を指定して取得する。folder を省くとキャプチャパネルで設定した保存先フォルダへ保存する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "画面キャプチャを始める。撮影はフレーム終端で行うため、完了と保存先は uiCaptureStatus で captureId を指定して取得する。folder を省くとキャプチャパネルで設定した保存先フォルダへ保存する。")]
     [PLResult("captureId", PLResultKind.Text, Description = "キャプチャの受付番号")]
     [PLResult("status",    PLResultKind.Text, Description = "pending / completed / failed")]
     public sealed class UiCaptureCommand : PanelCommand
@@ -195,7 +195,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>画面キャプチャの状態を返す。</summary>
-    [PLCommand(Description = "uiCapture で始めた画面キャプチャの状態を返す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "uiCapture で始めた画面キャプチャの状態を返す。")]
     [PLResult("captureId", PLResultKind.Text, Description = "キャプチャの受付番号")]
     [PLResult("status",    PLResultKind.Text, Description = "pending / completed / failed")]
     [PLResult("path",      PLResultKind.Text, Description = "保存した PNG のパス。completed のときだけ", Optional = true)]

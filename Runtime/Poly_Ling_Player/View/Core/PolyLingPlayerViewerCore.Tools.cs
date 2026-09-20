@@ -47,7 +47,7 @@ namespace Poly_Ling.Player
         public ProjectContext GetActiveProject() => ActiveProject;
 
         /// <summary>外部からコマンドをディスパッチする。</summary>
-        public void Dispatch(PanelCommand cmd) => _commandDispatcher?.Dispatch(cmd);
+        public void Dispatch(PanelCommand cmd) => DispatchHost(cmd);
 
         // ================================================================
         // ツール切り替え
@@ -144,6 +144,11 @@ namespace Poly_Ling.Player
                     section = _layoutRoot?.EdgeBridgeSection;
                     btn     = _layoutRoot?.EdgeBridgeBtn;
                     refresh = () => _edgeBridgeSubPanel?.Refresh();
+                    break;
+                case InteractionMode.BillboardProfile:
+                    section = _layoutRoot?.BillboardProfileSection;
+                    btn     = _layoutRoot?.BillboardProfileBtn;
+                    refresh = () => _billboardProfileSubPanel?.Refresh();
                     break;
                 case InteractionMode.FlipFace:
                     section = _layoutRoot?.FlipFaceSection;
@@ -302,7 +307,7 @@ namespace Poly_Ling.Player
             var model = ActiveProject?.CurrentModel;
             if (model == null) return;
 
-            _commandDispatcher?.Dispatch(new DeleteSelectionCommand(
+            DispatchHost(new DeleteSelectionCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 model.SelectedDrawableMeshIndices.ToArray()));
         }
@@ -361,7 +366,7 @@ namespace Poly_Ling.Player
             var mc    = model?.ActiveMeshContext;
             if (model == null || mc == null) return;
 
-            _commandDispatcher?.Dispatch(new Poly_Ling.Data.MergeVerticesCommand(
+            DispatchHost(new Poly_Ling.Data.MergeVerticesCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 new[] { model.IndexOf(mc) },
                 mode,
@@ -436,7 +441,7 @@ namespace Poly_Ling.Player
             target.Selection.ClearAll();
             target.Selection.SelectFace(elem.FaceIndex, false);
 
-            _commandDispatcher?.Dispatch(new DeleteFacesCommand(
+            DispatchHost(new DeleteFacesCommand(
                 ActiveProject?.CurrentModelIndex ?? 0, elem.MeshIndex, new[] { elem.FaceIndex }));
         }
 
@@ -467,7 +472,7 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectVertex(elem.VertexIndex, false);
 
-            _commandDispatcher?.Dispatch(new VertexDissolveCommand(
+            DispatchHost(new VertexDissolveCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 model.SelectedDrawableMeshIndices.ToArray()));
             _vertexDissolveSubPanel?.Refresh();
@@ -485,7 +490,7 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectFace(elem.FaceIndex, false);
 
-            _commandDispatcher?.Dispatch(new Tri4To1Command(
+            DispatchHost(new Tri4To1Command(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 model.SelectedDrawableMeshIndices.ToArray()));
             _tri4To1SubPanel?.Refresh();
@@ -504,7 +509,7 @@ namespace Poly_Ling.Player
             mc.Selection.SelectEdge(new VertexPair(elem.EdgeV1, elem.EdgeV2), false);
 
             // 頂点を外すかはパネルの「頂点を削除する」に従う。
-            _commandDispatcher?.Dispatch(new FaceMergeCommand(
+            DispatchHost(new FaceMergeCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 model.SelectedDrawableMeshIndices.ToArray(),
                 _faceMergeHandler?.DeleteVertices ?? true));
@@ -523,7 +528,7 @@ namespace Poly_Ling.Player
             mc.Selection.ClearAll();
             mc.Selection.SelectVertex(elem.VertexIndex, false);
 
-            _commandDispatcher?.Dispatch(new Quad4To1Command(
+            DispatchHost(new Quad4To1Command(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 model.SelectedDrawableMeshIndices.ToArray()));
             _quad4To1SubPanel?.Refresh();

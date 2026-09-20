@@ -180,6 +180,7 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateFrillCommand c:        return GenerateFrill(c, resolveBeltSource);
                 case CreatePipeCommand c:         return GeneratePipe(c, resolveBeltSource);
                 case CreatePlaceObjectCommand c:  return GeneratePlaceObject(c, resolvePlaceSources);
+                case CreateBoltPatternCommand c:  return GenerateBoltPattern(c, resolvePlaceSources);
 
                 default:
                     Debug.LogWarning($"[PrimitiveMeshFactory] 未対応のコマンド: {cmd.GetType().Name}");
@@ -505,6 +506,20 @@ namespace Poly_Ling.PrimitiveMesh
             return mo;
         }
 
+        // ── ネジ配置 ────────────────────────────────────────────────
+
+        /// <summary>
+        /// 配置元を円周上（PCD）または長方形の周上へ複製する。
+        /// 配置元の解決は藤壺と同じ口を使う。解決できないときは頂点 0 のメッシュを返す。
+        /// </summary>
+        private static MeshObject GenerateBoltPattern(
+            CreateBoltPatternCommand c, PlaceSourceResolver resolvePlaceSources)
+        {
+            if (resolvePlaceSources == null) return new MeshObject(c.Params.MeshName);
+            var srcs = resolvePlaceSources(c.SourceMasterIndices, c.Params.IncludeChildren);
+            return BoltPatternMeshGenerator.Generate(c.Params, srcs);
+        }
+
         // ================================================================
         // 共通
         // ================================================================
@@ -560,6 +575,7 @@ namespace Poly_Ling.PrimitiveMesh
             switch (shapeName)
             {
                 case "PlaceObject":
+                case "BoltPattern":
                     return;
 
                 case "Frill":

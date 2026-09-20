@@ -94,7 +94,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         }
                         break;
                     case "editorName":
-                        mc.EditorName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        // 旧形式の行。担当者名は作業中だけの一時ロックなので読み込まない
+                        // （操作経路統一計画.md L-1）。行は読み飛ばす。
                         break;
                     case "isTriangulated":
                         meshObject.IsTriangulated = ParseBool(cols, 1);
@@ -261,6 +262,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "nx":
                         ReadNormalExcludeSet(cols, meshObject);
+                        break;
+                    case "lg":
+                        ReadLineGroup(cols, meshObject);
                         break;
                     case "v":
                         meshObject.Vertices.Add(ReadVertex(cols));

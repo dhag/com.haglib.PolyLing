@@ -359,7 +359,7 @@ namespace Poly_Ling.Player
 
             // MCP（名前付きパイプ）からの実行入口。RemoteMode に依存しない。
             // 対の解除は Dispose 内。
-            PolyLingCommandGateway.Dispatch = cmd => _commandDispatcher.Dispatch(cmd);
+            PolyLingCommandGateway.Dispatch = cmd => _commandDispatcher.Dispatch(cmd, CommandActor.Mcp());
 
             // 生成系コマンドの受け口。実処理は Viewer 側にあるので委譲する。
             WireCreateCommandHandlers();
@@ -421,8 +421,8 @@ namespace Poly_Ling.Player
                         }
                         return ctx;
                     },
-                    cmd => _commandDispatcher != null
-                        ? _commandDispatcher.Dispatch(cmd)
+                    (cmd, actor) => _commandDispatcher != null
+                        ? _commandDispatcher.Dispatch(cmd, actor)
                         : CommandResult.Fail("command dispatcher is not ready"));
             }
 
@@ -623,7 +623,7 @@ namespace Poly_Ling.Player
 
             bindToggle.RegisterValueChangedCallback(e =>
             {
-                _commandDispatcher?.Dispatch(new Poly_Ling.Data.SetPoseDisplayModeCommand(
+                DispatchHost(new Poly_Ling.Data.SetPoseDisplayModeCommand(
                     ActiveProject?.CurrentModelIndex ?? 0, e.newValue));
             });
 

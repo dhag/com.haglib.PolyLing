@@ -394,6 +394,72 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
+        // Read: 線分群
+        // ================================================================
+
+        private static void ReadLineGroup(string[] cols, MeshObject meshObject)
+        {
+            // lg,name,closed,parentVertex,parentVertexId,count,(v,id)...
+            if (meshObject == null) return;
+            if (meshObject.LineGroups == null)
+                meshObject.LineGroups = new List<LineGroup>();
+
+            int idx = 1;
+            string name = UnescapeCsv(cols.Length > idx ? cols[idx] : "LineGroup"); idx++;
+
+            var g = new LineGroup(name);
+            g.Closed         = ParseBool(cols, idx++);
+            g.ParentVertex   = ParseInt(cols, idx++);
+            g.ParentVertexId = ParseInt(cols, idx++);
+
+            int count = ParseInt(cols, idx++);
+            for (int k = 0; k < count; k++)
+            {
+                int v  = ParseInt(cols, idx++);
+                int id = ParseInt(cols, idx++);
+                g.Order.Add(v);
+                g.OrderVertexIds.Add(id);
+            }
+
+            // ハンドル（点数ぶん、または 0）。旧ファイルは列が無く 0 として読む。
+            int hCount = ParseInt(cols, idx++);
+            if (hCount == count && hCount > 0)
+            {
+                for (int k = 0; k < hCount; k++)
+                {
+                    var h = new LinePointHandle();
+                    h.InOffset  = new Vector3(ParseFloat(cols, idx++), ParseFloat(cols, idx++), ParseFloat(cols, idx++));
+                    h.OutOffset = new Vector3(ParseFloat(cols, idx++), ParseFloat(cols, idx++), ParseFloat(cols, idx++));
+                    h.InConstraint = new HandleConstraint
+                    {
+                        Direction     = (HandleDirection)ParseInt(cols, idx++),
+                        Length        = (HandleLength)ParseInt(cols, idx++),
+                        LengthGroupId = ParseInt(cols, idx++),
+                        Ratio         = ParseFloat(cols, idx++),
+                    };
+                    h.OutConstraint = new HandleConstraint
+                    {
+                        Direction     = (HandleDirection)ParseInt(cols, idx++),
+                        Length        = (HandleLength)ParseInt(cols, idx++),
+                        LengthGroupId = ParseInt(cols, idx++),
+                        Ratio         = ParseFloat(cols, idx++),
+                    };
+                    g.PointHandles.Add(h);
+                }
+            }
+
+            int lgCount = ParseInt(cols, idx++);
+            for (int k = 0; k < lgCount; k++)
+            {
+                int   lid = ParseInt(cols, idx++);
+                float len = ParseFloat(cols, idx++);
+                g.LengthGroups.Add(new LineLengthGroup { Id = lid, Length = len });
+            }
+
+            meshObject.LineGroups.Add(g);
+        }
+
+        // ================================================================
         // CSV ユーティリティ
         // ================================================================
 

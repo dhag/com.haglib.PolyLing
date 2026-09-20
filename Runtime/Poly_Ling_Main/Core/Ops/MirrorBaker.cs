@@ -840,8 +840,14 @@ namespace Poly_Ling.Tools
             result.BakeAxis = axis;
 
             // 中身だけ差し替える（MeshObject インスタンスは維持）
+            int oldVertexCount = target.VertexCount;
+            var oldLineGroups  = target.LineGroups;
             target.Vertices = baked.Vertices;
             target.Faces    = baked.Faces;
+
+            // 線分群も元側・鏡像側を新しい頂点索引で作り直す（面と連携しているため）。
+            target.LineGroups = Poly_Ling.Ops.LineGroupOps.BuildMirrorBaked(oldLineGroups, result.OldToNew, oldVertexCount, result.PlaneNormal);
+            Poly_Ling.Ops.LineGroupOps.ReconcileWithFaces(target);
 
             // Vertices を丸ごと差し替えたので種別を確認し直す。
             // 差し替え前が MeshFilter でも、ベイク結果がウェイトを持てば Skinned。

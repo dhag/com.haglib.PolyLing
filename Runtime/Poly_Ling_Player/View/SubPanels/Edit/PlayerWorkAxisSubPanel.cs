@@ -33,8 +33,9 @@ namespace Poly_Ling.Player
         /// <summary>操作対象の作業軸。null なら入力を無視する。</summary>
         public Func<WorkAxisContext> GetWorkAxis;
 
-        /// <summary>ハンドラ（サブモード切替用）。</summary>
-        public Func<WorkAxisToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "workAxis";
 
         /// <summary>値が変わったときに呼ぶ。ギズモ再描画に使う。</summary>
         public Action OnValueChanged;
@@ -263,12 +264,9 @@ namespace Poly_Ling.Player
             // 頂点は GPU ヒットテストが要るので、要らないときは切っておくと軽い。
             _root.Add(Header("吸着対象"));
 
-            _snapVertexToggle = MakeSnapToggle("頂点にスナップ",
-                (h, v) => h.SnapToVertex = v);
-            _snapBoneToggle   = MakeSnapToggle("ボーンにスナップ",
-                (h, v) => h.SnapToBone = v);
-            _snapObjectToggle = MakeSnapToggle("描画オブジェクトにスナップ",
-                (h, v) => h.SnapToObject = v);
+            _snapVertexToggle = MakeSnapToggle("頂点にスナップ", "snapToVertex");
+            _snapBoneToggle   = MakeSnapToggle("ボーンにスナップ", "snapToBone");
+            _snapObjectToggle = MakeSnapToggle("描画オブジェクトにスナップ", "snapToObject");
 
             _root.Add(_snapVertexToggle);
             _root.Add(_snapBoneToggle);
@@ -344,15 +342,13 @@ namespace Poly_Ling.Player
             RepaintModeButtons();
         }
 
-        private Toggle MakeSnapToggle(string label, Action<WorkAxisToolHandler, bool> set)
+        private Toggle MakeSnapToggle(string label, string param)
         {
             var t = new Toggle(label);
             t.style.color = new StyleColor(Color.white);
             t.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h == null) return;
-                set(h, e.newValue);
+                Surface?.Set(Tool, param, e.newValue);
             });
             return t;
         }
@@ -619,12 +615,11 @@ namespace Poly_Ling.Player
             _visibleToggle?.SetValueWithoutNotify(wa.IsVisible);
             _lengthField?.SetValueWithoutNotify(wa.Length);
 
-            var h = GetH?.Invoke();
-            if (h != null)
+            if (Surface != null)
             {
-                _snapVertexToggle?.SetValueWithoutNotify(h.SnapToVertex);
-                _snapBoneToggle  ?.SetValueWithoutNotify(h.SnapToBone);
-                _snapObjectToggle?.SetValueWithoutNotify(h.SnapToObject);
+                _snapVertexToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "snapToVertex"));
+                _snapBoneToggle  ?.SetValueWithoutNotify(Surface.GetBool(Tool, "snapToBone", true));
+                _snapObjectToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "snapToObject"));
             }
 
             RefreshLibraryList();
@@ -689,10 +684,9 @@ namespace Poly_Ling.Player
 
         private void ApplySnapToHandler()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
             bool on = _snapToggle?.value ?? false;
-            h.RotateSnapDeg = on ? Mathf.Max(0.1f, _snapField?.value ?? 15f) : 0f;
+            Surface.Set(Tool, "rotateSnapDeg", on ? Mathf.Max(0.1f, _snapField?.value ?? 15f) : 0f);
         }
 
         // ================================================================
@@ -742,15 +736,15 @@ namespace Poly_Ling.Player
 
         private void SetMode(WorkAxisToolHandler.WorkAxisGizmoMode mode)
         {
-            var h = GetH?.Invoke();
-            if (h != null) h.Mode = mode;
+            Surface?.Set(Tool, "mode", mode);
             RepaintModeButtons();
             OnValueChanged?.Invoke();
         }
 
         private void RepaintModeButtons()
         {
-            var cur = GetH?.Invoke()?.Mode ?? WorkAxisToolHandler.WorkAxisGizmoMode.Move;
+            var cur = Surface?.Get(Tool, "mode", WorkAxisToolHandler.WorkAxisGizmoMode.Move)
+                      ?? WorkAxisToolHandler.WorkAxisGizmoMode.Move;
             if (_modeMoveBtn != null)
                 _modeMoveBtn.style.backgroundColor =
                     (cur == WorkAxisToolHandler.WorkAxisGizmoMode.Move) ? ActiveBtnColor : InactiveBtnColor;

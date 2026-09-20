@@ -20,7 +20,7 @@ namespace Poly_Ling.Data
     /// MeshFilter オブジェクト群をボーン+スキンドメッシュ構造に変換する。
     /// Undo 記録付き。変換後に GPU バッファを再構築する。
     /// </summary>
-    [PLCommand(Description = "MeshFilter オブジェクト群をボーン+スキンドメッシュ構造に変換する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "MeshFilter オブジェクト群をボーン+スキンドメッシュ構造に変換する。")]
     public class ConvertMeshFilterToSkinnedCommand : PanelCommand
     {
         /// <summary>回転ありボーンの軸をPMX軸 (Y→X) に入替える</summary>
@@ -65,10 +65,10 @@ namespace Poly_Ling.Data
     /// 変換先の WorldMatrix の逆行列でローカル化し直す（SkinKindConverter）。
     /// ボーンの生成・破棄は行わない。
     /// </summary>
-    [PLCommand(Description = "選んだ描画オブジェクトのウェイトを破棄して MeshFilter 系へ戻す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選んだ描画オブジェクトのウェイトを破棄して MeshFilter 系へ戻す。")]
     public class ConvertToMeshFilterCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -91,15 +91,15 @@ namespace Poly_Ling.Data
     /// 選んだ描画オブジェクトを、指定ボーンへウェイト 1.0 でバインドして
     /// SkinnedMesh 系にする。ボーンの生成は行わない（既存ボーンへ付ける）。
     /// </summary>
-    [PLCommand(Description = "選んだ描画オブジェクトを、指定ボーンへウェイト 1.0 でバインドして SkinnedMesh 系にする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選んだ描画オブジェクトを、指定ボーンへウェイト 1.0 でバインドして SkinnedMesh 系にする。")]
     public class ConvertToSkinnedCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
         /// <summary>バインド先ボーンの MeshContextList 索引。</summary>
-        [PLParam(TextKey = "BindBoneMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "BindBoneMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "ウェイト 1.0 でバインドする先のボーンの masterIndex", Required = true)]
         public int BoneMasterIndex { get; }
 
@@ -118,7 +118,7 @@ namespace Poly_Ling.Data
     /// PMX インポート直後のようにボーンが全て -1 のモデルで、
     /// ミラー生成前に一度だけ実行する用途。
     /// </summary>
-    [PLCommand(Description = "ボーンの左右対応（MirrorBoneIndex）を、ボーン名の左右から補完する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "ボーンの左右対応（MirrorBoneIndex）を、ボーン名の左右から補完する。")]
     public class ResolveMirrorBoneIndexCommand : PanelCommand
     {
         public ResolveMirrorBoneIndexCommand(int modelIndex) : base(modelIndex) { }
@@ -129,7 +129,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>選択中の描画メッシュ全頂点に指定ウェイトを一括塗りつぶす（Flood）</summary>
-    [PLCommand(Description = "選択中の描画メッシュの全頂点へ、指定したウェイトを一括で塗る。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択中の描画メッシュの全頂点へ、指定したウェイトを一括で塗る。")]
     public class FloodSkinWeightCommand : PanelCommand
     {
         [PLParam(TextKey = "SkinWeightTargetBone",
@@ -160,14 +160,14 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択中の描画メッシュ全頂点のボーンウェイトを正規化する（Normalize）</summary>
-    [PLCommand(Description = "選択中の描画メッシュの全頂点のボーンウェイトを、合計が 1 になるよう揃える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択中の描画メッシュの全頂点のボーンウェイトを、合計が 1 になるよう揃える。")]
     public class NormalizeSkinWeightCommand : PanelCommand
     {
         public NormalizeSkinWeightCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>選択中の描画メッシュ全頂点の微小ウェイトを除去する（Prune）</summary>
-    [PLCommand(Description = "選択中の描画メッシュの全頂点から、ごく小さいボーンウェイトを取り除く。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択中の描画メッシュの全頂点から、ごく小さいボーンウェイトを取り除く。")]
     public class PruneSkinWeightCommand : PanelCommand
     {
         [PLParam(TextKey = "SkinWeightPruneThreshold",
@@ -183,7 +183,7 @@ namespace Poly_Ling.Data
     /// BoneMasters が負値のスロットは未使用として weight 0 で埋める。
     /// 正規化はパネル側のボタンで行うため、ここでは入力値をそのまま書き込む。
     /// </summary>
-    [PLCommand(Description = "選択頂点のボーンウェイトを、指定した最大 4 組（ボーン MasterIndex, ウェイト値）で 直接上書きする。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択頂点のボーンウェイトを、指定した最大 4 組（ボーン MasterIndex, ウェイト値）で 直接上書きする。")]
     public class SetSkinWeightNumericCommand : PanelCommand
     {
         /// <summary>長さ 4。ボーンの MasterIndex。負値は未使用スロット。</summary>
@@ -209,7 +209,7 @@ namespace Poly_Ling.Data
     /// 合計が 1 でない頂点は GPU スキニングで原点方向へ寄り見た目が崩れるため、
     /// 読み込んだモデルや過去の編集で壊れた箇所をまとめて直す。
     /// </summary>
-    [PLCommand(Description = "対象メッシュ全件の全頂点についてボーンウェイトを正規化する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "対象メッシュ全件の全頂点についてボーンウェイトを正規化する。")]
     public class NormalizeAllSkinWeightsCommand : PanelCommand
     {
         public NormalizeAllSkinWeightsCommand(int modelIndex) : base(modelIndex) { }
@@ -239,10 +239,10 @@ namespace Poly_Ling.Data
     ///   VertexIndices.Length == Falloffs.Length、StepStarts が単調増加で範囲内）は
     ///   受け口の実行時検証で守る。型では表現できない。
     /// </summary>
-    [PLCommand(Description = "ブラシで塗ったスキンウェイトを適用する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ブラシで塗ったスキンウェイトを適用する。")]
     public class SkinWeightPaintCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "ステップが触る描画オブジェクトの masterIndex 配列。実行時点の塗り対象に含まれること",
                  Required = true)]
         public int[]   MasterIndices { get; }
@@ -256,7 +256,7 @@ namespace Poly_Ling.Data
                  Required = true)]
         public int[]   StepStarts { get; }
 
-        [PLParam(TextKey = "SkinPaintStepMeshIndices", IsMeshRef = true,
+        [PLParam(TextKey = "SkinPaintStepMeshIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "各ステップの対象メッシュ masterIndex。StepStarts と同じ長さ",
                  Required = true)]
         public int[]   StepMeshIndices { get; }

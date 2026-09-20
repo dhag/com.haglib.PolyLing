@@ -278,43 +278,10 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null || !model.HasBoneSelection) return;
 
-            var indices = new List<int>(model.SelectedBoneIndices);
-            var beforeSnapshots = new Dictionary<int, BonePoseDataSnapshot>();
-            var contexts = new List<(int idx, MeshContext ctx)>();
-
-            foreach (var idx in indices)
-            {
-                var ctx = model.GetMeshContext(idx);
-                if (ctx == null) continue;
-                if (ctx.BonePoseData == null) { ctx.BonePoseData = new BonePoseData(); ctx.BonePoseData.IsActive = true; }
-                beforeSnapshots[idx] = ctx.BonePoseData.CreateSnapshot();
-                contexts.Add((idx, ctx));
-            }
-            if (contexts.Count == 0) return;
-
-            foreach (var (_, ctx) in contexts) { ctx.BonePoseData.ClearAllLayers(); ctx.BonePoseData.SetDirty(); }
-
-            var undo = GetUndoController?.Invoke();
-            if (undo != null)
-            {
-                var record = new MultiBonePoseChangeRecord();
-                foreach (var (idx, ctx) in contexts)
-                    record.Entries.Add(new MultiBonePoseChangeRecord.Entry
-                    {
-                        MasterIndex = idx,
-                        OldSnapshot = beforeSnapshots.TryGetValue(idx, out var b) ? b : (BonePoseDataSnapshot?)null,
-                        NewSnapshot = ctx.BonePoseData.CreateSnapshot(),
-                    });
-                {
-                    string __dbgDesc = "ボーンポーズリセット";
-                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
-                    undo.MeshListStack.Record(record, __dbgDesc);
-                }
-                undo.FocusMeshList();
-            }
-
-            model.OnListChanged?.Invoke();
-            OnRepaint?.Invoke();
+            // リセットはコマンドで行う（ディスパッチャ側で Undo 記録。操作経路統一計画.md J）。
+            var indices = new List<int>(model.SelectedBoneIndices).ToArray();
+            if (indices.Length == 0) return;
+            SendCommand(new ResetBonePoseLayersCommand(GetModelIndex?.Invoke() ?? 0, indices));
             Refresh();
         }
 

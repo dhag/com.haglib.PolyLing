@@ -63,6 +63,15 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnSmoothEdges         = ExecuteSmoothEdges;
             _commandDispatcher.OnEdgeRibbonFace      = ExecuteEdgeRibbonFace;
             _commandDispatcher.OnCreateVertexBillboardPlace = ExecuteVertexBillboardPlace;
+            // ホスト（画面操作）が担当者判定で止められたら状態表示へ出す（操作経路統一計画.md L-5）。
+            _commandDispatcher.OnOwnershipDenied = (deniedCmd, deniedActor, reason) =>
+            {
+                if (deniedActor != null && deniedActor.Kind == CommandActorKind.Host)
+                    _status = $"編集できません（{reason}）";
+            };
+            // ツールの公開層：[PLTool] の付いたハンドラを名前で引く（操作経路統一計画.md B・C・D）。
+            _commandDispatcher.ResolveTool = id => ToolRegistry().TryGetValue(id ?? "", out var h) ? h : null;
+            _commandDispatcher.ListTools   = () => ToolRegistry().Keys;
             _commandDispatcher.OnImportPmxFile       = ExecuteImportPmxFile;
             _commandDispatcher.OnExportPmxFile       = ExecuteExportPmxFile;
             _commandDispatcher.OnImportMqoFile       = ExecuteImportMqoFile;
@@ -427,7 +436,7 @@ namespace Poly_Ling.Player
             if (panel == null) return;
             _objectArraySubPanel = panel;
 
-            _commandDispatcher?.Dispatch(new CreateObjectArrayCommand(
+            DispatchHost(new CreateObjectArrayCommand(
                 ActiveProject?.CurrentModelIndex ?? 0,
                 panel.Params,
                 panel.SelectedMasterIndices().ToArray(),

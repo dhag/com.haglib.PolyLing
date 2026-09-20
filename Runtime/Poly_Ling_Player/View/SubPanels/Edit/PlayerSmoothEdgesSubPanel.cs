@@ -13,9 +13,12 @@ namespace Poly_Ling.Player
 {
     public class PlayerSmoothEdgesSubPanel
     {
-        public Func<SmoothEdgesToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                 Surface;
         public Func<ProjectContext>         GetView;
         public Action<PanelCommand>         SendCommand;
+
+        private const string Tool = "smoothEdges";
 
         /// <summary>コマンドに載せるモデル索引。</summary>
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
@@ -89,11 +92,7 @@ namespace Poly_Ling.Player
             _strengthSlider = new Slider("強度", sMin, sMax) { value = 0.5f };
             _strengthSlider.style.marginBottom = 3;
             _strengthSlider.tooltip = "1 反復あたり隣接平均へ寄せる量。0 で変化なし。";
-            _strengthSlider.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH?.Invoke();
-                if (h != null) h.Strength = e.newValue;
-            });
+            _strengthSlider.RegisterValueChangedCallback(e => Surface.Set(Tool, "strength", e.newValue));
             _root.Add(_strengthSlider);
 
             // 反復回数
@@ -101,11 +100,7 @@ namespace Poly_Ling.Player
             int iMax = ParameterLimits.GetI("SmoothEdges.Iterations.Max");
             _iterationsSlider = new SliderInt("反復回数", iMin, iMax) { value = 1 };
             _iterationsSlider.style.marginBottom = 3;
-            _iterationsSlider.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH?.Invoke();
-                if (h != null) h.Iterations = e.newValue;
-            });
+            _iterationsSlider.RegisterValueChangedCallback(e => Surface.Set(Tool, "iterations", e.newValue));
             _root.Add(_iterationsSlider);
 
             // 端点固定
@@ -115,10 +110,9 @@ namespace Poly_Ling.Player
                 "選択チェーン内で次数1の頂点を動かしません。閉ループには端点が無いため影響しません。";
             _fixEndpointsToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH?.Invoke();
-                if (h == null) return;
-                h.FixEndpoints = e.newValue;
-                h.RefreshStats();
+                if (Surface == null) return;
+                Surface.Set(Tool, "fixEndpoints", e.newValue);
+                Surface.Invoke(Tool, "refreshStats");
                 UpdateStats();
             });
             _root.Add(_fixEndpointsToggle);
@@ -129,9 +123,9 @@ namespace Poly_Ling.Player
             lockRow.style.flexDirection = FlexDirection.Row;
             lockRow.style.marginBottom  = 4;
 
-            _lockX = MakeToggle("X", v => { var h = GetH?.Invoke(); if (h != null) h.LockX = v; });
-            _lockY = MakeToggle("Y", v => { var h = GetH?.Invoke(); if (h != null) h.LockY = v; });
-            _lockZ = MakeToggle("Z", v => { var h = GetH?.Invoke(); if (h != null) h.LockZ = v; });
+            _lockX = MakeToggle("X", v => Surface.Set(Tool, "lockX", v));
+            _lockY = MakeToggle("Y", v => Surface.Set(Tool, "lockY", v));
+            _lockZ = MakeToggle("Z", v => Surface.Set(Tool, "lockZ", v));
             lockRow.Add(_lockX);
             lockRow.Add(_lockY);
             lockRow.Add(_lockZ);
@@ -140,13 +134,14 @@ namespace Poly_Ling.Player
             // 実行
             _smoothBtn = new Button(() =>
             {
-                var h = GetH?.Invoke();
                 var targets = ActiveMasterIndices();
-                if (h == null || targets == null) return;
+                if (Surface == null || targets == null) return;
 
                 SendCommand?.Invoke(new SmoothEdgesCommand(
-                    ModelIndex, targets, h.Strength, h.Iterations,
-                    h.FixEndpoints, h.LockX, h.LockY, h.LockZ));
+                    ModelIndex, targets,
+                    Surface.GetFloat(Tool, "strength"), Surface.GetInt(Tool, "iterations"),
+                    Surface.GetBool(Tool, "fixEndpoints"),
+                    Surface.GetBool(Tool, "lockX"), Surface.GetBool(Tool, "lockY"), Surface.GetBool(Tool, "lockZ")));
                 Refresh();
             })
             { text = "平滑化実行" };
@@ -163,17 +158,16 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            h.RefreshStats();
+            Surface.Invoke(Tool, "refreshStats");
 
-            _strengthSlider?.SetValueWithoutNotify(h.Strength);
-            _iterationsSlider?.SetValueWithoutNotify(h.Iterations);
-            _fixEndpointsToggle?.SetValueWithoutNotify(h.FixEndpoints);
-            _lockX?.SetValueWithoutNotify(h.LockX);
-            _lockY?.SetValueWithoutNotify(h.LockY);
-            _lockZ?.SetValueWithoutNotify(h.LockZ);
+            _strengthSlider?.SetValueWithoutNotify(Surface.GetFloat(Tool, "strength"));
+            _iterationsSlider?.SetValueWithoutNotify(Surface.GetInt(Tool, "iterations"));
+            _fixEndpointsToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "fixEndpoints"));
+            _lockX?.SetValueWithoutNotify(Surface.GetBool(Tool, "lockX"));
+            _lockY?.SetValueWithoutNotify(Surface.GetBool(Tool, "lockY"));
+            _lockZ?.SetValueWithoutNotify(Surface.GetBool(Tool, "lockZ"));
 
             UpdateStats();
         }
@@ -184,10 +178,11 @@ namespace Poly_Ling.Player
 
         private void UpdateStats()
         {
-            var h = GetH?.Invoke();
-            if (h == null) return;
+            if (Surface == null) return;
+            int segments = Surface.GetInt(Tool, "segmentCount");
+            int movable  = Surface.GetInt(Tool, "movableVertexCount");
 
-            if (!h.StatsCalculated || h.SegmentCount == 0)
+            if (!Surface.GetBool(Tool, "statsCalculated") || segments == 0)
             {
                 if (_segmentLabel != null) _segmentLabel.text = "辺または線分を選択してください";
                 if (_vertexLabel  != null) _vertexLabel.text  = "";
@@ -196,12 +191,12 @@ namespace Poly_Ling.Player
             }
 
             if (_segmentLabel != null)
-                _segmentLabel.text = $"辺・線分: {h.SegmentCount} 本  /  チェーン頂点: {h.ChainVertexCount}";
+                _segmentLabel.text = $"辺・線分: {segments} 本  /  チェーン頂点: {Surface.GetInt(Tool, "chainVertexCount")}";
 
             if (_vertexLabel != null)
-                _vertexLabel.text = $"端点: {h.EndpointCount}  /  移動対象: {h.MovableVertexCount} 頂点";
+                _vertexLabel.text = $"端点: {Surface.GetInt(Tool, "endpointCount")}  /  移動対象: {movable} 頂点";
 
-            _smoothBtn?.SetEnabled(h.MovableVertexCount > 0);
+            _smoothBtn?.SetEnabled(movable > 0);
         }
 
         // ================================================================

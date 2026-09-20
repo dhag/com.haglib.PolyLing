@@ -10,6 +10,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("scale", Description = "選択頂点の拡大縮小")]
     public class ScaleToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
@@ -48,22 +49,71 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "X 方向の倍率")]
         public float ScaleX        { get => _tool.ScaleX;       set { _tool.ScaleX = value; } }
+        [Poly_Ling.Data.PLToolParam(Description = "Y 方向の倍率")]
         public float ScaleY        { get => _tool.ScaleY;       set { _tool.ScaleY = value; } }
+        [Poly_Ling.Data.PLToolParam(Description = "Z 方向の倍率")]
         public float ScaleZ        { get => _tool.ScaleZ;       set { _tool.ScaleZ = value; } }
+        [Poly_Ling.Data.PLToolParam(Description = "3 軸を同じ倍率にするか")]
         public bool  UniformScale  { get => _tool.UniformScale; set => _tool.UniformScale = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "オブジェクト原点を拡大の中心にするか")]
         public bool  UseOriginPivot{ get => _tool.UseOriginPivot; set => _tool.UseOriginPivot = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネット（周辺へ減衰して波及）を使うか")]
         public bool         UseMagnet          { get => _tool.UseMagnet;          set => _tool.UseMagnet = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの半径")]
         public float        MagnetRadius       { get => _tool.MagnetRadius;       set => _tool.MagnetRadius = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの減衰の形")]
         public Poly_Ling.Tools.FalloffType  MagnetFalloff      { get => _tool.MagnetFalloff;      set => _tool.MagnetFalloff = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの距離の測り方")]
         public Poly_Ling.Tools.DistanceMode MagnetDistanceMode { get => _tool.MagnetDistanceMode; set => _tool.MagnetDistanceMode = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "ScaleTool.ScaleAxisX（パネルの軸欄 X）")]
         public float ScaleAxisX { get => _tool.ScaleAxisX; set => _tool.ScaleAxisX = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "ScaleTool.ScaleAxisY（パネルの軸欄 Y）")]
         public float ScaleAxisY { get => _tool.ScaleAxisY; set => _tool.ScaleAxisY = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "ScaleTool.ScaleAxisZ（パネルの軸欄 Z）")]
         public float ScaleAxisZ { get => _tool.ScaleAxisZ; set => _tool.ScaleAxisZ = value; }
+        [Poly_Ling.Data.PLToolState(Description = "拡大の影響を受ける頂点数")]
+        public int   AffectedCount => _tool.GetTotalAffectedCountPublic();
         public int   GetTotalAffectedCount() => _tool.GetTotalAffectedCountPublic();
         public void  BeginSliderDrag() => _tool.BeginSliderDrag();
-        public void  EndSliderDrag()   { _tool.EndSliderDrag(); OnApplyCompleted?.Invoke(); }
-        public void  Revert()          => _tool.RevertPublic();
+        public void  EndSliderDrag()   { _tool.EndSliderDrag(); OnApplyCompleted?.Invoke(); EndPanelPreview(); }
+        [Poly_Ling.Data.PLToolAction(Description = "プレビューを捨てて開始状態へ戻す")]
+        public void  Revert()          { _tool.RevertPublic(); EndPanelPreview(); }
+
+        // ================================================================
+        // パネルからのプレビュー（操作経路統一計画.md H-2。RotateToolHandler と同じ形）
+        // ================================================================
+
+        /// <summary>パネルのスライダー操作でプレビューを始めてよいか（選択の担当者判定とロック取得）。</summary>
+        public Func<bool> TryBeginPreview;
+
+        /// <summary>パネルのプレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action EndPreview;
+
+        private bool _panelPreview;
+
+        /// <summary>
+        /// パネルのスライダーからのプレビュー開始。担当者判定で止められたらプレビューに入らない。
+        /// コマンド実行（ExecuteFromCommand）は判定済みなので BeginSliderDrag を直接使う。
+        /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "パネルのスライダー操作によるプレビューを始める（対象のロックを取る）")]
+        public void BeginSliderDragFromPanel()
+        {
+            if (!_panelPreview && TryBeginPreview != null)
+            {
+                if (!TryBeginPreview()) return;
+                _panelPreview = true;
+            }
+            _tool.BeginSliderDrag();
+        }
+
+        private void EndPanelPreview()
+        {
+            if (!_panelPreview) return;
+            _panelPreview = false;
+            EndPreview?.Invoke();
+        }
 
         // ================================================================
         // コマンド経路
@@ -80,6 +130,7 @@ namespace Poly_Ling.Player
         ///   送信口が無い・対象が決まらない・取り出せる倍率が無いときは、
         ///   従来どおり EndSliderDrag で確定させる。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "プレビュー中の拡大縮小を ScaleSelectionCommand として確定する")]
         public void CommitViaCommand()
         {
             int[] targets = SelectedMasterIndices();
@@ -100,6 +151,7 @@ namespace Poly_Ling.Player
                 _tool.UseOriginPivot,
                 _tool.UseMagnet, _tool.MagnetRadius,
                 _tool.MagnetFalloff, _tool.MagnetDistanceMode));
+            EndPanelPreview();
         }
 
         /// <summary>

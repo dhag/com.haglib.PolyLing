@@ -121,6 +121,9 @@ namespace Poly_Ling.Player
                 case ShapeKind.MotorCoupling:     return new CreateMotorCouplingCommand(mi, _motorCouplingP, pl);
                 case ShapeKind.TrapezoidalThread: return new CreateTrapezoidalThreadCommand(mi, _trapP, pl);
                 case ShapeKind.Spline:            return new CreateSplineCommand(mi, _splineP, pl);
+                case ShapeKind.BoltPattern:
+                    return new CreateBoltPatternCommand(
+                        mi, _boltP, _boltSrcPick.SelectedMasterIndices().ToArray(), pl);
 
                 // ── 機構部品A ──
                 case ShapeKind.HelicalGear:       return new CreateHelicalGearCommand(mi, _helGearP, pl);

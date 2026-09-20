@@ -13,6 +13,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("quad4To1", Description = "Quad4To1Tool（確定は Quad4To1Command）")]
     public class Quad4To1ToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -37,9 +38,11 @@ namespace Poly_Ling.Player
         // 公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolState(Description = "Quad4To1Tool.SelectedVertexCount")]
         public int SelectedVertexCount => _tool.SelectedVertexCount;
 
         /// <summary>対象メッシュ全部を合わせた下調べ結果。</summary>
+        [Poly_Ling.Data.PLToolStateGroup(Name = "inspect", Description = "実行前の下調べ（Quad4To1Tool.MergeSummary）")]
         public Quad4To1Tool.MergeSummary Inspect() => _tool.Inspect();
 
         /// <summary>

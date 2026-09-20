@@ -299,23 +299,11 @@ namespace Poly_Ling.Player
             int masterIdx = model.IndexOf(mc);
             int modelIdx  = _getModelIndex?.Invoke() ?? 0;
 
-            if (_panelContext != null)
-            {
-                _panelContext.SendCommand(new ApplyLscmUnwrapCommand(
-                    modelIdx, masterIdx, _includeBoundaryAsSeam,
-                    Mathf.Clamp(_maxIterations, MaxIterationsMin, MaxIterationsMax)));
-                SetStatus("LSCM展開を実行しました");
-            }
-            else
-            {
-                // フォールバック（PanelContext 未設定時）
-                var seamEdges = mc.SelectedEdges ?? new HashSet<VertexPair>();
-                var result = LscmUnwrapOperation.Execute(mc.MeshObject, seamEdges,
-                    _includeBoundaryAsSeam,
-                    Mathf.Clamp(_maxIterations, MaxIterationsMin, MaxIterationsMax));
-                SetStatus(result.StatusMessage);
-                if (result.Success) { mc.ReplaceUnityMesh(mc.MeshObject.ToUnityMesh()); OnRepaint?.Invoke(); }
-            }
+            // 本体も SetCommandContext を渡すので、直接展開する経路は持たない（操作経路統一計画.md J）。
+            _panelContext?.SendCommand(new ApplyLscmUnwrapCommand(
+                modelIdx, masterIdx, _includeBoundaryAsSeam,
+                Mathf.Clamp(_maxIterations, MaxIterationsMin, MaxIterationsMax)));
+            SetStatus("LSCM展開を実行しました");
             RefreshSeamInfo(model);
         }
 

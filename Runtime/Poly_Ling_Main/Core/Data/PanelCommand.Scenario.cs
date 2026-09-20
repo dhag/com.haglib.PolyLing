@@ -32,7 +32,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>登録済みの手本を一覧する。</summary>
-    [PLCommand(Description = "登録済みの手本（シナリオ）を一覧する。名前・目的・段数を同じ並びの配列で返す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "登録済みの手本（シナリオ）を一覧する。名前・目的・段数を同じ並びの配列で返す。")]
     [PLResult("count",      PLResultKind.Integer,      Description = "手本の数")]
     [PLResult("storePath",  PLResultKind.Text,         Description = "手本を置いているファイルの絶対パス")]
     [PLResult("names",      PLResultKind.TextArray,    Description = "手本の名前", Optional = true)]
@@ -51,7 +51,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>手本 1 本の中身を返す。</summary>
-    [PLCommand(Description = "手本 1 本の中身を返す。段は elementIds と同じ並びの配列で返し、引数は argCounts で区切った argKeys / argValues に連結して返す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本 1 本の中身を返す。段は elementIds と同じ並びの配列で返し、引数は argCounts で区切った argKeys / argValues に連結して返す。")]
     [PLResult("name",            PLResultKind.Text,         Description = "手本の名前")]
     [PLResult("goal",            PLResultKind.Text,         Description = "この手本で達成したいこと")]
     [PLResult("parentName",      PLResultKind.Text,         Description = "元にした手本の名前。空 = 元がない")]
@@ -93,7 +93,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>段を持たない手本を新しく作る。</summary>
-    [PLCommand(Description = "段を持たない手本を新しく作る。段は addScenarioStep で足す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "段を持たない手本を新しく作る。段は addScenarioStep で足す。")]
     [PLResult("name",      PLResultKind.Text,    Description = "作った手本の名前")]
     [PLResult("count",     PLResultKind.Integer, Description = "登録後の手本の数")]
     [PLResult("storePath", PLResultKind.Text,    Description = "手本を置いているファイルの絶対パス")]
@@ -118,7 +118,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>手本を消す。</summary>
-    [PLCommand(Description = "手本を消す。ファイルからも消える。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本を消す。ファイルからも消える。")]
     [PLResult("removed", PLResultKind.Flag,    Description = "消したか")]
     [PLResult("count",   PLResultKind.Integer, Description = "消した後の手本の数")]
     public sealed class DeleteScenarioCommand : PanelCommand
@@ -134,7 +134,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>元を残したまま手本を複製する。</summary>
-    [PLCommand(Description = "元を残したまま手本を複製する。複製の由来に元の名前が入る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "元を残したまま手本を複製する。複製の由来に元の名前が入る。")]
     [PLResult("name",  PLResultKind.Text,    Description = "作った手本の名前")]
     [PLResult("steps", PLResultKind.Integer, Description = "段の数")]
     [PLResult("count", PLResultKind.Integer, Description = "登録後の手本の数")]
@@ -164,7 +164,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>現在のモデルのオブジェクトグループを手本として登録する。</summary>
-    [PLCommand(Description = "現在のモデルのオブジェクトグループを手本として登録する。描画オブジェクトへの参照と出力先は落とす。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "現在のモデルのオブジェクトグループを手本として登録する。描画オブジェクトへの参照と出力先は落とす。")]
     [PLResult("name",  PLResultKind.Text,    Description = "作った手本の名前")]
     [PLResult("steps", PLResultKind.Integer, Description = "段の数")]
     [PLResult("count", PLResultKind.Integer, Description = "登録後の手本の数")]
@@ -198,7 +198,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>手本の意味情報を書く。</summary>
-    [PLCommand(Description = "手本の目的・前提・成功条件・札・由来を書く。空にした引数は変えない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本の目的・前提・成功条件・札・由来を書く。空にした引数は変えない。")]
     [PLResult("name",  PLResultKind.Text,    Description = "手本の名前")]
     [PLResult("steps", PLResultKind.Integer, Description = "段の数")]
     public sealed class SetScenarioMetaCommand : PanelCommand
@@ -241,7 +241,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>手本へ段を 1 つ足す。</summary>
-    [PLCommand(Description = "手本へ段を 1 つ足す。afterElementId を省くと末尾へ足す。Command 以外の段は action を持たない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本へ段を 1 つ足す。afterElementId を省くと末尾へ足す。Command 以外の段は action を持たない。")]
     [PLResult("name",      PLResultKind.Text,    Description = "手本の名前")]
     [PLResult("elementId", PLResultKind.Text,    Description = "足した段の名前")]
     [PLResult("steps",     PLResultKind.Integer, Description = "足した後の段の数")]
@@ -305,7 +305,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>手本の段を前後へ動かす。</summary>
-    [PLCommand(Description = "手本の段を別の位置へ動かす。段の名前と中身は変わらず、並びだけが変わる。beforeElementId か afterElementId のどちらか一方を指定する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本の段を別の位置へ動かす。段の名前と中身は変わらず、並びだけが変わる。beforeElementId か afterElementId のどちらか一方を指定する。")]
     [PLResult("name",       PLResultKind.Text,      Description = "手本の名前")]
     [PLResult("elementId",  PLResultKind.Text,      Description = "動かした段の名前")]
     [PLResult("fromIndex",  PLResultKind.Integer,   Description = "動かす前の位置（0 始まり）")]
@@ -347,7 +347,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>手本の段を 1 つ丸ごと置き換える。</summary>
-    [PLCommand(Description = "手本の段を 1 つ丸ごと置き換える。段の名前と位置は変わらない。省いた引数は既定値で上書きされる。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本の段を 1 つ丸ごと置き換える。段の名前と位置は変わらない。省いた引数は既定値で上書きされる。")]
     [PLResult("name",      PLResultKind.Text,    Description = "手本の名前")]
     [PLResult("elementId", PLResultKind.Text,    Description = "置き換えた段の名前")]
     [PLResult("steps",     PLResultKind.Integer, Description = "段の数")]
@@ -402,7 +402,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>手本から段を 1 つ消す。</summary>
-    [PLCommand(Description = "手本から段を 1 つ消す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本から段を 1 つ消す。")]
     [PLResult("name",  PLResultKind.Text,    Description = "手本の名前")]
     [PLResult("steps", PLResultKind.Integer, Description = "消した後の段の数")]
     public sealed class RemoveScenarioStepCommand : PanelCommand
@@ -422,7 +422,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>手本の段の引数を 1 つだけ書く。</summary>
-    [PLCommand(Description = "手本の段の引数を 1 つだけ書く。値にカンマを含む引数（masterIndices や点列など）はこちらを使う。addScenarioStep / setScenarioStep の argValues は配列なのでカンマで割れてしまう。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本の段の引数を 1 つだけ書く。値にカンマを含む引数（masterIndices や点列など）はこちらを使う。addScenarioStep / setScenarioStep の argValues は配列なのでカンマで割れてしまう。")]
     [PLResult("name",      PLResultKind.Text,    Description = "手本の名前")]
     [PLResult("elementId", PLResultKind.Text,    Description = "段の名前")]
     [PLResult("key",       PLResultKind.Text,    Description = "書いた引数のキー")]
@@ -459,7 +459,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>参照段を、参照先の段の列で置き換える。</summary>
-    [PLCommand(Description = "参照段を、参照先の手本の段の列で置き換える。置き換えた段には新しい名前を振る。参照先は変わらない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "参照段を、参照先の手本の段の列で置き換える。置き換えた段には新しい名前を振る。参照先は変わらない。")]
     [PLResult("name",       PLResultKind.Text,      Description = "手本の名前")]
     [PLResult("refName",    PLResultKind.Text,      Description = "展開した参照先の手本の名前")]
     [PLResult("inserted",   PLResultKind.Integer,   Description = "入れ替わった段の数")]
@@ -486,7 +486,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>手本を先頭から流す。</summary>
-    [PLCommand(Description = "手本を先頭の段から順に実行する。指示（Instruction）・確認（Observe）の段と、失敗した段で止まる。注意（Note）の段は止まらずに読み飛ばし、別の手本を呼ぶ段（ScenarioRef）では呼ばれた手本をその場で流す。止まったら stop と stopMessage を読み、continueScenario で続ける。@prev と @<段の名前> は、この流れの中で実行した段の結果だけを指す。途中の段だけを選んで実行する口は無い。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本を先頭の段から順に実行する。指示（Instruction）・確認（Observe）の段と、失敗した段で止まる。注意（Note）の段は止まらずに読み飛ばし、別の手本を呼ぶ段（ScenarioRef）では呼ばれた手本をその場で流す。止まったら stop と stopMessage を読み、continueScenario で続ける。@prev と @<段の名前> は、この流れの中で実行した段の結果だけを指す。途中の段だけを選んで実行する口は無い。")]
     [PLResult("rootName",         PLResultKind.Text,      Description = "流している手本の名前")]
     [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none（段数の上限で一旦返した）/ judgment（指示・確認の段）/ failed（段が失敗）/ finished（最後まで終わった）")]
     [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった段の内容、または失敗の理由")]
@@ -515,7 +515,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>止まった所から続ける。</summary>
-    [PLCommand(Description = "runScenario で止まった所から続ける。指示・確認の段で止まっていたときはその段を越えて進み、失敗で止まっていたときは同じ段をやり直す。argKeys / argValues を渡すと、次に実行するコマンドの段の値だけを差し替える（指示の段で決めた値を渡すため）。戻り値は runScenario と同じ。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "runScenario で止まった所から続ける。指示・確認の段で止まっていたときはその段を越えて進み、失敗で止まっていたときは同じ段をやり直す。argKeys / argValues を渡すと、次に実行するコマンドの段の値だけを差し替える（指示の段で決めた値を渡すため）。戻り値は runScenario と同じ。")]
     [PLResult("rootName",         PLResultKind.Text,      Description = "流している手本の名前")]
     [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / finished")]
     [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった段の内容、または失敗の理由")]
@@ -549,7 +549,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>流している手本の状態を返す。</summary>
-    [PLCommand(Description = "流している手本の状態を返す。戻り値は runScenario と同じで、log にはこの流れの記録がすべて入る。流していなければ rootName が空。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "流している手本の状態を返す。戻り値は runScenario と同じで、log にはこの流れの記録がすべて入る。流していなければ rootName が空。")]
     [PLResult("rootName",         PLResultKind.Text,      Description = "流している手本の名前。流していなければ空")]
     [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / finished")]
     [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった段の内容、または失敗の理由")]
@@ -570,7 +570,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>流すのをやめる。</summary>
-    [PLCommand(Description = "流している手本をやめる。それまでに実行した段の結果はモデルに残る（元に戻すのは Undo）。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "流している手本をやめる。それまでに実行した段の結果はモデルに残る（元に戻すのは Undo）。")]
     [PLResult("stopped", PLResultKind.Flag, Description = "流していたものをやめたか")]
     [PLResult("rootName",         PLResultKind.Text,    Description = "やめた流しの先頭の手本")]
     [PLResult("scenario",         PLResultKind.Text,    Description = "やめたときに居た手本（呼ばれた手本の中ならその名前）")]
@@ -590,7 +590,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>実行したコマンドを手本の下書きとして控え始める。</summary>
-    [PLCommand(Description = "実行したコマンドを手本の下書きとして控え始める。止めるまでに実行したコマンド（パネル・MCP・UI のどこから撃ったものでも）を、計算済みの引数ごと 1 段ずつ控える。検証パネルを流すと、段名・UI での手順・理由も Instruction / Note として入る。手本コマンドと UI 自動操作は控えない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "実行したコマンドを手本の下書きとして控え始める。止めるまでに実行したコマンド（パネル・MCP・UI のどこから撃ったものでも）を、計算済みの引数ごと 1 段ずつ控える。検証パネルを流すと、段名・UI での手順・理由も Instruction / Note として入る。手本コマンドと UI 自動操作は控えない。")]
     [PLResult("recording", PLResultKind.Flag, Description = "記録中になったか")]
     public sealed class StartScenarioRecordingCommand : PanelCommand
     {
@@ -601,7 +601,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>記録を止め、控えたものを手本として登録する。</summary>
-    [PLCommand(Description = "記録を止め、控えた段を手本として登録する。discard を立てると登録せずに捨てる。登録に失敗したときは記録を続けるので、名前を変えて止め直せる。登録したら queryScenarioAudit で、焼いたままの索引が残っていないか確かめること。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "記録を止め、控えた段を手本として登録する。discard を立てると登録せずに捨てる。登録に失敗したときは記録を続けるので、名前を変えて止め直せる。登録したら queryScenarioAudit で、焼いたままの索引が残っていないか確かめること。")]
     [PLResult("name",      PLResultKind.Text,    Description = "登録した手本の名前。捨てたときは空")]
     [PLResult("steps",     PLResultKind.Integer, Description = "登録した段の数")]
     [PLResult("count",     PLResultKind.Integer, Description = "登録後の手本の数")]
@@ -636,7 +636,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>手本の段を点検する。</summary>
-    [PLCommand(Description = "手本の段を点検し、撃ち直すと壊れる箇所を返す。literalMeshIndex は IsMeshRef の印が付いた引数に索引が直接入っている段（名前から引く照会と @ 参照に置き換える）、unknownAction は action を解決できない段、badRef / missingRef / forwardRef は @<段の名前>.<キー> の書き方違い・存在しない段・後ろの段を指している参照。頂点や面の番号は印が無いので点検の対象外。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "手本の段を点検し、撃ち直すと壊れる箇所を返す。literalMeshIndex は IsMeshRef の印が付いた引数に索引が直接入っている段（名前から引く照会と @ 参照に置き換える）、unknownAction は action を解決できない段、badRef / missingRef / forwardRef は @<段の名前>.<キー> の書き方違い・存在しない段・後ろの段を指している参照。頂点や面の番号は印が無いので点検の対象外。")]
     [PLResult("name",       PLResultKind.Text,      Description = "手本の名前")]
     [PLResult("issues",     PLResultKind.Integer,   Description = "指摘の数")]
     [PLResult("elementIds", PLResultKind.TextArray, Description = "指摘した段の名前", Optional = true)]

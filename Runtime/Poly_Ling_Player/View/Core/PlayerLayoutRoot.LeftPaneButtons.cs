@@ -128,6 +128,7 @@ namespace Poly_Ling.Player
         public Button        VertexDissolveBtn          { get; private set; }
         public Button        HoleRingCountBtn           { get; private set; }
         public Button        EdgeBridgeBtn              { get; private set; }
+        public Button        BillboardProfileBtn        { get; private set; }
         public Button        Tri4To1Btn                 { get; private set; }
         public Button        FaceMergeBtn               { get; private set; }
         public Button        Quad4To1Btn                { get; private set; }
@@ -497,6 +498,11 @@ namespace Poly_Ling.Player
             // 辺群ブリッジ。穴（閉じた縁）に限らず、拾った 2 か所の辺群の間に面を張る。
             EdgeBridgeBtn    = MakeBtn("辺群ブリッジ");   EdgeBridgeBtn.style.flexGrow    = 1;
             rowHoleRing.Add(HoleRingCountBtn); rowHoleRing.Add(EdgeBridgeBtn); foTopology.Add(rowHoleRing);
+
+            // 線分群の編集（ビルボード上の 2D プロファイル）。
+            var rowLineGroup = new VisualElement(); rowLineGroup.style.flexDirection = FlexDirection.Row; rowLineGroup.style.marginBottom = 2;
+            BillboardProfileBtn = MakeBtn("線分群の編集"); BillboardProfileBtn.style.flexGrow = 1;
+            rowLineGroup.Add(BillboardProfileBtn); foTopology.Add(rowLineGroup);
 
             // ブーリアン。2 つのメッシュから新しい面構成を作り直す操作なので
             // UV・マテリアルではなくトポロジー編集に置く。

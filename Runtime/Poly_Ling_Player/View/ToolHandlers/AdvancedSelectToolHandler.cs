@@ -14,6 +14,7 @@ using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("advancedSelect", Description = "高度選択（確定は AdvancedSelectCommand）")]
     public class AdvancedSelectToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -70,6 +71,7 @@ namespace Poly_Ling.Player
         // モード設定公開
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "高度選択のモード")]
         public AdvancedSelectMode Mode
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.Mode ?? AdvancedSelectMode.Connected;
@@ -81,6 +83,7 @@ namespace Poly_Ling.Player
             }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "AdvancedSelectSettings.AddToSelection")]
         public bool AddToSelection
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.AddToSelection ?? false;
@@ -88,6 +91,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>EdgeLoop モードの方向しきい値（0〜1）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeLoop モードの方向しきい値（0〜1）")]
         public float EdgeLoopThreshold
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.EdgeLoopThreshold ?? 0.5f;
@@ -95,6 +99,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>UvNormalCount モードのしきい値。この値より大きい頂点を選ぶ。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "UvNormalCount モードのしきい値。この値より大きい頂点を選ぶ")]
         public int UvNormalCountThreshold
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.UvNormalCountThreshold ?? 0;
@@ -102,6 +107,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>NearAxis モードのしきい値。軸に対応する平面までの距離がこの値未満の頂点を選ぶ。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "NearAxis モードのしきい値。軸に対応する平面までの距離がこの値未満の頂点を選ぶ")]
         public float AxisDistanceThreshold
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.AxisDistanceThreshold ?? 0.00001f;
@@ -109,6 +115,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>NearAxis モードの軸。X なら |Position.x| を見る。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "NearAxis モードの軸。X なら |Position.x| を見る")]
         public SymmetryAxis AxisKind
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.AxisKind ?? SymmetryAxis.X;
@@ -116,6 +123,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>属性選択を現在の選択頂点の中だけに限定するか。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "属性選択を現在の選択頂点の中だけに限定するか")]
         public bool LimitToCurrentSelection
         {
             get => ((AdvancedSelectSettings)_tool.Settings)?.LimitToCurrentSelection ?? false;
@@ -123,7 +131,11 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>現在のモードがボタン実行型（クリック不要）か。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "現在のモードがボタン実行型（クリック不要）か")]
         public bool IsAttributeMode => AdvancedSelectTool.IsAttributeMode(Mode);
+
+        [Poly_Ling.Data.PLToolState(Description = "ShortestPath モードで登録されている始点頂点。未登録は -1")]
+        public int ShortestPathFirstVertex => _tool.GetShortestPathFirstVertex();
 
         /// <summary>
         /// ShortestPath モードで登録されている始点頂点インデックスを返す。未登録は -1。
@@ -135,12 +147,14 @@ namespace Poly_Ling.Player
         /// ShortestPath モードの始点をクリアする。
         /// エディタ版 ClearFirstPoint ボタンに対応。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "ShortestPath の始点登録を消す")]
         public void ClearShortestPathFirst() => _tool.Reset();
 
         /// <summary>
         /// すべての選択（頂点/辺/面/線）を解除する。
         /// 進行中の ShortestPath 始点等もリセットする。全モード共通のクリアボタン用。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択を全解除し、ShortestPath の始点も消す")]
         public void ClearAllSelection()
         {
             _selectionOps?.ClearAll();     // SelectionState 全解除 + 描画通知（内部 OnSelectionChanged）
@@ -246,6 +260,7 @@ namespace Poly_Ling.Player
         /// BoundaryEdgeInSelection モードの選択を実行する（パネルの「実行」ボタン）。
         /// クリック非依存のため GPU ホバーは参照しない。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択範囲の中の境界辺を選ぶ（選択の Undo を積む）")]
         public void ExecuteBoundaryEdgeInSelection()
         {
             var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
@@ -398,6 +413,7 @@ namespace Poly_Ling.Player
         /// 現在の選択を反転する（パネルの「現在の選択を反転」ボタン）。
         /// SelectionState.Mode で有効なビットのみ対象。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択を反転する（選択の Undo を積む）")]
         public void InvertSelection()
         {
             var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);

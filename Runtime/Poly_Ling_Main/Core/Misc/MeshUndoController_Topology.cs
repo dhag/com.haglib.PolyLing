@@ -222,11 +222,12 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// 面追加操作を記録（頂点と面をまとめて1つの操作として）
         /// </summary>
-        public void RecordAddFaceOperation(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices)
+        public void RecordAddFaceOperation(Face face, int faceIndex, List<(int Index, Vertex Vertex)> addedVertices,
+            List<LineGroup> lineGroupsBefore = null, List<LineGroup> lineGroupsAfter = null)
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             
-            var record = new AddFaceOperationRecord(face, faceIndex, addedVertices);
+            var record = new AddFaceOperationRecord(face, faceIndex, addedVertices, lineGroupsBefore, lineGroupsAfter);
             string desc;
             if (face != null)
             {

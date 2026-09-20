@@ -37,7 +37,6 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<ModelContext>        GetModel;
-        public Func<MeshUndoController>  GetUndoController;
         public Action                    OnRepaint;
         public Action<Vector3>           OnFocusCamera;
         public Func<int>                 GetModelIndex;

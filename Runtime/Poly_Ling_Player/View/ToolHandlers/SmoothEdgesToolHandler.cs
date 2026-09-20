@@ -18,6 +18,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("smoothEdges", Description = "SmoothEdgesTool（確定は SmoothEdgesCommand）")]
     public class SmoothEdgesToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -40,20 +41,32 @@ namespace Poly_Ling.Player
         // 設定公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "SmoothEdgesTool.Strength")]
         public float Strength     { get => _tool.Strength;     set => _tool.Strength     = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "SmoothEdgesTool.Iterations")]
         public int   Iterations   { get => _tool.Iterations;   set => _tool.Iterations   = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "SmoothEdgesTool.FixEndpoints")]
         public bool  FixEndpoints { get => _tool.FixEndpoints; set => _tool.FixEndpoints = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "SmoothEdgesTool.LockX")]
         public bool  LockX        { get => _tool.LockX;        set => _tool.LockX        = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "SmoothEdgesTool.LockY")]
         public bool  LockY        { get => _tool.LockY;        set => _tool.LockY        = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "SmoothEdgesTool.LockZ")]
         public bool  LockZ        { get => _tool.LockZ;        set => _tool.LockZ        = value; }
 
+        [Poly_Ling.Data.PLToolState(Description = "SmoothEdgesTool.SegmentCount")]
         public int  SegmentCount       => _tool.SegmentCount;
+        [Poly_Ling.Data.PLToolState(Description = "SmoothEdgesTool.ChainVertexCount")]
         public int  ChainVertexCount   => _tool.ChainVertexCount;
+        [Poly_Ling.Data.PLToolState(Description = "SmoothEdgesTool.EndpointCount")]
         public int  EndpointCount      => _tool.EndpointCount;
+        [Poly_Ling.Data.PLToolState(Description = "SmoothEdgesTool.MovableVertexCount")]
         public int  MovableVertexCount => _tool.MovableVertexCount;
+        [Poly_Ling.Data.PLToolState(Description = "SmoothEdgesTool.StatsCalculated")]
         public bool StatsCalculated    => _tool.StatsCalculated;
 
         /// <summary>統計だけ再計算する（選択変更後のパネル更新用）。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "統計（SegmentCount ほか）を再計算する")]
         public void RefreshStats() => _tool.RecalculateStats();
 
         /// <summary>

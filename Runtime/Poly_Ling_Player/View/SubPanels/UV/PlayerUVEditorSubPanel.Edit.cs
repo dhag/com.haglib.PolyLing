@@ -24,6 +24,9 @@ namespace Poly_Ling.Player
         {
             _dragStartUVs.Clear();
             _uvMagnetW.Clear();
+            // ドラッグ中は UV を直接書き換えるので、始める前に担当者判定とロック取得（H-2）。
+            // 止められたら記録を空のままにし、以後のドラッグで何も動かさない。
+            if (!LockCurrentMeshForPreview()) return;
             var mo = GetMeshObject();
             if (mo == null) return;
             var selPos = new List<Vector2>();
@@ -86,6 +89,12 @@ namespace Poly_Ling.Player
 
         private void EndUVMove()
         {
+            try { EndUVMoveCore(); }
+            finally { UnlockCurrentMeshAfterPreview(); }
+        }
+
+        private void EndUVMoveCore()
+        {
             var mo = GetMeshObject();
             if (mo == null || _dragStartUVs.Count == 0) { _dragStartUVs.Clear(); return; }
 
@@ -124,8 +133,8 @@ namespace Poly_Ling.Player
                     v.UVs[id.UVIndex] = kv.Value;
             }
 
-            // コマンド送信
-            if (_panelContext != null)
+            // コマンド送信（本体も SetCommandContext を渡すので、直接記録する経路は持たない。
+            // 操作経路統一計画.md J）
             {
                 var mc = GetMeshContext();
                 var model = GetModel?.Invoke();
@@ -142,21 +151,6 @@ namespace Poly_Ling.Player
                 }
                 SendCmd(new ApplyUVChangesCommand(modelIdx, masterIdx,
                     viArr, uiArr, beforeArr, afterUVs, $"UV Move {keys.Count}V"));
-            }
-            else
-            {
-                // フォールバック（PanelContext 未設定時）
-                RecordTopologyChange($"UV Move {keys.Count}V", obj =>
-                {
-                    for (int i = 0; i < keys.Count; i++)
-                    {
-                        var id = keys[i];
-                        if (id.VertexIndex < 0 || id.VertexIndex >= obj.VertexCount) continue;
-                        var v = obj.Vertices[id.VertexIndex];
-                        if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
-                            v.UVs[id.UVIndex] = afterUVs[i];
-                    }
-                });
             }
 
             SetStatus($"UV {keys.Count}頂点を移動");
@@ -180,6 +174,8 @@ namespace Poly_Ling.Player
             _uvHandleTotalDeg  = 0f;
 
             _uvHandleStart.Clear(); _uvHandleW.Clear();
+            // ハンドル操作中も UV を直接書き換えるので、始める前に担当者判定とロック取得（H-2）。
+            if (!LockCurrentMeshForPreview()) return;
             var mo = GetMeshObject();
             if (mo == null) return;
 
@@ -251,8 +247,48 @@ namespace Poly_Ling.Player
             }
         }
 
-        /// <summary>ハンドルドラッグ終了：before/after をコマンド（またはUndo記録）でコミット。</summary>
+        /// <summary>ハンドルドラッグ終了：before/after をコマンドでコミット。</summary>
         private void EndUVHandle()
+        {
+            try { EndUVHandleCore(); }
+            finally { UnlockCurrentMeshAfterPreview(); }
+        }
+
+        // ================================================================
+        // プレビュー中のロック（操作経路統一計画.md H-2）
+        // ================================================================
+
+        /// <summary>ドラッグを始める前に、対象の担当者判定とロック取得を行う。null なら常に許可。</summary>
+        public Func<IList<int>, bool> TryLockForPreview;
+
+        /// <summary>ドラッグが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action UnlockAfterPreview;
+
+        private bool _previewLocked;
+
+        private bool LockCurrentMeshForPreview()
+        {
+            if (_previewLocked || TryLockForPreview == null) return true;
+            var mc    = GetMeshContext();
+            var model = GetModel?.Invoke();
+            if (mc == null || model == null) return true;
+            if (!TryLockForPreview(new List<int> { model.IndexOf(mc) }))
+            {
+                SetStatus("他の操作者が作業中のため編集できません");
+                return false;
+            }
+            _previewLocked = true;
+            return true;
+        }
+
+        private void UnlockCurrentMeshAfterPreview()
+        {
+            if (!_previewLocked) return;
+            _previewLocked = false;
+            UnlockAfterPreview?.Invoke();
+        }
+
+        private void EndUVHandleCore()
         {
             _uvHandle.Active = Canvas2DHandle.HandleType.None;
             _uvHandleType    = Canvas2DHandle.HandleType.None;
@@ -291,7 +327,7 @@ namespace Poly_Ling.Player
                 if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count) v.UVs[id.UVIndex] = kv.Value;
             }
 
-            if (_panelContext != null)
+            // 本体も SetCommandContext を渡すので、直接記録する経路は持たない（操作経路統一計画.md J）。
             {
                 var mc = GetMeshContext();
                 var model = GetModel?.Invoke();
@@ -308,19 +344,6 @@ namespace Poly_Ling.Player
                 }
                 SendCmd(new ApplyUVChangesCommand(modelIdx, masterIdx,
                     viArr, uiArr, beforeArr, afterUVs, "UV 回転/拡大縮小"));
-            }
-            else
-            {
-                RecordTopologyChange("UV 回転/拡大縮小", obj =>
-                {
-                    for (int i = 0; i < keys.Count; i++)
-                    {
-                        var id = keys[i];
-                        if (id.VertexIndex < 0 || id.VertexIndex >= obj.VertexCount) continue;
-                        var v = obj.Vertices[id.VertexIndex];
-                        if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count) v.UVs[id.UVIndex] = afterUVs[i];
-                    }
-                });
             }
 
             SetStatus($"UV {keys.Count}頂点を回転/拡大縮小");
@@ -448,7 +471,7 @@ namespace Poly_Ling.Player
             }
             targets = new HashSet<UVVertexId>(weights.Keys);
 
-            if (_panelContext != null)
+            // 本体も SetCommandContext を渡すので、直接記録する経路は持たない（操作経路統一計画.md J）。
             {
                 // コマンド経由：before/after を収集してから送信
                 var mc    = GetMeshContext();
@@ -480,11 +503,6 @@ namespace Poly_Ling.Player
 
                 SendCmd(new ApplyUVChangesCommand(modelIdx, masterIdx,
                     viArr, uiArr, beforeArr, afterArr, "UV Transform"));
-            }
-            else
-            {
-                RecordTopologyChange("UV Transform", obj =>
-                    ApplyUVTransform(obj, weights, mu, mv, su, sv, deg, pivot, saDeg));
             }
 
             SetStatus("UV変換を適用しました");
@@ -642,21 +660,6 @@ namespace Poly_Ling.Player
             _anchorManual = true;
             RefreshAnchorFields();
             _canvas?.MarkDirtyRepaint();
-        }
-
-        private static void ApplyUVTransform(MeshObject mo, Dictionary<UVVertexId, float> weights,
-            float mu, float mv, float su, float sv, float deg, Vector2 pivot, float saDeg)
-        {
-            float saRad = saDeg * Mathf.Deg2Rad;
-            float saCos = Mathf.Cos(saRad), saSin = Mathf.Sin(saRad);
-            foreach (var kv in weights)
-            {
-                var id = kv.Key;
-                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
-                var v = mo.Vertices[id.VertexIndex];
-                if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
-                v.UVs[id.UVIndex] = CalcTransformedUV(v.UVs[id.UVIndex], pivot, mu, mv, su, sv, deg, saCos, saSin, kv.Value);
-            }
         }
 
         /// <summary>before/after を計算するだけで MeshObject を変更しない。コマンド化用。</summary>

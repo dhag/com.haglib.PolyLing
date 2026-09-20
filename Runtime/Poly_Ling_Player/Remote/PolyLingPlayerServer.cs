@@ -59,7 +59,7 @@ namespace Poly_Ling.Player
             int port,
             bool autoStart,
             System.Func<ToolContext> getToolContext,
-            System.Func<PanelCommand, CommandResult> dispatchCommand,
+            System.Func<PanelCommand, CommandActor, CommandResult> dispatchCommand,
             System.Action requestPanelRefresh = null,
             string hostUserName = null)
         {

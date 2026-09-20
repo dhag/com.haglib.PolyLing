@@ -288,6 +288,74 @@ namespace Poly_Ling.Data
                 foreach (var n in unmarked) sb.Append('\n').Append("  ").Append(n);
             }
 
+            // 【参考】書き込み範囲（PLCommand.Writes）の未宣言。担当者判定の対象解決に使う。
+            // 全コマンドへの宣言が済むまでは完了条件に入れない（操作経路統一計画.md 10.5）。
+            var noWrites = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+            {
+                var a = t.GetCustomAttribute<PLCommandAttribute>(inherit: false);
+                if (a == null || a.Writes == PLWriteScope.Unspecified) noWrites.Add(t.Name);
+            }
+
+            sb.Append('\n')
+              .Append("[参考] 書き込み範囲（PLCommand.Writes）が未宣言のコマンド ").Append(noWrites.Count)
+              .Append("（完了条件ではない）");
+            if (noWrites.Count > 0)
+            {
+                sb.Append('\n').Append("── Writes が Unspecified ──");
+                foreach (var n in noWrites) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            // 【参考】IsMeshRef の付いた引数の、書き込み先／読むだけ（MeshRefAccess）の未指定。
+            var noAccess = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+                foreach (var k in PanelCommandFactory.MeshRefKeys(t))
+                    if (k.Access == PLMeshRefAccess.Unspecified) noAccess.Add(t.Name + "." + k.Key);
+
+            sb.Append('\n')
+              .Append("[参考] 書き込み先／読むだけ（PLParam.MeshRefAccess）が未指定の IsMeshRef 引数 ").Append(noAccess.Count)
+              .Append("（完了条件ではない）");
+            if (noAccess.Count > 0)
+            {
+                sb.Append('\n').Append("── MeshRefAccess が Unspecified ──");
+                foreach (var n in noAccess) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            // 書き込み条件（PLParam.WriteWhen）の書き間違い。担当者判定がこれを読むので完了条件に入れる。
+            var badWhen = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+                badWhen.AddRange(PanelCommandFactory.InvalidWriteWhens(t));
+
+            sb.Append('\n')
+              .Append("[PanelCommandFactoryAudit] 書き込み条件（PLParam.WriteWhen）の不正 ").Append(badWhen.Count);
+            if (badWhen.Count > 0)
+            {
+                sb.Append('\n').Append("── WriteWhen の不正 ──");
+                foreach (var n in badWhen) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            // ツールの公開層（PLTool）。ツール名の重複と、文字列にできない型のパラメータ・概要を数える。
+            // 完了条件に入れる（重複・扱えない型があると queryToolState／setToolParam が正しく動かない）。
+            var toolIds  = new Dictionary<string, string>(StringComparer.Ordinal);
+            var toolDups = new List<string>();
+            var toolBad  = new List<string>();
+            int toolCount = 0;
+            foreach (var t in typeof(PLToolAttribute).Assembly.GetTypes())
+            {
+                string id = PLToolSurface.ToolIdOf(t);
+                if (string.IsNullOrEmpty(id)) continue;
+                toolCount++;
+                if (toolIds.TryGetValue(id, out string other)) toolDups.Add($"{id}：{other} と {t.Name}");
+                else toolIds[id] = t.Name;
+                toolBad.AddRange(PLToolSurface.Unformattable(t));
+            }
+            sb.Append('\n')
+              .Append("[PanelCommandFactoryAudit] ツール（PLTool） ").Append(toolCount)
+              .Append("、名前の重複 ").Append(toolDups.Count)
+              .Append("、扱えない型 ").Append(toolBad.Count);
+            foreach (var n in toolDups) sb.Append('\n').Append("  重複: ").Append(n);
+            foreach (var n in toolBad)  sb.Append('\n').Append("  型: ").Append(n);
+
             if (skipped > 0)
             {
                 sb.Append('\n').Append("── スキーマに出せないコマンド ──");

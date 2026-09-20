@@ -7,12 +7,15 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerAddFaceSubPanel
     {
-        public Func<AddFaceToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "addFace";
 
         // ── 追加先オブジェクト（単一選択） ──
         /// <summary>候補一覧。(表示名, MeshContextList インデックス) を並び順で返す。</summary>
@@ -41,10 +44,16 @@ namespace Poly_Ling.Player
         private VisualElement _placedList;
         [UiControl("continuousLine", Reveal = nameof(RevealContinuous), Description = "線を続けて引く（Mode が Line のときだけ表示）")]
         private Toggle        _continuousToggle;
+        [UiControl("extendLineGroup", Reveal = nameof(RevealContinuous), Description = "描き始めが既存の線分群の端点なら、その群を伸ばす（OFF なら新しい群を作り始点を親にする。Mode が Line のときだけ表示）")]
+        private Toggle        _extendLineGroupToggle;
         [UiControl(Ignore = true)]
         private VisualElement _continuousRow;
         [UiControl("snapUnselected", Description = "非選択オブジェクトの頂点にも吸着する")]
         private Toggle        _snapUnselectedToggle;
+        [UiControl("snapBones", Description = "ボーンの位置にも吸着する（頂点に当たらなかったときだけ）")]
+        private Toggle        _snapBonesToggle;
+        [UiControl("snapObjectOrigins", Description = "描画オブジェクトの原点にも吸着する（頂点に当たらなかったときだけ）")]
+        private Toggle        _snapOriginsToggle;
         [UiControl("targetMesh", Description = "面を追加する先のオブジェクト")]
         private DropdownField _meshDD;
         [UiControl("material", Description = "追加する面のマテリアル（マテリアルリストのカレントと連動）")]
@@ -81,8 +90,8 @@ namespace Poly_Ling.Player
             modeDD.RegisterValueChangedCallback(e =>
             {
                 int idx = modeChoices.IndexOf(e.newValue);
-                var h = GetH(); if (h == null || idx < 0) return;
-                h.ModePublic = modeValues[idx];
+                if (Surface == null || idx < 0) return;
+                Surface.Set(Tool, "modePublic", modeValues[idx]);
                 UpdateConditionals();
             });
             _root.Add(modeDD);
@@ -116,8 +125,15 @@ namespace Poly_Ling.Player
             _continuousRow = new VisualElement();
             _continuousToggle = new Toggle("Continuous Line") { value = true };
             _continuousToggle.style.color = new StyleColor(Color.white);
-            _continuousToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.ContinuousLinePublic = e.newValue; });
+            _continuousToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "continuousLinePublic", e.newValue));
             _continuousRow.Add(_continuousToggle);
+
+            // 線分群を伸ばすか（既定 OFF = 新しい群を作り、始点を親にする）
+            _extendLineGroupToggle = new Toggle("既存の線分群を伸ばす") { value = false };
+            _extendLineGroupToggle.style.color = new StyleColor(Color.white);
+            _extendLineGroupToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "extendLineGroupPublic", e.newValue));
+            _continuousRow.Add(_extendLineGroupToggle);
+
             _root.Add(_continuousRow);
 
             // 非選択オブジェクトへの吸着
@@ -127,9 +143,26 @@ namespace Poly_Ling.Player
             _snapUnselectedToggle.style.color = new StyleColor(Color.white);
             _snapUnselectedToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH(); if (h != null) h.SnapToUnselectedObjects = e.newValue;
+                Surface?.Set(Tool, "snapToUnselectedObjects", e.newValue);
             });
             _root.Add(_snapUnselectedToggle);
+
+            // ボーン位置・描画オブジェクト原点への吸着（頂点に当たらなかったときだけ）
+            _snapBonesToggle = new Toggle("ボーンにも吸着") { value = false };
+            _snapBonesToggle.style.color = new StyleColor(Color.white);
+            _snapBonesToggle.RegisterValueChangedCallback(e =>
+            {
+                Surface?.Set(Tool, "snapToBones", e.newValue);
+            });
+            _root.Add(_snapBonesToggle);
+
+            _snapOriginsToggle = new Toggle("オブジェクト原点にも吸着") { value = false };
+            _snapOriginsToggle.style.color = new StyleColor(Color.white);
+            _snapOriginsToggle.RegisterValueChangedCallback(e =>
+            {
+                Surface?.Set(Tool, "snapToObjectOrigins", e.newValue);
+            });
+            _root.Add(_snapOriginsToggle);
 
             // 進捗
             _progressLabel = InfoLabel(); _root.Add(_progressLabel);
@@ -142,7 +175,7 @@ namespace Poly_Ling.Player
             _root.Add(_placedList);
 
             // Clear ボタン
-            var clearBtn = new Button(() => { GetH()?.ClearPointsPublic(); Refresh(); }) { text = "Clear Points" };
+            var clearBtn = new Button(() => { Surface?.Invoke(Tool, "clearPointsPublic"); Refresh(); }) { text = "Clear Points" };
             clearBtn.style.marginTop = 3;
             _root.Add(clearBtn);
             _clearPointsBtn = clearBtn;
@@ -161,19 +194,28 @@ namespace Poly_Ling.Player
         {
             RefreshDropdowns();
 
-            var h = GetH(); if (h == null) return;
-            _progressLabel.text = $"Points: {h.PlacedPointCount} / {h.RequiredPointsPublic}";
-            if (_snapUnselectedToggle != null
-                && _snapUnselectedToggle.value != h.SnapToUnselectedObjects)
-                _snapUnselectedToggle.SetValueWithoutNotify(h.SnapToUnselectedObjects);
+            if (Surface == null) return;
+            _progressLabel.text = $"Points: {Surface.GetInt(Tool, "placedPointCount")} / {Surface.GetInt(Tool, "requiredPointsPublic")}";
+            bool snapUnsel  = Surface.GetBool(Tool, "snapToUnselectedObjects");
+            bool extend     = Surface.GetBool(Tool, "extendLineGroupPublic");
+            bool snapBones  = Surface.GetBool(Tool, "snapToBones");
+            bool snapOrigin = Surface.GetBool(Tool, "snapToObjectOrigins");
+            if (_snapUnselectedToggle != null && _snapUnselectedToggle.value != snapUnsel)
+                _snapUnselectedToggle.SetValueWithoutNotify(snapUnsel);
+            if (_extendLineGroupToggle != null && _extendLineGroupToggle.value != extend)
+                _extendLineGroupToggle.SetValueWithoutNotify(extend);
+            if (_snapBonesToggle != null && _snapBonesToggle.value != snapBones)
+                _snapBonesToggle.SetValueWithoutNotify(snapBones);
+            if (_snapOriginsToggle != null && _snapOriginsToggle.value != snapOrigin)
+                _snapOriginsToggle.SetValueWithoutNotify(snapOrigin);
             UpdateConditionals();
 
             // 配置済み点リスト更新
             if (_placedList != null)
             {
                 _placedList.Clear();
-                var labels = h.GetPointLabels();
-                if (labels.Count > 0)
+                var labels = Surface.Get(Tool, "pointLabels", System.Array.Empty<string>());
+                if (labels.Length > 0)
                 {
                     if (_placedHeader != null)
                     {
@@ -240,8 +282,8 @@ namespace Poly_Ling.Player
 
         private void UpdateConditionals()
         {
-            var h = GetH();
-            bool isLine = h?.ModePublic == AddFaceMode.Line;
+            bool isLine = Surface != null
+                && Surface.Get(Tool, "modePublic", AddFaceMode.Quad) == AddFaceMode.Line;
             if (_continuousRow != null)
                 _continuousRow.style.display = isLine ? DisplayStyle.Flex : DisplayStyle.None;
         }

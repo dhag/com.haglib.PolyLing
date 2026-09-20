@@ -38,7 +38,7 @@
 namespace Poly_Ling.Data
 {
     /// <summary>PMX ファイルの中身を一覧する。モデルは変えない。</summary>
-    [PLCommand(Description = "PMX ファイルを読んで、取り込めるオブジェクトを一覧する。モデルは変えない。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "PMX ファイルを読んで、取り込めるオブジェクトを一覧する。モデルは変えない。")]
     [PLResult("count",        PLResultKind.Integer,      Description = "取り込めるオブジェクトの数")]
     [PLResult("names",        PLResultKind.TextArray,    Description = "オブジェクトの名前。並びが pmxIndices の番号になる", Optional = true)]
     [PLResult("vertexCounts", PLResultKind.IntegerArray, Description = "PMX 側の頂点数。names と同じ並び", Optional = true)]
@@ -69,7 +69,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>名前と頂点数でモデルと PMX を組む。モデルは変えない。</summary>
-    [PLCommand(Description = "名前の完全一致を先に見て、外れたら頂点数の一致で、モデルの描画オブジェクトと PMX のオブジェクトを組む。組を返すだけでモデルは変えない。返った組を必ず見ること。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "名前の完全一致を先に見て、外れたら頂点数の一致で、モデルの描画オブジェクトと PMX のオブジェクトを組む。組を返すだけでモデルは変えない。返った組を必ず見ること。")]
     [PLResult("pairs",               PLResultKind.Integer,      Description = "組めた数")]
     [PLResult("unmatched",           PLResultKind.Integer,      Description = "組めなかったモデル側オブジェクトの数。触らないのが正しい")]
     [PLResult("mismatchedCounts",    PLResultKind.Integer,      Description = "組んだが頂点数が食い違っている組の数。0 でないなら組み直すこと")]
@@ -106,7 +106,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定した組で、PMX の頂点属性をモデルへ差し替える。</summary>
-    [PLCommand(Description = "指定した組で、PMX の頂点位置・UV・ボーンウェイトをモデルの描画オブジェクトへ差し替える。頂点数も索引も変わらない。組は modelIndices と pmxIndices の同じ位置どうし。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定した組で、PMX の頂点位置・UV・ボーンウェイトをモデルの描画オブジェクトへ差し替える。頂点数も索引も変わらない。組は modelIndices と pmxIndices の同じ位置どうし。")]
     [PLResult("pairs",       PLResultKind.Integer, Description = "転送した組の数")]
     [PLResult("transferred", PLResultKind.Integer, Description = "書き換えた頂点の数")]
     public class ImportPmxVertexAttributesCommand : PanelCommand

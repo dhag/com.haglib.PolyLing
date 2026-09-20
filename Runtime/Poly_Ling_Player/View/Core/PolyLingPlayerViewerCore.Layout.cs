@@ -151,6 +151,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.HoleRingCountBtn.clicked    += ShowHoleRingCountPanel;
             if (_layoutRoot.EdgeBridgeBtn != null)
                 _layoutRoot.EdgeBridgeBtn.clicked       += ShowEdgeBridgePanel;
+            if (_layoutRoot.BillboardProfileBtn != null)
+                _layoutRoot.BillboardProfileBtn.clicked += ShowBillboardProfilePanel;
             if (_layoutRoot.Tri4To1Btn != null)
                 _layoutRoot.Tri4To1Btn.clicked          += ShowTri4To1Panel;
             if (_layoutRoot.FaceMergeBtn != null)
@@ -332,7 +334,7 @@ namespace Poly_Ling.Player
                 if (_isSyncingNormalRecalcToggle) return;
                 var indices = CollectSelectedMeshIndices();
                 if (indices.Length == 0) return;
-                _commandDispatcher?.Dispatch(new SetPreserveNormalsCommand(
+                DispatchHost(new SetPreserveNormalsCommand(
                     ActiveProject?.CurrentModelIndex ?? 0, indices, !e.newValue));
             });
 
@@ -348,7 +350,7 @@ namespace Poly_Ling.Player
 
             _layoutRoot.RecalcNormalsBtn.clicked += () =>
             {
-                _commandDispatcher?.Dispatch(new NormalEditCommand(
+                DispatchHost(new NormalEditCommand(
                     ActiveProject?.CurrentModelIndex ?? 0,
                     NormalEditCommand.Op.RecalcByAngle,
                     NormalRecalcDefaultAngleDeg));
@@ -455,8 +457,8 @@ namespace Poly_Ling.Player
             _layoutRoot.ConnectBtn   .clicked += () => _client?.Connect();
             _layoutRoot.DisconnectBtn.clicked += () => _client?.Disconnect();
             _layoutRoot.FetchBtn     .clicked += FetchProject;
-            _layoutRoot.UndoBtn      .clicked += () => _commandDispatcher?.Dispatch(new PerformUndoCommand());
-            _layoutRoot.RedoBtn      .clicked += () => _commandDispatcher?.Dispatch(new PerformRedoCommand());
+            _layoutRoot.UndoBtn      .clicked += () => DispatchHost(new PerformUndoCommand());
+            _layoutRoot.RedoBtn      .clicked += () => DispatchHost(new PerformRedoCommand());
 
             _layoutRoot.PerspectivePanel.SetViewport(_viewportManager.PerspectiveViewport);
             _layoutRoot.TopPanel        .SetViewport(_viewportManager.TopViewport);

@@ -21,7 +21,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerPlaceObjectReshapeSubPanel
     {
-        public Func<PlaceObjectReshapeToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface         Surface;
+        private const string Tool = "placeObjectReshape";
         public Func<ProjectContext>                GetView;
         public Action<PanelCommand>                SendCommand;
 
@@ -128,17 +130,16 @@ namespace Poly_Ling.Player
             // ── 実行 ───────────────────────────────────────────────────
             _executeBtn = new Button(() =>
             {
-                var h = GetH();
-                if (h == null) return;
+                if (Surface == null) return;
 
                 // 原型は MeshObject ではなく材料の masterIndex 配列で送る。
                 // 受け口が同じ MeshObjectAppendOps.Combine で組み立てる。
                 SendCommand?.Invoke(new PlaceObjectReshapeCommand(
                     ModelIndex, SelectedMasterIndices(),
                     _srcPick.SelectedMasterIndices().ToArray(),
-                    h.Mode,
-                    lambda:     h.Lambda,
-                    targetText: h.TargetText));
+                    CurMode,
+                    lambda:     Surface.GetFloat(Tool, "lambda"),
+                    targetText: Surface.GetString(Tool, "targetText")));
                 Refresh();
             }) { text = "開始" };
             _executeBtn.style.height    = 30;
@@ -181,11 +182,7 @@ namespace Poly_Ling.Player
         {
             _targetField = new TextField("対象パーツID（空欄で全部）") { isDelayed = true, value = "" };
             _targetField.style.marginBottom = 3;
-            _targetField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h != null) h.TargetText = e.newValue;
-            });
+            _targetField.RegisterValueChangedCallback(e => Surface.Set(Tool, "targetText", e.newValue));
             _root.Add(_targetField);
 
             _root.Add(SmallHeader("「5,6,7」や「5-7」の形式。"));
@@ -195,12 +192,10 @@ namespace Poly_Ling.Player
             row.style.marginBottom  = 4;
             row.Add(_pickTargetFromSelectionBtn = SmallBtn("選択頂点から取得", () =>
             {
-                var h = GetH();
-                if (h == null) return;
+                if (Surface == null) return;
 
-                string text = h.CollectSelectedPartsIdText();
-                h.TargetText = text;
-                _targetField.SetValueWithoutNotify(text);
+                Surface.Invoke(Tool, "collectSelectedPartsIdIntoTarget");
+                _targetField.SetValueWithoutNotify(Surface.GetString(Tool, "targetText"));
                 RefreshExecuteEnabled();
             }));
             _root.Add(row);
@@ -215,8 +210,7 @@ namespace Poly_Ling.Player
             _modeGroup.style.marginBottom = 4;
             _modeGroup.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h != null) h.Mode = ToMode(e.newValue);
+                Surface.Set(Tool, "mode", ToMode(e.newValue));
                 ApplyModeVisibility(ToMode(e.newValue));
                 RefreshExecuteEnabled();
             });
@@ -236,11 +230,7 @@ namespace Poly_Ling.Player
                 value = PlaceObjectReshapeSettings.DefaultLambda
             };
             _lambdaField.style.marginBottom = 3;
-            _lambdaField.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h != null) h.Lambda = e.newValue;
-            });
+            _lambdaField.RegisterValueChangedCallback(e => Surface.Set(Tool, "lambda", e.newValue));
             _tpsBox.Add(_lambdaField);
         }
 
@@ -248,25 +238,29 @@ namespace Poly_Ling.Player
         // Refresh
         // ================================================================
 
+        /// <summary>今のモード（窓口から読む）。</summary>
+        private PlaceObjectReshapeMode CurMode
+            => Surface?.Get(Tool, "mode", default(PlaceObjectReshapeMode)) ?? default(PlaceObjectReshapeMode);
+
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            int targets = h.TargetMeshCount;
+            int targets = Surface.GetInt(Tool, "targetMeshCount");
             _targetLabel.text = targets > 0
                 ? $"対象オブジェクト: {targets} 個"
                 : "対象オブジェクトなし（オブジェクトを選択してください）";
 
-            _modeGroup?.SetValueWithoutNotify(ToIndex(h.Mode));
-            _lambdaField?.SetValueWithoutNotify(h.Lambda);
-            _targetField?.SetValueWithoutNotify(h.TargetText ?? "");
+            var mode = CurMode;
+            _modeGroup?.SetValueWithoutNotify(ToIndex(mode));
+            _lambdaField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "lambda"));
+            _targetField?.SetValueWithoutNotify(Surface.GetString(Tool, "targetText"));
 
             RefreshSourcePick();
 
-            if (_resultLabel != null) _resultLabel.text = h.LastResult ?? "";
+            if (_resultLabel != null) _resultLabel.text = Surface.GetString(Tool, "lastResult");
 
-            ApplyModeVisibility(h.Mode);
+            ApplyModeVisibility(mode);
             RefreshExecuteEnabled();
         }
 
@@ -356,10 +350,9 @@ namespace Poly_Ling.Player
         {
             if (_executeBtn == null) return;
 
-            var h = GetH();
-            if (h == null) { _executeBtn.SetEnabled(false); return; }
+            if (Surface == null) { _executeBtn.SetEnabled(false); return; }
 
-            bool can = h.TargetMeshCount > 0
+            bool can = Surface.GetInt(Tool, "targetMeshCount") > 0
                        && PrototypeVertexCount() >= PlaceObjectReshapeOps.MinimumVertexCount;
 
             _executeBtn.SetEnabled(can);

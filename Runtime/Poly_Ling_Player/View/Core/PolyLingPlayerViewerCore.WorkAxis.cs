@@ -70,17 +70,44 @@ namespace Poly_Ling.Player
             var model = ActiveProject?.CurrentModel;
             if (model == null) return null;
 
+            var h = _workAxisHandler;
+            bool toVertex = h?.SnapToVertex ?? false;
+            bool toBone   = h?.SnapToBone   ?? true;
+            bool toObject = h?.SnapToObject ?? false;
+
             // ---- 頂点（GPU 吸着ヒットテスト） ----
-            var elem = _viewportManager.GetSnapHoverElement(model);
-            if (elem.Kind == PlayerHoverKind.Vertex && elem.MeshIndex >= 0)
+            if (toVertex)
             {
-                var vmc = model.GetMeshContext(elem.MeshIndex);
-                if (vmc != null &&
-                    _viewportManager.TryGetVertexWorld(model, vmc, elem.VertexIndex, out var vw))
-                    return vw;
+                var elem = _viewportManager.GetSnapHoverElement(model);
+                if (elem.Kind == PlayerHoverKind.Vertex && elem.MeshIndex >= 0)
+                {
+                    var vmc = model.GetMeshContext(elem.MeshIndex);
+                    if (vmc != null &&
+                        _viewportManager.TryGetVertexWorld(model, vmc, elem.VertexIndex, out var vw))
+                        return vw;
+                }
             }
 
-            // ---- ボーン（CPU 最近傍） ----
+            // ---- ボーン／描画オブジェクトの原点 ----
+            return SnapPointWorld(imguiPos, toBone, toObject);
+        }
+
+        /// <summary>
+        /// ボーン位置・描画オブジェクト原点への吸着先ワールド座標。無ければ null。
+        ///
+        /// imguiPos は ctx 系スクリーン座標（IMGUI Y、Y=0 上）。
+        /// 位置はボーン／原点マーカーの描画（UpdateBoneOverlayFor）と同じく
+        /// MeshContext.WorldMatrix の平行移動成分を使う。ボーンと原点は GPU の
+        /// 描画要素ではないため、マーカー表示と同じ値に揃える。
+        /// 非表示（IsVisible=false）のものは対象外。走査は MeshContext の数だけ。
+        /// </summary>
+        private Vector3? SnapPointWorld(Vector2 imguiPos, bool toBone, bool toObjectOrigin)
+        {
+            if (!toBone && !toObjectOrigin) return null;
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return null;
+
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx == null) return null;
 
@@ -90,7 +117,11 @@ namespace Poly_Ling.Player
             for (int i = 0; i < model.Count; i++)
             {
                 var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.Bone) continue;
+                if (mc == null || !mc.IsVisible) continue;
+
+                bool isBone = mc.Type == MeshType.Bone;
+                bool isObj  = mc.Type == MeshType.Mesh && mc.MeshObject != null;
+                if (isBone ? !toBone : (!isObj || !toObjectOrigin)) continue;
 
                 var     wm = mc.WorldMatrix;
                 Vector3 wp = new Vector3(wm.m03, wm.m13, wm.m23);

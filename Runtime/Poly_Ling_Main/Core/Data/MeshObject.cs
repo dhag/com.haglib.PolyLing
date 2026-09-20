@@ -229,6 +229,14 @@ namespace Poly_Ling.Data
             = new List<Poly_Ling.Selection.PartsSelectionSet>();
 
         /// <summary>
+        /// 線分群リスト（開始点 → 終了点の順序付き頂点列を複数本）。
+        /// 空 = 線分群を持たない。1 本ぶんの持ち方と親の意味は LineGroup.cs を正典とする。
+        /// 2 頂点 Face（補助線）とは独立した入れ物で、Face の有無とは同期しない。
+        /// </summary>
+        public List<LineGroup> LineGroups { get; set; } = new List<LineGroup>();
+
+
+        /// <summary>
         /// ミラー分岐のルートか。
         /// true の場合、ヒエラルキーエクスポート時にこのノード配下を
         /// 実体側とミラー側（MirrorSide を祖先に持つノード）の2本の枝に分割する。

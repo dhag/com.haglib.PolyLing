@@ -13,6 +13,7 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("tri4To1", Description = "Tri4To1Tool（確定は Tri4To1Command）")]
     public class Tri4To1ToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -37,9 +38,11 @@ namespace Poly_Ling.Player
         // 公開 API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolState(Description = "Tri4To1Tool.SelectedFaceCount")]
         public int SelectedFaceCount => _tool.SelectedFaceCount;
 
         /// <summary>対象メッシュ全部を合わせた下調べ結果。</summary>
+        [Poly_Ling.Data.PLToolStateGroup(Name = "inspect", Description = "実行前の下調べ（Tri4To1Tool.MergeSummary）")]
         public Tri4To1Tool.MergeSummary Inspect() => _tool.Inspect();
 
         /// <summary>

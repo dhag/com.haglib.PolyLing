@@ -23,7 +23,7 @@ namespace Poly_Ling.Data
     // 非スキンドの描画オブジェクト）なら揺れデータを持てる。
 
     /// <summary>揺れの評価設定（モデル全体で 1 組）を変える。</summary>
-    [PLCommand(Description = "揺れものの評価設定（固定タイムステップ・安定化フレーム数）を変える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "揺れものの評価設定（固定タイムステップ・安定化フレーム数）を変える。")]
     public class SetSpringBoneSettingsCommand : PanelCommand
     {
         [PLParam(TextKey = "SpringBoneFixedDeltaTime",
@@ -45,7 +45,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>コライダーグループを足す。</summary>
-    [PLCommand(Description = "揺れもののコライダーグループを 1 つ足す。同じ名前があればそれを使い回す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "揺れもののコライダーグループを 1 つ足す。同じ名前があればそれを使い回す。")]
     public class AddSpringBoneColliderGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "SpringBoneGroupName",
@@ -60,7 +60,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>コライダーグループの名前を変える。</summary>
-    [PLCommand(Description = "揺れもののコライダーグループの名前を変える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "揺れもののコライダーグループの名前を変える。")]
     public class RenameSpringBoneColliderGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "SpringBoneGroupIndex",
@@ -83,7 +83,7 @@ namespace Poly_Ling.Data
     /// コライダーグループを消す。所属していたコライダー・チェーンの
     /// 参照索引はすべて詰め直される。
     /// </summary>
-    [PLCommand(Description = "揺れもののコライダーグループを消す。参照している索引はすべて詰め直す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "揺れもののコライダーグループを消す。参照している索引はすべて詰め直す。")]
     public class DeleteSpringBoneColliderGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "SpringBoneGroupIndex",
@@ -101,10 +101,10 @@ namespace Poly_Ling.Data
     /// 指定ノードを揺れチェーンの起点にする。
     /// ジョイントが付いていなければ既定値で同時に付ける。
     /// </summary>
-    [PLCommand(Description = "指定したノードを揺れチェーンの起点にする。ジョイントが無ければ同時に付ける。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定したノードを揺れチェーンの起点にする。ジョイントが無ければ同時に付ける。")]
     public class SetSpringBoneChainRootCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "起点にするノードの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -133,10 +133,10 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>揺れチェーンの起点指定を外す。ジョイントは残る。</summary>
-    [PLCommand(Description = "揺れチェーンの起点指定を外す。ジョイントは残る。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "揺れチェーンの起点指定を外す。ジョイントは残る。")]
     public class ClearSpringBoneChainRootCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象ノードの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -148,10 +148,10 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選んだノードへ揺れジョイントを付ける（既にあれば値を上書きする）。</summary>
-    [PLCommand(Description = "選んだノードへ揺れジョイントを付ける。既に付いていれば値を上書きする。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選んだノードへ揺れジョイントを付ける。既に付いていれば値を上書きする。")]
     public class SetSpringBoneJointCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象ノードの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -222,10 +222,10 @@ namespace Poly_Ling.Data
     /// 揺れジョイントを外す。起点指定が残っていると出力できない
     /// チェーンになるため、同じノードの起点指定も一緒に外す。
     /// </summary>
-    [PLCommand(Description = "選んだノードから揺れジョイントを外す。起点指定も一緒に外れる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "選んだノードから揺れジョイントを外す。起点指定も一緒に外れる。")]
     public class ClearSpringBoneJointCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "対象ノードの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -242,10 +242,10 @@ namespace Poly_Ling.Data
     /// 末端のジョイントは tail 扱いで揺れないため、子の無いボーンで
     /// チェーンを終えると 1 段ぶん短くなる。その手当て。
     /// </summary>
-    [PLCommand(Description = "揺れチェーンの末端に子ボーンを 1 本足す。末端は tail 扱いで揺れないための手当て。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "揺れチェーンの末端に子ボーンを 1 本足す。末端は tail 扱いで揺れないための手当て。")]
     public class AddSpringBoneTailBoneCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "末端ボーンの masterIndex 配列。子ボーンを持つものは飛ばす", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -276,14 +276,14 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 階層を辿ってボーン列を選択する。揺れチェーンの対象を選ぶための入口。
     /// </summary>
-    [PLCommand(Description = "起点から階層を辿ってノード列を選択する。揺れチェーンの対象を選ぶのに使う。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "起点から階層を辿ってノード列を選択する。揺れチェーンの対象を選ぶのに使う。")]
     [PLResult("nodes",           PLResultKind.Integer, Description = "選んだノードの数")]
     [PLResult("rootMasterIndex", PLResultKind.Integer, Description = "起点の masterIndex")]
     [PLResult("walk",            PLResultKind.Text,    Description = "使った辿り方")]
     [PLResult("additive",        PLResultKind.Flag,    Description = "既存の選択に足したか")]
     public class SelectBoneChainCommand : PanelCommand
     {
-        [PLParam(TextKey = "SpringBoneChainRootIndex", IsMeshRef = true,
+        [PLParam(TextKey = "SpringBoneChainRootIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "辿り始めるノードの masterIndex", Required = true)]
         public int RootMasterIndex { get; }
 
@@ -311,10 +311,10 @@ namespace Poly_Ling.Data
     /// 描画オブジェクトの頂点に効いているボーンを選択する。
     /// 頂点選択があればその頂点だけ、無ければ全頂点を見る。
     /// </summary>
-    [PLCommand(Description = "描画オブジェクトの頂点に効いているボーンを選択する。頂点選択があればその範囲だけを見る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクトの頂点に効いているボーンを選択する。頂点選択があればその範囲だけを見る。")]
     public class SelectBonesByVertexWeightCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
@@ -344,7 +344,7 @@ namespace Poly_Ling.Data
     /// 揺れ方は SetSpringBoneJointCommand、先頭指定は
     /// SetSpringBoneChainRootCommand で別に送る。
     /// </summary>
-    [PLCommand(Description = "揺れもの用のボーン鎖を置く。ボーンだけを作り、メッシュ・ウェイト・揺れ方は付けない。")]
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "揺れもの用のボーン鎖を置く。ボーンだけを作り、メッシュ・ウェイト・揺れ方は付けない。")]
     public class PlaceSpringBoneChainsCommand : PanelCommand
     {
         [PLParam(TextKey = "SpringBoneChainLayout",
@@ -352,7 +352,7 @@ namespace Poly_Ling.Data
                  Required = true)]
         public SpringBoneChainLayout Layout { get; }
 
-        [PLParam(TextKey = "SpringBoneAttachIndex", IsMeshRef = true,
+        [PLParam(TextKey = "SpringBoneAttachIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "親にするボーンの masterIndex。-1 で親を付けない")]
         public int AttachMasterIndex { get; }
 
@@ -367,7 +367,7 @@ namespace Poly_Ling.Data
         /// 当たり前なので、あとから親を付け替えて位置を直すことはできない。
         /// 作る時点で正しい場所に置くために、基準だけを別に指定する。
         /// </summary>
-        [PLParam(TextKey = "SpringBoneOriginIndex", IsMeshRef = true,
+        [PLParam(TextKey = "SpringBoneOriginIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "位置の基準にするボーンの masterIndex。-1 でワールド原点。親にはしない")]
         public int OriginMasterIndex { get; }
 
@@ -445,14 +445,14 @@ namespace Poly_Ling.Data
     ///
     /// 揺れもの用に作った鎖を、あとから既存のボーンへ繋ぐために要る。
     /// </summary>
-    [PLCommand(Description = "ボーンの親を付け替える。ワールド位置は保つ。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ボーンの親を付け替える。ワールド位置は保つ。")]
     public class SetBoneParentCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "親を変えるボーンの masterIndex 配列", Required = true)]
         public int[] MasterIndices { get; }
 
-        [PLParam(TextKey = "BoneNewParentIndex", IsMeshRef = true,
+        [PLParam(TextKey = "BoneNewParentIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "新しい親の masterIndex。-1 でモデル直下", Required = true)]
         public int ParentMasterIndex { get; }
 
@@ -467,10 +467,10 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 揺れものの当たり判定（collider）をボーンへ 1 つ足す。
     /// </summary>
-    [PLCommand(Description = "揺れものの当たり判定をボーンへ 1 つ足す。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "揺れものの当たり判定をボーンへ 1 つ足す。")]
     public class AddSpringBoneColliderCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "付ける先のボーンの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -522,10 +522,10 @@ namespace Poly_Ling.Data
     ///   作り直すしかなかった。消す手段も無かったため、間違えると
     ///   プロジェクトを作り直すことになる。
     /// </summary>
-    [PLCommand(Description = "ボーンに付いている当たり判定を 1 つ書き換える。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ボーンに付いている当たり判定を 1 つ書き換える。")]
     public class UpdateSpringBoneColliderCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "当たり判定が付いているボーンの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -579,10 +579,10 @@ namespace Poly_Ling.Data
     /// 当たり判定（collider）を 1 つ消す。
     /// 同じボーンの後ろの当たり判定は 1 つずつ前へ詰まる。
     /// </summary>
-    [PLCommand(Description = "ボーンに付いている当たり判定を 1 つ消す。後ろの番号は詰まる。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ボーンに付いている当たり判定を 1 つ消す。後ろの番号は詰まる。")]
     public class DeleteSpringBoneColliderCommand : PanelCommand
     {
-        [PLParam(TextKey = "MasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "当たり判定が付いているボーンの masterIndex", Required = true)]
         public int MasterIndex { get; }
 
@@ -599,21 +599,21 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Description = "控えておいた T ポーズをモデルへ適用する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "控えておいた T ポーズをモデルへ適用する。")]
     public class ApplyTPoseCommand : PanelCommand
     {
         public ApplyTPoseCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>バックアップから元の姿勢に戻す</summary>
-    [PLCommand(Description = "控えておいた姿勢へ戻す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "控えておいた姿勢へ戻す。")]
     public class RestoreTPoseCommand : PanelCommand
     {
         public RestoreTPoseCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>現在の姿勢をベースとしてバックアップを破棄する（Undo不可）</summary>
-    [PLCommand(Description = "今の姿勢を基準として確定し、控えを捨てる。Undo では戻せない。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "今の姿勢を基準として確定し、控えを捨てる。Undo では戻せない。")]
     public class BakeTPoseCommand : PanelCommand
     {
         public BakeTPoseCommand(int modelIndex) : base(modelIndex) { }
@@ -625,7 +625,7 @@ namespace Poly_Ling.Data
     /// 中で setSpringBoneJoint（段ごと）と setSpringBoneChainRoot（鎖ごと）を撃つ。
     /// 手本に索引を 1 本ずつ焼かないための口。
     /// </summary>
-    [PLCommand(Description = "接頭辞で名前の付いた揺れもの鎖（{接頭辞}_{番号}_top → _1 … → _end）を名前から組み立て、全ボーンへ同じ揺れ方を入れ、鎖ごとに先頭を指定する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "接頭辞で名前の付いた揺れもの鎖（{接頭辞}_{番号}_top → _1 … → _end）を名前から組み立て、全ボーンへ同じ揺れ方を入れ、鎖ごとに先頭を指定する。")]
     [PLResult("chains", PLResultKind.Integer, Description = "見つけた鎖の本数")]
     [PLResult("levels", PLResultKind.Integer, Description = "いちばん長い鎖の段数")]
     [PLResult("rootIndices", PLResultKind.IntegerArray, Description = "鎖の先頭ボーンの masterIndex")]

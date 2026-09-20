@@ -47,10 +47,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"isVisible,{mc.IsVisible}");
             sb.AppendLine($"isLocked,{mc.IsLocked}");
             sb.AppendLine($"isFolding,{mc.IsFolding}");
-            // 協働編集: 安定オブジェクトID と 担当者名
+            // 協働編集: 安定オブジェクトID
             // objectId は位置非依存の識別子。保存/読込を跨いで同一オブジェクトを指す。
+            // 担当者名（EditorName）は作業中だけの一時ロックなので書かない（操作経路統一計画.md L-1）。
             sb.AppendLine($"objectId,{mc.ObjectId}");
-            sb.AppendLine($"editorName,{EscapeCsv(mc.EditorName ?? "")}");
             sb.AppendLine($"isTriangulated,{mc.MeshObject?.IsTriangulated ?? false}");
             sb.AppendLine($"preserveNormals,{mc.MeshObject?.PreserveNormals ?? false}");
             // 描画オブジェクトの種別（MeshFilter 系 / SkinnedMesh 系）。
@@ -440,6 +440,63 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 foreach (var l in ss.Lines) sb.Append($",{l}");
 
                 WriteSelectionSetVertexIds(sb, ss);
+
+                sb.AppendLine();
+            }
+        }
+
+        // ================================================================
+        // Write: 線分群
+        // ================================================================
+
+        /// <summary>
+        /// 線分群を行として書き出す。
+        /// lg,name,closed,parentVertex,parentVertexId,count,(v,id)...
+        /// 旧ファイルにはこの行が無く、読み側は線分群なしとして読む。
+        /// </summary>
+        private static void WriteLineGroups(StringBuilder sb, MeshContext mc)
+        {
+            var list = mc.MeshObject?.LineGroups;
+            if (list == null || list.Count == 0) return;
+
+            foreach (var g in list)
+            {
+                if (g == null || g.Order == null || g.Order.Count == 0) continue;
+
+                sb.Append($"lg,{EscapeCsv(g.Name)},{g.Closed},{g.ParentVertex},{g.ParentVertexId}");
+                sb.Append($",{g.Order.Count}");
+                for (int k = 0; k < g.Order.Count; k++)
+                {
+                    int id = (g.OrderVertexIds != null && k < g.OrderVertexIds.Count)
+                        ? g.OrderVertexIds[k] : 0;
+                    sb.Append($",{g.Order[k]},{id}");
+                }
+
+                // ハンドル（点数ぶん、または 0）と長さの組。旧ファイルには無く、読み側は 0 として読む。
+                if (g.HasHandles)
+                {
+                    sb.Append($",{g.PointHandles.Count}");
+                    foreach (var h0 in g.PointHandles)
+                    {
+                        var h = h0 ?? LinePointHandle.CreateDefault();
+                        sb.Append($",{F(h.InOffset.x)},{F(h.InOffset.y)},{F(h.InOffset.z)}");
+                        sb.Append($",{F(h.OutOffset.x)},{F(h.OutOffset.y)},{F(h.OutOffset.z)}");
+                        sb.Append($",{(int)h.InConstraint.Direction},{(int)h.InConstraint.Length},{h.InConstraint.LengthGroupId},{F(h.InConstraint.Ratio)}");
+                        sb.Append($",{(int)h.OutConstraint.Direction},{(int)h.OutConstraint.Length},{h.OutConstraint.LengthGroupId},{F(h.OutConstraint.Ratio)}");
+                    }
+                }
+                else
+                {
+                    sb.Append(",0");
+                }
+
+                int lgCount = g.LengthGroups?.Count ?? 0;
+                sb.Append($",{lgCount}");
+                for (int k = 0; k < lgCount; k++)
+                {
+                    var lgv = g.LengthGroups[k];
+                    sb.Append($",{lgv?.Id ?? 0},{F(lgv?.Length ?? 0f)}");
+                }
 
                 sb.AppendLine();
             }

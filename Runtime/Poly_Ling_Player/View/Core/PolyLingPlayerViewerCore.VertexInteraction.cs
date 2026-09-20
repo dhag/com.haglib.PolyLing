@@ -137,7 +137,7 @@ namespace Poly_Ling.Player
             // クリック当たり判定補助として残置している。
             // 【将来別途検討】3D wire と菱形マーカーが視覚的に重複するため、
             // 3D 表示モード整理時に菱形マーカーの要否を再検討する。
-            _viewportManager.OnRefreshBoneOverlay = UpdateBoneOverlay;
+            _viewportManager.OnRefreshBoneOverlay = () => { UpdateBoneOverlay(); UpdateLineCurveOverlay(); };
             // Phase 2c-3: ツール固有 overlay を各 Enter* 入口末尾から駆動する。
             // 各ハンドラ側は内部状態（ホバー辺、プレビュー点、confirm 済み点等）を保持し、
             // ここで呼ばれる Update*Overlay が現在の視点で再投影して panel.Show*Preview に渡す。
@@ -298,7 +298,7 @@ namespace Poly_Ling.Player
             _tempMirrorController = new TempMirrorController
             {
                 GetProject  = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
 
             _advancedSelectHandler = new AdvancedSelectToolHandler();
@@ -379,6 +379,10 @@ namespace Poly_Ling.Player
             _vertexInteractor = new PlayerVertexInteractor(_selectionOps)
             {
                 GetHoverHit = () => _viewportManager.GetHoverHit(),
+                // 押下で始まるツール操作の前に、選択中の描画オブジェクトの担当者判定とロック取得
+                // （操作経路統一計画.md H-2）。
+                TryBeginPreview = TryBeginHostPreviewOfSelection,
+                EndPreview      = EndHostPreview,
             };
             _vertexInteractor.SetToolHandler(_moveToolHandler);
 
@@ -469,11 +473,15 @@ namespace Poly_Ling.Player
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
                     if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
+                    // ドラッグ前に選択の担当者判定とロック取得（操作経路統一計画.md H-2）。
+                    _boneDragAllowed = TryBeginHostPreviewOfSelection();
+                    _boneDragBegun   = true;
+                    if (!_boneDragAllowed) return;
                     _objectMoveHandler?.OnLeftDragBegin(PlayerHitResult.Miss, pos, mods);
                 };
                 panel.OnDrag += (btn, pos, delta, mods) =>
                 {
-                    if (btn != 0) return;
+                    if (btn != 0 || !_boneDragAllowed) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
                     if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
@@ -489,7 +497,10 @@ namespace Poly_Ling.Player
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
                     if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
-                    _objectMoveHandler?.OnLeftDragEnd(pos, mods);
+                    if (_boneDragAllowed) _objectMoveHandler?.OnLeftDragEnd(pos, mods);
+                    if (_boneDragBegun) EndHostPreview();
+                    _boneDragBegun   = false;
+                    _boneDragAllowed = true;
                     _boneEditorSubPanel?.Refresh();
                 };
             }
@@ -553,6 +564,11 @@ namespace Poly_Ling.Player
                     {
                         _pointDefinedHandler?.ClearPoints();
                     }
+                    // 線分群の編集は描きかけの折れ線を終える（描いた分は確定済み）。
+                    else if (_interactionMode == InteractionMode.BillboardProfile)
+                    {
+                        if (_billboardProfileHandler?.FinishChain() ?? false) RefreshBillboardProfile();
+                    }
                 };
             }
             ConnectCancelKey(_layoutRoot?.PerspectivePanel);
@@ -575,12 +591,31 @@ namespace Poly_Ling.Player
                     // 表示の更新はハンドラの OnPointsChanged が行う。
                     if (_interactionMode == InteractionMode.PointDefinedPrimitive)
                         _pointDefinedHandler?.RemoveLastPoint();
+                    // 線分群の編集（Profile）は選択中の点を消す。
+                    if (_interactionMode == InteractionMode.BillboardProfile)
+                        _billboardProfileHandler?.DeleteSelectedPoints();
                 };
             }
             ConnectUndoPointKey(_layoutRoot?.PerspectivePanel);
             ConnectUndoPointKey(_layoutRoot?.TopPanel);
             ConnectUndoPointKey(_layoutRoot?.FrontPanel);
             ConnectUndoPointKey(_layoutRoot?.SidePanel);
+
+            // Enter による確定（線分群の編集の自由曲線）。
+            void ConnectConfirmKey(PlayerViewportPanel p)
+            {
+                if (p == null) return;
+                p.OnConfirmKey += () =>
+                {
+                    if (_interactionMode == InteractionMode.BillboardProfile
+                        && (_billboardProfileHandler?.FinishChain() ?? false))
+                        RefreshBillboardProfile();
+                };
+            }
+            ConnectConfirmKey(_layoutRoot?.PerspectivePanel);
+            ConnectConfirmKey(_layoutRoot?.TopPanel);
+            ConnectConfirmKey(_layoutRoot?.FrontPanel);
+            ConnectConfirmKey(_layoutRoot?.SidePanel);
 
             // 面追加（四角形）で3点配置済みのとき、右クリックで三角形として確定する。
             // 線分モードは右クリックで描画を終了する（Escape と同じ扱い）。
@@ -591,6 +626,11 @@ namespace Poly_Ling.Player
                 p.OnClick += (btn, pos, mods) =>
                 {
                     if (btn != 1) return;
+                    if (_interactionMode == InteractionMode.BillboardProfile)
+                    {
+                        if (_billboardProfileHandler?.FinishChain() ?? false) RefreshBillboardProfile();
+                        return;
+                    }
                     if (_interactionMode != InteractionMode.AddFace) return;
                     if (_addFaceHandler != null &&
                         (_addFaceHandler.FinishAsTriangle() || _addFaceHandler.FinishLineChain()))

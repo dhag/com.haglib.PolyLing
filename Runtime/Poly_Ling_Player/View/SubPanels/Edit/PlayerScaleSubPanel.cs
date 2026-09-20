@@ -7,12 +7,15 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerScaleSubPanel
     {
-        public Func<ScaleToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private const string Tool = "scale";
         // UI 自動操作の ID は "scale.<下の Id>"（UiControlAttribute.cs）。
         // 倍率の変更はプレビューで、確定は「Apply」。Uniform オンは XYZ、オフは X/Y/Z を表示する。
         [UiControl(Ignore = true)]
@@ -87,80 +90,99 @@ namespace Poly_Ling.Player
             _targetLabel = InfoLabel(); _root.Add(_targetLabel);
             _uniformToggle = new Toggle("Uniform") { value = true };
             _uniformToggle.style.color = new StyleColor(Color.white);
-            _uniformToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UniformScale = e.newValue; Refresh(); });
+            _uniformToggle.RegisterValueChangedCallback(e => { Surface?.Set(Tool, "uniformScale", e.newValue); Refresh(); });
             _root.Add(_uniformToggle);
-            _sliderXYZ = MakeSlider("XYZ", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) { GetH().ScaleX = v; GetH().ScaleY = v; GetH().ScaleZ = v; } });
-            _sliderX = MakeSlider("X", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleX = v; });
-            _sliderY = MakeSlider("Y", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleY = v; });
-            _sliderZ = MakeSlider("Z", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleZ = v; });
-            // 確定はコマンド経由。CommitViaCommand が開始状態へ戻して
+            _sliderXYZ = MakeSlider("XYZ", 0.01f, 5f, 1f, v => PreviewUniform(v));
+            _sliderX = MakeSlider("X", 0.01f, 5f, 1f, v => Preview("scaleX", v));
+            _sliderY = MakeSlider("Y", 0.01f, 5f, 1f, v => Preview("scaleY", v));
+            _sliderZ = MakeSlider("Z", 0.01f, 5f, 1f, v => Preview("scaleZ", v));
+            // 確定はコマンド経由。commitViaCommand が開始状態へ戻して
             // ScaleSelectionCommand を送り、その受け口がベイクと Undo 記録を行う。
             foreach (var s in new[] { _sliderXYZ, _sliderX, _sliderY, _sliderZ })
-                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
+                s.RegisterCallback<PointerUpEvent>(_ => Commit());
 
             _fieldXYZ = new FloatField(); _fieldX = new FloatField();
             _fieldY   = new FloatField(); _fieldZ = new FloatField();
             // 数値欄はプレビューのみ。確定（＝ベイクと Undo 記録）は Apply ボタンだけが行う。
-            _rowXYZ = SliderWithField(_sliderXYZ, _fieldXYZ, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleX = v; h.ScaleY = v; h.ScaleZ = v; });
-            _rowX = SliderWithField(_sliderX, _fieldX, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleX = v; });
-            _rowY = SliderWithField(_sliderY, _fieldY, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleY = v; });
-            _rowZ = SliderWithField(_sliderZ, _fieldZ, 0.01f, 5f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleZ = v; });
+            _rowXYZ = SliderWithField(_sliderXYZ, _fieldXYZ, 0.01f, 5f, v => PreviewUniform(v));
+            _rowX = SliderWithField(_sliderX, _fieldX, 0.01f, 5f, v => Preview("scaleX", v));
+            _rowY = SliderWithField(_sliderY, _fieldY, 0.01f, 5f, v => Preview("scaleY", v));
+            _rowZ = SliderWithField(_sliderZ, _fieldZ, 0.01f, 5f, v => Preview("scaleZ", v));
             _root.Add(_rowXYZ); _root.Add(_rowX); _root.Add(_rowY); _root.Add(_rowZ);
-            _originToggle = new Toggle("オブジェクトの原点を中心に") { value = false }; _originToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseOriginPivot = e.newValue; });
+            _originToggle = new Toggle("オブジェクトの原点を中心に") { value = false }; _originToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "useOriginPivot", e.newValue));
             _originToggle.style.color = new StyleColor(Color.white);
             _root.Add(_originToggle);
 
             // スケール軸（フレーム回転）
             _root.Add(Header("Scale Axis (°)"));
-            _axisX = MakeSlider("X", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisX = v; });
-            _axisY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisY = v; });
-            _axisZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisZ = v; });
+            _axisX = MakeSlider("X", -180f, 180f, 0f, v => Preview("scaleAxisX", v));
+            _axisY = MakeSlider("Y", -180f, 180f, 0f, v => Preview("scaleAxisY", v));
+            _axisZ = MakeSlider("Z", -180f, 180f, 0f, v => Preview("scaleAxisZ", v));
             foreach (var s in new[] { _axisX, _axisY, _axisZ })
-                s.RegisterCallback<PointerUpEvent>(_ => { GetH()?.CommitViaCommand(); Refresh(); });
+                s.RegisterCallback<PointerUpEvent>(_ => Commit());
 
             _fieldAxisX = new FloatField(); _fieldAxisY = new FloatField(); _fieldAxisZ = new FloatField();
-            _root.Add(SliderWithField(_axisX, _fieldAxisX, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisX = v; }));
-            _root.Add(SliderWithField(_axisY, _fieldAxisY, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisY = v; }));
-            _root.Add(SliderWithField(_axisZ, _fieldAxisZ, -180f, 180f,
-                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.ScaleAxisZ = v; }));
+            _root.Add(SliderWithField(_axisX, _fieldAxisX, -180f, 180f, v => Preview("scaleAxisX", v)));
+            _root.Add(SliderWithField(_axisY, _fieldAxisY, -180f, 180f, v => Preview("scaleAxisY", v)));
+            _root.Add(SliderWithField(_axisZ, _fieldAxisZ, -180f, 180f, v => Preview("scaleAxisZ", v)));
 
             // マグネット（比例編集）
             _magnetToggle = new Toggle("Magnet") { value = false };
             _magnetToggle.style.color = new StyleColor(Color.white);
-            _magnetToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseMagnet = e.newValue; });
+            _magnetToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "useMagnet", e.newValue));
             _root.Add(_magnetToggle);
-            _magnetRadius = MakeSlider("Radius", 0.01f, 1f, 0.5f, v => { if (GetH() != null) GetH().MagnetRadius = v; });
+            _magnetRadius = MakeSlider("Radius", 0.01f, 1f, 0.5f, v => Surface?.Set(Tool, "magnetRadius", v));
             _root.Add(_magnetRadius);
             _magnetDistance = new EnumField("Distance", DistanceMode.Euclidean);
             _magnetDistance.style.color = new StyleColor(Color.white);
-            _magnetDistance.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().MagnetDistanceMode = (DistanceMode)e.newValue; });
+            _magnetDistance.RegisterValueChangedCallback(e => Surface?.Set(Tool, "magnetDistanceMode", (DistanceMode)e.newValue));
             _root.Add(_magnetDistance);
             _magnetFalloff = new EnumField("Falloff", FalloffType.Smooth);
             _magnetFalloff.style.color = new StyleColor(Color.white);
-            _magnetFalloff.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().MagnetFalloff = (FalloffType)e.newValue; });
+            _magnetFalloff.RegisterValueChangedCallback(e => Surface?.Set(Tool, "magnetFalloff", (FalloffType)e.newValue));
             _root.Add(_magnetFalloff);
 
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginTop = 4;
-            var applyBtn = new Button(() => { GetH()?.CommitViaCommand(); Refresh(); }) { text = "Apply" }; applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
+            var applyBtn = new Button(Commit) { text = "Apply" }; applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
             // 確定後はスケールが 1 に戻るので、Refresh で表示も 1 へ揃う
-            // （CommitViaCommand が取り出し時に 1 へ戻し、受け口も終了時に 1 へ戻す）。
-            var revertBtn = new Button(() => { GetH()?.Revert(); Refresh(); }) { text = "Reset" }; revertBtn.style.flexGrow = 1;
+            // （commitViaCommand が取り出し時に 1 へ戻し、受け口も終了時に 1 へ戻す）。
+            var revertBtn = new Button(() => { Surface?.Invoke(Tool, "revert"); Refresh(); }) { text = "Reset" }; revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn); _root.Add(btnRow);
             _applyBtn  = applyBtn;
             _revertBtn = revertBtn;
         }
 
+        /// <summary>スライダー操作：プレビューを始めて（ロックを取り）値を入れる。</summary>
+        private void Preview(string param, float v)
+        {
+            if (Surface == null) return;
+            Surface.Invoke(Tool, "beginSliderDragFromPanel");
+            Surface.Set(Tool, param, v);
+        }
+
+        /// <summary>一様スケール：3 軸へ同じ値を入れる。</summary>
+        private void PreviewUniform(float v)
+        {
+            if (Surface == null) return;
+            Surface.Invoke(Tool, "beginSliderDragFromPanel");
+            Surface.Set(Tool, "scaleX", v);
+            Surface.Set(Tool, "scaleY", v);
+            Surface.Set(Tool, "scaleZ", v);
+        }
+
+        /// <summary>確定：プレビュー中の拡大縮小を ScaleSelectionCommand として送る。</summary>
+        private void Commit()
+        {
+            Surface?.Invoke(Tool, "commitViaCommand");
+            Refresh();
+        }
+
         public void Refresh()
         {
-            var h = GetH(); if (h == null) return;
-            _targetLabel.text = $"Target: {h.GetTotalAffectedCount()} vertices";
-            bool uni = h.UniformScale;
+            if (Surface == null) return;
+            _targetLabel.text = $"Target: {Surface.GetInt(Tool, "affectedCount")} vertices";
+            bool uni = Surface.GetBool(Tool, "uniformScale", true);
+            float sx = Surface.GetFloat(Tool, "scaleX", 1f), sy = Surface.GetFloat(Tool, "scaleY", 1f), sz = Surface.GetFloat(Tool, "scaleZ", 1f);
             _uniformToggle?.SetValueWithoutNotify(uni);
             // 数値欄を含む行ごと出し分ける（スライダー単体を隠すと数値欄が残るため）。
             if (_rowXYZ != null) _rowXYZ.style.display = uni ? DisplayStyle.Flex : DisplayStyle.None;
@@ -168,25 +190,26 @@ namespace Poly_Ling.Player
             if (_rowY   != null) _rowY.style.display   = uni ? DisplayStyle.None : DisplayStyle.Flex;
             if (_rowZ   != null) _rowZ.style.display   = uni ? DisplayStyle.None : DisplayStyle.Flex;
             _suppressSync = true;
-            if (uni) { _sliderXYZ?.SetValueWithoutNotify(h.ScaleX); _fieldXYZ?.SetValueWithoutNotify(h.ScaleX); }
+            if (uni) { _sliderXYZ?.SetValueWithoutNotify(sx); _fieldXYZ?.SetValueWithoutNotify(sx); }
             else
             {
-                _sliderX?.SetValueWithoutNotify(h.ScaleX); _sliderY?.SetValueWithoutNotify(h.ScaleY); _sliderZ?.SetValueWithoutNotify(h.ScaleZ);
-                _fieldX?.SetValueWithoutNotify(h.ScaleX);  _fieldY?.SetValueWithoutNotify(h.ScaleY);  _fieldZ?.SetValueWithoutNotify(h.ScaleZ);
+                _sliderX?.SetValueWithoutNotify(sx); _sliderY?.SetValueWithoutNotify(sy); _sliderZ?.SetValueWithoutNotify(sz);
+                _fieldX?.SetValueWithoutNotify(sx);  _fieldY?.SetValueWithoutNotify(sy);  _fieldZ?.SetValueWithoutNotify(sz);
             }
             _suppressSync = false;
-            _originToggle?.SetValueWithoutNotify(h.UseOriginPivot);
-            _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
-            _magnetRadius?.SetValueWithoutNotify(h.MagnetRadius);
-            _magnetFalloff?.SetValueWithoutNotify(h.MagnetFalloff);
-            _magnetDistance?.SetValueWithoutNotify(h.MagnetDistanceMode);
+            _originToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "useOriginPivot"));
+            _magnetToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "useMagnet"));
+            _magnetRadius?.SetValueWithoutNotify(Surface.GetFloat(Tool, "magnetRadius"));
+            _magnetFalloff?.SetValueWithoutNotify(Surface.Get(Tool, "magnetFalloff", FalloffType.Smooth));
+            _magnetDistance?.SetValueWithoutNotify(Surface.Get(Tool, "magnetDistanceMode", DistanceMode.Euclidean));
+            float ax = Surface.GetFloat(Tool, "scaleAxisX"), ay = Surface.GetFloat(Tool, "scaleAxisY"), az = Surface.GetFloat(Tool, "scaleAxisZ");
             _suppressSync = true;
-            _axisX?.SetValueWithoutNotify(h.ScaleAxisX);
-            _axisY?.SetValueWithoutNotify(h.ScaleAxisY);
-            _axisZ?.SetValueWithoutNotify(h.ScaleAxisZ);
-            _fieldAxisX?.SetValueWithoutNotify(h.ScaleAxisX);
-            _fieldAxisY?.SetValueWithoutNotify(h.ScaleAxisY);
-            _fieldAxisZ?.SetValueWithoutNotify(h.ScaleAxisZ);
+            _axisX?.SetValueWithoutNotify(ax);
+            _axisY?.SetValueWithoutNotify(ay);
+            _axisZ?.SetValueWithoutNotify(az);
+            _fieldAxisX?.SetValueWithoutNotify(ax);
+            _fieldAxisY?.SetValueWithoutNotify(ay);
+            _fieldAxisZ?.SetValueWithoutNotify(az);
             _suppressSync = false;
         }
 

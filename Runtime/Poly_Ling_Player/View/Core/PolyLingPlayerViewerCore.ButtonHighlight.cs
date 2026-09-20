@@ -174,6 +174,7 @@ namespace Poly_Ling.Player
         private void RefreshObjectOverlays()
         {
             UpdateBoneOverlay();
+            UpdateLineCurveOverlay();
             UpdateGizmoOverlay();
         }
 

@@ -17,7 +17,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>現在の選択を法線再計算の除外セットとして保存</summary>
-    [PLCommand(Description = "現在の選択を、法線再計算から外す頂点の集合として保存する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "現在の選択を、法線再計算から外す頂点の集合として保存する。")]
     public class SaveNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetName",
@@ -28,7 +28,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>除外セットを現在の選択に適用（置き換え）</summary>
-    [PLCommand(Description = "保存した除外セットを現在の選択へ置き換えて入れる。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "保存した除外セットを現在の選択へ置き換えて入れる。")]
     public class LoadNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetIndex",
@@ -39,7 +39,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>除外セットを削除</summary>
-    [PLCommand(Description = "法線再計算の除外セットを消す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "法線再計算の除外セットを消す。")]
     public class DeleteNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetIndex",
@@ -50,7 +50,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>除外セットの名前を変更</summary>
-    [PLCommand(Description = "法線再計算の除外セットの名前を変える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "法線再計算の除外セットの名前を変える。")]
     public class RenameNormalExcludeSetCommand : PanelCommand
     {
         [PLParam(TextKey = "NormalExcludeSetIndex",
@@ -77,7 +77,7 @@ namespace Poly_Ling.Data
     ///   選択が無い       → メッシュ全体
     /// ただし RecalcByAngle だけはメッシュ全体が対象（スロットを作り直すため）。
     /// </summary>
-    [PLCommand(Description = "選択範囲の法線を編集する。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択範囲の法線を編集する。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。")]
     public class NormalEditCommand : PanelCommand
     {
         /// <summary>
@@ -211,7 +211,7 @@ namespace Poly_Ling.Data
     /// 頂点IDはモデル間・オブジェクト間の突き合わせに使う唯一の手掛かりだが、
     /// 未設定・重複・誤付与が混在しやすい。ID を使う操作の前に整えるための操作。
     /// </summary>
-    [PLCommand(Description = "頂点IDの修復。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "頂点IDの修復。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。")]
     public class RepairVertexIdsCommand : PanelCommand
     {
         public enum RepairMode
@@ -249,7 +249,7 @@ namespace Poly_Ling.Data
     ///   藤壺の配置元が複数オブジェクトだった場合は、あらかじめ 1 つへ結合したものを
     ///   リファレンスに指定すること（このコマンドは結合を行わない）。
     /// </summary>
-    [PLCommand(Description = "パーツID（Vertex.PartsId）／サブID（Vertex.SubId）の一括採番。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "パーツID（Vertex.PartsId）／サブID（Vertex.SubId）の一括採番。")]
     public class AssignPartsIdsCommand : PanelCommand
     {
         public enum PartsIdMode
@@ -265,7 +265,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>採番する描画オブジェクトの masterIndex。</summary>
-        [PLParam(TextKey = "PartsIdTargetMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "PartsIdTargetMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "採番する描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
 
@@ -277,7 +277,7 @@ namespace Poly_Ling.Data
         /// 1 パーツの頂点数を取る描画オブジェクトの masterIndex。-1 で未指定。
         /// ReferenceVertexCount 以外のモードでは無視する。
         /// </summary>
-        [PLParam(TextKey = "PartsIdReferenceMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "PartsIdReferenceMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "1 パーツの頂点数を取るオブジェクトの masterIndex。-1 で未指定")]
         public int ReferenceMasterIndex { get; }
 
@@ -319,12 +319,12 @@ namespace Poly_Ling.Data
     ///     2 個以上 … 同じ組み合わせを 1 群として GroupIdOffset からの連番
     ///   規則の全文と根拠は PartsIdByBoneWeightOps.cs の冒頭にある。
     /// </summary>
-    [PLCommand(Description =
+    [PLCommand(Writes = PLWriteScope.Targets, Description =
         "ボーンウェイトの組み合わせでパーツID（Vertex.PartsId）／サブID（Vertex.SubId）を振り直す。")]
     public class AssignPartsIdsByBoneWeightCommand : PanelCommand
     {
         /// <summary>採番する描画オブジェクトの masterIndex。</summary>
-        [PLParam(TextKey = "PartsIdByBoneWeightTargetMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "PartsIdByBoneWeightTargetMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "採番する描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
 
@@ -348,12 +348,12 @@ namespace Poly_Ling.Data
     ///   面は必ずどれか 1 つの子へ入る（取りこぼしも多重化も無し）。
     ///   頂点は重複してよい。規則の全文と根拠は PartsIdSplitOps.cs の冒頭にある。
     /// </summary>
-    [PLCommand(Description =
+    [PLCommand(Writes = PLWriteScope.Targets, Description =
         "パーツID（Vertex.PartsId）で描画オブジェクトを分解し、空のオブジェクトの子として並べる。")]
     public class SplitObjectByPartsIdCommand : PanelCommand
     {
         /// <summary>分解する描画オブジェクトの masterIndex。</summary>
-        [PLParam(TextKey = "PartsIdSplitTargetMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "PartsIdSplitTargetMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "分解する描画オブジェクトの masterIndex", Required = true)]
         public int TargetMasterIndex { get; }
 
@@ -371,7 +371,7 @@ namespace Poly_Ling.Data
     /// （リスト順に暗黙で対応させない）。両配列は同じ長さであること。
     /// インデックスは各モデルの MeshContextList のインデックス。
     /// </summary>
-    [PLCommand(Description = "モデル間・オブジェクト間で頂点データを転送する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "モデル間・オブジェクト間で頂点データを転送する。")]
     public class TransferVertexDataCommand : PanelCommand
     {
         /// <summary>転送元モデル（PanelCommand.ModelIndex）。</summary>
@@ -382,11 +382,11 @@ namespace Poly_Ling.Data
                  Description = "転送先モデルの索引", Required = true)]
         public int   TargetModelIndex  { get; }
 
-        [PLParam(TextKey = "TransferSourceMeshIndices", IsMeshRef = true,
+        [PLParam(TextKey = "TransferSourceMeshIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "転送元メッシュの索引。TargetMeshIndices と同じ長さ", Required = true)]
         public int[] SourceMeshIndices { get; }
 
-        [PLParam(TextKey = "TransferTargetMeshIndices", IsMeshRef = true, MeshRefModelKey = "TargetModelIndex",
+        [PLParam(TextKey = "TransferTargetMeshIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, MeshRefModelKey = "TargetModelIndex",
                  Description = "転送先メッシュの索引。SourceMeshIndices と同じ長さ", Required = true)]
         public int[] TargetMeshIndices { get; }
 
@@ -413,7 +413,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>メッシュ選択辞書をCSVファイルへ保存</summary>
-    [PLCommand(Description = "メッシュ選択辞書を CSV ファイルへ保存する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "メッシュ選択辞書を CSV ファイルへ保存する。")]
     public class SaveMeshSelSetsCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshSelSetsSavePath",
@@ -424,7 +424,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>メッシュ選択辞書をCSVファイルから読込み、既存リストへ追加</summary>
-    [PLCommand(Description = "メッシュ選択辞書を CSV ファイルから読み、既存の一覧へ足す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "メッシュ選択辞書を CSV ファイルから読み、既存の一覧へ足す。")]
     public class LoadMeshSelSetsCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "MeshSelSetsLoadPath",
@@ -448,21 +448,21 @@ namespace Poly_Ling.Data
     /// スキニング無しを前提とする。法線の空間変換はオブジェクト単位の
     /// MeshContext.WorldMatrix だけを使う。
     /// </summary>
-    [PLCommand(Description = "ビフォー／アフターの2オブジェクトが作るシェル（プリズム群）から、 ターゲットオブジェクトの各頂点へ法線を移植する。")]
+    [PLCommand(Writes = PLWriteScope.Targets, Description = "ビフォー／アフターの2オブジェクトが作るシェル（プリズム群）から、 ターゲットオブジェクトの各頂点へ法線を移植する。")]
     public class ApplyNormalTransplantCommand : PanelCommand
     {
         /// <summary>ビフォー（内側の面）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "TransplantBeforeMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "TransplantBeforeMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "ビフォー（内側の面）の masterIndex", Required = true)]
         public int   BeforeMasterIndex   { get; }
 
         /// <summary>アフター（外側の面）MeshContext の MasterIndex</summary>
-        [PLParam(TextKey = "TransplantAfterMasterIndex", IsMeshRef = true,
+        [PLParam(TextKey = "TransplantAfterMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "アフター（外側の面）の masterIndex", Required = true)]
         public int   AfterMasterIndex    { get; }
 
         /// <summary>法線を差し替える MeshContext の MasterIndex 配列</summary>
-        [PLParam(TextKey = "TransplantTargetMasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "TransplantTargetMasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
                  Description = "法線を差し替える描画オブジェクトの masterIndex 配列", Required = true)]
         public int[] TargetMasterIndices { get; }
 

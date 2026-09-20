@@ -245,6 +245,10 @@ namespace Poly_Ling.Player
                     return AnyBeltHasData(_placeBelts)
                         && _placeSrcPick.CurrentList(_placeP.IncludeChildren, GetSubtreeMeshList).Count > 0;
 
+                // ネジ配置は配置元の選択が要る。
+                case ShapeKind.BoltPattern:
+                    return _boltSrcPick.CurrentList(_boltP.IncludeChildren, GetSubtreeMeshList).Count > 0;
+
                 // 複製元のチェックが要る。生成先は Viewer 側の結線。
                 case ShapeKind.ObjectArray:
                     return OnObjectArrayGenerate != null

@@ -48,9 +48,9 @@ namespace Poly_Ling.Player
             _alignVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _alignVerticesSubPanel = new PlayerAlignVerticesSubPanel
             {
-                GetH        = () => _alignVerticesHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _alignVerticesSubPanel.Build(_layoutRoot.AlignVerticesSection);
 
@@ -68,9 +68,9 @@ namespace Poly_Ling.Player
             _pipeAlignHandler.SetCommandQueue(_editOps?.CommandQueue);
             _pipeAlignSubPanel = new PlayerPipeAlignSubPanel
             {
-                GetH        = () => _pipeAlignHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _pipeAlignSubPanel.Build(_layoutRoot.PipeAlignSection);
 
@@ -92,6 +92,8 @@ namespace Poly_Ling.Player
             };
             // ワールド座標が要るのは計算の直前だけ。毎フレームは呼ばない。
             _surfaceSnapHandler.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _surfaceSnapHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
+            _surfaceSnapHandler.EndPreview      = EndHostPreview;
             // Poly_Ling_Main 側へビューポート実装を持ち込まないため、値だけを写して渡す。
             _surfaceSnapHandler.GetCamera = kind =>
             {
@@ -120,7 +122,7 @@ namespace Poly_Ling.Player
             {
                 GetH        = () => _surfaceSnapHandler,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _surfaceSnapSubPanel.Build(_layoutRoot.SurfaceSnapSection);
 
@@ -140,10 +142,10 @@ namespace Poly_Ling.Player
             _placeObjectReshapeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _placeObjectReshapeSubPanel = new PlayerPlaceObjectReshapeSubPanel
             {
-                GetH                     = () => _placeObjectReshapeHandler,
+                Surface                  = ToolSurface,
                 GetDrawableMeshEntryList = BuildDrawableMeshEntryList,
                 GetView                  = () => ActiveProject,
-                SendCommand              = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand              = cmd => DispatchHost(cmd),
             };
             _placeObjectReshapeSubPanel.Build(_layoutRoot.PlaceObjectReshapeSection);
 
@@ -165,7 +167,7 @@ namespace Poly_Ling.Player
             {
                 GetH        = () => _planarizeAlongBonesHandler,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _planarizeAlongBonesSubPanel.Build(_layoutRoot.PlanarizeAlongBonesSection);
 
@@ -185,9 +187,9 @@ namespace Poly_Ling.Player
             _smoothEdgesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _smoothEdgesSubPanel = new PlayerSmoothEdgesSubPanel
             {
-                GetH        = () => _smoothEdgesHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _smoothEdgesSubPanel.Build(_layoutRoot.SmoothEdgesSection);
 
@@ -215,9 +217,9 @@ namespace Poly_Ling.Player
                 };
             _mergeVerticesSubPanel = new PlayerMergeVerticesSubPanel
             {
-                GetH        = () => _mergeVerticesHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _mergeVerticesSubPanel.Build(_layoutRoot.MergeVerticesSection);
 
@@ -245,9 +247,9 @@ namespace Poly_Ling.Player
                 };
             _splitVerticesSubPanel = new PlayerSplitVerticesSubPanel
             {
-                GetH        = () => _splitVerticesHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _splitVerticesSubPanel.Build(_layoutRoot.SplitVerticesSection);
 
@@ -268,9 +270,9 @@ namespace Poly_Ling.Player
                 };
             _vertexHoleSubPanel = new PlayerVertexHoleSubPanel
             {
-                GetH        = () => _vertexHoleHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexHoleSubPanel.Build(_layoutRoot.VertexHoleSection);
             AttachPanelSelectToggle(_layoutRoot.VertexHoleSection, PanelSelectKeyVertexHole);
@@ -292,9 +294,9 @@ namespace Poly_Ling.Player
                 };
             _vertexDissolveSubPanel = new PlayerVertexDissolveSubPanel
             {
-                GetH        = () => _vertexDissolveHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexDissolveSubPanel.Build(_layoutRoot.VertexDissolveSection);
 
@@ -320,7 +322,7 @@ namespace Poly_Ling.Player
                 };
             _holeRingCountSubPanel = new PlayerHoleRingCountSubPanel
             {
-                GetH      = () => _holeRingCountHandler,
+                Surface   = ToolSurface,
                 OnExecute = SendHoleRingCountCommand,
             };
             _holeRingCountSubPanel.Build(_layoutRoot.HoleRingCountSection);
@@ -370,11 +372,14 @@ namespace Poly_Ling.Player
                 };
             _edgeBridgeSubPanel = new PlayerEdgeBridgeSubPanel
             {
-                GetH      = () => _edgeBridgeHandler,
+                Surface   = ToolSurface,
                 OnExecute = SendEdgeBridgeCommand,
             };
             _edgeBridgeSubPanel.Build(_layoutRoot.EdgeBridgeSection);
             AttachPanelSelectToggle(_layoutRoot.EdgeBridgeSection, PanelSelectKeyEdgeBridge);
+
+            // 線分群の編集（ビルボード上の 2D プロファイル）
+            BuildBillboardProfile();
 
             _tri4To1Handler = new Tri4To1ToolHandler
             {
@@ -393,9 +398,9 @@ namespace Poly_Ling.Player
                 };
             _tri4To1SubPanel = new PlayerTri4To1SubPanel
             {
-                GetH        = () => _tri4To1Handler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _tri4To1SubPanel.Build(_layoutRoot.Tri4To1Section);
 
@@ -416,9 +421,9 @@ namespace Poly_Ling.Player
                 };
             _faceMergeSubPanel = new PlayerFaceMergeSubPanel
             {
-                GetH        = () => _faceMergeHandler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _faceMergeSubPanel.Build(_layoutRoot.FaceMergeSection);
 
@@ -439,16 +444,16 @@ namespace Poly_Ling.Player
                 };
             _quad4To1SubPanel = new PlayerQuad4To1SubPanel
             {
-                GetH        = () => _quad4To1Handler,
+                Surface     = ToolSurface,
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _quad4To1SubPanel.Build(_layoutRoot.Quad4To1Section);
 
             _vertexIdSubPanel = new PlayerVertexIdSubPanel
             {
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexIdSubPanel.Build(_layoutRoot.VertexIdSection);
 
@@ -457,7 +462,7 @@ namespace Poly_Ling.Player
             _partsIdSubPanel = new PlayerPartsIdSubPanel
             {
                 GetView                  = () => ActiveProject,
-                SendCommand              = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand              = cmd => DispatchHost(cmd),
                 GetDrawableMeshEntryList = BuildDrawableMeshEntryList,
                 GetLastResult            = () => _commandDispatcher != null
                                                ? _commandDispatcher.LastPartsIdResult
@@ -472,7 +477,7 @@ namespace Poly_Ling.Player
             _vertexTransferSubPanel = new PlayerVertexTransferSubPanel
             {
                 GetView     = () => ActiveProject,
-                SendCommand = cmd => _commandDispatcher?.Dispatch(cmd),
+                SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexTransferSubPanel.Build(_layoutRoot.VertexTransferSection);
 

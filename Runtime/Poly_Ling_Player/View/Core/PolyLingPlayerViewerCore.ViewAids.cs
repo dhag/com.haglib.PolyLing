@@ -420,6 +420,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.VertexDissolveSection);
             Hide(_layoutRoot.HoleRingCountSection);
             Hide(_layoutRoot.EdgeBridgeSection);
+            Hide(_layoutRoot.BillboardProfileSection);
             Hide(_layoutRoot.Tri4To1Section);
             Hide(_layoutRoot.FaceMergeSection);
             Hide(_layoutRoot.Quad4To1Section);

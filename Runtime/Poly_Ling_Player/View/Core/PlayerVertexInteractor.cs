@@ -109,9 +109,41 @@ namespace Poly_Ling.Player
         /// </summary>
         private IPlayerPressHandler PressHandler => _toolHandler as IPlayerPressHandler;
 
+        // ================================================================
+        // プレビュー中のロック（操作経路統一計画.md H-2）
+        // ================================================================
+
+        /// <summary>
+        /// 左ボタン押下でツールの操作（押下時追従・ドラッグ）を始めてよいかを問い合わせる。
+        /// 本体は選択中の描画オブジェクトの担当者判定とロック取得を行う。null なら常に許可。
+        /// </summary>
+        public Func<bool> TryBeginPreview;
+
+        /// <summary>押下で始めた操作が終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action EndPreview;
+
+        /// <summary>今の押下で操作を始めてよいと判定されたか。</summary>
+        private bool _pressAllowed = true;
+
+        /// <summary>今の押下で TryBeginPreview を呼んだか（EndPreview を対にする）。</summary>
+        private bool _previewBegun;
+
+        private void FinishPress()
+        {
+            if (_previewBegun) EndPreview?.Invoke();
+            _previewBegun = false;
+            _pressAllowed = true;
+        }
+
         private void OnButtonDown(int btn, Vector2 screenPos, ModifierKeys mods)
         {
             if (btn != 0 || _toolHandler == null) return;
+
+            // 押下で始まる操作（押下時追従・ドラッグ）の前に担当者判定を行う。
+            // 通らなければこの押下の追従とドラッグは止め、クリック（選択）は通す。
+            _previewBegun = TryBeginPreview != null;
+            _pressAllowed = TryBeginPreview?.Invoke() ?? true;
+            if (!_pressAllowed) return;
 
             // 押下時点のホバーは「直前の PointerMove で GPU が確定した値」。
             // PointerDown ではホバーを再計算しない（再計算すると判定位置が飛ぶ）。
@@ -124,7 +156,7 @@ namespace Poly_Ling.Player
 
         private void OnPressMove(int btn, Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
-            if (btn != 0 || _toolHandler == null) return;
+            if (btn != 0 || _toolHandler == null || !_pressAllowed) return;
             PressHandler?.OnLeftPressMove(screenPos, delta, mods);
         }
 
@@ -133,7 +165,8 @@ namespace Poly_Ling.Player
             if (btn != 0 || _toolHandler == null) return;
 
             // しきい値を越えずに離された。押下時に開始していた操作を先に巻き戻す。
-            PressHandler?.OnLeftPressCancel(screenPos, mods);
+            if (_pressAllowed) PressHandler?.OnLeftPressCancel(screenPos, mods);
+            FinishPress();
 
             // GPU が UpdateFrame で計算済みのホバー結果を読み取る。
             var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
@@ -147,7 +180,7 @@ namespace Poly_Ling.Player
 
         private void OnDragBegin(int btn, Vector2 screenPos, ModifierKeys mods)
         {
-            if (btn != 0 || _toolHandler == null) return;
+            if (btn != 0 || _toolHandler == null || !_pressAllowed) return;
             // ドラッグ開始時も同様に GPU 計算済みのホバー結果を使う。
             var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
             // screenPos は押下位置 (_downPos)。ホバーは直前の OnPointerHover で
@@ -162,14 +195,15 @@ namespace Poly_Ling.Player
 
         private void OnDrag(int btn, Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
-            if (btn != 0 || _toolHandler == null) return;
+            if (btn != 0 || _toolHandler == null || !_pressAllowed) return;
             _toolHandler.OnLeftDrag(screenPos, delta, mods);
         }
 
         private void OnDragEnd(int btn, Vector2 screenPos, ModifierKeys mods)
         {
             if (btn != 0 || _toolHandler == null) return;
-            _toolHandler.OnLeftDragEnd(screenPos, mods);
+            if (_pressAllowed) _toolHandler.OnLeftDragEnd(screenPos, mods);
+            FinishPress();
         }
     }
 }

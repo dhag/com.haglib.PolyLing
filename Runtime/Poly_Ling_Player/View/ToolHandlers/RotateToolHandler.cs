@@ -10,6 +10,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("rotate", Description = "選択頂点の回転")]
     public class RotateToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
@@ -41,26 +42,80 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "X 軸まわりの角度（度）")]
         public float RotX      { get => _tool.RotX;         set { _tool.RotX = value; } }
+        [Poly_Ling.Data.PLToolParam(Description = "Y 軸まわりの角度（度）")]
         public float RotY      { get => _tool.RotY;         set { _tool.RotY = value; } }
+        [Poly_Ling.Data.PLToolParam(Description = "Z 軸まわりの角度（度）")]
         public float RotZ      { get => _tool.RotZ;         set { _tool.RotZ = value; } }
+        [Poly_Ling.Data.PLToolParam(Description = "角度をスナップするか")]
         public bool  UseSnap       { get => _tool.UseSnap;      set => _tool.UseSnap = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "スナップ角（度）")]
         public float SnapAngle     { get => _tool.SnapAngle;    set => _tool.SnapAngle = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "オブジェクト原点を回転中心にするか")]
         public bool  UseOriginPivot{ get => _tool.UseOriginPivot; set => _tool.UseOriginPivot = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネット（周辺へ減衰して波及）を使うか")]
         public bool         UseMagnet          { get => _tool.UseMagnet;          set => _tool.UseMagnet = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの半径")]
         public float        MagnetRadius       { get => _tool.MagnetRadius;       set => _tool.MagnetRadius = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの減衰の形")]
         public Poly_Ling.Tools.FalloffType  MagnetFalloff      { get => _tool.MagnetFalloff;      set => _tool.MagnetFalloff = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "マグネットの距離の測り方")]
         public Poly_Ling.Tools.DistanceMode MagnetDistanceMode { get => _tool.MagnetDistanceMode; set => _tool.MagnetDistanceMode = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "任意軸まわりに回すか（false ならオイラー角）")]
         public bool  AxisMode  { get => _tool.AxisMode;  set => _tool.AxisMode = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "任意軸の X 成分")]
         public float AxisVecX  { get => _tool.AxisVecX;  set => _tool.AxisVecX = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "任意軸の Y 成分")]
         public float AxisVecY  { get => _tool.AxisVecY;  set => _tool.AxisVecY = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "任意軸の Z 成分")]
         public float AxisVecZ  { get => _tool.AxisVecZ;  set => _tool.AxisVecZ = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "任意軸まわりの角度（度）")]
         public float AxisAngle { get => _tool.AxisAngle; set => _tool.AxisAngle = value; }
+        [Poly_Ling.Data.PLToolState(Description = "回転中心（ワールド座標）")]
         public UnityEngine.Vector3 PivotPublic => _tool.PivotPublic;
+        [Poly_Ling.Data.PLToolState(Description = "回転の影響を受ける頂点数")]
+        public int   AffectedCount => _tool.GetTotalAffectedCountPublic();
         public int   GetTotalAffectedCount() => _tool.GetTotalAffectedCountPublic();
         public void  BeginSliderDrag() => _tool.BeginSliderDrag();
-        public void  EndSliderDrag()   { _tool.EndSliderDrag(); OnApplyCompleted?.Invoke(); }
-        public void  Revert()          => _tool.RevertPublic();
+        public void  EndSliderDrag()   { _tool.EndSliderDrag(); OnApplyCompleted?.Invoke(); EndPanelPreview(); }
+        [Poly_Ling.Data.PLToolAction(Description = "プレビューを捨てて開始状態へ戻す")]
+        public void  Revert()          { _tool.RevertPublic(); EndPanelPreview(); }
+
+        // ================================================================
+        // パネルからのプレビュー（操作経路統一計画.md H-2）
+        // ================================================================
+
+        /// <summary>パネルのスライダー操作でプレビューを始めてよいか（選択の担当者判定とロック取得）。</summary>
+        public Func<bool> TryBeginPreview;
+
+        /// <summary>パネルのプレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action EndPreview;
+
+        private bool _panelPreview;
+
+        /// <summary>
+        /// パネルのスライダーからのプレビュー開始。担当者判定で止められたらプレビューに入らない
+        /// （以後の値の代入は保持されるだけで、メッシュは動かない）。
+        /// コマンド実行（ExecuteFromCommand）は判定済みなので BeginSliderDrag を直接使う。
+        /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "パネルのスライダー操作によるプレビューを始める（対象のロックを取る）")]
+        public void BeginSliderDragFromPanel()
+        {
+            if (!_panelPreview && TryBeginPreview != null)
+            {
+                if (!TryBeginPreview()) return;
+                _panelPreview = true;
+            }
+            _tool.BeginSliderDrag();
+        }
+
+        private void EndPanelPreview()
+        {
+            if (!_panelPreview) return;
+            _panelPreview = false;
+            EndPreview?.Invoke();
+        }
 
         // ================================================================
         // コマンド経路
@@ -77,6 +132,7 @@ namespace Poly_Ling.Player
         ///   送信口が無い・対象が決まらない・取り出せる回転が無いときは、
         ///   従来どおり EndSliderDrag で確定させる。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "プレビュー中の回転を RotateSelectionCommand として確定する")]
         public void CommitViaCommand()
         {
             int[] targets = SelectedMasterIndices();
@@ -98,6 +154,7 @@ namespace Poly_Ling.Player
                 _tool.UseOriginPivot,
                 _tool.UseMagnet, _tool.MagnetRadius,
                 _tool.MagnetFalloff, _tool.MagnetDistanceMode));
+            EndPanelPreview();
         }
 
         /// <summary>

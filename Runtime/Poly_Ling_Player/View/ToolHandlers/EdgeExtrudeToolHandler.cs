@@ -12,6 +12,7 @@ using Poly_Ling.Selection;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("edgeExtrude", Description = "EdgeExtrudeTool（確定は EdgeExtrudeCommand）")]
     public class EdgeExtrudeToolHandler : IPlayerToolHandler
     {
         // ================================================================
@@ -37,8 +38,11 @@ namespace Poly_Ling.Player
         // 設定公開API
         // ================================================================
 
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeExtrudeTool.Mode")]
         public EdgeExtrudeSettings.ExtrudeMode Mode { get => _tool.Mode; set => _tool.Mode = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeExtrudeTool.SnapToAxis")]
         public bool SnapToAxis { get => _tool.SnapToAxis; set => _tool.SnapToAxis = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "EdgeExtrudeTool.DragSensitivity")]
         public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
 
         // ================================================================

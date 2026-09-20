@@ -21,7 +21,7 @@ namespace Poly_Ling.Data
     /// モーションファイルを読み、PolyLing モーション JSON（version 2）として書き出す。
     /// モデルは参照しない。
     /// </summary>
-    [PLCommand(Description = "VMD・Unity クリップ JSON・PolyLing モーション JSON を読み、検査してから PolyLing モーション JSON として書き出す。モデルは参照しない。作業フォルダが要る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "VMD・Unity クリップ JSON・PolyLing モーション JSON を読み、検査してから PolyLing モーション JSON として書き出す。モデルは参照しない。作業フォルダが要る。")]
     [PLResult("errors",      PLResultKind.Integer, Description = "検査で見つかったエラーの数。1 以上なら書き出していない")]
     [PLResult("warnings",    PLResultKind.Integer, Description = "検査で見つかった警告の数")]
     [PLResult("bones",       PLResultKind.Integer, Description = "ボーントラックの数")]
@@ -58,7 +58,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// PolyLing モーション JSON を読んで検査する。ファイルもモデルも変えない。
     /// </summary>
-    [PLCommand(Description = "PolyLing モーション JSON を読んで検査し、トラック数と問題点を返す。ファイルもモデルも変えない。作業フォルダが要る。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "PolyLing モーション JSON を読んで検査し、トラック数と問題点を返す。ファイルもモデルも変えない。作業フォルダが要る。")]
     [PLResult("valid",       PLResultKind.Flag,    Description = "エラーが無く読み込めるか")]
     [PLResult("version",     PLResultKind.Integer, Description = "ファイルに書かれていた版（読めなかったときは 0）")]
     [PLResult("errors",      PLResultKind.Integer, Description = "エラーの数")]

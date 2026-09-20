@@ -17,6 +17,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
+    [Poly_Ling.Data.PLTool("edgeRibbonFace", Description = "辺から帯面（確定は EdgeRibbonFaceCommand）")]
     public class EdgeRibbonFaceToolHandler : IPlayerToolHandler
     {
         private readonly EdgeRibbonFaceTool _tool =
@@ -36,6 +37,7 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<MeshContext, Vector3[]> GetWorldPositions;
 
+        [Poly_Ling.Data.PLToolSettings(Name = "settings", Description = "EdgeRibbonFaceSettings")]
         public EdgeRibbonFaceSettings Settings =>
             _tool.RibbonSettings;
 

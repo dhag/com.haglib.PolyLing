@@ -16,7 +16,7 @@ namespace Poly_Ling.Data
     // 選択
     // ================================================================
 
-    [PLCommand(Description = "リスト内のオブジェクトを選択し直す。分類ごとに索引の集合を差し替える。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "リスト内のオブジェクトを選択し直す。分類ごとに索引の集合を差し替える。")]
     public class SelectMeshCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectMeshCategory",
@@ -44,7 +44,7 @@ namespace Poly_Ling.Data
     ///   一致することを要求する（PanelCommand.Deform.cs / PanelCommand.Transform.cs の注記）。
     ///   よって選択と masterIndices の両方が要る。ここは両方を一度に埋める。
     /// </summary>
-    [PLCommand(Description = "名前で描画オブジェクトを選ぶ。選択状態を書き換え、選んだものの masterIndex と安定 ID を返す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "名前で描画オブジェクトを選ぶ。選択状態を書き換え、選んだものの masterIndex と安定 ID を返す。")]
     [PLResult("count",         PLResultKind.Integer,      Description = "選んだ描画オブジェクトの数")]
     [PLResult("masterIndices", PLResultKind.IntegerArray, Description = "選んだ描画オブジェクトの masterIndex", Optional = true)]
     [PLResult("objectIds",     PLResultKind.TextArray,    Description = "masterIndices と同じ並びの安定 ID。10 進の文字列", Optional = true)]
@@ -75,7 +75,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>現在のパーツ選択をセットとして保存</summary>
-    [PLCommand(Description = "現在のパーツ選択を選択辞書のセットとして保存する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "現在のパーツ選択を選択辞書のセットとして保存する。")]
     public class SavePartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetName",
@@ -86,7 +86,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを現在の選択に適用（置き換え）</summary>
-    [PLCommand(Description = "選択辞書の項目を現在の選択へ置き換えて入れる。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択辞書の項目を現在の選択へ置き換えて入れる。")]
     public class LoadPartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -97,7 +97,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを現在の選択に追加（Union）</summary>
-    [PLCommand(Description = "選択辞書の項目を現在の選択へ足す（和）。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択辞書の項目を現在の選択へ足す（和）。")]
     public class AddPartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -108,7 +108,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>現在の選択から辞書エントリを除外（Subtract）</summary>
-    [PLCommand(Description = "現在の選択から選択辞書の項目を除く（差）。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "現在の選択から選択辞書の項目を除く（差）。")]
     public class SubtractPartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -119,7 +119,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを削除</summary>
-    [PLCommand(Description = "メッシュ選択辞書の項目を消す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "メッシュ選択辞書の項目を消す。")]
     public class DeletePartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -130,7 +130,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリの名前を変更</summary>
-    [PLCommand(Description = "パーツ選択セットの名前を変える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "パーツ選択セットの名前を変える。")]
     public class RenamePartsSetCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -150,7 +150,7 @@ namespace Poly_Ling.Data
     ///
     /// パスは PLSandbox が作業フォルダの下へ閉じ込める。
     /// </summary>
-    [PLCommand(Description = "選択辞書をCSVフォルダへエクスポート。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "選択辞書をCSVフォルダへエクスポート。")]
     public class ExportPartsSetsCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetExportFolder",
@@ -165,7 +165,7 @@ namespace Poly_Ling.Data
     /// FolderPath が空のときは実行側でダイアログを開く（メインエディタ経路・単一ファイル）。
     /// ByObjectName が true のときはファイル内の "# object" 名と一致するオブジェクトへ読み込む。
     /// </summary>
-    [PLCommand(Description = "CSVフォルダから選択辞書をインポート。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "CSVフォルダから選択辞書をインポート。")]
     public class ImportPartsSetCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetImportFolder",
@@ -184,7 +184,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>選択中のメッシュを選択辞書エントリとして保存</summary>
-    [PLCommand(Description = "選択中のメッシュをメッシュ選択辞書の項目として保存する。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択中のメッシュをメッシュ選択辞書の項目として保存する。")]
     public class SaveSelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionaryCategory",
@@ -203,7 +203,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを選択に適用（置き換えまたは追加）</summary>
-    [PLCommand(Description = "メッシュ選択辞書の項目を選択へ入れる（置き換えるか足すかを選べる）。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "メッシュ選択辞書の項目を選択へ入れる（置き換えるか足すかを選べる）。")]
     public class ApplySelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionarySetIndex",
@@ -218,7 +218,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリを削除</summary>
-    [PLCommand(Description = "選択辞書の項目を消す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択辞書の項目を消す。")]
     public class DeleteSelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionarySetIndex",
@@ -229,7 +229,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択辞書エントリの名前を変更</summary>
-    [PLCommand(Description = "メッシュ選択辞書の項目の名前を変える。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "メッシュ選択辞書の項目の名前を変える。")]
     public class RenameSelectionDictionaryCommand : PanelCommand
     {
         [PLParam(TextKey = "SelectionDictionarySetIndex",
@@ -247,7 +247,7 @@ namespace Poly_Ling.Data
     /// パネル側でモデルを直接変更した後、全パネルにリスト構造変更を通知する。
     /// Paste / LoadCSV 等で使用。
     /// </summary>
-    [PLCommand(Description = "パネル側でモデルを直接変更した後、全パネルにリスト構造変更を通知する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "パネル側でモデルを直接変更した後、全パネルにリスト構造変更を通知する。")]
     public class NotifyListStructureChangedCommand : PanelCommand
     {
         public NotifyListStructureChangedCommand(int modelIndex) : base(modelIndex) { }
@@ -257,7 +257,7 @@ namespace Poly_Ling.Data
     /// パネル側で辞書メタデータを直接変更した後、全パネルに Attributes 変更を通知する。
     /// OnLoadDicFile 等で使用。
     /// </summary>
-    [PLCommand(Description = "パネル側で辞書メタデータを直接変更した後、全パネルに Attributes 変更を通知する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "パネル側で辞書メタデータを直接変更した後、全パネルに Attributes 変更を通知する。")]
     public class NotifyDictionaryChangedCommand : PanelCommand
     {
         public NotifyDictionaryChangedCommand(int modelIndex) : base(modelIndex) { }
@@ -301,7 +301,7 @@ namespace Poly_Ling.Data
     /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
-    [PLCommand(Description = "頂点・辺・面・線分をインデックス指定で選択する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "頂点・辺・面・線分をインデックス指定で選択する。")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている頂点の数")]
     [PLResult("edges",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている辺の数")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている面の数")]
@@ -318,7 +318,7 @@ namespace Poly_Ling.Data
         public enum SelectOp { Replace, Add, Remove, Toggle }
 
         /// <summary>Replace のときに選択を消す対象メッシュの範囲</summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "非加算のときに選択を消す対象の masterIndex 配列", Required = true)]
         public int[]   MasterIndices     { get; }
 
@@ -332,7 +332,7 @@ namespace Poly_Ling.Data
         public int[]   VertexIndices     { get; }
 
         /// <summary>VertexIndices と同じ並び・同じ長さ。各頂点が属する masterIndex</summary>
-        [PLParam(TextKey = "SelectVertexMeshIndices", IsMeshRef = true,
+        [PLParam(TextKey = "SelectVertexMeshIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "VertexIndices と同じ並び・同じ長さの masterIndex", Required = true)]
         public int[]   VertexMeshIndices { get; }
 
@@ -342,7 +342,7 @@ namespace Poly_Ling.Data
         public int[]   EdgePairs         { get; }
 
         /// <summary>EdgePairs の組ごとの masterIndex。長さは EdgePairs の半分</summary>
-        [PLParam(TextKey = "SelectEdgeMeshIndices", IsMeshRef = true,
+        [PLParam(TextKey = "SelectEdgeMeshIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "EdgePairs の組ごとの masterIndex。長さは EdgePairs の半分", Required = true)]
         public int[]   EdgeMeshIndices   { get; }
 
@@ -352,7 +352,7 @@ namespace Poly_Ling.Data
         public int[]   FaceIndices       { get; }
 
         /// <summary>FaceIndices と同じ並び・同じ長さ。各面が属する masterIndex</summary>
-        [PLParam(TextKey = "SelectFaceMeshIndices", IsMeshRef = true,
+        [PLParam(TextKey = "SelectFaceMeshIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "FaceIndices と同じ並び・同じ長さの masterIndex", Required = true)]
         public int[]   FaceMeshIndices   { get; }
 
@@ -362,7 +362,7 @@ namespace Poly_Ling.Data
         public int[]   LineIndices       { get; }
 
         /// <summary>LineIndices と同じ並び・同じ長さ。各線分が属する masterIndex</summary>
-        [PLParam(TextKey = "SelectLineMeshIndices", IsMeshRef = true,
+        [PLParam(TextKey = "SelectLineMeshIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "LineIndices と同じ並び・同じ長さの masterIndex", Required = true)]
         public int[]   LineMeshIndices   { get; }
 
@@ -409,7 +409,7 @@ namespace Poly_Ling.Data
     ///   EdgeLoop    : SeedEdgeV1/V2（辺ペア必須）
     ///   ShortestPath: SeedVertexIndex（始点）+ EndVertexIndex（終点）
     /// </summary>
-    [PLCommand(Description = "トポロジーベースの詳細選択を実行する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "トポロジーベースの詳細選択を実行する。")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている頂点の数")]
     [PLResult("edges",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている辺の数")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている面の数")]
@@ -422,7 +422,7 @@ namespace Poly_Ling.Data
         /// 受け口は「1 個で、それが編集対象と一致すること」を要求する。
         /// 配列にしてあるのは他コマンドと形を揃えて ObjectIds と対にするため。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個", Required = true)]
         public int[]              MasterIndices     { get; }
 
@@ -545,7 +545,7 @@ namespace Poly_Ling.Data
     /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
-    [PLCommand(Description = "属性で頂点を選ぶ（クリック非依存）。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "属性で頂点を選ぶ（クリック非依存）。")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている頂点の数")]
     [PLResult("edges",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている辺の数")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている面の数")]
@@ -557,7 +557,7 @@ namespace Poly_Ling.Data
         /// 実処理は編集対象メッシュ 1 本にしか効かないため、受け口は
         /// 「1 個で、それが編集対象と一致すること」を要求する。
         /// </summary>
-        [PLParam(TextKey = "MasterIndices", IsMeshRef = true,
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
                  Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個", Required = true)]
         public int[]              MasterIndices           { get; }
 
@@ -628,7 +628,7 @@ namespace Poly_Ling.Data
     /// 選択部品辞書が指している頂点から、識別子（頂点ID / 部品ID / サブID）を
     /// 控え直す。辞書化のときにも自動で控えるので、これは控え直したいときの手動口。
     /// </summary>
-    [PLCommand(Description = "選択部品辞書の指す頂点から、頂点ID・部品ID・サブIDを控え直す。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "選択部品辞書の指す頂点から、頂点ID・部品ID・サブIDを控え直す。")]
     public class CapturePartsSetVertexIdsCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",
@@ -647,7 +647,7 @@ namespace Poly_Ling.Data
     /// 頂点の挿入・削除で索引がずれたときの復旧口。
     /// 部品ID / サブID は引き当てには使わない。
     /// </summary>
-    [PLCommand(Description = "控えた頂点IDから、選択部品辞書の頂点インデックスを引き直す。索引がずれたときの復旧。")]
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "控えた頂点IDから、選択部品辞書の頂点インデックスを引き直す。索引がずれたときの復旧。")]
     public class ResolvePartsSetByVertexIdCommand : PanelCommand
     {
         [PLParam(TextKey = "PartsSetIndex",

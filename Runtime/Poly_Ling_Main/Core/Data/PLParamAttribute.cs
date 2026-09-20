@@ -52,6 +52,21 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// IsMeshRef の索引が指すオブジェクトへの触れ方。PLParamAttribute.MeshRefAccess が使う。
+    /// </summary>
+    public enum PLMeshRefAccess
+    {
+        /// <summary>未指定。PanelCommandFactoryAudit.RunAll が数える。</summary>
+        Unspecified = 0,
+
+        /// <summary>読むだけ（参照元・原型・リファレンス）。担当者判定の対象にしない。</summary>
+        Read = 1,
+
+        /// <summary>書き換える。担当者判定の対象にする。</summary>
+        Write = 2,
+    }
+
+    /// <summary>
     /// 作り直しで「出来たものを既存の出力先へ書き戻す」ときの役割。
     /// PLParamAttribute.RebuildRole が使う。
     /// </summary>
@@ -150,6 +165,45 @@ namespace Poly_Ling.Data
 
         /// <summary>MeshRefModelKey が指定されているか。</summary>
         public bool HasMeshRefModelKey => !string.IsNullOrEmpty(MeshRefModelKey);
+
+        /// <summary>
+        /// IsMeshRef の索引が指すオブジェクトを、コマンドが書き換えるか読むだけか。
+        ///
+        /// 【何のために要るか】
+        ///   担当者判定（RemoteOwnership）は「コマンドが書き換える対象」を知る必要がある。
+        ///   IsMeshRef は書き込み先（ApplyBlend の宛先）と読むだけの参照元
+        ///   （ApplyBlend のソース）を区別しないため、別に持つ。
+        ///
+        /// 【既定】
+        ///   Unspecified。IsMeshRef が付いていて未指定のものは
+        ///   PanelCommandFactoryAudit.RunAll が数える。
+        ///   IsMeshRef が付いていないパラメータでは読まない。
+        /// </summary>
+        public PLMeshRefAccess MeshRefAccess { get; set; } = PLMeshRefAccess.Unspecified;
+
+        /// <summary>
+        /// MeshRefAccess = Write の引数が、実際に書き込み先になる条件。"キー=値" の形。
+        ///
+        /// 【何のために要るか】
+        ///   引数の値によって、同じ参照先を書き換えるか読むだけかが変わるコマンドがある
+        ///   （例：ApplyBlend は createNewObject=true なら宛先を書き換えず複製を足す）。
+        ///   条件を書かないと常に書き込み先として扱われ、実際には書かない場合まで
+        ///   担当者判定で止まる。
+        ///
+        /// 【書き方】
+        ///   キーは PanelCommandFactory.ToArgs が出すキー（入れ子はドット区切り）。
+        ///   入れ子の型のメンバに付けるときは、入れ子の型の中のキー（例 "addMode"）で書く。
+        ///   MeshRefKeys が外側の接頭辞（例 "placement."）を付けて完全なキーにする。
+        ///   値は bool なら true/false、enum なら名前で書き、大文字小文字は区別しない。
+        ///   ToArgs は enum を整数で出すので、IsWriteActive が名前を整数へ直して比べる。
+        ///   "|" で区切ると、いずれかに一致すれば書き込み先
+        ///   （例 "addMode=AddToExisting|ReplaceExisting"）。空なら無条件で書き込み先。
+        ///   キーと値の妥当性は PanelCommandFactoryAudit.RunAll が検査する。
+        /// </summary>
+        public string WriteWhen { get; set; } = "";
+
+        /// <summary>WriteWhen が指定されているか。</summary>
+        public bool HasWriteWhen => !string.IsNullOrEmpty(WriteWhen);
 
         /// <summary>
         /// このパラメータがプロファイル（断面の点列・輪郭のループ群）の本体であることを示す。
