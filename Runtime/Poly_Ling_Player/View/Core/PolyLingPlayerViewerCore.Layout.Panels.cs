@@ -125,6 +125,14 @@ namespace Poly_Ling.Player
             _blendSubPanel.UnlockAfterPreview = EndHostPreview;
             _blendSubPanel.Build(_layoutRoot.BlendSection);
 
+            // 臨時の対称化は既存ミラー機構へ状態を足さず、対象のクローン追加だけを行う。
+            _referenceSymmetrySubPanel = new PlayerReferenceSymmetrySubPanel
+            {
+                GetModel = () => ActiveProject?.CurrentModel,
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+            };
+            _referenceSymmetrySubPanel.Build(_layoutRoot.ReferenceSymmetrySection);
+
             _shrinkSubPanel = new PlayerShrinkSubPanel(Poly_Ling.UI.ShrinkCollisionMode.VertexSegment);
             _shrinkSubPanel.OnSyncMeshPositions = mc =>
             {

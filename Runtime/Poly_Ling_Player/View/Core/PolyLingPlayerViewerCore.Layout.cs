@@ -112,6 +112,7 @@ namespace Poly_Ling.Player
             _layoutRoot.ShrinkBtn.clicked     += ShowShrinkPanel;
             _layoutRoot.ShrinkFaceBtn.clicked += ShowShrinkFacePanel;
             _layoutRoot.ModelBlendBtn.clicked += ShowModelBlendPanel;
+            _layoutRoot.ReferenceSymmetryBtn.clicked += ShowReferenceSymmetryPanel;
             _layoutRoot.BoneEditorBtn.clicked  += () => { ShowBoneEditorPanel(); _boneEditorSubPanel?.ShowBonesTab(); };
             _layoutRoot.UVEditorBtn.clicked    += ShowUVEditorPanel;
             _layoutRoot.UVUnwrapBtn.clicked    += ShowUVUnwrapPanel;
@@ -623,6 +624,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.UVUnwrapSection,          () => _uvUnwrapSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MaterialListSection,      () => _materialListSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.ThinPlateMorphSection,    () => _thinPlateMorphSubPanel?.OnSelectionChanged()));
+            _sectionRefreshPairs.Add((_layoutRoot.ReferenceSymmetrySection, () => _referenceSymmetrySubPanel?.Refresh()));
             // 図形生成のマテリアル指定ドロップダウン。生成でスロットを作った直後や、
             // マテリアル一覧側でスロットを増減した後に選択肢を追随させる。
             _sectionRefreshPairs.Add((_layoutRoot.PrimitiveSection,          () => _primitiveSubPanel?.RefreshMaterials()));

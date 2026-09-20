@@ -208,6 +208,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.NormalTransplantSection, ShowNormalTransplantPanel, _normalTransplantSubPanel);
             RegisterUiPanel("blend", "ブレンド（複数のソースを重みで混ぜる）",
                 _layoutRoot.BlendSection, ShowBlendPanel, _blendSubPanel);
+            RegisterUiPanel("referenceSymmetry", "左右対称な REF に基づき、対象の正 X 側をクローンの負 X 側へ移植する臨時機能",
+                _layoutRoot.ReferenceSymmetrySection, ShowReferenceSymmetryPanel, _referenceSymmetrySubPanel);
             RegisterUiPanel("modelBlend", "モデルブレンド（クローンにモデルごとの重みで混ぜる）",
                 _layoutRoot.ModelBlendSection, ShowModelBlendPanel, _modelBlendSubPanel);
             RegisterUiPanel("morph", "モーフエクスプレッション（セット・エントリ・プレビュー・CSV）",
