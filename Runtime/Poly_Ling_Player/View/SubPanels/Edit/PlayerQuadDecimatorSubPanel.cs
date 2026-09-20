@@ -16,10 +16,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerQuadDecimatorSubPanel
     {
-        public Func<ToolContext>     GetToolContext;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
-        public Func<ModelContext>   GetModel;
-        public Func<int>            GetModelIndex;
 
         // 設定
         private float _targetRatio     = 0.5f;
@@ -144,14 +143,10 @@ namespace Poly_Ling.Player
         public void Refresh()
         {
             if (_warningLabel == null) return;
-            var tc  = GetToolContext?.Invoke();
-            var mc  = tc?.ActiveMeshContext;
-            var obj = mc?.MeshObject;
-
-            if (tc == null)  { ShowWarning("ToolContext 未設定"); return; }
+            var mc = GetView?.Invoke()?.CurrentModel?.ActiveMesh;
             _warningLabel.style.display = DisplayStyle.None;
 
-            if (obj == null)
+            if (mc == null)
             {
                 _noMeshLabel.style.display    = DisplayStyle.Flex;
                 _meshInfoLabel.style.display  = DisplayStyle.None;
@@ -160,11 +155,10 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            int quads = 0, tris = 0;
-            foreach (var f in obj.Faces) { if (f.IsQuad) quads++; else if (f.IsTriangle) tris++; }
+            int quads = mc.QuadCount, tris = mc.TriCount;
             _noMeshLabel.style.display    = DisplayStyle.None;
             _meshInfoLabel.style.display  = DisplayStyle.Flex;
-            _meshInfoLabel.text = $"総面数: {obj.Faces.Count}  Quad: {quads}  Tri: {tris}";
+            _meshInfoLabel.text = $"総面数: {mc.FaceCount}  Quad: {quads}  Tri: {tris}";
 
             bool hasQuads = quads > 0;
             _btnExecute.SetEnabled(hasQuads);
@@ -173,35 +167,16 @@ namespace Poly_Ling.Player
 
         private void OnExecute()
         {
-            var model = GetModel?.Invoke();
-            var tc    = GetToolContext?.Invoke();
-            var mc    = tc?.ActiveMeshContext ?? model?.ActiveMeshContext;
-            if (mc?.MeshObject == null) { ShowWarning("メッシュが選択されていません"); return; }
+            var view      = GetView?.Invoke();
+            int masterIdx = view?.CurrentModel?.ActiveMeshIndex ?? -1;
+            if (masterIdx < 0) { ShowWarning("メッシュが選択されていません"); return; }
 
-            int modelIdx  = GetModelIndex?.Invoke() ?? 0;
-            int masterIdx = model?.IndexOf(mc) ?? -1;
-
-            if (SendCommand != null && masterIdx >= 0)
-            {
-                SendCommand.Invoke(new QuadDecimateCommand(
-                    modelIdx, masterIdx,
-                    _targetRatio, _maxPasses,
-                    _normalAngleDeg, _hardAngleDeg, _uvSeamThreshold));
-                SetWarningHidden();
-                return;
-            }
-            // フォールバック
-            var prms = new DecimatorParams
-            {
-                TargetRatio     = _targetRatio,
-                MaxPasses       = _maxPasses,
-                NormalAngleDeg  = _normalAngleDeg,
-                HardAngleDeg    = _hardAngleDeg,
-                UvSeamThreshold = _uvSeamThreshold,
-            };
-            _lastResult = QuadDecimatorOperation.Execute(mc, prms, tc);
-            RefreshResult();
-            tc?.Repaint?.Invoke();
+            // 実行はコマンドだけで行う（パネルからの直接実行の経路は持たない。操作経路統一計画.md J）。
+            SendCommand?.Invoke(new QuadDecimateCommand(
+                view.CurrentModelIndex, masterIdx,
+                _targetRatio, _maxPasses,
+                _normalAngleDeg, _hardAngleDeg, _uvSeamThreshold));
+            SetWarningHidden();
         }
 
         private void SetWarningHidden()

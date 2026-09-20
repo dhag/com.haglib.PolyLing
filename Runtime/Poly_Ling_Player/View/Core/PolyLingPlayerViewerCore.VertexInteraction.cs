@@ -73,6 +73,8 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
                 OnRepaint = () => _activePanel?.MarkDirtyRepaint(),
+                // ビューポートで半径を決める操作の通知は本体が受け、パネルに読み直させる（操作経路統一計画.md C-3）。
+                OnRadiusChanged = _ => _vertexMoveSubPanel?.Refresh(),
 
                 GetHoverElement = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
                 GetToolContext  = () => _viewportManager.GetCurrentToolContext(_activeViewport),
@@ -277,6 +279,9 @@ namespace Poly_Ling.Player
             _sculptHandler.SetUndoController(_editOps?.UndoController);
             _sculptHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _sculptHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
+            // ビューポートで半径を決める操作の通知は本体が受け、パネルに読み直させる（操作経路統一計画.md C-3）。
+            _sculptHandler.OnRadiusChanged          = _ => _sculptSubPanel?.Refresh();
+            _sculptHandler.OnRadiusDragModeExited   = () => _sculptSubPanel?.Refresh();
             _sculptHandler.OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
             _sculptHandler.OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
             _sculptHandler.OnSyncMeshPositions = mc =>
@@ -297,7 +302,7 @@ namespace Poly_Ling.Player
             // 実体化したツールから離れたときに SetInteractionMode が解除する。
             _tempMirrorController = new TempMirrorController
             {
-                GetProject  = () => ActiveProject,
+                GetProject  = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
 

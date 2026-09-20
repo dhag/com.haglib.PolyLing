@@ -7,12 +7,15 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerBillboardProfileSubPanel
     {
-        public Func<BillboardProfileToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface Surface;
+        private const string Tool = "billboardProfile";
         /// <summary>対象オブジェクトの名前と線分群の数（表示用）。</summary>
         public Func<(string Name, int Groups)> GetTargetInfo;
         /// <summary>描画を終える（Escape と同じ）。</summary>
@@ -83,21 +86,16 @@ namespace Poly_Ling.Player
             _modeField = new DropdownField("編集の仕方", ModeChoices, 0);
             _modeField.RegisterValueChangedCallback(_ =>
             {
-                var h = GetH?.Invoke();
-                if (h == null) return;
-                h.FinishChain();
-                h.Mode = IndexToMode(_modeField.index);
+                if (Surface == null) return;
+                Surface.Invoke(Tool, "finishChain");
+                Surface.Set(Tool, "mode", IndexToMode(_modeField.index));
                 Refresh();
             });
             _root.Add(_modeField);
 
             _extendToggle = new Toggle("既存の線分群を伸ばす") { value = false };
             _extendToggle.style.color = new StyleColor(Color.white);
-            _extendToggle.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH?.Invoke();
-                if (h != null) h.ExtendExisting = e.newValue;
-            });
+            _extendToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "extendExisting", e.newValue));
             _root.Add(_extendToggle);
 
             _targetLabel = new Label();
@@ -123,8 +121,8 @@ namespace Poly_Ling.Player
             _profileBox.Add(_selLabel);
 
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row;
-            _deleteBtn = new Button(() => { GetH?.Invoke()?.DeleteSelectedPoints(); Refresh(); }) { text = "選択点を削除" };
-            _smoothBtn = new Button(() => { GetH?.Invoke()?.SmoothSelectedPoints(); Refresh(); }) { text = "滑らかにする" };
+            _deleteBtn = new Button(() => { Surface?.Invoke(Tool, "deleteSelectedPoints"); Refresh(); }) { text = "選択点を削除" };
+            _smoothBtn = new Button(() => { Surface?.Invoke(Tool, "smoothSelectedPoints"); Refresh(); }) { text = "滑らかにする" };
             _deleteBtn.style.flexGrow = 1; _smoothBtn.style.flexGrow = 1;
             row.Add(_deleteBtn); row.Add(_smoothBtn);
             _profileBox.Add(row);
@@ -136,16 +134,13 @@ namespace Poly_Ling.Player
             _groupField = new IntegerField("長さの組 ID") { value = 1 };
             _applyConstraintBtn = new Button(() =>
             {
-                var h = GetH?.Invoke();
-                if (h == null) return;
-                var c = new Poly_Ling.Data.HandleConstraint
-                {
-                    Direction     = (Poly_Ling.Data.HandleDirection)_dirField.index,
-                    Length        = (Poly_Ling.Data.HandleLength)_lenField.index,
-                    Ratio         = _ratioField.value,
-                    LengthGroupId = _groupField.value,
-                };
-                h.SetSelectedConstraint(_sideField.index == 1, c);
+                if (Surface == null) return;
+                Surface.Invoke(Tool, "setSelectedConstraintValues",
+                    ("isOut",         _sideField.index == 1),
+                    ("direction",     (Poly_Ling.Data.HandleDirection)_dirField.index),
+                    ("length",        (Poly_Ling.Data.HandleLength)_lenField.index),
+                    ("ratio",         _ratioField.value),
+                    ("lengthGroupId", _groupField.value));
                 Refresh();
             }) { text = "選択点へ拘束を設定" };
             _profileBox.Add(_sideField);
@@ -172,27 +167,27 @@ namespace Poly_Ling.Player
         public void Refresh()
         {
             if (_root == null) return;
-            var h = GetH?.Invoke();
-            if (h != null)
+            if (Surface != null)
             {
-                if (_extendToggle.value != h.ExtendExisting) _extendToggle.SetValueWithoutNotify(h.ExtendExisting);
-                _statusLabel.text = h.Status ?? "";
-                _finishBtn.SetEnabled(h.ChainPoints.Count > 0);
+                bool extend  = Surface.GetBool(Tool, "extendExisting");
+                var  mode    = Surface.Get(Tool, "mode", BillboardProfileToolHandler.SubMode.Line);
+                int  chain   = Surface.GetInt(Tool, "chainPointCount");
+                int  ffCount = Surface.GetInt(Tool, "freeformPointCount");
+                if (_extendToggle.value != extend) _extendToggle.SetValueWithoutNotify(extend);
+                _statusLabel.text = Surface.GetString(Tool, "status");
 
-                bool profile = h.Mode == BillboardProfileToolHandler.SubMode.Profile;
+                bool profile = mode == BillboardProfileToolHandler.SubMode.Profile;
                 _profileBox.style.display = profile ? DisplayStyle.Flex : DisplayStyle.None;
-                _finishBtn.style.display  = profile ? DisplayStyle.None : DisplayStyle.Flex;
-                _extendToggle.style.display = profile ? DisplayStyle.None : DisplayStyle.Flex;
-                int sel = h.SelectedPoints.Count;
+                int sel = Surface.GetInt(Tool, "selectedPointCount");
                 _selLabel.text = $"選択中の点：{sel} 個";
                 _deleteBtn.SetEnabled(sel > 0);
                 _smoothBtn.SetEnabled(sel > 0);
                 _applyConstraintBtn.SetEnabled(sel > 0);
-                int idx = profile ? 1 : (h.Mode == BillboardProfileToolHandler.SubMode.Freeform ? 2 : 0);
+                int idx = profile ? 1 : (mode == BillboardProfileToolHandler.SubMode.Freeform ? 2 : 0);
                 if (_modeField.index != idx) _modeField.SetValueWithoutNotify(ModeChoices[idx]);
-                bool free = h.Mode == BillboardProfileToolHandler.SubMode.Freeform;
+                bool free = mode == BillboardProfileToolHandler.SubMode.Freeform;
                 _finishBtn.style.display  = profile ? DisplayStyle.None : DisplayStyle.Flex;
-                _finishBtn.SetEnabled(h.ChainPoints.Count > 0 || h.FreeformPoints.Count > 0);
+                _finishBtn.SetEnabled(chain > 0 || ffCount > 0);
                 _finishBtn.text = free ? "確定する（Enter と同じ）" : "描画を終える";
                 _extendToggle.style.display = (profile || free) ? DisplayStyle.None : DisplayStyle.Flex;
             }

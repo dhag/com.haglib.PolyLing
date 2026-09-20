@@ -18,7 +18,9 @@ namespace Poly_Ling.Player
         // 外部注入
         // ================================================================
 
-        public Func<MoveToolHandler> GetHandler;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private MoveSurfaceView H => Surface != null ? new MoveSurfaceView(Surface) : null;
 
         private PanelContext _ctx;
 
@@ -118,7 +120,7 @@ namespace Poly_Ling.Player
             _lassoToggle.style.marginBottom = 3;
             _lassoToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.DragSelectMode = e.newValue
                     ? MoveToolHandler.SelectionDragMode.Lasso
@@ -134,7 +136,7 @@ namespace Poly_Ling.Player
             _magnetToggle.style.marginBottom = 2;
             _magnetToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h != null) h.UseMagnet = e.newValue;
                 SetMagnetParamsVisible(e.newValue);
             });
@@ -153,7 +155,7 @@ namespace Poly_Ling.Player
 
             // ハンドラの実値から作る。固定値でスライダを作ると、上下限を変えた状態で
             // 開き直したときにつまみの位置と数字が食い違う。
-            var h0 = GetHandler?.Invoke();
+            var h0 = H;
             float radMin0 = h0?.MinMagnetRadius ?? 0.01f;
             float radMax0 = h0?.MaxMagnetRadius ?? 1.0f;
             float rad0    = h0?.MagnetRadius    ?? 0.5f;
@@ -164,7 +166,7 @@ namespace Poly_Ling.Player
             _magnetRadiusSlider.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h != null) h.MagnetRadius = e.newValue;
                 _suppressSync = true;
                 _magnetRadiusField?.SetValueWithoutNotify(e.newValue);
@@ -179,7 +181,7 @@ namespace Poly_Ling.Player
             _magnetRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 ApplyRadiusInput(h, e.newValue);
             });
@@ -188,16 +190,10 @@ namespace Poly_Ling.Player
             // ドラッグで範囲指定
             _radiusDragButton = new Button(() =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.IsRadiusDragMode = true;
-                h.OnRadiusChanged  = r =>
-                {
-                    _suppressSync = true;
-                    _magnetRadiusSlider?.SetValueWithoutNotify(r);
-                    _magnetRadiusField?.SetValueWithoutNotify(r);
-                    _suppressSync = false;
-                };
+                // 半径の変化はハンドラから本体経由で通知され、パネルは Refresh で読み直す（操作経路統一計画.md C-3）。
                 UpdateRadiusDragButtonStyle(true);
             });
             _radiusDragButton.text = "ドラッグで範囲指定";
@@ -207,13 +203,13 @@ namespace Poly_Ling.Player
 
             // 距離モード／フォールオフ（共通 UI）
             _distanceModeDropdown = _falloffControls.BuildDistanceDropdown(
-                () => GetHandler?.Invoke()?.MagnetDistanceMode ?? DistanceMode.Euclidean,
-                v  => { var h = GetHandler?.Invoke(); if (h != null) h.MagnetDistanceMode = v; });
+                () => H?.MagnetDistanceMode ?? DistanceMode.Euclidean,
+                v  => { var h = H; if (h != null) h.MagnetDistanceMode = v; });
             _magnetParamsGroup.Add(_distanceModeDropdown);
 
             _falloffDropdown = _falloffControls.BuildFalloffDropdown(
-                () => GetHandler?.Invoke()?.MagnetFalloff ?? FalloffType.Gaussian,
-                v  => { var h = GetHandler?.Invoke(); if (h != null) h.MagnetFalloff = v; });
+                () => H?.MagnetFalloff ?? FalloffType.Gaussian,
+                v  => { var h = H; if (h != null) h.MagnetFalloff = v; });
             _magnetParamsGroup.Add(_falloffDropdown);
 
             // 詳細設定（半径範囲）
@@ -238,7 +234,7 @@ namespace Poly_Ling.Player
             _minRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.MinMagnetRadius = Mathf.Max(0.001f, e.newValue);
                 ApplyRadiusRange(h);
@@ -260,7 +256,7 @@ namespace Poly_Ling.Player
             _maxRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.MaxMagnetRadius = Mathf.Clamp(
                     e.newValue,
@@ -295,7 +291,7 @@ namespace Poly_Ling.Player
 
             var applyMoveBtn = new Button(() =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
 
                 var targets = SelectedDrawables;
@@ -337,14 +333,14 @@ namespace Poly_Ling.Player
 
             _gizmoOffsetXSlider = MakeSlider("Offset X", -100f, 100f, 60f, v =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h != null) h.GizmoScreenOffsetX = v;
             });
             _root.Add(_gizmoOffsetXSlider);
 
             _gizmoOffsetYSlider = MakeSlider("Offset Y", -100f, 100f, -60f, v =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h != null) h.GizmoScreenOffsetY = v;
             });
             _root.Add(_gizmoOffsetYSlider);
@@ -365,7 +361,7 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetHandler?.Invoke();
+            var h = H;
             if (h == null) return;
 
             _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
@@ -455,7 +451,7 @@ namespace Poly_Ling.Player
         /// 黙ってクランプすると、上下限が折りたたみの中にあるため
         /// 「入れた数字が勝手に変わる」ように見える。
         /// </summary>
-        private void ApplyRadiusInput(MoveToolHandler h, float requested)
+        private void ApplyRadiusInput(MoveSurfaceView h, float requested)
         {
             float min = h.MinMagnetRadius;
             float max = h.MaxMagnetRadius;
@@ -473,7 +469,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>上下限が変わったとき、現在値を新レンジへ収めて UI を揃える。</summary>
-        private void ApplyRadiusRange(MoveToolHandler h)
+        private void ApplyRadiusRange(MoveSurfaceView h)
         {
             float min = h.MinMagnetRadius;
             float max = h.MaxMagnetRadius;
@@ -486,7 +482,7 @@ namespace Poly_Ling.Player
             SyncRadiusWidgets(h, min, max);
         }
 
-        private void SyncRadiusWidgets(MoveToolHandler h, float min, float max)
+        private void SyncRadiusWidgets(MoveSurfaceView h, float min, float max)
         {
             _suppressSync = true;
             SliderRangeUtil.SetRangeAndValue(_magnetRadiusSlider, min, max, h.MagnetRadius);

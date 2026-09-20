@@ -247,6 +247,7 @@ namespace Poly_Ling.Player
         private int                          _skinWeightUndoMasterIndex = -1;
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
+        private PlayerReferenceSymmetrySubPanel _referenceSymmetrySubPanel;
         private PlayerShrinkSubPanel         _shrinkSubPanel;
         private PlayerShrinkSubPanel         _shrinkFaceSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;

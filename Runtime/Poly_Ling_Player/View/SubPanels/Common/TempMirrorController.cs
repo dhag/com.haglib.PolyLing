@@ -38,7 +38,7 @@ namespace Poly_Ling.Player
     public class TempMirrorController
     {
         // ── 外部注入 ──────────────────────────────────────────────────
-        public Func<ProjectContext> GetProject;
+        public Func<Poly_Ling.View.IProjectView> GetProject;
         public Action<PanelCommand> SendCommand;
 
         /// <summary>実体化・解除の後に呼ばれる（サブパネルのボタン表示同期用）。</summary>
@@ -85,7 +85,7 @@ namespace Poly_Ling.Player
             if (model == null) { LastMessage = "モデルがありません"; return 0; }
             if (SendCommand == null) { LastMessage = "コマンド送信先が未設定です"; return 0; }
 
-            var targets = new List<int>(model.SelectedDrawableMeshIndices);
+            var targets = new List<int>(model.SelectedDrawableIndices);
             if (targets.Count == 0) { LastMessage = "メッシュを選択してください"; return 0; }
 
             int modelIndex = project.CurrentModelIndex;
@@ -95,16 +95,16 @@ namespace Poly_Ling.Player
             {
                 foreach (int masterIndex in targets)
                 {
-                    var mc = model.GetMeshContext(masterIndex);
-                    if (mc?.MeshObject == null) continue;
+                    var mc = model.GetMesh(masterIndex);
+                    if (mc == null) continue;
 
                     // 既に実体化されているメッシュは触らない。
                     // （左ペインの「一時ミラー」パネルから実体化されたものを奪わないため）
-                    if (mc.MeshObject.MirrorBakeState != null) continue;
+                    if (mc.IsMirrorBakedState) continue;
 
                     // 選択頂点を境界にするモードでは、そのメッシュに選択頂点が要る。
                     if (TempMirrorSettings.BoundaryMode == MirrorBoundaryMode.SelectedVertices
-                        && (mc.Selection?.Vertices.Count ?? 0) == 0)
+                        && mc.SelectedVertexCount == 0)
                         continue;
 
                     SendCommand.Invoke(new BakeMirrorCommand(
@@ -116,8 +116,8 @@ namespace Poly_Ling.Player
                         TempMirrorSettings.BoundaryMode,
                         TempMirrorSettings.ProjectBoundary));
 
-                    // 実際に実体化できたものだけを所有する。
-                    if (mc.MeshObject.MirrorBakeState != null)
+                    // 実際に実体化できたものだけを所有する（実行後に読み直す）。
+                    if (GetProject?.Invoke()?.CurrentModel?.GetMesh(masterIndex)?.IsMirrorBakedState == true)
                         _ownedMasterIndices.Add(masterIndex);
                 }
             }
@@ -175,15 +175,15 @@ namespace Poly_Ling.Player
                     for (int i = _ownedMasterIndices.Count - 1; i >= 0; i--)
                     {
                         int masterIndex = _ownedMasterIndices[i];
-                        var mc = model.GetMeshContext(masterIndex);
-                        if (mc?.MeshObject?.MirrorBakeState == null) continue;
+                        var mc = model.GetMesh(masterIndex);
+                        if (mc == null || !mc.IsMirrorBakedState) continue;
 
                         SendCommand.Invoke(new UnbakeMirrorCommand(
                             _ownerModelIndex, masterIndex,
                             TempMirrorSettings.WriteBack,
                             restoreSavedMirrorSettings: true));
 
-                        if (mc.MeshObject.MirrorBakeState == null) done++;
+                        if (GetProject?.Invoke()?.CurrentModel?.GetMesh(masterIndex)?.IsMirrorBakedState != true) done++;
                     }
                 }
                 else

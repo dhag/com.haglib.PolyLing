@@ -23,7 +23,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerVertexIdSubPanel
     {
-        public Func<ProjectContext>  GetView;
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand>  SendCommand;
 
         // UI 自動操作の ID は "vertexId.<下の Id>"（UiControlAttribute.cs）。
@@ -44,11 +44,9 @@ namespace Poly_Ling.Player
         [UiControl("clearAll", Safety = UiSafety.Destructive, Description = "全頂点 ID を消去する。既存の ID による対応付けが失われる")]
         private Button        _clearAllBtn;
 
-        private ProjectContext GetProject() => GetView?.Invoke();
-
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
-        private int ModelIndex => GetProject()?.CurrentModelIndex ?? 0;
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
         // ================================================================
         // Build
@@ -126,7 +124,12 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            var reports = VertexIdOps.Inspect(targets);
+            var reports = new List<Poly_Ling.View.VertexIdReportView>();
+            foreach (var t in targets)
+            {
+                var rep = t.InspectVertexIds();
+                if (rep != null) reports.Add(rep);
+            }
 
             int totalVerts = 0, totalUnset = 0, totalDupVerts = 0, healthy = 0;
             foreach (var r in reports)
@@ -173,21 +176,21 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>選択中の描画メッシュ。未選択時は編集対象メッシュ単体。</summary>
-        private List<MeshContext> CollectTargets()
+        private List<Poly_Ling.View.IMeshView> CollectTargets()
         {
-            var list  = new List<MeshContext>();
-            var model = GetProject()?.CurrentModel;
+            var list  = new List<Poly_Ling.View.IMeshView>();
+            var model = GetView?.Invoke()?.CurrentModel;
             if (model == null) return list;
 
-            foreach (int idx in model.SelectedDrawableMeshIndices)
+            foreach (int idx in model.SelectedDrawableIndices)
             {
-                var mc = model.GetMeshContext(idx);
-                if (mc?.MeshObject != null) list.Add(mc);
+                var mc = model.GetMesh(idx);
+                if (mc != null) list.Add(mc);
             }
             if (list.Count == 0)
             {
-                var mc = model.ActiveMeshContext;
-                if (mc?.MeshObject != null) list.Add(mc);
+                var mc = model.ActiveMesh;
+                if (mc != null) list.Add(mc);
             }
             return list;
         }

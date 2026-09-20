@@ -18,10 +18,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerMediaPipeFaceDeformSubPanel
     {
-        public Func<ToolContext>     GetToolContext;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
-        public Func<ModelContext>   GetModel;
-        public Func<int>            GetModelIndex;
 
         // 他のファイル読込パネルと同じく RecentPaths に端末ローカル保存する。
         private const string BeforePathKey = "MediaPipe.Before";
@@ -102,10 +101,10 @@ namespace Poly_Ling.Player
         public void Refresh()
         {
             if (_warningLabel == null) return;
-            var tc = GetToolContext?.Invoke();
-            if (tc?.ActiveMeshContext?.MeshObject == null)
+            var mesh = GetView?.Invoke()?.CurrentModel?.ActiveMesh;
+            if (mesh == null)
             {
-                _warningLabel.text          = tc == null ? "ToolContext 未設定" : "メッシュが選択されていません";
+                _warningLabel.text          = "メッシュが選択されていません";
                 _warningLabel.style.display = DisplayStyle.Flex;
                 return;
             }
@@ -173,54 +172,14 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            var model = GetModel?.Invoke();
-            var tc    = GetToolContext?.Invoke();
-            var mc    = tc?.ActiveMeshContext ?? model?.ActiveMeshContext;
-            if (mc?.MeshObject == null) { SetStatus("メッシュが選択されていません"); return; }
+            var view      = GetView?.Invoke();
+            int masterIdx = view?.CurrentModel?.ActiveMeshIndex ?? -1;
+            if (masterIdx < 0) { SetStatus("メッシュが選択されていません"); return; }
 
-            int masterIdx = model?.IndexOf(mc) ?? -1;
-            int modelIdx  = GetModelIndex?.Invoke() ?? 0;
-
-            if (SendCommand != null && masterIdx >= 0)
-            {
-                SendCommand.Invoke(new MediaPipeFaceDeformCommand(
-                    modelIdx, masterIdx, beforePath, afterPath, triPath));
-                SetStatus("MediaPipe変形コマンドを送信しました");
-                return;
-            }
-            // フォールバック
-            try
-            {
-                var sourceMesh    = mc.MeshObject;
-                var beforeLM      = MediaPipeFaceDeformer.LoadLandmarks(beforePath);
-                var afterLM       = MediaPipeFaceDeformer.LoadLandmarks(afterPath);
-                var triangles     = MediaPipeFaceDeformer.ParseTrianglesJson(File.ReadAllText(triPath));
-                int vertexCount   = sourceMesh.VertexCount;
-                var positions     = new Vector3[vertexCount];
-                for (int i = 0; i < vertexCount; i++) positions[i] = sourceMesh.Vertices[i].Position;
-                var deformer = new MediaPipeFaceDeformer();
-                deformer.SetBaseMesh(beforeLM, triangles);
-                int bindCount = deformer.Bind(positions);
-                deformer.Apply(afterLM, positions);
-                MeshObject cloned = sourceMesh.Clone();
-                // 既存の描画オブジェクトと名前が衝突しないようにする
-                // （同じメッシュを 2 回変形すると "元名_MP" が重複していた）。
-                string baseName = sourceMesh.Name + "_MP";
-                cloned.Name = model != null ? model.GenerateUniqueMeshName(baseName) : baseName;
-                for (int i = 0; i < vertexCount; i++) cloned.Vertices[i].Position = positions[i];
-                var newMc = new MeshContext
-                {
-                    // MeshContext.Name が未設定だと、オブジェクトリストに名前無しで並ぶ。
-                    Name       = cloned.Name,
-                    MeshObject = cloned,
-                    Materials  = new List<Material>(mc.Materials ?? new List<Material>()),
-                };
-                newMc.UnityMesh = cloned.ToUnityMesh(); newMc.UnityMesh.name = cloned.Name; newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-                tc?.AddMeshContext?.Invoke(newMc);
-                SetStatus($"変形メッシュを作成しました。バインド: {bindCount}/{vertexCount} 頂点");
-                tc?.Repaint?.Invoke();
-            }
-            catch (Exception ex) { SetStatus($"エラー: {ex.Message}"); UnityEngine.Debug.LogException(ex); }
+            // 実行はコマンドだけで行う（パネルからの直接実行の経路は持たない。操作経路統一計画.md J）。
+            SendCommand?.Invoke(new MediaPipeFaceDeformCommand(
+                view.CurrentModelIndex, masterIdx, beforePath, afterPath, triPath));
+            SetStatus("MediaPipe変形コマンドを送信しました");
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }

@@ -211,10 +211,69 @@ namespace Poly_Ling.View
         }
         private static readonly IPartsSetView[] _emptyPartsSetList = Array.Empty<IPartsSetView>();
 
+        // 一時ミラー（MeshObject.MirrorBakeState）
+        public bool IsMirrorBakedState            => _ctx?.MeshObject?.MirrorBakeState != null;
+        public int  MirrorBakeOriginalVertexCount => _ctx?.MeshObject?.MirrorBakeState?.OriginalVertexCount ?? 0;
+        public int  MirrorBakeOriginalFaceCount   => _ctx?.MeshObject?.MirrorBakeState?.OriginalFaceCount ?? 0;
+        public string MirrorBakeBoundaryDescription
+        {
+            get
+            {
+                var bake = _ctx?.MeshObject?.MirrorBakeState;
+                if (bake == null) return "";
+                return bake.BoundaryVertices == null
+                    ? "しきい値 " + bake.Threshold
+                    : "選択頂点 " + bake.BoundaryVertices.Length + " 点";
+            }
+        }
+
+        public VertexIdReportView InspectVertexIds()
+        {
+            if (_ctx?.MeshObject == null) return null;
+            var reports = Poly_Ling.Ops.VertexIdOps.Inspect(new List<MeshContext> { _ctx });
+            if (reports == null || reports.Count == 0) return null;
+            var r = reports[0];
+            return new VertexIdReportView
+            {
+                VertexCount           = r.VertexCount,
+                UnsetCount            = r.UnsetCount,
+                DuplicatedVertexCount = r.DuplicatedVertexCount,
+                IsHealthy             = r.IsHealthy,
+                Summary               = r.Summary,
+            };
+        }
+
+        /// <summary>法線再計算の除外セット（MeshObject.NormalRecalcExcludeList）。</summary>
+        public IReadOnlyList<IPartsSetView> NormalExcludeSets
+        {
+            get
+            {
+                var list = _ctx?.MeshObject?.NormalRecalcExcludeList;
+                if (list == null || list.Count == 0) return _emptyPartsSetList;
+                var result = new IPartsSetView[list.Count];
+                for (int i = 0; i < list.Count; i++)
+                    result[i] = new LivePartsSetView(list[i]);
+                return result;
+            }
+        }
+
         // 現在のパーツ選択状態（件数のみ）
         public int SelectedVertexCount => _ctx?.Selection?.Vertices?.Count ?? 0;
         public int SelectedEdgeCount   => _ctx?.Selection?.Edges?.Count   ?? 0;
         public int SelectedFaceCount   => _ctx?.Selection?.Faces?.Count   ?? 0;
+
+        public int HiddenFaceCount
+        {
+            get
+            {
+                var mo = _ctx?.MeshObject;
+                if (mo == null) return 0;
+                int n = 0;
+                foreach (var f in mo.Faces)
+                    if (f != null && f.VertexCount >= 3 && f.IsHidden) n++;
+                return n;
+            }
+        }
         public int SelectedLineCount   => _ctx?.Selection?.Lines?.Count   ?? 0;
 
         // 面カウント（詳細パネル用のみ呼ばれるため毎回計算で問題なし）
@@ -270,6 +329,23 @@ namespace Poly_Ling.View
 
         // 選択（毎回ライブで返す）
         public int[] SelectedDrawableIndices => _model.SelectedDrawableMeshIndices.ToArray();
+        public int ActiveMeshIndex => _model.ActiveMeshIndex;
+
+        public IMeshView ActiveMesh
+        {
+            get
+            {
+                int i  = _model.ActiveMeshIndex;
+                var mc = i >= 0 ? _model.GetMeshContext(i) : null;
+                return mc != null ? new LiveMeshView(mc, _model, i) : null;
+            }
+        }
+
+        public IMeshView GetMesh(int masterIndex)
+        {
+            var mc = masterIndex >= 0 ? _model.GetMeshContext(masterIndex) : null;
+            return mc != null ? new LiveMeshView(mc, _model, masterIndex) : null;
+        }
         public int[] SelectedBoneIndices => _model.SelectedBoneIndices.ToArray();
         public int[] SelectedMorphIndices => _model.SelectedMorphIndices.ToArray();
 
@@ -403,5 +479,7 @@ namespace Poly_Ling.View
         public int EdgeCount   => _set.Edges?.Count   ?? 0;
         public int FaceCount   => _set.Faces?.Count   ?? 0;
         public int LineCount   => _set.Lines?.Count   ?? 0;
+        public int  VertexIdCount          => _set.VertexIdCount;
+        public bool HasResolvableVertexIds => _set.HasResolvableVertexIds;
     }
 }

@@ -15,7 +15,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerPartsSelectionSetSubPanel
     {
-        public Func<ProjectContext>   GetView;
+        public Func<Poly_Ling.View.IProjectView>   GetView;
         public Action<PanelCommand> SendCommand;
 
         // UI 自動操作の ID は "partsSelectionSet.<下の Id>"（UiControlAttribute.cs）。
@@ -97,9 +97,8 @@ namespace Poly_Ling.Player
         private readonly List<string> _setNames = new List<string>();
 
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
-        private ProjectContext GetProject() => GetView?.Invoke();
-        private MeshContext FirstSelectedMeshContext
-            => GetView?.Invoke()?.CurrentModel?.ActiveMeshContext;
+        private Poly_Ling.View.IMeshView FirstSelectedMeshContext
+            => GetView?.Invoke()?.CurrentModel?.ActiveMesh;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
@@ -232,15 +231,15 @@ namespace Poly_Ling.Player
                 _meshNameLabel.text = mc.Name ?? "(no name)";
 
                 var parts = new List<string>();
-                if (mc.SelectedVertices?.Count > 0) parts.Add($"V:{mc.SelectedVertices.Count}");
-                if (mc.SelectedEdges?.Count   > 0) parts.Add($"E:{mc.SelectedEdges.Count}");
-                if (mc.SelectedFaces?.Count   > 0) parts.Add($"F:{mc.SelectedFaces.Count}");
+                if (mc.SelectedVertexCount > 0) parts.Add($"V:{mc.SelectedVertexCount}");
+                if (mc.SelectedEdgeCount   > 0) parts.Add($"E:{mc.SelectedEdgeCount}");
+                if (mc.SelectedFaceCount   > 0) parts.Add($"F:{mc.SelectedFaceCount}");
                 _currentSelLabel.text = parts.Count > 0 ? string.Join("  ", parts) : "(選択なし)";
             }
 
             // 辞書リスト再構築
             _setNames.Clear();
-            var sets = mc?.PartsSelectionSetList;
+            var sets = mc?.PartsSelectionSets;
             if (sets != null) foreach (var s in sets) _setNames.Add(s.Name ?? "");
             _setListView.itemsSource = _setNames;
             _setListView.Rebuild();
@@ -254,7 +253,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>選んだ辞書が控えている識別子の件数を出す。</summary>
-        private void UpdateIdStateLabel(List<Poly_Ling.Selection.PartsSelectionSet> sets)
+        private void UpdateIdStateLabel(IReadOnlyList<Poly_Ling.View.IPartsSetView> sets)
         {
             if (_idStateLabel == null) return;
 
@@ -298,8 +297,8 @@ namespace Poly_Ling.Player
         private void OnSave()
         {
             var mv = FirstSelectedMeshContext; if (mv == null) return;
-            bool hasSel = (mv.SelectedVertices?.Count > 0) || (mv.SelectedEdges?.Count > 0)
-                       || (mv.SelectedFaces?.Count > 0);
+            bool hasSel = mv.SelectedVertexCount > 0 || mv.SelectedEdgeCount > 0
+                       || mv.SelectedFaceCount > 0;
             if (!hasSel) { SetStatus("選択なし"); return; }
             SendCmd(new SavePartsSetCommand(ModelIndex, _setNameField?.value?.Trim() ?? ""));
             _setNameField?.SetValueWithoutNotify(""); SetStatus("辞書化しました");
@@ -340,7 +339,7 @@ namespace Poly_Ling.Player
         private void OnDelete()
         {
             if (_selectedSetIndex < 0) return;
-            var sets = FirstSelectedMeshContext?.PartsSelectionSetList;
+            var sets = FirstSelectedMeshContext?.PartsSelectionSets;
             string name = (sets != null && _selectedSetIndex < sets.Count) ? sets[_selectedSetIndex].Name : "?";
             bool ok = PLEditorBridge.I.DisplayDialogYesNo("削除確認", $"「{name}」を削除しますか？", "削除", "キャンセル");
             if (!ok) return;
@@ -406,7 +405,7 @@ namespace Poly_Ling.Player
             if (targets.Count == 0) { SetStatus("オブジェクトが選択されていません"); return; }
 
             int setCount = 0;
-            foreach (var t in targets) setCount += t.PartsSelectionSetList?.Count ?? 0;
+            foreach (var t in targets) setCount += t.PartsSelectionSets?.Count ?? 0;
             if (setCount == 0) { SetStatus("辞書が空です"); return; }
 
             string folder = ResolveDicFolder(forWrite: true);
@@ -439,7 +438,7 @@ namespace Poly_Ling.Player
             int fileCount = System.IO.Directory.GetFiles(folder, "Selected_*.csv").Length;
             if (fileCount == 0) { SetStatus("Selected_*.csv がありません"); return; }
 
-            var targets = byObjectName ? new List<MeshContext>() : CollectTargets();
+            var targets = byObjectName ? new List<Poly_Ling.View.IMeshView>() : CollectTargets();
             if (!byObjectName && targets.Count == 0) { SetStatus("オブジェクトが選択されていません"); return; }
 
             // 同名辞書は上書きのため件数では判定できない。内容の署名で変化を見る。
@@ -461,20 +460,20 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>選択中の描画メッシュを列挙する。未選択時は編集対象メッシュ単体。</summary>
-        private List<MeshContext> CollectTargets()
+        private List<Poly_Ling.View.IMeshView> CollectTargets()
         {
-            var list = new List<MeshContext>();
+            var list = new List<Poly_Ling.View.IMeshView>();
             var model = GetView?.Invoke()?.CurrentModel;
             if (model == null) return list;
 
-            foreach (int idx in model.SelectedDrawableMeshIndices)
+            foreach (int idx in model.SelectedDrawableIndices)
             {
-                var mc = model.GetMeshContext(idx);
+                var mc = model.GetMesh(idx);
                 if (mc != null) list.Add(mc);
             }
             if (list.Count == 0)
             {
-                var mc = model.ActiveMeshContext;
+                var mc = model.ActiveMesh;
                 if (mc != null) list.Add(mc);
             }
             return list;
@@ -484,19 +483,20 @@ namespace Poly_Ling.Player
         private string BuildSetsSignature()
         {
             var model = GetView?.Invoke()?.CurrentModel;
-            if (model?.MeshContextList == null) return string.Empty;
+            if (model == null) return string.Empty;
 
             var sb = new System.Text.StringBuilder();
-            foreach (var mc in model.MeshContextList)
+            for (int i = 0; i < model.TotalMeshCount; i++)
             {
-                if (mc?.PartsSelectionSetList == null) continue;
+                var mc = model.GetMesh(i);
+                if (mc?.PartsSelectionSets == null) continue;
                 sb.Append(mc.Name).Append(':');
-                foreach (var s in mc.PartsSelectionSetList)
+                foreach (var s in mc.PartsSelectionSets)
                     sb.Append(s.Name).Append('/')
-                      .Append(s.Vertices.Count).Append(',')
-                      .Append(s.Edges.Count).Append(',')
-                      .Append(s.Faces.Count).Append(',')
-                      .Append(s.Lines.Count).Append(';');
+                      .Append(s.VertexCount).Append(',')
+                      .Append(s.EdgeCount).Append(',')
+                      .Append(s.FaceCount).Append(',')
+                      .Append(s.LineCount).Append(';');
                 sb.Append('|');
             }
             return sb.ToString();

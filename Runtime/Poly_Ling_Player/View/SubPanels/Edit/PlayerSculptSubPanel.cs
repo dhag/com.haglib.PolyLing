@@ -17,7 +17,9 @@ namespace Poly_Ling.Player
         // 外部注入
         // ================================================================
 
-        public Func<SculptToolHandler> GetHandler;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private SculptSurfaceView H => Surface != null ? new SculptSurfaceView(Surface) : null;
 
         /// <summary>一時ミラーのコントローラ取得。</summary>
         public Func<TempMirrorController> GetTempMirror;
@@ -114,7 +116,7 @@ namespace Poly_Ling.Player
             _modeGroup.RegisterValueChangedCallback(e =>
             {
                 if (e.newValue < 0 || e.newValue >= ModeValues.Length) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h != null) h.Mode = ModeValues[e.newValue];
                 UpdateHelp(ModeValues[e.newValue]);
             });
@@ -131,7 +133,7 @@ namespace Poly_Ling.Player
             // ハンドラの実値（= ParameterLimits の上下限、SculptSettings の現在値）から作る。
             // 固定値でスライダを作ると、上下限を変更した状態で開き直したときに
             // つまみの位置と数字が食い違う。
-            var h0 = GetHandler?.Invoke();
+            var h0 = H;
             float radMin0 = h0?.MinBrushRadius ?? 0.05f;
             float radMax0 = h0?.MaxBrushRadius ?? 1.0f;
             float rad0    = h0?.BrushRadius    ?? 0.1f;
@@ -142,7 +144,7 @@ namespace Poly_Ling.Player
             _brushRadiusSlider.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.BrushRadius = e.newValue;
                 float applied = h.BrushRadius; // setter でクランプ済みの実値
@@ -160,7 +162,7 @@ namespace Poly_Ling.Player
             _brushRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 ApplyRadiusInput(h, e.newValue);
             });
@@ -168,18 +170,11 @@ namespace Poly_Ling.Player
 
             _radiusDragButton = new Button(() =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
+                // 半径の変化とモードの終了はハンドラから本体経由で通知され、パネルは Refresh で読み直す
+                // （操作経路統一計画.md C-3。PolyLingPlayerViewerCore の配線）。
                 h.IsRadiusDragMode = true;
-                h.OnRadiusChanged  = r =>
-                {
-                    _suppressSync = true;
-                    _brushRadiusSlider?.SetValueWithoutNotify(r);
-                    _brushRadiusField?.SetValueWithoutNotify(r);
-                    _suppressSync = false;
-                };
-                // ドラッグ終了・クリック終了時にハンドラーから通知を受けてボタン色を戻す
-                h.OnRadiusDragModeExited = () => UpdateRadiusDragButtonStyle(false);
                 UpdateRadiusDragButtonStyle(true);
             });
             _radiusDragButton.text = "ドラッグで範囲指定";
@@ -190,13 +185,13 @@ namespace Poly_Ling.Player
             // ── 距離モード／フォールオフ（共通 UI）─────────────────
             // 並びはマグネットに合わせて「距離モード」→「フォールオフ」。
             _distanceModeDropdown = _falloffControls.BuildDistanceDropdown(
-                () => GetHandler?.Invoke()?.DistanceMode ?? DistanceMode.Euclidean,
-                v  => { var h = GetHandler?.Invoke(); if (h != null) h.DistanceMode = v; });
+                () => H?.DistanceMode ?? DistanceMode.Euclidean,
+                v  => { var h = H; if (h != null) h.DistanceMode = v; });
             _root.Add(_distanceModeDropdown);
 
             _falloffDropdown = _falloffControls.BuildFalloffDropdown(
-                () => GetHandler?.Invoke()?.Falloff ?? FalloffType.Gaussian,
-                v  => { var h = GetHandler?.Invoke(); if (h != null) h.Falloff = v; });
+                () => H?.Falloff ?? FalloffType.Gaussian,
+                v  => { var h = H; if (h != null) h.Falloff = v; });
             _root.Add(_falloffDropdown);
 
             // ── 強度（スライダー + テキストボックス）────────────────
@@ -217,7 +212,7 @@ namespace Poly_Ling.Player
             _strengthSlider.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.Strength = e.newValue;
                 float applied = h.Strength; // setter でクランプ済みの実値
@@ -235,7 +230,7 @@ namespace Poly_Ling.Player
             _strengthField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 ApplyStrengthInput(h, e.newValue);
             });
@@ -247,7 +242,7 @@ namespace Poly_Ling.Player
             _invertToggle.style.marginBottom = 4;
             _invertToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h != null) h.Invert = e.newValue;
             });
             _root.Add(_invertToggle);
@@ -282,7 +277,7 @@ namespace Poly_Ling.Player
             _minRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.MinBrushRadius = e.newValue;      // setter で 0.001 以上にクランプ
                 ApplyRadiusRange(h);
@@ -304,7 +299,7 @@ namespace Poly_Ling.Player
             _maxRadiusField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.MaxBrushRadius = e.newValue;      // setter で Min+0.001 以上にクランプ
                 ApplyRadiusRange(h);
@@ -329,7 +324,7 @@ namespace Poly_Ling.Player
             _minStrengthField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.MinStrength = e.newValue;         // setter で 0.001 以上にクランプ
                 ApplyStrengthRange(h);
@@ -351,7 +346,7 @@ namespace Poly_Ling.Player
             _maxStrengthField.RegisterValueChangedCallback(e =>
             {
                 if (_suppressSync) return;
-                var h = GetHandler?.Invoke();
+                var h = H;
                 if (h == null) return;
                 h.MaxStrength = e.newValue;         // setter で Min+0.001 以上にクランプ
                 ApplyStrengthRange(h);
@@ -379,7 +374,7 @@ namespace Poly_Ling.Player
             // 一時ミラーの表示はハンドラの有無に依らないので先に同期する。
             _tempMirrorControls.Refresh();
 
-            var h = GetHandler?.Invoke();
+            var h = H;
             if (h == null) return;
 
             int modeIdx = System.Array.IndexOf(ModeValues, h.Mode);
@@ -457,7 +452,7 @@ namespace Poly_Ling.Player
         /// 黙ってクランプすると、上下限が折りたたみの中にあるため
         /// 「入れた数字が勝手に変わる」ように見える。
         /// </summary>
-        private void ApplyRadiusInput(SculptToolHandler h, float requested)
+        private void ApplyRadiusInput(SculptSurfaceView h, float requested)
         {
             float min = h.MinBrushRadius;
             float max = h.MaxBrushRadius;
@@ -474,7 +469,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>上下限が変わったとき、現在値を新レンジへ収めて UI を揃える。</summary>
-        private void ApplyRadiusRange(SculptToolHandler h)
+        private void ApplyRadiusRange(SculptSurfaceView h)
         {
             float min = h.MinBrushRadius;
             float max = h.MaxBrushRadius;
@@ -487,7 +482,7 @@ namespace Poly_Ling.Player
             SyncRadiusWidgets(h, min, max);
         }
 
-        private void SyncRadiusWidgets(SculptToolHandler h, float min, float max)
+        private void SyncRadiusWidgets(SculptSurfaceView h, float min, float max)
         {
             _suppressSync = true;
             SliderRangeUtil.SetRangeAndValue(_brushRadiusSlider, min, max, h.BrushRadius);
@@ -500,7 +495,7 @@ namespace Poly_Ling.Player
         // ── 強度 ─────────────────────────────────────────────────────
 
         /// <summary>半径と同じ方針。入力値を採用し、必要なら上下限を広げる。</summary>
-        private void ApplyStrengthInput(SculptToolHandler h, float requested)
+        private void ApplyStrengthInput(SculptSurfaceView h, float requested)
         {
             float min = h.MinStrength;
             float max = h.MaxStrength;
@@ -515,7 +510,7 @@ namespace Poly_Ling.Player
             SyncStrengthWidgets(h, min, max);
         }
 
-        private void ApplyStrengthRange(SculptToolHandler h)
+        private void ApplyStrengthRange(SculptSurfaceView h)
         {
             float min = h.MinStrength;
             float max = h.MaxStrength;
@@ -528,7 +523,7 @@ namespace Poly_Ling.Player
             SyncStrengthWidgets(h, min, max);
         }
 
-        private void SyncStrengthWidgets(SculptToolHandler h, float min, float max)
+        private void SyncStrengthWidgets(SculptSurfaceView h, float min, float max)
         {
             _suppressSync = true;
             SliderRangeUtil.SetRangeAndValue(_strengthSlider, min, max, h.Strength);

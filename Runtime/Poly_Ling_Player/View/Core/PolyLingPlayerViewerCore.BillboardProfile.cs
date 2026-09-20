@@ -36,7 +36,7 @@ namespace Poly_Ling.Player
 
             _billboardProfileSubPanel = new PlayerBillboardProfileSubPanel
             {
-                GetH = () => _billboardProfileHandler,
+                Surface = ToolSurface,
                 GetTargetInfo = () =>
                 {
                     var mc = ActiveProject?.CurrentModel?.ActiveMeshContext;

@@ -38,6 +38,9 @@ namespace Poly_Ling.Player
 
         /// <summary>確定前の点（ローカル）と、ドラッグ中の手描き（ローカル）。表示用。</summary>
         public IReadOnlyList<Vector3> FreeformPoints => _ffPoints;
+
+        [Poly_Ling.Data.PLToolState(Description = "手描き中の点の数（Freeform）")]
+        public int FreeformPointCount => _ffPoints.Count;
         public IReadOnlyList<Vector3> FreeformStroke => _ffStroke;
 
         private void FreeformClick(Vector2 screenPos, ModifierKeys mods)

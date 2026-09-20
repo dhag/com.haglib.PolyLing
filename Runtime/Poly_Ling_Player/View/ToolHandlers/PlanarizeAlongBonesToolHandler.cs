@@ -47,6 +47,14 @@ namespace Poly_Ling.Player
         [Poly_Ling.Data.PLToolState(Description = "PlanarizeAlongBonesTool.SelectedVertexCount")]
         public int      SelectedVertexCount => _tool.SelectedVertexCount;
 
+        [Poly_Ling.Data.PLToolState(Description = "ボーン A のワールド位置（ボーン一覧が空なら 0）")]
+        public Vector3 BoneWorldPositionA =>
+            (BoneNames != null && BoneNames.Length > 0) ? _tool.GetBoneWorldPosition(BoneIndexA) : Vector3.zero;
+
+        [Poly_Ling.Data.PLToolState(Description = "ボーン B のワールド位置（ボーン一覧が空なら 0）")]
+        public Vector3 BoneWorldPositionB =>
+            (BoneNames != null && BoneNames.Length > 0) ? _tool.GetBoneWorldPosition(BoneIndexB) : Vector3.zero;
+
         public Vector3 GetBoneWorldPosition(int listIndex) => _tool.GetBoneWorldPosition(listIndex);
         /// <summary>
         /// 平面化を実行する。
@@ -55,6 +63,7 @@ namespace Poly_Ling.Player
         /// PlanarizeAlongBonesCommand 経由に統一するため。
         /// </summary>
         private void   TriggerPlanarizeCore()              => _tool.TriggerPlanarize();
+        [Poly_Ling.Data.PLToolAction(Description = "ボーン一覧を必要なら作り直す")]
         public void    RebuildBoneList()                   => _tool.RebuildBoneListIfNeeded();
 
         /// <summary>

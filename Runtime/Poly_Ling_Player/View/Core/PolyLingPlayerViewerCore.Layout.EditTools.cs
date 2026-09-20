@@ -220,7 +220,7 @@ namespace Poly_Ling.Player
             _flipFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
             _flipFaceSubPanel = new PlayerFlipFaceSubPanel
             {
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _flipFaceSubPanel.Build(_layoutRoot.FlipFaceSection);
@@ -404,7 +404,7 @@ namespace Poly_Ling.Player
 
             _deformSubPanel = new PlayerDeformSubPanel
             {
-                GetH          = () => _deformHandler,
+                Surface       = ToolSurface,
                 WorkAxisPanel = _deformWorkAxisSubPanel,
             };
             _deformSubPanel.Build(_layoutRoot.DeformSection);
@@ -437,7 +437,7 @@ namespace Poly_Ling.Player
                 OnApplyCompleted  = () => NotifyPanels(ChangeKind.Attributes),
             };
             _latticeHandler.SetUndoController(_editOps?.UndoController);
-            _latticeSubPanel = new PlayerLatticeSubPanel { GetH = () => _latticeHandler };
+            _latticeSubPanel = new PlayerLatticeSubPanel { Surface = ToolSurface };
             _latticeSubPanel.Build(_layoutRoot.LatticeSection);
 
             _scaleHandler = new ScaleToolHandler
@@ -695,7 +695,7 @@ namespace Poly_Ling.Player
                 Surface = ToolSurface,
                 GetDrawableIndexList          = BuildDrawableIndexList,
                 GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1,
-                GetView                       = () => ActiveProject,
+                GetView                       = () => ActiveProjectView,
                 SendCommand                   = cmd => DispatchHost(cmd),
             };
             _solidifySubPanel.Build(_layoutRoot.SolidifySection);
@@ -724,7 +724,7 @@ namespace Poly_Ling.Player
             _lineExtrudeSubPanel = new PlayerLineExtrudeSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _lineExtrudeSubPanel.Build(_layoutRoot.LineExtrudeSection);

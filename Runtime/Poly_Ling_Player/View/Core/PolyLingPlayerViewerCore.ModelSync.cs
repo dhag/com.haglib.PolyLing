@@ -240,6 +240,23 @@ namespace Poly_Ling.Player
         private HostToolSurface _toolSurface;
 
         /// <summary>
+        /// パネルが読むプロジェクトの窓口（IProjectView。操作経路統一計画.md E）。
+        /// 読むたびに今のプロジェクトから作る（控えるとプロジェクト差し替えで古いものを掴む）。
+        /// </summary>
+        private Poly_Ling.View.IProjectView ActiveProjectView
+            => ActiveProject != null ? new PlayerProjectView(ActiveProject) : null;
+
+        /// <summary>ローカル読み込み、無ければ受信側のプロジェクトの窓口。</summary>
+        private Poly_Ling.View.IProjectView LoadedProjectView
+        {
+            get
+            {
+                var p = _localLoader.Project ?? _receiver?.Project;
+                return p != null ? new PlayerProjectView(p) : null;
+            }
+        }
+
+        /// <summary>
         /// パネルがツールハンドラへ届くための窓口（操作経路統一計画.md E-2）。
         /// 読み取りは登録簿のハンドラから、設定・操作はホストの操作としてコマンドで送る。
         /// </summary>

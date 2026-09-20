@@ -660,6 +660,18 @@ namespace Poly_Ling.Player
         public CommandActor CurrentActor => _currentActor;
 
         /// <summary>
+        /// ホスト以外（MCP・リモート）の操作でツールの値・状態が変わったときに呼ぶ（引数はツール名）。
+        /// 本体はそのツールのパネルに読み直させる。ホストの画面操作はパネル自身が再描画するので呼ばない。
+        /// </summary>
+        public Action<string> OnToolChanged;
+
+        private void NotifyToolChangedIfExternal(string toolId)
+        {
+            if (_currentActor == null || _currentActor.Kind == CommandActorKind.Host) return;
+            OnToolChanged?.Invoke(toolId);
+        }
+
+        /// <summary>
         /// 担当者判定で拒否したときに呼ぶ（コマンド・操作者・理由）。
         /// Core はホストの操作が拒否されたとき状態表示へ出す（L-5）。
         /// </summary>

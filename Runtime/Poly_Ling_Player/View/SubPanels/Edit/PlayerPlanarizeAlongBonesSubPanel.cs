@@ -1,6 +1,8 @@
 // PlayerPlanarizeAlongBonesSubPanel.cs
 // PlanarizeAlongBonesTool の Player 版サブパネル（UIToolkit）。
 // エディタ版 DrawSettingsUI() と同等の内容を提供する。
+// ハンドラは直接触らず、ツールの窓口（IToolSurface、ツール名 "planarizeAlongBones"）で読み書きする
+// （操作経路統一計画.md E）。
 // Runtime/Poly_Ling_Player/View/SubPanels/Edit/ に配置
 
 using System;
@@ -15,8 +17,10 @@ namespace Poly_Ling.Player
 {
     public class PlayerPlanarizeAlongBonesSubPanel
     {
-        public Func<PlanarizeAlongBonesToolHandler> GetH;
-        public Func<ProjectContext>                 GetView;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                         Surface;
+        private const string Tool = "planarizeAlongBones";
+        public Func<Poly_Ling.View.IProjectView>                 GetView;
         public Action<PanelCommand>                 SendCommand;
 
         /// <summary>コマンドに載せるモデル索引。</summary>
@@ -28,10 +32,8 @@ namespace Poly_Ling.Player
         /// </summary>
         private int[] ActiveMasterIndices()
         {
-            var model = GetView?.Invoke()?.CurrentModel;
-            var mc    = model?.ActiveMeshContext;
-            if (model == null || mc == null) return null;
-            return new[] { model.IndexOf(mc) };
+            int idx = GetView?.Invoke()?.CurrentModel?.ActiveMeshIndex ?? -1;
+            return idx >= 0 ? new[] { idx } : null;
         }
 
         // ================================================================
@@ -63,6 +65,9 @@ namespace Poly_Ling.Player
         private static readonly List<string> PlaneModeChoices =
             new List<string> { "Min Movement", "Anchor to A" };
 
+        /// <summary>ボーン名の一覧（窓口の概要 boneNames）。</summary>
+        private string[] BoneNames => Surface?.Get(Tool, "boneNames", Array.Empty<string>()) ?? Array.Empty<string>();
+
         // ================================================================
         // Build
         // ================================================================
@@ -91,10 +96,8 @@ namespace Poly_Ling.Player
             _boneADropdown.style.marginBottom = 3;
             _boneADropdown.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h?.BoneNames == null) return;
-                int idx = System.Array.IndexOf(h.BoneNames, e.newValue);
-                if (idx >= 0) h.BoneIndexA = idx;
+                int idx = Array.IndexOf(BoneNames, e.newValue);
+                if (idx >= 0) Surface?.Set(Tool, "boneIndexA", idx);
                 UpdateWarningAndPreview();
             });
             _root.Add(_boneADropdown);
@@ -105,10 +108,8 @@ namespace Poly_Ling.Player
             _boneBDropdown.style.marginBottom = 3;
             _boneBDropdown.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h?.BoneNames == null) return;
-                int idx = System.Array.IndexOf(h.BoneNames, e.newValue);
-                if (idx >= 0) h.BoneIndexB = idx;
+                int idx = Array.IndexOf(BoneNames, e.newValue);
+                if (idx >= 0) Surface?.Set(Tool, "boneIndexB", idx);
                 UpdateWarningAndPreview();
             });
             _root.Add(_boneBDropdown);
@@ -125,11 +126,7 @@ namespace Poly_Ling.Player
             _planeModeDropdown = new DropdownField(PlaneModeChoices, 0);
             _planeModeDropdown.style.marginBottom = 4;
             _planeModeDropdown.RegisterValueChangedCallback(e =>
-            {
-                var h = GetH();
-                if (h == null) return;
-                h.PlaneMode = (PlanePlacementMode)PlaneModeChoices.IndexOf(e.newValue);
-            });
+                Surface?.Set(Tool, "planeMode", (PlanePlacementMode)PlaneModeChoices.IndexOf(e.newValue)));
             _root.Add(_planeModeDropdown);
 
             // ブレンドスライダー + 数値フィールド
@@ -142,8 +139,7 @@ namespace Poly_Ling.Player
             _blendSlider.style.flexGrow = 1;
             _blendSlider.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h != null) h.Blend = e.newValue;
+                Surface?.Set(Tool, "blend", e.newValue);
                 _blendField?.SetValueWithoutNotify(e.newValue);
             });
 
@@ -153,8 +149,7 @@ namespace Poly_Ling.Player
             {
                 float v = Mathf.Clamp01(e.newValue);
                 _blendField.SetValueWithoutNotify(v);
-                var h = GetH();
-                if (h != null) h.Blend = v;
+                Surface?.Set(Tool, "blend", v);
                 _blendSlider?.SetValueWithoutNotify(v);
             });
 
@@ -170,12 +165,14 @@ namespace Poly_Ling.Player
             // 実行ボタン
             _planarizeBtn = new Button(() =>
             {
-                var h = GetH();
                 var targets = ActiveMasterIndices();
-                if (h == null || targets == null) return;
+                if (Surface == null || targets == null) return;
 
                 SendCommand?.Invoke(new PlanarizeAlongBonesCommand(
-                    ModelIndex, targets, h.BoneIndexA, h.BoneIndexB, h.PlaneMode, h.Blend));
+                    ModelIndex, targets,
+                    Surface.GetInt(Tool, "boneIndexA"), Surface.GetInt(Tool, "boneIndexB"),
+                    Surface.Get(Tool, "planeMode", default(PlanePlacementMode)),
+                    Surface.GetFloat(Tool, "blend")));
                 Refresh();
             })
             { text = "平面化実行" };
@@ -192,14 +189,15 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            h.RebuildBoneList();
+            Surface.Invoke(Tool, "rebuildBoneList");
 
             // ボーンリスト更新
-            var names = h.BoneNames;
-            if (names != null && names.Length > 0)
+            var names = BoneNames;
+            int ia = Surface.GetInt(Tool, "boneIndexA");
+            int ib = Surface.GetInt(Tool, "boneIndexB");
+            if (names.Length > 0)
             {
                 var choices = new List<string>(names);
                 _boneADropdown?.choices.Clear();
@@ -207,10 +205,8 @@ namespace Poly_Ling.Player
                 _boneBDropdown?.choices.Clear();
                 _boneBDropdown?.choices.AddRange(choices);
 
-                int a = Mathf.Clamp(h.BoneIndexA, 0, names.Length - 1);
-                int b = Mathf.Clamp(h.BoneIndexB, 0, names.Length - 1);
-                _boneADropdown?.SetValueWithoutNotify(names[a]);
-                _boneBDropdown?.SetValueWithoutNotify(names[b]);
+                _boneADropdown?.SetValueWithoutNotify(names[Mathf.Clamp(ia, 0, names.Length - 1)]);
+                _boneBDropdown?.SetValueWithoutNotify(names[Mathf.Clamp(ib, 0, names.Length - 1)]);
             }
             else
             {
@@ -218,18 +214,17 @@ namespace Poly_Ling.Player
                 _boneBDropdown?.SetValueWithoutNotify("—");
             }
 
-            _selectedLabel.text = $"選択中: {h.SelectedVertexCount} 頂点";
-            _planeModeDropdown?.SetValueWithoutNotify(PlaneModeChoices[(int)h.PlaneMode]);
-            _blendSlider?.SetValueWithoutNotify(h.Blend);
-            _blendField?.SetValueWithoutNotify(h.Blend);
+            int   selCount = Surface.GetInt(Tool, "selectedVertexCount");
+            float blend    = Surface.GetFloat(Tool, "blend");
+            _selectedLabel.text = $"選択中: {selCount} 頂点";
+            _planeModeDropdown?.SetValueWithoutNotify(
+                PlaneModeChoices[(int)Surface.Get(Tool, "planeMode", default(PlanePlacementMode))]);
+            _blendSlider?.SetValueWithoutNotify(blend);
+            _blendField?.SetValueWithoutNotify(blend);
 
             UpdateWarningAndPreview();
 
-            bool hasBones     = names != null && names.Length > 0;
-            bool diffBones    = h.BoneIndexA != h.BoneIndexB;
-            bool canPlanarize = hasBones && diffBones
-                                && h.SelectedVertexCount >= 1
-                                && h.Blend > 0f;
+            bool canPlanarize = names.Length > 0 && ia != ib && selCount >= 1 && blend > 0f;
             if (_planarizeBtn != null)
                 _planarizeBtn.SetEnabled(canPlanarize);
         }
@@ -240,16 +235,15 @@ namespace Poly_Ling.Player
 
         private void UpdateWarningAndPreview()
         {
-            var h = GetH();
-            if (h == null || _sameBoneWarning == null || _previewLabel == null) return;
+            if (Surface == null || _sameBoneWarning == null || _previewLabel == null) return;
 
-            bool same = h.BoneIndexA == h.BoneIndexB;
+            bool same = Surface.GetInt(Tool, "boneIndexA") == Surface.GetInt(Tool, "boneIndexB");
             _sameBoneWarning.style.display = same ? DisplayStyle.Flex : DisplayStyle.None;
 
-            if (!same && h.BoneNames != null && h.BoneNames.Length > 0)
+            if (!same && BoneNames.Length > 0)
             {
-                Vector3 posA = h.GetBoneWorldPosition(h.BoneIndexA);
-                Vector3 posB = h.GetBoneWorldPosition(h.BoneIndexB);
+                Vector3 posA = Surface.Get(Tool, "boneWorldPositionA", Vector3.zero);
+                Vector3 posB = Surface.Get(Tool, "boneWorldPositionB", Vector3.zero);
                 float   dist = (posB - posA).magnitude;
                 _previewLabel.text =
                     $"A: ({posA.x:F3}, {posA.y:F3}, {posA.z:F3})\n" +

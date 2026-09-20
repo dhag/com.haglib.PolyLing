@@ -73,6 +73,9 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：モデルブレンドセクション（ScrollView内）。</summary>
         public VisualElement ModelBlendSection { get; private set; }
 
+        /// <summary>右ペイン：対称な参照メッシュに基づく臨時の対称化。</summary>
+        public VisualElement ReferenceSymmetrySection { get; private set; }
+
         /// <summary>シュリンカー(頂点)セクション</summary>
         public VisualElement ShrinkSection { get; private set; }
 
@@ -326,6 +329,9 @@ namespace Poly_Ling.Player
 
             // ── モデルブレンドセクション
             ModelBlendSection = AddSection(visible: false);
+
+            // ── リファレンスに基づく対称化（臨時）
+            ReferenceSymmetrySection = AddSection(visible: false);
 
             // ── シュリンカー(頂点)セクション
             ShrinkSection = AddSection(visible: false);

@@ -111,6 +111,16 @@ namespace Poly_Ling.View
         int IMeshView.SelectedEdgeCount   => 0;
         int IMeshView.SelectedFaceCount   => 0;
         int IMeshView.SelectedLineCount   => 0;
+        // 非表示面の数はスナップショットに載せていない（選択件数と同じ扱い）。
+        int IMeshView.HiddenFaceCount     => 0;
+        // 法線除外セットもスナップショットに載せていない。
+        IReadOnlyList<IPartsSetView> IMeshView.NormalExcludeSets => System.Array.Empty<IPartsSetView>();
+        // 一時ミラーの状態もスナップショットに載せていない。
+        bool   IMeshView.IsMirrorBakedState            => false;
+        int    IMeshView.MirrorBakeOriginalVertexCount => 0;
+        int    IMeshView.MirrorBakeOriginalFaceCount   => 0;
+        string IMeshView.MirrorBakeBoundaryDescription => "";
+        VertexIdReportView IMeshView.InspectVertexIds() => null;
 
         // 表示用プロパティ
         // アイコンはミラーの有無だけを示す。

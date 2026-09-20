@@ -16,7 +16,7 @@ namespace Poly_Ling.Player
         /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
         public IToolSurface              Surface;
         private const string Tool = "solidify";
-        public Func<ProjectContext>      GetView;
+        public Func<Poly_Ling.View.IProjectView>      GetView;
         public Action<PanelCommand>      SendCommand;
 
         /// <summary>コマンドに載せるモデル索引。</summary>
@@ -28,10 +28,8 @@ namespace Poly_Ling.Player
         /// </summary>
         private int[] ActiveMasterIndices()
         {
-            var model = GetView?.Invoke()?.CurrentModel;
-            var mc    = model?.ActiveMeshContext;
-            if (model == null || mc == null) return null;
-            return new[] { model.IndexOf(mc) };
+            int idx = GetView?.Invoke()?.CurrentModel?.ActiveMeshIndex ?? -1;
+            return idx >= 0 ? new[] { idx } : null;
         }
 
         // UI 自動操作の ID は "solidify.<下の Id>"（UiControlAttribute.cs）。

@@ -357,6 +357,13 @@ namespace Poly_Ling.Player
                 _editOps?.CommandQueue,
                 () => _structureNotifyCount);
 
+            // MCP・リモートがツールの値や状態を変えたとき、表示中のパネルに読み直させる（操作経路統一計画.md P）。
+            _commandDispatcher.OnToolChanged = _ =>
+            {
+                foreach (var (section, refresh) in _sectionRefreshPairs)
+                    if (section?.style.display == DisplayStyle.Flex) refresh();
+            };
+
             // MCP（名前付きパイプ）からの実行入口。RemoteMode に依存しない。
             // 対の解除は Dispose 内。
             PolyLingCommandGateway.Dispatch = cmd => _commandDispatcher.Dispatch(cmd, CommandActor.Mcp());

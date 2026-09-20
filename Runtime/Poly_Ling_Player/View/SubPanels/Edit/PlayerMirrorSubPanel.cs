@@ -16,10 +16,9 @@ namespace Poly_Ling.Player
 {
     public class PlayerMirrorSubPanel
     {
-        public Func<ToolContext>     GetToolContext;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
-        public Func<ModelContext>   GetModel;
-        public Func<int>            GetModelIndex;
 
         // ── 設定値 ────────────────────────────────────────────────────────
         // 実体はすべて TempMirrorSettings（共有）にある。
@@ -111,11 +110,8 @@ namespace Poly_Ling.Player
             return true;
         }
 
-        private MeshContext ActiveMeshContext
-            => GetToolContext?.Invoke()?.ActiveMeshContext ?? GetModel?.Invoke()?.ActiveMeshContext;
-
-        /// <summary>実体化中なら現在の状態、未実体化なら null。</summary>
-        private MirrorBakeResult BakeState => ActiveMeshContext?.MeshObject?.MirrorBakeState;
+        private Poly_Ling.View.IMeshView ActiveMeshContext
+            => GetView?.Invoke()?.CurrentModel?.ActiveMesh;
 
         public void Build(VisualElement parent)
         {
@@ -263,103 +259,86 @@ namespace Poly_Ling.Player
 
             var mc = ActiveMeshContext;
             string meshName = mc?.Name ?? "(メッシュ未選択)";
-            int selVerts    = mc?.Selection?.Vertices.Count ?? 0;
-            var mo          = mc?.MeshObject;
-
-            var bake = mo?.MirrorBakeState;
+            int selVerts    = mc?.SelectedVertexCount ?? 0;
+            bool baked      = mc != null && mc.IsMirrorBakedState;
 
             string stateLine;
-            if (mo == null)
+            if (mc == null)
             {
                 stateLine = "状態: -";
             }
-            else if (bake == null)
+            else if (!baked)
             {
-                stateLine = $"状態: 未実体化   MirrorType={mc.MirrorType}   V:{mo.VertexCount} F:{mo.FaceCount}";
+                stateLine = $"状態: 未実体化   MirrorType={mc.MirrorType}   V:{mc.VertexCount} F:{mc.FaceCount}";
             }
             else
             {
-                string boundaryDesc = bake.BoundaryVertices == null
-                    ? "しきい値 " + bake.Threshold
-                    : "選択頂点 " + bake.BoundaryVertices.Length + " 点";
                 stateLine =
-                    $"状態: 実体化中   MirrorType={mc.MirrorType}   V:{mo.VertexCount} F:{mo.FaceCount}\n" +
-                    $"元 {bake.OriginalVertexCount} 頂点 / 元 {bake.OriginalFaceCount} 面 / 境界 {boundaryDesc}";
+                    $"状態: 実体化中   MirrorType={mc.MirrorType}   V:{mc.VertexCount} F:{mc.FaceCount}\n" +
+                    $"元 {mc.MirrorBakeOriginalVertexCount} 頂点 / 元 {mc.MirrorBakeOriginalFaceCount} 面 / 境界 {mc.MirrorBakeBoundaryDescription}";
             }
 
             _infoLabel.text = $"対象: {meshName}   選択頂点: {selVerts}\n{stateLine}";
 
-            bool baked = bake != null;
-            _btnBake?.SetEnabled(mo != null && !baked);
+            _btnBake?.SetEnabled(mc != null && !baked);
             _btnUnbake?.SetEnabled(baked);
         }
 
         // ── Operations ───────────────────────────────────────────────────
         private void OnBakeMirror()
         {
-            var model = GetModel?.Invoke();
-            if (model == null) { SetStatus("モデルがありません"); return; }
+            var view = GetView?.Invoke();
+            if (view?.CurrentModel == null) { SetStatus("モデルがありません"); return; }
 
             var mc = ActiveMeshContext;
-            if (mc?.MeshObject == null) { SetStatus("メッシュを選択してください"); return; }
+            if (mc == null) { SetStatus("メッシュを選択してください"); return; }
 
-            if (mc.MeshObject.MirrorBakeState != null)
+            if (mc.IsMirrorBakedState)
             { SetStatus("既に実体化されています"); return; }
 
-            if (_boundaryMode == MirrorBoundaryMode.SelectedVertices
-                && (mc.Selection?.Vertices.Count ?? 0) == 0)
+            if (_boundaryMode == MirrorBoundaryMode.SelectedVertices && mc.SelectedVertexCount == 0)
             { SetStatus("境界にする頂点を選択してください"); return; }
 
             if (SendCommand == null) { SetStatus("コマンド送信先が未設定です"); return; }
 
             SendCommand.Invoke(new BakeMirrorCommand(
-                GetModelIndex?.Invoke() ?? 0, model.IndexOf(mc),
+                view.CurrentModelIndex, mc.MasterIndex,
                 _mirrorAxis, _threshold, _flipU,
                 _planeOffset, _boundaryMode, _projectBoundary));
 
-            var bake = mc.MeshObject.MirrorBakeState;
-            SetStatus(bake == null
+            var after = ActiveMeshContext;
+            SetStatus(after == null || !after.IsMirrorBakedState
                 ? "実体化に失敗しました（コンソールの [MirrorBake] ログを確認）"
-                : $"実体化: {bake.OriginalVertexCount} → {mc.MeshObject.VertexCount} 頂点");
+                : $"実体化: {after.MirrorBakeOriginalVertexCount} → {after.VertexCount} 頂点");
             Refresh();
         }
 
         private void OnUnbake()
         {
-            var model = GetModel?.Invoke();
-            if (model == null) { SetStatus("モデルがありません"); return; }
+            var view = GetView?.Invoke();
+            if (view?.CurrentModel == null) { SetStatus("モデルがありません"); return; }
 
             var mc = ActiveMeshContext;
-            if (mc?.MeshObject == null) { SetStatus("メッシュを選択してください"); return; }
+            if (mc == null) { SetStatus("メッシュを選択してください"); return; }
 
-            if (mc.MeshObject.MirrorBakeState == null)
+            if (!mc.IsMirrorBakedState)
             { SetStatus("このメッシュは実体化されていません"); return; }
 
             if (SendCommand == null) { SetStatus("コマンド送信先が未設定です"); return; }
 
-            int vertsBefore = mc.MeshObject.VertexCount;
+            int vertsBefore = mc.VertexCount;
 
             SendCommand.Invoke(new UnbakeMirrorCommand(
-                GetModelIndex?.Invoke() ?? 0, model.IndexOf(mc), _writeBackMode));
+                view.CurrentModelIndex, mc.MasterIndex, _writeBackMode));
 
-            SetStatus(mc.MeshObject.MirrorBakeState != null
+            var after = ActiveMeshContext;
+            SetStatus(after != null && after.IsMirrorBakedState
                 ? "解除に失敗しました（コンソールの [MirrorBake] ログを確認）"
-                : $"解除: {vertsBefore} → {mc.MeshObject.VertexCount} 頂点");
+                : $"解除: {vertsBefore} → {after?.VertexCount ?? 0} 頂点");
             Refresh();
         }
 
         // ── Helpers ──────────────────────────────────────────────────────
-        private static MeshContext FindMeshContextByName(ToolContext tc, string name)
-        {
-            if (tc?.Model == null || string.IsNullOrEmpty(name)) return null;
-            for (int i = 0; i < tc.Model.MeshContextCount; i++)
-            {
-                var mc = tc.Model.GetMeshContext(i);
-                if (mc != null && mc.Name == name) return mc;
-            }
-            return null;
-        }
-
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
 
         private static VisualElement MakeSep(string title = null)

@@ -16,7 +16,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerFaceHideSubPanel
     {
-        public Func<ProjectContext> GetView;
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
 
         // UI 自動操作の ID は "faceHide.<下の Id>"（UiControlAttribute.cs）。
@@ -39,8 +39,8 @@ namespace Poly_Ling.Player
 
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
-        private MeshContext ActiveMeshContext
-            => GetView?.Invoke()?.CurrentModel?.ActiveMeshContext;
+        private Poly_Ling.View.IMeshView ActiveMeshContext
+            => GetView?.Invoke()?.CurrentModel?.ActiveMesh;
 
         // ================================================================
         // 構築
@@ -118,7 +118,7 @@ namespace Poly_Ling.Player
             if (_warningLabel == null) return;
 
             var mc = ActiveMeshContext;
-            if (mc?.MeshObject == null)
+            if (mc == null)
             {
                 _warningLabel.text          = "メッシュが選択されていません";
                 _warningLabel.style.display = DisplayStyle.Flex;
@@ -131,16 +131,10 @@ namespace Poly_Ling.Player
             _warningLabel.style.display = DisplayStyle.None;
             _meshNameLabel.text = mc.Name ?? "(no name)";
 
-            var mo = mc.MeshObject;
-            int total = 0, hidden = 0;
-            foreach (var face in mo.Faces)
-            {
-                if (face == null || face.VertexCount < 3) continue;
-                total++;
-                if (face.IsHidden) hidden++;
-            }
+            int total  = mc.TriCount + mc.QuadCount + mc.NgonCount;
+            int hidden = mc.HiddenFaceCount;
 
-            int selFaces = mc.Selection?.Faces.Count ?? 0;
+            int selFaces = mc.SelectedFaceCount;
             _countLabel.text = $"面 {total}   非表示 {hidden}   選択面 {selFaces}";
 
             UpdateButtonStates();
@@ -153,13 +147,13 @@ namespace Poly_Ling.Player
         private void Send(SetFaceHiddenCommand.Mode mode)
         {
             var mc = ActiveMeshContext;
-            if (mc?.MeshObject == null) { SetStatus("メッシュが選択されていません"); return; }
+            if (mc == null) { SetStatus("メッシュが選択されていません"); return; }
 
             bool needsFaceSelection =
                 mode == SetFaceHiddenCommand.Mode.HideSelected ||
                 mode == SetFaceHiddenCommand.Mode.HideUnselected;
 
-            if (needsFaceSelection && (mc.Selection?.Faces.Count ?? 0) == 0)
+            if (needsFaceSelection && mc.SelectedFaceCount == 0)
             {
                 SetStatus("面を選択してください");
                 return;
@@ -172,7 +166,7 @@ namespace Poly_Ling.Player
 
         private void UpdateButtonStates()
         {
-            bool hasFaceSel = (ActiveMeshContext?.Selection?.Faces.Count ?? 0) > 0;
+            bool hasFaceSel = (ActiveMeshContext?.SelectedFaceCount ?? 0) > 0;
             _btnHideSelected?.SetEnabled(hasFaceSel);
             _btnHideUnselected?.SetEnabled(hasFaceSel);
         }

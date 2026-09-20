@@ -118,6 +118,35 @@ namespace Poly_Ling.View
         int SelectedEdgeCount   { get; }
         int SelectedFaceCount   { get; }
         int SelectedLineCount   { get; }
+
+        /// <summary>非表示の面の数（3 頂点以上の面のうち IsHidden のもの）。</summary>
+        int HiddenFaceCount { get; }
+
+        /// <summary>法線再計算の除外セット（MeshObject.NormalRecalcExcludeList）。</summary>
+        IReadOnlyList<IPartsSetView> NormalExcludeSets { get; }
+
+        // 一時ミラー（MeshObject.MirrorBakeState）
+        /// <summary>一時ミラーで実体化中か。</summary>
+        bool IsMirrorBakedState { get; }
+        /// <summary>実体化前の頂点数（実体化中でなければ 0）。</summary>
+        int MirrorBakeOriginalVertexCount { get; }
+        /// <summary>実体化前の面数（実体化中でなければ 0）。</summary>
+        int MirrorBakeOriginalFaceCount { get; }
+        /// <summary>境界の決め方の説明（"しきい値 x" / "選択頂点 n 点"。実体化中でなければ空）。</summary>
+        string MirrorBakeBoundaryDescription { get; }
+
+        /// <summary>頂点 ID の診断（VertexIdOps.Inspect）。本体でだけ計算する。スナップショットでは null。</summary>
+        VertexIdReportView InspectVertexIds();
+    }
+
+    /// <summary>頂点 ID の診断結果（VertexIdOps の報告の写し）。</summary>
+    public sealed class VertexIdReportView
+    {
+        public int    VertexCount;
+        public int    UnsetCount;
+        public int    DuplicatedVertexCount;
+        public bool   IsHealthy;
+        public string Summary;
     }
 
     /// <summary>パーツ選択セットの軽量サマリ</summary>
@@ -130,6 +159,12 @@ namespace Poly_Ling.View
         int EdgeCount   { get; }
         int FaceCount   { get; }
         int LineCount   { get; }
+
+        /// <summary>頂点 ID の控えの件数（PartsSelectionSet.VertexIdCount）。</summary>
+        int VertexIdCount { get; }
+
+        /// <summary>引き当てに使える頂点 ID があるか（PartsSelectionSet.HasResolvableVertexIds）。</summary>
+        bool HasResolvableVertexIds { get; }
     }
 
     // ================================================================
@@ -164,6 +199,23 @@ namespace Poly_Ling.View
         /// 辞書が無ければ空配列（null は返さない）。
         /// </summary>
         IReadOnlyList<string> MeshSelectionSetNames { get; }
+
+        /// <summary>
+        /// 編集対象メッシュの MeshContextList 索引（ModelContext.ActiveMeshIndex と同じ）。未解決は -1。
+        /// </summary>
+        int ActiveMeshIndex { get; }
+
+        /// <summary>
+        /// 編集対象メッシュのビュー。未解決は null。本体では現物を読む（選択件数・非表示面数も正しい）。
+        /// リモートのスナップショットでは選択件数・非表示面数は 0。
+        /// </summary>
+        IMeshView ActiveMesh { get; }
+
+        /// <summary>
+        /// MeshContextList 索引でメッシュのビューを引く。範囲外・無しは null。
+        /// 本体では現物を読む（選択件数なども正しい）。リモートは各リストから引く。
+        /// </summary>
+        IMeshView GetMesh(int masterIndex);
     }
 
     // ================================================================

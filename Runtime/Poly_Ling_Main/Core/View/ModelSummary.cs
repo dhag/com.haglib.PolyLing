@@ -45,6 +45,22 @@ namespace Poly_Ling.View
             set => _meshSelectionSetNames = value ?? _emptyNames;
         }
 
+        /// <summary>編集対象メッシュの索引。未解決は -1（SummaryBuilder が設定する）。</summary>
+        public int ActiveMeshIndex { get; set; } = -1;
+
+        /// <summary>編集対象メッシュのビュー（各リストから ActiveMeshIndex で引く）。無ければ null。</summary>
+        public IMeshView ActiveMesh => ActiveMeshIndex < 0 ? null : GetMesh(ActiveMeshIndex);
+
+        /// <summary>各リストから MeshContextList 索引で引く。無ければ null。</summary>
+        public IMeshView GetMesh(int masterIndex)
+        {
+            if (masterIndex < 0) return null;
+            foreach (var list in new[] { DrawableList, BoneList, MorphList, RigidBodyList, RigidBodyJointList })
+                foreach (var m in list)
+                    if (m.MasterIndex == masterIndex) return m;
+            return null;
+        }
+
         // フルコンストラクタ
         public ModelSummary(
             string name, string filePath, bool isDirty,

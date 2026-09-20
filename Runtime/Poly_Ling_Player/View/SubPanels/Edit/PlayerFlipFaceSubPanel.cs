@@ -14,7 +14,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerFlipFaceSubPanel
     {
-        public Func<ProjectContext>      GetView;
+        public Func<Poly_Ling.View.IProjectView>      GetView;
         public Action<PanelCommand>      SendCommand;
 
         // UI 自動操作の ID は "flipFace.<下の Id>"（UiControlAttribute.cs）。
@@ -34,10 +34,8 @@ namespace Poly_Ling.Player
         /// </summary>
         private int[] ActiveMasterIndices()
         {
-            var model = GetView?.Invoke()?.CurrentModel;
-            var mc    = model?.ActiveMeshContext;
-            if (model == null || mc == null) return null;
-            return new[] { model.IndexOf(mc) };
+            int idx = GetView?.Invoke()?.CurrentModel?.ActiveMeshIndex ?? -1;
+            return idx >= 0 ? new[] { idx } : null;
         }
 
         public void Build(VisualElement parent)

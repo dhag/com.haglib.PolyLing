@@ -206,6 +206,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>選択中の点を消す。2 点未満になる群は群ごと消す。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択中の点を消す（Profile）")]
         public bool DeleteSelectedPoints()
         {
             if (Mode != SubMode.Profile || _selected.Count == 0) return false;
@@ -269,6 +270,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 選択中の点を滑らかにする（入り・出とも接線、長さは弦の 1/3）。ハンドルの無い群にはハンドルを作る。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択中の点を滑らかにする（Profile）")]
         public bool SmoothSelectedPoints()
         {
             if (_selected.Count == 0) return false;
@@ -287,6 +289,25 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>選択中の点のハンドル拘束を設定する（入りか出か）。</summary>
+        /// <summary>
+        /// 選択中の点へハンドルの拘束を設定する（窓口の操作用。拘束を値ごとに受け取る）。
+        /// 中身は SetSelectedConstraint と同じ。
+        /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "選択中の点へハンドルの拘束を設定する（isOut: 出の側か、direction, length, ratio, lengthGroupId）")]
+        public bool SetSelectedConstraintValues(bool isOut, HandleDirection direction, HandleLength length,
+                                                float ratio, int lengthGroupId)
+            => SetSelectedConstraint(isOut, new HandleConstraint
+            {
+                Direction     = direction,
+                Length        = length,
+                Ratio         = ratio,
+                LengthGroupId = lengthGroupId,
+            });
+
+        /// <summary>選択中の点の数。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "選択中の点の数（Profile）")]
+        public int SelectedPointCount => SelectedPoints.Count;
+
         public bool SetSelectedConstraint(bool isOut, HandleConstraint c)
         {
             if (_selected.Count == 0) return false;

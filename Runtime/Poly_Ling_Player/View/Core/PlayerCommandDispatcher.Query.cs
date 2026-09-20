@@ -67,7 +67,9 @@ namespace Poly_Ling.Player
                     { Fail(why); return true; }
                     // パネルへの通知はしない。スライダーのドラッグ中は 1 目盛りごとにここを通り、
                     // 通知するとパネルの Refresh が毎回走って、プレビュー中の回転中心などを
-                    // 読み直す（読み取りが計算を伴うハンドラがある）。変化の通知は別途（push）扱う。
+                    // 読み直す（読み取りが計算を伴うハンドラがある）。
+                    // ホスト以外（MCP・リモート）が変えたときだけ、そのツールのパネルに読み直させる。
+                    NotifyToolChangedIfExternal(stp.ToolId);
                     ReportData(CommandDataJson.New().Text("value", actual ?? "").Build());
                     return true;
                 }
@@ -81,6 +83,7 @@ namespace Poly_Ling.Player
                     var th = ResolveTool?.Invoke(ita.ToolId);
                     if (th == null) { Fail($"ツールがありません: {ita.ToolId}"); return true; }
                     if (!PLToolSurface.TryInvoke(th, ita.Action, ita.ArgKeys, ita.ArgValues, out string why)) { Fail(why); return true; }
+                    NotifyToolChangedIfExternal(ita.ToolId);
                     return true;
                 }
 

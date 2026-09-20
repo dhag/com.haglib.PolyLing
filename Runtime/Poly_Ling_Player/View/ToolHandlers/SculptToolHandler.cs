@@ -97,12 +97,14 @@ namespace Poly_Ling.Player
             set { if (_tool.Settings is SculptSettings s) s.Strength = Mathf.Clamp(value, s.MinStrength, s.MaxStrength); }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "強度の下限")]
         public float MinStrength
         {
             get => ((SculptSettings)_tool.Settings)?.MinStrength ?? 0.01f;
             set { if (_tool.Settings is SculptSettings s) s.MinStrength = Mathf.Max(0.001f, value); }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "強度の上限")]
         public float MaxStrength
         {
             get => ((SculptSettings)_tool.Settings)?.MaxStrength ?? 0.05f;
@@ -130,12 +132,14 @@ namespace Poly_Ling.Player
             set { if (_tool.Settings is SculptSettings s) s.DistanceMode = value; }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "ブラシ半径の下限")]
         public float MinBrushRadius
         {
             get => ((SculptSettings)_tool.Settings)?.MinBrushRadius ?? 0.05f;
             set { if (_tool.Settings is SculptSettings s) s.MinBrushRadius = Mathf.Max(0.001f, value); }
         }
 
+        [Poly_Ling.Data.PLToolParam(Description = "ブラシ半径の上限")]
         public float MaxBrushRadius
         {
             get => ((SculptSettings)_tool.Settings)?.MaxBrushRadius ?? 1.0f;
@@ -150,6 +154,7 @@ namespace Poly_Ling.Player
         /// true の間、次のドラッグ操作はスカルプトではなく
         /// ブラシ半径の設定として扱われる。ドラッグ終了後に自動的に false に戻る。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ビューポートのドラッグでブラシ半径を決めるモード中か")]
         public bool IsRadiusDragMode { get; set; } = false;
 
         private Vector2 _radiusDragStartPos;

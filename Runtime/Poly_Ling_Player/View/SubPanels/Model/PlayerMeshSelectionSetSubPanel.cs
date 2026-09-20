@@ -17,7 +17,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerMeshSelectionSetSubPanel
     {
-        public Func<ProjectContext>   GetView;
+        public Func<Poly_Ling.View.IProjectView>   GetView;
         public Action<PanelCommand> SendCommand;
 
         private enum TabType { Drawable, Bone, Morph }
@@ -68,7 +68,7 @@ namespace Poly_Ling.Player
         private readonly List<string> _setNames = new List<string>();
 
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
-        private ModelContext CurrentModel => GetView?.Invoke()?.CurrentModel;
+        private Poly_Ling.View.IModelView CurrentModel => GetView?.Invoke()?.CurrentModel;
 
         private MeshCategory CurrentCategory => _currentTab switch
         {
@@ -182,11 +182,11 @@ namespace Poly_Ling.Player
 
             _setNames.Clear();
             string filterText = (_filterTexts[(int)_currentTab] ?? "").ToLower();
-            var sets = model.MeshSelectionSets;
+            var sets = model.MeshSelectionSetNames;
             if (sets != null)
                 foreach (var s in sets)
                 {
-                    string n = s.Name ?? "";
+                    string n = s ?? "";
                     if (string.IsNullOrEmpty(filterText) || n.ToLower().Contains(filterText))
                         _setNames.Add(n);
                 }
@@ -228,7 +228,7 @@ namespace Poly_Ling.Player
             int[] selectedIndices = GetSelectedMeshIndices(model);
             if (selectedIndices.Length == 0) { SetStatus("選択なし"); return; }
 
-            var liveModel = new LiveModelView(model);
+            var liveModel = model;
             IReadOnlyList<IMeshView> source = _currentTab switch
             {
                 TabType.Bone  => liveModel.BoneList,
@@ -263,9 +263,9 @@ namespace Poly_Ling.Player
 
         private void OnDeleteSet()
         {
-            var sets = CurrentModel?.MeshSelectionSets;
+            var sets = CurrentModel?.MeshSelectionSetNames;
             if (sets == null || _selectedSetIndex < 0 || _selectedSetIndex >= sets.Count) return;
-            string name = sets[_selectedSetIndex].Name;
+            string name = sets[_selectedSetIndex];
             bool ok = PLEditorBridge.I.DisplayDialogYesNo("削除確認", $"'{name}' を削除しますか？", "削除", "キャンセル");
             if (!ok) return;
             SendCmd(new DeleteSelectionDictionaryCommand(ModelIndex, _selectedSetIndex));
@@ -306,7 +306,7 @@ namespace Poly_Ling.Player
             var model = CurrentModel;
             if (model == null) { SetStatus("モデルがありません"); return; }
 
-            int setCount = model.MeshSelectionSets?.Count ?? 0;
+            int setCount = model.MeshSelectionSetNames?.Count ?? 0;
             if (setCount == 0) { SetStatus("辞書が空です"); return; }
 
             // パス欄は読込用。書き出しは毎回ダイアログを出す。
@@ -347,9 +347,9 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            int before = model.MeshSelectionSets?.Count ?? 0;
+            int before = model.MeshSelectionSetNames?.Count ?? 0;
             SendCmd(new LoadMeshSelSetsCsvCommand(ModelIndex, path));
-            int after = CurrentModel?.MeshSelectionSets?.Count ?? before;
+            int after = CurrentModel?.MeshSelectionSetNames?.Count ?? before;
 
             if (after > before)
             {
@@ -363,13 +363,13 @@ namespace Poly_Ling.Player
         }
 
         // ── Helpers ──────────────────────────────────────────────────────
-        private int[] GetSelectedMeshIndices(ModelContext model)
+        private int[] GetSelectedMeshIndices(Poly_Ling.View.IModelView model)
         {
             return _currentTab switch
             {
-                TabType.Bone  => model.SelectedBoneIndices?.ToArray()    ?? Array.Empty<int>(),
-                TabType.Morph => model.SelectedMorphIndices?.ToArray()   ?? Array.Empty<int>(),
-                _             => model.SelectedDrawableMeshIndices?.ToArray()    ?? Array.Empty<int>(),
+                TabType.Bone  => model.SelectedBoneIndices     ?? Array.Empty<int>(),
+                TabType.Morph => model.SelectedMorphIndices    ?? Array.Empty<int>(),
+                _             => model.SelectedDrawableIndices ?? Array.Empty<int>(),
             };
         }
 

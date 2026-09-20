@@ -20,8 +20,10 @@ namespace Poly_Ling.Player
 {
     public class PlayerSurfaceSnapSubPanel
     {
-        public Func<SurfaceSnapToolHandler> GetH;
-        public Func<ProjectContext>         GetView;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public IToolSurface                 Surface;
+        private const string Tool = "surfaceSnap";
+        public Func<Poly_Ling.View.IProjectView>         GetView;
         public Action<PanelCommand>         SendCommand;
 
         /// <summary>コマンドに載せるモデル索引。</summary>
@@ -33,8 +35,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private int[] SelectedMasterIndices()
         {
-            var sel = GetView?.Invoke()?.CurrentModel?.SelectedDrawableMeshIndices;
-            return sel != null ? sel.ToArray() : System.Array.Empty<int>();
+            return GetView?.Invoke()?.CurrentModel?.SelectedDrawableIndices ?? System.Array.Empty<int>();
         }
 
         // ================================================================
@@ -121,10 +122,9 @@ namespace Poly_Ling.Player
             _cameraGroup.style.marginBottom = 4;
             _cameraGroup.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
-                h.CancelIfActive();
-                h.CameraKind = ToCameraKind(e.newValue);
+                if (Surface == null) return;
+                Surface.Invoke(Tool, "cancelPreviewIfActive");
+                Surface.Set(Tool, "cameraKind", ToCameraKind(e.newValue));
                 HidePreview();
                 Refresh();
             });
@@ -136,10 +136,9 @@ namespace Poly_Ling.Player
             _selectedOnlyToggle.style.marginBottom = 2;
             _selectedOnlyToggle.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
-                h.CancelIfActive();
-                h.SelectedVerticesOnly = e.newValue;
+                if (Surface == null) return;
+                Surface.Invoke(Tool, "cancelPreviewIfActive");
+                Surface.Set(Tool, "selectedVerticesOnly", e.newValue);
                 HidePreview();
             });
             _root.Add(_selectedOnlyToggle);
@@ -150,12 +149,11 @@ namespace Poly_Ling.Player
             _offsetField.style.marginBottom = 2;
             _offsetField.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
+                if (Surface == null) return;
                 float v = Mathf.Max(0f, e.newValue);
                 if (v != e.newValue) _offsetField.SetValueWithoutNotify(v);
-                h.CancelIfActive();
-                h.SurfaceOffset = v;
+                Surface.Invoke(Tool, "cancelPreviewIfActive");
+                Surface.Set(Tool, "surfaceOffset", v);
                 HidePreview();
             });
             _root.Add(_offsetField);
@@ -166,12 +164,11 @@ namespace Poly_Ling.Player
             _backfaceGroup.style.marginBottom = 4;
             _backfaceGroup.RegisterValueChangedCallback(e =>
             {
-                var h = GetH();
-                if (h == null) return;
-                h.CancelIfActive();
-                h.Backface = e.newValue == 1
+                if (Surface == null) return;
+                Surface.Invoke(Tool, "cancelPreviewIfActive");
+                Surface.Set(Tool, "backface", e.newValue == 1
                     ? SurfaceSnapBackface.FrontOnly
-                    : SurfaceSnapBackface.Both;
+                    : SurfaceSnapBackface.Both);
                 HidePreview();
             });
             _root.Add(_backfaceGroup);
@@ -238,73 +235,57 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var h = GetH();
-            if (h == null || _targetLabel == null) return;
+            if (Surface == null || _targetLabel == null) return;
 
-            BuildCandidates(h);
+            BuildCandidates();
 
-            int targets = h.TargetMeshCount;
+            int targets = Surface.GetInt(Tool, "targetMeshCount");
             _targetLabel.text = targets > 0
                 ? $"ターゲット: {targets} 個（選択中のオブジェクト）"
                 : "ターゲットなし（リファレンス以外のオブジェクトを選択してください）";
 
-            RefreshReferenceList(h);
+            RefreshReferenceList();
 
-            _cameraGroup?.SetValueWithoutNotify(ToCameraIndex(h.CameraKind));
-            _selectedOnlyToggle?.SetValueWithoutNotify(h.SelectedVerticesOnly);
-            _offsetField?.SetValueWithoutNotify(h.SurfaceOffset);
+            _cameraGroup?.SetValueWithoutNotify(ToCameraIndex(Surface.Get(Tool, "cameraKind", SurfaceSnapCameraKind.Current)));
+            _selectedOnlyToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "selectedVerticesOnly"));
+            _offsetField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "surfaceOffset"));
             _backfaceGroup?.SetValueWithoutNotify(
-                h.Backface == SurfaceSnapBackface.FrontOnly ? 1 : 0);
+                Surface.Get(Tool, "backface", SurfaceSnapBackface.Both) == SurfaceSnapBackface.FrontOnly ? 1 : 0);
 
-            if (_statusLabel != null) _statusLabel.text = h.LastResult ?? "";
+            if (_statusLabel != null) _statusLabel.text = Surface.GetString(Tool, "lastResult");
 
-            if (h.IsPreviewing)
+            if (Surface.GetBool(Tool, "isPreviewing"))
             {
+                float s = Surface.GetFloat(Tool, "slider");
                 _previewSection.style.display = DisplayStyle.Flex;
-                _slider?.SetValueWithoutNotify(h.Slider);
-                if (_sliderValueLabel != null) _sliderValueLabel.text = h.Slider.ToString("F2");
+                _slider?.SetValueWithoutNotify(s);
+                if (_sliderValueLabel != null) _sliderValueLabel.text = s.ToString("F2");
             }
             else
             {
                 HidePreview();
             }
 
-            RefreshComputeEnabled(h);
+            RefreshComputeEnabled();
         }
 
         // ================================================================
-        // 候補リスト
+        // 候補リスト（ハンドラの概要 candidateIndices／Names／VertexCounts）
         // ================================================================
 
-        private void BuildCandidates(SurfaceSnapToolHandler h)
+        private void BuildCandidates()
         {
             _candidates.Clear();
+            var idx   = Surface.Get(Tool, "candidateIndices",      Array.Empty<int>());
+            var names = Surface.Get(Tool, "candidateNames",        Array.Empty<string>());
+            var vc    = Surface.Get(Tool, "candidateVertexCounts", Array.Empty<int>());
+            int n = Math.Min(idx.Length, Math.Min(names.Length, vc.Length));
+            for (int i = 0; i < n; i++) _candidates.Add((idx[i], names[i], vc[i]));
 
-            var model = h.Model;
-            if (model == null) return;
-
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var ctx = model.GetMeshContext(i);
-                if (ctx?.MeshObject == null || ctx.MeshObject.VertexCount == 0) continue;
-                if (ctx.Type != MeshType.Mesh &&
-                    ctx.Type != MeshType.BakedMirror &&
-                    ctx.Type != MeshType.MirrorSide) continue;
-
-                _candidates.Add((i, ctx.Name, ctx.MeshObject.VertexCount));
-            }
-
-            h.PruneReferences(ContainsCandidate);
+            Surface.Invoke(Tool, "pruneReferencesToCandidates");
         }
 
-        private bool ContainsCandidate(int index)
-        {
-            for (int i = 0; i < _candidates.Count; i++)
-                if (_candidates[i].index == index) return true;
-            return false;
-        }
-
-        private void RefreshReferenceList(SurfaceSnapToolHandler h)
+        private void RefreshReferenceList()
         {
             _referenceListContainer.Clear();
 
@@ -317,6 +298,7 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            var refs = new HashSet<int>(Surface.Get(Tool, "referenceIndexArray", Array.Empty<int>()));
             for (int i = 0; i < _candidates.Count; i++)
             {
                 var c   = _candidates[i];
@@ -324,15 +306,14 @@ namespace Poly_Ling.Player
 
                 var tg = new Toggle($"{c.name}  [V:{c.vertexCount}]")
                 {
-                    value = h.IsReference(idx)
+                    value = refs.Contains(idx)
                 };
                 tg.style.fontSize     = 10;
                 tg.style.marginBottom = 1;
                 tg.RegisterValueChangedCallback(e =>
                 {
-                    var hh = GetH();
-                    if (hh == null) return;
-                    hh.SetReference(idx, e.newValue);
+                    if (Surface == null) return;
+                    Surface.Invoke(Tool, "setReferenceOn", ("meshIndex", idx), ("on", e.newValue));
                     HidePreview();
                     Refresh();
                 });
@@ -348,12 +329,12 @@ namespace Poly_Ling.Player
 
         private void OnComputeClicked()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            h.TriggerCompute();
+            Surface.Invoke(Tool, "compute");
+            bool previewing = Surface.GetBool(Tool, "isPreviewing");
 
-            if (h.IsPreviewing)
+            if (previewing)
             {
                 _previewSection.style.display = DisplayStyle.Flex;
                 _slider?.SetValueWithoutNotify(0f);
@@ -366,22 +347,21 @@ namespace Poly_Ling.Player
 
             if (_statusLabel != null)
             {
-                _statusLabel.style.color = h.IsPreviewing
+                _statusLabel.style.color = previewing
                     ? new StyleColor(new Color(0.4f, 0.8f, 1f))
                     : new StyleColor(new Color(1f, 0.4f, 0.4f));
-                _statusLabel.text = h.LastResult ?? "";
+                _statusLabel.text = Surface.GetString(Tool, "lastResult");
             }
 
-            RefreshComputeEnabled(h);
+            RefreshComputeEnabled();
         }
 
         private void OnSliderChanged(float newValue)
         {
-            var h = GetH();
-            if (h == null || !h.IsPreviewing) return;
+            if (Surface == null || !Surface.GetBool(Tool, "isPreviewing")) return;
 
             if (_sliderValueLabel != null) _sliderValueLabel.text = newValue.ToString("F2");
-            h.SetSlider(newValue);
+            Surface.Set(Tool, "sliderValue", newValue);
         }
 
         /// <summary>
@@ -393,17 +373,16 @@ namespace Poly_Ling.Player
         /// </summary>
         private void OnApplyClicked()
         {
-            var h = GetH();
-            if (h == null || !h.IsPreviewing) return;
+            if (Surface == null || !Surface.GetBool(Tool, "isPreviewing")) return;
 
             SendCommand?.Invoke(new SurfaceSnapCommand(
                 ModelIndex, SelectedMasterIndices(),
-                new List<int>(h.ReferenceIndices).ToArray(),
-                cameraKind:           h.CameraKind,
-                selectedVerticesOnly: h.SelectedVerticesOnly,
-                surfaceOffset:        h.SurfaceOffset,
-                backface:             h.Backface,
-                slider:               h.Slider));
+                Surface.Get(Tool, "referenceIndexArray", Array.Empty<int>()),
+                cameraKind:           Surface.Get(Tool, "cameraKind", SurfaceSnapCameraKind.Current),
+                selectedVerticesOnly: Surface.GetBool(Tool, "selectedVerticesOnly"),
+                surfaceOffset:        Surface.GetFloat(Tool, "surfaceOffset"),
+                backface:             Surface.Get(Tool, "backface", SurfaceSnapBackface.Both),
+                slider:               Surface.GetFloat(Tool, "slider")));
 
             HidePreview();
             Refresh();
@@ -411,10 +390,9 @@ namespace Poly_Ling.Player
 
         private void OnCancelClicked()
         {
-            var h = GetH();
-            if (h == null) return;
+            if (Surface == null) return;
 
-            h.TriggerCancel();
+            Surface.Invoke(Tool, "cancel");
             HidePreview();
             Refresh();
         }
@@ -430,12 +408,13 @@ namespace Poly_Ling.Player
             if (_sliderValueLabel != null) _sliderValueLabel.text = "0.00";
         }
 
-        private void RefreshComputeEnabled(SurfaceSnapToolHandler h)
+        private void RefreshComputeEnabled()
         {
             if (_computeBtn == null) return;
-            if (h == null) { _computeBtn.SetEnabled(false); return; }
+            if (Surface == null) { _computeBtn.SetEnabled(false); return; }
 
-            _computeBtn.SetEnabled(h.TargetMeshCount > 0 && h.ReferenceIndices.Count > 0);
+            _computeBtn.SetEnabled(Surface.GetInt(Tool, "targetMeshCount") > 0
+                && Surface.Get(Tool, "referenceIndexArray", Array.Empty<int>()).Length > 0);
         }
 
         private static SurfaceSnapCameraKind ToCameraKind(int index)

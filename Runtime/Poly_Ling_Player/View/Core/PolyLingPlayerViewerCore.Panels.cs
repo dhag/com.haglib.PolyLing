@@ -156,6 +156,15 @@ namespace Poly_Ling.Player
             _blendSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
 
+        private void ShowReferenceSymmetryPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(
+                _layoutRoot?.ReferenceSymmetrySection,
+                _layoutRoot?.ReferenceSymmetryBtn);
+            _referenceSymmetrySubPanel?.Refresh();
+        }
+
         private void ShowShrinkPanel()
         {
             // カテゴリ 3

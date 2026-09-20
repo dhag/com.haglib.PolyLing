@@ -120,6 +120,7 @@ namespace Poly_Ling.Player
         private DeformPhase _phase = DeformPhase.WorkAxis;
 
         /// <summary>現在のフェーズ。変えると入力経路とギズモ表示が切り替わる。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "現在のフェーズ（WorkAxis / Deform）。変えると入力経路とギズモ表示が切り替わる")]
         public DeformPhase Phase
         {
             get => _phase;
@@ -199,6 +200,16 @@ namespace Poly_Ling.Player
         /// <summary>作業軸ローカルでの s（= y）範囲。UI 表示用。</summary>
         public DeformContext PreviewContext => _applier.Context;
 
+        /// <summary>今のデフォーマの設定（デフォーマごとに型が違う）。"params.メンバー名" で読み書きする。</summary>
+        [Poly_Ling.Data.PLToolSettings(Name = "params", Description = "今のデフォーマの設定（デフォーマごとに型が違う）")]
+        public object DeformerParams => Deformer?.Params;
+
+        [Poly_Ling.Data.PLToolState(Description = "今のデフォーマの表示名")]
+        public string DeformerDisplayName => Deformer?.DisplayName ?? "";
+
+        [Poly_Ling.Data.PLToolStateGroup(Name = "previewContext", Description = "プレビューの範囲情報（DeformContext）")]
+        public DeformContext PreviewContextGroup => _applier.Context;
+
         // ================================================================
         // デフォーマ選択
         // ================================================================
@@ -207,6 +218,7 @@ namespace Poly_Ling.Player
         /// デフォーマを切り替える。プレビュー中なら一度巻き戻してから
         /// 新しいデフォーマで再計算する（パラメータの意味が変わるため）。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "デフォーマを名前で選ぶ")]
         public bool SelectDeformer(string name)
         {
             var next = DeformerRegistry.Create(name);
@@ -266,6 +278,7 @@ namespace Poly_Ling.Player
         /// 現在のパラメータでプレビューを更新する。
         /// 未開始なら自動で BeginPreview する。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "今の設定でプレビューを更新する（未開始なら開始し、対象のロックを取る）")]
         public void ApplyPreview()
         {
             if (!_applier.IsActive && !BeginPreview()) return;
@@ -353,6 +366,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>変形を捨てて開始位置へ戻す。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "プレビューを捨てて開始状態へ戻す")]
         public void Revert()
         {
             if (!_applier.IsActive) return;
@@ -379,6 +393,7 @@ namespace Poly_Ling.Player
         ///   送信口が無い・プレビュー中でない・コマンドに写せない
         ///   デフォーマのときは、従来どおり Commit で確定させる。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "プレビュー中の変形を Apply*DeformCommand として確定する")]
         public void CommitViaCommand()
         {
             if (SendCommand == null || !_applier.IsActive) { Commit(); return; }
@@ -583,12 +598,14 @@ namespace Poly_Ling.Player
         /// 頂点を触らずにギズモだけ組み直させる。形状プレビューの表示切替用。
         /// OnRepaint はギズモデータの再構築まで行う結線になっている。
         /// </summary>
+        [Poly_Ling.Data.PLToolAction(Description = "ギズモを組み直させる（頂点は動かさない）")]
         public void RequestGizmoRefresh()
         {
             OnRepaint?.Invoke();
         }
 
         /// <summary>デフォーマのパラメータを既定値へ戻す。プレビューは維持する。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "今のデフォーマの設定を既定値へ戻す（プレビュー中なら更新する）")]
         public void ResetParams()
         {
             Deformer?.Params?.Reset();

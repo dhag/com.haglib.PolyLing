@@ -39,7 +39,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>プロジェクト取得。modelIndex を封筒へ入れるために要る。</summary>
-        public Func<ProjectContext> GetProject;
+        public Func<Poly_Ling.View.IProjectView> GetProject;
 
         /// <summary>コマンドを実行して結果を返す口。</summary>
         public Func<PanelCommand, CommandResult> RunCommand;

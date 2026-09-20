@@ -21,7 +21,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerNormalEditSubPanel
     {
-        public Func<ProjectContext> GetView;
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
 
         private static readonly List<string> WeightNames = new List<string>
@@ -103,8 +103,8 @@ namespace Poly_Ling.Player
 
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
-        private MeshContext ActiveMeshContext
-            => GetView?.Invoke()?.CurrentModel?.ActiveMeshContext;
+        private Poly_Ling.View.IMeshView ActiveMeshContext
+            => GetView?.Invoke()?.CurrentModel?.ActiveMesh;
 
         private NormalWeightMode WeightMode
             => (NormalWeightMode)Mathf.Clamp(_weightDropdown?.index ?? 0, 0, 3);
@@ -316,12 +316,12 @@ namespace Poly_Ling.Player
             _meshNameLabel.text = mc.Name ?? "(no name)";
 
             var parts = new List<string>();
-            if (mc.Selection?.Vertices.Count > 0) parts.Add($"V:{mc.Selection.Vertices.Count}");
-            if (mc.Selection?.Edges.Count    > 0) parts.Add($"E:{mc.Selection.Edges.Count}");
-            if (mc.Selection?.Faces.Count    > 0) parts.Add($"F:{mc.Selection.Faces.Count}");
+            if (mc.SelectedVertexCount > 0) parts.Add($"V:{mc.SelectedVertexCount}");
+            if (mc.SelectedEdgeCount   > 0) parts.Add($"E:{mc.SelectedEdgeCount}");
+            if (mc.SelectedFaceCount   > 0) parts.Add($"F:{mc.SelectedFaceCount}");
 
-            string scope = (mc.Selection?.Faces.Count > 0) ? "面コーナー"
-                         : (mc.Selection?.Vertices.Count > 0) ? "選択頂点の全スロット"
+            string scope = (mc.SelectedFaceCount > 0) ? "面コーナー"
+                         : (mc.SelectedVertexCount > 0) ? "選択頂点の全スロット"
                          : "メッシュ全体";
 
             _currentSelLabel.text = parts.Count > 0

@@ -75,6 +75,7 @@ namespace Poly_Ling.View
                 model.SelectedBoneIndices.ToArray(),
                 model.SelectedMorphIndices.ToArray());
             summary.MeshSelectionSetNames = BuildSelectionSetNames(model);
+            summary.ActiveMeshIndex = model.ActiveMeshIndex;
             return summary;
         }
 

@@ -17,7 +17,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerNormalExcludeSetSubPanel
     {
-        public Func<ProjectContext> GetView;
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
 
         // UI 自動操作の ID は "normalExcludeSet.<下の Id>"（UiControlAttribute.cs）。
@@ -45,11 +45,11 @@ namespace Poly_Ling.Player
 
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
-        private MeshContext ActiveMeshContext
-            => GetView?.Invoke()?.CurrentModel?.ActiveMeshContext;
+        private Poly_Ling.View.IMeshView ActiveMeshContext
+            => GetView?.Invoke()?.CurrentModel?.ActiveMesh;
 
-        private List<PartsSelectionSet> ExcludeList
-            => ActiveMeshContext?.MeshObject?.NormalRecalcExcludeList;
+        private IReadOnlyList<Poly_Ling.View.IPartsSetView> ExcludeList
+            => ActiveMeshContext?.NormalExcludeSets;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
@@ -144,9 +144,9 @@ namespace Poly_Ling.Player
                 _meshNameLabel.text = mc.Name ?? "(no name)";
 
                 var parts = new List<string>();
-                if (mc.SelectedVertices?.Count > 0) parts.Add($"V:{mc.SelectedVertices.Count}");
-                if (mc.SelectedEdges?.Count   > 0) parts.Add($"E:{mc.SelectedEdges.Count}");
-                if (mc.SelectedFaces?.Count   > 0) parts.Add($"F:{mc.SelectedFaces.Count}");
+                if (mc.SelectedVertexCount > 0) parts.Add($"V:{mc.SelectedVertexCount}");
+                if (mc.SelectedEdgeCount   > 0) parts.Add($"E:{mc.SelectedEdgeCount}");
+                if (mc.SelectedFaceCount   > 0) parts.Add($"F:{mc.SelectedFaceCount}");
                 _currentSelLabel.text = parts.Count > 0 ? string.Join("  ", parts) : "(選択なし)";
             }
 
@@ -200,8 +200,8 @@ namespace Poly_Ling.Player
             var mc = ActiveMeshContext;
             if (mc == null) { SetStatus("メッシュが選択されていません"); return; }
 
-            bool hasSel = (mc.SelectedVertices?.Count > 0) || (mc.SelectedEdges?.Count > 0)
-                       || (mc.SelectedFaces?.Count > 0);
+            bool hasSel = mc.SelectedVertexCount > 0 || mc.SelectedEdgeCount > 0
+                       || mc.SelectedFaceCount > 0;
             if (!hasSel) { SetStatus("選択なし"); return; }
 
             SendCmd(new SaveNormalExcludeSetCommand(ModelIndex, _setNameField?.value?.Trim() ?? ""));

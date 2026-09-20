@@ -49,7 +49,7 @@ namespace Poly_Ling.Player
             _alignVerticesSubPanel = new PlayerAlignVerticesSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _alignVerticesSubPanel.Build(_layoutRoot.AlignVerticesSection);
@@ -69,7 +69,7 @@ namespace Poly_Ling.Player
             _pipeAlignSubPanel = new PlayerPipeAlignSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _pipeAlignSubPanel.Build(_layoutRoot.PipeAlignSection);
@@ -120,8 +120,8 @@ namespace Poly_Ling.Player
             _surfaceSnapHandler.SetCommandQueue(_editOps?.CommandQueue);
             _surfaceSnapSubPanel = new PlayerSurfaceSnapSubPanel
             {
-                GetH        = () => _surfaceSnapHandler,
-                GetView     = () => ActiveProject,
+                Surface     = ToolSurface,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _surfaceSnapSubPanel.Build(_layoutRoot.SurfaceSnapSection);
@@ -165,8 +165,8 @@ namespace Poly_Ling.Player
             _planarizeAlongBonesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _planarizeAlongBonesSubPanel = new PlayerPlanarizeAlongBonesSubPanel
             {
-                GetH        = () => _planarizeAlongBonesHandler,
-                GetView     = () => ActiveProject,
+                Surface     = ToolSurface,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _planarizeAlongBonesSubPanel.Build(_layoutRoot.PlanarizeAlongBonesSection);
@@ -188,7 +188,7 @@ namespace Poly_Ling.Player
             _smoothEdgesSubPanel = new PlayerSmoothEdgesSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _smoothEdgesSubPanel.Build(_layoutRoot.SmoothEdgesSection);
@@ -218,7 +218,7 @@ namespace Poly_Ling.Player
             _mergeVerticesSubPanel = new PlayerMergeVerticesSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _mergeVerticesSubPanel.Build(_layoutRoot.MergeVerticesSection);
@@ -248,7 +248,7 @@ namespace Poly_Ling.Player
             _splitVerticesSubPanel = new PlayerSplitVerticesSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _splitVerticesSubPanel.Build(_layoutRoot.SplitVerticesSection);
@@ -271,7 +271,7 @@ namespace Poly_Ling.Player
             _vertexHoleSubPanel = new PlayerVertexHoleSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexHoleSubPanel.Build(_layoutRoot.VertexHoleSection);
@@ -295,7 +295,7 @@ namespace Poly_Ling.Player
             _vertexDissolveSubPanel = new PlayerVertexDissolveSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexDissolveSubPanel.Build(_layoutRoot.VertexDissolveSection);
@@ -399,7 +399,7 @@ namespace Poly_Ling.Player
             _tri4To1SubPanel = new PlayerTri4To1SubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _tri4To1SubPanel.Build(_layoutRoot.Tri4To1Section);
@@ -422,7 +422,7 @@ namespace Poly_Ling.Player
             _faceMergeSubPanel = new PlayerFaceMergeSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _faceMergeSubPanel.Build(_layoutRoot.FaceMergeSection);
@@ -445,14 +445,14 @@ namespace Poly_Ling.Player
             _quad4To1SubPanel = new PlayerQuad4To1SubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _quad4To1SubPanel.Build(_layoutRoot.Quad4To1Section);
 
             _vertexIdSubPanel = new PlayerVertexIdSubPanel
             {
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexIdSubPanel.Build(_layoutRoot.VertexIdSection);

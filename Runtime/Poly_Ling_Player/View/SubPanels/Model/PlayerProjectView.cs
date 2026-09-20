@@ -90,6 +90,24 @@ namespace Poly_Ling.Player
         public IReadOnlyList<string> MeshSelectionSetNames
             => _meshSelectionSetNames ??= BuildSelectionSetNames();
 
+        public int ActiveMeshIndex => _model.ActiveMeshIndex;
+
+        public IMeshView ActiveMesh
+        {
+            get
+            {
+                int i  = _model.ActiveMeshIndex;
+                var mc = i >= 0 ? _model.GetMeshContext(i) : null;
+                return mc != null ? new Poly_Ling.View.LiveMeshView(mc, _model, i) : null;
+            }
+        }
+
+        public IMeshView GetMesh(int masterIndex)
+        {
+            var mc = masterIndex >= 0 ? _model.GetMeshContext(masterIndex) : null;
+            return mc != null ? new Poly_Ling.View.LiveMeshView(mc, _model, masterIndex) : null;
+        }
+
         private string[] BuildSelectionSetNames()
         {
             var sets = _model.MeshSelectionSets;

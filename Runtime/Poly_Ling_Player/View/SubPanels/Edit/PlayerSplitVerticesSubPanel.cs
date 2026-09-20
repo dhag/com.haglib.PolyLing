@@ -15,7 +15,7 @@ namespace Poly_Ling.Player
         /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
         public IToolSurface                   Surface;
         private const string Tool = "splitVertices";
-        public Func<ProjectContext>           GetView;
+        public Func<Poly_Ling.View.IProjectView>           GetView;
         public Action<PanelCommand>           SendCommand;
 
         /// <summary>コマンドに載せるモデル索引。</summary>
@@ -62,12 +62,11 @@ namespace Poly_Ling.Player
             // 実処理は編集対象メッシュ 1 本にしか効かないため、対象もその 1 本を載せる。
             _splitBtn = new Button(() =>
             {
-                var model = GetView?.Invoke()?.CurrentModel;
-                var mc    = model?.ActiveMeshContext;
-                if (mc == null) return;
+                int active = GetView?.Invoke()?.CurrentModel?.ActiveMeshIndex ?? -1;
+                if (active < 0) return;
 
                 SendCommand?.Invoke(new SplitVerticesCommand(
-                    ModelIndex, new[] { model.IndexOf(mc) }));
+                    ModelIndex, new[] { active }));
                 Refresh();
             })
             { text = "分割実行" };

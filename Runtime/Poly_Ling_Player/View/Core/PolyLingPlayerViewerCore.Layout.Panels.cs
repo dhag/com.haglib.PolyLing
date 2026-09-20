@@ -125,6 +125,14 @@ namespace Poly_Ling.Player
             _blendSubPanel.UnlockAfterPreview = EndHostPreview;
             _blendSubPanel.Build(_layoutRoot.BlendSection);
 
+            // 臨時の対称化は既存ミラー機構へ状態を足さず、対象のクローン追加だけを行う。
+            _referenceSymmetrySubPanel = new PlayerReferenceSymmetrySubPanel
+            {
+                GetModel = () => ActiveProject?.CurrentModel,
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+            };
+            _referenceSymmetrySubPanel.Build(_layoutRoot.ReferenceSymmetrySection);
+
             _shrinkSubPanel = new PlayerShrinkSubPanel(Poly_Ling.UI.ShrinkCollisionMode.VertexSegment);
             _shrinkSubPanel.OnSyncMeshPositions = mc =>
             {
@@ -302,35 +310,35 @@ namespace Poly_Ling.Player
 
             _partsSelSetSubPanel = new PlayerPartsSelectionSetSubPanel
             {
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _partsSelSetSubPanel.Build(_layoutRoot.PartsSelectionSetSection);
 
             _normalExcludeSubPanel = new PlayerNormalExcludeSetSubPanel
             {
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _normalExcludeSubPanel.Build(_layoutRoot.NormalExcludeSetSection);
 
             _normalEditSubPanel = new PlayerNormalEditSubPanel
             {
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _normalEditSubPanel.Build(_layoutRoot.NormalEditSection);
 
             _faceHideSubPanel = new PlayerFaceHideSubPanel
             {
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _faceHideSubPanel.Build(_layoutRoot.FaceHideSection);
 
             _meshSelSetSubPanel = new PlayerMeshSelectionSetSubPanel
             {
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _meshSelSetSubPanel.Build(_layoutRoot.MeshSelectionSetSection);
@@ -449,19 +457,15 @@ namespace Poly_Ling.Player
 
             _mirrorSubPanel = new PlayerMirrorSubPanel
             {
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetView       = () => ActiveProjectView,
                 SendCommand   = cmd => DispatchHost(cmd),
-                GetModel      = () => ActiveProject?.CurrentModel,
-                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _mirrorSubPanel.Build(_layoutRoot.MirrorSection);
 
             _quadDecimatorSubPanel = new PlayerQuadDecimatorSubPanel
             {
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetView       = () => ActiveProjectView,
                 SendCommand   = cmd => DispatchHost(cmd),
-                GetModel      = () => ActiveProject?.CurrentModel,
-                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _quadDecimatorSubPanel.Build(_layoutRoot.QuadDecimatorSection);
         }
@@ -499,7 +503,7 @@ namespace Poly_Ling.Player
 
             _vertexMoveSubPanel = new PlayerVertexMoveSubPanel
             {
-                GetHandler = () => _moveToolHandler,
+                Surface = ToolSurface,
             };
             _vertexMoveSubPanel.SetContext(_panelContext);
             _vertexMoveSubPanel.Build(_layoutRoot.VertexMoveSection);
@@ -511,10 +515,12 @@ namespace Poly_Ling.Player
 
             _sculptSubPanel = new PlayerSculptSubPanel
             {
-                GetHandler              = () => _sculptHandler,
+                Surface                 = ToolSurface,
                 GetTempMirror           = () => _tempMirrorController,
                 GetTempMirrorOwnerToken = () => (int)InteractionMode.Sculpt,
             };
+            // ビューポートで半径を決める操作の通知はパネルではなく本体が受け、パネルに読み直させる
+            // （操作経路統一計画.md C-3。ハンドラを作る箇所で配線する）。
             _sculptSubPanel.Build(_layoutRoot.SculptSection);
             // 起動時にスライダ範囲・値・詳細設定をハンドラ実値へ同期する。
             _sculptSubPanel.Refresh();
@@ -527,7 +533,11 @@ namespace Poly_Ling.Player
             _advancedSelectSubPanel = new PlayerAdvancedSelectSubPanel
             {
                 Surface     = ToolSurface,
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () =>
+                {
+                    var p = _localLoader.Project ?? _receiver?.Project;
+                    return p != null ? new PlayerProjectView(p) : null;
+                },
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _advancedSelectSubPanel.Build(_layoutRoot.AdvancedSelectSection);

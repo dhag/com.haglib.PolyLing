@@ -171,6 +171,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>ギズモのスクリーンオフセット X。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ギズモのスクリーンオフセット X")]
         public float GizmoScreenOffsetX
         {
             get => _axisGizmo.ScreenOffset.x;
@@ -178,6 +179,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>ギズモのスクリーンオフセット Y。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ギズモのスクリーンオフセット Y")]
         public float GizmoScreenOffsetY
         {
             get => _axisGizmo.ScreenOffset.y;
@@ -387,7 +389,11 @@ namespace Poly_Ling.Player
         /// true の間、次のドラッグ操作は移動ではなくマグネット半径の設定として扱われる。
         /// ドラッグ終了後に自動的に false に戻る。
         /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "ビューポートのドラッグでマグネット半径を決めるモード中か")]
         public bool IsRadiusDragMode { get; set; } = false;
+
+        [Poly_Ling.Data.PLToolState(Description = "移動の影響を受ける頂点数")]
+        public int AffectedCount => GetTotalAffectedCount();
 
         private Vector2 _radiusDragStartPos;
         private bool    _inRadiusDrag;

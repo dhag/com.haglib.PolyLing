@@ -34,10 +34,8 @@ namespace Poly_Ling.Player
         {
             _mediaPipeSubPanel = new PlayerMediaPipeFaceDeformSubPanel
             {
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetView       = () => ActiveProjectView,
                 SendCommand   = cmd => DispatchHost(cmd),
-                GetModel      = () => ActiveProject?.CurrentModel,
-                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _mediaPipeSubPanel.Build(_layoutRoot.MediaPipeSection);
 
@@ -164,7 +162,7 @@ namespace Poly_Ling.Player
             // 失敗を表示するため、戻り値を捨てる SendCommand ではなく Dispatch を直に渡す。
             _scenarioSubPanel = new PlayerScenarioSubPanel
             {
-                GetProject = () => ActiveProject,
+                GetProject = () => ActiveProjectView,
                 RunCommand = cmd => DispatchHost(cmd),
                 GetRun     = () => _commandDispatcher?.ScenarioRun,
             };

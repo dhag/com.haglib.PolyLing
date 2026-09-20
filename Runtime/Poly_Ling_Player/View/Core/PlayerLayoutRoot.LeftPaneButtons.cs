@@ -84,6 +84,9 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：キャプチャボタン（その他）。</summary>
         public Button CaptureBtn { get; private set; }
 
+        /// <summary>左ペイン：リファレンスに基づく対称化（臨時、その他）。</summary>
+        public Button ReferenceSymmetryBtn { get; private set; }
+
         /// <summary>左ペイン：ブレンドボタン。</summary>
         public Button BlendBtn { get; private set; }
 
@@ -729,6 +732,10 @@ namespace Poly_Ling.Player
             // 機能ではないため「その他」に置く。各ツール内の「一時ミラー」ボタンは
             // このパネルで指定したパラメータ（TempMirrorSettings）を使う。
             MirrorBtn = MakeBtn("一時ミラー"); foOther.Add(MirrorBtn);
+
+            ReferenceSymmetryBtn = MakeBtn("リファレンスに基づく対称化（臨時）");
+            ReferenceSymmetryBtn.style.marginTop = 2;
+            foOther.Add(ReferenceSymmetryBtn);
 
             // ── 結合 ───────────────────────────────────────────────────
             var foMerge = MakeFoldout("面の結合", "Merge");

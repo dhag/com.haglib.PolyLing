@@ -133,6 +133,66 @@ namespace Poly_Ling.Player
         public void TriggerCancel()       { _tool.TriggerCancel(); EndPanelPreview(); }
         public void CancelIfActive()      { _tool.CancelIfActive(); EndPanelPreview(); }
 
+        // ---- 窓口（操作経路統一計画.md E、C）----
+
+        [Poly_Ling.Data.PLToolAction(Description = "計算してプレビューを出す（対象のロックを取る）")]
+        public void Compute() => TriggerCompute();
+
+        [Poly_Ling.Data.PLToolAction(Description = "プレビューを取り消す")]
+        public void Cancel() => TriggerCancel();
+
+        [Poly_Ling.Data.PLToolAction(Description = "プレビュー中なら取り消す")]
+        public void CancelPreviewIfActive() => CancelIfActive();
+
+        /// <summary>寄せ具合（0〜1）。プレビュー中だけ反映する。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "寄せ具合（0〜1）。プレビュー中だけ反映する")]
+        public float SliderValue
+        {
+            get => _tool.Slider;
+            set { if (_tool.IsPreviewing) _tool.SetSlider(value); }
+        }
+
+        [Poly_Ling.Data.PLToolAction(Description = "リファレンスに加える／外す")]
+        public void SetReferenceOn(int meshIndex, bool on) => _tool.SetReference(meshIndex, on);
+
+        [Poly_Ling.Data.PLToolState(Description = "リファレンスの MeshContextList 索引")]
+        public int[] ReferenceIndexArray => new System.Collections.Generic.List<int>(_tool.ReferenceIndices).ToArray();
+
+        /// <summary>リファレンス候補（頂点を持つ Mesh・BakedMirror・MirrorSide）の索引。</summary>
+        [Poly_Ling.Data.PLToolState(Description = "リファレンス候補（頂点を持つ Mesh・BakedMirror・MirrorSide）の索引")]
+        public int[] CandidateIndices => CollectCandidates(c => c.index);
+
+        [Poly_Ling.Data.PLToolState(Description = "リファレンス候補の名前（candidateIndices と同じ順）")]
+        public string[] CandidateNames => CollectCandidates(c => c.name);
+
+        [Poly_Ling.Data.PLToolState(Description = "リファレンス候補の頂点数（candidateIndices と同じ順）")]
+        public int[] CandidateVertexCounts => CollectCandidates(c => c.vertexCount);
+
+        /// <summary>候補から外れたリファレンスを外す。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "候補から外れたリファレンスを外す")]
+        public void PruneReferencesToCandidates()
+        {
+            var set = new System.Collections.Generic.HashSet<int>(CandidateIndices);
+            _tool.PruneReferences(set.Contains);
+        }
+
+        private T[] CollectCandidates<T>(Func<(int index, string name, int vertexCount), T> pick)
+        {
+            var list  = new System.Collections.Generic.List<T>();
+            var model = Model;
+            if (model == null) return list.ToArray();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var ctx = model.GetMeshContext(i);
+                if (ctx?.MeshObject == null || ctx.MeshObject.VertexCount == 0) continue;
+                if (ctx.Type != Poly_Ling.Data.MeshType.Mesh &&
+                    ctx.Type != Poly_Ling.Data.MeshType.BakedMirror &&
+                    ctx.Type != Poly_Ling.Data.MeshType.MirrorSide) continue;
+                list.Add(pick((i, ctx.Name, ctx.MeshObject.VertexCount)));
+            }
+            return list.ToArray();
+        }
+
         /// <summary>パネル操作でプレビューを始めてよいか（選択の担当者判定とロック取得）。</summary>
         public Func<bool> TryBeginPreview;
 

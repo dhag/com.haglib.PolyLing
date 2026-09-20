@@ -26,7 +26,9 @@ namespace Poly_Ling.Player
         // 外部コールバック（Viewer から設定）
         // ================================================================
 
-        public Func<DeformToolHandler> GetH;
+        /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
+        private DeformSurfaceView H => Surface != null ? new DeformSurfaceView(Surface) : null;
 
         // ================================================================
         // ウィジェット
@@ -174,7 +176,7 @@ namespace Poly_Ling.Player
 
         private bool RevealAxisPhase()
         {
-            var h = GetH?.Invoke();
+            var h = H;
             if (h == null || h.Phase == DeformToolHandler.DeformPhase.WorkAxis) return false;
             SetPhase(DeformToolHandler.DeformPhase.WorkAxis);
             return true;
@@ -182,7 +184,7 @@ namespace Poly_Ling.Player
 
         private bool RevealDeformPhase()
         {
-            var h = GetH?.Invoke();
+            var h = H;
             if (h == null || h.Phase == DeformToolHandler.DeformPhase.Deform) return false;
             SetPhase(DeformToolHandler.DeformPhase.Deform);
             return true;
@@ -197,7 +199,7 @@ namespace Poly_Ling.Player
         private bool RevealDeformer<TParams>() where TParams : class
         {
             bool changed = RevealDeformPhase();
-            if (GetH?.Invoke()?.Deformer?.Params is TParams) return changed;
+            if (H?.Deformer?.Params is TParams) return changed;
             if (_deformerDropdown == null) return changed;
 
             for (int i = 0; i < _deformerIds.Count; i++)
@@ -255,7 +257,7 @@ namespace Poly_Ling.Player
                 int idx = _deformerDropdown.index;
                 if (idx < 0 || idx >= _deformerIds.Count) return;
 
-                GetH?.Invoke()?.SelectDeformer(_deformerIds[idx]);
+                H?.SelectDeformer(_deformerIds[idx]);
                 UpdateGroupVisibility();
                 Refresh();
             });
@@ -298,7 +300,7 @@ namespace Poly_Ling.Player
             _shapePreviewToggle.RegisterValueChangedCallback(e =>
             {
                 if (_suppressCallback) return;
-                var h = GetH?.Invoke(); if (h == null) return;
+                var h = H; if (h == null) return;
                 h.ShowShapePreview = e.newValue;
                 // ギズモを組み直させる。頂点は動かさない。
                 h.RequestGizmoRefresh();
@@ -318,9 +320,9 @@ namespace Poly_Ling.Player
             btnRow.style.marginTop     = 6;
             // 確定はコマンド経由。CommitViaCommand が開始位置へ戻して
             // ApplyDeformCommand を送り、その受け口が変形と Undo 記録を行う。
-            var applyBtn = new Button(() => { GetH?.Invoke()?.CommitViaCommand(); Refresh(); }) { text = "適用" };
+            var applyBtn = new Button(() => { H?.CommitViaCommand(); Refresh(); }) { text = "適用" };
             applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
-            var revertBtn = new Button(() => { GetH?.Invoke()?.Revert(); ResetWidgets(); Refresh(); }) { text = "取消" };
+            var revertBtn = new Button(() => { H?.Revert(); ResetWidgets(); Refresh(); }) { text = "取消" };
             revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn);
             _deformBody.Add(btnRow);
@@ -374,7 +376,7 @@ namespace Poly_Ling.Player
 
         private void SetPhase(DeformToolHandler.DeformPhase phase)
         {
-            var h = GetH?.Invoke();
+            var h = H;
             if (h == null) return;
 
             h.Phase = phase;
@@ -387,7 +389,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private void RefreshPhaseButtons()
         {
-            var h = GetH?.Invoke();
+            var h = H;
             bool axisPhase = h == null || h.Phase == DeformToolHandler.DeformPhase.WorkAxis;
 
             if (_phaseDeformBtn != null)
@@ -430,10 +432,9 @@ namespace Poly_Ling.Player
 
         private void WithRotate(Action<RotateDeformerParams> set)
         {
-            var h = GetH?.Invoke();
-            if (h?.Deformer?.Params is RotateDeformerParams p)
+            var h = H;
+            if (h != null && h.EditParams(set))
             {
-                set(p);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -460,10 +461,9 @@ namespace Poly_Ling.Player
 
         private void WithMove(Action<MoveDeformerParams> set)
         {
-            var h = GetH?.Invoke();
-            if (h?.Deformer?.Params is MoveDeformerParams p)
+            var h = H;
+            if (h != null && h.EditParams(set))
             {
-                set(p);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -491,10 +491,9 @@ namespace Poly_Ling.Player
 
         private void WithScale(Action<ScaleDeformerParams> set)
         {
-            var h = GetH?.Invoke();
-            if (h?.Deformer?.Params is ScaleDeformerParams p)
+            var h = H;
+            if (h != null && h.EditParams(set))
             {
-                set(p);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -540,10 +539,9 @@ namespace Poly_Ling.Player
 
         private void WithBend(Action<BendDeformerParams> set)
         {
-            var h = GetH?.Invoke();
-            if (h?.Deformer?.Params is BendDeformerParams p)
+            var h = H;
+            if (h != null && h.EditParams(set))
             {
-                set(p);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -555,7 +553,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private void RefreshBendPlaneEnabled()
         {
-            bool manual = !(GetH?.Invoke()?.Deformer?.Params is BendDeformerParams bp)
+            bool manual = !(H?.Deformer?.Params is BendDeformerParams bp)
                           || !bp.UseCameraBendPlane;
 
             _bendPlaneSlider?.SetEnabled(manual);
@@ -589,10 +587,9 @@ namespace Poly_Ling.Player
 
         private void WithTwist(Action<TwistDeformerParams> set)
         {
-            var h = GetH?.Invoke();
-            if (h?.Deformer?.Params is TwistDeformerParams p)
+            var h = H;
+            if (h != null && h.EditParams(set))
             {
-                set(p);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -611,7 +608,7 @@ namespace Poly_Ling.Player
             _magnetToggle.RegisterValueChangedCallback(e =>
             {
                 if (_suppressCallback) return;
-                var h = GetH?.Invoke(); if (h == null) return;
+                var h = H; if (h == null) return;
                 // 影響頂点の集合が変わるため、プレビューを張り直す。
                 h.Revert();
                 h.UseMagnet = e.newValue;
@@ -625,7 +622,7 @@ namespace Poly_Ling.Player
             _magnetRadius.RegisterValueChangedCallback(e =>
             {
                 if (_suppressCallback) return;
-                var h = GetH?.Invoke(); if (h == null) return;
+                var h = H; if (h == null) return;
                 h.Revert();
                 h.MagnetRadius = e.newValue;
                 h.ApplyPreview();
@@ -638,7 +635,7 @@ namespace Poly_Ling.Player
             _magnetDistance.RegisterValueChangedCallback(e =>
             {
                 if (_suppressCallback) return;
-                var h = GetH?.Invoke(); if (h == null) return;
+                var h = H; if (h == null) return;
                 h.Revert();
                 h.MagnetDistanceMode = (DistanceMode)e.newValue;
                 h.ApplyPreview();
@@ -650,7 +647,7 @@ namespace Poly_Ling.Player
             _magnetFalloff.RegisterValueChangedCallback(e =>
             {
                 if (_suppressCallback) return;
-                var h = GetH?.Invoke(); if (h == null) return;
+                var h = H; if (h == null) return;
                 h.Revert();
                 h.MagnetFalloff = (FalloffType)e.newValue;
                 h.ApplyPreview();
@@ -667,7 +664,7 @@ namespace Poly_Ling.Player
             // 埋め込んだ作業軸パネルも一緒に更新する。
             WorkAxisPanel?.Refresh();
 
-            var h = GetH?.Invoke();
+            var h = H;
             if (h == null) return;
 
             _suppressCallback = true;
@@ -730,7 +727,7 @@ namespace Poly_Ling.Player
         {
             if (_infoLabel == null) return;
 
-            var h = GetH?.Invoke();
+            var h = H;
             if (h == null) { _infoLabel.text = string.Empty; return; }
 
             if (!h.IsPreviewing)
@@ -747,7 +744,7 @@ namespace Poly_Ling.Player
 
         private void UpdateGroupVisibility()
         {
-            var p = GetH?.Invoke()?.Deformer?.Params;
+            var p = H?.Deformer?.Params;
             bool isRotate = p is RotateDeformerParams;
             bool isMove   = p is MoveDeformerParams;
             bool isScale  = p is ScaleDeformerParams;
@@ -769,7 +766,7 @@ namespace Poly_Ling.Player
         /// <summary>取消時にウィジェットを 0 へ戻す。</summary>
         private void ResetWidgets()
         {
-            GetH?.Invoke()?.ResetParams();
+            H?.ResetParams();
         }
 
         // ================================================================

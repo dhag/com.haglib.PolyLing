@@ -64,6 +64,8 @@ namespace Poly_Ling.Player
 
         /// <summary>描画中の点（ローカル座標）。</summary>
         public IReadOnlyList<Vector3> ChainPoints => _chainPoints;
+        [Poly_Ling.Data.PLToolState(Description = "描画中の点の数")]
+        public int ChainPointCount => _chainPoints.Count;
         [Poly_Ling.Data.PLToolState(Description = "描画中の対象オブジェクト")]
         public int TargetMasterIndex => _targetMaster;
         /// <summary>描いている群の番号（まだ作っていなければ -1）。</summary>
@@ -142,6 +144,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>描画を終える（Escape / 右クリック）。描いた分は確定済み。自由曲線はここで確定する。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "描いている線分群を終える（Escape と同じ）")]
         public bool FinishChain()
         {
             if (_ffPoints.Count > 0) return FreeformFinish(false);

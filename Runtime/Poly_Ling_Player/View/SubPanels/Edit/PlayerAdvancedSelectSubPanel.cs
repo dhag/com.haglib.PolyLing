@@ -28,7 +28,7 @@ namespace Poly_Ling.Player
         /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
         public IToolSurface                    Surface;
         private const string Tool = "advancedSelect";
-        public Func<ProjectContext>            GetView;
+        public Func<Poly_Ling.View.IProjectView>            GetView;
         public Action<PanelCommand>            SendCommand;
 
         // ================================================================
@@ -256,15 +256,14 @@ namespace Poly_Ling.Player
             {
                 if (Surface == null) return;
 
-                var model = GetView?.Invoke()?.CurrentModel;
-                var mc    = model?.ActiveMeshContext;
-                if (mc == null) return;
+                int active = GetView?.Invoke()?.CurrentModel?.ActiveMeshIndex ?? -1;
+                if (active < 0) return;
 
                 // 設定値はコマンドが正典。パネルの現在値を載せて送る。
                 // ハンドラ側は実行後に元の値へ戻すので、表示は変わらない。
                 SendCommand?.Invoke(new AdvancedSelectByAttributeCommand(
                     ModelIndex,
-                    new[] { model.IndexOf(mc) },
+                    new[] { active },
                     Surface.Get(Tool, "mode", default(AdvancedSelectMode)),
                     addToSelection:          Surface.GetBool(Tool, "addToSelection", true),
                     uvNormalCountThreshold:  Surface.GetInt(Tool, "uvNormalCountThreshold"),
