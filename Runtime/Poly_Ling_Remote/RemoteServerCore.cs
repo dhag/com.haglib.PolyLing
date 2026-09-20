@@ -3,7 +3,8 @@
 // EditorWindow（RemoteServer）またはスタンドアロンアプリからホストされる。
 //
 // 使用方法:
-//   var core = new RemoteServerCore(() => toolContext, port: 8765);
+//   var core = new RemoteServerCore(() => toolContext);
+//   （待ち受けポートは OS が割り当てる。接続先はサーバ一覧（RemoteDirectory）で公開する）
 //   core.OnLog     = msg => Debug.Log(msg);
 //   core.OnRepaint = () => editorWindow.Repaint();   // または独自UIの更新
 //   core.Start();
@@ -41,8 +42,12 @@ namespace Poly_Ling.Remote
         // 設定・状態
         // ================================================================
 
-        public int  Port      { get; set; }
+        /// <summary>実際に待ち受けているポート（OS 割り当て）。停止中は 0。</summary>
+        public int  Port      { get; private set; }
         public bool IsRunning { get; private set; }
+
+        /// <summary>サーバ一覧（マスター）での役割。停止中は None。</summary>
+        public RemoteDirectoryNode.NodeRole DirectoryRole => _directory?.Role ?? RemoteDirectoryNode.NodeRole.None;
 
         public int ClientCount => _wsServer?.Clients.Length ?? 0;
 
@@ -146,11 +151,9 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         /// <param name="contextProvider">ToolContextを返すデリゲート（毎回動的取得）</param>
-        /// <param name="port">待ち受けポート番号（デフォルト8765）</param>
-        public RemoteServerCore(Func<ToolContext> contextProvider, int port = 8765)
+        public RemoteServerCore(Func<ToolContext> contextProvider)
         {
             _contextProvider = contextProvider;
-            Port = port;
         }
 
         // ================================================================
@@ -190,17 +193,26 @@ namespace Poly_Ling.Remote
                     OnRepaint?.Invoke();
                 });
 
-                IsRunning = true;
+                // ポートは OS に割り当てさせる（複数起動で衝突しない）。
+                // Bind は同期で行われ、失敗すると例外になる。
+                _ = _wsServer.StartAsync(0);
+                Port = _wsServer.BoundPort;
+
+                // 待ち受けが立ってから状態を確定し、モデルを購読する。
+                IsRunning  = true;
+                _startedAt = DateTime.UtcNow.ToString("o");
                 SubscribeModel();
-                _ = _wsServer.StartAsync($"http://localhost:{Port}/");
 
                 Log($"サーバー起動: http://localhost:{Port}/");
 
-                WriteEndpointFile();
+                StartDirectory();
             }
             catch (Exception ex)
             {
                 Log($"起動失敗: {ex.Message}");
+                try { _ = _wsServer?.StopAsync(); } catch { }
+                _wsServer = null;
+                Port      = 0;
                 IsRunning = false;
             }
         }
@@ -209,72 +221,81 @@ namespace Poly_Ling.Remote
         {
             if (!IsRunning) return;
 
+            StopDirectory();
+
             UnsubscribeModel();
 
             try { _ = _wsServer?.StopAsync(); } catch { }
             _wsServer = null;
             IsRunning = false;
-
-            DeleteEndpointFile();
+            Port      = 0;
 
             Log("サーバー停止");
         }
 
         // ================================================================
-        // エンドポイント公開ファイル（軽量クライアントの接続先発見用）
-        // 保存先: Application.persistentDataPath/PolyLing/endpoint.json
-        // 内容:   {"host","port","pid","startedAt"}
+        // サーバ一覧（RemoteDirectory）への参加
+        // 起動時にマスターになるか、既存のマスターへ登録する。
+        // クライアントはマスターから一覧を得て接続先を決める。
         // ================================================================
 
-        private string EndpointFilePath =>
-            Path.Combine(Application.persistentDataPath, "PolyLing", "endpoint.json");
+        private RemoteDirectoryNode _directory;
+        private string              _startedAt = "";
 
-        // 自身が書き込んだ内容。Stop 時は自分が書いたファイルのみ削除する。
-        private string _lastEndpointJson;
+        /// <summary>サーバ一覧での役割が変わったとき（メインスレッドで発火）。</summary>
+        public Action OnDirectoryRoleChanged;
 
-        private void WriteEndpointFile()
+        private void StartDirectory()
         {
-            try
-            {
-                var jb = new JsonBuilder();
-                jb.BeginObject();
-                jb.KeyValue("host",      "127.0.0.1");
-                jb.KeyValue("port",      Port);
-                jb.KeyValue("pid",       System.Diagnostics.Process.GetCurrentProcess().Id);
-                jb.KeyValue("startedAt", System.DateTime.UtcNow.ToString("o"));
-                jb.EndObject();
-                string json = jb.ToString();
+            StopDirectory();
 
-                string path = EndpointFilePath;
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, json);
-                _lastEndpointJson = json;
-                Log($"endpoint.json 書込: {path}");
-            }
-            catch (Exception ex)
+            var node = new RemoteDirectoryNode(GetDirectoryInfoAsync)
             {
-                Log($"endpoint.json 書込失敗: {ex.Message}");
-            }
+                // 背景スレッドから呼ばれるため、メインスレッドへ回す。
+                OnLog         = msg => RunOnMainThread(() => Log(msg)),
+                OnRoleChanged = ()  => RunOnMainThread(() =>
+                {
+                    OnDirectoryRoleChanged?.Invoke();
+                    OnRepaint?.Invoke();
+                }),
+            };
+            _directory = node;
+            node.Start();
         }
 
-        private void DeleteEndpointFile()
+        private void StopDirectory()
         {
-            try
+            var node = _directory;
+            _directory = null;
+            node?.Stop();
+        }
+
+        /// <summary>
+        /// サーバ一覧に載せる自分の情報。背景スレッドから呼ばれるので、
+        /// 組み立てはメインスレッドで行う（プロジェクト名は起動後に変わる）。
+        /// </summary>
+        private Task<RemoteServerInfo> GetDirectoryInfoAsync()
+        {
+            var tcs = new TaskCompletionSource<RemoteServerInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+            RunOnMainThread(() =>
             {
-                string path = EndpointFilePath;
-                if (_lastEndpointJson != null &&
-                    File.Exists(path) &&
-                    File.ReadAllText(path) == _lastEndpointJson)
+                try
                 {
-                    File.Delete(path);
-                    Log("endpoint.json 削除");
+                    tcs.TrySetResult(new RemoteServerInfo
+                    {
+                        Pid          = System.Diagnostics.Process.GetCurrentProcess().Id,
+                        Port         = Port,
+                        HostUserName = HostUserName ?? "",
+                        ProjectName  = GetProjectContext()?.Name ?? "",
+                        StartedAt    = _startedAt,
+                    });
                 }
-            }
-            catch (Exception ex)
-            {
-                Log($"endpoint.json 削除失敗: {ex.Message}");
-            }
-            _lastEndpointJson = null;
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
+            return tcs.Task;
         }
 
         /// <summary>
@@ -360,35 +381,9 @@ namespace Poly_Ling.Remote
                 return;
             }
 
-            string bundleName = RemoteFileBundle.SanitizeFolderName(project.Name);
-            string sendRoot = Path.Combine(
-                Application.persistentDataPath, "PolyLing", "RemoteSend", bundleName);
-
-            byte[] bundle;
-            try
+            if (!TryBuildProjectBundle(project, out string bundleName, out byte[] bundle, out string buildError))
             {
-                // 前回の残骸を混ぜないため作り直す。
-                if (Directory.Exists(sendRoot)) Directory.Delete(sendRoot, true);
-                Directory.CreateDirectory(sendRoot);
-
-                if (!CsvProjectSerializer.Export(sendRoot, project))
-                {
-                    Log("ヒエラルキー送信: プロジェクト書き出しに失敗");
-                    return;
-                }
-
-                bundle = RemoteFileBundle.Serialize(
-                    sendRoot, bundleName, RemoteFileBundle.KindProject, out string serErr);
-
-                if (bundle == null)
-                {
-                    Log("ヒエラルキー送信: " + serErr);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("ヒエラルキー送信: 失敗 " + ex.Message);
+                Log("ヒエラルキー送信: " + buildError);
                 return;
             }
 
@@ -404,6 +399,78 @@ namespace Poly_Ling.Remote
             BroadcastBinaryToType(HierarchyClientType, bundle);
 
             Log($"ヒエラルキー送信: {project.ModelCount}モデル {bundle.Length}B → {targets}クライアント");
+        }
+
+        /// <summary>
+        /// 現在のプロジェクト全体をプロジェクトファイル形式で一時フォルダへ書き出し、PLRF 束にする。
+        /// push（SendHierarchyBundle）とクエリ（project_bundle）の共通部。
+        /// </summary>
+        private bool TryBuildProjectBundle(ProjectContext project,
+            out string bundleName, out byte[] bundle, out string error)
+        {
+            bundleName = RemoteFileBundle.SanitizeFolderName(project.Name);
+            bundle     = null;
+            error      = "";
+
+            string sendRoot = Path.Combine(
+                Application.persistentDataPath, "PolyLing", "RemoteSend", bundleName);
+
+            try
+            {
+                // 前回の残骸を混ぜないため作り直す。
+                if (Directory.Exists(sendRoot)) Directory.Delete(sendRoot, true);
+                Directory.CreateDirectory(sendRoot);
+
+                if (!CsvProjectSerializer.Export(sendRoot, project))
+                {
+                    error = "プロジェクト書き出しに失敗";
+                    return false;
+                }
+
+                bundle = RemoteFileBundle.Serialize(
+                    sendRoot, bundleName, RemoteFileBundle.KindProject, out string serErr);
+
+                if (bundle == null)
+                {
+                    error = serErr;
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error  = "失敗 " + ex.Message;
+                bundle = null;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// クエリ project_bundle：要求したクライアントにだけ、プロジェクト全体の PLRF 束を返す。
+        /// 応答 JSON に概要（bundleName / modelCount / byteCount）、続くバイナリに束本体。
+        /// </summary>
+        private string ProcessProjectBundleQuery(RemoteMessage msg)
+        {
+            var project = GetProjectContext();
+            if (project == null) return BuildErrorResponse(msg.Id, "No project");
+
+            if (!TryBuildProjectBundle(project, out string bundleName, out byte[] bundle, out string error))
+            {
+                Log("プロジェクト束の応答: " + error);
+                return BuildErrorResponse(msg.Id, error);
+            }
+
+            _pendingBinaryResponses = new List<byte[]> { bundle };
+
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("bundleName", bundleName);
+            jb.KeyValue("modelCount", project.ModelCount);
+            jb.KeyValue("byteCount",  bundle.Length);
+            jb.EndObject();
+
+            Log($"プロジェクト束の応答: {project.ModelCount}モデル {bundle.Length}B");
+            return BuildSuccessResponse(msg.Id, jb.ToString());
         }
 
         public void SendProjectHeader()

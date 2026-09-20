@@ -63,35 +63,52 @@ namespace Poly_Ling.Player
 
             _skinWeightNumericSubPanel = new PlayerSkinWeightNumericSubPanel
             {
-                GetModel  = () => ActiveProject?.CurrentModel,
+                GetModel  = () => ActiveProjectView?.CurrentModel,
+                Surface   = ToolSurface,
                 OnRepaint = () => _activePanel?.MarkDirtyRepaint(),
             };
+            // ボーンウェイト数値入力の読み取り（ツールの窓口 "skinWeightNumeric"）。
+            _skinWeightNumericHandler = new SkinWeightNumericHandler { GetModel = () => ActiveProject?.CurrentModel };
             _skinWeightNumericSubPanel.OnVisualizationTargetChanged =
                 () => _viewportManager.EnterWeightTargetChanged(ActiveProject);
             _skinWeightNumericSubPanel.SetCommandContext(
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _skinWeightNumericSubPanel.Build(_layoutRoot.SkinWeightNumericSection);
 
-            _blendSubPanel = new PlayerBlendSubPanel();
-            _blendSubPanel.OnSyncMeshPositions = mc =>
+            // メッシュブレンドの試し表示（ツールの窓口 "blend"。操作経路統一計画.md E）。
+            // 以下の同期・可視・ロックの配線は、従来パネルへ渡していたものをハンドラへ移した。
+            _blendToolHandler = new BlendToolHandler
             {
-                // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
-
-                _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                GetModel        = () => ActiveProject?.CurrentModel,
+                GetModelContext = mi => mi >= 0 ? ActiveProject?.GetModel(mi) : null,
+                GetModelIndex   = () => ActiveProject?.CurrentModelIndex ?? 0,
+                TryLockForPreview  = TryBeginHostPreview,
+                UnlockAfterPreview = EndHostPreview,
             };
-            _blendSubPanel.OnNotifyTopologyChanged = () =>
+            _blendToolHandler.BuildToolContext = () =>
             {
-                var proj = ActiveProject;
-                if (proj?.CurrentModel == null) return;
-                // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
-                _viewportManager.EnterTopologyChanged(proj);
-                NotifyPanels(ChangeKind.ListStructure);
+                var ctx = new Poly_Ling.Tools.ToolContext();
+                ctx.Model          = ActiveProject?.CurrentModel;
+                ctx.Repaint        = () => _activePanel?.MarkDirtyRepaint();
+                ctx.UndoController = _editOps?.UndoController;
+                ctx.CommandQueue   = _editOps?.CommandQueue;
+                // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+                ctx.SyncMeshContextPositionsOnly = mc =>
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                ctx.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+                return ctx;
             };
             // プレビュー中に法線を再計算した分を GPU へ送る。
-            // OnSyncMeshPositions（EnterVerticesMoved/Dragging）は
-            // SyncMeshPositionsAndTransform で位置しか送らないため、
-            // これを通さないとプレビューの陰影が確定結果と一致しない。
-            _blendSubPanel.OnSyncMeshNormals = mc =>
+            // 位置の同期（EnterVerticesMoved/Dragging）は SyncMeshPositionsAndTransform で
+            // 位置しか送らないため、これを通さないとプレビューの陰影が確定結果と一致しない。
+            _blendToolHandler.OnSyncMeshNormals = mc =>
             {
                 var proj = ActiveProject;
                 if (proj?.CurrentModel == null || mc?.MeshObject == null) return;
@@ -105,31 +122,26 @@ namespace Poly_Ling.Player
             // 面は SubmitMeshes が毎フレーム MeshContext.IsVisible を見るので
             // 勝手に消えるが、頂点と辺は GPU 内部の描画フラグで決まる。
             // それを書き戻すのは EnterMeshAttributesChanged だけ。
-            _blendSubPanel.OnMeshVisibilityChanged = () =>
+            _blendToolHandler.OnMeshVisibilityChanged = () =>
             {
                 var proj = ActiveProject;
                 if (proj == null) return;
                 _viewportManager.EnterMeshAttributesChanged(proj);
             };
-            _blendSubPanel.OnRepaint          = () => _activePanel?.MarkDirtyRepaint();
-            _blendSubPanel.GetUndoController  = () => _editOps?.UndoController;
-            _blendSubPanel.GetCommandQueue    = () => _editOps?.CommandQueue;
-            // ソースは別モデルから選べる。モデル一覧は IProjectView、
-            // 実体の MeshContext は ProjectContext.GetModel から引く。
-            _blendSubPanel.GetProjectView     = () => ActiveProject != null
-                ? new PlayerProjectView(ActiveProject) : null;
-            _blendSubPanel.GetModelContext    = mi =>
-                mi >= 0 ? ActiveProject?.GetModel(mi) : null;
+
+            _blendSubPanel = new PlayerBlendSubPanel();
+            _blendSubPanel.OnRepaint      = () => _activePanel?.MarkDirtyRepaint();
+            _blendSubPanel.GetProjectView = () => ActiveProjectView;
+            _blendSubPanel.Surface        = ToolSurface;
             _blendSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
-            _blendSubPanel.TryLockForPreview  = TryBeginHostPreview;
-            _blendSubPanel.UnlockAfterPreview = EndHostPreview;
             _blendSubPanel.Build(_layoutRoot.BlendSection);
 
             // 臨時の対称化は既存ミラー機構へ状態を足さず、対象のクローン追加だけを行う。
             _referenceSymmetrySubPanel = new PlayerReferenceSymmetrySubPanel
             {
-                GetModel = () => ActiveProject?.CurrentModel,
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetModel      = () => ActiveProjectView?.CurrentModel,
+                SendCommand   = DispatchFromPanel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _referenceSymmetrySubPanel.Build(_layoutRoot.ReferenceSymmetrySection);
 
@@ -246,7 +258,7 @@ namespace Poly_Ling.Player
         private void BuildEditPanels()
         {
             _boneEditorSubPanel = new PlayerBoneEditorSubPanel();
-            _boneEditorSubPanel.GetModel          = () => ActiveProject?.CurrentModel;
+            _boneEditorSubPanel.GetModel          = () => ActiveProjectView?.CurrentModel;
             _boneEditorSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
             _boneEditorSubPanel.SetContext(_panelContext);
             _boneEditorSubPanel.GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0;
@@ -282,10 +294,17 @@ namespace Poly_Ling.Player
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _uvUnwrapSubPanel.Build(_layoutRoot.UVUnwrapSection);
 
-            _materialListSubPanel = new PlayerMaterialListSubPanel
+            _materialEditHandler = new MaterialEditHandler
             {
                 GetModel      = () => ActiveProject?.CurrentModel,
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand   = DispatchPanelCommand,
+                OnRepaint     = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _materialListSubPanel = new PlayerMaterialListSubPanel
+            {
+                GetView        = () => ActiveProjectView,
+                Surface        = ToolSurface,
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
             _materialListSubPanel.SetCommandContext(
@@ -347,28 +366,32 @@ namespace Poly_Ling.Player
             // ModelContext ではなく ProjectContext を渡す。
             _objectGroupSubPanel = new PlayerObjectGroupSubPanel
             {
-                GetProject  = () => _localLoader.Project ?? _receiver?.Project,
+                GetProject  = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _objectGroupSubPanel.Build(_layoutRoot.ObjectGroupSection);
 
             _mergeMeshesSubPanel = new PlayerMergeMeshesSubPanel
             {
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _mergeMeshesSubPanel.Build(_layoutRoot.MergeMeshesSection);
 
             _booleanSubPanel = new PlayerBooleanSubPanel
             {
-                GetView     = () => _localLoader.Project ?? _receiver?.Project,
+                GetView     = () => LoadedProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _booleanSubPanel.Build(_layoutRoot.BooleanSection);
 
-            _morphSubPanel = new PlayerMorphSubPanel
+            // モーフエクスプレッションの試し表示（ツールの窓口 "morphExpression"）。
+            // プレビューの表示更新に使う ToolContext は従来パネルが作っていたものをそのまま渡す。
+            _morphExpressionHandler = new MorphExpressionHandler
             {
-                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModel       = () => ActiveProject?.CurrentModel,
+                GetModelIndex  = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand    = DispatchPanelCommand,
                 GetToolContext = () =>
                 {
                     var model = ActiveProject?.CurrentModel;
@@ -388,20 +411,24 @@ namespace Poly_Ling.Player
                     return ctx;
                 },
             };
+            _morphSubPanel = new PlayerMorphSubPanel
+            {
+                GetView     = () => ActiveProjectView,
+                Surface     = ToolSurface,
+                SendCommand = cmd => DispatchHost(cmd),
+            };
             _morphSubPanel.Build(_layoutRoot.MorphSection);
 
             _morphCreateSubPanel = new PlayerMorphCreateSubPanel
             {
-                GetProject          = () => ActiveProject,
-                OnRebuildModelList  = RebuildModelList,
+                GetProject          = () => ActiveProjectView,
                 SendCommand         = cmd => DispatchHost(cmd),
             };
             _morphCreateSubPanel.Build(_layoutRoot.MorphCreateSection);
 
             _tposeSubPanel = new PlayerTPoseSubPanel
             {
-                GetModel      = () => ActiveProject?.CurrentModel,
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetModel      = () => ActiveProjectView?.CurrentModel,
                 SendCommand   = cmd => DispatchHost(cmd),
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
@@ -409,8 +436,7 @@ namespace Poly_Ling.Player
 
             _humanoidMappingSubPanel = new PlayerHumanoidMappingSubPanel
             {
-                GetModel      = () => ActiveProject?.CurrentModel,
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetModel      = () => ActiveProjectView?.CurrentModel,
                 SendCommand   = cmd => DispatchHost(cmd),
                 GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
@@ -418,31 +444,42 @@ namespace Poly_Ling.Player
 
             // 揺れもの編集。対象は選択（ボーン優先、無ければ描画オブジェクト）で決まるので
             // ツールコンテキストは要らない。参照の解決はモデル内で閉じる。
-            _springBoneSubPanel = new PlayerSpringBoneSubPanel
+            // 揺れもの編集の一覧と 3D 強調表示（ツールの窓口 "springBone"）。
+            _springBoneHandler = new SpringBoneHandler
             {
-                GetProject  = () => ActiveProject,
-                SendCommand = cmd => DispatchHost(cmd),
-
+                GetModel = () => ActiveProject?.CurrentModel,
                 // 鎖の強調表示はボーンの線メッシュを作り直して描く。
                 // PrepareBones はスロットが dirty のときしか走らないので、
                 // 強調表示を書き換えたらここで dirty を立てる。
                 OnHighlightChanged = () => _viewportManager?.MarkAllSlotsDirty(),
             };
+            _springBoneSubPanel = new PlayerSpringBoneSubPanel
+            {
+                GetProject  = () => ActiveProjectView,
+                SendCommand = cmd => DispatchHost(cmd),
+                Surface     = ToolSurface,
+            };
             _springBoneSubPanel.Build(_layoutRoot.SpringBoneSection);
 
             // 当たり判定の作成と編集。対象は揺れもの編集と同じく「選択」で決まる。
+            // 揺れものの当たり判定の 3D 表示（ツールの窓口 "springBoneColliderDisplay"）。
+            _springBoneColliderDisplayHandler = new SpringBoneColliderDisplayHandler
+            {
+                GetModel         = () => ActiveProject?.CurrentModel,
+                OnDisplayChanged = () => _viewportManager?.EnterOverlayContentChanged(),
+            };
             _springBoneColliderSubPanel = new PlayerSpringBoneColliderSubPanel
             {
-                GetProject  = () => ActiveProject,
+                GetProject  = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
-                OnDisplayChanged = () => _viewportManager?.EnterOverlayContentChanged(),
+                Surface     = ToolSurface,
             };
             _springBoneColliderSubPanel.Build(_layoutRoot.SpringBoneColliderSection);
 
             // マッスル可動域の編集。対象はボーン選択で決まる。
             _humanLimitSubPanel = new PlayerHumanLimitSubPanel
             {
-                GetProject  = () => ActiveProject,
+                GetProject  = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _humanLimitSubPanel.Build(_layoutRoot.HumanLimitSection);
@@ -450,7 +487,7 @@ namespace Poly_Ling.Player
             // VRM 出力設定。対象はモデル全体（一人称だけメッシュ選択で決まる）。
             _vrmSettingsSubPanel = new PlayerVrmSettingsSubPanel
             {
-                GetProject  = () => ActiveProject,
+                GetProject  = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _vrmSettingsSubPanel.Build(_layoutRoot.VrmSettingsSection);

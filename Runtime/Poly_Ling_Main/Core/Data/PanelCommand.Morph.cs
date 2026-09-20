@@ -78,6 +78,70 @@ namespace Poly_Ling.Data
     // ================================================================
     // モーフプレビュー
     // ================================================================
+    // モーフエクスプレッションの編集（操作経路統一計画.md E。パネルが直接書き換えていたものを移した）
+    // ================================================================
+
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションの名前（JP/EN）とパネルを変える。")]
+    public class SetMorphExpressionAttributesCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MorphExpressionIndex", Description = "モーフエクスプレッションの番号", Required = true)]
+        public int SetIndex { get; }
+        [PLParam(TextKey = "MorphExpressionName", Description = "名前（JP）")]
+        public string Name { get; }
+        [PLParam(TextKey = "MorphExpressionNameEn", Description = "名前（EN）")]
+        public string NameEnglish { get; }
+        [PLParam(TextKey = "MorphExpressionPanel", Description = "パネル（0 眉 / 1 目 / 2 口 / 3 その他）")]
+        public int Panel { get; }
+        public SetMorphExpressionAttributesCommand(int modelIndex, int setIndex, string name, string nameEnglish, int panel)
+            : base(modelIndex) { SetIndex = setIndex; Name = name ?? ""; NameEnglish = nameEnglish ?? ""; Panel = panel; }
+    }
+
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションを 1 つ消す。モーフメッシュは消さない。")]
+    public class DeleteMorphExpressionCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MorphExpressionIndex", Description = "消すモーフエクスプレッションの番号", Required = true)]
+        public int SetIndex { get; }
+        public DeleteMorphExpressionCommand(int modelIndex, int setIndex) : base(modelIndex) { SetIndex = setIndex; }
+    }
+
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションのエントリのウェイトをまとめて変える（Undo 1 回ぶん）。")]
+    public class SetMorphEntryWeightsCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MorphExpressionIndex", Description = "モーフエクスプレッションの番号", Required = true)]
+        public int SetIndex { get; }
+        [PLParam(TextKey = "MorphEntryIndices", Description = "エントリの番号", Required = true)]
+        public int[] EntryIndices { get; }
+        [PLParam(TextKey = "MorphEntryWeights", Description = "新しいウェイト（EntryIndices と同じ並び）", Required = true)]
+        public float[] Weights { get; }
+        public SetMorphEntryWeightsCommand(int modelIndex, int setIndex, int[] entryIndices, float[] weights)
+            : base(modelIndex) { SetIndex = setIndex; EntryIndices = entryIndices ?? System.Array.Empty<int>(); Weights = weights ?? System.Array.Empty<float>(); }
+    }
+
+    [PLCommand(Writes = PLWriteScope.None, Description = "モーフエクスプレッションの各モーフメッシュ（モーフ後の形）を複製し、新しいモデルとして足す。今のモデルは変えない。")]
+    public class ExpandMorphExpressionToModelCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MorphExpressionIndex", Description = "展開するモーフエクスプレッションの番号", Required = true)]
+        public int SetIndex { get; }
+        public ExpandMorphExpressionToModelCommand(int modelIndex, int setIndex) : base(modelIndex) { SetIndex = setIndex; }
+    }
+
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "BlendShapeSync CSV を読み込んでモーフエクスプレッションへ足す（同名は上書き）。")]
+    public class ImportMorphCsvCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MorphCsvPath", Description = "読み込む CSV のパス", Required = true)]
+        public string Path { get; }
+        public ImportMorphCsvCommand(int modelIndex, string path) : base(modelIndex) { Path = path ?? ""; }
+    }
+
+    [PLCommand(Writes = PLWriteScope.None, Description = "モーフエクスプレッションを BlendShapeSync CSV へ書き出す。")]
+    public class ExportMorphCsvCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MorphCsvPath", Description = "保存先 CSV のパス", Required = true)]
+        public string Path { get; }
+        public ExportMorphCsvCommand(int modelIndex, string path) : base(modelIndex) { Path = path ?? ""; }
+    }
+
+    // ================================================================
 
     [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定モーフの試し表示を始める。確定するまで頂点は元へ戻せる。")]
     public class StartMorphPreviewCommand : PanelCommand

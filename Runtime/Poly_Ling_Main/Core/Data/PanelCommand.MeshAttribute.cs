@@ -180,6 +180,30 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// オブジェクト原点を CSV へ書き出す（ObjectOriginCsv.Build。ボーンは出さない）。
+    /// 従来 PlayerBoneEditorSubPanel が直接モデルを読んで書き出していたものを移した。
+    /// </summary>
+    [PLCommand(Writes = PLWriteScope.None, Description = "オブジェクト原点を CSV へ書き出す（ボーン・ミラー・姿勢くさびは出さない）。")]
+    public class ExportObjectOriginsCsvCommand : PanelCommand
+    {
+        [PLParam(TextKey = "OriginCsvPath", Description = "保存先 CSV のパス", Required = true)]
+        public string Path { get; }
+        [PLParam(TextKey = "OriginCsvWithRotation", Description = "回転も書き出すか")]
+        public bool WithRotation { get; }
+        [PLParam(TextKey = "OriginCsvIncludeBones", Description = "ボーンも書き出すか")]
+        public bool IncludeBones { get; }
+        [PLParam(TextKey = "OriginCsvBakeRotationToPosition", Description = "回転を位置に変換して保存するか（読込後にワールド原点が今と同じ場所へ来るローカル位置、回転 0）")]
+        public bool BakeRotationToPosition { get; }
+        public ExportObjectOriginsCsvCommand(int modelIndex, string path, bool withRotation,
+            bool includeBones = false, bool bakeRotationToPosition = false)
+            : base(modelIndex)
+        {
+            Path = path ?? ""; WithRotation = withRotation;
+            IncludeBones = includeBones; BakeRotationToPosition = bakeRotationToPosition;
+        }
+    }
+
+    /// <summary>
     /// オブジェクト原点（BoneTransform.Position）を名前指定で一括設定するコマンド。
     /// 「原点だけ移動 = true / 子を一緒に移動 = false」と同じ挙動で適用する。
     ///

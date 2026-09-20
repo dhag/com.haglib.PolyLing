@@ -23,42 +23,18 @@ namespace Poly_Ling.Player
         // コールバック（Viewer から設定）
         // ================================================================
 
-        /// <summary>ブレンド適用後に GPU バッファ更新と通知を行うコールバック。</summary>
-        public Action<MeshContext> OnSyncMeshPositions;
-
-        /// <summary>
-        /// 法線を GPU へ送るコールバック。
-        /// OnSyncMeshPositions は位置しか送らないため、プレビュー中に法線を
-        /// 再計算しても、これを通さないと画面の陰影が確定結果と食い違う。
-        /// </summary>
-        public Action<MeshContext> OnSyncMeshNormals;
-
-        /// <summary>トポロジー変更後の再構築コールバック（RebuildAdapter相当）。</summary>
-        public Action OnNotifyTopologyChanged;
-
-        /// <summary>
-        /// MeshContext.IsVisible を書き換えた直後に呼ぶコールバック。
-        ///
-        /// 面は毎フレーム MeshContext を見て描画されるので可視の変更が即座に効くが、
-        /// 頂点と辺は GPU 内部の描画フラグで決まる。そちらは専用の書き戻し経路を
-        /// 通さないと更新されず、面だけ消えて頂点と辺が残る。
-        /// </summary>
-        public Action OnMeshVisibilityChanged;
-
         /// <summary>再描画要求コールバック。</summary>
         public Action OnRepaint;
 
-        /// <summary>Undo記録のため UndoController を取得するコールバック。</summary>
-        public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
-
-        /// <summary>Undo記録のため CommandQueue を取得するコールバック。</summary>
-        public Func<Poly_Ling.Commands.CommandQueue> GetCommandQueue;
-
-        /// <summary>モデル一覧を引くためのプロジェクトビュー取得コールバック。</summary>
+        /// <summary>
+        /// プロジェクトの窓口（操作経路統一計画.md E）。モデル一覧・宛先とソースの候補を読む。
+        /// </summary>
         public Func<IProjectView> GetProjectView;
 
-        /// <summary>ソースを別モデルから引くための ModelContext 取得コールバック。</summary>
-        public Func<int, ModelContext> GetModelContext;
+        /// <summary>ツールの窓口（"blend"）。試し表示（プレビュー）と対応方式の注意書き。</summary>
+        public IToolSurface Surface;
+
+        private IModelView Model => GetProjectView?.Invoke()?.CurrentModel;
 
         // コマンド送信
         private PanelContext _panelContext;
@@ -69,14 +45,6 @@ namespace Poly_Ling.Player
             _panelContext  = ctx;
             _getModelIndex = getModelIndex;
         }
-
-        /// <summary>プレビューを始める前に、対象の担当者判定とロック取得を行う（操作経路統一計画.md H-2）。null なら常に許可。</summary>
-        public Func<IList<int>, bool> TryLockForPreview;
-
-        /// <summary>プレビューが終わったときに呼ぶ（ロックを外す）。</summary>
-        public Action UnlockAfterPreview;
-
-        private bool _previewLocked;
 
         // ================================================================
         // 内部状態
@@ -91,8 +59,6 @@ namespace Poly_Ling.Player
             public int   MasterIndex;   // -1 = 未選択（ModelIndex のモデル内索引）
             public float Weight;
         }
-
-        private ModelContext _model;
 
         private readonly SourceSlot[] _slots = new SourceSlot[MaxSources];
 
@@ -115,8 +81,6 @@ namespace Poly_Ling.Player
         /// </summary>
         private bool _hideSources          = true;
         private BlendMatchMode _matchMode  = BlendMatchMode.Index;
-
-        private readonly BlendPreviewState _blendPreview = new BlendPreviewState();
 
         /// <summary>ドロップダウンの表示名 → 索引の対応（表示順）。</summary>
         private readonly List<int>    _modelIndexMap = new List<int>();
@@ -484,10 +448,9 @@ namespace Poly_Ling.Player
         // モデル更新（Viewer から呼ぶ）
         // ================================================================
 
-        public void SetModel(ModelContext model)
+        public void SetModel()
         {
-            if (_blendPreview.IsActive) EndPreview();
-            _model           = model;
+            EndPreview();
             _destMasterIndex = -1;
             ClearAllSlots(applyPreview: false);
             Refresh();
@@ -497,8 +460,8 @@ namespace Poly_Ling.Player
         public void OnSelectionChanged()
         {
             // 宛先とソースはドロップダウンで明示指定するため、選択変更では
-            // 選び直さない。プレビュー中の退避先が消えた場合だけ畳む。
-            if (_blendPreview.IsActive && _model?.GetMeshContext(_blendPreview.DestIndex) == null)
+            // 選び直さない。プレビュー中の宛先が消えた場合だけ畳む。
+            if (IsPreviewing && Model?.GetMesh(_destMasterIndex) == null)
                 EndPreview();
             Refresh();
         }
@@ -511,7 +474,7 @@ namespace Poly_Ling.Player
         {
             if (_warningLabel == null) return;
 
-            if (_model == null)
+            if (Model == null)
             {
                 ShowWarning("モデルがありません");
                 return;
@@ -569,14 +532,15 @@ namespace Poly_Ling.Player
             _destChoices.Clear();
             _destChoices.Add(NoneChoice);
 
-            for (int i = 0; i < _model.MeshContextCount; i++)
+            var model = Model;
+            for (int i = 0; i < (model?.TotalMeshCount ?? 0); i++)
             {
-                var ctx = _model.GetMeshContext(i);
+                var ctx = model.GetMesh(i);
                 if (!IsBlendable(ctx)) continue;
                 // ミラー側は実体側から作り直されるため宛先にしない。
                 if (ctx.Type == MeshType.MirrorSide || ctx.Type == MeshType.BakedMirror) continue;
                 _destIndexMap.Add(i);
-                _destChoices.Add($"{ctx.Name} [V:{ctx.MeshObject.VertexCount}]");
+                _destChoices.Add($"{ctx.Name} [V:{ctx.VertexCount}]");
             }
 
             int sel = _destIndexMap.IndexOf(_destMasterIndex);
@@ -610,15 +574,16 @@ namespace Poly_Ling.Player
             choices.Clear();
             choices.Add(NoneChoice);
 
-            var srcModel = GetModelContext?.Invoke(_slots[slot].ModelIndex);
+            var srcModel = _slots[slot].ModelIndex >= 0
+                ? GetProjectView?.Invoke()?.GetModelView(_slots[slot].ModelIndex) : null;
             if (srcModel != null)
             {
-                for (int i = 0; i < srcModel.MeshContextCount; i++)
+                for (int i = 0; i < srcModel.TotalMeshCount; i++)
                 {
-                    var ctx = srcModel.GetMeshContext(i);
+                    var ctx = srcModel.GetMesh(i);
                     if (!IsBlendable(ctx)) continue;
                     map.Add(i);
-                    choices.Add($"{ctx.Name} [V:{ctx.MeshObject.VertexCount}]");
+                    choices.Add($"{ctx.Name} [V:{ctx.VertexCount}]");
                 }
             }
 
@@ -631,9 +596,9 @@ namespace Poly_Ling.Player
             _suppressCallbacks = false;
         }
 
-        private static bool IsBlendable(MeshContext ctx)
+        private static bool IsBlendable(IMeshView ctx)
         {
-            if (ctx?.MeshObject == null || ctx.MeshObject.VertexCount == 0) return false;
+            if (ctx == null || ctx.VertexCount == 0) return false;
             return ctx.Type == MeshType.Mesh
                 || ctx.Type == MeshType.BakedMirror
                 || ctx.Type == MeshType.MirrorSide;
@@ -642,9 +607,9 @@ namespace Poly_Ling.Player
         private void RefreshDestInfo()
         {
             if (_destInfoLabel == null) return;
-            var ctx = _destMasterIndex >= 0 ? _model?.GetMeshContext(_destMasterIndex) : null;
-            _destInfoLabel.text = ctx?.MeshObject != null
-                ? $"宛先頂点数: {ctx.MeshObject.VertexCount}"
+            var ctx = _destMasterIndex >= 0 ? Model?.GetMesh(_destMasterIndex) : null;
+            _destInfoLabel.text = ctx != null
+                ? $"宛先頂点数: {ctx.VertexCount}"
                 : "宛先が未選択です";
         }
 
@@ -690,10 +655,10 @@ namespace Poly_Ling.Player
         private void RefreshActionState()
         {
             bool ready = _destMasterIndex >= 0 && HasAnyUsableSlot();
-            _btnApply?.SetEnabled(ready && _blendPreview.IsActive);
+            bool previewing = IsPreviewing;
+            _btnApply?.SetEnabled(ready && previewing);
             if (_previewingLabel != null)
-                _previewingLabel.style.display =
-                    _blendPreview.IsActive ? DisplayStyle.Flex : DisplayStyle.None;
+                _previewingLabel.style.display = previewing ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private bool HasAnyUsableSlot()
@@ -704,166 +669,73 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 選んだ対応方式が実際に使える状態かを出す。
-        /// 頂点ID照合は、未設定IDや重複IDがあると黙って対応が取れない頂点が出る。
-        /// 展開インデックス経由は、両者の IsTriangulated が同じなら
-        /// 頂点インデックス直結と同じ動きになる。
+        /// 選んだ対応方式が実際に使える状態かを出す。判定はツールの窓口 "blend" の
+        /// inspectMatchMode が本体側で行う（頂点 ID・三角形化状態を読むため）。
         /// </summary>
         private void RefreshMatchModeHint()
         {
             if (_matchModeHintLabel == null) return;
-
-            var destCtx = _destMasterIndex >= 0 ? _model?.GetMeshContext(_destMasterIndex) : null;
-            var destMo  = destCtx?.MeshObject;
-            if (destMo == null)
+            if (_destMasterIndex < 0 || Surface == null)
             {
                 _matchModeHintLabel.style.display = DisplayStyle.None;
                 return;
             }
 
-            var lines = new List<string>();
-
-            if (_matchMode == BlendMatchMode.VertexId)
-            {
-                var (dUnset, dDup) = BlendVertexResolver.InspectVertexIds(destMo);
-                if (dUnset > 0 || dDup > 0)
-                    lines.Add($"宛先「{destCtx.Name}」の頂点ID: 未設定 {dUnset} / 重複 {dDup}");
-
-                ForEachUsableSource((ctx, _) =>
-                {
-                    var (u, d) = BlendVertexResolver.InspectVertexIds(ctx.MeshObject);
-                    if (u > 0 || d > 0)
-                        lines.Add($"ソース「{ctx.Name}」の頂点ID: 未設定 {u} / 重複 {d}");
-                });
-
-                if (lines.Count > 0)
-                    lines.Add("未設定IDの頂点は対応対象外、重複IDは先勝ちになります。");
-            }
-            else if (_matchMode == BlendMatchMode.Expanded)
-            {
-                ForEachUsableSource((ctx, _) =>
-                {
-                    if (ctx.MeshObject.IsTriangulated == destMo.IsTriangulated)
-                        lines.Add($"「{ctx.Name}」と宛先は三角形化状態が同じため、頂点インデックス直結と同じ動きになります。");
-                });
-            }
-
-            if (lines.Count == 0)
+            CollectUsable(null, out var models, out var masters, out _);
+            Surface.Invoke(Tool, "inspectMatchMode",
+                ("dest", _destMasterIndex), ("srcModels", models), ("srcMasters", masters), ("matchMode", _matchMode));
+            string hint = Surface.GetString(Tool, "matchModeHint");
+            if (string.IsNullOrEmpty(hint))
             {
                 _matchModeHintLabel.style.display = DisplayStyle.None;
                 return;
             }
-            _matchModeHintLabel.text          = string.Join("\n", lines);
+            _matchModeHintLabel.text          = hint;
             _matchModeHintLabel.style.display = DisplayStyle.Flex;
         }
 
         // ================================================================
-        // ソース解決
+        // ソース
         // ================================================================
 
-        private void ForEachUsableSource(Action<MeshContext, float> action)
+        /// <summary>有効なソースを、窓口へ渡す並列配列にする。slotOrder には元の行番号を入れる。</summary>
+        private void CollectUsable(List<int> slotOrder, out int[] models, out int[] masters, out float[] weights)
         {
-            for (int i = 0; i < MaxSources; i++)
-            {
-                if (!IsSlotUsable(i)) continue;
-                var m   = GetModelContext?.Invoke(_slots[i].ModelIndex);
-                var ctx = m?.GetMeshContext(_slots[i].MasterIndex);
-                if (ctx?.MeshObject == null) continue;
-                action(ctx, _slots[i].Weight);
-            }
-        }
-
-        /// <summary>
-        /// 有効なソースを解決する。返り値の並びは slotOrder と対応する。
-        /// </summary>
-        private List<BlendSourceEntry> ResolveSources(List<int> slotOrder)
-        {
-            var list = new List<BlendSourceEntry>();
+            var m = new List<int>(); var s = new List<int>(); var w = new List<float>();
             slotOrder?.Clear();
             for (int i = 0; i < MaxSources; i++)
             {
                 if (!IsSlotUsable(i)) continue;
-                var m   = GetModelContext?.Invoke(_slots[i].ModelIndex);
-                var ctx = m?.GetMeshContext(_slots[i].MasterIndex);
-                if (ctx?.MeshObject == null) continue;
-                list.Add(new BlendSourceEntry(ctx, _slots[i].Weight));
+                m.Add(_slots[i].ModelIndex); s.Add(_slots[i].MasterIndex); w.Add(_slots[i].Weight);
                 slotOrder?.Add(i);
             }
-            return list;
-        }
-
-        /// <summary>
-        /// プレビュー中に隠すメッシュ索引。カレントモデル内のソースのみ。
-        /// 別モデルの索引を混ぜると索引空間が違うため無関係なメッシュを隠す。
-        /// </summary>
-        private List<int> BuildHideIndices()
-        {
-            var list = new List<int>();
-            if (!_hideSources) return list;
-
-            int curModel = _getModelIndex?.Invoke() ?? 0;
-            for (int i = 0; i < MaxSources; i++)
-            {
-                if (!IsSlotUsable(i)) continue;
-                if (_slots[i].ModelIndex != curModel) continue;
-                if (_slots[i].MasterIndex == _destMasterIndex) continue;
-                list.Add(_slots[i].MasterIndex);
-            }
-            return list;
+            models = m.ToArray(); masters = s.ToArray(); weights = w.ToArray();
         }
 
         // ================================================================
-        // プレビュー
+        // プレビュー（ツールの窓口 "blend"。操作経路統一計画.md E）
         // ================================================================
+
+        private const string Tool = "blend";
+
+        private bool IsPreviewing => Surface != null && Surface.GetBool(Tool, "isPreviewing");
 
         private void EnsurePreviewAndApply()
         {
-            if (_model == null || _destMasterIndex < 0) return;
-
-            if (!HasAnyUsableSlot())
-            {
-                // ウェイトを 0 にして有効なソースが無くなった場合。
-                // ここで戻さないと、隠したメッシュが隠れたまま残る。
-                RefreshPreviewVisibility();
-                return;
-            }
-
-            if (!_blendPreview.IsActive)
-            {
-                var hide = BuildHideIndices();
-
-                // プレビューは宛先の頂点と、隠すソースの表示を書き換えるので、
-                // 始める前に担当者判定とロック取得（操作経路統一計画.md H-2）。
-                if (!_previewLocked && TryLockForPreview != null)
-                {
-                    var lockTargets = new List<int> { _destMasterIndex };
-                    foreach (var hi in hide) if (!lockTargets.Contains(hi)) lockTargets.Add(hi);
-                    if (!TryLockForPreview(lockTargets)) return;
-                    _previewLocked = true;
-                }
-
-                _blendPreview.Start(_model, _destMasterIndex, hide);
-                if (_blendPreview.IsActive) OnMeshVisibilityChanged?.Invoke();
-                else if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
-            }
-
+            if (Model == null || _destMasterIndex < 0) return;
             ApplyPreview();
         }
 
-        /// <summary>
-        /// 隠す対象をいまの設定で取り直す。ソースの差し替え・追加・削除、
-        /// 「ソースを隠す」の切替から呼ぶ。ブレンド計算はやり直さない。
-        /// </summary>
+        /// <summary>隠す対象と表示をいまの設定で取り直す（窓口の preview が隠す対象も追随させる）。</summary>
         private void RefreshPreviewVisibility()
         {
-            if (_model == null || !_blendPreview.IsActive) return;
-            if (_blendPreview.UpdateHiddenSources(_model, BuildHideIndices()))
-                OnMeshVisibilityChanged?.Invoke();
+            if (!IsPreviewing) return;
+            ApplyPreview();
         }
 
         private void ReapplyPreview()
         {
-            if (!_blendPreview.IsActive) return;
+            if (!IsPreviewing) return;
             ApplyPreview();
         }
 
@@ -874,57 +746,38 @@ namespace Poly_Ling.Player
         /// </summary>
         private void ApplyPreview()
         {
-            if (_model == null) return;
+            if (Model == null || Surface == null || _destMasterIndex < 0) return;
 
-            // ソースの差し替え・追加・削除へ追随する。プレビュー開始時に
-            // 一度決めるだけだと、後から選び直したソースが隠れず、
-            // 前のソースが隠れたまま残る。
-            RefreshPreviewVisibility();
+            var order = new List<int>();
+            CollectUsable(order, out var models, out var masters, out var weights);
+            Surface.Invoke(Tool, "preview",
+                ("dest", _destMasterIndex), ("srcModels", models), ("srcMasters", masters), ("weights", weights),
+                ("selectedVerticesOnly", _selectedVerticesOnly), ("matchMode", _matchMode),
+                ("recalculateNormals", _recalculateNormals), ("hideSources", _hideSources));
 
-            var order   = new List<int>();
-            var sources = ResolveSources(order);
-            if (sources.Count == 0) return;
-
-            var stats = _blendPreview.Apply(
-                _model, sources,
-                _selectedVerticesOnly, _matchMode, _recalculateNormals,
-                OnSyncMeshNormals, BuildToolCtx());
-
-            ShowStats(order, stats);
+            ShowStats(order,
+                Surface.Get(Tool, "statsLines", Array.Empty<string>()),
+                Surface.Get(Tool, "statsWarn",  Array.Empty<bool>()));
             RefreshActionState();
         }
 
-        private void ShowStats(List<int> slotOrder, BlendMatchStats[] stats)
+        private void ShowStats(List<int> slotOrder, string[] lines, bool[] warn)
         {
             for (int i = 0; i < MaxSources; i++)
                 if (_srcStatsLabels[i] != null)
                     _srcStatsLabels[i].style.display = DisplayStyle.None;
 
-            if (stats == null || slotOrder == null) return;
+            if (lines == null || slotOrder == null) return;
 
-            for (int k = 0; k < slotOrder.Count && k < stats.Length; k++)
+            for (int k = 0; k < slotOrder.Count && k < lines.Length; k++)
             {
                 int slot = slotOrder[k];
                 var lbl  = _srcStatsLabels[slot];
                 if (lbl == null) continue;
-
-                var st = stats[k];
-                if (st.TargetVertexCount == 0)
-                {
-                    lbl.text = "対象頂点がありません（孤立頂点のみ、または選択頂点が空）";
-                    lbl.style.color = new StyleColor(new Color(1f, 0.4f, 0.4f));
-                }
-                else
-                {
-                    lbl.text = $"対応 {st.MatchedVertexCount} / {st.TargetVertexCount}"
-                             + $"（{st.MatchRatio * 100f:F1}%）"
-                             + (st.UnmatchedVertexCount > 0
-                                 ? $"　未対応 {st.UnmatchedVertexCount} 頂点は元位置のまま"
-                                 : "");
-                    lbl.style.color = st.UnmatchedVertexCount > 0
-                        ? new StyleColor(new Color(1f, 0.7f, 0.3f))
-                        : new StyleColor(new Color(0.5f, 0.9f, 0.5f));
-                }
+                lbl.text = lines[k];
+                lbl.style.color = (warn != null && k < warn.Length && warn[k])
+                    ? new StyleColor(new Color(1f, 0.7f, 0.3f))
+                    : new StyleColor(new Color(0.5f, 0.9f, 0.5f));
                 lbl.style.display = DisplayStyle.Flex;
             }
         }
@@ -935,7 +788,7 @@ namespace Poly_Ling.Player
 
         private void OnApplyClicked()
         {
-            if (_model == null || _destMasterIndex < 0) return;
+            if (Model == null || _destMasterIndex < 0) return;
 
             var specs = new List<BlendSourceSpec>();
             for (int i = 0; i < MaxSources; i++)
@@ -1019,44 +872,17 @@ namespace Poly_Ling.Player
         /// </summary>
         public void CancelIfActive()
         {
-            if (!_blendPreview.IsActive) return;
+            if (!IsPreviewing) return;
             EndPreview();
         }
 
         private void EndPreview()
         {
-            if (_previewLocked) { _previewLocked = false; UnlockAfterPreview?.Invoke(); }
-            bool wasActive = _blendPreview.IsActive;
-            _blendPreview.End(_model, BuildToolCtx());
-            if (wasActive) OnMeshVisibilityChanged?.Invoke();
+            Surface?.Invoke(Tool, "endPreview");
             for (int i = 0; i < MaxSources; i++)
                 if (_srcStatsLabels[i] != null)
                     _srcStatsLabels[i].style.display = DisplayStyle.None;
             RefreshActionState();
-        }
-
-        // ================================================================
-        // ToolContext 生成（最小構成）
-        // ================================================================
-
-        private Poly_Ling.Tools.ToolContext BuildToolCtx()
-        {
-            var ctx = new Poly_Ling.Tools.ToolContext();
-            ctx.Model          = _model;
-            ctx.Repaint        = OnRepaint;
-            ctx.UndoController = GetUndoController?.Invoke();
-            ctx.CommandQueue   = GetCommandQueue?.Invoke();
-
-            // SyncMeshContextPositionsOnly: UnityMesh + GPU バッファを更新
-            ctx.SyncMeshContextPositionsOnly = mc =>
-            {
-                OnSyncMeshPositions?.Invoke(mc);
-            };
-
-            // NotifyTopologyChanged: RebuildAdapter 相当
-            ctx.NotifyTopologyChanged = OnNotifyTopologyChanged;
-
-            return ctx;
         }
 
         // ================================================================

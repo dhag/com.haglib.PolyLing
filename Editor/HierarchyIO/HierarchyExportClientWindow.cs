@@ -8,7 +8,7 @@
 //   自分からクエリ・コマンドは送らない。
 //
 // 【処理の流れ】
-//   1. endpoint.json を探索して WebSocket 接続。
+//   1. サーバ一覧（マスター）に問い合わせて WebSocket 接続（複数あれば選択）。
 //   2. RegisterClientType("hierarchyExport") で自タイプを登録。
 //   3. サーバが Send Hierarchy を実行すると、
 //      JSON push "hierarchyBundle"（概要）→ PLRF バイナリ束 の順で届く。
@@ -58,7 +58,8 @@ namespace Poly_Ling.EditorIO
         private const string PrefsKeyAutoConnect = "PolyLing.HierarchyExportClient.AutoConnect";
         private const string PrefsKeyAutoExport  = "PolyLing.HierarchyExportClient.AutoExport";
 
-        private PolyLingPlayerClient _client;
+        private PolyLingPlayerClient  _client;
+        private RemoteServerConnector _connector;
 
         private string _destRoot    = "";
         private string _userName    = "";
@@ -96,10 +97,7 @@ namespace Poly_Ling.EditorIO
             Disconnect();
         }
 
-        private static string DefaultDestRoot()
-        {
-            return Path.Combine(Application.persistentDataPath, "PolyLing", "RemoteHierarchy");
-        }
+        private static string DefaultDestRoot() => RemoteHierarchyReceive.DefaultDestRoot();
 
         private void SavePrefs()
         {
@@ -109,40 +107,8 @@ namespace Poly_Ling.EditorIO
             EditorPrefs.SetBool(PrefsKeyAutoExport, _autoExport);
         }
 
-        // ================================================================
-        // 書き出し可否（自分のエディタの状態）
-        // ================================================================
-
-        /// <summary>
-        /// いま書き出してよいか。不可なら理由を返す（可なら reason は空）。
-        ///
-        /// Play モード中に書き出すと、生成した GameObject は Play 終了で破棄され、
-        /// プレファブ／メッシュ .asset の生成も想定外の結果になる。
-        /// コンパイル中・アセット更新中も AssetDatabase 操作が不安定なため同じ扱いにする。
-        /// </summary>
-        private static bool CanExportNow(out string reason)
-        {
-            if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isPlaying)
-            {
-                reason = "Play モード実行中のため書き出しをスキップしました。";
-                return false;
-            }
-
-            if (EditorApplication.isCompiling)
-            {
-                reason = "スクリプトコンパイル中のため書き出しをスキップしました。";
-                return false;
-            }
-
-            if (EditorApplication.isUpdating)
-            {
-                reason = "アセットデータベース更新中のため書き出しをスキップしました。";
-                return false;
-            }
-
-            reason = "";
-            return true;
-        }
+        // 書き出してよいかの判定は RemoteHierarchyReceive.CanExportNow（共有部品）。
+        private static bool CanExportNow(out string reason) => RemoteHierarchyReceive.CanExportNow(out reason);
 
         // ================================================================
         // UI（IMGUI）
@@ -171,6 +137,9 @@ namespace Poly_Ling.EditorIO
             EditorGUILayout.LabelField("状態", _status);
             if (!string.IsNullOrEmpty(_endpointInfo))
                 EditorGUILayout.LabelField("接続先", _endpointInfo);
+
+            // サーバが複数あるときの接続先選択。
+            RemoteHierarchyReceive.DrawServerChoices(_connector);
 
             EditorGUILayout.Space(6);
 
@@ -230,34 +199,34 @@ namespace Poly_Ling.EditorIO
         {
             if (_client != null && _client.IsConnected) return;
 
-            if (!EndpointLocator.TryLocate(out string host, out int port, out string foundPath))
+            if (_client == null)
             {
-                _endpointInfo = "";
-                _status = "endpoint.json が見つかりません（サーバ未起動）";
-                Repaint();
-                return;
+                _client = new PolyLingPlayerClient();
+                _client.OnConnected         += HandleConnected;
+                _client.OnDisconnected      += HandleDisconnected;
+                _client.OnPushReceived      += HandleTextPush;
+                _client.OnBinaryPushReceived += HandleBinaryPush;
+
+                // 接続先はマスターから得る。複数あれば OnGUI で選ばせる。
+                // Begin / Choose はメインスレッドから呼ぶこと。
+                // ここで捕まえた SynchronizationContext 経由で各コールバックが返る。
+                _connector = new RemoteServerConnector(_client)
+                {
+                    OnStatus         = s => { _status = s; Repaint(); },
+                    OnChoicesChanged = _ => Repaint(),
+                };
             }
 
-            _endpointInfo = $"ws://{host}:{port}/   ({foundPath})";
-            _status = "接続中...";
-            Repaint();
-
-            Disconnect();
-
-            _client = new PolyLingPlayerClient();
-            _client.OnConnected         += HandleConnected;
-            _client.OnDisconnected      += HandleDisconnected;
-            _client.OnPushReceived      += HandleTextPush;
-            _client.OnBinaryPushReceived += HandleBinaryPush;
-
-            // Initialize はメインスレッドから呼ぶこと。
-            // ここで捕まえた SynchronizationContext 経由で各コールバックが返る。
-            _client.Initialize(host, port, autoConnect: true);
+            _endpointInfo = "";
+            _connector.Begin();
         }
 
         private void Disconnect()
         {
             if (_client == null) return;
+
+            _connector?.Detach();
+            _connector = null;
 
             _client.OnConnected         -= HandleConnected;
             _client.OnDisconnected      -= HandleDisconnected;
@@ -267,6 +236,7 @@ namespace Poly_Ling.EditorIO
             _client.Dispose();
             _client = null;
 
+            _endpointInfo = "";
             _status = "未接続";
             Repaint();
         }
@@ -278,6 +248,8 @@ namespace Poly_Ling.EditorIO
         private void HandleConnected()
         {
             _status = "接続済み（待ち受け中）";
+            var target = _connector?.Target;
+            _endpointInfo = target != null ? $"ws://{RemoteDirectory.Host}:{target.Port}/   {target.Label}" : "";
 
             string name = string.IsNullOrWhiteSpace(_userName)
                 ? SystemInfo.deviceName
@@ -311,17 +283,8 @@ namespace Poly_Ling.EditorIO
             if (string.IsNullOrEmpty(_destRoot))
                 _destRoot = DefaultDestRoot();
 
-            try { Directory.CreateDirectory(_destRoot); }
-            catch (Exception ex)
-            {
-                _status = "保存先を作成できません: " + ex.Message;
-                Repaint();
-                return;
-            }
-
-            bool ok = RemoteFileBundle.Deserialize(
-                data, _destRoot,
-                out string folderPath, out byte rootKind, out int fileCount, out string error);
+            bool ok = RemoteHierarchyReceive.Expand(
+                data, _destRoot, out string folderPath, out int fileCount, out string error);
 
             if (!ok)
             {

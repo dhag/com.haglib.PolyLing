@@ -785,6 +785,46 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── 作業軸ライブラリ（プロジェクト共有。パネルが直接書き換えていたものを移した）
+                case RegisterWorkAxisEntryCommand c:
+                {
+                    var lib = _getProject?.Invoke()?.WorkAxes;
+                    if (lib == null) { Fail("作業軸ライブラリがありません"); return true; }
+                    var wa = GetActiveWorkAxis?.Invoke();
+                    if (wa == null) { Fail("アクティブな作業軸がありません"); return true; }
+                    string name = WorkAxisLibrary.Normalize(c.Name);
+                    if (name.Length == 0) { Fail("名前を入れてください"); return true; }
+                    bool overwrite = lib.Contains(name);
+                    lib.Set(name, WorkAxisEntry.FromContext(wa));
+                    ReportData(CommandDataJson.New().Text("name", name).Int("overwrite", overwrite ? 1 : 0).Build());
+                    return true;
+                }
+                case RemoveWorkAxisEntryCommand c:
+                {
+                    var lib = _getProject?.Invoke()?.WorkAxes;
+                    if (lib == null) { Fail("作業軸ライブラリがありません"); return true; }
+                    if (!lib.Remove(c.Name)) { Fail($"登録名がありません: {c.Name}"); return true; }
+                    return true;
+                }
+                case SaveWorkAxisLibraryCsvCommand c:
+                {
+                    var lib = _getProject?.Invoke()?.WorkAxes;
+                    if (lib == null) { Fail("作業軸ライブラリがありません"); return true; }
+                    if (lib.Count == 0) { Fail("辞書が空です"); return true; }
+                    if (!WorkAxisLibraryCsvIO.Save(c.Path, lib)) { Fail("保存に失敗しました"); return true; }
+                    ReportData(CommandDataJson.New().Int("saved", lib.Count).Build());
+                    return true;
+                }
+                case LoadWorkAxisLibraryCsvCommand c:
+                {
+                    var lib = _getProject?.Invoke()?.WorkAxes;
+                    if (lib == null) { Fail("作業軸ライブラリがありません"); return true; }
+                    var r = WorkAxisLibraryCsvIO.Load(c.Path, lib, true);
+                    if (!r.Success) { Fail($"読み込みに失敗しました： {r.ErrorMessage}"); return true; }
+                    ReportData(CommandDataJson.New().Int("loaded", r.Loaded).Int("skipped", r.Skipped).Build());
+                    return true;
+                }
+
                 // ── 可視性トグル
                 case ToggleVisibilityCommand c:
                 {

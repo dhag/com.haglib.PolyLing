@@ -48,6 +48,24 @@ namespace Poly_Ling.Player
             return model.ResolveWorkAxis();
         }
 
+        /// <summary>
+        /// 今の作業軸の値の写し（パネル用。操作経路統一計画.md E）。
+        /// 作業軸オブジェクトが持つ軸なら、その MeshContextList 索引も載せる。
+        /// </summary>
+        private Poly_Ling.View.WorkAxisView CurrentWorkAxisView()
+        {
+            var wa = CurrentWorkAxis();
+            if (wa == null) return null;
+            int idx = -1;
+            var model = ActiveProject?.CurrentModel;
+            if (model != null)
+            {
+                for (int i = 0; i < model.MeshContextCount; i++)
+                    if (ReferenceEquals(model.GetMeshContext(i)?.WorkAxis, wa)) { idx = i; break; }
+            }
+            return Poly_Ling.View.WorkAxisView.From(wa, idx);
+        }
+
         /// <summary>作業軸ハンドルがボーンへ吸着する当たり半径（px）。</summary>
         private const float WorkAxisBoneSnapRadius = 10f;
 

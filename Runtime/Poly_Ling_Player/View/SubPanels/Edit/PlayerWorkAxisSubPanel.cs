@@ -26,12 +26,12 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// 対象モデル。使う軸の一覧を出すために読む。null なら一覧を出さない。
+        /// プロジェクトの窓口（操作経路統一計画.md E）。使う軸の一覧と作業軸辞書の名前を読む。
         /// </summary>
-        public Func<Poly_Ling.Context.ModelContext> GetModel;
+        public Func<Poly_Ling.View.IProjectView> GetView;
 
-        /// <summary>操作対象の作業軸。null なら入力を無視する。</summary>
-        public Func<WorkAxisContext> GetWorkAxis;
+        /// <summary>操作対象の作業軸の値の写し。null なら入力を無視する。</summary>
+        public Func<Poly_Ling.View.WorkAxisView> GetWorkAxis;
 
         /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
         public Poly_Ling.Data.IToolSurface Surface;
@@ -89,10 +89,10 @@ namespace Poly_Ling.Player
         public bool ShowHeader = true;
 
         /// <summary>
-        /// 名前付き作業軸の辞書。Viewer が用意した1個を全パネルで共有する。
-        /// null なら辞書 UI を出さない。
+        /// 名前付き作業軸の辞書への操作（登録・削除・CSV）の送り先。結果を返す Dispatch を渡す。
+        /// null なら辞書 UI を出さない。辞書の中身は GetView の WorkAxisLibraryNames で読む。
         /// </summary>
-        public Func<WorkAxisLibrary> GetLibrary;
+        public Func<PanelCommand, CommandResult> Dispatch;
 
         /// <summary>辞書の中身が変わったときに呼ぶ。他パネルの一覧を揃えるため。</summary>
         public Action OnLibraryChanged;
@@ -359,7 +359,7 @@ namespace Poly_Ling.Player
 
         private void BuildLibrarySection()
         {
-            if (GetLibrary == null) return;
+            if (Dispatch == null) return;
 
             _root.Add(Header("作業軸の辞書"));
 
@@ -418,12 +418,12 @@ namespace Poly_Ling.Player
         {
             if (_libDropdown == null) return;
 
-            var lib = GetLibrary?.Invoke();
+            var lib = GetView?.Invoke()?.WorkAxisLibraryNames;
             string prev = _libDropdown.index >= 0 && _libDropdown.index < _libNames.Count
                 ? _libNames[_libDropdown.index] : null;
 
             _libNames.Clear();
-            if (lib != null) _libNames.AddRange(lib.Names);
+            if (lib != null) _libNames.AddRange(lib);
 
             _libDropdown.choices = new List<string>(_libNames);
 
@@ -434,9 +434,7 @@ namespace Poly_Ling.Player
 
         private void RegisterCurrent()
         {
-            var lib = GetLibrary?.Invoke();
-            var wa  = GetWorkAxis?.Invoke();
-            if (lib == null || wa == null) return;
+            if (GetWorkAxis?.Invoke() == null) return;
 
             string name = WorkAxisLibrary.Normalize(_libNameField?.value);
             if (name.Length == 0)
@@ -445,8 +443,9 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            bool overwrite = lib.Contains(name);
-            lib.Set(name, WorkAxisEntry.FromContext(wa));
+            bool overwrite = _libNames.Contains(name);
+            var r = Dispatch?.Invoke(new RegisterWorkAxisEntryCommand(GetModelIndex?.Invoke() ?? 0, name));
+            if (r != null && !r.Success) { SetInfo(r.Reason); return; }
 
             RefreshLibraryList();
             if (_libDropdown != null) _libDropdown.index = _libNames.IndexOf(name);
@@ -457,14 +456,10 @@ namespace Poly_Ling.Player
 
         private void RecallSelected()
         {
-            var lib = GetLibrary?.Invoke();
-            var wa  = GetWorkAxis?.Invoke();
-            if (lib == null || wa == null || _libDropdown == null) return;
+            if (GetWorkAxis?.Invoke() == null || _libDropdown == null) return;
 
             int i = _libDropdown.index;
             if (i < 0 || i >= _libNames.Count) return;
-
-            if (!lib.Contains(_libNames[i])) return;
 
             SendCommand?.Invoke(new RecallWorkAxisCommand(
                 GetModelIndex?.Invoke() ?? 0, _libNames[i]));
@@ -474,14 +469,14 @@ namespace Poly_Ling.Player
 
         private void RemoveSelected()
         {
-            var lib = GetLibrary?.Invoke();
-            if (lib == null || _libDropdown == null) return;
+            if (_libDropdown == null) return;
 
             int i = _libDropdown.index;
             if (i < 0 || i >= _libNames.Count) return;
 
             string name = _libNames[i];
-            if (!lib.Remove(name)) return;
+            var r = Dispatch?.Invoke(new RemoveWorkAxisEntryCommand(GetModelIndex?.Invoke() ?? 0, name));
+            if (r == null || !r.Success) return;
 
             RefreshLibraryList();
             SetInfo($"「{name}」を削除しました。");
@@ -493,10 +488,7 @@ namespace Poly_Ling.Player
 
         private void SaveLibraryCsv()
         {
-            var lib = GetLibrary?.Invoke();
-            if (lib == null) return;
-
-            if (lib.Count == 0) { SetInfo("辞書が空です。"); return; }
+            if (_libNames.Count == 0) { SetInfo("辞書が空です。"); return; }
 
             // 書き込み先はフォルダだけを覚え、ファイル名は毎回この既定から始める。
             string path = Poly_Ling.Core.SaveDest.AskSavePath(
@@ -504,29 +496,28 @@ namespace Poly_Ling.Player
                 "workaxis_library.csv", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
-            SetInfo(WorkAxisLibraryCsvIO.Save(path, lib)
-                ? $"{lib.Count} 件を保存しました： {Path.GetFileName(path)}"
+            var r = Dispatch?.Invoke(new SaveWorkAxisLibraryCsvCommand(GetModelIndex?.Invoke() ?? 0, path));
+            SetInfo(r != null && r.Success
+                ? $"{_libNames.Count} 件を保存しました： {Path.GetFileName(path)}"
                 : "保存に失敗しました。");
         }
 
         private void LoadLibraryCsv()
         {
-            var lib = GetLibrary?.Invoke();
-            if (lib == null) return;
-
             string path = Poly_Ling.Player.PlayerIoUiKit.AskLoadPath(
                 "作業軸辞書を読み込み", LibraryCsvKey, null, "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             // 既存へ足す。同名は上書き。
-            var r = WorkAxisLibraryCsvIO.Load(path, lib, true);
+            int before = _libNames.Count;
+            var r = Dispatch?.Invoke(new LoadWorkAxisLibraryCsvCommand(GetModelIndex?.Invoke() ?? 0, path));
 
             RefreshLibraryList();
             OnLibraryChanged?.Invoke();
 
-            SetInfo(r.Success
-                ? $"{r.Loaded} 件を読み込みました" + (r.Skipped > 0 ? $"（{r.Skipped} 行を読み飛ばし）" : "")
-                : $"読み込みに失敗しました： {r.ErrorMessage}");
+            SetInfo(r != null && r.Success
+                ? "読み込みました（" + _libNames.Count + " 件。読み込み前 " + before + " 件）"
+                : $"読み込みに失敗しました： {r?.Reason}");
         }
 
         private void SetInfo(string text)
@@ -552,24 +543,23 @@ namespace Poly_Ling.Player
         /// 作業軸オブジェクトの一覧を作り直し、今使っている軸を選んだ状態にする。
         /// 軸が 1 本も無ければ一覧を隠す。
         /// </summary>
-        private void RefreshAxisList(WorkAxisContext active)
+        private void RefreshAxisList(Poly_Ling.View.WorkAxisView active)
         {
             if (_activeAxisDropdown == null) return;
 
-            var model = GetModel?.Invoke();
+            var model = GetView?.Invoke()?.CurrentModel;
             var names = new System.Collections.Generic.List<string>();
             _axisMasterIndices = new System.Collections.Generic.List<int>();
             int activeIdx = -1;
 
-            var list = model?.MeshContextList;
-            if (list != null)
+            if (model != null)
             {
-                for (int i = 0; i < list.Count; i++)
+                for (int i = 0; i < model.TotalMeshCount; i++)
                 {
-                    var mc = list[i];
-                    if (mc == null || !mc.IsWorkAxis) continue;
+                    var mc = model.GetMesh(i);
+                    if (mc == null || mc.Type != Poly_Ling.Data.MeshType.WorkAxis) continue;
 
-                    if (ReferenceEquals(mc.WorkAxis, active)) activeIdx = names.Count;
+                    if (active != null && active.MasterIndex == i) activeIdx = names.Count;
                     names.Add(mc.Name);
                     _axisMasterIndices.Add(i);
                 }

@@ -25,9 +25,10 @@ namespace Poly_Ling.UI
     public static class ReferenceSymmetryOperation
     {
         /// <summary>
-        /// reference の正 X 頂点を X 反転した位置から、reference の負 X 頂点を探す。
-        /// 対応する target の正 X 頂点を反転し、target のクローンの負 X 頂点へ書く。
-        /// X=0 の頂点と正 X 側はクローン元のまま変更しない。
+        /// reference の移植元側（sourcePositiveX=true なら正 X、false なら負 X）の頂点を X 反転した位置から、
+        /// reference の反対側の頂点を探す。対応する target の移植元側の頂点を反転し、
+        /// target のクローンの反対側の頂点へ書く。
+        /// |X| が許容誤差以下の頂点（中心線）と移植元側はクローン元のまま変更しない。
         /// </summary>
         public static ReferenceSymmetryResult ApplyAsNewObject(
             ModelContext model,
@@ -36,7 +37,8 @@ namespace Poly_Ling.UI
             float tolerance,
             bool recalculateNormals,
             ToolContext toolCtx,
-            string newObjectName = null)
+            string newObjectName = null,
+            bool sourcePositiveX = true)
         {
             if (model == null) return ReferenceSymmetryResult.Fail("モデルがありません");
             if (referenceMasterIndex == targetMasterIndex)
@@ -53,7 +55,7 @@ namespace Poly_Ling.UI
                     $"頂点数が一致しません（REF {refMo.VertexCount} / 対象 {targetMo.VertexCount}）");
 
             tolerance = Mathf.Max(1e-7f, tolerance);
-            if (!TryBuildPairs(refMo, tolerance, out var pairs, out string pairError))
+            if (!TryBuildPairs(refMo, tolerance, sourcePositiveX, out var pairs, out string pairError))
                 return ReferenceSymmetryResult.Fail(pairError);
 
             // 名前の指定が無ければ「対象名_対称」。既存と重複すれば末尾に番号を付ける。
@@ -65,12 +67,14 @@ namespace Poly_Ling.UI
 
             // 検証がすべて済んでからクローンだけを書き換える。
             // sourceIndex は REF と対象で共通する頂点インデックス、destIndex は
-            // REF の幾何形状から得た負 X 側の対応インデックスである。
+            // REF の幾何形状から得た反対側の対応インデックスである。
+            // 書き込み先は移植元の反対側なので、X の符号も反対側にそろえる。
+            float destSign = sourcePositiveX ? -1f : 1f;
             foreach (var pair in pairs)
             {
                 Vector3 source = targetMo.Vertices[pair.SourceIndex].Position;
                 clone.MeshObject.Vertices[pair.DestIndex].Position =
-                    new Vector3(-Mathf.Abs(source.x), source.y, source.z);
+                    new Vector3(destSign * Mathf.Abs(source.x), source.y, source.z);
             }
 
             if (recalculateNormals) clone.MeshObject.RecalculateSmoothNormals();
@@ -112,26 +116,32 @@ namespace Poly_Ling.UI
         }
 
         private static bool TryBuildPairs(
-            MeshObject reference, float tolerance,
+            MeshObject reference, float tolerance, bool sourcePositiveX,
             out List<VertexPair> pairs, out string error)
         {
             pairs = new List<VertexPair>();
             error = null;
             float toleranceSq = tolerance * tolerance;
-            var usedNegative = new HashSet<int>();
+            var usedDest = new HashSet<int>();
 
-            // 負 X 側を許容誤差サイズのセルへ入れる。全頂点総当たりにすると
+            // 中心線（|X| が許容誤差以下）は移植元にも書き込み先にもしない（X=0 は接続頂点で操作不要）。
+            // 厳密な X=0 だけを中心線とすると、数値誤差で X がわずかにずれた中心線の頂点が
+            // 移植元に入り、その対称点（中心線の向こう側）が見つからず全体が失敗する。
+            bool IsSource(float x) => sourcePositiveX ? x >  tolerance : x < -tolerance;
+            bool IsDest(float x)   => sourcePositiveX ? x < 0f        : x > 0f;
+
+            // 書き込み先側を許容誤差サイズのセルへ入れる。全頂点総当たりにすると
             // 頭部メッシュで O(n^2) になるため、反転位置の隣接 27 セルだけを見る。
-            var negativeCells = new Dictionary<Vector3Int, List<int>>();
+            var destCells = new Dictionary<Vector3Int, List<int>>();
             for (int j = 0; j < reference.VertexCount; j++)
             {
                 Vector3 candidate = reference.Vertices[j].Position;
-                if (candidate.x >= 0f) continue;
+                if (!IsDest(candidate.x)) continue;
                 Vector3Int cell = CellOf(candidate, tolerance);
-                if (!negativeCells.TryGetValue(cell, out var indices))
+                if (!destCells.TryGetValue(cell, out var indices))
                 {
                     indices = new List<int>();
-                    negativeCells.Add(cell, indices);
+                    destCells.Add(cell, indices);
                 }
                 indices.Add(j);
             }
@@ -139,7 +149,7 @@ namespace Poly_Ling.UI
             for (int i = 0; i < reference.VertexCount; i++)
             {
                 Vector3 p = reference.Vertices[i].Position;
-                if (p.x <= 0f) continue; // X=0 は操作しない。
+                if (!IsSource(p.x)) continue;
 
                 Vector3 mirrored = new Vector3(-p.x, p.y, p.z);
                 int bestIndex = -1;
@@ -150,7 +160,7 @@ namespace Poly_Ling.UI
                 for (int dx = -1; dx <= 1; dx++)
                 {
                     var cell = new Vector3Int(center.x + dx, center.y + dy, center.z + dz);
-                    if (!negativeCells.TryGetValue(cell, out var candidates)) continue;
+                    if (!destCells.TryGetValue(cell, out var candidates)) continue;
                     foreach (int j in candidates)
                     {
                         float sq = (reference.Vertices[j].Position - mirrored).sqrMagnitude;
@@ -164,12 +174,12 @@ namespace Poly_Ling.UI
 
                 if (bestIndex < 0 || bestSq > toleranceSq)
                 {
-                    error = $"REF 頂点 {i} の対称点が許容誤差 {tolerance:G6} 内にありません";
+                    error = $"REF 頂点 {i}（X={p.x:G6}）の対称点が許容誤差 {tolerance:G6} 内にありません";
                     return false;
                 }
-                if (!usedNegative.Add(bestIndex))
+                if (!usedDest.Add(bestIndex))
                 {
-                    error = $"REF の複数頂点が同じ負 X 頂点 {bestIndex} に対応しました";
+                    error = $"REF の複数頂点が同じ対称点（頂点 {bestIndex}）に対応しました";
                     return false;
                 }
                 pairs.Add(new VertexPair(i, bestIndex));
@@ -177,7 +187,7 @@ namespace Poly_Ling.UI
 
             if (pairs.Count == 0)
             {
-                error = "REF に正 X 側の頂点がありません";
+                error = sourcePositiveX ? "REF に正 X 側の頂点がありません" : "REF に負 X 側の頂点がありません";
                 return false;
             }
             return true;

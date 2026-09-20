@@ -61,6 +61,30 @@ namespace Poly_Ling.View
             return null;
         }
 
+        /// <summary>オブジェクトグループはスナップショットに載せていない。空。</summary>
+        public IReadOnlyList<ObjectGroupView> ObjectGroups => System.Array.Empty<ObjectGroupView>();
+
+        /// <summary>マテリアルはスナップショットに載せていない。</summary>
+        public int MaterialCount        => 0;
+        public int CurrentMaterialIndex => -1;
+        public MaterialSlotView GetMaterialSlot(int slot) => null;
+        /// <summary>モーフエクスプレッションはスナップショットに載せていない。空。</summary>
+        public IReadOnlyList<MorphExpressionView> MorphExpressions => System.Array.Empty<MorphExpressionView>();
+
+        /// <summary>Tポーズ関係はスナップショットに載せていない。</summary>
+        public int    HumanoidMappingCount => 0;
+        public bool   HasAnySkinWeight     => false;
+        public bool   HasTPoseBackup       => false;
+        public string DiagnoseTPose()      => "";
+        public int HumanoidMissingRequiredCount => 0;
+        public AvatarRetargetView AvatarRetarget => null;
+        public IReadOnlyList<string> SpringBoneColliderGroupNames => System.Array.Empty<string>();
+        /// <summary>VRM 設定はスナップショットに載せていない。</summary>
+        public bool HasVrmMeta   => false;
+        public Poly_Ling.Data.VrmMetaData   VrmMetaCopy   => null;
+        public bool HasVrmLookAt => false;
+        public Poly_Ling.Data.VrmLookAtData VrmLookAtCopy => null;
+
         // フルコンストラクタ
         public ModelSummary(
             string name, string filePath, bool isDirty,

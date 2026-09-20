@@ -568,8 +568,14 @@ namespace Poly_Ling.Player
 
             // リモートサーバ稼働時、本体の選択/モデル変更を接続クライアントへ配信する。
             // （エディタは Tick を回さないため、この中心経路から通知する）
+            // プロジェクト／現在モデルの入れ替え（読込・インポート・モデル切替）は
+            // 監視先の付け替えとクライアントの再取得が要るため、先に知らせる。
             if (_remoteMode == RemoteMode.Server && _playerServer != null)
+            {
+                if (kind == ChangeKind.ModelSwitch)
+                    _playerServer.NotifyProjectReplaced();
                 _playerServer.NotifySelectionChanged();
+            }
 
             if (_interactionMode == InteractionMode.ObjectMove)
                 _boneEditorSubPanel?.Refresh();

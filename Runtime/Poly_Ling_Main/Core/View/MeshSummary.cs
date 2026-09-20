@@ -121,6 +121,29 @@ namespace Poly_Ling.View
         int    IMeshView.MirrorBakeOriginalFaceCount   => 0;
         string IMeshView.MirrorBakeBoundaryDescription => "";
         VertexIdReportView IMeshView.InspectVertexIds() => null;
+        // ボーン編集の値はスナップショットに載せていない。
+        bool    IMeshView.HasManualPoseLayer           => false;
+        Vector3 IMeshView.ManualPoseDeltaPosition      => Vector3.zero;
+        Vector3 IMeshView.ManualPoseDeltaRotationEuler => Vector3.zero;
+        Vector3 IMeshView.WorldPosition                => Vector3.zero;
+        // 可動域もスナップショットに載せていない。
+        string  IMeshView.HumanBodyBone        => "";
+        bool    IMeshView.IsHumanLimitCarrier  => false;
+        bool    IMeshView.HasCustomHumanLimit  => false;
+        bool    IMeshView.HasHumanLimit        => false;
+        Vector3 IMeshView.HumanLimitMin        => Vector3.zero;
+        Vector3 IMeshView.HumanLimitMax        => Vector3.zero;
+        Vector3 IMeshView.HumanLimitCenter     => Vector3.zero;
+        float   IMeshView.HumanLimitAxisLength => 0f;
+        bool    IMeshView.IsSpringBoneCarrier  => false;
+        IReadOnlyList<SpringBoneColliderView> IMeshView.SpringBoneColliders => System.Array.Empty<SpringBoneColliderView>();
+        bool   IMeshView.HasSpringBoneChainRoot      => false;
+        string IMeshView.SpringBoneChainName         => "";
+        string IMeshView.SpringBoneChainCenterBone   => "";
+        int[]  IMeshView.SpringBoneChainGroupIndices => System.Array.Empty<int>();
+        Poly_Ling.Data.VrmFirstPersonType IMeshView.VrmFirstPerson => Poly_Ling.Data.VrmFirstPersonType.Auto;
+        bool   IMeshView.IsVrmFirstPersonCarrier     => false;
+        PartsIdReportView IMeshView.InspectPartsIds() => null;
 
         // 表示用プロパティ
         // アイコンはミラーの有無だけを示す。

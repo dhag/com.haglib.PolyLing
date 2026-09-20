@@ -98,7 +98,7 @@ namespace Poly_Ling.Player
 
             foreach (int idx in indices)
             {
-                var mc = model.GetMeshContext(idx);
+                var mc = model.GetMesh(idx);
                 if (mc == null) continue;
                 if (!TryReadTransformValue(mc, field, poseMode, out float cur)) continue;
 
@@ -119,15 +119,14 @@ namespace Poly_Ling.Player
         /// （モードC はポーズ層 "Manual" の差分、それ以外は BoneTransform）。
         /// </summary>
         private static bool TryReadTransformValue(
-            MeshContext mc, SetBoneTransformValueCommand.Field field, bool poseMode, out float value)
+            IMeshView mc, SetBoneTransformValueCommand.Field field, bool poseMode, out float value)
         {
             value = 0f;
 
             if (poseMode)
             {
-                var layer = mc.BonePoseData?.GetLayer("Manual");
-                Vector3 pRot = layer != null ? NormEuler180(layer.DeltaRotation.eulerAngles) : Vector3.zero;
-                Vector3 pPos = layer != null ? layer.DeltaPosition : Vector3.zero;
+                Vector3 pRot = mc.HasManualPoseLayer ? NormEuler180(mc.ManualPoseDeltaRotationEuler) : Vector3.zero;
+                Vector3 pPos = mc.ManualPoseDeltaPosition;
                 switch (field)
                 {
                     case SetBoneTransformValueCommand.Field.PositionX: value = pPos.x; return true;
@@ -141,19 +140,19 @@ namespace Poly_Ling.Player
                 }
             }
 
-            var bt = mc.BoneTransform;
-            if (bt == null) return false;
+            // BoneTransform の値（窓口の Local*）
+            Vector3 p = mc.LocalPosition, r = mc.LocalRotationEuler, s = mc.LocalScale;
             switch (field)
             {
-                case SetBoneTransformValueCommand.Field.PositionX: value = bt.Position.x; return true;
-                case SetBoneTransformValueCommand.Field.PositionY: value = bt.Position.y; return true;
-                case SetBoneTransformValueCommand.Field.PositionZ: value = bt.Position.z; return true;
-                case SetBoneTransformValueCommand.Field.RotationX: value = bt.Rotation.x; return true;
-                case SetBoneTransformValueCommand.Field.RotationY: value = bt.Rotation.y; return true;
-                case SetBoneTransformValueCommand.Field.RotationZ: value = bt.Rotation.z; return true;
-                case SetBoneTransformValueCommand.Field.ScaleX:    value = bt.Scale.x;    return true;
-                case SetBoneTransformValueCommand.Field.ScaleY:    value = bt.Scale.y;    return true;
-                case SetBoneTransformValueCommand.Field.ScaleZ:    value = bt.Scale.z;    return true;
+                case SetBoneTransformValueCommand.Field.PositionX: value = p.x; return true;
+                case SetBoneTransformValueCommand.Field.PositionY: value = p.y; return true;
+                case SetBoneTransformValueCommand.Field.PositionZ: value = p.z; return true;
+                case SetBoneTransformValueCommand.Field.RotationX: value = r.x; return true;
+                case SetBoneTransformValueCommand.Field.RotationY: value = r.y; return true;
+                case SetBoneTransformValueCommand.Field.RotationZ: value = r.z; return true;
+                case SetBoneTransformValueCommand.Field.ScaleX:    value = s.x; return true;
+                case SetBoneTransformValueCommand.Field.ScaleY:    value = s.y; return true;
+                case SetBoneTransformValueCommand.Field.ScaleZ:    value = s.z; return true;
                 default: return false;
             }
         }
@@ -223,18 +222,18 @@ namespace Poly_Ling.Player
                     raw = model.SelectedBoneIndices;
                     break;
                 case SubPanelScope.MeshesOnly:
-                    raw = model.SelectedDrawableMeshIndices;
+                    raw = model.SelectedDrawableIndices;
                     break;
                 default:
                     raw = model.SelectedBoneIndices
-                        .Concat(model.SelectedDrawableMeshIndices
+                        .Concat(model.SelectedDrawableIndices
                             .Where(i => !model.SelectedBoneIndices.Contains(i)));
                     break;
             }
 
             return raw.Where(i =>
             {
-                var mc = model.GetMeshContext(i);
+                var mc = model.GetMesh(i);
                 return mc != null && mc.Type != MeshType.MirrorSide;
             }).ToArray();
         }
@@ -318,27 +317,27 @@ namespace Poly_Ling.Player
 
             // TRS 同期
             _suppressTRS = true;
-            var mc0 = model.GetMeshContext(indices[0]);
-            var bt0 = mc0?.BoneTransform;
+            var mc0 = model.GetMesh(indices[0]);
             var mvs = GetObjectMoveSettings?.Invoke();
             bool poseMode = mvs != null && mvs.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer;
             if (poseMode)
             {
                 // モードC: ポーズ層 "Manual" の差分を表示（0＝ポーズ無し）
-                var layer = mc0?.BonePoseData?.GetLayer("Manual");
-                Vector3 pRot = layer != null ? NormEuler180(layer.DeltaRotation.eulerAngles) : Vector3.zero;
-                Vector3 pPos = layer != null ? layer.DeltaPosition : Vector3.zero;
+                Vector3 pRot = mc0 != null && mc0.HasManualPoseLayer ? NormEuler180(mc0.ManualPoseDeltaRotationEuler) : Vector3.zero;
+                Vector3 pPos = mc0?.ManualPoseDeltaPosition ?? Vector3.zero;
                 SF(_posX, pPos.x); SF(_posY, pPos.y); SF(_posZ, pPos.z);
                 SF(_rotX, pRot.x); SF(_rotY, pRot.y); SF(_rotZ, pRot.z);
                 SS(_rotSliderX, pRot.x); SS(_rotSliderY, pRot.y); SS(_rotSliderZ, pRot.z);
-                SF(_sclX, bt0?.Scale.x ?? 1f); SF(_sclY, bt0?.Scale.y ?? 1f); SF(_sclZ, bt0?.Scale.z ?? 1f);
+                Vector3 s = mc0?.LocalScale ?? Vector3.one;
+                SF(_sclX, s.x); SF(_sclY, s.y); SF(_sclZ, s.z);
             }
-            else if (bt0 != null)
+            else if (mc0 != null)
             {
-                SF(_posX, bt0.Position.x); SF(_posY, bt0.Position.y); SF(_posZ, bt0.Position.z);
-                SF(_rotX, bt0.Rotation.x); SF(_rotY, bt0.Rotation.y); SF(_rotZ, bt0.Rotation.z);
-                SS(_rotSliderX, bt0.Rotation.x); SS(_rotSliderY, bt0.Rotation.y); SS(_rotSliderZ, bt0.Rotation.z);
-                SF(_sclX, bt0.Scale.x);    SF(_sclY, bt0.Scale.y);    SF(_sclZ, bt0.Scale.z);
+                Vector3 p = mc0.LocalPosition, r = mc0.LocalRotationEuler, s = mc0.LocalScale;
+                SF(_posX, p.x); SF(_posY, p.y); SF(_posZ, p.z);
+                SF(_rotX, r.x); SF(_rotY, r.y); SF(_rotZ, r.z);
+                SS(_rotSliderX, r.x); SS(_rotSliderY, r.y); SS(_rotSliderZ, r.z);
+                SF(_sclX, s.x);    SF(_sclY, s.y);    SF(_sclZ, s.z);
             }
             else
             {
@@ -350,16 +349,16 @@ namespace Poly_Ling.Player
 
             if (_ignorePoseToggle != null && showIgnorePose)
                 _ignorePoseToggle.SetValueWithoutNotify(
-                    model.GetMeshContext(indices[0])?.IgnorePoseInArmature ?? false);
+                    model.GetMesh(indices[0])?.IgnorePoseInArmature ?? false);
 
 
             _suppressTRS = false;
             _statusLabel.text = StatusText(model);
         }
 
-        private void RefreshBoneSection(ModelContext model)
+        private void RefreshBoneSection(IModelView model)
         {
-            bool hasBone = model.HasBoneSelection;
+            bool hasBone = model.SelectedBoneIndices.Length > 0;
             _btnReset?.SetEnabled(hasBone);
             _btnFocus?.SetEnabled(hasBone);
 
@@ -370,22 +369,22 @@ namespace Poly_Ling.Player
             }
 
             int first = model.SelectedBoneIndices[0];
-            var ctx   = model.GetMeshContext(first);
+            var ctx   = model.GetMesh(first);
 
             if (_bonePoseActiveToggle != null)
-                _bonePoseActiveToggle.SetValueWithoutNotify(ctx?.BonePoseData?.IsActive ?? false);
+                _bonePoseActiveToggle.SetValueWithoutNotify(ctx?.BonePose?.IsActive ?? false);
 
             if (_boneNameLabel    != null) _boneNameLabel.text    = ctx?.Name ?? "(no name)";
             _suppressBoneEdit = true;
             if (_masterIndexField != null) _masterIndexField.SetValueWithoutNotify(first);
-            int boneIdx = model.TypedIndices?.MasterToBoneIndex(first) ?? -1;
+            int boneIdx = ctx?.BoneIndex ?? -1;
             if (_boneIndexLabel   != null) _boneIndexLabel.text   = boneIdx >= 0 ? boneIdx.ToString() : "-";
             RefreshParentDropdown(model, first);
             _suppressBoneEdit = false;
             if (_worldPosLabel != null && ctx != null)
             {
-                var wm = ctx.WorldMatrix;
-                _worldPosLabel.text = $"({wm.m03:F4}, {wm.m13:F4}, {wm.m23:F4})";
+                var w = ctx.WorldPosition;
+                _worldPosLabel.text = $"({w.x:F4}, {w.y:F4}, {w.z:F4})";
             }
         }
 
@@ -394,7 +393,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>親ボーン Dropdown の選択肢と現在値を更新する。</summary>
-        private void RefreshParentDropdown(ModelContext model, int targetMaster)
+        private void RefreshParentDropdown(IModelView model, int targetMaster)
         {
             if (_parentBoneDropdown == null) return;
 
@@ -402,19 +401,18 @@ namespace Poly_Ling.Player
             var choices = new List<string> { "(なし)" };
             _parentChoiceMasters.Add(-1);
 
-            foreach (var e in model.Bones)
+            foreach (var e in model.BoneList)
             {
                 int m = e.MasterIndex;
                 if (m == targetMaster) continue;                    // 自身は親にできない
                 if (IsDescendant(model, targetMaster, m)) continue; // 子孫は親にできない（循環防止）
-                var c = model.GetMeshContext(m);
-                choices.Add($"{c?.Name ?? "-"} [{m}]");
+                choices.Add($"{e.Name ?? "-"} [{m}]");
                 _parentChoiceMasters.Add(m);
             }
 
             _parentBoneDropdown.choices = choices;
 
-            int curParent = model.GetMeshContext(targetMaster)?.HierarchyParentIndex ?? -1;
+            int curParent = model.GetMesh(targetMaster)?.HierarchyParentIndex ?? -1;
             int sel = _parentChoiceMasters.IndexOf(curParent);
             if (sel < 0) sel = 0;
             _parentBoneDropdown.SetValueWithoutNotify(choices[sel]);
@@ -449,21 +447,8 @@ namespace Poly_Ling.Player
 
             bool withRot = IncludeRotationInCsv;
 
-            // ボーンは読込側（ApplyObjectOrigins）が適用対象から外すため、ここでは出さない。
-            string csv = Poly_Ling.Tools.ObjectPose.ObjectOriginCsv.Build(
-                model, withRot, includeBones: false, bakeRotationToPosition: false,
-                out int count, out int skippedMirror, out int skippedWedge);
-
-            try
-            {
-                System.IO.File.WriteAllText(path, csv, new System.Text.UTF8Encoding(true));
-                Debug.Log($"[ObjectOrigin] 原点を書き出し: {count} 件 → {path}" +
-                          $"（除外: ミラー {skippedMirror} 件 / 姿勢くさび {skippedWedge} 件）");
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"[ObjectOrigin] 書き出しに失敗: {e.Message}");
-            }
+            // 書き出しはコマンドで行う（モデルを読むのは受け口。操作経路統一計画.md E）。
+            SendCommand(new ExportObjectOriginsCsvCommand(GetModelIndex?.Invoke() ?? 0, path, withRot));
         }
 
         /// <summary>CSV から原点(位置)を読み込み、名前一致で適用する。</summary>
@@ -543,8 +528,8 @@ namespace Poly_Ling.Player
             // 1つだけ選ばれていれば候補として渡す。的外れならディスパッチ側が
             // 名前・中身での自動検出に切り替えるので、ここでは絞り込まない。
             int container = -1;
-            if (model != null && model.SelectedDrawableMeshIndices.Count == 1)
-                container = model.SelectedDrawableMeshIndices[0];
+            if (model != null && model.SelectedDrawableIndices.Length == 1)
+                container = model.SelectedDrawableIndices[0];
 
             SendCommand(new ApplyObjectPoseWedgesCommand(
                 GetModelIndex?.Invoke() ?? 0, container,

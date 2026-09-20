@@ -46,18 +46,17 @@ namespace Poly_Ling.Player
 
             _sceneRoot          = sceneRoot;
             _remoteMode         = config.Mode;
-            _clientHost         = config.ClientHost;
-            _clientPort         = config.ClientPort;
             _clientAutoConnect  = config.ClientAutoConnect;
-            _serverPort         = config.ServerPort;
             _serverAutoStart    = config.ServerAutoStart;
 
             // ── リモートモード初期化 ────────────────────────────────────
             switch (_remoteMode)
             {
                 case RemoteMode.Client:
-                    _client = new PolyLingPlayerClient();
-                    _client.Initialize(_clientHost, _clientPort, _clientAutoConnect);
+                    // 接続先はマスターから得る。問い合わせは BuildLayout 後
+                    // （選択 UI と状態表示の配線後）に始める。
+                    _client    = new PolyLingPlayerClient();
+                    _connector = new RemoteServerConnector(_client);
                     break;
                 case RemoteMode.Server:
                     _client = null;
@@ -357,6 +356,9 @@ namespace Poly_Ling.Player
                 _editOps?.CommandQueue,
                 () => _structureNotifyCount);
 
+            // 作業軸ライブラリへの登録（RegisterWorkAxisEntryCommand）が読むアクティブな作業軸。
+            _commandDispatcher.GetActiveWorkAxis = CurrentWorkAxis;
+
             // MCP・リモートがツールの値や状態を変えたとき、表示中のパネルに読み直させる（操作経路統一計画.md P）。
             _commandDispatcher.OnToolChanged = _ =>
             {
@@ -404,7 +406,6 @@ namespace Poly_Ling.Player
             if (_remoteMode == RemoteMode.Server && _playerServer != null)
             {
                 _playerServer.Initialize(
-                    _serverPort,
                     _serverAutoStart,
                     () =>
                     {
@@ -430,7 +431,24 @@ namespace Poly_Ling.Player
                     },
                     (cmd, actor) => _commandDispatcher != null
                         ? _commandDispatcher.Dispatch(cmd, actor)
-                        : CommandResult.Fail("command dispatcher is not ready"));
+                        : CommandResult.Fail("command dispatcher is not ready"),
+                    // ホストの操作者名は端末名。リストクライアントもユーザー名が空欄なら端末名を使うため、
+                    // 同じ PC で空欄のまま開いた別窓はホストと同一人物として選択が連動する。
+                    hostUserName: UnityEngine.SystemInfo.deviceName);
+            }
+
+            // RemoteMode.Client: 接続先はマスターから得る。複数あれば選択 UI を出す。
+            if (_remoteMode == RemoteMode.Client && _connector != null)
+            {
+                _connector.OnStatus = s => _status = s;
+                if (_layoutRoot?.RemoteSection != null)
+                {
+                    _serverChoiceView = new RemoteServerChoiceView(_connector);
+                    // Connect ボタンの直後に置く。
+                    int at = _layoutRoot.RemoteSection.IndexOf(_layoutRoot.ConnectBtn) + 1;
+                    _layoutRoot.RemoteSection.Insert(at, _serverChoiceView);
+                }
+                if (_clientAutoConnect) _connector.Begin();
             }
 
             // ── ローカルローダー配線 ────────────────────────────────────
@@ -722,6 +740,11 @@ namespace Poly_Ling.Player
 
             _livePrimitiveSubPanel?.Dispose();
             _livePrimitiveSubPanel = null;
+
+            _serverChoiceView?.Detach();
+            _serverChoiceView = null;
+            _connector?.Detach();
+            _connector = null;
 
             if (_client != null)
             {

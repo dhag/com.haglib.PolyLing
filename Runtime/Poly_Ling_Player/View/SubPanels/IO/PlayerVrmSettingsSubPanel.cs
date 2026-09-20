@@ -37,13 +37,14 @@ namespace Poly_Ling.Player
         // 外部依存（Viewer から設定）
         // ================================================================
 
-        public Func<ProjectContext> GetProject;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetProject;
         public Action<PanelCommand> SendCommand;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
-        private ProjectContext GetProj      => GetProject?.Invoke();
-        private ModelContext   CurrentModel => GetProj?.CurrentModel;
+        private Poly_Ling.View.IProjectView GetProj      => GetProject?.Invoke();
+        private Poly_Ling.View.IModelView   CurrentModel => GetProj?.CurrentModel;
         private int            ModelIndex   => GetProj?.CurrentModelIndex ?? 0;
 
         // ================================================================
@@ -170,7 +171,7 @@ namespace Poly_Ling.Player
         private bool _suppressListEvents;
 
         /// <summary>直前に欄へ読み込んだモデル。変わったら読み直す。</summary>
-        private ModelContext _loadedModel;
+        private string _loadedModelKey;
 
         // ================================================================
         // 選択肢（並びは Poly_Ling.Data の各 enum の値の順と一致させること）
@@ -423,21 +424,23 @@ namespace Poly_Ling.Player
             }
 
             // モデルが変わったときだけ欄を読み直す（入力中の値を消さないため）。
-            if (!ReferenceEquals(_loadedModel, model))
+            // 窓口の写しは毎回作り直すので、モデル索引と名前で同じモデルかを見る。
+            string modelKey = $"{ModelIndex}:{model.Name}";
+            if (_loadedModelKey != modelKey)
             {
-                _loadedModel = model;
+                _loadedModelKey = modelKey;
                 LoadMetaFields(model);
                 LoadLookAtFields(model);
             }
 
             _stateLabel.text =
-                (model.VrmMeta != null ? "作者情報: 設定済み" : "作者情報: 未設定（VRM の既定で出ます）")
+                (model.HasVrmMeta ? "作者情報: 設定済み" : "作者情報: 未設定（VRM の既定で出ます）")
                 + " / "
-                + (model.VrmLookAt != null ? "視線: 設定済み" : "視線: 未設定（VRM の既定で出ます）");
+                + (model.HasVrmLookAt ? "視線: 設定済み" : "視線: 未設定（VRM の既定で出ます）");
 
             if (_lookAtStateLabel != null)
             {
-                _lookAtStateLabel.text = (model.VrmLookAt != null)
+                _lookAtStateLabel.text = model.HasVrmLookAt
                     ? "このモデルは視線の設定を持っています。"
                     : "未設定です。書き込むと、以下の値が VRM に載ります。";
             }
@@ -446,20 +449,19 @@ namespace Poly_Ling.Player
             var targets = SelectedDrawables(model);
             _fpTargetLabel.text = (targets.Count == 0)
                 ? "メッシュが選ばれていません。設定する先を選んでください。"
-                : $"設定先: {model.GetMeshContext(targets[0])?.Name}（選択 {targets.Count} 件のうち先頭）";
+                : $"設定先: {model.GetMesh(targets[0])?.Name}（選択 {targets.Count} 件のうち先頭）";
 
             // 一人称の一覧
             _fpRows.Clear();
             _fpRowRefs.Clear();
-            for (int i = 0; i < model.MeshContextCount; i++)
+            for (int i = 0; i < model.TotalMeshCount; i++)
             {
-                var mc = model.GetMeshContext(i);
-                var mo = mc?.MeshObject;
-                if (mo == null) continue;
-                if (mo.VrmFirstPerson == VrmFirstPersonType.Auto) continue;
+                var mc = model.GetMesh(i);
+                if (mc == null) continue;
+                if (mc.VrmFirstPerson == VrmFirstPersonType.Auto) continue;
 
                 _fpRowRefs.Add(i);
-                _fpRows.Add($"{mc.Name}  {FirstPersonText(mo.VrmFirstPerson)}");
+                _fpRows.Add($"{mc.Name}  {FirstPersonText(mc.VrmFirstPerson)}");
             }
             if (_fpRows.Count == 0) _fpRows.Add("すべて自動です（指定なし）。");
 
@@ -489,9 +491,10 @@ namespace Poly_Ling.Player
         // 欄への読み込み
         // ================================================================
 
-        private void LoadMetaFields(ModelContext model)
+        private void LoadMetaFields(Poly_Ling.View.IModelView model)
         {
-            var m = VrmSettingsOps.GetMetaOrNew(model);
+            var m = model.VrmMetaCopy;
+            if (m == null) return;
 
             _nameField?.SetValueWithoutNotify(m.Name ?? "");
             _versionField?.SetValueWithoutNotify(m.Version ?? "");
@@ -515,9 +518,10 @@ namespace Poly_Ling.Player
             _otherLicenseField?.SetValueWithoutNotify(m.OtherLicenseUrl ?? "");
         }
 
-        private void LoadLookAtFields(ModelContext model)
+        private void LoadLookAtFields(Poly_Ling.View.IModelView model)
         {
-            var l = VrmSettingsOps.GetLookAtOrNew(model);
+            var l = model.VrmLookAtCopy;
+            if (l == null) return;
 
             _offX?.SetValueWithoutNotify(l.OffsetFromHead.x);
             _offY?.SetValueWithoutNotify(l.OffsetFromHead.y);
@@ -626,9 +630,9 @@ namespace Poly_Ling.Player
 
             int master = _fpRowRefs[_fpSelectedRow];
 
-            var mo = CurrentModel?.GetMeshContext(master)?.MeshObject;
-            if (mo != null && _fpTypeField != null)
-                _fpTypeField.index = (int)mo.VrmFirstPerson;
+            var mv = CurrentModel?.GetMesh(master);
+            if (mv != null && _fpTypeField != null)
+                _fpTypeField.index = (int)mv.VrmFirstPerson;
 
             // 3D 画面・メッシュリストと同じ経路で選び直す。
             SendCmd(new SelectMeshCommand(ModelIndex, MeshCategory.Drawable, new[] { master }));
@@ -642,13 +646,13 @@ namespace Poly_Ling.Player
         /// 一人称を設定する先。描画オブジェクトの選択だけを見る。
         /// 判定の正典は VrmSettingsOps.IsFirstPersonCarrier。
         /// </summary>
-        private static List<int> SelectedDrawables(ModelContext model)
+        private static List<int> SelectedDrawables(Poly_Ling.View.IModelView model)
         {
             var result = new List<int>();
-            if (model?.SelectedDrawableMeshIndices == null) return result;
+            if (model?.SelectedDrawableIndices == null) return result;
 
-            foreach (int i in model.SelectedDrawableMeshIndices)
-                if (VrmSettingsOps.IsFirstPersonCarrier(model, i)) result.Add(i);
+            foreach (int i in model.SelectedDrawableIndices)
+                if (model.GetMesh(i)?.IsVrmFirstPersonCarrier == true) result.Add(i);
 
             return result;
         }

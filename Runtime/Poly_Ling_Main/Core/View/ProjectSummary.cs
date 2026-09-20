@@ -23,6 +23,14 @@ namespace Poly_Ling.View
         public IModelView GetModelView(int index)
             => (Models != null && index >= 0 && index < Models.Count) ? Models[index] : null;
 
+        /// <summary>スナップショットでは計算できないので null。</summary>
+        public VertexTransferPreviewView PreviewVertexTransfer(
+            int srcModelIndex, int srcMeshIndex, int dstModelIndex, int dstMeshIndex,
+            Poly_Ling.Ops.VertexMatchMode mode) => null;
+
+        /// <summary>作業軸ライブラリはスナップショットに載せていない。空。</summary>
+        public IReadOnlyList<string> WorkAxisLibraryNames => System.Array.Empty<string>();
+
         public ProjectSummary(
             string projectName, int currentModelIndex,
             ModelSummary currentModel,

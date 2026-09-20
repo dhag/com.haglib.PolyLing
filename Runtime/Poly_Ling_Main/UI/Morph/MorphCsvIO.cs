@@ -20,12 +20,31 @@ namespace Poly_Ling.UI
         /// <summary>BlendShapeSync CSV の最近使ったパス（読込・保存で共有）。</summary>
         private const string CsvRecentKey = "Morph.BlendShapeSyncCsv.Path";
 
+        /// <summary>読み込む CSV のパスを尋ねる（パネル用。取消なら null）。</summary>
+        public static string AskImportPath()
+            => RecentFileDialog.AskLoad("BlendShapeSync CSV読込", CsvRecentKey, "csv");
+
+        /// <summary>保存先 CSV のパスを尋ねる（パネル用。取消なら null）。</summary>
+        public static string AskExportPath()
+            => SaveDest.AskSavePath("BlendShapeSync CSV保存", SaveDest.Keys.MorphCsv, "", "blendshape_sync.csv", "csv");
+
         public static (int imported, int overwritten, int unmatched) Import(
             ModelContext model,
             System.Action<string> statusLog)
         {
             string path = RecentFileDialog.AskLoad("BlendShapeSync CSV読込", CsvRecentKey, "csv");
             if (string.IsNullOrEmpty(path)) return (0, 0, 0);
+            return ImportFromPath(model, path, statusLog);
+        }
+
+        /// <summary>
+        /// 指定したパスの CSV を読み込む（ダイアログは開かない。ImportMorphCsvCommand の受け口から呼ぶ）。
+        /// </summary>
+        public static (int imported, int overwritten, int unmatched) ImportFromPath(
+            ModelContext model, string path,
+            System.Action<string> statusLog)
+        {
+            if (model == null || string.IsNullOrEmpty(path)) return (0, 0, 0);
 
             var rows = CSVHelper.ParseFile(path);
             if (rows.Count == 0) { statusLog?.Invoke("CSVが空です"); return (0, 0, 0); }
@@ -103,6 +122,17 @@ namespace Poly_Ling.UI
             // 履歴にフルパスを残すと、次の保存が前回のファイル名で開いて上書き事故になる。
             string path = SaveDest.AskSavePath(
                 "BlendShapeSync CSV保存", SaveDest.Keys.MorphCsv, "", "blendshape_sync.csv", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+            ExportToPath(model, path, statusLog);
+        }
+
+        /// <summary>
+        /// 指定したパスへ CSV を書き出す（ダイアログは開かない。ExportMorphCsvCommand の受け口から呼ぶ）。
+        /// </summary>
+        public static void ExportToPath(ModelContext model, string path, System.Action<string> statusLog)
+        {
+            if (model == null || model.MorphExpressionCount == 0)
+            { statusLog?.Invoke("保存するモーフエクスプレッションがありません"); return; }
             if (string.IsNullOrEmpty(path)) return;
 
             try

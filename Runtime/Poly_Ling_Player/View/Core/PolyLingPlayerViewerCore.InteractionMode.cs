@@ -515,7 +515,7 @@ namespace Poly_Ling.Player
                     if (_moveToolHandler != null) _moveToolHandler.SelectOnly = true;
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
-                    _skinWeightNumericSubPanel?.RefreshBoneList(ActiveProject?.CurrentModel);
+                    _skinWeightNumericSubPanel?.RefreshBoneList(ActiveProjectView?.CurrentModel);
                     // ウェイトのヒートマップ可視化はペイントツールの機構を流用する。
                     // ActivePanel は SkinWeightPaintTool.VisualizationTargetBone と
                     // MeshSceneRenderer.CollectWeightVisTargets の参照先。

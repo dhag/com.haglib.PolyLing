@@ -455,8 +455,8 @@ namespace Poly_Ling.Player
             _localLoader.OnPmxRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.PMX);
             _localLoader.OnMqoRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.MQO);
 
-            _layoutRoot.ConnectBtn   .clicked += () => _client?.Connect();
-            _layoutRoot.DisconnectBtn.clicked += () => _client?.Disconnect();
+            _layoutRoot.ConnectBtn   .clicked += () => _connector?.Begin();
+            _layoutRoot.DisconnectBtn.clicked += () => { if (_connector != null) _connector.Disconnect(); else _client?.Disconnect(); };
             _layoutRoot.FetchBtn     .clicked += FetchProject;
             _layoutRoot.UndoBtn      .clicked += () => DispatchHost(new PerformUndoCommand());
             _layoutRoot.RedoBtn      .clicked += () => DispatchHost(new PerformRedoCommand());

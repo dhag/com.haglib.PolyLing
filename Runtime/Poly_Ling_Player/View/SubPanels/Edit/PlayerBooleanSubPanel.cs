@@ -20,7 +20,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerBooleanSubPanel
     {
-        public Func<ProjectContext> GetView;
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
 
         // UI 自動操作の ID は "boolean.<下の Id>"（UiControlAttribute.cs）。
@@ -137,12 +137,11 @@ namespace Poly_Ling.Player
             if (model == null) { SetStatus("モデルなし"); return; }
 
             _selectedMeshViews.Clear();
-            var liveModel  = new LiveModelView(model);
-            var selIndices = liveModel.SelectedDrawableIndices;
-            var drawList   = liveModel.DrawableList;
-            if (selIndices != null && drawList != null)
-                foreach (int idx in selIndices)
-                    if (idx >= 0 && idx < drawList.Count) _selectedMeshViews.Add(drawList[idx]);
+            foreach (int idx in model.SelectedDrawableIndices ?? System.Array.Empty<int>())
+            {
+                var mv = model.GetMesh(idx);
+                if (mv != null) _selectedMeshViews.Add(mv);
+            }
 
             _selectionLabel.text        = $"選択メッシュ: {_selectedMeshViews.Count}";
             _baseObjectList.itemsSource = _selectedMeshViews;

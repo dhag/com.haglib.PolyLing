@@ -26,7 +26,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerPartsIdSubPanel
     {
-        public Func<ProjectContext> GetView;
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
 
         /// <summary>対象・リファレンスの候補一覧。Viewer から設定する。</summary>
@@ -81,8 +81,7 @@ namespace Poly_Ling.Player
         private static readonly List<string> IsolatedChoices =
             new List<string> { "まとめて1パーツ", "1つずつ独立" };
 
-        private ProjectContext GetProject() => GetView?.Invoke();
-        private int ModelIndex => GetProject()?.CurrentModelIndex ?? 0;
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
         // ================================================================
         // Build
@@ -279,17 +278,18 @@ namespace Poly_Ling.Player
         {
             if (_diagLabel == null) return;
 
-            var mo = GetMeshObject(CurrentTargetMasterIndex());
+            var mo = GetMeshContext(CurrentTargetMasterIndex());
             if (mo == null)
             {
                 _diagLabel.text = "対象オブジェクトがありません";
                 return;
             }
 
-            var report = PartsIdAssignOps.Inspect(mo, CurrentTargetName());
+            var report = mo.InspectPartsIds();
+            if (report == null) { _diagLabel.text = ""; return; }
             _diagLabel.text = report.Summary;
             _diagLabel.style.color = new StyleColor(
-                (report.CurrentPartCount == report.ConnectedComponentCount && report.SubIdIsSequential)
+                report.IsConsistent
                     ? new Color(0.65f, 0.9f, 0.65f)
                     : new Color(1f, 0.7f, 0.4f));
         }
@@ -298,8 +298,8 @@ namespace Poly_Ling.Player
         {
             if (_referenceLabel == null) return;
 
-            var target = GetMeshObject(CurrentTargetMasterIndex());
-            var mo     = GetMeshObject(CurrentReferenceMasterIndex());
+            var target = GetMeshContext(CurrentTargetMasterIndex());
+            var mo     = GetMeshContext(CurrentReferenceMasterIndex());
             if (mo == null)
             {
                 _referenceLabel.text = "リファレンスオブジェクトがありません";
@@ -422,13 +422,11 @@ namespace Poly_Ling.Player
             return mc?.Name ?? "(no name)";
         }
 
-        private MeshContext GetMeshContext(int masterIndex)
+        private Poly_Ling.View.IMeshView GetMeshContext(int masterIndex)
         {
             if (masterIndex < 0) return null;
-            return GetProject()?.CurrentModel?.GetMeshContext(masterIndex);
+            return GetView?.Invoke()?.CurrentModel?.GetMesh(masterIndex);
         }
-
-        private MeshObject GetMeshObject(int masterIndex) => GetMeshContext(masterIndex)?.MeshObject;
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
 

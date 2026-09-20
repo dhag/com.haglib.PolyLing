@@ -279,9 +279,9 @@ namespace Poly_Ling.Player
             };
             _workAxisSubPanel = new PlayerWorkAxisSubPanel
             {
-                GetWorkAxis               = () => CurrentWorkAxis(),
+                GetWorkAxis               = () => CurrentWorkAxisView(),
                 // 使う軸の一覧を出すために読む。
-                GetModel                  = () => ActiveProject?.CurrentModel,
+                GetView                   = () => ActiveProjectView,
                 Surface                   = ToolSurface,
                 SendCommand               = cmd => DispatchHost(cmd),
                 GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,
@@ -293,7 +293,7 @@ namespace Poly_Ling.Player
                 },
                 GetSelectionCentroidWorld = () => SelectedVerticesCentroidWorld(),
                 // 辞書はプロジェクト単位の 1 個を左ペインと変形パネルで共有する。
-                GetLibrary                = () => ActiveProject?.WorkAxes,
+                Dispatch                  = cmd => DispatchHost(cmd),
                 OnLibraryChanged          = () => RefreshWorkAxisLibraryLists(),
             };
             _workAxisSubPanel.Build(_layoutRoot.WorkAxisSection);
@@ -386,8 +386,8 @@ namespace Poly_Ling.Player
             // 同じ WorkAxisContext / WorkAxisToolHandler を操作する。
             _deformWorkAxisSubPanel = new PlayerWorkAxisSubPanel
             {
-                GetWorkAxis               = () => CurrentWorkAxis(),
-                GetModel                  = () => ActiveProject?.CurrentModel,
+                GetWorkAxis               = () => CurrentWorkAxisView(),
+                GetView                   = () => ActiveProjectView,
                 Surface                   = ToolSurface,
                 SendCommand               = cmd => DispatchHost(cmd),
                 GetModelIndex             = () => ActiveProject?.CurrentModelIndex ?? 0,
@@ -398,7 +398,7 @@ namespace Poly_Ling.Player
                 },
                 GetSelectionCentroidWorld = () => SelectedVerticesCentroidWorld(),
                 // 左ペインと同じ WorkAxisLibrary を指す。片方で登録したら両方の一覧が揃う。
-                GetLibrary                = () => ActiveProject?.WorkAxes,
+                Dispatch                  = cmd => DispatchHost(cmd),
                 OnLibraryChanged          = () => RefreshWorkAxisLibraryLists(),
             };
 

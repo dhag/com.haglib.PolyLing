@@ -22,15 +22,11 @@ namespace Poly_Ling.Player
         // 外部依存
         // ================================================================
 
-        /// <summary>現在のプロジェクトを返すデリゲート。</summary>
-        public Func<ProjectContext> GetProject;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetProject;
 
         /// <summary>パネル再描画要求。</summary>
         public Action OnRepaint;
-
-        /// <summary>モデルリスト再構築要求（プロジェクトにモデルを追加した後に呼ぶ）。</summary>
-        public Action OnRebuildModelList;
-
 
         /// <summary>PanelCommand を送信するコールバック。</summary>
         public Action<PanelCommand> SendCommand;
@@ -161,7 +157,7 @@ namespace Poly_Ling.Player
             {
                 for (int i = 0; i < project.ModelCount; i++)
                 {
-                    string name = project.Models[i]?.Name ?? $"Model{i}";
+                    string name = project.GetModelView(i)?.Name ?? $"Model{i}";
                     string label = $"[{i}]　{name}";
                     _modelChoices.Add((i, label));
                     labels.Add(label);
@@ -228,11 +224,11 @@ namespace Poly_Ling.Player
             if (baseIdx == morphIdx)
             { SetCreateStatus("基準モデルとモーフモデルが同じです", true); return; }
 
-            var baseModel  = project.Models[baseIdx];
-            var morphModel = project.Models[morphIdx];
-            if (baseModel.Count != morphModel.Count)
+            var baseModel  = project.GetModelView(baseIdx);
+            var morphModel = project.GetModelView(morphIdx);
+            if (baseModel.TotalMeshCount != morphModel.TotalMeshCount)
             {
-                SetCreateStatus($"メッシュ数が一致しません (基準:{baseModel.Count} / モーフ:{morphModel.Count})", true);
+                SetCreateStatus($"メッシュ数が一致しません (基準:{baseModel.TotalMeshCount} / モーフ:{morphModel.TotalMeshCount})", true);
                 return;
             }
 
@@ -257,52 +253,23 @@ namespace Poly_Ling.Player
         {
             _expandStatus.text = "";
 
-            var project = GetProject?.Invoke();
-            if (project == null) { SetExpandStatus("プロジェクトがありません", true); return; }
-
-            var baseModel = project.CurrentModel;
+            var view = GetProject?.Invoke();
+            if (view == null) { SetExpandStatus("プロジェクトがありません", true); return; }
+            var baseModel = view.CurrentModel;
             if (baseModel == null) { SetExpandStatus("カレントモデルがありません", true); return; }
-
             if (_selectedExprIndex < 0 || _selectedExprIndex >= baseModel.MorphExpressions.Count)
             { SetExpandStatus("MorphExpression を選択してください", true); return; }
 
-            var expr = baseModel.MorphExpressions[_selectedExprIndex];
+            // 展開（新規モデルの追加）はコマンドで行う（操作経路統一計画.md E・J）。
+            int before = view.ModelCount;
+            string exprName = baseModel.MorphExpressions[_selectedExprIndex].Name;
+            SendCommand?.Invoke(new ExpandMorphExpressionToModelCommand(view.CurrentModelIndex, _selectedExprIndex));
+            int after = GetProject?.Invoke()?.ModelCount ?? before;
 
-            // ── 新規モデルを生成 ─────────────────────────────────────
-            var newModel = new ModelContext { Name = expr.Name + "_expanded" };
-
-            int expandedCount = 0;
-
-            foreach (var entry in expr.MeshEntries)
-            {
-                int meshIdx = entry.MeshIndex;
-                if (meshIdx < 0 || meshIdx >= baseModel.Count) continue;
-
-                var morphCtx = baseModel.GetMeshContext(meshIdx);
-                if (morphCtx == null || !morphCtx.IsMorph) continue;
-
-                // モーフ後位置を持つクローンを新モデルに追加
-                var expandedObj = morphCtx.MeshObject.Clone();
-                expandedObj.Type = MeshType.Mesh;
-
-                var expandedCtx = new MeshContext
-                {
-                    Name       = morphCtx.Name,
-                    MeshObject = expandedObj,
-                    IsVisible  = true,
-                };
-
-                newModel.Add(expandedCtx);
-                expandedCount++;
-            }
-
-            if (expandedCount == 0)
-            { SetExpandStatus("展開できるモーフメッシュがありませんでした", true); return; }
-
-            project.AddModel(newModel);
-            OnRebuildModelList?.Invoke();
-
-            SetExpandStatus($"完了: {expandedCount}メッシュを新規モデル \"{newModel.Name}\" に展開しました", false);
+            if (after > before)
+                SetExpandStatus($"完了: 新規モデル \"{exprName}_expanded\" に展開しました", false);
+            else
+                SetExpandStatus("展開できるモーフメッシュがありませんでした", true);
 
             RefreshExpressionList();
             OnRepaint?.Invoke();

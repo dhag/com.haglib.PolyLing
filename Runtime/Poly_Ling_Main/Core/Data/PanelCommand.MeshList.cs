@@ -16,6 +16,39 @@ namespace Poly_Ling.Data
     // リスト操作
     // ================================================================
 
+    /// <summary>
+    /// リファレンスに基づく対称化（臨時）。対象を複製し、REF から求めた対称の対応に従って
+    /// 移植元側の頂点を反対側へ移植したクローンを足す。REF・対象は書き換えない。
+    /// 従来 PlayerReferenceSymmetrySubPanel が ReferenceSymmetryOperation を直接呼んでいたものを移した。
+    /// </summary>
+    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "REF の対称の対応に従い、対象のクローンの片側を反対側から移植して足す（REF・対象は変えない）。")]
+    public class ApplyReferenceSymmetryCommand : PanelCommand
+    {
+        [PLParam(TextKey = "ReferenceMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "左右対称な参照オブジェクトの索引", Required = true)]
+        public int ReferenceMasterIndex { get; }
+        [PLParam(TextKey = "TargetMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "移植する対象の索引（複製して使う）", Required = true)]
+        public int TargetMasterIndex { get; }
+        [PLParam(TextKey = "SymmetryTolerance", Description = "REF の対称点を照合する位置誤差")]
+        public float Tolerance { get; }
+        [PLParam(TextKey = "RecalculateNormals", Description = "生成後に法線を再計算する")]
+        public bool RecalculateNormals { get; }
+        [PLParam(TextKey = "NewObjectName", Description = "作成するオブジェクトの名前（空なら「対象名_対称」。重複時は末尾に番号）")]
+        public string NewObjectName { get; }
+        [PLParam(TextKey = "SourcePositiveX", Description = "移植元を正 X 側にする（false なら負 X 側から正 X 側へ）")]
+        public bool SourcePositiveX { get; }
+
+        public ApplyReferenceSymmetryCommand(int modelIndex, int referenceMasterIndex, int targetMasterIndex,
+            float tolerance = 0.0001f, bool recalculateNormals = true, string newObjectName = "", bool sourcePositiveX = true)
+            : base(modelIndex)
+        {
+            ReferenceMasterIndex = referenceMasterIndex; TargetMasterIndex = targetMasterIndex;
+            Tolerance = tolerance; RecalculateNormals = recalculateNormals;
+            NewObjectName = newObjectName ?? ""; SourcePositiveX = sourcePositiveX;
+        }
+    }
+
     [PLCommand(Writes = PLWriteScope.AddOnly, Description = "空の描画オブジェクトをモデルへ 1 つ足す。")]
     public class AddMeshCommand : PanelCommand
     {
@@ -267,6 +300,16 @@ namespace Poly_Ling.Data
 
         public RebuildObjectGroupCommand(int modelIndex, string groupName, bool keepStash = false)
             : base(modelIndex) { GroupName = groupName; KeepStash = keepStash; }
+    }
+
+    /// <summary>
+    /// 参照先（出力先など）が消えたオブジェクトグループを片づける（ObjectGroupOps.PurgeMissing）。
+    /// 描画オブジェクトは消さない。
+    /// </summary>
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "参照先が消えたオブジェクトグループを片づける。描画オブジェクトは消さない。")]
+    public class PurgeObjectGroupsCommand : PanelCommand
+    {
+        public PurgeObjectGroupsCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>

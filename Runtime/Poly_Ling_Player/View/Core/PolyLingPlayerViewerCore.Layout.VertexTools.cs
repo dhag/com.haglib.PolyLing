@@ -144,7 +144,7 @@ namespace Poly_Ling.Player
             {
                 Surface                  = ToolSurface,
                 GetDrawableMeshEntryList = BuildDrawableMeshEntryList,
-                GetView                  = () => ActiveProject,
+                GetView                  = () => ActiveProjectView,
                 SendCommand              = cmd => DispatchHost(cmd),
             };
             _placeObjectReshapeSubPanel.Build(_layoutRoot.PlaceObjectReshapeSection);
@@ -461,7 +461,7 @@ namespace Poly_Ling.Player
             // 選ぶため、ビューポートのオブジェクト選択には依存しない。
             _partsIdSubPanel = new PlayerPartsIdSubPanel
             {
-                GetView                  = () => ActiveProject,
+                GetView                  = () => ActiveProjectView,
                 SendCommand              = cmd => DispatchHost(cmd),
                 GetDrawableMeshEntryList = BuildDrawableMeshEntryList,
                 GetLastResult            = () => _commandDispatcher != null
@@ -476,7 +476,7 @@ namespace Poly_Ling.Player
 
             _vertexTransferSubPanel = new PlayerVertexTransferSubPanel
             {
-                GetView     = () => ActiveProject,
+                GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _vertexTransferSubPanel.Build(_layoutRoot.VertexTransferSection);

@@ -106,7 +106,11 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>現在のモデルを返す。</summary>
-        public Func<ModelContext> GetModel;
+        /// <summary>モデルの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IModelView> GetModel;
+        /// <summary>ツールの窓口。読み取り（取り込み・検査・対象）は "skinWeightNumeric" で行う。</summary>
+        public IToolSurface Surface;
+        private const string Tool = "skinWeightNumeric";
 
         /// <summary>再描画要求。</summary>
         public Action OnRepaint;
@@ -385,19 +389,24 @@ namespace Poly_Ling.Player
         /// </summary>
         private void OnGather()
         {
-            var model = GetModel?.Invoke();
-            if (model == null) { SetStatus("モデルがありません。"); return; }
+            if (GetModel?.Invoke() == null) { SetStatus("モデルがありません。"); return; }
 
-            string err = null;
-            var common = SkinWeightOperations.GatherCommonBoneWeights(model, 1e-4f, m => err = m);
-            if (common == null) { SetStatus(err ?? "取り込めませんでした。"); return; }
+            // 取り込みはツールの窓口 "skinWeightNumeric" が本体側で行う（操作経路統一計画.md E）。
+            Surface?.Invoke(Tool, "gather", ("tolerance", 1e-4f));
+            string err   = Surface?.GetString(Tool, "gatherError") ?? "";
+            var    bones = Surface?.Get(Tool, "gatheredBones", Array.Empty<int>()) ?? Array.Empty<int>();
+            var    ws    = Surface?.Get(Tool, "gatheredWeights", Array.Empty<float>()) ?? Array.Empty<float>();
+            if (!string.IsNullOrEmpty(err) || bones.Length == 0)
+            { SetStatus(string.IsNullOrEmpty(err) ? "取り込めませんでした。" : err); return; }
 
             int filled = 0;
             for (int i = 0; i < SlotCount; i++)
             {
-                SetSlotBone(i, common[i].bone);
-                SetSlotWeight(i, common[i].weight);
-                if (common[i].bone >= 0) filled++;
+                int   b = i < bones.Length ? bones[i] : -1;
+                float w = i < ws.Length    ? ws[i]    : 0f;
+                SetSlotBone(i, b);
+                SetSlotWeight(i, w);
+                if (b >= 0) filled++;
             }
             UpdateTotalLabel();
             SetStatus(filled > 0
@@ -442,23 +451,28 @@ namespace Poly_Ling.Player
         /// <summary>対象メッシュ全頂点のウェイト合計を検査して結果を表示する。</summary>
         private void OnCheckSums()
         {
-            var model = GetModel?.Invoke();
-            if (model == null) { SetCheck("モデルがありません。"); return; }
+            if (GetModel?.Invoke() == null) { SetCheck("モデルがありません。"); return; }
 
-            var rep = SkinWeightOperations.CheckWeightSums(model, SumTolerance);
-            if (rep.Checked == 0 && rep.NoWeight == 0)
+            Surface?.Invoke(Tool, "checkSums", ("tolerance", SumTolerance));
+            int   chk    = Surface?.GetInt(Tool, "sumChecked")  ?? 0;
+            int   noW    = Surface?.GetInt(Tool, "sumNoWeight") ?? 0;
+            int   broken = Surface?.GetInt(Tool, "sumBroken")   ?? 0;
+            if (chk == 0 && noW == 0)
             { SetCheck("対象がありません。"); return; }
 
-            if (rep.Broken == 0)
+            if (broken == 0)
             {
-                SetCheck($"問題なし。検査 {rep.Checked} 頂点" +
-                         (rep.NoWeight > 0 ? $"（ウェイト無し {rep.NoWeight}）" : ""));
+                SetCheck($"問題なし。検査 {chk} 頂点" +
+                         (noW > 0 ? $"（ウェイト無し {noW}）" : ""));
                 return;
             }
 
-            SetCheck($"合計が 1 でない頂点: {rep.Broken} / {rep.Checked}　" +
-                     $"合計の範囲 {rep.MinSum:F4}〜{rep.MaxSum:F4}　" +
-                     $"対象: {string.Join(" / ", rep.BrokenMeshNames)}");
+            float mn = Surface.GetFloat(Tool, "sumMin");
+            float mx = Surface.GetFloat(Tool, "sumMax");
+            var names = Surface.Get(Tool, "sumBrokenMeshNames", Array.Empty<string>());
+            SetCheck($"合計が 1 でない頂点: {broken} / {chk}　" +
+                     $"合計の範囲 {mn:F4}〜{mx:F4}　" +
+                     $"対象: {string.Join(" / ", names)}");
         }
 
         /// <summary>対象メッシュ全件の全頂点を正規化する。</summary>
@@ -475,14 +489,14 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>モデルのボーン一覧をドロップダウンへ反映する。</summary>
-        public void RefreshBoneList(ModelContext model)
+        public void RefreshBoneList(Poly_Ling.View.IModelView model)
         {
             _boneNames.Clear();
             _boneMasterIndices.Clear();
 
             if (model != null)
             {
-                var bones = model.Bones;
+                var bones = model.BoneList;
                 if (bones != null)
                 {
                     foreach (var entry in bones)
@@ -519,24 +533,23 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             RefreshBoneList(model);
 
-            // 適用先と同じ「選択中の描画オブジェクト全件」で数える。
-            var targets  = model != null
-                ? SkinWeightOperations.CollectTargetMeshContexts(model)
-                : new List<MeshContext>();
+            // 適用先と同じ「選択中の描画オブジェクト全件」で数える（本体側で集計）。
+            var names  = model != null ? (Surface?.Get(Tool, "targetNames", Array.Empty<string>()) ?? Array.Empty<string>()) : Array.Empty<string>();
+            var counts = model != null ? (Surface?.Get(Tool, "targetSelectedVertexCounts", Array.Empty<int>()) ?? Array.Empty<int>()) : Array.Empty<int>();
 
             int selCount = 0;
             var parts    = new List<string>();
-            foreach (var mc in targets)
+            for (int k = 0; k < names.Length; k++)
             {
-                int n = mc?.SelectedVertices?.Count ?? 0;
+                int n = k < counts.Length ? counts[k] : 0;
                 selCount += n;
-                parts.Add($"{(string.IsNullOrEmpty(mc?.Name) ? "?" : mc.Name)}({n})");
+                parts.Add($"{names[k]}({n})");
             }
 
             if (_targetLabel != null)
-                _targetLabel.text = targets.Count == 0
+                _targetLabel.text = names.Length == 0
                     ? "対象: なし（オブジェクトリストでオブジェクトを選択してください）"
-                    : $"対象: {targets.Count} 件 — {string.Join(" / ", parts)}";
+                    : $"対象: {names.Length} 件 — {string.Join(" / ", parts)}";
 
             if (_selCountLabel != null)
                 _selCountLabel.text = $"選択頂点: {selCount}（全対象の合計）";

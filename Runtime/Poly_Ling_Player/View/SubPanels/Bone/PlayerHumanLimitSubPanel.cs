@@ -37,13 +37,13 @@ namespace Poly_Ling.Player
         // 外部依存（Viewer から設定）
         // ================================================================
 
-        public Func<ProjectContext> GetProject;
+        public Func<Poly_Ling.View.IProjectView> GetProject;
         public Action<PanelCommand> SendCommand;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
-        private ProjectContext GetProj      => GetProject?.Invoke();
-        private ModelContext   CurrentModel => GetProj?.CurrentModel;
+        private Poly_Ling.View.IProjectView GetProj      => GetProject?.Invoke();
+        private Poly_Ling.View.IModelView   CurrentModel => GetProj?.CurrentModel;
         private int            ModelIndex   => GetProj?.CurrentModelIndex ?? 0;
 
         // ================================================================
@@ -269,8 +269,8 @@ namespace Poly_Ling.Player
             }
             else
             {
-                var mc = model.GetMeshContext(targets[0]);
-                string human = mc?.MeshObject?.HumanBodyBone;
+                var mc = model.GetMesh(targets[0]);
+                string human = mc?.HumanBodyBone;
                 string humanText = string.IsNullOrEmpty(human)
                     ? "Humanoid 割当なし（このままでは効きません）"
                     : $"Humanoid: {human}";
@@ -281,15 +281,13 @@ namespace Poly_Ling.Player
             // 一覧
             _rows.Clear();
             _rowRefs.Clear();
-            for (int i = 0; i < model.MeshContextCount; i++)
+            for (int i = 0; i < model.TotalMeshCount; i++)
             {
-                if (!HumanLimitOps.HasCustomLimit(model, i)) continue;
+                var mc = model.GetMesh(i);
+                if (mc == null || !mc.HasCustomHumanLimit) continue;
 
-                var mc = model.GetMeshContext(i);
-                var hl = mc.MeshObject.HumanLimit;
-
-                Vector3 mn = hl.Min * Mathf.Rad2Deg;
-                Vector3 mx = hl.Max * Mathf.Rad2Deg;
+                Vector3 mn = mc.HumanLimitMin * Mathf.Rad2Deg;
+                Vector3 mx = mc.HumanLimitMax * Mathf.Rad2Deg;
 
                 _rowRefs.Add(i);
                 _rows.Add(
@@ -388,16 +386,15 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>指定ボーンの可動域を欄へ入れる（ラジアン→度）。</summary>
-        private void LoadFields(ModelContext model, int master)
+        private void LoadFields(Poly_Ling.View.IModelView model, int master)
         {
-            var hl = (model != null && master >= 0 && master < model.MeshContextCount)
-                ? model.GetMeshContext(master)?.MeshObject?.HumanLimit
-                : null;
+            var hl = (model != null && master >= 0) ? model.GetMesh(master) : null;
+            bool has = hl != null && hl.HasHumanLimit;
 
-            Vector3 mn = (hl != null) ? hl.Min    * Mathf.Rad2Deg : Vector3.zero;
-            Vector3 mx = (hl != null) ? hl.Max    * Mathf.Rad2Deg : Vector3.zero;
-            Vector3 ce = (hl != null) ? hl.Center * Mathf.Rad2Deg : Vector3.zero;
-            float   ax = (hl != null) ? hl.AxisLength : 0f;
+            Vector3 mn = has ? hl.HumanLimitMin    * Mathf.Rad2Deg : Vector3.zero;
+            Vector3 mx = has ? hl.HumanLimitMax    * Mathf.Rad2Deg : Vector3.zero;
+            Vector3 ce = has ? hl.HumanLimitCenter * Mathf.Rad2Deg : Vector3.zero;
+            float   ax = has ? hl.HumanLimitAxisLength : 0f;
 
             _minX?.SetValueWithoutNotify(mn.x);
             _minY?.SetValueWithoutNotify(mn.y);
@@ -410,7 +407,7 @@ namespace Poly_Ling.Player
             _cenZ?.SetValueWithoutNotify(ce.z);
             _axisLengthField?.SetValueWithoutNotify(ax);
 
-            if (hl == null) SetStatus("そのボーンは可動域を持っていません（既定）。");
+            if (!has) SetStatus("そのボーンは可動域を持っていません（既定）。");
         }
 
         private Vector3 ReadMin()    => new Vector3(_minX.value, _minY.value, _minZ.value);
@@ -421,13 +418,13 @@ namespace Poly_Ling.Player
         /// 付ける先。可動域はボーンにしか付かないので、ボーン選択だけを見る。
         /// 判定の正典は HumanLimitOps.IsCarrier。
         /// </summary>
-        private static List<int> SelectedBones(ModelContext model)
+        private static List<int> SelectedBones(Poly_Ling.View.IModelView model)
         {
             var result = new List<int>();
             if (model?.SelectedBoneIndices == null) return result;
 
             foreach (int i in model.SelectedBoneIndices)
-                if (HumanLimitOps.IsCarrier(model, i)) result.Add(i);
+                if (model.GetMesh(i)?.IsHumanLimitCarrier == true) result.Add(i);
 
             return result;
         }

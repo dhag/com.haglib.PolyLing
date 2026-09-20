@@ -424,6 +424,45 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// アクティブな作業軸を作業軸ライブラリへ名前付きで登録する（同名は上書き）。
+    /// ライブラリはプロジェクト共有でモデルは書き換えない。
+    /// </summary>
+    [PLCommand(Writes = PLWriteScope.None, Description = "アクティブな作業軸を作業軸ライブラリへ名前付きで登録する（同名は上書き）。")]
+    public class RegisterWorkAxisEntryCommand : PanelCommand
+    {
+        [PLParam(TextKey = "WorkAxisName", Description = "登録名", Required = true)]
+        public string Name { get; }
+        public RegisterWorkAxisEntryCommand(int modelIndex, string name) : base(modelIndex) { Name = name ?? ""; }
+    }
+
+    /// <summary>作業軸ライブラリから登録名を 1 つ消す。</summary>
+    [PLCommand(Writes = PLWriteScope.None, Description = "作業軸ライブラリから登録名を 1 つ消す。")]
+    public class RemoveWorkAxisEntryCommand : PanelCommand
+    {
+        [PLParam(TextKey = "WorkAxisName", Description = "消す登録名", Required = true)]
+        public string Name { get; }
+        public RemoveWorkAxisEntryCommand(int modelIndex, string name) : base(modelIndex) { Name = name ?? ""; }
+    }
+
+    /// <summary>作業軸ライブラリを CSV へ保存する。</summary>
+    [PLCommand(Writes = PLWriteScope.None, Description = "作業軸ライブラリを CSV へ保存する。")]
+    public class SaveWorkAxisLibraryCsvCommand : PanelCommand
+    {
+        [PLParam(TextKey = "FilePath", Description = "保存先 CSV のパス", Required = true)]
+        public string Path { get; }
+        public SaveWorkAxisLibraryCsvCommand(int modelIndex, string path) : base(modelIndex) { Path = path ?? ""; }
+    }
+
+    /// <summary>作業軸ライブラリへ CSV を読み込む（既存へ足す。同名は上書き）。</summary>
+    [PLCommand(Writes = PLWriteScope.None, Description = "作業軸ライブラリへ CSV を読み込む（既存へ足す。同名は上書き）。")]
+    public class LoadWorkAxisLibraryCsvCommand : PanelCommand
+    {
+        [PLParam(TextKey = "FilePath", Description = "読み込む CSV のパス", Required = true)]
+        public string Path { get; }
+        public LoadWorkAxisLibraryCsvCommand(int modelIndex, string path) : base(modelIndex) { Path = path ?? ""; }
+    }
+
     // ================================================================
     // 変形ギズモ（選択頂点の回転・スケール）
     //

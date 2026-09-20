@@ -130,6 +130,22 @@ namespace Poly_Ling.Player
                 }
 
                 // ── メッシュマージ
+                case ApplyReferenceSymmetryCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var result = Poly_Ling.UI.ReferenceSymmetryOperation.ApplyAsNewObject(
+                        model, c.ReferenceMasterIndex, c.TargetMasterIndex, c.Tolerance,
+                        c.RecalculateNormals, BuildMinimalToolCtx(model), c.NewObjectName, c.SourcePositiveX);
+                    if (!result.Success) { Fail(result.Message ?? "失敗しました"); return true; }
+                    model.IsDirty = true;
+                    ReportData(CommandDataJson.New()
+                        .Int("newMasterIndex", result.NewMasterIndex)
+                        .Int("transferred", result.TransferredVertexCount)
+                        .Text("message", result.Message ?? "").Build());
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return true;
+                }
+
                 case MergeMeshesCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }

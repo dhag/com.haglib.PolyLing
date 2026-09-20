@@ -16,22 +16,19 @@ namespace Poly_Ling.Player
         /// <summary>PolyLingPlayerServer への参照。PolyLingPlayerViewer から SerializeField 経由で設定する。</summary>
         public Func<PolyLingPlayerServer> GetServer;
 
-        private const string AutoStartPrefKey = "PolyLing.RemoteServer.AutoStart";
-        private const string AutoStartPortKey = "PolyLing.RemoteServer.Port";
-
         // UI
         // UI 自動操作の ID は "remoteServer.<下の Id>"（UiControlAttribute.cs）。
         // 外部と通信するサーバなので、開始・停止と送信のボタンは利用者の操作に限る（UserOnly）。
+        // 待ち受けポートは OS が割り当て、サーバ一覧（RemoteDirectory）で公開するため入力欄は持たない。
+        // 起動時の自動開始は PolyLingPlayerViewer の Server Auto Start（Inspector）だけで決める。
         [UiControl("missing", Safety = UiSafety.ReadOnly, Description = "サーバが使えないときの表示")]
         private Label         _missingLabel;
         [UiControl(Ignore = true)]
         private VisualElement _mainContent;
         [UiControl("status", Safety = UiSafety.ReadOnly, Description = "サーバの状態")]
         private Label         _statusInfo;
-        [UiControl("port", Description = "待ち受けポート")]
-        private IntegerField  _portField;
-        [UiControl("autoStart", Description = "アプリ起動時に自動開始する")]
-        private Toggle        _autoStartToggle;
+        [UiControl("directory", Safety = UiSafety.ReadOnly, Description = "サーバ一覧（マスター）での役割")]
+        private Label         _directoryInfo;
         [UiControl("start", Safety = UiSafety.UserOnly, Description = "サーバを開始する（外部から接続できるようになる）")]
         private Button        _btnStart;
         [UiControl("stop", Safety = UiSafety.UserOnly, Description = "サーバを停止する")]
@@ -84,22 +81,12 @@ namespace Poly_Ling.Player
             _statusInfo.style.marginBottom = 4;
             root.Add(_statusInfo);
 
-            // ポート設定
-            var portRow = new VisualElement(); portRow.style.flexDirection = FlexDirection.Row; portRow.style.marginBottom = 3;
-            var portLbl = new Label("Port"); portLbl.style.width = 50; portLbl.style.fontSize = 10; portLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            _portField = new IntegerField { value = PLEditorBridge.I.GetPrefInt(AutoStartPortKey, 8765) };
-            _portField.style.flexGrow = 1;
-            _portField.RegisterValueChangedCallback(e => PLEditorBridge.I.SetPrefInt(AutoStartPortKey, e.newValue));
-            portRow.Add(portLbl); portRow.Add(_portField);
-            root.Add(portRow);
+            // サーバ一覧での役割（マスター／登録済み）
+            _directoryInfo = new Label();
+            _directoryInfo.style.fontSize     = 10;
+            _directoryInfo.style.marginBottom = 4;
+            root.Add(_directoryInfo);
 
-            // 自動起動 Toggle
-            _autoStartToggle = new Toggle("アプリ起動時に自動開始")
-            { value = PLEditorBridge.I.GetPrefBool(AutoStartPrefKey, false) };
-            _autoStartToggle.style.marginBottom = 4;
-            _autoStartToggle.RegisterValueChangedCallback(e =>
-                PLEditorBridge.I.SetPrefBool(AutoStartPrefKey, e.newValue));
-            root.Add(_autoStartToggle);
 
             // Start / Stop ボタン
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginBottom = 6;
@@ -181,7 +168,25 @@ namespace Poly_Ling.Player
 
             _btnStart?.SetEnabled(!running);
             _btnStop?.SetEnabled(running);
-            _portField?.SetEnabled(!running);
+
+            if (_directoryInfo != null)
+            {
+                switch (running ? server.DirectoryRole : Poly_Ling.Remote.RemoteDirectoryNode.NodeRole.None)
+                {
+                    case Poly_Ling.Remote.RemoteDirectoryNode.NodeRole.Master:
+                        _directoryInfo.text = $"サーバ一覧: マスター（port {Poly_Ling.Remote.RemoteDirectory.MasterPort}）";
+                        break;
+                    case Poly_Ling.Remote.RemoteDirectoryNode.NodeRole.Member:
+                        _directoryInfo.text = "サーバ一覧: マスターへ登録済み";
+                        break;
+                    case Poly_Ling.Remote.RemoteDirectoryNode.NodeRole.Joining:
+                        _directoryInfo.text = "サーバ一覧: 参加処理中...";
+                        break;
+                    default:
+                        _directoryInfo.text = running ? "サーバ一覧: 未参加（ログを参照）" : "サーバ一覧: -";
+                        break;
+                }
+            }
 
             // Captured Images 情報
             var images = server.CapturedImages;

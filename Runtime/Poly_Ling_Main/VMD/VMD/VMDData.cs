@@ -138,16 +138,8 @@ namespace Poly_Ling.VMD
         private void ReadFromStream(Stream stream)
         {
             // Shift-JISエンコーディングを取得
-            Encoding sjis;
-            try
-            {
-                sjis = Encoding.GetEncoding(932);
-            }
-            catch
-            {
-                sjis = Encoding.UTF8;
-                Debug.LogWarning("Shift-JIS encoding not available, using UTF8");
-            }
+            // Shift_JIS が使えない環境では UTF-8 で読むと名前が化けるため、例外のまま止める。
+            Encoding sjis = Encoding.GetEncoding(932);
 
             using (var reader = new BinaryReader(stream, sjis, leaveOpen: true))
             {

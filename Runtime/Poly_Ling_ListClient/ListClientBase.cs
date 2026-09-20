@@ -1,6 +1,6 @@
 // ListClientBase.cs
 // 軽量リストクライアントの共通基底（MonoBehaviour）。
-// endpoint.json 探索 → WebSocket 接続 → project_header 1回フェッチ →
+// サーバ一覧（マスター）に問い合わせ → WebSocket 接続 → project_header 1回フェッチ →
 // RemoteProjectReceiver で ProjectContext を復元 → 現行メインパネルの実サブパネルを
 // PanelContext + PlayerProjectView 経由で駆動する。
 //
@@ -27,7 +27,7 @@ namespace Poly_Ling.ListClient
         // 設定
         // ================================================================
 
-        [Tooltip("endpoint.json が見つからない/未接続時の再試行間隔(秒)")]
+        [Tooltip("サーバが見つからない/未接続時に、サーバ一覧を問い合わせ直す間隔(秒)")]
         [SerializeField] private float _retrySeconds = 1.0f;
 
         [Tooltip("サーバへ登録するユーザー名。空欄なら端末名を使う。協働編集の担当者名になる。")]
@@ -68,9 +68,10 @@ namespace Poly_Ling.ListClient
         protected ProjectContext Project { get; private set; }
 
         private float _retryTimer;
-        private float _awaitTimer;
-        private bool  _awaitingConnect;
         private bool  _chromeBuilt;
+
+        private RemoteServerConnector  _connector;
+        private RemoteServerChoiceView _choiceView;
 
         private Label         _statusLabel;
         private VisualElement _host;
@@ -108,6 +109,9 @@ namespace Poly_Ling.ListClient
             _client.OnDisconnected += HandleDisconnected;
             _client.OnPushReceived += HandlePush;
 
+            // 接続先はマスターから得る。複数あれば選択 UI を出す。
+            _connector = new RemoteServerConnector(_client) { OnStatus = SetStatus };
+
             // パネル操作をサーバへ送るルータ。action と引数は PanelCommandFactory の規則で汎用に作る。
             _router = new PanelCommandRouter(_client);
             // 送信コマンドに安定ObjectIdを添えるための解決子と、書き込み先を集めるための Project。
@@ -120,60 +124,38 @@ namespace Poly_Ling.ListClient
         protected virtual void OnDestroy()
         {
             OnTeardown();
+            _choiceView?.Detach();
+            _connector?.Detach();
             _client?.Dispose();
         }
 
         protected virtual void Update()
         {
             _client?.Tick();
-            float dt = Time.unscaledDeltaTime;
 
-            bool connected = _client != null && _client.IsConnected;
-            if (connected)
-            {
-                _awaitingConnect = false;
-                // 接続中はポーリングしない（更新は push 契機のみ）。
-            }
-            else if (_awaitingConnect)
-            {
-                // 接続失敗時はコールバックが無い場合があるためタイムアウトで打ち切る。
-                _awaitTimer -= dt;
-                if (_awaitTimer <= 0f) _awaitingConnect = false;
-            }
-            else
-            {
-                _retryTimer -= dt;
-                if (_retryTimer <= 0f)
-                {
-                    _retryTimer = _retrySeconds;
-                    TryConnect();
-                }
-            }
-
+            // 選択 UI を置く場所ができてから接続を始める。
             if (!_chromeBuilt) BuildChrome();
+            if (!_chromeBuilt) return;
+
+            // 未接続で何も進行していないときだけ、一定間隔で問い合わせからやり直す。
+            // 問い合わせ中・選択待ち・接続待ち・接続中は connector の状態で止まる
+            // （接続失敗・切断はコールバックで Idle に戻る）。
+            if (_connector.Current != RemoteServerConnector.State.Idle) return;
+
+            _retryTimer -= Time.unscaledDeltaTime;
+            if (_retryTimer <= 0f)
+            {
+                _retryTimer = _retrySeconds;
+                _connector.Begin();
+            }
         }
 
         // ================================================================
         // 接続
         // ================================================================
 
-        private void TryConnect()
-        {
-            if (!EndpointLocator.TryLocate(out string host, out int port, out string _))
-            {
-                SetStatus("endpoint.json 待機中...");
-                return;
-            }
-
-            _awaitingConnect = true;
-            _awaitTimer = Mathf.Max(3f, _retrySeconds * 3f);
-            SetStatus($"接続中... {host}:{port}");
-            _client.Initialize(host, port, autoConnect: true);
-        }
-
         private void HandleConnected()
         {
-            _awaitingConnect = false;
             SetStatus("接続済");
             // 自分のタイプ（機能）とユーザー名をサーバへ登録してからフェッチする。
             _client.RegisterClientType(ClientTypeId, UserName);
@@ -182,7 +164,6 @@ namespace Poly_Ling.ListClient
 
         private void HandleDisconnected()
         {
-            _awaitingConnect = false;
             SetStatus("切断");
         }
 
@@ -407,6 +388,12 @@ namespace Poly_Ling.ListClient
             _statusLabel.style.paddingTop = 2;
             _statusLabel.style.paddingBottom = 2;
             root.Add(_statusLabel);
+
+            // サーバが複数あるときの接続先選択。
+            _choiceView = new RemoteServerChoiceView(_connector);
+            _choiceView.style.paddingLeft  = 4;
+            _choiceView.style.paddingRight = 4;
+            root.Add(_choiceView);
 
             // サーバ右ペインと同一構造: ScrollView(高さ非拘束・縦スクロール) → section → subpanel。
             // これによりサブパネルが自然高さで積まれ、要素の潰れ/重なりを防ぎ、

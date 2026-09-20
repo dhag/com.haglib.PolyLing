@@ -217,6 +217,18 @@ namespace Poly_Ling.Data
     // マテリアルリスト
     // ================================================================
 
+    /// <summary>
+    /// 現在のマテリアルスロット（CurrentMaterialIndex）を切り替える。
+    /// モデルの AutoSetDefaultMaterials が立っていれば、既定マテリアルの控えも今の並びで取り直す。
+    /// </summary>
+    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "現在のマテリアルスロットを切り替える（自動控えが有効なら既定マテリアルも取り直す）。")]
+    public class SetCurrentMaterialSlotCommand : PanelCommand
+    {
+        [PLParam(TextKey = "CurrentMaterialSlotIndex", Description = "現在にするマテリアルスロットの番号", Required = true)]
+        public int SlotIndex { get; }
+        public SetCurrentMaterialSlotCommand(int modelIndex, int slotIndex) : base(modelIndex) { SlotIndex = slotIndex; }
+    }
+
     /// <summary>マテリアルスロットを末尾に追加する</summary>
     [PLCommand(Writes = PLWriteScope.ModelWide, Description = "マテリアルの枠を末尾へ足す。")]
     public class AddMaterialSlotCommand : PanelCommand
@@ -251,7 +263,7 @@ namespace Poly_Ling.Data
 
         /// <summary>適用対象の面インデックス配列</summary>
         [PLParam(TextKey = "MaterialFaceIndices",
-                 Description = "マテリアルを適用する面の索引", Required = true)]
+                 Description = "マテリアルを適用する面の索引。空なら対象メッシュの今の選択面")]
         public int[] FaceIndices  { get; }
 
         public ApplyMaterialToFacesCommand(int modelIndex, int masterIndex,

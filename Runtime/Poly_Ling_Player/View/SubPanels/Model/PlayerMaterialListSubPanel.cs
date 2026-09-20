@@ -21,9 +21,14 @@ namespace Poly_Ling.Player
     public class PlayerMaterialListSubPanel
     {
         // ── コールバック ──────────────────────────────────────────────────
-        public Func<ModelContext>  GetModel;
-        public Func<ToolContext>   GetToolContext;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E、M-1）。マテリアルの写しと選択面数を読む。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetView;
+        /// <summary>ツールの窓口。色・Metallic・Smoothness の操作中プレビューと確定（"materialEdit"。M-2）。</summary>
+        public IToolSurface        Surface;
+        private const string       Tool = "materialEdit";
         public Action              OnRepaint;
+
+        private Poly_Ling.View.IModelView Model => GetView?.Invoke()?.CurrentModel;
 
         // コマンド送信
         private PanelContext _panelContext;
@@ -148,7 +153,7 @@ namespace Poly_Ling.Player
         // 折りたたみトグルは Refresh() では触らないため、パネル表示時のみ呼ぶこと。
         public void SyncEditingSlotToCurrent()
         {
-            var model = GetModel?.Invoke();
+            var model = Model;
             if (model == null) { _editingSlot = -1; return; }
             int count = model.MaterialCount;
             if (count <= 0) { _editingSlot = -1; return; }
@@ -160,7 +165,7 @@ namespace Poly_Ling.Player
         // ── Refresh ───────────────────────────────────────────────────────
         public void Refresh()
         {
-            var model = GetModel?.Invoke();
+            var model = Model;
             if (_list == null) return;
             _list.Clear();
 
@@ -183,10 +188,9 @@ namespace Poly_Ling.Player
             // パラメータエリア
             RebuildParamSection(model);
 
-            // 面適用セクション（面は描画メッシュの Selection に入るためそこから直接読む。
-            // GetToolContext().SelectionState は ToToolContext で未設定=null のため使えない）
-            var sel = model?.ActiveMeshContext?.Selection;
-            bool hasFace = sel != null && sel.Faces.Count > 0;
+            // 面適用セクション（面は編集対象メッシュの選択面。窓口の ActiveMesh は現物を読む）
+            int selFaces = model.ActiveMesh?.SelectedFaceCount ?? 0;
+            bool hasFace = selFaces > 0;
             // 面未選択でもセクションは表示し、ボタンを無効化(グレーアウト)して存在を示す。
             if (_applySection != null) _applySection.style.display = DisplayStyle.Flex;
             if (_btnApply != null)
@@ -195,13 +199,13 @@ namespace Poly_Ling.Player
                 _btnApply.text = $"マテリアル [{model.CurrentMaterialIndex}] を選択面に適用";
             }
             if (_selInfoLabel != null)
-                _selInfoLabel.text = hasFace ? $"{sel.Faces.Count} 面選択中" : "面が選択されていません";
+                _selInfoLabel.text = hasFace ? $"{selFaces} 面選択中" : "面が選択されていません";
 
             PlayerLayoutRoot.ApplyDarkTheme(_list);
         }
 
         // ── Row ───────────────────────────────────────────────────────────
-        private VisualElement MakeRow(ModelContext model, int index)
+        private VisualElement MakeRow(Poly_Ling.View.IModelView model, int index)
         {
             bool isCurrent = (model.CurrentMaterialIndex == index);
 
@@ -248,14 +252,14 @@ namespace Poly_Ling.Player
             return row;
         }
 
-        private static string MatName(ModelContext model, int index)
+        private static string MatName(Poly_Ling.View.IModelView model, int index)
         {
-            var mat = model.GetMaterial(index);
-            return mat != null ? mat.name : "(None)";
+            var v = model.GetMaterialSlot(index);
+            return v != null && v.HasMaterial ? v.Name : "(None)";
         }
 
         // ── パラメータ編集エリア ──────────────────────────────────────────
-        private void RebuildParamSection(ModelContext model)
+        private void RebuildParamSection(Poly_Ling.View.IModelView model)
         {
             if (_paramSection == null) return;
             _paramSection.Clear();
@@ -266,18 +270,17 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            var mat    = model.GetMaterial(_editingSlot);
-            var matRef = model.GetMaterialReference(_editingSlot);
+            var v = model.GetMaterialSlot(_editingSlot);
             _paramSection.style.display = DisplayStyle.Flex;
 
             // ヘッダー
-            var header = new Label($"■ スロット [{_editingSlot}]  {(mat != null ? mat.name : "(None)")}");
+            var header = new Label($"■ スロット [{_editingSlot}]  {(v != null && v.HasMaterial ? v.Name : "(None)")}");
             header.style.fontSize = 10;
             header.style.color    = new StyleColor(new Color(0.65f, 0.8f, 1f));
             header.style.marginBottom = 4;
             _paramSection.Add(header);
 
-            if (mat == null)
+            if (v == null || !v.HasMaterial)
             {
                 var none = new Label("マテリアルが割り当てられていません");
                 none.style.fontSize = 10;
@@ -288,25 +291,21 @@ namespace Poly_Ling.Player
 
             // ── シェーダー ──
             _paramSection.Add(ParamLabel("シェーダー"));
-            _paramSection.Add(MakeShaderRow(matRef, mat));
+            _paramSection.Add(MakeShaderRow(v));
 
             // ── メインカラー ──
-            if (mat.HasProperty("_BaseColor") || mat.HasProperty("_Color"))
+            if (v.HasColor)
             {
-                Color current = mat.HasProperty("_BaseColor")
-                    ? mat.GetColor("_BaseColor")
-                    : mat.GetColor("_Color");
-
                 _paramSection.Add(ParamLabel("メインカラー"));
-                _paramSection.Add(MakeColorRGBARow(matRef, mat, current));
+                _paramSection.Add(MakeColorRGBARow(v));
             }
 
             // ── メインテクスチャ ──
-            if (mat.HasProperty("_BaseMap") || mat.HasProperty("_MainTex"))
+            if (v.MainTexProperty != null)
             {
-                string propName = mat.HasProperty("_BaseMap") ? "_BaseMap" : "_MainTex";
-                var tex = mat.GetTexture(propName) as Texture2D;
-                string texName = tex != null ? tex.name : "(None)";
+                string propName = v.MainTexProperty;
+                var tex = v.MainTexture;
+                string texName = v.MainTexName ?? "(None)";
 
                 _paramSection.Add(ParamLabel("メインテクスチャ"));
                 var texRow = new VisualElement();
@@ -314,7 +313,7 @@ namespace Poly_Ling.Player
                 texRow.style.alignItems    = Align.Center;
                 texRow.style.marginBottom  = 4;
 
-                // サムネプレビュー（メインテクスチャが設定されていれば表示）
+                // サムネプレビュー（本体でだけテクスチャが入る。リモートでは名前だけ）
                 var thumb = new VisualElement();
                 thumb.style.width  = 40;
                 thumb.style.height = 40;
@@ -340,7 +339,7 @@ namespace Poly_Ling.Player
                 texLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
 
                 string capturedProp = propName;
-                var browseBtn = new Button(() => OnBrowseTexture(matRef, mat, capturedProp, texLabel, thumb)) { text = "..." };
+                var browseBtn = new Button(() => OnBrowseTexture(capturedProp, texLabel, thumb)) { text = "..." };
                 browseBtn.style.width = 28;
                 browseBtn.style.marginRight = 2;
 
@@ -350,53 +349,22 @@ namespace Poly_Ling.Player
             }
 
             // ── Metallic ──
-            if (mat.HasProperty("_Metallic"))
-            {
-                float val = mat.GetFloat("_Metallic");
-                _paramSection.Add(ParamLabel($"Metallic  {val:F2}"));
-                var slider = new Slider(0f, 1f) { value = val };
-                slider.style.marginBottom = 4;
-                var labelRef = (Label)_paramSection[_paramSection.childCount - 1]; // 直前のParamLabel
-                // 操作中は見た目だけを変え、離したとき・フォーカスを外したときに
-                // SetMaterialScalarCommand で確定する（操作経路統一計画.md H-3）。
-                slider.RegisterValueChangedCallback(e =>
-                {
-                    MaterialEditOps.SetScalar(mat, MaterialScalarKind.Metallic, e.newValue);
-                    labelRef.text = $"Metallic  {e.newValue:F2}";
-                });
-                RegisterScalarCommit(slider, MaterialScalarKind.Metallic);
-                _paramSection.Add(slider);
-            }
+            if (v.HasMetallic)
+                AddScalarSlider("Metallic", v.Metallic, MaterialScalarKind.Metallic);
 
             // ── Smoothness ──
-            string smoothProp = mat.HasProperty("_Smoothness") ? "_Smoothness"
-                              : mat.HasProperty("_Glossiness") ? "_Glossiness"
-                              : null;
-            if (smoothProp != null)
-            {
-                float val = mat.GetFloat(smoothProp);
-                _paramSection.Add(ParamLabel($"Smoothness  {val:F2}"));
-                var slider = new Slider(0f, 1f) { value = val };
-                slider.style.marginBottom = 4;
-                var labelRef = (Label)_paramSection[_paramSection.childCount - 1];
-                slider.RegisterValueChangedCallback(e =>
-                {
-                    MaterialEditOps.SetScalar(mat, MaterialScalarKind.Smoothness, e.newValue);
-                    labelRef.text = $"Smoothness  {e.newValue:F2}";
-                });
-                RegisterScalarCommit(slider, MaterialScalarKind.Smoothness);
-                _paramSection.Add(slider);
-            }
+            if (v.HasSmoothness)
+                AddScalarSlider("Smoothness", v.Smoothness, MaterialScalarKind.Smoothness);
 
             // ── 表面種別（Opaque / Transparent）──
-            bool isTransparent = IsTransparent(mat);
+            bool isTransparent = v.IsTransparent;
             _paramSection.Add(ParamLabel("表面種別"));
             var surfaceRow = new VisualElement();
             surfaceRow.style.flexDirection = FlexDirection.Row;
             surfaceRow.style.marginBottom  = 4;
 
-            var opaqueBtn      = new Button(() => OnSurfaceOpaque(matRef, mat))      { text = "Opaque"      };
-            var transparentBtn = new Button(() => OnSurfaceTransparent(matRef, mat)) { text = "Transparent" };
+            var opaqueBtn      = new Button(() => OnSurface(false)) { text = "Opaque"      };
+            var transparentBtn = new Button(() => OnSurface(true))  { text = "Transparent" };
             StyleSurfaceBtn(opaqueBtn,      !isTransparent);
             StyleSurfaceBtn(transparentBtn, isTransparent);
 
@@ -405,8 +373,48 @@ namespace Poly_Ling.Player
             _paramSection.Add(surfaceRow);
         }
 
+        /// <summary>
+        /// Metallic・Smoothness のスライダー。操作中はツールの窓口の previewScalar で見た目だけ変え、
+        /// 離したとき・フォーカスを外したときに commitScalar で確定する（M-2）。
+        /// 確定後は窓口が見た目を保存データへ揃えるので、止められたときは保存データの値へ戻す。
+        /// </summary>
+        private void AddScalarSlider(string title, float initial, MaterialScalarKind kind)
+        {
+            int slot = _editingSlot;
+            var label = ParamLabel($"{title}  {initial:F2}");
+            _paramSection.Add(label);
+            var slider = new Slider(0f, 1f) { value = initial };
+            slider.style.marginBottom = 4;
+            bool[] pending = { false };
+            slider.RegisterValueChangedCallback(e =>
+            {
+                Surface?.Invoke(Tool, "previewScalar",
+                    ("slot", slot), ("kind", kind), ("value", e.newValue));
+                label.text = $"{title}  {e.newValue:F2}";
+                pending[0] = true;
+            });
+            void Commit()
+            {
+                if (!pending[0]) return;
+                pending[0] = false;
+                Surface?.Invoke(Tool, "commitScalar",
+                    ("slot", slot), ("kind", kind), ("value", slider.value));
+                var after = Model?.GetMaterialSlot(slot);
+                if (after == null) return;
+                float saved = kind == MaterialScalarKind.Metallic ? after.SavedMetallic : after.SavedSmoothness;
+                if (!Mathf.Approximately(saved, slider.value))
+                {
+                    slider.SetValueWithoutNotify(saved);
+                    label.text = $"{title}  {saved:F2}";
+                }
+            }
+            slider.RegisterCallback<PointerCaptureOutEvent>(_ => Commit());
+            slider.RegisterCallback<FocusOutEvent>(_ => Commit());
+            _paramSection.Add(slider);
+        }
+
         // ── シェーダー選択行 ──────────────────────────────────────────────
-        private VisualElement MakeShaderRow(MaterialReference matRef, Material mat)
+        private VisualElement MakeShaderRow(Poly_Ling.View.MaterialSlotView v)
         {
             var container = new VisualElement();
             container.style.marginBottom = 4;
@@ -426,7 +434,7 @@ namespace Poly_Ling.Player
             // 表示は実材質の shader から求める。matRef.Data.ShaderType と食い違うのは
             // 「記録した種別のシェーダーがビルドに無く ToMaterial がフォールバックした」場合で、
             // ここで Data を書き換えると記録した種別を失う。表示だけ合わせ、Data は触らない。
-            var detected = MaterialDataConverter.DetectShaderType(mat);
+            var detected = v.DetectedShaderType;
             int sel = types.IndexOf(detected);
             if (sel < 0) sel = types.Count - 1;   // Unknown → Custom 扱い
 
@@ -434,7 +442,7 @@ namespace Poly_Ling.Player
             _shaderDropdown.style.marginBottom = 2;
             container.Add(_shaderDropdown);
 
-            string shaderName = mat.shader != null ? mat.shader.name : "";
+            string shaderName = v.ShaderName ?? "";
             _customShaderField = new TextField("シェーダー名") { isDelayed = true, value = shaderName };
             _customShaderField.style.fontSize = 10;
             _customShaderField.style.display =
@@ -463,11 +471,11 @@ namespace Poly_Ling.Player
                     SetStatus("シェーダー名を入力してください");
                     return;
                 }
-                ApplyShaderType(matRef, mat, t, null);
+                ApplyShaderType(t, null);
             });
 
             customField.RegisterValueChangedCallback(e =>
-                ApplyShaderType(matRef, mat, ShaderType.Custom, e.newValue));
+                ApplyShaderType(ShaderType.Custom, e.newValue));
 
             // DropdownField / TextField は自前で色を持たないため暗色テーマを掛ける。
             // 全 TextElement を白にするので、灰色にしたいラベルはこの後で塗り直す。
@@ -481,17 +489,18 @@ namespace Poly_Ling.Player
         /// マテリアルのシェーダーを差し替える。処理は SetMaterialShaderCommand の受け口
         /// （MaterialEditOps.ApplyShader）が行う（操作経路統一計画.md H-3c）。
         /// </summary>
-        private void ApplyShaderType(MaterialReference matRef, Material mat, ShaderType type, string customName)
+        private void ApplyShaderType(ShaderType type, string customName)
         {
-            if (matRef == null || mat == null) return;
+            if (_editingSlot < 0) return;
             SendCmd(new SetMaterialShaderCommand(
                 _getModelIndex?.Invoke() ?? 0, _editingSlot, type, customName ?? ""));
-            NotifyAndRefresh($"シェーダー: {(mat.shader != null ? mat.shader.name : "")}");
+            NotifyAndRefresh($"シェーダー: {Model?.GetMaterialSlot(_editingSlot)?.ShaderName ?? ""}");
         }
 
         // ── RGBA スライダー行 ─────────────────────────────────────────────
-        private VisualElement MakeColorRGBARow(MaterialReference matRef, Material mat, Color initial)
+        private VisualElement MakeColorRGBARow(Poly_Ling.View.MaterialSlotView v)
         {
+            Color initial = v.Color;
             var container = new VisualElement();
             container.style.marginBottom = 4;
 
@@ -525,16 +534,16 @@ namespace Poly_Ling.Player
                 if (!pending[0]) return;
                 pending[0] = false;
                 var c = cur[0];
-                SendCmd(new SetMaterialColorCommand(
-                    _getModelIndex?.Invoke() ?? 0, slot, new[] { c.r, c.g, c.b, c.a }));
+                // 確定は窓口の commitColor（SetMaterialColorCommand を送り、見た目を保存データへ揃える。M-2）。
+                Surface?.Invoke(Tool, "commitColor",
+                    ("slot", slot), ("r", c.r), ("g", c.g), ("b", c.b), ("a", c.a));
 
-                // 担当者判定で止められた場合、永続データは変わっていない。
-                // 画面の色を永続データへ戻し、見た目とデータの食い違いを残さない。
-                var saved = matRef?.Data?.GetBaseColor() ?? initial;
+                // 担当者判定で止められた場合、保存データは変わっていない。
+                // 表示を保存データの色へ戻し、見た目とデータの食い違いを残さない。
+                var saved = Model?.GetMaterialSlot(slot)?.SavedColor ?? initial;
                 if (saved != c)
                 {
                     cur[0] = saved;
-                    SetMaterialColor(mat, saved);
                     preview.style.backgroundColor = new StyleColor(saved);
                 }
             }
@@ -577,7 +586,8 @@ namespace Poly_Ling.Player
                         case 2: cur[0].b = e.newValue; break;
                         case 3: cur[0].a = e.newValue; break;
                     }
-                    SetMaterialColor(mat, cur[0]);
+                    Surface?.Invoke(Tool, "previewColor",
+                        ("slot", slot), ("r", cur[0].r), ("g", cur[0].g), ("b", cur[0].b), ("a", cur[0].a));
                     preview.style.backgroundColor = new StyleColor(cur[0]);
                     pending[0] = true;
                 });
@@ -598,7 +608,7 @@ namespace Poly_Ling.Player
         // ── テクスチャブラウズ ────────────────────────────────────────────
         // 読み込みと設定は SetMaterialTextureCommand の受け口（MaterialEditOps.ApplyTextureFile）
         // が行う。画面で選んだファイルは作業フォルダの外でも 1 回だけ許可する（操作経路統一計画.md H-3c）。
-        private void OnBrowseTexture(MaterialReference matRef, Material mat, string propName, Label displayLabel, VisualElement preview)
+        private void OnBrowseTexture(string propName, Label displayLabel, VisualElement preview)
         {
             string path = PlayerIoUiKit.AskLoadPath(
                 "テクスチャ選択", TexPathKey, null, "png,jpg,jpeg,tga,bmp");
@@ -606,16 +616,19 @@ namespace Poly_Ling.Player
             if (!File.Exists(path)) return;
 
             PLSandbox.AllowOnceFromDialog(path);
+            int slot = _editingSlot;
             SendCmd(new SetMaterialTextureCommand(
-                _getModelIndex?.Invoke() ?? 0, _editingSlot, propName, path));
+                _getModelIndex?.Invoke() ?? 0, slot, propName, path));
 
-            // 設定できたかは材質の実物で確かめる（止められた・読めなかったときは変わらない）。
-            var tex = mat != null && mat.HasProperty(propName) ? mat.GetTexture(propName) : null;
-            if (tex != null && tex.name == Path.GetFileNameWithoutExtension(path))
+            // 設定できたかは窓口の写しで確かめる（止められた・読めなかったときは変わらない）。
+            var after = Model?.GetMaterialSlot(slot);
+            if (after != null && after.MainTexProperty == propName
+                && after.MainTexName == Path.GetFileNameWithoutExtension(path))
             {
-                displayLabel.text = tex.name;
-                if (preview != null) preview.style.backgroundImage = new StyleBackground(tex as Texture2D);
-                SetStatus($"テクスチャ設定: {tex.name}");
+                displayLabel.text = after.MainTexName;
+                if (preview != null && after.MainTexture != null)
+                    preview.style.backgroundImage = new StyleBackground(after.MainTexture);
+                SetStatus($"テクスチャ設定: {after.MainTexName}");
             }
             else
             {
@@ -625,54 +638,12 @@ namespace Poly_Ling.Player
 
         // ── 表面種別 ──────────────────────────────────────────────────────
         // 設定は SetMaterialSurfaceCommand の受け口（MaterialEditOps.ApplySurface）が行う。
-        private void OnSurfaceOpaque(MaterialReference matRef, Material mat)
+        private void OnSurface(bool transparent)
         {
-            if (mat == null) return;
-            SendCmd(new SetMaterialSurfaceCommand(_getModelIndex?.Invoke() ?? 0, _editingSlot, false));
-            NotifyAndRefresh("Opaque に設定");
+            if (_editingSlot < 0) return;
+            SendCmd(new SetMaterialSurfaceCommand(_getModelIndex?.Invoke() ?? 0, _editingSlot, transparent));
+            NotifyAndRefresh(transparent ? "Transparent に設定" : "Opaque に設定");
         }
-
-        private void OnSurfaceTransparent(MaterialReference matRef, Material mat)
-        {
-            if (mat == null) return;
-            SendCmd(new SetMaterialSurfaceCommand(_getModelIndex?.Invoke() ?? 0, _editingSlot, true));
-            NotifyAndRefresh("Transparent に設定");
-        }
-
-        private static bool IsTransparent(Material mat) => MaterialEditOps.IsTransparent(mat);
-
-        /// <summary>
-        /// Metallic・Smoothness のスライダーを、離したとき・フォーカスを外したときに
-        /// SetMaterialScalarCommand で確定する。止められて永続データが変わらなかったときは、
-        /// 画面の値を永続データへ戻す（操作経路統一計画.md H-3）。
-        /// </summary>
-        private void RegisterScalarCommit(Slider slider, MaterialScalarKind kind)
-        {
-            int slot = _editingSlot;
-            bool[] pending = { false };
-            slider.RegisterValueChangedCallback(_ => pending[0] = true);
-            void Commit()
-            {
-                if (!pending[0]) return;
-                pending[0] = false;
-                float v = slider.value;
-                SendCmd(new SetMaterialScalarCommand(_getModelIndex?.Invoke() ?? 0, slot, kind, v));
-
-                var matRef = GetModel?.Invoke()?.GetMaterialReference(slot);
-                var d = matRef?.Data;
-                if (d == null) return;
-                float saved = kind == MaterialScalarKind.Metallic ? d.Metallic : d.Smoothness;
-                if (!Mathf.Approximately(saved, v))
-                {
-                    MaterialEditOps.SetScalar(matRef.Material, kind, saved);
-                    slider.SetValueWithoutNotify(saved);
-                }
-            }
-            slider.RegisterCallback<PointerCaptureOutEvent>(_ => Commit());
-            slider.RegisterCallback<FocusOutEvent>(_ => Commit());
-        }
-
-        private static void SetMaterialColor(Material mat, Color color) => MaterialEditOps.SetColor(mat, color);
 
         private static void StyleSurfaceBtn(Button btn, bool active)
         {
@@ -686,13 +657,13 @@ namespace Poly_Ling.Player
         // ── Operations ───────────────────────────────────────────────────
         private void OnSelectSlot(int index)
         {
-            var m = GetModel?.Invoke(); if (m == null) return;
-            m.CurrentMaterialIndex = index;
+            if (Model == null) return;
+            // 現在スロットの切り替えと既定マテリアルの自動控えはコマンドで行う（M-3）。
+            SendCmd(new SetCurrentMaterialSlotCommand(_getModelIndex?.Invoke() ?? 0, index));
 
             // 同スロットを再クリックでパラメータエリアをトグル
             _editingSlot = (_editingSlot == index) ? -1 : index;
 
-            AutoUpdateDefault(m);
             NotifyAndRefresh(string.Empty);
         }
 
@@ -701,14 +672,14 @@ namespace Poly_Ling.Player
         // （操作経路統一計画.md J）。
         private void OnAdd()
         {
-            if (GetModel?.Invoke() == null) return;
+            if (Model == null) return;
             SendCmd(new AddMaterialSlotCommand(_getModelIndex?.Invoke() ?? 0));
             Refresh();
         }
 
         private void OnRemoveSlot(int index)
         {
-            var m = GetModel?.Invoke(); if (m == null || m.MaterialCount <= 1) return;
+            var m = Model; if (m == null || m.MaterialCount <= 1) return;
             if (_editingSlot == index) _editingSlot = -1;
             SendCmd(new RemoveMaterialSlotCommand(_getModelIndex?.Invoke() ?? 0, index));
             Refresh();
@@ -716,39 +687,22 @@ namespace Poly_Ling.Player
 
         private void OnApplyToSelection()
         {
-            var m  = GetModel?.Invoke();     if (m == null) return;
-            var mc = m.ActiveMeshContext;
-            var sel = mc?.Selection;   // 面は描画メッシュの Selection に入る（tc.SelectionState は null）
-            if (mc?.MeshObject == null || sel == null || sel.Faces.Count == 0) return;
+            var m = Model; if (m == null) return;
+            int masterIdx = m.ActiveMeshIndex;
+            int selFaces  = m.ActiveMesh?.SelectedFaceCount ?? 0;
+            if (masterIdx < 0 || selFaces == 0) return;
             int matIdx = m.CurrentMaterialIndex;
+            // 面の索引は空で送る（受け口が対象メッシュの今の選択面を使う）。
             SendCmd(new ApplyMaterialToFacesCommand(
-                _getModelIndex?.Invoke() ?? 0, m.IndexOf(mc), matIdx, sel.Faces.ToArray()));
-            NotifyAndRefresh($"[{matIdx}] を {sel.Faces.Count} 面に適用");
+                _getModelIndex?.Invoke() ?? 0, masterIdx, matIdx, System.Array.Empty<int>()));
+            NotifyAndRefresh($"[{matIdx}] を {selFaces} 面に適用");
         }
 
         // ── Helpers ──────────────────────────────────────────────────────
-        private void AutoUpdateDefault(ModelContext m)
-        {
-            if (m == null || !m.AutoSetDefaultMaterials || m.MaterialCount == 0) return;
-            m.DefaultMaterials = new List<Material>(m.Materials);
-            m.DefaultCurrentMaterialIndex = m.CurrentMaterialIndex;
-        }
-
-        private void MarkDirty()
-        {
-            var m  = GetModel?.Invoke();
-            var tc = GetToolContext?.Invoke();
-            if (m != null) m.IsDirty = true;
-            tc?.SyncMesh?.Invoke();
-            tc?.Repaint?.Invoke();
-        }
-
+        // 変更フラグ・一覧更新通知・再描画は各コマンドの受け口が行う（M-3）。
         private void NotifyAndRefresh(string status)
         {
-            var m  = GetModel?.Invoke();
-            var tc = GetToolContext?.Invoke();
-            if (m != null) { m.IsDirty = true; m.OnListChanged?.Invoke(); }
-            tc?.SyncMesh?.Invoke(); tc?.Repaint?.Invoke();
+            OnRepaint?.Invoke();
             if (!string.IsNullOrEmpty(status)) SetStatus(status);
             Refresh();
         }

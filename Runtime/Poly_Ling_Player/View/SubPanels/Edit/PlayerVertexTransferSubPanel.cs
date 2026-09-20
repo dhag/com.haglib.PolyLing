@@ -25,7 +25,7 @@ namespace Poly_Ling.Player
 {
     public class PlayerVertexTransferSubPanel
     {
-        public Func<ProjectContext> GetView;
+        public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
 
         // ================================================================
@@ -93,7 +93,7 @@ namespace Poly_Ling.Player
         [UiControl("run", Safety = UiSafety.SafeWrite, Description = "転送を実行する（転送先の頂点データを書き換える）")]
         private Button _executeBtn;
 
-        private ProjectContext GetProject() => GetView?.Invoke();
+        private Poly_Ling.View.IProjectView GetProject() => GetView?.Invoke();
 
         // ================================================================
         // Build
@@ -240,7 +240,7 @@ namespace Poly_Ling.Player
 
             var names = new List<string>();
             for (int i = 0; i < project.ModelCount; i++)
-                names.Add($"[{i}] {project.GetModel(i)?.Name ?? "?"}");
+                names.Add($"[{i}] {project.GetModelView(i)?.Name ?? "?"}");
 
             if (names.Count == 0) names.Add("(モデルなし)");
 
@@ -337,8 +337,8 @@ namespace Poly_Ling.Player
         private void AutoMatch()
         {
             var project = GetProject();
-            var srcModel = project?.GetModel(_sourceModelIndex);
-            var dstModel = project?.GetModel(_targetModelIndex);
+            var srcModel = project?.GetModelView(_sourceModelIndex);
+            var dstModel = project?.GetModelView(_targetModelIndex);
             if (srcModel == null || dstModel == null) { SetStatus("モデルが選択されていません"); return; }
 
             var srcList = CollectMeshIndices(srcModel);
@@ -350,12 +350,12 @@ namespace Poly_Ling.Player
             // Pass 1: 名前一致
             foreach (int si in srcList)
             {
-                string sName = srcModel.GetMeshContext(si)?.Name;
+                string sName = srcModel.GetMesh(si)?.Name;
                 if (string.IsNullOrEmpty(sName)) continue;
                 foreach (int di in dstList)
                 {
                     if (usedDst.Contains(di)) continue;
-                    if (dstModel.GetMeshContext(di)?.Name != sName) continue;
+                    if (dstModel.GetMesh(di)?.Name != sName) continue;
                     _pairs.Add(new Pair { SourceMeshIndex = si, TargetMeshIndex = di });
                     usedDst.Add(di);
                     break;
@@ -369,12 +369,12 @@ namespace Poly_Ling.Player
             foreach (int si in srcList)
             {
                 if (pairedSrc.Contains(si)) continue;
-                int sCount = srcModel.GetMeshContext(si)?.MeshObject?.VertexCount ?? 0;
+                int sCount = srcModel.GetMesh(si)?.VertexCount ?? 0;
                 if (sCount == 0) continue;
                 foreach (int di in dstList)
                 {
                     if (usedDst.Contains(di)) continue;
-                    if ((dstModel.GetMeshContext(di)?.MeshObject?.VertexCount ?? -1) != sCount) continue;
+                    if ((dstModel.GetMesh(di)?.VertexCount ?? -1) != sCount) continue;
                     _pairs.Add(new Pair { SourceMeshIndex = si, TargetMeshIndex = di });
                     usedDst.Add(di);
                     break;
@@ -396,19 +396,18 @@ namespace Poly_Ling.Player
             _previewBox.Clear();
 
             var project  = GetProject();
-            var srcModel = project?.GetModel(_sourceModelIndex);
-            var dstModel = project?.GetModel(_targetModelIndex);
+            var srcModel = project?.GetModelView(_sourceModelIndex);
+            var dstModel = project?.GetModelView(_targetModelIndex);
             if (srcModel == null || dstModel == null) return;
 
             int totalMatched = 0, totalUnmatched = 0, validPairs = 0;
 
             foreach (var pair in _pairs)
             {
-                var srcMc = srcModel.GetMeshContext(pair.SourceMeshIndex);
-                var dstMc = dstModel.GetMeshContext(pair.TargetMeshIndex);
-                if (srcMc?.MeshObject == null || dstMc?.MeshObject == null) continue;
-
-                var r = VertexDataTransferOps.Preview(srcMc, dstMc, _matchMode);
+                var r = project.PreviewVertexTransfer(
+                    _sourceModelIndex, pair.SourceMeshIndex,
+                    _targetModelIndex, pair.TargetMeshIndex, _matchMode);
+                if (r == null) continue;
                 totalMatched   += r.Matched;
                 totalUnmatched += r.Unmatched;
                 validPairs++;
@@ -447,14 +446,14 @@ namespace Poly_Ling.Player
 
             var srcIdx = new List<int>();
             var dstIdx = new List<int>();
-            var srcModel = project.GetModel(_sourceModelIndex);
-            var dstModel = project.GetModel(_targetModelIndex);
+            var srcModel = project.GetModelView(_sourceModelIndex);
+            var dstModel = project.GetModelView(_targetModelIndex);
             if (srcModel == null || dstModel == null) { SetStatus("モデルが選択されていません"); return; }
 
             foreach (var pair in _pairs)
             {
-                if (srcModel.GetMeshContext(pair.SourceMeshIndex)?.MeshObject == null) continue;
-                if (dstModel.GetMeshContext(pair.TargetMeshIndex)?.MeshObject == null) continue;
+                if (srcModel.GetMesh(pair.SourceMeshIndex) == null) continue;
+                if (dstModel.GetMesh(pair.TargetMeshIndex) == null) continue;
                 srcIdx.Add(pair.SourceMeshIndex);
                 dstIdx.Add(pair.TargetMeshIndex);
             }
@@ -482,14 +481,14 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>転送の対象にする描画メッシュとモーフメッシュの MeshContextList インデックス。</summary>
-        private List<int> CollectMeshIndices(ModelContext model)
+        private List<int> CollectMeshIndices(Poly_Ling.View.IModelView model)
         {
             var list = new List<int>();
-            if (model?.MeshContextList == null) return list;
-            for (int i = 0; i < model.MeshContextList.Count; i++)
+            if (model == null) return list;
+            for (int i = 0; i < model.TotalMeshCount; i++)
             {
-                var mc = model.MeshContextList[i];
-                if (mc?.MeshObject == null) continue;
+                var mc = model.GetMesh(i);
+                if (mc == null) continue;
                 // ボーン等の非メッシュは除外。モーフは対象に含める
                 // （モーフ基準データの転送を手動ペアで行えるようにするため）。
                 if (mc.Type != MeshType.Mesh && mc.Type != MeshType.BakedMirror && mc.Type != MeshType.Morph)
@@ -502,12 +501,12 @@ namespace Poly_Ling.Player
         private List<string> BuildMeshChoices(int modelIndex)
         {
             var names = new List<string>();
-            var model = GetProject()?.GetModel(modelIndex);
+            var model = GetProject()?.GetModelView(modelIndex);
             if (model == null) return names;
             foreach (int i in CollectMeshIndices(model))
             {
-                var mc = model.GetMeshContext(i);
-                names.Add($"[{i}] {mc?.Name ?? "?"} ({mc?.MeshObject?.VertexCount ?? 0})");
+                var mc = model.GetMesh(i);
+                names.Add($"[{i}] {mc?.Name ?? "?"} ({mc?.VertexCount ?? 0})");
             }
             return names;
         }
@@ -515,7 +514,7 @@ namespace Poly_Ling.Player
         /// <summary>選択肢の並び順 → MeshContextList インデックス。</summary>
         private int ChoiceToMeshIndex(int modelIndex, int choiceIndex)
         {
-            var model = GetProject()?.GetModel(modelIndex);
+            var model = GetProject()?.GetModelView(modelIndex);
             if (model == null) return -1;
             var list = CollectMeshIndices(model);
             return (choiceIndex >= 0 && choiceIndex < list.Count) ? list[choiceIndex] : -1;
@@ -524,7 +523,7 @@ namespace Poly_Ling.Player
         /// <summary>MeshContextList インデックス → 選択肢の並び順。</summary>
         private int IndexOfChoice(List<string> choices, int modelIndex, int meshIndex)
         {
-            var model = GetProject()?.GetModel(modelIndex);
+            var model = GetProject()?.GetModelView(modelIndex);
             if (model == null || meshIndex < 0) return 0;
             var list = CollectMeshIndices(model);
             int at = list.IndexOf(meshIndex);

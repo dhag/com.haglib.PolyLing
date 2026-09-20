@@ -21,8 +21,8 @@ namespace Poly_Ling.Player
 {
     public class PlayerTPoseSubPanel
     {
-        public Func<ModelContext>    GetModel;
-        public Func<ToolContext>     GetToolContext;
+        /// <summary>モデルの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IModelView> GetModel;
         /// <summary>PanelCommand を送信するコールバック。</summary>
         public Action<PanelCommand> SendCommand;
         /// <summary>モデルインデックスを返すデリゲート。</summary>
@@ -214,8 +214,8 @@ namespace Poly_Ling.Player
             // CSV セクションはマッピングの有無に関わらず出す（ここから設定できるようにする）
             if (_csvSection != null) _csvSection.style.display = DisplayStyle.Flex;
 
-            var mapping = model.HumanoidMapping;
-            if (mapping == null || mapping.IsEmpty)
+            int mappingCount = model.HumanoidMappingCount;
+            if (mappingCount == 0)
             {
                 ShowWarning("Humanoidボーンマッピングが未設定です。\n" +
                             "上のCSV読み込み、または Humanoid Mapping パネルで設定してください。");
@@ -225,8 +225,8 @@ namespace Poly_Ling.Player
             _warningLabel.style.display = DisplayStyle.None;
             _mainContent.style.display  = DisplayStyle.Flex;
 
-            bool hasSkin = TPoseConverter.HasAnySkinWeight(model.MeshContextList);
-            _mappingInfoLabel.text = $"マッピング済: {mapping.Count} 件" +
+            bool hasSkin = model.HasAnySkinWeight;
+            _mappingInfoLabel.text = $"マッピング済: {mappingCount} 件" +
                 (hasSkin ? "（スキンド：頂点を焼き込みます）"
                          : "（スキンなし：階層の姿勢だけを変えます）");
 
@@ -234,6 +234,7 @@ namespace Poly_Ling.Player
         }
 
         // ── Operations ───────────────────────────────────────────────────
+        // 変換・復元・破棄はコマンドだけで行う（パネルから直接行う予備経路は持たない。操作経路統一計画.md J）。
         private void OnApplyTPose()
         {
             var model = GetModel?.Invoke(); if (model == null) return;
@@ -241,99 +242,35 @@ namespace Poly_Ling.Player
 
             // 変換前に何が起きるかを確定させておく。
             // 「押しても反応がない」ときに、どこで止まったかがそのまま残る。
-            string diag = TPoseConverter.Diagnose(model.MeshContextList, model.HumanoidMapping);
+            string diag = model.DiagnoseTPose();
             Debug.Log("[TPose診断]\n" + diag);
 
-            if (SendCommand != null)
-            {
-                SendCommand.Invoke(new ApplyTPoseCommand(modelIdx));
-                SetStatus(diag);
-                Refresh();
-                return;
-            }
-            // フォールバック
-            var tc      = GetToolContext?.Invoke();
-            var mapping = model.HumanoidMapping;
-            if (mapping == null || mapping.IsEmpty) return;
-            var beforeState    = new TPoseBackup();
-            TPoseConverter.CaptureBackup(model.MeshContextList, beforeState);
-            var oldTPoseBackup = model.TPoseBackup;
-            var backup = new TPoseBackup();
-            TPoseConverter.ConvertToTPose(model.MeshContextList, mapping, backup);
-            model.TPoseBackup = backup;
-            var afterState = new TPoseBackup();
-            TPoseConverter.CaptureBackup(model.MeshContextList, afterState);
-            var undo = tc?.UndoController;
-            if (undo != null)
-            {
-                {
-                    string __dbgDesc = "Apply T-Pose";
-                    var __record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose");
-                    PLDiag.UndoRecord("MeshList", __dbgDesc, __record);
-                    undo.MeshListStack.Record(__record, __dbgDesc);
-                }
-            }
-            model.IsDirty = true;
-            tc?.NotifyTopologyChanged?.Invoke();
-            tc?.Repaint?.Invoke();
-            SetStatus("Tポーズを適用しました。バックアップを保存しました。");
+            SendCommand?.Invoke(new ApplyTPoseCommand(modelIdx));
+            SetStatus(diag);
             Refresh();
         }
 
         private void OnRestoreOriginal()
         {
-            var model = GetModel?.Invoke(); if (model?.TPoseBackup == null) return;
-            int modelIdx = GetModelIndex?.Invoke() ?? 0;
-            if (SendCommand != null)
-            {
-                SendCommand.Invoke(new RestoreTPoseCommand(modelIdx));
-                SetStatus("元の姿勢に戻しました。");
-                Refresh();
-                return;
-            }
-            // フォールバック
-            var tc = GetToolContext?.Invoke();
-            var beforeState    = new TPoseBackup();
-            TPoseConverter.CaptureBackup(model.MeshContextList, beforeState);
-            var oldTPoseBackup = model.TPoseBackup;
-            TPoseConverter.RestoreFromBackup(model.MeshContextList, model.TPoseBackup);
-            var afterState = new TPoseBackup();
-            TPoseConverter.CaptureBackup(model.MeshContextList, afterState);
-            model.TPoseBackup = null;
-            var undo = tc?.UndoController;
-            if (undo != null)
-            {
-                {
-                    string __dbgDesc = "Restore Original Pose";
-                    var __record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose");
-                    PLDiag.UndoRecord("MeshList", __dbgDesc, __record);
-                    undo.MeshListStack.Record(__record, __dbgDesc);
-                }
-            }
-            model.IsDirty = true;
-            tc?.NotifyTopologyChanged?.Invoke();
-            tc?.Repaint?.Invoke();
+            var model = GetModel?.Invoke(); if (model == null || !model.HasTPoseBackup) return;
+            SendCommand?.Invoke(new RestoreTPoseCommand(GetModelIndex?.Invoke() ?? 0));
             SetStatus("元の姿勢に戻しました。");
             Refresh();
         }
 
         private void OnBake()
         {
-            var model = GetModel?.Invoke(); if (model?.TPoseBackup == null) return;
+            var model = GetModel?.Invoke(); if (model == null || !model.HasTPoseBackup) return;
             bool ok = PLEditorBridge.I.DisplayDialogYesNo("Tポーズ変換", "元の姿勢のバックアップを破棄しますか？\nこの操作は元に戻せません。", "OK", "Cancel");
             if (!ok) return;
-            int modelIdx = GetModelIndex?.Invoke() ?? 0;
-            if (SendCommand != null)
-                SendCommand.Invoke(new BakeTPoseCommand(modelIdx));
-            else
-                model.TPoseBackup = null;
+            SendCommand?.Invoke(new BakeTPoseCommand(GetModelIndex?.Invoke() ?? 0));
             SetStatus("バックアップを破棄しました。現在の姿勢がベース姿勢になります。");
             Refresh();
         }
 
         /// <summary>
-        /// 現在の姿勢を原点CSVとして書き出す。
-        /// 書き出すだけで、モデルのデータは変えない（ワールド行列のキャッシュ更新のみ）。
+        /// 現在の姿勢を原点CSVとして書き出す（ExportObjectOriginsCsvCommand）。
+        /// 書き出すだけで、モデルのデータは変えない。
         ///
         /// 値は「回転を位置に変換して保存」トグルで決まる。
         ///   オン : 読込後にワールド原点が今と同じ場所へ来るローカル位置、回転 = 0
@@ -354,29 +291,10 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(path)) return;
 
             bool bakeRotToPos = _toggleBakeRotToPos?.value ?? true;
-
-            string csv = Poly_Ling.Tools.ObjectPose.ObjectOriginCsv.Build(
-                model, withRotation: true, includeBones: true,
-                bakeRotationToPosition: bakeRotToPos,
-                out int count, out int skippedMirror, out int skippedWedge);
-
-            try
-            {
-                File.WriteAllText(path, csv, new UTF8Encoding(true));
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[TPose] 原点CSVの書き出しに失敗: {ex.Message}");
-                SetStatus("原点CSVの書き出しに失敗しました");
-                return;
-            }
-
-            Debug.Log($"[TPose] 現在の姿勢を原点CSVに保存: {count} 件 → {path}" +
-                      $"（回転を位置に変換={bakeRotToPos} / " +
-                      $"除外: ミラー {skippedMirror} 件・姿勢くさび {skippedWedge} 件）");
-            SetStatus($"原点CSVに保存しました: {count} 件" +
-                      $"（{(bakeRotToPos ? "回転を位置に変換" : "位置・回転をそのまま")}" +
-                      $" / 除外: ミラー {skippedMirror} 件・姿勢くさび {skippedWedge} 件）");
+            SendCommand?.Invoke(new ExportObjectOriginsCsvCommand(
+                GetModelIndex?.Invoke() ?? 0, path, withRotation: true,
+                includeBones: true, bakeRotationToPosition: bakeRotToPos));
+            SetStatus($"原点CSVに保存しました（{(bakeRotToPos ? "回転を位置に変換" : "位置・回転をそのまま")}）: {Path.GetFileName(path)}");
         }
 
         private static string SanitizeFileName(string name)
@@ -416,11 +334,11 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            // 索引 = マスター索引 になるよう、全コンテキストぶんの名前リストを作る
-            var names = new List<string>(model.MeshContextCount);
-            for (int i = 0; i < model.MeshContextCount; i++)
+            // 索引 = マスター索引 になるよう、全オブジェクトぶんの名前リストを作る
+            var names = new List<string>(model.TotalMeshCount);
+            for (int i = 0; i < model.TotalMeshCount; i++)
             {
-                var mc = model.GetMeshContext(i);
+                var mc = model.GetMesh(i);
                 names.Add(mc != null && !string.IsNullOrEmpty(mc.Name) ? mc.Name : "");
             }
 
@@ -465,9 +383,9 @@ namespace Poly_Ling.Player
             if (_mainContent != null) _mainContent.style.display = DisplayStyle.None;
         }
 
-        private void RefreshBackupSection(ModelContext model)
+        private void RefreshBackupSection(Poly_Ling.View.IModelView model)
         {
-            if (model.TPoseBackup != null)
+            if (model.HasTPoseBackup)
             {
                 _backupSection.style.display = DisplayStyle.Flex;
                 _backupStatusLabel.text      = "✓ 元の姿勢のバックアップあり（復元可能）";

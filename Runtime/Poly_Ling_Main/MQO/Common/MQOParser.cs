@@ -618,24 +618,9 @@ namespace Poly_Ling.MQO
             catch { }
 #endif
 
-            try
-            {
-                return Encoding.GetEncoding("Shift_JIS");
-            }
-            catch
-            {
-                try
-                {
-                    // 代替: コードページ番号で試行
-                    return Encoding.GetEncoding(932);
-                }
-                catch
-                {
-                    // 最終フォールバック: UTF8
-                    Debug.LogWarning("[MQOParser] Shift-JIS encoding not available, using UTF-8");
-                    return Encoding.UTF8;
-                }
-            }
+            // Shift_JIS が使えない環境（ビルド版で I18N.CJK.dll が無い等）では
+            // UTF-8 で読むと名前が化けたまま読み込まれるため、例外のまま止める。
+            return Encoding.GetEncoding(932);
         }
     }
 }

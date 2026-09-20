@@ -243,6 +243,53 @@ namespace Poly_Ling.View
             };
         }
 
+        // ボーン編集（PlayerBoneEditorSubPanel が読む項目）
+        public bool    HasManualPoseLayer           => _ctx?.BonePoseData?.GetLayer("Manual") != null;
+        public Vector3 ManualPoseDeltaPosition      => _ctx?.BonePoseData?.GetLayer("Manual")?.DeltaPosition ?? Vector3.zero;
+        public Vector3 ManualPoseDeltaRotationEuler => _ctx?.BonePoseData?.GetLayer("Manual")?.DeltaRotation.eulerAngles ?? Vector3.zero;
+        public Vector3 WorldPosition
+        {
+            get
+            {
+                if (_ctx == null) return Vector3.zero;
+                var wm = _ctx.WorldMatrix;
+                return new Vector3(wm.m03, wm.m13, wm.m23);
+            }
+        }
+
+        // Humanoid の可動域（PlayerHumanLimitSubPanel が読む項目）
+        public string  HumanBodyBone        => _ctx?.MeshObject?.HumanBodyBone ?? "";
+        public bool    IsHumanLimitCarrier  => _model != null && Poly_Ling.Ops.HumanLimitOps.IsCarrier(_model, _masterIndex);
+        public bool    HasCustomHumanLimit  => _model != null && Poly_Ling.Ops.HumanLimitOps.HasCustomLimit(_model, _masterIndex);
+        public bool    HasHumanLimit        => _ctx?.MeshObject?.HumanLimit != null;
+        public Vector3 HumanLimitMin        => _ctx?.MeshObject?.HumanLimit?.Min    ?? Vector3.zero;
+        public Vector3 HumanLimitMax        => _ctx?.MeshObject?.HumanLimit?.Max    ?? Vector3.zero;
+        public Vector3 HumanLimitCenter     => _ctx?.MeshObject?.HumanLimit?.Center ?? Vector3.zero;
+        public float   HumanLimitAxisLength => _ctx?.MeshObject?.HumanLimit?.AxisLength ?? 0f;
+        public bool    IsSpringBoneCarrier  => _model != null && Poly_Ling.Ops.SpringBoneOps.IsCarrier(_model, _masterIndex);
+        public IReadOnlyList<SpringBoneColliderView> SpringBoneColliders
+            => SpringBoneColliderView.ListOf(_ctx?.MeshObject?.SpringBoneColliders);
+        public bool   HasSpringBoneChainRoot      => _ctx?.MeshObject?.SpringBoneChainRoot != null;
+        public string SpringBoneChainName         => _ctx?.MeshObject?.SpringBoneChainRoot?.Name ?? "";
+        public string SpringBoneChainCenterBone   => _ctx?.MeshObject?.SpringBoneChainRoot?.CenterBoneName ?? "";
+        public int[]  SpringBoneChainGroupIndices
+            => _ctx?.MeshObject?.SpringBoneChainRoot?.SpringBoneColliderGroupIndices?.ToArray() ?? Array.Empty<int>();
+        public Poly_Ling.Data.VrmFirstPersonType VrmFirstPerson
+            => _ctx?.MeshObject?.VrmFirstPerson ?? Poly_Ling.Data.VrmFirstPersonType.Auto;
+        public bool IsVrmFirstPersonCarrier => Poly_Ling.Ops.VrmSettingsOps.IsFirstPersonCarrier(_ctx);
+
+        public PartsIdReportView InspectPartsIds()
+        {
+            var mo = _ctx?.MeshObject;
+            if (mo == null) return null;
+            var r = Poly_Ling.Ops.PartsIdAssignOps.Inspect(mo, _ctx.Name ?? "(no name)");
+            return new PartsIdReportView
+            {
+                Summary      = r.Summary,
+                IsConsistent = r.CurrentPartCount == r.ConnectedComponentCount && r.SubIdIsSequential,
+            };
+        }
+
         /// <summary>法線再計算の除外セット（MeshObject.NormalRecalcExcludeList）。</summary>
         public IReadOnlyList<IPartsSetView> NormalExcludeSets
         {
@@ -346,6 +393,27 @@ namespace Poly_Ling.View
             var mc = masterIndex >= 0 ? _model.GetMeshContext(masterIndex) : null;
             return mc != null ? new LiveMeshView(mc, _model, masterIndex) : null;
         }
+
+        /// <summary>プロジェクトを持たないので作れない（出力先の解決にプロジェクトが要る）。空。</summary>
+        public IReadOnlyList<ObjectGroupView> ObjectGroups => Array.Empty<ObjectGroupView>();
+
+        public int MaterialCount        => _model.MaterialCount;
+        public int CurrentMaterialIndex => _model.CurrentMaterialIndex;
+        public MaterialSlotView GetMaterialSlot(int slot) => LiveProjectView.BuildMaterialSlotView(_model, slot);
+        public IReadOnlyList<MorphExpressionView> MorphExpressions => LiveProjectView.BuildMorphExpressionViews(_model);
+
+        public int    HumanoidMappingCount => (_model.HumanoidMapping == null || _model.HumanoidMapping.IsEmpty) ? 0 : _model.HumanoidMapping.Count;
+        public bool   HasAnySkinWeight     => Poly_Ling.Ops.TPoseConverter.HasAnySkinWeight(_model.MeshContextList);
+        public bool   HasTPoseBackup       => _model.TPoseBackup != null;
+        public string DiagnoseTPose()      => Poly_Ling.Ops.TPoseConverter.Diagnose(_model.MeshContextList, _model.HumanoidMapping);
+        public int HumanoidMissingRequiredCount => LiveProjectView.HumanoidMissingRequiredOf(_model);
+        public AvatarRetargetView AvatarRetarget => LiveProjectView.BuildAvatarRetargetView(_model);
+        public IReadOnlyList<string> SpringBoneColliderGroupNames
+            => new List<string>(_model.SpringBoneColliderGroupNames ?? new List<string>());
+        public bool HasVrmMeta   => _model.VrmMeta != null;
+        public Poly_Ling.Data.VrmMetaData   VrmMetaCopy   => Poly_Ling.Ops.VrmSettingsOps.GetMetaOrNew(_model);
+        public bool HasVrmLookAt => _model.VrmLookAt != null;
+        public Poly_Ling.Data.VrmLookAtData VrmLookAtCopy => Poly_Ling.Ops.VrmSettingsOps.GetLookAtOrNew(_model);
         public int[] SelectedBoneIndices => _model.SelectedBoneIndices.ToArray();
         public int[] SelectedMorphIndices => _model.SelectedMorphIndices.ToArray();
 
@@ -417,6 +485,201 @@ namespace Poly_Ling.View
         public string ProjectName => _project.Name;
         public int CurrentModelIndex => _project.CurrentModelIndex;
         public int ModelCount => _project.ModelCount;
+
+        public VertexTransferPreviewView PreviewVertexTransfer(
+            int srcModelIndex, int srcMeshIndex, int dstModelIndex, int dstMeshIndex,
+            Poly_Ling.Ops.VertexMatchMode mode)
+            => ComputeVertexTransferPreview(_project, srcModelIndex, srcMeshIndex, dstModelIndex, dstMeshIndex, mode);
+
+        public IReadOnlyList<string> WorkAxisLibraryNames => LibraryNamesOf(_project);
+
+        /// <summary>必須の Humanoid ボーンのうち未割当の数（PlayerHumanoidMappingSubPanel が読んでいた項目）。</summary>
+        public static int HumanoidMissingRequiredOf(ModelContext model)
+        {
+            var m = model?.HumanoidMapping;
+            return (m == null || m.IsEmpty) ? 0 : m.GetMissingRequiredBones().Count;
+        }
+
+        /// <summary>Avatar リターゲット設定の写しを作る（未設定なら既定値、IsSet=false）。</summary>
+        public static AvatarRetargetView BuildAvatarRetargetView(ModelContext model)
+        {
+            if (model == null) return null;
+            var a = Poly_Ling.Ops.AvatarRetargetOps.GetRetargetOrNew(model);
+            return new AvatarRetargetView
+            {
+                IsSet             = model.AvatarRetarget != null,
+                UpperArmTwist     = a.UpperArmTwist,
+                LowerArmTwist     = a.LowerArmTwist,
+                UpperLegTwist     = a.UpperLegTwist,
+                LowerLegTwist     = a.LowerLegTwist,
+                ArmStretch        = a.ArmStretch,
+                LegStretch        = a.LegStretch,
+                FeetSpacing       = a.FeetSpacing,
+                HasTranslationDoF = a.HasTranslationDoF,
+            };
+        }
+
+        /// <summary>モーフエクスプレッションの写しを作る（PlayerMorphSubPanel が読んでいた項目）。</summary>
+        public static IReadOnlyList<MorphExpressionView> BuildMorphExpressionViews(ModelContext model)
+        {
+            var list = new List<MorphExpressionView>();
+            if (model?.MorphExpressions == null) return list;
+            foreach (var s in model.MorphExpressions)
+            {
+                if (s == null) continue;
+                var v = new MorphExpressionView
+                {
+                    Name        = s.Name ?? "",
+                    NameEnglish = s.NameEnglish ?? "",
+                    TypeName    = s.Type.ToString(),
+                    Panel       = s.Panel,
+                    MeshCount   = s.MeshCount,
+                };
+                foreach (var e in s.MeshEntries)
+                {
+                    var mc = e.MeshIndex >= 0 && e.MeshIndex < model.MeshContextCount ? model.GetMeshContext(e.MeshIndex) : null;
+                    v.Entries.Add(new MorphEntryView { MeshIndex = e.MeshIndex, MeshName = mc?.Name, Weight = e.Weight });
+                }
+                list.Add(v);
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// マテリアルスロットの表示用の写しを作る（PlayerMaterialListSubPanel が Material から読んでいた項目。M-1）。
+        /// </summary>
+        public static MaterialSlotView BuildMaterialSlotView(ModelContext model, int slot)
+        {
+            if (model == null || slot < 0 || slot >= model.MaterialCount) return null;
+            var mat  = model.GetMaterial(slot);
+            var data = model.GetMaterialReference(slot)?.Data;
+            var v = new MaterialSlotView { Slot = slot, HasMaterial = mat != null };
+            if (mat == null) { v.Name = "(None)"; return v; }
+
+            v.Name               = mat.name;
+            v.ShaderName         = mat.shader != null ? mat.shader.name : "";
+            v.DetectedShaderType = Poly_Ling.Materials.MaterialDataConverter.DetectShaderType(mat);
+
+            if (mat.HasProperty("_BaseColor") || mat.HasProperty("_Color"))
+            {
+                v.HasColor   = true;
+                v.Color      = mat.HasProperty("_BaseColor") ? mat.GetColor("_BaseColor") : mat.GetColor("_Color");
+                v.SavedColor = data != null ? data.GetBaseColor() : v.Color;
+            }
+
+            if (mat.HasProperty("_BaseMap") || mat.HasProperty("_MainTex"))
+            {
+                v.MainTexProperty = mat.HasProperty("_BaseMap") ? "_BaseMap" : "_MainTex";
+                v.MainTexture     = mat.GetTexture(v.MainTexProperty) as UnityEngine.Texture2D;
+                v.MainTexName     = v.MainTexture != null ? v.MainTexture.name : "(None)";
+            }
+
+            if (mat.HasProperty("_Metallic"))
+            {
+                v.HasMetallic   = true;
+                v.Metallic      = mat.GetFloat("_Metallic");
+                v.SavedMetallic = data != null ? data.Metallic : v.Metallic;
+            }
+
+            string smoothProp = mat.HasProperty("_Smoothness") ? "_Smoothness"
+                              : mat.HasProperty("_Glossiness") ? "_Glossiness" : null;
+            if (smoothProp != null)
+            {
+                v.HasSmoothness   = true;
+                v.Smoothness      = mat.GetFloat(smoothProp);
+                v.SavedSmoothness = data != null ? data.Smoothness : v.Smoothness;
+            }
+
+            v.IsTransparent = Poly_Ling.Materials.MaterialEditOps.IsTransparent(mat);
+            return v;
+        }
+
+        /// <summary>作業軸ライブラリの登録名（Live・Player の両ビューで共用）。</summary>
+        public static IReadOnlyList<string> LibraryNamesOf(ProjectContext project)
+        {
+            var lib = project?.WorkAxes;
+            return lib != null ? new List<string>(lib.Names) : new List<string>();
+        }
+
+        /// <summary>本体側の現物から頂点データ転送の下見を計算する（Live・Player の両ビューで共用）。</summary>
+        public static VertexTransferPreviewView ComputeVertexTransferPreview(
+            ProjectContext project,
+            int srcModelIndex, int srcMeshIndex, int dstModelIndex, int dstMeshIndex,
+            Poly_Ling.Ops.VertexMatchMode mode)
+        {
+            var src = project?.GetModel(srcModelIndex)?.GetMeshContext(srcMeshIndex);
+            var dst = project?.GetModel(dstModelIndex)?.GetMeshContext(dstMeshIndex);
+            if (src?.MeshObject == null || dst?.MeshObject == null) return null;
+            var r = Poly_Ling.Ops.VertexDataTransferOps.Preview(src, dst, mode);
+            return new VertexTransferPreviewView { Matched = r.Matched, Unmatched = r.Unmatched, Summary = r.Summary };
+        }
+
+        /// <summary>
+        /// オブジェクトグループの表示用の写しを作る（PlayerObjectGroupSubPanel にあった判定と文面をここへ移した）。
+        /// </summary>
+        public static IReadOnlyList<ObjectGroupView> BuildObjectGroupViews(ProjectContext project, ModelContext model)
+        {
+            var list = new List<ObjectGroupView>();
+            if (model?.ObjectGroups == null) return list;
+            foreach (var g in model.ObjectGroups)
+            {
+                if (g == null) continue;
+
+                // 出力先はステップごとに複数ありうる。1 つでも引けなければ印を立てる。
+                bool outMissing = !g.HasOutput;
+                if (!outMissing)
+                {
+                    foreach (ulong oid in g.OutputObjectIds)
+                        if (Poly_Ling.Ops.ObjectGroupOps.Resolve(project, oid) == null) { outMissing = true; break; }
+                }
+
+                var stashCtx = g.HasStash ? Poly_Ling.Ops.ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
+
+                var srcNames = new List<string>();
+                foreach (ulong id in g.SourceObjectIds)
+                {
+                    var mc = Poly_Ling.Ops.ObjectGroupOps.Resolve(project, id);
+                    srcNames.Add(mc != null ? mc.Name : $"(見つからない: {id})");
+                }
+
+                // ステップごとに action と出力先を出す。実行順は並びそのもの。
+                var stepLines = new List<string>();
+                for (int i = 0; i < g.StepCount; i++)
+                {
+                    var st = g.GetStep(i);
+                    if (st == null) continue;
+
+                    var outNames = new List<string>();
+                    foreach (ulong oid in st.OutputObjectIds)
+                    {
+                        var mc = Poly_Ling.Ops.ObjectGroupOps.Resolve(project, oid);
+                        outNames.Add(mc != null ? mc.Name : $"(見つからない: {oid})");
+                    }
+
+                    string outText = outNames.Count == 0 ? "なし"
+                        : outNames.Count <= 3 ? string.Join(", ", outNames)
+                        : $"{outNames[0]} ほか {outNames.Count - 1} 件";
+
+                    stepLines.Add($"  {i + 1}. {st.Action} → {outText}  (パラメータ {st.Args.Count} 件)");
+                }
+
+                list.Add(new ObjectGroupView
+                {
+                    Name          = g.Name,
+                    Action        = g.Action,
+                    StepCount     = g.StepCount,
+                    AutoUpdate    = g.AutoUpdate,
+                    OutputMissing = outMissing,
+                    Stale         = !outMissing && Poly_Ling.Ops.ObjectGroupOps.IsStale(project, g),
+                    Detail        =
+                          $"ステップ: {g.StepCount} 件\n"
+                        + string.Join("\n", stepLines) + "\n"
+                        + $"入力: {(srcNames.Count > 0 ? string.Join(", ", srcNames) : "なし")}\n"
+                        + $"退避: {(stashCtx != null ? stashCtx.Name : "なし")}",
+                });
+            }
+            return list;
+        }
 
         public IModelView GetModelView(int index)
         {

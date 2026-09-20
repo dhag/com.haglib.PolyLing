@@ -40,6 +40,8 @@ namespace Poly_Ling.Player
         public Action<byte[]> OnBinaryPushReceived;
         public Action         OnConnected;
         public Action         OnDisconnected;
+        /// <summary>接続の確立に失敗したとき（メインスレッドで発火。引数は理由）。</summary>
+        public Action<string> OnConnectFailed;
 
         // ================================================================
         // 内部
@@ -153,7 +155,11 @@ namespace Poly_Ling.Player
             }
             catch (Exception ex)
             {
-                RunOnMainThread(() => Debug.LogWarning($"[PolyLingPlayerClient] 接続失敗: {ex.Message}"));
+                RunOnMainThread(() =>
+                {
+                    Debug.LogWarning($"[PolyLingPlayerClient] 接続失敗: {ex.Message}");
+                    OnConnectFailed?.Invoke(ex.Message);
+                });
             }
         }
 
@@ -214,8 +220,17 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            if (id != null && _binaryCallbacks.ContainsKey(id))
+            if (id != null && _binaryCallbacks.TryGetValue(id, out var binCb))
             {
+                // 失敗応答はバイナリを伴わない。待たずに (json, null) で返して片付ける。
+                // （待つと、このコールバックが呼ばれないまま残る）
+                if (json.IndexOf("\"success\":false", StringComparison.Ordinal) >= 0)
+                {
+                    _binaryCallbacks.Remove(id);
+                    binCb(json, null);
+                    return;
+                }
+
                 _lastTextResponseId   = id;
                 _lastTextResponseJson = json;
                 return;
@@ -310,6 +325,18 @@ namespace Poly_Ling.Player
             SendBinaryQuery(
                 $"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"mesh_data_batch\"," +
                 $"\"params\":{{\"modelIndex\":\"{modelIndex}\",\"category\":\"{category}\"}}}}",
+                onResponse);
+        }
+
+        /// <summary>
+        /// プロジェクト全体の PLRF 束を要求する（リモートからのヒエラルキー書き出し用）。
+        /// 成功時は (応答 JSON, 束)、失敗応答時は (応答 JSON, null) で呼ばれる。
+        /// </summary>
+        public void FetchProjectBundle(Action<string, byte[]> onResponse)
+        {
+            string id = NextId();
+            SendBinaryQuery(
+                $"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"project_bundle\"}}",
                 onResponse);
         }
 

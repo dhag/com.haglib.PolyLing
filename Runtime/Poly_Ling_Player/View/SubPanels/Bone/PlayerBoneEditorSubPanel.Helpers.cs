@@ -31,7 +31,7 @@ namespace Poly_Ling.Player
         ///   両方タブ    : ボーン → メッシュ の順で連結
         /// 複数選択中は「(複数選択: n)」を先頭に置き、選ばれるまでコマンドを送らない。
         /// </summary>
-        private void RefreshTargetDropdown(ModelContext model)
+        private void RefreshTargetDropdown(IModelView model)
         {
             if (_boneDropdown == null) return;
 
@@ -46,7 +46,7 @@ namespace Poly_Ling.Player
 
                 if (_scope != SubPanelScope.MeshesOnly)
                 {
-                    var bones = model.Bones;
+                    var bones = model.BoneList;
                     if (bones != null)
                     {
                         foreach (var e in bones)
@@ -60,12 +60,12 @@ namespace Poly_Ling.Player
 
                 if (_scope != SubPanelScope.BonesOnly)
                 {
-                    var drawables = model.DrawableMeshes;
+                    var drawables = model.DrawableList;
                     if (drawables != null)
                     {
                         foreach (var e in drawables)
                         {
-                            if (e.Context == null || e.Context.Type == MeshType.MirrorSide) continue;
+                            if (e.Type == MeshType.MirrorSide) continue;
                             choices.Add(bothScope ? $"M: {e.Name}" : e.Name);
                             _targetChoiceMasters.Add(e.MasterIndex);
                             _targetChoiceCategories.Add(MeshCategory.Drawable);
@@ -125,7 +125,7 @@ namespace Poly_Ling.Player
         {
             if (_suppressBoneEdit) return;
             var model = GetModel?.Invoke();
-            if (model == null || !model.HasBoneSelection) return;
+            if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
             MoveBone(model, model.SelectedBoneIndices[0], newMaster: evt.newValue, newParentMaster: null);
         }
 
@@ -133,21 +133,21 @@ namespace Poly_Ling.Player
         {
             if (_suppressBoneEdit) return;
             var model = GetModel?.Invoke();
-            if (model == null || !model.HasBoneSelection) return;
+            if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
             int idx = _parentBoneDropdown.index;
             if (idx < 0 || idx >= _parentChoiceMasters.Count) return;
             MoveBone(model, model.SelectedBoneIndices[0], newMaster: null, newParentMaster: _parentChoiceMasters[idx]);
         }
 
         /// <summary>nodeMaster が ancestorMaster の子孫かどうか（HierarchyParentIndex を上に辿る）。</summary>
-        private static bool IsDescendant(ModelContext model, int ancestorMaster, int nodeMaster)
+        private static bool IsDescendant(IModelView model, int ancestorMaster, int nodeMaster)
         {
-            int cur = model.GetMeshContext(nodeMaster)?.HierarchyParentIndex ?? -1;
+            int cur = model.GetMesh(nodeMaster)?.HierarchyParentIndex ?? -1;
             int guard = 0;
             while (cur >= 0 && guard++ < 4096)
             {
                 if (cur == ancestorMaster) return true;
-                cur = model.GetMeshContext(cur)?.HierarchyParentIndex ?? -1;
+                cur = model.GetMesh(cur)?.HierarchyParentIndex ?? -1;
             }
             return false;
         }
@@ -157,11 +157,11 @@ namespace Poly_Ling.Player
         /// newMaster 指定時: 親を維持しつつ親の範囲内でマスターIdx位置へ（親は超えない）。
         /// newParentMaster 指定時: 新親の子末尾へ。各パネル反映は Dispatch 側の通知に委ねる。
         /// </summary>
-        private void MoveBone(ModelContext model, int target, int? newMaster, int? newParentMaster)
+        private void MoveBone(IModelView model, int target, int? newMaster, int? newParentMaster)
         {
             // 現在のボーン順（master index）と depth / parent
             var order = new List<int>();
-            foreach (var e in model.Bones) order.Add(e.MasterIndex);
+            foreach (var e in model.BoneList) order.Add(e.MasterIndex);
             int n = order.Count;
             if (n == 0) return;
 
@@ -169,7 +169,7 @@ namespace Poly_Ling.Player
             var parent = new Dictionary<int, int>(n);
             foreach (var m in order)
             {
-                var c = model.GetMeshContext(m);
+                var c = model.GetMesh(m);
                 depth[m]  = c?.Depth ?? 0;
                 parent[m] = c?.HierarchyParentIndex ?? -1;
             }
@@ -197,7 +197,7 @@ namespace Poly_Ling.Player
                 if (np == target || IsDescendant(model, target, np)) { Refresh(); return; }
                 appliedParent = np;
                 appliedDepth  = np >= 0
-                    ? ((depth.TryGetValue(np, out var dp) ? dp : (model.GetMeshContext(np)?.Depth ?? 0)) + 1)
+                    ? ((depth.TryGetValue(np, out var dp) ? dp : (model.GetMesh(np)?.Depth ?? 0)) + 1)
                     : 0;
 
                 if (np < 0)
@@ -276,7 +276,7 @@ namespace Poly_Ling.Player
         private void OnResetPose()
         {
             var model = GetModel?.Invoke();
-            if (model == null || !model.HasBoneSelection) return;
+            if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
 
             // リセットはコマンドで行う（ディスパッチャ側で Undo 記録。操作経路統一計画.md J）。
             var indices = new List<int>(model.SelectedBoneIndices).ToArray();
@@ -288,11 +288,10 @@ namespace Poly_Ling.Player
         private void OnFocusBone()
         {
             var model = GetModel?.Invoke();
-            if (model == null || !model.HasBoneSelection) return;
-            var ctx = model.GetMeshContext(model.SelectedBoneIndices[0]);
+            if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
+            var ctx = model.GetMesh(model.SelectedBoneIndices[0]);
             if (ctx == null) return;
-            var wm = ctx.WorldMatrix;
-            OnFocusCamera?.Invoke(new Vector3(wm.m03, wm.m13, wm.m23));
+            OnFocusCamera?.Invoke(ctx.WorldPosition);
         }
 
         // ================================================================
@@ -418,10 +417,10 @@ namespace Poly_Ling.Player
             _                        => "未選択 — オブジェクトを選択してください",
         };
 
-        private string StatusText(ModelContext model) => _scope switch
+        private string StatusText(IModelView model) => _scope switch
         {
-            SubPanelScope.BonesOnly  => $"Bones: {model.BoneCount}  Selected: {model.SelectedBoneIndices.Count}",
-            SubPanelScope.MeshesOnly => $"Meshes: {model.DrawableCount}  Selected: {model.SelectedDrawableMeshIndices.Count}",
+            SubPanelScope.BonesOnly  => $"Bones: {model.BoneCount}  Selected: {model.SelectedBoneIndices.Length}",
+            SubPanelScope.MeshesOnly => $"Meshes: {model.DrawableCount}  Selected: {model.SelectedDrawableIndices.Length}",
             _                        => $"Bones: {model.BoneCount}  Meshes: {model.DrawableCount}",
         };
 

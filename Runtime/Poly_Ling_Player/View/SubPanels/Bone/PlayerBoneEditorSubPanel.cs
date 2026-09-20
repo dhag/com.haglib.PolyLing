@@ -36,7 +36,8 @@ namespace Poly_Ling.Player
         // コールバック
         // ================================================================
 
-        public Func<ModelContext>        GetModel;
+        /// <summary>モデルの窓口（操作経路統一計画.md E）。本体では現物を読む PlayerModelView。</summary>
+        public Func<Poly_Ling.View.IModelView> GetModel;
         public Action                    OnRepaint;
         public Action<Vector3>           OnFocusCamera;
         public Func<int>                 GetModelIndex;
@@ -440,7 +441,7 @@ namespace Poly_Ling.Player
             _bonePoseActiveToggle.RegisterValueChangedCallback(e =>
             {
                 var model = GetModel?.Invoke();
-                if (model == null || !model.HasBoneSelection) return;
+                if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
                 SendCommand(new SetBonePoseActiveCommand(
                     GetModelIndex?.Invoke() ?? 0, model.SelectedBoneIndices.ToArray(), e.newValue));
             });
@@ -458,21 +459,21 @@ namespace Poly_Ling.Player
             _btnInitPose.clicked += () =>
             {
                 var model = GetModel?.Invoke();
-                if (model == null || !model.HasBoneSelection) return;
+                if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
                 SendCommand(new InitBonePoseCommand(GetModelIndex?.Invoke() ?? 0,
                     model.SelectedBoneIndices.ToArray()));
             };
             _btnResetLayers.clicked += () =>
             {
                 var model = GetModel?.Invoke();
-                if (model == null || !model.HasBoneSelection) return;
+                if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
                 SendCommand(new ResetBonePoseLayersCommand(GetModelIndex?.Invoke() ?? 0,
                     model.SelectedBoneIndices.ToArray()));
             };
             _btnBakePose.clicked += () =>
             {
                 var model = GetModel?.Invoke();
-                if (model == null || !model.HasBoneSelection) return;
+                if (model == null || !(model.SelectedBoneIndices.Length > 0)) return;
                 SendCommand(new BakePoseToBindPoseCommand(GetModelIndex?.Invoke() ?? 0,
                     model.SelectedBoneIndices.ToArray()));
             };

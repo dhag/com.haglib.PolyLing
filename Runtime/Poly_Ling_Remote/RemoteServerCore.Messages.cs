@@ -93,6 +93,9 @@ namespace Poly_Ling.Remote
                 case "mesh_data":         return ProcessMeshDataQuery(msg);
                 case "mesh_data_batch":   return ProcessMeshDataBatchQuery(msg);
 
+                // リモートからのヒエラルキー書き出し：プロジェクト全体の PLRF 束（要求者にだけ返す）。
+                case "project_bundle":    return ProcessProjectBundleQuery(msg);
+
                 // probe クライアント用（リスト系とは別データ・テキスト応答）。
                 case "server_info":       return BuildSuccessResponse(msg.Id, BuildServerInfoData());
 
@@ -319,7 +322,9 @@ namespace Poly_Ling.Remote
             // selectMesh をここで横取りし、本体へは流さない。
             // これをやらないと A の選択が B の画面まで飛び、担当を分けても
             // 同時作業ができなくなる。
-            if (cmd is SelectMeshCommand sel)
+            // ただしホストと同じ名前（同一人物の別窓）の選択は横取りせず本体へ流す。
+            // 本体の選択が変わると CheckSelectionChanged が同名の窓へ送り返す。
+            if (cmd is SelectMeshCommand sel && requester != HostUserName)
                 return HandleRemoteSelect(msg, channel, requester, sel);
 
             // ── 所有権ゲートはディスパッチャが操作者を見て行う ──────────
@@ -376,6 +381,11 @@ namespace Poly_Ling.Remote
 
         private CommandResult DispatchWithSelectionOf(string userName, PanelCommand cmd, CommandActor actor)
         {
+            // ホストと同名（同一人物の別窓）は本体の選択そのものを使う。
+            // 差し替えると実行後に元へ戻され、選択コマンドの結果が消えるため。
+            if (userName == HostUserName)
+                return Invoke(cmd, actor);
+
             var model = Context?.Model;
             var slot  = _selectionStore.Find(userName);
 

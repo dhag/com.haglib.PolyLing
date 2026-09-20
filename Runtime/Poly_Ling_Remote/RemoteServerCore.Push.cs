@@ -115,6 +115,18 @@ namespace Poly_Ling.Remote
         /// </summary>
         public void NotifySelectionChanged() => CheckSelectionChanged();
 
+        /// <summary>
+        /// ホストでプロジェクト／現在モデルが入れ替わったとき（ファイル読込・インポート・モデル切替）に呼ぶ。
+        /// 監視先を現在のモデルへ付け替え、全クライアントへ再取得（refreshRequired）を促す。
+        /// 付け替えないと、起動時のモデルを監視したままになり一覧変更の push が出ない。
+        /// </summary>
+        public void NotifyProjectReplaced()
+        {
+            if (!IsRunning) return;
+            SubscribeModel();
+            BroadcastAsync(BuildPushMessage("refreshRequired", "{}"));
+        }
+
         private void CheckSelectionChanged()
         {
             var proj  = Context?.Project;
@@ -127,8 +139,12 @@ namespace Poly_Ling.Remote
 
             // ホストの選択スロットを最新化する。
             // 差し替えスコープの復帰値もここが基準になる。
-            _selectionStore.Set(HostUserName,
-                UserSelection.Capture(model, proj.CurrentModelIndex));
+            var hostSlot = UserSelection.Capture(model, proj.CurrentModelIndex);
+            _selectionStore.Set(HostUserName, hostSlot);
+
+            // ホストと同じ名前で登録したクライアント（同一人物の別窓）にだけ届ける。
+            // 別名のユーザーには送らないので、協働編集で他人の画面は動かない。
+            SendSelectionToUser(HostUserName, hostSlot);
         }
 
         private static string CsvIndices(System.Collections.Generic.List<int> list)

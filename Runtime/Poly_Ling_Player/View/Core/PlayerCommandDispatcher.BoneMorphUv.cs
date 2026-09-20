@@ -251,6 +251,110 @@ namespace Poly_Ling.Player
                 // ── モーフプレビュー
                 // 開始と重み変更では通知しない。頂点位置の GPU 反映は
                 // MeshListOps.SyncPositionsOnly（GetMeshListOps で配線）が担う。
+                // ── モーフエクスプレッションの編集（パネルが直接書き換えていたものを移した。Undo も同じ記録）
+                case SetMorphExpressionAttributesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"モーフエクスプレッション {c.SetIndex} がありません"); return true; }
+                    var set = model.MorphExpressions[c.SetIndex];
+                    int panel = System.Math.Clamp(c.Panel, 0, 3);
+                    if (c.Name == set.Name && c.NameEnglish == set.NameEnglish && panel == set.Panel) return true;
+                    var rec = new MorphExpressionEditRecord { SetIndex = c.SetIndex, OldSnapshot = set.Clone() };
+                    set.Name = c.Name; set.NameEnglish = c.NameEnglish; set.Panel = panel;
+                    rec.NewSnapshot = set.Clone();
+                    RecordMeshListUndo(rec, $"モーフエクスプレッション属性変更: {set.Name}");
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+                case DeleteMorphExpressionCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"モーフエクスプレッション {c.SetIndex} がありません"); return true; }
+                    var set = model.MorphExpressions[c.SetIndex];
+                    RecordMeshListUndo(new MorphExpressionChangeRecord { RemovedExpression = set.Clone(), RemovedIndex = c.SetIndex },
+                        $"モーフエクスプレッション削除: {set.Name}");
+                    model.MorphExpressions.RemoveAt(c.SetIndex);
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+                case SetMorphEntryWeightsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressionCount) { Fail($"モーフエクスプレッション {c.SetIndex} がありません"); return true; }
+                    if (c.EntryIndices.Length != c.Weights.Length) { Fail("エントリ番号とウェイトの数が違います"); return true; }
+                    var set = model.MorphExpressions[c.SetIndex];
+                    var before = set.Clone();
+                    bool changed = false;
+                    for (int k = 0; k < c.EntryIndices.Length; k++)
+                    {
+                        int ei = c.EntryIndices[k];
+                        if (ei < 0 || ei >= set.MeshEntries.Count) { Fail($"エントリ {ei} がありません"); return true; }
+                        var e = set.MeshEntries[ei];
+                        if (Mathf.Abs(e.Weight - c.Weights[k]) <= 0.0001f) continue;
+                        e.Weight = c.Weights[k];
+                        set.MeshEntries[ei] = e;
+                        changed = true;
+                    }
+                    if (!changed) return true;
+                    RecordMeshListUndo(new MorphExpressionEditRecord { SetIndex = c.SetIndex, OldSnapshot = before, NewSnapshot = set.Clone() },
+                        $"モーフウェイト変更: {set.Name}");
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+                case ExpandMorphExpressionToModelCommand c:
+                {
+                    // 従来 PlayerMorphCreateSubPanel が直接行っていた処理を受け口へ移した。
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (c.SetIndex < 0 || c.SetIndex >= model.MorphExpressions.Count) { Fail("MorphExpression を選択してください"); return true; }
+                    var expr = model.MorphExpressions[c.SetIndex];
+                    var newModel = new ModelContext { Name = expr.Name + "_expanded" };
+                    int expandedCount = 0;
+                    foreach (var entry in expr.MeshEntries)
+                    {
+                        int meshIdx = entry.MeshIndex;
+                        if (meshIdx < 0 || meshIdx >= model.Count) continue;
+                        var morphCtx = model.GetMeshContext(meshIdx);
+                        if (morphCtx == null || !morphCtx.IsMorph) continue;
+                        var expandedObj = morphCtx.MeshObject.Clone();
+                        expandedObj.Type = MeshType.Mesh;
+                        newModel.Add(new MeshContext { Name = morphCtx.Name, MeshObject = expandedObj, IsVisible = true });
+                        expandedCount++;
+                    }
+                    if (expandedCount == 0) { Fail("展開できるモーフメッシュがありませんでした"); return true; }
+                    project.AddModel(newModel);
+                    _rebuildModelList?.Invoke();
+                    ReportData(CommandDataJson.New().Int("expanded", expandedCount).Text("modelName", newModel.Name).Build());
+                    return true;
+                }
+
+                case ImportMorphCsvCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    string log = null;
+                    var oldSets = new System.Collections.Generic.List<MorphExpression>();
+                    foreach (var s in model.MorphExpressions) oldSets.Add(s.Clone());
+                    var (imported, overwritten, unmatched) = Poly_Ling.UI.MorphCsvIO.ImportFromPath(model, c.Path, m => log = m);
+                    if (imported == 0) { Fail(log ?? "読み込めませんでした"); return true; }
+                    var newSets = new System.Collections.Generic.List<MorphExpression>();
+                    foreach (var s in model.MorphExpressions) newSets.Add(s.Clone());
+                    RecordMeshListUndo(new MorphExpressionListReplaceRecord { OldSets = oldSets, NewSets = newSets }, $"CSVインポート: {imported}セット");
+                    model.IsDirty = true;
+                    ReportData(CommandDataJson.New().Int("imported", imported).Int("overwritten", overwritten).Int("unmatched", unmatched).Build());
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+                case ExportMorphCsvCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    string log = null;
+                    Poly_Ling.UI.MorphCsvIO.ExportToPath(model, c.Path, m => log = m);
+                    if (log != null) ReportData(CommandDataJson.New().Text("message", log).Build());
+                    return true;
+                }
+
                 case StartMorphPreviewCommand c:
                     if (model == null) { Fail("no current model"); return true; }
                     GetMeshListOps(model).StartMorphPreview(c.MorphIndices);
@@ -385,6 +489,24 @@ namespace Poly_Ling.Player
                 }
 
                 // ── マテリアルスロット追加
+                case SetCurrentMaterialSlotCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (c.SlotIndex < 0 || c.SlotIndex >= model.MaterialCount)
+                    { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
+                    model.CurrentMaterialIndex = c.SlotIndex;
+                    // 従来パネルが行っていた既定マテリアルの自動控え（AutoSetDefaultMaterials）。
+                    if (model.AutoSetDefaultMaterials && model.MaterialCount > 0)
+                    {
+                        model.DefaultMaterials = new System.Collections.Generic.List<UnityEngine.Material>(model.Materials);
+                        model.DefaultCurrentMaterialIndex = model.CurrentMaterialIndex;
+                    }
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
                 case AddMaterialSlotCommand _:
                 {
                     if (model == null) { Fail("no current model"); return true; }
@@ -460,7 +582,14 @@ namespace Poly_Ling.Player
                         _undoController.MeshUndoContext.ParentModelContext = model;
                     }
                     var matBefore = _undoController?.CaptureMeshObjectSnapshotOf(matMc);
-                    foreach (int fi in c.FaceIndices)
+                    // 面の指定が空なら対象メッシュの今の選択面（パネルは面の索引を持たない。操作経路統一計画.md E）。
+                    int[] applyFaces = (c.FaceIndices != null && c.FaceIndices.Length > 0)
+                        ? c.FaceIndices
+                        : (matMc.Selection?.Faces != null
+                            ? new System.Collections.Generic.List<int>(matMc.Selection.Faces).ToArray()
+                            : System.Array.Empty<int>());
+                    if (applyFaces.Length == 0) { Fail("面が選択されていません"); return true; }
+                    foreach (int fi in applyFaces)
                         if (fi >= 0 && fi < matMc.MeshObject.FaceCount)
                             matMc.MeshObject.Faces[fi].MaterialIndex = c.MaterialSlot;
                     if (_undoController != null && matBefore != null)

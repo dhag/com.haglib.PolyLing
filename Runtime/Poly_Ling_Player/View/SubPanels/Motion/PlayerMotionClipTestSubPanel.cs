@@ -34,15 +34,17 @@ using Poly_Ling.UndoSystem;
 using Poly_Ling.VMD;
 using Poly_Ling.UnityClip;
 using Poly_Ling.Motion;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
     public class PlayerMotionClipTestSubPanel
     {
         // ── コールバック ──────────────────────────────────────────────────
-        public Func<ModelContext>  GetModel;
-        public Func<ToolContext>   GetToolContext;
-        public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
+        /// <summary>モデルの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IModelView> GetModel;
+        /// <summary>ツールの窓口。クリップの読み込み・フレーム適用は "motionClip"（MotionClipHandler）で行う。</summary>
+        public Poly_Ling.Data.IToolSurface Surface;
 
         /// <summary>現在のモデル番号（コマンドの宛先）。</summary>
         public Func<int> GetModelIndex;
@@ -50,16 +52,11 @@ namespace Poly_Ling.Player
         /// <summary>コマンドの発行口（JSON 保存は ExportMotionJsonCommand を通す）。</summary>
         public Action<Poly_Ling.Data.PanelCommand> SendCommand;
 
-        /// <summary>フレーム適用後に呼ぶ。GPU メッシュ再スキンを core 側で起こすため。</summary>
-        public Action OnFrameApplied;
-
         // ── ソース種別 ────────────────────────────────────────────────────
         private static readonly List<string> SourceChoices =
             new List<string> { "VMD", "UnityClip JSON", "統合JSON" };
 
         // ── 状態 ──────────────────────────────────────────────────────────
-        private MotionClipDTO    _dto;
-        private MotionClipApplier _applier;
         private float            _currentTime;   // 秒
         private float            _maxTime;       // 秒
         private string           _filePath;
@@ -134,14 +131,16 @@ namespace Poly_Ling.Player
         private Label         _reportLabel;
 
         // 直近の読込の検査結果（統合JSON のときだけ）。
-        private MotionClipLoadResult _loadResult;
 
         private const string PathKey     = "MotionClip.Path";
         private const string BindPathKey = "MotionClip.Bind.Path";
         private const string SourceKey   = "MotionClip.Source";
 
-        private ModelContext Model => GetModel?.Invoke();
-        private float FrameRate => _dto != null && _dto.frameRate > 0f ? _dto.frameRate : 30f;
+        private Poly_Ling.View.IModelView Model => GetModel?.Invoke();
+        private float FrameRate => HasClip ? (Surface?.GetFloat(Tool, "frameRate") ?? 30f) : 30f;
+        /// <summary>モーションの試し再生のツールの窓口名（MotionClipHandler）。</summary>
+        private const string Tool = "motionClip";
+        private bool HasClip => Surface != null && Surface.GetBool(Tool, "clipLoaded");
 
         // ================================================================
         // Build
@@ -268,7 +267,7 @@ namespace Poly_Ling.Player
             _timeInput = new FloatField { value = 0f }; _timeInput.style.width = 70;
             _timeInput.RegisterValueChangedCallback(e =>
             {
-                if (_dto == null) return;
+                if (!HasClip) return;
                 _currentTime = Mathf.Clamp(e.newValue, 0f, _maxTime);
                 UpdateSlider();
                 UpdateTimeLabel();
@@ -279,15 +278,15 @@ namespace Poly_Ling.Player
 
             var nav1 = new VisualElement(); nav1.style.flexDirection = FlexDirection.Row; nav1.style.marginBottom = 2;
             _btnTimeFirst = MkNavBtn(nav1, "|◀",  () => { _currentTime = 0; Sync(); });
-            _btnTimePrev  = MkNavBtn(nav1, "◀1", () => { if (_dto != null) { _currentTime = Mathf.Max(0f, _currentTime - Step()); Sync(); } });
-            _btnTime25    = MkNavBtn(nav1, "25%", () => { if (_dto != null) { _currentTime = _maxTime * 0.25f; Sync(); } });
-            _btnTime50    = MkNavBtn(nav1, "50%", () => { if (_dto != null) { _currentTime = _maxTime * 0.5f;  Sync(); } });
-            _btnTime75    = MkNavBtn(nav1, "75%", () => { if (_dto != null) { _currentTime = _maxTime * 0.75f; Sync(); } });
-            _btnTimeNext  = MkNavBtn(nav1, "1▶", () => { if (_dto != null) { _currentTime = Mathf.Min(_maxTime, _currentTime + Step()); Sync(); } });
-            _btnTimeLast  = MkNavBtn(nav1, "▶|", () => { if (_dto != null) { _currentTime = _maxTime; Sync(); } });
+            _btnTimePrev  = MkNavBtn(nav1, "◀1", () => { if (HasClip) { _currentTime = Mathf.Max(0f, _currentTime - Step()); Sync(); } });
+            _btnTime25    = MkNavBtn(nav1, "25%", () => { if (HasClip) { _currentTime = _maxTime * 0.25f; Sync(); } });
+            _btnTime50    = MkNavBtn(nav1, "50%", () => { if (HasClip) { _currentTime = _maxTime * 0.5f;  Sync(); } });
+            _btnTime75    = MkNavBtn(nav1, "75%", () => { if (HasClip) { _currentTime = _maxTime * 0.75f; Sync(); } });
+            _btnTimeNext  = MkNavBtn(nav1, "1▶", () => { if (HasClip) { _currentTime = Mathf.Min(_maxTime, _currentTime + Step()); Sync(); } });
+            _btnTimeLast  = MkNavBtn(nav1, "▶|", () => { if (HasClip) { _currentTime = _maxTime; Sync(); } });
             root.Add(nav1);
 
-            var resetBtn = new Button(ResetPose) { text = "ポーズリセット" };
+            var resetBtn = new Button(() => Surface?.Invoke(Tool, "resetPose")) { text = "ポーズリセット" };
             resetBtn.style.marginBottom = 4;
             root.Add(resetBtn);
             _btnResetPose = resetBtn;
@@ -304,12 +303,11 @@ namespace Poly_Ling.Player
             var scaleLbl = new Label("PositionScale");
             scaleLbl.style.width = 90; scaleLbl.style.fontSize = 10;
             scaleLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            _scaleField = new FloatField { value = _applier?.PositionScale ?? 1f };
+            _scaleField = new FloatField { value = Surface?.GetFloat(Tool, "positionScale") ?? 1f };
             _scaleField.style.flexGrow = 1;
             _scaleField.RegisterValueChangedCallback(e =>
             {
-                if (_applier != null) _applier.PositionScale = e.newValue;
-                if (_dto != null) ApplyFrame();
+                Surface?.Invoke(Tool, "setPositionScale", ("scale", e.newValue), ("time", _currentTime));
             });
             scaleRow.Add(scaleLbl); scaleRow.Add(_scaleField);
             root.Add(scaleRow);
@@ -331,42 +329,38 @@ namespace Poly_Ling.Player
             var model = Model;
             if (_modelLabel != null)
                 _modelLabel.text = model != null
-                    ? $"✓ {model.Name}  ({model.Bones.Count()} bones)"
+                    ? $"✓ {model.Name}  ({model.BoneCount} bones)"
                     : "(No model loaded)";
 
             if (_fileLabel != null)
                 _fileLabel.text = string.IsNullOrEmpty(_filePath) ? "(None)" : Path.GetFileName(_filePath);
-            if (_btnClear  != null) _btnClear.SetEnabled(_dto != null);
+            if (_btnClear  != null) _btnClear.SetEnabled(HasClip);
             if (_btnReload != null) _btnReload.SetEnabled(!string.IsNullOrEmpty(_filePath));
 
             if (_clipSection == null) return;
-            bool hasClip = _dto != null;
+            bool hasClip = HasClip;
             _clipSection.style.display = hasClip ? DisplayStyle.Flex : DisplayStyle.None;
             if (!hasClip) return;
 
-            int trackCount = TrackCount(_dto);
+            int trackCount = Surface.GetInt(Tool, "trackTotal");
+            var counts = Surface.Get(Tool, "trackCounts", Array.Empty<int>());
+            int C(int i) => i < counts.Length ? counts[i] : 0;
             if (_clipInfoLabel != null)
                 _clipInfoLabel.text =
-                    $"Clip: {_dto.name}\n" +
+                    $"Clip: {Surface.GetString(Tool, "clipName")}\n" +
                     $"Length: {_maxTime:F2}s  (@ {FrameRate:F0}fps)\n" +
-                    $"Bone: {(_dto.bones?.Count ?? 0)}  Baked: {(_dto.bakedBones?.Count ?? 0)}  " +
-                    $"Muscle: {(_dto.muscles?.Count ?? 0)}  Expr: {(_dto.expressions?.Count ?? 0)}";
+                    $"Bone: {C(0)}  Baked: {C(1)}  " +
+                    $"Muscle: {C(2)}  Expr: {C(3)}";
 
-            if (_clipMatchLabel != null && model != null && _applier != null)
+            if (_clipMatchLabel != null && model != null)
             {
-                float rate = trackCount > 0 ? (float)_applier.MatchedTrackCount / trackCount : 0f;
-                _clipMatchLabel.text = $"Matched: {_applier.MatchedTrackCount}/{trackCount} ({rate:P0})";
+                int matched = Surface.GetInt(Tool, "matchedTrackCount");
+                float rate = trackCount > 0 ? (float)matched / trackCount : 0f;
+                _clipMatchLabel.text = $"Matched: {matched}/{trackCount} ({rate:P0})";
             }
 
             if (_reportLabel != null)
-            {
-                string text = "";
-                if (_loadResult != null && _loadResult.Issues.Count > 0)
-                    text = $"検査: エラー {_loadResult.ErrorCount} / 警告 {_loadResult.WarningCount}\n{_loadResult.FormatIssues(8)}\n";
-                if (_applier != null)
-                    text += _applier.BindingReport.ToText(8);
-                _reportLabel.text = text;
-            }
+                _reportLabel.text = Surface.GetString(Tool, "reportText");
 
             UpdateSlider();
             UpdateTimeLabel();
@@ -375,27 +369,23 @@ namespace Poly_Ling.Player
 
         private void RefreshBoneList()
         {
-            if (_boneListContainer == null || _dto == null) return;
+            if (_boneListContainer == null || !HasClip) return;
             _boneListContainer.Clear();
 
-            var all = new List<MotionTrackDTO>();
-            if (_dto.bones != null)      all.AddRange(_dto.bones);
-            if (_dto.bakedBones != null) all.AddRange(_dto.bakedBones);
-
-            foreach (var track in all.Take(50))
+            var lines   = Surface.Get(Tool, "trackLines", Array.Empty<string>());
+            var matched = Surface.Get(Tool, "trackMatched", Array.Empty<bool>());
+            int total   = Surface.GetInt(Tool, "trackTotal");
+            for (int i = 0; i < lines.Length; i++)
             {
-                if (track == null) continue;
-                bool matched = Model != null && _applier != null && _applier.IsTrackMatched(track);
-                bool conflicted = _applier != null && _applier.IsTrackConflicted(track);
-                int keys = track.keys?.Count ?? 0;
-                var lbl = new Label($"{(matched ? "✓" : conflicted ? "⚠" : "✗")} [{track.targetKind}] {track.id} ({keys} keys){(conflicted ? " 競合" : "")}");
+                bool ok = i < matched.Length && matched[i];
+                var lbl = new Label(lines[i]);
                 lbl.style.fontSize = 10;
-                lbl.style.color    = new StyleColor(matched ? new Color(0.5f, 0.9f, 0.5f) : new Color(0.8f, 0.4f, 0.4f));
+                lbl.style.color    = new StyleColor(ok ? new Color(0.5f, 0.9f, 0.5f) : new Color(0.8f, 0.4f, 0.4f));
                 _boneListContainer.Add(lbl);
             }
-            int rem = all.Count - 50;
+            int rem = total - 50;
             if (rem > 0) { var l = new Label($"  ...他 {rem} トラック"); l.style.fontSize = 9; _boneListContainer.Add(l); }
-            if (_boneListFoldout != null) _boneListFoldout.text = $"Tracks ({all.Count})";
+            if (_boneListFoldout != null) _boneListFoldout.text = $"Tracks ({total})";
         }
 
         // ================================================================
@@ -416,29 +406,18 @@ namespace Poly_Ling.Player
         {
             if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
             if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
-            try
-            {
-                _dto = LoadDtoBySource(path);
-                if (_dto == null) { SetStatus("読込み結果が空です"); return; }
 
-                _filePath    = path;
-                _currentTime = 0f;
-                _maxTime     = ComputeMaxTime(_dto);
-                EnsureApplier();
-                ApplySourceDefaults();
-                _applier.SetClip(_dto);
+            // 読み込み・対応付け・フレーム適用はツールの窓口 "motionClip" が本体側で行う。
+            Surface?.Invoke(Tool, "load", ("path", path), ("sourceKind", _sourceKind), ("time", 0f));
+            string err = Surface?.GetString(Tool, "error") ?? "";
+            if (!string.IsNullOrEmpty(err)) { SetStatus($"読込み失敗: {err}"); return; }
 
-                var model = Model;
-                if (model != null) { _applier.BuildMapping(model); ApplyFrame(); }
-
-                SetStatus($"読込み完了: {Path.GetFileName(path)}");
-                RefreshAll();
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"読込み失敗: {ex.Message}");
-                UnityEngine.Debug.LogError($"[PlayerMotionClipTestSubPanel] {ex}");
-            }
+            _filePath    = path;
+            _currentTime = 0f;
+            _maxTime     = Surface.GetFloat(Tool, "clipLength");
+            _scaleField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "positionScale"));
+            SetStatus($"読込み完了: {Path.GetFileName(path)}");
+            RefreshAll();
         }
 
         // ソース種別に応じて PositionScale の既定値を設定する。
@@ -455,57 +434,22 @@ namespace Poly_Ling.Player
         // 注意: MotionClipApplier.PositionScale は boneName トラック（自前適用）と
         //       path/humanoid トラック（UnityClipApplier へ委譲）の両方に同じ値が掛かる。
         //       混在クリップでは単位系を揃えてから読み込むこと。
-        private void ApplySourceDefaults()
-        {
-            if (_applier == null) return;
-
-            float scale = 1f;
-            if (_sourceKind == 0)
-            {
-                var es = GetUndoController?.Invoke()?.EditorState;
-                scale = es != null ? es.PmxUnityRatio : 0.1f;
-            }
-
-            _applier.PositionScale = scale;
-            _scaleField?.SetValueWithoutNotify(scale);
-        }
-
-        // ソース種別に応じて読み込み、MotionClipDTO へ変換する。
-        // 統合JSON は検査結果を _loadResult に残し、エラーがあれば例外にする。
-        private MotionClipDTO LoadDtoBySource(string path)
-        {
-            _loadResult = null;
-            switch (_sourceKind)
-            {
-                case 0: // VMD
-                    return MotionClipConverters.FromVMD(VMDData.LoadFromFile(path));
-                case 1: // UnityClip JSON
-                    return MotionClipConverters.FromUnityClipDTO(UnityClipSerializer.LoadJson(path));
-                default: // 統合JSON
-                {
-                    _loadResult = MotionClipSerializer.Load(path);
-                    if (_loadResult.Dto == null)
-                        throw new InvalidDataException(_loadResult.FormatIssues(8));
-                    return _loadResult.Dto;
-                }
-            }
-        }
-
-        // 表情適用で WorkingPositions を変えた基準メッシュの表示を更新させる。
-        private void EnsureApplier()
-        {
-            if (_applier == null) _applier = new MotionClipApplier();
-            _applier.SyncMeshPositions = ctx => GetToolContext?.Invoke()?.SyncMeshContextPositionsOnly?.Invoke(ctx);
-        }
+        // 位置の倍率の既定値（VMD は PmxUnityRatio、他は 1）と読み込みは MotionClipHandler.Load が行う。
+        // 注意: MotionClipApplier.PositionScale は boneName トラック（自前適用）と
+        //       path/humanoid トラック（UnityClipApplier へ委譲）の両方に同じ値が掛かる。
+        //       混在クリップでは単位系を揃えてから読み込むこと。
+        //       統合 JSON は生成元の単位系を DTO から判別できないため 1 を既定とする
+        //       （MotionClipDTO に単位系フィールドが無いことが根本原因）。
 
         // 「JSON保存」: 読み込んだ元ファイルを ExportMotionJsonCommand で変換・書き出す。
         // パネル内の DTO は元ファイルから決まるので、コマンドの結果と同じものになる。
         private void OnSaveJson()
         {
-            if (_dto == null || string.IsNullOrEmpty(_filePath)) { SetStatus("クリップを読み込んでください"); return; }
+            if (!HasClip || string.IsNullOrEmpty(_filePath)) { SetStatus("クリップを読み込んでください"); return; }
             if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
 
-            string defName = !string.IsNullOrEmpty(_dto.name) ? _dto.name : Path.GetFileNameWithoutExtension(_filePath);
+            string defName = Surface?.GetString(Tool, "clipName");
+            if (string.IsNullOrEmpty(defName)) defName = Path.GetFileNameWithoutExtension(_filePath);
             string outPath = SaveDest.AskSavePath(
                 "PolyLing モーション JSON の保存", SaveDest.Keys.Motion, "", defName + ".plmotion.json", "json");
             if (string.IsNullOrEmpty(outPath)) return;
@@ -544,35 +488,24 @@ namespace Poly_Ling.Player
         {
             if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
             if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
-            try
-            {
-                string text = File.ReadAllText(path);
-                EnsureApplier();
-                int n = _applier.LoadSourceRestCsv(text);
 
-                var model = Model;
-                if (model != null) _applier.BuildMapping(model);
+            Surface?.Invoke(Tool, "loadBind", ("path", path), ("time", _currentTime));
+            string err = Surface?.GetString(Tool, "error") ?? "";
+            if (!string.IsNullOrEmpty(err)) { SetStatus($"バインドポーズ読込失敗: {err}"); return; }
 
-                if (_bindPoseLabel != null)
-                    _bindPoseLabel.text = n > 0 ? $"✓ {Path.GetFileName(path)} ({n} bones)" : "(0 bones)";
-
-                if (_dto != null) ApplyFrame();
-                SetStatus(n > 0
-                    ? $"バインドポーズ読込: {n} bones（リターゲット有効）"
-                    : "バインドポーズ: Humanoid 行が見つかりません");
-                RefreshAll();
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"バインドポーズ読込失敗: {ex.Message}");
-                UnityEngine.Debug.LogError($"[PlayerMotionClipTestSubPanel] {ex}");
-            }
+            int n = Surface.GetInt(Tool, "bindBoneCount");
+            if (_bindPoseLabel != null)
+                _bindPoseLabel.text = n > 0 ? $"✓ {Path.GetFileName(path)} ({n} bones)" : "(0 bones)";
+            SetStatus(n > 0
+                ? $"バインドポーズ読込: {n} bones（リターゲット有効）"
+                : "バインドポーズ: Humanoid 行が見つかりません");
+            RefreshAll();
         }
 
         private void Clear()
         {
-            ResetPose();
-            _dto = null; _filePath = null; _currentTime = 0f; _maxTime = 0f;
+            Surface?.Invoke(Tool, "clear");
+            _filePath = null; _currentTime = 0f; _maxTime = 0f;
             SetStatus("クリアしました");
             RefreshAll();
         }
@@ -583,35 +516,23 @@ namespace Poly_Ling.Player
             string path = _filePath;
             float  time = _currentTime;
             Clear();
-            try
-            {
-                _dto = LoadDtoBySource(path); _filePath = path;
-                _maxTime = ComputeMaxTime(_dto);
-                _currentTime = Mathf.Clamp(time, 0f, _maxTime);
-                EnsureApplier();
-                ApplySourceDefaults();
-                _applier.SetClip(_dto);
-                var model = Model;
-                if (model != null) { _applier.BuildMapping(model); ApplyFrame(); }
-                RefreshAll();
-            }
-            catch (Exception ex) { SetStatus($"再読込み失敗: {ex.Message}"); }
+
+            Surface?.Invoke(Tool, "load", ("path", path), ("sourceKind", _sourceKind), ("time", 0f));
+            string err = Surface?.GetString(Tool, "error") ?? "";
+            if (!string.IsNullOrEmpty(err)) { SetStatus($"再読込み失敗: {err}"); return; }
+
+            _filePath    = path;
+            _maxTime     = Surface.GetFloat(Tool, "clipLength");
+            _currentTime = Mathf.Clamp(time, 0f, _maxTime);
+            _scaleField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "positionScale"));
+            ApplyFrame();
+            RefreshAll();
         }
 
         private void ApplyFrame()
         {
-            if (_dto == null || Model == null || _applier == null) return;
-            _applier.ApplyFrame(Model, _currentTime);
-            OnFrameApplied?.Invoke();
-            GetToolContext?.Invoke()?.Repaint?.Invoke();
-        }
-
-        private void ResetPose()
-        {
-            if (Model == null || _applier == null) return;
-            _applier.ResetAllBones(Model);
-            OnFrameApplied?.Invoke();
-            GetToolContext?.Invoke()?.Repaint?.Invoke();
+            if (!HasClip || Model == null) return;
+            Surface?.Invoke(Tool, "setTime", ("time", _currentTime));
         }
 
         private void Sync()
@@ -625,7 +546,7 @@ namespace Poly_Ling.Player
 
         private void UpdateSlider()
         {
-            if (_timeSlider == null || _dto == null) return;
+            if (_timeSlider == null || !HasClip) return;
             _timeSlider.highValue = Mathf.Max(0.0001f, _maxTime);
             _timeSlider.SetValueWithoutNotify(_currentTime);
             _timeInput?.SetValueWithoutNotify(_currentTime);

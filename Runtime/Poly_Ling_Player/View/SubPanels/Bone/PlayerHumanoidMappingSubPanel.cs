@@ -22,8 +22,8 @@ namespace Poly_Ling.Player
 {
     public class PlayerHumanoidMappingSubPanel
     {
-        public Func<ModelContext>  GetModel;
-        public Func<ToolContext>   GetToolContext;
+        /// <summary>モデルの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IModelView> GetModel;
         public Action<PanelCommand> SendCommand;
         public Func<int>            GetModelIndex;
 
@@ -100,9 +100,9 @@ namespace Poly_Ling.Player
         private Button     _btnClearRetarget;
 
         /// <summary>直前に欄へ読み込んだモデル。変わったら読み直す。</summary>
-        private ModelContext _retargetLoadedModel;
+        private string _retargetLoadedKey;
 
-        private ModelContext Model => GetModel?.Invoke();
+        private Poly_Ling.View.IModelView Model => GetModel?.Invoke();
 
         public void Build(VisualElement parent)
         {
@@ -284,9 +284,10 @@ namespace Poly_Ling.Player
         /// Refresh からは「モデルが変わったとき」だけ呼ぶ。毎回入れると
         /// 入力中のスライダーが戻ってしまう。
         /// </summary>
-        private void LoadRetargetFields(ModelContext model)
+        private void LoadRetargetFields(Poly_Ling.View.IModelView model)
         {
-            var a = AvatarRetargetOps.GetRetargetOrNew(model);
+            var a = model.AvatarRetarget;
+            if (a == null) return;
 
             _upperArmTwist?.SetValueWithoutNotify(a.UpperArmTwist);
             _lowerArmTwist?.SetValueWithoutNotify(a.LowerArmTwist);
@@ -355,15 +356,17 @@ namespace Poly_Ling.Player
             _warningLabel.style.display = DisplayStyle.None;
             UpdateModelMappingLabel(model);
 
-            // リターゲット設定は、モデルが変わったときだけ欄へ読み直す。
-            if (!ReferenceEquals(_retargetLoadedModel, model))
+            // リターゲット設定は、モデルが変わったときだけ欄へ読み直す
+            // （窓口の写しは毎回作り直すので、モデル索引と名前で同じモデルかを見る）。
+            string modelKey = $"{GetModelIndex?.Invoke() ?? 0}:{model.Name}";
+            if (_retargetLoadedKey != modelKey)
             {
-                _retargetLoadedModel = model;
+                _retargetLoadedKey = modelKey;
                 LoadRetargetFields(model);
             }
             if (_retargetStateLabel != null)
             {
-                _retargetStateLabel.text = (model.AvatarRetarget != null)
+                _retargetStateLabel.text = (model.AvatarRetarget?.IsSet ?? false)
                     ? "設定済み。Avatar 生成でこの値を使います。"
                     : "未設定。Avatar 生成は Unity の既定値を使います。";
             }
@@ -407,32 +410,13 @@ namespace Poly_Ling.Player
             UpdatePreviewUI();
         }
 
+        // 適用・クリアはコマンドだけで行う（パネルから直接行う予備経路は持たない。操作経路統一計画.md J）。
         private void OnApply()
         {
             if (_previewMapping == null || Model == null) return;
             int modelIdx = GetModelIndex?.Invoke() ?? 0;
-            if (SendCommand != null)
-            {
-                ApplyHumanoidMappingCommand.SplitMapping(_previewMapping, out var hmNames, out var hmIdx);
-                SendCommand.Invoke(new ApplyHumanoidMappingCommand(modelIdx, hmNames, hmIdx));
-                SetStatus($"適用しました ({_previewMapping.Count} ボーン)");
-                Refresh();
-                return;
-            }
-            // フォールバック
-            var tc     = GetToolContext?.Invoke();
-            var before = Model.HumanoidMapping.Clone();
-            Model.HumanoidMapping.CopyFrom(_previewMapping);
-            var after  = Model.HumanoidMapping.Clone();
-            var undo   = tc?.UndoController;
-            if (undo != null)
-            {
-                var __rec = new HumanoidMappingChangedRecord(before, after, "Apply Humanoid Mapping");
-                string __dbgDesc = "Apply Humanoid Mapping";
-                PLDiag.UndoRecord("MeshList", __dbgDesc, __rec);
-                undo.MeshListStack.Record(__rec, __dbgDesc);
-            }
-            Model.IsDirty = true;
+            ApplyHumanoidMappingCommand.SplitMapping(_previewMapping, out var hmNames, out var hmIdx);
+            SendCommand?.Invoke(new ApplyHumanoidMappingCommand(modelIdx, hmNames, hmIdx));
             SetStatus($"適用しました ({_previewMapping.Count} ボーン)");
             Refresh();
         }
@@ -440,30 +424,7 @@ namespace Poly_Ling.Player
         private void OnClear()
         {
             if (Model == null) return;
-            int modelIdx = GetModelIndex?.Invoke() ?? 0;
-            if (SendCommand != null)
-            {
-                SendCommand.Invoke(new ClearHumanoidMappingCommand(modelIdx));
-                _previewMapping = null;
-                SetStatus("マッピングをクリアしました");
-                UpdateModelMappingLabel(Model);
-                UpdatePreviewUI();
-                return;
-            }
-            // フォールバック
-            var tc     = GetToolContext?.Invoke();
-            var before = Model.HumanoidMapping.Clone();
-            Model.HumanoidMapping.ClearAll();
-            var after  = Model.HumanoidMapping.Clone();
-            var undo   = tc?.UndoController;
-            if (undo != null)
-            {
-                var __rec = new HumanoidMappingChangedRecord(before, after, "Clear Humanoid Mapping");
-                string __dbgDesc = "Clear Humanoid Mapping";
-                PLDiag.UndoRecord("MeshList", __dbgDesc, __rec);
-                undo.MeshListStack.Record(__rec, __dbgDesc);
-            }
-            Model.IsDirty   = true;
+            SendCommand?.Invoke(new ClearHumanoidMappingCommand(GetModelIndex?.Invoke() ?? 0));
             _previewMapping = null;
             SetStatus("マッピングをクリアしました");
             UpdateModelMappingLabel(Model);
@@ -514,17 +475,16 @@ namespace Poly_Ling.Player
 
             if (!_includeNonBoneContexts)
             {
-                foreach (var entry in model.Bones)
+                foreach (var entry in model.BoneList)
                 {
-                    var mc = model.GetMeshContext(entry.MasterIndex);
-                    if (mc != null && !string.IsNullOrEmpty(mc.Name)) names.Add(mc.Name);
+                    if (!string.IsNullOrEmpty(entry.Name)) names.Add(entry.Name);
                 }
                 return names;
             }
 
-            for (int i = 0; i < model.MeshContextCount; i++)
+            for (int i = 0; i < model.TotalMeshCount; i++)
             {
-                var mc = model.GetMeshContext(i);
+                var mc = model.GetMesh(i);
                 names.Add(mc != null && !string.IsNullOrEmpty(mc.Name) ? mc.Name : "");
             }
             return names;
@@ -535,7 +495,7 @@ namespace Poly_Ling.Player
         /// この Dict は保存対象で、humanoid.csv と bone.csv の humanBodyBone 列に
         /// 書き出され、読込時に再構築される（CsvModelSerializer / ModelSerializer）。
         /// </summary>
-        private void UpdateModelMappingLabel(ModelContext model)
+        private void UpdateModelMappingLabel(Poly_Ling.View.IModelView model)
         {
             if (_modelMappingLabel == null) return;
 
@@ -547,18 +507,18 @@ namespace Poly_Ling.Player
             }
             _modelMappingLabel.style.display = DisplayStyle.Flex;
 
-            var mapping = model.HumanoidMapping;
-            if (mapping == null || mapping.IsEmpty)
+            int count = model.HumanoidMappingCount;
+            if (count == 0)
             {
                 _modelMappingLabel.text  = "このモデル: マッピング未設定";
                 _modelMappingLabel.style.color = new StyleColor(new Color(1f, 0.7f, 0.4f));
                 return;
             }
 
-            int missing = mapping.GetMissingRequiredBones().Count;
+            int missing = model.HumanoidMissingRequiredCount;
             _modelMappingLabel.text = missing == 0
-                ? $"このモデル: マッピング設定済み {mapping.Count} ボーン（必須すべて割当済み。Avatar作成可）"
-                : $"このモデル: マッピング設定済み {mapping.Count} ボーン（必須未割当 {missing} 件）";
+                ? $"このモデル: マッピング設定済み {count} ボーン（必須すべて割当済み。Avatar作成可）"
+                : $"このモデル: マッピング設定済み {count} ボーン（必須未割当 {missing} 件）";
             _modelMappingLabel.style.color = new StyleColor(
                 missing == 0 ? new Color(0.5f, 0.9f, 0.5f) : new Color(1f, 0.85f, 0.4f));
         }
@@ -567,7 +527,7 @@ namespace Poly_Ling.Player
         /// 「ボーン以外も候補に含める」をボーン数から決める。
         /// ボーンが 1 本も無ければオン、あればオフ。Refresh のたびに無条件で上書きする。
         /// </summary>
-        private void SyncScopeToggleToBoneCount(ModelContext model)
+        private void SyncScopeToggleToBoneCount(Poly_Ling.View.IModelView model)
         {
             bool auto = (model != null && model.BoneCount == 0);
             _includeNonBoneContexts = auto;

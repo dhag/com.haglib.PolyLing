@@ -104,6 +104,16 @@ namespace Poly_Ling.Player
                 }
 
                 // ── オブジェクトグループ：解除（描画オブジェクトは消さない）
+                case PurgeObjectGroupsCommand:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    // 従来パネルが直接呼んでいた処理をそのまま受け口へ移した（Undo 記録なしは従来どおり）。
+                    int purged = ObjectGroupOps.PurgeMissing(project, model);
+                    ReportData(CommandDataJson.New().Int("purged", purged).Build());
+                    _notifyPanels?.Invoke(ChangeKind.ListStructure);
+                    return true;
+                }
+
                 case DeleteObjectGroupCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
@@ -573,6 +583,14 @@ namespace Poly_Ling.Player
         {
             if (_undoController == null || record == null) return;
             _undoController.MeshListStack.Record(record, description);
+        }
+
+        /// <summary>オブジェクト一覧の Undo スタックへ記録し、Undo の対象を一覧へ向ける（モーフエクスプレッション等）。</summary>
+        private void RecordMeshListUndo(Poly_Ling.UndoSystem.MeshListUndoRecord record, string description)
+        {
+            if (_undoController == null || record == null) return;
+            _undoController.MeshListStack.Record(record, description);
+            _undoController.FocusMeshList();
         }
 
         private static List<MeshContext> CollectSelectedMeshContexts(ModelContext model)

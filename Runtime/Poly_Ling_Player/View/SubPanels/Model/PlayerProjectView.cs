@@ -31,8 +31,15 @@ namespace Poly_Ling.Player
         public IModelView GetModelView(int index)
         {
             var model = _project.GetModel(index);
-            return model == null ? null : new PlayerModelView(model, index);
+            return model == null ? null : new PlayerModelView(model, index, _project);
         }
+
+        public VertexTransferPreviewView PreviewVertexTransfer(
+            int srcModelIndex, int srcMeshIndex, int dstModelIndex, int dstMeshIndex,
+            Poly_Ling.Ops.VertexMatchMode mode)
+            => LiveProjectView.ComputeVertexTransferPreview(_project, srcModelIndex, srcMeshIndex, dstModelIndex, dstMeshIndex, mode);
+
+        public IReadOnlyList<string> WorkAxisLibraryNames => LiveProjectView.LibraryNamesOf(_project);
     }
 
     /// <summary>
@@ -42,6 +49,7 @@ namespace Poly_Ling.Player
     public class PlayerModelView : IModelView
     {
         private readonly ModelContext _model;
+        private readonly ProjectContext _project;
 
         // 遅延構築
         private IReadOnlyList<IMeshView> _drawableList;
@@ -54,10 +62,37 @@ namespace Poly_Ling.Player
         private int[] _selectedMorphIndices;
         private IReadOnlyList<string> _meshSelectionSetNames;
 
-        public PlayerModelView(ModelContext model, int modelIndex)
+        public PlayerModelView(ModelContext model, int modelIndex, ProjectContext project = null)
         {
             _model = model ?? throw new ArgumentNullException(nameof(model));
+            _project = project;
         }
+
+        /// <summary>オブジェクトグループの一覧（プロジェクトが無ければ空）。</summary>
+        public IReadOnlyList<ObjectGroupView> ObjectGroups
+            => _project != null
+                ? Poly_Ling.View.LiveProjectView.BuildObjectGroupViews(_project, _model)
+                : Array.Empty<ObjectGroupView>();
+
+        public int MaterialCount        => _model.MaterialCount;
+        public int CurrentMaterialIndex => _model.CurrentMaterialIndex;
+        public MaterialSlotView GetMaterialSlot(int slot)
+            => Poly_Ling.View.LiveProjectView.BuildMaterialSlotView(_model, slot);
+        public IReadOnlyList<MorphExpressionView> MorphExpressions
+            => Poly_Ling.View.LiveProjectView.BuildMorphExpressionViews(_model);
+
+        public int    HumanoidMappingCount => (_model.HumanoidMapping == null || _model.HumanoidMapping.IsEmpty) ? 0 : _model.HumanoidMapping.Count;
+        public bool   HasAnySkinWeight     => Poly_Ling.Ops.TPoseConverter.HasAnySkinWeight(_model.MeshContextList);
+        public bool   HasTPoseBackup       => _model.TPoseBackup != null;
+        public string DiagnoseTPose()      => Poly_Ling.Ops.TPoseConverter.Diagnose(_model.MeshContextList, _model.HumanoidMapping);
+        public int HumanoidMissingRequiredCount => Poly_Ling.View.LiveProjectView.HumanoidMissingRequiredOf(_model);
+        public AvatarRetargetView AvatarRetarget => Poly_Ling.View.LiveProjectView.BuildAvatarRetargetView(_model);
+        public IReadOnlyList<string> SpringBoneColliderGroupNames
+            => new List<string>(_model.SpringBoneColliderGroupNames ?? new List<string>());
+        public bool HasVrmMeta   => _model.VrmMeta != null;
+        public Poly_Ling.Data.VrmMetaData   VrmMetaCopy   => Poly_Ling.Ops.VrmSettingsOps.GetMetaOrNew(_model);
+        public bool HasVrmLookAt => _model.VrmLookAt != null;
+        public Poly_Ling.Data.VrmLookAtData VrmLookAtCopy => Poly_Ling.Ops.VrmSettingsOps.GetLookAtOrNew(_model);
 
         public string Name     => _model.Name;
         public string FilePath => _model.FilePath;

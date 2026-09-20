@@ -53,20 +53,18 @@ namespace Poly_Ling.Player
         // 外部依存（Viewer から設定）
         // ================================================================
 
-        public Func<ProjectContext> GetProject;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetProject;
         public Action<PanelCommand> SendCommand;
 
-        /// <summary>
-        /// 3D 画面の強調表示を書き換えたときに呼ぶ。
-        /// ビューポートへ「描き直せ」と伝えるためだけのもの。
-        /// </summary>
-        public Action OnHighlightChanged;
+        /// <summary>ツールの窓口。一覧（鎖・検査）と 3D 強調表示は "springBone" で行う。</summary>
+        public IToolSurface Surface;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
-        private ProjectContext Project      => GetProject?.Invoke();
-        private ModelContext   CurrentModel => Project?.CurrentModel;
-        private int            ModelIndex   => Project?.CurrentModelIndex ?? 0;
+        private Poly_Ling.View.IProjectView Project      => GetProject?.Invoke();
+        private Poly_Ling.View.IModelView   CurrentModel => Project?.CurrentModel;
+        private int                         ModelIndex   => Project?.CurrentModelIndex ?? 0;
 
         // ================================================================
         // UI
@@ -709,30 +707,23 @@ namespace Poly_Ling.Player
             // 対象の表示
             var targets = SelectedTargets(model);
             int carriers = 0;
-            foreach (int i in targets) if (SpringBoneOps.IsCarrier(model, i)) carriers++;
+            foreach (int i in targets) if (model.GetMesh(i)?.IsSpringBoneCarrier == true) carriers++;
 
             string firstName = targets.Count > 0
-                ? (model.GetMeshContext(targets[0])?.Name ?? "")
+                ? (model.GetMesh(targets[0])?.Name ?? "")
                 : "";
             _targetLabel.text = targets.Count == 0
                 ? "選択なし。ボーンか描画オブジェクトを選んでください。"
                 : $"選択 {targets.Count} 件（うち揺れを付けられる {carriers} 件）  先頭: {firstName}";
 
-            var childrenOf = MeshHierarchyOps.BuildChildrenTable(model);
+            // 鎖の一覧・検査結果はツールの窓口 "springBone" が本体側で作る。
+            Surface?.Invoke(Tool, "refreshSummary");
 
             // 鎖の一覧
             _chainRows.Clear();
             _chainMasters.Clear();
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                var mo = mc?.MeshObject;
-                if (mo?.SpringBoneChainRoot == null) continue;
-
-                int members = SpringBoneOps.CollectJointMembers(model, childrenOf, i).Count;
-                _chainMasters.Add(i);
-                _chainRows.Add($"{SpringBoneOps.ChainName(mo, mc)}  ({mc.Name} / {members} 段)");
-            }
+            _chainRows.AddRange(Surface?.Get(Tool, "chainRows", Array.Empty<string>()) ?? Array.Empty<string>());
+            _chainMasters.AddRange(Surface?.Get(Tool, "chainMasters", Array.Empty<int>()) ?? Array.Empty<int>());
             if (_chainRows.Count == 0) _chainRows.Add("まだ揺れる場所が登録されていません。");
 
             // まとまりの一覧
@@ -743,21 +734,18 @@ namespace Poly_Ling.Player
                     _groupRows.Add($"[{i}] {names[i]}");
 
             // 評価設定
-            _fixedDtField?.SetValueWithoutNotify(model.SpringBoneFixedDeltaTime);
-            _warmupField?.SetValueWithoutNotify(model.SpringBoneWarmupFrames);
+            _fixedDtField?.SetValueWithoutNotify(Surface?.GetFloat(Tool, "fixedDeltaTime") ?? 0f);
+            _warmupField?.SetValueWithoutNotify(Surface?.GetInt(Tool, "warmupFrames") ?? 0);
 
             // 検査
             _issueRows.Clear();
             _issueMasters.Clear();
-            foreach (var issue in SpringBoneOps.Validate(model))
-            {
-                _issueRows.Add((issue.IsError ? "NG  " : "注意  ") + issue.Message);
-                _issueMasters.Add(issue.MasterIndex);
-            }
+            _issueRows.AddRange(Surface?.Get(Tool, "issueRows", Array.Empty<string>()) ?? Array.Empty<string>());
+            _issueMasters.AddRange(Surface?.Get(Tool, "issueMasters", Array.Empty<int>()) ?? Array.Empty<int>());
             if (_issueRows.Count == 0) _issueRows.Add("問題は見つかりませんでした。");
 
             RebuildLists();
-            UpdateHighlight(model, childrenOf);
+            UpdateHighlight(model);
         }
 
         private void RebuildLists()
@@ -794,99 +782,31 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// いま触っている鎖と、その中の何段目かを 3D 画面へ伝える。
-        ///
-        /// 【鎖の決め方】
-        ///   選択の先頭ボーンから親を辿り、いちばん上の「揺れの根元」を探す。
-        ///   見つからなければ選択の先頭を根元とみなし、下だけを集める。
+        /// いま触っている鎖と、その中の何段目かを 3D 画面へ伝える
+        /// （鎖の決め方と強調の書き込みはツールの窓口 "springBone" の updateHighlight）。
         /// </summary>
-        private void UpdateHighlight(ModelContext model, Dictionary<int, List<int>> childrenOf)
+        private void UpdateHighlight(Poly_Ling.View.IModelView model)
         {
             if (model == null) return;
-
             var targets = SelectedTargets(model);
             int active = targets.Count > 0 ? targets[0] : -1;
-
-            var members = new List<int>();
-            int rootIndex = -1;
-
-            if (active >= 0)
-            {
-                rootIndex = FindChainRoot(model, active);
-                if (rootIndex >= 0)
-                    members = SpringBoneOps.CollectJointMembers(model, childrenOf, rootIndex);
-            }
-
-            model.SpringBoneHighlightIndices = members;
-            model.SpringBoneHighlightActiveIndex = active;
-
-            // 文字でも同じことを出す。色だけでは何段目かまでは読めない。
-            if (_placeLabel != null)
-            {
-                if (active < 0 || members.Count == 0)
-                {
-                    _placeLabel.text = "";
-                }
-                else
-                {
-                    int step = members.IndexOf(active);
-                    var rootMc = model.GetMeshContext(rootIndex);
-                    string chainName = SpringBoneOps.ChainName(rootMc?.MeshObject, rootMc);
-                    string activeName = model.GetMeshContext(active)?.Name ?? "";
-
-                    _placeLabel.text = step >= 0
-                        ? $"いまの場所: 鎖「{chainName}」の {step + 1} / {members.Count} 段目（{activeName}）"
-                        : $"いまの場所: 鎖「{chainName}」の外（{activeName}）";
-                }
-            }
-
-            OnHighlightChanged?.Invoke();
-        }
-
-        /// <summary>
-        /// 親を辿って、いちばん上の「揺れの根元」を返す。
-        /// 見つからなければ自分自身を返す（下へ辿るぶんには同じ結果になる）。
-        /// </summary>
-        private static int FindChainRoot(ModelContext model, int index)
-        {
-            if (model == null || index < 0 || index >= model.MeshContextCount) return -1;
-
-            var parents = MeshHierarchyOps.BuildParentIndicesFromDepth(model);
-
-            int cur = index;
-            int found = -1;
-            var guard = new HashSet<int>();
-
-            while (cur >= 0 && cur < model.MeshContextCount && guard.Add(cur))
-            {
-                var mo = model.GetMeshContext(cur)?.MeshObject;
-                if (mo?.SpringBoneChainRoot != null) found = cur;
-
-                cur = (parents != null && cur < parents.Length) ? parents[cur] : -1;
-            }
-
-            return found >= 0 ? found : index;
+            Surface?.Invoke(Tool, "updateHighlight", ("active", active));
+            if (_placeLabel != null) _placeLabel.text = Surface?.GetString(Tool, "placeText") ?? "";
         }
 
         /// <summary>
         /// パネルを離れるときに強調表示を消す。
-        /// 何も付いていなければ何もしない（パネル切替のたびに
-        /// ビューポートを作り直させないため）。
+        /// 何も付いていなければ何もしない（判定はハンドラ側）。
         /// </summary>
         public void ClearHighlight()
         {
-            var model = CurrentModel;
-            if (model == null) return;
-
-            bool had = model.SpringBoneHighlightActiveIndex >= 0
-                    || (model.SpringBoneHighlightIndices != null &&
-                        model.SpringBoneHighlightIndices.Count > 0);
-            if (!had) return;
-
-            model.ClearSpringBoneHighlight();
+            if (CurrentModel == null) return;
+            Surface?.Invoke(Tool, "clearHighlight");
             if (_placeLabel != null) _placeLabel.text = "";
-            OnHighlightChanged?.Invoke();
         }
+
+        /// <summary>揺れもの編集のツールの窓口名（SpringBoneHandler）。</summary>
+        private const string Tool = "springBone";
 
         // ================================================================
         // 操作
@@ -911,15 +831,15 @@ namespace Poly_Ling.Player
             var model = CurrentModel;
             if (model == null) { SetStatus("モデルが読み込まれていません。"); return; }
 
-            var meshes = model.SelectedDrawableMeshIndices;
-            if (meshes == null || meshes.Count == 0)
+            var meshes = model.SelectedDrawableIndices;
+            if (meshes == null || meshes.Length == 0)
             {
                 SetStatus("描画オブジェクトを選んでください。");
                 return;
             }
 
             SendCmd(new SelectBonesByVertexWeightCommand(
-                ModelIndex, new List<int>(meshes).ToArray(),
+                ModelIndex, meshes,
                 _minWeightField.value, _additiveToggle.value));
 
             SetStatus("重みの掛かったボーンを選びました。");
@@ -1112,13 +1032,12 @@ namespace Poly_Ling.Player
             if (_selectedChainRow < 0 || _selectedChainRow >= _chainMasters.Count) return;
 
             int master = _chainMasters[_selectedChainRow];
-            var mo = CurrentModel?.GetMeshContext(master)?.MeshObject;
-            var chain = mo?.SpringBoneChainRoot;
-            if (chain == null) return;
+            var mv = CurrentModel?.GetMesh(master);
+            if (mv == null || !mv.HasSpringBoneChainRoot) return;
 
-            _chainNameField?.SetValueWithoutNotify(chain.Name ?? "");
-            _centerBoneField?.SetValueWithoutNotify(chain.CenterBoneName ?? "");
-            _chainGroupsField?.SetValueWithoutNotify(JoinIndices(chain.SpringBoneColliderGroupIndices));
+            _chainNameField?.SetValueWithoutNotify(mv.SpringBoneChainName ?? "");
+            _centerBoneField?.SetValueWithoutNotify(mv.SpringBoneChainCenterBone ?? "");
+            _chainGroupsField?.SetValueWithoutNotify(JoinIndices(mv.SpringBoneChainGroupIndices));
 
             // 3D 画面・メッシュリストと同じ経路で選び直す。
             SendCmd(new SelectMeshCommand(ModelIndex, MeshCategory.Bone, new[] { master }));
@@ -1214,19 +1133,19 @@ namespace Poly_Ling.Player
         /// 対象。ボーン選択を主に見て、無ければ描画オブジェクトの選択を使う。
         /// 非スキンドの描画オブジェクトにも揺れを付けられるため、両方拾う。
         /// </summary>
-        private static List<int> SelectedTargets(ModelContext model)
+        private static List<int> SelectedTargets(Poly_Ling.View.IModelView model)
         {
             var result = new List<int>();
             if (model == null) return result;
 
-            if (model.SelectedBoneIndices != null && model.SelectedBoneIndices.Count > 0)
+            if (model.SelectedBoneIndices != null && model.SelectedBoneIndices.Length > 0)
             {
                 result.AddRange(model.SelectedBoneIndices);
                 return result;
             }
 
-            if (model.SelectedDrawableMeshIndices != null)
-                result.AddRange(model.SelectedDrawableMeshIndices);
+            if (model.SelectedDrawableIndices != null)
+                result.AddRange(model.SelectedDrawableIndices);
 
             return result;
         }
@@ -1246,7 +1165,7 @@ namespace Poly_Ling.Player
             return list.ToArray();
         }
 
-        private static string JoinIndices(List<int> indices)
+        private static string JoinIndices(IReadOnlyList<int> indices)
         {
             if (indices == null || indices.Count == 0) return "";
             return string.Join(",", indices);

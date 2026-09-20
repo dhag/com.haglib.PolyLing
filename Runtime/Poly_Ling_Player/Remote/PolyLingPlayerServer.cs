@@ -23,6 +23,10 @@ namespace Poly_Ling.Player
         public int  Port        => _server?.Port      ?? 0;
         public int  ClientCount => _server?.ClientCount ?? 0;
 
+        /// <summary>サーバ一覧（マスター）での役割。</summary>
+        public RemoteDirectoryNode.NodeRole DirectoryRole
+            => _server?.DirectoryRole ?? RemoteDirectoryNode.NodeRole.None;
+
         // ================================================================
         // 公開 API（PlayerRemoteServerSubPanel から利用）
         // ================================================================
@@ -51,19 +55,18 @@ namespace Poly_Ling.Player
         /// <summary>
         /// PolyLingPlayerViewer.Start() から呼ぶ。
         /// </summary>
-        /// <param name="port">待ち受けポート番号</param>
         /// <param name="autoStart">true のとき Initialize 内でサーバを起動する</param>
         /// <param name="getToolContext">ToolContext を返すデリゲート（RemoteServerCore に渡す）</param>
         /// <param name="dispatchCommand">受信コマンドを処理し、実行結果を返すデリゲート</param>
+        /// <remarks>待ち受けポートは OS が割り当て、サーバ一覧（RemoteDirectory）で公開する。</remarks>
         public void Initialize(
-            int port,
             bool autoStart,
             System.Func<ToolContext> getToolContext,
             System.Func<PanelCommand, CommandActor, CommandResult> dispatchCommand,
             System.Action requestPanelRefresh = null,
             string hostUserName = null)
         {
-            _server = new RemoteServerCore(getToolContext, port)
+            _server = new RemoteServerCore(getToolContext)
             {
                 DispatchCommand = dispatchCommand,
                 OnRepaint       = () => OnLogChanged?.Invoke(),
@@ -114,6 +117,15 @@ namespace Poly_Ling.Player
         public void NotifySelectionChanged()
         {
             _server?.NotifySelectionChanged();
+        }
+
+        /// <summary>
+        /// 本体でプロジェクト／現在モデルが入れ替わった際に呼ぶ。
+        /// 監視先を付け替え、接続中クライアントへ再取得を促す。
+        /// </summary>
+        public void NotifyProjectReplaced()
+        {
+            _server?.NotifyProjectReplaced();
         }
 
         // ================================================================

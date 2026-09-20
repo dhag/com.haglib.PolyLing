@@ -18,12 +18,9 @@ namespace Poly_Ling.Player
 
         [SerializeField] private PolyLingPlayerViewerCore.RemoteMode _remoteMode = PolyLingPlayerViewerCore.RemoteMode.None;
 
-        [SerializeField] private string _clientHost        = "127.0.0.1";
-        [SerializeField] private int    _clientPort        = 8765;
-        [SerializeField] private bool   _clientAutoConnect = true;
-
-        [SerializeField] private int  _serverPort      = 8765;
-        [SerializeField] private bool _serverAutoStart = true;
+        // 接続先・待ち受けポートはサーバ一覧（RemoteDirectory）で決まるため設定しない。
+        [SerializeField] private bool _clientAutoConnect = true;
+        [SerializeField] private bool _serverAutoStart   = true;
 
         [SerializeField] private UIDocument _uiDocument;
         [SerializeField] private Transform  _sceneRoot;
@@ -62,12 +59,9 @@ namespace Poly_Ling.Player
                 _sceneRoot,
                 new PolyLingPlayerViewerCore.RemoteConfig
                 {
-                    Mode             = _remoteMode,
-                    ClientHost       = _clientHost,
-                    ClientPort       = _clientPort,
+                    Mode              = _remoteMode,
                     ClientAutoConnect = _clientAutoConnect,
-                    ServerPort       = _serverPort,
-                    ServerAutoStart  = _serverAutoStart,
+                    ServerAutoStart   = _serverAutoStart,
                 });
         }
 

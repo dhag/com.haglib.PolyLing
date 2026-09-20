@@ -348,6 +348,26 @@ namespace Poly_Ling.Player
                 }
 
                 // ── オブジェクト原点の一括設定（CSV読み込み）
+                case ExportObjectOriginsCsvCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    // ボーンを出すかは呼び出し側が決める（オブジェクト原点の書き出しは出さない、
+                    // Tポーズの姿勢の書き出しは出す）。
+                    string csv = Poly_Ling.Tools.ObjectPose.ObjectOriginCsv.Build(
+                        model, c.WithRotation, includeBones: c.IncludeBones, bakeRotationToPosition: c.BakeRotationToPosition,
+                        out int count, out int skippedMirror, out int skippedWedge);
+                    try
+                    {
+                        System.IO.File.WriteAllText(c.Path, csv, new System.Text.UTF8Encoding(true));
+                    }
+                    catch (System.Exception e) { Fail($"書き出しに失敗: {e.Message}"); return true; }
+                    UnityEngine.Debug.Log($"[ObjectOrigin] 原点を書き出し: {count} 件 → {c.Path}" +
+                                          $"（除外: ミラー {skippedMirror} 件 / 姿勢くさび {skippedWedge} 件）");
+                    ReportData(CommandDataJson.New().Int("count", count)
+                        .Int("skippedMirror", skippedMirror).Int("skippedWedge", skippedWedge).Build());
+                    return true;
+                }
+
                 case ApplyObjectOriginsCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }

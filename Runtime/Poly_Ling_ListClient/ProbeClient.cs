@@ -4,7 +4,7 @@
 // クライアントタイプ登録とタイプ宛 push の振り分けを実証する。
 //
 // しくみ:
-//   - endpoint.json を探索 → WebSocket 接続。
+//   - サーバ一覧（マスター）に問い合わせ → WebSocket 接続。複数あれば選択する。
 //   - 接続後 RegisterClientType("probe", userName) で自タイプを登録。
 //   - server_info を query（テキスト応答）し、port/modelCount/currentModelIndex/
 //     clientCount/serverTime を表示（リスト系は取得しないデータ）。
@@ -27,7 +27,7 @@ namespace Poly_Ling.ListClient
         // 設定
         // ================================================================
 
-        [Tooltip("endpoint.json が見つからない/未接続時の再試行間隔(秒)")]
+        [Tooltip("サーバが見つからない/未接続時に、サーバ一覧を問い合わせ直す間隔(秒)")]
         [SerializeField] private float _retrySeconds = 1.0f;
 
         [Tooltip("サーバへ登録するユーザー名。既定は空（名前なし）。将来の協働開発向け。")]
@@ -41,9 +41,10 @@ namespace Poly_Ling.ListClient
         private PolyLingPlayerClient _client;
 
         private float _retryTimer;
-        private float _awaitTimer;
-        private bool  _awaitingConnect;
         private bool  _chromeBuilt;
+
+        private RemoteServerConnector  _connector;
+        private RemoteServerChoiceView _choiceView;
 
         private Label _statusLabel;
         private Label _portLabel;
@@ -70,62 +71,43 @@ namespace Poly_Ling.ListClient
             _client.OnConnected    += HandleConnected;
             _client.OnDisconnected += HandleDisconnected;
             _client.OnPushReceived += HandlePush;
+
+            // 接続先はマスターから得る。複数あれば選択 UI を出す。
+            _connector = new RemoteServerConnector(_client) { OnStatus = SetStatus };
         }
 
         private void OnDestroy()
         {
+            _choiceView?.Detach();
+            _connector?.Detach();
             _client?.Dispose();
         }
 
         private void Update()
         {
             _client?.Tick();
-            float dt = Time.unscaledDeltaTime;
 
-            bool connected = _client != null && _client.IsConnected;
-            if (connected)
-            {
-                _awaitingConnect = false;
-            }
-            else if (_awaitingConnect)
-            {
-                _awaitTimer -= dt;
-                if (_awaitTimer <= 0f) _awaitingConnect = false;
-            }
-            else
-            {
-                _retryTimer -= dt;
-                if (_retryTimer <= 0f)
-                {
-                    _retryTimer = _retrySeconds;
-                    TryConnect();
-                }
-            }
-
+            // 選択 UI を置く場所ができてから接続を始める。
             if (!_chromeBuilt) BuildChrome();
+            if (!_chromeBuilt) return;
+
+            // 未接続で何も進行していないときだけ、一定間隔で問い合わせからやり直す。
+            if (_connector.Current != RemoteServerConnector.State.Idle) return;
+
+            _retryTimer -= Time.unscaledDeltaTime;
+            if (_retryTimer <= 0f)
+            {
+                _retryTimer = _retrySeconds;
+                _connector.Begin();
+            }
         }
 
         // ================================================================
         // 接続
         // ================================================================
 
-        private void TryConnect()
-        {
-            if (!EndpointLocator.TryLocate(out string host, out int port, out string _))
-            {
-                SetStatus("endpoint.json 待機中...");
-                return;
-            }
-
-            _awaitingConnect = true;
-            _awaitTimer = Mathf.Max(3f, _retrySeconds * 3f);
-            SetStatus($"接続中... {host}:{port}");
-            _client.Initialize(host, port, autoConnect: true);
-        }
-
         private void HandleConnected()
         {
-            _awaitingConnect = false;
             SetStatus("接続済（probe 登録）");
             // 自タイプを登録してから server_info を取得する。
             _client.RegisterClientType("probe", _userName);
@@ -134,7 +116,6 @@ namespace Poly_Ling.ListClient
 
         private void HandleDisconnected()
         {
-            _awaitingConnect = false;
             SetStatus("切断");
         }
 
@@ -204,6 +185,10 @@ namespace Poly_Ling.ListClient
             col.Add(title);
 
             _statusLabel      = AddLine(col, "未接続");
+
+            // サーバが複数あるときの接続先選択。
+            _choiceView = new RemoteServerChoiceView(_connector);
+            col.Add(_choiceView);
             _portLabel        = AddLine(col, "port: -");
             _modelCountLabel  = AddLine(col, "modelCount: -");
             _curModelLabel    = AddLine(col, "currentModelIndex: -");

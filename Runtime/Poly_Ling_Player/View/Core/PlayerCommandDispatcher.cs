@@ -659,6 +659,9 @@ namespace Poly_Ling.Player
         /// </summary>
         public CommandActor CurrentActor => _currentActor;
 
+        /// <summary>アクティブな作業軸（作業軸ライブラリへの登録で使う）。Core が結線する。</summary>
+        public Func<WorkAxisContext> GetActiveWorkAxis;
+
         /// <summary>
         /// ホスト以外（MCP・リモート）の操作でツールの値・状態が変わったときに呼ぶ（引数はツール名）。
         /// 本体はそのツールのパネルに読み直させる。ホストの画面操作はパネル自身が再描画するので呼ばない。

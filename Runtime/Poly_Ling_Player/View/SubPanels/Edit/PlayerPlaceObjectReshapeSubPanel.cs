@@ -24,7 +24,7 @@ namespace Poly_Ling.Player
         /// <summary>ツールへの窓口（操作経路統一計画.md E）。ハンドラを直接は触らない。</summary>
         public Poly_Ling.Data.IToolSurface         Surface;
         private const string Tool = "placeObjectReshape";
-        public Func<ProjectContext>                GetView;
+        public Func<Poly_Ling.View.IProjectView>    GetView;
         public Action<PanelCommand>                SendCommand;
 
         /// <summary>コマンドに載せるモデル索引。</summary>
@@ -36,8 +36,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private int[] SelectedMasterIndices()
         {
-            var sel = GetView?.Invoke()?.CurrentModel?.SelectedDrawableMeshIndices;
-            return sel != null ? sel.ToArray() : System.Array.Empty<int>();
+            return GetView?.Invoke()?.CurrentModel?.SelectedDrawableIndices ?? System.Array.Empty<int>();
         }
 
         /// <summary>原型の候補一覧。Viewer から設定する。</summary>

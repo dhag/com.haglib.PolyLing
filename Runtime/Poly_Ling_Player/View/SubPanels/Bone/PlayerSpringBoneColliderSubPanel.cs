@@ -32,20 +32,18 @@ namespace Poly_Ling.Player
         // 外部依存（Viewer から設定）
         // ================================================================
 
-        public Func<ProjectContext> GetProject;
+        /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
+        public Func<Poly_Ling.View.IProjectView> GetProject;
         public Action<PanelCommand> SendCommand;
 
-        /// <summary>
-        /// 当たり判定の表示（ModelContext.SpringBoneCollider*）を書き換えた後に呼ぶ。
-        /// ビューポートへ作り直しを促す。
-        /// </summary>
-        public Action OnDisplayChanged;
+        /// <summary>ツールの窓口。当たり判定の 3D 表示は "springBoneColliderDisplay" で行う。</summary>
+        public IToolSurface Surface;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
-        private ProjectContext GetProj      => GetProject?.Invoke();
-        private ModelContext   CurrentModel => GetProj?.CurrentModel;
-        private int            ModelIndex   => GetProj?.CurrentModelIndex ?? 0;
+        private Poly_Ling.View.IProjectView GetProj      => GetProject?.Invoke();
+        private Poly_Ling.View.IModelView   CurrentModel => GetProj?.CurrentModel;
+        private int                         ModelIndex   => GetProj?.CurrentModelIndex ?? 0;
 
         // ================================================================
         // UI
@@ -307,7 +305,7 @@ namespace Poly_Ling.Player
             // 付ける先の表示
             var targets = SelectedTargets(model);
             string firstName = targets.Count > 0
-                ? (model.GetMeshContext(targets[0])?.Name ?? "")
+                ? (model.GetMesh(targets[0])?.Name ?? "")
                 : "";
             _targetLabel.text = targets.Count == 0
                 ? "ボーンが選ばれていません。付ける先のボーンを選んでください。"
@@ -316,10 +314,10 @@ namespace Poly_Ling.Player
             // 一覧
             _rows.Clear();
             _rowRefs.Clear();
-            for (int i = 0; i < model.MeshContextCount; i++)
+            for (int i = 0; i < model.TotalMeshCount; i++)
             {
-                var mc = model.GetMeshContext(i);
-                var list = mc?.MeshObject?.SpringBoneColliders;
+                var mc = model.GetMesh(i);
+                var list = mc?.SpringBoneColliders;
                 if (list == null) continue;
 
                 for (int k = 0; k < list.Count; k++)
@@ -330,7 +328,7 @@ namespace Poly_Ling.Player
                     _rowRefs.Add((i, k));
                     _rows.Add(
                         $"{mc.Name} [{k}]  {ShapeText(c.Shape)}  半径 {Fmt(c.Radius)}"
-                      + $"  まとまり {JoinIndices(c.SpringBoneGroupIndices)}");
+                      + $"  まとまり {JoinIndices(c.GroupIndices)}");
                 }
             }
             if (_rows.Count == 0) _rows.Add("まだ当たり判定がありません。");
@@ -369,33 +367,26 @@ namespace Poly_Ling.Player
         /// 当たり判定の追加・変更・削除でも線を作り直す必要があるため、
         /// 呼ばれるたびに OnDisplayChanged でビューポートへ作り直しを促す。
         /// </summary>
-        private void UpdateDisplay(ModelContext model)
+        private void UpdateDisplay(Poly_Ling.View.IModelView model)
         {
             if (model == null) return;
-
             TryGetSelectedRef(out int master, out int slot);
-
-            model.SpringBoneColliderDisplay         = true;
-            model.SpringBoneColliderHighlightMaster = master;
-            model.SpringBoneColliderHighlightSlot   = slot;
-
-            OnDisplayChanged?.Invoke();
+            Surface?.Invoke(DisplayTool, "show", ("master", master), ("slot", slot));
         }
 
         /// <summary>
         /// パネルを離れるときに表示を消す。
         /// 何も付いていなければ何もしない（パネル切替のたびに
-        /// ビューポートを作り直させないため）。
+        /// ビューポートを作り直させないため。判定はハンドラ側）。
         /// </summary>
         public void ClearDisplay()
         {
-            var model = CurrentModel;
-            if (model == null) return;
-            if (!model.SpringBoneColliderDisplay) return;
-
-            model.ClearSpringBoneColliderDisplay();
-            OnDisplayChanged?.Invoke();
+            if (CurrentModel == null) return;
+            Surface?.Invoke(DisplayTool, "clear");
         }
+
+        /// <summary>当たり判定の 3D 表示のツールの窓口名（SpringBoneColliderDisplayHandler）。</summary>
+        private const string DisplayTool = "springBoneColliderDisplay";
 
         private void RebuildList()
         {
@@ -429,7 +420,7 @@ namespace Poly_Ling.Player
             if (targets.Count == 0) { SetStatus("付ける先のボーンを選んでください。"); return; }
 
             int master = targets[0];
-            if (!SpringBoneOps.IsCarrier(model, master))
+            if (model.GetMesh(master)?.IsSpringBoneCarrier != true)
             { SetStatus("そのオブジェクトには当たり判定を付けられません。"); return; }
 
             SendCmd(new AddSpringBoneColliderCommand(
@@ -439,7 +430,7 @@ namespace Poly_Ling.Player
                 ReadTail(), ReadNormal(),
                 ParseIndices(_groupsField.value)));
 
-            SetStatus($"{model.GetMeshContext(master)?.Name} に当たり判定を作りました。");
+            SetStatus($"{model.GetMesh(master)?.Name} に当たり判定を作りました。");
             Refresh();
         }
 
@@ -464,7 +455,7 @@ namespace Poly_Ling.Player
             if (!TryGetSelectedRef(out int master, out int slot))
             { SetStatus("消す行を選んでください。"); return; }
 
-            string name = CurrentModel?.GetMeshContext(master)?.Name ?? "?";
+            string name = CurrentModel?.GetMesh(master)?.Name ?? "?";
 
             bool ok = PLEditorBridge.I.DisplayDialogYesNo(
                 "削除確認",
@@ -491,8 +482,8 @@ namespace Poly_Ling.Player
             _selectedRow = _listView.selectedIndex;
             if (!TryGetSelectedRef(out int master, out int slot)) return;
 
-            var c = CurrentModel?.GetMeshContext(master)?.MeshObject?.SpringBoneColliders;
-            if (c == null || slot >= c.Count) return;
+            var c = CurrentModel?.GetMesh(master)?.SpringBoneColliders;
+            if (c == null || slot >= c.Count || c[slot] == null) return;
 
             var d = c[slot];
             if (_shapeField != null) _shapeField.index = (int)d.Shape;
@@ -506,7 +497,7 @@ namespace Poly_Ling.Player
             _normX?.SetValueWithoutNotify(d.Normal.x);
             _normY?.SetValueWithoutNotify(d.Normal.y);
             _normZ?.SetValueWithoutNotify(d.Normal.z);
-            _groupsField?.SetValueWithoutNotify(JoinIndices(d.SpringBoneGroupIndices));
+            _groupsField?.SetValueWithoutNotify(JoinIndices(d.GroupIndices));
 
             // 3D 画面・メッシュリストと同じ経路で選び直す。
             SendCmd(new SelectMeshCommand(ModelIndex, MeshCategory.Bone, new[] { master }));
@@ -549,19 +540,19 @@ namespace Poly_Ling.Player
         /// 付ける先。ボーン選択を主に見て、無ければ描画オブジェクトの選択を使う。
         /// 判定の正典は SpringBoneOps.IsCarrier。
         /// </summary>
-        private static List<int> SelectedTargets(ModelContext model)
+        private static List<int> SelectedTargets(Poly_Ling.View.IModelView model)
         {
             var result = new List<int>();
             if (model == null) return result;
 
-            if (model.SelectedBoneIndices != null && model.SelectedBoneIndices.Count > 0)
+            if (model.SelectedBoneIndices != null && model.SelectedBoneIndices.Length > 0)
             {
                 result.AddRange(model.SelectedBoneIndices);
                 return result;
             }
 
-            if (model.SelectedDrawableMeshIndices != null)
-                result.AddRange(model.SelectedDrawableMeshIndices);
+            if (model.SelectedDrawableIndices != null)
+                result.AddRange(model.SelectedDrawableIndices);
 
             return result;
         }
@@ -592,7 +583,7 @@ namespace Poly_Ling.Player
             return list.ToArray();
         }
 
-        private static string JoinIndices(List<int> indices)
+        private static string JoinIndices(IReadOnlyList<int> indices)
         {
             if (indices == null || indices.Count == 0) return "（なし）";
             return string.Join(",", indices);

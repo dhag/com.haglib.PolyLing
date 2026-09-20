@@ -44,16 +44,16 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>プロジェクト取得。参照の解決にモデルをまたぐため ProjectContext が要る。</summary>
-        public Func<ProjectContext> GetProject;
+        public Func<Poly_Ling.View.IProjectView> GetProject;
 
         /// <summary>コマンド送信。</summary>
         public Action<PanelCommand> SendCommand;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 
-        private ProjectContext Project     => GetProject?.Invoke();
-        private ModelContext   CurrentModel => Project?.CurrentModel;
-        private int            ModelIndex   => Project?.CurrentModelIndex ?? 0;
+        private Poly_Ling.View.IProjectView Project      => GetProject?.Invoke();
+        private Poly_Ling.View.IModelView   CurrentModel => Project?.CurrentModel;
+        private int                         ModelIndex   => Project?.CurrentModelIndex ?? 0;
 
         // ================================================================
         // 内部状態
@@ -201,39 +201,24 @@ namespace Poly_Ling.Player
         {
             _rows.Clear();
             _labels.Clear();
+            _groups = CurrentModel?.ObjectGroups ?? System.Array.Empty<Poly_Ling.View.ObjectGroupView>();
 
-            var project = Project;
-            var model   = CurrentModel;
-
-            if (model?.ObjectGroups != null)
+            foreach (var g in _groups)
             {
-                foreach (var g in model.ObjectGroups)
+                var row = new Row
                 {
-                    if (g == null) continue;
+                    Name          = g.Name,
+                    Action        = g.Action,
+                    Stale         = g.Stale,
+                    OutputMissing = g.OutputMissing,
+                };
+                _rows.Add(row);
 
-                    // 出力先はステップごとに複数ありうる。1 つでも引けなければ印を立てる。
-                    bool outMissing = !g.HasOutput;
-                    if (!outMissing)
-                    {
-                        foreach (ulong oid in g.OutputObjectIds)
-                            if (ObjectGroupOps.Resolve(project, oid) == null) { outMissing = true; break; }
-                    }
-
-                    var row = new Row
-                    {
-                        Name          = g.Name,
-                        Action        = g.Action,
-                        Stale         = !outMissing && ObjectGroupOps.IsStale(project, g),
-                        OutputMissing = outMissing,
-                    };
-                    _rows.Add(row);
-
-                    string mark = row.OutputMissing ? "[出力先なし] "
-                                : row.Stale        ? "[要更新] "
-                                : "";
-                    string steps = g.StepCount > 1 ? $" [{g.StepCount} ステップ]" : "";
-                    _labels.Add($"{mark}{row.Name}  ({row.Action}){steps}");
-                }
+                string mark = row.OutputMissing ? "[出力先なし] "
+                            : row.Stale        ? "[要更新] "
+                            : "";
+                string steps = g.StepCount > 1 ? $" [{g.StepCount} ステップ]" : "";
+                _labels.Add($"{mark}{row.Name}  ({row.Action}){steps}");
             }
 
             if (_selected >= _labels.Count) _selected = -1;
@@ -244,12 +229,16 @@ namespace Poly_Ling.Player
             UpdateDetail();
         }
 
-        private ObjectGroup SelectedGroup()
+        /// <summary>直近の Refresh で読んだグループの写し。</summary>
+        private IReadOnlyList<Poly_Ling.View.ObjectGroupView> _groups
+            = System.Array.Empty<Poly_Ling.View.ObjectGroupView>();
+
+        private Poly_Ling.View.ObjectGroupView SelectedGroup()
         {
-            var model = CurrentModel;
-            if (model?.ObjectGroups == null) return null;
             if (_selected < 0 || _selected >= _rows.Count) return null;
-            return model.FindObjectGroupByName(_rows[_selected].Name);
+            string name = _rows[_selected].Name;
+            foreach (var g in _groups) if (g.Name == name) return g;
+            return null;
         }
 
         private void UpdateDetail()
@@ -271,43 +260,7 @@ namespace Poly_Ling.Player
             }
 
             _autoUpdateToggle?.SetValueWithoutNotify(g.AutoUpdate);
-
-            var project = Project;
-            var stashCtx = g.HasStash ? ObjectGroupOps.Resolve(project, g.StashObjectId) : null;
-
-            var srcNames = new List<string>();
-            foreach (ulong id in g.SourceObjectIds)
-            {
-                var mc = ObjectGroupOps.Resolve(project, id);
-                srcNames.Add(mc != null ? mc.Name : $"(見つからない: {id})");
-            }
-
-            // ステップごとに action と出力先を出す。実行順は並びそのもの。
-            var stepLines = new List<string>();
-            for (int i = 0; i < g.StepCount; i++)
-            {
-                var st = g.GetStep(i);
-                if (st == null) continue;
-
-                var outNames = new List<string>();
-                foreach (ulong oid in st.OutputObjectIds)
-                {
-                    var mc = ObjectGroupOps.Resolve(project, oid);
-                    outNames.Add(mc != null ? mc.Name : $"(見つからない: {oid})");
-                }
-
-                string outText = outNames.Count == 0 ? "なし"
-                    : outNames.Count <= 3 ? string.Join(", ", outNames)
-                    : $"{outNames[0]} ほか {outNames.Count - 1} 件";
-
-                stepLines.Add($"  {i + 1}. {st.Action} → {outText}  (パラメータ {st.Args.Count} 件)");
-            }
-
-            _detailLabel.text =
-                  $"ステップ: {g.StepCount} 件\n"
-                + string.Join("\n", stepLines) + "\n"
-                + $"入力: {(srcNames.Count > 0 ? string.Join(", ", srcNames) : "なし")}\n"
-                + $"退避: {(stashCtx != null ? stashCtx.Name : "なし")}";
+            _detailLabel.text = g.Detail;
         }
 
         private void SetStatus(string text)
@@ -385,11 +338,12 @@ namespace Poly_Ling.Player
 
         private void OnPurge()
         {
-            var project = Project;
-            var model   = CurrentModel;
+            var model = CurrentModel;
             if (model == null) { SetStatus("モデルがありません"); return; }
 
-            int n = ObjectGroupOps.PurgeMissing(project, model);
+            int before = model.ObjectGroups.Count;
+            SendCmd(new PurgeObjectGroupsCommand(ModelIndex));
+            int n = before - (CurrentModel?.ObjectGroups.Count ?? before);
             SetStatus(n > 0 ? $"参照切れのグループを {n} 件片づけました" : "参照切れはありませんでした");
             Refresh();
         }

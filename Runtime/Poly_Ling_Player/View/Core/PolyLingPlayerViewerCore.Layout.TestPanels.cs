@@ -335,18 +335,27 @@ namespace Poly_Ling.Player
             };
             _vmdToVrmaSubPanel.Build(_layoutRoot.VmdToVrmaSection);
 
-            _motionClipTestSubPanel = new PlayerMotionClipTestSubPanel
+            // モーションの試し再生（ツールの窓口 "motionClip"）。
+            _motionClipHandler = new MotionClipHandler
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
-                GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
-                SendCommand       = cmd => _panelContext?.SendCommand(cmd),
-                GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
-                GetUndoController = () => _editOps?.UndoController,
+                GetPmxUnityRatio  = () => _editOps?.UndoController?.EditorState?.PmxUnityRatio ?? 0.1f,
+                // 表情適用で WorkingPositions を変えた基準メッシュの表示を更新させる。
+                SyncMeshPositions = ctx => _viewportManager.GetCurrentToolContext(_activeViewport)?.SyncMeshContextPositionsOnly?.Invoke(ctx),
+                // フレーム適用後に GPU メッシュの再スキンを起こす。
                 OnFrameApplied    = () =>
                 {
                     _viewportManager.UpdateTransform();
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+                    _viewportManager.GetCurrentToolContext(_activeViewport)?.Repaint?.Invoke();
                 },
+            };
+            _motionClipTestSubPanel = new PlayerMotionClipTestSubPanel
+            {
+                GetModel          = () => ActiveProjectView?.CurrentModel,
+                GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
+                SendCommand       = cmd => _panelContext?.SendCommand(cmd),
+                Surface           = ToolSurface,
             };
             _motionClipTestSubPanel.Build(_layoutRoot.MotionClipTestSection);
         }

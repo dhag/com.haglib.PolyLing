@@ -70,22 +70,17 @@ namespace Poly_Ling.Player
         /// <summary>Initialize に渡すリモート設定。</summary>
         public struct RemoteConfig
         {
+            // 接続先・待ち受けポートはサーバ一覧（RemoteDirectory）で決まるため持たない。
             public RemoteMode Mode;
-            public string     ClientHost;
-            public int        ClientPort;
             public bool       ClientAutoConnect;
-            public int        ServerPort;
             public bool       ServerAutoStart;
 
             /// <summary>デフォルト値（None モード）を返す。</summary>
             public static RemoteConfig Default => new RemoteConfig
             {
-                Mode             = RemoteMode.None,
-                ClientHost       = "127.0.0.1",
-                ClientPort       = 8765,
+                Mode              = RemoteMode.None,
                 ClientAutoConnect = true,
-                ServerPort       = 8765,
-                ServerAutoStart  = true,
+                ServerAutoStart   = true,
             };
         }
 
@@ -98,11 +93,11 @@ namespace Poly_Ling.Player
         // 頂点編集のリモート連動フラグ（方向別・既定オフ）。比較検証用に実行時トグル可能。
         public bool SyncServerToClient = true; // サーバでの編集をクライアントへ配信
         public bool SyncClientToServer = true; // クライアントでの編集をサーバへ送信
-        private string     _clientHost;
-        private int        _clientPort;
         private bool       _clientAutoConnect;
-        private int        _serverPort;
         private bool       _serverAutoStart;
+        /// <summary>クライアントモードの接続先決定（マスター問い合わせ→自動/選択→接続）。</summary>
+        private RemoteServerConnector _connector;
+        private RemoteServerChoiceView _serverChoiceView;
         private Transform  _sceneRoot;
 
         // ================================================================
@@ -248,6 +243,20 @@ namespace Poly_Ling.Player
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
         private PlayerReferenceSymmetrySubPanel _referenceSymmetrySubPanel;
+        /// <summary>材質のプレビュー・確定（ツールの窓口 "materialEdit"。操作経路統一計画.md M-2）。</summary>
+        private MaterialEditHandler _materialEditHandler;
+        /// <summary>モーフエクスプレッションの試し表示（ツールの窓口 "morphExpression"）。</summary>
+        private MorphExpressionHandler _morphExpressionHandler;
+        /// <summary>メッシュブレンドの試し表示（ツールの窓口 "blend"）。</summary>
+        private BlendToolHandler _blendToolHandler;
+        /// <summary>揺れものの当たり判定の 3D 表示（ツールの窓口 "springBoneColliderDisplay"）。</summary>
+        private SpringBoneColliderDisplayHandler _springBoneColliderDisplayHandler;
+        /// <summary>揺れもの編集の一覧と 3D 強調表示（ツールの窓口 "springBone"）。</summary>
+        private SpringBoneHandler _springBoneHandler;
+        /// <summary>ボーンウェイト数値入力の読み取り（ツールの窓口 "skinWeightNumeric"）。</summary>
+        private SkinWeightNumericHandler _skinWeightNumericHandler;
+        /// <summary>モーションの試し再生（ツールの窓口 "motionClip"）。</summary>
+        private MotionClipHandler _motionClipHandler;
         private PlayerShrinkSubPanel         _shrinkSubPanel;
         private PlayerShrinkSubPanel         _shrinkFaceSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;
