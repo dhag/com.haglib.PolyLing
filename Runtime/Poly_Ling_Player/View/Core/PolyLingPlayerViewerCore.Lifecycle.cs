@@ -371,6 +371,9 @@ namespace Poly_Ling.Player
             PolyLingCommandGateway.Dispatch = cmd => _commandDispatcher.Dispatch(cmd, CommandActor.Mcp());
             PolyLingCommandGateway.ModelState = () => _commandDispatcher.CaptureModelState();
 
+            // ビルド版で MCP サーバの要求を受ける（Editor では何もしない）。対の停止は Dispose 内。
+            PolyLingPlayerControlServer.Start();
+
             // 生成系コマンドの受け口。実処理は Viewer 側にあるので委譲する。
             WireCreateCommandHandlers();
 
@@ -785,6 +788,7 @@ namespace Poly_Ling.Player
             _uiAutomation = null;
 
             // MCP からの実行入口を外す。掴んだままだと破棄済みのディスパッチャを触る。
+            PolyLingPlayerControlServer.Stop();
             PolyLingCommandGateway.Dispatch = null;
             PolyLingCommandGateway.ModelState = null;
         }
