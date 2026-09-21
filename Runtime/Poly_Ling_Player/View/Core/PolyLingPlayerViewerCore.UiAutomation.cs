@@ -541,6 +541,29 @@ namespace Poly_Ling.Player
                 return CommandResult.Fail(
                     $"unknown capture target: {cmd.Target}（MainView / TriView / Window）");
 
+            CaptureFormat format;
+            switch ((cmd.Format ?? "png").Trim().ToLowerInvariant())
+            {
+                case "png":  format = CaptureFormat.Png;  break;
+                case "jpg":
+                case "jpeg": format = CaptureFormat.Jpeg; break;
+                default: return CommandResult.Fail($"unknown capture format: {cmd.Format}（png / jpeg）");
+            }
+
+            // パネル指定は target より優先する。表示されていないパネルは矩形が取れないので、
+            // ここで理由を返す（撮ってから失敗させない）。
+            VisualElement cropOverride = null;
+            if (!string.IsNullOrEmpty(cmd.PanelId))
+            {
+                if (!_uiAutomationRegistry.TryGetPanel(cmd.PanelId, out var panel))
+                    return CommandResult.Fail($"パネルが登録されていません: {cmd.PanelId}");
+
+                cropOverride = panel.Section;
+                if (cropOverride == null || cropOverride.panel == null)
+                    return CommandResult.Fail(
+                        $"パネルが表示されていません: {cmd.PanelId}（uiShowPanel で開いてから撮ること）");
+            }
+
             // 保存先を指定したときは作業フォルダの関門を通す。
             // TryResolveWrite は拡張子を検査するのでフォルダには使えない。
             // ファイル名は PlayerScreenCapture が区切り文字を除いて .png を付けるため、
@@ -557,7 +580,7 @@ namespace Poly_Ling.Player
             Debug.Log($"[UiAutomation] Capture start: id={id} target={target} baseName={cmd.BaseName}"
                 + $" folder={folder ?? "(キャプチャパネルの設定)"}");
 
-            StartCapture(target, folder, cmd.BaseName, (ok, msg) =>
+            StartCapture(target, cropOverride, folder, cmd.BaseName, cmd.MaxLongEdge, format, cmd.Quality, (ok, msg) =>
             {
                 _uiCaptureJobs.Complete(id, ok, msg);
                 Debug.Log(ok

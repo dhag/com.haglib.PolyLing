@@ -53,6 +53,13 @@ namespace Poly_Ling.Data
         /// <summary>保存先の絶対パス（表示・手動バックアップ用）。</summary>
         public static string StorePath => FileName;
 
+        /// <summary>
+        /// 置き場の版。保存・読み直しで 1 つ進む。
+        /// 呼び出し側が「前に見たときから変わったか」を判定するために使う（queryRevisions）。
+        /// 保存しない（起動ごとに 0 から数え直す）。
+        /// </summary>
+        public static int Revision { get; private set; }
+
         // ================================================================
         // 読み書き
         // ================================================================
@@ -71,14 +78,14 @@ namespace Poly_Ling.Data
         /// <summary>ファイルから読み直す。手で編集したあとに呼ぶ。</summary>
         public static void Reload()
         {
-            lock (_lock) { _items = ReadFile(); }
+            lock (_lock) { _items = ReadFile(); Revision++; }
         }
 
         /// <summary>今の中身をファイルへ書く。</summary>
         public static void Save()
         {
             EnsureLoaded();
-            lock (_lock) { WriteFile(_items); }
+            lock (_lock) { WriteFile(_items); Revision++; }
         }
 
         private static List<ObjectGroup> ReadFile()

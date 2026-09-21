@@ -787,7 +787,12 @@ namespace Poly_Ling.Player
             // 手本の記録は一番外側の 1 本だけを控える。入れ子は外側の結果に含まれる。
             // outermost は構造通知の受け口が無いと立たないので、深さだけで別に見る。
             bool topLevel = _dispatchDepth == 0;
-            if (topLevel) _dispatchNotRecorded = false;
+            if (topLevel)
+            {
+                _dispatchNotRecorded = false;
+                // 版と差分のために、実行前の安定 ID を控える（PlayerCommandDispatcher.Revision.cs）。
+                _dispatchEntryObjectIds = CaptureObjectIds();
+            }
 
             _dispatchDepth++;
 
@@ -807,6 +812,8 @@ namespace Poly_Ling.Player
                     NotifyStructureIfMissed();
                 }
             }
+
+            if (topLevel) FinishRevision(cmd, result);
 
             if (topLevel && !_dispatchNotRecorded && ScenarioRecorder.IsRecording)
                 ScenarioRecorder.RecordCommand(cmd, result);
@@ -1002,6 +1009,9 @@ namespace Poly_Ling.Player
             // 例外は saveScenarioFromGroup で、受け口の中で現在のモデルを見る。
             // 記録の対象外（手本を記録すると、記録の開始・停止まで段に入る）。
             if (DispatchScenario(cmd)) { MarkNotRecorded(); return; }
+
+            // 利用シーン（SceneLibrary）も同じ。プロジェクトにもモデルにも属さない。
+            if (DispatchScene(cmd)) { MarkNotRecorded(); return; }
 
             // 生成系（図形生成・生成メッシュ追加）と読み込み系は、プロジェクトも
             // モデルも無い状態から呼べる。

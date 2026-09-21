@@ -301,6 +301,10 @@ namespace Poly_Ling.Remote
             if (isRemote && IsScenario(cmd))
                 return OwnershipVerdict.Deny("手本の操作はリモート接続からは実行できません");
 
+            // 利用シーンの置き場もホストの持ち物。手本と同じく受けない。
+            if (isRemote && IsScene(cmd))
+                return OwnershipVerdict.Deny("利用シーンの操作はリモート接続からは実行できません");
+
             // 編集者の設定・解放そのものは専用判定へ
             if (cmd is SetObjectEditorCommand sec)
                 return AuthorizeSetEditor(project, sec, actor, objectIds);
@@ -587,6 +591,10 @@ namespace Poly_Ling.Remote
                     return false;
             }
         }
+
+        /// <summary>利用シーンのコマンドか（PanelCommand.Scene.cs）。</summary>
+        private static bool IsScene(PanelCommand cmd)
+            => cmd is QueryScenesCommand || cmd is SetSceneCommand || cmd is DeleteSceneCommand;
 
         /// <summary>手本（シナリオ）のコマンドか（PanelCommand.Scenario.cs）。</summary>
         private static bool IsScenario(PanelCommand cmd)

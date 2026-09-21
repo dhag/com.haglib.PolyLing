@@ -232,18 +232,39 @@ namespace Poly_Ling.Player
 
             foreach (var g in all)
             {
+                // query の照合はコマンド検索と同じ方式（PanelCommandSchemaIndex.ScoreText）。
+                // 空の query は全部通る。
+                if (PanelCommandFactory.ScoreText(cmd.Query, g.Name, ScenarioHaystack(g)) <= 0f) continue;
+
                 names.Add(g.Name ?? "");
                 goals.Add(g.Goal ?? "");
                 stepCounts.Add(g.StepCount);
             }
 
             ReportData(CommandDataJson.New()
-                .Int  ("count",      all.Count)
+                .Int  ("count",      names.Count)
                 .Text ("storePath",  ScenarioLibrary.StorePath)
                 .Texts("names",      names)
                 .Texts("goals",      goals)
                 .Ints ("stepCounts", stepCounts)
                 .Build());
+        }
+
+        /// <summary>手本の検索で照合する本文。目的・札・満たすべきこと・段の目的とコマンド名。</summary>
+        private static string ScenarioHaystack(ObjectGroup g)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(g.Goal ?? "").Append('\n');
+            if (g.Tags != null)            foreach (var t in g.Tags)            sb.Append(t).Append('\n');
+            if (g.Preconditions != null)   foreach (var t in g.Preconditions)   sb.Append(t).Append('\n');
+            if (g.SuccessCriteria != null) foreach (var t in g.SuccessCriteria) sb.Append(t).Append('\n');
+            if (g.Steps != null)
+                foreach (var s in g.Steps)
+                {
+                    if (s == null) continue;
+                    sb.Append(s.Action ?? "").Append('\n').Append(s.Purpose ?? "").Append('\n');
+                }
+            return sb.ToString();
         }
 
         private void RunDescribeScenario(DescribeScenarioCommand cmd)

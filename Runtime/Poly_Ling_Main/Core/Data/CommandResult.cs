@@ -46,6 +46,19 @@ namespace Poly_Ling.Data
         /// </summary>
         public bool StaleView { get; }
 
+        /// <summary>
+        /// 実行後のモデルの版（ModelContext.Revision）。書き込みのあるコマンドが成功すると 1 つ進む。
+        /// 0 はモデルが無い、または版を採れなかったとき。
+        /// ディスパッチャが一番外側の呼び出しの最後に入れる。
+        /// </summary>
+        public int ModelRevision { get; internal set; }
+
+        /// <summary>この呼び出しで増えたオブジェクトの安定 ID。無ければ null。</summary>
+        public ulong[] CreatedObjectIds { get; internal set; }
+
+        /// <summary>この呼び出しで消えたオブジェクトの安定 ID。無ければ null。</summary>
+        public ulong[] DeletedObjectIds { get; internal set; }
+
         private CommandResult(bool success, string reason, int[] masterIndices, ulong[] objectIds,
                               string data, bool staleView = false)
         {

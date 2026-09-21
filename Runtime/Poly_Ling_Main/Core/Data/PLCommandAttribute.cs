@@ -52,6 +52,19 @@ namespace Poly_Ling.Data
         /// </summary>
         public bool WritesMirrorSide { get; set; } = true;
 
+        /// <summary>
+        /// 分類名（任意）。polyling_search の絞り込みと検索対象に使う。
+        /// 空のときは分類なしとして扱い、公開は妨げない。
+        /// 例: "mesh.topology" / "bone" / "ui"。
+        /// </summary>
+        public string Category { get; set; } = "";
+
+        /// <summary>
+        /// 検索用の語（任意）。カンマ区切り。polyling_search が名前・説明と一緒に照合する。
+        /// 説明文に出てこない言い換え（「板」「プレート」等）を足すための欄。
+        /// </summary>
+        public string Tags { get; set; } = "";
+
         public PLCommandAttribute() { }
 
         public PLCommandAttribute(string description) { Description = description; }

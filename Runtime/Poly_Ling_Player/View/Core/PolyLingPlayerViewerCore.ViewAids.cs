@@ -57,19 +57,35 @@ namespace Poly_Ling.Player
         /// </summary>
         private void StartCapture(
             CaptureTarget target, string folder, string baseName, Action<bool, string> onDone)
+            => StartCapture(target, null, folder, baseName, 0, CaptureFormat.Png,
+                            PlayerScreenCapture.DefaultJpegQuality, onDone);
+
+        /// <summary>
+        /// 撮影の本体。cropOverride が非 null なら target ではなくその要素の矩形で切り出す
+        /// （uiCapture の panelId が使う）。maxLongEdge・format・quality は PlayerScreenCapture の注記を参照。
+        /// </summary>
+        private void StartCapture(
+            CaptureTarget target, VisualElement cropOverride, string folder, string baseName,
+            int maxLongEdge, CaptureFormat format, int quality, Action<bool, string> onDone)
         {
-            VisualElement crop = null;
-            switch (target)
+            VisualElement crop = cropOverride;
+            if (crop == null)
             {
-                case CaptureTarget.MainView: crop = _layoutRoot?.PerspectivePanel; break;
-                case CaptureTarget.TriView:  crop = _layoutRoot?.ViewportArea;     break;
-                case CaptureTarget.Window:   crop = null;                          break;
+                switch (target)
+                {
+                    case CaptureTarget.MainView: crop = _layoutRoot?.PerspectivePanel; break;
+                    case CaptureTarget.TriView:  crop = _layoutRoot?.ViewportArea;     break;
+                    case CaptureTarget.Window:   crop = null;                          break;
+                }
             }
 
             PlayerScreenCapture.Capture(
                 crop,
                 string.IsNullOrEmpty(folder) ? PlayerCaptureSubPanel.GetFolder() : folder,
                 baseName,
+                maxLongEdge,
+                format,
+                quality,
                 (ok, msg) =>
                 {
                     _captureSubPanel?.SetStatus(ok ? $"保存しました: {msg}" : $"失敗: {msg}");

@@ -179,7 +179,7 @@ namespace Poly_Ling.EditorControl
             var requestJson = message.PayloadString;
 
             // OnReceived は背景スレッド。Debug.Log は背景スレッドから呼べる。
-            Debug.Log($"{LogTag} 受信: {requestJson}");
+            Debug.Log($"{LogTag} 受信: {ClipForLog(requestJson)}");
 
             RunOnMainThread(() =>
             {
@@ -278,6 +278,7 @@ namespace Poly_Ling.EditorControl
         // ================================================================
         //
         // 要求: {"type":"command","action":"ping"|"play"|"stop"|"state"|"tools"|"call"
+        //                                  |"tools_generic"|"tools_search"|"tools_describe"
         //                                  |"refresh"|"recompile"
         //                                  |"prefab_export"|"prefab_instantiate"|"prefab_import"}
         //       call と prefab_* は "params" を伴う（HandleCall・「プレファブ」節の注記を参照）
@@ -315,6 +316,18 @@ namespace Poly_Ling.EditorControl
                 case "tools":
                     return LogResponse(HandleTools(op));
 
+                case "tools_generic":
+                    return LogResponse(HandleToolsGeneric(op));
+
+                case "tools_search":
+                    return LogResponse(HandleToolsSearch(op, msg));
+
+                case "tools_describe":
+                    return LogResponse(HandleToolsDescribe(op, msg));
+
+                case "scenes":
+                    return LogResponse(HandleScenes(op));
+
                 case "call":
                     return LogResponse(HandleCall(op, msg));
 
@@ -347,8 +360,25 @@ namespace Poly_Ling.EditorControl
         /// <summary>生成した応答 JSON をコンソールへ出力し、そのまま返す。</summary>
         private static string LogResponse(string responseJson)
         {
-            Debug.Log($"{LogTag} 応答生成: {responseJson}");
+            Debug.Log($"{LogTag} 応答生成: {ClipForLog(responseJson)}");
             return responseJson;
+        }
+
+        /// <summary>コンソールへ出す要求・応答の最大文字数。</summary>
+        private const int MaxLoggedJsonChars = 2000;
+
+        /// <summary>
+        /// 要求・応答をコンソールへ出すときに切り詰める。
+        ///
+        /// tools の応答は全コマンドの Schema を含み数百 KB になる。全文を Debug.Log すると
+        /// Editor.log がその文字列で埋まり、read_unity_log で末尾を読んだときに
+        /// コンパイルエラーや例外がその後ろへ押し出される。
+        /// 応答そのものは切り詰めない（ここで切るのはログに出す文字列だけ）。
+        /// </summary>
+        private static string ClipForLog(string json)
+        {
+            if (json == null || json.Length <= MaxLoggedJsonChars) return json;
+            return json.Substring(0, MaxLoggedJsonChars) + $"…(+{json.Length - MaxLoggedJsonChars} chars)";
         }
 
         // ================================================================
@@ -358,8 +388,9 @@ namespace Poly_Ling.EditorControl
         // 要求: {"type":"command","action":"call",
         //        "params":{"command":"smoothEdges","modelIndex":"0","strength":"0.5"}}
         //
-        //   command    … 道具名（PanelCommandFactory.ActionOf が作る名前）
-        //   modelIndex … 対象モデル。省くと 0
+        //   command      … 道具名（PanelCommandFactory.ActionOf が作る名前）
+        //   modelIndex   … 対象モデル。省くと 0
+        //   wantRevision … 1 のとき応答に modelRevision / createdObjectIds / deletedObjectIds を足す
         //   それ以外   … コマンドの引数。入れ子はドット区切り（params.widthTop）
         //
         // JsonParser.ParseFlat は値が '[' や '{' で始まるものを辞書へ入れない
@@ -397,6 +428,175 @@ namespace Poly_Ling.EditorControl
             }
         }
 
+        // ================================================================
+        // 道具一覧の段階的な取得（MCP のプロファイル別）
+        // ================================================================
+        //
+        // tools は現行（profile=current）の応答をそのまま保つため変えない。
+        // 以下 3 つはどれも "result" にオブジェクトを入れて返す（call と同じ置き場）。
+        //
+        //   tools_generic  … profile=generic 用。全件 + schemaRevision
+        //                     {"schemaRevision":"sha256:…","usable":N,"skipped":M,"tools":[…]}
+        //   tools_search   … profile=optimized 用。params: query / category / scene / offset / limit
+        //   tools_describe … profile=optimized 用。params: names（カンマ区切り、最大 10 件）
+        //   scenes         … profile=optimized 用。利用シーン（SceneLibrary）の定義を全部返す
+        //                     {"storePath":"…","scenes":[{"name","description","commands":[],"categories":[],"tags":[],"tools":[]}]}
+        //                     サーバが固定の道具を絞るのに使う。パネルが開いていなくても答える。
+        // ================================================================
+
+        /// <summary>tools_search の limit の既定と上限。</summary>
+        private const int ToolsSearchDefaultLimit = 8;
+        private const int ToolsSearchMaxLimit     = 50;
+
+        /// <summary>tools_describe で一度に引ける件数の上限。</summary>
+        private const int ToolsDescribeMaxNames = 10;
+
+        private static string HandleToolsGeneric(string op)
+        {
+            try
+            {
+                string json = PanelCommandFactory.BuildToolsListJson();
+                PanelCommandFactory.CountTools(out int usable, out int skipped);
+
+                var inner = new JsonBuilder();
+                inner.BeginObject();
+                inner.KeyValue("schemaRevision", PanelCommandFactory.ComputeSchemaRevision(json));
+                inner.KeyValue("usable",  usable);
+                inner.KeyValue("skipped", skipped);
+                inner.KeyRaw("tools", json);
+                inner.EndObject();
+
+                return BuildResult(op, inner.ToString());
+            }
+            catch (Exception ex)
+            {
+                return BuildError(op, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private static string HandleToolsSearch(string op, RemoteMessage msg)
+        {
+            try
+            {
+                var p = msg?.Params;
+                string query     = GetParam(p, "query");
+                string category  = GetParam(p, "category");
+                string sceneName = GetParam(p, "scene");
+
+                SceneDefinition scene = null;
+                if (!string.IsNullOrWhiteSpace(sceneName))
+                {
+                    scene = SceneLibrary.Get(sceneName.Trim());
+                    if (scene == null)
+                        return BuildError(op, $"利用シーンがありません: {sceneName}");
+                }
+
+                int offset = 0;
+                int limit  = ToolsSearchDefaultLimit;
+
+                string offsetText = GetParam(p, "offset");
+                if (!string.IsNullOrEmpty(offsetText) && !int.TryParse(offsetText, out offset))
+                    return BuildError(op, $"offset を整数にできません: {offsetText}");
+
+                string limitText = GetParam(p, "limit");
+                if (!string.IsNullOrEmpty(limitText) && !int.TryParse(limitText, out limit))
+                    return BuildError(op, $"limit を整数にできません: {limitText}");
+
+                offset = Math.Max(0, offset);
+                limit  = Math.Clamp(limit, 1, ToolsSearchMaxLimit);
+
+                return BuildResult(op, PanelCommandFactory.BuildToolsSearchJson(query, category, scene, offset, limit));
+            }
+            catch (Exception ex)
+            {
+                return BuildError(op, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private static string HandleToolsDescribe(string op, RemoteMessage msg)
+        {
+            try
+            {
+                string namesText = GetParam(msg?.Params, "names");
+                if (string.IsNullOrWhiteSpace(namesText))
+                    return BuildError(op, "params.names がありません（カンマ区切りのコマンド名）");
+
+                var names = new List<string>();
+                foreach (var part in namesText.Split(','))
+                {
+                    var n = part.Trim();
+                    if (n.Length > 0 && !names.Contains(n)) names.Add(n);
+                }
+
+                if (names.Count == 0)
+                    return BuildError(op, "params.names が空です");
+                if (names.Count > ToolsDescribeMaxNames)
+                    return BuildError(op, $"names は {ToolsDescribeMaxNames} 件までです（{names.Count} 件）");
+
+                return BuildResult(op, PanelCommandFactory.BuildToolsDescribeJson(names));
+            }
+            catch (Exception ex)
+            {
+                return BuildError(op, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private static string HandleScenes(string op)
+        {
+            try
+            {
+                var inner = new JsonBuilder();
+                inner.BeginObject();
+                inner.KeyValue("storePath", SceneLibrary.StorePath);
+                inner.Key("scenes");
+                inner.BeginArray();
+                foreach (var s in SceneLibrary.GetAll())
+                {
+                    inner.BeginObject();
+                    inner.KeyValue("name",        s.Name);
+                    inner.KeyValue("description", s.Description);
+                    AppendStringArray(inner, "commands",   s.Commands);
+                    AppendStringArray(inner, "categories", s.Categories);
+                    AppendStringArray(inner, "tags",       s.Tags);
+                    AppendStringArray(inner, "tools",      s.Tools);
+                    inner.EndObject();
+                }
+                inner.EndArray();
+                inner.EndObject();
+                return BuildResult(op, inner.ToString());
+            }
+            catch (Exception ex)
+            {
+                return BuildError(op, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        /// <summary>文字列の配列を足す。空でも [] を書く（受け側が有無を判定しなくて済む）。</summary>
+        private static void AppendStringArray(JsonBuilder jb, string key, List<string> values)
+        {
+            jb.Key(key);
+            jb.BeginArray();
+            if (values != null)
+                foreach (var v in values) jb.Value(v);
+            jb.EndArray();
+        }
+
+        private static string GetParam(Dictionary<string, string> p, string key)
+            => p != null && p.TryGetValue(key, out string v) ? v : null;
+
+        /// <summary>成功応答の "result" に JSON オブジェクトを入れて返す。</summary>
+        private static string BuildResult(string op, string resultJson)
+        {
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("type",    "response");
+            jb.KeyValue("success", true);
+            jb.KeyValue("action",  op);
+            jb.KeyRaw("result", resultJson);
+            jb.EndObject();
+            return jb.ToString();
+        }
+
         /// <summary>コマンドを組み立てて実行する。メインスレッドで呼ばれる。</summary>
         private static string HandleCall(string op, RemoteMessage msg)
         {
@@ -414,11 +614,16 @@ namespace Poly_Ling.EditorControl
                     return BuildError(op, $"modelIndex を整数にできません: {mi}");
             }
 
-            // command / modelIndex はコマンドの引数ではないので外す。
+            // 封筒の値。コマンドの引数ではないので外す。
+            //   wantRevision … 応答に版と差分（modelRevision / createdObjectIds / deletedObjectIds）を足す。
+            //                  既定は付けない。付けると応答が変わるので、要求した呼び出しにだけ足す。
+            bool wantRevision = raw.TryGetValue("wantRevision", out string wr)
+                                && (wr == "1" || string.Equals(wr, "true", StringComparison.OrdinalIgnoreCase));
+
             var args = new Dictionary<string, string>();
             foreach (var kv in raw)
             {
-                if (kv.Key == "command" || kv.Key == "modelIndex") continue;
+                if (kv.Key == "command" || kv.Key == "modelIndex" || kv.Key == "wantRevision") continue;
                 args[kv.Key] = kv.Value;
             }
 
@@ -446,6 +651,13 @@ namespace Poly_Ling.EditorControl
             jb.KeyValue("command", command);
             AppendIntArray(jb, "masterIndices", result.MasterIndices);
             AppendUlongArray(jb, "objectIds",   result.ObjectIds);
+
+            if (wantRevision)
+            {
+                jb.KeyValue("modelRevision", result.ModelRevision);
+                AppendUlongArray(jb, "createdObjectIds", result.CreatedObjectIds);
+                AppendUlongArray(jb, "deletedObjectIds", result.DeletedObjectIds);
+            }
 
             // コマンドが返した実データ。既に JSON オブジェクトの文字列なので
             // そのまま差し込む（tools と同じ KeyRaw の経路）。

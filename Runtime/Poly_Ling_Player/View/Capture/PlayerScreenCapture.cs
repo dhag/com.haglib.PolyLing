@@ -17,6 +17,13 @@ using UnityEngine.UIElements;
 
 namespace Poly_Ling.Player
 {
+    /// <summary>書き出す形式。</summary>
+    public enum CaptureFormat
+    {
+        Png,
+        Jpeg,
+    }
+
     /// <summary>キャプチャ対象。</summary>
     public enum CaptureTarget
     {
@@ -34,6 +41,9 @@ namespace Poly_Ling.Player
         /// <summary>ファイル名の既定値（拡張子なし）。</summary>
         public const string DefaultFileName = "PolyLing";
 
+        /// <summary>jpeg の既定の品質。</summary>
+        public const int DefaultJpegQuality = 90;
+
         /// <summary>
         /// キャプチャを実行する。フレーム終端で1回だけ撮影し、PNG を保存する。
         /// crop が null ならウインドウ全体、非 null ならその要素の矩形で切り出す。
@@ -41,9 +51,22 @@ namespace Poly_Ling.Player
         /// </summary>
         public static void Capture(
             VisualElement crop, string folder, string baseName, Action<bool, string> onDone)
+            => Capture(crop, folder, baseName, 0, CaptureFormat.Png, DefaultJpegQuality, onDone);
+
+        /// <summary>
+        /// 縮小と書き出し形式を指定して撮る。
+        ///
+        /// maxLongEdge を超える長辺は、その値まで縮めてから保存する（0 以下なら等倍）。
+        /// 画像は MCP の応答で最も高くつくので、送る前ではなく保存する前に小さくする。
+        /// jpeg は写真的な画面では png より小さくなるが、細い線と文字はにじむ。
+        /// </summary>
+        public static void Capture(
+            VisualElement crop, string folder, string baseName,
+            int maxLongEdge, CaptureFormat format, int quality, Action<bool, string> onDone)
         {
             if (string.IsNullOrWhiteSpace(folder))   folder   = DefaultFolder;
             if (string.IsNullOrWhiteSpace(baseName)) baseName = DefaultFileName;
+            quality = Mathf.Clamp(quality, 1, 100);
 
             // 切り出し矩形は撮影前（要素のレイアウトが確定している今）に取る。
             RectInt? rect = null;
@@ -57,17 +80,21 @@ namespace Poly_Ling.Player
                 rect = r;
             }
 
-            PlayerCaptureRunner.Instance.RunAtEndOfFrame(() => Shoot(rect, folder, baseName, onDone));
+            PlayerCaptureRunner.Instance.RunAtEndOfFrame(
+                () => Shoot(rect, folder, baseName, maxLongEdge, format, quality, onDone));
         }
 
         // ================================================================
         // 撮影・保存
         // ================================================================
 
-        private static void Shoot(RectInt? rect, string folder, string baseName, Action<bool, string> onDone)
+        private static void Shoot(
+            RectInt? rect, string folder, string baseName,
+            int maxLongEdge, CaptureFormat format, int quality, Action<bool, string> onDone)
         {
-            Texture2D shot = null;
-            Texture2D cut  = null;
+            Texture2D shot   = null;
+            Texture2D cut    = null;
+            Texture2D scaled = null;
             try
             {
                 shot = ScreenCapture.CaptureScreenshotAsTexture();
@@ -92,16 +119,22 @@ namespace Poly_Ling.Player
                     src = cut;
                 }
 
-                byte[] png = src.EncodeToPNG();
-                if (png == null || png.Length == 0)
+                if (maxLongEdge > 0 && Mathf.Max(src.width, src.height) > maxLongEdge)
                 {
-                    onDone?.Invoke(false, "PNG への変換に失敗しました。");
+                    scaled = Downscale(src, maxLongEdge);
+                    if (scaled != null) src = scaled;
+                }
+
+                byte[] bytes = format == CaptureFormat.Jpeg ? src.EncodeToJPG(quality) : src.EncodeToPNG();
+                if (bytes == null || bytes.Length == 0)
+                {
+                    onDone?.Invoke(false, $"{(format == CaptureFormat.Jpeg ? "JPEG" : "PNG")} への変換に失敗しました。");
                     return;
                 }
 
                 Directory.CreateDirectory(folder);
-                string path = NextPath(folder, baseName);
-                File.WriteAllBytes(path, png);
+                string path = NextPath(folder, baseName, format == CaptureFormat.Jpeg ? ".jpg" : ".png");
+                File.WriteAllBytes(path, bytes);
                 onDone?.Invoke(true, path);
             }
             catch (Exception e)
@@ -111,25 +144,52 @@ namespace Poly_Ling.Player
             }
             finally
             {
+                if (scaled != null) UnityEngine.Object.Destroy(scaled);
                 if (cut  != null) UnityEngine.Object.Destroy(cut);
                 if (shot != null) UnityEngine.Object.Destroy(shot);
             }
         }
 
         /// <summary>
-        /// "&lt;baseName&gt;_0001.png" 形式で、まだ存在しない番号のパスを返す。
+        /// 長辺が maxLongEdge になるまで縮めた写しを作る。縦横の比は保つ。
+        /// GetPixelBilinear で読むので、拡大方向には使わない（呼び出し側が大きいときだけ呼ぶ）。
+        /// </summary>
+        private static Texture2D Downscale(Texture2D src, int maxLongEdge)
+        {
+            float scale = (float)maxLongEdge / Mathf.Max(src.width, src.height);
+            int w = Mathf.Max(1, Mathf.RoundToInt(src.width  * scale));
+            int h = Mathf.Max(1, Mathf.RoundToInt(src.height * scale));
+
+            var dst = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            var pixels = new Color[w * h];
+
+            for (int y = 0; y < h; y++)
+            {
+                float v = (y + 0.5f) / h;
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                    pixels[row + x] = src.GetPixelBilinear((x + 0.5f) / w, v);
+            }
+
+            dst.SetPixels(pixels);
+            dst.Apply();
+            return dst;
+        }
+
+        /// <summary>
+        /// "&lt;baseName&gt;_0001&lt;拡張子&gt;" 形式で、まだ存在しない番号のパスを返す。
         /// 既存ファイルを上書きしない。
         /// </summary>
-        private static string NextPath(string folder, string baseName)
+        private static string NextPath(string folder, string baseName, string extension)
         {
             string safe = SanitizeName(baseName);
             for (int i = 1; i <= 9999; i++)
             {
-                string p = Path.Combine(folder, $"{safe}_{i:0000}.png");
+                string p = Path.Combine(folder, $"{safe}_{i:0000}{extension}");
                 if (!File.Exists(p)) return p;
             }
             // 9999 まで埋まっている場合は時刻で一意化する。
-            return Path.Combine(folder, $"{safe}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+            return Path.Combine(folder, $"{safe}_{DateTime.Now:yyyyMMdd_HHmmss}{extension}");
         }
 
         private static string SanitizeName(string name)

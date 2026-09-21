@@ -32,7 +32,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>登録済みの手本を一覧する。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "登録済みの手本（シナリオ）を一覧する。名前・目的・段数を同じ並びの配列で返す。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "登録済みの手本（シナリオ）を一覧する。名前・目的・段数を同じ並びの配列で返す。query を指定すると、名前・目的・札・段のコマンド名で絞り込む。")]
     [PLResult("count",      PLResultKind.Integer,      Description = "手本の数")]
     [PLResult("storePath",  PLResultKind.Text,         Description = "手本を置いているファイルの絶対パス")]
     [PLResult("names",      PLResultKind.TextArray,    Description = "手本の名前", Optional = true)]
@@ -43,10 +43,14 @@ namespace Poly_Ling.Data
         [PLParam(Description = "ファイルから読み直してから返す。手で編集したあとに使う")]
         public bool Reload { get; }
 
-        public QueryScenariosCommand(int modelIndex = 0, bool reload = false)
+        [PLParam(Description = "探す言葉。名前・目的・札・段のコマンド名と照合する。日本語でよい。省くと全部返す")]
+        public string Query { get; }
+
+        public QueryScenariosCommand(int modelIndex = 0, bool reload = false, string query = "")
             : base(modelIndex)
         {
             Reload = reload;
+            Query  = query ?? "";
         }
     }
 

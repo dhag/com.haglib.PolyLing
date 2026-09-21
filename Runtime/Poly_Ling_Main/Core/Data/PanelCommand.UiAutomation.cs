@@ -170,7 +170,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>画面キャプチャを始める。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "画面キャプチャを始める。撮影はフレーム終端で行うため、完了と保存先は uiCaptureStatus で captureId を指定して取得する。folder を省くとキャプチャパネルで設定した保存先フォルダへ保存する。")]
+    [PLCommand(Writes = PLWriteScope.None, Description = "画面キャプチャを始める。撮影はフレーム終端で行うため、完了と保存先は uiCaptureStatus で captureId を指定して取得する。folder を省くとキャプチャパネルで設定した保存先フォルダへ保存する。panelId でパネル 1 つに絞り、maxLongEdge で縮めてから保存できる。")]
     [PLResult("captureId", PLResultKind.Text, Description = "キャプチャの受付番号")]
     [PLResult("status",    PLResultKind.Text, Description = "pending / completed / failed")]
     public sealed class UiCaptureCommand : PanelCommand
@@ -178,19 +178,36 @@ namespace Poly_Ling.Data
         [PLParam(Description = "撮影範囲。MainView（メイン3D画面）/ TriView（3面図を含むビューポート領域）/ Window（ウインドウ全体）。省くと Window")]
         public string Target { get; }
 
-        [PLParam(Description = "ファイル名の土台。連番と .png が付く。省くと PolyLingTutorial")]
+        [PLParam(Description = "パネル ID。指定するとそのパネルの矩形だけを撮り、target は見ない。uiDescribe の panelIds のどれか。表示されていないパネルは撮れない")]
+        public string PanelId { get; }
+
+        [PLParam(Description = "長辺の上限[px]。これを超えるときだけ縮めて保存する。0 なら等倍", Min = 0)]
+        public int MaxLongEdge { get; }
+
+        [PLParam(Description = "書き出す形式。png / jpeg。省くと png")]
+        public string Format { get; }
+
+        [PLParam(Description = "jpeg の品質。1〜100。png では使わない", Min = 1, Max = 100)]
+        public int Quality { get; }
+
+        [PLParam(Description = "ファイル名の土台。連番と拡張子が付く。省くと PolyLingTutorial")]
         public string BaseName { get; }
 
         [PLParam(Description = "保存先フォルダ。作業フォルダからの相対パスで、作業フォルダの外は指定できない。作業フォルダ直下は . 。無いフォルダは作る。省くとキャプチャパネルで設定した保存先フォルダ")]
         public string Folder { get; }
 
         public UiCaptureCommand(
-            int modelIndex, string target = "Window", string baseName = "PolyLingTutorial", string folder = "")
+            int modelIndex, string target = "Window", string baseName = "PolyLingTutorial", string folder = "",
+            string panelId = "", int maxLongEdge = 0, string format = "png", int quality = 90)
             : base(modelIndex)
         {
-            Target   = string.IsNullOrEmpty(target)   ? "Window"           : target;
-            BaseName = string.IsNullOrEmpty(baseName) ? "PolyLingTutorial" : baseName;
-            Folder   = folder ?? "";
+            Target      = string.IsNullOrEmpty(target)   ? "Window"           : target;
+            BaseName    = string.IsNullOrEmpty(baseName) ? "PolyLingTutorial" : baseName;
+            Folder      = folder ?? "";
+            PanelId     = panelId ?? "";
+            MaxLongEdge = maxLongEdge < 0 ? 0 : maxLongEdge;
+            Format      = string.IsNullOrEmpty(format) ? "png" : format;
+            Quality     = quality;
         }
     }
 
@@ -198,7 +215,7 @@ namespace Poly_Ling.Data
     [PLCommand(Writes = PLWriteScope.None, Description = "uiCapture で始めた画面キャプチャの状態を返す。")]
     [PLResult("captureId", PLResultKind.Text, Description = "キャプチャの受付番号")]
     [PLResult("status",    PLResultKind.Text, Description = "pending / completed / failed")]
-    [PLResult("path",      PLResultKind.Text, Description = "保存した PNG のパス。completed のときだけ", Optional = true)]
+    [PLResult("path",      PLResultKind.Text, Description = "保存した画像のパス。completed のときだけ", Optional = true)]
     [PLResult("error",     PLResultKind.Text, Description = "失敗理由。failed のときだけ", Optional = true)]
     public sealed class UiCaptureStatusCommand : PanelCommand
     {

@@ -53,10 +53,61 @@
 
 ### 1-4. PolyLing のコマンド
 
-| ツール | いつ使うか |
+サーバは起動引数 `--profile` で道具の出し方が変わる。接続先の `serverInfo` の version に
+`profile=…` が出るので、**どの条件で動いているかを先に確かめる。**
+
+| profile | コマンドの見つけ方 | 実行 |
+|---|---|---|
+| `optimized` | `polyling_search` で候補を探し、`polyling_describe` で選んだものの引数を読む | `polyling_call` |
+| `current`（既定） | `polyling_tools` で全コマンドの Schema を取る | `polyling_call` |
+| `generic` | コマンドが 1 本ずつ `pl_<コマンド名>` の道具として並んでいる | `pl_<コマンド名>` を直接呼ぶ |
+
+`optimized` での手順:
+
+```
+polyling_search query=<目的を言葉で>      … 名前と要約だけが返る（既定 8 件）
+polyling_describe commands=[<選んだ名前>] … その分だけ完全な引数・戻り値の Schema
+polyling_call command=<名前> args=<引数>
+```
+
+- `polyling_search` は日本語で書いてよい。名前・説明・分類・タグ・引数の説明と照合する
+- 当たらないときは言い換える。`query` を空にすると全コマンドが名前順に出る（`offset` / `limit` でページ送り）
+- `polyling_describe` は 1 回 10 件まで。**引数名は推測せず、ここで読んだ名前を使う**（3 節「引数名は毎回確かめる」）
+- `polyling_tools` は全件を一度に返す診断用。応答が大きく、その後の会話の入力にも残るので通常は使わない
+
+**`optimized` での共通道具の既定値**
+
+呼び出しが省いたとき、サーバが次の値を入れる。他の条件は従来どおり。
+
+| 道具 | 引数 | 既定 | 備考 |
+|---|---|---|---|
+| `list_files` | `max_results` | 200 | 切ったときは末尾に `TRUNCATED: shown N of M files` |
+| `search_text` | `max_matches` / `max_output_chars` | 50 / 20000 | 当たりが多そうなら先に `summary=true`（ファイルごとの件数だけ） |
+| `read_unity_log` | `severity` / `max_entries` | `error` / 20 | 全文が要るときは `severity=all`。スタックは `include_stacktrace=true` |
+| `unity_capture` | `max_long_edge` | 1568 | これより大きい画像は送る前に縮小されるだけなので、撮る時点で縮める |
+| `apply_patch` | — | — | 応答に変更量・ハッシュ・取り込みが要るかが付く |
+
+**版を見てから取り直す**
+
+`queryRevisions` がモデル・道具一覧・手本・利用シーンの版を返す。前に見た版と同じなら取り直さなくてよい。
+モデルの版は書き込みのあるコマンドが成功するたびに 1 つ進む（照会では進まない）。
+`optimized` では `polyling_call` の応答に `modelRevision` と、増えた・消えたオブジェクトの
+`createdObjectIds` / `deletedObjectIds` が付く。**索引を控えて使い回さず、ここを見る。**
+
+**利用シーン（`optimized` のみ）**
+
+作業の場面ごとに、見せる道具と検索するコマンドを絞れる。
+
+| 何を | どうする |
 |---|---|
-| `polyling_tools` | コマンド一覧（約 262 個）。**作業の前に取り直す。** 増えていることがある |
-| `polyling_call` | コマンドを 1 つ実行 |
+| シーンを見る | `polyling_scenes`（名前・説明・対象・見せる道具） |
+| 検索をシーンに絞る | `polyling_search scene=<名前>` |
+| 道具をシーンに絞る | クライアントが選ぶ。WebClient は「利用シーン」欄、Claude Desktop はサーバの `--scene` |
+| シーンを作る・変える・消す | `setScene` / `deleteScene`（`queryScenes` で一覧）。実行中に変えてよい |
+
+- シーンの対象は `commands`・`categories`・`tags` のどれかに当たるコマンド。3 つとも空なら全コマンド
+- `tools` が空なら道具は絞らない。`polyling_search` / `polyling_describe` / `polyling_call` / `polyling_scenes` はどのシーンでも消えない
+- 目的のコマンドがシーンに無いときは `scene` を外して探し直す。見つかったらシーンに足すかを利用者に諮る
 
 `polyling_call` の引数は **文字列だけの平らな組**。
 
@@ -64,6 +115,8 @@
 - 入れ子 → ドット付きのキー（`"params.widthTop"`）
 
 JSON の配列をそのまま渡すと断られる。
+`generic` の `pl_` 道具は Schema どおり JSON の配列で渡してよい（サーバがカンマ区切りへ直す）。
+対象モデルは `polyling_call` では `model_index`、`pl_` 道具でも `model_index`（既定 0）。
 
 ---
 
@@ -74,6 +127,16 @@ JSON の配列をそのまま渡すと断られる。
 ```
 unity_stop → 編集 → compile → unity_refresh → unity_play → unity_state
 ```
+
+`optimized` では `unity_validate_changes` が停止・取り込み・コンパイル待ち・今回ぶんのエラー抽出・
+再生への復帰（`restore_play_mode=true`）を 1 回で行う。
+
+```
+編集 → compile → unity_validate_changes restore_play_mode=true
+```
+
+返るのはこの呼び出しの間に Editor.log へ書かれたコンパイルエラーと例外だけ（件数と先頭 `max_errors` 行）。
+エラーがあると再生へは戻さない。全文が要るときだけ `read_unity_log` を読む。
 
 **`unity_refresh` を飛ばすと、Unity は古いコードのまま動く。**
 `compile` が通ったからといって Editor に反映されてはいない。
@@ -108,6 +171,9 @@ unity_capture target=MainView
 | 引数 | 既定 | 意味 |
 |---|---|---|
 | `target` | `MainView` | `MainView` / `TriView` / `Window`。パネルまで写るのは `Window` だけ |
+| `panel_id` | 空 | 指定するとそのパネルだけを撮る（`target` は見ない）。開いていないパネルは撮れない |
+| `max_long_edge` | `optimized` では 1568 | 長辺がこれを超えるときだけ、保存する前に縮める。0 で等倍 |
+| `format` / `quality` | `png` / 90 | 陰影の多い画面は `jpeg` の方が小さい。細い線と文字はにじむ |
 | `folder` | `.` | 作業フォルダからの相対。**空にしない**（キャプチャパネルの設定先はプロジェクトの外かもしれず、その場合は読めない） |
 | `base_name` | `PolyLingCapture` | 連番と `.png` が付く |
 | `focus` | `true` | 落とさない。背面では撮影が終わらない（下記） |
@@ -307,6 +373,15 @@ polyling_call queryUiAutomationAudit
 
 この計算が汎用的なら、**新しいコマンドとして登録する候補**になる。
 ただし登録は利用者からの要請があったときだけ。
+
+### 5-1b. 保存してある手本を先に探す
+
+`queryScenarios query=<目的を言葉で>` で、保存してある手本（シナリオ）を名前・目的・札・段の
+コマンド名から探せる。**同じ手順を組み立て直す前に、まず探す。**
+
+同じ並びのコマンドを 3 回以上繰り返したら、**手本にするかを利用者に諮る。**
+勝手に登録しない。登録するなら `createScenario` と `addScenarioStep`、
+または記録（`startScenarioRecording` → `stopScenarioRecording`）を使う。
 
 ### 5-2. どこを読むか
 
