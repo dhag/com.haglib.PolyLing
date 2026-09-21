@@ -149,6 +149,10 @@ namespace Poly_Ling.Player
                 if (step == null) continue;
                 string id = step.ElementId ?? "";
 
+                // 段の利用シーンが消えた・改名された。区間の意味が失われるので指摘する。
+                if (!string.IsNullOrEmpty(step.UsageScene) && SceneLibrary.Get(step.UsageScene) == null)
+                    Add(id, "unknownUsageScene", "", $"利用シーン {step.UsageScene} が登録されていない");
+
                 if (step.IsExecutable)
                 {
                     Type t = PanelCommandFactory.ResolveType(step.Action);
@@ -226,6 +230,15 @@ namespace Poly_Ling.Player
             if (cmd.Reload) ScenarioLibrary.Reload();
 
             var all        = ScenarioLibrary.GetAll();
+
+            // 利用シーンからの逆引き。登録されていない名前は、黙って 0 件にせず断る。
+            SceneDefinition usage = null;
+            if (!string.IsNullOrWhiteSpace(cmd.UsageScene))
+            {
+                usage = SceneLibrary.Get(cmd.UsageScene.Trim());
+                if (usage == null) { Fail($"利用シーンがありません: {cmd.UsageScene}"); return; }
+            }
+
             var names      = new List<string>(all.Count);
             var goals      = new List<string>(all.Count);
             var stepCounts = new List<int>(all.Count);
@@ -235,6 +248,7 @@ namespace Poly_Ling.Player
                 // query の照合はコマンド検索と同じ方式（PanelCommandSchemaIndex.ScoreText）。
                 // 空の query は全部通る。
                 if (PanelCommandFactory.ScoreText(cmd.Query, g.Name, ScenarioHaystack(g)) <= 0f) continue;
+                if (usage != null && !ScenarioUsesScene(g, usage)) continue;
 
                 names.Add(g.Name ?? "");
                 goals.Add(g.Goal ?? "");
@@ -248,6 +262,17 @@ namespace Poly_Ling.Player
                 .Texts("goals",      goals)
                 .Ints ("stepCounts", stepCounts)
                 .Build());
+        }
+
+        /// <summary>手本が利用シーンに関係するか。段に名前がある、または利用シーンの relatedScenarios に挙がっている。</summary>
+        private static bool ScenarioUsesScene(ObjectGroup g, SceneDefinition usage)
+        {
+            foreach (var r in usage.RelatedScenarios)
+                if (string.Equals(r, g.Name, StringComparison.OrdinalIgnoreCase)) return true;
+            if (g.Steps == null) return false;
+            foreach (var s in g.Steps)
+                if (s != null && string.Equals(s.UsageScene, usage.Name, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         /// <summary>手本の検索で照合する本文。目的・札・満たすべきこと・段の目的とコマンド名。</summary>
@@ -299,6 +324,7 @@ namespace Poly_Ling.Player
             var kinds      = new List<string>();
             var actions    = new List<string>();
             var purposes   = new List<string>();
+            var usages     = new List<string>();
             var refNames   = new List<string>();
             var policies   = new List<string>();
             var argCounts  = new List<int>();
@@ -311,6 +337,7 @@ namespace Poly_Ling.Player
                 kinds.Add(step.Kind.ToString());
                 actions.Add(step.Action ?? "");
                 purposes.Add(step.Purpose ?? "");
+                usages.Add(step.UsageScene ?? "");
                 refNames.Add(step.IsScenarioRef ? (step.RefName ?? "") : "");
                 policies.Add(step.IsScenarioRef ? step.ExpansionPolicy.ToString() : "");
 
@@ -339,6 +366,7 @@ namespace Poly_Ling.Player
                 .Texts("kinds",             kinds)
                 .Texts("actions",           actions)
                 .Texts("purposes",          purposes)
+                .Texts("usageScenes",       usages)
                 .Texts("refNames",          refNames)
                 .Texts("expansionPolicies", policies)
                 .Texts("scenarioNames",     owners)
@@ -483,7 +511,7 @@ namespace Poly_Ling.Player
 
             if (!TryBuildScenarioStep(
                     cmd.Kind, cmd.Action, cmd.Purpose, cmd.ArgKeys, cmd.ArgValues,
-                    cmd.RefName, cmd.ExpansionPolicy,
+                    cmd.RefName, cmd.ExpansionPolicy, cmd.UsageScene,
                     out ObjectGroupStep step, out string reason))
             { Fail(reason); return; }
 
@@ -537,7 +565,7 @@ namespace Poly_Ling.Player
 
             if (!TryBuildScenarioStep(
                     cmd.Kind, cmd.Action, cmd.Purpose, cmd.ArgKeys, cmd.ArgValues,
-                    cmd.RefName, cmd.ExpansionPolicy,
+                    cmd.RefName, cmd.ExpansionPolicy, cmd.UsageScene,
                     out ObjectGroupStep step, out string reason))
             { Fail(reason); return; }
 
@@ -945,11 +973,25 @@ namespace Poly_Ling.Player
         private static bool TryBuildScenarioStep(
             ObjectGroupStepKind kind, string action, string purpose,
             string[] argKeys, string[] argValues,
-            string refName, ScenarioExpansionPolicy expansionPolicy,
+            string refName, ScenarioExpansionPolicy expansionPolicy, string usageScene,
             out ObjectGroupStep step, out string reason)
         {
             step   = null;
             reason = null;
+
+            // 段の利用シーンは、登録済みの名前だけを受ける（綴り違いのまま区間ができるのを防ぐ）。
+            // 登録名の大小文字に揃えて持つ。
+            usageScene = (usageScene ?? "").Trim();
+            if (usageScene.Length > 0)
+            {
+                var sc = SceneLibrary.Get(usageScene);
+                if (sc == null)
+                {
+                    reason = $"利用シーンがありません: {usageScene}（polyling_scenes の名前を指定する）";
+                    return false;
+                }
+                usageScene = sc.Name;
+            }
 
             argKeys   = argKeys   ?? new string[0];
             argValues = argValues ?? new string[0];
@@ -1000,6 +1042,7 @@ namespace Poly_Ling.Player
                 Purpose         = purpose ?? "",
                 RefName         = scenarioRef ? refName : "",
                 ExpansionPolicy = scenarioRef ? expansionPolicy : ScenarioExpansionPolicy.Reference,
+                UsageScene      = usageScene,
             };
 
             for (int i = 0; i < argKeys.Length; i++)

@@ -23,7 +23,10 @@ namespace Poly_Ling.Player
         /// <summary>配置元（ネジ）。複数可。</summary>
         private MeshSourceMultiPick _boltSrcPick = new MeshSourceMultiPick();
 
+        // 並べ方ごとに入力欄をまとめる入れ物。中の欄は個別に登録済みなので、入れ物は外へ出さない。
+        [UiControl(Ignore = true)]
         private VisualElement _boltCircleBox;
+        [UiControl(Ignore = true)]
         private VisualElement _boltRectBox;
 
         [UiControl("boltPattern.info", Safety = UiSafety.ReadOnly, Description = "ネジ配置の個数")]

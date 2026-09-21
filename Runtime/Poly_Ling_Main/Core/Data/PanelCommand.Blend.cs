@@ -22,7 +22,7 @@ namespace Poly_Ling.Data
     /// 戻り値としてクローンのモデルインデックスが必要だが PanelCommand は戻り値を持たないため、
     /// ハンドラが NotifyPanels を呼び出したあとパネルは OnViewChanged で新モデル数を検出する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "パネルオープン時にターゲットモデルのクローンを作成してプロジェクトに追加する。")]
+    [PLCommand(Category = "object.list", Writes = PLWriteScope.AddOnly, Description = "パネルオープン時にターゲットモデルのクローンを作成してプロジェクトに追加する。")]
     public class CreateBlendCloneCommand : PanelCommand
     {
         [PLParam(TextKey = "CloneNameBase",
@@ -33,7 +33,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ブレンドをクローンモデルに適用する</summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "ブレンドをクローンモデルに適用する。")]
+    [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.ModelWide, Description = "ブレンドをクローンモデルに適用する。")]
     public class ApplyModelBlendCommand : PanelCommand
     {
         /// <summary>クローン先モデルインデックス</summary>
@@ -70,7 +70,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ブレンドプレビュー（Undo記録なし）</summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "ブレンドの見た目だけを更新する（Undo 記録なし）。")]
+    [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.ModelWide, Description = "ブレンドの見た目だけを更新する（Undo 記録なし）。")]
     public class PreviewModelBlendCommand : PanelCommand
     {
         [PLParam(TextKey = "BlendCloneModelIndex",
@@ -142,7 +142,7 @@ namespace Poly_Ling.Data
     /// PanelCommand.ModelIndex と書き込み先が食い違い、Undo と
     /// 所有権判定の基準が二重になるため。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "宛先メッシュへ、複数のソースメッシュを加重平均でブレンドして適用する。")]
+    [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.Targets, Description = "宛先メッシュへ、複数のソースメッシュを加重平均でブレンドして適用する。")]
     public class ApplyBlendCommand : PanelCommand
     {
         /// <summary>1 コマンドで受け付けるソースの上限</summary>

@@ -33,7 +33,10 @@ namespace Poly_Ling.EditorIO
         private string _modelFolderPath = "";
 
         // オプション。既定値は HierarchyExportOptions が持つ。
-        private readonly HierarchyExportOptions _opt = new HierarchyExportOptions();
+        private readonly HierarchyExportOptions _opt = new HierarchyExportOptions
+        {
+            AddToHierarchy = true,
+        };
 
 
         [MenuItem("PolyLing/IO/Hierarchy Export (Project File → Hierarchy)")]
@@ -79,9 +82,11 @@ namespace Poly_Ling.EditorIO
             HierarchyExportOptionsGUI.Draw(_opt);
 
             EditorGUILayout.Space();
-            using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(_modelFolderPath)))
+            bool hasOutput = _opt.AddToHierarchy || _opt.SaveAsPrefab;
+            using (new EditorGUI.DisabledScope(
+                       string.IsNullOrEmpty(_modelFolderPath) || !hasOutput))
             {
-                string label = _opt.SaveAsPrefab ? "ロードしてプレファブに保存" : "ロードしてヒエラルキーに書き出し";
+                string label = BuildExecuteLabel();
                 if (GUILayout.Button(label, GUILayout.Height(28)))
                 {
                     LoadAndExport();
@@ -114,6 +119,17 @@ namespace Poly_Ling.EditorIO
         {
             var outcome = new HierarchyPrefabExporter(_opt.Clone()).ExportFolder(_modelFolderPath);
             EditorUtility.DisplayDialog(outcome.Title, outcome.Text, "OK");
+        }
+
+        private string BuildExecuteLabel()
+        {
+            if (_opt.AddToHierarchy && _opt.SaveAsPrefab)
+                return "ロードしてプレファブ保存＋ヒエラルキー追加";
+            if (_opt.SaveAsPrefab)
+                return "ロードしてプレファブに保存";
+            if (_opt.AddToHierarchy)
+                return "ロードしてヒエラルキーに追加";
+            return "出力方法を選択してください";
         }
     }
 }

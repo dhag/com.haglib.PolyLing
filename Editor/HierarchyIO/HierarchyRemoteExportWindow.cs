@@ -1,33 +1,23 @@
 // Editor/HierarchyIO/HierarchyRemoteExportWindow.cs
 // ============================================================
-// リモートのプロジェクト → Unityヒエラルキー（要求型クライアント）
+// PolyLing 本体からプロジェクトを取得して Unity ヒエラルキーへ書き出す。
 // ============================================================
 //
-// 【役割】
-//   HierarchyExportWindow（プロジェクトファイル → ヒエラルキー）のリモート版。
-//   入力元がモデルフォルダではなく、接続した PolyLing 本体（サーバ）になる。
-//   こちらからクエリ project_bundle を送り、プロジェクト全体を PLRF 束で受け取る。
+// 【方針】
+//   リモート書き出しは、Unity エディタ側から project_bundle を要求する
+//   Pull 方式を正本とする。
 //
 // 【処理の流れ】
-//   1. サーバ一覧（マスター）に問い合わせて WebSocket 接続（複数あれば選択）。
-//   2. RegisterClientType("hierarchyFetch")。
-//      "hierarchyExport" で登録すると、本体側の Send Hierarchy の push まで届くため別名にする。
-//   3. ボタンで FetchProjectBundle → 応答の束を受信ファイルの書き込み先へ展開。
-//   4. 展開したフォルダを HierarchyPrefabExporter.ExportFolder で書き出し、結果をダイアログで出す。
-//      これはファイルから読んだときと同じ経路になる。
+//   1. RemoteDirectory から PolyLing 本体を選び、WebSocket 接続する。
+//   2. エディタ側から project_bundle を要求する。
+//   3. 受信した PLRF 束を保存先フォルダへ展開する。
+//   4. HierarchyPrefabExporter で Hierarchy または Prefab へ書き出す。
 //
-// 【共有部品】
-//   オプション欄と設定の読み書き … HierarchyExportOptionsGUI（HierarchyExportWindow と同じ設定）
-//   書き出し可否・展開・接続先の選択 … RemoteHierarchyReceive
-//
-// 【注意】
-//   Play 中・コンパイル中・アセット更新中は、展開までで止めて理由を出す（受信ファイルは残る）。
 // ============================================================
 
 #if UNITY_EDITOR
 
 using System;
-using System.IO;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Core;
@@ -41,76 +31,100 @@ namespace Poly_Ling.EditorIO
     {
         private const string ClientTypeId = "hierarchyFetch";
 
-        // 接続まわりの設定はこの窓だけのものなので EditorPrefs。
-        private const string PrefsKeyUserName    = "PolyLing.HierarchyRemoteExport.UserName";
-        private const string PrefsKeyAutoConnect = "PolyLing.HierarchyRemoteExport.AutoConnect";
+        private const string PrefsKeyUserName =
+            "PolyLing.HierarchyRemoteExport.UserName";
+        private const string PrefsKeyAutoConnect =
+            "PolyLing.HierarchyRemoteExport.AutoConnect";
 
-        // オプション。既定値は HierarchyExportOptions が持つ。
-        private readonly HierarchyExportOptions _opt = new HierarchyExportOptions();
+        private readonly HierarchyExportOptions _options =
+            new HierarchyExportOptions
+            {
+                AddToHierarchy = true,
+            };
 
-        private PolyLingPlayerClient  _client;
+        private PolyLingPlayerClient _client;
         private RemoteServerConnector _connector;
 
-        private string _destRoot    = "";
-        private string _userName    = "";
-        private bool   _autoConnect = true;
+        private string _receiveRoot = "";
+        private string _userName = "";
+        private bool _autoConnect = true;
 
         private string _endpointInfo = "";
-        private string _status       = "未接続";
-        private bool   _fetching;
-
+        private string _status = "未接続";
+        private bool _fetching;
         private Vector2 _scroll;
 
-        [MenuItem("PolyLing/IO/Hierarchy Export (Remote Project → Hierarchy)")]
+        [MenuItem("PolyLing/IO/Hierarchy Export (PolyLing → Hierarchy)")]
         public static void Open()
         {
-            GetWindow<HierarchyRemoteExportWindow>(true, "Hierarchy Export (Remote)", true);
+            GetWindow<HierarchyRemoteExportWindow>(
+                true, "Hierarchy Export from PolyLing", true);
         }
-
-        // ================================================================
-        // ライフサイクル
-        // ================================================================
 
         private void OnEnable()
         {
-            HierarchyExportOptionsGUI.Load(_opt);
+            HierarchyExportOptionsGUI.Load(_options);
 
-            // 受信ファイルの書き込み先は待ち受け型クライアントと共通（SaveDest.Keys.RemoteHierarchy）。
-            _destRoot    = EditorSaveDestField.Load(SaveDest.Keys.RemoteHierarchy, RemoteHierarchyReceive.DefaultDestRoot());
-            _userName    = EditorPrefs.GetString(PrefsKeyUserName, "");
+            _receiveRoot = EditorSaveDestField.Load(
+                SaveDest.Keys.RemoteHierarchy,
+                RemoteHierarchyReceive.DefaultDestRoot());
+
+            _userName = EditorPrefs.GetString(PrefsKeyUserName, "");
             _autoConnect = EditorPrefs.GetBool(PrefsKeyAutoConnect, true);
 
-            if (_autoConnect) Connect();
+            if (_autoConnect)
+                Connect();
         }
 
         private void OnDisable()
         {
-            HierarchyExportOptionsGUI.Save(_opt);
-            SaveDest.SetFolder(SaveDest.Keys.RemoteHierarchy, _destRoot ?? "");
-            EditorPrefs.SetString(PrefsKeyUserName, _userName ?? "");
-            EditorPrefs.SetBool(PrefsKeyAutoConnect, _autoConnect);
+            SaveSettings();
             Disconnect();
         }
 
-        // ================================================================
-        // UI（IMGUI）
-        // ================================================================
+        private void SaveSettings()
+        {
+            HierarchyExportOptionsGUI.Save(_options);
+            SaveDest.SetFolder(
+                SaveDest.Keys.RemoteHierarchy, _receiveRoot ?? "");
+            EditorPrefs.SetString(PrefsKeyUserName, _userName ?? "");
+            EditorPrefs.SetBool(PrefsKeyAutoConnect, _autoConnect);
+        }
 
         private void OnGUI()
         {
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
 
-            EditorGUILayout.LabelField("リモートのプロジェクト → ヒエラルキー", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                "PolyLingから取得 → ヒエラルキー", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "接続した PolyLing 本体からプロジェクト全体を取得し、" +
-                "配下のモデルを全て書き出します。",
+                "接続したPolyLing本体からプロジェクト全体を取得し、" +
+                "HierarchyまたはPrefabへ書き出します。送信操作はPolyLing本体側では不要です。",
                 MessageType.None);
-            EditorGUILayout.Space();
 
-            // ── 接続 ──────────────────────────────────────────────
+            EditorGUILayout.Space(6);
+            DrawConnectionSection();
+
+            EditorGUILayout.Space(8);
+            DrawReceiveSection();
+
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField("書き出し設定", EditorStyles.boldLabel);
+            HierarchyExportOptionsGUI.Draw(_options);
+
+            EditorGUILayout.Space(10);
+            DrawExecutionSection();
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawConnectionSection()
+        {
+            EditorGUILayout.LabelField("接続", EditorStyles.boldLabel);
+
             bool connected = _client != null && _client.IsConnected;
-
             EditorGUILayout.LabelField("状態", _status);
+
             if (!string.IsNullOrEmpty(_endpointInfo))
                 EditorGUILayout.LabelField("接続先", _endpointInfo);
 
@@ -120,69 +134,91 @@ namespace Poly_Ling.EditorIO
             {
                 using (new EditorGUI.DisabledScope(connected))
                 {
-                    if (GUILayout.Button("接続", GUILayout.Height(22))) Connect();
+                    if (GUILayout.Button("接続", GUILayout.Height(22)))
+                        Connect();
                 }
+
                 using (new EditorGUI.DisabledScope(!connected))
                 {
-                    if (GUILayout.Button("切断", GUILayout.Height(22))) Disconnect();
+                    if (GUILayout.Button("切断", GUILayout.Height(22)))
+                        Disconnect();
                 }
             }
 
-            _autoConnect = EditorGUILayout.Toggle("ウィンドウを開いたら接続", _autoConnect);
+            _autoConnect = EditorGUILayout.Toggle(
+                "ウィンドウを開いたら接続", _autoConnect);
+
             using (new EditorGUI.DisabledScope(connected))
             {
-                _userName = EditorGUILayout.TextField("ユーザー名（任意）", _userName);
+                _userName = EditorGUILayout.TextField(
+                    "ユーザー名（任意）", _userName);
             }
+        }
 
-            // [...] は書き込み先フォルダを決めるだけ。
-            _destRoot = EditorSaveDestField.Draw(
-                "受信ファイルの書き込み先", _destRoot, SaveDest.Keys.RemoteHierarchy,
-                "受信ファイルの書き込み先", "project.csv", "csv");
+        private void DrawReceiveSection()
+        {
+            EditorGUILayout.LabelField("受信ファイル", EditorStyles.boldLabel);
 
-            // ── オプション（HierarchyExportWindow と共通） ──────────
-            EditorGUILayout.Space();
-            HierarchyExportOptionsGUI.Draw(_opt);
+            _receiveRoot = EditorSaveDestField.Draw(
+                "書き込み先フォルダ",
+                _receiveRoot,
+                SaveDest.Keys.RemoteHierarchy,
+                "受信ファイルの書き込み先",
+                "project.csv",
+                "csv");
+        }
 
-            // ── 実行 ──────────────────────────────────────────────
-            EditorGUILayout.Space();
+        private void DrawExecutionSection()
+        {
+            bool connected = _client != null && _client.IsConnected;
+            bool canExport = RemoteHierarchyReceive.CanExportNow(
+                out string blockReason);
+            bool hasOutput = _options.AddToHierarchy || _options.SaveAsPrefab;
 
-            bool canExport = RemoteHierarchyReceive.CanExportNow(out string blockReason);
             if (!canExport)
             {
                 EditorGUILayout.HelpBox(
-                    blockReason + "\n取得したファイルの保存だけは行います。",
+                    blockReason,
                     MessageType.Warning);
             }
 
-            using (new EditorGUI.DisabledScope(!connected || _fetching))
+            using (new EditorGUI.DisabledScope(
+                       !connected || _fetching || !canExport || !hasOutput))
             {
-                string label = _opt.SaveAsPrefab ? "取得してプレファブに保存" : "取得してヒエラルキーに書き出し";
-                if (GUILayout.Button(label, GUILayout.Height(28)))
-                    FetchAndExport();
+                if (GUILayout.Button(BuildExecuteLabel(), GUILayout.Height(30)))
+                    FetchProject();
             }
-
-            EditorGUILayout.EndScrollView();
         }
 
-        // ================================================================
-        // 接続 / 切断
-        // ================================================================
+        private string BuildExecuteLabel()
+        {
+            if (_options.AddToHierarchy && _options.SaveAsPrefab)
+                return "取得してプレファブ保存＋ヒエラルキー追加";
+            if (_options.SaveAsPrefab)
+                return "取得してプレファブに保存";
+            if (_options.AddToHierarchy)
+                return "取得してヒエラルキーに追加";
+            return "出力方法を選択してください";
+        }
 
         private void Connect()
         {
-            if (_client != null && _client.IsConnected) return;
+            if (_client != null && _client.IsConnected)
+                return;
 
             if (_client == null)
             {
                 _client = new PolyLingPlayerClient();
-                _client.OnConnected    += HandleConnected;
+                _client.OnConnected += HandleConnected;
                 _client.OnDisconnected += HandleDisconnected;
 
-                // 接続先はマスターから得る。複数あれば OnGUI で選ばせる。
-                // Begin / Choose はメインスレッドから呼ぶこと。
                 _connector = new RemoteServerConnector(_client)
                 {
-                    OnStatus         = s => { _status = s; Repaint(); },
+                    OnStatus = value =>
+                    {
+                        _status = value;
+                        Repaint();
+                    },
                     OnChoicesChanged = _ => Repaint(),
                 };
             }
@@ -193,28 +229,31 @@ namespace Poly_Ling.EditorIO
 
         private void Disconnect()
         {
-            if (_client == null) return;
+            if (_client == null)
+                return;
 
             _connector?.Detach();
             _connector = null;
 
-            _client.OnConnected    -= HandleConnected;
+            _client.OnConnected -= HandleConnected;
             _client.OnDisconnected -= HandleDisconnected;
-
             _client.Dispose();
             _client = null;
 
-            _fetching     = false;
+            _fetching = false;
             _endpointInfo = "";
-            _status       = "未接続";
+            _status = "未接続";
             Repaint();
         }
 
         private void HandleConnected()
         {
             _status = "接続済み";
+
             var target = _connector?.Target;
-            _endpointInfo = target != null ? $"ws://{RemoteDirectory.Host}:{target.Port}/   {target.Label}" : "";
+            _endpointInfo = target != null
+                ? $"ws://{RemoteDirectory.Host}:{target.Port}/   {target.Label}"
+                : "";
 
             string name = string.IsNullOrWhiteSpace(_userName)
                 ? SystemInfo.deviceName
@@ -227,23 +266,34 @@ namespace Poly_Ling.EditorIO
         private void HandleDisconnected()
         {
             _fetching = false;
-            _status   = "切断されました";
+            _status = "切断されました";
             Repaint();
         }
 
-        // ================================================================
-        // 取得 → 展開 → 書き出し
-        // ================================================================
-
-        private void FetchAndExport()
+        private void FetchProject()
         {
-            if (_client == null || !_client.IsConnected || _fetching) return;
+            if (_client == null || !_client.IsConnected || _fetching)
+                return;
+
+            SaveSettings();
 
             _fetching = true;
-            _status   = "プロジェクトを取得中...";
+            _status = "プロジェクトを取得中...";
             Repaint();
 
-            _client.FetchProjectBundle(OnBundleReceived);
+            try
+            {
+                _client.FetchProjectBundle(OnBundleReceived);
+            }
+            catch (Exception ex)
+            {
+                _fetching = false;
+                _status = "取得要求に失敗しました";
+                Debug.LogException(ex);
+                EditorUtility.DisplayDialog(
+                    "取得失敗", ex.Message, "OK");
+                Repaint();
+            }
         }
 
         private void OnBundleReceived(string json, byte[] data)
@@ -253,14 +303,22 @@ namespace Poly_Ling.EditorIO
             if (data == null)
             {
                 _status = "取得に失敗しました";
-                Debug.LogError("[HierarchyRemoteExport] 取得に失敗しました: " + json);
-                EditorUtility.DisplayDialog("取得失敗", "サーバからプロジェクトを取得できませんでした。\n" + json, "OK");
+                Debug.LogError(
+                    "[HierarchyRemoteExport] 取得に失敗しました: " + json);
+                EditorUtility.DisplayDialog(
+                    "取得失敗",
+                    "サーバからプロジェクトを取得できませんでした。\n" + json,
+                    "OK");
                 Repaint();
                 return;
             }
 
-            if (!RemoteHierarchyReceive.Expand(data, _destRoot,
-                    out string folderPath, out int fileCount, out string error))
+            if (!RemoteHierarchyReceive.Expand(
+                    data,
+                    _receiveRoot,
+                    out string folderPath,
+                    out int fileCount,
+                    out string error))
             {
                 _status = "展開に失敗しました: " + error;
                 EditorUtility.DisplayDialog("展開失敗", error, "OK");
@@ -268,22 +326,51 @@ namespace Poly_Ling.EditorIO
                 return;
             }
 
-            Debug.Log($"[HierarchyRemoteExport] 受信 {fileCount} ファイル → {folderPath}");
+            Debug.Log(
+                $"[HierarchyRemoteExport] 受信 {fileCount} ファイル → {folderPath}");
 
-            // 書き出しは自分のエディタの状態に依存する。不可なら理由を出して止める（受信ファイルは残る）。
-            if (!RemoteHierarchyReceive.CanExportNow(out string blockReason))
+            if (!RemoteHierarchyReceive.CanExportNow(
+                    out string blockReason))
             {
                 _status = blockReason;
-                Debug.LogError("[HierarchyRemoteExport] " + blockReason + " 受信ファイルは保存済みです: " + folderPath);
+                Debug.LogError("[HierarchyRemoteExport] " + blockReason);
                 Repaint();
                 return;
             }
 
-            // 以降はファイルから読むときと同一経路（HierarchyExportWindow.LoadAndExport と同じ本体）。
-            var outcome = new HierarchyPrefabExporter(_opt.Clone()).ExportFolder(folderPath);
-            _status = $"{outcome.Title}  {DateTime.Now:HH:mm:ss}";
-            Repaint();
-            EditorUtility.DisplayDialog(outcome.Title, outcome.Text, "OK");
+            ExportFolder(folderPath);
+        }
+
+        private void ExportFolder(string folderPath)
+        {
+            if (!RemoteHierarchyReceive.CanExportNow(
+                    out string blockReason))
+            {
+                _status = blockReason;
+                Repaint();
+                return;
+            }
+
+            SaveSettings();
+
+            try
+            {
+                var outcome = new HierarchyPrefabExporter(
+                    _options.Clone()).ExportFolder(folderPath);
+
+                _status = $"{outcome.Title}  {DateTime.Now:HH:mm:ss}";
+                Repaint();
+                EditorUtility.DisplayDialog(
+                    outcome.Title, outcome.Text, "OK");
+            }
+            catch (Exception ex)
+            {
+                _status = "書き出しに失敗しました";
+                Debug.LogException(ex);
+                EditorUtility.DisplayDialog(
+                    "書き出し失敗", ex.Message, "OK");
+                Repaint();
+            }
         }
     }
 }

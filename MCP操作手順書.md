@@ -96,18 +96,44 @@ polyling_call command=<名前> args=<引数>
 
 **利用シーン（`optimized` のみ）**
 
-作業の場面ごとに、見せる道具と検索するコマンドを絞れる。
+利用シーンとは、スキニングやモーフ編集のような作業の一局面について、検索するコマンドと見せる道具を
+あらかじめ決めておくプリセットである。手本（シナリオ）が作業全体、コマンドが 1 つの操作なら、
+利用シーンはその中間の「一区間」にあたる。Unity のシーンとは無関係。
 
 | 何を | どうする |
 |---|---|
-| シーンを見る | `polyling_scenes`（名前・説明・対象・見せる道具） |
-| 検索をシーンに絞る | `polyling_search scene=<名前>` |
-| 道具をシーンに絞る | クライアントが選ぶ。WebClient は「利用シーン」欄、Claude Desktop はサーバの `--scene` |
-| シーンを作る・変える・消す | `setScene` / `deleteScene`（`queryScenes` で一覧）。実行中に変えてよい |
+| 利用シーンを見る | `polyling_scenes`（名前・説明・対象・見せる道具） |
+| 検索を利用シーンに絞る | `polyling_search scene=<名前>` |
+| 道具を利用シーンに絞る | クライアントが選ぶ。WebClient は「利用シーン」欄、Claude Desktop はサーバの `--scene` |
+| 利用シーンを作る・変える・消す | `setScene` / `deleteScene`（`queryScenes` で一覧）。実行中に変えてよい。名前の誤りは断られる |
 
-- シーンの対象は `commands`・`categories`・`tags` のどれかに当たるコマンド。3 つとも空なら全コマンド
-- `tools` が空なら道具は絞らない。`polyling_search` / `polyling_describe` / `polyling_call` / `polyling_scenes` はどのシーンでも消えない
-- 目的のコマンドがシーンに無いときは `scene` を外して探し直す。見つかったらシーンに足すかを利用者に諮る
+- 候補になるのは `explicitCommands` に名前がある、または `includeCategories` に属するコマンド。両方空なら全コマンド。`excludeCommands` に名前があれば外れる
+- `includeCategories` は階層で書ける。`geometry` は `geometry.topology` なども含む
+- `boostTags` は候補を増やさない。当たったコマンドの順位を上げるだけ
+- `hazardPolicy` は危険性ごとの扱い。`hide` はその危険性を持つコマンドを候補から外し、`warn` / `require-confirmation` は検索結果の `policy` に出る。**`require-confirmation` が付いたコマンドは、実行前に利用者に諮る**
+- `stateAssumptions` は利用シーンが想定するモデル状態。実際と違うと検索結果の `stateWarnings` に出る。`stateChecked=false` はパネルが開いておらず照合していないという意味
+- `notes` は注意書き。禁忌を承知で破る事情などが書いてある。検索結果にも出るので必ず読む
+- `verificationPolicy` は実行後に確かめること。検索結果にも出る
+- 使える分類・状態・危険性・検証の名前は、`polyling_scenes` の応答に一覧がある
+- 同梱の既製品が 3 件ある（`origin=builtin`）：**新規形状作成**・**スキニング**・**モーフ・表情作成**。
+  既製品は変更も削除もできない。変えたいときは別の名前で `setScene` して使う
+- 危険性の扱いは、コマンドに `Hazards` が付いているものにだけ効く（いまは代表の 55 本）
+- 利用シーンを指定した検索では、候補ごとに `matchedCategory`（候補に入った理由。`explicit` は明示）、
+  `matchedTags`、`stateConflicts`（その危険性がいまのモデルで実際に壊すもの。例 `InvalidatesMorphs:hasMorphs`）が付く。
+  **`stateConflicts` が付いたコマンドは、実行前に利用者に諮る**
+
+**手本と利用シーン**
+
+- 手本の段は `usageScene` を持てる（`addScenarioStep` / `setScenarioStep`）。同じ名前が続く段がその利用シーンの区間になる
+- 手本を流している間は、`queryScenarioRun`（と `runScenario` / `continueScenario` の結果）の `usageScene` が
+  次の段の利用シーンを示す。**検索の `scene` をこれに合わせる**（自動では切り替わらない）
+- `queryScenarios usageScene=<名前>` で、その利用シーンを使う手本を引ける
+- 利用シーンを消したり改名したりしたら `queryScenarioAudit` を回す（`unknownUsageScene` が出る）
+
+**モデル状態** は `queryModelState` で取れる。ボーン・スキンウェイト・モーフ・Humanoid・スプリングボーン・ミラーの有無と、
+`topologyLocked`（スキンウェイトかモーフがあり、頂点や面を増減すると壊れる状態）を返す。
+- `tools` が空なら道具は絞らない。`polyling_search` / `polyling_describe` / `polyling_call` / `polyling_scenes` はどの利用シーンでも消えない
+- 目的のコマンドが利用シーンに無いときは `scene` を外して探し直す。見つかったら利用シーンに足すかを利用者に諮る
 
 `polyling_call` の引数は **文字列だけの平らな組**。
 

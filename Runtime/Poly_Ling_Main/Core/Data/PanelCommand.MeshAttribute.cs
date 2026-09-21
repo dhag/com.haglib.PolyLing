@@ -16,7 +16,7 @@ namespace Poly_Ling.Data
     // 属性変更
     // ================================================================
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "オブジェクト 1 つの表示・非表示を切り替える。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, Description = "オブジェクト 1 つの表示・非表示を切り替える。")]
     public class ToggleVisibilityCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -26,7 +26,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndex = masterIndex; }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "複数オブジェクトの表示・非表示を一括で設定する。")]
+    [PLCommand(Category = "object.attribute", Effects = PLCommandEffect.ObjectAttribute, Writes = PLWriteScope.Targets, Description = "複数オブジェクトの表示・非表示を一括で設定する。")]
     public class SetBatchVisibilityCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -40,7 +40,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; Visible = visible; }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "オブジェクト 1 つのロックを切り替える。ロック中は編集できない。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, Description = "オブジェクト 1 つのロックを切り替える。ロック中は編集できない。")]
     public class ToggleLockCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -54,7 +54,7 @@ namespace Poly_Ling.Data
     /// 複数オブジェクトのロック状態を一括設定する。
     /// オブジェクトリストの行内ロックボタンを、選択が複数あるときに使う。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "複数オブジェクトのロック状態を一括設定する。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, Description = "複数オブジェクトのロック状態を一括設定する。")]
     public class SetBatchLockCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -83,7 +83,7 @@ namespace Poly_Ling.Data
     ///   DetachedMirrorObjectId が有効 … その相手を引き当てて再ペアする。
     ///   無い場合                      … 実体側から生成ミラーを作る。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "ミラーの有無そのものを切り替える。種別を変えるだけの操作と違い、ミラー側のオブジェクトを作る／片付ける。")]
+    [PLCommand(Category = "mirror", Writes = PLWriteScope.Targets, Description = "ミラーの有無そのものを切り替える。種別を変えるだけの操作と違い、ミラー側のオブジェクトを作る／片付ける。")]
     public class SetMirrorEnabledCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -103,7 +103,7 @@ namespace Poly_Ling.Data
     /// 上限は MirrorViewUtil.MirrorTypeCount が正典で、3 以上は MQO へ不正値として
     /// 書き出されるため作らない（MirrorViewUtil.cs:43-52）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "複数オブジェクトのミラータイプを一括設定する。")]
+    [PLCommand(Category = "mirror", Writes = PLWriteScope.Targets, Description = "複数オブジェクトのミラータイプを一括設定する。")]
     public class SetBatchMirrorTypeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -130,7 +130,7 @@ namespace Poly_Ling.Data
     /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
     /// ローカル発行時は null / 空でよい（照合をスキップする）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "オブジェクトの編集者（担当者）を設定・解放するコマンド。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, Description = "オブジェクトの編集者（担当者）を設定・解放するコマンド。")]
     public class SetObjectEditorCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -165,7 +165,7 @@ namespace Poly_Ling.Data
     /// IgnorePoseInArmature フラグを設定するコマンド。
     /// true の場合、BoneTransform.Rotation を 0 にリセットする。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "IgnorePoseInArmature フラグを設定するコマンド。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, Description = "IgnorePoseInArmature フラグを設定するコマンド。")]
     public class SetIgnorePoseCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -183,7 +183,7 @@ namespace Poly_Ling.Data
     /// オブジェクト原点を CSV へ書き出す（ObjectOriginCsv.Build。ボーンは出さない）。
     /// 従来 PlayerBoneEditorSubPanel が直接モデルを読んで書き出していたものを移した。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "オブジェクト原点を CSV へ書き出す（ボーン・ミラー・姿勢くさびは出さない）。")]
+    [PLCommand(Category = "io.export", Writes = PLWriteScope.None, Description = "オブジェクト原点を CSV へ書き出す（ボーン・ミラー・姿勢くさびは出さない）。")]
     public class ExportObjectOriginsCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "OriginCsvPath", Description = "保存先 CSV のパス", Required = true)]
@@ -210,7 +210,7 @@ namespace Poly_Ling.Data
     /// Rotations は任意。null なら回転を触らない。要素が null の行も同じく触らない
     /// （CSV に回転列が無い行を「指定なし」として扱うため）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "オブジェクト原点（BoneTransform.Position）を名前指定で一括設定するコマンド。")]
+    [PLCommand(Category = "object.attribute", Effects = PLCommandEffect.Skeleton, Hazards = PLCommandHazard.AffectsMultipleObjects, Writes = PLWriteScope.ModelWide, Description = "オブジェクト原点（BoneTransform.Position）を名前指定で一括設定するコマンド。")]
     public class ApplyObjectOriginsCommand : PanelCommand
     {
         [PLParam(TextKey = "ObjectOriginNames",
@@ -302,7 +302,7 @@ namespace Poly_Ling.Data
     /// メッシュオブジェクトの姿勢を、表示用のくさびオブジェクト列としてモデル内に生成する。
     /// くさびは新規の空オブジェクト（コンテナ）の配下に、メッシュの階層を保って並ぶ。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "メッシュオブジェクトの姿勢を、表示用のくさびオブジェクト列としてモデル内に生成する。")]
+    [PLCommand(Category = "rig.skeleton.pose", Writes = PLWriteScope.AddOnly, Description = "メッシュオブジェクトの姿勢を、表示用のくさびオブジェクト列としてモデル内に生成する。")]
     public class GenerateObjectPoseWedgesCommand : PanelCommand
     {
         /// <summary>くさびの全長（オブジェクトの拡大率平均を掛ける前の基準値）。</summary>
@@ -323,7 +323,7 @@ namespace Poly_Ling.Data
     /// くさびオブジェクト列を読み、名前一致でメッシュオブジェクトの姿勢へ適用する。
     /// 適用は「原点だけ移動」と同じく、自頂点を再局所化して見た目を保つ。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "くさびオブジェクト列を読み、名前一致でメッシュオブジェクトの姿勢へ適用する。")]
+    [PLCommand(Category = "rig.skeleton.pose", Writes = PLWriteScope.ModelWide, Description = "くさびオブジェクト列を読み、名前一致でメッシュオブジェクトの姿勢へ適用する。")]
     public class ApplyObjectPoseWedgesCommand : PanelCommand
     {
         /// <summary>コンテナの MeshContextList 索引。-1 なら名前で自動検出。</summary>
@@ -343,7 +343,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// PreserveNormals フラグ（頂点法線を自動再計算しない）を設定するコマンド。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "PreserveNormals フラグ（頂点法線を自動再計算しない）を設定するコマンド。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "PreserveNormals フラグ（頂点法線を自動再計算しない）を設定するコマンド。")]
     public class SetPreserveNormalsCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -361,7 +361,7 @@ namespace Poly_Ling.Data
     /// ビルボード表示（カメラへ正対させる）を設定するコマンド。
     /// 表示と書き戻しだけの切替で、頂点も姿勢データも変えない。保存もしない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "描画オブジェクトをカメラへ正対させる（ビルボード）表示を設定する。表示だけの切替で、頂点も姿勢も変えない。UV を XYZ へ展開した板のような 2D の面を、視点を問わず正面から編集するために使う。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, Description = "描画オブジェクトをカメラへ正対させる（ビルボード）表示を設定する。表示だけの切替で、頂点も姿勢も変えない。UV を XYZ へ展開した板のような 2D の面を、視点を問わず正面から編集するために使う。")]
     public class SetMeshBillboardCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -377,7 +377,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ミラー分岐ルートのフラグを設定するコマンド。</summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "ミラー分岐ルートのフラグを設定するコマンド。")]
+    [PLCommand(Category = "mirror", Effects = PLCommandEffect.MirrorSetting, Writes = PLWriteScope.Targets, Description = "ミラー分岐ルートのフラグを設定するコマンド。")]
     public class SetMirrorBranchRootCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -391,7 +391,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "オブジェクト 1 つのミラー種別を次の値へ送る。")]
+    [PLCommand(Category = "mirror", Writes = PLWriteScope.Targets, Description = "オブジェクト 1 つのミラー種別を次の値へ送る。")]
     public class CycleMirrorTypeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -401,7 +401,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndex = masterIndex; }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "オブジェクト 1 つの名前を変える。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "オブジェクト 1 つの名前を変える。")]
     public class RenameMeshCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -423,7 +423,7 @@ namespace Poly_Ling.Data
     /// MeshRenameCsvHelper.ResolveUniqueNames で自動回避するため、
     /// 送信側は CSV に書かれた希望名をそのまま渡してよい。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "複数オブジェクトの名前を一括変更する（名称一括変更 CSV 用）。")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "複数オブジェクトの名前を一括変更する（名称一括変更 CSV 用）。")]
     public class RenameMeshesCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -440,7 +440,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// メッシュの TreeView 折りたたみ状態変更
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "メッシュの TreeView 折りたたみ状態変更")]
+    [PLCommand(Category = "object.attribute", Writes = PLWriteScope.Targets, WritesMirrorSide = false, Description = "メッシュの TreeView 折りたたみ状態変更")]
     public class SetMeshFoldingCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -465,7 +465,7 @@ namespace Poly_Ling.Data
     /// 非表示は編集補助であり、面データは残る（エクスポートにも出る）。
     /// メッシュ丸ごとの非表示は ToggleVisibilityCommand / SetBatchVisibilityCommand を使うこと。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "面の非表示フラグ（Face.IsHidden）を操作する。")]
+    [PLCommand(Category = "geometry.attribute", Writes = PLWriteScope.ModelWide, Description = "面の非表示フラグ（Face.IsHidden）を操作する。")]
     public class SetFaceHiddenCommand : PanelCommand
     {
         public enum Mode

@@ -33,6 +33,9 @@ namespace Poly_Ling.Player
         [PLToolState(Description = "プレビュー中のモーフエクスプレッション番号（-1 はプレビューなし）")]
         public int PreviewSetIndex => _preview.IsActive ? _setIndex : -1;
 
+        /// <summary>モーフのプレビュー中か（queryRevisions の activeModes が読む）。</summary>
+        public bool IsPreviewing => _preview.IsActive;
+
         [PLToolState(Description = "プレビューのウェイト")]
         public float PreviewWeight => _weight;
 

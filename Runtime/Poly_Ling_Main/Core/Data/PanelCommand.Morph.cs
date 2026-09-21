@@ -16,7 +16,7 @@ namespace Poly_Ling.Data
     // モーフ
     // ================================================================
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "描画オブジェクトをモーフへ変換し、指定した親の下へ入れる。")]
+    [PLCommand(Category = "morph", Effects = PLCommandEffect.Morph | PLCommandEffect.Hierarchy, Verification = PLCommandVerification.MorphIntegrity, Writes = PLWriteScope.ModelWide, Description = "描画オブジェクトをモーフへ変換し、指定した親の下へ入れる。")]
     public class ConvertMeshToMorphCommand : PanelCommand
     {
         /// <summary>
@@ -47,7 +47,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { SourceIndex = sourceIndex; ParentIndex = parentIndex; MorphName = morphName; Panel = panel; }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "モーフを描画オブジェクトへ戻す。")]
+    [PLCommand(Category = "morph", Effects = PLCommandEffect.Morph | PLCommandEffect.Hierarchy, Preconditions = PLCommandPrecondition.RequiresMorphs, Writes = PLWriteScope.Targets, Description = "モーフを描画オブジェクトへ戻す。")]
     public class ConvertMorphToMeshCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -57,7 +57,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定したモーフをまとめた表示グループを作る。")]
+    [PLCommand(Category = "morph", Effects = PLCommandEffect.Morph, Preconditions = PLCommandPrecondition.RequiresMorphs, Writes = PLWriteScope.ModelWide, Description = "指定したモーフをまとめた表示グループを作る。")]
     public class CreateMorphSetCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphSetName",
@@ -81,7 +81,7 @@ namespace Poly_Ling.Data
     // モーフエクスプレッションの編集（操作経路統一計画.md E。パネルが直接書き換えていたものを移した）
     // ================================================================
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションの名前（JP/EN）とパネルを変える。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションの名前（JP/EN）とパネルを変える。")]
     public class SetMorphExpressionAttributesCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphExpressionIndex", Description = "モーフエクスプレッションの番号", Required = true)]
@@ -96,7 +96,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { SetIndex = setIndex; Name = name ?? ""; NameEnglish = nameEnglish ?? ""; Panel = panel; }
     }
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションを 1 つ消す。モーフメッシュは消さない。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションを 1 つ消す。モーフメッシュは消さない。")]
     public class DeleteMorphExpressionCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphExpressionIndex", Description = "消すモーフエクスプレッションの番号", Required = true)]
@@ -104,7 +104,7 @@ namespace Poly_Ling.Data
         public DeleteMorphExpressionCommand(int modelIndex, int setIndex) : base(modelIndex) { SetIndex = setIndex; }
     }
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションのエントリのウェイトをまとめて変える（Undo 1 回ぶん）。")]
+    [PLCommand(Category = "morph", Effects = PLCommandEffect.Morph, Preconditions = PLCommandPrecondition.RequiresMorphs, Writes = PLWriteScope.ModelWide, Description = "モーフエクスプレッションのエントリのウェイトをまとめて変える（Undo 1 回ぶん）。")]
     public class SetMorphEntryWeightsCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphExpressionIndex", Description = "モーフエクスプレッションの番号", Required = true)]
@@ -117,7 +117,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { SetIndex = setIndex; EntryIndices = entryIndices ?? System.Array.Empty<int>(); Weights = weights ?? System.Array.Empty<float>(); }
     }
 
-    [PLCommand(Writes = PLWriteScope.None, Description = "モーフエクスプレッションの各モーフメッシュ（モーフ後の形）を複製し、新しいモデルとして足す。今のモデルは変えない。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.None, Description = "モーフエクスプレッションの各モーフメッシュ（モーフ後の形）を複製し、新しいモデルとして足す。今のモデルは変えない。")]
     public class ExpandMorphExpressionToModelCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphExpressionIndex", Description = "展開するモーフエクスプレッションの番号", Required = true)]
@@ -125,7 +125,7 @@ namespace Poly_Ling.Data
         public ExpandMorphExpressionToModelCommand(int modelIndex, int setIndex) : base(modelIndex) { SetIndex = setIndex; }
     }
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "BlendShapeSync CSV を読み込んでモーフエクスプレッションへ足す（同名は上書き）。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.ModelWide, Description = "BlendShapeSync CSV を読み込んでモーフエクスプレッションへ足す（同名は上書き）。")]
     public class ImportMorphCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphCsvPath", Description = "読み込む CSV のパス", Required = true)]
@@ -133,7 +133,7 @@ namespace Poly_Ling.Data
         public ImportMorphCsvCommand(int modelIndex, string path) : base(modelIndex) { Path = path ?? ""; }
     }
 
-    [PLCommand(Writes = PLWriteScope.None, Description = "モーフエクスプレッションを BlendShapeSync CSV へ書き出す。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.None, Description = "モーフエクスプレッションを BlendShapeSync CSV へ書き出す。")]
     public class ExportMorphCsvCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphCsvPath", Description = "保存先 CSV のパス", Required = true)]
@@ -143,7 +143,7 @@ namespace Poly_Ling.Data
 
     // ================================================================
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定モーフの試し表示を始める。確定するまで頂点は元へ戻せる。")]
+    [PLCommand(Category = "morph", Effects = PLCommandEffect.VertexPosition, Verification = PLCommandVerification.Visual, Preconditions = PLCommandPrecondition.RequiresMorphs, Writes = PLWriteScope.ModelWide, Description = "指定モーフの試し表示を始める。確定するまで頂点は元へ戻せる。")]
     public class StartMorphPreviewCommand : PanelCommand
     {
         [PLParam(TextKey = "PreviewMorphIndices",
@@ -153,7 +153,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MorphIndices = morphIndices; }
     }
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "試し表示中のモーフの効き具合を変える。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.ModelWide, Description = "試し表示中のモーフの効き具合を変える。")]
     public class ApplyMorphPreviewCommand : PanelCommand
     {
         [PLParam(TextKey = "MorphPreviewWeight",
@@ -164,7 +164,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { Weight = weight; }
     }
 
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "モーフの試し表示を終え、その時点の形で確定する。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.ModelWide, Description = "モーフの試し表示を終え、その時点の形で確定する。")]
     public class EndMorphPreviewCommand : PanelCommand
     {
         public EndMorphPreviewCommand(int modelIndex) : base(modelIndex) { }
@@ -174,7 +174,7 @@ namespace Poly_Ling.Data
     // モーフ全選択/全解除
     // ================================================================
 
-    [PLCommand(Writes = PLWriteScope.None, Description = "モーフをすべて選択する。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.None, Description = "モーフをすべて選択する。")]
     public class SelectAllMorphsCommand : PanelCommand
     {
         [PLParam(TextKey = "AllMorphIndices",
@@ -184,7 +184,7 @@ namespace Poly_Ling.Data
             : base(modelIndex) { AllMorphIndices = allMorphIndices; }
     }
 
-    [PLCommand(Writes = PLWriteScope.None, Description = "モーフの選択をすべて解除する。")]
+    [PLCommand(Category = "morph", Writes = PLWriteScope.None, Description = "モーフの選択をすべて解除する。")]
     public class DeselectAllMorphsCommand : PanelCommand
     {
         public DeselectAllMorphsCommand(int modelIndex) : base(modelIndex) { }
@@ -199,7 +199,7 @@ namespace Poly_Ling.Data
     /// 基準モデルに MorphExpression として登録する。
     /// Undo 記録付き。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "基準モデルとモーフモデルの差分から頂点モーフを生成し、 基準モデルに MorphExpression として登録する。")]
+    [PLCommand(Category = "morph", Effects = PLCommandEffect.Morph, Verification = PLCommandVerification.MorphIntegrity, Writes = PLWriteScope.ModelWide, Description = "基準モデルとモーフモデルの差分から頂点モーフを生成し、 基準モデルに MorphExpression として登録する。")]
     public class CreateMorphFromDiffCommand : PanelCommand
     {
         /// <summary>基準モデルのインデックス（プロジェクト内）</summary>

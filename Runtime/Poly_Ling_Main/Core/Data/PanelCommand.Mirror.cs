@@ -32,7 +32,7 @@ namespace Poly_Ling.Data
     /// 見た目・エクスポート用の別オブジェクトは作らない。頂点も面も選択メッシュの中に増える。
     /// メッシュが見た目用のミラーモード（MirrorType > 0）だった場合は、実体化と同時に解除する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択メッシュ自身にミラーの実体を生やす（ミラー実体化 / in-place）。")]
+    [PLCommand(Category = "mirror", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs | PLCommandHazard.BreaksMirrorRelation, Verification = PLCommandVerification.MirrorIntegrity | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "選択メッシュ自身にミラーの実体を生やす（ミラー実体化 / in-place）。")]
     public class BakeMirrorCommand : PanelCommand
     {
         /// <summary>
@@ -102,7 +102,7 @@ namespace Poly_Ling.Data
     /// 既定では解除後に見た目・エクスポート用のミラーモード（MirrorType = 2 / 結合）を強制する。
     /// RestoreSavedMirrorSettings = true のときは、実体化前のミラー設定へそのまま戻す。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "ミラー実体化を解除して半身へ戻す（in-place）。")]
+    [PLCommand(Category = "mirror", Writes = PLWriteScope.Targets, Description = "ミラー実体化を解除して半身へ戻す（in-place）。")]
     public class UnbakeMirrorCommand : PanelCommand
     {
         [PLParam(TextKey = "UnbakeSourceMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,

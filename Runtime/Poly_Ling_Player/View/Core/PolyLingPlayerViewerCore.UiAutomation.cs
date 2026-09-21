@@ -454,6 +454,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnUiSetValue      = ExecuteUiSetValue;
             _commandDispatcher.OnUiHighlight     = ExecuteUiHighlight;
             _commandDispatcher.OnUiCapture       = ExecuteUiCapture;
+            _commandDispatcher.OnQueryActiveModes = CollectActiveModes;   // ActiveModes.cs
             _commandDispatcher.OnUiCaptureStatus = ExecuteUiCaptureStatus;
             _commandDispatcher.OnUiClick         = ExecuteUiClick;
             _commandDispatcher.OnQueryUiAutomationAudit = ExecuteQueryUiAutomationAudit;

@@ -369,6 +369,7 @@ namespace Poly_Ling.Player
             // MCP（名前付きパイプ）からの実行入口。RemoteMode に依存しない。
             // 対の解除は Dispose 内。
             PolyLingCommandGateway.Dispatch = cmd => _commandDispatcher.Dispatch(cmd, CommandActor.Mcp());
+            PolyLingCommandGateway.ModelState = () => _commandDispatcher.CaptureModelState();
 
             // 生成系コマンドの受け口。実処理は Viewer 側にあるので委譲する。
             WireCreateCommandHandlers();
@@ -785,6 +786,7 @@ namespace Poly_Ling.Player
 
             // MCP からの実行入口を外す。掴んだままだと破棄済みのディスパッチャを触る。
             PolyLingCommandGateway.Dispatch = null;
+            PolyLingCommandGateway.ModelState = null;
         }
     }
 }

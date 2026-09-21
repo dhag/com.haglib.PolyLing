@@ -26,7 +26,7 @@ namespace Poly_Ling.Data
     ///
     /// スキンドメッシュは対象にできない（ボーンウェイトが失われるため）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "2 つのメッシュオブジェクトにブーリアン演算（和 / 差 / 積）を行う。結果を入れたオブジェクトを対象として返す（新規なら追加したもの、置き換えなら A）。失敗したら失敗を返す。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology | PLCommandEffect.CreatesObject, Hazards = PLCommandHazard.ChangesVertexOrder | PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.Topology | PLCommandVerification.VertexCount | PLCommandVerification.Visual, Writes = PLWriteScope.Targets, Description = "2 つのメッシュオブジェクトにブーリアン演算（和 / 差 / 積）を行う。結果を入れたオブジェクトを対象として返す（新規なら追加したもの、置き換えなら A）。失敗したら失敗を返す。")]
     [PLResult("vertices", PLResultKind.Integer, Description = "結果の頂点数")]
     [PLResult("faces",    PLResultKind.Integer, Description = "結果の面数")]
     [PLResult("actualMergeThreshold", PLResultKind.Number, Description = "実際に採用した頂点結合距離。結合しない場合は0")]
@@ -103,7 +103,7 @@ namespace Poly_Ling.Data
     /// ブーリアン演算で面が欠ける箇所を段階ごとに数える。モデルは変えない。
     /// 計測の中身は BooleanDiagnostics.cs の冒頭注記を参照。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "ブーリアン演算を結果を捨てて実行し、面が欠ける箇所を段階ごとに数える。モデルは変えない。入力の穴、BSP の手順ごとの多角形数、多角形の平面の質（無効・先頭 3 頂点の法線のずれ）、結果の穴（頂点をほぼ完全一致でまとめた場合と mergeThreshold でまとめた場合。どちらも T 字解消後）、結果の頂点数を返す。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "ブーリアン演算を結果を捨てて実行し、面が欠ける箇所を段階ごとに数える。モデルは変えない。入力の穴、BSP の手順ごとの多角形数、多角形の平面の質（無効・先頭 3 頂点の法線のずれ）、結果の穴（頂点をほぼ完全一致でまとめた場合と mergeThreshold でまとめた場合。どちらも T 字解消後）、結果の頂点数を返す。")]
     [PLResult("inputHolesA",         PLResultKind.Integer,      Description = "入力 A の穴の数")]
     [PLResult("inputHolesB",         PLResultKind.Integer,      Description = "入力 B の穴の数")]
     [PLResult("polygonsA",           PLResultKind.Integer,      Description = "入力 A の多角形数")]
@@ -196,7 +196,7 @@ namespace Poly_Ling.Data
     ///
     /// ブーリアン専用ではない。同じ状態は穴つなぎや面削除の後にも起きる。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "境界辺を、端点でつながる逆向きの境界辺に合わせて分割し、T字接合を解消する。正常な共有辺や無関係な頂点は対象外。頂点位置・頂点数・面数は変えず、UV/法線の隅参照を補間する。真の欠損面は補わない。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "境界辺を、端点でつながる逆向きの境界辺に合わせて分割し、T字接合を解消する。正常な共有辺や無関係な頂点は対象外。頂点位置・頂点数・面数は変えず、UV/法線の隅参照を補間する。真の欠損面は補わない。")]
     [PLResult("inserted",      PLResultKind.Integer, Description = "挿入した点の数")]
     [PLResult("touchedFaces",  PLResultKind.Integer, Description = "点を挿入した面の数")]
     [PLResult("vertices",      PLResultKind.Integer, Description = "解消後の頂点数")]
@@ -225,7 +225,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>Quad保持減数化を実行して結果メッシュをモデルに追加する</summary>
-    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "四角面を保ったまま面数を減らし、結果のメッシュをモデルへ足す。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.AddOnly, Description = "四角面を保ったまま面数を減らし、結果のメッシュをモデルへ足す。")]
     public class QuadDecimateCommand : PanelCommand
     {
         [PLParam(TextKey = "QuadDecimateSourceMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
@@ -300,7 +300,7 @@ namespace Poly_Ling.Data
     ///   値を渡さずに呼んでいた呼び出しの動作が黙って変わる。必須にして指定漏れを失敗させる。
     ///   旧 FaceMergeCollapseCommand は DeleteVertices = true に置き換えた。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "面結合（辺指定）。選択辺を挟む 2 枚の面を 1 枚へ結合する。DeleteVertices で共有頂点を新しい面から外すかを選ぶ。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "面結合（辺指定）。選択辺を挟む 2 枚の面を 1 枚へ結合する。DeleteVertices で共有頂点を新しい面から外すかを選ぶ。")]
     public class FaceMergeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -331,7 +331,7 @@ namespace Poly_Ling.Data
     /// 選択頂点を共有する四角形 4 枚を、四隅を結ぶ四角形 1 枚へ張り替える。
     /// 実処理は Quad4To1Tool。対象は選択中の描画オブジェクト全部。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点を共有する四角形 4 枚を、四隅を結ぶ四角形 1 枚へ張り替える。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "選択頂点を共有する四角形 4 枚を、四隅を結ぶ四角形 1 枚へ張り替える。")]
     public class Quad4To1Command : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -355,7 +355,7 @@ namespace Poly_Ling.Data
     /// 選択した三角形とそれを囲む三角形 3 枚を、外側の 3 頂点を結ぶ三角形 1 枚へ張り替える。
     /// 中点細分割の逆操作。実処理は Tri4To1Tool。対象は選択中の描画オブジェクト全部。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択した三角形とそれを囲む三角形 3 枚を、外側の 3 頂点を結ぶ三角形 1 枚へ張り替える。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "選択した三角形とそれを囲む三角形 3 枚を、外側の 3 頂点を結ぶ三角形 1 枚へ張り替える。")]
     public class Tri4To1Command : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -380,7 +380,7 @@ namespace Poly_Ling.Data
     /// 周りが閉じていない（境界の）頂点は対象外。
     /// 実処理は VertexDissolveTool。対象は選択中の描画オブジェクト全部。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点を消して、その頂点を囲む面を 1 枚の面へ張り替える。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "選択頂点を消して、その頂点を囲む面を 1 枚の面へ張り替える。")]
     public class VertexDissolveCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -407,7 +407,7 @@ namespace Poly_Ling.Data
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// 配列なのは他のコマンドと形をそろえて ObjectIds と対にするため。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点を面ごとに独立したコピーへ分離する。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.MaySplitVertices | PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Normals | PLCommandVerification.UVSeams, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.Targets, Description = "選択頂点を面ごとに独立したコピーへ分離する。")]
     public class SplitVerticesCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -440,7 +440,7 @@ namespace Poly_Ling.Data
     /// 元の面を張り替える。実処理は VertexHoleTool。
     /// 対象は選択中の描画オブジェクト全部。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点を消して穴を開ける。頂点につながる各辺の上に新しい頂点を作り、 元の面を張り替える。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "選択頂点を消して穴を開ける。頂点につながる各辺の上に新しい頂点を作り、 元の面を張り替える。")]
     public class VertexHoleCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -479,7 +479,7 @@ namespace Poly_Ling.Data
     /// 実処理が編集対象メッシュ 1 本にしか効かない（FlipFaceTool.cs:93）ため、
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "面の裏表を反転する。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "面の裏表を反転する。")]
     public class FlipFaceCommand : PanelCommand
     {
         /// <summary>反転する範囲。</summary>
@@ -522,7 +522,7 @@ namespace Poly_Ling.Data
     /// 実処理が編集対象メッシュ 1 本にしか効かない（AlignVerticesTool.cs:141）ため、
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択頂点を軸ごとに整列する。")]
+    [PLCommand(Category = "geometry.position", Writes = PLWriteScope.Targets, Description = "選択頂点を軸ごとに整列する。")]
     public class AlignVerticesCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -570,7 +570,7 @@ namespace Poly_Ling.Data
     /// 実処理が編集対象メッシュ 1 本にしか効かない（SmoothEdgesTool.cs:116）ため、
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択した辺・線分のつながりを平滑化する。")]
+    [PLCommand(Category = "geometry.position", Writes = PLWriteScope.Targets, Description = "選択した辺・線分のつながりを平滑化する。")]
     public class SmoothEdgesCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -634,7 +634,7 @@ namespace Poly_Ling.Data
     ///   PlayerImportSubPanel.PostOptions の 4 項目を平坦化して持つ。
     ///   Poly_Ling.Data から View 側の入れ子クラスへ依存しないため。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "PMX ファイルを読み込む。作業フォルダの下だけを読める。")]
+    [PLCommand(Category = "io.import", Writes = PLWriteScope.AddOnly, Description = "PMX ファイルを読み込む。作業フォルダの下だけを読める。")]
     public class ImportPmxFileCommand : PanelCommand
     {
         [PLParam(Description = "読み込む PMX のパス。作業フォルダからの相対でも絶対でもよい",

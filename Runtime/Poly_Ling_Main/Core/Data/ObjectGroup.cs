@@ -172,6 +172,14 @@ namespace Poly_Ling.Data
         public ScenarioExpansionPolicy ExpansionPolicy = ScenarioExpansionPolicy.Reference;
 
         /// <summary>
+        /// この段が属する利用シーン（SceneLibrary）の名前。空でもよい。
+        /// 同じ名前が続く段の並びが、その利用シーンの区間になる（PolyLing_利用シーン_カテゴライズ設計方針.md 12 節）。
+        /// 手本を流しているとき、次の段の利用シーンが queryScenarioRun に出る。
+        /// リモートの二進形式（RemoteProgressiveSerializer）では送らない。受け取った側では空になる。
+        /// </summary>
+        public string UsageScene = "";
+
+        /// <summary>
         /// 生成コマンドの action 名（PanelCommandFactory.ActionOf の結果）。
         /// 例: "createFrill" / "createPipe" / "createPlaceObject" / "applyBlend"。
         /// </summary>
@@ -345,6 +353,7 @@ namespace Poly_Ling.Data
                 Purpose         = Purpose,
                 RefName         = RefName,
                 ExpansionPolicy = ExpansionPolicy,
+                UsageScene      = UsageScene,
                 Action          = Action,
                 Args            = new Dictionary<string, string>(StringComparer.Ordinal),
                 MeshRefIds      = new Dictionary<string, List<ulong>>(StringComparer.Ordinal),

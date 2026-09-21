@@ -40,6 +40,13 @@ namespace Poly_Ling.Data
         public static bool IsReady => Dispatch != null;
 
         /// <summary>
+        /// カレントモデルの状態を取り出す入口。パネル側（PolyLingPlayerViewerCore.Lifecycle.cs）が
+        /// Dispatch と対で設定・解除する。Editor 側の検索が、利用シーンの stateAssumptions と
+        /// 突き合わせるために使う。null ならパネルが開いておらず、照合できない。
+        /// </summary>
+        public static Func<ModelStateSnapshot> ModelState;
+
+        /// <summary>
         /// コマンドを実行する。メインスレッドから呼ぶこと。
         /// 未登録・null・例外はすべて CommandResult.Fail で返し、外へ投げない。
         /// </summary>

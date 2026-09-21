@@ -31,7 +31,7 @@ namespace Poly_Ling.Data
     ///   受け側の beltClosed / beltFlipWinding は bool[] なので、
     ///   "true,false" でも "1,0" でも TryParse が受ける。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクトから梯子（基準ベルト）を取り込み、生成コマンドへ渡せる点列として返す。モデルは変えない。")]
+    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.None, Description = "描画オブジェクトから梯子（基準ベルト）を取り込み、生成コマンドへ渡せる点列として返す。モデルは変えない。")]
     [PLResult("ok",              PLResultKind.Flag,        Description = "取り込めたか")]
     [PLResult("message",         PLResultKind.Text,        Description = "取り込みの説明。失敗した理由もここに入る")]
     [PLResult("belts",           PLResultKind.Integer,     Description = "取り込んだ梯子の本数")]
@@ -293,7 +293,7 @@ namespace Poly_Ling.Data
     /// フリル。断面プロファイルは A / B の2本まで持てる。
     /// TwoProfiles が false のときは A だけを使う。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "フリル。断面プロファイルは A / B の2本まで持てる。")]
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "フリル。断面プロファイルは A / B の2本まで持てる。")]
     public sealed class CreateFrillCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Frill", Description = "フリルのパラメータ", Required = true)]
@@ -341,7 +341,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。</summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。")]
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "パイプ。断面プロファイルは1本で、閉ループかどうかを別に持つ。")]
     public sealed class CreatePipeCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ", Required = true)]
@@ -390,7 +390,7 @@ namespace Poly_Ling.Data
     /// 藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。
     /// 索引から MeshObject への解決はディスパッチャ側が行う。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。")]
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "藤壺（配置）。配置元はモデル内の描画オブジェクトなので索引で指す。")]
     public sealed class CreatePlaceObjectCommand : CreateBeltPrimitiveCommand
     {
         [PLParam(TextKey = "PlaceObject", Description = "配置のパラメータ", Required = true)]
@@ -444,7 +444,7 @@ namespace Poly_Ling.Data
     ///   Mesh はスキーマにできないため Ignore を付けてある。
     ///   MCP からの生成には図形ごとの CreatePrimitiveMeshCommand を使う。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "出来上がったメッシュをそのままモデルへ置く。内部用で、外からは使えない。")]
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "出来上がったメッシュをそのままモデルへ置く。内部用で、外からは使えない。")]
     public class AddGeneratedMeshCommand : PanelCommand
     {
         /// <summary>置くメッシュ。呼出し側が作った実体をそのまま渡す。</summary>
@@ -486,7 +486,7 @@ namespace Poly_Ling.Data
     /// 穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。
     /// 穴は種頂点で指す。種から縁を復元するのは生成側。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。")]
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.ModelWide, Description = "穴つなぎ。2つの穴（境界辺の連結成分）の縁どうしに面を張る。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -593,7 +593,7 @@ namespace Poly_Ling.Data
     /// 開いた辺の連なりも扱える点が穴つなぎと違う。
     /// 辺は同一メッシュのものに限る（生成側が2群へ分けるため）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "辺群ブリッジ。拾った辺そのものを辺群として、その間に面を張る。")]
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "辺群ブリッジ。拾った辺そのものを辺群として、その間に面を張る。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -659,7 +659,7 @@ namespace Poly_Ling.Data
     ///   開いているモデルを全部捨てる。Undo では戻せない。
     ///   UI のボタンには出さず、自動検証とリモートからのみ使う。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "プロジェクトを空にして、モデルを 1 つだけ作り直す。")]
+    [PLCommand(Category = "object.model", Effects = PLCommandEffect.DeletesObject | PLCommandEffect.CreatesObject, Hazards = PLCommandHazard.RequiresUserConfirmation | PLCommandHazard.AffectsMultipleObjects, Writes = PLWriteScope.ModelWide, Description = "プロジェクトを空にして、モデルを 1 つだけ作り直す。")]
     public class ResetProjectCommand : PanelCommand
     {
         /// <summary>作り直すモデルの名前。空なら "Model"。</summary>

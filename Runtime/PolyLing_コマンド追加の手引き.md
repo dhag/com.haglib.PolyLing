@@ -22,7 +22,7 @@
 
 | # | 場所 | 内容 |
 |---|---|---|
-| 1 | `Core/Data/PanelCommand.cs` | クラスに `[PLCommand(Description = "…")]`、全プロパティに `[PLParam]`、返すものがあれば `[PLResult]` |
+| 1 | `Core/Data/PanelCommand.cs` | クラスに `[PLCommand(Category = "…", Writes = …, Description = "…")]`、全プロパティに `[PLParam]`、返すものがあれば `[PLResult]`。影響・危険性などは 2b 節 |
 | 2 | `Poly_Ling_Player/View/Core/PlayerCommandDispatcher.cs` | `Func<T, string>` のフック宣言と `switch` の `case` |
 | 3 | `Poly_Ling_Player/View/Core/PolyLingPlayerViewerCore.CreateCommands.cs` | `Execute*` の受け口と、`_commandDispatcher.OnXxx = ExecuteXxx;` の配線 |
 | 4 | `Poly_Ling_Remote/RemoteOwnership.cs` | `case` を足して所有権判定に載せる |
@@ -65,6 +65,41 @@ case XxxCommand c:
 `?.Invoke` は使わない。未配線が無言で通ってしまう。
 
 ---
+
+## 2b. 分類と影響・危険性（利用シーンのために付ける）
+
+検索と利用シーンの絞り込みは、コマンドの属性を読む。考え方は `PolyLing_利用シーン_カテゴライズ設計方針.md`。
+
+| 属性 | 何を書くか | 必須か |
+|---|---|---|
+| `Category` | 何をするか。`PLCommandCategories.cs` の正典から 1 つ | **必須**（監査が未設定と綴り違いを数える） |
+| `Tags` | 何に使いやすいか。カンマ区切りで複数可。検索順位を上げるだけで、候補は増やさない | 任意 |
+| `Effects` | 実行すると何が変わるか（`PLCommandEffect` の組合せ） | 書き込むコマンドは付ける（未設定は監査の参考欄に出る） |
+| `Hazards` | 実行すると何が壊れ得るか（`PLCommandHazard`） | 当てはまるときだけ |
+| `Verification` | 実行後に確かめるとよいこと（`PLCommandVerification`） | 当てはまるときだけ |
+| `Preconditions` | 呼ぶ前に満たすべき条件（`PLCommandPrecondition`） | 当てはまるときだけ |
+
+- **分類は「何をするか」だけで決める。** 用途や作る物（髪・服・機械）で決めない。それは `Tags` と利用シーンの仕事。
+- **正典に無い分類が要るときは、先に `PLCommandCategories.cs` へ 1 行足す。** 足したら `queryCommandAudit` の
+  「利用シーンの categories が正典に当たらない」を見て、既存の利用シーンを見直す。
+- 表示・ロック・名前・原点・グループ設定など、形状を変えずオブジェクトの属性だけを変えるコマンドの Effects は `ObjectAttribute`。
+- **旗の値は `1 << n` で末尾に足す。** 並べ替えたり詰めたりしない（書いた属性の意味が変わる）。
+- 一時的な状態（プレビューなど）を新しく作ったら、`PolyLingPlayerViewerCore.ActiveModes.cs` に 1 行足す。
+- モデルの状態（利用シーンの `stateAssumptions` が照合するもの）を新しく足すときは、`ModelStateSnapshot.cs` の
+  `Names`・`Capture`・`TryGet` に足し、`QueryModelStateCommand` の `PLResult` にも足す。
+- 危険性とモデル状態の組み合わせ（検索結果の `stateConflicts`）は `ModelStateSnapshot.ConflictsWith` が決める。
+  状態で判定できる危険性を足したら、ここにも対応を足す。
+- `PLCommandHazard` / `PLCommandVerification` に値を足すと、利用シーンの `hazardPolicy` / `verificationPolicy` で
+  自動的に使えるようになる（名前で照合する）。**名前を変えると、保存済みの利用シーンのその項目が読めなくなる。**
+
+```csharp
+[PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets,
+    Tags = "deformable",
+    Effects = PLCommandEffect.Topology | PLCommandEffect.VertexOrder,
+    Hazards = PLCommandHazard.InvalidatesSkinWeights | PLCommandHazard.InvalidatesMorphs,
+    Verification = PLCommandVerification.Topology | PLCommandVerification.VertexCount,
+    Description = "…")]
+```
 
 ## 2. 道具として載るための条件
 
@@ -124,7 +159,11 @@ MCP からは `polyling_call queryCommandAudit` で同じものを回せる。
 [PanelCommandFactoryAudit] コマンド N / action 衝突 0 / 引数の対応なし 0 / PLParam 付け忘れ 0 / 未対応の型 0
 [PanelCommandSchema] 道具として出せた N / 出せなかった M
 [PLCommand] 説明が無い道具 0
+[PanelCommandFactoryAudit] 機能カテゴリ（PLCommand.Category）が未設定 0 / 正典に無い 0
+[PanelCommandFactoryAudit] 利用シーンの categories が正典に当たらない 0
 ```
+
+`[参考]` で始まる行（`Effects` の未設定など）は完了条件ではない。
 
 **すべて 0 なら通っている。** 0 でない項目には該当コマンド名が並ぶ。
 
@@ -438,7 +477,11 @@ if (mapped > 0)
 |---|---|
 | `Core/Data/PanelCommand.cs` | コマンドの定義 |
 | `Core/Data/PLParamAttribute.cs` | 引数のメタデータ |
-| `Core/Data/PLCommandAttribute.cs` | コマンドの説明 |
+| `Core/Data/PLCommandAttribute.cs` | コマンドの説明・分類・影響・危険性・検証・前提 |
+| `Core/Data/PLCommandCategories.cs` | 機能カテゴリの正典 |
+| `Core/Data/SceneLibrary.cs` | 利用シーンの定義と置き場（`scenes.csv`、v1 は読み替え） |
+| `Core/Data/ModelStateSnapshot.cs` | モデル状態の取り出し（`queryModelState` と利用シーンの照合） |
+| `Core/Data/BuiltinScenes.cs` | 同梱の既製の利用シーン（読み取り専用） |
 | `Core/Data/PanelCommandFactory.cs` | 文字列 → コマンド、コマンド → 文字列 |
 | `Core/Data/PanelCommandNested.cs` | 入れ子のドット区切り展開 |
 | `Core/Data/PanelCommandSchema.cs` | JSON Schema の生成 |

@@ -49,6 +49,9 @@ namespace Poly_Ling.Data
             public string Category;
             public string Tags;
             public string Writes;
+            /// <summary>PLCommand.Hazards。None なら空（検索結果に出さない）。</summary>
+            public string Hazards;
+            public PLCommandHazard HazardFlags;
             /// <summary>照合用の本文（説明・分類・タグ・道具定義 JSON）を小文字化したもの。</summary>
             public string Haystack;
         }
@@ -91,6 +94,8 @@ namespace Poly_Ling.Data
                         Category    = cat,
                         Tags        = tags,
                         Writes      = (attr?.Writes ?? PLWriteScope.Unspecified).ToString(),
+                        Hazards     = FlagText(attr?.Hazards ?? PLCommandHazard.None),
+                        HazardFlags = attr?.Hazards ?? PLCommandHazard.None,
                         Haystack    = (desc + "\n" + cat + "\n" + tags + "\n" + json).ToLowerInvariant(),
                     });
                 }
@@ -130,9 +135,14 @@ namespace Poly_Ling.Data
         ///  "matches":[{"name","summary","writes","category"?}]}
         /// </summary>
         /// <param name="query">問い合わせ。空なら全件（名前順）。</param>
-        /// <param name="category">分類の完全一致（大小無視）。空なら絞らない。</param>
+        /// <param name="category">分類。階層一致（"geometry" は "geometry.topology" も含む）。空なら絞らない。</param>
         /// <param name="scene">利用シーン（SceneLibrary）。null なら絞らない。対象外のコマンドは返さない。</param>
-        public static string BuildToolsSearchJson(string query, string category, SceneDefinition scene, int offset, int limit)
+        /// <param name="state">
+        /// カレントモデルの状態。利用シーンの stateAssumptions と突き合わせる。
+        /// null ならモデル状態を取れなかった（パネルが開いていない）として、照合しなかったことを結果に書く。
+        /// </param>
+        public static string BuildToolsSearchJson(string query, string category, SceneDefinition scene,
+                                                  ModelStateSnapshot state, int offset, int limit)
         {
             EnsureToolIndex();
 
@@ -141,18 +151,28 @@ namespace Poly_Ling.Data
 
             string[] terms = SplitQuery(query);
             var hits = new List<KeyValuePair<float, ToolIndexEntry>>();
+            var actions = new Dictionary<ToolIndexEntry, PLHazardAction>();
 
             foreach (var e in _toolIndex)
             {
-                if (!string.IsNullOrEmpty(category) &&
-                    !string.Equals(e.Category, category, StringComparison.OrdinalIgnoreCase))
+                // 分類は階層一致（"geometry" で "geometry.topology" も当たる）。
+                if (!string.IsNullOrEmpty(category) && !SceneDefinition.CategoryMatches(e.Category, category))
                     continue;
 
-                if (scene != null && !scene.Covers(e.Name, e.Category, e.Tags))
+                if (scene != null && !scene.Covers(e.Name, e.Category))
                     continue;
+
+                // 利用シーンの hazardPolicy。hide は候補から外し、warn / require-confirmation は印を付ける。
+                var action = scene?.ActionFor(e.HazardFlags) ?? PLHazardAction.Allow;
+                if (action == PLHazardAction.Hide) continue;
 
                 float score = terms.Length == 0 ? 1f : Score(e.NameLower, e.Haystack, terms);
                 if (score <= 0f) continue;
+
+                // 利用シーンの tags は候補を増やさず、順位だけを上げる。
+                // 文字列照合の 1 語ぶん（ASCII の名前一致 3 点）より小さく、同点を割る程度にする。
+                if (scene != null) score += TagBoostPerHit * scene.TagBoost(e.Tags);
+                if (action != PLHazardAction.Allow) actions[e] = action;
                 hits.Add(new KeyValuePair<float, ToolIndexEntry>(score, e));
             }
 
@@ -169,7 +189,31 @@ namespace Poly_Ling.Data
             sb.Append("\"schemaRevision\":").Append(Quote(_toolIndexRevision));
             sb.Append(",\"query\":").Append(Quote(query ?? ""));
             if (!string.IsNullOrEmpty(category)) sb.Append(",\"category\":").Append(Quote(category));
-            if (scene != null) sb.Append(",\"scene\":").Append(Quote(scene.Name));
+            if (scene != null)
+            {
+                sb.Append(",\"scene\":").Append(Quote(scene.Name));
+
+                // 想定するモデル状態との照合。食い違いは候補を変えず、警告として返す。
+                if (scene.StateAssumptions.Count > 0)
+                {
+                    sb.Append(",\"stateChecked\":").Append(state != null ? "true" : "false");
+                    var mismatches = scene.StateMismatches(state);
+                    if (mismatches.Count > 0)
+                    {
+                        sb.Append(",\"stateWarnings\":[");
+                        for (int i = 0; i < mismatches.Count; i++)
+                        {
+                            if (i > 0) sb.Append(',');
+                            sb.Append(Quote(mismatches[i]));
+                        }
+                        sb.Append(']');
+                    }
+                }
+
+                var verify = scene.VerificationItems();
+                if (verify.Count > 0) sb.Append(",\"verificationPolicy\":").Append(Quote(string.Join(",", verify)));
+                if (!string.IsNullOrEmpty(scene.Notes)) sb.Append(",\"notes\":").Append(Quote(scene.Notes));
+            }
             sb.Append(",\"total\":").Append(hits.Count.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"offset\":").Append(offset.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"returned\":").Append(Math.Max(0, end - offset).ToString(CultureInfo.InvariantCulture));
@@ -184,12 +228,36 @@ namespace Poly_Ling.Data
                 sb.Append(",\"summary\":").Append(Quote(e.Description));
                 sb.Append(",\"writes\":").Append(Quote(e.Writes));
                 if (!string.IsNullOrEmpty(e.Category)) sb.Append(",\"category\":").Append(Quote(e.Category));
+                // 壊れ得るものがあるときだけ付ける（要約を太らせないため。設計方針 14.4）。
+                if (!string.IsNullOrEmpty(e.Hazards)) sb.Append(",\"hazards\":").Append(Quote(e.Hazards));
+                // 利用シーンが警告・承認要求にしている危険性を持つとき、その扱いを添える。
+                if (actions.TryGetValue(e, out var act))
+                    sb.Append(",\"policy\":").Append(Quote(SceneDefinition.ActionText(act)));
+
+                // 利用シーンを指定したときだけ：候補に入った理由、当たったタグ、いまのモデルで実際に壊すもの。
+                if (scene != null)
+                {
+                    string by = scene.MatchedBy(e.Name, e.Category);
+                    if (by.Length > 0 && by != "all") sb.Append(",\"matchedCategory\":").Append(Quote(by));
+
+                    var tagsHit = scene.MatchedTags(e.Tags);
+                    if (tagsHit.Count > 0) sb.Append(",\"matchedTags\":").Append(Quote(string.Join(",", tagsHit)));
+
+                    if (state != null)
+                    {
+                        var conflicts = state.ConflictsWith(e.HazardFlags);
+                        if (conflicts.Count > 0) sb.Append(",\"stateConflicts\":").Append(Quote(string.Join(",", conflicts)));
+                    }
+                }
                 sb.Append('}');
             }
 
             sb.Append("]}");
             return sb.ToString();
         }
+
+        /// <summary>利用シーンの tags が 1 つ当たるごとに足す点。</summary>
+        private const float TagBoostPerHit = 0.5f;
 
         private static readonly char[] QuerySeparators =
         {
@@ -253,6 +321,18 @@ namespace Poly_Ling.Data
             return Score((name ?? "").ToLowerInvariant(), (body ?? "").ToLowerInvariant(), terms);
         }
 
+        /// <summary>旗の列挙を "A,B" の形にする。None なら空。</summary>
+        private static string FlagText(Enum value)
+        {
+            if (Convert.ToInt64(value) == 0) return "";
+            return value.ToString().Replace(" ", "");
+        }
+
+        private static void AppendFlags(StringBuilder sb, string key, string text)
+        {
+            if (!string.IsNullOrEmpty(text)) sb.Append(",\"").Append(key).Append("\":").Append(Quote(text));
+        }
+
         // ================================================================
         // 記述
         // ================================================================
@@ -303,6 +383,10 @@ namespace Poly_Ling.Data
                     sb.Append("{\"writes\":").Append(Quote((attr?.Writes ?? PLWriteScope.Unspecified).ToString()));
                     if (!string.IsNullOrEmpty(attr?.Category)) sb.Append(",\"category\":").Append(Quote(attr.Category));
                     if (!string.IsNullOrEmpty(attr?.Tags))     sb.Append(",\"tags\":").Append(Quote(attr.Tags));
+                    AppendFlags(sb, "effects",       FlagText(attr?.Effects       ?? PLCommandEffect.None));
+                    AppendFlags(sb, "hazards",       FlagText(attr?.Hazards       ?? PLCommandHazard.None));
+                    AppendFlags(sb, "verification",  FlagText(attr?.Verification  ?? PLCommandVerification.None));
+                    AppendFlags(sb, "preconditions", FlagText(attr?.Preconditions ?? PLCommandPrecondition.None));
                     sb.Append(",\"definition\":").Append(json);
                     sb.Append('}');
                 }

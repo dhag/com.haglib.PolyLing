@@ -306,6 +306,66 @@ namespace Poly_Ling.Data
                 foreach (var n in noWrites) sb.Append('\n').Append("  ").Append(n);
             }
 
+            // 機能カテゴリ（PLCommand.Category）。未設定と、正典（PLCommandCategories）に無い綴りを数える。
+            // 検索と利用シーンの絞り込みがこれを読むので完了条件に入れる。
+            var noCategory  = new List<string>();
+            var badCategory = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+            {
+                var a = t.GetCustomAttribute<PLCommandAttribute>(inherit: false);
+                if (a == null || string.IsNullOrEmpty(a.Category)) noCategory.Add(t.Name);
+                else if (!PLCommandCategories.IsKnown(a.Category)) badCategory.Add(t.Name + " : " + a.Category);
+            }
+
+            sb.Append('\n')
+              .Append("[PanelCommandFactoryAudit] 機能カテゴリ（PLCommand.Category）が未設定 ").Append(noCategory.Count)
+              .Append(" / 正典に無い ").Append(badCategory.Count);
+            if (noCategory.Count > 0)
+            {
+                sb.Append('\n').Append("── Category が未設定 ──");
+                foreach (var n in noCategory) sb.Append('\n').Append("  ").Append(n);
+            }
+            if (badCategory.Count > 0)
+            {
+                sb.Append('\n').Append("── Category が正典（PLCommandCategories）に無い ──");
+                foreach (var n in badCategory) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            // 【参考】影響（PLCommand.Effects）の未設定。書き込むコマンドだけを数える
+            // （Writes = None の照会は変えるものが無いので None が正しい）。
+            // 値付けは代表のコマンドから順に進めるので完了条件に入れない（設計方針 15 節）。
+            var noEffects = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+            {
+                var a = t.GetCustomAttribute<PLCommandAttribute>(inherit: false);
+                if (a != null && a.Writes != PLWriteScope.None && a.Effects == PLCommandEffect.None)
+                    noEffects.Add(t.Name);
+            }
+
+            sb.Append('\n')
+              .Append("[参考] 書き込むのに影響（PLCommand.Effects）が未設定のコマンド ").Append(noEffects.Count)
+              .Append("（完了条件ではない）");
+            if (noEffects.Count > 0)
+            {
+                sb.Append('\n').Append("── Effects が None（Writes は None 以外）──");
+                foreach (var n in noEffects) sb.Append('\n').Append("  ").Append(n);
+            }
+
+            // 利用シーン（SceneLibrary）の categories が正典に当たらないもの。
+            // 分類を改名・削除したときに、古い名前を書いたままの利用シーンを見つけるため。
+            var staleScene = new List<string>();
+            foreach (var scene in SceneLibrary.GetAll())
+                foreach (var c in scene.IncludeCategories)
+                    if (!PLCommandCategories.IsValidRequest(c)) staleScene.Add(scene.Name + " : " + c);
+
+            sb.Append('\n')
+              .Append("[PanelCommandFactoryAudit] 利用シーンの categories が正典に当たらない ").Append(staleScene.Count);
+            if (staleScene.Count > 0)
+            {
+                sb.Append('\n').Append("── 利用シーンの categories を見直す ──");
+                foreach (var n in staleScene) sb.Append('\n').Append("  ").Append(n);
+            }
+
             // 【参考】IsMeshRef の付いた引数の、書き込み先／読むだけ（MeshRefAccess）の未指定。
             var noAccess = new List<string>();
             foreach (var t in PLParamAudit.FindCommandTypes())

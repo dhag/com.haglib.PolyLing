@@ -12,7 +12,7 @@ MCP の 3 条件（`generic` / `current` / `optimized`）を、同じ課題・�
 | generic | `--profile generic` | 全コマンドが 1 本ずつ `pl_<コマンド名>` の道具 |
 | current | `--profile current` | `polyling_tools` で全件取得 → `polyling_call` |
 | optimized | `--profile optimized` | `polyling_search` → `polyling_describe` → `polyling_call` |
-| optimized＋シーン | `--profile optimized` ＋ WebClient で利用シーンを選ぶ | 上に加えて道具と検索範囲をシーンで絞る |
+| optimized＋利用シーン | `--profile optimized` ＋ WebClient で利用シーンを選ぶ | 上に加えて道具と検索範囲を利用シーンで絞る |
 
 3 条件とも同じサーバ・同じ Unity で動き、違うのは道具の見せ方・運用指示（instructions）・
 `optimized` での共通道具の既定値（`MCP操作手順書.md` 1-4 節）だけ。
@@ -92,7 +92,7 @@ MCP の 3 条件（`generic` / `current` / `optimized`）を、同じ課題・�
 | WebClient の CSV | 保存した `polyling-metrics-*.csv` | Claude API の 1 往復（`round`）、課題の開始（`task_start`）・終了（`task_end`） |
 | サーバの計測ログ | `--metrics` で指定した JSONL | `tools/list` 1 回（`kind=list`）、`tools/call` 1 回（`kind=call`） |
 
-WebClient 自身が行う呼び出し（シーン一覧の取得）は `taskId` が空で、課題には数えない。
+WebClient 自身が行う呼び出し（利用シーン一覧の取得）は `taskId` が空で、課題には数えない。
 
 | 指標 | 出し方 |
 |---|---|
@@ -110,6 +110,20 @@ WebClient 自身が行う呼び出し（シーン一覧の取得）は `taskId` 
 | 成功率 | `task_end` の `outcome` |
 
 コストだけが下がり成功率が下がる条件は、改善とみなさない。
+
+### サーバでの集計
+
+計測ログはサーバ自身で集計できる（MCP サーバとしては起動しない）。
+
+```
+PolyLingMcpServer.exe --summarize-metrics <保存先>\generic.jsonl <保存先>\current.jsonl <保存先>\optimized.jsonl > 集計.md
+```
+
+コマンド別・道具別・課題別の表が出る。コマンド別の表は、影響・危険性の値付けを使われた順に進めるときの順番に使う。
+
+サーバを `--metrics-search` 付きで起動しておくと、`polyling_search` の問い合わせと上位の結果も記録され、
+集計に「検索と、その後に実行したコマンド」の表が加わる。次に実行したコマンドが上位の結果に無かった行が、
+タグや説明の見直し候補になる。問い合わせ文は利用者の言葉なので、既定では記録しない。
 
 ---
 

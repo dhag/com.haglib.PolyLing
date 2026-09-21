@@ -5,7 +5,7 @@
 namespace Poly_Ling.Data
 {
     /// <summary>ツールのパラメータ・概要・操作の一覧を返す。モデルは変えない。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "ツールのパラメータ（現在値）・概要・呼べる操作を返す。toolId を省くとツール名の一覧を返す。モデルは変えない。")]
+    [PLCommand(Category = "tool", Writes = PLWriteScope.None, Description = "ツールのパラメータ（現在値）・概要・呼べる操作を返す。toolId を省くとツール名の一覧を返す。モデルは変えない。")]
     [PLResult("tools",       PLResultKind.TextArray, Description = "toolId を省いたとき：ツール名の一覧")]
     [PLResult("paramNames",  PLResultKind.TextArray, Description = "パラメータ名")]
     [PLResult("paramTypes",  PLResultKind.TextArray, Description = "パラメータの型名")]
@@ -23,7 +23,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ツールのパラメータを設定し、設定後の実際の値を返す。ハンドラの設定値でありモデルではない。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "ツールのパラメータを名前で設定し、設定後の実際の値を返す。")]
+    [PLCommand(Category = "tool", Writes = PLWriteScope.None, Description = "ツールのパラメータを名前で設定し、設定後の実際の値を返す。")]
     [PLResult("value", PLResultKind.Text, Description = "設定後の実際の値")]
     public class SetToolParamCommand : PanelCommand
     {
@@ -49,7 +49,7 @@ namespace Poly_Ling.Data
     /// ツールの操作を名前で呼ぶ。操作の中で送られるコマンドは入れ子として各段で担当者判定を受ける。
     /// 引数のある操作は argKeys（引数名）と argValues（値。コマンド引数と同じ文字列表現）で渡す。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "ツールの操作を名前で呼ぶ。引数のある操作は argKeys と argValues で渡す。操作の中で送られるコマンドはそれぞれ担当者判定を受ける。")]
+    [PLCommand(Category = "tool", Writes = PLWriteScope.None, Description = "ツールの操作を名前で呼ぶ。引数のある操作は argKeys と argValues で渡す。操作の中で送られるコマンドはそれぞれ担当者判定を受ける。")]
     public class InvokeToolActionCommand : PanelCommand
     {
         [PLParam(Description = "ツール名", Required = true)]

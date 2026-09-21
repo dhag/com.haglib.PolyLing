@@ -223,6 +223,7 @@ namespace Poly_Ling.Player
                     .Int ("stepCount",        0)
                     .Text("stepKind",         "")
                     .Text("purpose",          "")
+                    .Text("usageScene",       "")
                     .Int ("executedCommands", 0)
                     .Build());
                 return;
@@ -463,6 +464,7 @@ namespace Poly_Ling.Player
                 .Int  ("stepCount",        group?.StepCount ?? 0)
                 .Text ("stepKind",         step != null ? step.Kind.ToString() : "")
                 .Text ("purpose",          step?.Purpose ?? "")
+                .Text ("usageScene",       step?.UsageScene ?? "")
                 .Int  ("executedCommands", run.ExecutedCommands)
                 .Texts(allLog ? "log" : "newLog", lines)
                 .Build());

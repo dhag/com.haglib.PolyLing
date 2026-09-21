@@ -17,7 +17,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>選択メッシュに投影UV展開を適用する</summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択したメッシュへ投影による UV 展開を入れる。")]
+    [PLCommand(Category = "uv", Writes = PLWriteScope.Targets, Description = "選択したメッシュへ投影による UV 展開を入れる。")]
     public class ApplyUvUnwrapCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -56,7 +56,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>UV→XYZ展開メッシュを新規生成してリストに追加する</summary>
-    [PLCommand(Writes = PLWriteScope.AddOnly, Description = "UV を XYZ に展開したメッシュを新しく作り、一覧へ足す。")]
+    [PLCommand(Category = "uv", Writes = PLWriteScope.AddOnly, Description = "UV を XYZ に展開したメッシュを新しく作り、一覧へ足す。")]
     public class UvToXyzCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
@@ -94,7 +94,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>ソースメッシュのXYZ座標をターゲットメッシュのUVに書き戻す</summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "元メッシュの XYZ 座標を、対象メッシュの UV へ書き戻す。")]
+    [PLCommand(Category = "uv", Writes = PLWriteScope.Targets, Description = "元メッシュの XYZ 座標を、対象メッシュの UV へ書き戻す。")]
     public class XyzToUvCommand : PanelCommand
     {
         [PLParam(TextKey = "XyzToUvSourceMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
@@ -127,7 +127,7 @@ namespace Poly_Ling.Data
     /// 指定 MeshContext の UV 座標変更をコマンドとして記録する。
     /// ドラッグ移動・一括変換の両方に使用する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定オブジェクトの UV 座標を書き換える。変更前後の値を渡すので元へ戻せる。")]
+    [PLCommand(Category = "uv", Writes = PLWriteScope.Targets, Description = "指定オブジェクトの UV 座標を書き換える。変更前後の値を渡すので元へ戻せる。")]
     public class ApplyUVChangesCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
@@ -184,7 +184,7 @@ namespace Poly_Ling.Data
     /// 選択メッシュに LSCM UV 展開を実行する。
     /// Seam エッジはコマンド発行時点の mc.SelectedEdges から Dispatcher が読み取る。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択メッシュに LSCM UV 展開を実行する。")]
+    [PLCommand(Category = "uv", Writes = PLWriteScope.Targets, Description = "選択メッシュに LSCM UV 展開を実行する。")]
     public class ApplyLscmUnwrapCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
@@ -221,7 +221,7 @@ namespace Poly_Ling.Data
     /// 現在のマテリアルスロット（CurrentMaterialIndex）を切り替える。
     /// モデルの AutoSetDefaultMaterials が立っていれば、既定マテリアルの控えも今の並びで取り直す。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "現在のマテリアルスロットを切り替える（自動控えが有効なら既定マテリアルも取り直す）。")]
+    [PLCommand(Category = "material", Writes = PLWriteScope.ModelWide, Description = "現在のマテリアルスロットを切り替える（自動控えが有効なら既定マテリアルも取り直す）。")]
     public class SetCurrentMaterialSlotCommand : PanelCommand
     {
         [PLParam(TextKey = "CurrentMaterialSlotIndex", Description = "現在にするマテリアルスロットの番号", Required = true)]
@@ -230,14 +230,14 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>マテリアルスロットを末尾に追加する</summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "マテリアルの枠を末尾へ足す。")]
+    [PLCommand(Category = "material", Effects = PLCommandEffect.Material, Writes = PLWriteScope.ModelWide, Description = "マテリアルの枠を末尾へ足す。")]
     public class AddMaterialSlotCommand : PanelCommand
     {
         public AddMaterialSlotCommand(int modelIndex) : base(modelIndex) { }
     }
 
     /// <summary>指定インデックスのマテリアルスロットを削除する</summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "指定した番号のマテリアルの枠を消す。")]
+    [PLCommand(Category = "material", Writes = PLWriteScope.ModelWide, Description = "指定した番号のマテリアルの枠を消す。")]
     public class RemoveMaterialSlotCommand : PanelCommand
     {
         [PLParam(TextKey = "RemoveMaterialSlotIndex",
@@ -248,7 +248,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>選択面に指定マテリアルスロットを適用する</summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択した面へ、指定したマテリアルの枠を割り当てる。")]
+    [PLCommand(Category = "material", Writes = PLWriteScope.Targets, Description = "選択した面へ、指定したマテリアルの枠を割り当てる。")]
     public class ApplyMaterialToFacesCommand : PanelCommand
     {
         /// <summary>対象 MeshContext の MasterIndex</summary>
@@ -287,7 +287,7 @@ namespace Poly_Ling.Data
     ///   両方へ書いている（PlayerMaterialListSubPanel.cs:610-625）。
     ///   書く先はディスパッチャ側が持つ。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットの基本色を設定する。")]
+    [PLCommand(Category = "material", Effects = PLCommandEffect.Material, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットの基本色を設定する。")]
     public class SetMaterialColorCommand : PanelCommand
     {
         /// <summary>対象マテリアルスロット番号</summary>
@@ -333,7 +333,7 @@ namespace Poly_Ling.Data
     /// マテリアルスロットのシェーダーを差し替える。色・メインテクスチャ・不透明／半透明は引き継ぐ。
     /// 処理は MaterialEditOps.ApplyShader（操作経路統一計画.md H-3b）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットのシェーダーを差し替える。色・テクスチャ・不透明／半透明は引き継ぐ。")]
+    [PLCommand(Category = "material", Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットのシェーダーを差し替える。色・テクスチャ・不透明／半透明は引き継ぐ。")]
     public class SetMaterialShaderCommand : PanelCommand
     {
         [PLParam(Description = "対象のマテリアルスロットの番号", Required = true)]
@@ -359,7 +359,7 @@ namespace Poly_Ling.Data
     /// マテリアルスロットの実数パラメータ（Metallic・Smoothness）を設定する。
     /// 処理は MaterialEditOps.ApplyScalar（操作経路統一計画.md H-3）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットの Metallic または Smoothness を設定する。")]
+    [PLCommand(Category = "material", Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットの Metallic または Smoothness を設定する。")]
     public class SetMaterialScalarCommand : PanelCommand
     {
         [PLParam(Description = "対象のマテリアルスロットの番号", Required = true)]
@@ -385,7 +385,7 @@ namespace Poly_Ling.Data
     /// マテリアルスロットを不透明／半透明に切り替える。
     /// 処理は MaterialEditOps.ApplySurface（操作経路統一計画.md H-3b）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットを不透明／半透明に切り替える。")]
+    [PLCommand(Category = "material", Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットを不透明／半透明に切り替える。")]
     public class SetMaterialSurfaceCommand : PanelCommand
     {
         [PLParam(Description = "対象のマテリアルスロットの番号", Required = true)]
@@ -407,7 +407,7 @@ namespace Poly_Ling.Data
     /// （画面で選んだファイルは PLSandbox.AllowOnceFromDialog で 1 回だけ許可される）。
     /// 処理は MaterialEditOps.ApplyTextureFile（操作経路統一計画.md H-3b）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "画像ファイルを読んでマテリアルスロットのテクスチャ欄へ設定する。作業フォルダの下だけを読める。")]
+    [PLCommand(Category = "material", Writes = PLWriteScope.ModelWide, Description = "画像ファイルを読んでマテリアルスロットのテクスチャ欄へ設定する。作業フォルダの下だけを読める。")]
     public class SetMaterialTextureCommand : PanelCommand
     {
         [PLParam(Description = "対象のマテリアルスロットの番号", Required = true)]

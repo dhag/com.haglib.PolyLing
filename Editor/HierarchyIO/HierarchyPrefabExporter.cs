@@ -57,7 +57,9 @@ namespace Poly_Ling.EditorIO
         public bool IncludeInvisibleAncestors = true;   // 可視ノードの親が不可視なら補完して出力
         public bool ExportMeshOnly            = false;  // ボーンを除外しメッシュのみ
         public bool ExportPhysics             = true;   // 剛体/JOINT を Unity 物理部品として出力
-        public bool SaveAsPrefab              = true;   // シーンではなくプレファブとして保存（アセット化）
+        public bool AddToHierarchy            = false;  // 生成物を現在のシーンへ追加
+        public bool DirectSingleObjectToHierarchy = true; // 直下が1個ならモデル用ルートを省略
+        public bool SaveAsPrefab              = true;   // プレファブとして保存（Hierarchy追加と併用可）
         public bool BuildAvatar               = true;   // プレファブと同時に Humanoid Avatar(.asset) を生成
         public bool SupplementHumanoid        = false;  // 不足する Humanoid 必須関節をダミーで補完
         public bool WriteAttach               = true;   // IK 付帯を attach.csv でプレファブ同居出力
@@ -112,6 +114,10 @@ namespace Poly_Ling.EditorIO
         // --- 出力パスに挟むプロジェクト名（空なら挟まない） ---
         private string _prefabProjectFolder = "";
 
+        // ExportFolder 開始時点の選択を固定する。一括出力の途中で Selection が
+        // 生成物へ移っても、全モデルを同じ親の下へ追加するため。
+        private Transform _hierarchyParent;
+
         // --- 結果レポート ---
         private readonly HierarchyExportReport _report = new HierarchyExportReport();
 
@@ -131,6 +137,15 @@ namespace Poly_Ling.EditorIO
         public HierarchyExportOutcome ExportFolder(string folderPath)
         {
             var outcome = new HierarchyExportOutcome();
+
+            if (!_opt.AddToHierarchy && !_opt.SaveAsPrefab)
+            {
+                outcome.Title = "エラー";
+                outcome.Text = "「ヒエラルキーに追加」または「プレファブとして保存」を選択してください。";
+                return outcome;
+            }
+
+            _hierarchyParent = ResolveSelectedSceneTransform();
 
             if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
             {
@@ -277,6 +292,8 @@ namespace Poly_Ling.EditorIO
             var root = Export(model);
             if (root != null)
             {
+                root = AddGeneratedRootToHierarchy(root);
+
                 // シーン出力ではアセットを一切作らないため Avatar は生成せず、
                 // 空の Animator（avatar 未設定）のみを付与する。
                 if (_opt.SceneAnimator || _opt.AnimatorController != null)
@@ -391,6 +408,7 @@ namespace Poly_Ling.EditorIO
             _usedMeshNames.Clear();
 
             GameObject root = null;
+            bool keepHierarchyObject = false;
             try
             {
                 root = Export(model);
@@ -487,8 +505,11 @@ namespace Poly_Ling.EditorIO
                 var prefab = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
                 AssetDatabase.SaveAssets();
 
-                UnityEditor.Selection.activeObject = prefab;
-                EditorGUIUtility.PingObject(prefab);
+                if (!_opt.AddToHierarchy)
+                {
+                    UnityEditor.Selection.activeObject = prefab;
+                    EditorGUIUtility.PingObject(prefab);
+                }
                 _report.Log($"プレファブ保存: {prefabPath}（材料アセット {matCount} / テクスチャ {texCount}）");
 
                 if (prefab == null) _report.Error("プレファブの保存に失敗しました: " + prefabPath);
@@ -504,15 +525,139 @@ namespace Poly_Ling.EditorIO
                 // 警告・エラーをプレファブと同じフォルダへテキストで残す。
                 WriteExportReportFile(model, baseDir, prefab != null);
 
-                return prefab != null;
+                bool hierarchyOk = true;
+                if (_opt.AddToHierarchy)
+                {
+                    root = AddGeneratedRootToHierarchy(root);
+                    hierarchyOk = root != null;
+                    keepHierarchyObject = hierarchyOk;
+
+                    if (hierarchyOk)
+                    {
+                        UnityEditor.Selection.activeGameObject = root;
+                        EditorGUIUtility.PingObject(root);
+                    }
+                }
+
+                return prefab != null && hierarchyOk;
             }
             finally
             {
                 _prefabExportActive = false;
                 _meshesDir = "";
-                // シーン上の一時ルートは破棄（プレファブが成果物）
-                if (root != null) UnityEngine.Object.DestroyImmediate(root);
+                // Hierarchyにも追加する場合は生成物を残す。Prefabだけなら一時ルートを破棄する。
+                if (root != null && !keepHierarchyObject)
+                    UnityEngine.Object.DestroyImmediate(root);
             }
+        }
+
+        // ================================================================
+        // Hierarchy への追加
+        // ================================================================
+
+        /// <summary>
+        /// ExportFolder 開始時に選択されていた、シーン上の GameObject を親候補として返す。
+        /// Project 上の Prefab アセットなどは親にできないため除外する。
+        /// </summary>
+        private static Transform ResolveSelectedSceneTransform()
+        {
+            var selected = UnityEditor.Selection.activeGameObject;
+            if (selected == null) return null;
+            if (EditorUtility.IsPersistent(selected)) return null;
+            if (!selected.scene.IsValid()) return null;
+            return selected.transform;
+        }
+
+        /// <summary>
+        /// 生成物を選択中 GameObject の子へ追加する。
+        /// 直下の子が1個だけでモデル用ルートに固有部品が無い場合は、その子を直接追加する。
+        /// </summary>
+        private GameObject AddGeneratedRootToHierarchy(GameObject modelRoot)
+        {
+            if (modelRoot == null) return null;
+
+            GameObject result = modelRoot;
+
+            if (_opt.DirectSingleObjectToHierarchy &&
+                modelRoot.transform.childCount == 1 &&
+                CanRemoveModelRoot(modelRoot))
+            {
+                var child = modelRoot.transform.GetChild(0);
+                CopyRootAnimator(modelRoot, child.gameObject);
+
+                Vector3 localPosition = child.localPosition;
+                Quaternion localRotation = child.localRotation;
+                Vector3 localScale = child.localScale;
+
+                Undo.SetTransformParent(
+                    child, _hierarchyParent,
+                    "PolyLing: Add Single Object to Hierarchy");
+                Undo.RecordObject(child, "PolyLing: Restore Local Transform");
+                child.localPosition = localPosition;
+                child.localRotation = localRotation;
+                child.localScale = localScale;
+
+                Undo.DestroyObjectImmediate(modelRoot);
+                result = child.gameObject;
+
+                _report.Note("直下のオブジェクトが1個のため、モデル用ルートを省略しました。");
+            }
+            else
+            {
+                Vector3 localPosition = modelRoot.transform.localPosition;
+                Quaternion localRotation = modelRoot.transform.localRotation;
+                Vector3 localScale = modelRoot.transform.localScale;
+
+                Undo.SetTransformParent(
+                    modelRoot.transform, _hierarchyParent,
+                    "PolyLing: Add Model to Hierarchy");
+                Undo.RecordObject(modelRoot.transform, "PolyLing: Restore Local Transform");
+                modelRoot.transform.localPosition = localPosition;
+                modelRoot.transform.localRotation = localRotation;
+                modelRoot.transform.localScale = localScale;
+
+                if (_opt.DirectSingleObjectToHierarchy &&
+                    modelRoot.transform.childCount == 1)
+                {
+                    _report.Note(
+                        "モデル用ルートに保持すべきコンポーネントがあるため、ルートを省略しませんでした。");
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Transform と Animator 以外が付いているルートは省略しない。
+        /// Rigidbody、Collider、ユーザースクリプトなどを失わないためである。
+        /// </summary>
+        private static bool CanRemoveModelRoot(GameObject modelRoot)
+        {
+            foreach (var component in modelRoot.GetComponents<Component>())
+            {
+                if (component == null) return false;
+                if (component is Transform) continue;
+                if (component is Animator) continue;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>省略するモデル用ルートの Animator 設定を唯一の子へ移す。</summary>
+        private static void CopyRootAnimator(GameObject sourceRoot, GameObject destination)
+        {
+            var source = sourceRoot.GetComponent<Animator>();
+            if (source == null) return;
+
+            var target = destination.GetComponent<Animator>();
+            if (target == null)
+                target = Undo.AddComponent<Animator>(destination);
+
+            target.avatar = source.avatar;
+            target.runtimeAnimatorController = source.runtimeAnimatorController;
+            target.applyRootMotion = source.applyRootMotion;
+            target.updateMode = source.updateMode;
+            target.cullingMode = source.cullingMode;
         }
 
         // ================================================================
@@ -763,7 +908,8 @@ namespace Poly_Ling.EditorIO
             new HierarchyBuilder(BuildHierarchyOptions()).WarnAboutExpectations(model, pre);
             foreach (string w in pre.Warnings) _report.Warn(w);
 
-            if (_opt.BuildAvatar && (model.HumanoidMapping == null || model.HumanoidMapping.IsEmpty))
+            if (_opt.SaveAsPrefab && _opt.BuildAvatar &&
+                (model.HumanoidMapping == null || model.HumanoidMapping.IsEmpty))
             {
                 _report.Warn(
                     "Humanoid 割当が空です。Avatar は生成できません。\n"

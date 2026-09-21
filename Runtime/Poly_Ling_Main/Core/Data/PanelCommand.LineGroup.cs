@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Poly_Ling.Data
 {
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "線分群を作る。点列から頂点・線分（2 頂点の面）・線分群を一緒に作る。")]
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群を作る。点列から頂点・線分（2 頂点の面）・線分群を一緒に作る。")]
     [PLResult("groupIndex", PLResultKind.Integer, Description = "作った線分群の番号")]
     public class CreateLineGroupCommand : PanelCommand
     {
@@ -56,7 +56,7 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "線分群の点列（と任意でハンドル）を差し替える。点の数が変われば頂点と線分も増減する。")]
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群の点列（と任意でハンドル）を差し替える。点の数が変われば頂点と線分も増減する。")]
     public class SetLineGroupPointsCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,
@@ -87,7 +87,7 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "線分群とその線分を消す。頂点も消すかを選べる（他から使われている頂点は残す）。")]
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群とその線分を消す。頂点も消すかを選べる（他から使われている頂点は残す）。")]
     public class DeleteLineGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,
@@ -109,7 +109,7 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "線分群の名前を変える。")]
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群の名前を変える。")]
     public class RenameLineGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,
@@ -131,7 +131,7 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "線分群の点のハンドル拘束（向き・長さ）を変えて解き直す。ハンドルの無い群には既定のハンドルを作る。")]
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群の点のハンドル拘束（向き・長さ）を変えて解き直す。ハンドルの無い群には既定のハンドルを作る。")]
     public class SetLineHandleConstraintCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,
@@ -175,7 +175,7 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "線分群の曲線（ハンドル）を折れ線に焼き込む。曲線を分割した点で点列を差し替え、ハンドルと長さの組を捨てる。")]
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群の曲線（ハンドル）を折れ線に焼き込む。曲線を分割した点で点列を差し替え、ハンドルと長さの組を捨てる。")]
     public class BakeLineGroupCurveCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,
@@ -197,7 +197,7 @@ namespace Poly_Ling.Data
         }
     }
 
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "線分群の長さの組を作るか値を変えて、解き直す。")]
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群の長さの組を作るか値を変えて、解き直す。")]
     public class SetLineLengthGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,

@@ -75,6 +75,9 @@ namespace Poly_Ling.Serialization
         /// <summary>参照段の扱い方（ScenarioExpansionPolicy の数値）。0 = Reference。</summary>
         public int expansionPolicy = 0;
 
+        /// <summary>段が属する利用シーンの名前。空 = 指定なし。古いデータには無い（空として読む）。</summary>
+        public string usageScene = "";
+
         public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
         public List<ObjectGroupMeshRefDTO> meshRefs = new List<ObjectGroupMeshRefDTO>();
 
@@ -93,6 +96,7 @@ namespace Poly_Ling.Serialization
                 purpose         = s.Purpose ?? "",
                 refName         = s.RefName ?? "",
                 expansionPolicy = (int)s.ExpansionPolicy,
+                usageScene      = s.UsageScene ?? "",
             };
 
             foreach (var kv in s.SortedArgs())
@@ -129,6 +133,7 @@ namespace Poly_Ling.Serialization
                 ExpansionPolicy = System.Enum.IsDefined(typeof(ScenarioExpansionPolicy), expansionPolicy)
                             ? (ScenarioExpansionPolicy)expansionPolicy
                             : ScenarioExpansionPolicy.Reference,
+                UsageScene = usageScene ?? "",
             };
 
             if (args != null)

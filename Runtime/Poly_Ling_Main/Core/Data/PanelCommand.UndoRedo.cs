@@ -20,14 +20,14 @@ namespace Poly_Ling.Data
     /// 直前の操作を 1 段戻す。モデル非依存なので ModelIndex は 0 固定。
     /// 戻せる履歴が無いときは失敗として返る。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "直前の操作を 1 段戻す。モデル非依存なので ModelIndex は 0 固定。")]
+    [PLCommand(Category = "undo", Writes = PLWriteScope.ModelWide, Description = "直前の操作を 1 段戻す。モデル非依存なので ModelIndex は 0 固定。")]
     public class PerformUndoCommand : PanelCommand
     {
         public PerformUndoCommand() : base(0) { }
     }
 
     /// <summary>戻した操作を 1 段やり直す。</summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "戻した操作を 1 段やり直す。")]
+    [PLCommand(Category = "undo", Writes = PLWriteScope.ModelWide, Description = "戻した操作を 1 段やり直す。")]
     public class PerformRedoCommand : PanelCommand
     {
         public PerformRedoCommand() : base(0) { }
@@ -40,7 +40,7 @@ namespace Poly_Ling.Data
     /// 変更されるのは対象穴のメッシュだけで、基準穴は頂点数を読むだけ。
     /// 基準と対象が同じメッシュにあってもよい。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "穴の頂点数を基準の穴に合わせる。穴つなぎは 2 つの穴の頂点数が同じであることを要求するので、その前処理に使う。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "穴の頂点数を基準の穴に合わせる。穴つなぎは 2 つの穴の頂点数が同じであることを要求するので、その前処理に使う。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -96,7 +96,7 @@ namespace Poly_Ling.Data
     /// 面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。
     /// 消すのは指定メッシュの面だけで、他のオブジェクトの選択は巻き込まない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。")]
     [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
@@ -124,7 +124,7 @@ namespace Poly_Ling.Data
     /// 単一のメッシュを返さないので図形生成コマンドとは別系統にする。
     /// 作業軸はモデル側の状態なのでディスパッチャが解決する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "歪み複製。複製元を歪ませながら複数組つくり、モデルへ挿入する。")]
+    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "歪み複製。複製元を歪ませながら複数組つくり、モデルへ挿入する。")]
     public class CreateObjectArrayCommand : PanelCommand
     {
         /// <summary>生成パラメータ。</summary>

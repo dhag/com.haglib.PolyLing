@@ -32,7 +32,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>境界辺（穴の縁）を座標で絞って返す。モデルは変えない。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "境界辺（穴の縁）を並べて返す。atExtreme でどちらか一端の辺だけに絞れる。どれを使うかは呼ぶ側が中点の座標を見て決める。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "境界辺（穴の縁）を並べて返す。atExtreme でどちらか一端の辺だけに絞れる。どれを使うかは呼ぶ側が中点の座標を見て決める。モデルは変えない。")]
     [PLResult("count", PLResultKind.Integer,     Description = "返した境界辺の数")]
     [PLResult("v1",    PLResultKind.IntegerArray, Description = "辺の片側の頂点索引", Optional = true)]
     [PLResult("v2",    PLResultKind.IntegerArray, Description = "辺のもう片側の頂点索引。v1 と同じ並び", Optional = true)]
@@ -64,7 +64,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>面を軸並行の箱で絞って返す。モデルは変えない。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "面の中心が指定した箱の中に入っている面を並べて返す。deleteFaces へそのまま渡せる。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "面の中心が指定した箱の中に入っている面を並べて返す。deleteFaces へそのまま渡せる。モデルは変えない。")]
     [PLResult("count",      PLResultKind.Integer,      Description = "箱に入った面の数")]
     [PLResult("faceIndices", PLResultKind.IntegerArray, Description = "面の索引。deleteFaces の faceIndices へ渡す", Optional = true)]
     [PLResult("centerX",    PLResultKind.NumberArray,  Description = "面の中心の x。faceIndices と同じ並び", Optional = true)]
@@ -94,7 +94,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>相手に最も近い境界頂点を返す。モデルは変えない。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "相手の描画オブジェクト（または指定した点）に最も近い境界頂点を返す。穴つなぎ・穴の頂点数合わせが穴を指すのに使う種頂点。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "相手の描画オブジェクト（または指定した点）に最も近い境界頂点を返す。穴つなぎ・穴の頂点数合わせが穴を指すのに使う種頂点。モデルは変えない。")]
     [PLResult("found",       PLResultKind.Flag,        Description = "引けたか")]
     [PLResult("vertexIndex", PLResultKind.Integer,     Description = "境界頂点の索引。引けなかったときは -1")]
     [PLResult("distance",    PLResultKind.Number,      Description = "相手までのワールド距離[m]")]

@@ -109,7 +109,25 @@ namespace Poly_Ling.EditorIO
 
             opt.ExportMeshOnly = EditorGUILayout.Toggle("メッシュのみ（ボーン除外）", opt.ExportMeshOnly);
             opt.ExportPhysics  = EditorGUILayout.Toggle("剛体/JOINTを出力", opt.ExportPhysics);
+
+            opt.AddToHierarchy = EditorGUILayout.Toggle(
+                "ヒエラルキーに追加", opt.AddToHierarchy);
+            using (new EditorGUI.DisabledScope(!opt.AddToHierarchy))
+            {
+                opt.DirectSingleObjectToHierarchy = EditorGUILayout.Toggle(
+                    "オブジェクトが1つの場合直接ヒエラルキーに追加",
+                    opt.DirectSingleObjectToHierarchy);
+            }
+
             opt.SaveAsPrefab   = EditorGUILayout.Toggle("プレファブとして保存", opt.SaveAsPrefab);
+
+            if (!opt.AddToHierarchy && !opt.SaveAsPrefab)
+            {
+                EditorGUILayout.HelpBox(
+                    "「ヒエラルキーに追加」または「プレファブとして保存」を選択してください。",
+                    MessageType.Warning);
+            }
+
             if (opt.SaveAsPrefab)
             {
                 // [...] は書き込み先フォルダを決めるだけ。ここで保存はしない。
@@ -136,12 +154,20 @@ namespace Poly_Ling.EditorIO
                         ? "\n不足する必須関節をダミーの空オブジェクトで補ってから生成します。" : ""),
                     MessageType.Info);
             }
-            else
+
+            if (opt.AddToHierarchy && !opt.SaveAsPrefab)
             {
                 opt.SceneAnimator = EditorGUILayout.Toggle("空の Animator を付与", opt.SceneAnimator);
                 EditorGUILayout.HelpBox(
-                    "シーンに書き出します。アセット・ファイルは一切生成しません。" +
+                    "ヒエラルキーに追加します。アセット・ファイルは生成しません。" +
                     (opt.SceneAnimator ? "\nルートに Animator を付与します（Avatar は未設定）。" : ""),
+                    MessageType.Info);
+            }
+            else if (opt.AddToHierarchy && opt.SaveAsPrefab)
+            {
+                EditorGUILayout.HelpBox(
+                    "プレファブを保存し、同じ生成結果をヒエラルキーにも残します。\n" +
+                    "Hierarchy上でGameObjectが選択されている場合は、その子として追加します。",
                     MessageType.Info);
             }
 

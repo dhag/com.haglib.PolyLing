@@ -440,7 +440,11 @@ namespace Poly_Ling.EditorControl
         //   tools_search   … profile=optimized 用。params: query / category / scene / offset / limit
         //   tools_describe … profile=optimized 用。params: names（カンマ区切り、最大 10 件）
         //   scenes         … profile=optimized 用。利用シーン（SceneLibrary）の定義を全部返す
-        //                     {"storePath":"…","scenes":[{"name","description","commands":[],"categories":[],"tags":[],"tools":[]}]}
+        //                     {"storePath":"…","scenes":[{"name","description","explicitCommands":[],"includeCategories":[],
+        //                       "boostTags":[],"tools":[],"excludeCommands":[],"stateAssumptions":[],"hazardPolicy":[],
+        //                       "verificationPolicy":[],"relatedScenarios":[],"notes"}],
+        //                      "categories":[{"name","description"}],"stateNames":[],"hazardNames":[],
+        //                      "hazardActions":[],"verificationNames":[]}（書ける名前の一覧）
         //                     サーバが固定の道具を絞るのに使う。パネルが開いていなくても答える。
         // ================================================================
 
@@ -505,7 +509,17 @@ namespace Poly_Ling.EditorControl
                 offset = Math.Max(0, offset);
                 limit  = Math.Clamp(limit, 1, ToolsSearchMaxLimit);
 
-                return BuildResult(op, PanelCommandFactory.BuildToolsSearchJson(query, category, scene, offset, limit));
+                // 利用シーンを指定したときは、パネルからモデル状態を取る。想定との照合（stateWarnings）と、
+                // 危険性がいまのモデルで実際に壊すものの表示（stateConflicts）に使う。
+                // パネルが開いていなければ null のまま渡し、照合しなかったことを結果に書かせる。
+                ModelStateSnapshot state = null;
+                if (scene != null)
+                {
+                    try { state = PolyLingCommandGateway.ModelState?.Invoke(); }
+                    catch (Exception ex) { Debug.LogWarning($"{LogTag} モデル状態を取れませんでした: {ex.Message}"); }
+                }
+
+                return BuildResult(op, PanelCommandFactory.BuildToolsSearchJson(query, category, scene, state, offset, limit));
             }
             catch (Exception ex)
             {
@@ -555,13 +569,39 @@ namespace Poly_Ling.EditorControl
                     inner.BeginObject();
                     inner.KeyValue("name",        s.Name);
                     inner.KeyValue("description", s.Description);
-                    AppendStringArray(inner, "commands",   s.Commands);
-                    AppendStringArray(inner, "categories", s.Categories);
-                    AppendStringArray(inner, "tags",       s.Tags);
-                    AppendStringArray(inner, "tools",      s.Tools);
+                    inner.KeyValue("origin",      SceneLibrary.OriginOf(s.Name));
+                    AppendStringArray(inner, "explicitCommands",   s.ExplicitCommands);
+                    AppendStringArray(inner, "includeCategories",  s.IncludeCategories);
+                    AppendStringArray(inner, "boostTags",          s.BoostTags);
+                    AppendStringArray(inner, "tools",              s.Tools);
+                    AppendStringArray(inner, "excludeCommands",    s.ExcludeCommands);
+                    AppendStringArray(inner, "stateAssumptions",   s.StateAssumptionItems());
+                    AppendStringArray(inner, "hazardPolicy",       s.HazardPolicyItems());
+                    AppendStringArray(inner, "verificationPolicy", s.VerificationItems());
+                    AppendStringArray(inner, "relatedScenarios",   s.RelatedScenarios);
+                    inner.KeyValue("notes", s.Notes);
                     inner.EndObject();
                 }
                 inner.EndArray();
+
+                // 利用シーンの categories に書ける分類の一覧（正典）。人工知能が綴りを推測しないで済むように添える。
+                inner.Key("categories");
+                inner.BeginArray();
+                foreach (var kv in PLCommandCategories.All)
+                {
+                    inner.BeginObject();
+                    inner.KeyValue("name",        kv.Key);
+                    inner.KeyValue("description", kv.Value);
+                    inner.EndObject();
+                }
+                inner.EndArray();
+
+                // stateAssumptions / hazardPolicy / verificationPolicy に書ける名前。綴りを推測させないために添える。
+                AppendStringArray(inner, "stateNames", new List<string>(ModelStateSnapshot.Names));
+                AppendStringArray(inner, "hazardNames", EnumNames<PLCommandHazard>());
+                AppendStringArray(inner, "hazardActions", new List<string> { "allow", "warn", "require-confirmation", "hide" });
+                AppendStringArray(inner, "verificationNames", EnumNames<PLCommandVerification>());
+
                 inner.EndObject();
                 return BuildResult(op, inner.ToString());
             }
@@ -569,6 +609,15 @@ namespace Poly_Ling.EditorControl
             {
                 return BuildError(op, $"{ex.GetType().Name}: {ex.Message}");
             }
+        }
+
+        /// <summary>旗の列挙の名前（None を除く）。</summary>
+        private static List<string> EnumNames<T>() where T : Enum
+        {
+            var list = new List<string>();
+            foreach (var v in Enum.GetValues(typeof(T)))
+                if (Convert.ToInt64(v) != 0) list.Add(v.ToString());
+            return list;
         }
 
         /// <summary>文字列の配列を足す。空でも [] を書く（受け側が有無を判定しなくて済む）。</summary>

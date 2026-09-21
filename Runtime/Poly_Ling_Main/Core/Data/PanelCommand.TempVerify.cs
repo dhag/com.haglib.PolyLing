@@ -63,7 +63,7 @@ namespace Poly_Ling.Data
     /// 【破壊的】
     ///   ResetProjectCommand を通すので、開いているモデルは全部捨てる。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "【臨時】リセットから読込・ポーズ付与・両表示モードでの頂点移動・表示ワールド位置の照合までを 1 回で通す検証コマンド。開いているモデルは全部捨てる。")]
+    [PLCommand(Category = "verify", Writes = PLWriteScope.ModelWide, Description = "【臨時】リセットから読込・ポーズ付与・両表示モードでの頂点移動・表示ワールド位置の照合までを 1 回で通す検証コマンド。開いているモデルは全部捨てる。")]
     [PLResult("targetIndex",        PLResultKind.Integer,     Description = "実際に検証した描画オブジェクトの masterIndex")]
     [PLResult("targetName",         PLResultKind.Text,        Description = "その名前")]
     [PLResult("loadedBones",        PLResultKind.Integer,     Description = "読み込み後のボーン数")]
@@ -176,7 +176,7 @@ namespace Poly_Ling.Data
     ///
     /// 【破壊的】プロジェクトを捨てて読み直し、頂点を動かす。検証専用。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "【臨時】バインド表示と現在ポーズ表示で、選択頂点の回転が表示どおりに効くかを測る。")]
+    [PLCommand(Category = "verify", Writes = PLWriteScope.ModelWide, Description = "【臨時】バインド表示と現在ポーズ表示で、選択頂点の回転が表示どおりに効くかを測る。")]
     [PLResult("targetIndex",        PLResultKind.Integer,     Description = "検証に使った描画オブジェクトの masterIndex")]
     [PLResult("targetName",         PLResultKind.Text,        Description = "その名前")]
     [PLResult("testedVertices",     PLResultKind.Integer,     Description = "検査した頂点の数")]
@@ -261,7 +261,7 @@ namespace Poly_Ling.Data
     ///
     /// 【破壊的】プロジェクトを捨てて読み直し、頂点を動かす。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "【臨時・簡易】スカルプトのブラシが画面に見えている位置に当たるかを測る。開いているモデルは全部捨てる。")]
+    [PLCommand(Category = "verify", Writes = PLWriteScope.ModelWide, Description = "【臨時・簡易】スカルプトのブラシが画面に見えている位置に当たるかを測る。開いているモデルは全部捨てる。")]
     [PLResult("targetIndex",      PLResultKind.Integer, Description = "検証に使った描画オブジェクトの masterIndex")]
     [PLResult("targetName",       PLResultKind.Text,    Description = "その名前")]
     [PLResult("anchorVertex",     PLResultKind.Integer, Description = "ブラシ中心に置いた頂点の索引")]

@@ -19,7 +19,7 @@
 //   gc … 成功条件 1 件
 //   gt … 札 1 件
 //   gv … 由来（gv,parentName,changeSummary,createdBy）
-//   s  … ステップの頭（s,action,elementId,kind,purpose,refName,expansionPolicy）。以降の o / a / r はこの段に付く
+//   s  … ステップの頭（s,action,elementId,kind,purpose,refName,expansionPolicy,usageScene）。以降の o / a / r はこの段に付く
 //   o  … その段の出力先 ObjectId 列
 //   a  … パラメータ 1 件
 //   r  … 描画オブジェクト参照 1 件（キーと ObjectId 列）
@@ -32,7 +32,8 @@
 //   1.1 … s / o を追加。ステップ列。
 //   1.2 … g に goal、s に elementId / kind / purpose、gp / gc / gt / gv を追加。
 //   1.3 … s に refName / expansionPolicy を追加（Kind = ScenarioRef 用）。
-//   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 の本文もそのまま読める
+//   1.4 … s に usageScene を追加（段が属する利用シーンの名前）。
+//   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 / 1.3 の本文もそのまま読める
 //   （Split は行末の空欄を落とすため、列数は種別ごとに下限だけ見る）。
 //
 // 【並びを固定する】
@@ -56,7 +57,7 @@ namespace Poly_Ling.Serialization
     public static class ObjectGroupCsv
     {
         /// <summary>書き出す版。</summary>
-        public const string Version = "1.3";
+        public const string Version = "1.4";
 
         // ================================================================
         // 書き
@@ -113,7 +114,7 @@ namespace Poly_Ling.Serialization
                     sb.AppendLine(
                         $"s,{Esc(st.Action ?? "")},{Esc(st.ElementId ?? "")}," +
                         $"{st.Kind},{Esc(st.Purpose ?? "")}," +
-                        $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy}");
+                        $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy},{Esc(st.UsageScene ?? "")}");
 
                     if (st.OutputObjectIds != null && st.OutputObjectIds.Count > 0)
                     {
@@ -247,6 +248,7 @@ namespace Poly_Ling.Serialization
                             Purpose         = cols.Length > 4 ? Unesc(cols[4]) : "",
                             RefName         = cols.Length > 5 ? Unesc(cols[5]) : "",
                             ExpansionPolicy = ParsePolicy(cols, 6),
+                            UsageScene      = cols.Length > 7 ? Unesc(cols[7]) : "",
                         };
                         cur.Steps.Add(curStep);
                         break;

@@ -78,7 +78,7 @@ namespace Poly_Ling.Data
     ///   名前での一致を先に試し、無いときだけ Humanoid の割当へ落とす
     ///   （PlayerSpringBoneTestSubPanel.cs:963-967 と同じ判断）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "名前か Humanoid の割当からボーンを 1 本引き、索引・名前・ワールド座標を返す。名前を先に試し、無ければ Humanoid の割当へ落とす。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "名前か Humanoid の割当からボーンを 1 本引き、索引・名前・ワールド座標を返す。名前を先に試し、無ければ Humanoid の割当へ落とす。モデルは変えない。")]
     [PLResult("found",         PLResultKind.Flag,        Description = "引けたか")]
     [PLResult("boneIndex",     PLResultKind.Integer,     Description = "ボーンの masterIndex。引けなかったときは -1")]
     [PLResult("boneName",      PLResultKind.Text,        Description = "ボーンの名前")]
@@ -106,7 +106,7 @@ namespace Poly_Ling.Data
     /// モデルの構成を数え、描画オブジェクトの索引・安定 ID・名前の対応を
     /// 結果辞書へ書く。モデルは変えない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "モデルの構成を数え、描画オブジェクトの索引・安定 ID・名前の対応を結果辞書へ書く。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "モデルの構成を数え、描画オブジェクトの索引・安定 ID・名前の対応を結果辞書へ書く。モデルは変えない。")]
     [PLResult("entry",        PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("modelIndex",   PLResultKind.Integer, Description = "読んだモデルの索引")]
     [PLResult("meshContexts", PLResultKind.Integer, Description = "モデルが持つ要素の総数")]
@@ -134,7 +134,7 @@ namespace Poly_Ling.Data
     ///   （自動更新が立っているか / ソースを引けるか / 要更新か）。
     ///   外から読めないと、パネルの画面を見るしか確かめる手が無い。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "オブジェクトグループの状態（自動更新・要更新・参照の生死）を結果辞書へ書く。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "オブジェクトグループの状態（自動更新・要更新・参照の生死）を結果辞書へ書く。モデルは変えない。")]
     [PLResult("entry",  PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("groups", PLResultKind.Integer, Description = "グループの数")]
     [PLResult("stale",  PLResultKind.Integer, Description = "要更新のグループの数")]
@@ -161,7 +161,7 @@ namespace Poly_Ling.Data
     ///   「塗り直されたか」は頂点数では判らない。どのボーンを指しているかで決まる。
     ///   接頭辞を渡すと、その名前で始まるボーンを指す頂点だけを別に数える。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクト 1 個のボーンウェイトの行き先を数え、結果辞書へ書く。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "描画オブジェクト 1 個のボーンウェイトの行き先を数え、結果辞書へ書く。モデルは変えない。")]
     [PLResult("entry",         PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("vertices",      PLResultKind.Integer, Description = "頂点数")]
     [PLResult("weighted",      PLResultKind.Integer, Description = "ウェイトを持つ頂点の数")]
@@ -194,7 +194,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 描画オブジェクト 1 個の規模を数え、結果辞書へ書く。モデルは変えない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクト 1 個の頂点数・面数・材質数・境界ループ数・バウンディングボックスを数え、結果辞書へ書く。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "描画オブジェクト 1 個の頂点数・面数・材質数・境界ループ数・バウンディングボックスを数え、結果辞書へ書く。モデルは変えない。")]
     [PLResult("entry",         PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("masterIndex",   PLResultKind.Integer, Description = "読んだ描画オブジェクトの masterIndex")]
     [PLResult("name",          PLResultKind.Text,    Description = "描画オブジェクトの名前")]
@@ -227,7 +227,7 @@ namespace Poly_Ling.Data
     /// 描画オブジェクトの穴（境界ループ）を集め、結果辞書へループ群として書く。
     /// モデルは変えない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクトの穴（境界ループ）を集め、各穴の頂点列と重心を結果辞書へ書く。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "描画オブジェクトの穴（境界ループ）を集め、各穴の頂点列と重心を結果辞書へ書く。モデルは変えない。")]
     [PLResult("entry",            PLResultKind.Entry,        Description = "書き込んだ結果辞書の見出し")]
     [PLResult("masterIndex",      PLResultKind.Integer,      Description = "読んだ描画オブジェクトの masterIndex")]
     [PLResult("holes",            PLResultKind.Integer,      Description = "穴の数")]
@@ -255,7 +255,7 @@ namespace Poly_Ling.Data
     /// 描画オブジェクトの線分群（MeshObject.LineGroups）を並べて返す。モデルは変えない。
     /// 線分群の隣り合う 2 点に 2 頂点の面があるかも数える（連携の検査用）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクトの線分群（順序付きの頂点列）を並べて返す。各群の区間に 2 頂点の面（線分）があるかも数える。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "描画オブジェクトの線分群（順序付きの頂点列）を並べて返す。各群の区間に 2 頂点の面（線分）があるかも数える。モデルは変えない。")]
     [PLResult("masterIndex",   PLResultKind.Integer,      Description = "読んだ描画オブジェクトの masterIndex")]
     [PLResult("groups",        PLResultKind.Integer,      Description = "線分群の数")]
     [PLResult("names",         PLResultKind.TextArray,    Description = "群ごとの名前")]
@@ -287,7 +287,7 @@ namespace Poly_Ling.Data
     /// 条件に合う要素を 1 個だけ返す。位相変更コマンドの種を決めるために使う。
     /// モデルは変えない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "条件に合う頂点・面・境界辺を 1 個だけ返す。位相変更コマンドの種を決めるために使う。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "条件に合う頂点・面・境界辺を 1 個だけ返す。位相変更コマンドの種を決めるために使う。モデルは変えない。")]
     [PLResult("entry",       PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("masterIndex", PLResultKind.Integer, Description = "読んだ描画オブジェクトの masterIndex")]
     [PLResult("mode",        PLResultKind.Text,    Description = "使った探し方")]
@@ -330,7 +330,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// ボーン階層とスキンウェイトの分布を数え、結果辞書へ書く。モデルは変えない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "ボーン階層と Humanoid 割当、スキンウェイトの分布を数え、結果辞書へ書く。モデルは変えない。")]
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, Description = "ボーン階層と Humanoid 割当、スキンウェイトの分布を数え、結果辞書へ書く。モデルは変えない。")]
     [PLResult("entry",            PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("bones",            PLResultKind.Integer, Description = "ボーンの数")]
     [PLResult("roots",            PLResultKind.Integer, Description = "親を持たないボーンの数")]
@@ -362,7 +362,7 @@ namespace Poly_Ling.Data
     /// コマンド定義の検査（PanelCommandFactoryAudit.RunAll）を回して結果を返す。
     /// モデルもプロジェクトも見ない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "コマンド定義の検査を回し、PLParam の付け忘れ・action 衝突・未対応の型・道具として出せた数を返す。モデルもプロジェクトも見ない。")]
+    [PLCommand(Category = "mcp", Writes = PLWriteScope.None, Description = "コマンド定義の検査を回し、PLParam の付け忘れ・action 衝突・未対応の型・道具として出せた数を返す。モデルもプロジェクトも見ない。")]
     [PLResult("report",       PLResultKind.Text,    Description = "検査結果の全文。複数行")]
     [PLResult("toolsUsable",  PLResultKind.Integer, Description = "道具として出せた数")]
     [PLResult("toolsSkipped", PLResultKind.Integer, Description = "道具として出せなかった数")]
@@ -381,7 +381,7 @@ namespace Poly_Ling.Data
     /// 照会対象のコマンドは action と引数（argKeys / argValues、手本の段と同じ形）から
     /// PanelCommandFactory.Create で組み立てる。modelIndex はこのコマンドの封筒の値を使う。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "指定したコマンドを指定した名前で実行したときの担当者判定を、実行せずに返す。モデルは変えない。")]
+    [PLCommand(Category = "mcp", Writes = PLWriteScope.None, Description = "指定したコマンドを指定した名前で実行したときの担当者判定を、実行せずに返す。モデルは変えない。")]
     [PLResult("allowed",         PLResultKind.Flag,         Description = "許可されるか")]
     [PLResult("staleView",       PLResultKind.Flag,         Description = "索引と安定 ID の食い違い（ズレ）で拒否されたか")]
     [PLResult("reason",          PLResultKind.Text,         Description = "拒否理由。許可なら空")]
@@ -428,7 +428,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 現在の選択（またはパーツ選択セット）を結果辞書へ写す。形状は変えない。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "現在の選択を結果辞書へ IndexSet として写す。getRawData / setRawData の setName から引ける。形状は変えない。")]
+    [PLCommand(Category = "query.data", Writes = PLWriteScope.None, Description = "現在の選択を結果辞書へ IndexSet として写す。getRawData / setRawData の setName から引ける。形状は変えない。")]
     [PLResult("entry",       PLResultKind.Entry,   Description = "書き込んだ結果辞書の見出し")]
     [PLResult("masterIndex", PLResultKind.Integer, Description = "写した選択が属する描画オブジェクトの masterIndex")]
     [PLResult("vertices",    PLResultKind.Integer, Description = "写した頂点の数")]
@@ -479,7 +479,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>生データを取得する。モデルは変えない。</summary>
-    [PLCommand(Writes = PLWriteScope.None, Description = "描画オブジェクトの生データ（座標・UV・法線・ID・面・ウェイト）を取得する。量があるので取る種別と範囲を絞って呼ぶこと。モデルは変えない。")]
+    [PLCommand(Category = "query.data", Writes = PLWriteScope.None, Description = "描画オブジェクトの生データ（座標・UV・法線・ID・面・ウェイト）を取得する。量があるので取る種別と範囲を絞って呼ぶこと。モデルは変えない。")]
     [PLResult("objects",       PLResultKind.Integer,      Description = "読んだ描画オブジェクトの数")]
     [PLResult("masterIndices", PLResultKind.IntegerArray, Description = "読んだ描画オブジェクトの masterIndex")]
     [PLResult("objectIds",     PLResultKind.TextArray,    Description = "同じ並びの安定 ID。10 進の文字列")]
@@ -580,7 +580,7 @@ namespace Poly_Ling.Data
     /// 生データを書き戻す。位相は変えない。
     /// 対象は描画オブジェクト 1 個だけ。数が合わなければ拒否する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "描画オブジェクト 1 個へ生データ（座標・UV・法線・ID・ウェイト・フラグ・材質）を書き戻す。位相は変えない。数が合わなければ拒否する。")]
+    [PLCommand(Category = "query.data", Writes = PLWriteScope.ModelWide, Description = "描画オブジェクト 1 個へ生データ（座標・UV・法線・ID・ウェイト・フラグ・材質）を書き戻す。位相は変えない。数が合わなければ拒否する。")]
     [PLResult("masterIndex",     PLResultKind.Integer, Description = "書き戻した描画オブジェクトの masterIndex")]
     [PLResult("vertices",        PLResultKind.Integer, Description = "書き戻した頂点の数")]
     [PLResult("faces",           PLResultKind.Integer, Description = "書き戻した面の数")]

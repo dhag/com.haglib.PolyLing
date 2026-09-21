@@ -25,7 +25,7 @@ namespace Poly_Ling.Data
     ///
     /// 面だけを消す DeleteFacesCommand と違い、消す要素は各メッシュの Selection が持つ。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択されている頂点・面・線分を削除する。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "選択されている頂点・面・線分を削除する。")]
     public class DeleteSelectionCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -53,7 +53,7 @@ namespace Poly_Ling.Data
     /// （PipeAlignOps.ParsePairs / PipeSmoothOps.ParseWeights / ParseTargets）が読む
     /// 書式そのまま。読めなければ受け口が失敗理由を返す。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "パイプ状の部品どうしで断面の頂点位置をそろえる。")]
+    [PLCommand(Category = "geometry.position", Writes = PLWriteScope.Targets, Description = "パイプ状の部品どうしで断面の頂点位置をそろえる。")]
     public class PipeAlignCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -135,7 +135,7 @@ namespace Poly_Ling.Data
     /// masterIndex 配列で指定する。受け口が MeshObjectAppendOps.Combine で
     /// 並び順どおりに 1 つへ結合する（パネルの「複数チェックで上から結合」と同じ）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "配置済みの部品を原型メッシュの形へ張り直す。")]
+    [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.Targets, Description = "配置済みの部品を原型メッシュの形へ張り直す。")]
     public class PlaceObjectReshapeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -189,7 +189,7 @@ namespace Poly_Ling.Data
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// 生成物の追加は AddGeneratedMeshCommand が担う（ここでは作るところまで）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択面に厚みを付けて別メッシュとして生成する。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "選択面に厚みを付けて別メッシュとして生成する。")]
     public class SolidifyCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -278,7 +278,7 @@ namespace Poly_Ling.Data
     ///   分岐の無い開いた連なりの端に、梯子の自動検索（BeltStackDetector）の目印を付ける。
     ///   開始側は 上(+Y)→下、同じなら 手前(-Z)→奥、同じなら 左(-X)→右 で決める。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description = "辺を中心線として、ワールド固定幅の帯面を足す。梯子の開始・終了タグも付けられる。")]
     public class EdgeRibbonFaceCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -344,7 +344,7 @@ namespace Poly_Ling.Data
     ///   EdgeSetName が空なら選択辺を新しいパーツ選択辞書へ保存して使う
     ///   （対象は選択中の描画オブジェクトと一致すること）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのオブジェクトグループになる。")]
+    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "辺をパイプにする。帯面と開始タグを作って梯子として取り込み、パイプを作って帯を隠す。帯とパイプは 1 つのオブジェクトグループになる。")]
     [PLResult("groupName", PLResultKind.Text,    Description = "作ったオブジェクトグループの名前")]
     [PLResult("ladders",   PLResultKind.Integer, Description = "帯から取り込んだ梯子の本数")]
     [PLResult("edgeSetName", PLResultKind.Text,  Description = "辺を読んだパーツ選択辞書の名前")]
@@ -438,7 +438,7 @@ namespace Poly_Ling.Data
     /// 【向き】ViewDirection / ViewUp（ワールド）から作る。作り直しでもこの値を使うので、
     ///   向きは作ったときのカメラに固定される。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "頂点へ藤壺。対象の頂点それぞれへ配置元オブジェクトを複製し、カメラに向けて置く。")]
+    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "頂点へ藤壺。対象の頂点それぞれへ配置元オブジェクトを複製し、カメラに向けて置く。")]
     public class CreateVertexBillboardPlaceCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -546,7 +546,7 @@ namespace Poly_Ling.Data
     ///   ・PointPositions.Length == PointVertexIndices.Length * 3
     ///   ・既存頂点番号が編集対象の頂点数の範囲内であること
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "指定した点から円筒・角柱、三角形・四角形の板を編集対象へ足す。既存頂点を指す点と、分割数が一致する既存の辺列はそのまま共有する。")]
+    [PLCommand(Category = "geometry.create.derived", Writes = PLWriteScope.Targets, Description = "指定した点から円筒・角柱、三角形・四角形の板を編集対象へ足す。既存頂点を指す点と、分割数が一致する既存の辺列はそのまま共有する。")]
     public class CreatePointDefinedPrimitiveCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -610,7 +610,7 @@ namespace Poly_Ling.Data
     /// 実処理が編集対象メッシュ 1 本の選択線分しか見ないため、
     /// MasterIndices は「1 個で、それが編集対象と一致すること」を要求する。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "選択線分から検出した輪郭ループを押し出してメッシュを作る。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.CreatesObject, Verification = PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "選択線分から検出した輪郭ループを押し出してメッシュを作る。")]
     public class LineExtrudeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -698,7 +698,7 @@ namespace Poly_Ling.Data
     ///   SurfaceSnapTool.cs:439-453）。よって受け口は計算・スライダー・決定を続けて呼ぶ。
     ///   Slider は最終的な補間量（0 = 動かさない、1 = 完全に張り付く）。
     /// </summary>
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "対象オブジェクトの頂点を、リファレンスオブジェクトの面へ視線方向に張り付ける。")]
+    [PLCommand(Category = "geometry.position", Writes = PLWriteScope.Targets, Description = "対象オブジェクトの頂点を、リファレンスオブジェクトの面へ視線方向に張り付ける。")]
     public class SurfaceSnapCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,

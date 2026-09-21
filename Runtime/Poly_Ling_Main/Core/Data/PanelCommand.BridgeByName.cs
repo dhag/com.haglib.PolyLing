@@ -25,7 +25,7 @@
 namespace Poly_Ling.Data
 {
     /// <summary>名前で指した 2 つのオブジェクトの穴を橋渡しする。</summary>
-    [PLCommand(Writes = PLWriteScope.ModelWide, Description = "名前で指した 2 つの描画オブジェクトの、いちばん近い穴どうしを橋で張る。種頂点は実データから選び直すので、頂点番号を手順に焼かなくてよい。matchCounts を立てると、張る前に穴の頂点数を揃える。")]
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.ModelWide, Description = "名前で指した 2 つの描画オブジェクトの、いちばん近い穴どうしを橋で張る。種頂点は実データから選び直すので、頂点番号を手順に焼かなくてよい。matchCounts を立てると、張る前に穴の頂点数を揃える。")]
     [PLResult("ok",          PLResultKind.Flag,    Description = "橋を張れたか")]
     [PLResult("message",     PLResultKind.Text,    Description = "失敗した理由。成功時は空")]
     [PLResult("baseIndex",   PLResultKind.Integer, Description = "基準側の masterIndex")]

@@ -65,6 +65,29 @@ namespace Poly_Ling.Data
         /// </summary>
         public string Tags { get; set; } = "";
 
+        // ----------------------------------------------------------------
+        // 影響・危険性・検証・前提（PolyLing_利用シーン_カテゴライズ設計方針.md 6 節）
+        //   分類（Category）は「何をするか」だけを表す。「何が変わり、何が壊れ得るか」は
+        //   ここに分けて持つ。利用シーンとモデル状態を突き合わせて、警告・承認・非表示を決める材料になる。
+        //   未指定（None）でもコマンドの公開は妨げない。書き込むコマンドで Effects が None のものは
+        //   監査（PanelCommandFactoryAudit）が「未設定」として数える。
+        // ----------------------------------------------------------------
+
+        /// <summary>実行すると何が変わるか。</summary>
+        public PLCommandEffect Effects { get; set; } = PLCommandEffect.None;
+
+        /// <summary>実行すると何が壊れ得るか。</summary>
+        public PLCommandHazard Hazards { get; set; } = PLCommandHazard.None;
+
+        /// <summary>実行後に確かめるとよいこと。</summary>
+        public PLCommandVerification Verification { get; set; } = PLCommandVerification.None;
+
+        /// <summary>
+        /// 呼び出しが成り立つための条件。満たさずに呼ぶと失敗するか、壊れる。
+        /// Hazards（実行の結果として壊れ得るもの）とは別に、呼ぶ前に確かめるものを表す。
+        /// </summary>
+        public PLCommandPrecondition Preconditions { get; set; } = PLCommandPrecondition.None;
+
         public PLCommandAttribute() { }
 
         public PLCommandAttribute(string description) { Description = description; }
@@ -96,5 +119,98 @@ namespace Poly_Ling.Data
 
         /// <summary>モデル全体に効く、または対象を引数から特定できない。</summary>
         ModelWide = 4,
+    }
+
+    /// <summary>
+    /// コマンドが変えるもの（PLCommand.Effects）。複数を組み合わせてよい。
+    /// 値は旗として 1 ビットずつ割り当てる。並び替えたり詰めたりしないこと
+    /// （属性に書いた値の意味が変わる）。新しい値は末尾に足す。
+    /// </summary>
+    [Flags]
+    public enum PLCommandEffect
+    {
+        None           = 0,
+        CreatesObject  = 1 << 0,
+        DeletesObject  = 1 << 1,
+        VertexPosition = 1 << 2,
+        Topology       = 1 << 3,
+        VertexOrder    = 1 << 4,
+        Normals        = 1 << 5,
+        UV             = 1 << 6,
+        Material       = 1 << 7,
+        Skeleton       = 1 << 8,
+        SkinWeights    = 1 << 9,
+        Morph          = 1 << 10,
+        Animation      = 1 << 11,
+        SpringBone     = 1 << 12,
+        /// <summary>表示中の姿勢（ポーズ層・T ポーズ）。</summary>
+        Pose           = 1 << 13,
+        /// <summary>バインドポーズ（ウェイトを付けた基準の姿勢）。</summary>
+        BindPose       = 1 << 14,
+        /// <summary>オブジェクトの親子・並び。</summary>
+        Hierarchy      = 1 << 15,
+        /// <summary>ミラーの設定（ミラーの種類・分岐ルートなどのフラグ）。形状は変えない。</summary>
+        MirrorSetting  = 1 << 16,
+        /// <summary>オブジェクト単位の属性（表示・ロック・名前・原点・グループ設定など）。形状は変えない。</summary>
+        ObjectAttribute = 1 << 17,
+    }
+
+    /// <summary>
+    /// 実行によって壊れ得るもの（PLCommand.Hazards）。複数を組み合わせてよい。
+    /// 禁止ではない。利用シーンの注意書きで、承知のうえで使うことがある。
+    /// 値の決まりは PLCommandEffect と同じ。
+    /// </summary>
+    [Flags]
+    public enum PLCommandHazard
+    {
+        None                     = 0,
+        InvalidatesSkinWeights   = 1 << 0,
+        InvalidatesMorphs        = 1 << 1,
+        MaySplitVertices         = 1 << 2,
+        ChangesVertexOrder       = 1 << 3,
+        BreaksMirrorRelation     = 1 << 4,
+        AffectsMultipleObjects   = 1 << 5,
+        RequiresUserConfirmation = 1 << 6,
+        /// <summary>バインドポーズを書き換え、元の姿勢へ戻せない。</summary>
+        ChangesBindPose          = 1 << 7,
+    }
+
+    /// <summary>
+    /// 実行後に確かめるとよいこと（PLCommand.Verification）。複数を組み合わせてよい。
+    /// 値の決まりは PLCommandEffect と同じ。
+    /// </summary>
+    [Flags]
+    public enum PLCommandVerification
+    {
+        None           = 0,
+        Geometry       = 1 << 0,
+        Topology       = 1 << 1,
+        VertexCount    = 1 << 2,
+        Normals        = 1 << 3,
+        UVSeams        = 1 << 4,
+        SkinWeights    = 1 << 5,
+        MorphIntegrity = 1 << 6,
+        MirrorIntegrity= 1 << 7,
+        Visual         = 1 << 8,
+    }
+
+    /// <summary>
+    /// 呼び出しが成り立つための条件（PLCommand.Preconditions）。複数を組み合わせてよい。
+    /// 値の決まりは PLCommandEffect と同じ。
+    /// </summary>
+    [Flags]
+    public enum PLCommandPrecondition
+    {
+        None                    = 0,
+        /// <summary>頂点・面・オブジェクトのどれかが選ばれていること。</summary>
+        RequiresSelection       = 1 << 0,
+        /// <summary>対象にスキンウェイトがあること。</summary>
+        RequiresSkinWeights     = 1 << 1,
+        /// <summary>モデルに Humanoid の割当があること。</summary>
+        RequiresHumanoid        = 1 << 2,
+        /// <summary>対象にモーフがあること。</summary>
+        RequiresMorphs          = 1 << 3,
+        /// <summary>取り込み元と取り込み先の頂点数が一致していること。</summary>
+        RequiresMatchingVertexCount = 1 << 4,
     }
 }

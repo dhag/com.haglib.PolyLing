@@ -35,7 +35,7 @@ using Poly_Ling.Tools.SpringBoneRig;
 
 namespace Poly_Ling.Data
 {
-    [PLCommand(Writes = PLWriteScope.Targets, Description = "はしご（梯子状ベルト）から揺れもの用のボーン鎖を置く。ボーンを作り、必要ならはしご自身へウェイトを塗る。メッシュと揺れ方は付けない。")]
+    [PLCommand(Category = "dynamics.spring", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.Skeleton | PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Writes = PLWriteScope.Targets, Description = "はしご（梯子状ベルト）から揺れもの用のボーン鎖を置く。ボーンを作り、必要ならはしご自身へウェイトを塗る。メッシュと揺れ方は付けない。")]
     public class PlaceSpringBoneLadderChainsCommand : PanelCommand
     {
         [PLParam(Description = "はしごの取り込み元になる描画オブジェクトの masterIndex",
