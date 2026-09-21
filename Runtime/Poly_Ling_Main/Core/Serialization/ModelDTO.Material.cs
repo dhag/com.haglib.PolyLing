@@ -117,4 +117,17 @@ namespace Poly_Ling.Serialization
         public float w;
         public string texturePath;
     }
+
+    /// <summary>
+    /// 埋め込みテクスチャ 1 枚（ファイル名 ＋ 画像のバイト列）。
+    /// リモートのヒエラルキー送信でだけ使う。通常の JSON 保存では ModelDTO.embeddedTextures は null のままで出力されない。
+    /// 対応づけは CSV の textures フォルダと同じく、MaterialData のパスのファイル名で行う（ModelTextureTransfer）。
+    /// data は Newtonsoft.Json が base64 文字列として読み書きする。
+    /// </summary>
+    [Serializable]
+    public class EmbeddedTextureDTO
+    {
+        public string fileName;
+        public byte[] data;
+    }
 }

@@ -451,7 +451,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// プロジェクト全体を PLRF 束にして、接続中のエディタ拡張
+    /// プロジェクト全体を JSON（ProjectDTO）にして、接続中のエディタ拡張
     /// （ヒエラルキー書き出し、自動受け入れがオンのもの）へ送る。
     /// 実処理は RemoteServerCore.SendHierarchyBundle。
     /// </summary>

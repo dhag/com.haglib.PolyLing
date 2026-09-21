@@ -33,7 +33,7 @@ namespace Poly_Ling.Player
 
         public List<ImageEntry>          CapturedImages    => _server?.CapturedImages;
         public void SendProjectHeader()                    => _server?.SendProjectHeader();
-        /// <summary>プロジェクト全体を PLRF 束にして "hierarchyExport" クライアントへ push する。失敗理由を返す（成功時は null）。</summary>
+        /// <summary>プロジェクト全体を JSON（ProjectDTO）にして "hierarchyExport" クライアントへ push する。失敗理由を返す（成功時は null）。</summary>
         public string SendHierarchyBundle()
             => _server != null ? _server.SendHierarchyBundle() : "サーバがありません";
         public void SendCapturedImages()                   => _server?.SendCapturedImages();

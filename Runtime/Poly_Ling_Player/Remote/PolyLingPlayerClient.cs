@@ -329,8 +329,8 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// プロジェクト全体の PLRF 束を要求する（リモートからのヒエラルキー書き出し用）。
-        /// 成功時は (応答 JSON, 束)、失敗応答時は (応答 JSON, null) で呼ばれる。
+        /// プロジェクト全体の JSON（ProjectDTO、UTF-8）を要求する（リモートからのヒエラルキー書き出し用）。
+        /// 成功時は (応答 JSON, 本体)、失敗応答時は (応答 JSON, null) で呼ばれる。
         /// </summary>
         public void FetchProjectBundle(Action<string, byte[]> onResponse)
         {

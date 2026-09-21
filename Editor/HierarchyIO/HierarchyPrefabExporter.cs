@@ -175,6 +175,71 @@ namespace Poly_Ling.EditorIO
             return outcome;
         }
 
+        /// <summary>
+        /// メモリ上のモデル群を書き出す（リモートから受け取ったプロジェクト用）。ファイルは介さない。
+        /// 1 件なら単体、複数なら一括と同じ文言で outcome を埋める。ダイアログは出さない。
+        /// </summary>
+        /// <param name="projectName">出力パスに挟むプロジェクト名。空なら挟まない。</param>
+        public HierarchyExportOutcome ExportModels(string projectName, IList<ModelContext> models)
+        {
+            var outcome = new HierarchyExportOutcome();
+
+            if (!_opt.AddToHierarchy && !_opt.SaveAsPrefab)
+            {
+                outcome.Title = "エラー";
+                outcome.Text = "「ヒエラルキーに追加」または「プレファブとして保存」を選択してください。";
+                return outcome;
+            }
+
+            if (models == null || models.Count == 0)
+            {
+                outcome.Title = "エラー";
+                outcome.Text  = "書き出すモデルがありません。";
+                return outcome;
+            }
+
+            _hierarchyParent = ResolveSelectedSceneTransform();
+
+            _prefabProjectFolder = string.IsNullOrWhiteSpace(projectName) ? "" : SanitizeName(projectName);
+            try
+            {
+                if (models.Count == 1)
+                {
+                    _report.Reset();
+                    outcome.Success = ExportLoadedModel(models[0], outcome, single: true);
+                    return outcome;
+                }
+
+                int ok = 0;
+                var failed   = new List<string>();
+                var problems = new List<string>();
+
+                foreach (var model in models)
+                {
+                    string name = string.IsNullOrEmpty(model?.Name) ? "(名称なし)" : model.Name;
+
+                    _report.Reset();
+                    if (model != null && ExportLoadedModel(model, outcome, single: false))
+                    {
+                        ok++;
+                        if (_report.HasProblem)
+                            problems.Add($"{name}: {_report.BuildOneLineSummary()}");
+                    }
+                    else
+                    {
+                        failed.Add($"{name}: {_report.BuildOneLineSummary()}");
+                    }
+                }
+
+                FillBatchOutcome(outcome, models.Count, ok, failed, problems);
+                return outcome;
+            }
+            finally
+            {
+                _prefabProjectFolder = "";
+            }
+        }
+
         // ================================================================
         // ロード → 書き出し
         // ================================================================
@@ -225,8 +290,16 @@ namespace Poly_Ling.EditorIO
                 _prefabProjectFolder = "";
             }
 
+            FillBatchOutcome(outcome, modelFolders.Count, ok, failed, problems);
+        }
+
+        /// <summary>一括書き出しのまとめの文言で outcome を埋める。</summary>
+        private static void FillBatchOutcome(
+            HierarchyExportOutcome outcome, int total, int ok,
+            List<string> failed, List<string> problems)
+        {
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"{modelFolders.Count} 件中 {ok} 件を書き出しました。");
+            sb.AppendLine($"{total} 件中 {ok} 件を書き出しました。");
 
             if (failed.Count > 0)
             {
@@ -277,6 +350,16 @@ namespace Poly_Ling.EditorIO
                 return false;
             }
 
+            return ExportLoadedModel(model, outcome, single);
+        }
+
+        /// <summary>
+        /// 読み込み済みの ModelContext 1 件を書き出す。成功したら true。
+        /// フォルダからの書き出しとメモリ上のモデル（ExportModels）の共通部。
+        /// レポートの Reset は呼び出し側で行う。
+        /// </summary>
+        private bool ExportLoadedModel(ModelContext model, HierarchyExportOutcome outcome, bool single)
+        {
             // 読込直後の ModelContext はボーンの WorldMatrix が未計算。
             model.ComputeWorldMatrices();
 
@@ -925,6 +1008,8 @@ namespace Poly_Ling.EditorIO
         /// <summary>ModelContext を Unity ヒエラルキーに書き出し、ルート GameObject を返す。</summary>
         private GameObject Export(ModelContext model)
         {
+            // 書き出し専用の Undo グループにする。失敗時にこのグループだけを取り消すため。
+            Undo.IncrementCurrentGroup();
             Undo.SetCurrentGroupName("PolyLing: Export to Hierarchy");
             int undoGroup = Undo.GetCurrentGroup();
 
@@ -933,7 +1018,17 @@ namespace Poly_Ling.EditorIO
                 ? (m => MeshAssetUtil.SaveDeterministic(m, ResolveMeshAssetPath(m.name)))
                 : (System.Func<Mesh, Mesh>)null;
 
-            _build = new HierarchyBuilder(BuildHierarchyOptions(), persistMesh).Build(model);
+            try
+            {
+                _build = new HierarchyBuilder(BuildHierarchyOptions(), persistMesh).Build(model);
+            }
+            catch
+            {
+                // Build は GameObject を Undo 登録しながら作る（HierarchyBuilder.cs のルート生成など）。
+                // 途中で例外が出ると作りかけがシーンに残るので、このグループごと取り消す。
+                Undo.RevertAllDownToGroup(undoGroup);
+                throw;
+            }
 
             Undo.CollapseUndoOperations(undoGroup);
 

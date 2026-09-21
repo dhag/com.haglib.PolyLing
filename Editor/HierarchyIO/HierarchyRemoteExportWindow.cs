@@ -15,20 +15,25 @@
 //   1. RemoteDirectory から PolyLing 本体を選び、WebSocket 接続する。
 //   2. Pull は project_bundle を要求する。Push は hierarchyBundle の push と
 //      続くバイナリを受ける。
-//   3. 受信した PLRF 束を保存先フォルダへ展開する。
-//   4. HierarchyPrefabExporter で Hierarchy または Prefab へ書き出す。
+//   3. 受信した JSON（ProjectDTO の UTF-8）をメモリ上で ModelContext に戻す。
+//      テクスチャは ModelDTO.embeddedTextures の画像を Material に設定する。ファイルは介さない。
+//   4. HierarchyPrefabExporter.ExportModels で Hierarchy または Prefab へ書き出す。
 //
 // ============================================================
 
 #if UNITY_EDITOR
 
 using System;
+using System.Collections.Generic;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Core;
+using Poly_Ling.Context;
 using Poly_Ling.EditorTools;
 using Poly_Ling.Player;
 using Poly_Ling.Remote;
+using Poly_Ling.Serialization;
 
 namespace Poly_Ling.EditorIO
 {
@@ -56,7 +61,6 @@ namespace Poly_Ling.EditorIO
         private PolyLingPlayerClient _client;
         private RemoteServerConnector _connector;
 
-        private string _receiveRoot = "";
         private string _userName = "";
         private bool _autoConnect = true;
         private bool _autoAccept = true;
@@ -80,10 +84,6 @@ namespace Poly_Ling.EditorIO
         {
             HierarchyExportOptionsGUI.Load(_options);
 
-            _receiveRoot = EditorSaveDestField.Load(
-                SaveDest.Keys.RemoteHierarchy,
-                RemoteHierarchyReceive.DefaultDestRoot());
-
             _userName = EditorPrefs.GetString(PrefsKeyUserName, "");
             _autoConnect = EditorPrefs.GetBool(PrefsKeyAutoConnect, true);
             _autoAccept = EditorPrefs.GetBool(PrefsKeyAutoAccept, true);
@@ -101,8 +101,6 @@ namespace Poly_Ling.EditorIO
         private void SaveSettings()
         {
             HierarchyExportOptionsGUI.Save(_options);
-            SaveDest.SetFolder(
-                SaveDest.Keys.RemoteHierarchy, _receiveRoot ?? "");
             EditorPrefs.SetString(PrefsKeyUserName, _userName ?? "");
             EditorPrefs.SetBool(PrefsKeyAutoConnect, _autoConnect);
             EditorPrefs.SetBool(PrefsKeyAutoAccept, _autoAccept);
@@ -124,9 +122,6 @@ namespace Poly_Ling.EditorIO
 
             EditorGUILayout.Space(6);
             DrawConnectionSection();
-
-            EditorGUILayout.Space(8);
-            DrawReceiveSection();
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("書き出し設定", EditorStyles.boldLabel);
@@ -204,19 +199,6 @@ namespace Poly_Ling.EditorIO
                 _userName = EditorGUILayout.TextField(
                     "ユーザー名（任意）", _userName);
             }
-        }
-
-        private void DrawReceiveSection()
-        {
-            EditorGUILayout.LabelField("受信ファイル", EditorStyles.boldLabel);
-
-            _receiveRoot = EditorSaveDestField.Draw(
-                "書き込み先フォルダ",
-                _receiveRoot,
-                SaveDest.Keys.RemoteHierarchy,
-                "受信ファイルの書き込み先",
-                "project.csv",
-                "csv");
         }
 
         private void DrawExecutionSection()
@@ -394,22 +376,6 @@ namespace Poly_Ling.EditorIO
                 return;
             }
 
-            if (!RemoteHierarchyReceive.Expand(
-                    data,
-                    _receiveRoot,
-                    out string folderPath,
-                    out int fileCount,
-                    out string error))
-            {
-                _status = "展開に失敗しました: " + error;
-                EditorUtility.DisplayDialog("展開失敗", error, "OK");
-                Repaint();
-                return;
-            }
-
-            Debug.Log(
-                $"[HierarchyRemoteExport] 受信 {fileCount} ファイル → {folderPath}");
-
             if (!RemoteHierarchyReceive.CanExportNow(
                     out string blockReason))
             {
@@ -419,25 +385,37 @@ namespace Poly_Ling.EditorIO
                 return;
             }
 
-            ExportFolder(folderPath);
-        }
-
-        private void ExportFolder(string folderPath)
-        {
-            if (!RemoteHierarchyReceive.CanExportNow(
-                    out string blockReason))
-            {
-                _status = blockReason;
-                Repaint();
-                return;
-            }
-
             SaveSettings();
 
             try
             {
+                // 受信データ（ProjectDTO の JSON、UTF-8）をメモリ上で ModelContext に戻す。
+                var projectDto = ProjectSerializer.FromJson(Encoding.UTF8.GetString(data));
+                if (projectDto == null)
+                {
+                    _status = "受信データを読めませんでした";
+                    EditorUtility.DisplayDialog(
+                        "受信失敗", "受信データがプロジェクトの JSON ではありません。", "OK");
+                    Repaint();
+                    return;
+                }
+
+                var models = new List<ModelContext>();
+                foreach (var modelDto in projectDto.models)
+                {
+                    var model = ModelSerializer.ToModelContext(modelDto);
+                    if (model == null) continue;
+
+                    // テクスチャ画像を Material に設定する（JSON はパスしか持たないため別に運んでいる）。
+                    ModelTextureTransfer.Apply(model, modelDto.embeddedTextures);
+                    models.Add(model);
+                }
+
+                Debug.Log(
+                    $"[HierarchyRemoteExport] 受信 {models.Count} モデル（{projectDto.name}）");
+
                 var outcome = new HierarchyPrefabExporter(
-                    _options.Clone()).ExportFolder(folderPath);
+                    _options.Clone()).ExportModels(projectDto.name, models);
 
                 _status = $"{outcome.Title}  {DateTime.Now:HH:mm:ss}";
                 Repaint();

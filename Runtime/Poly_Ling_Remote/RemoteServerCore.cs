@@ -360,11 +360,10 @@ namespace Poly_Ling.Remote
         public const string HierarchyClientType = "hierarchyExport";
 
         /// <summary>
-        /// 現在のプロジェクト全体をプロジェクトファイル形式で一時フォルダへ書き出し、
-        /// PLRF 束にして "hierarchyExport" タイプのクライアントへ push する。
+        /// 現在のプロジェクト全体を JSON（ProjectDTO）の UTF-8 バイト列にして、
+        /// "hierarchyExport" タイプのクライアントへ push する。ファイルは介さない。
         ///
-        /// 受け手はこれをフォルダへ展開し、ファイルから読んだときと同じ経路で
-        /// Unity ヒエラルキーへ書き出す。
+        /// 受け手はメモリ上で ModelContext に戻し、そのまま Unity ヒエラルキー／プレファブへ書き出す。
         /// 受け手は「サーバからの自動受け入れ」をオンにしている間だけ
         /// "hierarchyExport" で登録する（HierarchyRemoteExportWindow）。
         /// </summary>
@@ -391,7 +390,7 @@ namespace Poly_Ling.Remote
                 return noTarget;
             }
 
-            if (!TryBuildProjectBundle(project, out string bundleName, out byte[] bundle, out string buildError))
+            if (!TryBuildProjectJson(project, out string bundleName, out byte[] bundle, out string buildError))
             {
                 string failed = "ヒエラルキー送信: " + buildError;
                 Log(failed);
@@ -414,39 +413,33 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
-        /// 現在のプロジェクト全体をプロジェクトファイル形式で一時フォルダへ書き出し、PLRF 束にする。
+        /// 現在のプロジェクト全体を JSON（ProjectDTO）の UTF-8 バイト列にする。ファイルは介さない。
         /// push（SendHierarchyBundle）とクエリ（project_bundle）の共通部。
         /// </summary>
-        private bool TryBuildProjectBundle(ProjectContext project,
+        private bool TryBuildProjectJson(ProjectContext project,
             out string bundleName, out byte[] bundle, out string error)
         {
-            bundleName = RemoteFileBundle.SanitizeFolderName(project.Name);
+            bundleName = project.Name ?? "";
             bundle     = null;
             error      = "";
 
-            string sendRoot = Path.Combine(
-                Application.persistentDataPath, "PolyLing", "RemoteSend", bundleName);
-
             try
             {
-                // 前回の残骸を混ぜないため作り直す。
-                if (Directory.Exists(sendRoot)) Directory.Delete(sendRoot, true);
-                Directory.CreateDirectory(sendRoot);
-
-                if (!CsvProjectSerializer.Export(sendRoot, project))
+                var dto = Poly_Ling.Serialization.ProjectDTO.Create(project.Name);
+                foreach (var model in project.Models)
                 {
-                    error = "プロジェクト書き出しに失敗";
-                    return false;
+                    var modelDto = Poly_Ling.Serialization.ModelSerializer.FromModelContext(model);
+                    if (modelDto == null) continue;
+
+                    // テクスチャ画像そのものも載せる（JSON はパスしか持たないため）。
+                    modelDto.embeddedTextures = Poly_Ling.Serialization.ModelTextureTransfer.ToEmbedded(
+                        Poly_Ling.Serialization.ModelTextureTransfer.Collect(model));
+
+                    dto.models.Add(modelDto);
                 }
 
-                bundle = RemoteFileBundle.Serialize(
-                    sendRoot, bundleName, RemoteFileBundle.KindProject, out string serErr);
-
-                if (bundle == null)
-                {
-                    error = serErr;
-                    return false;
-                }
+                string json = Poly_Ling.Serialization.ProjectSerializer.ToJson(dto);
+                bundle = Encoding.UTF8.GetBytes(json ?? "");
                 return true;
             }
             catch (Exception ex)
@@ -458,15 +451,15 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
-        /// クエリ project_bundle：要求したクライアントにだけ、プロジェクト全体の PLRF 束を返す。
-        /// 応答 JSON に概要（bundleName / modelCount / byteCount）、続くバイナリに束本体。
+        /// クエリ project_bundle：要求したクライアントにだけ、プロジェクト全体の JSON（ProjectDTO）を返す。
+        /// 応答 JSON に概要（bundleName / modelCount / byteCount）、続くバイナリに JSON 本体（UTF-8）。
         /// </summary>
         private string ProcessProjectBundleQuery(RemoteMessage msg)
         {
             var project = GetProjectContext();
             if (project == null) return BuildErrorResponse(msg.Id, "No project");
 
-            if (!TryBuildProjectBundle(project, out string bundleName, out byte[] bundle, out string error))
+            if (!TryBuildProjectJson(project, out string bundleName, out byte[] bundle, out string error))
             {
                 Log("プロジェクト束の応答: " + error);
                 return BuildErrorResponse(msg.Id, error);

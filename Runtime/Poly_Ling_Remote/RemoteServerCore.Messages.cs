@@ -93,7 +93,7 @@ namespace Poly_Ling.Remote
                 case "mesh_data":         return ProcessMeshDataQuery(msg);
                 case "mesh_data_batch":   return ProcessMeshDataBatchQuery(msg);
 
-                // リモートからのヒエラルキー書き出し：プロジェクト全体の PLRF 束（要求者にだけ返す）。
+                // リモートからのヒエラルキー書き出し：プロジェクト全体の JSON（ProjectDTO。要求者にだけ返す）。
                 case "project_bundle":    return ProcessProjectBundleQuery(msg);
 
                 // probe クライアント用（リスト系とは別データ・テキスト応答）。

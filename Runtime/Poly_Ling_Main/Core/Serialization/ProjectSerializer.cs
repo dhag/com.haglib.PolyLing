@@ -42,6 +42,32 @@ namespace Poly_Ling.Serialization
         public const string JsonFileKey   = "Project.JsonFilePath";
 
         // ================================================================
+        // JSON 文字列との変換（ファイルを介さない）
+        // ================================================================
+
+        /// <summary>
+        /// ProjectDTO を JSON 文字列にする。ファイル保存とリモート送信（ヒエラルキー送信）で共用する。
+        /// </summary>
+        public static string ToJson(ProjectDTO projectDTO)
+        {
+            if (projectDTO == null) return null;
+
+            var settings = new JsonSerializerSettings
+            {
+                Formatting = Formatting.Indented,
+                NullValueHandling = NullValueHandling.Ignore
+            };
+            return JsonConvert.SerializeObject(projectDTO, settings);
+        }
+
+        /// <summary>JSON 文字列から ProjectDTO を復元する。失敗時は例外をそのまま投げる。</summary>
+        public static ProjectDTO FromJson(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            return JsonConvert.DeserializeObject<ProjectDTO>(json);
+        }
+
+        // ================================================================
         // エクスポート
         // ================================================================
 
@@ -57,13 +83,7 @@ namespace Poly_Ling.Serialization
             {
                 projectDTO.UpdateModifiedAt();
 
-                var settings = new JsonSerializerSettings
-                {
-                    Formatting = Formatting.Indented,
-                    NullValueHandling = NullValueHandling.Ignore
-                };
-
-                string json = JsonConvert.SerializeObject(projectDTO, settings);
+                string json = ToJson(projectDTO);
                 File.WriteAllText(path, json);
 
                 Debug.Log($"[ProjectSerializer] Exported: {path}");
@@ -112,7 +132,7 @@ namespace Poly_Ling.Serialization
             try
             {
                 string json = File.ReadAllText(path);
-                var projectDTO = JsonConvert.DeserializeObject<ProjectDTO>(json);
+                var projectDTO = FromJson(json);
 
                 if (projectDTO == null)
                 {

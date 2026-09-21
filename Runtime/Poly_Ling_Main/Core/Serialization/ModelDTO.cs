@@ -178,6 +178,16 @@ namespace Poly_Ling.Serialization
         /// <summary>PMX / MQO の座標規約（null=未設定）。</summary>
         public CoordinateConventionDTO coordinateConvention;
 
+        // ================================================================
+        // 埋め込みテクスチャ（リモートのヒエラルキー送信専用）
+        // ================================================================
+
+        /// <summary>
+        /// テクスチャ画像そのもの。null=埋め込みなし（通常の JSON 保存は常に null で、出力に現れない）。
+        /// 作成・適用は ModelTextureTransfer。
+        /// </summary>
+        public List<EmbeddedTextureDTO> embeddedTextures;
+
         // === ファクトリメソッド ===
 
         public static ModelDTO Create(string modelName)
