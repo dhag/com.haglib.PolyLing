@@ -349,6 +349,16 @@ namespace Poly_Ling.Player
             return OnLoadProject(path);
         }
 
+        /// <summary>プロジェクト全体をエディタ拡張（ヒエラルキー書き出し）へ送るコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSendHierarchyBundle(Poly_Ling.Data.SendHierarchyBundleCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (_playerServer == null) return "リモートサーバがありません";
+            if (!_playerServer.IsRunning) return "リモートサーバが起動していません";
+            return _playerServer.SendHierarchyBundle();
+        }
+
         /// <summary>プロジェクト CSV 保存コマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteSaveProjectCsv(Poly_Ling.Data.SaveProjectCsvCommand cmd)

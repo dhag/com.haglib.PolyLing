@@ -492,6 +492,15 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // プロジェクト全体を送るので、現在モデルの有無は問わない。判定は受け口と送信側が行う。
+                case SendHierarchyBundleCommand c:
+                {
+                    if (OnSendHierarchyBundle == null) { Fail("send hierarchy bundle handler not wired"); return true; }
+                    string shbReason = OnSendHierarchyBundle.Invoke(c);
+                    if (shbReason != null) { Fail(shbReason); return true; }
+                    return true;
+                }
+
                 case PlanarizeAlongBonesCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }

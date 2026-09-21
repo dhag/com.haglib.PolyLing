@@ -394,6 +394,9 @@ namespace Poly_Ling.Player
         /// <summary>プロジェクト CSV 読み込みコマンドの実行。</summary>
         public Func<LoadProjectCsvCommand, string> OnLoadProjectCsv;
 
+        /// <summary>プロジェクト全体をエディタ拡張（ヒエラルキー書き出し）へ送るコマンドの実行。</summary>
+        public Func<SendHierarchyBundleCommand, string> OnSendHierarchyBundle;
+
         /// <summary>ボーン平面への平面化コマンドの実行。</summary>
         public Func<PlanarizeAlongBonesCommand, string> OnPlanarizeAlongBones;
 

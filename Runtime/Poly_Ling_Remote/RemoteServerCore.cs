@@ -365,11 +365,19 @@ namespace Poly_Ling.Remote
         ///
         /// 受け手はこれをフォルダへ展開し、ファイルから読んだときと同じ経路で
         /// Unity ヒエラルキーへ書き出す。
+        /// 受け手は「サーバからの自動受け入れ」をオンにしている間だけ
+        /// "hierarchyExport" で登録する（HierarchyRemoteExportWindow）。
         /// </summary>
-        public void SendHierarchyBundle()
+        /// <returns>失敗理由。成功時は null。</returns>
+        public string SendHierarchyBundle()
         {
             var project = GetProjectContext();
-            if (project == null) { Log("ヒエラルキー送信: プロジェクトなし"); return; }
+            if (project == null)
+            {
+                const string noProject = "ヒエラルキー送信: プロジェクトなし";
+                Log(noProject);
+                return noProject;
+            }
 
             int targets = 0;
             foreach (var kv in _clientRegistry)
@@ -377,14 +385,17 @@ namespace Poly_Ling.Remote
 
             if (targets == 0)
             {
-                Log("ヒエラルキー送信: 受け手なし（hierarchyExport が未接続）");
-                return;
+                const string noTarget =
+                    "ヒエラルキー送信: 受け手なし（自動受け入れがオンのエディタ拡張が未接続）";
+                Log(noTarget);
+                return noTarget;
             }
 
             if (!TryBuildProjectBundle(project, out string bundleName, out byte[] bundle, out string buildError))
             {
-                Log("ヒエラルキー送信: " + buildError);
-                return;
+                string failed = "ヒエラルキー送信: " + buildError;
+                Log(failed);
+                return failed;
             }
 
             // 先に JSON push で概要を通知し、続けてバイナリ本体を送る。
@@ -399,6 +410,7 @@ namespace Poly_Ling.Remote
             BroadcastBinaryToType(HierarchyClientType, bundle);
 
             Log($"ヒエラルキー送信: {project.ModelCount}モデル {bundle.Length}B → {targets}クライアント");
+            return null;
         }
 
         /// <summary>

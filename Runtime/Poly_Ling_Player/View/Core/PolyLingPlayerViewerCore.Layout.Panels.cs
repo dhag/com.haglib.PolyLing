@@ -531,7 +531,8 @@ namespace Poly_Ling.Player
 
             _remoteServerSubPanel = new PlayerRemoteServerSubPanel
             {
-                GetServer = () => _playerServer,
+                GetServer       = () => _playerServer,
+                OnSendHierarchy = () => DispatchFromPanel(new SendHierarchyBundleCommand(PanelModelIndex())),
             };
             _remoteServerSubPanel.Build(_layoutRoot.RemoteServerSection);
 

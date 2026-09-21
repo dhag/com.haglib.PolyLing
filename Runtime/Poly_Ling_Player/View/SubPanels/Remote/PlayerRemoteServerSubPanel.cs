@@ -16,6 +16,9 @@ namespace Poly_Ling.Player
         /// <summary>PolyLingPlayerServer への参照。PolyLingPlayerViewer から SerializeField 経由で設定する。</summary>
         public Func<PolyLingPlayerServer> GetServer;
 
+        /// <summary>ヒエラルキー送信（SendHierarchyBundleCommand の発行）。PolyLingPlayerViewerCore が配線する。</summary>
+        public Action OnSendHierarchy;
+
         // UI
         // UI 自動操作の ID は "remoteServer.<下の Id>"（UiControlAttribute.cs）。
         // 外部と通信するサーバなので、開始・停止と送信のボタンは利用者の操作に限る（UserOnly）。
@@ -123,7 +126,7 @@ namespace Poly_Ling.Player
             hierNote.style.marginBottom = 3;
             root.Add(hierNote);
 
-            _btnSendHierarchy = new Button(OnSendHierarchy) { text = "Send Hierarchy (Project)" };
+            _btnSendHierarchy = new Button(OnSendHierarchyClicked) { text = "Send Hierarchy (Project)" };
             _btnSendHierarchy.style.marginBottom = 4;
             root.Add(_btnSendHierarchy);
 
@@ -243,9 +246,9 @@ namespace Poly_Ling.Player
             Refresh();
         }
 
-        private void OnSendHierarchy()
+        private void OnSendHierarchyClicked()
         {
-            GetServer?.Invoke()?.SendHierarchyBundle();
+            OnSendHierarchy?.Invoke();
             Refresh();
         }
 

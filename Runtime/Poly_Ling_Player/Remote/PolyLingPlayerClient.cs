@@ -422,6 +422,10 @@ namespace Poly_Ling.Player
 
         private string NextId() => $"pc_{++_requestId}";
 
+        /// <summary>push メッセージの event 名を返す（OnPushReceived の受け手用）。無ければ null。</summary>
+        public static string GetPushEvent(string json)
+            => string.IsNullOrEmpty(json) ? null : ExtractJsonString(json, "event");
+
         private static string ExtractJsonString(string json, string key)
         {
             string s = $"\"{key}\"";

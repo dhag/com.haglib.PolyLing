@@ -4,12 +4,17 @@
 // ============================================================
 //
 // 【方針】
-//   リモート書き出しは、Unity エディタ側から project_bundle を要求する
-//   Pull 方式を正本とする。
+//   2 つの経路を持つ。
+//   ・Pull：エディタ側から project_bundle を要求する（取得ボタン）。
+//   ・Push：本体の SendHierarchyBundleCommand が送る束を受ける。
+//     「サーバからの自動受け入れ」がオンの間だけ "hierarchyExport" で登録し、
+//     オフの間は "hierarchyFetch" で登録する。サーバは "hierarchyExport" にだけ
+//     送るので、オフの間はデータが送られない。
 //
 // 【処理の流れ】
 //   1. RemoteDirectory から PolyLing 本体を選び、WebSocket 接続する。
-//   2. エディタ側から project_bundle を要求する。
+//   2. Pull は project_bundle を要求する。Push は hierarchyBundle の push と
+//      続くバイナリを受ける。
 //   3. 受信した PLRF 束を保存先フォルダへ展開する。
 //   4. HierarchyPrefabExporter で Hierarchy または Prefab へ書き出す。
 //
@@ -29,12 +34,18 @@ namespace Poly_Ling.EditorIO
 {
     public class HierarchyRemoteExportWindow : EditorWindow
     {
-        private const string ClientTypeId = "hierarchyFetch";
+        /// <summary>自動受け入れがオフのときの登録種別。サーバの push 対象外。</summary>
+        private const string FetchOnlyClientTypeId = "hierarchyFetch";
+
+        /// <summary>サーバが送ってくる push の event 名（RemoteServerCore.SendHierarchyBundle）。</summary>
+        private const string PushEventHierarchyBundle = "hierarchyBundle";
 
         private const string PrefsKeyUserName =
             "PolyLing.HierarchyRemoteExport.UserName";
         private const string PrefsKeyAutoConnect =
             "PolyLing.HierarchyRemoteExport.AutoConnect";
+        private const string PrefsKeyAutoAccept =
+            "PolyLing.HierarchyRemoteExport.AutoAccept";
 
         private readonly HierarchyExportOptions _options =
             new HierarchyExportOptions
@@ -48,6 +59,10 @@ namespace Poly_Ling.EditorIO
         private string _receiveRoot = "";
         private string _userName = "";
         private bool _autoConnect = true;
+        private bool _autoAccept = true;
+
+        /// <summary>hierarchyBundle の push を受け、続くバイナリ（束本体）を待っている。</summary>
+        private bool _pushPending;
 
         private string _endpointInfo = "";
         private string _status = "未接続";
@@ -71,6 +86,7 @@ namespace Poly_Ling.EditorIO
 
             _userName = EditorPrefs.GetString(PrefsKeyUserName, "");
             _autoConnect = EditorPrefs.GetBool(PrefsKeyAutoConnect, true);
+            _autoAccept = EditorPrefs.GetBool(PrefsKeyAutoAccept, true);
 
             if (_autoConnect)
                 Connect();
@@ -89,12 +105,16 @@ namespace Poly_Ling.EditorIO
                 SaveDest.Keys.RemoteHierarchy, _receiveRoot ?? "");
             EditorPrefs.SetString(PrefsKeyUserName, _userName ?? "");
             EditorPrefs.SetBool(PrefsKeyAutoConnect, _autoConnect);
+            EditorPrefs.SetBool(PrefsKeyAutoAccept, _autoAccept);
         }
 
         private void OnGUI()
         {
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
 
+            DrawAutoAcceptToggle();
+
+            EditorGUILayout.Space(4);
             EditorGUILayout.LabelField(
                 "PolyLingから取得 → ヒエラルキー", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
@@ -116,6 +136,37 @@ namespace Poly_Ling.EditorIO
             DrawExecutionSection();
 
             EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawAutoAcceptToggle()
+        {
+            bool next = EditorGUILayout.ToggleLeft(
+                "サーバからの自動受け入れ", _autoAccept, EditorStyles.boldLabel);
+            if (next == _autoAccept)
+                return;
+
+            _autoAccept = next;
+            EditorPrefs.SetBool(PrefsKeyAutoAccept, _autoAccept);
+            if (!_autoAccept)
+                _pushPending = false;
+
+            // 登録種別を切り替え、サーバの送信対象から外す／戻す。
+            RegisterClientType();
+        }
+
+        private string CurrentClientTypeId =>
+            _autoAccept ? RemoteServerCore.HierarchyClientType : FetchOnlyClientTypeId;
+
+        private void RegisterClientType()
+        {
+            if (_client == null || !_client.IsConnected)
+                return;
+
+            string name = string.IsNullOrWhiteSpace(_userName)
+                ? SystemInfo.deviceName
+                : _userName.Trim();
+
+            _client.RegisterClientType(CurrentClientTypeId, name);
         }
 
         private void DrawConnectionSection()
@@ -211,6 +262,8 @@ namespace Poly_Ling.EditorIO
                 _client = new PolyLingPlayerClient();
                 _client.OnConnected += HandleConnected;
                 _client.OnDisconnected += HandleDisconnected;
+                _client.OnPushReceived += HandlePush;
+                _client.OnBinaryPushReceived = HandleBinaryPush;
 
                 _connector = new RemoteServerConnector(_client)
                 {
@@ -237,10 +290,13 @@ namespace Poly_Ling.EditorIO
 
             _client.OnConnected -= HandleConnected;
             _client.OnDisconnected -= HandleDisconnected;
+            _client.OnPushReceived -= HandlePush;
+            _client.OnBinaryPushReceived = null;
             _client.Dispose();
             _client = null;
 
             _fetching = false;
+            _pushPending = false;
             _endpointInfo = "";
             _status = "未接続";
             Repaint();
@@ -255,19 +311,44 @@ namespace Poly_Ling.EditorIO
                 ? $"ws://{RemoteDirectory.Host}:{target.Port}/   {target.Label}"
                 : "";
 
-            string name = string.IsNullOrWhiteSpace(_userName)
-                ? SystemInfo.deviceName
-                : _userName.Trim();
-
-            _client?.RegisterClientType(ClientTypeId, name);
+            RegisterClientType();
             Repaint();
         }
 
         private void HandleDisconnected()
         {
             _fetching = false;
+            _pushPending = false;
             _status = "切断されました";
             Repaint();
+        }
+
+        private void HandlePush(string json)
+        {
+            if (PolyLingPlayerClient.GetPushEvent(json) != PushEventHierarchyBundle)
+                return;
+
+            // オフに切り替えた直後に送られていた分は受けない。
+            if (!_autoAccept)
+                return;
+
+            _pushPending = true;
+            _status = "サーバからプロジェクトを受信中...";
+            Repaint();
+        }
+
+        private void HandleBinaryPush(byte[] data)
+        {
+            if (!_pushPending)
+                return;
+            _pushPending = false;
+
+            if (!_autoAccept)
+                return;
+
+            Debug.Log(
+                $"[HierarchyRemoteExport] サーバから受信 ({data?.Length ?? 0}B)");
+            OnBundleReceived("", data);
         }
 
         private void FetchProject()

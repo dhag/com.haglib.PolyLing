@@ -451,6 +451,20 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// プロジェクト全体を PLRF 束にして、接続中のエディタ拡張
+    /// （ヒエラルキー書き出し、自動受け入れがオンのもの）へ送る。
+    /// 実処理は RemoteServerCore.SendHierarchyBundle。
+    /// </summary>
+    [PLCommand(Category = "io.export", Writes = PLWriteScope.None, Description = "プロジェクト全体を、接続中のエディタ拡張（ヒエラルキー書き出し）へ送る。リモートサーバが起動していて、自動受け入れがオンの受け手が接続している必要がある。")]
+    public class SendHierarchyBundleCommand : PanelCommand
+    {
+        public SendHierarchyBundleCommand(int modelIndex = 0)
+            : base(modelIndex)
+        {
+        }
+    }
+
+    /// <summary>
     /// CSV からプロジェクトを読み込む。
     /// Merge を立てると、指定ファイルと同じフォルダのメッシュを現在の
     /// プロジェクトへ足す（名前が重なるものは置き換える）。

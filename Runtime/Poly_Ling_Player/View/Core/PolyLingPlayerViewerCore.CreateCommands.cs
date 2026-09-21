@@ -86,6 +86,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnLoadProjectFile     = ExecuteLoadProjectFile;
             _commandDispatcher.OnSaveProjectCsv      = ExecuteSaveProjectCsv;
             _commandDispatcher.OnLoadProjectCsv      = ExecuteLoadProjectCsv;
+            _commandDispatcher.OnSendHierarchyBundle = ExecuteSendHierarchyBundle;
             _commandDispatcher.OnPlanarizeAlongBones = ExecutePlanarizeAlongBones;
             _commandDispatcher.OnMergeVertices       = ExecuteMergeVertices;
             _commandDispatcher.OnDeleteSelection     = ExecuteDeleteSelectionCommand;
