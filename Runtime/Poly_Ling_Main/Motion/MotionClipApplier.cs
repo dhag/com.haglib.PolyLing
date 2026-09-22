@@ -202,6 +202,24 @@ namespace Poly_Ling.Motion
         /// <summary>ソース rest を破棄。</summary>
         public void ClearSourceRest() => _clip.ClearSourceRest();
 
+        /// <summary>UnityLimit CSV を破棄し、既定（CanonMuscleTable）へ戻す。</summary>
+        public void ClearMuscleLimits() => _clip.ClearMuscleLimits();
+
+        /// <summary>UnityLimit CSV を読み込んでいるか。</summary>
+        public bool HasMuscleLimits => _clip.HasMuscleLimits;
+
+        /// <summary>読み込んだ UnityLimit CSV が実測列を持つか。</summary>
+        public bool HasMuscleMeasured => _clip.HasMuscleMeasured;
+
+        /// <summary>BuildMapping で作った仮想骨格（VRMA 書き出しの骨格の元）。</summary>
+        public UnityClipVirtualSkeleton Skeleton => _clip.Skeleton;
+
+        /// <summary>
+        /// 直近の ApplyFrame 時点のノード・ワールド行列（path / humanoid / muscles を当てたとき有効）。
+        /// boneName だけのクリップでは false。そのときは VmdNodeWorldSampler でモデルから読む。
+        /// </summary>
+        public bool TryGetNodeWorldMatrix(int node, out Matrix4x4 world) => _clip.TryGetNodeWorldMatrix(node, out world);
+
         // ================================================================
         // マッピング
         // ================================================================

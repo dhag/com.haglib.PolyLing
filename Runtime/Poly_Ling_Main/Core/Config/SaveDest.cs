@@ -88,9 +88,6 @@ namespace Poly_Ling.Core
 
             /// <summary>Editor: ヒエラルキー書き出しのプレファブ出力先（Assets 相対）。</summary>
             public const string HierarchyPrefab = "Save.HierarchyPrefab.Folder";
-
-            /// <summary>Editor: UnityClip 書き出し。</summary>
-            public const string UnityClip = "Save.UnityClip.Folder";
         }
 
         // ================================================================

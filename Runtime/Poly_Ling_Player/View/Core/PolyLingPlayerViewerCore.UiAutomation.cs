@@ -339,11 +339,9 @@ namespace Poly_Ling.Player
                 _layoutRoot.VMDTestSection, ShowVMDTestPanel, _vmdTestSubPanel);
             RegisterUiPanel("vmdToVrma", "VMD から VRMA への書き出し",
                 _layoutRoot.VmdToVrmaSection, ShowVmdToVrmaPanel, _vmdToVrmaSubPanel);
-            RegisterUiPanel("unityClipTest", "Unity クリップの読込と再生の検証（VRMA 書き出しつき）",
-                _layoutRoot.UnityClipTestSection, ShowUnityClipTestPanel, _unityClipTestSubPanel);
-            RegisterUiPanel("unityClipToVrma", "Unity クリップから VRMA への書き出し",
+            RegisterUiPanel("unityClipToVrma", "PolyLing モーションから VRMA への変換（モデル不要）",
                 _layoutRoot.UnityClipToVrmaSection, ShowUnityClipToVrmaPanel, _unityClipToVrmaSubPanel);
-            RegisterUiPanel("motionClipTest", "モーションクリップの読込と再生の検証",
+            RegisterUiPanel("motionClipTest", "モーションの読込と再生の検証（VRMA 書き出しつき）",
                 _layoutRoot.MotionClipTestSection, ShowMotionClipTestPanel, _motionClipTestSubPanel);
             RegisterUiPanel("mediaPipe", "MediaPipe の顔ランドマークによる変形",
                 _layoutRoot.MediaPipeSection, ShowMediaPipePanel, _mediaPipeSubPanel);

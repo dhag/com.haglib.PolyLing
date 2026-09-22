@@ -17,10 +17,10 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>
-    /// Unity クリップ（UnityClipDTO の JSON）を現在のモデルへ適用しながら
+    /// PolyLing モーション（.plmotion.json）を現在のモデルへ適用しながら
     /// VRM アニメーション（.vrma）として書き出す。
     /// </summary>
-    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "Unity クリップの JSON をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
+    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "PolyLing モーション（.plmotion.json）をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
     public class ExportVrmAnimationCommand : PanelCommand
     {
         [PLParam(TextKey = "VrmAnimationSavePath",
@@ -28,7 +28,7 @@ namespace Poly_Ling.Data
         public string FilePath { get; }
 
         [PLParam(TextKey = "VrmAnimationClipPath",
-                 Description = "読み込む Unity クリップの JSON。作業フォルダからの相対経路", Required = true)]
+                 Description = "読み込む PolyLing モーション（.plmotion.json）。作業フォルダからの相対経路", Required = true)]
         public string ClipFilePath { get; }
 
         [PLParam(TextKey = "VrmAnimationLimitPath",
@@ -76,10 +76,10 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// Unity クリップ（UnityClipDTO の JSON）を T ポーズ基準の正準骨格へ載せて
+    /// PolyLing モーション（muscles を持つもの）を T ポーズ基準の正準骨格へ載せて
     /// VRM アニメーション（.vrma）へ変換する。モデルを参照しない。
     /// </summary>
-    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "Unity クリップの JSON を T ポーズ基準で VRM アニメーション（.vrma）へ変換する。モデルは参照しない。作業フォルダが要る。")]
+    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "PolyLing モーション（.plmotion.json。muscles を持つもの）を T ポーズ基準で VRM アニメーション（.vrma）へ変換する。モデルは参照しない。作業フォルダが要る。")]
     public class ConvertUnityClipToVrmaCommand : PanelCommand
     {
         [PLParam(TextKey = "VrmaConvertSavePath",
@@ -87,7 +87,7 @@ namespace Poly_Ling.Data
         public string FilePath { get; }
 
         [PLParam(TextKey = "VrmaConvertClipPath",
-                 Description = "読み込む Unity クリップの JSON。muscles を持つ Humanoid クリップであること", Required = true)]
+                 Description = "読み込む PolyLing モーション（.plmotion.json）。muscles を持つこと", Required = true)]
         public string ClipFilePath { get; }
 
         [PLParam(TextKey = "VrmaConvertFps",

@@ -1,17 +1,17 @@
 // PlayerUnityClipToVrmaSubPanel.cs
 // ============================================================
-// Unity クリップ → VRMA 変換パネル（モデル非依存）
+// PolyLing モーション → VRMA 変換パネル（モデル非依存）
 // ------------------------------------------------------------
 // Runtime/Poly_Ling_Player/View/SubPanels/UnityClip/ に配置。
 //
-// 【PlayerUnityClipTestSubPanel との違い】
-//   あちらはモデルへクリップを適用して確認するための道具で、
+// 【統合モーションパネル（PlayerMotionClipTestSubPanel）の VRMA 書き出しとの違い】
+//   あちらはモデルへモーションを適用しながら書き出すので、
 //   Humanoid 割り当て済みのモデルが要る。
 //   こちらは T ポーズ基準の正準骨格へ載せるだけなので、モデルを一切見ない。
 //   したがって GetModel も OnFrameApplied も持たない。
 //
 // 【操作】
-//   [開く] で保存済みの Unity クリップ JSON を指定 → [保存] で .vrma を書き出す。
+//   [開く] で PolyLing モーション（.plmotion.json。muscles を持つもの）を指定 → [保存] で .vrma を書き出す。
 //
 // 【パスと PLSandbox】
 //   PLSandbox の 1 回許可は解決した時点で消える（PLSandbox.cs:224-226）ため、
@@ -25,6 +25,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Core;
 using Poly_Ling.UnityClip;
+using Poly_Ling.Motion;
 using Poly_Ling.Vrm;
 
 namespace Poly_Ling.Player
@@ -45,7 +46,7 @@ namespace Poly_Ling.Player
         // 状態
         // ================================================================
 
-        private UnityClipDTO _clip;
+        private MotionClipDTO _clip;
         private string       _clipPath;
         private float        _maxTime;
 
@@ -96,7 +97,7 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
-            root.Add(SecLabel("Unityクリップ→VRMA変換"));
+            root.Add(SecLabel("モーション→VRMA変換"));
 
             var note = new Label(
                 "T ポーズ基準で変換します。モデルは使いません。\n" +
@@ -108,7 +109,7 @@ namespace Poly_Ling.Player
             root.Add(note);
 
             // ── 入力 ─────────────────────────────────────────────────
-            root.Add(PlayerIoUiKit.SectionLabel("Unity Clip (JSON)"));
+            root.Add(PlayerIoUiKit.SectionLabel("PolyLing モーション (.plmotion.json)"));
             _clipPathField = new TextField();
             _clipPathField.RegisterValueChangedCallback(e => RecentPaths.Set(ClipPathKey, e.newValue));
             root.Add(PlayerIoUiKit.PathRow(_clipPathField, OnBrowseClip, out _btnBrowseClip));
@@ -226,7 +227,7 @@ namespace Poly_Ling.Player
                 else
                 {
                     int muscles = _clip.muscles?.Count ?? 0;
-                    int bones   = _clip.bones?.Count ?? 0;
+                    int bones   = (_clip.bones?.Count ?? 0) + (_clip.bakedBones?.Count ?? 0);
 
                     // Root 系は muscles の中に名前で入っている（RootT.x など）。
                     // 何本あるかを出しておくと、移動が載らないときに
@@ -234,9 +235,9 @@ namespace Poly_Ling.Player
                     var rootNames = CollectRootTrackNames(_clip);
 
                     _clipInfoLabel.text =
-                        $"Clip: {_clip.name}  ({_clip.clipType})\n" +
+                        $"Clip: {_clip.name}\n" +
                         $"Length: {_maxTime:F2}s  (@ {(_clip.frameRate > 0f ? _clip.frameRate : 30f):F0}fps)\n" +
-                        $"Animator tracks: {muscles}   Bone tracks: {bones}（変換に使うのは Animator 側）\n" +
+                        $"Muscle tracks: {muscles}   Bone tracks: {bones}（変換に使うのは Muscle 側）\n" +
                         $"Root: {(rootNames.Count > 0 ? string.Join(" ", rootNames.ToArray()) : "なし")}";
                 }
             }
@@ -253,7 +254,7 @@ namespace Poly_Ling.Player
         private void OnBrowseClip()
         {
             string path = PlayerIoUiKit.AskLoadPath(
-                "Unity クリップを開く", ClipPathKey, _clipPathField.value, "json");
+                "PolyLing モーションを開く", ClipPathKey, _clipPathField.value, "json");
             if (string.IsNullOrEmpty(path)) return;
             _clipPathField.value = path;
             LoadClip(path);
@@ -267,9 +268,15 @@ namespace Poly_Ling.Player
 
             try
             {
-                _clip     = UnityClipSerializer.LoadJson(path);
+                var loaded = MotionClipSerializer.Load(path);
+                if (loaded.Dto == null)
+                {
+                    SetStatus($"読込み失敗: {loaded.FormatIssues(3)}");
+                    return;
+                }
+                _clip     = loaded.Dto;
                 _clipPath = path;
-                _maxTime  = UnityClipVrmAnimationSource.ComputeMaxTime(_clip);
+                _maxTime  = MotionClipSerializer.Length(_clip);
 
                 // 読み込んだクリップの実値を欄へ入れる。
                 // 0 を番兵として利用者に入力させない。
@@ -281,7 +288,7 @@ namespace Poly_Ling.Player
                 int muscles = _clip?.muscles?.Count ?? 0;
                 SetStatus(muscles > 0
                     ? $"読込み完了: {Path.GetFileName(path)}"
-                    : "読込みましたが muscles がありません。Humanoid クリップを指定してください");
+                    : "読込みましたが muscles がありません。Unity クリップ書き出しでマッスルを持つモーションを作ってください");
                 RefreshAll();
             }
             catch (Exception ex)
@@ -363,7 +370,7 @@ namespace Poly_Ling.Player
         /// クリップに入っている Root 系トラック名を並べる。
         /// 名前の正本は UnityClipRootMotion。ここで文字列を書き写さない。
         /// </summary>
-        private static System.Collections.Generic.List<string> CollectRootTrackNames(UnityClipDTO clip)
+        private static System.Collections.Generic.List<string> CollectRootTrackNames(MotionClipDTO clip)
         {
             var found = new System.Collections.Generic.List<string>();
             if (clip?.muscles == null) return found;
@@ -377,7 +384,7 @@ namespace Poly_Ling.Player
 
             foreach (var name in wanted)
                 foreach (var m in clip.muscles)
-                    if (m != null && m.name == name && m.w != null && m.w.Count > 0)
+                    if (m != null && m.name == name && m.keys != null && m.keys.Count > 0)
                     { found.Add(name); break; }
 
             return found;

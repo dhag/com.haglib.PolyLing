@@ -219,7 +219,6 @@ namespace Poly_Ling.Player
                 _layoutRoot.MqoToPmxTestBtn.clicked += ShowMqoToPmxTestPanel;
             if (_layoutRoot.RobotBuildTestBtn != null)
                 _layoutRoot.RobotBuildTestBtn.clicked += ShowRobotBuildTestPanel;
-            _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
             _layoutRoot.UnityClipToVrmaBtn.clicked  += ShowUnityClipToVrmaPanel;
             if (_layoutRoot.VmdToVrmaBtn != null)
                 _layoutRoot.VmdToVrmaBtn.clicked    += ShowVmdToVrmaPanel;
@@ -737,7 +736,6 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.Profile2DTestSection,     () => _profile2DTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PmxToMqoTestSection,      () => _pmxToMqoTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MqoToPmxTestSection,      () => _mqoToPmxTestSubPanel?.Refresh()));
-            _sectionRefreshPairs.Add((_layoutRoot.UnityClipTestSection,     () => _unityClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UnityClipToVrmaSection,   () => _unityClipToVrmaSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));

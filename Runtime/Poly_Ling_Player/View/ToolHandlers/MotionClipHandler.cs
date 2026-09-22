@@ -12,7 +12,6 @@ using System.IO;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Motion;
-using Poly_Ling.UnityClip;
 using Poly_Ling.VMD;
 
 namespace Poly_Ling.Player
@@ -32,6 +31,7 @@ namespace Poly_Ling.Player
         private MotionClipApplier    _applier;
         private MotionClipLoadResult _loadResult;
         private int                  _bindBoneCount;
+        private int                  _limitBoneCount;
 
         public bool HasClip => _dto != null;
 
@@ -74,13 +74,19 @@ namespace Poly_Ling.Player
         public int      TrackTotal => (_dto?.bones?.Count ?? 0) + (_dto?.bakedBones?.Count ?? 0);
         [PLToolState(Description = "直近の loadBind で読んだボーン数")]
         public int      BindBoneCount => _bindBoneCount;
+        [PLToolState(Description = "直近の loadLimit で読んだボーン数（0 は未読込）")]
+        public int      LimitBoneCount => _limitBoneCount;
+        [PLToolState(Description = "読み込んだ可動域 CSV が実測列を持つか")]
+        public bool     LimitMeasured => _applier != null && _applier.HasMuscleMeasured;
+        [PLToolState(Description = "現在のモデルの Humanoid 割り当て数（VRMA 書き出しに要る）")]
+        public int      HumanoidBoneCount => GetModel?.Invoke()?.HumanoidMapping?.Count ?? 0;
 
         /// <summary>
         /// クリップを読み込み、対応付けて time のフレームを当てる。
-        /// sourceKind: 0 = VMD、1 = UnityClip JSON、2 = 統合 JSON。位置の倍率は種類の既定値にする
-        /// （VMD は PmxUnityRatio。他は 1。統合 JSON は生成元の単位系を DTO から判別できないため 1）。
+        /// sourceKind: 0 = VMD、1 = PolyLing モーション（.plmotion.json）。位置の倍率は種類の既定値にする
+        /// （VMD は PmxUnityRatio。PolyLing モーションは生成元の単位系を DTO から判別できないため 1）。
         /// </summary>
-        [PLToolAction(Description = "クリップを読み込み、対応付けて time 秒のフレームを当てる（sourceKind: 0=VMD / 1=UnityClip JSON / 2=統合 JSON）")]
+        [PLToolAction(Description = "クリップを読み込み、対応付けて time 秒のフレームを当てる（sourceKind: 0=VMD / 1=PolyLing モーション）")]
         public void Load(string path, int sourceKind, float time)
         {
             Error = "";
@@ -93,7 +99,6 @@ namespace Poly_Ling.Player
                 switch (sourceKind)
                 {
                     case 0:  dto = MotionClipConverters.FromVMD(VMDData.LoadFromFile(path)); break;
-                    case 1:  dto = MotionClipConverters.FromUnityClipDTO(UnityClipSerializer.LoadJson(path)); break;
                     default:
                         _loadResult = MotionClipSerializer.Load(path);
                         if (_loadResult.Dto == null) throw new InvalidDataException(_loadResult.FormatIssues(8));
@@ -160,6 +165,37 @@ namespace Poly_Ling.Player
                 Error = ex.Message;
                 UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
             }
+        }
+
+        /// <summary>外部 UnityLimit CSV（マッスル可動域・実測）を読む。ベイク元アバターの limits.csv を渡す。</summary>
+        [PLToolAction(Description = "マッスル可動域 CSV（UnityLimit）を読み、time 秒のフレームを当て直す")]
+        public void LoadLimit(string path, float time)
+        {
+            Error = "";
+            _limitBoneCount = 0;
+            if (string.IsNullOrEmpty(path)) { Error = "ファイルパスを指定してください"; return; }
+            if (!File.Exists(path))        { Error = $"ファイルが見つかりません: {Path.GetFileName(path)}"; return; }
+            try
+            {
+                EnsureApplier();
+                _limitBoneCount = _applier.LoadMuscleLimitCsv(File.ReadAllText(path));
+                if (_dto != null) ApplyFrameCore(time);
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+                UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
+            }
+        }
+
+        /// <summary>読み込んだ UnityLimit CSV を捨て、既定の可動域へ戻す。</summary>
+        [PLToolAction(Description = "マッスル可動域 CSV を外して既定値へ戻し、time 秒のフレームを当て直す")]
+        public void ClearLimit(float time)
+        {
+            _limitBoneCount = 0;
+            if (_applier == null) return;
+            _applier.ClearMuscleLimits();
+            if (_dto != null) ApplyFrameCore(time);
         }
 
         private void EnsureApplier()

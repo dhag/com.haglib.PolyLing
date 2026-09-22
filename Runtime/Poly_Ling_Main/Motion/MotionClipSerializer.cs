@@ -14,7 +14,7 @@ namespace Poly_Ling.Motion
     // MotionClipSerializer
     // ----------------------------------------------------------------
     // MotionClipDTO（純POCO）の JSON 入出力・検証・ファイル入出力を担う。
-    // 既存 VmdMotionSerializer / UnityClipSerializer に倣い
+    // 既存 VmdMotionSerializer に倣い
     // Newtonsoft.Json（com.unity.nuget.newtonsoft-json）を使用する。
     // エディタ専用の Unity.Plastic.Newtonsoft.Json はプレイヤービルドに含まれないため使わない。
     //

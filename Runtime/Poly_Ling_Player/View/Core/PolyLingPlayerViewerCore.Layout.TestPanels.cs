@@ -303,21 +303,6 @@ namespace Poly_Ling.Player
             };
             _robotBuildTestSubPanel.Build(_layoutRoot.RobotBuildTestSection);
 
-            _unityClipTestSubPanel = new PlayerUnityClipTestSubPanel
-            {
-                GetModel          = () => ActiveProject?.CurrentModel,
-                GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0,
-                SendCommand       = cmd => _panelContext?.SendCommand(cmd),
-                GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
-                GetUndoController = () => _editOps?.UndoController,
-                OnFrameApplied    = () =>
-                {
-                    _viewportManager.UpdateTransform();
-                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
-                },
-            };
-            _unityClipTestSubPanel.Build(_layoutRoot.UnityClipTestSection);
-
             // モデルを見ない変換専用パネル。GetModel は持たせない。
             _unityClipToVrmaSubPanel = new PlayerUnityClipToVrmaSubPanel
             {

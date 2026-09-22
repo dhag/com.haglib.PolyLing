@@ -397,7 +397,7 @@ namespace Poly_Ling.Player
         // ================================================================
         // VRM アニメーション（.vrma）書き出し
         //
-        // 入力は Unity クリップの JSON。フレームごとにモデルへ適用しながら
+        // 入力は PolyLing モーション（.plmotion.json）。フレームごとにモデルへ適用しながら
         // 骨格を写し取るので、終了後はパネルの表示フレームへ戻す。
         // ================================================================
 
@@ -430,16 +430,9 @@ namespace Poly_Ling.Player
                 limitText = System.IO.File.ReadAllText(limitPath);
             }
 
-            Poly_Ling.UnityClip.UnityClipDTO clip;
-            try
-            {
-                clip = Poly_Ling.UnityClip.UnityClipSerializer.LoadJson(clipPath);
-            }
-            catch (System.Exception ex)
-            {
-                return $"クリップの読込みに失敗: {ex.Message}";
-            }
-            if (clip == null) return "クリップを読み取れません";
+            var loaded = Poly_Ling.Motion.MotionClipSerializer.Load(clipPath);
+            if (loaded.Dto == null) return $"モーションを読み込めません: {loaded.FormatIssues(5)}";
+            var clip = loaded.Dto;
 
             var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
             {
@@ -453,8 +446,8 @@ namespace Poly_Ling.Player
                 model, clip, limitText, outPath, settings);
 
             // 書き出しはモデルへ実際にフレームを適用する。
-            // ポーズ層は ExportToFile が戻すので、パネルの表示フレームを引き直す。
-            _unityClipTestSubPanel?.ReapplyCurrentFrame();
+            // ポーズ層は ExportToFile が戻すので、統合モーションパネルの表示フレームを引き直す。
+            _motionClipTestSubPanel?.ReapplyCurrentFrame();
             _viewportManager.UpdateTransform();
             _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
 
@@ -466,7 +459,7 @@ namespace Poly_Ling.Player
             return null;
         }
 
-        /// <summary>Unity クリップ → VRMA 変換コマンド（モデル非依存）。</summary>
+        /// <summary>PolyLing モーション → VRMA 変換コマンド（モデル非依存）。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteConvertUnityClipToVrma(Poly_Ling.Data.ConvertUnityClipToVrmaCommand cmd)
         {
@@ -483,16 +476,9 @@ namespace Poly_Ling.Player
                     cmd.ClipFilePath, out string clipPath, out string clipReason))
                 return clipReason;
 
-            Poly_Ling.UnityClip.UnityClipDTO clip;
-            try
-            {
-                clip = Poly_Ling.UnityClip.UnityClipSerializer.LoadJson(clipPath);
-            }
-            catch (System.Exception ex)
-            {
-                return $"クリップの読込みに失敗: {ex.Message}";
-            }
-            if (clip == null) return "クリップを読み取れません";
+            var loaded = Poly_Ling.Motion.MotionClipSerializer.Load(clipPath);
+            if (loaded.Dto == null) return $"モーションを読み込めません: {loaded.FormatIssues(5)}";
+            var clip = loaded.Dto;
 
             var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
             {

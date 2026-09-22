@@ -433,7 +433,6 @@ namespace Poly_Ling.Player
         private PlayerProfile2DTestSubPanel  _profile2DTestSubPanel;
         private PlayerPmxToMqoTestSubPanel   _pmxToMqoTestSubPanel;
         private PlayerMqoToPmxTestSubPanel   _mqoToPmxTestSubPanel;
-        private PlayerUnityClipTestSubPanel  _unityClipTestSubPanel;
         private PlayerUnityClipToVrmaSubPanel _unityClipToVrmaSubPanel;
         private PlayerVmdToVrmaSubPanel     _vmdToVrmaSubPanel;
         private PlayerMotionClipTestSubPanel _motionClipTestSubPanel;

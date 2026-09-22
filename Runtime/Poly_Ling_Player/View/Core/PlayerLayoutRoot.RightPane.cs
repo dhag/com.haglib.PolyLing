@@ -167,7 +167,6 @@ namespace Poly_Ling.Player
         public VisualElement LineExtrudeSection         { get; private set; }
         public VisualElement MediaPipeSection       { get; private set; }
         public VisualElement VMDTestSection         { get; private set; }
-        public VisualElement UnityClipTestSection    { get; private set; }
         public VisualElement UnityClipToVrmaSection { get; private set; }
         public VisualElement VmdToVrmaSection      { get; private set; }
         public VisualElement MotionClipTestSection   { get; private set; }
@@ -405,7 +404,6 @@ namespace Poly_Ling.Player
             LineExtrudeSection         = AddSection(visible: false);
             MediaPipeSection           = AddSection(visible: false);
             VMDTestSection             = AddSection(visible: false);
-            UnityClipTestSection       = AddSection(visible: false);
             UnityClipToVrmaSection     = AddSection(visible: false);
             VmdToVrmaSection           = AddSection(visible: false);
             MotionClipTestSection      = AddSection(visible: false);

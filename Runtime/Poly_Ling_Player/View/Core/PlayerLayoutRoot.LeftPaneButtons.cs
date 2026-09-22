@@ -156,7 +156,6 @@ namespace Poly_Ling.Player
         public Button        MediaPipeBtn           { get; private set; }
         public Button        VMDTestBtn             { get; private set; }
         public Button        VmdToVrmaBtn          { get; private set; }
-        public Button        UnityClipTestBtn        { get; private set; }
         public Button        UnityClipToVrmaBtn      { get; private set; }
         public Button        MotionClipTestBtn        { get; private set; }
 
@@ -702,12 +701,11 @@ namespace Poly_Ling.Player
             rowMisc.Add(MediaPipeBtn); rowMisc.Add(VMDTestBtn); rowMisc.Add(RemoteServerBtn); foOther.Add(rowMisc);
 
             var rowMisc2 = new VisualElement(); rowMisc2.style.flexDirection = FlexDirection.Row; rowMisc2.style.marginBottom = 2;
-            UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1; UnityClipTestBtn.style.marginRight = 2;
-            MotionClipTestBtn = MakeBtn("Yet（統合モーション)"); MotionClipTestBtn.style.flexGrow = 1;
-            rowMisc2.Add(UnityClipTestBtn); rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
+            MotionClipTestBtn = MakeBtn("モーション"); MotionClipTestBtn.style.flexGrow = 1;
+            rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
 
             // モデルを使わない変換専用の道具。名前が長いので 1 行使う。
-            UnityClipToVrmaBtn = MakeBtn("Unityクリップ→VRMA変換");
+            UnityClipToVrmaBtn = MakeBtn("モーション→VRMA変換（モデル不要）");
             UnityClipToVrmaBtn.style.marginBottom = 2;
             foOther.Add(UnityClipToVrmaBtn);
 

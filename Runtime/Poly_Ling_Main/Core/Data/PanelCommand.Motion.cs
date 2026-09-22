@@ -10,18 +10,15 @@ namespace Poly_Ling.Data
         /// <summary>VMD（MMD モーション）。</summary>
         Vmd = 0,
 
-        /// <summary>Unity クリップの JSON（UnityClipDTO）。</summary>
-        UnityClipJson = 1,
-
         /// <summary>PolyLing モーション JSON（version 1 / 2）。</summary>
-        PolyLingMotionJson = 2,
+        PolyLingMotionJson = 1,
     }
 
     /// <summary>
     /// モーションファイルを読み、PolyLing モーション JSON（version 2）として書き出す。
     /// モデルは参照しない。
     /// </summary>
-    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "VMD・Unity クリップ JSON・PolyLing モーション JSON を読み、検査してから PolyLing モーション JSON として書き出す。モデルは参照しない。作業フォルダが要る。")]
+    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "VMD・PolyLing モーション JSON を読み、検査してから PolyLing モーション JSON として書き出す。モデルは参照しない。作業フォルダが要る。")]
     [PLResult("errors",      PLResultKind.Integer, Description = "検査で見つかったエラーの数。1 以上なら書き出していない")]
     [PLResult("warnings",    PLResultKind.Integer, Description = "検査で見つかった警告の数")]
     [PLResult("bones",       PLResultKind.Integer, Description = "ボーントラックの数")]

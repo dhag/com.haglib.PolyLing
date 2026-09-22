@@ -459,7 +459,6 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.SolidifySection);
             Hide(_layoutRoot.MediaPipeSection);
             Hide(_layoutRoot.VMDTestSection);
-            Hide(_layoutRoot.UnityClipTestSection);
             Hide(_layoutRoot.UnityClipToVrmaSection);
             Hide(_layoutRoot.MotionClipTestSection);
             Hide(_layoutRoot.RemoteServerSection);

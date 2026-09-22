@@ -17,7 +17,6 @@ using System.IO;
 using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.Motion;
-using Poly_Ling.UnityClip;
 using Poly_Ling.VMD;
 
 namespace Poly_Ling.Player
@@ -58,9 +57,6 @@ namespace Poly_Ling.Player
                 {
                     case MotionSourceKind.Vmd:
                         dto = MotionClipConverters.FromVMD(VMDData.LoadFromFile(srcPath));
-                        break;
-                    case MotionSourceKind.UnityClipJson:
-                        dto = MotionClipConverters.FromUnityClipDTO(UnityClipSerializer.LoadJson(srcPath));
                         break;
                     default:
                     {

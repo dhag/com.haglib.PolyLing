@@ -1,8 +1,10 @@
 // PlayerMotionClipTestSubPanel.cs
-// 統合 MotionClipDTO（float 秒）のテスト用 Player サブパネル（再生専用）。
-// 入力: VMD / UnityClip JSON / 統合 MotionClip JSON を読み込み、内部で
+// モーション（MotionClipDTO・float 秒）の試し再生と VRMA 書き出しの Player サブパネル。
+// 入力: VMD / PolyLing モーション（.plmotion.json）を読み込み、内部で
 //       MotionClipDTO に変換して秒スライダーで適用する。
-// 旧 PlayerVMDTestSubPanel / PlayerUnityClipTestSubPanel は比較用に残置。
+// 可動域 CSV（UnityLimit）を読むと、マッスルをその実測で再構成する（ベイク元アバターの limits.csv）。
+// VRMA 書き出しは PolyLing モーションを読んだときだけ（ExportVrmAnimationCommand）。
+// 旧 PlayerVMDTestSubPanel は比較用に残置。
 //
 // 仕様: 値は Unity 左手系のまま・座標変換なし（MotionClipDTO 準拠）。
 //       boneName は VMD 直接適用、path/humanoid は UnityClipApplier 経路（Applier 側で分岐）。
@@ -10,7 +12,7 @@
 // ■ PositionScale（重要）
 //   MotionClipApplier.PositionScale の既定は 1。ソースが VMD の場合、値は PMX 単位
 //   （およそ 10cm/unit）なので EditorState.PmxUnityRatio（既定 0.1）を設定しないと
-//   位置が 10 倍になる。UnityClip JSON は既に Unity メートルなので 1 のままが正しい。
+//   位置が 10 倍になる。Unity クリップから書き出したモーションは既に Unity メートルなので 1 のままが正しい。
 //   ApplySourceDefaults() で _sourceKind に応じて設定する。
 //
 // ■ 既知の問題（未対応・恒久メモ）
@@ -32,9 +34,9 @@ using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.VMD;
-using Poly_Ling.UnityClip;
 using Poly_Ling.Motion;
 using Poly_Ling.Data;
+using Poly_Ling.Vrm;
 
 namespace Poly_Ling.Player
 {
@@ -54,13 +56,13 @@ namespace Poly_Ling.Player
 
         // ── ソース種別 ────────────────────────────────────────────────────
         private static readonly List<string> SourceChoices =
-            new List<string> { "VMD", "UnityClip JSON", "統合JSON" };
+            new List<string> { "VMD", "PolyLing モーション" };
 
         // ── 状態 ──────────────────────────────────────────────────────────
         private float            _currentTime;   // 秒
         private float            _maxTime;       // 秒
         private string           _filePath;
-        private int              _sourceKind;    // 0=VMD, 1=UnityClip JSON, 2=統合JSON
+        private int              _sourceKind;    // 0=VMD, 1=PolyLing モーション
 
         // ── UI 要素 ───────────────────────────────────────────────────────
         // UI 自動操作の ID は "motionClipTest.<下の Id>"（UiControlAttribute.cs）。
@@ -130,11 +132,42 @@ namespace Poly_Ling.Player
         [UiControl("report", Safety = UiSafety.ReadOnly, Description = "読込の検査結果と、モデルとの結び付き状況")]
         private Label         _reportLabel;
 
+        // 可動域 CSV（UnityLimit）
+        [UiControl("limitFile", Safety = UiSafety.ReadOnly, Description = "読み込んだ可動域ファイル")]
+        private Label         _limitLabel;
+        [UiControl("limitPath", Description = "可動域ファイルのパス（ダイアログの初期値として使う）")]
+        private TextField     _limitPathField;
+        [UiControl("limitOpen", Safety = UiSafety.UserOnly, Description = "可動域ファイルを開く（ファイル選択ダイアログを開く）")]
+        private Button        _btnLimitOpen;
+        [UiControl("browseLimit", Safety = UiSafety.UserOnly, Description = "可動域ファイルの [...]（ファイル選択ダイアログを開く）")]
+        private Button        _btnBrowseLimit;
+        [UiControl("limitClear", Safety = UiSafety.Destructive, Description = "読み込んだ可動域を外す")]
+        private Button        _btnLimitClear;
+
+        // VRMA 書き出し
+        [UiControl("vrma.path", Description = "VRMA の書き出し先（ダイアログの初期値として使う）")]
+        private TextField     _vrmaPathField;
+        [UiControl("vrma.browse", Safety = UiSafety.UserOnly, Description = "VRMA の [...]（保存ダイアログを開く）")]
+        private Button        _btnBrowseVrma;
+        [UiControl("vrma.fps", Description = "VRMA 書き出しのフレームレート")]
+        private FloatField    _vrmaFpsField;
+        [UiControl("vrma.scale", Description = "VRMA 書き出しの倍率")]
+        private FloatField    _vrmaScaleField;
+        [UiControl("vrma.startTime", Description = "VRMA 書き出しの開始時刻")]
+        private FloatField    _vrmaStartField;
+        [UiControl("vrma.endTime", Description = "VRMA 書き出しの終了時刻")]
+        private FloatField    _vrmaEndField;
+        [UiControl("vrma.export", Safety = UiSafety.UserOnly, Description = "VRMA を書き出す（保存ダイアログを開く）")]
+        private Button        _btnVrmaExport;
+        [UiControl("vrma.status", Safety = UiSafety.ReadOnly, Description = "VRMA 書き出しの状態")]
+        private Label         _vrmaLabel;
+
         // 直近の読込の検査結果（統合JSON のときだけ）。
 
         private const string PathKey     = "MotionClip.Path";
         private const string BindPathKey = "MotionClip.Bind.Path";
         private const string SourceKey   = "MotionClip.Source";
+        private const string LimitPathKey = "MotionClip.Limit.Path";
 
         private Poly_Ling.View.IModelView Model => GetModel?.Invoke();
         private float FrameRate => HasClip ? (Surface?.GetFloat(Tool, "frameRate") ?? 30f) : 30f;
@@ -169,6 +202,7 @@ namespace Poly_Ling.Player
             {
                 _sourceKind = Mathf.Max(0, SourceChoices.IndexOf(e.newValue));
                 RecentPaths.Set(SourceKey, _sourceKind.ToString());
+                RefreshVrmaSection();
             });
             root.Add(_sourceField);
 
@@ -210,6 +244,28 @@ namespace Poly_Ling.Player
             _bindPoseLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
             _bindPoseLabel.style.marginBottom = 3;
             root.Add(_bindPoseLabel);
+
+            // ── 可動域 CSV（UnityLimit。ベイク元アバターの limits.csv）──────
+            root.Add(PlayerIoUiKit.SectionLabel("可動域 CSV（UnityLimit）"));
+            _limitPathField = new TextField();
+            _limitPathField.RegisterValueChangedCallback(e => RecentPaths.Set(LimitPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_limitPathField, OnBrowseLimit, out _btnBrowseLimit));
+            _limitPathField.SetValueWithoutNotify(RecentPaths.Get(LimitPathKey));
+
+            var limitRow = new VisualElement();
+            limitRow.style.flexDirection = FlexDirection.Row;
+            limitRow.style.marginBottom  = 3;
+            var btnLimitOpen = PlayerIoUiKit.OpenButton("開く", OnBrowseLimit);
+            _btnLimitOpen = btnLimitOpen;
+            btnLimitOpen.style.flexGrow = 1; btnLimitOpen.style.marginRight = 2;
+            _btnLimitClear = new Button(ClearLimit) { text = "クリア" }; _btnLimitClear.style.width = 52;
+            limitRow.Add(btnLimitOpen); limitRow.Add(_btnLimitClear);
+            root.Add(limitRow);
+            _limitLabel = new Label("(未読込)");
+            _limitLabel.style.fontSize = 10;
+            _limitLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _limitLabel.style.marginBottom = 3;
+            root.Add(_limitLabel);
 
             // ── クリップセクション（ロード後に表示）──────────────────────
             _clipSection = new VisualElement();
@@ -312,6 +368,8 @@ namespace Poly_Ling.Player
             scaleRow.Add(scaleLbl); scaleRow.Add(_scaleField);
             root.Add(scaleRow);
 
+            BuildVrmaSection(root);
+
             _boneListFoldout = new Foldout { text = "Tracks (0)", value = false };
             _boneListContainer = new VisualElement();
             _boneListFoldout.Add(_boneListContainer);
@@ -336,6 +394,7 @@ namespace Poly_Ling.Player
                 _fileLabel.text = string.IsNullOrEmpty(_filePath) ? "(None)" : Path.GetFileName(_filePath);
             if (_btnClear  != null) _btnClear.SetEnabled(HasClip);
             if (_btnReload != null) _btnReload.SetEnabled(!string.IsNullOrEmpty(_filePath));
+            if (_btnLimitClear != null) _btnLimitClear.SetEnabled((Surface?.GetInt(Tool, "limitBoneCount") ?? 0) > 0);
 
             if (_clipSection == null) return;
             bool hasClip = HasClip;
@@ -361,6 +420,8 @@ namespace Poly_Ling.Player
 
             if (_reportLabel != null)
                 _reportLabel.text = Surface.GetString(Tool, "reportText");
+
+            RefreshVrmaSection();
 
             UpdateSlider();
             UpdateTimeLabel();
@@ -425,8 +486,7 @@ namespace Poly_Ling.Player
         //   0 = VMD          : 値は PMX 単位。EditorState.PmxUnityRatio（既定 0.1）を掛ける。
         //                      未設定だと位置が 10 倍になる（旧 PlayerVMDTestSubPanel は
         //                      読込時に同じ設定を行っている）。
-        //   1 = UnityClip    : 値は既に Unity メートル。1 のままが正しい。
-        //   2 = 統合JSON     : 生成元の単位系を DTO から判別できないため 1 を既定とする。
+        //   1 = PolyLing モーション : 生成元の単位系を DTO から判別できないため 1 を既定とする。
         //                      VMD 由来の統合 JSON を読む場合は手動で PositionScale を
         //                      0.1 に変更すること。※ MotionClipDTO に単位系フィールドが
         //                      無いことが根本原因。将来は DTO 側へ持たせて自動判別する。
@@ -459,7 +519,6 @@ namespace Poly_Ling.Player
 
             var since = DateTime.Now.AddSeconds(-2);
             var kind  = _sourceKind == 0 ? Poly_Ling.Data.MotionSourceKind.Vmd
-                      : _sourceKind == 1 ? Poly_Ling.Data.MotionSourceKind.UnityClipJson
                       :                    Poly_Ling.Data.MotionSourceKind.PolyLingMotionJson;
 
             SendCommand(new Poly_Ling.Data.ExportMotionJsonCommand(GetModelIndex?.Invoke() ?? 0, outPath, _filePath, kind));
@@ -501,6 +560,144 @@ namespace Poly_Ling.Player
                 : "バインドポーズ: Humanoid 行が見つかりません");
             RefreshAll();
         }
+
+        // ── 可動域 CSV ────────────────────────────────────────────────
+        private void OnBrowseLimit()
+        {
+            string path = PlayerIoUiKit.AskLoadPath("Open UnityLimit CSV", LimitPathKey, _limitPathField.value, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+            _limitPathField.value = path;
+            LoadLimit(path);
+        }
+
+        private void LoadLimit(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
+            if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
+
+            Surface?.Invoke(Tool, "loadLimit", ("path", path), ("time", _currentTime));
+            string err = Surface?.GetString(Tool, "error") ?? "";
+            if (!string.IsNullOrEmpty(err)) { SetStatus($"可動域読込失敗: {err}"); return; }
+
+            int n = Surface.GetInt(Tool, "limitBoneCount");
+            bool measured = Surface.GetBool(Tool, "limitMeasured");
+            if (_limitLabel != null)
+                _limitLabel.text = n > 0 ? $"✓ {Path.GetFileName(path)} ({n} bones{(measured ? " / 実測あり" : "")})" : "(0 bones)";
+            SetStatus(n > 0 ? $"可動域読込: {n} bones" : "可動域: 有効な行が見つかりません");
+            RefreshAll();
+        }
+
+        // 別モデルの CSV を誤って読んだときの復帰口。パス欄と記憶パスも消す。
+        private void ClearLimit()
+        {
+            Surface?.Invoke(Tool, "clearLimit", ("time", _currentTime));
+            _limitPathField?.SetValueWithoutNotify(string.Empty);
+            RecentPaths.Set(LimitPathKey, string.Empty);
+            if (_limitLabel != null) _limitLabel.text = "(未読込)";
+            SetStatus("可動域をクリアしました（既定値を使用）");
+            RefreshAll();
+        }
+
+        // ── VRMA 書き出し ─────────────────────────────────────────────
+        //   出るのは Hips の平行移動と Humanoid 骨の回転だけ。二次骨と表情は VRMA に載らない。
+        private void BuildVrmaSection(VisualElement root)
+        {
+            root.Add(SecLabel("VRM アニメーション書き出し（.vrma）"));
+
+            _vrmaPathField = new TextField();
+            _vrmaPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VrmaPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_vrmaPathField, OnBrowseVrma, out _btnBrowseVrma));
+            _vrmaPathField.SetValueWithoutNotify(RecentPaths.Get(VrmaPathKey));
+
+            var row1 = new VisualElement(); row1.style.flexDirection = FlexDirection.Row; row1.style.marginBottom = 2;
+            row1.Add(NumField("FPS", out _vrmaFpsField, 30f));
+            row1.Add(NumField("Scale", out _vrmaScaleField, 1f));
+            root.Add(row1);
+
+            var row2 = new VisualElement(); row2.style.flexDirection = FlexDirection.Row; row2.style.marginBottom = 3;
+            row2.Add(NumField("Start", out _vrmaStartField, 0f));
+            row2.Add(NumField("End", out _vrmaEndField, 0f));
+            root.Add(row2);
+
+            _btnVrmaExport = new Button(OnExportVrma) { text = "VRMA 書き出し" };
+            _btnVrmaExport.style.marginBottom = 2;
+            root.Add(_btnVrmaExport);
+
+            _vrmaLabel = new Label();
+            _vrmaLabel.style.fontSize = 10; _vrmaLabel.style.whiteSpace = WhiteSpace.Normal; _vrmaLabel.style.marginBottom = 4;
+            root.Add(_vrmaLabel);
+        }
+
+        private const string VrmaPathKey = "MotionClip.Vrma.Path";
+
+        private static VisualElement NumField(string label, out FloatField field, float initial)
+        {
+            var box = new VisualElement(); box.style.flexDirection = FlexDirection.Row; box.style.flexGrow = 1; box.style.marginRight = 4;
+            var lbl = new Label(label); lbl.style.width = 44; lbl.style.fontSize = 10; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            field = new FloatField { value = initial }; field.style.flexGrow = 1;
+            box.Add(lbl); box.Add(field);
+            return box;
+        }
+
+        // 書き出しの可否と理由。VRM パッケージ無し・VMD 読込中・Humanoid 未割当を区別する。
+        private void RefreshVrmaSection()
+        {
+            if (_btnVrmaExport == null || _vrmaLabel == null) return;
+            string reason = null;
+            int mapped = Surface?.GetInt(Tool, "humanoidBoneCount") ?? 0;
+            if (!PLVrmAnimationBridge.I.IsAvailable) reason = "VRM パッケージ (com.vrmc.vrm) が無いため書き出せません";
+            else if (_sourceKind != 1)               reason = "PolyLing モーションを読み込んだときだけ書き出せます（VMD は VMD→VRMA 書き出しを使う）";
+            else if (mapped == 0)                    reason = "Humanoid 割り当てがありません";
+            _btnVrmaExport.SetEnabled(reason == null && SendCommand != null);
+            _vrmaLabel.text = reason ?? $"Humanoid {mapped} bones。Hips 位置と Humanoid 骨の回転だけを出します";
+        }
+
+        private void OnBrowseVrma()
+        {
+            string path = AskVrmaSavePath();
+            if (!string.IsNullOrEmpty(path)) _vrmaPathField.value = path;
+        }
+
+        // 書き出しは必ず保存ダイアログを通す。パス欄の値は初期値としてだけ使う。
+        private string AskVrmaSavePath()
+        {
+            string defName = Surface?.GetString(Tool, "clipName");
+            if (string.IsNullOrEmpty(defName)) defName = "motion";
+            return SaveDest.AskSavePath("VRM アニメーションの書き出し", SaveDest.Keys.Vrma, "", defName, "vrma");
+        }
+
+        private void OnExportVrma()
+        {
+            if (!HasClip || string.IsNullOrEmpty(_filePath) || _sourceKind != 1)
+            { SetStatus("PolyLing モーションを読み込んでください"); return; }
+            if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
+
+            string outPath = AskVrmaSavePath();
+            if (string.IsNullOrEmpty(outPath)) return;
+            _vrmaPathField.value = outPath;
+
+            // モーションと CSV はこのパネルのダイアログで利用者が選んだもの。
+            // PLSandbox の 1 回許可は解決した時点で消えるので、コマンドを送る直前に付け直す。
+            string limitPath = (Surface?.GetInt(Tool, "limitBoneCount") ?? 0) > 0 ? (_limitPathField?.value?.Trim() ?? "") : "";
+            PLSandbox.AllowOnceFromDialog(_filePath);
+            if (!string.IsNullOrEmpty(limitPath)) PLSandbox.AllowOnceFromDialog(limitPath);
+
+            var since = DateTime.Now.AddSeconds(-2);
+            SendCommand(new Poly_Ling.Data.ExportVrmAnimationCommand(
+                GetModelIndex?.Invoke() ?? 0, outPath, _filePath, limitPath,
+                _vrmaFpsField?.value ?? 30f, _vrmaStartField?.value ?? 0f,
+                _vrmaEndField?.value ?? 0f, _vrmaScaleField?.value ?? 1f));
+
+            // Dispatch は同期なので、書き出し結果をここで確かめる。
+            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
+            SetStatus(ok ? $"VRMA を書き出しました: {Path.GetFileName(outPath)}" : "VRMA 書き出しに失敗しました（ログを参照）");
+            RefreshAll();
+        }
+
+        /// <summary>
+        /// 表示中のフレームをモデルへ当て直す。VRMA 書き出しがポーズ層を戻したあとに受け口から呼ばれる。
+        /// </summary>
+        public void ReapplyCurrentFrame() => ApplyFrame();
 
         private void Clear()
         {

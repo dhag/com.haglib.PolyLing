@@ -1,6 +1,6 @@
 // UnityClipCanonVrmAnimation.cs
 // ============================================================
-// Unity クリップ（UnityClipDTO）→ VRM アニメーション（.vrma）
+// PolyLing モーション（muscles / RootT / RootQ）→ VRM アニメーション（.vrma）
 // モデル非依存・T ポーズ前提の変換
 // ------------------------------------------------------------
 // Runtime/Poly_Ling_Main/UnityClip/ に配置。
@@ -45,7 +45,7 @@
 //
 //   Humanoid クリップは Transform トラックを持たない。代わりに Animator 型の
 //   カーブとして RootT.x/y/z・RootQ.x/y/z/w を持ち、書き出し側はこれを
-//   dto.muscles へそのまま入れている（UnityClipExportWindow.cs:246-251）。
+//   dto.muscles へそのまま入れている（Editor の UnityClipExportWindow）。
 //
 //   RootT / RootQ は HumanTrait.MuscleName に含まれないが、
 //   **含まれないことは不要を意味しない。** マッスルが関節の正規化自由度なのに対し、
@@ -68,6 +68,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Vrm;
+using Poly_Ling.Motion;
 
 namespace Poly_Ling.UnityClip
 {
@@ -331,7 +332,7 @@ namespace Poly_Ling.UnityClip
         /// ModelContext を一切参照しない。
         /// </summary>
         public static VrmAnimationExportResult ConvertToFile(
-            UnityClipDTO clip, string outputPath, VrmAnimationExportSettings settings, float boneLength,
+            MotionClipDTO clip, string outputPath, VrmAnimationExportSettings settings, float boneLength,
             bool useRoot = true)
         {
             if (clip == null) return VrmAnimationExportResult.Failed("クリップがありません");
@@ -347,14 +348,29 @@ namespace Poly_Ling.UnityClip
                 return VrmAnimationExportResult.Failed(
                     "クリップに muscles がありません。Humanoid クリップを指定してください");
 
+            // マッスルの評価は MotionCurveMath（接線つき）で行う。姿勢の計算側は
+            // UnityMuscleTrackDTO を読むので、1 キーだけのビューへ毎フレーム評価値を書き込んで渡す
+            // （MotionClipApplier が UnityClipApplier へ委譲するときと同じ方式）。
             var muscleByName = new Dictionary<string, UnityMuscleTrackDTO>();
+            var views = new List<(MotionScalarTrackDTO src, UnityWeightKeyDTO key)>();
             foreach (var m in clip.muscles)
-                if (m != null && !string.IsNullOrEmpty(m.name)) muscleByName[m.name] = m;
+            {
+                if (m == null || string.IsNullOrEmpty(m.name) || m.keys == null || m.keys.Count == 0) continue;
+                var key = new UnityWeightKeyDTO();
+                var dst = new UnityMuscleTrackDTO { name = m.name };
+                dst.w.Add(key);
+                muscleByName[m.name] = dst;
+                views.Add((m, key));
+            }
+            Action<float> UpdateViews = t =>
+            {
+                foreach (var v in views) { v.key.t = t; v.key.v = MotionCurveMath.EvaluateScalar(v.src, t); }
+            };
 
             float fps = settings.Fps > 0f ? settings.Fps
                       : (clip.frameRate > 0f ? clip.frameRate : 30f);
 
-            float clipEnd = UnityClipVrmAnimationSource.ComputeMaxTime(clip);
+            float clipEnd = MotionClipSerializer.Length(clip);
             float start   = Mathf.Max(0f, settings.StartSec);
             float end     = settings.EndSec > start ? settings.EndSec : clipEnd;
             if (end < start) end = start;
@@ -374,6 +390,7 @@ namespace Poly_Ling.UnityClip
                 // Root 系はマッスルと別系統として抜き出す。
                 // 既存 JSON は Root も muscles に入っているので、同じ辞書から引く。
                 var root = UnityClipRootMotion.From(muscleByName);
+                UpdateViews(times[0]);
                 src.SetupRoot(root, times[0], useRoot, out string rootNote);
 
                 // 何をどの倍率で載せたかを残す。載らなかったときの原因もここに出る。
@@ -386,7 +403,7 @@ namespace Poly_Ling.UnityClip
                     src.HumanBones,
                     src.Root.transform,
                     times,
-                    i => localSrc.Pose(muscleByName, times[i]),
+                    i => { UpdateViews(times[i]); localSrc.Pose(muscleByName, times[i]); },
                     outputPath);
 
                 if (result != null && result.Success)

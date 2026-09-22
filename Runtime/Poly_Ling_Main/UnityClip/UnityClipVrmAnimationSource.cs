@@ -1,6 +1,6 @@
 // UnityClipVrmAnimationSource.cs
 // ============================================================
-// UnityClipDTO を VRM アニメーション（.vrma）として書き出すための橋渡し
+// PolyLing モーションを VRM アニメーション（.vrma）として書き出すための橋渡し（モデル経由）
 // ------------------------------------------------------------
 // Runtime/Poly_Ling_Main/UnityClip/ に配置。
 //
@@ -83,7 +83,7 @@
 // ============================================================
 //
 //   書き出しはモデルへ実際にフレームを適用する（プレビューと同じ経路）。
-//   終わったら UnityClipApplier.ResetAllBones でポーズ層を必ず戻す。
+//   終わったら MotionClipApplier.ResetAllBones でポーズ層を必ず戻す。
 //   パネル側の表示フレームの復帰は呼び出し側（受け口）が行う。
 //
 // ============================================================
@@ -94,6 +94,8 @@ using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.HierarchyIO;
 using Poly_Ling.Vrm;
+using Poly_Ling.Motion;
+using Poly_Ling.VMD;
 
 namespace Poly_Ling.UnityClip
 {
@@ -362,17 +364,18 @@ namespace Poly_Ling.UnityClip
         // ================================================================
 
         /// <summary>
-        /// クリップをモデルへ適用しながら .vrma を書き出す。
+        /// PolyLing モーションをモデルへ適用しながら .vrma を書き出す。
+        /// 適用は MotionClipApplier（統合モーションパネルと同じ経路）で行う。
         /// モデルのポーズ層は終了時に必ず戻す。
         /// </summary>
         /// <param name="model">対象モデル。Humanoid 割り当てが要る。</param>
-        /// <param name="clip">適用するクリップ。</param>
+        /// <param name="clip">適用するモーション。</param>
         /// <param name="muscleLimitCsvText">UnityLimit CSV の中身。空なら既定値を使う。</param>
         /// <param name="outputPath">出力先（実経路）。</param>
         /// <param name="settings">倍率・毎秒枚数・区間。null なら既定値。</param>
         public static VrmAnimationExportResult ExportToFile(
             ModelContext model,
-            UnityClipDTO clip,
+            MotionClipDTO clip,
             string muscleLimitCsvText,
             string outputPath,
             VrmAnimationExportSettings settings)
@@ -390,7 +393,7 @@ namespace Poly_Ling.UnityClip
             float fps = settings.Fps > 0f ? settings.Fps
                       : (clip.frameRate > 0f ? clip.frameRate : 30f);
 
-            float clipEnd = ComputeMaxTime(clip);
+            float clipEnd = MotionClipSerializer.Length(clip);
             float start   = Mathf.Max(0f, settings.StartSec);
             float end     = settings.EndSec > start ? settings.EndSec : clipEnd;
             if (end < start) end = start;
@@ -401,10 +404,14 @@ namespace Poly_Ling.UnityClip
             for (int i = 0; i < frameCount; i++)
                 times[i] = start + i / fps;
 
-            var applier = new UnityClipApplier();
+            var applier = new MotionClipApplier();
             if (!string.IsNullOrEmpty(muscleLimitCsvText))
                 applier.LoadMuscleLimitCsv(muscleLimitCsvText);
+            applier.SetClip(clip);
             applier.BuildMapping(model);
+
+            // boneName トラック（VMD 由来）はアプライヤがノード行列を持たないので、モデルから読む。
+            var sampler = VmdNodeWorldSampler.Build(model, out string samplerReason);
 
             UnityClipVrmAnimationSource src = null;
             try
@@ -422,8 +429,11 @@ namespace Poly_Ling.UnityClip
                     times,
                     i =>
                     {
-                        applier.ApplyFrame(model, clip, times[i]);
-                        localSrc.PoseFromModel(applier);
+                        applier.ApplyFrame(model, times[i]);
+                        sampler?.Capture(model);
+                        localSrc.PoseFrom((int node, out Matrix4x4 w) =>
+                            applier.TryGetNodeWorldMatrix(node, out w)
+                            || (sampler != null && sampler.TryGetNodeWorldMatrix(node, out w)));
                     },
                     outputPath);
 
@@ -449,35 +459,6 @@ namespace Poly_Ling.UnityClip
                 if (src != null) src.Dispose();
                 applier.ResetAllBones(model);
             }
-        }
-
-        /// <summary>クリップの最終キー時刻（秒）。</summary>
-        public static float ComputeMaxTime(UnityClipDTO clip)
-        {
-            float max = 0f;
-            if (clip == null) return 0f;
-
-            if (clip.bones != null)
-            {
-                foreach (var track in clip.bones)
-                {
-                    if (track?.keys == null) continue;
-                    foreach (var key in track.keys)
-                        if (key != null && key.t > max) max = key.t;
-                }
-            }
-
-            if (clip.muscles != null)
-            {
-                foreach (var track in clip.muscles)
-                {
-                    if (track?.w == null) continue;
-                    foreach (var key in track.w)
-                        if (key != null && key.t > max) max = key.t;
-                }
-            }
-
-            return max;
         }
     }
 }

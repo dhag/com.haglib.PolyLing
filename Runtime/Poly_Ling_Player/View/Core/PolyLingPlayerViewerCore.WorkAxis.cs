@@ -648,13 +648,6 @@ namespace Poly_Ling.Player
             return CsvProjectSerializer.Export(folderPath, project);
         }
 
-        private void ShowUnityClipTestPanel()
-        {
-            SetInteractionMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.UnityClipTestSection, _layoutRoot?.UnityClipTestBtn);
-            _unityClipTestSubPanel?.Refresh();
-        }
-
         private void ShowUnityClipToVrmaPanel()
         {
             SetInteractionMode(InteractionMode.None);
