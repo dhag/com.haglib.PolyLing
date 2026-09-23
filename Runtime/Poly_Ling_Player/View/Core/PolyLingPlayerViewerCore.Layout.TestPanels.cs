@@ -335,6 +335,19 @@ namespace Poly_Ling.Player
                     _viewportManager.GetCurrentToolContext(_activeViewport)?.Repaint?.Invoke();
                 },
             };
+            // ライブ受信（ツールの窓口 "motionLive"）。当てた後の表示更新は motionClip と同じ。
+            _motionLiveHandler = new MotionLiveHandler
+            {
+                GetModel       = () => ActiveProject?.CurrentModel,
+                OnFrameApplied = () =>
+                {
+                    _viewportManager.UpdateTransform();
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+                    _viewportManager.GetCurrentToolContext(_activeViewport)?.Repaint?.Invoke();
+                    // 状態表示の読み取りは窓口の登録簿を引くので、毎フレームではなく 25 フレームごとにする。
+                    if (_motionLiveHandler.AppliedCount % 25 == 1) _motionClipTestSubPanel?.RefreshLiveStatus();
+                },
+            };
             _motionClipTestSubPanel = new PlayerMotionClipTestSubPanel
             {
                 GetModel          = () => ActiveProjectView?.CurrentModel,

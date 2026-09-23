@@ -68,6 +68,45 @@ namespace Poly_Ling.UnityClip
             }
 
             MatchedTrackCount = matched;
+            FinishFrame(model);
+        }
+
+        /// <summary>
+        /// 受信したマッスル値（HumanTrait.MuscleName の並び）を当てる。ライブ受信用。
+        /// valid[i] が false のマッスルは「トラック無し」と同じ扱いにする（その骨を当てない）。
+        /// 計算はクリップのマッスル経路（ApplyMuscleValues）と同じ。path トラックは無い。
+        /// </summary>
+        public void ApplyMuscleFrame(ModelContext model, float[] values, bool[] valid, float timeSec)
+        {
+            if (model == null || values == null) return;
+            if (_mappedModel != model || _mapping == null) BuildMapping(model);
+
+            ClearNodeDeltas();
+
+            PathMatchedCount = 0;
+            PathTrackCount   = 0;
+            UnresolvedPathTracks.Clear();
+            ResolvedBodyMode = BodySource.Muscle;
+
+            MatchedTrackCount = ApplyMuscleValues(model,
+                (int mi, out float v) =>
+                {
+                    if (mi >= 0 && mi < values.Length && (valid == null || (mi < valid.Length && valid[mi])))
+                    {
+                        v = values[mi];
+                        return true;
+                    }
+                    v = 0f;
+                    return false;
+                },
+                timeSec);
+
+            FinishFrame(model);
+        }
+
+        // フレーム適用の後始末（クリップ・ライブ受信で共通）。
+        private void FinishFrame(ModelContext model)
+        {
             LogDiagnosticsIfChanged();
 
             // 1 パス目: 実体ノードのデルタを反映してワールドを確定させる。
@@ -144,6 +183,29 @@ namespace Poly_Ling.UnityClip
             foreach (var m in clip.muscles)
                 if (m != null && !string.IsNullOrEmpty(m.name)) muscleByName[m.name] = m;
 
+            var names = HumanTrait.MuscleName;
+            return ApplyMuscleValues(model,
+                (int mi, out float v) =>
+                {
+                    if (names != null && mi >= 0 && mi < names.Length
+                        && muscleByName.TryGetValue(names[mi], out var mt))
+                    {
+                        v = SampleWeight(mt, timeSec);               // 正規化値 [-1,1]
+                        return true;
+                    }
+                    v = 0f;
+                    return false;
+                },
+                timeSec);
+        }
+
+        /// <summary>マッスル番号（HumanTrait.MuscleName の添字）の値を返す。無ければ false。</summary>
+        private delegate bool MuscleValueSource(int muscleIndex, out float value);
+
+        // マッスル値から本体ボーンのデルタを作って当てる（値の出どころだけが呼び出し元で違う）。
+        // timeSec は内訳ログの表示にだけ使う。
+        private int ApplyMuscleValues(ModelContext model, MuscleValueSource valueOf, float timeSec)
+        {
             var muscleNames = HumanTrait.MuscleName;
             int boneCount = HumanTrait.BoneCount;
             int matched = 0;
@@ -164,7 +226,7 @@ namespace Poly_Ling.UnityClip
                 {
                     int mi0 = HumanTrait.MuscleFromBone(bi, dof);
                     if (mi0 < 0 || muscleNames == null || mi0 >= muscleNames.Length) continue;
-                    if (muscleByName.ContainsKey(muscleNames[mi0])) driven = true;
+                    if (valueOf(mi0, out _)) driven = true;
                 }
                 if (!driven) continue;
                 MuscleTargetCount++;
@@ -225,14 +287,13 @@ namespace Poly_Ling.UnityClip
                         if (dbg) dsb.Append("   dof").Append(dof).Append(": マッスル無し\n");
                         continue;
                     }
-                    if (!muscleByName.TryGetValue(muscleNames[mi], out var mt))
+                    if (!valueOf(mi, out float v))
                     {
                         if (dbg) dsb.Append("   dof").Append(dof).Append(": クリップにトラック無し (")
                                     .Append(muscleNames[mi]).Append(")\n");
                         continue;
                     }
-
-                    float v = SampleWeight(mt, timeSec);                 // 正規化値 [-1,1]
+                    // v は正規化値 [-1,1]
 
                     // Zero 基準のデルタを |v| だけ効かせる（v=0 で identity）
                     Quaternion ext  = v >= 0f ? lim.MaxQ[dof] : lim.MinQ[dof];

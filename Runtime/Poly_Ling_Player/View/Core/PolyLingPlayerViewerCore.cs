@@ -257,6 +257,8 @@ namespace Poly_Ling.Player
         private SkinWeightNumericHandler _skinWeightNumericHandler;
         /// <summary>モーションの試し再生（ツールの窓口 "motionClip"）。</summary>
         private MotionClipHandler _motionClipHandler;
+        /// <summary>ライブ受信（ツールの窓口 "motionLive"）。UDP で届くマッスルを当てる。</summary>
+        private MotionLiveHandler _motionLiveHandler;
         private PlayerShrinkSubPanel         _shrinkSubPanel;
         private PlayerShrinkSubPanel         _shrinkFaceSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;

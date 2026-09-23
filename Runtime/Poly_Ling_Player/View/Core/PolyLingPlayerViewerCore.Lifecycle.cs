@@ -759,6 +759,7 @@ namespace Poly_Ling.Player
                 _client.Dispose();
             }
             _playerServer?.Dispose();
+            _motionLiveHandler?.Reject();   // UDP の待ち受けを閉じる（Play 停止後もポートを掴んだままにしない）
 
             if (_receiver != null)
             {

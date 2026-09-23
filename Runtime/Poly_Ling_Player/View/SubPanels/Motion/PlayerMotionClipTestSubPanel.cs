@@ -162,12 +162,30 @@ namespace Poly_Ling.Player
         [UiControl("vrma.status", Safety = UiSafety.ReadOnly, Description = "VRMA 書き出しの状態")]
         private Label         _vrmaLabel;
 
+        // ライブ受信（ツールの窓口 "motionLive"）
+        [UiControl("live.port", Description = "ライブ受信の待ち受けポート")]
+        private IntegerField  _livePortField;
+        [UiControl("live.streamPort", Description = "画面（モーションスタジオ等）への配信ポート（WebSocket）")]
+        private IntegerField  _liveStreamPortField;
+        [UiControl("live.accept", Safety = UiSafety.SafeWrite, Description = "ライブ受信の受け入れを許可する（待ち受け開始）")]
+        private Button        _btnLiveAccept;
+        [UiControl("live.reject", Safety = UiSafety.SafeWrite, Description = "ライブ受信の受け入れを不許可にする（待ち受け停止）")]
+        private Button        _btnLiveReject;
+        [UiControl("live.resetPose", Safety = UiSafety.SafeWrite, Description = "ライブ受信で当てた姿勢を初期へ戻す")]
+        private Button        _btnLiveResetPose;
+        [UiControl("live.status", Safety = UiSafety.ReadOnly, Description = "ライブ受信の状態")]
+        private Label         _liveStatusLabel;
+
         // 直近の読込の検査結果（統合JSON のときだけ）。
 
         private const string PathKey     = "MotionClip.Path";
         private const string BindPathKey = "MotionClip.Bind.Path";
         private const string SourceKey   = "MotionClip.Source";
         private const string LimitPathKey = "MotionClip.Limit.Path";
+        private const string LivePortKey  = "MotionClip.Live.Port";
+        private const string LiveStreamPortKey = "MotionClip.Live.StreamPort";
+        /// <summary>ライブ受信のツールの窓口名（MotionLiveHandler）。</summary>
+        private const string LiveTool = "motionLive";
 
         private Poly_Ling.View.IModelView Model => GetModel?.Invoke();
         private float FrameRate => HasClip ? (Surface?.GetFloat(Tool, "frameRate") ?? 30f) : 30f;
@@ -267,6 +285,9 @@ namespace Poly_Ling.Player
             _limitLabel.style.marginBottom = 3;
             root.Add(_limitLabel);
 
+            // ── ライブ受信（UDP でマッスルを受けて当てる）────────────────
+            BuildLiveSection(root);
+
             // ── クリップセクション（ロード後に表示）──────────────────────
             _clipSection = new VisualElement();
             _clipSection.style.display = DisplayStyle.None;
@@ -280,6 +301,84 @@ namespace Poly_Ling.Player
             root.Add(_statusLabel);
 
             RefreshAll();
+        }
+
+        private void BuildLiveSection(VisualElement root)
+        {
+            root.Add(PlayerIoUiKit.SectionLabel("ライブ受信（UDP・マッスル）"));
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 3;
+            var portLbl = new Label("ポート");
+            portLbl.style.width = 40; portLbl.style.fontSize = 10;
+            portLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _livePortField = new IntegerField
+            {
+                value = ParseInt(RecentPaths.Get(LivePortKey), MotionLiveHandler.DefaultPort),
+            };
+            _livePortField.style.width = 70; _livePortField.style.marginRight = 2;
+            _livePortField.RegisterValueChangedCallback(e => RecentPaths.Set(LivePortKey, e.newValue.ToString()));
+            _btnLiveAccept = new Button(() =>
+            {
+                Surface?.Invoke(LiveTool, "accept", ("port", _livePortField.value), ("streamPort", _liveStreamPortField.value));
+                RefreshLiveStatus();
+            }) { text = "受け入れ許可" };
+            _btnLiveAccept.style.flexGrow = 1; _btnLiveAccept.style.marginRight = 2;
+            _btnLiveReject = new Button(() =>
+            {
+                Surface?.Invoke(LiveTool, "reject");
+                RefreshLiveStatus();
+            }) { text = "不許可" };
+            _btnLiveReject.style.width = 52;
+            row.Add(portLbl); row.Add(_livePortField); row.Add(_btnLiveAccept); row.Add(_btnLiveReject);
+            root.Add(row);
+
+            var streamRow = new VisualElement();
+            streamRow.style.flexDirection = FlexDirection.Row;
+            streamRow.style.marginBottom  = 3;
+            var streamLbl = new Label("配信ポート（画面向け WebSocket）");
+            streamLbl.style.flexGrow = 1; streamLbl.style.fontSize = 10;
+            streamLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _liveStreamPortField = new IntegerField
+            {
+                value = ParseInt(RecentPaths.Get(LiveStreamPortKey), MotionLiveHandler.DefaultStreamPort),
+            };
+            _liveStreamPortField.style.width = 70;
+            _liveStreamPortField.RegisterValueChangedCallback(e => RecentPaths.Set(LiveStreamPortKey, e.newValue.ToString()));
+            streamRow.Add(streamLbl); streamRow.Add(_liveStreamPortField);
+            root.Add(streamRow);
+
+            _btnLiveResetPose = new Button(() => Surface?.Invoke(LiveTool, "resetPose")) { text = "ポーズリセット（ライブ）" };
+            _btnLiveResetPose.style.marginBottom = 3;
+            root.Add(_btnLiveResetPose);
+
+            _liveStatusLabel = new Label();
+            _liveStatusLabel.style.fontSize     = 10;
+            _liveStatusLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _liveStatusLabel.style.marginBottom = 4;
+            root.Add(_liveStatusLabel);
+        }
+
+        /// <summary>ライブ受信の状態表示を更新する（許可・不許可の操作時と、フレームを当てるたびに呼ぶ）。</summary>
+        public void RefreshLiveStatus()
+        {
+            if (_liveStatusLabel == null || Surface == null) return;
+            bool listening = Surface.GetBool(LiveTool, "listening");
+            string err = Surface.GetString(LiveTool, "error");
+            string text = listening
+                ? $"待ち受け中（ポート {Surface.GetInt(LiveTool, "port")}、配信 ws://localhost:{Surface.GetInt(LiveTool, "streamPort")}/ 接続 {Surface.GetInt(LiveTool, "viewerCount")}）\n" +
+                  $"受信 {Surface.GetInt(LiveTool, "receivedCount")} / 適用 {Surface.GetInt(LiveTool, "appliedCount")} / 破棄 {Surface.GetInt(LiveTool, "rejectedCount")}\n" +
+                  $"送信元 {Surface.GetString(LiveTool, "lastSender")}"
+                : "停止中";
+            string rej = Surface.GetString(LiveTool, "lastReject");
+            if (listening && !string.IsNullOrEmpty(rej)) text += $"\n最後に捨てた理由: {rej}";
+            if (!string.IsNullOrEmpty(err)) text += $"\n{err}";
+            _liveStatusLabel.text = text;
+            _btnLiveAccept?.SetEnabled(!listening);
+            _btnLiveReject?.SetEnabled(listening);
+            _livePortField?.SetEnabled(!listening);
+            _liveStreamPortField?.SetEnabled(!listening);
         }
 
         private void BuildClipSection(VisualElement root)
@@ -395,6 +494,7 @@ namespace Poly_Ling.Player
             if (_btnClear  != null) _btnClear.SetEnabled(HasClip);
             if (_btnReload != null) _btnReload.SetEnabled(!string.IsNullOrEmpty(_filePath));
             if (_btnLimitClear != null) _btnLimitClear.SetEnabled((Surface?.GetInt(Tool, "limitBoneCount") ?? 0) > 0);
+            RefreshLiveStatus();
 
             if (_clipSection == null) return;
             bool hasClip = HasClip;
