@@ -26,6 +26,10 @@
 //   可動域は UnityClipApplier の既定値（T ポーズ基準の Unity 定義値）。
 //   当てるのは再生用の姿勢（保存しない表示状態）で、Undo は持たない（motionClip と同じ）。
 //   不許可にしても姿勢は戻さない（戻すのは resetPose）。
+//
+// ■ 再生の配信
+//   BroadcastFrame は、モーションパネルの再生（motionClip.playFrame）で当てたフレームを全接続へ送る。
+//   形・送信待ちを溜めない扱いは転送と同じ。受け入れ許可中でなければ何もしない。
 
 using System;
 using System.Collections.Generic;
@@ -56,6 +60,8 @@ namespace Poly_Ling.Player
         private SynchronizationContext  _syncCtx;
         private int                     _muscleCount;
         private Dictionary<string, int> _muscleIndex;
+        private string[]                _muscleNames;
+        private uint                    _playSeq;
 
         // 受信スレッドが書き、メインスレッドが読む最新フレーム（_lock で守る）
         private MotionLiveFrame _latest;
@@ -107,7 +113,9 @@ namespace Poly_Ling.Player
 
             _syncCtx     = SynchronizationContext.Current;
             _muscleCount = HumanTrait.MuscleCount;
-            _muscleIndex = MotionLiveJson.BuildIndex(HumanTrait.MuscleName);
+            _muscleNames = HumanTrait.MuscleName;
+            _muscleIndex = MotionLiveJson.BuildIndex(_muscleNames);
+            _playSeq     = 0;
             if (_syncCtx == null) { Error = "メインスレッドの SynchronizationContext がありません"; return; }
 
             Interlocked.Exchange(ref _received, 0);
@@ -160,6 +168,24 @@ namespace Poly_Ling.Player
             if (model == null) return;
             _applier.ResetAllBones(model);
             OnFrameApplied?.Invoke();
+        }
+
+        /// <summary>マッスル名 → 番号（HumanTrait.MuscleName の添字）。受け入れ許可中だけ有効（それ以外は null）。</summary>
+        public IReadOnlyDictionary<string, int> MuscleIndex => _ws != null ? _muscleIndex : null;
+        /// <summary>マッスル数（受け入れ許可時の HumanTrait.MuscleCount）。</summary>
+        public int MuscleCount => _muscleCount;
+
+        /// <summary>
+        /// 再生で当てたフレームを全接続へ送る（メインスレッドから呼ぶ）。f.Seq はここで振り直す。
+        /// 受け入れ許可中でなければ何もせず false。
+        /// </summary>
+        public bool BroadcastFrame(MotionLiveFrame f)
+        {
+            var ws = _ws;
+            if (ws == null || f == null) return false;
+            f.Seq = _playSeq++;
+            Relay(ws, null, MotionLiveJson.Build(f, _muscleNames));
+            return true;
         }
 
         // ---------------- 受信スレッド（部品の接続ごと） ----------------

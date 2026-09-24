@@ -538,6 +538,51 @@ namespace Poly_Ling.Motion
             return vb;
         }
 
+        /// <summary>読み込んだクリップがマッスルのトラックを 1 本以上持つか。</summary>
+        public bool HasMuscleTracks
+        {
+            get
+            {
+                if (_dto?.muscles == null) return false;
+                foreach (var m in _dto.muscles)
+                    if (m != null && !string.IsNullOrEmpty(m.name) && m.keys != null && m.keys.Count > 0) return true;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 読み込んだクリップのマッスルとルート（body）を timeSec で評価して into に入れる（配信用）。
+        /// 評価は ApplyFrame と同じ MotionCurveMath。indexOf はマッスル名 → 番号（HumanTrait.MuscleName の添字）、
+        /// count はマッスル数。トラックの無いマッスルは Valid=false。マッスルのトラックが無ければ false。
+        /// </summary>
+        public bool TrySampleMuscleFrame(float timeSec, IReadOnlyDictionary<string, int> indexOf, int count, MotionLiveFrame into)
+        {
+            if (into == null || indexOf == null || !HasMuscleTracks) return false;
+
+            into.EnsureCount(count);
+            Array.Clear(into.Muscles, 0, count);
+            Array.Clear(into.Valid, 0, count);
+            foreach (var m in _dto.muscles)
+            {
+                if (m == null || string.IsNullOrEmpty(m.name) || m.keys == null || m.keys.Count == 0) continue;
+                if (!indexOf.TryGetValue(m.name, out int i) || i < 0 || i >= count) continue;
+                into.Muscles[i] = MotionCurveMath.EvaluateScalar(m, timeSec);
+                into.Valid[i]   = true;
+            }
+
+            into.HasRoot = false;
+            if (_dto.body != null
+                && MotionCurveMath.TryEvaluateVector3(_dto.body, MotionCurveMath.VectorChannel.Position, timeSec, out var p)
+                && MotionCurveMath.TryEvaluateRotation(_dto.body, timeSec, out var q))
+            {
+                into.HasRoot = true;
+                into.RootT   = p;
+                into.RootQ   = q;
+            }
+            into.Time = timeSec;
+            return true;
+        }
+
         // ビューのキーを timeSec の評価値へ書き換える。
         private void UpdateView(float timeSec)
         {

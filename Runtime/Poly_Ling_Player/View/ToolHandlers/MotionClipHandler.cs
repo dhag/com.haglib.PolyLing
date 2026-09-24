@@ -26,6 +26,8 @@ namespace Poly_Ling.Player
         public Action<MeshContext> SyncMeshPositions;
         /// <summary>フレームを当てた・姿勢を戻した後に呼ぶ（表示の更新）。</summary>
         public Action             OnFrameApplied;
+        /// <summary>再生で time 秒のフレームを当てた後に呼ぶ（playFrame のときだけ。配信用）。</summary>
+        public Action<float>      OnPlaybackFrame;
 
         private MotionClipDTO        _dto;
         private MotionClipApplier    _applier;
@@ -135,6 +137,21 @@ namespace Poly_Ling.Player
         [PLToolAction(Description = "time 秒のフレームを当てる")]
         public void SetTime(float time) => ApplyFrameCore(time);
 
+        /// <summary>再生中のフレームを当てる。setTime と同じに当てたうえで、配信用に OnPlaybackFrame を呼ぶ。</summary>
+        [PLToolAction(Description = "再生中の time 秒のフレームを当てる（setTime と同じに当て、ライブ受信の受け入れ中なら配信する）")]
+        public void PlayFrame(float time)
+        {
+            if (!ApplyFrameCore(time)) return;
+            OnPlaybackFrame?.Invoke(time);
+        }
+
+        [PLToolState(Description = "読み込んだクリップがマッスルのトラックを持つか（持つものだけ再生時に配信できる）")]
+        public bool HasMuscles => _applier != null && _dto != null && _applier.HasMuscleTracks;
+
+        /// <summary>読み込んだクリップのマッスルとルートを time 秒で評価して into に入れる（配信用）。</summary>
+        public bool TrySampleMuscleFrame(float time, IReadOnlyDictionary<string, int> indexOf, int count, MotionLiveFrame into)
+            => _applier != null && _dto != null && _applier.TrySampleMuscleFrame(time, indexOf, count, into);
+
         [PLToolAction(Description = "位置に掛ける倍率を変え、time 秒のフレームを当て直す")]
         public void SetPositionScale(float scale, float time)
         {
@@ -204,12 +221,13 @@ namespace Poly_Ling.Player
             _applier.SyncMeshPositions = SyncMeshPositions;
         }
 
-        private void ApplyFrameCore(float time)
+        private bool ApplyFrameCore(float time)
         {
             var model = GetModel?.Invoke();
-            if (_dto == null || model == null || _applier == null) return;
+            if (_dto == null || model == null || _applier == null) return false;
             _applier.ApplyFrame(model, time);
             OnFrameApplied?.Invoke();
+            return true;
         }
 
         private void ResetPoseCore()

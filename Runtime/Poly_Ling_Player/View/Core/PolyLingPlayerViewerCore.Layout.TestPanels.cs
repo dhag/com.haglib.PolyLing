@@ -348,6 +348,15 @@ namespace Poly_Ling.Player
                     if (_motionLiveHandler.AppliedCount % 25 == 1) _motionClipTestSubPanel?.RefreshLiveStatus();
                 },
             };
+            // 再生で当てたフレームを、ライブ受信の受け入れ中なら全接続へ配信する（マッスルを持つクリップだけ）。
+            var playFrame = new Poly_Ling.Motion.MotionLiveFrame();
+            _motionClipHandler.OnPlaybackFrame = time =>
+            {
+                var index = _motionLiveHandler.MuscleIndex;
+                if (index == null) return;                                   // 受け入れ許可中でない
+                if (_motionClipHandler.TrySampleMuscleFrame(time, index, _motionLiveHandler.MuscleCount, playFrame))
+                    _motionLiveHandler.BroadcastFrame(playFrame);
+            };
             _motionClipTestSubPanel = new PlayerMotionClipTestSubPanel
             {
                 GetModel          = () => ActiveProjectView?.CurrentModel,

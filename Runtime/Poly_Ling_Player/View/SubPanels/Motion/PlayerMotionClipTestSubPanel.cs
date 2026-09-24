@@ -127,6 +127,13 @@ namespace Poly_Ling.Player
         private Button        _btnTimeLast;
         [UiControl("resetPose", Safety = UiSafety.SafeWrite, Description = "ポーズをリセットする")]
         private Button        _btnResetPose;
+        [UiControl("play", Safety = UiSafety.SafeWrite, Description = "再生／停止（今の時刻から末尾まで実時間で進める。ライブ受信の受け入れ中は配信する）")]
+        private Button        _btnPlay;
+
+        // 再生（今の時刻から末尾まで。schedule の一発予約を再生中だけ繰り返す＝毎フレームの見回りはしない）
+        private bool   _playing;
+        private double _playStartReal;   // 再生開始時の実時間 [秒]
+        private float  _playStartTime;   // 再生開始時のクリップ時刻 [秒]
         [UiControl("saveJson", Safety = UiSafety.UserOnly, Description = "読み込んだクリップを PolyLing モーション JSON として保存する（保存ダイアログを開く）")]
         private Button        _btnSaveJson;
         [UiControl("report", Safety = UiSafety.ReadOnly, Description = "読込の検査結果と、モデルとの結び付き状況")]
@@ -434,6 +441,10 @@ namespace Poly_Ling.Player
             _btnTimeLast  = MkNavBtn(nav1, "▶|", () => { if (HasClip) { _currentTime = _maxTime; Sync(); } });
             root.Add(nav1);
 
+            _btnPlay = new Button(TogglePlay) { text = "▶ 再生" };
+            _btnPlay.style.marginBottom = 2;
+            root.Add(_btnPlay);
+
             var resetBtn = new Button(() => Surface?.Invoke(Tool, "resetPose")) { text = "ポーズリセット" };
             resetBtn.style.marginBottom = 4;
             root.Add(resetBtn);
@@ -558,6 +569,7 @@ namespace Poly_Ling.Player
 
         private void Load(string path)
         {
+            StopPlay();
             if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
             if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
 
@@ -794,6 +806,7 @@ namespace Poly_Ling.Player
 
         private void Clear()
         {
+            StopPlay();
             Surface?.Invoke(Tool, "clear");
             _filePath = null; _currentTime = 0f; _maxTime = 0f;
             SetStatus("クリアしました");
@@ -833,6 +846,69 @@ namespace Poly_Ling.Player
         }
 
         private float Step() => FrameRate > 0f ? 1f / FrameRate : 1f / 30f;
+
+        // ================================================================
+        // 再生
+        // ================================================================
+
+        private void TogglePlay()
+        {
+            if (_playing) { StopPlay(); SetStatus("停止しました"); return; }
+            if (!HasClip || Model == null) { SetStatus("クリップとモデルが必要です"); return; }
+            if (_currentTime >= _maxTime) { SetStatus("末尾にいます。先頭へ戻してから再生してください"); return; }
+
+            _playing       = true;
+            _playStartTime = _currentTime;
+            _playStartReal = Time.realtimeSinceStartupAsDouble;
+            SetPlayingUi(true);
+
+            bool listening = Surface?.GetBool(LiveTool, "listening") ?? false;
+            bool muscles   = Surface?.GetBool(Tool, "hasMuscles") ?? false;
+            SetStatus(!listening ? "再生中"
+                    : muscles    ? "再生中（受け入れ中の接続へ配信しています）"
+                                 : "再生中（このクリップはマッスルを持たないため配信しません）");
+            PlayTick();
+        }
+
+        private void PlayTick()
+        {
+            if (!_playing) return;
+            if (!HasClip || Model == null) { StopPlay(); return; }
+
+            float t = _playStartTime + (float)(Time.realtimeSinceStartupAsDouble - _playStartReal);
+            bool atEnd = t >= _maxTime;
+            _currentTime = Mathf.Min(t, _maxTime);
+            UpdateSlider();
+            UpdateTimeLabel();
+            Surface?.Invoke(Tool, "playFrame", ("time", _currentTime));
+
+            if (atEnd) { StopPlay(); SetStatus("末尾まで再生しました"); return; }
+            // 次の 1 回だけを予約する（クリップのフレーム間隔。10〜100ms に収める）
+            int ms = Mathf.Clamp(Mathf.RoundToInt(1000f / Mathf.Max(1f, FrameRate)), 10, 100);
+            _timeSlider?.schedule.Execute(PlayTick).StartingIn(ms);
+        }
+
+        private void StopPlay()
+        {
+            if (!_playing) return;
+            _playing = false;
+            SetPlayingUi(false);
+        }
+
+        // 再生中は時刻を動かす操作を止める
+        private void SetPlayingUi(bool playing)
+        {
+            if (_btnPlay != null) _btnPlay.text = playing ? "■ 停止" : "▶ 再生";
+            _timeSlider?.SetEnabled(!playing);
+            _timeInput?.SetEnabled(!playing);
+            _btnTimeFirst?.SetEnabled(!playing);
+            _btnTimePrev?.SetEnabled(!playing);
+            _btnTime25?.SetEnabled(!playing);
+            _btnTime50?.SetEnabled(!playing);
+            _btnTime75?.SetEnabled(!playing);
+            _btnTimeNext?.SetEnabled(!playing);
+            _btnTimeLast?.SetEnabled(!playing);
+        }
 
         private void UpdateSlider()
         {
