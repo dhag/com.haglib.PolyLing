@@ -163,10 +163,10 @@ namespace Poly_Ling.Player
         private Label         _vrmaLabel;
 
         // ライブ受信（ツールの窓口 "motionLive"）
-        [UiControl("live.port", Description = "ライブ受信の待ち受けポート")]
+        [UiControl("live.port", Description = "ライブ受信の待ち受けポート（WebSocket。送る側も画面も同じポートへつなぐ）")]
         private IntegerField  _livePortField;
-        [UiControl("live.streamPort", Description = "画面（モーションスタジオ等）への配信ポート（WebSocket）")]
-        private IntegerField  _liveStreamPortField;
+        [UiControl("live.lan", Description = "ライブ受信を LAN 上の別の PC からも受ける（オフは同じ PC の中だけ）")]
+        private Toggle        _liveLanToggle;
         [UiControl("live.accept", Safety = UiSafety.SafeWrite, Description = "ライブ受信の受け入れを許可する（待ち受け開始）")]
         private Button        _btnLiveAccept;
         [UiControl("live.reject", Safety = UiSafety.SafeWrite, Description = "ライブ受信の受け入れを不許可にする（待ち受け停止）")]
@@ -182,8 +182,8 @@ namespace Poly_Ling.Player
         private const string BindPathKey = "MotionClip.Bind.Path";
         private const string SourceKey   = "MotionClip.Source";
         private const string LimitPathKey = "MotionClip.Limit.Path";
-        private const string LivePortKey  = "MotionClip.Live.Port";
-        private const string LiveStreamPortKey = "MotionClip.Live.StreamPort";
+        private const string LivePortKey  = "MotionClip.Live.WsPort";
+        private const string LiveLanKey   = "MotionClip.Live.Lan";
         /// <summary>ライブ受信のツールの窓口名（MotionLiveHandler）。</summary>
         private const string LiveTool = "motionLive";
 
@@ -305,7 +305,7 @@ namespace Poly_Ling.Player
 
         private void BuildLiveSection(VisualElement root)
         {
-            root.Add(PlayerIoUiKit.SectionLabel("ライブ受信（UDP・マッスル）"));
+            root.Add(PlayerIoUiKit.SectionLabel("ライブ受信（WebSocket・マッスル）"));
 
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -321,7 +321,7 @@ namespace Poly_Ling.Player
             _livePortField.RegisterValueChangedCallback(e => RecentPaths.Set(LivePortKey, e.newValue.ToString()));
             _btnLiveAccept = new Button(() =>
             {
-                Surface?.Invoke(LiveTool, "accept", ("port", _livePortField.value), ("streamPort", _liveStreamPortField.value));
+                Surface?.Invoke(LiveTool, "accept", ("port", _livePortField.value), ("lan", _liveLanToggle.value));
                 RefreshLiveStatus();
             }) { text = "受け入れ許可" };
             _btnLiveAccept.style.flexGrow = 1; _btnLiveAccept.style.marginRight = 2;
@@ -334,20 +334,13 @@ namespace Poly_Ling.Player
             row.Add(portLbl); row.Add(_livePortField); row.Add(_btnLiveAccept); row.Add(_btnLiveReject);
             root.Add(row);
 
-            var streamRow = new VisualElement();
-            streamRow.style.flexDirection = FlexDirection.Row;
-            streamRow.style.marginBottom  = 3;
-            var streamLbl = new Label("配信ポート（画面向け WebSocket）");
-            streamLbl.style.flexGrow = 1; streamLbl.style.fontSize = 10;
-            streamLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            _liveStreamPortField = new IntegerField
+            _liveLanToggle = new Toggle("LAN 上の別の PC からも受ける")
             {
-                value = ParseInt(RecentPaths.Get(LiveStreamPortKey), MotionLiveHandler.DefaultStreamPort),
+                value = RecentPaths.Get(LiveLanKey) == "1",
             };
-            _liveStreamPortField.style.width = 70;
-            _liveStreamPortField.RegisterValueChangedCallback(e => RecentPaths.Set(LiveStreamPortKey, e.newValue.ToString()));
-            streamRow.Add(streamLbl); streamRow.Add(_liveStreamPortField);
-            root.Add(streamRow);
+            _liveLanToggle.style.fontSize = 10; _liveLanToggle.style.marginBottom = 3;
+            _liveLanToggle.RegisterValueChangedCallback(e => RecentPaths.Set(LiveLanKey, e.newValue ? "1" : "0"));
+            root.Add(_liveLanToggle);
 
             _btnLiveResetPose = new Button(() => Surface?.Invoke(LiveTool, "resetPose")) { text = "ポーズリセット（ライブ）" };
             _btnLiveResetPose.style.marginBottom = 3;
@@ -367,8 +360,8 @@ namespace Poly_Ling.Player
             bool listening = Surface.GetBool(LiveTool, "listening");
             string err = Surface.GetString(LiveTool, "error");
             string text = listening
-                ? $"待ち受け中（ポート {Surface.GetInt(LiveTool, "port")}、配信 ws://localhost:{Surface.GetInt(LiveTool, "streamPort")}/ 接続 {Surface.GetInt(LiveTool, "viewerCount")}）\n" +
-                  $"受信 {Surface.GetInt(LiveTool, "receivedCount")} / 適用 {Surface.GetInt(LiveTool, "appliedCount")} / 破棄 {Surface.GetInt(LiveTool, "rejectedCount")}\n" +
+                ? $"待ち受け中（ws://{(Surface.GetBool(LiveTool, "lan") ? "<この PC の IP>" : "localhost")}:{Surface.GetInt(LiveTool, "port")}/ 接続 {Surface.GetInt(LiveTool, "clientCount")}）\n" +
+                  $"受信 {Surface.GetInt(LiveTool, "receivedCount")} / 適用 {Surface.GetInt(LiveTool, "appliedCount")} / 破棄 {Surface.GetInt(LiveTool, "rejectedCount")} / 転送見送り {Surface.GetInt(LiveTool, "skippedSendCount")}\n" +
                   $"送信元 {Surface.GetString(LiveTool, "lastSender")}"
                 : "停止中";
             string rej = Surface.GetString(LiveTool, "lastReject");
@@ -378,7 +371,7 @@ namespace Poly_Ling.Player
             _btnLiveAccept?.SetEnabled(!listening);
             _btnLiveReject?.SetEnabled(listening);
             _livePortField?.SetEnabled(!listening);
-            _liveStreamPortField?.SetEnabled(!listening);
+            _liveLanToggle?.SetEnabled(!listening);
         }
 
         private void BuildClipSection(VisualElement root)
