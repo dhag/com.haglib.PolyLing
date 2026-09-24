@@ -154,6 +154,10 @@ namespace Poly_Ling.Player
         public Button        SolidifyBtn                { get; private set; }
         public Button        LineExtrudeBtn             { get; private set; }
         public Button        MediaPipeBtn           { get; private set; }
+        /// <summary>メディアパイプ（姿勢・指）。</summary>
+        public Button        MediaPipeFingerBtn     { get; private set; }
+        /// <summary>メディアパイプ（姿勢・ボディ）。</summary>
+        public Button        MediaPipeBodyBtn       { get; private set; }
         public Button        VMDTestBtn             { get; private set; }
         public Button        VmdToVrmaBtn          { get; private set; }
         public Button        UnityClipToVrmaBtn      { get; private set; }
@@ -695,10 +699,18 @@ namespace Poly_Ling.Player
             foOther.Add(WorkFolderBtn);
 
             var rowMisc = new VisualElement(); rowMisc.style.flexDirection = FlexDirection.Row; rowMisc.style.marginBottom = 2;
-            MediaPipeBtn    = MakeBtn("MediaPipe");   MediaPipeBtn.style.flexGrow    = 1; MediaPipeBtn.style.marginRight    = 2;
             VMDTestBtn      = MakeBtn("VMDテスト");    VMDTestBtn.style.flexGrow      = 1; VMDTestBtn.style.marginRight      = 2;
             RemoteServerBtn = MakeBtn("リモートサーバ"); RemoteServerBtn.style.flexGrow = 1;
-            rowMisc.Add(MediaPipeBtn); rowMisc.Add(VMDTestBtn); rowMisc.Add(RemoteServerBtn); foOther.Add(rowMisc);
+            rowMisc.Add(VMDTestBtn); rowMisc.Add(RemoteServerBtn); foOther.Add(rowMisc);
+
+            // メディアパイプ：顔フィット（顔の変形・表情転写）と姿勢（指・ボディ）
+            MediaPipeBtn = MakeBtn("メディアパイプ（顔フィット）");
+            MediaPipeBtn.style.marginBottom = 2;
+            foOther.Add(MediaPipeBtn);
+            var rowMp = new VisualElement(); rowMp.style.flexDirection = FlexDirection.Row; rowMp.style.marginBottom = 2;
+            MediaPipeFingerBtn = MakeBtn("メディアパイプ（姿勢・指）");   MediaPipeFingerBtn.style.flexGrow = 1; MediaPipeFingerBtn.style.marginRight = 2;
+            MediaPipeBodyBtn   = MakeBtn("メディアパイプ（姿勢・ボディ）"); MediaPipeBodyBtn.style.flexGrow   = 1;
+            rowMp.Add(MediaPipeFingerBtn); rowMp.Add(MediaPipeBodyBtn); foOther.Add(rowMp);
 
             var rowMisc2 = new VisualElement(); rowMisc2.style.flexDirection = FlexDirection.Row; rowMisc2.style.marginBottom = 2;
             MotionClipTestBtn = MakeBtn("モーション"); MotionClipTestBtn.style.flexGrow = 1;

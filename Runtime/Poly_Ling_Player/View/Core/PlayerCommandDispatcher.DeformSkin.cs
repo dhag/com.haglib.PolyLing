@@ -458,6 +458,99 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── 表情転写（MediaPipe。BEFORE・AFTER・カメラは faceTransfer の窓口から）
+                case FaceExpressionTransferCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (c.SourceMasterIndices == null || c.SourceMasterIndices.Length == 0)
+                    { Fail("変形するメッシュが選ばれていません"); return true; }
+                    var ftSources = new List<MeshContext>();
+                    foreach (int mi in c.SourceMasterIndices.Distinct())
+                    {
+                        var mc = model.GetMeshContext(mi);
+                        if (mc?.MeshObject == null) { Fail($"変形元のメッシュがありません（{mi}）"); return true; }
+                        ftSources.Add(mc);
+                    }
+
+                    if (FaceTransfer == null) { Fail("faceTransfer の窓口がありません"); return true; }
+                    var ftInputs = FaceTransfer.GetInputs(out string ftReason);
+                    if (ftInputs == null) { Fail(ftReason); return true; }
+
+                    // 三角形：指定が無ければ組み込み（MediaPipe の FACEMESH_TESSELATION）
+                    string ftTriJson;
+                    if (string.IsNullOrWhiteSpace(c.TrianglesPath))
+                        ftTriJson = Poly_Ling.NohMask.FaceTrianglesData.Json;
+                    else
+                    {
+                        if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                                c.TrianglesPath, out string ftTriPath, out string ftSbReason))
+                        { Fail($"TrianglesPath: {ftSbReason}"); return true; }
+                        ftTriJson = System.IO.File.ReadAllText(ftTriPath);
+                    }
+
+                    try
+                    {
+                        var ftBefore  = MeshFilterToSkinnedRecord.CaptureList(model);
+                        var triangles = Poly_Ling.Tools.MediaPipe.MediaPipeFaceDeformer.ParseTrianglesJson(ftTriJson);
+
+                        foreach (var ftSrcMc in ftSources)
+                        {
+                            var ftSrc = ftSrcMc.MeshObject;
+
+                            // 頂点（静止時）をワールドへ。描画と同じ VertexToWorldMatrix（スキンドは単位）。
+                            int vertexCount = ftSrc.VertexCount;
+                            var toWorld = ftSrcMc.VertexToWorldMatrix;
+                            var toLocal = ftSrcMc.WorldToVertexMatrix;
+                            var world   = new Vector3[vertexCount];
+                            for (int i = 0; i < vertexCount; i++) world[i] = toWorld.MultiplyPoint3x4(ftSrc.Vertices[i].Position);
+
+                            var moved = Poly_Ling.Tools.MediaPipe.FaceExpressionTransfer.Transfer(
+                                world, ftInputs.Camera, ftInputs.BeforePixels, ftInputs.AfterPixels, triangles,
+                                out bool[] movedFlags, out int bound);
+
+                            var cloned = ftSrc.Clone();
+                            cloned.Name = ftSrc.Name + "_MP";
+                            int movedCount = 0;
+                            for (int i = 0; i < vertexCount; i++)
+                            {
+                                if (!movedFlags[i]) continue;
+                                cloned.Vertices[i].Position = toLocal.MultiplyPoint3x4(moved[i]);
+                                movedCount++;
+                            }
+
+                            var ftNewMc = new MeshContext
+                            {
+                                MeshObject = cloned,
+                                Materials  = new System.Collections.Generic.List<Material>(
+                                    ftSrcMc.Materials ?? new System.Collections.Generic.List<Material>()),
+                            };
+                            ftNewMc.UnityMesh           = cloned.ToUnityMesh();
+                            ftNewMc.UnityMesh.name      = cloned.Name;
+                            ftNewMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+                            ftNewMc.ParentModelContext  = model;
+                            model.Add(ftNewMc);
+                            Debug.Log($"[FaceTransfer] {ftSrc.Name}: 結び付いた頂点 {bound} / 動かした頂点 {movedCount} / 全 {vertexCount}");
+                        }
+                        model.OnListChanged?.Invoke();
+
+                        if (_undoController != null)
+                        {
+                            var ftAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
+                            var ftRecord = new MeshFilterToSkinnedRecord { BeforeList = ftBefore, AfterList = ftAfter };
+                            PLDiag.UndoRecord("MeshList", "表情転写", ftRecord);
+                            _undoController.MeshListStack.Record(ftRecord, "表情転写");
+                            _undoController.FocusMeshList();
+                        }
+                        _viewportManager.EnterTopologyChanged(project);
+                        _notifyPanels(ChangeKind.ListStructure);
+                    }
+                    catch (Exception ex)
+                    {
+                        Fail($"表情転写に失敗しました: {ex.Message}");
+                    }
+                    return true;
+                }
+
                 // ── Quad減面
                 case QuadDecimateCommand c:
                 {

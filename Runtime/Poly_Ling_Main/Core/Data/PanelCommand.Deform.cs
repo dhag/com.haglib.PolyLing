@@ -281,6 +281,32 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
+    // 表情転写（MediaPipe。BEFORE＝ターゲットを描いた画像、AFTER＝人の顔）
+    // ================================================================
+
+    /// <summary>
+    /// 表情転写。BEFORE・AFTER・BEFORE を撮ったカメラは faceTransfer の窓口が持つ（このコマンドには載せない）。
+    /// 先に faceTransfer.captureBefore で BEFORE を用意し、MediaPipe クライアントから AFTER の顔を送っておくこと。
+    /// </summary>
+    [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.AddOnly, Description = "表情転写：BEFORE（ターゲットを撮った画像の顔）から AFTER（人の顔）への変形をメッシュに写し、新しいメッシュとして足す。")]
+    public class FaceExpressionTransferCommand : PanelCommand
+    {
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "変形元の描画オブジェクトの masterIndex（複数可。それぞれ新しいメッシュになる）", Required = true)]
+        public int[]  SourceMasterIndices { get; }
+
+        [PLParam(Description = "三角形定義の JSON。作業フォルダからの相対経路。絶対経路と \"..\" は拒否される（ダイアログで選んだ直後のパスだけは例外）。空なら組み込みの MediaPipe 顔の三角形（FaceTrianglesData）を使う")]
+        public string TrianglesPath       { get; }
+
+        public FaceExpressionTransferCommand(int modelIndex, int[] sourceMasterIndices, string trianglesPath)
+            : base(modelIndex)
+        {
+            SourceMasterIndices = sourceMasterIndices ?? System.Array.Empty<int>();
+            TrianglesPath       = trianglesPath ?? "";
+        }
+    }
+
+    // ================================================================
     // デフォーマ（作業軸を基準にした頂点変形）
     //
     // 【対象】

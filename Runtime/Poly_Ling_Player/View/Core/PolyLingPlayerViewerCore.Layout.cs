@@ -188,6 +188,8 @@ namespace Poly_Ling.Player
             if (_layoutRoot.LineExtrudeBtn != null)
                 _layoutRoot.LineExtrudeBtn.clicked      += ShowLineExtrudePanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
+            _layoutRoot.MediaPipeFingerBtn.clicked  += ShowMediaPipeFingerPanel;
+            _layoutRoot.MediaPipeBodyBtn.clicked    += ShowMediaPipeBodyPanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
             if (_layoutRoot.CommandSchemaBtn != null)
                 _layoutRoot.CommandSchemaBtn.clicked += ShowCommandSchemaPanel;

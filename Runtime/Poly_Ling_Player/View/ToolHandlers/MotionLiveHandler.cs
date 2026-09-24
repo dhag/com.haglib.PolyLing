@@ -27,6 +27,15 @@
 //   当てるのは再生用の姿勢（保存しない表示状態）で、Undo は持たない（motionClip と同じ）。
 //   不許可にしても姿勢は戻さない（戻すのは resetPose）。
 //
+// ■ MediaPipe（生データ）
+//   同じポートで {type:'mediapipe', seq, time, image:{w,h}, face/pose/leftHand/rightHand:{landmarks, world}} も受ける。
+//   点は [x, y, z, visibility]（landmarks は画像基準の正規化座標、world はメートル）。
+//   受けたものは最新の 1 件だけを保持する（来るたびに上書き。モデルへの適用・他の接続への転送はしない）。
+//   保持した 1 件は TryGetLatestMediaPipe で取り出す。
+//   ただし role:'before' 付きのもの（表情転写の BEFORE 検出の返事）は最新の 1 件には入れず、
+//   OnBeforeReceived でメインスレッドへ渡す。検出の依頼は SendDetectImage（画像を全接続へ送る）。受けたことは OnMediaPipeReceived でメインスレッドへ知らせる
+//   （前の知らせを処理し終えるまで次は出さない）。
+//
 // ■ 再生の配信
 //   BroadcastFrame は、モーションパネルの再生（motionClip.playFrame）で当てたフレームを全接続へ送る。
 //   形・送信待ちを溜めない扱いは転送と同じ。受け入れ許可中でなければ何もしない。
@@ -36,6 +45,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using HagLib.NET.Duplex;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
@@ -50,6 +60,13 @@ namespace Poly_Ling.Player
         public Func<ModelContext> GetModel;
         /// <summary>フレームを当てた後に呼ぶ（表示の更新）。</summary>
         public Action             OnFrameApplied;
+        /// <summary>MediaPipe のデータを受けて保持した後に呼ぶ（メインスレッド。状態表示の更新用）。</summary>
+        public Action             OnMediaPipeReceived;
+        /// <summary>role:'before' の MediaPipe データ（受け取った JSON そのまま）を受けたときに呼ぶ（メインスレッド）。</summary>
+        public Action<string>     OnBeforeReceived;
+
+        public const string TypeMediaPipe = "mediapipe";
+        private static readonly string[] MediaPipePartKeys = { "face", "pose", "leftHand", "rightHand" };
 
         public const int DefaultPort = 12361;
 
@@ -70,6 +87,14 @@ namespace Poly_Ling.Player
         // 送信が終わっていない接続（_sendingLock で守る）
         private readonly HashSet<string> _sending = new HashSet<string>();
         private readonly object          _sendingLock = new object();
+
+        // MediaPipe の最新 1 件（_mpLock で守る）
+        private readonly object _mpLock = new object();
+        private string          _mpJson;
+        private uint            _mpSeq;
+        private string          _mpParts = "";
+        private bool            _mpNotifyPending;
+        private int             _mpReceived;
 
         private int             _received;
         private int             _rejected;
@@ -98,6 +123,12 @@ namespace Poly_Ling.Player
         public string LastSender => _lastSender;
         [PLToolState(Description = "最後に捨てたメッセージの理由")]
         public string LastReject => _lastReject;
+        [PLToolState(Description = "受け取った MediaPipe のデータ数")]
+        public int    MediaPipeCount => Volatile.Read(ref _mpReceived);
+        [PLToolState(Description = "保持している MediaPipe のデータの連番（無ければ 0）")]
+        public int    MediaPipeSeq { get { lock (_mpLock) return (int)_mpSeq; } }
+        [PLToolState(Description = "保持している MediaPipe のデータに入っていた部位（face,pose,leftHand,rightHand のうち）")]
+        public string MediaPipeParts { get { lock (_mpLock) return _mpParts; } }
         [PLToolState(Description = "直近の accept の失敗理由（成功なら空）")]
         public string Error { get; private set; } = "";
 
@@ -122,6 +153,8 @@ namespace Poly_Ling.Player
             Interlocked.Exchange(ref _rejected, 0);
             Interlocked.Exchange(ref _applied, 0);
             Interlocked.Exchange(ref _skippedSends, 0);
+            Interlocked.Exchange(ref _mpReceived, 0);
+            lock (_mpLock) { _mpJson = null; _mpSeq = 0; _mpParts = ""; _mpNotifyPending = false; }
             _lastSender = "";
             _lastReject = "";
             lock (_lock) { _latest = null; _applyPending = false; }
@@ -200,8 +233,21 @@ namespace Poly_Ling.Player
             catch (Exception e) { RejectMessage(from, "封筒を開けない: " + e.Message); return; }
             if (string.IsNullOrEmpty(json)) { RejectMessage(from, "JSON が無い"); return; }
 
+            JObject o;
+            try { o = JObject.Parse(json); }
+            catch (Exception e) { RejectMessage(from, "JSON でない: " + e.Message); return; }
+
+            string type = (string)o["type"];
+            if (type == TypeMediaPipe && (string)o["role"] == "before")
+            {
+                _lastSender = from?.Id ?? "";
+                _syncCtx.Post(_ => OnBeforeReceived?.Invoke(json), null);
+                return;
+            }
+            if (type == TypeMediaPipe) { StoreMediaPipe(from, json, o); return; }
+
             var frame = new MotionLiveFrame();
-            if (!MotionLiveJson.TryParse(json, _muscleIndex, _muscleCount, frame, out string why))
+            if (!MotionLiveJson.TryParse(o, _muscleIndex, _muscleCount, frame, out string why))
             {
                 RejectMessage(from, why);
                 return;
@@ -219,6 +265,69 @@ namespace Poly_Ling.Player
                 _applyPending = true;
             }
             if (post) _syncCtx.Post(_ => ApplyLatest(), null);
+        }
+
+        // MediaPipe の生データを最新 1 件として保持する（受信スレッド）。
+        private void StoreMediaPipe(IDuplexChannel from, string json, JObject o)
+        {
+            uint seq = 0;
+            try { if (o["seq"] != null) seq = (uint)o["seq"]; }
+            catch (Exception) { RejectMessage(from, "mediapipe の seq が数でない"); return; }
+
+            var parts = new List<string>();
+            foreach (var p in MediaPipePartKeys) if (o[p] is JObject) parts.Add(p);
+
+            bool post;
+            lock (_mpLock)
+            {
+                _mpJson  = json;
+                _mpSeq   = seq;
+                _mpParts = string.Join(",", parts);
+                post = !_mpNotifyPending;
+                _mpNotifyPending = true;
+            }
+            Interlocked.Increment(ref _mpReceived);
+            _lastSender = from?.Id ?? "";
+            if (post) _syncCtx.Post(_ =>
+            {
+                lock (_mpLock) _mpNotifyPending = false;
+                OnMediaPipeReceived?.Invoke();
+            }, null);
+        }
+
+        /// <summary>
+        /// 画像の顔検出を、つながっている全接続へ頼む（MediaPipe クライアントが返事を role:'before' で返す）。
+        /// 送る中身は {type:'detectImage', requestId, role:'before'} と PNG 画像の 2 項目（Text フレームでは画像は base64）。
+        /// 送った接続の数を返す（受け入れ許可中でなければ 0）。
+        /// </summary>
+        public int SendDetectImage(byte[] png, int requestId)
+        {
+            var ws = _ws;
+            if (ws == null || png == null) return 0;
+            string json = "{\"type\":\"detectImage\",\"requestId\":" + requestId + ",\"role\":\"before\"}";
+            int count = 0;
+            foreach (var ch in ws.Clients)
+            {
+                if (ch == null) continue;
+                try
+                {
+                    _ = ch.SendAsync(TypedPayload.FromJson(json).AddImage(png, "image/png").ToMessage());
+                    count++;
+                }
+                catch (Exception) { }
+            }
+            return count;
+        }
+
+        /// <summary>保持している MediaPipe の最新 1 件（受け取った JSON そのまま）。無ければ false。</summary>
+        public bool TryGetLatestMediaPipe(out string json, out uint seq)
+        {
+            lock (_mpLock)
+            {
+                json = _mpJson;
+                seq  = _mpSeq;
+                return json != null;
+            }
         }
 
         private void RejectMessage(IDuplexChannel from, string why)

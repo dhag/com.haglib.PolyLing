@@ -358,6 +358,8 @@ namespace Poly_Ling.Player
 
             // 作業軸ライブラリへの登録（RegisterWorkAxisEntryCommand）が読むアクティブな作業軸。
             _commandDispatcher.GetActiveWorkAxis = CurrentWorkAxis;
+            // 表情転写（FaceExpressionTransferCommand）の材料を持つ窓口。
+            _commandDispatcher.FaceTransfer = _faceTransferHandler;
 
             // MCP・リモートがツールの値や状態を変えたとき、表示中のパネルに読み直させる（操作経路統一計画.md P）。
             _commandDispatcher.OnToolChanged = _ =>
@@ -759,6 +761,7 @@ namespace Poly_Ling.Player
                 _client.Dispose();
             }
             _playerServer?.Dispose();
+            _mediaPipePoseHandler?.Stop();  // 正準骨格・Avatar を破棄する
             _motionLiveHandler?.Reject();   // UDP の待ち受けを閉じる（Play 停止後もポートを掴んだままにしない）
 
             if (_receiver != null)

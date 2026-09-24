@@ -369,7 +369,8 @@ namespace Poly_Ling.Player
             string text = listening
                 ? $"待ち受け中（ws://{(Surface.GetBool(LiveTool, "lan") ? "<この PC の IP>" : "localhost")}:{Surface.GetInt(LiveTool, "port")}/ 接続 {Surface.GetInt(LiveTool, "clientCount")}）\n" +
                   $"受信 {Surface.GetInt(LiveTool, "receivedCount")} / 適用 {Surface.GetInt(LiveTool, "appliedCount")} / 破棄 {Surface.GetInt(LiveTool, "rejectedCount")} / 転送見送り {Surface.GetInt(LiveTool, "skippedSendCount")}\n" +
-                  $"送信元 {Surface.GetString(LiveTool, "lastSender")}"
+                  $"送信元 {Surface.GetString(LiveTool, "lastSender")}\n" +
+                  $"MediaPipe 受信 {Surface.GetInt(LiveTool, "mediaPipeCount")} / 保持中の連番 {Surface.GetInt(LiveTool, "mediaPipeSeq")} / 部位 {Surface.GetString(LiveTool, "mediaPipeParts")}"
                 : "停止中";
             string rej = Surface.GetString(LiveTool, "lastReject");
             if (listening && !string.IsNullOrEmpty(rej)) text += $"\n最後に捨てた理由: {rej}";

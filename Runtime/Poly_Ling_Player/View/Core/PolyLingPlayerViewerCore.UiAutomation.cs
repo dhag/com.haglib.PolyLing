@@ -343,8 +343,12 @@ namespace Poly_Ling.Player
                 _layoutRoot.UnityClipToVrmaSection, ShowUnityClipToVrmaPanel, _unityClipToVrmaSubPanel);
             RegisterUiPanel("motionClipTest", "モーションの読込と再生の検証（VRMA 書き出しつき）",
                 _layoutRoot.MotionClipTestSection, ShowMotionClipTestPanel, _motionClipTestSubPanel);
-            RegisterUiPanel("mediaPipe", "MediaPipe の顔ランドマークによる変形",
+            RegisterUiPanel("mediaPipe", "MediaPipe の顔ランドマークによる変形・表情転写（メディアパイプ（顔フィット））",
                 _layoutRoot.MediaPipeSection, ShowMediaPipePanel, _mediaPipeSubPanel);
+            RegisterUiPanel("mediaPipeFinger", "メディアパイプ（姿勢・指）：手の点から指のマッスル値を求めて送る",
+                _layoutRoot.MediaPipeFingerSection, ShowMediaPipeFingerPanel, _mediaPipeFingerSubPanel);
+            RegisterUiPanel("mediaPipeBody", "メディアパイプ（姿勢・ボディ）：姿勢の点からボディのマッスル値を求めて送る",
+                _layoutRoot.MediaPipeBodySection, ShowMediaPipeBodyPanel, _mediaPipeBodySubPanel);
 
             // ── 図形生成 ─────────────────────────────────────────────
             // 同じサブパネルをカテゴリごとに開き直す作りなので、カテゴリごとに別パネルとして登録する。

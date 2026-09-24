@@ -21,6 +21,10 @@ namespace Poly_Ling.Player
         /// <summary>プロジェクトの窓口（操作経路統一計画.md E）。</summary>
         public Func<Poly_Ling.View.IProjectView> GetView;
         public Action<PanelCommand> SendCommand;
+        /// <summary>ツールの窓口（表情転写 "faceTransfer" の撮影・状態に使う）。</summary>
+        public IToolSurface Surface;
+
+        private const string TransferTool = "faceTransfer";
 
         // 他のファイル読込パネルと同じく RecentPaths に端末ローカル保存する。
         private const string BeforePathKey = "MediaPipe.Before";
@@ -50,6 +54,14 @@ namespace Poly_Ling.Player
         private Button        _btnBrowseAfter;
         [UiControl("browseTri", Safety = UiSafety.UserOnly, Description = "面インデックス JSON の [...]（ファイル選択ダイアログを開く）")]
         private Button        _btnBrowseTri;
+
+        // 表情転写（BEFORE＝メイン 3D 画面を撮って MediaPipe クライアントで検出、AFTER＝クライアントから届いた最新の顔）
+        [UiControl("transfer.captureBefore", Safety = UiSafety.SafeWrite, Description = "メイン 3D 画面を BEFORE として撮り、MediaPipe クライアントへ顔検出を頼む")]
+        private Button        _btnCaptureBefore;
+        [UiControl("transfer.run", Safety = UiSafety.SafeWrite, Description = "表情転写を実行する（新しいメッシュとして足す）")]
+        private Button        _btnTransfer;
+        [UiControl("transfer.status", Safety = UiSafety.ReadOnly, Description = "表情転写の状態")]
+        private Label         _transferStatusLabel;
 
         public void Build(VisualElement parent)
         {
@@ -96,6 +108,77 @@ namespace Poly_Ling.Player
             _statusLabel.style.marginTop  = 4;
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
             root.Add(_statusLabel);
+
+            BuildTransferSection(root);
+        }
+
+        private void BuildTransferSection(VisualElement root)
+        {
+            var head = SecLabel("表情転写（MediaPipe クライアント）");
+            head.style.marginTop = 8;
+            root.Add(head);
+            root.Add(new HelpBox(
+                "1. モーションパネルのライブ受信を受け入れ許可にし、MediaPipe クライアントを接続する。\n" +
+                "2. メイン 3D 画面にターゲットの顔を映し（ワイヤー・頂点などの表示は切る）、「BEFORE を撮る」。\n" +
+                "3. MediaPipe クライアントから人の顔を送る（1 枚送る／リアルタイム）。\n" +
+                "4. 変形するメッシュを選び（複数可）、「転写」。面インデックス JSON は空なら組み込みを使う。",
+                HelpBoxMessageType.None));
+
+            _btnCaptureBefore = new Button(() =>
+            {
+                Surface?.Invoke(TransferTool, "captureBefore");
+                RefreshTransfer();
+            }) { text = "BEFORE を撮る（メイン 3D 画面）" };
+            root.Add(_btnCaptureBefore);
+
+            _transferStatusLabel = new Label();
+            _transferStatusLabel.style.fontSize   = 10;
+            _transferStatusLabel.style.whiteSpace = WhiteSpace.Normal;
+            root.Add(_transferStatusLabel);
+
+            _btnTransfer = new Button(OnTransfer) { text = "転写" };
+            _btnTransfer.style.height = 28;
+            root.Add(_btnTransfer);
+
+            RefreshTransfer();
+        }
+
+        /// <summary>表情転写の状態表示とボタンの有効/無効を更新する（faceTransfer の状態が変わったとき・AFTER を受けたときに呼ぶ）。</summary>
+        public void RefreshTransfer()
+        {
+            if (_transferStatusLabel == null || Surface == null) return;
+            bool hasBefore = Surface.GetBool(TransferTool, "hasBefore");
+            bool waiting   = Surface.GetBool(TransferTool, "waitingBefore");
+            bool hasAfter  = Surface.GetBool(TransferTool, "hasAfter");
+            string size    = Surface.GetString(TransferTool, "beforeImageSize");
+            _transferStatusLabel.text =
+                $"{Mark(hasBefore)} BEFORE{(string.IsNullOrEmpty(size) ? "" : $"（{size}）")}{(waiting ? "　検出待ち" : "")}\n" +
+                $"{Mark(hasAfter)} AFTER\n" +
+                $"{TriMark()} 面インデックス{(TriEmpty() ? "（組み込み）" : "")}\n" +
+                Surface.GetString(TransferTool, "status");
+            _btnTransfer?.SetEnabled(hasBefore && hasAfter && (TriEmpty() || Exists(_triField)));
+        }
+
+        // 面インデックス欄が空か（空なら組み込みの三角形を使う）
+        private bool TriEmpty() => _triField == null || string.IsNullOrWhiteSpace(_triField.value);
+        private string TriMark() => TriEmpty() || Exists(_triField) ? "✓" : "×";
+
+        private void OnTransfer()
+        {
+            if (!TriEmpty() && !Exists(_triField)) { SetStatus("面インデックス JSON が見つかりません（空にすると組み込みを使います）"); return; }
+            var view  = GetView?.Invoke();
+            var model = view?.CurrentModel;
+            if (model == null) { SetStatus("モデルがありません"); return; }
+
+            // 選択中の描画オブジェクト全部。無ければ編集対象メッシュ 1 つ。
+            int[] indices = model.SelectedDrawableIndices;
+            if (indices == null || indices.Length == 0)
+                indices = model.ActiveMeshIndex >= 0 ? new[] { model.ActiveMeshIndex } : Array.Empty<int>();
+            if (indices.Length == 0) { SetStatus("メッシュが選択されていません"); return; }
+
+            SendCommand?.Invoke(new FaceExpressionTransferCommand(
+                view.CurrentModelIndex, indices, TriEmpty() ? "" : _triField.value));
+            SetStatus($"表情転写コマンドを送信しました（{indices.Length} 個）");
         }
 
         public void Refresh()
@@ -127,6 +210,7 @@ namespace Poly_Ling.Player
                 $"{Mark(afterOk)} 変形後ランドマーク\n" +
                 $"{Mark(triOk)} 面インデックス";
             _btnExecute.SetEnabled(beforeOk && afterOk && triOk);
+            RefreshTransfer();
         }
 
         private static bool Exists(TextField f) =>

@@ -259,6 +259,10 @@ namespace Poly_Ling.Player
         private MotionClipHandler _motionClipHandler;
         /// <summary>ライブ受信（ツールの窓口 "motionLive"）。UDP で届くマッスルを当てる。</summary>
         private MotionLiveHandler _motionLiveHandler;
+        /// <summary>表情転写（ツールの窓口 "faceTransfer"）。</summary>
+        private FaceTransferHandler _faceTransferHandler;
+        /// <summary>メディアパイプ（姿勢）（ツールの窓口 "mediaPipePose"）。</summary>
+        private MediaPipePoseHandler _mediaPipePoseHandler;
         private PlayerShrinkSubPanel         _shrinkSubPanel;
         private PlayerShrinkSubPanel         _shrinkFaceSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;
@@ -418,6 +422,8 @@ namespace Poly_Ling.Player
         private PlayerLineExtrudeSubPanel         _lineExtrudeSubPanel;
         private LineExtrudeToolHandler            _lineExtrudeHandler;
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
+        private PlayerMediaPipePoseSubPanel       _mediaPipeFingerSubPanel;
+        private PlayerMediaPipePoseSubPanel       _mediaPipeBodySubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
         private PlayerCommandSchemaSubPanel  _commandSchemaSubPanel;
         private PlayerOriginTestSubPanel     _originTestSubPanel;

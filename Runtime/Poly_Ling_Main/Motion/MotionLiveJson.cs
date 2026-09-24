@@ -78,11 +78,17 @@ namespace Poly_Ling.Motion
         public static bool TryParse(string json, IReadOnlyDictionary<string, int> indexOf, int count,
                                     MotionLiveFrame into, out string error)
         {
-            error = "";
             JObject o;
             try { o = JObject.Parse(json); }
             catch (Exception e) { error = "JSON でない: " + e.Message; return false; }
+            return TryParse(o, indexOf, count, into, out error);
+        }
 
+        /// <summary>読み込み済みの JSON から読む（type で振り分けた後に使う）。</summary>
+        public static bool TryParse(JObject o, IReadOnlyDictionary<string, int> indexOf, int count,
+                                    MotionLiveFrame into, out string error)
+        {
+            error = "";
             if ((string)o["type"] != TypeMuscles) { error = "type が muscles でない"; return false; }
             if (!(o["muscles"] is JObject ms)) { error = "muscles が無い"; return false; }
 

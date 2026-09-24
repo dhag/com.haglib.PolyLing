@@ -36,6 +36,7 @@ namespace Poly_Ling.Player
             {
                 GetView       = () => ActiveProjectView,
                 SendCommand   = cmd => DispatchHost(cmd),
+                Surface       = ToolSurface,
             };
             _mediaPipeSubPanel.Build(_layoutRoot.MediaPipeSection);
 
@@ -347,7 +348,38 @@ namespace Poly_Ling.Player
                     // 状態表示の読み取りは窓口の登録簿を引くので、毎フレームではなく 25 フレームごとにする。
                     if (_motionLiveHandler.AppliedCount % 25 == 1) _motionClipTestSubPanel?.RefreshLiveStatus();
                 },
+                // MediaPipe は当てないので、受けた知らせで状態表示を更新する（10 件ごと）。
+                OnMediaPipeReceived = () =>
+                {
+                    _mediaPipePoseHandler?.OnMediaPipe();          // 開始中なら指などを解いて送る
+                    if (_motionLiveHandler.MediaPipeCount % 10 == 1)
+                    {
+                        _mediaPipeFingerSubPanel?.Refresh();
+                        _mediaPipeBodySubPanel?.Refresh();
+                        _motionClipTestSubPanel?.RefreshLiveStatus();
+                        _mediaPipeSubPanel?.RefreshTransfer();      // AFTER の有無
+                    }
+                },
             };
+            // 表情転写（ツールの窓口 "faceTransfer"）。BEFORE はメイン 3D 画面から撮り、検出は motionLive 経由で頼む。
+            _faceTransferHandler = new FaceTransferHandler
+            {
+                GetViewport = () => _viewportManager.PerspectiveViewport,
+                Live        = _motionLiveHandler,
+                OnChanged   = () => _mediaPipeSubPanel?.RefreshTransfer(),
+            };
+            _motionLiveHandler.OnBeforeReceived = json => _faceTransferHandler.ReceiveBefore(json);
+
+            // メディアパイプ（姿勢）（ツールの窓口 "mediaPipePose"）。指の欄とボディの欄が同じ窓口を使う。
+            _mediaPipePoseHandler = new MediaPipePoseHandler
+            {
+                Live      = _motionLiveHandler,
+                OnChanged = () => { _mediaPipeFingerSubPanel?.Refresh(); _mediaPipeBodySubPanel?.Refresh(); },
+            };
+            _mediaPipeFingerSubPanel = new PlayerMediaPipePoseSubPanel { IsBody = false, Surface = ToolSurface };
+            _mediaPipeFingerSubPanel.Build(_layoutRoot.MediaPipeFingerSection);
+            _mediaPipeBodySubPanel   = new PlayerMediaPipePoseSubPanel { IsBody = true,  Surface = ToolSurface };
+            _mediaPipeBodySubPanel.Build(_layoutRoot.MediaPipeBodySection);
             // 再生で当てたフレームを、ライブ受信の受け入れ中なら全接続へ配信する（マッスルを持つクリップだけ）。
             var playFrame = new Poly_Ling.Motion.MotionLiveFrame();
             _motionClipHandler.OnPlaybackFrame = time =>

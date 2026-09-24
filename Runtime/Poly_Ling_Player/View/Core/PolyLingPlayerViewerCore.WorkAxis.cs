@@ -447,6 +447,20 @@ namespace Poly_Ling.Player
             _mediaPipeSubPanel?.Refresh();
         }
 
+        private void ShowMediaPipeFingerPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MediaPipeFingerSection, _layoutRoot?.MediaPipeFingerBtn);
+            _mediaPipeFingerSubPanel?.Refresh();
+        }
+
+        private void ShowMediaPipeBodyPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MediaPipeBodySection, _layoutRoot?.MediaPipeBodyBtn);
+            _mediaPipeBodySubPanel?.Refresh();
+        }
+
         private void ShowVMDTestPanel()
         {
             // カテゴリ 3

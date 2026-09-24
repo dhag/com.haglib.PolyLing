@@ -458,6 +458,8 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.KnifeSection);
             Hide(_layoutRoot.SolidifySection);
             Hide(_layoutRoot.MediaPipeSection);
+            Hide(_layoutRoot.MediaPipeFingerSection);
+            Hide(_layoutRoot.MediaPipeBodySection);
             Hide(_layoutRoot.VMDTestSection);
             Hide(_layoutRoot.UnityClipToVrmaSection);
             Hide(_layoutRoot.MotionClipTestSection);
