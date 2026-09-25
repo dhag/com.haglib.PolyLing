@@ -142,7 +142,7 @@ namespace Poly_Ling.Player
             PlayerPrimitiveMeshSubPanel panel, PlayerPrimitiveMeshSubPanel.ShapeKind kind)
         {
             if (panel == null || panel != _livePrimitiveSubPanel) return;
-            if (_layoutRoot == null || _activeRightSection != _layoutRoot.LivePrimitiveSection) return;
+            if (_layoutRoot == null || !IsRightSectionActive(_layoutRoot.LivePrimitiveSection)) return;
 
             bool want = kind == PlayerPrimitiveMeshSubPanel.ShapeKind.PointDefined;
             if (want && _interactionMode != InteractionMode.PointDefinedPrimitive)

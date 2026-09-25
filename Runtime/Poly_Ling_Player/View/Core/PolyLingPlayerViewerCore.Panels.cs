@@ -135,7 +135,7 @@ namespace Poly_Ling.Player
         private void ShowMeshFilterToSkinnedPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MeshFilterToSkinnedSection, _layoutRoot?.MeshFilterToSkinnedBtn);
             _mfToSkinnedSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
@@ -143,7 +143,7 @@ namespace Poly_Ling.Player
         private void ShowSkinKindPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SkinKindSection, _layoutRoot?.SkinKindBtn);
             _skinKindSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
@@ -151,14 +151,14 @@ namespace Poly_Ling.Player
         private void ShowBlendPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.BlendSection, _layoutRoot?.BlendBtn);
             _blendSubPanel?.SetModel();
         }
 
         private void ShowReferenceSymmetryPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(
                 _layoutRoot?.ReferenceSymmetrySection,
                 _layoutRoot?.ReferenceSymmetryBtn);
@@ -168,7 +168,7 @@ namespace Poly_Ling.Player
         private void ShowShrinkPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.ShrinkSection, _layoutRoot?.ShrinkBtn);
             _shrinkSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
@@ -176,7 +176,7 @@ namespace Poly_Ling.Player
         private void ShowShrinkFacePanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.ShrinkFaceSection, _layoutRoot?.ShrinkFaceBtn);
             _shrinkFaceSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
@@ -184,7 +184,7 @@ namespace Poly_Ling.Player
         private void ShowModelBlendPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.ModelBlendSection, _layoutRoot?.ModelBlendBtn);
             _modelBlendSubPanel?.Init();
         }
@@ -201,7 +201,7 @@ namespace Poly_Ling.Player
         private void ShowUVEditorPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.UVEditorSection, _layoutRoot?.UVEditorBtn);
 
             // UndoController に対象メッシュを設定（CaptureMeshObjectSnapshot に必要）
@@ -220,7 +220,7 @@ namespace Poly_Ling.Player
         private void ShowUVUnwrapPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.UVUnwrapSection, _layoutRoot?.UVUnwrapBtn);
             _uvUnwrapSubPanel?.Refresh();
         }
@@ -237,7 +237,7 @@ namespace Poly_Ling.Player
         private void ShowUVZPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.UVZSection, _layoutRoot?.UVZBtn);
             _uvzSubPanel?.Refresh();
         }
@@ -267,7 +267,7 @@ namespace Poly_Ling.Player
         private void ShowNormalTransplantPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.NormalTransplantSection, _layoutRoot?.NormalTransplantBtn);
             _normalTransplantSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
@@ -294,7 +294,7 @@ namespace Poly_Ling.Player
         private void ShowMeshSelectionSetPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MeshSelectionSetSection, _layoutRoot?.MeshSelectionSetBtn);
             _meshSelSetSubPanel?.Refresh();
         }
@@ -302,7 +302,7 @@ namespace Poly_Ling.Player
         private void ShowObjectGroupPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.ObjectGroupSection, _layoutRoot?.ObjectGroupBtn);
             // 要更新の判定はソースの全頂点を走査する。パネルを出したこの一度だけ行う。
             _objectGroupSubPanel?.Refresh();
@@ -311,7 +311,7 @@ namespace Poly_Ling.Player
         private void ShowMergeMeshesPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MergeMeshesSection, _layoutRoot?.MergeMeshesBtn);
             _mergeMeshesSubPanel?.Refresh();
         }
@@ -319,7 +319,7 @@ namespace Poly_Ling.Player
         private void ShowBooleanPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.BooleanSection, _layoutRoot?.BooleanBtn);
             _booleanSubPanel?.Refresh();
         }
@@ -327,7 +327,7 @@ namespace Poly_Ling.Player
         private void ShowMorphPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MorphSection, _layoutRoot?.MorphBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
@@ -342,7 +342,7 @@ namespace Poly_Ling.Player
         private void ShowMorphCreatePanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MorphCreateSection, _layoutRoot?.MorphCreateBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
@@ -356,7 +356,7 @@ namespace Poly_Ling.Player
         private void ShowTPosePanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.TPoseSection, _layoutRoot?.TPoseBtn);
             // MeshListStack のコンテキストを現在のモデルに設定（TPoseUndoRecord が参照するため）
             var tpModel = ActiveProject?.CurrentModel;
@@ -368,7 +368,7 @@ namespace Poly_Ling.Player
         private void ShowHumanoidMappingPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.HumanoidMappingSection, _layoutRoot?.HumanoidMappingBtn);
             var hmModel = ActiveProject?.CurrentModel;
             if (hmModel != null && _editOps?.UndoController != null)
@@ -379,7 +379,7 @@ namespace Poly_Ling.Player
         private void ShowSpringBonePanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SpringBoneSection, _layoutRoot?.SpringBoneBtn);
             // MeshListStack のコンテキストを現在のモデルに設定
             // （SpringBoneChangeRecord / SpringBoneModelSettingsRecord が参照するため）。
@@ -392,7 +392,7 @@ namespace Poly_Ling.Player
         private void ShowSpringBoneColliderPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SpringBoneColliderSection, _layoutRoot?.SpringBoneColliderBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
@@ -409,7 +409,7 @@ namespace Poly_Ling.Player
         private void ShowHumanLimitPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.HumanLimitSection, _layoutRoot?.HumanLimitBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
@@ -424,7 +424,7 @@ namespace Poly_Ling.Player
         private void ShowVrmSettingsPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.VrmSettingsSection, _layoutRoot?.VrmSettingsBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
@@ -439,7 +439,7 @@ namespace Poly_Ling.Player
         private void ShowMirrorPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MirrorSection, _layoutRoot?.MirrorBtn);
             _mirrorSubPanel?.Refresh();
         }
@@ -447,7 +447,7 @@ namespace Poly_Ling.Player
         private void ShowQuadDecimatorPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.QuadDecimatorSection, _layoutRoot?.QuadDecimatorBtn);
             _quadDecimatorSubPanel?.Refresh();
         }

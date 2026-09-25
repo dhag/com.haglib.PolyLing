@@ -35,7 +35,7 @@ namespace Poly_Ling.Player
 
         private void ShowCapturePanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.CaptureSection, _layoutRoot?.CaptureBtn);
             _captureSubPanel?.Refresh();
         }
@@ -265,7 +265,7 @@ namespace Poly_Ling.Player
         private void ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode mode)
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             var btn = mode == PlayerPartialImportSubPanel.Mode.PMX
                 ? _layoutRoot?.PartialImportPmxBtn
                 : _layoutRoot?.PartialImportMqoBtn;
@@ -279,7 +279,7 @@ namespace Poly_Ling.Player
         private void ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode mode)
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             var btn = mode == PlayerPartialExportSubPanel.Mode.PMX
                 ? _layoutRoot?.PartialExportPmxBtn
                 : _layoutRoot?.PartialExportMqoBtn;
@@ -292,7 +292,7 @@ namespace Poly_Ling.Player
         private void ShowModelListPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.ModelListSection, _layoutRoot?.ModelListBtn);
         }
 
@@ -300,12 +300,17 @@ namespace Poly_Ling.Player
         {
             // ビューポート操作は 3 択（操作なし / 要素選択 / 姿勢調整）。
             // 既定は「姿勢調整」＝オブジェクト原点の選択と姿勢調整（ObjectMove）。
-            ApplyMeshListViewportOpMode(
-                _meshListSubPanel?.CurrentViewportOpMode
-                ?? MeshListSubPanel.ViewportOpMode.ObjectPose);
+            // オブジェクトリストは上区画（一般）なので、3 択が効くのは下区画が空のときだけ。
+            ApplyGeneralPanelMode(ApplyMeshListCurrentViewportOpMode);
             ShowRightPanel(_layoutRoot?.MeshListSection, _layoutRoot?.MeshListBtn);
             _meshListSubPanel?.SyncObjectPoseToggles();
         }
+
+        /// <summary>オブジェクトリストの今の 3 択を InteractionMode へ反映する。</summary>
+        private void ApplyMeshListCurrentViewportOpMode()
+            => ApplyMeshListViewportOpMode(
+                _meshListSubPanel?.CurrentViewportOpMode
+                ?? MeshListSubPanel.ViewportOpMode.ObjectPose);
 
         /// <summary>
         /// オブジェクトリストのビューポート操作モードを InteractionMode へ反映する。
@@ -329,148 +334,45 @@ namespace Poly_Ling.Player
             }
         }
 
-        private void HideAllRightPanels()
+        /// <summary>
+        /// 右ペインの指定区画（RightPanelKind）のセクションをすべて隠す。
+        /// 隠す対象は PlayerLayoutRoot の台帳（AddSection で種別付きで作った全セクション）から
+        /// 引くので、セクションを足しても登録漏れは起きない。
+        /// </summary>
+        private void HideRightArea(RightPanelKind kind)
         {
-            // 揺れもの編集の強調表示は、そのパネルを見ている間だけのもの。
-            // ここで消し、揺れもの編集へ戻ったときは Refresh が付け直す。
-            // 何も付いていないときは何もしないので、パネル切替の負担にならない。
-            _springBoneSubPanel?.ClearHighlight();
-
-            // 当たり判定の表示も同じ扱い（当たり判定パネルを見ている間だけ）。
-            _springBoneColliderSubPanel?.ClearDisplay();
-
-            // UI 自動操作の強調枠と保留中のスクロールも同じ扱い（そのパネルを見ている間だけ）。
-            _uiAutomation?.OnRightPanelsHidden();
-
-            if (_layoutRoot == null) return;
-            void Hide(VisualElement e) { if (e != null) e.style.display = DisplayStyle.None; }
-            Hide(_layoutRoot.ModelListSection);
-            Hide(_layoutRoot.CommandSchemaSection);
-            Hide(_layoutRoot.MeshListSection);
-            Hide(_layoutRoot.SkinWeightPaintSection);
-            Hide(_layoutRoot.SkinWeightNumericSection);
-            Hide(_layoutRoot.VertexMoveSection);
-            Hide(_layoutRoot.PivotSection);
-            Hide(_layoutRoot.SculptSection);
-            Hide(_layoutRoot.AdvancedSelectSection);
-            Hide(_layoutRoot.ImportSection);
-            Hide(_layoutRoot.ExportSection);
-            Hide(_layoutRoot.ProjectSaveSection);
-            Hide(_layoutRoot.ProjectLoadSection);
-            Hide(_layoutRoot.PartialImportSection);
-            Hide(_layoutRoot.PartialExportSection);
-            Hide(_layoutRoot.PrimitiveSection);
-            Hide(_layoutRoot.LivePrimitiveSection);
-            Hide(_layoutRoot.MeshFilterToSkinnedSection);
-            Hide(_layoutRoot.SkinKindSection);
-            // メッシュブレンドのプレビュー結果は MeshObject に書かれているため、
-            // 非表示にするだけでは未確定の形状が残ったままになる。
+            // ── 未確定プレビューの破棄（区画に関係なく、切替のたびに行う）──
+            // メッシュブレンド・シュリンカー・面に張り付けのプレビュー結果は MeshObject に
+            // 書かれている。パネルが見えたままでも、別のパネルで編集を始める前に破棄しないと
+            // 未確定の形状が残り、他の編集がそれを取り込む（頂点方式と面方式のシュリンカーは
+            // 同じ MeshObject を触るため、一方が変形後の座標をバックアップに取り込む）。
             _blendSubPanel?.CancelIfActive();
-            Hide(_layoutRoot.BlendSection);
-            Hide(_layoutRoot.ReferenceSymmetrySection);
-            // シュリンカーのプレビュー結果も MeshObject に書かれている。
-            // 頂点方式と面方式が同じ MeshObject を触るため、切り替え時に破棄しないと
-            // もう一方が変形後の座標をバックアップに取り込む。
             _shrinkSubPanel?.CancelIfActive();
             _shrinkFaceSubPanel?.CancelIfActive();
-            Hide(_layoutRoot.ShrinkSection);
-            Hide(_layoutRoot.ShrinkFaceSection);
-            Hide(_layoutRoot.NormalTransplantSection);
-            Hide(_layoutRoot.ThinPlateMorphSection);
-            Hide(_layoutRoot.ModelBlendSection);
-            Hide(_layoutRoot.BoneEditorSection);
-            Hide(_layoutRoot.UVEditorSection);
-            Hide(_layoutRoot.UVUnwrapSection);
-            Hide(_layoutRoot.MaterialListSection);
-            Hide(_layoutRoot.UVZSection);
-            Hide(_layoutRoot.PartsSelectionSetSection);
-            Hide(_layoutRoot.MeshSelectionSetSection);
-            Hide(_layoutRoot.ObjectGroupSection);
-            Hide(_layoutRoot.MergeMeshesSection);
-            Hide(_layoutRoot.BooleanSection);
-            Hide(_layoutRoot.MorphSection);
-            Hide(_layoutRoot.MorphCreateSection);
-            Hide(_layoutRoot.TPoseSection);
-            Hide(_layoutRoot.HumanoidMappingSection);
-            Hide(_layoutRoot.SpringBoneSection);
-            Hide(_layoutRoot.SpringBoneColliderSection);
-            Hide(_layoutRoot.HumanLimitSection);
-            Hide(_layoutRoot.VrmSettingsSection);
-            Hide(_layoutRoot.SpringBoneTestSection);
-
-            // 【登録漏れに注意】
-            //   ShowRightPanel は「全部隠してから 1 つ出す」方式なので、
-            //   AddSection で作ったセクションをここへ足し忘れると、
-            //   一度出したあと別のパネルへ切り替えても消えずに残る。
-            //   ボタンが増えたのに中身が同じに見える、という形で現れる。
-            Hide(_layoutRoot.NormalEditSection);
-            Hide(_layoutRoot.NormalExcludeSetSection);
-            Hide(_layoutRoot.FaceHideSection);
-            Hide(_layoutRoot.OriginTestSection);
-            Hide(_layoutRoot.SkinTestSection);
-            Hide(_layoutRoot.RobotBuildTestSection);
-            Hide(_layoutRoot.FrillSkirtTestSection);
-            Hide(_layoutRoot.SpringSkinScenarioSection);
-            Hide(_layoutRoot.SpringSkinPipeScenarioSection);
-            Hide(_layoutRoot.ScenarioSection);
-            Hide(_layoutRoot.PipeHairTestSection);
-            Hide(_layoutRoot.BarnacleTestSection);
-            Hide(_layoutRoot.RevolutionTestSection);
-            Hide(_layoutRoot.Profile2DTestSection);
-            Hide(_layoutRoot.PmxToMqoTestSection);
-            Hide(_layoutRoot.MqoToPmxTestSection);
-            Hide(_layoutRoot.MirrorSection);
-            Hide(_layoutRoot.QuadDecimatorSection);
-            Hide(_layoutRoot.AlignVerticesSection);
-            Hide(_layoutRoot.PlanarizeAlongBonesSection);
-            Hide(_layoutRoot.SmoothEdgesSection);
-            Hide(_layoutRoot.LineExtrudeSection);
-            // 面に張り付けのプレビュー結果も MeshObject に書かれている。
-            // 非表示にするだけでは未確定の形状が残るため、先に破棄する。
             _surfaceSnapHandler?.CancelIfActive();
-            Hide(_layoutRoot.PipeAlignSection);
-            Hide(_layoutRoot.SurfaceSnapSection);
-            Hide(_layoutRoot.PlaceObjectReshapeSection);
-            Hide(_layoutRoot.MergeVerticesSection);
-            Hide(_layoutRoot.SplitVerticesSection);
-            Hide(_layoutRoot.VertexHoleSection);
-            Hide(_layoutRoot.VertexDissolveSection);
-            Hide(_layoutRoot.HoleRingCountSection);
-            Hide(_layoutRoot.EdgeBridgeSection);
-            Hide(_layoutRoot.BillboardProfileSection);
-            Hide(_layoutRoot.Tri4To1Section);
-            Hide(_layoutRoot.FaceMergeSection);
-            Hide(_layoutRoot.Quad4To1Section);
-            Hide(_layoutRoot.VertexIdSection);
-            Hide(_layoutRoot.VertexTransferSection);
-            Hide(_layoutRoot.PartsIdSection);
-            Hide(_layoutRoot.AddFaceSection);
-            Hide(_layoutRoot.FlipFaceSection);
-            Hide(_layoutRoot.RotateSection);
-            Hide(_layoutRoot.WorkAxisSection);
-            Hide(_layoutRoot.DeformSection);
-            Hide(_layoutRoot.LatticeSection);
-            Hide(_layoutRoot.ScaleSection);
-            Hide(_layoutRoot.EdgeBevelSection);
-            Hide(_layoutRoot.EdgeExtrudeSection);
-            Hide(_layoutRoot.FaceExtrudeSection);
-            Hide(_layoutRoot.EdgeTopologySection);
-            Hide(_layoutRoot.KnifeSection);
-            Hide(_layoutRoot.SolidifySection);
-            Hide(_layoutRoot.MediaPipeSection);
-            Hide(_layoutRoot.MediaPipeFingerSection);
-            Hide(_layoutRoot.MediaPipeBodySection);
-            Hide(_layoutRoot.VMDTestSection);
-            Hide(_layoutRoot.UnityClipToVrmaSection);
-            Hide(_layoutRoot.MotionClipTestSection);
-            Hide(_layoutRoot.RemoteServerSection);
-            Hide(_layoutRoot.LogSection);
-            Hide(_layoutRoot.UnderlaySection);
-            Hide(_layoutRoot.GridAxisSection);
-            Hide(_layoutRoot.WorkFolderSection);
-            Hide(_layoutRoot.CameraSection);
-            Hide(_layoutRoot.CaptureSection);
-            _underlayActive = false;   // 別パネルへ切替時は下絵ドラッグを無効化
+
+            // UI 自動操作の強調枠と保留中のスクロールは、パネル切替のたびに消す。
+            _uiAutomation?.OnRightPanelsHidden();
+
+            // ── 見ている間だけの表示（そのパネルを隠すときだけ消す）──
+            if (kind == RightPanelKind.General)
+            {
+                // 揺れもの編集の強調表示・当たり判定の表示。戻ったときは Refresh が付け直す。
+                // 何も付いていないときは何もしないので、パネル切替の負担にならない。
+                _springBoneSubPanel?.ClearHighlight();
+                _springBoneColliderSubPanel?.ClearDisplay();
+            }
+            else
+            {
+                _underlayActive = false;   // 下絵パネルを隠すときは下絵ドラッグを無効化
+            }
+
+            if (_layoutRoot == null) return;
+            foreach (var section in _layoutRoot.RightSections)
+            {
+                if (_layoutRoot.GetRightPanelKind(section) != kind) continue;
+                section.style.display = DisplayStyle.None;
+            }
         }
     }
 }

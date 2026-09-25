@@ -36,6 +36,9 @@ namespace Poly_Ling.Player
         // カテゴリ 1 (3D 操作と右ペインが一体) → ShowRightPanel と組で呼ぶ
         // カテゴリ 2 (3D 操作を維持) → 呼ばない
         // カテゴリ 3 (3D 操作無効) → SetInteractionMode(None) を呼ぶ
+        //
+        // 右ペイン上区画（RightPanelKind.General）のパネルはここを直接呼ばず、
+        // ApplyGeneralPanelMode を使う（下区画の 3D 操作を奪わないため。ButtonHighlight.cs）。
         // ================================================================
 
         private void SetInteractionMode(InteractionMode mode)

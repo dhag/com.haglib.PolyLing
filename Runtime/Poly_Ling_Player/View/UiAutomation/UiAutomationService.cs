@@ -25,7 +25,7 @@
 //
 // 【表示判定】
 //   対象から root まで、インラインの style.display が None の祖先が無ければ表示中とみなす。
-//   右ペインのセクション（HideAllRightPanels / ShowRightPanel）と Foldout の中身は
+//   右ペインのセクション（HideRightArea / ShowRightPanel）・下区画の外枠と Foldout の中身は
 //   どちらもインライン style で切り替えているため、これで判定できる。
 //
 // 【ログ】
@@ -138,7 +138,7 @@ namespace Poly_Ling.Player
 
             bool wasDisplayed = element != null && IsDisplayed(element);
 
-            // ShowXxxPanel → HideAllRightPanels → OnRightPanelsHidden で
+            // ShowXxxPanel → HideRightArea → OnRightPanelsHidden で
             // 前の強調と保留中のスクロールは消える。
             p.Show();
 
@@ -301,7 +301,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 右ペインのパネルを全部隠したとき（HideAllRightPanels）に呼ぶ。
+        /// 右ペインのパネルを切り替えるとき（HideRightArea）に呼ぶ。
         /// 強調と保留中のスクロールは、そのパネルを見ている間だけのもの。
         /// </summary>
         public void OnRightPanelsHidden()

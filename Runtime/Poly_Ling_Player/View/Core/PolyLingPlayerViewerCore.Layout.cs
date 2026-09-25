@@ -442,6 +442,8 @@ namespace Poly_Ling.Player
 
             _layoutRoot.ModelListBtn.clicked += ShowModelListPanel;
             _layoutRoot.MeshListBtn .clicked += ShowMeshListPanel;
+            // 右ペイン下区画（3D 操作）を空にする。上区画のパネルの操作モードに戻る。
+            _layoutRoot.ToolAreaCloseBtn.clicked += CloseToolArea;
 
             _layoutRoot.ModelSelectDropdown.RegisterValueChangedCallback(e =>
             {

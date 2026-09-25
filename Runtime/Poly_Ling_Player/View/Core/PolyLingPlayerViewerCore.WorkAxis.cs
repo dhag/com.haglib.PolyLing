@@ -434,7 +434,7 @@ namespace Poly_Ling.Player
         private void ShowVertexTransferPanel()
         {
             // カテゴリ 3: モデル間の操作でビューポート入力を使わないため 3D 操作は落とす。
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.VertexTransferSection, _layoutRoot?.VertexTransferBtn);
             _vertexTransferSubPanel?.Refresh();
         }
@@ -442,21 +442,21 @@ namespace Poly_Ling.Player
         private void ShowMediaPipePanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MediaPipeSection, _layoutRoot?.MediaPipeBtn);
             _mediaPipeSubPanel?.Refresh();
         }
 
         private void ShowMediaPipeFingerPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MediaPipeFingerSection, _layoutRoot?.MediaPipeFingerBtn);
             _mediaPipeFingerSubPanel?.Refresh();
         }
 
         private void ShowMediaPipeBodyPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MediaPipeBodySection, _layoutRoot?.MediaPipeBodyBtn);
             _mediaPipeBodySubPanel?.Refresh();
         }
@@ -464,7 +464,7 @@ namespace Poly_Ling.Player
         private void ShowVMDTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.VMDTestSection, _layoutRoot?.VMDTestBtn);
             _vmdTestSubPanel?.Refresh();
         }
@@ -472,7 +472,7 @@ namespace Poly_Ling.Player
         /// <summary>コマンド定義の検査パネルを開く。</summary>
         private void ShowCommandSchemaPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.CommandSchemaSection, _layoutRoot?.CommandSchemaBtn);
             _commandSchemaSubPanel?.Refresh();
         }
@@ -480,7 +480,7 @@ namespace Poly_Ling.Player
         private void ShowOriginTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.OriginTestSection, _layoutRoot?.OriginTestBtn);
             _originTestSubPanel?.Refresh();
         }
@@ -488,7 +488,7 @@ namespace Poly_Ling.Player
         private void ShowSkinTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SkinTestSection, _layoutRoot?.SkinTestBtn);
             _skinTestSubPanel?.Refresh();
         }
@@ -496,7 +496,7 @@ namespace Poly_Ling.Player
         private void ShowSpringBoneTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SpringBoneTestSection, _layoutRoot?.SpringBoneTestBtn);
             _springBoneTestSubPanel?.Refresh();
         }
@@ -504,7 +504,7 @@ namespace Poly_Ling.Player
         private void ShowRevolutionTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.RevolutionTestSection, _layoutRoot?.RevolutionTestBtn);
             _revolutionTestSubPanel?.Refresh();
         }
@@ -512,7 +512,7 @@ namespace Poly_Ling.Player
         private void ShowProfile2DTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.Profile2DTestSection, _layoutRoot?.Profile2DTestBtn);
             _profile2DTestSubPanel?.Refresh();
         }
@@ -520,7 +520,7 @@ namespace Poly_Ling.Player
         private void ShowPmxToMqoTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.PmxToMqoTestSection, _layoutRoot?.PmxToMqoTestBtn);
             _pmxToMqoTestSubPanel?.Refresh();
         }
@@ -528,7 +528,7 @@ namespace Poly_Ling.Player
         private void ShowMqoToPmxTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MqoToPmxTestSection, _layoutRoot?.MqoToPmxTestBtn);
             _mqoToPmxTestSubPanel?.Refresh();
         }
@@ -536,7 +536,7 @@ namespace Poly_Ling.Player
         private void ShowBarnacleTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.BarnacleTestSection, _layoutRoot?.BarnacleTestBtn);
             _barnacleTestSubPanel?.Refresh();
         }
@@ -544,7 +544,7 @@ namespace Poly_Ling.Player
         private void ShowPipeHairTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.PipeHairTestSection, _layoutRoot?.PipeHairTestBtn);
             _pipeHairTestSubPanel?.Refresh();
         }
@@ -552,7 +552,7 @@ namespace Poly_Ling.Player
         private void ShowFrillSkirtTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.FrillSkirtTestSection, _layoutRoot?.FrillSkirtTestBtn);
             _frillSkirtTestSubPanel?.Refresh();
         }
@@ -560,7 +560,7 @@ namespace Poly_Ling.Player
         private void ShowSpringSkinScenarioPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SpringSkinScenarioSection, _layoutRoot?.SpringSkinScenarioBtn);
             _springSkinScenarioSubPanel?.Refresh();
         }
@@ -568,7 +568,7 @@ namespace Poly_Ling.Player
         private void ShowSpringSkinPipeScenarioPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.SpringSkinPipeScenarioSection, _layoutRoot?.SpringSkinPipeScenarioBtn);
             _springSkinPipeScenarioSubPanel?.Refresh();
         }
@@ -576,7 +576,7 @@ namespace Poly_Ling.Player
         private void ShowScenarioPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.ScenarioSection, _layoutRoot?.ScenarioBtn);
             _scenarioSubPanel?.Refresh();
         }
@@ -584,7 +584,7 @@ namespace Poly_Ling.Player
         private void ShowRobotBuildTestPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.RobotBuildTestSection, _layoutRoot?.RobotBuildTestBtn);
             _robotBuildTestSubPanel?.Refresh();
         }
@@ -664,21 +664,21 @@ namespace Poly_Ling.Player
 
         private void ShowUnityClipToVrmaPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.UnityClipToVrmaSection, _layoutRoot?.UnityClipToVrmaBtn);
             _unityClipToVrmaSubPanel?.Refresh();
         }
 
         private void ShowVmdToVrmaPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.VmdToVrmaSection, _layoutRoot?.VmdToVrmaBtn);
             _vmdToVrmaSubPanel?.Refresh();
         }
 
         private void ShowMotionClipTestPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.MotionClipTestSection, _layoutRoot?.MotionClipTestBtn);
             _motionClipTestSubPanel?.Refresh();
         }
@@ -686,14 +686,14 @@ namespace Poly_Ling.Player
         private void ShowRemoteServerPanel()
         {
             // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.RemoteServerSection, _layoutRoot?.RemoteServerBtn);
             _remoteServerSubPanel?.Refresh();
         }
 
         private void ShowLogPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.LogSection, _layoutRoot?.LogBtn);
             _logSubPanel?.Refresh();
         }
@@ -707,7 +707,7 @@ namespace Poly_Ling.Player
 
         private void ShowGridAxisPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.GridAxisSection, _layoutRoot?.GridAxisBtn);
             _gridAxisSubPanel?.Refresh();
         }
@@ -715,7 +715,7 @@ namespace Poly_Ling.Player
         /// <summary>作業フォルダ設定パネルを開く。</summary>
         private void ShowWorkFolderPanel()
         {
-            SetInteractionMode(InteractionMode.None);
+            ApplyGeneralPanelMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.WorkFolderSection, _layoutRoot?.WorkFolderBtn);
             _workFolderSubPanel?.Refresh();
         }

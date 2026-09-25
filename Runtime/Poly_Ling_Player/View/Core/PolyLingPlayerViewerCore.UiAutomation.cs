@@ -417,7 +417,7 @@ namespace Poly_Ling.Player
             if (_uiAutomationRegistry == null) return;
 
             _startupAudit = UiAutomationAudit.Run(
-                _uiAutomationRegistry, _layoutRoot?.RightPaneContent, _layoutRoot);
+                _uiAutomationRegistry, _layoutRoot?.RightSections, _layoutRoot);
 
             if (!_startupAudit.HasProblems) return;
 
@@ -441,7 +441,7 @@ namespace Poly_Ling.Player
         {
             if (_uiAutomationRegistry == null) return null;
             _startupAudit = UiAutomationAudit.Run(
-                _uiAutomationRegistry, _layoutRoot?.RightPaneContent, _layoutRoot);
+                _uiAutomationRegistry, _layoutRoot?.RightSections, _layoutRoot);
             return _startupAudit;
         }
 
@@ -480,7 +480,7 @@ namespace Poly_Ling.Player
             if (cmd == null) return CommandResult.Fail("コマンドが null");
             if (_uiAutomationRegistry == null) return CommandResult.Fail(UiAutomationNotReady);
 
-            var r = UiAutomationAudit.Run(_uiAutomationRegistry, _layoutRoot?.RightPaneContent, _layoutRoot);
+            var r = UiAutomationAudit.Run(_uiAutomationRegistry, _layoutRoot?.RightSections, _layoutRoot);
             return CommandResult.Ok(data: CommandDataJson.New()
                 .Text("report",               r.Report)
                 .Int ("sections",             r.Sections)

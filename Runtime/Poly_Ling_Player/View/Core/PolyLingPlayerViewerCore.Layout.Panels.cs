@@ -45,9 +45,9 @@ namespace Poly_Ling.Player
             _meshListSubPanel.OnGizmoRefresh        = UpdateGizmoOverlay;
             _meshListSubPanel.OnViewportOpModeChanged = mode =>
             {
-                if (_layoutRoot?.MeshListSection == null) return;
-                if (_activeRightSection != _layoutRoot.MeshListSection) return;
-                ApplyMeshListViewportOpMode(mode);
+                if (!IsRightSectionActive(_layoutRoot?.MeshListSection)) return;
+                // 上区画（一般）なので、下区画が開いている間は覚えておくだけ。
+                ApplyGeneralPanelMode(() => ApplyMeshListViewportOpMode(mode));
             };
 
             // ObjectMoveTRSPanel は BoneEditorSubPanel に統合済みのため生成不要

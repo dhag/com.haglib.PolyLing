@@ -62,7 +62,7 @@ namespace Poly_Ling.Player
         /// が btn を返すが、右ペインから起動するツール (EdgeBevel / EdgeExtrude / FaceExtrude
         /// / EdgeTopology / Knife / AddFace) はそちらでは null になる。
         /// このため switch 内で自分の `btn = _layoutRoot?.〇〇Btn;` を明示的に割当てないと
-        /// `_activePanelBtn` が null のままとなり、右ペインを開いても当該ボタンが緑
+        /// 下区画のパネルボタン（`_activeToolPanelBtn`）が null のままとなり、右ペインを開いても当該ボタンが緑
         /// ハイライトされない。ボタンを持つツールを追加するときは、ここにも case を
         /// 追加して btn を設定すること (section / refresh と同列)。
         /// </summary>

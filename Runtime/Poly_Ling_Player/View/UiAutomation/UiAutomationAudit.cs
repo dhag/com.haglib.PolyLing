@@ -12,8 +12,8 @@
 //   unsupportedTypes     … 既定の読み書きができず、Getter / Setter も無い型のもの
 //
 // 【セクションの一覧】
-//   右ペインのセクションはすべて PlayerLayoutRoot.AddSection が RightPaneContent へ足している
-//   （PlayerLayoutRoot.RightPane.cs の AddSection）。その子を一覧とする。
+//   右ペインのセクションはすべて PlayerLayoutRoot.AddSection が作り、台帳（RightSections）に
+//   載せている（PlayerLayoutRoot.RightPane.cs の AddSection）。その台帳を一覧とする。
 //   表示名は PlayerLayoutRoot の公開プロパティの名前から引く（検査の表示用で、操作には使わない）。
 
 using System;
@@ -66,7 +66,7 @@ namespace Poly_Ling.Player
         private const BindingFlags MemberFlags =
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
-        public static Result Run(UiAutomationRegistry registry, VisualElement rightPaneContent, object layoutRoot)
+        public static Result Run(UiAutomationRegistry registry, IEnumerable<VisualElement> rightSections, object layoutRoot)
         {
             var r  = new Result();
             var sb = new StringBuilder();
@@ -85,9 +85,9 @@ namespace Poly_Ling.Player
 
             var unregistered = new List<string>();
             var excluded     = new List<string>();
-            if (rightPaneContent != null)
+            if (rightSections != null)
             {
-                foreach (var child in rightPaneContent.Children())
+                foreach (var child in rightSections)
                 {
                     r.Sections++;
                     if (registeredSections.Contains(child)) continue;
