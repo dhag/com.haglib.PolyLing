@@ -323,6 +323,42 @@ namespace Poly_Ling.Player
                 _poseFold.style.display  = usePose ? DisplayStyle.Flex : DisplayStyle.None;
             if (_materialDd != null)
                 _materialDd.style.display = useMaterial ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_keepAsGroupRow != null)
+                _keepAsGroupRow.style.display = UsesCommonKeepAsGroup ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        /// <summary>
+        /// 共通の「オブジェクトグループとして残す」（PrimitivePlacement.KeepAsGroup）を
+        /// 今の図形が使うか。使わない図形では欄を隠す。
+        ///
+        /// 使う … 図形生成コマンドを通る図形（ディスパッチャ MeshAttributes の CreatePrimitiveMeshCommand）、
+        ///         辺から帯面（EditTools の EdgeRibbonFaceCommand）、頂点へ藤壺（VertexBillboard）。
+        /// 使わない …
+        ///   歪み複製・穴つなぎ・点指定図形 … 図形生成コマンドを通らない。
+        ///   辺から帯面のパイプ … ディスパッチャが常にグループを作る（EdgePipe で true に差し替え）。
+        ///   揺れもの用ボーン鎖（単体・円筒・回転体）… PlaceSpringBoneChainsCommand はグループを作らない。
+        ///   はしごから作る揺れものボーン … 専用の項目（_sbLadderKeepAsGroup）を使う。
+        /// </summary>
+        private bool UsesCommonKeepAsGroup
+        {
+            get
+            {
+                switch (_current)
+                {
+                    case ShapeKind.ObjectArray:
+                    case ShapeKind.Bridge:
+                    case ShapeKind.PointDefined:
+                    case ShapeKind.SpringBoneSingle:
+                    case ShapeKind.SpringBoneCylinder:
+                    case ShapeKind.SpringBoneRevolution:
+                    case ShapeKind.SpringBoneLadder:
+                        return false;
+                    case ShapeKind.EdgeRibbonFace:
+                        return !_ribbonFacePipe;
+                    default:
+                        return true;
+                }
+            }
         }
 
         /// <summary>ベイクしなかった回転（描画オブジェクトの姿勢へ渡す分）。</summary>
@@ -338,6 +374,10 @@ namespace Poly_Ling.Player
         /// <summary>姿勢フォールド。図形別に表示を切り替えるため保持する。</summary>
         [UiControl(Ignore = true)]
         private Foldout _poseFold;
+
+        /// <summary>「オブジェクトグループとして残す」と警告の行。図形別に表示を切り替えるため保持する。</summary>
+        [UiControl(Ignore = true)]
+        private VisualElement _keepAsGroupRow;
 
         // TRS 行の FloatField 参照。外部（将来のギズモ）から値を書き戻すために保持する。
         // 姿勢欄そのものは V3FRef が _uiDynamic へ登録する。ここはプリセットからの書き戻し用の控え。

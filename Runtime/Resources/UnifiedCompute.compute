@@ -696,9 +696,26 @@ void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
     }
     
     // 頂点数が3未満（補助線など）は常に可視
+    //
+    // 【端点の頂点も可視へ戻す】
+    //   頂点は ClearCulledBuffers で既定カリング済みになり、表の面が戻す。
+    //   補助線は索引を持たない（IndexStart=0）ので、下の表の面の処理では戻らない。
+    //   戻さないと、線分にしか使われていない頂点が裏面カリング有効時に
+    //   表示もヒットもされず、面の追加で開始点へ吸着できない。
+    //   端点は線分バッファ（lineStart / lineCount）から取る。
     if (face.vertexCount < 3)
     {
         _FaceCulledBuffer[faceIndex] = 0u;
+
+        for (uint li = 0; li < face.lineCount; li++)
+        {
+            uint lineIdx = face.lineStart + li;
+            if (lineIdx >= _LineCount) break;
+
+            UnifiedLine seg = _LineBuffer[lineIdx];
+            if (seg.v1 < _VertexCount) _VertexCulledBuffer[seg.v1] = 0u;
+            if (seg.v2 < _VertexCount) _VertexCulledBuffer[seg.v2] = 0u;
+        }
         return;
     }
     

@@ -369,12 +369,21 @@ namespace Poly_Ling.Player
             pose.Add(mergeToggle);
             _mergeToggle = mergeToggle;
 
+            parent.Add(poseFold);
+
             // ── グループとして残すか
             //    毎回ダイアログを出すと「ちょっと作るだけ」の操作が重くなるので、
             //    警告は常設のラベルにする。off のときだけ出す。
+            //
+            //    姿勢の設定ではないので、姿勢の折りたたみには入れない
+            //    （折りたたみは既定で閉じており、中に置くと見えない）。
+            //    値を使う図形でだけ出す。どれが使うかは RefreshCommonUiVisibility。
+            var keepRow = new VisualElement();
+            _keepAsGroupRow = keepRow;
+
             var keepToggle = new Toggle(T("KeepAsGroup")) { value = _keepAsGroup };
             keepToggle.style.color = new StyleColor(Color.white);
-            pose.Add(keepToggle);
+            keepRow.Add(keepToggle);
             _keepAsGroupToggle = keepToggle;
 
             var keepWarn = new Label(T("KeepAsGroupWarn"));
@@ -384,7 +393,7 @@ namespace Poly_Ling.Player
             keepWarn.style.marginBottom = 2;
             keepWarn.style.color = new StyleColor(new Color(1f, 0.75f, 0.35f));
             keepWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
-            pose.Add(keepWarn);
+            keepRow.Add(keepWarn);
 
             keepToggle.RegisterValueChangedCallback(e =>
             {
@@ -392,7 +401,7 @@ namespace Poly_Ling.Player
                 keepWarn.style.display = _keepAsGroup ? DisplayStyle.None : DisplayStyle.Flex;
             });
 
-            parent.Add(poseFold);
+            parent.Add(keepRow);
 
             // マテリアル指定（姿勢の下）。生成面の MaterialIndex を決める。
             // 選択肢はモデルのマテリアルスロット。0 件のときは操作できない

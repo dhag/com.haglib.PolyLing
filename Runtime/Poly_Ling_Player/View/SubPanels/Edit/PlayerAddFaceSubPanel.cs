@@ -42,9 +42,9 @@ namespace Poly_Ling.Player
         private Label         _placedHeader;
         [UiControl(Ignore = true, Rows = true)]
         private VisualElement _placedList;
-        [UiControl("continuousLine", Reveal = nameof(RevealContinuous), Description = "線を続けて引く（Mode が Line のときだけ表示）")]
+        [UiControl("continuousLine", Reveal = nameof(RevealContinuous), Description = "線を続けて引く（Mode が 線分 のときだけ表示）")]
         private Toggle        _continuousToggle;
-        [UiControl("extendLineGroup", Reveal = nameof(RevealContinuous), Description = "描き始めが既存の線分群の端点なら、その群を伸ばす（OFF なら新しい群を作り始点を親にする。Mode が Line のときだけ表示）")]
+        [UiControl("extendLineGroup", Reveal = nameof(RevealContinuous), Description = "描き始めが既存の線分群の端点なら、その群を伸ばす（OFF なら新しい群を作り始点を親にする。Mode が 線分 のときだけ表示）")]
         private Toggle        _extendLineGroupToggle;
         [UiControl(Ignore = true)]
         private VisualElement _continuousRow;
@@ -58,7 +58,7 @@ namespace Poly_Ling.Player
         private DropdownField _meshDD;
         [UiControl("material", Description = "追加する面のマテリアル（マテリアルリストのカレントと連動）")]
         private DropdownField _materialDD;
-        [UiControl("mode", Description = "Line / Triangle / Quad")]
+        [UiControl("mode", Description = "線分 / 三角形 / 四角形")]
         private DropdownField _modeDropdown;
         [UiControl("clearPoints", Safety = UiSafety.SafeWrite, Description = "配置途中の点を捨てる（作成済みの面は消さない）")]
         private Button        _clearPointsBtn;
@@ -72,6 +72,13 @@ namespace Poly_Ling.Player
         // SetValueWithoutNotify では choices 差し替え時の index 変化を抑えられない。
         private bool _syncing;
 
+        // モードの選択肢。表示名と値は位置で対応させる（表示名で値を決めない）。
+        private const string ModeLabelLine = "線分";
+        private static readonly List<string> ModeChoices =
+            new List<string> { ModeLabelLine, "三角形", "四角形" };
+        private static readonly AddFaceMode[] ModeValues =
+            { AddFaceMode.Line, AddFaceMode.Triangle, AddFaceMode.Quad };
+
         public void Build(VisualElement parent)
         {
             _root = new VisualElement();
@@ -83,15 +90,18 @@ namespace Poly_Ling.Player
             _root.Add(Header("Add Face"));
 
             // モード選択
-            var modeChoices = new List<string> { "Line", "Triangle", "Quad" };
-            var modeValues  = new[] { AddFaceMode.Line, AddFaceMode.Triangle, AddFaceMode.Quad };
-            var modeDD = new DropdownField("Mode", modeChoices, 2);
+            var modeDD = new DropdownField("Mode", ModeChoices, 2);
             modeDD.style.color = new StyleColor(Color.white);
             modeDD.RegisterValueChangedCallback(e =>
             {
-                int idx = modeChoices.IndexOf(e.newValue);
+                int idx = ModeChoices.IndexOf(e.newValue);
                 if (Surface == null || idx < 0) return;
-                Surface.Set(Tool, "modePublic", modeValues[idx]);
+                Surface.Set(Tool, "modePublic", ModeValues[idx]);
+                // 送った後はツール側の実際の値で表示を合わせ直す。
+                // 設定が通らなかったとき、表示だけ変わってツールが元のまま、
+                // というずれを残さないため（ずれたままだと同じ項目を選び直しても
+                // 値が変わらないので何も送られない）。
+                SyncModeDropdown();
                 UpdateConditionals();
             });
             _root.Add(modeDD);
@@ -208,6 +218,7 @@ namespace Poly_Ling.Player
                 _snapBonesToggle.SetValueWithoutNotify(snapBones);
             if (_snapOriginsToggle != null && _snapOriginsToggle.value != snapOrigin)
                 _snapOriginsToggle.SetValueWithoutNotify(snapOrigin);
+            SyncModeDropdown();
             UpdateConditionals();
 
             // 配置済み点リスト更新
@@ -280,6 +291,27 @@ namespace Poly_Ling.Player
             }
         }
 
+        /// <summary>
+        /// モードのドロップダウンをツール側の実際の値へ合わせる。
+        ///
+        /// 【読めたときだけ合わせる】
+        ///   値の正本はツール側（ハンドラ）にある。読み取りに対応していない窓口
+        ///   （ClientToolSurface は常に読めない）で既定値へ合わせると、
+        ///   表示が毎回四角形へ戻ってしまうので、そのときは触らない。
+        /// </summary>
+        private void SyncModeDropdown()
+        {
+            if (_modeDropdown == null || Surface == null) return;
+            if (!Surface.TryGet(Tool, "modePublic", out string raw)) return;
+            if (!PanelCommandFactory.TryParseValue(raw, typeof(AddFaceMode), out object v, out _)) return;
+            if (!(v is AddFaceMode mode)) return;
+
+            int idx = System.Array.IndexOf(ModeValues, mode);
+            if (idx < 0) return;
+            if (_modeDropdown.value != ModeChoices[idx])
+                _modeDropdown.SetValueWithoutNotify(ModeChoices[idx]);
+        }
+
         private void UpdateConditionals()
         {
             bool isLine = Surface != null
@@ -289,13 +321,13 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// UI 自動操作の表示の下準備（UiControl の Reveal）。Continuous Line は Mode が Line の
-        /// ときだけ表示されるので、利用者と同じく Mode を Line にする。既に Line なら false。
+        /// UI 自動操作の表示の下準備（UiControl の Reveal）。Continuous Line は Mode が 線分 の
+        /// ときだけ表示されるので、利用者と同じく Mode を 線分 にする。既に 線分 なら false。
         /// </summary>
         private bool RevealContinuous()
         {
-            if (_modeDropdown == null || _modeDropdown.value == "Line") return false;
-            _modeDropdown.value = "Line";
+            if (_modeDropdown == null || _modeDropdown.value == ModeLabelLine) return false;
+            _modeDropdown.value = ModeLabelLine;
             return true;
         }
 

@@ -97,7 +97,7 @@ namespace Poly_Ling.Player
             // ── パイプ化 ──
             c.Add(TR(T("EdgeRibbonFacePipe"),
                 () => _ribbonFacePipe,
-                v => { _ribbonFacePipe = v; RefreshCreateButtonState(); }));
+                v => { _ribbonFacePipe = v; RefreshCreateButtonState(); RefreshCommonUiVisibility(); }));
             c.Add(GearHint(T("EdgeRibbonFacePipeHint")));
 
             _ribbonFaceInfo = SL("");

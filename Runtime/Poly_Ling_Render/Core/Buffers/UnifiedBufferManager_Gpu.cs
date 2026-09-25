@@ -258,6 +258,8 @@ namespace Poly_Ling.Core
 
             _computeShader.SetInt("_FaceCount",   _totalFaceCount);
             _computeShader.SetInt("_VertexCount",  _totalVertexCount);
+            // 補助線（2 頂点の面）の端点を可視へ戻すのに線分バッファを読む（UnifiedCompute.compute の ComputeFaceVisibility）。
+            _computeShader.SetInt("_LineCount",    _totalLineCount);
 
             _computeShader.SetBuffer(_kernelFaceVisibility, "_ScreenPositionBuffer", screenBuf);
             _computeShader.SetBuffer(_kernelFaceVisibility, "_FaceBuffer",           _faceBuffer);
@@ -266,6 +268,7 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelFaceVisibility, "_IndexBuffer",          _indexBuffer);
             _computeShader.SetBuffer(_kernelFaceVisibility, "_VertexFlagsBuffer",    _vertexFlagsBuffer);
             _computeShader.SetBuffer(_kernelFaceVisibility, "_VertexCulledBuffer",   vCulledBuf);
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_LineBuffer",           _lineBuffer);
 
             Poly_Ling.Diagnostics.PLCamDbg.Dsp("FaceVisibility", 0, null, ThreadGroups(_totalFaceCount));
             _computeShader.Dispatch(_kernelFaceVisibility, ThreadGroups(_totalFaceCount), 1, 1);
