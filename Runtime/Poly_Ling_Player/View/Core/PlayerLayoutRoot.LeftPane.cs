@@ -19,8 +19,6 @@ namespace Poly_Ling.Player
         public Button        RedoBtn            { get; private set; }
         public VisualElement ModelListContainer  { get; private set; }
         public DropdownField ModelSelectDropdown { get; private set; }
-        public Button        ModelListBtn        { get; private set; }
-        public Button        MeshListBtn         { get; private set; }
 
         // ================================================================
         // ビューポート表示フラグ（面ごと）
@@ -128,7 +126,6 @@ namespace Poly_Ling.Player
         public Toggle SelExpandEdgeToVertexToggle { get; private set; }
         public Toggle SelExpandFaceToVertexToggle { get; private set; }
         public Toggle SelExpandLineToVertexToggle { get; private set; }
-        public Button        MaterialListBtn       { get; private set; }
 
         /// <summary>左ペイン：現在のタブの全オブジェクトを選択する。処理はメッシュリスト側と同じ。</summary>
         public Button        SelectAllObjectsBtn      { get; private set; }
@@ -174,17 +171,8 @@ namespace Poly_Ling.Player
 
             ModelListContainer = new VisualElement();
             scroll.Add(ModelListContainer);
-
-            var listBtnRow = new VisualElement();
-            listBtnRow.style.flexDirection = FlexDirection.Column;
-            listBtnRow.style.marginTop     = 4;
-            ModelListBtn = MakeBtn("モデルリスト");
-            MeshListBtn  = MakeBtn("オブジェクトリスト");
-            MaterialListBtn = MakeBtn("マテリアル（質感・色）");
-            listBtnRow.Add(ModelListBtn);
-            listBtnRow.Add(MeshListBtn);
-            listBtnRow.Add(MaterialListBtn);
-            scroll.Add(listBtnRow);
+            // モデル／オブジェクト／マテリアルのリストを開くボタンは右ペイン最上部にある
+            // （PlayerLayoutRoot.RightPane.cs の BuildRightPane）。
 
             scroll.Add(Separator());
 

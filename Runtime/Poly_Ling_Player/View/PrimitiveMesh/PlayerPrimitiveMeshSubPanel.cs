@@ -130,94 +130,97 @@ namespace Poly_Ling.Player
 
             parent.Add(Sep());
 
-            // プレビュー領域
-            _previewEl = new VisualElement();
-            _previewEl.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
-            _previewEl.style.height          = _previewHeight;
-            _previewEl.style.backgroundColor = new StyleColor(new Color(0.13f, 0.13f, 0.16f));
-            _previewEl.style.marginBottom    = 4;
-            _previewEl.style.backgroundSize  = new StyleBackgroundSize(new BackgroundSize(BackgroundSizeType.Cover));
-            _previewEl.pickingMode           = PickingMode.Position;
-            parent.Add(_previewEl);
+            // プレビュー領域（ShowPanelPreview が false の間は作らない。カメラ・RT も作らない）
+            if (ShowPanelPreview)
+            {
+                _previewEl = new VisualElement();
+                _previewEl.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+                _previewEl.style.height          = _previewHeight;
+                _previewEl.style.backgroundColor = new StyleColor(new Color(0.13f, 0.13f, 0.16f));
+                _previewEl.style.marginBottom    = 4;
+                _previewEl.style.backgroundSize  = new StyleBackgroundSize(new BackgroundSize(BackgroundSizeType.Cover));
+                _previewEl.pickingMode           = PickingMode.Position;
+                parent.Add(_previewEl);
 
-            _preview = new PrimitivePreviewViewport();
-            _preview.Initialize(sceneRoot);
+                _preview = new PrimitivePreviewViewport();
+                _preview.Initialize(sceneRoot);
 
-            _previewEl.RegisterCallback<GeometryChangedEvent>(e =>
-            {
-                _preview.Resize(Mathf.Max(1,(int)e.newRect.width), Mathf.Max(1,(int)e.newRect.height));
-            });
+                _previewEl.RegisterCallback<GeometryChangedEvent>(e =>
+                {
+                    _preview.Resize(Mathf.Max(1,(int)e.newRect.width), Mathf.Max(1,(int)e.newRect.height));
+                });
 
-            _previewEl.RegisterCallback<PointerDownEvent>(e =>
-            {
-                if (e.button == 0 && !e.ctrlKey) return;
-                _previewEl.CapturePointer(e.pointerId);
-                _mouseDragging = false;
-                _mouseBtn      = (e.button == 0) ? 2 : e.button;
-                _mouseDownPos  = e.localPosition;
-                _mousePrevPos  = e.localPosition;
-                e.StopPropagation();
-            });
-            _previewEl.RegisterCallback<PointerMoveEvent>(e =>
-            {
-                if (!_previewEl.HasPointerCapture(e.pointerId)) return;
-                var cur   = new Vector2(e.localPosition.x, e.localPosition.y);
-                var delta = cur - _mousePrevPos;
-                _mousePrevPos = cur;
-                if (!_mouseDragging && Vector2.Distance(cur, _mouseDownPos) > DragThreshold)
-                    _mouseDragging = true;
-                if (!_mouseDragging) return;
-                if (_mouseBtn == 1) _preview.Orbit.SimulateOrbit(delta.x, delta.y);
-                else                _preview.Orbit.SimulatePan(delta.x, -delta.y);
-                e.StopPropagation();
-            });
-            _previewEl.RegisterCallback<PointerUpEvent>(e =>
-            {
-                if (!_previewEl.HasPointerCapture(e.pointerId)) return;
-                _previewEl.ReleasePointer(e.pointerId);
-                _mouseDragging = false;
-                e.StopPropagation();
-            });
-            _previewEl.RegisterCallback<WheelEvent>(e =>
-            {
-                _preview.Orbit.SimulateScroll(-e.delta.y * 0.1f);
-                e.StopPropagation();
-            });
+                _previewEl.RegisterCallback<PointerDownEvent>(e =>
+                {
+                    if (e.button == 0 && !e.ctrlKey) return;
+                    _previewEl.CapturePointer(e.pointerId);
+                    _mouseDragging = false;
+                    _mouseBtn      = (e.button == 0) ? 2 : e.button;
+                    _mouseDownPos  = e.localPosition;
+                    _mousePrevPos  = e.localPosition;
+                    e.StopPropagation();
+                });
+                _previewEl.RegisterCallback<PointerMoveEvent>(e =>
+                {
+                    if (!_previewEl.HasPointerCapture(e.pointerId)) return;
+                    var cur   = new Vector2(e.localPosition.x, e.localPosition.y);
+                    var delta = cur - _mousePrevPos;
+                    _mousePrevPos = cur;
+                    if (!_mouseDragging && Vector2.Distance(cur, _mouseDownPos) > DragThreshold)
+                        _mouseDragging = true;
+                    if (!_mouseDragging) return;
+                    if (_mouseBtn == 1) _preview.Orbit.SimulateOrbit(delta.x, delta.y);
+                    else                _preview.Orbit.SimulatePan(delta.x, -delta.y);
+                    e.StopPropagation();
+                });
+                _previewEl.RegisterCallback<PointerUpEvent>(e =>
+                {
+                    if (!_previewEl.HasPointerCapture(e.pointerId)) return;
+                    _previewEl.ReleasePointer(e.pointerId);
+                    _mouseDragging = false;
+                    e.StopPropagation();
+                });
+                _previewEl.RegisterCallback<WheelEvent>(e =>
+                {
+                    _preview.Orbit.SimulateScroll(-e.delta.y * 0.1f);
+                    e.StopPropagation();
+                });
 
-            // プレビュー下端のリサイズハンドル（下方向ドラッグで拡大）
-            var resizeHandle = new VisualElement();
-            resizeHandle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
-            resizeHandle.style.height          = 6;
-            resizeHandle.style.marginBottom    = 4;
-            resizeHandle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
-            resizeHandle.pickingMode           = PickingMode.Position;
-            parent.Add(resizeHandle);
+                // プレビュー下端のリサイズハンドル（下方向ドラッグで拡大）
+                var resizeHandle = new VisualElement();
+                resizeHandle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+                resizeHandle.style.height          = 6;
+                resizeHandle.style.marginBottom    = 4;
+                resizeHandle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
+                resizeHandle.pickingMode           = PickingMode.Position;
+                parent.Add(resizeHandle);
 
-            resizeHandle.RegisterCallback<PointerDownEvent>(e =>
-            {
-                resizeHandle.CapturePointer(e.pointerId);
-                _resizeDragging    = true;
-                _resizeStartY      = e.position.y;
-                _resizeStartHeight = _previewHeight;
-                e.StopPropagation();
-            });
-            resizeHandle.RegisterCallback<PointerMoveEvent>(e =>
-            {
-                if (!_resizeDragging || !resizeHandle.HasPointerCapture(e.pointerId)) return;
-                float delta = e.position.y - _resizeStartY;
-                _previewHeight = Mathf.Clamp(_resizeStartHeight + delta, PreviewMinHeight, PreviewMaxHeight);
-                _previewEl.style.height = _previewHeight; // GeometryChangedEvent → _preview.Resize が追従
-                e.StopPropagation();
-            });
-            resizeHandle.RegisterCallback<PointerUpEvent>(e =>
-            {
-                if (!resizeHandle.HasPointerCapture(e.pointerId)) return;
-                resizeHandle.ReleasePointer(e.pointerId);
-                _resizeDragging = false;
-                e.StopPropagation();
-            });
+                resizeHandle.RegisterCallback<PointerDownEvent>(e =>
+                {
+                    resizeHandle.CapturePointer(e.pointerId);
+                    _resizeDragging    = true;
+                    _resizeStartY      = e.position.y;
+                    _resizeStartHeight = _previewHeight;
+                    e.StopPropagation();
+                });
+                resizeHandle.RegisterCallback<PointerMoveEvent>(e =>
+                {
+                    if (!_resizeDragging || !resizeHandle.HasPointerCapture(e.pointerId)) return;
+                    float delta = e.position.y - _resizeStartY;
+                    _previewHeight = Mathf.Clamp(_resizeStartHeight + delta, PreviewMinHeight, PreviewMaxHeight);
+                    _previewEl.style.height = _previewHeight; // GeometryChangedEvent → _preview.Resize が追従
+                    e.StopPropagation();
+                });
+                resizeHandle.RegisterCallback<PointerUpEvent>(e =>
+                {
+                    if (!resizeHandle.HasPointerCapture(e.pointerId)) return;
+                    resizeHandle.ReleasePointer(e.pointerId);
+                    _resizeDragging = false;
+                    e.StopPropagation();
+                });
 
-            parent.Add(Sep());
+                parent.Add(Sep());
+            }
 
             // ステータスラベル（生成ボタンのクリックハンドラが参照するため先に生成）
             _statusLabel = new Label("");

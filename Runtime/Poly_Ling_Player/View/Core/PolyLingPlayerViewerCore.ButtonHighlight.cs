@@ -60,16 +60,92 @@ namespace Poly_Ling.Player
         private VisualElement _activeGeneralSection;  // 上区画で開いているセクション
         private VisualElement _activeToolSection;     // 下区画で開いているセクション（null = 下区画は空）
 
-        /// <summary>そのセクションが上下どちらかの区画で開いているか。</summary>
+        /// <summary>そのセクションが上下どちらかの区画で開いているか（常駐リストを含む）。</summary>
         private bool IsRightSectionActive(VisualElement section)
-            => section != null && (section == _activeGeneralSection || section == _activeToolSection);
+            => section != null && (section == _activeGeneralSection || section == _activeToolSection
+                                   || _pinnedOpenOrder.Contains(section));
 
         /// <summary>
-        /// 上区画（一般パネル）が決めたい操作モードの適用手順。
-        /// 下区画が空のときだけ実行し、下区画が開いている間は覚えておいて、
-        /// 下区画を閉じたときに実行する（CloseToolArea）。
+        /// 上区画の一般パネルが決めたい操作モードの適用手順。「操作なし」を指定したパネルでは null
+        /// （そのときは常駐リストに任せる）。適用の順番は ApplyRightPaneViewportMode。
         /// </summary>
         private System.Action _generalPanelModeApplier;
+
+        // ================================================================
+        // 常駐リスト（モデル／オブジェクト／マテリアル）
+        // ================================================================
+
+        /// <summary>常駐リストのセクション → 開閉ボタンと、そのリストが決める操作モードの適用手順。</summary>
+        private readonly Dictionary<VisualElement, (Button btn, System.Action applyMode)> _pinnedPanels
+            = new Dictionary<VisualElement, (Button btn, System.Action applyMode)>();
+
+        /// <summary>開いている常駐リスト。末尾が最後に開いた（または操作した）もので、操作モードを決める。</summary>
+        private readonly List<VisualElement> _pinnedOpenOrder = new List<VisualElement>();
+
+        /// <summary>
+        /// 常駐リストを登録する。BuildLayout で 1 回だけ呼ぶ。
+        /// その時点で表示されているセクション（起動時のオブジェクトリスト）は開いている扱いにする。
+        /// 起動時に操作モードは適用しない（下区画の既定パネルが決める）。
+        /// </summary>
+        private void RegisterPinnedPanel(VisualElement section, Button btn, System.Action applyMode)
+        {
+            if (section == null) return;
+            _pinnedPanels[section] = (btn, applyMode);
+            if (section.style.display == DisplayStyle.Flex && !_pinnedOpenOrder.Contains(section))
+                _pinnedOpenOrder.Add(section);
+        }
+
+        private bool IsPinnedOpen(VisualElement section)
+            => section != null && _pinnedOpenOrder.Contains(section);
+
+        /// <summary>
+        /// 常駐リストを開く／閉じる。開くときは開いているリストの末尾へ回すので、
+        /// 開いたリストが操作モードを決める側になる。
+        /// </summary>
+        private void SetPinnedOpen(VisualElement section, bool open)
+        {
+            if (section == null || !_pinnedPanels.TryGetValue(section, out var p)) return;
+            _pinnedOpenOrder.Remove(section);
+            if (open) _pinnedOpenOrder.Add(section);
+            section.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+            if (open) PLPerfLog.SetPanel(p.btn?.text);
+            RepaintButtonHighlights();
+            ApplyRightPaneViewportMode();
+            RefreshObjectOverlays();
+        }
+
+        /// <summary>
+        /// 開いている常駐リストを末尾へ回して操作モードを適用し直す。
+        /// リスト内でビューポート操作の選び方を変えたときに呼ぶ（そのリストが決める側になる）。
+        /// </summary>
+        private void PromotePinned(VisualElement section)
+        {
+            if (!IsPinnedOpen(section)) return;
+            _pinnedOpenOrder.Remove(section);
+            _pinnedOpenOrder.Add(section);
+            ApplyRightPaneViewportMode();
+        }
+
+        /// <summary>
+        /// 右ペインの状態からビューポートの操作モードを決めて適用する。優先順：
+        ///   1. 下区画（3D 操作）が開いていれば、そのパネルが決めているので何もしない。
+        ///   2. 上区画の一般パネルが「操作なし」以外を指定していれば、それ。
+        ///   3. 開いている常駐リストのうち、最後に開いた（操作した）もの。
+        ///   4. どれもなければ「操作なし」。
+        /// </summary>
+        private void ApplyRightPaneViewportMode()
+        {
+            if (_activeToolSection != null) return;
+            if (_generalPanelModeApplier != null) { _generalPanelModeApplier(); return; }
+            if (_pinnedOpenOrder.Count > 0
+                && _pinnedPanels.TryGetValue(_pinnedOpenOrder[_pinnedOpenOrder.Count - 1], out var p)
+                && p.applyMode != null)
+            {
+                p.applyMode();
+                return;
+            }
+            SetInteractionMode(InteractionMode.None);
+        }
 
         /// <summary>
         /// InteractionMode に対応するボタンを取得。ない (None / 未割当) なら null。
@@ -134,6 +210,14 @@ namespace Poly_Ling.Player
                 _activeGeneralPanelBtn.style.backgroundColor = PanelActiveBtnColor;
             if (_activeToolPanelBtn != null && !btns.Contains(_activeToolPanelBtn))
                 _activeToolPanelBtn.style.backgroundColor = PanelActiveBtnColor;
+
+            // 常駐リストの開閉ボタン：開いている間は緑、閉じていれば非 active 色。
+            foreach (var kv in _pinnedPanels)
+            {
+                if (kv.Value.btn == null) continue;
+                kv.Value.btn.style.backgroundColor =
+                    _pinnedOpenOrder.Contains(kv.Key) ? PanelActiveBtnColor : InactiveBtnColor;
+            }
         }
 
         /// <summary>
@@ -173,6 +257,12 @@ namespace Poly_Ling.Player
         private void ShowRightPanel(VisualElement section, Button panelBtn)
         {
             var kind = _layoutRoot?.GetRightPanelKind(section) ?? RightPanelKind.Tool3D;
+            if (kind == RightPanelKind.Pinned)
+            {
+                // 常駐リストは排他にしない。開くだけ。
+                SetPinnedOpen(section, true);
+                return;
+            }
             HideRightArea(kind);
             if (section != null) section.style.display = DisplayStyle.Flex;
             if (kind == RightPanelKind.Tool3D)
@@ -199,24 +289,27 @@ namespace Poly_Ling.Player
             _activeToolSection = null;
             _layoutRoot?.SetToolAreaOpen(false);
             SetActivePanelButton(null, RightPanelKind.Tool3D);
-            if (_generalPanelModeApplier != null) _generalPanelModeApplier();
-            else                                  SetInteractionMode(InteractionMode.None);
+            ApplyRightPaneViewportMode();
             RefreshObjectOverlays();
         }
 
         /// <summary>
-        /// 上区画（一般パネル）が操作モードを決めるときの唯一の入口。
+        /// 上区画の一般パネルが操作モードを決めるときの唯一の入口。
         /// 下区画が空のときだけ即時に適用し、開いている間は覚えておく（CloseToolArea で適用）。
         /// 上区画のパネルから SetInteractionMode を直接呼ぶと下区画の 3D 操作を奪うので、呼ばないこと。
+        /// null（＝操作なし）のときは常駐リストが決める（ApplyRightPaneViewportMode）。
         /// </summary>
         private void ApplyGeneralPanelMode(System.Action apply)
         {
             _generalPanelModeApplier = apply;
-            if (_activeToolSection == null) apply?.Invoke();
+            ApplyRightPaneViewportMode();
         }
 
+        /// <summary>「操作なし」は常駐リストに任せる（例：オブジェクトリストの下に一時ミラーを開いても選択が効く）。</summary>
         private void ApplyGeneralPanelMode(InteractionMode mode)
-            => ApplyGeneralPanelMode(() => SetInteractionMode(mode));
+            => ApplyGeneralPanelMode(mode == InteractionMode.None
+                ? (System.Action)null
+                : () => SetInteractionMode(mode));
 
         /// <summary>
         /// 原点マーカー（水色ダイヤ）とギズモを、今のモード・パネルで組み直す。

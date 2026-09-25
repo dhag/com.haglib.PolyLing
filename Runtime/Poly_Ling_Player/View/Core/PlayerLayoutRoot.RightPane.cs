@@ -13,14 +13,17 @@ namespace Poly_Ling.Player
     ///
     ///   General … 3D 操作を持たないパネル（一覧・入出力・メッシュ処理など）。上区画。
     ///   Tool3D  … ビューポートの 3D 操作を使うパネル（頂点移動・選択を使う編集など）。下区画。
+    ///   Pinned  … 常駐のリスト（モデル／オブジェクト／マテリアル）。上区画の先頭に置き、
+    ///             右ペイン最上部のボタンでそれぞれ独立に開閉する（排他にしない）。
     ///
-    /// 上下の区画はそれぞれ 1 つずつパネルを表示するので、
-    /// オブジェクトリスト（General）と頂点移動（Tool3D）を同時に開ける。
+    /// 上区画は「常駐のリスト（開いているものを縦に並べる）＋その下に一般パネル 1 つ」、
+    /// 下区画は 3D 操作パネル 1 つを表示する。
     /// </summary>
     public enum RightPanelKind
     {
         General,
         Tool3D,
+        Pinned,
     }
 
     public partial class PlayerLayoutRoot
@@ -37,6 +40,11 @@ namespace Poly_Ling.Player
 
         /// <summary>下区画を閉じる（3D 操作パネルを 1 つも出さない状態にする）ボタン。</summary>
         public Button ToolAreaCloseBtn { get; private set; }
+
+        /// <summary>右ペイン最上部：常駐リストの開閉ボタン（モデル／オブジェクト／マテリアル）。</summary>
+        public Button ModelListBtn    { get; private set; }
+        public Button MeshListBtn     { get; private set; }
+        public Button MaterialListBtn { get; private set; }
 
         /// <summary>AddSection で作った全セクション（作成順）。</summary>
         public System.Collections.Generic.IReadOnlyList<VisualElement> RightSections => _rightSections;
@@ -59,10 +67,21 @@ namespace Poly_Ling.Player
         private VisualElement _toolArea;
         /// <summary>上下区画の仕切り（ドラッグで下区画の高さを変える）。</summary>
         private VisualElement _rightAreaSplitter;
+        /// <summary>右ペインの外枠（下区画の上限計算に使う）。</summary>
+        private VisualElement _rightPaneRoot;
+        /// <summary>最上部の常駐リスト開閉ボタン行（下区画の上限計算に使う）。</summary>
+        private VisualElement _rightPinnedBar;
+        /// <summary>下区画の希望の高さ（保存値・ドラッグ結果）。実際の高さはこれを上限で抑えた値。</summary>
+        private float _toolAreaDesiredH;
+        private bool  _rightSplitterHover;
+        private bool  _rightSplitterDragging;
 
         private const string PrefRightToolH = "PolyLing.Player.Layout.RightToolH";
         private const float  DefRightToolH  = 360f;
         private const float  MinRightAreaH  = 60f;
+        private const float  RightSplitterH = 8f;
+        private static readonly Color RightSplitterColor      = new Color(1f, 1f, 1f, 0.12f);
+        private static readonly Color RightSplitterHoverColor = new Color(1f, 1f, 1f, 0.35f);
 
         /// <summary>右ペイン：モデルリストセクション（ModelListSubPanel を Build する対象）。</summary>
         public VisualElement ModelListSection { get; private set; }
@@ -328,7 +347,28 @@ namespace Poly_Ling.Player
             pane.style.flexDirection   = FlexDirection.Column;
             pane.style.overflow        = Overflow.Hidden;
 
-            // 上区画：一般パネル（RightPanelKind.General）。残りの高さを全部使う。
+            // 最上部：常駐リストの開閉ボタン。スクロールの外に置き、常に見えるようにする。
+            var pinnedBar = new VisualElement();
+            pinnedBar.style.flexDirection = FlexDirection.Row;
+            pinnedBar.style.flexShrink    = 0;
+            pinnedBar.style.paddingTop    = 4;
+            pinnedBar.style.paddingLeft   = 4;
+            pinnedBar.style.paddingRight  = 4;
+            ModelListBtn    = MakeBtn("モデルリスト");
+            MeshListBtn     = MakeBtn("オブジェクトリスト");
+            MaterialListBtn = MakeBtn("マテリアルリスト");
+            foreach (var b in new[] { ModelListBtn, MeshListBtn, MaterialListBtn })
+            {
+                b.style.flexGrow  = 1;
+                b.style.flexBasis = 0;
+                b.style.minWidth  = 0;
+                pinnedBar.Add(b);
+            }
+            pane.Add(pinnedBar);
+            _rightPaneRoot  = pane;
+            _rightPinnedBar = pinnedBar;
+
+            // 上区画：常駐リスト（RightPanelKind.Pinned）＋一般パネル（RightPanelKind.General）。残りの高さを全部使う。
             var generalScroll = new ScrollView(ScrollViewMode.Vertical);
             generalScroll.style.flexGrow     = 1;
             generalScroll.style.flexShrink   = 1;
@@ -342,9 +382,9 @@ namespace Poly_Ling.Player
 
             // 上下の仕切り。下区画が空のときは下区画と一緒に隠す。
             _rightAreaSplitter = new VisualElement();
-            _rightAreaSplitter.style.height          = 5;
+            _rightAreaSplitter.style.height          = RightSplitterH;
             _rightAreaSplitter.style.flexShrink      = 0;
-            _rightAreaSplitter.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.12f));
+            _rightAreaSplitter.style.backgroundColor = new StyleColor(RightSplitterColor);
             _rightAreaSplitter.style.display         = DisplayStyle.None;
             pane.Add(_rightAreaSplitter);
 
@@ -352,7 +392,8 @@ namespace Poly_Ling.Player
             _toolArea = new VisualElement();
             _toolArea.style.flexDirection = FlexDirection.Column;
             _toolArea.style.flexShrink    = 0;
-            _toolArea.style.height        = LoadPref(PrefRightToolH, DefRightToolH);
+            _toolAreaDesiredH             = LoadPref(PrefRightToolH, DefRightToolH);
+            _toolArea.style.height        = _toolAreaDesiredH;
             _toolArea.style.minHeight     = MinRightAreaH;
             _toolArea.style.display       = DisplayStyle.None;
             pane.Add(_toolArea);
@@ -387,14 +428,16 @@ namespace Poly_Ling.Player
             // 独立 Separator 要素を廃止し、ボーダーをセクション自身に持たせることで、
             // 非表示セクションでは区切り線も一緒に消える（線分残り対策）。
             //
-            // visible=true:  既定で表示（ModelList / MeshList / Import）
+            // visible=true:  既定で表示（起動時はオブジェクトリストだけ）
             // visible=false: 既定で非表示（display=None）
 
-            // ── モデルリストセクション（先頭：区切り線なし）
-            ModelListSection = AddSection(visible: true, kind: RightPanelKind.General, topBorder: false);
-
-            // ── メッシュリストセクション
-            MeshListSection = AddSection(visible: true, kind: RightPanelKind.General);
+            // ── 常駐リスト（上区画の先頭。この順で縦に並ぶ）
+            // モデルリスト（先頭：区切り線なし）
+            ModelListSection    = AddSection(visible: false, kind: RightPanelKind.Pinned, topBorder: false);
+            // オブジェクトリスト（メッシュリスト）
+            MeshListSection     = AddSection(visible: true,  kind: RightPanelKind.Pinned);
+            // マテリアルリスト
+            MaterialListSection = AddSection(visible: false, kind: RightPanelKind.Pinned);
 
             // ── オブジェクト移動TRSセクション
             ObjectMoveTRSSection = AddSection(visible: false, kind: RightPanelKind.Tool3D);
@@ -446,7 +489,6 @@ namespace Poly_Ling.Player
             UVUnwrapSection = AddSection(visible: false, kind: RightPanelKind.General);
 
             // ── 追加パネルセクション群（デフォルト非表示）────────────────
-            MaterialListSection        = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             UVZSection                 = AddSection(visible: false, kind: RightPanelKind.General);
             PartsSelectionSetSection   = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MeshSelectionSetSection    = AddSection(visible: false, kind: RightPanelKind.General);
@@ -603,6 +645,37 @@ namespace Poly_Ling.Player
             var d = open ? DisplayStyle.Flex : DisplayStyle.None;
             if (_toolArea != null)          _toolArea.style.display          = d;
             if (_rightAreaSplitter != null) _rightAreaSplitter.style.display = d;
+            if (open) ApplyToolAreaHeight();
+        }
+
+        /// <summary>
+        /// 下区画の高さの上限。ペイン高からボタン行・仕切り・上区画の最小高を引いた値。
+        /// ペイン高が未確定のときは上限なし。
+        /// </summary>
+        private float ToolAreaMaxH()
+        {
+            if (_rightPaneRoot == null) return float.MaxValue;
+            float paneH = _rightPaneRoot.resolvedStyle.height;
+            if (float.IsNaN(paneH) || paneH <= 0f) return float.MaxValue;
+            float barH = _rightPinnedBar != null ? _rightPinnedBar.resolvedStyle.height : 0f;
+            if (float.IsNaN(barH) || barH < 0f) barH = 0f;
+            return Mathf.Max(MinRightAreaH, paneH - barH - RightSplitterH - MinRightAreaH);
+        }
+
+        /// <summary>希望の高さを上限で抑えて下区画に適用する（保存値は変えない）。</summary>
+        private void ApplyToolAreaHeight()
+        {
+            if (_toolArea == null) return;
+            float h   = Mathf.Clamp(_toolAreaDesiredH, MinRightAreaH, ToolAreaMaxH());
+            float cur = _toolArea.style.height.value.value;
+            if (!Mathf.Approximately(cur, h)) _toolArea.style.height = h;
+        }
+
+        private void UpdateRightSplitterColor()
+        {
+            if (_rightAreaSplitter == null) return;
+            _rightAreaSplitter.style.backgroundColor = new StyleColor(
+                (_rightSplitterHover || _rightSplitterDragging) ? RightSplitterHoverColor : RightSplitterColor);
         }
 
         /// <summary>
@@ -610,45 +683,58 @@ namespace Poly_Ling.Player
         /// </summary>
         private void SetupRightAreaSplitterDrag(VisualElement pane)
         {
-            bool  dragging = false;
-            float startY   = 0f;
-            float startH   = 0f;
+            float startY = 0f;
+            float startH = 0f;
+
+            // ペインの高さが変わったら（ウィンドウのリサイズ等）下区画を上限内に収め直す。
+            pane.RegisterCallback<GeometryChangedEvent>(_ => ApplyToolAreaHeight());
+
+            _rightAreaSplitter.RegisterCallback<PointerEnterEvent>(_ =>
+            {
+                _rightSplitterHover = true;
+                UpdateRightSplitterColor();
+            });
+            _rightAreaSplitter.RegisterCallback<PointerLeaveEvent>(_ =>
+            {
+                _rightSplitterHover = false;
+                UpdateRightSplitterColor();
+            });
 
             _rightAreaSplitter.RegisterCallback<PointerDownEvent>(evt =>
             {
                 if (evt.button != 0) return;
-                dragging = true;
-                startY   = evt.position.y;
-                startH   = _toolArea.resolvedStyle.height;
+                _rightSplitterDragging = true;
+                startY = evt.position.y;
+                startH = _toolArea.resolvedStyle.height;
                 _rightAreaSplitter.CapturePointer(evt.pointerId);
+                UpdateRightSplitterColor();
                 evt.StopPropagation();
             });
             _rightAreaSplitter.RegisterCallback<PointerMoveEvent>(evt =>
             {
-                if (!dragging) return;
-                float paneH = pane.resolvedStyle.height;
-                float maxH  = (float.IsNaN(paneH) || paneH <= 0f)
-                    ? float.MaxValue
-                    : Mathf.Max(MinRightAreaH, paneH - MinRightAreaH);
-                float h = Mathf.Clamp(startH - (evt.position.y - startY), MinRightAreaH, maxH);
+                if (!_rightSplitterDragging) return;
+                float h = Mathf.Clamp(startH - (evt.position.y - startY), MinRightAreaH, ToolAreaMaxH());
+                _toolAreaDesiredH      = h;
                 _toolArea.style.height = h;
                 evt.StopPropagation();
             });
             _rightAreaSplitter.RegisterCallback<PointerUpEvent>(evt =>
             {
-                if (!dragging) return;
-                dragging = false;
+                if (!_rightSplitterDragging) return;
+                _rightSplitterDragging = false;
                 if (_rightAreaSplitter.HasPointerCapture(evt.pointerId))
                     _rightAreaSplitter.ReleasePointer(evt.pointerId);
-                float v = _toolArea.resolvedStyle.height;
-                if (!float.IsNaN(v) && v > 0f)
-                {
-                    PlayerPrefs.SetFloat(PrefRightToolH, v);
-                    PlayerPrefs.Save();
-                }
+                _rightSplitterHover = _rightAreaSplitter.worldBound.Contains(evt.position);
+                UpdateRightSplitterColor();
+                PlayerPrefs.SetFloat(PrefRightToolH, _toolAreaDesiredH);
+                PlayerPrefs.Save();
                 evt.StopPropagation();
             });
-            _rightAreaSplitter.RegisterCallback<PointerCaptureOutEvent>(_ => dragging = false);
+            _rightAreaSplitter.RegisterCallback<PointerCaptureOutEvent>(_ =>
+            {
+                _rightSplitterDragging = false;
+                UpdateRightSplitterColor();
+            });
         }
     }
 }

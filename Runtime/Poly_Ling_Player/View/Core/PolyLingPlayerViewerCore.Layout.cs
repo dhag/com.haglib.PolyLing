@@ -116,7 +116,6 @@ namespace Poly_Ling.Player
             _layoutRoot.BoneEditorBtn.clicked  += () => { ShowBoneEditorPanel(); _boneEditorSubPanel?.ShowBonesTab(); };
             _layoutRoot.UVEditorBtn.clicked    += ShowUVEditorPanel;
             _layoutRoot.UVUnwrapBtn.clicked    += ShowUVUnwrapPanel;
-            _layoutRoot.MaterialListBtn.clicked    += ShowMaterialListPanel;
             _layoutRoot.UVZBtn.clicked             += ShowUVZPanel;
             _layoutRoot.PartsSelectionSetBtn.clicked += ShowPartsSelectionSetPanel;
             _layoutRoot.MeshSelectionSetBtn.clicked  += ShowMeshSelectionSetPanel;
@@ -440,8 +439,17 @@ namespace Poly_Ling.Player
                 ReadExpandToVertexKindsFromToggles();
             }
 
-            _layoutRoot.ModelListBtn.clicked += ShowModelListPanel;
-            _layoutRoot.MeshListBtn .clicked += ShowMeshListPanel;
+            // 常駐リスト（右ペイン最上部のボタンでトグル開閉）。操作モードは
+            // モデル＝操作なし／オブジェクト＝3 択の値／マテリアル＝選択のみ。
+            RegisterPinnedPanel(_layoutRoot.ModelListSection, _layoutRoot.ModelListBtn,
+                () => SetInteractionMode(InteractionMode.None));
+            RegisterPinnedPanel(_layoutRoot.MeshListSection, _layoutRoot.MeshListBtn,
+                ApplyMeshListCurrentViewportOpMode);
+            RegisterPinnedPanel(_layoutRoot.MaterialListSection, _layoutRoot.MaterialListBtn,
+                () => SetInteractionMode(InteractionMode.SelectOnly));
+            _layoutRoot.ModelListBtn.clicked    += ToggleModelListPanel;
+            _layoutRoot.MeshListBtn .clicked    += ToggleMeshListPanel;
+            _layoutRoot.MaterialListBtn.clicked += ToggleMaterialListPanel;
             // 右ペイン下区画（3D 操作）を空にする。上区画のパネルの操作モードに戻る。
             _layoutRoot.ToolAreaCloseBtn.clicked += CloseToolArea;
 

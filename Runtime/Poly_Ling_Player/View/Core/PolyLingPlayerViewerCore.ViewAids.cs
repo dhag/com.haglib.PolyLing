@@ -289,21 +289,41 @@ namespace Poly_Ling.Player
             _partialExportSubPanel?.SetMode(mode);
         }
 
+        // 常駐リスト（モデル／オブジェクト／マテリアル）の Show* は「開く」（閉じているときだけ開き、
+        // 開いていれば操作モードを決める側へ回す）。トグルは右ペイン最上部のボタンだけが行う
+        // （ToggleModelListPanel 等）。ショートカットと UI 自動操作（uiShowPanel）は Show* を使う。
+
         private void ShowModelListPanel()
         {
-            // カテゴリ 3
-            ApplyGeneralPanelMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.ModelListSection, _layoutRoot?.ModelListBtn);
+            // 操作モードは「操作なし」（ApplyRightPaneViewportMode の優先順で決まる）
+            SetPinnedOpen(_layoutRoot?.ModelListSection, true);
         }
 
         private void ShowMeshListPanel()
         {
             // ビューポート操作は 3 択（操作なし / 要素選択 / 姿勢調整）。
             // 既定は「姿勢調整」＝オブジェクト原点の選択と姿勢調整（ObjectMove）。
-            // オブジェクトリストは上区画（一般）なので、3 択が効くのは下区画が空のときだけ。
-            ApplyGeneralPanelMode(ApplyMeshListCurrentViewportOpMode);
-            ShowRightPanel(_layoutRoot?.MeshListSection, _layoutRoot?.MeshListBtn);
+            // 3 択が効くのは、下区画が空で、一般パネルが操作モードを指定していないときだけ。
+            SetPinnedOpen(_layoutRoot?.MeshListSection, true);
             _meshListSubPanel?.SyncObjectPoseToggles();
+        }
+
+        private void ToggleModelListPanel()
+        {
+            if (IsPinnedOpen(_layoutRoot?.ModelListSection)) SetPinnedOpen(_layoutRoot.ModelListSection, false);
+            else ShowModelListPanel();
+        }
+
+        private void ToggleMeshListPanel()
+        {
+            if (IsPinnedOpen(_layoutRoot?.MeshListSection)) SetPinnedOpen(_layoutRoot.MeshListSection, false);
+            else ShowMeshListPanel();
+        }
+
+        private void ToggleMaterialListPanel()
+        {
+            if (IsPinnedOpen(_layoutRoot?.MaterialListSection)) SetPinnedOpen(_layoutRoot.MaterialListSection, false);
+            else ShowMaterialListPanel();
         }
 
         /// <summary>オブジェクトリストの今の 3 択を InteractionMode へ反映する。</summary>

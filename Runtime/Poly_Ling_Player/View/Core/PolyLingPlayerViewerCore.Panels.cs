@@ -227,9 +227,9 @@ namespace Poly_Ling.Player
 
         private void ShowMaterialListPanel()
         {
-            // 選択専用: 面を選択してマテリアルを適用できるよう、移動なしの選択のみ有効化する。
-            SetInteractionMode(InteractionMode.SelectOnly);
-            ShowRightPanel(_layoutRoot?.MaterialListSection, _layoutRoot?.MaterialListBtn);
+            // 常駐リスト。面を選択してマテリアルを適用できるよう、操作モードは移動なしの選択のみ
+            // （登録時に指定。ApplyRightPaneViewportMode の優先順で決まる）。
+            SetPinnedOpen(_layoutRoot?.MaterialListSection, true);
             _materialListSubPanel?.SyncEditingSlotToCurrent();
             _materialListSubPanel?.Refresh();
         }

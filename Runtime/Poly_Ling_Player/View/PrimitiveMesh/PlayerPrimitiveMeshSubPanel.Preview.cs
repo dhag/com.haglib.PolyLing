@@ -51,6 +51,14 @@ namespace Poly_Ling.Player
         // プレビュー
         // ================================================================
 
+        /// <summary>
+        /// パネル内の 3D プレビュー（右ペイン）を表示するか。
+        /// false の間はプレビュー領域・カメラ・RT を作らない。形状の再生成と
+        /// メイン3Dウインドウへの黄色ワイヤ・くさびの表示はこの値に関係なく行う。
+        /// 表示を再開するときは true にする。
+        /// </summary>
+        private static readonly bool ShowPanelPreview = false;
+
         private PrimitivePreviewViewport _preview;
 
         /// <summary>
@@ -99,7 +107,6 @@ namespace Poly_Ling.Player
         /// </summary>
         private void Regenerate()
         {
-            if (_preview == null) return;
             if (!_dirty) return;
             // 適応スロットル：直前の生成コストに応じて再生成頻度を間引く。
             // スキップ時は _dirty を維持して後続フレームに回すため、最終値は必ず反映される。
@@ -109,7 +116,7 @@ namespace Poly_Ling.Player
             try
             {
                 var mo = Generate(true);
-                _preview.SetMesh(mo);
+                _preview?.SetMesh(mo);
                 DestroyWire();
                 if (mo != null) _wireMesh = BuildWire(mo);
             }
@@ -126,8 +133,9 @@ namespace Poly_Ling.Player
         /// </summary>
         private void TickPreview()
         {
-            if (_preview == null) return;
+            // 再生成はパネル内プレビューが無くても行う（メイン3Dウインドウの黄色ワイヤが使う）。
             Regenerate();
+            if (_preview == null) return;
             _preview.Tick(_wireMesh);
             if (_previewEl != null && _preview.RT != null)
                 _previewEl.style.backgroundImage = new StyleBackground(
