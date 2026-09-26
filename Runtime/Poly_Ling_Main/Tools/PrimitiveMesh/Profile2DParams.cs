@@ -10,19 +10,20 @@ using Poly_Ling.PrimitiveMesh;   // PrimitiveMeshPostProcess.PivotMin / PivotMax
 namespace Poly_Ling.Profile2DExtrude
 {
     /// <summary>
-    /// 2Dループ定義
+    /// ループ定義。点は 3D（モデルのローカル座標）。
+    /// 2D押し出しは xy だけで面を分割し、z は各点の高さとしてそのまま残す（凹凸を保つ）。
     /// </summary>
     [Serializable]
     public class Loop
     {
-        public List<Vector2> Points = new List<Vector2>();
+        public List<Vector3> Points = new List<Vector3>();
         public bool IsHole = false;
 
         public Loop() { }
 
         public Loop(Loop other)
         {
-            Points = new List<Vector2>(other.Points);
+            Points = new List<Vector3>(other.Points);
             IsHole = other.IsHole;
         }
     }
@@ -98,13 +99,14 @@ namespace Poly_Ling.Profile2DExtrude
         public LoopData[] Loops;
 
         /// <summary>
-        /// 全ループの点を連結したもの。x,y を 2 個ずつ並べる。
+        /// 全ループの点を連結したもの。x,y,z を 3 個ずつ並べる。
         /// Loops が空のときだけ使う。
         /// </summary>
         [PLParam(TextKey = "Profile2DLoopPointValues",
-                 Description = "全ループの点を連結したもの。x,y を 2 個ずつ並べる",
+                 Description = "全ループの点を連結したもの。x,y,z を 3 個ずつ並べる",
                  ProfileRole = PLProfileRole.FlatLoops, ProfileNormalize = false,
-                 ProfileLoopStartsKey = "LoopStarts", ProfileLoopIsHoleKey = "LoopIsHole")]
+                 ProfileLoopStartsKey = "LoopStarts", ProfileLoopIsHoleKey = "LoopIsHole",
+                 LegacyXYPairs = true)]
         public float[] LoopPointValues;
 
         /// <summary>ループ i が何点目から始まるか。単調増加。長さがループ本数。</summary>
@@ -129,7 +131,7 @@ namespace Poly_Ling.Profile2DExtrude
             int n = LoopStarts?.Length ?? 0;
             if (n == 0) return System.Array.Empty<LoopData>();
 
-            int total = (LoopPointValues?.Length ?? 0) / 2;
+            int total = (LoopPointValues?.Length ?? 0) / 3;
             var result = new LoopData[n];
             for (int i = 0; i < n; i++)
             {
@@ -140,10 +142,12 @@ namespace Poly_Ling.Profile2DExtrude
 
                 int count = to - from;
                 if (count < 0) count = 0;
-                var pts = new Vector2[count];
+                var pts = new Vector3[count];
                 for (int k = 0; k < count; k++)
-                    pts[k] = new Vector2(
-                        LoopPointValues[(from + k) * 2], LoopPointValues[(from + k) * 2 + 1]);
+                    pts[k] = new Vector3(
+                        LoopPointValues[(from + k) * 3],
+                        LoopPointValues[(from + k) * 3 + 1],
+                        LoopPointValues[(from + k) * 3 + 2]);
 
                 result[i] = new LoopData
                 {
@@ -172,7 +176,7 @@ namespace Poly_Ling.Profile2DExtrude
                 isHole[i] = loops[i].IsHole;
                 var pts = loops[i].Points;
                 if (pts != null)
-                    foreach (var q in pts) { vals.Add(q.x); vals.Add(q.y); }
+                    foreach (var q in pts) { vals.Add(q.x); vals.Add(q.y); vals.Add(q.z); }
                 cursor += pts?.Length ?? 0;
             }
             pointValues = vals.ToArray();
@@ -189,8 +193,8 @@ namespace Poly_Ling.Profile2DExtrude
         [Serializable]
         public struct LoopData
         {
-            [PLParam(TextKey = "Profile2DLoopPoints", Description = "ループの点列", Required = true)]
-            public Vector2[] Points;
+            [PLParam(TextKey = "Profile2DLoopPoints", Description = "ループの点列（x,y,z）", Required = true)]
+            public Vector3[] Points;
             [PLParam(TextKey = "Profile2DLoopIsHole", Description = "穴として扱う")]
             public bool IsHole;
 
@@ -205,7 +209,7 @@ namespace Poly_Ling.Profile2DExtrude
                 var loop = new Loop();
                 if (Points != null)
                 {
-                    loop.Points = new List<Vector2>(Points);
+                    loop.Points = new List<Vector3>(Points);
                 }
                 loop.IsHole = IsHole;
                 return loop;
@@ -266,7 +270,8 @@ namespace Poly_Ling.Profile2DExtrude
                 for (int j = 0; j < Loops[i].Points.Length; j++)
                 {
                     if (!Mathf.Approximately(Loops[i].Points[j].x, o.Loops[i].Points[j].x) ||
-                        !Mathf.Approximately(Loops[i].Points[j].y, o.Loops[i].Points[j].y))
+                        !Mathf.Approximately(Loops[i].Points[j].y, o.Loops[i].Points[j].y) ||
+                        !Mathf.Approximately(Loops[i].Points[j].z, o.Loops[i].Points[j].z))
                         return false;
                 }
             }
@@ -336,7 +341,7 @@ namespace Poly_Ling.Profile2DExtrude
         [Serializable]
         public class LoopWrapper
         {
-            public Vector2[] Points;
+            public Vector3[] Points;
             public bool IsHole;
         }
 

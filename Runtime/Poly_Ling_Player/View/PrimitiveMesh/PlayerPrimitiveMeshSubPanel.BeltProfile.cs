@@ -167,10 +167,11 @@ namespace Poly_Ling.Player
             public bool ClosedLoop;
 
             // ── 編集データ ──
-            public List<Vector2> Points        = new List<Vector2>();
+            // 点は 3D。キャンバスは xy だけを編集し、z は保持する（RevolutionProfileEditCore.WithXY）。
+            public List<Vector3> Points        = new List<Vector3>();
 
             /// <summary>参考表示するだけのプロファイル（A/B のもう一方）。null なら描かない。</summary>
-            public List<Vector2> GhostPoints;
+            public List<Vector3> GhostPoints;
 
             // ── A/B ペア（フリルの2プロファイル）──
             // ペアを持たないエディタ（パイプ等）では PairOther が null のままで、
@@ -275,25 +276,25 @@ namespace Poly_Ling.Player
             // ── Undo ──
             public UndoStack<BeltProfileUndoContext> UndoStack;
             public BeltProfileUndoContext            UndoCtx;
-            public List<Vector2>                     EditBefore;
+            public List<Vector3>                     EditBefore;
             public bool                              UndoApplying;
         }
 
-        private sealed class BeltProfileUndoContext { public List<Vector2> Profile; }
+        private sealed class BeltProfileUndoContext { public List<Vector3> Profile; }
 
         private sealed class BeltProfileUndoRecord : IUndoRecord<BeltProfileUndoContext>
         {
             public UndoOperationInfo Info { get; set; }
-            public List<Vector2> Before;
-            public List<Vector2> After;
+            public List<Vector3> Before;
+            public List<Vector3> After;
             public void Undo(BeltProfileUndoContext ctx) => ctx.Profile = CloneBeltProfile(Before);
             public void Redo(BeltProfileUndoContext ctx) => ctx.Profile = CloneBeltProfile(After);
         }
 
-        private static List<Vector2> CloneBeltProfile(List<Vector2> src)
-            => src == null ? null : new List<Vector2>(src);
+        private static List<Vector3> CloneBeltProfile(List<Vector3> src)
+            => src == null ? null : new List<Vector3>(src);
 
-        private static bool BeltProfileEquals(List<Vector2> a, List<Vector2> b)
+        private static bool BeltProfileEquals(List<Vector3> a, List<Vector3> b)
         {
             if (ReferenceEquals(a, b)) return true;
             if (a == null || b == null) return false;

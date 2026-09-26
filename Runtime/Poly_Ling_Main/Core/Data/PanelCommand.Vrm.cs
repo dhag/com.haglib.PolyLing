@@ -182,13 +182,13 @@ namespace Poly_Ling.Data
                  Description = "ひざを解く前に微小量だけ曲げるか。既定は false")]
         public bool KneePreBend { get; }
 
-        [PLParam(TextKey = "VmdToVrmaTPoseAlign",
-                 Description = "レスト姿勢を正準 T ポーズへ揃える補正の範囲。None / ArmsOnly / All。既定は ArmsOnly")]
-        public Poly_Ling.VMD.VmdTPoseAlignScope AlignScope { get; }
-
         [PLParam(TextKey = "VmdToVrmaDiagnosticLog",
                  Description = "切り分け用のログを出すか。既定は false")]
         public bool DiagnosticLog { get; }
+
+        [PLParam(TextKey = "VmdToVrmaViaMuscles",
+                 Description = "マッスルへ焼き込んでから書き出すか。既定は true。false はモデルの骨格のボーン回転をそのまま書き出す（Scale はこのときだけ使う）")]
+        public bool ViaMuscles { get; }
 
         // 既定値の意味は ExportVrmAnimationCommand と同じ。
         // fps = 0 は VMD の 30fps、endSec = 0 は VMD 終端。
@@ -196,8 +196,76 @@ namespace Poly_Ling.Data
             int modelIndex, string filePath, string vmdFilePath,
             float fps = 0f, float startSec = 0f, float endSec = 0f,
             float scale = 1f, bool enableIK = true,
-            Poly_Ling.VMD.VmdTPoseAlignScope alignScope = Poly_Ling.VMD.VmdTPoseAlignScope.ArmsOnly,
             bool diagnosticLog = false, string ikTraceDirectory = "",
+            bool ignoreAngleLimits = false, bool kneePreBend = false,
+            bool viaMuscles = true)
+            : base(modelIndex)
+        {
+            ViaMuscles        = viaMuscles;
+            FilePath          = filePath;
+            VmdFilePath       = vmdFilePath;
+            Fps               = fps;
+            StartSec          = startSec;
+            EndSec            = endSec;
+            Scale             = scale;
+            EnableIK          = enableIK;
+            DiagnosticLog     = diagnosticLog;
+            IkTraceDirectory  = ikTraceDirectory;
+            IgnoreAngleLimits = ignoreAngleLimits;
+            KneePreBend       = kneePreBend;
+        }
+    }
+
+    /// <summary>
+    /// VMD モーションを現在のモデルへ適用しながら、マッスル＋ボーン（二次骨）＋表情の
+    /// PolyLing モーション（.plmotion.json）を書き出す（VmdMotionBake）。
+    /// </summary>
+    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "VMD をモデルへ適用しながら、マッスル＋二次骨＋表情の PolyLing モーション（.plmotion.json）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
+    public class ExportVmdToMotionJsonCommand : PanelCommand
+    {
+        [PLParam(TextKey = "VmdToMotionSavePath",
+                 Description = "書き出し先の .plmotion.json。作業フォルダからの相対経路。絶対経路と \"..\" は拒否される（ダイアログで選んだ直後のパスだけは例外）", Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(TextKey = "VmdToMotionVmdPath",
+                 Description = "読み込む VMD。作業フォルダからの相対経路", Required = true)]
+        public string VmdFilePath { get; }
+
+        [PLParam(TextKey = "VmdToMotionFps",
+                 Description = "1 秒あたりのサンプリング枚数。0 以下にすると VMD の 30fps を使う",
+                 Min = 0.0, Max = 240.0)]
+        public float Fps { get; }
+
+        [PLParam(TextKey = "VmdToMotionStartSec",
+                 Description = "書き出す区間の開始時刻（秒）。出力では 0 秒になる", Min = 0.0)]
+        public float StartSec { get; }
+
+        [PLParam(TextKey = "VmdToMotionEndSec",
+                 Description = "書き出す区間の終了時刻（秒）。StartSec 以下にすると VMD の終端まで",
+                 Min = 0.0)]
+        public float EndSec { get; }
+
+        [PLParam(TextKey = "VmdToMotionEnableIK",
+                 Description = "IK を解いてから採取するか。既定は true")]
+        public bool EnableIK { get; }
+
+        [PLParam(TextKey = "VmdToMotionIgnoreAngleLimits",
+                 Description = "IK の角度制限を無視するか。切り分け用。既定は false")]
+        public bool IgnoreAngleLimits { get; }
+
+        [PLParam(TextKey = "VmdToMotionKneePreBend",
+                 Description = "ひざを解く前に微小量だけ曲げるか。既定は false")]
+        public bool KneePreBend { get; }
+
+        [PLParam(TextKey = "VmdToMotionDiagnosticLog",
+                 Description = "切り分け用のログを出すか（焼いたモーションを再生したときの VMD 直接との差など）。既定は false")]
+        public bool DiagnosticLog { get; }
+
+        public ExportVmdToMotionJsonCommand(
+            int modelIndex, string filePath, string vmdFilePath,
+            float fps = 0f, float startSec = 0f, float endSec = 0f,
+            bool enableIK = true,
+            bool diagnosticLog = false,
             bool ignoreAngleLimits = false, bool kneePreBend = false)
             : base(modelIndex)
         {
@@ -206,11 +274,8 @@ namespace Poly_Ling.Data
             Fps               = fps;
             StartSec          = startSec;
             EndSec            = endSec;
-            Scale             = scale;
             EnableIK          = enableIK;
-            AlignScope        = alignScope;
             DiagnosticLog     = diagnosticLog;
-            IkTraceDirectory  = ikTraceDirectory;
             IgnoreAngleLimits = ignoreAngleLimits;
             KneePreBend       = kneePreBend;
         }

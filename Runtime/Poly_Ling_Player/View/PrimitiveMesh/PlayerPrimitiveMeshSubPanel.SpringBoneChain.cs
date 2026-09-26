@@ -121,7 +121,7 @@ namespace Poly_Ling.Player
             if (kind != ShapeKind.SpringBoneCylinder)
             {
                 if (_revProfile == null)
-                    _revProfile = RevolutionProfileGenerator.CreateDefault();
+                    _revProfile = RevolutionProfileGenerator.To3D(RevolutionProfileGenerator.CreateDefault());
 
                 c.Add(SL("折れ線は下のプロファイルエディタで編集します。"
                        + "X が取り付け先からの水平距離、Y が高さ（下が負）です。"));
@@ -236,7 +236,8 @@ namespace Poly_Ling.Player
                     SetSpringBoneStatus("折れ線の点が 2 個未満です。プロファイルエディタで点を足してください。");
                     return;
                 }
-                profile = _revProfile.ToArray();
+                // 回転配置と同じく、3D の点は (半径, y) に直して渡す。
+                profile = RevolutionProfileEditCore.ToRadial(_revProfile).ToArray();
             }
 
             // 1. ボーンを作る

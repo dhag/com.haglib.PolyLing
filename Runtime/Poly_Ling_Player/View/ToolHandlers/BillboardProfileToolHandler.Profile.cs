@@ -6,12 +6,16 @@
 //   1. ハンドルをドラッグ … その点のずれを変える（拘束は残り、解き直される）
 //   2. 点をドラッグ     … 選択中の点をまとめて動かす（掴んだ点が未選択なら選び直す）
 //      クリック：選択（Shift 追加、Ctrl 除外）
-//   3. 弦をクリック     … その位置に点を挿入
+//   3. 弦の上で押す     … 押した瞬間に挿入待ちの点を作り、そのまま動かせる。離したとき 1 回で確定
+//      （IPlayerPressHandler。動かさずに離せば押した位置に入る）
 //   4. 空いた所をドラッグ … 矩形選択（Shift 追加、Ctrl 除外）。空いた所のクリックは選択解除
 //   Delete / Backspace … 選択中の点を消す（2 点未満になる群は群ごと消す）
 // 【確定】ドラッグ中はオーバーレイで仮の形を見せ、離したときに群ごとに SetLineGroupPoints を 1 回送る。
 // 【座標】点の表示位置は GPU の値。ハンドルの表示位置は点 + DisplayWorldMatrix で移したずれ。
 //   画面 → ローカルは TryScreenToLocal（DisplayWorldMatrixInverse）。
+// 【候補】ポインタ移動で決め（ResolveProfileHover）、面追加と同じ描画経路で見せる。
+//   点・直線の弦は GPU ホバー（頂点・線分）。ハンドルと曲線の弦（非表示の弦）は
+//   重ね描きにしか無いので画面距離で調べる。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -21,13 +25,13 @@ using Poly_Ling.Tools;
 
 namespace Poly_Ling.Player
 {
-    public partial class BillboardProfileToolHandler
+    public partial class BillboardProfileToolHandler : IPlayerPressHandler
     {
         /// <summary>選択中の点（群の番号, 群の中の点の番号）。</summary>
         private readonly HashSet<(int G, int P)> _selected = new HashSet<(int, int)>();
         public IReadOnlyCollection<(int G, int P)> SelectedPoints => _selected;
 
-        private enum DragKind { None, Points, Handle, Marquee }
+        private enum DragKind { None, Points, Handle, Marquee, Insert }
         private DragKind _drag = DragKind.None;
         private Vector2 _dragStartImgui;
         private Vector3 _dragStartLocal;
@@ -43,28 +47,273 @@ namespace Poly_Ling.Player
             => _drag == DragKind.Handle ? (_dragHandle.G, _dragHandle.P, _dragHandle.IsOut, _dragHandleOffset) : ((int, int, bool, Vector3)?)null;
         public Rect? Marquee => _marquee;
 
+        // ── 候補（ポインタ移動で決める。クリック・ドラッグ開始も同じ規則で決め直す）──
+        public enum ProfileHoverKind { None, Point, Chord, Handle }
+        private struct ProfileHover
+        {
+            public ProfileHoverKind Kind;
+            public int G, P;           // Point：群と点 / Chord：群と区間の始点 / Handle：群と点
+            public int Vertex;         // Point：頂点番号
+            public bool IsOut;         // Handle：出の側か
+            public Vector3 InsertLocal; // Chord：挿入位置（ローカル）
+        }
+        private ProfileHover _ph;
+
+        public ProfileHoverKind ProfileHoverType => _ph.Kind;
+        /// <summary>選択候補の頂点（Point のとき）。</summary>
+        public int ProfileHoverVertex => _ph.Kind == ProfileHoverKind.Point ? _ph.Vertex : -1;
+        /// <summary>挿入候補の区間（群, 区間の始点）と挿入位置（ローカル）。Chord のとき。</summary>
+        public (int G, int P, Vector3 Local)? ProfileHoverChord
+            => _ph.Kind == ProfileHoverKind.Chord ? (_ph.G, _ph.P, _ph.InsertLocal) : ((int, int, Vector3)?)null;
+        /// <summary>候補のハンドル（群, 点, 出か）。Handle のとき。</summary>
+        public (int G, int P, bool IsOut)? ProfileHoverHandle
+            => _ph.Kind == ProfileHoverKind.Handle ? (_ph.G, _ph.P, _ph.IsOut) : ((int, int, bool)?)null;
+
+        // ── 押した瞬間の挿入（弦の上で押す → 挿入待ちの点を作り、そのまま動かして離したら確定）──
+        private bool    _piActive;         // 挿入待ちの点がある
+        private int     _piG, _piAt;       // 群と挿入位置（この添字の前へ入れる）
+        private Vector3 _piLocal;          // 挿入待ちの点の現在位置（ローカル）
+        private Vector3 _piBase;           // 押したときの挿入位置（ローカル）
+        private Vector3 _piPointerStart;   // 押したときのポインタ（編集面上のローカル）
+        private bool    _pressConsumed;    // 押下で処理済み（続くクリックでは何もしない）
+
+        /// <summary>挿入待ちの点（群, 挿入位置, ローカル座標）。無ければ null。</summary>
+        public (int G, int At, Vector3 Local)? PendingInsert
+            => _piActive ? (_piG, _piAt, _piLocal) : ((int, int, Vector3)?)null;
+
+        public void OnLeftButtonDown(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
+        {
+            _pressConsumed = false;
+            _piActive = false;
+            if (Mode != SubMode.Profile) return;
+            if (!TryGetTarget(out _, out var mc, out var ctx)) return;
+            var imgui = ToImgui(screenPos, ctx);
+            ResolveProfileHover(imgui);
+            if (_ph.Kind != ProfileHoverKind.Chord) return;
+            if (!TryScreenToLocal(mc, ctx, imgui, out _piPointerStart)) return;
+
+            _piActive = true;
+            _piG = _ph.G;
+            _piAt = _ph.P + 1;
+            _piBase = _piLocal = _ph.InsertLocal;
+            _ph = default;
+            _selected.Clear();
+            SetStatus("点を挿入します（そのまま動かせます）");
+            OnChanged?.Invoke();
+        }
+
+        public void OnLeftPressMove(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
+        {
+            if (!_piActive) return;
+            MovePendingInsert(screenPos);
+        }
+
+        /// <summary>動かさずに離した：押した位置で確定する（続くクリックでは挿入しない）。</summary>
+        public void OnLeftPressCancel(Vector2 screenPos, ModifierKeys mods)
+        {
+            if (!_piActive) return;
+            CommitPendingInsert();
+            _pressConsumed = true;
+        }
+
+        private void MovePendingInsert(Vector2 screenPos)
+        {
+            if (!TryGetTarget(out _, out var mc, out var ctx)) return;
+            if (!TryScreenToLocal(mc, ctx, ToImgui(screenPos, ctx), out var cur)) return;
+            _piLocal = _piBase + (cur - _piPointerStart);
+            _piLocal.z = 0f;
+            OnChanged?.Invoke();
+        }
+
+        private void CommitPendingInsert()
+        {
+            if (!_piActive) return;
+            _piActive = false;
+            if (!TryGetTarget(out _, out var mc, out _)) return;
+            var mo = mc.MeshObject;
+            if (mo.LineGroups == null || _piG >= mo.LineGroups.Count) return;
+            InsertPoint(mc, _piG, _piAt, _piLocal);
+        }
+
+        /// <summary>
+        /// 候補を決める。優先順はクリック・ドラッグと同じ（ハンドル → 点 → 弦）。
+        /// ハンドルと曲線の弦はオーバーレイにしか無いので画面距離、点と直線の弦は GPU ホバー。
+        /// </summary>
+        private void ResolveProfileHover(Vector2 imgui)
+        {
+            _ph = default;
+            if (!TryGetTarget(out var model, out var mc, out var ctx)) return;
+            var mo = mc.MeshObject;
+            if (mo.LineGroups == null || mo.LineGroups.Count == 0) return;
+
+            var hd = HitHandle(model, mc, ctx, imgui);
+            if (hd.HasValue)
+            {
+                _ph = new ProfileHover { Kind = ProfileHoverKind.Handle, G = hd.Value.G, P = hd.Value.P, IsOut = hd.Value.IsOut };
+                return;
+            }
+
+            var e = GetHoverElement != null
+                ? GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex | Poly_Ling.Selection.MeshSelectMode.Line)
+                : PlayerHoverElement.None;
+            bool onTarget = e.MeshIndex >= 0 && e.MeshIndex == model.ActiveMeshIndex;
+
+            if (onTarget && e.Kind == PlayerHoverKind.Vertex && FindPoint(mo, e.VertexIndex, out int pg, out int pp))
+            {
+                _ph = new ProfileHover { Kind = ProfileHoverKind.Point, G = pg, P = pp, Vertex = e.VertexIndex };
+                return;
+            }
+
+            // 直線の弦：2 頂点の面に当たっていれば、その区間
+            if (onTarget && e.Kind == PlayerHoverKind.Line && e.FaceIndex >= 0 && e.FaceIndex < mo.FaceCount)
+            {
+                var f = mo.Faces[e.FaceIndex];
+                if (f?.VertexIndices != null && f.VertexIndices.Count == 2
+                    && FindSpan(mo, f.VertexIndices[0], f.VertexIndices[1], out int sg, out int sp)
+                    && TryChordInsert(model, mc, ctx, imgui, sg, sp, out var local))
+                {
+                    _ph = new ProfileHover { Kind = ProfileHoverKind.Chord, G = sg, P = sp, InsertLocal = local };
+                    return;
+                }
+            }
+
+            // 曲線の弦（ハンドルを持つ群の弦は非表示で GPU に当たらない）：重ね描きの曲線への画面距離
+            float best = PickRadius;
+            int bg = -1, bp = -1;
+            for (int gi = 0; gi < mo.LineGroups.Count; gi++)
+            {
+                var g = mo.LineGroups[gi];
+                if (g?.Order == null || !g.HasHandles) continue;
+                int segs = g.Closed ? g.Order.Count : g.Order.Count - 1;
+                for (int k = 0; k < segs; k++)
+                {
+                    var line = ChordScreen(model, mc, ctx, gi, k);
+                    if (line == null) continue;
+                    for (int i = 1; i < line.Count; i++)
+                    {
+                        float d = DistToSegment(imgui, line[i - 1], line[i]);
+                        if (d < best) { best = d; bg = gi; bp = k; }
+                    }
+                }
+            }
+            if (bg >= 0 && TryChordInsert(model, mc, ctx, imgui, bg, bp, out var cl))
+                _ph = new ProfileHover { Kind = ProfileHoverKind.Chord, G = bg, P = bp, InsertLocal = cl };
+        }
+
+        /// <summary>頂点を持つ最初の (群, 点)。</summary>
+        private static bool FindPoint(MeshObject mo, int vi, out int g, out int p)
+        {
+            g = p = -1;
+            for (int gi = 0; gi < mo.LineGroups.Count; gi++)
+            {
+                var order = mo.LineGroups[gi]?.Order;
+                if (order == null) continue;
+                int k = order.IndexOf(vi);
+                if (k >= 0) { g = gi; p = k; return true; }
+            }
+            return false;
+        }
+
+        /// <summary>2 頂点の組に当たる (群, 区間の始点)。ハンドルを持たない群だけ（持つ群の弦は非表示）。</summary>
+        private static bool FindSpan(MeshObject mo, int a, int b, out int g, out int p)
+        {
+            g = p = -1;
+            for (int gi = 0; gi < mo.LineGroups.Count; gi++)
+            {
+                var grp = mo.LineGroups[gi];
+                if (grp?.Order == null || grp.HasHandles) continue;
+                int n = grp.Order.Count;
+                int segs = grp.Closed ? n : n - 1;
+                for (int k = 0; k < segs; k++)
+                {
+                    int u = grp.Order[k], v = grp.Order[(k + 1) % n];
+                    if ((u == a && v == b) || (u == b && v == a)) { g = gi; p = k; return true; }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 区間の画面上の折れ線（Y=0 上）。点は GPU の値、ハンドルは DisplayWorldMatrix で移したずれ。
+        /// 曲線は重ね描き（UpdateLineCurveOverlay）と同じ分割数。
+        /// </summary>
+        public List<Vector2> ChordScreen(ModelContext model, MeshContext mc, ToolContext ctx, int gi, int k)
+        {
+            var mo = mc?.MeshObject;
+            if (mo?.LineGroups == null || gi < 0 || gi >= mo.LineGroups.Count) return null;
+            var g = mo.LineGroups[gi];
+            int n = g.Order.Count;
+            if (k < 0 || k >= n) return null;
+            int kb = (k + 1) % n;
+            var wa = GetVertexWorld?.Invoke(model, mc, g.Order[k]);
+            var wb = GetVertexWorld?.Invoke(model, mc, g.Order[kb]);
+            if (!wa.HasValue || !wb.HasValue) return null;
+
+            var result = new List<Vector2>();
+            Vector3 outA = Vector3.zero, inB = Vector3.zero;
+            if (g.HasHandles)
+            {
+                Matrix4x4 dm = mc.DisplayWorldMatrix;
+                outA = dm.MultiplyVector(g.PointHandles[k]?.OutOffset ?? Vector3.zero);
+                inB  = dm.MultiplyVector(g.PointHandles[kb]?.InOffset ?? Vector3.zero);
+            }
+            bool straight = outA.sqrMagnitude < 1e-12f && inB.sqrMagnitude < 1e-12f;
+            int steps = straight ? 1 : Poly_Ling.Ops.LineCurveSampler.DefaultSegmentsPerSpan * 2;
+            for (int s = 0; s <= steps; s++)
+                result.Add(ctx.WorldToScreen(Poly_Ling.Ops.LineCurveSampler.Bezier(
+                    wa.Value, wa.Value + outA, wb.Value + inB, wb.Value, (float)s / steps)));
+            return result;
+        }
+
+        /// <summary>区間の画面上の折れ線でポインタに最も近い所を、編集面のローカル座標にする。</summary>
+        private bool TryChordInsert(ModelContext model, MeshContext mc, ToolContext ctx, Vector2 imgui,
+                                    int gi, int k, out Vector3 local)
+        {
+            local = Vector3.zero;
+            var line = ChordScreen(model, mc, ctx, gi, k);
+            if (line == null || line.Count < 2) return false;
+            float best = float.MaxValue;
+            Vector2 foot = line[0];
+            for (int i = 1; i < line.Count; i++)
+            {
+                Vector2 q = ClosestOnSegment(imgui, line[i - 1], line[i]);
+                float d = Vector2.Distance(imgui, q);
+                if (d < best) { best = d; foot = q; }
+            }
+            return TryScreenToLocal(mc, ctx, foot, out local);
+        }
+
+        private static Vector2 ClosestOnSegment(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float len2 = ab.sqrMagnitude;
+            if (len2 < 1e-6f) return a;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / len2);
+            return a + ab * t;
+        }
+
         // ================================================================
         // クリック
         // ================================================================
 
         private void ProfileClick(Vector2 screenPos, ModifierKeys mods)
         {
+            if (_pressConsumed) { _pressConsumed = false; return; }   // 押下で挿入済み
             if (!TryGetTarget(out var model, out var mc, out var ctx)) return;
-            var imgui = ToImgui(screenPos, ctx);
+            ResolveProfileHover(ToImgui(screenPos, ctx));
 
-            var pt = HitPoint(model, mc, ctx, imgui);
-            if (pt.HasValue)
+            switch (_ph.Kind)
             {
-                ApplySelect(pt.Value, mods);
-                OnChanged?.Invoke();
-                return;
-            }
-
-            var seg = HitChord(model, mc, ctx, imgui);
-            if (seg.HasValue && TryScreenToLocal(mc, ctx, imgui, out var local))
-            {
-                InsertPoint(mc, seg.Value.G, seg.Value.P + 1, local);
-                return;
+                case ProfileHoverKind.Point:
+                    ApplySelect((_ph.G, _ph.P), mods);
+                    OnChanged?.Invoke();
+                    return;
+                case ProfileHoverKind.Chord:
+                    InsertPoint(mc, _ph.G, _ph.P + 1, _ph.InsertLocal);
+                    _ph = default;
+                    return;
+                case ProfileHoverKind.Handle:
+                    return;   // ハンドルはドラッグで動かす。クリックでは何もしない。
             }
 
             if (!mods.Shift && !mods.Ctrl) { _selected.Clear(); OnChanged?.Invoke(); }
@@ -88,27 +337,34 @@ namespace Poly_Ling.Player
             var imgui = ToImgui(screenPos, ctx);
             _dragStartImgui = imgui;
 
-            var hd = HitHandle(model, mc, ctx, imgui);
-            if (hd.HasValue)
+            // 弦の上で押していれば、挿入待ちの点をそのまま動かす。
+            if (_piActive) { _drag = DragKind.Insert; return; }
+
+            ResolveProfileHover(imgui);
+
+            if (_ph.Kind == ProfileHoverKind.Handle)
             {
-                var g = mc.MeshObject.LineGroups[hd.Value.G];
-                var h = g.PointHandles[hd.Value.P];
-                _dragHandle = hd.Value;
-                _dragHandleOffset = hd.Value.IsOut ? h.OutOffset : h.InOffset;
+                var g = mc.MeshObject.LineGroups[_ph.G];
+                var h = g.PointHandles[_ph.P];
+                _dragHandle = (_ph.G, _ph.P, _ph.IsOut);
+                _dragHandleOffset = _ph.IsOut ? h.OutOffset : h.InOffset;
                 _drag = DragKind.Handle;
+                _ph = default;
                 return;
             }
 
-            var pt = HitPoint(model, mc, ctx, imgui);
-            if (pt.HasValue && TryScreenToLocal(mc, ctx, imgui, out _dragStartLocal))
+            if (_ph.Kind == ProfileHoverKind.Point && TryScreenToLocal(mc, ctx, imgui, out _dragStartLocal))
             {
-                if (!_selected.Contains(pt.Value)) ApplySelect(pt.Value, mods);
+                var key = (_ph.G, _ph.P);
+                if (!_selected.Contains(key)) ApplySelect(key, mods);
                 _dragDeltaLocal = Vector3.zero;
                 _drag = DragKind.Points;
+                _ph = default;
                 OnChanged?.Invoke();
                 return;
             }
 
+            _ph = default;
             _drag = DragKind.Marquee;
             _marquee = new Rect(imgui, Vector2.zero);
             OnChanged?.Invoke();
@@ -117,6 +373,7 @@ namespace Poly_Ling.Player
         private void ProfileDrag(Vector2 screenPos, ModifierKeys mods)
         {
             if (_drag == DragKind.None) return;
+            if (_drag == DragKind.Insert) { MovePendingInsert(screenPos); return; }
             if (!TryGetTarget(out var model, out var mc, out var ctx)) return;
             var imgui = ToImgui(screenPos, ctx);
 
@@ -147,6 +404,14 @@ namespace Poly_Ling.Player
         {
             var kind = _drag;
             _drag = DragKind.None;
+            if (kind == DragKind.Insert)
+            {
+                MovePendingInsert(screenPos);
+                CommitPendingInsert();
+                _marquee = null;
+                OnChanged?.Invoke();
+                return;
+            }
             if (!TryGetTarget(out var model, out var mc, out var ctx)) { _marquee = null; return; }
             var mo = mc.MeshObject;
 
@@ -361,27 +626,7 @@ namespace Poly_Ling.Player
             return w.HasValue ? ctx.WorldToScreen(w.Value) : (Vector2?)null;
         }
 
-        private (int G, int P)? HitPoint(ModelContext model, MeshContext mc, ToolContext ctx, Vector2 imgui)
-        {
-            var mo = mc.MeshObject;
-            if (mo.LineGroups == null) return null;
-            float best = PickRadius;
-            (int, int)? found = null;
-            for (int gi = 0; gi < mo.LineGroups.Count; gi++)
-            {
-                var g = mo.LineGroups[gi];
-                if (g?.Order == null) continue;
-                for (int p = 0; p < g.Order.Count; p++)
-                {
-                    var s = ScreenOf(model, mc, ctx, g.Order[p]);
-                    if (!s.HasValue) continue;
-                    float d = Vector2.Distance(imgui, s.Value);
-                    if (d < best) { best = d; found = (gi, p); }
-                }
-            }
-            return found;
-        }
-
+        /// <summary>ハンドルへの当たり。ハンドルは重ね描きにしか無いので画面距離で調べる。</summary>
         private (int G, int P, bool IsOut)? HitHandle(ModelContext model, MeshContext mc, ToolContext ctx, Vector2 imgui)
         {
             var mo = mc.MeshObject;
@@ -405,31 +650,6 @@ namespace Poly_Ling.Player
                         float d = Vector2.Distance(imgui, ctx.WorldToScreen(w.Value + dm.MultiplyVector(off)));
                         if (d < best) { best = d; found = (gi, p, s == 1); }
                     }
-                }
-            }
-            return found;
-        }
-
-        /// <summary>弦（隣り合う点を結ぶ画面上の線分）への当たり。(群, 区間の始点) を返す。</summary>
-        private (int G, int P)? HitChord(ModelContext model, MeshContext mc, ToolContext ctx, Vector2 imgui)
-        {
-            var mo = mc.MeshObject;
-            if (mo.LineGroups == null) return null;
-            float best = PickRadius;
-            (int, int)? found = null;
-            for (int gi = 0; gi < mo.LineGroups.Count; gi++)
-            {
-                var g = mo.LineGroups[gi];
-                if (g?.Order == null) continue;
-                int n = g.Order.Count;
-                int segs = g.Closed ? n : n - 1;
-                for (int k = 0; k < segs; k++)
-                {
-                    var a = ScreenOf(model, mc, ctx, g.Order[k]);
-                    var b = ScreenOf(model, mc, ctx, g.Order[(k + 1) % n]);
-                    if (!a.HasValue || !b.HasValue) continue;
-                    float d = DistToSegment(imgui, a.Value, b.Value);
-                    if (d < best) { best = d; found = (gi, k); }
                 }
             }
             return found;

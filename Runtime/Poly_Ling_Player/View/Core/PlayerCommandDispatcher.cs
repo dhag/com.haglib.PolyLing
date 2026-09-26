@@ -434,6 +434,9 @@ namespace Poly_Ling.Player
         /// <summary>VMD → VRMA 書き出しコマンドの実行。</summary>
         public Func<ExportVmdToVrmaCommand, string> OnExportVmdToVrma;
 
+        /// <summary>VMD → PolyLing モーション（マッスル焼き込み）書き出しコマンドの実行。</summary>
+        public Func<ExportVmdToMotionJsonCommand, string> OnExportVmdToMotionJson;
+
         // ================================================================
         // ドラッグ確定（ベベル・押し出し）
         // ================================================================
@@ -541,6 +544,9 @@ namespace Poly_Ling.Player
 
         /// <summary>穴点数合わせコマンドの実行。戻り値は失敗理由。成功時は null。</summary>
         public Func<MatchHoleRingCountCommand, string> OnMatchHoleRingCount;
+
+        /// <summary>辺群の頂点数合わせコマンドの実行。戻り値は失敗理由。成功時は null。</summary>
+        public Func<MatchEdgeChainCountCommand, string> OnMatchEdgeChainCount;
 
         /// <summary>プロジェクト初期化コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
         public Func<ResetProjectCommand, string> OnResetProject;

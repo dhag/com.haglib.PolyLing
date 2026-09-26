@@ -38,14 +38,14 @@ namespace Poly_Ling.Player
         private const string RevUndoStackId = "PlayerEdit/RevProfileEdit";
         private const string P2dUndoStackId = "PlayerEdit/P2dLoopsEdit";
 
-        private sealed class RevProfileUndoContext { public List<Vector2> Profile; }
+        private sealed class RevProfileUndoContext { public List<Vector3> Profile; }
         private sealed class P2dLoopsUndoContext   { public List<Loop>     Loops;   }
 
         private sealed class RevProfileUndoRecord : IUndoRecord<RevProfileUndoContext>
         {
             public UndoOperationInfo Info { get; set; }
-            public List<Vector2> Before;
-            public List<Vector2> After;
+            public List<Vector3> Before;
+            public List<Vector3> After;
             public void Undo(RevProfileUndoContext ctx) => ctx.Profile = CloneRevProfile(Before);
             public void Redo(RevProfileUndoContext ctx) => ctx.Profile = CloneRevProfile(After);
         }
@@ -64,13 +64,13 @@ namespace Poly_Ling.Player
         private UndoStack<P2dLoopsUndoContext>   _p2dUndoStack;
         private P2dLoopsUndoContext              _p2dUndoCtx;
 
-        private List<Vector2> _revEditBefore;   // 回転体：編集前スナップショット
+        private List<Vector3> _revEditBefore;   // 回転体：編集前スナップショット
         private List<Loop>    _p2dEditBefore;   // 2D押し出し：編集前スナップショット
         private bool _revUndoApplying;          // undo/redo 適用中は記録抑止
         private bool _p2dUndoApplying;
 
-        private static List<Vector2> CloneRevProfile(List<Vector2> src)
-            => src == null ? null : new List<Vector2>(src);
+        private static List<Vector3> CloneRevProfile(List<Vector3> src)
+            => src == null ? null : new List<Vector3>(src);
 
         private static List<Loop> CloneP2dLoops(List<Loop> src)
         {
@@ -80,7 +80,7 @@ namespace Poly_Ling.Player
             return r;
         }
 
-        private static bool RevProfileEquals(List<Vector2> a, List<Vector2> b)
+        private static bool RevProfileEquals(List<Vector3> a, List<Vector3> b)
         {
             if (ReferenceEquals(a, b)) return true;
             if (a == null || b == null) return false;

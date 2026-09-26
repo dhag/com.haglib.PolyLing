@@ -28,8 +28,8 @@ namespace Poly_Ling.Player
             if (ed == null) return;
             if (ed.Points == null || ed.Points.Count < 2)
                 ed.Points = ed.DefaultProfile != null
-                    ? ed.DefaultProfile()
-                    : new List<Vector2> { new Vector2(0f, 0f), new Vector2(1f, 0f) };
+                    ? RevolutionProfileGenerator.To3D(ed.DefaultProfile())
+                    : new List<Vector3> { new Vector3(0f, 0f, 0f), new Vector3(1f, 0f, 0f) };
         }
 
         /// <summary>
@@ -260,7 +260,7 @@ namespace Poly_Ling.Player
             SB(btnRow, T("ResetProfile"), () =>
             {
                 BeltBegin(ed);
-                ed.Points = ed.DefaultProfile != null ? ed.DefaultProfile() : ed.Points;
+                ed.Points = ed.DefaultProfile != null ? RevolutionProfileGenerator.To3D(ed.DefaultProfile()) : ed.Points;
                 ed.Sel.Clear(); ed.SelectedIndex = -1;
                 BeltCommit(ed, "断面リセット");
                 D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
@@ -352,7 +352,7 @@ namespace Poly_Ling.Player
                 {
                     if (ed.SelectedIndex < 0 || ed.Points == null || ed.SelectedIndex >= ed.Points.Count) return;
                     xFf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3));
-                    ed.Points[ed.SelectedIndex] = new Vector2(e.newValue, ed.Points[ed.SelectedIndex].y);
+                    ed.Points[ed.SelectedIndex] = new Vector3(e.newValue, ed.Points[ed.SelectedIndex].y, ed.Points[ed.SelectedIndex].z);
                     D(); RefreshBeltCanvas(ed);
                 });
                 xSl.RegisterCallback<PointerDownEvent>(_ => BeltBegin(ed));
@@ -363,7 +363,7 @@ namespace Poly_Ling.Player
                     BeltBegin(ed);
                     float v = e.newValue;
                     xSl.SetValueWithoutNotify(Mathf.Clamp(v, -1f, 2f));
-                    ed.Points[ed.SelectedIndex] = new Vector2(v, ed.Points[ed.SelectedIndex].y);
+                    ed.Points[ed.SelectedIndex] = new Vector3(v, ed.Points[ed.SelectedIndex].y, ed.Points[ed.SelectedIndex].z);
                     D(); RefreshBeltCanvas(ed);
                     BeltCommit(ed, "点X編集");
                 });
@@ -379,7 +379,7 @@ namespace Poly_Ling.Player
                 {
                     if (ed.SelectedIndex < 0 || ed.Points == null || ed.SelectedIndex >= ed.Points.Count) return;
                     yFf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3));
-                    ed.Points[ed.SelectedIndex] = new Vector2(ed.Points[ed.SelectedIndex].x, e.newValue);
+                    ed.Points[ed.SelectedIndex] = new Vector3(ed.Points[ed.SelectedIndex].x, e.newValue, ed.Points[ed.SelectedIndex].z);
                     D(); RefreshBeltCanvas(ed);
                 });
                 ySl.RegisterCallback<PointerDownEvent>(_ => BeltBegin(ed));
@@ -390,7 +390,7 @@ namespace Poly_Ling.Player
                     BeltBegin(ed);
                     float v = e.newValue;
                     ySl.SetValueWithoutNotify(Mathf.Clamp(v, -1f, 2f));
-                    ed.Points[ed.SelectedIndex] = new Vector2(ed.Points[ed.SelectedIndex].x, v);
+                    ed.Points[ed.SelectedIndex] = new Vector3(ed.Points[ed.SelectedIndex].x, v, ed.Points[ed.SelectedIndex].z);
                     D(); RefreshBeltCanvas(ed);
                     BeltCommit(ed, "点Y編集");
                 });
@@ -525,7 +525,7 @@ namespace Poly_Ling.Player
                 foreach (var i in ed.Sel)
                     if (i >= 0 && i < ed.Points.Count) pts.Add(ed.Points[i]);
             }
-            else pts.AddRange(ed.Points);
+            else foreach (var q in ed.Points) pts.Add(q);
             return pts;
         }
 
@@ -545,7 +545,7 @@ namespace Poly_Ling.Player
             bool useSel = ed.Sel.Count > 0;
             var sel = new List<Vector2>();
             if (useSel) foreach (var i in ed.Sel) if (i >= 0 && i < ed.Points.Count) sel.Add(ed.Points[i]);
-            var orig = new List<Vector2>(ed.Points);
+            var orig = new List<Vector3>(ed.Points);
 
             for (int i = 0; i < orig.Count; i++)
             {
@@ -555,7 +555,8 @@ namespace Poly_Ling.Player
                 else wt = ed.Magnet.Enabled ? ed.Magnet.WeightFor(orig[i], sel) : 0f;
                 if (wt <= 0f) continue;
 
-                ed.Points[i] = Xform2D(orig[i], a, mx, my, sx, sy, saCos, saSin, deg, wt);
+                ed.Points[i] = RevolutionProfileEditCore.WithXY(
+                    orig[i], Xform2D(orig[i], a, mx, my, sx, sy, saCos, saSin, deg, wt));
             }
 
             BeltCommit(ed, "変換適用");
@@ -604,10 +605,10 @@ namespace Poly_Ling.Player
 
         // ================================================================
         // メッシュ⇄断面プロファイル
-        // 取り込み元／反映先 = 選択オブジェクト内の2頂点ライン。Z は捨てて XY を使う
-        // （回転体・2Dプロファイルと同じ規約）。
-        // 断面座標は rung 長で正規化された系なので、取り込み時だけ長辺が 1 になるよう
-        // 等方スケールし、AABB の最小角を原点へ寄せる。反映は生データのまま書き出す。
+        // 取り込み元／反映先 = 選択オブジェクト内の2頂点ライン。点は 3D のまま使う
+        // （回転体・2D押し出しと同じ規約）。
+        // 断面座標は rung 長で正規化された系なので、取り込み時だけ最長辺が 1 になるよう
+        // 等方スケールし、AABB の最小角を原点へ寄せる（z も同じ扱い）。反映は生データのまま書き出す。
         // ================================================================
 
         /// <summary>選択オブジェクトの2頂点ラインを断面プロファイルへ取り込む。</summary>
@@ -620,7 +621,7 @@ namespace Poly_Ling.Player
 
             var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
 
-            List<Vector2> pts = null;
+            List<Vector3> pts = null;
             if (ed.ClosedLoop)
             {
                 // 閉ループ断面。複数ループがあれば点数が最多のものを採る。
@@ -680,7 +681,7 @@ namespace Poly_Ling.Player
         /// 実体は LineProfileExtractor.NormalizeToUnitSpan。
         /// 自動検証パネルも同じ規則で取り込むため、規則は 1 箇所に置く。
         /// </summary>
-        private static List<Vector2> NormalizeBeltProfile(IReadOnlyList<Vector2> src)
+        private static List<Vector3> NormalizeBeltProfile(IReadOnlyList<Vector3> src)
             => LineProfileExtractor.NormalizeToUnitSpan(src);
 
         // 複数メッシュの連結は Poly_Ling.Ops.MeshObjectAppendOps.Combine へ移設した。

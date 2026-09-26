@@ -93,6 +93,49 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 辺群ブリッジの 2 つの辺群の頂点数を揃える。基準側の頂点数に合わせて、もう一方の辺を
+    /// 割る（中点を打つ）か潰す（2 頂点を結合する）。頂点数が揃うと辺群ブリッジの面が全部四角形になる。
+    ///
+    /// 辺は同一メッシュの境界辺に限る。2 群への分け方は CreateEdgeBridgeCommand と同じ
+    /// （EdgeChainOps.SplitIntoTwoChains。構成頂点の最小番号が小さい方が辺群①）。
+    /// 開いた辺群の端点は動かさない。
+    /// </summary>
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.VertexCount | PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description = "辺群ブリッジの 2 つの辺群の頂点数を、基準側に合わせて揃える。揃うと辺群ブリッジの面が全部四角形になる。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "数えた描画オブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
+    [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
+    public class MatchEdgeChainCountCommand : PanelCommand
+    {
+        /// <summary>辺のあるメッシュの MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "EdgeChainCountMesh", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Description = "対象メッシュの索引", Required = true)]
+        public int MeshIndex { get; }
+
+        /// <summary>拾った辺。両端の頂点番号の組で表す。</summary>
+        [PLParam(TextKey = "EdgeChainCountEdges", Description = "拾った辺の列（2 つの辺群を含む）", Required = true)]
+        public Poly_Ling.Selection.VertexPair[] Edges { get; }
+
+        /// <summary>true なら辺群②を基準にして辺群①を変える。false なら辺群①が基準。</summary>
+        [PLParam(TextKey = "EdgeChainCountBaseIsB", Description = "辺群②を基準にする（false なら辺群①が基準）")]
+        public bool BaseIsB { get; }
+
+        /// <summary>三角形を三角形へ分割するか。false なら四角へ分割する。</summary>
+        [PLParam(TextKey = "HoleRingSplitTri", Description = "三角形を三角形へ分割する")]
+        public bool SplitTriangleIntoTriangles { get; }
+
+        public MatchEdgeChainCountCommand(
+            int modelIndex, int meshIndex, Poly_Ling.Selection.VertexPair[] edges,
+            bool baseIsB, bool splitTriangleIntoTriangles = true)
+            : base(modelIndex)
+        {
+            MeshIndex                  = meshIndex;
+            Edges                      = edges;
+            BaseIsB                    = baseIsB;
+            SplitTriangleIntoTriangles = splitTriangleIntoTriangles;
+        }
+    }
+
+    /// <summary>
     /// 面を消す。面削除モードのクリック 1 回ぶんに相当するが、複数枚をまとめて渡せる。
     /// 消すのは指定メッシュの面だけで、他のオブジェクトの選択は巻き込まない。
     /// </summary>

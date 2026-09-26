@@ -138,6 +138,32 @@ namespace Poly_Ling.Player
         public bool AutoCorrespondence { get; set; } = true;
 
         // ================================================================
+        // 頂点数合わせの設定（サブパネルから操作）
+        // ================================================================
+
+        private bool _matchBaseIsB;
+
+        /// <summary>
+        /// 頂点数合わせの基準。false なら辺群①に合わせて辺群②を変える。
+        /// true なら辺群②に合わせて辺群①を変える。
+        /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "頂点数合わせで辺群②を基準にする（既定は辺群①が基準）")]
+        public bool MatchBaseIsB
+        {
+            get => _matchBaseIsB;
+            set
+            {
+                if (_matchBaseIsB == value) return;
+                _matchBaseIsB = value;
+                _summaryDirty = true;
+            }
+        }
+
+        /// <summary>三角形の面へ中点を入れたとき、四角形のまま残さず 2 枚の三角形へ割る。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "頂点数合わせで三角形を三角形へ分割する。既定 ON")]
+        public bool SplitTriangleIntoTriangles { get; set; } = true;
+
+        // ================================================================
         // 拾った辺
         // ================================================================
 
@@ -258,6 +284,11 @@ namespace Poly_Ling.Player
             public List<VertexPair> EdgesA = new List<VertexPair>();
             /// <summary>辺群②の辺（色分け表示用）。分割できないときは空。</summary>
             public List<VertexPair> EdgesB = new List<VertexPair>();
+
+            /// <summary>頂点数合わせを実行できるか。</summary>
+            public bool   CanMatch;
+            /// <summary>頂点数合わせの実行内容、または実行できない理由。</summary>
+            public string MatchMessage = "";
         }
 
         /// <summary>
@@ -310,7 +341,145 @@ namespace Poly_Ling.Player
             s.Ok = true;
             s.Message = $"辺群① {a.Count}頂点({(a.Closed ? "閉" : "開")}) / "
                       + $"辺群② {b.Count}頂点({(b.Closed ? "閉" : "開")})";
+
+            BuildMatchSummary(s, a, b);
             return s;
+        }
+
+        /// <summary>頂点数合わせの可否と内容を Summary へ入れる。</summary>
+        private void BuildMatchSummary(Summary s, EdgeChainOps.Chain a, EdgeChainOps.Chain b)
+        {
+            if (!_boundaryEdgeOnly)
+            {
+                s.MatchMessage = "頂点数合わせは境界辺だけの辺群で行えます。「境界辺のみを対象にする」を ON にしてください";
+                return;
+            }
+
+            var    baseChain   = _matchBaseIsB ? b : a;
+            var    targetChain = _matchBaseIsB ? a : b;
+            string targetName  = _matchBaseIsB ? "辺群①" : "辺群②";
+
+            int delta = baseChain.Count - targetChain.Count;
+            if (delta == 0)
+            {
+                s.MatchMessage = "頂点数は一致しています";
+                return;
+            }
+
+            s.CanMatch = true;
+            s.MatchMessage = delta > 0
+                ? $"{targetName} を {targetChain.Count} → {baseChain.Count} 頂点にします（長い辺から {delta} 箇所割る）"
+                : $"{targetName} を {targetChain.Count} → {baseChain.Count} 頂点にします（短い辺から {-delta} 箇所潰す）";
+        }
+
+        // ================================================================
+        // 頂点数合わせ（Viewer がコマンド受け口から呼ぶ）
+        // ================================================================
+
+        /// <summary>
+        /// 基準側の辺群の頂点数に合わせて、もう一方の辺群の辺を割る／潰す。
+        ///
+        /// 位相計算は HoleRingCountOps.ExecuteOnChain、Undo 記録・ミラー伝播・通知は
+        /// HoleRingCountTool.ApplyWithUndo（穴頂点数合わせと同じもの）に任せる。
+        ///
+        /// 実行後は拾い直す。割った辺はメッシュから消えて 2 本に置き換わり、潰すと
+        /// 頂点番号が詰め直されるので、元の拾いのままでは辺群が途切れる。
+        /// 変わった後の頂点列から辺を作り直して SetPicks へ通す。
+        /// </summary>
+        /// <returns>目標の頂点数へ到達したか。</returns>
+        public bool MatchVertexCount(out string message)
+        {
+            message = null;
+
+            var model = _project?.CurrentModel;
+            if (model == null) { message = "モデルがありません"; return false; }
+
+            var s = Inspect();
+            if (!s.Ok)       { message = s.Message;      return false; }
+            if (!s.CanMatch) { message = s.MatchMessage; return false; }
+
+            int meshIndex = PickedMeshIndex;
+            var mo = model.GetMeshContext(meshIndex)?.MeshObject;
+            if (mo == null) { message = "拾った辺のオブジェクトが見つかりません"; return false; }
+
+            if (!EdgeChainOps.SplitIntoTwoChains(_picked, out var a, out var b, out message))
+                return false;
+
+            var baseChain   = _matchBaseIsB ? b : a;
+            var targetChain = _matchBaseIsB ? a : b;
+
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) { message = "ツールコンテキストがありません"; return false; }
+            PrepareToolContext(ctx, model);
+
+            // 実体側・ミラー側とも変更前の添字で同じ入力を渡す（ApplyWithUndo の約束）。
+            // ExecuteOnChain は order を写してから使うので、targetOrder は書き換わらない。
+            var targetOrder = new List<int>(targetChain.Order);
+            bool closed     = targetChain.Closed;
+            int  desired    = baseChain.Count;
+            var  opt        = new HoleRingCountOps.Options
+            {
+                SplitTriangleIntoTriangles = SplitTriangleIntoTriangles,
+            };
+
+            // 基準側の頂点列は実体側だけで追従させる（ミラー側では拾い直さない）。
+            var baseTrack = new List<int>(baseChain.Order);
+
+            var result = HoleRingCountTool.ApplyWithUndo(
+                ctx, meshIndex,
+                m => HoleRingCountOps.ExecuteOnChain(
+                    m, targetOrder, closed, desired, opt,
+                    ReferenceEquals(m, mo) ? baseTrack : null),
+                "Edge Chain Count", out message);
+
+            if (result == null || !result.Ok)
+            {
+                _summaryDirty = true;
+                OnPicksChanged?.Invoke();
+                return false;
+            }
+
+            // 変わった後の頂点列から辺を作り直して拾い直す。
+            var edges = new List<VertexPair>();
+            AddChainEdges(edges, baseTrack,    baseChain.Closed);
+            AddChainEdges(edges, result.Order, closed);
+
+            InvalidateBoundaryCache();
+            if (!SetPicks(meshIndex, edges, out string pickReason))
+            {
+                message = $"{result.Message}（拾い直しに失敗: {pickReason}）";
+                return false;
+            }
+
+            return result.Reached;
+        }
+
+        /// <summary>頂点列の隣り合う組を辺として足す。閉環なら末尾→先頭も足す。</summary>
+        private static void AddChainEdges(List<VertexPair> edges, List<int> order, bool closed)
+        {
+            int n = order.Count;
+            int edgeCount = closed ? n : n - 1;
+            for (int i = 0; i < edgeCount; i++)
+                edges.Add(new VertexPair(order[i], order[(i + 1) % n]));
+        }
+
+        /// <summary>
+        /// ApplyWithUndo が使うコンテキストの配線（HoleRingCountToolHandler.Activate と同じ）。
+        /// Undo の記録先・位相変更の通知・再描画をこのハンドラの結線で満たす。
+        /// </summary>
+        private void PrepareToolContext(ToolContext ctx, ModelContext model)
+        {
+            var mc = model?.ActiveMeshContext;
+            ctx.Model                 = model;
+            ctx.SelectedVertices      = mc?.SelectedVertices;
+            ctx.SelectionState        = mc?.Selection;
+            ctx.UndoController        = _undoController;
+            ctx.CommandQueue          = _commandQueue;
+            ctx.Repaint               = OnRepaint;
+            ctx.NotifyTopologyChanged = NotifyTopologyChanged;
+            ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            if (_undoController?.MeshUndoContext != null && model != null)
+                _undoController.MeshUndoContext.ParentModelContext = model;
         }
 
         // ================================================================

@@ -33,8 +33,8 @@
 //   実体ノード     … MeshContext.WorldMatrix。
 //                    VMDApplier.ApplyBonePose が BonePoseData を書いたあと
 //                    ModelContext.ComputeWorldMatrices で更新される。
-//                    IK を有効にした場合、CCDIKSolver は BonePoseData ではなく
-//                    WorldMatrix を直接書き換えるので、その結果もここに入る。
+//                    IK を有効にした場合、CCDIKSolver は BonePoseData の "IK" レイヤーと
+//                    WorldMatrix の両方を書くので、その結果もここに入る。
 //   ミラーノード   … 同上。ミラー側の実効ワールドは ComputeWorldMatrices が
 //                    常に S·H·S として返すため、そのまま読めばよい。
 //   純仮想ミラー関節 … MeshContext を持たない。VMD はそこへキーを持てない

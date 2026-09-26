@@ -42,8 +42,8 @@ namespace Poly_Ling.Frill
         /// 割れないとき（span &lt; 2 / 点が足りない）は false を返す。
         /// </summary>
         public static bool Split(
-            IReadOnlyList<Vector2> a, IReadOnlyList<Vector2> b, int span,
-            out Vector2[][] piecesA, out Vector2[][] piecesB)
+            IReadOnlyList<Vector3> a, IReadOnlyList<Vector3> b, int span,
+            out Vector3[][] piecesA, out Vector3[][] piecesB)
         {
             piecesA = null;
             piecesB = null;
@@ -93,8 +93,8 @@ namespace Poly_Ling.Frill
                 cutU[d]   = u;
             }
 
-            piecesA = new Vector2[span][];
-            if (useB) piecesB = new Vector2[span][];
+            piecesA = new Vector3[span][];
+            if (useB) piecesB = new Vector3[span][];
 
             for (int d = 0; d < span; d++)
             {
@@ -118,22 +118,23 @@ namespace Poly_Ling.Frill
         // 内部
         // ================================================================
 
-        private static Vector2[] BuildPiece(
-            IReadOnlyList<Vector2> src, List<int> inner,
+        private static Vector3[] BuildPiece(
+            IReadOnlyList<Vector3> src, List<int> inner,
             int j0, float u0, int j1, float u1, int span, int d)
         {
             int m   = inner.Count + 2;
-            var dst = new Vector2[m];
+            var dst = new Vector3[m];
 
             dst[0] = At(src, j0, u0);
             for (int k = 0; k < inner.Count; k++) dst[k + 1] = src[inner[k]];
             dst[m - 1] = At(src, j1, u1);
 
-            for (int k = 0; k < m; k++) dst[k] = new Vector2(dst[k].x * span - d, dst[k].y);
+            // x だけを断片の 0..1 へ写す。y・z はそのまま。
+            for (int k = 0; k < m; k++) dst[k] = new Vector3(dst[k].x * span - d, dst[k].y, dst[k].z);
             return dst;
         }
 
-        private static Vector2 At(IReadOnlyList<Vector2> src, int j, float u)
-            => Vector2.Lerp(src[j], src[j + 1], u);
+        private static Vector3 At(IReadOnlyList<Vector3> src, int j, float u)
+            => Vector3.Lerp(src[j], src[j + 1], u);
     }
 }

@@ -181,8 +181,12 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
                 OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
+                // プロジェクトは保持せず、使うたびに今のものを取りに行く
+                // （起動後に作ったプロジェクトを受け取り損ねて「モデルがありません」になっていた）。
+                GetProject          = () => ActiveProject,
             };
-            _smoothEdgesHandler.SetProject(ActiveProject);
+            _smoothEdgesHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
+            _smoothEdgesHandler.EndPreview      = EndHostPreview;
             _smoothEdgesHandler.SetUndoController(_editOps?.UndoController);
             _smoothEdgesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _smoothEdgesSubPanel = new PlayerSmoothEdgesSubPanel
@@ -372,8 +376,9 @@ namespace Poly_Ling.Player
                 };
             _edgeBridgeSubPanel = new PlayerEdgeBridgeSubPanel
             {
-                Surface   = ToolSurface,
-                OnExecute = SendEdgeBridgeCommand,
+                Surface      = ToolSurface,
+                OnExecute    = SendEdgeBridgeCommand,
+                OnMatchCount = SendMatchEdgeChainCountCommand,
             };
             _edgeBridgeSubPanel.Build(_layoutRoot.EdgeBridgeSection);
             AttachPanelSelectToggle(_layoutRoot.EdgeBridgeSection, PanelSelectKeyEdgeBridge);

@@ -56,6 +56,8 @@ namespace Poly_Ling.Player
         private Toggle        _lockY;
         [UiControl("lock.z", Description = "Z 方向へは動かさない")]
         private Toggle        _lockZ;
+        [UiControl("preview", Description = "オンの間、設定を変えるたびに結果を表示する（確定はしない）。オフで元の形状へ戻す")]
+        private Toggle        _previewToggle;
         [UiControl("run", Safety = UiSafety.SafeWrite, Description = "平滑化を実行する（Undo できる）。辺か線分の選択が要る")]
         private Button        _smoothBtn;
 
@@ -90,7 +92,7 @@ namespace Poly_Ling.Player
             _strengthSlider = new Slider("強度", sMin, sMax) { value = 0.5f };
             _strengthSlider.style.marginBottom = 3;
             _strengthSlider.tooltip = "1 反復あたり隣接平均へ寄せる量。0 で変化なし。";
-            _strengthSlider.RegisterValueChangedCallback(e => Surface.Set(Tool, "strength", e.newValue));
+            _strengthSlider.RegisterValueChangedCallback(e => { Surface.Set(Tool, "strength", e.newValue); UpdatePreviewIfOn(); });
             _root.Add(_strengthSlider);
 
             // 反復回数
@@ -98,7 +100,7 @@ namespace Poly_Ling.Player
             int iMax = ParameterLimits.GetI("SmoothEdges.Iterations.Max");
             _iterationsSlider = new SliderInt("反復回数", iMin, iMax) { value = 1 };
             _iterationsSlider.style.marginBottom = 3;
-            _iterationsSlider.RegisterValueChangedCallback(e => Surface.Set(Tool, "iterations", e.newValue));
+            _iterationsSlider.RegisterValueChangedCallback(e => { Surface.Set(Tool, "iterations", e.newValue); UpdatePreviewIfOn(); });
             _root.Add(_iterationsSlider);
 
             // 端点固定
@@ -112,6 +114,7 @@ namespace Poly_Ling.Player
                 Surface.Set(Tool, "fixEndpoints", e.newValue);
                 Surface.Invoke(Tool, "refreshStats");
                 UpdateStats();
+                UpdatePreviewIfOn();
             });
             _root.Add(_fixEndpointsToggle);
 
@@ -121,19 +124,35 @@ namespace Poly_Ling.Player
             lockRow.style.flexDirection = FlexDirection.Row;
             lockRow.style.marginBottom  = 4;
 
-            _lockX = MakeToggle("X", v => Surface.Set(Tool, "lockX", v));
-            _lockY = MakeToggle("Y", v => Surface.Set(Tool, "lockY", v));
-            _lockZ = MakeToggle("Z", v => Surface.Set(Tool, "lockZ", v));
+            _lockX = MakeToggle("X", v => { Surface.Set(Tool, "lockX", v); UpdatePreviewIfOn(); });
+            _lockY = MakeToggle("Y", v => { Surface.Set(Tool, "lockY", v); UpdatePreviewIfOn(); });
+            _lockZ = MakeToggle("Z", v => { Surface.Set(Tool, "lockZ", v); UpdatePreviewIfOn(); });
             lockRow.Add(_lockX);
             lockRow.Add(_lockY);
             lockRow.Add(_lockZ);
             _root.Add(lockRow);
+
+            // プレビュー
+            _previewToggle = new Toggle("プレビュー") { value = false };
+            _previewToggle.style.marginTop = 4;
+            _previewToggle.tooltip = "オンの間、設定を変えるたびに結果を表示します（確定はしません）。オフで元の形状へ戻します。";
+            _previewToggle.RegisterValueChangedCallback(e =>
+            {
+                if (Surface == null) return;
+                Surface.Set(Tool, "preview", e.newValue);
+                // 担当者判定で止められたときはオンにならないので、実際の状態へ合わせる。
+                _previewToggle.SetValueWithoutNotify(Surface.GetBool(Tool, "preview"));
+            });
+            _root.Add(_previewToggle);
 
             // 実行
             _smoothBtn = new Button(() =>
             {
                 var targets = ActiveMasterIndices();
                 if (Surface == null || targets == null) return;
+
+                // 元の形状へ戻してから確定する（確定後の形状にもう一段かけた結果を出さないようオフのままにする）。
+                Surface.Set(Tool, "preview", false);
 
                 SendCommand?.Invoke(new SmoothEdgesCommand(
                     ModelIndex, targets,
@@ -168,11 +187,22 @@ namespace Poly_Ling.Player
             _lockZ?.SetValueWithoutNotify(Surface.GetBool(Tool, "lockZ"));
 
             UpdateStats();
+
+            // 選択や設定が外から変わったとき、プレビュー中なら計算し直す。
+            UpdatePreviewIfOn();
+            _previewToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "preview"));
         }
 
         // ================================================================
         // 内部ヘルパー
         // ================================================================
+
+        /// <summary>プレビュー中なら今の選択と設定で計算し直す。</summary>
+        private void UpdatePreviewIfOn()
+        {
+            if (Surface == null) return;
+            if (Surface.GetBool(Tool, "preview")) Surface.Invoke(Tool, "updatePreview");
+        }
 
         private void UpdateStats()
         {

@@ -5,7 +5,22 @@
 // Runtime/Poly_Ling_Main/VMD/Adapters/ に配置。
 //
 // ============================================================
-// ■ 何をするか
+// ■ 2 つの経路（VmdVrmAnimationOptions.ViaMuscles）
+// ============================================================
+//
+//   マッスル経由（既定）
+//     VmdMotionBake で VMD＋モデル → マッスル＋RootT/RootQ を作り、
+//     UnityClipCanonVrmAnimation.ConvertToFile（Unity クリップ経路と同じ）で書き出す。
+//     骨格はモデル非依存の正準骨格になり、VrmAnimationExportSettings.Scale は使わない
+//     （Hips の平行移動は受け側が Hips の高さ比で正規化する）。
+//
+//   直接（ViaMuscles = false）
+//     以下「何をするか」の手順で、モデルの骨格のボーン回転をそのまま書き出す。
+//
+//   姿勢の作り方（VMD の適用・IK・T ポーズ整列）は両経路で共通で、VmdPoseSession にある。
+//
+// ============================================================
+// ■ 何をするか（直接の経路）
 // ============================================================
 //
 //   1. UnityClipVirtualSkeleton から「ボーンだけの GameObject 骨格」を組む
@@ -40,7 +55,7 @@
 //   補正しないと、VMD の無回転フレームが受け側で T ポーズとして解釈される。
 //   MMD の無回転は A ポーズなので、腕がその差のぶんずれる。
 //
-//   そこで骨格へ渡すワールド回転を R_j·A_j に差し替える。
+//   そこで骨格へ渡すワールド回転を R_j·A_j に差し替える（VmdPoseSession）。
 //     A_j … 正準（T ポーズ）のボーン方向 → モデルの rest 方向 の最短弧。
 //            UnityClipApplier.TryGetCanonAlignment が正本。ここでは算出しない。
 //   posed_dir = R_j·A_j·(T ポーズ方向) となり、無回転フレームでは A_j だけが残る。
@@ -64,8 +79,9 @@
 //   指は根元と先端で逆向きに曲がった。
 //
 //   そこで既定は ArmsOnly（肩・上腕・前腕・手首の 8 本）に絞る。
-//   All は比較用に残す。None は補正なし。
-//   範囲を広げる前に、下の診断ログでボーンごとの角度を実測すること。
+//   範囲は固定で、選択肢は置かない（2026-09-26 に None / All を廃止）。
+//   範囲の正本は UnityClipApplier.IsArmAlignBone。焼き込み・VRMA・パネル再生がすべてこれを見る。
+//   再生は焼き込みの逆（右から A⁻¹）を掛ける（UnityClipApplier の DeltaOf）。
 //
 // ============================================================
 // ■ 既知の制限
@@ -77,6 +93,7 @@
 //   出力は Hips の平行移動と Humanoid ボーンの回転だけ。
 //   表情（モーフ）・視線・二次骨は .vrma に載らない
 //   （UniVRM の VrmAnimationExporter がそれしか書かないため）。
+//   表情と二次骨まで残したいときは VmdMotionBake で .plmotion.json に出す。
 //
 // ============================================================
 
@@ -84,27 +101,11 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Context;
-using Poly_Ling.Ops;
 using Poly_Ling.UnityClip;
 using Poly_Ling.Vrm;
 
 namespace Poly_Ling.VMD
 {
-    /// <summary>
-    /// T ポーズ整列を掛ける範囲。
-    /// </summary>
-    public enum VmdTPoseAlignScope
-    {
-        /// <summary>補正しない。</summary>
-        None = 0,
-
-        /// <summary>肩・上腕・前腕・手首の 8 本だけ補正する。既定。</summary>
-        ArmsOnly = 1,
-
-        /// <summary>Humanoid 全ボーンを補正する。比較用。</summary>
-        All = 2,
-    }
-
     /// <summary>
     /// VMD 適用側の設定。VrmAnimationExportSettings（骨格側）とは役割が別。
     /// </summary>
@@ -150,17 +151,19 @@ namespace Poly_Ling.VMD
         public bool FlipZ = true;
 
         /// <summary>
-        /// レスト姿勢を正準 T ポーズへ揃える補正の範囲。既定 ArmsOnly。
-        /// None にすると補正前（R_j をそのまま）の出力になる。
-        /// </summary>
-        public VmdTPoseAlignScope AlignScope = VmdTPoseAlignScope.ArmsOnly;
-
-        /// <summary>
         /// 切り分け用のログを出すか。既定 false。
         /// 出すのは開始時 1 回と、フレーム 0・中間フレームの 2 点だけ。
         /// フレームごとには出さない。
         /// </summary>
         public bool DiagnosticLog = false;
+
+        /// <summary>
+        /// マッスルへ焼き込んでから書き出すか。既定 true。
+        /// true … VmdMotionBake でマッスル＋RootT/RootQ を作り、正準骨格経由で書き出す
+        ///         （UnityClipCanonVrmAnimation.ConvertToFile。Unity クリップ経路と同じ）。
+        /// false … モデルの骨格のボーン回転をそのまま書き出す（従来の経路）。
+        /// </summary>
+        public bool ViaMuscles = true;
 
         public static VmdVrmAnimationOptions CreateDefault() => new VmdVrmAnimationOptions();
     }
@@ -178,6 +181,28 @@ namespace Poly_Ling.VMD
         {
             if (vmd == null) return 0f;
             return vmd.MaxFrameNumber / VmdFps;
+        }
+
+        /// <summary>
+        /// 秒の区間と毎秒枚数から採取時刻の列を作る。
+        /// fps が 0 以下なら 30、endSec が startSec 以下なら VMD の終端まで。
+        /// </summary>
+        public static float[] SampleTimes(VMDData vmd, VrmAnimationExportSettings settings,
+                                          out float fps, out float start, out float end)
+        {
+            fps = settings.Fps > 0f ? settings.Fps : VmdFps;
+
+            float vmdEnd = ComputeMaxTime(vmd);
+            start = Mathf.Max(0f, settings.StartSec);
+            end   = settings.EndSec > start ? settings.EndSec : vmdEnd;
+            if (end < start) end = start;
+
+            int frameCount = Mathf.Max(1, Mathf.RoundToInt((end - start) * fps) + 1);
+
+            var times = new float[frameCount];
+            for (int i = 0; i < frameCount; i++)
+                times[i] = start + i / fps;
+            return times;
         }
 
         /// <summary>
@@ -206,136 +231,18 @@ namespace Poly_Ling.VMD
             if (!PLVrmAnimationBridge.I.IsAvailable)
                 return VrmAnimationExportResult.Failed("VRM アニメーション エクスポータが利用できません");
 
-            float fps = settings.Fps > 0f ? settings.Fps : VmdFps;
+            if (options.ViaMuscles)
+                return ExportViaMuscles(model, vmd, outputPath, settings, options);
 
-            float vmdEnd = ComputeMaxTime(vmd);
-            float start  = Mathf.Max(0f, settings.StartSec);
-            float end    = settings.EndSec > start ? settings.EndSec : vmdEnd;
-            if (end < start) end = start;
+            var times = SampleTimes(vmd, settings, out float fps, out float start, out float end);
+            int frameCount = times.Length;
 
-            int frameCount = Mathf.Max(1, Mathf.RoundToInt((end - start) * fps) + 1);
+            var session = VmdPoseSession.Open(model, vmd, settings.Scale, options, out string openReason);
+            if (session == null) return VrmAnimationExportResult.Failed(openReason);
 
-            var times = new float[frameCount];
-            for (int i = 0; i < frameCount; i++)
-                times[i] = start + i / fps;
-
-            // VMD 適用側。トレースは出さない。
-            // DebugLog は BuildMapping の 1 行を拾うためだけに上げ、
-            // フレーム走査に入る前へ必ず戻す（IK の毎フレーム出力を止めるため）。
-            // IK の残差を採るときだけトレースを開く。
-            // TraceEnabled と TraceDirectory の両方が要る（CCDIKSolver の EnsureSummaryWriter）。
-            bool ikTrace = options.EnableIK && !string.IsNullOrEmpty(options.IkTraceDirectory);
-
-            var applier = new VMDApplier
-            {
-                PositionScale             = options.PositionScale,
-                CoordinateFlip            = new AxisFlip(options.FlipX, options.FlipZ),
-                ApplyCoordinateConversion = options.FlipX || options.FlipZ,
-                EnableIK                  = options.EnableIK,
-                IgnoreAngleLimits         = options.IgnoreAngleLimits,
-                KneePreBend               = options.KneePreBend,
-                DebugLog                  = options.DiagnosticLog,
-                TraceDirectory            = ikTrace ? options.IkTraceDirectory : null,
-                TraceEnabled              = ikTrace,
-            };
-            applier.BuildMapping(model);
-
-            if (ikTrace)
-                Debug.Log($"[VmdVrmAnimationExport] IK 設定: 角度制限を無視={options.IgnoreAngleLimits} / " +
-                          $"ひざ事前曲げ={options.KneePreBend}");
-            if (ikTrace)
-                Debug.Log($"[VmdVrmAnimationExport] IK トレース出力先: {options.IkTraceDirectory} " +
-                          $"({CCDIKSolver.SummaryFileName} / {CCDIKSolver.TraceFileName} / " +
-                          $"{VMDApplier.TraceFileName})");
-
-            if (options.DiagnosticLog)
-            {
-                var report = applier.DiagnoseMatching(vmd);
-                Debug.Log($"[VmdVrmAnimationExport] マッピング: VMD ボーン {report.MatchedBones.Count} 一致 / " +
-                          $"{report.UnmatchedVMDBones.Count} 不一致（{report.BoneMatchRate:P0}）");
-                if (report.UnmatchedVMDBones.Count > 0)
-                    Debug.Log($"[VmdVrmAnimationExport] 不一致の VMD ボーン(先頭10): {Head(report.UnmatchedVMDBones, 10)}");
-
-                Debug.Log($"[VmdVrmAnimationExport] VMD: モデル名 \"{vmd.ModelName}\" / " +
-                          $"ボーンキー {vmd.TotalBoneFrameCount} / モーフキー {vmd.TotalMorphFrameCount} / " +
-                          $"最終フレーム {vmd.MaxFrameNumber}");
-                Debug.Log($"[VmdVrmAnimationExport] VMD ボーントラック名(先頭10): {Head(report.MatchedBones, 10)}");
-            }
-
-            applier.DebugLog = false;
-
-            var sampler = VmdNodeWorldSampler.Build(model, out string samplerReason);
-            if (sampler == null) return VrmAnimationExportResult.Failed(samplerReason);
-
-            UnityClipVrmAnimationSource src = null;
             try
             {
-                // レストは BonePoseData を含まない値から取るので、
-                // ここでポーズを外す必要はない。
-                src = UnityClipVrmAnimationSource.Build(
-                    model, sampler.Skeleton, settings.Scale, out string buildReason);
-                if (src == null) return VrmAnimationExportResult.Failed(buildReason);
-
-                if (options.DiagnosticLog)
-                {
-                    Debug.Log($"[VmdVrmAnimationExport] 骨格: ノード {sampler.Skeleton.Nodes.Count} / " +
-                              $"Humanoid 割当 {sampler.Skeleton.HumanoidToNode.Count} / " +
-                              $"骨格に載った Humanoid {src.HumanBones.Count}");
-                    if (src.Dropped.Count > 0)
-                        Debug.Log($"[VmdVrmAnimationExport] 載らなかった Humanoid: {Head(src.Dropped, 10)}");
-                }
-
-                // 正準 T ポーズへの整列 A をノード索引で引ける形にする。
-                // 値は UnityClipApplier が正本。BuildMapping はモデルを書き換えない。
-                Quaternion[] align = null;
-                if (options.AlignScope != VmdTPoseAlignScope.None)
-                {
-                    var canon = new UnityClipApplier { DebugLog = false };
-                    canon.BuildMapping(model);
-
-                    align = new Quaternion[sampler.Skeleton.Nodes.Count];
-                    for (int i = 0; i < align.Length; i++) align[i] = Quaternion.identity;
-
-                    // 診断は「掛かった側」と「範囲外で見送った側」を分けて出す。
-                    // 範囲を広げる判断は、見送った側の角度を見てから行う。
-                    var applied = new List<KeyValuePair<string, float>>();
-                    var skipped = new List<KeyValuePair<string, float>>();
-
-                    foreach (var kv in sampler.Skeleton.HumanoidToNode)
-                    {
-                        if (kv.Value < 0 || kv.Value >= align.Length) continue;
-                        if (!canon.TryGetCanonAlignment(kv.Key, out Quaternion a)) continue;
-
-                        float deg = Quaternion.Angle(Quaternion.identity, a);
-                        bool inScope = options.AlignScope == VmdTPoseAlignScope.All
-                                    || IsArmBone(kv.Key);
-
-                        if (inScope)
-                        {
-                            align[kv.Value] = a;
-                            if (deg > ProbeThresholdDeg)
-                                applied.Add(new KeyValuePair<string, float>(kv.Key, deg));
-                        }
-                        else if (deg > ProbeThresholdDeg)
-                        {
-                            skipped.Add(new KeyValuePair<string, float>(kv.Key, deg));
-                        }
-                    }
-
-                    if (options.DiagnosticLog)
-                    {
-                        Debug.Log($"[VmdVrmAnimationExport] T ポーズ整列 ({options.AlignScope}): " +
-                                  $"補正 {applied.Count} 本 / 範囲外 {skipped.Count} 本");
-                        Debug.Log($"[VmdVrmAnimationExport] 補正した骨(降順10): {TopAngles(applied, 10)}");
-                        Debug.Log($"[VmdVrmAnimationExport] 範囲外の骨(降順10): {TopAngles(skipped, 10)}");
-                    }
-                }
-
-                var localSrc     = src;
-                var localSampler = sampler;
-                var localApplier = applier;
-                var localOptions = options;
-                var localGetter  = new AlignedNodeWorld(sampler, align);
+                var src = session.Src;
 
                 // 計測するのはこの 2 点だけ。フレームごとには出さない。
                 int probeA = 0;
@@ -348,14 +255,11 @@ namespace Poly_Ling.VMD
                     times,
                     i =>
                     {
-                        // 秒 → VMD フレーム番号。VMD は 30fps 固定。
-                        localApplier.ApplyFrame(model, vmd, times[i] * VmdFps);
-                        localSampler.Capture(model);
-                        localSrc.PoseFrom(localGetter.TryGet);
+                        session.Pose(model, vmd, times[i]);
 
-                        if (localOptions.DiagnosticLog && (i == probeA || i == probeB))
+                        if (options.DiagnosticLog && (i == probeA || i == probeB))
                             LogProbe(i, times[i] * VmdFps, model, vmd,
-                                     localApplier, localSampler, localSrc);
+                                     session.Applier, session.Sampler, src);
                     },
                     outputPath);
 
@@ -378,11 +282,37 @@ namespace Poly_Ling.VMD
             }
             finally
             {
-                if (src != null) src.Dispose();
-                sampler.Invalidate();
-                applier.CloseTrace();
-                applier.ResetAllBones(model);
+                session.Close(model);
             }
+        }
+
+        // ================================================================
+        // マッスル経由
+        // ----------------------------------------------------------------
+        //   焼き込んだクリップは開始時刻を 0 に寄せてある。
+        //   書き出しは焼いた範囲の全体を同じ毎秒枚数で行う。
+        // ================================================================
+        private static VrmAnimationExportResult ExportViaMuscles(
+            ModelContext model, VMDData vmd, string outputPath,
+            VrmAnimationExportSettings settings, VmdVrmAnimationOptions options)
+        {
+            var clip = VmdMotionBake.Bake(model, vmd, settings, options, out var report, out string reason,
+                                          withBonesAndExpressions: false);
+            if (clip == null) return VrmAnimationExportResult.Failed(reason);
+
+            var canonSettings = new VrmAnimationExportSettings
+            {
+                Fps      = clip.frameRate,
+                StartSec = 0f,
+                EndSec   = 0f,
+            };
+            var result = UnityClipCanonVrmAnimation.ConvertToFile(
+                clip, outputPath, canonSettings, VmdMotionBake.CanonBoneLength, true);
+
+            if (result != null && result.Success && report.DroppedHumanoid.Count > 0)
+                result.Warning = "骨格に載せられなかった Humanoid: "
+                               + string.Join(", ", report.DroppedHumanoid.ToArray());
+            return result ?? VrmAnimationExportResult.Failed("書き出し結果がありません");
         }
 
         // ================================================================
@@ -395,50 +325,7 @@ namespace Poly_Ling.VMD
         //   両方 0 本ならモデルまで、モデルだけ動いていれば写しまでが原因。
         // ================================================================
 
-        private const float ProbeThresholdDeg = 0.5f;
-
-        // ================================================================
-        // 骨格へ渡すノード・ワールド行列
-        // ----------------------------------------------------------------
-        //   回転だけ R_j·A_j に差し替える。位置はサンプラの値をそのまま通す。
-        //   align が null のときは素通し（補正なし）。
-        // ================================================================
-        private sealed class AlignedNodeWorld
-        {
-            private readonly VmdNodeWorldSampler _sampler;
-            private readonly Quaternion[]        _align;
-
-            public AlignedNodeWorld(VmdNodeWorldSampler sampler, Quaternion[] align)
-            {
-                _sampler = sampler;
-                _align   = align;
-            }
-
-            public bool TryGet(int node, out Matrix4x4 world)
-            {
-                if (_sampler == null || !_sampler.TryGetNodeWorldMatrix(node, out Matrix4x4 w))
-                {
-                    world = Matrix4x4.identity;
-                    return false;
-                }
-
-                if (_align == null)
-                {
-                    world = w;
-                    return true;
-                }
-
-                Quaternion a = (node >= 0 && node < _align.Length)
-                    ? _align[node]
-                    : Quaternion.identity;
-
-                world = Matrix4x4.TRS(
-                    new Vector3(w.m03, w.m13, w.m23),
-                    ProbeRotation(w) * a,
-                    Vector3.one);
-                return true;
-            }
-        }
+        internal const float ProbeThresholdDeg = 0.5f;
 
         private static void LogProbe(
             int frameIndex, float vmdFrame,
@@ -521,7 +408,7 @@ namespace Poly_Ling.VMD
 
         // 行列の回転部。列が縮退しているときだけ単位を返す
         // （UnityClipVrmAnimationSource.SafeRotation と同じ規則）。
-        private static Quaternion ProbeRotation(Matrix4x4 m)
+        internal static Quaternion ProbeRotation(Matrix4x4 m)
         {
             Vector3 fwd = new Vector3(m.m02, m.m12, m.m22);
             Vector3 up  = new Vector3(m.m01, m.m11, m.m21);
@@ -530,29 +417,8 @@ namespace Poly_Ling.VMD
             return m.rotation;
         }
 
-        // ================================================================
-        // 補正の範囲
-        // ----------------------------------------------------------------
-        //   肩・上腕・前腕・手首の 8 本。指と体幹は含めない。
-        //   名前は UnityClipVirtualSkeleton.NormalizeHumanoidName 済みの形で来る。
-        // ================================================================
-        private static readonly HashSet<string> ArmBoneNames = new HashSet<string>
-        {
-            "LeftShoulder",  "RightShoulder",
-            "LeftUpperArm",  "RightUpperArm",
-            "LeftLowerArm",  "RightLowerArm",
-            "LeftHand",      "RightHand",
-        };
-
-        private static bool IsArmBone(string humanoidName)
-        {
-            if (string.IsNullOrEmpty(humanoidName)) return false;
-            string key = UnityClipVirtualSkeleton.NormalizeHumanoidName(humanoidName);
-            return !string.IsNullOrEmpty(key) && ArmBoneNames.Contains(key);
-        }
-
         // 角度の大きい順に n 件を "名前 12.34°, …" の形へ。
-        private static string TopAngles(List<KeyValuePair<string, float>> list, int n)
+        internal static string TopAngles(List<KeyValuePair<string, float>> list, int n)
         {
             if (list == null || list.Count == 0) return "(なし)";
 
@@ -568,7 +434,7 @@ namespace Poly_Ling.VMD
             return sorted.Count > take ? s + $" … 他 {sorted.Count - take} 件" : s;
         }
 
-        private static string Head(List<string> list, int n)
+        internal static string Head(List<string> list, int n)
         {
             if (list == null || list.Count == 0) return "(なし)";
             int take = Mathf.Min(n, list.Count);

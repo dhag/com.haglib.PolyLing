@@ -508,6 +508,17 @@ namespace Poly_Ling.Player
 
         private void EndMove()
         {
+            // 確定の横取り（辺押し出しのギズモ）。移動量は記録せず、横取り側が
+            // 押し出しコマンド 1 本で確定する。位置の読み取り → 終了 → 横取り側の後始末の順。
+            if (CommitCapture != null && CommitCapture())
+            {
+                foreach (var kv in _meshTransforms) kv.Value.End();
+                _meshTransforms.Clear();
+                _affectedVertices.Clear();
+                CommitFinish?.Invoke();
+                return;
+            }
+
             if (_undoController != null)
             {
                 var model = _project?.CurrentModel;

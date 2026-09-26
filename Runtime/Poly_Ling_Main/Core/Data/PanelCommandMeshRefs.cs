@@ -266,6 +266,60 @@ namespace Poly_Ling.Data
             }
         }
 
+        /// <summary>
+        /// このコマンド型で LegacyXYPairs が付いたパラメータのキーを返す。
+        /// 走査規則は ProfileKeys と同じ（入れ子はドット区切り）。
+        /// </summary>
+        public static List<string> LegacyXYPairKeys(Type t)
+        {
+            var result = new List<string>();
+            if (t == null) return result;
+
+            ConstructorInfo ctor = PickConstructor(t);
+            if (ctor == null) return result;
+
+            foreach (var p in ctor.GetParameters())
+            {
+                if (IsModelIndexParam(p)) continue;
+
+                PropertyInfo prop = FindProperty(t, p.Name);
+                if (prop == null) continue;
+
+                var attr = prop.GetCustomAttribute<PLParamAttribute>(inherit: true);
+                if (attr == null || attr.Ignore) continue;
+
+                if (IsNestedType(prop.PropertyType))
+                {
+                    CollectNestedLegacyXYPairs(prop.PropertyType, KeyOf(t, prop), 1, result);
+                    continue;
+                }
+
+                if (attr.LegacyXYPairs) result.Add(KeyOf(t, prop));
+            }
+            return result;
+        }
+
+        private static void CollectNestedLegacyXYPairs(
+            Type t, string prefix, int depth, List<string> dst)
+        {
+            if (t == null || depth > NestedMaxDepth) return;
+
+            foreach (var m in EnumerateNested(t))
+            {
+                if (m.Attr.Ignore) continue;
+
+                string key = prefix + "." + Camel(m.Name);
+
+                if (IsNestedType(m.Type))
+                {
+                    CollectNestedLegacyXYPairs(m.Type, key, depth + 1, dst);
+                    continue;
+                }
+
+                if (m.Attr.LegacyXYPairs) dst.Add(key);
+            }
+        }
+
         /// <summary>入れ子の相棒キー。プロパティ名を同じ頭のキーへ付け替える。</summary>
         private static string NestedSiblingKey(string prefix, string memberName)
             => string.IsNullOrEmpty(memberName) ? "" : prefix + "." + Camel(memberName);

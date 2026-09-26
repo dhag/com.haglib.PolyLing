@@ -12,6 +12,17 @@ namespace Poly_Ling.Revolution
     public static class RevolutionProfileGenerator
     {
         /// <summary>
+        /// 平面のプリセット（x,y）を 3D の点列（z=0）へ直す。
+        /// パネルが持つプロファイルは 3D なので、プリセットを入れるときに通す。
+        /// </summary>
+        public static List<Vector3> To3D(List<Vector2> src)
+        {
+            var dst = new List<Vector3>(src?.Count ?? 0);
+            if (src != null) foreach (var p in src) dst.Add(new Vector3(p.x, p.y, 0f));
+            return dst;
+        }
+
+        /// <summary>
         /// デフォルトプロファイル（シンプルな壺形状）
         /// </summary>
         public static List<Vector2> CreateDefault()

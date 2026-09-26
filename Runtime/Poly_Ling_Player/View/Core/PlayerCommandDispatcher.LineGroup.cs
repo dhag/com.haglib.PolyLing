@@ -53,6 +53,36 @@ namespace Poly_Ling.Player
                     });
                     return true;
 
+                case EdgesToLinesCommand c:
+                {
+                    var etlGroups = new List<int>();
+                    var etlLines  = new List<int>();
+                    RunLineGroupEdit(project, model, c.MasterIndex, "辺の線分化", mo =>
+                    {
+                        IReadOnlyList<int> pairs = c.EdgeVertexPairs;
+                        if (pairs == null || pairs.Count == 0)
+                        {
+                            var sel = model.GetMeshContext(c.MasterIndex)?.Selection;
+                            if (sel == null || sel.Edges.Count == 0) return (false, "選択辺がありません", -1);
+                            var flat = new List<int>(sel.Edges.Count * 2);
+                            foreach (var e in sel.Edges) { flat.Add(e.V1); flat.Add(e.V2); }
+                            pairs = flat;
+                        }
+                        bool ok = LineGroupEditOps.CreateFromEdges(mo, pairs, etlGroups, etlLines, out string r);
+                        return (ok, r, -1);
+                    },
+                    onSuccess: mc =>
+                    {
+                        // 選択を作った線分だけにする（通知はトポロジ反映の後で出す）。
+                        var sel = mc.Selection;
+                        if (sel == null) return;
+                        sel.Vertices.Clear(); sel.Edges.Clear(); sel.Faces.Clear(); sel.Lines.Clear();
+                        foreach (int fi in etlLines) sel.Lines.Add(fi);
+                    },
+                    extraData: d => d.Int("lineCount", etlLines.Count).Ints("groupIndices", etlGroups));
+                    return true;
+                }
+
                 case SetLineGroupPointsCommand c:
                     RunLineGroupEdit(project, model, c.MasterIndex, "線分群の点の差し替え", mo =>
                     {
@@ -120,7 +150,9 @@ namespace Poly_Ling.Player
         /// </summary>
         private void RunLineGroupEdit(
             ProjectContext project, ModelContext model, int masterIndex, string label,
-            Func<MeshObject, (bool Ok, string Reason, int GroupIndex)> edit)
+            Func<MeshObject, (bool Ok, string Reason, int GroupIndex)> edit,
+            Action<MeshContext> onSuccess = null,
+            Action<CommandDataBuilder> extraData = null)
         {
             if (model == null) { Fail("no current model"); return; }
             var mc = model.GetMeshContext(masterIndex);
@@ -147,12 +179,16 @@ namespace Poly_Ling.Player
             if (_undoController != null && before != null)
                 _undoController.RecordTopologyChange(before, _undoController.CaptureMeshObjectSnapshotOf(mc), label);
 
+            onSuccess?.Invoke(mc);
+
             model.IsDirty = true;
             _viewportManager.EnterTopologyChanged(project);
             _notifyPanels(ChangeKind.Attributes);
+            if (onSuccess != null) mc.Selection?.NotifySelectionChanged();
 
             var data = CommandDataJson.New();
             if (result.GroupIndex >= 0) data.Int("groupIndex", result.GroupIndex);
+            extraData?.Invoke(data);
             ReportData(data.Build(), new[] { masterIndex }, new[] { mc.ObjectId });
         }
 

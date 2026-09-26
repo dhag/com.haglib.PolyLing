@@ -589,7 +589,7 @@ namespace Poly_Ling.Ops
 
                 if (pk.Role == PLProfileRole.Points)
                 {
-                    args[pk.Key] = JoinVector2(got.Points);
+                    args[pk.Key] = JoinVector3(got.Points);
                     replaced++;
                     continue;
                 }
@@ -604,9 +604,9 @@ namespace Poly_Ling.Ops
                 foreach (var lp in got.Loops)
                 {
                     if (lp?.Points == null || lp.Points.Count < 3) continue;
-                    starts.Add(vals.Count / 2);
+                    starts.Add(vals.Count / 3);
                     holes.Add(lp.IsHole);
-                    foreach (var q in lp.Points) { vals.Add(q.x); vals.Add(q.y); }
+                    foreach (var q in lp.Points) { vals.Add(q.x); vals.Add(q.y); vals.Add(q.z); }
                 }
                 if (starts.Count == 0)
                     return "使えるループが無いので、控えた値を使う";
@@ -720,11 +720,11 @@ namespace Poly_Ling.Ops
                 ? v : fallback;
 
         /// <summary>
-        /// Vector2 の列を平坦な CSV にする。
-        /// PanelCommandFactory.TryFormat の Vector2[] と同じ並びにすること
+        /// Vector3 の列を平坦な CSV にする。
+        /// PanelCommandFactory.TryFormat の Vector3[] と同じ並びにすること
         /// （読み側は TryParseVectorArray がこの形を前提にしている）。
         /// </summary>
-        private static string JoinVector2(IReadOnlyList<Vector2> v)
+        private static string JoinVector3(IReadOnlyList<Vector3> v)
         {
             if (v == null || v.Count == 0) return "";
             var sb = new StringBuilder();
@@ -732,9 +732,51 @@ namespace Poly_Ling.Ops
             {
                 if (i > 0) sb.Append(',');
                 sb.Append(v[i].x.ToString("R", CultureInfo.InvariantCulture)).Append(',')
-                  .Append(v[i].y.ToString("R", CultureInfo.InvariantCulture));
+                  .Append(v[i].y.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                  .Append(v[i].z.ToString("R", CultureInfo.InvariantCulture));
             }
             return sb.ToString();
+        }
+
+        // ================================================================
+        // 旧版の保存データ（プロファイルの点が x,y の 2 成分）
+        // ================================================================
+
+        /// <summary>
+        /// 旧版の段（ProfileDim が 3 未満）の Args を今の形へ直す。
+        ///
+        /// LegacyXYPairs の印が付いたキーの値は「実数の平坦な列を 2 個ずつ」で書かれている。
+        /// これを z=0 を足して 3 個ずつに書き直す。Vector3[] も float[]（ループの平坦な点列）も
+        /// 同じ変換で済む。直したら ProfileDim を今の値にする。
+        /// 読み込み直後に 1 回だけ呼ぶ（ObjectGroupCsv / ObjectGroupDTO）。
+        /// </summary>
+        public static void UpgradeLegacyProfileArgs(ObjectGroupStep step)
+        {
+            if (step == null || step.ProfileDim >= ObjectGroupStep.CurrentProfileDim) return;
+
+            Type t = string.IsNullOrEmpty(step.Action) ? null : PanelCommandFactory.ResolveType(step.Action);
+            if (t != null && step.Args != null)
+            {
+                foreach (string key in PanelCommandFactory.LegacyXYPairKeys(t))
+                {
+                    if (!step.Args.TryGetValue(key, out var raw) || string.IsNullOrEmpty(raw)) continue;
+                    float[] xy = ParseFloatCsv(raw);
+                    var xyz = new List<float>(xy.Length / 2 * 3);
+                    for (int i = 0; i + 1 < xy.Length; i += 2)
+                    {
+                        xyz.Add(xy[i]); xyz.Add(xy[i + 1]); xyz.Add(0f);
+                    }
+                    step.Args[key] = JoinFloats(xyz);
+                }
+            }
+            step.ProfileDim = ObjectGroupStep.CurrentProfileDim;
+        }
+
+        /// <summary>グループの全段へ UpgradeLegacyProfileArgs を掛ける。</summary>
+        public static void UpgradeLegacyProfileArgs(ObjectGroup group)
+        {
+            if (group?.Steps == null) return;
+            foreach (var st in group.Steps) UpgradeLegacyProfileArgs(st);
         }
 
         private static string JoinBools(IReadOnlyList<bool> v)

@@ -19,7 +19,7 @@
 //   gc … 成功条件 1 件
 //   gt … 札 1 件
 //   gv … 由来（gv,parentName,changeSummary,createdBy）
-//   s  … ステップの頭（s,action,elementId,kind,purpose,refName,expansionPolicy,usageScene）。以降の o / a / r はこの段に付く
+//   s  … ステップの頭（s,action,elementId,kind,purpose,refName,expansionPolicy,usageScene,profileDim）。以降の o / a / r はこの段に付く
 //   o  … その段の出力先 ObjectId 列
 //   a  … パラメータ 1 件
 //   r  … 描画オブジェクト参照 1 件（キーと ObjectId 列）
@@ -33,7 +33,10 @@
 //   1.2 … g に goal、s に elementId / kind / purpose、gp / gc / gt / gv を追加。
 //   1.3 … s に refName / expansionPolicy を追加（Kind = ScenarioRef 用）。
 //   1.4 … s に usageScene を追加（段が属する利用シーンの名前）。
-//   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 / 1.3 の本文もそのまま読める
+//   1.5 … s に profileDim を追加（Args のプロファイルの点の成分数。今は 3）。
+//         この列が無い段（1.4 以前）は 2 成分として読み、読み終えたところで
+//         ObjectGroupOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
+//   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 / 1.3 / 1.4 の本文もそのまま読める
 //   （Split は行末の空欄を落とすため、列数は種別ごとに下限だけ見る）。
 //
 // 【並びを固定する】
@@ -57,7 +60,7 @@ namespace Poly_Ling.Serialization
     public static class ObjectGroupCsv
     {
         /// <summary>書き出す版。</summary>
-        public const string Version = "1.4";
+        public const string Version = "1.5";
 
         // ================================================================
         // 書き
@@ -114,7 +117,7 @@ namespace Poly_Ling.Serialization
                     sb.AppendLine(
                         $"s,{Esc(st.Action ?? "")},{Esc(st.ElementId ?? "")}," +
                         $"{st.Kind},{Esc(st.Purpose ?? "")}," +
-                        $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy},{Esc(st.UsageScene ?? "")}");
+                        $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy},{Esc(st.UsageScene ?? "")},{st.ProfileDim}");
 
                     if (st.OutputObjectIds != null && st.OutputObjectIds.Count > 0)
                     {
@@ -162,7 +165,8 @@ namespace Poly_Ling.Serialization
                 if (curStep != null) return curStep;
                 if (cur == null) return null;
 
-                curStep = new ObjectGroupStep { Action = legacyAction };
+                // s 行が無いのは version 1.0 のファイルなので、プロファイルは 2 成分。
+                curStep = new ObjectGroupStep { Action = legacyAction, ProfileDim = 2 };
                 if (legacyOutput != 0UL) curStep.OutputObjectIds.Add(legacyOutput);
                 cur.Steps.Add(curStep);
                 return curStep;
@@ -180,6 +184,7 @@ namespace Poly_Ling.Serialization
                     && (!string.IsNullOrEmpty(legacyAction) || legacyOutput != 0UL))
                     EnsureStep();
                 cur.EnsureElementIds();
+                Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyProfileArgs(cur);
             }
 
             foreach (var line in lines)
@@ -249,6 +254,8 @@ namespace Poly_Ling.Serialization
                             RefName         = cols.Length > 5 ? Unesc(cols[5]) : "",
                             ExpansionPolicy = ParsePolicy(cols, 6),
                             UsageScene      = cols.Length > 7 ? Unesc(cols[7]) : "",
+                            // 列が無い（1.4 以前）ならプロファイルは 2 成分。
+                            ProfileDim      = cols.Length > 8 ? PInt(cols, 8) : 2,
                         };
                         cur.Steps.Add(curStep);
                         break;

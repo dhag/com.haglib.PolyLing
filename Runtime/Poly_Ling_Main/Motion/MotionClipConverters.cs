@@ -89,5 +89,42 @@ namespace Poly_Ling.Motion
             if (vmd != null) dst.name = vmd.ModelName;
             return dst;
         }
+
+        // ------------------------------------------------------------
+        // VMDData のモーフ → 表情トラック（区間 [startSec, endSec] を 0 秒始まりへ寄せる）
+        //   名前と provider は FromMotionDTO と同じ規則（PMX のモーフ名・"generic"）。
+        //   VMD のモーフは線形補間なので、区間の両端の値をキーとして足し、
+        //   間は元のキーをそのまま写せば区間内の値は元と一致する。
+        //   VmdMotionBake（VMD＋モデル → マッスル＋ボーン＋表情）が使う。
+        // ------------------------------------------------------------
+        public static List<MotionExpressionTrackDTO> ExpressionsFromVMD(VMDData vmd, float startSec, float endSec)
+        {
+            var list = new List<MotionExpressionTrackDTO>();
+            if (vmd == null || vmd.MorphFramesByName == null) return list;
+
+            const float fps = 30f;   // VMD は 30fps 固定
+            if (endSec < startSec) endSec = startSec;
+
+            foreach (var kv in vmd.MorphFramesByName)
+            {
+                if (kv.Value == null || kv.Value.Count == 0) continue;
+                var frames = new List<MorphFrameData>(kv.Value);
+                frames.Sort((a, b) => a.FrameNumber.CompareTo(b.FrameNumber));
+
+                var track = new MotionExpressionTrackDTO { name = kv.Key, provider = "generic" };
+                track.keys.Add(new MotionScalarKeyDTO { t = 0f, v = vmd.GetMorphWeightAtFrame(kv.Key, startSec * fps) });
+                foreach (var f in frames)
+                {
+                    if (f == null) continue;
+                    float t = f.FrameNumber / fps;
+                    if (t <= startSec || t >= endSec) continue;
+                    track.keys.Add(new MotionScalarKeyDTO { t = t - startSec, v = f.Weight });
+                }
+                if (endSec > startSec)
+                    track.keys.Add(new MotionScalarKeyDTO { t = endSec - startSec, v = vmd.GetMorphWeightAtFrame(kv.Key, endSec * fps) });
+                list.Add(track);
+            }
+            return list;
+        }
     }
 }

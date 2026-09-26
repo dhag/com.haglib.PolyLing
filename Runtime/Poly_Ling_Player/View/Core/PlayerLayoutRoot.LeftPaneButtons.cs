@@ -472,7 +472,11 @@ namespace Poly_Ling.Player
             // ── トポロジー編集 ─────────────────────────────────────────
             var foTopology = MakeFoldout("トポロジー編集", "Topology");
 
-            AddFaceBtn = MakeBtn("面追加"); foTopology.Add(AddFaceBtn);
+            // 面追加と線分の追加・編集（線分群の編集ツール）を 1 行に並べる。
+            var rowAddFace = new VisualElement(); rowAddFace.style.flexDirection = FlexDirection.Row; rowAddFace.style.marginBottom = 2;
+            AddFaceBtn = MakeBtn("面追加"); AddFaceBtn.style.flexGrow = 1; AddFaceBtn.style.marginRight = 2;
+            BillboardProfileBtn = MakeBtn("線分の追加・編集"); BillboardProfileBtn.style.flexGrow = 1;
+            rowAddFace.Add(AddFaceBtn); rowAddFace.Add(BillboardProfileBtn); foTopology.Add(rowAddFace);
 
             var rowFlipBevel = new VisualElement(); rowFlipBevel.style.flexDirection = FlexDirection.Row; rowFlipBevel.style.marginBottom = 2;
             FlipFaceBtn  = MakeBtn("面反転");   FlipFaceBtn.style.flexGrow  = 1; FlipFaceBtn.style.marginRight  = 2;
@@ -504,11 +508,6 @@ namespace Poly_Ling.Player
             // 辺群ブリッジ。穴（閉じた縁）に限らず、拾った 2 か所の辺群の間に面を張る。
             EdgeBridgeBtn    = MakeBtn("辺群ブリッジ");   EdgeBridgeBtn.style.flexGrow    = 1;
             rowHoleRing.Add(HoleRingCountBtn); rowHoleRing.Add(EdgeBridgeBtn); foTopology.Add(rowHoleRing);
-
-            // 線分群の編集（ビルボード上の 2D プロファイル）。
-            var rowLineGroup = new VisualElement(); rowLineGroup.style.flexDirection = FlexDirection.Row; rowLineGroup.style.marginBottom = 2;
-            BillboardProfileBtn = MakeBtn("線分群の編集"); BillboardProfileBtn.style.flexGrow = 1;
-            rowLineGroup.Add(BillboardProfileBtn); foTopology.Add(rowLineGroup);
 
             // ブーリアン。2 つのメッシュから新しい面構成を作り直す操作なので
             // UV・マテリアルではなくトポロジー編集に置く。

@@ -16,6 +16,33 @@ namespace Poly_Ling.Revolution
         public const float RangeX = 2f;   // プロファイル X 範囲
         public const float RangeY = 3f;   // プロファイル Y 範囲 (-1 〜 2)
 
+        /// <summary>
+        /// 点の xy だけを差し替え、z は元の点のまま残す。
+        /// 2D のキャンバスは xy だけを編集するので、点を書き戻すときは必ずこれを通す
+        /// （Vector2 をそのまま代入すると暗黙の変換で z が 0 になる）。
+        /// </summary>
+        public static Vector3 WithXY(Vector3 orig, Vector2 xy) => new Vector3(xy.x, xy.y, orig.z);
+
+        /// <summary>2 点の間の点。xy はキャンバス上の比率、z も同じ比率で補間する。</summary>
+        public static Vector3 LerpPoint(Vector3 a, Vector3 b, float t) => Vector3.Lerp(a, b, t);
+
+        /// <summary>
+        /// 3D の点列を (半径, y) の点列へ直す。半径 = x の符号 × √(x²+z²)。
+        /// Y 軸まわりに回す用途（回転体・揺れボーンの回転配置）で使う。z=0 なら元の (x, y) と同じ。
+        /// </summary>
+        public static List<Vector2> ToRadial(IReadOnlyList<Vector3> src)
+        {
+            var dst = new List<Vector2>(src?.Count ?? 0);
+            if (src == null) return dst;
+            for (int i = 0; i < src.Count; i++)
+            {
+                Vector3 q = src[i];
+                float r = Mathf.Sqrt(q.x * q.x + q.z * q.z);
+                dst.Add(new Vector2(q.x < 0f ? -r : r, q.y));
+            }
+            return dst;
+        }
+
         // ================================================================
         // 座標変換
         // ================================================================
@@ -52,7 +79,7 @@ namespace Poly_Ling.Revolution
         /// キャンバス座標から最近傍プロファイル点のインデックスを返す。
         /// maxDist 以内に点がなければ -1。
         /// </summary>
-        public static int FindClosest(List<Vector2> profile, Vector2 canvasPos,
+        public static int FindClosest(List<Vector3> profile, Vector2 canvasPos,
             float w, float h, float maxDist, float zoom = 1f, Vector2 offset = default)
         {
             if (profile == null) return -1;
@@ -72,12 +99,13 @@ namespace Poly_Ling.Revolution
 
         /// <summary>
         /// 選択点の直後（末尾なら末端）に点を追加し、選択インデックスを更新。
+        /// 点は 3D。挿入点の z は両隣（末端なら延長線）から決める。
         /// </summary>
-        public static void AddPoint(List<Vector2> profile, ref int selectedIndex)
+        public static void AddPoint(List<Vector3> profile, ref int selectedIndex)
         {
             if (profile == null) return;
 
-            Vector2 newPoint;
+            Vector3 newPoint;
             int     insertAt;
 
             if (selectedIndex >= 0 && selectedIndex < profile.Count - 1)
@@ -87,13 +115,13 @@ namespace Poly_Ling.Revolution
             }
             else if (profile.Count >= 2)
             {
-                Vector2 dir = profile[profile.Count - 1] - profile[profile.Count - 2];
+                Vector3 dir = profile[profile.Count - 1] - profile[profile.Count - 2];
                 newPoint = profile[profile.Count - 1] + dir.normalized * 0.2f;
                 insertAt = profile.Count;
             }
             else
             {
-                newPoint = new Vector2(0.5f, 0.5f);
+                newPoint = new Vector3(0.5f, 0.5f, 0f);
                 insertAt = profile.Count;
             }
 
@@ -104,7 +132,7 @@ namespace Poly_Ling.Revolution
         /// <summary>
         /// 選択点を削除。2 点未満になる場合は何もしない。選択インデックスを更新。
         /// </summary>
-        public static void RemovePoint(List<Vector2> profile, ref int selectedIndex)
+        public static void RemovePoint(List<Vector3> profile, ref int selectedIndex)
         {
             if (profile == null || profile.Count <= 2) return;
             if (selectedIndex < 0 || selectedIndex >= profile.Count) return;
@@ -116,7 +144,7 @@ namespace Poly_Ling.Revolution
         /// <summary>
         /// プロファイルをデフォルトにリセット。
         /// </summary>
-        public static void ResetProfile(List<Vector2> profile, ref int selectedIndex)
+        public static void ResetProfile(List<Vector3> profile, ref int selectedIndex)
         {
             if (profile == null) return;
             profile.Clear();

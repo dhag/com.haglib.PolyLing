@@ -19,10 +19,12 @@
 //   コマンドを送る直前に VMD のパスへ付け直す。
 //   書き出し先は毎回 AskSavePath を通す（PlayerMeshSelectionSetSubPanel と同じ規則）。
 //
-// 【この段階で出ないもの】
-//   T ポーズ補正の既定は腕のみ（VmdTPoseAlignScope.ArmsOnly）。体幹と指は無補正。
-//   表情・二次骨・ミラー枝の反対側は載らない。
-//   詳細は VmdVrmAnimationExport.cs 冒頭を見ること。
+// 【出力は 2 種類】
+//   VRMA（ExportVmdToVrmaCommand）… 既定はマッスル経由（VmdMotionBake → 正準骨格）。
+//     表情・二次骨は VRMA 形式の制約で載らない。
+//   PolyLing モーション（ExportVmdToMotionJsonCommand）… マッスル＋二次骨＋表情。
+//   T ポーズ補正は腕 8 本に固定（UnityClipApplier.IsArmAlignBone）。ミラー枝の反対側は載らない。
+//   詳細は VmdVrmAnimationExport.cs / VmdMotionBake.cs 冒頭を見ること。
 // ============================================================
 
 using System;
@@ -87,8 +89,6 @@ namespace Poly_Ling.Player
         private Button     _btnBrowseIkTraceDir;
         [UiControl("solveIk", Description = "IK を解いてから採取する")]
         private Toggle     _ikToggle;
-        [UiControl("align", Description = "姿勢の合わせ方")]
-        private EnumField  _alignField;
         [UiControl("diagnostics", Description = "切り分けログを出す")]
         private Toggle     _diagToggle;
         [UiControl("ikTraceDir", Description = "IK トレースの出力先（ダイアログの初期値として使う）")]
@@ -105,6 +105,10 @@ namespace Poly_Ling.Player
         private FloatField _startField;
         [UiControl("endFrame", Description = "採取の終了フレーム")]
         private FloatField _endField;
+        [UiControl("viaMuscles", Description = "マッスルへ焼き込んでから VRMA を書き出す（既定オン）")]
+        private Toggle     _viaMusclesToggle;
+        [UiControl("saveMotion", Safety = UiSafety.UserOnly, Description = "マッスル＋二次骨＋表情の PolyLing モーションを保存する（保存ダイアログを開く）")]
+        private Button     _btnSaveMotion;
 
         private const string VmdPathKey     = "VmdToVrma.Vmd.Path";
         private const string VrmaPathKey    = "VmdToVrma.Vrma.Path";
@@ -127,8 +131,9 @@ namespace Poly_Ling.Player
 
             var note = new Label(
                 "モデルへ VMD を適用しながら書き出します。Humanoid 割り当てが要ります。\n" +
-                "出るのは Hips の移動と Humanoid ボーンの回転だけです（表情・二次骨は載りません）。\n" +
-                "T ポーズ補正は既定で腕（肩・上腕・前腕・手首）のみです。");
+                "VRMA は既定でマッスルへ焼き込んでから書き出します。出るのは Hips の移動と Humanoid の回転だけです。\n" +
+                "PolyLing モーションにはマッスル・二次骨・表情が入ります。\n" +
+                "T ポーズ補正は腕（肩・上腕・前腕・手首）だけに掛かります。");
             note.style.fontSize     = 10;
             note.style.whiteSpace   = WhiteSpace.Normal;
             note.style.marginBottom = 4;
@@ -217,23 +222,29 @@ namespace Poly_Ling.Player
                 "角度制限を持つリンクを解く前に微小量だけ曲げます。角度制限を無視すると効きません。";
             root.Add(_kneePreBendToggle);
 
-            _alignField = new EnumField("T ポーズ補正", VmdTPoseAlignScope.ArmsOnly);
-            _alignField.style.fontSize     = 10;
-            _alignField.style.marginBottom = 2;
-            _alignField.tooltip =
-                "None: 補正しない / ArmsOnly: 肩・上腕・前腕・手首の 8 本だけ / All: Humanoid 全ボーン（比較用）";
-            root.Add(_alignField);
-
             _diagToggle = new Toggle("切り分けログを出す") { value = false };
             _diagToggle.style.fontSize     = 10;
             _diagToggle.style.marginBottom = 4;
             _diagToggle.tooltip = "開始時とフレーム 2 点だけログを出します。";
             root.Add(_diagToggle);
 
-            _btnSave = new Button(OnSave) { text = "保存" };
+            _viaMusclesToggle = new Toggle("マッスル経由で VRMA を書き出す") { value = true };
+            _viaMusclesToggle.style.fontSize     = 10;
+            _viaMusclesToggle.style.marginBottom = 4;
+            _viaMusclesToggle.tooltip =
+                "オン: マッスルへ焼き込んでから正準骨格で書き出します（倍率は使いません）。\n" +
+                "オフ: モデルの骨格のボーン回転をそのまま書き出します。";
+            root.Add(_viaMusclesToggle);
+
+            _btnSave = new Button(OnSave) { text = "VRMA 保存" };
             _btnSave.style.height       = 24;
             _btnSave.style.marginBottom = 2;
             root.Add(_btnSave);
+
+            _btnSaveMotion = new Button(OnSaveMotion) { text = "PolyLing モーション保存（マッスル＋二次骨＋表情）" };
+            _btnSaveMotion.style.height       = 24;
+            _btnSaveMotion.style.marginBottom = 2;
+            root.Add(_btnSaveMotion);
 
             _availLabel = new Label();
             _availLabel.style.fontSize   = 10;
@@ -315,6 +326,8 @@ namespace Poly_Ling.Player
             if (_btnClear != null) _btnClear.SetEnabled(_vmd != null);
             if (_btnSave != null)
                 _btnSave.SetEnabled(available && _vmd != null && model != null && SendCommand != null);
+            if (_btnSaveMotion != null)
+                _btnSaveMotion.SetEnabled(_vmd != null && model != null && SendCommand != null);
         }
 
         // ================================================================
@@ -429,9 +442,46 @@ namespace Poly_Ling.Player
                 _endField?.value   ?? 0f,
                 _scaleField?.value  ?? 1f,
                 _ikToggle?.value   ?? true,
-                (_alignField?.value is VmdTPoseAlignScope sc) ? sc : VmdTPoseAlignScope.ArmsOnly,
                 _diagToggle?.value ?? false,
                 ikTraceDir,
+                _ignoreLimitToggle?.value ?? false,
+                _kneePreBendToggle?.value ?? false,
+                _viaMusclesToggle?.value ?? true));
+
+            // Dispatch は同期なので、書き出し結果をここで確かめる。
+            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
+            SetStatus(ok
+                ? $"保存しました: {Path.GetFileName(outPath)}"
+                : "保存に失敗しました。理由はコンソールログに出ています");
+            RefreshAll();
+        }
+
+        // マッスル＋二次骨＋表情の PolyLing モーション。VRM パッケージは要らない。
+        private void OnSaveMotion()
+        {
+            if (Model == null)       { SetStatus("モデルがありません"); return; }
+            if (_vmd == null || string.IsNullOrEmpty(_vmdPath))
+                                     { SetStatus("VMD を読み込んでください"); return; }
+            if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
+
+            string defName = Path.GetFileNameWithoutExtension(_vmdPath) + ".plmotion.json";
+            string outPath = SaveDest.AskSavePath(
+                "PolyLing モーションの書き出し", SaveDest.Keys.Motion, "", defName, "json");
+            if (string.IsNullOrEmpty(outPath)) return;
+
+            PLSandbox.AllowOnceFromDialog(_vmdPath);
+
+            var since = DateTime.Now.AddSeconds(-2);
+
+            SendCommand(new Poly_Ling.Data.ExportVmdToMotionJsonCommand(
+                GetModelIndex?.Invoke() ?? 0,
+                outPath,
+                _vmdPath,
+                _fpsField?.value   ?? 30f,
+                _startField?.value ?? 0f,
+                _endField?.value   ?? 0f,
+                _ikToggle?.value   ?? true,
+                _diagToggle?.value ?? false,
                 _ignoreLimitToggle?.value ?? false,
                 _kneePreBendToggle?.value ?? false));
 

@@ -25,9 +25,9 @@ namespace Poly_Ling.Tools
         UvNormalCount,
         /// <summary>軸に対応する平面までの距離がしきい値未満の頂点を選択</summary>
         NearAxis,
-        /// <summary>クリックした要素からエッジ（1面だけが使う辺）グループを選択</summary>
+        /// <summary>クリックした要素から境界辺（1面だけが使う辺）の群を選択</summary>
         BoundaryEdgeGroup,
-        /// <summary>現在の選択範囲に収まるエッジを選択</summary>
+        /// <summary>現在の選択範囲に収まる境界辺を選択</summary>
         BoundaryEdgeInSelection
     }
 

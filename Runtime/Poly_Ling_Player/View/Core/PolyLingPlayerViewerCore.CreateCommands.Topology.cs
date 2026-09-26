@@ -789,6 +789,58 @@ namespace Poly_Ling.Player
                 h.AutoCorrespondence, h.FlipCorrespondence, h.FlipFaces, h.Subdivisions));
         }
 
+        /// <summary>
+        /// 辺群の頂点数合わせコマンド。拾いをハンドラへ入れてから、ハンドラの
+        /// MatchVertexCount を通す。受理判定は SetPicks が AcceptEdge へ通すので、
+        /// クリック経路と同じ規則（境界辺のみ・同一オブジェクトのみ）が効く。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteMatchEdgeChainCount(MatchEdgeChainCountCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h     = _edgeBridgeHandler;
+            var panel = _edgeBridgeSubPanel;
+            if (h == null) return "辺群ブリッジハンドラがありません";
+
+            h.MatchBaseIsB               = cmd.BaseIsB;
+            h.SplitTriangleIntoTriangles = cmd.SplitTriangleIntoTriangles;
+
+            if (!h.SetPicks(cmd.MeshIndex, cmd.Edges ?? new VertexPair[0], out string reason))
+            {
+                panel?.SetStatus(reason);
+                return reason;
+            }
+
+            bool ok = h.MatchVertexCount(out string message);
+            panel?.SetStatus(message);
+            UpdateTopologyToolsOverlay();
+            return ok ? null : message;
+        }
+
+        /// <summary>
+        /// 辺群ブリッジのサブパネル「頂点数を合わせる」から送るコマンドを組む。
+        /// 拾いはハンドラが持っているので、それをそのまま載せる。
+        /// </summary>
+        private void SendMatchEdgeChainCountCommand()
+        {
+            var h = _edgeBridgeHandler;
+            if (h == null) return;
+
+            if (h.PickedMeshIndex < 0 || h.PickedEdgeCount == 0)
+            {
+                _edgeBridgeSubPanel?.SetStatus("辺が拾えていません");
+                return;
+            }
+
+            var edges = new List<VertexPair>(h.PickedEdges).ToArray();
+
+            DispatchHost(new MatchEdgeChainCountCommand(
+                ActiveProject?.CurrentModelIndex ?? 0,
+                h.PickedMeshIndex, edges,
+                h.MatchBaseIsB, h.SplitTriangleIntoTriangles));
+        }
+
         // ================================================================
         // 面削除
         // ================================================================

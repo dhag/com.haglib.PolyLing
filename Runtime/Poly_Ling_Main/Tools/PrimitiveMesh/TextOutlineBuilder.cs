@@ -202,7 +202,8 @@ namespace Poly_Ling.GlyphText
                 }
 
                 var loop = new Loop();
-                loop.Points = built[a];
+                // グリフの輪郭は平面なので z=0。
+                foreach (var q in built[a]) loop.Points.Add(new Vector3(q.x, q.y, 0f));
                 loop.IsHole = (depth & 1) != 0;
                 loops.Add(loop);
             }

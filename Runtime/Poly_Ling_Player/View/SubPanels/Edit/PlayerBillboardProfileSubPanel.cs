@@ -71,7 +71,7 @@ namespace Poly_Ling.Player
             _root.style.paddingRight = _root.style.paddingBottom = 4;
             parent.Add(_root);
 
-            var header = new Label("Line Group / 線分群の編集");
+            var header = new Label("Line / 線分の追加・編集");
             header.style.unityFontStyleAndWeight = FontStyle.Bold;
             header.style.color = new StyleColor(Color.white);
             header.style.marginBottom = 4;
@@ -80,7 +80,7 @@ namespace Poly_Ling.Player
             _root.Add(new HelpBox(
                 "選択中の描画オブジェクトのローカル XY 平面（ビルボードならカメラ正対面）に線分群を描きます。\n" +
                 "クリックで点を置き、始点をクリックすると閉じます。Escape / 右クリックで描画を終えます。\n" +
-                "既存の点の近くをクリックすると、その点に吸着します。",
+                "既存の頂点にポインタを合わせると吸着します（面追加と同じ）。",
                 HelpBoxMessageType.Info));
 
             _modeField = new DropdownField("編集の仕方", ModeChoices, 0);

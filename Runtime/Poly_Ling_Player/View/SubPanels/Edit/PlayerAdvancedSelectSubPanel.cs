@@ -39,7 +39,7 @@ namespace Poly_Ling.Player
         // モードごとに表示される欄が変わるので、各欄の表示の下準備はモードを切り替える。
         [UiControl(Ignore = true)]
         private VisualElement _root;
-        [UiControl("mode", Description = "接続 / ベルト / 辺ループ / 最短 / UV/法線数 / 軸近傍 / エッジ群 / 選択内エッジ")]
+        [UiControl("mode", Description = "接続 / ベルト / 辺ループ / 最短 / UV/法線数 / 軸近傍 / 境界辺群 / 選択内の境界辺")]
         private DropdownField _modeDropdown;
         [UiControl("help", Safety = UiSafety.ReadOnly, Description = "今のモードの操作説明")]
         private HelpBox       _helpBox;
@@ -82,11 +82,11 @@ namespace Poly_Ling.Player
         [UiControl("attribute.run", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealUvNormal), Description = "属性選択を実行する（UV/法線数・軸近傍のときに表示）")]
         private Button        _executeBtn;
 
-        // エッジ（1面だけが使う辺）選択
+        // 境界辺（1面だけが使う辺）選択
         [UiControl(Ignore = true)]
         private VisualElement _boundaryEdgeGroup;
         [UiControl("boundaryEdgeInSelection.run", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealBoundaryEdgeInSelection),
-                   Description = "両端点が選択済みのエッジを選択する（選択内エッジのときだけ表示）")]
+                   Description = "両端点が選択済みの境界辺を選択する（選択内の境界辺のときだけ表示）")]
         private Button        _boundaryEdgeExecuteBtn;
 
         // 反転 / 辞書化
@@ -112,7 +112,7 @@ namespace Poly_Ling.Player
         private bool RevealShortestPath()           => RevealMode("最短");
         private bool RevealUvNormal()               => RevealMode("UV/法線数");
         private bool RevealNearAxis()               => RevealMode("軸近傍");
-        private bool RevealBoundaryEdgeInSelection() => RevealMode("選択内エッジ");
+        private bool RevealBoundaryEdgeInSelection() => RevealMode("選択内の境界辺");
 
         private static readonly SymmetryAxis[] AxisValues =
         {
@@ -138,7 +138,7 @@ namespace Poly_Ling.Player
         private static readonly string[] ModeLabels =
         {
             "接続", "ベルト", "辺ループ", "最短", "UV/法線数", "軸近傍",
-            "エッジ群", "選択内エッジ",
+            "境界辺群", "選択内の境界辺",
         };
 
         // ================================================================
@@ -274,14 +274,14 @@ namespace Poly_Ling.Player
             };
             _attrGroup.Add(_executeBtn);
 
-            // ── 選択内エッジ（クリック不要・実行ボタン）────────────────
+            // ── 選択内の境界辺（クリック不要・実行ボタン）────────────────
             _boundaryEdgeGroup = new VisualElement();
             _root.Add(_boundaryEdgeGroup);
 
             _boundaryEdgeExecuteBtn = new Button { text = "実行" };
             _boundaryEdgeExecuteBtn.style.marginBottom = 4;
             _boundaryEdgeExecuteBtn.tooltip =
-                "両端点が現在の頂点選択に含まれるエッジ（1つの面だけが使う辺）を、動作（追加/削除）に従って辺選択に反映します。";
+                "両端点が現在の頂点選択に含まれる境界辺（1つの面だけが使う辺）を、動作（追加/削除）に従って辺選択に反映します。";
             _boundaryEdgeExecuteBtn.clicked += () =>
             {
                 Surface?.Invoke(Tool, "executeBoundaryEdgeInSelection");
@@ -450,9 +450,9 @@ namespace Poly_Ling.Player
                     AdvancedSelectMode.NearAxis =>
                         "軸に対応する平面までの距離がしきい値未満の頂点を選択\nクリック不要。「実行」ボタンで適用",
                     AdvancedSelectMode.BoundaryEdgeGroup =>
-                        "エッジ上の頂点・辺、またはエッジに接する面をクリック\n同じグループのエッジ全部と構成頂点を選択します\nエッジ＝1つの面だけが使う辺（穴の縁など）",
+                        "境界辺上の頂点・辺、または境界辺に接する面をクリック\n同じ境界辺群の境界辺全部と構成頂点を選択します\n境界辺＝1つの面だけが使う辺（穴の縁など）",
                     AdvancedSelectMode.BoundaryEdgeInSelection =>
-                        "両端点が選択済みのエッジを選択\nクリック不要。「実行」ボタンで適用",
+                        "両端点が選択済みの境界辺を選択\nクリック不要。「実行」ボタンで適用",
                     _ => "",
                 };
             }
@@ -473,7 +473,7 @@ namespace Poly_Ling.Player
                 _nearAxisGroup.style.display =
                     mode == AdvancedSelectMode.NearAxis ? DisplayStyle.Flex : DisplayStyle.None;
 
-            // 選択内エッジグループ
+            // 選択内の境界辺グループ
             if (_boundaryEdgeGroup != null)
                 _boundaryEdgeGroup.style.display =
                     mode == AdvancedSelectMode.BoundaryEdgeInSelection

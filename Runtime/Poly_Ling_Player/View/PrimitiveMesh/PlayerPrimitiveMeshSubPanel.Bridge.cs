@@ -1,7 +1,7 @@
 // PlayerPrimitiveMeshSubPanel.Bridge.cs
 // 図形生成サブパネル：穴つなぎ（高度な図形）。
 //
-// 2つの穴（エッジ＝1面だけが使う辺のグループ）を選び、対応する頂点どうしに
+// 2つの穴（境界辺＝1面だけが使う辺のグループ）を選び、対応する頂点どうしに
 // 面を張って橋渡しする。関節に柔らかい面を張ってからウェイトを塗る用途を想定。
 //
 // 【生成経路】他の図形と違い、生成物は追加先メッシュの既存頂点を参照する。
@@ -32,7 +32,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// 選択中の描画オブジェクトから種を拾う。穴（エッジグループ）ごとに 1 つ、
+        /// 選択中の描画オブジェクトから種を拾う。穴（境界辺群）ごとに 1 つ、
         /// 最大 2 件。範囲選択で 1 つの穴に多数の頂点が入っていても 1 つだけ返る。
         /// 拾えなかったときは Ok=false の要素を 1 つだけ含むリストを返す。
         /// </summary>
@@ -178,7 +178,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 現在の種と設定から計画を組む。取り込み不足・エッジ不成立なら false。
+        /// 現在の種と設定から計画を組む。取り込み不足・境界辺不成立なら false。
         /// </summary>
         public bool TryBuildBridgePlan(out BridgePlan plan, out string message)
         {
@@ -371,7 +371,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 拾った種 1 件を A または B へ入れる。エッジをたどれなければ入れない。
+        /// 拾った種 1 件を A または B へ入れる。境界辺をたどれなければ入れない。
         /// </summary>
         private void ApplyBridgePick(BridgeSeed seed, HoleSeedPick pick)
         {

@@ -342,6 +342,46 @@ namespace Poly_Ling.UnityClip
             return HumanoidToNode.TryGetValue(key, out int n) ? n : -1;
         }
 
+        /// <summary>
+        /// ノードの親ノード。無ければ -1。
+        ///   ミラーノード … ParentNode（ミラー側の親）を持つ。
+        ///   実体ノード   … ParentContextIndex（MeshContextList 索引）を持つ。
+        ///                  その索引がノードでない場合があるので、ノードに当たるまで
+        ///                  MeshContext の階層をさかのぼる。
+        /// </summary>
+        public int ParentNodeOf(ModelContext model, int node)
+        {
+            if (node < 0 || node >= Nodes.Count) return -1;
+            var n = Nodes[node];
+            if (n.ParentNode >= 0) return n.ParentNode;
+
+            var list = model?.MeshContextList;
+            int ci = n.ParentContextIndex;
+            int guard = (list != null ? list.Count : 0) + 1;
+            while (ci >= 0 && list != null && ci < list.Count && guard-- > 0)
+            {
+                int pn = NodeOfContext(ci);
+                if (pn >= 0) return pn;
+                var c = list[ci];
+                if (c == null) break;
+                ci = c.HierarchyParentIndex;
+            }
+            return -1;
+        }
+
+        /// <summary>骨格をさかのぼって最初に見つかる Humanoid のノード。無ければ -1。</summary>
+        public int HumanoidAncestorNode(ModelContext model, int node, ICollection<int> humanoidNodes)
+        {
+            int guard = Nodes.Count + 1;
+            int cur = ParentNodeOf(model, node);
+            while (cur >= 0 && guard-- > 0)
+            {
+                if (humanoidNodes.Contains(cur)) return cur;
+                cur = ParentNodeOf(model, cur);
+            }
+            return -1;
+        }
+
         /// <summary>ノードのレスト・ローカル行列（実体側の枠・BonePoseData を含まない）。</summary>
         public Matrix4x4 RestLocalMatrix(ModelContext model, int node)
         {

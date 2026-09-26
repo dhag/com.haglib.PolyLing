@@ -192,6 +192,15 @@ namespace Poly_Ling.Data
         public Dictionary<string, string> Args = new Dictionary<string, string>(StringComparer.Ordinal);
 
         /// <summary>
+        /// Args の中のプロファイルの点が何成分で書かれているか。今は 3（x,y,z）。
+        /// 2 は旧版の保存データ（x,y）。読み込み直後に ObjectGroupOps.UpgradeLegacyProfileArgs が
+        /// LegacyXYPairs の印のキーを z=0 で 3 成分へ直し、3 にする。
+        /// 実行時に作る段はすべて 3。
+        /// </summary>
+        public const int CurrentProfileDim = 3;
+        public int ProfileDim = CurrentProfileDim;
+
+        /// <summary>
         /// 索引で描画オブジェクトを指す Args のキー → その ObjectId 列。
         ///
         /// どのキーがこれに当たるかは PanelCommandFactory.MeshRefKeys が
@@ -356,6 +365,7 @@ namespace Poly_Ling.Data
                 UsageScene      = UsageScene,
                 Action          = Action,
                 Args            = new Dictionary<string, string>(StringComparer.Ordinal),
+                ProfileDim      = ProfileDim,
                 MeshRefIds      = new Dictionary<string, List<ulong>>(StringComparer.Ordinal),
                 OutputObjectIds = OutputObjectIds != null
                     ? new List<ulong>(OutputObjectIds) : new List<ulong>(),

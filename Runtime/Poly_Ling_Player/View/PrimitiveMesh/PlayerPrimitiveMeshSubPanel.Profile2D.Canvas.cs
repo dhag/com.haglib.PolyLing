@@ -278,6 +278,7 @@ namespace Poly_Ling.Player
             int   edgeL = -1, edgeI = -1;
             float edgeD = 10f;
             Vector2 insertWorld = Vector2.zero;
+            float   insertZ     = 0f;
             for (int li = 0; li < _p2dLoops.Count; li++)
             {
                 var lp = _p2dLoops[li];
@@ -292,6 +293,10 @@ namespace Poly_Ling.Player
                     {
                         edgeD  = d; edgeL  = li; edgeI  = ei;
                         insertWorld = P2dCanvasToWorld(closest, w, h);
+                        // 高さは辺の両端から、キャンバス上の比率で補間する。
+                        float len2 = (b - a).sqrMagnitude;
+                        float t = len2 < 1e-8f ? 0f : Mathf.Clamp01(Vector2.Dot(closest - a, b - a) / len2);
+                        insertZ = Mathf.Lerp(lp.Points[ei].z, lp.Points[nxt].z, t);
                     }
                 }
             }
@@ -299,7 +304,7 @@ namespace Poly_Ling.Player
             {
                 int insertIdx = edgeI + 1;
                 P2dBegin();
-                _p2dLoops[edgeL].Points.Insert(insertIdx, insertWorld);
+                _p2dLoops[edgeL].Points.Insert(insertIdx, new Vector3(insertWorld.x, insertWorld.y, insertZ));
                 _p2dSel.Clear(); _p2dSel.Add(P2dKey(edgeL, insertIdx));
                 _p2dSelLoop = edgeL; _p2dSelPt = insertIdx;
                 BeginP2dDrag(cp, w, h);
@@ -411,7 +416,7 @@ namespace Poly_Ling.Player
             }
             else
             {
-                foreach (var lp in _p2dLoops) pts.AddRange(lp.Points);
+                foreach (var lp in _p2dLoops) foreach (var q in lp.Points) pts.Add(q);
             }
             return pts;
         }
@@ -546,7 +551,7 @@ namespace Poly_Ling.Player
                     else if (_p2dSel.Contains(P2dKey(li, pi))) wt = 1f;
                     else wt = _p2dMagnet.Enabled ? _p2dMagnet.WeightFor(lp.Points[pi], sel) : 0f;
                     if (wt <= 0f) continue;
-                    lp.Points[pi] = Xform2D(lp.Points[pi], a, mx, my, sx, sy, saCos, saSin, deg, wt);
+                    lp.Points[pi] = RevolutionProfileEditCore.WithXY(lp.Points[pi], Xform2D(lp.Points[pi], a, mx, my, sx, sy, saCos, saSin, deg, wt));
                 }
             }
             P2dCommit("変換適用");
@@ -622,7 +627,7 @@ namespace Poly_Ling.Player
                 int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
                 if (li < 0 || li >= _p2dLoops.Count) continue;
                 if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
-                _p2dLoops[li].Points[pi] = Xform2D(kv.Value, a, 0f, 0f, sx, sy, 1f, 0f, deg, _p2dHandleW[kv.Key]);
+                _p2dLoops[li].Points[pi] = RevolutionProfileEditCore.WithXY(_p2dLoops[li].Points[pi], Xform2D(kv.Value, a, 0f, 0f, sx, sy, 1f, 0f, deg, _p2dHandleW[kv.Key]));
             }
             D(); RefreshP2dCanvas(); RefreshP2dPointUI();
         }
@@ -694,7 +699,7 @@ namespace Poly_Ling.Player
                         int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
                         if (li < 0 || li >= _p2dLoops.Count) continue;
                         if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
-                        _p2dLoops[li].Points[pi] = kv.Value + delta;
+                        _p2dLoops[li].Points[pi] = RevolutionProfileEditCore.WithXY(_p2dLoops[li].Points[pi], kv.Value + delta);
                     }
                     // マグネット: 非選択点を delta×weight で追従
                     foreach (var kv in _p2dMagnetStart)
@@ -702,7 +707,7 @@ namespace Poly_Ling.Player
                         int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
                         if (li < 0 || li >= _p2dLoops.Count) continue;
                         if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
-                        _p2dLoops[li].Points[pi] = kv.Value + delta * _p2dMagnetW[kv.Key];
+                        _p2dLoops[li].Points[pi] = RevolutionProfileEditCore.WithXY(_p2dLoops[li].Points[pi], kv.Value + delta * _p2dMagnetW[kv.Key]);
                     }
                     D(); RefreshP2dCanvas(); RefreshP2dPointUI();
                 }

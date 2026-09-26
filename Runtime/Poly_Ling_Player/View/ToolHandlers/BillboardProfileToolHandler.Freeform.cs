@@ -9,6 +9,8 @@
 //                        （入り・出とも接線、長さは弦の 1/3）
 //   始点の近くでクリック／離す（3 点以上）… 閉じて確定
 //   ダブルクリック・Enter・Escape・右クリック … 開いたまま確定
+//   クリック・手描きの始まりは既存の頂点に吸着する（面追加と同じ GPU ホバー）。
+//   1 点目が吸着した頂点は、Line と同じく始点として共有する。
 // 【確定】描いている間はモデルを変えず、確定のときに CreateLineGroup を 1 回送る（Undo 1 件）。
 //   描いている間の点は頂点がまだ無いので、表示はローカル座標を DisplayWorldMatrix で移す。
 
@@ -35,6 +37,31 @@ namespace Poly_Ling.Player
         private readonly List<Vector2> _ffStrokeScreen = new List<Vector2>();
         private float   _ffLastClickTime = -10f;
         private Vector2 _ffLastClickPos;
+        private int     _ffStartVertex = -1;   // 1 点目を既存頂点に吸着させたときの頂点番号
+
+        /// <summary>確定前の点が 3 点以上あり、ポインタが最初の点の近くにある（クリックで閉じる）か。</summary>
+        public bool FreeformCloseToStart
+        {
+            get
+            {
+                if (Mode != SubMode.Freeform || _ffPoints.Count < 3 || _ffStroke.Count > 0 || !_hoverScreen.HasValue) return false;
+                var mc = GetProject?.Invoke()?.CurrentModel?.GetMeshContext(_targetMaster);
+                var ctx = GetToolContext?.Invoke();
+                return mc?.MeshObject != null && ctx != null && NearFirstScreen(mc, ctx, _hoverScreen.Value);
+            }
+        }
+
+        /// <summary>吸着候補の頂点のローカル座標。対象が違う・候補が無ければ false。</summary>
+        private bool TrySnapLocal(Poly_Ling.Data.MeshContext mc, out Vector3 local)
+        {
+            local = Vector3.zero;
+            var model = GetProject?.Invoke()?.CurrentModel;
+            int v = ResolveHoverVertex(model);
+            _hoverVertex = v;
+            if (v < 0 || mc?.MeshObject == null) return false;
+            local = mc.MeshObject.Vertices[v].Position;
+            return true;
+        }
 
         /// <summary>確定前の点（ローカル）と、ドラッグ中の手描き（ローカル）。表示用。</summary>
         public IReadOnlyList<Vector3> FreeformPoints => _ffPoints;
@@ -45,6 +72,7 @@ namespace Poly_Ling.Player
 
         private void FreeformClick(Vector2 screenPos, ModifierKeys mods)
         {
+            if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             if (!TryGetTarget(out _, out var mc, out var ctx)) return;
             var imgui = ToImgui(screenPos, ctx);
 
@@ -58,9 +86,12 @@ namespace Poly_Ling.Player
 
             if (_ffPoints.Count >= 3 && NearFirst(mc, ctx, imgui)) { FreeformFinish(true); return; }
 
-            if (!TryScreenToLocal(mc, ctx, imgui, out var local)) { SetStatus("編集面と交わりません"); return; }
+            // 既存の頂点に吸着（面追加と同じ GPU ホバー）。1 点目ならその頂点を始点に使う。
+            bool snapped = TrySnapLocal(mc, out var local);
+            if (!snapped && !TryScreenToLocal(mc, ctx, imgui, out local)) { SetStatus("編集面と交わりません"); return; }
             // 直前と同じ位置の点（ダブルクリックの 1 回目など）は足さない
             if (_ffPoints.Count > 0 && (_ffPoints[_ffPoints.Count - 1] - local).sqrMagnitude < 1e-10f) return;
+            if (_ffPoints.Count == 0) _ffStartVertex = snapped ? _hoverVertex : -1;
             _ffPoints.Add(local);
             _ffSmooth.Add(false);
             SetStatus($"点 {_ffPoints.Count} 個（Enter・ダブルクリック・Escape で確定、始点で閉じる）");
@@ -71,9 +102,13 @@ namespace Poly_Ling.Player
         {
             _ffStroke.Clear();
             _ffStrokeScreen.Clear();
+            if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             if (!TryGetTarget(out _, out var mc, out var ctx)) return;
             var imgui = ToImgui(screenPos, ctx);
-            if (!TryScreenToLocal(mc, ctx, imgui, out var local)) return;
+            bool snapped = TrySnapLocal(mc, out var local);
+            if (!snapped && !TryScreenToLocal(mc, ctx, imgui, out local)) return;
+            if (_ffPoints.Count == 0) _ffStartVertex = snapped ? _hoverVertex : -1;
+            _hoverVertex = -1;
             _ffStroke.Add(local);
             _ffStrokeScreen.Add(imgui);
             OnChanged?.Invoke();
@@ -153,7 +188,7 @@ namespace Poly_Ling.Player
             int modelIndex = GetProject?.Invoke()?.CurrentModelIndex ?? 0;
             Dispatch?.Invoke(new CreateLineGroupCommand(
                 modelIndex, _targetMaster, flat, closed && n >= 3, "",
-                anySmooth ? offs : null, -1,
+                anySmooth ? offs : null, _ffStartVertex,
                 anySmooth ? cons : null, anySmooth ? ratio : null));
 
             FreeformReset();
@@ -164,6 +199,7 @@ namespace Poly_Ling.Player
 
         private void FreeformReset()
         {
+            _ffStartVertex = -1;
             _ffPoints.Clear();
             _ffSmooth.Clear();
             _ffStroke.Clear();

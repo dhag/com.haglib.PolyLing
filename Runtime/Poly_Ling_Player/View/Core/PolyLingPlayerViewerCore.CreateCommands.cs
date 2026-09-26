@@ -43,6 +43,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnCreateEdgeBridge    = ExecuteCreateEdgeBridge;
             _commandDispatcher.OnDeleteFaces         = ExecuteDeleteFaces;
             _commandDispatcher.OnMatchHoleRingCount  = ExecuteMatchHoleRingCount;
+            _commandDispatcher.OnMatchEdgeChainCount = ExecuteMatchEdgeChainCount;
             _commandDispatcher.OnResetProject        = ExecuteResetProject;
             _commandDispatcher.OnCreateObjectArray   = ExecuteCreateObjectArray;
             _commandDispatcher.OnSplitObjectByPartsId = ExecuteSplitObjectByPartsId;
@@ -98,6 +99,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnExportVrmAnimation  = ExecuteExportVrmAnimation;
             _commandDispatcher.OnConvertUnityClipToVrma = ExecuteConvertUnityClipToVrma;
             _commandDispatcher.OnExportVmdToVrma     = ExecuteExportVmdToVrma;
+            _commandDispatcher.OnExportVmdToMotionJson = ExecuteExportVmdToMotionJson;
             _commandDispatcher.OnEdgeBevel           = ExecuteEdgeBevel;
             _commandDispatcher.OnEdgeExtrude         = ExecuteEdgeExtrude;
             _commandDispatcher.OnFaceExtrude         = ExecuteFaceExtrude;

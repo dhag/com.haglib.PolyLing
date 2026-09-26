@@ -1,9 +1,9 @@
 // BoundaryEdgeSelectMode.cs
-// エッジ群選択モード
+// 境界辺群選択モード
 //
-// 「エッジ」＝1つの面だけが使っている辺。穴の縁・開いた面の外周がこれにあたる。
-// クリックした要素（頂点／辺／面）からエッジグループを引き当て、
-// そのグループのエッジ全部と構成頂点を選択する。
+// 「境界辺」＝1つの面だけが使っている辺。穴の縁・開いた面の外周がこれにあたる。
+// クリックした要素（頂点／辺／面）から境界辺群を引き当て、
+// そのグループの境界辺全部と構成頂点を選択する。
 //
 // 開始要素の確定は GPU ホバー（ctx.GpuStartVertex/Edge/Face）を優先度
 // 頂点>辺>面 で解決する。CPU ヒットテスト（SelectionHelper.FindNearest*）は
@@ -17,7 +17,7 @@ using Poly_Ling.Selection;
 namespace Poly_Ling.Tools
 {
     /// <summary>
-    /// エッジ群選択モード
+    /// 境界辺群選択モード
     /// </summary>
     public class BoundaryEdgeSelectMode : IAdvancedSelectMode
     {
@@ -29,7 +29,7 @@ namespace Poly_Ling.Tools
             var edges = ResolveGroup(ctx);
             if (edges.Count == 0) return false;
 
-            // このモードの出力は「グループのエッジ」と「その構成頂点」で固定する。
+            // このモードの出力は「グループの境界辺」と「その構成頂点」で固定する。
             // 選択モードの ON/OFF で片方が欠けると穴の選択として使えないため。
             SelectionHelper.ApplyEdgeSelection(toolCtx, edges, ctx.AddToSelection);
             SelectionHelper.ApplyVertexSelection(toolCtx, BoundaryEdgeOps.VerticesOf(edges), ctx.AddToSelection);
@@ -55,8 +55,8 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         /// <summary>
-        /// GPU ホバー由来の開始要素からエッジグループを引く。
-        /// 優先度は 頂点 > 辺 > 面。どれもエッジに触れていなければ空を返す。
+        /// GPU ホバー由来の開始要素から境界辺群を引く。
+        /// 優先度は 頂点 > 辺 > 面。どれも境界辺に触れていなければ空を返す。
         /// </summary>
         private static List<VertexPair> ResolveGroup(AdvancedSelectContext ctx)
         {

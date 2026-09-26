@@ -43,6 +43,27 @@
 
 生成器は `Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/`（機構部品は `Gears/` 配下）。
 
+### 生成コマンドを作らない図形
+
+次の図形は単一メッシュを返さないため、`BuildCreateCommand` が意図して `null` を返す。
+`CreatePrimitiveMeshCommand` 派生も `PrimitiveMeshFactory.Generate` の分岐も持たない。
+
+| 図形 | 生成の経路 |
+|---|---|
+| 揺れボーン 1本／円筒／回転体／はしご | 作るのはボーン。パネルの「生成」から直接コマンドを送る |
+| 穴つなぎブリッジ | `CreateHoleBridgeCommand` |
+| 歪み複製 | `CreateObjectArrayCommand` |
+| 辺から帯面 | `EdgeRibbonFaceCommand` |
+| 点指定図形 | `CreatePointDefinedPrimitiveCommand` |
+| 頂点へ藤壺（`VertexBillboardPlace`） | `VertexBillboardPlaceToolHandler` |
+
+この種の図形を足すときは、A 表の 6〜8 行目を次に置き換える。
+
+- 6：`BuildCreateCommand` の `switch` で `null` を返し、理由をコメントに書く
+- 7・8：パネルから送る専用のコマンドを作る（`PolyLing_追加作業の必読.md` の A 節）
+
+1〜5 行目と 9〜12 行目は同じく踏む。
+
 ---
 
 ## B. 諸元 UI の組み方（ここを外すと MCP から触れない）
@@ -56,11 +77,15 @@
 | `TR(Lx, get, set)` | チェック |
 | `DD(Lx, choices, get, set)` | **選択式（ドロップダウン）** |
 | `V3F` / `SB` | 3 成分の数値欄 / 小ボタン |
-| `NF` | 名前欄 |
+| `RowTarget.AddRows(コンテナ)` | 候補がモデルのオブジェクト名で変わる一覧。固定 ID を付けず「データ行のコンテナ」として登録する。中の部品は「未登録の部品」の検査の対象外（例：`PlayerPrimitiveMeshSubPanel.BeltProfile.Options.cs`） |
 | `SL` / `GearHint` / `ShapeTitle` / `Sep` | 見出し・説明・区切り（操作部品ではない） |
 
 これらは `RowTarget.Add(ラベルのキー, 部品, 表示文字)` を通り、`UiDynamicControls` へ載る。
 載ったものだけが `uiDescribe` / `uiGetValue` / `uiSetValue` から触れる。
+
+名前欄は例外。`PlayerPrimitiveMeshSubPanel.Naming.cs` の `NF` が作り、`RowTarget.Add` は通らない。
+登録はフィールド側の `[UiControl("name")]`（`_nameField`）と `[UiControl("addTarget")]`（`_addTargetField`）で行い、
+`RebuildSettings` のたびに `NF` がこの 2 つのフィールドを差し替える。
 
 ### 禁止
 
@@ -85,7 +110,7 @@ ID は「ラベルのキー」。同じ図形の中で同じキーを 2 回使�
 
 ## C. カテゴリを 1 つ足す
 
-配列を 1 本足すだけでは済まない。7 か所。
+配列を 1 本足すだけでは済まない。6 か所。
 
 | # | 場所 | 内容 | 忘れると |
 |---|---|---|---|
@@ -95,11 +120,13 @@ ID は「ラベルのキー」。同じ図形の中で同じキーを 2 回使�
 | 4 | `PolyLingPlayerViewerCore.Panels.cs` | `ShowLiveXxxPrimitivePanel`（`SetInteractionMode` → `ShowRightPanel` → `SetCategory`） | 開けない |
 | 5 | `PolyLingPlayerViewerCore.Layout.Panels.cs` | `clicked += ShowLiveXxxPrimitivePanel` | 押せない |
 | 6 | `PolyLingPlayerViewerCore.UiAutomation.cs` | `RegisterUiPanel("primitiveXxx", …)` | MCP から開けない／監査に出ない |
-| 7 | `PrimitiveMeshTexts.cs` | `ShapeCategoryXxx` | — |
 
 **`ShapeCategory` の列挙値の名前は `PrimitiveShapeMemory` の保存欄（JSON のキー）と対応する。**
-表示名を変えるときは列挙値ではなくテキスト辞書と左ペインのボタン文字を変える
+カテゴリの表示名は左ペインのボタン文字（`PlayerLayoutRoot.LeftPaneButtons.cs`）だけで決まる。
+表示名を変えるときは列挙値ではなくボタン文字を変える
 （例：「機構部品」→「機構部品A」は `ShapeCategory.Mechanism` を残したまま行った）。
+`PrimitiveMeshTexts.cs` の `ShapeCategoryMechanism` / `ShapeCategoryMechanismB` / `SpringBoneCat` は
+どこからも引かれていない（変えても画面は変わらない）。
 
 右ペインのセクションは図形生成で 1 枚（`LivePrimitiveSection`）を共用する。
 カテゴリごとに `RegisterUiPanel` で別パネル ID を付けるが、セクションは同じものを渡す。
@@ -109,7 +136,8 @@ ID は「ラベルのキー」。同じ図形の中で同じキーを 2 回使�
 ## D. 3D ビュー表示・姿勢の成立条件
 
 - 黄色ワイヤは `LiveWireInMainViewport` が立つインスタンスだけ。立っているのは
-  3D 連携とサンドボックス。ショートカット経路 `ShowPrimitiveShape` が開く `_primitiveSubPanel`
+  `_livePrimitiveSubPanel` の 1 つだけで、3D 連携の各カテゴリとサンドボックスはこの同じ画面を
+  カテゴリを切り替えて共用している。ショートカット経路 `ShowPrimitiveShape` が開く `_primitiveSubPanel`
   は立っていない → **表示確認は 3D 連携パネルで行う**
 - `Generate(true)` が `null` なら出ない
 - プレビュー中の例外は `catch { }` で消える → 原因調査は `polyling_call` の失敗理由で行う

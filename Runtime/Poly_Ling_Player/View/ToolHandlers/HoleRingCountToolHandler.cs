@@ -158,7 +158,7 @@ namespace Poly_Ling.Player
             var picks = PickHoleSeeds();
             if (picks == null || picks.Count == 0)
             {
-                Fail(isBase, "エッジ上の頂点または辺を選択してください");
+                Fail(isBase, "境界辺上の頂点または辺を選択してください");
                 return false;
             }
             if (!picks[0].Ok)

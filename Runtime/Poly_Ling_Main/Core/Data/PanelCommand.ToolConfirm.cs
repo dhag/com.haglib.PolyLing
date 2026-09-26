@@ -76,15 +76,14 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// 指定した辺または線分を押し出す。実処理は EdgeExtrudeTool。
+    /// 指定した辺・線分（複数可）を押し出す。実処理は EdgeExtrudeTool。
     ///
-    /// 辺と線分はどちらか一方だけを指定する。
-    /// 辺を指定するときは LineIndex = -1、線分を指定するときは EdgeV1 = EdgeV2 = -1。
+    /// 対象の頂点を 1 回だけ複製し（共有頂点は 1 つ）、辺・線分ごとに四角形を足す。
+    /// 隣り合う対象はつながった帯になる。線分（2 頂点の面）は作り替えずに残す。
     ///
-    /// 押し出し量は対象メッシュのローカル空間のベクトル。マウス経路の累積
-    /// （EdgeExtrudeTool.cs:296-298）がローカル空間で積まれるのに合わせている。
+    /// 押し出し量は対象メッシュのローカル空間のベクトル。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した辺または線分を押し出す。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した辺・線分（複数可）を押し出す。つながった対象は帯になる。線分は残し、四角形の面だけを足す。")]
     public class EdgeExtrudeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -96,35 +95,38 @@ namespace Poly_Ling.Data
                  Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
         public ulong[] ObjectIds     { get; }
 
-        [PLParam(TextKey = "EdgeExtrudeV1",
-                 Description = "対象の辺の頂点番号 1。線分を指定するときは -1")]
-        public int     EdgeV1 { get; }
+        [PLParam(Description = "対象の辺。頂点番号を 2 個ずつ並べる（v1,v2,v1,v2,...）。無ければ空")]
+        public int[]   EdgeVertexPairs { get; }
 
-        [PLParam(TextKey = "EdgeExtrudeV2",
-                 Description = "対象の辺の頂点番号 2。線分を指定するときは -1")]
-        public int     EdgeV2 { get; }
+        [PLParam(Description = "対象の線分（頂点数 2 の面）の索引。無ければ空")]
+        public int[]   LineIndices { get; }
 
-        [PLParam(TextKey = "EdgeExtrudeLineIndex",
-                 Description = "対象の線分の索引。辺を指定するときは -1")]
-        public int     LineIndex { get; }
+        [PLParam(Description = "四角形を裏返す線分の索引（LineIndices の一部）。省くと v0,v1,v1',v0' の順で作る")]
+        public int[]   ReversedLineIndices { get; }
 
         [PLParam(TextKey = "EdgeExtrudeLocalOffset",
-                 Description = "押し出し量。対象メッシュのローカル空間のベクトル", Required = true)]
+                 Description = "押し出し量。対象メッシュのローカル空間のベクトル。NewVertexPositions を指定したときは使わない")]
         public Vector3 LocalOffset { get; }
+
+        [PLParam(Description = "複製頂点の最終位置（ローカル、x,y,z を 3 個ずつ）。並びは複製を作る順（辺の頂点順、続いて線分の頂点順。共有頂点は 1 回）。指定すると LocalOffset の代わりに使う")]
+        public float[] NewVertexPositions { get; }
 
         public EdgeExtrudeCommand(
             int modelIndex, int[] masterIndices,
-            int edgeV1, int edgeV2, int lineIndex,
-            Vector3 localOffset,
-            ulong[] objectIds = null)
+            int[] edgeVertexPairs, int[] lineIndices,
+            Vector3 localOffset = default,
+            int[] reversedLineIndices = null,
+            ulong[] objectIds = null,
+            float[] newVertexPositions = null)
             : base(modelIndex)
         {
-            MasterIndices = masterIndices ?? System.Array.Empty<int>();
-            ObjectIds     = objectIds;
-            EdgeV1        = edgeV1;
-            EdgeV2        = edgeV2;
-            LineIndex     = lineIndex;
-            LocalOffset   = localOffset;
+            MasterIndices       = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds           = objectIds;
+            EdgeVertexPairs     = edgeVertexPairs ?? System.Array.Empty<int>();
+            LineIndices         = lineIndices ?? System.Array.Empty<int>();
+            ReversedLineIndices = reversedLineIndices ?? System.Array.Empty<int>();
+            LocalOffset         = localOffset;
+            NewVertexPositions  = newVertexPositions ?? System.Array.Empty<float>();
         }
     }
 

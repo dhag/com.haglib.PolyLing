@@ -26,7 +26,10 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly SmoothEdgesTool _tool = new SmoothEdgesTool();
-        private          ProjectContext  _project;
+
+        /// <summary>今のプロジェクト（Viewer から結線）。保持せず使うたびに取りに行く。</summary>
+        public Func<ProjectContext> GetProject;
+        private ProjectContext Project => GetProject?.Invoke();
 
         // ================================================================
         // 外部コールバック（Viewer から設定）
@@ -69,6 +72,68 @@ namespace Poly_Ling.Player
         [Poly_Ling.Data.PLToolAction(Description = "統計（SegmentCount ほか）を再計算する")]
         public void RefreshStats() => _tool.RecalculateStats();
 
+        // ================================================================
+        // プレビュー（SurfaceSnapToolHandler と同じ形。操作経路統一計画.md H-2）
+        // ================================================================
+        //
+        // プレビューは画面上の確認であって確定操作ではないため、コマンド化しない。
+        // 対象を直接動かすので、開始時に担当者判定とロック取得を通し、終了時に外す。
+
+        /// <summary>パネル操作でプレビューを始めてよいか（選択の担当者判定とロック取得）。</summary>
+        public Func<bool> TryBeginPreview;
+
+        /// <summary>パネルのプレビューが終わったときに呼ぶ（ロックを外す）。</summary>
+        public Action EndPreview;
+
+        private bool _panelPreview;
+
+        [Poly_Ling.Data.PLToolState(Description = "プレビュー中か")]
+        public bool IsPreviewing => _tool.IsPreviewing;
+
+        /// <summary>
+        /// プレビューのオン／オフ。オンで今の選択と設定の結果を表示し、オフで元の形状へ戻す。
+        /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "プレビューのオン／オフ（オンで対象のロックを取る）")]
+        public bool Preview
+        {
+            get => _tool.IsPreviewing;
+            set { if (value) UpdatePreview(); else CancelPreviewIfActive(); }
+        }
+
+        /// <summary>プレビューを開始または更新する（今の選択と設定で計算し直す）。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "プレビューを開始または更新する（対象のロックを取る）")]
+        public void UpdatePreview()
+        {
+            if (!_panelPreview && TryBeginPreview != null)
+            {
+                if (!TryBeginPreview()) return;
+                _panelPreview = true;
+            }
+
+            // 選択の差し替えに追随するため、計算のたびに今のコンテキストを通す。
+            var ctx = GetToolContext?.Invoke();
+            if (ctx != null) Activate(ctx);
+
+            _tool.UpdatePreview();
+        }
+
+        /// <summary>プレビュー中なら元の形状へ戻して終える。</summary>
+        [Poly_Ling.Data.PLToolAction(Description = "プレビュー中なら取り消す")]
+        public void CancelPreviewIfActive() => CancelIfActive();
+
+        public void CancelIfActive()
+        {
+            _tool.EndPreview();
+            EndPanelPreview();
+        }
+
+        private void EndPanelPreview()
+        {
+            if (!_panelPreview) return;
+            _panelPreview = false;
+            EndPreview?.Invoke();
+        }
+
         /// <summary>
         /// 平滑化を実行する。
         ///
@@ -99,11 +164,14 @@ namespace Poly_Ling.Player
             reason = null;
             if (cmd == null) { reason = "コマンドが null"; return false; }
 
-            var model = _project?.CurrentModel;
+            var model = Project?.CurrentModel;
             if (model == null) { reason = "モデルがありません"; return false; }
 
             if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
                 return false;
+
+            // プレビューが書いた座標を元へ戻し、ロックも外してから実行する。
+            CancelIfActive();
 
             // 実行時と同じコンテキストで統計を出すため、先に Activate を通す。
             var ctx = GetToolContext?.Invoke();
@@ -152,7 +220,6 @@ namespace Poly_Ling.Player
         // 初期化
         // ================================================================
 
-        public void SetProject(ProjectContext project)         => _project = project;
         public void SetUndoController(MeshUndoController ctrl) { _undoController = ctrl; }
         public void SetCommandQueue(CommandQueue queue)        { _commandQueue = queue; }
 
@@ -170,7 +237,7 @@ namespace Poly_Ling.Player
         {
             if (ctx != null)
             {
-                var model = _project?.CurrentModel;
+                var model = Project?.CurrentModel;
                 var mc    = model?.ActiveMeshContext;
                 ctx.Model            = model;
                 ctx.SelectedVertices = mc?.SelectedVertices;
@@ -183,6 +250,11 @@ namespace Poly_Ling.Player
                 ctx.SyncMesh = () =>
                 {
                     var target = model?.ActiveMeshContext;
+                    if (target != null) OnSyncMeshPositions?.Invoke(target);
+                };
+                // プレビューは開始時のメッシュを指定して同期する（途中で編集対象が変わっても戻せるように）。
+                ctx.SyncMeshContextPositionsOnly = target =>
+                {
                     if (target != null) OnSyncMeshPositions?.Invoke(target);
                 };
             }

@@ -408,6 +408,30 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case ExportVmdToMotionJsonCommand c:
+                {
+                    if (model == null)
+                    {
+                        Fail("no current model");
+                        Debug.LogError("[PolyLing] VMD→モーション: モデルがありません");
+                        return true;
+                    }
+                    if (OnExportVmdToMotionJson == null)
+                    {
+                        Fail("vmd to motion json export handler not wired");
+                        Debug.LogError("[PolyLing] VMD→モーション: 受け口が配線されていません");
+                        return true;
+                    }
+                    string vmReason = OnExportVmdToMotionJson.Invoke(c);
+                    if (vmReason != null)
+                    {
+                        Fail(vmReason);
+                        Debug.LogError($"[PolyLing] VMD→モーション 書き出しに失敗: {vmReason}");
+                        return true;
+                    }
+                    return true;
+                }
+
                 // ── メッシュ選択辞書 ───────────────────────────────────────────
                 case SaveSelectionDictionaryCommand c:
                 {

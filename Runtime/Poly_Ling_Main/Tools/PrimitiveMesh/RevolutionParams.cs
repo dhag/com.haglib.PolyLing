@@ -108,9 +108,9 @@ namespace Poly_Ling.Revolution
         public float RotationY;
 
         // プロファイル（頂点リスト）
-        [PLParam(TextKey = "RevolutionProfile", Description = "回転させる断面の点列。生成器が実際に読むのはこの値", Required = true,
-                 ProfileRole = PLProfileRole.Points, ProfileNormalize = false)]
-        public Vector2[] Profile;
+        [PLParam(TextKey = "RevolutionProfile", Description = "回転させる断面の点列（x,y,z）。生成器が実際に読むのはこの値。半径は x の符号 × √(x²+z²)", Required = true,
+                 ProfileRole = PLProfileRole.Points, ProfileNormalize = false, LegacyXYPairs = true)]
+        public Vector3[] Profile;
         [PLParam(Ignore = true, Description = "編集中の点の位置。形状には影響しない")]
         public int SelectedPointIndex;
 
@@ -206,7 +206,8 @@ namespace Poly_Ling.Revolution
                 for (int i = 0; i < Profile.Length; i++)
                 {
                     if (!Mathf.Approximately(Profile[i].x, o.Profile[i].x) ||
-                        !Mathf.Approximately(Profile[i].y, o.Profile[i].y))
+                        !Mathf.Approximately(Profile[i].y, o.Profile[i].y) ||
+                        !Mathf.Approximately(Profile[i].z, o.Profile[i].z))
                         return false;
                 }
             }
@@ -239,7 +240,7 @@ namespace Poly_Ling.Revolution
             var copy = this;
             if (Profile != null)
             {
-                copy.Profile = new Vector2[Profile.Length];
+                copy.Profile = new Vector3[Profile.Length];
                 Array.Copy(Profile, copy.Profile, Profile.Length);
             }
             return copy;

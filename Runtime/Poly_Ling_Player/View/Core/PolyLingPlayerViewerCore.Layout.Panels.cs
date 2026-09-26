@@ -46,7 +46,7 @@ namespace Poly_Ling.Player
             _meshListSubPanel.OnViewportOpModeChanged = mode =>
             {
                 // 選び直したオブジェクトリストが操作モードを決める側になる
-                // （下区画が開いている間・一般パネルが指定している間は適用しない）。
+                // （3D 操作パネルが開いている間・一般パネルが指定している間は適用しない）。
                 PromotePinned(_layoutRoot?.MeshListSection);
             };
 

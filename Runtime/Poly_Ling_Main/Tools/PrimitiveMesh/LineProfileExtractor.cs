@@ -1,7 +1,8 @@
 // Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/LineProfileExtractor.cs
 // メッシュの2頂点ライン(補助線)群とプロファイル編集データを相互変換するユーティリティ。
 // 図形生成パネルの「取り込み(メッシュ→プロファイル)」「反映(プロファイル→メッシュ)」用。
-// 方針: Z を破棄し XY をそのまま扱う(座標変換なし)。
+// 方針: 点は 3D（モデルのローカル座標）のまま扱う（座標変換なし）。
+//   穴の判定など向きが要るところだけ xy で求める。
 // 連結・ループ解析はこのクラス内で独立実装している(旧 LineExtrudeTool は廃止済み)。
 // 【線分群】線分群（MeshObject.LineGroups）があれば取り込みはそれを正典として読み、
 //   無いときだけ 2 頂点の面をつなぎ直す。反映は面と同じ並びの線分群も作る（LineGroupOps）。
@@ -41,34 +42,35 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
 
         /// <summary>
-        /// AABB の長辺が 1 になるよう等方スケールし、AABB の最小角を原点へ寄せる。
-        /// 長辺が 0（全点が同一位置）なら null。
+        /// AABB（x,y,z）の最長辺が 1 になるよう等方スケールし、AABB の最小角を原点へ寄せる。
+        /// 最長辺が 0（全点が同一位置）なら null。
         ///
         /// 【なぜ要るか】
         ///   フリル／パイプの断面座標は rung 長で正規化された系にある。
         ///   描画オブジェクト（2頂点ライン）から取り込んだ点列は元メッシュの
         ///   ローカル座標そのままなので、そのまま断面として使うと寸法が合わない。
         ///   取り込みのときだけこれを掛ける（反映は生データのまま書き出す）。
+        ///   z も x・y と同じ扱いにする（最小を原点へ、同じ倍率）。
         /// </summary>
-        public static List<Vector2> NormalizeToUnitSpan(IReadOnlyList<Vector2> src)
+        public static List<Vector3> NormalizeToUnitSpan(IReadOnlyList<Vector3> src)
         {
             if (src == null || src.Count < 2) return null;
 
-            float minX = float.MaxValue, minY = float.MaxValue;
-            float maxX = float.MinValue, maxY = float.MinValue;
-            for (int i = 0; i < src.Count; i++)
+            Vector3 min = src[0], max = src[0];
+            for (int i = 1; i < src.Count; i++)
             {
-                minX = Mathf.Min(minX, src[i].x); maxX = Mathf.Max(maxX, src[i].x);
-                minY = Mathf.Min(minY, src[i].y); maxY = Mathf.Max(maxY, src[i].y);
+                min = Vector3.Min(min, src[i]);
+                max = Vector3.Max(max, src[i]);
             }
 
-            float span = Mathf.Max(maxX - minX, maxY - minY);
+            Vector3 size = max - min;
+            float span = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
             if (span <= 1e-6f) return null;
 
             float k = 1f / span;
-            var dst = new List<Vector2>(src.Count);
+            var dst = new List<Vector3>(src.Count);
             for (int i = 0; i < src.Count; i++)
-                dst.Add(new Vector2((src[i].x - minX) * k, (src[i].y - minY) * k));
+                dst.Add((src[i] - min) * k);
             return dst;
         }
 
@@ -77,12 +79,12 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
 
         /// <summary>
-        /// 2頂点ライン群を順序連結し、開いた折れ線(Revolution プロファイル用)として XY を返す。
+        /// 2頂点ライン群を順序連結し、開いた折れ線(Revolution プロファイル用)として 3D の点列を返す。
         /// 複数チェーンがある場合は頂点数が最多のものを採用。連結不能なら空リスト。
         /// </summary>
-        public static List<Vector2> ExtractPolyline(MeshObject mesh, IEnumerable<int> lineFaceIndices)
+        public static List<Vector3> ExtractPolyline(MeshObject mesh, IEnumerable<int> lineFaceIndices)
         {
-            var result = new List<Vector2>();
+            var result = new List<Vector3>();
             if (mesh == null) return result;
 
             // 線分群があれば、それが順序の正典なので線分群から読む（点数が最多の群）。
@@ -95,8 +97,7 @@ namespace Poly_Ling.PrimitiveMesh
                     if (bestGroup == null || g.Order.Count > bestGroup.Order.Count) bestGroup = g;
                 }
                 if (bestGroup != null)
-                    foreach (var p in LineCurveSampler.SampleLocal(mesh, bestGroup, LineCurveSampler.DefaultSegmentsPerSpan))
-                        result.Add(new Vector2(p.x, p.y));
+                    result.AddRange(LineCurveSampler.SampleLocal(mesh, bestGroup, LineCurveSampler.DefaultSegmentsPerSpan));
                 return result;
             }
 
@@ -110,16 +111,13 @@ namespace Poly_Ling.PrimitiveMesh
             if (best == null) return result;
 
             foreach (int vi in best)
-            {
-                Vector3 p = mesh.Vertices[vi].Position;
-                result.Add(new Vector2(p.x, p.y));
-            }
+                result.Add(mesh.Vertices[vi].Position);
             return result;
         }
 
         /// <summary>
-        /// 2頂点ライン群を閉ループ解析し、Profile2D 用の Loop 群として XY を返す。
-        /// hole 判定は Shoelace 符号(Y上向き前提)。反時計回りが外周、時計回りが穴。
+        /// 2頂点ライン群を閉ループ解析し、Profile2D 用の Loop 群として 3D の点列を返す。
+        /// hole 判定は xy の Shoelace 符号(Y上向き前提)。反時計回りが外周、時計回りが穴。
         /// </summary>
         public static List<Loop> ExtractLoops(MeshObject mesh, IEnumerable<int> lineFaceIndices)
         {
@@ -138,8 +136,7 @@ namespace Poly_Ling.PrimitiveMesh
                     if (vidxG.Count < 3) continue;
 
                     var loopG = new Loop();
-                    foreach (var p in LineCurveSampler.SampleLocal(mesh, g, LineCurveSampler.DefaultSegmentsPerSpan))
-                        loopG.Points.Add(new Vector2(p.x, p.y));
+                    loopG.Points.AddRange(LineCurveSampler.SampleLocal(mesh, g, LineCurveSampler.DefaultSegmentsPerSpan));
                     // 向きは曲線に分割した点列の符号付き面積で決める（負 = 時計回り = 穴）。
                     float area2 = 0f;
                     for (int i = 0; i < loopG.Points.Count; i++)
@@ -184,10 +181,7 @@ namespace Poly_Ling.PrimitiveMesh
                 {
                     var loop = new Loop();
                     foreach (int vi in vidx)
-                    {
-                        Vector3 p = mesh.Vertices[vi].Position;
-                        loop.Points.Add(new Vector2(p.x, p.y));
-                    }
+                        loop.Points.Add(mesh.Vertices[vi].Position);
                     // 反時計回りが外周、時計回りが穴。
                     //
                     // 【以前は逆だった】
@@ -216,9 +210,9 @@ namespace Poly_Ling.PrimitiveMesh
 
         /// <summary>
         /// 折れ線(点列)を2頂点 Face 群の MeshObject にする。closed=true で末尾→先頭も閉じる。
-        /// 点は (x, y, 0) として配置(Z=0)。
+        /// 点は (x, y, z) のまま配置。
         /// </summary>
-        public static MeshObject PolylineToLineMesh(IReadOnlyList<Vector2> points, string name, bool closed)
+        public static MeshObject PolylineToLineMesh(IReadOnlyList<Vector3> points, string name, bool closed)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(name) ? "Profile" : name);
             if (points == null || points.Count < 2) return mo;
@@ -242,7 +236,7 @@ namespace Poly_Ling.PrimitiveMesh
 
         /// <summary>
         /// Loop 群を2頂点 Face 群の MeshObject にする(各ループを閉じる)。
-        /// 点は (x, y, 0) として配置(Z=0)。
+        /// 点は (x, y, z) のまま配置。
         /// </summary>
         public static MeshObject LoopsToLineMesh(IEnumerable<Loop> loops, string name)
         {
@@ -284,10 +278,10 @@ namespace Poly_Ling.PrimitiveMesh
         // 内部: 頂点/ライン生成
         // ================================================================
 
-        private static Vertex NewLineVertex(Vector2 xy)
+        private static Vertex NewLineVertex(Vector3 p)
         {
             // UV/Normal の index 0 を有効にするため 3引数コンストラクタを使用。
-            return new Vertex(new Vector3(xy.x, xy.y, 0f), Vector2.zero, Vector3.forward);
+            return new Vertex(p, Vector2.zero, Vector3.forward);
         }
 
         private static Face NewLineFace(int a, int b)

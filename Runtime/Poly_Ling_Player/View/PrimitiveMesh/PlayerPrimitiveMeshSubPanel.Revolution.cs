@@ -27,7 +27,7 @@ namespace Poly_Ling.Player
         { var p = RevolutionParams.Default; p.Pivot = DefaultPivotBottom; return p; }
 
         private RevolutionParams                     _revP    = DefaultRevolutionParams();
-        private List<Vector2>                        _revProfile = null;
+        private List<Vector3>                        _revProfile = null;
 
         // ── プロファイルの取り込み元（作り直しで掛け直すために控える）
         //    「取り込み(メッシュ→プロファイル)」を押したときだけ埋まる。
@@ -153,7 +153,7 @@ namespace Poly_Ling.Player
         private void EnsureRevProfile()
         {
             if (_revProfile == null)
-                _revProfile = RevolutionProfileGenerator.CreateDefault();
+                _revProfile = RevolutionProfileGenerator.To3D(RevolutionProfileGenerator.CreateDefault());
         }
 
         private void BuildRevolutionUI(VisualElement c)
@@ -195,7 +195,7 @@ namespace Poly_Ling.Player
                 if (_revP.CurrentPreset != ProfilePreset.Custom)
                 {
                     RevBegin();
-                    _revProfile = RevolutionProfileGenerator.CreatePreset(_revP.CurrentPreset, ref _revP);
+                    _revProfile = RevolutionProfileGenerator.To3D(RevolutionProfileGenerator.CreatePreset(_revP.CurrentPreset, ref _revP));
                     _revSel.Clear(); _revSelIdx = -1;
                     RevCommit("プリセット適用");
                 }
@@ -412,7 +412,7 @@ namespace Poly_Ling.Player
                 {
                     if (_revSelIdx < 0 || _revProfile == null || _revSelIdx >= _revProfile.Count) return;
                     xFf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3));
-                    _revProfile[_revSelIdx] = new Vector2(e.newValue, _revProfile[_revSelIdx].y);
+                    _revProfile[_revSelIdx] = new Vector3(e.newValue, _revProfile[_revSelIdx].y, _revProfile[_revSelIdx].z);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
                 });
                 xSl.RegisterCallback<PointerDownEvent>(_ => RevBegin());
@@ -423,7 +423,7 @@ namespace Poly_Ling.Player
                     RevBegin();
                     float v = Mathf.Clamp(e.newValue, 0f, 2f);
                     xSl.SetValueWithoutNotify(v);
-                    _revProfile[_revSelIdx] = new Vector2(v, _revProfile[_revSelIdx].y);
+                    _revProfile[_revSelIdx] = new Vector3(v, _revProfile[_revSelIdx].y, _revProfile[_revSelIdx].z);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
                     RevCommit("点X編集");
                 });
@@ -440,7 +440,7 @@ namespace Poly_Ling.Player
                 {
                     if (_revSelIdx < 0 || _revProfile == null || _revSelIdx >= _revProfile.Count) return;
                     yFf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3));
-                    _revProfile[_revSelIdx] = new Vector2(_revProfile[_revSelIdx].x, e.newValue);
+                    _revProfile[_revSelIdx] = new Vector3(_revProfile[_revSelIdx].x, e.newValue, _revProfile[_revSelIdx].z);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
                 });
                 ySl.RegisterCallback<PointerDownEvent>(_ => RevBegin());
@@ -451,7 +451,7 @@ namespace Poly_Ling.Player
                     RevBegin();
                     float v = Mathf.Clamp(e.newValue, -1f, 2f);
                     ySl.SetValueWithoutNotify(v);
-                    _revProfile[_revSelIdx] = new Vector2(_revProfile[_revSelIdx].x, v);
+                    _revProfile[_revSelIdx] = new Vector3(_revProfile[_revSelIdx].x, v, _revProfile[_revSelIdx].z);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
                     RevCommit("点Y編集");
                 });
@@ -533,7 +533,7 @@ namespace Poly_Ling.Player
         {
             if (_revP.CurrentPreset != ProfilePreset.Custom)
             {
-                _revProfile = RevolutionProfileGenerator.CreatePreset(_revP.CurrentPreset, ref _revP);
+                _revProfile = RevolutionProfileGenerator.To3D(RevolutionProfileGenerator.CreatePreset(_revP.CurrentPreset, ref _revP));
                 _revSel.Clear(); _revSelIdx = -1;
             }
             D(); RefreshRevCanvas(); RefreshRevPointUI();
@@ -590,7 +590,7 @@ namespace Poly_Ling.Player
             _revProfileSrcIndex = ResolveMasterIndexOf(mesh);
 
             RevBegin();
-            _revProfile = new List<Vector2>(pts);
+            _revProfile = new List<Vector3>(pts);
             _revSel.Clear(); _revSelIdx  = -1;
             _revP.CurrentPreset = ProfilePreset.Custom;
             RevCommit("メッシュ取込");

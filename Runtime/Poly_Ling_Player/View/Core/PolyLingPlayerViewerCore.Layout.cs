@@ -450,7 +450,7 @@ namespace Poly_Ling.Player
             _layoutRoot.ModelListBtn.clicked    += ToggleModelListPanel;
             _layoutRoot.MeshListBtn .clicked    += ToggleMeshListPanel;
             _layoutRoot.MaterialListBtn.clicked += ToggleMaterialListPanel;
-            // 右ペイン下区画（3D 操作）を空にする。上区画のパネルの操作モードに戻る。
+            // 下区画のパネルを閉じる（一般・3D 操作のどちらでも）。常駐リストの操作モードに戻る。
             _layoutRoot.ToolAreaCloseBtn.clicked += CloseToolArea;
 
             _layoutRoot.ModelSelectDropdown.RegisterValueChangedCallback(e =>
@@ -728,7 +728,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.RotateSection,            () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _rotateHandler?.Activate(ctx); _rotateSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.ScaleSection,             () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _scaleHandler?.Activate(ctx); _scaleSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.EdgeBevelSection,         () => _edgeBevelSubPanel?.Refresh()));
-            _sectionRefreshPairs.Add((_layoutRoot.EdgeExtrudeSection,       () => _edgeExtrudeSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.EdgeExtrudeSection,       () => { ActivateEdgeExtrudeGizmoHandler(); _edgeExtrudeSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.FaceExtrudeSection,       () => _faceExtrudeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.EdgeTopologySection,      () => _edgeTopologySubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.KnifeSection,             () => _knifeSubPanel?.Refresh()));

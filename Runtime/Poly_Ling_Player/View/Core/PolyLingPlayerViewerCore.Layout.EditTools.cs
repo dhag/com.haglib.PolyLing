@@ -104,8 +104,10 @@ namespace Poly_Ling.Player
                     var model = proj.CurrentModel;
                     if (model == null) return false;
 
-                    // 描画可能メッシュが既にあればそのまま使う
-                    if (model.ActiveMeshContext != null) return true;
+                    // 描画オブジェクトが選ばれていればそのまま使う。
+                    // ActiveMeshContext で判定しないこと：描画オブジェクトが未選択だと
+                    // 選択中のボーン・モーフを返すため、ボーンへ面を書き込んでしまう。
+                    if (model.FirstDrawableMeshContext != null) return true;
 
                     // 空のMeshContextを1つ作成してUNDO記録
                     var emptyMo = new Poly_Ling.Data.MeshObject("New Mesh");
@@ -530,6 +532,8 @@ namespace Poly_Ling.Player
             _edgeExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _edgeExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeExtrudeHandler.SendCommand = DispatchPanelCommand;
+            // ギズモの種類が変わったら、辺押し出しの状態なら結線を組み直す。
+            _edgeExtrudeHandler.OnGizmoKindChanged = OnEdgeExtrudeGizmoKindChanged;
             _edgeExtrudeSubPanel = new PlayerEdgeExtrudeSubPanel { Surface = ToolSurface };
             _edgeExtrudeSubPanel.Build(_layoutRoot.EdgeExtrudeSection);
             _faceExtrudeHandler = new FaceExtrudeToolHandler

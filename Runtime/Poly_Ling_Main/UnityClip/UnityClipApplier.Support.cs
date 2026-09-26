@@ -84,40 +84,34 @@ namespace Poly_Ling.UnityClip
 
                     var e = new MuscleLimitEntry
                     {
-                        Min = new Vector3(ParseF(f[5]), ParseF(f[6]), ParseF(f[7])),
-                        Max = new Vector3(ParseF(f[8]), ParseF(f[9]), ParseF(f[10]))
+                        UseDefault = !string.Equals((f[4] ?? "").Trim(), "false",
+                                         System.StringComparison.OrdinalIgnoreCase),
+                        Min        = new Vector3(ParseF(f[5]),  ParseF(f[6]),  ParseF(f[7])),
+                        Max        = new Vector3(ParseF(f[8]),  ParseF(f[9]),  ParseF(f[10])),
+                        Center     = new Vector3(ParseF(f[11]), ParseF(f[12]), ParseF(f[13])),
+                        AxisLength = ParseF(f[14]),
                     };
 
-                    bool measured = string.Equals((f[24] ?? "").Trim(), "true",
+                    // 実測クォータニオン列（25-52）は読まない（MuscleLimitEntry の注記）。
+                    e.Measured = string.Equals((f[24] ?? "").Trim(), "true",
                         System.StringComparison.OrdinalIgnoreCase);
-                    if (measured && f.Count >= 53)
-                    {
-                        e.Measured = true;
-                        e.Zero = ReadQ(f, 25);
-                        for (int dof = 0; dof < 3; dof++)
-                        {
-                            e.MinQ[dof] = ReadQ(f, 29 + dof * 8);
-                            e.MaxQ[dof] = ReadQ(f, 33 + dof * 8);
-                        }
-                    }
 
                     dict[hum] = e;
                 }
             }
             _muscleLimits = dict;
-            _canonEntryCache?.Clear();     // 取り違え時の残留を断つ
+            _solverDirty  = true;
             return dict.Count;
         }
 
         /// <summary>
-        /// マッスル可動域・実測を破棄する。以後は全ボーンが既定
-        /// （T ポーズ基準の Unity 定義値 CanonMuscleTable）で駆動される。
+        /// 外部 CSV の可動域を破棄する。以後はモデル側可動域か Unity 既定で駆動される。
         /// 別モデルの CSV を誤って読んだときの復帰口。
         /// </summary>
         public void ClearMuscleLimits()
         {
             _muscleLimits = null;
-            _canonEntryCache?.Clear();     // 取り違え時の残留を断つ
+            _solverDirty  = true;
         }
 
         // ================================================================

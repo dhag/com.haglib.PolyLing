@@ -235,6 +235,18 @@ namespace Poly_Ling.Data
         /// </summary>
         public bool ProfileNormalize { get; set; }
 
+        /// <summary>
+        /// 旧版の保存データではこの値を x,y の 2 個ずつで書いていた（今は x,y,z の 3 個ずつ）。
+        ///
+        /// 【何のために要るか】
+        ///   プロファイルの点を 3D にしたとき、保存済みの ObjectGroup の Args は
+        ///   2 個ずつのまま残っている。値の個数だけでは 2 個ずつか 3 個ずつかを
+        ///   区別できない（6 個なら 3 点とも 2 点とも読める）ので、段に控えた
+        ///   ObjectGroupStep.ProfileDim が 2 のときだけ、この印のキーを z=0 で 3 個ずつへ直す
+        ///   （ObjectGroupOps.UpgradeLegacyProfileArgs）。
+        /// </summary>
+        public bool LegacyXYPairs { get; set; }
+
         /// <summary>プロファイルの印が付いているか。</summary>
         public bool HasProfileRole => ProfileRole != PLProfileRole.None;
 

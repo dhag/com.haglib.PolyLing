@@ -52,13 +52,13 @@ namespace Poly_Ling.Player
         // 両方 active (α: 混色の青緑)
         private static readonly StyleColor BothActiveBtnColor        = new StyleColor(new Color(0.3f,  0.625f, 0.7f));
 
-        // 旧 _activeBtn を分割。右ペインは上下 2 区画（RightPanelKind）なので、
-        // 開いているパネルのボタン・セクションも区画ごとに持つ。
+        // 旧 _activeBtn を分割。下区画に開けるのは一般パネルか 3D 操作パネルのどちらか 1 つだけ（排他）。
+        // 種別で操作モードの決め方が違うので、ボタン・セクションは種別ごとに持つ（開いているのは片方だけ）。
         private Button _activeInteractionBtn;         // InteractionMode を示すボタン
-        private Button _activeGeneralPanelBtn;        // 上区画（一般）で開いているパネルのボタン
-        private Button _activeToolPanelBtn;           // 下区画（3D 操作）で開いているパネルのボタン
-        private VisualElement _activeGeneralSection;  // 上区画で開いているセクション
-        private VisualElement _activeToolSection;     // 下区画で開いているセクション（null = 下区画は空）
+        private Button _activeGeneralPanelBtn;        // 開いている一般パネルのボタン
+        private Button _activeToolPanelBtn;           // 開いている 3D 操作パネルのボタン
+        private VisualElement _activeGeneralSection;  // 開いている一般パネルのセクション
+        private VisualElement _activeToolSection;     // 開いている 3D 操作パネルのセクション（null = なし）
 
         /// <summary>そのセクションが上下どちらかの区画で開いているか（常駐リストを含む）。</summary>
         private bool IsRightSectionActive(VisualElement section)
@@ -66,7 +66,7 @@ namespace Poly_Ling.Player
                                    || _pinnedOpenOrder.Contains(section));
 
         /// <summary>
-        /// 上区画の一般パネルが決めたい操作モードの適用手順。「操作なし」を指定したパネルでは null
+        /// 一般パネルが決めたい操作モードの適用手順。「操作なし」を指定したパネルでは null
         /// （そのときは常駐リストに任せる）。適用の順番は ApplyRightPaneViewportMode。
         /// </summary>
         private System.Action _generalPanelModeApplier;
@@ -108,6 +108,7 @@ namespace Poly_Ling.Player
             _pinnedOpenOrder.Remove(section);
             if (open) _pinnedOpenOrder.Add(section);
             section.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+            _layoutRoot?.RefreshRightAreas();
             if (open) PLPerfLog.SetPanel(p.btn?.text);
             RepaintButtonHighlights();
             ApplyRightPaneViewportMode();
@@ -128,8 +129,8 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 右ペインの状態からビューポートの操作モードを決めて適用する。優先順：
-        ///   1. 下区画（3D 操作）が開いていれば、そのパネルが決めているので何もしない。
-        ///   2. 上区画の一般パネルが「操作なし」以外を指定していれば、それ。
+        ///   1. 3D 操作パネルが開いていれば、そのパネルが決めているので何もしない。
+        ///   2. 一般パネルが「操作なし」以外を指定していれば、それ。
         ///   3. 開いている常駐リストのうち、最後に開いた（操作した）もの。
         ///   4. どれもなければ「操作なし」。
         /// </summary>
@@ -189,7 +190,7 @@ namespace Poly_Ling.Player
                 Add(_layoutRoot.ToolSkinWeightPaintBtn);
                 Add(_layoutRoot.SkinWeightNumericBtn);
                 Add(_layoutRoot.ToolDeleteFaceBtn);
-                // 現在パネルを示すボタンは区画ごとに最大 1 つ（上区画・下区画）なので
+                // 現在パネルを示すボタンは種別ごとに最大 1 つ（一般・3D 操作）なので
                 // 個別列挙は不要 (下の色設定で扱う)
             }
 
@@ -249,10 +250,13 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// RightPanel の標準切替。セクションの種別（PlayerLayoutRoot.AddSection で宣言）から
-        /// 区画を決め、その区画だけを切り替える：区画内を隠す → section 表示 → ボタンをハイライト。
-        /// カテゴリ 1/2/3 共通に使える。SetInteractionMode とは独立。
-        /// section が null（セクションを持たないツール）のときは下区画を空にする。
+        /// RightPanel の標準切替。下区画は排他で、開けるのは一般パネルか 3D 操作パネルのどちらか 1 つ：
+        /// 下区画の全パネルを隠す → section 表示 → ボタンをハイライト。常駐リストは別扱い（開くだけ）。
+        /// カテゴリ 1/2/3 共通に使える。
+        /// 一般パネルを開いたときは、閉じた 3D 操作パネルに代わって一般パネル（または常駐リスト）の
+        /// 操作モードを適用し直す。3D 操作パネルを開いたときは、一般パネルの操作モードを捨てる
+        /// （3D 操作パネルは SetInteractionMode で自分のモードを決める）。
+        /// section が null（セクションを持たないツール）のときは 3D 操作パネルを閉じた状態にする。
         /// </summary>
         private void ShowRightPanel(VisualElement section, Button panelBtn)
         {
@@ -263,40 +267,54 @@ namespace Poly_Ling.Player
                 SetPinnedOpen(section, true);
                 return;
             }
-            HideRightArea(kind);
+            HideRightArea(RightPanelKind.General);
+            HideRightArea(RightPanelKind.Tool3D);
             if (section != null) section.style.display = DisplayStyle.Flex;
+
+            bool toolWasOpen = _activeToolSection != null;
             if (kind == RightPanelKind.Tool3D)
             {
-                _activeToolSection = section;
-                _layoutRoot?.SetToolAreaOpen(section != null);
+                _activeToolSection       = section;
+                _activeGeneralSection    = null;
+                _generalPanelModeApplier = null;
+                SetActivePanelButton(null, RightPanelKind.General);
             }
             else
             {
                 _activeGeneralSection = section;
+                _activeToolSection    = null;
+                SetActivePanelButton(null, RightPanelKind.Tool3D);
             }
+            _layoutRoot?.RefreshRightAreas();
             SetActivePanelButton(panelBtn, kind);
             PLPerfLog.SetPanel(panelBtn?.text);
+            if (kind == RightPanelKind.General && toolWasOpen) ApplyRightPaneViewportMode();
             RefreshObjectOverlays();
         }
 
         /// <summary>
-        /// 下区画（3D 操作）を閉じる。「閉じる」ボタンから呼ぶ。
-        /// 下区画が空になるので、上区画のパネルが決めた操作モードを適用する。
+        /// 下区画のパネルを閉じる（種別を問わない）。「閉じる」ボタンから呼ぶ。
+        /// 常駐リスト（なければ操作なし）の操作モードに戻る。
         /// </summary>
         private void CloseToolArea()
         {
+            HideRightArea(RightPanelKind.General);
             HideRightArea(RightPanelKind.Tool3D);
-            _activeToolSection = null;
-            _layoutRoot?.SetToolAreaOpen(false);
+            _activeToolSection       = null;
+            _activeGeneralSection    = null;
+            _generalPanelModeApplier = null;
+            _layoutRoot?.RefreshRightAreas();
+            SetActivePanelButton(null, RightPanelKind.General);
             SetActivePanelButton(null, RightPanelKind.Tool3D);
             ApplyRightPaneViewportMode();
             RefreshObjectOverlays();
         }
 
         /// <summary>
-        /// 上区画の一般パネルが操作モードを決めるときの唯一の入口。
-        /// 下区画が空のときだけ即時に適用し、開いている間は覚えておく（CloseToolArea で適用）。
-        /// 上区画のパネルから SetInteractionMode を直接呼ぶと下区画の 3D 操作を奪うので、呼ばないこと。
+        /// 一般パネルが操作モードを決めるときの唯一の入口。
+        /// 3D 操作パネルがないときだけ即時に適用する。開いている間に呼ばれた分は、
+        /// ShowRightPanel が一般パネルへ切り替えたときに適用し直す（下区画は排他）。
+        /// 一般パネルから SetInteractionMode を直接呼ぶと 3D 操作パネルの操作を奪うので、呼ばないこと。
         /// null（＝操作なし）のときは常駐リストが決める（ApplyRightPaneViewportMode）。
         /// </summary>
         private void ApplyGeneralPanelMode(System.Action apply)
@@ -356,7 +374,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// カテゴリ3のパネルを、選択許可チェック付きで開く。
         /// ON なら SelectOnly（移動ギズモなしの選択のみ）、OFF なら None（3D操作無効）。
-        /// 上区画（一般）のパネルは ApplyGeneralPanelMode 経由（下区画が空のときだけ効く）。
+        /// 一般パネルは ApplyGeneralPanelMode 経由（開いた時点で 3D 操作パネルは閉じるので、そこで適用される）。
         /// </summary>
         private void ShowRightPanelSelectable(VisualElement section, Button panelBtn, string key)
         {

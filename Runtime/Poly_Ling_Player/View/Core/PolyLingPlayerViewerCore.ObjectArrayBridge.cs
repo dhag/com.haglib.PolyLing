@@ -361,7 +361,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 選択中の描画オブジェクトを走査し、穴（エッジグループ）ごとに種を 1 つ拾う。
+        /// 選択中の描画オブジェクトを走査し、穴（境界辺群）ごとに種を 1 つ拾う。
         /// 最大 2 件で打ち切る。範囲選択などで 1 つの穴に多数の頂点が入っていても、
         /// その穴からは 1 つだけを採る。
         ///
@@ -399,7 +399,7 @@ namespace Poly_Ling.Player
                 if (sel.Vertices.Count == 0 && sel.Edges.Count == 0) continue;
                 sawSelection = true;
 
-                // 穴の表はメッシュごとに 1 回だけ作る（頂点 → エッジグループ番号）。
+                // 穴の表はメッシュごとに 1 回だけ作る（頂点 → 境界辺群番号）。
                 var groups = BoundaryEdgeOps.BuildGroups(BoundaryEdgeOps.CollectBoundaryEdges(mo));
                 if (groups.Count == 0) continue;
 
@@ -425,7 +425,7 @@ namespace Poly_Ling.Player
                 {
                     if (picks.Count >= 2) break;
                     if (c.Vertex < 0 || c.Vertex >= mo.VertexCount) continue;
-                    if (!groupOf.TryGetValue(c.Vertex, out int gi)) continue;  // エッジ上にない頂点
+                    if (!groupOf.TryGetValue(c.Vertex, out int gi)) continue;  // 境界辺上にない頂点
                     if (!takenGroups.Add(gi)) continue;                        // その穴は採用済み
 
                     // 方向ヒントは同じ穴の頂点のときだけ活かす。
@@ -442,8 +442,8 @@ namespace Poly_Ling.Player
 
             if (picks.Count == 0)
                 picks.Add(Fail(sawSelection
-                    ? "選択はエッジ（1面だけが使う辺）の上にありません"
-                    : "エッジ上の頂点または辺を選択してください"));
+                    ? "選択は境界辺（1面だけが使う辺）の上にありません"
+                    : "境界辺上の頂点または辺を選択してください"));
 
             return picks;
         }

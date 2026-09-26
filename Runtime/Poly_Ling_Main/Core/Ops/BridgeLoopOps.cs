@@ -1,5 +1,5 @@
 // BridgeLoopOps.cs
-// 2つのエッジループ（穴の縁）を面でつなぐ「ブリッジ」の位相計算。
+// 2つの境界ループ（穴の縁）を面でつなぐ「ブリッジ」の位相計算。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
 // 【手順】
@@ -58,7 +58,7 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// startVertex を含むエッジグループ（1面だけが使う辺の連結成分）を、
+        /// startVertex を含む境界辺群（1面だけが使う辺の連結成分）を、
         /// startVertex から一方向にたどって順序付きの頂点列にする。
         /// directionHint が startVertex の隣接頂点なら、そちらへ進む向きを採る。
         /// </summary>
@@ -77,7 +77,7 @@ namespace Poly_Ling.Ops
             var group = BoundaryEdgeOps.GroupFromVertex(mesh, startVertex);
             if (group.Count == 0)
             {
-                message = "指定頂点はエッジ（1面だけが使う辺）上にありません";
+                message = "指定頂点は境界辺（1面だけが使う辺）上にありません";
                 return order;
             }
 
@@ -91,7 +91,7 @@ namespace Poly_Ling.Ops
 
             if (!adj.TryGetValue(startVertex, out var startNeighbors) || startNeighbors.Count == 0)
             {
-                message = "エッジをたどれませんでした";
+                message = "境界辺をたどれませんでした";
                 return order;
             }
 
@@ -128,7 +128,7 @@ namespace Poly_Ling.Ops
 
             if (order.Count < 3)
             {
-                message = "エッジの頂点が足りません";
+                message = "境界辺の頂点が足りません";
                 order.Clear();
                 return order;
             }
@@ -195,7 +195,7 @@ namespace Poly_Ling.Ops
             int  minCount = closed ? 3 : 2;   // 開環は 1 辺（2頂点）どうしでも面になる
             if (aCount < minCount || bCount < minCount)
             {
-                r.Message = closed ? "エッジの頂点が足りません" : "辺群の頂点が足りません";
+                r.Message = closed ? "境界辺の頂点が足りません" : "辺群の頂点が足りません";
                 return r;
             }
 
@@ -324,7 +324,7 @@ namespace Poly_Ling.Ops
         /// <summary>
         /// 辺 {v0,v1} を使う面が 1 枚だけのとき、その面が辺を v0→v1 の向きに
         /// 通るなら follows=true、v1→v0 なら follows=false を返して true。
-        /// 使う面が 0 枚または 2 枚以上（＝エッジでない）なら false。
+        /// 使う面が 0 枚または 2 枚以上（＝境界辺でない）なら false。
         /// </summary>
         public static bool EdgeFollowsFaceWinding(
             MeshObject mesh, int v0, int v1, out bool follows)
@@ -370,7 +370,7 @@ namespace Poly_Ling.Ops
         ///   flipCorrespondence = (dA == dB)
         /// で一意に決まる。
         ///
-        /// 判定できないとき（種の辺がエッジでない等）は false を返し、
+        /// 判定できないとき（種の辺が境界辺でない等）は false を返し、
         /// 出力フラグは触らない。
         /// </summary>
         public static bool TryAutoFlags(

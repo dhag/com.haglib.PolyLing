@@ -61,6 +61,15 @@
 //     ひじ LowerArm  Zero = ±Y 回り 79.99
 //     肩   UpperArm  Zero = (0, ±0.593, ±0.805) 回り 48.65
 //     体幹・首・頭・手首・足首 = 恒等
+//
+// 【dof の合成は Unity に任せる（2026-09-26 実測）】
+//   表の値（Zero・軸・可動端）は、正準骨格の Avatar に SetHumanPose で当てた結果と
+//   全 0・1 本だけ ±0.5 / ±1 のどちらでも 0.00 度で一致した。
+//   ところが同じボーンの dof を同時に動かすと、dof ごとの回転を順に掛ける合成では
+//   最大 57.81 度（上腕）ずれた。合成規則が Unity と違う。
+//   そこでマッスル → 回転は CanonMuscleSolver（Unity の SetHumanPose）で解き、
+//   この表は正準の Humanoid 名の一覧と方向表の出どころとしてだけ使う。
+//   dof ごとの回転を自前で合成する実装を復活させないこと。
 // ================================================================
 //
 // 【分割先】このファイルから次へ分けてある。
@@ -88,21 +97,15 @@ namespace Poly_Ling.UnityClip
         //       をそのまま適用する。最も高精度だが、抽出時に Avatar が必要。
         //       さらに外部 UnityBone CSV（ソース rest）があればレスト補正リターゲットへ。
         //   (b) Muscle    … dto.muscles（生マッスル）からローカル回転を再構成する。
-        //       Avatar 不要。精度は手持ちデータで段階的に上がる:
-        //         B-1 実測なし … 可動域（度）から Euler 合成する近似。
-        //                        Muscle Referential の pre/post 回転・sign を省く。
-        //         B-2 実測あり … 外部 UnityLimit CSV（LoadMuscleLimitCsv）の
-        //                        Zero / dof毎の -1・+1 実測クォータニオンから
-        //                        軸ごと Slerp して合成する。pre/post・sign を含む。
+        //       ソースの Avatar は不要。正準骨格の Avatar に Unity 自身で解かせ（CanonMuscleSolver）、
+        //       得た正準の姿勢を、焼き込みの逆でモデルへ移す（DeltaOf）。
         //   二次骨（dto.bones：袖/髪/スカート等）は、どちらの方式でも常時適用する。
         //
-        //   可動端（Min/Max）の出所は、Muscle 経路で次の順に決まる:
-        //     1) 外部 UnityLimit CSV の実測（LoadMuscleLimitCsv 済みのボーン）
+        //   可動域（正準 Avatar の HumanLimit）の出所は次の順に決まる:
+        //     1) 外部 UnityLimit CSV の UseDefault=false の行（LoadMuscleLimitCsv 済み）
         //     2) モデル側 per-bone 可動域（MeshObject.HumanLimit。
         //        UseDefaultValues == false のボーンだけ）
-        //     3) CanonMuscleTable の定数
-        //   回転軸と muscle=0 の姿勢は常に定数側を使う。HumanLimitData は
-        //   可動端しか持たないため、そこだけを差し替える。
+        //     3) Unity 既定
         //   2) の控えは BuildMapping（→ BuildCanonAlignment）で作る。
         //   可動域を編集したあとは BuildMapping を呼び直すまで反映されない。
         //
@@ -167,21 +170,24 @@ namespace Poly_Ling.UnityClip
         /// <summary>ソース rest（バインドポーズ）読込済みなら true＝レスト補正リターゲットが有効。</summary>
         public bool HasSourceRest => _sourceRest != null && _sourceRest.Count > 0;
 
-        // マッスル可動域・実測（外部 UnityLimit CSV v1 由来）。null/空 = 未読込。
+        // マッスル可動域（外部 UnityLimit CSV v1 由来）。null/空 = 未読込。
+        //   可動域は正準骨格の Avatar（CanonMuscleSolver）へ HumanLimit として渡す。
+        //   CSV の実測クォータニオン列（Zero / Dof*Min / Dof*Max）は読まない。
+        //   マッスルからの姿勢は Unity 自身に解かせるので、実測値は要らない
+        //   （CanonMuscleSolver.cs 冒頭の実測メモ）。Measured は表示のためだけに残す。
         private class MuscleLimitEntry
         {
+            public bool    UseDefault = true;                     // HumanLimit.useDefaultValues
             public Vector3 Min;                                   // 度（dof 0,1,2 の順）
             public Vector3 Max;                                   // 度
-            public bool    Measured;                              // 実測列を持つか
-            public bool    FromModelLimit;                        // 可動端をモデル側 HumanLimit で置いたか
-            public Quaternion Zero = Quaternion.identity;         // muscle 全 0 のローカル回転
-            public readonly Quaternion[] MinQ = { Quaternion.identity, Quaternion.identity, Quaternion.identity };
-            public readonly Quaternion[] MaxQ = { Quaternion.identity, Quaternion.identity, Quaternion.identity };
+            public Vector3 Center;                                // 度
+            public float   AxisLength;
+            public bool    Measured;                              // 実測列を持つか（表示用）
         }
         private Dictionary<string, MuscleLimitEntry> _muscleLimits;   // Humanoid 列挙名 → entry
 
-        // ---- 既定マッスル基準（外部 CSV が無いときの自動補正）------------
-        // 正準（T ポーズ）定数を、ターゲットモデルの rest 方向へ整列してから使う。
+        // ---- 正準の枠とモデルの枠 --------------------------------------------
+        // マッスルから得た正準（T ポーズ）の姿勢をモデルへ移すための量（下の「正準の姿勢をモデルへ移す」）。
         // 整列 A はモデルごとに BuildMapping で 1 回だけ作る（毎フレーム再計算しない）。
         private struct CanonFrame
         {
@@ -189,29 +195,19 @@ namespace Poly_Ling.UnityClip
             public Quaternion RestW;  // ルートからの累積レスト回転
             public Quaternion RestL;  // 自ボーンのレスト・ローカル回転
         }
-        private Dictionary<string, CanonFrame>       _canonFrame;       // Humanoid名 → 枠
-        private Dictionary<string, MuscleLimitEntry> _canonEntryCache;  // Humanoid名 → 合成 entry
+        private Dictionary<string, CanonFrame> _canonFrame;       // Humanoid名 → 枠
+        private Dictionary<string, string>     _humAncestor;      // Humanoid名 → モデル骨格上の Humanoid の祖先（無ければ null）
 
         // ---- モデル側 per-bone 可動域（MeshObject.HumanLimit）-------------
-        // 正典は MeshObject.HumanLimit（ラジアン）。ここへは度で控える。
-        // UseDefaultValues == true のボーンは入れない。入れないことが
-        // 「定数（CanonMuscleTable）をそのまま使う」の意味になる。
-        //
-        // 【なぜ定数を丸ごと置き換えないか】
-        //   CanonMuscleTable の可動端は HumanTrait の可動域と一致しない
-        //   （ツイストが捩りボーンへ分配されるため実効がおよそ半分）。
-        //   既定のボーンまでモデル値へ替えると、これまで出ていた姿勢が変わる。
-        //   よって「明示的に既定を外したボーンだけ」差し替える。
-        //
-        // 【軸と Zero は差し替えない】
-        //   HumanLimitData が持つのは可動端だけで、回転軸と muscle=0 の姿勢は
-        //   持たない。軸 cb.Axis と Zero は定数のまま使う。
-        private struct ModelLimitDeg
-        {
-            public Vector3 Min;   // 度（dof 0,1,2 の順）
-            public Vector3 Max;   // 度
-        }
-        private Dictionary<string, ModelLimitDeg> _modelLimitDeg;
+        // 正典は MeshObject.HumanLimit（ラジアン）。ここへは Unity の HumanLimit（度）で控える。
+        // UseDefaultValues == true のボーンは入れない（Unity 既定を使う）。
+        private Dictionary<string, HumanLimit> _modelLimit;
+
+        // ---- マッスル → 正準ローカル回転 -----------------------------------
+        // 可動域（CSV ＞ モデル ＞ 既定）が変わったら作り直す。
+        private CanonMuscleSolver _solver;
+        private bool              _solverDirty = true;
+        private float[]           _muscleBuf;
 
         /// <summary>UnityLimit CSV 読込済みなら true。</summary>
         public bool HasMuscleLimits => _muscleLimits != null && _muscleLimits.Count > 0;
@@ -350,8 +346,9 @@ namespace Poly_Ling.UnityClip
             EnsureCanonMuscle();
 
             _canonFrame      = new Dictionary<string, CanonFrame>();
-            _canonEntryCache = new Dictionary<string, MuscleLimitEntry>();
-            _modelLimitDeg   = new Dictionary<string, ModelLimitDeg>();
+            _humAncestor     = new Dictionary<string, string>();
+            _modelLimit      = new Dictionary<string, HumanLimit>();
+            _solverDirty     = true;
             if (model == null || _skeleton == null) return;
 
             // ターゲットの rest 位置（モデル空間）
@@ -370,10 +367,13 @@ namespace Poly_Ling.UnityClip
                 var hl = _skeleton.SourceContext(model, n)?.MeshObject?.HumanLimit;
                 if (hl != null && !hl.UseDefaultValues)
                 {
-                    _modelLimitDeg[kv.Key] = new ModelLimitDeg
+                    _modelLimit[kv.Key] = new HumanLimit
                     {
-                        Min = hl.Min * Mathf.Rad2Deg,
-                        Max = hl.Max * Mathf.Rad2Deg,
+                        useDefaultValues = false,
+                        min        = hl.Min    * Mathf.Rad2Deg,
+                        max        = hl.Max    * Mathf.Rad2Deg,
+                        center     = hl.Center * Mathf.Rad2Deg,
+                        axisLength = hl.AxisLength,
                     };
                 }
             }
@@ -387,7 +387,9 @@ namespace Poly_Ling.UnityClip
                     RestL = Quaternion.identity
                 };
 
-                if (_canonDir.TryGetValue(kv.Key, out var d0) && DirRest(tp, kv.Key, out var dt))
+                // A は腕 8 本だけ（IsArmAlignBone）。他は恒等。
+                if (IsArmAlignBone(kv.Key) &&
+                    _canonDir.TryGetValue(kv.Key, out var d0) && DirRest(tp, kv.Key, out var dt))
                     fr.A = QFromTo(d0, dt).ToUnity();
 
                 if (node.TryGetValue(kv.Key, out int n))
@@ -398,15 +400,56 @@ namespace Poly_Ling.UnityClip
 
                 _canonFrame[kv.Key] = fr;
             }
+
+            // Humanoid ごとの、モデル骨格上でいちばん近い Humanoid の祖先（無ければ null）。
+            // 正準の親ではなくモデルの親子で見る（UpperChest を持たないモデル等があるため）。
+            _humAncestor = new Dictionary<string, string>();
+            var nodeSet  = new HashSet<int>(node.Values);
+            var nameOf   = new Dictionary<int, string>();
+            foreach (var kv in node) nameOf[kv.Value] = kv.Key;
+            foreach (var kv in node)
+            {
+                int an = _skeleton.HumanoidAncestorNode(model, kv.Value, nodeSet);
+                _humAncestor[kv.Key] = an >= 0 && nameOf.TryGetValue(an, out var anName) ? anName : null;
+            }
+        }
+
+        // ================================================================
+        // T ポーズ整列を掛けるボーン（恒久メモ・削除禁止）
+        // ----------------------------------------------------------------
+        //   肩・上腕・前腕・手首の 8 本だけ。焼き込み・VRMA 書き出し・パネル再生の
+        //   すべてがここを見る（範囲がずれると再生が焼き込みの逆にならない）。
+        //
+        //   A は「ボーン 1 本の方向合わせ」でしかない。全 Humanoid へ掛けた実測では
+        //   上半身が反り返り、指が根元と先端で逆に曲がった（VmdVrmAnimationExport.cs 冒頭）。
+        //   2026-09-26 の実測：焼き込みと再生を腕 8 本・同じ掛け方にそろえると、
+        //   再生と VMD 直接の差は Unity のマッスル表現で落ちる分だけになった。
+        //   範囲を変える選択肢は置かない。
+        // ================================================================
+        private static readonly HashSet<string> ArmAlignBoneNames = new HashSet<string>
+        {
+            "LeftShoulder",  "RightShoulder",
+            "LeftUpperArm",  "RightUpperArm",
+            "LeftLowerArm",  "RightLowerArm",
+            "LeftHand",      "RightHand",
+        };
+
+        /// <summary>T ポーズ整列 A を掛けるボーンか（腕 8 本）。名前の空白の有無は問わない。</summary>
+        public static bool IsArmAlignBone(string humanoidName)
+        {
+            if (string.IsNullOrEmpty(humanoidName)) return false;
+            string key = UnityClipVirtualSkeleton.NormalizeHumanoidName(humanoidName);
+            return !string.IsNullOrEmpty(key) && ArmAlignBoneNames.Contains(key);
         }
 
         /// <summary>
         /// 正準（T ポーズ）のボーン方向 → ターゲット rest 方向 の最短弧 A。
+        /// 腕 8 本（IsArmAlignBone）だけが非恒等で、他は恒等を返す。
         /// BuildMapping を通したあとだけ引ける。引けなければ false（恒等を返す）。
         ///
-        /// VMD → VRMA の書き出し（VmdVrmAnimationExport）が、モデルのレスト姿勢を
-        /// 正準 T ポーズへ揃えるために読む。値の算出は BuildCanonAlignment が正本で、
-        /// ここでは複製しない。
+        /// VMD の焼き込み・VRMA 書き出し（VmdPoseSession）が、モデルのレスト姿勢を
+        /// 正準 T ポーズへ揃えるために読む。パネル再生（DeltaOf）も同じ値の逆を掛ける。
+        /// 値の算出は BuildCanonAlignment が正本で、ここでは複製しない。
         /// </summary>
         public bool TryGetCanonAlignment(string humanoidName, out Quaternion alignment)
         {
@@ -443,74 +486,85 @@ namespace Poly_Ling.UnityClip
             return _skeleton.RestWorldMatrix(model, node);
         }
 
-        // 正準定数をターゲットへ整列して MuscleLimitEntry を合成する。
-        // 外部 CSV と同じ形（Zero / MinQ / MaxQ）にするため、以後の処理は
-        // 実測ありの経路と完全に同一になる。
-        private MuscleLimitEntry GetCanonEntry(string humanoidName)
+        // ================================================================
+        // 正準（T ポーズ）の姿勢をモデルへ移す（恒久メモ・削除禁止）
+        // ----------------------------------------------------------------
+        //   焼き込み（VmdPoseSession）は、モデルのワールド差分 R に A を右から掛けて
+        //   正準のワールド W_c = R·A とする。再生はその逆で
+        //     モデルのワールド差分  Δ = W_c · A⁻¹
+        //     モデルのワールド      W = Δ · RestW
+        //   W_c は Hips から見た値を使う（身体の向き RootQ はこの経路では当てない。以前から同じ）。
+        //   ボーンへ載せるレスト差分は、モデル骨格上の Humanoid の祖先 anc の Δ を使って
+        //     D = RestW⁻¹ · Δ_anc⁻¹ · Δ · RestW
+        //   anc と自分の間の非 Humanoid ボーン（腕捩など）は姿勢を持たずレストのまま、という前提。
+        //
+        //   以前は正準のローカル回転を P⁻¹·(A·L·A⁻¹)·P·ΔL（A で挟む共役）で移していたが、
+        //   焼き込みの逆にならず、腕から先が最大 67° ずれた（2026-09-26 実測）。
+        //   掛け方を焼き込みとそろえると、差は Unity のマッスル表現で落ちる分だけになった。
+        // ================================================================
+        private readonly Dictionary<string, Quaternion> _deltaMemo  = new Dictionary<string, Quaternion>();
+        private readonly HashSet<string>                _drivenKeys = new HashSet<string>();
+
+        private CanonFrame FrameOf(string humanoidName)
         {
-            EnsureCanonMuscle();
-            if (_canonEntryCache != null &&
-                _canonEntryCache.TryGetValue(humanoidName, out var cached)) return cached;
-            if (!_canonMuscle.TryGetValue(humanoidName, out var cb)) return null;
+            if (_canonFrame != null && _canonFrame.TryGetValue(humanoidName, out var fr)) return fr;
+            return new CanonFrame { A = Quaternion.identity, RestW = Quaternion.identity, RestL = Quaternion.identity };
+        }
 
-            // 枠が無いときに default（全成分 0 のクォータニオン）を掴まないこと。
-            CanonFrame fr;
-            if (_canonFrame == null || !_canonFrame.TryGetValue(humanoidName, out fr))
-            {
-                fr = new CanonFrame
+        private string AncestorOf(string humanoidName)
+        {
+            string anc = null;
+            if (_humAncestor != null) _humAncestor.TryGetValue(humanoidName, out anc);
+            return anc;
+        }
+
+        // ワールド差分 Δ。駆動されていない Humanoid は祖先の Δ に付いていく。直近の Solve の値。
+        private Quaternion DeltaOf(string humanoidName, int depth = 0)
+        {
+            if (string.IsNullOrEmpty(humanoidName) || depth > 64) return Quaternion.identity;
+            if (_deltaMemo.TryGetValue(humanoidName, out var memo)) return memo;
+
+            Quaternion r;
+            if (_drivenKeys.Contains(humanoidName)
+                && System.Enum.TryParse<HumanBodyBones>(humanoidName, out var hbb)
+                && _solver != null && _solver.TryGetHipsRelativeWorld(hbb, out Quaternion wc))
+                r = QuatNorm(wc * Quaternion.Inverse(FrameOf(humanoidName).A));
+            else
+                r = DeltaOf(AncestorOf(humanoidName), depth + 1);
+
+            _deltaMemo[humanoidName] = r;
+            return r;
+        }
+
+        // マッスル → 正準ローカル回転の解法。可動域の優先順は
+        //   外部 UnityLimit CSV（UseDefault=false の行）＞ モデル側 HumanLimit ＞ Unity 既定。
+        private bool EnsureSolver(out string reason)
+        {
+            reason = null;
+            if (!_solverDirty && _solver != null) return true;
+
+            var limits = new Dictionary<HumanBodyBones, HumanLimit>();
+            if (_modelLimit != null)
+                foreach (var kv in _modelLimit)
+                    if (System.Enum.TryParse<HumanBodyBones>(kv.Key, out var hbb)) limits[hbb] = kv.Value;
+            if (_muscleLimits != null)
+                foreach (var kv in _muscleLimits)
                 {
-                    A     = Quaternion.identity,
-                    RestW = Quaternion.identity,
-                    RestL = Quaternion.identity
-                };
-            }
+                    if (kv.Value == null || kv.Value.UseDefault) continue;
+                    if (!System.Enum.TryParse<HumanBodyBones>(kv.Key, out var hbb)) continue;
+                    limits[hbb] = new HumanLimit
+                    {
+                        useDefaultValues = false,
+                        min        = kv.Value.Min,
+                        max        = kv.Value.Max,
+                        center     = kv.Value.Center,
+                        axisLength = kv.Value.AxisLength,
+                    };
+                }
 
-            // 正準（T ポーズ）の量を、ターゲットのレスト枠へ移す。
-            //   A  … ボーン方向の食い違い（傾いた背骨など）を吸収する
-            //   P  … 親までの累積レスト回転。腕を rest 回転で下げているモデルを吸収する
-            //   ΔL … 自ボーンのレスト・ローカル回転
-            // 定数そのものは一切いじらない。枠を移し替えるだけである。
-            Quaternion a  = fr.A;
-            Quaternion ai = Quaternion.Inverse(a);
-            Quaternion dL = fr.RestL;
-            Quaternion w  = fr.RestW;
-            Quaternion p  = w * Quaternion.Inverse(dL);
-            Quaternion pi = Quaternion.Inverse(p);
-            Quaternion wi = Quaternion.Inverse(w);
-
-            // 可動端だけモデル側の値へ差し替える（既定を外したボーンのみ）。
-            // 短絡評価の中で out var を宣言すると後段で確定代入にならないため、
-            // TryGetValue は if で分けて呼ぶ。
-            ModelLimitDeg ml = default;
-            bool useModelLimit = false;
-            if (_modelLimitDeg != null)
-                useModelLimit = _modelLimitDeg.TryGetValue(humanoidName, out ml);
-
-            var e = new MuscleLimitEntry();
-            e.Measured       = true;                 // 以後は実測ありと同じ経路を通す
-            e.FromModelLimit = useModelLimit;
-            e.Zero     = QuatNorm(pi * (a * cb.Zero * ai) * p * dL);
-
-            var mn = Vector3.zero;
-            var mx = Vector3.zero;
-            for (int dof = 0; dof < 3; dof++)
-            {
-                if (!cb.Has[dof]) { e.MinQ[dof] = e.Zero; e.MaxQ[dof] = e.Zero; continue; }
-                Vector3 axis = wi * (a * cb.Axis[dof]);
-
-                float minDeg = useModelLimit ? ml.Min[dof] : cb.MinDeg[dof];
-                float maxDeg = useModelLimit ? ml.Max[dof] : cb.MaxDeg[dof];
-
-                e.MinQ[dof] = QuatNorm(e.Zero * Quaternion.AngleAxis(minDeg, axis));
-                e.MaxQ[dof] = QuatNorm(e.Zero * Quaternion.AngleAxis(maxDeg, axis));
-                mn[dof] = minDeg;
-                mx[dof] = maxDeg;
-            }
-            e.Min = mn;
-            e.Max = mx;
-
-            if (_canonEntryCache != null) _canonEntryCache[humanoidName] = e;
-            return e;
+            _solver = CanonMuscleSolver.Shared(limits, out reason);
+            _solverDirty = _solver == null;
+            return _solver != null;
         }
 
         /// <summary>

@@ -13,7 +13,7 @@ namespace Poly_Ling.Revolution
     /// <summary>CSV 読み込み結果</summary>
     public class CSVLoadResult
     {
-        public List<Vector2> Profile;
+        public List<Vector3> Profile;
         public int   RadialSegments;
         public bool  CloseTop, CloseBottom, CloseLoop, Spiral;
         public float PivotY;
@@ -35,7 +35,7 @@ namespace Poly_Ling.Revolution
         {
             var result = new CSVLoadResult
             {
-                Profile        = new List<Vector2>(),
+                Profile        = new List<Vector3>(),
                 RadialSegments = currentParams.RadialSegments,
                 CloseTop       = currentParams.CloseTop,
                 CloseBottom    = currentParams.CloseBottom,
@@ -68,12 +68,16 @@ namespace Poly_Ling.Revolution
                     // ヘッダー行スキップ（"X,Y" など、先頭が英字の行）
                     if (t.Length > 0 && char.IsLetter(t[0])) continue;
 
+                    // 点の行。x,y,z（z の列が無い旧形式は z=0）。
                     var parts = t.Split(',');
                     if (parts.Length >= 2 &&
                         float.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float x) &&
                         float.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float y))
                     {
-                        result.Profile.Add(new Vector2(x, y));
+                        float z = 0f;
+                        if (parts.Length >= 3)
+                            float.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out z);
+                        result.Profile.Add(new Vector3(x, y, z));
                     }
                 }
 
@@ -94,7 +98,7 @@ namespace Poly_Ling.Revolution
         // 書き込み
         // ================================================================
 
-        public static bool Save(string path, List<Vector2> profile, RevolutionParams p)
+        public static bool Save(string path, List<Vector3> profile, RevolutionParams p)
         {
             try
             {
@@ -111,9 +115,9 @@ namespace Poly_Ling.Revolution
                     w.WriteLine($"$spiralPitch={p.SpiralPitch.ToString(CultureInfo.InvariantCulture)}");
                     w.WriteLine($"$flipY={p.FlipY}");
                     w.WriteLine($"$flipZ={p.FlipZ}");
-                    w.WriteLine("X,Y");
+                    w.WriteLine("X,Y,Z");
                     foreach (var pt in profile)
-                        w.WriteLine($"{pt.x.ToString(CultureInfo.InvariantCulture)},{pt.y.ToString(CultureInfo.InvariantCulture)}");
+                        w.WriteLine($"{pt.x.ToString(CultureInfo.InvariantCulture)},{pt.y.ToString(CultureInfo.InvariantCulture)},{pt.z.ToString(CultureInfo.InvariantCulture)}");
                 }
                 return true;
             }

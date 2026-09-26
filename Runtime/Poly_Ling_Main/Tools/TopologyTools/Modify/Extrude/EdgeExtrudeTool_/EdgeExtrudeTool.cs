@@ -1,5 +1,23 @@
 // Assets/Editor/Poly_Ling/Tools/Topology/EdgeExtrudeTool.cs
 // 面張りツール - IToolSettings対応版
+//
+// 【押し出しの形】
+//   選択中の辺・線分の頂点を 1 回だけ複製し（共有頂点は 1 つにまとめる）、
+//   辺・線分ごとに「元の 2 頂点 + 複製 2 頂点」の四角形を足す。
+//   共有頂点の複製が 1 つなので、隣り合う四角形はつながった帯になる。
+//   線分（2 頂点の面）は作り替えずにそのまま残す（線分群の前提
+//   「隣り合う点の間に 2 頂点の面が 1 枚ある」を壊さないため）。
+//
+// 【ドラッグ量】
+//   押した位置から今の位置までの画面上の差（全体量）で毎回計算し直す。
+//   差分を足し込む方式は、押し出し開始前の移動を取りこぼしてポインタから遅れる。
+//   頂点移動ツールの自由移動（MoveToolHandler.Press.cs）と同じ考え方。
+//
+// 【線分から作る四角形の表】
+//   線分には隣の面が無いので、押し始めたときのカメラ側を表にする。
+//   判定はワールド空間：線分の端点は GPU の値（ctx.GetVertexWorldPosition）、
+//   押し出し方向は画面差から求めたワールド方向。
+//   決めた結果（裏返す線分の一覧）をコマンドへ載せる。
 
 using System;
 using System.Collections.Generic;
@@ -21,7 +39,6 @@ namespace Poly_Ling.Tools
     {
         public string Name => "Extrude";
         public string DisplayName => "Extrude";
-        //public ToolCategory Category => ToolCategory.Topology;
 
         // ================================================================
         // 設定（IToolSettings対応）
@@ -30,7 +47,6 @@ namespace Poly_Ling.Tools
         private EdgeExtrudeSettings _settings = new EdgeExtrudeSettings();
         public IToolSettings Settings => _settings;
 
-        // 設定へのショートカットプロパティ
         public EdgeExtrudeSettings.ExtrudeMode Mode
         {
             get => _settings.Mode;
@@ -65,17 +81,13 @@ namespace Poly_Ling.Tools
         private Vector2 _mouseDownScreenPos;
         private VertexPair? _hitEdgeOnMouseDown;
         private int _hitLineOnMouseDown = -1;
-        private const float DragThreshold = 4f;
+        private Vector2 _screenTotal;   // OnMouseDrag（差分入力）用の全体量
 
         // ホバー
         private VertexPair? _hoverEdge;
         private int _hoverLine = -1;
 
-        // 押し出し
-        private Vector3 _extrudeDirection;
-        private float _extrudeDistance;
-
-        // 移動化ドラッグ用の累積ワールド移動量（頂点移動と同一挙動）
+        // 押し出し量（対象メッシュのローカル空間）
         private Vector3 _accumMove;
 
         // ドラッグ中の頂点位置更新用
@@ -85,6 +97,8 @@ namespace Poly_Ling.Tools
         // 押し出し対象
         private List<EdgeInfo> _targetEdges = new List<EdgeInfo>();
         private List<int> _targetLines = new List<int>();
+        /// <summary>四角形を裏返す線分（表をカメラ側に向けるため）。</summary>
+        private HashSet<int> _reversedLines = new HashSet<int>();
 
         // Undo
         private MeshObjectSnapshot _snapshotBefore;
@@ -111,10 +125,9 @@ namespace Poly_Ling.Tools
                 return false;
 
             _mouseDownScreenPos = mousePos;
+            _screenTotal = Vector2.zero;
 
-            // _hitEdgeOnMouseDown はハンドラーが PrepareHit() でセット
-            // _hitLineOnMouseDown はハンドラーが PrepareHit() でセット
-
+            // _hitEdgeOnMouseDown / _hitLineOnMouseDown はハンドラーが PrepareHit() でセット
             if (_hitEdgeOnMouseDown.HasValue || _hitLineOnMouseDown >= 0)
             {
                 _state = ExtrudeState.PendingAction;
@@ -127,33 +140,35 @@ namespace Poly_Ling.Tools
             return false;
         }
 
+        /// <summary>差分入力の経路。全体量へ足し込んで DragTo に渡す。</summary>
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
+        {
+            _screenTotal += delta;
+            return DragTo(ctx, _screenTotal);
+        }
+
+        /// <summary>
+        /// ドラッグ。screenTotal は押した位置から今の位置までの画面上の差（+Y が画面上）。
+        /// ドラッグ開始の判定は呼び出し側（入力の振り分け）が済ませているので、
+        /// ここでは待たずに押し出しを始める。
+        /// </summary>
+        public bool DragTo(ToolContext ctx, Vector2 screenTotal)
         {
             switch (_state)
             {
                 case ExtrudeState.PendingAction:
-                    float dragDistance = Vector2.Distance(mousePos, _mouseDownScreenPos);
-                    if (dragDistance > DragThreshold)
-                    {
-                        if (_hitEdgeOnMouseDown.HasValue || _hitLineOnMouseDown >= 0)
-                        {
-                            StartExtrude(ctx);
-                        }
-                        else
-                        {
-                            _state = ExtrudeState.Idle;
-                            return false;
-                        }
-                    }
+                    // 方向が決まらないうちは始めない（線分の四角形の表の判定に方向が要る）
+                    if (screenTotal.sqrMagnitude < 1e-6f) return true;
+                    StartExtrude(ctx, screenTotal);
+                    if (_state == ExtrudeState.Extruding) UpdateExtrude(ctx, screenTotal);
                     ctx.Repaint?.Invoke();
                     return true;
 
                 case ExtrudeState.Extruding:
-                    UpdateExtrude(ctx, mousePos, delta);
+                    UpdateExtrude(ctx, screenTotal);
                     ctx.Repaint?.Invoke();
                     return true;
             }
-
             return false;
         }
 
@@ -179,7 +194,6 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
-        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
         public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
@@ -203,9 +217,12 @@ namespace Poly_Ling.Tools
             _extrudeDragVertices.Clear();
             _targetEdges.Clear();
             _targetLines.Clear();
+            _reversedLines.Clear();
             _snapshotBefore = null;
-            _extrudeDistance = 0f;
             _accumMove = Vector3.zero;
+            _screenTotal = Vector2.zero;
+            _gizmoSession = false;
+            _vertexRemap.Clear();
         }
 
         public void OnSelectionChanged(ToolContext ctx)
@@ -235,36 +252,25 @@ namespace Poly_Ling.Tools
         // ================================================================
         // コマンド経路
         //
-        // 【なぜ要るか】
-        //   押し出し量はドラッグの累積（_accumMove、:296-298）から決まるので、
-        //   コマンドからは通せない。対象と量を直接渡せる入口をここに置き、
-        //   生成と Undo 記録はマウス経路と同じ
-        //   CollectTargetEdges / ExecuteExtrude / EndExtrude を通す。
-        //
-        // 【量はローカル空間のベクトル】
-        //   マウス経路の _accumMove は対象メッシュのローカル空間で累積される
-        //   （:296-298 が WorldToLocalVectorAt を通す）。対象が 1 メッシュに限られる
-        //   ので、コマンドも同じローカル空間のベクトルで持つ。
-        //
-        // 【Mode / SnapToAxis は読まない】
-        //   Mode は StartExtrude で初期方向を決めるだけで、確定位置は _accumMove が
-        //   上書きする（:291 の注記のとおり移動化に伴い不使用）。量を直接渡す
-        //   コマンドでは結果に影響しないため引数に持たない。
+        //   押し出し量はドラッグから決まるので、対象と量を直接渡せる入口をここに置く。
+        //   生成と Undo 記録はマウス経路と同じ CollectTargetEdges / ExecuteExtrude / EndExtrude を通す。
+        //   量は対象メッシュのローカル空間のベクトル。
         // ================================================================
 
         /// <summary>
-        /// 指定した辺（または線分）を指定量だけ押し出す。
-        ///
-        /// ExecuteExtrude は _extrudeDirection * _extrudeDistance を複製頂点の位置へ
-        /// 足す（:331）ので、量を方向と長さに分けて入れてから 1 回呼べば
-        /// ドラッグ確定と同じ形になる。
+        /// 指定した辺・線分（複数可）を押し出す。
+        /// newPositions があれば、複製頂点の位置をその並び（複製を作る順）で置く。無ければ localOffset だけずらす。
         /// </summary>
-        /// <param name="edge">対象の辺。線分を指定するときは null。</param>
-        /// <param name="line">対象の線分索引。辺を指定するときは -1。</param>
-        /// <param name="localOffset">対象メッシュのローカル空間での押し出し量。</param>
+        /// <param name="edges">対象の辺。</param>
+        /// <param name="lines">対象の線分索引（頂点数 2 の面）。</param>
+        /// <param name="reversedLines">四角形を裏返す線分索引（lines の部分集合）。null は無し。</param>
+        /// <param name="localOffset">対象メッシュのローカル空間での押し出し量（newPositions が無いとき）。</param>
+        /// <param name="newPositions">複製頂点の最終位置（ローカル、複製を作る順）。null なら localOffset を使う。</param>
         /// <param name="reason">実行できなかった理由。成功時は null。</param>
         public bool ApplyExtrudeFromCommand(
-            ToolContext ctx, VertexPair? edge, int line, Vector3 localOffset, out string reason)
+            ToolContext ctx, IReadOnlyList<VertexPair> edges, IReadOnlyList<int> lines,
+            IEnumerable<int> reversedLines, Vector3 localOffset, IReadOnlyList<Vector3> newPositions,
+            out string reason)
         {
             reason = null;
 
@@ -275,23 +281,23 @@ namespace Poly_Ling.Tools
             if (mo == null || ctx.SelectionState == null)
             { reason = "編集対象メッシュがありません"; return false; }
 
-            if (edge.HasValue == (line >= 0))
-            { reason = "辺と線分はどちらか一方だけを指定してください"; return false; }
+            int edgeCount = edges?.Count ?? 0;
+            int lineCount = lines?.Count ?? 0;
+            if (edgeCount == 0 && lineCount == 0)
+            { reason = "辺か線分を 1 つ以上指定してください"; return false; }
 
-            if (edge.HasValue)
-            {
-                if (edge.Value.V1 < 0 || edge.Value.V1 >= mo.VertexCount ||
-                    edge.Value.V2 < 0 || edge.Value.V2 >= mo.VertexCount)
-                { reason = "辺の頂点番号が範囲外です"; return false; }
-            }
-            else if (line >= mo.FaceCount || mo.Faces[line].VertexCount != 2)
-            {
-                // 線分は Faces のうち頂点数 2 のもの（CollectTargetEdges:594-595 と同じ判定）。
-                reason = "線分の索引が範囲外か、線分ではありません";
-                return false;
-            }
+            if (edges != null)
+                foreach (var e in edges)
+                    if (e.V1 < 0 || e.V1 >= mo.VertexCount || e.V2 < 0 || e.V2 >= mo.VertexCount)
+                    { reason = $"辺 ({e.V1},{e.V2}) の頂点番号が範囲外です"; return false; }
 
-            if (localOffset.sqrMagnitude < 1e-10f)
+            if (lines != null)
+                foreach (int li in lines)
+                    if (li < 0 || li >= mo.FaceCount || mo.Faces[li].VertexCount != 2)
+                    { reason = $"線分 {li} は範囲外か、線分ではありません"; return false; }
+
+            bool usePositions = newPositions != null && newPositions.Count > 0;
+            if (!usePositions && localOffset.sqrMagnitude < 1e-10f)
             { reason = "押し出し量が 0 です"; return false; }
 
             try
@@ -302,22 +308,41 @@ namespace Poly_Ling.Tools
 
                 ctx.SelectionState.Edges.Clear();
                 ctx.SelectionState.Lines.Clear();
-                if (edge.HasValue) ctx.SelectionState.Edges.Add(edge.Value);
-                else               ctx.SelectionState.Lines.Add(line);
+                if (edges != null) foreach (var e in edges) ctx.SelectionState.Edges.Add(e);
+                if (lines != null) foreach (int li in lines) ctx.SelectionState.Lines.Add(li);
 
                 CollectTargetEdges(ctx);
                 if (_targetEdges.Count == 0 && _targetLines.Count == 0)
                 {
-                    _snapshotBefore = null;
+                    RestoreSnapshot(ctx);
                     reason = "押し出せる辺・線分がありません";
                     return false;
                 }
 
-                _extrudeDirection = localOffset.normalized;
-                _extrudeDistance  = localOffset.magnitude;
-                _accumMove        = localOffset;
+                _reversedLines.Clear();
+                if (reversedLines != null)
+                    foreach (int li in reversedLines)
+                        if (_targetLines.Contains(li)) _reversedLines.Add(li);
 
-                ExecuteExtrude(ctx);
+                if (usePositions)
+                {
+                    ExecuteExtrude(ctx, Vector3.zero);
+                    if (newPositions.Count != _extrudeDragVertices.Count)
+                    {
+                        reason = $"NewVertexPositions の点数（{newPositions.Count}）が複製頂点の数（{_extrudeDragVertices.Count}）と合いません";
+                        RestoreSnapshot(ctx);
+                        return false;
+                    }
+                    for (int i = 0; i < _extrudeDragVertices.Count; i++)
+                        mo.Vertices[_extrudeDragVertices[i].Index].Position = newPositions[i];
+                    mo.InvalidatePositionCache();
+                    ctx.SyncMesh?.Invoke();
+                }
+                else
+                {
+                    _accumMove = localOffset;
+                    ExecuteExtrude(ctx, localOffset);
+                }
                 EndExtrude(ctx);   // Undo 記録
             }
             finally
@@ -328,34 +353,158 @@ namespace Poly_Ling.Tools
             return true;
         }
 
+        /// <summary>押す前のスナップショットへ戻す（Undo は積まない）。</summary>
+        private void RestoreSnapshot(ToolContext ctx)
+        {
+            if (_snapshotBefore != null && ctx?.UndoController != null)
+            {
+                _snapshotBefore.ApplyTo(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                ctx.SyncMesh?.Invoke();
+            }
+            _snapshotBefore = null;
+        }
+
+        // ================================================================
+        // ギズモ経路（移動・回転・拡大縮小のギズモで押し出す）
+        //
+        //   掴んだ瞬間に量 0 で押し出し、頂点選択を複製頂点にする（BeginGizmoSession）。
+        //   ドラッグ中の変形は各ギズモの既存処理が複製頂点に対して行う。
+        //   離したときは、まず複製頂点の位置を読み（CaptureGizmoResult）、
+        //   ギズモ側を開始状態へ戻させてから、押す前へ戻して結果を取り出す（FinishGizmoSession）。
+        //   呼び出し側はそれを押し出しコマンド 1 本で確定する（Undo 1 回）。
+        // ================================================================
+
+        private bool _gizmoSession;
+        private readonly List<Vector3> _capturedPositions = new List<Vector3>();
+        private bool _capturedChanged;
+        private Dictionary<int, int> _vertexRemap = new Dictionary<int, int>();
+
+        /// <summary>ギズモでの押し出し中か。</summary>
+        public bool GizmoSessionActive => _gizmoSession;
+
+        /// <summary>
+        /// 選択中の辺・線分を量 0 で押し出し、頂点選択を複製頂点にする。
+        /// 押し出せる対象が無ければ false（何も変えない）。
+        /// </summary>
+        public bool BeginGizmoSession(ToolContext ctx)
+        {
+            if (_state != ExtrudeState.Idle || _gizmoSession) return false;
+            if (ctx?.ActiveMeshObject == null || ctx.SelectionState == null) return false;
+
+            CollectTargetEdges(ctx);
+            if (_targetEdges.Count == 0 && _targetLines.Count == 0) { Reset(); return false; }
+
+            if (ctx.UndoController != null)
+                _snapshotBefore = MeshObjectSnapshot.Capture(
+                    ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+
+            _reversedLines.Clear();
+            _accumMove = Vector3.zero;
+            ExecuteExtrude(ctx, Vector3.zero);
+            _state = ExtrudeState.Extruding;
+            _gizmoSession = true;
+            return true;
+        }
+
+        /// <summary>
+        /// 離したとき最初に呼ぶ。複製頂点の今の位置を読み、線分の四角形の表を決める。
+        /// ギズモ側が開始状態へ戻す前に呼ぶこと。
+        /// </summary>
+        public bool CaptureGizmoResult(ToolContext ctx)
+        {
+            if (!_gizmoSession) return false;
+            var mo = ctx?.ActiveMeshObject;
+            _capturedPositions.Clear();
+            _capturedChanged = false;
+            if (mo == null) return true;
+
+            foreach (var dv in _extrudeDragVertices)
+            {
+                var p = (dv.Index >= 0 && dv.Index < mo.VertexCount) ? mo.Vertices[dv.Index].Position : dv.BasePos;
+                _capturedPositions.Add(p);
+                if ((p - dv.BasePos).sqrMagnitude > 1e-12f) _capturedChanged = true;
+            }
+
+            if (_capturedChanged) DecideLineWindingLocal(ctx, mo);
+            return true;
+        }
+
+        /// <summary>
+        /// ギズモ側を開始状態へ戻させた後に呼ぶ。押す前へ戻し、確定内容を取り出す。
+        /// 動いていなければ changed = false（呼び出し側はコマンドを送らない）。
+        /// </summary>
+        public void FinishGizmoSession(
+            ToolContext ctx, out bool changed, out List<VertexPair> edges, out List<int> lines,
+            out List<int> reversedLines, out List<Vector3> positions)
+        {
+            changed       = _gizmoSession && _capturedChanged;
+            edges         = new List<VertexPair>();
+            lines         = new List<int>();
+            reversedLines = new List<int>();
+            positions     = new List<Vector3>(_capturedPositions);
+
+            foreach (var e in _targetEdges) edges.Add(new VertexPair(e.V0, e.V1));
+            lines.AddRange(_targetLines);
+            reversedLines.AddRange(_reversedLines);
+
+            RestoreSnapshot(ctx);
+            Reset();
+        }
+
+        /// <summary>
+        /// 線分から作った四角形（v0, v1, v1', v0'）の表がカメラ側を向くか、ローカル空間で調べる。
+        /// カメラ位置はワールド → ローカル（書き戻し方向の変換）で移す。
+        /// </summary>
+        private void DecideLineWindingLocal(ToolContext ctx, MeshObject mo)
+        {
+            _reversedLines.Clear();
+            if (_targetLines.Count == 0) return;
+            Vector3 camLocal = ctx.ActiveWorldToLocal(ctx.CameraPosition);
+
+            foreach (int lineIdx in _targetLines)
+            {
+                var line = mo.Faces[lineIdx];
+                int v0 = line.VertexIndices[0], v1 = line.VertexIndices[1];
+                if (!_vertexRemap.TryGetValue(v0, out int nv0) || !_vertexRemap.TryGetValue(v1, out int nv1)) continue;
+                Vector3 p0 = mo.Vertices[v0].Position, p1 = mo.Vertices[v1].Position;
+                Vector3 p2 = mo.Vertices[nv1].Position, p3 = mo.Vertices[nv0].Position;
+                Vector3 n = NormalHelper.CalculateFaceNormal(p0, p1, p2);
+                if (n.sqrMagnitude < 1e-12f) n = NormalHelper.CalculateFaceNormal(p0, p2, p3);
+                Vector3 center = (p0 + p1 + p2 + p3) * 0.25f;
+                if (Vector3.Dot(n, camLocal - center) < 0f) _reversedLines.Add(lineIdx);
+            }
+        }
+
         /// <summary>
         /// 取り出せるドラッグ結果があるか。TryTakeExtrudeFromDrag が true を返す条件と同じ。
         /// </summary>
         public bool ExtrudePending
             => _state == ExtrudeState.Extruding
-               && (_hitEdgeOnMouseDown.HasValue || _hitLineOnMouseDown >= 0)
+               && (_targetEdges.Count > 0 || _targetLines.Count > 0)
                && _accumMove.sqrMagnitude > 1e-10f;
 
         /// <summary>
-        /// ドラッグの確定内容を取り出し、開始状態へ戻す。
+        /// ドラッグの確定内容（押し出していた辺・線分の全部と量）を取り出し、開始状態へ戻す。
         ///
-        /// 押し出しはドラッグ開始時にトポロジーまで作る（StartExtrude → ExecuteExtrude）ので、
-        /// 位置を戻すだけでは足りない。マウスダウン時のスナップショットを丸ごと適用する。
-        /// _snapshotBefore は null にするので、続けて呼ばれる OnMouseUp（EndExtrude）は
-        /// Undo を積まない。
+        /// 押し出しはドラッグ開始時にトポロジーまで作るので、位置を戻すだけでは足りない。
+        /// マウスダウン時のスナップショットを丸ごと適用する。
+        /// _snapshotBefore は null にするので、続けて呼ばれる OnMouseUp（EndExtrude）は Undo を積まない。
         /// </summary>
         public bool TryTakeExtrudeFromDrag(
-            ToolContext ctx, out VertexPair? edge, out int line, out Vector3 localOffset)
+            ToolContext ctx, out List<VertexPair> edges, out List<int> lines,
+            out List<int> reversedLines, out Vector3 localOffset)
         {
-            edge        = null;
-            line        = -1;
-            localOffset = Vector3.zero;
+            edges         = new List<VertexPair>();
+            lines         = new List<int>();
+            reversedLines = new List<int>();
+            localOffset   = Vector3.zero;
 
             if (!ExtrudePending) return false;
             if (ctx?.UndoController == null || _snapshotBefore == null) return false;
 
-            edge        = _hitEdgeOnMouseDown;
-            line        = _hitEdgeOnMouseDown.HasValue ? -1 : _hitLineOnMouseDown;
+            foreach (var e in _targetEdges) edges.Add(new VertexPair(e.V0, e.V1));
+            lines.AddRange(_targetLines);
+            reversedLines.AddRange(_reversedLines);
             localOffset = _accumMove;
 
             _snapshotBefore.ApplyTo(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
@@ -369,8 +518,10 @@ namespace Poly_Ling.Tools
         // 押し出し処理
         // ================================================================
 
-        private void StartExtrude(ToolContext ctx)
+        private void StartExtrude(ToolContext ctx, Vector2 screenTotal)
         {
+            // 掴んだ辺・線分が選択に入っていなければ、それだけを対象にする。
+            // 入っていれば選択中の辺・線分を全部押し出す。
             if (_hitEdgeOnMouseDown.HasValue)
             {
                 var edge = _hitEdgeOnMouseDown.Value;
@@ -400,14 +551,13 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            _extrudeDirection = (Mode == EdgeExtrudeSettings.ExtrudeMode.Normal)
-                ? CalculateExtrudeDirection(ctx)
-                : Vector3.up;
-            _extrudeDistance = 0f;
+            // 線分の四角形の表：押し始めた方向でカメラ側を表にする（ワールド空間）
+            DecideLineWinding(ctx, ScreenDeltaToWorldDelta(ctx, screenTotal));
+
             _accumMove = Vector3.zero;
 
             // トポロジーを即時実行し _extrudeDragVertices を確定させる
-            ExecuteExtrude(ctx);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
+            ExecuteExtrude(ctx, Vector3.zero);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
 
             _state = ExtrudeState.Extruding;
             // EnterTransformDragging は使用しない。
@@ -415,20 +565,15 @@ namespace Poly_Ling.Tools
             // エッジ/頂点描画が無効化されるため。SyncMeshPositionsOnly で直接更新する。
         }
 
-        private void UpdateExtrude(ToolContext ctx, Vector2 mousePos, Vector2 delta)
+        /// <summary>
+        /// 押した位置からの画面上の差を、複製頂点の移動量（ローカル）にして反映する。
+        /// 基準は複製頂点の先頭。スキンド頂点はボーンの SkinningMatrix で変換されるため、
+        /// メッシュの WorldMatrixInverse では倍率と向きが合わない（WorldToLocalVectorAt を使う）。
+        /// </summary>
+        private void UpdateExtrude(ToolContext ctx, Vector2 screenTotal)
         {
-            // 「移動（自由移動）と同一」の挙動:
-            //   毎フレームの delta（パネル Y上）を world デルタに変換し、対象メッシュの
-            //   WorldMatrix 逆行列でローカル化して累積。複製頂点を 1:1 でカメラ平面移動する。
-            //   MoveToolHandler.ApplyFreeDelta → AxisGizmo.ComputeFreeDelta と同じ計算。
-            //   モード別方向計算(ViewPlane/Normal/Free)と SnapToAxis は移動化に伴い不使用。
-            // Vertices[].Position はローカル座標なので、ワールドデルタを操作対象メッシュの
-            // ローカル空間へ変換してから累積する（DisplayMatrix は常に identity のため使わない）。
-            // 基準は複製頂点の先頭。スキンド頂点はボーンの SkinningMatrix で変換されるため、
-            // メッシュの WorldMatrixInverse（ActiveWorldToLocalVector）では倍率と向きが合わない。
             int basis = _extrudeDragVertices.Count > 0 ? _extrudeDragVertices[0].Index : -1;
-            Vector3 wd = ctx.WorldToLocalVectorAt(basis, ScreenDeltaToWorldDelta(ctx, delta));
-            _accumMove += wd;
+            _accumMove = ctx.WorldToLocalVectorAt(basis, ScreenDeltaToWorldDelta(ctx, screenTotal));
 
             var meshObject = ctx.ActiveMeshObject;
             if (meshObject != null)
@@ -459,28 +604,31 @@ namespace Poly_Ling.Tools
             _snapshotBefore = null;
         }
 
-        private void ExecuteExtrude(ToolContext ctx)
+        /// <summary>
+        /// 対象の頂点を 1 回だけ複製し（共有頂点は 1 つ）、辺・線分ごとに四角形を足す。
+        /// 線分は作り替えずに残す。
+        /// </summary>
+        private void ExecuteExtrude(ToolContext ctx, Vector3 offset)
         {
-            Vector3 offset = _extrudeDirection * _extrudeDistance;
             var meshObject = ctx.ActiveMeshObject;
-            var vertexRemap = new Dictionary<int, int>();
+            _vertexRemap.Clear();
+            var vertexRemap = _vertexRemap;
 
             // 押し出しで増える頂点の始まり。部品ID / サブIDの採番に使う。
             int origVertexCount = meshObject.VertexCount;
 
-            var allVertices = new HashSet<int>();
-            foreach (var edge in _targetEdges)
-            {
-                if (edge.V0 >= 0 && edge.V0 < meshObject.VertexCount) allVertices.Add(edge.V0);
-                if (edge.V1 >= 0 && edge.V1 < meshObject.VertexCount) allVertices.Add(edge.V1);
-            }
+            // 複製順を安定させるため、辺・線分の並び順で頂点を集める。
+            var allVertices = new List<int>();
+            var seen = new HashSet<int>();
+            void Collect(int v) { if (v >= 0 && v < meshObject.VertexCount && seen.Add(v)) allVertices.Add(v); }
+            foreach (var edge in _targetEdges) { Collect(edge.V0); Collect(edge.V1); }
             foreach (int lineIdx in _targetLines)
             {
                 if (lineIdx < 0 || lineIdx >= meshObject.FaceCount) continue;
                 var face = meshObject.Faces[lineIdx];
                 if (face.VertexCount != 2) continue;
-                if (face.VertexIndices[0] >= 0) allVertices.Add(face.VertexIndices[0]);
-                if (face.VertexIndices[1] >= 0) allVertices.Add(face.VertexIndices[1]);
+                Collect(face.VertexIndices[0]);
+                Collect(face.VertexIndices[1]);
             }
 
             if (allVertices.Count == 0) return;
@@ -509,12 +657,20 @@ namespace Poly_Ling.Tools
             var newEdges = new List<VertexPair>();
             var newFaceIndices = new List<int>();
 
+            void AddQuad(int a, int b, int nb, int na)
+            {
+                var f = new Face { MaterialIndex = matIdx };
+                f.VertexIndices.AddRange(new[] { a, b, nb, na });
+                f.UVIndices.AddRange(new[] { a, b, nb, na });
+                f.NormalIndices.AddRange(new[] { a, b, nb, na });
+                meshObject.Faces.Add(f);
+                newFaceIndices.Add(meshObject.FaceCount - 1);
+            }
+
             foreach (var edge in _targetEdges)
             {
                 if (!vertexRemap.TryGetValue(edge.V0, out int nv0)) continue;
                 if (!vertexRemap.TryGetValue(edge.V1, out int nv1)) continue;
-
-                var f = new Face { MaterialIndex = matIdx };
 
                 bool reverseWinding = false;
                 if (edge.AdjacentFace.HasValue && edge.AdjacentFace.Value < meshObject.FaceCount)
@@ -523,28 +679,16 @@ namespace Poly_Ling.Tools
                     int idxV0 = adjFace.VertexIndices.IndexOf(edge.V0);
                     int idxV1 = adjFace.VertexIndices.IndexOf(edge.V1);
                     if (idxV0 >= 0 && idxV1 >= 0)
-                    {
                         reverseWinding = (idxV1 == (idxV0 + 1) % adjFace.VertexCount);
-                    }
                 }
 
-                if (reverseWinding)
-                {
-                    f.VertexIndices.AddRange(new[] { edge.V0, nv0, nv1, edge.V1 });
-                    f.UVIndices.AddRange(new[] { edge.V0, nv0, nv1, edge.V1 });
-                    f.NormalIndices.AddRange(new[] { edge.V0, nv0, nv1, edge.V1 });
-                }
-                else
-                {
-                    f.VertexIndices.AddRange(new[] { edge.V0, edge.V1, nv1, nv0 });
-                    f.UVIndices.AddRange(new[] { edge.V0, edge.V1, nv1, nv0 });
-                    f.NormalIndices.AddRange(new[] { edge.V0, edge.V1, nv1, nv0 });
-                }
-                meshObject.Faces.Add(f);
-                newFaceIndices.Add(meshObject.FaceCount - 1);
+                if (reverseWinding) AddQuad(edge.V0, nv0, nv1, edge.V1);
+                else                AddQuad(edge.V0, edge.V1, nv1, nv0);
                 newEdges.Add(new VertexPair(nv0, nv1));
             }
 
+            // 線分：元の線分（2 頂点の面）は残し、四角形だけ足す。
+            // _targetLines の面索引は、ここで面を末尾へ足しても変わらない。
             foreach (int lineIdx in _targetLines)
             {
                 var line = meshObject.Faces[lineIdx];
@@ -552,26 +696,49 @@ namespace Poly_Ling.Tools
                 if (!vertexRemap.TryGetValue(v0, out int nv0)) continue;
                 if (!vertexRemap.TryGetValue(v1, out int nv1)) continue;
 
-                line.VertexIndices.Clear();
-                line.UVIndices.Clear();
-                line.NormalIndices.Clear();
-                line.MaterialIndex = matIdx;
-
-                line.VertexIndices.AddRange(new[] { v0, v1, nv1, nv0 });
-                line.UVIndices.AddRange(new[] { v0, v1, nv1, nv0 });
-                line.NormalIndices.AddRange(new[] { v0, v1, nv1, nv0 });
-                newFaceIndices.Add(lineIdx);
+                if (_reversedLines.Contains(lineIdx)) AddQuad(v1, v0, nv0, nv1);
+                else                                  AddQuad(v0, v1, nv1, nv0);
+                newEdges.Add(new VertexPair(nv0, nv1));
             }
 
+            // 押し出し後の選択：新しい辺と複製頂点。面は選ばない
+            // （面を選ぶと、頂点への展開で元の頂点までギズモの対象になる）。
+            ctx.SelectionState.Vertices.Clear();
             ctx.SelectionState.Edges.Clear();
             ctx.SelectionState.Lines.Clear();
             ctx.SelectionState.Faces.Clear();
+            foreach (var dv in _extrudeDragVertices)
+                ctx.SelectionState.Vertices.Add(dv.Index);
             foreach (var e in newEdges)
                 ctx.SelectionState.Edges.Add(e);
-            foreach (int fi in newFaceIndices)
-                ctx.SelectionState.Faces.Add(fi);
 
             ctx.SyncMesh?.Invoke();
+        }
+
+        /// <summary>
+        /// 線分から作る四角形（v0, v1, v1+d, v0+d）の表がカメラ側を向くか調べ、
+        /// 向かない線分を _reversedLines に入れる。ワールド空間で判定する。
+        /// 端点のワールド座標は GPU の値（ctx.GetVertexWorldPosition）。取れなければ判定しない。
+        /// </summary>
+        private void DecideLineWinding(ToolContext ctx, Vector3 worldDir)
+        {
+            _reversedLines.Clear();
+            var mo = ctx.ActiveMeshObject;
+            if (mo == null || ctx.GetVertexWorldPosition == null || worldDir.sqrMagnitude < 1e-12f) return;
+
+            foreach (int lineIdx in _targetLines)
+            {
+                var line = mo.Faces[lineIdx];
+                var w0 = ctx.GetVertexWorldPosition(line.VertexIndices[0]);
+                var w1 = ctx.GetVertexWorldPosition(line.VertexIndices[1]);
+                if (!w0.HasValue || !w1.HasValue) continue;
+
+                Vector3 p0 = w0.Value, p1 = w1.Value, p2 = p1 + worldDir;
+                Vector3 n = NormalHelper.CalculateFaceNormal(p0, p1, p2);
+                Vector3 center = (p0 + p1 + p2 + (p0 + worldDir)) * 0.25f;
+                if (Vector3.Dot(n, ctx.CameraPosition - center) < 0f)
+                    _reversedLines.Add(lineIdx);
+            }
         }
 
         // ================================================================
@@ -614,71 +781,6 @@ namespace Poly_Ling.Tools
             return null;
         }
 
-
-
-        private float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b)
-        {
-            Vector2 ab = b - a;
-            float len2 = ab.sqrMagnitude;
-            if (len2 < 0.0001f) return Vector2.Distance(p, a);
-            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / len2);
-            return Vector2.Distance(p, a + t * ab);
-        }
-
-        private Vector3 CalculateExtrudeDirection(ToolContext ctx)
-        {
-            Vector3 avgNormal = Vector3.zero;
-            int count = 0;
-            foreach (var e in _targetEdges)
-            {
-                if (e.AdjacentFace.HasValue)
-                {
-                    avgNormal += CalculateFaceNormal(ctx.ActiveMeshObject, e.AdjacentFace.Value);
-                    count++;
-                }
-            }
-            if (count > 0 && avgNormal.magnitude > 0.001f)
-                return avgNormal.normalized;
-
-            if (_targetEdges.Count > 0)
-            {
-                var e = _targetEdges[0];
-                Vector3 edgeDir = (ctx.ActiveMeshObject.Vertices[e.V1].Position - ctx.ActiveMeshObject.Vertices[e.V0].Position).normalized;
-                Vector3 perp = Vector3.Cross(edgeDir, Vector3.up);
-                if (perp.magnitude < 0.001f) perp = Vector3.Cross(edgeDir, Vector3.forward);
-                return perp.normalized;
-            }
-            return Vector3.up;
-        }
-
-        private Vector3 CalculateFaceNormal(MeshObject md, int fi)
-        {
-            var f = md.Faces[fi];
-            if (f.VertexCount < 3) return Vector3.up;
-            Vector3 p0 = md.Vertices[f.VertexIndices[0]].Position;
-            Vector3 p1 = md.Vertices[f.VertexIndices[1]].Position;
-            Vector3 p2 = md.Vertices[f.VertexIndices[2]].Position;
-            return NormalHelper.CalculateFaceNormal(p0, p1, p2);
-        }
-
-        private Vector3 GetSelectionCenter(ToolContext ctx)
-        {
-            Vector3 c = Vector3.zero;
-            int n = 0;
-            foreach (var e in _targetEdges)
-            {
-                c += ctx.ActiveMeshObject.Vertices[e.V0].Position + ctx.ActiveMeshObject.Vertices[e.V1].Position;
-                n += 2;
-            }
-            return n > 0 ? c / n : Vector3.zero;
-        }
-
-        private Vector2 WorldDirToScreenDir(ToolContext ctx, Vector3 wd)
-        {
-            Vector3 c = GetSelectionCenter(ctx);
-            return ctx.WorldToScreen(c + wd) - ctx.WorldToScreen(c);
-        }
-
         private Vector3 ScreenDeltaToWorldDelta(ToolContext ctx, Vector2 sd)
         {
             if (ctx.ScreenDeltaToWorldDelta != null)
@@ -686,14 +788,5 @@ namespace Poly_Ling.Tools
             float s = ctx.CameraDistance * 0.001f;
             return new Vector3(sd.x * s, -sd.y * s, 0f);
         }
-
-        private Vector3 SnapToAxisDir(Vector3 d)
-        {
-            float ax = Mathf.Abs(d.x), ay = Mathf.Abs(d.y), az = Mathf.Abs(d.z);
-            if (ax >= ay && ax >= az) return new Vector3(Mathf.Sign(d.x), 0, 0);
-            if (ay >= ax && ay >= az) return new Vector3(0, Mathf.Sign(d.y), 0);
-            return new Vector3(0, 0, Mathf.Sign(d.z));
-        }
-
     }
 }

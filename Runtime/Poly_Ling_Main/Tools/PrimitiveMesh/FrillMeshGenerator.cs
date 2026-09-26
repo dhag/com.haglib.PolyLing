@@ -9,7 +9,8 @@
 // 【プロファイルの座標系】ステップ s（rung s → rung s+1）ごとに次の系で解釈する。
 //   X = 進行方向（x=0 が rung s、x=1 が rung s+1）
 //   Y = 基準ベルトの面法線方向（そのレール区間長で正規化。y=1 が区間長）
-//   位置は p0 + dir * x + nrm * (y * len)。x も y も同じ len で拡大されるため、
+//   Z = 法線 × 進行方向（レールの横方向。y と同じくレール区間長で正規化）
+//   位置は p0 + dir * x + nrm * (y * len) + side * (z * len)。x・y・z とも同じ len で拡大されるため、
 //   区間が長いほど波形は相似形のまま大きくなる。
 //
 // 【巻き順】取り込み時に判定した基準ベルトの巻き順に従う。
@@ -101,7 +102,7 @@ namespace Poly_Ling.Frill
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool closed, bool flipWinding,
-            IReadOnlyList<Vector2> profile, string meshName)
+            IReadOnlyList<Vector3> profile, string meshName)
         {
             var one = new List<FrillBeltInput>(1)
             {
@@ -121,7 +122,7 @@ namespace Poly_Ling.Frill
         /// </summary>
         public static MeshObject Generate(
             IReadOnlyList<FrillBeltInput> belts,
-            IReadOnlyList<Vector2> profile,
+            IReadOnlyList<Vector3> profile,
             bool connectShared,
             FrillRungSeam seam,
             string meshName)
@@ -133,8 +134,8 @@ namespace Poly_Ling.Frill
         /// </summary>
         public static MeshObject Generate(
             IReadOnlyList<FrillBeltInput> belts,
-            IReadOnlyList<Vector2> profileA,
-            IReadOnlyList<Vector2> profileB,
+            IReadOnlyList<Vector3> profileA,
+            IReadOnlyList<Vector3> profileB,
             bool twoProfiles,
             bool connectShared,
             FrillRungSeam seam,
@@ -156,8 +157,8 @@ namespace Poly_Ling.Frill
         /// </summary>
         public static MeshObject Generate(
             IReadOnlyList<FrillBeltInput> belts,
-            IReadOnlyList<Vector2> profileA,
-            IReadOnlyList<Vector2> profileB,
+            IReadOnlyList<Vector3> profileA,
+            IReadOnlyList<Vector3> profileB,
             bool twoProfiles,
             bool connectShared,
             FrillRungSeam seam,
@@ -189,8 +190,8 @@ namespace Poly_Ling.Frill
             // ── プリーツを梯子 span 本ぶんへ広げる ──
             // 割れないときは span = 1 に落として従来と同じ1周期にする。
             int span = Mathf.Max(1, rungSpan);
-            Vector2[][] pieceA = null;
-            Vector2[][] pieceB = null;
+            Vector3[][] pieceA = null;
+            Vector3[][] pieceB = null;
 
             if (span >= 2)
             {
@@ -288,7 +289,7 @@ namespace Poly_Ling.Frill
 
                 for (int k = 0; k < mk; k++)
                 {
-                    Vector2 p  = ProfileAt(pieceA, pieceB, two, r.Phase, k, r.T);
+                    Vector3 p  = ProfileAt(pieceA, pieceB, two, r.Phase, k, r.T);
                     Vector2 uv = new Vector2(r.U0 + p.x * r.UStep, r.V);
 
                     bool isStart = (k == 0);
@@ -349,25 +350,30 @@ namespace Poly_Ling.Frill
         /// <summary>
         /// 断面プロファイル点 p を実座標へ写す。
         /// heightScale は法線方向成分だけに掛ける（進行方向はレール上の位置なので変えない）。
+        /// z はレールの横方向（法線 × 進行方向）へ、y と同じくレール線分長の倍率で置く
+        /// （heightScale は掛けない）。
         /// </summary>
         private static Vector3 ProfilePos(
-            Vector3 p0, Vector3 dir, float len, Vector3 nrm, Vector2 p, float heightScale)
-            => p0 + dir * p.x + nrm * (p.y * len * heightScale);
+            Vector3 p0, Vector3 dir, float len, Vector3 nrm, Vector3 p, float heightScale)
+        {
+            Vector3 side = len > 1e-8f ? Vector3.Cross(nrm, dir / len) : Vector3.zero;
+            return p0 + dir * p.x + nrm * (p.y * len * heightScale) + side * (p.z * len);
+        }
 
         /// <summary>
         /// レールの位相（どの断片を使うか）と補間パラメータ t で断面プロファイル点を解決する。
         /// A と B の断片は切断位置をそろえてあるので点数は必ず一致する。
         /// </summary>
-        private static Vector2 ProfileAt(
-            Vector2[][] a, Vector2[][] b, bool two, int phase, int k, float t)
-            => two ? Vector2.Lerp(a[phase][k], b[phase][k], t) : a[phase][k];
+        private static Vector3 ProfileAt(
+            Vector3[][] a, Vector3[][] b, bool two, int phase, int k, float t)
+            => two ? Vector3.Lerp(a[phase][k], b[phase][k], t) : a[phase][k];
 
         /// <summary>span = 1 のときの断片（＝プロファイルそのもの）を作る。</summary>
-        private static Vector2[] ToArray(IReadOnlyList<Vector2> src)
+        private static Vector3[] ToArray(IReadOnlyList<Vector3> src)
         {
-            if (src == null) return new Vector2[0];
+            if (src == null) return new Vector3[0];
 
-            var a = new Vector2[src.Count];
+            var a = new Vector3[src.Count];
             for (int i = 0; i < src.Count; i++) a[i] = src[i];
             return a;
         }

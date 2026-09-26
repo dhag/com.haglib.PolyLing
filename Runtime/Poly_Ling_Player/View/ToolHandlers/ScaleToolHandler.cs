@@ -38,6 +38,16 @@ namespace Poly_Ling.Player
         /// </summary>
         public Action<Poly_Ling.Data.PanelCommand>         SendCommand;
 
+        /// <summary>
+        /// ギズモ確定の横取り（辺押し出しのギズモが使う）。true を返すと拡大縮小を記録せず開始状態へ戻す。
+        /// 呼ばれた時点では頂点はまだ拡大縮小した位置にある（横取り側はここで位置を読む）。
+        /// </summary>
+        public Func<bool> CommitCapture;
+        /// <summary>CommitCapture が true を返し、開始状態へ戻した後に呼ぶ。</summary>
+        public Action     CommitFinish;
+        /// <summary>ギズモの軸を掴んでいるか（GizmoHitTest が当たった後、確定前）。</summary>
+        public bool GizmoGrabbed => _gizmoDragAxis != AxisGizmo.AxisType.None;
+
         // ビューポート・スケールギズモ（AxisGizmo 再利用）
         private readonly AxisGizmo _axisGizmo = new AxisGizmo();
         private AxisGizmo.AxisType _gizmoHoverAxis = AxisGizmo.AxisType.None;
@@ -376,6 +386,16 @@ namespace Poly_Ling.Player
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
             _gizmoDragAxis = AxisGizmo.AxisType.None;
             _axisGizmo.EndScaleDrag();
+
+            // 確定の横取り（辺押し出しのギズモ）。位置を読ませてから、拡大縮小は記録せず開始状態へ戻す。
+            if (CommitCapture != null && CommitCapture())
+            {
+                if (!_tool.TryTakeScaleFromDrag(out _, out _)) _tool.EndSliderDrag();
+                EndPanelPreview();
+                CommitFinish?.Invoke();
+                return;
+            }
+
             CommitViaCommand();
         }
 

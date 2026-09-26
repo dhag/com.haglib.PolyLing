@@ -300,13 +300,13 @@ namespace Poly_Ling.Data
         public Poly_Ling.Frill.FrillParams Params { get; }
 
         /// <summary>断面プロファイル A。</summary>
-        [PLParam(TextKey = "FrillProfileA", Description = "断面プロファイル A", Required = true,
-                 ProfileRole = PLProfileRole.Points, ProfileNormalize = true)]
-        public Vector2[] ProfileA { get; }
+        [PLParam(TextKey = "FrillProfileA", Description = "断面プロファイル A（x,y,z）", Required = true,
+                 ProfileRole = PLProfileRole.Points, ProfileNormalize = true, LegacyXYPairs = true)]
+        public Vector3[] ProfileA { get; }
 
         /// <summary>断面プロファイル B。TwoProfiles が false なら使わない。</summary>
-        [PLParam(TextKey = "FrillProfileB", Description = "断面プロファイル B")]
-        public Vector2[] ProfileB { get; }
+        [PLParam(TextKey = "FrillProfileB", Description = "断面プロファイル B（x,y,z）", LegacyXYPairs = true)]
+        public Vector3[] ProfileB { get; }
 
         public override string ShapeName => "Frill";
         public override string MeshName  => Params.MeshName;
@@ -314,7 +314,7 @@ namespace Poly_Ling.Data
         public CreateFrillCommand(
             int modelIndex,
             Poly_Ling.Frill.FrillParams @params,
-            Vector2[] profileA, Vector2[] profileB,
+            Vector3[] profileA, Vector3[] profileB,
             float[] beltLeftPoints, float[] beltRightPoints, int[] beltStarts,
             bool[] beltClosed, bool[] beltFlipWinding, float[] beltHeightScale,
             Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
@@ -347,9 +347,9 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ", Required = true)]
         public Poly_Ling.Pipe.PipeParams Params { get; }
 
-        [PLParam(TextKey = "PipeProfile", Description = "断面プロファイル", Required = true,
-                 ProfileRole = PLProfileRole.Points, ProfileNormalize = true)]
-        public Vector2[] Profile { get; }
+        [PLParam(TextKey = "PipeProfile", Description = "断面プロファイル（x,y,z）", Required = true,
+                 ProfileRole = PLProfileRole.Points, ProfileNormalize = true, LegacyXYPairs = true)]
+        public Vector3[] Profile { get; }
 
         [PLParam(TextKey = "PipeProfileClosed", Description = "断面を閉ループとして扱う")]
         public bool ProfileClosed { get; }
@@ -360,7 +360,7 @@ namespace Poly_Ling.Data
         public CreatePipeCommand(
             int modelIndex,
             Poly_Ling.Pipe.PipeParams @params,
-            Vector2[] profile, bool profileClosed,
+            Vector3[] profile, bool profileClosed,
             float[] beltLeftPoints, float[] beltRightPoints, int[] beltStarts,
             bool[] beltClosed, bool[] beltFlipWinding, float[] beltHeightScale,
             Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,

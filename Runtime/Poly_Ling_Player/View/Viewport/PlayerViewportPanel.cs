@@ -141,6 +141,8 @@ namespace Poly_Ling.Player
         private List<bool>               _addFacePreviewSnap  = new List<bool>();
         // プレビュー点ごとの塗り色。null 要素・リスト自体 null は既定色（下記 OnGenerateAddFaceOverlay 参照）。
         private List<Color?>             _addFacePreviewCols  = new List<Color?>();
+        // 強調して描く確定点の添字（_addFaceHighlightIdx に加えて。null は無し）。
+        private ICollection<int>         _addFaceHighlightSet;
         private List<(Vector2, Vector2)> _addFaceLines        = new List<(Vector2, Vector2)>();
         private int                      _addFaceHighlightIdx = -1;  // 強調する確定点の索引。-1 で無し
         private bool                     _addFaceVisible;
@@ -398,7 +400,8 @@ namespace Poly_Ling.Player
             List<bool>    previewSnapped,
             List<(Vector2, Vector2)> lines,
             int highlightPtIndex = -1,
-            List<Color?> previewColors = null)
+            List<Color?> previewColors = null,
+            ICollection<int> highlightPtIndices = null)
         {
             _addFacePts         = pts         ?? new List<Vector2>();
             _addFacePreviewPts  = previewPts  ?? new List<Vector2>();
@@ -406,6 +409,7 @@ namespace Poly_Ling.Player
             _addFacePreviewCols = previewColors  ?? new List<Color?>();
             _addFaceLines       = lines       ?? new List<(Vector2, Vector2)>();
             _addFaceHighlightIdx = highlightPtIndex;
+            _addFaceHighlightSet = highlightPtIndices;
             _addFaceVisible     = true;
             _addFaceOverlay?.MarkDirtyRepaint();
         }
@@ -413,6 +417,7 @@ namespace Poly_Ling.Player
         public void HideAddFacePreview()
         {
             _addFaceVisible = false;
+            _addFaceHighlightSet = null;
             _addFacePts.Clear();
             _addFacePreviewPts.Clear();
             _addFacePreviewSnap.Clear();
@@ -1303,7 +1308,8 @@ namespace Poly_Ling.Player
             for (int i = 0; i < _addFacePts.Count; i++)
             {
                 var  p  = cv(_addFacePts[i]);
-                bool hi = (i == _addFaceHighlightIdx);
+                bool hi = (i == _addFaceHighlightIdx)
+                          || (_addFaceHighlightSet != null && _addFaceHighlightSet.Contains(i));
                 float sz = hi ? 8f : halfSz;
                 painter.fillColor = hi
                     ? new Color(1f, 0.4f, 0.1f, 0.95f)

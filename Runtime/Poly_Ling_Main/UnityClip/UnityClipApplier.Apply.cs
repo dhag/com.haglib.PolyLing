@@ -149,31 +149,18 @@ namespace Poly_Ling.UnityClip
 
         // (b) muscles から本体ボーンのローカル回転を再構成して適用。
         //
-        //   経路は 1 本だけである。Zero / MinQ / MaxQ を使う経路に統一した。
-        //     dof 毎に「Zero → ±1 のローカル回転」からデルタ
-        //       full_d = Zero^-1 · Extreme_d
-        //     を作り、Slerp(identity, full_d, |v|) で v 倍したものを 3 dof 合成して d(v) を得る。
+        //   1. フレームのマッスル 95 本を正準骨格の Avatar へ当て、Unity 自身に
+        //      正準（T ポーズ）の姿勢を解かせる（CanonMuscleSolver）。
+        //      dof ごとの回転を自前で合成しないこと（UnityClipApplier.cs 冒頭の実測メモ）。
+        //   2. 正準の姿勢（Hips から見たワールド）を、焼き込みの逆でモデルのワールド差分 Δ にする（DeltaOf）。
+        //   3. レスト差分 D = RestW⁻¹ · Δ_祖先⁻¹ · Δ · RestW を BonePoseData に載せる。
         //
-        //   Zero / MinQ / MaxQ の出どころは 2 通りあるが、以後の計算は同一:
-        //     (1) 外部 UnityLimit CSV の Measured 行（ソースアバターの実測）
-        //     (2) 無いときは CanonMuscleTable（T ポーズ基準の Unity 定義値）を
-        //         ターゲットの rest 方向へ整列して合成した既定 entry
-        //     ※ かつて存在した「dof を X/Y/Z へ直接入れて Quaternion.Euler で組む」
-        //       近似経路は削除した。ひざが Z 軸回りに曲がる原因だった。復活させないこと。
-        //
-        //   ■ Zero はモデルのレスト姿勢ではない（重要）
+        //   ■ muscle=0 はモデルのレスト姿勢ではない（重要）
         //     Unity のマッスル 0 は、モデルのレストが T ポーズであっても T ポーズにならない。
         //     ひざ・ひじ・股関節が曲がった Unity 定義の固定ポーズになる。
-        //     例: ひざは一方向にしか曲がらないため Stretch の範囲 -80〜+80 の中央（0）が
-        //     「80 度曲がった位置」、+1 が伸展位になる。
+        //     正準の姿勢はそれを含んだ絶対の姿勢として扱う（差分にしない）。
         //
-        //     Unity 側のローカル回転は        L(v) = Zero · d(v)
-        //     PolyLing が入れるのはレスト差分  D    = RestL^-1 · Zero · d(v)
-        //
-        //     RestL は PolyLing 自身が持つレスト・ローカル回転（ctx.BoneTransform）。
-        //     d(v) をそのまま入れると Zero→rest 分（ひざで約 80 度）が丸ごと過剰になり、
-        //     ひざが逆に曲がる。この補正は実測・既定のどちらでも常時必要である。
-        //
+        //   クリップがトラックを持たない dof は 0 として解かせる（以前の「その dof を掛けない」と同じ）。
         //   rest からのデルタとして BonePoseData に載せる。
         private int ApplySelfMuscle(ModelContext model, UnityClipDTO clip, float timeSec)
         {
@@ -214,21 +201,40 @@ namespace Poly_Ling.UnityClip
             MuscleTargetCount  = 0;
             UnresolvedMuscleBones.Clear();
 
+            if (!EnsureSolver(out string solverReason))
+            {
+                UnresolvedMuscleBones.Add("(正準 Avatar を組めません: " + solverReason + ")");
+                return 0;
+            }
+
+            // フレームのマッスル値をそろえて Unity に解かせる（1 フレーム 1 回）
+            int mc = HumanTrait.MuscleCount;
+            if (_muscleBuf == null || _muscleBuf.Length != mc) _muscleBuf = new float[mc];
+            for (int mi = 0; mi < mc; mi++)
+                _muscleBuf[mi] = valueOf(mi, out float mv) ? mv : 0f;
+            _solver.Solve(_muscleBuf);
+
+            // 駆動されている Humanoid（dof のどれかにトラックがある）を先に集める。
+            // 駆動されていない Humanoid は祖先に付いていく（DeltaOf）。
+            _deltaMemo.Clear();
+            _drivenKeys.Clear();
+            for (int bi = 0; bi < boneCount; bi++)
+            {
+                for (int dof = 0; dof < 3; dof++)
+                {
+                    int mi0 = HumanTrait.MuscleFromBone(bi, dof);
+                    if (mi0 < 0 || muscleNames == null || mi0 >= muscleNames.Length) continue;
+                    if (valueOf(mi0, out _)) { _drivenKeys.Add(HumanTrait.BoneName[bi].Replace(" ", string.Empty)); break; }
+                }
+            }
+
             for (int bi = 0; bi < boneCount; bi++)
             {
                 string boneName = HumanTrait.BoneName[bi];          // 例 "Left Upper Arm"（空白入り）
                 string key = boneName.Replace(" ", string.Empty);    // 対応表キー "LeftUpperArm"
 
-                // このボーンをクリップが実際に駆動しているか（dof のいずれかにトラックがあるか）。
                 // 駆動していないボーンは母数に入れない（未解決として報告しない）。
-                bool driven = false;
-                for (int dof = 0; dof < 3 && !driven; dof++)
-                {
-                    int mi0 = HumanTrait.MuscleFromBone(bi, dof);
-                    if (mi0 < 0 || muscleNames == null || mi0 >= muscleNames.Length) continue;
-                    if (valueOf(mi0, out _)) driven = true;
-                }
-                if (!driven) continue;
+                if (!_drivenKeys.Contains(key)) continue;
                 MuscleTargetCount++;
 
                 int k = ResolveNode(key);
@@ -247,96 +253,38 @@ namespace Poly_Ling.UnityClip
                     continue;
                 }
 
-                // 外部 UnityLimit CSV の行（Humanoid 列挙名で引く）。
-                // 無い / 実測列を持たない場合は、T ポーズ基準の Unity 定義値から
-                // 既定 entry を合成する（自動補正）。
-                MuscleLimitEntry lim = null;
-                if (_muscleLimits != null) _muscleLimits.TryGetValue(key, out lim);
-                bool fromCsv = lim != null && lim.Measured;
-                if (!fromCsv) lim = GetCanonEntry(key);
-                if (lim == null)
+                if (!_solver.TryGetHipsRelativeWorld((HumanBodyBones)bi, out _))
                 {
-                    UnresolvedMuscleBones.Add(key + "(既定なし)");
+                    UnresolvedMuscleBones.Add(key + "(正準骨格に無い)");
                     continue;
                 }
 
-                Quaternion delta = Quaternion.identity;
-                bool any = false;
+                // 正準の姿勢 → モデルのワールド差分 → レスト差分（UnityClipApplier.cs の恒久メモ）。
+                var        fr       = FrameOf(key);
+                string     anc      = AncestorOf(key);
+                Quaternion delta    = DeltaOf(key);
+                Quaternion ancDelta = DeltaOf(anc);
+                Quaternion applied  = QuatNorm(Quaternion.Inverse(fr.RestW) * Quaternion.Inverse(ancDelta)
+                                               * delta * fr.RestW);
 
-                // 内訳ログ（対象ボーンのみ）
-                bool dbg = MuscleDebugLog && MuscleDebugBones != null && MuscleDebugBones.Contains(key);
-                System.Text.StringBuilder dsb = null;
-                if (dbg)
+                if (MuscleDebugLog && MuscleDebugBones != null && MuscleDebugBones.Contains(key))
                 {
-                    dsb = new System.Text.StringBuilder();
+                    var dsb = new System.Text.StringBuilder();
                     dsb.Append("[UnityClipApplier/muscle] ").Append(key)
-                       .Append("  t=").Append(timeSec.ToString("F3"))
-                       .Append("  src=").Append(
-                            fromCsv ? "CSV実測"
-                                    : (lim.FromModelLimit ? "モデル可動域" : "既定(Tポーズ基準)")).Append('\n');
-                    dsb.Append("   Zero  ").Append(AxAng(lim.Zero))
-                       .Append("  min(deg)=").Append(lim.Min)
-                       .Append(" max(deg)=").Append(lim.Max).Append('\n');
-                }
-
-                for (int dof = 0; dof < 3; dof++)
-                {
-                    int mi = HumanTrait.MuscleFromBone(bi, dof);
-                    if (mi < 0 || muscleNames == null || mi >= muscleNames.Length)
+                       .Append("  t=").Append(timeSec.ToString("F3")).Append('\n');
+                    for (int dof = 0; dof < 3; dof++)
                     {
-                        if (dbg) dsb.Append("   dof").Append(dof).Append(": マッスル無し\n");
-                        continue;
-                    }
-                    if (!valueOf(mi, out float v))
-                    {
-                        if (dbg) dsb.Append("   dof").Append(dof).Append(": クリップにトラック無し (")
-                                    .Append(muscleNames[mi]).Append(")\n");
-                        continue;
-                    }
-                    // v は正規化値 [-1,1]
-
-                    // Zero 基準のデルタを |v| だけ効かせる（v=0 で identity）
-                    Quaternion ext  = v >= 0f ? lim.MaxQ[dof] : lim.MinQ[dof];
-                    Quaternion full = Quaternion.Inverse(lim.Zero) * ext;
-                    Quaternion d    = Quaternion.Slerp(Quaternion.identity, full, Mathf.Min(1f, Mathf.Abs(v)));
-                    delta = delta * d;
-
-                    if (dbg)
-                    {
+                        int mi = HumanTrait.MuscleFromBone(bi, dof);
+                        if (mi < 0 || muscleNames == null || mi >= muscleNames.Length) continue;
+                        bool has = valueOf(mi, out float v);
                         dsb.Append("   dof").Append(dof).Append(' ').Append(muscleNames[mi])
-                           .Append("  v=").Append(v.ToString("F4"))
-                           .Append("  side=").Append(v >= 0f ? "Max" : "Min").Append('\n');
-                        dsb.Append("      MinQ ").Append(AxAng(lim.MinQ[dof]))
-                           .Append("   MaxQ ").Append(AxAng(lim.MaxQ[dof])).Append('\n');
-                        dsb.Append("      full ").Append(AxAng(full))
-                           .Append("   ->d ").Append(AxAng(d)).Append('\n');
+                           .Append(has ? "  v=" + v.ToString("F4") : "  (トラック無し→0)").Append('\n');
                     }
-                    any = true;
-                }
-                if (!any) continue;
-
-                // Zero（マッスル0）とモデルのレスト姿勢の差を打ち消す。常時適用する。
-                //   D = RestL^-1 · Zero · d(v)
-                // Unity のマッスル 0 は T ポーズではなく、ひざ・ひじ・股関節が曲がった
-                // 固定ポーズである。この補正を外すとひざが逆に曲がる。
-                // 実測・既定のどちらの entry でも必要。条件を付けないこと。
-                // ミラーノードでは自身の枠（右半身の枠）で見た rest を使う。
-                Quaternion restL = _skeleton.RestLocalRotation(model, k);
-                Quaternion zeroFix = Quaternion.Inverse(restL) * lim.Zero;
-                delta = zeroFix * delta;
-
-                Quaternion applied = delta;
-
-                if (dbg)
-                {
-                    dsb.Append("   RestL ").Append(AxAng(restL))
-                       .Append("   RestL^-1*Zero ").Append(AxAng(zeroFix)).Append('\n');
-                    dsb.Append("   合成 delta ").Append(AxAng(applied)).Append('\n');
-                    // モデル空間へ写した向き（R = BoneModelRotation）。ボーンがどちらへ回るかの確認用。
-                    Quaternion R = ctx.BoneModelRotation;
-                    Quaternion dWorld = R * applied * Quaternion.Inverse(R);
-                    dsb.Append("   R(BoneModelRotation) ").Append(AxAng(R))
-                       .Append("   モデル空間 ").Append(AxAng(dWorld)).Append('\n');
+                    dsb.Append("   A ").Append(AxAng(fr.A))
+                       .Append("   Δ ").Append(AxAng(delta))
+                       .Append("   祖先 ").Append(anc ?? "(なし)").Append(" Δ ").Append(AxAng(ancDelta)).Append('\n');
+                    dsb.Append("   RestW ").Append(AxAng(fr.RestW))
+                       .Append("   差分 ").Append(AxAng(applied)).Append('\n');
                     Debug.Log(dsb.ToString());
                 }
 

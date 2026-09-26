@@ -18,10 +18,15 @@ namespace Poly_Ling.Revolution
     {
         /// <summary>
         /// 回転体メッシュを生成
+        /// 【3D の点】点 (x, y, z) は (半径, y) に直してから回す。
+        ///   半径 = x の符号 × √(x²+z²)。回す軸はローカルの Y 軸なので、
+        ///   3D の曲線を回した面は (半径, y) の曲線を回した面と同じになる
+        ///   （違うのは各点の周方向の始まりの角度だけ）。z=0 のときは従来と同じ。
         /// </summary>
-        public static MeshObject Generate(List<Vector2> profile, RevolutionParams p)
+        public static MeshObject Generate(IReadOnlyList<Vector3> profile3, RevolutionParams p)
         {
-            if (profile == null || profile.Count < 2)
+            var profile = ToRadial(profile3);
+            if (profile.Count < 2)
                 return new MeshObject(p.MeshName);
 
             MeshObject md;
@@ -41,6 +46,10 @@ namespace Poly_Ling.Revolution
 
             return md;
         }
+
+        /// <summary>3D の点列を (半径, y) の点列へ直す（RevolutionProfileEditCore.ToRadial と同じ）。</summary>
+        private static List<Vector2> ToRadial(IReadOnlyList<Vector3> src)
+            => RevolutionProfileEditCore.ToRadial(src);
 
         /// <summary>
         /// 通常の回転体メッシュを生成

@@ -1,9 +1,12 @@
 // HoleRingCountTool.cs
 // 穴頂点数合わせツール - 基準穴の頂点数に合わせて、対象穴の頂点数を増減させる。
-// ブリッジ（BridgeLoopOps）が要求する「2つの穴の頂点数が同じ」を満たすための前処理。
+// ブリッジ（BridgeLoopOps.Build）は頂点数が違っても面を張れるが余りが三角形になる。
+// 頂点数を揃えて全部四角形にするための前処理。
 // 実処理は HoleRingCountOps。ここは種の保持・Undo 記録・ミラー伝播・通知を担う。
+// Undo 記録・ミラー伝播・通知は ApplyWithUndo に切り出してあり、
+// 辺群ブリッジの頂点数合わせ（EdgeBridgeToolHandler）も同じものを使う。
 //
-// 【種の選び方】ブリッジと同じ。ビューポートでエッジ上の頂点（または辺）を選び、
+// 【種の選び方】ブリッジと同じ。ビューポートで境界辺上の頂点（または辺）を選び、
 //   パネルの取り込みボタンで基準穴 / 対象穴を確定する。自動選択は持たない。
 //
 // 【変更されるのは対象穴のメッシュだけ】基準穴は頂点数を読むだけで触らない。
@@ -166,7 +169,7 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         /// <summary>
-        /// 種を 1 つ入れる。エッジをたどれなければ Valid=false のまま理由を Info へ入れる。
+        /// 種を 1 つ入れる。境界辺をたどれなければ Valid=false のまま理由を Info へ入れる。
         /// </summary>
         private void Apply(Seed seed, RingCache cache, int meshIndex, int vertex, int directionHint, string meshName)
         {
@@ -264,7 +267,7 @@ namespace Poly_Ling.Tools
             if (!_targetRing.Ok) { sum.Reason = "対象穴: " + _targetRing.Message; return sum; }
             sum.TargetCount = _targetRing.Count;
 
-            // 同じ穴（同じメッシュの同じエッジグループ）を 2 回取り込んだ状態は弾く。
+            // 同じ穴（同じメッシュの同じ境界辺群）を 2 回取り込んだ状態は弾く。
             // 基準穴のループに対象穴の種が乗っているかで判定する（控えを使うので追加の走査は無い）。
             if (_base.MeshIndex == _target.MeshIndex && _baseRing.Loop.Contains(_target.Vertex))
             {
@@ -301,25 +304,6 @@ namespace Poly_Ling.Tools
             var sum = Inspect();
             if (!sum.CanExecute) { message = sum.Reason; return false; }
 
-            var model = _context?.Model;
-            var mc    = model?.GetMeshContext(_target.MeshIndex);
-            var mo    = mc?.MeshObject;
-            if (mo == null) { message = "対象穴の描画オブジェクトが見つかりません"; return false; }
-
-            var undo = _context.UndoController;
-
-            // 生成ミラーは実体側から作り直すため、Undo の記録対象に含める。
-            // 片側だけ記録すると Undo で実体とミラーが食い違う。
-            var realIndices = new List<int> { _target.MeshIndex };
-            var captureIndices = MirrorBranchOps.CollectMirrorCaptureIndices(model, realIndices);
-
-            // ミラー側への伝播計画。添字恒等対応の検証を含むため、位相を変える前に取る。
-            var mirrorPlan = MirrorBranchOps.CaptureMirrorRebuildPlan(model, realIndices);
-
-            var before = new MultiMeshTopologySnapshot();
-            if (undo != null)
-                foreach (int idx in captureIndices) before.CaptureMesh(model, idx);
-
             var opt = new HoleRingCountOps.Options
             {
                 SplitTriangleIntoTriangles = SplitTriangleIntoTriangles,
@@ -328,15 +312,14 @@ namespace Poly_Ling.Tools
             // ミラー側へ同じ操作を掛けるための入力（変更前の添字）。
             int seedBefore = _target.Vertex;
             int hintBefore = _target.DirectionHint;
+            int desired    = sum.BaseCount;
 
-            var result = HoleRingCountOps.Execute(mo, seedBefore, hintBefore, sum.BaseCount, opt);
+            var result = ApplyWithUndo(
+                _context, _target.MeshIndex,
+                m => HoleRingCountOps.Execute(m, seedBefore, hintBefore, desired, opt),
+                "Hole Ring Count", out message);
 
-            if (!result.Ok)
-            {
-                message = result.Message;
-                Debug.LogWarning($"[HoleRingCountTool] 実行失敗: {message}");
-                return false;
-            }
+            if (result == null || !result.Ok) return false;
 
             // 種の添字は結合で詰め直されている。次の操作へ持ち越すため書き戻す。
             _target.Vertex        = result.SeedVertex;
@@ -346,19 +329,71 @@ namespace Poly_Ling.Tools
             _baseRing.Invalidate();
             _targetRing.Invalidate();
 
+            return result.Reached;
+        }
+
+        // ================================================================
+        // Undo 記録・ミラー伝播・通知（穴頂点数合わせ・辺群の頂点数合わせで共通）
+        // ================================================================
+
+        /// <summary>
+        /// 描画オブジェクト meshIndex に頂点数合わせの操作 op を掛け、
+        /// Undo 記録・ミラー伝播・選択の消去・位相変更の通知まで行う。
+        ///
+        /// op は実体側と生成ミラー側の両方へ、変更前の添字のまま同じ入力で呼ばれる。
+        /// 辺の長さはミラーで保たれるので、選ばれる辺も添字で一致する。
+        /// したがって op は呼ばれるたびに入力を作り直すか、入力を書き換えないこと。
+        ///
+        /// 戻り値は実体側の結果。メッシュが見つからないときは null。
+        /// 1 手も進めなかったとき（Ok=false）はメッシュが変わっていないので Undo も記録しない。
+        /// </summary>
+        public static HoleRingCountOps.Result ApplyWithUndo(
+            ToolContext ctx, int meshIndex,
+            System.Func<MeshObject, HoleRingCountOps.Result> op,
+            string undoLabel, out string message)
+        {
+            message = null;
+
+            var model = ctx?.Model;
+            var mc    = model?.GetMeshContext(meshIndex);
+            var mo    = mc?.MeshObject;
+            if (mo == null || op == null) { message = "対象の描画オブジェクトが見つかりません"; return null; }
+
+            var undo = ctx.UndoController;
+
+            // 生成ミラーは実体側から作り直すため、Undo の記録対象に含める。
+            // 片側だけ記録すると Undo で実体とミラーが食い違う。
+            var realIndices = new List<int> { meshIndex };
+            var captureIndices = MirrorBranchOps.CollectMirrorCaptureIndices(model, realIndices);
+
+            // ミラー側への伝播計画。添字恒等対応の検証を含むため、位相を変える前に取る。
+            var mirrorPlan = MirrorBranchOps.CaptureMirrorRebuildPlan(model, realIndices);
+
+            var before = new MultiMeshTopologySnapshot();
+            if (undo != null)
+                foreach (int idx in captureIndices) before.CaptureMesh(model, idx);
+
+            var result = op(mo);
+
+            if (result == null || !result.Ok)
+            {
+                message = result?.Message ?? "実行できませんでした";
+                Debug.LogWarning($"[{undoLabel}] 実行失敗: {message}");
+                return result;
+            }
+
             // 実体側に掛けたのと同じ操作を、同じ添字でミラー側にも掛ける。
-            // 辺の長さはミラーで保たれるので、選ばれる辺も添字で一致する。
             int mirrorApplied = MirrorBranchOps.ApplyToMirrors(model, mirrorPlan, (realIdx, mirrorMo) =>
             {
-                if (realIdx != _target.MeshIndex) return false;
-                var mr = HoleRingCountOps.Execute(mirrorMo, seedBefore, hintBefore, sum.BaseCount, opt);
-                return mr.Ok;
+                if (realIdx != meshIndex) return false;
+                var mr = op(mirrorMo);
+                return mr != null && mr.Ok;
             });
 
             // 消えた頂点を指したままの選択を残さない。
             mc.Selection?.ClearAll();
 
-            _context.OnTopologyChanged();
+            ctx.OnTopologyChanged();
 
             if (undo != null)
             {
@@ -368,7 +403,7 @@ namespace Poly_Ling.Tools
                 // MeshListStack の Context を今回のモデルに合わせる（Undo 時の復元先）。
                 undo.SetModelContext(model);
 
-                string desc = $"Hole Ring Count ({result.StartCount} -> {result.FinalCount})";
+                string desc = $"{undoLabel} ({result.StartCount} -> {result.FinalCount})";
                 var record = new MultiMeshTopologySnapshotRecord(before, after, desc);
                 PLDiag.UndoRecord("MeshList", desc, record);
                 undo.MeshListStack.Record(record, desc);
@@ -376,13 +411,13 @@ namespace Poly_Ling.Tools
 
             message = result.Message;
 
-            Debug.Log($"[HoleRingCountTool] 完了: {result.StartCount} → {result.FinalCount} "
-                    + $"(目標 {sum.BaseCount}) / 割った {result.SplitCount} / 潰した {result.MergeCount} "
+            Debug.Log($"[{undoLabel}] 完了: {result.StartCount} → {result.FinalCount} "
+                    + $"(目標 {result.DesiredCount}) / 割った {result.SplitCount} / 潰した {result.MergeCount} "
                     + $"/ 頂点 +{result.AddedVertexCount} -{result.RemovedVertexCount} "
                     + $"/ 面 +{result.AddedFaceCount} -{result.RemovedFaceCount} "
                     + $"/ ミラー伝播 {mirrorApplied} (対象 {mirrorPlan.Entries.Count} / 検証落ち {mirrorPlan.RejectedCount})");
 
-            return result.Reached;
+            return result;
         }
     }
 }

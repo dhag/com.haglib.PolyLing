@@ -6,7 +6,8 @@
 // 【編集面】対象のローカル XY 平面（Z = 0）。ビルボードならカメラに正対する。
 //   画面の点 → ローカル座標は、光線を DisplayWorldMatrixInverse でローカルへ移して
 //   Z = 0 と交わらせる（書き戻し方向なので CPU の行列を使う）。
-// 【表示位置】既存の点は GPU の値（GetVertexWorld）。当たり判定もこれで行う。
+// 【表示位置】既存の点は GPU の値（GetVertexWorld）。
+// 【吸着】線分サブモードは面追加と同じ GPU ホバー（頂点）で対象オブジェクトの頂点に吸着する。
 // 【確定】モデルは線分群コマンドでだけ変える（CreateLineGroup / SetLineGroupPoints）。
 //
 // 【サブモード】
@@ -41,10 +42,32 @@ namespace Poly_Ling.Player
         public Action<PanelCommand> Dispatch;
         /// <summary>状態が変わった（パネル・オーバーレイの更新）。</summary>
         public Action OnChanged;
+        /// <summary>GPU ホバー要素（面追加と同じ吸着の経路）。Viewer から結線。</summary>
+        public Func<Poly_Ling.Selection.MeshSelectMode, PlayerHoverElement> GetHoverElement;
+        /// <summary>ポインタ移動（吸着候補の表示だけを更新する。パネルは更新しない）。</summary>
+        public Action OnHoverChanged;
+        /// <summary>サブモードが変わった（Viewer がホバー種別を選び直す）。</summary>
+        public Action OnModeChanged;
+        /// <summary>
+        /// 描き始める前に、モデルと描画オブジェクトを用意する（面追加と同じ処理を Viewer から結線）。
+        /// 描画オブジェクトが選ばれていなければ「New Mesh」を作って選ぶ。用意できなければ false。
+        /// </summary>
+        public Func<bool> EnsureDrawableMesh;
 
         // ── 設定 ──
+        private SubMode _mode = SubMode.Line;
         [Poly_Ling.Data.PLToolParam(Description = "BillboardProfileToolHandler.Mode")]
-        public SubMode Mode = SubMode.Line;
+        public SubMode Mode
+        {
+            get => _mode;
+            set
+            {
+                if (_mode == value) return;
+                _mode = value;
+                ClearHover();
+                OnModeChanged?.Invoke();
+            }
+        }
         /// <summary>開いた群の終点から描き始めたとき、その群を伸ばすか（既定 OFF = 新しい群）。</summary>
         [Poly_Ling.Data.PLToolParam(Description = "開いた群の終点から描き始めたとき、その群を伸ばすか（既定 OFF = 新しい群）")]
         public bool ExtendExisting;
@@ -58,6 +81,7 @@ namespace Poly_Ling.Player
         private readonly List<Vector3> _chainPoints = new List<Vector3>(); // ローカル座標
         private int _pendingStartVertex = -1;   // 始点に使う既存頂点（群を作る前）
         private Vector2? _hoverScreen;          // IMGUI 座標
+        private int _hoverVertex = -1;          // 吸着候補の頂点（GPU ホバー。対象オブジェクトの頂点番号）
 
         [Poly_Ling.Data.PLToolState(Description = "BillboardProfileToolHandler.Status")]
         public string Status { get; private set; } = "";
@@ -72,6 +96,22 @@ namespace Poly_Ling.Player
         [Poly_Ling.Data.PLToolState(Description = "描いている群の番号（まだ作っていなければ -1）")]
         public int ChainGroupIndex => _chainGroup;
         public Vector2? HoverScreen => _hoverScreen;
+        /// <summary>吸着候補の頂点（無ければ -1）。</summary>
+        public int HoverVertex => _hoverVertex;
+
+        /// <summary>吸着候補が描いている群の始点で、クリックすると閉じる状態か。</summary>
+        public bool CloseToStart
+        {
+            get
+            {
+                if (Mode != SubMode.Line || _chainPoints.Count < 3 || _chainGroup < 0 || _hoverVertex < 0) return false;
+                var model = GetProject?.Invoke()?.CurrentModel;
+                if (model == null || model.ActiveMeshIndex != _targetMaster) return false;
+                var mo = model.GetMeshContext(_targetMaster)?.MeshObject;
+                if (mo?.LineGroups == null || _chainGroup >= mo.LineGroups.Count) return false;
+                return _hoverVertex == mo.LineGroups[_chainGroup].StartVertex;
+            }
+        }
 
         // ================================================================
         // IPlayerToolHandler
@@ -82,6 +122,7 @@ namespace Poly_Ling.Player
             if (Mode == SubMode.Profile) { ProfileClick(screenPos, mods); return; }
             if (Mode == SubMode.Freeform) { FreeformClick(screenPos, mods); return; }
             if (Mode != SubMode.Line) return;
+            if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetToolContext?.Invoke();
             var model = GetProject?.Invoke()?.CurrentModel;
             if (ctx == null || model == null) return;
@@ -94,8 +135,9 @@ namespace Poly_Ling.Player
             // 対象が変わったら描き直し
             if (master != _targetMaster) { ResetChain(); _targetMaster = master; }
 
-            // 既存の点への吸着（GPU の表示位置で判定）
-            int snapVertex = PickVertex(model, mc, imgui, ctx);
+            // 既存の頂点への吸着（面追加と同じ GPU ホバー）
+            int snapVertex = ResolveHoverVertex(model);
+            _hoverVertex = snapVertex;
             Vector3 local;
             if (snapVertex >= 0) local = mc.MeshObject.Vertices[snapVertex].Position;
             else if (!TryScreenToLocal(mc, ctx, imgui, out local)) { SetStatus("編集面と交わりません"); return; }
@@ -135,12 +177,39 @@ namespace Poly_Ling.Player
             else if (Mode == SubMode.Freeform) FreeformDragEnd(screenPos);
         }
 
-        /// <summary>ポインタ移動。仮の線分の表示用に位置を覚える。</summary>
+        /// <summary>
+        /// ポインタ移動。どのサブモードも候補（吸着・選択・挿入）を調べ、表示だけを更新する。
+        /// 頂点・弦は GPU ホバー。ハンドル・曲線の弦・確定前の点はオーバーレイにしか無いので画面距離。
+        /// </summary>
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null) return;
             _hoverScreen = ToImgui(screenPos, ctx);
-            if (_chainPoints.Count > 0 || _ffPoints.Count > 0) OnChanged?.Invoke();
+            var model = GetProject?.Invoke()?.CurrentModel;
+            switch (Mode)
+            {
+                case SubMode.Line:
+                    // 吸着候補は描き始める前から出す（面追加と同じ）。
+                    _hoverVertex = ResolveHoverVertex(model);
+                    break;
+                case SubMode.Freeform:
+                    // 手描き中は吸着しない（線の途中の点は画面の軌跡から作る）。
+                    _hoverVertex = _ffStroke.Count > 0 ? -1 : ResolveHoverVertex(model);
+                    break;
+                case SubMode.Profile:
+                    _hoverVertex = -1;
+                    if (_drag == DragKind.None) ResolveProfileHover(_hoverScreen.Value);
+                    break;
+            }
+            OnHoverChanged?.Invoke();
+        }
+
+        /// <summary>候補を捨てる（サブモードの切り替え・対象の切り替え）。</summary>
+        private void ClearHover()
+        {
+            _hoverVertex = -1;
+            _ph = default;
+            _piActive = false;
         }
 
         /// <summary>描画を終える（Escape / 右クリック）。描いた分は確定済み。自由曲線はここで確定する。</summary>
@@ -245,27 +314,18 @@ namespace Poly_Ling.Player
             return true;
         }
 
-        /// <summary>線分群の点のうち、画面で最も近いもの（PickRadius 以内）。無ければ -1。</summary>
-        private int PickVertex(ModelContext model, MeshContext mc, Vector2 imgui, ToolContext ctx)
+        /// <summary>
+        /// 吸着候補の頂点。面追加と同じく GPU ホバー（頂点）で決める。
+        /// 対象オブジェクト（ActiveMeshIndex）の頂点に当たっていなければ -1。
+        /// </summary>
+        private int ResolveHoverVertex(ModelContext model)
         {
-            var mo = mc.MeshObject;
-            if (mo?.LineGroups == null || GetVertexWorld == null) return -1;
-            float best = PickRadius;
-            int found = -1;
-            var seen = new HashSet<int>();
-            foreach (var g in mo.LineGroups)
-            {
-                if (g?.Order == null) continue;
-                foreach (int vi in g.Order)
-                {
-                    if (!seen.Add(vi)) continue;
-                    var w = GetVertexWorld(model, mc, vi);
-                    if (!w.HasValue) continue;
-                    float d = Vector2.Distance(imgui, ctx.WorldToScreen(w.Value));
-                    if (d < best) { best = d; found = vi; }
-                }
-            }
-            return found;
+            if (model == null || GetHoverElement == null) return -1;
+            var e = GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex);
+            if (e.Kind != PlayerHoverKind.Vertex || e.MeshIndex < 0 || e.MeshIndex != model.ActiveMeshIndex) return -1;
+            var mo = model.GetMeshContext(e.MeshIndex)?.MeshObject;
+            if (mo == null || e.VertexIndex < 0 || e.VertexIndex >= mo.VertexCount) return -1;
+            return e.VertexIndex;
         }
 
         /// <summary>描いている折れ線の最初の点をクリックしたか。</summary>

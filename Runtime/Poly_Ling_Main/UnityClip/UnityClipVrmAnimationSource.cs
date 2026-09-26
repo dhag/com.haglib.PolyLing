@@ -256,30 +256,9 @@ namespace Poly_Ling.UnityClip
             return -1;
         }
 
-        // ノードの親ノード。
-        //   ミラーノード … ParentNode（ミラー側の親）を持つ。
-        //   実体ノード   … ParentContextIndex（MeshContextList 索引）を持つ。
-        //                  その索引がノードでない場合があるので、ノードに当たるまで
-        //                  MeshContext の階層をさかのぼる。
+        // ノードの親ノード（UnityClipVirtualSkeleton.ParentNodeOf が正本）。
         private static int ParentOf(ModelContext model, UnityClipVirtualSkeleton skeleton, int node)
-        {
-            if (node < 0 || node >= skeleton.Nodes.Count) return -1;
-            var n = skeleton.Nodes[node];
-            if (n.ParentNode >= 0) return n.ParentNode;
-
-            var list = model.MeshContextList;
-            int ci = n.ParentContextIndex;
-            int guard = (list != null ? list.Count : 0) + 1;
-            while (ci >= 0 && list != null && ci < list.Count && guard-- > 0)
-            {
-                int pn = skeleton.NodeOfContext(ci);
-                if (pn >= 0) return pn;
-                var c = list[ci];
-                if (c == null) break;
-                ci = c.HierarchyParentIndex;
-            }
-            return -1;
-        }
+            => skeleton.ParentNodeOf(model, node);
 
         // 行列の回転部。HierarchyBuilder.cs:243 が使う Matrix4x4.rotation にそろえる。
         // 列が縮退しているときだけ単位を返す。

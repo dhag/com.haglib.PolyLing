@@ -377,8 +377,8 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "Pipe", Description = "パイプのパラメータ。ピボットは使わない", Required = true)]
         public Poly_Ling.Pipe.PipeParams Params { get; }
 
-        [PLParam(TextKey = "PipeProfile", Description = "断面プロファイル", Required = true)]
-        public Vector2[] Profile { get; }
+        [PLParam(TextKey = "PipeProfile", Description = "断面プロファイル（x,y,z）", Required = true, LegacyXYPairs = true)]
+        public Vector3[] Profile { get; }
 
         [PLParam(TextKey = "PipeProfileClosed", Description = "断面を閉ループとして扱う")]
         public bool ProfileClosed { get; }
@@ -397,7 +397,7 @@ namespace Poly_Ling.Data
             string edgeSetName,
             PrimitivePlacement placement,
             Poly_Ling.Pipe.PipeParams @params,
-            Vector2[] profile,
+            Vector3[] profile,
             bool profileClosed,
             Poly_Ling.PrimitiveMesh.BeltOrientOptions orient,
             Poly_Ling.PrimitiveMesh.BeltSplineOptions spline,
@@ -412,7 +412,7 @@ namespace Poly_Ling.Data
             EdgeSetName   = edgeSetName ?? "";
             Placement     = placement;
             Params        = @params;
-            Profile       = profile ?? System.Array.Empty<Vector2>();
+            Profile       = profile ?? System.Array.Empty<Vector3>();
             ProfileClosed = profileClosed;
             Orient        = orient;
             Spline        = spline;

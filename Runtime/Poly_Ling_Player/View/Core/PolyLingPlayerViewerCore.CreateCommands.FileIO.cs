@@ -541,10 +541,10 @@ namespace Poly_Ling.Player
             // PlayerVMDTestSubPanel.LoadVMD と同じ規則で、ここでは新しい変換を足さない。
             var options = Poly_Ling.VMD.VmdVrmAnimationOptions.CreateDefault();
             options.EnableIK          = cmd.EnableIK;
-            options.AlignScope        = cmd.AlignScope;
             options.DiagnosticLog     = cmd.DiagnosticLog;
             options.IgnoreAngleLimits = cmd.IgnoreAngleLimits;
             options.KneePreBend       = cmd.KneePreBend;
+            options.ViaMuscles        = cmd.ViaMuscles;
 
             // IK の残差 CSV の出力先。指定があるときだけ関門を通す。
             if (!string.IsNullOrEmpty(cmd.IkTraceDirectory))
@@ -577,6 +577,82 @@ namespace Poly_Ling.Player
                       $"(Humanoid {result.HumanoidBoneCount} / {result.FrameCount} frames / {result.DurationSec:F2}s)");
             if (!string.IsNullOrEmpty(result.Warning))
                 Debug.LogWarning($"[PolyLing] VMD→VRMA: {result.Warning}");
+            return null;
+        }
+
+        /// <summary>VMD → PolyLing モーション（マッスル＋二次骨＋表情）書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportVmdToMotionJson(Poly_Ling.Data.ExportVmdToMotionJsonCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            if (string.IsNullOrEmpty(cmd.FilePath))    return "FilePath が空です";
+            if (string.IsNullOrEmpty(cmd.VmdFilePath)) return "VmdFilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string outPath, out string outReason))
+                return outReason;
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.VmdFilePath, out string vmdPath, out string vmdReason))
+                return vmdReason;
+
+            Poly_Ling.VMD.VMDData vmd;
+            try
+            {
+                vmd = Poly_Ling.VMD.VMDData.LoadFromFile(vmdPath);
+            }
+            catch (System.Exception ex)
+            {
+                return $"VMD の読込みに失敗: {ex.Message}";
+            }
+            if (vmd == null) return "VMD を読み取れません";
+
+            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
+            {
+                Fps      = cmd.Fps,
+                StartSec = cmd.StartSec,
+                EndSec   = cmd.EndSec,
+            };
+
+            // 座標変換と位置倍率は EditorState を正本にする（ExecuteExportVmdToVrma と同じ）。
+            var options = Poly_Ling.VMD.VmdVrmAnimationOptions.CreateDefault();
+            options.EnableIK          = cmd.EnableIK;
+            options.DiagnosticLog     = cmd.DiagnosticLog;
+            options.IgnoreAngleLimits = cmd.IgnoreAngleLimits;
+            options.KneePreBend       = cmd.KneePreBend;
+            var es = _editOps?.UndoController?.EditorState;
+            if (es != null)
+            {
+                options.PositionScale = es.PmxUnityRatio;
+                options.FlipX         = es.PmxFlipX;
+                options.FlipZ         = es.PmxFlipZ;
+            }
+
+            var dto = Poly_Ling.VMD.VmdMotionBake.Bake(
+                model, vmd, settings, options, out var report, out string bakeReason);
+
+            // 焼き込みはモデルへ実際にフレームを適用する。
+            // ポーズ層は Bake が戻すので、表示を引き直す。
+            _viewportManager.UpdateTransform();
+            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+
+            if (dto == null) return $"{bakeReason}（出力先: {outPath}）";
+
+            dto.name = System.IO.Path.GetFileNameWithoutExtension(
+                System.IO.Path.GetFileNameWithoutExtension(outPath));   // "x.plmotion.json" → "x"
+
+            var saved = Poly_Ling.Motion.MotionClipSerializer.Save(dto, outPath);
+            if (saved.Dto == null) return $"書き出しに失敗しました: {saved.FormatIssues(10)}（出力先: {outPath}）";
+
+            Debug.Log($"[PolyLing] VMD→モーション 書き出し: {outPath} " +
+                      $"({report.FrameCount} frames / ボーン {report.BoneTrackCount} / 表情 {report.ExpressionTrackCount})");
+            if (report.DroppedHumanoid.Count > 0)
+                Debug.LogWarning("[PolyLing] VMD→モーション: 骨格に載せられなかった Humanoid: "
+                                 + string.Join(", ", report.DroppedHumanoid.ToArray()));
             return null;
         }
 

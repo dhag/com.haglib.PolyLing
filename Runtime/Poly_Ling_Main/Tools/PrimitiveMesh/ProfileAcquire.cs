@@ -16,7 +16,7 @@
 //
 // 【正規化】
 //   帯系の断面（フリル・パイプ）は rung 長で正規化された系にあるため、
-//   取り込みのときだけ長辺が 1 になるよう等方スケールする
+//   取り込みのときだけ最長辺が 1 になるよう等方スケールする（z も含む）
 //   （LineProfileExtractor.NormalizeToUnitSpan）。
 //   回転体・2D 押し出しはモデルのローカル座標をそのまま使うので掛けない。
 //   どちらかは呼び出し側（PLParam.ProfileNormalize）が決める。
@@ -51,7 +51,7 @@ namespace Poly_Ling.PrimitiveMesh
         /// 折れ線として読んだ点列。LineLoops のときは点数が最多のループを
         /// 1 本の点列として入れる（点列 1 本しか置けない受け口のため）。
         /// </summary>
-        public List<Vector2> Points = new List<Vector2>();
+        public List<Vector3> Points = new List<Vector3>();
 
         /// <summary>ループ群。LinePolyline のときは Points 1 本ぶんだけ入る。</summary>
         public List<Loop> Loops = new List<Loop>();
@@ -96,7 +96,7 @@ namespace Poly_Ling.PrimitiveMesh
                     return ProfileAcquireResult.Fail("線をつなげて閉ループにできない");
 
                 // 点数が最多のループを、点列 1 本しか置けない受け口のために抜き出す。
-                List<Vector2> best = null;
+                List<Vector3> best = null;
                 foreach (var lp in loops)
                 {
                     if (lp?.Points == null || lp.Points.Count < 3) continue;
@@ -124,39 +124,42 @@ namespace Poly_Ling.PrimitiveMesh
                 return ProfileAcquireResult.Fail("折れ線がつぶれている（全点が同じ位置）");
 
             result.Points  = norm;
-            result.Loops.Add(new Loop { Points = new List<Vector2>(norm) });
+            result.Loops.Add(new Loop { Points = new List<Vector3>(norm) });
             result.Message = $"線 {lineFaces.Count} 本 → 折れ線 {norm.Count} 点";
             return result;
         }
 
-        private static List<Vector2> Normalize(IReadOnlyList<Vector2> src, bool normalize)
+        private static List<Vector3> Normalize(IReadOnlyList<Vector3> src, bool normalize)
         {
             if (src == null) return null;
-            if (!normalize) return new List<Vector2>(src);
+            if (!normalize) return new List<Vector3>(src);
             return LineProfileExtractor.NormalizeToUnitSpan(src);
         }
 
         /// <summary>
-        /// ループ群をまとめて正規化する。
+        /// ループ群をまとめて正規化する（x,y,z とも LineProfileExtractor.NormalizeToUnitSpan と同じ扱い）。
         /// ループごとに別々の倍率を掛けると相対位置が崩れるので、
         /// 全ループを合わせた AABB で 1 回だけ決める。
         /// </summary>
         private static void NormalizeLoops(List<Loop> loops)
         {
-            float minX = float.MaxValue, minY = float.MaxValue;
-            float maxX = float.MinValue, maxY = float.MinValue;
+            bool any = false;
+            Vector3 min = Vector3.zero, max = Vector3.zero;
 
             foreach (var lp in loops)
             {
                 if (lp?.Points == null) continue;
                 foreach (var q in lp.Points)
                 {
-                    minX = Mathf.Min(minX, q.x); maxX = Mathf.Max(maxX, q.x);
-                    minY = Mathf.Min(minY, q.y); maxY = Mathf.Max(maxY, q.y);
+                    if (!any) { min = max = q; any = true; continue; }
+                    min = Vector3.Min(min, q);
+                    max = Vector3.Max(max, q);
                 }
             }
+            if (!any) return;
 
-            float span = Mathf.Max(maxX - minX, maxY - minY);
+            Vector3 size = max - min;
+            float span = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
             if (span <= 1e-6f) return;
 
             float k = 1f / span;
@@ -164,7 +167,7 @@ namespace Poly_Ling.PrimitiveMesh
             {
                 if (lp?.Points == null) continue;
                 for (int i = 0; i < lp.Points.Count; i++)
-                    lp.Points[i] = new Vector2((lp.Points[i].x - minX) * k, (lp.Points[i].y - minY) * k);
+                    lp.Points[i] = (lp.Points[i] - min) * k;
             }
         }
     }

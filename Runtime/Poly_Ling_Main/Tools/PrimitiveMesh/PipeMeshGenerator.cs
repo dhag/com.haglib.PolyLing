@@ -9,7 +9,8 @@
 //   原点 = Left[i]
 //   X 軸 = normalize(Right[i] - Left[i])  … rung 方向
 //   Y 軸 = 基準ベルトの面法線（X と直交化） … 法線方向
-//   断面座標は rung 長で正規化（x=1 / y=1 が その rung の長さ）。
+//   Z 軸 = X × Y                           … 断面の点の z を置く向き
+//   断面座標は rung 長で正規化（x=1 / y=1 / z=1 が その rung の長さ）。
 //
 // 【巻き順】取り込み時に判定した基準ベルトの巻き順に従う。
 //   断面が 2 点 (0,0)-(1,0) かつ開いた断面のときは基準ベルトと同一の面になる。
@@ -37,7 +38,7 @@ namespace Poly_Ling.Pipe
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            IReadOnlyList<Vector2> profile, bool profileClosed, bool capEnds,
+            IReadOnlyList<Vector3> profile, bool profileClosed, bool capEnds,
             Vector3? startPoint, Vector3? endPoint,
             string meshName)
             => Generate(left, right, beltClosed, flipWinding,
@@ -54,7 +55,7 @@ namespace Poly_Ling.Pipe
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            IReadOnlyList<Vector2> profile, bool profileClosed, bool capEnds,
+            IReadOnlyList<Vector3> profile, bool profileClosed, bool capEnds,
             Vector3? startPoint, Vector3? endPoint,
             string meshName, PartsIdCounter partsIds)
             => Generate(left, right, beltClosed, flipWinding,
@@ -71,7 +72,7 @@ namespace Poly_Ling.Pipe
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            IReadOnlyList<Vector2> profile, bool profileClosed, bool capEnds,
+            IReadOnlyList<Vector3> profile, bool profileClosed, bool capEnds,
             Vector3? startPoint, Vector3? endPoint,
             string meshName, PartsIdCounter partsIds,
             IReadOnlyList<BoneWeight?> leftWeights, IReadOnlyList<BoneWeight?> rightWeights)
@@ -106,8 +107,11 @@ namespace Poly_Ling.Pipe
 
                 for (int k = 0; k < m; k++)
                 {
-                    Vector2 p   = profile[k];
-                    Vector3 pos = left[i] + xDir[i] * (p.x * len[i]) + yDir[i] * (p.y * len[i]);
+                    Vector3 p   = profile[k];
+                    // 断面の z は rung 系の 3 つ目の軸（xDir × yDir）へ、x・y と同じ rung 長の倍率で置く。
+                    Vector3 zDir = Vector3.Cross(xDir[i], yDir[i]);
+                    Vector3 pos = left[i] + xDir[i] * (p.x * len[i]) + yDir[i] * (p.y * len[i])
+                                + zDir * (p.z * len[i]);
                     float   v   = profileClosed ? k / (float)m : k / (float)(m - 1);
 
                     var vert = new Vertex(pos, new Vector2(u, v));
@@ -194,15 +198,15 @@ namespace Poly_Ling.Pipe
                 if (mo.Vertices[v] != null) mo.Vertices[v].BoneWeight = w;
         }
 
-        /// <summary>断面の符号付き面積。正 = 正の向き（この向きだと筒が内向きになる）。</summary>
-        private static float SignedProfileArea(IReadOnlyList<Vector2> profile)
+        /// <summary>断面の符号付き面積（xy で求める）。正 = 正の向き（この向きだと筒が内向きになる）。</summary>
+        private static float SignedProfileArea(IReadOnlyList<Vector3> profile)
         {
             int m = profile.Count;
             float sum = 0f;
             for (int k = 0; k < m; k++)
             {
-                Vector2 p = profile[k];
-                Vector2 q = profile[(k + 1) % m];
+                Vector3 p = profile[k];
+                Vector3 q = profile[(k + 1) % m];
                 sum += p.x * q.y - q.x * p.y;
             }
             return sum * 0.5f;

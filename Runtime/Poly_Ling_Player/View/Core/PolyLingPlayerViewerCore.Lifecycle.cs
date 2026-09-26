@@ -29,6 +29,9 @@ namespace Poly_Ling.Player
 {
     public partial class PolyLingPlayerViewerCore
     {
+        /// <summary>外部操作の通知でパネルを読み直している最中か（再入防止）。</summary>
+        private bool _refreshingOnToolChanged;
+
         // ================================================================
         // 公開ライフサイクル API
         // ================================================================
@@ -364,8 +367,16 @@ namespace Poly_Ling.Player
             // MCP・リモートがツールの値や状態を変えたとき、表示中のパネルに読み直させる（操作経路統一計画.md P）。
             _commandDispatcher.OnToolChanged = _ =>
             {
-                foreach (var (section, refresh) in _sectionRefreshPairs)
-                    if (section?.style.display == DisplayStyle.Flex) refresh();
+                // パネルの読み直し自体がツールの操作（統計の再計算など）を呼び、それがまた
+                // この通知を呼ぶので、読み直し中の通知は受けない（無限再帰になっていた）。
+                if (_refreshingOnToolChanged) return;
+                _refreshingOnToolChanged = true;
+                try
+                {
+                    foreach (var (section, refresh) in _sectionRefreshPairs)
+                        if (section?.style.display == DisplayStyle.Flex) refresh();
+                }
+                finally { _refreshingOnToolChanged = false; }
             };
 
             // MCP（名前付きパイプ）からの実行入口。RemoteMode に依存しない。

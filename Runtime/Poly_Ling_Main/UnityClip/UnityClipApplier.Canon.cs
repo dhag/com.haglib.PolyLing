@@ -147,61 +147,13 @@ namespace Poly_Ling.UnityClip
         }
 
         /// <summary>
-        /// T ポーズ基準（モデル非依存）でマッスル値からローカル回転を作る。
-        ///
-        /// GetCanonEntry を A = RestW = RestL = 単位で通したのと同じ式であり、
-        /// 掛ける順序も ApplySelfMuscle と同じにしてある。
-        ///   Zero = cb.Zero
-        ///   ext  = Zero · AngleAxis(Min/MaxDeg[dof], Axis[dof])
-        ///   full = Zero⁻¹ · ext
-        ///   d    = Slerp(identity, full, |v|) を 3 dof 合成
-        ///   L    = Zero · d
-        /// レストが T ポーズなら L がそのまま正規化 Humanoid のローカル回転になる。
+        /// マッスルトラックの timeSec での値（キー間は線形）。
+        /// マッスル → 回転は CanonMuscleSolver（Unity）で解くこと。
+        /// 以前ここにあった「dof ごとの回転を順に掛ける合成」（TryGetCanonLocalRotation）は
+        /// Unity と最大 57.81 度食い違ったため削除した（UnityClipApplier.cs 冒頭の実測メモ）。
         /// </summary>
-        /// <returns>クリップがそのボーンを 1 dof も駆動していなければ false。</returns>
-        public static bool TryGetCanonLocalRotation(
-            string humanoidName,
-            IReadOnlyDictionary<string, UnityMuscleTrackDTO> muscleByName,
-            float timeSec,
-            out Quaternion local)
-        {
-            local = Quaternion.identity;
-            if (string.IsNullOrEmpty(humanoidName) || muscleByName == null) return false;
-
-            EnsureCanonMuscle();
-            if (!_canonMuscle.TryGetValue(humanoidName, out var cb)) return false;
-
-            int bi = CanonBoneIndex(humanoidName);
-            if (bi < 0) return false;
-
-            var muscleNames = HumanTrait.MuscleName;
-            Quaternion zero  = cb.Zero;
-            Quaternion delta = Quaternion.identity;
-            bool any = false;
-
-            for (int dof = 0; dof < 3; dof++)
-            {
-                if (!cb.Has[dof]) continue;
-
-                int mi = HumanTrait.MuscleFromBone(bi, dof);
-                if (mi < 0 || muscleNames == null || mi >= muscleNames.Length) continue;
-                if (!muscleByName.TryGetValue(muscleNames[mi], out var mt)) continue;
-
-                float v = SampleWeight(mt, timeSec);
-
-                Quaternion ext  = zero * Quaternion.AngleAxis(
-                                      v >= 0f ? cb.MaxDeg[dof] : cb.MinDeg[dof], cb.Axis[dof]);
-                Quaternion full = Quaternion.Inverse(zero) * ext;
-                Quaternion d    = Quaternion.Slerp(Quaternion.identity, full, Mathf.Min(1f, Mathf.Abs(v)));
-                delta = delta * d;
-                any = true;
-            }
-
-            if (!any) return false;
-
-            local = QuatNorm(zero * delta);
-            return true;
-        }
+        public static float SampleMuscleWeight(UnityMuscleTrackDTO track, float timeSec)
+            => SampleWeight(track, timeSec);
 
         // present で親をたどる（欠損はスキップ）
         private static string ParentOf(string cn, HashSet<string> present)

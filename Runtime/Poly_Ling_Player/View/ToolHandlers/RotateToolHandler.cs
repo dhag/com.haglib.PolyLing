@@ -38,6 +38,16 @@ namespace Poly_Ling.Player
         /// </summary>
         public Action<Poly_Ling.Data.PanelCommand>         SendCommand;
 
+        /// <summary>
+        /// ギズモ確定の横取り（辺押し出しのギズモが使う）。true を返すと回転を記録せず開始状態へ戻す。
+        /// 呼ばれた時点では頂点はまだ回した位置にある（横取り側はここで位置を読む）。
+        /// </summary>
+        public Func<bool> CommitCapture;
+        /// <summary>CommitCapture が true を返し、開始状態へ戻した後に呼ぶ。</summary>
+        public Action     CommitFinish;
+        /// <summary>ギズモのリングを掴んでいるか（GizmoHitTest が当たった後、確定前）。</summary>
+        public bool GizmoGrabbed => _gizmoDragAxis != AxisGizmo.AxisType.None;
+
         // ================================================================
         // 設定公開API
         // ================================================================
@@ -388,6 +398,18 @@ namespace Poly_Ling.Player
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
             _gizmoDragAxis = AxisGizmo.AxisType.None;
             _ringGizmo.EndAngleDrag();
+
+            // 確定の横取り（辺押し出しのギズモ）。位置を読ませてから、回転は記録せず開始状態へ戻す。
+            if (CommitCapture != null && CommitCapture())
+            {
+                if (!_tool.TryTakeRotationFromDrag(out _, out _, out _, out _)) _tool.EndSliderDrag();
+                _tool.AxisMode  = _prevAxisMode;
+                _tool.AxisAngle = 0f;
+                EndPanelPreview();
+                CommitFinish?.Invoke();
+                return;
+            }
+
             // AxisMode を戻すより先に取り出す。BeginGizmoDrag が立てた
             // AxisMode = true と軸ベクトルが、そのままコマンドの値になる。
             CommitViaCommand();

@@ -419,6 +419,13 @@ namespace Poly_Ling.Player
                     var axisHit = _axisGizmo.FindAxisAtScreenPos(ToImgui(screenPos), ctx);
                     if (axisHit != AxisGizmo.AxisType.None)
                     {
+                        // ギズモを掴んだ瞬間の割り込み（辺押し出しがここで量 0 の押し出しを行い、
+                        // 頂点選択を複製頂点へ置き換える）。対象が変わるので集計し直す。
+                        if (OnBuiltinGizmoGrab != null && OnBuiltinGizmoGrab())
+                        {
+                            UpdateAffectedVertices();
+                            if (!HasAnyAffected()) return;
+                        }
                         _draggingAxis    = axisHit;
                         _lastAxisDragPos = ToImgui(screenPos);
                         BeginMove();

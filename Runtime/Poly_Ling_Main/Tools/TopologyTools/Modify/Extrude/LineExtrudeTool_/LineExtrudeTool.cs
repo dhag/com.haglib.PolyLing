@@ -347,8 +347,8 @@ namespace Poly_Ling.Tools
             foreach (int vIdx in loop.VertexIndices)
             {
                 Vector3 pos = meshObject.Vertices[vIdx].Position;
-                // XY座標を出力（小数点6桁）
-                sb.AppendLine($"{pos.x:F6},{pos.y:F6}");
+                // XYZ座標を出力（小数点6桁）。読み側は z の列が無い旧形式も受ける。
+                sb.AppendLine($"{pos.x:F6},{pos.y:F6},{pos.z:F6}");
             }
         }
 
@@ -358,7 +358,7 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// 検出済みループをProfile2DExtrudeMeshGeneratorに渡せるLoop形式に変換して返す。
-        /// AnalyzeLoops()実行後に呼ぶこと。メッシュ頂点のXY座標をループ点として使用する。
+        /// AnalyzeLoops()実行後に呼ぶこと。メッシュ頂点の位置（x,y,z）をループ点として使用する。
         /// </summary>
         public List<Poly_Ling.Profile2DExtrude.Loop> GetLoopsForExtrude()
         {
@@ -371,10 +371,7 @@ namespace Poly_Ling.Tools
             {
                 var loop = new Poly_Ling.Profile2DExtrude.Loop { IsHole = loopInfo.IsHole };
                 foreach (int vIdx in loopInfo.VertexIndices)
-                {
-                    Vector3 pos = meshObject.Vertices[vIdx].Position;
-                    loop.Points.Add(new Vector2(pos.x, pos.y));
-                }
+                    loop.Points.Add(meshObject.Vertices[vIdx].Position);
                 result.Add(loop);
             }
             return result;

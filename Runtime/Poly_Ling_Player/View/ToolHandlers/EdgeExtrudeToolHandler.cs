@@ -3,6 +3,7 @@
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
@@ -70,13 +71,18 @@ namespace Poly_Ling.Player
             int  line = (el.Kind == PlayerHoverKind.Line) ? el.FaceIndex : -1;
             _tool.PrepareHit(edge, line);
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
+            // screenPos は押した位置（MoveToolHandler.MouseDownPos）。以後の量はここからの全体差で決める。
+            _pressOrigin = screenPos;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
         }
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), delta);
+            // 押した位置から今の位置までの全体差（+Y が画面上。頂点移動の自由移動と同じ）。
+            _tool.DragTo(ctx, screenPos - _pressOrigin);
         }
+
+        private Vector2 _pressOrigin;
 
         /// <summary>
         /// ドラッグ確定。
@@ -94,12 +100,13 @@ namespace Poly_Ling.Player
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
 
             bool taken = false;
-            VertexPair? takenEdge = null;
-            int     takenLine   = -1;
+            List<VertexPair> takenEdges = null;
+            List<int>        takenLines = null;
+            List<int>        takenReversed = null;
             Vector3 takenOffset = Vector3.zero;
 
             if (SendCommand != null && _tool.ExtrudePending)
-                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenEdge, out takenLine, out takenOffset);
+                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenEdges, out takenLines, out takenReversed, out takenOffset);
 
             // 取り出したときは _snapshotBefore が null なので EndExtrude は Undo を積まない。
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
@@ -110,13 +117,18 @@ namespace Poly_Ling.Player
                 var mc    = model?.ActiveMeshContext;
                 if (model != null && mc != null)
                 {
+                    var pairs = new int[takenEdges.Count * 2];
+                    for (int i = 0; i < takenEdges.Count; i++)
+                    { pairs[i * 2] = takenEdges[i].V1; pairs[i * 2 + 1] = takenEdges[i].V2; }
+
+                    // ドラッグ中に押し出していた辺・線分を全部載せる（確定後の形をドラッグ中と同じにする）。
                     SendCommand.Invoke(new Poly_Ling.Data.EdgeExtrudeCommand(
                         _project.CurrentModelIndex,
                         new[] { model.IndexOf(mc) },
-                        takenEdge.HasValue ? takenEdge.Value.V1 : -1,
-                        takenEdge.HasValue ? takenEdge.Value.V2 : -1,
-                        takenLine,
-                        takenOffset));
+                        pairs,
+                        takenLines.ToArray(),
+                        takenOffset,
+                        takenReversed.ToArray()));
                 }
             }
 
@@ -145,11 +157,108 @@ namespace Poly_Ling.Player
             var ctx = GetEnrichedCtx();
             if (ctx == null) { reason = "ツールコンテキストがありません"; return false; }
 
-            VertexPair? edge = (cmd.EdgeV1 >= 0 && cmd.EdgeV2 >= 0)
-                ? new VertexPair(cmd.EdgeV1, cmd.EdgeV2)
-                : (VertexPair?)null;
+            var pairs = cmd.EdgeVertexPairs ?? System.Array.Empty<int>();
+            if (pairs.Length % 2 != 0)
+            { reason = "EdgeVertexPairs は頂点番号を 2 個ずつ並べてください"; return false; }
+            var edges = new System.Collections.Generic.List<VertexPair>(pairs.Length / 2);
+            for (int i = 0; i < pairs.Length; i += 2) edges.Add(new VertexPair(pairs[i], pairs[i + 1]));
 
-            return _tool.ApplyExtrudeFromCommand(ctx, edge, cmd.LineIndex, cmd.LocalOffset, out reason);
+            List<Vector3> positions = null;
+            var flat = cmd.NewVertexPositions;
+            if (flat != null && flat.Length > 0)
+            {
+                if (flat.Length % 3 != 0)
+                { reason = "NewVertexPositions は x,y,z を 3 個ずつ並べてください"; return false; }
+                positions = new List<Vector3>(flat.Length / 3);
+                for (int i = 0; i < flat.Length; i += 3) positions.Add(new Vector3(flat[i], flat[i + 1], flat[i + 2]));
+            }
+
+            return _tool.ApplyExtrudeFromCommand(ctx, edges, cmd.LineIndices,
+                cmd.ReversedLineIndices, cmd.LocalOffset, positions, out reason);
+        }
+
+        // ================================================================
+        // ギズモでの押し出し（移動・回転・拡大縮小）
+        // ================================================================
+
+        public enum GizmoKind { None = 0, Move = 1, Rotate = 2, Scale = 3 }
+
+        private GizmoKind _gizmo = GizmoKind.Move;
+
+        /// <summary>辺押し出しの状態で出すギズモの種類（None はギズモを出さない）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "押し出しに使うギズモ（None / Move / Rotate / Scale）")]
+        public GizmoKind Gizmo
+        {
+            get => _gizmo;
+            set { if (_gizmo == value) return; _gizmo = value; OnGizmoKindChanged?.Invoke(); }
+        }
+
+        private bool _extrudePaused;
+
+        /// <summary>
+        /// 押し出しの一時停止。true の間はギズモも辺・線分のドラッグも押し出さず、
+        /// 普通の移動・回転・拡大縮小になる。
+        /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "押し出しの一時停止（true の間は普通の移動・回転・拡大縮小）")]
+        public bool ExtrudePaused
+        {
+            get => _extrudePaused;
+            set { if (_extrudePaused == value) return; _extrudePaused = value; OnGizmoKindChanged?.Invoke(); }
+        }
+
+        /// <summary>ギズモの種類・一時停止が変わった（Viewer が結線を組み直す）。</summary>
+        public Action OnGizmoKindChanged;
+
+        /// <summary>ギズモでの押し出し中か。</summary>
+        public bool GizmoExtrudeActive => _tool.GizmoSessionActive;
+
+        /// <summary>
+        /// ギズモを掴んだ瞬間に呼ぶ。選択中の辺・線分を量 0 で押し出し、頂点選択を複製頂点にする。
+        /// 押し出せる対象が無ければ false（何も変えない）。
+        /// </summary>
+        public bool BeginGizmoExtrude()
+        {
+            var ctx = GetEnrichedCtx(); if (ctx == null) return false;
+            return _tool.BeginGizmoSession(ctx);
+        }
+
+        /// <summary>離したとき、ギズモ側を開始状態へ戻させる前に呼ぶ。ギズモでの押し出し中でなければ false。</summary>
+        public bool CaptureGizmoExtrude()
+        {
+            if (!_tool.GizmoSessionActive) return false;
+            var ctx = GetEnrichedCtx(); if (ctx == null) return false;
+            return _tool.CaptureGizmoResult(ctx);
+        }
+
+        /// <summary>
+        /// ギズモ側を開始状態へ戻させた後に呼ぶ。押す前へ戻し、動いていれば押し出しコマンドを 1 本送る
+        /// （押し出しと変形をまとめて Undo 1 回）。
+        /// </summary>
+        public void FinishGizmoExtrude()
+        {
+            var ctx = GetEnrichedCtx(); if (ctx == null) return;
+            _tool.FinishGizmoSession(ctx, out bool changed, out var edges, out var lines,
+                                     out var reversed, out var positions);
+            if (changed && SendCommand != null)
+            {
+                var model = _project?.CurrentModel;
+                var mc    = model?.ActiveMeshContext;
+                if (model != null && mc != null)
+                {
+                    var pairs = new int[edges.Count * 2];
+                    for (int i = 0; i < edges.Count; i++) { pairs[i * 2] = edges[i].V1; pairs[i * 2 + 1] = edges[i].V2; }
+                    var flat = new float[positions.Count * 3];
+                    for (int i = 0; i < positions.Count; i++)
+                    { flat[i * 3] = positions[i].x; flat[i * 3 + 1] = positions[i].y; flat[i * 3 + 2] = positions[i].z; }
+
+                    SendCommand.Invoke(new Poly_Ling.Data.EdgeExtrudeCommand(
+                        _project.CurrentModelIndex,
+                        new[] { model.IndexOf(mc) },
+                        pairs, lines.ToArray(), Vector3.zero, reversed.ToArray(),
+                        null, flat));
+                }
+            }
+            OnApplyCompleted?.Invoke();
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {

@@ -1,11 +1,11 @@
 // BoundaryEdgeOps.cs
-// 「エッジ」＝1つの面だけが使っている辺（面のうち共有を持たない辺）の抽出とグループ分け。
+// 「境界辺」＝1つの面だけが使っている辺（面のうち共有を持たない辺）の抽出とグループ分け。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
 // 【用語】
-//   エッジ       : 面 1 枚だけが使う辺。穴の縁・開いた面の外周がこれにあたる。
+//   境界辺       : 面 1 枚だけが使う辺。穴の縁・開いた面の外周がこれにあたる。
 //                  2頂点の面（線分）は面ではないので対象外。
-//   エッジグループ: 頂点を共有してつながるエッジの連結成分。穴 1 つ＝グループ 1 つになる。
+//   境界辺群: 頂点を共有してつながる境界辺の連結成分。穴 1 つ＝グループ 1 つになる。
 //
 // 位相計算のみを行う。ヒットテスト・描画・選択適用は呼び出し側の担当。
 
@@ -61,7 +61,7 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// メッシュの全エッジ（1面だけが使う辺）を返す。
+        /// メッシュの全境界辺（1面だけが使う辺）を返す。
         /// 3頂点未満の面（線分）は辺を持たないものとして無視する。
         /// </summary>
         public static HashSet<VertexPair> CollectBoundaryEdges(MeshObject mesh)
@@ -100,14 +100,14 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// エッジを頂点共有でつなぎ、連結成分（グループ）に分ける。
+        /// 境界辺を頂点共有でつなぎ、連結成分（グループ）に分ける。
         /// </summary>
         public static List<List<VertexPair>> BuildGroups(HashSet<VertexPair> edges)
         {
             var groups = new List<List<VertexPair>>();
             if (edges == null || edges.Count == 0) return groups;
 
-            // 頂点 → その頂点に接するエッジ
+            // 頂点 → その頂点に接する境界辺
             var byVertex = new Dictionary<int, List<VertexPair>>();
             foreach (var e in edges)
             {
@@ -165,7 +165,7 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// 指定頂点に接するエッジが属するグループを返す。無ければ空。
+        /// 指定頂点に接する境界辺が属するグループを返す。無ければ空。
         /// 複数グループに接する頂点（グループ同士が1点で接する形）では、
         /// 接するすべてのグループを合わせて返す。
         /// </summary>
@@ -182,7 +182,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 指定辺が属するグループを返す。その辺がエッジでなければ空。
+        /// 指定辺が属するグループを返す。その辺が境界辺でなければ空。
         /// </summary>
         public static List<VertexPair> GroupFromEdge(MeshObject mesh, VertexPair edge)
         {
@@ -193,7 +193,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 指定面が持つエッジのグループを返す。その面がエッジを持たなければ空。
+        /// 指定面が持つ境界辺のグループを返す。その面が境界辺を持たなければ空。
         /// </summary>
         public static List<VertexPair> GroupFromFace(MeshObject mesh, int face)
         {
@@ -243,11 +243,11 @@ namespace Poly_Ling.Ops
         }
 
         // ================================================================
-        // 選択範囲内のエッジ
+        // 選択範囲内の境界辺
         // ================================================================
 
         /// <summary>
-        /// 両端点が selectedVertices に含まれるエッジだけを返す。
+        /// 両端点が selectedVertices に含まれる境界辺だけを返す。
         /// </summary>
         public static List<VertexPair> EdgesWithinSelection(
             MeshObject mesh, HashSet<int> selectedVertices)
@@ -269,7 +269,7 @@ namespace Poly_Ling.Ops
         // ユーティリティ
         // ================================================================
 
-        /// <summary>エッジ列の構成頂点を返す。</summary>
+        /// <summary>境界辺列の構成頂点を返す。</summary>
         public static List<int> VerticesOf(List<VertexPair> edges)
         {
             var set = new HashSet<int>();

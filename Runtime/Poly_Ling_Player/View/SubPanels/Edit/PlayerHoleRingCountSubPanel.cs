@@ -1,6 +1,6 @@
 // PlayerHoleRingCountSubPanel.cs
 // HoleRingCountTool の Player 版サブパネル（UIToolkit）。
-// 「基準穴」「対象穴」をブリッジと同じやり方（エッジ上の頂点／辺を選んで取り込み）で
+// 「基準穴」「対象穴」をブリッジと同じやり方（境界辺上の頂点／辺を選んで取り込み）で
 // 指定し、対象穴の頂点数を基準穴に合わせる。自動選択は持たない。
 // Runtime/Poly_Ling_Player/View/SubPanels/Edit/ に配置
 
@@ -41,9 +41,9 @@ namespace Poly_Ling.Player
         private Toggle        _splitTriToggle;
         [UiControl("run", Safety = UiSafety.SafeWrite, Description = "対象穴の頂点数を基準穴に合わせる")]
         private Button        _executeBtn;
-        [UiControl("importBase", Safety = UiSafety.SafeWrite, Description = "ビューポートの選択（エッジ上の頂点か辺）を基準穴として取り込む")]
+        [UiControl("importBase", Safety = UiSafety.SafeWrite, Description = "ビューポートの選択（境界辺上の頂点か辺）を基準穴として取り込む")]
         private Button        _importBaseBtn;
-        [UiControl("importTarget", Safety = UiSafety.SafeWrite, Description = "ビューポートの選択（エッジ上の頂点か辺）を対象穴として取り込む")]
+        [UiControl("importTarget", Safety = UiSafety.SafeWrite, Description = "ビューポートの選択（境界辺上の頂点か辺）を対象穴として取り込む")]
         private Button        _importTargetBtn;
         [UiControl("clearSeeds", Safety = UiSafety.SafeWrite, Description = "取り込んだ基準穴・対象穴を破棄する（メッシュは変えない）")]
         private Button        _clearSeedsBtn;
@@ -77,7 +77,7 @@ namespace Poly_Ling.Player
             _root.Add(new HelpBox(
                 "ブリッジの「2つの穴の頂点数が同じ」制約を満たすための前処理です。\n" +
                 "基準穴の頂点数に合わせて、対象穴の頂点数だけを増減させます。基準穴は変わりません。\n" +
-                "エッジ（1面だけが使う辺）の上の頂点か辺をビューポートで選び、下のボタンで取り込みます。\n" +
+                "境界辺（1面だけが使う辺）の上の頂点か辺をビューポートで選び、下のボタンで取り込みます。\n" +
                 "対象が少ないときは辺の長い順に割り、多いときは辺の短い順に潰します。",
                 HelpBoxMessageType.Info));
 

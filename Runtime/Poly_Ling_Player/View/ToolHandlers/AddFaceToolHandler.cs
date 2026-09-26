@@ -335,6 +335,10 @@ namespace Poly_Ling.Player
 
             if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
                 return false;
+            // 面を書けるのは描画オブジェクトだけ。描画オブジェクトが未選択だと
+            // 編集対象が選択中のボーン・モーフになるため、ここで止める。
+            if (model.FirstDrawableMeshContext == null || model.ActiveMeshContext != model.FirstDrawableMeshContext)
+            { reason = "描画オブジェクトが選ばれていません（ボーン・モーフには面を追加できません）"; return false; }
 
             var idx = cmd.PointVertexIndices;
             var pos = cmd.PointPositions;

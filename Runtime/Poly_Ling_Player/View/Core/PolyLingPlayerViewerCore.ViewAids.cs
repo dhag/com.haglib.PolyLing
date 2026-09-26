@@ -303,7 +303,7 @@ namespace Poly_Ling.Player
         {
             // ビューポート操作は 3 択（操作なし / 要素選択 / 姿勢調整）。
             // 既定は「姿勢調整」＝オブジェクト原点の選択と姿勢調整（ObjectMove）。
-            // 3 択が効くのは、下区画が空で、一般パネルが操作モードを指定していないときだけ。
+            // 3 択が効くのは、3D 操作パネルがなく、一般パネルが操作モードを指定していないときだけ。
             SetPinnedOpen(_layoutRoot?.MeshListSection, true);
             _meshListSubPanel?.SyncObjectPoseToggles();
         }
@@ -370,6 +370,7 @@ namespace Poly_Ling.Player
             _shrinkSubPanel?.CancelIfActive();
             _shrinkFaceSubPanel?.CancelIfActive();
             _surfaceSnapHandler?.CancelIfActive();
+            _smoothEdgesHandler?.CancelIfActive();
 
             // UI 自動操作の強調枠と保留中のスクロールは、パネル切替のたびに消す。
             _uiAutomation?.OnRightPanelsHidden();

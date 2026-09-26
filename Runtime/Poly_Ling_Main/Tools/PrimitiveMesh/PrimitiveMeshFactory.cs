@@ -193,8 +193,8 @@ namespace Poly_Ling.PrimitiveMesh
         private static MeshObject GenerateRevolution(CreateRevolutionCommand c)
         {
             var profile = c.Params.Profile != null
-                ? new List<Vector2>(c.Params.Profile)
-                : new List<Vector2>();
+                ? new List<Vector3>(c.Params.Profile)
+                : new List<Vector3>();
             return RevolutionMeshGenerator.Generate(profile, c.Params);
         }
 
@@ -596,7 +596,7 @@ namespace Poly_Ling.PrimitiveMesh
             }
         }
 
-        private static List<Vector2> ToList(Vector2[] src)
-            => src != null ? new List<Vector2>(src) : new List<Vector2>();
+        private static List<Vector3> ToList(Vector3[] src)
+            => src != null ? new List<Vector3>(src) : new List<Vector3>();
     }
 }

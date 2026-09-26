@@ -78,6 +78,13 @@ namespace Poly_Ling.Serialization
         /// <summary>段が属する利用シーンの名前。空 = 指定なし。古いデータには無い（空として読む）。</summary>
         public string usageScene = "";
 
+        /// <summary>
+        /// args の中のプロファイルの点の成分数（ObjectGroupStep.ProfileDim）。
+        /// 古いデータには無く 0 として読まれる。0 は 2 成分（x,y）として扱い、
+        /// ToStep で ObjectGroupOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
+        /// </summary>
+        public int profileDim = 0;
+
         public List<ObjectGroupArgDTO>     args     = new List<ObjectGroupArgDTO>();
         public List<ObjectGroupMeshRefDTO> meshRefs = new List<ObjectGroupMeshRefDTO>();
 
@@ -97,6 +104,7 @@ namespace Poly_Ling.Serialization
                 refName         = s.RefName ?? "",
                 expansionPolicy = (int)s.ExpansionPolicy,
                 usageScene      = s.UsageScene ?? "",
+                profileDim      = s.ProfileDim,
             };
 
             foreach (var kv in s.SortedArgs())
@@ -134,6 +142,7 @@ namespace Poly_Ling.Serialization
                             ? (ScenarioExpansionPolicy)expansionPolicy
                             : ScenarioExpansionPolicy.Reference,
                 UsageScene = usageScene ?? "",
+                ProfileDim = profileDim >= ObjectGroupStep.CurrentProfileDim ? profileDim : 2,
             };
 
             if (args != null)
@@ -161,6 +170,7 @@ namespace Poly_Ling.Serialization
                 }
             }
 
+            Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyProfileArgs(s);
             return s;
         }
     }

@@ -58,6 +58,125 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
+        /// 辺（頂点番号の組）から線分と線分群を作る。頂点は既存のものを使い、増やさない。
+        /// 重複した辺・すでに 2 頂点の面がある辺は飛ばす。
+        /// つながりは分岐点（次数 3 以上）と端点（次数 1）で区切って 1 群ずつにし、
+        /// 全部が次数 2 の輪は閉じた群にする。始点は番号の小さい頂点から取る（同じ入力で同じ結果）。
+        /// </summary>
+        /// <param name="edgeVertexPairs">v1,v2,v1,v2,... の並び</param>
+        /// <param name="groupIndices">作った群の番号を足す先</param>
+        /// <param name="lineFaceIndices">足した線分（面）の番号を足す先</param>
+        public static bool CreateFromEdges(
+            MeshObject mo, IReadOnlyList<int> edgeVertexPairs,
+            List<int> groupIndices, List<int> lineFaceIndices, out string reason)
+        {
+            reason = null;
+            if (mo == null) { reason = "メッシュがありません"; return false; }
+            if (edgeVertexPairs == null || edgeVertexPairs.Count == 0) { reason = "辺がありません"; return false; }
+            if (edgeVertexPairs.Count % 2 != 0) { reason = "辺の頂点番号は 2 個ずつ並べてください"; return false; }
+
+            // すでにある線分
+            var existing = new HashSet<long>();
+            foreach (var f in mo.Faces)
+            {
+                if (f?.VertexIndices == null || f.VertexIndices.Count != 2) continue;
+                existing.Add(LineGroupOps.PairKey(f.VertexIndices[0], f.VertexIndices[1]));
+            }
+
+            // 新しく線分にする辺と、その辺だけでの隣接
+            var todo = new HashSet<long>();
+            var adj = new SortedDictionary<int, List<int>>();
+            for (int i = 0; i + 1 < edgeVertexPairs.Count; i += 2)
+            {
+                int a = edgeVertexPairs[i], b = edgeVertexPairs[i + 1];
+                if (a < 0 || b < 0 || a >= mo.VertexCount || b >= mo.VertexCount)
+                { reason = $"頂点番号が範囲外です: {a},{b}"; return false; }
+                if (a == b) { reason = $"同じ頂点どうしの辺です: {a}"; return false; }
+                long key = LineGroupOps.PairKey(a, b);
+                if (existing.Contains(key) || !todo.Add(key)) continue;
+                AddNeighbor(adj, a, b);
+                AddNeighbor(adj, b, a);
+            }
+            if (todo.Count == 0) { reason = "線分にする辺がありません（すべて線分になっています）"; return false; }
+            foreach (var list in adj.Values) list.Sort();
+
+            var used = new HashSet<long>();
+            int Degree(int v) => adj[v].Count;
+            int NextUnused(int v)
+            {
+                foreach (int n in adj[v])
+                    if (!used.Contains(LineGroupOps.PairKey(v, n))) return n;
+                return -1;
+            }
+
+            var chains = new List<(List<int> Order, bool Closed)>();
+
+            // 1. 端点・分岐点から歩く（開いた連なり）
+            foreach (var kv in adj)
+            {
+                int s = kv.Key;
+                if (Degree(s) == 2) continue;
+                foreach (int first in kv.Value)
+                {
+                    if (used.Contains(LineGroupOps.PairKey(s, first))) continue;
+                    var order = new List<int> { s };
+                    int cur = s, next = first;
+                    while (true)
+                    {
+                        used.Add(LineGroupOps.PairKey(cur, next));
+                        order.Add(next);
+                        if (Degree(next) != 2) break;
+                        int nn = NextUnused(next);
+                        if (nn < 0) break;
+                        cur = next; next = nn;
+                    }
+                    // 分岐点から出て同じ分岐点へ戻った輪は、閉じた群にする（同じ頂点を 2 度持たせない）。
+                    bool loop = order.Count >= 4 && order[order.Count - 1] == s;
+                    if (loop) order.RemoveAt(order.Count - 1);
+                    chains.Add((order, loop));
+                }
+            }
+
+            // 2. 残りは次数 2 だけの輪（閉じた連なり）
+            foreach (var kv in adj)
+            {
+                int s = kv.Key;
+                int first = NextUnused(s);
+                if (first < 0) continue;
+                var order = new List<int> { s };
+                used.Add(LineGroupOps.PairKey(s, first));
+                int cur = first;
+                while (cur != s)
+                {
+                    order.Add(cur);
+                    int nn = NextUnused(cur);
+                    if (nn < 0) break;
+                    used.Add(LineGroupOps.PairKey(cur, nn));
+                    cur = nn;
+                }
+                chains.Add((order, cur == s && order.Count >= 3));
+            }
+
+            foreach (var (order, closed) in chains)
+            {
+                int before = mo.Faces.Count;
+                AddSegmentFaces(mo, order, closed);
+                for (int fi = before; fi < mo.Faces.Count; fi++) lineFaceIndices?.Add(fi);
+                int gi = LineGroupOps.AddGroup(mo, order, closed, null);
+                if (gi < 0) { reason = "線分群を作れませんでした"; return false; }
+                groupIndices?.Add(gi);
+            }
+            mo.RebuildIdSets();
+            return true;
+        }
+
+        private static void AddNeighbor(SortedDictionary<int, List<int>> adj, int v, int n)
+        {
+            if (!adj.TryGetValue(v, out var list)) { list = new List<int>(); adj[v] = list; }
+            list.Add(n);
+        }
+
+        /// <summary>
         /// 群の点列（と任意でハンドル）を差し替える。点の数が同じなら頂点を動かすだけ。
         /// 増えた点は新しい頂点を作り、減った点の頂点は他から使われていなければ消す。
         /// </summary>

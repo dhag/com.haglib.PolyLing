@@ -27,13 +27,35 @@ namespace Poly_Ling.Player
         private DropdownField _modeDropdown;
         [UiControl("snapToAxis", Description = "軸方向へ吸着する")]
         private Toggle _snapToggle;
+        [UiControl("gizmo", Description = "押し出しに使うギズモ（なし／移動／回転／拡大縮小）")]
+        private DropdownField _gizmoDropdown;
+        [UiControl("extrudePaused", Description = "押し出しの一時停止（チェック中は普通の移動・回転・拡大縮小）")]
+        private Toggle _pauseToggle;
+
+        // 並びは EdgeExtrudeToolHandler.GizmoKind の値と同じ（None=0, Move=1, Rotate=2, Scale=3）
+        private static readonly System.Collections.Generic.List<string> GizmoChoices =
+            new System.Collections.Generic.List<string> { "なし", "移動", "回転", "拡大縮小" };
 
         public void Build(VisualElement parent)
         {
             _root = new VisualElement(); _root.style.paddingTop = 4; _root.style.paddingLeft = 4; _root.style.paddingRight = 4;
             parent.Add(_root);
             _root.Add(Header("Edge Extrude"));
-            _root.Add(new HelpBox("選択エッジをドラッグして押し出します", HelpBoxMessageType.Info));
+            _root.Add(new HelpBox("選択エッジをドラッグして押し出します。ギズモを掴んでも、選択中の辺・線分を押し出して移動・回転・拡大縮小できます", HelpBoxMessageType.Info));
+
+            _gizmoDropdown = new DropdownField("ギズモ", GizmoChoices, 1);
+            _gizmoDropdown.style.color = new StyleColor(Color.white);
+            _gizmoDropdown.RegisterValueChangedCallback(e =>
+            {
+                int idx = GizmoChoices.IndexOf(e.newValue);
+                if (idx >= 0) Surface.Set(Tool, "gizmo", (EdgeExtrudeToolHandler.GizmoKind)idx);
+            });
+            _root.Add(_gizmoDropdown);
+
+            _pauseToggle = new Toggle("押し出しの一時停止") { value = false };
+            _pauseToggle.style.color = new StyleColor(Color.white);
+            _pauseToggle.RegisterValueChangedCallback(e => Surface.Set(Tool, "extrudePaused", e.newValue));
+            _root.Add(_pauseToggle);
             var modeChoices = new System.Collections.Generic.List<string> { "ViewPlane", "Normal", "Free" };
             var modeValues = new[] { EdgeExtrudeSettings.ExtrudeMode.ViewPlane, EdgeExtrudeSettings.ExtrudeMode.Normal, EdgeExtrudeSettings.ExtrudeMode.Free };
             var modeDD = new DropdownField("Mode", modeChoices, 0);
@@ -73,6 +95,11 @@ namespace Poly_Ling.Player
         {
             if (Surface == null) return;
             _dragSensField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "dragSensitivity", 1f));
+            int gi = (int)Surface.Get(Tool, "gizmo", EdgeExtrudeToolHandler.GizmoKind.Move);
+            if (_gizmoDropdown != null && gi >= 0 && gi < GizmoChoices.Count && _gizmoDropdown.index != gi)
+                _gizmoDropdown.SetValueWithoutNotify(GizmoChoices[gi]);
+            bool paused = Surface.GetBool(Tool, "extrudePaused");
+            if (_pauseToggle != null && _pauseToggle.value != paused) _pauseToggle.SetValueWithoutNotify(paused);
         }
 
         // ── ヘルパー ──────────────────────────────────────────────────────

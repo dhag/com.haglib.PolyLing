@@ -442,8 +442,8 @@ namespace Poly_Ling.VMD
             // IK解決
             // ApplyBonePose内でComputeWorldMatrices()が呼ばれた後、
             // VMD適用済みのWorldMatrixを入力としてIKを解く。
-            // CCDIKSolverはWorldMatrixを直接操作して結果を反映する
-            // （BonePoseDataレイヤーは使わない）。
+            // CCDIKSolver は解いた回転を BonePoseData の "IK" レイヤーへ書き、
+            // WorldMatrix も更新する。"IK" レイヤーは次の Solve の先頭と ResetAllBones で消える。
             if (EnableIK)
             {
                 _ikSolver.DebugEnabled = DebugLog;
@@ -583,7 +583,10 @@ namespace Poly_Ling.VMD
         public int MappedMorphCount => _morphNameToIndex.Count;
 
         /// <summary>
-        /// すべてのボーンをリセット（VMDレイヤーをクリア）
+        /// すべてのボーンをリセット（VMD レイヤーと IK レイヤーをクリア）。
+        /// IK レイヤーは CCDIKSolver が書く（CCDIKSolver.cs の SetLayerRotation("IK", …)）。
+        /// 消し忘れると、後から当てた別の姿勢（統合モーションの再生など）に
+        /// 前回の IK の回転が上乗せされる（2026-09-26 に足・ひざで 2 倍になった実測あり）。
         /// </summary>
         public void ResetAllBones(ModelContext model)
         {
@@ -594,8 +597,9 @@ namespace Poly_Ling.VMD
                 var ctx = model.MeshContextList[entry.MasterIndex];
                 if (ctx?.BonePoseData != null)
                 {
-                    // VMDレイヤーのみクリア（Manual等は残す）
+                    // VMD・IK レイヤーのみクリア（Manual等は残す）
                     ctx.BonePoseData.ClearLayer("VMD");
+                    ctx.BonePoseData.ClearLayer("IK");
                 }
             }
 

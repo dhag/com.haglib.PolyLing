@@ -1,5 +1,7 @@
 // Assets/Editor/MeshCreators/Profile2DExtrude/Profile2DExtrudeMeshGenerator.cs
 // 2D閉曲線押し出しメッシュ生成（Poly2Tri使用）
+// 【3D の点】Loop の点は 3D。面の分割・オフセット・対称の処理は xy だけで行い、
+//   各点の z は「高さ」として頂点の z へ足す（凹凸を保つ）。厚みとベベルは Z 方向のまま。
 
 using System;
 using System.Collections.Generic;
@@ -51,22 +53,30 @@ namespace Poly_Ling.Profile2DExtrude
 
             try
             {
-                // 変換済み座標を保持
+                // 変換済み座標を保持。面の分割・オフセット・対称の処理は xy だけで行い、
+                // 各点の z（高さ）は heights に同じ並びで持って最後に頂点へ足す（凹凸を保つ）。
                 var transformedLoops = new List<List<Vector2>>();
+                var heights = new List<List<float>>();
                 var isHoleFlags = new List<bool>();
+                bool hasHeight = false;
 
                 foreach (var loop in loops)
                 {
                     if (loop.Points.Count < 3) continue;
 
                     var transformed = new List<Vector2>();
+                    var h = new List<float>();
                     foreach (var pt in loop.Points)
                     {
                         float x = pt.x * p.Scale + p.Offset.x;
                         float y = (p.FlipY ? -pt.y : pt.y) * p.Scale + p.Offset.y;
                         transformed.Add(new Vector2(x, y));
+                        float z = pt.z * p.Scale;
+                        h.Add(z);
+                        if (Mathf.Abs(z) > 1e-7f) hasHeight = true;
                     }
                     transformedLoops.Add(transformed);
+                    heights.Add(h);
                     isHoleFlags.Add(loop.IsHole);
                 }
 
@@ -74,7 +84,7 @@ namespace Poly_Ling.Profile2DExtrude
                 List<bool[]> onAxisFlags = null;
                 if (p.SymmetryMode)
                 {
-                    ApplySymmetry(transformedLoops, isHoleFlags, out onAxisFlags);
+                    ApplySymmetry(transformedLoops, heights, isHoleFlags, out onAxisFlags);
                     bool hasOuterAfter = false;
                     for (int i = 0; i < transformedLoops.Count; i++)
                         if (!isHoleFlags[i] && transformedLoops[i].Count >= 3) { hasOuterAfter = true; break; }
@@ -87,7 +97,7 @@ namespace Poly_Ling.Profile2DExtrude
                 {
                     // 厚みなし：平面のみ。
                     // 正面ビューは +Z 側なので、1枚板の表は +Z へ向ける（平面 Orientation=XY と同じ）。
-                    GenerateFlatFaceReindexed(md, transformedLoops, transformedLoops, isHoleFlags, 0f, Vector3.forward, true);
+                    GenerateFlatFaceReindexed(md, transformedLoops, transformedLoops, heights, isHoleFlags, 0f, Vector3.forward, true);
                 }
                 else
                 {
@@ -100,8 +110,9 @@ namespace Poly_Ling.Profile2DExtrude
                     // ベベルで潰れる小突起を base からも除去（扇状の折れ対策）
                     float maxOff = Mathf.Max(frontOffset, backOffset);
                     if (!p.SymmetryMode && maxOff > 0.001f)
-                        transformedLoops = SimplifyBaseForBevel(transformedLoops, isHoleFlags, maxOff);
+                        transformedLoops = SimplifyBaseForBevel(transformedLoops, heights, isHoleFlags, maxOff);
 
+                    // オフセット後の点数は base と一致するので、高さは base の [li][pi] をそのまま使う。
                     var offsetFrontLoops = ApplyEdgeOffset(transformedLoops, isHoleFlags, frontOffset);
                     var offsetBackLoops = ApplyEdgeOffset(transformedLoops, isHoleFlags, backOffset);
 
@@ -112,18 +123,21 @@ namespace Poly_Ling.Profile2DExtrude
                     if (p.EdgeInward)
                     {
                         // Outwardモード
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetFrontLoops, isHoleFlags, -halfThick, Vector3.back, false);
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetBackLoops, isHoleFlags, halfThick, Vector3.forward, true);
-                        GenerateSideFacesOutward(md, transformedLoops, offsetFrontLoops, offsetBackLoops, isHoleFlags, halfThick, p);
+                        GenerateFlatFaceReindexed(md, transformedLoops, offsetFrontLoops, heights, isHoleFlags, -halfThick, Vector3.back, false);
+                        GenerateFlatFaceReindexed(md, transformedLoops, offsetBackLoops, heights, isHoleFlags, halfThick, Vector3.forward, true);
+                        GenerateSideFacesOutward(md, transformedLoops, offsetFrontLoops, offsetBackLoops, heights, isHoleFlags, halfThick, p);
                     }
                     else
                     {
                         // 通常モード
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetFrontLoops, isHoleFlags, -halfThick, Vector3.back, false);
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetBackLoops, isHoleFlags, halfThick, Vector3.forward, true);
-                        GenerateSideFacesNormal(md, transformedLoops, offsetFrontLoops, offsetBackLoops, isHoleFlags, halfThick, p);
+                        GenerateFlatFaceReindexed(md, transformedLoops, offsetFrontLoops, heights, isHoleFlags, -halfThick, Vector3.back, false);
+                        GenerateFlatFaceReindexed(md, transformedLoops, offsetBackLoops, heights, isHoleFlags, halfThick, Vector3.forward, true);
+                        GenerateSideFacesNormal(md, transformedLoops, offsetFrontLoops, offsetBackLoops, heights, isHoleFlags, halfThick, p);
                     }
                 }
+
+                // 高さのある点が 1 つでもあれば、平面前提で入れた法線は合わないので計算し直す。
+                if (hasHeight) md.RecalculateNormals();
 
                 // 編集面の x はワールド -X へ載せる（AuthoringFrame の規約）。
                 // 生成は編集面の x をそのまま +X に置いているので、最後に鏡映して合わせる。
@@ -275,7 +289,8 @@ namespace Poly_Ling.Profile2DExtrude
 
         // ベベルで潰れる（ミター後に同座標へ collapse する）小突起を、base 輪郭からも1点へマージする。
         // collapse が消えるまで反復（上限8）。外周のみ対象、穴はそのまま。ベベル幅より小さい凸は除去される。
-        private static List<List<Vector2>> SimplifyBaseForBevel(List<List<Vector2>> loops, List<bool> isHoleFlags, float offset)
+        // heights は loops と同じ並びの高さ。潰した点は高さも同じ群の平均にし、落とした点の高さは捨てる（in-place で置き換える）。
+        private static List<List<Vector2>> SimplifyBaseForBevel(List<List<Vector2>> loops, List<List<float>> heights, List<bool> isHoleFlags, float offset)
         {
             if (offset <= 0.001f) return loops;
 
@@ -286,6 +301,7 @@ namespace Poly_Ling.Profile2DExtrude
                 if (isHoleFlags[li] || loop == null || loop.Count < 3) { result.Add(loop); continue; }
 
                 var cur = new List<Vector2>(loop);
+                var curH = new List<float>(heights[li]);
                 for (int iter = 0; iter < 8; iter++)
                 {
                     int n = cur.Count;
@@ -302,30 +318,38 @@ namespace Poly_Ling.Profile2DExtrude
 
                     var drop = new bool[n];
                     var rep  = new Dictionary<int, Vector2>();
+                    var repH = new Dictionary<int, float>();
                     bool any = false;
                     foreach (var kv in groups)
                     {
                         if (kv.Value.Count < 2) continue;
                         any = true;
                         Vector2 c = Vector2.zero;
-                        foreach (int idx in kv.Value) c += cur[idx];
+                        float ch = 0f;
+                        foreach (int idx in kv.Value) { c += cur[idx]; ch += curH[idx]; }
                         c /= kv.Value.Count;
+                        ch /= kv.Value.Count;
                         int keep = kv.Value[0];
                         rep[keep] = c;
+                        repH[keep] = ch;
                         for (int t = 1; t < kv.Value.Count; t++) drop[kv.Value[t]] = true;
                     }
                     if (!any) break;
 
                     var next = new List<Vector2>(n);
+                    var nextH = new List<float>(n);
                     for (int i = 0; i < n; i++)
                     {
                         if (drop[i]) continue;
                         next.Add(rep.TryGetValue(i, out var rp) ? rp : cur[i]);
+                        nextH.Add(repH.TryGetValue(i, out var rh) ? rh : curH[i]);
                     }
                     if (next.Count < 3) break;   // 潰しすぎ防止
                     cur = next;
+                    curH = nextH;
                 }
                 result.Add(cur);
+                heights[li] = curH;
             }
             return result;
         }
@@ -366,9 +390,10 @@ namespace Poly_Ling.Profile2DExtrude
         // 元輪郭 topoLoops で三角化し、その位相を用いて posLoops の位置で平面を生成する。
         // 自己交差し得るインセット(posLoops)を Poly2Tri に渡さないため、Head/Tail 混入が起きない。
         // topoLoops と posLoops は同一の頂点数・対応 [li][pi] でなければならない。
+        // heights は topoLoops と同じ並びの各点の高さ。頂点の z は「z + 高さ」。
         private static void GenerateFlatFaceReindexed(
             MeshObject md, List<List<Vector2>> topoLoops, List<List<Vector2>> posLoops,
-            List<bool> isHoleFlags, float z, Vector3 normal, bool flipWinding)
+            List<List<float>> heights, List<bool> isHoleFlags, float z, Vector3 normal, bool flipWinding)
         {
             var outers = new List<int>();
             var holes  = new List<int>();
@@ -453,7 +478,7 @@ namespace Poly_Ling.Profile2DExtrude
                             int pi = (int)(key & 0xffffffff);
                             Vector2 p2 = posLoops[li][pi];
                             idx = md.VertexCount;
-                            md.Vertices.Add(new Vertex(new Vector3(p2.x, p2.y, z), new Vector2(p2.x, p2.y), normal));
+                            md.Vertices.Add(new Vertex(new Vector3(p2.x, p2.y, z + heights[li][pi]), new Vector2(p2.x, p2.y), normal));
                             vertexMap[key] = idx;
                         }
                         indices[i] = idx;
@@ -487,6 +512,7 @@ namespace Poly_Ling.Profile2DExtrude
         /// </summary>
         private static void GenerateSideFacesOutward(MeshObject md, List<List<Vector2>> baseLoops,
                                                       List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
+                                                      List<List<float>> heights,
                                                       List<bool> isHoleFlags, float halfThick, Profile2DGenerateParams p)
         {
             for (int li = 0; li < baseLoops.Count; li++)
@@ -494,6 +520,7 @@ namespace Poly_Ling.Profile2DExtrude
                 var baseLoop = baseLoops[li];
                 var offsetFront = offsetFrontLoops[li];
                 var offsetBack = offsetBackLoops[li];
+                var h = heights[li];
                 bool isHole = isHoleFlags[li];
 
                 int n = baseLoop.Count;
@@ -514,7 +541,7 @@ namespace Poly_Ling.Profile2DExtrude
                         GenerateEdgeFaces(md,
                             offsetFront[i], offsetFront[next],
                             baseLoop[i], baseLoop[next],
-                            -halfThick, -halfThick + p.EdgeSizeFront,
+                            -halfThick, -halfThick + p.EdgeSizeFront, h[i], h[next],
                             sideNormal, Vector3.back,
                             p.SegmentsFront, isHole, concave: false, isBackFace: false);
                     }
@@ -529,10 +556,10 @@ namespace Poly_Ling.Profile2DExtrude
                         Vector2 backPt0 = p.SegmentsBack > 0 ? baseLoop[i] : offsetBack[i];
                         Vector2 backPt1 = p.SegmentsBack > 0 ? baseLoop[next] : offsetBack[next];
 
-                        Vector3 v0 = new Vector3(frontPt0.x, frontPt0.y, frontZ);
-                        Vector3 v1 = new Vector3(frontPt1.x, frontPt1.y, frontZ);
-                        Vector3 v2 = new Vector3(backPt1.x, backPt1.y, backZ);
-                        Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ);
+                        Vector3 v0 = new Vector3(frontPt0.x, frontPt0.y, frontZ + h[i]);
+                        Vector3 v1 = new Vector3(frontPt1.x, frontPt1.y, frontZ + h[next]);
+                        Vector3 v2 = new Vector3(backPt1.x, backPt1.y, backZ + h[next]);
+                        Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ + h[i]);
 
                         int idx = md.VertexCount;
                         md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), sideNormal));
@@ -552,7 +579,7 @@ namespace Poly_Ling.Profile2DExtrude
                         GenerateEdgeFaces(md,
                             baseLoop[i], baseLoop[next],
                             offsetBack[i], offsetBack[next],
-                            halfThick - p.EdgeSizeBack, halfThick,
+                            halfThick - p.EdgeSizeBack, halfThick, h[i], h[next],
                             sideNormal, Vector3.forward,
                             p.SegmentsBack, isHole, concave: true, isBackFace: true);
                     }
@@ -565,6 +592,7 @@ namespace Poly_Ling.Profile2DExtrude
         /// </summary>
         private static void GenerateSideFacesNormal(MeshObject md, List<List<Vector2>> baseLoops,
                                                      List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
+                                                      List<List<float>> heights,
                                                      List<bool> isHoleFlags, float halfThick, Profile2DGenerateParams p)
         {
             for (int li = 0; li < baseLoops.Count; li++)
@@ -572,6 +600,7 @@ namespace Poly_Ling.Profile2DExtrude
                 var baseLoop = baseLoops[li];
                 var offsetFront = offsetFrontLoops[li];
                 var offsetBack = offsetBackLoops[li];
+                var h = heights[li];
                 bool isHole = isHoleFlags[li];
 
                 int n = baseLoop.Count;
@@ -592,7 +621,7 @@ namespace Poly_Ling.Profile2DExtrude
                         GenerateEdgeFaces(md,
                             offsetFront[i], offsetFront[next],
                             baseLoop[i], baseLoop[next],
-                            -halfThick, -halfThick + p.EdgeSizeFront,
+                            -halfThick, -halfThick + p.EdgeSizeFront, h[i], h[next],
                             sideNormal, Vector3.back,
                             p.SegmentsFront, isHole, concave: true, isBackFace: false);
                     }
@@ -607,10 +636,10 @@ namespace Poly_Ling.Profile2DExtrude
                         Vector2 backPt0 = p.SegmentsBack > 0 ? baseLoop[i] : offsetBack[i];
                         Vector2 backPt1 = p.SegmentsBack > 0 ? baseLoop[next] : offsetBack[next];
 
-                        Vector3 v0 = new Vector3(frontPt0.x, frontPt0.y, frontZ);
-                        Vector3 v1 = new Vector3(frontPt1.x, frontPt1.y, frontZ);
-                        Vector3 v2 = new Vector3(backPt1.x, backPt1.y, backZ);
-                        Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ);
+                        Vector3 v0 = new Vector3(frontPt0.x, frontPt0.y, frontZ + h[i]);
+                        Vector3 v1 = new Vector3(frontPt1.x, frontPt1.y, frontZ + h[next]);
+                        Vector3 v2 = new Vector3(backPt1.x, backPt1.y, backZ + h[next]);
+                        Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ + h[i]);
 
                         int idx = md.VertexCount;
                         md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), sideNormal));
@@ -630,7 +659,7 @@ namespace Poly_Ling.Profile2DExtrude
                         GenerateEdgeFaces(md,
                             baseLoop[i], baseLoop[next],
                             offsetBack[i], offsetBack[next],
-                            halfThick - p.EdgeSizeBack, halfThick,
+                            halfThick - p.EdgeSizeBack, halfThick, h[i], h[next],
                             sideNormal, Vector3.forward,
                             p.SegmentsBack, isHole, concave: false, isBackFace: true);
                     }
@@ -645,6 +674,7 @@ namespace Poly_Ling.Profile2DExtrude
             Vector2 outer0, Vector2 outer1,
             Vector2 inner0, Vector2 inner1,
             float outerZ, float innerZ,
+            float h0, float h1,
             Vector3 sideNormal,
             Vector3 faceNormal,
             int segments,
@@ -655,10 +685,10 @@ namespace Poly_Ling.Profile2DExtrude
             if (segments == 1)
             {
                 // ベベル
-                Vector3 v0 = new Vector3(outer0.x, outer0.y, outerZ);
-                Vector3 v1 = new Vector3(outer1.x, outer1.y, outerZ);
-                Vector3 v2 = new Vector3(inner1.x, inner1.y, innerZ);
-                Vector3 v3 = new Vector3(inner0.x, inner0.y, innerZ);
+                Vector3 v0 = new Vector3(outer0.x, outer0.y, outerZ + h0);
+                Vector3 v1 = new Vector3(outer1.x, outer1.y, outerZ + h1);
+                Vector3 v2 = new Vector3(inner1.x, inner1.y, innerZ + h1);
+                Vector3 v3 = new Vector3(inner0.x, inner0.y, innerZ + h0);
 
                 Vector3 bevelNormal = (sideNormal + faceNormal).normalized;
 
@@ -722,10 +752,10 @@ namespace Poly_Ling.Profile2DExtrude
                         n1 = Vector3.Slerp(faceNormal, sideNormal, t1).normalized;
                     }
 
-                    Vector3 v0 = new Vector3(p0_0.x, p0_0.y, z0);
-                    Vector3 v1 = new Vector3(p0_1.x, p0_1.y, z0);
-                    Vector3 v2 = new Vector3(p1_1.x, p1_1.y, z1);
-                    Vector3 v3 = new Vector3(p1_0.x, p1_0.y, z1);
+                    Vector3 v0 = new Vector3(p0_0.x, p0_0.y, z0 + h0);
+                    Vector3 v1 = new Vector3(p0_1.x, p0_1.y, z0 + h1);
+                    Vector3 v2 = new Vector3(p1_1.x, p1_1.y, z1 + h1);
+                    Vector3 v3 = new Vector3(p1_0.x, p1_0.y, z1 + h0);
 
                     int idx = md.VertexCount;
                     md.Vertices.Add(new Vertex(v0, new Vector2(0, t0), n0));
@@ -748,9 +778,11 @@ namespace Poly_Ling.Profile2DExtrude
         //  非交差の x<=0 頂点 : (0, clamp(y, Ymin, Ymax))。Ymin/Ymax は交差軸Yの最小/最大。
         // その後 非軸点を先頭へ回転→軸run を y整列→同y結合。全点 x<=0（右側消失）のループは破棄。
         // 交差が無く右側のみのループは無変換。分割ケース（軸を複数回跨ぐ形状）は想定外。
-        // loops/isHoleFlags は in-place で更新。onAxisFlags は残存ループ各頂点の軸上フラグ。
+        // loops/heights/isHoleFlags は in-place で更新。onAxisFlags は残存ループ各頂点の軸上フラグ。
+        // 高さ（heights）：軸へ寄せた点は元の点の高さを持ち越す（Type B は正の側の点の高さ）。
+        //   整列では点と一緒に動き、同y結合で捨てた点の高さは捨てる。
         private static void ApplySymmetry(
-            List<List<Vector2>> loops, List<bool> isHoleFlags, out List<bool[]> onAxisFlags)
+            List<List<Vector2>> loops, List<List<float>> heights, List<bool> isHoleFlags, out List<bool[]> onAxisFlags)
         {
             const float mergeTol = 1e-4f;
             onAxisFlags = new List<bool[]>();
@@ -758,6 +790,7 @@ namespace Poly_Ling.Profile2DExtrude
             for (int li = loops.Count - 1; li >= 0; li--)
             {
                 var srcLoop = loops[li];
+                var srcH = heights[li];
                 int n = srcLoop.Count;
 
                 // --- 符号判定（tol はX最大絶対値の2%、最低1e-4） ---
@@ -783,6 +816,8 @@ namespace Poly_Ling.Profile2DExtrude
                 // role: 0=右側保持 / 1=TypeA / 2=TypeB負側端点 / 3=非交差の左側
                 var role = new int[n];
                 var axisY = new float[n];
+                var axisH = new float[n];
+                for (int i = 0; i < n; i++) axisH[i] = srcH[i];
                 bool hasCross = false;
                 float yMin = float.MaxValue, yMax = float.MinValue;
 
@@ -806,7 +841,7 @@ namespace Poly_Ling.Profile2DExtrude
                     {
                         int neg = sign[i] < 0 ? i : q;
                         int pos = sign[i] < 0 ? q : i;
-                        role[neg] = 2; axisY[neg] = srcLoop[pos].y;
+                        role[neg] = 2; axisY[neg] = srcLoop[pos].y; axisH[neg] = srcH[pos];
                         hasCross = true;
                         yMin = Mathf.Min(yMin, axisY[neg]); yMax = Mathf.Max(yMax, axisY[neg]);
                     }
@@ -819,29 +854,30 @@ namespace Poly_Ling.Profile2DExtrude
                     for (int i = 0; i < n; i++) if (srcLoop[i].x > 0f) { hasPos = true; break; }
                     if (!hasPos)
                     {
-                        loops.RemoveAt(li); isHoleFlags.RemoveAt(li); continue;
+                        loops.RemoveAt(li); heights.RemoveAt(li); isHoleFlags.RemoveAt(li); continue;
                     }
                     onAxisFlags.Insert(0, new bool[n]);   // 全 false
                     continue;
                 }
 
                 // 頂点構築：交差点＝軸Yへ、非交差x<=0＝Ymin..Ymaxへクリップ、右側＝保持
-                var pts = new List<Vector2>(n);
+                // 並べ替え・結合で点と高さが離れないよう、ここからは (x, y, 高さ) の 3 成分で持つ。
+                var pts = new List<Vector3>(n);
                 var flag = new List<bool>(n);
                 int axisCount = 0;
                 for (int i = 0; i < n; i++)
                 {
                     if (role[i] == 1 || role[i] == 2)
                     {
-                        pts.Add(new Vector2(0f, axisY[i])); flag.Add(true); axisCount++;
+                        pts.Add(new Vector3(0f, axisY[i], axisH[i])); flag.Add(true); axisCount++;
                     }
                     else if (srcLoop[i].x <= 0f)
                     {
-                        pts.Add(new Vector2(0f, Mathf.Clamp(srcLoop[i].y, yMin, yMax))); flag.Add(true); axisCount++;
+                        pts.Add(new Vector3(0f, Mathf.Clamp(srcLoop[i].y, yMin, yMax), srcH[i])); flag.Add(true); axisCount++;
                     }
                     else
                     {
-                        pts.Add(srcLoop[i]); flag.Add(false);
+                        pts.Add(new Vector3(srcLoop[i].x, srcLoop[i].y, srcH[i])); flag.Add(false);
                     }
                 }
 
@@ -849,6 +885,7 @@ namespace Poly_Ling.Profile2DExtrude
                 if (axisCount == n)
                 {
                     loops.RemoveAt(li);
+                    heights.RemoveAt(li);
                     isHoleFlags.RemoveAt(li);
                     continue;
                 }
@@ -857,14 +894,14 @@ namespace Poly_Ling.Profile2DExtrude
                 int rot = flag.FindIndex(f => !f);   // axisCount<n なので必ず存在
                 if (rot > 0)
                 {
-                    var rp = new List<Vector2>(n);
+                    var rp = new List<Vector3>(n);
                     var rf = new List<bool>(n);
                     for (int i = 0; i < n; i++) { rp.Add(pts[(i + rot) % n]); rf.Add(flag[(i + rot) % n]); }
                     pts = rp; flag = rf;
                 }
 
                 // 連続する軸上区間ごとに y整列＋同y結合
-                var outPts = new List<Vector2>(n);
+                var outPts = new List<Vector3>(n);
                 var outFlag = new List<bool>(n);
                 int k = 0;
                 while (k < n)
@@ -877,7 +914,7 @@ namespace Poly_Ling.Profile2DExtrude
                     float prevY = pts[k - 1].y;                 // k>=1（先頭非軸を保証）
                     float nextY = (j < n) ? pts[j].y : pts[0].y;
 
-                    var seg = new List<Vector2>(j - k);
+                    var seg = new List<Vector3>(j - k);
                     for (int t = k; t < j; t++) seg.Add(pts[t]);
                     seg.Sort((a, b) => a.y.CompareTo(b.y));
                     if (prevY > nextY) seg.Reverse();
@@ -894,7 +931,11 @@ namespace Poly_Ling.Profile2DExtrude
                     k = j;
                 }
 
-                loops[li] = outPts;
+                var outXY = new List<Vector2>(outPts.Count);
+                var outH  = new List<float>(outPts.Count);
+                foreach (var q in outPts) { outXY.Add(new Vector2(q.x, q.y)); outH.Add(q.z); }
+                loops[li] = outXY;
+                heights[li] = outH;
                 onAxisFlags.Insert(0, outFlag.ToArray());
             }
         }

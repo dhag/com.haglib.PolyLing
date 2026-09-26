@@ -10,8 +10,8 @@
 // ============================================================
 //
 //   Unity の Humanoid マッスルは正規化された無次元量で、モデルに依存しない。
-//   T ポーズ基準の定義値（UnityClipApplier.CanonMuscleTable）から
-//   そのままローカル回転を作れるので、ModelContext も Humanoid 割り当ても要らない。
+//   正準骨格（T ポーズ）の Avatar に当てれば Unity 自身がローカル回転を解く
+//   （CanonMuscleSolver）ので、ModelContext も Humanoid 割り当ても要らない。
 //
 //   VRMC_vrm_animation が持つのは humanBones のノード索引だけで
 //   （com.vrmc.vrm/Runtime/Format/Animation/Format.g.cs）、骨の長さも
@@ -34,10 +34,10 @@
 // ■ 定数は複製しない
 // ============================================================
 //
-//   Zero・dof 軸・可動端・正準階層・T ポーズ方向はすべて
-//   UnityClipApplier が唯一の置き場である。ここでは
-//   TryGetCanonLocalRotation / TryGetCanonParent / TryGetCanonDir /
-//   CanonHumanoidNames を通して引くだけで、値を書き写さない。
+//   Zero・dof 軸・可動端の合成は Unity に任せる（CanonMuscleSolver。自前で合成しない）。
+//   正準階層・T ポーズ方向・Humanoid 名は UnityClipApplier が唯一の置き場で、
+//   TryGetCanonParent / TryGetCanonDir / CanonHumanoidNames を通して引くだけで、
+//   値を書き写さない。
 //
 // ============================================================
 // ■ Hips の平行移動と身体の向き（RootT / RootQ）
@@ -218,20 +218,52 @@ namespace Poly_Ling.UnityClip
 
         /// <summary>
         /// timeSec のマッスル値から各ボーンのローカル回転を作って骨格へ入れる。
-        /// クリップが駆動していないボーンは単位のまま（レスト＝T ポーズ）。
+        /// マッスル → 回転は CanonMuscleSolver（Unity 自身の SetHumanPose）で解く。
+        /// クリップがトラックを持たないマッスルは 0 として解く。
         /// </summary>
         public void PoseFromMuscles(
             IReadOnlyDictionary<string, UnityMuscleTrackDTO> muscleByName, float timeSec)
         {
-            for (int i = 0; i < _ordered.Count; i++)
+            if (_solver == null)
             {
-                _ordered[i].localRotation =
-                    UnityClipApplier.TryGetCanonLocalRotation(
-                        _orderedName[i], muscleByName, timeSec, out Quaternion local)
-                    ? local
-                    : Quaternion.identity;
+                _solver = CanonMuscleSolver.Shared(null, out string reason);
+                if (_solver == null)
+                {
+                    Debug.LogError($"[UnityClipCanonVrmAnimation] 正準 Avatar を組めません: {reason}");
+                    return;
+                }
             }
+
+            var names = HumanTrait.MuscleName;
+            if (_muscleBuf == null || _muscleBuf.Length != names.Length) _muscleBuf = new float[names.Length];
+            for (int m = 0; m < names.Length; m++)
+                _muscleBuf[m] = (muscleByName != null && muscleByName.TryGetValue(names[m], out var mt))
+                    ? UnityClipApplier.SampleMuscleWeight(mt, timeSec)
+                    : 0f;
+            _solver.Solve(_muscleBuf);
+
+            foreach (var kv in HumanBones)
+                kv.Value.localRotation = IsDriven((int)kv.Key, muscleByName)
+                                         && _solver.TryGetLocal(kv.Key, out Quaternion local)
+                    ? local
+                    : Quaternion.identity;   // クリップが駆動していないボーンはレスト（T ポーズ）のまま
         }
+
+        // そのボーンの dof のどれかにトラックがあるか。
+        private static bool IsDriven(int bone, IReadOnlyDictionary<string, UnityMuscleTrackDTO> muscleByName)
+        {
+            if (muscleByName == null) return false;
+            var names = HumanTrait.MuscleName;
+            for (int dof = 0; dof < 3; dof++)
+            {
+                int mi = HumanTrait.MuscleFromBone(bone, dof);
+                if (mi >= 0 && mi < names.Length && muscleByName.ContainsKey(names[mi])) return true;
+            }
+            return false;
+        }
+
+        private CanonMuscleSolver _solver;
+        private float[]           _muscleBuf;
 
         /// <summary>
         /// Root 情報の反映を仕込む。ConvertToFile が 1 回だけ呼ぶ。

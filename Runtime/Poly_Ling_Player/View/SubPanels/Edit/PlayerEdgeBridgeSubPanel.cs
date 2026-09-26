@@ -22,6 +22,9 @@ namespace Poly_Ling.Player
         /// <summary>「面を張る」を押したときに Viewer が実行する。</summary>
         public Action OnExecute;
 
+        /// <summary>「頂点数を合わせる」を押したときに Viewer が実行する。</summary>
+        public Action OnMatchCount;
+
         // ================================================================
         // UI 要素
         // ================================================================
@@ -53,6 +56,15 @@ namespace Poly_Ling.Player
         private Button _executeBtn;
         [UiControl("clearPicks", Safety = UiSafety.SafeWrite, Description = "拾った辺を捨てる（メッシュは変えない）")]
         private Button _clearPicksBtn;
+
+        [UiControl("matchBase", Description = "頂点数合わせの基準（辺群① / 辺群②）")]
+        private RadioButtonGroup _matchBaseGroup;
+        [UiControl("matchSplitTri", Description = "頂点数合わせで三角形を三角形へ分割する")]
+        private Toggle _matchSplitTriToggle;
+        [UiControl("matchInfo", Safety = UiSafety.ReadOnly, Description = "頂点数合わせの内容、または実行できない理由")]
+        private Label  _matchLabel;
+        [UiControl("matchCount", Safety = UiSafety.SafeWrite, Description = "基準側に合わせてもう一方の辺群の頂点数を揃える")]
+        private Button _matchBtn;
 
         /// <summary>直近の実行結果。Refresh で消さずに残す。</summary>
         private string _lastResult = "";
@@ -182,6 +194,46 @@ namespace Poly_Ling.Player
             subdivHint.style.marginBottom = 4;
             _root.Add(subdivHint);
 
+            // ── 頂点数合わせ ──
+            _root.Add(SectionLabel("頂点数合わせ"));
+
+            var matchHint = new Label(
+                "頂点数が違っても面は張れますが、余りが三角形になります。\n" +
+                "基準側に合わせてもう一方の辺を割る（長い辺から）か潰す（短い辺から）と、全部四角形になります。\n" +
+                "開いた辺群の端点は動かしません。境界辺だけの辺群で使えます。");
+            matchHint.style.fontSize     = 10;
+            matchHint.style.whiteSpace   = WhiteSpace.Normal;
+            matchHint.style.marginBottom = 4;
+            _root.Add(matchHint);
+
+            _matchBaseGroup = new RadioButtonGroup("基準",
+                new System.Collections.Generic.List<string> { "辺群①", "辺群②" }) { value = 0 };
+            _matchBaseGroup.style.fontSize = 11;
+            _matchBaseGroup.RegisterValueChangedCallback(e =>
+            {
+                Surface.Set(Tool, "matchBaseIsB", e.newValue == 1);
+                Refresh();
+            });
+            _root.Add(_matchBaseGroup);
+
+            _matchSplitTriToggle = new Toggle("三角形は三角形に割る") { value = true };
+            _matchSplitTriToggle.style.fontSize = 11;
+            _matchSplitTriToggle.RegisterValueChangedCallback(e =>
+            {
+                Surface.Set(Tool, "splitTriangleIntoTriangles", e.newValue);
+                Refresh();
+            });
+            _root.Add(_matchSplitTriToggle);
+
+            _matchLabel = InfoLabel();
+            _root.Add(_matchLabel);
+
+            _root.Add(_matchBtn = ActionButton("頂点数を合わせる", () =>
+            {
+                OnMatchCount?.Invoke();
+                Refresh();
+            }));
+
             // ── 実行 ──
             _executeBtn = new Button(() =>
             {
@@ -217,6 +269,8 @@ namespace Poly_Ling.Player
             _flipCorrespToggle ?.SetValueWithoutNotify(Surface.GetBool(Tool, "flipCorrespondence"));
             _flipFacesToggle   ?.SetValueWithoutNotify(Surface.GetBool(Tool, "flipFaces"));
             _subdivField       ?.SetValueWithoutNotify(Surface.GetInt(Tool, "subdivisions"));
+            _matchBaseGroup    ?.SetValueWithoutNotify(Surface.GetBool(Tool, "matchBaseIsB") ? 1 : 0);
+            _matchSplitTriToggle?.SetValueWithoutNotify(Surface.GetBool(Tool, "splitTriangleIntoTriangles", true));
 
             // 自動判定は境界辺でしか効かない面反転を含まないため、
             // 内部辺を含む場合でも自動対応そのものは使える。表示だけ補足する。
@@ -245,6 +299,11 @@ namespace Poly_Ling.Player
             }
 
             _executeBtn?.SetEnabled(ok);
+
+            bool canMatch = ok && sum.Item("canMatch", false);
+            if (_matchLabel != null)
+                _matchLabel.text = ok ? sum.Item("matchMessage", "") : "";
+            _matchBtn?.SetEnabled(canMatch);
         }
 
         // ================================================================

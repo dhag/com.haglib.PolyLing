@@ -127,7 +127,7 @@ namespace Poly_Ling.Player
         private string _ladderGroup   = "";
         private string _frillGroup    = "";
         private int    _frillIndex    = -1;
-        private List<Vector2> _profile = new List<Vector2>();
+        private List<Vector3> _profile = new List<Vector3>();
 
         /// <summary>直前に見たオブジェクト数。増え終わったかを見るために持つ。</summary>
         private int _lastSeenMeshCount = -1;
@@ -338,7 +338,7 @@ namespace Poly_Ling.Player
             _ladderGroup = "";
             _frillGroup  = "";
             _frillIndex  = -1;
-            _profile     = new List<Vector2>();
+            _profile     = new List<Vector3>();
             _lastSeenMeshCount = -1;
             _settleCount       = 0;
             _waitStage         = "";
@@ -517,7 +517,7 @@ namespace Poly_Ling.Player
                     "図形生成パネル → フリル → 断面プロファイル → 読込",
                     "プロファイルが無いとフリルの面が作れない。パスと書式を確かめること。");
 
-            _profile = result.PointsA ?? new List<Vector2>();
+            _profile = result.PointsA ?? new List<Vector3>();
             if (_profile.Count < 2)
                 return Ng($"断面プロファイルの点が足りない（{_profile.Count} 点）",
                     null,

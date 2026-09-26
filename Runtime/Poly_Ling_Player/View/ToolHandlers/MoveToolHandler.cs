@@ -328,6 +328,21 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<Vector2, ToolContext, bool> GizmoHitTestOverride;
 
+        /// <summary>
+        /// 組み込み移動ギズモを掴んだ瞬間（対象頂点を決める直前）に呼ぶ割り込み。
+        /// true を返したら対象頂点を集計し直す。辺押し出しのギズモ押し出しが使う。
+        /// </summary>
+        public Func<bool> OnBuiltinGizmoGrab;
+
+        /// <summary>
+        /// 移動確定の横取り。true を返すと移動量を記録しない。
+        /// 呼ばれた時点では頂点はまだ動かした位置にある（横取り側はここで位置を読む）。
+        /// </summary>
+        public Func<bool> CommitCapture;
+
+        /// <summary>CommitCapture が true を返した後、移動の後始末を終えてから呼ぶ。</summary>
+        public Action CommitFinish;
+
         private AxisGizmo.AxisType _draggingAxis   = AxisGizmo.AxisType.None;
         private AxisGizmo.AxisType _hoveredAxis    = AxisGizmo.AxisType.None;
         private Vector2            _lastAxisDragPos;

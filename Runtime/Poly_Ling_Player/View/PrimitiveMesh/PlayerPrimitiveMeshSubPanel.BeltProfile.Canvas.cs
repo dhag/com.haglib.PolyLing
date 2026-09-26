@@ -292,7 +292,7 @@ namespace Poly_Ling.Player
             // 2. 線分ヒット（10px以内）→ 即時挿入＆ドラッグ開始
             int     bestSeg    = -1;
             float   bestDist   = 10f;
-            Vector2 insertProf = Vector2.zero;
+            Vector3 insertProf = Vector3.zero;
             int     segCount   = BeltSegCount(ed);
             for (int i = 0; i < segCount; i++)
             {
@@ -305,7 +305,8 @@ namespace Poly_Ling.Player
                 {
                     bestDist   = d;
                     bestSeg    = i;
-                    insertProf = Vector2.Lerp(ed.Points[i], ed.Points[j], t);
+                    // z も同じ比率で補間する
+                    insertProf = RevolutionProfileEditCore.LerpPoint(ed.Points[i], ed.Points[j], t);
                 }
             }
             if (bestSeg >= 0)
@@ -383,13 +384,13 @@ namespace Poly_Ling.Player
                     {
                         int idx = kv.Key;
                         if (idx < 0 || idx >= ed.Points.Count) continue;
-                        ed.Points[idx] = kv.Value + delta;
+                        ed.Points[idx] = RevolutionProfileEditCore.WithXY(ed.Points[idx], kv.Value + delta);
                     }
                     foreach (var kv in ed.MagnetStart)
                     {
                         int idx = kv.Key;
                         if (idx < 0 || idx >= ed.Points.Count) continue;
-                        ed.Points[idx] = kv.Value + delta * ed.MagnetW[idx];
+                        ed.Points[idx] = RevolutionProfileEditCore.WithXY(ed.Points[idx], kv.Value + delta * ed.MagnetW[idx]);
                     }
                     D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
                 }
@@ -538,7 +539,7 @@ namespace Poly_Ling.Player
             {
                 int i = kv.Key;
                 if (i < 0 || i >= ed.Points.Count) continue;
-                ed.Points[i] = Xform2D(kv.Value, a, 0f, 0f, sx, sy, 1f, 0f, deg, ed.HandleW[i]);
+                ed.Points[i] = RevolutionProfileEditCore.WithXY(ed.Points[i], Xform2D(kv.Value, a, 0f, 0f, sx, sy, 1f, 0f, deg, ed.HandleW[i]));
             }
             D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
         }

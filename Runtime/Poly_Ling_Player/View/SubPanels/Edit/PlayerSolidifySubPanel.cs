@@ -119,7 +119,7 @@ namespace Poly_Ling.Player
             _root.Add(Header("Solidify / 厚み付け"));
             _root.Add(new HelpBox(
                 "選択した薄い面群に厚みを付けます。表裏2枚のコピーを厚みの半分ずつ移動し、" +
-                "孤立エッジを側面でつなぎます。元の面はそのまま残ります。",
+                "境界辺を側面でつなぎます。元の面はそのまま残ります。",
                 HelpBoxMessageType.Info));
 
             _infoLabel = InfoLabel("選択面: 0");

@@ -129,7 +129,7 @@ namespace Poly_Ling.Player
         private string _ladderGroup   = "";
         private string _pipeGroup     = "";
         private int    _pipeIndex     = -1;
-        private List<Vector2> _profile = new List<Vector2>();
+        private List<Vector3> _profile = new List<Vector3>();
 
         /// <summary>直前に見たオブジェクト数。増え終わったかを見るために持つ。</summary>
         private int _lastSeenMeshCount = -1;
@@ -333,7 +333,7 @@ namespace Poly_Ling.Player
             _ladderGroup  = "";
             _pipeGroup    = "";
             _pipeIndex    = -1;
-            _profile      = new List<Vector2>();
+            _profile      = new List<Vector3>();
             _lastSeenMeshCount = -1;
             _settleCount       = 0;
             _waitStage         = "";
@@ -528,7 +528,7 @@ namespace Poly_Ling.Player
 
             bool closed = _profileClosed.value;
 
-            List<Vector2> raw = null;
+            List<Vector3> raw = null;
             if (closed)
             {
                 var loops = LineProfileExtractor.ExtractLoops(mo, lineFaces);

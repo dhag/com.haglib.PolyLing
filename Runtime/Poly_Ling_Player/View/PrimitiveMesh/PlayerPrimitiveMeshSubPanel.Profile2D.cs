@@ -159,8 +159,8 @@ namespace Poly_Ling.Player
             float r = 0.4f;
             outer.Points.AddRange(new[]
             {
-                new Vector2(-r, -r), new Vector2( r, -r),
-                new Vector2( r,  r), new Vector2(-r,  r),
+                new Vector3(-r, -r, 0f), new Vector3( r, -r, 0f),
+                new Vector3( r,  r, 0f), new Vector3(-r,  r, 0f),
             });
             _p2dLoops.Add(outer);
         }
@@ -362,8 +362,8 @@ namespace Poly_Ling.Player
                 P2dBegin();
                 var lp = new Loop(); float r2 = 0.2f;
                 lp.Points.AddRange(new[] {
-                    new Vector2(-r2,-r2), new Vector2(r2,-r2),
-                    new Vector2(r2, r2),  new Vector2(-r2, r2) });
+                    new Vector3(-r2,-r2, 0f), new Vector3(r2,-r2, 0f),
+                    new Vector3(r2, r2, 0f),  new Vector3(-r2, r2, 0f) });
                 _p2dLoops.Add(lp);
                 _p2dSelLoop = _p2dLoops.Count - 1; P2dSelectAllInLoop(_p2dSelLoop);
                 P2dCommit("ループ追加");
@@ -396,7 +396,7 @@ namespace Poly_Ling.Player
                 P2dBegin();
                 var src = _p2dLoops[_p2dSelLoop];
                 var dup = new Loop(src);                    // 点列＋穴フラグを複製
-                var ofs = new Vector2(0.1f, 0.1f);          // 少しずらして重なり回避
+                var ofs = new Vector3(0.1f, 0.1f, 0f);      // 少しずらして重なり回避（高さはそのまま）
                 for (int pi = 0; pi < dup.Points.Count; pi++) dup.Points[pi] += ofs;
                 _p2dLoops.Add(dup);
                 _p2dSelLoop = _p2dLoops.Count - 1;          // 複製先を選択
@@ -413,7 +413,7 @@ namespace Poly_Ling.Player
                 for (int pi = 0; pi < lp.Points.Count; pi++)
                 {
                     var p = lp.Points[pi];
-                    lp.Points[pi] = new Vector2(-p.x, p.y);   // Y軸(x=0)対称
+                    lp.Points[pi] = new Vector3(-p.x, p.y, p.z);   // Y軸(x=0)対称。高さはそのまま
                 }
                 lp.Points.Reverse();                        // 反転で逆転する巻き順を戻す
                 P2dSelectAllInLoop(_p2dSelLoop);
@@ -451,7 +451,7 @@ namespace Poly_Ling.Player
                 {
                     if (!P2dGetSelPt(out var lp, out _)) return;
                     xFf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3));
-                    lp.Points[_p2dSelPt] = new Vector2(e.newValue, lp.Points[_p2dSelPt].y);
+                    lp.Points[_p2dSelPt] = new Vector3(e.newValue, lp.Points[_p2dSelPt].y, lp.Points[_p2dSelPt].z);
                     D(); RefreshP2dCanvas();
                 });
                 xSl.RegisterCallback<PointerDownEvent>(_ => P2dBegin());
@@ -460,7 +460,7 @@ namespace Poly_Ling.Player
                 {
                     if (!P2dGetSelPt(out var lp, out _)) return;
                     P2dBegin();
-                    xSl.SetValueWithoutNotify(e.newValue); lp.Points[_p2dSelPt] = new Vector2(e.newValue, lp.Points[_p2dSelPt].y);
+                    xSl.SetValueWithoutNotify(e.newValue); lp.Points[_p2dSelPt] = new Vector3(e.newValue, lp.Points[_p2dSelPt].y, lp.Points[_p2dSelPt].z);
                     D(); RefreshP2dCanvas();
                     P2dCommit("点X編集");
                 });
@@ -476,7 +476,7 @@ namespace Poly_Ling.Player
                 {
                     if (!P2dGetSelPt(out var lp, out _)) return;
                     yFf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3));
-                    lp.Points[_p2dSelPt] = new Vector2(lp.Points[_p2dSelPt].x, e.newValue);
+                    lp.Points[_p2dSelPt] = new Vector3(lp.Points[_p2dSelPt].x, e.newValue, lp.Points[_p2dSelPt].z);
                     D(); RefreshP2dCanvas();
                 });
                 ySl.RegisterCallback<PointerDownEvent>(_ => P2dBegin());
@@ -485,7 +485,7 @@ namespace Poly_Ling.Player
                 {
                     if (!P2dGetSelPt(out var lp, out _)) return;
                     P2dBegin();
-                    ySl.SetValueWithoutNotify(e.newValue); lp.Points[_p2dSelPt] = new Vector2(lp.Points[_p2dSelPt].x, e.newValue);
+                    ySl.SetValueWithoutNotify(e.newValue); lp.Points[_p2dSelPt] = new Vector3(lp.Points[_p2dSelPt].x, e.newValue, lp.Points[_p2dSelPt].z);
                     D(); RefreshP2dCanvas();
                     P2dCommit("点Y編集");
                 });
@@ -537,15 +537,20 @@ namespace Poly_Ling.Player
                 RecentPaths.Set(P2dCsvKey, _p2dCsvPath);
                 try
                 {
+                    // 1 行 = x,y,z。ループ先頭行の末尾に hole を付けると穴（z の列が無い旧形式も読む）。
+                    var inv = System.Globalization.CultureInfo.InvariantCulture;
                     var sb = new System.Text.StringBuilder();
                     foreach (var lp in _p2dLoops)
                     {
-                        if (lp.IsHole && lp.Points.Count > 0)
-                            sb.AppendLine($"{lp.Points[0].x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{lp.Points[0].y.ToString(System.Globalization.CultureInfo.InvariantCulture)},hole");
-                        else if (lp.Points.Count > 0)
-                            sb.AppendLine($"{lp.Points[0].x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{lp.Points[0].y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
-                        for (int pi = 1; pi < lp.Points.Count; pi++)
-                            sb.AppendLine($"{lp.Points[pi].x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{lp.Points[pi].y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                        for (int pi = 0; pi < lp.Points.Count; pi++)
+                        {
+                            var q = lp.Points[pi];
+                            sb.Append(q.x.ToString(inv)).Append(',')
+                              .Append(q.y.ToString(inv)).Append(',')
+                              .Append(q.z.ToString(inv));
+                            if (pi == 0 && lp.IsHole) sb.Append(",hole");
+                            sb.AppendLine();
+                        }
                         sb.AppendLine();
                     }
                     System.IO.File.WriteAllText(_p2dCsvPath, sb.ToString());
@@ -643,13 +648,23 @@ namespace Poly_Ling.Player
                         System.Globalization.CultureInfo.InvariantCulture, out float x)) continue;
                 if (!float.TryParse(parts[1], System.Globalization.NumberStyles.Float,
                         System.Globalization.CultureInfo.InvariantCulture, out float y)) continue;
+                // 3 列目以降：数値なら z、"hole" ならそのループは穴（旧形式は x,y[,hole]）。
+                float z = 0f;
+                bool hole = false;
+                for (int ci = 2; ci < parts.Length; ci++)
+                {
+                    string c = parts[ci].Trim();
+                    if (c.ToLower() == "hole") hole = true;
+                    else if (ci == 2) float.TryParse(c, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out z);
+                }
                 if (current == null)
                 {
                     current = new Loop();
-                    if (parts.Length >= 3 && parts[2].Trim().ToLower() == "hole") current.IsHole = true;
+                    if (hole) current.IsHole = true;
                     loops.Add(current);
                 }
-                current.Points.Add(new Vector2(x, y));
+                current.Points.Add(new Vector3(x, y, z));
             }
             return loops.Count > 0 ? loops : null;
         }

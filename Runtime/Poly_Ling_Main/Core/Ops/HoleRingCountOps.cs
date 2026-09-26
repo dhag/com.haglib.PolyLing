@@ -1,7 +1,17 @@
 // HoleRingCountOps.cs
-// 穴（エッジ＝1面だけが使う辺のループ）を構成する頂点数を、指定した数へ合わせる位相計算。
-// ブリッジ（BridgeLoopOps）の「2つの穴の頂点数が同じ」制約を外すための前処理。
+// 穴（境界辺＝1面だけが使う辺のループ）を構成する頂点数を、指定した数へ合わせる位相計算。
+// ブリッジ（BridgeLoopOps.Build）は頂点数が違っても面を張れるが、余りが三角形になる。
+// 頂点数を揃えると全部四角形になる。そのための前処理。
+// 穴（種頂点から復元する閉環）と、辺群ブリッジの辺群（頂点列＋開閉）の両方を扱う。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
+//
+// 【入口】
+//   Execute        : 種頂点から穴を復元して合わせる（穴頂点数合わせ）。
+//   ExecuteOnChain : 頂点列と開閉を直接受けて合わせる（辺群ブリッジ）。
+//                    辺群の各辺は境界辺であること（面がちょうど 1 枚）。
+//                    開環では末尾→先頭の辺は存在しないので候補にしない。
+//                    開環で潰すときは端点を含む辺を候補にしない
+//                    （MergeVerticesToCentroid は両端を中点へ動かすので、端が動く）。
 //
 // 【方針】
 //   足りないとき（現在 < 目標）: 穴の辺のうち最長のものに中点を打つ。これを差分だけ繰り返す。
@@ -84,6 +94,12 @@ namespace Poly_Ling.Ops
             public int SeedVertex = -1;
             /// <summary>実行後の進行方向ヒント頂点。失われたときは -1。</summary>
             public int SeedDirectionHint = -1;
+
+            /// <summary>
+            /// 実行後の頂点列（ExecuteOnChain のみ）。割った中点は挿入され、
+            /// 潰した頂点は詰め直し後の添字へ置き換わる。呼出し側はこれで拾い直す。
+            /// </summary>
+            public List<int> Order;
         }
 
         // ================================================================
@@ -131,7 +147,7 @@ namespace Poly_Ling.Ops
             {
                 while (loop.Count < desiredCount)
                 {
-                    if (!SplitLongestEdge(mo, loop, opt, r, out string why))
+                    if (!SplitLongestEdge(mo, loop, true, opt, r, out string why))
                     {
                         r.Message = why;
                         break;
@@ -151,7 +167,7 @@ namespace Poly_Ling.Ops
 
                     if (--guard < 0) { r.Message = "頂点数が減らないため中断しました"; break; }
 
-                    if (!MergeShortestEdge(mo, loop, r, out string why))
+                    if (!MergeShortestEdge(mo, loop, true, r, out string why))
                     {
                         r.Message = why;
                         break;
@@ -179,6 +195,100 @@ namespace Poly_Ling.Ops
             return r;
         }
 
+        /// <summary>
+        /// 頂点列 order（closed なら閉環、false なら開いた鎖）の頂点数を desiredCount に合わせる。
+        /// 辺群ブリッジの辺群に使う。order は書き換えない（写しを作る）。
+        ///
+        /// 各辺は境界辺（面がちょうど 1 枚）であること。そうでない辺があれば何もせずに返す。
+        /// 途中で進めなくなったときは、そこまでの変更を残したまま Reached=false で返す。
+        /// 実行後の頂点列は Result.Order に入る。
+        ///
+        /// track: 同じメッシュにある別の頂点列（辺群ブリッジのもう一方の辺群など）。
+        /// 潰すたびに頂点の詰め直しが起きるので、その添字をここで追従させる（その場で書き換える）。
+        /// 不要なら null。track の頂点は潰されない前提（order と頂点を共有しないこと）。
+        /// </summary>
+        public static Result ExecuteOnChain(
+            MeshObject mo, IReadOnlyList<int> order, bool closed, int desiredCount, Options opt,
+            List<int> track = null)
+        {
+            var r = new Result { DesiredCount = desiredCount };
+
+            if (mo == null) { r.Message = "メッシュがありません"; return r; }
+
+            int minCount = closed ? 3 : 2;
+            if (order == null || order.Count < minCount) { r.Message = "辺群の頂点が足りません"; return r; }
+            if (desiredCount < minCount) { r.Message = "目標の頂点数が足りません"; return r; }
+
+            var chain = new List<int>(order);
+            r.Order      = chain;
+            r.StartCount = chain.Count;
+            r.FinalCount = chain.Count;
+
+            // 分割・結合とも「辺を使う面がちょうど 1 枚」を前提にする。先に全辺を確かめる。
+            int edgeCount = closed ? chain.Count : chain.Count - 1;
+            for (int i = 0; i < edgeCount; i++)
+            {
+                int a = chain[i];
+                int b = chain[(i + 1) % chain.Count];
+                if (!TryFindBoundaryFace(mo, a, b, out _, out _))
+                {
+                    r.Message = $"辺 ({a}, {b}) を使う面が 1 枚ではありません。境界辺だけの辺群にしてください";
+                    return r;
+                }
+            }
+
+            if (chain.Count == desiredCount)
+            {
+                r.Ok      = true;
+                r.Reached = true;
+                r.Message = "頂点数は既に一致しています";
+                return r;
+            }
+
+            if (chain.Count < desiredCount)
+            {
+                while (chain.Count < desiredCount)
+                {
+                    if (!SplitLongestEdge(mo, chain, closed, opt, r, out string why))
+                    {
+                        r.Message = why;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                int guard = r.StartCount - desiredCount + 8;   // 数が減らない事故での無限ループ避け
+                while (chain.Count > desiredCount)
+                {
+                    if (--guard < 0) { r.Message = "頂点数が減らないため中断しました"; break; }
+
+                    if (!MergeShortestEdge(mo, chain, closed, r, out string why, track))
+                    {
+                        r.Message = why;
+                        break;
+                    }
+                }
+            }
+
+            mo.InvalidatePositionCache();
+
+            r.FinalCount = chain.Count;
+            r.Ok         = (r.SplitCount + r.MergeCount) > 0;
+            r.Reached    = r.FinalCount == desiredCount;
+
+            if (r.Reached)
+                r.Message = r.SplitCount > 0
+                    ? $"{r.SplitCount} 箇所を割りました（頂点 +{r.AddedVertexCount} / 面 +{r.AddedFaceCount}）"
+                    : $"{r.MergeCount} 箇所を潰しました（頂点 -{r.RemovedVertexCount} / 面 -{r.RemovedFaceCount}）";
+            else if (string.IsNullOrEmpty(r.Message))
+                r.Message = $"{r.StartCount} → {r.FinalCount}（目標 {desiredCount}）で止まりました";
+            else
+                r.Message = $"{r.StartCount} → {r.FinalCount}（目標 {desiredCount}）で中断: {r.Message}";
+
+            return r;
+        }
+
         // ================================================================
         // 分割（最長の辺に中点を打つ）
         // ================================================================
@@ -186,15 +296,17 @@ namespace Poly_Ling.Ops
         /// <summary>
         /// ループ中の最長の辺に中点を打ち、その辺を使う面を割り直す。
         /// loop は中点を挿入した状態へ書き換える（既存頂点の添字は動かない）。
+        /// closed が false（開いた鎖）のときは末尾→先頭の辺を候補にしない。
         /// </summary>
         private static bool SplitLongestEdge(
-            MeshObject mo, List<int> loop, Options opt, Result r, out string reason)
+            MeshObject mo, List<int> loop, bool closed, Options opt, Result r, out string reason)
         {
             int n = loop.Count;
+            int edgeCount = closed ? n : n - 1;
 
             int   bestI   = -1;
             float bestLen = -1f;
-            for (int i = 0; i < n; i++)
+            for (int i = 0; i < edgeCount; i++)
             {
                 int a = loop[i];
                 int b = loop[(i + 1) % n];
@@ -414,18 +526,26 @@ namespace Poly_Ling.Ops
         /// ループ中の辺を 1 本潰して 2 頂点を中点へ結合する。
         /// 四角形以上の面に接する辺を優先し、その中で最短のものを選ぶ。
         /// 優先候補が無いときは全体の最短辺を潰す（接していた三角形が 1 枚消える）。
+        ///
+        /// closed が false（開いた鎖）のときは、末尾→先頭の辺と、端点を含む辺を候補にしない。
+        /// loop は結合後の状態へ書き換える（消えた頂点の要素を除き、残りを詰め直し後の添字へ）。
         /// </summary>
         private static bool MergeShortestEdge(
-            MeshObject mo, List<int> loop, Result r, out string reason)
+            MeshObject mo, List<int> loop, bool closed, Result r, out string reason,
+            List<int> track = null)
         {
             int n = loop.Count;
+            int edgeCount = closed ? n : n - 1;
 
             int   bestI         = -1;
             float bestLen       = float.MaxValue;
             bool  bestPreferred = false;
 
-            for (int i = 0; i < n; i++)
+            for (int i = 0; i < edgeCount; i++)
             {
+                // 開いた鎖の端点は動かさない（両端を中点へ寄せると辺群の端がずれる）。
+                if (!closed && (i == 0 || i + 1 == n - 1)) continue;
+
                 int a = loop[i];
                 int b = loop[(i + 1) % n];
 
@@ -445,11 +565,16 @@ namespace Poly_Ling.Ops
                 bestPreferred = preferred;
             }
 
-            if (bestI < 0) { reason = "潰せる辺がありません"; return false; }
+            if (bestI < 0)
+            {
+                reason = closed ? "潰せる辺がありません" : "端点を動かさずに潰せる辺がありません";
+                return false;
+            }
 
             int va = loop[bestI];
             int vb = loop[(bestI + 1) % n];
             int drop = Mathf.Max(va, vb);   // MergeVerticesToCentroid は小さい方を残す
+            int dropPos = (drop == va) ? bestI : (bestI + 1) % n;
 
             int facesBefore = mo.FaceCount;
 
@@ -465,6 +590,16 @@ namespace Poly_Ling.Ops
             // drop が消え、drop より大きい添字が 1 つずつ繰り下がる。
             r.SeedVertex        = RemapAfterDrop(r.SeedVertex,        drop, merged);
             r.SeedDirectionHint = RemapAfterDrop(r.SeedDirectionHint, drop, merged);
+
+            // 頂点列も追従させる。消えた頂点の要素を除き、残りを詰め直し後の添字へ置き換える。
+            loop.RemoveAt(dropPos);
+            for (int k = 0; k < loop.Count; k++)
+                loop[k] = RemapAfterDrop(loop[k], drop, merged);
+
+            // 同じメッシュの別の頂点列も詰め直しに追従させる。
+            if (track != null)
+                for (int k = 0; k < track.Count; k++)
+                    track[k] = RemapAfterDrop(track[k], drop, merged);
 
             reason = null;
             return true;

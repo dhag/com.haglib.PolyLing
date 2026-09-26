@@ -25,7 +25,7 @@
 //
 // 【表示判定】
 //   対象から root まで、インラインの style.display が None の祖先が無ければ表示中とみなす。
-//   右ペインのセクション（HideRightArea / ShowRightPanel）・下区画の外枠と Foldout の中身は
+//   右ペインのセクション（HideRightArea / ShowRightPanel）・上下区画の外枠と Foldout の中身は
 //   どちらもインライン style で切り替えているため、これで判定できる。
 //
 // 【ログ】

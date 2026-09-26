@@ -55,6 +55,13 @@ namespace Poly_Ling.Player
             var panel = _activePanel;
             if (panel == null) return;
 
+            // 線分の追加・編集（線分サブモード）も同じ描画経路を使う。
+            if (_interactionMode == InteractionMode.BillboardProfile)
+            {
+                UpdateBillboardEditPreview();
+                return;
+            }
+
             if (_interactionMode != InteractionMode.AddFace || _addFaceHandler == null)
             {
                 panel.HideAddFacePreview();

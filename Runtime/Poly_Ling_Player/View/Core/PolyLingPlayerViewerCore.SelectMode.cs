@@ -181,6 +181,12 @@ namespace Poly_Ling.Player
                 case InteractionMode.AddFace:           return MeshSelectMode.Vertex;
                 // 点指定図形: 吸着先の頂点だけを拾う（面追加と同じ）。
                 case InteractionMode.PointDefinedPrimitive: return MeshSelectMode.Vertex;
+                // 線分の追加・編集: 吸着先の頂点だけを拾う（面追加と同じ）。
+                // Profile は点の選択に頂点、点の挿入に弦（2 頂点の面）を拾う。
+                case InteractionMode.BillboardProfile:
+                    return _billboardProfileHandler?.Mode == BillboardProfileToolHandler.SubMode.Profile
+                        ? MeshSelectMode.Vertex | MeshSelectMode.Line
+                        : MeshSelectMode.Vertex;
 
                 // 辺を対象にするツール
                 case InteractionMode.EdgeBevel:         return MeshSelectMode.Edge;

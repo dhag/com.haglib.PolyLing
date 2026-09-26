@@ -37,8 +37,8 @@ namespace Poly_Ling.Player
         // カテゴリ 2 (3D 操作を維持) → 呼ばない
         // カテゴリ 3 (3D 操作無効) → SetInteractionMode(None) を呼ぶ
         //
-        // 右ペイン上区画（RightPanelKind.General）のパネルはここを直接呼ばず、
-        // ApplyGeneralPanelMode を使う（下区画の 3D 操作を奪わないため。ButtonHighlight.cs）。
+        // 一般パネル（RightPanelKind.General）はここを直接呼ばず、
+        // ApplyGeneralPanelMode を使う（3D 操作パネルの操作を奪わないため。ButtonHighlight.cs）。
         // ================================================================
 
         private void SetInteractionMode(InteractionMode mode)
@@ -70,8 +70,12 @@ namespace Poly_Ling.Player
                 _activePanel?.HideTopoToolOverlay();
 
             // 線分群の編集を抜けたら、描きかけの折れ線を終える（描いた分は確定済み）。
+            // 吸着候補の表示（面追加と共用の描画）も消す。面追加へ移るときは面追加側が描き直す。
             if (_interactionMode == InteractionMode.BillboardProfile && mode != InteractionMode.BillboardProfile)
+            {
                 _billboardProfileHandler?.FinishChain();
+                _activePanel?.HideAddFacePreview();
+            }
 
             if (_interactionMode == InteractionMode.SkinWeightPaint && mode != InteractionMode.SkinWeightPaint)
             {
@@ -205,7 +209,13 @@ namespace Poly_Ling.Player
                 _moveToolHandler.SuppressBuiltinGizmo = false;
                 _moveToolHandler.GizmoHitTestOverride = null;
                 _moveToolHandler.SuppressDragSelect   = false;
+                // 辺押し出しのギズモ押し出し用の割り込み・横取りも毎回外す（EdgeExtrude case でだけ付ける）。
+                _moveToolHandler.OnBuiltinGizmoGrab   = null;
+                _moveToolHandler.CommitCapture        = null;
+                _moveToolHandler.CommitFinish         = null;
             }
+            if (_rotateHandler != null) { _rotateHandler.CommitCapture = null; _rotateHandler.CommitFinish = null; }
+            if (_scaleHandler  != null) { _scaleHandler.CommitCapture  = null; _scaleHandler.CommitFinish  = null; }
 
             // 新モードの ToolHandler 割当 + ホバーコールバック登録
             switch (mode)
@@ -326,23 +336,9 @@ namespace Poly_Ling.Player
                     _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _edgeBevelHandler?.OnLeftDragEnd(pos, mods);
                     break;
                 case InteractionMode.EdgeExtrude:
-                    // MoveToolHandler の選択/矩形選択を流用。ドラッグ系ツール (EdgeBevel と同パターン)。
-                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
-                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeExtrudeHandler?.UpdateHover(pos, ctx));
-                    _moveToolHandler.OnDragStartExtra = (elem, mods) =>
-                    {
-                        // Edge / Line（2点面）ヒットで押し出し発火。要素なし or 型違いは通常の矩形選択等に任せる
-                        if (elem.Kind != PlayerHoverKind.Edge && elem.Kind != PlayerHoverKind.Line) return false;
-                        // 対象の担当者判定とロック取得。止められたら何もしない（操作経路統一計画.md H-2）。
-                        if (!TryBeginHostPreview(new[] { elem.MeshIndex })) return true;
-                        // 開始原点は実マウスダウン座標を渡す（zero だと画面隅基準になり非連動）。
-                        _edgeExtrudeHandler?.OnLeftDragBegin(
-                            new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
-                            _moveToolHandler.MouseDownPos, mods);
-                        return true;
-                    };
-                    _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _edgeExtrudeHandler?.OnLeftDrag(pos, delta, mods);
-                    _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _edgeExtrudeHandler?.OnLeftDragEnd(pos, mods);
+                    // MoveToolHandler の選択/矩形選択を流用。辺・線分のドラッグで押し出し、
+                    // ギズモ（移動・回転・拡大縮小）でも押し出す。結線は ApplyEdgeExtrudeRouting。
+                    ApplyEdgeExtrudeRouting();
                     break;
                 case InteractionMode.FaceExtrude:
                     // MoveToolHandler の選択/矩形選択を流用。ドラッグ系ツール (EdgeBevel と同パターン)。

@@ -212,31 +212,29 @@ namespace Poly_Ling.Tools
         // 平滑化実行
         // ================================================================
 
-        private void ExecuteSmooth()
+        /// <summary>
+        /// 平滑化後の座標を計算する。メッシュは書き換えない。
+        /// 確定（ExecuteSmooth）とプレビュー（UpdatePreview）で共用する。
+        /// </summary>
+        /// <param name="movable">移動対象の頂点。対象が無ければ空</param>
+        /// <returns>チェーン上の全頂点の計算後座標。対象が無ければ null</returns>
+        private Dictionary<int, Vector3> ComputeSmoothed(
+            MeshObject mesh, SelectionState state, out List<int> movable, out int segmentCount)
         {
-            var ctx = _context;
-            var mesh = ctx?.ActiveMeshObject;
-            if (mesh == null) return;
+            movable = new List<int>();
 
-            var adjacency = BuildChainAdjacency(mesh, ctx.SelectionState, out int segmentCount);
-            if (adjacency == null) return;
+            var adjacency = BuildChainAdjacency(mesh, state, out segmentCount);
+            if (adjacency == null) return null;
 
             // 移動対象
-            var movable = new List<int>();
             foreach (var kv in adjacency)
             {
                 if (IsMovable(kv.Value.Count)) movable.Add(kv.Key);
             }
-            if (movable.Count == 0) return;
+            if (movable.Count == 0) return null;
 
             int iterations = Mathf.Max(1, Iterations);
             float strength = Strength;
-
-            MeshObjectSnapshot before =
-                ctx.UndoController != null && ctx.ActiveMeshContext != null
-                    ? MeshObjectSnapshot.Capture(
-                        ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState)
-                    : null;
 
             // 作業用の位置テーブル。チェーン上の全頂点（固定端点も隣接平均の材料になる）を持つ。
             var current = new Dictionary<int, Vector3>(adjacency.Count);
@@ -272,6 +270,28 @@ namespace Poly_Ling.Tools
                 foreach (var kv in next) current[kv.Key] = kv.Value;
             }
 
+            return current;
+        }
+
+        private void ExecuteSmooth()
+        {
+            // プレビューが書いた座標を元へ戻してから計算する（Undo の「前」を元形状にするため）。
+            EndPreview();
+
+            var ctx = _context;
+            var mesh = ctx?.ActiveMeshObject;
+            if (mesh == null) return;
+
+            MeshObjectSnapshot before =
+                ctx.UndoController != null && ctx.ActiveMeshContext != null
+                    ? MeshObjectSnapshot.Capture(
+                        ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState)
+                    : null;
+
+            var current = ComputeSmoothed(mesh, ctx.SelectionState, out var movable, out int segmentCount);
+            if (current == null) return;
+            int iterations = Mathf.Max(1, Iterations);
+
             // 反映
             int movedCount = 0;
             foreach (int v in movable)
@@ -303,6 +323,100 @@ namespace Poly_Ling.Tools
 
             RecalculateStats();
             ctx.Repaint?.Invoke();
+        }
+
+        // ================================================================
+        // プレビュー
+        // ================================================================
+        //
+        // 計算結果を MeshObject に直接書くが Undo は積まない。
+        // 書き換えた頂点の元座標を持ち、更新のたびに元へ戻してから計算し直す。
+        // メッシュ・同期口は開始時のものを保持する（途中で Deactivate されても戻せるように）。
+
+        private bool                     _previewActive;
+        private MeshContext              _previewMc;
+        private Dictionary<int, Vector3> _previewBackup;
+        private System.Action<MeshContext> _previewSync;
+        private System.Action            _previewRepaint;
+
+        /// <summary>プレビュー中か。</summary>
+        public bool IsPreviewing => _previewActive;
+
+        /// <summary>
+        /// プレビューを開始または更新する。
+        /// 前回書いた座標を元へ戻し、今の選択と設定で計算し直して書き込む。
+        /// </summary>
+        public void UpdatePreview()
+        {
+            RestorePreviewPositions();
+            _previewActive = true;
+
+            var ctx = _context;
+            var mc  = ctx?.ActiveMeshContext;
+            var mesh = mc?.MeshObject;
+            if (mesh == null) return;
+
+            var current = ComputeSmoothed(mesh, ctx.SelectionState, out var movable, out _);
+
+            _previewMc      = mc;
+            _previewBackup  = new Dictionary<int, Vector3>(movable.Count);
+            _previewSync    = ctx.SyncMeshContextPositionsOnly;
+            _previewRepaint = ctx.Repaint;
+
+            if (current == null) { _previewRepaint?.Invoke(); return; }
+
+            int movedCount = 0;
+            foreach (int v in movable)
+            {
+                var vertex = mesh.Vertices[v];
+                Vector3 newPos = current[v];
+                if (newPos == vertex.Position) continue;
+
+                _previewBackup[v] = vertex.Position;
+                vertex.Position = newPos;
+                movedCount++;
+            }
+
+            if (movedCount > 0)
+            {
+                mesh.InvalidatePositionCache();
+                _previewSync?.Invoke(mc);
+            }
+            _previewRepaint?.Invoke();
+        }
+
+        /// <summary>座標を元へ戻してプレビューを終える。プレビュー中でなければ何もしない。</summary>
+        public void EndPreview()
+        {
+            if (!_previewActive) return;
+            var repaint = _previewRepaint;
+            RestorePreviewPositions();
+            _previewActive = false;
+            repaint?.Invoke();
+        }
+
+        /// <summary>プレビューが書いた座標を元へ戻し、保持を空にする。プレビュー状態は変えない。</summary>
+        private void RestorePreviewPositions()
+        {
+            var mc   = _previewMc;
+            var mesh = mc?.MeshObject;
+            var backup = _previewBackup;
+
+            if (mesh != null && backup != null && backup.Count > 0)
+            {
+                foreach (var kv in backup)
+                {
+                    if (kv.Key < 0 || kv.Key >= mesh.VertexCount) continue;
+                    mesh.Vertices[kv.Key].Position = kv.Value;
+                }
+                mesh.InvalidatePositionCache();
+                _previewSync?.Invoke(mc);
+            }
+
+            _previewMc      = null;
+            _previewBackup  = null;
+            _previewSync    = null;
+            _previewRepaint = null;
         }
     }
 }

@@ -490,6 +490,15 @@ namespace Poly_Ling.Player
                 case InteractionMode.Deform:          return _deformHandler;
                 case InteractionMode.Lattice:         return _latticeHandler;
                 case InteractionMode.Camera:          return _cameraHandler;
+                // 辺押し出し：パネルで選んだギズモ（移動は既定の移動ギズモ）。
+                case InteractionMode.EdgeExtrude:
+                    switch (_edgeExtrudeHandler?.Gizmo ?? EdgeExtrudeToolHandler.GizmoKind.Move)
+                    {
+                        case EdgeExtrudeToolHandler.GizmoKind.Rotate: return _rotateHandler;
+                        case EdgeExtrudeToolHandler.GizmoKind.Scale:  return _scaleHandler;
+                        case EdgeExtrudeToolHandler.GizmoKind.None:   return null;
+                        default:                                     return _moveToolHandler;
+                    }
 
                 case InteractionMode.Sculpt:
                 case InteractionMode.AdvancedSelect:

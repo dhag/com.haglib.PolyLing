@@ -19,8 +19,7 @@
 // ■ 正準骨格
 //   T ポーズで全骨のレストのローカル回転が単位。骨の向きは UnityClipApplier.TryGetCanonDir（自骨→子骨）。
 //   末端（Distal）は表に無いので Intermediate の向きを使う。
-//   骨格の Transform は UnityClipCanonVrmAnimation.Build で組み、その骨格から AvatarBuilder で Avatar を作る
-//   （HumanDescription は mocopi 公式と同じ値。twist 0.5、stretch 0.05、feetSpacing 0、hasTranslationDoF false）。
+//   骨格・Avatar・HumanPoseHandler は CanonHumanPoseRig が組む（VmdMotionBake と共用）。
 //
 // ■ 手
 //   手の向きは、手首(0)→中指の付け根(9) を前、小指の付け根(17)→人差し指の付け根(5) を横として、
@@ -65,9 +64,7 @@ namespace Poly_Ling.Motion
         /// <summary>解いた骨のローカル回転（正準骨格＝T ポーズ基準）。</summary>
         public readonly Dictionary<HumanBodyBones, Quaternion> Locals = new Dictionary<HumanBodyBones, Quaternion>();
 
-        private UnityClipCanonVrmAnimation _skel;
-        private Avatar                     _avatar;
-        private HumanPoseHandler           _handler;
+        private readonly CanonHumanPoseRig _rig = new CanonHumanPoseRig();
         private HumanPose                  _pose;
 
         // 指：Humanoid 名の接頭辞と、MediaPipe の手の点の番号（付け根から先へ 4 点）
@@ -289,48 +286,8 @@ namespace Poly_Ling.Motion
         /// <summary>正準骨格と Avatar を組む。ToMuscles の前に 1 回呼ぶ。</summary>
         public bool Build(out string reason)
         {
-            Dispose();
-            _skel = UnityClipCanonVrmAnimation.Build(0.1f, out reason);
-            if (_skel == null) return false;
-            HideAll(_skel.Root.transform);
-
-            var human = new List<HumanBone>();
-            var boneNames = HumanTrait.BoneName;
-            for (int bi = 0; bi < boneNames.Length; bi++)
-            {
-                if (!Enum.TryParse<HumanBodyBones>(boneNames[bi].Replace(" ", string.Empty), out var hbb)) continue;
-                if (!_skel.HumanBones.TryGetValue(hbb, out var t)) continue;
-                var hb = new HumanBone { humanName = boneNames[bi], boneName = t.name };
-                hb.limit.useDefaultValues = true;
-                human.Add(hb);
-            }
-
-            var skeleton = new List<SkeletonBone>();
-            AddSkeleton(_skel.Root.transform, skeleton);
-
-            var desc = new HumanDescription
-            {
-                human = human.ToArray(),
-                skeleton = skeleton.ToArray(),
-                upperArmTwist = 0.5f,
-                lowerArmTwist = 0.5f,
-                upperLegTwist = 0.5f,
-                lowerLegTwist = 0.5f,
-                armStretch = 0.05f,
-                legStretch = 0.05f,
-                feetSpacing = 0.0f,
-                hasTranslationDoF = false,
-            };
-            _avatar = AvatarBuilder.BuildHumanAvatar(_skel.Root, desc);
-            if (_avatar == null || !_avatar.isValid || !_avatar.isHuman)
-            {
-                reason = "正準骨格から Humanoid の Avatar を組めませんでした";
-                Dispose();
-                return false;
-            }
-            _handler = new HumanPoseHandler(_avatar, _skel.Root.transform);
+            if (!_rig.Build(0.1f, out reason)) return false;
             _pose = new HumanPose();
-            reason = null;
             return true;
         }
 
@@ -340,11 +297,11 @@ namespace Poly_Ling.Motion
         /// </summary>
         public bool ToMuscles(MotionLiveFrame into)
         {
-            if (_handler == null || into == null) return false;
+            if (_rig.Skeleton == null || into == null) return false;
 
-            foreach (var kv in _skel.HumanBones)
+            foreach (var kv in _rig.Skeleton.HumanBones)
                 kv.Value.localRotation = Locals.TryGetValue(kv.Key, out var q) ? q : Quaternion.identity;
-            _handler.GetHumanPose(ref _pose);
+            if (!_rig.GetHumanPose(ref _pose)) return false;
 
             int n = HumanTrait.MuscleCount;
             into.EnsureCount(n);
@@ -371,29 +328,6 @@ namespace Poly_Ling.Motion
             return true;
         }
 
-        public void Dispose()
-        {
-            _handler?.Dispose();
-            _handler = null;
-            if (_avatar != null) UnityEngine.Object.Destroy(_avatar);
-            _avatar = null;
-            _skel?.Dispose();
-            _skel = null;
-        }
-
-        private static void HideAll(Transform t)
-        {
-            t.gameObject.hideFlags = HideFlags.HideAndDontSave;
-            for (int i = 0; i < t.childCount; i++) HideAll(t.GetChild(i));
-        }
-
-        private static void AddSkeleton(Transform t, List<SkeletonBone> list)
-        {
-            list.Add(new SkeletonBone
-            {
-                name = t.name, position = t.localPosition, rotation = t.localRotation, scale = t.localScale,
-            });
-            for (int i = 0; i < t.childCount; i++) AddSkeleton(t.GetChild(i), list);
-        }
+        public void Dispose() => _rig.Dispose();
     }
 }

@@ -59,7 +59,7 @@ namespace Poly_Ling.UnityClip.Editor
         private string             _outDir = "";
 
         // ── オプション ────────────────────────────────────────────────────
-        private bool _bakeMuscles = false;   // マッスルにベイク（アバター指定時のみ有効）
+        private bool _bakeMuscles = true;    // マッスルにベイク（アバター指定時のみ有効。既定オン）
         private bool _skinnedOnly = true;    // bones.csv: Skinned ボーン + Humanoid 骨のみ
         private bool _writeHeader = true;    // CSV のヘッダ行
         private bool _utf8Bom     = true;    // CSV の UTF-8 BOM
@@ -100,8 +100,10 @@ namespace Poly_Ling.UnityClip.Editor
             EditorGUILayout.Space();
             using (new EditorGUI.DisabledScope(!AvatarIsHuman))
             {
-                _bakeMuscles = EditorGUILayout.ToggleLeft(
+                // アバター未指定のあいだは表示だけ外し、設定値（既定オン）は保つ。
+                bool shown = EditorGUILayout.ToggleLeft(
                     "マッスルにベイク（マッスルを持たないクリップだけ）", _bakeMuscles && AvatarIsHuman);
+                if (AvatarIsHuman) _bakeMuscles = shown;
             }
             _skinnedOnly = EditorGUILayout.ToggleLeft("bones.csv は Skinned ボーン + Humanoid 骨のみ（推奨）", _skinnedOnly);
             _writeHeader = EditorGUILayout.ToggleLeft("CSV にヘッダ行を付ける", _writeHeader);

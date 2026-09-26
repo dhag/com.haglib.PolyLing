@@ -56,6 +56,33 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// 辺を線分にする。辺の 2 頂点をそのまま使って 2 頂点の面（線分）を足し、
+    /// つながりごとに線分群を作る（分岐点・端点で区切る。全部が次数 2 の輪は閉じた群）。
+    /// 重複した辺・すでに線分がある辺は飛ばす。頂点は増やさない。
+    /// 実行後、対象オブジェクトの選択を作った線分だけにする。
+    /// 実処理は LineGroupEditOps.CreateFromEdges。
+    /// </summary>
+    [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "辺を線分にする（線分化）。辺の頂点をそのまま使って線分と線分群を作り、選択を作った線分に変える。")]
+    [PLResult("lineCount", PLResultKind.Integer, Description = "足した線分の数")]
+    [PLResult("groupIndices", PLResultKind.IntegerArray, Description = "作った線分群の番号")]
+    public class EdgesToLinesCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,
+                 Description = "対象の描画オブジェクトの masterIndex")]
+        public int MasterIndex { get; }
+
+        [PLParam(Description = "対象の辺。頂点番号を 2 個ずつ並べる（v1,v2,v1,v2,...）。空ならそのオブジェクトの選択辺を使う")]
+        public int[] EdgeVertexPairs { get; }
+
+        public EdgesToLinesCommand(int modelIndex, int masterIndex, int[] edgeVertexPairs = null)
+            : base(modelIndex)
+        {
+            MasterIndex     = masterIndex;
+            EdgeVertexPairs = edgeVertexPairs ?? System.Array.Empty<int>();
+        }
+    }
+
     [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群の点列（と任意でハンドル）を差し替える。点の数が変われば頂点と線分も増減する。")]
     public class SetLineGroupPointsCommand : PanelCommand
     {

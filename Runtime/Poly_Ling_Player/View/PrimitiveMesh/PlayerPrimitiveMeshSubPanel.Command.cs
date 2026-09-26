@@ -202,7 +202,7 @@ namespace Poly_Ling.Player
             EnsureRevProfile();
 
             var p = _revP;
-            p.Profile = _revProfile != null ? _revProfile.ToArray() : new Vector2[0];
+            p.Profile = _revProfile != null ? _revProfile.ToArray() : new Vector3[0];
 
             // 取り込み元を控えてあれば、作り直しで折れ線として読み直せる。
             return new CreateRevolutionCommand(

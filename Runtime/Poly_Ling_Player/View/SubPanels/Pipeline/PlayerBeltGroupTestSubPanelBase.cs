@@ -100,7 +100,7 @@ namespace Poly_Ling.Player
         protected int ProfileIndex = -1;
 
         /// <summary>取り込んで正規化した断面。</summary>
-        protected List<Vector2> ProfilePoints;
+        protected List<Vector3> ProfilePoints;
 
         /// <summary>作り直す前の出力先 ObjectId。作り直しても変わらないことを検査する。</summary>
         protected ulong OutputIdBefore;
@@ -162,7 +162,8 @@ namespace Poly_Ling.Player
             if (pts == null || pts.Count < 2)
                 return Ng("断面の点列を作れなかった", null, null);
 
-            var mo = LineProfileExtractor.PolylineToLineMesh(pts, ProfileObjectName, ProfileIsClosed);
+            var mo = LineProfileExtractor.PolylineToLineMesh(
+                Poly_Ling.Revolution.RevolutionProfileGenerator.To3D(pts), ProfileObjectName, ProfileIsClosed);
             if (mo == null || mo.FaceCount == 0)
                 return Ng("線メッシュを作れなかった", null, null);
 
@@ -216,7 +217,7 @@ namespace Poly_Ling.Player
                     "取り込みは「頂点 2 個だけの面」を線とみなして拾う。"
                   + "三角形や四角形の面しか無いオブジェクトからは断面を作れない。");
 
-            List<Vector2> raw = null;
+            List<Vector3> raw = null;
             if (ProfileIsClosed)
             {
                 // 閉ループ断面。複数ループがあれば点数が最多のものを採る。
@@ -437,8 +438,14 @@ namespace Poly_Ling.Player
                 Mathf.RoundToInt(p.z / unit));
 
         protected static string FormatPoints(IReadOnlyList<Vector2> pts)
+            => FormatPoints(pts == null ? null : Poly_Ling.Revolution.RevolutionProfileGenerator.To3D(new List<Vector2>(pts)));
+
+        /// <summary>点列を短く文字にする。z がすべて 0 なら (x,y)、そうでなければ (x,y,z)。</summary>
+        protected static string FormatPoints(IReadOnlyList<Vector3> pts)
         {
             if (pts == null || pts.Count == 0) return "(なし)";
+            bool hasZ = false;
+            foreach (var q in pts) if (Mathf.Abs(q.z) > 1e-6f) { hasZ = true; break; }
             var sb = new StringBuilder();
             int n = Mathf.Min(pts.Count, 10);
             for (int i = 0; i < n; i++)
@@ -446,7 +453,9 @@ namespace Poly_Ling.Player
                 if (i > 0) sb.Append(' ');
                 sb.Append('(')
                   .Append(pts[i].x.ToString("0.###", CultureInfo.InvariantCulture)).Append(',')
-                  .Append(pts[i].y.ToString("0.###", CultureInfo.InvariantCulture)).Append(')');
+                  .Append(pts[i].y.ToString("0.###", CultureInfo.InvariantCulture));
+                if (hasZ) sb.Append(',').Append(pts[i].z.ToString("0.###", CultureInfo.InvariantCulture));
+                sb.Append(')');
             }
             if (pts.Count > n) sb.Append(" …計").Append(pts.Count).Append('点');
             return sb.ToString();

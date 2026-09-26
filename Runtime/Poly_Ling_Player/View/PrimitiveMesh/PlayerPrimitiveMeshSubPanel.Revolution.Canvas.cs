@@ -29,7 +29,7 @@ namespace Poly_Ling.Player
         private Vector2 RevP2C(Vector2 p, float w, float h)            => RevolutionProfileEditCore.ProfileToCanvas(p, w, h, _revZoom, _revOffset);
         private Vector2 RevC2P(Vector2 c, float w, float h)
             => RevolutionProfileEditCore.CanvasToProfile(c, w, h, _revZoom, _revOffset);
-        private int RevFind(List<Vector2> prof, Vector2 c, float w, float h, float md)
+        private int RevFind(List<Vector3> prof, Vector2 c, float w, float h, float md)
             => RevolutionProfileEditCore.FindClosest(prof, c, w, h, md, _revZoom, _revOffset);
 
         /// <summary>下絵レイヤーにプロファイルビューと同じ変換（中心基準ズーム＋パン）を適用。</summary>
@@ -239,7 +239,7 @@ namespace Poly_Ling.Player
             // 2. セグメントヒット判定（10px以内）→ 即時挿入＆ドラッグ開始
             int   bestSeg  = -1;
             float bestDist = 10f;
-            Vector2 insertProf = Vector2.zero;
+            Vector3 insertProf = Vector3.zero;
             int   segCount = _revP.CloseLoop ? _revProfile.Count : _revProfile.Count - 1;
             for (int i = 0; i < segCount; i++)
             {
@@ -252,8 +252,8 @@ namespace Poly_Ling.Player
                 {
                     bestDist   = d;
                     bestSeg    = i;
-                    // 挿入座標をプロファイル空間で計算
-                    insertProf = Vector2.Lerp(_revProfile[i], _revProfile[j], t);
+                    // 挿入座標をプロファイル空間で計算（z も同じ比率で補間）
+                    insertProf = RevolutionProfileEditCore.LerpPoint(_revProfile[i], _revProfile[j], t);
                     insertProf.x = Mathf.Max(0f, insertProf.x);
                 }
             }
@@ -336,7 +336,7 @@ namespace Poly_Ling.Player
                 foreach (var i in _revSel)
                     if (i >= 0 && i < _revProfile.Count) pts.Add(_revProfile[i]);
             }
-            else pts.AddRange(_revProfile);
+            else foreach (var q in _revProfile) pts.Add(q);
             return pts;
         }
 
@@ -455,7 +455,7 @@ namespace Poly_Ling.Player
             bool useSel = _revSel.Count > 0;
             var sel = new List<Vector2>();
             if (useSel) foreach (var i in _revSel) if (i >= 0 && i < _revProfile.Count) sel.Add(_revProfile[i]);
-            var orig = new List<Vector2>(_revProfile);
+            var orig = new List<Vector3>(_revProfile);
 
             for (int i = 0; i < orig.Count; i++)
             {
@@ -467,7 +467,7 @@ namespace Poly_Ling.Player
 
                 var np = Xform2D(orig[i], a, mx, my, sx, sy, saCos, saSin, deg, wt);
                 np.x = Mathf.Max(0f, np.x);   // 回転体 R は非負
-                _revProfile[i] = np;
+                _revProfile[i] = RevolutionProfileEditCore.WithXY(_revProfile[i], np);
             }
             _revP.CurrentPreset = ProfilePreset.Custom;
             RevCommit("変換適用");
@@ -533,7 +533,7 @@ namespace Poly_Ling.Player
                 if (i < 0 || i >= _revProfile.Count) continue;
                 var np = Xform2D(kv.Value, a, 0f, 0f, sx, sy, 1f, 0f, deg, _revHandleW[i]);
                 np.x = Mathf.Max(0f, np.x);
-                _revProfile[i] = np;
+                _revProfile[i] = RevolutionProfileEditCore.WithXY(_revProfile[i], np);
             }
             _revP.CurrentPreset = ProfilePreset.Custom;
             D(); RefreshRevCanvas(); RefreshRevPointUI();
@@ -607,7 +607,7 @@ namespace Poly_Ling.Player
                         if (idx < 0 || idx >= _revProfile.Count) continue;
                         var np = kv.Value + delta;
                         np.x = Mathf.Max(0f, np.x);
-                        _revProfile[idx] = np;
+                        _revProfile[idx] = RevolutionProfileEditCore.WithXY(_revProfile[idx], np);
                     }
                     // マグネット: 非選択点を delta×weight で追従
                     foreach (var kv in _revMagnetStart)
@@ -616,7 +616,7 @@ namespace Poly_Ling.Player
                         if (idx < 0 || idx >= _revProfile.Count) continue;
                         var np = kv.Value + delta * _revMagnetW[idx];
                         np.x = Mathf.Max(0f, np.x);
-                        _revProfile[idx] = np;
+                        _revProfile[idx] = RevolutionProfileEditCore.WithXY(_revProfile[idx], np);
                     }
                     _revP.CurrentPreset = ProfilePreset.Custom;
                     D(); RefreshRevCanvas(); RefreshRevPointUI();

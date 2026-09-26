@@ -11,13 +11,14 @@ namespace Poly_Ling.Player
     /// 右ペインのパネル種別。セクションを作るとき（AddSection）に必ず宣言し、
     /// 種別で表示区画が自動で決まる。
     ///
-    ///   General … 3D 操作を持たないパネル（一覧・入出力・メッシュ処理など）。上区画。
+    ///   General … 3D 操作を持たないパネル（一覧・入出力・メッシュ処理など）。下区画。
     ///   Tool3D  … ビューポートの 3D 操作を使うパネル（頂点移動・選択を使う編集など）。下区画。
-    ///   Pinned  … 常駐のリスト（モデル／オブジェクト／マテリアル）。上区画の先頭に置き、
+    ///   Pinned  … 常駐のリスト（モデル／オブジェクト／マテリアル）。上区画。
     ///             右ペイン最上部のボタンでそれぞれ独立に開閉する（排他にしない）。
     ///
-    /// 上区画は「常駐のリスト（開いているものを縦に並べる）＋その下に一般パネル 1 つ」、
-    /// 下区画は 3D 操作パネル 1 つを表示する。
+    /// 上区画は常駐のリスト（開いているものを縦に並べる）だけを表示する。
+    /// 下区画は一般パネルか 3D 操作パネルのどちらか 1 つだけを表示する（排他。ShowRightPanel）。
+    /// 区画の中に表示中のものがなければ、その区画を隠す（RefreshRightAreas）。
     /// </summary>
     public enum RightPanelKind
     {
@@ -32,13 +33,13 @@ namespace Poly_Ling.Player
         // 右ペイン セクション（公開要素）
         // ================================================================
 
-        /// <summary>右ペイン上区画（一般パネル）の ScrollView の contentContainer。</summary>
-        public VisualElement GeneralPaneContent { get; private set; }
+        /// <summary>右ペイン上区画（常駐リスト）の ScrollView の contentContainer。</summary>
+        public VisualElement PinnedPaneContent { get; private set; }
 
-        /// <summary>右ペイン下区画（3D 操作パネル）の ScrollView の contentContainer。</summary>
-        public VisualElement ToolPaneContent { get; private set; }
+        /// <summary>右ペイン下区画（一般パネル・3D 操作パネル）の ScrollView の contentContainer。</summary>
+        public VisualElement PanelPaneContent { get; private set; }
 
-        /// <summary>下区画を閉じる（3D 操作パネルを 1 つも出さない状態にする）ボタン。</summary>
+        /// <summary>下区画の見出しの「閉じる」ボタン。下区画のパネル（一般・3D 操作のどちらでも）を閉じる。</summary>
         public Button ToolAreaCloseBtn { get; private set; }
 
         /// <summary>右ペイン最上部：常駐リストの開閉ボタン（モデル／オブジェクト／マテリアル）。</summary>
@@ -63,7 +64,11 @@ namespace Poly_Ling.Player
             return null;
         }
 
-        /// <summary>下区画（3D 操作）の外枠。空のときは display=None で隠す。</summary>
+        /// <summary>上区画（常駐リスト）の ScrollView。空のときは display=None で隠す。</summary>
+        private ScrollView _pinnedScroll;
+        /// <summary>上区画が表示中か。隠れている間は下区画が全高を使う。</summary>
+        private bool _pinnedAreaOpen = true;
+        /// <summary>下区画（一般パネル・3D 操作パネル）の外枠。空のときは display=None で隠す。</summary>
         private VisualElement _toolArea;
         /// <summary>上下区画の仕切り（ドラッグで下区画の高さを変える）。</summary>
         private VisualElement _rightAreaSplitter;
@@ -368,19 +373,19 @@ namespace Poly_Ling.Player
             _rightPaneRoot  = pane;
             _rightPinnedBar = pinnedBar;
 
-            // 上区画：常駐リスト（RightPanelKind.Pinned）＋一般パネル（RightPanelKind.General）。残りの高さを全部使う。
-            var generalScroll = new ScrollView(ScrollViewMode.Vertical);
-            generalScroll.style.flexGrow     = 1;
-            generalScroll.style.flexShrink   = 1;
-            generalScroll.style.minHeight    = MinRightAreaH;
-            generalScroll.style.paddingTop   = 4;
-            generalScroll.style.paddingLeft  = 4;
-            generalScroll.style.paddingRight = 4;
-            pane.Add(generalScroll);
-            GeneralPaneContent = generalScroll.contentContainer;
-            GeneralPaneContent.style.color = new StyleColor(Color.white);
+            // 上区画：常駐リスト（RightPanelKind.Pinned）。残りの高さを全部使う。
+            _pinnedScroll = new ScrollView(ScrollViewMode.Vertical);
+            _pinnedScroll.style.flexGrow     = 1;
+            _pinnedScroll.style.flexShrink   = 1;
+            _pinnedScroll.style.minHeight    = MinRightAreaH;
+            _pinnedScroll.style.paddingTop   = 4;
+            _pinnedScroll.style.paddingLeft  = 4;
+            _pinnedScroll.style.paddingRight = 4;
+            pane.Add(_pinnedScroll);
+            PinnedPaneContent = _pinnedScroll.contentContainer;
+            PinnedPaneContent.style.color = new StyleColor(Color.white);
 
-            // 上下の仕切り。下区画が空のときは下区画と一緒に隠す。
+            // 上下の仕切り。上下どちらかの区画が空のときは隠す。
             _rightAreaSplitter = new VisualElement();
             _rightAreaSplitter.style.height          = RightSplitterH;
             _rightAreaSplitter.style.flexShrink      = 0;
@@ -388,7 +393,7 @@ namespace Poly_Ling.Player
             _rightAreaSplitter.style.display         = DisplayStyle.None;
             pane.Add(_rightAreaSplitter);
 
-            // 下区画：3D 操作パネル（RightPanelKind.Tool3D）。見出し行（閉じる）＋ ScrollView。
+            // 下区画：一般パネル（General）と 3D 操作パネル（Tool3D）。見出し行（閉じる）＋ ScrollView。
             _toolArea = new VisualElement();
             _toolArea.style.flexDirection = FlexDirection.Column;
             _toolArea.style.flexShrink    = 0;
@@ -404,7 +409,7 @@ namespace Poly_Ling.Player
             toolHeader.style.flexShrink    = 0;
             toolHeader.style.paddingLeft   = 4;
             toolHeader.style.paddingRight  = 4;
-            var toolLabel = new Label("3D操作");
+            var toolLabel = new Label("パネル");
             toolLabel.style.flexGrow = 1;
             toolLabel.style.color    = new StyleColor(Color.white);
             toolHeader.Add(toolLabel);
@@ -419,8 +424,8 @@ namespace Poly_Ling.Player
             toolScroll.style.paddingLeft  = 4;
             toolScroll.style.paddingRight = 4;
             _toolArea.Add(toolScroll);
-            ToolPaneContent = toolScroll.contentContainer;
-            ToolPaneContent.style.color = new StyleColor(Color.white);
+            PanelPaneContent = toolScroll.contentContainer;
+            PanelPaneContent.style.color = new StyleColor(Color.white);
 
             SetupRightAreaSplitterDrag(pane);
 
@@ -606,12 +611,15 @@ namespace Poly_Ling.Player
             // ── 描画オブジェクト単位の種別変換セクション
             SkinKindSection = AddSection(visible: false, kind: RightPanelKind.General);
 
+            // 起動時の表示状態（既定表示のセクション）に合わせて上下区画を出し分ける。
+            RefreshRightAreas();
+
             return pane;
         }
 
         /// <summary>
         /// 右ペインにセクションを追加する。種別（kind）で入る区画が決まる
-        /// （General → 上区画、Tool3D → 下区画）。種別は台帳に記録し、
+        /// （Pinned → 上区画、General / Tool3D → 下区画）。種別は台帳に記録し、
         /// パネル切替（ShowRightPanel）は台帳から種別を引いて同じ区画だけを切り替える。
         /// 区切り線はセクション自身の上ボーダーで表現するため、
         /// 非表示時（display=None）には区切り線も一緒に消える。
@@ -631,21 +639,59 @@ namespace Poly_Ling.Player
                 v.style.paddingTop     = 4;
                 v.style.marginTop      = 4;
             }
-            (kind == RightPanelKind.Tool3D ? ToolPaneContent : GeneralPaneContent).Add(v);
+            (kind == RightPanelKind.Pinned ? PinnedPaneContent : PanelPaneContent).Add(v);
             _rightSections.Add(v);
             _rightSectionKinds[v] = kind;
             return v;
         }
 
         /// <summary>
-        /// 下区画（3D 操作）の表示／非表示。空のときは仕切りごと隠し、上区画が全高を使う。
+        /// 下区画のセクションを区画の先頭（いちばん上）へ移す。パネルを開くたびに呼び、
+        /// あとから開いたほうを上に置く。常駐リスト（上区画）には何もしない。
         /// </summary>
-        public void SetToolAreaOpen(bool open)
+        public void MoveSectionToTop(VisualElement section)
         {
-            var d = open ? DisplayStyle.Flex : DisplayStyle.None;
-            if (_toolArea != null)          _toolArea.style.display          = d;
-            if (_rightAreaSplitter != null) _rightAreaSplitter.style.display = d;
-            if (open) ApplyToolAreaHeight();
+            if (section == null || section.parent != PanelPaneContent) return;
+            section.SendToBack();
+        }
+
+        /// <summary>
+        /// 上下区画の表示／非表示を、各区画に表示中のセクションがあるかで決め直す。
+        /// セクションの表示を変えたあとに呼ぶ。
+        ///   上下とも表示 … 上区画が残りの高さ、下区画は保存した高さ（上限で抑える）、仕切りあり。
+        ///   上区画だけ空 … 上区画と仕切りを隠し、下区画が全高を使う。
+        ///   下区画だけ空 … 下区画と仕切りを隠し、上区画が全高を使う。
+        /// </summary>
+        public void RefreshRightAreas()
+        {
+            bool pinnedOpen = false, panelOpen = false;
+            foreach (var s in _rightSections)
+            {
+                if (s.style.display != DisplayStyle.Flex) continue;
+                if (_rightSectionKinds[s] == RightPanelKind.Pinned) pinnedOpen = true;
+                else                                                panelOpen  = true;
+            }
+
+            _pinnedAreaOpen = pinnedOpen;
+            if (_pinnedScroll != null)
+                _pinnedScroll.style.display = pinnedOpen ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_toolArea != null)
+                _toolArea.style.display = panelOpen ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_rightAreaSplitter != null)
+                _rightAreaSplitter.style.display = (pinnedOpen && panelOpen) ? DisplayStyle.Flex : DisplayStyle.None;
+
+            if (_toolArea == null) return;
+            if (pinnedOpen)
+            {
+                _toolArea.style.flexGrow = 0;
+                ApplyToolAreaHeight();
+            }
+            else
+            {
+                // 上区画がないときは高さ指定を外し、下区画を全高に伸ばす。
+                _toolArea.style.flexGrow = 1;
+                _toolArea.style.height   = StyleKeyword.Auto;
+            }
         }
 
         /// <summary>
@@ -666,8 +712,10 @@ namespace Poly_Ling.Player
         private void ApplyToolAreaHeight()
         {
             if (_toolArea == null) return;
+            // 上区画が隠れている間は下区画が全高を使う（RefreshRightAreas）ので高さを指定しない。
+            if (!_pinnedAreaOpen) return;
             float h   = Mathf.Clamp(_toolAreaDesiredH, MinRightAreaH, ToolAreaMaxH());
-            float cur = _toolArea.style.height.value.value;
+            float cur = _toolArea.style.height.keyword == StyleKeyword.Auto ? -1f : _toolArea.style.height.value.value;
             if (!Mathf.Approximately(cur, h)) _toolArea.style.height = h;
         }
 

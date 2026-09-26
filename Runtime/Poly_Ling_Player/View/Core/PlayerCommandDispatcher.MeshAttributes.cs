@@ -338,6 +338,16 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case MatchEdgeChainCountCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnMatchEdgeChainCount == null) { Fail("edge chain count handler not wired"); return true; }
+                    string mecReason = OnMatchEdgeChainCount.Invoke(c);
+                    if (mecReason != null) { Fail(mecReason); return true; }
+                    ReportData(BuildTopologyCountsData(model, c.MeshIndex));
+                    return true;
+                }
+
                 case CreateObjectArrayCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
