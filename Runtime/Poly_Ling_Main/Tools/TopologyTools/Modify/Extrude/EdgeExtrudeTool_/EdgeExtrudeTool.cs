@@ -2,9 +2,10 @@
 // 面張りツール - IToolSettings対応版
 //
 // 【押し出しの形】
-//   選択中の辺・線分の頂点を 1 回だけ複製し（共有頂点は 1 つにまとめる）、
-//   辺・線分ごとに「元の 2 頂点 + 複製 2 頂点」の四角形を足す。
-//   共有頂点の複製が 1 つなので、隣り合う四角形はつながった帯になる。
+//   選択中の辺・線分の頂点を段数（Segments、最低 1）ぶん複製し（各段で共有頂点は 1 つ）、
+//   隣り合う段の間に辺・線分ごとの四角形を足す（0 段目は元の頂点）。
+//   k 段目は押し出し量の k/N の位置に置くので、四角形がはしご状に並ぶ。
+//   共有頂点の複製が各段 1 つなので、隣り合う四角形はつながった帯になる。
 //   線分（2 頂点の面）は作り替えずにそのまま残す（線分群の前提
 //   「隣り合う点の間に 2 頂点の面が 1 枚ある」を壊さないため）。
 //
@@ -65,6 +66,13 @@ namespace Poly_Ling.Tools
             set => _settings.DragSensitivity = value;
         }
 
+        /// <summary>段数（はしご状に並べる四角形の数。最低 1）。</summary>
+        public int Segments
+        {
+            get => _settings.Segments;
+            set => _settings.Segments = value;
+        }
+
         // ================================================================
         // 状態
         // ================================================================
@@ -90,9 +98,15 @@ namespace Poly_Ling.Tools
         // 押し出し量（対象メッシュのローカル空間）
         private Vector3 _accumMove;
 
-        // ドラッグ中の頂点位置更新用
-        private struct ExtrudeDragVertex { public int Index; public Vector3 BasePos; }
+        // ドラッグ中の頂点位置更新用。
+        //   T    : 押し出し量に掛ける割合（k 段目なら k/N）。最上段は 1。
+        //   Slot : 複製元の並び（辺の頂点順、続いて線分の頂点順。共有頂点は 1 回）での番号。
+        //   Top  : 最上段か。ギズモ・NewVertexPositions が扱うのは最上段だけ。
+        private struct ExtrudeDragVertex { public int Index; public Vector3 BasePos; public float T; public int Slot; public bool Top; }
         private List<ExtrudeDragVertex> _extrudeDragVertices = new List<ExtrudeDragVertex>();
+
+        /// <summary>今の押し出しで作った段数（ExecuteExtrude が決める）。</summary>
+        private int _activeSegments = 1;
 
         // 押し出し対象
         private List<EdgeInfo> _targetEdges = new List<EdgeInfo>();
@@ -223,6 +237,7 @@ namespace Poly_Ling.Tools
             _screenTotal = Vector2.zero;
             _gizmoSession = false;
             _vertexRemap.Clear();
+            _activeSegments = 1;
         }
 
         public void OnSelectionChanged(ToolContext ctx)
@@ -259,20 +274,23 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// 指定した辺・線分（複数可）を押し出す。
-        /// newPositions があれば、複製頂点の位置をその並び（複製を作る順）で置く。無ければ localOffset だけずらす。
+        /// newPositions があれば、最上段の複製頂点の位置をその並び（複製を作る順）で置き、
+        /// 途中の段は元の位置と最上段の位置を k/N で結んだ位置に置く。無ければ localOffset を k/N ずつずらす。
         /// </summary>
         /// <param name="edges">対象の辺。</param>
         /// <param name="lines">対象の線分索引（頂点数 2 の面）。</param>
         /// <param name="reversedLines">四角形を裏返す線分索引（lines の部分集合）。null は無し。</param>
         /// <param name="localOffset">対象メッシュのローカル空間での押し出し量（newPositions が無いとき）。</param>
-        /// <param name="newPositions">複製頂点の最終位置（ローカル、複製を作る順）。null なら localOffset を使う。</param>
+        /// <param name="newPositions">最上段の複製頂点の最終位置（ローカル、複製を作る順）。null なら localOffset を使う。</param>
+        /// <param name="segments">段数（最低 1）。</param>
         /// <param name="reason">実行できなかった理由。成功時は null。</param>
         public bool ApplyExtrudeFromCommand(
             ToolContext ctx, IReadOnlyList<VertexPair> edges, IReadOnlyList<int> lines,
             IEnumerable<int> reversedLines, Vector3 localOffset, IReadOnlyList<Vector3> newPositions,
-            out string reason)
+            int segments, out string reason)
         {
             reason = null;
+            segments = Mathf.Max(1, segments);
 
             if (_state != ExtrudeState.Idle)
             { reason = "ドラッグ中は実行できません"; return false; }
@@ -326,22 +344,28 @@ namespace Poly_Ling.Tools
 
                 if (usePositions)
                 {
-                    ExecuteExtrude(ctx, Vector3.zero);
-                    if (newPositions.Count != _extrudeDragVertices.Count)
+                    ExecuteExtrude(ctx, Vector3.zero, segments);
+                    int topCount = 0;
+                    foreach (var dv in _extrudeDragVertices) if (dv.Top) topCount++;
+                    if (newPositions.Count != topCount)
                     {
-                        reason = $"NewVertexPositions の点数（{newPositions.Count}）が複製頂点の数（{_extrudeDragVertices.Count}）と合いません";
+                        reason = $"NewVertexPositions の点数（{newPositions.Count}）が最上段の複製頂点の数（{topCount}）と合いません";
                         RestoreSnapshot(ctx);
                         return false;
                     }
-                    for (int i = 0; i < _extrudeDragVertices.Count; i++)
-                        mo.Vertices[_extrudeDragVertices[i].Index].Position = newPositions[i];
+                    // 最上段は指定位置、途中の段は元の位置と最上段を k/N で結んだ位置。
+                    foreach (var dv in _extrudeDragVertices)
+                    {
+                        Vector3 top = newPositions[dv.Slot];
+                        mo.Vertices[dv.Index].Position = dv.Top ? top : Vector3.Lerp(dv.BasePos, top, dv.T);
+                    }
                     mo.InvalidatePositionCache();
                     ctx.SyncMesh?.Invoke();
                 }
                 else
                 {
                     _accumMove = localOffset;
-                    ExecuteExtrude(ctx, localOffset);
+                    ExecuteExtrude(ctx, localOffset, segments);
                 }
                 EndExtrude(ctx);   // Undo 記録
             }
@@ -400,14 +424,15 @@ namespace Poly_Ling.Tools
 
             _reversedLines.Clear();
             _accumMove = Vector3.zero;
-            ExecuteExtrude(ctx, Vector3.zero);
+            ExecuteExtrude(ctx, Vector3.zero, Segments);
             _state = ExtrudeState.Extruding;
             _gizmoSession = true;
             return true;
         }
 
         /// <summary>
-        /// 離したとき最初に呼ぶ。複製頂点の今の位置を読み、線分の四角形の表を決める。
+        /// 離したとき最初に呼ぶ。最上段の複製頂点の今の位置を読み（複製を作る順）、線分の四角形の表を決める。
+        /// 途中の段はギズモの対象ではないので読まない（確定時に k/N の位置へ置く）。
         /// ギズモ側が開始状態へ戻す前に呼ぶこと。
         /// </summary>
         public bool CaptureGizmoResult(ToolContext ctx)
@@ -420,6 +445,7 @@ namespace Poly_Ling.Tools
 
             foreach (var dv in _extrudeDragVertices)
             {
+                if (!dv.Top) continue;
                 var p = (dv.Index >= 0 && dv.Index < mo.VertexCount) ? mo.Vertices[dv.Index].Position : dv.BasePos;
                 _capturedPositions.Add(p);
                 if ((p - dv.BasePos).sqrMagnitude > 1e-12f) _capturedChanged = true;
@@ -432,16 +458,18 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// ギズモ側を開始状態へ戻させた後に呼ぶ。押す前へ戻し、確定内容を取り出す。
         /// 動いていなければ changed = false（呼び出し側はコマンドを送らない）。
+        /// positions は最上段の位置、segments はこの押し出しの段数。
         /// </summary>
         public void FinishGizmoSession(
             ToolContext ctx, out bool changed, out List<VertexPair> edges, out List<int> lines,
-            out List<int> reversedLines, out List<Vector3> positions)
+            out List<int> reversedLines, out List<Vector3> positions, out int segments)
         {
             changed       = _gizmoSession && _capturedChanged;
             edges         = new List<VertexPair>();
             lines         = new List<int>();
             reversedLines = new List<int>();
             positions     = new List<Vector3>(_capturedPositions);
+            segments      = _activeSegments;
 
             foreach (var e in _targetEdges) edges.Add(new VertexPair(e.V0, e.V1));
             lines.AddRange(_targetLines);
@@ -492,12 +520,13 @@ namespace Poly_Ling.Tools
         /// </summary>
         public bool TryTakeExtrudeFromDrag(
             ToolContext ctx, out List<VertexPair> edges, out List<int> lines,
-            out List<int> reversedLines, out Vector3 localOffset)
+            out List<int> reversedLines, out Vector3 localOffset, out int segments)
         {
             edges         = new List<VertexPair>();
             lines         = new List<int>();
             reversedLines = new List<int>();
             localOffset   = Vector3.zero;
+            segments      = _activeSegments;
 
             if (!ExtrudePending) return false;
             if (ctx?.UndoController == null || _snapshotBefore == null) return false;
@@ -557,7 +586,7 @@ namespace Poly_Ling.Tools
             _accumMove = Vector3.zero;
 
             // トポロジーを即時実行し _extrudeDragVertices を確定させる
-            ExecuteExtrude(ctx, Vector3.zero);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
+            ExecuteExtrude(ctx, Vector3.zero, Segments);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
 
             _state = ExtrudeState.Extruding;
             // EnterTransformDragging は使用しない。
@@ -567,6 +596,7 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// 押した位置からの画面上の差を、複製頂点の移動量（ローカル）にして反映する。
+        /// k 段目の頂点は移動量の k/N だけ動かす（最上段が全量）。
         /// 基準は複製頂点の先頭。スキンド頂点はボーンの SkinningMatrix で変換されるため、
         /// メッシュの WorldMatrixInverse では倍率と向きが合わない（WorldToLocalVectorAt を使う）。
         /// </summary>
@@ -581,7 +611,7 @@ namespace Poly_Ling.Tools
                 foreach (var dv in _extrudeDragVertices)
                 {
                     if (dv.Index >= 0 && dv.Index < meshObject.VertexCount)
-                        meshObject.Vertices[dv.Index].Position = dv.BasePos + _accumMove;
+                        meshObject.Vertices[dv.Index].Position = dv.BasePos + _accumMove * dv.T;
                 }
             }
             ctx.SyncMeshPositionsOnly?.Invoke();
@@ -605,19 +635,21 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
-        /// 対象の頂点を 1 回だけ複製し（共有頂点は 1 つ）、辺・線分ごとに四角形を足す。
-        /// 線分は作り替えずに残す。
+        /// 対象の頂点を段数ぶん複製し（各段で共有頂点は 1 つ）、隣り合う段の間に
+        /// 辺・線分ごとの四角形を足す（0 段目は元の頂点。はしご状につながる）。
+        /// k 段目の頂点は元の位置 + offset × k/N に置く。線分は作り替えずに残す。
         /// </summary>
-        private void ExecuteExtrude(ToolContext ctx, Vector3 offset)
+        private void ExecuteExtrude(ToolContext ctx, Vector3 offset, int segments)
         {
             var meshObject = ctx.ActiveMeshObject;
             _vertexRemap.Clear();
-            var vertexRemap = _vertexRemap;
+            int n = Mathf.Max(1, segments);
+            _activeSegments = n;
 
             // 押し出しで増える頂点の始まり。部品ID / サブIDの採番に使う。
             int origVertexCount = meshObject.VertexCount;
 
-            // 複製順を安定させるため、辺・線分の並び順で頂点を集める。
+            // 複製順を安定させるため、辺・線分の並び順で頂点を集める（この並びが Slot）。
             var allVertices = new List<int>();
             var seen = new HashSet<int>();
             void Collect(int v) { if (v >= 0 && v < meshObject.VertexCount && seen.Add(v)) allVertices.Add(v); }
@@ -633,29 +665,47 @@ namespace Poly_Ling.Tools
 
             if (allVertices.Count == 0) return;
 
+            // rows[k][元の頂点] = k 段目の頂点。rows[0] は元の頂点そのもの。
+            var rows = new List<Dictionary<int, int>>(n + 1);
+            var row0 = new Dictionary<int, int>();
+            foreach (int v in allVertices) row0[v] = v;
+            rows.Add(row0);
+
             _extrudeDragVertices.Clear();
-            foreach (int vIdx in allVertices)
+            for (int k = 1; k <= n; k++)
             {
-                var oldV = meshObject.Vertices[vIdx];
-                int newIdx = meshObject.VertexCount;
-                var newV = new Vertex { Position = oldV.Position + offset };
-                newV.UVs.AddRange(oldV.UVs);
-                newV.Normals.AddRange(oldV.Normals);
-                // 複製元の BoneWeight をコピーする。設定しないと GPU 側で
-                // メッシュ自身の context 索引が使われ（UnifiedBufferManager_Build.cs:356-362）、
-                // 周囲の頂点と別の行列で変換されてこの頂点だけ離れた位置に置かれる。
-                newV.BoneWeight = oldV.BoneWeight;
-                vertexRemap[vIdx] = newIdx;
-                meshObject.Vertices.Add(newV);
-                _extrudeDragVertices.Add(new ExtrudeDragVertex { Index = newIdx, BasePos = oldV.Position });
+                float t = (float)k / n;
+                var row = new Dictionary<int, int>();
+                for (int slot = 0; slot < allVertices.Count; slot++)
+                {
+                    int vIdx = allVertices[slot];
+                    var oldV = meshObject.Vertices[vIdx];
+                    int newIdx = meshObject.VertexCount;
+                    var newV = new Vertex { Position = oldV.Position + offset * t };
+                    newV.UVs.AddRange(oldV.UVs);
+                    newV.Normals.AddRange(oldV.Normals);
+                    // 複製元の BoneWeight をコピーする。設定しないと GPU 側で
+                    // メッシュ自身の context 索引が使われ（UnifiedBufferManager_Build.cs:356-362）、
+                    // 周囲の頂点と別の行列で変換されてこの頂点だけ離れた位置に置かれる。
+                    newV.BoneWeight = oldV.BoneWeight;
+                    row[vIdx] = newIdx;
+                    meshObject.Vertices.Add(newV);
+                    _extrudeDragVertices.Add(new ExtrudeDragVertex
+                    {
+                        Index = newIdx, BasePos = oldV.Position, T = t, Slot = slot, Top = k == n,
+                    });
+                }
+                rows.Add(row);
             }
+
+            // 元の頂点 → 最上段（線分の四角形の表の判定などが使う）
+            foreach (var kv in rows[n]) _vertexRemap[kv.Key] = kv.Value;
 
             // 今回増えた頂点を 1 つの部品として扱う。
             Poly_Ling.Ops.PartsIdOps.AssignNewVertices(meshObject, origVertexCount);
 
             int matIdx = ctx.CurrentMaterialIndex;
             var newEdges = new List<VertexPair>();
-            var newFaceIndices = new List<int>();
 
             void AddQuad(int a, int b, int nb, int na)
             {
@@ -664,13 +714,11 @@ namespace Poly_Ling.Tools
                 f.UVIndices.AddRange(new[] { a, b, nb, na });
                 f.NormalIndices.AddRange(new[] { a, b, nb, na });
                 meshObject.Faces.Add(f);
-                newFaceIndices.Add(meshObject.FaceCount - 1);
             }
 
             foreach (var edge in _targetEdges)
             {
-                if (!vertexRemap.TryGetValue(edge.V0, out int nv0)) continue;
-                if (!vertexRemap.TryGetValue(edge.V1, out int nv1)) continue;
+                if (!row0.ContainsKey(edge.V0) || !row0.ContainsKey(edge.V1)) continue;
 
                 bool reverseWinding = false;
                 if (edge.AdjacentFace.HasValue && edge.AdjacentFace.Value < meshObject.FaceCount)
@@ -682,9 +730,14 @@ namespace Poly_Ling.Tools
                         reverseWinding = (idxV1 == (idxV0 + 1) % adjFace.VertexCount);
                 }
 
-                if (reverseWinding) AddQuad(edge.V0, nv0, nv1, edge.V1);
-                else                AddQuad(edge.V0, edge.V1, nv1, nv0);
-                newEdges.Add(new VertexPair(nv0, nv1));
+                for (int k = 1; k <= n; k++)
+                {
+                    int a0 = rows[k - 1][edge.V0], a1 = rows[k - 1][edge.V1];
+                    int b0 = rows[k][edge.V0],     b1 = rows[k][edge.V1];
+                    if (reverseWinding) AddQuad(a0, b0, b1, a1);
+                    else                AddQuad(a0, a1, b1, b0);
+                }
+                newEdges.Add(new VertexPair(rows[n][edge.V0], rows[n][edge.V1]));
             }
 
             // 線分：元の線分（2 頂点の面）は残し、四角形だけ足す。
@@ -693,22 +746,27 @@ namespace Poly_Ling.Tools
             {
                 var line = meshObject.Faces[lineIdx];
                 int v0 = line.VertexIndices[0], v1 = line.VertexIndices[1];
-                if (!vertexRemap.TryGetValue(v0, out int nv0)) continue;
-                if (!vertexRemap.TryGetValue(v1, out int nv1)) continue;
+                if (!row0.ContainsKey(v0) || !row0.ContainsKey(v1)) continue;
 
-                if (_reversedLines.Contains(lineIdx)) AddQuad(v1, v0, nv0, nv1);
-                else                                  AddQuad(v0, v1, nv1, nv0);
-                newEdges.Add(new VertexPair(nv0, nv1));
+                bool rev = _reversedLines.Contains(lineIdx);
+                for (int k = 1; k <= n; k++)
+                {
+                    int a0 = rows[k - 1][v0], a1 = rows[k - 1][v1];
+                    int b0 = rows[k][v0],     b1 = rows[k][v1];
+                    if (rev) AddQuad(a1, a0, b0, b1);
+                    else     AddQuad(a0, a1, b1, b0);
+                }
+                newEdges.Add(new VertexPair(rows[n][v0], rows[n][v1]));
             }
 
-            // 押し出し後の選択：新しい辺と複製頂点。面は選ばない
+            // 押し出し後の選択：最上段の辺と頂点。面は選ばない
             // （面を選ぶと、頂点への展開で元の頂点までギズモの対象になる）。
             ctx.SelectionState.Vertices.Clear();
             ctx.SelectionState.Edges.Clear();
             ctx.SelectionState.Lines.Clear();
             ctx.SelectionState.Faces.Clear();
             foreach (var dv in _extrudeDragVertices)
-                ctx.SelectionState.Vertices.Add(dv.Index);
+                if (dv.Top) ctx.SelectionState.Vertices.Add(dv.Index);
             foreach (var e in newEdges)
                 ctx.SelectionState.Edges.Add(e);
 

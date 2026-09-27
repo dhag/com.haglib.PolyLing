@@ -51,8 +51,53 @@ namespace Poly_Ling.Player
                 case StartScenarioRecordingCommand c: RunStartScenarioRecording(c); return true;
                 case StopScenarioRecordingCommand c:  RunStopScenarioRecording(c);  return true;
                 case QueryScenarioAuditCommand c:     RunQueryScenarioAudit(c);     return true;
+                case ExportScenariosCommand c:        RunExportScenarios(c);        return true;
+                case ImportScenariosCommand c:        RunImportScenarios(c);        return true;
                 default: return false;
             }
+        }
+
+        // ================================================================
+        // 別ファイルとの出し入れ
+        // ================================================================
+
+        private void RunExportScenarios(ExportScenariosCommand cmd)
+        {
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(cmd.FilePath, out string path, out string reason)) { Fail(reason); return; }
+
+            if (!ScenarioLibrary.TryExport(cmd.Names, out string csv, out var names, out string error)) { Fail(error); return; }
+
+            try
+            {
+                string dir = System.IO.Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(path, csv, System.Text.Encoding.UTF8);
+            }
+            catch (Exception e) { Fail($"書き出しに失敗しました: {e.Message}"); return; }
+
+            ReportData(CommandDataJson.New()
+                .Text ("path",  path)
+                .Int  ("count", names.Count)
+                .Texts("names", names)
+                .Build());
+        }
+
+        private void RunImportScenarios(ImportScenariosCommand cmd)
+        {
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(cmd.FilePath, out string path, out string reason)) { Fail(reason); return; }
+            if (!System.IO.File.Exists(path)) { Fail($"ファイルがありません: {cmd.FilePath}"); return; }
+
+            string[] lines;
+            try { lines = System.IO.File.ReadAllLines(path, System.Text.Encoding.UTF8); }
+            catch (Exception e) { Fail($"読み込みに失敗しました: {e.Message}"); return; }
+
+            if (!ScenarioLibrary.TryImport(lines, cmd.Overwrite, out var added, out var replaced, out string error)) { Fail(error); return; }
+
+            ReportData(CommandDataJson.New()
+                .Texts("added",    added)
+                .Texts("replaced", replaced)
+                .Int  ("count",    ScenarioLibrary.Count)
+                .Build());
         }
 
         // ================================================================

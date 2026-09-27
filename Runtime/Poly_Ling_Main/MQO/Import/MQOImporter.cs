@@ -125,6 +125,9 @@ namespace Poly_Ling.MQO
 
         private static void ConvertDocument(MQODocument document, MQOImportSettings settings, MQOImportResult result)
         {
+            // 下絵（BackImage チャンク）→ モデルの下絵
+            result.Underlay = ConvertBackImages(document, settings);
+
             // マテリアル変換
             if (settings.ImportMaterials)
             {

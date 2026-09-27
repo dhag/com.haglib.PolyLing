@@ -76,6 +76,10 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnImportPmxFile       = ExecuteImportPmxFile;
             _commandDispatcher.OnExportPmxFile       = ExecuteExportPmxFile;
             _commandDispatcher.OnImportMqoFile       = ExecuteImportMqoFile;
+            _commandDispatcher.OnSetUnderlay         = ExecuteSetUnderlay;
+            _commandDispatcher.OnClearUnderlay       = ExecuteClearUnderlay;
+            _commandDispatcher.OnQueryUnderlay       = ExecuteQueryUnderlay;
+            _commandDispatcher.OnCameraCommand       = ExecuteCameraCommand;
             _commandDispatcher.OnExportMqoFile       = ExecuteExportMqoFile;
             _commandDispatcher.OnImportObjFile       = ExecuteImportObjFile;
             _commandDispatcher.OnExportObjFile       = ExecuteExportObjFile;

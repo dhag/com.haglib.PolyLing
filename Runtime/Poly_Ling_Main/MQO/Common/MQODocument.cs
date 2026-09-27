@@ -347,22 +347,22 @@ namespace Poly_Ling.MQO
     /// </summary>
     public class MQOBackImage
     {
-        /// <summary>パート名（FRONT, BACK, LEFT, RIGHT, TOP, BOTTOM）</summary>
+        /// <summary>パート名（front / back / left / right / top / bottom。大文字小文字は問わない）。4 つの数値は公式仕様に記載が無く、手元の MQO（480×480 画像で -240 -240 240 240）から画像の向かい合う 2 隅と読んでいる</summary>
         public string Part { get; set; }
 
         /// <summary>画像パス</summary>
         public string Path { get; set; }
 
-        /// <summary>X位置</summary>
-        public float X { get; set; }
+        /// <summary>1 隅の横座標（MQO 座標）</summary>
+        public float X0 { get; set; }
 
-        /// <summary>Y位置</summary>
-        public float Y { get; set; }
+        /// <summary>1 隅の縦座標（MQO 座標）</summary>
+        public float Y0 { get; set; }
 
-        /// <summary>幅</summary>
-        public float Width { get; set; }
+        /// <summary>向かい合う隅の横座標（MQO 座標）</summary>
+        public float X1 { get; set; }
 
-        /// <summary>高さ</summary>
-        public float Height { get; set; }
+        /// <summary>向かい合う隅の縦座標（MQO 座標）</summary>
+        public float Y1 { get; set; }
     }
 }

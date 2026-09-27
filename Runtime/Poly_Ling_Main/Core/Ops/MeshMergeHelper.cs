@@ -171,9 +171,38 @@ namespace Poly_Ling.Ops
             if (removeClosedFaces)
                 RemoveClosedFacePairs(meshObject, mergedRepresentatives);
 
-            // 不要頂点を削除
+            // 不要頂点を削除。
+            //   旧索引→新索引の表（結合された頂点は代表の新索引）を作り、面を新しい索引へ
+            //   書き換えてから、面を触らない入口 RemoveVerticesWithMap で頂点を詰める。
+            //   この入口を通すことで、線分群（LineGroups）・選択・ID 表・除外セットも同じ表で
+            //   付け替わる（自前で Vertices を詰めるとこれらが取り残される）。
             if (verticesToRemove.Count > 0)
-                RemoveVertices(meshObject, verticesToRemove);
+            {
+                int vcount = meshObject.VertexCount;
+                var keptIndex = new int[vcount];
+                int w = 0;
+                for (int i = 0; i < vcount; i++)
+                    keptIndex[i] = verticesToRemove.Contains(i) ? -1 : w++;
+
+                var map = new int[vcount];
+                for (int i = 0; i < vcount; i++)
+                {
+                    int rep = vertexRemap.TryGetValue(i, out int r) ? r : i;
+                    map[i] = keptIndex[rep];
+                }
+
+                foreach (var face in meshObject.Faces)
+                {
+                    var vidx = face.VertexIndices;
+                    for (int i = 0; i < vidx.Count; i++)
+                    {
+                        int ov = vidx[i];
+                        if (ov >= 0 && ov < vcount) vidx[i] = map[ov];
+                    }
+                }
+
+                meshObject.RemoveVerticesWithMap(verticesToRemove, map);
+            }
 
             result.Success = true;
             result.RemovedVertexCount = verticesToRemove.Count;
@@ -296,9 +325,19 @@ namespace Poly_Ling.Ops
                     if (newNormalIndices.Count > 0) newNormalIndices.RemoveAt(newNormalIndices.Count - 1);
                 }
 
-                if (newVertexIndices.Count < 3)
+                // 元が 2 頂点の面（線分）は 2 頂点残れば成立している。
+                // 3 未満で一律に消すと、結合と無関係な線分まで全部消える。
+                int minCount = face.VertexIndices.Count == 2 ? 2 : 3;
+                if (newVertexIndices.Count < minCount)
                 {
-                    // 頂点数が3未満なら面を削除（控えるだけ）
+                    // 成立しなくなった面を削除（控えるだけ）。
+                    // 消す面も新しい索引へ書き換えておく（詰めずに 1 対 1 で写す）。
+                    // 面の削除は頂点を詰めた後に行うので、線分群（新しい索引）との
+                    // 照合（LineGroupOps.SplitAtRemovedFaces）が同じ索引どうしになる。
+                    var mapped = new List<int>(face.VertexIndices.Count);
+                    foreach (int oldIdx in face.VertexIndices)
+                        mapped.Add(oldIdx >= 0 && oldIdx < originalCount ? indexMap[oldIdx] : -1);
+                    face.VertexIndices = mapped;
                     facesToRemove.Add(f);
                 }
                 else
@@ -310,17 +349,20 @@ namespace Poly_Ling.Ops
                 }
             }
 
-            meshObject.RemoveFaces(facesToRemove);
-
             // 4. 頂点を削除（マージ先以外）
             //    面は上で新しい索引へ書き換え済みなので、面を触らない入口を使う。
             //    表（indexMap）をそのまま渡すことで、選択とパーツ選択辞書は
-            //    マージ先の索引へ寄る（MeshObject.Removal.cs）。
+            //    マージ先の索引へ寄り、線分群は潰れた区間が畳まれる（MeshObject.Removal.cs）。
             var verticesToRemove = verticesToMerge
                 .Where(i => i != targetVertex && i >= 0 && i < meshObject.VertexCount)
                 .ToList();
 
             meshObject.RemoveVerticesWithMap(verticesToRemove, indexMap);
+
+            // 5. 成立しなくなった面を消す。
+            //    潰れた線分（両端が同じ頂点）は線分群側で既に畳まれているので、
+            //    SplitAtRemovedFaces はその区間で群を切らない。
+            meshObject.RemoveFaces(facesToRemove);
 
             return targetNewIndex;
         }
@@ -413,46 +455,6 @@ namespace Poly_Ling.Ops
             //    面は上で新しい索引へ書き換え済みなので、面を触らない入口を使う。
             //    表を渡すことで選択とパーツ選択辞書も追随する（MeshObject.Removal.cs）。
             meshObject.RemoveVerticesWithMap(verticesToDelete, indexMap);
-        }
-
-        /// <summary>
-        /// 指定された頂点を削除する（面インデックス更新済みの場合）
-        /// MergeVerticesAtSamePosition内部で使用
-        /// </summary>
-        public static void RemoveVertices(MeshObject meshObject, HashSet<int> verticesToRemove)
-        {
-            if (meshObject == null || verticesToRemove == null || verticesToRemove.Count == 0)
-                return;
-
-            var indexRemap = new Dictionary<int, int>();
-            int newIndex = 0;
-
-            for (int i = 0; i < meshObject.VertexCount; i++)
-            {
-                if (!verticesToRemove.Contains(i))
-                {
-                    indexRemap[i] = newIndex;
-                    newIndex++;
-                }
-            }
-
-            var newVertices = new List<Vertex>();
-            for (int i = 0; i < meshObject.VertexCount; i++)
-            {
-                if (!verticesToRemove.Contains(i))
-                    newVertices.Add(meshObject.Vertices[i]);
-            }
-            meshObject.Vertices.Clear();
-            meshObject.Vertices.AddRange(newVertices);
-
-            foreach (var face in meshObject.Faces)
-            {
-                for (int i = 0; i < face.VertexIndices.Count; i++)
-                {
-                    if (indexRemap.TryGetValue(face.VertexIndices[i], out int newIdx))
-                        face.VertexIndices[i] = newIdx;
-                }
-            }
         }
 
         // ================================================================
@@ -565,6 +567,14 @@ namespace Poly_Ling.Ops
             {
                 var face   = meshObject.Faces[i];
                 var unique = new HashSet<int>(face.VertexIndices);
+
+                // 2 頂点の面（線分）は、2 頂点が同じ番号に潰れたときだけ縮退とみなす。
+                // 3 未満で一律に消すと、結合と無関係な線分まで全部消える。
+                if (face.VertexCount == 2)
+                {
+                    if (unique.Count < 2) toRemove.Add(i);
+                    continue;
+                }
 
                 // unique頂点が3未満、または重複頂点が残存している面を削除
                 if (unique.Count < 3 || unique.Count < face.VertexCount)

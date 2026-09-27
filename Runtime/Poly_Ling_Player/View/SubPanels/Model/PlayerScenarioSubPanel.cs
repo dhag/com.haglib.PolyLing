@@ -76,6 +76,17 @@ namespace Poly_Ling.Player
         private ScrollView _logScroll;
         [UiControl("log", Safety = UiSafety.ReadOnly, Description = "流した段の記録")]
         private Label    _logLabel;
+        [UiControl("export", Safety = UiSafety.UserOnly, Description = "選んだ手本（と参照先の手本）を CSV ファイルへ書き出す。保存先のダイアログを開く")]
+        private Button   _btnExport;
+        [UiControl("import", Safety = UiSafety.UserOnly, Description = "CSV ファイルから手本を取り込む。ファイルを選ぶダイアログを開く")]
+        private Button   _btnImport;
+        [UiControl("importOverwrite", Description = "取り込むとき、同じ名前の手本を差し替える")]
+        private Toggle   _importOverwrite;
+        [UiControl("fileStatus", Safety = UiSafety.ReadOnly, Description = "書き出し・取り込みの結果")]
+        private Label    _fileStatusLabel;
+
+        private const string ExportKey = "Scenario.Export";
+        private const string ImportKey = "Scenario.Import";
 
         private readonly List<ObjectGroup> _scenarios  = new List<ObjectGroup>();
         private readonly List<string>      _labels     = new List<string>();
@@ -187,6 +198,25 @@ namespace Poly_Ling.Player
             _logLabel.style.fontSize   = 10;
             _logScroll.Add(_logLabel);
             _root.Add(_logScroll);
+
+            // ── ファイルとの出し入れ ──
+            _root.Add(SecLabel("ファイル"));
+            var fileRow = new VisualElement();
+            fileRow.style.flexDirection = FlexDirection.Row;
+            fileRow.style.marginBottom  = 2;
+            _btnExport = MkBtn("書き出す", OnExport); _btnExport.style.flexGrow = 1; _btnExport.style.marginRight = 2;
+            _btnImport = MkBtn("読み込む", OnImport); _btnImport.style.flexGrow = 1;
+            fileRow.Add(_btnExport); fileRow.Add(_btnImport);
+            _root.Add(fileRow);
+
+            _importOverwrite = new Toggle("読み込むとき同じ名前を差し替える") { value = false };
+            _importOverwrite.style.marginBottom = 2;
+            _root.Add(_importOverwrite);
+
+            _fileStatusLabel = new Label();
+            _fileStatusLabel.style.whiteSpace = WhiteSpace.Normal;
+            _fileStatusLabel.style.fontSize   = 10;
+            _root.Add(_fileStatusLabel);
 
             Refresh();
         }
@@ -404,6 +434,41 @@ namespace Poly_Ling.Player
             if (_stopLabel == null) return;
             _stopLabel.text = text ?? "";
             _stopLabel.style.color = new StyleColor(new Color(1f, 0.55f, 0.45f));
+        }
+
+        /// <summary>選んだ手本（無ければ全部）を CSV ファイルへ書き出す。参照先の手本も入る。</summary>
+        private void OnExport()
+        {
+            var sel = Selected();
+            string defaultName = (sel != null ? sel.Name : "scenarios") + ".csv";
+            // 保存ダイアログで選んだパスは作業フォルダの外でも 1 回だけ通る（SaveDest.AskSavePath）。
+            string path = Poly_Ling.Core.SaveDest.AskSavePath("手本を書き出す", ExportKey, "", defaultName, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            var names = sel != null ? new[] { sel.Name } : null;
+            var r = RunCommand?.Invoke(new ExportScenariosCommand(ModelIndex, path, names));
+            SetFileStatus(r, $"書き出しました: {path}");
+        }
+
+        /// <summary>CSV ファイルから手本を取り込み、一覧を読み直す。</summary>
+        private void OnImport()
+        {
+            string path = PlayerIoUiKit.AskLoadPath("手本を読み込む", ImportKey, "", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+            path = Poly_Ling.Core.PLSandbox.AllowOnceFromDialog(path);
+
+            bool overwrite = _importOverwrite != null && _importOverwrite.value;
+            var r = RunCommand?.Invoke(new ImportScenariosCommand(ModelIndex, path, overwrite));
+            SetFileStatus(r, $"読み込みました: {path}");
+            if (r != null && r.Success) Refresh();
+        }
+
+        private void SetFileStatus(CommandResult r, string ok)
+        {
+            if (_fileStatusLabel == null) return;
+            bool success = r != null && r.Success;
+            _fileStatusLabel.text = success ? ok : $"できませんでした: {r?.Reason ?? "実行の口が配線されていません"}";
+            _fileStatusLabel.style.color = new StyleColor(success ? new Color(0.6f, 0.9f, 0.6f) : new Color(1f, 0.55f, 0.45f));
         }
 
         // ================================================================

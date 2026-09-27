@@ -446,7 +446,9 @@ namespace Poly_Ling.Player
         private PlayerMotionClipTestSubPanel _motionClipTestSubPanel;
 
         // 下絵（3D背面に敷く参照画像）
-        private readonly UnderlayConfig      _underlay = new UnderlayConfig();
+        private UnderlayConfig               _underlayCfg;
+        /// <summary>下絵の画像と、現在モデルの下絵設定（ModelContext.Underlay）への窓口。</summary>
+        private UnderlayConfig               _underlay => _underlayCfg ??= new UnderlayConfig(() => ActiveProject?.CurrentModel);
         private PlayerUnderlaySubPanel       _underlaySubPanel;
         private bool                         _underlayActive;  // 下絵パネル表示中＝左ドラッグでオフセット移動
 

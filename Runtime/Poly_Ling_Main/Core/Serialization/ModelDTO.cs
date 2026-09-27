@@ -12,6 +12,7 @@
 //   ModelDTO.Morph.cs     DTO：モーフ基準データとミラーペア。
 //   ModelDTO.Rig.cs       DTO：IK／剛体／JOINT・スプリングボーン・VRM 1.0 モデルレベル設定・Avatar リターゲット・座標規約。
 //   ModelDTO.Settings.cs  DTO：エクスポート設定・WorkPlane・エディタ状態。
+//   ModelDTO.Underlay.cs  DTO：下絵。
 
 using System;
 using System.Collections.Generic;
@@ -177,6 +178,9 @@ namespace Poly_Ling.Serialization
 
         /// <summary>PMX / MQO の座標規約（null=未設定）。</summary>
         public CoordinateConventionDTO coordinateConvention;
+
+        /// <summary>下絵の設定（null=下絵なし）。</summary>
+        public UnderlayDTO underlay;
 
         // ================================================================
         // 埋め込みテクスチャ（リモートのヒエラルキー送信専用）

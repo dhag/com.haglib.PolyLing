@@ -140,6 +140,7 @@ namespace Poly_Ling.Player
             // 【将来別途検討】3D wire と菱形マーカーが視覚的に重複するため、
             // 3D 表示モード整理時に菱形マーカーの要否を再検討する。
             _viewportManager.OnRefreshBoneOverlay = () => { UpdateBoneOverlay(); UpdateLineCurveOverlay(); };
+            _viewportManager.OnRefreshUnderlay    = RefreshUnderlayPlacement;
             // Phase 2c-3: ツール固有 overlay を各 Enter* 入口末尾から駆動する。
             // 各ハンドラ側は内部状態（ホバー辺、プレビュー点、confirm 済み点等）を保持し、
             // ここで呼ばれる Update*Overlay が現在の視点で再投影して panel.Show*Preview に渡す。
@@ -759,21 +760,52 @@ namespace Poly_Ling.Player
             }
             WireTilt();
 
-            // ── 下絵オフセット移動（下絵パネル表示中の左ドラッグ） ─────
+            // ── 下絵の移動（下絵パネル表示中の左ドラッグ） ─────
+            //   ドラッグ中はモデルの下絵設定を直に動かして表示だけ合わせ、
+            //   離したときに最終値を setUnderlay で確定させる（記録・MCP と同じ経路に載せる）。
             void ConnectUnderlayDrag(PlayerViewport vp, PlayerViewportPanel panel)
             {
                 if (vp == null || panel == null) return;
+                bool dragging = false;
+                UnderlayDirection dragDir = UnderlayDirection.Persp;
+
                 panel.OnDrag += (btn, pos, delta, mods) =>
                 {
                     if (!_underlayActive || btn != 0) return;
                     var dir = GetUnderlayDirection(vp);
-                    var s   = _underlay.Get(dir);
-                    if (s == null || !s.HasImage) return;
+                    var s   = _underlay.Peek(dir);
+                    if (s == null || s.IsEmpty || _underlay.GetTexture(dir) == null) return;
 
-                    // delta は viewport座標(Y=0下)。TopLeft は UIToolkit(Y=0上) のためY反転。
-                    s.TopLeft += new Vector2(delta.x, -delta.y);
-                    panel.SetUnderlay(s.Texture, s.TopLeft, s.ScaleOrigin, s.Scale);
+                    if (UnderlayData.IsModelAnchored(dir))
+                    {
+                        // delta は viewport座標(Y=0下)。2 隅を同じだけ平行移動する。
+                        if (!s.HasCorners) return;
+                        if (!TryMoveByScreenDelta(vp.Cam, s.Corner0, delta, out var moved)) return;
+                        Vector3 d = moved - s.Corner0;
+                        s.Corner0 += d;
+                        s.Corner1 += d;
+                    }
+                    else
+                    {
+                        // TopLeft は UIToolkit(Y=0上) のためY反転。
+                        s.TopLeft += new Vector2(delta.x, -delta.y);
+                    }
+
+                    dragging = true;
+                    dragDir  = dir;
+                    PlaceUnderlay(vp, panel);
                     _underlaySubPanel?.RefreshFields(dir);
+                };
+
+                panel.OnDragEnd += (btn, pos, mods) =>
+                {
+                    if (!dragging) return;
+                    dragging = false;
+                    var s = _underlay.Peek(dragDir);
+                    if (s == null || s.IsEmpty) return;
+                    DispatchFromPanel(new SetUnderlayCommand(
+                        PanelModelIndex(), dragDir, "", keepPlacement: false,
+                        s.Corner0, s.Corner1, s.TopLeft, s.ScaleOrigin, s.Scale.x, s.Scale.y));
                 };
             }
             ConnectUnderlayDrag(_viewportManager.PerspectiveViewport, _layoutRoot?.PerspectivePanel);

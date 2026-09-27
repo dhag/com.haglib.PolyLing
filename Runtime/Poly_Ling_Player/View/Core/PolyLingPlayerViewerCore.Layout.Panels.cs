@@ -510,7 +510,8 @@ namespace Poly_Ling.Player
         /// <summary>BuildLayout の段：下絵・軸／グリッド・作業フォルダ・キャプチャ・リモートサーバ・ログ・頂点移動・ピボット・スカルプト・詳細選択・入出力。</summary>
         private void BuildIoAndMiscPanels()
         {
-            _underlaySubPanel = new PlayerUnderlaySubPanel(_underlay, ApplyAllUnderlays);
+            _underlaySubPanel = new PlayerUnderlaySubPanel(
+                _underlay, DispatchFromPanel, PanelModelIndex, AllowPanelPath);
             _underlaySubPanel.Build(_layoutRoot.UnderlaySection);
 
             _gridAxisSubPanel = new PlayerGridAxisSubPanel(

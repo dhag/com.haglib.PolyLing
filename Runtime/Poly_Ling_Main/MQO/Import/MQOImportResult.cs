@@ -37,6 +37,9 @@ namespace Poly_Ling.MQO
         /// <summary>インポートされたボーンMeshContextリスト</summary>
         public List<MeshContext> BoneMeshContexts { get; } = new List<MeshContext>();
 
+        /// <summary>下絵（BackImage チャンク）。無ければ null。モデルの ModelContext.Underlay へ移す。</summary>
+        public UnderlayData Underlay { get; set; }
+
         /// <summary>インポートされたマテリアル参照リスト（正式形式）</summary>
         public List<MaterialReference> MaterialReferences { get; } = new List<MaterialReference>();
 

@@ -362,6 +362,9 @@ namespace Poly_Ling.Player
             foreach (var pair in result.MirrorPairs)
                 model.MirrorPairs.Add(pair);
 
+            // 下絵（BackImage チャンク）
+            model.Underlay = result.Underlay;
+
             return model;
         }
     }

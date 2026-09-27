@@ -31,6 +31,8 @@ namespace Poly_Ling.Player
         private DropdownField _gizmoDropdown;
         [UiControl("extrudePaused", Description = "押し出しの一時停止（チェック中は普通の移動・回転・拡大縮小）")]
         private Toggle _pauseToggle;
+        [UiControl("segments", Description = "段数（押し出す方向へ四角形をはしご状に並べる数。最低 1）")]
+        private SliderInt _segmentsSlider;
 
         // 並びは EdgeExtrudeToolHandler.GizmoKind の値と同じ（None=0, Move=1, Rotate=2, Scale=3）
         private static readonly System.Collections.Generic.List<string> GizmoChoices =
@@ -56,6 +58,11 @@ namespace Poly_Ling.Player
             _pauseToggle.style.color = new StyleColor(Color.white);
             _pauseToggle.RegisterValueChangedCallback(e => Surface.Set(Tool, "extrudePaused", e.newValue));
             _root.Add(_pauseToggle);
+
+            // 段数（はしご状に並べる四角形の数）
+            _segmentsSlider = MakeIntSlider("段数", 1, 32, 1, v => Surface.Set(Tool, "segments", Mathf.Max(1, v)));
+            _segmentsSlider.showInputField = true;
+            _root.Add(_segmentsSlider);
             var modeChoices = new System.Collections.Generic.List<string> { "ViewPlane", "Normal", "Free" };
             var modeValues = new[] { EdgeExtrudeSettings.ExtrudeMode.ViewPlane, EdgeExtrudeSettings.ExtrudeMode.Normal, EdgeExtrudeSettings.ExtrudeMode.Free };
             var modeDD = new DropdownField("Mode", modeChoices, 0);
@@ -100,6 +107,8 @@ namespace Poly_Ling.Player
                 _gizmoDropdown.SetValueWithoutNotify(GizmoChoices[gi]);
             bool paused = Surface.GetBool(Tool, "extrudePaused");
             if (_pauseToggle != null && _pauseToggle.value != paused) _pauseToggle.SetValueWithoutNotify(paused);
+            int seg = Surface.Get(Tool, "segments", 1);
+            if (_segmentsSlider != null && _segmentsSlider.value != seg) _segmentsSlider.SetValueWithoutNotify(seg);
         }
 
         // ── ヘルパー ──────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ namespace Poly_Ling.Tools
         [SerializeField] private ExtrudeMode _mode = ExtrudeMode.ViewPlane;
         [SerializeField] private bool _snapToAxis = false;
         [SerializeField] private float _dragSensitivity = 1f;
+        [SerializeField] private int _segments = 1;
 
         public ExtrudeMode Mode
         {
@@ -44,6 +45,15 @@ namespace Poly_Ling.Tools
             set => _dragSensitivity = Mathf.Max(0.001f, value);
         }
 
+        /// <summary>
+        /// 段数。1 辺から押し出す方向へ並べる四角形の数（はしご状）。最低 1。
+        /// </summary>
+        public int Segments
+        {
+            get => _segments;
+            set => _segments = Mathf.Max(1, value);
+        }
+
         public EdgeExtrudeSettings() { }
 
         public EdgeExtrudeSettings(ExtrudeMode mode, bool snapToAxis)
@@ -56,6 +66,7 @@ namespace Poly_Ling.Tools
         {
             var c = new EdgeExtrudeSettings(_mode, _snapToAxis);
             c._dragSensitivity = _dragSensitivity;
+            c._segments = _segments;
             return c;
         }
 
@@ -66,6 +77,7 @@ namespace Poly_Ling.Tools
                 _mode = src._mode;
                 _snapToAxis = src._snapToAxis;
                 _dragSensitivity = src._dragSensitivity;
+                _segments = src._segments;
             }
         }
 
@@ -75,7 +87,8 @@ namespace Poly_Ling.Tools
             {
                 return _mode != src._mode
                     || _snapToAxis != src._snapToAxis
-                    || !Mathf.Approximately(_dragSensitivity, src._dragSensitivity);
+                    || !Mathf.Approximately(_dragSensitivity, src._dragSensitivity)
+                    || _segments != src._segments;
             }
             return true;
         }

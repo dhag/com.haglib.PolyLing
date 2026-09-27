@@ -243,6 +243,7 @@ namespace Poly_Ling.Context
             VrmLookAt = null;
             AvatarRetarget = null;
             CoordinateConvention = null;
+            Underlay = null;
             ClearSpringBoneHighlight();
             ClearAllCategorySelection();
             InvalidateTypedIndices();

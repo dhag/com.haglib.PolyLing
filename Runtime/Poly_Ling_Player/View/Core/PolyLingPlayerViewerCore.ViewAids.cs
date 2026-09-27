@@ -204,29 +204,112 @@ namespace Poly_Ling.Player
         {
             if (vp == null || panel == null) return;
 
-            var slot = _underlay.Get(GetUnderlayDirection(vp));
-            if (slot != null && slot.HasImage)
-            {
-                panel.SetUnderlay(slot.Texture, slot.TopLeft, slot.ScaleOrigin, slot.Scale);
-                vp.SetClearTransparent(true);
-            }
-            else
-            {
-                panel.ClearUnderlay();
-                vp.SetClearTransparent(false);
-            }
+            bool shown = PlaceUnderlay(vp, panel);
+            vp.SetClearTransparent(shown);
 
             // クリア色の変化を反映するため再描画。
             _viewportManager.EnterCameraChanged(vp, CameraChangePhase.Committed);
         }
 
-        /// <summary>4ビュー全てへ下絵を再適用する（設定変更時）。</summary>
+        /// <summary>4ビュー全てへ下絵を再適用する（設定変更・モデル切替時）。</summary>
         private void ApplyAllUnderlays()
         {
             ApplyUnderlayToViewport(_viewportManager.PerspectiveViewport, _layoutRoot?.PerspectivePanel);
             ApplyUnderlayToViewport(_viewportManager.TopViewport,        _layoutRoot?.TopPanel);
             ApplyUnderlayToViewport(_viewportManager.FrontViewport,      _layoutRoot?.FrontPanel);
             ApplyUnderlayToViewport(_viewportManager.SideViewport,       _layoutRoot?.SidePanel);
+        }
+
+        /// <summary>
+        /// カメラが動いたとき、モデル座標で置いた下絵の位置を合わせ直す
+        /// （PlayerViewportManager.OnRefreshUnderlay。EnterCameraChanged の末尾から呼ばれる）。
+        /// 再描画は要求しない（呼び出し元が描き直しの最中のため）。
+        /// 連動する平行投影ビューも一緒に動くので、4 ビューとも合わせる。
+        /// </summary>
+        private void RefreshUnderlayPlacement()
+        {
+            if (_viewportManager == null || _layoutRoot == null) return;
+            PlaceUnderlayIfAnchored(_viewportManager.PerspectiveViewport, _layoutRoot.PerspectivePanel);
+            PlaceUnderlayIfAnchored(_viewportManager.TopViewport,         _layoutRoot.TopPanel);
+            PlaceUnderlayIfAnchored(_viewportManager.FrontViewport,       _layoutRoot.FrontPanel);
+            PlaceUnderlayIfAnchored(_viewportManager.SideViewport,        _layoutRoot.SidePanel);
+        }
+
+        private void PlaceUnderlayIfAnchored(PlayerViewport vp, PlayerViewportPanel panel)
+        {
+            if (vp == null || panel == null) return;
+            if (!UnderlayData.IsModelAnchored(GetUnderlayDirection(vp))) return;
+            PlaceUnderlay(vp, panel);
+        }
+
+        /// <summary>
+        /// 現在方向の下絵をパネルへ敷き、位置を合わせる。敷いたら true。再描画は要求しない。
+        /// 上下前後左右は 2 隅のモデル座標をこのビューのカメラで投影した矩形に敷く。
+        /// Persp / Ortho は画面ピクセル基準の値をそのまま使う。
+        /// </summary>
+        private bool PlaceUnderlay(PlayerViewport vp, PlayerViewportPanel panel)
+        {
+            var dir  = GetUnderlayDirection(vp);
+            var slot = _underlay.Peek(dir);
+            var tex  = _underlay.GetTexture(dir);
+            if (slot == null || tex == null) { panel.ClearUnderlay(); return false; }
+
+            if (!UnderlayData.IsModelAnchored(dir))
+            {
+                panel.SetUnderlay(tex, slot.TopLeft, slot.ScaleOrigin, slot.Scale);
+                return true;
+            }
+
+            if (!TryProjectUnderlayRect(vp, slot, out Rect r)) { panel.ClearUnderlay(); return false; }
+            panel.SetUnderlay(tex, new Vector2(r.xMin, r.yMin), Vector2.zero,
+                              new Vector2(r.width / tex.width, r.height / tex.height));
+            return true;
+        }
+
+        /// <summary>
+        /// 2 隅のモデル座標をビューのカメラで投影し、パネル座標（Y=0 が上）の矩形にする。
+        /// カメラの画素数はパネルの大きさと同じ（PlayerViewportPanel.ToViewportCoord の前提）。
+        /// </summary>
+        private static bool TryProjectUnderlayRect(PlayerViewport vp, UnderlaySlotData slot, out Rect rect)
+        {
+            rect = default;
+            var cam = vp?.Cam;
+            if (cam == null || slot == null || !slot.HasCorners) return false;
+
+            Vector2 a = PlayerViewportManager.ProjectWorldToCameraScreen(cam, slot.Corner0);
+            Vector2 b = PlayerViewportManager.ProjectWorldToCameraScreen(cam, slot.Corner1);
+            if (float.IsNaN(a.x) || float.IsNaN(b.x)) return false;
+
+            float h  = cam.pixelHeight;
+            float x0 = Mathf.Min(a.x, b.x), x1 = Mathf.Max(a.x, b.x);
+            float y0 = h - Mathf.Max(a.y, b.y), y1 = h - Mathf.Min(a.y, b.y);
+            if (x1 - x0 < 0.5f || y1 - y0 < 0.5f) return false;   // 真横から見ている等で潰れた
+
+            rect = Rect.MinMaxRect(x0, y0, x1, y1);
+            return true;
+        }
+
+        /// <summary>
+        /// モデル座標の点を、ビュー上で画面の delta（Y=0 が下の画素）だけ動かした点を返す。
+        /// 奥行きは元の点のまま保つ。下絵のドラッグ移動に使う。
+        /// </summary>
+        private static bool TryMoveByScreenDelta(Camera cam, Vector3 world, Vector2 delta, out Vector3 moved)
+        {
+            moved = world;
+            if (cam == null || cam.pixelWidth <= 0 || cam.pixelHeight <= 0) return false;
+
+            Matrix4x4 vpMat = cam.projectionMatrix * cam.worldToCameraMatrix;
+            Vector4 clip = vpMat * new Vector4(world.x, world.y, world.z, 1f);
+            if (clip.w <= 0f) return false;
+
+            Vector3 ndc = new Vector3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
+            ndc.x += 2f * delta.x / cam.pixelWidth;
+            ndc.y += 2f * delta.y / cam.pixelHeight;
+
+            Vector4 back = vpMat.inverse * new Vector4(ndc.x, ndc.y, ndc.z, 1f);
+            if (Mathf.Abs(back.w) < 1e-12f) return false;
+            moved = new Vector3(back.x / back.w, back.y / back.w, back.z / back.w);
+            return true;
         }
 
         private void ShowExportPanel(PlayerExportSubPanel.Mode mode)

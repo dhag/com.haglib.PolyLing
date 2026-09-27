@@ -201,6 +201,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // coordinate.csv（PMX/MQO の座標規約。未設定なら書かない）
             WriteOrDeleteCoordinateCsv(modelFolderPath, model);
 
+            // underlay.csv（下絵。1 つも無ければ書かない）
+            WriteOrDeleteUnderlayCsv(modelFolderPath, model);
+
             // textures フォルダにテクスチャをコピー
             string texturesFolder = Path.Combine(modelFolderPath, "textures");
             Directory.CreateDirectory(texturesFolder);
@@ -434,6 +437,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string ccPath = Path.Combine(modelFolderPath, "coordinate.csv");
             if (File.Exists(ccPath))
                 ReadCoordinateCsv(ccPath, model);
+
+            string ulPath = Path.Combine(modelFolderPath, UnderlayCsvName);
+            if (File.Exists(ulPath))
+                ReadUnderlayCsv(ulPath, model);
 
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
             IKChainResolver.RebuildLinksFromPerBone(model);

@@ -540,5 +540,8 @@ namespace Poly_Ling.Context
 
         /// <summary>PMX / MQO の座標規約。null=未設定（読み手の既定値を使う）。</summary>
         public CoordinateConventionData CoordinateConvention { get; set; } = null;
+
+        /// <summary>下絵（ビューの背面に敷く参照画像）の設定。null=下絵なし。形状ではないので Undo に入れない。</summary>
+        public UnderlayData Underlay { get; set; } = null;
     }
 }

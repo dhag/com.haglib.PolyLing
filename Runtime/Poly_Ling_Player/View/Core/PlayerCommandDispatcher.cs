@@ -1076,6 +1076,8 @@ namespace Poly_Ling.Player
             if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchVertexBillboard(cmd, project, model))   return;
             if (DispatchLineGroup(cmd, project, model))         return;
+            if (DispatchUnderlay(cmd, project, model))          return;
+            if (DispatchCamera(cmd, project, model))            return;
             if (DispatchDeformSkin(cmd, project, model))        return;
             if (DispatchMirrorHumanoidVrm(cmd, project, model)) return;
             if (DispatchSpringBone(cmd, project, model))        return;

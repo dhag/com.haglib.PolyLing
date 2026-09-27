@@ -31,6 +31,8 @@ namespace Poly_Ling.Player
         private DropdownField _typeDropdown;
         [UiControl("individualNormals", Description = "面ごとの法線方向へ押し出す")]
         private Toggle _individualNormalsToggle;
+        [UiControl("segments", Description = "段数（押し出す方向へ重ねる層の数。最低 1）")]
+        private SliderInt _segmentsSlider;
 
         public void Build(VisualElement parent)
         {
@@ -58,6 +60,13 @@ namespace Poly_Ling.Player
             _root.Add(normalToggle);
             _individualNormalsToggle = normalToggle;
 
+            // 段数（押し出す方向へ重ねる層の数）
+            _segmentsSlider = new SliderInt("段数", 1, 32) { value = 1, showInputField = true };
+            _segmentsSlider.style.color = new StyleColor(Color.white);
+            _segmentsSlider.style.marginBottom = 3;
+            _segmentsSlider.RegisterValueChangedCallback(e => Surface.Set(Tool, "segments", Mathf.Max(1, e.newValue)));
+            _root.Add(_segmentsSlider);
+
             // Drag Sensitivity — テキストボックス（カメラ平面での実ドラッグ距離への比例係数）
             var sensRow = new VisualElement();
             sensRow.style.flexDirection = FlexDirection.Row;
@@ -81,6 +90,8 @@ namespace Poly_Ling.Player
         {
             if (Surface == null) return;
             _dragSensField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "dragSensitivity", 1f));
+            int seg = Surface.GetInt(Tool, "segments", 1);
+            if (_segmentsSlider != null && _segmentsSlider.value != seg) _segmentsSlider.SetValueWithoutNotify(seg);
         }
 
         /// <summary>

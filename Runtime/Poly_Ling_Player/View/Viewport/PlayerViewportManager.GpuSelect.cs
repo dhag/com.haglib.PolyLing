@@ -259,7 +259,7 @@ namespace Poly_Ling.Player
         /// Painter2D 側 (OnGenerateFaceOverlay) は panelH - y の反転を行って UIToolkit 系 (Y=0 が上) に変換する。
         /// </summary>
         /// <returns>投影成功時はスクリーン座標、カメラ背面の場合は NaN を含む Vector2。</returns>
-        private static Vector2 ProjectWorldToCameraScreen(Camera cam, Vector3 worldPos)
+        internal static Vector2 ProjectWorldToCameraScreen(Camera cam, Vector3 worldPos)
         {
             Matrix4x4 vpMat = cam.projectionMatrix * cam.worldToCameraMatrix;
             Vector4 clip = vpMat * new Vector4(worldPos.x, worldPos.y, worldPos.z, 1f);

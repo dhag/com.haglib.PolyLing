@@ -108,8 +108,13 @@ namespace Poly_Ling.Data
                  Description = "押し出し量。対象メッシュのローカル空間のベクトル。NewVertexPositions を指定したときは使わない")]
         public Vector3 LocalOffset { get; }
 
-        [PLParam(Description = "複製頂点の最終位置（ローカル、x,y,z を 3 個ずつ）。並びは複製を作る順（辺の頂点順、続いて線分の頂点順。共有頂点は 1 回）。指定すると LocalOffset の代わりに使う")]
+        [PLParam(Description = "最上段の複製頂点の最終位置（ローカル、x,y,z を 3 個ずつ）。並びは複製を作る順（辺の頂点順、続いて線分の頂点順。共有頂点は 1 回）。途中の段は元の位置と最上段を k/N で結んだ位置に置く。指定すると LocalOffset の代わりに使う")]
         public float[] NewVertexPositions { get; }
+
+        [PLParam(TextKey = "EdgeExtrudeSegments",
+                 Description = "段数。押し出す方向へ四角形をはしご状に並べる数。最低 1（既定 1）",
+                 Min = 1)]
+        public int Segments { get; }
 
         public EdgeExtrudeCommand(
             int modelIndex, int[] masterIndices,
@@ -117,7 +122,8 @@ namespace Poly_Ling.Data
             Vector3 localOffset = default,
             int[] reversedLineIndices = null,
             ulong[] objectIds = null,
-            float[] newVertexPositions = null)
+            float[] newVertexPositions = null,
+            int segments = 1)
             : base(modelIndex)
         {
             MasterIndices       = masterIndices ?? System.Array.Empty<int>();
@@ -127,13 +133,15 @@ namespace Poly_Ling.Data
             ReversedLineIndices = reversedLineIndices ?? System.Array.Empty<int>();
             LocalOffset         = localOffset;
             NewVertexPositions  = newVertexPositions ?? System.Array.Empty<float>();
+            Segments            = segments < 1 ? 1 : segments;
         }
     }
 
     /// <summary>
-    /// 指定した面を押し出す。実処理は FaceExtrudeTool。
+    /// 指定した面（複数可）を押し出す。実処理は FaceExtrudeTool。
+    /// 対象は FaceIndices。空なら FaceIndex の 1 枚。
     /// </summary>
-    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した面を押し出す。")]
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Hazards = PLCommandHazard.InvalidatesMorphs, Verification = PLCommandVerification.Topology | PLCommandVerification.Normals, Writes = PLWriteScope.Targets, Description = "指定した面（複数可）を押し出す。段数を指定すると側面がはしご状になる。")]
     public class FaceExtrudeCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
@@ -145,8 +153,11 @@ namespace Poly_Ling.Data
                  Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
         public ulong[] ObjectIds     { get; }
 
-        [PLParam(TextKey = "FaceExtrudeFaceIndex", Description = "対象の面の索引", Required = true)]
+        [PLParam(TextKey = "FaceExtrudeFaceIndex", Description = "対象の面の索引（1 枚のとき）。FaceIndices を指定したときは使わない")]
         public int   FaceIndex { get; }
+
+        [PLParam(Description = "対象の面の索引（複数）。空なら FaceIndex の 1 枚")]
+        public int[] FaceIndices { get; }
 
         /// <summary>押し出し距離。対象メッシュのローカル空間の長さ。負値で内側へ。</summary>
         [PLParam(TextKey = "FaceExtrudeDistance",
@@ -166,22 +177,32 @@ namespace Poly_Ling.Data
                  Description = "面ごとの法線で押し出す。false で平均法線")]
         public bool  IndividualNormals { get; }
 
+        [PLParam(TextKey = "FaceExtrudeSegments",
+                 Description = "段数。押し出す方向へ重ねる層の数（側面がはしご状になる）。最低 1（既定 1）",
+                 Min = 1)]
+        public int Segments { get; }
+
         public FaceExtrudeCommand(
             int modelIndex, int[] masterIndices,
-            int faceIndex, float distance,
+            float distance,
+            int faceIndex = -1,
             FaceExtrudeSettings.ExtrudeType type = FaceExtrudeSettings.ExtrudeType.Normal,
             float bevelScale        = 0.8f,
             bool individualNormals  = false,
-            ulong[] objectIds       = null)
+            ulong[] objectIds       = null,
+            int[] faceIndices       = null,
+            int segments            = 1)
             : base(modelIndex)
         {
             MasterIndices     = masterIndices ?? System.Array.Empty<int>();
             ObjectIds         = objectIds;
             FaceIndex         = faceIndex;
+            FaceIndices       = faceIndices ?? System.Array.Empty<int>();
             Distance          = distance;
             Type              = type;
             BevelScale        = bevelScale;
             IndividualNormals = individualNormals;
+            Segments          = segments < 1 ? 1 : segments;
         }
     }
 

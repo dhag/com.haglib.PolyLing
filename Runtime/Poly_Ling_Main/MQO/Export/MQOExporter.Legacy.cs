@@ -34,6 +34,9 @@ namespace Poly_Ling.MQO
             // デフォルトシーン情報
             document.Scene = CreateDefaultScene();
 
+            // 下絵（モデルの UnderlayData → BackImage チャンク）
+            AppendBackImages(document, meshContexts, settings);
+
             // マテリアル収集（MeshContext.Materialsから）
             var materialMap = new Dictionary<Material, int>();
             if (settings.ExportMaterials)

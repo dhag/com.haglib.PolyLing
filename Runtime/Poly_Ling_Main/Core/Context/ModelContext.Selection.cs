@@ -212,6 +212,43 @@ namespace Poly_Ling.Context
             RemapIndexReferences(map);
         }
 
+        /// <summary>
+        /// このモデルの全オブジェクトを、別モデルの末尾（既存 offset 件の後ろ）へ移す前に、
+        /// 索引参照（親・ミラー元・左右対ボーン・ボーンウェイト等）を offset だけずらす。
+        ///
+        /// 付け替える中身は Insert / RemoveAt / Move と同じ RemapIndexReferences。
+        /// 索引参照フィールドの列挙をここに複製しないこと。
+        ///
+        /// 移したあとの並びを前提にした値になるので、呼んだ後このモデル自体は使わないこと。
+        /// Humanoid 割当と T ポーズ退避はモデル単位の情報なので移さない前提
+        /// （ずらした索引がこのモデルの件数を超えるため、Humanoid 割当は落ちる）。
+        /// </summary>
+        public void OffsetIndexReferences(int offset)
+        {
+            if (offset <= 0 || MeshContextList == null || MeshContextList.Count == 0) return;
+
+            var map = new int[MeshContextList.Count];
+            for (int i = 0; i < map.Length; i++) map[i] = i + offset;
+
+            RemapIndexReferences(map);
+
+            // IK の集約表現（TargetIndex / Links[].BoneIndex）も索引で持つ。
+            // RemapIndexReferences の対象外なので、ここでずらす。
+            // （per-bone 表現の EffectorBoneName は名前なので索引の影響を受けない）
+            foreach (var mc in MeshContextList)
+            {
+                var ik = mc?.MeshObject?.IKData;
+                if (ik == null) continue;
+                if (ik.TargetIndex >= 0) ik.TargetIndex += offset;
+                if (ik.Links != null)
+                    foreach (var link in ik.Links)
+                        if (link != null && link.BoneIndex >= 0) link.BoneIndex += offset;
+            }
+
+            // ウェイト付け替えの控え（Undo 用）はこのモデルでは使わないので捨てる。
+            _pendingBoneWeightBackup = null;
+        }
+
         /// <summary>索引で他要素を指している全参照を付け替える。</summary>
         private void RemapIndexReferences(int[] map)
         {

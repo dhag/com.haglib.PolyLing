@@ -59,6 +59,9 @@ namespace Poly_Ling.MQO
             // デフォルトシーン情報
             document.Scene = CreateDefaultScene();
 
+            // 下絵（モデルの UnderlayData → BackImage チャンク）
+            AppendBackImages(document, meshContexts, settings);
+
             // 使用されているマテリアルインデックスを収集
             var usedMaterialIndices = new HashSet<int>();
             foreach (var mc in meshContexts)

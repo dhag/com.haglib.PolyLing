@@ -55,6 +55,16 @@ namespace Poly_Ling.Tools
             set => _settings.DragSensitivity = value;
         }
 
+        /// <summary>段数（押し出す方向へ重ねる層の数。最低 1）。</summary>
+        public int Segments
+        {
+            get => _settings.Segments;
+            set => _settings.Segments = value;
+        }
+
+        /// <summary>今の押し出しで作った段数（ExecuteExtrude が決める）。</summary>
+        private int _activeSegments = 1;
+
         // ================================================================
         // 状態
         // ================================================================
@@ -76,13 +86,14 @@ namespace Poly_Ling.Tools
         private float _extrudeDistance;
         private Vector3 _extrudeDirection;
 
-        // ドラッグ中の頂点位置更新用
+        // ドラッグ中の頂点位置更新用。T は押し出し量に掛ける割合（k 段目なら k/N）。
         private struct FaceDragVertex
         {
             public int     Index;
             public Vector3 BasePos;
             public Vector3 Normal;
             public Vector3 FaceCenter;
+            public float   T;
         }
         private List<FaceDragVertex> _faceDragVertices = new List<FaceDragVertex>();
 
@@ -213,6 +224,7 @@ namespace Poly_Ling.Tools
             _snapshotBefore = null;
             _extrudeDistance = 0f;
             _extrudeDirection = Vector3.zero;
+            _activeSegments = 1;
         }
 
         public void OnSelectionChanged(ToolContext ctx)
@@ -243,17 +255,19 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         /// <summary>
-        /// 指定した面を指定距離だけ押し出す。
+        /// 指定した面（複数可）を指定距離だけ押し出す。
         ///
-        /// ExecuteExtrude は _extrudeDistance を複製頂点の位置へ足す（:426-431, 435-443）ので、
+        /// ExecuteExtrude は _extrudeDistance × k/N を各段の複製頂点の位置へ足すので、
         /// 距離を入れてから 1 回呼べばドラッグ確定と同じ形になる。
         /// 距離は対象メッシュのローカル空間の長さ。負値で内側へ押し出す。
         /// </summary>
+        /// <param name="faceIndices">対象の面の索引。</param>
+        /// <param name="segments">段数（最低 1）。</param>
         /// <param name="reason">実行できなかった理由。成功時は null。</param>
         public bool ApplyExtrudeFromCommand(
-            ToolContext ctx, int faceIndex, float distance,
+            ToolContext ctx, IReadOnlyList<int> faceIndices, float distance,
             FaceExtrudeSettings.ExtrudeType type, float bevelScale, bool individualNormals,
-            out string reason)
+            int segments, out string reason)
         {
             reason = null;
 
@@ -264,8 +278,12 @@ namespace Poly_Ling.Tools
             if (mo == null || ctx.SelectionState == null)
             { reason = "編集対象メッシュがありません"; return false; }
 
-            if (faceIndex < 0 || faceIndex >= mo.FaceCount)
-            { reason = "面の索引が範囲外です"; return false; }
+            if (faceIndices == null || faceIndices.Count == 0)
+            { reason = "面を 1 つ以上指定してください"; return false; }
+
+            foreach (int fi in faceIndices)
+                if (fi < 0 || fi >= mo.FaceCount)
+                { reason = $"面の索引 {fi} が範囲外です"; return false; }
 
             if (Mathf.Abs(distance) < 1e-6f)
             { reason = "押し出し距離が 0 です"; return false; }
@@ -284,7 +302,7 @@ namespace Poly_Ling.Tools
                         ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
 
                 ctx.SelectionState.Faces.Clear();
-                ctx.SelectionState.Faces.Add(faceIndex);
+                foreach (int fi in faceIndices) ctx.SelectionState.Faces.Add(fi);
 
                 CollectTargetFaces(ctx);
                 if (_targetFaces.Count == 0)
@@ -295,7 +313,7 @@ namespace Poly_Ling.Tools
                 }
 
                 _extrudeDistance = distance;
-                ExecuteExtrude(ctx);
+                ExecuteExtrude(ctx, segments);
                 EndExtrude(ctx);   // Undo 記録
             }
             finally
@@ -325,15 +343,18 @@ namespace Poly_Ling.Tools
         /// _snapshotBefore は null にするので、続けて呼ばれる OnMouseUp（EndExtrude）は
         /// Undo を積まない。
         /// </summary>
-        public bool TryTakeExtrudeFromDrag(ToolContext ctx, out int faceIndex, out float distance)
+        /// <param name="faceIndices">押し出していた面の全部（ドラッグ中と同じ形で確定するため）。</param>
+        /// <param name="segments">この押し出しの段数。</param>
+        public bool TryTakeExtrudeFromDrag(ToolContext ctx, out List<int> faceIndices, out float distance, out int segments)
         {
-            faceIndex = -1;
-            distance  = 0f;
+            faceIndices = new List<int>();
+            distance    = 0f;
+            segments    = _activeSegments;
 
             if (!ExtrudePending) return false;
             if (ctx?.UndoController == null || _snapshotBefore == null) return false;
 
-            faceIndex = _hitFaceOnMouseDown;
+            foreach (var fi in _targetFaces) faceIndices.Add(fi.FaceIndex);
             distance  = _extrudeDistance;
 
             _snapshotBefore.ApplyTo(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
@@ -373,7 +394,7 @@ namespace Poly_Ling.Tools
             _extrudeDistance = 0f;
 
             // トポロジーを即時実行し _faceDragVertices を確定させる
-            ExecuteExtrude(ctx);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
+            ExecuteExtrude(ctx, Segments);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
 
             _state = ExtrudeState.Extruding;
             ctx.EnterTransformDragging?.Invoke();
@@ -425,13 +446,14 @@ namespace Poly_Ling.Tools
                 foreach (var dv in _faceDragVertices)
                 {
                     if (dv.Index < 0 || dv.Index >= meshObject.VertexCount) continue;
-                    Vector3 offset  = dv.Normal * _extrudeDistance;
+                    Vector3 offset  = dv.Normal * (_extrudeDistance * dv.T);
                     Vector3 pos     = dv.BasePos + offset;
                     if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
                     {
+                        // 縮小も段ごとに k/N の割合でかける（最上段で BevelScale）。
                         Vector3 newCenter = dv.FaceCenter + offset;
                         Vector3 toCenter  = newCenter - pos;
-                        pos = pos + toCenter * (1f - BevelScale);
+                        pos = pos + toCenter * ((1f - BevelScale) * dv.T);
                     }
                     meshObject.Vertices[dv.Index].Position = pos;
                 }
@@ -510,9 +532,16 @@ namespace Poly_Ling.Tools
             _snapshotBefore = null;
         }
 
-        private void ExecuteExtrude(ToolContext ctx)
+        /// <summary>
+        /// 面ごとに段数ぶんの層を作り、隣り合う層の間に側面を張って、元の面を最上段へ付け替える。
+        /// k 段目は「法線 × 距離 × k/N」だけ押し出し、Bevel の縮小も k/N の割合でかける。
+        /// 同じ面の側面は層どうしで頂点を共有するので、はしご状につながる。
+        /// </summary>
+        private void ExecuteExtrude(ToolContext ctx, int segments)
         {
             var meshObject = ctx.ActiveMeshObject;
+            int n = Mathf.Max(1, segments);
+            _activeSegments = n;
 
             // 押し出しで増える頂点の始まり。部品ID / サブIDの採番に使う。
             int origVertexCount = meshObject.VertexCount;
@@ -526,7 +555,6 @@ namespace Poly_Ling.Tools
             }
 
             int materialIndex = ctx.CurrentMaterialIndex;
-            var newVertexIndices = new List<int>();
             var newFaceIndices = new List<int>();
 
             _faceDragVertices.Clear();
@@ -534,64 +562,85 @@ namespace Poly_Ling.Tools
             foreach (var faceInfo in _targetFaces)
             {
                 Vector3 normal = IndividualNormals ? faceInfo.Normal : avgNormal;
-                Vector3 offset = normal * _extrudeDistance;
-                Vector3 newCenter = faceInfo.Center + offset;
 
-                var vertexMap = new Dictionary<int, int>();
+                // layers[k][元の頂点] = k 段目の頂点。layers[0] は元の頂点そのもの。
+                var layers = new List<Dictionary<int, int>>(n + 1);
+                var layer0 = new Dictionary<int, int>();
+                foreach (int v in faceInfo.VertexIndices)
+                    if (v >= 0 && v < meshObject.VertexCount) layer0[v] = v;
+                layers.Add(layer0);
 
-                foreach (int oldVIdx in faceInfo.VertexIndices)
+                for (int k = 1; k <= n; k++)
                 {
-                    if (oldVIdx < 0 || oldVIdx >= meshObject.VertexCount) continue;
+                    float t = (float)k / n;
+                    Vector3 offset = normal * (_extrudeDistance * t);
+                    Vector3 newCenter = faceInfo.Center + offset;
+                    var layer = new Dictionary<int, int>();
 
-                    var oldVertex = meshObject.Vertices[oldVIdx];
-                    Vector3 newPos = oldVertex.Position + offset;
-
-                    if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
+                    foreach (int oldVIdx in faceInfo.VertexIndices)
                     {
-                        Vector3 toCenter = newCenter - newPos;
-                        newPos = newPos + toCenter * (1f - BevelScale);
+                        if (oldVIdx < 0 || oldVIdx >= origVertexCount) continue;
+                        if (layer.ContainsKey(oldVIdx)) continue;
+
+                        var oldVertex = meshObject.Vertices[oldVIdx];
+                        Vector3 newPos = oldVertex.Position + offset;
+
+                        if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
+                        {
+                            Vector3 toCenter = newCenter - newPos;
+                            newPos = newPos + toCenter * ((1f - BevelScale) * t);
+                        }
+
+                        int newIdx = meshObject.VertexCount;
+                        var newVertex = new Vertex { Position = newPos };
+                        newVertex.UVs.AddRange(oldVertex.UVs);
+                        newVertex.Normals.AddRange(oldVertex.Normals);
+                        // 複製元の BoneWeight をコピーする。設定しないと GPU 側で
+                        // メッシュ自身の context 索引が使われ（UnifiedBufferManager_Build.cs:356-362）、
+                        // 周囲の頂点と別の行列で変換されてこの頂点だけ離れた位置に置かれる。
+                        newVertex.BoneWeight = oldVertex.BoneWeight;
+
+                        meshObject.Vertices.Add(newVertex);
+                        layer[oldVIdx] = newIdx;
+
+                        _faceDragVertices.Add(new FaceDragVertex
+                        {
+                            Index      = newIdx,
+                            BasePos    = oldVertex.Position,
+                            Normal     = normal,
+                            FaceCenter = faceInfo.Center,
+                            T          = t,
+                        });
                     }
-
-                    int newIdx = meshObject.VertexCount;
-                    var newVertex = new Vertex { Position = newPos };
-                    newVertex.UVs.AddRange(oldVertex.UVs);
-                    newVertex.Normals.AddRange(oldVertex.Normals);
-                    // 複製元の BoneWeight をコピーする。設定しないと GPU 側で
-                    // メッシュ自身の context 索引が使われ（UnifiedBufferManager_Build.cs:356-362）、
-                    // 周囲の頂点と別の行列で変換されてこの頂点だけ離れた位置に置かれる。
-                    newVertex.BoneWeight = oldVertex.BoneWeight;
-
-                    meshObject.Vertices.Add(newVertex);
-                    vertexMap[oldVIdx] = newIdx;
-                    newVertexIndices.Add(newIdx);
-
-                    _faceDragVertices.Add(new FaceDragVertex
-                    {
-                        Index      = newIdx,
-                        BasePos    = oldVertex.Position,
-                        Normal     = normal,
-                        FaceCenter = faceInfo.Center,
-                    });
+                    layers.Add(layer);
                 }
 
+                // 側面：層 k-1 と層 k の間に四角形を張る。
                 int vertCount = faceInfo.VertexIndices.Count;
-                for (int i = 0; i < vertCount; i++)
+                for (int k = 1; k <= n; k++)
                 {
-                    int v0 = faceInfo.VertexIndices[i];
-                    int v1 = faceInfo.VertexIndices[(i + 1) % vertCount];
+                    var lo = layers[k - 1];
+                    var hi = layers[k];
+                    for (int i = 0; i < vertCount; i++)
+                    {
+                        int v0 = faceInfo.VertexIndices[i];
+                        int v1 = faceInfo.VertexIndices[(i + 1) % vertCount];
+                        if (!lo.ContainsKey(v0) || !lo.ContainsKey(v1) ||
+                            !hi.ContainsKey(v0) || !hi.ContainsKey(v1)) continue;
 
-                    if (!vertexMap.ContainsKey(v0) || !vertexMap.ContainsKey(v1)) continue;
+                        int a0 = lo[v0], a1 = lo[v1];
+                        int b0 = hi[v0], b1 = hi[v1];
 
-                    int nv0 = vertexMap[v0];
-                    int nv1 = vertexMap[v1];
-
-                    var sideFace = new Face { MaterialIndex = materialIndex };
-                    sideFace.VertexIndices.AddRange(new[] { v0, v1, nv1, nv0 });
-                    sideFace.UVIndices.AddRange(new[] { v0, v1, nv1, nv0 });
-                    sideFace.NormalIndices.AddRange(new[] { v0, v1, nv1, nv0 });
-                    meshObject.Faces.Add(sideFace);
+                        var sideFace = new Face { MaterialIndex = materialIndex };
+                        sideFace.VertexIndices.AddRange(new[] { a0, a1, b1, b0 });
+                        sideFace.UVIndices.AddRange(new[] { a0, a1, b1, b0 });
+                        sideFace.NormalIndices.AddRange(new[] { a0, a1, b1, b0 });
+                        meshObject.Faces.Add(sideFace);
+                    }
                 }
 
+                // 元の面を最上段へ付け替える。
+                var top = layers[n];
                 var originalFace = meshObject.Faces[faceInfo.FaceIndex];
                 int origVertCount = originalFace.VertexIndices.Count;
 
@@ -603,9 +652,8 @@ namespace Poly_Ling.Tools
                 for (int i = 0; i < origVertCount; i++)
                 {
                     int oldIdx = originalFace.VertexIndices[i];
-                    if (vertexMap.ContainsKey(oldIdx))
+                    if (top.TryGetValue(oldIdx, out int newIdx))
                     {
-                        int newIdx = vertexMap[oldIdx];
                         originalFace.VertexIndices[i] = newIdx;
                         originalFace.UVIndices[i] = newIdx;
                         originalFace.NormalIndices[i] = newIdx;

@@ -145,6 +145,10 @@ namespace Poly_Ling.Player
 
             var settings = cmd.Settings ?? Poly_Ling.MQO.MQOImportSettings.CreateDefault();
 
+            // 置換は未対応（PolyLing_残件.md）。黙って新規読込にしない。
+            if (settings.ImportMode == Poly_Ling.MQO.MQOImportMode.Replace)
+                return "置換（Replace）は未対応です。NewModel か Append を指定してください";
+
             if (!string.IsNullOrEmpty(cmd.BoneWeightCsvPath))
             {
                 if (!Poly_Ling.Core.PLSandbox.TryResolveRead(

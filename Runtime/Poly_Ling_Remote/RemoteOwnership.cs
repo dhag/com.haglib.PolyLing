@@ -614,6 +614,8 @@ namespace Poly_Ling.Remote
                 case SetScenarioStepArgCommand _:
                 case MoveScenarioStepCommand _:
                 case ExpandScenarioRefCommand _:
+                case ExportScenariosCommand _:
+                case ImportScenariosCommand _:
                 case RunScenarioCommand _:
                 case ContinueScenarioCommand _:
                 case QueryScenarioRunCommand _:

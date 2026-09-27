@@ -380,5 +380,148 @@ namespace Poly_Ling.Data
             }
             return null;
         }
+
+        // ================================================================
+        // 書き出し・取り込み（別ファイルとの出し入れ）
+        // ================================================================
+        //
+        // 形式は scenarios.csv と同じ（ObjectGroupCsv が正典）。
+        // 書き出しは参照先の手本も一緒に入れる。そのファイルだけで参照が切れずに取り込めるように。
+        // 取り込みはファイルの手本をまとめて検査し、1 本でも問題があれば何も登録しない。
+
+        /// <summary>
+        /// 指定の手本と、それが参照している手本を 1 本の CSV 文字列にする。
+        /// names が空なら全部。並びは登録順。
+        /// </summary>
+        public static bool TryExport(IList<string> names, out string csv, out List<string> exported, out string error)
+        {
+            csv = null;
+            exported = new List<string>();
+            error = null;
+
+            EnsureLoaded();
+            lock (_lock)
+            {
+                var want = new HashSet<string>(StringComparer.Ordinal);
+                if (names == null || names.Count == 0)
+                {
+                    foreach (var g in _items) want.Add(g.Name);
+                }
+                else
+                {
+                    var stack = new Stack<string>();
+                    foreach (var n in names)
+                    {
+                        if (string.IsNullOrEmpty(n)) continue;
+                        if (FindIn(_items, n) == null) { error = $"手本がありません: {n}"; return false; }
+                        stack.Push(n);
+                    }
+                    while (stack.Count > 0)
+                    {
+                        string n = stack.Pop();
+                        if (!want.Add(n)) continue;
+                        var g = FindIn(_items, n);
+                        if (g == null) { error = $"参照先の手本がありません: {n}"; return false; }
+                        if (g.Steps == null) continue;
+                        foreach (var step in g.Steps)
+                            if (step != null && step.IsScenarioRef && !string.IsNullOrEmpty(step.RefName))
+                                stack.Push(step.RefName);
+                    }
+                }
+
+                var list = new List<ObjectGroup>();
+                foreach (var g in _items)
+                {
+                    if (!want.Contains(g.Name)) continue;
+                    list.Add(g);
+                    exported.Add(g.Name);
+                }
+                if (list.Count == 0) { error = "書き出す手本がありません"; return false; }
+
+                csv = ObjectGroupCsv.Build(list, Header);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// CSV の行から手本を取り込む。まとめて検査し、問題があれば何も登録しない。
+        /// 同じ名前の手本は overwrite のときだけ差し替える。
+        /// </summary>
+        public static bool TryImport(IEnumerable<string> lines, bool overwrite,
+                                     out List<string> added, out List<string> replaced, out string error)
+        {
+            added = new List<string>();
+            replaced = new List<string>();
+            error = null;
+
+            List<ObjectGroup> incoming;
+            try { incoming = ObjectGroupCsv.Parse(lines); }
+            catch (Exception e) { error = $"手本として読めません: {e.Message}"; return false; }
+            if (incoming == null || incoming.Count == 0) { error = "手本が入っていません"; return false; }
+
+            // ファイルの中での名前の重なりと、各段の中身を見る。
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var g in incoming)
+            {
+                if (g == null || string.IsNullOrEmpty(g.Name)) { error = "名前の無い手本があります"; return false; }
+                if (!names.Add(g.Name)) { error = $"ファイルの中で名前が重なっています: {g.Name}"; return false; }
+                if (g.Steps == null) continue;
+                for (int i = 0; i < g.Steps.Count; i++)
+                {
+                    var step = g.Steps[i];
+                    if (step == null)  { error = $"{g.Name} の段 {i} がありません"; return false; }
+                    if (!step.IsValid) { error = $"{g.Name} の段 {i}（{step.ElementId}）は実行する段なのに action が空です"; return false; }
+                }
+            }
+
+            EnsureLoaded();
+            lock (_lock)
+            {
+                // 既存との重なり。
+                var clash = new List<string>();
+                foreach (var g in incoming)
+                    if (FindIn(_items, g.Name) != null) clash.Add(g.Name);
+                if (clash.Count > 0 && !overwrite)
+                {
+                    error = $"同じ名前の手本が既にあります（差し替えるなら overwrite）: {string.Join(", ", clash)}";
+                    return false;
+                }
+
+                // 取り込んだ後の姿を作って、全部の参照が辿れるかを見る。
+                var probe = new List<ObjectGroup>(_items);
+                var copies = new List<ObjectGroup>();
+                foreach (var g in incoming)
+                {
+                    var copy = g.Clone();
+                    copy.EnsureElementIds();
+                    copies.Add(copy);
+
+                    int at = -1;
+                    for (int i = 0; i < probe.Count; i++)
+                        if (string.Equals(probe[i].Name, copy.Name, StringComparison.Ordinal)) { at = i; break; }
+                    if (at >= 0) probe[at] = copy;
+                    else         probe.Add(copy);
+                }
+                foreach (var copy in copies)
+                {
+                    var drain = new List<FlatStep>();
+                    if (!Walk(probe, copy.Name, 0, new List<string>(), drain, out error))
+                    {
+                        error = $"{copy.Name}: {error}";
+                        return false;
+                    }
+                }
+
+                foreach (var copy in copies)
+                {
+                    if (FindIn(_items, copy.Name) != null) replaced.Add(copy.Name);
+                    else                                   added.Add(copy.Name);
+                }
+                _items = probe;
+                WriteFile(_items);
+                Revision++;
+            }
+            return true;
+        }
     }
 }

@@ -430,6 +430,7 @@ namespace Poly_Ling.Player
             OnRefreshSelectedFacesOverlay?.Invoke();
             OnRefreshGizmoOverlay?.Invoke();
             OnRefreshBoneOverlay?.Invoke();
+            OnRefreshUnderlay?.Invoke();
             RefreshToolOverlays();
         }
 

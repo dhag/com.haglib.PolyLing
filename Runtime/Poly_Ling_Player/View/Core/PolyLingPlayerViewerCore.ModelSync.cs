@@ -630,6 +630,13 @@ namespace Poly_Ling.Player
             else
                 _viewportManager.EnterSelectionChanged(ActiveProject);
 
+            // 下絵はモデルが持つ（ModelContext.Underlay）。モデルが替わったら貼り直す。
+            if (kind == ChangeKind.ModelSwitch)
+            {
+                ApplyAllUnderlays();
+                _underlaySubPanel?.Refresh();
+            }
+
             OnChanged?.Invoke(kind);
         }
     }

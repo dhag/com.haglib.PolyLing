@@ -26,6 +26,7 @@ namespace Poly_Ling.Tools
         [SerializeField] private float _bevelScale = 0.8f;
         [SerializeField] private bool _individualNormals = false;
         [SerializeField] private float _dragSensitivity = 1f;
+        [SerializeField] private int _segments = 1;
 
         public ExtrudeType Type
         {
@@ -51,6 +52,15 @@ namespace Poly_Ling.Tools
             set => _dragSensitivity = Mathf.Max(0.001f, value);
         }
 
+        /// <summary>
+        /// 段数。押し出す方向へ重ねる層の数（側面がはしご状になる）。最低 1。
+        /// </summary>
+        public int Segments
+        {
+            get => _segments;
+            set => _segments = Mathf.Max(1, value);
+        }
+
         public FaceExtrudeSettings() { }
 
         public FaceExtrudeSettings(ExtrudeType type, float bevelScale, bool individualNormals)
@@ -64,6 +74,7 @@ namespace Poly_Ling.Tools
         {
             var c = new FaceExtrudeSettings(_type, _bevelScale, _individualNormals);
             c._dragSensitivity = _dragSensitivity;
+            c._segments = _segments;
             return c;
         }
 
@@ -75,6 +86,7 @@ namespace Poly_Ling.Tools
                 _bevelScale = src._bevelScale;
                 _individualNormals = src._individualNormals;
                 _dragSensitivity = src._dragSensitivity;
+                _segments = src._segments;
             }
         }
 
@@ -85,7 +97,8 @@ namespace Poly_Ling.Tools
                 return _type != src._type
                     || !Mathf.Approximately(_bevelScale, src._bevelScale)
                     || _individualNormals != src._individualNormals
-                    || !Mathf.Approximately(_dragSensitivity, src._dragSensitivity);
+                    || !Mathf.Approximately(_dragSensitivity, src._dragSensitivity)
+                    || _segments != src._segments;
             }
             return true;
         }

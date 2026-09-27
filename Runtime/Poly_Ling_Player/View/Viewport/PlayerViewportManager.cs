@@ -80,6 +80,9 @@ namespace Poly_Ling.Player
         // ボーン GPU wire は Poly_Ling/Bone3D_Overlay で自動追従するため
         // refresh 不要だが、UIToolkit マーカーの CPU 投影座標は event 駆動。
         public Action OnRefreshBoneOverlay;
+        // 下絵：モデル座標で置いた下絵は、カメラが動くと画面上の位置が変わる。
+        // EnterCameraChanged の末尾から呼ぶ（毎フレームは呼ばない）。
+        public Action OnRefreshUnderlay;
         // Phase 2c-3: ツール固有の UIToolkit overlay。各ハンドラが内部状態を
         // 保持し、正規入口 (Enter*) の末尾で再投影・再描画する。
         public Action OnRefreshAddFaceOverlay;

@@ -48,6 +48,8 @@ namespace Poly_Ling.Player
         public bool  IndividualNormals { get => _tool.IndividualNormals; set => _tool.IndividualNormals = value; }
         [Poly_Ling.Data.PLToolParam(Description = "FaceExtrudeTool.DragSensitivity")]
         public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "段数（押し出す方向へ重ねる層の数。最低 1）")]
+        public int Segments { get => _tool.Segments; set => _tool.Segments = value; }
 
         // ================================================================
         // 初期化
@@ -96,14 +98,15 @@ namespace Poly_Ling.Player
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
 
             bool  taken = false;
-            int   takenFace = -1;
+            System.Collections.Generic.List<int> takenFaces = null;
             float takenDistance = 0f;
+            int   takenSegments = 1;
             var   type   = _tool.Type;
             float bevel  = _tool.BevelScale;
             bool  indiv  = _tool.IndividualNormals;
 
             if (SendCommand != null && _tool.ExtrudePending)
-                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenFace, out takenDistance);
+                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenFaces, out takenDistance, out takenSegments);
 
             // 取り出したときは _snapshotBefore が null なので EndExtrude は Undo を積まない。
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
@@ -114,11 +117,13 @@ namespace Poly_Ling.Player
                 var mc    = model?.ActiveMeshContext;
                 if (model != null && mc != null)
                 {
+                    // ドラッグ中に押し出していた面を全部載せる（確定後の形をドラッグ中と同じにする）。
                     SendCommand.Invoke(new Poly_Ling.Data.FaceExtrudeCommand(
                         _project.CurrentModelIndex,
                         new[] { model.IndexOf(mc) },
-                        takenFace, takenDistance,
-                        type, bevel, indiv));
+                        takenDistance, -1,
+                        type, bevel, indiv,
+                        null, takenFaces.ToArray(), takenSegments));
                 }
             }
 
@@ -147,9 +152,15 @@ namespace Poly_Ling.Player
             var ctx = GetEnrichedCtx();
             if (ctx == null) { reason = "ツールコンテキストがありません"; return false; }
 
+            var faces = (cmd.FaceIndices != null && cmd.FaceIndices.Length > 0)
+                ? cmd.FaceIndices
+                : (cmd.FaceIndex >= 0 ? new[] { cmd.FaceIndex } : System.Array.Empty<int>());
+            if (faces.Length == 0)
+            { reason = "FaceIndices か FaceIndex で面を 1 つ以上指定してください"; return false; }
+
             return _tool.ApplyExtrudeFromCommand(
-                ctx, cmd.FaceIndex, cmd.Distance,
-                cmd.Type, cmd.BevelScale, cmd.IndividualNormals, out reason);
+                ctx, faces, cmd.Distance,
+                cmd.Type, cmd.BevelScale, cmd.IndividualNormals, cmd.Segments, out reason);
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {

@@ -203,6 +203,9 @@ namespace Poly_Ling.Commands
             foreach (var pair in result.MirrorPairs)
                 model.MirrorPairs.Add(pair);
 
+            // 下絵（BackImage チャンク）
+            model.Underlay = result.Underlay;
+
             // ボーン階層の WorldMatrix を確定させる（PMXと同様）。
             model.ComputeWorldMatrices();
 

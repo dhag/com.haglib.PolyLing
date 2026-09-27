@@ -45,6 +45,8 @@ namespace Poly_Ling.Player
         public bool SnapToAxis { get => _tool.SnapToAxis; set => _tool.SnapToAxis = value; }
         [Poly_Ling.Data.PLToolParam(Description = "EdgeExtrudeTool.DragSensitivity")]
         public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
+        [Poly_Ling.Data.PLToolParam(Description = "段数（押し出す方向へ四角形をはしご状に並べる数。最低 1）")]
+        public int Segments { get => _tool.Segments; set => _tool.Segments = value; }
 
         // ================================================================
         // 初期化
@@ -104,9 +106,10 @@ namespace Poly_Ling.Player
             List<int>        takenLines = null;
             List<int>        takenReversed = null;
             Vector3 takenOffset = Vector3.zero;
+            int takenSegments = 1;
 
             if (SendCommand != null && _tool.ExtrudePending)
-                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenEdges, out takenLines, out takenReversed, out takenOffset);
+                taken = _tool.TryTakeExtrudeFromDrag(ctx, out takenEdges, out takenLines, out takenReversed, out takenOffset, out takenSegments);
 
             // 取り出したときは _snapshotBefore が null なので EndExtrude は Undo を積まない。
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
@@ -128,7 +131,8 @@ namespace Poly_Ling.Player
                         pairs,
                         takenLines.ToArray(),
                         takenOffset,
-                        takenReversed.ToArray()));
+                        takenReversed.ToArray(),
+                        null, null, takenSegments));
                 }
             }
 
@@ -174,7 +178,7 @@ namespace Poly_Ling.Player
             }
 
             return _tool.ApplyExtrudeFromCommand(ctx, edges, cmd.LineIndices,
-                cmd.ReversedLineIndices, cmd.LocalOffset, positions, out reason);
+                cmd.ReversedLineIndices, cmd.LocalOffset, positions, cmd.Segments, out reason);
         }
 
         // ================================================================
@@ -238,7 +242,7 @@ namespace Poly_Ling.Player
         {
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             _tool.FinishGizmoSession(ctx, out bool changed, out var edges, out var lines,
-                                     out var reversed, out var positions);
+                                     out var reversed, out var positions, out int segments);
             if (changed && SendCommand != null)
             {
                 var model = _project?.CurrentModel;
@@ -255,7 +259,7 @@ namespace Poly_Ling.Player
                         _project.CurrentModelIndex,
                         new[] { model.IndexOf(mc) },
                         pairs, lines.ToArray(), Vector3.zero, reversed.ToArray(),
-                        null, flat));
+                        null, flat, segments));
                 }
             }
             OnApplyCompleted?.Invoke();

@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Remote;
@@ -46,10 +47,28 @@ namespace Poly_Ling.Player
         private void OnImportMqo(string filePath, MQOImportSettings settings,
                                  PlayerImportSubPanel.PostOptions post)
         {
+            var mode = settings?.ImportMode ?? MQOImportMode.NewModel;
+            if (mode == MQOImportMode.Replace)
+            {
+                // 置換は未対応（PolyLing_残件.md）。黙って新規読込にしない。
+                _status = "MQO読込: 置換（Replace）は未対応です";
+                UnityEngine.Debug.LogWarning("[ImportMqo] " + _status);
+                return;
+            }
+
             var cmd = new ImportMqoCommand(
                 filePath, settings,
-                onResult: (model, _) =>
+                onResult: (model, result) =>
                 {
+                    // 追加（Append）は読込時点の現在モデルへ足す。モデルが無ければ新規と同じ。
+                    var target = ActiveProject?.CurrentModel;
+                    if (mode == MQOImportMode.Append && target != null)
+                    {
+                        var renames = AppendImportedModel(target, model, result, filePath);
+                        ApplyImportPostOptions(post, renames);
+                        return;
+                    }
+
                     _localLoader.LoadModel(filePath, model);
                     UnityEngine.Debug.Log("[LoadDbg] 16 after-LoadModel");
                     ApplyImportPostOptions(post);
@@ -57,6 +76,305 @@ namespace Poly_Ling.Player
                 onError:  msg       => _status = $"MQO読込失敗: {msg}");
             _editOps?.CommandQueue.Enqueue(cmd);
             UnityEngine.Debug.Log("[LoadDbg] 17 after-Enqueue");
+        }
+
+        // ================================================================
+        // MQO の追加読込（Append）
+        // ================================================================
+
+        /// <summary>
+        /// 読み込んだモデル（imported）の中身を、現在のモデル（target）の末尾へ足す。
+        ///
+        /// 【材質】名前が同じでもまとめず、順番どおり末尾へ足す。面の材質番号は既存の
+        ///   材質数だけずらす。ミラー側材質は「実体側＋MirrorMaterialOffset」の相対位置
+        ///   なので、一括で末尾へ足せばずれは崩れない。
+        /// 【索引参照】親・ミラー元・左右対ボーン・ボーンウェイト・IK を既存のオブジェクト数
+        ///   だけずらす（ModelContext.OffsetIndexReferences）。
+        /// 【名前】既存と重なる名前は改名する（ResolveAppendNames）。
+        /// 【モデル単位の情報】target の名前・パス・下絵・Humanoid 割当はそのまま。
+        /// 【Undo】MeshListChangeRecord 1 件（材質参照・ミラー対も戻す）。
+        /// </summary>
+        /// <returns>オブジェクト名の改名表（旧名→新名）。改名が無ければ空。</returns>
+        private Dictionary<string, string> AppendImportedModel(
+            ModelContext target, ModelContext imported, MQOImportResult result, string filePath)
+        {
+            var renames = new Dictionary<string, string>();
+            if (target == null || imported == null) return renames;
+
+            int meshOffset = target.MeshContextCount;
+            int matOffset  = target.MaterialReferences?.Count ?? 0;
+
+            var oldSelected    = target.CaptureAllSelectedIndices();
+            var oldMatRefs     = MeshListChangeRecord.CloneMaterialRefs(target.MaterialReferences);
+            int oldMatIndex    = target.CurrentMaterialIndex;
+
+            // ── 名前の重複を解消（索引をずらす前に行う。名前だけを見る）──
+            int renamedObjects = ResolveAppendObjectNames(target, imported, renames);
+            int renamedMats    = ResolveAppendMaterialNames(target, imported.MaterialReferences);
+
+            // IK の per-bone 表現（エフェクタ名）も改名に追随させる。
+            if (renames.Count > 0)
+            {
+                foreach (var mc in imported.MeshContextList)
+                {
+                    var ik = mc?.MeshObject?.IKData;
+                    if (ik == null || string.IsNullOrEmpty(ik.EffectorBoneName)) continue;
+                    if (renames.TryGetValue(ik.EffectorBoneName, out var nn)) ik.EffectorBoneName = nn;
+                }
+            }
+
+            // ── 面の材質番号・索引参照をずらす ──
+            foreach (var mc in imported.MeshContextList)
+            {
+                var faces = mc?.MeshObject?.Faces;
+                if (faces == null) continue;
+                foreach (var f in faces)
+                    if (f.MaterialIndex >= 0) f.MaterialIndex += matOffset;
+            }
+            imported.OffsetIndexReferences(meshOffset);
+
+            // ── 材質を末尾へ ──
+            if (imported.MaterialReferences != null)
+                foreach (var r in imported.MaterialReferences)
+                    target.MaterialReferences.Add(r);
+
+            // ── オブジェクトを末尾へ ──
+            var importedList = new List<MeshContext>(imported.MeshContextList);
+            var added = new List<(int Index, MeshContext MeshContext)>(importedList.Count);
+            foreach (var mc in importedList)
+            {
+                if (mc == null) continue;
+                int idx = target.Add(mc);
+                added.Add((idx, mc));
+            }
+
+            // ── ミラー対を移す（BonePairMap は target の並びで組み直す）──
+            var addedPairs = new List<(int Real, int Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)>();
+            if (imported.MirrorPairs != null)
+            {
+                foreach (var p in imported.MirrorPairs)
+                {
+                    if (p?.Real == null || p.Mirror == null) continue;
+                    var pair = new MirrorPair { Real = p.Real, Mirror = p.Mirror, Axis = p.Axis };
+                    if (pair.Build(target.MeshContextList))
+                    {
+                        target.MirrorPairs.Add(pair);
+                        addedPairs.Add((target.MeshContextList.IndexOf(p.Real),
+                                        target.MeshContextList.IndexOf(p.Mirror), p.Axis));
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogWarning(
+                            $"[ImportMqo] ミラー対を組めませんでした: '{p.Real.Name}' ↔ '{p.Mirror.Name}'\n{pair.BuildLog}");
+                    }
+                }
+            }
+
+            target.ComputeWorldMatrices();
+            target.IsDirty = true;
+
+            // ── Undo 記録 ──
+            if (_editOps?.UndoController != null)
+            {
+                var record = new MeshListChangeRecord
+                {
+                    AddedMeshContexts = added
+                        .Select(e => (e.Index, MeshContextSnapshot.Capture(e.MeshContext)))
+                        .ToList(),
+                    OldSelectedIndices = oldSelected ?? new List<int>(),
+                    NewSelectedIndices = target.CaptureAllSelectedIndices() ?? new List<int>(),
+                    OldMaterialRefs = oldMatRefs,
+                    NewMaterialRefs = MeshListChangeRecord.CloneMaterialRefs(target.MaterialReferences),
+                    OldCurrentMaterialIndex = oldMatIndex,
+                    NewCurrentMaterialIndex = target.CurrentMaterialIndex,
+                    AddedMirrorPairs = addedPairs,
+                };
+                _editOps.UndoController.SetModelContext(target);
+                _editOps.UndoController.RecordMeshListChange(
+                    record, $"Append MQO: {System.IO.Path.GetFileName(filePath)}");
+            }
+
+            // ── 表示の作り直し ──
+            _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+            target.OnListChanged?.Invoke();
+            RebuildModelList();
+            NotifyPanels(ChangeKind.ListStructure);
+
+            _status = $"MQO追加読込: {System.IO.Path.GetFileName(filePath)}" +
+                      $"（オブジェクト +{added.Count} / 材質 +{imported.MaterialReferences?.Count ?? 0}" +
+                      (renamedObjects + renamedMats > 0
+                          ? $" / 改名 オブジェクト {renamedObjects}・材質 {renamedMats}" : "") + "）";
+            UnityEngine.Debug.Log("[ImportMqo] " + _status);
+            return renames;
+        }
+
+        /// <summary>
+        /// 追加するオブジェクトの名前を、既存オブジェクトと重ならないように改名する。
+        ///
+        /// 規則：末尾の「+」を外したものを基本名とし、実体（基本名）とミラー（基本名＋「+」）、
+        /// およびミラー対（MirrorPair）で結ばれたものを 1 組として扱う。組のどれかの名前が
+        /// 既存の名前と重なれば、組全体を同じ n で「名前_n」（ミラーは「基本名_n+」）に改名する。
+        /// n は 1 から数え、組の新しい名前がどれも既存・追加分・決まり済みの名前と重ならない最小値。
+        /// 追加分どうしの重複は改名しない（新規読込と同じ扱い）。
+        /// 一意性の範囲はモデル全体（種類をまたぐ。MeshRenameCsvHelper と同じ）。
+        /// </summary>
+        /// <returns>改名したオブジェクト数。renames に旧名→新名を入れる。</returns>
+        private static int ResolveAppendObjectNames(
+            ModelContext target, ModelContext imported, Dictionary<string, string> renames)
+        {
+            var existing = new HashSet<string>();
+            foreach (var mc in target.MeshContextList)
+                if (!string.IsNullOrEmpty(mc?.Name)) existing.Add(mc.Name);
+
+            var items = new List<MeshContext>();
+            foreach (var mc in imported.MeshContextList)
+                if (mc != null && !string.IsNullOrEmpty(mc.Name)) items.Add(mc);
+
+            // 組の結合：同じ基本名、またはミラー対。
+            var links = new List<(string, string)>();
+            if (imported.MirrorPairs != null)
+                foreach (var p in imported.MirrorPairs)
+                    if (!string.IsNullOrEmpty(p?.Real?.Name) && !string.IsNullOrEmpty(p?.Mirror?.Name))
+                        links.Add((p.Real.Name, p.Mirror.Name));
+
+            var nameMap = ResolveGroupedNames(
+                items.ConvertAll(mc => mc.Name), links, existing);
+
+            int count = 0;
+            foreach (var mc in items)
+            {
+                if (!nameMap.TryGetValue(mc.Name, out var nn)) continue;
+                renames[mc.Name] = nn;
+                mc.Name = nn;
+                count++;
+            }
+            if (count > 0)
+            {
+                var sb = new System.Text.StringBuilder("[ImportMqo] オブジェクトを改名:");
+                foreach (var kv in renames) sb.Append("\n  ").Append(kv.Key).Append(" → ").Append(kv.Value);
+                UnityEngine.Debug.Log(sb.ToString());
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// 追加する材質の名前を、既存の材質名と重ならないように改名する。
+        /// 規則は ResolveAppendObjectNames と同じ（実体「名前」とミラー「名前+」を 1 組）。
+        /// </summary>
+        /// <returns>改名した材質数。</returns>
+        private static int ResolveAppendMaterialNames(
+            ModelContext target, List<Poly_Ling.Materials.MaterialReference> addRefs)
+        {
+            if (addRefs == null || addRefs.Count == 0) return 0;
+
+            var existing = new HashSet<string>();
+            if (target.MaterialReferences != null)
+                foreach (var r in target.MaterialReferences)
+                    if (!string.IsNullOrEmpty(r?.Data?.Name)) existing.Add(r.Data.Name);
+
+            var names = new List<string>();
+            foreach (var r in addRefs)
+                if (!string.IsNullOrEmpty(r?.Data?.Name)) names.Add(r.Data.Name);
+
+            var nameMap = ResolveGroupedNames(names, null, existing);
+            if (nameMap.Count == 0) return 0;
+
+            int count = 0;
+            var sb = new System.Text.StringBuilder("[ImportMqo] 材質を改名:");
+            foreach (var r in addRefs)
+            {
+                string old = r?.Data?.Name;
+                if (string.IsNullOrEmpty(old) || !nameMap.TryGetValue(old, out var nn)) continue;
+                r.Data.Name = nn;
+                // 書き出しは Material.name を先に見るので、生成済みの材質名もそろえる
+                // （MQOImporter がミラー材質の「+」を付けるときと同じ扱い）。
+                var mat = r.Material;
+                if (mat != null) mat.name = nn;
+                sb.Append("\n  ").Append(old).Append(" → ").Append(nn);
+                count++;
+            }
+            UnityEngine.Debug.Log(sb.ToString());
+            return count;
+        }
+
+        /// <summary>
+        /// 改名表（旧名→新名）を作る。組の決め方と n の選び方は ResolveAppendObjectNames の説明どおり。
+        /// </summary>
+        /// <param name="names">追加分の名前（重複可）。</param>
+        /// <param name="links">同じ組にする名前の対（ミラー対）。null 可。</param>
+        /// <param name="existing">既存の名前。</param>
+        private static Dictionary<string, string> ResolveGroupedNames(
+            List<string> names, List<(string, string)> links, HashSet<string> existing)
+        {
+            var result = new Dictionary<string, string>();
+
+            string BaseOf(string n) => n.EndsWith("+") ? n.Substring(0, n.Length - 1) : n;
+            string WithN(string n, int k) => n.EndsWith("+")
+                ? $"{n.Substring(0, n.Length - 1)}_{k}+"
+                : $"{n}_{k}";
+
+            // 名前を節点とする素集合。基本名が同じもの・links の対を同じ組にする。
+            var parent = new Dictionary<string, string>();
+            string Find(string x)
+            {
+                while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+                return x;
+            }
+            void Unite(string a, string b)
+            {
+                if (!parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
+                string ra = Find(a), rb = Find(b);
+                if (ra != rb) parent[ra] = rb;
+            }
+
+            var distinct = new List<string>();
+            foreach (var n in names)
+                if (!parent.ContainsKey(n)) { parent[n] = n; distinct.Add(n); }
+
+            var byBase = new Dictionary<string, string>();
+            foreach (var n in distinct)
+            {
+                string b = BaseOf(n);
+                if (byBase.TryGetValue(b, out var first)) Unite(n, first);
+                else byBase[b] = n;
+            }
+            if (links != null)
+                foreach (var (a, b) in links) Unite(a, b);
+
+            var groups = new Dictionary<string, List<string>>();
+            foreach (var n in distinct)
+            {
+                string r = Find(n);
+                if (!groups.TryGetValue(r, out var g)) groups[r] = g = new List<string>();
+                g.Add(n);
+            }
+
+            // 使用中の名前：既存＋追加分の元の名前。決まった新しい名前も順に足す。
+            var taken = new HashSet<string>(existing);
+            foreach (var n in distinct) taken.Add(n);
+
+            foreach (var g in groups.Values)
+            {
+                bool collide = false;
+                foreach (var n in g) if (existing.Contains(n)) { collide = true; break; }
+                if (!collide) continue;
+
+                int k = 1;
+                while (true)
+                {
+                    bool ok = true;
+                    foreach (var n in g) if (taken.Contains(WithN(n, k))) { ok = false; break; }
+                    if (ok) break;
+                    k++;
+                }
+                foreach (var n in g)
+                {
+                    string nn = WithN(n, k);
+                    result[n] = nn;
+                    taken.Add(nn);
+                }
+            }
+            return result;
         }
 
         private void OnImportObj(string filePath, Poly_Ling.OBJ.ObjImportSettings settings,
@@ -128,14 +446,19 @@ namespace Poly_Ling.Player
         /// CommandQueue.ProcessAll は Execute() 内の例外を握り潰すため、
         /// ここで捕まえないと失敗が画面にもログにも出ない。
         /// </summary>
-        private void ApplyImportPostOptions(PlayerImportSubPanel.PostOptions post)
+        /// <param name="renames">
+        /// 追加読込で改名したオブジェクト名（旧名→新名）。null 可。
+        /// 原点CSVの名前をこの表で新しい名前へ読み替えてから適用する。
+        /// </param>
+        private void ApplyImportPostOptions(PlayerImportSubPanel.PostOptions post,
+                                            Dictionary<string, string> renames = null)
         {
             if (post == null) return;
 
             try
             {
                 if (post.HumanoidAutoMap) ApplyImportHumanoidAutoMap();
-                if (post.ApplyOriginCsv)  ApplyImportOriginCsv(post);
+                if (post.ApplyOriginCsv)  ApplyImportOriginCsv(post, renames);
             }
             catch (Exception ex)
             {
@@ -196,7 +519,8 @@ namespace Poly_Ling.Player
         /// 解析も適用も「描画オブジェクトの姿勢」タブの原点CSV読込と同じ経路
         /// （ObjectOriginCsv.Parse → ApplyObjectOriginsCommand）を通す。
         /// </summary>
-        private void ApplyImportOriginCsv(PlayerImportSubPanel.PostOptions post)
+        private void ApplyImportOriginCsv(PlayerImportSubPanel.PostOptions post,
+                                          Dictionary<string, string> renames = null)
         {
             string path = post.OriginCsvPath;
             if (string.IsNullOrEmpty(path))
@@ -235,6 +559,14 @@ namespace Poly_Ling.Player
                 _status = "原点CSV: 有効な行がありません";
                 UnityEngine.Debug.LogWarning("[ImportPostOptions] " + _status + ": " + path);
                 return;
+            }
+
+            // 追加読込で改名したオブジェクトは、CSV の名前を新しい名前へ読み替える
+            // （読み替えないと同名の既存オブジェクトに当たる。名前引きは先着のため）。
+            if (renames != null && renames.Count > 0)
+            {
+                for (int i = 0; i < names.Count; i++)
+                    if (names[i] != null && renames.TryGetValue(names[i], out var nn)) names[i] = nn;
             }
 
             ApplyObjectOriginsCommand.SplitRotations(

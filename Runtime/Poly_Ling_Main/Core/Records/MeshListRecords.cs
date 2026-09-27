@@ -14,6 +14,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.Selection;
+using Poly_Ling.Materials;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -340,6 +341,30 @@ namespace Poly_Ling.UndoSystem
         /// <summary>変更後のカレントマテリアルインデックス</summary>
         public int NewCurrentMaterialIndex;
 
+        /// <summary>
+        /// 変更前の材質参照一覧（複製して持つ）。null でなければ OldMaterials より優先する。
+        ///
+        /// OldMaterials（List&lt;Material&gt;）は ModelContext.Materials の setter を通るので、
+        /// 戻すと MaterialReference が作り直され、テクスチャパス等の材質データが失われる。
+        /// 材質一覧そのものを増減させる操作（MQO の追加読込など）はこちらを使う。
+        /// </summary>
+        public List<MaterialReference> OldMaterialRefs;
+
+        /// <summary>変更後の材質参照一覧（複製して持つ）。null でなければ NewMaterials より優先する。</summary>
+        public List<MaterialReference> NewMaterialRefs;
+
+        /// <summary>
+        /// 削除したオブジェクトに付いていたミラー対（実体・ミラーの索引は削除前の並び）。
+        /// Undo で削除分を挿し戻したあと、この索引で組み直す。
+        /// </summary>
+        public List<(int Real, int Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)> RemovedMirrorPairs;
+
+        /// <summary>
+        /// 追加したオブジェクトに付いていたミラー対（実体・ミラーの索引は追加後の並び）。
+        /// Redo で追加分を挿し戻したあと、この索引で組み直す。
+        /// </summary>
+        public List<(int Real, int Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)> AddedMirrorPairs;
+
         [Obsolete("Use OldSelectedIndices instead")]
         public int OldSelectedIndex
         {
@@ -375,8 +400,13 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(ModelContext ctx)
         {
-            // マテリアルを復元
-            if (OldMaterials != null)
+            // マテリアルを復元（材質参照の控えがあればそちらを優先）
+            if (OldMaterialRefs != null)
+            {
+                ctx.MaterialReferences = CloneMaterialRefs(OldMaterialRefs);
+                ctx.CurrentMaterialIndex = OldCurrentMaterialIndex;
+            }
+            else if (OldMaterials != null)
             {
                 ctx.Materials = new List<Material>(OldMaterials);
                 ctx.CurrentMaterialIndex = OldCurrentMaterialIndex;
@@ -401,6 +431,13 @@ namespace Poly_Ling.UndoSystem
                 ctx.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc, adjustSelection: false);
             }
 
+            // ミラー対：リストに居なくなったオブジェクトの対を外し、削除分の対を組み直す。
+            if (AddedMirrorPairs != null || RemovedMirrorPairs != null)
+            {
+                PruneMirrorPairs(ctx);
+                RebuildMirrorPairs(ctx, RemovedMirrorPairs);
+            }
+
             // 選択状態を復元
             ctx.RestoreSelectionFromIndices(OldSelectedIndices);
             ctx.ValidateSelection();
@@ -422,8 +459,13 @@ namespace Poly_Ling.UndoSystem
 
         public override void Redo(ModelContext ctx)
         {
-            // マテリアルを復元
-            if (NewMaterials != null)
+            // マテリアルを復元（材質参照の控えがあればそちらを優先）
+            if (NewMaterialRefs != null)
+            {
+                ctx.MaterialReferences = CloneMaterialRefs(NewMaterialRefs);
+                ctx.CurrentMaterialIndex = NewCurrentMaterialIndex;
+            }
+            else if (NewMaterials != null)
             {
                 ctx.Materials = new List<Material>(NewMaterials);
                 ctx.CurrentMaterialIndex = NewCurrentMaterialIndex;
@@ -448,6 +490,13 @@ namespace Poly_Ling.UndoSystem
                 ctx.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc, adjustSelection: false);
             }
 
+            // ミラー対：リストに居なくなったオブジェクトの対を外し、追加分の対を組み直す。
+            if (AddedMirrorPairs != null || RemovedMirrorPairs != null)
+            {
+                PruneMirrorPairs(ctx);
+                RebuildMirrorPairs(ctx, AddedMirrorPairs);
+            }
+
             // 選択状態を復元
             ctx.RestoreSelectionFromIndices(NewSelectedIndices);
             ctx.ValidateSelection();
@@ -465,6 +514,40 @@ namespace Poly_Ling.UndoSystem
             
             // MeshListStackにフォーカスを切り替え
             ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        /// <summary>材質参照一覧を要素ごとに複製する。</summary>
+        public static List<MaterialReference> CloneMaterialRefs(List<MaterialReference> src)
+        {
+            var list = new List<MaterialReference>(src?.Count ?? 0);
+            if (src != null)
+                foreach (var r in src) list.Add(r?.Clone());
+            return list;
+        }
+
+        /// <summary>実体・ミラーのどちらかがリストに居ないミラー対を外す。</summary>
+        private static void PruneMirrorPairs(ModelContext ctx)
+        {
+            if (ctx.MirrorPairs == null) return;
+            var alive = new HashSet<MeshContext>(ctx.MeshContextList);
+            ctx.MirrorPairs.RemoveAll(p => p == null || !alive.Contains(p.Real) || !alive.Contains(p.Mirror));
+        }
+
+        /// <summary>控えた索引の組でミラー対を組み直して足す。組めなかった対は足さない。</summary>
+        private static void RebuildMirrorPairs(
+            ModelContext ctx,
+            List<(int Real, int Mirror, Poly_Ling.Symmetry.SymmetryAxis Axis)> pairs)
+        {
+            if (pairs == null || pairs.Count == 0) return;
+            ctx.MirrorPairs ??= new List<MirrorPair>();
+            var list = ctx.MeshContextList;
+            foreach (var (ri, mi, axis) in pairs)
+            {
+                if (ri < 0 || ri >= list.Count || mi < 0 || mi >= list.Count) continue;
+                var pair = new MirrorPair { Real = list[ri], Mirror = list[mi], Axis = axis };
+                if (pair.Build(list)) ctx.MirrorPairs.Add(pair);
+                else Debug.LogWarning($"[MeshListChangeRecord] ミラー対を組み直せませんでした: '{list[ri]?.Name}' ↔ '{list[mi]?.Name}'\n{pair.BuildLog}");
+            }
         }
     }
 

@@ -185,6 +185,9 @@ namespace Poly_Ling.Serialization
 
             modelDTO.coordinateConvention = ToCoordinateConventionDTO(model.CoordinateConvention);
 
+            // 下絵（規約4：CSV/JSON 対称。CSV は underlay.csv）
+            modelDTO.underlay = UnderlayDTO.From(model.Underlay);
+
             return modelDTO;
         }
 
@@ -413,6 +416,9 @@ namespace Poly_Ling.Serialization
             // ================================================================
 
             model.CoordinateConvention = FromCoordinateConventionDTO(modelDTO.coordinateConvention);
+
+            // 下絵（規約4：CSV/JSON 対称）
+            model.Underlay = UnderlayDTO.ToData(modelDTO.underlay);
 
             // ================================================================
             // WorkAxis 復元（旧データの移行）

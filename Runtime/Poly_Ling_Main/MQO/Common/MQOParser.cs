@@ -264,10 +264,10 @@ namespace Poly_Ling.MQO
                     {
                         Part = match.Groups[1].Value,
                         Path = match.Groups[2].Value,
-                        X = float.Parse(match.Groups[3].Value),
-                        Y = float.Parse(match.Groups[4].Value),
-                        Width = float.Parse(match.Groups[5].Value),
-                        Height = float.Parse(match.Groups[6].Value)
+                        X0 = float.Parse(match.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture),
+                        Y0 = float.Parse(match.Groups[4].Value, System.Globalization.CultureInfo.InvariantCulture),
+                        X1 = float.Parse(match.Groups[5].Value, System.Globalization.CultureInfo.InvariantCulture),
+                        Y1 = float.Parse(match.Groups[6].Value, System.Globalization.CultureInfo.InvariantCulture)
                     });
                 }
             }

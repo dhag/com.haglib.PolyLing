@@ -334,6 +334,22 @@ namespace Poly_Ling.MQO
             }
             sb.AppendLine("}");
 
+            // BackImage（下絵）。メタセコイアが書く形に合わせ、数値は小数 3 桁。
+            if (document.BackImages.Count > 0)
+            {
+                sb.AppendLine("BackImage {");
+                foreach (var bi in document.BackImages)
+                {
+                    sb.Append($"\t{bi.Part} \"{bi.Path}\"");
+                    sb.Append($" {bi.X0.ToString("F3", CultureInfo.InvariantCulture)}");
+                    sb.Append($" {bi.Y0.ToString("F3", CultureInfo.InvariantCulture)}");
+                    sb.Append($" {bi.X1.ToString("F3", CultureInfo.InvariantCulture)}");
+                    sb.Append($" {bi.Y1.ToString("F3", CultureInfo.InvariantCulture)}");
+                    sb.AppendLine();
+                }
+                sb.AppendLine("}");
+            }
+
             // Material
             if (document.Materials.Count > 0)
             {

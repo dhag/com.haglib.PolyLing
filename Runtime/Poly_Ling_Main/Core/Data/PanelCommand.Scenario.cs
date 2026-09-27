@@ -676,4 +676,50 @@ namespace Poly_Ling.Data
             Name = name ?? "";
         }
     }
+
+    // ================================================================
+    // 別ファイルとの出し入れ
+    // ================================================================
+
+    /// <summary>手本をファイルへ書き出す。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "手本を CSV ファイルへ書き出す。形式は手本の置き場（scenarios.csv）と同じ。指定した手本が参照している手本も一緒に書くので、そのファイルだけで取り込める。作業フォルダの下だけへ書ける。")]
+    [PLResult("path",  PLResultKind.Text,      Description = "書いたファイルの絶対パス")]
+    [PLResult("count", PLResultKind.Integer,   Description = "書いた手本の数")]
+    [PLResult("names", PLResultKind.TextArray, Description = "書いた手本の名前。参照先として加わったものも含む", Optional = true)]
+    public sealed class ExportScenariosCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出す手本の名前。省くと全部")]
+        public string[] Names { get; }
+
+        [PLParam(Description = "書き出し先の CSV ファイルのパス。作業フォルダからの相対でも絶対でもよい", Required = true)]
+        public string FilePath { get; }
+
+        public ExportScenariosCommand(int modelIndex, string filePath, string[] names = null)
+            : base(modelIndex)
+        {
+            Names    = names ?? System.Array.Empty<string>();
+            FilePath = filePath ?? "";
+        }
+    }
+
+    /// <summary>ファイルから手本を取り込む。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "CSV ファイルから手本を取り込む。ファイルの手本をまとめて検査し、1 本でも問題（参照先が無い・循環・名前の重なり）があれば何も登録しない。同じ名前の手本は overwrite を立てたときだけ差し替える。作業フォルダの下だけを読める。")]
+    [PLResult("added",    PLResultKind.TextArray, Description = "新しく登録した手本の名前", Optional = true)]
+    [PLResult("replaced", PLResultKind.TextArray, Description = "差し替えた手本の名前", Optional = true)]
+    [PLResult("count",    PLResultKind.Integer,   Description = "取り込み後の手本の数")]
+    public sealed class ImportScenariosCommand : PanelCommand
+    {
+        [PLParam(Description = "取り込む CSV ファイルのパス。作業フォルダからの相対でも絶対でもよい", Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "同じ名前の手本があるとき差し替える。立てないと、重なる名前を挙げて失敗する")]
+        public bool Overwrite { get; }
+
+        public ImportScenariosCommand(int modelIndex, string filePath, bool overwrite = false)
+            : base(modelIndex)
+        {
+            FilePath  = filePath ?? "";
+            Overwrite = overwrite;
+        }
+    }
 }
