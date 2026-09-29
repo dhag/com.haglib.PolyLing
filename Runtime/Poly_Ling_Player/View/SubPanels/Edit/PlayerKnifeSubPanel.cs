@@ -28,6 +28,10 @@ namespace Poly_Ling.Player
         private Toggle        _equalToggle;
         [UiControl("simpleTriQuad", Reveal = nameof(RevealTriQuad), Description = "シンプル切断で 5 角以上を三角形＋四角形に分ける")]
         private Toggle        _triQuadToggle;
+        [UiControl("simpleVertexEndpoints", Reveal = nameof(RevealTriQuad), Description = "シンプル切断で、頂点ホバー上のクリックは起点・終点をその頂点で指定する")]
+        private Toggle        _vertexEndToggle;
+        [UiControl("simpleDragMode", Reveal = nameof(RevealTriQuad), Description = "シンプル切断をドラッグ式にする（押した位置が起点、離した位置が終点）。OFF は 2 クリック式")]
+        private Toggle        _dragModeToggle;
         [UiControl(Ignore = true)]
         private VisualElement _divRow;
         [UiControl("divisions", Reveal = nameof(RevealDivisions), Description = "等分割の分割数（2 以上）")]
@@ -98,6 +102,24 @@ namespace Poly_Ling.Player
             _triQuadToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "simpleTriQuad", e.newValue));
             _root.Add(_triQuadToggle);
 
+            // SimpleCut 専用: 起点・終点を頂点で指定（既定 OFF）
+            _vertexEndToggle = new Toggle("起点・終点を頂点で指定");
+            _vertexEndToggle.style.color = new StyleColor(Color.white);
+            _vertexEndToggle.style.marginTop = 2;
+            _vertexEndToggle.RegisterValueChangedCallback(e => Surface?.Set(Tool, "simpleVertexEndpoints", e.newValue));
+            _root.Add(_vertexEndToggle);
+
+            // SimpleCut 専用: ドラッグで切る（既定 OFF＝2 クリック）
+            _dragModeToggle = new Toggle("ドラッグで切る");
+            _dragModeToggle.style.color = new StyleColor(Color.white);
+            _dragModeToggle.style.marginTop = 2;
+            _dragModeToggle.RegisterValueChangedCallback(e =>
+            {
+                Surface?.Set(Tool, "simpleDragMode", e.newValue);
+                Refresh();   // 案内文をドラッグ式／2 クリック式に合わせる
+            });
+            _root.Add(_dragModeToggle);
+
             _statusLabel = new Label();
             _statusLabel.style.color = new StyleColor(Color.white);
             _statusLabel.style.fontSize  = 10;
@@ -165,6 +187,16 @@ namespace Poly_Ling.Player
             {
                 _triQuadToggle.style.display = isSimple ? DisplayStyle.Flex : DisplayStyle.None;
                 _triQuadToggle.SetValueWithoutNotify(Surface.GetBool(Tool, "simpleTriQuad", true));
+            }
+            if (_vertexEndToggle != null)
+            {
+                _vertexEndToggle.style.display = isSimple ? DisplayStyle.Flex : DisplayStyle.None;
+                _vertexEndToggle.SetValueWithoutNotify(Surface.GetBool(Tool, "simpleVertexEndpoints", false));
+            }
+            if (_dragModeToggle != null)
+            {
+                _dragModeToggle.style.display = isSimple ? DisplayStyle.Flex : DisplayStyle.None;
+                _dragModeToggle.SetValueWithoutNotify(Surface.GetBool(Tool, "simpleDragMode", false));
             }
 
             if (_statusLabel == null) return;

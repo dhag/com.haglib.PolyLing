@@ -69,18 +69,24 @@ namespace Poly_Ling.Player
         private VisualElement _screenBox;
         [UiControl("scale", Description = "Persp / Ortho のとき、X/Y 同時の拡大率。2D スケールの X・Y も同じ値になる")]
         private Slider        _scaleSlider;    // XY同時スケール
-        [UiControl("topLeft.x", Description = "Persp / Ortho のとき、左上位置の X")]
+        [UiControl("topLeft.x", Description = "Persp / Ortho のとき、ビュー中央から画像の左上までの X（ビューの高さ = 1）")]
         private FloatField    _tlX;
-        [UiControl("topLeft.y", Description = "Persp / Ortho のとき、左上位置の Y")]
+        [UiControl("topLeft.y", Description = "Persp / Ortho のとき、ビュー中央から画像の左上までの Y（ビューの高さ = 1、下向き）")]
         private FloatField    _tlY;            // 左上位置
         [UiControl("origin.x", Description = "Persp / Ortho のとき、拡大縮小の原点の X（画像の画素基準）")]
         private FloatField    _orgX;
         [UiControl("origin.y", Description = "Persp / Ortho のとき、拡大縮小の原点の Y（画像の画素基準・下向き）")]
         private FloatField    _orgY;           // 拡大縮小の原点
-        [UiControl("scale2d.x", Description = "Persp / Ortho のとき、2D スケールの X")]
+        [UiControl("scale2d.x", Description = "Persp / Ortho のとき、2D スケールの X（1 で画像の高さ = ビューの高さ）")]
         private FloatField    _sclX;
-        [UiControl("scale2d.y", Description = "Persp / Ortho のとき、2D スケールの Y")]
+        [UiControl("scale2d.y", Description = "Persp / Ortho のとき、2D スケールの Y（1 で画像の高さ = ビューの高さ）")]
         private FloatField    _sclY;           // 2Dスケール
+
+        // ── 表示調整（全方向共通の欄。値は方向ごと） ──
+        [UiControl("contrast", Description = "この方向の下絵のコントラスト（0〜1）。1 で元画像、0 で灰色一色")]
+        private Slider        _contrastSlider;
+        [UiControl("intensity", Description = "この方向の下絵の明るさ（0〜1）。1 で元画像、0 で黒")]
+        private Slider        _intensitySlider;
 
         [UiControl("open", Safety = UiSafety.UserOnly, Description = "画像ファイルを選ぶダイアログを開く")]
         private Button _openBtn;
@@ -183,6 +189,17 @@ namespace Poly_Ling.Player
             _sizeLabel.style.marginBottom = 6;
             parent.Add(_sizeLabel);
 
+            // ── 表示調整（コントラスト・明るさ） ──
+            _contrastSlider = new Slider("コントラスト", 0f, 1f) { value = 1f, showInputField = true };
+            _contrastSlider.style.marginBottom = 2;
+            _contrastSlider.RegisterValueChangedCallback(_ => SendAdjust());
+            parent.Add(_contrastSlider);
+
+            _intensitySlider = new Slider("明るさ", 0f, 1f) { value = 1f, showInputField = true };
+            _intensitySlider.style.marginBottom = 6;
+            _intensitySlider.RegisterValueChangedCallback(_ => SendAdjust());
+            parent.Add(_intensitySlider);
+
             // ── モデル座標基準（上下前後左右） ──
             _modelBox = new VisualElement();
             AddXYZRow(_modelBox, "隅1", out _c0x, out _c0y, out _c0z);
@@ -194,7 +211,7 @@ namespace Poly_Ling.Player
 
             // ── 画面ピクセル基準（Persp / Ortho） ──
             _screenBox = new VisualElement();
-            AddXYRow(_screenBox, "左上位置", out _tlX,  out _tlY);
+            AddXYRow(_screenBox, "左上(中央から/高さ比)", out _tlX,  out _tlY);
             AddXYRow(_screenBox, "原点",     out _orgX, out _orgY);
 
             // 原点プリセット（画像画素サイズ基準。要素ローカルpx／Y下向き）
@@ -314,6 +331,8 @@ namespace Poly_Ling.Player
             _sclX.value = s.Scale.x;       _sclY.value = s.Scale.y;
             // スライダーはテキストへ通知せず現在スケール（X基準）へ同期。
             _scaleSlider?.SetValueWithoutNotify(Mathf.Clamp(s.Scale.x, ScaleMin, ScaleMax));
+            _contrastSlider?.SetValueWithoutNotify(s.Contrast);
+            _intensitySlider?.SetValueWithoutNotify(s.Intensity);
 
             if (s.IsEmpty)            _fileLabel.text = "(未設定)";
             else if (tex == null)     _fileLabel.text = $"{Path.GetFileName(s.FilePath)}（読めません）";
@@ -368,6 +387,19 @@ namespace Poly_Ling.Player
                 new Vector2(_tlX.value, _tlY.value),
                 new Vector2(_orgX.value, _orgY.value),
                 _sclX.value, _sclY.value));
+        }
+
+        /// <summary>コントラスト・明るさを現在方向へ送る。置き方は変えない。画像が無い方向では何もしない。</summary>
+        private void SendAdjust()
+        {
+            if (_suppress) return;
+            var dir = CurrentDir;
+            var s   = _config.Peek(dir);
+            if (s == null || s.IsEmpty) return;
+
+            Send(new SetUnderlayCommand(Index(), dir, "", keepPlacement: true,
+                contrast:  Mathf.Clamp01(_contrastSlider.value),
+                intensity: Mathf.Clamp01(_intensitySlider.value)));
         }
 
         /// <summary>上下前後左右の置き方を既定に戻す（2 隅を同じ点にして送る）。</summary>

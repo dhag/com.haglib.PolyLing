@@ -82,13 +82,17 @@ namespace Poly_Ling.Player
         /// ワールド座標 → プレビュースクリーン座標（Y=0 が上、IMGUI 系）。
         /// AxisGizmo.Draw / FindAxisAtScreenPos / ComputeAxisDelta で使われる。
         /// </summary>
-        public Vector2 WorldToScreenPos(Vector3 worldPos, Rect previewRect,
-                                        Vector3 camPos, Vector3 lookAt)
+        /// <remarks>
+        /// 投影に使うカメラは引数で受ける。以前は共有フィールド _cam を実行時に読んでいたため、
+        /// あるビューで作った ToolContext でも、後から別のビューで ToToolContext が呼ばれると
+        /// そのビューのカメラで投影していた（2026-09-29 修正）。
+        /// </remarks>
+        public static Vector2 WorldToScreenPos(Camera cam, Vector3 worldPos, Rect previewRect)
         {
-            if (_cam == null) return Vector2.zero;
+            if (cam == null) return Vector2.zero;
             // Camera.WorldToScreenPoint はメインスクリーン解像度を使うため
             // RenderTexture カメラには使えない。行列で直接射影する。
-            Matrix4x4 vp = _cam.projectionMatrix * _cam.worldToCameraMatrix;
+            Matrix4x4 vp = cam.projectionMatrix * cam.worldToCameraMatrix;
             Vector4 clip = vp * new Vector4(worldPos.x, worldPos.y, worldPos.z, 1f);
             if (clip.w <= 0f) return new Vector2(-10000, -10000);
             // NDC → ピクセル座標（Y=0 が下）
@@ -104,31 +108,30 @@ namespace Poly_Ling.Player
         /// スクリーンデルタ → ワールドデルタ。
         /// CalcWorldDelta 相当。
         /// </summary>
-        public Vector3 ScreenDeltaToWorldDelta(Vector2 screenDelta,
-                                               Vector3 camPos, Vector3 target,
-                                               float camDist, Rect previewRect)
+        public static Vector3 ScreenDeltaToWorldDelta(Camera cam, Vector2 screenDelta,
+                                                      float camDist, Rect previewRect)
         {
-            if (_cam == null) return Vector3.zero;
+            if (cam == null) return Vector3.zero;
             float scale;
-            if (_cam.orthographic && previewRect.height > 0)
-                scale = _cam.orthographicSize * 2f / previewRect.height;
+            if (cam.orthographic && previewRect.height > 0)
+                scale = cam.orthographicSize * 2f / previewRect.height;
             else
                 scale = camDist / previewRect.height
-                      * Mathf.Tan(_cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 2f;
-            return  _cam.transform.right * screenDelta.x * scale
-                  + _cam.transform.up    * screenDelta.y * scale;
+                      * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 2f;
+            return  cam.transform.right * screenDelta.x * scale
+                  + cam.transform.up    * screenDelta.y * scale;
         }
 
         // ================================================================
         // ToolContext ラッパー（AxisGizmo に渡す）
         // ================================================================
 
-        private Camera _cam;
-
-        /// <summary>ToolContext 互換ラッパーを生成して返す。</summary>
+        /// <summary>
+        /// ToolContext 互換ラッパーを生成して返す。
+        /// 投影系のデリゲートは引数の cam を閉じ込める（他のビューの ToToolContext 呼び出しに影響されない）。
+        /// </summary>
         public ToolContext ToToolContext(Camera cam)
         {
-            _cam = cam;
             var ctx = new ToolContext();
             ctx.Model           = Model;
             ctx.CameraPosition  = CameraPosition;
@@ -137,10 +140,10 @@ namespace Poly_Ling.Player
             ctx.PreviewRect     = PreviewRect;
             ctx.DisplayMatrix   = DisplayMatrix;
             ctx.WorldToScreenPos = (wp, rect, cp, lt) =>
-                WorldToScreenPos(wp, rect, cp, lt);
+                WorldToScreenPos(cam, wp, rect);
             ctx.ScreenDeltaToWorldDelta = (sd, cp, ct, cd, rect) =>
-                ScreenDeltaToWorldDelta(sd, cp, ct, cd, rect);
-            ctx.ScreenPosToRay = screenPos => ScreenPosToRay(screenPos);
+                ScreenDeltaToWorldDelta(cam, sd, cd, rect);
+            ctx.ScreenPosToRay = screenPos => ScreenPosToRay(cam, screenPos);
             ctx.AddMeshContext             = AddMeshContext;
             ctx.AddMeshObjectToCurrentMesh = AddMeshObjectToCurrentMesh;
             return ctx;
@@ -150,12 +153,12 @@ namespace Poly_Ling.Player
         /// スクリーン座標（Y=0 が上 IMGUI 系）から Ray を生成する。
         /// SculptTool.ApplyBrush が使用する。
         /// </summary>
-        public Ray ScreenPosToRay(Vector2 imgui)
+        public static Ray ScreenPosToRay(Camera cam, Vector2 imgui)
         {
-            if (_cam == null) return new Ray();
+            if (cam == null) return new Ray();
             // IMGUI（Y=0 が上）→ Camera.ScreenPointToRay（Y=0 が下）に変換
-            float screenY = _cam.pixelHeight - imgui.y;
-            return _cam.ScreenPointToRay(new Vector3(imgui.x, screenY, 0f));
+            float screenY = cam.pixelHeight - imgui.y;
+            return cam.ScreenPointToRay(new Vector3(imgui.x, screenY, 0f));
         }
     }
 }

@@ -244,7 +244,7 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
-            _edgeRibbonFaceHandler.SetProject(ActiveProject);
+            _edgeRibbonFaceHandler.GetProject = () => ActiveProject;
             _edgeRibbonFaceHandler.SetUndoController(_editOps?.UndoController);
             _edgeRibbonFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
 

@@ -422,6 +422,9 @@ namespace Poly_Ling.Player
             });
             loopFold.Add(loopBtnRow2);
 
+            // ── ループのブーリアン（選択ループ ○ 相手ループ → 結果で 2 本を置き換える） ──
+            BuildP2dLoopBooleanRow(loopFold);
+
             // ── ループ一覧（穴フラグ切替） ─────────────────────────────────
             for (int i = 0; i < _p2dLoops.Count; i++)
             {
@@ -590,6 +593,81 @@ namespace Poly_Ling.Player
                 () => _p2dP.Pivot, v => { _p2dP.Pivot = v; D(); },
                 PrimitiveMeshPostProcess.PivotMin, PrimitiveMeshPostProcess.PivotMax,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
+        }
+
+        // ループのブーリアンの状態（メモリ保持・非永続）
+        private Boolean2DOpKind _p2dBoolOp    = Boolean2DOpKind.Union;
+        private int             _p2dBoolOther = -1;
+
+        /// <summary>
+        /// ループのブーリアン行。選択中のループ（A）と相手のループ（B）を XY 平面で演算し、
+        /// 2 本を結果のループで置き換える（Boolean2DOps.PerformProfileLoops）。
+        /// 各ループは穴の印に関係なく、それ自身が囲む領域として扱う。結果の穴には穴の印が付く。
+        /// </summary>
+        private void BuildP2dLoopBooleanRow(VisualElement parent)
+        {
+            // ループの追加・複製・削除は設定欄を作り直さないので、行は本数に関係なく常に置き、
+            // 相手の候補は開くたびに今のループ数で作り直す。
+            parent.Add(SL(T("LoopBoolean")));
+
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
+
+            var opField = new EnumField(_p2dBoolOp);
+            opField.style.width = 130;
+            opField.RegisterValueChangedCallback(e => _p2dBoolOp = (Boolean2DOpKind)e.newValue);
+            row.Add(opField);
+
+            List<string> LoopNames()
+            {
+                var list = new List<string>();
+                int n = _p2dLoops?.Count ?? 0;
+                for (int i = 0; i < n; i++) list.Add($"Loop {i}");
+                return list;
+            }
+            var otherField = new DropdownField(T("LoopBooleanOther"), LoopNames(), -1);
+            otherField.style.flexGrow = 1;
+            otherField.labelElement.style.minWidth = 30;
+            if (_p2dBoolOther >= 0 && _p2dBoolOther < otherField.choices.Count)
+                otherField.index = _p2dBoolOther;
+            otherField.RegisterValueChangedCallback(_ => _p2dBoolOther = otherField.index);
+            // 開く前に候補を今のループ数で作り直す（押下は子に届く前に拾う）。
+            otherField.RegisterCallback<PointerDownEvent>(_ =>
+            {
+                int keep = otherField.index;
+                otherField.choices = LoopNames();
+                if (keep >= otherField.choices.Count) otherField.SetValueWithoutNotify(null);
+            }, TrickleDown.TrickleDown);
+            row.Add(otherField);
+
+            SB(row, T("LoopBooleanRun"), RunP2dLoopBoolean);
+            parent.Add(row);
+        }
+
+        private void RunP2dLoopBoolean()
+        {
+            if (_p2dLoops == null) return;
+            int a = _p2dSelLoop, b = _p2dBoolOther;
+            if (b < 0 || b >= _p2dLoops.Count || a == b)
+            {
+                _statusLabel.text = "相手に選択中と別のループを選んでください";
+                return;
+            }
+            if (a < 0 || a >= _p2dLoops.Count) return;
+
+            var result = Boolean2DOps.PerformProfileLoops(
+                _p2dBoolOp, new List<Loop> { _p2dLoops[a] }, new List<Loop> { _p2dLoops[b] });
+            if (result.Count == 0) { _statusLabel.text = T("LoopBooleanEmpty"); return; }
+
+            P2dBegin();
+            int insertAt = Mathf.Min(a, b);
+            _p2dLoops.RemoveAt(Mathf.Max(a, b));
+            _p2dLoops.RemoveAt(insertAt);
+            _p2dLoops.InsertRange(insertAt, result);
+            _p2dSelLoop = insertAt;
+            _p2dBoolOther = -1;
+            _p2dSel.Clear(); _p2dSelPt = -1;
+            P2dCommit("ループのブーリアン");
+            D(); RebuildSettings();
         }
 
         /// <summary>角処理(ベベル)UI の表示を Thickness/Segments に応じて更新する。</summary>

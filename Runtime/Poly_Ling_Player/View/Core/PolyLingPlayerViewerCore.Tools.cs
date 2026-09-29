@@ -135,6 +135,11 @@ namespace Poly_Ling.Player
                     btn     = _layoutRoot?.EdgeTopologyBtn;
                     refresh = () => _edgeTopologySubPanel?.Refresh();
                     break;
+                case InteractionMode.EdgeTriangle:
+                    section = _layoutRoot?.EdgeTriangleSection;
+                    btn     = _layoutRoot?.EdgeTriangleBtn;
+                    refresh = () => _edgeTriangleSubPanel?.Refresh();
+                    break;
                 case InteractionMode.Knife:
                     section = _layoutRoot?.KnifeSection;
                     btn     = _layoutRoot?.KnifeBtn;

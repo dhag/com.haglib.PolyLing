@@ -22,7 +22,10 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly AdvancedSelectTool _tool = new AdvancedSelectTool();
-        private          ProjectContext     _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _project => GetProject?.Invoke();
         private          PlayerSelectionOps _selectionOps;
 
         // TopologyCache はメッシュごとにキャッシュ
@@ -439,7 +442,6 @@ namespace Poly_Ling.Player
         /// </summary>
         public Action<Poly_Ling.Data.PanelCommand> SendCommand;
 
-        public void SetProject(ProjectContext project) => _project = project;
         public void SetSelectionOps(PlayerSelectionOps ops) => _selectionOps = ops;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
         private MeshUndoController _undoController;

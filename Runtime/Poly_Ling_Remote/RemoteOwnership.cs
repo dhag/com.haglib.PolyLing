@@ -604,6 +604,7 @@ namespace Poly_Ling.Remote
                 case QueryScenariosCommand _:
                 case DescribeScenarioCommand _:
                 case CreateScenarioCommand _:
+                case SetScenarioBundleCommand _:
                 case DeleteScenarioCommand _:
                 case ForkScenarioCommand _:
                 case SaveScenarioFromGroupCommand _:

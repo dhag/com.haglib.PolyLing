@@ -147,37 +147,6 @@ namespace Poly_Ling.Player
                     _viewportManager.PerspectiveViewport,
                     CameraChangePhase.Reset,
                     mc.UnityMesh.bounds);
-            _moveToolHandler?.SetProject(ActiveProject);
-            _objectMoveHandler?.SetProject(ActiveProject);
-            _pivotOffsetHandler?.SetProject(ActiveProject);
-            _sculptHandler?.SetProject(ActiveProject);
-            _advancedSelectHandler?.SetProject(ActiveProject);
-            _skinWeightPaintHandler?.SetProject(ActiveProject);
-            _alignVerticesHandler?.SetProject(ActiveProject);
-            _pipeAlignHandler?.SetProject(ActiveProject);
-            _planarizeAlongBonesHandler?.SetProject(ActiveProject);
-                _mergeVerticesHandler?.SetProject(ActiveProject);
-                _splitVerticesHandler?.SetProject(ActiveProject);
-                _lineExtrudeHandler?.SetProject(ActiveProject);
-                _vertexHoleHandler?.SetProject(ActiveProject);
-                _addFaceHandler?.SetProject(ActiveProject);
-                _flipFaceHandler?.SetProject(ActiveProject);
-                _rotateHandler?.SetProject(ActiveProject);
-                _scaleHandler?.SetProject(ActiveProject);
-                _edgeBevelHandler?.SetProject(ActiveProject);
-                _edgeExtrudeHandler?.SetProject(ActiveProject);
-                _faceExtrudeHandler?.SetProject(ActiveProject);
-                _edgeRibbonFaceHandler?.SetProject(ActiveProject);
-                _edgeTopologyHandler?.SetProject(ActiveProject);
-                _knifeHandler?.SetProject(ActiveProject);
-                _solidifyHandler?.SetProject(ActiveProject);
-                _deleteSelectionHandler?.SetProject(ActiveProject);
-                _vertexDissolveHandler?.SetProject(ActiveProject);
-                _tri4To1Handler?.SetProject(ActiveProject);
-                _faceMergeHandler?.SetProject(ActiveProject);
-                _quad4To1Handler?.SetProject(ActiveProject);
-                _edgeBridgeHandler?.SetProject(ActiveProject);
-                _holeRingCountHandler?.SetProject(ActiveProject);
             // 受信中はフル GPU 再構築を抑止（完了時 EnterSceneReset で1回だけ行う）。
             if (!_suppressRebuildDuringFetch)
             {

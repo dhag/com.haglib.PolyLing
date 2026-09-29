@@ -121,7 +121,10 @@ namespace Poly_Ling.Player
             return CommandResult.Ok();
         }
 
-        public CommandResult Reveal(string controlId, bool highlight)
+        public CommandResult Reveal(string controlId, bool highlight) => Reveal(controlId, highlight, add: false);
+
+        /// <param name="add">強調するとき今の枠を残して足す。</param>
+        public CommandResult Reveal(string controlId, bool highlight, bool add)
         {
             if (!_registry.TryGetControl(controlId, out var c))
             {
@@ -158,9 +161,13 @@ namespace Poly_Ling.Player
             if (changed) ScrollAfterLayout(element);
             else         ScrollIntoView(element);
 
-            if (highlight) _highlight.Show(element);
+            if (highlight)
+            {
+                if (add) _highlight.Add(element);
+                else     _highlight.Show(element);
+            }
 
-            Debug.Log($"{LogTag} Reveal: {controlId} (changed={changed}, highlight={highlight})");
+            Debug.Log($"{LogTag} Reveal: {controlId} (changed={changed}, highlight={highlight}, add={add})");
             return CommandResult.Ok();
         }
 
@@ -279,14 +286,17 @@ namespace Poly_Ling.Player
         // 強調表示
         // ================================================================
 
-        public CommandResult Highlight(string controlId, bool enabled)
+        public CommandResult Highlight(string controlId, bool enabled) => Highlight(controlId, enabled, add: false);
+
+        /// <param name="add">今の枠を残して足す。</param>
+        public CommandResult Highlight(string controlId, bool enabled, bool add)
         {
             if (!TryResolve(controlId, out var c, out var element, out string err))
                 return CommandResult.Fail(err);
 
             if (!enabled)
             {
-                if (_highlight.Target == element) _highlight.Clear();
+                _highlight.Remove(element);
                 Debug.Log($"{LogTag} Highlight off: {controlId}");
                 return CommandResult.Ok();
             }
@@ -295,8 +305,17 @@ namespace Poly_Ling.Player
                 return CommandResult.Fail(
                     $"control is not displayed: {controlId}（uiReveal で表示してから強調する）");
 
-            _highlight.Show(element);
-            Debug.Log($"{LogTag} Highlight: {controlId}");
+            if (add) _highlight.Add(element);
+            else     _highlight.Show(element);
+            Debug.Log($"{LogTag} Highlight: {controlId} (add={add}, count={_highlight.Count})");
+            return CommandResult.Ok();
+        }
+
+        /// <summary>強調の枠を全部消す。</summary>
+        public CommandResult ClearHighlights()
+        {
+            _highlight.Clear();
+            Debug.Log($"{LogTag} Highlight cleared");
             return CommandResult.Ok();
         }
 

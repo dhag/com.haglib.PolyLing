@@ -94,8 +94,6 @@ namespace Poly_Ling.Player
                 {
                     // モデル・描画メッシュがなければ空のMeshContextを自動生成する
                     _localLoader.EnsureProject();
-                    _moveToolHandler?.SetProject(ActiveProject);
-                    _objectMoveHandler?.SetProject(ActiveProject);
                     var proj = ActiveProject;
                     if (proj == null) return false;
                     if (proj.CurrentModel == null && proj.ModelCount > 0)
@@ -139,37 +137,15 @@ namespace Poly_Ling.Player
                     // Phase 2a-2b-2 Batch 3: 新規 MeshContext 作成後の RebuildAdapter +
                     // SetSelectionState + UpdateSelectedDrawableMesh を EnterSceneReset に集約。
                     _viewportManager.EnterSceneReset(ActiveProject);
-                    _addFaceHandler?.SetProject(ActiveProject);
-                    // 【設計ポイント: プロジェクト生成経路では全ハンドラに SetProject 伝播】
-                    // EnsureProject はユーザがメッシュを持たない状態で編集ツールを起動したときに
-                    // 暗黙に Project を生成する経路。_addFaceHandler だけ再設定していた過去の
-                    // 残骸があると、EdgeTopology / Knife / EdgeBevel 等の他トポロジ系ハンドラは
-                    // 初期化時の 1 回切りの SetProject(null) のまま取り残され、
-                    // GetEnrichedCtx が null model を返してツールが無反応になる。
-                    // 同じ症状を他ツールで繰り返さないために、プロジェクト生成/切替/受信経路は
-                    // 全トポロジハンドラを漏れなく伝播する (PrepareHandlersForGeneratedMesh,
-                    // OnMeshDataReceived 等の他経路も同じ列挙を持つ)。新ハンドラ追加時は
-                    // 全伝播箇所に新しい `_xxxHandler?.SetProject(ActiveProject);` を追加すること。
-                    _edgeBevelHandler?.SetProject(ActiveProject);
-                    _edgeExtrudeHandler?.SetProject(ActiveProject);
-                    _faceExtrudeHandler?.SetProject(ActiveProject);
-                _edgeRibbonFaceHandler?.SetProject(ActiveProject);
-                    _edgeTopologyHandler?.SetProject(ActiveProject);
-                    _knifeHandler?.SetProject(ActiveProject);
-                    _deleteSelectionHandler?.SetProject(ActiveProject);
-                    _vertexDissolveHandler?.SetProject(ActiveProject);
-                    _tri4To1Handler?.SetProject(ActiveProject);
-                    _faceMergeHandler?.SetProject(ActiveProject);
-                    _quad4To1Handler?.SetProject(ActiveProject);
-                    _edgeBridgeHandler?.SetProject(ActiveProject);
-                _holeRingCountHandler?.SetProject(ActiveProject);
+                    // ツールハンドラはプロジェクトを保持せず GetProject で都度引くので、
+                    // プロジェクトを作っても配り直す必要は無い。
                     RebuildModelList();
                     NotifyPanels(ChangeKind.ListStructure);
                     return true;
                 },
             };
             _addFaceHandler.SendCommand = DispatchPanelCommand;
-            _addFaceHandler.SetProject(ActiveProject);
+            _addFaceHandler.GetProject = () => ActiveProject;
             _addFaceHandler.SetUndoController(_editOps?.UndoController);
             _addFaceSubPanel = new PlayerAddFaceSubPanel
             {
@@ -217,7 +193,7 @@ namespace Poly_Ling.Player
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
-            _flipFaceHandler.SetProject(ActiveProject);
+            _flipFaceHandler.GetProject = () => ActiveProject;
             _flipFaceHandler.SetUndoController(_editOps?.UndoController);
             _flipFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
             _flipFaceSubPanel = new PlayerFlipFaceSubPanel
@@ -242,7 +218,7 @@ namespace Poly_Ling.Player
             _rotateHandler.SendCommand = DispatchPanelCommand;
             _rotateHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
             _rotateHandler.EndPreview      = EndHostPreview;
-            _rotateHandler.SetProject(ActiveProject);
+            _rotateHandler.GetProject = () => ActiveProject;
             _rotateHandler.SetUndoController(_editOps?.UndoController);
             _rotateSubPanel = new PlayerRotateSubPanel { Surface = ToolSurface };
             _rotateSubPanel.Build(_layoutRoot.RotateSection);
@@ -351,6 +327,9 @@ namespace Poly_Ling.Player
             _deformHandler = new DeformToolHandler
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                // 曲げのたわみ方向は BendCameraView のビューで決める（カレントビューに依らない）。
+                GetToolContextForView = GetToolContextForView,
+                GetActiveViewKind     = ActiveViewKind,
                 GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
                 OnRepaint      = () =>
                 {
@@ -408,6 +387,7 @@ namespace Poly_Ling.Player
             {
                 Surface       = ToolSurface,
                 WorkAxisPanel = _deformWorkAxisSubPanel,
+                GetActiveViewKind = ActiveViewKind,
             };
             _deformSubPanel.Build(_layoutRoot.DeformSection);
 
@@ -458,7 +438,7 @@ namespace Poly_Ling.Player
             _scaleHandler.SendCommand = DispatchPanelCommand;
             _scaleHandler.TryBeginPreview = TryBeginHostPreviewOfSelection;
             _scaleHandler.EndPreview      = EndHostPreview;
-            _scaleHandler.SetProject(ActiveProject);
+            _scaleHandler.GetProject = () => ActiveProject;
             _scaleHandler.SetUndoController(_editOps?.UndoController);
             _scaleSubPanel = new PlayerScaleSubPanel { Surface = ToolSurface };
             _scaleSubPanel.Build(_layoutRoot.ScaleSection);
@@ -492,7 +472,7 @@ namespace Poly_Ling.Player
                 },
                 OnApplyCompleted = () => NotifyPanels(ChangeKind.ListStructure),
             };
-            _edgeBevelHandler.SetProject(ActiveProject);
+            _edgeBevelHandler.GetProject = () => ActiveProject;
             _edgeBevelHandler.SetUndoController(_editOps?.UndoController);
             _edgeBevelHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeBevelHandler.SendCommand = DispatchPanelCommand;
@@ -501,6 +481,9 @@ namespace Poly_Ling.Player
             _edgeExtrudeHandler = new EdgeExtrudeToolHandler
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                // edgeExtrude はコマンドのビューで線分の四角形の表裏を決める（カレントビューに依らない）。
+                GetToolContextForView = GetToolContextForView,
+                GetActiveViewKind     = ActiveViewKind,
                 // 変換の基準に GPU が計算したワールド座標を使う（CPU で計算し直さない）。
                 GetVertexWorldPosition = vi =>
                 {
@@ -528,7 +511,7 @@ namespace Poly_Ling.Player
                 },
                 OnApplyCompleted = () => NotifyPanels(ChangeKind.ListStructure),
             };
-            _edgeExtrudeHandler.SetProject(ActiveProject);
+            _edgeExtrudeHandler.GetProject = () => ActiveProject;
             _edgeExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _edgeExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeExtrudeHandler.SendCommand = DispatchPanelCommand;
@@ -568,7 +551,7 @@ namespace Poly_Ling.Player
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
-            _faceExtrudeHandler.SetProject(ActiveProject);
+            _faceExtrudeHandler.GetProject = () => ActiveProject;
             _faceExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _faceExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _faceExtrudeHandler.SendCommand = DispatchPanelCommand;
@@ -592,7 +575,7 @@ namespace Poly_Ling.Player
                 },
             };
             _edgeTopologyHandler.SendCommand = DispatchPanelCommand;
-            _edgeTopologyHandler.SetProject(ActiveProject);
+            _edgeTopologyHandler.GetProject = () => ActiveProject;
             _edgeTopologyHandler.SetUndoController(_editOps?.UndoController);
             _edgeTopologyHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeTopologySubPanel = new PlayerEdgeTopologySubPanel { Surface = ToolSurface };
@@ -600,9 +583,36 @@ namespace Poly_Ling.Player
             // Selection.Mode (ホバー有効範囲) を切り替える。
             _edgeTopologySubPanel.OnModeChanged = m => ApplySelectionModeForEdgeTopology(m);
             _edgeTopologySubPanel.Build(_layoutRoot.EdgeTopologySection);
+
+            // 辺から三角形。辺を掴んでドラッグで頂点を引き出す。確定は EdgeTriangleCommand。
+            _edgeTriangleHandler = new EdgeTriangleToolHandler
+            {
+                GetToolContext   = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint        = () => _activePanel?.MarkDirtyRepaint(),
+                GetHoverElement  = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                OnRefreshOverlay = () => UpdateTopologyToolsOverlay(),
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+                OnResultChanged  = () => _edgeTriangleSubPanel?.Refresh(),
+            };
+            _edgeTriangleHandler.SendCommand = DispatchPanelCommand;
+            _edgeTriangleHandler.GetProject  = () => ActiveProject;
+            _edgeTriangleHandler.SetUndoController(_editOps?.UndoController);
+            _edgeTriangleHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _edgeTriangleSubPanel = new PlayerEdgeTriangleSubPanel { Surface = ToolSurface };
+            _edgeTriangleSubPanel.Build(_layoutRoot.EdgeTriangleSection);
             _knifeHandler = new KnifeToolHandler
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                // ビューを持つコマンド（knifeSimpleCut）はカレントビューに依らず指定のビューで実行する。
+                GetToolContextForView = GetToolContextForView,
+                GetVertexClipWForView = GetActiveMeshVertexClipW,
+                GetActiveViewKind     = ActiveViewKind,
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
                 // 段 (開始頂点 → セグメント辺 → 終了頂点) ごとにホバー種別が変わる。
@@ -652,7 +662,7 @@ namespace Poly_Ling.Player
                 },
             };
             _knifeHandler.SendCommand = DispatchPanelCommand;
-            _knifeHandler.SetProject(ActiveProject);
+            _knifeHandler.GetProject = () => ActiveProject;
             _knifeHandler.SetUndoController(_editOps?.UndoController);
             _knifeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _knifeSubPanel = new PlayerKnifeSubPanel { Surface = ToolSurface };
@@ -691,7 +701,7 @@ namespace Poly_Ling.Player
                         },
                         poseAlreadyBaked: true)),
             };
-            _solidifyHandler.SetProject(ActiveProject);
+            _solidifyHandler.GetProject = () => ActiveProject;
             _solidifyHandler.SetUndoController(_editOps?.UndoController);
             _solidifyHandler.SetCommandQueue(_editOps?.CommandQueue);
             _solidifySubPanel = new PlayerSolidifySubPanel
@@ -722,7 +732,7 @@ namespace Poly_Ling.Player
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
-            _lineExtrudeHandler.SetProject(ActiveProject);
+            _lineExtrudeHandler.GetProject = () => ActiveProject;
             _lineExtrudeHandler.SetUndoController(_editOps?.UndoController);
             _lineExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _lineExtrudeSubPanel = new PlayerLineExtrudeSubPanel

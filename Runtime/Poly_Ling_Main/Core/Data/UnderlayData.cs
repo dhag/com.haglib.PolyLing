@@ -12,7 +12,17 @@
 //   上下前後左右の 6 方向（IsModelAnchored が true）はモデル座標の 2 隅で置く。
 //   カメラをズーム・移動しても、モデルとの位置関係は変わらない。
 //   透視・平行投影の 2 スロット（Persp / Ortho）は視線の向きが決まらないため、
-//   従来どおり画面ピクセル基準（左上位置・拡大縮小の原点・2D スケール）で置く。
+//   画面基準（左上位置・拡大縮小の原点・2D スケール）で置く。
+//
+// 【画面基準はビュー中央・ビューの高さで持つ】
+//   カメラはビュー中央を基準に、ビューの高さに比例した大きさで描く（視野角・平行投影の
+//   幅はどちらも縦で決まる）。下絵も同じ基準で持たないと、ビューの大きさが変わったとき
+//   メッシュとだけずれる。そこで次の単位で持つ（ViewRelative = true）。
+//     TopLeft … 画像の左上の、ビュー中央からの位置。ビューの高さを 1 とする（Y 下向き）。
+//     Scale   … 1 で画像の高さがビューの高さと同じになる倍率。
+//     ScaleOrigin … 画像ローカルの画素（Y 下向き）。ビューには依らない。
+//   ViewRelative = false は以前の形式（ビュー左上からの画素・画素倍率）。
+//   最初に表示するときのビューの大きさで今の形式に直す（ConvertLegacyScreen）。
 //
 // 【2 隅】
 //   Corner0 / Corner1 は画像の向かい合う 2 隅のモデル座標。どちらがどの隅かは問わない。
@@ -47,16 +57,19 @@ namespace Poly_Ling.Data
         /// <summary>画像ファイルの絶対パス。空なら未設定。</summary>
         public string FilePath = string.Empty;
 
-        // ── 画面ピクセル基準（Persp / Ortho） ──
+        // ── 画面基準（Persp / Ortho） ──
 
-        /// <summary>パネル左上からの表示位置（px）。</summary>
+        /// <summary>画像の左上の、ビュー中央からの位置。ビューの高さを 1 とする（Y 下向き）。</summary>
         public Vector2 TopLeft = Vector2.zero;
 
         /// <summary>拡大縮小の原点（画像ローカル px、Y 下向き）。</summary>
         public Vector2 ScaleOrigin = Vector2.zero;
 
-        /// <summary>2D スケール（x, y）。</summary>
+        /// <summary>2D スケール（x, y）。1 で画像の高さがビューの高さと同じ。</summary>
         public Vector2 Scale = Vector2.one;
+
+        /// <summary>TopLeft / Scale が上の単位か。false は以前の画素基準（表示時に直す）。</summary>
+        public bool ViewRelative = false;
 
         // ── モデル座標基準（上下前後左右） ──
 
@@ -65,6 +78,14 @@ namespace Poly_Ling.Data
 
         /// <summary>Corner0 と向かい合う隅のモデル座標。</summary>
         public Vector3 Corner1 = Vector3.zero;
+
+        // ── 表示調整 ──
+
+        /// <summary>コントラスト（0〜1）。1 で元画像、0 で灰色一色。</summary>
+        public float Contrast = 1f;
+
+        /// <summary>明るさ（0〜1）。1 で元画像、0 で黒。</summary>
+        public float Intensity = 1f;
 
         /// <summary>画像が設定されていないか。</summary>
         public bool IsEmpty => string.IsNullOrEmpty(FilePath);
@@ -79,9 +100,57 @@ namespace Poly_Ling.Data
             TopLeft     = TopLeft,
             ScaleOrigin = ScaleOrigin,
             Scale       = Scale,
+            ViewRelative = ViewRelative,
             Corner0     = Corner0,
             Corner1     = Corner1,
+            Contrast    = Contrast,
+            Intensity   = Intensity,
         };
+
+        /// <summary>
+        /// 画面基準の置き方を、指定したビューの画素（左上からの位置・画素倍率）に直す。
+        /// texHeight は画像の高さ（画素）、viewW / viewH はビューの画素数。
+        ///
+        /// 画像の点 p（画像ローカル画素）の表示位置を
+        ///   中央 + viewH·TopLeft + k·(ScaleOrigin + (p − ScaleOrigin)·Scale)   （k = viewH / texHeight）
+        /// とする。パネル側は 左上 + ScaleOrigin + (p − ScaleOrigin)·倍率 で描くので、
+        /// 左上 = 中央 + viewH·TopLeft + (k − 1)·ScaleOrigin、倍率 = k·Scale になる。
+        /// これでビューの大きさが変わっても、画像は中央を基準に高さに比例して動く。
+        /// </summary>
+        public void ToViewPixels(int texHeight, float viewW, float viewH,
+                                 out Vector2 topLeftPx, out Vector2 scalePx)
+        {
+            float k = viewH / Mathf.Max(1, texHeight);
+            topLeftPx = new Vector2(viewW * 0.5f, viewH * 0.5f) + TopLeft * viewH + (k - 1f) * ScaleOrigin;
+            scalePx   = Scale * k;
+        }
+
+        /// <summary>ビューの画素（左上からの位置・画素倍率）から画面基準の置き方を決める。ToViewPixels の逆。</summary>
+        public void FromViewPixels(int texHeight, float viewW, float viewH,
+                                   Vector2 topLeftPx, Vector2 scalePx)
+        {
+            float k = viewH / Mathf.Max(1, texHeight);
+            TopLeft      = (topLeftPx - new Vector2(viewW * 0.5f, viewH * 0.5f) - (k - 1f) * ScaleOrigin) / viewH;
+            Scale        = scalePx / k;
+            ViewRelative = true;
+        }
+
+        /// <summary>以前の画素基準の値を、指定したビューの大きさで今の形式に直す。今の形式なら何もしない。</summary>
+        public void ConvertLegacyScreen(int texHeight, float viewW, float viewH)
+        {
+            if (ViewRelative) return;
+            FromViewPixels(texHeight, viewW, viewH, TopLeft, Scale);
+        }
+
+        /// <summary>画面基準の既定の置き方：ビュー中央に、画像の高さをビューの高さに合わせる。</summary>
+        public void SetDefaultScreenPlacement(int texWidth, int texHeight)
+        {
+            float aspect = texWidth / (float)Mathf.Max(1, texHeight);
+            TopLeft      = new Vector2(-0.5f * aspect, -0.5f);
+            ScaleOrigin  = Vector2.zero;
+            Scale        = Vector2.one;
+            ViewRelative = true;
+        }
     }
 
     /// <summary>8 方向分の下絵設定。ModelContext.Underlay として 1 つ持つ。null＝下絵なし。</summary>

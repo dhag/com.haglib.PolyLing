@@ -19,7 +19,10 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly SkinWeightPaintTool _tool = new SkinWeightPaintTool();
-        private          ProjectContext      _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _project => GetProject?.Invoke();
         private          MeshUndoController  _undoController;
         private          CommandQueue        _commandQueue;
 
@@ -57,7 +60,6 @@ namespace Poly_Ling.Player
         // 初期化
         // ================================================================
 
-        public void SetProject(ProjectContext project)     => _project       = project;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
         public void SetCommandQueue(CommandQueue queue)    => _commandQueue   = queue;
 

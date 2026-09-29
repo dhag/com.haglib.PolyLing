@@ -1,6 +1,7 @@
 // PolyLingPlayerViewerCore.CameraCommands.cs
 // Player ビューアのコア：カメラ系コマンド（fitCameraToModel / fitCameraToSelection /
-// resetCamera / setCamera / queryCamera）の受け口。
+// resetCamera / setCamera / queryCamera / setCurrentView）の受け口。
+// setCurrentView の実体は PolyLingPlayerViewerCore.CurrentView.cs。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 //
 // 【範囲は GPU の表示位置から取る】
@@ -65,6 +66,9 @@ namespace Poly_Ling.Player
 
                 case QueryCameraCommand _:
                     return QueryCamera(data);
+
+                case SetCurrentViewCommand c:
+                    return SetCurrentView(c.View, data);
             }
             return "カメラのコマンドではありません";
         }
@@ -271,6 +275,7 @@ namespace Poly_Ling.Player
                     .Num("triHalfHeight", ortho.WorldHeightPerPixel * ph * 0.5f)
                     .Flag("triPerspective", ortho.Perspective);
             }
+            data.Text("currentView", ActiveViewKind().ToString());
             return null;
         }
 

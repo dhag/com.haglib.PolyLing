@@ -29,6 +29,7 @@ namespace Poly_Ling.Player
                 case ResetCameraCommand _:
                 case SetCameraCommand _:
                 case QueryCameraCommand _:
+                case SetCurrentViewCommand _:
                     needsModel = false;
                     break;
                 default:

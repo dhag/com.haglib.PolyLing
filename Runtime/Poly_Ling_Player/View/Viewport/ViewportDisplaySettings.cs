@@ -53,6 +53,8 @@ namespace Poly_Ling.Player
         public bool ShowMirrorMeshOrigin;
         /// <summary>法線（頂点スロット単位）を描くか。選択メッシュのみ対象。既定 false。</summary>
         public bool ShowNormals;
+        /// <summary>下絵（ビュー背面の参照画像）を表示するか。既定 true。</summary>
+        public bool ShowUnderlay;
 
         /// <summary>
         /// MeshSceneRenderer のデフォルト値と一致するデフォルト設定を返す。
@@ -77,6 +79,7 @@ namespace Poly_Ling.Player
             ShowUnselectedMeshOrigin = true,
             ShowMirrorMeshOrigin     = false,
             ShowNormals              = false,
+            ShowUnderlay             = true,
         };
 
         /// <summary>
@@ -142,6 +145,8 @@ namespace Poly_Ling.Player
             if (!ShowUnselectedMirrorVertices)  b |= 1 << 16;
             // ビット17 も同じ理由で反転格納する（既定 true）。
             if (!ShowUnselectedMirrorMesh)      b |= 1 << 17;
+            // ビット18（下絵）も同じ理由で反転格納する（既定 true）。
+            if (!ShowUnderlay)                  b |= 1 << 18;
             return b;
         }
 
@@ -172,6 +177,7 @@ namespace Poly_Ling.Player
             ShowUnselectedMirrorWireframe = (b & (1 << 15)) == 0,
             ShowUnselectedMirrorVertices  = (b & (1 << 16)) == 0,
             ShowUnselectedMirrorMesh      = (b & (1 << 17)) == 0,
+            ShowUnderlay                  = (b & (1 << 18)) == 0,
         };
     }
 }

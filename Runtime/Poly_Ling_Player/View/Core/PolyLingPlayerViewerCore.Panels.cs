@@ -291,6 +291,24 @@ namespace Poly_Ling.Player
             _faceHideSubPanel?.Refresh();
         }
 
+        private void ShowTriangleRelocatePanel()
+        {
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持。
+            // 頂点を選んだまま実行するため、選択モードを変えない。
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _triangleRelocateHandler?.Activate(ctx);
+            ShowRightPanel(_layoutRoot?.TriangleRelocateSection, _layoutRoot?.TriangleRelocateBtn);
+            _triangleRelocateSubPanel?.Refresh();
+        }
+
+        private void ShowDuplicateSelectionPanel()
+        {
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持。
+            // 選択したまま複製するため、選択モードを変えない。
+            ShowRightPanel(_layoutRoot?.DuplicateSelectionSection, _layoutRoot?.DuplicateSelectionBtn);
+            _duplicateSelectionSubPanel?.Refresh();
+        }
+
         private void ShowMeshSelectionSetPanel()
         {
             // カテゴリ 3

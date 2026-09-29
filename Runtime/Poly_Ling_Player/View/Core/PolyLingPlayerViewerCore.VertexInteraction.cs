@@ -60,8 +60,9 @@ namespace Poly_Ling.Player
                     if (section?.style.display == DisplayStyle.Flex) refresh();
             };
 
-            _moveToolHandler = new MoveToolHandler(_selectionOps, ActiveProject)
+            _moveToolHandler = new MoveToolHandler(_selectionOps)
             {
+                GetProject = () => ActiveProject,
                 // クリック選択はコマンド発行に寄せてある。
                 // 送り先は他パネルと同じ DispatchPanelCommand。
                 SendCommand = DispatchPanelCommand,
@@ -160,7 +161,7 @@ namespace Poly_Ling.Player
 
             _objectMoveHandler = new ObjectMoveToolHandler();
             _objectMoveHandler.SendCommand = DispatchPanelCommand;
-            _objectMoveHandler.SetProject(ActiveProject);
+            _objectMoveHandler.GetProject = () => ActiveProject;
             _objectMoveHandler.SetUndoController(_editOps?.UndoController);
             _objectMoveHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _objectMoveHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
@@ -238,7 +239,7 @@ namespace Poly_Ling.Player
             _pivotOffsetHandler = new PivotOffsetToolHandler();
             // ドラッグ確定はコマンド発行に寄せてある。送り先は他パネルと同じ。
             _pivotOffsetHandler.SendCommand = DispatchPanelCommand;
-            _pivotOffsetHandler.SetProject(ActiveProject);
+            _pivotOffsetHandler.GetProject = () => ActiveProject;
             _pivotOffsetHandler.SetUndoController(_editOps?.UndoController);
             _pivotOffsetHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _pivotOffsetHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
@@ -276,7 +277,7 @@ namespace Poly_Ling.Player
             _sculptHandler = new SculptToolHandler();
             // ストローク確定はコマンド発行に寄せてある。送り先は他パネルと同じ。
             _sculptHandler.SendCommand = DispatchPanelCommand;
-            _sculptHandler.SetProject(ActiveProject);
+            _sculptHandler.GetProject = () => ActiveProject;
             _sculptHandler.SetUndoController(_editOps?.UndoController);
             _sculptHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _sculptHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
@@ -310,7 +311,7 @@ namespace Poly_Ling.Player
             _advancedSelectHandler = new AdvancedSelectToolHandler();
             // クリック選択はコマンド発行に寄せてある。送り先は他パネルと同じ。
             _advancedSelectHandler.SendCommand = DispatchPanelCommand;
-            _advancedSelectHandler.SetProject(ActiveProject);
+            _advancedSelectHandler.GetProject = () => ActiveProject;
             _advancedSelectHandler.SetSelectionOps(_selectionOps);
             _advancedSelectHandler.SetUndoController(_editOps?.UndoController);
             _advancedSelectHandler.GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport);
@@ -354,7 +355,7 @@ namespace Poly_Ling.Player
                 mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel);
 
             _skinWeightPaintHandler = new SkinWeightPaintToolHandler();
-            _skinWeightPaintHandler.SetProject(ActiveProject);
+            _skinWeightPaintHandler.GetProject = () => ActiveProject;
             _skinWeightPaintHandler.SetUndoController(_editOps?.UndoController);
             _skinWeightPaintHandler.SetCommandQueue(_editOps?.CommandQueue);
             _skinWeightPaintHandler.SendCommand              = DispatchPanelCommand;
@@ -415,21 +416,8 @@ namespace Poly_Ling.Player
 
                 panel.OnPointerHover += localPos =>
                 {
-                    if (_activePanel != panel)
-                    {
-                        if (_activePanel != null)
-                        {
-                            _activePanel.HideBoxSelect();
-                            _activePanel.HideFaceHover();
-                            _activePanel.HideGizmo();
-                            // ブラシ円は常時表示なので、旧ビューポートに残さない。
-                            _activePanel.HideBrushCircle();
-                            _vertexInteractor.Disconnect(_activePanel);
-                        }
-                        _activePanel    = panel;
-                        _activeViewport = vp;
-                        _vertexInteractor.Connect(_activePanel);
-                    }
+                    // カレントビューの切り替えは setCurrentView と同じ入口を通す。
+                    SwitchActivePanel(panel, vp);
                     // Phase 2b-1: 正規入口 EnterHoverChanged 経由。
                     // 入口末尾で面ホバー/ギズモ overlay refresh が発火される。
                     // Phase 2b 以降で HoverTargetKind を現行ツールから取得して渡す。
@@ -766,6 +754,11 @@ namespace Poly_Ling.Player
             void ConnectUnderlayDrag(PlayerViewport vp, PlayerViewportPanel panel)
             {
                 if (vp == null || panel == null) return;
+
+                // ビューの大きさが変わったら下絵を敷き直す。
+                // 画面基準はビュー中央・高さ基準、モデル座標基準は投影し直しが要る。
+                panel.OnSizeChanged += () => PlaceUnderlay(vp, panel);
+
                 bool dragging = false;
                 UnderlayDirection dragDir = UnderlayDirection.Persp;
 
@@ -787,8 +780,12 @@ namespace Poly_Ling.Player
                     }
                     else
                     {
-                        // TopLeft は UIToolkit(Y=0上) のためY反転。
-                        s.TopLeft += new Vector2(delta.x, -delta.y);
+                        // TopLeft はビューの高さを 1 とする単位で Y 下向き（UnderlayData.cs 冒頭）。
+                        // delta は画素・Y 上向きなので、Y を反転してビューの高さで割る。
+                        float vh = vp.Cam != null ? vp.Cam.pixelHeight : 0f;
+                        if (vh <= 1f) return;
+                        s.ConvertLegacyScreen(_underlay.GetTexture(dir).height, vp.Cam.pixelWidth, vh);
+                        s.TopLeft += new Vector2(delta.x, -delta.y) / vh;
                     }
 
                     dragging = true;

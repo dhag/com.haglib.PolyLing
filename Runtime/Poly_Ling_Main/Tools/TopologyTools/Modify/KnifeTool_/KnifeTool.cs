@@ -51,6 +51,26 @@ namespace Poly_Ling.Tools
             set => _settings.SimpleTriQuad = value;
         }
 
+        /// <summary>SimpleCut: 起点・終点を頂点ホバーで指定する（既定 OFF）。</summary>
+        public bool SimpleVertexEndpoints
+        {
+            get => _settings.SimpleVertexEndpoints;
+            set => _settings.SimpleVertexEndpoints = value;
+        }
+
+        /// <summary>SimpleCut: 押した位置を起点、離した位置を終点としてドラッグで切る（既定 OFF＝2 クリック）。</summary>
+        public bool SimpleDragMode
+        {
+            get => _settings.SimpleDragMode;
+            set
+            {
+                if (_settings.SimpleDragMode == value) return;
+                _settings.SimpleDragMode = value;
+                // 途中まで進んだ段を別の操作方式へ持ち越さない。
+                ResetSimpleCut();
+            }
+        }
+
         // ================================================================
         // 状態
         // ================================================================
@@ -150,7 +170,11 @@ namespace Poly_Ling.Tools
         {
             if (Mode == KnifeMode.Erase) return T("HelpErase");
             if (Mode == KnifeMode.BeltLoop) return T("PickBeltEdge");
-            if (Mode == KnifeMode.SimpleCut) return _simpleStage == SimpleStage.HasP0 ? T("PickSecond") : T("PickFirst");
+            if (Mode == KnifeMode.SimpleCut)
+            {
+                if (SimpleDragMode) return _simpleStage == SimpleStage.HasP0 ? T("DragRelease") : T("DragFirst");
+                return _simpleStage == SimpleStage.HasP0 ? T("PickSecond") : T("PickFirst");
+            }
             switch (_stage)
             {
                 case LadderStage.Idle:       return T("PickStart");
@@ -202,7 +226,14 @@ namespace Poly_Ling.Tools
             return false;
         }
 
-        public bool OnMouseUp(ToolContext ctx, Vector2 mousePos) => false;
+        public bool OnMouseUp(ToolContext ctx, Vector2 mousePos)
+        {
+            // ドラッグ式のシンプル切断だけ、離した位置を終点にする（2 クリック式は押下で進む）。
+            if (Mode != KnifeMode.SimpleCut || !SimpleDragMode) return false;
+            var mo = ctx?.ActiveMeshObject;
+            if (mo == null) return false;
+            return HandleSimpleCutRelease(ctx, mo, mousePos);
+        }
 
         public void DrawGizmo(ToolContext ctx) { }
 
@@ -240,6 +271,10 @@ namespace Poly_Ling.Tools
             public Vector2 ScreenP1;
             /// <summary>SimpleCut の面カリングマスク。null で全面対象。</summary>
             public bool[] FaceCulledMask;
+            /// <summary>SimpleCut の 1 点目を指定した頂点（自由点は -1）。</summary>
+            public int SimpleV0;
+            /// <summary>SimpleCut の 2 点目を指定した頂点（自由点は -1）。</summary>
+            public int SimpleV1;
         }
 
         /// <summary>
@@ -288,6 +323,7 @@ namespace Poly_Ling.Tools
                     if (_simpleStage == SimpleStage.Idle)
                     {
                         // 1 点目。HandleSimpleCutClick と同じ更新だけを行う。
+                        _simpleV0    = SnapSimplePoint(ctx, mo, ref screenPos);
                         _simpleP0    = screenPos;
                         _simpleStage = SimpleStage.HasP0;
                         LastError    = "";
@@ -295,6 +331,8 @@ namespace Poly_Ling.Tools
                         return false;
                     }
 
+                    req.SimpleV1       = SnapSimplePoint(ctx, mo, ref screenPos);
+                    req.SimpleV0       = _simpleV0;
                     req.ScreenP0       = _simpleP0;
                     req.ScreenP1       = screenPos;
                     req.FaceCulledMask = _simpleFaceCulledMask;
@@ -484,12 +522,34 @@ namespace Poly_Ling.Tools
         /// <param name="reason">実行できなかった理由。成功時は null。</param>
         public bool ExecuteSimpleCutFromCommand(
             ToolContext ctx, Vector2 p0, Vector2 p1,
-            bool[] faceCulledMask, bool triQuad, out string reason)
+            bool[] faceCulledMask, bool triQuad, bool viewNormalized,
+            int startVertex, int endVertex, out string reason)
         {
             reason = null;
 
             var mo = ctx?.ActiveMeshObject;
             if (mo == null) { reason = "編集対象メッシュがありません"; return false; }
+
+            if (viewNormalized)
+            {
+                // ビュー基準座標（中央原点・高さ 1・上が＋）→ 画素座標（左下原点・Y 上）。
+                float w = ctx.PreviewRect.width, h = ctx.PreviewRect.height;
+                if (h <= 0f) { reason = "ビューの大きさが取れません"; return false; }
+                p0 = new Vector2(w * 0.5f + p0.x * h, h * 0.5f + p0.y * h);
+                p1 = new Vector2(w * 0.5f + p1.x * h, h * 0.5f + p1.y * h);
+            }
+
+            // 端点を頂点で指定した場合は、実行時のその頂点の画面位置で置き換える。
+            if (startVertex >= 0)
+            {
+                if (!InRange(mo, startVertex)) { reason = $"StartVertex {startVertex} が範囲外です"; return false; }
+                p0 = SimpleCutExecutor.VertexScreenPos(ctx, mo, startVertex);
+            }
+            if (endVertex >= 0)
+            {
+                if (!InRange(mo, endVertex)) { reason = $"EndVertex {endVertex} が範囲外です"; return false; }
+                p1 = SimpleCutExecutor.VertexScreenPos(ctx, mo, endVertex);
+            }
 
             if (faceCulledMask != null && faceCulledMask.Length != 0 &&
                 faceCulledMask.Length != mo.FaceCount)

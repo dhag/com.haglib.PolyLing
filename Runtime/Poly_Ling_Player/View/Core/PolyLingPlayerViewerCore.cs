@@ -144,7 +144,7 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, SkinWeightNumeric, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, Camera, EdgeBridge, PointDefinedPrimitive, BillboardProfile }
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, SkinWeightNumeric, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, EdgeTriangle, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, Camera, EdgeBridge, PointDefinedPrimitive, BillboardProfile }
         private InteractionMode               _interactionMode = InteractionMode.VertexMove;
 
         // パネルごとの「ビューポートで選択する」チェックの保存キー。
@@ -286,6 +286,7 @@ namespace Poly_Ling.Player
         private PlayerNormalTransplantSubPanel  _normalTransplantSubPanel;
         private PlayerThinPlateMorphSubPanel    _thinPlateMorphSubPanel;
         private PlayerFaceHideSubPanel          _faceHideSubPanel;
+        private PlayerDuplicateSelectionSubPanel _duplicateSelectionSubPanel;
         private PlayerMeshSelectionSetSubPanel  _meshSelSetSubPanel;
         private PlayerObjectGroupSubPanel       _objectGroupSubPanel;
         private PlayerMergeMeshesSubPanel    _mergeMeshesSubPanel;
@@ -361,6 +362,10 @@ namespace Poly_Ling.Player
         private Tri4To1ToolHandler                _tri4To1Handler;
         private FaceMergeToolHandler              _faceMergeHandler;
         private Quad4To1ToolHandler               _quad4To1Handler;
+        private TriangleRelocateToolHandler       _triangleRelocateHandler;
+        private EdgeTriangleToolHandler           _edgeTriangleHandler;
+        private PlayerEdgeTriangleSubPanel        _edgeTriangleSubPanel;
+        private PlayerTriangleRelocateSubPanel    _triangleRelocateSubPanel;
         // 選択削除サブツール。専用サブパネルは持たない (左ペインのボタンと D キーのみ)。
         private DeleteSelectionToolHandler        _deleteSelectionHandler;
         private PlayerAddFaceSubPanel             _addFaceSubPanel;

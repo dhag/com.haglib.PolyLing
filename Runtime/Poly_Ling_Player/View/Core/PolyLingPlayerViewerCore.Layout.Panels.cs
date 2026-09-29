@@ -355,6 +355,13 @@ namespace Poly_Ling.Player
             };
             _faceHideSubPanel.Build(_layoutRoot.FaceHideSection);
 
+            _duplicateSelectionSubPanel = new PlayerDuplicateSelectionSubPanel
+            {
+                GetView     = () => LoadedProjectView,
+                SendCommand = cmd => DispatchHost(cmd),
+            };
+            _duplicateSelectionSubPanel.Build(_layoutRoot.DuplicateSelectionSection);
+
             _meshSelSetSubPanel = new PlayerMeshSelectionSetSubPanel
             {
                 GetView     = () => LoadedProjectView,
@@ -581,7 +588,6 @@ namespace Poly_Ling.Player
             };
             _advancedSelectSubPanel.Build(_layoutRoot.AdvancedSelectSection);
 
-            _localLoader.BuildUI(_layoutRoot.LocalLoaderSection);
 
             _importSubPanel = new PlayerImportSubPanel();
             _importSubPanel.Build(_layoutRoot.ImportSection);

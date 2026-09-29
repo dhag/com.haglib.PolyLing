@@ -14,7 +14,10 @@ namespace Poly_Ling.Player
         // 左ペイン 通常ボタン（公開要素）
         // ================================================================
 
-        public VisualElement LocalLoaderSection { get; private set; }
+        /// <summary>左ペイン：PMX 読み込み（読み込みパネルを PMX モードで開く）。</summary>
+        public Button        PmxLoadBtn         { get; private set; }
+        /// <summary>左ペイン：MQO 読み込み（読み込みパネルを MQO モードで開く）。</summary>
+        public Button        MqoLoadBtn         { get; private set; }
         public Button        ConnectBtn         { get; private set; }
         public Button        DisconnectBtn      { get; private set; }
         public Button        FetchBtn           { get; private set; }
@@ -111,6 +114,9 @@ namespace Poly_Ling.Player
         public Button        NormalEditBtn         { get; private set; }
         public Button        NormalTransplantBtn   { get; private set; }
         public Button        FaceHideBtn           { get; private set; }
+        public Button        DuplicateSelectionBtn { get; private set; }
+        public Button        TriangleRelocateBtn   { get; private set; }
+        public Button        EdgeTriangleBtn       { get; private set; }
         public Button        MergeMeshesBtn        { get; private set; }
         public Button        BooleanBtn            { get; private set; }
         public Button        MorphBtn              { get; private set; }
@@ -255,10 +261,6 @@ namespace Poly_Ling.Player
         /// </summary>
         private void BuildLeftPaneToolButtons(VisualElement scroll)
         {
-            LocalLoaderSection = new VisualElement();
-            LocalLoaderSection.style.marginBottom = 6;
-            // ※ LocalLoaderSection（Load PMX / Load MQO）は「ファイル」foldout の先頭へ移動する（下記）。
-
             // ================================================================
             // カテゴリ別 Foldout（既定折りたたみ）にまとめる。
             // ボタンのインスタンス・代入先プロパティは一切変更せず、
@@ -285,8 +287,29 @@ namespace Poly_Ling.Player
             projectLoadRow.Add(ObjLoadBtn);
             foFile.Add(projectLoadRow);
 
-            // PMX読み込み / MQO読み込み（PlayerLocalLoader.BuildUI が中身を作る）。
-            foFile.Add(LocalLoaderSection);
+            // PMX読み込み / MQO読み込み。押すと読み込みパネルをそれぞれのモードで開く
+            // （結線は PolyLingPlayerViewerCore.Layout.cs）。
+            // 見た目は旧 PlayerLocalLoader.BuildUI と同じ（行の下余白 4 + 旧器の下余白 6）。
+            var pmxMqoLoadRow = new VisualElement();
+            pmxMqoLoadRow.style.flexDirection = FlexDirection.Row;
+            pmxMqoLoadRow.style.marginBottom  = 10;
+            PmxLoadBtn = new Button { text = "PMX読み込み" };
+            PmxLoadBtn.style.flexGrow      = 1;
+            PmxLoadBtn.style.marginRight   = 2;
+            PmxLoadBtn.style.fontSize      = 10;
+            PmxLoadBtn.style.height        = 20;
+            PmxLoadBtn.style.paddingTop    = 0;
+            PmxLoadBtn.style.paddingBottom = 0;
+            MqoLoadBtn = new Button { text = "MQO読み込み" };
+            MqoLoadBtn.style.flexGrow      = 1;
+            MqoLoadBtn.style.marginLeft    = 2;
+            MqoLoadBtn.style.fontSize      = 10;
+            MqoLoadBtn.style.height        = 20;
+            MqoLoadBtn.style.paddingTop    = 0;
+            MqoLoadBtn.style.paddingBottom = 0;
+            pmxMqoLoadRow.Add(PmxLoadBtn);
+            pmxMqoLoadRow.Add(MqoLoadBtn);
+            foFile.Add(pmxMqoLoadRow);
 
             // VRM 読み込み（VRM 1.0 / 0.x）と STL 読み込みを 1 行に並べる。
             // どちらもインポータのセクションをそれぞれのモードで開く。
@@ -497,10 +520,15 @@ namespace Poly_Ling.Player
 
             var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
             EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
+            // 辺から三角形。辺を掴んでドラッグで頂点を引き出し、三角形を作る。
+            EdgeTriangleBtn = MakeBtn("辺から三角形"); EdgeTriangleBtn.style.flexGrow = 1;
+            rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(EdgeTriangleBtn); foTopology.Add(rowEdgeKnife);
+
+            var rowKnifeHole = new VisualElement(); rowKnifeHole.style.flexDirection = FlexDirection.Row; rowKnifeHole.style.marginBottom = 2;
             KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1; KnifeBtn.style.marginRight     = 2;
             VertexHoleBtn   = MakeBtn("穴あけ");       VertexHoleBtn.style.flexGrow   = 1; VertexHoleBtn.style.marginRight = 2;
             BridgeBtn       = MakeBtn("穴つなぎブリッジ");     BridgeBtn.style.flexGrow       = 1;
-            rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); rowEdgeKnife.Add(VertexHoleBtn); rowEdgeKnife.Add(BridgeBtn); foTopology.Add(rowEdgeKnife);
+            rowKnifeHole.Add(KnifeBtn); rowKnifeHole.Add(VertexHoleBtn); rowKnifeHole.Add(BridgeBtn); foTopology.Add(rowKnifeHole);
 
             // 穴頂点数合わせ。ブリッジの「2つの穴の頂点数が同じ」制約を満たすための前処理。
             var rowHoleRing = new VisualElement(); rowHoleRing.style.flexDirection = FlexDirection.Row; rowHoleRing.style.marginBottom = 2;
@@ -512,8 +540,10 @@ namespace Poly_Ling.Player
             // ブーリアン。2 つのメッシュから新しい面構成を作り直す操作なので
             // UV・マテリアルではなくトポロジー編集に置く。
             var rowBoolean = new VisualElement(); rowBoolean.style.flexDirection = FlexDirection.Row; rowBoolean.style.marginBottom = 2;
-            BooleanBtn = MakeBtn("ブーリアン"); BooleanBtn.style.flexGrow = 1;
-            rowBoolean.Add(BooleanBtn); foTopology.Add(rowBoolean);
+            BooleanBtn = MakeBtn("ブーリアン"); BooleanBtn.style.flexGrow = 1; BooleanBtn.style.marginRight = 2;
+            // 三角形の移し替え。三角形 1 枚と四角形 3 枚に囲まれた頂点を消し、三角形を向かい側へ移す。
+            TriangleRelocateBtn = MakeBtn("三角形の移し替え"); TriangleRelocateBtn.style.flexGrow = 1;
+            rowBoolean.Add(BooleanBtn); rowBoolean.Add(TriangleRelocateBtn); foTopology.Add(rowBoolean);
 
             // 削除系。面削除モードは進入中にボタンがハイライトされる
             // (破壊的モードなので表示は必須)。
@@ -523,8 +553,10 @@ namespace Poly_Ling.Player
             rowDelete.Add(SubToolDeleteBtn); rowDelete.Add(ToolDeleteFaceBtn); foTopology.Add(rowDelete);
 
             var rowFaceHide = new VisualElement(); rowFaceHide.style.flexDirection = FlexDirection.Row; rowFaceHide.style.marginBottom = 2;
-            FaceHideBtn = MakeBtn("面の表示・非表示"); FaceHideBtn.style.flexGrow = 1;
-            rowFaceHide.Add(FaceHideBtn); foTopology.Add(rowFaceHide);
+            FaceHideBtn = MakeBtn("面の表示・非表示"); FaceHideBtn.style.flexGrow = 1; FaceHideBtn.style.marginRight = 2;
+            // 選択している頂点・辺・線分・面だけを別オブジェクトへ複製する。
+            DuplicateSelectionBtn = MakeBtn("選択を複製"); DuplicateSelectionBtn.style.flexGrow = 1;
+            rowFaceHide.Add(FaceHideBtn); rowFaceHide.Add(DuplicateSelectionBtn); foTopology.Add(rowFaceHide);
 
             // ── 法線 ───────────────────────────────────────────────────
             // 法線に関する操作と設定をここへ集める。自動計算トグルと手動再計算は

@@ -23,7 +23,11 @@ namespace Poly_Ling.Tools
                 Mode = EditorModeValues[next];
 
             if (Mode == KnifeMode.SimpleCut)
+            {
                 SimpleTriQuad = EditorGUILayout.ToggleLeft("5角以上を三角+四角に分割", SimpleTriQuad);
+                SimpleVertexEndpoints = EditorGUILayout.ToggleLeft("起点・終点を頂点で指定", SimpleVertexEndpoints);
+                SimpleDragMode        = EditorGUILayout.ToggleLeft("ドラッグで切る", SimpleDragMode);
+            }
 
             EditorGUILayout.Space(5);
 

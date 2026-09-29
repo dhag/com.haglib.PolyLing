@@ -61,6 +61,16 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<ToolContext>    GetToolContext;
+
+        /// <summary>
+        /// 指定のビューの ToolContext（Viewer から結線）。
+        /// 曲げのたわみ方向をカメラから決めるときに BendCameraView のビューで使う。
+        /// </summary>
+        public Func<Poly_Ling.Data.ViewportKind, ToolContext> GetToolContextForView;
+
+        /// <summary>今のカレントビューの種別（Viewer から結線）。ギズモで操作したときに BendCameraView へ入れる。</summary>
+        public Func<Poly_Ling.Data.ViewportKind> GetActiveViewKind;
+
         public Func<float>          GetPanelHeight;
         public Action               OnRepaint;
 
@@ -178,6 +188,13 @@ namespace Poly_Ling.Player
         /// </summary>
         [Poly_Ling.Data.PLToolParam(Description = "曲げ・ねじりの形状プレビュー六角柱を描くか。既定は表示")]
         public bool ShowShapePreview { get; set; } = true;
+
+        /// <summary>
+        /// 曲げのたわみ方向をカメラから決めるとき（params.useCameraBendPlane が true）に使うビュー。
+        /// カレントビューには依らない。画面のパネルやギズモで操作したときは、そのときのカレントビューが入る。
+        /// </summary>
+        [Poly_Ling.Data.PLToolParam(Description = "曲げのたわみ方向をカメラから決めるとき（params.useCameraBendPlane が true）に使うビュー。Perspective / Top / Front / Side。既定は Perspective。画面のパネルやギズモで操作したときはそのときのカレントビューが入る")]
+        public Poly_Ling.Data.ViewportKind BendCameraView { get; set; } = Poly_Ling.Data.ViewportKind.Perspective;
 
         // マグネット（比例編集）
         [Poly_Ling.Data.PLToolParam(Description = "マグネット（比例編集）を使うか")]
@@ -305,18 +322,20 @@ namespace Poly_Ling.Player
         /// 直前の φ をそのまま残す。
         /// </summary>
         /// <remarks>
-        /// 内部で GetToolContext（アクティブなビューポート）を取るため、
-        /// 各ビューポートの ctx を使っている最中に呼んではいけない。
-        /// 呼ぶのは描画ループへ入る前か、ドラッグ処理の中だけ。
+        /// 参照するカメラは BendCameraView のビューのもの（カレントビューには依らない）。
+        /// 画面のパネルやギズモから操作したときは、呼び出し側が先に BendCameraView へ
+        /// カレントビューを入れる。
         /// </remarks>
         public bool SyncCameraBendPlane()
         {
             if (!(Deformer?.Params is BendDeformerParams bp)) return false;
             if (!bp.UseCameraBendPlane) return false;
 
-            // 参照するのは常にアクティブなビューポートのカメラ。ここで ctx を
-            // 引数で受けると、4面のどれを描いたかで値が変わってしまう。
-            var ctx = GetToolContext?.Invoke();
+            // ctx を引数で受けると、4面のどれを描いたかで値が変わってしまうので、
+            // ここで BendCameraView のビューから取る。
+            var ctx = GetToolContextForView != null
+                ? GetToolContextForView(BendCameraView)
+                : GetToolContext?.Invoke();
             var wa  = GetWorkAxis?.Invoke();
             if (ctx == null || wa == null) return false;
 
@@ -1216,6 +1235,8 @@ namespace Poly_Ling.Player
 
             SetValue(_dragHandle, Mathf.Clamp(value, h.Min, h.Max));
 
+            // 画面での操作なので、たわみ方向はいま操作しているビュー（カレントビュー）のカメラで決める。
+            if (GetActiveViewKind != null) BendCameraView = GetActiveViewKind();
             ApplyPreview();
             OnParamsChangedByGizmo?.Invoke();
         }

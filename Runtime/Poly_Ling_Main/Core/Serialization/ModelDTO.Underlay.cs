@@ -36,8 +36,10 @@ namespace Poly_Ling.Serialization
                     topLeft     = new[] { s.TopLeft.x, s.TopLeft.y },
                     scaleOrigin = new[] { s.ScaleOrigin.x, s.ScaleOrigin.y },
                     scale       = new[] { s.Scale.x, s.Scale.y },
+                    viewRelative = s.ViewRelative,
                     corner0     = new[] { s.Corner0.x, s.Corner0.y, s.Corner0.z },
                     corner1     = new[] { s.Corner1.x, s.Corner1.y, s.Corner1.z },
+                    adjust      = new[] { s.Contrast, s.Intensity },
                 });
             }
             return dto.slots.Count > 0 ? dto : null;
@@ -57,8 +59,12 @@ namespace Poly_Ling.Serialization
                 s.TopLeft     = V2(d.topLeft, Vector2.zero);
                 s.ScaleOrigin = V2(d.scaleOrigin, Vector2.zero);
                 s.Scale       = V2(d.scale, Vector2.one);
+                s.ViewRelative = d.viewRelative;
                 s.Corner0     = V3(d.corner0);
                 s.Corner1     = V3(d.corner1);
+                var adj       = V2(d.adjust, Vector2.one);
+                s.Contrast    = Mathf.Clamp01(adj.x);
+                s.Intensity   = Mathf.Clamp01(adj.y);
             }
             return data.IsEmpty ? null : data;
         }
@@ -79,7 +85,11 @@ namespace Poly_Ling.Serialization
         public float[] topLeft;
         public float[] scaleOrigin;
         public float[] scale;
+        /// <summary>画面基準の値がビュー中央・ビューの高さ基準か。無い（false）なら以前の画素基準。</summary>
+        public bool    viewRelative;
         public float[] corner0;
         public float[] corner1;
+        /// <summary>表示調整 { コントラスト, 明るさ }（0〜1）。無い（以前のデータ）なら { 1, 1 }。</summary>
+        public float[] adjust;
     }
 }

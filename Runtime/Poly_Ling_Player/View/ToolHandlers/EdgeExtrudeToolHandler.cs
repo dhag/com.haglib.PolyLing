@@ -21,13 +21,29 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly EdgeExtrudeTool _tool = new EdgeExtrudeTool();
-        private          ProjectContext _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _project => GetProject?.Invoke();
 
         // ================================================================
         // 外部コールバック（Viewer から設定）
         // ================================================================
 
         public Func<ToolContext> GetToolContext;
+
+        /// <summary>
+        /// 指定のビューの ToolContext（Viewer から結線）。
+        /// EdgeExtrudeCommand の実行に使う。線分の四角形の表をそのビューのカメラへ向ける。
+        /// </summary>
+        public Func<Poly_Ling.Data.ViewportKind, ToolContext> GetToolContextForView;
+
+        /// <summary>今のカレントビューの種別（Viewer から結線）。画面から確定したコマンドに書き込む。</summary>
+        public Func<Poly_Ling.Data.ViewportKind> GetActiveViewKind;
+
+        private Poly_Ling.Data.ViewportKind ActiveViewKind
+            => GetActiveViewKind?.Invoke() ?? Poly_Ling.Data.ViewportKind.Perspective;
+
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
         public Action            NotifyTopologyChanged;
@@ -52,7 +68,6 @@ namespace Poly_Ling.Player
         // 初期化
         // ================================================================
 
-        public void SetProject(ProjectContext project) => _project = project;
         public void SetUndoController(MeshUndoController ctrl) { _undoController = ctrl; }
         public void SetCommandQueue(CommandQueue queue)         { _commandQueue   = queue; }
 
@@ -132,7 +147,7 @@ namespace Poly_Ling.Player
                         takenLines.ToArray(),
                         takenOffset,
                         takenReversed.ToArray(),
-                        null, null, takenSegments));
+                        null, null, takenSegments, default, ActiveViewKind));
                 }
             }
 
@@ -158,8 +173,11 @@ namespace Poly_Ling.Player
             if (!PlayerCommandTargets.MatchesActiveMesh(model, cmd.MasterIndices, out reason))
                 return false;
 
-            var ctx = GetEnrichedCtx();
-            if (ctx == null) { reason = "ツールコンテキストがありません"; return false; }
+            // 線分の四角形の表裏はカメラ位置で決まるので、コマンドのビューで ctx を作る
+            // （カレントビューには依らない）。
+            if (GetToolContextForView == null) { reason = "ビュー指定の経路が未配線です"; return false; }
+            var ctx = Enrich(GetToolContextForView(cmd.View));
+            if (ctx == null) { reason = $"ビュー {cmd.View} がありません"; return false; }
 
             var pairs = cmd.EdgeVertexPairs ?? System.Array.Empty<int>();
             if (pairs.Length % 2 != 0)
@@ -178,7 +196,7 @@ namespace Poly_Ling.Player
             }
 
             return _tool.ApplyExtrudeFromCommand(ctx, edges, cmd.LineIndices,
-                cmd.ReversedLineIndices, cmd.LocalOffset, positions, cmd.Segments, out reason);
+                cmd.ReversedLineIndices, cmd.LocalOffset, positions, cmd.Segments, cmd.ExtrudeScale, out reason);
         }
 
         // ================================================================
@@ -259,7 +277,7 @@ namespace Poly_Ling.Player
                         _project.CurrentModelIndex,
                         new[] { model.IndexOf(mc) },
                         pairs, lines.ToArray(), Vector3.zero, reversed.ToArray(),
-                        null, flat, segments));
+                        null, flat, segments, default, ActiveViewKind));
                 }
             }
             OnApplyCompleted?.Invoke();
@@ -300,9 +318,11 @@ namespace Poly_Ling.Player
         // ================================================================
 
 
-        private ToolContext GetEnrichedCtx()
+        private ToolContext GetEnrichedCtx() => Enrich(GetToolContext?.Invoke());
+
+        /// <summary>ビューポートから作った ctx に、モデル・選択・Undo などを足す。</summary>
+        private ToolContext Enrich(ToolContext ctx)
         {
-            var ctx = GetToolContext?.Invoke();
             if (ctx == null) return null;
             var model = _project?.CurrentModel;
             ctx.Model            = model;

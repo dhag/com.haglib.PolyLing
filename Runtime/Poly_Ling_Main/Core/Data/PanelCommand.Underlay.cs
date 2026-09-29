@@ -8,7 +8,8 @@
 //
 // 【置き方は方向で決まる】
 //   上下前後左右（Top/Bottom/Front/Back/Left/Right）はモデル座標の 2 隅（corner0 / corner1）。
-//   透視・平行投影（Persp/Ortho）は画面ピクセル基準（topLeft / scaleOrigin / scaleX / scaleY）。
+//   透視・平行投影（Persp/Ortho）は画面基準（topLeft / scaleOrigin / scaleX / scaleY）。
+//   画面基準はビュー中央・ビューの高さを単位にする（UnderlayData.cs 冒頭）。
 //   方向に合わない側の引数は使わない。
 //
 // 【実体は Viewer】
@@ -21,7 +22,7 @@ namespace Poly_Ling.Data
 {
     /// <summary>下絵を設定する。</summary>
     [PLCommand(Category = "underlay", Writes = PLWriteScope.None,
-        Description = "現在のモデルの下絵を 1 方向ぶん設定する。上下前後左右はモデル座標の 2 隅で置き、カメラを動かしてもモデルとの位置関係が変わらない。透視・平行投影（Persp/Ortho）は画面ピクセル基準で置く。下絵はモデルと一緒に保存される。")]
+        Description = "現在のモデルの下絵を 1 方向ぶん設定する。上下前後左右はモデル座標の 2 隅で置き、カメラを動かしてもモデルとの位置関係が変わらない。透視・平行投影（Persp/Ortho）は画面基準で置く。画面基準はビュー中央を原点、ビューの高さを 1 とする単位なので、ビューの大きさが変わってもメッシュとの関係が変わらない。keepPlacement で初めて置くときはビュー中央に高さを合わせる。下絵はモデルと一緒に保存される。")]
     [PLResult("direction", PLResultKind.Text,    Description = "設定した方向")]
     [PLResult("filePath",  PLResultKind.Text,    Description = "画像ファイルの絶対パス")]
     [PLResult("width",     PLResultKind.Integer, Description = "画像の幅（画素）")]
@@ -43,25 +44,34 @@ namespace Poly_Ling.Data
         [PLParam(Description = "上下前後左右のとき、corner0 と向かい合う隅のモデル座標")]
         public Vector3 Corner1 { get; }
 
-        [PLParam(Description = "Persp / Ortho のとき、ビューの左上から画像の左上までの距離（画素）")]
+        [PLParam(Description = "Persp / Ortho のとき、ビュー中央から画像の左上までの位置。ビューの高さを 1 とする単位で、下向きが正")]
         public Vector2 TopLeft { get; }
 
         [PLParam(Description = "Persp / Ortho のとき、拡大縮小の原点（画像の左上からの画素、下向きが正）")]
         public Vector2 ScaleOrigin { get; }
 
-        [PLParam(Description = "Persp / Ortho のとき、横の倍率", Min = 0.01)]
+        [PLParam(Description = "Persp / Ortho のとき、横の倍率。1 で画像の高さがビューの高さと同じ大きさ（縦横比は画像のまま）", Min = 0.01)]
         public float ScaleX { get; }
 
-        [PLParam(Description = "Persp / Ortho のとき、縦の倍率", Min = 0.01)]
+        [PLParam(Description = "Persp / Ortho のとき、縦の倍率。1 で画像の高さがビューの高さと同じ", Min = 0.01)]
         public float ScaleY { get; }
+
+        [PLParam(Description = "コントラスト（0〜1）。1 で元画像、0 で灰色一色。負なら今の値のまま。keepPlacement でも効く")]
+        public float Contrast { get; }
+
+        [PLParam(Description = "明るさ（0〜1）。1 で元画像、0 で黒。負なら今の値のまま。keepPlacement でも効く")]
+        public float Intensity { get; }
 
         public SetUnderlayCommand(int modelIndex, UnderlayDirection direction, string filePath = "",
                                   bool keepPlacement = false,
                                   Vector3 corner0 = default, Vector3 corner1 = default,
                                   Vector2 topLeft = default, Vector2 scaleOrigin = default,
-                                  float scaleX = 1f, float scaleY = 1f)
+                                  float scaleX = 1f, float scaleY = 1f,
+                                  float contrast = -1f, float intensity = -1f)
             : base(modelIndex)
         {
+            Contrast      = contrast;
+            Intensity     = intensity;
             Direction     = direction;
             FilePath      = filePath ?? "";
             KeepPlacement = keepPlacement;
@@ -101,8 +111,10 @@ namespace Poly_Ling.Data
     [PLResult("count",       PLResultKind.Integer,   Description = "下絵の数")]
     [PLResult("directions",  PLResultKind.TextArray, Description = "方向", Optional = true)]
     [PLResult("filePaths",   PLResultKind.TextArray, Description = "画像ファイルの絶対パス。directions と同じ並び", Optional = true)]
-    [PLResult("placements",  PLResultKind.TextArray, Description = "置き方（2 隅のモデル座標、または画面ピクセル基準の値）。directions と同じ並び", Optional = true)]
+    [PLResult("placements",  PLResultKind.TextArray, Description = "置き方（2 隅のモデル座標、または画面基準の値。画面基準はビュー中央・ビューの高さが単位）。directions と同じ並び", Optional = true)]
     [PLResult("imageSizes",  PLResultKind.TextArray, Description = "画像の大きさ（幅x高さ）。読めなかったものは空。directions と同じ並び", Optional = true)]
+    [PLResult("contrasts",   PLResultKind.TextArray, Description = "コントラスト（0〜1）。directions と同じ並び", Optional = true)]
+    [PLResult("intensities", PLResultKind.TextArray, Description = "明るさ（0〜1）。directions と同じ並び", Optional = true)]
     public sealed class QueryUnderlayCommand : PanelCommand
     {
         public QueryUnderlayCommand(int modelIndex = 0)

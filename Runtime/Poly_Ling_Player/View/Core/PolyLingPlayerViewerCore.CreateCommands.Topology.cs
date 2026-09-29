@@ -53,6 +53,31 @@ namespace Poly_Ling.Player
             return null;
         }
 
+        /// <summary>辺から三角形コマンド。</summary>
+        private bool ExecuteEdgeTriangle(Poly_Ling.Data.EdgeTriangleCommand cmd,
+                                         out Poly_Ling.Ops.EdgeTriangleOps.Result result, out string reason)
+        {
+            result = default;
+            var h = _edgeTriangleHandler;
+            if (h == null) { reason = "辺から三角形ハンドラがありません"; return false; }
+            return h.ExecuteFromCommand(cmd, out result, out reason);
+        }
+
+        /// <summary>三角形の移し替えコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteTriangleRelocate(Poly_Ling.Data.TriangleRelocateCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var h = _triangleRelocateHandler;
+            if (h == null) return "三角形の移し替えハンドラがありません";
+
+            if (!h.ExecuteFromCommand(cmd, out string reason)) return reason;
+
+            _triangleRelocateSubPanel?.Refresh();
+            return null;
+        }
+
         /// <summary>三角形 4→1 コマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteTri4To1(Poly_Ling.Data.Tri4To1Command cmd)
@@ -949,15 +974,7 @@ namespace Poly_Ling.Player
             var panel = _holeRingCountSubPanel;
             if (h == null) return "穴点数合わせハンドラがありません";
 
-            // プロジェクトを配り直す。
-            //
-            // SetProject はレイアウト構築時に一度呼ばれるだけで、そのときの
-            // ActiveProject は null（PolyLingPlayerViewerCore.cs:3455）。
-            // PrepareHandlersForGeneratedMesh は他のハンドラへ配り直しているが、
-            // このハンドラは入っていない。配らないと Activate で
-            // ctx.Model が null になり、Inspect が「モデルがありません」を返して
-            // Execute が空振りする。種は選べているのに何も起きない。
-            h.SetProject(ActiveProject);
+            // プロジェクトはハンドラが GetProject で都度引くので配り直さない。
             h.SetUndoController(_editOps?.UndoController);
             h.SetCommandQueue(_editOps?.CommandQueue);
 

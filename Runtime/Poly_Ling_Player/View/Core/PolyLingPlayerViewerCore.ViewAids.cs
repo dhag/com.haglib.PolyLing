@@ -196,6 +196,17 @@ namespace Poly_Ling.Player
             return UnderlayDirection.Persp;
         }
 
+        /// <summary>ビューの表示設定スロット（0=P, 1=T, 2=F, 3=S）。該当なしは -1。</summary>
+        private int GetViewSlot(PlayerViewport vp)
+        {
+            if (vp == null) return -1;
+            if (vp == _viewportManager.PerspectiveViewport) return 0;
+            if (vp == _viewportManager.TopViewport)         return 1;
+            if (vp == _viewportManager.FrontViewport)       return 2;
+            if (vp == _viewportManager.SideViewport)        return 3;
+            return -1;
+        }
+
         /// <summary>
         /// 指定ビューへ現在方向の下絵を適用する。画像があればカメラ背景を透明化して
         /// 背面の下絵を見せ、なければ不透明に戻す。最後に再描画を要求する。
@@ -245,18 +256,33 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 現在方向の下絵をパネルへ敷き、位置を合わせる。敷いたら true。再描画は要求しない。
         /// 上下前後左右は 2 隅のモデル座標をこのビューのカメラで投影した矩形に敷く。
-        /// Persp / Ortho は画面ピクセル基準の値をそのまま使う。
+        /// Persp / Ortho はビュー中央・ビューの高さ基準の値を、今のビューの画素に直して敷く
+        /// （カメラと同じ基準なので、ビューの大きさが変わってもメッシュとずれない）。
         /// </summary>
         private bool PlaceUnderlay(PlayerViewport vp, PlayerViewportPanel panel)
         {
+            // 左ペインの表示グリッド「下絵」が外れているビューには敷かない。
+            int viewSlot = GetViewSlot(vp);
+            if (viewSlot >= 0 && !_viewportManager.GetDisplaySettings(viewSlot).ShowUnderlay)
+            { panel.ClearUnderlay(); return false; }
+
             var dir  = GetUnderlayDirection(vp);
             var slot = _underlay.Peek(dir);
-            var tex  = _underlay.GetTexture(dir);
+            // コントラスト・明るさを画素へ焼いた画像（1 のままなら元画像）。
+            var tex  = _underlay.GetDisplayTexture(dir);
             if (slot == null || tex == null) { panel.ClearUnderlay(); return false; }
 
             if (!UnderlayData.IsModelAnchored(dir))
             {
-                panel.SetUnderlay(tex, slot.TopLeft, slot.ScaleOrigin, slot.Scale);
+                var cam = vp?.Cam;
+                if (cam == null || cam.pixelWidth <= 1 || cam.pixelHeight <= 1) { panel.ClearUnderlay(); return false; }
+                float w = cam.pixelWidth, h = cam.pixelHeight;
+
+                // 以前の画素基準の値は、最初に表示するビューの大きさで今の形式に直す。
+                slot.ConvertLegacyScreen(tex.height, w, h);
+
+                slot.ToViewPixels(tex.height, w, h, out Vector2 tl, out Vector2 sc);
+                panel.SetUnderlay(tex, tl, slot.ScaleOrigin, sc);
                 return true;
             }
 

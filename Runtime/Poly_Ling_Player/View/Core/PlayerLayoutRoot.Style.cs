@@ -242,10 +242,19 @@ namespace Poly_Ling.Player
         /// "LeftPane.Fold.&lt;prefKey&gt;" で保存・復元する（選択モード永続化と同方式）。
         /// 見出しフォントを小さめにして縦スペースを節約する。
         /// </summary>
-        private static Foldout MakeFoldout(string title, string prefKey)
+        /// <summary>
+        /// 左ペインの折り畳み。キーは MakeFoldout の prefKey（File / SpecialDeform など）。
+        /// UI 自動操作（leftPane.fold.&lt;キー&gt;）が見出しの強調・開閉に使う。
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyDictionary<string, Foldout> LeftFoldouts => _leftFoldouts;
+        private readonly System.Collections.Generic.Dictionary<string, Foldout> _leftFoldouts
+            = new System.Collections.Generic.Dictionary<string, Foldout>(System.StringComparer.Ordinal);
+
+        private Foldout MakeFoldout(string title, string prefKey)
         {
             string key = "LeftPane.Fold." + prefKey;
             var f = new Foldout { text = title };
+            _leftFoldouts[prefKey] = f;
             // 復元（未保存は既定＝折りたたみ）
             f.SetValueWithoutNotify(Poly_Ling.Player.PlayerUiPrefs.GetBool(key, false));
             // 保存（開閉のたびに write-through）

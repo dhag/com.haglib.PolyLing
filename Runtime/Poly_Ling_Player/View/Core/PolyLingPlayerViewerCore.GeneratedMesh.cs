@@ -89,46 +89,14 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 生成メッシュをモデルへ入れる前に、各ツールハンドラへ現在のプロジェクトを配り直す。
+        /// 生成メッシュをモデルへ入れる前に、プロジェクトが無ければ作る。
         ///
-        /// 生成でモデルが差し替わることがあり（新しいモデルへ追加）、
-        /// 配り直さないとハンドラが古い ProjectContext を掴んだままになる。
+        /// ツールハンドラはプロジェクトを保持せず GetProject で都度引くので、
+        /// ここで配り直す必要は無い。
         /// </summary>
         private void PrepareHandlersForGeneratedMesh()
         {
-
             _localLoader.EnsureProject();
-            _moveToolHandler?.SetProject(ActiveProject);
-            _objectMoveHandler?.SetProject(ActiveProject);
-            _pivotOffsetHandler?.SetProject(ActiveProject);
-            _sculptHandler?.SetProject(ActiveProject);
-            _advancedSelectHandler?.SetProject(ActiveProject);
-            _skinWeightPaintHandler?.SetProject(ActiveProject);
-            _alignVerticesHandler?.SetProject(ActiveProject);
-            _pipeAlignHandler?.SetProject(ActiveProject);
-            _planarizeAlongBonesHandler?.SetProject(ActiveProject);
-            _mergeVerticesHandler?.SetProject(ActiveProject);
-            _splitVerticesHandler?.SetProject(ActiveProject);
-            _lineExtrudeHandler?.SetProject(ActiveProject);
-            _vertexHoleHandler?.SetProject(ActiveProject);
-            _addFaceHandler?.SetProject(ActiveProject);
-            _flipFaceHandler?.SetProject(ActiveProject);
-            _rotateHandler?.SetProject(ActiveProject);
-            _scaleHandler?.SetProject(ActiveProject);
-            _edgeBevelHandler?.SetProject(ActiveProject);
-            _edgeExtrudeHandler?.SetProject(ActiveProject);
-            _faceExtrudeHandler?.SetProject(ActiveProject);
-            _edgeRibbonFaceHandler?.SetProject(ActiveProject);
-            _edgeTopologyHandler?.SetProject(ActiveProject);
-            _knifeHandler?.SetProject(ActiveProject);
-            _solidifyHandler?.SetProject(ActiveProject);
-            _deleteSelectionHandler?.SetProject(ActiveProject);
-            _vertexDissolveHandler?.SetProject(ActiveProject);
-            _tri4To1Handler?.SetProject(ActiveProject);
-            _faceMergeHandler?.SetProject(ActiveProject);
-            _quad4To1Handler?.SetProject(ActiveProject);
-            _edgeBridgeHandler?.SetProject(ActiveProject);
-            _holeRingCountHandler?.SetProject(ActiveProject);
         }
 
 
@@ -543,10 +511,6 @@ namespace Poly_Ling.Player
                     matSlotAdded ? new List<Material>(newModel.Materials) : null,
                     matSlotAdded ? newModel.CurrentMaterialIndex : 0);
             }
-
-            // ハンドラーを新モデルに切り替え
-            _moveToolHandler?.SetProject(ActiveProject);
-            _objectMoveHandler?.SetProject(ActiveProject);
 
             PrimitiveMeshFinalize(newModel);
             RebuildModelList();

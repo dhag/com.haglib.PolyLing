@@ -667,6 +667,59 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── 選択部分の複製（SelectionDuplicateOps が正典）
+                case DuplicateSelectionCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var __oldSel  = model.CaptureAllSelectedIndices();
+                    var __added   = new List<(int, MeshContext)>();
+                    var __srcIdx  = new List<int>();
+                    var __names   = new List<string>();
+                    var __vCounts = new List<int>();
+                    var __fCounts = new List<int>();
+                    var __lCounts = new List<int>();
+
+                    // 追加で並びが変わる前に対象を確定する。
+                    var __targets = model.SelectedDrawableMeshIndices.OrderBy(i => i).ToList();
+                    foreach (int idx in __targets)
+                    {
+                        var srcCtx = model.GetMeshContext(idx);
+                        if (!Poly_Ling.Ops.SelectionDuplicateOps.HasSelection(srcCtx)) continue;
+
+                        string __name = model.GenerateUniqueMeshName(srcCtx.Name + "_sel");
+                        var dup = Poly_Ling.Ops.SelectionDuplicateOps.Duplicate(
+                            srcCtx, c.EdgesAsLines, __name, out var __r);
+                        if (dup == null) continue;
+
+                        int __addedIdx = model.Add(dup);
+                        __added.Add((__addedIdx, dup));
+                        __srcIdx.Add(idx);
+                        __names.Add(dup.Name ?? __name);
+                        __vCounts.Add(__r.Vertices);
+                        __fCounts.Add(__r.Faces);
+                        __lCounts.Add(__r.LinesFromEdges);
+                    }
+                    if (__added.Count == 0) { Fail("選択中の描画オブジェクトに、頂点・辺・線分・面の選択がありません"); return true; }
+
+                    if (_undoController != null)
+                    {
+                        var __newSel = model.CaptureAllSelectedIndices();
+                        _undoController.RecordMeshContextsAdd(__added, __oldSel, __newSel);
+                    }
+                    _notifyPanels(ChangeKind.ListStructure);
+
+                    ReportData(CommandDataJson.New()
+                        .Int ("objects",        __added.Count)
+                        .Ints("masterIndices",  __added.Select(a => a.Item1).ToList())
+                        .Ints("sourceIndices",  __srcIdx)
+                        .Texts("names",         __names)
+                        .Ints("vertexCounts",   __vCounts)
+                        .Ints("faceCounts",     __fCounts)
+                        .Ints("linesFromEdges", __lCounts)
+                        .Build());
+                    return true;
+                }
+
                 // ── メッシュリスト順序変更 (D&D/上下移動/Indent/Outdent)
                 // Editor と同一ロジック (MeshListOps.ReorderMeshes) を使用。
                 // Undo 記録 (MeshReorderChangeRecord) も内部で実行される。

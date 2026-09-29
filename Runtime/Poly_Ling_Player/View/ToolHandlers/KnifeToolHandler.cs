@@ -14,14 +14,17 @@ using Poly_Ling.Commands;
 namespace Poly_Ling.Player
 {
     [Poly_Ling.Data.PLTool("knife", Description = "KnifeTool（確定は Knife*Command）")]
-    public class KnifeToolHandler : IPlayerToolHandler
+    public class KnifeToolHandler : IPlayerToolHandler, IPlayerPressHandler
     {
         // ================================================================
         // 依存
         // ================================================================
 
         private readonly KnifeTool _tool = new KnifeTool();
-        private          ProjectContext _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _project => GetProject?.Invoke();
 
         // TopologyCache はメッシュごとにキャッシュ
         private readonly Dictionary<int, TopologyCache> _topoCaches = new Dictionary<int, TopologyCache>();
@@ -31,6 +34,18 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<ToolContext> GetToolContext;
+
+        /// <summary>
+        /// 指定のビューの ToolContext（Viewer から結線）。
+        /// ビューを持つコマンド（KnifeSimpleCutCommand）の実行に使う。カレントビューには依らない。
+        /// </summary>
+        public Func<Poly_Ling.Data.ViewportKind, ToolContext> GetToolContextForView;
+
+        /// <summary>指定のビューでの、操作対象メッシュの頂点のクリップ空間 w（Viewer から結線）。</summary>
+        public Func<Poly_Ling.Data.ViewportKind, int, float?> GetVertexClipWForView;
+
+        /// <summary>今のカレントビューの種別（Viewer から結線）。画面から確定したコマンドに書き込む。</summary>
+        public Func<Poly_Ling.Data.ViewportKind> GetActiveViewKind;
 
         /// <summary>
         /// 操作対象メッシュの頂点のクリップ空間 w を返す
@@ -95,6 +110,18 @@ namespace Poly_Ling.Player
         [Poly_Ling.Data.PLToolParam(Description = "SimpleCut: 5角以上の面を三角形＋四角形へ再分解（既定 ON）")]
         public bool SimpleTriQuad { get => _tool.SimpleTriQuad; set => _tool.SimpleTriQuad = value; }
 
+        /// <summary>SimpleCut: 起点・終点を頂点ホバーで指定する（既定 OFF）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "SimpleCut: 起点・終点のクリックが頂点ホバー上なら、その端点を頂点で指定する（既定 OFF）")]
+        public bool SimpleVertexEndpoints { get => _tool.SimpleVertexEndpoints; set => _tool.SimpleVertexEndpoints = value; }
+
+        /// <summary>SimpleCut: 押した位置を起点、離した位置を終点としてドラッグで切る（既定 OFF＝2 クリック）。</summary>
+        [Poly_Ling.Data.PLToolParam(Description = "SimpleCut: 押した位置を起点、離した位置を終点としてドラッグで切る（既定 OFF＝2 クリック）")]
+        public bool SimpleDragMode
+        {
+            get => _tool.SimpleDragMode;
+            set { _tool.SimpleDragMode = value; ApplyHoverSelectionMode(); OnRepaint?.Invoke(); }
+        }
+
         /// <summary>状態説明テキスト（サブパネル用）。</summary>
         public string StageText() => _tool.StageText();
 
@@ -123,7 +150,6 @@ namespace Poly_Ling.Player
         // 初期化
         // ================================================================
 
-        public void SetProject(ProjectContext project) => _project = project;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
         public void SetCommandQueue(CommandQueue queue)        => _commandQueue   = queue;
 
@@ -146,6 +172,18 @@ namespace Poly_Ling.Player
         /// </summary>
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            // ドラッグ式のシンプル切断では、クリック（しきい値を越えずに離した）は何もしない。
+            // 押下で置いた 1 点目は OnLeftPressCancel で取り消し済み。
+            if (IsSimpleDrag) return;
+            ClickCore(screenPos, mods);
+        }
+
+        /// <summary>シンプル切断をドラッグ式で操作しているか。</summary>
+        private bool IsSimpleDrag => _tool.Mode == KnifeMode.SimpleCut && _tool.SimpleDragMode;
+
+        /// <summary>クリック 1 回ぶんの段の更新とコマンド発行（2 クリック式のクリック、ドラッグ式の押下・離し）。</summary>
+        private void ClickCore(Vector2 screenPos, ModifierKeys mods)
+        {
             var ctx = BuildCtx(mods, screenPos); if (ctx == null) return;
             InjectGpuHover();
 
@@ -158,7 +196,7 @@ namespace Poly_Ling.Player
             {
                 if (_tool.TryTakeCutFromClick(ctx, ToImgui(screenPos, ctx), screenPos, out var req))
                 {
-                    var cmd = BuildKnifeCommand(req);
+                    var cmd = BuildKnifeCommand(req, ctx);
                     if (cmd != null) SendCommand(cmd);
                 }
             }
@@ -195,7 +233,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>取り出した切断内容からコマンドを組み立てる。</summary>
-        private Poly_Ling.Data.PanelCommand BuildKnifeCommand(KnifeTool.KnifeCutRequest req)
+        private Poly_Ling.Data.PanelCommand BuildKnifeCommand(KnifeTool.KnifeCutRequest req, ToolContext ctx)
         {
             var targets = ActiveMasterIndices();
             if (targets == null) return null;
@@ -213,9 +251,20 @@ namespace Poly_Ling.Player
                         req.CutRatio, _tool.EqualDivide, _tool.Divisions);
 
                 case KnifeMode.SimpleCut:
+                {
+                    // ビュー基準座標（中央原点・高さ 1・上が＋）で送る。記録された手本が
+                    // ビューの大きさに左右されないようにするため。
+                    float w = ctx?.PreviewRect.width ?? 0f, h = ctx?.PreviewRect.height ?? 0f;
+                    if (h <= 0f) return null;
+                    Vector2 ToView(Vector2 p) => new Vector2((p.x - w * 0.5f) / h, (p.y - h * 0.5f) / h);
+                    // 切断線を引いたビュー（クリックしたビュー）も載せる。再生時にカレントビューが
+                    // 違っていても同じビューで切れるようにするため。
+                    var view = GetActiveViewKind?.Invoke() ?? Poly_Ling.Data.ViewportKind.Perspective;
                     return new Poly_Ling.Data.KnifeSimpleCutCommand(
-                        mi, targets, req.ScreenP0, req.ScreenP1,
-                        req.FaceCulledMask, _tool.SimpleTriQuad);
+                        mi, targets, ToView(req.ScreenP0), ToView(req.ScreenP1),
+                        req.FaceCulledMask, _tool.SimpleTriQuad, null, true,
+                        req.SimpleV0, req.SimpleV1, view);
+                }
 
                 case KnifeMode.LadderCut:
                     return new Poly_Ling.Data.KnifeLadderCutCommand(
@@ -261,15 +310,26 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// シンプル切断コマンドを実行する。
-        /// ScreenP0 / ScreenP1 は実行時のアクティブビューポートの座標として解釈される。
+        /// ScreenP0 / ScreenP1 は cmd.View のビューポートの座標として解釈する。
+        /// 頂点の投影と透視補正の w も同じビューで取る（カレントビューには依らない）。
         /// </summary>
         /// <param name="reason">実行できなかった理由。成功時は null。</param>
         public bool ExecuteFromCommand(
             Poly_Ling.Data.KnifeSimpleCutCommand cmd, out string reason)
         {
             if (!PrepareCommand(cmd?.MasterIndices, out var ctx, out reason)) return false;
+
+            if (GetToolContextForView == null) { reason = "ビュー指定の経路が未配線です"; return false; }
+            var view = cmd.View;
+            ctx = EnrichCtx(GetToolContextForView(view), default(ModifierKeys), Vector2.zero);
+            if (ctx == null) { reason = $"ビュー {view} がありません"; return false; }
+            ctx.GetVertexClipW = GetVertexClipWForView != null
+                ? (Func<int, float?>)(vi => GetVertexClipWForView(view, vi))
+                : null;
+
             return _tool.ExecuteSimpleCutFromCommand(
-                ctx, cmd.ScreenP0, cmd.ScreenP1, cmd.FaceCulledMask, cmd.TriQuad, out reason);
+                ctx, cmd.ScreenP0, cmd.ScreenP1, cmd.FaceCulledMask, cmd.TriQuad, cmd.ViewNormalized,
+                cmd.StartVertex, cmd.EndVertex, out reason);
         }
 
         /// <summary>4 コマンド共通の前処理。対象の照合とコンテキストの組み立て。</summary>
@@ -293,13 +353,61 @@ namespace Poly_Ling.Player
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
-            // クリック指定のみ。ドラッグ開始は単発クリックと同じ扱い。
-            OnLeftClick(hit, screenPos, mods);
+            // ドラッグ式のシンプル切断は、押下（OnLeftButtonDown）で 1 点目を置き済み。
+            // screenPos は押下位置だが、ホバーは現在位置で再計算されているので、ここで 1 点目は取らない。
+            if (IsSimpleDrag) return;
+            // それ以外はクリック指定のみ。ドラッグ開始は単発クリックと同じ扱い。
+            ClickCore(screenPos, mods);
         }
 
-        public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods) { }
+        public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
+        {
+            if (IsSimpleDrag && _tool.SimpleDragPending) UpdateSimpleDragPreview(screenPos, mods);
+        }
 
-        public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods) { }
+        public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
+        {
+            // ドラッグ式：離した位置を 2 点目として切る。ホバーは離した位置で確定しているので、
+            // 頂点指定もその位置の頂点になる。
+            if (IsSimpleDrag && _tool.SimpleDragPending) ClickCore(screenPos, mods);
+        }
+
+        // ================================================================
+        // 押下フェーズ（IPlayerPressHandler）。ドラッグ式のシンプル切断だけが使う。
+        // ================================================================
+
+        /// <summary>押下：ドラッグ式なら押下位置を 1 点目にする。押下時のホバーは押下位置のもの。</summary>
+        public void OnLeftButtonDown(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
+        {
+            if (!IsSimpleDrag) return;
+            if (_tool.SimpleCutHasFirstPoint) _tool.CancelSimpleCut();
+            ClickCore(screenPos, mods);
+        }
+
+        /// <summary>押下中（しきい値前）の移動：切断線のプレビューを追従させる。</summary>
+        public void OnLeftPressMove(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
+        {
+            if (IsSimpleDrag && _tool.SimpleDragPending) UpdateSimpleDragPreview(screenPos, mods);
+        }
+
+        /// <summary>動かさずに離した：ドラッグ式なら置いた 1 点目を取り消す（切らない）。</summary>
+        public void OnLeftPressCancel(Vector2 screenPos, ModifierKeys mods)
+        {
+            if (!IsSimpleDrag) return;
+            _tool.CancelSimpleCut();
+            ApplyHoverSelectionMode();
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>ドラッグ中の切断線プレビュー（ホバーと同じ描き方）。</summary>
+        private void UpdateSimpleDragPreview(Vector2 screenPos, ModifierKeys mods)
+        {
+            var ctx = BuildCtx(mods, screenPos); if (ctx == null) return;
+            InjectGpuHover();
+            InjectSimpleCutMask(ctx);
+            _tool.OnSimpleCutHoverScreen(ctx, screenPos);
+            OnRepaint?.Invoke();
+        }
 
         public void UpdateHover(Vector2 screenPos, ToolContext baseCtx)
         {
@@ -309,7 +417,11 @@ namespace Poly_Ling.Player
             // ホバー中もマスクを注入する（クリック時と同一の slot0 由来カリング）。
             if (_tool.Mode == KnifeMode.SimpleCut && _tool.SimpleCutHasFirstPoint)
                 InjectSimpleCutMask(ctx);
-            _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), Vector2.zero);
+            // SimpleCut はクリックと同じく生の座標を渡す（P0 と同系。ToImgui は二重反転になる）。
+            if (_tool.Mode == KnifeMode.SimpleCut)
+                _tool.OnSimpleCutHoverScreen(ctx, screenPos);
+            else
+                _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), Vector2.zero);
             OnRepaint?.Invoke();
         }
 

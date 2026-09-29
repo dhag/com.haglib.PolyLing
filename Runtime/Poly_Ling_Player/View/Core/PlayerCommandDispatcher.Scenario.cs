@@ -34,6 +34,7 @@ namespace Poly_Ling.Player
                 case QueryScenariosCommand c:        RunQueryScenarios(c);        return true;
                 case DescribeScenarioCommand c:      RunDescribeScenario(c);      return true;
                 case CreateScenarioCommand c:        RunCreateScenario(c);        return true;
+                case SetScenarioBundleCommand c:     RunSetScenarioBundle(c);     return true;
                 case DeleteScenarioCommand c:        RunDeleteScenario(c);        return true;
                 case ForkScenarioCommand c:          RunForkScenario(c);          return true;
                 case SaveScenarioFromGroupCommand c: RunSaveScenarioFromGroup(c); return true;
@@ -285,6 +286,7 @@ namespace Poly_Ling.Player
             }
 
             var names      = new List<string>(all.Count);
+            var bundles    = new List<string>(all.Count);
             var goals      = new List<string>(all.Count);
             var stepCounts = new List<int>(all.Count);
 
@@ -296,6 +298,7 @@ namespace Poly_Ling.Player
                 if (usage != null && !ScenarioUsesScene(g, usage)) continue;
 
                 names.Add(g.Name ?? "");
+                bundles.Add(ScenarioLibrary.BundleOf(g.Name) ?? "");
                 goals.Add(g.Goal ?? "");
                 stepCounts.Add(g.StepCount);
             }
@@ -304,6 +307,7 @@ namespace Poly_Ling.Player
                 .Int  ("count",      names.Count)
                 .Text ("storePath",  ScenarioLibrary.StorePath)
                 .Texts("names",      names)
+                .Texts("bundles",    bundles)
                 .Texts("goals",      goals)
                 .Ints ("stepCounts", stepCounts)
                 .Build());
@@ -433,12 +437,24 @@ namespace Poly_Ling.Player
             var g = new ObjectGroup(cmd.Name) { Goal = cmd.Goal ?? "" };
             g.Steps.Clear();   // 段は addScenarioStep で足す
 
-            if (!ScenarioLibrary.Register(g, cmd.Overwrite, out string error)) { Fail(error); return; }
+            if (!ScenarioLibrary.Register(g, cmd.Overwrite, out string error, cmd.Bundle)) { Fail(error); return; }
 
             ReportData(CommandDataJson.New()
                 .Text("name",      g.Name)
                 .Int ("count",     ScenarioLibrary.Count)
+                .Text("bundle",    ScenarioLibrary.BundleOf(g.Name) ?? "")
                 .Text("storePath", ScenarioLibrary.StorePath)
+                .Build());
+        }
+
+        private void RunSetScenarioBundle(SetScenarioBundleCommand cmd)
+        {
+            if (!ScenarioLibrary.SetBundle(cmd.Names, cmd.Bundle, out string error)) { Fail(error); return; }
+
+            string bundle = cmd.Names.Length > 0 ? ScenarioLibrary.BundleOf(cmd.Names[0]) ?? "" : "";
+            ReportData(CommandDataJson.New()
+                .Text ("bundle", bundle)
+                .Texts("names",  cmd.Names)
                 .Build());
         }
 

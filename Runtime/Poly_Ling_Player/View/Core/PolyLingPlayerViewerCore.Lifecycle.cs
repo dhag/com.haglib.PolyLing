@@ -493,39 +493,6 @@ namespace Poly_Ling.Player
                         }
                     }
                 }
-                UnityEngine.Debug.Log("[LoadDbg] 02 before-SetProject");
-                _moveToolHandler?.SetProject(ActiveProject);
-                _objectMoveHandler?.SetProject(ActiveProject);
-                _pivotOffsetHandler?.SetProject(ActiveProject);
-                _sculptHandler?.SetProject(ActiveProject);
-                _advancedSelectHandler?.SetProject(ActiveProject);
-                _skinWeightPaintHandler?.SetProject(ActiveProject);
-                _alignVerticesHandler?.SetProject(ActiveProject);
-                _pipeAlignHandler?.SetProject(ActiveProject);
-                _planarizeAlongBonesHandler?.SetProject(ActiveProject);
-                _mergeVerticesHandler?.SetProject(ActiveProject);
-                _splitVerticesHandler?.SetProject(ActiveProject);
-                _lineExtrudeHandler?.SetProject(ActiveProject);
-                _vertexHoleHandler?.SetProject(ActiveProject);
-                _addFaceHandler?.SetProject(ActiveProject);
-                _flipFaceHandler?.SetProject(ActiveProject);
-                _rotateHandler?.SetProject(ActiveProject);
-                _scaleHandler?.SetProject(ActiveProject);
-                _edgeBevelHandler?.SetProject(ActiveProject);
-                _edgeExtrudeHandler?.SetProject(ActiveProject);
-                _faceExtrudeHandler?.SetProject(ActiveProject);
-                _edgeRibbonFaceHandler?.SetProject(ActiveProject);
-                _edgeTopologyHandler?.SetProject(ActiveProject);
-                _knifeHandler?.SetProject(ActiveProject);
-                _solidifyHandler?.SetProject(ActiveProject);
-                _deleteSelectionHandler?.SetProject(ActiveProject);
-                _vertexDissolveHandler?.SetProject(ActiveProject);
-                _tri4To1Handler?.SetProject(ActiveProject);
-                _faceMergeHandler?.SetProject(ActiveProject);
-                _quad4To1Handler?.SetProject(ActiveProject);
-                _edgeBridgeHandler?.SetProject(ActiveProject);
-                _holeRingCountHandler?.SetProject(ActiveProject);
-
                 UnityEngine.Debug.Log("[LoadDbg] 03 before-UndoCtx");
                 _editOps?.UndoController.SetModelContext(loadedModel);
                 // 問題 A/B 対応: ProjectStack (モデル切替用 Undo) の Context も同期する。

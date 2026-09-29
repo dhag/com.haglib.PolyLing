@@ -5,6 +5,7 @@
 // 選択メッシュ 2 個を対象にする。リストで選んだ側が A（基準）、
 // もう一方が B になる。演算は A のローカル空間で行い、結果も A の姿勢を引き継ぐ。
 // 実処理は BooleanMeshCommand -> BooleanOps。ここは入力の組み立てだけを行う。
+// 「2D」を入れると BooleanMesh2DCommand -> Boolean2DOps（同じ平面の面／線分のループどうし）。
 
 using System;
 using System.Collections.Generic;
@@ -40,6 +41,20 @@ namespace Poly_Ling.Player
         private FloatField _mergeThresholdField;
         [UiControl("epsilon", Description = "演算に渡す epsilon")]
         private FloatField _epsilonField;
+        // ── 2D（同じ平面の図形どうし。BooleanMesh2DCommand） ──
+        [UiControl("mode2D", Description = "2D ブーリアンにする（同じ平面上の面どうし、または線分のループどうしを演算する）")]
+        private Toggle     _mode2DToggle;
+        [UiControl(Ignore = true)]
+        private VisualElement _box3D;
+        [UiControl(Ignore = true)]
+        private VisualElement _box2D;
+        [UiControl("operation2D", Description = "2D のときの演算の種類（和 / 差 / 積 / 排他的論理和）")]
+        private EnumField  _op2DField;
+        [UiControl("source2D", Description = "2D のときの入力。Faces は 3 頂点以上の面、Lines は線分の閉じたループ")]
+        private EnumField  _source2DField;
+        [UiControl("planeTolerance", Description = "2D のとき、同じ平面とみなす距離の上限")]
+        private FloatField _planeTolField;
+
         [UiControl("run", Safety = UiSafety.Destructive, Description = "ブーリアン演算を実行する。「B を削除する」がオンなら B を削除する")]
         private Button     _executeButton;
         [UiControl("status", Safety = UiSafety.ReadOnly, Description = "実行できない理由、または実行結果")]
@@ -93,9 +108,32 @@ namespace Poly_Ling.Player
             };
             root.Add(_baseObjectList);
 
+            _mode2DToggle = new Toggle("2D（同じ平面の図形どうし）") { value = false };
+            _mode2DToggle.style.marginBottom = 4;
+            _mode2DToggle.RegisterValueChangedCallback(_ => UpdateModeVisibility());
+            root.Add(_mode2DToggle);
+
+            _box3D = new VisualElement();
+            _box2D = new VisualElement();
+
             _opField = new EnumField("演算", BooleanOpKind.Subtract);
             _opField.style.marginBottom = 6;
-            root.Add(_opField);
+            _box3D.Add(_opField);
+
+            _op2DField = new EnumField("演算", Boolean2DOpKind.Subtract);
+            _op2DField.style.marginBottom = 2;
+            _box2D.Add(_op2DField);
+
+            _source2DField = new EnumField("入力", Boolean2DSource.Faces);
+            _source2DField.style.marginBottom = 2;
+            _box2D.Add(_source2DField);
+
+            _planeTolField = new FloatField("平面の許容量") { value = Boolean2DOps.DefaultPlaneTolerance };
+            _planeTolField.style.marginBottom = 6;
+            _box2D.Add(_planeTolField);
+
+            root.Add(_box3D);
+            root.Add(_box2D);
 
             _createNewMeshToggle = new Toggle("新規メッシュオブジェクトに格納する") { value = true };
             _createNewMeshToggle.style.marginBottom = 2;
@@ -127,6 +165,20 @@ namespace Poly_Ling.Player
             _statusLabel.style.color       = new StyleColor(Color.white);
             _statusLabel.style.whiteSpace  = WhiteSpace.Normal;
             root.Add(_statusLabel);
+
+            UpdateModeVisibility();
+        }
+
+        /// <summary>3D / 2D で使う欄だけを見せる。頂点マージと epsilon は 3D の CSG 専用。</summary>
+        private void UpdateModeVisibility()
+        {
+            bool is2D = _mode2DToggle != null && _mode2DToggle.value;
+            var show3D = is2D ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_box3D != null) _box3D.style.display = show3D;
+            if (_box2D != null) _box2D.style.display = is2D ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_mergeVerticesToggle != null) _mergeVerticesToggle.style.display = show3D;
+            if (_mergeThresholdField != null) _mergeThresholdField.style.display = show3D;
+            if (_epsilonField        != null) _epsilonField.style.display        = show3D;
         }
 
         public void Refresh()
@@ -199,6 +251,19 @@ namespace Poly_Ling.Player
             int aMaster = _selectedMeshViews[_baseListIndex].MasterIndex;
             int bMaster = _selectedMeshViews[bIndex].MasterIndex;
             if (aMaster == bMaster) { SetStatus("同一メッシュは指定できません"); return; }
+
+            if (_mode2DToggle.value)
+            {
+                var op2 = (Boolean2DOpKind)_op2DField.value;
+                SendCommand?.Invoke(new BooleanMesh2DCommand(
+                    modelIdx, aMaster, bMaster, op2,
+                    (Boolean2DSource)_source2DField.value,
+                    _createNewMeshToggle.value,
+                    _deleteBToggle.value,
+                    Mathf.Max(0f, _planeTolField.value)));
+                SetStatus($"2D {Boolean2DOps.DisplayName(op2)} を実行しました");
+                return;
+            }
 
             var op = (BooleanOpKind)_opField.value;
 

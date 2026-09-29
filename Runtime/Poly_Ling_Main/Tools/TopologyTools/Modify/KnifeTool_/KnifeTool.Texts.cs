@@ -15,6 +15,8 @@ namespace Poly_Ling.Tools
             ["SimpleCut"]  = new() { ["en"] = "Simple Cut", ["ja"] = "シンプル", ["hi"] = "かんたんぎり" },
             ["PickFirst"]  = new() { ["en"] = "Click first point.\nESC: Cancel", ["ja"] = "1点目をクリック\nESC: キャンセル", ["hi"] = "1つめのてんをクリック\nESC: やめる" },
             ["PickSecond"] = new() { ["en"] = "Click second point to cut.\nESC: Cancel", ["ja"] = "2点目をクリックで切断\nESC: キャンセル", ["hi"] = "2つめのてんをクリックしてきる\nESC: やめる" },
+            ["DragFirst"]  = new() { ["en"] = "Drag from start to end to cut.", ["ja"] = "起点から終点までドラッグで切断", ["hi"] = "はじめからおわりまでドラッグしてきる" },
+            ["DragRelease"] = new() { ["en"] = "Release at end point to cut.\nESC: Cancel", ["ja"] = "終点で離すと切断\nESC: キャンセル", ["hi"] = "おわりではなすときれる\nESC: やめる" },
             ["EqualDivide"] = new() { ["en"] = "Equal Divide", ["ja"] = "等分割",             ["hi"] = "とうぶんかつ" },
             ["BeltLoop"]    = new() { ["en"] = "Belt / Loop",  ["ja"] = "一意分割(ベルト)",     ["hi"] = "ベルトわけ" },
 

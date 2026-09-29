@@ -14,6 +14,9 @@ namespace Poly_Ling.Player
         // Left ペイン公開要素
         // ================================================================
 
+        /// <summary>左ペインのスクロール領域（中身全体）。UI 自動操作の leftPane パネルの表示領域。</summary>
+        public ScrollView    LeftPaneScroll     { get; private set; }
+
         public Label         StatusLabel        { get; private set; }
         public Button        UndoBtn            { get; private set; }
         public Button        RedoBtn            { get; private set; }
@@ -64,7 +67,9 @@ namespace Poly_Ling.Player
         public const int VD_UNSEL_MESH_ORIGIN = 14;
         public const int VD_MIRROR_MESH_ORIGIN = 15;
         public const int VD_NORMAL       = 16;
-        public const int VD_COUNT        = 17;
+        /// <summary>下絵（ビュー背面の参照画像）。</summary>
+        public const int VD_UNDERLAY     = 17;
+        public const int VD_COUNT        = 18;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
@@ -143,6 +148,7 @@ namespace Poly_Ling.Player
             pane.style.overflow        = Overflow.Hidden;
 
             var scroll = new ScrollView(ScrollViewMode.Vertical);
+            LeftPaneScroll = scroll;
             scroll.style.flexGrow     = 1;
             scroll.style.paddingTop   = 6;
             scroll.style.paddingLeft  = 6;
@@ -322,6 +328,7 @@ namespace Poly_Ling.Player
                 "選択Bone",  "非選Bone",
                 "選択M原点", "非選M原点", "ミラーM原点",
                 "法線",
+                "下絵",
             };
             // ViewportDisplaySettings.Default と一致させる
             var itemDefaults = new bool[]
@@ -343,6 +350,7 @@ namespace Poly_Ling.Player
                 true,  // 非選M原点
                 false, // ミラーM原点（実体側と重なるため既定 OFF）
                 false, // 法線（線分数が多いため既定 OFF）
+                true,  // 下絵
             };
 
             // ヘッダ行

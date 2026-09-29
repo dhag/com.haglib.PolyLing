@@ -49,14 +49,6 @@ namespace Poly_Ling.Player
             var model = project.CurrentModel;
             if (model == null) return;
 
-            // ツールハンドラへの Project 参照更新 (SwitchModelCommand ハンドラでは扱わない分)。
-            _moveToolHandler?.SetProject(project);
-            _objectMoveHandler?.SetProject(project);
-            _pivotOffsetHandler?.SetProject(project);
-            _sculptHandler?.SetProject(project);
-            _advancedSelectHandler?.SetProject(project);
-            _skinWeightPaintHandler?.SetProject(project);
-
             _skinWeightPaintPanel?.RefreshBoneList(model);
         }
 

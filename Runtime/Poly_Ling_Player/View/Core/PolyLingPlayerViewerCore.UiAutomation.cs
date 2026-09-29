@@ -77,8 +77,99 @@ namespace Poly_Ling.Player
             }
         }
 
+        // ================================================================
+        // 左ペイン（leftPane）
+        // ================================================================
+        //
+        // 【パネルとしての扱い】
+        //   左ペインは常時表示なので、開く処理は何もしない。表示領域は左ペインのスクロール領域。
+        //   uiReveal はこの中の祖先の折り畳みを開き、スクロールして見せる（右ペインと同じ処理）。
+        //
+        // 【項目の集め方】
+        //   PlayerLayoutRoot の公開プロパティのうち Button / Toggle / DropdownField 型で、
+        //   実体が左ペインの中にあるものを反射で集める。画面を名前や文字列で探すのではなく、
+        //   PlayerLayoutRoot が公開している部品だけを載せる（登録簿の方針どおり）。
+        //   ID は leftPane.<プロパティ名の先頭小文字>、説明は表示文字列と所属する折り畳みの見出し。
+        //   安全度は未指定（強調・表示・読み取りはできるが、uiClick では押さない）。
+        //   押せるようにするときは、ボタンごとに安全度を決めて登録を分けること。
+        //
+        // 【折り畳み】
+        //   leftPane.fold.<キー>（MakeFoldout の prefKey）。要素は見出しの行（Foldout の Toggle）。
+        //   全体を囲むと、開いているときに中身まで囲んでしまうため。
+
+        private const string LeftPanePanelId = "leftPane";
+
+        private void RegisterLeftPaneUiAutomation()
+        {
+            var scroll = _layoutRoot?.LeftPaneScroll;
+            if (scroll == null) return;
+
+            if (!_uiAutomationRegistry.RegisterPanel(LeftPanePanelId,
+                    "左ペイン（常時表示）の折り畳み・ボタン・チェックボックス。項目の説明に所属する折り畳みの見出しが入る。"
+                    + "機能の場所を聞かれたら、説明から探して uiReveal（ボタン）と uiHighlight add=true（折り畳みの見出し）で示す",
+                    scroll, () => { }))
+                return;
+
+            // 折り畳みの見出し
+            foreach (var kv in _layoutRoot.LeftFoldouts)
+            {
+                var fold  = kv.Value;
+                string title = fold.text;
+                _uiAutomationRegistry.RegisterControl(
+                    $"{LeftPanePanelId}.fold.{kv.Key}", LeftPanePanelId,
+                    () => (VisualElement)fold.Q<Toggle>(className: Foldout.toggleUssClassName) ?? fold,
+                    $"折り畳み「{title}」の見出し（値 true で開く）",
+                    UiSafety.SafeWrite, source: $"PlayerLayoutRoot.LeftFoldouts[{kv.Key}]");
+            }
+
+            // ボタン・チェックボックス・ドロップダウン
+            var props = typeof(PlayerLayoutRoot).GetProperties(
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            foreach (var p in props)
+            {
+                var t = p.PropertyType;
+                if (t != typeof(Button) && t != typeof(Toggle) && t != typeof(DropdownField)) continue;
+                if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
+                if (!(p.GetValue(_layoutRoot) is VisualElement e) || !scroll.Contains(e)) continue;
+
+                var prop = p;
+                string id = $"{LeftPanePanelId}.{char.ToLowerInvariant(p.Name[0])}{p.Name.Substring(1)}";
+                _uiAutomationRegistry.RegisterControl(
+                    id, LeftPanePanelId,
+                    () => prop.GetValue(_layoutRoot) as VisualElement,
+                    LeftPaneDescription(e),
+                    UiSafety.Unspecified, source: $"PlayerLayoutRoot.{p.Name}");
+            }
+        }
+
+        /// <summary>表示文字列と、所属する折り畳みの見出し。</summary>
+        private static string LeftPaneDescription(VisualElement e)
+        {
+            string text;
+            switch (e)
+            {
+                case Button b:        text = b.text; break;
+                case Toggle tg:       text = tg.label; break;
+                case DropdownField d: text = d.label; break;
+                default:              text = ""; break;
+            }
+            if (string.IsNullOrEmpty(text)) text = e.tooltip ?? "";
+            if (string.IsNullOrEmpty(text)) text = "(表示文字なし)";
+
+            string fold = null;
+            for (var p = e.parent; p != null; p = p.parent)
+                if (p is Foldout f) { fold = f.text; break; }
+
+            string kind = e is Button ? "ボタン" : e is Toggle ? "チェックボックス" : "ドロップダウン";
+            return fold != null
+                ? $"{text}（{kind}・折り畳み: {fold}）"
+                : $"{text}（{kind}・左ペイン上部）";
+        }
+
         private void RegisterUiAutomationPanels()
         {
+            RegisterLeftPaneUiAutomation();
+
             RegisterUiPanel("underlay", "下絵（3D 背面に敷く参照画像）の方向別設定",
                 _layoutRoot.UnderlaySection, ShowUnderlayPanel, _underlaySubPanel);
 
@@ -176,6 +267,12 @@ namespace Poly_Ling.Player
             // ── モデル（SubPanels/Model）──────────────────────────────
             RegisterUiPanel("faceHide", "面の表示・非表示",
                 _layoutRoot.FaceHideSection, ShowFaceHidePanel, _faceHideSubPanel);
+            RegisterUiPanel("edgeTriangle", "辺から三角形（辺を掴んでドラッグで頂点を引き出し、三角形を作る）",
+                _layoutRoot.EdgeTriangleSection, ShowEdgeTrianglePanel, _edgeTriangleSubPanel);
+            RegisterUiPanel("triangleRelocate", "三角形の移し替え（三角形 1 枚と四角形 3 枚に囲まれた頂点を消し、三角形を向かい側へ移す）",
+                _layoutRoot.TriangleRelocateSection, ShowTriangleRelocatePanel, _triangleRelocateSubPanel);
+            RegisterUiPanel("duplicateSelection", "選択を複製（選択した頂点・辺・線分・面だけを別オブジェクトへ）",
+                _layoutRoot.DuplicateSelectionSection, ShowDuplicateSelectionPanel, _duplicateSelectionSubPanel);
             RegisterUiPanel("normalEdit", "法線の編集",
                 _layoutRoot.NormalEditSection, ShowNormalEditPanel, _normalEditSubPanel);
             RegisterUiPanel("normalExcludeSet", "法線の除外セット",
@@ -455,6 +552,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnUiGetValue      = ExecuteUiGetValue;
             _commandDispatcher.OnUiSetValue      = ExecuteUiSetValue;
             _commandDispatcher.OnUiHighlight     = ExecuteUiHighlight;
+            _commandDispatcher.OnUiClearHighlights = ExecuteUiClearHighlights;
             _commandDispatcher.OnUiCapture       = ExecuteUiCapture;
             _commandDispatcher.OnQueryActiveModes = CollectActiveModes;   // ActiveModes.cs
             _commandDispatcher.OnUiCaptureStatus = ExecuteUiCaptureStatus;
@@ -513,7 +611,7 @@ namespace Poly_Ling.Player
         {
             if (cmd == null) return CommandResult.Fail("コマンドが null");
             if (_uiAutomation == null) return CommandResult.Fail(UiAutomationNotReady);
-            return _uiAutomation.Reveal(cmd.ControlId, cmd.Highlight);
+            return _uiAutomation.Reveal(cmd.ControlId, cmd.Highlight, cmd.Add);
         }
 
         private CommandResult ExecuteUiGetValue(UiGetValueCommand cmd)
@@ -534,7 +632,14 @@ namespace Poly_Ling.Player
         {
             if (cmd == null) return CommandResult.Fail("コマンドが null");
             if (_uiAutomation == null) return CommandResult.Fail(UiAutomationNotReady);
-            return _uiAutomation.Highlight(cmd.ControlId, cmd.Enabled);
+            return _uiAutomation.Highlight(cmd.ControlId, cmd.Enabled, cmd.Add);
+        }
+
+        private CommandResult ExecuteUiClearHighlights(UiClearHighlightsCommand cmd)
+        {
+            if (cmd == null) return CommandResult.Fail("コマンドが null");
+            if (_uiAutomation == null) return CommandResult.Fail(UiAutomationNotReady);
+            return _uiAutomation.ClearHighlights();
         }
 
         private CommandResult ExecuteUiCapture(UiCaptureCommand cmd)

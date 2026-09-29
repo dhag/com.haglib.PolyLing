@@ -170,6 +170,9 @@ namespace Poly_Ling.Player
         public VisualElement NormalTransplantSection { get; private set; }
         public VisualElement ThinPlateMorphSection { get; private set; }
         public VisualElement FaceHideSection       { get; private set; }
+        public VisualElement DuplicateSelectionSection { get; private set; }
+        public VisualElement TriangleRelocateSection   { get; private set; }
+        public VisualElement EdgeTriangleSection       { get; private set; }
         public VisualElement MergeMeshesSection    { get; private set; }
         public VisualElement BooleanSection        { get; private set; }
         public VisualElement MorphSection          { get; private set; }
@@ -502,6 +505,9 @@ namespace Poly_Ling.Player
             NormalEditSection          = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             NormalTransplantSection    = AddSection(visible: false, kind: RightPanelKind.General);
             FaceHideSection            = AddSection(visible: false, kind: RightPanelKind.Tool3D);
+            DuplicateSelectionSection  = AddSection(visible: false, kind: RightPanelKind.Tool3D);
+            TriangleRelocateSection    = AddSection(visible: false, kind: RightPanelKind.Tool3D);
+            EdgeTriangleSection        = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MergeMeshesSection         = AddSection(visible: false, kind: RightPanelKind.General);
             BooleanSection             = AddSection(visible: false, kind: RightPanelKind.General);
             MorphSection               = AddSection(visible: false, kind: RightPanelKind.General);

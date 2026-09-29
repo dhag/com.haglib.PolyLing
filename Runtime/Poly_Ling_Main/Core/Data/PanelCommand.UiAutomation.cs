@@ -63,11 +63,15 @@ namespace Poly_Ling.Data
         [PLParam(Description = "表示したあと項目を枠で強調するか。省くと強調する")]
         public bool Highlight { get; }
 
-        public UiRevealCommand(int modelIndex, string controlId, bool highlight = true)
+        [PLParam(Description = "強調するとき、今出ている枠を残して足す。省くと前の枠を消してから強調する")]
+        public bool Add { get; }
+
+        public UiRevealCommand(int modelIndex, string controlId, bool highlight = true, bool add = false)
             : base(modelIndex)
         {
             ControlId = controlId ?? "";
             Highlight = highlight;
+            Add       = add;
         }
     }
 
@@ -152,7 +156,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>指定した項目を枠で強調する。</summary>
-    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定した項目を枠で強調する。強調は 1 か所だけで、別のパネルへ切り替えると消える。項目が表示されていないときは失敗する（先に uiReveal を使う）。")]
+    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定した項目を枠で強調する。add を立てると今出ている枠を残して足す（折り畳みの見出しとその中のボタンを同時に囲むなど）。立てないと前の枠を消してから強調する。右ペインのパネルを切り替えると枠は全部消える。項目が表示されていないときは失敗する（先に uiReveal を使う）。左ペインの部品は panelId=leftPane の項目。")]
     public sealed class UiHighlightCommand : PanelCommand
     {
         [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
@@ -161,12 +165,23 @@ namespace Poly_Ling.Data
         [PLParam(Description = "true で強調する。false でこの項目の強調を消す。省くと強調する")]
         public bool Enabled { get; }
 
-        public UiHighlightCommand(int modelIndex, string controlId, bool enabled = true)
+        [PLParam(Description = "今出ている枠を残して足す。省くと前の枠を消してから強調する")]
+        public bool Add { get; }
+
+        public UiHighlightCommand(int modelIndex, string controlId, bool enabled = true, bool add = false)
             : base(modelIndex)
         {
             ControlId = controlId ?? "";
             Enabled   = enabled;
+            Add       = add;
         }
+    }
+
+    /// <summary>強調の枠を全部消す。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "uiHighlight / uiReveal で出した強調の枠を全部消す。")]
+    public sealed class UiClearHighlightsCommand : PanelCommand
+    {
+        public UiClearHighlightsCommand(int modelIndex = 0) : base(modelIndex) { }
     }
 
     /// <summary>画面キャプチャを始める。</summary>

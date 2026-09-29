@@ -296,6 +296,13 @@ namespace Poly_Ling.Player
             if (ctx != null) _faceExtrudeHandler?.Activate(ctx);
         }
 
+        private void ShowEdgeTrianglePanel()
+        {
+            ShowCategory1Panel(InteractionMode.EdgeTriangle);
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _edgeTriangleHandler?.Activate(ctx);
+        }
+
         private void ShowEdgeTopologyPanel()
         {
             ShowCategory1Panel(InteractionMode.EdgeTopology);

@@ -113,6 +113,8 @@ namespace Poly_Ling.Tools
         private List<int> _targetLines = new List<int>();
         /// <summary>四角形を裏返す線分（表をカメラ側に向けるため）。</summary>
         private HashSet<int> _reversedLines = new HashSet<int>();
+        /// <summary>線分ごとに ExecuteExtrude が足した四角形の面索引（コマンド経路で表裏を直すのに使う）。</summary>
+        private readonly Dictionary<int, List<int>> _lineQuadFaces = new Dictionary<int, List<int>>();
 
         // Undo
         private MeshObjectSnapshot _snapshotBefore;
@@ -232,6 +234,7 @@ namespace Poly_Ling.Tools
             _targetEdges.Clear();
             _targetLines.Clear();
             _reversedLines.Clear();
+            _lineQuadFaces.Clear();
             _snapshotBefore = null;
             _accumMove = Vector3.zero;
             _screenTotal = Vector2.zero;
@@ -283,11 +286,16 @@ namespace Poly_Ling.Tools
         /// <param name="localOffset">対象メッシュのローカル空間での押し出し量（newPositions が無いとき）。</param>
         /// <param name="newPositions">最上段の複製頂点の最終位置（ローカル、複製を作る順）。null なら localOffset を使う。</param>
         /// <param name="segments">段数（最低 1）。</param>
+        /// <param name="extrudeScale">
+        /// 拡大・縮小しながら押し出す倍率（ギズモの拡大縮小押し出しと同じ形）。
+        /// 最上段を「押し出し元の頂点の重心 + (元の位置 - 重心) × 倍率 + localOffset」に置く。
+        /// 0,0,0 は使わない。newPositions があるときは使わない。
+        /// </param>
         /// <param name="reason">実行できなかった理由。成功時は null。</param>
         public bool ApplyExtrudeFromCommand(
             ToolContext ctx, IReadOnlyList<VertexPair> edges, IReadOnlyList<int> lines,
             IEnumerable<int> reversedLines, Vector3 localOffset, IReadOnlyList<Vector3> newPositions,
-            int segments, out string reason)
+            int segments, Vector3 extrudeScale, out string reason)
         {
             reason = null;
             segments = Mathf.Max(1, segments);
@@ -306,8 +314,12 @@ namespace Poly_Ling.Tools
 
             if (edges != null)
                 foreach (var e in edges)
+                {
                     if (e.V1 < 0 || e.V1 >= mo.VertexCount || e.V2 < 0 || e.V2 >= mo.VertexCount)
                     { reason = $"辺 ({e.V1},{e.V2}) の頂点番号が範囲外です"; return false; }
+                    if (!FindAdjacentFace(mo, e.V1, e.V2).HasValue)
+                    { reason = $"辺 ({e.V1},{e.V2}) を含む面がありません"; return false; }
+                }
 
             if (lines != null)
                 foreach (int li in lines)
@@ -315,7 +327,9 @@ namespace Poly_Ling.Tools
                     { reason = $"線分 {li} は範囲外か、線分ではありません"; return false; }
 
             bool usePositions = newPositions != null && newPositions.Count > 0;
-            if (!usePositions && localOffset.sqrMagnitude < 1e-10f)
+            bool useScale     = !usePositions && extrudeScale.sqrMagnitude > 1e-12f;
+            if (!usePositions && localOffset.sqrMagnitude < 1e-10f
+                && (!useScale || (extrudeScale - Vector3.one).sqrMagnitude < 1e-12f))
             { reason = "押し出し量が 0 です"; return false; }
 
             try
@@ -362,11 +376,38 @@ namespace Poly_Ling.Tools
                     mo.InvalidatePositionCache();
                     ctx.SyncMesh?.Invoke();
                 }
+                else if (useScale)
+                {
+                    // 量 0 で複製してから、最上段を重心中心の倍率＋平行移動で置く。途中の段は k/N で結ぶ。
+                    ExecuteExtrude(ctx, Vector3.zero, segments);
+                    Vector3 pivot = Vector3.zero;
+                    int topCount = 0;
+                    foreach (var dv in _extrudeDragVertices)
+                        if (dv.Top) { pivot += dv.BasePos; topCount++; }
+                    if (topCount > 0) pivot /= topCount;
+
+                    foreach (var dv in _extrudeDragVertices)
+                    {
+                        Vector3 top = pivot + Vector3.Scale(dv.BasePos - pivot, extrudeScale) + localOffset;
+                        mo.Vertices[dv.Index].Position = dv.Top ? top : Vector3.Lerp(dv.BasePos, top, dv.T);
+                    }
+                    mo.InvalidatePositionCache();
+                    ctx.SyncMesh?.Invoke();
+                }
                 else
                 {
                     _accumMove = localOffset;
                     ExecuteExtrude(ctx, localOffset, segments);
                 }
+
+                // 裏返す線分の指定が無ければ、マウス・ギズモ経路と同じく
+                // 置き終えた位置でカメラ側を表にする（指定があればそれに従う）。
+                if (_reversedLines.Count == 0 && _targetLines.Count > 0)
+                {
+                    DecideLineWindingLocal(ctx, mo);
+                    if (FlipLineQuads(mo)) ctx.SyncMesh?.Invoke();
+                }
+
                 EndExtrude(ctx);   // Undo 記録
             }
             finally
@@ -375,6 +416,36 @@ namespace Poly_Ling.Tools
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// _reversedLines に入った線分の四角形を、ExecuteExtrude の rev と同じ並び
+        /// （a0,a1,b1,b0 → a1,a0,b0,b1）に並べ替えて裏返す。1 枚でも裏返したら true。
+        /// </summary>
+        private bool FlipLineQuads(MeshObject mo)
+        {
+            bool flipped = false;
+            foreach (int lineIdx in _reversedLines)
+            {
+                if (!_lineQuadFaces.TryGetValue(lineIdx, out var faces)) continue;
+                foreach (int fi in faces)
+                {
+                    if (fi < 0 || fi >= mo.FaceCount) continue;
+                    var f = mo.Faces[fi];
+                    if (f.VertexCount != 4) continue;
+                    Swap4(f.VertexIndices);
+                    if (f.UVIndices.Count == 4) Swap4(f.UVIndices);
+                    if (f.NormalIndices.Count == 4) Swap4(f.NormalIndices);
+                    flipped = true;
+                }
+            }
+            return flipped;
+
+            static void Swap4(List<int> l)
+            {
+                int t = l[0]; l[0] = l[1]; l[1] = t;
+                t = l[2]; l[2] = l[3]; l[3] = t;
+            }
         }
 
         /// <summary>押す前のスナップショットへ戻す（Undo は積まない）。</summary>
@@ -643,6 +714,7 @@ namespace Poly_Ling.Tools
         {
             var meshObject = ctx.ActiveMeshObject;
             _vertexRemap.Clear();
+            _lineQuadFaces.Clear();
             int n = Mathf.Max(1, segments);
             _activeSegments = n;
 
@@ -720,15 +792,13 @@ namespace Poly_Ling.Tools
             {
                 if (!row0.ContainsKey(edge.V0) || !row0.ContainsKey(edge.V1)) continue;
 
-                bool reverseWinding = false;
-                if (edge.AdjacentFace.HasValue && edge.AdjacentFace.Value < meshObject.FaceCount)
-                {
-                    var adjFace = meshObject.Faces[edge.AdjacentFace.Value];
-                    int idxV0 = adjFace.VertexIndices.IndexOf(edge.V0);
-                    int idxV1 = adjFace.VertexIndices.IndexOf(edge.V1);
-                    if (idxV0 >= 0 && idxV1 >= 0)
-                        reverseWinding = (idxV1 == (idxV0 + 1) % adjFace.VertexCount);
-                }
+                // 隣の面（CollectTargetEdges で v0 と v1 が隣り合う面に限定済み）が
+                // v0→v1 の順で通るなら、新しい四角形は v1→v0 で通るよう裏返す。v1→v0 ならそのまま。
+                if (!edge.AdjacentFace.HasValue || edge.AdjacentFace.Value >= meshObject.FaceCount) continue;
+                var adjFace = meshObject.Faces[edge.AdjacentFace.Value];
+                int idxV0 = adjFace.VertexIndices.IndexOf(edge.V0);
+                int idxV1 = adjFace.VertexIndices.IndexOf(edge.V1);
+                bool reverseWinding = (idxV1 == (idxV0 + 1) % adjFace.VertexCount);
 
                 for (int k = 1; k <= n; k++)
                 {
@@ -749,13 +819,16 @@ namespace Poly_Ling.Tools
                 if (!row0.ContainsKey(v0) || !row0.ContainsKey(v1)) continue;
 
                 bool rev = _reversedLines.Contains(lineIdx);
+                var quadFaces = new List<int>(n);
                 for (int k = 1; k <= n; k++)
                 {
                     int a0 = rows[k - 1][v0], a1 = rows[k - 1][v1];
                     int b0 = rows[k][v0],     b1 = rows[k][v1];
+                    quadFaces.Add(meshObject.FaceCount);
                     if (rev) AddQuad(a1, a0, b0, b1);
                     else     AddQuad(a0, a1, b1, b0);
                 }
+                _lineQuadFaces[lineIdx] = quadFaces;
                 newEdges.Add(new VertexPair(rows[n][v0], rows[n][v1]));
             }
 
@@ -808,13 +881,16 @@ namespace Poly_Ling.Tools
             _targetEdges.Clear();
             _targetLines.Clear();
 
+            // 辺は隣の面から表裏が一意に決まる。辺として持つ面が無いものは辺ではないので対象にしない。
             foreach (var ep in ctx.SelectionState.Edges)
             {
+                int? adj = FindAdjacentFace(ctx.ActiveMeshObject, ep.V1, ep.V2);
+                if (!adj.HasValue) continue;
                 _targetEdges.Add(new EdgeInfo
                 {
                     V0 = ep.V1,
                     V1 = ep.V2,
-                    AdjacentFace = FindAdjacentFace(ctx.ActiveMeshObject, ep.V1, ep.V2)
+                    AdjacentFace = adj
                 });
             }
 
@@ -828,12 +904,21 @@ namespace Poly_Ling.Tools
             }
         }
 
+        /// <summary>
+        /// 辺 v0-v1 を辺として持つ面（3 頂点以上で、v0 と v1 が頂点の並びで隣り合う面）を返す。
+        /// 2 頂点を対角に含むだけの面は辺の向きを決められないので返さない。無ければ null。
+        /// </summary>
         private int? FindAdjacentFace(MeshObject md, int v0, int v1)
         {
             for (int i = 0; i < md.FaceCount; i++)
             {
                 var f = md.Faces[i];
-                if (f.VertexCount >= 3 && f.VertexIndices.Contains(v0) && f.VertexIndices.Contains(v1))
+                int n = f.VertexCount;
+                if (n < 3) continue;
+                int i0 = f.VertexIndices.IndexOf(v0);
+                int i1 = f.VertexIndices.IndexOf(v1);
+                if (i0 < 0 || i1 < 0) continue;
+                if (i1 == (i0 + 1) % n || i0 == (i1 + 1) % n)
                     return i;
             }
             return null;

@@ -31,7 +31,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_Underlay,version,1.0");
-            sb.AppendLine("#direction,filePath,topLeftX,topLeftY,scaleOriginX,scaleOriginY,scaleX,scaleY,corner0X,corner0Y,corner0Z,corner1X,corner1Y,corner1Z");
+            sb.AppendLine("#direction,filePath,topLeftX,topLeftY,scaleOriginX,scaleOriginY,scaleX,scaleY,corner0X,corner0Y,corner0Z,corner1X,corner1Y,corner1Z,viewRelative,contrast,intensity");
             foreach (UnderlayDirection dir in Enum.GetValues(typeof(UnderlayDirection)))
             {
                 var s = u.Get(dir);
@@ -42,7 +42,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                   .Append(Fl(s.ScaleOrigin.x)).Append(',').Append(Fl(s.ScaleOrigin.y)).Append(',')
                   .Append(Fl(s.Scale.x)).Append(',').Append(Fl(s.Scale.y)).Append(',')
                   .Append(Fl(s.Corner0.x)).Append(',').Append(Fl(s.Corner0.y)).Append(',').Append(Fl(s.Corner0.z)).Append(',')
-                  .Append(Fl(s.Corner1.x)).Append(',').Append(Fl(s.Corner1.y)).Append(',').Append(Fl(s.Corner1.z))
+                  .Append(Fl(s.Corner1.x)).Append(',').Append(Fl(s.Corner1.y)).Append(',').Append(Fl(s.Corner1.z)).Append(',')
+                  .Append(s.ViewRelative ? "1" : "0").Append(',')
+                  .Append(Fl(s.Contrast)).Append(',').Append(Fl(s.Intensity))
                   .AppendLine();
             }
 
@@ -68,6 +70,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 s.Scale       = new Vector2(PFl(cols, 6, 1f), PFl(cols, 7, 1f));
                 s.Corner0     = new Vector3(PFl(cols, 8),  PFl(cols, 9),  PFl(cols, 10));
                 s.Corner1     = new Vector3(PFl(cols, 11), PFl(cols, 12), PFl(cols, 13));
+                // 15 列目が無い行は以前の画素基準（表示時に今の形式へ直す）。
+                s.ViewRelative = cols.Length > 14 && cols[14].Trim() == "1";
+                // 16・17 列目（コントラスト・明るさ）が無い行は 1（元画像のまま）。
+                s.Contrast     = Mathf.Clamp01(PFl(cols, 15, 1f));
+                s.Intensity    = Mathf.Clamp01(PFl(cols, 16, 1f));
             }
 
             model.Underlay = u.IsEmpty ? null : u;

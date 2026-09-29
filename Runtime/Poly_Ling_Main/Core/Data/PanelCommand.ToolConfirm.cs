@@ -101,8 +101,11 @@ namespace Poly_Ling.Data
         [PLParam(Description = "対象の線分（頂点数 2 の面）の索引。無ければ空")]
         public int[]   LineIndices { get; }
 
-        [PLParam(Description = "四角形を裏返す線分の索引（LineIndices の一部）。省くと v0,v1,v1',v0' の順で作る")]
+        [PLParam(Description = "四角形を裏返す線分の索引（LineIndices の一部）。省くと、置き終えた位置で View のカメラ側が表になるように各線分の向きを決める")]
         public int[]   ReversedLineIndices { get; }
+
+        [PLParam(Description = "線分から作る四角形の表を向けるカメラのビュー。Perspective（メイン画面）/ Top / Front / Side。ReversedLineIndices を省いたときだけ使う。既定は Perspective")]
+        public ViewportKind View { get; }
 
         [PLParam(TextKey = "EdgeExtrudeLocalOffset",
                  Description = "押し出し量。対象メッシュのローカル空間のベクトル。NewVertexPositions を指定したときは使わない")]
@@ -116,6 +119,9 @@ namespace Poly_Ling.Data
                  Min = 1)]
         public int Segments { get; }
 
+        [PLParam(Description = "拡大・縮小しながら押し出すときの軸ごとの倍率（1 は等倍）。複製頂点を、押し出し元の頂点の重心を中心にこの倍率で置き、LocalOffset も足す。省くか 0,0,0 なら使わない。NewVertexPositions を指定したときは使わない")]
+        public Vector3 ExtrudeScale { get; }
+
         public EdgeExtrudeCommand(
             int modelIndex, int[] masterIndices,
             int[] edgeVertexPairs, int[] lineIndices,
@@ -123,9 +129,13 @@ namespace Poly_Ling.Data
             int[] reversedLineIndices = null,
             ulong[] objectIds = null,
             float[] newVertexPositions = null,
-            int segments = 1)
+            int segments = 1,
+            Vector3 extrudeScale = default,
+            ViewportKind view = ViewportKind.Perspective)
             : base(modelIndex)
         {
+            View                = view;
+            ExtrudeScale        = extrudeScale;
             MasterIndices       = masterIndices ?? System.Array.Empty<int>();
             ObjectIds           = objectIds;
             EdgeVertexPairs     = edgeVertexPairs ?? System.Array.Empty<int>();
@@ -411,6 +421,78 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
+    // 辺から三角形（EdgeTriangleToolHandler / EdgeTriangleOps）
+    // ================================================================
+
+    /// <summary>
+    /// 辺から三角形。辺 (EdgeV1, EdgeV2) と新しい頂点 1 つで三角形を作る。
+    /// 実処理は EdgeTriangleOps。編集対象メッシュ 1 本にだけ効く。
+    ///
+    /// 【表裏】辺がちょうど 1 枚の面（頂点 3 以上）に属するときは、その面と表裏をそろえる。
+    ///   そうでないとき（線分だけ・2 枚以上）は ViewPosition から表が見える向きにする。
+    /// 【四角形】MakeQuad で、辺が属する面がちょうど 1 枚の三角形なら、三角形を足さずに
+    ///   その三角形へ新しい頂点を差し込んで四角形にする。
+    /// </summary>
+    [PLCommand(Category = "geometry.topology", Effects = PLCommandEffect.Topology, Verification = PLCommandVerification.Topology, Writes = PLWriteScope.Targets, Description =
+        "辺から三角形。辺の 2 頂点と新しい頂点 1 つで三角形を作る。辺がちょうど 1 枚の面に属するときはその面と表裏をそろえ、"
+        + "そうでないときは viewPosition から表が見える向きにする。makeQuad を立てると、辺が属する面がちょうど 1 枚の三角形のとき、"
+        + "三角形を足さずにその三角形へ新しい頂点を差し込んで四角形にする。")]
+    [PLResult("vertexIndex", PLResultKind.Integer, Description = "作った頂点の番号")]
+    [PLResult("faceIndex",   PLResultKind.Integer, Description = "作った面、または四角形にした面の番号")]
+    [PLResult("madeQuad",    PLResultKind.Flag,    Description = "三角形を四角形にしたか")]
+    [PLResult("winding",     PLResultKind.Text,    Description = "表裏の決め方。adjacentFace（隣の面にそろえた）/ view（視点から見える向き）")]
+    public class EdgeTriangleCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 Description = "対象の描画オブジェクトの masterIndex 配列。要素は 1 個で、編集対象と一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(Description = "辺の頂点 1", Required = true)]
+        public int     EdgeV1 { get; }
+
+        [PLParam(Description = "辺の頂点 2", Required = true)]
+        public int     EdgeV2 { get; }
+
+        [PLParam(Description = "新しい頂点のメッシュローカル座標", Required = true)]
+        public Vector3 Position { get; }
+
+        [PLParam(Description = "辺上の押した位置（EdgeV1 から EdgeV2 への比率 0〜1）。新しい頂点の UV の補間と、ウェイト等を写す端点（0.5 未満なら EdgeV1）の選択に使う")]
+        public float   EdgeT { get; }
+
+        [PLParam(Description = "辺が属する面がちょうど 1 枚の三角形なら、三角形を足さずに四角形にする")]
+        public bool    MakeQuad { get; }
+
+        [PLParam(Description = "面の表を向ける先（ワールド座標）。表裏が隣の面で決まらないときだけ使う", Required = true)]
+        public Vector3 ViewPosition { get; }
+
+        [PLParam(Description = "隣の面が無いときに新しい面へ付ける材質番号")]
+        public int     MaterialIndex { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
+        public ulong[] ObjectIds { get; }
+
+        public EdgeTriangleCommand(
+            int modelIndex, int[] masterIndices, int edgeV1, int edgeV2,
+            Vector3 position, Vector3 viewPosition,
+            float edgeT = 0.5f, bool makeQuad = true, int materialIndex = 0,
+            ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            EdgeV1        = edgeV1;
+            EdgeV2        = edgeV2;
+            Position      = position;
+            ViewPosition  = viewPosition;
+            EdgeT         = edgeT;
+            MakeQuad      = makeQuad;
+            MaterialIndex = materialIndex;
+            ObjectIds     = objectIds;
+        }
+    }
+
+    // ================================================================
     // ナイフ（KnifeTool）
     //
     // 4 モードで確定条件も実処理も違うので、モードごとに別コマンドにする。
@@ -600,9 +682,9 @@ namespace Poly_Ling.Data
     /// シンプル切断。画面上の 2 点を結ぶ直線で切る。実処理は SimpleCutExecutor.Execute。
     ///
     /// 【このコマンドは自己完結しない】
-    ///   ScreenP0 / ScreenP1 は「実行時のアクティブビューポート」の座標
-    ///   （Y=0 が下・原点が左下）として解釈される。視点やビューポート寸法が
-    ///   変われば同じ値でも結果が変わる。
+    ///   ScreenP0 / ScreenP1 は View で指定したビューポートの座標
+    ///   （Y=0 が下・原点が左下）として解釈される。そのビューの視点や寸法が
+    ///   変われば同じ値でも結果が変わる。カレントビュー（ポインタが最後に乗ったビュー）には依らない。
     ///   切る面の判定（カリング）だけは FaceCulledMask で明示できるようにしてある。
     ///
     /// 【型で守れない制約】受け口が実行時に確かめる。
@@ -625,12 +707,12 @@ namespace Poly_Ling.Data
         public ulong[] ObjectIds     { get; }
 
         [PLParam(TextKey = "KnifeSimpleP0",
-                 Description = "切断線の 1 点目。実行時のビューポート座標（Y=0 が下）",
+                 Description = "切断線の 1 点目。View のビューポート座標（Y=0 が下）",
                  Required = true)]
         public Vector2 ScreenP0 { get; }
 
         [PLParam(TextKey = "KnifeSimpleP1",
-                 Description = "切断線の 2 点目。実行時のビューポート座標（Y=0 が下）",
+                 Description = "切断線の 2 点目。View のビューポート座標（Y=0 が下）",
                  Required = true)]
         public Vector2 ScreenP1 { get; }
 
@@ -642,14 +724,34 @@ namespace Poly_Ling.Data
                  Description = "5 角以上になった面を三角形と四角形へ分け直す。既定は true")]
         public bool TriQuad { get; }
 
+        [PLParam(Description = "ScreenP0 / ScreenP1 をビュー基準座標として読む。ビュー中央が原点、ビューの高さを 1、上が＋。実行時のビューの大きさで画素座標へ直すので、ビューの大きさが変わっても同じ所を切れる。既定は false（画素座標）")]
+        public bool ViewNormalized { get; }
+
+        [PLParam(Description = "1 点目を既存頂点で指定する。0 以上なら ScreenP0 の代わりに、実行時のこの頂点の画面位置を使う。既定は -1（ScreenP0 を使う）")]
+        public int StartVertex { get; }
+
+        [PLParam(Description = "2 点目を既存頂点で指定する。0 以上なら ScreenP1 の代わりに、実行時のこの頂点の画面位置を使う。既定は -1（ScreenP1 を使う）")]
+        public int EndVertex { get; }
+
+        [PLParam(Description = "切断線を引くビュー。Perspective（メイン画面）/ Top / Front / Side。ScreenP0 / ScreenP1 はこのビューの座標として読み、頂点の投影もこのビューで行う。既定は Perspective")]
+        public ViewportKind View { get; }
+
         public KnifeSimpleCutCommand(
             int modelIndex, int[] masterIndices,
             Vector2 screenP0, Vector2 screenP1,
             bool[] faceCulledMask = null,
             bool triQuad          = true,
-            ulong[] objectIds     = null)
+            ulong[] objectIds     = null,
+            bool viewNormalized   = false,
+            int startVertex       = -1,
+            int endVertex         = -1,
+            ViewportKind view     = ViewportKind.Perspective)
             : base(modelIndex)
         {
+            View           = view;
+            ViewNormalized = viewNormalized;
+            StartVertex    = startVertex;
+            EndVertex      = endVertex;
             MasterIndices  = masterIndices ?? System.Array.Empty<int>();
             ObjectIds      = objectIds;
             ScreenP0       = screenP0;

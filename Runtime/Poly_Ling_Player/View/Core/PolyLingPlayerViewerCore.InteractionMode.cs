@@ -495,6 +495,11 @@ namespace Poly_Ling.Player
                     // Split → Vertex ホバーのみ、Flip/Dissolve → Edge ホバーのみ
                     // (override は ResolveToolSelectModeOverride が同じ規則で決める)
                     break;
+                case InteractionMode.EdgeTriangle:
+                    // 辺から三角形: 辺ホバーで掴み、ドラッグで頂点を引き出す。選択は触らない。
+                    _vertexInteractor?.SetToolHandler(_edgeTriangleHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeTriangleHandler?.UpdateHover(pos, ctx));
+                    break;
                 case InteractionMode.Knife:
                     _vertexInteractor?.SetToolHandler(_knifeHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _knifeHandler?.UpdateHover(pos, ctx));

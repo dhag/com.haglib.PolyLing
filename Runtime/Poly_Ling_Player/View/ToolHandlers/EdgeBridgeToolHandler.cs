@@ -38,7 +38,25 @@ namespace Poly_Ling.Player
         // 依存
         // ================================================================
 
-        private ProjectContext     _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        // プロジェクトが替わったら、拾いと境界辺キャッシュは前のプロジェクトのものなので捨てる。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _lastSeenProject;
+        private ProjectContext _project
+        {
+            get
+            {
+                var p = GetProject?.Invoke();
+                if (!ReferenceEquals(p, _lastSeenProject))
+                {
+                    _lastSeenProject = p;
+                    ClearPicks();
+                    InvalidateBoundaryCache();
+                }
+                return p;
+            }
+        }
         private MeshUndoController _undoController;
         private CommandQueue       _commandQueue;
 
@@ -571,13 +589,6 @@ namespace Poly_Ling.Player
         // ================================================================
         // 初期化
         // ================================================================
-
-        public void SetProject(ProjectContext project)
-        {
-            _project = project;
-            ClearPicks();
-            InvalidateBoundaryCache();
-        }
 
         public void SetUndoController(MeshUndoController ctrl) { _undoController = ctrl; }
         public void SetCommandQueue(CommandQueue queue)        { _commandQueue = queue; }

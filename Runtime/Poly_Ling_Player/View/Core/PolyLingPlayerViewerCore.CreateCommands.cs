@@ -55,6 +55,8 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnAdvancedSelectByAttribute = ExecuteAdvancedSelectByAttribute;
             _commandDispatcher.OnFaceMerge           = ExecuteFaceMerge;
             _commandDispatcher.OnQuad4To1            = ExecuteQuad4To1;
+            _commandDispatcher.OnTriangleRelocate    = ExecuteTriangleRelocate;
+            _commandDispatcher.OnEdgeTriangle        = ExecuteEdgeTriangle;
             _commandDispatcher.OnTri4To1             = ExecuteTri4To1;
             _commandDispatcher.OnVertexDissolve      = ExecuteVertexDissolve;
             _commandDispatcher.OnSplitVertices       = ExecuteSplitVertices;

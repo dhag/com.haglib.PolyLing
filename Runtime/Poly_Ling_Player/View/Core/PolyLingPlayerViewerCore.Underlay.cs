@@ -60,10 +60,21 @@ namespace Poly_Ling.Player
             }
             else if (!c.KeepPlacement)
             {
-                s.TopLeft     = c.TopLeft;
-                s.ScaleOrigin = c.ScaleOrigin;
-                s.Scale       = new Vector2(Mathf.Max(0.01f, c.ScaleX), Mathf.Max(0.01f, c.ScaleY));
+                // 画面基準：ビュー中央からの位置・ビューの高さ基準の倍率（UnderlayData.cs 冒頭）。
+                s.TopLeft      = c.TopLeft;
+                s.ScaleOrigin  = c.ScaleOrigin;
+                s.Scale        = new Vector2(Mathf.Max(0.01f, c.ScaleX), Mathf.Max(0.01f, c.ScaleY));
+                s.ViewRelative = true;
             }
+            else if (cur == null || cur.IsEmpty)
+            {
+                // 初めて置く画面基準の下絵は、ビュー中央に高さを合わせて置く。
+                s.SetDefaultScreenPlacement(tex.width, tex.height);
+            }
+
+            // 表示調整。負は今の値のまま（置き方の指定とは別に効く）。
+            if (c.Contrast  >= 0f) s.Contrast  = Mathf.Clamp01(c.Contrast);
+            if (c.Intensity >= 0f) s.Intensity = Mathf.Clamp01(c.Intensity);
 
             if (model.Underlay == null) model.Underlay = new UnderlayData();
             model.Underlay.Set(dir, s);
@@ -113,6 +124,8 @@ namespace Poly_Ling.Player
             var paths = new List<string>();
             var placements = new List<string>();
             var sizes = new List<string>();
+            var contrasts = new List<string>();
+            var intensities = new List<string>();
 
             var u = model.Underlay;
             if (u != null)
@@ -130,6 +143,8 @@ namespace Poly_Ling.Player
 
                     var tex = _underlay.Load(s.FilePath, reload: false, out _);
                     sizes.Add(tex != null ? $"{tex.width}x{tex.height}" : "");
+                    contrasts.Add(F(s.Contrast));
+                    intensities.Add(F(s.Intensity));
                 }
             }
 
@@ -139,7 +154,9 @@ namespace Poly_Ling.Player
                 data.Texts("directions", dirs)
                     .Texts("filePaths", paths)
                     .Texts("placements", placements)
-                    .Texts("imageSizes", sizes);
+                    .Texts("imageSizes", sizes)
+                    .Texts("contrasts", contrasts)
+                    .Texts("intensities", intensities);
             }
             return null;
         }

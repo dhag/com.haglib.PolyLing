@@ -60,6 +60,67 @@ namespace Poly_Ling.Player
             return Load(s.FilePath, reload: false, out _);
         }
 
+        // 方向ごとの表示用画像（コントラスト・明るさを画素へ焼いたもの）。
+        private sealed class Adjusted
+        {
+            public Texture2D Source;
+            public float     Contrast;
+            public float     Intensity;
+            public Texture2D Texture;
+        }
+        private readonly Dictionary<UnderlayDirection, Adjusted> _adjusted =
+            new Dictionary<UnderlayDirection, Adjusted>();
+
+        /// <summary>
+        /// 現在モデルの指定方向の表示用画像。コントラスト・明るさが共に 1 なら元画像そのもの。
+        /// それ以外は 表示 = 明るさ × (コントラスト × 画素 + (1 − コントラスト) × 0.5) を画素へ焼いた複製
+        /// （色空間や UI の合成のしかたに左右されないよう、画像の値そのものを変える）。
+        /// 元画像・値が変わらなければ作り直さない。未設定・読めないときは null。
+        /// </summary>
+        public Texture2D GetDisplayTexture(UnderlayDirection dir)
+        {
+            var s   = Peek(dir);
+            var src = GetTexture(dir);
+            if (s == null || src == null) return null;
+
+            float c = Mathf.Clamp01(s.Contrast);
+            float k = Mathf.Clamp01(s.Intensity);
+            if (c >= 1f && k >= 1f) return src;
+
+            if (_adjusted.TryGetValue(dir, out var a) && a.Texture != null
+                && a.Source == src && a.Contrast == c && a.Intensity == k)
+                return a.Texture;
+
+            if (a == null) { a = new Adjusted(); _adjusted[dir] = a; }
+            if (a.Texture == null || a.Texture.width != src.width || a.Texture.height != src.height)
+            {
+                if (a.Texture != null) UnityEngine.Object.Destroy(a.Texture);
+                a.Texture = new Texture2D(src.width, src.height, TextureFormat.RGBA32, src.mipmapCount > 1);
+                a.Texture.name = src.name + "_adjusted";
+            }
+            a.Texture.filterMode = src.filterMode;
+            a.Texture.wrapMode   = src.wrapMode;
+
+            var px = src.GetPixels32();
+            float mul = k * c;
+            float add = k * (1f - c) * 127.5f;
+            for (int i = 0; i < px.Length; i++)
+            {
+                var p = px[i];
+                p.r = (byte)Mathf.Clamp(Mathf.RoundToInt(p.r * mul + add), 0, 255);
+                p.g = (byte)Mathf.Clamp(Mathf.RoundToInt(p.g * mul + add), 0, 255);
+                p.b = (byte)Mathf.Clamp(Mathf.RoundToInt(p.b * mul + add), 0, 255);
+                px[i] = p;
+            }
+            a.Texture.SetPixels32(px);
+            a.Texture.Apply(true);
+
+            a.Source    = src;
+            a.Contrast  = c;
+            a.Intensity = k;
+            return a.Texture;
+        }
+
         /// <summary>
         /// 画像を読む（読んであればそれを返す）。reload で読み直す。
         /// 読めなければ null と理由。
@@ -116,6 +177,9 @@ namespace Poly_Ling.Player
             foreach (var t in _cache.Values)
                 if (t != null) UnityEngine.Object.Destroy(t);
             _cache.Clear();
+            foreach (var a in _adjusted.Values)
+                if (a?.Texture != null) UnityEngine.Object.Destroy(a.Texture);
+            _adjusted.Clear();
         }
     }
 }

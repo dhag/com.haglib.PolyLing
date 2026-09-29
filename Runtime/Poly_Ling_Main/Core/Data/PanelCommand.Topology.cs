@@ -352,6 +352,44 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 三角形の移し替え。三角形 1 枚と四角形 3 枚に囲まれた選択頂点を消し、
+    /// 周りの三角形を向かいの四角形の対角の隅の周りの三角形 3 枚へ移す。
+    /// 実処理は TriangleRelocateTool / TriangleRelocateOps。対象は選択中の描画オブジェクト全部。
+    /// </summary>
+    [PLCommand(Category = "geometry.topology", Writes = PLWriteScope.Targets, Description =
+        "三角形の移し替え。三角形 1 枚と四角形 3 枚に囲まれた選択頂点 V について、"
+        + "三角形の向かいの四角形を対角線で割って V 側を捨て、残る三角形を対角線上の 2 点で 3 つに割り、"
+        + "両隣の四角形の V をその 2 点へつなぎ変え、三角形を四角形に張り替えて V を消す。"
+        + "2 点の位置は対角線の端 b から他端 a への比率 t1・t2（V の周りを面の巻き方向に回ったとき、三角形の直前の四角形と共有する端が b）。既定は 1/3・2/3。")]
+    public class TriangleRelocateCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 Description = "対象の描画オブジェクトの masterIndex 配列。実行時点の選択オブジェクトと一致すること",
+                 Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(Description = "新しい頂点 p の位置。対角線 b→a の比率（0 < t1 < t2 < 1）。省くと 1/3")]
+        public float   T1            { get; }
+
+        [PLParam(Description = "新しい頂点 q の位置。対角線 b→a の比率（0 < t1 < t2 < 1）。省くと 2/3")]
+        public float   T2            { get; }
+
+        [PLParam(TextKey = "ObjectIds",
+                 Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
+        public ulong[] ObjectIds     { get; }
+
+        public TriangleRelocateCommand(int modelIndex, int[] masterIndices,
+                                       float t1 = 1f / 3f, float t2 = 2f / 3f, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            T1            = t1;
+            T2            = t2;
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
     /// 選択した三角形とそれを囲む三角形 3 枚を、外側の 3 頂点を結ぶ三角形 1 枚へ張り替える。
     /// 中点細分割の逆操作。実処理は Tri4To1Tool。対象は選択中の描画オブジェクト全部。
     /// </summary>

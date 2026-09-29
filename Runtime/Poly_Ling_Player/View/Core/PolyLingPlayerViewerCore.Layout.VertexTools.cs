@@ -43,7 +43,7 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
-            _alignVerticesHandler.SetProject(ActiveProject);
+            _alignVerticesHandler.GetProject = () => ActiveProject;
             _alignVerticesHandler.SetUndoController(_editOps?.UndoController);
             _alignVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _alignVerticesSubPanel = new PlayerAlignVerticesSubPanel
@@ -63,7 +63,7 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
-            _pipeAlignHandler.SetProject(ActiveProject);
+            _pipeAlignHandler.GetProject = () => ActiveProject;
             _pipeAlignHandler.SetUndoController(_editOps?.UndoController);
             _pipeAlignHandler.SetCommandQueue(_editOps?.CommandQueue);
             _pipeAlignSubPanel = new PlayerPipeAlignSubPanel
@@ -115,7 +115,7 @@ namespace Poly_Ling.Player
                     Forward        = cam.transform.forward,
                 };
             };
-            _surfaceSnapHandler.SetProject(ActiveProject);
+            _surfaceSnapHandler.GetProject = () => ActiveProject;
             _surfaceSnapHandler.SetUndoController(_editOps?.UndoController);
             _surfaceSnapHandler.SetCommandQueue(_editOps?.CommandQueue);
             _surfaceSnapSubPanel = new PlayerSurfaceSnapSubPanel
@@ -123,6 +123,16 @@ namespace Poly_Ling.Player
                 Surface     = ToolSurface,
                 GetView     = () => ActiveProjectView,
                 SendCommand = cmd => DispatchHost(cmd),
+                ResolveCurrentCameraKind = () =>
+                {
+                    switch (ActiveViewKind())
+                    {
+                        case ViewportKind.Top:   return SurfaceSnapCameraKind.Top;
+                        case ViewportKind.Front: return SurfaceSnapCameraKind.Front;
+                        case ViewportKind.Side:  return SurfaceSnapCameraKind.Side;
+                        default:                 return SurfaceSnapCameraKind.Perspective;
+                    }
+                },
             };
             _surfaceSnapSubPanel.Build(_layoutRoot.SurfaceSnapSection);
 
@@ -137,7 +147,7 @@ namespace Poly_Ling.Player
                 // 原型はパネルが持つチェック一覧を並び順で結合したもの。
                 GetPrototype        = () => _placeObjectReshapeSubPanel?.BuildPrototype(),
             };
-            _placeObjectReshapeHandler.SetProject(ActiveProject);
+            _placeObjectReshapeHandler.GetProject = () => ActiveProject;
             _placeObjectReshapeHandler.SetUndoController(_editOps?.UndoController);
             _placeObjectReshapeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _placeObjectReshapeSubPanel = new PlayerPlaceObjectReshapeSubPanel
@@ -160,7 +170,7 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
-            _planarizeAlongBonesHandler.SetProject(ActiveProject);
+            _planarizeAlongBonesHandler.GetProject = () => ActiveProject;
             _planarizeAlongBonesHandler.SetUndoController(_editOps?.UndoController);
             _planarizeAlongBonesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _planarizeAlongBonesSubPanel = new PlayerPlanarizeAlongBonesSubPanel
@@ -208,7 +218,7 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
-            _mergeVerticesHandler.SetProject(ActiveProject);
+            _mergeVerticesHandler.GetProject = () => ActiveProject;
             _mergeVerticesHandler.SetUndoController(_editOps?.UndoController);
             _mergeVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _mergeVerticesHandler.NotifyTopologyChanged = () =>
@@ -238,7 +248,7 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
-            _splitVerticesHandler.SetProject(ActiveProject);
+            _splitVerticesHandler.GetProject = () => ActiveProject;
             _splitVerticesHandler.SetUndoController(_editOps?.UndoController);
             _splitVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
             _splitVerticesHandler.NotifyTopologyChanged = () =>
@@ -262,7 +272,7 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
-            _vertexHoleHandler.SetProject(ActiveProject);
+            _vertexHoleHandler.GetProject = () => ActiveProject;
             _vertexHoleHandler.SetUndoController(_editOps?.UndoController);
             _vertexHoleHandler.SetCommandQueue(_editOps?.CommandQueue);
             _vertexHoleHandler.NotifyTopologyChanged = () =>
@@ -286,7 +296,7 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
-            _vertexDissolveHandler.SetProject(ActiveProject);
+            _vertexDissolveHandler.GetProject = () => ActiveProject;
             _vertexDissolveHandler.SetUndoController(_editOps?.UndoController);
             _vertexDissolveHandler.SetCommandQueue(_editOps?.CommandQueue);
             _vertexDissolveHandler.NotifyTopologyChanged = () =>
@@ -314,7 +324,7 @@ namespace Poly_Ling.Player
                     ActiveProject?.CurrentModel?.GetMeshContext(idx)?.Name ?? $"#{idx}",
                 OnSeedsChanged = UpdateTopologyToolsOverlay,
             };
-            _holeRingCountHandler.SetProject(ActiveProject);
+            _holeRingCountHandler.GetProject = () => ActiveProject;
             _holeRingCountHandler.SetUndoController(_editOps?.UndoController);
             _holeRingCountHandler.SetCommandQueue(_editOps?.CommandQueue);
             _holeRingCountHandler.NotifyTopologyChanged = () =>
@@ -364,7 +374,7 @@ namespace Poly_Ling.Player
                     _edgeBridgeSubPanel?.Refresh();
                 },
             };
-            _edgeBridgeHandler.SetProject(ActiveProject);
+            _edgeBridgeHandler.GetProject = () => ActiveProject;
             _edgeBridgeHandler.SetUndoController(_editOps?.UndoController);
             _edgeBridgeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeBridgeHandler.NotifyTopologyChanged = () =>
@@ -391,7 +401,7 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
-            _tri4To1Handler.SetProject(ActiveProject);
+            _tri4To1Handler.GetProject = () => ActiveProject;
             _tri4To1Handler.SetUndoController(_editOps?.UndoController);
             _tri4To1Handler.SetCommandQueue(_editOps?.CommandQueue);
             _tri4To1Handler.NotifyTopologyChanged = () =>
@@ -414,7 +424,7 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
-            _faceMergeHandler.SetProject(ActiveProject);
+            _faceMergeHandler.GetProject = () => ActiveProject;
             _faceMergeHandler.SetUndoController(_editOps?.UndoController);
             _faceMergeHandler.SetCommandQueue(_editOps?.CommandQueue);
             _faceMergeHandler.NotifyTopologyChanged = () =>
@@ -437,7 +447,7 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
-            _quad4To1Handler.SetProject(ActiveProject);
+            _quad4To1Handler.GetProject = () => ActiveProject;
             _quad4To1Handler.SetUndoController(_editOps?.UndoController);
             _quad4To1Handler.SetCommandQueue(_editOps?.CommandQueue);
             _quad4To1Handler.NotifyTopologyChanged = () =>
@@ -454,6 +464,30 @@ namespace Poly_Ling.Player
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _quad4To1SubPanel.Build(_layoutRoot.Quad4To1Section);
+
+            // 三角形の移し替え（Quad4To1 と同じ構成）。
+            _triangleRelocateHandler = new TriangleRelocateToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _triangleRelocateHandler.GetProject = () => ActiveProject;
+            _triangleRelocateHandler.SetUndoController(_editOps?.UndoController);
+            _triangleRelocateHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _triangleRelocateHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _triangleRelocateSubPanel = new PlayerTriangleRelocateSubPanel
+            {
+                Surface     = ToolSurface,
+                GetView     = () => ActiveProjectView,
+                SendCommand = cmd => DispatchHost(cmd),
+            };
+            _triangleRelocateSubPanel.Build(_layoutRoot.TriangleRelocateSection);
 
             _vertexIdSubPanel = new PlayerVertexIdSubPanel
             {
@@ -493,12 +527,7 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
-            // ここでの SetProject は BuildLayout 時点の値 (モデル未読込なら null)。
-            // ActiveProject は _localLoader.Project が読込時に生成されるまで null なので、
-            // プロジェクト生成/切替/受信の各経路で必ず再伝播すること
-            // (EnsureDrawableMesh / PrepareHandlersForGeneratedMesh / OnMeshDataReceived /
-            //  モデル読込完了。EnsureDrawableMesh 内の設計ポイントコメント参照)。
-            _deleteSelectionHandler.SetProject(ActiveProject);
+            _deleteSelectionHandler.GetProject = () => ActiveProject;
             _deleteSelectionHandler.SetUndoController(_editOps?.UndoController);
             _deleteSelectionHandler.SetCommandQueue(_editOps?.CommandQueue);
             _deleteSelectionHandler.NotifyTopologyChanged = () =>

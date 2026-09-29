@@ -422,6 +422,35 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // ── 辺から三角形 ─────────────────────────────────────────────
+            // 押す前はホバー辺、ドラッグ中は辺と、辺の両端から新しい頂点への線を描く。
+            if (_interactionMode == InteractionMode.EdgeTriangle && _edgeTriangleHandler != null && mo != null)
+            {
+                var col = new UnityEngine.Color(0.4f, 1f, 0.5f);
+                if (_edgeTriangleHandler.IsDragging)
+                {
+                    int v0 = _edgeTriangleHandler.DragEdgeV1, v1 = _edgeTriangleHandler.DragEdgeV2;
+                    if (v0 >= 0 && v0 < mo.VertexCount && v1 >= 0 && v1 < mo.VertexCount)
+                    {
+                        var s0 = toScreen(mo.Vertices[v0].Position);
+                        var s1 = toScreen(mo.Vertices[v1].Position);
+                        var sn = toScreen(_edgeTriangleHandler.PreviewLocal);
+                        lines.Add((s0, s1, col));
+                        lines.Add((s0, sn, col));
+                        lines.Add((s1, sn, col));
+                    }
+                }
+                else if (_edgeTriangleHandler.HasHoverEdge)
+                {
+                    int v0 = _edgeTriangleHandler.HoverEdgeV1, v1 = _edgeTriangleHandler.HoverEdgeV2;
+                    if (v0 >= 0 && v0 < mo.VertexCount && v1 >= 0 && v1 < mo.VertexCount)
+                        lines.Add((toScreen(mo.Vertices[v0].Position),
+                                   toScreen(mo.Vertices[v1].Position), col));
+                }
+                panel.UpdateTopoToolOverlay(lines);
+                return;
+            }
+
             // ── EdgeTopology (Flip / Dissolve) ───────────────────────────
             // Split モードはメソッド冒頭で UpdateEdgeTopologySplitOverlay() に分岐済み。
             // ここに到達するのは Flip/Dissolve モードのみ。辺ホバーを黄色線で示す。

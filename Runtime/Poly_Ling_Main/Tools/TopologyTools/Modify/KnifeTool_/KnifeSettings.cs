@@ -36,16 +36,22 @@ namespace Poly_Ling.Tools
         /// <summary>SimpleCut: 分割後に5角以上になった面を三角形＋四角形へ再分解する（既定 ON）。</summary>
         public bool SimpleTriQuad = true;
 
-        public IToolSettings Clone() => new KnifeSettings { Mode = this.Mode, EqualDivide = this.EqualDivide, Divisions = this.Divisions, SimpleTriQuad = this.SimpleTriQuad };
+        /// <summary>SimpleCut: 起点・終点のクリックが頂点ホバー上なら、その端点を頂点で指定する（既定 OFF）。</summary>
+        public bool SimpleVertexEndpoints = false;
+
+        /// <summary>SimpleCut: 押した位置を起点、離した位置を終点としてドラッグで切る（既定 OFF＝2 クリック）。</summary>
+        public bool SimpleDragMode = false;
+
+        public IToolSettings Clone() => new KnifeSettings { Mode = this.Mode, EqualDivide = this.EqualDivide, Divisions = this.Divisions, SimpleTriQuad = this.SimpleTriQuad, SimpleVertexEndpoints = this.SimpleVertexEndpoints, SimpleDragMode = this.SimpleDragMode };
 
         public void CopyFrom(IToolSettings other)
         {
-            if (other is KnifeSettings src) { Mode = src.Mode; EqualDivide = src.EqualDivide; Divisions = src.Divisions; SimpleTriQuad = src.SimpleTriQuad; }
+            if (other is KnifeSettings src) { Mode = src.Mode; EqualDivide = src.EqualDivide; Divisions = src.Divisions; SimpleTriQuad = src.SimpleTriQuad; SimpleVertexEndpoints = src.SimpleVertexEndpoints; SimpleDragMode = src.SimpleDragMode; }
         }
 
         public bool IsDifferentFrom(IToolSettings other)
         {
-            if (other is KnifeSettings src) return Mode != src.Mode || EqualDivide != src.EqualDivide || Divisions != src.Divisions || SimpleTriQuad != src.SimpleTriQuad;
+            if (other is KnifeSettings src) return Mode != src.Mode || EqualDivide != src.EqualDivide || Divisions != src.Divisions || SimpleTriQuad != src.SimpleTriQuad || SimpleVertexEndpoints != src.SimpleVertexEndpoints || SimpleDragMode != src.SimpleDragMode;
             return true;
         }
     }

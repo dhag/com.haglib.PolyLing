@@ -317,6 +317,10 @@ namespace Poly_Ling.Player
 
         /// <summary>四角形 4→1 コマンドの実行。</summary>
         public Func<Quad4To1Command, string> OnQuad4To1;
+        public Func<TriangleRelocateCommand, string> OnTriangleRelocate;
+        public delegate bool EdgeTriangleHandler(EdgeTriangleCommand cmd,
+            out Poly_Ling.Ops.EdgeTriangleOps.Result result, out string reason);
+        public EdgeTriangleHandler OnEdgeTriangle;
 
         /// <summary>三角形 4→1 コマンドの実行。</summary>
         public Func<Tri4To1Command, string> OnTri4To1;
@@ -1076,6 +1080,7 @@ namespace Poly_Ling.Player
             if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchVertexBillboard(cmd, project, model))   return;
             if (DispatchLineGroup(cmd, project, model))         return;
+            if (DispatchBoolean2D(cmd, project, model))         return;
             if (DispatchUnderlay(cmd, project, model))          return;
             if (DispatchCamera(cmd, project, model))            return;
             if (DispatchDeformSkin(cmd, project, model))        return;

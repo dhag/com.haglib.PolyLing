@@ -26,8 +26,15 @@
 //   書き戻したいときは Register で明示的に登録する。
 //
 // 【保存先】
-//   <persistentDataPath>/PolyLing/scenarios.csv
+//   <persistentDataPath>/PolyLing/scenarios/<まとまり名>.csv
+//   ひとまとまりの作業（複数の手本）を 1 ファイルに入れる。
+//   どのまとまりに属すかは、読んだファイルで決まる（ObjectGroup には持たせない）。
+//   名前は全ファイルを通して一意。参照は名前で引くので、まとまりをまたいでよい。
 //   形式は objectgroups.csv と同じ（ObjectGroupCsv が正典）。
+//
+// 【旧形式からの移行】
+//   scenarios フォルダが無く、旧 scenarios.csv があれば、手本ごとに
+//   1 ファイルへ分け、旧ファイルは scenarios.csv.bak へ名前を変えて残す。
 
 using System;
 using System.Collections.Generic;
@@ -44,14 +51,19 @@ namespace Poly_Ling.Data
         private const string LogTag  = "[ScenarioLibrary]";
         private const string Header  = "PolyLing_Scenarios";
 
+        private const string Ext     = ".csv";
+
         private static List<ObjectGroup> _items;
+        /// <summary>手本の名前 → まとまり名（= ファイル名の拡張子抜き）。</summary>
+        private static Dictionary<string, string> _bundleOf;
         private static readonly object _lock = new object();
 
-        private static string Dir      => Path.Combine(Application.persistentDataPath, "PolyLing");
-        private static string FileName => Path.Combine(Dir, "scenarios.csv");
+        private static string Dir        => Path.Combine(Application.persistentDataPath, "PolyLing");
+        private static string FolderName => Path.Combine(Dir, "scenarios");
+        private static string LegacyFile => Path.Combine(Dir, "scenarios.csv");
 
-        /// <summary>保存先の絶対パス（表示・手動バックアップ用）。</summary>
-        public static string StorePath => FileName;
+        /// <summary>保存先フォルダの絶対パス（表示・手動バックアップ用）。</summary>
+        public static string StorePath => FolderName;
 
         /// <summary>
         /// 置き場の版。保存・読み直しで 1 つ進む。
@@ -71,62 +83,183 @@ namespace Poly_Ling.Data
             lock (_lock)
             {
                 if (_items != null) return;
-                _items = ReadFile();
+                ReadAll();
             }
         }
 
-        /// <summary>ファイルから読み直す。手で編集したあとに呼ぶ。</summary>
+        /// <summary>フォルダから読み直す。手で編集したあとに呼ぶ。</summary>
         public static void Reload()
         {
-            lock (_lock) { _items = ReadFile(); Revision++; }
+            lock (_lock) { ReadAll(); Revision++; }
         }
 
-        /// <summary>今の中身をファイルへ書く。</summary>
+        /// <summary>今の中身を全まとまりのファイルへ書く。</summary>
         public static void Save()
         {
             EnsureLoaded();
-            lock (_lock) { WriteFile(_items); Revision++; }
+            lock (_lock) { WriteBundles(new List<string>(_bundleOf.Values)); Revision++; }
         }
 
-        private static List<ObjectGroup> ReadFile()
+        /// <summary>_items と _bundleOf をフォルダから作り直す。旧形式なら先に移す。</summary>
+        private static void ReadAll()
         {
+            _items    = new List<ObjectGroup>();
+            _bundleOf = new Dictionary<string, string>(StringComparer.Ordinal);
+
             try
             {
-                if (!File.Exists(FileName)) return new List<ObjectGroup>();
-
-                var list = ObjectGroupCsv.Parse(File.ReadAllLines(FileName, Encoding.UTF8));
-
-                // 名前が重なると Find がどちらを返すか決まらない。後ろを落とす。
-                var seen = new HashSet<string>(StringComparer.Ordinal);
-                for (int i = list.Count - 1; i >= 0; i--)
+                if (!Directory.Exists(FolderName) && File.Exists(LegacyFile))
                 {
-                    var g = list[i];
-                    if (g == null || string.IsNullOrEmpty(g.Name) || !seen.Add(g.Name))
-                    {
-                        Debug.LogWarning($"{LogTag} 名前の無い／重なった手本を読み飛ばしました: 位置 {i}");
-                        list.RemoveAt(i);
-                    }
+                    MigrateLegacy();
+                    return;
                 }
-                return list;
+                if (!Directory.Exists(FolderName)) return;
+
+                var files = Directory.GetFiles(FolderName, "*" + Ext);
+                Array.Sort(files, StringComparer.Ordinal);
+
+                foreach (var path in files)
+                {
+                    string bundle = Path.GetFileNameWithoutExtension(path);
+                    List<ObjectGroup> list;
+                    try { list = ObjectGroupCsv.Parse(File.ReadAllLines(path, Encoding.UTF8)); }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"{LogTag} 読み込みに失敗しました: {path}: {e.Message}");
+                        continue;
+                    }
+                    AddLoaded(list, bundle, path);
+                }
             }
             catch (Exception e)
             {
                 Debug.LogError($"{LogTag} 読み込みに失敗しました: {e.Message}");
-                return new List<ObjectGroup>();
             }
         }
 
-        private static void WriteFile(List<ObjectGroup> list)
+        /// <summary>読んだ手本を足す。名前が重なると Find がどちらを返すか決まらない。後から来た方を落とす。</summary>
+        private static void AddLoaded(List<ObjectGroup> list, string bundle, string source)
         {
-            try
+            if (list == null) return;
+            for (int i = 0; i < list.Count; i++)
             {
-                Directory.CreateDirectory(Dir);
-                File.WriteAllText(FileName, ObjectGroupCsv.Build(list, Header), Encoding.UTF8);
+                var g = list[i];
+                if (g == null || string.IsNullOrEmpty(g.Name) || _bundleOf.ContainsKey(g.Name))
+                {
+                    Debug.LogWarning($"{LogTag} 名前の無い／重なった手本を読み飛ばしました: {source} 位置 {i}");
+                    continue;
+                }
+                _items.Add(g);
+                _bundleOf[g.Name] = bundle;
             }
-            catch (Exception e)
+        }
+
+        /// <summary>旧 scenarios.csv を手本ごとのファイルへ分け、旧ファイルは .bak へ名前を変える。</summary>
+        private static void MigrateLegacy()
+        {
+            var list = ObjectGroupCsv.Parse(File.ReadAllLines(LegacyFile, Encoding.UTF8));
+            foreach (var g in list)
             {
-                Debug.LogError($"{LogTag} 保存に失敗しました: {e.Message}");
+                if (g == null || string.IsNullOrEmpty(g.Name)) continue;
+                AddLoaded(new List<ObjectGroup> { g }, CanonicalBundle(g.Name), LegacyFile);
             }
+
+            Directory.CreateDirectory(FolderName);
+            if (!WriteBundles(new List<string>(_bundleOf.Values)))
+            {
+                Debug.LogError($"{LogTag} 移行の書き込みに失敗したので旧ファイルを残します: {LegacyFile}");
+                return;
+            }
+
+            string bak = LegacyFile + ".bak";
+            for (int n = 1; File.Exists(bak); n++) bak = LegacyFile + ".bak" + n;
+            File.Move(LegacyFile, bak);
+            Debug.Log($"{LogTag} 旧形式から {_items.Count} 本を移行しました。旧ファイル: {bak}");
+        }
+
+        /// <summary>まとまりごとにファイルへ書く。手本が 0 本になったまとまりはファイルを消す。</summary>
+        private static bool WriteBundles(IEnumerable<string> bundles)
+        {
+            bool ok = true;
+            var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var bundle in bundles)
+            {
+                if (string.IsNullOrEmpty(bundle) || !done.Add(bundle)) continue;
+                try
+                {
+                    Directory.CreateDirectory(FolderName);
+                    string path = Path.Combine(FolderName, bundle + Ext);
+
+                    var list = new List<ObjectGroup>();
+                    foreach (var g in _items)
+                        if (_bundleOf.TryGetValue(g.Name, out var b)
+                            && string.Equals(b, bundle, StringComparison.OrdinalIgnoreCase))
+                            list.Add(g);
+
+                    if (list.Count > 0) File.WriteAllText(path, ObjectGroupCsv.Build(list, Header), Encoding.UTF8);
+                    else if (File.Exists(path)) File.Delete(path);
+                }
+                catch (Exception e)
+                {
+                    ok = false;
+                    Debug.LogError($"{LogTag} 保存に失敗しました: {bundle}: {e.Message}");
+                }
+            }
+            return ok;
+        }
+
+        /// <summary>
+        /// まとまり名をファイル名として使える形にする。
+        /// 既存のまとまりと大文字小文字だけ違うときは既存の綴りに合わせる（Windows では同じファイル）。
+        /// </summary>
+        private static string CanonicalBundle(string bundle)
+        {
+            var sb = new StringBuilder((bundle ?? "").Trim());
+            foreach (char c in Path.GetInvalidFileNameChars()) sb.Replace(c, '_');
+            string s = sb.ToString().TrimEnd('.', ' ');
+            if (s.Length == 0) s = "_";
+
+            if (_bundleOf != null)
+                foreach (var b in _bundleOf.Values)
+                    if (string.Equals(b, s, StringComparison.OrdinalIgnoreCase)) return b;
+            return s;
+        }
+
+        /// <summary>この手本が入っているまとまり名。無ければ null。</summary>
+        public static string BundleOf(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            EnsureLoaded();
+            return _bundleOf.TryGetValue(name, out var b) ? b : null;
+        }
+
+        /// <summary>
+        /// 手本をまとまりへ移す。移したら関係するファイルを書く。
+        /// 1 本でも無い名前があれば何もしない。
+        /// </summary>
+        public static bool SetBundle(IList<string> names, string bundle, out string error)
+        {
+            error = null;
+            if (names == null || names.Count == 0) { error = "手本の名前がありません"; return false; }
+            if (string.IsNullOrWhiteSpace(bundle)) { error = "まとまり名が空です"; return false; }
+
+            EnsureLoaded();
+            lock (_lock)
+            {
+                foreach (var n in names)
+                    if (string.IsNullOrEmpty(n) || !_bundleOf.ContainsKey(n)) { error = $"手本がありません: {n}"; return false; }
+
+                string target = CanonicalBundle(bundle);
+                var affected = new List<string> { target };
+                foreach (var n in names)
+                {
+                    affected.Add(_bundleOf[n]);
+                    _bundleOf[n] = target;
+                }
+                WriteBundles(affected);
+                Revision++;
+            }
+            return true;
         }
 
         // ================================================================
@@ -282,7 +415,8 @@ namespace Poly_Ling.Data
         /// 登録できたらファイルへ書く。
         /// </summary>
         /// <param name="overwrite">同名があるとき差し替えるか。false なら失敗。</param>
-        public static bool Register(ObjectGroup group, bool overwrite, out string error)
+        /// <param name="bundle">入れるまとまり名。null/空なら、既存の手本は今のまとまりのまま、新しい手本は自分の名前のまとまり。</param>
+        public static bool Register(ObjectGroup group, bool overwrite, out string error, string bundle = null)
         {
             error = null;
 
@@ -326,7 +460,12 @@ namespace Poly_Ling.Data
                 if (at >= 0) _items[at] = copy;
                 else         _items.Add(copy);
 
-                WriteFile(_items);
+                _bundleOf.TryGetValue(copy.Name, out var oldBundle);
+                string target = !string.IsNullOrWhiteSpace(bundle) ? CanonicalBundle(bundle)
+                              : oldBundle ?? CanonicalBundle(copy.Name);
+                _bundleOf[copy.Name] = target;
+
+                WriteBundles(new List<string> { target, oldBundle });
             }
             return true;
         }
@@ -356,7 +495,9 @@ namespace Poly_Ling.Data
                     }
 
                     _items.RemoveAt(i);
-                    WriteFile(_items);
+                    _bundleOf.TryGetValue(name, out var oldBundle);
+                    _bundleOf.Remove(name);
+                    WriteBundles(new List<string> { oldBundle });
                     return true;
                 }
             }
@@ -518,7 +659,19 @@ namespace Poly_Ling.Data
                     else                                   added.Add(copy.Name);
                 }
                 _items = probe;
-                WriteFile(_items);
+
+                // 既存の手本は今のまとまりのまま、新しい手本は自分の名前のまとまりへ。
+                var affected = new List<string>();
+                foreach (var copy in copies)
+                {
+                    if (!_bundleOf.TryGetValue(copy.Name, out var b))
+                    {
+                        b = CanonicalBundle(copy.Name);
+                        _bundleOf[copy.Name] = b;
+                    }
+                    affected.Add(b);
+                }
+                WriteBundles(affected);
                 Revision++;
             }
             return true;

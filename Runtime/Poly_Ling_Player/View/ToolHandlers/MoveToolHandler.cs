@@ -202,7 +202,10 @@ namespace Poly_Ling.Player
         // 内部
         // ================================================================
         private readonly PlayerSelectionOps               _selectionOps;
-        private          ProjectContext                    _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _project => GetProject?.Invoke();
         private          MeshUndoController               _undoController;
 
         private const float DragThreshold = 4f;
@@ -419,10 +422,9 @@ namespace Poly_Ling.Player
         // ================================================================
         // 初期化
         // ================================================================
-        public MoveToolHandler(PlayerSelectionOps selectionOps, ProjectContext project)
+        public MoveToolHandler(PlayerSelectionOps selectionOps)
         {
             _selectionOps = selectionOps ?? throw new ArgumentNullException(nameof(selectionOps));
-            _project      = project;
             _axisGizmo.ScreenOffset     = new Vector2(60, -60);
             _axisGizmo.HandleHitRadius  = GizmoHandleHitRadius;
             _axisGizmo.HandleSize       = GizmoHandleSize;
@@ -430,7 +432,6 @@ namespace Poly_Ling.Player
             _axisGizmo.ScreenAxisLength = GizmoAxisLength;
         }
 
-        public void SetProject(ProjectContext project) => _project = project;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
 
         // ================================================================

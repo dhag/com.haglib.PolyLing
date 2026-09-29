@@ -76,6 +76,31 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 選択部分の複製。選択中の描画オブジェクトそれぞれについて、今の選択
+    /// （頂点・辺・線分・面）だけを写した新しいオブジェクトを作る。元は変えない。
+    /// 選択を引数に持たない。シナリオでは直前の選択コマンドの段が選択を決める。
+    /// </summary>
+    [PLCommand(Category = "object.list", Writes = PLWriteScope.AddOnly, Description =
+        "選択中の描画オブジェクトそれぞれについて、今選択している頂点・辺・線分・面だけを写した新しいオブジェクトを作る。"
+        + "面・線分は面が使う頂点ごと写す。辺は edgesAsLines のとき、その辺を含む面や同じ線分を写さない場合に線分（2 頂点の面）として写し、そうでなければ両端の頂点だけを写す。"
+        + "選択された頂点は単独でも写す。変換・種別は元を引き継ぐ。元のオブジェクトは変えない。")]
+    [PLResult("objects",       PLResultKind.Integer,      Description = "作ったオブジェクトの数")]
+    [PLResult("masterIndices", PLResultKind.IntegerArray, Description = "作ったオブジェクトの masterIndex", Optional = true)]
+    [PLResult("sourceIndices", PLResultKind.IntegerArray, Description = "複製元の masterIndex。masterIndices と同じ並び", Optional = true)]
+    [PLResult("names",         PLResultKind.TextArray,    Description = "作ったオブジェクトの名前。masterIndices と同じ並び", Optional = true)]
+    [PLResult("vertexCounts",  PLResultKind.IntegerArray, Description = "写した頂点の数。masterIndices と同じ並び", Optional = true)]
+    [PLResult("faceCounts",    PLResultKind.IntegerArray, Description = "写した面の数（線分を含む）。masterIndices と同じ並び", Optional = true)]
+    [PLResult("linesFromEdges", PLResultKind.IntegerArray, Description = "辺から作った線分の数。masterIndices と同じ並び", Optional = true)]
+    public class DuplicateSelectionCommand : PanelCommand
+    {
+        [PLParam(Description = "辺を線分にする。立てると、選択した辺のうち、それを含む面も同じ線分も写さないものを線分として写す。立てないと両端の頂点だけを写す")]
+        public bool EdgesAsLines { get; }
+
+        public DuplicateSelectionCommand(int modelIndex, bool edgesAsLines = false)
+            : base(modelIndex) { EdgesAsLines = edgesAsLines; }
+    }
+
+    /// <summary>
     /// メッシュリスト順序変更（D&D/上下移動/Indent/Outdent/先頭末尾移動）
     /// </summary>
     [PLCommand(Category = "object.list", Effects = PLCommandEffect.Hierarchy, Writes = PLWriteScope.ModelWide, Description = "メッシュリスト順序変更（D&D/上下移動/Indent/Outdent/先頭末尾移動）")]

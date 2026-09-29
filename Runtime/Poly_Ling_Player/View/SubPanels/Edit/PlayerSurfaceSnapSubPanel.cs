@@ -26,6 +26,11 @@ namespace Poly_Ling.Player
         public Func<Poly_Ling.View.IProjectView>         GetView;
         public Action<PanelCommand>         SendCommand;
 
+        /// <summary>
+        /// カメラ種別 Current を、今のカレントビューの種別（Perspective / Top / Front / Side）へ置き換える（Viewer から結線）。
+        /// </summary>
+        public Func<SurfaceSnapCameraKind>  ResolveCurrentCameraKind;
+
         /// <summary>コマンドに載せるモデル索引。</summary>
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
@@ -375,10 +380,16 @@ namespace Poly_Ling.Player
         {
             if (Surface == null || !Surface.GetBool(Tool, "isPreviewing")) return;
 
+            // Current（カレントビュー）は実際のビューに置き換えて載せる。
+            // 記録した手本を再生したとき、そのときのカレントビューで結果が変わらないようにするため。
+            var cameraKind = Surface.Get(Tool, "cameraKind", SurfaceSnapCameraKind.Current);
+            if (cameraKind == SurfaceSnapCameraKind.Current && ResolveCurrentCameraKind != null)
+                cameraKind = ResolveCurrentCameraKind();
+
             SendCommand?.Invoke(new SurfaceSnapCommand(
                 ModelIndex, SelectedMasterIndices(),
                 Surface.Get(Tool, "referenceIndexArray", Array.Empty<int>()),
-                cameraKind:           Surface.Get(Tool, "cameraKind", SurfaceSnapCameraKind.Current),
+                cameraKind:           cameraKind,
                 selectedVerticesOnly: Surface.GetBool(Tool, "selectedVerticesOnly"),
                 surfaceOffset:        Surface.GetFloat(Tool, "surfaceOffset"),
                 backface:             Surface.Get(Tool, "backface", SurfaceSnapBackface.Both),

@@ -125,6 +125,9 @@ namespace Poly_Ling.Player
             _layoutRoot.NormalTransplantBtn.clicked  += ShowNormalTransplantPanel;
             _layoutRoot.ThinPlateMorphBtn.clicked    += ShowThinPlateMorphPanel;
             _layoutRoot.FaceHideBtn.clicked          += ShowFaceHidePanel;
+            _layoutRoot.DuplicateSelectionBtn.clicked += ShowDuplicateSelectionPanel;
+            _layoutRoot.TriangleRelocateBtn.clicked   += ShowTriangleRelocatePanel;
+            _layoutRoot.EdgeTriangleBtn.clicked       += ShowEdgeTrianglePanel;
             _layoutRoot.MergeMeshesBtn.clicked     += ShowMergeMeshesPanel;
             _layoutRoot.BooleanBtn.clicked         += ShowBooleanPanel;
             _layoutRoot.TPoseBtn.clicked           += ShowTPosePanel;
@@ -463,8 +466,8 @@ namespace Poly_Ling.Player
                 SwitchActiveModel(idx);
             });
 
-            _localLoader.OnPmxRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.PMX);
-            _localLoader.OnMqoRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.MQO);
+            _layoutRoot.PmxLoadBtn.clicked += () => ShowImportPanel(PlayerImportSubPanel.Mode.PMX);
+            _layoutRoot.MqoLoadBtn.clicked += () => ShowImportPanel(PlayerImportSubPanel.Mode.MQO);
 
             _layoutRoot.ConnectBtn   .clicked += () => _connector?.Begin();
             _layoutRoot.DisconnectBtn.clicked += () => { if (_connector != null) _connector.Disconnect(); else _client?.Disconnect(); };
@@ -587,9 +590,12 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN: ds.ShowUnselectedMeshOrigin = e.newValue; break;
                                 case PlayerLayoutRoot.VD_MIRROR_MESH_ORIGIN: ds.ShowMirrorMeshOrigin    = e.newValue; break;
                                 case PlayerLayoutRoot.VD_NORMAL:             ds.ShowNormals             = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNDERLAY:           ds.ShowUnderlay            = e.newValue; break;
                             }
                             // Phase 2a-2g-3: SetDisplaySettings → EnterDisplaySettingsChanged に集約。
                             _viewportManager.EnterDisplaySettingsChanged(slot, ds);
+                            // 下絵はレンダラではなくパネル背面の要素なので、敷き直す。
+                            if (item == PlayerLayoutRoot.VD_UNDERLAY) ApplyAllUnderlays();
                             // Mesh トグルに応じて Mirror トグルの値・有効状態を更新する。
                             ApplyMirrorToggleGating(slot);
                         });
@@ -620,6 +626,7 @@ namespace Poly_Ling.Player
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN, ds.ShowUnselectedMeshOrigin);
                 SyncTog(PlayerLayoutRoot.VD_MIRROR_MESH_ORIGIN, ds.ShowMirrorMeshOrigin);
                 SyncTog(PlayerLayoutRoot.VD_NORMAL,             ds.ShowNormals);
+                SyncTog(PlayerLayoutRoot.VD_UNDERLAY,           ds.ShowUnderlay);
                 // Mesh トグルに応じて Mirror トグルの値・有効状態を初期同期する。
                 ApplyMirrorToggleGating(s);
             }
@@ -647,6 +654,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.NormalExcludeSetSection,  () => _normalExcludeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.NormalEditSection,        () => _normalEditSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FaceHideSection,          () => _faceHideSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.DuplicateSelectionSection, () => _duplicateSelectionSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MirrorSection,            () => _mirrorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MergeMeshesSection,       () => _mergeMeshesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.BooleanSection,           () => _booleanSubPanel?.Refresh()));
@@ -719,6 +727,13 @@ namespace Poly_Ling.Player
                 var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
                 if (ctx != null) _quad4To1Handler?.Activate(ctx);
                 _quad4To1SubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.EdgeTriangleSection,  () => _edgeTriangleSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.TriangleRelocateSection, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _triangleRelocateHandler?.Activate(ctx);
+                _triangleRelocateSubPanel?.Refresh();
             }));
             _sectionRefreshPairs.Add((_layoutRoot.VertexIdSection,          () => _vertexIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VertexTransferSection,    () => _vertexTransferSubPanel?.Refresh()));

@@ -214,6 +214,29 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case EdgeTriangleCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnEdgeTriangle == null) { Fail("edge triangle handler not wired"); return true; }
+                    if (!OnEdgeTriangle.Invoke(c, out var etRes, out string etReason)) { Fail(etReason); return true; }
+                    ReportData(CommandDataJson.New()
+                        .Int ("vertexIndex", etRes.VertexIndex)
+                        .Int ("faceIndex",   etRes.FaceIndex)
+                        .Flag("madeQuad",    etRes.MadeQuad)
+                        .Text("winding",     etRes.Winding ?? "")
+                        .Build());
+                    return true;
+                }
+
+                case TriangleRelocateCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnTriangleRelocate == null) { Fail("triangle relocate handler not wired"); return true; }
+                    string trReason = OnTriangleRelocate.Invoke(c);
+                    if (trReason != null) { Fail(trReason); return true; }
+                    return true;
+                }
+
                 case Tri4To1Command c:
                 {
                     if (model == null) { Fail("no current model"); return true; }

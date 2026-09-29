@@ -1,5 +1,5 @@
 // PlayerLocalLoader.cs
-// ローカルファイル（PMX/MQO）ロード処理と UI 構築を集約するサブクラス。
+// ローカルファイル（PMX/MQO）ロード処理を集約するサブクラス。
 // Runtime/Poly_Ling_Player/IO/ に配置
 
 using System;
@@ -28,8 +28,7 @@ namespace Poly_Ling.Player
 
         public Action<ProjectContext> OnLoaded;
         public Action<string> OnStatusChanged;
-        public Action OnPmxRequested;
-        public Action OnMqoRequested;
+        // PMX読み込み / MQO読み込みのボタンは PlayerLayoutRoot（PmxLoadBtn / MqoLoadBtn）が持つ。
 
         // ================================================================
         // 公開 API
@@ -77,37 +76,6 @@ namespace Poly_Ling.Player
                 return;
             }
             FinishLoad(filePath, model);
-        }
-
-        // ================================================================
-        // UI
-        // ================================================================
-
-        public void BuildUI(VisualElement parent)
-        {
-            var btnRow = new VisualElement();
-            btnRow.style.flexDirection = FlexDirection.Row;
-            btnRow.style.marginBottom  = 4;
-
-            var btnPmx = new Button(() => OnPmxRequested?.Invoke()) { text = "PMX読み込み" };
-            btnPmx.style.flexGrow     = 1;
-            btnPmx.style.marginRight  = 2;
-            btnPmx.style.fontSize     = 10;
-            btnPmx.style.height       = 20;
-            btnPmx.style.paddingTop   = 0;
-            btnPmx.style.paddingBottom = 0;
-
-            var btnMqo = new Button(() => OnMqoRequested?.Invoke()) { text = "MQO読み込み" };
-            btnMqo.style.flexGrow     = 1;
-            btnMqo.style.marginLeft   = 2;
-            btnMqo.style.fontSize     = 10;
-            btnMqo.style.height       = 20;
-            btnMqo.style.paddingTop   = 0;
-            btnMqo.style.paddingBottom = 0;
-
-            btnRow.Add(btnPmx);
-            btnRow.Add(btnMqo);
-            parent.Add(btnRow);
         }
 
         public void LoadModel(string filePath, ModelContext model)

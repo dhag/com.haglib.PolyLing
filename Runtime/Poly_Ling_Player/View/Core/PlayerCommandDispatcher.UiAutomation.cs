@@ -41,6 +41,9 @@ namespace Poly_Ling.Player
         /// <summary>項目の強調表示。</summary>
         public Func<UiHighlightCommand, CommandResult>     OnUiHighlight;
 
+        /// <summary>強調の枠を全部消す。</summary>
+        public Func<UiClearHighlightsCommand, CommandResult> OnUiClearHighlights;
+
         /// <summary>画面キャプチャの開始。</summary>
         public Func<UiCaptureCommand, CommandResult>       OnUiCapture;
 
@@ -64,6 +67,7 @@ namespace Poly_Ling.Player
                 case UiGetValueCommand c:      RunUiAutomation(OnUiGetValue,      c, "uiGetValue");      return true;
                 case UiSetValueCommand c:      RunUiAutomation(OnUiSetValue,      c, "uiSetValue");      return true;
                 case UiHighlightCommand c:     RunUiAutomation(OnUiHighlight,     c, "uiHighlight");     return true;
+                case UiClearHighlightsCommand c: RunUiAutomation(OnUiClearHighlights, c, "uiClearHighlights"); return true;
                 case UiCaptureCommand c:       RunUiAutomation(OnUiCapture,       c, "uiCapture");       return true;
                 case UiCaptureStatusCommand c: RunUiAutomation(OnUiCaptureStatus, c, "uiCaptureStatus"); return true;
                 case UiClickCommand c:         RunUiAutomation(OnUiClick,         c, "uiClick");         return true;

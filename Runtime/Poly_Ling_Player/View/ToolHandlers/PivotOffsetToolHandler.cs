@@ -22,7 +22,10 @@ namespace Poly_Ling.Player
         // ObjectMoveTool を専用設定(OriginOnly=true, 子は据え置き, ピック無効=ギズモ専用)で保持
         private readonly ObjectMoveTool _tool = new ObjectMoveTool();
 
-        private ProjectContext    _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _project => GetProject?.Invoke();
         private MeshUndoController _undoController;
 
         public PivotOffsetToolHandler()
@@ -49,7 +52,6 @@ namespace Poly_Ling.Player
         public Action             OnSyncBoneTransforms;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
 
-        public void SetProject(ProjectContext project) => _project = project;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
 
         /// <summary>

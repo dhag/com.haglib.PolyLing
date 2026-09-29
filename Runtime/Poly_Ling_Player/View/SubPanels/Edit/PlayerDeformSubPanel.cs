@@ -30,6 +30,19 @@ namespace Poly_Ling.Player
         public Poly_Ling.Data.IToolSurface Surface;
         private DeformSurfaceView H => Surface != null ? new DeformSurfaceView(Surface) : null;
 
+        /// <summary>今のカレントビューの種別（Viewer から結線）。</summary>
+        public Func<Poly_Ling.Data.ViewportKind> GetActiveViewKind;
+
+        /// <summary>
+        /// パネルから操作したときは、曲げのたわみ方向をいま見ているビュー（カレントビュー）の
+        /// カメラで決める。ツール側はビューをパラメータで持つので、呼ぶ直前に入れる。
+        /// </summary>
+        private void SyncBendCameraView(DeformSurfaceView h)
+        {
+            if (h == null || GetActiveViewKind == null) return;
+            h.BendCameraView = GetActiveViewKind();
+        }
+
         // ================================================================
         // ウィジェット
         // ================================================================
@@ -257,7 +270,9 @@ namespace Poly_Ling.Player
                 int idx = _deformerDropdown.index;
                 if (idx < 0 || idx >= _deformerIds.Count) return;
 
-                H?.SelectDeformer(_deformerIds[idx]);
+                var hs = H;
+                SyncBendCameraView(hs);
+                hs?.SelectDeformer(_deformerIds[idx]);
                 UpdateGroupVisibility();
                 Refresh();
             });
@@ -435,6 +450,7 @@ namespace Poly_Ling.Player
             var h = H;
             if (h != null && h.EditParams(set))
             {
+                SyncBendCameraView(h);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -464,6 +480,7 @@ namespace Poly_Ling.Player
             var h = H;
             if (h != null && h.EditParams(set))
             {
+                SyncBendCameraView(h);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -494,6 +511,7 @@ namespace Poly_Ling.Player
             var h = H;
             if (h != null && h.EditParams(set))
             {
+                SyncBendCameraView(h);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -542,6 +560,7 @@ namespace Poly_Ling.Player
             var h = H;
             if (h != null && h.EditParams(set))
             {
+                SyncBendCameraView(h);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -590,6 +609,7 @@ namespace Poly_Ling.Player
             var h = H;
             if (h != null && h.EditParams(set))
             {
+                SyncBendCameraView(h);
                 h.ApplyPreview();
                 RefreshInfo();
             }
@@ -612,6 +632,7 @@ namespace Poly_Ling.Player
                 // 影響頂点の集合が変わるため、プレビューを張り直す。
                 h.Revert();
                 h.UseMagnet = e.newValue;
+                SyncBendCameraView(h);
                 h.ApplyPreview();
                 RefreshInfo();
             });
@@ -625,6 +646,7 @@ namespace Poly_Ling.Player
                 var h = H; if (h == null) return;
                 h.Revert();
                 h.MagnetRadius = e.newValue;
+                SyncBendCameraView(h);
                 h.ApplyPreview();
                 RefreshInfo();
             });
@@ -638,6 +660,7 @@ namespace Poly_Ling.Player
                 var h = H; if (h == null) return;
                 h.Revert();
                 h.MagnetDistanceMode = (DistanceMode)e.newValue;
+                SyncBendCameraView(h);
                 h.ApplyPreview();
             });
             _deformBody.Add(_magnetDistance);
@@ -650,6 +673,7 @@ namespace Poly_Ling.Player
                 var h = H; if (h == null) return;
                 h.Revert();
                 h.MagnetFalloff = (FalloffType)e.newValue;
+                SyncBendCameraView(h);
                 h.ApplyPreview();
             });
             _deformBody.Add(_magnetFalloff);
@@ -766,7 +790,9 @@ namespace Poly_Ling.Player
         /// <summary>取消時にウィジェットを 0 へ戻す。</summary>
         private void ResetWidgets()
         {
-            H?.ResetParams();
+            var hr = H;
+            SyncBendCameraView(hr);
+            hr?.ResetParams();
         }
 
         // ================================================================

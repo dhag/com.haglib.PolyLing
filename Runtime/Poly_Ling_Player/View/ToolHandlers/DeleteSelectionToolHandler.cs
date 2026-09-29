@@ -26,7 +26,10 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly DeleteSelectionTool _tool = new DeleteSelectionTool();
-        private          ProjectContext      _project;
+        // プロジェクトは保持せず、使うたびにその時点のものを引く。
+        // 保持すると、起動後に作られた・差し替えられたプロジェクトに追従できない。
+        public  System.Func<ProjectContext> GetProject;
+        private ProjectContext _project => GetProject?.Invoke();
         private          MeshUndoController  _undoController;
         private          CommandQueue        _commandQueue;
 
@@ -42,7 +45,6 @@ namespace Poly_Ling.Player
         // 初期化
         // ================================================================
 
-        public void SetProject(ProjectContext project)          => _project = project;
         public void SetUndoController(MeshUndoController ctrl)  { _undoController = ctrl; }
         public void SetCommandQueue(CommandQueue queue)         { _commandQueue   = queue; }
 
@@ -82,9 +84,7 @@ namespace Poly_Ling.Player
             var ctx = BuildCtx();
             if (ctx == null)
             {
-                // ここに来る主因は SetProject の伝播漏れ (BuildLayout 時点の
-                // ActiveProject は null のため、プロジェクト生成/切替/受信の各経路で
-                // 再伝播していないと _project が null のまま取り残される)。
+                // プロジェクトまたはモデルがまだ無い。
                 Debug.LogWarning("[DeleteSelectionToolHandler] EARLY RETURN: "
                                + $"project={_project != null}, currentModel={_project?.CurrentModel != null}");
                 return;

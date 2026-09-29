@@ -75,6 +75,13 @@ namespace Poly_Ling.Player
         public FalloffType  MagnetFalloff      { get => _s.Get(Tool, "magnetFalloff", FalloffType.Smooth);           set => _s.Set(Tool, "magnetFalloff", value); }
         public DistanceMode MagnetDistanceMode { get => _s.Get(Tool, "magnetDistanceMode", DistanceMode.Euclidean);  set => _s.Set(Tool, "magnetDistanceMode", value); }
 
+        /// <summary>曲げのたわみ方向をカメラから決めるときに使うビュー。</summary>
+        public ViewportKind BendCameraView
+        {
+            get => _s.Get(Tool, "bendCameraView", ViewportKind.Perspective);
+            set => _s.Set(Tool, "bendCameraView", value);
+        }
+
         public string DeformerName  => _s.GetString(Tool, "deformerName");
         public bool   IsPreviewing  => _s.GetBool(Tool, "isPreviewing");
         public int    AffectedCount => _s.GetInt(Tool, "affectedCount");

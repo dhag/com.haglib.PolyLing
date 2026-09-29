@@ -64,6 +64,17 @@ namespace Poly_Ling.Tools
 
         private const string nullName = "null";
 
+        /// <summary>
+        /// 頂点 v の画面位置。Execute が切断判定に使う投影（sp[v]）と同一の式。
+        /// 端点を頂点で指定するとき、この値を P0/P1 に使うと切断線がその頂点を正確に通る。
+        /// </summary>
+        public static Vector2 VertexScreenPos(ToolContext ctx, MeshObject mo, int v)
+        {
+            float h = ctx.PreviewRect.height;
+            Vector2 s = ctx.LocalToScreen(v, mo.Vertices[v].Position);
+            return new Vector2(s.x, h - s.y);
+        }
+
         public static void Execute(ToolContext ctx, MeshObject mo, Vector2 p0, Vector2 p1, bool[] faceCulledMask, bool triQuad)
         {
             if (ctx == null || mo == null) return;

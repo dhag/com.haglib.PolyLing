@@ -105,6 +105,11 @@ namespace Poly_Ling.Player
         /// <summary>OnFirstRealSize の一度きり判定。発火後は二度と立て直さない。</summary>
         private bool _firstRealSizeFired;
 
+        /// <summary>パネル（＝カメラの画素数）の大きさが変わったとき。下絵の敷き直しに使う。</summary>
+        public event Action OnSizeChanged;
+
+        private int _lastW, _lastH;
+
         // ================================================================
         // 矩形選択オーバーレイ
         // ================================================================
@@ -910,6 +915,13 @@ namespace Poly_Ling.Player
             int h = Mathf.Max(1, Mathf.RoundToInt(resolvedStyle.height));
             Viewport.Resize(w, h);
             RefreshBackground();
+
+            // 大きさが変わったことを知らせる（下絵はビューの大きさで敷き直す必要がある）。
+            if (w != _lastW || h != _lastH)
+            {
+                _lastW = w; _lastH = h;
+                OnSizeChanged?.Invoke();
+            }
 
             // 実サイズが初めて確定した 1 回だけ通知する。
             // w/h は上で Mathf.Max(1, …) 済みなので、1 は「まだ確定していない」を意味する。

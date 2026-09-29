@@ -34,8 +34,9 @@ namespace Poly_Ling.Data
     /// <summary>登録済みの手本を一覧する。</summary>
     [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "登録済みの手本（シナリオ）を一覧する。名前・目的・段数を同じ並びの配列で返す。query を指定すると、名前・目的・札・段のコマンド名で絞り込む。usageScene を指定すると、その利用シーンを段に持つ手本と、利用シーンの relatedScenarios に挙がった手本だけを返す。")]
     [PLResult("count",      PLResultKind.Integer,      Description = "手本の数")]
-    [PLResult("storePath",  PLResultKind.Text,         Description = "手本を置いているファイルの絶対パス")]
+    [PLResult("storePath",  PLResultKind.Text,         Description = "手本を置いているフォルダの絶対パス。まとまりごとに <まとまり名>.csv")]
     [PLResult("names",      PLResultKind.TextArray,    Description = "手本の名前", Optional = true)]
+    [PLResult("bundles",    PLResultKind.TextArray,    Description = "手本が入っているまとまり名（ファイル名）。names と同じ並び", Optional = true)]
     [PLResult("goals",      PLResultKind.TextArray,    Description = "手本の目的。names と同じ並び", Optional = true)]
     [PLResult("stepCounts", PLResultKind.IntegerArray, Description = "手本の段数。names と同じ並び", Optional = true)]
     public sealed class QueryScenariosCommand : PanelCommand
@@ -105,7 +106,8 @@ namespace Poly_Ling.Data
     [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "段を持たない手本を新しく作る。段は addScenarioStep で足す。")]
     [PLResult("name",      PLResultKind.Text,    Description = "作った手本の名前")]
     [PLResult("count",     PLResultKind.Integer, Description = "登録後の手本の数")]
-    [PLResult("storePath", PLResultKind.Text,    Description = "手本を置いているファイルの絶対パス")]
+    [PLResult("bundle",    PLResultKind.Text,    Description = "手本を入れたまとまり名")]
+    [PLResult("storePath", PLResultKind.Text,    Description = "手本を置いているフォルダの絶対パス")]
     public sealed class CreateScenarioCommand : PanelCommand
     {
         [PLParam(Description = "手本の名前。既にあるときは overwrite を立てること", Required = true)]
@@ -117,12 +119,36 @@ namespace Poly_Ling.Data
         [PLParam(Description = "同じ名前の手本があるとき差し替える")]
         public bool Overwrite { get; }
 
-        public CreateScenarioCommand(int modelIndex, string name, string goal = "", bool overwrite = false)
+        [PLParam(Description = "入れるまとまり名（ファイル名）。ひとまとまりの作業を 1 ファイルに入れるために使う。省くと、既存の手本は今のまとまりのまま、新しい手本は自分の名前のまとまり")]
+        public string Bundle { get; }
+
+        public CreateScenarioCommand(int modelIndex, string name, string goal = "", bool overwrite = false, string bundle = "")
             : base(modelIndex)
         {
             Name      = name ?? "";
             Goal      = goal ?? "";
             Overwrite = overwrite;
+            Bundle    = bundle ?? "";
+        }
+    }
+
+    /// <summary>手本をまとまりへ移す。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "手本をまとまり（1 ファイル）へ移す。ひとまとまりの作業に属する手本を同じファイルにまとめるために使う。中身と名前は変わらない。手本が 0 本になったまとまりのファイルは消える。")]
+    [PLResult("bundle", PLResultKind.Text,      Description = "移した先のまとまり名（ファイル名として使える形にしたもの）")]
+    [PLResult("names",  PLResultKind.TextArray, Description = "移した手本の名前", Optional = true)]
+    public sealed class SetScenarioBundleCommand : PanelCommand
+    {
+        [PLParam(Description = "移す手本の名前。1 本でも無い名前があれば何もしない", Required = true)]
+        public string[] Names { get; }
+
+        [PLParam(Description = "移す先のまとまり名。無ければ作る", Required = true)]
+        public string Bundle { get; }
+
+        public SetScenarioBundleCommand(int modelIndex, string[] names, string bundle)
+            : base(modelIndex)
+        {
+            Names  = names ?? System.Array.Empty<string>();
+            Bundle = bundle ?? "";
         }
     }
 

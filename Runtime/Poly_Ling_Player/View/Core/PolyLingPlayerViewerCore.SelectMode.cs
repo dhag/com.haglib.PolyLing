@@ -194,6 +194,8 @@ namespace Poly_Ling.Player
                 case InteractionMode.EdgeExtrude:       return MeshSelectMode.Edge | MeshSelectMode.Line;
                 // 辺群ブリッジ: 拾うのは常に辺。頂点・面のホバーは有害。
                 case InteractionMode.EdgeBridge:        return MeshSelectMode.Edge;
+                // 辺から三角形: 掴むのは辺。
+                case InteractionMode.EdgeTriangle:      return MeshSelectMode.Edge;
 
                 // 面を対象にするツール
                 case InteractionMode.FaceExtrude:       return MeshSelectMode.Face;

@@ -149,6 +149,7 @@ namespace Poly_Ling.Data
     [PLResult("triRotation",      PLResultKind.Text,   Description = "3 面図全体の回転（x,y,z のオイラー角、度）")]
     [PLResult("triHalfHeight",    PLResultKind.Number, Description = "3 面図の正面図に映る縦の半分の長さ")]
     [PLResult("triPerspective",   PLResultKind.Flag,   Description = "3 面図がパース表示か")]
+    [PLResult("currentView",      PLResultKind.Text,   Description = "カレントビュー（Perspective / Top / Front / Side）。setCurrentView で切り替える")]
     public sealed class QueryCameraCommand : PanelCommand
     {
         public QueryCameraCommand(int modelIndex = 0)
