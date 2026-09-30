@@ -76,6 +76,12 @@ namespace Poly_Ling.Remote
                 DispatchFrame(RemoteMagic.Read(frame), frame);
                 offset += len;
             }
+
+            // モデルごとの組み直し（ミラー対・IK 集約リンク・Humanoid 集中辞書）。
+            // CSV / JSON の読込の末尾と同じ。消費側は集約側を読む。
+            if (_project?.Models != null)
+                foreach (var m in _project.Models)
+                    RemoteProgressiveSerializer.FinishReceivedModel(m);
         }
 
         public void DispatchFrame(uint magic, byte[] data)
@@ -100,6 +106,7 @@ namespace Poly_Ling.Remote
             for (int i = 0; i < mc; i++)
                 _project.Models.Add(new ModelContext($"Model{i}"));
             _project.CurrentModelIndex = ci;
+            RemoteProgressiveSerializer.ReadProjectHeaderExtras(data, _project);
 
             Debug.Log($"[RemoteProjectReceiver] PLRH: \"{name}\" {mc}モデル");
             OnProjectHeaderReceived?.Invoke(_project);
@@ -138,6 +145,8 @@ namespace Poly_Ling.Remote
             var model = _project.Models[mi];
             while (model.MeshContextList.Count <= si)
                 model.MeshContextList.Add(new MeshContext { Name = $"Mesh{model.MeshContextList.Count}" });
+            // リストへ直に入れるので ModelContext.Add が張る親参照が無い。材質の取得に要るので張る。
+            mc.ParentModelContext = model;
             model.MeshContextList[si] = mc;
             model.InvalidateTypedIndices();
 
@@ -160,6 +169,12 @@ namespace Poly_Ling.Remote
             var mc = model.MeshContextList[si];
             string savedName = mc.Name;
             MeshType savedType = mc.Type;
+
+            // PLRS（サマリ）で MeshObject に載せた付帯データは PLRD（ジオメトリ）に無い。
+            // MeshObject を差し替えると消えるので引き継ぐ。
+            var prev = mc.MeshObject;
+            if (mesh != null && prev != null)
+                RemoteProgressiveSerializer.CopySummaryAttributes(prev, mesh);
 
             mc.MeshObject = mesh;
 

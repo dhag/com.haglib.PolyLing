@@ -398,6 +398,12 @@ namespace Poly_Ling.Player
         /// <summary>プロジェクト CSV 読み込みコマンドの実行。</summary>
         public Func<LoadProjectCsvCommand, string> OnLoadProjectCsv;
 
+        /// <summary>プロジェクトバイナリ（.plrf）保存コマンドの実行。</summary>
+        public Func<SaveProjectBinaryCommand, string> OnSaveProjectBinary;
+
+        /// <summary>プロジェクトバイナリ（.plrf）読み込みコマンドの実行。</summary>
+        public Func<LoadProjectBinaryCommand, string> OnLoadProjectBinary;
+
         /// <summary>プロジェクト全体をエディタ拡張（ヒエラルキー書き出し）へ送るコマンドの実行。</summary>
         public Func<SendHierarchyBundleCommand, string> OnSendHierarchyBundle;
 
@@ -988,6 +994,24 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // CSV 保存フォルダの比較（シリアライザの往復確認用）。モデルを見ないので門の前で受ける。
+            if (cmd is QueryCsvFolderDiffCommand diffCmd)
+            {
+                MarkNotRecorded();
+                if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(diffCmd.FolderA, out string dirA, out string reasonA)) { Fail(reasonA); return; }
+                if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(diffCmd.FolderB, out string dirB, out string reasonB)) { Fail(reasonB); return; }
+                if (!System.IO.Directory.Exists(dirA)) { Fail($"フォルダがありません: {dirA}"); return; }
+                if (!System.IO.Directory.Exists(dirB)) { Fail($"フォルダがありません: {dirB}"); return; }
+
+                string report = CsvFolderDiff.Run(dirA, dirB, diffCmd.MaxLines, out int diffFiles, out int diffLines);
+                ReportData(CommandDataJson.New()
+                    .Text("report",    report)
+                    .Int("diffFiles",  diffFiles)
+                    .Int("diffLines",  diffLines)
+                    .Build());
+                return;
+            }
+
             // Undo / Redo もプロジェクトの有無に関わらず受ける。
             // 実行は Viewer が持つ UndoManager へ委譲する（ディスパッチャの
             // MeshUndoController は対象ノードが別のため使わない）。
@@ -1059,7 +1083,8 @@ namespace Poly_Ling.Player
                 || cmd is ImportPmxFileCommand       || cmd is ImportMqoFileCommand
                 || cmd is ImportObjFileCommand       || cmd is ImportVrmFileCommand
                 || cmd is ImportStlFileCommand
-                || cmd is LoadProjectFileCommand     || cmd is LoadProjectCsvCommand;
+                || cmd is LoadProjectFileCommand     || cmd is LoadProjectCsvCommand
+                || cmd is LoadProjectBinaryCommand;
 
             var project = _getProject();
             if (project == null && !createsOwnProject) { Fail("no project"); return; }

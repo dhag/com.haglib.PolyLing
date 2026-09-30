@@ -515,6 +515,23 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case SaveProjectBinaryCommand c:
+                {
+                    if (OnSaveProjectBinary == null) { Fail("save project binary handler not wired"); return true; }
+                    string spbReason = OnSaveProjectBinary.Invoke(c);
+                    if (spbReason != null) { Fail(spbReason); return true; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return true;
+                }
+
+                case LoadProjectBinaryCommand c:
+                {
+                    if (OnLoadProjectBinary == null) { Fail("load project binary handler not wired"); return true; }
+                    string lpbReason = OnLoadProjectBinary.Invoke(c);
+                    if (lpbReason != null) { Fail(lpbReason); return true; }
+                    return true;
+                }
+
                 // プロジェクト全体を送るので、現在モデルの有無は問わない。判定は受け口と送信側が行う。
                 case SendHierarchyBundleCommand c:
                 {

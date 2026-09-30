@@ -451,6 +451,90 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// プロジェクトを、リモート送信と同じバイナリ（.plrf）で保存する。デバッグ用。
+    /// 実処理は RemoteProgressiveSerializer.SerializeWholeProject。
+    /// </summary>
+    [PLCommand(Category = "io.project", Writes = PLWriteScope.None, Description = "プロジェクトを、リモート送信と同じバイナリで .plrf ファイルへ保存する（デバッグ用）。範囲は丸ごと・モデル単位・メッシュ単位（断片）。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class SaveProjectBinaryCommand : PanelCommand
+    {
+        [PLParam(Description = "保存先の .plrf のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "範囲。project＝丸ごと、model＝対象モデル 1 体、meshes＝対象モデルの masterIndices のメッシュだけ（断片）")]
+        public string Scope { get; }
+
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "Scope=meshes のときに保存する描画オブジェクトの masterIndex 配列")]
+        public int[] MasterIndices { get; }
+
+        public SaveProjectBinaryCommand(int modelIndex, string filePath, string scope = "project", int[] masterIndices = null)
+            : base(modelIndex)
+        {
+            FilePath      = filePath ?? "";
+            Scope         = string.IsNullOrEmpty(scope) ? "project" : scope;
+            MasterIndices = masterIndices;
+        }
+    }
+
+    /// <summary>
+    /// リモート送信と同じバイナリ（.plrf）を読み込む。デバッグ用。
+    /// 断片（メッシュ単位）なら対象モデルへ足す（名前が同じものは置き換え）。
+    /// それ以外は Append で決める（false＝プロジェクトを置き換え、true＝モデルを足す）。
+    /// </summary>
+    [PLCommand(Category = "io.project", Writes = PLWriteScope.ModelWide, Description = "リモート送信と同じバイナリの .plrf ファイルを読み込む（デバッグ用）。断片なら対象モデルへ足す（名前が同じものは置き換え）。丸ごと・モデル単位は append=false で置き換え、true でモデルを足す。")]
+    public class LoadProjectBinaryCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む .plrf のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "丸ごと・モデル単位のファイルで、今のプロジェクトへモデルを足す。false なら置き換える。断片ファイルでは無視する")]
+        public bool Append { get; }
+
+        public LoadProjectBinaryCommand(int modelIndex, string filePath, bool append = false)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Append   = append;
+        }
+    }
+
+    /// <summary>
+    /// 2 つの CSV 保存フォルダを 1 行ずつ比べる（シリアライザの往復確認用）。
+    /// 実処理は PlayerCommandDispatcher が直に行う（Viewer に実体が無い）。
+    /// </summary>
+    [PLCommand(Category = "io.project", Writes = PLWriteScope.None, Description = "2 つの CSV 保存フォルダを 1 行ずつ比べ、違うファイルと行を返す（シリアライザの往復確認用）。createdAt / modifiedAt の行は比べない。作業フォルダの下だけを読める。")]
+    [PLResult("report",    PLResultKind.Text,    Description = "違いの一覧。無ければ「差なし」")]
+    [PLResult("diffFiles", PLResultKind.Integer, Description = "違いのあったファイルの数（片方にしか無いものを含む）")]
+    [PLResult("diffLines", PLResultKind.Integer, Description = "違う行の合計")]
+    public class QueryCsvFolderDiffCommand : PanelCommand
+    {
+        [PLParam(Description = "比べる元のフォルダ", Required = true)]
+        public string FolderA { get; }
+
+        [PLParam(Description = "比べる先のフォルダ", Required = true)]
+        public string FolderB { get; }
+
+        [PLParam(Description = "例として返す違う行の最大数（ファイルごと）")]
+        public int MaxLines { get; }
+
+        public QueryCsvFolderDiffCommand(int modelIndex, string folderA, string folderB, int maxLines = 5)
+            : base(modelIndex)
+        {
+            FolderA  = folderA ?? "";
+            FolderB  = folderB ?? "";
+            MaxLines = maxLines <= 0 ? 5 : maxLines;
+        }
+    }
+
+    /// <summary>
     /// プロジェクト全体を JSON（ProjectDTO）にして、接続中のエディタ拡張
     /// （ヒエラルキー書き出し、自動受け入れがオンのもの）へ送る。
     /// 実処理は RemoteServerCore.SendHierarchyBundle。

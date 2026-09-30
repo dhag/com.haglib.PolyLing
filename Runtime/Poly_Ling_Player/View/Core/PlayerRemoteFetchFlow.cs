@@ -121,9 +121,9 @@ namespace Poly_Ling.Player
             FetchingModelIndex = mi;
             _setStatus($"メッシュフェッチ中... [{mi}/{ModelCount - 1}]");
 
-            FetchMeshDataBatch(mi, "bone",     () =>
-            FetchMeshDataBatch(mi, "drawable", () =>
-            FetchMeshDataBatch(mi, "morph",    () =>
+            // 種別（bone / drawable / morph）ごとに取ると、補助・グループ・作業軸など
+            // どの種別にも入らない型の頂点データが届かない。全型をまとめて取る。
+            FetchMeshDataBatch(mi, "all", () =>
             {
                 var project = _receiver?.Project;
                 if (project != null && mi < project.ModelCount)
@@ -203,7 +203,7 @@ namespace Poly_Ling.Player
                     _setStatus($"完了 ({project?.Name})");
                     _notifyPanels(ChangeKind.ModelSwitch);
                 }
-            })));
+            });
         }
 
         private void FetchMeshDataBatch(int mi, string cat, Action done)

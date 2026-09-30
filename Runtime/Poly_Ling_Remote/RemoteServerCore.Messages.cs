@@ -249,8 +249,11 @@ namespace Poly_Ling.Remote
             {
                 var mc = entry.Context;
                 if (mc?.MeshObject == null || mc.MeshObject.VertexCount == 0) continue;
+                // Complete：CSV と揃えた追加の欄（2 本目以降の法線・ミラー側ウェイト・制御点・
+                // 線分群・法線除外セット）まで送る。受け手は C# のクライアントだけ
+                // （PlayerRemoteFetchFlow / PolyLingClientTest）で、同じビルドの RemoteBinarySerializer が読む。
                 var data = RemoteProgressiveSerializer.SerializeMeshData(
-                    mc, modelIndex, entry.MasterIndex, MeshFieldFlags.All);
+                    mc, modelIndex, entry.MasterIndex, MeshFieldFlags.Complete);
                 if (data != null) frames.Add(data);
             }
 
@@ -555,37 +558,10 @@ namespace Poly_Ling.Remote
 
 
         // ================================================================
-        // バッチフレーム組み立て
-        // [4B Magic=PLRB][1B Version][3B padding][4B FrameCount]{ [4B Len][Data] }×N
+        // バッチフレーム組み立て（本体は RemoteProgressiveSerializer.BuildBatch）
         // ================================================================
 
         private static byte[] BuildBatch(List<byte[]> frames)
-        {
-            if (frames == null || frames.Count == 0)
-            {
-                using (var ms = new System.IO.MemoryStream(12))
-                using (var w  = new System.IO.BinaryWriter(ms))
-                {
-                    w.Write(RemoteMagic.Batch);
-                    w.Write((byte)1); w.Write((byte)0); w.Write((byte)0); w.Write((byte)0);
-                    w.Write((uint)0);
-                    return ms.ToArray();
-                }
-            }
-            if (frames.Count == 1) return frames[0];
-
-            int totalBody = 0;
-            foreach (var f in frames) totalBody += 4 + f.Length;
-
-            using (var ms = new System.IO.MemoryStream(12 + totalBody))
-            using (var w  = new System.IO.BinaryWriter(ms))
-            {
-                w.Write(RemoteMagic.Batch);
-                w.Write((byte)1); w.Write((byte)0); w.Write((byte)0); w.Write((byte)0);
-                w.Write((uint)frames.Count);
-                foreach (var f in frames) { w.Write((uint)f.Length); w.Write(f); }
-                return ms.ToArray();
-            }
-        }
+            => RemoteProgressiveSerializer.BuildBatch(frames);
     }
 }

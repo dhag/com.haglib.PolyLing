@@ -398,6 +398,34 @@ namespace Poly_Ling.Player
             return OnLoadCsvProject(path, cmd.Merge);
         }
 
+        /// <summary>プロジェクトバイナリ（.plrf）保存コマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSaveProjectBinary(Poly_Ling.Data.SaveProjectBinaryCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnSaveBinaryProject(path, cmd.ModelIndex, cmd.Scope, cmd.MasterIndices);
+        }
+
+        /// <summary>プロジェクトバイナリ（.plrf）読み込みコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteLoadProjectBinary(Poly_Ling.Data.LoadProjectBinaryCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            return OnLoadBinaryProject(path, cmd.ModelIndex, cmd.Append);
+        }
+
         // ================================================================
         // VRM アニメーション（.vrma）書き出し
         //

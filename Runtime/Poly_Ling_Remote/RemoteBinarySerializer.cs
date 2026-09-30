@@ -126,6 +126,9 @@ namespace Poly_Ling.Remote
                 if (flags.HasFlag(MeshFieldFlags.FaceNormalIndices))
                     WriteFaceNormalIndices(w, mesh);
 
+                // 追加の欄（Complete のときだけ立つ）
+                WriteExtras(w, mesh, flags);
+
                 return ms.ToArray();
             }
         }
@@ -291,6 +294,8 @@ namespace Poly_Ling.Remote
                 if (flags.HasFlag(MeshFieldFlags.FaceNormalIndices))
                     ReadFaceNormalIndices(r, mesh, faceCount);
 
+                ReadExtras(r, mesh, flags, vertexCount);
+
                 return mesh;
             }
         }
@@ -363,6 +368,99 @@ namespace Poly_Ling.Remote
                 }
 
                 return h;
+            }
+        }
+
+        // ================================================================
+        // 追加の欄（MeshFieldFlags.Extras。CSV の mesh 行と揃える）
+        //   並びは NormalsExtra → MirrorBoneWeights → ControlPoints → LineGroups → NormalExcludeSets。
+        // ================================================================
+
+        private static void WriteExtras(BinaryWriter w, MeshObject mesh, MeshFieldFlags flags)
+        {
+            if (flags.HasFlag(MeshFieldFlags.NormalsExtra))
+            {
+                for (int i = 0; i < mesh.VertexCount; i++)
+                {
+                    var ns = mesh.Vertices[i].Normals;
+                    int extra = (ns != null && ns.Count > 1) ? ns.Count - 1 : 0;
+                    w.Write(extra);
+                    for (int j = 1; j <= extra; j++) RemoteBinaryIO.WriteVector3(w, ns[j]);
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.MirrorBoneWeights))
+            {
+                for (int i = 0; i < mesh.VertexCount; i++)
+                {
+                    var mbw = mesh.Vertices[i].MirrorBoneWeight;
+                    w.Write(mbw.HasValue);
+                    if (mbw.HasValue) RemoteBinaryIO.WriteBoneWeight(w, mbw.Value);
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.ControlPoints))
+            {
+                for (int i = 0; i < mesh.VertexCount; i++)
+                {
+                    var cps = mesh.Vertices[i].ControlPoints;
+                    int n = cps?.Count ?? 0;
+                    w.Write(n);
+                    for (int j = 0; j < n; j++) RemoteBinaryIO.WriteVector3(w, cps[j]);
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.LineGroups))
+                RemoteBinaryIO.WriteLineGroups(w, mesh.LineGroups);
+
+            if (flags.HasFlag(MeshFieldFlags.NormalExcludeSets))
+                RemoteBinaryIO.WritePartsSetList(w, mesh.NormalRecalcExcludeList);
+        }
+
+        private static void ReadExtras(BinaryReader r, MeshObject mesh, MeshFieldFlags flags, uint vertexCount)
+        {
+            if (flags.HasFlag(MeshFieldFlags.NormalsExtra))
+            {
+                EnsureVertexCount(mesh, vertexCount);
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    int extra = r.ReadInt32();
+                    if (extra == 0) continue;
+                    var v = mesh.Vertices[i];
+                    if (v.Normals == null) v.Normals = new List<Vector3>();
+                    if (v.Normals.Count == 0) v.Normals.Add(Vector3.up);
+                    for (int j = 0; j < extra; j++) v.Normals.Add(RemoteBinaryIO.ReadVector3(r));
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.MirrorBoneWeights))
+            {
+                EnsureVertexCount(mesh, vertexCount);
+                for (int i = 0; i < vertexCount; i++)
+                    mesh.Vertices[i].MirrorBoneWeight =
+                        r.ReadBoolean() ? RemoteBinaryIO.ReadBoneWeight(r) : (BoneWeight?)null;
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.ControlPoints))
+            {
+                EnsureVertexCount(mesh, vertexCount);
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    int n = r.ReadInt32();
+                    if (n == 0) { mesh.Vertices[i].ControlPoints = null; continue; }
+                    var list = new List<Vector3>(n);
+                    for (int j = 0; j < n; j++) list.Add(RemoteBinaryIO.ReadVector3(r));
+                    mesh.Vertices[i].ControlPoints = list;
+                }
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.LineGroups))
+                mesh.LineGroups = RemoteBinaryIO.ReadLineGroups(r);
+
+            if (flags.HasFlag(MeshFieldFlags.NormalExcludeSets))
+            {
+                var nx = RemoteBinaryIO.ReadPartsSetList(r);
+                mesh.NormalRecalcExcludeList = nx.Count > 0 ? nx : null;
             }
         }
 

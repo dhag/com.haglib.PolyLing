@@ -1,6 +1,10 @@
 // Assets/Editor/Poly_Ling/Serialization/ProjectSerializer.cs
 // プロジェクトファイル (.mfproj) のインポート/エクスポート
 // v1.0: 初期バージョン
+//
+// 【決まり】シリアライザ（CSV / JSON(.mfproj) / リモート送信用バイナリ）は 3 つ揃えて直す。
+//   ここに項目を足したら CsvProjectSerializer（CsvModelSerializer）と
+//   RemoteProgressiveSerializer にも足す。確認手順は PolyLing_追加作業の必読.md の E。
 
 using System;
 using System.Collections.Generic;

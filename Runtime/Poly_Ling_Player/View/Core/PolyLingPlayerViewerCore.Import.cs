@@ -796,6 +796,82 @@ namespace Poly_Ling.Player
             return null;
         }
 
+        // path はリモート送信と同じバイナリ（.plrf）。デバッグ用。
+        /// <summary>
+        /// プロジェクトバイナリ保存。scope は project（丸ごと）/ model（modelIndex の 1 体）/
+        /// meshes（modelIndex の masterIndices だけ。断片）。失敗理由を返す（成功時は null）。
+        /// </summary>
+        private string OnSaveBinaryProject(string path, int modelIndex, string scope, int[] masterIndices)
+        {
+            if (string.IsNullOrEmpty(path)) return "パスが指定されていません";
+            var project = ActiveProject;
+            if (project == null) return "プロジェクトがありません";
+
+            byte[] data;
+            switch (scope)
+            {
+                case "project":
+                    data = Poly_Ling.Remote.RemoteProgressiveSerializer.SerializeWholeProject(project);
+                    break;
+                case "model":
+                    if (modelIndex < 0 || modelIndex >= project.ModelCount) return $"modelIndex が範囲外です: {modelIndex}";
+                    data = Poly_Ling.Remote.RemoteProgressiveSerializer.SerializeSingleModel(project, modelIndex);
+                    break;
+                case "meshes":
+                    if (modelIndex < 0 || modelIndex >= project.ModelCount) return $"modelIndex が範囲外です: {modelIndex}";
+                    if (masterIndices == null || masterIndices.Length == 0) return "masterIndices が空です";
+                    data = Poly_Ling.Remote.RemoteProgressiveSerializer.SerializeMeshFragment(
+                        project.Models[modelIndex], masterIndices);
+                    break;
+                default:
+                    return $"scope は project / model / meshes のどれかです: {scope}";
+            }
+
+            if (data == null) return "シリアライズ失敗";
+            try { System.IO.File.WriteAllBytes(path, data); }
+            catch (Exception ex) { return $"保存失敗: {ex.Message}"; }
+            return null;
+        }
+
+        /// <summary>
+        /// プロジェクトバイナリ読込。断片なら modelIndex のモデルへ足す（名前が同じものは置き換え）。
+        /// 丸ごと・モデル単位は append=false で置き換え、true でモデルを足す。失敗理由を返す（成功時は null）。
+        /// </summary>
+        private string OnLoadBinaryProject(string path, int modelIndex, bool append)
+        {
+            if (string.IsNullOrEmpty(path)) return "パスが指定されていません";
+            byte[] data;
+            try { data = System.IO.File.ReadAllBytes(path); }
+            catch (Exception ex) { return $"読込失敗: {ex.Message}"; }
+
+            if (Poly_Ling.Remote.RemoteProgressiveSerializer.IsMeshFragment(data))
+            {
+                var project = ActiveProject;
+                if (project == null) return "プロジェクトがありません";
+                if (modelIndex < 0 || modelIndex >= project.ModelCount) return $"modelIndex が範囲外です: {modelIndex}";
+                var model = project.Models[modelIndex];
+
+                string reason = Poly_Ling.Remote.RemoteProgressiveSerializer.MergeMeshFragment(
+                    data, model, out int added, out int replaced);
+                if (reason != null) return reason;
+
+                // CSV の MergeCsvFromFolder と同じ後始末
+                _viewportManager.EnterSceneReset(project, clearScene: true);
+                model.OnListChanged?.Invoke();
+                Debug.Log($"[PlayerViewerCore] MergeBinary: added={added}, replaced={replaced}");
+                return null;
+            }
+
+            var loadedProject = Poly_Ling.Remote.RemoteProgressiveSerializer.DeserializeWholeProject(data);
+            if (loadedProject == null) return "復元失敗";
+            if (!append) _localLoader.Clear();
+            foreach (var m in loadedProject.Models)
+                _localLoader.LoadModel(m.FilePath ?? loadedProject.Name, m);
+            if (!append) AdoptWorkAxisLibrary(loadedProject);
+            AdoptCoordinateConvention();
+            return null;
+        }
+
         /// <summary>
         /// 読み込んだプロジェクトの作業軸辞書を、実際に表示されるプロジェクトへ移す。
         ///

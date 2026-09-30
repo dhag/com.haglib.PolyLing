@@ -12,6 +12,10 @@
 //   CsvModelSerializer.Texture.cs    CSV モデル入出力：テクスチャの保存・読み込みとユーティリティ。
 //   CsvModelSerializer.VrmCsv.cs     CSV モデル入出力：springbonegroups・vrmmeta・vrmlookat・coordinate・avatarsettings・previewsettings。
 //   ModelEntry.cs                    モデルフォルダ内のメッシュエントリ（CsvModelSerializer から分離）。
+//
+// 【決まり】シリアライザ（CSV / JSON(.mfproj) / リモート送信用バイナリ）は 3 つ揃えて直す。
+//   ここに項目を足したら RemoteProgressiveSerializer と ProjectSerializer にも足す。
+//   確認手順は PolyLing_追加作業の必読.md の E。
 
 using System;
 using System.Collections.Generic;

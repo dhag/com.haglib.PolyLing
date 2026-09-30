@@ -94,6 +94,8 @@
 //   Positions → Normals → UVs → BoneWeights → VertexFlags → VertexIds
 //   → VertexSubIds → FaceIndices → FaceMaterials → FaceFlags → FaceIds
 //   → FaceUVIndices → FaceNormalIndices
+//   → NormalsExtra → MirrorBoneWeights → ControlPoints → LineGroups → NormalExcludeSets
+//     （この 5 つは MeshFieldFlags.Extras。All には入れず Complete で送る。2026-09-30 追加）
 //
 //   VertexSubIds(0x0040) は SubID / PartsID を運ぶ後付けのブロックで、
 //   VertexIds(0x0020) の中身は変えていない。読み手はヘッダの FieldFlags に
@@ -127,6 +129,8 @@ namespace Poly_Ling.Remote
         public const uint Batch         = 0x42524C50;
         /// <summary>ImageList "PLRI"</summary>
         public const uint Image         = 0x49524C50;
+        /// <summary>断片の見出し "PLRF"（メッシュ単位の断片ファイル。RemoteProgressiveSerializer.SerializeMeshFragment）</summary>
+        public const uint Fragment      = 0x46524C50;
 
         // C→S クライアントアップロード（ModelMetaと同値、方向で区別）
         /// <summary>クライアントアップロードメッシュ "PLRM"</summary>
@@ -187,11 +191,28 @@ namespace Poly_Ling.Remote
         FaceUVIndices     = 0x1000,
         FaceNormalIndices = 0x2000,
 
+        // 追加の欄（CSV の mesh 行と揃えるため。2026-09-30 追加）
+        //   All には含めない。含めるとこれらを知らない読み手（ブラウザのクライアント等）が
+        //   本文を読み違える。丸ごと・断片のファイル保存とプロジェクト転送だけが Complete で送る。
+        /// <summary>2 本目以降の法線（頂点ごとに [4B 本数] + 本数×12B）。1 本目は Normals 欄。</summary>
+        NormalsExtra      = 0x4000,
+        /// <summary>ミラー側ウェイト（頂点ごとに [1B 有無] + 有なら 32B）。</summary>
+        MirrorBoneWeights = 0x8000,
+        /// <summary>頂点の制御点（頂点ごとに [4B 個数] + 個数×12B）。</summary>
+        ControlPoints     = 0x10000,
+        /// <summary>線分群（メッシュ単位）。</summary>
+        LineGroups        = 0x20000,
+        /// <summary>法線再計算の除外セット（メッシュ単位）。</summary>
+        NormalExcludeSets = 0x40000,
+
         // 複合
         VertexBasic    = Positions | Normals | UVs,
         AllVertex      = Positions | Normals | UVs | BoneWeights | VertexFlags | VertexIds | VertexSubIds,
         AllFace        = FaceIndices | FaceMaterials | FaceFlags | FaceIds | FaceUVIndices | FaceNormalIndices,
         All            = AllVertex | AllFace,
+        /// <summary>All に追加の欄を足したもの。ファイル保存とプロジェクト転送で使う。</summary>
+        Extras         = NormalsExtra | MirrorBoneWeights | ControlPoints | LineGroups | NormalExcludeSets,
+        Complete       = All | Extras,
     }
 
     /// <summary>

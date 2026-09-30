@@ -7,6 +7,10 @@
 //     model.csv, materials.csv, humanoid.csv, morphgroups.csv,
 //     editorstate.csv, workplane.csv,
 //     ModelName.mesh.csv, ModelName.bone.csv, ModelName.morph.csv
+//
+// 【決まり】シリアライザ（CSV / JSON(.mfproj) / リモート送信用バイナリ）は 3 つ揃えて直す。
+//   ここに項目を足したら RemoteProgressiveSerializer と ProjectSerializer にも足す。
+//   確認手順は PolyLing_追加作業の必読.md の E。
 
 using System;
 using System.Collections.Generic;

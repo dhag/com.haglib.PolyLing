@@ -99,16 +99,15 @@ namespace Poly_Ling.Player
         private void FetchAllModelsBatch(int mi)
         {
             if (mi >= _modelCount) return;
-            FetchMeshDataBatch(mi, "bone", () =>
-                FetchMeshDataBatch(mi, "drawable", () =>
-                    FetchMeshDataBatch(mi, "morph", () =>
-                    {
-                        int next = mi + 1;
-                        if (next < _modelCount)
-                            FetchAllModelsBatch(next);
-                        else
-                            Debug.Log("[PolyLingClientTest] フェッチ完了");
-                    })));
+            // PlayerRemoteFetchFlow と同じく全型をまとめて取る。
+            FetchMeshDataBatch(mi, "all", () =>
+            {
+                int next = mi + 1;
+                if (next < _modelCount)
+                    FetchAllModelsBatch(next);
+                else
+                    Debug.Log("[PolyLingClientTest] フェッチ完了");
+            });
         }
 
         private void FetchMeshDataBatch(int mi, string cat, System.Action done = null)

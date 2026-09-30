@@ -223,6 +223,7 @@ namespace Poly_Ling.Player
                 // 保存・書き出し
                 case SaveProjectFileCommand _:
                 case SaveProjectCsvCommand _:
+                case SaveProjectBinaryCommand _:
                 case ExportPmxFileCommand _:
                 case ExportMqoFileCommand _:
                 case ExportObjFileCommand _:
@@ -232,6 +233,7 @@ namespace Poly_Ling.Player
                 // 読込・初期化
                 case LoadProjectFileCommand _:
                 case LoadProjectCsvCommand _:
+                case LoadProjectBinaryCommand _:
                 case ImportPmxFileCommand _:
                 case ImportMqoFileCommand _:
                 case ImportObjFileCommand _:

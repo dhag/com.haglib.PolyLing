@@ -177,3 +177,34 @@ Instruction、「なぜ」が Note として入る。
 いまの状態は `queryScenarioRun`、やめるのは `stopScenarioRun`。
 流す前に `queryScenarioAudit` を 0 にしておくこと。索引の直書きは、
 モデルに先に別のオブジェクトがあると別物を掴んで途中で失敗する。
+
+---
+
+## E. シリアライザを変えるとき
+
+保存形式は 3 つある。**1 つに項目を足したら、3 つとも足す。**
+
+| 形式 | 場所 | 使い道 |
+|---|---|---|
+| CSV | `CsvProjectSerializer` / `CsvModelSerializer.*` | 保存・断片のマージ |
+| JSON（.mfproj） | `ProjectSerializer` | 保存 |
+| バイナリ（.plrf） | `RemoteProgressiveSerializer` | リモート送信（断片・丸ごと） |
+
+バイナリは版番号を上げ、旧版も読めるようにする（`RemoteBinaryProtocol.cs` の先頭に版の履歴がある）。
+バイナリの置き場所：プロジェクト見出し＝`SerializeProjectHeader`、モデル単位＝`WriteModelExtras`、
+メッシュ単位の付帯＝`WriteMeshExtras`（どちらも `RemoteProgressiveSerializer.Extras.cs`）、
+頂点・面とメッシュ単位の索引付きデータ＝`RemoteBinarySerializer`（`MeshFieldFlags`）。
+MeshContext の欄の多くは MeshObject に置かれている。ジオメトリで MeshObject を差し替えても消えないよう、
+MeshObject に欄を足したら `CopySummaryAttributes` にも足す。
+
+### 確認（ファイルで行う）
+
+1. `saveProjectCsv` で A を保存
+2. `saveProjectBinary` で .plrf を保存
+3. `loadProjectBinary` で読み戻す
+4. `saveProjectCsv` で B を保存
+5. `queryCsvFolderDiff(folderA, folderB)` で比べる。「差なし」以外なら、その項目がバイナリに入っていない
+   （大きさだけでは比べない。-1 と 0、True と False が打ち消し合って大きさが同じになることがある）
+
+断片（`saveProjectBinary` の `scope=meshes`）とモデル単位（`scope=model`）も同じ手順で確かめる。
+断片は同じモデルへ読み戻す（名前が同じものは置き換わる）と、A と比べて「差なし」になるはず。

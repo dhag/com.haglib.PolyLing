@@ -6,6 +6,13 @@
 //   PLRM SerializeModelMeta     / DeserializeModelMeta
 //   PLRS SerializeMeshSummary   / DeserializeMeshSummary
 //   PLRD SerializeMeshData      / DeserializeMeshData
+//   PLRB BuildBatch             / (RemoteProjectReceiver.ProcessBatch)
+//   プロジェクト全体 SerializeWholeProject / DeserializeWholeProject
+//
+// 【決まり】シリアライザ（CSV / JSON(.mfproj) / このバイナリ）は 3 つ揃えて直す。
+//   CSV や JSON に項目を足したら、ここにも足す（リモート送信はこのバイナリで行う）。
+//   確認は saveProjectCsv → saveProjectBinary → loadProjectBinary → saveProjectCsv の
+//   2 つの CSV を比べる（PolyLing_追加作業の必読.md の E）。
 
 using System;
 using System.Collections.Generic;
@@ -19,12 +26,13 @@ using Poly_Ling.Materials;
 
 namespace Poly_Ling.Remote
 {
-    public static class RemoteProgressiveSerializer
+    public static partial class RemoteProgressiveSerializer
     {
         // ================================================================
         // PLRH — ProjectHeader
         // [4B] Magic  [1B] Version  [1B] CurrentModelIndex  [2B] ModelCount
         // [string] ProjectName
+        // [WorkAxes] (v2+) 作業軸辞書（workaxis_library.csv と同じ項目）。v1 の受信側は読まずに終わる。
         // ================================================================
 
         public static byte[] SerializeProjectHeader(ProjectContext project)
@@ -34,11 +42,29 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ProjectHeader);
-                w.Write((byte)1);
+                w.Write((byte)2);
                 w.Write((byte)project.CurrentModelIndex);
                 w.Write((ushort)project.ModelCount);
                 WriteString(w, project.Name);
+                WriteWorkAxisLibrary(w, project.WorkAxes);
                 return ms.ToArray();
+            }
+        }
+
+        /// <summary>PLRH の v2 以降の付帯（作業軸辞書）を読んで project へ入れる。v1 なら何もしない。</summary>
+        public static void ReadProjectHeaderExtras(byte[] data, ProjectContext project)
+        {
+            if (data == null || data.Length < 8 || project == null) return;
+            using (var ms = new MemoryStream(data))
+            using (var r = new BinaryReader(ms))
+            {
+                if (r.ReadUInt32() != RemoteMagic.ProjectHeader) return;
+                int version = r.ReadByte();
+                r.ReadByte(); r.ReadUInt16();
+                ReadString(r);
+                if (version < 2) return;
+                if (project.WorkAxes == null) project.WorkAxes = new WorkAxisLibrary();
+                ReadWorkAxisLibrary(r, project.WorkAxes);
             }
         }
 
@@ -112,16 +138,27 @@ namespace Poly_Ling.Remote
         //     Version 5 の受信側とは非互換のため Editor/Player を同時更新すること。
         //   ※ Version 7 で末尾に [8B] ActiveWorkAxisObjectId（使う作業軸の ObjectId。0 は未指定）を追加。
         //     Version 6 以前の受信側は末尾のこの欄を読まずに終わる（読み終わりを検査しない）。
+        //   ※ Version 8 で各材質の末尾に AssetPath・金属度・滑らかさ・法線強度・遮蔽強度・
+        //     ブレンド・各テクスチャ経路（materials.csv と同じ項目）を追加。材質は途中に並ぶので
+        //     Version 7 以前の受信側とは非互換。Editor/Player を同時更新すること。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
         {
             if (model == null) return null;
+
+            // IK: 集約 Links → per-bone（IKLink）を同期してから送る（CSV / JSON の保存と同じ）。
+            // PLRS の v6 は per-bone の IKLink を運び、受信側で RebuildLinksFromPerBone する。
+            Poly_Ling.Ops.IKChainResolver.SyncPerBoneFromLinks(model);
+
+            // Humanoid: 集中 Dict → per-bone（HumanBodyBone）を同期してから送る（CSV と同じ）。
+            Poly_Ling.Ops.HumanoidMappingResolver.SyncPerBoneFromMapping(model);
+
             using (var ms = new MemoryStream())
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)7);   // version 7: 使う作業軸の ID。v6: 参照段（RefName / ExpansionPolicy）。v5: 意味情報、v4: ステップ列、v3: ObjectGroup ブロック
+                w.Write((byte)9);   // version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照段（RefName / ExpansionPolicy）。v5: 意味情報、v4: ステップ列、v3: ObjectGroup ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -137,7 +174,7 @@ namespace Poly_Ling.Remote
                 var matRefs = model.MaterialReferences;
                 w.Write((ushort)matRefs.Count);
                 for (int i = 0; i < matRefs.Count; i++)
-                    WriteMaterialData(w, matRefs[i]?.Data ?? new MaterialData());
+                    WriteMaterialData(w, matRefs[i]?.Data ?? new MaterialData(), matRefs[i]?.AssetPath);
 
                 var exprs = model.MorphExpressions;
                 w.Write((ushort)exprs.Count);
@@ -250,6 +287,9 @@ namespace Poly_Ling.Remote
                 // ── version 7：使う作業軸（ModelContext.ActiveWorkAxisObjectId）。0 は未指定。
                 w.Write(model.ActiveWorkAxisObjectId);
 
+                // ── version 9：CSV のモデル単位ファイルと揃える付帯（RemoteProgressiveSerializer.Extras.cs）
+                WriteModelExtras(w, model);
+
                 return ms.ToArray();
             }
         }
@@ -285,12 +325,13 @@ namespace Poly_Ling.Remote
                 var refList = new List<MaterialReference>(matCount);
                 for (int i = 0; i < matCount; i++)
                 {
-                    var (mdata, tex) = ReadMaterialData(r, metaVersion);
+                    var (mdata, tex, assetPath) = ReadMaterialData(r, metaVersion);
 
                     // wire の MaterialData から直接参照を生成する。
                     // Unity Material 経由（model.Materials）だと SetMaterial→GetAssetPath/
                     // FromMaterial が走り、Editor外で EditorBridgeNull がエラーになるため回避。
                     var mref = new MaterialReference(mdata);
+                    if (!string.IsNullOrEmpty(assetPath)) mref.AssetPath = assetPath;
 
                     // テクスチャがある場合のみ Material を生成して付与（Editor呼び出しなし）。
                     if (tex != null)
@@ -469,6 +510,10 @@ namespace Poly_Ling.Remote
                 if (metaVersion >= 7)
                     model.ActiveWorkAxisObjectId = r.ReadUInt64();
 
+                // ── version 9：モデル単位の付帯
+                if (metaVersion >= 9)
+                    ReadModelExtras(r, model);
+
                 return (modelIndex, model);
             }
         }
@@ -495,6 +540,12 @@ namespace Poly_Ling.Remote
         // [1B] HasWorkAxis(v5+)  (if) Origin[12B] Rotation[16B] Length[4B] IsVisible[1B]
         //   ※ v5 で末尾に追加。値を持つのは作業軸オブジェクト（MeshType.WorkAxis）だけ。
         //     v4 以前の受信側は末尾のこの欄を読まずに終わる（読み終わりを検査しない）。
+        // [1B] BoneTransform.UseLocalTransform (v6+)
+        // [BonePose] [1B] Has (if) IsActive[1B] HasManual[1B] (if) dPos[12B] dRot[16B] Weight[4B] Enabled[1B]  (v6+)
+        // [IKLink]   [1B] Has (if) HasLimit[1B] Min[12B] Max[12B]                                        (v6+)
+        // [RigidBody][1B] Has (if) *.pmx_physics.csv の rigidBody 行と同じ項目                            (v6+)
+        // [Joint]    [1B] Has (if) *.pmx_physics.csv の joint 行と同じ項目                                (v6+)
+        //   ※ v6 で末尾に追加。v5 以前の受信側は読まずに終わる。
         // ================================================================
 
         public static byte[] SerializeMeshSummary(MeshContext mc, int modelIndex, int meshIndex)
@@ -504,7 +555,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.MeshSummary);
-                w.Write((byte)5);   // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用 / v5: 作業軸の値
+                w.Write((byte)7);   // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用 / v5: 作業軸の値 / v6: ポーズ層・IK リンク・剛体・ジョイント / v7: メッシュ単位の付帯
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
                 w.Write((short)meshIndex);
@@ -592,8 +643,96 @@ namespace Poly_Ling.Remote
                     w.Write(wa.IsVisible);
                 }
 
+                // ---- v6: ボーンのポーズ層・IK リンク・剛体・ジョイント（*.bone.csv / *.pmx_physics.csv と揃える）----
+                w.Write(mc.BoneTransform?.UseLocalTransform ?? false);
+                WriteBonePose(w, mc.BonePoseData);
+
+                var lk = mc.MeshObject?.IKLink;
+                w.Write(lk != null);
+                if (lk != null)
+                {
+                    w.Write(lk.HasLimit);
+                    WriteVector3(w, lk.LimitMin);
+                    WriteVector3(w, lk.LimitMax);
+                }
+
+                var rb = mc.MeshObject?.RigidBodyData;
+                w.Write(rb != null);
+                if (rb != null)
+                {
+                    WriteString(w, rb.NameEnglish ?? "");
+                    WriteString(w, rb.RelatedBoneName ?? "");
+                    w.Write(rb.BoneIndex);
+                    w.Write(rb.Group);
+                    w.Write(rb.CollisionMask);
+                    w.Write((int)rb.Shape);
+                    WriteVector3(w, rb.Size);
+                    WriteVector3(w, rb.Position);
+                    WriteVector3(w, rb.Rotation);
+                    w.Write(rb.Mass);
+                    w.Write(rb.LinearDamping);
+                    w.Write(rb.AngularDamping);
+                    w.Write(rb.Restitution);
+                    w.Write(rb.Friction);
+                    w.Write((int)rb.PhysicsMode);
+                }
+
+                var jd = mc.MeshObject?.JointData;
+                w.Write(jd != null);
+                if (jd != null)
+                {
+                    WriteString(w, jd.NameEnglish ?? "");
+                    w.Write(jd.JointType);
+                    WriteString(w, jd.BodyAName ?? "");
+                    WriteString(w, jd.BodyBName ?? "");
+                    w.Write(jd.RigidBodyIndexA);
+                    w.Write(jd.RigidBodyIndexB);
+                    WriteVector3(w, jd.Position);
+                    WriteVector3(w, jd.Rotation);
+                    WriteVector3(w, jd.TranslationMin);
+                    WriteVector3(w, jd.TranslationMax);
+                    WriteVector3(w, jd.RotationMin);
+                    WriteVector3(w, jd.RotationMax);
+                    WriteVector3(w, jd.SpringTranslation);
+                    WriteVector3(w, jd.SpringRotation);
+                }
+
+                // ---- v7: メッシュ単位の付帯（CSV の mesh 行と揃える。RemoteProgressiveSerializer.Extras.cs）----
+                WriteMeshExtras(w, mc);
+
                 return ms.ToArray();
             }
+        }
+
+        /// <summary>ポーズ層。CSV の bonePose 行と同じく IsActive と Manual 層だけを運ぶ。</summary>
+        private static void WriteBonePose(BinaryWriter w, BonePoseData bp)
+        {
+            w.Write(bp != null);
+            if (bp == null) return;
+            w.Write(bp.IsActive);
+            var manual = bp.GetLayer("Manual");
+            bool hasManual = manual != null && !manual.IsZero;
+            w.Write(hasManual);
+            if (!hasManual) return;
+            WriteVector3(w, manual.DeltaPosition);
+            WriteQuaternion(w, manual.DeltaRotation);
+            w.Write(manual.Weight);
+            w.Write(manual.Enabled);
+        }
+
+        private static BonePoseData ReadBonePose(BinaryReader r)
+        {
+            if (!r.ReadBoolean()) return null;
+            var bp = new BonePoseData { IsActive = r.ReadBoolean() };
+            if (r.ReadBoolean())
+            {
+                var layer = bp.GetOrCreateLayer("Manual");
+                layer.DeltaPosition = ReadVector3(r);
+                layer.DeltaRotation = ReadQuaternion(r);
+                layer.Weight        = r.ReadSingle();
+                layer.Enabled       = r.ReadBoolean();
+            }
+            return bp;
         }
 
         public static (int modelIndex, int meshIndex, MeshContext mc, int vertexCount, int faceCount)? DeserializeMeshSummary(byte[] data)
@@ -645,6 +784,9 @@ namespace Poly_Ling.Remote
                     if (bpCount > 0)
                     {
                         var mbd = mc.MorphBaseData ?? new MorphBaseData(morphName);
+                        // SetAsMorph は頂点の無い MeshObject では何もしない（サマリの時点では頂点が無い）。
+                        // その場合 MorphPanel の代入も捨てられるので、ここで入れ直す。
+                        mbd.Panel = morphPanel;
                         mbd.BasePositions = new Vector3[bpCount];
                         for (int i = 0; i < bpCount; i++)
                             mbd.BasePositions[i] = ReadVector3(r);
@@ -716,6 +858,72 @@ namespace Poly_Ling.Remote
                     mc.WorkAxis  = wa;
                 }
 
+                // ---- v6: ボーンのポーズ層・IK リンク・剛体・ジョイント ----
+                // v5 以前の送信元からは届かないので空のまま。
+                bool btUseLocal = true;   // v5 以前は常に true として受けていた
+                if (summaryVersion >= 6)
+                {
+                    btUseLocal = r.ReadBoolean();
+                    mc.BonePoseData = ReadBonePose(r);
+
+                    if (r.ReadBoolean())
+                    {
+                        mc.MeshObject.IKLink = new IKLinkData
+                        {
+                            HasLimit = r.ReadBoolean(),
+                            LimitMin = ReadVector3(r),
+                            LimitMax = ReadVector3(r),
+                        };
+                    }
+
+                    if (r.ReadBoolean())
+                    {
+                        mc.MeshObject.RigidBodyData = new RigidBodyData
+                        {
+                            NameEnglish     = ReadString(r),
+                            RelatedBoneName = ReadString(r),
+                            BoneIndex       = r.ReadInt32(),
+                            Group           = r.ReadInt32(),
+                            CollisionMask   = r.ReadUInt16(),
+                            Shape           = (RigidBodyShape)r.ReadInt32(),
+                            Size            = ReadVector3(r),
+                            Position        = ReadVector3(r),
+                            Rotation        = ReadVector3(r),
+                            Mass            = r.ReadSingle(),
+                            LinearDamping   = r.ReadSingle(),
+                            AngularDamping  = r.ReadSingle(),
+                            Restitution     = r.ReadSingle(),
+                            Friction        = r.ReadSingle(),
+                            PhysicsMode     = (RigidBodyPhysicsMode)r.ReadInt32(),
+                        };
+                    }
+
+                    if (r.ReadBoolean())
+                    {
+                        mc.MeshObject.JointData = new JointData
+                        {
+                            NameEnglish       = ReadString(r),
+                            JointType         = r.ReadInt32(),
+                            BodyAName         = ReadString(r),
+                            BodyBName         = ReadString(r),
+                            RigidBodyIndexA   = r.ReadInt32(),
+                            RigidBodyIndexB   = r.ReadInt32(),
+                            Position          = ReadVector3(r),
+                            Rotation          = ReadVector3(r),
+                            TranslationMin    = ReadVector3(r),
+                            TranslationMax    = ReadVector3(r),
+                            RotationMin       = ReadVector3(r),
+                            RotationMax       = ReadVector3(r),
+                            SpringTranslation = ReadVector3(r),
+                            SpringRotation    = ReadVector3(r),
+                        };
+                    }
+                }
+
+                // ---- v7: メッシュ単位の付帯 ----
+                if (summaryVersion >= 7)
+                    ReadMeshExtras(r, mc);
+
                 // BoneTransform は MeshObject 設定後に適用
                 // mc.MeshObject は先頭で生成済み（Name/Type書き込み済み）なのでそのまま使う
                 if (hasBone)
@@ -725,7 +933,7 @@ namespace Poly_Ling.Remote
                         Position        = btPos,
                         Rotation        = btRot,
                         Scale           = btScale,
-                        UseLocalTransform = true,
+                        UseLocalTransform = btUseLocal,
                     };
                 }
 
@@ -818,7 +1026,7 @@ namespace Poly_Ling.Remote
         // マテリアルシリアライズ（内部共用）
         // ================================================================
 
-        private static void WriteMaterialData(BinaryWriter w, MaterialData d)
+        private static void WriteMaterialData(BinaryWriter w, MaterialData d, string assetPath)
         {
             WriteString(w, d.Name ?? string.Empty);
             w.Write((byte)d.ShaderType);
@@ -875,6 +1083,23 @@ namespace Poly_Ling.Remote
                 w.Write(p.W);
                 WriteString(w, p.TexturePath ?? string.Empty);
             }
+
+            // ---- ModelMeta version 8 拡張ブロック（materials.csv と揃える）----
+            // 追加は必ずこのブロックの末尾に行うこと。
+            WriteString(w, assetPath ?? string.Empty);
+            w.Write(d.Metallic);
+            w.Write(d.Smoothness);
+            w.Write(d.NormalScale);
+            w.Write(d.OcclusionStrength);
+            w.Write((byte)d.BlendMode);
+            WriteString(w, d.BaseMapPath ?? string.Empty);
+            WriteString(w, d.MetallicMapPath ?? string.Empty);
+            WriteString(w, d.NormalMapPath ?? string.Empty);
+            WriteString(w, d.OcclusionMapPath ?? string.Empty);
+            WriteString(w, d.EmissionMapPath ?? string.Empty);
+            WriteString(w, d.SourceTexturePath ?? string.Empty);
+            WriteString(w, d.SourceAlphaMapPath ?? string.Empty);
+            WriteString(w, d.SourceBumpMapPath ?? string.Empty);
         }
 
         private static void WriteST(BinaryWriter w, float[] st)
@@ -894,7 +1119,7 @@ namespace Poly_Ling.Remote
             return new float[] { r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle() };
         }
 
-        private static (MaterialData data, Texture2D tex) ReadMaterialData(BinaryReader r, int version)
+        private static (MaterialData data, Texture2D tex, string assetPath) ReadMaterialData(BinaryReader r, int version)
         {
             var d = new MaterialData();
             d.Name       = ReadString(r);
@@ -957,8 +1182,30 @@ namespace Poly_Ling.Remote
                 }
             }
 
-            return (d, tex);
+            // ---- ModelMeta version 8 拡張ブロック ----
+            string assetPath = null;
+            if (version >= 8)
+            {
+                assetPath             = NullIfEmpty(ReadString(r));
+                d.Metallic            = r.ReadSingle();
+                d.Smoothness          = r.ReadSingle();
+                d.NormalScale         = r.ReadSingle();
+                d.OcclusionStrength   = r.ReadSingle();
+                d.BlendMode           = (BlendModeType)r.ReadByte();
+                d.BaseMapPath         = NullIfEmpty(ReadString(r));
+                d.MetallicMapPath     = NullIfEmpty(ReadString(r));
+                d.NormalMapPath       = NullIfEmpty(ReadString(r));
+                d.OcclusionMapPath    = NullIfEmpty(ReadString(r));
+                d.EmissionMapPath     = NullIfEmpty(ReadString(r));
+                d.SourceTexturePath   = NullIfEmpty(ReadString(r));
+                d.SourceAlphaMapPath  = NullIfEmpty(ReadString(r));
+                d.SourceBumpMapPath   = NullIfEmpty(ReadString(r));
+            }
+
+            return (d, tex, assetPath);
         }
+
+        private static string NullIfEmpty(string s) => string.IsNullOrEmpty(s) ? null : s;
 
         private static byte[] EncodeTextureAsPNG(Texture2D src)
         {
@@ -1026,5 +1273,91 @@ namespace Poly_Ling.Remote
 
         private static void WriteMatrix4x4(BinaryWriter w, Matrix4x4 m) { for (int i = 0; i < 16; i++) w.Write(m[i]); }
         private static Matrix4x4 ReadMatrix4x4(BinaryReader r) { var m = new Matrix4x4(); for (int i = 0; i < 16; i++) m[i] = r.ReadSingle(); return m; }
+
+        // ================================================================
+        // PLRB — バッチフレーム（複数フレームを 1 本に束ねる）
+        // [4B Magic=PLRB][1B Version][3B padding][4B FrameCount]{ [4B Len][Data] }×N
+        // 読みは RemoteProjectReceiver.ProcessBatch。1 フレームなら束ねずそのまま返す。
+        // ================================================================
+
+        public static byte[] BuildBatch(List<byte[]> frames)
+        {
+            if (frames == null || frames.Count == 0)
+            {
+                using (var ms = new MemoryStream(12))
+                using (var w  = new BinaryWriter(ms))
+                {
+                    w.Write(RemoteMagic.Batch);
+                    w.Write((byte)1); w.Write((byte)0); w.Write((byte)0); w.Write((byte)0);
+                    w.Write((uint)0);
+                    return ms.ToArray();
+                }
+            }
+            if (frames.Count == 1) return frames[0];
+
+            int totalBody = 0;
+            foreach (var f in frames) totalBody += 4 + f.Length;
+
+            using (var ms = new MemoryStream(12 + totalBody))
+            using (var w  = new BinaryWriter(ms))
+            {
+                w.Write(RemoteMagic.Batch);
+                w.Write((byte)1); w.Write((byte)0); w.Write((byte)0); w.Write((byte)0);
+                w.Write((uint)frames.Count);
+                foreach (var f in frames) { w.Write((uint)f.Length); w.Write(f); }
+                return ms.ToArray();
+            }
+        }
+
+        // ================================================================
+        // プロジェクト全体
+        // PLRH → (PLRM → PLRS×メッシュ数)×モデル数 → PLRD×頂点を持つメッシュ数 を PLRB で束ねる。
+        // リモートで送るフレームと同じもの。ファイル保存（saveProjectBinary）はこれを書くだけ。
+        // ================================================================
+
+        public static byte[] SerializeWholeProject(ProjectContext project)
+        {
+            if (project == null) return null;
+
+            var frames = new List<byte[]>();
+            var header = SerializeProjectHeader(project);
+            if (header == null) return null;
+            frames.Add(header);
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.Models[mi];
+                var mm = SerializeModelMeta(model, mi);
+                if (mm != null) frames.Add(mm);
+                for (int si = 0; si < model.Count; si++)
+                {
+                    var ms = SerializeMeshSummary(model.MeshContextList[si], mi, si);
+                    if (ms != null) frames.Add(ms);
+                }
+            }
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.Models[mi];
+                for (int si = 0; si < model.Count; si++)
+                {
+                    var mc = model.MeshContextList[si];
+                    if (mc?.MeshObject == null || mc.MeshObject.VertexCount == 0) continue;
+                    var md = SerializeMeshData(mc, mi, si, MeshFieldFlags.Complete);
+                    if (md != null) frames.Add(md);
+                }
+            }
+
+            return BuildBatch(frames);
+        }
+
+        /// <summary>SerializeWholeProject の逆。失敗時は null。</summary>
+        public static ProjectContext DeserializeWholeProject(byte[] data)
+        {
+            if (data == null || data.Length < 4) return null;
+            var receiver = new RemoteProjectReceiver();
+            receiver.ProcessBatch(data);
+            return receiver.Project;
+        }
     }
 }
