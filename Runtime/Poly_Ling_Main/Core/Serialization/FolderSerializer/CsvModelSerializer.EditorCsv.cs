@@ -179,63 +179,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
-        // workaxis.csv（作業用ローカル軸）
-        //
-        // 値はすべて Unity ワールド座標系のまま書き出す（座標系変換なし）。
-        // 回転はクォータニオン x,y,z,w。
-        // ================================================================
-
-        private static void WriteWorkAxisCsv(string folderPath, WorkAxisContext wa)
-        {
-            var o = wa.Origin;
-            var r = wa.Rotation;
-
-            var sb = new StringBuilder();
-            sb.AppendLine("#PolyLing_WorkAxis,version,1.0");
-            sb.AppendLine($"origin,{Fl(o.x)},{Fl(o.y)},{Fl(o.z)}");
-            sb.AppendLine($"rotation,{Fl(r.x)},{Fl(r.y)},{Fl(r.z)},{Fl(r.w)}");
-            sb.AppendLine($"isVisible,{wa.IsVisible}");
-            sb.AppendLine($"length,{Fl(wa.Length)}");
-
-            File.WriteAllText(Path.Combine(folderPath, "workaxis.csv"), sb.ToString(), Encoding.UTF8);
-        }
-
-        private static void ReadWorkAxisCsv(string path, WorkAxisContext wa)
-        {
-            if (wa == null) return;
-            wa.Reset();
-            if (!File.Exists(path)) return;
-
-            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
-            {
-                var cols = Split(line);
-                if (cols.Length < 2 || cols[0].StartsWith("#")) continue;
-
-                switch (cols[0])
-                {
-                    case "origin":
-                        wa.Origin = new Vector3(PFl(cols, 1), PFl(cols, 2), PFl(cols, 3));
-                        break;
-                    case "rotation":
-                        wa.Rotation = new Quaternion(
-                            PFl(cols, 1), PFl(cols, 2), PFl(cols, 3), PFl(cols, 4, 1f));
-                        break;
-                    case "isVisible":
-                        wa.IsVisible = PBool(cols, 1, true);
-                        break;
-                    case "length":
-                        // 行が無い旧ファイルは Reset() の既定値のまま。
-                        // 0 以下は下限クランプで使い物にならない長さになるため無視する。
-                        {
-                            float len = PFl(cols, 1);
-                            if (len > 0f) wa.Length = len;
-                        }
-                        break;
-                }
-            }
-        }
-
-        // ================================================================
         // Load: フォルダ内の全メッシュエントリ読み込み（マージ用）
         // ================================================================
 

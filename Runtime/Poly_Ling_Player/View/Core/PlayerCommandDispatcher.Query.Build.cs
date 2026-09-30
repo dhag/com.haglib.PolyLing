@@ -217,6 +217,34 @@ namespace Poly_Ling.Player
                 values.Add(PLDataValue.Str(key + ".name",        ent.Name ?? ""));
             }
 
+            // 全 MeshContext の階層・種別・表示（取り込み結果の検証用）
+            var list = model.MeshContextList;
+            for (int m = 0; m < list.Count; m++)
+            {
+                var mc = list[m];
+                if (mc == null) continue;
+                string key = $"mesh.{m}";
+                values.Add(PLDataValue.Str(key + ".name",       mc.Name ?? ""));
+                values.Add(PLDataValue.Str(key + ".type",       mc.Type.ToString()));
+                values.Add(PLDataValue.Num(key + ".depth",      mc.Depth));
+                values.Add(PLDataValue.Num(key + ".parent",     mc.HierarchyParentIndex));
+                values.Add(PLDataValue.Num(key + ".visible",    mc.IsVisible ? 1 : 0));
+                values.Add(PLDataValue.Num(key + ".mirrorType", mc.MirrorType));
+                values.Add(PLDataValue.Num(key + ".bakedFrom",  mc.BakedMirrorSourceIndex));
+                values.Add(PLDataValue.Num(key + ".vertices",   mc.MeshObject?.VertexCount ?? 0));
+                values.Add(PLDataValue.Num(key + ".faces",      mc.MeshObject?.FaceCount ?? 0));
+
+                // BoneTransform：フラグと値が単位か（UseLocalTransform の検証用）
+                var bt = mc.BoneTransform;
+                bool btUnit = bt == null ||
+                    (bt.Position == Vector3.zero && bt.Rotation == Vector3.zero && bt.Scale == Vector3.one);
+                values.Add(PLDataValue.Num(key + ".useLocal", bt != null && bt.UseLocalTransform ? 1 : 0));
+                values.Add(PLDataValue.Num(key + ".btUnit",   btUnit ? 1 : 0));
+                if (!btUnit)
+                    values.Add(PLDataValue.Str(key + ".bt",
+                        $"P{bt.Position} R{bt.Rotation} S{bt.Scale}"));
+            }
+
             var store = model.DataStore;
             var entry = store.Put(PLDataEntry.FromValues(
                 ResolveResultName(store, cmd.ResultName, "modelStructure"), values,

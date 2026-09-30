@@ -1,5 +1,5 @@
 // WorkAxisObjectOps.cs
-// 作業軸オブジェクト（MeshType.WorkAxis）の生成と、旧データからの移行。
+// 作業軸オブジェクト（MeshType.WorkAxis）の生成。
 //
 // 【正典】
 //   軸値（原点・回転・長さ）は MeshContext.WorkAxis が持つ。ModelContext は
@@ -10,8 +10,10 @@
 //   頂点 0・面 0 の MeshObject を必ず持たせる（PartsIdSplitInserter.cs:6-9 と同じ理由）。
 //
 // 【表示】
-//   表示するかどうかは MeshContext.IsVisible を使う。WorkAxisContext.IsVisible は
-//   旧データの移行でだけ読み、以後は参照しない。
+//   オブジェクトとしての表示（一覧の可視）は MeshContext.IsVisible。
+//   ギズモの表示と掴めるかどうかは WorkAxisContext.IsVisible
+//   （WorkAxisToolHandler / DeformToolHandler / 作業軸パネルのチェックボックスが読む）。
+//   作成時は WorkAxisContext.IsVisible を MeshContext.IsVisible の初期値にも使う。
 //
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 
@@ -84,19 +86,6 @@ namespace Poly_Ling.Ops
             model.Insert(index, ctx);
             model.ActiveWorkAxisObjectId = ctx.ObjectId;
             return index;
-        }
-
-        /// <summary>
-        /// 旧データ（モデル直下に 1 本だけ持っていた作業軸）を作業軸オブジェクトへ移す。
-        /// すでに作業軸オブジェクトがあるモデルには何もしない。
-        /// </summary>
-        /// <returns>移行したら true。</returns>
-        public static bool MigrateLegacy(ModelContext model, WorkAxisContext legacy)
-        {
-            if (model == null || legacy == null) return false;
-            if (model.ResolveWorkAxisObject() != null) return false;
-
-            return Append(model, DefaultName, legacy) >= 0;
         }
     }
 }

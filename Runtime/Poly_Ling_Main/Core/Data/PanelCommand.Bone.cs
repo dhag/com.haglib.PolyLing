@@ -65,7 +65,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>BoneTransform の Position/Rotation/Scale 単一軸値変更</summary>
-    [PLCommand(Category = "rig.skeleton.pose", Effects = PLCommandEffect.Skeleton, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.Targets, Description = "BoneTransform の Position / Rotation / Scale の 1 軸だけを変える。")]
+    [PLCommand(Category = "rig.skeleton.pose", Effects = PLCommandEffect.Skeleton, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.Targets, Description = "BoneTransform の Position / Rotation / Scale の 1 軸だけを変える。単独では Undo を記録しない。戻せるようにするには beginBoneTransformSliderDrag と endBoneTransformSliderDrag で挟む（記録は end が行う）。")]
     public class SetBoneTransformValueCommand : PanelCommand
     {
         public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }

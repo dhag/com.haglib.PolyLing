@@ -70,11 +70,8 @@ namespace Poly_Ling.Serialization
                 modelDTO.workPlane = ToWorkPlaneData(workPlaneContext);
             }
 
-            // WorkAxisContext（作業用ローカル軸）
-            //   作業軸は作業軸オブジェクトが正典になったので、ここでは書かない。
-            //   modelDTO.workAxis は旧データを読むためだけに残してある
-            //   （復元側 ModelSerializer_ModelContext.cs の WorkAxis 移行を参照）。
-            modelDTO.workAxis = null;
+            // 作業軸は作業軸オブジェクト（MeshType.WorkAxis）の行（MeshDTO.workAxis）に載る。
+            // モデル直下には持たない。
 
             // EditorState
             modelDTO.editorStateDTO = editorStateDTO;
@@ -419,21 +416,6 @@ namespace Poly_Ling.Serialization
 
             // 下絵（規約4：CSV/JSON 対称）
             model.Underlay = UnderlayDTO.ToData(modelDTO.underlay);
-
-            // ================================================================
-            // WorkAxis 復元（旧データの移行）
-            //
-            // 作業軸は作業軸オブジェクト（MeshType.WorkAxis）が正典になったので、
-            // modelDTO.workAxis は旧データを読むためだけに残してある。
-            // 作業軸オブジェクトが 1 本も無いモデルにだけ 1 個作って値を移す。
-            // ================================================================
-
-            if (modelDTO.workAxis != null)
-            {
-                var legacy = new WorkAxisContext();
-                ApplyToWorkAxis(modelDTO.workAxis, legacy);
-                Poly_Ling.Ops.WorkAxisObjectOps.MigrateLegacy(model, legacy);
-            }
 
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
             Poly_Ling.Ops.IKChainResolver.RebuildLinksFromPerBone(model);

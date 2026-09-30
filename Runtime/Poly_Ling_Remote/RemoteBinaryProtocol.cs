@@ -168,6 +168,16 @@ namespace Poly_Ling.Remote
         VertexIds         = 0x0020,
         /// <summary>SubID / PartsID（各頂点 int×2）。VertexIds とは別ブロックで送る。</summary>
         VertexSubIds      = 0x0040,
+        /// <summary>
+        /// BoneWeights 欄の形式 2（単独では使わない。BoneWeights と組で立つ）。
+        /// 立っているとき、BoneWeights 欄は頂点ごとに [1B 有無] + (有のときだけ) [32B ウェイト]。
+        /// 立っていないとき（旧形式）は頂点ごとに [32B ウェイト] 固定で、
+        /// 「ウェイトなし（null）」を送れない。旧形式ではウェイトなしの頂点が
+        /// 全ゼロのウェイトとして届き、受信側で SkinKind が Skinned に化けて
+        /// スキニング経路で原点に潰れていた（2026-09-30 修正）。
+        /// 送信側は RemoteBinarySerializer.NormalizeFlags で自動で立てる。
+        /// </summary>
+        BoneWeightPresence = 0x0080,
 
         // 面系
         FaceIndices       = 0x0100,

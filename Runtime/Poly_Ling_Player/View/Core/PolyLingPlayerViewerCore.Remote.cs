@@ -46,7 +46,33 @@ namespace Poly_Ling.Player
             // サーバの実際の push 名に合わせる（旧 mesh_changed/model_changed は発行元なし）。
             // 構造変更（一覧変更）を契機に再フェッチする。
             if (json.Contains("\"event\":\"meshListChanged\""))
+            {
                 FetchProject();
+                return;
+            }
+
+            // 作業軸の値の変更（RemoteWorkAxisSync）。再フェッチせずその場で当てる。
+            if (json.Contains("\"event\":\"" + RemoteWorkAxisSync.EventName + "\""))
+                ApplyRemoteWorkAxis(json);
+        }
+
+        /// <summary>
+        /// サーバから push された作業軸の値を当てる（S→C 連動）。メインスレッドで呼ばれる。
+        /// 画面更新は RefreshWorkAxisViews（push を送り返さない方）を使う。
+        /// </summary>
+        private void ApplyRemoteWorkAxis(string json)
+        {
+            var data = RemoteWorkAxisSync.Parse(json);
+            if (data == null) return;
+
+            var project = ActiveProject;
+            if (project == null) return;
+            if (data.modelIndex < 0 || data.modelIndex >= project.ModelCount) return;
+
+            var model = project.Models[data.modelIndex];
+            if (!RemoteWorkAxisSync.Apply(model, data)) return;
+
+            RefreshWorkAxisViews();
         }
 
         /// <summary>

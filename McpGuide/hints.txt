@@ -1,0 +1,16 @@
+# PolyLing MCP：道具の呼び出しに応じて応答へ添える案内（GuideRules.cs が読む）
+# 1 行 1 規則。タブ区切り 5 列。# で始まる行と空行は読み飛ばす。セッション中に各規則は 1 回だけ出る。
+#   1 id
+#   2 道具名の正規表現（サーバ側の名前：read_lines / search_text / apply_patch / polyling_call など）
+#   3 引数の正規表現（「キー=値」を改行で並べた文字列に当てる。大文字小文字は区別しない）
+#   4 このセッションで読んでいれば出さない文書名（.md。空なら常に出す）
+#   5 出す文（\n で改行）
+# 書き換えはサーバの再起動なしで次の呼び出しから効く。
+ui-where-search	^(polyling_search|search_text)$	(どこ|場所|ボタン|メニュー|折り畳み|パネル|where|button|LeftPane|RightPane|MakeBtn)	PolyLing_機能の場所.md	画面の場所を答えるときは、PolyLing_機能の場所.md を引いて言葉で答えたうえで、画面でも示す：polyling_call uiReveal controlId=leftPane.xxxBtn（折り畳みを開いて赤枠）→ uiHighlight controlId=leftPane.fold.Xxx add=true（見出しにも枠）。項目 ID は uiDescribe panelId=leftPane。
+ui-where-code	^(read_lines|read_file|search_text)$	(PlayerLayoutRoot|LeftPaneButtons|RightPane|UiAutomation)		UI の配置をソースで調べているなら、画面での案内は uiReveal / uiHighlight で出せる（左ペインの項目 ID は uiDescribe panelId=leftPane）。場所を聞かれたら言葉と赤枠の両方で答える。
+pose-rules	^(read_lines|read_file|search_text|apply_patch|write_file)$	(Transform|BindPose|BindWorld|WorldMatrix|BoneTransform|BonePose|Skinning|SkinKind|TPose|UnityClip|MotionClip|VMD|ComputeWorldMatrices|MirrorConjugate)	PolyLing_姿勢の規約.md	姿勢・行列まわりに触れている。先に PolyLing_姿勢の規約.md を読むこと（BoneTransform＝バインド側・ポーズ層＝差分・WorldMatrix/BindWorldMatrix/BindPose の使い分け・UseLocalTransform=false なら値も単位・頂点の書き戻し規約）。
+present-rules	^(apply_patch|write_file)$	(ComputeWorldMatrices|WorldMatrix\s*=|BoneTransform\.|BonePoseData)	PolyLing_姿勢_残件.md	階層行列を変える変更では画面へ配ること：リスト構造が変わるなら EnterTopologyChanged 系（RebuildAdapter が GPU 行列を押し込む）、姿勢だけなら EnterVerticesMoved に加えて UpdateTransform()。PresentAll だけでは GPU の行列は古いまま（PolyLing_姿勢_残件.md「画面へ配る規則」）。
+subtool-guide	^(read_lines|read_file|search_text|apply_patch|write_file)$	(SubPanels/|ToolHandlers/|SubPanel\.cs|ToolHandler\.cs)	PolyLing_サブツール作成ガイド.md	サブツール（右ペインのパネル・ツールハンドラ）を扱っている。作る・直す前に PolyLing_サブツール作成ガイド.md を読むこと。
+remote-symmetry	^(read_lines|read_file|search_text|apply_patch|write_file)$	(Poly_Ling_Remote|RemoteProgressive|RemoteBinary|Serializer|DTO\.cs)	PolyLing_残件.md	保存項目を足す・変えるときは CSV / JSON / バイナリ（リモート取得の RemoteProgressiveSerializer）の 3 つを同時に直す（PolyLing_残件.md R-1）。
+query-results	^polyling_call$	command=query		照会コマンドの詳細は結果辞書に入り、応答には見出ししか出ない。中身は saveProjectCsv で保存し、モデルフォルダの datastore.csv を search_text で読む。
+capture-first	^polyling_call$	command=(setBoneTransformValue|setBonePoseValue|importMqoFile|importPmxFile|importVrmFile|uiClick|undo|redo)		見た目が変わる操作のあとは unity_capture で画面を見て確かめる（数値だけで済ませない）。

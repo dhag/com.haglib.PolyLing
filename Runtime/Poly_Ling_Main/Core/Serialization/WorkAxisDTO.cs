@@ -1,8 +1,8 @@
 // Runtime/Poly_Ling_Main/Core/Serialization/WorkAxisDTO.cs
 // 作業用ローカル軸 (WorkAxisContext) のシリアライズ用データ構造。
 //
-// ModelDTO.workAxis に保持され、.mfproj (JSON) と workaxis.csv (フォルダ形式) の
-// 両方で同じ値を書き出す（規約4: CSV/JSON 対称）。
+// 作業軸オブジェクト（MeshType.WorkAxis）の行の MeshDTO.workAxis に保持され、
+// .mfproj (JSON) とフォルダ形式 (CSV) の両方で同じ値を書き出す（規約4: CSV/JSON 対称）。
 //
 // 値はすべて Unity ワールド座標系のまま保存する。WorkPlaneDTO と同じく
 // 変換は行わない。

@@ -129,6 +129,15 @@ namespace Poly_Ling.Player
             _server?.NotifyProjectReplaced();
         }
 
+        /// <summary>
+        /// 作業軸の値（または使う作業軸）の変更が確定したときに呼ぶ。
+        /// 接続中クライアントへ workAxisChanged を配信する。
+        /// </summary>
+        public void NotifyWorkAxisChanged()
+        {
+            _server?.NotifyWorkAxisChanged();
+        }
+
         // ================================================================
         // サーバー制御
         // ================================================================

@@ -58,12 +58,26 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
+        /// 送信するフィールドフラグを正規化する。
+        /// BoneWeights を送るときは必ず形式 2（BoneWeightPresence）で送る。
+        /// ヘッダに書くフラグと本文の書き方を一致させるため、送信経路はすべてこれを通すこと
+        /// （PLRD の包み直しでヘッダを書く RemoteProgressiveSerializer.SerializeMeshData も含む）。
+        /// </summary>
+        public static MeshFieldFlags NormalizeFlags(MeshFieldFlags flags)
+        {
+            if (flags.HasFlag(MeshFieldFlags.BoneWeights))
+                return flags | MeshFieldFlags.BoneWeightPresence;
+            return flags & ~MeshFieldFlags.BoneWeightPresence;
+        }
+
+        /// <summary>
         /// MeshObjectから指定フィールドをバイナリにシリアライズ
         /// </summary>
         public static byte[] Serialize(
             MeshObject mesh, MeshFieldFlags flags, int modelIndex = 0, ulong objectId = 0UL)
         {
             if (mesh == null) return null;
+            flags = NormalizeFlags(flags);
 
             using (var ms = new MemoryStream())
             using (var w = new BinaryWriter(ms))
@@ -246,7 +260,8 @@ namespace Poly_Ling.Remote
                     ReadUVs(r, mesh, vertexCount);
 
                 if (flags.HasFlag(MeshFieldFlags.BoneWeights))
-                    ReadBoneWeights(r, mesh, vertexCount);
+                    ReadBoneWeights(r, mesh, vertexCount,
+                        withPresence: flags.HasFlag(MeshFieldFlags.BoneWeightPresence));
 
                 if (flags.HasFlag(MeshFieldFlags.VertexFlags))
                     ReadVertexFlags(r, mesh, vertexCount);
@@ -395,12 +410,21 @@ namespace Poly_Ling.Remote
             }
         }
 
+        /// <summary>
+        /// BoneWeights 欄（形式 2）。頂点ごとに [1B 有無] + (有のときだけ) [32B ウェイト]。
+        /// 「ウェイトなし（null）」をそのまま運ぶ。全ゼロで代用してはならない
+        /// （受信側で Skinned に化ける。MeshFieldFlags.BoneWeightPresence の注記を参照）。
+        /// </summary>
         private static void WriteBoneWeights(BinaryWriter w, MeshObject mesh)
         {
             for (int i = 0; i < mesh.VertexCount; i++)
             {
                 var v = mesh.Vertices[i];
-                BoneWeight bw = v.BoneWeight ?? default;
+                bool has = v.BoneWeight.HasValue;
+                w.Write(has);
+                if (!has) continue;
+
+                BoneWeight bw = v.BoneWeight.Value;
                 w.Write(bw.boneIndex0);
                 w.Write(bw.boneIndex1);
                 w.Write(bw.boneIndex2);
@@ -549,11 +573,23 @@ namespace Poly_Ling.Remote
             }
         }
 
-        private static void ReadBoneWeights(BinaryReader r, MeshObject mesh, uint count)
+        /// <summary>
+        /// BoneWeights 欄を読む。
+        /// withPresence=true（形式 2）: 頂点ごとの有無を読み、無の頂点は null にする。
+        /// withPresence=false（旧形式）: 全頂点に 32B が並ぶ。null を運べない形式なので
+        ///   届いた値をそのまま入れる（旧送信元との互換のためだけに残す）。
+        /// </summary>
+        private static void ReadBoneWeights(BinaryReader r, MeshObject mesh, uint count, bool withPresence)
         {
             EnsureVertexCount(mesh, count);
             for (int i = 0; i < count; i++)
             {
+                if (withPresence && !r.ReadBoolean())
+                {
+                    mesh.Vertices[i].BoneWeight = null;
+                    continue;
+                }
+
                 var bw = new BoneWeight
                 {
                     boneIndex0 = r.ReadInt32(),

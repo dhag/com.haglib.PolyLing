@@ -573,8 +573,6 @@ namespace Poly_Ling.Context
         //
         // 軸値の正典は MeshType.WorkAxis のオブジェクト（MeshContext.WorkAxis）で、
         // モデル内に何本あってもよい。ModelContext 自身は軸値を持たない。
-        // 旧データ（ModelDTO.workAxis / workaxis.csv）は読み込み時に
-        // 作業軸オブジェクト 1 個へ移す。
         // ================================================================
 
         /// <summary>

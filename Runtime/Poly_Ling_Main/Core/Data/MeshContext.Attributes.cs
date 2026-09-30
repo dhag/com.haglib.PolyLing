@@ -41,8 +41,9 @@ namespace Poly_Ling.Data
         // 軸値（原点・回転・長さ）の正典はこの WorkAxisContext で、
         // BoneTransform は使わない（原点はワールド座標のまま。
         // 規約は WorkAxisContext.cs:7-10）。
-        // 表示するかどうかは MeshContext.IsVisible を使う。
-        // WorkAxisContext.IsVisible は旧データの移行でだけ読む。
+        // オブジェクトとしての表示（一覧の可視）は MeshContext.IsVisible、
+        // ギズモの表示と掴めるかどうかは WorkAxisContext.IsVisible
+        // （WorkAxisObjectOps.cs の冒頭注記を参照）。
         // ----------------------------------------------------------------
 
         /// <summary>作業軸の値。Type == MeshType.WorkAxis のときだけ非 null。</summary>

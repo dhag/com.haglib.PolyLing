@@ -1090,8 +1090,6 @@ namespace Poly_Ling.Player
             if (DispatchSelectionSets(cmd, project, model))     return;
             if (DispatchNormalEdit(cmd, project, model))        return;
             if (DispatchMeshSelectionSets(cmd, project, model)) return;
-            // 【臨時】姿勢検証。検証が済んだらこの行と PlayerCommandDispatcher.TempVerify.cs を消す。
-            if (DispatchTempVerify(cmd, project, model))       return;
 
             // ── その他（モーフ変換・プレビュー等）は Player では未実装
             Debug.LogWarning($"[PlayerCommandDispatcher] Unhandled PanelCommand: {cmd.GetType().Name}");

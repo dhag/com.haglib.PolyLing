@@ -110,6 +110,8 @@ namespace Poly_Ling.Remote
         //     ScenarioExpansionPolicy で、0 = Reference。Version 5 以前は全部 0。
         //     読みは Version 3 / 4 / 5 の形も受ける。
         //     Version 5 の受信側とは非互換のため Editor/Player を同時更新すること。
+        //   ※ Version 7 で末尾に [8B] ActiveWorkAxisObjectId（使う作業軸の ObjectId。0 は未指定）を追加。
+        //     Version 6 以前の受信側は末尾のこの欄を読まずに終わる（読み終わりを検査しない）。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -119,7 +121,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)6);   // version 6: 参照段（RefName / ExpansionPolicy）。v5: 意味情報、v4: ステップ列、v3: ObjectGroup ブロック
+                w.Write((byte)7);   // version 7: 使う作業軸の ID。v6: 参照段（RefName / ExpansionPolicy）。v5: 意味情報、v4: ステップ列、v3: ObjectGroup ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -244,6 +246,9 @@ namespace Poly_Ling.Remote
                         }
                     }
                 }
+
+                // ── version 7：使う作業軸（ModelContext.ActiveWorkAxisObjectId）。0 は未指定。
+                w.Write(model.ActiveWorkAxisObjectId);
 
                 return ms.ToArray();
             }
@@ -460,6 +465,10 @@ namespace Poly_Ling.Remote
                     }
                 }
 
+                // ── version 7：使う作業軸。v6 以前の送信元からは届かないので 0（未指定）のまま。
+                if (metaVersion >= 7)
+                    model.ActiveWorkAxisObjectId = r.ReadUInt64();
+
                 return (modelIndex, model);
             }
         }
@@ -483,6 +492,9 @@ namespace Poly_Ling.Remote
         // [1B] MorphMirrorPolicy(v4+)  [2B] MirrorOfMorphIndex(v4+)
         //   ※ v4 追加分は末尾に置く。既存レイアウトは動かさない。
         //     規約は MorphMirrorPolicy.cs を正典とする。
+        // [1B] HasWorkAxis(v5+)  (if) Origin[12B] Rotation[16B] Length[4B] IsVisible[1B]
+        //   ※ v5 で末尾に追加。値を持つのは作業軸オブジェクト（MeshType.WorkAxis）だけ。
+        //     v4 以前の受信側は末尾のこの欄を読まずに終わる（読み終わりを検査しない）。
         // ================================================================
 
         public static byte[] SerializeMeshSummary(MeshContext mc, int modelIndex, int meshIndex)
@@ -492,7 +504,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.MeshSummary);
-                w.Write((byte)4);   // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用
+                w.Write((byte)5);   // v2: HierarchyParentIndex / v3: ObjectId + EditorName / v4: モーフのミラー適用 / v5: 作業軸の値
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
                 w.Write((short)meshIndex);
@@ -568,6 +580,17 @@ namespace Poly_Ling.Remote
                 // 追加は必ずこのブロックの末尾に行うこと。
                 w.Write((byte)mc.MorphMirrorPolicy);
                 w.Write((short)mc.MirrorOfMorphIndex);
+
+                // ---- v5: 作業軸の値（作業軸オブジェクトだけが持つ）----
+                var wa = mc.WorkAxis;
+                w.Write(wa != null);
+                if (wa != null)
+                {
+                    WriteVector3(w, wa.Origin);
+                    WriteQuaternion(w, wa.Rotation);
+                    w.Write(wa.Length);
+                    w.Write(wa.IsVisible);
+                }
 
                 return ms.ToArray();
             }
@@ -681,6 +704,18 @@ namespace Poly_Ling.Remote
                     mc.MirrorOfMorphIndex = r.ReadInt16();
                 }
 
+                // ---- v5: 作業軸の値 ----
+                // v4 以前の送信元からは届かないので、作業軸オブジェクトでも値は空のまま。
+                if (summaryVersion >= 5 && r.ReadBoolean())
+                {
+                    var wa = new Poly_Ling.Context.WorkAxisContext();
+                    wa.Origin    = ReadVector3(r);
+                    wa.Rotation  = ReadQuaternion(r);
+                    wa.Length    = r.ReadSingle();
+                    wa.IsVisible = r.ReadBoolean();
+                    mc.WorkAxis  = wa;
+                }
+
                 // BoneTransform は MeshObject 設定後に適用
                 // mc.MeshObject は先頭で生成済み（Name/Type書き込み済み）なのでそのまま使う
                 if (hasBone)
@@ -710,11 +745,19 @@ namespace Poly_Ling.Remote
         {
             if (mc?.MeshObject == null) return null;
 
-            // RemoteBinarySerializer でボディを含む PLRM を生成し、ヘッダ部分(20B)を差し替える
-            byte[] plrm = RemoteBinarySerializer.Serialize(mc, flags);
-            if (plrm == null || plrm.Length < 20) return null;
+            // 本文の書き方とヘッダのフラグを一致させる（BoneWeights は形式 2 で書かれる）。
+            flags = RemoteBinarySerializer.NormalizeFlags(flags);
 
-            int bodyLen = plrm.Length - 20;
+            // RemoteBinarySerializer でボディを含む電文を生成し、ヘッダ部分を差し替える。
+            // ヘッダ長は電文の版で決まる（v1 = 20B、v2 = 28B。4 バイト目が版番号）。
+            // 以前は 20B 固定で切っていたため、v2 の ObjectId 8B が本体の先頭に混ざり、
+            // 受信側の読み出しが 8B ずれて末尾を越えていた（2026-09-29 修正）。
+            byte[] plrm = RemoteBinarySerializer.Serialize(mc, flags);
+            if (plrm == null || plrm.Length < 5) return null;
+            int hdrLen = BinaryHeader.SizeOf(plrm[4]);
+            if (plrm.Length < hdrLen) return null;
+
+            int bodyLen = plrm.Length - hdrLen;
             using (var ms = new MemoryStream(24 + bodyLen))
             using (var w = new BinaryWriter(ms))
             {
@@ -727,7 +770,7 @@ namespace Poly_Ling.Remote
                 w.Write((uint)(mc.MeshObject?.VertexCount ?? 0));    // 14-17
                 w.Write((uint)(mc.MeshObject?.FaceCount ?? 0));      // 18-21
                 w.Write((ushort)0);                                  // 22-23 reserved
-                w.Write(plrm, 20, bodyLen);                          // 24..
+                w.Write(plrm, hdrLen, bodyLen);                      // 24..
                 return ms.ToArray();
             }
         }

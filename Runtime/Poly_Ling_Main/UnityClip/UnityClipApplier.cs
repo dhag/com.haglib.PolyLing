@@ -310,6 +310,9 @@ namespace Poly_Ling.UnityClip
             _nodeDeltaPos = new Vector3[n];
             _nodeHasDelta = new bool[n];
 
+            // レストは BindWorldMatrix を読む（RestWorldOf）。BoneTransform を変えたあと
+            // ComputeWorldMatrices を通していない経路でも古い値を読まないよう、ここで確定させる。
+            model.ComputeWorldMatrices();
             BuildCanonAlignment(model);
 
             if (DebugLog && _skeleton.MirrorNodeCount > 0)
@@ -464,25 +467,20 @@ namespace Poly_Ling.UnityClip
             return true;
         }
 
-        // ノードの rest ワールド行列。
-        //   スキンド（MeshType.Bone あり）は従来どおり BindPose を正本にする。
-        //   MeshFilter 骨格は BindPose を持たない（mesh.csv に bindPose 行が無く単位行列のまま）ため、
-        //   BoneTransform を階層に沿って累積して組む。ここを BindPose のままにすると
-        //   全ボーンの rest 位置が原点になり、方向整列 A が丸ごと壊れる。
+        // ノードの rest ワールド行列。スキンド・MeshFilter 骨格とも
+        // RestWorldMatrix（＝ MeshContext.BindWorldMatrix。ポーズを含まないバインド階層）を使う。
         //
-        // 【一本化の候補・未着手】
-        //   下の BindPose.inverse は RestWorldMatrix（＝ MeshContext.BindWorldMatrix）と
-        //   同じ意味の値で、レストの出どころが 2 つある状態になっている。
-        //   BindPose がいつ撮られた値かに依存するため、撮り直しの整理
-        //   （BindPoseOps.RebindToBind への置き換え）が済んでから寄せること。
-        //   規約は PolyLing_姿勢の規約.md を参照。
+        // 【なぜ BindPose.inverse ではないか】（2026-09-30、残件 B-3）
+        //   モーションはポーズ層（BonePoseData）へ差分として書かれ、ワールドは
+        //   BindWorldMatrix の階層にポーズを積んで決まる。差分 D を組むレストは
+        //   この階層と同じでなければならない。
+        //   BindPose は「スキンを撮った瞬間の逆」で、取込直後は BindWorldMatrix.inverse と
+        //   一致するが（Zunko_MMD.pmx で差 1.8e-8）、スキン固定のボーン移動
+        //   （BindPose = W⁻¹·S0）やポーズ込みの撮り直し（BakeCurrentPoseToBind）の後は
+        //   ずれ、D の枠が変わる。
+        //   以前はスキンドだけ BindPose.inverse を読んでおり、レストの出どころが 2 つあった。
         private Matrix4x4 RestWorldOf(ModelContext model, int node)
         {
-            if (!_skeleton.MeshFilterSkeleton)
-            {
-                var ctx = _skeleton.TargetContext(model, node);
-                if (ctx != null) return ctx.BindPose.inverse;
-            }
             return _skeleton.RestWorldMatrix(model, node);
         }
 

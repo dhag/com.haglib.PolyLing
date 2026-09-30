@@ -527,12 +527,20 @@ namespace Poly_Ling.Player
             if (target?.MeshObject == null) { target = null; targetIndex = -1; }
         }
 
-        /// <summary>編集対象の頂点のワールド座標。GPU 値が無いときは WorldMatrix を掛ける（面追加と同じ）。</summary>
+        /// <summary>
+        /// 編集対象の頂点のワールド座標。GPU 値が無いときは、描画と同じ規則の頂点行列
+        /// （MeshContext.VertexMatrix。バインド表示とスキニングを含む）を掛ける。
+        /// ToolContext.ActiveVertexMatrix と同じ行列にすること。
+        /// 以前は WorldMatrix を直接掛けており、バインド表示中やスキンドメッシュで
+        /// 画面の位置とずれていた（2026-09-30 修正）。
+        /// </summary>
         private Vector3 WorldOfTargetVertex(MeshContext target, int targetIndex, int vertex)
         {
             var w = GetMeshVertexWorldPosition?.Invoke(targetIndex, vertex);
             if (w.HasValue) return w.Value;
-            return target.WorldMatrix.MultiplyPoint3x4(target.MeshObject.Vertices[vertex].Position);
+            bool showBindPose = GetToolContext?.Invoke()?.ShowBindPose ?? false;
+            return target.VertexMatrix(vertex, showBindPose)
+                .MultiplyPoint3x4(target.MeshObject.Vertices[vertex].Position);
         }
 
         /// <summary>

@@ -457,12 +457,11 @@ namespace Poly_Ling.Player
                     }
                     // Phase 2a-2g-1: ComputeWorldMatrices + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
                     _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging);
-                    // A(スキン固定): PresentAll 経路は GPU の transform 行列を push しないため、
-                    // 補正後の SkinningMatrix(World×BindPose) を明示反映する（移動ツールと同じ理由）。
-                    if (_activeBoneEditMode == BoneMoveMode.BoneOnlyRebind && _boneRebindStartSkinning.Count > 0)
-                        _viewportManager.UpdateTransform();
-                    else if (_activeBoneEditMode == BoneMoveMode.PoseLayer)
-                        _viewportManager.UpdateTransform();
+                    // PresentAll 経路は GPU の transform 行列を push しないため、どのモードでも
+                    // 変わった階層行列（A では補正後の SkinningMatrix）を明示反映する。
+                    // 以前は A と C だけで呼んでおり、通常モードではギズモだけが動き
+                    // メッシュは動かなかった（実測 2026-09-30）。
+                    _viewportManager.UpdateTransform();
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
 

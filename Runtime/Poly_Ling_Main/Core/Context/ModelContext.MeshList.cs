@@ -610,8 +610,17 @@ namespace Poly_Ling.Context
         }
 
         /// <summary>
-        /// MeshContextリストからワールド行列を計算（静的メソッド・インポート時用）
-        /// HierarchyParentIndexとBoneTransformに基づいて親→子の順で計算
+        /// MeshContextリストからバインド階層のワールド行列を計算（静的メソッド・インポート時用）。
+        /// HierarchyParentIndex と BindLocalMatrix（BoneTransform。ポーズ層は含めない）で親→子の順に積む。
+        ///
+        /// インスタンス側 ComputeWorldMatrices の BindWorldMatrix と同じ規則にそろえてある
+        /// （2026-09-30、残件 B-2）。
+        ///   ・ローカル行列は ctx.BindLocalMatrix（UseLocalTransform=false・BoneTransform=null は単位）
+        ///   ・親の番号が範囲外（または自分自身）ならルートとして扱う
+        ///   ・ミラー側（MirrorGeometryDerived）は戻り値にだけ共役 S·H·S を掛ける
+        /// 以前は BoneTransform の値を UseLocalTransform を見ずに積み、BoneTransform=null や
+        /// 範囲外の親を持つ要素は子孫ごと飛ばして行列を返さなかった。
+        /// ポーズ層は以前から積んでいない（バインド階層のまま）。
         /// </summary>
         public static Dictionary<int, Matrix4x4> CalculateWorldMatrices(List<MeshContext> meshContexts)
         {
@@ -632,13 +641,15 @@ namespace Poly_Ling.Context
                         continue;
 
                     var ctx = meshContexts[i];
-                    if (ctx?.BoneTransform == null)
+                    if (ctx == null)
                         continue;
 
                     int parentIndex = ctx.HierarchyParentIndex;
+                    bool hasParent = parentIndex >= 0 && parentIndex < meshContexts.Count
+                                     && parentIndex != i && meshContexts[parentIndex] != null;
                     Matrix4x4 parentWorld;
 
-                    if (parentIndex < 0)
+                    if (!hasParent)
                     {
                         parentWorld = Matrix4x4.identity;
                     }
@@ -651,11 +662,7 @@ namespace Poly_Ling.Context
                         continue;
                     }
 
-                    Matrix4x4 localMatrix = Matrix4x4.TRS(
-                        ctx.BoneTransform.Position,
-                        Quaternion.Euler(ctx.BoneTransform.Rotation),
-                        ctx.BoneTransform.Scale
-                    );
+                    Matrix4x4 localMatrix = ctx.BindLocalMatrix;
 
                     // ComputeWorldMatrices と同じ規則。階層ワールドは hierarchyWorld に、
                     // ミラー側の実効ワールド S·H·S は戻り値に入れる。
@@ -697,13 +704,10 @@ namespace Poly_Ling.Context
         /// MeshContextリストのBindPoseを一括計算（静的メソッド・インポート時用）
         /// CalculateWorldMatrices + BindPose = inverse を一括実行
         ///
-        /// 【ポーズの扱い・未整理】
-        ///   CalculateWorldMatrices は MeshContext.LocalMatrix を積むので、
-        ///   ポーズ層が入っていればその分を含む。取込直後はポーズが無いため
-        ///   実害は出ていないが、意味としては RebindToBind 側にそろえるべき。
-        ///   この静的経路は MeshContext.BindWorldMatrix を書かない（インスタンス側の
-        ///   ComputeWorldMatrices を通らない）ため、寄せるにはこのメソッド自体を
-        ///   バインド階層で組み直す必要がある。規約は PolyLing_姿勢の規約.md。
+        /// CalculateWorldMatrices はバインド階層（BindLocalMatrix。ポーズ層を含めない）を
+        /// 積むので、結果は RebindToBind（BindPose = BindWorldMatrix.inverse）と同じ規則になる。
+        /// この静的経路は MeshContext.BindWorldMatrix 自体は書かない（モデルへ入った後の
+        /// ComputeWorldMatrices が書く）。規約は PolyLing_姿勢の規約.md。
         /// </summary>
         public static void ComputeBindPosesFromList(List<MeshContext> meshContexts)
         {

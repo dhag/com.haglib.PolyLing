@@ -127,8 +127,6 @@ namespace Poly_Ling.Serialization
         /// <summary>
         /// 作業軸の値（MeshContext.WorkAxis）。
         /// type == MeshType.WorkAxis のオブジェクトだけが持つ。それ以外は null。
-        /// この欄が無い旧データでは null になり、作業軸オブジェクトは作られない
-        /// （旧データの作業軸は ModelDTO.workAxis から移行する）。
         /// </summary>
         public WorkAxisDTO workAxis = null;
 

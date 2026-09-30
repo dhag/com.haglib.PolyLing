@@ -80,8 +80,13 @@ SkinningMatrix = WorldMatrix × BindPose                                      �
   `BoneTransform` だけを親から積む。
   利用側：`UnityClipApplier.cs:436` / `VmdNodeWorldSampler.cs:115` /
   `UnityClipVrmAnimationSource.cs:223`。
-- なお `UnityClipApplier.cs:434` は同じ用途で `ctx.BindPose.inverse` を使う。
-  **同じ「レスト」に 2 つの出どころがある。**
+- ~~なお `UnityClipApplier.cs:434` は同じ用途で `ctx.BindPose.inverse` を使う。
+  **同じ「レスト」に 2 つの出どころがある。**~~
+  2026-09-30 に解消（残件 B-3）。`UnityClipApplier.RestWorldOf` はスキンドも
+  `RestWorldMatrix`（＝ `BindWorldMatrix`）を読む。モーションの差分はポーズ層へ書かれ、
+  ワールドは `BindWorldMatrix` の階層にポーズを積んで決まるため、レストもこの階層でなければならない。
+  `BindPose` は「スキンを撮った瞬間の逆」で、スキン固定のボーン移動やポーズ込みの撮り直しの後は
+  `BindWorldMatrix.inverse` からずれる。**レストに `BindPose.inverse` を使わないこと。**
 
 `UnityClipVrmAnimationSource.cs:34-45` に、`ctx.WorldMatrix` をレストに使うと
 T ポーズでなくなる旨が明記されている。これが 5 の症状。
@@ -101,10 +106,27 @@ true 側も入り方がばらばら。`MeshListOps.cs:615-618` はメッシュ�
 `HierarchyReparentOps.cs:136` / `MirrorBranchOps.cs:442` / `SpringBoneOps.cs:547` /
 `MeshFilterToSkinnedConverter.cs:515`。
 
+### 6.1 決まり：false のときは値も単位にそろえる（2026-09-30）
+
+`UseLocalTransform = false` にするときは、同時に `Position = 0`・`Rotation = 0`・`Scale = 1` を入れる。
+こうしておけば false と「true かつ単位」は結果が同じになり、上の 3 つの意図を区別する必要がない
+（残件 B-1 はこれで取り下げ）。
+
+破ると起きること：false のまま値だけ単位でないと、画面には効いていない値が残る。
+メッシュリストで 1 軸だけ入れた瞬間に true へ切り替わり（`MeshListOps.cs:626`）、
+他の軸の古い値が急に効いてオブジェクトが飛ぶ。
+
+2026-09-30 の確認：false を代入する 6 か所（上の 1・3 と `WorkAxisObjectOps.cs:52`・
+`ObjectArrayInserter.cs:255`・`ObjectPoseWedgeInserter.cs:97`）はすべて同じ場所で値を単位に戻している。
+保存済みの mesh.csv 171 本・.mfproj 4 本、および MQO / PMX / VRM の読込直後（メッシュ 429・ボーン 592）で
+違反 0 件。検査は `queryModelStructure` の `mesh.{i}.useLocal` / `mesh.{i}.btUnit`、
+または保存 CSV に対する正規表現 `^boneTransform,False,(?!(-?0,){6}1,1,1\r?$)` で行える。
+
 ## 7. ポーズの正典が割れている箇所
 
-- IK（`CCDIKSolver`）は `BonePoseData` ではなく `WorldMatrix` を直接書き換える
-  （`VmdNodeWorldSampler.cs:36-37` の注記）。`ComputeWorldMatrices` を呼び直すと消える。
+- ~~IK（`CCDIKSolver`）は `BonePoseData` ではなく `WorldMatrix` を直接書き換える~~
+  2026-09-29 のコードでは成り立たない。`CCDIKSolver.SetBoneRotation`（`CCDIKSolver.cs:614-623`）が
+  `BonePoseData` の `"IK"` 層へ書き、その後 `ComputeWorldMatrices` を呼ぶ（`:369-372`）。
 - 付与親（`GrantParentIndex` / `GrantRate`）は読み書きと取込では保持されるが、
   姿勢適用側に評価コードが無い（`VMDApplier.cs:37-40`）。
 - 統合経路（`MotionClipApplier`）には IK が無い（同上）。
@@ -117,8 +139,8 @@ true 側も入り方がばらばら。`MeshListOps.cs:615-618` はメッシュ�
    `BindPose = BindWorldMatrix.inverse` を導出に変える。5.1 と 5.2 をここへ寄せる。
 3. **表示**：現在ポーズ／バインドポーズの切替。非スキンドは
    `WorldMatrix` ↔ `BindWorldMatrix`、スキンドは `SkinningMatrix` ↔ 単位行列の差し替え。
-4. **保留**：`UseLocalTransform` の意味の分離（6）と、IK の置き場所（7）。
-   1〜3 とは独立に直せるので後回しにする。
+4. **保留**：~~`UseLocalTransform` の意味の分離（6）~~（6.1 の決まりで取り下げ、2026-09-30）と、IK の置き場所（7）。
+   1〜3 とは独立に直せるので後回しにする。IK の置き場所は 7 の訂正のとおり解消済み。
 
 ---
 
@@ -187,6 +209,7 @@ true 側も入り方がばらばら。`MeshListOps.cs:615-618` はメッシュ�
 | ギズモ中心 | `MoveToolHandler.UpdateGizmoState`。表示と同じ `VertexMatrix(i, showBindPose)` で集計する（2026-09-15 修正。以前は `LocalToWorld(i, …)` で現在ポーズ固定だった） |
 | UI | 左ペインの `PlayerLayoutRoot.ShowBindPoseToggle`（「バインドポーズ表示」）。`VD_*` のグリッドには入れない（あちらはビューポート単位の表示ビットで永続化される） |
 | 画面への反映 | **`EnterVerticesMoved` と `UpdateTransform()` の両方を呼ぶ**。下の 10.5 を参照 |
+| バインドの撮り直し | `Core/Ops/BindPoseOps.cs`。`RebindToBind`（`:30`。`BindPose = BindWorldMatrix.inverse`、ポーズを含めない）と `BakeCurrentPoseToBind`（`:40`。`BindPose = WorldMatrix.inverse`、ポーズを含める）。撮り直しの呼び出し 9 か所をこの 2 つへ置き換えた（2026-09-15） |
 
 ### 10.5 姿勢を変えたら画面へ 2 つ呼ぶ
 
@@ -247,8 +270,11 @@ PMX（スキンド・対象 `顔肌+`、ポーズは `頭` ボーンへ 30°）�
 
 **この試験の限界。** 見ているのは `MeshObject.Vertices` の格納値と `MeshContext.VertexMatrix`
 だけで、GPU が実際に描いた位置とは突き合わせていない。
-ただし `VertexMatrix` が GPU の規則と一致することは別途確認済み
-（PMX スキンドの全 2585 頂点で 1e-07 台。残件メモ「検証が済んだもの」）。
+ただし `VertexMatrix` が GPU の規則と一致することは別途確認済み（2026-09-15）。
+PMX スキンド `顔肌` の全 2585 頂点で、CPU の `VertexMatrix × Vertices[].Position` と
+GPU の `_worldPositions` が 1e-07 台で一致（`poseGapCount = 0`）。読み込み直後の入力座標も
+全頂点一致（`loadInputGapCount = 0`）。移動は GPU 基準でも一致
+（`poseGpuMaxError = 1.4e-06`、`cpuGpuGap = 6.7e-07`）。
 **画面に出ているかは別問題で、実際 2026-09-15 まで出ていなかった（10.5）。
 数値で合否を書く前に必ずキャプチャを撮ること。**
 
@@ -280,9 +306,10 @@ CPU で計算し直してはならない（`MeshContext.Transform.cs:436-455` �
 2026-09-15 まで未配線で、面追加・新規頂点のウェイト継承・面押し出し・ナイフ・
 点指定図形がバインド表示に追従していなかった。`WireGpuWorldReaders` で埋めている。
 
-`GetCurrentToolContext` を経由しない `ToolContext` は `ToolManager.cs:70` と
-`PlayerCommandDispatcher.Blend.cs:603`（`BuildMinimalToolCtx`）の 2 か所。
-どちらも `Project` が入らないので、バインド表示に関わる変換を使うなら埋めること。
+`GetCurrentToolContext` を経由しない `ToolContext` のうち、
+`PlayerCommandDispatcher.BuildMinimalToolCtx`（`Blend.cs:603`）は 2026-09-15 に
+`ctx.Project` を埋めた（`:611`）。もう 1 か所だった `ToolManager` は未使用クラスとして削除済み。
+新たに `new ToolContext()` を作る箇所を足すときは `Project` を埋めること。
 
 ### 10.6.2 保険として残した CPU 経路
 
@@ -300,12 +327,20 @@ CPU で計算し直してはならない（`MeshContext.Transform.cs:436-455` �
 `PivotWorld()` と `RotateToolHandler.WorldPivot()` / `ScaleToolHandler.WorldPivot()` は
 素通しにしてある。`UseOriginPivot` は「基準メッシュのローカル原点をワールドへ直した点」。
 
-確認済み（2026-09-15・`verifyBindRotate`・試験回転 X 35°）：
+確認済み（2026-09-15・`verifyBindRotate`・試験回転 X 35°／拡大縮小は 2026-09-29・`verifyBindScale`）：
 
 | 試験 | 対象 | bindMaxError | bindLegacyError | poseMaxError | poseLegacyError |
 |---|---|---|---|---|---|
 | 回転 | MQO 非スキンド `obj63あたま_old` | 1.0e-07 | **0.0305** | 8.9e-08 | 8.9e-08 |
 | 回転 | PMX スキンド `顔肌+`（ポーズは `頭`） | 1.8e-07 | 1.8e-07 | 2.6e-07 | **0.0214** |
+| 拡大縮小 | MQO 非スキンド `obj63あたま_old` | 1.8e-07 | **0.0359** | 3.3e-07 | 3.3e-07 |
+| 拡大縮小 | PMX スキンド `顔肌+`（ポーズは `頭`） | 6.0e-08 | 6.0e-08 | 2.6e-07 | **0.0301** |
+
+拡大縮小は 2026-09-29 に `verifyBindScale`（倍率 1.5, 0.7, 1.2・軸の回転なし・ポーズ Z 30°）で測った。
+両組とも検査 50 頂点すべてが姿勢の動いた頂点で、`pass = true`。
+倍率を不均一にしているのは、均一な倍率はどの回転とも交換可能で旧コードとの差が出ないため（10.6.4 と同じ理由）。
+画面：PMX で拡大縮小後に `fitCameraToSelection` で寄せ、頭が傾いた現在ポーズのまま選択頂点が
+顔から飛び出して描かれていることをキャプチャで確認した（`SandBox/Captures/verifyBindScale_pmx_0002.png`）。
 
 `legacyError` は「旧コード（メッシュ 1 個の `LocalToWorld` / `WorldToLocal`）なら
 こうなった値」と正解の差。**旧コードは非スキンドのバインド表示でも、
@@ -323,6 +358,43 @@ CPU で計算し直してはならない（`MeshContext.Transform.cs:436-455` �
 - 試験回転 X 35° … `bindLegacyError = 0.0305` → `discriminating = true`（有効）
 
 `discriminating` が false のときの `pass` は読まないこと。
+
+### 10.6.5 スカルプトと変形ツールもワールド空間（2026-09-15）
+
+**スカルプト**（`SculptTool.cs`）は当たり判定・変形・法線ともワールド空間で行う。
+
+- 当たり判定（`FindBrushCenter` / `GetVerticesInBrushRadius`）は GPU のワールド座標を使う。
+  旧コードはメッシュ 1 個の行列でローカルへ落としており、非スキンドのバインド表示では
+  1 頂点も拾えていなかった（`bindLegacyHit = 0`）。
+- 法線キャッシュは `BuildCachesForMesh`（`:141`）に GPU のワールド座標を渡して作る。
+- 変形 4 種（Draw / Smooth / Inflate / Flatten）は共通の作業配列（頂点索引 → ワールド座標、
+  `BuildWorkWorld`（`:374`））を書き換える。Smooth が隣接を読むので隣接も作業配列に入れる。
+  書き戻しは `WriteBackWorld`（`:402`）で `VertexMatrix(i, showBindPose).inverse`。
+- **`BrushRadius` と `Strength` の尺度はワールド。** メッシュにスケールが入っていれば効き方が変わる。
+- 確認済み：MQO・PMX の 4 組で `bindGapCount = poseGapCount = 0`、中心に置いた頂点が両表示とも動く。
+
+**変形ツール**（`DeformApplier.cs`）は前方向を GPU 値、書き戻しを
+`VertexMatrix(i, showBindPose).inverse` にした。`_startWorld`（ワールド）を新設し（`:151`）、
+`_startPositions`（ローカル、`:150`）はそのまま残す。後者は `LatticeDeformer.FitToSelection` が
+参照するため意味を変えられない。口は `GetMeshWorldPositions` / `GetShowBindPose` で、
+格子ツール側は `LatticeToolHandler.WireApplierWorldReaders`（`:669`）にまとめた。
+
+**範囲（`BuildContext`）も表示位置から取る**（2026-09-29 修正）。ねじり・曲げ・波の起点と全長、
+格子変形の「選択に合わせる」は `DeformContext`（`SMin` / `SMax` / `LocalMin` / `LocalMax`）を使う。
+これを以前は `mc.LocalToWorld`（メッシュ 1 個の `WorldMatrix`）で出しており、変形本体（`_startWorld`）と
+基準が食い違っていた。範囲を使わない移動・回転・拡大縮小の変形には影響していなかった。
+
+確認済み（2026-09-29・`verifyBindDeform`・ねじり合計 90°・起点は選択の下端・ポーズ Z 30°）：
+
+| 対象 | bindMaxError | bindLegacyError | poseMaxError | poseLegacyError |
+|---|---|---|---|---|
+| MQO 非スキンド `obj63あたま_old` | 9.3e-09 | **0.101** | 9.1e-08 | 0 |
+| PMX スキンド `顔肌+`（ポーズは `頭`） | 1.8e-08 | 0 | 1.2e-07 | **0.0058** |
+
+修正前は MQO のバインド表示で 0.101、PMX の現在ポーズ表示で 0.0058 の誤差が出て不合格だった
+（どちらも `legacyError` と一致）。画面：PMX で頭へ寄せ、傾いた現在ポーズのまま選択頂点がねじられて
+描かれていることをキャプチャで確認（`SandBox/Captures/verifyBindDeform_pmx_0001.png`）。
+格子変形（`ApplyLatticeDeformCommand`）そのものは測っていない。
 
 ## 11. 頂点を直接書いたら位置キャッシュを捨てる
 

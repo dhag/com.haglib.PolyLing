@@ -138,7 +138,25 @@ namespace Poly_Ling.Player
                     id, LeftPanePanelId,
                     () => prop.GetValue(_layoutRoot) as VisualElement,
                     LeftPaneDescription(e),
-                    UiSafety.Unspecified, source: $"PlayerLayoutRoot.{p.Name}");
+                    LeftPaneSafety(p.Name), source: $"PlayerLayoutRoot.{p.Name}");
+            }
+        }
+
+        /// <summary>
+        /// 左ペイン部品の安全度。個別に判定済みのものだけ明示し、それ以外は Unspecified。
+        /// リモート接続系（接続・切断・プロジェクト取得）はファイルや編集内容を壊さず、
+        /// 取得はクライアント側の表示を受信内容で置き換えるだけなので SafeWrite。
+        /// </summary>
+        private static UiSafety LeftPaneSafety(string propertyName)
+        {
+            switch (propertyName)
+            {
+                case nameof(PlayerLayoutRoot.ConnectBtn):
+                case nameof(PlayerLayoutRoot.DisconnectBtn):
+                case nameof(PlayerLayoutRoot.FetchBtn):
+                    return UiSafety.SafeWrite;
+                default:
+                    return UiSafety.Unspecified;
             }
         }
 

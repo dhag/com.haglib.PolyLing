@@ -750,9 +750,24 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 作業軸が変わったときの後処理。ハンドラ・パネルの OnValueChanged と同じ内容を通す。
+        /// 作業軸の変更が確定したときの後処理。画面を更新し、サーバ稼働中なら
+        /// 接続中クライアントへ値を push する（workAxisChanged）。
+        /// 作業軸を変える確定経路（作成・切替・値の設定・ライブラリ呼出し。
+        /// ギズモのドラッグも確定時は SetWorkAxisCommand でここへ来る）はすべてここを通すこと。
         /// </summary>
         private void NotifyWorkAxisChanged()
+        {
+            RefreshWorkAxisViews();
+
+            if (_remoteMode == RemoteMode.Server && _playerServer != null)
+                _playerServer.NotifyWorkAxisChanged();
+        }
+
+        /// <summary>
+        /// 作業軸の画面の更新だけを行う。ハンドラ・パネルの OnValueChanged と同じ内容。
+        /// push は出さない（受け側で push を当てたときはこちらを呼ぶ。送り返さないため）。
+        /// </summary>
+        private void RefreshWorkAxisViews()
         {
             _workAxisSubPanel?.Refresh();
             _deformWorkAxisSubPanel?.Refresh();

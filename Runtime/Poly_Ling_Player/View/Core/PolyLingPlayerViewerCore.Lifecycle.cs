@@ -146,6 +146,16 @@ namespace Poly_Ling.Player
                             _viewportManager.EnterTopologyChanged(ActiveProject);
                             RebuildModelList();
                         }
+                        else
+                        {
+                            // 残りの記録（ポーズ・BoneTransform・原点など）は階層行列だけを変える。
+                            // 上の ComputeWorldMatrices は CPU 側の行列しか直さず、
+                            // PresentAll 経路は GPU の変換行列を押し込まない（画面へ配る規則）。
+                            // UpdateTransform を呼ばないと、ギズモは戻るのにメッシュは
+                            // Undo 前の姿勢のまま残る（実測 2026-09-30: setBonePoseValue → undo）。
+                            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+                            _viewportManager.UpdateTransform();
+                        }
 
                         // 順序変更の Undo/Redo はツリーの作り直しが要る。
                         // Attributes では CreateTreeRoot が走らず、リスト表示が古いままになる。

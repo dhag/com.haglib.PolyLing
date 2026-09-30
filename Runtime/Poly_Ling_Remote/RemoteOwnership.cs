@@ -320,11 +320,15 @@ namespace Poly_Ling.Remote
                 return OwnershipVerdict.Deny(
                     "ユーザー名が未登録です。名前を設定して接続し直してください。");
 
+            // 既存オブジェクトを書き換えず新規に足すだけのものは担当と無関係。
+            // モデルの有無より先に見る。新規モデルとして読み込むコマンドは
+            // モデルが 0 個でも通らねばならない（実測 2026-09-30: 読込を Undo して
+            // 0 個になると importMqoFile が「モデルがありません」で拒否された）。
+            // 既存モデルが要る AddOnly コマンドは、コマンド側が自分で失敗を返す。
+            if (scope == PLWriteScope.AddOnly) return OwnershipVerdict.Ok;
+
             var model = GetModel(project, cmd.ModelIndex);
             if (model == null) return OwnershipVerdict.Deny($"モデルがありません: {cmd.ModelIndex}");
-
-            // 既存オブジェクトを書き換えず新規に足すだけのものは担当と無関係。
-            if (scope == PLWriteScope.AddOnly) return OwnershipVerdict.Ok;
 
             // 対象を引数から特定できないもの（未宣言を含む）は
             // 「そのモデルに他人の担当が1つでもあれば拒否」の保守的判定にする。

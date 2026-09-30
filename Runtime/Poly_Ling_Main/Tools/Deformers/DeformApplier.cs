@@ -418,9 +418,20 @@ namespace Poly_Ling.Tools.Deformers
                 var mc = _model.GetMeshContext(meshKv.Key);
                 if (mc == null) continue;
 
+                // 範囲も Apply と同じ表示ワールド座標（開始時に GPU から写した値）から取る。
+                // 以前は mc.LocalToWorld（メッシュ 1 個の WorldMatrix）で出しており、
+                // 非スキンドのバインド表示とスキンドの両表示で、変形の起点・全長が
+                // 表示とずれていた（2026-09-29 修正。verifyBindDeform で確認）。
+                _startWorld.TryGetValue(meshKv.Key, out var worldMap);
+                bool showBind = GetShowBindPose?.Invoke() ?? false;
+
                 foreach (var posKv in meshKv.Value)
                 {
-                    Vector3 local = _axis.WorldToLocal(mc.LocalToWorld(posKv.Value));
+                    // 【保険】写せていない頂点だけ CPU 行列に落ちる（CaptureStartWorld の注記）。
+                    Vector3 world = (worldMap != null && worldMap.TryGetValue(posKv.Key, out var sw))
+                        ? sw
+                        : mc.VertexMatrix(posKv.Key, showBind).MultiplyPoint3x4(posKv.Value);
+                    Vector3 local = _axis.WorldToLocal(world);
 
                     if (local.x < ctx.LocalMin.x) ctx.LocalMin.x = local.x;
                     if (local.y < ctx.LocalMin.y) ctx.LocalMin.y = local.y;

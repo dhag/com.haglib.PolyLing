@@ -127,6 +127,25 @@ namespace Poly_Ling.Remote
             BroadcastAsync(BuildPushMessage("refreshRequired", "{}"));
         }
 
+        /// <summary>
+        /// ホストで作業軸の値（または使う作業軸）の変更が確定したときに呼ぶ。
+        /// 現在モデルの作業軸すべての値を全クライアントへ push する（workAxisChanged）。
+        /// 作業軸はモデルのデータなので、選択と違ってユーザーごとに分けない。
+        /// 追加・削除は一覧変更（meshListChanged）の再フェッチで届くのでここでは送らない。
+        /// </summary>
+        public void NotifyWorkAxisChanged()
+        {
+            if (_wsServer == null || ClientCount == 0) return;
+
+            var proj  = Context?.Project;
+            var model = Context?.Model;
+            if (proj == null || model == null) return;
+
+            BroadcastAsync(BuildPushMessage(
+                RemoteWorkAxisSync.EventName,
+                RemoteWorkAxisSync.BuildData(model, proj.CurrentModelIndex)));
+        }
+
         private void CheckSelectionChanged()
         {
             var proj  = Context?.Project;
