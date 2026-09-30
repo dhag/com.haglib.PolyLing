@@ -27,6 +27,20 @@ namespace Poly_Ling.Tools
         /// </summary>
         public Quaternion Orientation = Quaternion.identity;
 
+        /// <summary>
+        /// 平面制約（作業空間。PolyLing_UV_Billboard_Design.md 5.2）。true のとき
+        /// Z リング（Orientation のローカル Z まわり）だけを当たり判定の対象にする。
+        /// 呼び出し側は Orientation に作業空間の平面の姿勢を入れ、X・Y のリングを描かないこと。
+        /// </summary>
+        public bool PlaneConstrained;
+
+        /// <summary>作業空間の平面（ToolContext.EditSpacePlane）に合わせて向きと平面制約を設定する。null なら従来のワールド軸へ戻す。</summary>
+        public void ApplyEditSpacePlane(EditSpacePlane? plane)
+        {
+            PlaneConstrained = plane.HasValue;
+            Orientation      = plane.HasValue ? plane.Value.Rotation : Quaternion.identity;
+        }
+
         /// <summary>Orientation を適用した軸方向（ワールド）。</summary>
         public Vector3 GetOrientedAxisVector(AxisGizmo.AxisType axis)
             => Orientation * AxisVector(axis);
@@ -60,6 +74,7 @@ namespace Poly_Ling.Tools
             float dX = -1f, dY = -1f, dZ = -1f;
             foreach (var axis in new[] { AxisGizmo.AxisType.X, AxisGizmo.AxisType.Y, AxisGizmo.AxisType.Z })
             {
+                if (PlaneConstrained && axis != AxisGizmo.AxisType.Z) continue;
                 var pts = GetRingScreen(ctx, axis);
                 float d = MinDistToPolyline(screenPos, pts);
                 if (axis == AxisGizmo.AxisType.X) dX = d;

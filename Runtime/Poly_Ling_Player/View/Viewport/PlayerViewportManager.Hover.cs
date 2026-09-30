@@ -76,6 +76,10 @@ namespace Poly_Ling.Player
             if (_renderer == null) return;
             _lastProjectForPresent = project;
 
+            // 作業空間の下絵の四角形（ロック解除中）。代理の姿勢・画像・ロックのどれかが
+            // 変わると何らかの Enter* を通るので、ここで決め直す。
+            _plateQuadRenderer.Prepare(GetPlateQuad?.Invoke());
+
             // ここへ来たということは、カメラ・頂点位置・選択・トポロジ・表示設定の
             // いずれかが変わった可能性がある。ホバー間引きのキャッシュを捨てて、
             // 次のポインタ移動が同じ画素でも必ず再計算されるようにする。
@@ -175,6 +179,9 @@ namespace Poly_Ling.Player
             if (Poly_Ling.Diagnostics.PLCamDbg.SwLog) Poly_Ling.Diagnostics.PLCamDbg.Mark("S0 enter slot=" + slot);
             // 軸/グリッドはモデル・レンダラーの有無に依存しないため先に提出する。
             _gridAxisRenderer?.Submit(cam);
+
+            // 作業空間の下絵の四角形。そのビューの「下絵」表示に従う。
+            if (_displaySettings[slot].ShowUnderlay) _plateQuadRenderer.Submit(cam);
 
             if (_renderer == null || project == null) return;
 

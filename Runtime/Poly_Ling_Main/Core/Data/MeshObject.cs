@@ -217,6 +217,26 @@ namespace Poly_Ling.Data
         public BillboardMode Billboard { get; set; } = BillboardMode.Off;
 
         /// <summary>
+        /// 両面表示。true なら面の回り順に関係なく表として扱い、辺と頂点の表示と
+        /// クリック判定で裏面カリングをしない（GPU の面フラグ SelectionFlags.DoubleSided）。
+        /// 面の塗りには効かない（塗りを止めるのは HideFaceShading）。
+        /// 作業空間の代理メッシュのように、面の回り順が表裏の意味を持たない
+        /// 2 次元の配置（UV など）に使う。
+        ///
+        /// 【保存しない】Billboard と同じく .mfproj / CSV / リモートのいずれにも書かない。
+        /// </summary>
+        public bool DoubleSidedDisplay { get; set; }
+
+        /// <summary>
+        /// 面を塗らない。面のデータ・面の選択・クリック判定・辺と頂点の表示はそのまま。
+        /// 作業空間の代理メッシュで、背面の下絵を面が隠さないようにするために使う
+        /// （PolyLing_UV_Billboard_Design.md 6.7）。
+        ///
+        /// 【保存しない】Billboard と同じく .mfproj / CSV / リモートのいずれにも書かない。
+        /// </summary>
+        public bool HideFaceShading { get; set; }
+
+        /// <summary>
         /// 法線の自動再計算から除外するセット一覧（パーツ選択辞書と同じ構造）。
         /// リストに載っているセットが指す要素は、RecalculateNormals /
         /// RecalculateSmoothNormals の直前に法線を退避し、計算後に書き戻す。

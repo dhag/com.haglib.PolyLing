@@ -75,9 +75,23 @@ namespace Poly_Ling.Player
             return model.ComputeBillboardMatrices(cam.transform.rotation);
         }
 
-        /// <summary>ビルボードの基準にするビューポートを解決する。</summary>
+        /// <summary>
+        /// 作業空間が開いている間の基準ビュー（作業ビュー）を返す口。開いていなければ null。
+        /// Viewer が結線する（PolyLingPlayerViewerCore.EditSpace.cs）。
+        /// </summary>
+        public System.Func<PlayerViewport> GetEditSpaceReferenceViewport;
+
+        /// <summary>
+        /// ビルボードの基準にするビューポートを解決する。
+        /// 作業空間が開いている間は作業ビューに固定する。基準ビューが Current のままだと、
+        /// 別のビューでカメラを動かしたときに代理の向きがそちらへ移り、作業ビューの下絵・枠とずれるため。
+        /// 保存される設定（ProjectContext.BillboardView）は書き換えない。
+        /// </summary>
         private PlayerViewport BillboardReferenceViewport(BillboardViewKind kind)
         {
+            var editSpaceView = GetEditSpaceReferenceViewport?.Invoke();
+            if (editSpaceView != null) return editSpaceView;
+
             switch (kind)
             {
                 case BillboardViewKind.Top:   return TopViewport;

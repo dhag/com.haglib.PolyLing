@@ -15,8 +15,11 @@ namespace Poly_Ling.Player
     ///   Tool3D  … ビューポートの 3D 操作を使うパネル（頂点移動・選択を使う編集など）。下区画。
     ///   Pinned  … 常駐のリスト（モデル／オブジェクト／マテリアル）。上区画。
     ///             右ペイン最上部のボタンでそれぞれ独立に開閉する（排他にしない）。
+    ///   EditSpace … 作業空間バー。中区画（上区画と下区画の間）。作業空間が開いている間だけ出す。
+    ///             下区画のパネルを切り替えても消えない（PolyLing_UV_Billboard_Design.md 5.1）。
     ///
     /// 上区画は常駐のリスト（開いているものを縦に並べる）だけを表示する。
+    /// 中区画は作業空間バーだけを表示する（高さは中身なり）。
     /// 下区画は一般パネルか 3D 操作パネルのどちらか 1 つだけを表示する（排他。ShowRightPanel）。
     /// 区画の中に表示中のものがなければ、その区画を隠す（RefreshRightAreas）。
     /// </summary>
@@ -25,6 +28,7 @@ namespace Poly_Ling.Player
         General,
         Tool3D,
         Pinned,
+        EditSpace,
     }
 
     public partial class PlayerLayoutRoot
@@ -38,6 +42,12 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン下区画（一般パネル・3D 操作パネル）の ScrollView の contentContainer。</summary>
         public VisualElement PanelPaneContent { get; private set; }
+
+        /// <summary>右ペイン中区画（作業空間バー）の中身を入れる要素。</summary>
+        public VisualElement EditSpacePaneContent { get; private set; }
+
+        /// <summary>作業空間バーのセクション（中区画）。</summary>
+        public VisualElement EditSpaceSection { get; private set; }
 
         /// <summary>下区画の見出しの「閉じる」ボタン。下区画のパネル（一般・3D 操作のどちらでも）を閉じる。</summary>
         public Button ToolAreaCloseBtn { get; private set; }
@@ -66,6 +76,8 @@ namespace Poly_Ling.Player
 
         /// <summary>上区画（常駐リスト）の ScrollView。空のときは display=None で隠す。</summary>
         private ScrollView _pinnedScroll;
+        /// <summary>中区画（作業空間バー）の外枠。作業空間が開いていないときは display=None。</summary>
+        private VisualElement _editSpaceArea;
         /// <summary>上区画が表示中か。隠れている間は下区画が全高を使う。</summary>
         private bool _pinnedAreaOpen = true;
         /// <summary>下区画（一般パネル・3D 操作パネル）の外枠。空のときは display=None で隠す。</summary>
@@ -196,6 +208,8 @@ namespace Poly_Ling.Player
 
         public VisualElement MergeVerticesSection       { get; private set; }
         public VisualElement SplitVerticesSection       { get; private set; }
+        /// <summary>右ペイン：頂点の分離（選択面を切り離す・選択辺で切り開く）。</summary>
+        public VisualElement DetachVerticesSection      { get; private set; }
         public VisualElement VertexHoleSection          { get; private set; }
         public VisualElement VertexDissolveSection      { get; private set; }
 
@@ -388,6 +402,24 @@ namespace Poly_Ling.Player
             PinnedPaneContent = _pinnedScroll.contentContainer;
             PinnedPaneContent.style.color = new StyleColor(Color.white);
 
+            // 中区画：作業空間バー（RightPanelKind.EditSpace）。高さは中身なり。
+            _editSpaceArea = new VisualElement();
+            _editSpaceArea.style.flexShrink        = 0;
+            _editSpaceArea.style.paddingTop        = 4;
+            _editSpaceArea.style.paddingBottom     = 4;
+            _editSpaceArea.style.paddingLeft       = 4;
+            _editSpaceArea.style.paddingRight      = 4;
+            _editSpaceArea.style.borderTopWidth    = 1;
+            _editSpaceArea.style.borderBottomWidth = 1;
+            _editSpaceArea.style.borderTopColor    = new StyleColor(new Color(0.4f, 0.65f, 1f, 0.6f));
+            _editSpaceArea.style.borderBottomColor = new StyleColor(new Color(0.4f, 0.65f, 1f, 0.6f));
+            _editSpaceArea.style.backgroundColor   = new StyleColor(new Color(0.15f, 0.2f, 0.28f, 1f));
+            _editSpaceArea.style.display           = DisplayStyle.None;
+            pane.Add(_editSpaceArea);
+            EditSpacePaneContent = _editSpaceArea;
+            EditSpacePaneContent.style.color = new StyleColor(Color.white);
+
+
             // 上下の仕切り。上下どちらかの区画が空のときは隠す。
             _rightAreaSplitter = new VisualElement();
             _rightAreaSplitter.style.height          = RightSplitterH;
@@ -498,6 +530,7 @@ namespace Poly_Ling.Player
 
             // ── 追加パネルセクション群（デフォルト非表示）────────────────
             UVZSection                 = AddSection(visible: false, kind: RightPanelKind.General);
+            EditSpaceSection           = AddSection(visible: false, kind: RightPanelKind.EditSpace, topBorder: false);
             PartsSelectionSetSection   = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MeshSelectionSetSection    = AddSection(visible: false, kind: RightPanelKind.General);
             ObjectGroupSection         = AddSection(visible: false, kind: RightPanelKind.General);
@@ -524,6 +557,7 @@ namespace Poly_Ling.Player
             PlaceObjectReshapeSection  = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MergeVerticesSection       = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             SplitVerticesSection       = AddSection(visible: false, kind: RightPanelKind.Tool3D);
+            DetachVerticesSection      = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             VertexHoleSection          = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             VertexDissolveSection      = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             HoleRingCountSection       = AddSection(visible: false, kind: RightPanelKind.Tool3D);
@@ -645,7 +679,9 @@ namespace Poly_Ling.Player
                 v.style.paddingTop     = 4;
                 v.style.marginTop      = 4;
             }
-            (kind == RightPanelKind.Pinned ? PinnedPaneContent : PanelPaneContent).Add(v);
+            (kind == RightPanelKind.Pinned    ? PinnedPaneContent
+           : kind == RightPanelKind.EditSpace ? EditSpacePaneContent
+           : PanelPaneContent).Add(v);
             _rightSections.Add(v);
             _rightSectionKinds[v] = kind;
             return v;
@@ -670,13 +706,18 @@ namespace Poly_Ling.Player
         /// </summary>
         public void RefreshRightAreas()
         {
-            bool pinnedOpen = false, panelOpen = false;
+            bool pinnedOpen = false, panelOpen = false, editSpaceOpen = false;
             foreach (var s in _rightSections)
             {
                 if (s.style.display != DisplayStyle.Flex) continue;
-                if (_rightSectionKinds[s] == RightPanelKind.Pinned) pinnedOpen = true;
-                else                                                panelOpen  = true;
+                var k = _rightSectionKinds[s];
+                if      (k == RightPanelKind.Pinned)    pinnedOpen    = true;
+                else if (k == RightPanelKind.EditSpace) editSpaceOpen = true;
+                else                                    panelOpen     = true;
             }
+
+            if (_editSpaceArea != null)
+                _editSpaceArea.style.display = editSpaceOpen ? DisplayStyle.Flex : DisplayStyle.None;
 
             _pinnedAreaOpen = pinnedOpen;
             if (_pinnedScroll != null)
@@ -711,7 +752,10 @@ namespace Poly_Ling.Player
             if (float.IsNaN(paneH) || paneH <= 0f) return float.MaxValue;
             float barH = _rightPinnedBar != null ? _rightPinnedBar.resolvedStyle.height : 0f;
             if (float.IsNaN(barH) || barH < 0f) barH = 0f;
-            return Mathf.Max(MinRightAreaH, paneH - barH - RightSplitterH - MinRightAreaH);
+            float esH = (_editSpaceArea != null && _editSpaceArea.style.display == DisplayStyle.Flex)
+                ? _editSpaceArea.resolvedStyle.height : 0f;
+            if (float.IsNaN(esH) || esH < 0f) esH = 0f;
+            return Mathf.Max(MinRightAreaH, paneH - barH - esH - RightSplitterH - MinRightAreaH);
         }
 
         /// <summary>希望の高さを上限で抑えて下区画に適用する（保存値は変えない）。</summary>

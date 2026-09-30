@@ -597,6 +597,8 @@ namespace Poly_Ling.Core
             uint startIndexOffset = indexOffset;
             bool isVisible = meshContext?.IsVisible ?? true;
             bool isLocked = meshContext?.IsLocked ?? false;
+            // 両面表示（作業空間の代理など）。面フラグに載せて裏面カリングから外す。
+            uint doubleSidedFlag = meshObject.DoubleSidedDisplay ? (uint)SelectionFlags.DoubleSided : 0u;
 
             for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
             {
@@ -637,7 +639,7 @@ namespace Poly_Ling.Core
                     VertexCount = (uint)face.VertexCount,
                     Flags = (uint)_flagManager.ComputeFaceFlags(
                         modelIndex, meshIndex, faceIdx,
-                        faceVisible, isLocked, false),
+                        faceVisible, isLocked, false) | doubleSidedFlag,
                     MaterialIndex = (uint)face.MaterialIndex,
                     MeshIndex = (uint)meshIndex,
                     ModelIndex = (uint)modelIndex,

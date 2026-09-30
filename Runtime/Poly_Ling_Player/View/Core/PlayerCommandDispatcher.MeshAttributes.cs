@@ -657,6 +657,18 @@ namespace Poly_Ling.Player
 
                         int __addedIdx = model.Add(dup);
                         __added.Add((__addedIdx, dup));
+
+                        // 複製元に作業板スロット（作業空間の下絵。UnderlayData.Plates）があれば、
+                        // 同じ画像・置き方・表示調整で複製の ObjectId にも付ける。
+                        // スロットは Undo に入らない（下絵の扱い）。複製を Undo で消すとスロットは
+                        // 表示されずに残り、Redo で同じ ObjectId の複製が戻ればまた表示される。
+                        var __plate = model.Underlay?.FindPlate(srcCtx.ObjectId);
+                        if (__plate != null && !__plate.IsEmpty)
+                        {
+                            var __copy = __plate.Clone();
+                            __copy.ObjectId = dup.ObjectId;
+                            model.Underlay.SetPlate(__copy);
+                        }
                     }
                     if (__added.Count > 0 && _undoController != null)
                     {

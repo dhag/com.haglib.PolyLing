@@ -146,6 +146,22 @@ namespace Poly_Ling.UndoSystem
             if (_projectStack     != null) _projectStack.RecordingEnabled     = enabled;
         }
 
+        // ================================================================
+        // 履歴の範囲（UndoScope.cs）
+        // ================================================================
+
+        /// <summary>
+        /// メイングループに履歴の範囲を開く。既に開いていれば null。
+        /// 開いている間は範囲より前の記録を Undo しない。作業空間が使う。
+        /// </summary>
+        public UndoScope BeginHistoryScope() => _mainGroup.BeginScope();
+
+        /// <summary>範囲の Undo の床を今の位置へ上げる（範囲を開いた直後の準備を戻させない）。</summary>
+        public void RaiseHistoryScopeFloor(UndoScope scope) => _mainGroup.RaiseScopeFloor(scope);
+
+        /// <summary>範囲を閉じる。discard が true なら範囲の中の記録を履歴から除く。</summary>
+        public void EndHistoryScope(UndoScope scope, bool discard) => _mainGroup.EndScope(scope, discard);
+
         // === プロジェクトレベルUndo プロパティ ===
         public bool CanUndoProject => _projectUndoStack.Count > 0;
         public bool CanRedoProject => _projectRedoStack.Count > 0;

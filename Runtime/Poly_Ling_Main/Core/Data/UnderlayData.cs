@@ -33,6 +33,7 @@
 //   #if UNITY_EDITOR を含まない。
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Poly_Ling.Data
@@ -153,7 +154,57 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>8 方向分の下絵設定。ModelContext.Underlay として 1 つ持つ。null＝下絵なし。</summary>
+    /// <summary>
+    /// 作業板スロット（PolyLing_UV_Billboard_Design.md 8.3）。断面系の作業空間の代理オブジェクトに固定する参考画像。
+    ///
+    /// 【基準】代理オブジェクトのローカル XY 座標で 2 隅を持つ。オブジェクトの移動・回転やビルボードの
+    ///   ロック状態によらず、断面との位置関係が保たれる。
+    /// 【対象】並び位置ではなく安定 ID（MeshContext.ObjectId）で指す。オブジェクトの追加・削除で
+    ///   別の対象を指さない。対象が見つからないスロットも消さず、表示しないまま残す（8.4）。
+    /// </summary>
+    [Serializable]
+    public class UnderlayPlateSlotData
+    {
+        /// <summary>下絵を固定する代理オブジェクトの安定 ID。</summary>
+        public ulong ObjectId;
+
+        /// <summary>画像ファイルの絶対パス。空なら未設定。</summary>
+        public string FilePath = string.Empty;
+
+        /// <summary>画像の 1 隅（代理のローカル XY）。</summary>
+        public Vector2 Corner0 = Vector2.zero;
+
+        /// <summary>Corner0 と向かい合う隅（代理のローカル XY）。</summary>
+        public Vector2 Corner1 = Vector2.zero;
+
+        /// <summary>コントラスト（0〜1）。1 で元画像、0 で灰色一色。</summary>
+        public float Contrast = 1f;
+
+        /// <summary>明るさ（0〜1）。1 で元画像、0 で黒。</summary>
+        public float Intensity = 1f;
+
+        /// <summary>画像が設定されていないか。</summary>
+        public bool IsEmpty => string.IsNullOrEmpty(FilePath);
+
+        /// <summary>2 隅が置かれているか。</summary>
+        public bool HasCorners => Corner0.x != Corner1.x && Corner0.y != Corner1.y;
+
+        /// <summary>ディープコピー。</summary>
+        public UnderlayPlateSlotData Clone() => new UnderlayPlateSlotData
+        {
+            ObjectId  = ObjectId,
+            FilePath  = FilePath ?? string.Empty,
+            Corner0   = Corner0,
+            Corner1   = Corner1,
+            Contrast  = Contrast,
+            Intensity = Intensity,
+        };
+    }
+
+    /// <summary>
+    /// 8 方向分の下絵設定と作業板スロットの一覧。ModelContext.Underlay として 1 つ持つ。null＝下絵なし。
+    /// 作業板スロットは方向スロットとは別の一覧（保存も別の一覧・別のファイル）。
+    /// </summary>
     [Serializable]
     public class UnderlayData
     {
@@ -161,11 +212,45 @@ namespace Poly_Ling.Data
         public const int Count = 8;
 
         private readonly UnderlaySlotData[] _slots;
+        private readonly List<UnderlayPlateSlotData> _plates = new List<UnderlayPlateSlotData>();
 
         public UnderlayData()
         {
             _slots = new UnderlaySlotData[Count];
             for (int i = 0; i < Count; i++) _slots[i] = new UnderlaySlotData();
+        }
+
+        // ── 作業板スロット ──
+
+        /// <summary>作業板スロットの一覧（読むだけ）。</summary>
+        public IReadOnlyList<UnderlayPlateSlotData> Plates => _plates;
+
+        /// <summary>指定オブジェクトの作業板スロット。無ければ null。</summary>
+        public UnderlayPlateSlotData FindPlate(ulong objectId)
+        {
+            foreach (var p in _plates) if (p != null && p.ObjectId == objectId) return p;
+            return null;
+        }
+
+        /// <summary>作業板スロットを置く（同じオブジェクトのものがあれば差し替える）。空のスロットは消す。</summary>
+        public void SetPlate(UnderlayPlateSlotData plate)
+        {
+            if (plate == null) return;
+            _plates.RemoveAll(p => p == null || p.ObjectId == plate.ObjectId);
+            if (!plate.IsEmpty) _plates.Add(plate.Clone());
+        }
+
+        /// <summary>指定オブジェクトの作業板スロットを消す。消したら true。</summary>
+        public bool RemovePlate(ulong objectId) => _plates.RemoveAll(p => p == null || p.ObjectId == objectId) > 0;
+
+        /// <summary>どの方向にも画像が無いか（作業板スロットは見ない）。</summary>
+        public bool HasNoDirectionImages
+        {
+            get
+            {
+                foreach (var s in _slots) if (!s.IsEmpty) return false;
+                return true;
+            }
         }
 
         /// <summary>指定方向のスロット。必ず非 null。</summary>
@@ -175,12 +260,13 @@ namespace Poly_Ling.Data
         public void Set(UnderlayDirection dir, UnderlaySlotData slot)
             => _slots[(int)dir] = slot != null ? slot.Clone() : new UnderlaySlotData();
 
-        /// <summary>どの方向にも画像が無いか。</summary>
+        /// <summary>どの方向にも作業板スロットにも画像が無いか。</summary>
         public bool IsEmpty
         {
             get
             {
-                foreach (var s in _slots) if (!s.IsEmpty) return false;
+                if (!HasNoDirectionImages) return false;
+                foreach (var p in _plates) if (p != null && !p.IsEmpty) return false;
                 return true;
             }
         }
@@ -190,6 +276,7 @@ namespace Poly_Ling.Data
         {
             var d = new UnderlayData();
             for (int i = 0; i < Count; i++) d._slots[i] = _slots[i].Clone();
+            foreach (var p in _plates) if (p != null) d._plates.Add(p.Clone());
             return d;
         }
 

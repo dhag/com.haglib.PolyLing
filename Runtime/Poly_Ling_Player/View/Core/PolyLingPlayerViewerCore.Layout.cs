@@ -117,6 +117,7 @@ namespace Poly_Ling.Player
             _layoutRoot.UVEditorBtn.clicked    += ShowUVEditorPanel;
             _layoutRoot.UVUnwrapBtn.clicked    += ShowUVUnwrapPanel;
             _layoutRoot.UVZBtn.clicked             += ShowUVZPanel;
+            _layoutRoot.UVEditSpaceBtn.clicked     += OnUVEditSpaceButtonClicked;
             _layoutRoot.PartsSelectionSetBtn.clicked += ShowPartsSelectionSetPanel;
             _layoutRoot.MeshSelectionSetBtn.clicked  += ShowMeshSelectionSetPanel;
             _layoutRoot.ObjectGroupBtn.clicked       += ShowObjectGroupPanel;
@@ -740,6 +741,9 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.PartsIdSection,           () => _partsIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.AddFaceSection,           () => _addFaceSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.FlipFaceSection,          () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _flipFaceHandler?.Activate(ctx); _flipFaceSubPanel?.Refresh(); }));
+            // 頂点移動：作業空間の開閉・選択の変化で、数値移動の単位（ワールド / 作業空間の U・V）と
+            // 移動対象の頂点数が変わるので、表示中は通知のたびに読み直す。
+            _sectionRefreshPairs.Add((_layoutRoot.VertexMoveSection,        () => _vertexMoveSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RotateSection,            () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _rotateHandler?.Activate(ctx); _rotateSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.ScaleSection,             () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _scaleHandler?.Activate(ctx); _scaleSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.EdgeBevelSection,         () => _edgeBevelSubPanel?.Refresh()));

@@ -98,12 +98,18 @@ namespace Poly_Ling.Player
 
             if (model.Underlay != null)
             {
-                if (c.AllDirections) model.Underlay = null;
+                // 方向スロットだけを消す。作業板スロットは別の一覧なので残す
+                // （clearEditSpacePlateUnderlay で消す）。
+                if (c.AllDirections)
+                {
+                    foreach (UnderlayDirection d in Enum.GetValues(typeof(UnderlayDirection)))
+                        model.Underlay.Set(d, null);
+                }
                 else
                 {
                     model.Underlay.Set(c.Direction, null);
-                    if (model.Underlay.IsEmpty) model.Underlay = null;
                 }
+                if (model.Underlay.IsEmpty) model.Underlay = null;
                 model.IsDirty = true;
             }
 

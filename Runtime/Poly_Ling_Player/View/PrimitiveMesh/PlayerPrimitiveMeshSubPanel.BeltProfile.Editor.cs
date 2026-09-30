@@ -299,8 +299,9 @@ namespace Poly_Ling.Player
             var beltIoRow  = new VisualElement();
             beltIoRow.style.flexDirection = FlexDirection.Row;
             beltIoRow.style.marginBottom  = 4;
-            SB(beltIoRow, T("ImportFromMesh"), () => ImportBeltProfileFromMesh(ed));
+            SB(beltIoRow, T("ImportFromMesh"), () => ImportProfileFromSelected(KindOf(ed)));
             SB(beltIoRow, T("ApplyToMesh"),    () => ApplyBeltProfileToMesh(ed));
+            SB(beltIoRow, T("OpenInEditSpace"), () => RequestOpenProfileEditSpace(KindOf(ed)));
             beltIoFold.Add(beltIoRow);
 
             var beltIoHint = new Label(T("BeltProfileIOHint"));
@@ -611,52 +612,8 @@ namespace Poly_Ling.Player
         // 等方スケールし、AABB の最小角を原点へ寄せる（z も同じ扱い）。反映は生データのまま書き出す。
         // ================================================================
 
-        /// <summary>選択オブジェクトの2頂点ラインを断面プロファイルへ取り込む。</summary>
-        private void ImportBeltProfileFromMesh(BeltProfileEdit ed)
-        {
-            if (ed == null) return;
-
-            var mesh = GetSelectedMeshObject?.Invoke();
-            if (mesh == null) { SetBeltStatus(T("NoSelectedMesh")); return; }
-
-            var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
-
-            List<Vector3> pts = null;
-            if (ed.ClosedLoop)
-            {
-                // 閉ループ断面。複数ループがあれば点数が最多のものを採る。
-                var loops = LineProfileExtractor.ExtractLoops(mesh, lineFaces);
-                if (loops != null)
-                {
-                    foreach (var lp in loops)
-                    {
-                        if (lp?.Points == null || lp.Points.Count < 3) continue;
-                        if (pts == null || lp.Points.Count > pts.Count) pts = lp.Points;
-                    }
-                }
-            }
-            else
-            {
-                pts = LineProfileExtractor.ExtractPolyline(mesh, lineFaces);
-            }
-
-            if (pts == null || pts.Count < 2) { SetBeltStatus(T("NoLinesFound")); return; }
-
-            // 取り込み元を控える。オブジェクトグループが作り直すときに、
-            // 同じオブジェクトから同じ読み方で掛け直せるようにするため。
-            ed.SourceMasterIndex = ResolveMasterIndexOf(mesh);
-
-            var norm = NormalizeBeltProfile(pts);
-            if (norm == null) { SetBeltStatus(T("ProfileDegenerate")); return; }
-
-            BeltBegin(ed);
-            ed.Points = norm;
-            ed.Sel.Clear(); ed.SelectedIndex = -1;
-            BeltCommit(ed, "メッシュ取込");
-
-            SetBeltStatus(T("ImportedPoints", norm.Count));
-            D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
-        }
+        // 取り込み（選択オブジェクト → 断面）は ImportProfileFromSelected（PlayerPrimitiveMeshSubPanel.EditSpace.cs）。
+        // 読み方（閉ループは点数最多のループ、開ループは折れ線、そのあと正規化）は ReadProfileFromMesh が持つ。
 
         /// <summary>断面プロファイルを2頂点ラインの描画オブジェクトとして反映する（正規化なし）。</summary>
         private void ApplyBeltProfileToMesh(BeltProfileEdit ed)

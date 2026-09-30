@@ -55,6 +55,7 @@
 #define FLAG_IS_BOUNDARY        0x00020000
 #define FLAG_IS_SEAM            0x00040000
 #define FLAG_IS_SHARP           0x00080000
+#define FLAG_DOUBLE_SIDED       0x00100000   // 両面表示の面（SelectionFlags.DoubleSided）。裏面カリングしない
 
 // マスク
 #define HIERARCHY_MASK          0x0000000F
@@ -725,6 +726,9 @@ void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
     
     // ミラー変換時は面の向きが反転するので判定も反転
     if (_IsMirrored != 0) isFrontFacing = !isFrontFacing;
+
+    // 両面表示の面は回り順に関係なく表（作業空間の代理など。回り順が表裏の意味を持たない）
+    if (HAS_FLAG(flags, FLAG_DOUBLE_SIDED)) isFrontFacing = true;
     
     if (isFrontFacing)
     {

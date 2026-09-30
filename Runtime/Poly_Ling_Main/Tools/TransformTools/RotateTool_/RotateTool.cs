@@ -412,6 +412,26 @@ namespace Poly_Ling.Tools
                 rot = Quaternion.Euler(_rotX, _rotY, _rotZ);
             }
 
+            // 作業空間の平面制約（PolyLing_UV_Billboard_Design.md 5.2）。回転軸を平面の法線に限る。
+            //   軸モード … 指定軸の法線方向の向き（符号）だけを採り、角度はそのまま使う
+            //              （ギズモは法線まわりの Z リングしか出さないので、軸は法線と一致する）。
+            //   オイラー … 平面の Z まわりの角度として RotZ だけを使う。X・Y は使わない。
+            // 3D で回してから平面へ押し戻すのではなく、最初から法線まわりに回す。
+            var esPlane = _ctx?.EditSpacePlane;
+            if (esPlane.HasValue)
+            {
+                Vector3 n = esPlane.Value.Normal;
+                if (_axisMode)
+                {
+                    float sign = Vector3.Dot(_axisVec, n) >= 0f ? 1f : -1f;
+                    rot = Quaternion.AngleAxis(_axisAngle * sign, n);
+                }
+                else
+                {
+                    rot = Quaternion.AngleAxis(_rotZ, n);
+                }
+            }
+
             // rot はワールド軸まわりの回転。頂点はローカル座標なので、
             // 「ローカル→ワールド→回転→ローカル」の往復で適用する。
             // これによりメッシュの WorldMatrix に回転／スケールがあっても
@@ -437,6 +457,20 @@ namespace Poly_Ling.Tools
                         Quaternion rq = rot;
                         if (wmap != null && wmap.TryGetValue(i, out float wt))
                             rq = Quaternion.Slerp(Quaternion.identity, rot, wt);
+
+                        // 平面制約中は、法線まわりの回転を代理のローカル座標の写像にして掛ける
+                        // （EditSpacePlane.ToLocalPlanar。往復の丸めでローカル Z がずれない）。
+                        if (esPlane.HasValue)
+                        {
+                            var op = Matrix4x4.Translate(pivotWorld) * Matrix4x4.Rotate(rq)
+                                   * Matrix4x4.Translate(-pivotWorld);
+                            var lp = meshObject.Vertices[i];
+                            lp.Position = EditSpacePlane.ToLocalPlanar(op, meshContext.VertexMatrix(i, showBindPose))
+                                                        .MultiplyPoint3x4(posKv.Value);
+                            meshObject.Vertices[i] = lp;
+                            meshObject.InvalidatePositionCache();
+                            continue;
+                        }
 
                         // 前方向は開始時に GPU から写した表示ワールド座標。
                         // 書き戻しだけ頂点単位の逆行列を使う（GPU 側に逆行列は無い）。

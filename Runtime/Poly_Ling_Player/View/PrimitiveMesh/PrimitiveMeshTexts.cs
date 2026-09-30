@@ -393,6 +393,7 @@ namespace Poly_Ling.Player
             ["MeshProfileIO"]   = new() { ["en"] = "Import / Export Drawn Object", ["ja"] = "描画オブジェクトのインポートエクスポート", ["hi"] = "オブジェクトのやりとり" },
             ["ImportFromMesh"]  = new() { ["en"] = "Import from Mesh",   ["ja"] = "取り込み(メッシュ→)", ["hi"] = "とりこみ" },
             ["ApplyToMesh"]     = new() { ["en"] = "Apply to Mesh",      ["ja"] = "反映(→メッシュ)",    ["hi"] = "はんえい" },
+            ["OpenInEditSpace"] = new() { ["en"] = "Open in Edit Space", ["ja"] = "作業空間で開く",     ["hi"] = "さぎょうくうかんでひらく" },
             ["ImportedPoints"]  = new() { ["en"] = "Imported {0} pts",   ["ja"] = "取り込み: {0}点",     ["hi"] = "とりこみ: {0}てん" },
             ["ImportedLoops"]   = new() { ["en"] = "Imported {0} loops", ["ja"] = "取り込み: {0}ループ",  ["hi"] = "とりこみ: {0}ループ" },
             ["NoSelectedMesh"]  = new() { ["en"] = "No selected mesh",   ["ja"] = "選択メッシュなし",    ["hi"] = "えらんでない" },

@@ -45,6 +45,9 @@ namespace Poly_Ling.Player
             // 掴んだ対象と一緒に動いてしまう。
             if (_gizmoCenterFrozen) _axisGizmo.Center = _frozenGizmoCenter;
             else                    UpdateGizmoState(ctx);
+            // 作業空間の平面の姿勢はカメラ（ビルボード）で変わるので、描くたびに読み直す。
+            // 押下中（重心固定中）は掴んだときの向きのまま動かす。
+            if (!_gizmoCenterFrozen) _axisGizmo.ApplyEditSpacePlane(ctx.EditSpacePlane);
 
             _axisGizmo.HoveredAxis  = _hoveredAxis;
             _axisGizmo.DraggingAxis = _draggingAxis;
@@ -67,6 +70,7 @@ namespace Poly_Ling.Player
             {
                 HasGizmo    = true,
                 Origin      = o, XEnd = xe, YEnd = ye, ZEnd = ze,
+                HideZ       = _axisGizmo.PlaneConstrained,
                 HoveredAxis = ha,
             };
             return true;
@@ -326,6 +330,9 @@ namespace Poly_Ling.Player
 
         private void UpdateGizmoState(ToolContext ctx)
         {
+            // 作業空間の平面制約（ToolContext.EditSpacePlane）。無ければワールド軸へ戻る。
+            _axisGizmo.ApplyEditSpacePlane(ctx?.EditSpacePlane);
+
             var model = _project?.CurrentModel;
             // 表示の姿勢。正典は ProjectContext.ShowBindPose。
             // 表示に使った行列とギズモの基準は同じものにする（規約 10.1）。
@@ -369,7 +376,11 @@ namespace Poly_Ling.Player
         ///   辞書へ残す。マグネットの影響頂点は Begin の中で決まるので、
         ///   先にそろえず引かれた時点で作る。
         /// </summary>
-        private static Func<int, Vector3, Vector3> MakeWorldToLocal(MeshContext mc, bool showBindPose)
+        /// <param name="planar">
+        /// 作業空間の平面制約中（対象は代理だけ）。移動量は平面内なので、ローカルの Z 成分は
+        /// 行列の丸めだけの値になる。0 にしてローカル Z を保つ（EditSpacePlane.ToLocalPlanarDelta）。
+        /// </param>
+        private static Func<int, Vector3, Vector3> MakeWorldToLocal(MeshContext mc, bool showBindPose, bool planar)
         {
             var cache = new Dictionary<int, Matrix4x4>();
             return (vertexIndex, worldDelta) =>
@@ -379,7 +390,9 @@ namespace Poly_Ling.Player
                     inv = mc.VertexMatrix(vertexIndex, showBindPose).inverse;
                     cache[vertexIndex] = inv;
                 }
-                return inv.MultiplyVector(worldDelta);
+                return planar
+                    ? EditSpacePlane.ToLocalPlanarDelta(worldDelta, inv)
+                    : inv.MultiplyVector(worldDelta);
             };
         }
 
@@ -392,6 +405,7 @@ namespace Poly_Ling.Player
 
             // 表示の姿勢。正典は ProjectContext.ShowBindPose。
             bool showBindPose = _project?.ShowBindPose ?? false;
+            bool planar = GetToolContext?.Invoke()?.EditSpacePlane.HasValue ?? false;
 
             foreach (var kv in _affectedVertices)
             {
@@ -399,7 +413,7 @@ namespace Poly_Ling.Player
                 if (mc?.MeshObject == null) continue;
 
                 var startPos = (Vector3[])mc.MeshObject.Positions.Clone();
-                var toLocal  = MakeWorldToLocal(mc, showBindPose);
+                var toLocal  = MakeWorldToLocal(mc, showBindPose, planar);
 
                 IVertexTransform t;
                 if (UseMagnet)

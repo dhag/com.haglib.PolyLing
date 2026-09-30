@@ -102,6 +102,12 @@ namespace Poly_Ling.Core
         /// <summary>シャープエッジ</summary>
         IsSharp = 1 << 19,
 
+        /// <summary>
+        /// 両面表示の面（MeshObject.DoubleSidedDisplay）。回り順に関係なく表として扱い、
+        /// 裏面カリングで消さない（UnifiedCompute.compute の ComputeFaceVisibility）。
+        /// </summary>
+        DoubleSided = 1 << 20,
+
         // ============================================================
         // 複合マスク
         // ============================================================

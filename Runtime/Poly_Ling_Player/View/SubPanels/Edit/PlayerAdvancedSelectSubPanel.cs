@@ -444,7 +444,7 @@ namespace Poly_Ling.Player
                     AdvancedSelectMode.EdgeLoop    =>
                         "エッジをクリックしてエッジループを選択\n・頂点: ループ上の頂点\n・エッジ: ループ上のエッジ\n・面: 隣接する面",
                     AdvancedSelectMode.ShortestPath =>
-                        "2つの頂点をクリックして最短経路を選択\n・頂点: 経路上の頂点\n・エッジ: 経路上のエッジ\n・面: 隣接する面",
+                        "2つの頂点をクリックして最短経路を選択\n・頂点: 経路上の頂点\n・エッジ: 経路上のエッジ\n・線: 経路上の補助線分\n・面: 隣接する面",
                     AdvancedSelectMode.UvNormalCount =>
                         "UV/法線スロット数がしきい値より大きい頂点を選択\nクリック不要。「実行」ボタンで適用",
                     AdvancedSelectMode.NearAxis =>

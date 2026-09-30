@@ -565,6 +565,13 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<SplitObjectByPartsIdCommand, string> OnSplitObjectByPartsId;
 
+        /// <summary>
+        /// コマンドの門。理由を返したコマンドは実行せずに失敗させる（null なら通す）。
+        /// 作業空間を開いている間の保存・読込・モデル切替を断るのに使う
+        /// （PolyLingPlayerViewerCore.EditSpace.cs の EditSpaceBlockReason）。
+        /// </summary>
+        public Func<PanelCommand, string> CommandGate;
+
         /// <summary>Undo の実行。1 段戻せたら true を返すこと。</summary>
         public Func<bool> OnUndo;
 
@@ -950,6 +957,10 @@ namespace Poly_Ling.Player
 
         private void DispatchCore(PanelCommand cmd)
         {
+            // コマンドの門。プロジェクト初期化も対象にするので、一番先に見る。
+            string gateReason = CommandGate?.Invoke(cmd);
+            if (gateReason != null) { Fail(gateReason); return; }
+
             // プロジェクト初期化は「プロジェクトがまだ無い状態」から呼ぶコマンド。
             // 下の null 門より前で捌かないと、初回に握り潰されて何も起きない。
             if (cmd is ResetProjectCommand reset)
@@ -1082,6 +1093,8 @@ namespace Poly_Ling.Player
             if (DispatchLineGroup(cmd, project, model))         return;
             if (DispatchBoolean2D(cmd, project, model))         return;
             if (DispatchUnderlay(cmd, project, model))          return;
+            if (DispatchEditSpace(cmd, project, model))         return;
+            if (DispatchDetach(cmd, project, model))            return;
             if (DispatchCamera(cmd, project, model))            return;
             if (DispatchDeformSkin(cmd, project, model))        return;
             if (DispatchMirrorHumanoidVrm(cmd, project, model)) return;

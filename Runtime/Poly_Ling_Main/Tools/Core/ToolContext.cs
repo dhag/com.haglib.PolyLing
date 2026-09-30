@@ -123,6 +123,17 @@ namespace Poly_Ling.Tools
         /// <summary>表示用変換行列（Local/Worldトランスフォーム表示モード用）</summary>
         public Matrix4x4 DisplayMatrix { get; set; } = Matrix4x4.identity;
 
+        // === 作業空間の平面制約（下の WorkPlane とは別物。EditSpacePlane.cs） ===
+
+        /// <summary>
+        /// 作業空間の平面を返す関数。作業空間が開いていて操作対象が代理メッシュだけのときに値を返し、
+        /// それ以外は null。姿勢はカメラ（ビルボード）で変わるので、使うたびに呼ぶ。
+        /// </summary>
+        public Func<EditSpacePlane?> GetEditSpacePlane { get; set; }
+
+        /// <summary>今の作業空間の平面。無ければ null（ツールは従来どおりワールド軸で動く）。</summary>
+        public EditSpacePlane? EditSpacePlane => GetEditSpacePlane?.Invoke();
+
         // === 選択状態 ===
 
         /// <summary>選択中の頂点インデックス（後方互換）</summary>

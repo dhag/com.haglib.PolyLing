@@ -228,6 +228,9 @@ namespace Poly_Ling.Player
                     if (m == null)
                         return new Poly_Ling.MQO.MQOExportResult
                         { Success = false, ErrorMessage = "モデルがありません" };
+                    string esBlock = EditSpaceBlockReason();
+                    if (esBlock != null)
+                        return new Poly_Ling.MQO.MQOExportResult { Success = false, ErrorMessage = esBlock };
 
                     var r = Poly_Ling.MQO.MQOExporter.ExportFile(path, m, settings);
                     if (r != null && r.Success) AuxiliaryBackupWriter.Save(m, path);
@@ -260,6 +263,9 @@ namespace Poly_Ling.Player
                     if (m == null)
                         return new Poly_Ling.PMX.PMXExportResult
                         { Success = false, ErrorMessage = "モデルがありません" };
+                    string esBlock = EditSpaceBlockReason();
+                    if (esBlock != null)
+                        return new Poly_Ling.PMX.PMXExportResult { Success = false, ErrorMessage = esBlock };
 
                     var r = Poly_Ling.PMX.PMXExporter.Export(m, path, settings);
                     if (r != null && r.Success) AuxiliaryBackupWriter.Save(m, path);

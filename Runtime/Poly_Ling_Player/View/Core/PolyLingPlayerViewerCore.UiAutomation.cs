@@ -214,6 +214,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.FlipFaceSection, ShowFlipFacePanel, _flipFaceSubPanel);
             RegisterUiPanel("splitVertices", "頂点分割（共有頂点を面ごとに分離）",
                 _layoutRoot.SplitVerticesSection, ShowSplitVerticesPanel, _splitVerticesSubPanel);
+            RegisterUiPanel("detachVertices", "頂点の分離（選択面を切り離す・選択辺で切り開く）",
+                _layoutRoot.DetachVerticesSection, ShowDetachVerticesPanel, _detachVerticesSubPanel);
             RegisterUiPanel("tri4To1", "三角形 4→1 統合",
                 _layoutRoot.Tri4To1Section, ShowTri4To1Panel, _tri4To1SubPanel);
             RegisterUiPanel("quad4To1", "四角形 4→1 統合",
@@ -307,6 +309,8 @@ namespace Poly_Ling.Player
             // ── UV（SubPanels/UV）────────────────────────────────────
             RegisterUiPanel("uvz", "UVZ（UV と XYZ の相互変換）",
                 _layoutRoot.UVZSection, ShowUVZPanel, _uvzSubPanel);
+            RegisterUiPanel("editSpace", "作業空間バー（右ペイン中区画。作業空間が開いている間だけ出る。反映・取消し・終了・ビルボードのロック）",
+                _layoutRoot.EditSpaceSection, ShowEditSpaceBar, _editSpaceBar);
             RegisterUiPanel("uvUnwrap", "UV 展開（投影展開・LSCM 展開）",
                 _layoutRoot.UVUnwrapSection, ShowUVUnwrapPanel, _uvUnwrapSubPanel);
             RegisterUiPanel("uvEditor", "UV 編集（キャンバス・UV 変換・アンカー・マグネット）",

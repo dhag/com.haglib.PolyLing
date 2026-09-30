@@ -40,7 +40,18 @@ namespace Poly_Ling.Tools
                 if (selectMode.Has(MeshSelectMode.Vertex))
                     SelectionHelper.ApplyVertexSelection(toolCtx, path, ctx.AddToSelection);
 
-                // 辺選択は廃止（頂点主体の機能。辺経路の始点解決が不正な頂点を拾うため）。
+                // 経路の区間を、面の辺は辺選択へ、補助線分（2 頂点の面）は線分選択へ入れる。
+                // 始点・終点は常にクリックした頂点（ホバーは頂点に絞られる）なので、
+                // 以前の「辺を起点にした始点解決」の問題は起きない。
+                if (selectMode.Has(MeshSelectMode.Edge) || selectMode.Has(MeshSelectMode.Line))
+                {
+                    SplitPathSegments(toolCtx.ActiveMeshObject, path, out var polyEdges, out var lineFaces);
+                    if (selectMode.Has(MeshSelectMode.Edge))
+                        SelectionHelper.ApplyEdgeSelection(toolCtx, polyEdges, ctx.AddToSelection);
+                    if (selectMode.Has(MeshSelectMode.Line))
+                        SelectionHelper.ApplyLineSelection(toolCtx, lineFaces, ctx.AddToSelection);
+                }
+
                 if (selectMode.Has(MeshSelectMode.Face))
                 {
                     var pathEdges = SelectionHelper.GetEdgesFromPath(path);
@@ -64,7 +75,13 @@ namespace Poly_Ling.Tools
             {
                 ctx.PreviewPath.AddRange(GetShortestPath(toolCtx.ActiveMeshObject, _firstVertex, ctx.HoveredVertex));
 
-                // 辺選択は廃止。
+                if (selectMode.Has(MeshSelectMode.Edge) || selectMode.Has(MeshSelectMode.Line))
+                {
+                    SplitPathSegments(toolCtx.ActiveMeshObject, ctx.PreviewPath, out var polyEdges, out var lineFaces);
+                    if (selectMode.Has(MeshSelectMode.Edge)) ctx.PreviewEdges.AddRange(polyEdges);
+                    if (selectMode.Has(MeshSelectMode.Line)) ctx.PreviewLines.AddRange(lineFaces);
+                }
+
                 if (selectMode.Has(MeshSelectMode.Face))
                 {
                     var pathEdges = SelectionHelper.GetEdgesFromPath(ctx.PreviewPath);
@@ -81,6 +98,42 @@ namespace Poly_Ling.Tools
         public void ClearFirstPoint()
         {
             _firstVertex = -1;
+        }
+
+        /// <summary>
+        /// 経路の区間を、3 頂点以上の面の辺（polyEdges）と補助線分の面番号（lineFaces）に分ける。
+        /// 区間が両方に当たるとき（面の辺と補助線分が重なっている）は両方に入る。
+        /// </summary>
+        private static void SplitPathSegments(MeshObject mo, List<int> path,
+            out List<VertexPair> polyEdges, out List<int> lineFaces)
+        {
+            polyEdges = new List<VertexPair>();
+            lineFaces = new List<int>();
+            var segs = SelectionHelper.GetEdgesFromPath(path);
+            if (mo == null || segs.Count == 0) return;
+
+            var want   = new HashSet<VertexPair>(segs);
+            var inPoly = new HashSet<VertexPair>();
+            for (int fi = 0; fi < mo.FaceCount; fi++)
+            {
+                var face = mo.Faces[fi];
+                if (face == null) continue;
+                var vs = face.VertexIndices;
+                int n  = vs.Count;
+                if (n == 2)
+                {
+                    if (want.Contains(new VertexPair(vs[0], vs[1]))) lineFaces.Add(fi);
+                }
+                else if (n >= 3)
+                {
+                    for (int i = 0; i < n; i++)
+                    {
+                        var e = new VertexPair(vs[i], vs[(i + 1) % n]);
+                        if (want.Contains(e)) inPoly.Add(e);
+                    }
+                }
+            }
+            foreach (var s in segs) if (inPoly.Contains(s)) polyEdges.Add(s);
         }
 
         // ================================================================

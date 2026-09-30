@@ -319,6 +319,17 @@ namespace Poly_Ling.Tools
 
             Vector3 scale = new Vector3(_scaleX, _scaleY, _scaleZ);
             Quaternion axisRot = Quaternion.Euler(_scaleAxisX, _scaleAxisY, _scaleAxisZ);
+
+            // 作業空間の平面制約（PolyLing_UV_Billboard_Design.md 5.2）。
+            // 軸を作業空間の平面の姿勢に取り、平面の X・Y だけを伸縮する（Z の倍率は使わない）。
+            // 軸欄は平面内の回転（Z まわり）だけを使う。X・Y まわりの傾きは平面から外れるので使わない。
+            var esPlane = _ctx?.EditSpacePlane;
+            if (esPlane.HasValue)
+            {
+                axisRot = esPlane.Value.Rotation * Quaternion.Euler(0f, 0f, _scaleAxisZ);
+                scale.z = 1f;
+            }
+
             Quaternion axisInv = Quaternion.Inverse(axisRot);
             // スケール軸はワールド軸基準。頂点はローカル座標なので
             // 「ローカル→ワールド→スケール→ローカル」の往復で適用する。
@@ -340,6 +351,20 @@ namespace Poly_Ling.Tools
                         Vector3 sc = scale;
                         if (wmap != null && wmap.TryGetValue(i, out float wt))
                             sc = new Vector3(1f + (scale.x - 1f) * wt, 1f + (scale.y - 1f) * wt, 1f + (scale.z - 1f) * wt);
+
+                        // 平面制約中は、平面内の伸縮を代理のローカル座標の写像にして掛ける
+                        // （EditSpacePlane.ToLocalPlanar。往復の丸めでローカル Z がずれない）。
+                        if (esPlane.HasValue)
+                        {
+                            var op = Matrix4x4.Translate(pivotWorld) * Matrix4x4.Rotate(axisRot)
+                                   * Matrix4x4.Scale(sc) * Matrix4x4.Rotate(axisInv)
+                                   * Matrix4x4.Translate(-pivotWorld);
+                            var lp = meshObject.Vertices[i];
+                            lp.Position = EditSpacePlane.ToLocalPlanar(op, meshContext.VertexMatrix(i, showBindPose))
+                                                        .MultiplyPoint3x4(posKv.Value);
+                            meshObject.Vertices[i] = lp;
+                            continue;
+                        }
 
                         // スケール軸フレーム: R⁻¹ → スケール → R
                         // 前方向は開始時に GPU から写した表示ワールド座標。

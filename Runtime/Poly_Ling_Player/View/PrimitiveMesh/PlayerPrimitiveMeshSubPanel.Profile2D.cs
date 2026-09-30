@@ -564,8 +564,9 @@ namespace Poly_Ling.Player
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
             var p2dIoFold = FoldSection(pe, T("MeshProfileIO"), false);
             var ioRow = new VisualElement(); ioRow.style.flexDirection = FlexDirection.Row; ioRow.style.marginBottom = 4;
-            SB(ioRow, T("ImportFromMesh"), ImportProfile2DFromMesh);
+            SB(ioRow, T("ImportFromMesh"), () => ImportProfileFromSelected(ProfileEditKind.Profile2D));
             SB(ioRow, T("ApplyToMesh"),    ApplyProfile2DToMesh);
+            SB(ioRow, T("OpenInEditSpace"), () => RequestOpenProfileEditSpace(ProfileEditKind.Profile2D));
             p2dIoFold.Add(ioRow);
 
             // ── パラメータ ────────────────────────────────────────────────
@@ -747,28 +748,7 @@ namespace Poly_Ling.Player
             return loops.Count > 0 ? loops : null;
         }
 
-        /// <summary>選択オブジェクトの全2頂点ラインを Profile2D ループへ取り込む。</summary>
-        private void ImportProfile2DFromMesh()
-        {
-            var mesh = GetSelectedMeshObject?.Invoke();
-            if (mesh == null) { _statusLabel.text = T("NoSelectedMesh"); return; }
-
-            var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
-            var loops     = LineProfileExtractor.ExtractLoops(mesh, lineFaces);
-            if (loops == null || loops.Count == 0) { _statusLabel.text = T("NoLinesFound"); return; }
-
-            // 取り込み元を控える（回転体側と同じ理由）。
-            _p2dProfileSrcIndex = ResolveMasterIndexOf(mesh);
-
-            P2dBegin();
-            _p2dLoops   = loops;
-            _p2dSelLoop = 0;
-            _p2dSel.Clear();
-            _p2dSelPt   = -1;
-            P2dCommit("メッシュ取込");
-            _statusLabel.text = T("ImportedLoops", loops.Count);
-            D(); RebuildSettings();
-        }
+        // 取り込み（選択オブジェクト → ループ）は ImportProfileFromSelected（PlayerPrimitiveMeshSubPanel.EditSpace.cs）。
 
         /// <summary>Profile2D ループを2頂点ラインの MeshObject として反映する。</summary>
         private void ApplyProfile2DToMesh()

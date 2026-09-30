@@ -237,6 +237,22 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
+        /// UV と法線を 1 組として必ず新しいスロットに足し、その添字を返す（既存の組と同じ値でも足す）。
+        ///
+        /// GetOrAddUVNormal は同じ値の組があればそれを返すが、その組を別の角のまとまりが
+        /// 既に使っていると、別々にしたい角が同じスロットを共有してしまう。
+        /// 角ごとに必ず別のスロットが要るとき（作業空間で頂点を分けて反映する場合）に使う。
+        /// 不変条件（UVs.Count == Normals.Count）は GetOrAddUVNormal と同じく保つ。
+        /// </summary>
+        public int AddUVNormalSlot(Vector2 uv, Vector3 normal)
+        {
+            EnsureNormalSlots();
+            UVs.Add(uv);
+            Normals.Add(normal);
+            return UVs.Count - 1;
+        }
+
+        /// <summary>
         /// 法線スロット数を UV スロット数へ揃える。
         /// 不足分は先頭法線（無ければ Vector3.up）で埋め、超過分は切り捨てる。
         /// UVスロットが無い頂点は判断材料が無いため何もしない。

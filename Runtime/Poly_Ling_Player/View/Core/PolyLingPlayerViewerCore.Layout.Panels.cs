@@ -288,7 +288,8 @@ namespace Poly_Ling.Player
 
             _uvUnwrapSubPanel = new PlayerUVUnwrapSubPanel();
             _uvUnwrapSubPanel.GetModel    = () => ActiveProject?.CurrentModel;
-            _uvUnwrapSubPanel.SendCommand = cmd => DispatchHost(cmd);
+            _uvUnwrapSubPanel.SendCommand = cmd => DispatchFromPanel(cmd);
+            _uvUnwrapSubPanel.GetActiveView = ActiveViewKind;
             _uvUnwrapSubPanel.OnRepaint   = () => _activePanel?.MarkDirtyRepaint();
             _uvUnwrapSubPanel.SetCommandContext(
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
@@ -326,6 +327,12 @@ namespace Poly_Ling.Player
                 OnExitUvEditMode  = ExitUvEditMode,
             };
             _uvzSubPanel.Build(_layoutRoot.UVZSection);
+
+            // 作業空間バー（右ペイン中区画）。
+            BuildEditSpaceBar();
+
+            // 頂点の分離（右ペイン・左ペインのボタン）。
+            BuildDetachVertices();
 
             _partsSelSetSubPanel = new PlayerPartsSelectionSetSubPanel
             {
@@ -698,6 +705,8 @@ namespace Poly_Ling.Player
             // マテリアル指定ドロップダウンの選択肢。
             _primitiveSubPanel.GetMaterialNames = BuildMaterialNames;
             _primitiveSubPanel.GetUndoController = () => _editOps?.UndoController;
+            // 断面の「作業空間で開く」（PolyLingPlayerViewerCore.EditSpace.cs）。
+            _primitiveSubPanel.OnOpenProfileEditSpace = k => OpenProfileEditSpaceFromPanel("primitive", k);
             // 歪み複製（高度な図形）。作業軸を基準に複製＋歪みを行う。
             _primitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
             // 追加先ドロップダウン（名前欄の差し替え先）の既定選択。
@@ -749,6 +758,7 @@ namespace Poly_Ling.Player
             // マテリアル指定ドロップダウンの選択肢。
             _livePrimitiveSubPanel.GetMaterialNames = BuildMaterialNames;
             _livePrimitiveSubPanel.GetUndoController = () => _editOps?.UndoController;
+            _livePrimitiveSubPanel.OnOpenProfileEditSpace = k => OpenProfileEditSpaceFromPanel("live", k);
             // 歪み複製（新しい高度）。既存インスタンスとは状態を共有しない。
             _livePrimitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
             _livePrimitiveSubPanel.GetFirstSelectedDrawableIndex = () => ActiveProject?.CurrentModel?.ActiveMeshIndex ?? -1;

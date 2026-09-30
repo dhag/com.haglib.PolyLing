@@ -464,8 +464,9 @@ namespace Poly_Ling.Data
         // ── 出力フラグ ──────────────────────────────────────────────
         //
         // モードによっては効かないものがある。実処理を持つ AdvancedSelectTool 側が
-        // 意図的に外しているためで、EdgeLoop は頂点（EdgeLoopSelectMode.cs:28）、
-        // ShortestPath は辺（ShortestPathSelectMode.cs:42）が対象外。
+        // 意図的に外しているためで、EdgeLoop は頂点（EdgeLoopSelectMode.cs:28）が対象外。
+        // ShortestPath は経路の区間のうち面の辺を辺選択へ入れる（補助線分は線分選択で、
+        // このコマンドの出力フラグには無い）。
         [PLParam(TextKey = "AdvancedSelectVertices",
                  Description = "結果を頂点選択へ入れる。既定は true")]
         public bool               SelectVertices    { get; }

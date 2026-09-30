@@ -67,6 +67,15 @@ namespace Poly_Ling.Player
             _toolCtx.AddMeshObjectToCurrentMesh = addMeshObjectToCurrentMesh;
         }
 
+        /// <summary>
+        /// 作業空間の平面制約（ToolContext.EditSpacePlane）の供給元を結線する。
+        /// PolyLingPlayerViewerCore が Initialize で 1 回だけ呼ぶ。
+        /// </summary>
+        public void SetEditSpacePlaneSource(Func<Poly_Ling.Tools.EditSpacePlane?> getPlane)
+        {
+            _toolCtx.GetEditSpacePlane = getPlane;
+        }
+
         // ================================================================
         // Overlay 再描画コールバック (Phase 2b-1)
         //
@@ -223,6 +232,16 @@ namespace Poly_Ling.Player
         private readonly Poly_Ling.Core.Rendering.GridAxisRenderer _gridAxisRenderer
             = new Poly_Ling.Core.Rendering.GridAxisRenderer();
 
+        /// <summary>作業空間の下絵の四角形（ロック解除中。PlateQuadRenderer.cs）。</summary>
+        private readonly Poly_Ling.Core.Rendering.PlateQuadRenderer _plateQuadRenderer
+            = new Poly_Ling.Core.Rendering.PlateQuadRenderer();
+
+        /// <summary>
+        /// 作業空間の下絵の四角形を問い合わせる口（Viewer が結線する）。null を返せば描かない。
+        /// PresentAll の中で読む（event 駆動）。
+        /// </summary>
+        public System.Func<Poly_Ling.Core.Rendering.PlateQuadParams?> GetPlateQuad;
+
         private const string GridSettingsKey = "Viewport.Grid";
 
         // RecentPaths から軸/グリッド設定を復元（未保存/不正なら Default）。
@@ -305,6 +324,7 @@ namespace Poly_Ling.Player
         public void Dispose()
         {
             _gridAxisRenderer?.Dispose();
+            _plateQuadRenderer?.Dispose();
 
             PerspectiveViewport?.Dispose();
             TopViewport        ?.Dispose();

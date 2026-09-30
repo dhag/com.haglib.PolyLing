@@ -189,9 +189,13 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 現在の選択状態で移動対象となる頂点の総数を返す。
         /// エディタ版 MoveTool.GetTotalAffectedCount() に対応。
+        /// 控え（_affectedVertices）はギズモの描画・ホバー・押下のときにしか数え直さないので、
+        /// 選択の通知の直後にパネルが読むと古い値になる。ドラッグ中でなければ数え直してから返す。
+        /// ドラッグ中は移動の計算が控えを使っているので書き換えない。
         /// </summary>
         public int GetTotalAffectedCount()
         {
+            if (_state == MoveState.Idle) UpdateAffectedVertices();
             int total = 0;
             foreach (var kv in _affectedVertices)
                 total += kv.Value.Count;
@@ -412,6 +416,20 @@ namespace Poly_Ling.Player
 
         [Poly_Ling.Data.PLToolState(Description = "移動の影響を受ける頂点数")]
         public int AffectedCount => GetTotalAffectedCount();
+
+        /// <summary>
+        /// 作業空間の平面制約中の表示単位（ToolContext.EditSpacePlane.UnitScale。UV なら作業倍率）。
+        /// 平面制約が無ければ 0。パネルは 0 より大きいとき、数値移動とマグネット半径をこの値で割って表示する。
+        /// </summary>
+        [Poly_Ling.Data.PLToolState(Description = "作業空間の平面制約中の表示単位（UV なら作業倍率）。平面制約が無ければ 0")]
+        public float EditSpaceUnitScale => GetToolContext?.Invoke()?.EditSpacePlane?.UnitScale ?? 0f;
+
+        /// <summary>
+        /// 同じく平面の Y 方向の表示単位（UV なら sV）。平面制約が無ければ 0。
+        /// 画像の縦横比で表示する UV のとき EditSpaceUnitScale と違う。数値移動の Y だけに使う。
+        /// </summary>
+        [Poly_Ling.Data.PLToolState(Description = "作業空間の平面制約中の Y 方向の表示単位（UV なら V の作業倍率）。平面制約が無ければ 0")]
+        public float EditSpaceUnitScaleY => GetToolContext?.Invoke()?.EditSpacePlane?.UnitScaleY ?? 0f;
 
         private Vector2 _radiusDragStartPos;
         private bool    _inRadiusDrag;

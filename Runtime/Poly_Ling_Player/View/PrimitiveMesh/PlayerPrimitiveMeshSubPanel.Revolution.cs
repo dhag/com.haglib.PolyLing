@@ -524,8 +524,9 @@ namespace Poly_Ling.Player
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
             var revIoFold = FoldSection(pe, T("MeshProfileIO"), false);
             var ioRow = new VisualElement(); ioRow.style.flexDirection = FlexDirection.Row; ioRow.style.marginBottom = 4;
-            SB(ioRow, T("ImportFromMesh"), ImportRevolutionFromMesh);
+            SB(ioRow, T("ImportFromMesh"), () => ImportProfileFromSelected(ProfileEditKind.Revolution));
             SB(ioRow, T("ApplyToMesh"),    ApplyRevolutionToMesh);
+            SB(ioRow, T("OpenInEditSpace"), () => RequestOpenProfileEditSpace(ProfileEditKind.Revolution));
             revIoFold.Add(ioRow);
         }
 
@@ -570,33 +571,12 @@ namespace Poly_Ling.Player
 
         // ================================================================
         // メッシュ⇄プロファイル連携（取り込み/反映）
-        // 方針: Z を破棄し XY をそのまま扱う（座標変換なし）。
-        // 取り込み元 = 選択オブジェクト内の全2頂点ライン（未選択でも対象）。
+        // 取り込み元 = 選択オブジェクト内の全2頂点ライン（未選択でも対象）。点は 3D のまま（z も保つ）。
+        // 取り込みの規則は ReadProfileFromMesh（PlayerPrimitiveMeshSubPanel.EditSpace.cs）が持ち、
+        // 作業空間の「反映」も同じ関数を通す。取り込み元の索引も同じ所で控える
+        // （オブジェクトグループが作り直すときに、同じオブジェクトから同じ読み方で掛け直すため）。
         // 反映先 = 既存 AddMode ドロップダウンに従う。
         // ================================================================
-
-        /// <summary>選択オブジェクトの全2頂点ラインを Revolution プロファイルへ取り込む。</summary>
-        private void ImportRevolutionFromMesh()
-        {
-            var mesh = GetSelectedMeshObject?.Invoke();
-            if (mesh == null) { _statusLabel.text = T("NoSelectedMesh"); return; }
-
-            var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
-            var pts       = LineProfileExtractor.ExtractPolyline(mesh, lineFaces);
-            if (pts == null || pts.Count < 2) { _statusLabel.text = T("NoLinesFound"); return; }
-
-            // 取り込み元を控える。オブジェクトグループが作り直すときに、
-            // 同じオブジェクトから同じ読み方で掛け直せるようにするため。
-            _revProfileSrcIndex = ResolveMasterIndexOf(mesh);
-
-            RevBegin();
-            _revProfile = new List<Vector3>(pts);
-            _revSel.Clear(); _revSelIdx  = -1;
-            _revP.CurrentPreset = ProfilePreset.Custom;
-            RevCommit("メッシュ取込");
-            _statusLabel.text = T("ImportedPoints", pts.Count);
-            D(); RefreshRevCanvas(); RefreshRevPointUI();
-        }
 
         /// <summary>Revolution プロファイルを2頂点ラインの MeshObject として反映する。</summary>
         private void ApplyRevolutionToMesh()

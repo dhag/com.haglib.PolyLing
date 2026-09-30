@@ -176,6 +176,8 @@ namespace Poly_Ling.Player
         // RT はカメラ背景を透明化した場合、非ジオメトリ部が透過して背面の下絵が見える。
         private readonly VisualElement _underlayImage;
         private readonly VisualElement _rtImage;
+        /// <summary>作業空間の枠（UV の 0〜1）。RT の上・ツールオーバーレイの下。既定非表示。</summary>
+        private readonly VisualElement _editSpaceFrame;
 
         public struct BoneWireData
         {
@@ -217,6 +219,10 @@ namespace Poly_Ling.Player
         {
             public bool HasGizmo;
             public Vector2 Origin, XEnd, YEnd, ZEnd;
+            /// <summary>Z 軸（線・先端・リング）を描かない。作業空間の平面制約中（AxisGizmo.PlaneConstrained）に立てる。</summary>
+            public bool HideZ;
+            /// <summary>回転リングを Z だけ描く（X・Y を描かない）。作業空間の平面制約中（RotateRingGizmo.PlaneConstrained）に立てる。</summary>
+            public bool OnlyZRing;
             public Poly_Ling.Tools.AxisGizmo.AxisType HoveredAxis;
             public Poly_Ling.Tools.AxisGizmo.AxisType DraggingAxis;
             /// <summary>オブジェクト移動用ダイヤ型スタイル。true=ダイヤ、false=矢印（頂点移動）。</summary>
@@ -752,6 +758,24 @@ namespace Poly_Ling.Player
             _rtImage.pickingMode      = PickingMode.Ignore;
             Add(_rtImage);
 
+            // ── 作業空間の枠（RT の上・ツールオーバーレイの下。既定非表示） ──
+            // 拡大は scale ではなく幅・高さで行う（枠線の太さを画面上で 1px に保つため）。
+            _editSpaceFrame = new VisualElement();
+            _editSpaceFrame.style.position          = Position.Absolute;
+            _editSpaceFrame.style.display           = DisplayStyle.None;
+            _editSpaceFrame.style.borderTopWidth    = 1;
+            _editSpaceFrame.style.borderBottomWidth = 1;
+            _editSpaceFrame.style.borderLeftWidth   = 1;
+            _editSpaceFrame.style.borderRightWidth  = 1;
+            var frameColor = new StyleColor(new Color(1f, 0.85f, 0.2f, 0.9f));
+            _editSpaceFrame.style.borderTopColor    = frameColor;
+            _editSpaceFrame.style.borderBottomColor = frameColor;
+            _editSpaceFrame.style.borderLeftColor   = frameColor;
+            _editSpaceFrame.style.borderRightColor  = frameColor;
+            _editSpaceFrame.style.transformOrigin   = new TransformOrigin(0, 0, 0f);
+            _editSpaceFrame.pickingMode             = PickingMode.Ignore;
+            Add(_editSpaceFrame);
+
             // 矩形選択オーバーレイ（初期非表示）
             _boxOverlay = new VisualElement();
             _boxOverlay.style.position        = Position.Absolute;
@@ -896,12 +920,86 @@ namespace Poly_Ling.Player
                 new Length(scaleOrigin.x, LengthUnit.Pixel),
                 new Length(scaleOrigin.y, LengthUnit.Pixel), 0f);
             _underlayImage.style.scale           = new Scale(new Vector3(scale.x, scale.y, 1f));
+            _underlayImage.style.rotate          = new Rotate(0f);
+
+            // 画像ローカルの点 p は 左上 + 原点 + (p − 原点)·倍率 に描かれる。
+            _underlayShown  = true;
+            _underlayCorner = topLeft + scaleOrigin - Vector2.Scale(scaleOrigin, scale);
+            _underlayAxisU  = new Vector2(tex.width * scale.x, 0f);
+            _underlayAxisV  = new Vector2(0f, tex.height * scale.y);
+        }
+
+        // 今表示している下絵画像の四辺形（パネル座標、Y=0 が上）。ビューからの UV 投影が読む。
+        private bool    _underlayShown;
+        private Vector2 _underlayCorner;   // 画像の左上の角
+        private Vector2 _underlayAxisU;    // 左上 → 右上
+        private Vector2 _underlayAxisV;    // 左上 → 左下
+
+        /// <summary>
+        /// 今表示している下絵画像の四辺形（パネル座標、Y=0 が上）。
+        /// corner は画像の左上の角、axisU は左上から右上へ、axisV は左上から左下へのベクトル。
+        /// 下絵を表示していなければ false。SetUnderlay / SetUnderlayRotated が描いた値そのもの。
+        /// </summary>
+        public bool TryGetUnderlayQuad(out Vector2 corner, out Vector2 axisU, out Vector2 axisV)
+        {
+            corner = _underlayCorner; axisU = _underlayAxisU; axisV = _underlayAxisV;
+            return _underlayShown;
+        }
+
+        /// <summary>
+        /// 下絵を平行四辺形ではなく「回転した矩形」として置く（作業空間の下絵）。
+        /// topLeft: 画像の左上の角（パネル座標、Y=0 が上）。
+        /// widthPx / heightPx: 画面上の幅・高さ（px）。angleDeg: 画面上の回転（度、時計回りが正）。
+        /// </summary>
+        public void SetUnderlayRotated(Texture2D tex, Vector2 topLeft, float widthPx, float heightPx, float angleDeg)
+        {
+            if (tex == null || tex.width <= 0 || tex.height <= 0) { ClearUnderlay(); return; }
+
+            _underlayImage.style.display         = DisplayStyle.Flex;
+            _underlayImage.style.backgroundImage = new StyleBackground(tex);
+            _underlayImage.style.width           = tex.width;
+            _underlayImage.style.height          = tex.height;
+            _underlayImage.style.left            = topLeft.x;
+            _underlayImage.style.top             = topLeft.y;
+            _underlayImage.style.transformOrigin = new TransformOrigin(0, 0, 0f);
+            _underlayImage.style.scale           = new Scale(new Vector3(widthPx / tex.width, heightPx / tex.height, 1f));
+            _underlayImage.style.rotate          = new Rotate(angleDeg);
+
+            // 左上の角を中心に、画面上で時計回り（Y=0 が上の座標で +角度）に回る。
+            float rad = angleDeg * Mathf.Deg2Rad;
+            var ex = new Vector2(Mathf.Cos(rad), Mathf.Sin(rad));
+            var ey = new Vector2(-Mathf.Sin(rad), Mathf.Cos(rad));
+            _underlayShown  = true;
+            _underlayCorner = topLeft;
+            _underlayAxisU  = ex * widthPx;
+            _underlayAxisV  = ey * heightPx;
         }
 
         /// <summary>下絵を非表示にする。</summary>
         public void ClearUnderlay()
         {
             _underlayImage.style.display = DisplayStyle.None;
+            _underlayShown = false;
+        }
+
+        /// <summary>
+        /// 作業空間の枠を置く。引数は SetUnderlayRotated と同じ意味。
+        /// 枠線は画面上で 1px（拡大は幅・高さで行い、scale は使わない）。
+        /// </summary>
+        public void SetEditSpaceFrame(Vector2 topLeft, float widthPx, float heightPx, float angleDeg)
+        {
+            _editSpaceFrame.style.display = DisplayStyle.Flex;
+            _editSpaceFrame.style.left    = topLeft.x;
+            _editSpaceFrame.style.top     = topLeft.y;
+            _editSpaceFrame.style.width   = widthPx;
+            _editSpaceFrame.style.height  = heightPx;
+            _editSpaceFrame.style.rotate  = new Rotate(angleDeg);
+        }
+
+        /// <summary>作業空間の枠を非表示にする。</summary>
+        public void ClearEditSpaceFrame()
+        {
+            _editSpaceFrame.style.display = DisplayStyle.None;
         }
 
         // ================================================================
@@ -1530,9 +1628,13 @@ namespace Poly_Ling.Player
 
             if (_gizmoData.IsRingStyle)
             {
-                DrawGizmoPolyline(ctx, _gizmoData.RingX, GizmoAxisColor(GizmoAxis.AxisType.X, hx), hx ? 4.0f : 1.2f);
-                DrawGizmoPolyline(ctx, _gizmoData.RingY, GizmoAxisColor(GizmoAxis.AxisType.Y, hy), hy ? 4.0f : 1.2f);
-                DrawGizmoPolyline(ctx, _gizmoData.RingZ, GizmoAxisColor(GizmoAxis.AxisType.Z, hz), hz ? 4.0f : 1.2f);
+                if (!_gizmoData.OnlyZRing)
+                {
+                    DrawGizmoPolyline(ctx, _gizmoData.RingX, GizmoAxisColor(GizmoAxis.AxisType.X, hx), hx ? 4.0f : 1.2f);
+                    DrawGizmoPolyline(ctx, _gizmoData.RingY, GizmoAxisColor(GizmoAxis.AxisType.Y, hy), hy ? 4.0f : 1.2f);
+                }
+                if (!_gizmoData.HideZ)
+                    DrawGizmoPolyline(ctx, _gizmoData.RingZ, GizmoAxisColor(GizmoAxis.AxisType.Z, hz), hz ? 4.0f : 1.2f);
                 // 軸ギズモを併用しない呼び出し元（回転ツール）は従来どおりここで終了する。
                 // オブジェクト移動はリング＋軸ギズモを同時に描くため下へ抜ける。
                 if (!_gizmoData.DrawAxisWithRing) return;
@@ -1543,10 +1645,10 @@ namespace Poly_Ling.Player
                 // スケール: 軸線 + 先端キューブ + 中心キューブ（Unity準拠）
                 DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.XEnd, GizmoAxis.AxisType.X, hx);
                 DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.YEnd, GizmoAxis.AxisType.Y, hy);
-                DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.ZEnd, GizmoAxis.AxisType.Z, hz);
+                if (!_gizmoData.HideZ) DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.ZEnd, GizmoAxis.AxisType.Z, hz);
                 DrawGizmoCenterHandleHi(ctx, _gizmoData.XEnd, 6f, GizmoAxis.AxisType.X, hx);
                 DrawGizmoCenterHandleHi(ctx, _gizmoData.YEnd, 6f, GizmoAxis.AxisType.Y, hy);
-                DrawGizmoCenterHandleHi(ctx, _gizmoData.ZEnd, 6f, GizmoAxis.AxisType.Z, hz);
+                if (!_gizmoData.HideZ) DrawGizmoCenterHandleHi(ctx, _gizmoData.ZEnd, 6f, GizmoAxis.AxisType.Z, hz);
                 DrawGizmoCenterHandleHi(ctx, _gizmoData.Origin, 8f, GizmoAxis.AxisType.Center, hc);
             }
             else if (_gizmoData.IsDiamondStyle)
@@ -1565,7 +1667,7 @@ namespace Poly_Ling.Player
                 // 頂点移動 / オブジェクト姿勢 / 図形配置(移動): 矢印
                 DrawGizmoAxisHi(ctx, _gizmoData.Origin, _gizmoData.XEnd, GizmoAxis.AxisType.X, hx);
                 DrawGizmoAxisHi(ctx, _gizmoData.Origin, _gizmoData.YEnd, GizmoAxis.AxisType.Y, hy);
-                DrawGizmoAxisHi(ctx, _gizmoData.Origin, _gizmoData.ZEnd, GizmoAxis.AxisType.Z, hz);
+                if (!_gizmoData.HideZ) DrawGizmoAxisHi(ctx, _gizmoData.Origin, _gizmoData.ZEnd, GizmoAxis.AxisType.Z, hz);
                 DrawGizmoCenterHandleHi(ctx, _gizmoData.Origin, 8f, GizmoAxis.AxisType.Center, hc);
             }
 

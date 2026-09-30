@@ -50,6 +50,10 @@ namespace Poly_Ling.Player
         public float        GizmoScreenOffsetX { get => _s.GetFloat(Tool, "gizmoScreenOffsetX");                     set => _s.Set(Tool, "gizmoScreenOffsetX", value); }
         public float        GizmoScreenOffsetY { get => _s.GetFloat(Tool, "gizmoScreenOffsetY");                     set => _s.Set(Tool, "gizmoScreenOffsetY", value); }
         public int          GetTotalAffectedCount() => _s.GetInt(Tool, "affectedCount");
+        /// <summary>作業空間の平面制約中の表示単位。平面制約が無ければ 0（MoveToolHandler.EditSpaceUnitScale）。</summary>
+        public float        EditSpaceUnitScale  => _s.GetFloat(Tool, "editSpaceUnitScale");
+        /// <summary>同じく Y 方向の表示単位。平面制約が無ければ 0（MoveToolHandler.EditSpaceUnitScaleY）。</summary>
+        public float        EditSpaceUnitScaleY => _s.GetFloat(Tool, "editSpaceUnitScaleY");
     }
 
     /// <summary>

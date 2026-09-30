@@ -33,6 +33,10 @@ namespace Poly_Ling.Player
         private void OnImportPmx(string filePath, PMXImportSettings settings,
                                  PlayerImportSubPanel.PostOptions post)
         {
+            // 自動検証パネルはコマンドを通らずここを呼ぶので、作業空間の門をここでも見る。
+            string esBlock = EditSpaceBlockReason();
+            if (esBlock != null) { _status = esBlock; return; }
+
             var cmd = new ImportPmxCommand(
                 filePath, settings,
                 onResult: (model, _) =>
@@ -47,6 +51,10 @@ namespace Poly_Ling.Player
         private void OnImportMqo(string filePath, MQOImportSettings settings,
                                  PlayerImportSubPanel.PostOptions post)
         {
+            // 自動検証パネルはコマンドを通らずここを呼ぶので、作業空間の門をここでも見る。
+            string esBlock = EditSpaceBlockReason();
+            if (esBlock != null) { _status = esBlock; return; }
+
             var mode = settings?.ImportMode ?? MQOImportMode.NewModel;
             if (mode == MQOImportMode.Replace)
             {

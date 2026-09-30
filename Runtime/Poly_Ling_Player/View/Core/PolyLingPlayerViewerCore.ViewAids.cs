@@ -249,7 +249,8 @@ namespace Poly_Ling.Player
         private void PlaceUnderlayIfAnchored(PlayerViewport vp, PlayerViewportPanel panel)
         {
             if (vp == null || panel == null) return;
-            if (!UnderlayData.IsModelAnchored(GetUnderlayDirection(vp))) return;
+            // 作業空間の下絵・枠はカメラに合わせて毎回置き直す（作業ビューのときだけ効く）。
+            if (!UnderlayData.IsModelAnchored(GetUnderlayDirection(vp)) && !IsEditSpaceUnderlayView(vp)) return;
             PlaceUnderlay(vp, panel);
         }
 
@@ -261,6 +262,10 @@ namespace Poly_Ling.Player
         /// </summary>
         private bool PlaceUnderlay(PlayerViewport vp, PlayerViewportPanel panel)
         {
+            // 作業空間（UV）の下絵と枠。作業ビューでは方向スロットより優先する
+            // （PolyLing_UV_Billboard_Design.md 8.1。方向スロットの設定は書き換えない）。
+            if (TryPlaceEditSpaceUnderlay(vp, panel, out bool esImageShown)) return esImageShown;
+
             // 左ペインの表示グリッド「下絵」が外れているビューには敷かない。
             int viewSlot = GetViewSlot(vp);
             if (viewSlot >= 0 && !_viewportManager.GetDisplaySettings(viewSlot).ShowUnderlay)

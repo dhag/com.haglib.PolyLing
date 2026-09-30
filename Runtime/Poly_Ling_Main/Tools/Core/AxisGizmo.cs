@@ -57,6 +57,21 @@ namespace Poly_Ling.Tools
         /// </summary>
         public Quaternion Orientation { get; set; } = Quaternion.identity;
 
+        /// <summary>
+        /// 平面制約（作業空間。PolyLing_UV_Billboard_Design.md 5.2）。true のとき：
+        ///   ・Z 軸（Orientation のローカル Z）を出さず、当たり判定もしない。
+        ///   ・自由移動（中央ドラッグ）は視線直交面ではなく、Orientation の X・Y が張る平面の中で解く。
+        /// 呼び出し側は Orientation に作業空間の平面の姿勢（ToolContext.EditSpacePlane.Rotation）を入れること。
+        /// </summary>
+        public bool PlaneConstrained { get; set; }
+
+        /// <summary>作業空間の平面（ToolContext.EditSpacePlane）に合わせて向きと平面制約を設定する。null なら従来のワールド軸へ戻す。</summary>
+        public void ApplyEditSpacePlane(EditSpacePlane? plane)
+        {
+            PlaneConstrained = plane.HasValue;
+            Orientation      = plane.HasValue ? plane.Value.Rotation : Quaternion.identity;
+        }
+
         /// <summary>Orientation を適用した軸方向。静的な GetAxisDirection と違い向きを反映する。</summary>
         public Vector3 GetOrientedAxisDirection(AxisType axis)
             => Orientation * GetAxisDirection(axis);
@@ -76,7 +91,10 @@ namespace Poly_Ling.Tools
             origin = GetOriginScreen(ctx);
             xEnd   = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.X), origin);
             yEnd   = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Y), origin);
-            zEnd   = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Z), origin);
+            // 平面制約中は Z を出さない（長さ 0 にする。描画側は GizmoData.HideZ で Z を描かない）。
+            zEnd   = PlaneConstrained
+                ? origin
+                : GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Z), origin);
         }
 
         public void Draw(ToolContext ctx)
@@ -155,7 +173,7 @@ namespace Poly_Ling.Tools
                 return AxisType.X;
             if (Vector2.Distance(screenPos, yEnd) < HandleHitRadius)
                 return AxisType.Y;
-            if (Vector2.Distance(screenPos, zEnd) < HandleHitRadius)
+            if (!PlaneConstrained && Vector2.Distance(screenPos, zEnd) < HandleHitRadius)
                 return AxisType.Z;
 
             // 軸線分（原点〜先端）。先端に当たらなかったときだけ評価し、最短の軸を採る。
@@ -168,7 +186,7 @@ namespace Poly_Ling.Tools
             float dy = DistanceToSegment(screenPos, originScreen, yEnd);
             if (dy < bestDist) { bestDist = dy; bestAxis = AxisType.Y; }
 
-            float dz = DistanceToSegment(screenPos, originScreen, zEnd);
+            float dz = PlaneConstrained ? float.MaxValue : DistanceToSegment(screenPos, originScreen, zEnd);
             if (dz < bestDist) { bestDist = dz; bestAxis = AxisType.Z; }
 
             if (GizmoDebugLog)
@@ -331,8 +349,21 @@ namespace Poly_Ling.Tools
         public Vector3 ComputeFreeDelta(Vector2 screenDeltaYUp, ToolContext ctx)
         {
             if (!TryGetScreenBasis(ctx, out Vector3 u, out Vector3 v,
-                                   out Vector2 su, out Vector2 sv, out _))
+                                   out Vector2 su, out Vector2 sv, out float pxPerWorld))
                 return Vector3.zero;
+
+            // 平面制約中は、視線直交面ではなく作業空間の平面（Orientation の X・Y）の中で解く。
+            // ビルボードをロックしている間はこの平面が視線に直交するので、上の基底と同じ
+            // 厳密な線形になる。ロックを外して斜めから見ている間は、軸ドラッグ
+            // （ComputeAxisDelta）と同じく画面上 10px 相当の中心差分で接線を取る。
+            if (PlaneConstrained)
+            {
+                u = GetOrientedAxisDirection(AxisType.X);
+                v = GetOrientedAxisDirection(AxisType.Y);
+                float hp = 10f / pxPerWorld;
+                su = ScreenPerWorldUnit(ctx, u, hp);
+                sv = ScreenPerWorldUnit(ctx, v, hp);
+            }
 
             // ScreenPerWorldUnit は Y 下系。引数は Y 上系なので合わせる。
             Vector2 d = new Vector2(screenDeltaYUp.x, -screenDeltaYUp.y);

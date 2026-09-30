@@ -387,7 +387,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>A/B 切替ボタン1個ぶん。</summary>
-        private Button FrillProfileTargetBtn(string label, bool isB)
+        private Button FrillProfileTargetBtn(Lx label, bool isB)
         {
             var btn = new Button(() =>
             {
@@ -401,7 +401,8 @@ namespace Poly_Ling.Player
             btn.style.backgroundColor = (_frillEditingB == isB)
                 ? new StyleColor(new Color(0.25f, 0.45f, 0.65f))
                 : new StyleColor(new Color(0.25f, 0.25f, 0.25f));
-            return btn;
+            // UI 自動操作の項目（ID は辞書のキー FrillProfileA / FrillProfileB）。
+            return RowTarget.Add(label.Key, btn, $"{label.Text} を編集対象にする", UiSafety.SafeWrite);
         }
 
         private void RefreshFrillInfo()

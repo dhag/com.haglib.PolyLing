@@ -56,6 +56,45 @@ namespace Poly_Ling.Player
         public Action<Poly_Ling.Selection.MeshSelectMode?> OnRequestSelectModeOverride;
 
         /// <summary>
+        /// 利用者が左ペインで指定した選択モード（チェックボックス）。クリックで選ぶ種別に使う。
+        ///
+        /// 【なぜ要るか】
+        ///   SelectionState.Mode にはホバーの絞り込み（HoverSelectModeOverride。最短は頂点、
+        ///   ベルト・辺ループは辺と線分）が書かれている（ApplySelectMode の単一権限）。
+        ///   それを選ぶ種別として読むと、最短は頂点しか、ベルト・辺ループは面を選べない。
+        ///   ホバーで拾う種別と、結果を入れる種別は別物なので、結果は利用者の指定から取る。
+        ///   null のときは SelectionState.Mode をそのまま使う。
+        /// </summary>
+        public Func<Poly_Ling.Selection.MeshSelectMode> GetUserSelectMode;
+
+        /// <summary>クリックで結果を入れる種別。利用者の指定、無ければ今の SelectionState.Mode。</summary>
+        private Poly_Ling.Selection.MeshSelectMode OutputSelectMode()
+        {
+            if (GetUserSelectMode != null) return GetUserSelectMode();
+            return _selectionOps?.SelectionState?.Mode ?? Poly_Ling.Selection.MeshSelectMode.Vertex;
+        }
+
+        /// <summary>
+        /// クリックの直呼び経路を、結果を入れる種別に切り替えた SelectionState.Mode で実行する
+        /// （ExecuteFromCommand と同じ形。実行後に元へ戻す）。
+        /// </summary>
+        private bool RunWithOutputSelectMode(Func<bool> run)
+        {
+            var sel = _selectionOps?.SelectionState;
+            if (sel == null) return run();
+            var saved = sel.Mode;
+            try
+            {
+                sel.Mode = OutputSelectMode();
+                return run();
+            }
+            finally
+            {
+                sel.Mode = saved;
+            }
+        }
+
+        /// <summary>
         /// 現在の高度選択モードが要求するホバー種別。null はユーザ指定に従う。
         /// Belt / EdgeLoop は辺と補助線分、ShortestPath は頂点。
         /// 属性系（Connected / UvNormalCount / NearAxis / BoundaryEdge*）は絞らない。
@@ -295,8 +334,8 @@ namespace Poly_Ling.Player
         /// 【選択種別】
         ///   コマンドの SelectVertices / SelectEdges / SelectFaces を
         ///   SelectionState.Mode へ一時的に流し込み、実行後に元へ戻す。
-        ///   モードによっては効かないものがある（EdgeLoop は頂点、
-        ///   ShortestPath は辺を、Tool 側が意図的に外している）。
+        ///   モードによっては効かないものがある（EdgeLoop は頂点を、
+        ///   Tool 側が意図的に外している）。
         ///
         /// 【対象メッシュ】
         ///   Tool は ctx.ActiveMeshObject に対して動く。コマンドの MasterIndex が
@@ -465,7 +504,7 @@ namespace Poly_Ling.Player
             }
 
             var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
-            bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
+            bool changed = RunWithOutputSelectMode(() => _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx)));
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
             if (changed)
             {
@@ -484,7 +523,7 @@ namespace Poly_Ling.Player
             if (TrySendSeedCommand(ctx)) return;
 
             var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
-            bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
+            bool changed = RunWithOutputSelectMode(() => _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx)));
             if (changed)
             {
                 RecordSelectionUndo(ctx, oldSnap);
@@ -508,7 +547,7 @@ namespace Poly_Ling.Player
         ///   これらは従来の直呼び経路に残す。
         ///
         /// 【出力フラグ】
-        ///   マウス経路は現在の SelectionState.Mode を使う。コマンドの
+        ///   マウス経路は利用者の指定（OutputSelectMode）を使う。コマンドの
         ///   SelectVertices / SelectEdges / SelectFaces もそこから起こして、
         ///   両経路で同じ対象になるようにする。
         /// </summary>
@@ -539,9 +578,10 @@ namespace Poly_Ling.Player
             }
             else if (!gpuEdge.HasValue) return false;
 
-            bool wantV = sel.Mode.Has(Poly_Ling.Selection.MeshSelectMode.Vertex);
-            bool wantE = sel.Mode.Has(Poly_Ling.Selection.MeshSelectMode.Edge);
-            bool wantF = sel.Mode.Has(Poly_Ling.Selection.MeshSelectMode.Face);
+            var outMode = OutputSelectMode();
+            bool wantV = outMode.Has(Poly_Ling.Selection.MeshSelectMode.Vertex);
+            bool wantE = outMode.Has(Poly_Ling.Selection.MeshSelectMode.Edge);
+            bool wantF = outMode.Has(Poly_Ling.Selection.MeshSelectMode.Face);
             if (!wantV && !wantE && !wantF) return false;
 
             SendCommand(new Poly_Ling.Data.AdvancedSelectCommand(

@@ -6,6 +6,9 @@
 //   並び順に依存させない。読めない名前の行は捨てる。
 // 【画像の無いスロットは書かない】
 //   下絵が 1 つも無ければ DTO 自体を null にする（ModelContext.Underlay == null と同じ）。
+// 【作業板スロット】
+//   方向スロット（slots）とは別の一覧（plates）に書く。slots の読み書きは変えていない。
+//   plates が無いのは以前のデータ。
 
 using System;
 using System.Collections.Generic;
@@ -20,11 +23,26 @@ namespace Poly_Ling.Serialization
     {
         public List<UnderlaySlotDTO> slots = new List<UnderlaySlotDTO>();
 
+        /// <summary>作業板スロット（方向スロットとは別の一覧。無い＝以前のデータ）。</summary>
+        public List<UnderlayPlateDTO> plates = new List<UnderlayPlateDTO>();
+
         /// <summary>POCO → DTO。null・空は null。</summary>
         public static UnderlayDTO From(UnderlayData data)
         {
             if (data == null || data.IsEmpty) return null;
             var dto = new UnderlayDTO();
+            foreach (var p in data.Plates)
+            {
+                if (p == null || p.IsEmpty) continue;
+                dto.plates.Add(new UnderlayPlateDTO
+                {
+                    objectId = p.ObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    filePath = p.FilePath,
+                    corner0  = new[] { p.Corner0.x, p.Corner0.y },
+                    corner1  = new[] { p.Corner1.x, p.Corner1.y },
+                    adjust   = new[] { p.Contrast, p.Intensity },
+                });
+            }
             foreach (UnderlayDirection dir in Enum.GetValues(typeof(UnderlayDirection)))
             {
                 var s = data.Get(dir);
@@ -42,14 +60,34 @@ namespace Poly_Ling.Serialization
                     adjust      = new[] { s.Contrast, s.Intensity },
                 });
             }
-            return dto.slots.Count > 0 ? dto : null;
+            return dto.slots.Count > 0 || dto.plates.Count > 0 ? dto : null;
         }
 
         /// <summary>DTO → POCO。null・空は null。</summary>
         public static UnderlayData ToData(UnderlayDTO dto)
         {
-            if (dto?.slots == null || dto.slots.Count == 0) return null;
+            if (dto == null) return null;
             var data = new UnderlayData();
+            if (dto.plates != null)
+            {
+                foreach (var p in dto.plates)
+                {
+                    if (p == null || string.IsNullOrEmpty(p.filePath)) continue;
+                    if (!ulong.TryParse(p.objectId ?? "", System.Globalization.NumberStyles.Integer,
+                                        System.Globalization.CultureInfo.InvariantCulture, out ulong id)) continue;
+                    var adjP = V2(p.adjust, Vector2.one);
+                    data.SetPlate(new UnderlayPlateSlotData
+                    {
+                        ObjectId  = id,
+                        FilePath  = p.filePath,
+                        Corner0   = V2(p.corner0, Vector2.zero),
+                        Corner1   = V2(p.corner1, Vector2.zero),
+                        Contrast  = Mathf.Clamp01(adjP.x),
+                        Intensity = Mathf.Clamp01(adjP.y),
+                    });
+                }
+            }
+            if (dto.slots == null) return data.IsEmpty ? null : data;
             foreach (var d in dto.slots)
             {
                 if (d == null || string.IsNullOrEmpty(d.filePath)) continue;
@@ -74,6 +112,21 @@ namespace Poly_Ling.Serialization
 
         private static Vector3 V3(float[] a)
             => (a != null && a.Length >= 3) ? new Vector3(a[0], a[1], a[2]) : Vector3.zero;
+    }
+
+    /// <summary>作業板スロット 1 件分の DTO。</summary>
+    [Serializable]
+    public class UnderlayPlateDTO
+    {
+        /// <summary>代理オブジェクトの安定 ID（10 進の文字列。桁落ちを避ける）。</summary>
+        public string  objectId;
+        public string  filePath;
+        /// <summary>画像の 1 隅（代理のローカル XY）。</summary>
+        public float[] corner0;
+        /// <summary>向かい合う隅（代理のローカル XY）。</summary>
+        public float[] corner1;
+        /// <summary>表示調整 { コントラスト, 明るさ }（0〜1）。</summary>
+        public float[] adjust;
     }
 
     /// <summary>下絵 1 方向分の DTO。</summary>

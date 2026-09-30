@@ -60,7 +60,8 @@ namespace Poly_Ling.Player
             return Load(s.FilePath, reload: false, out _);
         }
 
-        // 方向ごとの表示用画像（コントラスト・明るさを画素へ焼いたもの）。
+        // 方向または作業板スロットごとの表示用画像（コントラスト・明るさを画素へ焼いたもの）。
+        // キーは方向なら列挙名、作業板スロットなら "plate:<ObjectId>"。
         private sealed class Adjusted
         {
             public Texture2D Source;
@@ -68,8 +69,8 @@ namespace Poly_Ling.Player
             public float     Intensity;
             public Texture2D Texture;
         }
-        private readonly Dictionary<UnderlayDirection, Adjusted> _adjusted =
-            new Dictionary<UnderlayDirection, Adjusted>();
+        private readonly Dictionary<string, Adjusted> _adjusted =
+            new Dictionary<string, Adjusted>();
 
         /// <summary>
         /// 現在モデルの指定方向の表示用画像。コントラスト・明るさが共に 1 なら元画像そのもの。
@@ -82,16 +83,29 @@ namespace Poly_Ling.Player
             var s   = Peek(dir);
             var src = GetTexture(dir);
             if (s == null || src == null) return null;
+            return Adjust(dir.ToString(), src, s.Contrast, s.Intensity);
+        }
 
-            float c = Mathf.Clamp01(s.Contrast);
-            float k = Mathf.Clamp01(s.Intensity);
+        /// <summary>作業板スロットの表示用画像（GetDisplayTexture と同じ焼き込み）。読めなければ null。</summary>
+        public Texture2D GetPlateDisplayTexture(UnderlayPlateSlotData plate)
+        {
+            if (plate == null || plate.IsEmpty) return null;
+            var src = Load(plate.FilePath, reload: false, out _);
+            if (src == null) return null;
+            return Adjust("plate:" + plate.ObjectId, src, plate.Contrast, plate.Intensity);
+        }
+
+        private Texture2D Adjust(string key, Texture2D src, float contrast, float intensity)
+        {
+            float c = Mathf.Clamp01(contrast);
+            float k = Mathf.Clamp01(intensity);
             if (c >= 1f && k >= 1f) return src;
 
-            if (_adjusted.TryGetValue(dir, out var a) && a.Texture != null
+            if (_adjusted.TryGetValue(key, out var a) && a.Texture != null
                 && a.Source == src && a.Contrast == c && a.Intensity == k)
                 return a.Texture;
 
-            if (a == null) { a = new Adjusted(); _adjusted[dir] = a; }
+            if (a == null) { a = new Adjusted(); _adjusted[key] = a; }
             if (a.Texture == null || a.Texture.width != src.width || a.Texture.height != src.height)
             {
                 if (a.Texture != null) UnityEngine.Object.Destroy(a.Texture);

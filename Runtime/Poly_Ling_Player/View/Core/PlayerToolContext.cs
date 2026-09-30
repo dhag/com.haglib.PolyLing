@@ -50,6 +50,9 @@ namespace Poly_Ling.Player
         /// <summary>MeshObject を編集対象メッシュへマージする（Undo 記録込み）。</summary>
         public Action<MeshObject, string> AddMeshObjectToCurrentMesh { get; set; }
 
+        /// <summary>作業空間の平面制約（ToolContext.GetEditSpacePlane）。PolyLingPlayerViewerCore が結線する。</summary>
+        public Func<EditSpacePlane?> GetEditSpacePlane { get; set; }
+
         // ================================================================
         // Camera から毎フレーム更新する
         // ================================================================
@@ -146,6 +149,7 @@ namespace Poly_Ling.Player
             ctx.ScreenPosToRay = screenPos => ScreenPosToRay(cam, screenPos);
             ctx.AddMeshContext             = AddMeshContext;
             ctx.AddMeshObjectToCurrentMesh = AddMeshObjectToCurrentMesh;
+            ctx.GetEditSpacePlane          = GetEditSpacePlane;
             return ctx;
         }
 

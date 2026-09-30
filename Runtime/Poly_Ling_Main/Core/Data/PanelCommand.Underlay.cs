@@ -86,7 +86,7 @@ namespace Poly_Ling.Data
 
     /// <summary>下絵を外す。</summary>
     [PLCommand(Category = "underlay", Writes = PLWriteScope.None,
-        Description = "現在のモデルの下絵を外す。1 方向だけ、または全方向。")]
+        Description = "現在のモデルの下絵を外す。1 方向だけ、または全方向。作業板スロット（断面の作業空間の下絵）は外さない（clearEditSpacePlateUnderlay で外す）。")]
     [PLResult("remaining", PLResultKind.Integer, Description = "外した後に残っている下絵の数")]
     public sealed class ClearUnderlayCommand : PanelCommand
     {

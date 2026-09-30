@@ -81,6 +81,9 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnSetUnderlay         = ExecuteSetUnderlay;
             _commandDispatcher.OnClearUnderlay       = ExecuteClearUnderlay;
             _commandDispatcher.OnQueryUnderlay       = ExecuteQueryUnderlay;
+            _commandDispatcher.OnEditSpaceCommand    = ExecuteEditSpaceCommand;
+            _commandDispatcher.OnDetachVertices      = ExecuteDetachVertices;
+            _commandDispatcher.OnComputeViewUvs      = ComputeViewUvs;
             _commandDispatcher.OnCameraCommand       = ExecuteCameraCommand;
             _commandDispatcher.OnExportMqoFile       = ExecuteExportMqoFile;
             _commandDispatcher.OnImportObjFile       = ExecuteImportObjFile;
@@ -129,6 +132,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnCreateWorkAxisObject = ExecuteCreateWorkAxisObject;
             _commandDispatcher.OnSetActiveWorkAxis    = ExecuteSetActiveWorkAxis;
             _commandDispatcher.OnRecallWorkAxis      = ExecuteRecallWorkAxis;
+            _commandDispatcher.CommandGate           = EditSpaceBlockReason;
             _commandDispatcher.OnUndo                = () => _editOps != null && _editOps.PerformUndo();
             _commandDispatcher.OnRedo                = () => _editOps != null && _editOps.PerformRedo();
         }

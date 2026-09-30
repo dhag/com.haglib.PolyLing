@@ -549,6 +549,10 @@ namespace Poly_Ling.Core
                     if (!isSel && !ShowUnselectedMesh) continue;
                 }
 
+                // 面を塗らない描画オブジェクト（作業空間の代理。MeshObject.HideFaceShading）。
+                // 辺・頂点・選択面の強調は別の経路（UnifiedSystemAdapter）で描くので、ここで飛ばしても残る。
+                if (ctx.HideFaceShading) continue;
+
                 var mesh = ctx.UnityMesh;
                 for (int sub = 0; sub < mesh.subMeshCount; sub++)
                 {

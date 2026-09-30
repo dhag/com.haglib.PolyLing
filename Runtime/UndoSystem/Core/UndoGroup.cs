@@ -45,7 +45,7 @@ namespace Poly_Ling.UndoSystem
     /// Undoノードのグループ
     /// 複数のスタックや子グループを束ねて、調停しながらUndo/Redoを実行
     /// </summary>
-    public class UndoGroup : IUndoGroup
+    public class UndoGroup : IUndoGroup, IUndoScopeNode
     {
         // === フィールド ===
         private readonly List<IUndoNode> _children = new();
@@ -402,6 +402,13 @@ namespace Poly_Ling.UndoSystem
             if (target == null)
                 return false;
 
+            // 履歴の範囲を開いている間は、範囲より前の記録を戻さない（UndoScope.cs）。
+            // ResolveFromOperationLog は末尾の無効な項目を除いてから対象を返すので、
+            // ここで見る末尾は target に対応する項目。
+            if (_activeScope != null && ResolutionPolicy == UndoResolutionPolicy.OperationLog
+                && _undoLog.Count > 0 && !_activeScope.AboveFloor(_undoLog[^1]))
+                return false;
+
             // OperationLog方式: Undo前にログエントリをRedoログに移動
             if (ResolutionPolicy == UndoResolutionPolicy.OperationLog && _undoLog.Count > 0)
             {
@@ -424,6 +431,11 @@ namespace Poly_Ling.UndoSystem
             var target = ResolveRedoTarget();
             if (target == null)
                 return false;
+
+            // 履歴の範囲を開いている間は、範囲より前から残っている Redo をやり直さない。
+            if (_activeScope != null && ResolutionPolicy == UndoResolutionPolicy.OperationLog
+                && _redoLog.Count > 0 && !_activeScope.AboveFloor(_redoLog[^1]))
+                return false;
             
             // OperationLog方式: Redo前にログエントリをUndoログに戻す
             if (ResolutionPolicy == UndoResolutionPolicy.OperationLog && _redoLog.Count > 0)
@@ -434,6 +446,70 @@ namespace Poly_Ling.UndoSystem
             }
 
             return target.PerformRedo();
+        }
+
+        // === 履歴の範囲（UndoScope.cs） ===
+
+        private UndoScope _activeScope;
+
+        /// <summary>開いている範囲。無ければ null。</summary>
+        public UndoScope ActiveScope => _activeScope;
+
+        /// <summary>
+        /// 範囲を開く。既に開いていれば null を返す（範囲は同時に 1 つ）。
+        /// 保留中の記録は範囲より前のものなので、先に積んでおく。
+        /// </summary>
+        public UndoScope BeginScope()
+        {
+            if (_activeScope != null) return null;
+            ProcessPendingQueue();
+            var scope = new UndoScope();
+            ((IUndoScopeNode)this).CaptureScopeMarks(scope.Marks);
+            _activeScope = scope;
+            return scope;
+        }
+
+        /// <summary>
+        /// 開いている範囲の Undo の床を今の位置へ上げる。範囲を開いた直後の準備
+        /// （一時オブジェクトの追加など）を範囲の中の Undo で戻させないために使う。
+        /// 準備の記録は範囲の中なので、EndScope(discard: true) で除かれる。
+        /// </summary>
+        public void RaiseScopeFloor(UndoScope scope)
+        {
+            if (scope == null || !ReferenceEquals(scope, _activeScope)) return;
+            ProcessPendingQueue();
+            var floor = new Dictionary<string, int>();
+            ((IUndoScopeNode)this).CaptureScopeMarks(floor);
+            scope.Floor = floor;
+        }
+
+        /// <summary>
+        /// 範囲を閉じる。discard が true なら範囲の中の記録とログ項目を除く。
+        /// 開いている範囲と違うものを渡されたら何もしない。
+        /// </summary>
+        public void EndScope(UndoScope scope, bool discard)
+        {
+            if (scope == null || !ReferenceEquals(scope, _activeScope)) return;
+            ProcessPendingQueue();
+            if (discard) ((IUndoScopeNode)this).DiscardAfterScopeMarks(scope.Marks);
+            _activeScope = null;
+        }
+
+        void IUndoScopeNode.CaptureScopeMarks(Dictionary<string, int> marks)
+        {
+            foreach (var child in _children)
+                if (child is IUndoScopeNode n) n.CaptureScopeMarks(marks);
+        }
+
+        void IUndoScopeNode.DiscardAfterScopeMarks(IReadOnlyDictionary<string, int> marks)
+        {
+            foreach (var child in _children)
+                if (child is IUndoScopeNode n) n.DiscardAfterScopeMarks(marks);
+
+            bool After(OperationLogEntry e)
+                => !marks.TryGetValue(e.StackId, out int mark) || e.GroupId > mark;
+            _undoLog.RemoveAll(After);
+            _redoLog.RemoveAll(After);
         }
 
         /// <summary>

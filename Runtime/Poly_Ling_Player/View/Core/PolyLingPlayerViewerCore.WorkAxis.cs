@@ -603,6 +603,7 @@ namespace Poly_Ling.Player
         private bool LoadProjectFolderForTest(string folderPath)
         {
             if (string.IsNullOrEmpty(folderPath)) return false;
+            if (EditSpaceBlockReason() != null) return false;   // 作業空間を開いている間は読まない
 
             var loaded = CsvProjectSerializer.Import(folderPath, out _, out _);
             if (loaded == null) return false;
@@ -666,6 +667,7 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(folderPath)) return false;
             var project = ActiveProject;
             if (project == null) return false;
+            if (EditSpaceBlockReason() != null) return false;   // 代理を保存へ混ぜない
             return CsvProjectSerializer.Export(folderPath, project);
         }
 

@@ -89,6 +89,14 @@ namespace Poly_Ling.Player
 
         private bool _suppressSync;
 
+        // 作業空間の平面制約中の表示単位（MoveToolHandler.EditSpaceUnitScale）。
+        // 平面制約中は数値移動を平面の U・V（この単位）で受け、マグネット半径もこの単位で見せる。
+        // 平面制約が無いときは 1（従来どおりワールド値）。Refresh で読み直す。
+        [UiControl(Ignore = true)]
+        private Label _moveHeader;
+        private float _unit = 1f;
+        private bool  _planeMode;
+
         // フォールオフ／距離モードの選択肢は BrushFalloffControls に集約した。
         // スカルプト・スキンWペイントも同じものを使う。
         private static string[]      FalloffLabels      => BrushFalloffControls.FalloffLabels;
@@ -167,7 +175,7 @@ namespace Poly_Ling.Player
             {
                 if (_suppressSync) return;
                 var h = H;
-                if (h != null) h.MagnetRadius = e.newValue;
+                if (h != null) h.MagnetRadius = e.newValue * _unit;
                 _suppressSync = true;
                 _magnetRadiusField?.SetValueWithoutNotify(e.newValue);
                 _suppressSync = false;
@@ -183,7 +191,7 @@ namespace Poly_Ling.Player
                 if (_suppressSync) return;
                 var h = H;
                 if (h == null) return;
-                ApplyRadiusInput(h, e.newValue);
+                ApplyRadiusInput(h, e.newValue * _unit);
             });
             radiusRow.Add(_magnetRadiusField);
 
@@ -236,7 +244,7 @@ namespace Poly_Ling.Player
                 if (_suppressSync) return;
                 var h = H;
                 if (h == null) return;
-                h.MinMagnetRadius = Mathf.Max(0.001f, e.newValue);
+                h.MinMagnetRadius = Mathf.Max(0.001f, e.newValue * _unit);
                 ApplyRadiusRange(h);
             });
             minRow.Add(_minRadiusField);
@@ -259,7 +267,7 @@ namespace Poly_Ling.Player
                 var h = H;
                 if (h == null) return;
                 h.MaxMagnetRadius = Mathf.Clamp(
-                    e.newValue,
+                    e.newValue * _unit,
                     h.MinMagnetRadius + SliderRangeUtil.MinSpan,
                     MoveToolHandler.MagnetRadiusHardMax);
                 ApplyRadiusRange(h);
@@ -272,7 +280,13 @@ namespace Poly_Ling.Player
             // ワールド空間の「増分」を入力して選択要素を移動する（絶対座標ではない）。
             // MoveSelectedVerticesCommand を発行し、ディスパッチャ経由で
             // MoveToolHandler へ戻る。Undo は 1 件にまとまる。
-            AddHeader("数値移動 (ワールド増分)");
+            // 見出しは平面制約の有無で書き換える（Refresh → ApplyUnitMode）。
+            _moveHeader = new Label("数値移動 (ワールド増分)");
+            _moveHeader.style.marginTop    = 6;
+            _moveHeader.style.marginBottom = 2;
+            _moveHeader.style.color        = new StyleColor(Color.white);
+            _moveHeader.style.fontSize     = 10;
+            _root.Add(_moveHeader);
 
             var moveRow = new VisualElement();
             moveRow.style.flexDirection = FlexDirection.Row;
@@ -297,16 +311,24 @@ namespace Poly_Ling.Player
                 var targets = SelectedDrawables;
                 if (targets == null || targets.Length == 0) return;
 
+                // 作業空間の平面制約中は、入力を作業平面の U・V（表示単位）として受け、
+                // 代理のローカル量 (U·sU, V·sV, 0) を Local で送る。Z は使わない。
+                float unit  = h.EditSpaceUnitScale;
+                float unitY = h.EditSpaceUnitScaleY;
+                bool  plane = unit > 0f;
+                if (unitY <= 0f) unitY = unit;
+                Vector3 delta = plane
+                    ? new Vector3((_moveXField?.value ?? 0f) * unit, (_moveYField?.value ?? 0f) * unitY, 0f)
+                    : new Vector3(_moveXField?.value ?? 0f, _moveYField?.value ?? 0f, _moveZField?.value ?? 0f);
+
                 // マグネットはコマンドが正典。パネルの現在値を載せて送る。
                 // ハンドラ側は実行後に元の値へ戻すので、表示は変わらない。
                 SendCmd(new MoveSelectedVerticesCommand(
                     ModelIndex,
                     targets,
-                    new Vector3(
-                        _moveXField?.value ?? 0f,
-                        _moveYField?.value ?? 0f,
-                        _moveZField?.value ?? 0f),
-                    MoveSelectedVerticesCommand.CoordSpace.World,
+                    delta,
+                    plane ? MoveSelectedVerticesCommand.CoordSpace.Local
+                          : MoveSelectedVerticesCommand.CoordSpace.World,
                     recalcNormals:      false,
                     useMagnet:          h.UseMagnet,
                     magnetRadius:       h.MagnetRadius,
@@ -364,6 +386,8 @@ namespace Poly_Ling.Player
             var h = H;
             if (h == null) return;
 
+            ApplyUnitMode(h.EditSpaceUnitScale);
+
             _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
 
             if (_lassoToggle != null)
@@ -391,10 +415,10 @@ namespace Poly_Ling.Player
             // つまみの位置とテキストボックスの数字が食い違う）。
             _suppressSync = true;
             SliderRangeUtil.SetRangeAndValue(
-                _magnetRadiusSlider, h.MinMagnetRadius, h.MaxMagnetRadius, h.MagnetRadius);
-            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius);
-            _minRadiusField?.SetValueWithoutNotify(h.MinMagnetRadius);
-            _maxRadiusField?.SetValueWithoutNotify(h.MaxMagnetRadius);
+                _magnetRadiusSlider, h.MinMagnetRadius / _unit, h.MaxMagnetRadius / _unit, h.MagnetRadius / _unit);
+            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius / _unit);
+            _minRadiusField?.SetValueWithoutNotify(h.MinMagnetRadius / _unit);
+            _maxRadiusField?.SetValueWithoutNotify(h.MaxMagnetRadius / _unit);
             _suppressSync = false;
 
             UpdateRadiusDragButtonStyle(h.IsRadiusDragMode);
@@ -485,11 +509,29 @@ namespace Poly_Ling.Player
         private void SyncRadiusWidgets(MoveSurfaceView h, float min, float max)
         {
             _suppressSync = true;
-            SliderRangeUtil.SetRangeAndValue(_magnetRadiusSlider, min, max, h.MagnetRadius);
-            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius);
-            _minRadiusField?.SetValueWithoutNotify(min);
-            _maxRadiusField?.SetValueWithoutNotify(max);
+            SliderRangeUtil.SetRangeAndValue(_magnetRadiusSlider, min / _unit, max / _unit, h.MagnetRadius / _unit);
+            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius / _unit);
+            _minRadiusField?.SetValueWithoutNotify(min / _unit);
+            _maxRadiusField?.SetValueWithoutNotify(max / _unit);
             _suppressSync = false;
+        }
+
+        /// <summary>
+        /// 平面制約の有無で表示単位と数値移動の見た目を切り替える。
+        /// unitScale が 0 以下なら従来（ワールド値、X・Y・Z）。
+        /// </summary>
+        private void ApplyUnitMode(float unitScale)
+        {
+            bool plane = unitScale > 0f;
+            _unit = plane ? unitScale : 1f;
+            if (plane == _planeMode) return;   // 見た目は Build 時点で従来（ワールド）表示
+            _planeMode = plane;
+
+            if (_moveHeader != null)
+                _moveHeader.text = plane ? "数値移動 (作業空間 U・V の増分)" : "数値移動 (ワールド増分)";
+            if (_moveXField != null) _moveXField.label = plane ? "U" : "X";
+            if (_moveYField != null) _moveYField.label = plane ? "V" : "Y";
+            if (_moveZField != null) _moveZField.style.display = plane ? DisplayStyle.None : DisplayStyle.Flex;
         }
 
         private void AddHeader(string text, VisualElement target = null)

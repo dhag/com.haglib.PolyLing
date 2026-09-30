@@ -315,6 +315,7 @@ namespace Poly_Ling.Player
                 _gizmoHoverAxis = AxisGizmo.AxisType.None; return;
             }
             _ringGizmo.Center = WorldPivot();
+            if (_gizmoDragAxis == AxisGizmo.AxisType.None) _ringGizmo.ApplyEditSpacePlane(ctx.EditSpacePlane);
             _gizmoHoverAxis = _ringGizmo.FindRingAtScreenPos(ToImgui(screenPos), ctx);
             OnRepaint?.Invoke();
         }
@@ -328,6 +329,8 @@ namespace Poly_Ling.Player
             hoveredAxis = AxisGizmo.AxisType.None;
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
             _ringGizmo.Center = WorldPivot();
+            // 作業空間の平面の姿勢はカメラ（ビルボード）で変わるので、描くたびに読み直す。ドラッグ中は掴んだときの向きのまま。
+            if (_gizmoDragAxis == AxisGizmo.AxisType.None) _ringGizmo.ApplyEditSpacePlane(ctx.EditSpacePlane);
             ringX = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.X);
             ringY = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Y);
             ringZ = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Z);
@@ -349,6 +352,7 @@ namespace Poly_Ling.Player
                 HasGizmo    = true,
                 IsRingStyle = true,
                 RingX = rx, RingY = ry, RingZ = rz,
+                OnlyZRing   = _ringGizmo.PlaneConstrained,
                 HoveredAxis = rha,
             };
             return true;
@@ -358,6 +362,7 @@ namespace Poly_Ling.Player
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
             _ringGizmo.Center = WorldPivot();
+            _ringGizmo.ApplyEditSpacePlane(ctx.EditSpacePlane);
             var axis = _ringGizmo.FindRingAtScreenPos(ToImgui(screenPos), ctx);
             if (axis == AxisGizmo.AxisType.None) return false;
             _gizmoDragAxis = axis;
@@ -378,7 +383,8 @@ namespace Poly_Ling.Player
                 return false;
             }
 
-            Vector3 worldAxis = RotateRingGizmo.AxisVector(_gizmoDragAxis);
+            // リングの向き（作業空間の平面の姿勢を含む）を適用した軸。平面制約が無ければワールド軸と同じ。
+            Vector3 worldAxis = _ringGizmo.GetOrientedAxisVector(_gizmoDragAxis);
 
             _prevAxisMode = _tool.AxisMode;
             _tool.AxisMode = true;

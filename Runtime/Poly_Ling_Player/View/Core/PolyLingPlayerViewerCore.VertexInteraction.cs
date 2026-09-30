@@ -323,6 +323,9 @@ namespace Poly_Ling.Player
                 _toolSelectModeOverride = m;
                 ApplySelectMode();
             };
+            // クリックの結果を入れる種別は、ホバーの絞り込みではなく左ペインの指定。
+            _advancedSelectHandler.GetUserSelectMode = () =>
+                _userSelectMode == MeshSelectMode.None ? MeshSelectMode.Vertex : _userSelectMode;
             _advancedSelectHandler.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
             _advancedSelectHandler.OnSelectionChanged = () =>
             {

@@ -195,12 +195,22 @@ namespace Poly_Ling.Player
             return element;
         }
 
-        /// <summary>ID（と組）で探す。group が null なら組を問わない。</summary>
+        /// <summary>
+        /// ID（と組）で探す。group が null なら組を問わない。
+        /// 行の一部だけを作り直す箇所（Begin を通らずに Clear して Add し直す）では、
+        /// 外された古い要素の項目が残る。画面に付いている要素の項目を先に返し、
+        /// どれも付いていなければ最後に加えた項目を返す。
+        /// </summary>
         public Entry Find(string id, string group)
         {
+            Entry last = null;
             foreach (var e in _entries)
-                if (e.Id == id && (group == null || e.Group == group)) return e;
-            return null;
+            {
+                if (e.Id != id || (group != null && e.Group != group)) continue;
+                if (e.Element != null && e.Element.panel != null) return e;
+                last = e;
+            }
+            return last;
         }
     }
 }

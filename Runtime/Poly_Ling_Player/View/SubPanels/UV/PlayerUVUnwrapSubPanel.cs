@@ -20,8 +20,11 @@ namespace Poly_Ling.Player
     public class PlayerUVUnwrapSubPanel
     {
         public Func<ModelContext>   GetModel;
-        public Action<PanelCommand> SendCommand;
+        /// <summary>コマンドを流し、失敗理由を返す（成功なら null）。</summary>
+        public Func<PanelCommand, string> SendCommand;
         public Action               OnRepaint;
+        /// <summary>今のカレントビュー。ビューからの投影で投影するビュー。</summary>
+        public Func<ViewportKind>   GetActiveView;
 
         // コマンド送信（PanelContext 経由）
         private PanelContext _panelContext;
@@ -41,7 +44,18 @@ namespace Poly_Ling.Player
         private float _scale   = 1f;
         private float _offsetU = 0f;
         private float _offsetV = 0f;
-        private readonly Button[] _projBtns = new Button[6];
+        private readonly Button[] _projBtns = new Button[7];
+
+        // ビューからの投影の基準
+        private ViewProjectionFrame _viewFrame = ViewProjectionFrame.Underlay;
+        private readonly Button[] _frameBtns = new Button[3];
+        private static readonly ViewProjectionFrame[] FrameTypes =
+            { ViewProjectionFrame.Underlay, ViewProjectionFrame.Viewport, ViewProjectionFrame.Bounds };
+        private static readonly ProjectionType[] ProjTypes =
+        {
+            ProjectionType.PlanarXY, ProjectionType.PlanarXZ, ProjectionType.PlanarYZ,
+            ProjectionType.Box, ProjectionType.Cylindrical, ProjectionType.Spherical, ProjectionType.View
+        };
 
         // LSCM パラメータ
         private bool _includeBoundaryAsSeam = true;
@@ -79,6 +93,16 @@ namespace Poly_Ling.Player
         private Button _projCylindricalBtn;
         [UiControl("projection.spherical", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを Spherical にする")]
         private Button _projSphericalBtn;
+        [UiControl("projection.view", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealProjection), Description = "投影モードを「ビュー」（カレントビューからの投影）にする")]
+        private Button _projViewBtn;
+        [UiControl(Ignore = true)]
+        private VisualElement _viewFrameRow;
+        [UiControl("projection.viewFrame.underlay", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealViewFrame), Description = "ビューからの投影の基準を「下絵」（表示中の下絵画像の矩形が UV 0〜1）にする")]
+        private Button _frameUnderlayBtn;
+        [UiControl("projection.viewFrame.viewport", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealViewFrame), Description = "ビューからの投影の基準を「ビュー全体」にする")]
+        private Button _frameViewportBtn;
+        [UiControl("projection.viewFrame.bounds", Safety = UiSafety.SafeWrite, Reveal = nameof(RevealViewFrame), Description = "ビューからの投影の基準を「範囲」（投影した頂点の範囲）にする")]
+        private Button _frameBoundsBtn;
         [UiControl("projection.scale", Reveal = nameof(RevealProjection), Description = "スケール（スライダー）")]
         private Slider     _scaleSlider;
         [UiControl("projection.scaleValue", Reveal = nameof(RevealProjection), Description = "スケール（数値入力）")]
@@ -106,6 +130,18 @@ namespace Poly_Ling.Player
             if (_projContent == null || _projContent.style.display.value != DisplayStyle.None) return false;
             SwitchTab(Tab.Projection);
             return true;
+        }
+
+        /// <summary>基準の欄は投影展開のタブで、投影モードが「ビュー」のときだけ表示される。</summary>
+        private bool RevealViewFrame()
+        {
+            bool changed = RevealProjection();
+            if (_projection != ProjectionType.View)
+            {
+                SetProjection(ProjectionType.View);
+                changed = true;
+            }
+            return changed;
         }
 
         /// <summary>LSCM の欄は LSCM 展開のタブのときだけ表示される。</summary>
@@ -170,30 +206,47 @@ namespace Poly_Ling.Player
         private void BuildProjectionContent(VisualElement root)
         {
             root.Add(SecLabel("投影モード"));
-            string[] labels   = { "PlanarXY", "PlanarXZ", "PlanarYZ", "Box", "Cylindrical", "Spherical" };
-            var projTypes = new[]
-            {
-                ProjectionType.PlanarXY, ProjectionType.PlanarXZ, ProjectionType.PlanarYZ,
-                ProjectionType.Box, ProjectionType.Cylindrical, ProjectionType.Spherical
-            };
+            string[] labels   = { "PlanarXY", "PlanarXZ", "PlanarYZ", "Box", "Cylindrical", "Spherical", "ビュー" };
             var row1 = new VisualElement(); row1.style.flexDirection = FlexDirection.Row; row1.style.marginBottom = 2;
             var row2 = new VisualElement(); row2.style.flexDirection = FlexDirection.Row; row2.style.marginBottom = 4;
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < ProjTypes.Length; i++)
             {
                 int ci = i;
-                var b  = new Button(() => { _projection = projTypes[ci]; UpdateProjBtns(); }) { text = labels[i] };
+                var b  = new Button(() => SetProjection(ProjTypes[ci])) { text = labels[i] };
                 b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 9;
                 _projBtns[i] = b;
                 (i < 3 ? row1 : row2).Add(b);
             }
             root.Add(row1); root.Add(row2);
-            UpdateProjBtns();
             _projPlanarXYBtn    = _projBtns[0];
             _projPlanarXZBtn    = _projBtns[1];
             _projPlanarYZBtn    = _projBtns[2];
             _projBoxBtn         = _projBtns[3];
             _projCylindricalBtn = _projBtns[4];
             _projSphericalBtn   = _projBtns[5];
+            _projViewBtn        = _projBtns[6];
+
+            // ビューからの投影の基準（投影モードが「ビュー」のときだけ表示）。
+            // 投影するのは実行時のカレントビュー。
+            _viewFrameRow = new VisualElement();
+            _viewFrameRow.style.marginBottom = 4;
+            _viewFrameRow.Add(SecLabel("基準（カレントビューで UV 0〜1 にするもの）"));
+            var frameRow = new VisualElement(); frameRow.style.flexDirection = FlexDirection.Row;
+            string[] frameLabels = { "下絵", "ビュー全体", "範囲" };
+            for (int i = 0; i < FrameTypes.Length; i++)
+            {
+                int ci = i;
+                var b = new Button(() => { _viewFrame = FrameTypes[ci]; UpdateProjBtns(); }) { text = frameLabels[i] };
+                b.style.flexGrow = 1; b.style.height = 22; b.style.fontSize = 9;
+                _frameBtns[i] = b;
+                frameRow.Add(b);
+            }
+            _viewFrameRow.Add(frameRow);
+            root.Add(_viewFrameRow);
+            _frameUnderlayBtn = _frameBtns[0];
+            _frameViewportBtn = _frameBtns[1];
+            _frameBoundsBtn   = _frameBtns[2];
+            UpdateProjBtns();
 
             root.Add(SecLabel("パラメータ"));
             root.Add(MkSliderRow("スケール",     ScaleMin,  ScaleMax,  _scale,   v => _scale   = v,
@@ -285,8 +338,20 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null || model.SelectedDrawableMeshIndices.Count == 0) { SetStatus("メッシュが未選択です"); return; }
             int[] indices = model.SelectedDrawableMeshIndices.ToArray();
-            SendCommand?.Invoke(new ApplyUvUnwrapCommand(indices[0], indices, _projection, _scale, _offsetU, _offsetV));
-            SetStatus($"UV展開を実行しました ({_projection})");
+            int modelIdx  = _getModelIndex?.Invoke() ?? 0;
+            var view      = GetActiveView?.Invoke() ?? ViewportKind.Perspective;
+            string reason = SendCommand?.Invoke(new ApplyUvUnwrapCommand(
+                modelIdx, indices, _projection, _scale, _offsetU, _offsetV, view, _viewFrame));
+            if (reason != null) { SetStatus($"UV展開できません: {reason}"); return; }
+            SetStatus(_projection == ProjectionType.View
+                ? $"UV展開を実行しました (ビュー {view} / {_viewFrame})"
+                : $"UV展開を実行しました ({_projection})");
+        }
+
+        private void SetProjection(ProjectionType p)
+        {
+            _projection = p;
+            UpdateProjBtns();
         }
 
         private void OnApplyLscm()
@@ -331,9 +396,12 @@ namespace Poly_Ling.Player
         {
             var active   = PlayerLayoutRoot.BtnActiveColor;
             var inactive = PlayerLayoutRoot.BtnInactiveColor;
-            var types    = new[] { ProjectionType.PlanarXY, ProjectionType.PlanarXZ, ProjectionType.PlanarYZ, ProjectionType.Box, ProjectionType.Cylindrical, ProjectionType.Spherical };
             for (int i = 0; i < _projBtns.Length; i++)
-                if (_projBtns[i] != null) _projBtns[i].style.backgroundColor = (_projection == types[i]) ? active : inactive;
+                if (_projBtns[i] != null) _projBtns[i].style.backgroundColor = (_projection == ProjTypes[i]) ? active : inactive;
+            for (int i = 0; i < _frameBtns.Length; i++)
+                if (_frameBtns[i] != null) _frameBtns[i].style.backgroundColor = (_viewFrame == FrameTypes[i]) ? active : inactive;
+            if (_viewFrameRow != null)
+                _viewFrameRow.style.display = _projection == ProjectionType.View ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void SetStatus(string t) { if (_statusLabel != null) _statusLabel.text = t; }

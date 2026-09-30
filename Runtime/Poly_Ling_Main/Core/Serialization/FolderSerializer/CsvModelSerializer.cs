@@ -431,6 +431,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (File.Exists(ulPath))
                 ReadUnderlayCsv(ulPath, model);
 
+            // underlay_plates.csv（作業板スロット。方向スロットの後に足す）
+            string ulpPath = Path.Combine(modelFolderPath, UnderlayPlatesCsvName);
+            if (File.Exists(ulpPath))
+                ReadUnderlayPlatesCsv(ulpPath, model);
+
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
             IKChainResolver.RebuildLinksFromPerBone(model);
 

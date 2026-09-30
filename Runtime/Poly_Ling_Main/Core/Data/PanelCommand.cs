@@ -29,7 +29,20 @@ namespace Poly_Ling.Data
         PlanarYZ,
         Box,
         Cylindrical,
-        Spherical
+        Spherical,
+        /// <summary>ビューからの投影（画面に写った位置から UV を決める）。</summary>
+        View
+    }
+
+    /// <summary>ビューからの投影で、画面上の何を UV の 0〜1 にするか。</summary>
+    public enum ViewProjectionFrame
+    {
+        /// <summary>そのビューに今表示されている下絵画像の矩形。</summary>
+        Underlay,
+        /// <summary>ビュー全体。</summary>
+        Viewport,
+        /// <summary>投影した頂点の範囲。</summary>
+        Bounds
     }
     public abstract class PanelCommand
     {

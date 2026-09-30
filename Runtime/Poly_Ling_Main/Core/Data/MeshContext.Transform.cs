@@ -166,6 +166,20 @@ namespace Poly_Ling.Data
             set { if (MeshObject != null) MeshObject.Billboard = value; }
         }
 
+        /// <summary>両面表示（辺・頂点の表示とクリック判定で裏面カリングをしない）。実体は MeshObject 側。保存しない。</summary>
+        public bool DoubleSidedDisplay
+        {
+            get => MeshObject?.DoubleSidedDisplay ?? false;
+            set { if (MeshObject != null) MeshObject.DoubleSidedDisplay = value; }
+        }
+
+        /// <summary>面を塗らない（選択・クリック判定・辺と頂点の表示は残す）。実体は MeshObject 側。保存しない。</summary>
+        public bool HideFaceShading
+        {
+            get => MeshObject?.HideFaceShading ?? false;
+            set { if (MeshObject != null) MeshObject.HideFaceShading = value; }
+        }
+
         /// <summary>
         /// 法線の自動再計算から除外するセット一覧。実体は MeshObject 側。
         /// </summary>

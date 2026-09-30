@@ -107,6 +107,7 @@ namespace Poly_Ling.Player
         public Button UVEditorBtn { get; private set; }
         public Button UVUnwrapBtn { get; private set; }
         public Button        UVZBtn                { get; private set; }
+        public Button        UVEditSpaceBtn        { get; private set; }
         public Button        PartsSelectionSetBtn  { get; private set; }
         public Button        MeshSelectionSetBtn   { get; private set; }
         public Button        ObjectGroupBtn        { get; private set; }
@@ -133,6 +134,8 @@ namespace Poly_Ling.Player
         public Button        PlaceObjectReshapeBtn      { get; private set; }
         public Button        MergeVerticesBtn           { get; private set; }
         public Button        SplitVerticesBtn           { get; private set; }
+        /// <summary>左ペイン「頂点の分離」（選択面を切り離す・選択辺で切り開く）。</summary>
+        public Button        DetachVerticesBtn          { get; private set; }
         public Button        VertexHoleBtn              { get; private set; }
         public Button        VertexDissolveBtn          { get; private set; }
         public Button        HoleRingCountBtn           { get; private set; }
@@ -629,8 +632,10 @@ namespace Poly_Ling.Player
 
             var rowMergeSplit = new VisualElement(); rowMergeSplit.style.flexDirection = FlexDirection.Row; rowMergeSplit.style.marginBottom = 2;
             MergeVerticesBtn = MakeBtn("頂点マージ");  MergeVerticesBtn.style.flexGrow = 1; MergeVerticesBtn.style.marginRight = 2;
-            SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1;
-            rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); foVertexTopo.Add(rowMergeSplit);
+            SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1; SplitVerticesBtn.style.marginRight = 2;
+            DetachVerticesBtn = MakeBtn("頂点の分離"); DetachVerticesBtn.style.flexGrow = 1;
+            rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); rowMergeSplit.Add(DetachVerticesBtn);
+            foVertexTopo.Add(rowMergeSplit);
 
             // 頂点IDユーティリティ。モデル間・オブジェクト間の突き合わせに使う ID を
             // 診断・修復する。ID を使う操作の前段に置く。
@@ -698,6 +703,9 @@ namespace Poly_Ling.Player
             UVUnwrapBtn = MakeBtn("UV展開");     UVUnwrapBtn.style.flexGrow = 1; UVUnwrapBtn.style.marginRight = 2;
             UVZBtn      = MakeBtn("UVZ");        UVZBtn.style.flexGrow      = 1;
             rowUv.Add(UVEditorBtn); rowUv.Add(UVUnwrapBtn); rowUv.Add(UVZBtn); foUvMat.Add(rowUv);
+
+            // 作業空間（ビルボード上の UV 編集）。押すと選択中のオブジェクトで開く。
+            UVEditSpaceBtn = MakeBtn("UV作業空間を開く"); foUvMat.Add(UVEditSpaceBtn);
 
             MergeMeshesBtn  = MakeBtn("メッシュマージ");   foUvMat.Add(MergeMeshesBtn);
             // ブーリアンは「トポロジー編集」へ移動した。

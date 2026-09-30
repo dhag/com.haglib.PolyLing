@@ -283,6 +283,19 @@ namespace Poly_Ling.Player
         /// </summary>
         private Vector3 WorldPivot() => _tool.PivotPublic;
 
+        /// <summary>
+        /// 作業空間の平面制約（ToolContext.EditSpacePlane）をギズモへ渡す。ドラッグ中は掴んだときの向きのまま。
+        /// 向きは ScaleTool が伸縮に使う軸（平面の姿勢 × 軸欄 Z の回転）と同じにする。
+        /// </summary>
+        private void ApplyEditSpacePlaneToGizmo(ToolContext ctx)
+        {
+            if (_gizmoDragAxis != AxisGizmo.AxisType.None && _axisGizmo.IsScaleDragging) return;
+            var plane = ctx?.EditSpacePlane;
+            _axisGizmo.ApplyEditSpacePlane(plane);
+            if (plane.HasValue)
+                _axisGizmo.Orientation = plane.Value.Rotation * Quaternion.Euler(0f, 0f, _tool.ScaleAxisZ);
+        }
+
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0)
@@ -290,6 +303,7 @@ namespace Poly_Ling.Player
                 _gizmoHoverAxis = AxisGizmo.AxisType.None; return;
             }
             _axisGizmo.Center = WorldPivot();
+            ApplyEditSpacePlaneToGizmo(ctx);
             _gizmoHoverAxis = _axisGizmo.FindAxisAtScreenPos(ToImgui(screenPos), ctx);
             OnRepaint?.Invoke();
         }
@@ -305,6 +319,7 @@ namespace Poly_Ling.Player
             hoveredAxis = AxisGizmo.AxisType.None;
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
             _axisGizmo.Center       = WorldPivot();
+            ApplyEditSpacePlaneToGizmo(ctx);
             _axisGizmo.HoveredAxis  = _gizmoHoverAxis;
             _axisGizmo.DraggingAxis = _gizmoDragAxis;
             _axisGizmo.GetScreenPositions(ctx, out origin, out xEnd, out yEnd, out zEnd);
@@ -326,6 +341,7 @@ namespace Poly_Ling.Player
                 HasGizmo    = true,
                 IsCubeStyle = true,
                 Origin      = so, XEnd = sxe, YEnd = sye, ZEnd = sze,
+                HideZ       = _axisGizmo.PlaneConstrained,
                 HoveredAxis = sha,
             };
             return true;
@@ -336,6 +352,7 @@ namespace Poly_Ling.Player
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
             _axisGizmo.Center = WorldPivot();
+            ApplyEditSpacePlaneToGizmo(ctx);
             var axis = _axisGizmo.FindAxisAtScreenPos(ToImgui(screenPos), ctx);
             if (axis == AxisGizmo.AxisType.None) return false;
             _gizmoDragAxis        = axis;

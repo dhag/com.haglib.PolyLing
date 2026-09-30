@@ -31,7 +31,7 @@ namespace Poly_Ling.UndoSystem
     /// 任意のコンテキスト型に対応した末端スタック
     /// ConcurrentQueue経由で別スレッドからの記録を受け付け
     /// </summary>
-    public class UndoStack<TContext> : IUndoStack<TContext>
+    public class UndoStack<TContext> : IUndoStack<TContext>, IUndoScopeNode
     {
         // === フィールド ===
         private readonly List<IUndoRecord<TContext>> _undoStack = new();
@@ -413,6 +413,32 @@ namespace Poly_Ling.UndoSystem
             {
                 _activeGroupId = -1;
             }
+        }
+
+        // === 履歴の範囲（UndoScope.cs） ===
+
+        /// <summary>
+        /// 今までに振ったグループ ID の最大値を控える。保留中の記録も Record 時点で
+        /// 番号が決まっているので、これより大きい番号の記録は控えた後に積まれたもの。
+        /// </summary>
+        void IUndoScopeNode.CaptureScopeMarks(Dictionary<string, int> marks)
+        {
+            lock (_groupLock)
+            {
+                marks[Id] = _currentGroupId;
+            }
+        }
+
+        /// <summary>
+        /// 控えた番号より後の記録を Undo 側・Redo 側の両方から除く。
+        /// 控えに無いスタック（範囲の途中で足された）の記録はすべて範囲内とみなす。
+        /// </summary>
+        void IUndoScopeNode.DiscardAfterScopeMarks(IReadOnlyDictionary<string, int> marks)
+        {
+            ProcessPendingQueue();
+            int mark = marks.TryGetValue(Id, out int m) ? m : 0;
+            _undoStack.RemoveAll(r => r.Info != null && r.Info.GroupId > mark);
+            _redoStack.RemoveAll(r => r.Info != null && r.Info.GroupId > mark);
         }
 
         // === 内部メソッド ===

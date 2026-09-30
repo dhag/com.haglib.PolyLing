@@ -24,6 +24,12 @@ namespace Poly_Ling.Player
     public partial class PlayerCommandDispatcher
     {
         /// <summary>
+        /// ビューからの UV 投影で、対象メッシュごとの頂点 UV（masterIndex → uvs[頂点番号]）を求める口。
+        /// 失敗理由を返す（成功なら null）。実体は PolyLingPlayerViewerCore.ViewUvProjection.cs。
+        /// </summary>
+        public Func<ApplyUvUnwrapCommand, ModelContext, Dictionary<int, Vector2[]>, string> OnComputeViewUvs;
+
+        /// <summary>
         /// DispatchCore の分担：BonePose・モーフ・BoneTransform・UV 展開・マテリアル。
         /// 該当するコマンドなら処理して true を返す。区画の本文は元の switch のままで、
         /// DispatchCore を抜けていた return; だけを return true; にしてある。
@@ -479,8 +485,22 @@ namespace Poly_Ling.Player
                             _undoController.MeshUndoContext.ParentModelContext = model;
                         }
                     }
-                    Poly_Ling.Core.PolyLingCoreUvHandlers.HandleApplyUvUnwrap(
-                        model, _undoController, BuildMinimalToolCtx(model), () => { }, c);
+                    if (c.Projection == ProjectionType.View)
+                    {
+                        // 画面への投影はビューアが持つカメラ・下絵の位置で求める（OnComputeViewUvs）。
+                        if (OnComputeViewUvs == null) { Fail("view uv projection handler not wired"); return true; }
+                        var viewUvs = new Dictionary<int, Vector2[]>();
+                        string viewUvReason = OnComputeViewUvs.Invoke(c, model, viewUvs);
+                        if (viewUvReason != null) { Fail(viewUvReason); return true; }
+                        Poly_Ling.Core.PolyLingCoreUvHandlers.HandleApplyVertexUvs(
+                            model, _undoController, BuildMinimalToolCtx(model), () => { }, viewUvs,
+                            $"UV Unwrap (View {c.View} / {c.ViewFrame})");
+                    }
+                    else
+                    {
+                        Poly_Ling.Core.PolyLingCoreUvHandlers.HandleApplyUvUnwrap(
+                            model, _undoController, BuildMinimalToolCtx(model), () => { }, c);
+                    }
                     // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);

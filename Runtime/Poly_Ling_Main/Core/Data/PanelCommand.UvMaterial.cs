@@ -43,8 +43,16 @@ namespace Poly_Ling.Data
                  LimitKey = "UvUnwrap.Offset", Required = true)]
         public float OffsetV { get; }
 
+        [PLParam(Description = "Projection が View のときに投影するビュー。Perspective（メイン画面）/ Top / Front / Side。既定は Perspective")]
+        public ViewportKind View { get; }
+
+        [PLParam(Description = "Projection が View のときに UV の 0〜1 にするもの。Underlay（そのビューに表示中の下絵画像の矩形）/ Viewport（ビュー全体）/ Bounds（投影した頂点の範囲）。既定は Underlay。U は画面の右、V は画面の上が正。Scale・Offset はこの後に掛かる")]
+        public ViewProjectionFrame ViewFrame { get; }
+
         public ApplyUvUnwrapCommand(int modelIndex, int[] masterIndices,
-            ProjectionType projection, float scale, float offsetU, float offsetV)
+            ProjectionType projection, float scale, float offsetU, float offsetV,
+            ViewportKind view = ViewportKind.Perspective,
+            ViewProjectionFrame viewFrame = ViewProjectionFrame.Underlay)
             : base(modelIndex)
         {
             MasterIndices = masterIndices;
@@ -52,6 +60,8 @@ namespace Poly_Ling.Data
             Scale = scale;
             OffsetU = offsetU;
             OffsetV = offsetV;
+            View = view;
+            ViewFrame = viewFrame;
         }
     }
 

@@ -594,6 +594,13 @@ namespace Poly_Ling.Player
             _viewportManager.SetMeshContextSinks(
                 AddMeshContextFromTool, AddMeshObjectToCurrentMeshFromTool);
 
+            // 作業空間の平面制約（ToolContext.EditSpacePlane）。
+            _viewportManager.SetEditSpacePlaneSource(GetEditSpacePlane);
+            _viewportManager.GetPlateQuad = GetEditSpacePlateQuad;
+            // 作業空間が開いている間は、ビルボードの基準を作業ビューに固定する。
+            _viewportManager.GetEditSpaceReferenceViewport = () =>
+                _editSpace != null && !_editSpace.IsBroken ? _editSpace.CameraViewport : null;
+
             SetupPerfLog();
         }
 

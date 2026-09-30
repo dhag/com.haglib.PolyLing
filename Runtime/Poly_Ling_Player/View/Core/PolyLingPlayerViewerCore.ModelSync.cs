@@ -558,6 +558,9 @@ namespace Poly_Ling.Player
                 _structureNotifyCount++;
             _panelContext.Notify(view, kind);
 
+            // 作業空間バー（中区画）は下区画のパネルと別に常駐するので、ここで読み直す。
+            _editSpaceBar?.Refresh();
+
             // リモートサーバ稼働時、本体の選択/モデル変更を接続クライアントへ配信する。
             // （エディタは Tick を回さないため、この中心経路から通知する）
             // プロジェクト／現在モデルの入れ替え（読込・インポート・モデル切替）は

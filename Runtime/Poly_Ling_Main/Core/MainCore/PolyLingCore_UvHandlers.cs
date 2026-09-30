@@ -23,34 +23,68 @@ namespace Poly_Ling.Core
             ApplyUvUnwrapCommand cmd)
         {
             if (model == null) return;
+            ApplyToMeshes(model, undoController, toolContext, repaint, cmd.MasterIndices,
+                (_, mo) => UvUnwrapOps.UnwrapMesh(mo, cmd.Projection, cmd.Scale, cmd.OffsetU, cmd.OffsetV),
+                $"UV Unwrap ({cmd.Projection})");
+        }
 
-            bool firstDone = false;
-            MeshObjectSnapshot before = null;
-            MeshContext firstCtx = null;
+        /// <summary>
+        /// 頂点ごとの UV（masterIndex → uvs[頂点番号]）を書く。ビューからの投影で使う
+        /// （UV は Player 側が画面への投影から求める）。
+        /// </summary>
+        public static void HandleApplyVertexUvs(
+            ModelContext model,
+            MeshUndoController undoController,
+            Poly_Ling.Tools.ToolContext toolContext,
+            System.Action repaint,
+            IReadOnlyDictionary<int, Vector2[]> uvsOf,
+            string description)
+        {
+            if (model == null || uvsOf == null) return;
+            var indices = new List<int>(uvsOf.Keys);
+            ApplyToMeshes(model, undoController, toolContext, repaint, indices,
+                (idx, mo) => UvUnwrapOps.ApplyVertexUVs(mo, uvsOf[idx]),
+                description);
+        }
 
-            foreach (int masterIdx in cmd.MasterIndices)
+        /// <summary>
+        /// 対象の全メッシュへ write を掛け、全メッシュぶんを 1 つの Undo に記録する。
+        /// 以前は先頭メッシュしか記録していなかった（MeshObjectSnapshot は 1 メッシュ分）。
+        /// </summary>
+        private static void ApplyToMeshes(
+            ModelContext model,
+            MeshUndoController undoController,
+            Poly_Ling.Tools.ToolContext toolContext,
+            System.Action repaint,
+            IEnumerable<int> masterIndices,
+            System.Action<int, MeshObject> write,
+            string description)
+        {
+            var targets = new List<int>();
+            foreach (int masterIdx in masterIndices)
             {
                 var ctx = model.GetMeshContext(masterIdx);
-                var meshObj = ctx?.MeshObject;
-                if (meshObj == null) continue;
-
-                if (!firstDone)
-                {
-                    firstCtx = ctx;
-                    before = undoController?.CaptureMeshObjectSnapshotOf(firstCtx);
-                    firstDone = true;
-                }
-
-                UvUnwrapOps.UnwrapMesh(meshObj, cmd.Projection, cmd.Scale, cmd.OffsetU, cmd.OffsetV);
+                if (ctx?.MeshObject == null || targets.Contains(masterIdx)) continue;
+                targets.Add(masterIdx);
             }
+            if (targets.Count == 0) return;
+
+            var before = new MultiMeshTopologySnapshot();
+            foreach (int idx in targets) before.CaptureMesh(model, idx);
+
+            foreach (int idx in targets) write(idx, model.GetMeshContext(idx).MeshObject);
 
             toolContext?.SyncMesh?.Invoke();
 
-            if (undoController != null && before != null)
+            if (undoController != null)
             {
-                var after = undoController.CaptureMeshObjectSnapshotOf(firstCtx);
-                undoController.RecordTopologyChange(before, after,
-                    $"UV Unwrap ({cmd.Projection})");
+                var after = new MultiMeshTopologySnapshot();
+                foreach (int idx in targets) after.CaptureMesh(model, idx);
+                // MeshListStack の Context を今回のモデルに合わせる（Undo 時の復元先）。
+                undoController.SetModelContext(model);
+                var record = new MultiMeshTopologySnapshotRecord(before, after, description);
+                undoController.MeshListStack.Record(record, description);
+                undoController.FocusMeshList();
             }
 
             repaint?.Invoke();

@@ -113,7 +113,8 @@ namespace Poly_Ling.Player
         ///
         /// 【Local の基準】
         ///   Space == Local のとき、Delta は MasterIndices[0] のローカル量として
-        ///   解釈し、そのメッシュの WorldMatrix でワールドへ変換する。ApplyDelta は
+        ///   解釈し、そのメッシュの表示の行列（DisplayWorldMatrix。バインド表示中は
+        ///   BindWorldMatrix）でワールドへ変換する。ApplyDelta は
         ///   受け取ったワールド量をメッシュごとにローカル化する。
         /// </summary>
         /// <param name="reason">実行できなかった理由。成功時は null。</param>
@@ -144,11 +145,23 @@ namespace Poly_Ling.Player
             }
             else
             {
+                // ApplyDelta が頂点ごとのローカル化に使う行列（MeshContext.VertexMatrix）と
+                // 同じ規則でワールドへ出す：バインド表示中は BindWorldMatrix、それ以外は
+                // ビルボードを含む DisplayWorldMatrix。WorldMatrix で出すと、ビルボード中の
+                // オブジェクト（作業空間の代理など）でローカル量が往復で一致しない。
                 var baseMc = model.GetMeshContext(indices[0]);
-                worldDelta = baseMc.WorldMatrix.MultiplyVector(cmd.Delta);
+                bool showBind = _project?.ShowBindPose ?? false;
+                worldDelta = (showBind ? baseMc.BindWorldMatrix : baseMc.DisplayWorldMatrix)
+                             .MultiplyVector(cmd.Delta);
             }
 
-            if (worldDelta == Vector3.zero) { reason = "移動量が 0 です"; return false; }
+            // 作業空間の平面制約中（対象が代理だけ）は、移動量を平面内の成分として解釈する。
+            // 法線方向の成分は平面の外へ出す指示なので使わない。
+            var esPlane = GetToolContext?.Invoke()?.EditSpacePlane;
+            if (esPlane.HasValue)
+                worldDelta = Vector3.ProjectOnPlane(worldDelta, esPlane.Value.Normal);
+
+            if (worldDelta.sqrMagnitude < 1e-20f) { reason = "移動量が 0 です"; return false; }
 
             // マグネットの UI 状態を退避する。
             bool         savedUse      = UseMagnet;

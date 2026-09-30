@@ -3,6 +3,7 @@
 // Runtime/Poly_Ling_Main/Core/Serialization/FolderSerializer/ に配置
 //
 // 1 行 1 方向。画像の無い方向は書かない。1 つも無ければファイルを作らない（あれば消す）。
+// 作業板スロットは underlay_plates.csv（このファイルの下半分）。
 // 方向は名前で持つ（UnderlayData.NameOf）。JSON 側は ModelDTO.Underlay.cs。
 
 using System;
@@ -22,8 +23,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
         {
             string path = Path.Combine(folderPath, UnderlayCsvName);
 
+            // 作業板スロットは別のファイル（underlay_plates.csv）。このファイルの形式は変えない。
+            WriteOrDeleteUnderlayPlatesCsv(folderPath, model);
+
             var u = model.Underlay;
-            if (u == null || u.IsEmpty)
+            if (u == null || u.HasNoDirectionImages)
             {
                 if (File.Exists(path)) File.Delete(path);
                 return;
@@ -75,6 +79,71 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // 16・17 列目（コントラスト・明るさ）が無い行は 1（元画像のまま）。
                 s.Contrast     = Mathf.Clamp01(PFl(cols, 15, 1f));
                 s.Intensity    = Mathf.Clamp01(PFl(cols, 16, 1f));
+            }
+
+            model.Underlay = u.IsEmpty ? null : u;
+        }
+
+        // ================================================================
+        // underlay_plates.csv（作業板スロット。PolyLing_UV_Billboard_Design.md 8.3・8.4）
+        //   1 行 1 スロット。対象は代理オブジェクトの安定 ID（10 進）。2 隅は代理のローカル XY。
+        //   スロットが 1 つも無ければファイルを作らない（あれば消す）。
+        // ================================================================
+
+        private const string UnderlayPlatesCsvName = "underlay_plates.csv";
+
+        private static void WriteOrDeleteUnderlayPlatesCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, UnderlayPlatesCsvName);
+
+            var u = model.Underlay;
+            int count = 0;
+            if (u != null) foreach (var p in u.Plates) if (p != null && !p.IsEmpty) count++;
+            if (count == 0)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_UnderlayPlates,version,1.0");
+            sb.AppendLine("#objectId,filePath,corner0X,corner0Y,corner1X,corner1Y,contrast,intensity");
+            foreach (var p in u.Plates)
+            {
+                if (p == null || p.IsEmpty) continue;
+                sb.Append(p.ObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',')
+                  .Append(Esc(p.FilePath)).Append(',')
+                  .Append(Fl(p.Corner0.x)).Append(',').Append(Fl(p.Corner0.y)).Append(',')
+                  .Append(Fl(p.Corner1.x)).Append(',').Append(Fl(p.Corner1.y)).Append(',')
+                  .Append(Fl(p.Contrast)).Append(',').Append(Fl(p.Intensity))
+                  .AppendLine();
+            }
+
+            File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        /// <summary>作業板スロットを読み、モデルの下絵へ足す（方向スロットの読込の後に呼ぶ）。</summary>
+        private static void ReadUnderlayPlatesCsv(string path, ModelContext model)
+        {
+            var u = model.Underlay ?? new UnderlayData();
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 2 || string.IsNullOrEmpty(cols[1])) continue;
+                if (!ulong.TryParse(cols[0].Trim(), System.Globalization.NumberStyles.Integer,
+                                    System.Globalization.CultureInfo.InvariantCulture, out ulong id)) continue;
+
+                u.SetPlate(new UnderlayPlateSlotData
+                {
+                    ObjectId  = id,
+                    FilePath  = cols[1],
+                    Corner0   = new Vector2(PFl(cols, 2), PFl(cols, 3)),
+                    Corner1   = new Vector2(PFl(cols, 4), PFl(cols, 5)),
+                    Contrast  = Mathf.Clamp01(PFl(cols, 6, 1f)),
+                    Intensity = Mathf.Clamp01(PFl(cols, 7, 1f)),
+                });
             }
 
             model.Underlay = u.IsEmpty ? null : u;
