@@ -65,7 +65,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         // UI 自動操作の ID は "springSkinScenario.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ）は基底クラス側で登録する。
         // 入力の 3 ファイルは実行時に PLSandbox が作業フォルダの下だけに限る。
         // VRM の書き出し先はこのパネルがそのまま書き込むので、外から変えるときは関門を通す。
         [UiControl("mqoPath", Description = "読み込む MQO のパス")]
@@ -639,7 +639,7 @@ namespace Poly_Ling.Player
                 bundleMode: SpringBoneLadderBundleMode.Thin,
                 chainRootMasterIndices: null,
                 keepAsGroup: true,
-                attachToSourceParent: true));   // 取り付け先は梯子の親。索引を焼かない（手本に記録したとき直書きにならない）
+                attachToSourceParent: true));   // 取り付け先は梯子の親。索引を焼かない（シナリオに記録したとき直書きにならない）
 
             return Ok(
                 "PlaceSpringBoneLadderChainsCommand を送った"
@@ -733,7 +733,7 @@ namespace Poly_Ling.Player
             foreach (var ch in chains) maxLen = Mathf.Max(maxLen, ch.Count);
 
             // 揺れ方と鎖の先頭は applySpringBoneByPrefix にまとめて渡す。
-            // 索引を 1 本ずつ撃つと、手本に記録したとき索引の直書きが数十段並ぶ。
+            // 索引を 1 本ずつ撃つと、シナリオに記録したとき索引の直書きが数十項目並ぶ。
             SendCommand(new ApplySpringBoneByPrefixCommand(
                 ModelIndex, prefix,
                 _springHitRadius.value,

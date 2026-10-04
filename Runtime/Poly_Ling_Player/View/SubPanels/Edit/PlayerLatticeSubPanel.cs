@@ -39,7 +39,7 @@ namespace Poly_Ling.Player
 
         // UI 自動操作の ID は "lattice.<下の Id>"（UiControlAttribute.cs）。
         // 手順は「格子の姿勢設定」→（分割数・中心・大きさ・選択フィット）→「変形開始」→
-        // 格子点を動かす →「適用」。各段で使えない項目は無効になる（uiSetValue / uiClick が拒否する）。
+        // 格子点を動かす →「適用」。各段で使えないボタンや入力欄は無効になる（uiSetValue / uiClick が拒否する）。
         [UiControl(Ignore = true)]
         private VisualElement _root;
 

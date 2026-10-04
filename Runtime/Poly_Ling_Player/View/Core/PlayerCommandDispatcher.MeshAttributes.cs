@@ -184,7 +184,7 @@ namespace Poly_Ling.Player
                         new SelectMeshCommand(byName.ModelIndex, MeshCategory.Drawable, wanted.ToArray()));
                     if (selResult != null && !selResult.Success) { Fail(selResult.Reason); return true; }
 
-                    // 対象としても報告する。手本を流すときの @prev がこれを読む。
+                    // 対象としても報告する。シナリオを流すときの @prev がこれを読む。
                     ReportData(CommandDataJson.New()
                         .Int  ("count",         pickedIdx.Count)
                         .Ints ("masterIndices", pickedIdx)
@@ -382,6 +382,14 @@ namespace Poly_Ling.Player
                 {
                     if (model == null) { Fail("no current model"); return true; }
                     ApplyObjectOrigins(model, c);
+                    return true;
+                }
+
+                // ── 位置付き CSV からボーン / 空の描画オブジェクトを作る
+                case CreateObjectsFromPositionCsvCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    CreateObjectsFromPositionCsv(project, model, c);
                     return true;
                 }
 

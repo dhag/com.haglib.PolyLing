@@ -443,6 +443,15 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // 読み込みはモデルを作る操作なので、現在モデルが無くても通す。
+                case ImportStlFolderCommand c:
+                {
+                    if (OnImportStlFolder == null) { Fail("import stl folder handler not wired"); return true; }
+                    string istlfReason = OnImportStlFolder.Invoke(c);
+                    if (istlfReason != null) { Fail(istlfReason); return true; }
+                    return true;
+                }
+
                 case ExportStlFileCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }

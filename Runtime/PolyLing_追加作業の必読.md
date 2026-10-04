@@ -46,7 +46,7 @@
 - **描画オブジェクトの索引を受ける引数には `IsMeshRef = true` を付ける。** 付けないと
   `queryScenarioAudit` が直書きを見逃す。付け忘れは `queryCommandAudit` の「[参考]」に出る
 - **対象を変えたコマンドは、変えたオブジェクトを `ReportData(..., masterIndices, objectIds)` で返す。**
-  返さないと手本の次の段が `@prev.masterIndices` を引けない（`booleanMesh` がこれで e5 を落としていた）。
+  返さないとシナリオの次の項目が `@prev.masterIndices` を引けない（`booleanMesh` がこれで e5 を落としていた）。
   索引を報告するときは引数の値ではなく、解決した実体から `MeshContextList.IndexOf` で引き直す
 - **失敗は `Fail` で返す。** ログに警告を出して `return true` だけにすると、呼んだ側には成功に見える
 - **面や頂点を書き換えるなら Undo を残す。** 形は `applyLscmUnwrap` と同じ
@@ -98,15 +98,22 @@
 
 ---
 
-## D. 手本（シナリオ）に残すとき
+## D. シナリオに残すとき
 
-手順が固まったら `scenarios.csv` に残す。
+手順が固まったらシナリオに残す。置き場は `@settings/PolyLing/PolyLing/scenarios/<フォルダ>/<名前>.csv`（1 シナリオ 1 ファイル）。
+
+### フォルダと親子
+
+- **フォルダ＝置き場所**（整理用。1 本は 1 か所。順番は持たない）。`createScenarioFolder` / `moveScenarios` / `renameScenarioFolder` / `deleteScenarioFolder`
+- **親子＝使い方**（別のシナリオを呼ぶ項目。順番を持ち、1 本の子を何本の親からでも呼べる）
+- 断片をフォルダに集めて並べ、`createScenarioFromFolder(folder, name, names?)` で順に呼ぶ親にする。親どうしをさらに上の親でまとめてよい
+- 親は名前で子を呼ぶので、フォルダを移しても親子関係は切れない
 
 ### 起こし方
 
 | 元 | 手 |
 |---|---|
-| 検証パネル・手で撃った一連の操作 | `startScenarioRecording` → パネルを流す／撃つ → `stopScenarioRecording(name)` |
+| 検証パネル・手で撃った一連の操作 | `startScenarioRecording` → パネルを流す／撃つ（入れたくない操作は `pauseScenarioRecording` 〜 `resumeScenarioRecording` で挟む）→ `stopScenarioRecording` → `saveScenarioRecording(name)`（やめるなら `discardScenarioRecording`）。状態は `queryScenarioRecording`。シナリオパネルの「シナリオを記録する」でも同じことができる |
 | 生成系 1 本 | パネルを 1 回流してから `saveScenarioFromGroup` |
 
 記録は `Dispatch` の一番外側を通ったコマンドを、計算済みの引数ごと控える。
@@ -116,11 +123,11 @@ Instruction、「なぜ」が Note として入る。
 
 記録に入らないもの。
 
-- 手本コマンド・UI 自動操作・`queryCommandAudit`
+- シナリオコマンド・UI 自動操作・`queryCommandAudit`
 - **`Dispatch` を通らずにモデルを直接書き換えた処理**（例：フリル検証の段 8
-  `StageEditSource` は頂点を直に動かしている）。下書きに段が抜けるので、
-  コマンドで同じことをする段を足す
-- 戻り値（段に欄が無い）。失敗した段は Note に残る
+  `StageEditSource` は頂点を直に動かしている）。下書きに項目が抜けるので、
+  コマンドで同じことをする項目を足す
+- 戻り値（項目に欄が無い）。失敗した項目は Note に残る
 - 文字列の引数に直せない型を持つコマンド（`addGeneratedMesh` など）は、
   控えはするが Note で「撃ち直しても同じにならない」と出る
 
@@ -130,9 +137,9 @@ Instruction、「なぜ」が Note として入る。
 
 | 種類 | 直し方 |
 |---|---|
-| `literalMeshIndex` | 索引が直に入っている。`selectDrawablesByName` などの照会段を前に置き、`@<段の名前>.masterIndices` に置き換える |
+| `literalMeshIndex` | 索引が直に入っている。`selectDrawablesByName` などの照会項目を前に置き、`@<項目 ID>.masterIndices` に置き換える |
 | `unknownAction` | action 名を直す |
-| `badRef` / `missingRef` / `forwardRef` | `@` 参照の書き方・指す段・順序を直す |
+| `badRef` / `missingRef` / `forwardRef` | `@` 参照の書き方・指す項目・順序を直す |
 
 **点検が見るのは `IsMeshRef` の印が付いた引数だけ。** 印の無い索引
 （`queryCommandAudit` の「[参考] 索引の印が無い引数」に並ぶもの）と、
@@ -141,37 +148,37 @@ Instruction、「なぜ」が Note として入る。
 - 入力だけで決まる値（寸法・断面の点列・絶対座標）は焼いてよい
 - 実データで決まる値（描画オブジェクトの索引・頂点番号・面番号）は焼かない。照会で引いて `@` で渡す
 
-### 段の間で値を渡す
+### 項目の間で値を渡す
 
 | 書き方 | 意味 |
 |---|---|
-| `@prev.masterIndices` / `@prev.objectIds` | 直前の段の対象 |
-| `@prev.<キー>` | 直前の段の戻り値 |
-| `@<段の名前>.<キー>` | 名指しした段の戻り値。間に何段挟んでもよい |
+| `@prev.masterIndices` / `@prev.objectIds` | 直前の項目の対象 |
+| `@prev.<キー>` | 直前の項目の戻り値 |
+| `@<項目 ID>.<キー>` | 名指しした項目の戻り値。間に何項目挟んでもよい |
 
-どれも**同じ流れの中で実行した段の結果**だけを指す。別の流れや前回の結果は混ざらない。
+どれも**同じ流れの中で実行した項目の結果**だけを指す。別の流れや前回の結果は混ざらない。
 
-カンマを含む値は `setScenarioStepArg` で書く。`argValues` は配列なので割れる。
+カンマを含む値は `setScenarioItemArg` で書く。`argValues` は配列なので割れる。
 
 ### 流す
 
-途中の段だけを選んで実行する口は無い。流し方は 2 通り。
+途中の項目だけを選んで実行する口は無い。流し方は 2 通り。
 
 | 口 | すること |
 |---|---|
-| `runScenario(name)` / パネルの「流す」 | 先頭の段から流す |
+| `runScenario(name)` / パネルの「流す」 | 先頭の項目から流す |
 | `continueScenario` / パネルの「続きを流す」 | 止まった所から続ける |
 
 止まる所と、続けたときの動き。
 
 | 止まる所 | 続けると |
 |---|---|
-| 指示（Instruction）の段 | その段を越えて進む。`continueScenario(argKeys, argValues)` で次に実行する段の値を差し替えられる |
-| 確認（Observe）の段 | その段を越えて進む |
-| 失敗した段 | 同じ段をやり直す |
+| 指示（Instruction）の項目 | その項目を越えて進む。`continueScenario(argKeys, argValues)` で次に実行する項目の値を差し替えられる |
+| 確認（Observe）の項目 | その項目を越えて進む |
+| 失敗した項目 | 同じ項目をやり直す |
 
-注意（Note）の段は止まらずに読み飛ばす。別の手本を呼ぶ段（ScenarioRef）では、
-呼ばれた手本をその場で流し、終わったら元の手本へ戻る。
+注意（Note）の項目は止まらずに読み飛ばす。別のシナリオを呼ぶ項目（ScenarioRef）では、
+呼ばれたシナリオをその場で流し、終わったら元のシナリオへ戻る。
 止める条件は `ObjectGroupStep.RequiresJudgment` の 1 か所だけにある。
 
 いまの状態は `queryScenarioRun`、やめるのは `stopScenarioRun`。

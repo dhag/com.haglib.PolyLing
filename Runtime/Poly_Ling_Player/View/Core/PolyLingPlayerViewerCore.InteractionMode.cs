@@ -61,6 +61,13 @@ namespace Poly_Ling.Player
             if (_interactionMode == InteractionMode.Sculpt && mode != InteractionMode.Sculpt)
                 _activePanel?.HideBrushCircle();
 
+            // 法線編集のビューポート操作を抜けるとき、ドラッグ中のプレビューを捨て、ブラシ円を消す。
+            if (_interactionMode == InteractionMode.NormalEdit && mode != InteractionMode.NormalEdit)
+            {
+                _normalEditHandler?.Deactivate();
+                _activePanel?.HideBrushCircle();
+            }
+
             if (_interactionMode == InteractionMode.AdvancedSelect && mode != InteractionMode.AdvancedSelect)
                 _activePanel?.HideAdvSelPreview();
 
@@ -92,6 +99,16 @@ namespace Poly_Ling.Player
                 ClearNumericWeightVisualization();
                 SkinWeightPaintTool.SetVisualizationActive(false);
                 SkinWeightPaintTool.ActivePanel = null;
+            }
+
+            // スキンW範囲塗りも同じ可視化を使う。加えて範囲の重ね表示を消す
+            // （他パネルを開いた経路ではオーバーレイの更新が走らないため）。
+            if (_interactionMode == InteractionMode.SkinWeightVolume && mode != InteractionMode.SkinWeightVolume)
+            {
+                ClearNumericWeightVisualization();
+                SkinWeightPaintTool.SetVisualizationActive(false);
+                SkinWeightPaintTool.ActivePanel = null;
+                _activePanel?.HideTopoToolOverlay();
             }
 
             // 【選択モードの復元について】
@@ -142,6 +159,8 @@ namespace Poly_Ling.Player
                 // 解除し損ねると、次のモードでも OnDragStartExtra が true を返し続けて
                 // 頂点移動が一切効かなくなる。
                 || (_interactionMode == InteractionMode.PrimitivePlace && mode != InteractionMode.PrimitivePlace)
+                // スキンW範囲塗りも半径・高さのハンドルをフックへ委譲する（配置ギズモと同じ構成）。
+                || (_interactionMode == InteractionMode.SkinWeightVolume && mode != InteractionMode.SkinWeightVolume)
                 // 変形も回転ハンドルをフックへ委譲する。解除し損ねると同じ症状になる。
                 || (_interactionMode == InteractionMode.Deform      && mode != InteractionMode.Deform)
                 // DeleteFace は OnLeftClickExtra で面クリック削除を発火する。
@@ -292,6 +311,9 @@ namespace Poly_Ling.Player
                 case InteractionMode.Sculpt:
                     _vertexInteractor?.SetToolHandler(_sculptHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _sculptHandler?.UpdateHover(pos, ctx));
+                    break;
+                case InteractionMode.NormalEdit:
+                    ApplyNormalEditToolRouting();
                     break;
                 case InteractionMode.AdvancedSelect:
                     _vertexInteractor?.SetToolHandler(_advancedSelectHandler);
@@ -532,6 +554,37 @@ namespace Poly_Ling.Player
                     // その 1 メッシュに固定され、多メッシュ編集の Undo が壊れる。
                     // -1 にしておけば MeshObject 参照からの逆引きが働く。
                     _skinWeightUndoMasterIndex = -1;
+                    break;
+                case InteractionMode.SkinWeightVolume:
+                    // 選択は MoveToolHandler（頂点のみ）。頂点は動かさず、半径・高さの
+                    // ハンドルはフック経由で SkinWeightVolumeToolHandler へ委譲する
+                    // （PrimitivePlace と同じ構成。SelectOnly だと GizmoHitTestOverride が
+                    //  呼ばれずハンドルを掴めないため使わない）。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SuppressBuiltinGizmo = true;
+                        _moveToolHandler.GizmoHitTestOverride =
+                            (pos, c) => _skinWeightVolumeHandler != null && _skinWeightVolumeHandler.GizmoHitTest(pos, c);
+                        // ハンドルに当たらなかった要素ドラッグでも true を返して頂点移動を抑止する。
+                        // クリック選択と、何も掴んでいない位置からの矩形／投げ縄選択はそのまま効く。
+                        _moveToolHandler.OnDragStartExtra   = (elem, mods) =>
+                        {
+                            _skinWeightVolumeHandler?.BeginGizmoDrag();
+                            return true;
+                        };
+                        _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _skinWeightVolumeHandler?.GizmoDrag(pos);
+                        _moveToolHandler.OnToolDragEndExtra = (pos, mods) => _skinWeightVolumeHandler?.EndGizmoDrag();
+                    }
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _skinWeightVolumeHandler?.UpdateHover(pos, ctx));
+                    _skinWeightVolumeSubPanel?.RefreshBoneList(ActiveProjectView?.CurrentModel);
+                    // ウェイトのヒートマップ可視化はペイントツールの機構を流用する（数値設定と同じ）。
+                    SkinWeightPaintTool.ActivePanel = _skinWeightVolumeSubPanel;
+                    SkinWeightPaintTool.SetVisualizationActive(true);
+                    _viewportManager.EnterWeightTargetChanged(ActiveProject);
+                    // Undo 対象は PlayerCommandDispatcher がメッシュごとに差し替える（数値設定と同じ）。
+                    _skinWeightUndoMasterIndex = -1;
+                    UpdateTopologyToolsOverlay();
                     break;
                 case InteractionMode.SkinWeightPaint:
                     _vertexInteractor?.SetToolHandler(_skinWeightPaintHandler);

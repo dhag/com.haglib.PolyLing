@@ -33,7 +33,7 @@ namespace Poly_Ling.Player
         private const string FrillName   = "FT_Frill";
 
         // UI 自動操作の ID は "frillSkirtTest.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
         [UiControl("radiusTop", Description = "スカート円筒の上の半径")]
         private FloatField   _radiusTop;
         [UiControl("radiusBottom", Description = "スカート円筒の下の半径")]

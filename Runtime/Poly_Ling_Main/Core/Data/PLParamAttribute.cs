@@ -241,7 +241,7 @@ namespace Poly_Ling.Data
         /// 【何のために要るか】
         ///   プロファイルの点を 3D にしたとき、保存済みの ObjectGroup の Args は
         ///   2 個ずつのまま残っている。値の個数だけでは 2 個ずつか 3 個ずつかを
-        ///   区別できない（6 個なら 3 点とも 2 点とも読める）ので、段に控えた
+        ///   区別できない（6 個なら 3 点とも 2 点とも読める）ので、項目に控えた
         ///   ObjectGroupStep.ProfileDim が 2 のときだけ、この印のキーを z=0 で 3 個ずつへ直す
         ///   （ObjectGroupOps.UpgradeLegacyProfileArgs）。
         /// </summary>

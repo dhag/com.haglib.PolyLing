@@ -31,6 +31,18 @@
 //       四隅の 1/4 球 4 個（方位角 90° × 極角 180°）
 //     円筒どうしの継ぎ目が 1/4 球になる。
 //
+// 【半小判型（Half = true）】
+//   上の形を原点を通る平面で半分に割り、片側だけを残して切り口を平面で閉じる。
+//     HalfAxis = Length : x = 0 で割り、x ≥ 0 側を残す（片端だけ丸い D 字形）。切り口の法線は -X。
+//     HalfAxis = Depth  : z = 0 で割り、z ≥ 0 側を残す（背面が丸いかまぼこ形）。切り口の法線は -Z。
+//   作り方：割る面の上に頂点の列が乗るよう分割数を倍にして全体を作り、
+//   負の側の面と使われなくなった頂点を消してから、切り口を張る。
+//   分割数は残った側に対する数として扱う。
+//     Length : X の分割数を倍にして作る（残った直線部が LengthSegments 分割になる）。
+//     Depth  : 丸みの分割数を倍にして作る（残った 1/4 円が CapSegments 分割になる）。
+//   切り口の輪郭の頂点は、残った面の境界の頂点と位置が一致するように張る
+//   （結合は他のパッチと同じく「重複頂点をマージ」に任せる）。
+//
 // 【面の巻き順】
 //   cross(v1 - v0, v2 - v1) が外向きになる向きで張る
 //   （CubeMeshGenerator.AddQuadFace と同じ規約）。
@@ -47,6 +59,15 @@ using Poly_Ling.Data;
 
 namespace Poly_Ling.PrimitiveMesh
 {
+    /// <summary>半小判型の割り方。</summary>
+    public enum StadiumHalfAxis
+    {
+        /// <summary>長さ方向で割る（x = 0 で割り、x ≥ 0 側を残す）。</summary>
+        Length = 0,
+        /// <summary>奥行き方向で割る（z = 0 で割り、z ≥ 0 側を残す）。</summary>
+        Depth = 1,
+    }
+
     public static class StadiumBoxMeshGenerator
     {
         /// <summary>半円 180° の分割数の下限・上限。</summary>
@@ -97,6 +118,13 @@ namespace Poly_Ling.PrimitiveMesh
             [PLParam(TextKey = "StadiumRoundTopBottom", Description = "上下も半円筒にする。四隅は 1/4 球でつながる")]
             public bool RoundTopBottom;
 
+            /// <summary>半小判型にする（小判型を半分に割った片側だけを作り、切り口を平面で閉じる）。</summary>
+            [PLParam(TextKey = "StadiumHalf", Description = "半小判型にする。小判型を原点を通る平面で半分に割った片側だけを作り、切り口を平面で閉じる")]
+            public bool Half;
+            /// <summary>半小判型の割り方。Half = false のときは無視される。</summary>
+            [PLParam(TextKey = "StadiumHalfAxis", Description = "半小判型の割り方。Length = 長さ方向で割る（x ≥ 0 側を残す）/ Depth = 奥行き方向で割る（z ≥ 0 側を残す）。Half = false のときは無視される")]
+            public StadiumHalfAxis HalfAxis;
+
             /// <summary>半円 180° の分割数</summary>
             [PLParam(TextKey = "StadiumCapSegments", Description = "半円 180°の分割数", Min = CapSegmentsMin,
                      Max = CapSegmentsMax, Step = 1)]
@@ -132,6 +160,8 @@ namespace Poly_Ling.PrimitiveMesh
                 Height         = 1f,
                 Depth          = 1f,
                 RoundTopBottom = false,
+                Half           = false,
+                HalfAxis       = StadiumHalfAxis.Length,
                 CapSegments    = 12,
                 LengthSegments = 2,
                 HeightSegments = 2,
@@ -147,6 +177,8 @@ namespace Poly_Ling.PrimitiveMesh
                 Mathf.Approximately(Height, o.Height) &&
                 Mathf.Approximately(Depth,  o.Depth)  &&
                 RoundTopBottom == o.RoundTopBottom &&
+                Half           == o.Half           &&
+                HalfAxis       == o.HalfAxis       &&
                 CapSegments    == o.CapSegments    &&
                 LengthSegments == o.LengthSegments &&
                 HeightSegments == o.HeightSegments &&
@@ -183,9 +215,18 @@ namespace Poly_Ling.PrimitiveMesh
 
             string name = string.IsNullOrEmpty(p.MeshName) ? "StadiumBox" : p.MeshName;
 
+            // 半小判型は割る面の上に頂点の列が乗るよう、割られる側の分割数を倍にして全体を作る。
+            bool cutX = p.Half && p.HalfAxis == StadiumHalfAxis.Length;
+            bool cutZ = p.Half && p.HalfAxis == StadiumHalfAxis.Depth;
+            if (cutX) lenSeg *= 2;
+            if (cutZ) capSeg *= 2;
+
             var mo = p.RoundTopBottom
                 ? BuildRounded (name, a, b, r, capSeg, lenSeg, hSeg)
                 : BuildFlatCaps(name, a, b, r, capSeg, lenSeg, hSeg, p.CapTop, p.CapBottom);
+
+            if (cutX || cutZ)
+                CutHalf(mo, cutX, p.RoundTopBottom, a, b, r, capSeg, lenSeg, hSeg);
 
             AssignBoxProjectionUV(mo);
             if (p.FlipFaces) PrimitiveMeshPostProcess.FlipFaces(mo);
@@ -393,6 +434,201 @@ namespace Poly_Ling.PrimitiveMesh
             AddQuarterSphere(mo, new Vector3( a, -b, 0f), Vector3.right, Vector3.down, r, capSeg, azSeg);
 
             return mo;
+        }
+
+        // ================================================================
+        // 半小判型（半分に割って切り口を閉じる）
+        // ================================================================
+
+        /// <summary>
+        /// 原点を通る平面（cutX なら x = 0、そうでなければ z = 0）で割り、
+        /// 負の側の面と使われなくなった頂点を消して、切り口を平面で閉じる。
+        /// capSeg / lenSeg は全体を作ったときの（倍にした後の）分割数。
+        /// どの面も割る面をまたがない（割る面の上に頂点の列がある）ので、
+        /// 面の重心の符号だけで残す・消すを決められる。
+        /// </summary>
+        private static void CutHalf(
+            MeshObject mo, bool cutX, bool rounded,
+            float a, float b, float r, int capSeg, int lenSeg, int hSeg)
+        {
+            // ── 負の側の面を消す ──
+            var killFaces = new List<int>();
+            for (int fi = 0; fi < mo.Faces.Count; fi++)
+            {
+                var f = mo.Faces[fi];
+                if (f == null || f.VertexIndices == null || f.VertexIndices.Count == 0) continue;
+                Vector3 c = Vector3.zero;
+                foreach (int vi in f.VertexIndices) c += mo.Vertices[vi].Position;
+                c /= f.VertexIndices.Count;
+                if ((cutX ? c.x : c.z) < 0f) killFaces.Add(fi);
+            }
+            mo.RemoveFaces(killFaces);
+
+            // ── 使われなくなった頂点を消す ──
+            var used = new bool[mo.VertexCount];
+            foreach (var f in mo.Faces)
+                if (f?.VertexIndices != null)
+                    foreach (int vi in f.VertexIndices) used[vi] = true;
+            var killVerts = new List<int>();
+            for (int i = 0; i < used.Length; i++)
+                if (!used[i]) killVerts.Add(i);
+            mo.RemoveVertices(killVerts);
+
+            // ── 切り口 ──
+            // 半径方向の分割数は平フタと同じ決め方（切り口の境界がフタ・丸みの頂点と一致する）。
+            int radSeg = Mathf.Max(1, (capSeg + 1) / 2);
+
+            if (cutX)
+            {
+                Vector3 nrm = Vector3.left;
+                if (!rounded)
+                {
+                    // 長方形 1 枚（Z は平フタの長方形と同じ 2·radSeg、Y は高さの分割数）
+                    AddGridFacing(mo,
+                        new Vector3(0f, -b, -r), new Vector3(0f, -b,  r),
+                        new Vector3(0f,  b,  r), new Vector3(0f,  b, -r),
+                        nrm, 2 * radSeg, hSeg);
+                }
+                else
+                {
+                    // 縦向きの小判型（直線部 2b、上下が半径 r の半円）
+                    if (b > Eps)
+                        AddGridFacing(mo,
+                            new Vector3(0f, -b, -r), new Vector3(0f, -b,  r),
+                            new Vector3(0f,  b,  r), new Vector3(0f,  b, -r),
+                            nrm, 2 * radSeg, hSeg);
+                    AddFanFacing(mo, new Vector3(0f,  b, 0f),
+                        ArcPoints(new Vector3(0f,  b, 0f), Vector3.forward, Vector3.up,   r, Mathf.PI, capSeg),
+                        radSeg, nrm);
+                    AddFanFacing(mo, new Vector3(0f, -b, 0f),
+                        ArcPoints(new Vector3(0f, -b, 0f), Vector3.forward, Vector3.down, r, Mathf.PI, capSeg),
+                        radSeg, nrm);
+                }
+            }
+            else
+            {
+                Vector3 nrm = Vector3.back;
+                float xo = a + r;
+
+                // 中央の長方形
+                if (a > Eps && b > Eps)
+                    AddGridFacing(mo,
+                        new Vector3(-a, -b, 0f), new Vector3( a, -b, 0f),
+                        new Vector3( a,  b, 0f), new Vector3(-a,  b, 0f),
+                        nrm, lenSeg, hSeg);
+
+                // 左右の帯（丸みの部分。X は radSeg 分割）
+                if (b > Eps)
+                {
+                    AddGridFacing(mo,
+                        new Vector3( a, -b, 0f), new Vector3( xo, -b, 0f),
+                        new Vector3( xo, b, 0f), new Vector3( a,   b, 0f),
+                        nrm, radSeg, hSeg);
+                    AddGridFacing(mo,
+                        new Vector3(-xo, -b, 0f), new Vector3(-a, -b, 0f),
+                        new Vector3(-a,   b, 0f), new Vector3(-xo, b, 0f),
+                        nrm, radSeg, hSeg);
+                }
+
+                if (rounded)
+                {
+                    // 上下の帯（Y は radSeg 分割）
+                    if (a > Eps)
+                    {
+                        AddGridFacing(mo,
+                            new Vector3(-a, b, 0f),     new Vector3( a, b, 0f),
+                            new Vector3( a, b + r, 0f), new Vector3(-a, b + r, 0f),
+                            nrm, lenSeg, radSeg);
+                        AddGridFacing(mo,
+                            new Vector3(-a, -b - r, 0f), new Vector3( a, -b - r, 0f),
+                            new Vector3( a, -b, 0f),     new Vector3(-a, -b, 0f),
+                            nrm, lenSeg, radSeg);
+                    }
+
+                    // 四隅の 1/4 円（弧は 1/4 球の赤道と同じ分割）
+                    int azSeg = Mathf.Max(1, Mathf.RoundToInt(capSeg * 0.5f));
+                    float hp = Mathf.PI * 0.5f;
+                    AddFanFacing(mo, new Vector3( a,  b, 0f),
+                        ArcPoints(new Vector3( a,  b, 0f), Vector3.right, Vector3.up,   r, hp, azSeg), radSeg, nrm);
+                    AddFanFacing(mo, new Vector3(-a,  b, 0f),
+                        ArcPoints(new Vector3(-a,  b, 0f), Vector3.left,  Vector3.up,   r, hp, azSeg), radSeg, nrm);
+                    AddFanFacing(mo, new Vector3(-a, -b, 0f),
+                        ArcPoints(new Vector3(-a, -b, 0f), Vector3.left,  Vector3.down, r, hp, azSeg), radSeg, nrm);
+                    AddFanFacing(mo, new Vector3( a, -b, 0f),
+                        ArcPoints(new Vector3( a, -b, 0f), Vector3.right, Vector3.down, r, hp, azSeg), radSeg, nrm);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 円弧の点列。center + radius·(e0·cosθ + e1·sinθ)、θ = 0 … angle を seg 分割（seg + 1 点）。
+        /// </summary>
+        private static List<Vector3> ArcPoints(
+            Vector3 center, Vector3 e0, Vector3 e1, float radius, float angle, int seg)
+        {
+            var list = new List<Vector3>(seg + 1);
+            for (int i = 0; i <= seg; i++)
+            {
+                float t = angle * i / seg;
+                list.Add(center + (e0 * Mathf.Cos(t) + e1 * Mathf.Sin(t)) * radius);
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 平面の格子を normal の向きに張る。v0 → v1 が U（divU 分割）、v0 → v3 が V（divV 分割）。
+        /// 並びが normal と逆向きなら U と V を入れ替えて張る。
+        /// </summary>
+        private static void AddGridFacing(
+            MeshObject mo, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3,
+            Vector3 normal, int divU, int divV)
+        {
+            if (Vector3.Dot(Vector3.Cross(v1 - v0, v2 - v1), normal) < 0f)
+                AddGrid(mo, v0, v3, v2, v1, normal, divV, divU);
+            else
+                AddGrid(mo, v0, v1, v2, v3, normal, divU, divV);
+        }
+
+        /// <summary>
+        /// 扇形（円弧 arc と中心 center で囲まれた領域）を、center を極とする極座標格子で
+        /// normal の向きに張る。半径方向は radSeg 分割。最外周は arc の点そのものを使う。
+        /// </summary>
+        private static void AddFanFacing(
+            MeshObject mo, Vector3 center, List<Vector3> arc, int radSeg, Vector3 normal)
+        {
+            int count = arc.Count;
+            if (count < 2 || radSeg < 1) return;
+
+            bool flip = Vector3.Dot(Vector3.Cross(arc[0] - center, arc[1] - arc[0]), normal) < 0f;
+
+            int baseIdx = mo.VertexCount;
+            mo.Vertices.Add(new Vertex(center, new Vector2(0.5f, 0.5f), normal));
+            for (int k = 1; k <= radSeg; k++)
+            {
+                float t = (float)k / radSeg;
+                for (int i = 0; i < count; i++)
+                {
+                    Vector3 pos = (k == radSeg) ? arc[i] : center + (arc[i] - center) * t;
+                    mo.Vertices.Add(new Vertex(pos, new Vector2((float)i / (count - 1), t), normal));
+                }
+            }
+
+            int ring1 = baseIdx + 1;
+            for (int i = 0; i < count - 1; i++)
+            {
+                if (!flip) mo.AddTriangle(baseIdx, ring1 + i,     ring1 + i + 1);
+                else       mo.AddTriangle(baseIdx, ring1 + i + 1, ring1 + i);
+            }
+            for (int k = 1; k < radSeg; k++)
+            {
+                int inner = baseIdx + 1 + (k - 1) * count;
+                int outer = inner + count;
+                for (int i = 0; i < count - 1; i++)
+                {
+                    if (!flip) mo.AddQuad(inner + i, outer + i,     outer + i + 1, inner + i + 1);
+                    else       mo.AddQuad(inner + i, inner + i + 1, outer + i + 1, outer + i);
+                }
+            }
         }
 
         // ================================================================

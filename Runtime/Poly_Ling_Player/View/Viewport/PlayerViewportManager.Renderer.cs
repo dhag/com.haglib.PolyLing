@@ -333,6 +333,16 @@ namespace Poly_Ling.Player
                 }
             }
 
+            // サブディビジョンの子（親から作った滑らかなメッシュ）も追随させる。
+            // ミラー側と同じく位置だけを書き、面構成の変更は RebuildAdapter 側が受け持つ。
+            Poly_Ling.Ops.SubdivisionSync.SyncFromCage(model, mc, child =>
+            {
+                int childCtxIdx = model.MeshContextList.IndexOf(child);
+                if (childCtxIdx < 0) return;
+                int childUnifiedIdx = adapter.ContextToUnifiedMeshIndex(childCtxIdx);
+                if (childUnifiedIdx >= 0) bm.UpdatePositions(child.MeshObject, childUnifiedIdx);
+            });
+
             // ④ 次フレームのワイヤー/頂点メッシュ再構築を予約
             adapter.NotifyTransformChanged();
         }

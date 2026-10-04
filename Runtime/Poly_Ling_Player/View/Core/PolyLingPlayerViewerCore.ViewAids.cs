@@ -440,6 +440,12 @@ namespace Poly_Ling.Player
             else ShowMaterialListPanel();
         }
 
+        private void ToggleHumanoidBoneSelectPanel()
+        {
+            if (IsPinnedOpen(_layoutRoot?.HumanoidBoneSelectSection)) SetPinnedOpen(_layoutRoot.HumanoidBoneSelectSection, false);
+            else ShowHumanoidBoneSelectPanel();
+        }
+
         /// <summary>オブジェクトリストの今の 3 択を InteractionMode へ反映する。</summary>
         private void ApplyMeshListCurrentViewportOpMode()
             => ApplyMeshListViewportOpMode(

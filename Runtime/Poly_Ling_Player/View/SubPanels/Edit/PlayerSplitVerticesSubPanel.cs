@@ -22,7 +22,7 @@ namespace Poly_Ling.Player
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "splitVertices.<下の Id>"（UiControlAttribute.cs）。

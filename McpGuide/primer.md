@@ -5,6 +5,7 @@
 - 頼むのは、道具で届かないもの（MCP サーバ自身の再ビルド・再起動、書き込み許可フォルダの外のファイル削除など）だけ。そのときは理由と代わりの案を添える。
 
 ## Unity と PolyLing の起動
+- Unity Editor 自体が起動していない（unity_focus が Unity プロセスを見つけられない）ときは unity_editor_launch で起動し、unity_state が応答するまで待ってから unity_play する。
 - polyling_* と unity_capture は Play 中でないと動かない。止まっていたら unity_play → unity_state で確認する。
 - unity_play 直後は数秒つながらない（ポートに接続できません）。unity_state をもう一度呼べば通る。
 - 状態は unity_state（Play 中か・コンパイル中か）。

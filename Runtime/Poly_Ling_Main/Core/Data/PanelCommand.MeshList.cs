@@ -50,6 +50,7 @@ namespace Poly_Ling.Data
     }
 
     [PLCommand(Category = "object.list", Writes = PLWriteScope.AddOnly, Description = "空の描画オブジェクトをモデルへ 1 つ足す。")]
+    [PLUiRoute("オブジェクトリスト", "rightPaneTop.meshList", "meshList.add")]
     public class AddMeshCommand : PanelCommand
     {
         public AddMeshCommand(int modelIndex) : base(modelIndex) { }
@@ -78,7 +79,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// 選択部分の複製。選択中の描画オブジェクトそれぞれについて、今の選択
     /// （頂点・辺・線分・面）だけを写した新しいオブジェクトを作る。元は変えない。
-    /// 選択を引数に持たない。シナリオでは直前の選択コマンドの段が選択を決める。
+    /// 選択を引数に持たない。シナリオでは直前の選択コマンドの項目が選択を決める。
     /// </summary>
     [PLCommand(Category = "object.list", Writes = PLWriteScope.AddOnly, Description =
         "選択中の描画オブジェクトそれぞれについて、今選択している頂点・辺・線分・面だけを写した新しいオブジェクトを作る。"
@@ -199,7 +200,7 @@ namespace Poly_Ling.Data
     /// 【なぜ要るか】
     ///   reorderMeshes は索引・深さ・親の索引を 3 個ずつ並べて渡す。索引は
     ///   描画オブジェクトの増減でずれ、深さは親の深さから数える必要があるので、
-    ///   手本に書くと流すたびに手で計算し直すことになる（robot_build_hierarchy の e3）。
+    ///   シナリオに書くと流すたびに手で計算し直すことになる（robot_build_hierarchy の e3）。
     ///   名前の組だけを受け取り、索引と深さはここで引く。
     ///
     /// 【ボーンには使わない】
@@ -353,7 +354,7 @@ namespace Poly_Ling.Data
     /// <summary>
     /// オブジェクトグループを 1 つにまとめる（マクロを組む）。
     ///
-    /// ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。
+    /// ソースの全項目をターゲットの末尾へ移し、ソースのグループを消す。
     /// 描画オブジェクトは 1 つも消さない。
     ///
     /// 【なぜ生成コマンド側で「どのグループへ足すか」を指定しないか】
@@ -363,9 +364,9 @@ namespace Poly_Ling.Data
     ///   足す側の知識はこのコマンド 1 つに収まる。
     ///
     /// 【並び順】
-    ///   ステップの実行順はリストの並びそのもの。足した順に実行される。
+    ///   項目の実行順はリストの並びそのもの。足した順に実行される。
     /// </summary>
-    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを 1 つにまとめる。ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。描画オブジェクトは消さない。")]
+    [PLCommand(Category = "object.group", Writes = PLWriteScope.ModelWide, Description = "オブジェクトグループを 1 つにまとめる。ソースの全項目をターゲットの末尾へ移し、ソースのグループを消す。描画オブジェクトは消さない。")]
     public class MergeObjectGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "ObjectGroupName", Description = "足し先のグループの名前", Required = true)]

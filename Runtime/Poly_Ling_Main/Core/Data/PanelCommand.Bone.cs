@@ -296,7 +296,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 対応するボーンをオブジェクト名で渡す。BoneNames と同じ並び。
         /// 渡したときは BoneIndices を使わず、実行時に名前から索引を引く
-        /// （手本に索引を焼かないため。robot_build_skin の e7）。
+        /// （シナリオに索引を焼かないため。robot_build_skin の e7）。
         /// </summary>
         [PLParam(Description = "対応するボーンのオブジェクト名。BoneNames と同じ並び。渡すと boneIndices の代わりに名前から索引を引く")]
         public string[] BoneObjectNames { get; }

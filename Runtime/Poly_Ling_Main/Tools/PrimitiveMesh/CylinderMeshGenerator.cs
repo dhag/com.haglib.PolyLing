@@ -39,9 +39,13 @@ namespace Poly_Ling.PrimitiveMesh
             public const int RadialSegmentsMin = 3;
             public const int RadialSegmentsMax = 48;
 
-            /// <summary>高さ方向の分割数の下限・上限</summary>
+            /// <summary>
+            /// 高さ方向の分割数の下限・上限。
+            /// 上限は小判型（StadiumBox の LengthSegments / HeightSegments）と同じ 64。
+            /// 脚のような長い円柱へウェイトを塗るには 16 では粗い。
+            /// </summary>
             public const int HeightSegmentsMin = 1;
-            public const int HeightSegmentsMax = 16;
+            public const int HeightSegmentsMax = 64;
 
             /// <summary>縁の丸めの下限。上限は高さと半径から決まるので定数にできない</summary>
             public const float EdgeRadiusMin = 0f;

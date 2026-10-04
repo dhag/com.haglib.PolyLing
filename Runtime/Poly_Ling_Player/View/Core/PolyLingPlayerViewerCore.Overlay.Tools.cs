@@ -335,6 +335,19 @@ namespace Poly_Ling.Player
             // ここで先に横取りする。
             if (UpdateHoleSeedOverlay(panel, ctx)) return;
 
+            // ── スキンW範囲塗り ─────────────────────────────────────
+            // 円筒／球の範囲・軸・0%／50%／100% の基準点・半径と高さのハンドル。
+            // 組み立ては SkinWeightVolumeToolHandler が持つ。
+            if (_interactionMode == InteractionMode.SkinWeightVolume)
+            {
+                if (_skinWeightVolumeHandler != null
+                    && _skinWeightVolumeHandler.TryBuildOverlay(ctx, out var swvLines, out var swvPoints))
+                    panel.UpdateTopoToolOverlay(swvLines, swvPoints, null);
+                else
+                    panel.HideTopoToolOverlay();
+                return;
+            }
+
             // ── 格子変形 ─────────────────────────────────────────────
             // 格子の線と制御点はメッシュ頂点ではなく作業軸ローカルの制御点を
             // 投影したもの。組み立ては LatticeToolHandler が持つ。

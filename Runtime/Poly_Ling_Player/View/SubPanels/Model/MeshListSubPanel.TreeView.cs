@@ -56,7 +56,7 @@ namespace Poly_Ling.MeshListV2
         // 縦操作中は横スクロールバーの出入りを止める。
         // 既定の Auto は内容幅の変化で出たり消えたりし、そのたびに
         // 表示領域の高さが変わってリストが揺れる。
-        /// <summary>ツリーを入れているスクロール。中身はツリーが作る行なので項目にしない。</summary>
+        /// <summary>ツリーを入れているスクロール。中身はツリーが作る行なのでボタンや入力欄にしない。</summary>
         [UiControl(Ignore = true)]
         private ScrollView _treeScroll;
         private bool _hScrollerLocked;

@@ -58,6 +58,36 @@ namespace Poly_Ling.UI
         /// ビフォー／アフターからプリズム群を作り、各ターゲット頂点の移植法線を求める。
         /// 失敗時は null を返し error に理由を入れる。
         /// </summary>
+        /// <summary>
+        /// ビフォー／アフターが同一トポロジ（面数・各面のコーナー数が一致）かを、
+        /// 座標を読まずに調べる。計算の前にパネルが条件の不一致を示すために使う。
+        /// 判定は NormalPrismSolver.Build の検査と同じ。
+        /// </summary>
+        /// <param name="reason">一致しないとき、最初に食い違った箇所。</param>
+        public static bool CheckPairTopology(MeshObject before, MeshObject after, out string reason)
+        {
+            reason = null;
+            if (before == null) { reason = "ビフォーのメッシュがありません"; return false; }
+            if (after  == null) { reason = "アフターのメッシュがありません"; return false; }
+            if (before.Faces.Count != after.Faces.Count)
+            {
+                reason = $"面数が一致しません（ビフォー {before.Faces.Count} / アフター {after.Faces.Count}）";
+                return false;
+            }
+            for (int fi = 0; fi < before.Faces.Count; fi++)
+            {
+                var bf = before.Faces[fi];
+                var af = after.Faces[fi];
+                int bc = bf?.VertexCount ?? 0, ac = af?.VertexCount ?? 0;
+                if (bc != ac)
+                {
+                    reason = $"面 {fi} のコーナー数が一致しません（ビフォー {bc} / アフター {ac}）";
+                    return false;
+                }
+            }
+            return true;
+        }
+
         public static List<NormalTransplantPreviewState.TargetSample> ComputeSamples(
             ModelContext model,
             int beforeIndex, int afterIndex,
@@ -114,6 +144,7 @@ namespace Poly_Ling.UI
                     VertexCount = mo.VertexCount,
                     LocalNormals = new Vector3[mo.VertexCount],
                     Resolved = new bool[mo.VertexCount],
+                    Inside = new bool[mo.VertexCount],
                 };
 
                 for (int vi = 0; vi < vc; vi++)
@@ -128,6 +159,7 @@ namespace Poly_Ling.UI
                     sample.LocalNormals[vi] = local.normalized;
                     sample.Resolved[vi] = true;
                     sample.ResolvedCount++;
+                    sample.Inside[vi] = inside;
                     if (inside) sample.InsideCount++;
                 }
 

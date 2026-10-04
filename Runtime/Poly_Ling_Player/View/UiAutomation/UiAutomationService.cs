@@ -1,6 +1,6 @@
 // UiAutomationService.cs
 // UI 自動操作の本体。登録簿（UiAutomationRegistry）の意味 ID で
-// パネル表示・項目の表示（Reveal）・値の読み書き・ボタンの押下・強調表示を行う。
+// パネル表示・ボタンや入力欄の表示（Reveal）・値の読み書き・ボタンの押下・強調表示を行う。
 // Runtime/Poly_Ling_Player/View/UiAutomation/ に配置
 //
 // 【利用者の操作と同じ経路を通す】
@@ -15,7 +15,7 @@
 //     ReadOnly            … 値の変更もボタンの押下もしない
 //     Destructive / File… … allowDestructive を付けたときだけ変える・押す
 //     UserOnly            … 自動では変えない・押さない（ダイアログを開く等）
-//     Unspecified         … 値の項目は SafeWrite として扱う。ボタンは押さない
+//     Unspecified         … 入力欄は SafeWrite として扱う。ボタンは押さない
 //
 // 【レイアウト確定を待つ】
 //   ShowRightPanel は style.display を書き換えるだけで、レイアウトは次の更新で確定する
@@ -108,7 +108,7 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // パネル表示・項目の表示
+        // パネル表示・ボタンや入力欄の表示
         // ================================================================
 
         public CommandResult ShowPanel(string panelId)
@@ -128,7 +128,7 @@ namespace Poly_Ling.Player
         {
             if (!_registry.TryGetControl(controlId, out var c))
             {
-                // 動的な項目（モードごとの設定行など）は、所属パネルを開くと作られる。
+                // 動的なボタンや入力欄（モードごとの設定行など）は、所属パネルを開くと作られる。
                 if (!_registry.TryGetDynamicPanelFor(controlId, out var dynPanel))
                     return CommandResult.Fail($"unknown controlId: {controlId}");
                 dynPanel.Show();
@@ -231,7 +231,7 @@ namespace Poly_Ling.Player
             err = c.Setter != null ? c.Setter(text ?? "") : WriteValue(element, text ?? "");
             if (err != null) return CommandResult.Fail(err);
 
-            // 項目側の丸め（スライダーの範囲など）を反映した値を返す。
+            // 入力欄側の丸め（スライダーの範囲など）を反映した値を返す。
             string after;
             var now = c.Element;
             if (c.Getter != null) after = c.Getter() ?? "";

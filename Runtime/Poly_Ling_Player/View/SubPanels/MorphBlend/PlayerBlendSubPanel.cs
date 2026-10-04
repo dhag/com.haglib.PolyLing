@@ -98,7 +98,7 @@ namespace Poly_Ling.Player
         private bool _suppressCallbacks = false;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "blend.<下の Id>"（UiControlAttribute.cs）。

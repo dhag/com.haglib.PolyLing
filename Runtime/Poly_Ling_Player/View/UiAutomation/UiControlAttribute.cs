@@ -1,5 +1,5 @@
 // UiControlAttribute.cs
-// UI 自動操作で操作できる項目の宣言。サブパネルの VisualElement 型のフィールド・
+// UI 自動操作で操作できるボタンや入力欄の宣言。サブパネルの VisualElement 型のフィールド・
 // プロパティに付ける。UiAutomationRegistry.RegisterObject が集めて登録する。
 // Runtime/Poly_Ling_Player/View/UiAutomation/ に配置
 //
@@ -25,10 +25,10 @@ using UnityEngine.UIElements;
 
 namespace Poly_Ling.Player
 {
-    /// <summary>項目を外から操作してよい度合い。</summary>
+    /// <summary>ボタンや入力欄を外から操作してよい度合い。</summary>
     public enum UiSafety
     {
-        /// <summary>未指定。値の項目は SafeWrite として扱う。ボタンは押さない（検査で数える）。</summary>
+        /// <summary>未指定。入力欄は SafeWrite として扱う。ボタンは押さない（検査で数える）。</summary>
         Unspecified = 0,
 
         /// <summary>読むだけ。値の変更もボタンの押下もしない。</summary>
@@ -71,7 +71,7 @@ namespace Poly_Ling.Player
         /// <summary>
         /// Ignore と一緒に使う。このコンテナの中身はデータに合わせて作り直す行
         /// （一覧の各行のボタン・チェックなど）で、固定の ID を付けられない。
-        /// 検査（未登録の部品）はこのコンテナの中を見ない。
+        /// 検査（未登録のボタンや入力欄）はこのコンテナの中を見ない。
         /// </summary>
         public bool Rows { get; set; }
 
@@ -97,8 +97,8 @@ namespace Poly_Ling.Player
     }
 
     /// <summary>
-    /// UI 部品をまとめて持つ補助オブジェクト（TempMirrorControls など）のフィールドに付ける。
-    /// RegisterObject はこのフィールドの中身も同じパネルの項目として取り込み、
+    /// ボタンや入力欄をまとめて持つ補助オブジェクト（TempMirrorControls など）のフィールドに付ける。
+    /// RegisterObject はこのフィールドの中身も同じパネルのボタンや入力欄として取り込み、
     /// ID を "&lt;パネル ID&gt;.&lt;Prefix&gt;.&lt;中の Id&gt;" にする。
     /// 検査（付け忘れ）も中身まで見る。
     /// </summary>
@@ -109,7 +109,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 中身を表示する下準備のメソッド名（外側のクラスの bool M()）。
-        /// 中身の各項目の Reveal より先に呼ぶ。表示を変えたら true。
+        /// 中身のそれぞれのボタンや入力欄の Reveal より先に呼ぶ。表示を変えたら true。
         /// </summary>
         public string Reveal { get; set; } = "";
 
@@ -126,10 +126,10 @@ namespace Poly_Ling.Player
     }
 
     /// <summary>
-    /// 作り直すたびに中身が変わる項目（モードごとの設定行など）の置き場。
+    /// 作り直すたびに中身が変わるボタンや入力欄（モードごとの設定行など）の置き場。
     /// サブパネルがフィールドに持ち、作り直すときに Begin してから、行を作る補助関数が Add する。
-    /// RegisterObject はこの型のフィールドを見つけると「動的な項目の出どころ」として登録簿へ渡し、
-    /// 項目の検索・一覧・検査はその時点の中身を使う。
+    /// RegisterObject はこの型のフィールドを見つけると「動的なボタンや入力欄の出どころ」として登録簿へ渡し、
+    /// ボタンや入力欄の検索・一覧・検査はその時点の中身を使う。
     ///
     /// 【組（Group）】1 つのセクションをモードで切り替えるパネル（書き出しの PMX / MQO など）は、
     /// モードごとに別のパネル ID で登録し、パネルごとにどの組を見るかを決める。
@@ -154,13 +154,13 @@ namespace Poly_Ling.Player
         private readonly List<VisualElement> _rows = new List<VisualElement>();
         private string _group = "";
 
-        /// <summary>今ある項目。</summary>
+        /// <summary>今あるボタンや入力欄。</summary>
         public IReadOnlyList<Entry> Entries => _entries;
 
         /// <summary>今あるデータ行のコンテナ（固定の ID を付けられない行の入れ物。検査はこの中を見ない）。</summary>
         public IReadOnlyList<VisualElement> Rows => _rows;
 
-        /// <summary>作り直しの始めに呼ぶ。前回の項目を捨て、今回の組を決める。</summary>
+        /// <summary>作り直しの始めに呼ぶ。前回のボタンや入力欄を捨て、今回の組を決める。</summary>
         public void Begin(string group)
         {
             _entries.Clear();
@@ -175,7 +175,7 @@ namespace Poly_Ling.Player
             return container;
         }
 
-        /// <summary>項目を加える。作った要素をそのまま返すので、生成式に挟んで使える。</summary>
+        /// <summary>ボタンや入力欄を加える。作った要素をそのまま返すので、生成式に挟んで使える。</summary>
         public T Add<T>(string id, T element, string description, UiSafety safety = UiSafety.Unspecified,
                         Func<bool> reveal = null)
             where T : VisualElement
@@ -198,8 +198,8 @@ namespace Poly_Ling.Player
         /// <summary>
         /// ID（と組）で探す。group が null なら組を問わない。
         /// 行の一部だけを作り直す箇所（Begin を通らずに Clear して Add し直す）では、
-        /// 外された古い要素の項目が残る。画面に付いている要素の項目を先に返し、
-        /// どれも付いていなければ最後に加えた項目を返す。
+        /// 外された古い要素のボタンや入力欄が残る。画面に付いている要素のボタンや入力欄を先に返し、
+        /// どれも付いていなければ最後に加えたボタンや入力欄を返す。
         /// </summary>
         public Entry Find(string id, string group)
         {

@@ -51,7 +51,7 @@ namespace Poly_Ling.Player
         private float           _maxTime;       // 秒
         private string          _filePath;
 
-        // ── UI 要素 ───────────────────────────────────────────────────────
+        // ── ボタンや入力欄 ───────────────────────────────────────────────────────
         // UI 自動操作の ID は "unityClipTest.<下の Id>"（UiControlAttribute.cs）。
         // ボーンの一覧は読み込んだクリップに合わせて作り直す行（Rows）。
         [UiControl("model", Safety = UiSafety.ReadOnly, Description = "対象モデル")]

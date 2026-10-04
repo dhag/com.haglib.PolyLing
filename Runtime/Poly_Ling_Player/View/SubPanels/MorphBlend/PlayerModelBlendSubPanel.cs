@@ -46,7 +46,7 @@ namespace Poly_Ling.Player
         private readonly Dictionary<int, Slider> _sliderMap = new Dictionary<int, Slider>();
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "modelBlend.<下の Id>"（UiControlAttribute.cs）。

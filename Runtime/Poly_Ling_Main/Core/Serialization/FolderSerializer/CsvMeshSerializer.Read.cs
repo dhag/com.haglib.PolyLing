@@ -263,6 +263,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "nx":
                         ReadNormalExcludeSet(cols, meshObject);
                         break;
+                    case "nxm":
+                        // 直前の nx 行で読んだ除外セットへの付帯情報
+                        {
+                            var nxList = meshObject?.NormalRecalcExcludeList;
+                            if (nxList != null && nxList.Count > 0 && nxList[nxList.Count - 1] != null)
+                                nxList[nxList.Count - 1].ProtectManualNormalEdit = ParseInt(cols, 1) != 0;
+                        }
+                        break;
                     case "lg":
                         ReadLineGroup(cols, meshObject);
                         break;

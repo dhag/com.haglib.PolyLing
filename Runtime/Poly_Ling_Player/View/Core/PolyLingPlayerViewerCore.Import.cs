@@ -419,6 +419,36 @@ namespace Poly_Ling.Player
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
+        /// <summary>
+        /// フォルダの下の STL をまとめて 1 つの新しいモデルへ読み込む（1 ファイル = 1 オブジェクト）。
+        /// 読めなかったファイルは飛ばし、件数を状態表示へ、名前と理由をログへ出す。
+        /// </summary>
+        private void OnImportStlFolder(string folderPath, bool includeSubfolders,
+                                       Poly_Ling.STL.StlImportSettings settings,
+                                       PlayerImportSubPanel.PostOptions post)
+        {
+            var cmd = new ImportStlBatchCommand(
+                folderPath, includeSubfolders, settings,
+                onResult: (model, result) =>
+                {
+                    _localLoader.LoadModel(folderPath, model);
+                    // 読込後オプションが状態表示を書くので、その前に置く。
+                    _status =
+                        $"STLフォルダ読込完了: {System.IO.Path.GetFileName(folderPath)}" +
+                        $" ({result.ImportedFiles}/{result.FoundFiles}ファイル / " +
+                        $"{result.TotalVertices}頂点 / {result.TotalFaces}面" +
+                        (result.Renamed > 0 ? $" / 同名に番号 {result.Renamed}" : "") +
+                        (result.DroppedDegenerateFaces > 0 ? $" / 縮退で除外 {result.DroppedDegenerateFaces}面" : "") +
+                        (result.Failed.Count > 0 ? $" / 失敗 {result.Failed.Count}（コンソール参照）" : "") + ")";
+                    UnityEngine.Debug.Log("[ImportStlFolder] " + _status);
+                    foreach (var (rel, reason) in result.Failed)
+                        UnityEngine.Debug.LogWarning($"[ImportStlFolder] 失敗: {rel}: {reason}");
+                    ApplyImportPostOptions(post);
+                },
+                onError:  msg       => _status = $"STLフォルダ読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
         private void OnImportVrm(string filePath, Poly_Ling.Vrm.Vrm10ImportSettings settings,
                                  PlayerImportSubPanel.PostOptions post)
         {

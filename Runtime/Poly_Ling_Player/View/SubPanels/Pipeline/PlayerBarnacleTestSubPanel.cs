@@ -44,7 +44,7 @@ namespace Poly_Ling.Player
         private const string PlaceName   = "BT_Barnacle";
 
         // UI 自動操作の ID は "barnacleTest.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
         [UiControl("ballRadius", Description = "球（梯子の元）の半径")]
         private FloatField   _ballRadius;
         [UiControl("coneRadius", Description = "円錐の底面半径")]
@@ -501,7 +501,7 @@ namespace Poly_Ling.Player
             float grow   = Mathf.Max(0f, _coneGrow.value);
 
             // 位置はここで計算し、書き込みは SetVertexPositionsCommand に通す。
-            // 直接書き換えると Dispatch を通らず、手本の記録にも Undo にも残らない。
+            // 直接書き換えると Dispatch を通らず、シナリオの記録にも Undo にも残らない。
             int ballMoved = 0;
             if (squash > 0f)
             {

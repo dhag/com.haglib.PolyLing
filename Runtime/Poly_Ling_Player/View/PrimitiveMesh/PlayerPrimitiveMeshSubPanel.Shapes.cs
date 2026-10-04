@@ -258,6 +258,26 @@ namespace Poly_Ling.Player
                 _lastSandbox = sbx.Value;
         }
 
+        /// <summary>
+        /// 図形のキー（ShapeKeys。CreatePrimitiveMeshCommand.ShapeName と同じ文字列）から、
+        /// その図形が載っているカテゴリを引く。どのカテゴリにも載っていなければ false。
+        /// シナリオの案内バーが経路を割り出すのに使う（UiRouteCatalog）。
+        /// </summary>
+        public static bool TryGetCategoryOfKey(string key, out ShapeCategory category)
+        {
+            category = ShapeCategory.Basic;
+            int idx = System.Array.IndexOf(ShapeKeys, key);
+            if (idx < 0) return false;
+            var k = (ShapeKind)idx;
+            foreach (ShapeCategory c in System.Enum.GetValues(typeof(ShapeCategory)))
+            {
+                if (System.Array.IndexOf(ShapesOf(c), k) < 0) continue;
+                category = c;
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>指定形状のカテゴリを返す。</summary>
         public ShapeCategory CategoryOf(ShapeKind k)
         {

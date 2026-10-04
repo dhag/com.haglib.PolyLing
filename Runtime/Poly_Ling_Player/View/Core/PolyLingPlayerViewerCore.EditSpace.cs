@@ -238,10 +238,12 @@ namespace Poly_Ling.Player
                 case ImportMqoFileCommand _:
                 case ImportObjFileCommand _:
                 case ImportStlFileCommand _:
+                case ImportStlFolderCommand _:
                 case ImportVrmFileCommand _:
                 case ImportMqoVertexPositionsCommand _:
                 case ImportPmxVertexAttributesCommand _:
                 case ResetProjectCommand _:
+                case CreateEmptyModelCommand _:
                 // モデル切替・削除
                 case SwitchModelCommand _:
                 case DeleteModelCommand _:

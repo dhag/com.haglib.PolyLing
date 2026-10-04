@@ -59,10 +59,37 @@ namespace Poly_Ling.Player
                 _sceneRoot,
                 new PolyLingPlayerViewerCore.RemoteConfig
                 {
-                    Mode              = _remoteMode,
+                    Mode              = ResolveRemoteMode(_remoteMode),
                     ClientAutoConnect = _clientAutoConnect,
                     ServerAutoStart   = _serverAutoStart,
                 });
+        }
+
+        /// <summary>起動引数でリモートモードを指定する引数名。値は client / server / none。</summary>
+        public const string RemoteModeArg = "--polyling-remote=";
+
+        /// <summary>
+        /// 起動引数 --polyling-remote=client|server|none があれば、シーンの設定より優先する。
+        /// 同じビルドをクライアントにもサーバにもして起動するため（MCP の player_launch が渡す）。
+        /// 引数が無い・値が不明なら、シーンの設定のまま。
+        /// </summary>
+        private static PolyLingPlayerViewerCore.RemoteMode ResolveRemoteMode(PolyLingPlayerViewerCore.RemoteMode sceneMode)
+        {
+            foreach (var arg in System.Environment.GetCommandLineArgs())
+            {
+                if (arg == null || !arg.StartsWith(RemoteModeArg, System.StringComparison.OrdinalIgnoreCase)) continue;
+                string v = arg.Substring(RemoteModeArg.Length).Trim().ToLowerInvariant();
+                switch (v)
+                {
+                    case "client": Debug.Log("[PolyLingPlayerViewer] 起動引数でクライアント"); return PolyLingPlayerViewerCore.RemoteMode.Client;
+                    case "server": Debug.Log("[PolyLingPlayerViewer] 起動引数でサーバ");       return PolyLingPlayerViewerCore.RemoteMode.Server;
+                    case "none":   Debug.Log("[PolyLingPlayerViewer] 起動引数でリモートなし"); return PolyLingPlayerViewerCore.RemoteMode.None;
+                    default:
+                        Debug.LogWarning($"[PolyLingPlayerViewer] 起動引数の値が不明です: {arg}（シーンの設定を使う）");
+                        return sceneMode;
+                }
+            }
+            return sceneMode;
         }
 
         // Phase 2a-2f: MonoBehaviour.Update / LateUpdate はイベント駆動規約に違反するため削除。

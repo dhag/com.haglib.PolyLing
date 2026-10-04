@@ -742,6 +742,8 @@ namespace Poly_Ling.Player
                 SendCommand = cmd => DispatchHost(cmd),
             };
             _lineExtrudeSubPanel.Build(_layoutRoot.LineExtrudeSection);
+
+            BuildSubdivisionPanel();
         }
     }
 }

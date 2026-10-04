@@ -207,6 +207,39 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
+        /// 頂点ごとに与えた値（MeshObject の頂点索引順、0..1）でヒートマップ色を焼き込む。
+        /// 適用前のウェイトを見せるプレビュー（スキンW範囲塗り）に使う。
+        /// 展開順は他の版と同じ MeshExpansion。
+        /// </summary>
+        /// <returns>値が 0 より大きかった頂点数。診断用。</returns>
+        public static int ApplyVisualizationColors(Mesh mesh, MeshObject mo, float[] perVertexWeights)
+        {
+            if (mesh == null || mo == null) return 0;
+            if (perVertexWeights == null) return ApplyVisualizationColors(mesh, mo, -1);
+
+            int unityVertCount = mesh.vertexCount;
+            var colors = new Color[unityVertCount];
+            int weightedCount = 0;
+            int colorIdx = 0;
+
+            MeshExpansion.Enumerate(mo, (vIdx, uvIdx, expIdx) =>
+            {
+                if (expIdx >= unityVertCount) return;
+                float w = (vIdx >= 0 && vIdx < perVertexWeights.Length) ? Mathf.Clamp01(perVertexWeights[vIdx]) : 0f;
+                if (uvIdx == 0 && w > 0f) weightedCount++;
+                colors[expIdx] = WeightToHeatmapColor(w);
+                colorIdx = expIdx + 1;
+            });
+
+            var greyFill = new Color(0.3f, 0.3f, 0.3f, 1f);
+            for (; colorIdx < unityVertCount; colorIdx++)
+                colors[colorIdx] = greyFill;
+
+            mesh.colors = colors;
+            return weightedCount;
+        }
+
+        /// <summary>
         /// 複数ボーンのウェイトを合計してヒートマップ色を焼き込む
         /// （Blender の Multi-Paint 相当）。
         ///

@@ -556,6 +556,18 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// カテゴリ 6: ライト設定の変更（4面共通）。
+        /// 契機: ライトサブパネルの各項目変更・追加・削除。
+        /// </summary>
+        public void EnterDisplaySettingsChanged(ViewportLightSettings ls)
+        {
+#pragma warning disable CS0618
+            SetLightSettings(ls);
+            PresentAll(_lastProjectForPresent);
+#pragma warning restore CS0618
+        }
+
+        /// <summary>
         /// カテゴリ 6: 表示専用の上乗せ描画の中身が変わった。
         /// 契機: 当たり判定パネルの表示フラグ・強調対象の書き換え、
         ///       当たり判定の追加・変更・削除の後の再表示。

@@ -4,16 +4,16 @@
 //
 // 【役割】
 //   Capture     … 実行した生成コマンドと出来た出力先から、グループを 1 件作る
-//   CaptureStep … 同じものをステップ 1 つとして作る（グループへは足さない）
-//   AppendStep  … 既にあるグループの末尾へステップを足す
+//   CaptureStep … 同じものを項目 1 つとして作る（グループへは足さない）
+//   AppendStep  … 既にあるグループの末尾へ項目を足す
 //   IsStale     … ソースが前回ビルド時から変わったか
-//   BuildCommand… グループのステップから今のモデルに合った生成コマンドを組み直す
+//   BuildCommand… グループの項目から今のモデルに合った生成コマンドを組み直す
 //   PurgeMissing… 参照先が消えたグループを片づける（明示操作からのみ呼ぶ）
 //
-// 【ステップ単位で働く】
+// 【項目単位で働く】
 //   索引の引き直し・取り込みの掛け直しはコマンド 1 つぶんの仕事なので、
-//   中身はステップを受け取る形にしてある。グループを受け取る旧来の口は
-//   ステップ 0 を見る包みで、呼び出し側はそのままでよい。
+//   中身は項目を受け取る形にしてある。グループを受け取る旧来の口は
+//   項目 0 を見る包みで、呼び出し側はそのままでよい。
 //
 // 【索引を保存しない】
 //   Args に入る「索引で描画オブジェクトを指す値」は保存した時点で古くなる。
@@ -141,7 +141,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 実行した生成コマンドからステップを 1 つ作る。グループへは足さない。
+        /// 実行した生成コマンドから項目を 1 つ作る。グループへは足さない。
         ///
         /// Args は PanelCommandFactory.ToArgs で取る（新しい直列化機構は作らない）。
         /// IsMeshRef が付いたキーは、そのときの索引を ObjectId へ置き換えて控える。
@@ -202,7 +202,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// 実行した生成コマンドを、既にあるグループの末尾へステップとして足す。
+        /// 実行した生成コマンドを、既にあるグループの末尾へ項目として足す。
         /// ダイジェストは足したあとに取り直す（ソースの集合が変わりうるため）。
         /// </summary>
         public static ObjectGroupStep AppendStep(
@@ -219,7 +219,7 @@ namespace Poly_Ling.Ops
             return step;
         }
 
-        /// <summary>ステップ 0 の出力先を差し替える。ダイジェストは触らない。</summary>
+        /// <summary>項目 0 の出力先を差し替える。ダイジェストは触らない。</summary>
         public static void SetOutput(ObjectGroup group, ulong outputObjectId)
         {
             if (group == null) return;
@@ -227,7 +227,7 @@ namespace Poly_Ling.Ops
         }
 
         /// <summary>
-        /// ステップの出力先を丸ごと差し替える。ダイジェストは触らない。
+        /// 項目の出力先を丸ごと差し替える。ダイジェストは触らない。
         /// 0 は控えない（＝出力先なし）。
         /// </summary>
         public static void SetOutputs(
@@ -341,8 +341,8 @@ namespace Poly_Ling.Ops
             => BuildCommand(project, modelIndex, group, 0, out error);
 
         /// <summary>
-        /// グループの stepIndex 番目のステップから生成コマンドを組み直す。
-        /// やることは 1 ステップ版の BuildCommand と同じ。
+        /// グループの stepIndex 番目の項目から生成コマンドを組み直す。
+        /// やることは 1 項目版の BuildCommand と同じ。
         /// </summary>
         public static PanelCommand BuildCommand(
             ProjectContext project, int modelIndex, ObjectGroup group, int stepIndex,
@@ -354,12 +354,12 @@ namespace Poly_Ling.Ops
             if (!group.IsValid)         { error = "グループに生成コマンドが記録されていません"; return null; }
 
             var step = group.GetStep(stepIndex);
-            if (step == null) { error = $"ステップ {stepIndex} がありません"; return null; }
+            if (step == null) { error = $"項目 {stepIndex} がありません"; return null; }
 
-            // 実行しない段（説明・指示・確認）はコマンドにならない。
+            // 実行しない項目（説明・指示・確認）はコマンドにならない。
             // 飛ばすかどうかは呼ぶ側が決める（RunObjectGroupStep は飛ばす）。
             if (!step.IsExecutable)
-            { error = $"ステップ {stepIndex} は {step.Kind} で、実行する段ではありません"; return null; }
+            { error = $"項目 {stepIndex} は {step.Kind} で、実行する項目ではありません"; return null; }
 
             Type t = PanelCommandFactory.ResolveType(step.Action);
             if (t == null) { error = $"未対応の action: {step.Action}"; return null; }
@@ -743,7 +743,7 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// 旧版の段（ProfileDim が 3 未満）の Args を今の形へ直す。
+        /// 旧版の項目（ProfileDim が 3 未満）の Args を今の形へ直す。
         ///
         /// LegacyXYPairs の印が付いたキーの値は「実数の平坦な列を 2 個ずつ」で書かれている。
         /// これを z=0 を足して 3 個ずつに書き直す。Vector3[] も float[]（ループの平坦な点列）も
@@ -772,7 +772,7 @@ namespace Poly_Ling.Ops
             step.ProfileDim = ObjectGroupStep.CurrentProfileDim;
         }
 
-        /// <summary>グループの全段へ UpgradeLegacyProfileArgs を掛ける。</summary>
+        /// <summary>グループの全項目へ UpgradeLegacyProfileArgs を掛ける。</summary>
         public static void UpgradeLegacyProfileArgs(ObjectGroup group)
         {
             if (group?.Steps == null) return;

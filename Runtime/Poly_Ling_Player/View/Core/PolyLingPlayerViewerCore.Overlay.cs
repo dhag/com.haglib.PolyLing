@@ -490,6 +490,8 @@ namespace Poly_Ling.Player
                 case InteractionMode.Deform:          return _deformHandler;
                 case InteractionMode.Lattice:         return _latticeHandler;
                 case InteractionMode.Camera:          return _cameraHandler;
+                // 法線編集：ハンドルのときだけダイヤ型ギズモ（他のサブモードでは出さない）。
+                case InteractionMode.NormalEdit:      return _normalEditHandler;
                 // 辺押し出し：パネルで選んだギズモ（移動は既定の移動ギズモ）。
                 case InteractionMode.EdgeExtrude:
                     switch (_edgeExtrudeHandler?.Gizmo ?? EdgeExtrudeToolHandler.GizmoKind.Move)
@@ -504,6 +506,8 @@ namespace Poly_Ling.Player
                 case InteractionMode.AdvancedSelect:
                 case InteractionMode.SkinWeightPaint:
                 case InteractionMode.SkinWeightNumeric:
+                // スキンW範囲塗りは頂点を動かさない。範囲とハンドルは重ね表示で描く。
+                case InteractionMode.SkinWeightVolume:
                 // 点指定図形は頂点を動かさないので移動ギズモを出さない。
                 case InteractionMode.PointDefinedPrimitive:
                 case InteractionMode.None:            return null;

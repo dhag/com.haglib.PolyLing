@@ -2,17 +2,26 @@
 // 選択範囲に対する法線編集操作。
 // Runtime/Poly_Ling_Main/Core/Ops/ に配置
 //
-// 【対象範囲のルール】
-//   面選択がある     → その面のコーナーのみ
-//   頂点選択のみある → その頂点が参照する全スロット
-//   辺選択のみある   → 辺の両端頂点が参照する全スロット
-//   選択が無い       → メッシュ全体
+// 【対象範囲のルール】（CollectTargetCorners）
+//   面選択がある         → その面のコーナーのみ（頂点・辺の選択は見ない）
+//   面選択が無く、頂点か辺の選択がある
+//                        → 選択頂点と選択辺の両端頂点（和集合）が参照する全スロット
+//   選択が無い           → メッシュ全体
+//   RecalcByAngle だけは上の規則に従わずメッシュ全体が対象（スロットを作り直すため）。
+//   ただし法線再計算の除外セットが指すコーナーは元の法線を保つ。
+//
+// 【共有スロットの扱い】
+//   複数のコーナーが同じスロットを参照できる。現在値から計算する操作（Flip / Smooth）は
+//   （頂点, スロット）の組で重複を除き、元の値を固定してから 1 スロット 1 回だけ書く。
+//   重複したまま書くと、反転が偶数回かかって元に戻る・補間が複数回かかる、が起きる。
 //
 // 【不変条件（厳守）】
 //   Vertex.UVs.Count == Vertex.Normals.Count
 //   Face.UVIndices[j] == Face.NormalIndices[j]
-//   スロットを増やす操作（Break）は Vertex.GetOrAddUVNormal のみを使う。
+//   スロットを増やす経路は 3 つだけ：Break（Vertex.GetOrAddUVNormal）、
+//   SplitKeepDirection と IsolateTargetSlots（Vertex.AddUVNormalSlot。値が同じでも必ず別スロット）。
 //   それ以外の操作は既存スロットの値を書き換えるだけでスロット数を変えない。
+//   スロットが増えると Unity Mesh の展開頂点数が変わるため、モーフの展開索引との対応がずれる。
 //   各操作の末尾で NormalSmoothingOps.ValidateSlotInvariant を実行する。
 //
 // 【Unify がスロットを畳まない理由】
@@ -23,9 +32,47 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Selection;
 
 namespace Poly_Ling.Ops
 {
+    /// <summary>
+    /// 法線編集 1 回分の結果。値は処理の前後を比べた実測で、操作側の自己申告ではない。
+    /// </summary>
+    public sealed class NormalEditResult
+    {
+        public string Operation = "";
+        /// <summary>適用先として渡されたオブジェクト数。</summary>
+        public int TargetObjects;
+        /// <summary>法線かスロット構成が実際に変わったオブジェクト数。</summary>
+        public int ChangedObjects;
+        /// <summary>法線が変わった面コーナーの総数。</summary>
+        public int ChangedCorners;
+        /// <summary>変更したオブジェクトの法線スロット総数（前・後）。</summary>
+        public int SlotsBefore;
+        public int SlotsAfter;
+        /// <summary>実体側の結果を写し直した生成ミラーの数。</summary>
+        public int MirrorObjects;
+        /// <summary>「手動の法線編集からも守る」除外セットのため対象から外したコーナー数。</summary>
+        public int ProtectedCorners;
+        /// <summary>変わらなかったオブジェクトと、その理由。</summary>
+        public List<string> Skipped = new List<string>();
+
+        public string Summary
+        {
+            get
+            {
+                if (TargetObjects == 0) return $"{Operation}: 対象がありません";
+                string s = $"{Operation}: {ChangedObjects}/{TargetObjects} オブジェクト / "
+                         + $"{ChangedCorners} コーナー / スロット {SlotsBefore}→{SlotsAfter}";
+                if (MirrorObjects > 0) s += $" / ミラー {MirrorObjects}";
+                if (ProtectedCorners > 0) s += $" / 保護で除外 {ProtectedCorners} コーナー";
+                if (Skipped.Count > 0) s += $" / 変更なし: {string.Join(", ", Skipped)}";
+                return s;
+            }
+        }
+    }
+
     /// <summary>面コーナー（面インデックス + コーナー番号）の指定。</summary>
     public readonly struct FaceCorner
     {
@@ -39,7 +86,11 @@ namespace Poly_Ling.Ops
         }
     }
 
-    public static class NormalEditOps
+    /// <summary>
+    /// 法線編集の個々の操作。実行の手順（対象の収集・保護・分離・強度）は
+    /// NormalEditOps.Pipeline.cs の Execute が持つ。パネルのプレビューも同じ Execute を通す。
+    /// </summary>
+    public static partial class NormalEditOps
     {
         private const float SlotTolerance = 0.0001f;
 
@@ -48,14 +99,31 @@ namespace Poly_Ling.Ops
         // ================================================================
 
         /// <summary>
-        /// 選択状態から編集対象の面コーナーを列挙する。
+        /// 選択状態から編集対象の面コーナーを列挙する（規則はファイル冒頭）。
         /// 3頂点未満の面（補助線）は常に対象外。
         /// </summary>
         public static List<FaceCorner> CollectTargetCorners(
             MeshObject mesh,
             IReadOnlyCollection<int> selectedFaces,
-            IReadOnlyCollection<int> selectedVertices)
+            IReadOnlyCollection<int> selectedVertices,
+            IEnumerable<VertexPair> selectedEdges = null)
         {
+            // 頂点選択と辺の両端頂点をまとめる（面選択があれば使わない）
+            if ((selectedFaces == null || selectedFaces.Count == 0) && selectedEdges != null)
+            {
+                HashSet<int> merged = null;
+                foreach (var e in selectedEdges)
+                {
+                    if (merged == null)
+                        merged = selectedVertices != null
+                            ? new HashSet<int>(selectedVertices)
+                            : new HashSet<int>();
+                    merged.Add(e.V1);
+                    merged.Add(e.V2);
+                }
+                if (merged != null) selectedVertices = merged;
+            }
+
             var result = new List<FaceCorner>();
             if (mesh == null) return result;
 
@@ -179,6 +247,74 @@ namespace Poly_Ling.Ops
             return n > 0 ? sum / n : Vector3.zero;
         }
 
+        /// <summary>
+        /// 対象コーナーを（頂点, スロット）の組で重複除去する。
+        /// 各組につき最初に現れたコーナーを代表として返す（書き込みはその 1 本で足りる）。
+        /// </summary>
+        private static List<FaceCorner> UniqueSlotCorners(MeshObject mesh, IReadOnlyList<FaceCorner> corners)
+        {
+            var result = new List<FaceCorner>();
+            var seen   = new HashSet<(int, int)>();
+            foreach (var fc in corners)
+            {
+                int slot = SlotOf(mesh, fc, out int vi);
+                if (slot < 0) continue;
+                if (seen.Add((vi, slot))) result.Add(fc);
+            }
+            return result;
+        }
+
+        // ================================================================
+        // 結果の実測
+        // ================================================================
+
+        /// <summary>面コーナーごとの現在の法線を写す（読めないコーナーは null 扱いで zero）。</summary>
+        public static Vector3[][] CaptureCornerNormals(MeshObject mesh)
+        {
+            if (mesh == null) return new Vector3[0][];
+            var result = new Vector3[mesh.Faces.Count][];
+            for (int fi = 0; fi < mesh.Faces.Count; fi++)
+            {
+                var face = mesh.Faces[fi];
+                if (face == null) { result[fi] = new Vector3[0]; continue; }
+                var arr = new Vector3[face.VertexCount];
+                for (int j = 0; j < face.VertexCount; j++)
+                    arr[j] = TryReadNormal(mesh, new FaceCorner(fi, j), out var n) ? n : Vector3.zero;
+                result[fi] = arr;
+            }
+            return result;
+        }
+
+        /// <summary>CaptureCornerNormals の結果と現在の法線を比べ、変わったコーナー数を返す。</summary>
+        public static int CountChangedCorners(MeshObject mesh, Vector3[][] before)
+        {
+            if (mesh == null || before == null) return 0;
+            int changed = 0;
+            int faceCount = Mathf.Min(mesh.Faces.Count, before.Length);
+            for (int fi = 0; fi < faceCount; fi++)
+            {
+                var face = mesh.Faces[fi];
+                if (face == null) continue;
+                var prev = before[fi];
+                int n = Mathf.Min(face.VertexCount, prev.Length);
+                for (int j = 0; j < n; j++)
+                {
+                    Vector3 cur = TryReadNormal(mesh, new FaceCorner(fi, j), out var v) ? v : Vector3.zero;
+                    if ((cur - prev[j]).sqrMagnitude > 1e-10f) changed++;
+                }
+            }
+            return changed;
+        }
+
+        /// <summary>メッシュ全体の法線スロット数。</summary>
+        public static int SlotCount(MeshObject mesh)
+        {
+            if (mesh == null) return 0;
+            int total = 0;
+            foreach (var v in mesh.Vertices) total += v.Normals.Count;
+            return total;
+        }
+
         private static int Finish(MeshObject mesh, int changed, string context)
         {
             if (changed > 0)
@@ -196,13 +332,18 @@ namespace Poly_Ling.Ops
         /// <summary>
         /// スムージング角で法線を作り直す。メッシュ全体が対象（NormalSmoothingOps に委譲）。
         /// ハードエッジ分だけスロットが増えるため、呼び出し側は展開頂点数の変化を前提にすること。
+        ///
+        /// 法線再計算の除外セット（MeshObject.NormalRecalcExcludeList）が指すコーナーは
+        /// 再計算前の法線を保つ。保った値でスロットを取るので、除外コーナーと
+        /// 非除外コーナーが同じスロットを奪い合うことはない。
         /// </summary>
         public static void RecalcByAngle(
             MeshObject mesh, float angleDeg, NormalWeightMode weightMode)
         {
             if (mesh == null) return;
+            var fixedNormals = mesh.GetNormalRecalcExcludedCornerNormals();
             NormalSmoothingOps.ApplyFacetSmoothing(
-                mesh, angleDeg, false, mesh.Name, weightMode);
+                mesh, angleDeg, false, fixedNormals, mesh.Name, weightMode);
         }
 
         /// <summary>
@@ -408,7 +549,8 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// 平滑化。辺で繋がった隣接頂点の法線平均と、元の法線を strength で補間する。
-        /// 元の法線は全コーナー分を先に読み出してから使うので、走査順に依存しない。
+        /// 隣接側の法線も補間元の法線も書き込み前に固定し、対象は（頂点, スロット）で
+        /// 重複除去してから 1 スロット 1 回だけ書く。よって走査順にも共有数にも依存しない。
         /// </summary>
         public static int Smooth(
             MeshObject mesh, IReadOnlyList<FaceCorner> corners, float strength)
@@ -458,8 +600,10 @@ namespace Poly_Ling.Ops
                 }
             }
 
+            // 各スロットは 1 回だけ読んで 1 回だけ書く（別スロットへの書き込みは
+            // 互いの読み出しに影響しないので、これで元の値が固定される）
             int changed = 0;
-            foreach (var fc in corners)
+            foreach (var fc in UniqueSlotCorners(mesh, corners))
             {
                 int vi = VertexOf(mesh, fc);
                 if (vi < 0) continue;
@@ -620,13 +764,16 @@ namespace Poly_Ling.Ops
             return Finish(mesh, changed, mesh.Name);
         }
 
-        /// <summary>法線を反転する。</summary>
+        /// <summary>
+        /// 法線を反転する。共有スロットに反転が 2 回かかって元に戻らないよう、
+        /// （頂点, スロット）で重複除去してから各スロットを 1 回だけ反転する。
+        /// </summary>
         public static int Flip(MeshObject mesh, IReadOnlyList<FaceCorner> corners)
         {
             if (mesh == null || corners == null) return 0;
 
             int changed = 0;
-            foreach (var fc in corners)
+            foreach (var fc in UniqueSlotCorners(mesh, corners))
             {
                 if (!TryReadNormal(mesh, fc, out var n)) continue;
 

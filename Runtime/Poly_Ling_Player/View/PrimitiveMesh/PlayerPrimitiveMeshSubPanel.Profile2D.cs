@@ -30,7 +30,7 @@ namespace Poly_Ling.Player
 
         // ── Profile2D キャンバス状態 ──────────────────────────────────────
         // 2D 断面の編集はキャンバス上のポインタ操作が主なので、キャンバスと点の編集欄は
-        // 項目にしない。読み込み・書き出しなど押せるものだけ諸元と同じ置き場（_uiDynamic）に入る。
+        // ボタンや入力欄にしない。読み込み・書き出しなど押せるものだけ諸元と同じ置き場（_uiDynamic）に入る。
         [UiControl(Ignore = true)]
         private VisualElement _p2dCanvas;
         [UiControl(Ignore = true)]

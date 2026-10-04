@@ -86,6 +86,7 @@ namespace Poly_Ling.Player
         public bool   HasTPoseBackup       => _model.TPoseBackup != null;
         public string DiagnoseTPose()      => Poly_Ling.Ops.TPoseConverter.Diagnose(_model.MeshContextList, _model.HumanoidMapping);
         public int HumanoidMissingRequiredCount => Poly_Ling.View.LiveProjectView.HumanoidMissingRequiredOf(_model);
+        public IReadOnlyDictionary<string, int> HumanoidBoneIndexMap => Poly_Ling.View.LiveProjectView.HumanoidBoneIndexMapOf(_model);
         public AvatarRetargetView AvatarRetarget => Poly_Ling.View.LiveProjectView.BuildAvatarRetargetView(_model);
         public IReadOnlyList<string> SpringBoneColliderGroupNames
             => new List<string>(_model.SpringBoneColliderGroupNames ?? new List<string>());

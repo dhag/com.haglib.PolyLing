@@ -2,8 +2,10 @@
 // 図形生成サブパネル：小判型（両側面が半円筒の直方体）。
 // 「上下も丸める」を入れると上下も半円筒になり、四隅は 1/4 球でつながる。
 // 「上下も丸める」が OFF のときだけ、上下のフタの有無を指定できる。
+// 「半小判型」を入れると半分に割った片側だけを作る（割る向きは長さ方向 / 奥行き方向）。
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Data;
@@ -35,6 +37,12 @@ namespace Poly_Ling.Player
         [UiControl(Ignore = true)]
         private VisualElement _stadiumCapHint;
 
+        /// <summary>割る向きの行と説明。「半小判型」OFF のときは隠す。</summary>
+        [UiControl(Ignore = true)]
+        private VisualElement _stadiumHalfAxisRow;
+        [UiControl(Ignore = true)]
+        private VisualElement _stadiumHalfHint;
+
         // ================================================================
         // UI
         // ================================================================
@@ -57,6 +65,19 @@ namespace Poly_Ling.Player
                 () => _stadiumP.RoundTopBottom,
                 v => { _stadiumP.RoundTopBottom = v; D(); RefreshStadiumCapVis(); }));
             c.Add(GearHint(T("StadiumRoundTopBottomHint")));
+
+            // ── 半小判型 ──
+            c.Add(TR(T("StadiumHalf"),
+                () => _stadiumP.Half,
+                v => { _stadiumP.Half = v; D(); RefreshStadiumHalfVis(); }));
+            _stadiumHalfAxisRow = DD(T("StadiumHalfAxis"),
+                new List<string> { T("StadiumHalfAxisLength"), T("StadiumHalfAxisDepth") },
+                () => (int)_stadiumP.HalfAxis,
+                i => { _stadiumP.HalfAxis = (StadiumHalfAxis)i; D(); });
+            c.Add(_stadiumHalfAxisRow);
+            _stadiumHalfHint = GearHint(T("StadiumHalfHint"));
+            c.Add(_stadiumHalfHint);
+            RefreshStadiumHalfVis();
 
             // ── 上下のフタ ──
             _stadiumCapTopRow = TR(T("CapTop"),
@@ -100,6 +121,14 @@ namespace Poly_Ling.Player
             if (_stadiumCapTopRow    != null) _stadiumCapTopRow.style.display    = d;
             if (_stadiumCapBottomRow != null) _stadiumCapBottomRow.style.display = d;
             if (_stadiumCapHint      != null) _stadiumCapHint.style.display      = d;
+        }
+
+        /// <summary>割る向きの行の表示切替（「半小判型」ON のときだけ出す）。</summary>
+        private void RefreshStadiumHalfVis()
+        {
+            var d = _stadiumP.Half ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_stadiumHalfAxisRow != null) _stadiumHalfAxisRow.style.display = d;
+            if (_stadiumHalfHint    != null) _stadiumHalfHint.style.display    = d;
         }
 
         private MeshObject GenerateStadiumBoxMesh()

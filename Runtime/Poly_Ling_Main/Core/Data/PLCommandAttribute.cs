@@ -88,6 +88,13 @@ namespace Poly_Ling.Data
         /// </summary>
         public PLCommandPrecondition Preconditions { get; set; } = PLCommandPrecondition.None;
 
+        /// <summary>
+        /// 人が画面で行う経路を持たない（MCP 専用・照会・内部の後始末など）。
+        /// 経路（PLUiRoute）を書かないコマンドと区別するために明示する（PLUiRouteAttribute.cs）。
+        /// シナリオを流すとき、この項目は枠を出さずにそのまま実行する。
+        /// </summary>
+        public bool NoUi { get; set; }
+
         public PLCommandAttribute() { }
 
         public PLCommandAttribute(string description) { Description = description; }

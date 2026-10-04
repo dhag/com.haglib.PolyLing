@@ -306,6 +306,46 @@ namespace Poly_Ling.Data
                 foreach (var n in noWrites) sb.Append('\n').Append("  ").Append(n);
             }
 
+            // 【参考】画面での経路（PLUiRoute）の未宣言。シナリオの案内バーが赤枠を出すのに使う（PLUiRouteAttribute.cs）。
+            // 経路も「UI なし」（PLCommand.NoUi）も無いものを数える。図形生成は PLUiRouteByShape（継承）で宣言済みとみなす。
+            // 経路に書いたボタン・入力欄の ID が登録されているかは画面側の検査（queryUiAutomationAudit）が見る。
+            // 全コマンドへの宣言が済むまでは完了条件に入れない。
+            var noRoute  = new List<string>();
+            var badRoute = new List<string>();
+            foreach (var t in PLParamAudit.FindCommandTypes())
+            {
+                var a      = t.GetCustomAttribute<PLCommandAttribute>(inherit: false);
+                var routes = t.GetCustomAttributes<PLUiRouteAttribute>(inherit: false);
+                bool any = false;
+                foreach (var r in routes)
+                {
+                    any = true;
+                    if (string.IsNullOrEmpty(r.Name) || r.Items == null || r.Items.Length == 0)
+                        badRoute.Add(t.Name + " : 名前かボタンや入力欄が空の経路");
+                    else
+                        foreach (var item in r.Items)
+                            if (string.IsNullOrWhiteSpace(item)) badRoute.Add(t.Name + " : 「" + r.Name + "」に空のボタンや入力欄");
+                }
+                bool byShape = t.GetCustomAttribute<PLUiRouteByShapeAttribute>(inherit: true) != null;
+                bool noUi    = a != null && a.NoUi;
+                if (any && noUi) badRoute.Add(t.Name + " : 経路と NoUi の両方がある");
+                if (!any && !byShape && !noUi) noRoute.Add(t.Name);
+            }
+
+            sb.Append('\n')
+              .Append("[参考] 画面での経路（PLUiRoute）も UI なし（PLCommand.NoUi）も無いコマンド ").Append(noRoute.Count)
+              .Append("（完了条件ではない）、経路の書き方の誤り ").Append(badRoute.Count);
+            if (badRoute.Count > 0)
+            {
+                sb.Append('\n').Append("── 経路の書き方の誤り ──");
+                foreach (var n in badRoute) sb.Append('\n').Append("  ").Append(n);
+            }
+            if (noRoute.Count > 0)
+            {
+                sb.Append('\n').Append("── PLUiRoute も NoUi も無い ──");
+                foreach (var n in noRoute) sb.Append('\n').Append("  ").Append(n);
+            }
+
             // 機能カテゴリ（PLCommand.Category）。未設定と、正典（PLCommandCategories）に無い綴りを数える。
             // 検索と利用シーンの絞り込みがこれを読むので完了条件に入れる。
             var noCategory  = new List<string>();

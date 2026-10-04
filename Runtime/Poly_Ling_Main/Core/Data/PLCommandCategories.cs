@@ -61,7 +61,7 @@ namespace Poly_Ling.Data
             Pair("vrm",                        "VRM 固有の設定（メタ・視線・一人称）"),
             Pair("underlay",                   "下絵（ビューの背面に敷く参照画像）の設定"),
             Pair("camera",                     "ビューのカメラ（注視点・角度・距離・ズーム）の設定と照会"),
-            Pair("scenario",                   "手本（シナリオ）の作成・実行・記録"),
+            Pair("scenario",                   "シナリオの作成・実行・記録"),
             Pair("mcp",                        "利用シーン・版・監査など AI 連携のための照会"),
             Pair("ui",                         "UI 自動操作と画面更新の通知"),
             Pair("tool",                       "ツール面（汎用のパラメータ設定と起動）"),

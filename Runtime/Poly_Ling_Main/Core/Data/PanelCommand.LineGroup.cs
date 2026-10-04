@@ -13,6 +13,8 @@ namespace Poly_Ling.Data
 {
     [PLCommand(Category = "linegroup", Writes = PLWriteScope.Targets, Description = "線分群を作る。点列から頂点・線分（2 頂点の面）・線分群を一緒に作る。")]
     [PLResult("groupIndex", PLResultKind.Integer, Description = "作った線分群の番号")]
+    [PLUiRoute("線分の追加・編集", "leftPane.fold.Topology", "leftPane.billboardProfileBtn",
+        Note = "メイン画面で点を打って線分群を描き、確定する")]
     public class CreateLineGroupCommand : PanelCommand
     {
         [PLParam(TextKey = "MasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write, Required = true,

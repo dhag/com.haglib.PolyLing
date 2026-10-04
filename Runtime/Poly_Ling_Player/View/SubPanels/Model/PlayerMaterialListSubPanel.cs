@@ -45,7 +45,7 @@ namespace Poly_Ling.Player
         // ── UI ────────────────────────────────────────────────────────────
         // UI 自動操作の ID は "materialList.<下の Id>"（UiControlAttribute.cs）。
         // マテリアルの行と、選んだマテリアルのパラメータ欄（テクスチャ・スライダー・色・サーフェス）は
-        // マテリアルとシェーダーに合わせて作り直すので、固定の項目としては登録しない（Rows）。
+        // マテリアルとシェーダーに合わせて作り直すので、固定のボタンや入力欄としては登録しない（Rows）。
         // シェーダーの選択と名前欄はフィールドに持つので登録する。
         [UiControl("count", Safety = UiSafety.ReadOnly, Description = "マテリアル数")]
         private Label         _countLabel;

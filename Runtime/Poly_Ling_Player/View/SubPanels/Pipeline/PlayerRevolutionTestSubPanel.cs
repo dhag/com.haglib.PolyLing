@@ -33,7 +33,7 @@ namespace Poly_Ling.Player
         private const string OutputName  = "RT_Bottle";
 
         // UI 自動操作の ID は "revolutionTest.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
         [UiControl("height", Description = "全体の高さ")]
         private FloatField   _height;
         [UiControl("bulge", Description = "胴の最大半径")]

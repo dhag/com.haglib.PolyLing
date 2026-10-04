@@ -64,7 +64,7 @@ namespace Poly_Ling.Player
         private string           _filePath;
         private int              _sourceKind;    // 0=VMD, 1=PolyLing モーション
 
-        // ── UI 要素 ───────────────────────────────────────────────────────
+        // ── ボタンや入力欄 ───────────────────────────────────────────────────────
         // UI 自動操作の ID は "motionClipTest.<下の Id>"（UiControlAttribute.cs）。
         // ボーンの一覧は読み込んだクリップに合わせて作り直す行（Rows）。
         [UiControl("model", Safety = UiSafety.ReadOnly, Description = "対象モデル")]

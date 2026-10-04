@@ -787,7 +787,7 @@ namespace Poly_Ling.Data
     /// 頂点位置を直接書く（ローカル座標）。
     ///
     /// 【なぜ要るか】
-    ///   検証パネルが頂点を直接書き換えると Dispatch を通らず、手本の記録にも Undo にも残らない
+    ///   検証パネルが頂点を直接書き換えると Dispatch を通らず、シナリオの記録にも Undo にも残らない
     ///   （藤壺検証の段 11、フリル検証の段 8）。位置の計算はパネル側に残し、書き込みだけをこの口に通す。
     /// </summary>
     [PLCommand(Category = "geometry.position", Effects = PLCommandEffect.VertexPosition, Verification = PLCommandVerification.Geometry, Writes = PLWriteScope.Targets, Description = "描画オブジェクトの頂点位置をローカル座標で書く。vertexIndices と positions（x,y,z を 3 個ずつ）は同じ並び。Undo に残る。")]

@@ -3,23 +3,23 @@
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 利用シーンはプロジェクトにもモデルにも属さない（SceneLibrary.cs の注記）。
-// 振り分けは PlayerCommandDispatcher.Scene.cs が、手本と同じくプロジェクトの null 門より前で行う。
+// 振り分けは PlayerCommandDispatcher.Scene.cs が、シナリオと同じくプロジェクトの null 門より前で行う。
 // 一覧の値はコマンドの戻り値に入れ子の配列を持てないため、利用シーンごとに ';' で連結した文字列で返す。
 
 using System.Collections.Generic;
 
 namespace Poly_Ling.Data
 {
-    /// <summary>モデル・道具一覧・手本・利用シーンの版を返す。</summary>
+    /// <summary>モデル・道具一覧・シナリオ・利用シーンの版を返す。</summary>
     [PLCommand(Writes = PLWriteScope.None, Category = "mcp",
-        Description = "モデル・道具一覧・手本・利用シーンの版と、いま続いている一時的な状態（手本の記録中・実行中、モーフやブレンドのプレビュー中）を返す。前に見たときと同じ版なら取り直さなくてよい。モデルの版は書き込みのあるコマンドが成功するたびに 1 つ進む。一時的な状態の間は、その状態を終えるまで避けるべき操作がある。")]
+        Description = "モデル・道具一覧・シナリオ・利用シーンの版と、いま続いている一時的な状態（シナリオの記録中・実行中、モーフやブレンドのプレビュー中）を返す。前に見たときと同じ版なら取り直さなくてよい。モデルの版は書き込みのあるコマンドが成功するたびに 1 つ進む。一時的な状態の間は、その状態を終えるまで避けるべき操作がある。")]
     [PLResult("modelIndex",       PLResultKind.Integer, Description = "読んだモデルの索引")]
     [PLResult("modelRevision",    PLResultKind.Integer, Description = "モデルの版。モデルが無ければ 0")]
     [PLResult("models",           PLResultKind.Integer, Description = "プロジェクトが持つモデルの数")]
     [PLResult("schemaRevision",   PLResultKind.Text,    Description = "道具一覧の版。コマンドの顔ぶれが変わると変わる")]
-    [PLResult("scenarioRevision", PLResultKind.Integer, Description = "手本の置き場の版")]
+    [PLResult("scenarioRevision", PLResultKind.Integer, Description = "シナリオの置き場の版")]
     [PLResult("sceneRevision",    PLResultKind.Integer, Description = "利用シーンの置き場の版")]
-    [PLResult("activeModes",      PLResultKind.TextArray, Description = "いま続いている一時的な状態。scenarioRecording / scenarioRun / morphPreview / blendPreview。無ければ空", Optional = true)]
+    [PLResult("activeModes",      PLResultKind.TextArray, Description = "いま続いている一時的な状態。scenarioRecording / scenarioRecordingPaused / scenarioRecordingEnded / scenarioRun / morphPreview / blendPreview。無ければ空", Optional = true)]
     public sealed class QueryRevisionsCommand : PanelCommand
     {
         public QueryRevisionsCommand(int modelIndex = 0)
@@ -65,7 +65,7 @@ namespace Poly_Ling.Data
     [PLResult("stateAssumptions",   PLResultKind.TextArray, Description = "想定するモデル状態（名前=true/false）を ';' で連結。names と同じ並び", Optional = true)]
     [PLResult("hazardPolicy",       PLResultKind.TextArray, Description = "危険性ごとの扱い（危険性=allow/warn/require-confirmation/hide）を ';' で連結。names と同じ並び", Optional = true)]
     [PLResult("verificationPolicy", PLResultKind.TextArray, Description = "実行後に確かめることを ';' で連結。names と同じ並び", Optional = true)]
-    [PLResult("relatedScenarios",   PLResultKind.TextArray, Description = "関係する手本の名前を ';' で連結。names と同じ並び", Optional = true)]
+    [PLResult("relatedScenarios",   PLResultKind.TextArray, Description = "関係するシナリオの名前を ';' で連結。names と同じ並び", Optional = true)]
     [PLResult("notes",              PLResultKind.TextArray, Description = "注意書き。names と同じ並び", Optional = true)]
     public sealed class QueryScenesCommand : PanelCommand
     {
@@ -117,7 +117,7 @@ namespace Poly_Ling.Data
         [PLParam(Description = "この利用シーンで実行後に確かめること。名前は polyling_describe の verification と同じ（VertexCount, MorphIntegrity など）")]
         public string[] VerificationPolicy { get; }
 
-        [PLParam(Description = "関係する手本（シナリオ）の名前")]
+        [PLParam(Description = "関係するシナリオの名前")]
         public string[] RelatedScenarios { get; }
 
         [PLParam(Description = "注意書き。禁忌を承知で破る事情など、機械的に表せない例外を書く")]

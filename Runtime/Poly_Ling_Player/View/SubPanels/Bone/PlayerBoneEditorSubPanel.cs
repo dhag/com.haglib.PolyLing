@@ -69,7 +69,7 @@ namespace Poly_Ling.Player
         private void SendCommand(PanelCommand cmd) => _panelContext?.SendCommand(cmd);
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "boneEditor.<下の Id>"（UiControlAttribute.cs）。

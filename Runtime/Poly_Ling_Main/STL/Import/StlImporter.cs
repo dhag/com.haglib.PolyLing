@@ -86,6 +86,55 @@ namespace Poly_Ling.STL
             return Import(document, settings);
         }
 
+        /// <summary>
+        /// ファイル全体を 1 オブジェクトとして読み込む（フォルダ一括読込用）。
+        /// ASCII で solid が複数あっても三角形をすべて 1 つにまとめる。
+        /// 名前は objectName（solid 名は使わない）。頂点の共有はまとめた後の全体で行う。
+        /// </summary>
+        public static StlImportResult ImportFileAsOneObject(
+            string filePath, StlImportSettings settings, string objectName)
+        {
+            var result = new StlImportResult();
+
+            if (string.IsNullOrEmpty(filePath))
+            {
+                result.ErrorMessage = "ファイルパスが空です";
+                return result;
+            }
+            if (!File.Exists(filePath))
+            {
+                result.ErrorMessage = $"ファイルが見つかりません: {filePath}";
+                return result;
+            }
+
+            StlDocument document;
+            try
+            {
+                document = StlParser.ParseFile(filePath);
+            }
+            catch (Exception e)
+            {
+                result.ErrorMessage = e.Message;
+                Debug.LogError($"[StlImporter] パースに失敗: {filePath}\n{e}");
+                return result;
+            }
+
+            var merged = new StlDocument
+            {
+                FileName = document.FileName,
+                IsBinary = document.IsBinary,
+            };
+            var one = new StlSolid
+            {
+                Name = string.IsNullOrEmpty(objectName) ? document.FileName : objectName,
+            };
+            foreach (var solid in document.Solids)
+                if (solid != null) one.Triangles.AddRange(solid.Triangles);
+            merged.Solids.Add(one);
+
+            return Import(merged, settings);
+        }
+
         public static StlImportResult Import(StlDocument document, StlImportSettings settings = null)
         {
             var result = new StlImportResult();

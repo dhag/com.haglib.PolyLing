@@ -1,5 +1,5 @@
 // ScenarioLibrary.cs
-// 手本のオブジェクトグループ（手順の知識）の置き場。
+// シナリオのオブジェクトグループ（手順の知識）の置き場。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 【なぜモデルの外に置くか】
@@ -7,8 +7,8 @@
 //   Undo で差し替えられ（MeshListRecords）、参照の生存を検査され
 //   （ModelInvariantChecker.CheckObjectGroupReferences）、参照先を全て失うと
 //   消される（ObjectGroupOps.PurgeMissing）。
-//   手本は実体を持たないので、同じリストへ入れるとこの 3 か所すべてに
-//   「手本は除く」という例外が要る。置き場を分ければ例外は 1 つも要らない。
+//   シナリオは実体を持たないので、同じリストへ入れるとこの 3 か所すべてに
+//   「シナリオは除く」という例外が要る。置き場を分ければ例外は 1 つも要らない。
 //
 // 【なぜプロジェクトの外に置くか】
 //   手順の知識はプロジェクトをまたいで貯まる。ProjectContext.WorkAxes は
@@ -18,7 +18,7 @@
 // 【型は分けない】
 //   中身は ObjectGroup そのもの。実体付きとの違いは置き場と、
 //   参照（MeshRefIds / OutputObjectIds）が埋まっているかどうかだけ。
-//   型を分けるとステップ列の器が 2 つになり、ObjectGroupOps.CaptureStep の
+//   型を分けると項目列の器が 2 つになり、ObjectGroupOps.CaptureStep の
 //   出力先も 2 つになる。
 //
 // 【原本を渡さない】
@@ -26,15 +26,21 @@
 //   書き戻したいときは Register で明示的に登録する。
 //
 // 【保存先】
-//   <persistentDataPath>/PolyLing/scenarios/<まとまり名>.csv
-//   ひとまとまりの作業（複数の手本）を 1 ファイルに入れる。
-//   どのまとまりに属すかは、読んだファイルで決まる（ObjectGroup には持たせない）。
-//   名前は全ファイルを通して一意。参照は名前で引くので、まとまりをまたいでよい。
+//   <persistentDataPath>/PolyLing/scenarios/<フォルダ>/<名前>.csv
+//   1 シナリオ 1 ファイル。フォルダは何階層でもよく、置き場所（整理）だけを表す。
+//   どのフォルダにあるかは、読んだファイルの場所で決まる（ObjectGroup には持たせない）。
+//   名前は全フォルダを通して一意。親は名前で子を引くので、フォルダを移しても参照は切れない。
 //   形式は objectgroups.csv と同じ（ObjectGroupCsv が正典）。
 //
+// 【フォルダと親子】
+//   フォルダ＝置き場所（1 本は 1 か所。順番を持たない）。
+//   親子＝使い方（ScenarioRef。順番を持ち、1 本の子を何本の親からでも呼べる）。
+//
 // 【旧形式からの移行】
-//   scenarios フォルダが無く、旧 scenarios.csv があれば、手本ごとに
+//   scenarios フォルダが無く、旧 scenarios.csv があれば、シナリオごとに
 //   1 ファイルへ分け、旧ファイルは scenarios.csv.bak へ名前を変えて残す。
+//   1 ファイルに複数入っている旧「まとまり」は、ファイル名のフォルダへ 1 本ずつ分け、
+//   元のファイルは .bak へ名前を変えて残す。
 
 using System;
 using System.Collections.Generic;
@@ -45,7 +51,7 @@ using Poly_Ling.Serialization;
 
 namespace Poly_Ling.Data
 {
-    /// <summary>手本のオブジェクトグループの置き場。</summary>
+    /// <summary>シナリオのオブジェクトグループの置き場。</summary>
     public static class ScenarioLibrary
     {
         private const string LogTag  = "[ScenarioLibrary]";
@@ -54,8 +60,10 @@ namespace Poly_Ling.Data
         private const string Ext     = ".csv";
 
         private static List<ObjectGroup> _items;
-        /// <summary>手本の名前 → まとまり名（= ファイル名の拡張子抜き）。</summary>
-        private static Dictionary<string, string> _bundleOf;
+        /// <summary>シナリオの名前 → 置いているファイル（scenarios からの相対パス。区切りは '/'）。</summary>
+        private static Dictionary<string, string> _fileOf;
+        /// <summary>ディスク上のフォルダ（空のものも含む。scenarios からの相対。区切りは '/'）。</summary>
+        private static HashSet<string> _folders;
         private static readonly object _lock = new object();
 
         private static string Dir        => Path.Combine(Application.persistentDataPath, "PolyLing");
@@ -93,18 +101,19 @@ namespace Poly_Ling.Data
             lock (_lock) { ReadAll(); Revision++; }
         }
 
-        /// <summary>今の中身を全まとまりのファイルへ書く。</summary>
+        /// <summary>今の中身を全部ファイルへ書く。</summary>
         public static void Save()
         {
             EnsureLoaded();
-            lock (_lock) { WriteBundles(new List<string>(_bundleOf.Values)); Revision++; }
+            lock (_lock) { foreach (var g in _items) WriteOne(g); Revision++; }
         }
 
-        /// <summary>_items と _bundleOf をフォルダから作り直す。旧形式なら先に移す。</summary>
+        /// <summary>_items・_fileOf・_folders をディスクから作り直す。旧形式なら先に移す。</summary>
         private static void ReadAll()
         {
-            _items    = new List<ObjectGroup>();
-            _bundleOf = new Dictionary<string, string>(StringComparer.Ordinal);
+            _items   = new List<ObjectGroup>();
+            _fileOf  = new Dictionary<string, string>(StringComparer.Ordinal);
+            _folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
@@ -115,12 +124,14 @@ namespace Poly_Ling.Data
                 }
                 if (!Directory.Exists(FolderName)) return;
 
-                var files = Directory.GetFiles(FolderName, "*" + Ext);
+                foreach (var dir in Directory.GetDirectories(FolderName, "*", SearchOption.AllDirectories))
+                    _folders.Add(ToRel(dir));
+
+                var files = Directory.GetFiles(FolderName, "*" + Ext, SearchOption.AllDirectories);
                 Array.Sort(files, StringComparer.Ordinal);
 
                 foreach (var path in files)
                 {
-                    string bundle = Path.GetFileNameWithoutExtension(path);
                     List<ObjectGroup> list;
                     try { list = ObjectGroupCsv.Parse(File.ReadAllLines(path, Encoding.UTF8)); }
                     catch (Exception e)
@@ -128,7 +139,12 @@ namespace Poly_Ling.Data
                         Debug.LogError($"{LogTag} 読み込みに失敗しました: {path}: {e.Message}");
                         continue;
                     }
-                    AddLoaded(list, bundle, path);
+                    if (list == null || list.Count == 0) continue;
+
+                    // 1 ファイルに複数入っているのは旧形式のまとまり。同名のフォルダへ 1 本ずつ分ける。
+                    if (list.Count > 1) { SplitBundleFile(path, list); continue; }
+
+                    AddLoaded(list[0], ToRel(path), path);
                 }
             }
             catch (Exception e)
@@ -137,35 +153,67 @@ namespace Poly_Ling.Data
             }
         }
 
-        /// <summary>読んだ手本を足す。名前が重なると Find がどちらを返すか決まらない。後から来た方を落とす。</summary>
-        private static void AddLoaded(List<ObjectGroup> list, string bundle, string source)
+        /// <summary>読んだシナリオを足す。名前が重なると Find がどちらを返すか決まらない。後から来た方を落とす。</summary>
+        private static bool AddLoaded(ObjectGroup g, string file, string source)
         {
-            if (list == null) return;
-            for (int i = 0; i < list.Count; i++)
+            if (g == null || string.IsNullOrEmpty(g.Name) || _fileOf.ContainsKey(g.Name))
             {
-                var g = list[i];
-                if (g == null || string.IsNullOrEmpty(g.Name) || _bundleOf.ContainsKey(g.Name))
-                {
-                    Debug.LogWarning($"{LogTag} 名前の無い／重なった手本を読み飛ばしました: {source} 位置 {i}");
-                    continue;
-                }
-                _items.Add(g);
-                _bundleOf[g.Name] = bundle;
+                Debug.LogWarning($"{LogTag} 名前の無い／重なったシナリオを読み飛ばしました: {source}");
+                return false;
             }
+            _items.Add(g);
+            _fileOf[g.Name] = file;
+            AddFolderChain(FolderOfFile(file));
+            return true;
         }
 
-        /// <summary>旧 scenarios.csv を手本ごとのファイルへ分け、旧ファイルは .bak へ名前を変える。</summary>
+        /// <summary>旧形式の「複数入りのファイル」を、拡張子を除いた名前のフォルダへ 1 本ずつ分ける。元は .bak にする。</summary>
+        private static void SplitBundleFile(string path, List<ObjectGroup> list)
+        {
+            string fileRel = ToRel(path);
+            string parent  = FolderOfFile(fileRel);
+            string folder  = JoinRel(parent, SanitizeSegment(Path.GetFileNameWithoutExtension(path)));
+
+            bool ok = true;
+            foreach (var g in list)
+            {
+                if (g == null || string.IsNullOrEmpty(g.Name) || _fileOf.ContainsKey(g.Name))
+                {
+                    Debug.LogWarning($"{LogTag} 名前の無い／重なったシナリオを読み飛ばしました: {path}");
+                    continue;
+                }
+                string file = NewFileFor(g.Name, folder);
+                _items.Add(g);
+                _fileOf[g.Name] = file;
+                AddFolderChain(folder);
+                if (!WriteOne(g)) ok = false;
+            }
+
+            if (!ok)
+            {
+                Debug.LogError($"{LogTag} 分割の書き込みに失敗したので元のファイルを残します: {path}");
+                return;
+            }
+            string bak = path + ".bak";
+            for (int n = 1; File.Exists(bak); n++) bak = path + ".bak" + n;
+            File.Move(path, bak);
+            Debug.Log($"{LogTag} {fileRel} の {list.Count} 本をフォルダ {folder} へ分けました。元のファイル: {bak}");
+        }
+
+        /// <summary>旧 scenarios.csv をシナリオごとのファイルへ分け、旧ファイルは .bak へ名前を変える。</summary>
         private static void MigrateLegacy()
         {
             var list = ObjectGroupCsv.Parse(File.ReadAllLines(LegacyFile, Encoding.UTF8));
+            bool ok = true;
+            Directory.CreateDirectory(FolderName);
             foreach (var g in list)
             {
                 if (g == null || string.IsNullOrEmpty(g.Name)) continue;
-                AddLoaded(new List<ObjectGroup> { g }, CanonicalBundle(g.Name), LegacyFile);
+                if (!AddLoaded(g, NewFileFor(g.Name, ""), LegacyFile)) continue;
+                if (!WriteOne(g)) ok = false;
             }
 
-            Directory.CreateDirectory(FolderName);
-            if (!WriteBundles(new List<string>(_bundleOf.Values)))
+            if (!ok)
             {
                 Debug.LogError($"{LogTag} 移行の書き込みに失敗したので旧ファイルを残します: {LegacyFile}");
                 return;
@@ -177,86 +225,304 @@ namespace Poly_Ling.Data
             Debug.Log($"{LogTag} 旧形式から {_items.Count} 本を移行しました。旧ファイル: {bak}");
         }
 
-        /// <summary>まとまりごとにファイルへ書く。手本が 0 本になったまとまりはファイルを消す。</summary>
-        private static bool WriteBundles(IEnumerable<string> bundles)
+        /// <summary>1 本を自分のファイルへ書く。</summary>
+        private static bool WriteOne(ObjectGroup g)
         {
-            bool ok = true;
-            var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var bundle in bundles)
+            if (g == null || !_fileOf.TryGetValue(g.Name, out var file)) return false;
+            try
             {
-                if (string.IsNullOrEmpty(bundle) || !done.Add(bundle)) continue;
-                try
-                {
-                    Directory.CreateDirectory(FolderName);
-                    string path = Path.Combine(FolderName, bundle + Ext);
-
-                    var list = new List<ObjectGroup>();
-                    foreach (var g in _items)
-                        if (_bundleOf.TryGetValue(g.Name, out var b)
-                            && string.Equals(b, bundle, StringComparison.OrdinalIgnoreCase))
-                            list.Add(g);
-
-                    if (list.Count > 0) File.WriteAllText(path, ObjectGroupCsv.Build(list, Header), Encoding.UTF8);
-                    else if (File.Exists(path)) File.Delete(path);
-                }
-                catch (Exception e)
-                {
-                    ok = false;
-                    Debug.LogError($"{LogTag} 保存に失敗しました: {bundle}: {e.Message}");
-                }
+                string path = ToAbs(file);
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, ObjectGroupCsv.Build(new List<ObjectGroup> { g }, Header), Encoding.UTF8);
+                return true;
             }
-            return ok;
+            catch (Exception e)
+            {
+                Debug.LogError($"{LogTag} 保存に失敗しました: {file}: {e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>シナリオのファイルを消す（移動・削除のとき）。</summary>
+        private static void DeleteFile(string file)
+        {
+            if (string.IsNullOrEmpty(file)) return;
+            try
+            {
+                string path = ToAbs(file);
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"{LogTag} ファイルを消せませんでした: {file}: {e.Message}");
+            }
+        }
+
+        // ================================================================
+        // パスとフォルダ名
+        // ================================================================
+
+        private static string ToAbs(string rel)
+            => string.IsNullOrEmpty(rel) ? FolderName : Path.Combine(FolderName, rel.Replace('/', Path.DirectorySeparatorChar));
+
+        private static string ToRel(string abs)
+        {
+            string root = Path.GetFullPath(FolderName).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string full = Path.GetFullPath(abs);
+            string rel  = full.Length > root.Length ? full.Substring(root.Length + 1) : "";
+            return rel.Replace('\\', '/');
+        }
+
+        private static string JoinRel(string a, string b)
+            => string.IsNullOrEmpty(a) ? (b ?? "") : string.IsNullOrEmpty(b) ? a : a + "/" + b;
+
+        /// <summary>ファイルの相対パスからフォルダ部分を返す。直下なら空。</summary>
+        private static string FolderOfFile(string file)
+        {
+            if (string.IsNullOrEmpty(file)) return "";
+            int at = file.LastIndexOf('/');
+            return at < 0 ? "" : file.Substring(0, at);
+        }
+
+        /// <summary>フォルダとその親を全部 _folders へ入れる。</summary>
+        private static void AddFolderChain(string folder)
+        {
+            if (string.IsNullOrEmpty(folder)) return;
+            string acc = "";
+            foreach (var seg in folder.Split('/'))
+            {
+                acc = JoinRel(acc, seg);
+                _folders.Add(acc);
+            }
+        }
+
+        /// <summary>フォルダ名・ファイル名の 1 段をファイル名に使える形にする。</summary>
+        private static string SanitizeSegment(string s)
+        {
+            var sb = new StringBuilder((s ?? "").Trim());
+            foreach (char c in Path.GetInvalidFileNameChars()) sb.Replace(c, '_');
+            string r = sb.ToString().TrimEnd('.', ' ');
+            return r.Length == 0 ? "_" : r;
         }
 
         /// <summary>
-        /// まとまり名をファイル名として使える形にする。
-        /// 既存のまとまりと大文字小文字だけ違うときは既存の綴りに合わせる（Windows では同じファイル）。
+        /// フォルダ名を「a/b/c」の形にそろえる。区切りは '/' でも '\' でもよい。
+        /// 空の段は捨てる。「.」「..」は受けない。既にあるフォルダと大文字小文字だけ違うときは既存の綴りに合わせる。
+        /// 直下は空文字。
         /// </summary>
-        private static string CanonicalBundle(string bundle)
+        private static bool TryCanonicalFolder(string folder, out string canonical, out string error)
         {
-            var sb = new StringBuilder((bundle ?? "").Trim());
-            foreach (char c in Path.GetInvalidFileNameChars()) sb.Replace(c, '_');
-            string s = sb.ToString().TrimEnd('.', ' ');
-            if (s.Length == 0) s = "_";
-
-            if (_bundleOf != null)
-                foreach (var b in _bundleOf.Values)
-                    if (string.Equals(b, s, StringComparison.OrdinalIgnoreCase)) return b;
-            return s;
+            canonical = "";
+            error     = null;
+            string acc = "";
+            foreach (var raw in (folder ?? "").Split('/', '\\'))
+            {
+                string seg = raw.Trim();
+                if (seg.Length == 0) continue;
+                if (seg == "." || seg == "..") { error = $"フォルダ名に「{seg}」は使えません: {folder}"; return false; }
+                string next = JoinRel(acc, SanitizeSegment(seg));
+                foreach (var f in _folders)
+                    if (string.Equals(f, next, StringComparison.OrdinalIgnoreCase)) { next = f; break; }
+                acc = next;
+            }
+            canonical = acc;
+            return true;
         }
 
-        /// <summary>この手本が入っているまとまり名。無ければ null。</summary>
-        public static string BundleOf(string name)
+        /// <summary>
+        /// 新しく置くファイルの相対パスを決める。名前をファイル名に使える形にし、
+        /// ほかのシナリオのファイルと（大文字小文字を無視して）重なるなら番号を付ける。
+        /// </summary>
+        private static string NewFileFor(string name, string folder)
+        {
+            string stem = SanitizeSegment(name);
+            var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _fileOf)
+                if (!string.Equals(kv.Key, name, StringComparison.Ordinal)) taken.Add(kv.Value);
+
+            string file = JoinRel(folder, stem + Ext);
+            for (int n = 2; taken.Contains(file); n++) file = JoinRel(folder, $"{stem}_{n}{Ext}");
+            return file;
+        }
+
+        /// <summary>フォルダ f が folder 自身か、その下にあるか。folder が空なら全部。</summary>
+        private static bool IsUnder(string f, string folder)
+            => string.IsNullOrEmpty(folder)
+            || string.Equals(f, folder, StringComparison.OrdinalIgnoreCase)
+            || (f != null && f.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase));
+
+        // ================================================================
+        // フォルダ
+        // ================================================================
+
+        /// <summary>このシナリオを置いているフォルダ。直下なら空文字。無ければ null。</summary>
+        public static string FolderOf(string name)
         {
             if (string.IsNullOrEmpty(name)) return null;
             EnsureLoaded();
-            return _bundleOf.TryGetValue(name, out var b) ? b : null;
+            return _fileOf.TryGetValue(name, out var f) ? FolderOfFile(f) : null;
+        }
+
+        /// <summary>既にあるフォルダを引く。綴りを既存のものにそろえて返す。直下（空）は無いものとして扱う。</summary>
+        public static bool TryFindFolder(string folder, out string canonical)
+        {
+            EnsureLoaded();
+            lock (_lock)
+            {
+                if (!TryCanonicalFolder(folder, out canonical, out _)) return false;
+                return canonical.Length > 0 && _folders.Contains(canonical);
+            }
+        }
+
+        /// <summary>全フォルダ（空のものも含む）。名前順。</summary>
+        public static List<string> Folders()
+        {
+            EnsureLoaded();
+            lock (_lock)
+            {
+                var list = new List<string>(_folders);
+                list.Sort(StringComparer.Ordinal);
+                return list;
+            }
+        }
+
+        /// <summary>空のフォルダを作る（親も作る）。既にあれば何もしない。</summary>
+        public static bool CreateFolder(string folder, out string canonical, out string error)
+        {
+            EnsureLoaded();
+            lock (_lock)
+            {
+                if (!TryCanonicalFolder(folder, out canonical, out error)) return false;
+                if (canonical.Length == 0) { error = "フォルダ名が空です"; return false; }
+                try { Directory.CreateDirectory(ToAbs(canonical)); }
+                catch (Exception e) { error = $"フォルダを作れませんでした: {e.Message}"; return false; }
+                AddFolderChain(canonical);
+                Revision++;
+            }
+            return true;
         }
 
         /// <summary>
-        /// 手本をまとまりへ移す。移したら関係するファイルを書く。
-        /// 1 本でも無い名前があれば何もしない。
+        /// シナリオをフォルダへ移す。folder が空なら直下。無いフォルダは作る。
+        /// 1 本でも無い名前があれば何もしない。親は名前で子を引くので、移しても参照は切れない。
         /// </summary>
-        public static bool SetBundle(IList<string> names, string bundle, out string error)
+        public static bool Move(IList<string> names, string folder, out string canonical, out string error)
         {
+            canonical = "";
             error = null;
-            if (names == null || names.Count == 0) { error = "手本の名前がありません"; return false; }
-            if (string.IsNullOrWhiteSpace(bundle)) { error = "まとまり名が空です"; return false; }
+            if (names == null || names.Count == 0) { error = "シナリオの名前がありません"; return false; }
 
             EnsureLoaded();
             lock (_lock)
             {
                 foreach (var n in names)
-                    if (string.IsNullOrEmpty(n) || !_bundleOf.ContainsKey(n)) { error = $"手本がありません: {n}"; return false; }
+                    if (string.IsNullOrEmpty(n) || !_fileOf.ContainsKey(n)) { error = $"シナリオがありません: {n}"; return false; }
+                if (!TryCanonicalFolder(folder, out canonical, out error)) return false;
 
-                string target = CanonicalBundle(bundle);
-                var affected = new List<string> { target };
                 foreach (var n in names)
                 {
-                    affected.Add(_bundleOf[n]);
-                    _bundleOf[n] = target;
+                    string oldFile = _fileOf[n];
+                    if (string.Equals(FolderOfFile(oldFile), canonical, StringComparison.Ordinal)) continue;
+                    _fileOf[n] = NewFileFor(n, canonical);
+                    if (!WriteOne(FindInternal(n))) { _fileOf[n] = oldFile; error = $"書き込めませんでした: {n}"; return false; }
+                    DeleteFile(oldFile);
                 }
-                WriteBundles(affected);
+                AddFolderChain(canonical);
+                if (canonical.Length > 0) Directory.CreateDirectory(ToAbs(canonical));
+                Revision++;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// フォルダの名前を変える（中のシナリオとフォルダごと）。「a/b」→「c/b」のように別の親の下へも移せる。
+        /// 行き先が既にあるとき・自分の下へ移すときは失敗する。
+        /// </summary>
+        public static bool RenameFolder(string folder, string newFolder, out string canonical, out string error)
+        {
+            canonical = "";
+            error = null;
+
+            EnsureLoaded();
+            lock (_lock)
+            {
+                if (!TryCanonicalFolder(folder, out var src, out error)) return false;
+                if (src.Length == 0 || !_folders.Contains(src)) { error = $"フォルダがありません: {folder}"; return false; }
+                if (!TryCanonicalFolder(newFolder, out canonical, out error)) return false;
+                if (canonical.Length == 0) { error = "新しいフォルダ名が空です"; return false; }
+                if (string.Equals(src, canonical, StringComparison.OrdinalIgnoreCase)) { error = "名前が変わっていません"; return false; }
+                if (IsUnder(canonical, src)) { error = $"自分の下へは移せません: {src} → {canonical}"; return false; }
+                if (_folders.Contains(canonical)) { error = $"フォルダが既にあります: {canonical}"; return false; }
+
+                string dst = canonical;
+                string Rebase(string f) => dst + f.Substring(src.Length);
+
+                // 中のシナリオを新しい場所へ書いてから古いファイルを消す。
+                var names = new List<string>();
+                foreach (var kv in _fileOf)
+                    if (IsUnder(FolderOfFile(kv.Value), src)) names.Add(kv.Key);
+                foreach (var n in names)
+                {
+                    string oldFile = _fileOf[n];
+                    _fileOf[n] = NewFileFor(n, Rebase(FolderOfFile(oldFile)));
+                    if (!WriteOne(FindInternal(n))) { _fileOf[n] = oldFile; error = $"書き込めませんでした: {n}"; return false; }
+                    DeleteFile(oldFile);
+                }
+
+                // 空のフォルダも移す。古いフォルダは深い方から、空なら消す。
+                var oldFolders = new List<string>();
+                foreach (var f in _folders) if (IsUnder(f, src)) oldFolders.Add(f);
+                foreach (var f in oldFolders)
+                {
+                    string nf = Rebase(f);
+                    Directory.CreateDirectory(ToAbs(nf));
+                    AddFolderChain(nf);
+                }
+                oldFolders.Sort((a, b) => b.Length.CompareTo(a.Length));
+                foreach (var f in oldFolders)
+                {
+                    string abs = ToAbs(f);
+                    try
+                    {
+                        if (Directory.Exists(abs) && Directory.GetFileSystemEntries(abs).Length == 0) Directory.Delete(abs);
+                    }
+                    catch (Exception e) { Debug.LogWarning($"{LogTag} 古いフォルダを消せませんでした: {f}: {e.Message}"); }
+                    if (!Directory.Exists(abs)) _folders.Remove(f);
+                }
+                Revision++;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 空のフォルダを消す（下の空のフォルダも）。シナリオが入っているとき、
+        /// シナリオ以外のファイル（.bak など）が入っているときは消さない。
+        /// </summary>
+        public static bool DeleteFolder(string folder, out string error)
+        {
+            error = null;
+            EnsureLoaded();
+            lock (_lock)
+            {
+                if (!TryCanonicalFolder(folder, out var src, out error)) return false;
+                if (src.Length == 0 || !_folders.Contains(src)) { error = $"フォルダがありません: {folder}"; return false; }
+
+                int inside = 0;
+                foreach (var kv in _fileOf) if (IsUnder(FolderOfFile(kv.Value), src)) inside++;
+                if (inside > 0) { error = $"{src} にはシナリオが {inside} 本入っているので消せません（先に移すか消す）"; return false; }
+
+                string abs = ToAbs(src);
+                if (Directory.Exists(abs))
+                {
+                    var files = Directory.GetFiles(abs, "*", SearchOption.AllDirectories);
+                    if (files.Length > 0) { error = $"{src} にはシナリオ以外のファイルがあるので消しません: {ToRel(files[0])}"; return false; }
+                    try { Directory.Delete(abs, true); }
+                    catch (Exception e) { error = $"フォルダを消せませんでした: {e.Message}"; return false; }
+                }
+
+                var gone = new List<string>();
+                foreach (var f in _folders) if (IsUnder(f, src)) gone.Add(f);
+                foreach (var f in gone) _folders.Remove(f);
                 Revision++;
             }
             return true;
@@ -266,7 +532,7 @@ namespace Poly_Ling.Data
         // 参照
         // ================================================================
 
-        /// <summary>登録されている手本の数。</summary>
+        /// <summary>登録されているシナリオの数。</summary>
         public static int Count
         {
             get { EnsureLoaded(); return _items.Count; }
@@ -288,7 +554,7 @@ namespace Poly_Ling.Data
             return found?.Clone();
         }
 
-        /// <summary>この名前の手本があるか。</summary>
+        /// <summary>この名前のシナリオがあるか。</summary>
         public static bool Contains(string name) => FindInternal(name) != null;
 
         /// <summary>全件の複製を返す。</summary>
@@ -310,22 +576,22 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
-        // 参照段
+        // 参照項目
         // ================================================================
 
         /// <summary>参照を辿る深さの上限。これを超えたら組み方を疑う。</summary>
         public const int MaxRefDepth = 8;
 
-        /// <summary>平たくした段 1 つ。どの手本の何段目から来たかを添える。</summary>
+        /// <summary>平たくした項目 1 つ。どのシナリオの何番目から来たかを添える。</summary>
         public sealed class FlatStep
         {
-            /// <summary>この段が載っている手本の名前。</summary>
+            /// <summary>この項目が載っているシナリオの名前。</summary>
             public string ScenarioName;
 
-            /// <summary>参照の深さ。0 = 起点の手本。</summary>
+            /// <summary>参照の深さ。0 = 起点のシナリオ。</summary>
             public int Depth;
 
-            /// <summary>段そのもの（複製）。</summary>
+            /// <summary>項目そのもの（複製）。</summary>
             public ObjectGroupStep Step;
         }
 
@@ -347,8 +613,8 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// 参照段を辿って平たい段の列にする。参照段そのものは列に入れず、
-        /// 参照先の段に置き換える。
+        /// 参照項目を辿って平たい項目の列にする。参照項目そのものは列に入れず、
+        /// 参照先の項目に置き換える。
         /// </summary>
         public static bool TryFlatten(string name, out List<FlatStep> steps, out string error)
         {
@@ -358,7 +624,7 @@ namespace Poly_Ling.Data
             EnsureLoaded();
 
             var root = FindInternal(name);
-            if (root == null) { error = $"手本がありません: {name}"; return false; }
+            if (root == null) { error = $"シナリオがありません: {name}"; return false; }
 
             return Walk(_items, name, 0, new List<string>(), steps, out error);
         }
@@ -377,7 +643,7 @@ namespace Poly_Ling.Data
 
             var g = FindIn(items, name);
             if (g == null)
-            { error = $"参照先の手本がありません: {name}"; return false; }
+            { error = $"参照先のシナリオがありません: {name}"; return false; }
 
             path.Add(name);
             try
@@ -410,28 +676,28 @@ namespace Poly_Ling.Data
         // ================================================================
 
         /// <summary>
-        /// 手本を登録する。渡されたものの複製を入れるので、呼ぶ側が
+        /// シナリオを登録する。渡されたものの複製を入れるので、呼ぶ側が
         /// あとで書き換えても登録済みの中身は変わらない。
         /// 登録できたらファイルへ書く。
         /// </summary>
         /// <param name="overwrite">同名があるとき差し替えるか。false なら失敗。</param>
-        /// <param name="bundle">入れるまとまり名。null/空なら、既存の手本は今のまとまりのまま、新しい手本は自分の名前のまとまり。</param>
-        public static bool Register(ObjectGroup group, bool overwrite, out string error, string bundle = null)
+        /// <param name="folder">置くフォルダ。null なら、既存のシナリオは今の場所のまま、新しいシナリオは直下。空文字は直下。</param>
+        public static bool Register(ObjectGroup group, bool overwrite, out string error, string folder = null)
         {
             error = null;
 
-            if (group == null)                     { error = "手本がありません";       return false; }
-            if (string.IsNullOrEmpty(group.Name))  { error = "手本の名前が空です";     return false; }
+            if (group == null)                     { error = "シナリオがありません";       return false; }
+            if (string.IsNullOrEmpty(group.Name))  { error = "シナリオの名前が空です";     return false; }
 
-            // ObjectGroup.IsValid は「段が 1 つ以上ある」ことも要求するが、
-            // 手本は段 0 本から組み始める。ここでは各段の中身だけを見る。
+            // ObjectGroup.IsValid は「項目が 1 つ以上ある」ことも要求するが、
+            // シナリオは項目 0 個から組み始める。ここでは各項目の中身だけを見る。
             if (group.Steps != null)
             {
                 for (int i = 0; i < group.Steps.Count; i++)
                 {
                     var step = group.Steps[i];
-                    if (step == null)  { error = $"段 {i} がありません"; return false; }
-                    if (!step.IsValid) { error = $"段 {i}（{step.ElementId}）は実行する段なのに action が空です"; return false; }
+                    if (step == null)  { error = $"項目 {i} がありません"; return false; }
+                    if (!step.IsValid) { error = $"項目 {i}（{step.ScenarioItemId}）は実行する項目なのに action が空です"; return false; }
                 }
             }
 
@@ -439,14 +705,14 @@ namespace Poly_Ling.Data
             lock (_lock)
             {
                 var copy = group.Clone();
-                copy.EnsureElementIds();
+                copy.EnsureScenarioItemIds();
 
                 int at = -1;
                 for (int i = 0; i < _items.Count; i++)
                     if (string.Equals(_items[i].Name, copy.Name, StringComparison.Ordinal)) { at = i; break; }
 
                 if (at >= 0 && !overwrite)
-                { error = $"同じ名前の手本が既にあります: {copy.Name}"; return false; }
+                { error = $"同じ名前のシナリオが既にあります: {copy.Name}"; return false; }
 
                 // 参照先の不在と循環は、入れる前に見る。入れてしまうと
                 // TryFlatten が回らなくなり、直す口も参照で詰まる。
@@ -457,22 +723,28 @@ namespace Poly_Ling.Data
                 var drain = new List<FlatStep>();
                 if (!Walk(probe, copy.Name, 0, new List<string>(), drain, out error)) return false;
 
+                string target = null;
+                if (folder != null && !TryCanonicalFolder(folder, out target, out error)) return false;
+
+                _fileOf.TryGetValue(copy.Name, out var oldFile);
+                string file = (oldFile != null && (target == null || string.Equals(FolderOfFile(oldFile), target, StringComparison.Ordinal)))
+                            ? oldFile
+                            : NewFileFor(copy.Name, target ?? "");
+
                 if (at >= 0) _items[at] = copy;
                 else         _items.Add(copy);
 
-                _bundleOf.TryGetValue(copy.Name, out var oldBundle);
-                string target = !string.IsNullOrWhiteSpace(bundle) ? CanonicalBundle(bundle)
-                              : oldBundle ?? CanonicalBundle(copy.Name);
-                _bundleOf[copy.Name] = target;
-
-                WriteBundles(new List<string> { target, oldBundle });
+                _fileOf[copy.Name] = file;
+                AddFolderChain(FolderOfFile(file));
+                if (!WriteOne(copy)) { error = $"書き込めませんでした: {copy.Name}"; return false; }
+                if (oldFile != null && !string.Equals(oldFile, file, StringComparison.Ordinal)) DeleteFile(oldFile);
             }
             return true;
         }
 
         /// <summary>
-        /// 手本を消す。消したらファイルへ書く。
-        /// 他の手本から参照されているものは消さない。消すと参照が宙に浮き、
+        /// シナリオを消す。消したらファイルへ書く。
+        /// 他のシナリオから参照されているものは消さない。消すと参照が宙に浮き、
         /// 参照している側を直そうとしても登録の検査で止まる。
         /// </summary>
         /// <param name="error">消さなかった理由。消したときは null。</param>
@@ -495,18 +767,18 @@ namespace Poly_Ling.Data
                     }
 
                     _items.RemoveAt(i);
-                    _bundleOf.TryGetValue(name, out var oldBundle);
-                    _bundleOf.Remove(name);
-                    WriteBundles(new List<string> { oldBundle });
+                    _fileOf.TryGetValue(name, out var oldFile);
+                    _fileOf.Remove(name);
+                    DeleteFile(oldFile);
                     return true;
                 }
             }
 
-            error = $"手本がありません: {name}";
+            error = $"シナリオがありません: {name}";
             return false;
         }
 
-        /// <summary>この手本を参照している手本の名前。無ければ null。</summary>
+        /// <summary>このシナリオを参照しているシナリオの名前。無ければ null。</summary>
         private static string FirstReferrer(string name)
         {
             foreach (var g in _items)
@@ -526,12 +798,12 @@ namespace Poly_Ling.Data
         // 書き出し・取り込み（別ファイルとの出し入れ）
         // ================================================================
         //
-        // 形式は scenarios.csv と同じ（ObjectGroupCsv が正典）。
-        // 書き出しは参照先の手本も一緒に入れる。そのファイルだけで参照が切れずに取り込めるように。
-        // 取り込みはファイルの手本をまとめて検査し、1 本でも問題があれば何も登録しない。
+        // 形式は置き場のファイルと同じ（ObjectGroupCsv が正典）。
+        // 書き出しは参照先のシナリオも一緒に入れる。そのファイルだけで参照が切れずに取り込めるように。
+        // 取り込みはファイルのシナリオをまとめて検査し、1 本でも問題があれば何も登録しない。
 
         /// <summary>
-        /// 指定の手本と、それが参照している手本を 1 本の CSV 文字列にする。
+        /// 指定のシナリオと、それが参照しているシナリオを 1 本の CSV 文字列にする。
         /// names が空なら全部。並びは登録順。
         /// </summary>
         public static bool TryExport(IList<string> names, out string csv, out List<string> exported, out string error)
@@ -554,7 +826,7 @@ namespace Poly_Ling.Data
                     foreach (var n in names)
                     {
                         if (string.IsNullOrEmpty(n)) continue;
-                        if (FindIn(_items, n) == null) { error = $"手本がありません: {n}"; return false; }
+                        if (FindIn(_items, n) == null) { error = $"シナリオがありません: {n}"; return false; }
                         stack.Push(n);
                     }
                     while (stack.Count > 0)
@@ -562,7 +834,7 @@ namespace Poly_Ling.Data
                         string n = stack.Pop();
                         if (!want.Add(n)) continue;
                         var g = FindIn(_items, n);
-                        if (g == null) { error = $"参照先の手本がありません: {n}"; return false; }
+                        if (g == null) { error = $"参照先のシナリオがありません: {n}"; return false; }
                         if (g.Steps == null) continue;
                         foreach (var step in g.Steps)
                             if (step != null && step.IsScenarioRef && !string.IsNullOrEmpty(step.RefName))
@@ -577,7 +849,7 @@ namespace Poly_Ling.Data
                     list.Add(g);
                     exported.Add(g.Name);
                 }
-                if (list.Count == 0) { error = "書き出す手本がありません"; return false; }
+                if (list.Count == 0) { error = "書き出すシナリオがありません"; return false; }
 
                 csv = ObjectGroupCsv.Build(list, Header);
             }
@@ -585,11 +857,13 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// CSV の行から手本を取り込む。まとめて検査し、問題があれば何も登録しない。
-        /// 同じ名前の手本は overwrite のときだけ差し替える。
+        /// CSV の行からシナリオを取り込む。まとめて検査し、問題があれば何も登録しない。
+        /// 同じ名前のシナリオは overwrite のときだけ差し替える。
         /// </summary>
+        /// <param name="folder">新しく入るシナリオを置くフォルダ。null/空なら直下。差し替えるシナリオは今の場所のまま。</param>
         public static bool TryImport(IEnumerable<string> lines, bool overwrite,
-                                     out List<string> added, out List<string> replaced, out string error)
+                                     out List<string> added, out List<string> replaced, out string error,
+                                     string folder = null)
         {
             added = new List<string>();
             replaced = new List<string>();
@@ -597,34 +871,36 @@ namespace Poly_Ling.Data
 
             List<ObjectGroup> incoming;
             try { incoming = ObjectGroupCsv.Parse(lines); }
-            catch (Exception e) { error = $"手本として読めません: {e.Message}"; return false; }
-            if (incoming == null || incoming.Count == 0) { error = "手本が入っていません"; return false; }
+            catch (Exception e) { error = $"シナリオとして読めません: {e.Message}"; return false; }
+            if (incoming == null || incoming.Count == 0) { error = "シナリオが入っていません"; return false; }
 
-            // ファイルの中での名前の重なりと、各段の中身を見る。
+            // ファイルの中での名前の重なりと、各項目の中身を見る。
             var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (var g in incoming)
             {
-                if (g == null || string.IsNullOrEmpty(g.Name)) { error = "名前の無い手本があります"; return false; }
+                if (g == null || string.IsNullOrEmpty(g.Name)) { error = "名前の無いシナリオがあります"; return false; }
                 if (!names.Add(g.Name)) { error = $"ファイルの中で名前が重なっています: {g.Name}"; return false; }
                 if (g.Steps == null) continue;
                 for (int i = 0; i < g.Steps.Count; i++)
                 {
                     var step = g.Steps[i];
-                    if (step == null)  { error = $"{g.Name} の段 {i} がありません"; return false; }
-                    if (!step.IsValid) { error = $"{g.Name} の段 {i}（{step.ElementId}）は実行する段なのに action が空です"; return false; }
+                    if (step == null)  { error = $"{g.Name} の項目 {i} がありません"; return false; }
+                    if (!step.IsValid) { error = $"{g.Name} の項目 {i}（{step.ScenarioItemId}）は実行する項目なのに action が空です"; return false; }
                 }
             }
 
             EnsureLoaded();
             lock (_lock)
             {
+                if (!TryCanonicalFolder(folder, out var target, out error)) return false;
+
                 // 既存との重なり。
                 var clash = new List<string>();
                 foreach (var g in incoming)
                     if (FindIn(_items, g.Name) != null) clash.Add(g.Name);
                 if (clash.Count > 0 && !overwrite)
                 {
-                    error = $"同じ名前の手本が既にあります（差し替えるなら overwrite）: {string.Join(", ", clash)}";
+                    error = $"同じ名前のシナリオが既にあります（差し替えるなら overwrite）: {string.Join(", ", clash)}";
                     return false;
                 }
 
@@ -634,7 +910,7 @@ namespace Poly_Ling.Data
                 foreach (var g in incoming)
                 {
                     var copy = g.Clone();
-                    copy.EnsureElementIds();
+                    copy.EnsureScenarioItemIds();
                     copies.Add(copy);
 
                     int at = -1;
@@ -660,18 +936,13 @@ namespace Poly_Ling.Data
                 }
                 _items = probe;
 
-                // 既存の手本は今のまとまりのまま、新しい手本は自分の名前のまとまりへ。
-                var affected = new List<string>();
+                // 既存のシナリオは今の場所のまま、新しいシナリオは指定のフォルダへ。
                 foreach (var copy in copies)
                 {
-                    if (!_bundleOf.TryGetValue(copy.Name, out var b))
-                    {
-                        b = CanonicalBundle(copy.Name);
-                        _bundleOf[copy.Name] = b;
-                    }
-                    affected.Add(b);
+                    if (!_fileOf.ContainsKey(copy.Name)) _fileOf[copy.Name] = NewFileFor(copy.Name, target);
+                    AddFolderChain(FolderOfFile(_fileOf[copy.Name]));
+                    WriteOne(copy);
                 }
-                WriteBundles(affected);
                 Revision++;
             }
             return true;

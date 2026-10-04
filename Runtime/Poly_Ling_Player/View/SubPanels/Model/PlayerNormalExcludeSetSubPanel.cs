@@ -37,6 +37,8 @@ namespace Poly_Ling.Player
         private Button    _btnLoad;
         [UiControl("delete", Safety = UiSafety.Destructive, Description = "選んだセットを削除する")]
         private Button    _btnDelete;
+        [UiControl("protectManual", Description = "選んだセットを手動の法線編集からも守る")]
+        private Toggle    _protectManualToggle;
         [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label     _statusLabel;
 
@@ -64,7 +66,8 @@ namespace Poly_Ling.Player
 
             var help = new HelpBox(
                 "辞書に登録した頂点／面は、法線の自動再計算の直前に法線を退避し、"
-                + "計算後に元の法線へ戻す。辺は両端頂点として扱う。",
+                + "計算後に元の法線へ戻す。辺は両端頂点として扱う。"
+                + "「手動の法線編集からも守る」を付けたセットは、法線編集パネルの操作の対象からも外れる。",
                 HelpBoxMessageType.Info);
             help.style.marginBottom = 4;
             root.Add(help);
@@ -117,6 +120,19 @@ namespace Poly_Ling.Player
             foreach (var b in new[] { _btnLoad, _btnDelete }) { b.style.flexGrow = 1; opRow.Add(b); }
             root.Add(opRow);
 
+            // 選んだセットの保護の種類。常に自動再計算からは守られ、これを付けると手動編集からも守る。
+            _protectManualToggle = new Toggle("手動の法線編集からも守る");
+            _protectManualToggle.style.fontSize     = 10;
+            _protectManualToggle.style.marginBottom = 4;
+            _protectManualToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (_selectedSetIndex < 0) return;
+                SendCmd(new SetNormalExcludeSetProtectionCommand(ModelIndex, _selectedSetIndex, evt.newValue));
+                Refresh();
+                SetStatus(evt.newValue ? "手動の法線編集からも守ります" : "自動の再計算からだけ守ります");
+            });
+            root.Add(_protectManualToggle);
+
             _statusLabel = new Label();
             _statusLabel.style.fontSize   = 9;
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
@@ -155,7 +171,9 @@ namespace Poly_Ling.Player
             if (sets != null)
             {
                 foreach (var s in sets)
-                    _setNames.Add(s != null ? $"{s.Name}  {s.Summary}" : "");
+                    _setNames.Add(s != null
+                        ? $"{s.Name}  {s.Summary}" + (s.ProtectManualNormalEdit ? "  [手動も保護]" : "")
+                        : "");
             }
             _setListView.itemsSource = _setNames;
             _setListView.Rebuild();
@@ -252,6 +270,14 @@ namespace Poly_Ling.Player
             bool hasSel = _selectedSetIndex >= 0;
             if (_btnLoad   != null) _btnLoad.SetEnabled(hasSel);
             if (_btnDelete != null) _btnDelete.SetEnabled(hasSel);
+            if (_protectManualToggle != null)
+            {
+                _protectManualToggle.SetEnabled(hasSel);
+                var sets = ExcludeList;
+                bool cur = hasSel && sets != null && _selectedSetIndex < sets.Count
+                        && sets[_selectedSetIndex] != null && sets[_selectedSetIndex].ProtectManualNormalEdit;
+                _protectManualToggle.SetValueWithoutNotify(cur);
+            }
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }

@@ -491,6 +491,13 @@ namespace Poly_Ling.Data
     [PLResult("vertices", PLResultKind.Integer, Description = "実行後の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "実行後の面数の合計")]
     [PLResult("holes",    PLResultKind.Integer, Description = "実行後の境界ループ（穴）の数の合計")]
+    [PLUiRoute("高度な図形の穴つなぎ",
+        "leftPane.fold.Primitive", "leftPane.liveAdvancedPrimitiveBtn",
+        "primitiveAdvanced.shape.Bridge", "primitiveAdvanced.create",
+        Order = 0, Note = "穴の縁の頂点を種 A・種 B として取り込んでから作成を押す")]
+    [PLUiRoute("トポロジー編集の穴つなぎブリッジ",
+        "leftPane.fold.Topology", "leftPane.bridgeBtn", "primitive.create",
+        Order = 1, Note = "穴の縁の頂点を種 A・種 B として取り込んでから作成を押す")]
     public class CreateHoleBridgeCommand : PanelCommand
     {
         // ── 値域 ─────────────────────────────────────────────────
@@ -659,7 +666,7 @@ namespace Poly_Ling.Data
     ///   開いているモデルを全部捨てる。Undo では戻せない。
     ///   UI のボタンには出さず、自動検証とリモートからのみ使う。
     /// </summary>
-    [PLCommand(Category = "object.model", Effects = PLCommandEffect.DeletesObject | PLCommandEffect.CreatesObject, Hazards = PLCommandHazard.RequiresUserConfirmation | PLCommandHazard.AffectsMultipleObjects, Writes = PLWriteScope.ModelWide, Description = "プロジェクトを空にして、モデルを 1 つだけ作り直す。")]
+    [PLCommand(Category = "object.model", Effects = PLCommandEffect.DeletesObject | PLCommandEffect.CreatesObject, Hazards = PLCommandHazard.RequiresUserConfirmation | PLCommandHazard.AffectsMultipleObjects, Writes = PLWriteScope.ModelWide, NoUi = true, Description = "プロジェクトを空にして、モデルを 1 つだけ作り直す。")]
     public class ResetProjectCommand : PanelCommand
     {
         /// <summary>作り直すモデルの名前。空なら "Model"。</summary>
@@ -668,5 +675,28 @@ namespace Poly_Ling.Data
 
         public ResetProjectCommand(string modelName = null)
             : base(0) { ModelName = modelName; }
+    }
+
+    /// <summary>
+    /// 空のモデルを 1 つ足してカレントにする。既存のモデルは残す。
+    ///
+    /// 【何のためか】
+    ///   シナリオの先頭で「空のモデルを用意する」項目にする。図形生成の新規モデル
+    ///   （placement.addMode = NewModel）で代用すると、最初の部品とモデル作成が
+    ///   1 項目に混ざり、ボーンなど部品以外から組み始められない。
+    ///
+    /// 【Undo】
+    ///   モデルの追加・削除（DeleteModelCommand / ResetProjectCommand）と同じく記録しない。
+    /// </summary>
+    [PLCommand(Category = "object.model", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.AddOnly, Description = "空のモデルを 1 つ足してカレントにする。既存のモデルは残す。")]
+    [PLResult("modelIndex", PLResultKind.Integer, Description = "作ったモデルの索引")]
+    [PLResult("modelName",  PLResultKind.Text,    Description = "作ったモデルの名前")]
+    public class CreateEmptyModelCommand : PanelCommand
+    {
+        [PLParam(Description = "モデルの名前。空にすると自動で付ける")]
+        public string ModelName { get; }
+
+        public CreateEmptyModelCommand(string modelName = "")
+            : base(0) { ModelName = modelName ?? ""; }
     }
 }

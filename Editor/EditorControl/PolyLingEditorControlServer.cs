@@ -109,13 +109,50 @@ namespace Poly_Ling.EditorControl
                 // 外部から届かないようループバックだけを bind する。
                 _ = server.StartAsync(System.Net.IPAddress.Loopback, Port);
 
+                _startRetry = 0;
                 Debug.Log($"{LogTag} 起動: port={Port}（ループバックのみ）");
             }
             catch (Exception ex)
             {
+                var failed = _server;
                 _server = null;
-                Debug.LogWarning($"{LogTag} 起動失敗: {ex.Message}");
+                try { failed?.Dispose(); } catch { }
+                ScheduleStartRetry(ex.Message);
             }
+        }
+
+        // ================================================================
+        // 起動のやり直し
+        // ================================================================
+        //
+        // 【なぜ要るか】
+        //   ドメインリロードの直後は、前の待ち受けが閉じ切る前に起動が走ることがある。
+        //   警告だけで終えると、窓口が立たないまま接続だけ受け付けられる状態に見え、
+        //   外からは固まったのか忙しいのか区別できない（2026-10-04 に 2 回起きた）。
+        //   少し待って立て直し、決めた回数で立たなければエラーとして出す。
+        //   毎フレームは見ない。時間を置いてメインスレッドへ 1 回だけ戻す。
+
+        private const int StartRetryMax     = 10;
+        private const int StartRetryDelayMs = 1000;
+        private static int _startRetry;
+
+        private static void ScheduleStartRetry(string reason)
+        {
+            if (_startRetry >= StartRetryMax)
+            {
+                Debug.LogError($"{LogTag} 起動失敗（{StartRetryMax} 回やり直しても立たない）: {reason}");
+                _startRetry = 0;
+                return;
+            }
+            _startRetry++;
+            Debug.LogWarning($"{LogTag} 起動失敗: {reason}（{StartRetryDelayMs}ms 後にやり直す {_startRetry}/{StartRetryMax}）");
+
+            var ctx = _syncCtx ?? SynchronizationContext.Current;
+            if (ctx == null) return;
+            Task.Delay(StartRetryDelayMs).ContinueWith(_ =>
+            {
+                try { ctx.Post(__ => Start(), null); } catch { }
+            });
         }
 
         /// <summary>
@@ -339,6 +376,9 @@ namespace Poly_Ling.EditorControl
 
                 case "prefab_import":
                     return LogResponse(HandlePrefabImport(op, msg));
+
+                case "build_player":
+                    return LogResponse(HandleBuildPlayer(op, msg));
 
                 default:
                     return LogResponse(BuildError(op, $"unknown action: {op}"));
@@ -672,6 +712,81 @@ namespace Poly_Ling.EditorControl
                 $"{outcome.Title}\nprefabs={string.Join(",", outcome.PrefabPaths)}\n{outcome.Text}";
 
             return outcome.Success ? BuildOk(op, text) : BuildError(op, text);
+        }
+
+        // ================================================================
+        // build_player：Player ビルド（Windows 64bit）
+        //   params.outputPath  … 出力する exe。プロジェクト直下からの相対か絶対。既定 ビルド用/PolyLing.exe
+        //   params.development … 開発ビルドにするか（既定 false）
+        //   シーンは Build Settings で有効なもの。Play 中・コンパイル中は拒否する。
+        //   ビルドはメインスレッドを塞ぐので、応答は終わってから返る（MCP 側は待ち時間を長く取る）。
+        //   出力先の exe が起動中だと上書きできずに失敗する（先に player_stop）。
+        // ================================================================
+
+        /// <summary>build_player の既定の出力先（プロジェクト直下からの相対）。</summary>
+        public const string DefaultPlayerOutput = "ビルド用/PolyLing.exe";
+
+        private static string HandleBuildPlayer(string op, RemoteMessage msg)
+        {
+            if (!CheckEditModeIdle(op, out string busy)) return busy;
+
+            var raw = msg?.Params;
+
+            string projectRoot = System.IO.Path.GetDirectoryName(Application.dataPath);
+            string output = TryGetParam(raw, "outputPath", out string o) && !string.IsNullOrWhiteSpace(o)
+                ? o : DefaultPlayerOutput;
+            if (!System.IO.Path.IsPathRooted(output))
+                output = System.IO.Path.Combine(projectRoot, output);
+            output = System.IO.Path.GetFullPath(output);
+            if (!output.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                return BuildError(op, "outputPath は .exe を指定してください: " + output);
+
+            bool development = false;
+            string err = null;
+            ReadBool(raw, "development", ref development, ref err);
+            if (err != null) return BuildError(op, err);
+
+            var scenes = new List<string>();
+            foreach (var s in EditorBuildSettings.scenes)
+                if (s != null && s.enabled && !string.IsNullOrEmpty(s.path)) scenes.Add(s.path);
+            if (scenes.Count == 0)
+                return BuildError(op, "Build Settings に有効なシーンがありません");
+
+            var options = new BuildPlayerOptions
+            {
+                scenes           = scenes.ToArray(),
+                locationPathName = output,
+                target           = BuildTarget.StandaloneWindows64,
+                targetGroup      = BuildTargetGroup.Standalone,
+                options          = development ? BuildOptions.Development : BuildOptions.None,
+            };
+
+            Debug.Log($"{LogTag} build_player 開始: {output} scenes={string.Join(",", scenes)} dev={development}");
+            var report = BuildPipeline.BuildPlayer(options);
+            var sum = report.summary;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"result={sum.result}; output={output}; seconds={sum.totalTime.TotalSeconds:F1}; ");
+            sb.Append($"errors={sum.totalErrors}; warnings={sum.totalWarnings}; bytes={sum.totalSize}; ");
+            sb.Append($"scenes={string.Join(",", scenes)}");
+
+            if (sum.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            {
+                // エラーの本文（先頭いくつか）を添える
+                int shown = 0;
+                foreach (var step in report.steps)
+                {
+                    foreach (var m in step.messages)
+                    {
+                        if (m.type != LogType.Error && m.type != LogType.Exception) continue;
+                        sb.Append("\n").Append(m.content);
+                        if (++shown >= 10) break;
+                    }
+                    if (shown >= 10) break;
+                }
+                return BuildError(op, sb.ToString());
+            }
+            return BuildOk(op, sb.ToString());
         }
 
         private static string HandlePrefabInstantiate(string op, RemoteMessage msg)

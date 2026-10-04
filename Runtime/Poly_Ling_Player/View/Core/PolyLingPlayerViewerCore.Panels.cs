@@ -234,6 +234,13 @@ namespace Poly_Ling.Player
             _materialListSubPanel?.Refresh();
         }
 
+        private void ShowHumanoidBoneSelectPanel()
+        {
+            // 常駐リスト。操作モードは登録時に指定（オブジェクトリストと同じ）。
+            SetPinnedOpen(_layoutRoot?.HumanoidBoneSelectSection, true);
+            _humanoidBoneSelectSubPanel?.Refresh();
+        }
+
         private void ShowUVZPanel()
         {
             // カテゴリ 3

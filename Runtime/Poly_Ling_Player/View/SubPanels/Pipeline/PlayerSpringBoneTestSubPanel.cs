@@ -143,7 +143,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         // UI 自動操作の ID は "springBoneTest.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
         // 形状（スカート／ポニーテール）で出る欄が変わるので、それぞれ形状を切り替える下準備を付ける。
         [UiControl("pmxPath", Description = "読み込む PMX のパス")]
         private TextField    _pmxPathField;

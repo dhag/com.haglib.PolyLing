@@ -38,7 +38,7 @@ namespace Poly_Ling.Player
         private const float DiffThreshold = 0.0001f;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "morphCreate.<下の Id>"（UiControlAttribute.cs）。

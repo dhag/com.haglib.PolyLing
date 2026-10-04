@@ -206,6 +206,7 @@ namespace Poly_Ling.Player
 
                 // 頂点を対象にするツール
                 case InteractionMode.SkinWeightNumeric: return MeshSelectMode.Vertex;
+                case InteractionMode.SkinWeightVolume:  return MeshSelectMode.Vertex;
                 case InteractionMode.VertexDissolve:    return MeshSelectMode.Vertex;
                 case InteractionMode.Quad4To1:          return MeshSelectMode.Vertex;
 

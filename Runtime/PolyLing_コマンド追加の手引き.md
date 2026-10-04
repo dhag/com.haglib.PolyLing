@@ -101,6 +101,35 @@ case XxxCommand c:
     Description = "…")]
 ```
 
+## 2c. 画面での経路（シナリオの案内バーの赤枠のために付ける）
+
+シナリオを流すとき、案内バー（右ペイン中区画）は項目のコマンドに当たるボタンや入力欄を赤枠で囲む（今なにをしているか・次に押すボタン・人間の入力待ち）。どのボタンや入力欄かはコマンドに書く（`PLUiRouteAttribute.cs`）。
+
+- 人が画面で行えるコマンドには `[PLUiRoute("経路の名前", "項目 ID", …)]` を付ける。項目 ID は UI 自動操作の ID（`uiDescribe` で引ける）。左ペインなら折り畳みの見出し（`leftPane.fold.<キー>`）とボタン（`leftPane.<プロパティ名の先頭小文字>`）、右ペインならパネルの項目（`<パネル ID>.<項目>`）、右ペイン最上部の開閉ボタンは `rightPaneTop.<リスト>`。
+- 区切り（何番目に押すか）は書かない。並べた項目は全部同時に囲む。
+- ボタンで表せない操作（ビューポートで描く・ショートカット）は `Note` に書く。枠はそこへ行き着くまでの項目にだけ付く。
+- 入口が複数あれば経路を複数書き、`Order` の小さいものを既定にする。流すときは前の項目の経路に近いもの（最後の項目が同じパネル → 同じ項目を含む）を選び、無ければ既定を使う。
+- UI を持たないコマンド（MCP 専用・照会・内部の後始末）は `PLCommand` に `NoUi = true` を書く。書いていないものと区別するため。
+- 図形生成（`CreatePrimitiveMeshCommand` の派生）は書かない。親の `PLUiRouteByShape` を受けて、画面側（`UiRouteCatalog`）が図形名から左ペインのボタンと図形ボタンを割り出す。図形を別のカテゴリへ移したときも書き直しは要らない。
+- パネルの項目は今まで通り `UiControl` で UI 自動操作に登録する。登録していない項目には枠を付けられない。
+- 入力待ちは「ボタンが押されたか」ではなく「同じコマンドが実行されたか」で判定するので、人がどの経路で行っても先へ進む。
+
+```csharp
+[PLCommand(Category = "object.list", Writes = PLWriteScope.AddOnly, Description = "…")]
+[PLUiRoute("オブジェクトリスト", "rightPaneTop.meshList", "meshList.add")]
+public class AddMeshCommand : PanelCommand
+
+[PLUiRoute("高度な図形の穴つなぎ", "leftPane.fold.Primitive", "leftPane.liveAdvancedPrimitiveBtn",
+    "primitiveAdvanced.shape.Bridge", "primitiveAdvanced.create", Order = 0)]
+[PLUiRoute("トポロジー編集の穴つなぎブリッジ", "leftPane.fold.Topology", "leftPane.bridgeBtn",
+    "primitive.create", Order = 1)]
+public class CreateHoleBridgeCommand : PanelCommand
+```
+
+検査：
+- 経路も `NoUi` も無いコマンド … `queryCommandAudit`（`PanelCommandFactoryAudit.RunAll` の「[参考] 画面での経路…」）。全コマンドへ書き終えるまでは完了条件に入れない。
+- 経路に書いた項目 ID が登録されていないもの（打ち間違い・項目の改名）… `queryUiAutomationAudit` の `unknownRouteItems`。
+
 ## 2. 道具として載るための条件
 
 3 つある。どれか 1 つでも破れると、そのコマンドは道具一覧に出ない。

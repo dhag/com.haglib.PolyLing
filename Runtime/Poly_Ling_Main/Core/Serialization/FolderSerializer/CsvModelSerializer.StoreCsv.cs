@@ -149,7 +149,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         {
             if (ss == null) return;
 
-            sb.Append("s,").Append(ss.Mode);
+            sb.Append("s,").Append(CsvSelectModeFormat.Format(ss.Mode));
 
             sb.Append(',').Append(ss.Vertices.Count);
             foreach (var v in ss.Vertices) sb.Append(',').Append(v);
@@ -306,9 +306,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var ss = new Poly_Ling.Selection.PartsSelectionSet(name ?? "");
 
             int idx = 1;
-            if (Enum.TryParse<Poly_Ling.Selection.MeshSelectMode>(SafeGet(cols, idx), out var mode))
+            if (CsvSelectModeFormat.Read(cols, ref idx, out var mode))
                 ss.Mode = mode;
-            idx++;
 
             int vCount = PInt(cols, idx++);
             for (int i = 0; i < vCount; i++) ss.Vertices.Add(PInt(cols, idx++));
@@ -385,7 +384,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
 
         // 本文の組み立てと読み取りは ObjectGroupCsv が持つ。ここはファイルの
-        // 入出力だけ。手本のグループ（ScenarioLibrary）が同じ形のファイルを
+        // 入出力だけ。シナリオのグループ（ScenarioLibrary）が同じ形のファイルを
         // 読み書きするので、構文解析を 2 か所に置かない。
         private static void WriteObjectGroupsCsv(string folderPath, ModelContext model)
         {

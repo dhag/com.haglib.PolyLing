@@ -2,7 +2,7 @@
 // 利用シーンのコマンド（PanelCommand.Scene.cs）と、版・モデル状態の照会の振り分けと実処理。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 //
-// 手本（PlayerCommandDispatcher.Scenario.cs）と同じ扱い。
+// シナリオ（PlayerCommandDispatcher.Scenario.cs）と同じ扱い。
 //   ・SceneLibrary はプロジェクトにもモデルにも属さないので、プロジェクトの null 門より前で捌く
 //   ・Viewer 側に実体が無いので受け口のフックを通さず、ここで直に処理して ReportData する
 //   ・記録の対象外
@@ -42,7 +42,12 @@ namespace Poly_Ling.Player
 
             // 一時的な状態。ディスパッチャ自身が持つものと、Viewer 側から受け取るもの。
             var modes = new List<string>();
-            if (ScenarioRecorder.IsRecording) modes.Add("scenarioRecording");
+            switch (ScenarioRecorder.State)
+            {
+                case ScenarioRecordingState.Recording: modes.Add("scenarioRecording");       break;
+                case ScenarioRecordingState.Paused:    modes.Add("scenarioRecordingPaused"); break;
+                case ScenarioRecordingState.Ended:     modes.Add("scenarioRecordingEnded");  break;
+            }
             if (_scenarioRun != null)         modes.Add("scenarioRun");
             var fromViewer = OnQueryActiveModes?.Invoke();
             if (fromViewer != null) modes.AddRange(fromViewer);

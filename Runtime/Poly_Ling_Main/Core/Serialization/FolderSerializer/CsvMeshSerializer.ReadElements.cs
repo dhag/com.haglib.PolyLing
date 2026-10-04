@@ -268,10 +268,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             int idx = 1;
             string name = UnescapeCsv(cols.Length > idx ? cols[idx] : "Set"); idx++;
-            string modeStr = cols.Length > idx ? cols[idx] : "Vertex"; idx++;
 
             var ss = new PartsSelectionSet(name);
-            if (Enum.TryParse<MeshSelectMode>(modeStr, out var mode))
+            if (CsvSelectModeFormat.Read(cols, ref idx, out var mode))
                 ss.Mode = mode;
 
             // Vertices
@@ -353,10 +352,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             int idx = 1;
             string name = UnescapeCsv(cols.Length > idx ? cols[idx] : "Set"); idx++;
-            string modeStr = cols.Length > idx ? cols[idx] : "Vertex"; idx++;
 
             var ss = new PartsSelectionSet(name);
-            if (Enum.TryParse<MeshSelectMode>(modeStr, out var mode))
+            if (CsvSelectModeFormat.Read(cols, ref idx, out var mode))
                 ss.Mode = mode;
 
             int vCount = ParseInt(cols, idx++);

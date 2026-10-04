@@ -96,6 +96,18 @@ namespace Poly_Ling.NohMask
 
         [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
         public string MeshName;
+        /// <summary>
+        /// プリセットのファイル（.mqo またはプロジェクト .csv）のフルパス。
+        /// 空なら MediaPipe（ランドマーク／三角形 JSON）から作る。
+        /// 指定時は形をそのまま使い、下の MediaPipe 用の諸元は使わない。
+        /// </summary>
+        [PLParam(TextKey = "SezannePresetPath", Description = "プリセットのファイル（.mqo かプロジェクト .csv）のパス。空なら MediaPipe の顔から作る")]
+        public string PresetPath;
+
+        /// <summary>プリセットのファイル内の通し番号（全オブジェクトを先頭から数えた番号）。</summary>
+        [PLParam(TextKey = "SezannePresetIndex", Description = "プリセットのファイル内の通し番号（全オブジェクトを先頭から数える）", Min = 0, Max = 100000, Step = 1)]
+        public int PresetIndex;
+
         [PLParam(TextKey = "NohLandmarksPath", Description = "ランドマーク JSON のパス。空なら内蔵の既定データを使う")]
         public string LandmarksFilePath;
         [PLParam(TextKey = "NohTrianglesPath", Description = "三角形 JSON のパス。空なら内蔵の既定データを使う")]
@@ -138,6 +150,8 @@ namespace Poly_Ling.NohMask
         public static FaceMeshParams Default => new FaceMeshParams
         {
             MeshName           = "FaceMesh",
+            PresetPath         = "",
+            PresetIndex        = 0,
             LandmarksFilePath  = "",
             TrianglesFilePath  = "",
             Scale              = 10f,
@@ -154,6 +168,8 @@ namespace Poly_Ling.NohMask
 
         public bool Equals(FaceMeshParams o) =>
             MeshName          == o.MeshName          &&
+            PresetPath        == o.PresetPath        &&
+            PresetIndex       == o.PresetIndex       &&
             LandmarksFilePath == o.LandmarksFilePath &&
             TrianglesFilePath == o.TrianglesFilePath &&
             Mathf.Approximately(Scale,      o.Scale)      &&
@@ -364,6 +380,11 @@ namespace Poly_Ling.NohMask
         /// </summary>
         public static MeshObject GenerateFromFiles(FaceMeshParams p)
         {
+            // プリセット指定時は形をそのまま使う（MediaPipe 用の諸元は使わない）。
+            if (!string.IsNullOrEmpty(p.PresetPath))
+                return SezannePresetLibrary.LoadMesh(p.PresetPath, p.PresetIndex, p.MeshName)
+                       ?? new MeshObject(p.MeshName);
+
             string landmarksJson, trianglesJson;
 
             // ランドマーク: 未選択なら内蔵デフォルト（プリセット）

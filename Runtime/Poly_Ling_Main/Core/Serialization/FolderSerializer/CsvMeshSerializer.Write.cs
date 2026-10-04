@@ -338,7 +338,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // ss,name,mode,vertexCount,v0,v1,...,edgeCount,e0v1,e0v2,...,
                 //    faceCount,f0,...,lineCount,l0,...,idCount,idx0,id0,parts0,sub0,...
                 // 識別子の控えは末尾に足してある。列並びは変えていない。
-                sb.Append($"ss,{EscapeCsv(ss.Name)},{ss.Mode}");
+                sb.Append($"ss,{EscapeCsv(ss.Name)},{CsvSelectModeFormat.Format(ss.Mode)}");
 
                 // Vertices
                 sb.Append($",{ss.Vertices.Count}");
@@ -425,7 +425,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (ss == null) continue;
 
                 // nx,name,mode,vertexCount,v0,...,edgeCount,e0v1,e0v2,...,faceCount,f0,...,lineCount,l0,...
-                sb.Append($"nx,{EscapeCsv(ss.Name)},{ss.Mode}");
+                sb.Append($"nx,{EscapeCsv(ss.Name)},{CsvSelectModeFormat.Format(ss.Mode)}");
 
                 sb.Append($",{ss.Vertices.Count}");
                 foreach (var v in ss.Vertices) sb.Append($",{v}");
@@ -442,6 +442,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 WriteSelectionSetVertexIds(sb, ss);
 
                 sb.AppendLine();
+
+                // 直前の nx 行のセットへの付帯情報。立っているときだけ書く。
+                // nxm,protectManualNormalEdit（旧ファイルには無く、読み側は false として読む）
+                if (ss.ProtectManualNormalEdit)
+                    sb.AppendLine("nxm,1");
             }
         }
 

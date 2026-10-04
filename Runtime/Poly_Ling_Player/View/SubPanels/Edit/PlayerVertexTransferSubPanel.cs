@@ -49,7 +49,7 @@ namespace Poly_Ling.Player
 
         // UI
         // UI 自動操作の ID は "vertexTransfer.<下の Id>"（UiControlAttribute.cs）。
-        // メッシュのペアの行（行ごとのドロップダウンと×）は行数が変わるので、項目として登録しない。
+        // メッシュのペアの行（行ごとのドロップダウンと×）は行数が変わるので、ボタンや入力欄として登録しない。
         [UiControl("sourceModel", Description = "転送元のモデル")]
         private DropdownField _srcModelDrop;
         [UiControl("destinationModel", Description = "転送先のモデル")]

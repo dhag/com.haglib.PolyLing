@@ -212,6 +212,96 @@ namespace Poly_Ling.Player
                         mc => SkinWeightOperations.NormalizeAllInMesh(mc));
                     return true;
 
+                // ── スキンW範囲塗り（円筒・球の範囲へ親・自ボーンを直線補間で配分）
+                //    対象・Undo・ミラー同期は Flood と同じ共通経路（ApplySkinWeightPerMesh）。
+                //    非スキンドは頂点がローカル空間で計算の前提が崩れるため、適用前に全体を弾く。
+                case SkinWeightSegmentFillCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+
+                    if (!SkinWeightVolumeOps.TryBuildSegment(model, c.JointBone, c.ParentBone, c.Radius,
+                            out var sfFrame, out string sfErr))
+                    { Fail(sfErr); return true; }
+
+                    var sfTargets = SkinWeightOperations.CollectTargetMeshContexts(model);
+                    if (sfTargets.Count == 0) { Fail("対象の描画オブジェクトがありません。"); return true; }
+
+                    var sfNonSkinned = SkinWeightVolumeOps.FindNonSkinned(sfTargets);
+                    if (sfNonSkinned.Count > 0)
+                    {
+                        Fail("スキンドでない描画オブジェクトが含まれています: "
+                             + string.Join(" / ", sfNonSkinned));
+                        return true;
+                    }
+
+                    int sfVerts = 0;
+                    var sfChanged = new List<MeshContext>();
+                    ApplySkinWeightPerMesh(project, model, "Skin Weight Segment Fill", mc =>
+                    {
+                        int n = SkinWeightVolumeOps.ApplySegmentFillToMesh(mc, sfFrame, c.SelectedOnly);
+                        if (n > 0) { sfVerts += n; sfChanged.Add(mc); }
+                        return n;
+                    });
+
+                    var sfIdx = new int[sfChanged.Count];
+                    var sfIds = new ulong[sfChanged.Count];
+                    for (int i = 0; i < sfChanged.Count; i++)
+                    {
+                        sfIdx[i] = model.MeshContextList.IndexOf(sfChanged[i]);
+                        sfIds[i] = sfChanged[i].ObjectId;
+                    }
+
+                    ReportData(CommandDataJson.New()
+                        .Int("vertices",   sfVerts)
+                        .Int("meshes",     sfChanged.Count)
+                        .Int("parentBone", sfFrame.ParentBone)
+                        .Build(), sfIdx, sfIds);
+                    return true;
+                }
+
+                case SkinWeightVolumePaintCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+
+                    if (!SkinWeightVolumeOps.TryBuildFrame(model, c.ToSpec(), out var swvFrame, out string swvErr))
+                    { Fail(swvErr); return true; }
+
+                    var swvTargets = SkinWeightOperations.CollectTargetMeshContexts(model);
+                    if (swvTargets.Count == 0) { Fail("対象の描画オブジェクトがありません。"); return true; }
+
+                    var swvNonSkinned = SkinWeightVolumeOps.FindNonSkinned(swvTargets);
+                    if (swvNonSkinned.Count > 0)
+                    {
+                        Fail("スキンドでない描画オブジェクトが含まれています: "
+                             + string.Join(" / ", swvNonSkinned));
+                        return true;
+                    }
+
+                    int swvVerts = 0;
+                    var swvChanged = new List<MeshContext>();
+                    ApplySkinWeightPerMesh(project, model, "Skin Weight Volume Paint", mc =>
+                    {
+                        int n = SkinWeightVolumeOps.ApplyToMesh(mc, swvFrame, c.SelectedOnly);
+                        if (n > 0) { swvVerts += n; swvChanged.Add(mc); }
+                        return n;
+                    });
+
+                    var swvIdx = new int[swvChanged.Count];
+                    var swvIds = new ulong[swvChanged.Count];
+                    for (int i = 0; i < swvChanged.Count; i++)
+                    {
+                        swvIdx[i] = model.MeshContextList.IndexOf(swvChanged[i]);
+                        swvIds[i] = swvChanged[i].ObjectId;
+                    }
+
+                    ReportData(CommandDataJson.New()
+                        .Int("vertices",   swvVerts)
+                        .Int("meshes",     swvChanged.Count)
+                        .Int("parentBone", swvFrame.ParentBone)
+                        .Build(), swvIdx, swvIds);
+                    return true;
+                }
+
                 // ── MeshFilter → Skinned 変換
                 case ConvertMeshFilterToSkinnedCommand c:
                 {

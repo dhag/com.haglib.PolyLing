@@ -296,12 +296,12 @@ namespace Poly_Ling.Remote
             if (isRemote && IsUiAutomation(cmd))
                 return OwnershipVerdict.Deny("UI 自動操作はリモート接続からは実行できません");
 
-            // 手本（シナリオ）の置き場はホストの持ち物で、モデルにも属さない。
+            // シナリオの置き場はホストの持ち物で、モデルにも属さない。
             // リモートの参加者が書き換える筋合いがないので同じく受けない。
             if (isRemote && IsScenario(cmd))
-                return OwnershipVerdict.Deny("手本の操作はリモート接続からは実行できません");
+                return OwnershipVerdict.Deny("シナリオの操作はリモート接続からは実行できません");
 
-            // 利用シーンの置き場もホストの持ち物。手本と同じく受けない。
+            // 利用シーンの置き場もホストの持ち物。シナリオと同じく受けない。
             if (isRemote && IsScene(cmd))
                 return OwnershipVerdict.Deny("利用シーンの操作はリモート接続からは実行できません");
 
@@ -600,7 +600,7 @@ namespace Poly_Ling.Remote
         private static bool IsScene(PanelCommand cmd)
             => cmd is QueryScenesCommand || cmd is SetSceneCommand || cmd is DeleteSceneCommand;
 
-        /// <summary>手本（シナリオ）のコマンドか（PanelCommand.Scenario.cs）。</summary>
+        /// <summary>シナリオのコマンドか（PanelCommand.Scenario.cs）。</summary>
         private static bool IsScenario(PanelCommand cmd)
         {
             switch (cmd)
@@ -608,16 +608,20 @@ namespace Poly_Ling.Remote
                 case QueryScenariosCommand _:
                 case DescribeScenarioCommand _:
                 case CreateScenarioCommand _:
-                case SetScenarioBundleCommand _:
+                case MoveScenariosCommand _:
+                case CreateScenarioFolderCommand _:
+                case RenameScenarioFolderCommand _:
+                case DeleteScenarioFolderCommand _:
+                case CreateScenarioFromFolderCommand _:
                 case DeleteScenarioCommand _:
                 case ForkScenarioCommand _:
                 case SaveScenarioFromGroupCommand _:
                 case SetScenarioMetaCommand _:
-                case AddScenarioStepCommand _:
-                case SetScenarioStepCommand _:
-                case RemoveScenarioStepCommand _:
-                case SetScenarioStepArgCommand _:
-                case MoveScenarioStepCommand _:
+                case AddScenarioItemCommand _:
+                case SetScenarioItemCommand _:
+                case RemoveScenarioItemCommand _:
+                case SetScenarioItemArgCommand _:
+                case MoveScenarioItemCommand _:
                 case ExpandScenarioRefCommand _:
                 case ExportScenariosCommand _:
                 case ImportScenariosCommand _:
@@ -626,7 +630,12 @@ namespace Poly_Ling.Remote
                 case QueryScenarioRunCommand _:
                 case StopScenarioRunCommand _:
                 case StartScenarioRecordingCommand _:
+                case PauseScenarioRecordingCommand _:
+                case ResumeScenarioRecordingCommand _:
                 case StopScenarioRecordingCommand _:
+                case SaveScenarioRecordingCommand _:
+                case DiscardScenarioRecordingCommand _:
+                case QueryScenarioRecordingCommand _:
                 case QueryScenarioAuditCommand _:
                     return true;
                 default:

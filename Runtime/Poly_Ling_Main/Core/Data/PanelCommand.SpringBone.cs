@@ -623,7 +623,7 @@ namespace Poly_Ling.Data
     /// 接頭辞で名前の付いた揺れもの鎖へ、揺れ方と鎖の先頭をまとめて入れる。
     /// 鎖の組み立ては SpringBoneChainNaming.CollectChainsByName。
     /// 中で setSpringBoneJoint（段ごと）と setSpringBoneChainRoot（鎖ごと）を撃つ。
-    /// 手本に索引を 1 本ずつ焼かないための口。
+    /// シナリオに索引を 1 本ずつ焼かないための口。
     /// </summary>
     [PLCommand(Category = "dynamics.spring", Effects = PLCommandEffect.SpringBone, Hazards = PLCommandHazard.AffectsMultipleObjects, Writes = PLWriteScope.ModelWide, Description = "接頭辞で名前の付いた揺れもの鎖（{接頭辞}_{番号}_top → _1 … → _end）を名前から組み立て、全ボーンへ同じ揺れ方を入れ、鎖ごとに先頭を指定する。")]
     [PLResult("chains", PLResultKind.Integer, Description = "見つけた鎖の本数")]

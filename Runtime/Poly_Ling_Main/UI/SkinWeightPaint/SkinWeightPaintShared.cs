@@ -59,4 +59,17 @@ namespace Poly_Ling.UI
         /// <summary>可視化に含めるボーンの MasterIndex 群。null で単一ボーン表示。</summary>
         IReadOnlyList<int> VisualizationBones { get; }
     }
+
+    /// <summary>
+    /// 適用前のウェイトを色で見せたいパネル（スキンW範囲塗り）が追加で実装するインターフェース。
+    ///
+    /// パネルは入力値だけを渡し、計算はモデルを持つ描画側（MeshSceneRenderer）が
+    /// SkinWeightVolumeOps で行う。true を返している間は、実ウェイトの代わりに
+    /// 適用後の自ボーンのウェイトで色を付ける。
+    /// </summary>
+    public interface ISkinWeightVolumePreview
+    {
+        /// <summary>プレビューする入力。プレビューしないときは false。</summary>
+        bool TryGetVolumePreviewSpec(out Poly_Ling.Ops.SkinWeightVolumeSpec spec);
+    }
 }

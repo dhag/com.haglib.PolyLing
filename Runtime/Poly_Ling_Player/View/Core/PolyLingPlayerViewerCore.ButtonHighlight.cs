@@ -163,6 +163,7 @@ namespace Poly_Ling.Player
                 case InteractionMode.AdvancedSelect:  return _layoutRoot.ToolAdvancedSelBtn;
                 case InteractionMode.SkinWeightPaint: return _layoutRoot.ToolSkinWeightPaintBtn;
                 case InteractionMode.SkinWeightNumeric: return _layoutRoot.SkinWeightNumericBtn;
+                case InteractionMode.SkinWeightVolume:  return _layoutRoot.SkinWeightVolumeBtn;
                 case InteractionMode.DeleteFace:      return _layoutRoot.ToolDeleteFaceBtn;
                 // AddFace / EdgeBevel / EdgeExtrude / FaceExtrude / EdgeTopology / Knife
                 // はツールボタンを持たない (右ペインから起動) ため null のまま。
@@ -189,6 +190,7 @@ namespace Poly_Ling.Player
                 Add(_layoutRoot.ToolAdvancedSelBtn);
                 Add(_layoutRoot.ToolSkinWeightPaintBtn);
                 Add(_layoutRoot.SkinWeightNumericBtn);
+                Add(_layoutRoot.SkinWeightVolumeBtn);
                 Add(_layoutRoot.ToolDeleteFaceBtn);
                 // 現在パネルを示すボタンは種別ごとに最大 1 つ（一般・3D 操作）なので
                 // 個別列挙は不要 (下の色設定で扱う)
@@ -260,6 +262,11 @@ namespace Poly_Ling.Player
         /// </summary>
         private void ShowRightPanel(VisualElement section, Button panelBtn)
         {
+            // 法線編集のプレビューは実体の法線を書き換えている。パネルを離れたら必ず戻す
+            // （戻さずに他の操作をすると、取消のときにその操作の結果を上書きしてしまう）。
+            if (_layoutRoot != null && section != _layoutRoot.NormalEditSection)
+                _normalEditSubPanel?.CancelPreview();
+
             var kind = _layoutRoot?.GetRightPanelKind(section) ?? RightPanelKind.Tool3D;
             if (kind == RightPanelKind.Pinned)
             {

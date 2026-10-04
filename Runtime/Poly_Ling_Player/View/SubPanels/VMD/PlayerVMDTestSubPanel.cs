@@ -44,7 +44,7 @@ namespace Poly_Ling.Player
         private bool   _kneePreBend       = false;  // 既定 OFF
         private string _ikTraceBoneList = "";       // 空なら全 IK ボーン
 
-        // ── UI 要素 ───────────────────────────────────────────────────────
+        // ── ボタンや入力欄 ───────────────────────────────────────────────────────
         // UI 自動操作の ID は "vmdTest.<下の Id>"（UiControlAttribute.cs）。
         // ボーン・モーフの一覧は読み込んだ VMD に合わせて作り直す行（Rows）。
         [UiControl("model", Safety = UiSafety.ReadOnly, Description = "対象モデル")]

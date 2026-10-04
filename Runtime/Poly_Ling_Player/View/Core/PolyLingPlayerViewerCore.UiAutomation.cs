@@ -1,17 +1,17 @@
 // PolyLingPlayerViewerCore.UiAutomation.cs
-// Player ビューアのコア：UI 自動操作（パネル・項目の登録と、コマンドの受け口）。
+// Player ビューアのコア：UI 自動操作（パネル・ボタン・入力欄の登録と、コマンドの受け口）。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 //
 // 【初期化の順】
 //   BuildLayout（サブパネル生成）と _commandDispatcher の生成より後に BuildUiAutomation を呼ぶ
 //   （PolyLingPlayerViewerCore.Lifecycle.cs の Initialize）。
 //     1. パネルを登録し、サブパネルのインスタンスを RegisterObject へ渡す
-//        （UiControlAttribute の付いたメンバーが項目として登録される）
+//        （UiControlAttribute の付いたメンバーがボタンや入力欄として登録される）
 //     2. ディスパッチャの受け口を配線
 //
 // 【パネルを増やすとき】
 //   RegisterUiAutomationPanels に RegisterUiPanel を 1 行足す。
-//   項目はサブパネルのフィールドに UiControlAttribute を付けて宣言する。
+//   ボタンや入力欄はサブパネルのフィールドに UiControlAttribute を付けて宣言する。
 //   付け忘れ・未登録のセクションは queryUiAutomationAudit で数える。
 //
 // 【キャプチャ】
@@ -46,7 +46,7 @@ namespace Poly_Ling.Player
             WireUiAutomationCommands();
         }
 
-        /// <summary>パネルを登録し、項目を宣言したオブジェクトを渡す。</summary>
+        /// <summary>パネルを登録し、ボタンや入力欄を宣言したオブジェクトを渡す。</summary>
         private void RegisterUiPanel(
             string id, string description, VisualElement section, Action show, params object[] objects)
             => RegisterUiPanelGrouped(id, description, section, show, null, objects);
@@ -85,10 +85,10 @@ namespace Poly_Ling.Player
         //   左ペインは常時表示なので、開く処理は何もしない。表示領域は左ペインのスクロール領域。
         //   uiReveal はこの中の祖先の折り畳みを開き、スクロールして見せる（右ペインと同じ処理）。
         //
-        // 【項目の集め方】
+        // 【ボタンや入力欄の集め方】
         //   PlayerLayoutRoot の公開プロパティのうち Button / Toggle / DropdownField 型で、
         //   実体が左ペインの中にあるものを反射で集める。画面を名前や文字列で探すのではなく、
-        //   PlayerLayoutRoot が公開している部品だけを載せる（登録簿の方針どおり）。
+        //   PlayerLayoutRoot が公開しているボタンや入力欄だけを載せる（登録簿の方針どおり）。
         //   ID は leftPane.<プロパティ名の先頭小文字>、説明は表示文字列と所属する折り畳みの見出し。
         //   安全度は未指定（強調・表示・読み取りはできるが、uiClick では押さない）。
         //   押せるようにするときは、ボタンごとに安全度を決めて登録を分けること。
@@ -105,7 +105,7 @@ namespace Poly_Ling.Player
             if (scroll == null) return;
 
             if (!_uiAutomationRegistry.RegisterPanel(LeftPanePanelId,
-                    "左ペイン（常時表示）の折り畳み・ボタン・チェックボックス。項目の説明に所属する折り畳みの見出しが入る。"
+                    "左ペイン（常時表示）の折り畳み・ボタン・チェックボックス。ボタンや入力欄の説明に所属する折り畳みの見出しが入る。"
                     + "機能の場所を聞かれたら、説明から探して uiReveal（ボタン）と uiHighlight add=true（折り畳みの見出し）で示す",
                     scroll, () => { }))
                 return;
@@ -143,7 +143,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 左ペイン部品の安全度。個別に判定済みのものだけ明示し、それ以外は Unspecified。
+        /// 左ペインのボタンや入力欄の安全度。個別に判定済みのものだけ明示し、それ以外は Unspecified。
         /// リモート接続系（接続・切断・プロジェクト取得）はファイルや編集内容を壊さず、
         /// 取得はクライアント側の表示を受信内容で置き換えるだけなので SafeWrite。
         /// </summary>
@@ -184,9 +184,41 @@ namespace Poly_Ling.Player
                 : $"{text}（{kind}・左ペイン上部）";
         }
 
+        // ================================================================
+        // 右ペイン最上部（rightPaneTop）
+        // ================================================================
+        //
+        //   常駐リスト（モデル／オブジェクト／マテリアル／ヒューマノイドボーン）の開閉ボタンの行。
+        //   常時表示なので開く処理は何もしない。シナリオの案内バーが経路の赤枠を付けるのに使う
+        //   （AddMeshCommand の経路など）。押すとリストを開閉するだけなので SafeWrite。
+
+        private const string RightPaneTopPanelId = "rightPaneTop";
+
+        private void RegisterRightPaneTopUiAutomation()
+        {
+            var bar = _layoutRoot?.RightPinnedBar;
+            if (bar == null) return;
+
+            if (!_uiAutomationRegistry.RegisterPanel(RightPaneTopPanelId,
+                    "右ペイン最上部（常時表示）の常駐リスト開閉ボタン", bar, () => { }))
+                return;
+
+            void Add(string id, Func<Button> get, string name)
+                => _uiAutomationRegistry.RegisterControl(
+                    $"{RightPaneTopPanelId}.{id}", RightPaneTopPanelId, () => get(),
+                    $"「{name}」を開く・閉じる（右ペイン最上部のボタン）",
+                    UiSafety.SafeWrite, source: $"PlayerLayoutRoot.{name}");
+
+            Add("modelList",          () => _layoutRoot.ModelListBtn,          "モデルリスト");
+            Add("meshList",           () => _layoutRoot.MeshListBtn,           "オブジェクトリスト");
+            Add("materialList",       () => _layoutRoot.MaterialListBtn,       "マテリアルリスト");
+            Add("humanoidBoneSelect", () => _layoutRoot.HumanoidBoneSelectBtn, "ヒューマノイドボーン");
+        }
+
         private void RegisterUiAutomationPanels()
         {
             RegisterLeftPaneUiAutomation();
+            RegisterRightPaneTopUiAutomation();
 
             RegisterUiPanel("underlay", "下絵（3D 背面に敷く参照画像）の方向別設定",
                 _layoutRoot.UnderlaySection, ShowUnderlayPanel, _underlaySubPanel);
@@ -254,6 +286,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.SolidifySection, ShowSolidifyPanel, _solidifySubPanel);
             RegisterUiPanel("lineExtrude", "ラインの押し出し（ループを検出して押し出す）",
                 _layoutRoot.LineExtrudeSection, ShowLineExtrudePanel, _lineExtrudeSubPanel);
+            RegisterUiPanel("subdivision", "サブディビジョン（滑らかな子を作る）",
+                _layoutRoot.SubdivisionSection, ShowSubdivisionPanel, _subdivisionSubPanel);
             RegisterUiPanel("quadDecimator", "Quad 減数化",
                 _layoutRoot.QuadDecimatorSection, ShowQuadDecimatorPanel, _quadDecimatorSubPanel);
             RegisterUiPanel("planarizeAlongBones", "ボーンに沿った平面化",
@@ -305,6 +339,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.ObjectGroupSection, ShowObjectGroupPanel, _objectGroupSubPanel);
             RegisterUiPanel("materialList", "マテリアル一覧（作成・シェーダー・選択面への適用）",
                 _layoutRoot.MaterialListSection, ShowMaterialListPanel, _materialListSubPanel);
+            RegisterUiPanel("humanoidBoneSelect", "ヒューマノイドボーン選択（体・頭・手の図の丸印でボーンを選ぶ。背景と丸印の位置は差し替え可）",
+                _layoutRoot.HumanoidBoneSelectSection, ShowHumanoidBoneSelectPanel, _humanoidBoneSelectSubPanel);
 
             // ── UV（SubPanels/UV）────────────────────────────────────
             RegisterUiPanel("uvz", "UVZ（UV と XYZ の相互変換）",
@@ -351,6 +387,9 @@ namespace Poly_Ling.Player
             RegisterUiPanel("skinWeightNumeric", "スキンウェイトの数値編集（スロット・正規化・合計の検査）",
                 _layoutRoot.SkinWeightNumericSection, () => ShowCategory1Panel(InteractionMode.SkinWeightNumeric),
                 _skinWeightNumericSubPanel);
+            RegisterUiPanel("skinWeightVolume", "スキンW範囲塗り（円筒・球の範囲で親・自ボーンのウェイトを直線補間で配分）",
+                _layoutRoot.SkinWeightVolumeSection, () => ShowCategory1Panel(InteractionMode.SkinWeightVolume),
+                _skinWeightVolumeSubPanel);
             RegisterUiPanel("vrmSettings", "VRM 設定（作者情報・許諾・視線・一人称）",
                 _layoutRoot.VrmSettingsSection, ShowVrmSettingsPanel, _vrmSettingsSubPanel);
             RegisterUiPanel("skinKind", "スキンの種類（MeshFilter 系とスキンドの相互変換・ミラー）",
@@ -409,6 +448,8 @@ namespace Poly_Ling.Player
             // ── 表示・環境 ───────────────────────────────────────────
             RegisterUiPanel("gridAxis", "グリッドと軸の表示",
                 _layoutRoot.GridAxisSection, ShowGridAxisPanel, _gridAxisSubPanel);
+            RegisterUiPanel("light", "ライト（個数・種類・色・明るさ・向き・位置）",
+                _layoutRoot.LightSection, ShowLightPanel, _lightSubPanel);
             RegisterUiPanel("workFolder", "作業フォルダ（読み書きできる範囲）",
                 _layoutRoot.WorkFolderSection, ShowWorkFolderPanel, _workFolderSubPanel);
             RegisterUiPanel("camera", "カメラ（メイン画面・3 面図の注視点・回転・画角）",
@@ -423,7 +464,7 @@ namespace Poly_Ling.Player
                 _layoutRoot.CommandSchemaSection, ShowCommandSchemaPanel, _commandSchemaSubPanel);
 
             // ── 検証パネル（SubPanels/Pipeline）──────────────────────
-            // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラスに付けてある。
+            // 共通のボタンや入力欄（実行・状態・ログ・書き込み先・退避）は基底クラスに付けてある。
             RegisterUiPanel("revolutionTest", "回転体の検証",
                 _layoutRoot.RevolutionTestSection, ShowRevolutionTestPanel, _revolutionTestSubPanel);
             RegisterUiPanel("frillSkirtTest", "フリルスカートの検証",
@@ -450,8 +491,10 @@ namespace Poly_Ling.Player
                 _layoutRoot.SpringSkinScenarioSection, ShowSpringSkinScenarioPanel, _springSkinScenarioSubPanel);
             RegisterUiPanel("springSkinPipeScenario", "揺れもの＋スキンの通し検証（パイプ）",
                 _layoutRoot.SpringSkinPipeScenarioSection, ShowSpringSkinPipeScenarioPanel, _springSkinPipeScenarioSubPanel);
-            RegisterUiPanel("scenario", "手本（シナリオ）を選んで先頭から流す。指示・確認の段と失敗で止まる",
+            RegisterUiPanel("scenario", "シナリオを選んで先頭から流す。指示・確認の項目と失敗で止まる",
                 _layoutRoot.ScenarioSection, ShowScenarioPanel, _scenarioSubPanel);
+            RegisterUiPanel("scenarioGuide", "シナリオの案内バー（右ペイン中区画。流している間だけ出る。見せ方・続き・やめる）",
+                _layoutRoot.ScenarioGuideSection, ShowScenarioGuideBar, _scenarioGuideBar);
 
             // ── モーション（SubPanels/VMD ほか）──────────────────────
             RegisterUiPanel("vmdTest", "VMD の読込と再生の検証",
@@ -525,8 +568,8 @@ namespace Poly_Ling.Player
         /// 登録が終わった直後に一度だけ検査する。
         ///
         /// 【なぜ要るか】
-        ///   属性の付け忘れや未登録の部品はコンパイルを通ってしまう。
-        ///   queryUiAutomationAudit を人が呼ぶまで気づけないと、部品を足したときに抜ける。
+        ///   属性の付け忘れや未登録のボタンや入力欄はコンパイルを通ってしまう。
+        ///   queryUiAutomationAudit を人が呼ぶまで気づけないと、ボタンや入力欄を足したときに抜ける。
         ///   ここで走らせておけば、再生するたびに目に入る。
         ///
         /// 問題が無いときは何も出さない（毎回出ると読み飛ばすようになるため）。
@@ -580,6 +623,9 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnUiCaptureStatus = ExecuteUiCaptureStatus;
             _commandDispatcher.OnUiClick         = ExecuteUiClick;
             _commandDispatcher.OnQueryUiAutomationAudit = ExecuteQueryUiAutomationAudit;
+
+            // シナリオの案内バー：人間の入力待ちで、人が項目のコマンドを実行したら次の項目へ進む。
+            _commandDispatcher.OnScenarioUserStepAccepted = () => _scenarioGuideBar?.OnUserStepAccepted();
         }
 
         // ================================================================
@@ -612,6 +658,7 @@ namespace Poly_Ling.Player
                 .Int ("unspecifiedSafety",    r.UnspecifiedSafety)
                 .Int ("unsupportedTypes",     r.UnsupportedTypes)
                 .Int ("unregisteredElements", r.UnregisteredElements)
+                .Int ("unknownRouteItems",    r.UnknownRouteItems)
                 .Build());
         }
 

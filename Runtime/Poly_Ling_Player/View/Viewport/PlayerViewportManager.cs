@@ -267,6 +267,36 @@ namespace Poly_Ling.Player
             RecentPaths.Set(GridSettingsKey, _gridSettings.ToCsv());
         }
 
+        // ================================================================
+        // ライト（4面共通・任意個数）
+        // ================================================================
+
+        private ViewportLightSettings _lightSettings = LoadLightSettings();
+        private readonly PlayerLightRig _lightRig = new PlayerLightRig();
+
+        private const string LightSettingsKey = "Viewport.Lights";
+
+        private static ViewportLightSettings LoadLightSettings()
+            => ViewportLightSettings.FromCsv(RecentPaths.Get(LightSettingsKey, ""));
+
+        /// <summary>ライト設定の写しを返す（4面共通）。</summary>
+        public ViewportLightSettings GetLightSettings() => _lightSettings.Clone();
+
+        /// <summary>ライト設定を更新する（4面共通）。</summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
+        public void SetLightSettings(ViewportLightSettings s)
+        {
+            _lightSettings = (s ?? ViewportLightSettings.Default).Clamped();
+            // 設定を起動間で記録（write-through）。
+            RecentPaths.Set(LightSettingsKey, _lightSettings.ToCsv());
+            _lightRig.Apply(_lightSettings);
+        }
+
         /// <summary>
         /// 軸/グリッドのラインメッシュを現在の設定で構築しておく。
         /// GridAxisRenderer.Prepare は設定が変化していなければ即 return するため、
@@ -319,10 +349,14 @@ namespace Poly_Ling.Player
 
             // 軸/グリッドはモデル未ロードでも表示するため、ここで構築しておく。
             EnsureGridPrepared();
+
+            // ライト：シーン内の既存ライトを無効にし、設定どおりのライトを置く。
+            _lightRig.Initialize(parent, _lightSettings);
         }
 
         public void Dispose()
         {
+            _lightRig.Dispose();
             _gridAxisRenderer?.Dispose();
             _plateQuadRenderer?.Dispose();
 

@@ -463,84 +463,14 @@ namespace Poly_Ling.Player
         // 法線編集の実行
         // ================================================================
         // 対象範囲は NormalEditOps.CollectTargetCorners のルールに従う
-        //   面選択がある → その面のコーナー / 頂点選択のみ → その頂点の全スロット
-        //   選択が無い   → メッシュ全体
-        // RecalcByAngle だけはスロットを作り直すのでメッシュ全体が対象。
+        //   面選択がある         → その面のコーナー
+        //   頂点か辺の選択がある → 選択頂点と辺の両端頂点が参照する全スロット
+        //   選択が無い           → メッシュ全体
+        // RecalcByAngle だけはスロットを作り直すのでメッシュ全体が対象
+        // （法線再計算の除外セットが指すコーナーは元の法線を保つ）。
+        // 手順（手動保護・選択外の分離・強度）は NormalEditOps.Execute が持つ。
+        // パネルのプレビューも同じ Execute を通すので、プレビューと確定の結果は一致する。
         private static int ApplyNormalEdit(MeshContext mc, NormalEditCommand c)
-        {
-            var mo = mc?.MeshObject;
-            if (mo == null) return 0;
-
-            if (c.Operation == NormalEditCommand.Op.RecalcByAngle)
-            {
-                NormalEditOps.RecalcByAngle(mo, c.AngleDeg, c.WeightMode);
-                return mo.FaceCount;
-            }
-
-            var sel = mc.Selection;
-            var corners = NormalEditOps.CollectTargetCorners(
-                mo, sel?.Faces, sel?.Vertices);
-            if (corners.Count == 0) return 0;
-
-            switch (c.Operation)
-            {
-                case NormalEditCommand.Op.SetFromFaces:
-                    return NormalEditOps.SetFromFaces(mo, corners);
-
-                // 面法線だけを平均して1本にする。スロット数は変わらないため
-                // slotCountMayChange には含めない。
-                case NormalEditCommand.Op.AverageFromFaces:
-                    return NormalEditOps.AverageFromFaces(mo, corners, c.WeightMode);
-
-                case NormalEditCommand.Op.Unify:
-                    return NormalEditOps.Unify(mo, corners, c.WeightMode);
-
-                case NormalEditCommand.Op.Break:
-                    return NormalEditOps.Break(mo, corners);
-
-                case NormalEditCommand.Op.AverageAll:
-                    return NormalEditOps.AverageAll(mo, corners);
-
-                case NormalEditCommand.Op.Smooth:
-                    return NormalEditOps.Smooth(mo, corners, c.Strength);
-
-                case NormalEditCommand.Op.Sphereize:
-                {
-                    Vector3 center = c.UseSelectionCenter
-                        ? NormalEditOps.CenterOf(mo, corners)
-                        : c.Target;
-                    return NormalEditOps.Sphereize(mo, corners, center);
-                }
-
-                case NormalEditCommand.Op.PointToTarget:
-                    return NormalEditOps.PointToTarget(mo, corners, c.Target, c.AlignVectors);
-
-                case NormalEditCommand.Op.AlignToAxis:
-                {
-                    Vector3 dir = c.Axis switch
-                    {
-                        0 => Vector3.right,
-                        1 => Vector3.up,
-                        _ => Vector3.forward,
-                    };
-                    if (c.Negative) dir = -dir;
-                    return NormalEditOps.SetDirection(mo, corners, dir);
-                }
-
-                case NormalEditCommand.Op.FlattenOnAxis:
-                    return NormalEditOps.FlattenOnAxis(mo, corners, c.Axis);
-
-                // ミラー対応（X軸対称）。中央近傍の頂点だけ法線の X をゼロにする。
-                // スロット数は変わらないため slotCountMayChange には含めない。
-                case NormalEditCommand.Op.MirrorFlattenSeamX:
-                    return NormalEditOps.FlattenMirrorSeamX(mo, corners, c.MirrorThreshold);
-
-                case NormalEditCommand.Op.Flip:
-                    return NormalEditOps.Flip(mo, corners);
-
-                default:
-                    return 0;
-            }
-        }
+            => NormalEditOps.Execute(mc, c);
     }
 }

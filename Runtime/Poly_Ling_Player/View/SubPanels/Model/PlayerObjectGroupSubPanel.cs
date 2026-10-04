@@ -4,7 +4,7 @@
 //
 // 【できること】
 //   ・グループの一覧と、ソースが変わっているか（要更新）の表示
-//   ・作り直し（退避を残すかを選べる）。ステップが複数あるものは順に実行する
+//   ・作り直し（退避を残すかを選べる）。項目が複数あるものは順に実行する
 //   ・1 つ上のグループへ足してマクロにする
 //   ・自動更新の切り替え（立てると、はしごなどのソースをスキンド化したときに流れる）
 //   ・解除（描画オブジェクトは消さない）
@@ -13,8 +13,8 @@
 // 【マクロの組み方】
 //   生成コマンドは 1 つで 1 グループを作る。順に並べたいときは、
 //   下のグループを選んで「1つ上へ足す」を押す。上のグループの末尾へ
-//   ステップが移り、下のグループは消える（描画オブジェクトは残る）。
-//   実行順はステップの並びそのもの。
+//   項目が移り、下のグループは消える（描画オブジェクトは残る）。
+//   実行順は項目の並びそのもの。
 //
 // 【要更新の判定を毎フレームやらない】
 //   ObjectGroupOps.IsStale はソースの全頂点を走査する。
@@ -217,7 +217,7 @@ namespace Poly_Ling.Player
                 string mark = row.OutputMissing ? "[出力先なし] "
                             : row.Stale        ? "[要更新] "
                             : "";
-                string steps = g.StepCount > 1 ? $" [{g.StepCount} ステップ]" : "";
+                string steps = g.StepCount > 1 ? $" [{g.StepCount} 項目]" : "";
                 _labels.Add($"{mark}{row.Name}  ({row.Action}){steps}");
             }
 
@@ -280,7 +280,7 @@ namespace Poly_Ling.Player
             bool keepStash = _keepStashToggle != null && _keepStashToggle.value;
             SendCmd(new RebuildObjectGroupCommand(ModelIndex, g.Name, keepStash));
             SetStatus(g.StepCount > 1
-                ? $"「{g.Name}」を {g.StepCount} ステップ実行しました"
+                ? $"「{g.Name}」の {g.StepCount} 項目を実行しました"
                 : $"「{g.Name}」を作り直しました");
             Refresh();
         }
@@ -326,7 +326,7 @@ namespace Poly_Ling.Player
                 "グループ結合の確認",
                 $"「{sourceName}」を「{targetName}」の末尾へ足します。\n\n"
               + $"「{sourceName}」のグループは消えます（描画オブジェクトは残ります）。\n"
-              + "実行順はステップの並びそのものです。",
+              + "実行順は項目の並びそのものです。",
                 "足す", "キャンセル");
             if (!ok) return;
 

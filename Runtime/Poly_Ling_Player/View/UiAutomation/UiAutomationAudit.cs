@@ -2,7 +2,7 @@
 // UI 自動操作の登録状況の検査（queryUiAutomationAudit）。
 // Runtime/Poly_Ling_Player/View/UiAutomation/ に配置
 //
-// 【何を数えるか】すべて 0 なら、右ペインの全項目が登録されている。
+// 【何を数えるか】すべて 0 なら、右ペインのすべてのボタンや入力欄が登録されている。
 //   unregisteredSections … 右ペインのセクションのうち RegisterPanel されていないもの
 //   missingAttributes    … RegisterObject したオブジェクトの VisualElement 型のフィールド・
 //                          自動実装プロパティのうち、UiControlAttribute が付いていないもの
@@ -36,18 +36,21 @@ namespace Poly_Ling.Player
             public int    UnspecifiedSafety;
             public int    UnsupportedTypes;
             public int    UnregisteredElements;
+            /// <summary>コマンドの経路（PLUiRoute・図形からの割り出し）に書かれたボタン・入力欄の ID のうち、登録されていないもの。</summary>
+            public int    UnknownRouteItems;
             public int    Controls;
             public int    Panels;
             public string Report;
 
             /// <summary>
             /// 直すべきものが残っているか。6 つのカウンタが全部 0 なら false。
-            /// 未構築（今は表示していないだけの項目）は正常なので数えない。
+            /// 未構築（今は表示していないだけのボタンや入力欄）は正常なので数えない。
             /// </summary>
             public bool HasProblems =>
                 UnregisteredSections > 0 || MissingAttributes    > 0 ||
                 RegistrationErrors   > 0 || UnspecifiedSafety    > 0 ||
-                UnsupportedTypes     > 0 || UnregisteredElements > 0;
+                UnsupportedTypes     > 0 || UnregisteredElements > 0 ||
+                UnknownRouteItems    > 0;
 
             /// <summary>問題の件数を 1 行にまとめる。0 のものは省く。</summary>
             public string ProblemSummary()
@@ -58,7 +61,8 @@ namespace Poly_Ling.Player
                 if (RegistrationErrors   > 0) parts.Add($"登録失敗 {RegistrationErrors}");
                 if (UnspecifiedSafety    > 0) parts.Add($"安全度未指定のボタン {UnspecifiedSafety}");
                 if (UnsupportedTypes     > 0) parts.Add($"未対応の型 {UnsupportedTypes}");
-                if (UnregisteredElements > 0) parts.Add($"未登録の部品 {UnregisteredElements}");
+                if (UnregisteredElements > 0) parts.Add($"未登録のボタンや入力欄 {UnregisteredElements}");
+                if (UnknownRouteItems    > 0) parts.Add($"経路の未登録のボタンや入力欄 {UnknownRouteItems}");
                 return string.Join(" / ", parts);
             }
         }
@@ -109,7 +113,7 @@ namespace Poly_Ling.Player
             // ── 登録の失敗 ─────────────────────────────────────────
             r.RegistrationErrors = registry.Errors.Count;
 
-            // ── 項目ごとの判定 ─────────────────────────────────────
+            // ── ボタンや入力欄ごとの判定 ─────────────────────────────────────
             var unspecified = new List<string>();
             var unsupported = new List<string>();
             int unbuilt = 0;
@@ -131,37 +135,63 @@ namespace Poly_Ling.Player
             r.UnsupportedTypes  = unsupported.Count;
             r.Panels            = registry.Panels.Count;
 
-            // ── 未登録の部品（登録済みパネルの中を辿る）───────────────
+            // ── 未登録のボタンや入力欄（登録済みパネルの中を辿る）───────────────
             var strays = CollectStrayElements(registry);
             r.UnregisteredElements = strays.Count;
 
+            // ── コマンドの経路のボタンや入力欄（PLUiRouteAttribute.cs）───────────
+            // 動的なボタンや入力欄（図形ボタン・諸元）はパネルを開くまで作られないので、所属パネルが引ければ良しとする。
+            var unknownRoute = CollectUnknownRouteItems(registry);
+            r.UnknownRouteItems = unknownRoute.Count;
+
             // ── 報告 ───────────────────────────────────────────────
-            sb.AppendLine($"[UiAutomationAudit] セクション {r.Sections} / パネル {r.Panels} / 項目 {r.Controls}"
+            sb.AppendLine($"[UiAutomationAudit] セクション {r.Sections} / パネル {r.Panels} / ボタンや入力欄 {r.Controls}"
                         + $"（未構築 {unbuilt}）");
             sb.AppendLine($"  未登録のセクション {r.UnregisteredSections} / 属性の付け忘れ {r.MissingAttributes}"
                         + $" / 登録失敗 {r.RegistrationErrors} / 安全度未指定のボタン {r.UnspecifiedSafety}"
-                        + $" / 未対応の型 {r.UnsupportedTypes} / 未登録の部品 {r.UnregisteredElements}");
+                        + $" / 未対応の型 {r.UnsupportedTypes} / 未登録のボタンや入力欄 {r.UnregisteredElements}"
+                        + $" / 経路の未登録のボタンや入力欄 {r.UnknownRouteItems}");
+            AppendList(sb, "経路の未登録のボタンや入力欄", unknownRoute);
             AppendList(sb, "未登録のセクション", unregistered);
             AppendList(sb, "対象外にしたセクション", excluded);
             AppendList(sb, "属性の付け忘れ", missing);
             AppendList(sb, "登録失敗", registry.Errors);
             AppendList(sb, "安全度未指定のボタン", unspecified);
             AppendList(sb, "未対応の型", unsupported);
-            AppendList(sb, "未登録の部品", strays);
+            AppendList(sb, "未登録のボタンや入力欄", strays);
             r.Report = sb.ToString();
             return r;
         }
 
+        /// <summary>全コマンドの経路のボタンや入力欄のうち、登録簿で引けないもの（「型名 / 経路名 : ボタン・入力欄の ID」）。</summary>
+        private static List<string> CollectUnknownRouteItems(UiAutomationRegistry registry)
+        {
+            var list = new List<string>();
+            foreach (var t in Poly_Ling.Data.PLParamAudit.FindCommandTypes())
+            {
+                foreach (var route in UiRouteCatalog.RoutesOf(t))
+                {
+                    foreach (var id in route.Items)
+                    {
+                        if (registry.TryGetControl(id, out _)) continue;
+                        if (registry.TryGetDynamicPanelFor(id, out _)) continue;
+                        list.Add($"{t.Name} / {route.Name} : {id}");
+                    }
+                }
+            }
+            return list;
+        }
+
         // ================================================================
-        // 未登録の部品
+        // 未登録のボタンや入力欄
         // ================================================================
 
         /// <summary>
-        /// 登録済みパネルのセクションの中を論理上の子（Children）で辿り、操作できる部品
+        /// 登録済みパネルのセクションの中を論理上の子（Children）で辿り、操作できるボタンや入力欄
         /// （Button・BaseField 系・一覧）のうち登録されていないものを集める。
-        /// 登録済みの部品と、データ行のコンテナ（UiControl の Rows）の中は辿らない。
+        /// 登録済みのボタンや入力欄と、データ行のコンテナ（UiControl の Rows）の中は辿らない。
         /// Children で辿るので、Foldout の見出しや ScrollView のスクロールバーは対象にならない。
-        /// フィールドに持たずに作った部品（補助関数の中で作ったものなど）はここで見つかる。
+        /// フィールドに持たずに作ったボタンや入力欄（補助関数の中で作ったものなど）はここで見つかる。
         /// </summary>
         private static List<string> CollectStrayElements(UiAutomationRegistry registry)
         {
@@ -204,7 +234,7 @@ namespace Poly_Ling.Player
             }
         }
 
-        /// <summary>利用者が操作できる部品か（Button・BaseField 系・一覧）。</summary>
+        /// <summary>利用者が操作できるボタンや入力欄か（Button・BaseField 系・一覧）。</summary>
         private static bool IsOperable(VisualElement v)
         {
             if (v is Button || v is BaseVerticalCollectionView) return true;
@@ -242,7 +272,7 @@ namespace Poly_Ling.Player
                         continue;
                     }
 
-                    // UiControl 付きの部品を持つ補助オブジェクトを、UiNested なしで持っている。
+                    // UiControl 付きのボタンや入力欄を持つ補助オブジェクトを、UiNested なしで持っている。
                     // 取り込まないなら UiControl(Ignore = true) を付けて明示する。
                     if (!typeof(VisualElement).IsAssignableFrom(f.FieldType)
                         && !f.IsDefined(typeof(CompilerGeneratedAttribute), false)

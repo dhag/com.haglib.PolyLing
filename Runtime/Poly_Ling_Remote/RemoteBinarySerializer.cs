@@ -415,6 +415,17 @@ namespace Poly_Ling.Remote
 
             if (flags.HasFlag(MeshFieldFlags.NormalExcludeSets))
                 RemoteBinaryIO.WritePartsSetList(w, mesh.NormalRecalcExcludeList);
+
+            // NormalExcludeSets と同じ並び（null を飛ばす）で 1 セット 1 個の bool。
+            if (flags.HasFlag(MeshFieldFlags.NormalExcludeLocks))
+            {
+                var list = mesh.NormalRecalcExcludeList;
+                int n = 0;
+                if (list != null) foreach (var s in list) if (s != null) n++;
+                w.Write(n);
+                if (list != null)
+                    foreach (var s in list) if (s != null) w.Write(s.ProtectManualNormalEdit);
+            }
         }
 
         private static void ReadExtras(BinaryReader r, MeshObject mesh, MeshFieldFlags flags, uint vertexCount)
@@ -461,6 +472,18 @@ namespace Poly_Ling.Remote
             {
                 var nx = RemoteBinaryIO.ReadPartsSetList(r);
                 mesh.NormalRecalcExcludeList = nx.Count > 0 ? nx : null;
+            }
+
+            if (flags.HasFlag(MeshFieldFlags.NormalExcludeLocks))
+            {
+                int n = r.ReadInt32();
+                var list = mesh.NormalRecalcExcludeList;
+                for (int i = 0; i < n; i++)
+                {
+                    bool locked = r.ReadBoolean();
+                    if (list != null && i < list.Count && list[i] != null)
+                        list[i].ProtectManualNormalEdit = locked;
+                }
             }
         }
 

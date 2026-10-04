@@ -69,7 +69,7 @@ namespace Poly_Ling.Data
     /// 【何のためにあるか】
     ///   鎖や装飾の取り付け先は「腰」「頭」のようなボーンで決まるが、
     ///   その索引とワールド座標はモデルを読んで割り当てるまで決まらない。
-    ///   手本に索引を焼くと別のモデルで壊れる。ここが名前から引き直す。
+    ///   シナリオに索引を焼くと別のモデルで壊れる。ここが名前から引き直す。
     ///
     /// 【名前を先に見る理由】
     ///   PMX の Humanoid 自動割当は Hips に「センター」を当てることがある。
@@ -139,7 +139,7 @@ namespace Poly_Ling.Data
     [PLResult("groups", PLResultKind.Integer, Description = "グループの数")]
     [PLResult("stale",  PLResultKind.Integer, Description = "要更新のグループの数")]
     [PLResult("names",      PLResultKind.TextArray,    Description = "グループの名前。rebuildObjectGroup や saveScenarioFromGroup へ渡す", Optional = true)]
-    [PLResult("actions",    PLResultKind.TextArray,    Description = "各グループの先頭の段のコマンド名。names と同じ並び", Optional = true)]
+    [PLResult("actions",    PLResultKind.TextArray,    Description = "各グループの先頭の項目のコマンド名。names と同じ並び", Optional = true)]
     [PLResult("staleFlags", PLResultKind.IntegerArray, Description = "各グループが要更新か。1 = 要更新。names と同じ並び", Optional = true)]
     public class QueryObjectGroupsCommand : PanelCommand
     {
@@ -378,7 +378,7 @@ namespace Poly_Ling.Data
     ///   判定はリモート経路の中でしか呼ばれず、単独で確かめる口が無かった。
     ///   確認用のほか、実行前に「このコマンドを今この名前で実行できるか」を知る手段になる。
     ///
-    /// 照会対象のコマンドは action と引数（argKeys / argValues、手本の段と同じ形）から
+    /// 照会対象のコマンドは action と引数（argKeys / argValues、シナリオの項目と同じ形）から
     /// PanelCommandFactory.Create で組み立てる。modelIndex はこのコマンドの封筒の値を使う。
     /// </summary>
     [PLCommand(Category = "mcp", Writes = PLWriteScope.None, Description = "指定したコマンドを指定した名前で実行したときの担当者判定を、実行せずに返す。モデルは変えない。")]

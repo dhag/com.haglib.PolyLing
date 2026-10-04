@@ -193,7 +193,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// UI 自動操作の動的な項目の組（モードごとの設定行）。ViewerCore が
+        /// UI 自動操作の動的なボタンや入力欄の組（モードごとの設定行）。ViewerCore が
         /// exportPmx / exportMqo / exportObj / exportVrm の各パネルに同じ名前を渡す。
         /// </summary>
         public static string ModeGroup(Mode mode) => ModeName(mode).ToLowerInvariant();

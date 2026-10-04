@@ -67,6 +67,22 @@ namespace Poly_Ling.Core
 
         private readonly List<UnifiedSystemAdapter> _adapters       = new List<UnifiedSystemAdapter>();
 
+        // アダプター番号ごとの「そのアダプターを作ったモデル」。RebuildAdapter が記録する。
+        // アダプター番号はモデル番号と一致するとは限らない（Player は常に番号 0 に
+        // カレントモデルを載せる）。アダプターの中身と組み合わせてモデルを読む処理は、
+        // project.Models[mi] ではなく必ずここから引くこと（ModelForAdapter）。
+        private readonly List<ModelContext>         _adapterModels  = new List<ModelContext>();
+
+        /// <summary>アダプター mi を作ったモデル。記録が無ければ project.Models[mi]。</summary>
+        private ModelContext ModelForAdapter(int mi, ProjectContext project)
+        {
+            if (mi >= 0 && mi < _adapterModels.Count && _adapterModels[mi] != null)
+                return _adapterModels[mi];
+            if (project != null && mi >= 0 && mi < project.ModelCount)
+                return project.Models[mi];
+            return null;
+        }
+
         /// <summary>
         /// バインドポーズで見せるか（表示だけの切替）。
         /// 正典は ProjectContext.ShowBindPose。ここは各アダプタへ配るための控え。
@@ -198,6 +214,25 @@ namespace Poly_Ling.Core
         // と色相が衝突しない灰青を選ぶ。
         private static readonly Color NormalRootColor = new Color(0.35f, 0.42f, 0.52f, 0.85f);
         private static readonly Color NormalTipColor  = new Color(0.62f, 0.74f, 0.88f, 0.95f);
+
+        // 法線編集の範囲で色分けするとき（NormalEditOps.ScopeColoringEnabled）の先端色。
+        // 根元は既定の NormalRootColor のまま、先端だけ分類の色にする。
+        private static readonly Color NormalTipTarget          = new Color(1.00f, 0.90f, 0.20f, 1f);  // 対象：黄
+        private static readonly Color NormalTipShared          = new Color(1.00f, 0.50f, 0.10f, 1f);  // 共有で影響を受ける：橙
+        private static readonly Color NormalTipProtectedAuto   = new Color(0.30f, 0.85f, 0.95f, 1f);  // 自動再計算から保護：水色
+        private static readonly Color NormalTipProtectedManual = new Color(0.95f, 0.30f, 0.35f, 1f);  // 手動編集からも保護：赤
+
+        private static Color NormalTipColorOf(Poly_Ling.Ops.NormalEditOps.SlotScope s)
+        {
+            switch (s)
+            {
+                case Poly_Ling.Ops.NormalEditOps.SlotScope.Target:          return NormalTipTarget;
+                case Poly_Ling.Ops.NormalEditOps.SlotScope.SharedInfluence: return NormalTipShared;
+                case Poly_Ling.Ops.NormalEditOps.SlotScope.ProtectedAuto:   return NormalTipProtectedAuto;
+                case Poly_Ling.Ops.NormalEditOps.SlotScope.ProtectedManual: return NormalTipProtectedManual;
+                default:                                                     return NormalTipColor;
+            }
+        }
 
         // ================================================================
         // Adapter構築
@@ -362,6 +397,12 @@ namespace Poly_Ling.Core
         {
             Poly_Ling.Diagnostics.PLResStat.Report("RebuildAdapter.enter mi=" + mi);
 
+            // サブディビジョンの子を親に合わせる。子は親から作る派生物で、
+            // バッファを組む前に中身が揃っていなければならない（面の追加・削除・
+            // Undo・読み込みはどれもこの入口を通る）。差し替えた旧 Mesh は
+            // 遅延破棄に積まれ、直後の FlushRetiredMeshes で解放される。
+            Poly_Ling.Ops.SubdivisionSync.RefreshModel(model);
+
             // 書き戻しが積んだ旧 Mesh をここで解放する。
             // 再構築の入口なので前フレームの描画は完了している。
             Poly_Ling.Data.MeshContext.FlushRetiredMeshes();
@@ -373,6 +414,9 @@ namespace Poly_Ling.Core
             while (_adapters.Count <= mi) _adapters.Add(null);
             _adapters[mi]?.Dispose();
             _adapters[mi] = null;
+
+            while (_adapterModels.Count <= mi) _adapterModels.Add(null);
+            _adapterModels[mi] = model;
 
             bool hasAny = false;
             foreach (var mc in model.MeshContextList)
@@ -628,12 +672,13 @@ namespace Poly_Ling.Core
                     ? _selectedMeshIndexForDraw[mi] : -1;
 
                 // ---- AllowSelectedDrawableMeshSync ----
-                if (profile.AllowSelectedDrawableMeshSync && project != null && mi < project.ModelCount)
+                var adapterModel = ModelForAdapter(mi, project);
+                if (profile.AllowSelectedDrawableMeshSync && adapterModel != null)
                 {
                     var bufMgr = adapter.BufferManager;
                     if (bufMgr != null)
                     {
-                        var model = project.Models[mi];
+                        var model = adapterModel;
                         bufMgr.SyncSelectionFromModel(model);
                         if (selIdx >= 0) bufMgr.SetActiveMesh(0, selIdx);
                         bufMgr.UpdateAllSelectionFlags();
@@ -1188,10 +1233,12 @@ namespace Poly_Ling.Core
 
             float length = DisplaySettings.GetF(DisplaySettings.KeyNormalLength);
 
-            for (int mi = 0; mi < project.ModelCount && mi < _adapters.Count; mi++)
+            for (int mi = 0; mi < _adapters.Count; mi++)
             {
                 var adapter = _adapters[mi];
                 if (adapter == null || !adapter.IsInitialized) continue;
+                var adapterModel = ModelForAdapter(mi, project);
+                if (adapterModel == null) continue;
 
                 // ドラッグ中は抑止する。キャッシュはそのまま残し、Submit 側で止める。
                 if (adapter.CurrentMode == UpdateMode.TransformDragging)
@@ -1205,7 +1252,7 @@ namespace Poly_Ling.Core
                 // 構築済みメッシュをそのまま使う。頂点は動いていない。
                 if (!adapter.CurrentProfile.AllowMeshRebuild) continue;
 
-                BuildNormalLineMesh(project.Models[mi], mi, adapter, length);
+                BuildNormalLineMesh(adapterModel, mi, adapter, length);
             }
         }
 
@@ -1267,6 +1314,12 @@ namespace Poly_Ling.Core
                     int vertStart = (int)meshInfos[unified].VertexStart;
                     int vertCount = (int)meshInfos[unified].VertexCount;
 
+                    // 法線編集の範囲で色分けするなら、このメッシュのスロットを分類しておく。
+                    // 構築は event 駆動（PrepareNormals）なので、ここで計算してよい。
+                    var scopes = Poly_Ling.Ops.NormalEditOps.ScopeColoringEnabled
+                        ? Poly_Ling.Ops.NormalEditOps.ClassifySlots(ctx)
+                        : null;
+
                     for (int v = 0; v < mo.VertexCount && v < vertCount; v++)
                     {
                         var vertex = mo.Vertices[v];
@@ -1297,7 +1350,9 @@ namespace Poly_Ling.Core
                             _normalVerts.Add(root);
                             _normalVerts.Add(root + wn * length);
                             _normalColors.Add(NormalRootColor);
-                            _normalColors.Add(NormalTipColor);
+                            _normalColors.Add(scopes != null && v < scopes.Length && s < scopes[v].Length
+                                ? NormalTipColorOf(scopes[v][s])
+                                : NormalTipColor);
                             _normalIndices.Add(baseIdx);
                             _normalIndices.Add(baseIdx + 1);
                         }
@@ -1392,13 +1447,11 @@ namespace Poly_Ling.Core
             var mat = GetBoneOverlayMaterial(isSelected: true);
             if (mat == null) return;
 
-            for (int mi = 0; mi < project.ModelCount; mi++)
+            // キャッシュはアダプター番号で引いている（モデル番号ではない）。
+            foreach (var mesh in _normalMeshCache.Values)
             {
-                if (_normalMeshCache.TryGetValue(mi, out var mesh)
-                    && mesh != null && mesh.vertexCount > 0)
-                {
+                if (mesh != null && mesh.vertexCount > 0)
                     Graphics.DrawMesh(mesh, Matrix4x4.identity, mat, 0, cam);
-                }
             }
         }
 
@@ -1438,13 +1491,30 @@ namespace Poly_Ling.Core
             var targetBones = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBones;
             int targetBone  = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
 
+            // 適用前のプレビュー（スキンW範囲塗り）。入力が揃っていれば実ウェイトの代わりに
+            // 適用後の自ボーンのウェイトで塗る。入力が不正なら通常表示へ落とす。
+            bool hasVolumePreview = false;
+            Poly_Ling.Ops.SkinWeightVolumeFrame volumeFrame = default;
+            bool volumeSelectedOnly = false;
+            if (Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel is Poly_Ling.UI.ISkinWeightVolumePreview vp
+                && vp.TryGetVolumePreviewSpec(out var volumeSpec)
+                && Poly_Ling.Ops.SkinWeightVolumeOps.TryBuildFrame(model, volumeSpec, out volumeFrame, out _))
+            {
+                hasVolumePreview   = true;
+                volumeSelectedOnly = volumeSpec.SelectedOnly;
+            }
+
             foreach (int masterIdx in masterIndices)
             {
                 var ctx = model.GetMeshContext(masterIdx);
                 if (ctx?.UnityMesh == null || ctx.UnityMesh.vertexCount <= 0
                  || ctx.MeshObject == null || !ctx.IsVisible) continue;
 
-                if (targetBones != null)
+                if (hasVolumePreview)
+                    Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(
+                        ctx.UnityMesh, ctx.MeshObject,
+                        Poly_Ling.Ops.SkinWeightVolumeOps.ComputePreview(ctx, volumeFrame, volumeSelectedOnly));
+                else if (targetBones != null)
                     Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(
                         ctx.UnityMesh, ctx.MeshObject, targetBones);
                 else
@@ -1554,6 +1624,7 @@ namespace Poly_Ling.Core
                 adapter?.Dispose();
             }
             _adapters.Clear();
+            _adapterModels.Clear();
             _selectedMeshIndexForDraw.Clear();
 
             ClearMeshCaches();

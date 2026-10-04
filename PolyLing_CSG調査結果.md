@@ -14,9 +14,9 @@
 
 ### 1.1 何が問題になったか
 
-- 手本 `boolean_demo`（立方体 6×6×6 − 立方体 3×3×3）は水密な結果になる（穴 0）。
+- シナリオ `boolean_demo`（立方体 6×6×6 − 立方体 3×3×3）は水密な結果になる（穴 0）。
 - 細かく割った曲面どうしの差では、結果に穴が残る。`Plane.cs` 冒頭の注記には、以前「球 738 頂点 − 円柱 170 頂点で 8 枚の脱落が残る」と記録されていた。
-- 手本 `boolean_demo` の e1 / e8 には、以前「原因は `Node.ClipPolygons` が葉で裏側を捨てる設計」と書いてあったが、実測の裏付けが無かったので、この会話で実測値だけの記述に書き換えた。
+- シナリオ `boolean_demo` の e1 / e8 には、以前「原因は `Node.ClipPolygons` が葉で裏側を捨てる設計」と書いてあったが、実測の裏付けが無かったので、この会話で実測値だけの記述に書き換えた。
 
 ### 1.2 演算の流れ（`BooleanOps.Perform`）
 
@@ -25,8 +25,8 @@
 3. pb_CSG の BSP で演算（`CSG.Subtract` / `Union` / `Intersect` → `Node`）
 4. 結果の多角形 → Unity Mesh（多角形ごとに扇形に三角形分割。`Model.cs:121-131`）
 5. `FromUnityMesh(mergeVertices: false)`（頂点は三角形ごとにばらばら）
-6. `MeshMergeHelper.MergeAllVerticesAtSamePosition(mergeThreshold)`（手本では 1e-4）
-7. 手本では、この後に `resolveTJunctions`（tolerance 1e-4）を撃つ
+6. `MeshMergeHelper.MergeAllVerticesAtSamePosition(mergeThreshold)`（シナリオでは 1e-4）
+7. シナリオでは、この後に `resolveTJunctions`（tolerance 1e-4）を撃つ
 
 ---
 
@@ -42,7 +42,7 @@
 | T 字解消 | `Poly_Ling_Main/Core/Ops/TJunctionOps.cs` |
 | 頂点まとめ | `Poly_Ling_Main/Core/Ops/MeshMergeHelper.cs` |
 | 穴の列挙 | `Poly_Ling_Main/Core/Ops/BridgeAutoPairOps.cs`（`CollectHoles`） |
-| 手本 | `@settings/PolyLing/PolyLing/scenarios.csv` の `boolean_demo` |
+| シナリオ | `@settings/PolyLing/PolyLing/scenarios/boolean_demo.csv` |
 
 ---
 
@@ -113,8 +113,8 @@
 | 対策 | 実施 | 結果 |
 |---|---|---|
 | `Plane` の法線を正規化 | この会話より前（`Plane.cs` 冒頭の注記） | 注記によれば 8 枚の脱落が残った。この会話では再測していない |
-| epsilon を 1e-6 / 1e-9 で比較 | この会話より前（手本 e7 の記述） | 記述では結果は同一。この会話では再測していない |
-| 頂点まとめ（1e-4）＋ T 字解消 | 手本の手順 | 穴 25 → 6。0 にはならない |
+| epsilon を 1e-6 / 1e-9 で比較 | この会話より前（シナリオ e7 の記述） | 記述では結果は同一。この会話では再測していない |
+| 頂点まとめ（1e-4）＋ T 字解消 | シナリオの手順 | 穴 25 → 6。0 にはならない |
 | 平面が無効な多角形の法線を Newell 法で作り直して演算（計測用の試し、`fixInvalidPlanes`） | この会話 | 作り直した平面 534・残った無効 0・結果 2,608 多角形。穴は 31 / 6 で、1e-4 でまとめた後の 6 は減らない |
 | `Node` の空の木で落ちる不具合を修正（`polygons` を空リストで初期化、`plane` が null のとき何もしない） | この会話 | 積で結果が空のときの NullReferenceException が消えた。球 − 円柱の結果（25 / 6・重心）は修正前と完全一致 |
 | `booleanMesh` の失敗を `Fail` で返す／対象を報告する | この会話 | 空の結果で「ブーリアン失敗: 結果が空になった」が返る。穴には影響しない |

@@ -32,7 +32,7 @@ namespace Poly_Ling.Player
         public Action<PanelCommand>            SendCommand;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "advancedSelect.<下の Id>"（UiControlAttribute.cs）。

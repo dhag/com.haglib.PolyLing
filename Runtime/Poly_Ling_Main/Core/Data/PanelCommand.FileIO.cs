@@ -274,6 +274,55 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// フォルダの下の STL をまとめて 1 つの新しいモデルへ読み込む。1 ファイル = 1 オブジェクト。
+    /// </summary>
+    [PLCommand(Category = "io.import", Writes = PLWriteScope.AddOnly, Description = "フォルダの下の STL をまとめて 1 つの新しいモデルへ読み込む（1 ファイル = 1 オブジェクト、名前はファイル名、同名は「名前_1」…）。作業フォルダの下だけを読める。")]
+    public class ImportStlFolderCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込むフォルダ。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FolderPath { get; }
+
+        [PLParam(Description = "サブフォルダの下の STL も読む")]
+        public bool IncludeSubfolders { get; }
+
+        [PLParam(Description = "読み込み設定（全ファイル共通）。省いた項目は既定値のまま")]
+        public Poly_Ling.STL.StlImportSettings Settings { get; }
+
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
+        public ImportStlFolderCommand(
+            int modelIndex,
+            string folderPath,
+            bool includeSubfolders = true,
+            Poly_Ling.STL.StlImportSettings settings = null,
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
+            : base(modelIndex)
+        {
+            FolderPath               = folderPath ?? "";
+            IncludeSubfolders        = includeSubfolders;
+            Settings                 = settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault();
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
+        }
+    }
+
     /// <summary>STL ファイルを書き出す。バイナリか ASCII かは設定の Binary で決める。</summary>
     [PLCommand(Category = "io.export", Writes = PLWriteScope.None, Description = "現在のモデルを STL ファイルへ書き出す。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]

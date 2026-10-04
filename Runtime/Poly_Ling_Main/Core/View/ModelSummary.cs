@@ -77,6 +77,7 @@ namespace Poly_Ling.View
         public bool   HasTPoseBackup       => false;
         public string DiagnoseTPose()      => "";
         public int HumanoidMissingRequiredCount => 0;
+        public IReadOnlyDictionary<string, int> HumanoidBoneIndexMap => new Dictionary<string, int>();
         public AvatarRetargetView AvatarRetarget => null;
         public IReadOnlyList<string> SpringBoneColliderGroupNames => System.Array.Empty<string>();
         /// <summary>VRM 設定はスナップショットに載せていない。</summary>

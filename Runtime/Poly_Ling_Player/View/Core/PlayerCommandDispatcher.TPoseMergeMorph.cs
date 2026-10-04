@@ -460,7 +460,7 @@ namespace Poly_Ling.Player
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
 
-                    // 結果を入れた先を対象として返す。手本の次の段が @prev で引けるように。
+                    // 結果を入れた先を対象として返す。シナリオの次の項目が @prev で引けるように。
                     // B を消すと索引がずれるので、ここで引き直す。
                     int boolOutIdx = model.IndexOf(boolOut);
                     ReportData(CommandDataJson.New()

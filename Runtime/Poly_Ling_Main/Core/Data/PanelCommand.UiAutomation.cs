@@ -8,7 +8,7 @@
 //   ディスパッチャはプロジェクトの null 門より前で捌く（PlayerCommandDispatcher.UiAutomation.cs）。
 //
 // 【操作できるもの】
-//   UiAutomationRegistry に明示登録されたパネル・項目だけ。
+//   UiAutomationRegistry に明示登録されたパネル・ボタン・入力欄だけ。
 //   画面座標・表示文字列・型による探索はしない。
 //
 // 【リモート（WebSocket）からは受けない】
@@ -17,15 +17,15 @@
 
 namespace Poly_Ling.Data
 {
-    /// <summary>登録済みのパネル・項目の一覧を返す。</summary>
-    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "操作できる UI のパネルと項目の一覧を返す。項目の情報は controlIds と同じ並びの配列で返す。")]
+    /// <summary>登録済みのパネル・ボタン・入力欄の一覧を返す。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "操作できる UI のパネルとボタン・入力欄の一覧を返す。ボタンや入力欄の情報は controlIds と同じ並びの配列で返す。")]
     [PLResult("panelIds",            PLResultKind.TextArray,    Description = "パネル ID")]
     [PLResult("panelDescriptions",   PLResultKind.TextArray,    Description = "パネルの説明。panelIds と同じ並び")]
-    [PLResult("controlIds",          PLResultKind.TextArray,    Description = "項目 ID", Optional = true)]
-    [PLResult("controlPanels",       PLResultKind.TextArray,    Description = "項目が属するパネル ID。controlIds と同じ並び", Optional = true)]
-    [PLResult("controlTypes",        PLResultKind.TextArray,    Description = "項目の UI 型名。controlIds と同じ並び", Optional = true)]
-    [PLResult("controlDescriptions", PLResultKind.TextArray,    Description = "項目の説明。controlIds と同じ並び", Optional = true)]
-    [PLResult("controlSafety",       PLResultKind.TextArray,    Description = "項目の安全度（readOnly / safeWrite / destructive / fileOperation / userOnly / unspecified）。controlIds と同じ並び", Optional = true)]
+    [PLResult("controlIds",          PLResultKind.TextArray,    Description = "ボタン・入力欄の ID", Optional = true)]
+    [PLResult("controlPanels",       PLResultKind.TextArray,    Description = "ボタンや入力欄が属するパネル ID。controlIds と同じ並び", Optional = true)]
+    [PLResult("controlTypes",        PLResultKind.TextArray,    Description = "ボタンや入力欄の UI 型名。controlIds と同じ並び", Optional = true)]
+    [PLResult("controlDescriptions", PLResultKind.TextArray,    Description = "ボタンや入力欄の説明。controlIds と同じ並び", Optional = true)]
+    [PLResult("controlSafety",       PLResultKind.TextArray,    Description = "ボタンや入力欄の安全度（readOnly / safeWrite / destructive / fileOperation / userOnly / unspecified）。controlIds と同じ並び", Optional = true)]
     [PLResult("controlWritable",     PLResultKind.IntegerArray, Description = "値を変更できれば 1、読むだけなら 0。controlIds と同じ並び", Optional = true)]
     public sealed class UiDescribeCommand : PanelCommand
     {
@@ -53,14 +53,14 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>指定した項目が見える状態にする。</summary>
-    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定した項目が見える状態にする。所属パネルを開き、折り畳みを開き、項目が見える位置までスクロールする。")]
+    /// <summary>指定したボタンや入力欄が見える状態にする。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定したボタンや入力欄が見える状態にする。所属パネルを開き、折り畳みを開き、ボタンや入力欄が見える位置までスクロールする。")]
     public sealed class UiRevealCommand : PanelCommand
     {
-        [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
+        [PLParam(Description = "ボタン・入力欄の ID。uiDescribe の controlIds のどれか", Required = true)]
         public string ControlId { get; }
 
-        [PLParam(Description = "表示したあと項目を枠で強調するか。省くと強調する")]
+        [PLParam(Description = "表示したあとボタンや入力欄を枠で強調するか。省くと強調する")]
         public bool Highlight { get; }
 
         [PLParam(Description = "強調するとき、今出ている枠を残して足す。省くと前の枠を消してから強調する")]
@@ -75,17 +75,17 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>指定した項目の現在値を返す。</summary>
-    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定した項目の現在値を返す。パネルが表示されていなくても読める。")]
-    [PLResult("controlId", PLResultKind.Text,      Description = "項目 ID")]
-    [PLResult("type",      PLResultKind.Text,      Description = "項目の UI 型名")]
+    /// <summary>指定したボタンや入力欄の現在値を返す。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定したボタンや入力欄の現在値を返す。パネルが表示されていなくても読める。")]
+    [PLResult("controlId", PLResultKind.Text,      Description = "ボタン・入力欄の ID")]
+    [PLResult("type",      PLResultKind.Text,      Description = "ボタンや入力欄の UI 型名")]
     [PLResult("value",     PLResultKind.Text,      Description = "現在値の文字列。数値は不変文化圏の書式")]
-    [PLResult("choices",   PLResultKind.TextArray, Description = "選べる値。選択式の項目だけ", Optional = true)]
+    [PLResult("choices",   PLResultKind.TextArray, Description = "選べる値。選択式の入力欄だけ", Optional = true)]
     [PLResult("min",       PLResultKind.Number,    Description = "下限。スライダーだけ", Optional = true)]
     [PLResult("max",       PLResultKind.Number,    Description = "上限。スライダーだけ", Optional = true)]
     public sealed class UiGetValueCommand : PanelCommand
     {
-        [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
+        [PLParam(Description = "ボタン・入力欄の ID。uiDescribe の controlIds のどれか", Required = true)]
         public string ControlId { get; }
 
         public UiGetValueCommand(int modelIndex, string controlId)
@@ -95,19 +95,19 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>指定した項目の値を変更する。</summary>
-    [PLCommand(Category = "ui", Writes = PLWriteScope.ModelWide, Description = "指定した項目の値を変更する。利用者が操作したときと同じ処理を通る。範囲を超えた値は項目側で丸められ、丸めた後の値を返す。")]
-    [PLResult("controlId", PLResultKind.Text, Description = "項目 ID")]
+    /// <summary>指定した入力欄の値を変更する。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.ModelWide, Description = "指定した入力欄の値を変更する。利用者が操作したときと同じ処理を通る。範囲を超えた値は入力欄側で丸められ、丸めた後の値を返す。")]
+    [PLResult("controlId", PLResultKind.Text, Description = "ボタン・入力欄の ID")]
     [PLResult("value",     PLResultKind.Text, Description = "変更後に読み戻した値")]
     public sealed class UiSetValueCommand : PanelCommand
     {
-        [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
+        [PLParam(Description = "ボタン・入力欄の ID。uiDescribe の controlIds のどれか", Required = true)]
         public string ControlId { get; }
 
         [PLParam(Description = "設定する値の文字列。数値は小数点に . を使う。真偽値は true / false。選択式は uiGetValue の choices のどれか。一覧は選ぶ行の番号（-1 で選択を外す）", Required = true)]
         public string Value { get; }
 
-        [PLParam(Description = "安全度が destructive / fileOperation の項目を変えるときだけ true にする。省くと false")]
+        [PLParam(Description = "安全度が destructive / fileOperation のボタンや入力欄を変えるときだけ true にする。省くと false")]
         public bool AllowDestructive { get; }
 
         public UiSetValueCommand(int modelIndex, string controlId, string value, bool allowDestructive = false)
@@ -121,10 +121,10 @@ namespace Poly_Ling.Data
 
     /// <summary>指定したボタンを押す。</summary>
     [PLCommand(Category = "ui", Writes = PLWriteScope.ModelWide, Description = "指定したボタンを押す。利用者が押したときと同じ処理を通る。表示されていないボタン・無効なボタンは押せない（先に uiReveal を使う）。安全度が destructive / fileOperation のボタンは allowDestructive を true にしたときだけ押す。readOnly / userOnly / unspecified のボタンは押さない。")]
-    [PLResult("controlId", PLResultKind.Text, Description = "押した項目の ID")]
+    [PLResult("controlId", PLResultKind.Text, Description = "押したボタン・入力欄の ID")]
     public sealed class UiClickCommand : PanelCommand
     {
-        [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
+        [PLParam(Description = "ボタン・入力欄の ID。uiDescribe の controlIds のどれか", Required = true)]
         public string ControlId { get; }
 
         [PLParam(Description = "安全度が destructive / fileOperation のボタンを押すときだけ true にする。省くと false")]
@@ -139,30 +139,31 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>UI 自動操作の登録状況を検査する。</summary>
-    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "UI 自動操作の登録状況を検査する。未登録のセクション・属性の付け忘れ・登録失敗・安全度が未指定のボタン・未対応の型・登録済みパネル内の未登録の部品の数を返す。すべて 0 なら右ペインの全項目が登録されている。")]
+    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "UI 自動操作の登録状況を検査する。未登録のセクション・属性の付け忘れ・登録失敗・安全度が未指定のボタン・未対応の型・登録済みパネル内の未登録のボタンや入力欄の数を返す。すべて 0 なら右ペインのすべてのボタンや入力欄が登録されている。")]
     [PLResult("report",               PLResultKind.Text,    Description = "検査結果の全文。複数行")]
     [PLResult("sections",             PLResultKind.Integer, Description = "右ペインのセクションの数")]
     [PLResult("panels",               PLResultKind.Integer, Description = "登録済みパネルの数")]
-    [PLResult("controls",             PLResultKind.Integer, Description = "登録済み項目の数")]
+    [PLResult("controls",             PLResultKind.Integer, Description = "登録済みのボタンや入力欄の数")]
     [PLResult("unregisteredSections", PLResultKind.Integer, Description = "登録されていないセクションの数")]
     [PLResult("missingAttributes",    PLResultKind.Integer, Description = "UiControl 属性の付け忘れの数")]
     [PLResult("registrationErrors",   PLResultKind.Integer, Description = "登録を拒否した数")]
     [PLResult("unspecifiedSafety",    PLResultKind.Integer, Description = "安全度が未指定のボタンの数")]
-    [PLResult("unsupportedTypes",     PLResultKind.Integer, Description = "読み書きできない型の項目の数")]
-    [PLResult("unregisteredElements", PLResultKind.Integer, Description = "登録済みパネルの中にある、登録されていない操作部品の数")]
+    [PLResult("unsupportedTypes",     PLResultKind.Integer, Description = "読み書きできない型のボタンや入力欄の数")]
+    [PLResult("unregisteredElements", PLResultKind.Integer, Description = "登録済みパネルの中にある、登録されていないボタンや入力欄の数")]
+    [PLResult("unknownRouteItems",    PLResultKind.Integer, Description = "コマンドの画面での経路（PLUiRoute）に書かれたボタン・入力欄の ID のうち、登録されていないものの数")]
     public sealed class QueryUiAutomationAuditCommand : PanelCommand
     {
         public QueryUiAutomationAuditCommand(int modelIndex = 0) : base(modelIndex) { }
     }
 
-    /// <summary>指定した項目を枠で強調する。</summary>
-    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定した項目を枠で強調する。add を立てると今出ている枠を残して足す（折り畳みの見出しとその中のボタンを同時に囲むなど）。立てないと前の枠を消してから強調する。右ペインのパネルを切り替えると枠は全部消える。項目が表示されていないときは失敗する（先に uiReveal を使う）。左ペインの部品は panelId=leftPane の項目。")]
+    /// <summary>指定したボタンや入力欄を枠で強調する。</summary>
+    [PLCommand(Category = "ui", Writes = PLWriteScope.None, Description = "指定したボタンや入力欄を枠で強調する。add を立てると今出ている枠を残して足す（折り畳みの見出しとその中のボタンを同時に囲むなど）。立てないと前の枠を消してから強調する。右ペインのパネルを切り替えると枠は全部消える。ボタンや入力欄が表示されていないときは失敗する（先に uiReveal を使う）。左ペインのボタンや入力欄は panelId=leftPane のボタンや入力欄。")]
     public sealed class UiHighlightCommand : PanelCommand
     {
-        [PLParam(Description = "項目 ID。uiDescribe の controlIds のどれか", Required = true)]
+        [PLParam(Description = "ボタン・入力欄の ID。uiDescribe の controlIds のどれか", Required = true)]
         public string ControlId { get; }
 
-        [PLParam(Description = "true で強調する。false でこの項目の強調を消す。省くと強調する")]
+        [PLParam(Description = "true で強調する。false でこのボタンや入力欄の強調を消す。省くと強調する")]
         public bool Enabled { get; }
 
         [PLParam(Description = "今出ている枠を残して足す。省くと前の枠を消してから強調する")]

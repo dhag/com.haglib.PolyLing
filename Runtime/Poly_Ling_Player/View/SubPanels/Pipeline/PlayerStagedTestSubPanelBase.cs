@@ -59,7 +59,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         // UI 自動操作の ID は "<パネル ID>.<下の Id>"（UiControlAttribute.cs）。
-        // 段階テストのパネルはこの基底クラスを継承するので、ここに付けた項目は
+        // 段階テストのパネルはこの基底クラスを継承するので、ここに付けたボタンや入力欄は
         // どの検証パネルにも共通で入る。段ごとの設定欄は各パネルの BuildOptionsUI が作る。
         [UiControl(Ignore = true)]
         private VisualElement _root;
@@ -87,7 +87,7 @@ namespace Poly_Ling.Player
         private int  _retryCount;
         private bool _running;
 
-        /// <summary>手本の記録へ始まりを知らせた段。-1 はまだ無し。</summary>
+        /// <summary>シナリオの記録へ始まりを知らせた段。-1 はまだ無し。</summary>
         private int  _markedStage = -1;
 
         /// <summary>段の間に空けるミリ秒。コマンドキューが捌けるのを待つ。</summary>
@@ -252,7 +252,7 @@ namespace Poly_Ling.Player
         protected string CurrentStageName
             => (_stageIndex >= 0 && _stageIndex < _stages.Count) ? _stages[_stageIndex].Name : "?";
 
-        // 手本の記録中（startScenarioRecording）は、段の文言も記録へ渡す。
+        // シナリオの記録中（startScenarioRecording）は、段の文言も記録へ渡す。
         // 「UI でやるなら」は Instruction、「なぜ」は Note として段の頭に入る。
         protected StageResult Ok(string did, string ui, string why)
         {
@@ -303,7 +303,7 @@ namespace Poly_Ling.Player
 
             var (name, run) = _stages[_stageIndex];
 
-            // 手本の記録へ段の始まりを知らせる。Retry で同じ段を呼び直すときは知らせない
+            // シナリオの記録へ段の始まりを知らせる。Retry で同じ段を呼び直すときは知らせない
             // （最初の呼び出しで送ったコマンドも、この段のものとして数えるため）。
             if (_markedStage != _stageIndex)
             {

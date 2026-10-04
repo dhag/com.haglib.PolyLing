@@ -174,7 +174,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 諸元 UI の動的な項目。図形を選ぶたびに作り直すので、固定のフィールドでは持てない。
+        /// 諸元 UI の動的なボタンや入力欄。図形を選ぶたびに作り直すので、固定のフィールドでは持てない。
         /// 行ヘルパ（SR / IR / TR / V3F / SB）が、ローカライズのキーを ID にして登録する。
         /// 組はカテゴリ名（ViewerCore がカテゴリごとに別パネルとして登録する）。
         /// </summary>
@@ -256,8 +256,8 @@ namespace Poly_Ling.Player
         ///
         /// 【なぜヘルパにするか】
         ///   DropdownField を直に作って親へ足すと UiDynamicControls へ載らず、
-        ///   MCP の uiSetValue から触れない（queryUiAutomationAudit の「未登録の部品」に出る）。
-        ///   諸元 UI の部品はこのヘルパ群だけで組むこと。
+        ///   MCP の uiSetValue から触れない（queryUiAutomationAudit の「未登録のボタンや入力欄」に出る）。
+        ///   諸元 UI のボタンや入力欄はこのヘルパ群だけで組むこと。
         /// </summary>
         private VisualElement DD(Lx label, List<string> choices, Func<int> get, Action<int> set)
         {

@@ -49,6 +49,12 @@ namespace Poly_Ling.Player
         /// <summary>作業空間バーのセクション（中区画）。</summary>
         public VisualElement EditSpaceSection { get; private set; }
 
+        /// <summary>シナリオの案内バーのセクション（中区画）。シナリオを流している間だけ出す。</summary>
+        public VisualElement ScenarioGuideSection { get; private set; }
+
+        /// <summary>最上部の常駐リスト開閉ボタン行。UI 自動操作の rightPaneTop パネルの表示領域。</summary>
+        public VisualElement RightPinnedBar => _rightPinnedBar;
+
         /// <summary>下区画の見出しの「閉じる」ボタン。下区画のパネル（一般・3D 操作のどちらでも）を閉じる。</summary>
         public Button ToolAreaCloseBtn { get; private set; }
 
@@ -56,6 +62,8 @@ namespace Poly_Ling.Player
         public Button ModelListBtn    { get; private set; }
         public Button MeshListBtn     { get; private set; }
         public Button MaterialListBtn { get; private set; }
+        /// <summary>右ペイン最上部：ヒューマノイドボーン選択の開閉ボタン。</summary>
+        public Button HumanoidBoneSelectBtn { get; private set; }
 
         /// <summary>AddSection で作った全セクション（作成順）。</summary>
         public System.Collections.Generic.IReadOnlyList<VisualElement> RightSections => _rightSections;
@@ -124,6 +132,9 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：スキンウェイト数値設定セクション（ScrollView内）。</summary>
         public VisualElement SkinWeightNumericSection { get; private set; }
 
+        /// <summary>右ペイン：スキンW範囲塗りセクション（ScrollView内）。</summary>
+        public VisualElement SkinWeightVolumeSection { get; private set; }
+
         /// <summary>右ペイン：頂点移動サブパネルセクション（ScrollView内）。</summary>
         public VisualElement VertexMoveSection { get; private set; }
 
@@ -144,6 +155,9 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：軸/グリッド設定セクション（ScrollView内）。</summary>
         public VisualElement GridAxisSection { get; private set; }
+
+        /// <summary>右ペイン：ライト設定セクション（ScrollView内）。</summary>
+        public VisualElement LightSection { get; private set; }
 
         /// <summary>右ペイン：カメラ調整セクション（ScrollView内）。</summary>
         public VisualElement CameraSection { get; private set; }
@@ -173,6 +187,8 @@ namespace Poly_Ling.Player
         public VisualElement UVUnwrapSection { get; private set; }
 
         public VisualElement MaterialListSection   { get; private set; }
+        /// <summary>右ペイン：ヒューマノイドボーン選択（常駐リスト）。</summary>
+        public VisualElement HumanoidBoneSelectSection { get; private set; }
         public VisualElement UVZSection            { get; private set; }
         public VisualElement PartsSelectionSetSection { get; private set; }
         public VisualElement MeshSelectionSetSection  { get; private set; }
@@ -254,6 +270,7 @@ namespace Poly_Ling.Player
         public VisualElement KnifeSection               { get; private set; }
         public VisualElement SolidifySection            { get; private set; }
         public VisualElement LineExtrudeSection         { get; private set; }
+        public VisualElement SubdivisionSection         { get; private set; }
         public VisualElement MediaPipeSection       { get; private set; }
         public VisualElement MediaPipeFingerSection { get; private set; }
         public VisualElement MediaPipeBodySection   { get; private set; }
@@ -306,7 +323,7 @@ namespace Poly_Ling.Player
         public VisualElement FrillSkirtTestSection    { get; private set; }
         public VisualElement SpringSkinScenarioSection { get; private set; }
 
-        /// <summary>手本（シナリオ）を選んで先頭から流す。指示・確認の段と失敗で止まる。</summary>
+        /// <summary>シナリオを選んで先頭から流す。指示・確認の項目と失敗で止まる。</summary>
         public VisualElement ScenarioSection          { get; private set; }
 
         /// <summary>
@@ -379,7 +396,8 @@ namespace Poly_Ling.Player
             ModelListBtn    = MakeBtn("モデルリスト");
             MeshListBtn     = MakeBtn("オブジェクトリスト");
             MaterialListBtn = MakeBtn("マテリアルリスト");
-            foreach (var b in new[] { ModelListBtn, MeshListBtn, MaterialListBtn })
+            HumanoidBoneSelectBtn = MakeBtn("ヒューマノイドボーン");
+            foreach (var b in new[] { ModelListBtn, MeshListBtn, MaterialListBtn, HumanoidBoneSelectBtn })
             {
                 b.style.flexGrow  = 1;
                 b.style.flexBasis = 0;
@@ -478,6 +496,8 @@ namespace Poly_Ling.Player
             MeshListSection     = AddSection(visible: true,  kind: RightPanelKind.Pinned);
             // マテリアルリスト
             MaterialListSection = AddSection(visible: false, kind: RightPanelKind.Pinned);
+            // ヒューマノイドボーン選択
+            HumanoidBoneSelectSection = AddSection(visible: false, kind: RightPanelKind.Pinned);
 
             // ── オブジェクト移動TRSセクション
             ObjectMoveTRSSection = AddSection(visible: false, kind: RightPanelKind.Tool3D);
@@ -499,6 +519,9 @@ namespace Poly_Ling.Player
 
             // ── スキンウェイト数値設定セクション
             SkinWeightNumericSection = AddSection(visible: false, kind: RightPanelKind.Tool3D);
+
+            // ── スキンW範囲塗りセクション
+            SkinWeightVolumeSection = AddSection(visible: false, kind: RightPanelKind.Tool3D);
 
             // ── ブレンドセクション
             BlendSection = AddSection(visible: false, kind: RightPanelKind.General);
@@ -531,6 +554,8 @@ namespace Poly_Ling.Player
             // ── 追加パネルセクション群（デフォルト非表示）────────────────
             UVZSection                 = AddSection(visible: false, kind: RightPanelKind.General);
             EditSpaceSection           = AddSection(visible: false, kind: RightPanelKind.EditSpace, topBorder: false);
+            // シナリオの案内バーも中区画に置く（下区画を切り替えても消えない。PlayerScenarioGuideBar.cs）。
+            ScenarioGuideSection       = AddSection(visible: false, kind: RightPanelKind.EditSpace, topBorder: false);
             PartsSelectionSetSection   = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MeshSelectionSetSection    = AddSection(visible: false, kind: RightPanelKind.General);
             ObjectGroupSection         = AddSection(visible: false, kind: RightPanelKind.General);
@@ -583,6 +608,7 @@ namespace Poly_Ling.Player
             KnifeSection               = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             SolidifySection            = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             LineExtrudeSection         = AddSection(visible: false, kind: RightPanelKind.Tool3D);
+            SubdivisionSection         = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             MediaPipeSection           = AddSection(visible: false, kind: RightPanelKind.General);
             MediaPipeFingerSection     = AddSection(visible: false, kind: RightPanelKind.General);
             MediaPipeBodySection       = AddSection(visible: false, kind: RightPanelKind.General);
@@ -611,6 +637,7 @@ namespace Poly_Ling.Player
             MqoToPmxTestSection        = AddSection(visible: false, kind: RightPanelKind.General);
             UnderlaySection            = AddSection(visible: false, kind: RightPanelKind.Tool3D);   // 表示中はビューポートの左ドラッグで下絵を動かす
             GridAxisSection            = AddSection(visible: false, kind: RightPanelKind.General);
+            LightSection               = AddSection(visible: false, kind: RightPanelKind.General);
             WorkFolderSection          = AddSection(visible: false, kind: RightPanelKind.General);
             CameraSection              = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             CaptureSection             = AddSection(visible: false, kind: RightPanelKind.General);

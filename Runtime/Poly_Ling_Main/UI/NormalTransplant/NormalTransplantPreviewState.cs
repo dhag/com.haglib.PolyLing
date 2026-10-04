@@ -43,6 +43,12 @@ namespace Poly_Ling.UI
             /// <summary>移植法線が求まったか</summary>
             public bool[] Resolved;
 
+            /// <summary>
+            /// プリズムの内側で求まったか。Resolved が true で Inside が false の頂点は
+            /// 最近傍のプリズムへ寄せて求めた（AllowNearest）もの。
+            /// </summary>
+            public bool[] Inside;
+
             /// <summary>プリズムに内包されていた頂点数</summary>
             public int InsideCount;
 

@@ -1,11 +1,11 @@
 // ObjectGroupCsv.cs
-// オブジェクトグループの CSV 本文（objectgroups.csv / scenarios.csv）を組み立て・読み取る。
+// オブジェクトグループの CSV 本文（objectgroups.csv / シナリオの置き場のファイル）を組み立て・読み取る。
 // Runtime/Poly_Ling_Main/Core/Serialization/ に配置
 //
 // 【なぜ 1 か所にまとめるか】
 //   同じ形のファイルを 2 か所が読み書きする。
 //     モデルに属するグループ … CsvModelSerializer（モデルフォルダの objectgroups.csv）
-//     手本のグループ         … ScenarioLibrary（persistentDataPath の scenarios.csv）
+//     シナリオのグループ         … ScenarioLibrary（persistentDataPath の scenarios フォルダ。1 シナリオ 1 ファイル）
 //   それぞれに構文解析を置くと、列を 1 つ足すたびに 2 か所を直すことになり、
 //   必ず片方が取り残される。本文の組み立てと読み取りはここだけに置き、
 //   ファイルの入出力は呼ぶ側が持つ。
@@ -13,28 +13,28 @@
 // 【行の形】
 //   g  … グループ 1 件の頭
 //        g,name,action0,output0,stash,autoUpdate,sourceDigest,goal
-//        action0 と output0 はステップ 0 の要約で、version 1.0 の読み手が
-//        ここだけを見て 1 ステップのグループとして読めるようにしてある。
+//        action0 と output0 は項目 0 の要約で、version 1.0 の読み手が
+//        ここだけを見て 1 項目のグループとして読めるようにしてある。
 //   gp … 前提条件 1 件
 //   gc … 成功条件 1 件
 //   gt … 札 1 件
 //   gv … 由来（gv,parentName,changeSummary,createdBy）
-//   s  … ステップの頭（s,action,elementId,kind,purpose,refName,expansionPolicy,usageScene,profileDim）。以降の o / a / r はこの段に付く
-//   o  … その段の出力先 ObjectId 列
+//   s  … 項目の頭（s,action,scenarioItemId,kind,purpose,refName,expansionPolicy,usageScene,profileDim）。以降の o / a / r はこの項目に付く
+//   o  … その項目の出力先 ObjectId 列
 //   a  … パラメータ 1 件
 //   r  … 描画オブジェクト参照 1 件（キーと ObjectId 列）
 //
 //   s の無いファイル（version 1.0）は、o / a / r が来た時点で g の控えから
-//   ステップ 0 を作って読む。
+//   項目 0 を作って読む。
 //
 // 【版】
 //   1.0 … g / a / r のみ。1 グループ 1 コマンド。
-//   1.1 … s / o を追加。ステップ列。
-//   1.2 … g に goal、s に elementId / kind / purpose、gp / gc / gt / gv を追加。
+//   1.1 … s / o を追加。項目列。
+//   1.2 … g に goal、s に scenarioItemId / kind / purpose、gp / gc / gt / gv を追加。
 //   1.3 … s に refName / expansionPolicy を追加（Kind = ScenarioRef 用）。
-//   1.4 … s に usageScene を追加（段が属する利用シーンの名前）。
+//   1.4 … s に usageScene を追加（項目が属する利用シーンの名前）。
 //   1.5 … s に profileDim を追加（Args のプロファイルの点の成分数。今は 3）。
-//         この列が無い段（1.4 以前）は 2 成分として読み、読み終えたところで
+//         この列が無い項目（1.4 以前）は 2 成分として読み、読み終えたところで
 //         ObjectGroupOps.UpgradeLegacyProfileArgs が 3 成分へ直す。
 //   足した列はすべて行の末尾なので、1.0 / 1.1 / 1.2 / 1.3 / 1.4 の本文もそのまま読める
 //   （Split は行末の空欄を落とすため、列数は種別ごとに下限だけ見る）。
@@ -79,10 +79,10 @@ namespace Poly_Ling.Serialization
             {
                 if (g == null) continue;
 
-                // g 行の action と出力先はステップ 0 の要約。
+                // g 行の action と出力先は項目 0 の要約。
                 // ObjectGroup.Action / OutputObjectId は Step0 を通るが、
-                // あの getter は段が無いときに空の段を作る。書き出しで対象を
-                // 書き換えてしまうので、ここでは段の有無を自分で見る。
+                // あの getter は項目が無いときに空の項目を作る。書き出しで対象を
+                // 書き換えてしまうので、ここでは項目の有無を自分で見る。
                 var first = (g.Steps != null && g.Steps.Count > 0) ? g.Steps[0] : null;
 
                 sb.AppendLine(
@@ -115,7 +115,7 @@ namespace Poly_Ling.Serialization
                     if (st == null) continue;
 
                     sb.AppendLine(
-                        $"s,{Esc(st.Action ?? "")},{Esc(st.ElementId ?? "")}," +
+                        $"s,{Esc(st.Action ?? "")},{Esc(st.ScenarioItemId ?? "")}," +
                         $"{st.Kind},{Esc(st.Purpose ?? "")}," +
                         $"{Esc(st.RefName ?? "")},{st.ExpansionPolicy},{Esc(st.UsageScene ?? "")},{st.ProfileDim}");
 
@@ -159,7 +159,7 @@ namespace Poly_Ling.Serialization
             string legacyAction = "";
             ulong  legacyOutput = 0UL;
 
-            // s 行が無いまま o / a / r が来たら、g 行の控えからステップ 0 を作る。
+            // s 行が無いまま o / a / r が来たら、g 行の控えから項目 0 を作る。
             ObjectGroupStep EnsureStep()
             {
                 if (curStep != null) return curStep;
@@ -172,18 +172,18 @@ namespace Poly_Ling.Serialization
                 return curStep;
             }
 
-            // ステップが 1 つも書かれていないグループ。
+            // 項目が 1 つも書かれていないグループ。
             //
             // version 1.0 の形（g 行に action と出力先を持ち、s 行が無い）だけを
-            // 1 段として起こす。段 0 本の手本（createScenario で作ったもの）を
-            // 読んだときに空の段が生えないよう、g 行の控えが空なら何もしない。
+            // 1 項目として起こす。項目 0 個のシナリオ（createScenario で作ったもの）を
+            // 読んだときに空の項目が生えないよう、g 行の控えが空なら何もしない。
             void CloseGroup()
             {
                 if (cur == null) return;
                 if (cur.Steps.Count == 0
                     && (!string.IsNullOrEmpty(legacyAction) || legacyOutput != 0UL))
                     EnsureStep();
-                cur.EnsureElementIds();
+                cur.EnsureScenarioItemIds();
                 Poly_Ling.Ops.ObjectGroupOps.UpgradeLegacyProfileArgs(cur);
             }
 
@@ -193,7 +193,7 @@ namespace Poly_Ling.Serialization
                 var cols = Split(line);
 
                 // Split は行末の空欄を落とす（"s," は 1 列になる）。
-                // action が空のステップがあるので、列数の下限は種別ごとに見る。
+                // action が空の項目があるので、列数の下限は種別ごとに見る。
                 if (cols.Length < 1) continue;
 
                 switch (cols[0])
@@ -248,7 +248,7 @@ namespace Poly_Ling.Serialization
                         curStep = new ObjectGroupStep
                         {
                             Action          = cols.Length > 1 ? Unesc(cols[1]) : "",
-                            ElementId       = cols.Length > 2 ? Unesc(cols[2]) : "",
+                            ScenarioItemId       = cols.Length > 2 ? Unesc(cols[2]) : "",
                             Kind            = ParseKind(cols, 3),
                             Purpose         = cols.Length > 4 ? Unesc(cols[4]) : "",
                             RefName         = cols.Length > 5 ? Unesc(cols[5]) : "",
@@ -303,8 +303,8 @@ namespace Poly_Ling.Serialization
         // ================================================================
 
         /// <summary>
-        /// 段の種別を読む。名前でも数字でも受ける。読めなければ実行する段とみなす
-        /// （version 1.1 以前にはこの列が無く、全部が実行する段だった）。
+        /// 項目の種別を読む。名前でも数字でも受ける。読めなければ実行する項目とみなす
+        /// （version 1.1 以前にはこの列が無く、全部が実行する項目だった）。
         /// </summary>
         private static ObjectGroupStepKind ParseKind(string[] cols, int index)
         {
@@ -316,7 +316,7 @@ namespace Poly_Ling.Serialization
         }
 
         /// <summary>
-        /// 参照段の扱い方を読む。名前でも数字でも受ける。読めなければ Reference。
+        /// 参照項目の扱い方を読む。名前でも数字でも受ける。読めなければ Reference。
         /// </summary>
         private static ScenarioExpansionPolicy ParsePolicy(string[] cols, int index)
         {

@@ -90,7 +90,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         // UI 自動操作の ID は "mqoToPmxTest.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ・書き込み先）は基底クラス側で登録する。
         [UiControl("pmxPath", Description = "PMX パス（土台）")]
         private TextField  _pmxPathField;
         [UiControl("mqoPath", Description = "MQO パス（ソース）")]

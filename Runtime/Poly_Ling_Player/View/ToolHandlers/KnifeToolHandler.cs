@@ -252,7 +252,7 @@ namespace Poly_Ling.Player
 
                 case KnifeMode.SimpleCut:
                 {
-                    // ビュー基準座標（中央原点・高さ 1・上が＋）で送る。記録された手本が
+                    // ビュー基準座標（中央原点・高さ 1・上が＋）で送る。記録されたシナリオが
                     // ビューの大きさに左右されないようにするため。
                     float w = ctx?.PreviewRect.width ?? 0f, h = ctx?.PreviewRect.height ?? 0f;
                     if (h <= 0f) return null;

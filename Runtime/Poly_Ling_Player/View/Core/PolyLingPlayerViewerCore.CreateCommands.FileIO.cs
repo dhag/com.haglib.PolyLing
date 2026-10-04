@@ -249,6 +249,30 @@ namespace Poly_Ling.Player
             return null;
         }
 
+        /// <summary>STL フォルダ一括読み込みコマンド。実際の読み込みは CommandQueue が後で流す。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportStlFolder(Poly_Ling.Data.ImportStlFolderCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FolderPath)) return "FolderPath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                    cmd.FolderPath, out string path, out string reason))
+                return reason;
+            if (!System.IO.Directory.Exists(path))
+                return $"フォルダがありません: {path}";
+
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportStlFolder(path, cmd.IncludeSubfolders,
+                cmd.Settings ?? Poly_Ling.STL.StlImportSettings.CreateDefault(), post);
+            return null;
+        }
+
         /// <summary>STL 書き出しコマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteExportStlFile(Poly_Ling.Data.ExportStlFileCommand cmd)
@@ -722,6 +746,30 @@ namespace Poly_Ling.Player
             EnsureDefaultMaterialSlot(model);
 
             _viewportManager.EnterSceneReset(project, clearScene: true);
+            RebuildModelList();
+            NotifyPanels(ChangeKind.ListStructure);
+            return null;
+        }
+
+        /// <summary>
+        /// 空のモデルを 1 つ足してカレントにする。既存のモデルは残す。
+        /// マテリアルスロットは ResetProject と同じく既定の 1 つを用意する。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteCreateEmptyModel(CreateEmptyModelCommand cmd)
+        {
+            _localLoader.EnsureProject();
+
+            var project = ActiveProject;
+            if (project == null) return "プロジェクトを用意できませんでした";
+
+            string name = string.IsNullOrEmpty(cmd?.ModelName) ? null : cmd.ModelName;
+            var model = project.CreateNewModel(name);
+            if (model == null) return "モデルを作れませんでした";
+
+            EnsureDefaultMaterialSlot(model);
+
+            _viewportManager.EnterTopologyChanged(project);
             RebuildModelList();
             NotifyPanels(ChangeKind.ListStructure);
             return null;

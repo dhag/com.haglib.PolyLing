@@ -5,7 +5,7 @@
 // 【利用シーンとは】
 //   スキニングやモーフ編集のような作業の一局面について、検索するコマンド・見せる MCP の道具・
 //   危険な操作の扱い・実行後の確認をあらかじめ決めておくプリセット。
-//   手本（シナリオ）が作業全体、コマンドが 1 つの操作なら、利用シーンはその中間の一区間にあたる。
+//   シナリオが作業全体、コマンドが 1 つの操作なら、利用シーンはその中間の一区間にあたる。
 //   Unity のシーンとは無関係。考え方は PolyLing_利用シーン_カテゴライズ設計方針.md。
 //
 // 【何を持つか】（方針書 8.2）
@@ -18,7 +18,7 @@
 //   stateAssumptions      … 想定するモデル状態（ModelStateSnapshot.Names の名前 = true/false）
 //   hazardPolicy          … 危険性（PLCommandHazard）ごとの扱い。allow / warn / require-confirmation / hide
 //   verificationPolicy    … この利用シーンで実行後に確かめること（PLCommandVerification）
-//   relatedScenarios      … 関係する手本（シナリオ）の名前
+//   relatedScenarios      … 関係するシナリオの名前
 //   notes                 … 注意書き。禁忌を承知で破る事情など、機械的に表せない例外をここに書く
 //
 // 【候補の決まり方】（方針書 9.2）

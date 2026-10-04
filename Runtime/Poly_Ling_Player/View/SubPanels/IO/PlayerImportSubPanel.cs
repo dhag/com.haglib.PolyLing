@@ -100,6 +100,12 @@ namespace Poly_Ling.Player
         public Action<string, Poly_Ling.STL.StlImportSettings, PostOptions> OnImportStl;
 
         /// <summary>
+        /// STL「フォルダ読込」ボタン押下時に呼ばれる。
+        /// 引数は (folderPath, サブフォルダも含めるか, settings のコピー, 読込後オプション)。
+        /// </summary>
+        public Action<string, bool, Poly_Ling.STL.StlImportSettings, PostOptions> OnImportStlFolder;
+
+        /// <summary>
         /// VRM Import ボタン押下時に呼ばれる。
         /// 引数は (filePath, settings のコピー, 読込後オプション)。
         /// </summary>
@@ -261,7 +267,7 @@ namespace Poly_Ling.Player
         private string ImportPathKey()
             => "Import." + ModeName(_mode) + ".Path";
 
-        /// <summary>UI 自動操作の動的な項目の組（モードごとの設定行）。</summary>
+        /// <summary>UI 自動操作の動的なボタンや入力欄の組（モードごとの設定行）。</summary>
         public static string ModeGroup(Mode mode) => ModeName(mode).ToLowerInvariant();
 
         // ================================================================
@@ -798,8 +804,45 @@ namespace Poly_Ling.Player
         // UV・材質・分割の単位を持たないので、その欄は出さない。
         // ────────────────────────────────────────────────────────
 
+        /// <summary>フォルダ読込でサブフォルダの下も読むか（既定オン。パネル再構築をまたいで残す）。</summary>
+        private bool _stlIncludeSubfolders = true;
+
+        /// <summary>フォルダ読込のフォルダの保存キー。</summary>
+        private const string StlFolderRecentKey = "Import.STL.Folder";
+
+        /// <summary>
+        /// 「フォルダ読込」。フォルダ選択ダイアログで選んだフォルダの下の STL を、
+        /// 下の設定で 1 つの新しいモデルへまとめて読む（1 ファイル = 1 オブジェクト）。
+        /// </summary>
+        private void OnStlFolderClicked()
+        {
+            string folder = PlayerIoUiKit.AskFolderPath(
+                "STL を読み込むフォルダ", StlFolderRecentKey, null);
+            if (string.IsNullOrEmpty(folder)) return;
+            if (!Directory.Exists(folder))
+            {
+                SetStatus($"フォルダが見つかりません: {folder}");
+                return;
+            }
+            SetStatus("");
+            OnImportStlFolder?.Invoke(folder, _stlIncludeSubfolders, _stlSettings.Clone(), BuildPostOptions());
+        }
+
         private void BuildStlSettings(VisualElement parent)
         {
+            parent.Add(SectionLabel("フォルダ一括"));
+            parent.Add(ToggleRow("folder.includeSubfolders", "サブフォルダも含める",
+                () => _stlIncludeSubfolders, v => _stlIncludeSubfolders = v));
+            var folderBtn = new Button(OnStlFolderClicked) { text = "フォルダ読込" };
+            folderBtn.tooltip = "選んだフォルダの下の STL を、下の設定で 1 つの新しいモデルへまとめて読み込む。\n"
+                              + "1 ファイル = 1 オブジェクト（名前はファイル名。同名は「名前_1」…）。";
+            folderBtn.style.height       = 24;
+            folderBtn.style.marginBottom = 2;
+            parent.Add(_uiDynamic.Add("folder.open", folderBtn,
+                "フォルダ読込。フォルダ選択ダイアログを開き、選んだフォルダの下の STL を 1 つのモデルへまとめて読み込む",
+                UiSafety.UserOnly));
+
+            parent.Add(Separator());
             parent.Add(SectionLabel("座標変換"));
             parent.Add(FloatRow("scale", "Scale", () => _stlSettings.Scale, v => _stlSettings.Scale = v));
             parent.Add(EnumRow("upAxis", "上方向",

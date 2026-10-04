@@ -44,12 +44,12 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "surfaceSnap.<下の Id>"（UiControlAttribute.cs）。
         // プレビュー（スライダー・決定・キャンセル）は「計算」を押した後だけ表示される。
-        // 参照オブジェクトのチェックは対象ごとに作り直す行なので、項目として登録しない。
+        // 参照オブジェクトのチェックは対象ごとに作り直す行なので、ボタンや入力欄として登録しない。
         [UiControl(Ignore = true)]
         private VisualElement _root;
         [UiControl("target", Safety = UiSafety.ReadOnly, Description = "ターゲット（選択中のオブジェクト）の数")]
@@ -381,7 +381,7 @@ namespace Poly_Ling.Player
             if (Surface == null || !Surface.GetBool(Tool, "isPreviewing")) return;
 
             // Current（カレントビュー）は実際のビューに置き換えて載せる。
-            // 記録した手本を再生したとき、そのときのカレントビューで結果が変わらないようにするため。
+            // 記録したシナリオを再生したとき、そのときのカレントビューで結果が変わらないようにするため。
             var cameraKind = Surface.Get(Tool, "cameraKind", SurfaceSnapCameraKind.Current);
             if (cameraKind == SurfaceSnapCameraKind.Current && ResolveCurrentCameraKind != null)
                 cameraKind = ResolveCurrentCameraKind();

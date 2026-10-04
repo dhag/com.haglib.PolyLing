@@ -51,7 +51,7 @@ namespace Poly_Ling.Player
         private enum FrontAxis { MinusZ = 0, PlusZ = 1 }
 
         // UI 自動操作の ID は "pipeHairTest.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
         [UiControl("radius", Description = "四分球（頭）の半径")]
         private FloatField    _radius;
         [UiControl("profileFlatten", Description = "断面の Y 方向の倍率")]

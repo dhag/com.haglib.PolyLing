@@ -15,19 +15,19 @@
 //   ulong は JsonUtility が扱えない。10 進の文字列にして往復させる。
 //
 // 【古い形との往復】
-//   ステップが導入される前は、グループが action / args / meshRefs /
+//   項目が導入される前は、グループが action / args / meshRefs /
 //   outputObjectId を 1 組だけ持っていた。読みでは steps が空のときに
-//   その 4 つをステップ 0 として読む。書きでは steps を必ず書き、
-//   ステップが 1 つのときだけ古い 4 つも埋める（1 ステップのグループは
-//   古い読み手でもそのまま開ける）。2 ステップ以上は古い読み手では開けない。
+//   その 4 つを項目 0 として読む。書きでは steps を必ず書き、
+//   項目が 1 つのときだけ古い 4 つも埋める（1 項目のグループは
+//   古い読み手でもそのまま開ける）。2 項目以上は古い読み手では開けない。
 //
 // 【後から足した欄】
-//   elementId / kind / purpose / refName / expansionPolicy（段）と
+//   scenarioItemId / kind / purpose / refName / expansionPolicy（項目）と
 //   goal / preconditions / successCriteria /
 //   tags / prov*（グループ）は、いずれも既定が空か 0。JsonUtility は無い欄を
 //   既定のまま残すので、これらを持たない保存データもそのまま読める。
-//   ElementId だけは空のままにできない（段を ID で指すため）ので、
-//   読みの最後に ObjectGroup.EnsureElementIds が振る。
+//   ScenarioItemId だけは空のままにできない（項目を ID で指すため）ので、
+//   読みの最後に ObjectGroup.EnsureScenarioItemIds が振る。
 
 using System;
 using System.Collections.Generic;
@@ -54,28 +54,28 @@ namespace Poly_Ling.Serialization
         public List<string> objectIds = new List<string>();
     }
 
-    /// <summary>ステップ 1 つぶん（生成コマンド 1 つ）。</summary>
+    /// <summary>項目 1 つぶん（生成コマンド 1 つ）。</summary>
     [Serializable]
     public class ObjectGroupStepDTO
     {
         public string action = "";
 
-        /// <summary>段を指す名前。グループ内で一意。空の古いデータは読みで振る。</summary>
-        public string elementId = "";
+        /// <summary>項目を指す名前。グループ内で一意。空の古いデータは読みで振る。</summary>
+        public string scenarioItemId = "";
 
-        /// <summary>段の種別（ObjectGroupStepKind の数値）。0 = 実行する段。</summary>
+        /// <summary>項目の種別（ObjectGroupStepKind の数値）。0 = 実行する項目。</summary>
         public int kind = 0;
 
-        /// <summary>この段が要る理由。</summary>
+        /// <summary>この項目が要る理由。</summary>
         public string purpose = "";
 
-        /// <summary>参照先の手本の名前。Kind が ScenarioRef のときだけ使う。</summary>
+        /// <summary>参照先のシナリオの名前。Kind が ScenarioRef のときだけ使う。</summary>
         public string refName = "";
 
-        /// <summary>参照段の扱い方（ScenarioExpansionPolicy の数値）。0 = Reference。</summary>
+        /// <summary>参照項目の扱い方（ScenarioExpansionPolicy の数値）。0 = Reference。</summary>
         public int expansionPolicy = 0;
 
-        /// <summary>段が属する利用シーンの名前。空 = 指定なし。古いデータには無い（空として読む）。</summary>
+        /// <summary>項目が属する利用シーンの名前。空 = 指定なし。古いデータには無い（空として読む）。</summary>
         public string usageScene = "";
 
         /// <summary>
@@ -98,7 +98,7 @@ namespace Poly_Ling.Serialization
             var dto = new ObjectGroupStepDTO
             {
                 action          = s.Action ?? "",
-                elementId       = s.ElementId ?? "",
+                scenarioItemId       = s.ScenarioItemId ?? "",
                 kind            = (int)s.Kind,
                 purpose         = s.Purpose ?? "",
                 refName         = s.RefName ?? "",
@@ -132,7 +132,7 @@ namespace Poly_Ling.Serialization
             var s = new ObjectGroupStep
             {
                 Action    = action ?? "",
-                ElementId = elementId ?? "",
+                ScenarioItemId = scenarioItemId ?? "",
                 Kind      = System.Enum.IsDefined(typeof(ObjectGroupStepKind), kind)
                             ? (ObjectGroupStepKind)kind
                             : ObjectGroupStepKind.Command,
@@ -184,8 +184,8 @@ namespace Poly_Ling.Serialization
         /// <summary>実行するコマンド列。並び順がそのまま実行順。</summary>
         public List<ObjectGroupStepDTO> steps = new List<ObjectGroupStepDTO>();
 
-        // ── ここから下は古い形（1 ステップ前提）。読みの互換のために残す。
-        //    書きでは、ステップが 1 つのときだけ埋める。
+        // ── ここから下は古い形（1 項目前提）。読みの互換のために残す。
+        //    書きでは、項目が 1 つのときだけ埋める。
 
         public string action = "";
 
@@ -267,7 +267,7 @@ namespace Poly_Ling.Serialization
                 }
             }
 
-            // 1 ステップのグループは古い形でも書いておく。
+            // 1 項目のグループは古い形でも書いておく。
             if (dto.steps.Count == 1)
             {
                 var only = dto.steps[0];
@@ -322,7 +322,7 @@ namespace Poly_Ling.Serialization
                 }
             }
 
-            // steps が無い保存データ（ステップ導入前）は、古い 4 つをステップ 0 として読む。
+            // steps が無い保存データ（項目導入前）は、古い 4 つを項目 0 として読む。
             if (g.Steps.Count == 0)
             {
                 var legacy = new ObjectGroupStepDTO
@@ -339,8 +339,8 @@ namespace Poly_Ling.Serialization
                 g.Steps.Add(legacy.ToStep());
             }
 
-            // ステップ導入前・ElementId 導入前の保存データには ID が無い。
-            g.EnsureElementIds();
+            // 項目導入前・ScenarioItemId 導入前の保存データには ID が無い。
+            g.EnsureScenarioItemIds();
             return g;
         }
 

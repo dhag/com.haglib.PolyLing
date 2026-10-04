@@ -2,6 +2,14 @@
 // 入力 (開始頂点, セグメント辺, 終了頂点) からラダー切断計画を解決する。
 // 巡回は BeltSelectMode と同方式（四角形の対辺を辿る）。全てインデックスベース。
 // 解決不能なら Ok=false の計画を返す（呼び出し側は警告して何もしない）。
+//
+// 【面の形】
+//   開始面 … 四角形か三角形。三角形のときは開始頂点の向かいの辺だけが横木になり、
+//            開始頂点からその辺の切断点まで切る（三角・四角…の帯の先端から始められる）。
+//   途中   … 四角形だけ（対辺を辿るため）。
+//   終端面 … 頂点数を問わない（終了頂点を角に持つ面に着いた時点で確定する）。
+//   切断の実行側（LadderCutExecutor / NCutExecutor）は頂点と辺をつなぐ分割を
+//   頂点数を問わずに行うので、三角形の開始面もそのまま割れる。
 
 using System.Collections.Generic;
 using Poly_Ling.Data;
@@ -137,7 +145,7 @@ namespace Poly_Ling.Tools
             foreach (int f in segFaces)
             {
                 var face = mo.Faces[f];
-                if (face.VertexCount != 4) continue;
+                if (!IsStartFaceShape(face)) continue;
                 if (!face.VertexIndices.Contains(startV)) continue;
                 return f;
             }
@@ -159,13 +167,14 @@ namespace Poly_Ling.Tools
             for (int f = 0; f < mo.FaceCount; f++)
             {
                 var face = mo.Faces[f];
-                if (face.VertexCount != 4) continue;
+                if (!IsStartFaceShape(face)) continue;
                 if (!face.VertexIndices.Contains(startV)) continue;
 
                 var verts = face.VertexIndices;
-                for (int i = 0; i < 4; i++)
+                int n = verts.Count;
+                for (int i = 0; i < n; i++)
                 {
-                    var r = new VertexPair(verts[i], verts[(i + 1) % 4]);
+                    var r = new VertexPair(verts[i], verts[(i + 1) % n]);
                     if (r.Contains(startV)) continue; // 開始頂点に隣接する辺は起点ラングにできない
                     if (BeltOutwardReaches(mo, edgeToFaces, f, r, seg))
                     {
@@ -213,6 +222,13 @@ namespace Poly_Ling.Tools
             }
             return false;
         }
+
+        /// <summary>
+        /// 開始面にできる形か（四角形か三角形）。
+        /// 三角形では開始頂点に隣接しない辺が 1 本だけなので、横木は一意に決まる。
+        /// </summary>
+        private static bool IsStartFaceShape(Face face)
+            => face.VertexCount == 4 || face.VertexCount == 3;
 
         /// <summary>
         /// 四角形面で指定辺の対辺を返す（BeltSelectMode.FindOppositeEdge 同方式）。

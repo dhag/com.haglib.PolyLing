@@ -92,6 +92,11 @@ namespace Poly_Ling.Player
         /// </summary>
         public PartsIdByBoneWeightResult LastPartsIdByBoneWeightResult { get; private set; }
 
+        /// <summary>
+        /// NormalEditCommand の直近の実行結果（前後比較による実測）。パネルが結果表示へ使う。
+        /// </summary>
+        public Poly_Ling.Ops.NormalEditResult LastNormalEditResult { get; private set; }
+
         // BoneTransformスライダーのUndo用スナップショット（Begin～End間で保持）
         private readonly Dictionary<int, BoneTransformSnapshot> _boneTransformBeforeSnapshots
             = new Dictionary<int, BoneTransformSnapshot>();
@@ -377,6 +382,9 @@ namespace Poly_Ling.Player
         /// <summary>STL ファイル読み込みコマンドの実行。</summary>
         public Func<ImportStlFileCommand, string> OnImportStlFile;
 
+        /// <summary>STL フォルダ一括読み込みコマンドの実行。</summary>
+        public Func<ImportStlFolderCommand, string> OnImportStlFolder;
+
         /// <summary>STL ファイル書き出しコマンドの実行。</summary>
         public Func<ExportStlFileCommand, string> OnExportStlFile;
 
@@ -560,6 +568,9 @@ namespace Poly_Ling.Player
 
         /// <summary>プロジェクト初期化コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
         public Func<ResetProjectCommand, string> OnResetProject;
+
+        /// <summary>空のモデルを足す。戻り値は失敗理由。成功時は null。</summary>
+        public Func<CreateEmptyModelCommand, string> OnCreateEmptyModel;
 
         /// <summary>歪み複製コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
         public Func<CreateObjectArrayCommand, string> OnCreateObjectArray;
@@ -813,7 +824,7 @@ namespace Poly_Ling.Player
                 _dispatchEntryTopology    = CaptureTopology();
             }
 
-            // 手本の記録は一番外側の 1 本だけを控える。入れ子は外側の結果に含まれる。
+            // シナリオの記録は一番外側の 1 本だけを控える。入れ子は外側の結果に含まれる。
             // outermost は構造通知の受け口が無いと立たないので、深さだけで別に見る。
             bool topLevel = _dispatchDepth == 0;
             if (topLevel)
@@ -846,6 +857,10 @@ namespace Poly_Ling.Player
 
             if (topLevel && !_dispatchNotRecorded && ScenarioRecorder.IsRecording)
                 ScenarioRecorder.RecordCommand(cmd, result);
+
+            // シナリオの案内バーが人の入力を待っているなら、同じコマンドが実行されたかを見る
+            // （PlayerCommandDispatcher.ScenarioRun.cs）。
+            if (topLevel) AcceptUserStepIfAwaiting(cmd, result);
 
             return result;
         }
@@ -977,6 +992,23 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // 空のモデルの追加も、プロジェクトがまだ無い状態から呼べるようにここで捌く。
+            if (cmd is CreateEmptyModelCommand emptyModel)
+            {
+                if (OnCreateEmptyModel == null) { Fail("create empty model handler not wired"); return; }
+                string cemReason = OnCreateEmptyModel.Invoke(emptyModel);
+                if (cemReason != null) { Fail(cemReason); return; }
+
+                var cemProject = _getProject();
+                int cemIndex   = cemProject?.CurrentModelIndex ?? -1;
+                var cemModel   = cemIndex >= 0 ? cemProject.GetModel(cemIndex) : null;
+                ReportData(CommandDataJson.New()
+                    .Int("modelIndex", cemIndex)
+                    .Text("modelName", cemModel?.Name ?? "")
+                    .Build());
+                return;
+            }
+
             // コマンド定義の検査もプロジェクトの有無に関わらず受ける。
             // 見るのはアセンブリ上の型だけで、モデルにもプロジェクトにも触れない。
             // 下の null 門より前で捌かないと、何も読み込んでいない状態で
@@ -1056,9 +1088,9 @@ namespace Poly_Ling.Player
             // 記録（ScenarioRecorder）の対象外。手順ではなく道具の操作なので。
             if (DispatchUiAutomation(cmd)) { MarkNotRecorded(); return; }
 
-            // 手本（シナリオ）もモデルとプロジェクトを見ない。同じ理由でここで捌く。
+            // シナリオもモデルとプロジェクトを見ない。同じ理由でここで捌く。
             // 例外は saveScenarioFromGroup で、受け口の中で現在のモデルを見る。
-            // 記録の対象外（手本を記録すると、記録の開始・停止まで段に入る）。
+            // 記録の対象外（シナリオを記録すると、記録の開始・停止まで項目に入る）。
             if (DispatchScenario(cmd)) { MarkNotRecorded(); return; }
 
             // 利用シーン（SceneLibrary）も同じ。プロジェクトにもモデルにも属さない。
@@ -1082,7 +1114,7 @@ namespace Poly_Ling.Player
                    cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand
                 || cmd is ImportPmxFileCommand       || cmd is ImportMqoFileCommand
                 || cmd is ImportObjFileCommand       || cmd is ImportVrmFileCommand
-                || cmd is ImportStlFileCommand
+                || cmd is ImportStlFileCommand       || cmd is ImportStlFolderCommand
                 || cmd is LoadProjectFileCommand     || cmd is LoadProjectCsvCommand
                 || cmd is LoadProjectBinaryCommand;
 
@@ -1115,6 +1147,7 @@ namespace Poly_Ling.Player
             if (DispatchObjectGroup(cmd, project, model))       return;
             if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchVertexBillboard(cmd, project, model))   return;
+            if (DispatchSubdivision(cmd, project, model))       return;
             if (DispatchLineGroup(cmd, project, model))         return;
             if (DispatchBoolean2D(cmd, project, model))         return;
             if (DispatchUnderlay(cmd, project, model))          return;

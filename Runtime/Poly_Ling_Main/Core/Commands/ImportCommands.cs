@@ -1,5 +1,5 @@
 // ImportCommands.cs
-// PMX / MQO / OBJ / STL インポートのコマンド化。
+// PMX / MQO / OBJ / STL インポートのコマンド化（STL はフォルダ一括読込を含む）。
 // UndoなしのICommand実装（インポートはプロジェクトロード操作であり編集操作ではないため）。
 // Runtime/Poly_Ling_Main/Core/Commands/ に配置
 
@@ -380,6 +380,169 @@ namespace Poly_Ling.Commands
 
             foreach (var mc in result.MeshContexts)
                 model.Add(mc);
+
+            // 階層は無いが、WorldMatrix を単位で確定させておく（描画側が参照するため）。
+            model.ComputeWorldMatrices();
+
+            _onResult?.Invoke(model, result);
+        }
+    }
+
+    /// <summary>フォルダ一括 STL 読み込みの結果。</summary>
+    public class StlFolderImportResult
+    {
+        /// <summary>見つけた STL ファイルの数。</summary>
+        public int FoundFiles;
+
+        /// <summary>オブジェクトにできたファイルの数。</summary>
+        public int ImportedFiles;
+
+        /// <summary>読めなかったファイル（フォルダからの相対パスと理由）。</summary>
+        public System.Collections.Generic.List<(string RelativePath, string Reason)> Failed { get; }
+            = new System.Collections.Generic.List<(string, string)>();
+
+        /// <summary>同名のため番号を付けたオブジェクトの数。</summary>
+        public int Renamed;
+
+        public int TotalVertices;
+        public int TotalFaces;
+        public int DroppedDegenerateFaces;
+    }
+
+    /// <summary>
+    /// フォルダの下の STL をまとめて 1 つのモデルへ読み込むコマンド。
+    /// 1 ファイル = 1 オブジェクト（ASCII の複数 solid も 1 つにまとめる）。
+    ///
+    /// 【並び】フォルダからの相対パスの順（大文字小文字は区別しない）。
+    /// 【名前】ファイル名（拡張子なし）。既に使われていれば「名前_1」「名前_2」… の最小の空き。
+    /// 【失敗】読めないファイルは飛ばして Failed に積む。1 つも読めなければ onError。
+    /// 【対象】拡張子 .stl（大文字小文字は区別しない）だけ。それ以外のファイルは見ない。
+    /// </summary>
+    public class ImportStlBatchCommand : ICommand
+    {
+        private readonly string            _folderPath;
+        private readonly bool              _includeSubfolders;
+        private readonly StlImportSettings _settings;
+        private readonly Action<ModelContext, StlFolderImportResult> _onResult;
+        private readonly Action<string>    _onError;
+
+        public string         Description  => $"Import STL Folder: {Path.GetFileName(_folderPath)}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        /// <param name="folderPath">読み込むフォルダ（解決済みの実経路）</param>
+        /// <param name="includeSubfolders">サブフォルダの下も読むか</param>
+        /// <param name="settings">インポート設定（nullの場合デフォルト使用）。全ファイル共通</param>
+        /// <param name="onResult">成功時コールバック (ModelContext, StlFolderImportResult)</param>
+        /// <param name="onError">失敗時コールバック (エラーメッセージ)</param>
+        public ImportStlBatchCommand(
+            string            folderPath,
+            bool              includeSubfolders,
+            StlImportSettings settings,
+            Action<ModelContext, StlFolderImportResult> onResult,
+            Action<string>    onError = null)
+        {
+            _folderPath        = folderPath;
+            _includeSubfolders = includeSubfolders;
+            _settings          = settings ?? StlImportSettings.CreateDefault();
+            _onResult          = onResult;
+            _onError           = onError;
+        }
+
+        public void Execute()
+        {
+            if (string.IsNullOrEmpty(_folderPath))
+            {
+                _onError?.Invoke("フォルダが空です");
+                return;
+            }
+            if (!Directory.Exists(_folderPath))
+            {
+                _onError?.Invoke($"フォルダが見つかりません: {_folderPath}");
+                return;
+            }
+
+            string root = Path.GetFullPath(_folderPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            var files = new System.Collections.Generic.List<string>();
+            try
+            {
+                var option = _includeSubfolders ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+                foreach (var f in Directory.GetFiles(root, "*", option))
+                    if (string.Equals(Path.GetExtension(f), ".stl", StringComparison.OrdinalIgnoreCase))
+                        files.Add(f);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ImportStlBatchCommand] {e}");
+                _onError?.Invoke($"フォルダを列挙できません: {e.Message}");
+                return;
+            }
+
+            string Rel(string f) => f.Substring(root.Length).TrimStart(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            files.Sort((a, b) => string.Compare(Rel(a), Rel(b), StringComparison.OrdinalIgnoreCase));
+
+            var result = new StlFolderImportResult { FoundFiles = files.Count };
+            if (files.Count == 0)
+            {
+                _onError?.Invoke($"STL ファイルがありません: {root}");
+                return;
+            }
+
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileName(root),
+                FilePath = root,
+            };
+
+            var taken = new System.Collections.Generic.HashSet<string>();
+            foreach (var f in files)
+            {
+                string baseName = Path.GetFileNameWithoutExtension(f);
+                string name     = baseName;
+                if (taken.Contains(name))
+                {
+                    int k = 1;
+                    while (taken.Contains($"{baseName}_{k}")) k++;
+                    name = $"{baseName}_{k}";
+                    result.Renamed++;
+                }
+
+                StlImportResult r;
+                try
+                {
+                    r = StlImporter.ImportFileAsOneObject(f, _settings, name);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[ImportStlBatchCommand] {Rel(f)}: {e}");
+                    result.Failed.Add((Rel(f), e.Message));
+                    continue;
+                }
+
+                if (r == null || !r.Success || r.MeshContexts.Count == 0)
+                {
+                    result.Failed.Add((Rel(f), r?.ErrorMessage ?? "不明"));
+                    continue;
+                }
+
+                taken.Add(name);
+                foreach (var mc in r.MeshContexts) model.Add(mc);
+                result.ImportedFiles++;
+                result.TotalVertices          += r.TotalVertices;
+                result.TotalFaces             += r.TotalFaces;
+                result.DroppedDegenerateFaces += r.DroppedDegenerateFaces;
+            }
+
+            if (result.ImportedFiles == 0)
+            {
+                _onError?.Invoke($"読み込めた STL がありません（{files.Count} 件すべて失敗。コンソール参照）");
+                foreach (var (rel, reason) in result.Failed)
+                    Debug.LogWarning($"[ImportStlBatchCommand] 失敗: {rel}: {reason}");
+                return;
+            }
 
             // 階層は無いが、WorldMatrix を単位で確定させておく（描画側が参照するため）。
             model.ComputeWorldMatrices();

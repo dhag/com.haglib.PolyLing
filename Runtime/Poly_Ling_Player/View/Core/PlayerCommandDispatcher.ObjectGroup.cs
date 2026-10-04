@@ -34,7 +34,7 @@ namespace Poly_Ling.Player
             {
                 // ── オブジェクトグループ：まとめる（マクロを組む）
                 //
-                //   ソースの全ステップをターゲットの末尾へ移し、ソースのグループを消す。
+                //   ソースの全項目をターゲットの末尾へ移し、ソースのグループを消す。
                 //   描画オブジェクトは 1 つも消さない。
                 case MergeObjectGroupCommand c:
                 {
@@ -49,7 +49,7 @@ namespace Poly_Ling.Player
                     var mgSource = model.FindObjectGroupByName(c.SourceGroupName);
                     if (mgSource == null) { Fail($"グループが見つかりません: {c.SourceGroupName}"); return true; }
                     if (mgSource.StepCount == 0)
-                    { Fail($"足すステップがありません: {c.SourceGroupName}"); return true; }
+                    { Fail($"足す項目がありません: {c.SourceGroupName}"); return true; }
 
                     int mgSourceIndex = model.ObjectGroups.IndexOf(mgSource);
                     var mgTargetBefore = mgTarget.Clone();
@@ -266,7 +266,7 @@ namespace Poly_Ling.Player
         ///   ・増えていなければ fallbackIndex のオブジェクト（既存へ追加・上書きブレンド）
         ///
         /// 出力先が決まらなくてもグループは作る。値を書くだけのコマンドのように
-        /// 出力先を持たないステップがあるため。作り直しはそのステップで止まる。
+        /// 出力先を持たない項目があるため。作り直しはその項目で止まる。
         /// </summary>
         private void CaptureObjectGroup(
             PanelCommand cmd, HashSet<ulong> beforeIds, int fallbackIndex,
@@ -414,7 +414,7 @@ namespace Poly_Ling.Player
                                 project, model, modelIndex, false, g, si, out string err))
                         {
                             Debug.LogWarning(
-                                $"[ObjectGroup] 自動更新が止まりました: {g.Name} ステップ {si}: {err}");
+                                $"[ObjectGroup] 自動更新が止まりました: {g.Name} 項目 {si}: {err}");
                             ok = false;
                             break;
                         }
@@ -433,21 +433,21 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// オブジェクトグループの 1 ステップを実行する。
+        /// オブジェクトグループの 1 項目を実行する。
         ///
         /// やること
-        ///   1. そのステップの出力先を、控えの ObjectId から今の索引へ引き直す
-        ///   2. ステップから生成コマンドを組み直す
+        ///   1. その項目の出力先を、控えの ObjectId から今の索引へ引き直す
+        ///   2. 項目から生成コマンドを組み直す
         ///   3. 出力先があれば「そこへ書き戻す」形へ差し替える（PLParam.RebuildRole）
         ///   4. 実行する
         ///
-        /// 【出力先を持たないステップ】
+        /// 【出力先を持たない項目】
         ///   値を書くだけのコマンド（揺れ方の設定など）は出力先を持たない。
         ///   そのときは書き戻しをせず、組み直したコマンドをそのまま実行する。
         ///
         /// 【退避】
-        ///   先頭ステップが単数の描画メッシュを出力するときだけ作る。
-        ///   ステップごとに作ると、実行のたびに複製がステップ数ぶん増える。
+        ///   先頭項目が単数の描画メッシュを出力するときだけ作る。
+        ///   項目ごとに作ると、実行のたびに複製が項目数ぶん増える。
         ///
         /// 【Undo】
         ///   ここでは記録しない。呼び出し側がマクロ全体で 1 件だけ積む。
@@ -461,10 +461,10 @@ namespace Poly_Ling.Player
             error = null;
 
             var step = g.GetStep(stepIndex);
-            if (step == null) { error = $"ステップ {stepIndex} がありません"; return false; }
+            if (step == null) { error = $"項目 {stepIndex} がありません"; return false; }
 
-            // 実行しない段（説明・指示・確認）は何もせず通す。
-            // 失敗にすると、手本から起こしたマクロが説明 1 行で止まる。
+            // 実行しない項目（説明・指示・確認）は何もせず通す。
+            // 失敗にすると、シナリオから起こしたマクロが説明 1 行で止まる。
             if (!step.IsExecutable) return true;
 
             System.Type stepType = PanelCommandFactory.ResolveType(step.Action);
@@ -491,7 +491,7 @@ namespace Poly_Ling.Player
 
             bool writeBack = outIndices.Count > 0;
             if (writeBack && !rbKeys.IsSupported)
-            { error = "このステップは作り直しに対応していません"; return false; }
+            { error = "この項目は作り直しに対応していません"; return false; }
 
             // 出力先が単数の描画メッシュのときだけ、退避と頂点数の検査をする。
             // ボーンの MeshObject は頂点を持たないので、検査を通すと必ず落ちる。

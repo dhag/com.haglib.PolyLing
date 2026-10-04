@@ -144,7 +144,7 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, SkinWeightNumeric, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, EdgeTriangle, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, Camera, EdgeBridge, PointDefinedPrimitive, BillboardProfile }
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, SkinWeightNumeric, SkinWeightVolume, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, EdgeTriangle, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, Camera, EdgeBridge, PointDefinedPrimitive, BillboardProfile, NormalEdit }
         private InteractionMode               _interactionMode = InteractionMode.VertexMove;
 
         // パネルごとの「ビューポートで選択する」チェックの保存キー。
@@ -227,6 +227,8 @@ namespace Poly_Ling.Player
         private LatticeToolHandler           _latticeHandler;
         private PlayerLatticeSubPanel        _latticeSubPanel;
         private SculptToolHandler            _sculptHandler;
+        // 法線編集パネルのビューポート操作（ハンドル・直接回転・ブラシ・スポイト）
+        private NormalEditToolHandler        _normalEditHandler;
         // ツール内「一時ミラー」の状態。所有権を持つのはこの 1 インスタンスだけで、
         // どのツールが実体化したか (OwnerToken = (int)InteractionMode) を覚える。
         private TempMirrorController         _tempMirrorController;
@@ -239,6 +241,7 @@ namespace Poly_Ling.Player
         private SkinWeightPaintToolHandler   _skinWeightPaintHandler;
         private PlayerSkinWeightPaintPanel   _skinWeightPaintPanel;
         private PlayerSkinWeightNumericSubPanel _skinWeightNumericSubPanel;
+        private PlayerSkinWeightVolumeSubPanel  _skinWeightVolumeSubPanel;
         private int                          _skinWeightUndoMasterIndex = -1;
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
@@ -255,6 +258,8 @@ namespace Poly_Ling.Player
         private SpringBoneHandler _springBoneHandler;
         /// <summary>ボーンウェイト数値入力の読み取り（ツールの窓口 "skinWeightNumeric"）。</summary>
         private SkinWeightNumericHandler _skinWeightNumericHandler;
+        /// <summary>スキンW範囲塗りの範囲表示・ハンドル・読み取り（ツールの窓口 "skinWeightVolume"）。</summary>
+        private SkinWeightVolumeToolHandler _skinWeightVolumeHandler;
         /// <summary>モーションの試し再生（ツールの窓口 "motionClip"）。</summary>
         private MotionClipHandler _motionClipHandler;
         /// <summary>ライブ受信（ツールの窓口 "motionLive"）。UDP で届くマッスルを当てる。</summary>
@@ -270,6 +275,7 @@ namespace Poly_Ling.Player
         private PlayerUVEditorSubPanel       _uvEditorSubPanel;
         private PlayerUVUnwrapSubPanel       _uvUnwrapSubPanel;
         private PlayerMaterialListSubPanel   _materialListSubPanel;
+        private PlayerHumanoidBoneSelectSubPanel _humanoidBoneSelectSubPanel;
         private PlayerUVZSubPanel            _uvzSubPanel;
 
         // UV編集モード（A方式：UVZ平面メッシュに展開し既存ツールで編集→書き戻し）。
@@ -438,7 +444,7 @@ namespace Poly_Ling.Player
         private PlayerSpringSkinScenarioSubPanel _springSkinScenarioSubPanel;
         private PlayerSpringSkinPipeScenarioSubPanel _springSkinPipeScenarioSubPanel;
 
-        /// <summary>手本（シナリオ）を選んで先頭から流す。指示・確認の段と失敗で止まる。</summary>
+        /// <summary>シナリオを選んで先頭から流す。指示・確認の項目と失敗で止まる。</summary>
         private PlayerScenarioSubPanel _scenarioSubPanel;
         private PlayerPipeHairTestSubPanel   _pipeHairTestSubPanel;
         private PlayerBarnacleTestSubPanel   _barnacleTestSubPanel;
@@ -459,6 +465,7 @@ namespace Poly_Ling.Player
 
         // 軸 / グリッド平面（4面共通）
         private PlayerGridAxisSubPanel       _gridAxisSubPanel;
+        private PlayerLightSubPanel          _lightSubPanel;
         private PlayerWorkFolderSubPanel     _workFolderSubPanel;
 
         // 画面キャプチャ（PNG 保存）

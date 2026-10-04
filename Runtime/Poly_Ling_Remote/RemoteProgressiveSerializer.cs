@@ -104,7 +104,7 @@ namespace Poly_Ling.Remote
         //                  [2B] MeshRefCount ([string] Key [2B] IdCount [8B × IdCount]) × MeshRefCount
         //     参照は ObjectId なので受信側でメッシュ索引へ読み替える必要がない。
         //     Version 2 の受信側とは非互換のため Editor/Player を同時更新すること。
-        //   ※ Version 4 で ObjectGroup をステップ列にした。
+        //   ※ Version 4 で ObjectGroup を項目列にした。
         //     ObjectGroup: [string] Name  [8B] StashObjectId
         //                  [1B] AutoUpdate  [string] SourceDigest
         //                  [2B] StepCount  [Step × StepCount]
@@ -124,15 +124,15 @@ namespace Poly_Ling.Remote
         //                  [2B] TagCount           [string × N]
         //                  [string] ProvParentName [string] ProvChangeSummary [string] ProvCreatedBy
         //                  [2B] StepCount  [Step × StepCount]
-        //     Step: [string] Action  [string] ElementId  [1B] Kind  [string] Purpose
+        //     Step: [string] Action  [string] ScenarioItemId  [1B] Kind  [string] Purpose
         //           [2B] OutCount … （以下 Version 4 と同じ）
-        //     Kind は ObjectGroupStepKind。0 = 実行する段で、Version 4 以前は全部 0。
+        //     Kind は ObjectGroupStepKind。0 = 実行する項目で、Version 4 以前は全部 0。
         //     読みは Version 3 / 4 の形も受ける。
         //     Version 4 の受信側とは非互換のため Editor/Player を同時更新すること。
         //   ※ Version 6 で参照段を追加した。Step の Purpose の直後に足す。
         //     Step: … [string] Purpose  [string] RefName  [1B] ExpansionPolicy
         //           [2B] OutCount … （以下 Version 5 と同じ）
-        //     RefName は Kind = ScenarioRef の段だけが使う。ExpansionPolicy は
+        //     RefName は Kind = ScenarioRef の項目だけが使う。ExpansionPolicy は
         //     ScenarioExpansionPolicy で、0 = Reference。Version 5 以前は全部 0。
         //     読みは Version 3 / 4 / 5 の形も受ける。
         //     Version 5 の受信側とは非互換のため Editor/Player を同時更新すること。
@@ -158,7 +158,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)9);   // version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照段（RefName / ExpansionPolicy）。v5: 意味情報、v4: ステップ列、v3: ObjectGroup ブロック
+                w.Write((byte)9);   // version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -194,7 +194,7 @@ namespace Poly_Ling.Remote
                     }
                 }
 
-                // ── ObjectGroups（version 3 で追加 / version 4 でステップ列へ）
+                // ── ObjectGroups（version 3 で追加 / version 4 で項目列へ）
                 //    並びは保存と同じくキー順に固定する。Dictionary の列挙順は
                 //    保証されないため、固定しないと同じ内容でもバイト列が変わる。
                 var groups = model.ObjectGroups;
@@ -240,9 +240,9 @@ namespace Poly_Ling.Remote
                         var st = steps[si];
                         if (st == null)
                         {
-                            // 空のステップとして詰めておく。
+                            // 空の項目として詰めておく。
                             WriteString(w, "");
-                            WriteString(w, "");                 // ElementId
+                            WriteString(w, "");                 // ScenarioItemId
                             w.Write((byte)0);                   // Kind = Command
                             WriteString(w, "");                 // Purpose
                             WriteString(w, "");                 // RefName
@@ -252,7 +252,7 @@ namespace Poly_Ling.Remote
                         }
 
                         WriteString(w, st.Action ?? "");
-                        WriteString(w, st.ElementId ?? "");
+                        WriteString(w, st.ScenarioItemId ?? "");
                         w.Write((byte)st.Kind);
                         WriteString(w, st.Purpose ?? "");
                         WriteString(w, st.RefName ?? "");
@@ -373,7 +373,7 @@ namespace Poly_Ling.Remote
 
                 // ── ObjectGroups（version 3 以降）
                 //    v2 以前の送信側はこのブロックを持たない。読まずに抜ける。
-                //    v3 は 1 グループ 1 コマンド 1 出力。ステップ 0 として読む。
+                //    v3 は 1 グループ 1 コマンド 1 出力。項目 0 として読む。
                 if (metaVersion >= 3)
                 {
                     ushort groupCount = r.ReadUInt16();
@@ -413,7 +413,7 @@ namespace Poly_Ling.Remote
 
                                 if (metaVersion >= 5)
                                 {
-                                    st.ElementId = ReadString(r);
+                                    st.ScenarioItemId = ReadString(r);
 
                                     byte kindByte = r.ReadByte();
                                     st.Kind = System.Enum.IsDefined(
@@ -467,8 +467,8 @@ namespace Poly_Ling.Remote
                             if (g.Steps.Count == 0)
                                 g.Steps.Add(new Poly_Ling.Data.ObjectGroupStep());
 
-                            // Version 4 以前には ElementId が無い。
-                            g.EnsureElementIds();
+                            // Version 4 以前には ScenarioItemId が無い。
+                            g.EnsureScenarioItemIds();
                             model.ObjectGroups.Add(g);
                             continue;
                         }
@@ -501,7 +501,7 @@ namespace Poly_Ling.Remote
                             g3.SetMeshRefIds(k, ids);
                         }
 
-                        g3.EnsureElementIds();
+                        g3.EnsureScenarioItemIds();
                         model.ObjectGroups.Add(g3);
                     }
                 }

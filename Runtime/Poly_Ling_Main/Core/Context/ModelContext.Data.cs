@@ -174,7 +174,7 @@ namespace Poly_Ling.Context
 
         /// <summary>
         /// 出力先の ObjectId でオブジェクトグループを検索。見つからなければ null。
-        /// どのステップの出力でも当たる（ステップ 0 に限らない）。
+        /// どの項目の出力でも当たる（項目 0 に限らない）。
         /// </summary>
         public Poly_Ling.Data.ObjectGroup FindObjectGroupByOutput(ulong objectId)
         {

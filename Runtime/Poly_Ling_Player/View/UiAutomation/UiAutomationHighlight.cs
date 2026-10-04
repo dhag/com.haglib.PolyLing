@@ -5,7 +5,7 @@
 //
 // 【対象に手を入れない】
 //   対象自身の border は変えない。root 直下に絶対配置の枠を対象ごとに 1 つ置いて重ねる。
-//   枠は PickingMode.Ignore なので、枠の下の項目は通常どおり操作できる。
+//   枠は PickingMode.Ignore なので、枠の下のボタンや入力欄は通常どおり操作できる。
 //
 // 【位置の追従】
 //   毎フレームは見ない。次の 2 つの通知で置き直す。
@@ -44,10 +44,10 @@ namespace Poly_Ling.Player
         private readonly VisualElement _root;
         private readonly List<Entry>   _entries = new List<Entry>();
 
-        /// <summary>最後に強調した項目。無ければ null。</summary>
+        /// <summary>最後に強調したボタンや入力欄。無ければ null。</summary>
         public VisualElement Target => _entries.Count > 0 ? _entries[_entries.Count - 1].Target : null;
 
-        /// <summary>今強調している項目の数。</summary>
+        /// <summary>今強調しているボタンや入力欄の数。</summary>
         public int Count => _entries.Count;
 
         public UiAutomationHighlight(VisualElement root)

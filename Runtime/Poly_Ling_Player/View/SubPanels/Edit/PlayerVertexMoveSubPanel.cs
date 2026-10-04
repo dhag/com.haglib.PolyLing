@@ -35,7 +35,7 @@ namespace Poly_Ling.Player
             => _ctx?.CurrentView?.CurrentModel?.SelectedDrawableIndices;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "vertexMove.<下の Id>"（UiControlAttribute.cs）。

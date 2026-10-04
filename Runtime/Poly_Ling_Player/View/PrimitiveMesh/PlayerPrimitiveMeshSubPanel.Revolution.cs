@@ -57,7 +57,7 @@ namespace Poly_Ling.Player
         private bool          _revAnchorDrag;
         private bool          _revAnchorSuppress;
         // 回転体の断面編集も 2D 断面と同じく、キャンバス上のポインタ操作が主。
-        // キャンバスと点の編集欄は項目にしない。
+        // キャンバスと点の編集欄はボタンや入力欄にしない。
         [UiControl(Ignore = true)]
         private Slider        _revAnchorXSlider;
         [UiControl(Ignore = true)]

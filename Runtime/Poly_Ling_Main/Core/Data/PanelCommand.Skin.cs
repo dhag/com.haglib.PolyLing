@@ -215,6 +215,134 @@ namespace Poly_Ling.Data
         public NormalizeAllSkinWeightsCommand(int modelIndex) : base(modelIndex) { }
     }
 
+    /// <summary>
+    /// 立体範囲（円筒・球）の中の頂点へ、親ボーンと自ボーンのウェイトを直線補間で配分する
+    /// （スキンW範囲塗り）。親関節で自ボーン 0%、自関節で 50%、先端で 100%。
+    /// 範囲内の頂点は自ボーン w・親ボーン 1-w だけになり、範囲外の頂点は変わらない。
+    /// 対象は選択中の描画オブジェクト全件で、非スキンドが含まれていれば失敗する。
+    /// 計算はバインド空間（頂点の格納値と BindPose⁻¹ の原点）で行う（SkinWeightVolumeOps）。
+    /// </summary>
+    [PLCommand(Category = "rig.skinning", Effects = PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.ModelWide, Description = "円筒または球の範囲内の頂点へ、親ボーンと自ボーンのウェイトを直線補間で配分する（自関節の手前 0%・自関節 50%・先端 100%）。親側の長さは既定で先端側と同じ。")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "書き換えた頂点数（全対象の合計）")]
+    [PLResult("meshes",   PLResultKind.Integer, Description = "書き換えた描画オブジェクトの数")]
+    [PLResult("parentBone", PLResultKind.Integer, Description = "使った親ボーンの masterIndex")]
+    public class SkinWeightVolumePaintCommand : PanelCommand
+    {
+        [PLParam(TextKey = "SkinWeightVolumeSelfBone", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "自ボーンの masterIndex", Required = true)]
+        public int SelfBone { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeParentBone", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "親ボーンの masterIndex。-1 で自ボーンの階層の親")]
+        public int ParentBone { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeShape",
+                 Description = "範囲の形。Cylinder / Sphere", Required = true)]
+        public SkinWeightVolumeShape Shape { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeRadius",
+                 Description = "半径（バインド空間の長さ）", Required = true)]
+        public float Radius { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeHeight",
+                 Description = "円筒の高さ。自関節から先端までの長さ。球では使わない")]
+        public float Height { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeSeparateParentHeight",
+                 Description = "親側（自関節から 0% の点まで）の長さを別に指定する。false なら先端側と同じ長さ（円筒は高さ、球は半径）。既定は false")]
+        public bool SeparateParentHeight { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeParentHeight",
+                 Description = "親側の長さ。自関節から 0% の点まで。separateParentHeight のときだけ使う")]
+        public float ParentHeight { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeSelectedOnly",
+                 Description = "true なら選択頂点だけ、false なら全頂点を対象にする。既定は false")]
+        public bool SelectedOnly { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeAxisMode",
+                 Description = "範囲の軸の向き。ParentToSelf=親関節→自関節（既定）/ SelfToChild=自関節→子関節。股関節のように親→自の向きが部位に沿わない関節では SelfToChild")]
+        public SkinWeightVolumeAxis AxisMode { get; }
+
+        [PLParam(TextKey = "SkinWeightVolumeChildBone", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "軸に使う子ボーンの masterIndex。-1 で自ボーンの階層の子（子のボーンが 1 本だけのとき）。axisMode が SelfToChild のときだけ使う")]
+        public int ChildBone { get; }
+
+        public SkinWeightVolumePaintCommand(
+            int modelIndex, int selfBone, int parentBone,
+            SkinWeightVolumeShape shape, float radius, float height,
+            bool selectedOnly = false,
+            bool separateParentHeight = false, float parentHeight = 0f,
+            SkinWeightVolumeAxis axisMode = SkinWeightVolumeAxis.ParentToSelf, int childBone = -1)
+            : base(modelIndex)
+        {
+            AxisMode             = axisMode;
+            ChildBone            = childBone;
+            SelfBone             = selfBone;
+            ParentBone           = parentBone;
+            Shape                = shape;
+            Radius               = radius;
+            Height               = height;
+            SelectedOnly         = selectedOnly;
+            SeparateParentHeight = separateParentHeight;
+            ParentHeight         = parentHeight;
+        }
+
+        /// <summary>計算用の入力へ詰め替える。</summary>
+        public SkinWeightVolumeSpec ToSpec() => new SkinWeightVolumeSpec
+        {
+            SelfBone             = SelfBone,
+            ParentBone           = ParentBone,
+            Shape                = Shape,
+            Radius               = Radius,
+            Height               = Height,
+            SeparateParentHeight = SeparateParentHeight,
+            ParentHeight         = ParentHeight,
+            SelectedOnly         = SelectedOnly,
+            AxisMode             = AxisMode,
+            ChildBone            = ChildBone,
+        };
+    }
+
+    /// <summary>
+    /// 親関節から指定関節までの円筒の中の頂点を、親ボーン 1 本だけ・ウェイト 100% で塗る。
+    /// 関節の前後のぼかしは範囲塗り（SkinWeightVolumePaintCommand）で後から入れる。
+    /// 対象は選択中の描画オブジェクト全件で、非スキンドが含まれていれば失敗する。
+    /// 計算はバインド空間（SkinWeightVolumeOps.ApplySegmentFillToMesh）。
+    /// </summary>
+    [PLCommand(Category = "rig.skinning", Effects = PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.ModelWide, Description = "親関節から指定関節までの円筒の中の頂点を、親ボーン 1 本だけ・ウェイト 100% で塗る（他のボーンは消す）。範囲外の頂点は変えない。")]
+    [PLResult("vertices",   PLResultKind.Integer, Description = "書き換えた頂点数（全対象の合計）")]
+    [PLResult("meshes",     PLResultKind.Integer, Description = "書き換えた描画オブジェクトの数")]
+    [PLResult("parentBone", PLResultKind.Integer, Description = "塗った親ボーンの masterIndex")]
+    public class SkinWeightSegmentFillCommand : PanelCommand
+    {
+        [PLParam(TextKey = "SkinWeightSegmentJointBone", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "区間の先の関節にするボーンの masterIndex", Required = true)]
+        public int JointBone { get; }
+
+        [PLParam(TextKey = "SkinWeightSegmentParentBone", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "塗る親ボーンの masterIndex（区間の元の関節）。-1 で関節の階層の親")]
+        public int ParentBone { get; }
+
+        [PLParam(TextKey = "SkinWeightSegmentRadius",
+                 Description = "円筒の半径（バインド空間の長さ）", Required = true)]
+        public float Radius { get; }
+
+        [PLParam(TextKey = "SkinWeightSegmentSelectedOnly",
+                 Description = "true なら選択頂点だけ、false なら全頂点を対象にする。既定は false")]
+        public bool SelectedOnly { get; }
+
+        public SkinWeightSegmentFillCommand(
+            int modelIndex, int jointBone, int parentBone, float radius, bool selectedOnly = false)
+            : base(modelIndex)
+        {
+            JointBone    = jointBone;
+            ParentBone   = parentBone;
+            Radius       = radius;
+            SelectedOnly = selectedOnly;
+        }
+    }
+
     // ================================================================
     // スキンウェイト塗り
     // ================================================================

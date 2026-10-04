@@ -40,7 +40,7 @@ namespace Poly_Ling.Player
         private const string OutputName  = "PT_Plate";
 
         // UI 自動操作の ID は "profile2DTest.<下の Id>"（UiControlAttribute.cs）。
-        // 共通の項目（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
+        // 共通のボタンや入力欄（実行・状態・ログ・書き込み先・退避）は基底クラス側で登録する。
         [UiControl("outerSize", Description = "外周の一辺（正六角形の外接半径）")]
         private FloatField   _outerSize;
         [UiControl("holeSize", Description = "穴の半径")]

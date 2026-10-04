@@ -26,7 +26,7 @@
 // [Header 8B+]
 //   Magic      : 4B "PLRM"
 //   Version    : 1B (現在 6。2 で MaterialData に拡張ブロック、3 で ObjectGroup、
-//                4 で ObjectGroup のステップ列、5 で ObjectGroup / Step の意味情報、
+//                4 で ObjectGroup の項目列、5 で ObjectGroup / Step の意味情報、
 //                6 で参照段（RefName / ExpansionPolicy）。読みは 3 / 4 / 5 も受ける)
 //   Padding    : 1B
 //   ModelIndex : 2B (int16)
@@ -95,7 +95,9 @@
 //   → VertexSubIds → FaceIndices → FaceMaterials → FaceFlags → FaceIds
 //   → FaceUVIndices → FaceNormalIndices
 //   → NormalsExtra → MirrorBoneWeights → ControlPoints → LineGroups → NormalExcludeSets
-//     （この 5 つは MeshFieldFlags.Extras。All には入れず Complete で送る。2026-09-30 追加）
+//   → NormalExcludeLocks
+//     （この 6 つは MeshFieldFlags.Extras。All には入れず Complete で送る。2026-09-30 追加、
+//       NormalExcludeLocks は 2026-10-01 追加）
 //
 //   VertexSubIds(0x0040) は SubID / PartsID を運ぶ後付けのブロックで、
 //   VertexIds(0x0020) の中身は変えていない。読み手はヘッダの FieldFlags に
@@ -204,6 +206,12 @@ namespace Poly_Ling.Remote
         LineGroups        = 0x20000,
         /// <summary>法線再計算の除外セット（メッシュ単位）。</summary>
         NormalExcludeSets = 0x40000,
+        /// <summary>
+        /// 法線再計算の除外セットごとの「手動の法線編集からも守る」（PartsSelectionSet.ProtectManualNormalEdit）。
+        /// NormalExcludeSets の直後に、件数（int）と件数分の bool を置く。並びは NormalExcludeSets と同じ。
+        /// 2026-10-01 追加。読み手はフラグが立っているときだけ読むので、旧データはこのブロックを持たない。
+        /// </summary>
+        NormalExcludeLocks = 0x80000,
 
         // 複合
         VertexBasic    = Positions | Normals | UVs,
@@ -211,7 +219,7 @@ namespace Poly_Ling.Remote
         AllFace        = FaceIndices | FaceMaterials | FaceFlags | FaceIds | FaceUVIndices | FaceNormalIndices,
         All            = AllVertex | AllFace,
         /// <summary>All に追加の欄を足したもの。ファイル保存とプロジェクト転送で使う。</summary>
-        Extras         = NormalsExtra | MirrorBoneWeights | ControlPoints | LineGroups | NormalExcludeSets,
+        Extras         = NormalsExtra | MirrorBoneWeights | ControlPoints | LineGroups | NormalExcludeSets | NormalExcludeLocks,
         Complete       = All | Extras,
     }
 

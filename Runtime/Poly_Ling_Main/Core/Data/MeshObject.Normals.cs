@@ -96,6 +96,22 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
+        /// 除外セットが指すコーナーの現在の法線を、(面インデックス, コーナー番号) 引きで返す。
+        /// 対象が無ければ null。スロットを作り直す再計算（NormalSmoothingOps.ApplyFacetSmoothing
+        /// の固定コーナー版）に渡して、除外コーナーの法線を保つために使う。
+        /// </summary>
+        public Dictionary<(int Face, int Corner), Vector3> GetNormalRecalcExcludedCornerNormals()
+        {
+            var backup = CaptureNormalRecalcExcluded();
+            if (backup == null) return null;
+
+            var result = new Dictionary<(int Face, int Corner), Vector3>(backup.Count);
+            foreach (var entry in backup)
+                result[(entry.FaceIndex, entry.Corner)] = entry.Normal;
+            return result;
+        }
+
+        /// <summary>
         /// 退避した法線を書き戻す。
         ///
         /// UVs.Count == Normals.Count / UVIndices[j] == NormalIndices[j] の不変条件下では、

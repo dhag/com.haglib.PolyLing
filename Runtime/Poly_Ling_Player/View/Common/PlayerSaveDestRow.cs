@@ -41,7 +41,7 @@ namespace Poly_Ling.Player
         /// <summary>この行の UI。パネルの親要素へ Add する。</summary>
         public VisualElement Root => _root;
 
-        /// <summary>フォルダ欄。UI 自動操作で関門付きの項目として登録するパネルが使う。</summary>
+        /// <summary>フォルダ欄。UI 自動操作で関門付きのボタンや入力欄として登録するパネルが使う。</summary>
         public TextField FolderField => _folderField;
 
         /// <summary>フォルダを選ぶ [...] ボタン。</summary>

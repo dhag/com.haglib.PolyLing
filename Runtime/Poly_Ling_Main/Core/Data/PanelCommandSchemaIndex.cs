@@ -310,7 +310,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// 同じ照合を道具一覧の外でも使う（手本の検索 queryScenarios）。
+        /// 同じ照合を道具一覧の外でも使う（シナリオの検索 queryScenarios）。
         /// 問い合わせが空なら常に 1（絞らない）。0 なら当たらなかった。
         /// name は当たりの重みが大きい欄、body はそれ以外の本文。
         /// </summary>

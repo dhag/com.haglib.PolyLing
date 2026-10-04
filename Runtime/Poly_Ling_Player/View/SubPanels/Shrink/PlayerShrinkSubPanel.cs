@@ -115,7 +115,7 @@ namespace Poly_Ling.Player
             = new List<(int, string, int)>();
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "<shrink / shrinkFace>.<下の Id>"（UiControlAttribute.cs）。

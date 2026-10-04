@@ -407,6 +407,7 @@ namespace Poly_Ling.View
         public bool   HasTPoseBackup       => _model.TPoseBackup != null;
         public string DiagnoseTPose()      => Poly_Ling.Ops.TPoseConverter.Diagnose(_model.MeshContextList, _model.HumanoidMapping);
         public int HumanoidMissingRequiredCount => LiveProjectView.HumanoidMissingRequiredOf(_model);
+        public IReadOnlyDictionary<string, int> HumanoidBoneIndexMap => LiveProjectView.HumanoidBoneIndexMapOf(_model);
         public AvatarRetargetView AvatarRetarget => LiveProjectView.BuildAvatarRetargetView(_model);
         public IReadOnlyList<string> SpringBoneColliderGroupNames
             => new List<string>(_model.SpringBoneColliderGroupNames ?? new List<string>());
@@ -498,6 +499,15 @@ namespace Poly_Ling.View
         {
             var m = model?.HumanoidMapping;
             return (m == null || m.IsEmpty) ? 0 : m.GetMissingRequiredBones().Count;
+        }
+
+        /// <summary>Humanoid ボーン名 → master 索引の写し（未設定なら空）。</summary>
+        public static IReadOnlyDictionary<string, int> HumanoidBoneIndexMapOf(ModelContext model)
+        {
+            var m = model?.HumanoidMapping;
+            return (m == null || m.IsEmpty)
+                ? new Dictionary<string, int>()
+                : new Dictionary<string, int>(m.ToDictionary());
         }
 
         /// <summary>Avatar リターゲット設定の写しを作る（未設定なら既定値、IsSet=false）。</summary>
@@ -625,7 +635,7 @@ namespace Poly_Ling.View
             {
                 if (g == null) continue;
 
-                // 出力先はステップごとに複数ありうる。1 つでも引けなければ印を立てる。
+                // 出力先は項目ごとに複数ありうる。1 つでも引けなければ印を立てる。
                 bool outMissing = !g.HasOutput;
                 if (!outMissing)
                 {
@@ -642,7 +652,7 @@ namespace Poly_Ling.View
                     srcNames.Add(mc != null ? mc.Name : $"(見つからない: {id})");
                 }
 
-                // ステップごとに action と出力先を出す。実行順は並びそのもの。
+                // 項目ごとに action と出力先を出す。実行順は並びそのもの。
                 var stepLines = new List<string>();
                 for (int i = 0; i < g.StepCount; i++)
                 {
@@ -672,7 +682,7 @@ namespace Poly_Ling.View
                     OutputMissing = outMissing,
                     Stale         = !outMissing && Poly_Ling.Ops.ObjectGroupOps.IsStale(project, g),
                     Detail        =
-                          $"ステップ: {g.StepCount} 件\n"
+                          $"項目: {g.StepCount} 件\n"
                         + string.Join("\n", stepLines) + "\n"
                         + $"入力: {(srcNames.Count > 0 ? string.Join(", ", srcNames) : "なし")}\n"
                         + $"退避: {(stashCtx != null ? stashCtx.Name : "なし")}",
@@ -744,5 +754,6 @@ namespace Poly_Ling.View
         public int LineCount   => _set.Lines?.Count   ?? 0;
         public int  VertexIdCount          => _set.VertexIdCount;
         public bool HasResolvableVertexIds => _set.HasResolvableVertexIds;
+        public bool ProtectManualNormalEdit => _set.ProtectManualNormalEdit;
     }
 }

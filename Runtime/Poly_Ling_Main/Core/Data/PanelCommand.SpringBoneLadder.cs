@@ -111,7 +111,7 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// 取り付け先を取り込み元の親（HierarchyParentIndex）から決める。true のとき attachMasterIndex は使わない。
-        /// UI の「取り付け先を取り込み元の親から決める」と同じ。手本に取り付け先の索引を焼かないため。
+        /// UI の「取り付け先を取り込み元の親から決める」と同じ。シナリオに取り付け先の索引を焼かないため。
         /// </summary>
         [PLParam(Description = "取り付け先を取り込み元の親から決める。true のとき attachMasterIndex は使わない")]
         public bool AttachToSourceParent { get; }

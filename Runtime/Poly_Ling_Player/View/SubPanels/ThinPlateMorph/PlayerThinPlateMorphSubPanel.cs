@@ -114,7 +114,7 @@ namespace Poly_Ling.Player
             => mode == ThinPlateLocalMode.EuclideanRadius || mode == ThinPlateLocalMode.LinkRadius;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "thinPlateMorph.<下の Id>"（UiControlAttribute.cs）。

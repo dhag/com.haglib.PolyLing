@@ -1,5 +1,5 @@
 // ObjectGroup.cs
-// 「入力ソース＋生成パラメータ＋出力先」をコマンド列（ステップ）で持つもの。
+// 「入力ソース＋生成パラメータ＋出力先」をコマンド列（項目）で持つもの。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置
 //
 // 【何のためにあるか】
@@ -10,20 +10,20 @@
 //   ソースを直しても出力先は古いままだった。作り直すには手順ごとやり直すしかない。
 //   その関係をモデルに残すのがこれ。
 //
-// 【ステップ】
-//   1 グループは 1 つ以上のステップ（ObjectGroupStep）を並び順に持つ。
-//   ステップ 1 つが生成コマンド 1 つで、出力は複数ありうる
+// 【項目】
+//   1 グループは 1 つ以上の項目（ObjectGroupStep）を並び順に持つ。
+//   項目 1 つが生成コマンド 1 つで、出力は複数ありうる
 //   （はしごから作る揺れボーンの鎖は 1 回の実行で何本もできる）。
 //
-//   ステップの間に依存グラフは持たない。実行の順はリストの並びそのもの。
-//   ステップ間の参照は ObjectId で成立する（前のステップの出力は実在するので
+//   項目の間に依存グラフは持たない。実行の順はリストの並びそのもの。
+//   項目間の参照は ObjectId で成立する（前の項目の出力は実在するので
 //   ObjectId が振られており、冪等なら作り直されずに同じ ID が残る）。
-//   「ステップ n の出力 k」という相対参照は持たない。
+//   「項目 n の出力 k」という相対参照は持たない。
 //
-//   ステップが 1 つのグループは、これまでの ObjectGroup と同じもの。
-//   Action / Args / MeshRefIds / OutputObjectId はステップ 0 への窓口として
+//   項目が 1 つのグループは、これまでの ObjectGroup と同じもの。
+//   Action / Args / MeshRefIds / OutputObjectId は項目 0 への窓口として
 //   残してあり、既存の呼び出しはそのまま通る。二重には持たない
-//   （フィールドとステップの両方に置くと必ず食い違う）。
+//   （フィールドと項目の両方に置くと必ず食い違う）。
 //
 // 【参照は ObjectId で持つ】
 //   索引はリストの挿入・削除・並べ替えでずれ、名前はリネームで切れる。
@@ -37,7 +37,7 @@
 //   PanelCommandFactory.ToArgs で文字列の対にし、Create で戻す。
 //   往復は PanelCommandFactoryAudit が検査済みで、新しい直列化機構は作らない。
 //   Args のうち「索引で描画オブジェクトを指す」ものだけは、再構築のときに
-//   ステップの MeshRefIds から引き直す（PLParam.IsMeshRef）。
+//   項目の MeshRefIds から引き直す（PLParam.IsMeshRef）。
 //
 // 【一時グループ】
 //   ModelContext.ObjectGroups へ入れなければ、保存・転送・Undo・不変条件検査の
@@ -46,12 +46,12 @@
 //
 // 【手順の知識として使う】
 //   同じ型を 2 通りに使う。
-//     実体付き … ModelContext.ObjectGroups に入るもの。ステップの参照が
+//     実体付き … ModelContext.ObjectGroups に入るもの。項目の参照が
 //                実在の ObjectId を指し、作り直しで出力先へ書き戻す。今までどおり。
-//     手本     … ScenarioLibrary に入るもの。モデルに属さず、参照は空でよい。
+//     シナリオ     … ScenarioLibrary に入るもの。モデルに属さず、参照は空でよい。
 //                目的・前提・成功条件・由来を持ち、元を残したまま派生を増やす。
 //   両者の違いは置き場と参照の埋まり方だけで、型は分けない。分けると
-//   ステップ列の器が 2 つになり、CaptureStep の出力先も 2 つになる。
+//   項目列の器が 2 つになり、CaptureStep の出力先も 2 つになる。
 
 
 
@@ -61,18 +61,18 @@ using System.Collections.Generic;
 namespace Poly_Ling.Data
 {
     /// <summary>
-    /// ステップの種別。
+    /// 項目の種別。
     ///
-    /// 【なぜ実行しない段を同じリストに置くか】
-    ///   手順の知識には「なぜこの段が要るか」「ここは対象を見て人が決める」
-    ///   「この段のあとに何を確かめるか」が混ざる。別のリストに分けると
+    /// 【なぜ実行しない項目を同じリストに置くか】
+    ///   手順の知識には「なぜこの項目が要るか」「ここは対象を見て人が決める」
+    ///   「この項目のあとに何を確かめるか」が混ざる。別のリストに分けると
     ///   並び順の対応を二重に管理することになり、必ずずれる。
     ///   実行側（ObjectGroupOps.BuildCommand /
     ///   PlayerCommandDispatcher.RunObjectGroupStep）が Command 以外を飛ばす。
     /// </summary>
     public enum ObjectGroupStepKind
     {
-        /// <summary>生成コマンドを実行する段。既定。</summary>
+        /// <summary>生成コマンドを実行する項目。既定。</summary>
         Command = 0,
 
         /// <summary>理由・注意・設計意図。実行しない。</summary>
@@ -85,7 +85,7 @@ namespace Poly_Ling.Data
         Observe = 3,
 
         /// <summary>
-        /// 別の手本への参照。実行しない。
+        /// 別のシナリオへの参照。実行しない。
         ///
         /// 参照先は RefName、扱い方は ExpansionPolicy が持つ。
         /// 循環は ScenarioLibrary が登録時に拒否する。
@@ -94,9 +94,9 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// 参照段の扱い方。
+    /// 参照項目の扱い方。
     ///
-    /// 方針案の inline（編集時に要素列へ展開する）は段の状態ではなく操作なので、
+    /// 方針案の inline（編集時に要素列へ展開する）は項目の状態ではなく操作なので、
     /// ここには入れない。expandScenarioRef コマンドが行う。
     /// </summary>
     public enum ScenarioExpansionPolicy
@@ -141,40 +141,40 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// グループの 1 ステップ。生成コマンド 1 つぶんのパラメータと出力先。
+    /// グループの 1 項目。生成コマンド 1 つぶんのパラメータと出力先。
     /// </summary>
     [Serializable]
     public class ObjectGroupStep
     {
         /// <summary>
-        /// この段を指す名前。グループ内で一意。
+        /// この項目を指す名前。グループ内で一意。
         ///
         /// 【なぜ番号で指さないか】
-        ///   「3 番目の段を差し替える」は、前に 1 段挿すだけで別の段を指す。
-        ///   段を足す・消す・並べ替える使い方をするので、位置ではなく
-        ///   この ID で指す。読み込み時に空なら ObjectGroup.EnsureElementIds が振る。
+        ///   「3 番目の項目を差し替える」は、前に 1 項目挿すだけで別の項目を指す。
+        ///   項目を足す・消す・並べ替える使い方をするので、位置ではなく
+        ///   この ID で指す。読み込み時に空なら ObjectGroup.EnsureScenarioItemIds が振る。
         /// </summary>
-        public string ElementId = "";
+        public string ScenarioItemId = "";
 
-        /// <summary>段の種別。既定は実行する段。</summary>
+        /// <summary>項目の種別。既定は実行する項目。</summary>
         public ObjectGroupStepKind Kind = ObjectGroupStepKind.Command;
 
-        /// <summary>この段が要る理由。空でもよい。</summary>
+        /// <summary>この項目が要る理由。空でもよい。</summary>
         public string Purpose = "";
 
         /// <summary>
-        /// 参照先の手本の名前。Kind が ScenarioRef のときだけ使う。
-        /// それ以外の段では空。
+        /// 参照先のシナリオの名前。Kind が ScenarioRef のときだけ使う。
+        /// それ以外の項目では空。
         /// </summary>
         public string RefName = "";
 
-        /// <summary>参照段の扱い方。Kind が ScenarioRef のときだけ使う。</summary>
+        /// <summary>参照項目の扱い方。Kind が ScenarioRef のときだけ使う。</summary>
         public ScenarioExpansionPolicy ExpansionPolicy = ScenarioExpansionPolicy.Reference;
 
         /// <summary>
-        /// この段が属する利用シーン（SceneLibrary）の名前。空でもよい。
-        /// 同じ名前が続く段の並びが、その利用シーンの区間になる（PolyLing_利用シーン_カテゴライズ設計方針.md 12 節）。
-        /// 手本を流しているとき、次の段の利用シーンが queryScenarioRun に出る。
+        /// この項目が属する利用シーン（SceneLibrary）の名前。空でもよい。
+        /// 同じ名前が続く項目の並びが、その利用シーンの区間になる（PolyLing_利用シーン_カテゴライズ設計方針.md 12 節）。
+        /// シナリオを流しているとき、次の項目の利用シーンが queryScenarioRun に出る。
         /// リモートの二進形式（RemoteProgressiveSerializer）では送らない。受け取った側では空になる。
         /// </summary>
         public string UsageScene = "";
@@ -195,7 +195,7 @@ namespace Poly_Ling.Data
         /// Args の中のプロファイルの点が何成分で書かれているか。今は 3（x,y,z）。
         /// 2 は旧版の保存データ（x,y）。読み込み直後に ObjectGroupOps.UpgradeLegacyProfileArgs が
         /// LegacyXYPairs の印のキーを z=0 で 3 成分へ直し、3 にする。
-        /// 実行時に作る段はすべて 3。
+        /// 実行時に作る項目はすべて 3。
         /// </summary>
         public const int CurrentProfileDim = 3;
         public int ProfileDim = CurrentProfileDim;
@@ -215,20 +215,20 @@ namespace Poly_Ling.Data
             = new Dictionary<string, List<ulong>>(StringComparer.Ordinal);
 
         /// <summary>
-        /// このステップの出力先の ObjectId 列。空 = まだ作っていない / 失われた。
+        /// この項目の出力先の ObjectId 列。空 = まだ作っていない / 失われた。
         /// 図形生成は 1 件、揺れボーンの鎖は鎖の本数ぶん入る。
         /// 並びは作った順（鎖 0 の根元、鎖 1 の根元 …）。
         /// </summary>
         public List<ulong> OutputObjectIds = new List<ulong>();
 
-        /// <summary>実行する段か（Kind が Command）。</summary>
+        /// <summary>実行する項目か（Kind が Command）。</summary>
         public bool IsExecutable => Kind == ObjectGroupStepKind.Command;
 
-        /// <summary>別の手本を指す段か。</summary>
+        /// <summary>別のシナリオを指す項目か。</summary>
         public bool IsScenarioRef => Kind == ObjectGroupStepKind.ScenarioRef;
 
         /// <summary>
-        /// 手本を流すとき、ここで止めて人か AI の判断を待つ段か。
+        /// シナリオを流すとき、ここで止めて人か AI の判断を待つ項目か。
         ///
         /// 指示（Instruction）は「人または AI への作業指示」、確認（Observe）は
         /// 「実行後に確かめること」で、どちらも読んだ者が決めないと先へ進めない。
@@ -240,8 +240,8 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// 再構築に必要なものが揃っているか。
-        /// 実行しない段（Note / Instruction / Observe）は action を持たないので常に真。
-        /// 参照段は参照先の名前を持っていること。
+        /// 実行しない項目（Note / Instruction / Observe）は action を持たないので常に真。
+        /// 参照項目は参照先の名前を持っていること。
         /// </summary>
         public bool IsValid
         {
@@ -267,7 +267,7 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// 出力先の先頭。無ければ 0。
-        /// 1 ステップ 1 出力だったころの OutputObjectId に当たる。
+        /// 1 項目 1 出力だったころの OutputObjectId に当たる。
         /// </summary>
         public ulong FirstOutputId
         {
@@ -282,7 +282,7 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// 出力先の先頭を差し替える。0 を渡すと出力先を消す。
-        /// 複数の出力を持つステップへ 0 以外を書くと、先頭だけが変わる。
+        /// 複数の出力を持つ項目へ 0 以外を書くと、先頭だけが変わる。
         /// </summary>
         public void SetFirstOutput(ulong objectId)
         {
@@ -357,7 +357,7 @@ namespace Poly_Ling.Data
         {
             var c = new ObjectGroupStep
             {
-                ElementId       = ElementId,
+                ScenarioItemId       = ScenarioItemId,
                 Kind            = Kind,
                 Purpose         = Purpose,
                 RefName         = RefName,
@@ -379,7 +379,7 @@ namespace Poly_Ling.Data
         }
 
         public override string ToString()
-            => $"ObjectGroupStep[{Kind}:{ElementId}:{(IsScenarioRef ? RefName : Action)}] "
+            => $"ObjectGroupStep[{Kind}:{ScenarioItemId}:{(IsScenarioRef ? RefName : Action)}] "
              + $"out={(OutputObjectIds?.Count ?? 0)}";
     }
 
@@ -484,15 +484,15 @@ namespace Poly_Ling.Data
         public ObjectGroup(string name) : this() { Name = name ?? ""; }
 
         // ================================================================
-        // ステップ
+        // 項目
         // ================================================================
 
-        /// <summary>ステップの数。</summary>
+        /// <summary>項目の数。</summary>
         public int StepCount => Steps?.Count ?? 0;
 
         /// <summary>
-        /// ステップ 0。無ければ空のステップを作って返す。
-        /// 「1 ステップだったころの窓口」がここを通る。
+        /// 項目 0。無ければ空の項目を作って返す。
+        /// 「1 項目だったころの窓口」がここを通る。
         /// </summary>
         public ObjectGroupStep Step0
         {
@@ -504,45 +504,45 @@ namespace Poly_Ling.Data
             }
         }
 
-        /// <summary>番号でステップを読む。範囲外は null。</summary>
+        /// <summary>番号で項目を読む。範囲外は null。</summary>
         public ObjectGroupStep GetStep(int index)
             => (Steps != null && index >= 0 && index < Steps.Count) ? Steps[index] : null;
 
-        /// <summary>末尾へステップを 1 つ足す。ElementId が空なら振る。</summary>
+        /// <summary>末尾へ項目を 1 つ足す。ScenarioItemId が空なら振る。</summary>
         public ObjectGroupStep AddStep(ObjectGroupStep step)
         {
             if (step == null) return null;
             if (Steps == null) Steps = new List<ObjectGroupStep>();
             Steps.Add(step);
-            if (string.IsNullOrEmpty(step.ElementId)) step.ElementId = NextElementId();
+            if (string.IsNullOrEmpty(step.ScenarioItemId)) step.ScenarioItemId = NextScenarioItemId();
             return step;
         }
 
-        /// <summary>ElementId でステップを引く。無ければ null。</summary>
-        public ObjectGroupStep FindStep(string elementId)
+        /// <summary>ScenarioItemId で項目を引く。無ければ null。</summary>
+        public ObjectGroupStep FindStep(string scenarioItemId)
         {
-            int i = IndexOfStep(elementId);
+            int i = IndexOfStep(scenarioItemId);
             return i >= 0 ? Steps[i] : null;
         }
 
-        /// <summary>ElementId でステップの位置を引く。無ければ -1。</summary>
-        public int IndexOfStep(string elementId)
+        /// <summary>ScenarioItemId で項目の位置を引く。無ければ -1。</summary>
+        public int IndexOfStep(string scenarioItemId)
         {
-            if (Steps == null || string.IsNullOrEmpty(elementId)) return -1;
+            if (Steps == null || string.IsNullOrEmpty(scenarioItemId)) return -1;
             for (int i = 0; i < Steps.Count; i++)
-                if (Steps[i] != null && string.Equals(Steps[i].ElementId, elementId, StringComparison.Ordinal))
+                if (Steps[i] != null && string.Equals(Steps[i].ScenarioItemId, scenarioItemId, StringComparison.Ordinal))
                     return i;
             return -1;
         }
 
         /// <summary>
-        /// ElementId が空のステップへ振る。既にある ID とは重ならない。
+        /// ScenarioItemId が空の項目へ振る。既にある ID とは重ならない。
         ///
-        /// ステップ導入より前の保存データには ID が無いので、読み込みの最後に呼ぶ。
+        /// 項目導入より前の保存データには ID が無いので、読み込みの最後に呼ぶ。
         /// 既に入っている ID は書き換えない（書き換えると、その ID を指している
         /// 派生グループの参照が切れる）。
         /// </summary>
-        public void EnsureElementIds()
+        public void EnsureScenarioItemIds()
         {
             if (Steps == null) return;
 
@@ -550,30 +550,30 @@ namespace Poly_Ling.Data
             for (int i = 0; i < Steps.Count; i++)
             {
                 var s = Steps[i];
-                if (s == null || string.IsNullOrEmpty(s.ElementId)) continue;
+                if (s == null || string.IsNullOrEmpty(s.ScenarioItemId)) continue;
 
                 // 重複していたら後ろの方を空に戻して振り直す。
-                if (!used.Add(s.ElementId)) s.ElementId = "";
+                if (!used.Add(s.ScenarioItemId)) s.ScenarioItemId = "";
             }
 
             for (int i = 0; i < Steps.Count; i++)
             {
                 var s = Steps[i];
-                if (s == null || !string.IsNullOrEmpty(s.ElementId)) continue;
-                s.ElementId = NextElementId(used);
-                used.Add(s.ElementId);
+                if (s == null || !string.IsNullOrEmpty(s.ScenarioItemId)) continue;
+                s.ScenarioItemId = NextScenarioItemId(used);
+                used.Add(s.ScenarioItemId);
             }
         }
 
-        /// <summary>まだ使っていない ElementId を 1 つ作る。</summary>
-        private string NextElementId(HashSet<string> used = null)
+        /// <summary>まだ使っていない ScenarioItemId を 1 つ作る。</summary>
+        private string NextScenarioItemId(HashSet<string> used = null)
         {
             if (used == null)
             {
                 used = new HashSet<string>(StringComparer.Ordinal);
                 if (Steps != null)
                     foreach (var s in Steps)
-                        if (s != null && !string.IsNullOrEmpty(s.ElementId)) used.Add(s.ElementId);
+                        if (s != null && !string.IsNullOrEmpty(s.ScenarioItemId)) used.Add(s.ScenarioItemId);
             }
 
             for (int n = 1; ; n++)
@@ -584,61 +584,61 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
-        // ステップ 0 への窓口（1 ステップだったころの形）
+        // 項目 0 への窓口（1 項目だったころの形）
         // ================================================================
 
-        /// <summary>ステップ 0 の action 名。</summary>
+        /// <summary>項目 0 の action 名。</summary>
         public string Action
         {
             get => Step0.Action;
             set => Step0.Action = value ?? "";
         }
 
-        /// <summary>ステップ 0 のパラメータ。</summary>
+        /// <summary>項目 0 のパラメータ。</summary>
         public Dictionary<string, string> Args
         {
             get => Step0.Args;
             set => Step0.Args = value ?? new Dictionary<string, string>(StringComparer.Ordinal);
         }
 
-        /// <summary>ステップ 0 の描画オブジェクト参照。</summary>
+        /// <summary>項目 0 の描画オブジェクト参照。</summary>
         public Dictionary<string, List<ulong>> MeshRefIds
         {
             get => Step0.MeshRefIds;
             set => Step0.MeshRefIds = value ?? new Dictionary<string, List<ulong>>(StringComparer.Ordinal);
         }
 
-        /// <summary>ステップ 0 の出力先の先頭。0 = まだ作っていない / 失われた。</summary>
+        /// <summary>項目 0 の出力先の先頭。0 = まだ作っていない / 失われた。</summary>
         public ulong OutputObjectId
         {
             get => Step0.FirstOutputId;
             set => Step0.SetFirstOutput(value);
         }
 
-        /// <summary>ステップ 0 の Args の 1 件を読む。無ければ既定値。</summary>
+        /// <summary>項目 0 の Args の 1 件を読む。無ければ既定値。</summary>
         public string GetArg(string key, string fallback = null) => Step0.GetArg(key, fallback);
 
-        /// <summary>ステップ 0 の Args の 1 件を書く。</summary>
+        /// <summary>項目 0 の Args の 1 件を書く。</summary>
         public void SetArg(string key, string value) => Step0.SetArg(key, value);
 
-        /// <summary>ステップ 0 のキーに対応する ObjectId 列を読む。無ければ空。</summary>
+        /// <summary>項目 0 のキーに対応する ObjectId 列を読む。無ければ空。</summary>
         public List<ulong> GetMeshRefIds(string key) => Step0.GetMeshRefIds(key);
 
-        /// <summary>ステップ 0 のキーに対応する ObjectId 列を書く。</summary>
+        /// <summary>項目 0 のキーに対応する ObjectId 列を書く。</summary>
         public void SetMeshRefIds(string key, List<ulong> ids) => Step0.SetMeshRefIds(key, ids);
 
-        /// <summary>ステップ 0 の MeshRefIds をキー順に並べて返す。</summary>
+        /// <summary>項目 0 の MeshRefIds をキー順に並べて返す。</summary>
         public List<KeyValuePair<string, List<ulong>>> SortedMeshRefIds() => Step0.SortedMeshRefIds();
 
-        /// <summary>ステップ 0 の Args をキー順に並べて返す。</summary>
+        /// <summary>項目 0 の Args をキー順に並べて返す。</summary>
         public List<KeyValuePair<string, string>> SortedArgs() => Step0.SortedArgs();
 
         // ================================================================
-        // 参照の集約（全ステップ）
+        // 参照の集約（全項目）
         // ================================================================
 
         /// <summary>
-        /// 全ステップの出力先（0 を除き、重複なし）。並びはステップ順。
+        /// 全項目の出力先（0 を除き、重複なし）。並びは項目順。
         /// </summary>
         public List<ulong> OutputObjectIds
         {
@@ -663,7 +663,7 @@ namespace Poly_Ling.Data
             }
         }
 
-        /// <summary>この ObjectId をどれかのステップの出力先に含むか。</summary>
+        /// <summary>この ObjectId をどれかの項目の出力先に含むか。</summary>
         public bool ContainsOutput(ulong objectId)
         {
             if (objectId == 0UL || Steps == null) return false;
@@ -674,10 +674,10 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// 入力ソースの ObjectId（重複を除いたもの）。
-        /// 全ステップの MeshRefIds に載っている全 ID から、出力先と退避を除いたもの。
+        /// 全項目の MeshRefIds に載っている全 ID から、出力先と退避を除いたもの。
         /// ダイジェストと UI 表示に使う。
         ///
-        /// 前のステップの出力を後のステップが取り込む形では、その ID は
+        /// 前の項目の出力を後の項目が取り込む形では、その ID は
         /// 出力先なのでここには出ない。ダイジェストは「マクロが書き換えないもの」
         /// だけから作られる。
         /// </summary>
@@ -729,7 +729,7 @@ namespace Poly_Ling.Data
             }
         }
 
-        /// <summary>どれかのステップが出力先を持っているか。</summary>
+        /// <summary>どれかの項目が出力先を持っているか。</summary>
         public bool HasOutput
         {
             get
@@ -807,10 +807,10 @@ namespace Poly_Ling.Data
                 foreach (var s in Steps)
                     if (s != null) c.Steps.Add(s.Clone());
 
-            // 段の無いグループ（組み立て途中の手本）はそのまま写す。
-            // ここで空の段を足すと、ScenarioLibrary へ登録した時点で
-            // action の無い実行段が 1 つ生える。
-            // 実体付きのグループが段 0 本になることはなく、
+            // 項目の無いグループ（組み立て途中のシナリオ）はそのまま写す。
+            // ここで空の項目を足すと、ScenarioLibrary へ登録した時点で
+            // action の無い実行項目が 1 つ生える。
+            // 実体付きのグループが項目 0 個になることはなく、
             // 万一なっても Step0 が要るときに作る。
             return c;
         }

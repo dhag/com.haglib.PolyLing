@@ -94,11 +94,14 @@ namespace Poly_Ling.Player
 
         private readonly NormalTransplantPreviewState _preview = new NormalTransplantPreviewState();
 
+        /// <summary>直近の「法線を計算」に掛かった時間（ミリ秒）。</summary>
+        public double LastComputeMilliseconds { get; private set; }
+
         private readonly List<(int index, string name, int vertexCount)> _candidates
             = new List<(int, string, int)>();
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "normalTransplant.<下の Id>"（UiControlAttribute.cs）。
@@ -134,6 +137,14 @@ namespace Poly_Ling.Player
         private Button _btnApply;
         [UiControl("cancel", Safety = UiSafety.SafeWrite, Description = "法線の移植のプレビューを取り消す（「法線を計算」の後だけ表示）")]
         private Button _btnCancel;
+        [UiControl("makePair", Safety = UiSafety.SafeWrite, Description = "編集対象のオブジェクトを 2 つ複製し、ビフォー・アフター・ターゲットに設定する")]
+        private Button _btnMakePair;
+        [UiControl("pairCheck", Safety = UiSafety.ReadOnly, Description = "ビフォー／アフターの条件（面数・コーナー数の一致）の検査結果")]
+        private Label  _pairCheckLabel;
+        [UiControl("selectUnresolved", Safety = UiSafety.SafeWrite, Description = "移植法線が求まらなかった頂点を選択する（「法線を計算」の後だけ表示）")]
+        private Button _btnSelectUnresolved;
+        [UiControl("selectNearest", Safety = UiSafety.SafeWrite, Description = "最近傍のプリズムで補った頂点を選択する（「法線を計算」の後だけ表示）")]
+        private Button _btnSelectNearest;
 
         // ================================================================
         // Build
@@ -155,6 +166,23 @@ namespace Poly_Ling.Player
             _warningLabel.style.marginBottom = 4;
             _root.Add(_warningLabel);
 
+            // ── 準備の補助（オブジェクトが足りないときも使えるよう _mainContent の外に置く）
+            var prepHelp = new Label(
+                "参照ペアを作る：編集対象のオブジェクトを 2 つ複製し、1 つ目をビフォー、2 つ目をアフター、"
+                + "元をターゲットにする。アフターを膨らませる・削るなどして形を作り、「法線を計算」する。"
+                + "同じ頂点構成の別オブジェクトから法線をそのまま写すだけなら「頂点データ転送」パネルを使う。");
+            prepHelp.style.fontSize     = 9;
+            prepHelp.style.whiteSpace   = WhiteSpace.Normal;
+            prepHelp.style.color        = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
+            prepHelp.style.marginBottom = 2;
+            _root.Add(prepHelp);
+
+            _btnMakePair = new Button(OnMakePairClicked) { text = "編集対象から参照ペアを作る" };
+            _btnMakePair.style.height       = 22;
+            _btnMakePair.style.fontSize     = 10;
+            _btnMakePair.style.marginBottom = 4;
+            _root.Add(_btnMakePair);
+
             _mainContent = new VisualElement();
             _root.Add(_mainContent);
 
@@ -169,6 +197,13 @@ namespace Poly_Ling.Player
             _afterListContainer = new VisualElement();
             _afterListContainer.style.marginBottom = 4;
             _mainContent.Add(_afterListContainer);
+
+            // ビフォー／アフターの条件（同一トポロジ）を計算の前に示す
+            _pairCheckLabel = new Label();
+            _pairCheckLabel.style.fontSize     = 10;
+            _pairCheckLabel.style.whiteSpace   = WhiteSpace.Normal;
+            _pairCheckLabel.style.marginBottom = 4;
+            _mainContent.Add(_pairCheckLabel);
 
             _mainContent.Add(Sep());
 
@@ -266,6 +301,117 @@ namespace Poly_Ling.Player
             btnRow.Add(_btnApply);
             btnRow.Add(btnCancel);
             _btnCancel = btnCancel;
+
+            // 頂点ごとの結果の確認（プリズム内で求まった／最近傍で補った／求まらなかった）
+            var selRow = new VisualElement();
+            selRow.style.flexDirection = FlexDirection.Row;
+            selRow.style.marginTop     = 4;
+            _applySection.Add(selRow);
+            _btnSelectUnresolved = new Button(() => SelectByKind(unresolved: true)) { text = "求まらなかった頂点を選択" };
+            _btnSelectNearest    = new Button(() => SelectByKind(unresolved: false)) { text = "最近傍で補った頂点を選択" };
+            foreach (var b in new[] { _btnSelectUnresolved, _btnSelectNearest })
+            {
+                b.style.flexGrow = 1;
+                b.style.height   = 22;
+                b.style.fontSize = 10;
+                selRow.Add(b);
+            }
+        }
+
+        // ================================================================
+        // 準備の補助
+        // ================================================================
+
+        /// <summary>
+        /// 編集対象のオブジェクトを 2 つ複製し、1 つ目をビフォー、2 つ目をアフター、元をターゲットにする。
+        /// 複製はコマンド（DuplicateMeshesCommand）で行うので Undo できる。
+        /// </summary>
+        private void OnMakePairClicked()
+        {
+            if (_model == null) return;
+            var src = _model.ActiveMeshContext;
+            if (src?.MeshObject == null)
+            {
+                SetStatusColor(new Color(1f, 0.4f, 0.4f));
+                _statusLabel.text = "編集対象のオブジェクトがありません";
+                return;
+            }
+
+            CancelComputation();
+            int mi = _getModelIndex?.Invoke() ?? 0;
+
+            // 2 つの複製を 1 回のコマンドで作る（同じ索引を 2 回渡す）。
+            // こうすると Undo 1 回で 2 つとも消える。
+            MeshContext before = null, after = null;
+            int srcIdx = _model.MeshContextList.IndexOf(src);
+            if (srcIdx >= 0)
+            {
+                var known = new HashSet<MeshContext>(_model.MeshContextList);
+                _panelContext?.SendCommand(new DuplicateMeshesCommand(mi, new[] { srcIdx, srcIdx }));
+                foreach (var m in _model.MeshContextList)
+                {
+                    if (m == null || known.Contains(m)) continue;
+                    if (before == null) before = m;
+                    else if (after == null) after = m;
+                }
+            }
+            if (before == null || after == null)
+            {
+                SetStatusColor(new Color(1f, 0.4f, 0.4f));
+                _statusLabel.text = "複製できませんでした";
+                Refresh();
+                return;
+            }
+
+            _beforeIndex = _model.MeshContextList.IndexOf(before);
+            _afterIndex  = _model.MeshContextList.IndexOf(after);
+            _targetIndices.Clear();
+            _targetIndices.Add(_model.MeshContextList.IndexOf(src));
+
+            Refresh();
+            SetStatusColor(new Color(0.4f, 0.8f, 1f));
+            _statusLabel.text =
+                $"参照ペアを作りました（ビフォー「{before.Name}」／アフター「{after.Name}」／ターゲット「{src.Name}」）。"
+                + "アフターを変形してから「法線を計算」してください。";
+        }
+
+        /// <summary>計算済みのサンプルから、求まらなかった頂点、または最近傍で補った頂点を選択する。</summary>
+        private void SelectByKind(bool unresolved)
+        {
+            var samples = _preview.Samples;
+            if (samples == null || _model == null) return;
+
+            var masters = new List<int>();
+            var verts   = new List<int>();
+            var meshes  = new List<int>();
+            foreach (var s in samples)
+            {
+                masters.Add(s.MasterIndex);
+                for (int vi = 0; vi < s.VertexCount; vi++)
+                {
+                    bool resolved = s.Resolved != null && vi < s.Resolved.Length && s.Resolved[vi];
+                    bool inside   = s.Inside   != null && vi < s.Inside.Length   && s.Inside[vi];
+                    bool hit = unresolved ? !resolved : (resolved && !inside);
+                    if (!hit) continue;
+                    verts.Add(vi);
+                    meshes.Add(s.MasterIndex);
+                }
+            }
+
+            var empty = System.Array.Empty<int>();
+            _panelContext?.SendCommand(new SelectElementsCommand(
+                _getModelIndex?.Invoke() ?? 0, masters.ToArray(),
+                verts.ToArray(), meshes.ToArray(),
+                empty, empty, empty, empty, empty, empty));
+            _statusLabel.text = unresolved
+                ? $"求まらなかった頂点 {verts.Count} 個を選択しました"
+                : $"最近傍で補った頂点 {verts.Count} 個を選択しました";
+            OnRepaint?.Invoke();
+        }
+
+        private void SetStatusColor(Color c)
+        {
+            if (_statusLabel != null) _statusLabel.style.color = new StyleColor(c);
         }
 
         // ================================================================
@@ -338,7 +484,29 @@ namespace Poly_Ling.Player
 
             RefreshTargetList();
 
+            // ビフォー／アフターの条件を計算の前に示す（不一致なら計算させない）
+            bool pairOk = true;
+            if (_beforeIndex >= 0 && _afterIndex >= 0 && _beforeIndex != _afterIndex)
+            {
+                pairOk = NormalTransplantOperation.CheckPairTopology(
+                    _model.GetMeshContext(_beforeIndex)?.MeshObject,
+                    _model.GetMeshContext(_afterIndex)?.MeshObject,
+                    out string why);
+                _pairCheckLabel.text = pairOk
+                    ? "ビフォー／アフター：面数と各面のコーナー数が一致しています"
+                    : $"ビフォー／アフターが条件を満たしません：{why}";
+                _pairCheckLabel.style.color = pairOk
+                    ? new StyleColor(new Color(0.5f, 0.9f, 0.5f))
+                    : new StyleColor(new Color(1f, 0.4f, 0.4f));
+            }
+            else
+            {
+                _pairCheckLabel.text = "ビフォーとアフターを選んでください（同じ面数・同じコーナー数が条件）";
+                _pairCheckLabel.style.color = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
+            }
+
             _btnCompute.SetEnabled(
+                pairOk &&
                 _beforeIndex >= 0 && _afterIndex >= 0 &&
                 _beforeIndex != _afterIndex && _targetIndices.Count > 0);
 
@@ -457,12 +625,16 @@ namespace Poly_Ling.Player
             // ワールド座標が要るのはこの時点だけ。毎フレームは呼ばない。
             OnRequestUpdateTransform?.Invoke();
 
+            // 計算時間を測って表示する（連続再計算の可否を判断する材料。文書 5.5）
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var samples = NormalTransplantOperation.ComputeSamples(
                 _model, _beforeIndex, _afterIndex, new List<int>(_targetIndices),
                 _spherical
                     ? NormalPrismSolver.TriangleBlendMode.Spherical
                     : NormalPrismSolver.TriangleBlendMode.Linear,
                 _allowNearest, GetWorldPositions, out string error);
+            sw.Stop();
+            LastComputeMilliseconds = sw.Elapsed.TotalMilliseconds;
 
             if (samples == null)
             {
@@ -507,7 +679,9 @@ namespace Poly_Ling.Player
             _statusLabel.style.color = allResolved
                 ? new StyleColor(new Color(0.4f, 0.8f, 1f))
                 : new StyleColor(new Color(1f, 0.7f, 0.3f));
-            _statusLabel.text = $"移植: {resolved} / {total} 頂点（プリズム内包 {inside}）";
+            _statusLabel.text =
+                $"移植: {resolved} / {total} 頂点（プリズム内 {inside} / 最近傍で補った {resolved - inside} / "
+                + $"求まらなかった {total - resolved}）  計算 {LastComputeMilliseconds:F1} ms";
 
             _applySection.style.display = DisplayStyle.Flex;
             OnRepaint?.Invoke();

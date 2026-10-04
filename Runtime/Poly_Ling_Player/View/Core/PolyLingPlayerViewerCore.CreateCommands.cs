@@ -45,6 +45,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnMatchHoleRingCount  = ExecuteMatchHoleRingCount;
             _commandDispatcher.OnMatchEdgeChainCount = ExecuteMatchEdgeChainCount;
             _commandDispatcher.OnResetProject        = ExecuteResetProject;
+            _commandDispatcher.OnCreateEmptyModel    = ExecuteCreateEmptyModel;
             _commandDispatcher.OnCreateObjectArray   = ExecuteCreateObjectArray;
             _commandDispatcher.OnSplitObjectByPartsId = ExecuteSplitObjectByPartsId;
             _commandDispatcher.OnAdvancedSelect      = ExecuteAdvancedSelect;
@@ -89,6 +90,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnImportObjFile       = ExecuteImportObjFile;
             _commandDispatcher.OnExportObjFile       = ExecuteExportObjFile;
             _commandDispatcher.OnImportStlFile       = ExecuteImportStlFile;
+            _commandDispatcher.OnImportStlFolder     = ExecuteImportStlFolder;
             _commandDispatcher.OnExportStlFile       = ExecuteExportStlFile;
             _commandDispatcher.OnExportVrmFile       = ExecuteExportVrmFile;
             _commandDispatcher.OnImportVrmFile       = ExecuteImportVrmFile;

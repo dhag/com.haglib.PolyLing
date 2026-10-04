@@ -721,6 +721,13 @@ namespace Poly_Ling.Player
             _gridAxisSubPanel?.Refresh();
         }
 
+        private void ShowLightPanel()
+        {
+            ApplyGeneralPanelMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.LightSection, _layoutRoot?.LightBtn);
+            _lightSubPanel?.Refresh();
+        }
+
         /// <summary>作業フォルダ設定パネルを開く。</summary>
         private void ShowWorkFolderPanel()
         {

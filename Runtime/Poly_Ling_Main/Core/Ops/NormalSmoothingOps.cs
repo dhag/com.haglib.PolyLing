@@ -114,7 +114,7 @@ namespace Poly_Ling.Ops
             NormalWeightMode weightMode = NormalWeightMode.Uniform)
         {
             if (mesh == null) return;
-            Rebuild(mesh, faceCornerUVs, smoothingAngleDeg, flatShading, debugContext, weightMode);
+            Rebuild(mesh, faceCornerUVs, smoothingAngleDeg, flatShading, debugContext, weightMode, null);
         }
 
         /// <summary>
@@ -128,10 +128,31 @@ namespace Poly_Ling.Ops
             string debugContext = null,
             NormalWeightMode weightMode = NormalWeightMode.Uniform)
         {
+            ApplyFacetSmoothing(mesh, smoothingAngleDeg, flatShading, null, debugContext, weightMode);
+        }
+
+        /// <summary>
+        /// 既存スロットから UV を吸い出して再構築する版に、法線を固定するコーナーを足したもの。
+        ///
+        /// fixedCornerNormals に載っているコーナー（面インデックス, コーナー番号）は
+        /// 計算した法線ではなく指定の法線でスロットを取る。スロットは (UV, 法線) で
+        /// 引き当てるため、固定値が周囲と異なれば自動的に別スロットになり、
+        /// 固定コーナーと非固定コーナーが互いの値を上書きしない。
+        /// 固定コーナーの面法線は周囲のスムージング計算には通常どおり寄与する。
+        /// </summary>
+        public static void ApplyFacetSmoothing(
+            MeshObject mesh,
+            float smoothingAngleDeg,
+            bool flatShading,
+            IReadOnlyDictionary<(int Face, int Corner), Vector3> fixedCornerNormals,
+            string debugContext = null,
+            NormalWeightMode weightMode = NormalWeightMode.Uniform)
+        {
             if (mesh == null) return;
 
             var cornerUVs = CaptureCornerUVs(mesh);
-            Rebuild(mesh, cornerUVs, smoothingAngleDeg, flatShading, debugContext, weightMode);
+            Rebuild(mesh, cornerUVs, smoothingAngleDeg, flatShading, debugContext, weightMode,
+                fixedCornerNormals);
         }
 
         /// <summary>
@@ -187,7 +208,8 @@ namespace Poly_Ling.Ops
             float smoothingAngleDeg,
             bool flatShading,
             string debugContext,
-            NormalWeightMode weightMode)
+            NormalWeightMode weightMode,
+            IReadOnlyDictionary<(int Face, int Corner), Vector3> fixedCornerNormals)
         {
             int faceCount = mesh.Faces.Count;
             if (faceCount == 0)
@@ -303,6 +325,14 @@ namespace Poly_Ling.Ops
                     normal = (normal.sqrMagnitude < 1e-12f)
                         ? faceNormals[fi]
                         : normal.normalized;
+
+                    // 法線再計算の除外コーナーは元の法線でスロットを取る
+                    if (fixedCornerNormals != null
+                        && fixedCornerNormals.TryGetValue((fi, j), out var fixedNormal)
+                        && fixedNormal.sqrMagnitude >= 1e-12f)
+                    {
+                        normal = fixedNormal;
+                    }
 
                     // 不変条件を保つ唯一の追加口
                     int slot = mesh.Vertices[vIdx].GetOrAddUVNormal(uv, normal, SlotTolerance);

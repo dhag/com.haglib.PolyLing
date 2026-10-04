@@ -1,5 +1,5 @@
 // UiAutomationRegistry.cs
-// UI 自動操作の対象（パネル・項目）の登録簿。意味 ID と VisualElement を結ぶ。
+// UI 自動操作の対象（パネル・ボタン・入力欄）の登録簿。意味 ID と VisualElement を結ぶ。
 // Runtime/Poly_Ling_Player/View/UiAutomation/ に配置
 //
 // 【登録した物しか操作しない】
@@ -8,7 +8,7 @@
 //
 // 【登録の仕方】
 //   パネル … PolyLingPlayerViewerCore が RegisterPanel（表示の手順 ShowXxxPanel を知っている側）
-//   項目   … RegisterObject にサブパネルのインスタンスを渡す。UiControlAttribute の付いた
+//   ボタンや入力欄   … RegisterObject にサブパネルのインスタンスを渡す。UiControlAttribute の付いた
 //            メンバーだけを集めて登録する（UiControlAttribute.cs の冒頭注記）。
 //            属性で表せないもの（作り直しのたびに増減する行など）は RegisterControl で直接登録する。
 //
@@ -17,7 +17,7 @@
 //   作り直しでフィールドが別の要素に差し替わる UI にも追従する。
 //
 // 【範囲（scope）】
-//   作り直しのたびに増減する項目は scope 付きで登録し、作り直す前に ClearScope で消す。
+//   作り直しのたびに増減するボタンや入力欄は scope 付きで登録し、作り直す前に ClearScope で消す。
 //
 // 【登録の失敗】
 //   ID の重複・所属パネル未登録・属性の誤りは登録せずに Errors へ積み、
@@ -44,7 +44,7 @@ namespace Poly_Ling.Player
             public Action        Show;
         }
 
-        /// <summary>項目 1 件。</summary>
+        /// <summary>ボタンや入力欄 1 件。</summary>
         public sealed class ControlEntry
         {
             public string   Id;
@@ -67,7 +67,7 @@ namespace Poly_Ling.Player
             /// <summary>既定の書き込みで足りないときだけ登録する。成功で null、失敗で理由。</summary>
             public Func<string, string> Setter;
 
-            /// <summary>作り直しで消す範囲。固定の項目は null。</summary>
+            /// <summary>作り直しで消す範囲。固定のボタンや入力欄は null。</summary>
             public string Scope;
 
             /// <summary>登録元（型名.メンバー名）。検査の表示用。</summary>
@@ -113,7 +113,7 @@ namespace Poly_Ling.Player
 
         /// <summary>中身がデータ行のコンテナ。</summary>
         /// <summary>
-        /// データ行のコンテナ。属性（Rows）で宣言したものに、動的な項目の出どころが
+        /// データ行のコンテナ。属性（Rows）で宣言したものに、動的なボタンや入力欄の出どころが
         /// 今持っている行コンテナ（UiDynamicControls.AddRows）を続けたもの。
         /// </summary>
         public IReadOnlyList<RowContainer> RowContainers
@@ -158,8 +158,8 @@ namespace Poly_Ling.Player
         public IReadOnlyList<PanelEntry> Panels => _panelOrder;
 
         /// <summary>
-        /// 項目。固定の項目（登録順）に、動的な項目の出どころの今の中身を続けたもの。
-        /// 動的な項目は呼ぶたびに作り直すので、参照を持ち続けないこと。
+        /// ボタンや入力欄。固定のボタンや入力欄（登録順）に、動的なボタンや入力欄の出どころの今の中身を続けたもの。
+        /// 動的なボタンや入力欄は呼ぶたびに作り直すので、参照を持ち続けないこと。
         /// </summary>
         public IReadOnlyList<ControlEntry> Controls
         {
@@ -176,10 +176,10 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // 動的な項目（UiDynamicControls）
+        // 動的なボタンや入力欄（UiDynamicControls）
         // ================================================================
 
-        /// <summary>動的な項目の出どころ 1 件。</summary>
+        /// <summary>動的なボタンや入力欄の出どころ 1 件。</summary>
         private sealed class DynamicSource
         {
             public string            PanelId;
@@ -213,8 +213,8 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 動的な項目の ID から所属パネルを返す。まだ作られていない（別のモードを表示中など）
-        /// 項目でも、パネルを開けば作られるので、uiReveal はこれでパネルを開いてから引き直す。
+        /// 動的なボタン・入力欄の ID から所属パネルを返す。まだ作られていない（別のモードを表示中など）
+        /// ボタンや入力欄でも、パネルを開けば作られるので、uiReveal はこれでパネルを開いてから引き直す。
         /// </summary>
         public bool TryGetDynamicPanelFor(string controlId, out PanelEntry panel)
         {
@@ -269,11 +269,11 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // 項目
+        // ボタンや入力欄
         // ================================================================
 
         /// <summary>
-        /// 項目を 1 件登録する。所属パネルは先に登録しておくこと。
+        /// ボタンや入力欄を 1 件登録する。所属パネルは先に登録しておくこと。
         /// ID が空・重複、パネル未登録、resolve が無いときは登録せず Errors へ積む。
         /// </summary>
         public bool RegisterControl(
@@ -289,13 +289,13 @@ namespace Poly_Ling.Player
             string source = null)
         {
             if (string.IsNullOrEmpty(id))
-                return Reject($"項目 ID が空です（{source}）");
+                return Reject($"ボタン・入力欄の ID が空です（{source}）");
             if (_controls.ContainsKey(id))
-                return Reject($"項目 ID が重複しています: {id}（{source}）");
+                return Reject($"ボタン・入力欄の ID が重複しています: {id}（{source}）");
             if (string.IsNullOrEmpty(panelId) || !_panels.ContainsKey(panelId))
-                return Reject($"項目 {id} の所属パネルが登録されていません: {panelId}");
+                return Reject($"ボタンや入力欄 {id} の所属パネルが登録されていません: {panelId}");
             if (resolve == null)
-                return Reject($"項目の要素を返す処理がありません: {id}");
+                return Reject($"ボタンや入力欄の要素を返す処理がありません: {id}");
 
             var c = new ControlEntry
             {
@@ -321,7 +321,7 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(id)) return false;
             if (_controls.TryGetValue(id, out control)) return true;
 
-            // 動的な項目は、今作られているものだけを引く。
+            // 動的なボタンや入力欄は、今作られているものだけを引く。
             foreach (var ds in _dynamicSources)
             {
                 string head = ds.Head;
@@ -334,7 +334,7 @@ namespace Poly_Ling.Player
             return false;
         }
 
-        /// <summary>scope 付きで登録した項目を全部消す。作り直す前に呼ぶ。</summary>
+        /// <summary>scope 付きで登録したボタンや入力欄を全部消す。作り直す前に呼ぶ。</summary>
         public void ClearScope(string scope)
         {
             if (string.IsNullOrEmpty(scope)) return;
@@ -358,7 +358,7 @@ namespace Poly_Ling.Player
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         /// <summary>
-        /// instance の UiControlAttribute 付きメンバーを panelId の項目として登録する。
+        /// instance の UiControlAttribute 付きメンバーを panelId のボタンや入力欄として登録する。
         /// 基底クラスのメンバーも見る。Ignore のものは登録しない。
         /// UiNestedAttribute 付きのフィールドは、その中身も同じパネルへ取り込む。
         /// idPrefix を渡すと ID を "&lt;パネル ID&gt;.&lt;idPrefix&gt;.&lt;Id&gt;" にする
@@ -393,7 +393,7 @@ namespace Poly_Ling.Player
             {
                 foreach (var f in t.GetFields(MemberFlags))
                 {
-                    // 作り直すたびに中身が変わる項目の置き場。
+                    // 作り直すたびに中身が変わるボタンや入力欄の置き場。
                     if (f.FieldType == typeof(UiDynamicControls))
                     {
                         if (f.GetValue(instance) is UiDynamicControls dyn)
@@ -454,7 +454,7 @@ namespace Poly_Ling.Player
                         continue;
                     }
 
-                    // 固定個数の部品を配列で持つ場合（ソースのスロットなど）。ID の {0} に 1 始まりの番号が入る。
+                    // 固定個数のボタンや入力欄を配列で持つ場合（ソースのスロットなど）。ID の {0} に 1 始まりの番号が入る。
                     if (f.FieldType.IsArray && typeof(VisualElement).IsAssignableFrom(f.FieldType.GetElementType()))
                     {
                         RegisterArrayMember(panelId, idPrefix, instance, t, f, attr, outerReveal);
@@ -510,7 +510,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// VisualElement の配列フィールドを、要素ごとの項目として登録する。
+        /// VisualElement の配列フィールドを、要素ごとのボタンや入力欄として登録する。
         /// ID と説明の "{0}" に 1 始まりの番号を入れる。要素は操作のときに配列から読む。
         /// 配列の長さは登録時の長さ（固定個数のスロット用。行が増減するものは Rows を使う）。
         /// Getter / Setter は要素ごとに変えられないので受け付けない。Reveal は全要素で共通。

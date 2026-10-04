@@ -64,6 +64,25 @@ namespace Poly_Ling.Data
             : base(modelIndex) { SetIndex = setIndex; NewName = newName; }
     }
 
+    /// <summary>
+    /// 除外セットを手動の法線編集からも守るかを切り替える。
+    /// 守るセットのコーナーは NormalEditCommand の対象から外れる（自動の再計算からは常に守られる）。
+    /// </summary>
+    [PLCommand(Category = "selection.set", Writes = PLWriteScope.ModelWide, Description = "法線再計算の除外セットを、手動の法線編集からも守るかを切り替える。")]
+    public class SetNormalExcludeSetProtectionCommand : PanelCommand
+    {
+        [PLParam(TextKey = "NormalExcludeSetIndex",
+                 Description = "切り替える法線再計算 除外セットの索引", Required = true)]
+        public int SetIndex { get; }
+
+        [PLParam(TextKey = "NormalExcludeProtectManual",
+                 Description = "true で手動の法線編集からも守る", Required = true)]
+        public bool ProtectManual { get; }
+
+        public SetNormalExcludeSetProtectionCommand(int modelIndex, int setIndex, bool protectManual)
+            : base(modelIndex) { SetIndex = setIndex; ProtectManual = protectManual; }
+    }
+
     // ================================================================
     // 法線編集
     // ================================================================
@@ -72,12 +91,23 @@ namespace Poly_Ling.Data
     /// 選択範囲の法線を編集する。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。
     ///
     /// 各メッシュ内の対象範囲は次のルールで決まる（NormalEditOps.CollectTargetCorners）。
-    ///   面選択がある     → その面のコーナーのみ
-    ///   頂点選択のみある → その頂点が参照する全スロット
-    ///   選択が無い       → メッシュ全体
+    ///   面選択がある         → その面のコーナーのみ
+    ///   頂点か辺の選択がある → 選択頂点と辺の両端頂点が参照する全スロット
+    ///   選択が無い           → メッシュ全体
     /// ただし RecalcByAngle だけはメッシュ全体が対象（スロットを作り直すため）。
+    /// その場合も法線再計算の除外セットが指すコーナーは元の法線を保つ。
+    ///
+    /// 全対象（と、その生成ミラー）の変更は 1 件の Undo にまとまる。
     /// </summary>
     [PLCommand(Category = "geometry.attribute", Writes = PLWriteScope.ModelWide, Description = "選択範囲の法線を編集する。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。")]
+    [PLResult("targetObjects",    PLResultKind.Integer, Description = "適用先のオブジェクト数")]
+    [PLResult("changedObjects",   PLResultKind.Integer, Description = "法線かスロット構成が実際に変わったオブジェクト数")]
+    [PLResult("changedCorners",   PLResultKind.Integer, Description = "法線が変わった面コーナー数（前後比較の実測）")]
+    [PLResult("slotsBefore",      PLResultKind.Integer, Description = "変わったオブジェクトの法線スロット数の合計（前）")]
+    [PLResult("slotsAfter",       PLResultKind.Integer, Description = "変わったオブジェクトの法線スロット数の合計（後）")]
+    [PLResult("mirrorObjects",    PLResultKind.Integer, Description = "結果を写し直した生成ミラーの数")]
+    [PLResult("protectedCorners", PLResultKind.Integer, Description = "手動の法線編集から守るため対象から外したコーナー数")]
+    [PLResult("skipped",          PLResultKind.TextArray, Description = "変わらなかったオブジェクトと理由")]
     public class NormalEditCommand : PanelCommand
     {
         /// <summary>
@@ -121,7 +151,33 @@ namespace Poly_Ling.Data
             MirrorFlattenSeamX,
             /// <summary>反転</summary>
             Flip,
+            /// <summary>
+            /// 方向を保持して分離。今の法線の値を変えずに、対象コーナーを面ごとに別スロットへ分ける。
+            /// スロットが増える（Break と違い方向は変えない）。
+            /// </summary>
+            SplitKeepDirection,
+            /// <summary>指定方向（Direction）へ向ける。スポイトで拾った方向にも使う。</summary>
+            AlignToVector,
+            /// <summary>軸（Direction）回りに RotateDeg 度だけ回す。直接回転ツールの確定に使う。</summary>
+            RotateAxisAngle,
+            /// <summary>
+            /// オブジェクト間の継ぎ目を揃える。選択中の複数オブジェクトで、ワールド座標が
+            /// SeamDistance 以内に重なる頂点の法線をワールド空間で平均する。
+            /// 2 つ以上のオブジェクトにまたがる重なりだけが対象（同じオブジェクト内は変えない）。
+            /// </summary>
+            AverageAcrossObjects,
         }
+
+        /// <summary>
+        /// Blend（強度）が効かない操作。スロットを作り直す・付け替える操作は
+        /// 操作の前後でコーナーの対応が取れないため、常に強度 1 として扱う。
+        /// </summary>
+        public static bool IgnoresBlend(Op op)
+            => op == Op.RecalcByAngle || op == Op.Break || op == Op.SplitKeepDirection;
+
+        /// <summary>スロット数が変わりうる操作（ProtectUnselected による分離は別に数える）。</summary>
+        public static bool MayChangeSlotCount(Op op)
+            => op == Op.RecalcByAngle || op == Op.Break || op == Op.SplitKeepDirection;
 
         [PLParam(TextKey = "NormalEditOperation",
                  Description = "法線に対して何をするか", Required = true)]
@@ -178,6 +234,49 @@ namespace Poly_Ling.Data
                  LimitKey = "NormalEdit.MirrorThreshold")]
         public float MirrorThreshold { get; }
 
+        /// <summary>
+        /// 強度（元の法線との混合率）。0 で変更なし、1 で操作の結果そのもの。
+        /// 操作の前のコーナー法線と結果を球面補間する。IgnoresBlend の操作には効かない。
+        /// </summary>
+        [PLParam(TextKey = "NormalEditBlend",
+                 Description = "強度。元の法線と結果を球面補間する割合（0 で変更なし、1 で結果どおり）。RecalcByAngle / Break / SplitKeepDirection には効かない。既定は 1",
+                 LimitKey = "NormalEdit.Blend")]
+        public float Blend { get; }
+
+        /// <summary>
+        /// 選択外の保護。true なら、対象コーナーと対象外のコーナーが同じスロットを
+        /// 使っているとき、書き込む前に対象側だけ新しいスロットへ分ける（スロットが増える）。
+        /// false なら共有しているスロットごと書き換える（対象外の面にも効く）。
+        /// </summary>
+        [PLParam(TextKey = "NormalEditProtectUnselected",
+                 Description = "選択外の面の法線を変えない。共有スロットを対象側だけ分離する（スロットが増える）。既定は false")]
+        public bool ProtectUnselected { get; }
+
+        /// <summary>AlignToVector の向き / RotateAxisAngle の回転軸。</summary>
+        [PLParam(TextKey = "NormalEditDirection",
+                 Description = "AlignToVector の向き / RotateAxisAngle の回転軸")]
+        public Vector3 Direction { get; }
+
+        /// <summary>RotateAxisAngle の回転角（度）。</summary>
+        [PLParam(TextKey = "NormalEditRotateDeg",
+                 Description = "RotateAxisAngle の回転角（度）。既定は 0",
+                 LimitKey = "NormalEdit.RotateDeg")]
+        public float RotateDeg { get; }
+
+        /// <summary>
+        /// Target / Direction の座標空間。false はオブジェクトごとのローカル座標、
+        /// true はワールド座標（オブジェクトごとに WorldMatrix でローカルへ直してから使う）。
+        /// </summary>
+        [PLParam(TextKey = "NormalEditWorldSpace",
+                 Description = "Target / Direction をワールド座標として読む。false ならオブジェクトごとのローカル座標。既定は false")]
+        public bool WorldSpace { get; }
+
+        /// <summary>AverageAcrossObjects で同じ位置とみなす距離（ワールド）。</summary>
+        [PLParam(TextKey = "NormalEditSeamDistance",
+                 Description = "AverageAcrossObjects で重なりとみなすワールド距離。既定は 0.0001",
+                 LimitKey = "NormalEdit.SeamDistance")]
+        public float SeamDistance { get; }
+
         public NormalEditCommand(
             int modelIndex,
             Op operation,
@@ -189,7 +288,13 @@ namespace Poly_Ling.Data
             bool useSelectionCenter = true,
             bool alignVectors = false,
             NormalWeightMode weightMode = NormalWeightMode.Uniform,
-            float mirrorThreshold = 0.00001f)
+            float mirrorThreshold = 0.00001f,
+            float blend = 1f,
+            bool protectUnselected = false,
+            Vector3 direction = default,
+            float rotateDeg = 0f,
+            bool worldSpace = false,
+            float seamDistance = 0.0001f)
             : base(modelIndex)
         {
             Operation          = operation;
@@ -202,6 +307,66 @@ namespace Poly_Ling.Data
             AlignVectors       = alignVectors;
             WeightMode         = weightMode;
             MirrorThreshold    = mirrorThreshold;
+            Blend              = blend;
+            ProtectUnselected  = protectUnselected;
+            Direction          = direction;
+            RotateDeg          = rotateDeg;
+            WorldSpace         = worldSpace;
+            SeamDistance       = seamDistance;
+        }
+    }
+
+    /// <summary>
+    /// 法線ブラシのストローク 1 回分。ブラシ中心の列（ワールド座標）に沿って、
+    /// 範囲内の頂点の法線を変える。実処理は NormalBrushOps.ApplyStroke。Undo 記録付き。
+    /// マウス経路（法線編集ツールのブラシ）も 1 ストローク 1 コマンドでこれを送る。
+    /// </summary>
+    [PLCommand(Category = "geometry.attribute", Writes = PLWriteScope.Targets, Description = "法線ブラシのストローク。ブラシ中心の列（ワールド座標）に沿って範囲内の頂点の法線を変える。")]
+    [PLResult("changedObjects", PLResultKind.Integer, Description = "法線が変わったオブジェクト数")]
+    [PLResult("writtenSlots",   PLResultKind.Integer, Description = "書き換えたスロット数（塗りの延べ）")]
+    public class NormalBrushStrokeCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MasterIndices", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
+        public int[] MasterIndices { get; }
+
+        [PLParam(TextKey = "NormalBrushCenters",
+                 Description = "ブラシ中心をストローク順に並べたもの（ワールド座標）", Required = true)]
+        public Vector3[] BrushCenters { get; }
+
+        [PLParam(TextKey = "NormalBrushMode",
+                 Description = "Comb＝指定方向へ寄せる / Smooth＝隣接頂点の平均へ寄せる / Average＝範囲内の平均へ寄せる", Required = true)]
+        public NormalBrushMode Mode { get; }
+
+        [PLParam(TextKey = "NormalBrushRadius",
+                 Description = "ブラシ半径（対象のローカル空間単位）", LimitKey = "NormalBrush.BrushRadius", Required = true)]
+        public float BrushRadius { get; }
+
+        [PLParam(TextKey = "NormalBrushStrength",
+                 Description = "1 回の塗りの強さ", LimitKey = "NormalBrush.Strength", Required = true)]
+        public float Strength { get; }
+
+        [PLParam(TextKey = "NormalBrushDirection",
+                 Description = "Comb の向き（ワールド座標）")]
+        public Vector3 Direction { get; }
+
+        [PLParam(TextKey = "NormalBrushMirrorX",
+                 Description = "ローカル X で反転した位置にも同じ塗りを掛ける。既定は false")]
+        public bool MirrorX { get; }
+
+        public NormalBrushStrokeCommand(
+            int modelIndex, int[] masterIndices, Vector3[] brushCenters,
+            NormalBrushMode mode, float brushRadius, float strength,
+            Vector3 direction = default, bool mirrorX = false)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices;
+            BrushCenters  = brushCenters;
+            Mode          = mode;
+            BrushRadius   = brushRadius;
+            Strength      = strength;
+            Direction     = direction;
+            MirrorX       = mirrorX;
         }
     }
 

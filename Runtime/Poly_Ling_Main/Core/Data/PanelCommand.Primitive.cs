@@ -125,6 +125,8 @@ namespace Poly_Ling.Data
     [PLResult("vertices", PLResultKind.Integer, Description = "生成物の頂点数の合計")]
     [PLResult("faces",    PLResultKind.Integer, Description = "生成物の面数の合計")]
     [PLResult("holes",    PLResultKind.Integer, Description = "生成物の境界ループ（穴）の数の合計")]
+    // 画面での経路は図形名から割り出す（UiRouteCatalog）。図形ごとには書かない。
+    [PLUiRouteByShape]
     public abstract class CreatePrimitiveMeshCommand : PanelCommand
     {
         /// <summary>配置と後処理の指定。</summary>
@@ -829,10 +831,10 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
-    [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.Targets, Description = "能面のメッシュを作る。")]
+    [PLCommand(Category = "geometry.create.special", Writes = PLWriteScope.Targets, Description = "セザンヌ（顔）のメッシュを作る。MediaPipe の顔、または sezane フォルダのプリセットから作る。")]
     public sealed class CreateNohMaskCommand : CreatePrimitiveMeshCommand
     {
-        [PLParam(TextKey = "NohMask", Description = "面（能面）のパラメータ", Required = true)]
+        [PLParam(TextKey = "NohMask", Description = "セザンヌのパラメータ", Required = true)]
         public Poly_Ling.NohMask.FaceMeshParams Params { get; }
 
         public override string ShapeName => "NohMask";

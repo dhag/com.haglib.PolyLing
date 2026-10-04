@@ -158,8 +158,8 @@ namespace Poly_Ling.Player
             };
             _springSkinPipeScenarioSubPanel.Build(_layoutRoot.SpringSkinPipeScenarioSection);
 
-            // 手本（シナリオ）。上の 2 つと違い、段は scenarios.csv から読んだデータ。
-            // 先頭から流し、指示・確認の段と失敗で止まる（PlayerCommandDispatcher.ScenarioRun.cs）。
+            // シナリオ。上の 2 つと違い、項目は scenarios フォルダから読んだデータ。
+            // 先頭から流し、指示・確認の項目と失敗で止まる（PlayerCommandDispatcher.ScenarioRun.cs）。
             // 失敗を表示するため、戻り値を捨てる SendCommand ではなく Dispatch を直に渡す。
             _scenarioSubPanel = new PlayerScenarioSubPanel
             {
@@ -168,6 +168,9 @@ namespace Poly_Ling.Player
                 GetRun     = () => _commandDispatcher?.ScenarioRun,
             };
             _scenarioSubPanel.Build(_layoutRoot.ScenarioSection);
+
+            // 流す駆動は中区画の案内バーが持つ（PolyLingPlayerViewerCore.ScenarioGuide.cs）。
+            BuildScenarioGuideBar();
 
             // 前髪パイプ自動検証。四分球を梯子にしてパイプを生やす。
             // 開始タグ三角形・終了三角形を足して梯子の自動検出を通す経路の確認も兼ねる。

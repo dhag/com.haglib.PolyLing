@@ -43,11 +43,11 @@ namespace Poly_Ling.Player
         public Func<List<(string Label, int MasterIndex, MeshObject Mesh)>> GetDrawableMeshEntryList;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "placeObjectReshape.<下の Id>"（UiControlAttribute.cs）。
-        // 原型オブジェクトのチェックは一覧を取り直すたびに作り直す行なので、項目として登録しない。
+        // 原型オブジェクトのチェックは一覧を取り直すたびに作り直す行なので、ボタンや入力欄として登録しない。
         [UiControl(Ignore = true)]
         private VisualElement _root;
         [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象オブジェクトの数")]

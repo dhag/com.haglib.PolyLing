@@ -60,6 +60,9 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：スキンウェイト数値設定ボタン。</summary>
         public Button SkinWeightNumericBtn { get; private set; }
 
+        /// <summary>左ペイン：スキンW範囲塗りボタン（円筒・球の範囲で親・自ボーンを配分）。</summary>
+        public Button SkinWeightVolumeBtn { get; private set; }
+
         /// <summary>左ペイン：一時選択サブツール呼び出しボタン (デバッグ用。ショートカット R / G と同処理)。</summary>
         public Button SubToolBoxSelectBtn   { get; private set; }
         public Button SubToolLassoSelectBtn { get; private set; }
@@ -80,6 +83,7 @@ namespace Poly_Ling.Player
 
         /// <summary>左ペイン：軸/グリッドボタン（その他）。</summary>
         public Button GridAxisBtn { get; private set; }
+        public Button LightBtn { get; private set; }
 
         /// <summary>左ペイン：カメラ調整ボタン（その他）。</summary>
         public Button CameraBtn { get; private set; }
@@ -162,6 +166,7 @@ namespace Poly_Ling.Player
         public Button        BridgeBtn                  { get; private set; }
         public Button        SolidifyBtn                { get; private set; }
         public Button        LineExtrudeBtn             { get; private set; }
+        public Button        SubdivisionBtn             { get; private set; }
         public Button        MediaPipeBtn           { get; private set; }
         /// <summary>メディアパイプ（姿勢・指）。</summary>
         public Button        MediaPipeFingerBtn     { get; private set; }
@@ -201,7 +206,7 @@ namespace Poly_Ling.Player
         public Button        SpringSkinScenarioBtn     { get; private set; }
         public Button        SpringSkinPipeScenarioBtn     { get; private set; }
 
-        /// <summary>手本（シナリオ）を選んで先頭から流す。指示・確認の段と失敗で止まる。</summary>
+        /// <summary>シナリオを選んで先頭から流す。指示・確認の項目と失敗で止まる。</summary>
         public Button        ScenarioBtn               { get; private set; }
         public Button        PipeHairTestBtn          { get; private set; }
         public Button        BarnacleTestBtn          { get; private set; }
@@ -518,8 +523,10 @@ namespace Poly_Ling.Player
             // 線分押し出しは選択線分からループを検出して新しいメッシュを作る。
             // 押し出し系と並べたいが 1 行 3 つで幅が詰まるため行を分ける。
             var rowLineExtrude = new VisualElement(); rowLineExtrude.style.flexDirection = FlexDirection.Row; rowLineExtrude.style.marginBottom = 2;
-            LineExtrudeBtn = MakeBtn("線分押し出し"); LineExtrudeBtn.style.flexGrow = 1;
-            rowLineExtrude.Add(LineExtrudeBtn); foTopology.Add(rowLineExtrude);
+            LineExtrudeBtn = MakeBtn("線分押し出し"); LineExtrudeBtn.style.flexGrow = 1; LineExtrudeBtn.style.marginRight = 2;
+            // サブディビジョン。選択メッシュを親にして滑らかな子を作る（親の編集に追随）。
+            SubdivisionBtn = MakeBtn("サブディビジョン"); SubdivisionBtn.style.flexGrow = 1;
+            rowLineExtrude.Add(LineExtrudeBtn); rowLineExtrude.Add(SubdivisionBtn); foTopology.Add(rowLineExtrude);
 
             var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
             EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
@@ -680,6 +687,9 @@ namespace Poly_Ling.Player
             SkinWeightNumericBtn = MakeBtn("スキンW数値設定");
             foBoneMorph.Add(SkinWeightNumericBtn);
 
+            SkinWeightVolumeBtn = MakeBtn("スキンW範囲塗り");
+            foBoneMorph.Add(SkinWeightVolumeBtn);
+
             // ブレンド / シュリンカー / TPSモーフ / 格子変形は「特殊な変形」へ移動した。
 
             MorphCreateBtn = MakeBtn("モーフ生成・差分から");         foBoneMorph.Add(MorphCreateBtn);
@@ -773,8 +783,9 @@ namespace Poly_Ling.Player
 
             var rowMisc4 = new VisualElement(); rowMisc4.style.flexDirection = FlexDirection.Row; rowMisc4.style.marginBottom = 2;
             CameraBtn  = MakeBtn("カメラ調整"); CameraBtn.style.flexGrow  = 1; CameraBtn.style.marginRight = 2;
-            CaptureBtn = MakeBtn("キャプチャ"); CaptureBtn.style.flexGrow = 1;
-            rowMisc4.Add(CameraBtn); rowMisc4.Add(CaptureBtn); foOther.Add(rowMisc4);
+            CaptureBtn = MakeBtn("キャプチャ"); CaptureBtn.style.flexGrow = 1; CaptureBtn.style.marginRight = 2;
+            LightBtn   = MakeBtn("ライト");     LightBtn.style.flexGrow   = 1;
+            rowMisc4.Add(CameraBtn); rowMisc4.Add(CaptureBtn); rowMisc4.Add(LightBtn); foOther.Add(rowMisc4);
 
             // 一時ミラー（旧「ミラー編集」）。
             // 作業中だけ反対側の実体を生やす一時的な機能であり、ボーン・モーフの編集
@@ -808,9 +819,9 @@ namespace Poly_Ling.Player
             // 2 個並びの行は左ボタンに marginRight = 2 を付け、右ボタンには余白を付けない。
             // 単独行のボタンは flexGrow = 1 のみ。全行でこの規則にそろえること。
 
-            // 0) 手本（シナリオ）。この節の先頭に置く。
+            // 0) シナリオ。この節の先頭に置く。
             //    下に並ぶ検証パネルは段が C# のラムダで固定だが、こちらは
-            //    scenarios.csv から読んだ手本を並べ、先頭から流す（指示・確認の段と失敗で止まる）。
+            //    scenarios フォルダから読んだシナリオを並べ、先頭から流す（指示・確認の項目と失敗で止まる）。
             var rowSysDebug0 = new VisualElement(); rowSysDebug0.style.flexDirection = FlexDirection.Row; rowSysDebug0.style.marginBottom = 2;
             ScenarioBtn = MakeBtn("シナリオ"); ScenarioBtn.style.flexGrow = 1;
             rowSysDebug0.Add(ScenarioBtn); foSysDebug.Add(rowSysDebug0);

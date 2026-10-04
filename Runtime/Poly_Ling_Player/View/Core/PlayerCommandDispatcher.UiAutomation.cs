@@ -23,22 +23,22 @@ namespace Poly_Ling.Player
         // UI 自動操作の受け口（PolyLingPlayerViewerCore.UiAutomation.cs が配線する）
         // ================================================================
 
-        /// <summary>登録済みパネル・項目の一覧。</summary>
+        /// <summary>登録済みパネル・ボタン・入力欄の一覧。</summary>
         public Func<UiDescribeCommand, CommandResult>      OnUiDescribe;
 
         /// <summary>パネル表示。</summary>
         public Func<UiShowPanelCommand, CommandResult>     OnUiShowPanel;
 
-        /// <summary>項目を見える状態にする。</summary>
+        /// <summary>ボタンや入力欄を見える状態にする。</summary>
         public Func<UiRevealCommand, CommandResult>        OnUiReveal;
 
-        /// <summary>項目の値の読み取り。</summary>
+        /// <summary>入力欄の値の読み取り。</summary>
         public Func<UiGetValueCommand, CommandResult>      OnUiGetValue;
 
-        /// <summary>項目の値の変更。</summary>
+        /// <summary>入力欄の値の変更。</summary>
         public Func<UiSetValueCommand, CommandResult>      OnUiSetValue;
 
-        /// <summary>項目の強調表示。</summary>
+        /// <summary>ボタンや入力欄の強調表示。</summary>
         public Func<UiHighlightCommand, CommandResult>     OnUiHighlight;
 
         /// <summary>強調の枠を全部消す。</summary>

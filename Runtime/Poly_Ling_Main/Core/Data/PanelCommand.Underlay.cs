@@ -27,6 +27,8 @@ namespace Poly_Ling.Data
     [PLResult("filePath",  PLResultKind.Text,    Description = "画像ファイルの絶対パス")]
     [PLResult("width",     PLResultKind.Integer, Description = "画像の幅（画素）")]
     [PLResult("height",    PLResultKind.Integer, Description = "画像の高さ（画素）")]
+    [PLUiRoute("下絵パネル", "leftPane.fold.Other", "leftPane.underlayBtn", "underlay.direction", "underlay.open",
+        Note = "方向を選んでから画像ファイルを開く。置き場所と大きさは下の欄で合わせる")]
     public sealed class SetUnderlayCommand : PanelCommand
     {
         [PLParam(Description = "設定する方向", Required = true)]

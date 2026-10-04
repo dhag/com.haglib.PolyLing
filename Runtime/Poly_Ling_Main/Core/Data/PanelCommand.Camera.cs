@@ -83,6 +83,8 @@ namespace Poly_Ling.Data
     /// <summary>カメラを任意の値にする。</summary>
     [PLCommand(Category = "camera", Writes = PLWriteScope.None,
         Description = "カメラを任意の注視点・角度にする。メイン画面は target・rotationX/Y/Z・distance・fov・orthographic を、3 面図は target・triRotation・triHalfHeight を使う。今の値は queryCamera で読める。")]
+    [PLUiRoute("カメラ調整パネル", "leftPane.fold.Other", "leftPane.cameraBtn", "camera.target",
+        Note = "調整対象を選び、注視点・回転・距離・画角の欄で合わせる")]
     public sealed class SetCameraCommand : PanelCommand
     {
         [PLParam(Description = "対象のビュー。All はメイン画面と 3 面図の両方")]

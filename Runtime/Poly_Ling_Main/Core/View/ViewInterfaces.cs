@@ -246,6 +246,9 @@ namespace Poly_Ling.View
 
         /// <summary>引き当てに使える頂点 ID があるか（PartsSelectionSet.HasResolvableVertexIds）。</summary>
         bool HasResolvableVertexIds { get; }
+
+        /// <summary>法線除外セットとして、手動の法線編集からも守るか（PartsSelectionSet.ProtectManualNormalEdit）。</summary>
+        bool ProtectManualNormalEdit { get; }
     }
 
     // ================================================================
@@ -328,6 +331,12 @@ namespace Poly_Ling.View
         // Humanoid マッピング（PlayerHumanoidMappingSubPanel が読む項目）
         /// <summary>必須の Humanoid ボーンのうち未割当の数（マッピング未設定なら 0）。スナップショットでは 0。</summary>
         int HumanoidMissingRequiredCount { get; }
+        /// <summary>
+        /// Humanoid ボーン名 → master 索引（ModelContext.HumanoidMapping の写し）。
+        /// 編集中の割当の正本はこの表（ボーン個別の HumanBodyBone は保存・読込時しか同期しない）。
+        /// 未設定・スナップショットでは空。
+        /// </summary>
+        IReadOnlyDictionary<string, int> HumanoidBoneIndexMap { get; }
         /// <summary>Avatar リターゲット設定の写し（未設定なら既定値で IsSet=false）。スナップショットでは null。</summary>
         AvatarRetargetView AvatarRetarget { get; }
 
@@ -416,7 +425,7 @@ namespace Poly_Ling.View
         public bool   Stale;
         /// <summary>出力先が無い、または 1 つでも引けない。</summary>
         public bool   OutputMissing;
-        /// <summary>詳細表示の文（ステップ・入力・退避）。</summary>
+        /// <summary>詳細表示の文（項目・入力・退避）。</summary>
         public string Detail;
     }
 

@@ -89,7 +89,7 @@ polyling_call command=<名前> args=<引数>
 
 **版を見てから取り直す**
 
-`queryRevisions` がモデル・道具一覧・手本・利用シーンの版を返す。前に見た版と同じなら取り直さなくてよい。
+`queryRevisions` がモデル・道具一覧・シナリオ・利用シーンの版を返す。前に見た版と同じなら取り直さなくてよい。
 モデルの版は書き込みのあるコマンドが成功するたびに 1 つ進む（照会では進まない）。
 `optimized` では `polyling_call` の応答に `modelRevision` と、増えた・消えたオブジェクトの
 `createdObjectIds` / `deletedObjectIds` が付く。**索引を控えて使い回さず、ここを見る。**
@@ -97,7 +97,7 @@ polyling_call command=<名前> args=<引数>
 **利用シーン（`optimized` のみ）**
 
 利用シーンとは、スキニングやモーフ編集のような作業の一局面について、検索するコマンドと見せる道具を
-あらかじめ決めておくプリセットである。手本（シナリオ）が作業全体、コマンドが 1 つの操作なら、
+あらかじめ決めておくプリセットである。シナリオが作業全体、コマンドが 1 つの操作なら、
 利用シーンはその中間の「一区間」にあたる。Unity のシーンとは無関係。
 
 | 何を | どうする |
@@ -115,7 +115,7 @@ polyling_call command=<名前> args=<引数>
 - `notes` は注意書き。禁忌を承知で破る事情などが書いてある。検索結果にも出るので必ず読む
 - `verificationPolicy` は実行後に確かめること。検索結果にも出る
 - 使える分類・状態・危険性・検証の名前は、`polyling_scenes` の応答に一覧がある
-- 同梱の既製品が 24 件ある（`origin=builtin`）：**新規形状作成**・**スキニング**・**モーフ・表情作成**・**既存形状の改変**・**トポロジ確定後の調整**・**Humanoid骨格作成**・**リジッド機構**・**SpringBone設定**・**アニメーション編集**・**VRM仕上げ・検証**・**機械部品作成**・**線分群・2Dプロファイル編集**・**派生生成と再構築**・**髪・装飾物作成**・**UV展開・材質設定**・**形状の転写・フィッティング**・**外部ツール往復**・**左右対称の整備**・**部品分割・選択セット管理**・**姿勢の基準化**・**形式変換・プロジェクト管理**・**手本作成・検証**・**ヘルプ・チュートリアル作成**・**新規ツール・コマンド**。
+- 同梱の既製品が 24 件ある（`origin=builtin`）：**新規形状作成**・**スキニング**・**モーフ・表情作成**・**既存形状の改変**・**トポロジ確定後の調整**・**Humanoid骨格作成**・**リジッド機構**・**SpringBone設定**・**アニメーション編集**・**VRM仕上げ・検証**・**機械部品作成**・**線分群・2Dプロファイル編集**・**派生生成と再構築**・**髪・装飾物作成**・**UV展開・材質設定**・**形状の転写・フィッティング**・**外部ツール往復**・**左右対称の整備**・**部品分割・選択セット管理**・**姿勢の基準化**・**形式変換・プロジェクト管理**・**シナリオ作成・検証**・**ヘルプ・チュートリアル作成**・**新規ツール・コマンド**。
   **新規ツール・コマンド** だけは `tools` を持ち、サーバ側の道具も絞る
   既製品は変更も削除もできない。変えたいときは別の名前で `setScene` して使う
 - 危険性の扱いは、コマンドに `Hazards` が付いているものにだけ効く（いまは代表の 55 本）
@@ -123,12 +123,12 @@ polyling_call command=<名前> args=<引数>
   `matchedTags`、`stateConflicts`（その危険性がいまのモデルで実際に壊すもの。例 `InvalidatesMorphs:hasMorphs`）が付く。
   **`stateConflicts` が付いたコマンドは、実行前に利用者に諮る**
 
-**手本と利用シーン**
+**シナリオと利用シーン**
 
-- 手本の段は `usageScene` を持てる（`addScenarioStep` / `setScenarioStep`）。同じ名前が続く段がその利用シーンの区間になる
-- 手本を流している間は、`queryScenarioRun`（と `runScenario` / `continueScenario` の結果）の `usageScene` が
-  次の段の利用シーンを示す。**検索の `scene` をこれに合わせる**（自動では切り替わらない）
-- `queryScenarios usageScene=<名前>` で、その利用シーンを使う手本を引ける
+- シナリオの項目は `usageScene` を持てる（`addScenarioItem` / `setScenarioItem`）。同じ名前が続く項目がその利用シーンの区間になる
+- シナリオを流している間は、`queryScenarioRun`（と `runScenario` / `continueScenario` の結果）の `usageScene` が
+  次の項目の利用シーンを示す。**検索の `scene` をこれに合わせる**（自動では切り替わらない）
+- `queryScenarios usageScene=<名前>` で、その利用シーンを使うシナリオを引ける
 - 利用シーンを消したり改名したりしたら `queryScenarioAudit` を回す（`unknownUsageScene` が出る）
 
 **モデル状態** は `queryModelState` で取れる。ボーン・スキンウェイト・モーフ・Humanoid・スプリングボーン・ミラーの有無と、
@@ -401,14 +401,20 @@ polyling_call queryUiAutomationAudit
 この計算が汎用的なら、**新しいコマンドとして登録する候補**になる。
 ただし登録は利用者からの要請があったときだけ。
 
-### 5-1b. 保存してある手本を先に探す
+### 5-1b. 保存してあるシナリオを先に探す
 
-`queryScenarios query=<目的を言葉で>` で、保存してある手本（シナリオ）を名前・目的・札・段の
+`queryScenarios query=<目的を言葉で>` で、保存してあるシナリオを名前・目的・札・項目の
 コマンド名から探せる。**同じ手順を組み立て直す前に、まず探す。**
 
-同じ並びのコマンドを 3 回以上繰り返したら、**手本にするかを利用者に諮る。**
-勝手に登録しない。登録するなら `createScenario` と `addScenarioStep`、
-または記録（`startScenarioRecording` → `stopScenarioRecording`）を使う。
+同じ並びのコマンドを 3 回以上繰り返したら、**シナリオにするかを利用者に諮る。**
+勝手に登録しない。登録するなら `createScenario` と `addScenarioItem`、
+または記録（`startScenarioRecording` → `stopScenarioRecording` → `saveScenarioRecording`。
+途中を外すなら `pauseScenarioRecording` / `resumeScenarioRecording`、やめるなら `discardScenarioRecording`）を使う。
+
+シナリオは**フォルダ（置き場所）**と**親子（別のシナリオを呼ぶ項目）**で整理する。
+断片をフォルダに集め、`createScenarioFromFolder` で順に呼ぶ親を作る。フォルダの操作は
+`createScenarioFolder` / `moveScenarios` / `renameScenarioFolder` / `deleteScenarioFolder`。
+`queryScenarios` の `folders` / `allFolders` で置き場所が分かる。
 
 ### 5-2. どこを読むか
 

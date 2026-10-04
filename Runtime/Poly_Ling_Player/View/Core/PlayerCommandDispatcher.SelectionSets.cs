@@ -158,6 +158,18 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case SetNormalExcludeSetProtectionCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var nxpList = model.ActiveMeshContext?.MeshObject?.NormalRecalcExcludeList;
+                    if (nxpList == null || c.SetIndex < 0 || c.SetIndex >= nxpList.Count || nxpList[c.SetIndex] == null)
+                    { Fail($"セット番号 {c.SetIndex} が範囲外です"); return true; }
+                    nxpList[c.SetIndex].ProtectManualNormalEdit = c.ProtectManual;
+                    model.IsDirty = true;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
                 case ExportPartsSetsCsvCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
@@ -244,64 +256,232 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── 法線ブラシ ─────────────────────────────────────────────────
+                case NormalBrushStrokeCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (c.BrushCenters == null || c.BrushCenters.Length == 0) { Fail("ブラシ中心が空です"); return true; }
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) { Fail("対象が指定されていません"); return true; }
+
+                    var nbTargets = new List<MeshContext>();
+                    var nbIdx     = new List<int>();
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var mc = model.GetMeshContext(idx);
+                        if (mc?.MeshObject == null) { Fail($"masterIndex {idx} のメッシュがありません"); return true; }
+                        nbTargets.Add(mc);
+                        nbIdx.Add(idx);
+                    }
+
+                    // Undo の記録範囲は法線編集と同じ（対象と、その生成ミラー）。
+                    var nbRecord = new List<int>(nbIdx);
+                    var nbList = model.MeshContextList;
+                    for (int i = 0; i < nbList.Count; i++)
+                    {
+                        var m = nbList[i];
+                        if (m != null && m.MirrorGeometryDerived && nbIdx.Contains(m.BakedMirrorSourceIndex)
+                            && !nbRecord.Contains(i))
+                            nbRecord.Add(i);
+                    }
+                    MultiMeshTopologySnapshot nbBefore = null;
+                    if (_undoController != null)
+                    {
+                        nbBefore = new MultiMeshTopologySnapshot();
+                        foreach (int idx in nbRecord) nbBefore.CaptureMesh(model, idx);
+                    }
+
+                    int nbWritten = 0;
+                    var nbSynced = new List<MeshContext>();
+                    foreach (var mc in nbTargets)
+                    {
+                        int w = NormalBrushOps.ApplyStroke(
+                            mc, c.BrushCenters, c.BrushRadius, c.Strength, c.Mode, c.Direction, c.MirrorX);
+                        if (w <= 0) continue;
+                        nbWritten += w;
+                        nbSynced.Add(mc);
+                        mc.MeshObject.PreserveNormals = true;
+                    }
+                    if (nbWritten == 0) { Fail("ブラシ範囲に変えられる法線がありません"); return true; }
+
+                    int nbMirrored = MirrorBranchOps.RebakeDerivedMirrorNormals(
+                        model.MeshContextList, model.MaterialCount);
+
+                    if (_undoController != null && nbBefore != null)
+                    {
+                        var nbAfter = new MultiMeshTopologySnapshot();
+                        foreach (int idx in nbRecord) nbAfter.CaptureMesh(model, idx);
+                        const string nbDesc = "Normal Brush";
+                        var rec = new MultiMeshTopologySnapshotRecord(nbBefore, nbAfter, nbDesc);
+                        PLDiag.UndoRecord("MeshList", nbDesc, rec);
+                        _undoController.SetModelContext(model);
+                        _undoController.MeshListStack.Record(rec, nbDesc);
+                        _undoController.FocusMeshList();
+                    }
+
+                    bool nbRebuild = nbMirrored > 0;
+                    if (!nbRebuild)
+                        foreach (var mc in nbSynced)
+                            if (mc.UnityMesh == null || !mc.MeshObject.ApplyNormalsToUnityMesh(mc.UnityMesh)) { nbRebuild = true; break; }
+                    if (nbRebuild) _viewportManager.EnterTopologyChanged(project);
+                    else foreach (var mc in nbSynced)
+                        _viewportManager.EnterVertexAttributesChanged(project, mc, weights: false, uvs: false);
+
+                    _notifyPanels(ChangeKind.Attributes);
+                    var nbMasters = new int[nbSynced.Count];
+                    var nbIds     = new ulong[nbSynced.Count];
+                    for (int i = 0; i < nbSynced.Count; i++)
+                    {
+                        nbMasters[i] = model.MeshContextList.IndexOf(nbSynced[i]);
+                        nbIds[i]     = nbSynced[i].ObjectId;
+                    }
+                    ReportData(CommandDataJson.New()
+                        .Int("changedObjects", nbSynced.Count)
+                        .Int("writtenSlots",   nbWritten)
+                        .Build(), nbMasters, nbIds);
+                    Debug.Log($"[NormalBrush] {c.Mode}: {nbSynced.Count} オブジェクト / {nbWritten} スロット");
+                    return true;
+                }
+
                 // ── 法線編集 ───────────────────────────────────────────────────
                 case NormalEditCommand c:
                 {
+                    var neResult = new NormalEditResult { Operation = c.Operation.ToString() };
+                    LastNormalEditResult = neResult;
+
                     if (model == null) { Fail("no current model"); return true; }
                     var neTargets = CollectSelectedMeshContexts(model);
+                    neResult.TargetObjects = neTargets.Count;
                     if (neTargets.Count == 0) { Fail("対象がありません"); return true; }
 
-                    // RecalcByAngle / Break はスロット数が変わり得る。その場合は
-                    // Unity Mesh を作り直す必要があるので描画更新の段を分ける。
-                    bool slotCountMayChange =
-                        c.Operation == NormalEditCommand.Op.RecalcByAngle ||
-                        c.Operation == NormalEditCommand.Op.Break;
+                    // スロット数が変わったか（RecalcByAngle / Break / SplitKeepDirection と、
+                    // ProtectUnselected による分離）。変わったら Unity Mesh を作り直す。
+                    // 操作の種類からは決めず、前後のスロット数で測る。
+                    bool slotCountChanged = false;
 
-                    int neTotal = 0;
+                    // ── Undo の記録範囲 ──
+                    // 全対象と、それを実体にもつ生成ミラーを 1 件の Undo にまとめる。
+                    // ミラー側は下の RebakeDerivedMirrorNormals で書き換わるので、
+                    // 含めないと Undo 後もミラー側だけ編集後の法線が残る。
+                    // 方式は SetRawData（PlayerCommandDispatcher.Query.cs）と同じ。
+                    var neList = model.MeshContextList;
+                    var neTargetIdx = new HashSet<int>();
+                    foreach (var mc in neTargets)
+                    {
+                        int idx = neList.IndexOf(mc);
+                        if (idx >= 0) neTargetIdx.Add(idx);
+                    }
+                    var neRecordIdx = new List<int>(neTargetIdx);
+                    for (int i = 0; i < neList.Count; i++)
+                    {
+                        var m = neList[i];
+                        if (m != null && m.MirrorGeometryDerived
+                            && neTargetIdx.Contains(m.BakedMirrorSourceIndex)
+                            && !neTargetIdx.Contains(i))
+                            neRecordIdx.Add(i);
+                    }
+
+                    MultiMeshTopologySnapshot neBefore = null;
+                    if (_undoController != null)
+                    {
+                        neBefore = new MultiMeshTopologySnapshot();
+                        foreach (int idx in neRecordIdx) neBefore.CaptureMesh(model, idx);
+                    }
+
                     var neSynced = new List<MeshContext>();
+
+                    // 結果は前後の比較で実測する（実行側の戻り値は処理したコーナー数で、
+                    // 変更量ではない）。オブジェクト間の操作は全対象を一度に処理するので、
+                    // 先に全対象の「前」を取ってから実行する。
+                    var neCornersBefore = new Dictionary<MeshContext, Vector3[][]>();
+                    var neSlotsBefore   = new Dictionary<MeshContext, int>();
+                    var neProcessed     = new Dictionary<MeshContext, int>();
+                    foreach (var mc in neTargets)
+                    {
+                        var mo = mc?.MeshObject;
+                        if (mo == null) continue;
+                        neCornersBefore[mc] = NormalEditOps.CaptureCornerNormals(mo);
+                        neSlotsBefore[mc]   = NormalEditOps.SlotCount(mo);
+                        if (c.Operation != NormalEditCommand.Op.RecalcByAngle)
+                        {
+                            NormalEditOps.CollectEditCorners(mc, out int prot);
+                            neResult.ProtectedCorners += prot;
+                        }
+                    }
+
+                    if (c.Operation == NormalEditCommand.Op.AverageAcrossObjects)
+                    {
+                        if (neTargets.Count < 2)
+                        { Fail("オブジェクト間の継ぎ目を揃えるには、描画オブジェクトを 2 つ以上選んでください"); return true; }
+                        NormalEditOps.ExecuteAcrossObjects(neTargets, c);
+                        // 実行は済んでいる。下のループでは測るだけにする。
+                        foreach (var mc in neTargets)
+                            if (mc?.MeshObject != null) neProcessed[mc] = 1;
+                    }
+                    else
+                    {
+                        foreach (var mc in neTargets)
+                            if (mc?.MeshObject != null) neProcessed[mc] = ApplyNormalEdit(mc, c);
+                    }
 
                     foreach (var mc in neTargets)
                     {
                         var mo = mc?.MeshObject;
                         if (mo == null) continue;
 
-                        // Undo は MeshObject 丸ごとのスナップショットで戻す。
-                        // スロット（UV/法線）の増減も含めて復元する必要があるため。
-                        if (_undoController != null)
+                        int processed      = neProcessed[mc];
+                        int slotsBefore    = neSlotsBefore[mc];
+                        int changedCorners = NormalEditOps.CountChangedCorners(mo, neCornersBefore[mc]);
+                        int slotsAfter     = NormalEditOps.SlotCount(mo);
+                        if (slotsAfter != slotsBefore) slotCountChanged = true;
+
+                        if (processed <= 0)
                         {
-                            _undoController.SetMeshObject(mo, mc.UnityMesh);
-                            _undoController.MeshUndoContext.ParentModelContext = model;
+                            neResult.Skipped.Add($"{mc.Name}（対象コーナーなし）");
+                            continue;
                         }
-                        var neBefore = _undoController?.CaptureMeshObjectSnapshotOf(mc);
+                        if (changedCorners == 0 && slotsAfter == slotsBefore)
+                        {
+                            neResult.Skipped.Add($"{mc.Name}（値が変わらず）");
+                            continue;
+                        }
 
-                        int changed = ApplyNormalEdit(mc, c);
-                        if (changed <= 0) continue;
-
-                        neTotal += changed;
+                        neResult.ChangedObjects++;
+                        neResult.ChangedCorners += changedCorners;
+                        neResult.SlotsBefore    += slotsBefore;
+                        neResult.SlotsAfter     += slotsAfter;
                         neSynced.Add(mc);
 
                         // 手で編集した法線は、頂点移動時の自動再計算で消えてしまう
                         // （MeshUndoContext.ApplyVertexPositionsToMesh）。維持フラグを立てる。
+                        // RecalcByAngle も同じ：自動再計算は Mesh.RecalculateNormals で
+                        // 角度による再計算とは別物なので、維持しないと結果が消える。
                         mo.PreserveNormals = true;
-
-                        if (_undoController != null && neBefore != null)
-                        {
-                            var neAfter = _undoController.CaptureMeshObjectSnapshotOf(mc);
-                            _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
-                                _undoController, neBefore, neAfter, $"Normal Edit ({c.Operation})"));
-                        }
                     }
 
-                    if (neTotal > 0)
+                    if (neSynced.Count > 0)
                     {
                         // ミラー側の面は選択できないため、実体側の編集結果を写す。
                         // スロット数が変わる操作でも実体側と 1:1 に張り直される。
                         // 生成ミラー（MirrorGeometryDerived）のみが対象。
                         int neMirrored = MirrorBranchOps.RebakeDerivedMirrorNormals(
                             model.MeshContextList, model.MaterialCount);
+                        neResult.MirrorObjects = neRecordIdx.Count - neTargetIdx.Count;
+
+                        if (_undoController != null && neBefore != null)
+                        {
+                            var neAfter = new MultiMeshTopologySnapshot();
+                            foreach (int idx in neRecordIdx) neAfter.CaptureMesh(model, idx);
+
+                            string neDesc = $"Normal Edit ({c.Operation})";
+                            var neRecord = new MultiMeshTopologySnapshotRecord(neBefore, neAfter, neDesc);
+                            PLDiag.UndoRecord("MeshList", neDesc, neRecord);
+                            _undoController.SetModelContext(model);
+                            _undoController.MeshListStack.Record(neRecord, neDesc);
+                            _undoController.FocusMeshList();
+                        }
 
                         // ミラー側の UnityMesh を作り直した場合は GPU も再構築が要る。
-                        bool neRebuild = slotCountMayChange || neMirrored > 0;
+                        bool neRebuild = slotCountChanged || neMirrored > 0;
 
                         // スロット数が変わらない操作でも、Unity Mesh の法線だけは
                         // 差し替える必要がある。差し替えられなければ作り直す。
@@ -332,7 +512,24 @@ namespace Poly_Ling.Player
                         _notifyPanels(ChangeKind.Attributes);
                     }
 
-                    Debug.Log($"[NormalEdit] {c.Operation}: {neTargets.Count} オブジェクト / {neTotal} コーナー");
+                    var neMasters = new int[neSynced.Count];
+                    var neIds     = new ulong[neSynced.Count];
+                    for (int i = 0; i < neSynced.Count; i++)
+                    {
+                        neMasters[i] = model.MeshContextList.IndexOf(neSynced[i]);
+                        neIds[i]     = neSynced[i].ObjectId;
+                    }
+                    ReportData(CommandDataJson.New()
+                        .Int("targetObjects",    neResult.TargetObjects)
+                        .Int("changedObjects",   neResult.ChangedObjects)
+                        .Int("changedCorners",   neResult.ChangedCorners)
+                        .Int("slotsBefore",      neResult.SlotsBefore)
+                        .Int("slotsAfter",       neResult.SlotsAfter)
+                        .Int("mirrorObjects",    neResult.MirrorObjects)
+                        .Int("protectedCorners", neResult.ProtectedCorners)
+                        .Texts("skipped",        neResult.Skipped)
+                        .Build(), neMasters, neIds);
+                    Debug.Log($"[NormalEdit] {neResult.Summary}");
                     return true;
                 }
             }

@@ -72,7 +72,7 @@ namespace Poly_Ling.Player
 
         // UI 自動操作の ID は "springBone.<下の Id>"（UiControlAttribute.cs）。
         // 一覧（揺れる鎖・まとまり・気になるところ）は行を選ぶと選択コマンドを送る作りなので、
-        // 一覧そのものを項目にする（行番号で選ぶ）。
+        // 一覧そのものをボタンや入力欄にする（行番号で選ぶ）。
         [UiControl("target", Safety = UiSafety.ReadOnly, Description = "対象")]
         private Label _targetLabel;
         [UiControl("place", Safety = UiSafety.ReadOnly, Description = "選んでいるところ")]

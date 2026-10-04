@@ -108,6 +108,18 @@ namespace Poly_Ling.Core
             ("NormalEdit.Strength.Min",            0.0f,  "法線編集: 平滑強度の下限"),
             ("NormalEdit.Strength.Max",            1.0f,  "法線編集: 平滑強度の上限"),
             ("NormalEdit.MirrorThreshold.Min",     0.0f,  "法線編集: ミラー対応しきい値の下限"),
+            ("NormalEdit.Blend.Min",               0.0f,  "法線編集: 強度（元の法線との混合）の下限"),
+            ("NormalEdit.Blend.Max",               1.0f,  "法線編集: 強度（元の法線との混合）の上限"),
+            ("NormalEdit.RotateDeg.Min",        -180.0f,  "法線編集: 回転角の下限（度）"),
+            ("NormalEdit.RotateDeg.Max",         180.0f,  "法線編集: 回転角の上限（度）"),
+            ("NormalEdit.SeamDistance.Min",        0.0f,  "法線編集: オブジェクト間の継ぎ目とみなす距離の下限"),
+            ("NormalEdit.SeamDistance.Max",        0.1f,  "法線編集: オブジェクト間の継ぎ目とみなす距離の上限"),
+
+            // --- NormalBrush（法線ブラシ） ---
+            ("NormalBrush.BrushRadius.Min",        0.001f, "法線ブラシ: ブラシ半径の下限"),
+            ("NormalBrush.BrushRadius.Max",        1.0f,   "法線ブラシ: ブラシ半径の上限"),
+            ("NormalBrush.Strength.Min",           0.0f,   "法線ブラシ: 強度の下限"),
+            ("NormalBrush.Strength.Max",           1.0f,   "法線ブラシ: 強度の上限"),
 
             // --- UvUnwrap（UV 投影展開） ---
             ("UvUnwrap.Scale.Min",                 0.01f, "UV投影展開: スケールの下限"),

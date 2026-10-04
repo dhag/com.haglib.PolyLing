@@ -190,6 +190,8 @@ namespace Poly_Ling.Player
             _layoutRoot.SolidifyBtn.clicked              += ShowSolidifyPanel;
             if (_layoutRoot.LineExtrudeBtn != null)
                 _layoutRoot.LineExtrudeBtn.clicked      += ShowLineExtrudePanel;
+            if (_layoutRoot.SubdivisionBtn != null)
+                _layoutRoot.SubdivisionBtn.clicked      += ShowSubdivisionPanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.MediaPipeFingerBtn.clicked  += ShowMediaPipeFingerPanel;
             _layoutRoot.MediaPipeBodyBtn.clicked    += ShowMediaPipeBodyPanel;
@@ -235,6 +237,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.UnderlayBtn.clicked     += ShowUnderlayPanel;
             if (_layoutRoot.GridAxisBtn != null)
                 _layoutRoot.GridAxisBtn.clicked     += ShowGridAxisPanel;
+            if (_layoutRoot.LightBtn != null)
+                _layoutRoot.LightBtn.clicked        += ShowLightPanel;
             if (_layoutRoot.WorkFolderBtn != null)
                 _layoutRoot.WorkFolderBtn.clicked   += ShowWorkFolderPanel;
             if (_layoutRoot.CameraBtn != null)
@@ -272,6 +276,8 @@ namespace Poly_Ling.Player
             _layoutRoot.ToolSkinWeightPaintBtn.clicked   += () => ShowCategory1Panel(InteractionMode.SkinWeightPaint);
             if (_layoutRoot.SkinWeightNumericBtn != null)
                 _layoutRoot.SkinWeightNumericBtn.clicked += () => ShowCategory1Panel(InteractionMode.SkinWeightNumeric);
+            if (_layoutRoot.SkinWeightVolumeBtn != null)
+                _layoutRoot.SkinWeightVolumeBtn.clicked += () => ShowCategory1Panel(InteractionMode.SkinWeightVolume);
 
             // 一時選択サブツール (デバッグ用ボタン。ショートカット R / G と同処理)。
             if (_layoutRoot.SubToolBoxSelectBtn != null)
@@ -451,9 +457,14 @@ namespace Poly_Ling.Player
                 ApplyMeshListCurrentViewportOpMode);
             RegisterPinnedPanel(_layoutRoot.MaterialListSection, _layoutRoot.MaterialListBtn,
                 () => SetInteractionMode(InteractionMode.SelectOnly));
+            // ヒューマノイドボーン選択はオブジェクトリストのボーン選択の別の見せ方なので、
+            // 操作モードもオブジェクトリストと同じにする。
+            RegisterPinnedPanel(_layoutRoot.HumanoidBoneSelectSection, _layoutRoot.HumanoidBoneSelectBtn,
+                ApplyMeshListCurrentViewportOpMode);
             _layoutRoot.ModelListBtn.clicked    += ToggleModelListPanel;
             _layoutRoot.MeshListBtn .clicked    += ToggleMeshListPanel;
             _layoutRoot.MaterialListBtn.clicked += ToggleMaterialListPanel;
+            _layoutRoot.HumanoidBoneSelectBtn.clicked += ToggleHumanoidBoneSelectPanel;
             // 下区画のパネルを閉じる（一般・3D 操作のどちらでも）。常駐リストの操作モードに戻る。
             _layoutRoot.ToolAreaCloseBtn.clicked += CloseToolArea;
 
@@ -639,9 +650,11 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Clear();
             _sectionRefreshPairs.Add((_layoutRoot.BoneEditorSection,        () => _boneEditorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SkinWeightNumericSection, () => _skinWeightNumericSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SkinWeightVolumeSection,  () => _skinWeightVolumeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UVEditorSection,          () => _uvEditorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UVUnwrapSection,          () => _uvUnwrapSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MaterialListSection,      () => _materialListSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.HumanoidBoneSelectSection, () => _humanoidBoneSelectSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.ThinPlateMorphSection,    () => _thinPlateMorphSubPanel?.OnSelectionChanged()));
             _sectionRefreshPairs.Add((_layoutRoot.ReferenceSymmetrySection, () => _referenceSymmetrySubPanel?.Refresh()));
             // 図形生成のマテリアル指定ドロップダウン。生成でスロットを作った直後や、
@@ -674,6 +687,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.PlanarizeAlongBonesSection,   () => _planarizeAlongBonesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.SmoothEdgesSection,           () => _smoothEdgesSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.LineExtrudeSection,           () => _lineExtrudeSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.SubdivisionSection,           () => _subdivisionSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PipeAlignSection,             () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _pipeAlignHandler?.Activate(ctx); _pipeAlignSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.SurfaceSnapSection,           () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _surfaceSnapHandler?.Activate(ctx); _surfaceSnapSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.PlaceObjectReshapeSection,    () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _placeObjectReshapeHandler?.Activate(ctx); _placeObjectReshapeSubPanel?.Refresh(); }));

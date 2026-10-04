@@ -311,7 +311,7 @@ namespace Poly_Ling.Player
                 BuildMqoList(_listContainer);
         }
 
-        /// <summary>UI 自動操作の動的な項目の組（モードごとの設定行・一覧）。</summary>
+        /// <summary>UI 自動操作の動的なボタンや入力欄の組（モードごとの設定行・一覧）。</summary>
         public static string ModeGroup(Mode mode) => mode == Mode.PMX ? "pmx" : "mqo";
 
         // ================================================================

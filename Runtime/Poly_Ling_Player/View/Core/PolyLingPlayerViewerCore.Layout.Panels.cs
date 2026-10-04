@@ -75,6 +75,41 @@ namespace Poly_Ling.Player
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _skinWeightNumericSubPanel.Build(_layoutRoot.SkinWeightNumericSection);
 
+            // スキンW範囲塗り。パネルは入力値だけを持ち、範囲表示・ハンドル・読み取りは
+            // ツールの窓口 "skinWeightVolume"（SkinWeightVolumeToolHandler）が受け持つ。
+            _skinWeightVolumeSubPanel = new PlayerSkinWeightVolumeSubPanel
+            {
+                GetModel  = () => ActiveProjectView?.CurrentModel,
+                Surface   = ToolSurface,
+                OnRepaint = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _skinWeightVolumeHandler = new SkinWeightVolumeToolHandler
+            {
+                GetModel         = () => ActiveProject?.CurrentModel,
+                GetToolContext   = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetPanelHeight   = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
+                GetSpec          = () => _skinWeightVolumeSubPanel.CurrentSpec(),
+                SetRadius        = v => _skinWeightVolumeSubPanel.SetRadiusFromHandle(v),
+                SetHeight        = v => _skinWeightVolumeSubPanel.SetHeightFromHandle(v),
+                SetParentHeight  = v => _skinWeightVolumeSubPanel.SetParentHeightFromHandle(v),
+                OnRefreshOverlay = UpdateTopologyToolsOverlay,
+                // ワイヤ表示（図形作成の黄色ワイヤと同じ描き方）。パネルを開いている間だけ出す。
+                IsWireActive      = () => _interactionMode == InteractionMode.SkinWeightVolume,
+                IsViewportCamera  = cam => _viewportManager != null && _viewportManager.IsViewportCamera(cam),
+                ShowVolumeWire    = () => _skinWeightVolumeSubPanel.ShowVolumeWire,
+                ShowSegmentWire   = () => _skinWeightVolumeSubPanel.ShowSegmentWire,
+            };
+            _skinWeightVolumeHandler.EnableWire();
+            // 入力が変わったら、適用前の色（ウェイト可視化）と範囲の重ね表示を作り直す。
+            _skinWeightVolumeSubPanel.OnSpecChanged = () =>
+            {
+                _viewportManager.EnterWeightTargetChanged(ActiveProject);
+                UpdateTopologyToolsOverlay();
+            };
+            _skinWeightVolumeSubPanel.SetCommandContext(
+                _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _skinWeightVolumeSubPanel.Build(_layoutRoot.SkinWeightVolumeSection);
+
             // メッシュブレンドの試し表示（ツールの窓口 "blend"。操作経路統一計画.md E）。
             // 以下の同期・可視・ロックの配線は、従来パネルへ渡していたものをハンドラへ移した。
             _blendToolHandler = new BlendToolHandler
@@ -312,6 +347,14 @@ namespace Poly_Ling.Player
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _materialListSubPanel.Build(_layoutRoot.MaterialListSection);
 
+            _humanoidBoneSelectSubPanel = new PlayerHumanoidBoneSelectSubPanel
+            {
+                GetModel      = () => ActiveProjectView?.CurrentModel,
+                SendCommand   = cmd => DispatchHost(cmd),
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
+            };
+            _humanoidBoneSelectSubPanel.Build(_layoutRoot.HumanoidBoneSelectSection);
+
             _uvzSubPanel = new PlayerUVZSubPanel
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
@@ -350,10 +393,13 @@ namespace Poly_Ling.Player
 
             _normalEditSubPanel = new PlayerNormalEditSubPanel
             {
-                GetView     = () => LoadedProjectView,
-                SendCommand = cmd => DispatchHost(cmd),
+                GetView       = () => LoadedProjectView,
+                SendCommand   = cmd => DispatchHost(cmd),
+                GetLastResult = () => _commandDispatcher?.LastNormalEditResult,
             };
             _normalEditSubPanel.Build(_layoutRoot.NormalEditSection);
+            // プレビュー・表示・ビューポート操作（ハンドル・直接回転・ブラシ・スポイト）の配線
+            WireNormalEdit();
 
             _faceHideSubPanel = new PlayerFaceHideSubPanel
             {
@@ -533,6 +579,11 @@ namespace Poly_Ling.Player
                 gs => _viewportManager.EnterDisplaySettingsChanged(gs));
             _gridAxisSubPanel.Build(_layoutRoot.GridAxisSection);
 
+            _lightSubPanel = new PlayerLightSubPanel(
+                () => _viewportManager.GetLightSettings(),
+                ls => _viewportManager.EnterDisplaySettingsChanged(ls));
+            _lightSubPanel.Build(_layoutRoot.LightSection);
+
             // 作業フォルダ（PLSandbox の根）。コマンドは通さない。
             // リモートから根を書き換えられると境界の意味が消えるため。
             _workFolderSubPanel = new PlayerWorkFolderSubPanel();
@@ -620,6 +671,12 @@ namespace Poly_Ling.Player
                 originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
             _importSubPanel.OnImportStl = (p, s, post) => DispatchFromPanel(new ImportStlFileCommand(
                 PanelModelIndex(), AllowPanelPath(p), s,
+                humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            _importSubPanel.OnImportStlFolder = (p, sub, s, post) => DispatchFromPanel(new ImportStlFolderCommand(
+                PanelModelIndex(), AllowPanelPath(p), sub, s,
                 humanoidAutoMap: post?.HumanoidAutoMap ?? false,
                 applyOriginCsv: post?.ApplyOriginCsv ?? false,
                 originCsvPath: AllowPanelPath(post?.OriginCsvPath),

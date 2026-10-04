@@ -110,6 +110,11 @@ namespace Poly_Ling.Player
                     btn     = _layoutRoot?.SkinWeightNumericBtn;
                     refresh = () => _skinWeightNumericSubPanel?.Refresh();
                     break;
+                case InteractionMode.SkinWeightVolume:
+                    section = _layoutRoot?.SkinWeightVolumeSection;
+                    btn     = _layoutRoot?.SkinWeightVolumeBtn;
+                    refresh = () => _skinWeightVolumeSubPanel?.Refresh();
+                    break;
                 case InteractionMode.AddFace:
                     section = _layoutRoot?.AddFaceSection;
                     // AddFace は右ペインから起動するためツールボタンなし → btn = null

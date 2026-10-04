@@ -22,7 +22,7 @@ namespace Poly_Ling.Player
         private bool          _isReceiving;
 
         // ================================================================
-        // UI要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "modelList.<下の Id>"（UiControlAttribute.cs）。

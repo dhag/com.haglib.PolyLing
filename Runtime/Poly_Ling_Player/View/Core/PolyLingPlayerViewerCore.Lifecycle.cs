@@ -400,7 +400,7 @@ namespace Poly_Ling.Player
             // 生成系コマンドの受け口。実処理は Viewer 側にあるので委譲する。
             WireCreateCommandHandlers();
 
-            // UI 自動操作（パネル・項目の登録と受け口）。サブパネルと
+            // UI 自動操作（パネル・ボタン・入力欄の登録と受け口）。サブパネルと
             // _commandDispatcher の両方が揃った後に作る。
             BuildUiAutomation();
 
@@ -740,6 +740,7 @@ namespace Poly_Ling.Player
             _primitiveSubPanel = null;
 
             _livePrimitiveSubPanel?.Dispose();
+            _skinWeightVolumeHandler?.Dispose();
             _livePrimitiveSubPanel = null;
 
             _serverChoiceView?.Detach();

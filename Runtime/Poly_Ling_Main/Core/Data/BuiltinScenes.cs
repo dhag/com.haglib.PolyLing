@@ -257,9 +257,9 @@ namespace Poly_Ling.Data
                 null,
                 PLCommandVerification.None));
 
-            // ---- 手本作成・検証
-            list.Add(Make("手本作成・検証",
-                "手本（シナリオ）を作り、記録・実行・監査する段階。",
+            // ---- シナリオ作成・検証
+            list.Add(Make("シナリオ作成・検証",
+                "シナリオを作り、記録・実行・監査する段階。",
                 "利用シーンを消したり改名したりしたら queryScenarioAudit を回す。",
                 new[] { "scenario", "object.group", "mcp", "query" },
                 null,

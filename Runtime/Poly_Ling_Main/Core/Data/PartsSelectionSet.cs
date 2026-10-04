@@ -56,6 +56,16 @@ namespace Poly_Ling.Selection
         public HashSet<int> Lines { get; set; } = new HashSet<int>();
 
         /// <summary>
+        /// 法線再計算の除外セットとして使うときだけ意味を持つ。
+        /// true なら、自動の再計算だけでなく手動の法線編集（NormalEditCommand）からも
+        /// このセットのコーナーを守る（編集対象から外す）。既定 false。
+        /// パーツ選択辞書として使うときは読まない。
+        /// 保存：CSV は nx 行の直後の nxm 行、JSON は protectManualNormalEdit、
+        /// バイナリは MeshFieldFlags.NormalExcludeLocks のブロック。
+        /// </summary>
+        public bool ProtectManualNormalEdit { get; set; } = false;
+
+        /// <summary>
         /// 面索引 → Face.Id の控え。Faces の各要素に対応する。
         /// 頂点の VertexIds と同じ役割で、索引が詰められたあとの引き直しに使う。
         /// 後付けなので欠けを許す（控えていない索引は引き直しの対象外）。
@@ -204,7 +214,8 @@ namespace Poly_Ling.Selection
                 FaceIds   = new Dictionary<int, int>(FaceIds),
                 LineIds   = new Dictionary<int, int>(LineIds),
                 EdgeVertexIds = new Dictionary<VertexPair, VertexPair>(EdgeVertexIds),
-                Color = Color
+                Color = Color,
+                ProtectManualNormalEdit = ProtectManualNormalEdit,
             };
         }
 
@@ -607,6 +618,9 @@ namespace Poly_Ling.Selection
         public List<int> lines;
         public float[] color;  // [r, g, b, a]
 
+        /// <summary>法線除外セットの「手動の法線編集からも守る」。欄が無い旧データは false。</summary>
+        public bool protectManualNormalEdit;
+
         // 識別子の控え。4 本の平行配列で持つ（int[] の入れ子を避けるため）。
         // 4 本は同じ長さにすること。欄が無い旧データは null になり、控え無しとして読む。
         public List<int> vertexIdIndices;   // 対応する頂点インデックス
@@ -641,7 +655,8 @@ namespace Poly_Ling.Selection
                 edges = set.Edges.Select(e => new int[] { e.V1, e.V2 }).ToList(),
                 faces = set.Faces.ToList(),
                 lines = set.Lines.ToList(),
-                color = new float[] { set.Color.r, set.Color.g, set.Color.b, set.Color.a }
+                color = new float[] { set.Color.r, set.Color.g, set.Color.b, set.Color.a },
+                protectManualNormalEdit = set.ProtectManualNormalEdit,
             };
 
             // 識別子の控え
@@ -738,6 +753,7 @@ namespace Poly_Ling.Selection
         public PartsSelectionSet ToSelectionSet()
         {
             var set = new PartsSelectionSet(name ?? "SelectionSet");
+            set.ProtectManualNormalEdit = protectManualNormalEdit;
 
             // CreatedAt
             if (!string.IsNullOrEmpty(createdAt) && DateTime.TryParse(createdAt, out var dt))

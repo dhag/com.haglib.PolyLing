@@ -28,7 +28,7 @@ namespace Poly_Ling.Player
         public Func<int> GetTempMirrorOwnerToken;
 
         // ================================================================
-        // UI 要素
+        // ボタンや入力欄
         // ================================================================
 
         // UI 自動操作の ID は "sculpt.<下の Id>"（UiControlAttribute.cs）。
