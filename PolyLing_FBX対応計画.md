@@ -5,30 +5,28 @@ FBX のモデルとモーションを読み書きする。Editor とビルド版
 
 ## 1. ライブラリの選定
 
-| 向き | ライブラリ | 理由 |
+| 向き | 実装 | 理由 |
 |---|---|---|
-| 書き出し | Autodesk FBX SDK の C# バインディング（`com.autodesk.fbx` 5.1.3） | Unity の FBX Exporter と同じ土台。公開されている API が書き出し用途の部分集合 |
-| 読み込み | ufbx（C、単一ソース、MIT またはパブリックドメイン）を `plufbx.dll` にして P/Invoke | `com.autodesk.fbx` は C# でダウンキャストできず、スキン（`FbxDeformer` → `FbxSkinDeformer`）を読めない。現在以外のテイク（`FbxAnimStack`）も型付きで辿れない。Unity も読み込み用途には推奨していない（5.1.3 マニュアル「Known issues and limitations」） |
+| 書き出し | 自前（C#、PolyLing.Runtime。段 7） | `MeshObject` から多角形・制御点・疎なモーフ差分を直接書くため（Unity メッシュの三角形からの組み直しをなくす）。FBX SDK への依存（パッケージ・`FBXSDK_RUNTIME`・`UnityFbxSdkNative.dll`）もなくなる |
+| 読み込み | ufbx（C、単一ソース、MIT またはパブリックドメイン）を `plufbx.dll` にして P/Invoke | FBX SDK の C# バインディング（`com.autodesk.fbx`）は C# でダウンキャストできず、スキン（`FbxDeformer` → `FbxSkinDeformer`）を読めない。現在以外のテイク（`FbxAnimStack`）も型付きで辿れない |
 
-`com.autodesk.fbx` で型付きで読めるのはノード階層・`EvaluateLocalTransform(FbxTime)`・`GetMesh`・`GetSkeleton`・
-`GetBlendShapeDeformer`・`GetCurrentAnimationStack` まで（5.1.3 の API リファレンス）。
+段 1〜6 の書き出しは FBX SDK（`com.autodesk.fbx` 5.1.3）で作り、段 7 で自前に置き換えた。§5 の段 1〜6 の結果はその当時の記録。
 
 ## 2. 構成
 
 | 置き場 | 中身 |
 |---|---|
-| `Runtime/Poly_Ling_Main/FBX/PLFbxBridge.cs` | Runtime 側の口。書き出し実装（PolyLing.Fbx）の登録先。glTF の `PLGltfBridge` と同じ分離規約（`IVrm10Exporter.cs` 冒頭）で、Autodesk の型を PolyLing.Runtime に持ち込まない |
+| `Runtime/Poly_Ling_Main/FBX/PLFbxBridge.cs` | 入口。`PLFbxBridge.Exporter` は `FbxExporter`（登録の仕組みは無い） |
+| `Runtime/Poly_Ling_Main/FBX/FbxExporter.cs` | 書き出しの流れ（標本化 → `HierarchyBuilder`（Unity メッシュを作らない）→ ノード木 → ファイル） |
+| `Runtime/Poly_Ling_Main/FBX/FbxModelWriter.cs` | `HierarchyBuildResult`（Transform 階層と `MeshSourceOf`）とモーションの標本から FBX のノード木を組む。規則の正本は冒頭 |
+| `Runtime/Poly_Ling_Main/FBX/FbxNodeTree.cs`・`FbxBinaryWriter.cs`・`FbxAsciiWriter.cs` | ノード木と、FBX 7.4 バイナリ・ASCII への書き出し |
+| `Runtime/Poly_Ling_Main/HierarchyIO/HierarchyMeshSource.cs` | 描画ノードごとの形状の出どころ（`HierarchyBuildResult.MeshSourceOf`） |
 | `Runtime/Poly_Ling_Main/FBX/UfbxNative.cs` | `plufbx.dll` への P/Invoke。PolyLing.Runtime から直接呼ぶ |
-| `Runtime/Poly_Ling_Fbx/`（アセンブリ `PolyLing.Fbx`） | `Autodesk.Fbx` を参照する唯一のアセンブリ。対象は Editor と WindowsStandalone64。`[RuntimeInitializeOnLoadMethod]` で `PLFbxBridge` へ登録する |
 | `Runtime/Plugins/x86_64/plufbx.dll` | ufbx の DLL（Editor と Win64） |
 | `Native~/ufbx/` | `ufbx.c`・`ufbx.h`（0.23.1）・`plufbx.c`（C の口）・`build_msvc.bat`・`LICENSE_ufbx.txt`。`~` 付きなので Unity は取り込まない |
 
 - ufbx の構造体は C# へ直接渡さない。`plufbx.c` が平らな関数（数・配列の写し）にして公開する。
-- 依存：`package.json` の `dependencies` に `com.autodesk.fbx: 5.1.3`。
-- ビルド版：Player の Scripting Define Symbols（Standalone）に `FBXSDK_RUNTIME`。これが無いと
-  `UnityFbxSdkNative.dll` がビルドへコピーされない（`com.autodesk.fbx` の `Editor/Scripts/PostProcessAddToBuild.cs`。
-  コピー先は `<exe>_Data/Plugins`）。`Autodesk.Fbx.asmdef` 自体は定義の有無によらず Win64 でコンパイルされる。
-- 利用条件：FBX SDK は Autodesk の FBX SDK License and Services Agreement に従う。
+- 依存するパッケージは無い。ビルド版の Scripting Define Symbols も要らない。
 
 ## 3. 段
 
@@ -239,7 +237,12 @@ FBX のモデルとモーションを読み書きする。Editor とビルド版
   - CMU（`cmu_01_01.bvh`）を `DefaultMale.fbx` へ当てた書き出しは、上腕・前腕・太もも・すねの向きが元の BVH と最大 0.04° で一致。
   - マッスル由来のクリップ（rotationSource なし）の書き出しは変更前とバイト一致（`ext_victory_rest.plmotion.json` → BVH）。
   - JS（polyling_motion_studio）は version 2 で保存し rotationSource を書かない。C# はその bakedBones を読まない（version 4 未満）ので影響しない。
-- モーション付き FBX の Unity 取り込み・再生はまだ試していない（段 5 の FBX 読み込みで往復を確かめるときに併せて行う）。
+- （解決済み 2026-10-20）モーション付き FBX の Unity 取り込み：段 7 の書き出しでテイクが読まれ、標本化した関節位置を確かめた（7.8）。
+- CMU のモーションを書き出した後、同じモデルで続けて VMD を標本化すると、関節位置が最大 63 mm ずれる（モデルに状態が残る）。段 7 の前からある。段 7 の VMD の比較は、CMU の前に書いたもので行った。
+- `ビルド用/PolyLing_Data/Plugins/` に以前のビルドの `UnityFbxSdkNative.dll` が残っている（ビルドは古いファイルを消さない）。MCP の書き込み先の外なので手で消す。新しいフォルダ（`SandBox/build7`）へのビルドには入らない。
+- ビルド版で書き出しを動かす確認は未実施。MCP サーバーを `--target player` で起動し直す必要がある。
+- MCP の書き出しコマンドは引数 `model_index` を見ず、今のモデルを書く。
+- ProjectSettings の Scripting Define Symbols は `Standalone:` の行が空で残っている（動作に影響しない）。
 
 ## 多角形での書き出し（2026-10-15）
 
@@ -252,3 +255,137 @@ FBX のモデルとモーションを読み書きする。Editor とビルド版
   - MQO（`_0N_モデル_Ref_id修正版_id_`、70 メッシュ）：警告 0。面 88,465（3 角 9,294・4 角 79,171）がオブジェクトごとに元の mesh.csv（表示中で 3 頂点以上の面）と一致。
     ミラー側（「＋」の付くオブジェクト）も含め、各面の頂点位置（X 反転）と巻き順（反転。左手系→右手系の変換分）が実体側と同じ規則で一致し、差は丸めの 0.1 mm 以内。
 - `queryCommandAudit`：今回の変更に関わる項目はすべて 0。
+
+## 7. 段 7：FBX SDK を使わない書き出し（計画 2026-10-20・実施 2026-10-20。結果は 7.8）
+
+### 7.1 目的
+
+- 書き出しから Autodesk FBX SDK（`com.autodesk.fbx`）を外す。ビルド版の `FBXSDK_RUNTIME` と `UnityFbxSdkNative.dll` も要らなくする。
+- 書き出しの材料を Unity メッシュから `MeshObject` に替える。三角形からの多角形の組み直し、Unity 頂点の名寄せ、モーフ差分の再展開を通らないようにする。
+- 読み込み（ufbx）は変えない。
+
+### 7.2 今の作りの根拠（コード）
+
+| 箇所 | 中身 |
+|---|---|
+| `FbxExporterImpl.cs` 8–10 行 | 材料は `HierarchyBuilder` の GameObject＋Unity メッシュ（ミラー枝・関節・可視補完・モーフの規則を書き写さないため） |
+| `HierarchyBuilder.cs` 328 行・620 行 | メッシュは `MeshObject.ToUnityMesh(Matrix4x4.identity)`。`MeshBridgeDefault.cs` 196–261 行で面を `face.Triangulate()` して三角形だけを積み、面と Unity 頂点の対応は残さない |
+| `SourcePolygons.cs` | 上の三角形から元の多角形を推定し直す。扇形分割・`CompactSubMeshes`・面の除外の規則を前提に書き写している |
+| `FbxExporterImpl.cs` 411–424 行（`ControlPointComparer`） | （頂点・UV・法線）ごとに分かれた Unity 頂点を、位置・ウェイト・全差分の完全一致でまとめ直して制御点にする |
+| `HierarchyMorphBuilder.cs` 9–29 行・`BuildDelta` | モーフは「頂点番号＋オフセット」の疎な差分（`GetMorphOffsets`）。Unity 頂点の並びに合わせるため、位置をずらした複製をもう一度 `ToUnityMesh` に通して引き算する |
+| `HierarchyBuilder.cs` 611 行・647–687 行 | ミラー枝の形状は `MeshObject` の段階で作る（`BuildMirroredMeshObject`）。ミラー側コンテキストの補正は全頂点一律の平行移動（`BuildMirrorSideMesh`） |
+| `FbxImporter.cs` 42 行 | 読み込みは「制御点 1 つ = `Vertex` 1 つ」「面は多角形のまま」。FBX の頂点の持ち方（制御点＋角ごとの UV・法線）は `MeshObject`（`Vertex` の UV・法線スロット＋`Face.UVIndices` / `NormalIndices`）と同じ形 |
+
+### 7.3 構成
+
+`HierarchyBuilder`（変更）
+
+- 姿勢・親子・ミラー枝・関節・可視補完・ボーンの並びの決定は今のまま正本とし、FBX 側へ書き写さない。
+- 描画ノードごとに「形状の出どころ」を `HierarchyBuildResult.MeshSourceOf[Transform]`（新設の `HierarchyMeshSource`）へ記録する。
+  - `ShapeSource`：その GameObject の形状を作る `MeshObject`（実体側は `mc.MeshObject`、許容モードの生成ミラーは `BuildMirroredMeshObject` の結果、ミラー側コンテキストは `mc.MeshObject`）。今の `SourceMeshObjectOf` と同じ選び方（`HierarchyBuilder.cs` 537 行・581 行）
+  - `VertexOffset`：`BuildMirrorSideMesh` の平行移動量。量の計算を関数に切り出し、Unity メッシュ版と共用する
+  - `IsSkinned`、`Materials`（`BuildMaterials` の結果。サブメッシュ番号順、詰める前）
+  - `Bones`・`Bindposes`・`BoneSlotOf`（`AttachSkinnedMesh` 965–978 行で作る表）
+  - `Morphs`：（モーフの索引、ブレンドシェイプ名、差分を反転するか、反転軸）。名前の一意化と `MorphShapes`（表情曲線のつなぎ先）は今と同じ規則で、`HierarchyMorphBuilder` の名前付けを差分作りから分けて共用する
+- `HierarchyBuildOptions.CreateUnityMeshes`（既定 true）を足す。false のときは `ToUnityMesh`・ブレンドシェイプ差分・レンダラのメッシュを作らず、Transform と上の記録だけを作る。
+  そのため `AttachStaticMesh` の中の姿勢の設定をメッシュの生成から分ける。glTF とヒエラルキー出力は true のまま使う。
+- `RemapBoneWeights` の `MapSlot`（出力されないボーンを指すウェイトは 0 にして件数を警告）を、Unity の `Mesh` に依存しない関数にして FBX からも使う。
+- `SourceMeshObjectOf` は廃止する（使っているのは FBX の組み直しだけ）。
+
+新しい書き出し（`Runtime/Poly_Ling_Main/FBX/`、PolyLing.Runtime）
+
+| ファイル | 中身 |
+|---|---|
+| `FbxNodeTree.cs` | FBX のノード（名前・プロパティの列・子）の木 |
+| `FbxBinaryWriter.cs` | FBX 7.4 バイナリ（7400）。ヘッダ、32 ビットの終了位置、空レコード、フッタ。大きな配列は zlib（Deflate＋ヘッダ＋Adler-32） |
+| `FbxAsciiWriter.cs` | 同じ木を ASCII で書く（書き出しパネルの「ASCII」） |
+| `FbxModelWriter.cs` | モデル・モーションを木にする（FBXHeaderExtension、GlobalSettings、Documents、References、Definitions、Objects、Connections、Takes） |
+| `FbxExporter.cs` | `IFbxExporter` の実装（`FbxExporterImpl` を置き換える）。標本化（`ModelMotionSampler`）と曲線の作り方は段 3 のものを移す |
+
+- `PLFbxBridge.Exporter` は常にこの実装を返す。登録（`RegisterExporter`・`RegisterSdk`）、`FbxExporterNull`、`IFbxSdkInfo`、`TryGetSdkVersion` は廃止する。
+  呼び出し側（`PolyLingPlayerViewerCore.Import.cs` 814 行、`…CreateCommands.FileIO.cs` 387・789・829 行、`PlayerExportSubPanel.cs` 545 行）は変えない。
+- 起動時の 1 行（`PLFbxBridge.LogStatus`）は ufbx の版だけを出す。
+
+### 7.4 書き出しの規則
+
+| 項目 | 規則 |
+|---|---|
+| 座標 | ファイルは右手系・Y 上・前 +Z・単位 cm（UnitScaleFactor 1）。点は 100·S·p、方向は S·n、行列は S·M·S（S = diag(−1, 1, 1)）、面の角の並びは反転。読み込み（`FbxImporter.cs` 冒頭）の逆。`DeepConvertScene` を使った段 2 の結果（X 反転・+Z 正面）と同じになることを 7.6 で確かめる |
+| ノード | 置く姿勢は今と同じ（ボーンはバインドのワールド、ほかは親のワールド · ローカル TRS）。書き出し上のローカル S·(親のワールド⁻¹ · ワールド)·S を移動（×100）・回転・拡大に分ける。回転は FBX 既定の回転順 XYZ のオイラー角（RotationOrder は書かない）。拡大 0 は 1e-12。InheritType は RSrs |
+| 制御点 | `ShapeSource` の `Vertex` 1 つを制御点 1 つにする（`VertexOffset` を足す）。読み込みと対になる。Unity 頂点の名寄せは無くなる |
+| 面 | `Faces` の順に、表示中で 3 頂点以上の面を多角形のまま書く（面を選ぶ条件は `ToUnityMesh` と同じ。2 頂点の面と非表示の面は書かない）。PolygonVertexIndex は各面の最後の角を −(i+1) |
+| UV・法線 | 角ごとに `Face.UVIndices` / `NormalIndices` のスロット。範囲外のときは `ToUnityMesh` と同じ扱い（スロット 0、無ければ UV (0, 0)）。UV は IndexToDirect（頂点のスロットを並べた配列＋角の索引）、法線は ByPolygonVertex・Direct。`ToUnityMesh` が法線を Unity に計算させる条件（PreserveNormals でなく、法線が無いか全部 (0, 1, 0)。`MeshBridgeDefault.cs` 278–280 行）のメッシュは、法線の層を書かない（今は Unity が計算した法線を書いている） |
+| 材質 | 面の材質番号を 0〜サブメッシュ数−1 に丸め、`Materials[番号]`。メッシュのノードには面のある材質だけを付けて番号を詰める（1 つなら AllSame、複数なら ByPolygon）。材質の中身とテクスチャは段 2 と同じ（Lambert、Diffuse / NormalMap / Emissive、埋め込みは Video の Content、画像は「ファイル名_textures」） |
+| スキン | `Vertex.BoneWeight` を `BoneSlotOf` で写す（`MapSlot` を共用）。クラスタはボーンごとで、Indexes・Weights、Transform はメッシュのグローバル、TransformLink はボーンのバインドのグローバル（ファイル座標）。メッシュごとに BindPose を 1 つ置く |
+| ブレンドシェイプ | Deformer「BlendShape」→ SubDeformer「BlendShapeChannel」（DeformPercent、FullWeights 100）→ Geometry「Shape」。Indexes は `GetMorphOffsets` の頂点番号、Vertices は差分（100·S·d）。ufbx は Shape の Vertices を差分として読む（`ufbx.c` 13028–13032 行）。生成ミラーは差分を `MirrorBranchOps.MirrorNormal` で反転する。差分 0 件のモーフも空の Shape で残す（今と同じ）。法線の差分は書かない（今も 0） |
+| アニメーション | 標本化、関節の対応、表情の重みは段 3 と同じ。AnimationStack → AnimationLayer → AnimationCurveNode（T・R・DeformPercent）→ AnimationCurve。時刻は 1 秒 = 46186158000 の整数、補間は線形（KeyAttrFlags の線形 0x4。`ufbx.c` 14092–14094 行）。オイラー角はファイル座標の XYZ 順で、同じ回転の 2 通り (x, y, z) / (x + 180, 180 − y, z + 180) を 360° 単位でそろえて前のフレームに近い方。GlobalSettings に TimeMode と CustomFrameRate |
+| 形式 | 既定はバイナリ。ASCII を指定されたら同じ木を ASCII で書く |
+
+### 7.5 撤去するもの
+
+- `Runtime/Poly_Ling_Fbx/`（`PolyLing.Fbx.asmdef`、`FbxExporterImpl.cs`、`FbxSdkInfoImpl.cs`、`SourcePolygons.cs` と各 `.meta`）
+- `package.json` の依存 `com.autodesk.fbx`
+- Scripting Define Symbols（Standalone）の `FBXSDK_RUNTIME`
+- §1・§2 の FBX SDK の記述（表・依存・ビルド版・利用条件）は、実装後に今の構成へ書き換える。§5 の段 1〜6 の結果は記録として残す
+
+### 7.6 検証
+
+- 実装前に、今の（FBX SDK の）書き出しで AちゃんH・`DefaultMale.fbx`・MQO（`_0N_モデル_Ref_id修正版_id_`）とモーション 2 本（CMU・VMD）を `SandBox/` に書いて残し、比較の基準にする。
+- ufbx で新旧を読み、ノード・ボーン・メッシュ・面（多角形の内訳）・材質・テクスチャの数を比べる。
+  角ごとの位置・UV・法線・材質、スキンで再計算した位置とバインドの差、ブレンドシェイプを 1 にした角の位置も比べる。
+  制御点の数は名寄せが無くなるので変わってよい（`Vertex` の数に一致すること）。
+- 往復：書き出し → 読み込み → 書き出しで同じになること。
+- モーション：段 3 と同じく、関節のワールド位置をキーのフレームで BVH の順運動学と比べる（CMU・VMD）。表情のテスト（0 / 0.5 / 1）も行う。
+- Unity の FBX 取り込み（`Assets/` へ書き出して Refresh）：警告・エラーが 0。頂点・サブメッシュ・ブレンドシェイプの数を確かめる。モーション付きの FBX は再生して確かめる（§6 の残件も同時に済ませる）。
+- glTF の書き出しとヒエラルキー出力が変更前とバイト一致すること（`CreateUnityMeshes` = true の経路が変わらないこと）。
+- ビルド版：`FBXSDK_RUNTIME` なしでビルドし、読み込み・書き出し・モーション書き出しができること。`PolyLing_Data/Plugins/` に `UnityFbxSdkNative.dll` が無いこと。
+- `queryCommandAudit` / `queryUiAutomationAudit` が全項目 0。
+
+### 7.7 MCP でできない作業
+
+- `Runtime/Poly_Ling_Fbx/` フォルダ自体の削除（`delete_path` はフォルダを拒否する。中のファイルは消せる）。
+- `FBXSDK_RUNTIME` の削除（ProjectSettings に書き込めるかは着手時に確かめる）。
+
+実施時：`Runtime/Poly_Ling_Fbx/` は `delete_path` で `_McpTrash/20261020_180739` へ移せた。ProjectSettings には MCP で書き込めないので、
+一時的な Editor スクリプト（`PlayerSettings.SetScriptingDefineSymbols`）で `FBXSDK_RUNTIME` を外し、スクリプトは消した。
+
+### 7.8 結果（2026-10-20）
+
+実装（7.3 のとおり。差分だけ記す）
+
+- `HierarchyMeshSource` に `MirrorDelta`・`MirrorAxis` を持たせ、生成ミラーのモーフ差分の反転を記録する。
+- `HierarchyMorphBuilder.Plan` を足し、名前付け（`ShapeNameOf`）を `Apply` と共用する。`CreateUnityMeshes` = false のときは Plan だけ通す。
+- ウェイトの写しは `HierarchyBuilder.RemapBoneWeight`・`DroppedWeightsMessage`（public static）にして FBX からも使う。
+- オイラー角の分解は atan2 の式（`atan2(−r20, √(r00² + r10²))`）。asin とジンバルのしきい値の式は最大 8e-4 の誤差が出たので替えた（6.7e-8）。
+- 材質は SDK の出力と同じく `EmissiveFactor` 1 を書く。
+- 曲線のキーは KeyAttrFlags 0x104、KeyAttrDataFloat [0, 0, 0x0D050D05, 0]。
+- FileId・CreationTime・フッタ ID は SDK が書いたファイルの 1 組をそのまま使う（3 つがそろっていないと FBX SDK が読まない）。
+- どのオブジェクトにも空の入れ子リスト（`FbxNode.Block()`）を付ける。付けないと FBX SDK（Unity の取り込み）が AnimationLayer を読まず、テイクが無くなる。
+  SDK が書いたファイルからこのブロックを抜くと同じくテイクが無くなることで確かめた（`FbxNodeTree.cs` の `Block` の注記）。
+
+検証（新旧とも ufbx で読んで比べた）
+
+| 対象 | 結果 |
+|---|---|
+| glTF 書き出し | AちゃんH・`DefaultMale`・MQO が変更前とバイト一致 |
+| AちゃんH | 角 502,908 個の位置・UV・法線・ウェイト・材質が一致。ブレンドシェイプを 1 にした差は最大 9.8e-6 m。制御点 91,555（= `Vertex` 数。以前は名寄せで 85,323）。往復（書き出し → 読み込み → 書き出し）が一致 |
+| `DefaultMale` | 多角形の内訳（3 角 8・4 角 7,532・5 角 4）が保たれ、ほかもすべて一致。ASCII の出力も一致 |
+| MQO（`_0N_モデル_Ref_id修正版_id_`） | 面（3 角 9,294・4 角 79,171）が一致、往復も一致 |
+| モーション（関節位置、BVH の順運動学と比較） | VMD 0.023 mm、CMU 0.0099 mm、`Victory-anim1.fbx` を `DefaultMale` へ当てたもの 0.020 mm（旧 SDK の出力は 1.6 mm） |
+| Unity の取り込み | テイクが読まれる（AちゃんH＋VMD のクリップは曲線 1,181 本、Victory は 574 本）。Unity で標本化した関節位置と BVH の差は 5.4 mm・10.26 mm（旧 SDK の出力も 10.26 mm） |
+| `queryCommandAudit` | 今回の変更に関わる項目はすべて 0（「正典に無い 1」`OpenProfileEditSpaceCommand` と「出せなかった 1」`AddGeneratedMeshCommand` は以前から） |
+| ビルド版（`SandBox/build7`） | ビルド成功。`Plugins` は `plufbx.dll` と `lib_burst_generated.dll` だけ、`Managed` に Autodesk の DLL なし。`Player.log` に「[PolyLing] FBX: 書き出し PolyLing / 読み込み ufbx 0.23.1」、例外なし |
+
+- MQO の `@OptionV_4@` は法線が全部 (0, 1, 0) なので、7.4 の規則で法線の層を書かない。ufbx と Unity は法線を作り直すので、以前の（Unity が計算して書いた）法線とは違う。Unity の取り込みは「法線が無いので計算する」旨の警告を出す。
+- 制御点の数の変化は 7.6 のとおり（`Vertex` 数に一致）。
+- ビルド版での書き出しの動作確認は未実施（§6 の残件）。
+
+修正（2026-10-20）：スキンのクラスタの `Transform`
+
+- 誤り：クラスタの `Transform` にメッシュのワールドを書いていた。ファイルの `Transform` はメッシュ → ボーン（ufbx の mesh_node_to_bone、`ufbx.c` 14050・16115 行。SDK のファイルも「`TransformLink`⁻¹ · メッシュのワールド」）。
+  Unity の取り込みで bindpose が全部単位行列になり（`_0_ぜろちゃんH.pmx` の書き出しで、ボーン · bindpose とメッシュのワールドの差が最大 1.871）、手足が伸びて表示された。
+- 見落とした理由：上の検証は角の位置をノードの空間で比べただけで、スキンで再計算した位置を比べていなかった。比較した `Assets/AちゃんH.fbx` は旧 SDK の出力だった。
+- 修正：`Transform` = FileMatrix(ボーンのバインドワールド⁻¹ · メッシュのワールド)（`FbxModelWriter.WriteSkin`）。
+- 検証：
+  - ufbx でスキンを再計算した位置（Σ w · bind_to_world · geometry_to_bone · p）とバインドの位置の差：0ちゃんH 1.2e-7 m、AちゃんH 1.2e-7 m、`DefaultMale` 2.5e-7 m（修正前の 0ちゃんH は 1.744 m。旧 SDK の AちゃんH は 1.2e-7 m）。
+  - Unity の取り込み：ボーン · bindpose とメッシュのワールドの差は 0ちゃんH・AちゃんH 3.6e-7、`DefaultMale` 1.8e-5。単位行列の bindpose は 0。正面の描画で手足の伸びが無いことを見た。

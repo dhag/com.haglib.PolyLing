@@ -80,6 +80,13 @@ namespace Poly_Ling.HierarchyIO
         /// <summary>レンダラ種別の決め方。</summary>
         public HierarchyRendererMode RendererMode = HierarchyRendererMode.Auto;
 
+        /// <summary>
+        /// Unity メッシュ（ToUnityMesh・ブレンドシェイプ差分・レンダラ）を作るか。
+        /// false のときは Transform と HierarchyBuildResult.MeshSourceOf（形状の出どころ）だけを作る。
+        /// MeshObject から直接書く書き出し（FBX）が使う。既定 true。
+        /// </summary>
+        public bool CreateUnityMeshes = true;
+
         public HierarchyBuildOptions Clone()
         {
             return new HierarchyBuildOptions
@@ -94,6 +101,7 @@ namespace Poly_Ling.HierarchyIO
                 ExportMorphTargets        = this.ExportMorphTargets,
                 DropEmptySubMeshes        = this.DropEmptySubMeshes,
                 RendererMode              = this.RendererMode,
+                CreateUnityMeshes         = this.CreateUnityMeshes,
             };
         }
 

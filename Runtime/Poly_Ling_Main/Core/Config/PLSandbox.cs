@@ -11,6 +11,8 @@
 //   ・既定値は持たない。未設定のうちはすべて拒否する
 //     （利用者が場所を意識しないまま書き込まれるのを避けるため）
 //   ・拒否リストではなく許可リスト。根の下以外はすべて拒否する
+//   ・根の直下には新しいファイル・フォルダを作らせない。直下の既存フォルダの中だけ通す
+//     （IsUnderExistingTopFolder）
 //
 // 【ダイアログ経路は別扱い】
 //   利用者がファイルダイアログで選んだパスは「選んだ＝許可の表明」とみなし、
@@ -246,6 +248,9 @@ namespace Poly_Ling.Core
                 return false;
             }
 
+            // 作業フォルダ直下を散らかさない。直下に置けるのは既存フォルダの中だけ。
+            if (!IsUnderExistingTopFolder(root, full, forWrite, out reason)) return false;
+
             // リンクは辿らない。辿ると根の外へ抜けられる。
             if (HasReparsePointOnPath(root, full, out string linkPath))
             {
@@ -279,6 +284,43 @@ namespace Poly_Ling.Core
 
             string prefix = r + Path.DirectorySeparatorChar;
             return f.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 作業フォルダ直下に新しいファイルやフォルダを作らせない。
+        /// 通すのは「直下に既にあるフォルダの中」と、ファイル書き込み以外での
+        /// 「直下に既にあるフォルダそのもの」だけ。
+        /// 作業フォルダ自身・直下のファイル・直下にまだ無いフォルダは拒否する。
+        /// 【なぜ要るか】作業フォルダがプロジェクト直下のとき、頭に置き場所を付けない
+        ///   相対パス（"Foo/Foo.csv" など）が直下にフォルダを増やし続けたため。
+        /// 置き場所の名前は決め打ちしない（既存フォルダかどうかだけで判定する）。
+        /// </summary>
+        private static bool IsUnderExistingTopFolder(string root, string full, bool forWrite, out string reason)
+        {
+            reason = null;
+            string r = TrimSeparator(root);
+            string f = TrimSeparator(full);
+            string msg = $"作業フォルダの直下には作れません。直下にある既存のフォルダの中を指定してください（作業フォルダ: {r}）";
+
+            if (string.Equals(r, f, StringComparison.OrdinalIgnoreCase))
+            { reason = msg; return false; }
+
+            string rest = f.Substring(r.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            int sep = rest.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
+
+            if (sep < 0)
+            {
+                // 直下の名前そのもの。既存フォルダをフォルダとして指すときだけ通す。
+                if (!forWrite && Directory.Exists(f)) return true;
+                reason = msg;
+                return false;
+            }
+
+            string top = Path.Combine(r, rest.Substring(0, sep));
+            if (!Directory.Exists(top))
+            { reason = msg; return false; }
+
+            return true;
         }
 
         private static bool IsWritableExtension(string full, out string reason)

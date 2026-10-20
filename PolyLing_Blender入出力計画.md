@@ -127,27 +127,29 @@ Blender で PolyLing のデータを読み書きするアドオンを作る。
 
 ## 6. 残件（範囲外で見つけたもの）
 
+1〜14 は `PolyLing_Blender不具合修正計画.md` へ移した（2026-10-20。項目番号は同じ）。各項目の末尾の【移管の結果】が、直した段か直さない理由（詳細はその計画書の 4 の進捗）。
+
 C# の CSV 読み書きの不具合（段 ① で確認。Python 側は 1・3・4 を正しく扱い、2・5 は C# と同じ書き方にした）：
-1. `materialprops.csv` で、テクスチャのパスが空のプロパティは行末が `,` になり、`Split` が空欄を落として 9 列になるため、読込（`CsvModelSerializer.ModelCsv.cs` の `cols.Length < 10`）で全部捨てられる。A4・RoboFArms で実際に消える（CSV を読み直すとシェーダー固有プロパティが無くなる）。
-2. 名前モードの CSV では `mirrorGeometryDerived` を書かない（`CsvMeshSerializer.Write.cs` の索引モード側だけ）。読みは両方のモードで読むので、書けば失われない。
-3. 中身が空になっても消さないファイルがある（morphgroups・meshselsets・objectgroups・mirrorpairs・editorstate・workplane・tposebackup・springbonegroups・humanoid.export）。同じフォルダへ保存し直すと古い中身が読込で復活する。Python 側は空なら消す。
-4. `tposebackup.csv` は boneRot と vtxPos が両方空だと、worldMat・bindPose の行があっても null として読む。
-5. `springbonegroups.csv` で名前が空のグループは空行になり、読込で飛ばされて後ろの番号がずれる（Python 側も同じ形式なので、空の名前はずれる。直すなら書式の変更が要る）。
+1. `materialprops.csv` で、テクスチャのパスが空のプロパティは行末が `,` になり、`Split` が空欄を落として 9 列になるため、読込（`CsvModelSerializer.ModelCsv.cs` の `cols.Length < 10`）で全部捨てられる。A4・RoboFArms で実際に消える（CSV を読み直すとシェーダー固有プロパティが無くなる）。【移管の結果】段 ① で直した（C# の `Split` が行末の空欄を作る）。Python は段 ③ で注記だけ直した。
+2. 名前モードの CSV では `mirrorGeometryDerived` を書かない（`CsvMeshSerializer.Write.cs` の索引モード側だけ）。読みは両方のモードで読むので、書けば失われない。【移管の結果】段 ①（C#）・段 ③（Python）で直した（両方のモードで書く）。
+3. 中身が空になっても消さないファイルがある（morphgroups・meshselsets・objectgroups・mirrorpairs・editorstate・workplane・tposebackup・springbonegroups・humanoid.export）。同じフォルダへ保存し直すと古い中身が読込で復活する。Python 側は空なら消す。【移管の結果】段 ① で直した（C# も 9 ファイルを中身が無ければ消す）。
+4. `tposebackup.csv` は boneRot と vtxPos が両方空だと、worldMat・bindPose の行があっても null として読む。【移管の結果】段 ①（C#）・段 ③（Python）で直した（「ファイルがある ⇔ 控えがある」。`.mfproj` と同じ）。
+5. `springbonegroups.csv` で名前が空のグループは空行になり、読込で飛ばされて後ろの番号がずれる（Python 側も同じ形式なので、空の名前はずれる。直すなら書式の変更が要る）。【移管の結果】段 ①（C#）・段 ③（Python）で直した（空の名前を `""` と書く。読みは変えていない）。
 
 段 ② で見つけたもの（C# を読んで確認。今の試験データでは起きない）：
-6. スキンドメッシュのウェイトの無い頂点の行列が、描画と編集で食い違う。描画はメッシュ自身の欄に SkinningMatrix（WorldMatrix·BindPose）を入れる（`UnifiedBufferManager_Update.cs:85-104`、頂点の欄はメッシュ自身 `MeshContext.Transform.cs` の注記 `UnifiedBufferManager_Build.cs:344-363`）が、`MeshContext.VertexMatrix` はウェイトの無い頂点に DisplayWorldMatrix を返す。メッシュ自身の BindPose が単位でないときだけずれる。Blender 側はこの頂点を動かさない（PolyLing の描画とはずれる）。
+6. スキンドメッシュのウェイトの無い頂点の行列が、描画と編集で食い違う。描画はメッシュ自身の欄に SkinningMatrix（WorldMatrix·BindPose）を入れる（`UnifiedBufferManager_Update.cs:85-104`、頂点の欄はメッシュ自身 `MeshContext.Transform.cs` の注記 `UnifiedBufferManager_Build.cs:344-363`）が、`MeshContext.VertexMatrix` はウェイトの無い頂点に DisplayWorldMatrix を返す。メッシュ自身の BindPose が単位でないときだけずれる。Blender 側はこの頂点を動かさない（PolyLing の描画とはずれる）。【移管の結果】C# は段 ② で直した（規則を `MeshContext.TransformRowMatrix` の 1 か所にし、描画と `VertexMatrix` が共に使う）。Blender 側は直さない（Armature 修飾子ではウェイトの無い頂点だけにメッシュ自身の行列を掛けられない）。段 ③ で、食い違うメッシュに取り込みの警告を出すようにした。
 
 段 ③ で見つけたもの：
-7. C# で `.mfproj` を読んでから CSV に保存すると、CSV を読んでから保存したものより行が足りない。A4 で、C# 自身が書いた `SandBox/BlenderIO/A4_cs.mfproj` を `loadProjectFile` → `saveProjectCsv` したもの（`SandBox/BlenderIO/stage3/cs_A4mf_orig`）と、`bintest/A4/project.csv` を `loadProjectCsv` → `saveProjectCsv` したもの（`stage3/cs_A4_orig`）を `queryCsvFolderDiff` で比べると、前者には bone.csv の `humanBodyBone`・`bindPose` の行、pmx_physics.csv の `rigidBody` の行、AliciaSolid の humanoid.export.csv が無い（4 ファイル・17380 行）。A4_cs.mfproj には `humanBodyBone`・`bindPose`・`rigidBodyData` の欄がある。原因の箇所は未調査。
+7. C# で `.mfproj` を読んでから CSV に保存すると、CSV を読んでから保存したものより行が足りない。A4 で、C# 自身が書いた `SandBox/BlenderIO/A4_cs.mfproj` を `loadProjectFile` → `saveProjectCsv` したもの（`SandBox/BlenderIO/stage3/cs_A4mf_orig`）と、`bintest/A4/project.csv` を `loadProjectCsv` → `saveProjectCsv` したもの（`stage3/cs_A4_orig`）を `queryCsvFolderDiff` で比べると、前者には bone.csv の `humanBodyBone`・`bindPose` の行、pmx_physics.csv の `rigidBody` の行、AliciaSolid の humanoid.export.csv が無い（4 ファイル・17380 行）。A4_cs.mfproj には `humanBodyBone`・`bindPose`・`rigidBodyData` の欄がある。原因の箇所は未調査。【移管の結果】段 ① で直した（原因は `ModelSerializer.ToModelContext` が `ToMeshContext` の復元を通していなかったこと。`ToMeshContext(meshDTO, true)` を呼ぶようにした）。
 
 段 ④ で見つけたもの（C# を読んで確認）：
-8. モーションの再生で、A4 の Zunko_MMD の Spine が「kimono_spine_02.x」に割り当たる。このモデルのボーンは humanBodyBone を持たないので `UnityClipApplier.ResolveNode` は埋め込みの別名表を使い、`HumanoidBoneMapping.FindBoneByAliases` は別名ごとに「完全一致 → 部分一致」を回すため、最初の別名 "Spine" の部分一致（大小無視）が "上半身" より先に当たる。Blender 側の自動割り当ても同じ規則にしてある（表はパネルで直せる）。
-9. グループの表情（MorphExpression の type 0）は保存すると子（`GroupChildren`）が失われる。`GroupChildren` は DTO に無く（`MorphExpression.cs:132`、Serialization に書く箇所が無い）、`MotionClipApplier.ExpandToVertexMorphs`（`:451-456`）はグループを `GroupChildren` だけで展開するので、CSV・.mfproj から読んだグループの表情はモーションで何も動かさない。A4 の AliciaSolid では VRM の表情（aa・blink・happy など 12 本）がこれに当たる（meshEntries は持っている）。Blender 側も PolyLing と同じく何にも当てない。
-10. A4 の AliciaSolid は PolyLing の画面でも Blender（Cycles）でも白一色で写る（段 ④ のキャプチャ）。原因は未調査。
+8. モーションの再生で、A4 の Zunko_MMD の Spine が「kimono_spine_02.x」に割り当たる。このモデルのボーンは humanBodyBone を持たないので `UnityClipApplier.ResolveNode` は埋め込みの別名表を使い、`HumanoidBoneMapping.FindBoneByAliases` は別名ごとに「完全一致 → 部分一致」を回すため、最初の別名 "Spine" の部分一致（大小無視）が "上半身" より先に当たる。Blender 側の自動割り当ても同じ規則にしてある（表はパネルで直せる）。【移管の結果】段 ②（C#）・段 ③（Python）で直した（全別名で完全一致 → 全別名で部分一致の 2 巡。Spine は「上半身」になる）。
+9. グループの表情（MorphExpression の type 0）は保存すると子（`GroupChildren`）が失われる。`GroupChildren` は DTO に無く（`MorphExpression.cs:132`、Serialization に書く箇所が無い）、`MotionClipApplier.ExpandToVertexMorphs`（`:451-456`）はグループを `GroupChildren` だけで展開するので、CSV・.mfproj から読んだグループの表情はモーションで何も動かさない。A4 の AliciaSolid では VRM の表情（aa・blink・happy など 12 本）がこれに当たる（meshEntries は持っている）。Blender 側も PolyLing と同じく何にも当てない。【移管の結果】保存は段 ① で直した（`.mfproj` の `groupChildren`・`morphgroups.csv` の子の欄・PLRM v10）。再生は段 ②（C#）・段 ③（Python）で直した（グループを `meshEntries` で展開する。パネルの試し当てと同じ）。
+10. A4 の AliciaSolid は PolyLing の画面でも Blender（Cycles）でも白一色で写る（段 ④ のキャプチャ）。原因は未調査。【移管の結果】直さない（コードの不具合ではない）。A4 の AliciaSolid は保存データに画像が無い（テクスチャを付けずに読んだものを保存したデータ）。陰の色まで無いのは 1 の欠落が重なっていたため（1 は段 ① で直した）。
 
 段 ⑤ で見つけたもの（ソースを読んで確認。直していない。実際に起きるかは試していない）：
-11. Blender でシェイプキーの名前を変えると、そのモーフの形が書き出しで失われる。2.3 は「シェイプキーの名前の変更は書き出さない（保持した値のまま）」だが、`exporter.export_morphs` はシェイプキーを取り込み時の名前（`polyling_morphs` の `shapeKey`）で引くので、名前を変えたものは見つからず、警告「シェイプキー … が無いので差分 0 にした」を出してモーフの頂点を basePositions のまま書く。モーションの表情（`motion.expression_targets`）も同じ名前で引くので、そのシェイプキーに当たらなくなる。
-12. Blender から `.mfproj` 由来のプロジェクトを CSV で書くと、`Assets/…` などの相対パスのテクスチャが写らない。`format/csv_project.py` の textures の写し（.mfproj から読んだとき）は、パスそのものと `_unityProjectRoot` を根にしたパスを探すが、`_unityProjectRoot` を入れる箇所が無いので、相対パスは Blender の作業フォルダ基準になる。C#（`ModelTextureTransfer.cs` の `ResolveFullPath`）は `Assets/…` を Unity のプロジェクトの根から探す。
-13. `.plmotion.json` の `bakedBones` のトラックごとにキー時刻が違うファイルは、読んでそのまま書いても元のトラックに戻らず格子で標本化される。`motion.import_motion` は正準骨格の全トラックのキー時刻を合わせたものを、駆動するどのボーンにも打つ。`export_motion` はボーンのキーのフレームがそのトラックの元のキー時刻と同じ数・同じ時刻のときだけ元のトラックを使う。段 ④ の試験データ（全キー比較で一致）では起きていない。
-14. `blender/motion.py` の冒頭の注記は、書き出しを「q = W_c(正準の親で割り当てのある一番近い祖先)⁻¹·W_c」と書いているが、実装（`export_motion` の `local_of`）は 2.4 どおり正準骨格の親そのもの（`CANON_PARENT`）を使う。その注記に当たる `Rig.canon_parent` はどこからも呼ばれていない。
+11. Blender でシェイプキーの名前を変えると、そのモーフの形が書き出しで失われる。2.3 は「シェイプキーの名前の変更は書き出さない（保持した値のまま）」だが、`exporter.export_morphs` はシェイプキーを取り込み時の名前（`polyling_morphs` の `shapeKey`）で引くので、名前を変えたものは見つからず、警告「シェイプキー … が無いので差分 0 にした」を出してモーフの頂点を basePositions のまま書く。モーションの表情（`motion.expression_targets`）も同じ名前で引くので、そのシェイプキーに当たらなくなる。【移管の結果】段 ③ で直した（`meshread.morph_shape_keys`：名前、無ければ数が同じときに取り込み時の並び順 `keyOrder`。契約 §7.4）。
+12. Blender から `.mfproj` 由来のプロジェクトを CSV で書くと、`Assets/…` などの相対パスのテクスチャが写らない。`format/csv_project.py` の textures の写し（.mfproj から読んだとき）は、パスそのものと `_unityProjectRoot` を根にしたパスを探すが、`_unityProjectRoot` を入れる箇所が無いので、相対パスは Blender の作業フォルダ基準になる。C#（`ModelTextureTransfer.cs` の `ResolveFullPath`）は `Assets/…` を Unity のプロジェクトの根から探す。【移管の結果】段 ③ で直した（取り込みの設定「Unity プロジェクトのフォルダ」、空なら自動で探す。`_csvUnityProjectRoot`。契約 §7.1）。
+13. `.plmotion.json` の `bakedBones` のトラックごとにキー時刻が違うファイルは、読んでそのまま書いても元のトラックに戻らず格子で標本化される。`motion.import_motion` は正準骨格の全トラックのキー時刻を合わせたものを、駆動するどのボーンにも打つ。`export_motion` はボーンのキーのフレームがそのトラックの元のキー時刻と同じ数・同じ時刻のときだけ元のトラックを使う。段 ④ の試験データ（全キー比較で一致）では起きていない。【移管の結果】段 ③ で直した（読込で打った時刻を `polyling_key_times` に残し、書き出しでその時刻の元のトラックの値と比べる。契約 §5.1）。
+14. `blender/motion.py` の冒頭の注記は、書き出しを「q = W_c(正準の親で割り当てのある一番近い祖先)⁻¹·W_c」と書いているが、実装（`export_motion` の `local_of`）は 2.4 どおり正準骨格の親そのもの（`CANON_PARENT`）を使う。その注記に当たる `Rig.canon_parent` はどこからも呼ばれていない。【移管の結果】段 ③ で直した（注記を正準骨格の親に合わせ、`Rig.canon_parent` を消した）。
 15. マニュアル：リポジトリ（`Packages/com.haglib.polyling`・`データとツール`・`Assets`）に PolyLing 本体のマニュアルに当たるファイルが無い。`README.md` は導入と作業メモ、`MCP操作手順書.md` は MCP 向け、`データとツール/VRMビュワー/polyling_motion_studio/polyling_motion_studio_manual.html` はモーションスタジオのもの。Blender アドオンの入れ方と使い方は機能索引（`PolyLing_機能の場所.md` §3）と契約 §7.1 に書いた。

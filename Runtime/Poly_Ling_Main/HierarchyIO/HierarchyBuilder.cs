@@ -315,7 +315,7 @@ namespace Poly_Ling.HierarchyIO
                             || result.SupplementedIndices.Contains(i);
 
                 Mesh unityMesh = null;
-                if (!isJoint)
+                if (!isJoint && _opt.CreateUnityMeshes)
                 {
                     // Unityメッシュはブリッジ経由（MeshObject.ToUnityMesh）で毎回生成する。
                     //   mc.UnityMesh は表示用に WorldMatrix を焼き込んだメッシュのため
@@ -534,7 +534,6 @@ namespace Poly_Ling.HierarchyIO
             if (isSkinned)
             {
                 AttachSkinnedMesh(go, mc, unityMesh, model, boneTransformMap, armatureRoot, index);
-                _result.SourceMeshObjectOf[go.transform] = mc.MeshObject;
                 return;
             }
 
@@ -547,13 +546,19 @@ namespace Poly_Ling.HierarchyIO
             // 実体側とミラー枝では面の巻き順が違うため、ここを取り違えると並びがずれる。
             MeshObject shapeSource = mc.MeshObject;
             bool mirrorDelta = false;
+            Vector3 vertexOffset = Vector3.zero;
 
             if (mirror)
             {
+                bool failed;
                 if (generateMirrorShape)
                 {
-                    meshForGo = BuildGeneratedMirrorMesh(mc, unityMesh, goName, out var mirroredObject);
-                    if (mirroredObject != null)
+                    var mirroredObject = BuildMirroredShape(mc);
+                    meshForGo = mirroredObject != null && _opt.CreateUnityMeshes
+                        ? BuildGeneratedMirrorMesh(mirroredObject, unityMesh, mc, goName)
+                        : null;
+                    failed = mirroredObject == null || (_opt.CreateUnityMeshes && meshForGo == null);
+                    if (!failed)
                     {
                         shapeSource = mirroredObject;
                         mirrorDelta = true;
@@ -563,22 +568,23 @@ namespace Poly_Ling.HierarchyIO
                 {
                     // ミラー側コンテキストは形状が既に反転済みで、
                     // BuildMirrorSideMesh の補正は全頂点一律の平行移動なので差分に影響しない。
-                    meshForGo = BuildMirrorSideMesh(mc, unityMesh, realPeer);
+                    vertexOffset = MirrorSideVertexOffset(mc, realPeer);
+                    meshForGo = _opt.CreateUnityMeshes ? BuildMirrorSideMesh(unityMesh, vertexOffset) : null;
+                    failed = _opt.CreateUnityMeshes && meshForGo == null;
                 }
 
-                if (meshForGo == null)
+                if (failed)
                 {
                     _result.Warn($"ミラー側メッシュを生成できませんでした: \"{mc.Name}\"");
-                    meshForGo   = unityMesh;
-                    shapeSource = mc.MeshObject;
-                    mirrorDelta = false;
+                    meshForGo    = unityMesh;
+                    shapeSource  = mc.MeshObject;
+                    mirrorDelta  = false;
+                    vertexOffset = Vector3.zero;
                 }
             }
 
             AttachStaticMesh(go, mc, meshForGo, model, hasMeshParent, mirror, trsSource,
-                             index, shapeSource, mirrorDelta);
-            // meshForGo の元（ブレンドシェイプの差分と同じ MeshObject）
-            _result.SourceMeshObjectOf[go.transform] = shapeSource;
+                             index, shapeSource, mirrorDelta, vertexOffset);
         }
 
         // ================================================================
@@ -597,23 +603,14 @@ namespace Poly_Ling.HierarchyIO
         /// 実体側の UnityMesh をそのまま使い回すと巻き順が裏返ったままになるため、
         /// MeshObject 段階で鏡像化してから Unity メッシュへ変換する。
         /// </summary>
-        /// <param name="mirroredObject">
-        /// 生成に使った鏡像化済み MeshObject。ブレンドシェイプの差分は、
-        /// この MeshObject を元にクローンして作らなければ並びがずれる
+        /// <remarks>
+        /// 鏡像化した MeshObject は BuildMirroredShape、Unity メッシュへの変換はこの関数。
+        /// ブレンドシェイプの差分は、その MeshObject を元にクローンして作らなければ並びがずれる
         /// （HierarchyMorphBuilder.cs 冒頭を参照）。
-        /// </param>
+        /// </remarks>
         private static Mesh BuildGeneratedMirrorMesh(
-            MeshContext mc, Mesh source, string goName, out MeshObject mirroredObject)
+            MeshObject mirroredObj, Mesh source, MeshContext mc, string goName)
         {
-            mirroredObject = null;
-            if (mc?.MeshObject == null) return null;
-
-            var mirroredObj = MirrorBranchOps.BuildMirroredMeshObject(
-                mc.MeshObject,
-                MirrorBranchOps.ResolveMirrorAxis(mc),
-                0f,                            // 距離はピボット側が吸収する
-                mc.MirrorMaterialOffset,
-                mc.Name);
             if (mirroredObj == null) return null;
 
             // 行列版を単位行列で呼ぶ理由は実体側と同じ（法線が分岐する頂点の欠落回避）。
@@ -625,8 +622,23 @@ namespace Poly_Ling.HierarchyIO
                 ? (source != null ? source.name : mc.Name) + MirrorBranchSuffix
                 : goName;
 
-            mirroredObject = mirroredObj;
             return mesh;
+        }
+
+        /// <summary>
+        /// ミラー枝用の形状（鏡像化と巻き順の反転を済ませた MeshObject）を作る。
+        /// 距離 0 の理由は BuildGeneratedMirrorMesh の説明のとおり。作れなければ null。
+        /// </summary>
+        private static MeshObject BuildMirroredShape(MeshContext mc)
+        {
+            if (mc?.MeshObject == null) return null;
+
+            return MirrorBranchOps.BuildMirroredMeshObject(
+                mc.MeshObject,
+                MirrorBranchOps.ResolveMirrorAxis(mc),
+                0f,                            // 距離はピボット側が吸収する
+                mc.MirrorMaterialOffset,
+                mc.Name);
         }
 
         /// <summary>
@@ -643,11 +655,33 @@ namespace Poly_Ling.HierarchyIO
         /// 原点CSV未適用（MirrorSide の原点が実体側と同一）なら W == R となり
         /// 補正量は 2(W - d) で従来と一致する。相方が取れない場合も同式にフォールバックする。
         /// 形状自体は MirrorSide が既に反転済みのため、反転や巻き順の変更は行わない。
+        /// 補正量は MirrorSideVertexOffset が求める（MeshObject から直接書く書き出しも同じ量を使う）。
         /// </summary>
-        private static Mesh BuildMirrorSideMesh(MeshContext mc, Mesh source, MeshContext realPeer)
+        private static Mesh BuildMirrorSideMesh(Mesh source, Vector3 offset)
         {
             if (source == null) return null;
 
+            // Vector3 の == は誤差を許すので成分ごとに比べる（0 は MirrorSideVertexOffset が丸めた値）。
+            if (offset.x == 0f && offset.y == 0f && offset.z == 0f) return source;
+
+            var mesh = UnityEngine.Object.Instantiate(source);
+            // 「左腕+」ではなく「右腕」にする。左右対応が付かない名前だけ接尾辞へ落ちる。
+            mesh.name = MirrorNameOps.MakeMirrorName(source.name, MirrorBranchSuffix, null);
+
+            var verts = mesh.vertices;
+            for (int i = 0; i < verts.Length; i++) verts[i] += offset;
+            mesh.vertices = verts;
+
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>
+        /// ミラー側コンテキストの頂点に足す補正量 W − mirror(R)（BuildMirrorSideMesh の説明）。
+        /// 長さの 2 乗が 1e-12 未満なら 0（補正しない）。
+        /// </summary>
+        private static Vector3 MirrorSideVertexOffset(MeshContext mc, MeshContext realPeer)
+        {
             var wm = mc.WorldMatrix;
             var w  = new Vector3(wm.m03, wm.m13, wm.m23);
 
@@ -672,18 +706,7 @@ namespace Poly_Ling.HierarchyIO
 
             Vector3 offset = w - mirrored;
 
-            if (offset.sqrMagnitude < 1e-12f) return source;
-
-            var mesh = UnityEngine.Object.Instantiate(source);
-            // 「左腕+」ではなく「右腕」にする。左右対応が付かない名前だけ接尾辞へ落ちる。
-            mesh.name = MirrorNameOps.MakeMirrorName(source.name, MirrorBranchSuffix, null);
-
-            var verts = mesh.vertices;
-            for (int i = 0; i < verts.Length; i++) verts[i] += offset;
-            mesh.vertices = verts;
-
-            mesh.RecalculateBounds();
-            return mesh;
+            return offset.sqrMagnitude < 1e-12f ? Vector3.zero : offset;
         }
 
         /// <summary>
@@ -953,8 +976,6 @@ namespace Poly_Ling.HierarchyIO
             Transform armatureRoot,
             int index)
         {
-            var smr = PLEditorBridge.I.AddComponent<SkinnedMeshRenderer>(go);
-
             // BoneWeight の bone0-3 は MeshContextList の索引を指す
             // （PMXImporter.ApplyBoneWeightIndexOffset が「既存 MeshContext 数」を
             //   足していることが根拠。ボーン数ではない）。
@@ -977,6 +998,30 @@ namespace Poly_Ling.HierarchyIO
                 bindposes.Add(_opt.UseBindpose ? bmc.BindPose : boneTf.worldToLocalMatrix);
             }
 
+            var materials = BuildMaterials(mc, model);
+
+            // 形状の出どころ。スキンドはミラー枝を通らないので差分の反転は不要。
+            var source = new HierarchyMeshSource
+            {
+                Shape       = mc.MeshObject,
+                IsSkinned   = true,
+                Materials   = (Material[])materials.Clone(),
+                Bones       = boneList.ToArray(),
+                Bindposes   = bindposes.ToArray(),
+                BoneSlotOf  = boneSlotOf,
+                MirrorDelta = false,
+                MirrorAxis  = 1,
+            };
+            _result.MeshSourceOf[go.transform] = source;
+
+            if (!_opt.CreateUnityMeshes)
+            {
+                AppendMorphPlan(model, index, source, go.transform);
+                return;
+            }
+
+            var smr = PLEditorBridge.I.AddComponent<SkinnedMeshRenderer>(go);
+
             // bindposes はメッシュ複製側に設定（共有メッシュを汚さない）。
             var mesh = UnityEngine.Object.Instantiate(unityMesh);
             mesh.name = unityMesh.name;
@@ -985,13 +1030,10 @@ namespace Poly_Ling.HierarchyIO
             RemapBoneWeights(mesh, boneSlotOf, mc.Name);
 
             // マテリアル配列は空サブメッシュ除去と対で扱う（index が連動するため）。
-            var materials = BuildMaterials(mc, model);
             if (_opt.DropEmptySubMeshes) CompactSubMeshes(mesh, ref materials);
 
             // ブレンドシェイプはアセット化より前に載せる（アセットへ焼き込むため）。
-            // スキンドはミラー枝を通らないので差分の反転は不要。
-            AppendMorphTargets(model, index, mc.MeshObject, mesh, go.transform,
-                               mirrorDelta: false, mirrorAxis: 1);
+            AppendMorphTargets(model, index, source, mesh, go.transform);
 
             // 共有アセット化するかどうかは呼び出し側の決定（規約 1）。
             mesh = PersistMesh(mesh);
@@ -1010,23 +1052,44 @@ namespace Poly_Ling.HierarchyIO
         private void AttachStaticMesh(
             GameObject go, MeshContext mc, Mesh unityMesh, ModelContext model,
             bool hasMeshParent, bool mirror = false, MeshContext trsSource = null,
-            int index = -1, MeshObject shapeSource = null, bool mirrorDelta = false)
+            int index = -1, MeshObject shapeSource = null, bool mirrorDelta = false,
+            Vector3 vertexOffset = default)
         {
             var src = trsSource ?? mc;
 
-            var mf = PLEditorBridge.I.AddComponent<MeshFilter>(go);
-            var mr = PLEditorBridge.I.AddComponent<MeshRenderer>(go);
-
-            // マテリアル配列は空サブメッシュ除去と対で扱う（index が連動するため）。
             var materials = BuildMaterials(mc, model);
-            if (_opt.DropEmptySubMeshes) CompactSubMeshes(unityMesh, ref materials);
 
-            // ブレンドシェイプはアセット化より前に載せる（アセットへ焼き込むため）。
-            AppendMorphTargets(model, index, shapeSource ?? mc.MeshObject, unityMesh, go.transform,
-                               mirrorDelta, MirrorBranchOps.ResolveMirrorAxis(mc));
+            // 形状の出どころ（頂点は vertexOffset を足した位置。BuildMirrorSideMesh と同じ量）。
+            var source = new HierarchyMeshSource
+            {
+                Shape        = shapeSource ?? mc.MeshObject,
+                VertexOffset = vertexOffset,
+                IsSkinned    = false,
+                Materials    = (Material[])materials.Clone(),
+                MirrorDelta  = mirrorDelta,
+                MirrorAxis   = MirrorBranchOps.ResolveMirrorAxis(mc),
+            };
+            _result.MeshSourceOf[go.transform] = source;
 
-            // 共有アセット化するかどうかは呼び出し側の決定（規約 1）。
-            mf.sharedMesh = PersistMesh(unityMesh);
+            MeshRenderer mr = null;
+            if (_opt.CreateUnityMeshes)
+            {
+                var mf = PLEditorBridge.I.AddComponent<MeshFilter>(go);
+                mr = PLEditorBridge.I.AddComponent<MeshRenderer>(go);
+
+                // マテリアル配列は空サブメッシュ除去と対で扱う（index が連動するため）。
+                if (_opt.DropEmptySubMeshes) CompactSubMeshes(unityMesh, ref materials);
+
+                // ブレンドシェイプはアセット化より前に載せる（アセットへ焼き込むため）。
+                AppendMorphTargets(model, index, source, unityMesh, go.transform);
+
+                // 共有アセット化するかどうかは呼び出し側の決定（規約 1）。
+                mf.sharedMesh = PersistMesh(unityMesh);
+            }
+            else
+            {
+                AppendMorphPlan(model, index, source, go.transform);
+            }
 
             if (hasMeshParent)
             {
@@ -1063,7 +1126,7 @@ namespace Poly_Ling.HierarchyIO
                 go.transform.localScale = wm.lossyScale;
             }
 
-            mr.sharedMaterials = materials;
+            if (mr != null) mr.sharedMaterials = materials;
         }
 
         /// <summary>
@@ -1086,33 +1149,41 @@ namespace Poly_Ling.HierarchyIO
             int dropped = 0;
 
             for (int i = 0; i < weights.Length; i++)
-            {
-                var w = weights[i];
-
-                // BoneWeight の weight0-3 / boneIndex0-3 はプロパティなので
-                // ref で渡せない（CS0206）。ローカルへ出してから書き戻す。
-                float w0 = w.weight0, w1 = w.weight1, w2 = w.weight2, w3 = w.weight3;
-
-                int i0 = MapSlot(w.boneIndex0, ref w0, boneSlotOf, ref changed, ref dropped);
-                int i1 = MapSlot(w.boneIndex1, ref w1, boneSlotOf, ref changed, ref dropped);
-                int i2 = MapSlot(w.boneIndex2, ref w2, boneSlotOf, ref changed, ref dropped);
-                int i3 = MapSlot(w.boneIndex3, ref w3, boneSlotOf, ref changed, ref dropped);
-
-                w.boneIndex0 = i0; w.weight0 = w0;
-                w.boneIndex1 = i1; w.weight1 = w1;
-                w.boneIndex2 = i2; w.weight2 = w2;
-                w.boneIndex3 = i3; w.weight3 = w3;
-
-                weights[i] = w;
-            }
+                weights[i] = RemapBoneWeight(weights[i], boneSlotOf, ref changed, ref dropped);
 
             if (changed) mesh.boneWeights = weights;
 
             if (dropped > 0)
-                _result.Warn(
-                    $"メッシュ \"{meshName}\" のウェイト {dropped} 件が、出力されなかったボーンを"
-                    + "指していたため重み 0 にしました。");
+                _result.Warn(DroppedWeightsMessage(meshName, dropped));
         }
+
+        /// <summary>
+        /// 1 頂点ぶんのウェイトのボーン索引（MeshContext 索引）を bones 配列の位置へ写す。
+        /// 規則は RemapBoneWeights のとおり（MeshObject から直接書く書き出しも同じ規則で写す）。
+        /// </summary>
+        public static BoneWeight RemapBoneWeight(
+            BoneWeight w, Dictionary<int, int> boneSlotOf, ref bool changed, ref int dropped)
+        {
+            // BoneWeight の weight0-3 / boneIndex0-3 はプロパティなので
+            // ref で渡せない（CS0206）。ローカルへ出してから書き戻す。
+            float w0 = w.weight0, w1 = w.weight1, w2 = w.weight2, w3 = w.weight3;
+
+            int i0 = MapSlot(w.boneIndex0, ref w0, boneSlotOf, ref changed, ref dropped);
+            int i1 = MapSlot(w.boneIndex1, ref w1, boneSlotOf, ref changed, ref dropped);
+            int i2 = MapSlot(w.boneIndex2, ref w2, boneSlotOf, ref changed, ref dropped);
+            int i3 = MapSlot(w.boneIndex3, ref w3, boneSlotOf, ref changed, ref dropped);
+
+            w.boneIndex0 = i0; w.weight0 = w0;
+            w.boneIndex1 = i1; w.weight1 = w1;
+            w.boneIndex2 = i2; w.weight2 = w2;
+            w.boneIndex3 = i3; w.weight3 = w3;
+            return w;
+        }
+
+        /// <summary>出力されなかったボーンを指すウェイトを 0 にしたときの警告文。</summary>
+        public static string DroppedWeightsMessage(string meshName, int dropped)
+            => $"メッシュ \"{meshName}\" のウェイト {dropped} 件が、出力されなかったボーンを"
+             + "指していたため重み 0 にしました。";
 
         /// <summary>索引を bones 配列の位置へ写す。重み 0 のスロットは触らない。</summary>
         private static int MapSlot(
@@ -1138,18 +1209,40 @@ namespace Poly_Ling.HierarchyIO
         /// ExportMorphTargets が false のときは何もしない。
         /// </summary>
         private void AppendMorphTargets(
-            ModelContext model, int index, MeshObject shapeSource, Mesh mesh,
-            Transform rendererTransform, bool mirrorDelta, int mirrorAxis)
+            ModelContext model, int index, HierarchyMeshSource source, Mesh mesh,
+            Transform rendererTransform)
         {
             if (!_opt.ExportMorphTargets) return;
-            if (index < 0 || model == null || shapeSource == null || mesh == null) return;
+            if (index < 0 || model == null || source?.Shape == null || mesh == null) return;
 
             var slots = HierarchyMorphBuilder.Apply(
-                model, index, shapeSource, mesh, rendererTransform,
-                mirrorDelta, mirrorAxis, _result.Warnings);
+                model, index, source.Shape, mesh, rendererTransform,
+                source.MirrorDelta, source.MirrorAxis, _result.Warnings);
 
             if (slots != null && slots.Count > 0)
+            {
                 _result.MorphShapes.AddRange(slots);
+                source.Morphs.AddRange(slots);
+            }
+        }
+
+        /// <summary>
+        /// Unity メッシュを作らないとき（CreateUnityMeshes = false）に、
+        /// 載せるモーフの名前と並びだけを決めて記録する（HierarchyMorphBuilder.Plan）。
+        /// </summary>
+        private void AppendMorphPlan(
+            ModelContext model, int index, HierarchyMeshSource source, Transform rendererTransform)
+        {
+            if (!_opt.ExportMorphTargets) return;
+            if (index < 0 || model == null || source?.Shape == null) return;
+
+            var slots = HierarchyMorphBuilder.Plan(model, index, source.Shape, rendererTransform);
+
+            if (slots != null && slots.Count > 0)
+            {
+                _result.MorphShapes.AddRange(slots);
+                source.Morphs.AddRange(slots);
+            }
         }
 
         /// <summary>共有アセット化フックを通す。未指定なら素通し。</summary>

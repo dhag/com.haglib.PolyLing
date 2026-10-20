@@ -250,12 +250,12 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 | `lookAt`・`lookAtOffsetFromHeadBone` | アーマチュアの子の空オブジェクト「＜アーマチュア名＞_視線」（カスタムプロパティ `polyling_lookat`、表示は矢印）の回転と位置。アクション名「＜クリップ名＞_視線」 |
 | `muscles`・`body`・`bones`（二次骨）・`absentMuscles`・`metadata` ほか | 表さない。読んだファイルを丸ごとアーマチュアのアクションのカスタムプロパティ `polyling_motion`（JSON）に残し、書き出しで戻す |
 
-アーマチュアのアクションには `polyling_frame_rate`（frameRate）・`polyling_frame_start`（0）・`polyling_apply_root`・`polyling_align_legs`（読んだときの選択）も残す。
+アーマチュアのアクションには `polyling_frame_rate`（frameRate）・`polyling_frame_start`（0）・`polyling_apply_root`・`polyling_align_legs`（読んだときの選択）・`polyling_key_times`（読込で骨に打ったキー時刻〔秒〕の JSON 配列。下の「キーの決まり」）も残す。
 
 **割り当て表**（Humanoid 名 → ボーン名）
 
 - アーマチュアのオブジェクトの `polyling_humanoid`（各行が `humanoid`＝空白なしの Humanoid 名と `bone`＝ボーン名）。行は正準骨格の 54 本（`format/humanoid.py` の `CANON_ROWS`＝`CanonSkeleton.cs` の `Table` の写し）。`bone` が空・アーマチュアに無い名前の行は割り当て無し。サイドバー［PolyLing］の表で選び直せる。
-- 「自動で割り当て」：PolyLing の再生（`UnityClipApplier.ResolveNode`）と同じ順。① ボーンの `humanBodyBone`（取り込んだボーンの `polyling_mesh`。先勝ち）② 埋め込みの別名表（`HumanoidBoneMapping.EmbeddedMapping` の写し。別名ごとに大小無視の完全一致 → 部分一致、`FindBoneByAliases` と同じ）③ Humanoid 名そのもの（指は空白ありの名前でも）を ② と同じ照合で。ボーンは PolyLing の索引順（取り込んだボーンの `polyling_index`）に並べて探す。
+- 「自動で割り当て」：PolyLing の再生（`UnityClipApplier.ResolveNode`）と同じ順。① ボーンの `humanBodyBone`（取り込んだボーンの `polyling_mesh`。先勝ち）② 埋め込みの別名表（`HumanoidBoneMapping.EmbeddedMapping` の写し。照合は `FindBoneByAliases`〔`format/humanoid.py` の `find_bone_by_aliases`〕と同じ 2 巡：1 巡目は全別名で大小無視の完全一致、2 巡目は全別名で部分一致〔ボーン名が別名を含む〕。どちらも別名の順に、ボーンの並びの先頭から探して最初に当たったもの。先の別名の部分一致が後の別名の完全一致より先に当たることは無い）③ Humanoid 名そのもの（指は空白ありの名前でも）を ② と同じ照合で。ボーンは PolyLing の索引順（取り込んだボーンの `polyling_index`）に並べて探す。
 - 「VRM アドオンから取り込む」：VRM Add-on for Blender の `armature.data.vrm_addon_extension`。VRM 0.x は `vrm0.humanoid.human_bones` の各要素の `bone`（先頭を大文字にして Humanoid 名）と `node.bone_name`。VRM 1.0 は `vrm1.humanoid.human_bones.<名前>.node.bone_name`（`<名前>` は snake_case、例 `left_upper_arm`）。VRM 1.0 の親指は `thumbMetacarpal`・`thumbProximal`・`thumbDistal` を Unity の `ThumbProximal`・`ThumbIntermediate`・`ThumbDistal` にする。正準骨格にある名前でアーマチュアにあるボーンだけを入れる。読めないか 1 本も無ければボタンは押せない。
 - どちらのボタンも表を作り直す（割り当ての無い行は空になる）。読込・書き出しの時に表が空なら自動で割り当てて表に入れ、警告する。
 
@@ -286,10 +286,11 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 **キーの決まり**
 
-- 読込：骨のキーは、正準骨格にある `bakedBones` の全トラックのキー時刻を合わせたもの。駆動するボーンにはその全時刻にキーを打つ。表情はそのシェイプキーに当たるトラックのキー時刻を合わせたもの、視線は `lookAt` のキー時刻。フレーム = t × frameRate（t = 0 がフレーム 0）、補間は線形（四元数は成分ごとの線形。キーの上では元の値）。接線（`tan`）は使わず線形として読み、警告する。
+- 読込：骨のキーは、正準骨格にある `bakedBones` の全トラックのキー時刻を合わせたもの（祖先のキーで子の Blender の回転が変わるので和集合が要る）。駆動するボーンにはその全時刻にキーを打ち、その時刻の並びをアクションの `polyling_key_times` に残す。表情はそのシェイプキーに当たるトラックのキー時刻を合わせたもの、視線は `lookAt` のキー時刻。フレーム = t × frameRate（t = 0 がフレーム 0）、補間は線形（四元数は成分ごとの線形。キーの上では元の値）。接線（`tan`）は使わず線形として読み、警告する。
 - 読込の「シーンの fps と範囲を合わせる」（既定オン）：fps = frameRate（整数でなければ fps を切り上げ、fps_base = fps ÷ frameRate）、開始フレーム 0、終了フレーム = max(1, ⌈長さ × frameRate⌉)、長さ = max(`duration`, 全キー時刻の最大)。
 - 書き出しの fps は、読み込んだアクションなら `polyling_frame_rate`、そうでなければシーンの fps ÷ fps_base。開始は `polyling_frame_start`（読み込んだものは 0）、そうでなければシーンの開始フレーム。
 - トラックごとに、Blender のキーのフレーム（そのボーンの回転の F カーブ、Hips は位置も）が元のキー時刻と同じ数で 1e-3 フレーム以内、かつ元のキー時刻で作り直した値と元の値の差が許容差のうちなら、元のトラックをそのまま書く。許容差：回転は四元数の成分 2e-5（符号を揃えて）、Hips の位置 1e-5、表情 1e-6、視線 2e-5。
+- 骨のトラックで上に当たらないとき、Blender のキーのフレームが `polyling_key_times`（読込で打った和集合）と同じ数で 1e-3 フレーム以内なら、その全時刻で「Blender から作った値」と「元のトラックをその時刻で読込と同じく評価した値」（線形、回転は Slerp、範囲の外は端の値）を比べ、許容差（上と同じ）のうちなら元のトラックをそのまま書く。トラックごとにキー時刻が違うファイルも、読んでそのまま書けば元に戻る（腰を当てずに読んだ Hips は常に元のまま）。
 - そうでなければ frameRate の格子（t = 0, 1/fps, …）で標本化する。格子の終わり = (アーマチュア・表情を当てるシェイプキー・視線の空の全キーの最大フレーム − 開始) ÷ fps（キーが 1 つも無ければシーンの終了フレーム）、点の数 = round(終わり × fps) + 1。回転は隣のキーと符号を揃える。`preWrapMode`・`postWrapMode` は元のトラックから引き継ぐ。
 - 書く `bakedBones` の並び：元のファイルの順。その後ろに、元に無く割り当てのあるボーンのうちキーのあるもの（Hips は常に）を正準骨格の順で足す。元にあって割り当ての無いトラックはそのまま書く。
 - `bakedBones` を 1 本でも作り直したら、元の `muscles`・`body` は回転と合わないので書かず（`muscles` は空、`body` は無し。元にあれば警告）、`rotationSource` を `"bakedBones"` にする。PolyLing は読込で `bakedBones` からマッスル＋body を焼く。
@@ -298,7 +299,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 **表情・視線の表し方**
 
-- 表情の割り当ては PolyLing と同じ展開（`MotionClipApplier.FindExpression`・`ExpandToVertexMorphs`）。モデルの表情（取り込んだモデルの `morphExpressions`）を名前 → 英語名の順に完全一致で引き、頂点モーフ（type 1）なら `meshEntries`（無ければ `meshIndices` を重み 1）のモーフのシェイプキーへ「値 × 重み」を当てる。グループ（type 0）は `GroupChildren` を辿るが、保存データに `GroupChildren` は無いので何にも当たらない（PolyLing と同じ）。頂点モーフとグループ以外の種類も当てない。
+- 表情の割り当ては PolyLing と同じ展開（`MotionClipApplier.FindExpression`・`ExpandToVertexMorphs`）。モデルの表情（取り込んだモデルの `morphExpressions`）を名前 → 英語名の順に完全一致で引き、頂点モーフ（type 1）とグループ（type 0）は `meshEntries`（無ければ `meshIndices` を重み 1）のモーフのシェイプキーへ「値 × 重み」を当てる。グループは取り込み（PMX・VRM）で子のモーフを重み付きで `meshEntries` に展開して持つので、`groupChildren`（PMX 書き出しの構造用。§7.5）は使わない（PolyLing の再生とモーフのパネルの試し当て〔`MorphPreviewState.BuildMorphBasePairs`〕と同じ）。それ以外の種類は当てない。モーフ → シェイプキーは §7.4 の「シェイプキーの引き方」で引く。
 - 表情の定義に無い名前は、同じ名前のシェイプキー（モデルのメッシュのどれでも）へ重み 1 で当てる。当たるものが無い表情は警告する。1 つのシェイプキーに複数の表情が当たれば値を足し、警告する。値がスライダーの範囲を外れれば範囲を広げる（±10 まで）。
 - 読込のたびに、そのモデルのシェイプキーに付いていたアクションを外す（書き出しが今のクリップの表情だけを読むように）。
 - 書き出し：元の表情トラックは、当たるシェイプキー（重みが 0 でない最初のもの）の値 ÷ 重み（キーの決まりは上と同じ。当たるシェイプキーが無ければ元のトラックのまま）。元に無くアクションで動かしたシェイプキーは、そのモーフだけを重み 1 で持つ頂点モーフの表情があればその名前、無ければシェイプキー名のトラックにする。新しく足すトラックは `name` と `keys` だけを書く（`provider`・`category` は書かない。PolyLing は provider で引かない）。
@@ -364,13 +365,14 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 | 場所 | 演算子 | 選べるもの |
 |---|---|---|
-| ［ファイル > インポート > PolyLing プロジェクト (.mfproj/.csv)］ | `import_scene.polyling_project` | `.mfproj`、CSV フォルダの `project.csv`（任意の名前）か `model.csv` |
+| ［ファイル > インポート > PolyLing プロジェクト (.mfproj/.csv)］ | `import_scene.polyling_project` | `.mfproj`、CSV フォルダの `project.csv`（任意の名前）か `model.csv`。「Unity プロジェクトのフォルダ」（既定は空＝自動。下の「テクスチャ」） |
 | ［ファイル > エクスポート > PolyLing プロジェクト (.mfproj/.csv)］ | `export_scene.polyling_project` | 拡張子 `.mfproj` なら JSON、`.csv` なら CSV フォルダ（どちらでもなければ `.mfproj` を付ける）。「名前で参照（CSV）」（既定オフ。読んだ CSV が名前モードのモデルは常に名前） |
 | ［ファイル > インポート > PolyLing モーション (.plmotion.json)］ | `import_anim.polyling_motion` | 「腰の回転と位置も当てる」（既定オン）・「脚も T ポーズに合わせる」（既定オフ）・「シーンの fps と範囲を合わせる」（既定オン） |
 | ［ファイル > エクスポート > PolyLing モーション (.plmotion.json)］ | `export_anim.polyling_motion` | 名前が `.json` で終わらなければ `.plmotion.json` を付ける |
 | 3D ビューのサイドバーのタブ［PolyLing］ | | 「モーションを読む」「モーションを書く」、「Humanoid の割り当て」の「自動で割り当て」「VRM アドオンから取り込む」と表（§5.1） |
 
-- プロジェクトの書き出しは、選んだオブジェクトが入っている取り込み済みのプロジェクト（無ければ最初のもの）を書く。CSV は指定した名前のプロジェクトファイルと、同じフォルダにモデルごとのフォルダを作る。CSV のテクスチャは、読んだ CSV の `textures` を写す。`.mfproj` から読んだものは、マテリアルのパスで見つかる画像を写す。
+- プロジェクトの書き出しは、選んだオブジェクトが入っている取り込み済みのプロジェクト（無ければ最初のもの）を書く。CSV は指定した名前のプロジェクトファイルと、同じフォルダにモデルごとのフォルダを作る。CSV のテクスチャは、読んだ CSV の `textures` を写す。`.mfproj` から読んだものは、マテリアルのパスで見つかる画像を写す（同じファイル名は最初の 1 枚）。
+- テクスチャ（`.mfproj` から読んだとき）：マテリアルのパス（とこれまでの候補）で見つからなければ、相対パスを Unity プロジェクトのフォルダを根にして探す（C# の `ModelTextureTransfer.ResolveFullPath` が `Assets/…` をプロジェクトの根から探すのと同じ）。Unity プロジェクトのフォルダは、取り込みの設定「Unity プロジェクトのフォルダ」に入れたもの。空なら `.mfproj` のフォルダから上へたどって `Assets` と `ProjectSettings` を両方持つ最初のフォルダ（`format/__init__.py` の `find_unity_project_root`。無ければ使わない）。読込はこれを各モデルの `_csvUnityProjectRoot` に入れ（`_csv` で始まるので `.mfproj` には書かない）、CSV の `textures` の写しと Blender のマテリアルの画像の探索（`blender/materials.py` の `resolve_texture`。相対パスのとき）の両方で使う。CSV から読んだときは使わない。
 
 ### 7.2 Blender への置き方（取り込み）
 
@@ -381,7 +383,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 | Bone・Morph・Group・Helper・RigidBody・RigidBodyJoint・WorkAxis 以外の種類（Mesh・BakedMirror・MirrorSide など）で頂点か面を持つもの | メッシュのオブジェクト | `polyling_mesh`（vertices・faces を除いた MeshDTO）ほか下の控え |
 | Group・Helper、頂点も面も無いメッシュ | 空オブジェクト | `polyling_mesh`（MeshDTO 丸ごと） |
 | ボーン（Bone） | モデルごとに 1 つのアーマチュア「＜モデル名＞_Armature」のボーン | `polyling_mesh`（丸ごと）、`polyling_local_rotation`（元のローカル回転）、`polyling_rest_matrix`（取り込み時のレスト） |
-| モーフ（Morph） | 親メッシュのシェイプキー（親は `MorphPreviewState.FindBaseMeshIndex` と同じ規則。見つからなければ独立したメッシュ） | 親の `polyling_morphs`（シェイプキー名・索引・vertices と faces を除いた MeshDTO・控え） |
+| モーフ（Morph） | 親メッシュのシェイプキー（親は `MorphPreviewState.FindBaseMeshIndex` と同じ規則。見つからなければ独立したメッシュ） | 親の `polyling_morphs`（シェイプキー名 `shapeKey`・`key_blocks` の中の位置 `keyOrder`・索引・vertices と faces を除いた MeshDTO・控え） |
 | マテリアル | Principled BSDF のマテリアル（使う番号だけをスロットに） | `polyling_material_index`、`polyling_material`（MaterialReferenceDTO の JSON）。オブジェクトの `polyling_slot_mi`（スロット → 番号） |
 | RigidBody・RigidBodyJoint・WorkAxis | 表さない | モデルの `polyling_raw_meshes` |
 
@@ -397,7 +399,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 - 座標：Blender (x, y, z) ⇔ PolyLing (x, z, y)。行列は `M_bl = C·M_pl·C`（C は y と z の入れ替え。自分自身が逆）。
 - PolyLing のローカル行列は TRS(position, Quaternion.Euler(rotation), scale)（`BoneTransform.cs` の `TransformMatrix`）。bindPose は 16 値・行優先。
 - MeshFilter 系（skinKind 0）と空：頂点はローカル。`matrix_basis` = C·ローカル·C、親とのずれは `matrix_parent_inverse` で吸収し、ワールドを PolyLing の WorldMatrix（生成ミラー側は S·H·S）に合わせる。
-- Skinned 系（skinKind 1。skinKind が無ければウェイトを持つ頂点があるもの）：頂点はバインド（ワールド）空間のまま。単位行列でアーマチュアの子にし、Armature 修飾子を付ける。
+- Skinned 系（skinKind 1。skinKind が無ければウェイトを持つ頂点があるもの）：頂点はバインド（ワールド）空間のまま。単位行列でアーマチュアの子にし、Armature 修飾子を付ける。ウェイトの無い頂点は動かさずに置く。PolyLing はこの頂点を、通常表示ではメッシュ自身の SkinningMatrix（WorldMatrix·BindPose。描画と編集が共に使う `MeshContext.TransformRowMatrix`）で描くが、Armature 修飾子にはその頂点だけにメッシュの行列を掛ける表し方が無い。そのため、ウェイトの無い頂点があり WorldMatrix·bindPose が単位（要素の差 1e-5 以内）でないメッシュは、取り込みで警告する。
 - ボーン：レストは保存された bindPose の逆（null は単位）。向きは子の頭の平均へ（見た目だけ）。WorldMatrix·bindPose が単位でないボーンは、ポーズ行列 = C·(WorldMatrix·bindPose)·C·レスト になるようにポーズを付ける（PolyLing の SkinningMatrix = WorldMatrix·BindPose、`UnifiedBufferManager_Update.cs`）。
 
 ### 7.4 書き出し（Blender → `.mfproj`・CSV）
@@ -419,11 +421,18 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 | UV | レイヤー「UVMap」の角の値。頂点ごとの並びは `pl_uvi` の番号で元へ戻す（番号の食い違い・欠けがあれば出てきた順に振り直す） |
 | 法線 | 角の `pl_normal`。ただし「動いた頂点」（位置が `pl_co` と違う）と、それと面を共有する頂点の角は Blender が計算した法線（警告）。並びは `pl_ni` で元へ戻す |
 | ウェイト `bw` | 頂点グループの中身が元の `bw` と同じなら元の `bw`。違えば頂点グループから（重みの大きい順に 4 つ、4 つを超えたら 4 つで正規化）。ボーンに当たらない頂点グループは書かない（警告） |
-| モーフ | シェイプキーの差分（基準キーとの差）を basePositions に足した位置。ほかの欄は親の頂点の写し＋控え |
+| モーフ | シェイプキーの差分（基準キーとの差）を basePositions に足した位置。ほかの欄は親の頂点の写し＋控え。シェイプキーは下の「シェイプキーの引き方」で引く |
 | 名前 | オブジェクト・ボーンの名前（Blender が付けた「.001」などは元の名前とみなす） |
 | 表示 | `hide_viewport` → `isVisible` |
 | MeshFilter 系・空の姿勢 | ローカル = C·`matrix_basis`·C。変わっていれば `exportSettingsDTO` の position・rotation（度）・scale を書き換え、useLocalTransform を真にする（警告） |
 | ボーン | レストが取り込み時と違えば bindPose を作り直す（取り込みで向きを子へ向けた分を戻す）。ポーズから WorldMatrix（ポーズ行列 = C·(WorldMatrix·bindPose)·C·レスト）を戻し、ローカル = hierarchy[親]⁻¹·WorldMatrix |
+
+**シェイプキーの引き方**（`blender/meshread.py` の `morph_shape_keys`。モーフの書き出し `exporter.export_morphs` と、モーションの表情の割り当て・書き出し〔`motion.expression_targets`・`_expression_name_for`〕が使う）
+
+- シェイプキー（KeyBlock）はカスタムプロパティを持てないので、結び付けは名前と並び順だけで行う。
+- 名前（`polyling_morphs` の `shapeKey`）で引く。
+- 無ければ、今のシェイプキーの数が取り込み時（基準キー＋モーフの数）と同じときに限り、`keyOrder` の位置にあるシェイプキーを、その名前がどのモーフの `shapeKey` でもなければ名前を変えたものとして使う。書き出しは警告「「＜オブジェクト名＞」：シェイプキー ＜旧名＞ → ＜新名＞ を名前の変更として扱った」を出す。
+- それでも無ければ見つからないものとし、モーフは差分 0 で書いて警告、表情は当てない。
 
 **頂点数・面のつながりが変わったメッシュ**（`polyling_topology` と違うもの）
 
@@ -434,11 +443,23 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 - PolyLing 由来でないオブジェクト・ボーン（警告）。
 - 親子の付け替え（`parentIndex` は保持した値）。
-- シェイプキーの名前の変更（モーフの名前は保持した値。名前を変えたシェイプキーは見つからず、そのモーフは差分 0 で書き、警告する）。
+- シェイプキーの名前の変更（モーフの名前は保持した値。名前を変えたシェイプキーは上の「シェイプキーの引き方」で引き、形は書く）。
 - マテリアル自身の設定の変更（`materialReferences` は保持した値。面に当てるマテリアルの付け替えは書く）。
 - カスタム法線だけの編集。
 - 生成ミラー側だけの移動（PolyLing では実体側から決まる。`ModelContext.MeshList.cs` の `SyncDerivedMirrorTransforms`。警告）。
 - Blender で消した要素は、番号がずれないように空の要素で埋めて警告する。
+
+### 7.5 CSV フォルダの規則（C# と Python で同じ）
+
+正本は C#（`FolderSerializer/CsvModelSerializer*.cs`・`CsvMeshSerializer*.cs`）。Python（`format/csv_project.py`・`format/csv_mesh.py`）は同じ規則で読み書きする。決定の経緯は `PolyLing_Blender不具合修正計画.md`。
+
+- **欄の分け方**：行末が `,` の行は、最後に空の欄が 1 つある（C# の `Split`）。`materialprops.csv` のテクスチャのパスが空の行も 10 欄で読む。Python の `split_line` は行末の空欄を作らないので、9 欄以上を読む（結果は同じ）。
+- **中身が無いファイルは消す**：`humanoid.export.csv`・`morphgroups.csv`・`meshselsets.csv`・`objectgroups.csv`・`mirrorpairs.csv`・`editorstate.csv`・`workplane.csv`・`tposebackup.csv`・`springbonegroups.csv` の 9 ファイルは、書く中身が無ければ古いファイルを消す（読込はファイルがあれば読むので、残すと同じフォルダへ保存し直したときに古い中身が戻る）。C# の `editorstate.csv`・`workplane.csv` は、呼び出し元が渡さないときも消す。
+- **`tposebackup.csv`**：「ファイルがある ⇔ T ポーズの控え（TPoseBackup）がある」（`.mfproj` の `tPoseBackup` と同じ）。書きは控えが無ければ消し、あれば中身が空でも書く（見出し行だけになる）。読みはファイルがあれば中身によらず控えにする（空でも null にしない）。
+- **`springbonegroups.csv`**：1 行に 1 つのコライダーグループ名。並びが番号（ボーンの `grp` はこの番号）。空の名前は `""`（引用した空文字）と書く（空行は読込で飛ばされ、後ろの番号がずれるため）。`""` は空の欄 1 つとして読む。
+- **`morphgroups.csv`**：行は `名前,英語名,panel,type,エントリの数,<メッシュ>:<重み>…`。グループの子（`MorphExpression.GroupChildren`）があれば、エントリの後ろに `,<子の数>,<名前>:<重み>…` を足す（子 1 つが 1 欄。`名前:重み` を 1 つの値として CSV の引用の決まりで書く。名前と重みは最後の `:` で分ける）。子が無ければ何も足さない（以前と同じ行）。子の欄の無い行は子 0 件として読む。
+- **グループの子の置き場所**：`.mfproj` は `MorphExpressionDTO.groupChildren`（`[{"name":…, "weight":…}]`。子が無ければ欄ごと省く）、転送（PLRM）は v10 で表情ごとに子の一覧、CSV は上の `morphgroups.csv`。`groupChildren` は PMX 書き出しがグループモーフを作るのに使う。表情の再生・パネルの試し当て・Blender の表情の割り当て（§5.1）は `meshEntries` を使う。
+- **`mirrorGeometryDerived`**（メッシュの行）：索引モードでも名前モードでも書く（参照ではない値。読みは両方のモードで読む）。
 
 ---
 

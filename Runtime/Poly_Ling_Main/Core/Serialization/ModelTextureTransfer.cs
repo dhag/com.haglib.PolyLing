@@ -5,7 +5,7 @@
 // 【使う所】
 //   ・CSV（プロジェクトファイル）の textures フォルダの保存・読み込み（CsvModelSerializer.Texture.cs）
 //   ・リモートのヒエラルキー送信で ModelDTO.embeddedTextures に画像を載せる／受け側で戻す
-//   ・FBX 書き出し（FbxExporterImpl）。材質ごとにテクスチャをつなぐため Entry.Uses を使う
+//   ・FBX 書き出し（FbxModelWriter）。材質ごとにテクスチャをつなぐため Entry.Uses を使う
 //   どれも同じ集め方・同じ対応づけ（MaterialData のパスのファイル名で照合）を使う。
 //   以前は CsvModelSerializer.Texture.cs にフォルダ直書きで実装されていたものを、中身を変えずに切り出した。
 //

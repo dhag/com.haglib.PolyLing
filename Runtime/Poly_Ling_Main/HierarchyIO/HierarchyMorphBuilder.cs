@@ -144,9 +144,7 @@ namespace Poly_Ling.HierarchyIO
                     if (delta == null) continue;
                 }
 
-                string shapeName = HierarchyBuilder.MakeUniqueName(
-                    string.IsNullOrEmpty(morphCtx.Name) ? $"Morph_{morphIndex}" : morphCtx.Name,
-                    usedNames);
+                string shapeName = ShapeNameOf(morphCtx, morphIndex, usedNames);
 
                 int shapeIndex = unityMesh.blendShapeCount;
                 unityMesh.AddBlendShapeFrame(shapeName, FrameWeight, delta, null, null);
@@ -161,6 +159,73 @@ namespace Poly_Ling.HierarchyIO
             }
 
             return slots;
+        }
+
+        /// <summary>
+        /// Unity メッシュを作らずに、載せるモーフの名前と並びだけを決める
+        /// （HierarchyBuildOptions.CreateUnityMeshes = false。MeshObject から直接書く書き出し用）。
+        /// 名前・並び・飛ばす条件は Apply と同じ：
+        ///   ・形状に表示中の 3 頂点以上の面が無い（Apply では展開頂点 0）なら何も載せない。
+        ///   ・差分があるのに 1 つも頂点番号の範囲に入らないモーフは載せない（Apply の BuildDelta が null）。
+        ///   ・差分 0 件のモーフは載せる。
+        /// Apply だけにある「展開頂点数の不一致」は Unity メッシュへ展開し直すことで起きるもので、ここには無い。
+        /// ShapeIndex は並びの番号。
+        /// </summary>
+        public static List<MorphShapeSlot> Plan(
+            ModelContext model, int baseIndex, MeshObject shapeSource, Transform rendererTransform)
+        {
+            var slots = new List<MorphShapeSlot>();
+            if (model == null || shapeSource == null) return slots;
+
+            var morphIndices = CollectMorphIndices(model, baseIndex);
+            if (morphIndices.Count == 0) return slots;
+
+            if (!HasDrawableFace(shapeSource)) return slots;
+
+            int vertexCount = shapeSource.Vertices?.Count ?? 0;
+            var usedNames = new HashSet<string>();
+
+            foreach (int morphIndex in morphIndices)
+            {
+                var morphCtx = model.GetMeshContext(morphIndex);
+                if (morphCtx == null) continue;
+
+                var offsets = morphCtx.GetMorphOffsets();
+                if (offsets != null && offsets.Count > 0)
+                {
+                    bool any = false;
+                    foreach (var (vertexIndex, _) in offsets)
+                        if (vertexIndex >= 0 && vertexIndex < vertexCount) { any = true; break; }
+                    if (!any) continue;
+                }
+
+                slots.Add(new MorphShapeSlot
+                {
+                    MorphContextIndex = morphIndex,
+                    Renderer          = rendererTransform,
+                    ShapeIndex        = slots.Count,
+                    ShapeName         = ShapeNameOf(morphCtx, morphIndex, usedNames),
+                });
+            }
+
+            return slots;
+        }
+
+        /// <summary>ブレンドシェイプ名（モーフ名。同じメッシュ内で重なれば「_n」）。</summary>
+        private static string ShapeNameOf(MeshContext morphCtx, int morphIndex, HashSet<string> usedNames)
+            => HierarchyBuilder.MakeUniqueName(
+                string.IsNullOrEmpty(morphCtx.Name) ? $"Morph_{morphIndex}" : morphCtx.Name,
+                usedNames);
+
+        /// <summary>
+        /// ToUnityMesh が面を積む条件（3 頂点以上・表示中。MeshBridgeDefault.ToUnityMesh）を満たす面があるか。
+        /// </summary>
+        private static bool HasDrawableFace(MeshObject mo)
+        {
+            if (mo?.Faces == null || mo.Vertices == null || mo.Vertices.Count == 0) return false;
+            foreach (var f in mo.Faces)
+                if (f != null && f.VertexCount >= 3 && !f.IsHidden) return true;
+            return false;
         }
 
         /// <summary>

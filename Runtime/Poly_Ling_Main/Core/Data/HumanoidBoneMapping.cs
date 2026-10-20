@@ -389,7 +389,8 @@ namespace Poly_Ling.Data
         /// <summary>
         /// エイリアスリストを使って候補名リストからあいまい検索
         /// AvatarCreatorPanel と HumanoidBoneMapping で共通使用
-        /// 優先度: 完全一致 → 候補名がエイリアスを含む → エイリアスが候補名を含む
+        /// 優先度（2 巡）: 全エイリアスで完全一致（大小無視）→ 全エイリアスで部分一致（候補名がエイリアスを含む。大小無視）。
+        /// エイリアスが候補名を含む向きは見ない。各巡ともエイリアスの順に、候補の先頭から探して最初に当たったもの
         /// </summary>
         /// <param name="candidateNames">検索対象の名前リスト</param>
         /// <param name="aliases">エイリアスリスト（優先度順）</param>
