@@ -8,9 +8,9 @@ FBX のモデルとモーションを読み書きする。Editor とビルド版
 | 向き | 実装 | 理由 |
 |---|---|---|
 | 書き出し | 自前（C#、PolyLing.Runtime。段 7） | `MeshObject` から多角形・制御点・疎なモーフ差分を直接書くため（Unity メッシュの三角形からの組み直しをなくす）。FBX SDK への依存（パッケージ・`FBXSDK_RUNTIME`・`UnityFbxSdkNative.dll`）もなくなる |
-| 読み込み | ufbx（C、単一ソース、MIT またはパブリックドメイン）を `plufbx.dll` にして P/Invoke | FBX SDK の C# バインディング（`com.autodesk.fbx`）は C# でダウンキャストできず、スキン（`FbxDeformer` → `FbxSkinDeformer`）を読めない。現在以外のテイク（`FbxAnimStack`）も型付きで辿れない |
+| 読み込み | 自前（C#、PolyLing.Runtime。段 8・段 9）。FBX 6.x・7.x のバイナリ（ビッグエンディアンも）と ASCII。式は ufbx 0.23.1 を移したもの | ネイティブ DLL（`plufbx.dll`）をなくす。5.x 以前は「未対応の版」として止める |
 
-段 1〜6 の書き出しは FBX SDK（`com.autodesk.fbx` 5.1.3）で作り、段 7 で自前に置き換えた。§5 の段 1〜6 の結果はその当時の記録。
+段 1〜6 の書き出しは FBX SDK（`com.autodesk.fbx` 5.1.3）で作り、段 7 で自前に置き換えた。段 4〜7 の読み込みは ufbx（`plufbx.dll` への P/Invoke）で、段 8 で自前に置き換えた。§5 の段 1〜7 の結果はその当時の記録。
 
 ## 2. 構成
 
@@ -21,12 +21,13 @@ FBX のモデルとモーションを読み書きする。Editor とビルド版
 | `Runtime/Poly_Ling_Main/FBX/FbxModelWriter.cs` | `HierarchyBuildResult`（Transform 階層と `MeshSourceOf`）とモーションの標本から FBX のノード木を組む。規則の正本は冒頭 |
 | `Runtime/Poly_Ling_Main/FBX/FbxNodeTree.cs`・`FbxBinaryWriter.cs`・`FbxAsciiWriter.cs` | ノード木と、FBX 7.4 バイナリ・ASCII への書き出し |
 | `Runtime/Poly_Ling_Main/HierarchyIO/HierarchyMeshSource.cs` | 描画ノードごとの形状の出どころ（`HierarchyBuildResult.MeshSourceOf`） |
-| `Runtime/Poly_Ling_Main/FBX/UfbxNative.cs` | `plufbx.dll` への P/Invoke。PolyLing.Runtime から直接呼ぶ |
-| `Runtime/Plugins/x86_64/plufbx.dll` | ufbx の DLL（Editor と Win64） |
-| `Native~/ufbx/` | `ufbx.c`・`ufbx.h`（0.23.1）・`plufbx.c`（C の口）・`build_msvc.bat`・`LICENSE_ufbx.txt`。`~` 付きなので Unity は取り込まない |
+| `Runtime/Poly_Ling_Main/FBX/FbxScene.cs` | 読み込みの口（以前の `UfbxScene` と同じ口・同じ値）。使うのは `FbxImporter`・`FbxMotionReader`・`FbxNodeTable` |
+| `Runtime/Poly_Ling_Main/FBX/FbxBinaryReader.cs`・`FbxAsciiReader.cs` | FBX 6.x・7.x のバイナリ・ASCII → `FbxNode` の木（書き出しと同じ型） |
+| `Runtime/Poly_Ling_Main/FBX/FbxSceneReader.cs`・`FbxSceneModel.cs` | 木 → シーンの表（ノード・メッシュ・スキン・ブレンドシェイプ・材質・テクスチャ・ポーズ・テイク）。座標・単位の変換、法線の生成 |
+| `Runtime/Poly_Ling_Main/FBX/FbxTransformEval.cs`・`FbxMath.cs` | ノードの変換と継承、曲線・レイヤの評価、ブレンドの重み。倍精度 |
+| `Runtime/Poly_Ling_Main/FBX/LICENSE_ufbx.txt` | 式の出どころの ufbx のライセンス（MIT またはパブリックドメイン） |
 
-- ufbx の構造体は C# へ直接渡さない。`plufbx.c` が平らな関数（数・配列の写し）にして公開する。
-- 依存するパッケージは無い。ビルド版の Scripting Define Symbols も要らない。
+- 依存するパッケージもネイティブ DLL も無い。ビルド版の Scripting Define Symbols も要らない。
 
 ## 3. 段
 
@@ -207,7 +208,10 @@ FBX のモデルとモーションを読み書きする。Editor とビルド版
 
 ## 6. 残件
 
-- `build_msvc.bat`（Visual Studio 2022 で `plufbx.dll` を作り直す）は未実行。段 4 の DLL は zig cc で作った（段 4 の表）。
+- （段 8 で不要）`plufbx.dll` と `build_msvc.bat` は撤去した。
+- （段 9 で対応）FBX 6.x。5.x 以前は読めない。
+- ufbx と値が違うもの（段 9 の比較で見つけたもの。6.x・7.x 共通）：3ds Max の OSL・シェーダーグラフのテクスチャのファイル名（`max_texture_mapping`・`max_openpbr_material`・`max_shadergraph`）、Audio、Thumbnail、不正な UTF-8 の名前の区別（6.x は名前が ID なので、別の不正バイトの名前が同じ ID になる）、ufbx がわざと失敗させる壊れたファイル（入れ子の深さ・NURBS の次数のあふれなど）を読めてしまうこと。
+- 読み込みの時間は ufbx の約 5 倍（20 MB の 0ちゃんH で 0.85 秒、ufbx 0.16 秒）。アニメーションの評価は約 4 倍（段 8 の結果）。
 - モーションだけの FBX（メッシュもバインドポーズも無い。例 `Victory-anim1.fbx`）では、レストがノードの既定の変換になり、T ポーズとは限らない（`Victory-anim1.fbx` は 0 フレーム目の腕を下ろした姿勢）。
   T ポーズ整列 A は腕・脚の向きしか直さないので、手首などの向きがずれる。BVH の読み込みも同じ前提（OFFSET の姿勢をレストにする）。
   → レスト用の FBX（`FbxRestPath`）を足した（段 5 の結果）。試し再生（`motionClip` の load）とモーションパネルにも渡す口を足した（段 6）。
@@ -389,3 +393,146 @@ FBX のモデルとモーションを読み書きする。Editor とビルド版
 - 検証：
   - ufbx でスキンを再計算した位置（Σ w · bind_to_world · geometry_to_bone · p）とバインドの位置の差：0ちゃんH 1.2e-7 m、AちゃんH 1.2e-7 m、`DefaultMale` 2.5e-7 m（修正前の 0ちゃんH は 1.744 m。旧 SDK の AちゃんH は 1.2e-7 m）。
   - Unity の取り込み：ボーン · bindpose とメッシュのワールドの差は 0ちゃんH・AちゃんH 3.6e-7、`DefaultMale` 1.8e-5。単位行列の bindpose は 0。正面の描画で手足の伸びが無いことを見た。
+
+## 8. 段 8：ufbx を使わない読み込み（計画 2026-10-20・実施 2026-10-20。結果は 8.7）
+
+### 8.1 目的と範囲
+
+- 読み込みから ufbx（`plufbx.dll`）を外し、C#（PolyLing.Runtime）で読む。
+- 対象は FBX 7.x（7100〜7700）のバイナリ（リトルエンディアン、32/64 ビットの位置）と ASCII。6.x 以前は「未対応の版」として理由を返して止める。
+  プロジェクト内の FBX 132 本（Assets・Packages・Library/PackageCache・SandBox・データとツール）の内訳：バイナリ 7400 が 59、7500 が 40、7700 が 30、ASCII 7400・7700 が各 1、
+  6.x は `BanyanTree.fbx`（AI Navigation のサンプル、バイナリ・ビッグエンディアン 6000）の 1 本だけ。
+
+### 8.2 今の作りの根拠（コード）
+
+| 箇所 | 中身 |
+|---|---|
+| `UfbxNative.cs` の `UfbxScene` | 読み込みの口はすべてここ。使うのは `FbxImporter`・`FbxMotionReader`・`FbxNodeTable` |
+| `plufbx.c` `plufbx_load_memory` | 右手系・Y 上・単位 m（`UFBX_SPACE_CONVERSION_MODIFY_GEOMETRY`）、`generate_missing_normals`、元のパスでテクスチャの相対パスを解決 |
+| `plufbx.c` `explicit_bind` | 明示のバインド：クラスタのリンク行列 → バインドポーズの順 |
+| `plufbx.c` `plufbx_mesh_*` | 先頭スキンのクラスタ（geometry_to_bone・bind_to_world）、ウェイト（重い順）、ブレンドシェイプは target_shape（無ければ最後のキー） |
+| `plufbx.c` `plufbx_material_info` / `texture_*` | Lambert・Phong の値、テクスチャ（LayeredTexture は先頭のファイル）、埋め込み（Texture か Video の Content）、Scaling・Translation |
+| `plufbx.c` `plufbx_anim_sample` | 全ノードが継承 NORMAL なら局所変換を親から掛ける、そうでなければ `ufbx_evaluate_scene` |
+| `PLFbxBridge.cs`、`…CreateCommands.FileIO.cs` 453 行、`PlayerImportSubPanel.cs` 355・1001 行 | `UfbxNative.TryGetVersion` で DLL の有無を確かめる |
+
+### 8.3 構成
+
+- `UfbxScene` と同じ口の `FbxScene` を作り、呼び出し側（`FbxImporter`・`FbxMotionReader`・`FbxNodeTable`）は型の名前だけ替える。
+  `NodeInfo.AttribType` は ufbx の `ufbx_element_type` の値（`FbxNodeTable` が 0 と 6 を見る）なので、同じ値を返すか、`FbxNodeTable` を新しい列挙に合わせる（着手時に決めて記す）。
+- 規則は ufbx の該当処理を読んで同じ式にし、各ファイルの冒頭に ufbx のどこと同じかを書く。
+
+新しいファイル（`Runtime/Poly_Ling_Main/FBX/`）
+
+| ファイル | 中身 |
+|---|---|
+| `FbxBinaryReader.cs` | バイナリ 7.x → `FbxNode` の木（書き出しと同じ型）。zlib の配列は `DeflateStream` |
+| `FbxAsciiReader.cs` | ASCII 7.x → 同じ木。埋め込み画像（Content）は base64 |
+| `FbxSceneReader.cs` | Objects・Connections（OO・OP）・Definitions の既定値・GlobalSettings → ノード・メッシュ・スキン・ブレンドシェイプ・材質・テクスチャ・Video・Pose・テイクの表 |
+| `FbxTransformEval.cs` | ノードのローカル変換（移動・回転・拡大のオフセットとピボット、事前・事後回転、回転順、ジオメトリ変換）、継承の種類、座標系・単位の変換 |
+| `FbxMeshReader.cs` | レイヤ要素（法線・UV・材質）の対応づけ（ByPolygonVertex・ByControlPoint・ByPolygon・AllSame）と参照（Direct・IndexToDirect）、法線の生成、スキン、ブレンドシェイプ |
+| `FbxAnimEval.cs` | 曲線の評価（定数・線形・3 次。重み付き接線を含む）、レイヤの合成、DeformPercent、テイクの範囲、fps |
+| `FbxScene.cs` | `UfbxScene` と同じ口 |
+
+撤去するもの
+
+- `UfbxNative.cs`、`Runtime/Plugins/x86_64/plufbx.dll`（と `.meta`）、`Native~/ufbx/`
+- DLL の有無の確認 3 か所。`PLFbxBridge.Describe` は「書き出し PolyLing / 読み込み PolyLing」
+- §1・§2 の ufbx の記述
+
+### 8.4 進め方
+
+1. ufbx の該当処理を読み、規則（座標・単位の変換、ノードの変換と継承、レイヤ要素、法線の生成、クラスタの補い、ブレンドシェイプ、材質・テクスチャの解決、テイクの範囲と fps、曲線とレイヤ）を 8.5 に書き出す。
+2. 読み取り（バイナリ・ASCII）→ シーンの表 → `FbxScene` の順に作る。この間 ufbx は残す。
+3. 新旧の比較（8.6）が通ったら呼び出し側を `FbxScene` に替え、ufbx を撤去する。
+
+### 8.5 規則
+
+正本は各ファイルの冒頭（ufbx 0.23.1 の `ufbx.c` の関数名と行番号を書いてある）。要点：
+
+| 項目 | 規則 |
+|---|---|
+| 読み込みの設定 | ufbx の `plufbx_load_memory` と同じ：右手系・Y 上・前 +Z・単位 m、`UFBX_SPACE_CONVERSION_MODIFY_GEOMETRY`、`generate_missing_normals`、パス区切り `\`、倍精度 |
+| テンプレート | Definitions の型が合う最初のテンプレート。Material・Model・AnimationStack・AnimationLayer 以外はサブ型が違えば使わない |
+| Properties70 | 整数・実数 4 つまで・文字列。同名は後のものが勝つ |
+| つなぎ | 要素ごとの Dst/Src を (DstProp, SrcProp) で安定ソート。根につながるノード以外の要素は捨てる |
+| ノード | 並びは（深さ、親の要素番号、要素番号）。InheritType 0 → 成分ごと、2 → 親の拡大を無視。RotationActive が事前・事後回転と回転順を有効にする |
+| MODIFY_GEOMETRY | 深さ 1 以下のノードに根の回転を事前回転として掛け、移動に根の拡大を掛ける。頂点とブレンドの差分も拡大 |
+| クラスタ | bind_to_world = W·TransformLink（移動 × 拡大）。mesh_node_to_bone が無ければ bind⁻¹·ノードのワールド。geometry_to_bone はジオメトリ変換を含む |
+| メッシュの層 | ByPolygonVertex・ByVertex・ByPolygon・AllSame。ReferenceInformationType は見ない。範囲外の索引は丸める。法線の生成は位置の同じ角を束ね、平滑化の層が無ければ平ら |
+| 材質・テクスチャ | ufbx の材質の表と update_factor。テクスチャのファイル名は relative_root（DocumentUrl からの相対）で解決 |
+| 曲線 | 定数・線形・3 次（自動・TCB の接線、重み）、外挿、ベジェはニュートン法。時間は 1 秒 = 46186158000 |
+| レイヤ | 加算・ブレンド・上書き。評価したプロパティで UpdateNode を通す |
+
+### 8.6 検証
+
+- 新旧の比較：一時スクリプトで ufbx と `FbxScene` に同じファイルを読ませ、口が返す値を全部比べる（ノードは名前で対応づける）。
+  対象は 8.1 の 7.x の 131 本。比べる値は、ノードのワールド・バインド・ジオメトリ変換、メッシュの点・面・角・法線・UV・材質、クラスタ、ウェイト、
+  ブレンドシェイプ、材質の値、テクスチャのパスと埋め込み、テイクの範囲と fps、全フレームの関節のワールドとブレンドの重み。
+- 呼び出し側の結果が変わらないこと：`FbxImporter`（段 4 の往復、`DefaultMale`・`Lion`）と `FbxMotionReader`（段 5 の CMU・`Victory-anim1.fbx`＋レスト用 FBX の .plmotion.json）の出力が変更前と同じ。
+  読み込んだモデルをキャプチャで見る。
+- `BanyanTree.fbx` は「未対応の版」の理由が出ること。
+- ビルド版：`plufbx.dll` の無いビルドで、FBX のモデル読み込みとモーション読み込みができること。
+- `queryCommandAudit` で今回の変更に関わる項目が 0。
+
+### 8.7 結果（2026-10-20）
+
+実装（8.3 との差）
+
+- ファイルは `FbxBinaryReader`・`FbxAsciiReader`・`FbxSceneModel`・`FbxSceneReader`・`FbxTransformEval`・`FbxMath`・`FbxScene`。8.3 の `FbxMeshReader`・`FbxAnimEval` は `FbxSceneReader`・`FbxTransformEval` に入れた。
+- `NodeInfo.AttribType` は ufbx の `ufbx_element_type` と同じ値を返す（`FbxNodeTable` は変えない）。
+- `FbxNode`・読み取り 2 つ・`FbxValue` は public（Editor の検査スクリプトから使うため）。
+- `FbxScene.AnimSample` は、動くプロパティとレイヤをテイクごとに先に拾い（`FbxTransformEval.PlanNode`・`PlanBlend`）、フレームごとには曲線だけを評価する。値は `EvaluateProps` → `UpdateNode` と同じ式。
+- `FbxMotionReader` の `createdWith` は「PolyLing FbxMotionReader (自動割当 n 本)」（以前は「(ufbx, 自動割当 n 本)」）。
+
+検証
+
+| 対象 | 結果 |
+|---|---|
+| 新旧の比較（7.x の 131 本） | 全部一致。口が返す値の差は最大 1.4e-14（ほとんど 0）。アニメーション（外挿を含む 40 フレーム）とブレンドの重みも一致 |
+| `BanyanTree.fbx` | 「未対応の版です（ビッグエンディアン 6000）。読めるのは FBX 7.x のリトルエンディアンだけです」（段 9 で読めるようにした） |
+| 読み込み → 書き出し（呼び出し側） | `0ちゃんH`・`Lion`・`new_male_ascii`：木が変更前と完全一致。`rt_a`：テクスチャのフォルダ名（before_ / after_）だけ違う。`new_male`（バイナリ）：ポーズとクラスタの行列 12 個が 1 ulp（0 に近い成分の ±2.2e-16、移動 1e-11 cm）違う |
+| モーションの読み込み（CMU・Victory・VMD の FBX → .plmotion.json） | `createdWith` の文字列だけ違い、ほかはバイト一致 |
+| 速さ（`mot_cmu.fbx`、ノード 242・チャンネル 82・2,752 フレーム） | 読み込み 0.84〜1.08 秒（ufbx 0.16〜0.18 秒）。全ノードの評価 1.4 秒（ufbx 0.32 秒、事前の拾い出しの前は 600 フレームで 1.6 秒）。値は ufbx と一致 |
+| 表示 | `rt_a.fbx` を読み込み、テクスチャ付きで直立（キャプチャ `SandBox/Captures/PolyLingCapture_0030.png`） |
+| コンパイル | `UfbxNative.cs`・`plufbx.dll`・`Native~/` を撤去してエラー 0 |
+| ビルド版（`SandBox/build8`） | ビルド成功。`Plugins` は `lib_burst_generated.dll` だけ。画面操作で `.FBX読込` → `DefaultMale.fbx` が T ポーズで表示、モーションパネル（FBX、レスト用 FBX `DefaultMale.fbx`）で `Victory-anim1.fbx` を読むと姿勢が変わった |
+| `queryCommandAudit` | 今回の変更に関わる項目はすべて 0（「正典に無い 1」`OpenProfileEditSpaceCommand` と「出せなかった 1」`AddGeneratedMeshCommand` は以前から） |
+
+## 9. 段 9：FBX 6.x の読み込み（計画・実施 2026-10-20）
+
+### 9.1 範囲
+
+- FBX 6.x（6000〜6100）のバイナリ（リトル・ビッグエンディアン）と ASCII。7.x のビッグエンディアンも読む。5.x 以前は「未対応の版」。
+- 規則は ufbx 0.23.1 の 6.x の処理（legacy）を移した。正本は `FbxSceneReader.cs` の冒頭（`ufbx.c` の行番号つき）。
+
+### 9.2 規則
+
+| 項目 | 規則 |
+|---|---|
+| バイナリ | ヘッダのエンディアンが 0 以外ならビッグエンディアン：版・ノードの長さ・値・配列の要素数と中身（展開後）をバイト反転。配列のノード（Vertices・PolygonVertexIndex など。表は `FbxArrayNodes`、`ufbx.c` 7974-8498）で値が数の並びなら 1 つの配列にまとめる。文字列が混じれば壊れたファイル。`C` は 0/1 なら bool、ほかは文字の符号 |
+| ASCII | 配列のノードの数の並び（6.x は `*n { a: }` でない）をまとめる。最初の値が次の行にあってよい。コメントの前のカンマは値の続き。`1.#INF`・`1.#IND`・`nan(...)`・`inf`・`infinity` |
+| ID | 名前「型::名前」（バイナリは「名前\0\1型」）から作る。根は「Model::Scene」 |
+| Properties60 | サブ型の列が無い。フラグは 2 番目、値は 3 番目から。フラグ `U` はユーザー定義 |
+| 属性 | Model の中に属性の値がある。ノードのプロパティ名の表（`ufbx.c` 11641-11714）とユーザー定義のフラグでノードと属性に分け、属性を別の要素にしてノードへつなぐ。Vertices と PolygonVertexIndex があればメッシュ |
+| ブレンドシェイプ | 版 7100 以下は Geometry の Shape から、デフォーマ・チャンネル（DeformPercent。メッシュのプロパティが数ならつなぐ）・形を作る（`ufbx.c` 13073-13130） |
+| つなぎ | 名前で引く。ノードに無いプロパティへのつなぎは属性へ、スキン・キャッシュはジオメトリへ付け替える |
+| ポーズ | PoseNode の Node は名前 |
+| テイク | Takes の Take の下の Model の Channel。Transform の T・R・S は Lcl Translation・Rotation・Scaling へ。キーは KeyVer（既定 4005）で読み分け、KeyCount が無い・余りがあれば失敗。自動の傾きはフラグ 0x6000 |
+| 設定 | GlobalSettings は Objects の中にあってよい。Version5 の FrameRate を CustomFrameRate・TimeMode 14 にする（あるプロパティが勝つ） |
+| 材質のテクスチャ | メッシュの LayerElementTexture（面ごとのテクスチャ番号）を材質のテクスチャへ（`ufbx.c` 13666-13698・22367-22466）。材質のテクスチャを名前で並べる前に入れる |
+| プロパティのつなぎ | つながれたプロパティはつなぎ元の値を返す（連鎖をたどる。`ufbx.c` 19270・25930-25950）。7.x にも効く |
+
+### 9.3 検証
+
+ufbx 0.23.1（クラウド上で gcc でビルド。プロジェクトには戻していない）と口が返す値を全部比べた（段 8 と同じ比べ方。NaN どうしは一致とする）。
+
+| 対象 | 結果 |
+|---|---|
+| ufbx のテストの 6.x（203 本） | 199 本一致。違う 4 本：`max_texture_mapping_6100`（ASCII・バイナリ。3ds Max のシェーダーのテクスチャのファイル名。7.x の同じファイルも違う）、`synthetic_unicode_error_identity_6100`（ASCII・バイナリ。不正な UTF-8 の名前が UTF-8 に直すと同じ ID になる） |
+| ufbx のテストの 7.x（501 本） | 一致 480・違う 15・両方失敗 6。段 9 の前は違う 31。直ったもの：ビッグエンディアン 7100・7400・7500、7100 のブレンドシェイプ、`recursive_connections`、外挿のファイルいくつか。残りは §6 の残件 |
+| プロジェクトの FBX（122 本） | 全部一致（`BanyanTree.fbx` を含む） |
+| Unity | コンパイルエラー 0。`BanyanTree.fbx` を読み込み、直立で表示（`SandBox/Captures/PolyLingCapture_0031.png`）。`maya_game_sausage_6100_binary_deform.fbx` でメッシュとボーンを表示（`PolyLingCapture_0033.png`）。`maya_character_6100_binary.fbx`（骨格だけ）のモーション → `SandBox/fbx6/maya_character.plmotion.json`：エラー 0、bakedBones 10、マッスル 21、4.958 秒 |
+| `queryCommandAudit` | 今回の変更に関わる項目はすべて 0（「正典に無い 1」`OpenProfileEditSpaceCommand` と「出せなかった 1」`AddGeneratedMeshCommand` は以前から） |
+
+- 速さは段 9 の変更後に測り直していない。
+- テスト用に `SandBox/fbx6/` へ ufbx のテストの 6.x ファイル 2 本を置いた。

@@ -15,7 +15,7 @@ namespace Poly_Ling.Fbx
 {
     public sealed class FbxNodeTable
     {
-        public UfbxScene.NodeInfo[] Nodes      { get; private set; }
+        public FbxScene.NodeInfo[] Nodes      { get; private set; }
         public List<int>[]          Children   { get; private set; }
         public bool[]               Container  { get; private set; }
         /// <summary>バインド時のワールド（ファイルの座標）。</summary>
@@ -24,11 +24,11 @@ namespace Poly_Ling.Fbx
         /// <summary>読み飛ばす入れ物の名前（DFS 順）。</summary>
         public List<string>         ContainerNames { get; } = new List<string>();
 
-        public static FbxNodeTable Read(UfbxScene scene)
+        public static FbxNodeTable Read(FbxScene scene)
         {
             var t = new FbxNodeTable();
             int n = scene.NodeCount;
-            t.Nodes    = new UfbxScene.NodeInfo[n];
+            t.Nodes    = new FbxScene.NodeInfo[n];
             t.Children = new List<int>[n];
             for (int i = 0; i < n; i++) { t.Nodes[i] = scene.Node(i); t.Children[i] = new List<int>(); }
             for (int i = 0; i < n; i++)

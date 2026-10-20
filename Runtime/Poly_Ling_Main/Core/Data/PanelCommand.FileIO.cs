@@ -544,7 +544,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// FBX ファイルを読み込む（ufbx。規則は FbxImporter.cs 冒頭）。
+    /// FBX ファイルを読み込む（FBX 7.x。規則は FbxImporter.cs 冒頭）。
     /// テクスチャの書き出し先は FbxImportSettings 側で Ignore にしてある。
     /// 受け口が「FBX と同じフォルダの ファイル名_textures」を関門（TryResolveFolder）に通す。
     /// </summary>

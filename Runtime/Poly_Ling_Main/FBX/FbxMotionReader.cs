@@ -5,7 +5,7 @@
 // 規則の正本は本ファイル冒頭と PolyLing_FBX対応計画.md 段 5。
 //
 // ■ 流れ
-//   1. ufbx で読む（座標は右手系・Y 上・+Z 正面・m。FbxImporter と同じ設定）。
+//   1. FbxScene で読む（座標は右手系・Y 上・+Z 正面・m。FbxImporter と同じ）。
 //   2. 関節 = FbxNodeTable のボーン（入れ物・メッシュだけのノードは除く）。レストは各関節のバインド時のワールド（bw）。
 //      レスト用の FBX（RestFbxPath。同じ骨格のモデル）を渡すと、そのファイルの bw を関節名で引いてレストにする。
 //      モーションだけの FBX はバインドポーズを持たず、bw がノードの既定の変換（T ポーズとは限らない）になるため。
@@ -13,7 +13,7 @@
 //      Humanoid に割り当てた関節がレスト用の FBX に無いときは、その関節だけ自分の bw を使い、警告する。
 //   3. 関節名を Humanoid に割り当てる：HumanoidBoneMapping.AutoMapFromEmbeddedCSV（モデルの Humanoid 自動割当と同じ表。
 //      PMX・Mixamo・Unity など）→ 割り当て CSV で上書き・追加（BVH と同じ書式）。
-//   4. テイクを t = 始まり + f / fps で評価し（ufbx_evaluate_scene）、関節のワールド回転と位置を取る。
+//   4. テイクを t = 始まり + f / fps で評価し（FbxScene.AnimSample）、関節のワールド回転と位置を取る。
 //      fps はシーンの設定（無ければ 30）。フレーム数は round((終わり − 始まり)·fps) + 1。
 //   5. CanonMotionBuilder（BVH と共通）：Δ = (W·R⁻¹)·A → 正準ローカル回転と腰の正規化位置 → マッスル＋body。
 //      R はレストのワールド回転（BVH は単位だが FBX は一般に単位でない）。
@@ -54,7 +54,7 @@ namespace Poly_Ling.Fbx
             var r = new MotionClipLoadResult();
             options = options ?? new FbxMotionReadOptions();
 
-            using (var scene = UfbxScene.Load(path, out string error))
+            using (var scene = FbxScene.Load(path, out string error))
             {
                 if (scene == null) { r.Error(MotionFileCodes.FileReadFailed, error); return r; }
                 try
@@ -73,7 +73,7 @@ namespace Poly_Ling.Fbx
             return r;
         }
 
-        private static MotionClipDTO ToMotion(UfbxScene scene, string fileName, FbxMotionReadOptions opt, MotionClipLoadResult r)
+        private static MotionClipDTO ToMotion(FbxScene scene, string fileName, FbxMotionReadOptions opt, MotionClipLoadResult r)
         {
             if (scene.AnimStackCount == 0) { r.Error(MotionFileCodes.FbxInvalid, "アニメーション（テイク）がありません"); return null; }
             int take = opt.TakeIndex;
@@ -154,7 +154,7 @@ namespace Poly_Ling.Fbx
                 RestRot     = restR,
                 GroundY     = groundY,
                 BoneJoint   = boneJoint,
-                CreatedWith = $"PolyLing FbxMotionReader (ufbx, {tableName})",
+                CreatedWith = $"PolyLing FbxMotionReader ({tableName})",
                 ErrorCode   = MotionFileCodes.FbxInvalid,
                 SampleWorld = (f, wr, wp) =>
                 {
@@ -188,7 +188,7 @@ namespace Poly_Ling.Fbx
         private static bool ApplyRestFbx(string path, List<string> names, Dictionary<HumanBodyBones, int> boneJoint,
                                          Matrix4x4[] restWorld, MotionClipLoadResult r)
         {
-            using (var rest = UfbxScene.Load(path, out string error))
+            using (var rest = FbxScene.Load(path, out string error))
             {
                 if (rest == null) { r.Error(MotionFileCodes.FbxInvalid, $"レスト用の FBX を読めません: {error}"); return false; }
                 var t = FbxNodeTable.Read(rest);
@@ -230,7 +230,7 @@ namespace Poly_Ling.Fbx
             return d;
         }
 
-        private static void AddExpressions(UfbxScene scene, FbxNodeTable table, MotionClipDTO dto,
+        private static void AddExpressions(FbxScene scene, FbxNodeTable table, MotionClipDTO dto,
                                            float[] weights, int frames, int nCh, float dt)
         {
             var seen = new HashSet<string>();

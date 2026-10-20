@@ -19,7 +19,7 @@ namespace Poly_Ling.Data
         /// <summary>BVH（関節の階層つきモーション）。BvhCodec で読む。</summary>
         Bvh = 3,
 
-        /// <summary>FBX のアニメーション（テイク）。FbxMotionReader（ufbx）で読む。</summary>
+        /// <summary>FBX のアニメーション（テイク）。FbxMotionReader（FbxScene）で読む。</summary>
         Fbx = 4,
     }
 

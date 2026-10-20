@@ -450,9 +450,6 @@ namespace Poly_Ling.Player
             if (cmd == null) return "コマンドが null";
             if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
 
-            if (!Poly_Ling.Fbx.UfbxNative.TryGetVersion(out _, out string dllReason))
-                return dllReason;
-
             if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
                     cmd.FilePath, out string path, out string reason))
                 return reason;

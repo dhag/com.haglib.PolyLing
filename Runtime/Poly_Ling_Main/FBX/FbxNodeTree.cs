@@ -17,7 +17,7 @@ using System.Collections.Generic;
 
 namespace Poly_Ling.Fbx
 {
-    internal sealed class FbxNode
+    public sealed class FbxNode
     {
         public readonly string Name;
         public readonly List<object> Props = new List<object>();

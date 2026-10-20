@@ -5,7 +5,7 @@
 // 規則の正本は PolyLing_FBX対応計画.md。
 //
 // ■ 実装
-//   書き出しは FbxExporter（自前。段 7）、読み込みは ufbx（UfbxNative・FbxImporter）。
+//   書き出しは FbxExporter（自前。段 7）、読み込みは FbxScene・FbxImporter（自前。段 8。FBX 7.x）。
 //   どちらも PolyLing.Runtime にあり、登録の仕組みは無い。
 // ============================================================
 
@@ -36,12 +36,8 @@ namespace Poly_Ling.Fbx
 
         public static IFbxExporter Exporter => _exporter;
 
-        /// <summary>FBX の読み書きの状態を 1 行で返す（読み込みの ufbx の版）。</summary>
-        public static string Describe()
-        {
-            string ufbx = UfbxNative.TryGetVersion(out string uv, out string ur) ? uv : "なし（" + ur + "）";
-            return $"書き出し PolyLing / 読み込み ufbx {ufbx}";
-        }
+        /// <summary>FBX の読み書きの状態を 1 行で返す。</summary>
+        public static string Describe() => "書き出し PolyLing / 読み込み PolyLing（FBX 7.x）";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void LogStatus()

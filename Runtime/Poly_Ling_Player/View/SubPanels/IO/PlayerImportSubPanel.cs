@@ -352,11 +352,6 @@ namespace Poly_Ling.Player
             }
             else if (_mode == Mode.FBX)
             {
-                if (!Poly_Ling.Fbx.UfbxNative.TryGetVersion(out _, out string dllReason))
-                {
-                    SetStatus(dllReason);
-                    return;
-                }
                 OnImportFbx?.Invoke(path, _fbxSettings.Clone(), BuildPostOptions());
             }
             else
@@ -992,21 +987,12 @@ namespace Poly_Ling.Player
 
         // ────────────────────────────────────────────────────────
         // FBX 設定
-        //   読み込みは ufbx（plufbx.dll）。軸と単位はファイルの設定から Unity 左手系・メートルへ直す。
+        //   読み込みは PolyLing の C# 実装（FbxScene。FBX 7.x）。軸と単位はファイルの設定から Unity 左手系・メートルへ直す。
         //   多角形は三角形化しない。モーション（テイク）はここでは読まない（モーションパネルで読む）。
         // ────────────────────────────────────────────────────────
 
         private void BuildFbxSettings(VisualElement parent)
         {
-            if (!Poly_Ling.Fbx.UfbxNative.TryGetVersion(out _, out string dllReason))
-            {
-                var warn = new Label("FBX インポータが利用できません: " + dllReason);
-                warn.style.whiteSpace = WhiteSpace.Normal;
-                warn.style.color      = new StyleColor(new Color(1f, 0.6f, 0.4f));
-                parent.Add(warn);
-                return;
-            }
-
             parent.Add(SectionLabel("読み込む内容"));
             parent.Add(ToggleRow("morphs", "モーフ（ブレンドシェイプ）",
                 () => _fbxSettings.ImportMorphs, v => _fbxSettings.ImportMorphs = v));

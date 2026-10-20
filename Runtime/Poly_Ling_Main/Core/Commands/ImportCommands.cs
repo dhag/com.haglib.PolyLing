@@ -751,7 +751,7 @@ namespace Poly_Ling.Commands
     /// <summary>
     /// FBX ファイルをインポートするコマンド。
     /// Execute() が同期でインポートを実行し、onResult にModelContextを返す。
-    /// 実処理は Poly_Ling.Fbx.FbxImporter（ufbx。plufbx.dll）。規則は FbxImporter.cs 冒頭。
+    /// 実処理は Poly_Ling.Fbx.FbxImporter（FbxScene）。規則は FbxImporter.cs 冒頭。
     /// </summary>
     public class ImportFbxCommand : ICommand
     {

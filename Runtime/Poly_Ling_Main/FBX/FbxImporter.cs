@@ -1,6 +1,6 @@
 // FbxImporter.cs
 // ============================================================
-// FBX → ModelContext の材料（ufbx。plufbx.dll 経由）
+// FBX → ModelContext の材料（FbxScene。段 8）
 // ------------------------------------------------------------
 // 規則の正本は本ファイル冒頭と PolyLing_FBX対応計画.md 段 4。
 // 形は glTF 読み込み（Runtime/Poly_Ling_Vrm10/VrmToPolyLingConverter.cs）に合わせる。
@@ -9,7 +9,7 @@
 // 座標
 // ============================================================
 //
-//   ufbx が右手系・Y 上・前 +Z・単位 m へ直す（plufbx_load_memory）。
+//   FbxScene が右手系・Y 上・前 +Z・単位 m へ直す（FbxSceneReader の SpaceConversion）。
 //   ここで X 反転して Unity の左手系へ：点 p → S·p、行列 M → S·M·S（S = diag(−1, 1, 1)）。
 //   面の角の並びは反転する（鏡映で表裏が入れ替わるため。glTF の読み込みと同じ）。
 //   UV はそのまま（FBX も Unity も原点が左下）。
@@ -33,7 +33,7 @@
 //
 //   ノードのバインド時のワールド bw は、
 //     スキンクラスタのリンク行列（bind_to_world）→ バインドポーズ（FbxPose）→ 親の bw · 親から見た今の変換
-//   の順に決める（plufbx の explicit_bind と BindWorld）。ボーンと静的な描画オブジェクトはこの bw に置く。
+//   の順に決める（FbxScene.Node の ExplicitBind と FbxNodeTable.BindWorld）。ボーンと静的な描画オブジェクトはこの bw に置く。
 //
 // ============================================================
 // 頂点と面
@@ -88,7 +88,7 @@ namespace Poly_Ling.Fbx
 
             settings = settings ?? FbxImportSettings.CreateDefault();
 
-            using (var scene = UfbxScene.Load(filePath, out string error))
+            using (var scene = FbxScene.Load(filePath, out string error))
             {
                 if (scene == null) return FbxImportResult.Failed(error);
                 try
@@ -115,14 +115,14 @@ namespace Poly_Ling.Fbx
             private const int MaxInfluences = 4;
             private const float BakeTolerance = 1e-4f;
 
-            private readonly UfbxScene         _scene;
+            private readonly FbxScene         _scene;
             private readonly string            _filePath;
             private readonly FbxImportSettings _settings;
             private readonly FbxImportResult   _result = new FbxImportResult();
 
             // ノードの分類とバインド姿勢（FbxNodeTable。モーション読み込みと共通）
             private FbxNodeTable _t;
-            private UfbxScene.NodeInfo[] _nodes      => _t.Nodes;
+            private FbxScene.NodeInfo[] _nodes      => _t.Nodes;
             private bool[]               _container  => _t.Container;
             private Matrix4x4[]          _bindWorld  => _t.BindWorld;     // ファイル座標
             private HashSet<int>         _jointNodes => _t.JointNodes;
@@ -152,7 +152,7 @@ namespace Poly_Ling.Fbx
 
             private static readonly Matrix4x4 FlipX = Matrix4x4.Scale(new Vector3(-1f, 1f, 1f));
 
-            public Converter(UfbxScene scene, string filePath, FbxImportSettings settings)
+            public Converter(FbxScene scene, string filePath, FbxImportSettings settings)
             {
                 _scene    = scene;
                 _filePath = filePath;
@@ -645,7 +645,7 @@ namespace Poly_Ling.Fbx
                 return v.AddUVNormalSlot(uv, n);
             }
 
-            private void ApplyWeights(int mi, UfbxScene.MeshInfo info, MeshObject mo, int[] clusterToCtx, string name)
+            private void ApplyWeights(int mi, FbxScene.MeshInfo info, MeshObject mo, int[] clusterToCtx, string name)
             {
                 int over = _scene.MeshSkinWeights(mi, info.VertexCount, MaxInfluences, out var cl, out var w);
                 if (over > 0)
@@ -733,7 +733,7 @@ namespace Poly_Ling.Fbx
             // モーフと表情
             // ------------------------------------------------------------
 
-            private void CollectMorphs(int mi, UfbxScene.MeshInfo info, string nodeName, MeshContext baseCtx, Matrix4x4 bakeU)
+            private void CollectMorphs(int mi, FbxScene.MeshInfo info, string nodeName, MeshContext baseCtx, Matrix4x4 bakeU)
             {
                 string prefix = string.IsNullOrEmpty(nodeName) ? null : nodeName + "_";
                 for (int k = 0; k < info.BlendChannelCount; k++)
