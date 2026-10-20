@@ -24,6 +24,12 @@ namespace Poly_Ling.Player
         public ViewportMode   Mode     { get; private set; }
         public bool           IsReady  => Cam != null && RT != null && RT.IsCreated();
 
+        /// <summary>
+        /// RT を作り直した（サイズ以外の理由。いまはブルームの切替で形式が変わったとき）。
+        /// 表示側（PlayerViewportPanel）は背景を貼り直す。
+        /// </summary>
+        public event System.Action RenderTextureChanged;
+
         // コントローラー（Viewer が ResetToMesh などを呼ぶために公開）
         public OrbitCameraController Orbit { get; private set; }
         public OrthoViewController   Ortho { get; private set; }
@@ -54,6 +60,8 @@ namespace Poly_Ling.Player
             Cam.cullingMask    = -1;
             Cam.nearClipPlane  = 0.01f;
             Cam.farClipPlane   = 1000f;
+            Poly_Ling.PostFx.PLPostFxBridge.RegisterCamera(Cam);
+            Poly_Ling.PostFx.PLPostFxBridge.BloomChanged += OnBloomChanged;
 
             if (mode == ViewportMode.Perspective)
             {
@@ -88,11 +96,13 @@ namespace Poly_Ling.Player
 
         public void Dispose()
         {
+            Poly_Ling.PostFx.PLPostFxBridge.BloomChanged -= OnBloomChanged;
             if (_source != null) DisconnectSource(_source);
             ReleaseRT();
 
             if (_camGo != null)
             {
+                Poly_Ling.PostFx.PLPostFxBridge.UnregisterCamera(Cam);
                 Object.Destroy(_camGo);
                 _camGo = null;
                 Cam    = null;
@@ -158,9 +168,22 @@ namespace Poly_Ling.Player
         // 内部ユーティリティ
         // ================================================================
 
+        /// <summary>
+        /// ブルームの切替で描画先の形式が変わるときだけ、同じサイズで RT を作り直す。
+        /// </summary>
+        private void OnBloomChanged()
+        {
+            if (RT == null) return;
+            if (RT.format == Poly_Ling.PostFx.PLPostFxBridge.ViewportColorFormat) return;
+            int w = RT.width, h = RT.height;
+            ReleaseRT();
+            CreateRT(w, h);
+            RenderTextureChanged?.Invoke();
+        }
+
         private void CreateRT(int w, int h)
         {
-            RT = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32)
+            RT = new RenderTexture(w, h, 24, Poly_Ling.PostFx.PLPostFxBridge.ViewportColorFormat)
             {
                 hideFlags    = HideFlags.HideAndDontSave,
                 antiAliasing = 1,

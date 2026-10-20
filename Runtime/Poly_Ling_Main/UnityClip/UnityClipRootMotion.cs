@@ -5,6 +5,21 @@
 // Runtime/Poly_Ling_Main/UnityClip/ に配置。
 //
 // ============================================================
+// ■ PolyLing モーションでの置き場所（2026-10-06 決定）
+// ============================================================
+//
+//   Root は MotionClipDTO.body トラック（targetKind "body"）に置く。
+//     key.pos = HumanPose.bodyPosition（RootT）
+//     key.rot = HumanPose.bodyRotation（RootQ）
+//   muscles に "RootT.x" などの名前で入れてはならない（MotionClipSerializer が拒否する）。
+//   理由：成分ごとのスカラー補間では四元数が単位長を保たない。body トラックなら
+//   回転は MotionCurveMath.TryEvaluateRotation（Slerp／正規化つき）で評価される。
+//   ライブ（MotionLiveJson）の rootT / rootQ とも 1 対 1 に対応する。
+//
+//   下の NameTx などは Unity の AnimationClip が持つ Animator カーブの名前。
+//   AnimationClip から読み取るとき（Editor の書き出し）と、検査で旧表現を拒否するときだけに使う。
+//
+// ============================================================
 // ■ RootT / RootQ とは何か（実物で確認した事実）
 // ============================================================
 //
@@ -50,9 +65,6 @@
 // ============================================================
 //
 //   bodyRotation はアバター根から見た身体の向きで、素立ちではほぼ単位。
-//   実測でも WALK00_F.json の t=0 は
-//     RootQ = (-0.01459, 0.00839, 0.00008, -0.99986)
-//   で、符号違いの単位近傍（q と -q は同じ回転）。
 //   したがって差分を取らず、そのまま身体の向きとして使う。
 //
 //   ただし w の符号は反転しうる。VRMA の受け側はフレーム間を補間するので、
@@ -60,16 +72,17 @@
 //
 // ============================================================
 
-using System.Collections.Generic;
 using UnityEngine;
+using Poly_Ling.Motion;
 
 namespace Poly_Ling.UnityClip
 {
     /// <summary>
-    /// クリップの Root 系トラック（RootT / RootQ）。マッスルとは別系統として扱う。
+    /// クリップの Root（body トラック）。マッスルとは別系統として扱う。
     /// </summary>
     public sealed class UnityClipRootMotion
     {
+        // Unity の AnimationClip の Animator カーブ名（PolyLing モーションの muscles には入れない）
         public const string NameTx = "RootT.x";
         public const string NameTy = "RootT.y";
         public const string NameTz = "RootT.z";
@@ -78,88 +91,57 @@ namespace Poly_Ling.UnityClip
         public const string NameQz = "RootQ.z";
         public const string NameQw = "RootQ.w";
 
-        private UnityMuscleTrackDTO _tx, _ty, _tz;
-        private UnityMuscleTrackDTO _qx, _qy, _qz, _qw;
+        /// <summary>Unity の Animator カーブの Root 名か。</summary>
+        public static bool IsRootCurveName(string name)
+            => name == NameTx || name == NameTy || name == NameTz
+            || name == NameQx || name == NameQy || name == NameQz || name == NameQw;
 
-        /// <summary>RootT が 1 本でもあるか。</summary>
+        private MotionTrackDTO _body;
+
+        /// <summary>位置（RootT）を持つキーが 1 つでもあるか。</summary>
         public bool HasTranslation { get; private set; }
 
-        /// <summary>RootQ が 4 本そろっているか。w が無いと四元数にならないので全部要る。</summary>
+        /// <summary>回転（RootQ）を持つキーが 1 つでもあるか。</summary>
         public bool HasRotation { get; private set; }
-
-        /// <summary>見つかったトラック名。ログ用。</summary>
-        public readonly List<string> FoundNames = new List<string>();
 
         private UnityClipRootMotion() { }
 
         /// <summary>
-        /// 名前引きの辞書から Root 系だけを抜き出す。
-        /// 既存 JSON は Root も muscles に入っているので、辞書はそのまま渡してよい。
-        /// 1 本も無ければ null ではなく「持たない」インスタンスを返す。
+        /// body トラックから作る。null・キー無しなら「持たない」インスタンスを返す（null は返さない）。
         /// </summary>
-        public static UnityClipRootMotion From(
-            IReadOnlyDictionary<string, UnityMuscleTrackDTO> trackByName)
+        public static UnityClipRootMotion From(MotionTrackDTO body)
         {
             var r = new UnityClipRootMotion();
-            if (trackByName == null) return r;
-
-            r._tx = Pick(trackByName, NameTx, r.FoundNames);
-            r._ty = Pick(trackByName, NameTy, r.FoundNames);
-            r._tz = Pick(trackByName, NameTz, r.FoundNames);
-
-            r._qx = Pick(trackByName, NameQx, r.FoundNames);
-            r._qy = Pick(trackByName, NameQy, r.FoundNames);
-            r._qz = Pick(trackByName, NameQz, r.FoundNames);
-            r._qw = Pick(trackByName, NameQw, r.FoundNames);
-
-            r.HasTranslation = r._tx != null || r._ty != null || r._tz != null;
-            r.HasRotation    = r._qx != null && r._qy != null && r._qz != null && r._qw != null;
-
+            if (body?.keys == null || body.keys.Count == 0) return r;
+            r._body = body;
+            foreach (var k in body.keys)
+            {
+                if (k == null) continue;
+                if (k.pos != null && k.pos.Length == 3) r.HasTranslation = true;
+                if (k.rot != null && k.rot.Length == 4) r.HasRotation = true;
+            }
             return r;
-        }
-
-        private static UnityMuscleTrackDTO Pick(
-            IReadOnlyDictionary<string, UnityMuscleTrackDTO> map, string name, List<string> found)
-        {
-            if (!map.TryGetValue(name, out var t)) return null;
-            if (t == null || t.w == null || t.w.Count == 0) return null;
-            found.Add(name);
-            return t;
         }
 
         // ================================================================
         // サンプリング
         // ================================================================
 
-        /// <summary>
-        /// 正規化されたままの RootT。メートルではない。倍率は呼び出し側で掛ける。
-        /// 欠けている軸は 0。
-        /// </summary>
+        /// <summary>正規化されたままの RootT。メートルではない。倍率は呼び出し側で掛ける。無ければ 0。</summary>
         public Vector3 SampleNormalizedTranslation(float timeSec)
-            => new Vector3(
-                UnityClipApplier.SampleTrackValue(_tx, timeSec),
-                UnityClipApplier.SampleTrackValue(_ty, timeSec),
-                UnityClipApplier.SampleTrackValue(_tz, timeSec));
+            => HasTranslation
+               && MotionCurveMath.TryEvaluateVector3(_body, MotionCurveMath.VectorChannel.Position, timeSec, out var v)
+                ? v : Vector3.zero;
 
-        /// <summary>
-        /// RootQ。長さが 0 に近いときは単位を返す（不正値で骨格を壊さない）。
-        /// </summary>
+        /// <summary>RootQ。無いとき・長さが 0 に近いときは単位を返す（不正値で骨格を壊さない）。</summary>
         public Quaternion SampleRotation(float timeSec)
         {
-            if (!HasRotation) return Quaternion.identity;
-
-            var q = new Quaternion(
-                UnityClipApplier.SampleTrackValue(_qx, timeSec),
-                UnityClipApplier.SampleTrackValue(_qy, timeSec),
-                UnityClipApplier.SampleTrackValue(_qz, timeSec),
-                UnityClipApplier.SampleTrackValue(_qw, timeSec));
-
+            if (!HasRotation || !MotionCurveMath.TryEvaluateRotation(_body, timeSec, out var q))
+                return Quaternion.identity;
             return NormalizeSafe(q);
         }
 
-        /// <summary>
-        /// 長さで割る。0 長・NaN・無限大は単位へ落とす。
-        /// </summary>
+        /// <summary>長さで割る。0 長・NaN・無限大は単位へ落とす。</summary>
         public static Quaternion NormalizeSafe(Quaternion q)
         {
             float sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
@@ -188,7 +170,7 @@ namespace Poly_Ling.UnityClip
         /// 正規化 RootT を正準骨格の寸法へ移す倍率。
         /// 基準時刻の RootT.y が Hips レスト高に一致するように決める。
         ///
-        /// 決められないとき（RootT.y が無い・0 近傍）は false。
+        /// 決められないとき（RootT が無い・y が 0 近傍）は false。
         /// そのときは平行移動を載せないこと。基準が無いまま掛けると寸法が化ける。
         /// </summary>
         public bool TryComputeTranslationScale(
@@ -198,12 +180,10 @@ namespace Poly_Ling.UnityClip
 
             if (!HasTranslation) { note = "RootT が無い"; return false; }
 
-            float y0 = UnityClipApplier.SampleTrackValue(_ty, referenceTimeSec);
-            if (_ty == null || Mathf.Abs(y0) < 1e-4f)
+            float y0 = SampleNormalizedTranslation(referenceTimeSec).y;
+            if (Mathf.Abs(y0) < 1e-4f)
             {
-                note = _ty == null
-                    ? "RootT.y が無いので倍率を決められない"
-                    : $"基準時刻の RootT.y が 0 近傍（{y0:F5}）なので倍率を決められない";
+                note = $"基準時刻の RootT.y が 0 近傍（{y0:F5}）なので倍率を決められない";
                 return false;
             }
 
@@ -218,7 +198,7 @@ namespace Poly_Ling.UnityClip
         /// <summary>ログ用。基準時刻の値を 1 行で返す。</summary>
         public string Describe(float timeSec)
         {
-            if (!HasTranslation && !HasRotation) return "Root トラックなし";
+            if (!HasTranslation && !HasRotation) return "body トラックなし";
 
             var t = SampleNormalizedTranslation(timeSec);
             var q = SampleRotation(timeSec);

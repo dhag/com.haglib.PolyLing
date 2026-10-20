@@ -585,56 +585,19 @@ namespace Poly_Ling.Vrm10Impl
         /// <summary>
         /// 表情名から VRM のプリセットを決める。決まらなければ custom。
         ///
-        /// NameEnglish がプリセット名（happy / aa / blink …）と一致すればそれを使う。
-        /// 一致しなければ PMX の標準モーフ名で引く。
+        /// 名前の解決は Poly_Ling.Motion.VrmExpressionNames（.vrma 書き出しと共用の表）。
         /// 既に埋まっているプリセットは先勝ちで、後から来たものは custom へ落とす。
         /// </summary>
         private static ExpressionPreset ResolvePreset(
             MorphExpression expr, HashSet<ExpressionPreset> used)
         {
-            ExpressionPreset preset = ExpressionPreset.custom;
-
-            if (!string.IsNullOrEmpty(expr.NameEnglish) &&
-                Enum.TryParse<ExpressionPreset>(expr.NameEnglish.Trim(), true, out var byEnglish) &&
-                byEnglish != ExpressionPreset.custom)
-            {
-                preset = byEnglish;
-            }
-            else if (!string.IsNullOrEmpty(expr.Name) &&
-                     PresetByName.TryGetValue(expr.Name.Trim(), out var byName))
-            {
-                preset = byName;
-            }
-
-            if (preset == ExpressionPreset.custom) return ExpressionPreset.custom;
+            if (!Poly_Ling.Motion.VrmExpressionNames.TryResolvePreset(expr.Name, expr.NameEnglish, out string name))
+                return ExpressionPreset.custom;
+            if (!Enum.TryParse<ExpressionPreset>(name, true, out var preset) || preset == ExpressionPreset.custom)
+                return ExpressionPreset.custom;
             if (used.Contains(preset)) return ExpressionPreset.custom;
-
             return preset;
         }
-
-        /// <summary>PMX の標準モーフ名 → VRM プリセット。</summary>
-        private static readonly Dictionary<string, ExpressionPreset> PresetByName =
-            new Dictionary<string, ExpressionPreset>
-            {
-                { "あ",           ExpressionPreset.aa },
-                { "い",           ExpressionPreset.ih },
-                { "う",           ExpressionPreset.ou },
-                { "え",           ExpressionPreset.ee },
-                { "お",           ExpressionPreset.oh },
-                { "まばたき",     ExpressionPreset.blink },
-                { "ウィンク",     ExpressionPreset.blinkLeft },
-                { "ウィンク右",   ExpressionPreset.blinkRight },
-                { "笑い",         ExpressionPreset.happy },
-                { "怒り",         ExpressionPreset.angry },
-                { "困る",         ExpressionPreset.sad },
-                { "リラックス",   ExpressionPreset.relaxed },
-                { "驚き",         ExpressionPreset.surprised },
-                { "上",           ExpressionPreset.lookUp },
-                { "下",           ExpressionPreset.lookDown },
-                { "左",           ExpressionPreset.lookLeft },
-                { "右",           ExpressionPreset.lookRight },
-                { "Neutral",      ExpressionPreset.neutral },
-            };
 
         /// <summary>
         /// プリセット枠へ差し込む。既に埋まっていれば false を返す。

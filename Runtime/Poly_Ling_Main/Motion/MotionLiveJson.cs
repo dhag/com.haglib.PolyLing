@@ -1,13 +1,38 @@
 // MotionLiveJson.cs
-// ライブ受信のマッスル 1 フレーム分の JSON の組み立てと読み取り。
-// 送信側（mocopi 受信アプリ）と受信側（PolyLing の motionLive 窓口）、転送先の画面（モーションスタジオ）が
-// 同じ形を使う。WebSocket では Duplex 封筒（Text フレーム {type,id,items:[{type:3,data:"…"}]}）に包んで送る。
+// ライブ受信（PolyLing の motionLive 窓口。既定ポート 12361）で流れるメッセージの定義と、
+// マッスル 1 フレーム分の JSON の組み立て・読み取り。
+// 送信側（mocopi 受信アプリ・PolyLing の再生配信・MediaPipe 姿勢）と受信側（PolyLing の motionLive 窓口）、
+// 転送先の画面（モーションスタジオ）が同じ形を使う。
+// WebSocket では Duplex 封筒（Text フレーム {type,id,items:[{type:3,data:"…"}]}）に包んで送る。
 //
-// ■ 形
-//   {"type":"muscles","seq":連番,"time":秒,
+// ■ このポートを流れるメッセージ（中の JSON の type で振り分ける）
+//   muscles     … マッスル 1 フレーム（下の形）。PolyLing はモデルへ当て、送ってきた接続以外へ転送する。
+//   mediapipe   … MediaPipe の生データ 1 フレーム（形は Poly_Ling.Tools.MediaPipe.MediaPipeFrame）。
+//                 PolyLing は最新の 1 件だけを持つ（当てない・転送しない）。
+//   detectImage … PolyLing → クライアントの要求（Duplex の request。封筒の type が "request"）。
+//                 中身 {type:'detectImage'} と PNG 画像 1 枚。クライアントは同じ封筒 id の response で
+//                 {type:'mediapipe', image:{w,h}, face:{landmarks}} を返す。
+//
+// ■ muscles の形
+//   {"type":"muscles","source":送り手,"seq":連番,"time":秒,
 //    "muscles":{"マッスル名":値, …},      ← HumanTrait.MuscleName の名前。計測値のものだけを入れる
 //    "rootT":[x,y,z],                     ← HumanPose.bodyPosition（無いこともある）
-//    "rootQ":[x,y,z,w]}                   ← HumanPose.bodyRotation（無いこともある）
+//    "rootQ":[x,y,z,w],                   ← HumanPose.bodyRotation（無いこともある）
+//    "bones":{"<HumanBodyBones 名>":[x,y,z,w], …},
+//    "hips":[x,y,z]}
+//                                         ← bones と hips は PolyLing が送るフレーム（再生・MediaPipe 姿勢・
+//                                           外から受けて転送するフレーム）だけが持つ。
+//                                           hips は正準骨格の Hips の正規化位置（レスト位置からの差 ÷ レストの腰の高さ、
+//                                           Unity 左手系。.plmotion の bakedBones の Hips の pos と同じ意味）。
+//                                           正準骨格（PolyLing_VRMA整備計画.md 5）上の Humanoid ローカル回転
+//                                           （Unity 左手系）を Unity（HumanPoseHandler）で解いたもの。
+//                                           駆動されているボーン（マッスルを 1 本でも持つ）と Hips だけを載せる。
+//                                           載っていないボーンは単位（祖先に付いていく）。
+//                                           外部の画面は骨をこれで動かし、マッスルから自前で合成しない。
+//   source … 送り手の種類（"mocopi" / "mediapipe" / "playback" など。無いこともある）。
+//   seq    … 送り手ごとの連番。送り手が違えば比べられない。
+//   time   … 送り手の時計の秒（mocopi はアプリの経過秒、playback はクリップ内の秒、mediapipe は
+//             ブラウザの performance.now の秒）。同じ送り手の中でだけ比べられる。
 
 using System;
 using System.Collections.Generic;
@@ -21,6 +46,8 @@ namespace Poly_Ling.Motion
     /// <summary>ライブ受信の 1 フレーム。Muscles / Valid は HumanTrait.MuscleName の並び。</summary>
     public sealed class MotionLiveFrame
     {
+        /// <summary>送り手の種類（MotionLiveJson.Source*）。空なら書かない。</summary>
+        public string     Source = "";
         public uint       Seq;
         public double     Time;
         public bool       HasRoot;
@@ -28,6 +55,26 @@ namespace Poly_Ling.Motion
         public Quaternion RootQ = Quaternion.identity;
         public float[]    Muscles = Array.Empty<float>();
         public bool[]     Valid   = Array.Empty<bool>();
+
+        /// <summary>
+        /// 正準骨格上の Humanoid ローカル回転（HumanBodyBones の添字。BoneValid が true のものだけ書く）。
+        /// PolyLing が送るフレームだけが持つ（MotionLiveHandler.BroadcastFrame が埋める）。
+        /// </summary>
+        public Quaternion[] BoneRot   = Array.Empty<Quaternion>();
+        public bool[]       BoneValid = Array.Empty<bool>();
+        /// <summary>正準骨格の Hips の正規化位置（レスト位置からの差 ÷ レストの腰の高さ）。HasHips のときだけ書く。</summary>
+        public bool         HasHips;
+        public Vector3      HipsOffset;
+
+        /// <summary>骨の配列を HumanBodyBones.LastBone 個にそろえ、すべて無効にする（hips も無効）。</summary>
+        public void ClearBones()
+        {
+            int n = (int)HumanBodyBones.LastBone;
+            if (BoneRot.Length   != n) BoneRot   = new Quaternion[n];
+            if (BoneValid.Length != n) BoneValid = new bool[n];
+            Array.Clear(BoneValid, 0, n);
+            HasHips = false;
+        }
 
         /// <summary>マッスル数を合わせる（足りなければ作り直す）。</summary>
         public void EnsureCount(int n)
@@ -39,14 +86,25 @@ namespace Poly_Ling.Motion
 
     public static class MotionLiveJson
     {
-        public const string TypeMuscles = "muscles";
+        // ---- メッセージの type ----
+        public const string TypeMuscles     = "muscles";
+        public const string TypeMediaPipe   = "mediapipe";
+        public const string TypeDetectImage = "detectImage";
+
+        // ---- muscles の source ----
+        public const string SourceMocopi    = "mocopi";
+        public const string SourceMediaPipe = "mediapipe";
+        public const string SourcePlayback  = "playback";
 
         /// <summary>フレームを JSON にする。names は HumanTrait.MuscleName。</summary>
         public static string Build(MotionLiveFrame f, string[] names)
         {
             var inv = CultureInfo.InvariantCulture;
             var sb = new StringBuilder(4096);
-            sb.Append("{\"type\":\"").Append(TypeMuscles).Append("\",\"seq\":").Append(f.Seq.ToString(inv))
+            sb.Append("{\"type\":\"").Append(TypeMuscles).Append('"');
+            if (!string.IsNullOrEmpty(f.Source))
+                sb.Append(",\"source\":\"").Append(Escape(f.Source)).Append('"');
+            sb.Append(",\"seq\":").Append(f.Seq.ToString(inv))
               .Append(",\"time\":").Append(f.Time.ToString("R", inv))
               .Append(",\"muscles\":{");
             bool first = true;
@@ -66,7 +124,34 @@ namespace Poly_Ling.Motion
                   .Append(f.RootQ.y.ToString("R", inv)).Append(',').Append(f.RootQ.z.ToString("R", inv)).Append(',')
                   .Append(f.RootQ.w.ToString("R", inv)).Append(']');
             }
+            bool anyBone = false;
+            for (int b = 0; b < f.BoneValid.Length && b < f.BoneRot.Length; b++)
+            {
+                if (!f.BoneValid[b]) continue;
+                sb.Append(anyBone ? "," : ",\"bones\":{");
+                anyBone = true;
+                var q = f.BoneRot[b];
+                sb.Append('"').Append(((HumanBodyBones)b).ToString()).Append("\":[")
+                  .Append(q.x.ToString("R", inv)).Append(',').Append(q.y.ToString("R", inv)).Append(',')
+                  .Append(q.z.ToString("R", inv)).Append(',').Append(q.w.ToString("R", inv)).Append(']');
+            }
+            if (anyBone) sb.Append('}');
+            if (f.HasHips)
+                sb.Append(",\"hips\":[").Append(f.HipsOffset.x.ToString("R", inv)).Append(',')
+                  .Append(f.HipsOffset.y.ToString("R", inv)).Append(',').Append(f.HipsOffset.z.ToString("R", inv)).Append(']');
             sb.Append('}');
+            return sb.ToString();
+        }
+
+        private static string Escape(string s)
+        {
+            var sb = new StringBuilder(s.Length);
+            foreach (char c in s)
+            {
+                if (c == '"' || c == '\\') sb.Append('\\').Append(c);
+                else if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                else sb.Append(c);
+            }
             return sb.ToString();
         }
 
@@ -94,8 +179,9 @@ namespace Poly_Ling.Motion
 
             try
             {
-                into.Seq  = o["seq"]  != null ? (uint)o["seq"]  : 0u;
-                into.Time = o["time"] != null ? (double)o["time"] : 0.0;
+                into.Source = (string)o["source"] ?? "";
+                into.Seq    = o["seq"]  != null ? (uint)o["seq"]  : 0u;
+                into.Time   = o["time"] != null ? (double)o["time"] : 0.0;
 
                 into.EnsureCount(count);
                 Array.Clear(into.Muscles, 0, count);

@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly2Tri;
 
 namespace Poly_Ling.Profile2DExtrude
@@ -31,6 +32,67 @@ namespace Poly_Ling.Profile2DExtrude
     /// </summary>
     public static class Profile2DExtrudeMeshGenerator
     {
+        /// <summary>
+        /// 輪郭の点を除く距離。図形生成後の重複頂点の結合と同じ距離にする
+        /// （これより近い点は結合で 1 点に潰れるので、先に除いておく）。
+        /// </summary>
+        private const float NearPointDistance = Poly_Ling.PrimitiveMesh.PrimitiveMeshFactory.MergeEpsilon;
+
+        /// <summary>
+        /// 同じ位置の頂点を 1 個にまとめて作る。
+        ///
+        /// 【以前】側面の四角形ごとに頂点を 4 個ずつ新しく作っていたため、輪郭の 1 点につき
+        ///   ふた 2 個＋側面 4 個の 6 個ができ、位置の違うものは 2 個だけだった（約 3 倍）。
+        ///   余りは生成後の重複頂点の結合が 1 個にまとめていた。
+        /// 【いま】位置が完全に同じなら最初に作った頂点を返す。結合は番号の最も小さい頂点
+        ///   （＝最初に作った頂点）を残し、その法線・UV を使うので、結合後の結果と同じになる。
+        ///   ふたを側面より先に作るので、側面の角は角処理が無ければふたの頂点を使う。
+        /// </summary>
+        private sealed class VertexCache
+        {
+            private readonly MeshObject _md;
+            private readonly Dictionary<Vector3, int> _map = new Dictionary<Vector3, int>();
+
+            public VertexCache(MeshObject md) { _md = md; }
+
+            public int Get(Vector3 position, Vector2 uv, Vector3 normal)
+            {
+                if (_map.TryGetValue(position, out int idx)) return idx;
+                idx = _md.VertexCount;
+                _md.Vertices.Add(new Vertex(position, uv, normal));
+                _map[position] = idx;
+                return idx;
+            }
+        }
+
+        /// <summary>
+        /// 閉じた輪郭から、直前に残した点との距離が distance 未満の点を除く。
+        /// 末尾の点は先頭の点とも比べる。heights は points と同じ並びで一緒に除く。
+        /// </summary>
+        private static void RemoveNearPoints(List<Vector2> points, List<float> heights, float distance)
+        {
+            if (points == null || points.Count < 2) return;
+            float sq = distance * distance;
+
+            var keptP = new List<Vector2>(points.Count) { points[0] };
+            var keptH = new List<float>(points.Count) { heights[0] };
+            for (int i = 1; i < points.Count; i++)
+            {
+                if ((points[i] - keptP[keptP.Count - 1]).sqrMagnitude < sq) continue;
+                keptP.Add(points[i]);
+                keptH.Add(heights[i]);
+            }
+            while (keptP.Count > 1 && (keptP[keptP.Count - 1] - keptP[0]).sqrMagnitude < sq)
+            {
+                keptP.RemoveAt(keptP.Count - 1);
+                keptH.RemoveAt(keptH.Count - 1);
+            }
+
+            if (keptP.Count == points.Count) return;
+            points.Clear();  points.AddRange(keptP);
+            heights.Clear(); heights.AddRange(keptH);
+        }
+
         /// <summary>
         /// メッシュデータを生成
         /// </summary>
@@ -75,10 +137,20 @@ namespace Poly_Ling.Profile2DExtrude
                         h.Add(z);
                         if (Mathf.Abs(z) > 1e-7f) hasHeight = true;
                     }
+
+                    // 大きさを掛けたあとで、隣の点と結合距離より近い点を除く。
+                    // 残すと生成後の重複頂点の結合で 1 点に潰れ、同じ頂点を 2 回含む面ができて
+                    // 分割処理が要る（小さい文字ほど多い）。先に除けば最初から起きない。
+                    RemoveNearPoints(transformed, h, NearPointDistance);
+                    if (transformed.Count < 3) continue;
+
                     transformedLoops.Add(transformed);
                     heights.Add(h);
                     isHoleFlags.Add(loop.IsHole);
                 }
+
+                // 近い点を除いた結果、外側ループが残らなければ作らない（入口の確認と同じ扱い）。
+                if (!isHoleFlags.Contains(false)) return null;
 
                 // 左右対称モード：x<=0 を x=0 へスナップし、軸上runをy整列＋同y結合
                 List<bool[]> onAxisFlags = null;
@@ -92,12 +164,13 @@ namespace Poly_Ling.Profile2DExtrude
                 }
 
                 var md = new MeshObject(meshName);
+                var cache = new VertexCache(md);
 
                 if (p.Thickness <= 0.001f)
                 {
                     // 厚みなし：平面のみ。
                     // 正面ビューは +Z 側なので、1枚板の表は +Z へ向ける（平面 Orientation=XY と同じ）。
-                    GenerateFlatFaceReindexed(md, transformedLoops, transformedLoops, heights, isHoleFlags, 0f, Vector3.forward, true);
+                    GenerateFlatFaceReindexed(md, cache, transformedLoops, transformedLoops, heights, isHoleFlags, 0f, Vector3.forward, true);
                 }
                 else
                 {
@@ -123,18 +196,26 @@ namespace Poly_Ling.Profile2DExtrude
                     if (p.EdgeInward)
                     {
                         // Outwardモード
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetFrontLoops, heights, isHoleFlags, -halfThick, Vector3.back, false);
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetBackLoops, heights, isHoleFlags, halfThick, Vector3.forward, true);
-                        GenerateSideFacesOutward(md, transformedLoops, offsetFrontLoops, offsetBackLoops, heights, isHoleFlags, halfThick, p);
+                        GenerateFlatFaceReindexed(md, cache, transformedLoops, offsetFrontLoops, heights, isHoleFlags, -halfThick, Vector3.back, false);
+                        GenerateFlatFaceReindexed(md, cache, transformedLoops, offsetBackLoops, heights, isHoleFlags, halfThick, Vector3.forward, true);
+                        GenerateSideFacesOutward(md, cache, transformedLoops, offsetFrontLoops, offsetBackLoops, heights, isHoleFlags, halfThick, p);
                     }
                     else
                     {
                         // 通常モード
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetFrontLoops, heights, isHoleFlags, -halfThick, Vector3.back, false);
-                        GenerateFlatFaceReindexed(md, transformedLoops, offsetBackLoops, heights, isHoleFlags, halfThick, Vector3.forward, true);
-                        GenerateSideFacesNormal(md, transformedLoops, offsetFrontLoops, offsetBackLoops, heights, isHoleFlags, halfThick, p);
+                        GenerateFlatFaceReindexed(md, cache, transformedLoops, offsetFrontLoops, heights, isHoleFlags, -halfThick, Vector3.back, false);
+                        GenerateFlatFaceReindexed(md, cache, transformedLoops, offsetBackLoops, heights, isHoleFlags, halfThick, Vector3.forward, true);
+                        GenerateSideFacesNormal(md, cache, transformedLoops, offsetFrontLoops, offsetBackLoops, heights, isHoleFlags, halfThick, p);
                     }
                 }
+
+                // 頂点を位置で共有したので、角処理で潰れた点（CollapseReversedRuns）などから
+                // 同じ頂点を 2 回含む面や、裏表が逆なだけの重なった面ができうる。
+                // 従来は生成後の重複頂点の結合がこれを片付けていた（結合が無いと残らなかった）。
+                // 共有した以上ここで同じ片付けをする（MeshMergeHelper の結合後の手順と同じ順）。
+                MeshMergeHelper.SplitSelfIntersectingFaces(md);
+                MeshMergeHelper.RemoveDegenerateFaces(md);
+                MeshMergeHelper.RemoveClosedFacePairs(md, null);
 
                 // 高さのある点が 1 つでもあれば、平面前提で入れた法線は合わないので計算し直す。
                 if (hasHeight) md.RecalculateNormals();
@@ -392,7 +473,7 @@ namespace Poly_Ling.Profile2DExtrude
         // topoLoops と posLoops は同一の頂点数・対応 [li][pi] でなければならない。
         // heights は topoLoops と同じ並びの各点の高さ。頂点の z は「z + 高さ」。
         private static void GenerateFlatFaceReindexed(
-            MeshObject md, List<List<Vector2>> topoLoops, List<List<Vector2>> posLoops,
+            MeshObject md, VertexCache cache, List<List<Vector2>> topoLoops, List<List<Vector2>> posLoops,
             List<List<float>> heights, List<bool> isHoleFlags, float z, Vector3 normal, bool flipWinding)
         {
             var outers = new List<int>();
@@ -477,8 +558,7 @@ namespace Poly_Ling.Profile2DExtrude
                             int li = (int)(key >> 32);
                             int pi = (int)(key & 0xffffffff);
                             Vector2 p2 = posLoops[li][pi];
-                            idx = md.VertexCount;
-                            md.Vertices.Add(new Vertex(new Vector3(p2.x, p2.y, z + heights[li][pi]), new Vector2(p2.x, p2.y), normal));
+                            idx = cache.Get(new Vector3(p2.x, p2.y, z + heights[li][pi]), new Vector2(p2.x, p2.y), normal);
                             vertexMap[key] = idx;
                         }
                         indices[i] = idx;
@@ -510,7 +590,7 @@ namespace Poly_Ling.Profile2DExtrude
         /// <summary>
         /// 側面を生成（Outwardモード）
         /// </summary>
-        private static void GenerateSideFacesOutward(MeshObject md, List<List<Vector2>> baseLoops,
+        private static void GenerateSideFacesOutward(MeshObject md, VertexCache cache, List<List<Vector2>> baseLoops,
                                                       List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
                                                       List<List<float>> heights,
                                                       List<bool> isHoleFlags, float halfThick, Profile2DGenerateParams p)
@@ -538,7 +618,7 @@ namespace Poly_Ling.Profile2DExtrude
                     // 表面の角処理部分
                     if (p.SegmentsFront > 0)
                     {
-                        GenerateEdgeFaces(md,
+                        GenerateEdgeFaces(md, cache,
                             offsetFront[i], offsetFront[next],
                             baseLoop[i], baseLoop[next],
                             -halfThick, -halfThick + p.EdgeSizeFront, h[i], h[next],
@@ -561,22 +641,21 @@ namespace Poly_Ling.Profile2DExtrude
                         Vector3 v2 = new Vector3(backPt1.x, backPt1.y, backZ + h[next]);
                         Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ + h[i]);
 
-                        int idx = md.VertexCount;
-                        md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), sideNormal));
-                        md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), sideNormal));
-                        md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), sideNormal));
-                        md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), sideNormal));
+                        int i0 = cache.Get(v0, new Vector2(0, 0), sideNormal);
+                        int i1 = cache.Get(v1, new Vector2(1, 0), sideNormal);
+                        int i2 = cache.Get(v2, new Vector2(1, 1), sideNormal);
+                        int i3 = cache.Get(v3, new Vector2(0, 1), sideNormal);
 
                         if (isHole)
-                            md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
+                            md.AddQuad(i0, i3, i2, i1);
                         else
-                            md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
+                            md.AddQuad(i0, i1, i2, i3);
                     }
 
                     // 裏面の角処理部分
                     if (p.SegmentsBack > 0)
                     {
-                        GenerateEdgeFaces(md,
+                        GenerateEdgeFaces(md, cache,
                             baseLoop[i], baseLoop[next],
                             offsetBack[i], offsetBack[next],
                             halfThick - p.EdgeSizeBack, halfThick, h[i], h[next],
@@ -590,7 +669,7 @@ namespace Poly_Ling.Profile2DExtrude
         /// <summary>
         /// 側面を生成（通常モード）
         /// </summary>
-        private static void GenerateSideFacesNormal(MeshObject md, List<List<Vector2>> baseLoops,
+        private static void GenerateSideFacesNormal(MeshObject md, VertexCache cache, List<List<Vector2>> baseLoops,
                                                      List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
                                                       List<List<float>> heights,
                                                      List<bool> isHoleFlags, float halfThick, Profile2DGenerateParams p)
@@ -618,7 +697,7 @@ namespace Poly_Ling.Profile2DExtrude
                     // 表面の角処理部分
                     if (p.SegmentsFront > 0)
                     {
-                        GenerateEdgeFaces(md,
+                        GenerateEdgeFaces(md, cache,
                             offsetFront[i], offsetFront[next],
                             baseLoop[i], baseLoop[next],
                             -halfThick, -halfThick + p.EdgeSizeFront, h[i], h[next],
@@ -641,22 +720,21 @@ namespace Poly_Ling.Profile2DExtrude
                         Vector3 v2 = new Vector3(backPt1.x, backPt1.y, backZ + h[next]);
                         Vector3 v3 = new Vector3(backPt0.x, backPt0.y, backZ + h[i]);
 
-                        int idx = md.VertexCount;
-                        md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), sideNormal));
-                        md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), sideNormal));
-                        md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), sideNormal));
-                        md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), sideNormal));
+                        int i0 = cache.Get(v0, new Vector2(0, 0), sideNormal);
+                        int i1 = cache.Get(v1, new Vector2(1, 0), sideNormal);
+                        int i2 = cache.Get(v2, new Vector2(1, 1), sideNormal);
+                        int i3 = cache.Get(v3, new Vector2(0, 1), sideNormal);
 
                         if (isHole)
-                            md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
+                            md.AddQuad(i0, i3, i2, i1);
                         else
-                            md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
+                            md.AddQuad(i0, i1, i2, i3);
                     }
 
                     // 裏面の角処理部分
                     if (p.SegmentsBack > 0)
                     {
-                        GenerateEdgeFaces(md,
+                        GenerateEdgeFaces(md, cache,
                             baseLoop[i], baseLoop[next],
                             offsetBack[i], offsetBack[next],
                             halfThick - p.EdgeSizeBack, halfThick, h[i], h[next],
@@ -670,7 +748,7 @@ namespace Poly_Ling.Profile2DExtrude
         /// <summary>
         /// 角処理の面を生成
         /// </summary>
-        private static void GenerateEdgeFaces(MeshObject md,
+        private static void GenerateEdgeFaces(MeshObject md, VertexCache cache,
             Vector2 outer0, Vector2 outer1,
             Vector2 inner0, Vector2 inner1,
             float outerZ, float innerZ,
@@ -692,17 +770,16 @@ namespace Poly_Ling.Profile2DExtrude
 
                 Vector3 bevelNormal = (sideNormal + faceNormal).normalized;
 
-                int idx = md.VertexCount;
-                md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), bevelNormal));
-                md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), bevelNormal));
-                md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), bevelNormal));
-                md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), bevelNormal));
+                int i0 = cache.Get(v0, new Vector2(0, 0), bevelNormal);
+                int i1 = cache.Get(v1, new Vector2(1, 0), bevelNormal);
+                int i2 = cache.Get(v2, new Vector2(1, 1), bevelNormal);
+                int i3 = cache.Get(v3, new Vector2(0, 1), bevelNormal);
 
                 bool flipWinding = isHole;
                 if (flipWinding)
-                    md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
+                    md.AddQuad(i0, i3, i2, i1);
                 else
-                    md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
+                    md.AddQuad(i0, i1, i2, i3);
             }
             else
             {
@@ -757,17 +834,16 @@ namespace Poly_Ling.Profile2DExtrude
                     Vector3 v2 = new Vector3(p1_1.x, p1_1.y, z1 + h1);
                     Vector3 v3 = new Vector3(p1_0.x, p1_0.y, z1 + h0);
 
-                    int idx = md.VertexCount;
-                    md.Vertices.Add(new Vertex(v0, new Vector2(0, t0), n0));
-                    md.Vertices.Add(new Vertex(v1, new Vector2(1, t0), n0));
-                    md.Vertices.Add(new Vertex(v2, new Vector2(1, t1), n1));
-                    md.Vertices.Add(new Vertex(v3, new Vector2(0, t1), n1));
+                    int i0 = cache.Get(v0, new Vector2(0, t0), n0);
+                    int i1 = cache.Get(v1, new Vector2(1, t0), n0);
+                    int i2 = cache.Get(v2, new Vector2(1, t1), n1);
+                    int i3 = cache.Get(v3, new Vector2(0, t1), n1);
 
                     bool flipWinding = isHole;
                     if (flipWinding)
-                        md.AddQuad(idx, idx + 3, idx + 2, idx + 1);
+                        md.AddQuad(i0, i3, i2, i1);
                     else
-                        md.AddQuad(idx, idx + 1, idx + 2, idx + 3);
+                        md.AddQuad(i0, i1, i2, i3);
                 }
             }
         }

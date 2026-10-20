@@ -17,6 +17,14 @@ namespace Poly_Ling.Serialization
         public float weight = 1f;
     }
 
+    /// <summary>グループモーフの子（名前と重み）のシリアライズ用。</summary>
+    [Serializable]
+    public class MorphGroupChildDTO
+    {
+        public string name = "";
+        public float weight = 1f;
+    }
+
     /// <summary>材質色バインドのシリアライズ用（VRM 表情）。</summary>
     [Serializable]
     public class VrmMaterialColorBindDTO
@@ -175,6 +183,12 @@ namespace Poly_Ling.Serialization
         /// <summary>VRM 表情の付帯データ（null = なし）</summary>
         public VrmExpressionDTO vrm;
 
+        /// <summary>
+        /// グループモーフの子（MorphExpression.GroupChildren）。子が無ければ null（JSON では欄ごと省く）。
+        /// PMX 書き出しはこれでグループモーフを作る（PolyLing_Blender不具合修正計画.md の 9）。
+        /// </summary>
+        public List<MorphGroupChildDTO> groupChildren;
+
         // ================================================================
         // 変換
         // ================================================================
@@ -195,6 +209,14 @@ namespace Poly_Ling.Serialization
                 }
             }
 
+            List<MorphGroupChildDTO> children = null;
+            if (set.GroupChildren != null && set.GroupChildren.Count > 0)
+            {
+                children = new List<MorphGroupChildDTO>(set.GroupChildren.Count);
+                foreach (var c in set.GroupChildren)
+                    children.Add(new MorphGroupChildDTO { name = c.Name ?? "", weight = c.Weight });
+            }
+
             return new MorphExpressionDTO
             {
                 name = set.Name ?? "",
@@ -204,7 +226,8 @@ namespace Poly_Ling.Serialization
                 meshEntries = entries,
                 meshIndices = null,  // 新形式ではmeshEntriesのみ使用
                 createdAt = set.CreatedAt.ToString("o"),
-                vrm = VrmExpressionDTO.From(set.Vrm)
+                vrm = VrmExpressionDTO.From(set.Vrm),
+                groupChildren = children
             };
         }
 
@@ -245,6 +268,10 @@ namespace Poly_Ling.Serialization
             }
 
             set.Vrm = vrm?.ToData();
+
+            if (groupChildren != null)
+                foreach (var c in groupChildren)
+                    if (c != null) set.GroupChildren.Add(new Data.MorphGroupChild(c.name ?? "", c.weight));
 
             return set;
         }

@@ -1,16 +1,16 @@
 // CanonHumanPoseRig.cs
 // ============================================================
-// 正準骨格（T ポーズ）＋ Humanoid Avatar ＋ HumanPoseHandler の一式
+// 正準骨格（VRM T ポーズ）＋ Humanoid Avatar ＋ HumanPoseHandler の一式
 // ------------------------------------------------------------
 // Runtime/Poly_Ling_Main/Motion/ に配置。
 //
 // ■ 何のためか
-//   ボーンのローカル回転からマッスル値（と RootT / RootQ）を求める口。
-//   骨格の姿勢を決めてから GetHumanPose を呼ぶと、Unity の定義どおりのマッスルが得られる。
-//   使う側：MediaPipePoseSolver（MediaPipe の点 → マッスル）、VmdMotionBake（VMD＋モデル → マッスル）。
+//   ボーンのローカル回転 ⇄ マッスル値（と RootT / RootQ）を Unity に解かせる口。
+//   使う側：CanonMuscleSolver（再生）、CanonBoneMotion（bakedBones・VRMA）、
+//           MediaPipePoseSolver（MediaPipe の点 → マッスル）、VmdMotionBake（VMD＋モデル → マッスル）。
 //
 // ■ 骨格
-//   UnityClipCanonVrmAnimation.Build で組む。レストで全ノードのローカル回転が単位。
+//   CanonSkeleton（正準骨格の唯一の置き場）。レストで全ノードのローカル回転が単位。
 //   HumanDescription は mocopi 公式と同じ値（twist 0.5、stretch 0.05、feetSpacing 0、
 //   hasTranslationDoF false）。この値は MediaPipePoseSolver から移したもので、変えていない。
 // ============================================================
@@ -18,14 +18,13 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using Poly_Ling.UnityClip;
 
 namespace Poly_Ling.Motion
 {
     public sealed class CanonHumanPoseRig : IDisposable
     {
         /// <summary>正準骨格。Build 後に有効。</summary>
-        public UnityClipCanonVrmAnimation Skeleton { get; private set; }
+        public CanonSkeleton Skeleton { get; private set; }
 
         /// <summary>Humanoid ボーンを親から子の順に並べたもの。ワールド回転の代入順に使う。</summary>
         public readonly List<KeyValuePair<HumanBodyBones, Transform>> Ordered
@@ -36,13 +35,11 @@ namespace Poly_Ling.Motion
 
         /// <summary>正準骨格と Avatar を組む。失敗時は false と理由。</summary>
         /// <param name="limits">ボーンごとの可動域の上書き。無いボーンは Unity 既定（useDefaultValues）。</param>
-        public bool Build(float boneLength, out string reason,
+        public bool Build(out string reason,
                           IReadOnlyDictionary<HumanBodyBones, HumanLimit> limits = null)
         {
             Dispose();
-            Skeleton = UnityClipCanonVrmAnimation.Build(boneLength, out reason);
-            if (Skeleton == null) return false;
-            HideAll(Skeleton.Root.transform);
+            Skeleton = CanonSkeleton.Build();
 
             var human = new List<HumanBone>();
             var boneNames = HumanTrait.BoneName;
@@ -81,11 +78,12 @@ namespace Poly_Ling.Motion
                 Dispose();
                 return false;
             }
+            _avatar.hideFlags = HideFlags.HideAndDontSave;
             _handler = new HumanPoseHandler(_avatar, Skeleton.Root.transform);
 
-            // 親から子の順（根からの深さ順）
-            foreach (var kv in Skeleton.HumanBones) Ordered.Add(kv);
-            Ordered.Sort((a, b) => Depth(a.Value).CompareTo(Depth(b.Value)));
+            // 親から子の順（CanonSkeleton.Rows がその順）
+            foreach (var r in CanonSkeleton.Rows)
+                Ordered.Add(new KeyValuePair<HumanBodyBones, Transform>(r.Bone, Skeleton.HumanBones[r.Bone]));
 
             reason = null;
             return true;
@@ -120,20 +118,6 @@ namespace Poly_Ling.Motion
             Skeleton?.Dispose();
             Skeleton = null;
             Ordered.Clear();
-        }
-
-        private int Depth(Transform t)
-        {
-            int d = 0;
-            var root = Skeleton?.Root != null ? Skeleton.Root.transform : null;
-            while (t != null && t != root) { d++; t = t.parent; }
-            return d;
-        }
-
-        private static void HideAll(Transform t)
-        {
-            t.gameObject.hideFlags = HideFlags.HideAndDontSave;
-            for (int i = 0; i < t.childCount; i++) HideAll(t.GetChild(i));
         }
 
         private static void AddSkeleton(Transform t, List<SkeletonBone> list)

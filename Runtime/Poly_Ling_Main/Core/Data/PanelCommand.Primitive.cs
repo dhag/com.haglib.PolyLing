@@ -411,6 +411,38 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
+    [PLCommand(Category = "geometry.create.primitive", Writes = PLWriteScope.Targets, Description = "12 星座のマーク（♈～♓）を作る。厚み・角処理・周囲の円を指定できる。")]
+    public sealed class CreateZodiacSignCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "ZodiacSign", Description = "星座マークのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.ZodiacSignMeshGenerator.ZodiacSignParams Params { get; }
+
+        public override string ShapeName => "ZodiacSign";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateZodiacSignCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.ZodiacSignMeshGenerator.ZodiacSignParams @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
+    [PLCommand(Category = "geometry.create.primitive", Writes = PLWriteScope.Targets, Description = "紋章図形（五芒星・六芒星・クロス・八芒星）を塗りまたは太さを持つ線で作る。厚み・角の丸め・エッジのラウンド・周囲の円を指定できる。")]
+    public sealed class CreateEmblemCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "Emblem", Description = "紋章図形のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.EmblemMeshGenerator.EmblemParams Params { get; }
+
+        public override string ShapeName => "Emblem";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateEmblemCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.EmblemMeshGenerator.EmblemParams @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
     [PLCommand(Category = "geometry.create.mechanical", Writes = PLWriteScope.Targets, Description = "インボリュート平歯車を作る。")]
     public sealed class CreateInvoluteGearCommand : CreatePrimitiveMeshCommand
     {

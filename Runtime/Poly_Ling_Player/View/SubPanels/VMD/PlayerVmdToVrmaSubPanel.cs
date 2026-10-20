@@ -1,28 +1,24 @@
 // PlayerVmdToVrmaSubPanel.cs
 // ============================================================
-// VMD → VRMA 書き出しパネル
+// VMD ＋ モデル → PolyLing モーション（.plmotion.json）＋ VRM アニメーション（.vrma）
 // ------------------------------------------------------------
 // Runtime/Poly_Ling_Player/View/SubPanels/VMD/ に配置。
 //
+// 【経路（PolyLing_VRMA整備計画.md 2.5）】
+//   VMD はマッスルを持たないので、モデルへ当てながらマッスル＋二次骨＋表情を焼く（VmdMotionBake）。
+//   焼いたものを .plmotion.json に保存し、「VRMA も書く」がオンなら同じ内容を .vrma へ書く
+//   （ExportVmdToMotionCommand → VrmaCodec）。VRMA への出口は「.plmotion → .vrma」1 本で、
+//   ここもその出口を通る。モデルに Humanoid 割り当てが要る。
+//   .vrma は .plmotion.json と同じフォルダ・同じ名前で置く（x.plmotion.json → x.vrma）。
+//
 // 【PlayerVMDTestSubPanel との違い】
 //   あちらは VMD をモデルへ適用して 1 フレームずつ確認するための道具。
-//   こちらは区間を通しでサンプリングして .vrma を書き出すだけで、
-//   フレームスライダも骨・モーフの一覧も持たない。
-//
-// 【PlayerUnityClipToVrmaSubPanel との違い】
-//   あちらはモデルを見ない（マッスルだけで正準骨格へ載せる）。
-//   VMD はマッスルを持たないので、こちらは必ずモデルを使う。
-//   モデルに Humanoid 割り当てが要る。
+//   こちらは区間を通しでサンプリングして書き出すだけで、フレームスライダも骨・モーフの一覧も持たない。
 //
 // 【パスと PLSandbox】
 //   PLSandbox の 1 回許可は解決した時点で消える（PLSandbox.cs:224-226）ため、
-//   コマンドを送る直前に VMD のパスへ付け直す。
-//   書き出し先は毎回 AskSavePath を通す（PlayerMeshSelectionSetSubPanel と同じ規則）。
+//   コマンドを送る直前に VMD のパスへ付け直す。書き出し先は毎回 AskSavePath を通す。
 //
-// 【出力は 2 種類】
-//   VRMA（ExportVmdToVrmaCommand）… 既定はマッスル経由（VmdMotionBake → 正準骨格）。
-//     表情・二次骨は VRMA 形式の制約で載らない。
-//   PolyLing モーション（ExportVmdToMotionJsonCommand）… マッスル＋二次骨＋表情。
 //   T ポーズ補正は腕 8 本に固定（UnityClipApplier.IsArmAlignBone）。ミラー枝の反対側は載らない。
 //   詳細は VmdVrmAnimationExport.cs / VmdMotionBake.cs 冒頭を見ること。
 // ============================================================
@@ -34,7 +30,6 @@ using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.Core;
 using Poly_Ling.VMD;
-using Poly_Ling.Vrm;
 
 namespace Poly_Ling.Player
 {
@@ -62,20 +57,15 @@ namespace Poly_Ling.Player
         private float   _maxTime;
 
         // UI 自動操作の ID は "vmdToVrma.<下の Id>"（UiControlAttribute.cs）。
-        // パス欄はどれもダイアログの初期値として使い、確定は [...] か「保存」のダイアログで行う。
         [UiControl("vmdPath", Description = "読み込む VMD のパス（ダイアログの初期値として使う）")]
         private TextField  _vmdPathField;
-        [UiControl("vrmaPath", Description = "書き出す VRMA のパス（ダイアログの初期値として使う）")]
-        private TextField  _vrmaPathField;
         [UiControl("model", Safety = UiSafety.ReadOnly, Description = "対象モデル")]
         private Label      _modelLabel;
         [UiControl("vmdInfo", Safety = UiSafety.ReadOnly, Description = "読み込んだ VMD の情報")]
         private Label      _vmdInfoLabel;
         [UiControl("status", Safety = UiSafety.ReadOnly, Description = "直近の操作の結果")]
         private Label      _statusLabel;
-        [UiControl("availability", Safety = UiSafety.ReadOnly, Description = "書き出しが使えるかどうかの表示")]
-        private Label      _availLabel;
-        [UiControl("save", Safety = UiSafety.UserOnly, Description = "VRMA を保存する（保存ダイアログを開く）")]
+        [UiControl("save", Safety = UiSafety.UserOnly, Description = "PolyLing モーション（と VRMA）を保存する（保存ダイアログを開く）")]
         private Button     _btnSave;
         [UiControl("clear", Safety = UiSafety.Destructive, Description = "読み込んだ VMD を外す")]
         private Button     _btnClear;
@@ -83,10 +73,10 @@ namespace Poly_Ling.Player
         private Button     _btnOpen;
         [UiControl("browseVmd", Safety = UiSafety.UserOnly, Description = "VMD の [...]（ファイル選択ダイアログを開く）")]
         private Button     _btnBrowseVmd;
-        [UiControl("browseVrma", Safety = UiSafety.UserOnly, Description = "VRMA の [...]（保存ダイアログを開く）")]
-        private Button     _btnBrowseVrma;
         [UiControl("browseIkTraceDir", Safety = UiSafety.UserOnly, Description = "IK トレースの出力先の [...]（フォルダ選択ダイアログを開く）")]
         private Button     _btnBrowseIkTraceDir;
+        [UiControl("writeVrma", Description = "PolyLing モーションと同じ名前で VRMA も書く（既定オン）")]
+        private Toggle     _vrmaToggle;
         [UiControl("solveIk", Description = "IK を解いてから採取する")]
         private Toggle     _ikToggle;
         [UiControl("diagnostics", Description = "切り分けログを出す")]
@@ -97,22 +87,19 @@ namespace Poly_Ling.Player
         private Toggle     _ignoreLimitToggle;
         [UiControl("kneePreBend", Description = "ひざを事前に曲げる")]
         private Toggle     _kneePreBendToggle;
+        [UiControl("alignLegs", Description = "T ポーズ合わせを脚（太もも・すね）にも掛ける。切は腕だけ。再生（統合モーションテスト）でも同じ設定にすること")]
+        private Toggle     _alignLegsToggle;
         [UiControl("fps", Description = "採取のフレームレート")]
         private FloatField _fpsField;
-        [UiControl("scale", Description = "取り込みの倍率")]
-        private FloatField _scaleField;
-        [UiControl("startFrame", Description = "採取の開始フレーム")]
+        [UiControl("startFrame", Description = "採取の開始時刻（秒）")]
         private FloatField _startField;
-        [UiControl("endFrame", Description = "採取の終了フレーム")]
+        [UiControl("endFrame", Description = "採取の終了時刻（秒）")]
         private FloatField _endField;
-        [UiControl("viaMuscles", Description = "マッスルへ焼き込んでから VRMA を書き出す（既定オン）")]
-        private Toggle     _viaMusclesToggle;
-        [UiControl("saveMotion", Safety = UiSafety.UserOnly, Description = "マッスル＋二次骨＋表情の PolyLing モーションを保存する（保存ダイアログを開く）")]
-        private Button     _btnSaveMotion;
 
         private const string VmdPathKey     = "VmdToVrma.Vmd.Path";
-        private const string VrmaPathKey    = "VmdToVrma.Vrma.Path";
         private const string IkTraceDirKey  = "VmdToVrma.IkTrace.Dir";
+        // 統合モーションテストの「脚も T ポーズに合わせる」と同じキー（焼き込みと再生をそろえる）
+        private const string AlignLegsKey   = "MotionClip.AlignLegs";
 
         private ModelContext Model => GetModel?.Invoke();
 
@@ -127,12 +114,12 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
-            root.Add(SecLabel("VMD→VRMA書き出し"));
+            root.Add(SecLabel("VMD→モーション・VRMA書き出し"));
 
             var note = new Label(
-                "モデルへ VMD を適用しながら書き出します。Humanoid 割り当てが要ります。\n" +
-                "VRMA は既定でマッスルへ焼き込んでから書き出します。出るのは Hips の移動と Humanoid の回転だけです。\n" +
-                "PolyLing モーションにはマッスル・二次骨・表情が入ります。\n" +
+                "モデルへ VMD を適用しながら、マッスル・二次骨・表情の PolyLing モーションを書き出します。" +
+                "Humanoid 割り当てが要ります。\n" +
+                "「VRMA も書く」がオンなら、同じ内容を同じ名前の .vrma にも書きます（二次骨は VRMA に載りません）。\n" +
                 "T ポーズ補正は腕（肩・上腕・前腕・手首）だけに掛かります。");
             note.style.fontSize     = 10;
             note.style.whiteSpace   = WhiteSpace.Normal;
@@ -169,13 +156,6 @@ namespace Poly_Ling.Player
             _vmdInfoLabel.style.marginBottom = 4;
             root.Add(_vmdInfoLabel);
 
-            // ── 出力 ─────────────────────────────────────────────────
-            root.Add(PlayerIoUiKit.SectionLabel("書き出し先 (.vrma)"));
-            _vrmaPathField = new TextField();
-            _vrmaPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VrmaPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_vrmaPathField, OnBrowseVrma, out _btnBrowseVrma));
-            _vrmaPathField.SetValueWithoutNotify(RecentPaths.Get(VrmaPathKey));
-
             // ── 設定 ─────────────────────────────────────────────────
             root.Add(SecLabel("設定"));
 
@@ -183,7 +163,6 @@ namespace Poly_Ling.Player
             row1.style.flexDirection = FlexDirection.Row;
             row1.style.marginBottom  = 2;
             row1.Add(NumField("FPS", out _fpsField, 30f));
-            row1.Add(NumField("倍率", out _scaleField, 1f));
             root.Add(row1);
 
             var row2 = new VisualElement();
@@ -222,39 +201,38 @@ namespace Poly_Ling.Player
                 "角度制限を持つリンクを解く前に微小量だけ曲げます。角度制限を無視すると効きません。";
             root.Add(_kneePreBendToggle);
 
+            // T ポーズ合わせの範囲。記憶は統合モーションテストのチェックと同じキー（焼き込みと再生をそろえるため）。
+            _alignLegsToggle = new Toggle("脚も T ポーズに合わせる（切は腕だけ）")
+            {
+                value = RecentPaths.Get(AlignLegsKey) == "1",
+            };
+            _alignLegsToggle.style.fontSize     = 10;
+            _alignLegsToggle.style.marginBottom = 2;
+            _alignLegsToggle.tooltip = "焼き込みと再生で同じ設定にしてください。";
+            _alignLegsToggle.RegisterValueChangedCallback(e => RecentPaths.Set(AlignLegsKey, e.newValue ? "1" : "0"));
+            root.Add(_alignLegsToggle);
+
             _diagToggle = new Toggle("切り分けログを出す") { value = false };
             _diagToggle.style.fontSize     = 10;
-            _diagToggle.style.marginBottom = 4;
+            _diagToggle.style.marginBottom = 2;
             _diagToggle.tooltip = "開始時とフレーム 2 点だけログを出します。";
             root.Add(_diagToggle);
 
-            _viaMusclesToggle = new Toggle("マッスル経由で VRMA を書き出す") { value = true };
-            _viaMusclesToggle.style.fontSize     = 10;
-            _viaMusclesToggle.style.marginBottom = 4;
-            _viaMusclesToggle.tooltip =
-                "オン: マッスルへ焼き込んでから正準骨格で書き出します（倍率は使いません）。\n" +
-                "オフ: モデルの骨格のボーン回転をそのまま書き出します。";
-            root.Add(_viaMusclesToggle);
+            _vrmaToggle = new Toggle("VRMA も書く（同じ名前の .vrma）") { value = true };
+            _vrmaToggle.style.fontSize     = 10;
+            _vrmaToggle.style.marginBottom = 4;
+            root.Add(_vrmaToggle);
 
-            _btnSave = new Button(OnSave) { text = "VRMA 保存" };
+            _btnSave = new Button(OnSave) { text = "保存" };
             _btnSave.style.height       = 24;
             _btnSave.style.marginBottom = 2;
             root.Add(_btnSave);
 
-            _btnSaveMotion = new Button(OnSaveMotion) { text = "PolyLing モーション保存（マッスル＋二次骨＋表情）" };
-            _btnSaveMotion.style.height       = 24;
-            _btnSaveMotion.style.marginBottom = 2;
-            root.Add(_btnSaveMotion);
-
-            _availLabel = new Label();
-            _availLabel.style.fontSize   = 10;
-            _availLabel.style.whiteSpace = WhiteSpace.Normal;
-            root.Add(_availLabel);
-
             _statusLabel = new Label();
-            _statusLabel.style.fontSize  = 10;
-            _statusLabel.style.color     = new StyleColor(PlayerIoUiKit.StatusColor);
-            _statusLabel.style.marginTop = 4;
+            _statusLabel.style.fontSize   = 10;
+            _statusLabel.style.whiteSpace = WhiteSpace.Normal;
+            _statusLabel.style.color      = new StyleColor(PlayerIoUiKit.StatusColor);
+            _statusLabel.style.marginTop  = 4;
             root.Add(_statusLabel);
 
             RefreshAll();
@@ -288,34 +266,18 @@ namespace Poly_Ling.Player
 
         private void RefreshAll()
         {
-            bool available = PLVrmAnimationBridge.I.IsAvailable;
-            var  model     = Model;
-
-            if (_availLabel != null)
-                _availLabel.text = available
-                    ? string.Empty
-                    : "VRM パッケージ (com.vrmc.vrm) が無いため書き出せません";
+            var model = Model;
 
             if (_modelLabel != null)
-            {
-                _modelLabel.text = model == null
-                    ? "(モデル未選択)"
-                    : $"Model: {model.Name}";
-            }
+                _modelLabel.text = model == null ? "(モデル未選択)" : $"Model: {model.Name}";
 
             if (_vmdInfoLabel != null)
             {
-                if (_vmd == null)
-                {
-                    _vmdInfoLabel.text = "(未読込)";
-                }
-                else
-                {
-                    _vmdInfoLabel.text =
-                        $"VMD: {_vmd.ModelName}\n" +
-                        $"Length: {_maxTime:F2}s  (最終フレーム {_vmd.MaxFrameNumber} @ 30fps)\n" +
-                        $"Bone keys: {_vmd.TotalBoneFrameCount}   Morph keys: {_vmd.TotalMorphFrameCount}";
-                }
+                _vmdInfoLabel.text = _vmd == null
+                    ? "(未読込)"
+                    : $"VMD: {_vmd.ModelName}\n" +
+                      $"Length: {_maxTime:F2}s  (最終フレーム {_vmd.MaxFrameNumber} @ 30fps)\n" +
+                      $"Bone keys: {_vmd.TotalBoneFrameCount}   Morph keys: {_vmd.TotalMorphFrameCount}";
             }
 
             bool ikOn = _ikToggle != null && _ikToggle.value;
@@ -324,10 +286,7 @@ namespace Poly_Ling.Player
             if (_kneePreBendToggle != null) _kneePreBendToggle.SetEnabled(ikOn);
 
             if (_btnClear != null) _btnClear.SetEnabled(_vmd != null);
-            if (_btnSave != null)
-                _btnSave.SetEnabled(available && _vmd != null && model != null && SendCommand != null);
-            if (_btnSaveMotion != null)
-                _btnSaveMotion.SetEnabled(_vmd != null && model != null && SendCommand != null);
+            if (_btnSave  != null) _btnSave.SetEnabled(_vmd != null && model != null && SendCommand != null);
         }
 
         // ================================================================
@@ -388,76 +347,18 @@ namespace Poly_Ling.Player
             _ikTraceDirField.value = path;
         }
 
-        private void OnBrowseVrma()
+        /// <summary>x.plmotion.json → 同じフォルダの x.vrma。</summary>
+        public static string VrmaPathFor(string motionPath)
         {
-            string path = AskVrmaSavePath();
-            if (string.IsNullOrEmpty(path)) return;
-            _vrmaPathField.value = path;
-        }
-
-        // 書き出しは必ず保存ダイアログを通す。パス欄の値は初期値としてだけ使う。
-        private string AskVrmaSavePath()
-        {
-            // 書き込み先はフォルダだけを覚える。ファイル名は毎回この既定から始める。
-            // 読み込んだ VMD の名前は「初期値」であって書き込み先ではない。
-            string defName = !string.IsNullOrEmpty(_vmdPath)
-                ? Path.GetFileNameWithoutExtension(_vmdPath)
-                : "motion";
-            return SaveDest.AskSavePath(
-                "VRM アニメーションの書き出し", SaveDest.Keys.Vrma, "", defName, "vrma");
+            string dir  = Path.GetDirectoryName(motionPath) ?? "";
+            string name = Path.GetFileNameWithoutExtension(motionPath);   // x.plmotion
+            const string suffix = ".plmotion";
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - suffix.Length);
+            return Path.Combine(dir, name + ".vrma");
         }
 
         private void OnSave()
-        {
-            if (Model == null)       { SetStatus("モデルがありません"); return; }
-            if (_vmd == null || string.IsNullOrEmpty(_vmdPath))
-                                     { SetStatus("VMD を読み込んでください"); return; }
-            if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
-            if (!PLVrmAnimationBridge.I.IsAvailable)
-                                     { SetStatus("VRM パッケージが無いため書き出せません"); return; }
-
-            string outPath = AskVrmaSavePath();
-            if (string.IsNullOrEmpty(outPath)) return;
-            _vrmaPathField.value = outPath;
-
-            // VMD はこのパネルのダイアログで利用者が選んだもの。
-            // 1 回許可は解決時に消えるので、送る直前に付け直す。
-            PLSandbox.AllowOnceFromDialog(_vmdPath);
-
-            // IK トレース先も同じ規則。IK が off なら送らない。
-            string ikTraceDir = (_ikToggle?.value ?? true)
-                ? (_ikTraceDirField?.value?.Trim() ?? string.Empty)
-                : string.Empty;
-            if (!string.IsNullOrEmpty(ikTraceDir))
-                PLSandbox.AllowOnceFromDialog(ikTraceDir);
-
-            var since = DateTime.Now.AddSeconds(-2);
-
-            SendCommand(new Poly_Ling.Data.ExportVmdToVrmaCommand(
-                GetModelIndex?.Invoke() ?? 0,
-                outPath,
-                _vmdPath,
-                _fpsField?.value   ?? 30f,
-                _startField?.value ?? 0f,
-                _endField?.value   ?? 0f,
-                _scaleField?.value  ?? 1f,
-                _ikToggle?.value   ?? true,
-                _diagToggle?.value ?? false,
-                ikTraceDir,
-                _ignoreLimitToggle?.value ?? false,
-                _kneePreBendToggle?.value ?? false,
-                _viaMusclesToggle?.value ?? true));
-
-            // Dispatch は同期なので、書き出し結果をここで確かめる。
-            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
-            SetStatus(ok
-                ? $"保存しました: {Path.GetFileName(outPath)}"
-                : "保存に失敗しました。理由はコンソールログに出ています");
-            RefreshAll();
-        }
-
-        // マッスル＋二次骨＋表情の PolyLing モーション。VRM パッケージは要らない。
-        private void OnSaveMotion()
         {
             if (Model == null)       { SetStatus("モデルがありません"); return; }
             if (_vmd == null || string.IsNullOrEmpty(_vmdPath))
@@ -469,26 +370,44 @@ namespace Poly_Ling.Player
                 "PolyLing モーションの書き出し", SaveDest.Keys.Motion, "", defName, "json");
             if (string.IsNullOrEmpty(outPath)) return;
 
+            bool   writeVrma = _vrmaToggle?.value ?? true;
+            string vrmaPath  = writeVrma ? VrmaPathFor(outPath) : string.Empty;
+
+            // VMD と出力先はこのパネルのダイアログで利用者が選んだもの。
+            // 1 回許可は解決時に消えるので、送る直前に付け直す。
             PLSandbox.AllowOnceFromDialog(_vmdPath);
+            PLSandbox.AllowOnceFromDialog(outPath);
+            if (writeVrma) PLSandbox.AllowOnceFromDialog(vrmaPath);
+
+            // IK トレース先も同じ規則。IK が off なら送らない。
+            string ikTraceDir = (_ikToggle?.value ?? true)
+                ? (_ikTraceDirField?.value?.Trim() ?? string.Empty)
+                : string.Empty;
+            if (!string.IsNullOrEmpty(ikTraceDir))
+                PLSandbox.AllowOnceFromDialog(ikTraceDir);
 
             var since = DateTime.Now.AddSeconds(-2);
 
-            SendCommand(new Poly_Ling.Data.ExportVmdToMotionJsonCommand(
+            SendCommand(new Poly_Ling.Data.ExportVmdToMotionCommand(
                 GetModelIndex?.Invoke() ?? 0,
                 outPath,
                 _vmdPath,
+                vrmaPath,
                 _fpsField?.value   ?? 30f,
                 _startField?.value ?? 0f,
                 _endField?.value   ?? 0f,
                 _ikToggle?.value   ?? true,
                 _diagToggle?.value ?? false,
+                ikTraceDir,
                 _ignoreLimitToggle?.value ?? false,
-                _kneePreBendToggle?.value ?? false));
+                _kneePreBendToggle?.value ?? false,
+                _alignLegsToggle?.value ?? false));
 
             // Dispatch は同期なので、書き出し結果をここで確かめる。
-            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
-            SetStatus(ok
-                ? $"保存しました: {Path.GetFileName(outPath)}"
+            bool okMotion = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
+            bool okVrma   = !writeVrma || (File.Exists(vrmaPath) && File.GetLastWriteTime(vrmaPath) >= since);
+            SetStatus(okMotion && okVrma
+                ? $"保存しました: {Path.GetFileName(outPath)}" + (writeVrma ? $" / {Path.GetFileName(vrmaPath)}" : "")
                 : "保存に失敗しました。理由はコンソールログに出ています");
             RefreshAll();
         }

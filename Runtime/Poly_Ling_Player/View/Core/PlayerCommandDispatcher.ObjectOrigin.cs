@@ -169,6 +169,92 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        /// <summary>
+        /// scaleObjectGeometry の実処理。対象の全頂点をローカル原点まわりに拡大縮小する。
+        /// BoneTransform・親子・子は変えない。取り消しは BakeObjectScale と同じ記録（拡大率は前後とも今の値）。
+        /// スキンドは頂点がモデル座標で BindPose 前提のため断る。ボーン・頂点の無いものは飛ばす。
+        /// </summary>
+        private void RunScaleObjectGeometry(ModelContext model, ScaleObjectGeometryCommand c)
+        {
+            var indices = c.MasterIndices ?? System.Array.Empty<int>();
+            if (indices.Length == 0) { Fail("masterIndices が空です"); return; }
+            Vector3 s = c.Scale;
+            if (s.x == 0f || s.y == 0f || s.z == 0f) { Fail("倍率に 0 があります"); return; }
+
+            var targets = new List<MeshContext>();
+            foreach (int idx in indices)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc?.MeshObject == null) { Fail($"索引 {idx} の描画オブジェクトがありません"); return; }
+                if (mc.Type == MeshType.Bone) { Fail($"{mc.Name} はボーンです"); return; }
+                if (MirrorBranchOps.IsMirrorSideContext(mc)) { Fail($"{mc.Name} はミラー側です。実体側を指定してください"); return; }
+                if (mc.IsSkinned) { Fail($"{mc.Name} はスキンドなので形を原点まわりに縮められません"); return; }
+                if (!targets.Contains(mc)) targets.Add(mc);
+            }
+
+            // 倍率をかけるフレーム R（ローカル座標）。v' = R · S · R⁻¹ · v
+            Quaternion frame    = Quaternion.Euler(c.ScaleAxis);
+            Quaternion frameInv = Quaternion.Inverse(frame);
+
+            var before = new Dictionary<int, ObjectScaleSnapshot>();
+            var after  = new Dictionary<int, ObjectScaleSnapshot>();
+            int vertexTotal = 0;
+
+            foreach (var mc in targets)
+            {
+                int idx = model.MeshContextList.IndexOf(mc);
+                var mo  = mc.MeshObject;
+                Vector3 keepScale = mc.BoneTransform != null ? mc.BoneTransform.Scale : Vector3.one;
+
+                var oldVerts = new Vector3[mo.Vertices.Count];
+                for (int v = 0; v < mo.Vertices.Count; v++) oldVerts[v] = mo.Vertices[v].Position;
+                before[idx] = new ObjectScaleSnapshot { Scale = keepScale, VertexPositions = oldVerts };
+
+                for (int v = 0; v < mo.Vertices.Count; v++)
+                {
+                    var vert = mo.Vertices[v];
+                    vert.Position = frame * Vector3.Scale(frameInv * vert.Position, s);
+                    mo.Vertices[v] = vert;
+                }
+                mo.InvalidatePositionCache();
+                vertexTotal += mo.Vertices.Count;
+
+                var newVerts = new Vector3[mo.Vertices.Count];
+                for (int v = 0; v < mo.Vertices.Count; v++) newVerts[v] = mo.Vertices[v].Position;
+                after[idx] = new ObjectScaleSnapshot { Scale = keepScale, VertexPositions = newVerts };
+            }
+
+            // 生成ミラーは実体側の頂点から作り直す（v_M = S·v_R を保つ）
+            MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
+            model.ComputeWorldMatrices();
+
+            if (_undoController != null)
+            {
+                _undoController.SetModelContext(model);
+                _undoController.MeshListStack.Record(
+                    new ObjectScaleBakeRecord(before, after, "形を拡大縮小"), "形を拡大縮小");
+                _undoController.FocusMeshList();
+            }
+
+            model.IsDirty = true;
+            model.OnListChanged?.Invoke();
+            _viewportManager.EnterTopologyChanged(_getProject());
+            _notifyPanels(ChangeKind.Attributes);
+
+            var outIdx = new List<int>(targets.Count);
+            var outIds = new List<ulong>(targets.Count);
+            foreach (var mc in targets)
+            {
+                outIdx.Add(model.MeshContextList.IndexOf(mc));
+                outIds.Add(mc.ObjectId);
+            }
+            ReportData(CommandDataJson.New()
+                .Int("objects",  targets.Count)
+                .Int("vertices", vertexTotal)
+                .Build(),
+                outIdx.ToArray(), outIds.ToArray());
+        }
+
         private void ApplyObjectOrigins(ModelContext model, ApplyObjectOriginsCommand cmd)
         {
             if (cmd?.Names == null || cmd.Positions == null) return;

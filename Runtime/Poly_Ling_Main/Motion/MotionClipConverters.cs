@@ -13,7 +13,7 @@ namespace Poly_Ling.Motion
     // ■ 座標系（恒久メモ）
     //   VMD 系は VmdMotionSerializer.ToMotionDTO（ToUnityRotation / ToUnityPosition）で
     //   既に Unity 化された値を受け取る。ここで新たな座標変換は足さない。
-    //   sourceRest はいずれの経路でも空で生成する（外部 UnityBone CSV v2 を優先）。
+    //   sourceRest はいずれの経路でも空で生成する（VMD は boneName で直接当てるので基準姿勢を使わない）。
     // ================================================================
     public static class MotionClipConverters
     {

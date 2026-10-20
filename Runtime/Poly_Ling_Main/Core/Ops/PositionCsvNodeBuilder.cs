@@ -20,6 +20,11 @@
 //   3. 表にはあるが今回作らない行（絞り込みで外れた行）なら、その行の親をさらに辿る
 //   4. どれにも当たらなければ親なし
 //
+// 【並び】
+//   ボーンは末尾へ足す（親は HierarchyParentIndex で決まる）。
+//   空の描画オブジェクトは深さを親の深さ + 1 にして、親の枝の末尾へ挿し込む
+//   （描画オブジェクトの親子はリスト順 + 深さで決まるため。AddNode の注記）。
+//
 // 【座標】
 //   ローカル位置 = 親のワールド行列の逆 × ワールド位置。
 //   親が今回作る節なら、その節のワールド行列は「親の親の行列で回転・拡縮を受け継ぎ、
@@ -245,8 +250,13 @@ namespace Poly_Ling.Ops
             }
 
             // 作る
+            //   空の描画オブジェクトは親の枝の末尾へ挿し込むので、途中で索引がずれる。
+            //   そのため親は実体（MeshContext）で控え、索引はその都度引き直す。
             var worldOf = new Dictionary<string, Matrix4x4>(StringComparer.Ordinal);
-            var indexOf = new Dictionary<string, int>(StringComparer.Ordinal);
+            var ctxOf   = new Dictionary<string, MeshContext>(StringComparer.Ordinal);
+            var existingCtx = new Dictionary<string, MeshContext>(StringComparer.Ordinal);
+            foreach (var kv in existing) existingCtx[kv.Key] = model.GetMeshContext(kv.Value);
+            var createdCtx = new List<MeshContext>();
 
             foreach (var name in order)
             {
@@ -259,13 +269,14 @@ namespace Poly_Ling.Ops
                 {
                     if (parentIsNew[name])
                     {
-                        parentIndex = indexOf[pName];
+                        parentIndex = model.MeshContextList.IndexOf(ctxOf[pName]);
                         parentWorld = worldOf[pName];
                     }
                     else
                     {
-                        parentIndex = existing[pName];
-                        parentWorld = model.GetMeshContext(parentIndex).WorldMatrix;
+                        var pc = existingCtx[pName];
+                        parentIndex = model.MeshContextList.IndexOf(pc);
+                        parentWorld = pc.WorldMatrix;
                         result.AttachedToExisting++;
                     }
                 }
@@ -286,10 +297,12 @@ namespace Poly_Ling.Ops
                     result.Renamed++;
                 }
 
-                int added = AddNode(model, objName, parentIndex, local, asBones);
-                indexOf[name] = added;
-                result.Created.Add(added);
+                var addedCtx = AddNode(model, objName, parentIndex, local, asBones);
+                ctxOf[name] = addedCtx;
+                createdCtx.Add(addedCtx);
             }
+
+            foreach (var c in createdCtx) result.Created.Add(model.MeshContextList.IndexOf(c));
 
             model.ComputeWorldMatrices();
             if (asBones)
@@ -319,8 +332,17 @@ namespace Poly_Ling.Ops
             if (placed.Add(name)) order.Add(name);
         }
 
-        /// <summary>節を 1 つ足す。ボーンの作り方は SpringBoneChainPlacer.AddBone にそろえる。</summary>
-        private static int AddNode(
+        /// <summary>
+        /// 節を 1 つ足す。ボーンの作り方は SpringBoneChainPlacer.AddBone にそろえる。
+        ///
+        /// 【空の描画オブジェクトの置き場所】
+        ///   描画オブジェクトの親子は「リスト順 + 深さ」で決まる（MeshHierarchyOps.BuildParentIndicesFromDepth。
+        ///   書き出しと setParentsByName がこれを使う）。末尾へ足して深さ 0 のままだと、
+        ///   HierarchyParentIndex を入れても親なしと読まれる。そこで深さを親の深さ + 1 にし、
+        ///   親の枝の末尾（親より深い節が続く間。ボーンとミラー側は深さの判定に入らないので飛ばす）へ挿し込む。
+        ///   ボーンは HierarchyParentIndex で親を決めるので、従来どおり末尾へ足す。
+        /// </summary>
+        private static MeshContext AddNode(
             ModelContext model, string name, int parentIndex, Vector3 localPos, bool asBone)
         {
             var bt = new BoneTransform
@@ -362,7 +384,33 @@ namespace Poly_Ling.Ops
             }
 
             mc.ParentModelContext = model;
-            return model.Add(mc);
+
+            var parent = parentIndex >= 0 ? model.GetMeshContext(parentIndex) : null;
+            bool placeInBranch = !asBone && parent != null && parent.Type != MeshType.Bone
+                              && !MirrorBranchOps.IsMirrorSideContext(parent);
+            if (!placeInBranch)
+            {
+                model.Add(mc);
+                return mc;
+            }
+
+            mc.Depth = parent.Depth + 1;
+            int pos = parentIndex + 1;
+            while (pos < model.MeshContextCount)
+            {
+                var c = model.GetMeshContext(pos);
+                if (c == null || c.Type == MeshType.Bone || MirrorBranchOps.IsMirrorSideContext(c)
+                    || c.Depth > parent.Depth)
+                {
+                    pos++;
+                    continue;
+                }
+                break;
+            }
+            // Insert は挿し込んだ節自身の親索引も「挿入前の索引」として付け替える。
+            // 親は挿入位置より前にあるので値は変わらない。
+            model.Insert(pos, mc);
+            return mc;
         }
 
         // ================================================================

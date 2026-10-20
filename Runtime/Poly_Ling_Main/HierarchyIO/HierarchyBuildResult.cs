@@ -49,6 +49,15 @@ namespace Poly_Ling.HierarchyIO
         /// </summary>
         public readonly List<MorphShapeSlot> MorphShapes = new List<MorphShapeSlot>();
 
+        /// <summary>
+        /// レンダラを持つ GameObject の Transform → その Unity メッシュの元になった MeshObject
+        /// （MeshObject.ToUnityMesh で変換したもの。ミラー枝で生成した形状は鏡像化した MeshObject）。
+        /// 書き出し側が元の多角形を組み直すのに使う（FBX）。Unity メッシュの三角形は
+        /// 元の面の順に、面ごとに角 0 を中心とした扇形で並ぶ（MeshBridgeDefault.ToUnityMesh・Face.Triangulate）。
+        /// </summary>
+        public readonly Dictionary<Transform, Poly_Ling.Data.MeshObject> SourceMeshObjectOf
+            = new Dictionary<Transform, Poly_Ling.Data.MeshObject>();
+
         /// <summary>出力した GameObject 数（メッシュ・関節）。</summary>
         public int ExportedNodeCount;
 

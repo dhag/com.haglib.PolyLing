@@ -88,10 +88,14 @@ namespace Poly_Ling.Ops
             }
 
             Vector3 normal = new Vector3(nx, ny, nz);
-            if (normal.sqrMagnitude < 1e-16f)
+            float sq = normal.sqrMagnitude;
+            if (sq < 1e-16f)
                 return Vector3.up;
 
-            return normal.normalized;
+            // Vector3.normalized は大きさ 1e-5 以下でゼロベクトルを返す。
+            // Newell ベクトルの大きさは面積の 2 倍なので、メートル単位の小さい面
+            // （約 5mm² 以下）がゼロ法線になる。大きさで直接割る。
+            return normal / Mathf.Sqrt(sq);
         }
 
         // ================================================================
@@ -322,9 +326,12 @@ namespace Poly_Ling.Ops
 
                     int root = Find(parent, cornerOffset[fi] + j);
                     Vector3 normal = groupSum[root];
-                    normal = (normal.sqrMagnitude < 1e-12f)
+                    float normalSq = normal.sqrMagnitude;
+                    // Vector3.normalized は大きさ 1e-5 以下でゼロを返すため直接割る
+                    // （重みが面積のとき合計が小さくなる）。
+                    normal = (normalSq < 1e-24f)
                         ? faceNormals[fi]
-                        : normal.normalized;
+                        : normal / Mathf.Sqrt(normalSq);
 
                     // 法線再計算の除外コーナーは元の法線でスロットを取る
                     if (fixedCornerNormals != null

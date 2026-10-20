@@ -392,6 +392,45 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// マテリアルスロットの発光を設定する。発光色 × 強さを HDR の発光色として書く。
+    /// 強さを 1 より大きくすると、ブルーム（setViewportBloom）のしきい値を超えて滲む。
+    /// 処理は MaterialEditOps.ApplyEmission。発光の欄を持たないシェーダー（Unlit など）では失敗する。
+    /// </summary>
+    [PLCommand(Category = "material", Effects = PLCommandEffect.Material, Verification = PLCommandVerification.Visual, Writes = PLWriteScope.ModelWide,
+        Description = "マテリアルスロットの発光を設定する。発光色 × 強さを発光色として書き、保存に乗る。強さを 1 より大きくするとブルーム（setViewportBloom）で滲む。発光の欄を持たないシェーダー（Unlit など）では失敗する。")]
+    public class SetMaterialEmissionCommand : PanelCommand
+    {
+        [PLParam(Description = "対象のマテリアルスロットの番号", Required = true)]
+        public int SlotIndex { get; }
+
+        [PLParam(Description = "true で発光させる、false で発光を切る", Required = true)]
+        public bool Enabled { get; }
+
+        [PLParam(Description = "発光色。0〜1 の RGB を 3 要素で並べる")]
+        public float[] ColorRgb { get; }
+
+        [PLParam(Description = "強さ（発光色に掛ける倍率）", Min = 0)]
+        public float Intensity { get; }
+
+        public SetMaterialEmissionCommand(int modelIndex, int slotIndex, bool enabled,
+            float[] colorRgb = null, float intensity = 1f)
+            : base(modelIndex)
+        {
+            SlotIndex = slotIndex;
+            Enabled   = enabled;
+            ColorRgb  = (colorRgb != null && colorRgb.Length > 0) ? colorRgb : new[] { 1f, 1f, 1f };
+            Intensity = intensity;
+        }
+
+        /// <summary>発光色 × 強さ（HDR）。</summary>
+        public Color HdrColor => new Color(
+            (ColorRgb.Length > 0 ? ColorRgb[0] : 1f) * Intensity,
+            (ColorRgb.Length > 1 ? ColorRgb[1] : 1f) * Intensity,
+            (ColorRgb.Length > 2 ? ColorRgb[2] : 1f) * Intensity,
+            1f);
+    }
+
+    /// <summary>
     /// マテリアルスロットを不透明／半透明に切り替える。
     /// 処理は MaterialEditOps.ApplySurface（操作経路統一計画.md H-3b）。
     /// </summary>

@@ -275,7 +275,6 @@ namespace Poly_Ling.Player
         public VisualElement MediaPipeFingerSection { get; private set; }
         public VisualElement MediaPipeBodySection   { get; private set; }
         public VisualElement VMDTestSection         { get; private set; }
-        public VisualElement UnityClipToVrmaSection { get; private set; }
         public VisualElement VmdToVrmaSection      { get; private set; }
         public VisualElement MotionClipTestSection   { get; private set; }
 
@@ -613,7 +612,6 @@ namespace Poly_Ling.Player
             MediaPipeFingerSection     = AddSection(visible: false, kind: RightPanelKind.General);
             MediaPipeBodySection       = AddSection(visible: false, kind: RightPanelKind.General);
             VMDTestSection             = AddSection(visible: false, kind: RightPanelKind.General);
-            UnityClipToVrmaSection     = AddSection(visible: false, kind: RightPanelKind.General);
             VmdToVrmaSection           = AddSection(visible: false, kind: RightPanelKind.General);
             MotionClipTestSection      = AddSection(visible: false, kind: RightPanelKind.General);
             CommandSchemaSection       = AddSection(visible: false, kind: RightPanelKind.General);

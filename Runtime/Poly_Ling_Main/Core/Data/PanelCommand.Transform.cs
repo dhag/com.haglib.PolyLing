@@ -564,6 +564,45 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 描画オブジェクトの形（全頂点）を、それぞれのローカル原点まわりに拡大縮小する。
+    ///
+    /// 【なぜ要るか】
+    ///   scaleSelection は選んだ頂点にしか効かず、頂点を全部選ぶ口が無い。
+    ///   「拡大縮小をベイク」は子を持つオブジェクトを対象にしない（子がずれるため）。
+    ///   部品の形だけを小さくし、位置や子はそのままにしたいときに使う。
+    ///
+    /// 【変えないもの】
+    ///   BoneTransform（位置・回転・拡大率）、親子、子の位置。必要なら setBoneTransformValue で別に動かす。
+    /// </summary>
+    [PLCommand(Category = "geometry.position", Writes = PLWriteScope.Targets, Description = "描画オブジェクトの形（全頂点）を、それぞれのローカル原点まわりに拡大縮小する。位置・回転・拡大率・子は変えない。子を持つ部品の形だけを小さくするときに使う。")]
+    [PLResult("objects",  PLResultKind.Integer, Description = "形を変えたオブジェクトの数")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "動かした頂点の数")]
+    public class ScaleObjectGeometryCommand : PanelCommand
+    {
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 Description = "対象の描画オブジェクトの masterIndex 配列", Required = true)]
+        public int[]   MasterIndices { get; }
+
+        [PLParam(Description = "軸ごとの倍率。scaleAxis で回したフレームの軸ごと（既定はオブジェクトのローカル座標の軸）。1 は等倍", Required = true)]
+        public Vector3 Scale { get; }
+
+        [PLParam(Description = "倍率をかけるフレームの回転（度、オブジェクトのローカル座標での X・Y・Z オイラー角）。既定は 0,0,0。斜めに置いた円柱の太さだけを変えるときなどに、円柱の軸をフレームの軸にそろえる")]
+        public Vector3 ScaleAxis { get; }
+
+        [PLParam(Description = "MasterIndices と同じ並び・同じ長さの安定 ID。省くとズレ照合をしない")]
+        public ulong[] ObjectIds { get; }
+
+        public ScaleObjectGeometryCommand(int modelIndex, int[] masterIndices, Vector3 scale, Vector3 scaleAxis = default, ulong[] objectIds = null)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            Scale         = scale;
+            ScaleAxis     = scaleAxis;
+            ObjectIds     = objectIds;
+        }
+    }
+
+    /// <summary>
     /// 選択頂点をピボット中心に拡大縮小する。実処理は ScaleTool。
     ///
     /// 【UniformScale を載せない理由】

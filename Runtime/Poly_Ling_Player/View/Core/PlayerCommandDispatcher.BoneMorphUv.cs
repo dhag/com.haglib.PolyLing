@@ -677,6 +677,20 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case SetMaterialEmissionCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var emRef = model.GetMaterialReference(c.SlotIndex);
+                    if (emRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
+                    string emReason = Poly_Ling.Materials.MaterialEditOps.ApplyEmission(emRef, c.Enabled, c.HdrColor);
+                    if (emReason != null) { Fail(emReason); return true; }
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
+                    _viewportManager.EnterMeshAttributesChanged(project);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
                 case SetMaterialSurfaceCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }

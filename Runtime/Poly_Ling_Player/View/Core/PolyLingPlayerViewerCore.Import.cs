@@ -469,6 +469,46 @@ namespace Poly_Ling.Player
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
+        private void OnImportGltf(string filePath, Poly_Ling.Gltf.GltfImportSettings settings,
+                                  PlayerImportSubPanel.PostOptions post)
+        {
+            var cmd = new ImportGltfCommand(
+                filePath, settings,
+                onResult: (model, result) =>
+                {
+                    _localLoader.LoadModel(filePath, model);
+                    // 読込後オプションが状態表示を書くので、その前に置く。
+                    _status =
+                        $"glTF読込完了: {System.IO.Path.GetFileName(filePath)}" +
+                        $" ({result.MeshCount}メッシュ / {result.VertexCount}頂点 / " +
+                        $"{result.BoneCount}ボーン / モーフ {result.MorphCount})" +
+                        (result.Warnings.Count > 0 ? $" 警告 {result.Warnings.Count} 件（コンソール参照）" : "");
+                    ApplyImportPostOptions(post);
+                },
+                onError:  msg       => _status = $"glTF読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
+        private void OnImportFbx(string filePath, Poly_Ling.Fbx.FbxImportSettings settings,
+                                 PlayerImportSubPanel.PostOptions post)
+        {
+            var cmd = new ImportFbxCommand(
+                filePath, settings,
+                onResult: (model, result) =>
+                {
+                    _localLoader.LoadModel(filePath, model);
+                    // 読込後オプションが状態表示を書くので、その前に置く。
+                    _status =
+                        $"FBX読込完了: {System.IO.Path.GetFileName(filePath)}" +
+                        $" ({result.MeshCount}メッシュ / {result.VertexCount}頂点 / " +
+                        $"{result.BoneCount}ボーン / モーフ {result.MorphCount})" +
+                        (result.Warnings.Count > 0 ? $" 警告 {result.Warnings.Count} 件（コンソール参照）" : "");
+                    ApplyImportPostOptions(post);
+                },
+                onError:  msg       => _status = $"FBX読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
         // ================================================================
         // 読込後オプション（インポータパネルのチェック）
         // ================================================================
@@ -523,17 +563,25 @@ namespace Poly_Ling.Player
 
             bool bonesOnly = model.BoneCount > 0;
 
-            var names = new List<string>(model.MeshContextCount);
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                bool use = mc != null && !string.IsNullOrEmpty(mc.Name)
-                           && (!bonesOnly || mc.Type == MeshType.Bone);
-                names.Add(use ? mc.Name : "");
-            }
-
             var mapping = new Poly_Ling.Data.HumanoidBoneMapping();
-            int mapped  = mapping.AutoMapFromEmbeddedCSV(names);
+            int mapped  = mapping.AutoMapFromEmbeddedCSV(BuildAutoMapNames(model, bonesOnly));
+
+            // ボーンに骨格の根（Hips）が無ければ、ボーンは人型の骨格ではない
+            // （例: 追加読込の前からモデルにあった、ロボットのダミー関節）。
+            // そのときは描画オブジェクトの関節も候補に入れて引き直す。
+            // ボーンだけに絞ると、骨格を描画オブジェクトで持つ MQO を追加読込したとき
+            // 体の割当が 1 本も入らない。
+            if (bonesOnly && !mapping.Has("Hips"))
+            {
+                var all = new Poly_Ling.Data.HumanoidBoneMapping();
+                int allMapped = all.AutoMapFromEmbeddedCSV(BuildAutoMapNames(model, false));
+                if (all.Has("Hips"))
+                {
+                    mapping   = all;
+                    mapped    = allMapped;
+                    bonesOnly = false;
+                }
+            }
 
             if (mapped == 0)
             {
@@ -550,6 +598,23 @@ namespace Poly_Ling.Player
 
             _status = $"ヒューマンマッピングを自動割当: {mapped} ボーン";
             UnityEngine.Debug.Log("[ImportPostOptions] " + _status);
+        }
+
+        /// <summary>
+        /// 自動割当に渡す名前の並び（索引 = MeshContextList の索引）。
+        /// bonesOnly のときはボーン以外を空文字にする。
+        /// </summary>
+        private static List<string> BuildAutoMapNames(ModelContext model, bool bonesOnly)
+        {
+            var names = new List<string>(model.MeshContextCount);
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                bool use = mc != null && !string.IsNullOrEmpty(mc.Name)
+                           && (!bonesOnly || mc.Type == MeshType.Bone);
+                names.Add(use ? mc.Name : "");
+            }
+            return names;
         }
 
         /// <summary>
@@ -699,6 +764,57 @@ namespace Poly_Ling.Player
                     if (!string.IsNullOrEmpty(result.Warning))
                         msg += "\n警告: " + result.Warning;
                     _exportSubPanel?.SetStatus(msg);
+                    return null;
+                }
+                _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                return result.ErrorMessage;
+            }
+            catch (Exception ex)
+            {
+                _exportSubPanel?.SetStatus($"例外: {ex.Message}");
+                return $"例外: {ex.Message}";
+            }
+        }
+
+        /// <summary>glTF（.glb / .gltf）書き出し。失敗理由を返す（成功時は null）。</summary>
+        private string OnExportGltf(string outputPath, Poly_Ling.Gltf.GltfExportSettings settings)
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
+            try
+            {
+                var result = Poly_Ling.Gltf.PLGltfBridge.Exporter.Export(model, outputPath, settings);
+                if (result.Success)
+                {
+                    string bin = string.IsNullOrEmpty(result.BinPath)
+                        ? ""
+                        : $" + {System.IO.Path.GetFileName(result.BinPath)}";
+                    _exportSubPanel?.SetStatus(
+                        $"完了: {System.IO.Path.GetFileName(outputPath)}{bin} " +
+                        $"({result.MeshCount}メッシュ / {result.VertexCount}頂点 / {result.BoneCount}ボーン)");
+                    return null;
+                }
+                _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
+                return result.ErrorMessage;
+            }
+            catch (Exception ex)
+            {
+                _exportSubPanel?.SetStatus($"例外: {ex.Message}");
+                return $"例外: {ex.Message}";
+            }
+        }
+
+        /// <summary>FBX 書き出し。失敗理由を返す（成功時は null）。</summary>
+        private string OnExportFbx(string outputPath, Poly_Ling.Fbx.FbxExportSettings settings)
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { _exportSubPanel?.SetStatus("モデルがありません"); return "モデルがありません"; }
+            try
+            {
+                var result = Poly_Ling.Fbx.PLFbxBridge.Exporter.Export(model, outputPath, settings);
+                if (result.Success)
+                {
+                    _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)} ({result.Summary()})");
                     return null;
                 }
                 _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");

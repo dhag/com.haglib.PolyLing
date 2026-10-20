@@ -2,6 +2,7 @@
 // ライブ受信：WebSocket で届くマッスル（MotionLiveJson の {type:'muscles'}）を受け取り、現在のモデルへ当てる。
 // 同じフレームを、送ってきた接続以外の接続（モーションスタジオ等の画面）へ転送する。
 // 「受け入れ許可」で指定ポートの待ち受けを始め、「不許可」で止める。
+// このポートを流れるメッセージの一覧と形は MotionLiveJson の冒頭にまとめてある。
 //
 // ■ 待ち受け
 //   com.haglib.net_duplexchannel の WebSocketDuplexServer を 1 つ立てる。送る側（mocopi 受信アプリ）も
@@ -16,7 +17,9 @@
 //   RemoteServerCore と同じく、許可したとき（メインスレッド）の SynchronizationContext を控える。
 //
 // ■ 転送
-//   受け取った JSON をそのまま（読めたものだけ）送ってきた接続以外へ送る。部品は 1 接続の送信を 1 件ずつ
+//   読めたフレームを、メインスレッドで骨の回転（bones）と Hips の正規化位置（hips）を添えて作り直し（FillBones）、
+//   送ってきた接続以外へ送る。適用と同じく最新の 1 フレームだけを送る（間のフレームは送らない）。
+//   source・seq・time は送り手の値のまま。部品は 1 接続の送信を 1 件ずつ
 //   行う（WebSocketDuplexChannel の _sendLock）ので、前の送信が終わっていない接続にはそのフレームを送らずに
 //   捨てる（送信待ちを溜めない）。接続ごとに判定するので、遅い画面が速い画面を止めることもない。
 //
@@ -28,17 +31,22 @@
 //   不許可にしても姿勢は戻さない（戻すのは resetPose）。
 //
 // ■ MediaPipe（生データ）
-//   同じポートで {type:'mediapipe', seq, time, image:{w,h}, face/pose/leftHand/rightHand:{landmarks, world}} も受ける。
-//   点は [x, y, z, visibility]（landmarks は画像基準の正規化座標、world はメートル）。
-//   受けたものは最新の 1 件だけを保持する（来るたびに上書き。モデルへの適用・他の接続への転送はしない）。
-//   保持した 1 件は TryGetLatestMediaPipe で取り出す。
-//   ただし role:'before' 付きのもの（表情転写の BEFORE 検出の返事）は最新の 1 件には入れず、
-//   OnBeforeReceived でメインスレッドへ渡す。検出の依頼は SendDetectImage（画像を全接続へ送る）。受けたことは OnMediaPipeReceived でメインスレッドへ知らせる
-//   （前の知らせを処理し終えるまで次は出さない）。
+//   同じポートで {type:'mediapipe'} も受ける。受信スレッドで MediaPipeFrame に読み取り、最新の 1 件だけを
+//   保持する（来るたびに上書き。モデルへの適用・他の接続への転送はしない）。取り出しは TryGetLatestMediaPipe。
+//   受けたことは OnMediaPipeReceived でメインスレッドへ知らせる（前の知らせを処理し終えるまで次は出さない）。
 //
-// ■ 再生の配信
-//   BroadcastFrame は、モーションパネルの再生（motionClip.playFrame）で当てたフレームを全接続へ送る。
+// ■ PolyLing からクライアントへの要求（detectImage）
+//   RequestDetectImage は Duplex の request（封筒の type が "request"）を全接続へ送り、
+//   最初に顔を返した接続の response を MediaPipeFrame にして、メインスレッドで呼び出し側へ渡す。
+//   要求と返事の対応は部品の封筒 id が受け持つ（自前の requestId は持たない）。
+//   返事をしない接続（mocopi・画面）の要求は時間切れで捨てる。
+//
+// ■ 再生・姿勢の配信
+//   BroadcastFrame は、モーションパネルの再生（motionClip.playFrame）と MediaPipe 姿勢（mediaPipePose）が
+//   求めたフレームを全接続へ送る。連番は送り手（f.Source）ごとに振る。
 //   形・送信待ちを溜めない扱いは転送と同じ。受け入れ許可中でなければ何もしない。
+//   送るフレームには、正準骨格で Unity に解かせた骨の回転（bones）と Hips の正規化位置（hips）を添える（FillBones）。
+//   外から届いて転送するフレームも同じ（受信スレッドでは Unity の Avatar を使えないので、メインスレッドで添える）。
 
 using System;
 using System.Collections.Generic;
@@ -50,6 +58,7 @@ using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Motion;
+using Poly_Ling.Tools.MediaPipe;
 using Poly_Ling.UnityClip;
 
 namespace Poly_Ling.Player
@@ -62,13 +71,11 @@ namespace Poly_Ling.Player
         public Action             OnFrameApplied;
         /// <summary>MediaPipe のデータを受けて保持した後に呼ぶ（メインスレッド。状態表示の更新用）。</summary>
         public Action             OnMediaPipeReceived;
-        /// <summary>role:'before' の MediaPipe データ（受け取った JSON そのまま）を受けたときに呼ぶ（メインスレッド）。</summary>
-        public Action<string>     OnBeforeReceived;
-
-        public const string TypeMediaPipe = "mediapipe";
-        private static readonly string[] MediaPipePartKeys = { "face", "pose", "leftHand", "rightHand" };
 
         public const int DefaultPort = 12361;
+
+        /// <summary>detectImage の返事を待つ時間。</summary>
+        private static readonly TimeSpan DetectTimeout = TimeSpan.FromSeconds(20);
 
         private readonly UnityClipApplier _applier = new UnityClipApplier();
         private readonly object _lock = new object();
@@ -78,10 +85,11 @@ namespace Poly_Ling.Player
         private int                     _muscleCount;
         private Dictionary<string, int> _muscleIndex;
         private string[]                _muscleNames;
-        private uint                    _playSeq;
+        private readonly Dictionary<string, uint> _seqBySource = new Dictionary<string, uint>();
 
-        // 受信スレッドが書き、メインスレッドが読む最新フレーム（_lock で守る）
+        // 受信スレッドが書き、メインスレッドが読む最新フレームと送り手（_lock で守る）
         private MotionLiveFrame _latest;
+        private IDuplexChannel  _latestFrom;
         private bool            _applyPending;
 
         // 送信が終わっていない接続（_sendingLock で守る）
@@ -90,9 +98,7 @@ namespace Poly_Ling.Player
 
         // MediaPipe の最新 1 件（_mpLock で守る）
         private readonly object _mpLock = new object();
-        private string          _mpJson;
-        private uint            _mpSeq;
-        private string          _mpParts = "";
+        private MediaPipeFrame  _mpFrame;
         private bool            _mpNotifyPending;
         private int             _mpReceived;
 
@@ -126,9 +132,9 @@ namespace Poly_Ling.Player
         [PLToolState(Description = "受け取った MediaPipe のデータ数")]
         public int    MediaPipeCount => Volatile.Read(ref _mpReceived);
         [PLToolState(Description = "保持している MediaPipe のデータの連番（無ければ 0）")]
-        public int    MediaPipeSeq { get { lock (_mpLock) return (int)_mpSeq; } }
+        public int    MediaPipeSeq { get { lock (_mpLock) return _mpFrame != null ? (int)_mpFrame.Seq : 0; } }
         [PLToolState(Description = "保持している MediaPipe のデータに入っていた部位（face,pose,leftHand,rightHand のうち）")]
-        public string MediaPipeParts { get { lock (_mpLock) return _mpParts; } }
+        public string MediaPipeParts { get { lock (_mpLock) return _mpFrame?.PartsText ?? ""; } }
         [PLToolState(Description = "直近の accept の失敗理由（成功なら空）")]
         public string Error { get; private set; } = "";
 
@@ -146,7 +152,7 @@ namespace Poly_Ling.Player
             _muscleCount = HumanTrait.MuscleCount;
             _muscleNames = HumanTrait.MuscleName;
             _muscleIndex = MotionLiveJson.BuildIndex(_muscleNames);
-            _playSeq     = 0;
+            _seqBySource.Clear();
             if (_syncCtx == null) { Error = "メインスレッドの SynchronizationContext がありません"; return; }
 
             Interlocked.Exchange(ref _received, 0);
@@ -154,7 +160,7 @@ namespace Poly_Ling.Player
             Interlocked.Exchange(ref _applied, 0);
             Interlocked.Exchange(ref _skippedSends, 0);
             Interlocked.Exchange(ref _mpReceived, 0);
-            lock (_mpLock) { _mpJson = null; _mpSeq = 0; _mpParts = ""; _mpNotifyPending = false; }
+            lock (_mpLock) { _mpFrame = null; _mpNotifyPending = false; }
             _lastSender = "";
             _lastReject = "";
             lock (_lock) { _latest = null; _applyPending = false; }
@@ -193,6 +199,13 @@ namespace Poly_Ling.Player
             lock (_lock) { _latest = null; }
         }
 
+        [PLToolState(Description = "T ポーズ合わせを脚（太もも・すね）にも掛けるか（false は腕だけ）")]
+        public bool AlignLegs => _applier.AlignLegs;
+
+        /// <summary>T ポーズ合わせの範囲を切り替える（統合モーションテストのチェックと同じ値にする）。</summary>
+        [PLToolAction(Description = "T ポーズ合わせを脚（太もも・すね）にも掛けるかを切り替える（enabled=false は腕だけ）")]
+        public void SetAlignLegs(bool enabled) => _applier.AlignLegs = enabled;
+
         /// <summary>ライブ受信で当てた姿勢を初期へ戻す（待ち受けは続ける）。</summary>
         [PLToolAction(Description = "ライブ受信で当てた姿勢を初期へ戻す")]
         public void ResetPose()
@@ -209,16 +222,82 @@ namespace Poly_Ling.Player
         public int MuscleCount => _muscleCount;
 
         /// <summary>
-        /// 再生で当てたフレームを全接続へ送る（メインスレッドから呼ぶ）。f.Seq はここで振り直す。
+        /// PolyLing 側で求めたフレーム（再生・MediaPipe 姿勢）を全接続へ送る（メインスレッドから呼ぶ）。
+        /// f.Source は呼び出し側が入れる。f.Seq はここで送り手ごとに振り直す。
         /// 受け入れ許可中でなければ何もせず false。
         /// </summary>
         public bool BroadcastFrame(MotionLiveFrame f)
         {
             var ws = _ws;
             if (ws == null || f == null) return false;
-            f.Seq = _playSeq++;
+            string key = f.Source ?? "";
+            _seqBySource.TryGetValue(key, out uint seq);
+            f.Seq = seq;
+            _seqBySource[key] = seq + 1;
+            FillBones(f);
             Relay(ws, null, MotionLiveJson.Build(f, _muscleNames));
             return true;
+        }
+
+        // ---- 骨の回転（PolyLing_VRMA整備計画.md 2.6）----
+        private CanonBoneMotion _canon;
+        private float[]         _boneBuf;
+        private bool[]          _drivenBone;
+
+        [PLToolState(Description = "配信に骨の回転（bones）を添えられなかった理由（添えられていれば空）")]
+        public string BonesError { get; private set; } = "";
+
+        [PLToolState(Description = "直近の配信に添えた骨の数")]
+        public int LastBoneCount { get; private set; }
+
+        /// <summary>
+        /// フレームのマッスル（＋root）を正準骨格に当て、駆動されているボーンと Hips のローカル回転を f.BoneRot へ入れる。
+        /// 値の無いマッスルは、駆動されているボーンの dof なら 0（受信側 ApplyMuscleFrame と同じ）、
+        /// 駆動されていないボーンなら正準 T ポーズの値（そのボーンは単位ローカルになり、祖先に付いていく）。
+        /// root が無ければレストの body。メインスレッドで呼ぶ。
+        /// </summary>
+        private void FillBones(MotionLiveFrame f)
+        {
+            f.ClearBones();
+            LastBoneCount = 0;
+            if (_canon == null)
+            {
+                var c = new CanonBoneMotion();
+                if (!c.Build(out string reason)) { c.Dispose(); BonesError = reason ?? "正準骨格を組めません"; return; }
+                _canon = c;
+            }
+            BonesError = "";
+
+            int mc = HumanTrait.MuscleCount;
+            if (_boneBuf == null || _boneBuf.Length != mc) _boneBuf = new float[mc];
+            if (_drivenBone == null) _drivenBone = new bool[(int)HumanBodyBones.LastBone];
+            Array.Clear(_drivenBone, 0, _drivenBone.Length);
+            for (int mi = 0; mi < mc && mi < f.Valid.Length; mi++)
+            {
+                if (!f.Valid[mi]) continue;
+                int b = HumanTrait.BoneFromMuscle(mi);
+                if (b >= 0 && b < _drivenBone.Length) _drivenBone[b] = true;
+            }
+            var rest = _canon.RestMuscles;
+            for (int mi = 0; mi < mc; mi++)
+            {
+                if (mi < f.Valid.Length && f.Valid[mi] && mi < f.Muscles.Length) { _boneBuf[mi] = f.Muscles[mi]; continue; }
+                int b = HumanTrait.BoneFromMuscle(mi);
+                bool driven = b >= 0 && b < _drivenBone.Length && _drivenBone[b];
+                _boneBuf[mi] = driven ? 0f : (rest != null && mi < rest.Length ? rest[mi] : 0f);
+            }
+
+            _canon.SetMuscles(_boneBuf, f.HasRoot ? f.RootT : (Vector3?)null, f.HasRoot ? f.RootQ : (Quaternion?)null);
+            foreach (var row in CanonSkeleton.Rows)
+            {
+                int b = (int)row.Bone;
+                if (row.Bone != HumanBodyBones.Hips && !_drivenBone[b]) continue;
+                f.BoneRot[b]   = _canon.GetLocal(row.Bone);
+                f.BoneValid[b] = true;
+                LastBoneCount++;
+            }
+            f.HipsOffset = _canon.GetHipsOffset();
+            f.HasHips    = true;
         }
 
         // ---------------- 受信スレッド（部品の接続ごと） ----------------
@@ -238,13 +317,7 @@ namespace Poly_Ling.Player
             catch (Exception e) { RejectMessage(from, "JSON でない: " + e.Message); return; }
 
             string type = (string)o["type"];
-            if (type == TypeMediaPipe && (string)o["role"] == "before")
-            {
-                _lastSender = from?.Id ?? "";
-                _syncCtx.Post(_ => OnBeforeReceived?.Invoke(json), null);
-                return;
-            }
-            if (type == TypeMediaPipe) { StoreMediaPipe(from, json, o); return; }
+            if (type == MotionLiveJson.TypeMediaPipe) { StoreMediaPipe(from, o); return; }
 
             var frame = new MotionLiveFrame();
             if (!MotionLiveJson.TryParse(o, _muscleIndex, _muscleCount, frame, out string why))
@@ -255,34 +328,26 @@ namespace Poly_Ling.Player
             Interlocked.Increment(ref _received);
             _lastSender = from?.Id ?? "";
 
-            Relay(ws, from, json);
-
             bool post;
             lock (_lock)
             {
-                _latest = frame;                 // 最新だけ残す
+                _latest     = frame;             // 最新だけ残す（転送もメインスレッドで骨を添えてから）
+                _latestFrom = from;
                 post = !_applyPending;
                 _applyPending = true;
             }
             if (post) _syncCtx.Post(_ => ApplyLatest(), null);
         }
 
-        // MediaPipe の生データを最新 1 件として保持する（受信スレッド）。
-        private void StoreMediaPipe(IDuplexChannel from, string json, JObject o)
+        // MediaPipe の生データを読み取り、最新 1 件として保持する（受信スレッド）。
+        private void StoreMediaPipe(IDuplexChannel from, JObject o)
         {
-            uint seq = 0;
-            try { if (o["seq"] != null) seq = (uint)o["seq"]; }
-            catch (Exception) { RejectMessage(from, "mediapipe の seq が数でない"); return; }
-
-            var parts = new List<string>();
-            foreach (var p in MediaPipePartKeys) if (o[p] is JObject) parts.Add(p);
+            if (!MediaPipeFrame.TryParse(o, out var frame, out string why)) { RejectMessage(from, why); return; }
 
             bool post;
             lock (_mpLock)
             {
-                _mpJson  = json;
-                _mpSeq   = seq;
-                _mpParts = string.Join(",", parts);
+                _mpFrame = frame;
                 post = !_mpNotifyPending;
                 _mpNotifyPending = true;
             }
@@ -295,39 +360,69 @@ namespace Poly_Ling.Player
             }, null);
         }
 
-        /// <summary>
-        /// 画像の顔検出を、つながっている全接続へ頼む（MediaPipe クライアントが返事を role:'before' で返す）。
-        /// 送る中身は {type:'detectImage', requestId, role:'before'} と PNG 画像の 2 項目（Text フレームでは画像は base64）。
-        /// 送った接続の数を返す（受け入れ許可中でなければ 0）。
-        /// </summary>
-        public int SendDetectImage(byte[] png, int requestId)
-        {
-            var ws = _ws;
-            if (ws == null || png == null) return 0;
-            string json = "{\"type\":\"detectImage\",\"requestId\":" + requestId + ",\"role\":\"before\"}";
-            int count = 0;
-            foreach (var ch in ws.Clients)
-            {
-                if (ch == null) continue;
-                try
-                {
-                    _ = ch.SendAsync(TypedPayload.FromJson(json).AddImage(png, "image/png").ToMessage());
-                    count++;
-                }
-                catch (Exception) { }
-            }
-            return count;
-        }
-
-        /// <summary>保持している MediaPipe の最新 1 件（受け取った JSON そのまま）。無ければ false。</summary>
-        public bool TryGetLatestMediaPipe(out string json, out uint seq)
+        /// <summary>保持している MediaPipe の最新 1 件。無ければ false。</summary>
+        public bool TryGetLatestMediaPipe(out MediaPipeFrame frame)
         {
             lock (_mpLock)
             {
-                json = _mpJson;
-                seq  = _mpSeq;
-                return json != null;
+                frame = _mpFrame;
+                return frame != null;
             }
+        }
+
+        /// <summary>
+        /// 画像の顔検出を、つながっている全接続へ要求する（Duplex の request。中身は {type:'detectImage'} と PNG）。
+        /// 最初に顔を返した接続の結果で onDone(frame, null) を、どこからも得られなければ onDone(null, 理由) を
+        /// メインスレッドで呼ぶ。送った接続の数を返す（受け入れ許可中でなければ 0。そのとき onDone は呼ばない）。
+        /// </summary>
+        public int RequestDetectImage(byte[] png, Action<MediaPipeFrame, string> onDone)
+        {
+            var ws = _ws;
+            var ctx = _syncCtx;
+            if (ws == null || png == null || ctx == null) return 0;
+
+            string json = "{\"type\":\"" + MotionLiveJson.TypeDetectImage + "\"}";
+            var tasks = new List<Task<DuplexMessage>>();
+            var cts = new CancellationTokenSource(DetectTimeout);
+            foreach (var ch in ws.Clients)
+            {
+                if (ch == null) continue;
+                try { tasks.Add(ch.SendAndReceiveAsync(TypedPayload.FromJson(json).AddImage(png, "image/png").ToMessage(), cts.Token)); }
+                catch (Exception) { }
+            }
+            if (tasks.Count == 0) { cts.Dispose(); return 0; }
+
+            _ = WaitFirstFaceAsync(tasks, cts, ctx, onDone);
+            return tasks.Count;
+        }
+
+        private static async Task WaitFirstFaceAsync(List<Task<DuplexMessage>> tasks, CancellationTokenSource cts,
+                                                     SynchronizationContext ctx, Action<MediaPipeFrame, string> onDone)
+        {
+            MediaPipeFrame found = null;
+            string reason = "どの接続からも顔の返事がありませんでした";
+            var pending = new List<Task<DuplexMessage>>(tasks);
+            while (pending.Count > 0 && found == null)
+            {
+                Task<DuplexMessage> t;
+                try { t = await Task.WhenAny(pending).ConfigureAwait(false); }
+                catch (Exception) { break; }
+                pending.Remove(t);
+                if (t.Status != TaskStatus.RanToCompletion) continue;   // 時間切れ・切断
+                try
+                {
+                    string json = TypedPayload.FromMessage(t.Result).GetJson();
+                    if (string.IsNullOrEmpty(json)) continue;
+                    if (!MediaPipeFrame.TryParse(JObject.Parse(json), out var f, out string why)) { reason = why; continue; }
+                    if (f.Face == null || f.Face.Landmarks.Length < MediaPipeFrame.FaceMeshPoints)
+                    { reason = "返事の画像に顔が見つかりませんでした"; continue; }
+                    found = f;
+                }
+                catch (Exception e) { reason = "返事が読めません: " + e.Message; }
+            }
+            try { cts.Cancel(); } catch { }
+            cts.Dispose();
+            ctx.Post(_ => onDone?.Invoke(found, found != null ? null : reason), null);
         }
 
         private void RejectMessage(IDuplexChannel from, string why)
@@ -370,13 +465,20 @@ namespace Poly_Ling.Player
         private void ApplyLatest()
         {
             MotionLiveFrame f;
+            IDuplexChannel  from;
             lock (_lock)
             {
                 _applyPending = false;
                 f = _latest;
+                from = _latestFrom;
                 _latest = null;
+                _latestFrom = null;
             }
-            if (f == null || _ws == null) return;    // 不許可にした後に届いた依頼
+            var ws = _ws;
+            if (f == null || ws == null) return;     // 不許可にした後に届いた依頼
+
+            FillBones(f);                            // 転送するフレームにも骨の回転と Hips を添える
+            Relay(ws, from, MotionLiveJson.Build(f, _muscleNames));
 
             var model = GetModel?.Invoke();
             if (model == null) return;

@@ -28,9 +28,30 @@ namespace Poly_Ling.MeshListV2
         // OnViewChanged（エディタ版と同一、EditorApplication.delayCall を schedule.Execute に）
         // ================================================================
 
+        // 【同じフレームに続けて来た通知】
+        //   受信中の印（_isReceiving）は、こちらがツリーや選択を書き換えたことで後から届く
+        //   UI 側のコールバックを無視するため、次のフレームまで下ろさない。
+        //   その間に届いた変更通知まで捨てると、1 回の操作で続けて描画オブジェクトを足す処理
+        //   （魔法陣：親と部品の子を順に作る）で最初の 1 回分しか一覧に出ない。
+        //   そこで、この遅延の間に届いた通知は最も強い種類（ModelSwitch > ListStructure >
+        //   Attributes > Selection、列挙の並びと同じ）だけを控え、印を下ろした直後に 1 回流す。
+        private bool        _viewChangeDeferred;
+        private bool        _hasPendingViewChange;
+        private ChangeKind  _pendingViewChangeKind;
+        private IProjectView _pendingView;
+
         private void OnViewChanged(IProjectView view, ChangeKind kind)
         {
-            if (_isReceiving) return;
+            if (_isReceiving)
+            {
+                if (_viewChangeDeferred)
+                {
+                    if (!_hasPendingViewChange || kind > _pendingViewChangeKind) _pendingViewChangeKind = kind;
+                    _hasPendingViewChange = true;
+                    _pendingView = view;
+                }
+                return;
+            }
             _isReceiving = true;
             try
             {
@@ -77,7 +98,25 @@ namespace Poly_Ling.MeshListV2
                         break;
                 }
             }
-            finally { _root?.schedule.Execute(() => _isReceiving = false); }
+            finally
+            {
+                if (_root == null) { _isReceiving = false; }
+                else
+                {
+                    _viewChangeDeferred = true;
+                    _root.schedule.Execute(() =>
+                    {
+                        _isReceiving        = false;
+                        _viewChangeDeferred = false;
+                        if (!_hasPendingViewChange) return;
+
+                        _hasPendingViewChange = false;
+                        var pv = _pendingView;
+                        _pendingView = null;
+                        OnViewChanged(pv, _pendingViewChangeKind);
+                    });
+                }
+            }
         }
 
         // ================================================================

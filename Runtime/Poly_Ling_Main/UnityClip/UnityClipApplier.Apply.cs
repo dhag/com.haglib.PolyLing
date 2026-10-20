@@ -1,5 +1,5 @@
 // UnityClipApplier.Apply.cs
-// Unity クリップ適用：フレームの適用とレスト補正（Unity→MMD 完全リターゲット）。
+// Unity クリップ適用：フレームの適用（path の二次骨とマッスル）。
 // Runtime/Poly_Ling_Main/UnityClip/ に配置
 
 using System.Collections.Generic;
@@ -7,6 +7,7 @@ using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Ops;
+using Poly_Ling.Motion;
 using Poly_Ling.UnityClip;
 
 namespace Poly_Ling.UnityClip
@@ -18,6 +19,14 @@ namespace Poly_Ling.UnityClip
         // ================================================================
 
         public void ApplyFrame(ModelContext model, UnityClipDTO clip, float timeSec)
+            => ApplyFrame(model, clip, timeSec, null);
+
+        /// <summary>
+        /// canonLocals が null でなければ、本体ボーンは muscles ではなく正準ローカル回転
+        /// （MotionClipDTO.bakedBones の値。rotationSource = "bakedBones"）で当てる。path の二次骨は同じ。
+        /// </summary>
+        public void ApplyFrame(ModelContext model, UnityClipDTO clip, float timeSec,
+                               IReadOnlyDictionary<HumanBodyBones, Quaternion> canonLocals)
         {
             if (model == null || clip == null) return;
             if (_mappedModel != model || _mapping == null) BuildMapping(model);
@@ -41,31 +50,10 @@ namespace Poly_Ling.UnityClip
                 }
             }
 
-            // 本体ボーン: 方式を解決してから適用する
-            bool hasBaked = clip.bakedBones != null && clip.bakedBones.Count > 0;
-            BodySource mode = BodyMode;
-            if (mode == BodySource.Auto)
-                mode = hasBaked ? BodySource.BakedBones : BodySource.Muscle;
-            ResolvedBodyMode = mode;
-
-            if (mode == BodySource.BakedBones)
-            {
-                if (HasSourceRest)
-                {
-                    // レスト補正あり: Unity→MMD 完全リターゲット（applyRetarget 移植）
-                    matched += ApplyRetargetedBody(model, clip, timeSec);
-                }
-                else if (clip.bakedBones != null)
-                {
-                    // 未読込: 同一リグ用の従来経路（モデル rest デルタ）
-                    foreach (var track in clip.bakedBones)
-                        matched += ApplyTrackAt(model, track, timeSec);
-                }
-            }
-            else
-            {
-                matched += ApplySelfMuscle(model, clip, timeSec);
-            }
+            // 本体ボーン: 正準ローカル回転があればそれ、無ければ muscles から再構成する
+            matched += canonLocals != null
+                ? ApplyCanonLocals(model, canonLocals)
+                : ApplySelfMuscle(model, clip, timeSec);
 
             MatchedTrackCount = matched;
             FinishFrame(model);
@@ -86,7 +74,6 @@ namespace Poly_Ling.UnityClip
             PathMatchedCount = 0;
             PathTrackCount   = 0;
             UnresolvedPathTracks.Clear();
-            ResolvedBodyMode = BodySource.Muscle;
 
             MatchedTrackCount = ApplyMuscleValues(model,
                 (int mi, out float v) =>
@@ -99,7 +86,7 @@ namespace Poly_Ling.UnityClip
                     v = 0f;
                     return false;
                 },
-                timeSec);
+                false, timeSec);
 
             FinishFrame(model);
         }
@@ -160,7 +147,7 @@ namespace Poly_Ling.UnityClip
         //     ひざ・ひじ・股関節が曲がった Unity 定義の固定ポーズになる。
         //     正準の姿勢はそれを含んだ絶対の姿勢として扱う（差分にしない）。
         //
-        //   クリップがトラックを持たない dof は 0 として解かせる（以前の「その dof を掛けない」と同じ）。
+        //   クリップがトラックを持たない dof は clip.absentMusclesRest に従い 0 か正準 T ポーズの値で解かせる。
         //   rest からのデルタとして BonePoseData に載せる。
         private int ApplySelfMuscle(ModelContext model, UnityClipDTO clip, float timeSec)
         {
@@ -183,19 +170,21 @@ namespace Poly_Ling.UnityClip
                     v = 0f;
                     return false;
                 },
-                timeSec);
+                clip.absentMusclesRest, timeSec);
         }
 
         /// <summary>マッスル番号（HumanTrait.MuscleName の添字）の値を返す。無ければ false。</summary>
         private delegate bool MuscleValueSource(int muscleIndex, out float value);
 
         // マッスル値から本体ボーンのデルタを作って当てる（値の出どころだけが呼び出し元で違う）。
+        // valueOf が値を持たないマッスルは、absentRest なら正準 T ポーズの値（CanonMuscleSolver.RestMuscles）、
+        // そうでなければ 0 で解く（MotionClipDTO.absentMuscles）。効くのは駆動されているボーンの dof だけで、
+        // 駆動されていないボーンはどちらでも当てない（祖先に付いていく）。
         // timeSec は内訳ログの表示にだけ使う。
-        private int ApplyMuscleValues(ModelContext model, MuscleValueSource valueOf, float timeSec)
+        private int ApplyMuscleValues(ModelContext model, MuscleValueSource valueOf, bool absentRest, float timeSec)
         {
             var muscleNames = HumanTrait.MuscleName;
             int boneCount = HumanTrait.BoneCount;
-            int matched = 0;
 
             MuscleMatchedCount = 0;
             MuscleTargetCount  = 0;
@@ -210,8 +199,10 @@ namespace Poly_Ling.UnityClip
             // フレームのマッスル値をそろえて Unity に解かせる（1 フレーム 1 回）
             int mc = HumanTrait.MuscleCount;
             if (_muscleBuf == null || _muscleBuf.Length != mc) _muscleBuf = new float[mc];
+            var rest = absentRest ? _solver.RestMuscles : null;
             for (int mi = 0; mi < mc; mi++)
-                _muscleBuf[mi] = valueOf(mi, out float mv) ? mv : 0f;
+                _muscleBuf[mi] = valueOf(mi, out float mv) ? mv
+                    : (rest != null && mi < rest.Length ? rest[mi] : 0f);
             _solver.Solve(_muscleBuf);
 
             // 駆動されている Humanoid（dof のどれかにトラックがある）を先に集める。
@@ -227,6 +218,62 @@ namespace Poly_Ling.UnityClip
                     if (valueOf(mi0, out _)) { _drivenKeys.Add(HumanTrait.BoneName[bi].Replace(" ", string.Empty)); break; }
                 }
             }
+
+            _useCanonWorld = false;
+            return ApplyDrivenBones(model, valueOf, timeSec);
+        }
+
+        // (c) 正準ローカル回転（bakedBones）から本体ボーンを当てる（MotionClipDTO.rotationSource = "bakedBones"）。
+        //
+        //   マッスルを通さないので、マッスルで表せない回転（肩・手のねじり、前腕・すねの横曲げ）も残る。
+        //   1. Hips から見た正準ワールド W_c を CanonSkeleton の親から子の順に組む
+        //      （正準骨格はレストのローカル回転が単位なので、ローカル回転を掛けていけばよい）。
+        //      Hips 自身は単位（マッスル経路の CanonMuscleSolver.TryGetHipsRelativeWorld と同じ。
+        //      身体の向きはこの経路では当てない）。トラックの無いボーンは親のワールドのまま。
+        //   2. 以降はマッスル経路と同じ（DeltaOf → D = RestW⁻¹·Δ_祖先⁻¹·Δ·RestW）。
+        //   駆動するボーンは、トラックのあるボーンから Hips を除いたもの。
+        private readonly Dictionary<HumanBodyBones, Quaternion> _canonWorld = new Dictionary<HumanBodyBones, Quaternion>();
+        private bool _useCanonWorld;
+
+        private int ApplyCanonLocals(ModelContext model, IReadOnlyDictionary<HumanBodyBones, Quaternion> locals)
+        {
+            MuscleMatchedCount = 0;
+            MuscleTargetCount  = 0;
+            UnresolvedMuscleBones.Clear();
+
+            _canonWorld.Clear();
+            foreach (var row in CanonSkeleton.Rows)
+            {
+                if (!row.HasParent) { _canonWorld[row.Bone] = Quaternion.identity; continue; }
+                var pw = _canonWorld.TryGetValue(row.Parent, out var w) ? w : Quaternion.identity;
+                _canonWorld[row.Bone] = locals.TryGetValue(row.Bone, out var l) ? QuatNorm(pw * l) : pw;
+            }
+
+            _deltaMemo.Clear();
+            _drivenKeys.Clear();
+            foreach (var kv in locals)
+                if (kv.Key != HumanBodyBones.Hips && _canonWorld.ContainsKey(kv.Key))
+                    _drivenKeys.Add(kv.Key.ToString());
+
+            _useCanonWorld = true;
+            return ApplyDrivenBones(model, null, 0f);
+        }
+
+        // 直近の姿勢での Hips から見た正準ワールド回転（ApplyCanonLocals の値か、マッスルの解法の値）。
+        private bool TryGetCanonWorld(HumanBodyBones bone, out Quaternion wc)
+        {
+            if (_useCanonWorld) return _canonWorld.TryGetValue(bone, out wc);
+            wc = Quaternion.identity;
+            return _solver != null && _solver.TryGetHipsRelativeWorld(bone, out wc);
+        }
+
+        // 駆動されている Humanoid（_drivenKeys）へレスト差分を当てる（マッスル・正準ローカル回転で共通）。
+        // valueOf は内訳ログにだけ使う（null なら出さない）。
+        private int ApplyDrivenBones(ModelContext model, MuscleValueSource valueOf, float timeSec)
+        {
+            var muscleNames = HumanTrait.MuscleName;
+            int boneCount = HumanTrait.BoneCount;
+            int matched = 0;
 
             for (int bi = 0; bi < boneCount; bi++)
             {
@@ -253,7 +300,7 @@ namespace Poly_Ling.UnityClip
                     continue;
                 }
 
-                if (!_solver.TryGetHipsRelativeWorld((HumanBodyBones)bi, out _))
+                if (!TryGetCanonWorld((HumanBodyBones)bi, out _))
                 {
                     UnresolvedMuscleBones.Add(key + "(正準骨格に無い)");
                     continue;
@@ -267,7 +314,7 @@ namespace Poly_Ling.UnityClip
                 Quaternion applied  = QuatNorm(Quaternion.Inverse(fr.RestW) * Quaternion.Inverse(ancDelta)
                                                * delta * fr.RestW);
 
-                if (MuscleDebugLog && MuscleDebugBones != null && MuscleDebugBones.Contains(key))
+                if (valueOf != null && MuscleDebugLog && MuscleDebugBones != null && MuscleDebugBones.Contains(key))
                 {
                     var dsb = new System.Text.StringBuilder();
                     dsb.Append("[UnityClipApplier/muscle] ").Append(key)
@@ -297,41 +344,17 @@ namespace Poly_Ling.UnityClip
         }
 
         // ================================================================
-        // レスト補正（Unity→MMD 完全リターゲット）
-        //   motion_timeline.html applyRetarget（isModel=false 経路）を逐語移植。
-        //   「FK でワールド化 → ソース rest(RestW) 相対のワールド差分 → 左右ミラー
-        //     → A/T 整列 → CANON 親相対のローカルへ戻す」。
-        //   ソース rest（RestW/位置）は外部 UnityBone CSV v2（拡張C）から供給する。
-        //   独自の座標変換は足さない（mir / ft / Mx は逐語）。
+        // 正準の枠の補助（BuildCanonAlignment が使う）
         // ================================================================
 
-        // JS QR 準拠のクォータニオン [x,y,z,w]（world = QMul(parentWorld, local)）
+        // クォータニオン [x,y,z,w]
         private struct Q
         {
             public float x, y, z, w;
             public Q(float x, float y, float z, float w) { this.x = x; this.y = y; this.z = z; this.w = w; }
             public static Q Identity => new Q(0f, 0f, 0f, 1f);
             public Quaternion ToUnity() => new Quaternion(x, y, z, w);
-            public static Q From(Quaternion q) => new Q(q.x, q.y, q.z, q.w);
         }
-
-        private static Q QMul(Q a, Q b) => new Q(
-            a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-            a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z);
-
-        private static Q QConj(Q q) => new Q(-q.x, -q.y, -q.z, q.w);
-
-        private static Q QNorm(Q q)
-        {
-            float n = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-            if (n <= 1e-20f) n = 1f;
-            return new Q(q.x / n, q.y / n, q.z / n, q.w / n);
-        }
-
-        // Y軸180°回転の共役（Unity→PMX: 両左手系で向き-Z差のみ、正則回転）
-        private static Q QMir(Q q) => new Q(-q.x, q.y, -q.z, q.w);
 
         // 単位ベクトル a→b の最短弧（JS QR.ft 逐語）
         private static Q QFromTo(Vector3 a, Vector3 b)
@@ -358,8 +381,6 @@ namespace Poly_Ling.UnityClip
             if (n <= 1e-20f) n = 1f;
             return new Q(c.x / n, c.y / n, c.z / n, w / n);
         }
-
-        private static Vector3 Mx(Vector3 v) => new Vector3(-v.x, v.y, -v.z);   // Y軸180°回転（位置/方向）
 
         // 正準(Humanoid)階層テーブル（motion_timeline.html CANON_PARENT / CANON_CHILD と同一）
         private static Dictionary<string, string> _canonParent;

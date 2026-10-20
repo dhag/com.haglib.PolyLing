@@ -26,7 +26,11 @@ namespace Poly_Ling.Motion
     //   - 検証でエラーが 1 件でもあれば書かない。
     //
     // ■ 読込
-    //   JSON 解析 → format / version の確認 → version 1 の引き上げ → DTO 化 → 検証。
+    //   JSON 解析 → format / version の確認 → version 1 の引き上げ → DTO 化 → 検証
+    //   → muscles が無く bakedBones だけなら正準骨格でマッスル＋body へ焼く（CanonBoneMotion.BakeMuscles）。
+    //     このとき rotationSource を "bakedBones" にする（bakedBones が正本）。
+    //   書出しで muscles があれば bakedBones をマッスルから作り直す。ただし rotationSource が
+    //   "bakedBones" なら作り直さない。
     //   構文エラー・非対応形式・非対応版・検証エラーは失敗（Dto = null）。
     //   警告だけなら成功。
     //
@@ -106,8 +110,25 @@ namespace Poly_Ling.Motion
                 if (jo["morphs"] is JArray morphs && jo["expressions"] == null)
                     jo["expressions"] = morphs;
                 jo.Remove("morphs");
-                result.UpgradedFromVersion = 1;
             }
+            // version 2 → 3: 形は同じ。Root を muscles に置いたもの（旧表現）は Validate がエラーにする。
+            // version 3 → 4: sourceRest を廃止（下で捨てる）。bakedBones の意味は正準骨格上の
+            //   ローカル回転に固定されたが、旧ファイルの値が正準かどうかはファイルから判別できない。
+            //   旧ファイルの bakedBones は警告を出したうえで捨てる（再生の正本は muscles）。
+            if (jo["sourceRest"] is JArray srArr)
+            {
+                if (srArr.Count > 0)
+                    result.Warning(MotionFileCodes.DroppedField, $"sourceRest（{srArr.Count} 件）は version 4 で廃止したため読みません");
+                jo.Remove("sourceRest");
+            }
+            if (version < 4 && jo["bakedBones"] is JArray bbArr)
+            {
+                if (bbArr.Count > 0)
+                    result.Warning(MotionFileCodes.DroppedField,
+                        $"version {version} の bakedBones（{bbArr.Count} 本）は意味が正準と限らないため読みません");
+                jo.Remove("bakedBones");
+            }
+            if (version < MotionClipDTO.CurrentVersion) result.UpgradedFromVersion = version;
 
             MotionClipDTO dto;
             try
@@ -127,7 +148,25 @@ namespace Poly_Ling.Motion
             dto.version = MotionClipDTO.CurrentVersion;
 
             Validate(dto, result);
-            if (result.ErrorCount == 0) result.Dto = dto;
+            if (result.ErrorCount > 0) return result;
+
+            // muscles が無く bakedBones だけなら、正準骨格でマッスル＋body へ焼く（再生の正は muscles）。
+            bool hadBody = dto.body != null;
+            var ignored = new List<string>();
+            if (!CanonBoneMotion.BakeMuscles(dto, ignored, out bool baked, out string bakeReason))
+            {
+                result.Error(MotionFileCodes.InvalidHeader, bakeReason);
+                return result;
+            }
+            if (ignored.Count > 0)
+                result.Warning(MotionFileCodes.UnknownBone,
+                    $"bakedBones のうち正準骨格に無いボーンは使いません: {string.Join(", ", ignored)}");
+            if (baked && hadBody)
+                result.Warning(MotionFileCodes.DroppedField, "muscles が無いため、body は bakedBones から作り直しました");
+            // bakedBones だけのファイルは bakedBones が正本（マッスルは Humanoid 向けに添えたもの）。
+            if (baked) dto.rotationSource = MotionClipDTO.RotationSourceBakedBones;
+
+            result.Dto = dto;
             return result;
         }
 
@@ -175,18 +214,7 @@ namespace Poly_Ling.Motion
         public static MotionClipLoadResult Save(MotionClipDTO dto, string path)
         {
             var result = new MotionClipLoadResult();
-            if (dto == null)
-            {
-                result.Error(MotionFileCodes.InvalidHeader, "書き出す DTO がありません");
-                return result;
-            }
-
-            dto.format  = MotionClipDTO.FormatName;
-            dto.version = MotionClipDTO.CurrentVersion;
-            Validate(dto, result);
-            if (result.ErrorCount > 0) return result;
-
-            if (dto.duration <= 0f) dto.duration = MaxKeyTime(dto);
+            if (!PrepareForSave(dto, result)) return result;
 
             string json = ToJson(dto, indented: true);
             string tmp  = path + ".tmp";
@@ -214,6 +242,62 @@ namespace Poly_Ling.Motion
             return result;
         }
 
+        /// <summary>
+        /// Save がファイルに書くものと同じ JSON 文字列を作る（ファイルは書かない）。dto は書き換えない
+        /// （写しを整えて書く）。エラーがあれば json は null で、理由は戻り値の Issues。
+        /// 成功時の戻り値の Dto は整えた写し。Blender ブリッジのモーション取得（queryMotionClipJson）が使う。
+        /// </summary>
+        public static MotionClipLoadResult ToSaveJson(MotionClipDTO dto, out string json)
+        {
+            json = null;
+            var result = new MotionClipLoadResult();
+            if (dto == null)
+            {
+                result.Error(MotionFileCodes.InvalidHeader, "書き出す DTO がありません");
+                return result;
+            }
+            var copy = JsonConvert.DeserializeObject<MotionClipDTO>(ToJson(dto, indented: false), Settings);
+            if (!PrepareForSave(copy, result)) return result;
+            json = ToJson(copy, indented: true);
+            result.Dto = copy;
+            return result;
+        }
+
+        /// <summary>
+        /// 書き出す前の整え（Save と ToSaveJson が共用）。dto を書き換える。エラーがあれば false。
+        /// </summary>
+        private static bool PrepareForSave(MotionClipDTO dto, MotionClipLoadResult result)
+        {
+            if (dto == null)
+            {
+                result.Error(MotionFileCodes.InvalidHeader, "書き出す DTO がありません");
+                return false;
+            }
+
+            dto.format  = MotionClipDTO.FormatName;
+            dto.version = MotionClipDTO.CurrentVersion;
+
+            // muscles を持つなら bakedBones を必ず添える（マッスルから Unity で解いた正準ローカル回転。
+            // PolyLing_VRMA整備計画.md 2.1）。Unity の外（JS など）はこれで骨を動かす。
+            // rotationSource が "bakedBones" のクリップは bakedBones が正本なので作り直さない。
+            if (dto.muscles != null && dto.muscles.Count > 0)
+            {
+                SortKeys(dto);
+                if (!MotionClipDTO.BakedBonesArePrimary(dto)
+                    && !CanonBoneMotion.BakeBones(dto, out string bakeReason))
+                {
+                    result.Error(MotionFileCodes.InvalidHeader, bakeReason);
+                    return false;
+                }
+            }
+
+            Validate(dto, result);
+            if (result.ErrorCount > 0) return false;
+
+            if (dto.duration <= 0f) dto.duration = MaxKeyTime(dto);
+            return true;
+        }
+
         /// <summary>書き出す。エラーがあれば例外。</summary>
         public static void SaveJson(MotionClipDTO dto, string path)
         {
@@ -233,6 +317,7 @@ namespace Poly_Ling.Motion
             max = Mathf.Max(max, MaxTimeTracks(dto.bones));
             max = Mathf.Max(max, MaxTimeTracks(dto.bakedBones));
             if (dto.body?.keys != null) foreach (var k in dto.body.keys) if (k != null) max = Mathf.Max(max, k.t);
+            if (dto.lookAt?.keys != null) foreach (var k in dto.lookAt.keys) if (k != null) max = Mathf.Max(max, k.t);
             max = Mathf.Max(max, MaxTimeScalar(dto.muscles));
             if (dto.expressions != null)
                 foreach (var tr in dto.expressions)
@@ -272,6 +357,7 @@ namespace Poly_Ling.Motion
             SortTracks(dto.bones);
             SortTracks(dto.bakedBones);
             if (dto.body != null) SortTrack(dto.body);
+            if (dto.lookAt != null) SortTrack(dto.lookAt);
 
             if (dto.expressions != null)
                 foreach (var t in dto.expressions)
@@ -313,11 +399,6 @@ namespace Poly_Ling.Motion
             return _muscleNames.Contains(name);
         }
 
-        private static bool IsRootCurveName(string name)
-            => name == UnityClipRootMotion.NameTx || name == UnityClipRootMotion.NameTy || name == UnityClipRootMotion.NameTz
-            || name == UnityClipRootMotion.NameQx || name == UnityClipRootMotion.NameQy
-            || name == UnityClipRootMotion.NameQz || name == UnityClipRootMotion.NameQw;
-
         /// <summary>ファイルだけで決まる検査を行い、結果へ積む。キーの並べ替えと回転符号の揃えも行う。</summary>
         public static void Validate(MotionClipDTO dto, MotionClipLoadResult r)
         {
@@ -339,12 +420,16 @@ namespace Poly_Ling.Motion
                     if (string.IsNullOrEmpty(tr.name)) { r.Error(MotionFileCodes.InvalidTrack, "muscles に名前の無いトラックがあります"); continue; }
                     if (!seen.Add(tr.name)) r.Error(MotionFileCodes.DuplicateTrack, $"{label} が重複しています");
 
-                    bool root = IsRootCurveName(tr.name);
-                    if (!root && !IsKnownMuscle(tr.name))
+                    if (UnityClipRootMotion.IsRootCurveName(tr.name))
+                    {
+                        r.Error(MotionFileCodes.InvalidTrack,
+                            $"{label}：Root（RootT / RootQ）は muscles ではなく body トラック（pos / rot）に置くこと");
+                        continue;
+                    }
+                    if (!IsKnownMuscle(tr.name))
                         r.Warning(MotionFileCodes.UnknownMuscle, $"{label} は Unity のマッスル名にありません");
 
-                    ValidateScalarTrack(tr, label, r, root ? float.NegativeInfinity : -1f, root ? float.PositiveInfinity : 1f,
-                        MotionFileCodes.MuscleOutOfRange);
+                    ValidateScalarTrack(tr, label, r, -1f, 1f, MotionFileCodes.MuscleOutOfRange);
                 }
             }
 
@@ -371,7 +456,7 @@ namespace Poly_Ling.Motion
                     if (tr == null) { r.Error(MotionFileCodes.InvalidTrack, "bones に空の要素があります"); continue; }
                     string label = $"bones[{tr.targetKind}:{tr.id}]";
                     if (tr.id == null) { r.Error(MotionFileCodes.InvalidTrack, "bones に id の無いトラックがあります"); continue; }
-                    if (tr.targetKind != "boneName" && tr.targetKind != "path")
+                    if (tr.targetKind != MotionClipDTO.TargetBoneName && tr.targetKind != MotionClipDTO.TargetPath)
                         r.Error(MotionFileCodes.InvalidTrack, $"{label} の targetKind は \"boneName\" か \"path\" であること");
                     if (!seen.Add(tr.targetKind + "\n" + tr.id)) r.Error(MotionFileCodes.DuplicateTrack, $"{label} が重複しています");
                     ValidateBoneTrack(tr, label, r);
@@ -386,12 +471,89 @@ namespace Poly_Ling.Motion
                     if (tr == null) { r.Error(MotionFileCodes.InvalidTrack, "bakedBones に空の要素があります"); continue; }
                     string label = $"bakedBones[{tr.id}]";
                     if (string.IsNullOrEmpty(tr.id)) { r.Error(MotionFileCodes.InvalidTrack, "bakedBones に id の無いトラックがあります"); continue; }
+                    if (tr.targetKind != MotionClipDTO.TargetHumanoid)
+                        r.Error(MotionFileCodes.InvalidTrack, $"{label} の targetKind は \"humanoid\" であること（\"{tr.targetKind}\"）");
+                    if (!IsHumanoidName(tr.id))
+                        r.Error(MotionFileCodes.InvalidTrack, $"{label} の id は HumanBodyBones の列挙名であること");
                     if (!seen.Add(tr.id)) r.Error(MotionFileCodes.DuplicateTrack, $"{label} が重複しています");
+                    bool isHips = tr.id == nameof(HumanBodyBones.Hips);
+                    if (tr.keys != null)
+                        for (int i = 0; i < tr.keys.Count; i++)
+                        {
+                            var k = tr.keys[i];
+                            if (k == null) continue;
+                            if (k.scl != null)
+                                r.Error(MotionFileCodes.InvalidCurve, $"{label} キー {i} に scl があります（bakedBones は拡大縮小を持たない）");
+                            if (k.pos != null && !isHips)
+                                r.Error(MotionFileCodes.InvalidCurve, $"{label} キー {i} に pos があります（pos を持てるのは Hips だけ）");
+                        }
                     ValidateBoneTrack(tr, label, r);
                 }
             }
 
-            if (dto.body != null) ValidateBoneTrack(dto.body, "body", r);
+            if (dto.body != null)
+            {
+                if (dto.body.targetKind != MotionClipDTO.TargetBody || dto.body.id != MotionClipDTO.BodyTrackId)
+                    r.Error(MotionFileCodes.InvalidTrack,
+                        $"body の id と targetKind はどちらも \"body\" であること（id \"{dto.body.id}\" / targetKind \"{dto.body.targetKind}\"）");
+                ValidateBoneTrack(dto.body, "body", r);
+            }
+
+            // ---- 視線 ----
+            if (dto.lookAt != null)
+            {
+                if (dto.lookAt.targetKind != MotionClipDTO.TargetLookAt || dto.lookAt.id != MotionClipDTO.LookAtTrackId)
+                    r.Error(MotionFileCodes.InvalidTrack,
+                        $"lookAt の id と targetKind はどちらも \"lookAt\" であること（id \"{dto.lookAt.id}\" / targetKind \"{dto.lookAt.targetKind}\"）");
+                if (dto.lookAt.keys != null)
+                    for (int i = 0; i < dto.lookAt.keys.Count; i++)
+                    {
+                        var k = dto.lookAt.keys[i];
+                        if (k == null) continue;
+                        if (k.pos != null || k.scl != null)
+                            r.Error(MotionFileCodes.InvalidCurve, $"lookAt キー {i} に pos か scl があります（lookAt は rot だけ）");
+                        if (k.rot == null)
+                            r.Error(MotionFileCodes.InvalidCurve, $"lookAt キー {i} に rot がありません");
+                    }
+                ValidateBoneTrack(dto.lookAt, "lookAt", r);
+            }
+            if (dto.lookAtOffsetFromHeadBone != null && !IsFiniteArray(dto.lookAtOffsetFromHeadBone, 3))
+                r.Error(MotionFileCodes.InvalidHeader, "lookAtOffsetFromHeadBone は null か数 3 個であること");
+            if (dto.absentMuscles != null
+                && dto.absentMuscles != MotionClipDTO.AbsentMusclesZero
+                && dto.absentMuscles != MotionClipDTO.AbsentMusclesRest)
+                r.Error(MotionFileCodes.InvalidHeader,
+                    $"absentMuscles は \"{MotionClipDTO.AbsentMusclesZero}\" か \"{MotionClipDTO.AbsentMusclesRest}\" であること（\"{dto.absentMuscles}\"）");
+            if (dto.rotationSource != null
+                && dto.rotationSource != MotionClipDTO.RotationSourceMuscles
+                && dto.rotationSource != MotionClipDTO.RotationSourceBakedBones)
+                r.Error(MotionFileCodes.InvalidHeader,
+                    $"rotationSource は \"{MotionClipDTO.RotationSourceMuscles}\" か \"{MotionClipDTO.RotationSourceBakedBones}\" であること（\"{dto.rotationSource}\"）");
+            else if (dto.rotationSource == MotionClipDTO.RotationSourceBakedBones
+                     && (dto.bakedBones == null || dto.bakedBones.Count == 0))
+                r.Error(MotionFileCodes.InvalidHeader, "rotationSource が \"bakedBones\" なのに bakedBones がありません");
+        }
+
+        private static HashSet<string> _humanoidNames;
+
+        /// <summary>HumanBodyBones の列挙名（LastBone を除く）か。</summary>
+        public static bool IsHumanoidName(string name)
+        {
+            if (_humanoidNames == null)
+            {
+                var set = new HashSet<string>(StringComparer.Ordinal);
+                foreach (HumanBodyBones b in Enum.GetValues(typeof(HumanBodyBones)))
+                    if (b != HumanBodyBones.LastBone) set.Add(b.ToString());
+                _humanoidNames = set;
+            }
+            return name != null && _humanoidNames.Contains(name);
+        }
+
+        private static bool IsFiniteArray(float[] a, int n)
+        {
+            if (a == null || a.Length != n) return false;
+            foreach (var v in a) if (!IsFinite(v)) return false;
+            return true;
         }
 
         private static void ValidateScalarTrack(MotionScalarTrackDTO tr, string label, MotionClipLoadResult r,
@@ -544,6 +706,13 @@ namespace Poly_Ling.Motion
         public const string AuxiliaryBoneConflict = "AUXILIARY_BONE_CONFLICT";
         public const string FileReadFailed        = "FILE_READ_FAILED";
         public const string FileWriteFailed       = "FILE_WRITE_FAILED";
+        public const string DroppedField          = "DROPPED_FIELD";
+        public const string VrmaInvalid           = "VRMA_INVALID";
+        public const string VrmaNotRead           = "VRMA_NOT_READ";
+        public const string BvhInvalid            = "BVH_INVALID";
+        public const string BvhNotRead            = "BVH_NOT_READ";
+        public const string FbxInvalid            = "FBX_INVALID";
+        public const string FbxNotRead            = "FBX_NOT_READ";
     }
 
     /// <summary>検査で見つかった 1 件。</summary>

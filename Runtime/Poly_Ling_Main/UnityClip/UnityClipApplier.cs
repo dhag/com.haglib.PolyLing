@@ -73,7 +73,7 @@
 // ================================================================
 //
 // 【分割先】このファイルから次へ分けてある。
-//   UnityClipApplier.Apply.cs    Unity クリップ適用：フレームの適用とレスト補正（Unity→MMD 完全リターゲット）。
+//   UnityClipApplier.Apply.cs    Unity クリップ適用：フレームの適用（path の二次骨とマッスル）。
 //   UnityClipApplier.Canon.cs    Unity クリップ適用：正準マッスル基準テーブルと正準定数の公開。
 //   UnityClipApplier.Support.cs  Unity クリップ適用：外部 CSV・診断ログ・ノード単位のデルタ・仮想ミラー鎖・ワールド行列・サンプリング。
 
@@ -91,15 +91,14 @@ namespace Poly_Ling.UnityClip
         private const string LayerName = "UnityClip";
 
         // ================================================================
-        // 本体ボーンの適用方式（「あれば使う・なければそれなり」）
+        // 本体ボーンの適用
         // ----------------------------------------------------------------
-        //   (a) BakedBones … dto.bakedBones（HumanBodyBones の localRotation を焼いたもの）
-        //       をそのまま適用する。最も高精度だが、抽出時に Avatar が必要。
-        //       さらに外部 UnityBone CSV（ソース rest）があればレスト補正リターゲットへ。
-        //   (b) Muscle    … dto.muscles（生マッスル）からローカル回転を再構成する。
-        //       ソースの Avatar は不要。正準骨格の Avatar に Unity 自身で解かせ（CanonMuscleSolver）、
-        //       得た正準の姿勢を、焼き込みの逆でモデルへ移す（DeltaOf）。
-        //   二次骨（dto.bones：袖/髪/スカート等）は、どちらの方式でも常時適用する。
+        //   dto.muscles（生マッスル）からローカル回転を再構成する（再生の正は muscles。
+        //   PolyLing_VRMA整備計画.md 2.1）。正準骨格の Avatar に Unity 自身で解かせ（CanonMuscleSolver）、
+        //   得た正準の姿勢を、焼き込みの逆でモデルへ移す（DeltaOf）。
+        //   bakedBones だけのファイルは MotionClipSerializer.Parse が読込時にマッスル＋body へ焼くので、
+        //   ここへは来ない（以前の bakedBones 直接適用・ソース rest によるリターゲットは段 ⑤ で削除）。
+        //   二次骨（dto.bones：袖/髪/スカート等）は常時適用する。
         //
         //   可動域（正準 Avatar の HumanLimit）の出所は次の順に決まる:
         //     1) 外部 UnityLimit CSV の UseDefault=false の行（LoadMuscleLimitCsv 済み）
@@ -108,31 +107,7 @@ namespace Poly_Ling.UnityClip
         //     3) Unity 既定
         //   2) の控えは BuildMapping（→ BuildCanonAlignment）で作る。
         //   可動域を編集したあとは BuildMapping を呼び直すまで反映されない。
-        //
-        // BodyMode = Auto のとき、bakedBones があれば (a)、無ければ (b) を選ぶ。
-        //
-        // ■ 未対応（恒久メモ）
-        //   Muscle 経路にはレスト補正リターゲットが無い。実測値はソースアバターの
-        //   ボーンローカル軸で得た量なので、ターゲットモデルのレスト姿勢が大きく
-        //   異なる場合はその分ずれる。UnityBone CSV の rest を使った整列は今後の課題。
         // ================================================================
-
-        /// <summary>本体ボーンの適用方式。</summary>
-        public enum BodySource
-        {
-            /// <summary>bakedBones があれば BakedBones、無ければ Muscle。</summary>
-            Auto = 0,
-            /// <summary>常に bakedBones を使う（無ければ本体ボーンは動かない）。</summary>
-            BakedBones = 1,
-            /// <summary>常に muscles から再構成する。</summary>
-            Muscle = 2
-        }
-
-        /// <summary>本体ボーンの適用方式。既定は Auto。</summary>
-        public BodySource BodyMode { get; set; } = BodySource.Auto;
-
-        /// <summary>直近の ApplyFrame で実際に選ばれた方式（Auto の解決結果）。</summary>
-        public BodySource ResolvedBodyMode { get; private set; } = BodySource.Auto;
 
         // マッピング状態
         private ModelContext _mappedModel;
@@ -153,22 +128,6 @@ namespace Poly_Ling.UnityClip
         private Quaternion[] _nodeDeltaRot;
         private Vector3[]    _nodeDeltaPos;
         private bool[]       _nodeHasDelta;
-
-        // リターゲット用ソース rest（外部 UnityBone CSV v2 由来）。null/空 = 未読込。
-        //
-        // ■ 存置理由（削除しかけた記録）
-        //   この経路（ApplyRetargetedBody）へ入るのは clip.bakedBones があるときだけで、
-        //   現行のエクスポータは bakedBones を出力しない（WALK00_F / rest_mascle_0 とも 0 件）。
-        //   そのため Unity クリップパネル側の「バインドポーズ CSV」UI は削除した。
-        //   実装本体をここに残しているのは MotionClipApplier が
-        //   HasSourceRest / LoadSourceRestCsv / ClearSourceRest を委譲しており、
-        //   消すと統合モーションパネルがビルドできなくなるため。
-        //   統合モーション側を整理するときに、この一式ごと落とすこと。
-        private struct SourceRest { public Quaternion RestW; public Vector3 RestPos; }
-        private Dictionary<string, SourceRest> _sourceRest;   // Humanoid名 → rest
-
-        /// <summary>ソース rest（バインドポーズ）読込済みなら true＝レスト補正リターゲットが有効。</summary>
-        public bool HasSourceRest => _sourceRest != null && _sourceRest.Count > 0;
 
         // マッスル可動域（外部 UnityLimit CSV v1 由来）。null/空 = 未読込。
         //   可動域は正準骨格の Avatar（CanonMuscleSolver）へ HumanLimit として渡す。
@@ -333,8 +292,7 @@ namespace Poly_Ling.UnityClip
         // ----------------------------------------------------------------
         //   ボーン 1 本につき 3 つの量を用意する。
         //     A     … 正準（T ポーズ）のボーン方向 → ターゲットの rest 方向 の最短弧。
-        //             骨組み（EnsureCanon / DirRest / QFromTo）は ApplyRetargetedBody
-        //             用に既にあるものを流用する。
+        //             骨組みは EnsureCanon / DirRest / QFromTo（UnityClipApplier.Apply.cs・Canon.cs）。
         //     RestL … 自ボーンのレスト・ローカル回転
         //     RestW … ルートからの累積レスト回転
         //
@@ -390,10 +348,8 @@ namespace Poly_Ling.UnityClip
                     RestL = Quaternion.identity
                 };
 
-                // A は腕 8 本だけ（IsArmAlignBone）。他は恒等。
-                if (IsArmAlignBone(kv.Key) &&
-                    _canonDir.TryGetValue(kv.Key, out var d0) && DirRest(tp, kv.Key, out var dt))
-                    fr.A = QFromTo(d0, dt).ToUnity();
+                // A は腕 8 本（AlignLegs なら脚 4 本も）。他は恒等。算出は CanonAlignment が正本（BVH 読込と共用）。
+                fr.A = CanonAlignment(tp, kv.Key, _alignLegs);
 
                 if (node.TryGetValue(kv.Key, out int n))
                 {
@@ -420,14 +376,17 @@ namespace Poly_Ling.UnityClip
         // ================================================================
         // T ポーズ整列を掛けるボーン（恒久メモ・削除禁止）
         // ----------------------------------------------------------------
-        //   肩・上腕・前腕・手首の 8 本だけ。焼き込み・VRMA 書き出し・パネル再生の
-        //   すべてがここを見る（範囲がずれると再生が焼き込みの逆にならない）。
+        //   既定は肩・上腕・前腕・手首の 8 本。オプション「脚も合わせる」（AlignLegs）で
+        //   太もも・すねの 4 本を加える。範囲の正本はこの表と IsAlignBone の 1 か所だけ。
+        //   焼き込み・VRMA 書き出し・パネル再生・BVH 書き出し・ライブ受信のすべてがここを見る。
+        //   焼き込みと再生は同じ設定にそろえること（範囲がずれると再生が焼き込みの逆にならない）。
+        //   BVH 読込は常に腕＋脚（BvhCodec。CMU のレストは脚が約 20° 開いているため。2026-10-14）。
         //
         //   A は「ボーン 1 本の方向合わせ」でしかない。全 Humanoid へ掛けた実測では
         //   上半身が反り返り、指が根元と先端で逆に曲がった（VmdVrmAnimationExport.cs 冒頭）。
         //   2026-09-26 の実測：焼き込みと再生を腕 8 本・同じ掛け方にそろえると、
         //   再生と VMD 直接の差は Unity のマッスル表現で落ちる分だけになった。
-        //   範囲を変える選択肢は置かない。
+        //   体幹・足首・つま先・指は範囲に入れない。脚 4 本は 2026-10-14 にオプションとして加えた。
         // ================================================================
         private static readonly HashSet<string> ArmAlignBoneNames = new HashSet<string>
         {
@@ -437,17 +396,43 @@ namespace Poly_Ling.UnityClip
             "LeftHand",      "RightHand",
         };
 
-        /// <summary>T ポーズ整列 A を掛けるボーンか（腕 8 本）。名前の空白の有無は問わない。</summary>
-        public static bool IsArmAlignBone(string humanoidName)
+        private static readonly HashSet<string> LegAlignBoneNames = new HashSet<string>
+        {
+            "LeftUpperLeg",  "RightUpperLeg",
+            "LeftLowerLeg",  "RightLowerLeg",
+        };
+
+        /// <summary>T ポーズ整列 A を掛けるボーンか（腕 8 本。includeLegs なら脚 4 本も）。名前の空白の有無は問わない。</summary>
+        public static bool IsAlignBone(string humanoidName, bool includeLegs)
         {
             if (string.IsNullOrEmpty(humanoidName)) return false;
             string key = UnityClipVirtualSkeleton.NormalizeHumanoidName(humanoidName);
-            return !string.IsNullOrEmpty(key) && ArmAlignBoneNames.Contains(key);
+            if (string.IsNullOrEmpty(key)) return false;
+            return ArmAlignBoneNames.Contains(key) || (includeLegs && LegAlignBoneNames.Contains(key));
         }
+
+        /// <summary>T ポーズ整列 A を掛けるボーンか（腕 8 本だけ）。</summary>
+        public static bool IsArmAlignBone(string humanoidName) => IsAlignBone(humanoidName, false);
+
+        /// <summary>
+        /// オプション「脚も T ポーズに合わせる」。既定は false（腕 8 本だけ）。
+        /// 変えると、対応付け済みならその場で整列を作り直す。焼き込みと再生は同じ値にそろえること。
+        /// </summary>
+        public bool AlignLegs
+        {
+            get => _alignLegs;
+            set
+            {
+                if (_alignLegs == value) return;
+                _alignLegs = value;
+                if (_mappedModel != null && _skeleton != null) BuildCanonAlignment(_mappedModel);
+            }
+        }
+        private bool _alignLegs;
 
         /// <summary>
         /// 正準（T ポーズ）のボーン方向 → ターゲット rest 方向 の最短弧 A。
-        /// 腕 8 本（IsArmAlignBone）だけが非恒等で、他は恒等を返す。
+        /// 範囲（腕 8 本。AlignLegs なら脚 4 本も）だけが非恒等で、他は恒等を返す。
         /// BuildMapping を通したあとだけ引ける。引けなければ false（恒等を返す）。
         ///
         /// VMD の焼き込み・VRMA 書き出し（VmdPoseSession）が、モデルのレスト姿勢を
@@ -465,6 +450,27 @@ namespace Poly_Ling.UnityClip
 
             alignment = fr.A;
             return true;
+        }
+
+        /// <summary>
+        /// T ポーズ整列 A をレスト位置の表から求める唯一の算出（モデルの BuildCanonAlignment と BVH 読込が呼ぶ）。
+        /// restPos は Humanoid 名（空白なし）→ レストのワールド位置（Unity 左手系）。
+        /// 範囲（IsAlignBone）の中で、自分と正準の子の両方の位置があるときだけ
+        /// 「正準の骨の向き → レストの骨の向き」の最短弧を返す。それ以外は恒等。
+        /// </summary>
+        public static Quaternion CanonAlignment(Dictionary<string, Vector3> restPos, string humanoidName, bool includeLegs)
+            => IsAlignBone(humanoidName, includeLegs) ? CanonDirAlignment(restPos, humanoidName) : Quaternion.identity;
+
+        // 範囲を見ない最短弧（範囲の判定は CanonAlignment が持つ）。
+        private static Quaternion CanonDirAlignment(Dictionary<string, Vector3> restPos, string humanoidName)
+        {
+            if (restPos == null || string.IsNullOrEmpty(humanoidName)) return Quaternion.identity;
+            EnsureCanon();
+            EnsureCanonMuscle();
+            string key = UnityClipVirtualSkeleton.NormalizeHumanoidName(humanoidName);
+            if (_canonDir.TryGetValue(key, out var d0) && DirRest(restPos, key, out var dt))
+                return QFromTo(d0, dt).ToUnity();
+            return Quaternion.identity;
         }
 
         // ノードの rest ワールド行列。スキンド・MeshFilter 骨格とも
@@ -525,7 +531,7 @@ namespace Poly_Ling.UnityClip
             Quaternion r;
             if (_drivenKeys.Contains(humanoidName)
                 && System.Enum.TryParse<HumanBodyBones>(humanoidName, out var hbb)
-                && _solver != null && _solver.TryGetHipsRelativeWorld(hbb, out Quaternion wc))
+                && TryGetCanonWorld(hbb, out Quaternion wc))
                 r = QuatNorm(wc * Quaternion.Inverse(FrameOf(humanoidName).A));
             else
                 r = DeltaOf(AncestorOf(humanoidName), depth + 1);
@@ -536,6 +542,11 @@ namespace Poly_Ling.UnityClip
 
         // マッスル → 正準ローカル回転の解法。可動域の優先順は
         //   外部 UnityLimit CSV（UseDefault=false の行）＞ モデル側 HumanLimit ＞ Unity 既定。
+        /// <summary>
+        /// 再生に使う解法の正準 T ポーズのマッスル値（absentMuscles = "rest" の値）。解法を組めなければ null。
+        /// </summary>
+        public float[] CanonRestMuscles => EnsureSolver(out _) ? _solver.RestMuscles : null;
+
         private bool EnsureSolver(out string reason)
         {
             reason = null;
@@ -642,71 +653,73 @@ namespace Poly_Ling.UnityClip
             "RightLowerLeg|0.642743 0 0 0.766082|0 1 0 -45 45|-|-1 0 0 -80 80",
             "RightFoot|0 0 0 1|-|0 0 1 -30 30|1 0 0 -50 50",
             "RightToes|0 0 0 1|-|-|1 0 0 -50 50",
-            "LeftThumbProximal|1e-06 0.123091 0.123092 0.984732|-|-0.6357 0 -0.772 -25 25|-0.2485 0.9468 0.2047 -20 20",
-            "LeftThumbIntermediate|0 -0.196116 0 0.980581|-|-|-0.2502 0.9461 0.2057 -40 35",
-            "LeftThumbDistal|0 -0.196116 0 0.980581|-|-|-0.2502 0.9461 0.2057 -40 35",
-            "LeftIndexProximal|1e-06 0.076402 0.286508 0.955027|-|0.0235 0.9997 0 -20 20|0 0 -1 -50 50",
-            "LeftIndexIntermediate|0 0 0.313378 0.949629|-|-|-0.0001 0 -1 -45 45",
-            "LeftIndexDistal|0 0 0.313378 0.949629|-|-|-0.0001 0 -1 -45 45",
-            "LeftMiddleProximal|0 0.038285 0.287137 0.957124|-|0.0235 0.9997 0 -7.5 7.5|0 0 -1 -50 50",
-            "LeftMiddleIntermediate|0 0 0.313378 0.949629|-|-|-0.0001 0 -1 -45 45",
-            "LeftMiddleDistal|0 0 0.313378 0.949629|-|-|-0.0001 0 -1 -45 45",
-            "LeftRingProximal|0 -0.038285 0.287137 0.957124|-|-0.0235 -0.9997 0 -7.5 7.5|0 0 -1 -50 50",
-            "LeftRingIntermediate|0 0 0.313378 0.949629|-|-|-0.0002 0 -1 -45 45",
-            "LeftRingDistal|0 0 0.313378 0.949629|-|-|-0.0002 0 -1 -45 45",
-            "LeftLittleProximal|-1e-06 -0.076402 0.286508 0.955027|-|-0.0235 -0.9997 0 -20 20|0 0 -1 -50 50",
-            "LeftLittleIntermediate|0 0 0.313378 0.949629|-|-|-0.0001 0 -1 -45 45",
-            "LeftLittleDistal|0 0 0.313378 0.949629|-|-|-0.0001 0 -1 -45 45",
-            "RightThumbProximal|1e-06 -0.123091 -0.123092 0.984732|-|-0.6357 0 0.772 -25 25|-0.2485 -0.9468 -0.2047 -20 20",
-            "RightThumbIntermediate|0 0.196116 0 0.980581|-|-|-0.2502 -0.9461 -0.2057 -40 35",
-            "RightThumbDistal|0 0.196116 0 0.980581|-|-|-0.2502 -0.9461 -0.2057 -40 35",
-            "RightIndexProximal|1e-06 -0.076402 -0.286508 0.955027|-|0.0235 -0.9997 0 -20 20|0 0 1 -50 50",
-            "RightIndexIntermediate|0 0 -0.313378 0.949629|-|-|-0.0001 0 1 -45 45",
-            "RightIndexDistal|0 0 -0.313378 0.949629|-|-|-0.0001 0 1 -45 45",
-            "RightMiddleProximal|0 -0.038285 -0.287137 0.957124|-|0.0235 -0.9997 0 -7.5 7.5|0 0 1 -50 50",
-            "RightMiddleIntermediate|0 0 -0.313378 0.949629|-|-|-0.0001 0 1 -45 45",
-            "RightMiddleDistal|0 0 -0.313378 0.949629|-|-|-0.0001 0 1 -45 45",
-            "RightRingProximal|0 0.038285 -0.287137 0.957124|-|-0.0235 0.9997 0 -7.5 7.5|0 0 1 -50 50",
-            "RightRingIntermediate|0 0 -0.313378 0.949629|-|-|-0.0002 0 1 -45 45",
-            "RightRingDistal|0 0 -0.313378 0.949629|-|-|-0.0002 0 1 -45 45",
-            "RightLittleProximal|-1e-06 0.076402 -0.286508 0.955027|-|-0.0235 0.9997 0 -20 20|0 0 1 -50 50",
-            "RightLittleIntermediate|0 0 -0.313378 0.949629|-|-|-0.0001 0 1 -45 45",
-            "RightLittleDistal|0 0 -0.313378 0.949629|-|-|-0.0001 0 1 -45 45",
+            // 指の行は 2026-10-14 に正準骨格の指を VRM T ポーズへ合わせたあと、正準骨格の Avatar で測り直した値
+            // （全マッスル 0 の姿勢＝Zero、1 本だけ ±1 にしたときの Zero⁻¹・q の軸と角度）。旧骨格で同じ測り方をすると旧表を再現した。
+            "LeftThumbProximal|1e-06 0.123091 0.123092 0.984732|-|-0.7071 0 -0.7071 -25 25|0 1 0 -20 20",
+            "LeftThumbIntermediate|0 -0.196116 0 0.980581|-|-|0 1 0 -40 35",
+            "LeftThumbDistal|0 -0.196116 0 0.980581|-|-|0 1 0 -40 35",
+            "LeftIndexProximal|1e-06 0.076402 0.286508 0.955027|-|0 1 0 -20 20|0 0 -1 -50 50",
+            "LeftIndexIntermediate|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "LeftIndexDistal|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "LeftMiddleProximal|0 0.038285 0.287137 0.957124|-|0 1 0 -7.5 7.5|0 0 -1 -50 50",
+            "LeftMiddleIntermediate|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "LeftMiddleDistal|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "LeftRingProximal|0 -0.038285 0.287137 0.957124|-|0 -1 0 -7.5 7.5|0 0 -1 -50 50",
+            "LeftRingIntermediate|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "LeftRingDistal|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "LeftLittleProximal|-1e-06 -0.076402 0.286508 0.955027|-|0 -1 0 -20 20|0 0 -1 -50 50",
+            "LeftLittleIntermediate|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "LeftLittleDistal|0 0 0.313378 0.949629|-|-|0 0 -1 -45 45",
+            "RightThumbProximal|1e-06 -0.123091 -0.123092 0.984732|-|-0.7071 0 0.7071 -25 25|0 -1 0 -20 20",
+            "RightThumbIntermediate|0 0.196116 0 0.980581|-|-|0 -1 0 -40 35",
+            "RightThumbDistal|0 0.196116 0 0.980581|-|-|0 -1 0 -40 35",
+            "RightIndexProximal|1e-06 -0.076402 -0.286508 0.955027|-|0 -1 0 -20 20|0 0 1 -50 50",
+            "RightIndexIntermediate|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
+            "RightIndexDistal|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
+            "RightMiddleProximal|0 -0.038285 -0.287137 0.957124|-|0 -1 0 -7.5 7.5|0 0 1 -50 50",
+            "RightMiddleIntermediate|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
+            "RightMiddleDistal|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
+            "RightRingProximal|0 0.038285 -0.287137 0.957124|-|0 1 0 -7.5 7.5|0 0 1 -50 50",
+            "RightRingIntermediate|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
+            "RightRingDistal|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
+            "RightLittleProximal|-1e-06 0.076402 -0.286508 0.955027|-|0 1 0 -20 20|0 0 1 -50 50",
+            "RightLittleIntermediate|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
+            "RightLittleDistal|0 0 -0.313378 0.949629|-|-|0 0 1 -45 45",
         };
 
         private static readonly string[] CanonDirTable =
         {
             "Chest|0 1 0",
             "Hips|0 1 0",
-            "LeftIndexIntermediate|-0.9998 0.0218 0.0001",
-            "LeftIndexProximal|-0.9997 0.0235 0",
-            "LeftLittleIntermediate|-0.9998 0.0218 0.0001",
-            "LeftLittleProximal|-0.9997 0.0235 0",
+            "LeftIndexIntermediate|-1 0 0",
+            "LeftIndexProximal|-1 0 0",
+            "LeftLittleIntermediate|-1 0 0",
+            "LeftLittleProximal|-1 0 0",
             "LeftLowerArm|-1 0 0",
             "LeftLowerLeg|0 -1 0",
-            "LeftMiddleIntermediate|-0.9998 0.0218 0.0001",
-            "LeftMiddleProximal|-0.9997 0.0235 0",
-            "LeftRingIntermediate|-0.9998 0.0218 0.0002",
-            "LeftRingProximal|-0.9997 0.0235 0",
+            "LeftMiddleIntermediate|-1 0 0",
+            "LeftMiddleProximal|-1 0 0",
+            "LeftRingIntermediate|-1 0 0",
+            "LeftRingProximal|-1 0 0",
             "LeftShoulder|-0.9993 0.0373 0",
-            "LeftThumbIntermediate|-0.7309 -0.3239 0.6008",
-            "LeftThumbProximal|-0.7308 -0.322 0.6018",
+            "LeftThumbIntermediate|-0.7071 0 0.7071",
+            "LeftThumbProximal|-0.7071 0 0.7071",
             "LeftUpperArm|-1 0 0",
             "LeftUpperLeg|-0.025 -0.9997 0",
             "Neck|0 1 0",
-            "RightIndexIntermediate|0.9998 0.0218 0.0001",
-            "RightIndexProximal|0.9997 0.0235 0",
-            "RightLittleIntermediate|0.9998 0.0218 0.0001",
-            "RightLittleProximal|0.9997 0.0235 0",
+            "RightIndexIntermediate|1 0 0",
+            "RightIndexProximal|1 0 0",
+            "RightLittleIntermediate|1 0 0",
+            "RightLittleProximal|1 0 0",
             "RightLowerArm|1 0 0",
             "RightLowerLeg|0 -1 0",
-            "RightMiddleIntermediate|0.9998 0.0218 0.0001",
-            "RightMiddleProximal|0.9997 0.0235 0",
-            "RightRingIntermediate|0.9998 0.0218 0.0002",
-            "RightRingProximal|0.9997 0.0235 0",
+            "RightMiddleIntermediate|1 0 0",
+            "RightMiddleProximal|1 0 0",
+            "RightRingIntermediate|1 0 0",
+            "RightRingProximal|1 0 0",
             "RightShoulder|0.9993 0.0373 0",
-            "RightThumbIntermediate|0.7309 -0.3239 0.6008",
-            "RightThumbProximal|0.7308 -0.322 0.6018",
+            "RightThumbIntermediate|0.7071 0 0.7071",
+            "RightThumbProximal|0.7071 0 0.7071",
             "RightUpperArm|1 0 0",
             "RightUpperLeg|0.025 -0.9997 0",
             "Spine|0 1 0",

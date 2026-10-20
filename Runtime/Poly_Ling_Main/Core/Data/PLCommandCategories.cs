@@ -63,6 +63,7 @@ namespace Poly_Ling.Data
             Pair("camera",                     "ビューのカメラ（注視点・角度・距離・ズーム）の設定と照会"),
             Pair("scenario",                   "シナリオの作成・実行・記録"),
             Pair("mcp",                        "利用シーン・版・監査など AI 連携のための照会"),
+            Pair("remote",                     "リモートのクライアント（Python など）への要求と一覧"),
             Pair("ui",                         "UI 自動操作と画面更新の通知"),
             Pair("tool",                       "ツール面（汎用のパラメータ設定と起動）"),
             Pair("undo",                       "取り消し・やり直し"),

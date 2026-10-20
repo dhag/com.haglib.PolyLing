@@ -99,6 +99,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ユーティリティ
         // ================================================================
 
+        /// <summary>モデルフォルダの中のファイルを、あれば消す（中身が無くなったファイルを残さないため）。</summary>
+        private static void DeleteIfExists(string folderPath, string fileName)
+        {
+            string path = Path.Combine(folderPath, fileName);
+            if (File.Exists(path)) File.Delete(path);
+        }
+
         private static string SanitizeFileName(string name)
         {
             foreach (char c in Path.GetInvalidFileNameChars())
@@ -163,7 +170,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         private static string[] Split(string line)
         {
-            // 簡易CSV分割（CsvMeshSerializerと同じロジック）
+            // 簡易CSV分割。行末の「,」の後ろは空の欄 1 つとして数える（CSV の決まりどおり）。
+            //   以前は行末の空欄を作らず、最後の欄が空の行（materialprops.csv のテクスチャ無しなど）が
+            //   1 欄少なく読まれて捨てられていた（PolyLing_Blender不具合修正計画.md の 1）。
+            //   この Split を使う読みは、欄の数で必要な欄の有無を見るか、件数で読む範囲を決めているので、
+            //   末尾の空欄が 1 つ増えても結果は変わらない。
             var result = new List<string>();
             int i = 0;
             while (i < line.Length)
@@ -192,6 +203,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     if (i < line.Length) i++;
                 }
             }
+            if (line.Length > 0 && line[line.Length - 1] == ',')
+                result.Add("");
             return result.ToArray();
         }
 

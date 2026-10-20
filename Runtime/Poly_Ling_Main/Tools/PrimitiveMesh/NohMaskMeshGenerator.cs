@@ -18,55 +18,11 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Tools.MediaPipe;
 
 namespace Poly_Ling.NohMask
 {
-    // ================================================================
-    // JSON構造体定義
-    // ================================================================
-
-    [Serializable]
-    public class FaceLandmarksJson
-    {
-        public string schema;
-        public int num_faces_detected;
-        public FaceData[] faces;
-    }
-
-    [Serializable]
-    public class FaceData
-    {
-        public int face_index;
-        public ImageData image;
-        public Landmark[] landmarks;
-    }
-
-    [Serializable]
-    public class ImageData
-    {
-        public string path;
-        public int width;
-        public int height;
-    }
-
-    [Serializable]
-    public class Landmark
-    {
-        public int index;
-        public float x;
-        public float y;
-        public float z;
-        public float pixel_x;
-        public float pixel_y;
-    }
-
-    [Serializable]
-    public class FaceMeshTrianglesJson
-    {
-        public int triangle_count;
-        public int vertex_count;
-        public int[][] triangles;
-    }
+    // JSON の型は Poly_Ling.Tools.MediaPipe.MediaPipeFaceFile / MediaPipeFaceTriangles（MediaPipe/MediaPipeFaceFile.cs）。
 
     // ================================================================
     // パラメータ構造体
@@ -212,12 +168,12 @@ namespace Poly_Ling.NohMask
             if (string.IsNullOrEmpty(landmarksJson) || string.IsNullOrEmpty(trianglesJson))
                 return md;
 
-            FaceLandmarksJson landmarks;
-            FaceMeshTrianglesJson triangles;
+            MediaPipeFaceFile landmarks;
+            MediaPipeFaceTriangles triangles;
 
             try
             {
-                landmarks = JsonUtility.FromJson<FaceLandmarksJson>(landmarksJson);
+                landmarks = JsonUtility.FromJson<MediaPipeFaceFile>(landmarksJson);
             }
             catch (Exception ex)
             {
@@ -260,7 +216,7 @@ namespace Poly_Ling.NohMask
             //   x -> -(lm.x - cx)   ... 画像の右＝本人の左。正面ビューの画面右は -X なので符号反転
             //   y -> -(lm.y - cy)   ... 画像は y 下向き
             //   z -> -(lm.z - cz)   ... MediaPipe は手前が負。顔の前方を +Z へ
-            // の 3 軸反転（行列式 -1）とする。
+            // の 3 軸反転（行列式 -1）とする。MediaPipeCoords.ToUnity と同じ変換（中心を引いてから掛ける）。
             //
             // Flip* は補正用ではなく、この基底に対する任意の反転オプション。既定はすべて false。
             float sx = p.FlipX ? -1f : 1f;
@@ -425,7 +381,7 @@ namespace Poly_Ling.NohMask
             if (string.IsNullOrEmpty(landmarksJson)) return 0;
             try
             {
-                var data = JsonUtility.FromJson<FaceLandmarksJson>(landmarksJson);
+                var data = JsonUtility.FromJson<MediaPipeFaceFile>(landmarksJson);
                 return data?.num_faces_detected ?? 0;
             }
             catch { return 0; }
@@ -436,9 +392,9 @@ namespace Poly_Ling.NohMask
         /// JsonUtility はネストした配列を扱えないため Regex を使用する。
         /// triangles 配列の各要素は要素数固定ではなく、3要素以上なら N 角形として読み込む。
         /// </summary>
-        public static FaceMeshTrianglesJson ParseTrianglesJson(string json)
+        public static MediaPipeFaceTriangles ParseTrianglesJson(string json)
         {
-            var result = new FaceMeshTrianglesJson();
+            var result = new MediaPipeFaceTriangles();
             var list   = new List<int[]>();
 
             var tcMatch = Regex.Match(json, @"""triangle_count""\s*:\s*(\d+)");

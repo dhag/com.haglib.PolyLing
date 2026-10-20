@@ -158,7 +158,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)9);   // version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
+                w.Write((byte)10);  // version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -289,6 +289,9 @@ namespace Poly_Ling.Remote
 
                 // ── version 9：CSV のモデル単位ファイルと揃える付帯（RemoteProgressiveSerializer.Extras.cs）
                 WriteModelExtras(w, model);
+
+                // ── version 10：グループモーフの子（morphgroups.csv の子の欄と揃える）
+                WriteMorphGroupChildren(w, model);
 
                 return ms.ToArray();
             }
@@ -513,6 +516,10 @@ namespace Poly_Ling.Remote
                 // ── version 9：モデル単位の付帯
                 if (metaVersion >= 9)
                     ReadModelExtras(r, model);
+
+                // ── version 10：グループモーフの子
+                if (metaVersion >= 10)
+                    ReadMorphGroupChildren(r, model);
 
                 return (modelIndex, model);
             }

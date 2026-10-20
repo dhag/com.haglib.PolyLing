@@ -176,6 +176,7 @@ namespace Poly_Ling.Player
                 case "prefab_export":
                 case "prefab_instantiate":
                 case "prefab_import":
+                case "prefab_add_component":
                     return PolyLingControlProtocol.BuildError(op,
                         $"{op} は Unity Editor の操作なので、ビルド版では使えません");
 

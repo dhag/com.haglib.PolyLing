@@ -46,6 +46,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnMatchEdgeChainCount = ExecuteMatchEdgeChainCount;
             _commandDispatcher.OnResetProject        = ExecuteResetProject;
             _commandDispatcher.OnCreateEmptyModel    = ExecuteCreateEmptyModel;
+            _commandDispatcher.OnEnsureProjectForCreate = EnsureProjectForCreate;
             _commandDispatcher.OnCreateObjectArray   = ExecuteCreateObjectArray;
             _commandDispatcher.OnSplitObjectByPartsId = ExecuteSplitObjectByPartsId;
             _commandDispatcher.OnAdvancedSelect      = ExecuteAdvancedSelect;
@@ -94,6 +95,10 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnExportStlFile       = ExecuteExportStlFile;
             _commandDispatcher.OnExportVrmFile       = ExecuteExportVrmFile;
             _commandDispatcher.OnImportVrmFile       = ExecuteImportVrmFile;
+            _commandDispatcher.OnExportGltfFile      = ExecuteExportGltfFile;
+            _commandDispatcher.OnImportGltfFile      = ExecuteImportGltfFile;
+            _commandDispatcher.OnImportFbxFile       = ExecuteImportFbxFile;
+            _commandDispatcher.OnExportFbxFile       = ExecuteExportFbxFile;
             _commandDispatcher.OnSaveProjectFile     = ExecuteSaveProjectFile;
             _commandDispatcher.OnLoadProjectFile     = ExecuteLoadProjectFile;
             _commandDispatcher.OnSaveProjectCsv      = ExecuteSaveProjectCsv;
@@ -101,6 +106,8 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnSaveProjectBinary   = ExecuteSaveProjectBinary;
             _commandDispatcher.OnLoadProjectBinary   = ExecuteLoadProjectBinary;
             _commandDispatcher.OnSendHierarchyBundle = ExecuteSendHierarchyBundle;
+            _commandDispatcher.GetPlayerServer       = () => _playerServer;
+            _commandDispatcher.GetMotionClipHandler  = () => _motionClipHandler;
             _commandDispatcher.OnPlanarizeAlongBones = ExecutePlanarizeAlongBones;
             _commandDispatcher.OnMergeVertices       = ExecuteMergeVertices;
             _commandDispatcher.OnDeleteSelection     = ExecuteDeleteSelectionCommand;
@@ -109,10 +116,10 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnSolidify            = ExecuteSolidify;
             _commandDispatcher.OnLineExtrude         = ExecuteLineExtrude;
             _commandDispatcher.OnSurfaceSnap         = ExecuteSurfaceSnap;
-            _commandDispatcher.OnExportVrmAnimation  = ExecuteExportVrmAnimation;
-            _commandDispatcher.OnConvertUnityClipToVrma = ExecuteConvertUnityClipToVrma;
-            _commandDispatcher.OnExportVmdToVrma     = ExecuteExportVmdToVrma;
-            _commandDispatcher.OnExportVmdToMotionJson = ExecuteExportVmdToMotionJson;
+            _commandDispatcher.OnConvertMotionToVrma = ExecuteConvertMotionToVrma;
+            _commandDispatcher.OnExportVmdToMotion   = ExecuteExportVmdToMotion;
+            _commandDispatcher.OnExportMotionToBvh   = ExecuteExportMotionToBvh;
+            _commandDispatcher.OnExportMotionToFbx   = ExecuteExportMotionToFbx;
             _commandDispatcher.OnEdgeBevel           = ExecuteEdgeBevel;
             _commandDispatcher.OnEdgeExtrude         = ExecuteEdgeExtrude;
             _commandDispatcher.OnFaceExtrude         = ExecuteFaceExtrude;
@@ -160,12 +167,27 @@ namespace Poly_Ling.Player
             if (mo == null)
                 return $"{cmd.ShapeName} を生成できませんでした（フォントが開けない・輪郭が 0 本など）";
 
+            var __sw = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
             string reason = PlaceGeneratedMesh(
                 mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale,
                 out int createdIndex);
+            UnityEngine.Debug.Log($"[PL/Timing] Place {cmd.ShapeName} {__sw.ElapsedMilliseconds}ms"); // TEMP-TIMING
 
             if (reason == null) ReportCreatedMesh(createdIndex);
             return reason;
+        }
+
+        /// <summary>
+        /// 生成系の前処理。プロジェクトとモデルが無ければ作り、CurrentModel を選んだ状態にする。
+        /// PlaceGeneratedMesh の冒頭と同じ処理（EnsureProject → モデル 0 の選択）。
+        /// </summary>
+        private ProjectContext EnsureProjectForCreate()
+        {
+            PrepareHandlersForGeneratedMesh();
+            var project = ActiveProject;
+            if (project != null && project.CurrentModel == null && project.ModelCount > 0)
+                project.SelectModel(0);
+            return project;
         }
 
         /// <summary>

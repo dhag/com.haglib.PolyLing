@@ -512,6 +512,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         sb.Append($",{entry.MeshIndex}:{Fl(entry.Weight)}");
                     }
                 }
+                // グループの子（GroupChildren）：エントリの後ろに ,<子の数>,<名前:重み>…。
+                //   子が無ければ何も足さない（旧形式と同じ行）。名前と重みは最後の ':' で分ける。
+                //   PolyLing_Blender不具合修正計画.md の 9。
+                if (me.GroupChildren != null && me.GroupChildren.Count > 0)
+                {
+                    sb.Append($",{me.GroupChildren.Count}");
+                    foreach (var c in me.GroupChildren)
+                        sb.Append($",{Esc($"{c.Name ?? ""}:{Fl(c.Weight)}")}");
+                }
                 sb.AppendLine();
             }
 
@@ -566,6 +575,20 @@ namespace Poly_Ling.Serialization.FolderSerializer
                             needsNameResolution = true;
                         }
                     }
+                }
+
+                // グループの子（エントリの後ろ。無ければ 0 件）
+                int childAt = 5 + entryCount;
+                int childCount = PInt(cols, childAt);
+                for (int i = 0; i < childCount; i++)
+                {
+                    int ci = childAt + 1 + i;
+                    if (ci >= cols.Length) break;
+                    string tok = Unesc(cols[ci]);
+                    int colon = tok.LastIndexOf(':');
+                    if (colon < 0) continue;
+                    float cw = float.TryParse(tok.Substring(colon + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out var w2) ? w2 : 1f;
+                    me.GroupChildren.Add(new MorphGroupChild(tok.Substring(0, colon), cw));
                 }
 
                 model.MorphExpressions.Add(me);

@@ -671,13 +671,6 @@ namespace Poly_Ling.Player
             return CsvProjectSerializer.Export(folderPath, project);
         }
 
-        private void ShowUnityClipToVrmaPanel()
-        {
-            ApplyGeneralPanelMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.UnityClipToVrmaSection, _layoutRoot?.UnityClipToVrmaBtn);
-            _unityClipToVrmaSubPanel?.Refresh();
-        }
-
         private void ShowVmdToVrmaPanel()
         {
             ApplyGeneralPanelMode(InteractionMode.None);

@@ -422,9 +422,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 }
             }
 
-            if (backup.BoneRotations.Count == 0 && backup.VertexPositions.Count == 0)
-                return null;
-
+            // ファイルがあれば中身が空でも null にしない（.mfproj の FromTPoseBackupDTO と同じ。
+            //   以前は boneRot と vtxPos が両方 0 件なら worldMat・bindPose があっても null にしていた）。
             return backup;
         }
 

@@ -298,6 +298,10 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case AddMeshFromArraysCommand c:
+                    RunAddMeshFromArrays(c);
+                    return true;
+
                 case CreateHoleBridgeCommand c:
                 {
                     if (model == null) { Fail("no current model"); return true; }
@@ -828,11 +832,12 @@ namespace Poly_Ling.Player
         ///   1. 名前を描画オブジェクトから完全一致で引く（selectDrawablesByName と同じ規則）。
         ///      見つからない・同じ名前が複数あるときは失敗にする。どれを掴んだか分からなくなるため。
         ///   2. 親子が輪にならないか、新しい親から上へたどって確かめる。
-        ///   3. 深さは親の深さ+1。親が一覧に無ければ、その親のいまの深さから数える。
-        ///   4. 行は親→子の順（深さ優先）に並べる。reorderMeshes は渡した行の
-        ///      オブジェクトが占めていた位置へ、行の順に詰め直す（MeshListOps.cs:265-298）。
-        ///      子を親より先に渡すと、リストで子が親より前に来る。
-        ///      一覧に無い親も、位置を揃えるため今の親・深さのまま行に入れる。
+        ///   3. いまの親はリスト順 + 深さから引く（書き出しと同じ規則）。
+        ///   4. 描画オブジェクト全体を新しい親子で深さ優先に並べ、深さは親の深さ+1 にする。
+        ///      兄弟の順はいまの並び。ミラー側は実体側の直後に同じ深さ・親で並べる。
+        ///      reorderMeshes は渡した行のオブジェクトが占めていた位置へ、行の順に
+        ///      詰め直す（MeshListOps.cs:265-298）。一部の枝だけを渡すと、新しい親が
+        ///      自分の親より前へ動いて深さからの親が崩れるため、全体を渡す。
         ///   5. reorderMeshes（Drawable、ワールド姿勢を保つ）を内側で撃つ。
         ///      並べ替え・親の書き換え・姿勢の組み直しを 2 か所に書かないため。
         ///   6. 実行後にモデルから読み直した索引・親・深さを返す。
@@ -890,8 +895,37 @@ namespace Poly_Ling.Player
                 childIdx.Add(child);
             }
 
+            // いまの親は「リスト順 + 深さ」から引く。書き出し（HierarchyBuilder）と同じ規則
+            // （MeshHierarchyOps.BuildParentIndicesFromDepth）に揃えるため。
+            var depthParents = MeshHierarchyOps.BuildParentIndicesFromDepth(model);
+            var peers        = MirrorPeerIndex.Build(model);
+
+            // 並べ替えの対象（木の節）。ミラー側は節にせず、実体側の直後に付いて行かせる。
+            var nodes   = new List<int>();
+            var nodeSet = new HashSet<int>();
+            foreach (var ent in model.DrawableMeshes)
+            {
+                var mc = model.GetMeshContext(ent.MasterIndex);
+                if (mc == null || MirrorBranchOps.IsMirrorSideContext(mc)) continue;
+                if (nodeSet.Add(ent.MasterIndex)) nodes.Add(ent.MasterIndex);
+            }
+            nodes.Sort();
+
+            foreach (int child in childIdx)
+            {
+                int p = newParent[child];
+                if (!nodeSet.Contains(child))
+                { Fail($"{model.GetMeshContext(child)?.Name} はミラー側なので親を付け替えられません"); return; }
+                if (p >= 0 && !nodeSet.Contains(p))
+                { Fail($"{model.GetMeshContext(p)?.Name} はミラー側なので親に指定できません"); return; }
+            }
+
             int ParentOf(int idx)
-                => newParent.TryGetValue(idx, out int p) ? p : (model.GetMeshContext(idx)?.HierarchyParentIndex ?? -1);
+            {
+                if (newParent.TryGetValue(idx, out int np)) return np;
+                int p = (idx >= 0 && idx < depthParents.Length) ? depthParents[idx] : -1;
+                return nodeSet.Contains(p) ? p : -1;
+            }
 
             // ── 2. 輪の検出 ──
             foreach (int child in childIdx)
@@ -905,78 +939,60 @@ namespace Poly_Ling.Player
                 }
             }
 
-            // ── 3. 深さ ──
-            // 一覧に入れなかった子孫も、親の深さが変われば深さが変わる。下の 4 で集めて行に入れる。
-            var descendants = new HashSet<int>();
-            var depth = new Dictionary<int, int>();
-            int DepthOf(int idx)
-            {
-                if (depth.TryGetValue(idx, out int d)) return d;
-                if (newParent.TryGetValue(idx, out int p))
-                    d = p < 0 ? 0 : DepthOf(p) + 1;
-                else if (descendants.Contains(idx))
-                {
-                    int cp = model.GetMeshContext(idx)?.HierarchyParentIndex ?? -1;
-                    d = cp < 0 ? 0 : DepthOf(cp) + 1;
-                }
-                else
-                    d = model.GetMeshContext(idx)?.Depth ?? 0;
-                depth[idx] = d;
-                return d;
-            }
-
-            // ── 4. 親→子の順に並べる ──
-            var involved = new HashSet<int>(childIdx);
-            foreach (int child in childIdx)
-            {
-                int p = newParent[child];
-                if (p >= 0) involved.Add(p);
-            }
-
-            // 張り替えた子の、いまの子孫を足す（親が一覧の外でも深さを揃えるため）。
-            var stack = new Stack<int>(childIdx);
-            while (stack.Count > 0)
-            {
-                int cur = stack.Pop();
-                for (int i = 0; i < model.MeshContextCount; i++)
-                {
-                    if (newParent.ContainsKey(i) || descendants.Contains(i)) continue;
-                    var mci = model.GetMeshContext(i);
-                    if (mci == null || mci.HierarchyParentIndex != cur) continue;
-                    descendants.Add(i);
-                    involved.Add(i);
-                    stack.Push(i);
-                }
-            }
-
-            var kids = new Dictionary<int, List<int>>();
+            // ── 3・4. 描画オブジェクト全体を、新しい親子で深さ優先に並べ直す ──
+            // 書き出しは「リスト順 + 深さ」で親を決めるので、どの節も自分の親の枝の中
+            // （親の直後から、親の枝が終わるまで）に並んでいなければならない。
+            // 張り替えた枝と新しい親だけを並べ替えると、新しい親が自分の親より前へ動く
+            // （腕の途中の 左手首 がリストの先頭へ出て、腕から外れる）。
+            // そのため全体を並べ直す。兄弟の順はいまの並び、深さは親の深さ + 1。
+            // ミラー側は実体側の直後に、同じ深さ・同じ親で付いて行く。
+            var kids  = new Dictionary<int, List<int>>();
             var roots = new List<int>();
-            foreach (int idx in involved)
+            foreach (int idx in nodes)   // nodes は索引順 → 兄弟はいまの並びのまま
             {
                 int p = ParentOf(idx);
-                if (p >= 0 && involved.Contains(p))
+                if (p >= 0)
                 {
                     if (!kids.TryGetValue(p, out var list)) kids[p] = list = new List<int>();
                     list.Add(idx);
                 }
                 else roots.Add(idx);
             }
-            roots.Sort();
-            foreach (var list in kids.Values) list.Sort();
 
             var entries = new List<ReorderMeshesCommand.ReorderEntry>();
-            void Emit(int idx)
+            var emitted = new HashSet<int>();
+            void Emit(int idx, int d, int parent)
             {
                 entries.Add(new ReorderMeshesCommand.ReorderEntry
                 {
                     MasterIndex          = idx,
-                    NewDepth             = DepthOf(idx),
-                    NewParentMasterIndex = ParentOf(idx),
+                    NewDepth             = d,
+                    NewParentMasterIndex = parent,
                 });
+                emitted.Add(idx);
+
+                if (peers.TryGetMirror(idx, out int m) && m != idx && !nodeSet.Contains(m) && !emitted.Contains(m))
+                {
+                    var mmc = model.GetMeshContext(m);
+                    if (mmc != null && MirrorBranchOps.IsMirrorSideContext(mmc))
+                    {
+                        entries.Add(new ReorderMeshesCommand.ReorderEntry
+                        {
+                            MasterIndex          = m,
+                            NewDepth             = d,
+                            NewParentMasterIndex = parent,
+                        });
+                        emitted.Add(m);
+                    }
+                }
+
                 if (kids.TryGetValue(idx, out var list))
-                    foreach (int k in list) Emit(k);
+                    foreach (int k in list) Emit(k, d + 1, idx);
             }
-            foreach (int r in roots) Emit(r);
+            foreach (int r in roots) Emit(r, 0, -1);
+
+            if (!nodes.All(emitted.Contains))
+            { Fail("親子をたどれないオブジェクトがあります（親子が輪になっている）"); return; }
 
             // 並べ替えで索引が動くので、実体を先に控える。
             var childCtx = new List<MeshContext>(childIdx.Count);

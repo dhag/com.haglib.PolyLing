@@ -45,7 +45,15 @@ namespace Poly_Ling.Player
                                // ── 頂点へ藤壺（高度な図形）
                                VertexBillboardPlace,
                                // ── ネジ配置（機構部品B）
-                               BoltPattern }
+                               BoltPattern,
+                               // ── 星座マーク（高度な図形）
+                               ZodiacSign,
+                               // ── 紋章図形（高度な図形）
+                               Emblem,
+                               // ── 魔法陣（高度な図形）
+                               MagicCircle,
+                               // ── 鉄塔（高度な図形）
+                               LatticeTower }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
@@ -59,7 +67,11 @@ namespace Poly_Ling.Player
               "Nut","ShaftHolder","BearingUnit","UniversalJoint","MotorBracket",
               "RodEnd","MotorCoupling","TrapezoidalThread","Spline",
               "VertexBillboardPlace",
-              "BoltPattern" };
+              "BoltPattern",
+              "ZodiacSign",
+              "Emblem",
+              "MagicCircle",
+              "LatticeTower" };
 
         /// <summary>
         /// 図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品A」/「機構部品B」/
@@ -76,7 +88,8 @@ namespace Poly_Ling.Player
               ShapeKind.StadiumBox };
         private static readonly ShapeKind[] AdvancedShapes =
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
-              ShapeKind.NGonGear, ShapeKind.NGonStar,
+              ShapeKind.NGonGear, ShapeKind.NGonStar, ShapeKind.Emblem, ShapeKind.ZodiacSign, ShapeKind.MagicCircle,
+              ShapeKind.LatticeTower,
               ShapeKind.PipeStadium, ShapeKind.HairStrand,
               ShapeKind.PlaceObject, ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge,
               ShapeKind.EdgeRibbonFace, ShapeKind.PointDefined, ShapeKind.RotorBlade,
@@ -388,6 +401,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.Ribbon:      BuildRibbonUI(_settingsContainer);      break;
                 case ShapeKind.NGonGear:     BuildNGonGearUI(_settingsContainer);     break;
                 case ShapeKind.NGonStar:     BuildNGonStarUI(_settingsContainer);     break;
+                case ShapeKind.ZodiacSign:   BuildZodiacSignUI(_settingsContainer);   break;
+                case ShapeKind.Emblem:       BuildEmblemUI(_settingsContainer);       break;
+                case ShapeKind.MagicCircle:  BuildMagicCircleUI(_settingsContainer);  break;
+                case ShapeKind.LatticeTower: BuildLatticeTowerUI(_settingsContainer); break;
                 case ShapeKind.InvoluteGear: BuildInvoluteGearUI(_settingsContainer); break;
                 case ShapeKind.StadiumBox:   BuildStadiumBoxUI(_settingsContainer);   break;
                 case ShapeKind.PipeStadium:  BuildPipeStadiumUI(_settingsContainer);  break;
@@ -434,6 +451,8 @@ namespace Poly_Ling.Player
 
             // 暗色テーマはボタンの背景を一律に塗るので、選択中の強調はその後で付け直す。
             if (_current == ShapeKind.PointDefined) RefreshPointDefinedButtons();
+            if (_current == ShapeKind.MagicCircle)  RefreshMagicCircleListColors();
+            if (_current == ShapeKind.LatticeTower) RefreshLatticeTowerListColors();
 
             RefreshCreateButtonState();
         }

@@ -869,8 +869,11 @@ namespace Poly_Ling.Data
             replaced = new List<string>();
             error = null;
 
+            var lineList = lines as IList<string> ?? new List<string>(lines ?? Array.Empty<string>());
+            if (!ObjectGroupCsv.TryValidate(lineList, out error)) return false;
+
             List<ObjectGroup> incoming;
-            try { incoming = ObjectGroupCsv.Parse(lines); }
+            try { incoming = ObjectGroupCsv.Parse(lineList); }
             catch (Exception e) { error = $"シナリオとして読めません: {e.Message}"; return false; }
             if (incoming == null || incoming.Count == 0) { error = "シナリオが入っていません"; return false; }
 

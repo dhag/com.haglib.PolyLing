@@ -1,13 +1,15 @@
 // NohMaskMeshExporter.cs
 // 既存メッシュを能面(NohMask)JSON形式(landmarks + triangles)へ書き出す。
-// 本質的に能面とは無関係で、JSONスキーマを汎用コンテナとして流用する。
+// 本質的に能面とは無関係で、JSONスキーマ（MediaPipeFaceFile / MediaPipeFaceTriangles）を汎用コンテナとして流用する。
 // 座標は頂点 Position をそのまま x/y/z へ格納する（生座標。中心引き算/Scale/反転は行わない）。
+// したがって書き出したファイルの x/y/z は MediaPipe の正規化座標ではない。
 // NohMaskMeshGenerator と対で Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/ に配置。
 
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Tools.MediaPipe;
 
 namespace Poly_Ling.NohMask
 {
@@ -15,24 +17,24 @@ namespace Poly_Ling.NohMask
     public static class NohMaskMeshExporter
     {
         /// <summary>
-        /// landmarks JSON（FaceLandmarksJson 形式）を生成する。
+        /// landmarks JSON（MediaPipeFaceFile 形式）を生成する。
         /// 各頂点の Position を生座標のまま x/y/z へ格納（index=頂点順、pixel_x/y=0）。
         /// ネスト配列を含まないため JsonUtility.ToJson で出力する。
         /// </summary>
         public static string BuildLandmarksJson(MeshObject mo)
         {
-            var data = new FaceLandmarksJson
+            var data = new MediaPipeFaceFile
             {
-                schema             = "mediapipe.face_landmarker",
+                schema             = MediaPipeFaceFile.SchemaName,
                 num_faces_detected = 1,
             };
 
             int n = mo?.VertexCount ?? 0;
-            var lms = new Landmark[n];
+            var lms = new MediaPipeFaceFileLandmark[n];
             for (int i = 0; i < n; i++)
             {
                 var pos = mo.Vertices[i].Position;
-                lms[i] = new Landmark
+                lms[i] = new MediaPipeFaceFileLandmark
                 {
                     index   = i,
                     x       = pos.x,
@@ -45,10 +47,10 @@ namespace Poly_Ling.NohMask
 
             data.faces = new[]
             {
-                new FaceData
+                new MediaPipeFaceFileFace
                 {
                     face_index = 0,
-                    image      = new ImageData { path = "", width = 0, height = 0 },
+                    image      = new MediaPipeFaceFileImage { path = "", width = 0, height = 0 },
                     landmarks  = lms,
                 }
             };
@@ -57,7 +59,7 @@ namespace Poly_Ling.NohMask
         }
 
         /// <summary>
-        /// triangles JSON（FaceMeshTrianglesJson 形式）を生成する。
+        /// triangles JSON（MediaPipeFaceTriangles 形式）を生成する。
         /// 面は三角分解せず、VertexIndices をそのまま [i0, i1, ...] 列として出力する（N角形対応）。
         /// ネスト int[][] は JsonUtility で出力できないため手動整形（生成側の Regex 形式に一致）。
         /// </summary>

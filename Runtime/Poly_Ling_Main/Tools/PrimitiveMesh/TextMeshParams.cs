@@ -8,6 +8,17 @@ using Poly_Ling.Data;
 
 namespace Poly_Ling.GlyphText
 {
+    /// <summary>文字列の配置のしかた。</summary>
+    public enum TextCurveMode
+    {
+        /// <summary>XY 平面にそのまま並べる。</summary>
+        Flat = 0,
+        /// <summary>Y 軸まわりの円筒の外側に巻く。</summary>
+        Cylinder = 1,
+        /// <summary>XY 面上の円のふちに沿わせる。</summary>
+        DiskRim = 2,
+    }
+
     /// <summary>
     /// 文字列メッシュ生成パラメータ。
     /// 厚み・角処理は Profile2DExtrudeMeshGenerator へそのまま渡す。
@@ -45,6 +56,10 @@ namespace Poly_Ling.GlyphText
         /// <summary>エッジサイズの下限・上限</summary>
         public const float EdgeSizeMin = 0.001f;
         public const float EdgeSizeMax = 0.25f;
+
+        /// <summary>曲面配置の半径の下限・上限</summary>
+        public const float CurveRadiusMin = 0.05f;
+        public const float CurveRadiusMax = 50f;
 
         [PLParam(TextKey = "MeshName", Description = "生成する描画オブジェクトの名前")]
         public string MeshName;
@@ -91,6 +106,32 @@ namespace Poly_Ling.GlyphText
         [PLParam(TextKey = "EdgeInward", Description = "ラウンドの曲率方向を入れ替える")]
         public bool EdgeInward;
 
+        [PLParam(TextKey = "TextCurve",
+                 Description = "配置のしかた。Flat = 平面 / Cylinder = Y軸まわりの円筒の外側に巻く / DiskRim = XY面上の円のふちに沿わせる。文字ごとに回して置く")]
+        public TextCurveMode CurveMode;
+
+        [PLParam(TextKey = "Radius",
+                 Description = "円筒・円盤のふちの半径。円盤のふちでは1行目のベースラインの位置。行頭からの距離÷半径が回転角",
+                 Min = CurveRadiusMin, Max = CurveRadiusMax)]
+        public float CurveRadius;
+
+        [PLParam(TextKey = "TextCurveFlip",
+                 Description = "円盤のふちのみ。false = 文字の上側を中心へ向け、円の下端から反時計回りに並べる / true = 文字の下側を中心へ向け、円の上端から時計回りに並べる")]
+        public bool CurveFlip;
+
+        /// <summary>開始角の下限・上限（度）。</summary>
+        public const float CurveStartAngleMin = -360f;
+        public const float CurveStartAngleMax = 360f;
+
+        [PLParam(TextKey = "TextCurveStartAngle",
+                 Description = "円盤のふちのみ。並び全体を正面から見て時計回りに回す角度（度）",
+                 Min = CurveStartAngleMin, Max = CurveStartAngleMax)]
+        public float CurveStartAngle;
+
+        [PLParam(TextKey = "TextCurveFitCircle",
+                 Description = "円盤のふちのみ。各行を 1 周に均等割り付けする（字間は半径から決めず、1 周を文字数で割る）")]
+        public bool CurveFitCircle;
+
         public static TextMeshParams Default => new TextMeshParams
         {
             MeshName      = "Text",
@@ -106,6 +147,11 @@ namespace Poly_Ling.GlyphText
             EdgeSizeFront = 0.02f,
             EdgeSizeBack  = 0.02f,
             EdgeInward    = false,
+            CurveMode     = TextCurveMode.Flat,
+            CurveRadius   = 2f,
+            CurveFlip     = false,
+            CurveStartAngle = 0f,
+            CurveFitCircle  = false,
         };
 
         public bool Equals(TextMeshParams o)
@@ -122,6 +168,11 @@ namespace Poly_Ling.GlyphText
             if (!Mathf.Approximately(EdgeSizeFront, o.EdgeSizeFront)) return false;
             if (!Mathf.Approximately(EdgeSizeBack, o.EdgeSizeBack)) return false;
             if (EdgeInward != o.EdgeInward) return false;
+            if (CurveMode != o.CurveMode) return false;
+            if (!Mathf.Approximately(CurveRadius, o.CurveRadius)) return false;
+            if (CurveFlip != o.CurveFlip) return false;
+            if (!Mathf.Approximately(CurveStartAngle, o.CurveStartAngle)) return false;
+            if (CurveFitCircle != o.CurveFitCircle) return false;
             return true;
         }
 
@@ -138,6 +189,9 @@ namespace Poly_Ling.GlyphText
                 h = h * 31 + Segment;
                 h = h * 31 + Size.GetHashCode();
                 h = h * 31 + Thickness.GetHashCode();
+                h = h * 31 + (int)CurveMode;
+                h = h * 31 + CurveRadius.GetHashCode();
+                h = h * 31 + (CurveFlip ? 1 : 0);
                 return h;
             }
         }

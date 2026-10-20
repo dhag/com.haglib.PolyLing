@@ -246,7 +246,7 @@ var ctx = GetToolContext?.Invoke() ?? new ToolContext();
 - テスト用 PMX:
   `データとツール/だいじなデータ/テスト用データ/PMXデータ_壊し用/_0_ぜろちゃんN_UVもーふ減らしたAB.pmx`
   （694 meshContexts / 186 bones / 88 drawables / 約 9 万頂点）。
-  VMD は同フォルダ。`exportVmdToVrma` は Humanoid 割当が要るので
+  VMD は同フォルダ。`exportVmdToMotion`（旧 `exportVmdToVrma`）は Humanoid 割当が要るので
   `importPmxFile` に `humanoidAutoMap=true` を付ける。
 
 ## 途中で撤回した判定（繰り返さないため）

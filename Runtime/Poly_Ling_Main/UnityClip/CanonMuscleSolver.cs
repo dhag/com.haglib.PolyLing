@@ -57,11 +57,20 @@ namespace Poly_Ling.UnityClip
             if (_shared.TryGetValue(key, out var s) && s.IsAlive) return s;
 
             s = new CanonMuscleSolver();
-            if (!s._rig.Build(BoneLength, out reason, limits)) return null;
+            if (!s._rig.Build(out reason, limits)) return null;
             s._pose = new HumanPose { muscles = new float[HumanTrait.MuscleCount] };
+            s._rig.Skeleton.ResetToRest();
+            s._rig.GetHumanPose(ref s._pose);
+            s.RestMuscles = (float[])s._pose.muscles.Clone();
             _shared[key] = s;
             return s;
         }
+
+        /// <summary>
+        /// 正準骨格のレスト（T ポーズ）のマッスル値（この解法の可動域で）。
+        /// absentMuscles = "rest" のクリップで、駆動されているボーンのトラックの無い dof に使う。
+        /// </summary>
+        public float[] RestMuscles { get; private set; }
 
         private bool IsAlive => _rig.Skeleton != null && _rig.Skeleton.Root != null;
 

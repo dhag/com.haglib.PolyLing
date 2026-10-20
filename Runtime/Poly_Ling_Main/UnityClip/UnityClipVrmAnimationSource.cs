@@ -1,6 +1,6 @@
 // UnityClipVrmAnimationSource.cs
 // ============================================================
-// PolyLing モーションを VRM アニメーション（.vrma）として書き出すための橋渡し（モデル経由）
+// モデルの仮想骨格から組む「Humanoid ボーンだけの GameObject 骨格」（レスト回転が単位）
 // ------------------------------------------------------------
 // Runtime/Poly_Ling_Main/UnityClip/ に配置。
 //
@@ -8,10 +8,12 @@
 // ■ 何をするか
 // ============================================================
 //
-//   1. UnityClipApplier が持つ仮想骨格から「ボーンだけの GameObject 骨格」を組む。
-//   2. UnityClipApplier でモデルへ 1 フレームずつクリップを適用し、
-//      その結果のノード・ワールド行列を骨格へ写す。
-//   3. PLVrmAnimationBridge 経由で .vrma を書き出す。
+//   1. UnityClipVirtualSkeleton から「ボーンだけの GameObject 骨格」を組む（Build）。
+//   2. モデルを動かした結果のノード・ワールド行列を骨格へ写す（PoseFrom）。
+//   使う側は VmdPoseSession（VMD＋モデル → マッスル焼き込み）。
+//   以前はここから UniVRM 経由で .vrma を書き出していたが、段 ④（2026-10-11）で廃止した。
+//   .vrma の書き出しは .plmotion → .vrma（VrmaCodec）の 1 本だけ。
+//   下の「レスト姿勢を単位回転で組む理由」は、焼き込みが正準骨格へ回転を写す前提なので残す。
 //
 // ============================================================
 // ■ 骨格の出どころを UnityClipVirtualSkeleton にする理由（重要・削除禁止）
@@ -93,9 +95,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.HierarchyIO;
-using Poly_Ling.Vrm;
-using Poly_Ling.Motion;
-using Poly_Ling.VMD;
 
 namespace Poly_Ling.UnityClip
 {
@@ -338,106 +337,5 @@ namespace Poly_Ling.UnityClip
             _hipsNode = -1;
         }
 
-        // ================================================================
-        // 書き出し本体
-        // ================================================================
-
-        /// <summary>
-        /// PolyLing モーションをモデルへ適用しながら .vrma を書き出す。
-        /// 適用は MotionClipApplier（統合モーションパネルと同じ経路）で行う。
-        /// モデルのポーズ層は終了時に必ず戻す。
-        /// </summary>
-        /// <param name="model">対象モデル。Humanoid 割り当てが要る。</param>
-        /// <param name="clip">適用するモーション。</param>
-        /// <param name="muscleLimitCsvText">UnityLimit CSV の中身。空なら既定値を使う。</param>
-        /// <param name="outputPath">出力先（実経路）。</param>
-        /// <param name="settings">倍率・毎秒枚数・区間。null なら既定値。</param>
-        public static VrmAnimationExportResult ExportToFile(
-            ModelContext model,
-            MotionClipDTO clip,
-            string muscleLimitCsvText,
-            string outputPath,
-            VrmAnimationExportSettings settings)
-        {
-            if (model == null) return VrmAnimationExportResult.Failed("モデルがありません");
-            if (clip == null)  return VrmAnimationExportResult.Failed("クリップがありません");
-            if (string.IsNullOrEmpty(outputPath))
-                return VrmAnimationExportResult.Failed("出力パスが空です");
-
-            settings = settings ?? VrmAnimationExportSettings.CreateDefault();
-
-            if (!PLVrmAnimationBridge.I.IsAvailable)
-                return VrmAnimationExportResult.Failed("VRM アニメーション エクスポータが利用できません");
-
-            float fps = settings.Fps > 0f ? settings.Fps
-                      : (clip.frameRate > 0f ? clip.frameRate : 30f);
-
-            float clipEnd = MotionClipSerializer.Length(clip);
-            float start   = Mathf.Max(0f, settings.StartSec);
-            float end     = settings.EndSec > start ? settings.EndSec : clipEnd;
-            if (end < start) end = start;
-
-            int frameCount = Mathf.Max(1, Mathf.RoundToInt((end - start) * fps) + 1);
-
-            var times = new float[frameCount];
-            for (int i = 0; i < frameCount; i++)
-                times[i] = start + i / fps;
-
-            var applier = new MotionClipApplier();
-            if (!string.IsNullOrEmpty(muscleLimitCsvText))
-                applier.LoadMuscleLimitCsv(muscleLimitCsvText);
-            applier.SetClip(clip);
-            applier.BuildMapping(model);
-
-            // boneName トラック（VMD 由来）はアプライヤがノード行列を持たないので、モデルから読む。
-            var sampler = VmdNodeWorldSampler.Build(model, out string samplerReason);
-
-            UnityClipVrmAnimationSource src = null;
-            try
-            {
-                // レストは BonePoseData を含まない値から取るので、
-                // ここでポーズを外す必要はない。
-                src = Build(model, applier.Skeleton, settings.Scale, out string buildReason);
-                if (src == null) return VrmAnimationExportResult.Failed(buildReason);
-
-                var localSrc = src;
-                var result = PLVrmAnimationBridge.I.Export(
-                    src.Root,
-                    src.HumanBones,
-                    src.Root.transform,
-                    times,
-                    i =>
-                    {
-                        applier.ApplyFrame(model, times[i]);
-                        sampler?.Capture(model);
-                        localSrc.PoseFrom((int node, out Matrix4x4 w) =>
-                            applier.TryGetNodeWorldMatrix(node, out w)
-                            || (sampler != null && sampler.TryGetNodeWorldMatrix(node, out w)));
-                    },
-                    outputPath);
-
-                if (result != null && result.Success)
-                {
-                    result.HumanoidBoneCount = src.HumanBones.Count;
-                    result.FrameCount        = frameCount;
-                    result.DurationSec       = end - start;
-                    result.OutputPath        = outputPath;
-                    if (src.Dropped.Count > 0)
-                        result.Warning = "骨格に載せられなかった Humanoid: "
-                                       + string.Join(", ", src.Dropped.ToArray());
-                }
-                return result ?? VrmAnimationExportResult.Failed("書き出し結果がありません");
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[UnityClipVrmAnimationSource] {ex}");
-                return VrmAnimationExportResult.Failed(ex.Message);
-            }
-            finally
-            {
-                if (src != null) src.Dispose();
-                applier.ResetAllBones(model);
-            }
-        }
     }
 }

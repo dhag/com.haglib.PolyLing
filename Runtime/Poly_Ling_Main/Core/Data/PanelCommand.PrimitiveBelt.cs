@@ -478,6 +478,41 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// 頂点座標と面の配列から描画オブジェクトを 1 つ作る（外部ツール・Python からの生成の口）。
+    ///
+    /// 【なぜ要るか】
+    ///   AddGeneratedMeshCommand はメッシュの実体を載せるので外から呼べない。
+    ///   配列は getRawData の結果と同じ平坦な形（positions / faceSizes / faceVertices）で受ける。
+    ///   座標と面の並びは PolyLing のまま（Unity 左手系・ローカル座標）。外部ツールの座標系への変換は呼ぶ側が行う。
+    /// 【実処理】
+    ///   ディスパッチャがメッシュを組み立て、AddGeneratedMeshCommand と同じ経路で新しい描画オブジェクトとして置く。
+    /// </summary>
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets, Description = "頂点座標（positions：x,y,z を 3 個ずつ）と面（faceSizes：面ごとの頂点数、faceVertices：頂点番号を連結）から描画オブジェクトを新しく 1 つ作る。形は getRawData の結果と同じ。座標と面の並びは PolyLing のまま（Unity 左手系）。")]
+    public class AddMeshFromArraysCommand : PanelCommand
+    {
+        [PLParam(TextKey = "MeshName", Description = "作る描画オブジェクトの名前。空なら Mesh")]
+        public string MeshName { get; }
+
+        [PLParam(Description = "頂点座標。x,y,z を 3 個ずつ", Required = true)]
+        public float[] Positions { get; }
+
+        [PLParam(Description = "面ごとの頂点数（3 以上）", Required = true)]
+        public int[] FaceSizes { get; }
+
+        [PLParam(Description = "面の頂点番号。faceSizes の数だけ連結", Required = true)]
+        public int[] FaceVertices { get; }
+
+        public AddMeshFromArraysCommand(int modelIndex, float[] positions, int[] faceSizes, int[] faceVertices, string meshName = "")
+            : base(modelIndex)
+        {
+            MeshName     = meshName ?? "";
+            Positions    = positions    ?? System.Array.Empty<float>();
+            FaceSizes    = faceSizes    ?? System.Array.Empty<int>();
+            FaceVertices = faceVertices ?? System.Array.Empty<int>();
+        }
+    }
+
     // ================================================================
     // 単一メッシュを返さない生成
     // ================================================================

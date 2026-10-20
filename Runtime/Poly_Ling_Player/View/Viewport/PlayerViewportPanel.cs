@@ -874,13 +874,15 @@ namespace Poly_Ling.Player
         {
             // 旧 Viewport の接続を解除
             Viewport?.DisconnectSource(this);
+            if (Viewport != null) Viewport.RenderTextureChanged -= RefreshBackground;
 
             Viewport = viewport;
 
             if (viewport != null)
             {
-                // RenderTexture を背景に設定
+                // RenderTexture を背景に設定（作り直されたら貼り直す）
                 RefreshBackground();
+                viewport.RenderTextureChanged += RefreshBackground;
                 // コントローラーをこのパネルのイベントに接続
                 viewport.ConnectSource(this);
             }

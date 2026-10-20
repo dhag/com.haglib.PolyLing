@@ -299,6 +299,62 @@ namespace Poly_Ling.Serialization
         }
 
         // ================================================================
+        // 書式の検査（取り込み前）
+        // ================================================================
+
+        /// <summary>
+        /// Parse は欄の多すぎる行や 2 行目以降の gv 行を黙って読み替える（引用符で囲まずに
+        /// カンマを書いた説明は途中で切れ、gv 行は最後の 1 行だけが残る）。
+        /// 手で書いたファイルを取り込む前にこれで見て、当てはまる行があれば断る。
+        /// o / r 行は欄の数が決まっていないので見ない。
+        /// </summary>
+        public static bool TryValidate(IEnumerable<string> lines, out string error)
+        {
+            error = null;
+            if (lines == null) return true;
+
+            string group  = null;
+            bool   seenGv = false;
+            int    lineNo = 0;
+            foreach (var line in lines)
+            {
+                lineNo++;
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 1) continue;
+
+                int max;
+                switch (cols[0])
+                {
+                    case "g":  max = 8; group = cols.Length > 1 ? Unesc(cols[1]) : ""; seenGv = false; break;
+                    case "gp":
+                    case "gc":
+                    case "gt": max = 2; break;
+                    case "gv":
+                        max = 4;
+                        if (seenGv)
+                        {
+                            error = $"{lineNo} 行目: シナリオ「{group}」の由来（gv 行）が 2 行以上あります。1 行にまとめてください";
+                            return false;
+                        }
+                        seenGv = true;
+                        break;
+                    case "s":  max = 9; break;
+                    case "a":  max = 3; break;
+                    default:   continue;
+                }
+
+                if (cols.Length > max)
+                {
+                    error = $"{lineNo} 行目（{cols[0]} 行）の欄が {cols.Length} あります（最大 {max}）。"
+                          + "カンマを含む値は引用符で囲んでください";
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // ================================================================
         // 列の読み
         // ================================================================
 

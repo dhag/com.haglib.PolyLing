@@ -285,21 +285,31 @@ namespace Poly_Ling.Data
             boneIndices = idx.ToArray();
         }
 
-        public ApplyHumanoidMappingCommand(int modelIndex, string[] boneNames, int[] boneIndices = null, string[] boneObjectNames = null)
+        public ApplyHumanoidMappingCommand(int modelIndex, string[] boneNames, int[] boneIndices = null, string[] boneObjectNames = null, bool merge = false)
             : base(modelIndex)
         {
             BoneNames       = boneNames       ?? System.Array.Empty<string>();
             BoneIndices     = boneIndices     ?? System.Array.Empty<int>();
             BoneObjectNames = boneObjectNames ?? System.Array.Empty<string>();
+            Merge           = merge;
         }
 
         /// <summary>
         /// 対応するボーンをオブジェクト名で渡す。BoneNames と同じ並び。
         /// 渡したときは BoneIndices を使わず、実行時に名前から索引を引く
         /// （シナリオに索引を焼かないため。robot_build_skin の e7）。
+        /// 引く先はボーンと、ミラー側でない描画オブジェクト
+        /// （MQO の人型は描画オブジェクトへ割り当てるため）。
         /// </summary>
-        [PLParam(Description = "対応するボーンのオブジェクト名。BoneNames と同じ並び。渡すと boneIndices の代わりに名前から索引を引く")]
+        [PLParam(Description = "対応するボーンのオブジェクト名。BoneNames と同じ並び。渡すと boneIndices の代わりに名前から索引を引く。ボーンのほか、ミラー側でない描画オブジェクトも引ける")]
         public string[] BoneObjectNames { get; }
+
+        /// <summary>
+        /// true なら今の割当を残し、渡した Humanoid ボーンだけを差し替える。
+        /// false（既定）なら今の割当を捨てて、渡したものだけにする（従来の動き）。
+        /// </summary>
+        [PLParam(Description = "true なら今の割当を残し、渡した Humanoid ボーンだけを差し替える。既定 false は割当全体を渡したものに置き換える")]
+        public bool Merge { get; }
     }
 
     /// <summary>モデルのHumanoidマッピングをクリアする</summary>

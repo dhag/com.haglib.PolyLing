@@ -419,6 +419,12 @@ namespace Poly_Ling.Player
             RegisterUiPanelGrouped("exportStl", "STL エクスポート（保存はダイアログで確定）",
                 _layoutRoot.ExportSection, () => ShowExportPanel(PlayerExportSubPanel.Mode.STL),
                 PlayerExportSubPanel.ModeGroup(PlayerExportSubPanel.Mode.STL), _exportSubPanel);
+            RegisterUiPanelGrouped("exportGltf", "glTF エクスポート（.glb / .gltf。保存はダイアログで確定）",
+                _layoutRoot.ExportSection, () => ShowExportPanel(PlayerExportSubPanel.Mode.GLTF),
+                PlayerExportSubPanel.ModeGroup(PlayerExportSubPanel.Mode.GLTF), _exportSubPanel);
+            RegisterUiPanelGrouped("exportFbx", "FBX エクスポート（モデル。保存はダイアログで確定）",
+                _layoutRoot.ExportSection, () => ShowExportPanel(PlayerExportSubPanel.Mode.FBX),
+                PlayerExportSubPanel.ModeGroup(PlayerExportSubPanel.Mode.FBX), _exportSubPanel);
 
             // 読込も 1 つのセクションを 4 モードで切り替える。
             RegisterUiPanelGrouped("importPmx", "PMX インポート（読込はファイル選択ダイアログで確定）",
@@ -436,6 +442,12 @@ namespace Poly_Ling.Player
             RegisterUiPanelGrouped("importStl", "STL インポート（読込はファイル選択ダイアログで確定）",
                 _layoutRoot.ImportSection, () => ShowImportPanel(PlayerImportSubPanel.Mode.STL),
                 PlayerImportSubPanel.ModeGroup(PlayerImportSubPanel.Mode.STL), _importSubPanel);
+            RegisterUiPanelGrouped("importGltf", "glTF インポート（.glb / .gltf。読込はファイル選択ダイアログで確定）",
+                _layoutRoot.ImportSection, () => ShowImportPanel(PlayerImportSubPanel.Mode.GLTF),
+                PlayerImportSubPanel.ModeGroup(PlayerImportSubPanel.Mode.GLTF), _importSubPanel);
+            RegisterUiPanelGrouped("importFbx", "FBX インポート（モデル。読込はファイル選択ダイアログで確定）",
+                _layoutRoot.ImportSection, () => ShowImportPanel(PlayerImportSubPanel.Mode.FBX),
+                PlayerImportSubPanel.ModeGroup(PlayerImportSubPanel.Mode.FBX), _importSubPanel);
 
             // ── 常に見えるパネル ─────────────────────────────────────
             RegisterUiPanel("modelList", "モデル一覧（カレントの切り替え・名前の変更・削除）",
@@ -499,11 +511,9 @@ namespace Poly_Ling.Player
             // ── モーション（SubPanels/VMD ほか）──────────────────────
             RegisterUiPanel("vmdTest", "VMD の読込と再生の検証",
                 _layoutRoot.VMDTestSection, ShowVMDTestPanel, _vmdTestSubPanel);
-            RegisterUiPanel("vmdToVrma", "VMD から VRMA への書き出し",
+            RegisterUiPanel("vmdToVrma", "VMD＋モデルから PolyLing モーション（と VRMA）への書き出し",
                 _layoutRoot.VmdToVrmaSection, ShowVmdToVrmaPanel, _vmdToVrmaSubPanel);
-            RegisterUiPanel("unityClipToVrma", "PolyLing モーションから VRMA への変換（モデル不要）",
-                _layoutRoot.UnityClipToVrmaSection, ShowUnityClipToVrmaPanel, _unityClipToVrmaSubPanel);
-            RegisterUiPanel("motionClipTest", "モーションの読込と再生の検証（VRMA 書き出しつき）",
+            RegisterUiPanel("motionClipTest", "モーション（.plmotion / .vrma / .vmd / .bvh / .fbx）の読込と再生、JSON・VRMA・BVH・FBX 書き出し",
                 _layoutRoot.MotionClipTestSection, ShowMotionClipTestPanel, _motionClipTestSubPanel);
             RegisterUiPanel("mediaPipe", "MediaPipe の顔ランドマークによる変形・表情転写（メディアパイプ（顔フィット））",
                 _layoutRoot.MediaPipeSection, ShowMediaPipePanel, _mediaPipeSubPanel);

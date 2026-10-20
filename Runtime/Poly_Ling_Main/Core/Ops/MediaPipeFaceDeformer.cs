@@ -47,12 +47,12 @@ namespace Poly_Ling.Tools.MediaPipe
 
         /// <summary>
         /// ランドマークJSONからXY座標配列を読み込む（468頂点）。
-        /// JSON スキーマ定義は <see cref="Poly_Ling.NohMask.FaceLandmarksJson"/> と共通。
+        /// JSON の形は <see cref="MediaPipeFaceFile"/>。
         /// </summary>
         public static Vector2[] LoadLandmarks(string jsonPath)
         {
             string json = File.ReadAllText(jsonPath);
-            var data = JsonUtility.FromJson<Poly_Ling.NohMask.FaceLandmarksJson>(json);
+            var data = JsonUtility.FromJson<MediaPipeFaceFile>(json);
             if (data?.faces == null || data.faces.Length == 0)
                 throw new InvalidOperationException($"No faces in {jsonPath}");
 

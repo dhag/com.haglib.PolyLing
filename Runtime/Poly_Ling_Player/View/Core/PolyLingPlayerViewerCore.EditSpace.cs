@@ -229,6 +229,8 @@ namespace Poly_Ling.Player
                 case ExportObjFileCommand _:
                 case ExportStlFileCommand _:
                 case ExportVrmFileCommand _:
+                case ExportGltfFileCommand _:
+                case ExportFbxFileCommand _:
                 case SendHierarchyBundleCommand _:
                 // 読込・初期化
                 case LoadProjectFileCommand _:
@@ -240,6 +242,8 @@ namespace Poly_Ling.Player
                 case ImportStlFileCommand _:
                 case ImportStlFolderCommand _:
                 case ImportVrmFileCommand _:
+                case ImportGltfFileCommand _:
+                case ImportFbxFileCommand _:
                 case ImportMqoVertexPositionsCommand _:
                 case ImportPmxVertexAttributesCommand _:
                 case ResetProjectCommand _:

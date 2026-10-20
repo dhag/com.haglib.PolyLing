@@ -29,7 +29,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO, OBJ, VRM, STL }
+        public enum Mode { PMX, MQO, OBJ, VRM, STL, GLTF, FBX }
 
         private Mode _mode;
 
@@ -69,6 +69,8 @@ namespace Poly_Ling.Player
         private ObjImportSettings _objSettings = ObjImportSettings.CreateDefault();
         private Poly_Ling.STL.StlImportSettings _stlSettings = Poly_Ling.STL.StlImportSettings.CreateDefault();
         private Poly_Ling.Vrm.Vrm10ImportSettings _vrmSettings = Poly_Ling.Vrm.Vrm10ImportSettings.CreateDefault();
+        private Poly_Ling.Gltf.GltfImportSettings _gltfSettings = Poly_Ling.Gltf.GltfImportSettings.CreateDefault();
+        private Poly_Ling.Fbx.FbxImportSettings   _fbxSettings  = Poly_Ling.Fbx.FbxImportSettings.CreateDefault();
 
         // ================================================================
         // コールバック
@@ -110,6 +112,18 @@ namespace Poly_Ling.Player
         /// 引数は (filePath, settings のコピー, 読込後オプション)。
         /// </summary>
         public Action<string, Poly_Ling.Vrm.Vrm10ImportSettings, PostOptions> OnImportVrm;
+
+        /// <summary>
+        /// glTF Import ボタン押下時に呼ばれる。
+        /// 引数は (filePath, settings のコピー, 読込後オプション)。
+        /// </summary>
+        public Action<string, Poly_Ling.Gltf.GltfImportSettings, PostOptions> OnImportGltf;
+
+        /// <summary>
+        /// FBX Import ボタン押下時に呼ばれる。
+        /// 引数は (filePath, settings のコピー, 読込後オプション)。
+        /// </summary>
+        public Action<string, Poly_Ling.Fbx.FbxImportSettings, PostOptions> OnImportFbx;
 
         /// <summary>インポート後に3D表示をオートスケールするか</summary>
         public bool AutoScale => _autoScale;
@@ -259,6 +273,8 @@ namespace Poly_Ling.Player
                 case Mode.OBJ: return "OBJ";
                 case Mode.VRM: return "VRM";
                 case Mode.STL: return "STL";
+                case Mode.GLTF: return "glTF";
+                case Mode.FBX: return "FBX";
                 default:       return "MQO";
             }
         }
@@ -278,7 +294,8 @@ namespace Poly_Ling.Player
         private void OnBrowse()
         {
             string name  = ModeName(_mode);
-            string ext   = name.ToLowerInvariant();
+            // glTF は 2 つの拡張子（GLB / 分割形式）を受ける。
+            string ext   = _mode == Mode.GLTF ? "glb,gltf" : name.ToLowerInvariant();
             string title = $"Select {name} File";
 
             string path = PlayerIoUiKit.AskLoadPath(title, ImportPathKey(), _pathField.value, ext);
@@ -323,6 +340,24 @@ namespace Poly_Ling.Player
                     return;
                 }
                 OnImportVrm?.Invoke(path, _vrmSettings.Clone(), BuildPostOptions());
+            }
+            else if (_mode == Mode.GLTF)
+            {
+                if (!Poly_Ling.Gltf.PLGltfBridge.Importer.IsAvailable)
+                {
+                    SetStatus("glTF インポータが利用できません（VRM パッケージ未導入、または Play 中でない）");
+                    return;
+                }
+                OnImportGltf?.Invoke(path, _gltfSettings.Clone(), BuildPostOptions());
+            }
+            else if (_mode == Mode.FBX)
+            {
+                if (!Poly_Ling.Fbx.UfbxNative.TryGetVersion(out _, out string dllReason))
+                {
+                    SetStatus(dllReason);
+                    return;
+                }
+                OnImportFbx?.Invoke(path, _fbxSettings.Clone(), BuildPostOptions());
             }
             else
                 OnImportMqo?.Invoke(path, CloneMqoSettings(), BuildPostOptions());
@@ -373,6 +408,10 @@ namespace Poly_Ling.Player
                 BuildStlSettings(_settingsContainer);
             else if (_mode == Mode.VRM)
                 BuildVrmSettings(_settingsContainer);
+            else if (_mode == Mode.GLTF)
+                BuildGltfSettings(_settingsContainer);
+            else if (_mode == Mode.FBX)
+                BuildFbxSettings(_settingsContainer);
             else
                 BuildMqoSettings(_settingsContainer);
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
@@ -908,6 +947,88 @@ namespace Poly_Ling.Player
             tex.tooltip = "VRM と同じフォルダの「VRM名_textures」へ画像を書き出し、材質から参照する。\n"
                         + "切ると材質にテクスチャは付かない。";
             parent.Add(tex);
+        }
+
+        // ────────────────────────────────────────────────────────
+        // glTF 設定（.glb / .gltf）
+        //   軸は Z 反転で Unity 座標へ直す（UniGLTF の glTF 既定）ので、軸反転・倍率の欄は持たない。
+        //   Humanoid は glTF に無いので、名前からの自動割当と原点 CSV は他形式と同じく出す。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildGltfSettings(VisualElement parent)
+        {
+            if (!Poly_Ling.Gltf.PLGltfBridge.Importer.IsAvailable)
+            {
+                var warn = new Label("glTF インポータが利用できません（VRM パッケージ未導入、または Play 中でない）");
+                warn.style.whiteSpace = WhiteSpace.Normal;
+                warn.style.color      = new StyleColor(new Color(1f, 0.6f, 0.4f));
+                parent.Add(warn);
+                return;
+            }
+
+            parent.Add(SectionLabel("読み込む内容"));
+            parent.Add(ToggleRow("morphs", "モーフ（モーフターゲット）",
+                () => _gltfSettings.ImportMorphs, v => _gltfSettings.ImportMorphs = v));
+            parent.Add(ToggleRow("autoScaleView", "3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("マテリアル"));
+            parent.Add(ToggleRow("materials", "材質を読み込む",
+                () => _gltfSettings.ImportMaterials, v => _gltfSettings.ImportMaterials = v));
+
+            var tex = ToggleRow("extractTextures", "テクスチャを書き出す",
+                () => _gltfSettings.ExtractTextures, v => _gltfSettings.ExtractTextures = v);
+            tex.tooltip = "glTF と同じフォルダの「ファイル名_textures」へ画像を書き出し、材質から参照する。\n"
+                        + "切ると材質にテクスチャは付かない。";
+            parent.Add(tex);
+
+            parent.Add(Separator());
+
+            // 読込後オプション（インポータ本体の設定ではない）
+            parent.Add(SectionLabel("読込後オプション"));
+            parent.Add(HumanoidAutoMapToggle());
+            parent.Add(OriginCsvOptionBlock());
+        }
+
+        // ────────────────────────────────────────────────────────
+        // FBX 設定
+        //   読み込みは ufbx（plufbx.dll）。軸と単位はファイルの設定から Unity 左手系・メートルへ直す。
+        //   多角形は三角形化しない。モーション（テイク）はここでは読まない（モーションパネルで読む）。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildFbxSettings(VisualElement parent)
+        {
+            if (!Poly_Ling.Fbx.UfbxNative.TryGetVersion(out _, out string dllReason))
+            {
+                var warn = new Label("FBX インポータが利用できません: " + dllReason);
+                warn.style.whiteSpace = WhiteSpace.Normal;
+                warn.style.color      = new StyleColor(new Color(1f, 0.6f, 0.4f));
+                parent.Add(warn);
+                return;
+            }
+
+            parent.Add(SectionLabel("読み込む内容"));
+            parent.Add(ToggleRow("morphs", "モーフ（ブレンドシェイプ）",
+                () => _fbxSettings.ImportMorphs, v => _fbxSettings.ImportMorphs = v));
+            parent.Add(ToggleRow("autoScaleView", "3D表示オートスケール", () => _autoScale, v => _autoScale = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("マテリアル"));
+            parent.Add(ToggleRow("materials", "材質を読み込む",
+                () => _fbxSettings.ImportMaterials, v => _fbxSettings.ImportMaterials = v));
+
+            var tex = ToggleRow("extractTextures", "テクスチャを書き出す",
+                () => _fbxSettings.ExtractTextures, v => _fbxSettings.ExtractTextures = v);
+            tex.tooltip = "FBX と同じフォルダの「ファイル名_textures」へ画像（埋め込み・外部ファイル）を書き出し、材質から参照する。\n"
+                        + "切ると材質にテクスチャは付かない。";
+            parent.Add(tex);
+
+            parent.Add(Separator());
+
+            // 読込後オプション（インポータ本体の設定ではない）
+            parent.Add(SectionLabel("読込後オプション"));
+            parent.Add(HumanoidAutoMapToggle());
+            parent.Add(OriginCsvOptionBlock());
         }
 
         // ================================================================

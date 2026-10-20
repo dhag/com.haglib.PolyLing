@@ -1,5 +1,5 @@
 // UnityClipApplier.Support.cs
-// Unity クリップ適用：外部 CSV・診断ログ・ノード単位のデルタ・仮想ミラー鎖・ワールド行列・サンプリング。
+// Unity クリップ適用：可動域 CSV・診断ログ・ノード単位のデルタ・仮想ミラー鎖・ワールド行列・サンプリング。
 // Runtime/Poly_Ling_Main/UnityClip/ に配置
 
 using System.Collections.Generic;
@@ -13,40 +13,6 @@ namespace Poly_Ling.UnityClip
 {
     public partial class UnityClipApplier
     {
-        // ================================================================
-        // 外部 UnityBone CSV v2（拡張C）読込：Humanoid毎の RestW/位置
-        //   列: UnityBone,Name,NameEn,Humanoid,Parent,PosX,PosY,PosZ,
-        //       RestLX,RestLY,RestLZ,RestLW,RestWX,RestWY,RestWZ,RestWW
-        //   ※ HumanoidBoneMapping.LoadFromCSV は使わない（あれは名前対応CSV用）。
-        // ================================================================
-        public int LoadSourceRestCsv(string csvText)
-        {
-            var dict = new Dictionary<string, SourceRest>();
-            if (!string.IsNullOrEmpty(csvText))
-            {
-                var lines = csvText.Split('\n');
-                foreach (var raw in lines)
-                {
-                    string line = raw.TrimEnd('\r');
-                    if (line.Length == 0 || line[0] == ';') continue;   // コメント行
-                    var f = SplitCsvLine(line);
-                    if (f.Count < 16) continue;
-                    if ((f[0] ?? "").Trim() != "UnityBone") continue;   // データ行のみ
-                    if ((f[1] ?? "").Trim() == "Name") continue;        // ヘッダ行スキップ
-                    string hum = (f[3] ?? "").Trim();
-                    if (hum.Length == 0) continue;                      // Humanoid割当のみ採用
-                    Vector3 pos = new Vector3(ParseF(f[5]), ParseF(f[6]), ParseF(f[7]));
-                    var qn = QNorm(new Q(ParseF(f[12]), ParseF(f[13]), ParseF(f[14]), ParseF(f[15])));
-                    dict[hum] = new SourceRest { RestW = qn.ToUnity(), RestPos = pos };
-                }
-            }
-            _sourceRest = dict;
-            return dict.Count;
-        }
-
-        /// <summary>ソース rest（バインドポーズ）を破棄。以後は同一リグ用の従来経路に戻る。</summary>
-        public void ClearSourceRest() { _sourceRest = null; }
-
         // ================================================================
         // 外部 UnityLimit CSV v1 読込：Humanoid 毎の可動域（度）＋マッスル実測
         //   列（53列・0起点）:
@@ -125,7 +91,6 @@ namespace Poly_Ling.UnityClip
             if (!DebugLog) return;
 
             string key = string.Concat(
-                ResolvedBodyMode.ToString(), "|",
                 PathMatchedCount.ToString(), "/", PathTrackCount.ToString(), "|",
                 MuscleMatchedCount.ToString(), "/", MuscleTargetCount.ToString(), "|",
                 string.Join(",", UnresolvedMuscleBones.ToArray()));
@@ -133,9 +98,7 @@ namespace Poly_Ling.UnityClip
             _lastDiagKey = key;
 
             var sb = new System.Text.StringBuilder();
-            sb.Append("[UnityClipApplier] body=").Append(ResolvedBodyMode)
-              .Append(" limits=").Append(HasMuscleMeasured ? "CSV実測" : "既定(Tポーズ基準)")
-              .Append(" sourceRest=").Append(HasSourceRest ? "yes" : "no").Append('\n');
+            sb.Append("[UnityClipApplier] limits=").Append(HasMuscleMeasured ? "CSV実測" : "既定(Tポーズ基準)").Append('\n');
             sb.Append("  path   : ").Append(PathMatchedCount).Append('/').Append(PathTrackCount).Append('\n');
             sb.Append("  muscle : ").Append(MuscleMatchedCount).Append('/').Append(MuscleTargetCount).Append('\n');
 

@@ -12,10 +12,10 @@
 
 using System;
 using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Motion;
+using Poly_Ling.Tools.MediaPipe;
 
 namespace Poly_Ling.Player
 {
@@ -83,21 +83,17 @@ namespace Poly_Ling.Player
         public void OnMediaPipe()
         {
             if (!Running || _solver == null || Live == null) return;
-            if (!Live.TryGetLatestMediaPipe(out string json, out uint seq) || seq == _lastSeq) return;
-            _lastSeq = seq;
-
-            JObject o;
-            try { o = JObject.Parse(json); } catch (Exception) { return; }
+            if (!Live.TryGetLatestMediaPipe(out var mp) || mp.Seq == _lastSeq) return;
+            _lastSeq = mp.Seq;
 
             _solver.Clear();
             var parts = new List<string>();
-            string rKey = SwapHands ? "leftHand" : "rightHand";
-            string lKey = SwapHands ? "rightHand" : "leftHand";
-            TryReadWorld(o, rKey, 21, out var rh);
-            TryReadWorld(o, lKey, 21, out var lh);
-            if (Body && TryReadWorld(o, "pose", 33, out var pose))
+            var rh = ReadWorld(SwapHands ? mp.LeftHand : mp.RightHand, MediaPipeFrame.HandPoints);
+            var lh = ReadWorld(SwapHands ? mp.RightHand : mp.LeftHand, MediaPipeFrame.HandPoints);
+            var pose = Body ? ReadWorld(mp.Pose, MediaPipeFrame.PosePoints) : null;
+            if (pose != null)
             {
-                TryReadFace(o, out var face);
+                var face = ReadFace(mp);
                 _solver.SolveBody(pose, face, rh, lh);
                 _solver.AdjustBody();
                 parts.Add("ボディ");
@@ -113,47 +109,30 @@ namespace Poly_Ling.Player
 
             if (_solver.Locals.Count == 0) { SetStatus("解けた部位がありません（手が写っていないなど）"); return; }
             if (!_solver.ToMuscles(_frame)) return;
-            _frame.Time = (double?)o["time"] ?? 0.0;
+            _frame.Source = MotionLiveJson.SourceMediaPipe;
+            _frame.Time   = mp.Time;
             if (Live.ClientCount > 0 && Live.BroadcastFrame(_frame)) Sent++;
             if (Processed % 10 == 1) SetStatus($"処理中（{LastParts}）");
         }
 
-        // o[key].world の点（[x,y,z,…]）を正準骨格の座標で読む。world が無ければ false。
-        private static bool TryReadWorld(JObject o, string key, int count, out Vector3[] points)
+        // 部位の world の先頭 count 点を正準骨格の座標で返す。world が無い・足りなければ null。
+        private static Vector3[] ReadWorld(MediaPipePart part, int count)
         {
-            points = null;
-            if (!(o[key]?["world"] is JArray arr) || arr.Count < count) return false;
-            try
-            {
-                points = new Vector3[count];
-                for (int i = 0; i < count; i++)
-                {
-                    var a = (JArray)arr[i];
-                    points[i] = MediaPipePoseSolver.ToUnity((float)a[0], (float)a[1], (float)a[2]);
-                }
-                return true;
-            }
-            catch (Exception) { points = null; return false; }
+            if (part?.World == null || part.World.Length < count) return null;
+            var points = new Vector3[count];
+            for (int i = 0; i < count; i++) points[i] = MediaPipeCoords.ToUnity(part.World[i]);
+            return points;
         }
 
-        // 顔の点（画像基準の正規化座標）を画素単位（x·w, y·h, z·w）にして正準骨格の座標で読む。無ければ null。
-        private static bool TryReadFace(JObject o, out Vector3[] points)
+        // 顔の点（画像基準の正規化座標）を画素単位にして正準骨格の座標で返す。無ければ null。
+        private static Vector3[] ReadFace(MediaPipeFrame mp)
         {
-            points = null;
-            if (!(o["face"]?["landmarks"] is JArray arr) || arr.Count < 468) return false;
-            float w = (float?)o["image"]?["w"] ?? 0f, h = (float?)o["image"]?["h"] ?? 0f;
-            if (w <= 0f || h <= 0f) return false;
-            try
-            {
-                points = new Vector3[arr.Count];
-                for (int i = 0; i < arr.Count; i++)
-                {
-                    var a = (JArray)arr[i];
-                    points[i] = MediaPipePoseSolver.ToUnity((float)a[0] * w, (float)a[1] * h, (float)a[2] * w);
-                }
-                return true;
-            }
-            catch (Exception) { points = null; return false; }
+            var lm = mp.Face?.Landmarks;
+            if (lm == null || lm.Length < MediaPipeFrame.FaceMeshPoints || !mp.HasImageSize) return null;
+            var points = new Vector3[lm.Length];
+            for (int i = 0; i < lm.Length; i++)
+                points[i] = MediaPipeCoords.ToUnity(MediaPipeCoords.ToPixels(lm[i], mp.ImageWidth, mp.ImageHeight));
+            return points;
         }
 
         private void SetStatus(string s)

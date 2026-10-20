@@ -161,15 +161,19 @@ namespace Poly_Ling.Ops
                 }
             }
 
+            var __sw = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
             // figure-8型自己交差面を分割してから縮退面を削除
             SplitSelfIntersectingFaces(meshObject);
+            long __tSplit = __sw.ElapsedMilliseconds; // TEMP-TIMING
             RemoveDegenerateFaces(meshObject);
+            long __tDegen = __sw.ElapsedMilliseconds - __tSplit; // TEMP-TIMING
 
             // 閉じた面ペア（逆巻きの重なり面）を削除。
             // 結合に関与した頂点（各グループの代表）を含む面だけを見る。
             // 索引は RemoveVertices の前なので代表索引がそのまま通じる。
             if (removeClosedFaces)
                 RemoveClosedFacePairs(meshObject, mergedRepresentatives);
+            long __tMark = __sw.ElapsedMilliseconds; // TEMP-TIMING
 
             // 不要頂点を削除。
             //   旧索引→新索引の表（結合された頂点は代表の新索引）を作り、面を新しい索引へ
@@ -203,6 +207,7 @@ namespace Poly_Ling.Ops
 
                 meshObject.RemoveVerticesWithMap(verticesToRemove, map);
             }
+            UnityEngine.Debug.Log($"[PL/Timing] Merge groups={mergeGroups.Count} removed={verticesToRemove.Count} split={__tSplit}ms degenerate={__tDegen}ms closedPairs={__tMark - __tSplit - __tDegen}ms removeVertices={__sw.ElapsedMilliseconds - __tMark}ms"); // TEMP-TIMING
 
             result.Success = true;
             result.RemovedVertexCount = verticesToRemove.Count;
@@ -471,86 +476,109 @@ namespace Poly_Ling.Ops
         /// 重複頂点の位置で複数の面に再帰的に分割する。
         /// マージ後に呼ぶこと。RemoveDegenerateFaces の前に実行する。
         /// </summary>
+        //
+        // 【全面を 1 回なめる】
+        //   以前は分割する面を見つけるたびに RemoveFaces（全面の索引表・配列の詰め・ID 集合の
+        //   作り直しなど）を 1 回ずつ呼んでいて、分割回数 × 面数の手間がかかっていた
+        //   （小さい文字で 400 秒超）。
+        //   いまは各面の頂点の並びを手元のリストだけで分け切り、分けた元の面の番号を控えて
+        //   最後に RemoveFaces を 1 回だけ呼ぶ。分けてできた面は従来どおり末尾に足す。
+        //   Blender の重複頂点の結合（bmo_weld_verts_exec）も、面を作り直したあとで
+        //   古い面を最後にまとめて消している。
+        //
+        // 【分け方は従来と同じ】
+        //   最初に重複が見つかる位置 a（a より後ろに同じ頂点がある最小の a）と、その後ろで
+        //   最初に同じ頂点が現れる位置 b で、[a..b-1] と [b..末尾]+[0..a-1] の 2 つに分ける。
+        //   分けた片方にまだ重複があれば同じ規則で分け続ける。頂点が 3 つ未満の片は捨てる。
+        //   UV・法線の番号は頂点と同じ位置で切り出す（足りないときの扱いも従来と同じ）。
         public static void SplitSelfIntersectingFaces(MeshObject meshObject)
         {
             if (meshObject == null) return;
 
-            int i = 0;
-            while (i < meshObject.FaceCount)
+            var kill  = new List<int>();
+            var added = new List<Face>();
+            var work  = new Stack<(List<int> v, List<int> u, List<int> n)>();
+
+            int faceCount = meshObject.FaceCount;
+            for (int i = 0; i < faceCount; i++)
             {
                 var face = meshObject.Faces[i];
-                var verts = face.VertexIndices;
-                var uvs   = face.UVIndices;
-                var norms = face.NormalIndices;
+                if (!FindSplit(face.VertexIndices, out _, out _)) continue;
 
-                // 最初の重複頂点を探す
-                int splitPos = -1;
-                for (int a = 0; a < verts.Count; a++)
+                kill.Add(i);
+                work.Push((face.VertexIndices, face.UVIndices, face.NormalIndices));
+
+                while (work.Count > 0)
                 {
-                    for (int b = a + 1; b < verts.Count; b++)
+                    var (verts, uvs, norms) = work.Pop();
+
+                    if (!FindSplit(verts, out int splitStart, out int splitEnd))
                     {
-                        if (verts[a] == verts[b])
-                        {
-                            splitPos = a; // ループ開始位置
-                            goto found;
-                        }
+                        // 重複が無くなった片。元の面そのもの（i）はここへ来ない（重複があるので）。
+                        var f = new Face { MaterialIndex = face.MaterialIndex };
+                        f.VertexIndices.AddRange(verts);
+                        f.UVIndices.AddRange(uvs);
+                        f.NormalIndices.AddRange(norms);
+                        added.Add(f);
+                        continue;
                     }
+
+                    // ループ1: [splitStart .. splitEnd-1]
+                    // ループ2: [splitEnd  .. verts.Count-1] + [0 .. splitStart-1]
+                    var loop1V = verts.GetRange(splitStart, splitEnd - splitStart);
+                    var loop1U = uvs.Count   >= splitEnd ? uvs.GetRange(splitStart,   splitEnd - splitStart) : new List<int>();
+                    var loop1N = norms.Count >= splitEnd ? norms.GetRange(splitStart, splitEnd - splitStart) : new List<int>();
+
+                    var loop2V = new List<int>();
+                    var loop2U = new List<int>();
+                    var loop2N = new List<int>();
+                    for (int k = splitEnd; k < verts.Count; k++) { loop2V.Add(verts[k]); if (k < uvs.Count) loop2U.Add(uvs[k]); if (k < norms.Count) loop2N.Add(norms[k]); }
+                    for (int k = 0;        k < splitStart;  k++) { loop2V.Add(verts[k]); if (k < uvs.Count) loop2U.Add(uvs[k]); if (k < norms.Count) loop2N.Add(norms[k]); }
+
+                    // ループ1 を先に取り出すよう、ループ2 を先に積む。
+                    // 出来る片の集合は従来と同じ。末尾に並ぶ順は従来（後回しの再検査）と違うことがある。
+                    if (loop2V.Count >= 3) work.Push((loop2V, loop2U, loop2N));
+                    if (loop1V.Count >= 3) work.Push((loop1V, loop1U, loop1N));
                 }
-                found:
-
-                if (splitPos < 0)
-                {
-                    i++;
-                    continue;
-                }
-
-                // verts[splitPos] == verts[splitEnd] となる splitEnd を探す
-                int splitStart = splitPos;
-                int splitEnd   = -1;
-                for (int b = splitStart + 1; b < verts.Count; b++)
-                {
-                    if (verts[b] == verts[splitStart])
-                    {
-                        splitEnd = b;
-                        break;
-                    }
-                }
-                if (splitEnd < 0) { i++; continue; }
-
-                // ループ1: [splitStart .. splitEnd-1]
-                // ループ2: [splitEnd  .. verts.Count-1] + [0 .. splitStart-1]
-                var loop1V = verts.GetRange(splitStart, splitEnd - splitStart);
-                var loop1U = uvs.Count  >= splitEnd ? uvs.GetRange(splitStart,  splitEnd - splitStart) : new List<int>();
-                var loop1N = norms.Count >= splitEnd ? norms.GetRange(splitStart, splitEnd - splitStart) : new List<int>();
-
-                var loop2V = new List<int>();
-                var loop2U = new List<int>();
-                var loop2N = new List<int>();
-                for (int k = splitEnd; k < verts.Count; k++)          { loop2V.Add(verts[k]); if (k < uvs.Count)   loop2U.Add(uvs[k]);   if (k < norms.Count) loop2N.Add(norms[k]); }
-                for (int k = 0;        k < splitStart; k++)            { loop2V.Add(verts[k]); if (k < uvs.Count)   loop2U.Add(uvs[k]);   if (k < norms.Count) loop2N.Add(norms[k]); }
-
-                // 元の面を削除して2面を末尾に追加（後続のwhileループで再検査される）
-                // 索引の詰めと辞書への付け替えは MeshObject.RemoveFaces が行う。
-                meshObject.RemoveFaces(new[] { i });
-
-                if (loop1V.Count >= 3)
-                {
-                    var f1 = new Face { MaterialIndex = face.MaterialIndex };
-                    f1.VertexIndices.AddRange(loop1V);
-                    f1.UVIndices.AddRange(loop1U);
-                    f1.NormalIndices.AddRange(loop1N);
-                    meshObject.Faces.Add(f1);
-                }
-                if (loop2V.Count >= 3)
-                {
-                    var f2 = new Face { MaterialIndex = face.MaterialIndex };
-                    f2.VertexIndices.AddRange(loop2V);
-                    f2.UVIndices.AddRange(loop2U);
-                    f2.NormalIndices.AddRange(loop2N);
-                    meshObject.Faces.Add(f2);
-                }
-                // i はインクリメントしない（追加された面は末尾なので再検査不要）
             }
+
+            if (kill.Count == 0) return;
+
+            // 索引の詰めと辞書への付け替えは MeshObject.RemoveFaces が行う。
+            meshObject.RemoveFaces(kill);
+            meshObject.Faces.AddRange(added);
+        }
+
+        /// <summary>
+        /// 分ける位置。a より後ろに同じ頂点がある最小の a と、a の後ろで最初に同じ頂点が現れる b。
+        /// 重複が無ければ false。
+        /// </summary>
+        private static bool FindSplit(List<int> verts, out int a, out int b)
+        {
+            a = -1;
+            b = -1;
+            int n = verts.Count;
+
+            if (n <= 16)
+            {
+                for (int i = 0; i < n; i++)
+                    for (int j = i + 1; j < n; j++)
+                        if (verts[i] == verts[j]) { a = i; b = j; return true; }
+                return false;
+            }
+
+            // 大きい多角形は、各頂点が最後に現れる位置を表にしてから先頭から見る。
+            // 「後ろに同じ頂点がある最小の a」は、最後に現れる位置が自分より後ろの最初の点。
+            var last = new Dictionary<int, int>(n);
+            for (int i = 0; i < n; i++) last[verts[i]] = i;
+            for (int i = 0; i < n; i++)
+            {
+                if (last[verts[i]] <= i) continue;
+                a = i;
+                for (int j = i + 1; j < n; j++)
+                    if (verts[j] == verts[i]) { b = j; return true; }
+            }
+            return false;
         }
 
         /// <summary>

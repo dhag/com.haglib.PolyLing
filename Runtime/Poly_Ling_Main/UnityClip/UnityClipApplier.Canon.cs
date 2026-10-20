@@ -155,22 +155,6 @@ namespace Poly_Ling.UnityClip
         public static float SampleMuscleWeight(UnityMuscleTrackDTO track, float timeSec)
             => SampleWeight(track, timeSec);
 
-        // present で親をたどる（欠損はスキップ）
-        private static string ParentOf(string cn, HashSet<string> present)
-        {
-            _canonParent.TryGetValue(cn, out var p);
-            while (p != null && !present.Contains(p)) _canonParent.TryGetValue(p, out p);
-            return p;
-        }
-
-        private static int DepthOf(string cn)
-        {
-            int d = 0;
-            _canonParent.TryGetValue(cn, out var p);
-            while (p != null) { d++; _canonParent.TryGetValue(p, out p); }
-            return d;
-        }
-
         // rest 方向（骨→CANON子の単位ベクトル）
         private static bool DirRest(Dictionary<string, Vector3> pos, string cn, out Vector3 dir)
         {
@@ -184,98 +168,5 @@ namespace Poly_Ling.UnityClip
             return true;
         }
 
-        // 本体レスト補正の本体：applyRetarget(isModel=false) を移植し timeSec で適用。
-        private int ApplyRetargetedBody(ModelContext model, UnityClipDTO clip, float timeSec)
-        {
-            if (clip.bakedBones == null || clip.bakedBones.Count == 0) return 0;
-            if (_sourceRest == null || _sourceRest.Count == 0) return 0;
-            EnsureCanon();
-
-            // byCanon: Humanoid名（= bakedBones.path）→ トラック
-            var byCanon = new Dictionary<string, UnityBoneTrackDTO>();
-            foreach (var t in clip.bakedBones)
-                if (t != null && t.keys != null && t.keys.Count > 0 && !string.IsNullOrEmpty(t.path))
-                    byCanon[t.path] = t;
-            if (byCanon.Count == 0) return 0;
-
-            var present = new HashSet<string>(byCanon.Keys);
-            var order = new List<string>(byCanon.Keys);
-            order.Sort((a, b) => DepthOf(a) - DepthOf(b));
-
-            // ターゲット rest 位置（モデル空間 = BindPose.inverse の並進）
-            var tp = new Dictionary<string, Vector3>();
-            foreach (var cn in order)
-            {
-                int master = ResolveMasterIndex(cn);
-                if (master < 0 || master >= model.MeshContextList.Count) continue;
-                var ctx = model.MeshContextList[master];
-                if (ctx == null) continue;
-                Matrix4x4 world = ctx.BindPose.inverse;
-                // Mx(Y軸180°回転)が向きを担うため、tp は Z 反転しない（二重反転回避）
-                tp[cn] = new Vector3(world.m03, world.m13, world.m23);
-            }
-
-            // ソース rest 位置
-            var sp = new Dictionary<string, Vector3>();
-            foreach (var kv in _sourceRest) sp[kv.Key] = kv.Value.RestPos;
-
-            // 整列 A[cn] = ft(ターゲットrest方向 → ミラーしたソースrest方向)。子が無ければ単位。
-            var Aq = new Dictionary<string, Q>();
-            foreach (var cn in order)
-            {
-                bool hasDs = DirRest(sp, cn, out var ds);
-                bool hasDt = DirRest(tp, cn, out var dt);
-                Aq[cn] = (hasDs && hasDt) ? QFromTo(dt, Mx(ds)) : Q.Identity;
-            }
-
-            // timeSec で local をサンプル
-            var Lsrc = new Dictionary<string, Q>();
-            foreach (var cn in order)
-            {
-                Quaternion? s = SampleRotation(byCanon[cn], timeSec);
-                Lsrc[cn] = s.HasValue ? Q.From(s.Value) : Q.Identity;
-            }
-
-            // FK でワールド化
-            var W = new Dictionary<string, Q>();
-            foreach (var cn in order)
-            {
-                string p = ParentOf(cn, present);
-                W[cn] = (p != null) ? QMul(W[p], Lsrc[cn]) : Lsrc[cn];
-            }
-
-            // ワールド差分 → ミラー＋整列 → CANON親相対ローカル → 適用
-            var Wt = new Dictionary<string, Q>();
-            int matched = 0;
-            foreach (var cn in order)
-            {
-                Q srcRestW = _sourceRest.TryGetValue(cn, out var sr) ? Q.From(sr.RestW) : Q.Identity;
-                Q E = QMul(W[cn], QConj(srcRestW));         // ワールド差分（レスト相対）
-                Wt[cn] = QMul(QMir(E), Aq[cn]);             // 左右ミラー＋A/T整列
-                string p = ParentOf(cn, present);
-                Q outLocal = (p != null) ? QNorm(QMul(QConj(Wt[p]), Wt[cn])) : QNorm(Wt[cn]);
-
-                if (ApplyLocalRotationToBone(model, cn, outLocal)) matched++;
-            }
-            return matched;
-        }
-
-        // CANON名（= Humanoid名）のモデルボーンへ CANON親相対ローカル回転を適用（回転のみ・位置は rest 維持）。
-        private bool ApplyLocalRotationToBone(ModelContext model, string canonName, Q outLocal)
-        {
-            int node = ResolveNode(canonName);
-            if (node < 0) return false;
-            var ctx = _skeleton.SourceContext(model, node);
-            if (ctx == null) return false;
-
-            // outLocal は「ターゲット rest 回転 = identity」前提（motion_timeline と同じ MMD 規約）の
-            // CANON 親相対ローカル回転。PMX ボーンはボーン整列の rest 回転 R(=BoneModelRotation, 非identity)
-            // を持つため、上書きすると R を捨てて全ボーンが誤配向になる。
-            // VMDApplier と同じく delta = R^-1 * outLocal * R を rest（baseMat）へのデルタとして適用する（回転のみ）。
-            Q R = Q.From(ctx.BoneModelRotation);
-            Q delta = QMul(QConj(R), QMul(outLocal, R));
-            SetNodeDelta(model, node, Vector3.zero, delta.ToUnity());
-            return true;
-        }
     }
 }

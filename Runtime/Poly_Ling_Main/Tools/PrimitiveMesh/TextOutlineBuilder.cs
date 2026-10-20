@@ -33,6 +33,15 @@ namespace Poly_Ling.GlyphText
 
         /// <summary>この文字のループ群。1 本以上入っている。</summary>
         public List<Loop> Loops;
+
+        /// <summary>字送り幅の中央の X（em 単位）。曲面配置で文字を回す基準。</summary>
+        public float AnchorX;
+
+        /// <summary>この文字の行のベースラインの Y（em 単位）。曲面配置で文字を回す基準。</summary>
+        public float BaselineY;
+
+        /// <summary>この文字の行の送り量 Y（em 単位）。1 行目が 0、下の行ほど負。</summary>
+        public float LineY;
     }
 
     public static class TextOutlineBuilder
@@ -95,7 +104,14 @@ namespace Poly_Ling.GlyphText
                     var one = new List<Loop>();
                     AppendGlyph(one, glyph, font, segment, mergeEps, inv, penX, lineY);
                     if (one.Count > 0)
-                        glyphs.Add(new GlyphLoops { CodePoint = cp, Loops = one });
+                        glyphs.Add(new GlyphLoops
+                        {
+                            CodePoint = cp,
+                            Loops     = one,
+                            AnchorX   = penX + glyph.Advance * inv * 0.5f,
+                            BaselineY = lineY + font.Descent * inv,
+                            LineY     = lineY,
+                        });
 
                     penX += glyph.Advance * inv + p.LetterSpacing;
                 }

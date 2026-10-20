@@ -143,10 +143,23 @@ namespace Poly_Ling.EditorIO
             }
             avatar.name = System.IO.Path.GetFileNameWithoutExtension(savePath);
 
-            // 7) .asset として保存（既存は上書き＝delete→create で決定論）
-            if (AssetDatabase.LoadAssetAtPath<Avatar>(savePath) != null)
-                AssetDatabase.DeleteAsset(savePath);
-            AssetDatabase.CreateAsset(avatar, savePath);
+            // 7) .asset として保存。
+            //   既存があれば中身だけ書き換えて同じ資産（GUID）を保つ。
+            //   消して作り直すと GUID が変わり、シーンに置いたモデルなど既存の参照が
+            //   Avatar を失う（Animator の Avatar が None になり、モーションが当たらない）。
+            var existing = AssetDatabase.LoadAssetAtPath<Avatar>(savePath);
+            if (existing != null)
+            {
+                EditorUtility.CopySerialized(avatar, existing);
+                existing.name = avatar.name;
+                EditorUtility.SetDirty(existing);
+                UnityEngine.Object.DestroyImmediate(avatar);
+                avatar = existing;
+            }
+            else
+            {
+                AssetDatabase.CreateAsset(avatar, savePath);
+            }
             AssetDatabase.SaveAssets();
 
             L($"Avatar 生成・保存: human={humanBones.Count} / skeleton={skeleton.Count}\n  → {savePath}");

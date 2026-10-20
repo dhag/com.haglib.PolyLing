@@ -42,7 +42,7 @@ namespace Poly_Ling.Remote
 
             if (msg.Type == "query")   return ProcessQuery(msg, channel);
             if (msg.Type == "command") return ProcessCommand(msg, channel);
-            return BuildErrorResponse(msg.Id, $"Unknown type: {msg.Type}");
+            return BuildErrorResponse(msg.Id, $"Unknown type: {msg.Type}", CommandErrorCodes.InvalidArgs);
         }
 
         /// <summary>
@@ -296,7 +296,7 @@ namespace Poly_Ling.Remote
             catch (Exception ex)
             {
                 Log($"コマンドエラー: {ex.Message}");
-                return BuildErrorResponse(msg.Id, ex.Message);
+                return BuildErrorResponse(msg.Id, ex.Message, CommandErrorCodes.Exception);
             }
         }
 
@@ -316,7 +316,7 @@ namespace Poly_Ling.Remote
                 string reason = string.IsNullOrEmpty(buildError)
                     ? $"Unknown action: {msg.Action}" : buildError;
                 Log($"組み立て失敗: {reason}");
-                return BuildErrorResponse(msg.Id, reason);
+                return BuildErrorResponse(msg.Id, reason, CommandResultJson.CodeForCreateFailure(msg.Action));
             }
 
             string requester = ResolveUserName(channel);
@@ -351,22 +351,12 @@ namespace Poly_Ling.Remote
             CheckOwnershipChanged();
 
             if (!result.Success)
-                return BuildErrorResponse(msg.Id, result.Reason);
+                return BuildErrorResponse(msg.Id, result.Reason, result.Code);
 
-            return BuildSuccessResponse(msg.Id, BuildResultJson(result));
-        }
-
-        /// <summary>実行結果を応答の data 部へ載せる JSON にする。</summary>
-        private static string BuildResultJson(CommandResult result)
-        {
-            var jb = new JsonBuilder();
-            jb.BeginObject();
-            if (result.MasterIndices != null && result.MasterIndices.Length > 0)
-                jb.KeyValue("masterIndices", string.Join(",", result.MasterIndices));
-            if (result.ObjectIds != null && result.ObjectIds.Length > 0)
-                jb.KeyValue("objectIds", string.Join(",", result.ObjectIds));
-            jb.EndObject();
-            return jb.ToString();
+            // data の欄（masterIndices / objectIds の配列・版・result）は MCP の call と共通（CommandResultJson）。
+            // wantRevision はコマンドの引数ではなく封筒の旗（PanelCommandFactory は知らない引数を使わない）。
+            bool wantRevision = CommandResultJson.IsTrue(GetParamString(msg, "wantRevision", null));
+            return BuildSuccessResponse(msg.Id, CommandResultJson.BuildSuccessObject(result, wantRevision));
         }
 
         /// <summary>

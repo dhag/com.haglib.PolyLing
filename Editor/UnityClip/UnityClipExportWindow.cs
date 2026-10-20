@@ -22,13 +22,14 @@
 //                        接線なし（線形）。欠けた成分は pos=0 / scl=1 / rot=恒等の成分で埋める。
 //   Animator カーブ    → muscles。名前は HumanTrait.MuscleName に合わせる
 //                        （クリップ内の指の名前 "LeftHand.Thumb.1 Stretched" → "Left Thumb 1 Stretched"）。
-//                        RootT / RootQ はそのまま。IK ゴール（LeftFootT.x 等）とその他は書かない（報告する）。
+//                        RootT / RootQ は body トラック（pos / rot。接線つき）へまとめる。
+//                        IK ゴール（LeftFootT.x 等）とその他は書かない（報告する）。
 //   blendShape カーブ  → expressions（provider "blendShape"）。値と接線は 1/100（0〜1 に換算）。
 //
 // ■ マッスルにベイク（チェックボックス。アバター指定時のみ）
 //   マッスルを持たないクリップだけをベイクする。既にマッスルを持つクリップは元のマッスルを使い、報告する。
 //   ベイクは毎フレーム SampleAnimation → HumanPoseHandler.GetHumanPose で 95 マッスルと
-//   RootT / RootQ（bodyPosition / bodyRotation）を取り、線形キーにする。
+//   RootT / RootQ（bodyPosition / bodyRotation。body トラック）を取り、線形キーにする。
 //   Humanoid ボーンの Transform トラックは書かない（マッスルで表す）。それ以外のボーンはカーブから写す。
 //   終了後、アバター配下の全 Transform の TRS を復元する。
 //
@@ -300,13 +301,22 @@ namespace Poly_Ling.UnityClip.Editor
             var pathCurves  = new SortedDictionary<string, AnimationCurve[][]>(StringComparer.Ordinal);
             var skipped     = new SortedSet<string>(StringComparer.Ordinal);
             var exprNames   = new HashSet<string>(StringComparer.Ordinal);
+            // RootT.x/y/z → [0][0..2]、RootQ.x/y/z/w → [1][0..3]。body トラックにまとめる。
+            var rootCurves  = new[] { new AnimationCurve[3], new AnimationCurve[4], new AnimationCurve[3] };
+            bool hasRootCurve = false;
 
             foreach (var b in AnimationUtility.GetCurveBindings(clip))
             {
                 if (b.type == typeof(Animator))
                 {
                     string name = clipToTrait.TryGetValue(b.propertyName, out var trait) ? trait : b.propertyName;
-                    if (muscleNames.Contains(name) || IsRootName(name))
+                    int rch = RootChannel(name, out int rcomp);
+                    if (rch >= 0)
+                    {
+                        var rc = AnimationUtility.GetEditorCurve(clip, b);
+                        if (rc != null && rc.length > 0) { rootCurves[rch][rcomp] = rc; hasRootCurve = true; }
+                    }
+                    else if (muscleNames.Contains(name))
                     {
                         var tr = BuildScalarTrack(name, AnimationUtility.GetEditorCurve(clip, b), 1f);
                         if (tr != null) dto.muscles.Add(tr);
@@ -344,6 +354,12 @@ namespace Poly_Ling.UnityClip.Editor
 
             hadMuscles = dto.muscles.Any(m => muscleNames.Contains(m.name));
 
+            if (hasRootCurve)
+            {
+                var body = BuildBoneTrack(MotionClipDTO.BodyTrackId, rootCurves, notes);
+                if (body != null) { body.targetKind = MotionClipDTO.TargetBody; dto.body = body; }
+            }
+
             // ベイク：マッスルを持たないクリップだけ
             HashSet<string> humanPaths = null;
             if (bakeAvatar != null && !hadMuscles)
@@ -366,10 +382,19 @@ namespace Poly_Ling.UnityClip.Editor
             return dto;
         }
 
-        private static bool IsRootName(string n)
-            => n == UnityClipRootMotion.NameTx || n == UnityClipRootMotion.NameTy || n == UnityClipRootMotion.NameTz
-            || n == UnityClipRootMotion.NameQx || n == UnityClipRootMotion.NameQy
-            || n == UnityClipRootMotion.NameQz || n == UnityClipRootMotion.NameQw;
+        // Animator の Root カーブ名 → チャンネル（0 = 位置 RootT、1 = 回転 RootQ）と成分。Root でなければ -1。
+        private static int RootChannel(string n, out int comp)
+        {
+            comp = -1;
+            if (n == UnityClipRootMotion.NameTx) { comp = 0; return 0; }
+            if (n == UnityClipRootMotion.NameTy) { comp = 1; return 0; }
+            if (n == UnityClipRootMotion.NameTz) { comp = 2; return 0; }
+            if (n == UnityClipRootMotion.NameQx) { comp = 0; return 1; }
+            if (n == UnityClipRootMotion.NameQy) { comp = 1; return 1; }
+            if (n == UnityClipRootMotion.NameQz) { comp = 2; return 1; }
+            if (n == UnityClipRootMotion.NameQw) { comp = 3; return 1; }
+            return -1;
+        }
 
         // クリップ内の指マッスル名（"LeftHand.Thumb.1 Stretched" / "LeftHand.Thumb.Spread"）→ HumanTrait 名。
         private static Dictionary<string, string> BuildClipMuscleNameMap()
@@ -398,8 +423,9 @@ namespace Poly_Ling.UnityClip.Editor
         // ------------------------------------------------------------
         private static void BakeMuscles(AnimationClip clip, Animator animator, MotionClipDTO dto)
         {
-            // Animator 由来（RootT/RootQ 等）は作り直すので捨てる
+            // Animator 由来（マッスル・Root）は作り直すので捨てる
             dto.muscles.Clear();
+            dto.body = null;
 
             Transform rootT = animator.transform;
             var all = rootT.GetComponentsInChildren<Transform>(true);
@@ -412,12 +438,7 @@ namespace Poly_Ling.UnityClip.Editor
             int mc = HumanTrait.MuscleCount;
             var muscleTracks = new MotionScalarTrackDTO[mc];
             for (int m = 0; m < mc; m++) muscleTracks[m] = new MotionScalarTrackDTO { name = names[m] };
-            string[] rootNames =
-            {
-                UnityClipRootMotion.NameTx, UnityClipRootMotion.NameTy, UnityClipRootMotion.NameTz,
-                UnityClipRootMotion.NameQx, UnityClipRootMotion.NameQy, UnityClipRootMotion.NameQz, UnityClipRootMotion.NameQw
-            };
-            var rootTracks = rootNames.Select(n => new MotionScalarTrackDTO { name = n }).ToArray();
+            var body = new MotionTrackDTO { id = MotionClipDTO.BodyTrackId, targetKind = MotionClipDTO.TargetBody };
 
             HumanPoseHandler handler = null;
             try
@@ -436,8 +457,12 @@ namespace Poly_Ling.UnityClip.Editor
                     Quaternion q = pose.bodyRotation;
                     if (hasPrev && Quaternion.Dot(prevQ, q) < 0f) q = new Quaternion(-q.x, -q.y, -q.z, -q.w);
                     prevQ = q; hasPrev = true;
-                    float[] rv = { pose.bodyPosition.x, pose.bodyPosition.y, pose.bodyPosition.z, q.x, q.y, q.z, q.w };
-                    for (int k = 0; k < 7; k++) rootTracks[k].keys.Add(new MotionScalarKeyDTO { t = t, v = rv[k] });
+                    body.keys.Add(new MotionKeyDTO
+                    {
+                        t   = t,
+                        pos = new[] { pose.bodyPosition.x, pose.bodyPosition.y, pose.bodyPosition.z },
+                        rot = new[] { q.x, q.y, q.z, q.w },
+                    });
                 }
             }
             finally
@@ -451,7 +476,7 @@ namespace Poly_Ling.UnityClip.Editor
             }
 
             dto.muscles.AddRange(muscleTracks);
-            dto.muscles.AddRange(rootTracks);
+            dto.body = body;
         }
 
         // ------------------------------------------------------------
@@ -585,8 +610,8 @@ namespace Poly_Ling.UnityClip.Editor
 
         // ================================================================
         // UnityBone CSV v3
-        //   先頭16列は固定。Runtime の LoadSourceRestCsv がこの並びを前提にする:
-        //     f[0]=="UnityBone" / f[3]=Humanoid名 / f[5..7]=Pos / f[12..15]=RestW
+        //   先頭16列は固定: f[0]=="UnityBone" / f[3]=Humanoid名 / f[5..7]=Pos / f[12..15]=RestW
+        //   （PolyLing 本体の読込 LoadSourceRestCsv は VRMA 整備計画 段 ⑤ で削除した。読む側は今は無い）
         // ================================================================
         private string BuildBoneCsv(Transform rootT, List<Transform> ordered, HashSet<Transform> set,
                                     Dictionary<Transform, string> humanMap, out int humCount)

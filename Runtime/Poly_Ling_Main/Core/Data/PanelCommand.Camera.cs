@@ -159,4 +159,47 @@ namespace Poly_Ling.Data
         {
         }
     }
+
+    /// <summary>
+    /// ビューにブルームを掛ける。処理は PLPostFxBridge（実装は PolyLing.Urp）。
+    /// しきい値を 1 より大きくすると、発光（setMaterialEmission）で明るくした面だけが滲み、
+    /// ワイヤーや選択表示などの白い線は滲まない。
+    /// </summary>
+    [PLCommand(Category = "camera", Writes = PLWriteScope.None,
+        Description = "ビュー（メイン画面と 3 面図）にブルームを掛ける・外す。シーンの Global Volume のプロファイルを実行時に複製して書き、シーンファイルは書き換えない。モデルにもセッティングにも保存しない。しきい値を 1 より大きくすると、発光させた材質の面だけが滲む。")]
+    public sealed class SetViewportBloomCommand : PanelCommand
+    {
+        [PLParam(Description = "true でブルームを掛ける、false で外す", Required = true)]
+        public bool Enabled { get; }
+
+        [PLParam(Description = "強さ", Min = 0)]
+        public float Intensity { get; }
+
+        [PLParam(Description = "しきい値（この明るさを超えた部分が滲む）", Min = 0)]
+        public float Threshold { get; }
+
+        [PLParam(Description = "滲みの広がり（0〜1）", Min = 0, Max = 1)]
+        public float Scatter { get; }
+
+        [PLParam(Description = "滲みの色。0〜1 の RGBA を 4 要素で並べる")]
+        public float[] TintRgba { get; }
+
+        public SetViewportBloomCommand(int modelIndex, bool enabled,
+            float intensity = 1.5f, float threshold = 1.1f, float scatter = 0.7f, float[] tintRgba = null)
+            : base(modelIndex)
+        {
+            Enabled   = enabled;
+            Intensity = intensity;
+            Threshold = threshold;
+            Scatter   = scatter;
+            TintRgba  = (tintRgba != null && tintRgba.Length > 0) ? tintRgba : new[] { 1f, 1f, 1f, 1f };
+        }
+
+        /// <summary>TintRgba から起こした色。</summary>
+        public Color Tint => new Color(
+            TintRgba.Length > 0 ? TintRgba[0] : 1f,
+            TintRgba.Length > 1 ? TintRgba[1] : 1f,
+            TintRgba.Length > 2 ? TintRgba[2] : 1f,
+            TintRgba.Length > 3 ? TintRgba[3] : 1f);
+    }
 }

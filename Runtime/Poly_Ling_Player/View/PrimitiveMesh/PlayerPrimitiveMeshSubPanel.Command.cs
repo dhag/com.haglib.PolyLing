@@ -106,6 +106,8 @@ namespace Poly_Ling.Player
                 case ShapeKind.HairStrand:   return BuildHairStrandCommand(mi, pl);
                 case ShapeKind.NGonGear:     return new CreateNGonGearCommand(mi, _ngonGearP, pl);
                 case ShapeKind.NGonStar:     return new CreateNGonStarCommand(mi, _ngonStarP, pl);
+                case ShapeKind.ZodiacSign:   return new CreateZodiacSignCommand(mi, _zodiacP, pl);
+                case ShapeKind.Emblem:       return new CreateEmblemCommand(mi, _emblemP, pl);
                 case ShapeKind.InvoluteGear: return new CreateInvoluteGearCommand(mi, _involGearP, pl);
 
                 // ── プロペラ・ファン ──

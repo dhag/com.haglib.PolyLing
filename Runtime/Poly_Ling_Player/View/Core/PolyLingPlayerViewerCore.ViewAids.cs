@@ -353,6 +353,8 @@ namespace Poly_Ling.Player
                 case PlayerExportSubPanel.Mode.OBJ: btn = _layoutRoot?.ObjSaveBtn;       break;
                 case PlayerExportSubPanel.Mode.STL: btn = _layoutRoot?.StlSaveBtn;       break;
                 case PlayerExportSubPanel.Mode.VRM: btn = _layoutRoot?.FullExportVrmBtn; break;
+                case PlayerExportSubPanel.Mode.GLTF: btn = _layoutRoot?.GltfSaveBtn;     break;
+                case PlayerExportSubPanel.Mode.FBX: btn = _layoutRoot?.FbxSaveBtn;       break;
                 default:                            btn = _layoutRoot?.FullExportMqoBtn; break;
             }
             ShowRightPanelSelectable(_layoutRoot?.ExportSection, btn, PanelSelectKeyExport);

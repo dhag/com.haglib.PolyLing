@@ -481,6 +481,43 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case ExportGltfFileCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnExportGltfFile == null) { Fail("export gltf handler not wired"); return true; }
+                    string egltfReason = OnExportGltfFile.Invoke(c);
+                    if (egltfReason != null) { Fail(egltfReason); return true; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return true;
+                }
+
+                case ExportFbxFileCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnExportFbxFile == null) { Fail("export fbx handler not wired"); return true; }
+                    string efbxReason = OnExportFbxFile.Invoke(c);
+                    if (efbxReason != null) { Fail(efbxReason); return true; }
+                    ReportData(BuildWriteResultData(c.FilePath));
+                    return true;
+                }
+
+                // 読み込みはモデルを作る操作なので、現在モデルが無くても通す。
+                case ImportGltfFileCommand c:
+                {
+                    if (OnImportGltfFile == null) { Fail("import gltf handler not wired"); return true; }
+                    string igltfReason = OnImportGltfFile.Invoke(c);
+                    if (igltfReason != null) { Fail(igltfReason); return true; }
+                    return true;
+                }
+
+                case ImportFbxFileCommand c:
+                {
+                    if (OnImportFbxFile == null) { Fail("import fbx handler not wired"); return true; }
+                    string ifbxReason = OnImportFbxFile.Invoke(c);
+                    if (ifbxReason != null) { Fail(ifbxReason); return true; }
+                    return true;
+                }
+
                 // プロジェクトの保存・読込はモデルではなくプロジェクトを見るので、
                 // 現在モデルの有無は問わない。判定は受け口が行う。
                 case SaveProjectFileCommand c:
@@ -677,6 +714,14 @@ namespace Poly_Ling.Player
                     if (OnScaleSelection == null) { Fail("scale selection handler not wired"); return true; }
                     string scReason = OnScaleSelection.Invoke(c);
                     if (scReason != null) { Fail(scReason); return true; }
+                    return true;
+                }
+
+                // ── オブジェクトの形を原点まわりに拡大縮小（位置・子は変えない）
+                case ScaleObjectGeometryCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    RunScaleObjectGeometry(model, c);
                     return true;
                 }
 

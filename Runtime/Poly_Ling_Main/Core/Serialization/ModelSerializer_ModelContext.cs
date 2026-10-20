@@ -217,64 +217,15 @@ namespace Poly_Ling.Serialization
             model.Name = modelDTO.name;
             model.FilePath = null;  // 呼び出し元で設定
 
-            // MeshContextDataからMeshContextを復元
+            // MeshDTO → MeshContext は ToMeshContext の 1 か所だけで行う。
+            //   以前はここに復元を別に書いており、IK・BindPose・剛体・ジョイント・揺れもの・
+            //   humanBodyBone・MirrorBoneIndex・可動域・VRM 一人称・VRM 制約を戻していなかった
+            //   （.mfproj を読むと失われた。PolyLing_Blender不具合修正計画.md の 7）。
+            //   ObjectId が 0 以外なら model.Add は採番せずそのまま保つ。
             foreach (var meshContextData in modelDTO.meshDTOList)
             {
-                var meshObject = ToMeshObject(meshContextData);
-                if (meshObject == null) continue;
-
-                // MeshTypeをパース
-                MeshType meshType = MeshType.Mesh;
-                if (!string.IsNullOrEmpty(meshContextData.type))
-                {
-                    Enum.TryParse(meshContextData.type, out meshType);
-                }
-
-                var context = new MeshContext
-                {
-                    Name = meshContextData.name ?? "UnityMesh",
-                    MeshObject = meshObject,
-                    UnityMesh = meshObject.ToUnityMesh(),
-                    OriginalPositions = (Vector3[])meshObject.Positions.Clone(),
-                    BoneTransform = ToBoneTransform(meshContextData.exportSettingsDTO),
-                    // Materials は ModelData から復元するため、ここでは設定しない
-                    // オブジェクト属性
-                    Type = meshType,
-                    ParentIndex = meshContextData.parentIndex,
-                    Depth = meshContextData.depth,
-                    HierarchyParentIndex = meshContextData.hierarchyParentIndex,
-                    IsVisible = meshContextData.isVisible,
-                    IsLocked = meshContextData.isLocked,
-                    IsFolding = meshContextData.isFolding,
-                    // 協働編集。0 以外なら model.Add は採番せずそのまま保つ。
-                    ObjectId = meshContextData.objectId,
-                    // EditorName は作業中だけの一時ロックなので読み込まない（操作経路統一計画.md L-1）。
-                    // 作業軸オブジェクトの軸値。それ以外は null。
-                    WorkAxis = FromWorkAxisData(meshContextData.workAxis),
-                    // ミラー設定
-                    MirrorType = meshContextData.mirrorType,
-                    MirrorAxis = meshContextData.mirrorAxis,
-                    MirrorDistance = meshContextData.mirrorDistance,
-                    MirrorMaterialOffset = meshContextData.mirrorMaterialOffset,
-                    // ベイクミラー
-                    BakedMirrorSourceIndex = meshContextData.bakedMirrorSourceIndex,
-                    MirrorGeometryDerived  = meshContextData.mirrorGeometryDerived,
-                    DetachedMirrorObjectId = meshContextData.detachedMirrorObjectId,
-                    HasBakedMirrorChild = meshContextData.hasBakedMirrorChild
-                };
-
-                // 選択セットを復元
-                LoadSelectionSetsFromDTO(meshContextData, context);
-
-                // 線分群を復元
-                LoadLineGroupsFromDTO(meshContextData, context);
-
-                // モーフデータを復元（Phase Morph追加）
-                LoadMorphDataFromDTO(meshContextData, context);
-
-                // BonePoseData復元（Phase BonePose追加）
-                LoadBonePoseDataFromDTO(meshContextData, context);
-
+                var context = ToMeshContext(meshContextData, true);
+                if (context == null) continue;
                 model.Add(context);
             }
 

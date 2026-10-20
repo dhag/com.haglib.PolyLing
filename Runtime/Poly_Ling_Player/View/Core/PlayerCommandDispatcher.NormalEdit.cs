@@ -359,56 +359,8 @@ namespace Poly_Ling.Player
                 // Fail はコンソールへ出さず（Fail の定義を参照）、Dispatch の戻り値も
                 // DispatchPanelCommand が捨てる。書き出し系はパネル側も
                 // File.Exists でしか成否を見ないため、ここで出さないと理由が
-                // どこにも残らない。ConvertUnityClipToVrmaCommand と同じ形にそろえる。
-                case ExportVrmAnimationCommand c:
-                {
-                    if (model == null)
-                    {
-                        Fail("no current model");
-                        Debug.LogError("[PolyLing] VRMA 書き出し: モデルがありません");
-                        return true;
-                    }
-                    if (OnExportVrmAnimation == null)
-                    {
-                        Fail("vrm animation export handler not wired");
-                        Debug.LogError("[PolyLing] VRMA 書き出し: 受け口が配線されていません");
-                        return true;
-                    }
-                    string vaReason = OnExportVrmAnimation.Invoke(c);
-                    if (vaReason != null)
-                    {
-                        Fail(vaReason);
-                        Debug.LogError($"[PolyLing] VRMA 書き出しに失敗: {vaReason}");
-                        return true;
-                    }
-                    return true;
-                }
-
-                case ExportVmdToVrmaCommand c:
-                {
-                    if (model == null)
-                    {
-                        Fail("no current model");
-                        Debug.LogError("[PolyLing] VMD→VRMA: モデルがありません");
-                        return true;
-                    }
-                    if (OnExportVmdToVrma == null)
-                    {
-                        Fail("vmd to vrma export handler not wired");
-                        Debug.LogError("[PolyLing] VMD→VRMA: 受け口が配線されていません");
-                        return true;
-                    }
-                    string vvReason = OnExportVmdToVrma.Invoke(c);
-                    if (vvReason != null)
-                    {
-                        Fail(vvReason);
-                        Debug.LogError($"[PolyLing] VMD→VRMA 書き出しに失敗: {vvReason}");
-                        return true;
-                    }
-                    return true;
-                }
-
-                case ExportVmdToMotionJsonCommand c:
+                // どこにも残らない。ConvertMotionToVrmaCommand と同じ形にそろえる。
+                case ExportVmdToMotionCommand c:
                 {
                     if (model == null)
                     {
@@ -416,19 +368,90 @@ namespace Poly_Ling.Player
                         Debug.LogError("[PolyLing] VMD→モーション: モデルがありません");
                         return true;
                     }
-                    if (OnExportVmdToMotionJson == null)
+                    if (OnExportVmdToMotion == null)
                     {
-                        Fail("vmd to motion json export handler not wired");
+                        Fail("vmd to motion export handler not wired");
                         Debug.LogError("[PolyLing] VMD→モーション: 受け口が配線されていません");
                         return true;
                     }
-                    string vmReason = OnExportVmdToMotionJson.Invoke(c);
+                    string vmReason = OnExportVmdToMotion.Invoke(c);
                     if (vmReason != null)
                     {
                         Fail(vmReason);
                         Debug.LogError($"[PolyLing] VMD→モーション 書き出しに失敗: {vmReason}");
                         return true;
                     }
+                    return true;
+                }
+
+                // 同じ理由で失敗をログにも出す。
+                case ExportMotionToBvhCommand c:
+                {
+                    if (model == null)
+                    {
+                        Fail("no current model");
+                        Debug.LogError("[PolyLing] BVH 書き出し: モデルがありません");
+                        return true;
+                    }
+                    if (OnExportMotionToBvh == null)
+                    {
+                        Fail("bvh export handler not wired");
+                        Debug.LogError("[PolyLing] BVH 書き出し: 受け口が配線されていません");
+                        return true;
+                    }
+                    var bvhReport = new Poly_Ling.Motion.BvhExportReport();
+                    string bvhReason = OnExportMotionToBvh.Invoke(c, bvhReport);
+                    if (bvhReason != null)
+                    {
+                        Fail(bvhReason);
+                        Debug.LogError($"[PolyLing] BVH 書き出しに失敗: {bvhReason}");
+                        return true;
+                    }
+                    ReportData(CommandDataJson.New()
+                        .Int ("frames",         bvhReport.FrameCount)
+                        .Int ("joints",         bvhReport.JointCount)
+                        .Int ("positionJoints", bvhReport.PositionJointCount)
+                        .Int ("matchedTracks",  bvhReport.MatchedTrackCount)
+                        .Num ("durationSec",    bvhReport.DurationSec)
+                        .Flag("rootMotion",     bvhReport.RootMotion)
+                        .Build());
+                    return true;
+                }
+
+                // 同じ理由で失敗をログにも出す。
+                case ExportMotionToFbxCommand c:
+                {
+                    if (model == null)
+                    {
+                        Fail("no current model");
+                        Debug.LogError("[PolyLing] FBX モーション書き出し: モデルがありません");
+                        return true;
+                    }
+                    if (OnExportMotionToFbx == null)
+                    {
+                        Fail("fbx motion export handler not wired");
+                        Debug.LogError("[PolyLing] FBX モーション書き出し: 受け口が配線されていません");
+                        return true;
+                    }
+                    var fbxResult = OnExportMotionToFbx.Invoke(c);
+                    if (fbxResult == null || !fbxResult.Success)
+                    {
+                        string fbxReason = fbxResult?.ErrorMessage ?? "結果がありません";
+                        Fail(fbxReason);
+                        Debug.LogError($"[PolyLing] FBX モーション書き出しに失敗: {fbxReason}");
+                        return true;
+                    }
+                    ReportData(CommandDataJson.New()
+                        .Int ("frames",               fbxResult.FrameCount)
+                        .Num ("durationSec",          fbxResult.DurationSec)
+                        .Int ("animatedNodes",        fbxResult.AnimatedNodeCount)
+                        .Int ("skippedVirtualJoints", fbxResult.SkippedVirtualJointCount)
+                        .Int ("animatedBlendShapes",  fbxResult.AnimatedBlendShapeCount)
+                        .Int ("expressions",          fbxResult.ExpressionTrackCount)
+                        .Int ("expressionsResolved",  fbxResult.ExpressionResolvedCount)
+                        .Int ("matchedTracks",        fbxResult.MatchedTrackCount)
+                        .Flag("rootMotion",           fbxResult.RootMotion)
+                        .Build());
                     return true;
                 }
 

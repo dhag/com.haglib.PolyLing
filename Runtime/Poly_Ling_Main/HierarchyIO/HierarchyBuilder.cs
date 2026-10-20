@@ -337,8 +337,12 @@ namespace Poly_Ling.HierarchyIO
                 // 関節は両側に複製する。メッシュは所属側のみ。
                 //   ただし補完で追加したミラー側コンテキストは「ミラー枝の親の受け皿」なので
                 //   isJoint でもミラー側だけに出す（実体側へ空ノードを増やさない）。
+                //   分岐の外のミラー側コンテキスト（右目など）は受け皿ではない。
+                //   Humanoid 割当先として補完されたものは通常どおり実体側に出す
+                //   （ミラー枝に出ないので、ここで止めると階層から消える）。
                 bool supplementedMirrorSide =
-                    result.SupplementedIndices.Contains(i) && MirrorBranchOps.IsMirrorSideContext(mc);
+                    result.SupplementedIndices.Contains(i) && MirrorBranchOps.IsMirrorSideContext(mc)
+                    && inBranch;
 
                 // ミラー枝に出すかは出力計画が決める。
                 //   ・ミラー側コンテキスト（従来）
@@ -366,6 +370,15 @@ namespace Poly_Ling.HierarchyIO
                         meshTransformByIndex, mirrorTransformByIndex, usedMeshNames,
                         parentIndices, mirrorPeers, generateMirrorShape);
             }
+
+            // ── 描画オブジェクトを親に持つボーン ──────────────────────
+            //   ボーンの親（HierarchyParentIndex）が描画オブジェクトのとき、
+            //   2 パス目ではボーンの表に親が無いので Armature 直下に置いてある。
+            //   モデルの親子どおり、その描画オブジェクトの下へ移す（ワールド姿勢は保つ）。
+            //   親がミラー枝に複製されていれば、ボーンの枝もミラー側へ複製する。
+            if (boneTransformMap.Count > 0)
+                AttachBonesToDrawableParents(
+                    model, boneTransformMap, meshTransformByIndex, mirrorTransformByIndex, usedMeshNames);
 
             // ── 剛体/JOINT 書き出し ──────────────────────────────────
             if (_opt.ExportPhysics && !_opt.ExportMeshOnly)
@@ -521,6 +534,7 @@ namespace Poly_Ling.HierarchyIO
             if (isSkinned)
             {
                 AttachSkinnedMesh(go, mc, unityMesh, model, boneTransformMap, armatureRoot, index);
+                _result.SourceMeshObjectOf[go.transform] = mc.MeshObject;
                 return;
             }
 
@@ -563,6 +577,8 @@ namespace Poly_Ling.HierarchyIO
 
             AttachStaticMesh(go, mc, meshForGo, model, hasMeshParent, mirror, trsSource,
                              index, shapeSource, mirrorDelta);
+            // meshForGo の元（ブレンドシェイプの差分と同じ MeshObject）
+            _result.SourceMeshObjectOf[go.transform] = shapeSource;
         }
 
         // ================================================================
@@ -671,6 +687,77 @@ namespace Poly_Ling.HierarchyIO
         }
 
         /// <summary>
+        /// 親が描画オブジェクトのボーンを、その描画オブジェクトの GameObject の下へ移す。
+        /// 親がミラー枝にも出ていれば、ボーンとその子孫のボーンをミラー側へ複製する。
+        /// 複製のローカル姿勢は実体側のローカルを鏡映 S で共役にしたもの（S·L·S）。
+        /// 複製は mirrorTransformByIndex に実体側ボーンの索引で登録する
+        /// （Humanoid の左右補完がミラー側を引けるように）。
+        /// </summary>
+        private void AttachBonesToDrawableParents(
+            ModelContext model,
+            Dictionary<int, Transform> boneTransformMap,
+            Dictionary<int, Transform> meshTransformByIndex,
+            Dictionary<int, Transform> mirrorTransformByIndex,
+            HashSet<string> usedMeshNames)
+        {
+            var boneKids = new Dictionary<int, List<int>>();
+            foreach (var kv in boneTransformMap)
+            {
+                int p = model.GetMeshContext(kv.Key)?.HierarchyParentIndex ?? -1;
+                if (p < 0 || !boneTransformMap.ContainsKey(p)) continue;
+                if (!boneKids.TryGetValue(p, out var list)) boneKids[p] = list = new List<int>();
+                list.Add(kv.Key);
+            }
+
+            foreach (var kv in boneTransformMap)
+            {
+                var mc = model.GetMeshContext(kv.Key);
+                if (mc == null) continue;
+                int p = mc.HierarchyParentIndex;
+                if (p < 0 || boneTransformMap.ContainsKey(p)) continue;
+                if (!meshTransformByIndex.TryGetValue(p, out var realParent) || realParent == null) continue;
+
+                kv.Value.SetParent(realParent, worldPositionStays: true);
+
+                if (mirrorTransformByIndex.TryGetValue(p, out var mirrorParent) && mirrorParent != null)
+                {
+                    int axis = model.GetMeshContext(p)?.MirrorAxis ?? 1;
+                    CloneBoneToMirror(kv.Key, kv.Value, mirrorParent, axis,
+                                      boneTransformMap, boneKids, mirrorTransformByIndex, usedMeshNames);
+                }
+            }
+        }
+
+        private static void CloneBoneToMirror(
+            int boneIndex, Transform src, Transform mirrorParent, int mirrorAxis,
+            Dictionary<int, Transform> boneTransformMap,
+            Dictionary<int, List<int>> boneKids,
+            Dictionary<int, Transform> mirrorTransformByIndex,
+            HashSet<string> usedMeshNames)
+        {
+            string name = MirrorNameOps.MakeMirrorName(src.name, MirrorBranchSuffix, usedMeshNames.Contains);
+            var go = new GameObject(MakeUniqueName(name, usedMeshNames));
+            PLEditorBridge.I.RegisterCreatedObjectUndo(go, "Create Mirror Bone");
+            go.transform.SetParent(mirrorParent, worldPositionStays: false);
+
+            // 入れ子のローカルなので鏡映面は親の原点を通る（距離 0）。
+            var pos = src.localPosition;
+            var rot = src.localEulerAngles;
+            MirrorBranchOps.MirrorLocalTRS(mirrorAxis, 0f, ref pos, ref rot);
+            go.transform.localPosition    = pos;
+            go.transform.localEulerAngles = rot;
+            go.transform.localScale       = src.localScale;
+
+            mirrorTransformByIndex[boneIndex] = go.transform;
+
+            if (!boneKids.TryGetValue(boneIndex, out var kids)) return;
+            foreach (int k in kids)
+                if (boneTransformMap.TryGetValue(k, out var kTf) && kTf != null)
+                    CloneBoneToMirror(k, kTf, go.transform, mirrorAxis,
+                                      boneTransformMap, boneKids, mirrorTransformByIndex, usedMeshNames);
+        }
+
+        /// <summary>
         /// 関節ノードの Transform を設定する。mirror=true ではピボットを鏡像化する。
         /// trsSource は鏡像化の元にする姿勢の持ち主（MirrorSide の場合は実体側相方）。
         /// </summary>
@@ -761,6 +848,22 @@ namespace Poly_Ling.HierarchyIO
 
             if (_opt.IncludeInvisibleAncestors)
             {
+                // Humanoid の割当先は関節そのものなので、非表示でも Transform として要る。
+                // 欠けると Avatar の必須関節が階層に無くなり Avatar を作れない。
+                // 不可視の親と同じく補完扱い（Transform のみ）で対象へ加え、
+                // 下の祖先たどりの起点にも含める。
+                var mapping = model.HumanoidMapping;
+                if (mapping != null && !mapping.IsEmpty)
+                {
+                    foreach (var kv in mapping.BoneIndexMap)
+                    {
+                        int mi = kv.Value;
+                        if (!candidates.Contains(mi) || targets.Contains(mi)) continue;
+                        targets.Add(mi);
+                        _result.SupplementedIndices.Add(mi);
+                    }
+                }
+
                 // 可視ノードそれぞれから親をたどる。既に対象なら打ち切ってよい。
                 var seeds = new List<int>(targets);
                 foreach (int seed in seeds)

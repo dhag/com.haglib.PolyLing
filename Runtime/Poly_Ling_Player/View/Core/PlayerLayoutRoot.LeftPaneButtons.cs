@@ -174,7 +174,6 @@ namespace Poly_Ling.Player
         public Button        MediaPipeBodyBtn       { get; private set; }
         public Button        VMDTestBtn             { get; private set; }
         public Button        VmdToVrmaBtn          { get; private set; }
-        public Button        UnityClipToVrmaBtn      { get; private set; }
         public Button        MotionClipTestBtn        { get; private set; }
 
         /// <summary>左ペイン：コマンド定義の検査ボタン（システムデバッグ）。</summary>
@@ -245,6 +244,16 @@ namespace Poly_Ling.Player
         /// インポータ / エクスポータのセクションを STL モードで開く。</summary>
         public Button StlLoadBtn { get; private set; }
         public Button StlSaveBtn { get; private set; }
+
+        /// <summary>左ペイン：glTF（.glb / .gltf）読み込み / 保存ボタン。
+        /// インポータ / エクスポータのセクションを glTF モードで開く。</summary>
+        public Button GltfLoadBtn { get; private set; }
+        public Button GltfSaveBtn { get; private set; }
+
+        /// <summary>左ペイン：FBX 読み込み / 保存ボタン。
+        /// インポータ / エクスポータのセクションを FBX モードで開く。</summary>
+        public Button FbxLoadBtn { get; private set; }
+        public Button FbxSaveBtn { get; private set; }
 
         /// <summary>左ペイン：PMX部分インポートボタン。</summary>
         public Button PartialImportPmxBtn { get; private set; }
@@ -328,10 +337,23 @@ namespace Poly_Ling.Player
             VrmLoadBtn.style.flexGrow    = 1;
             VrmLoadBtn.style.marginRight = 2;
             StlLoadBtn = MakeBtn(".STLファイル読込");
-            StlLoadBtn.style.flexGrow = 1;
+            StlLoadBtn.style.flexGrow    = 1;
             vrmStlLoadRow.Add(VrmLoadBtn);
             vrmStlLoadRow.Add(StlLoadBtn);
             foFile.Add(vrmStlLoadRow);
+
+            // glTF 読み込みと FBX 読み込みを 1 行に並べる（左ペインの幅に収めるため行を分ける）。
+            var gltfFbxLoadRow = new VisualElement();
+            gltfFbxLoadRow.style.flexDirection = FlexDirection.Row;
+            gltfFbxLoadRow.style.marginBottom  = 2;
+            GltfLoadBtn = MakeBtn(".glTF読込");
+            GltfLoadBtn.style.flexGrow    = 1;
+            GltfLoadBtn.style.marginRight = 2;
+            FbxLoadBtn = MakeBtn(".FBX読込");
+            FbxLoadBtn.style.flexGrow = 1;
+            gltfFbxLoadRow.Add(GltfLoadBtn);
+            gltfFbxLoadRow.Add(FbxLoadBtn);
+            foFile.Add(gltfFbxLoadRow);
 
             foFile.Add(Separator());
 
@@ -358,6 +380,16 @@ namespace Poly_Ling.Player
             StlSaveBtn       = MakeBtn(".STL保存"); StlSaveBtn.style.flexGrow = 1;
             fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn); fullExportRow.Add(StlSaveBtn);
             foFile.Add(fullExportRow);
+
+            // glTF 保存と FBX 保存を 1 行に並べる（左ペインの幅に収めるため行を分ける）。
+            var gltfFbxSaveRow = new VisualElement();
+            gltfFbxSaveRow.style.flexDirection = FlexDirection.Row;
+            gltfFbxSaveRow.style.marginBottom  = 2;
+            GltfSaveBtn      = MakeBtn("glTF保存"); GltfSaveBtn.style.flexGrow = 1; GltfSaveBtn.style.marginRight = 2;
+            FbxSaveBtn       = MakeBtn("FBX保存");  FbxSaveBtn.style.flexGrow  = 1;
+            gltfFbxSaveRow.Add(GltfSaveBtn);
+            gltfFbxSaveRow.Add(FbxSaveBtn);
+            foFile.Add(gltfFbxSaveRow);
 
             // VRM に載せる作者情報・許諾・視線・一人称。保存されるモデルの値で、
             // 出力ごとの上書きは「エクスポート」側にある。VRM 保存の隣に置く。
@@ -765,13 +797,9 @@ namespace Poly_Ling.Player
             MotionClipTestBtn = MakeBtn("モーション"); MotionClipTestBtn.style.flexGrow = 1;
             rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
 
-            // モデルを使わない変換専用の道具。名前が長いので 1 行使う。
-            UnityClipToVrmaBtn = MakeBtn("モーション→VRMA変換（モデル不要）");
-            UnityClipToVrmaBtn.style.marginBottom = 2;
-            foOther.Add(UnityClipToVrmaBtn);
-
-            // こちらはモデルへ VMD を適用しながら書き出す。名前が長いので 1 行使う。
-            VmdToVrmaBtn = MakeBtn("VMD→VRMA書き出し");
+            // モデルへ VMD を適用しながら .plmotion（と .vrma）を書き出す。名前が長いので 1 行使う。
+            // .plmotion → .vrma の書き出しと .vrma の読込は「モーション」パネルにある。
+            VmdToVrmaBtn = MakeBtn("VMD→モーション・VRMA書き出し");
             VmdToVrmaBtn.style.marginBottom = 2;
             foOther.Add(VmdToVrmaBtn);
 

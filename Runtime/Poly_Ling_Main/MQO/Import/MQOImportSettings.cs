@@ -167,7 +167,7 @@ namespace Poly_Ling.MQO
         /// <summary>法線計算モード</summary>
         [Tooltip("FaceNormal: 面法線そのまま（フラット）, Smooth: スムージング")]
         [PLParam(Description = "法線の作り方。FaceNormal は面法線そのまま / Smooth は角度でならす")]
-        public NormalMode NormalMode = NormalMode.Smooth;
+        public NormalMode NormalMode = NormalMode.SmoothFacet;
 
         /// <summary>スムージング角度（度）</summary>
         [Tooltip("法線スムージングの閾値角度（NormalMode=Smoothの時のみ有効）")]

@@ -435,6 +435,159 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// glTF ファイルを書き出す。拡張子 .glb なら GLB、.gltf なら .gltf ＋「ファイル名.bin」。
+    /// 軸は Z 反転（UniGLTF の glTF 既定）。
+    /// </summary>
+    [PLCommand(Category = "io.export", Writes = PLWriteScope.None, Description = "現在のモデルを glTF ファイルへ書き出す。拡張子 .glb なら GLB、.gltf なら .gltf と同名の .bin。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class ExportGltfFileCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出し先のパス（.glb / .gltf）。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "書き出し設定。省いた項目は既定値のまま")]
+        public Poly_Ling.Gltf.GltfExportSettings Settings { get; }
+
+        public ExportGltfFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.Gltf.GltfExportSettings settings = null)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Settings = settings ?? Poly_Ling.Gltf.GltfExportSettings.CreateDefault();
+        }
+    }
+
+    /// <summary>
+    /// FBX ファイルを書き出す（規則の正本は PolyLing_FBX対応計画.md）。
+    /// テクスチャは FBX と同じフォルダの「ファイル名_textures」へ書き、既定ではバイナリ FBX の中へも埋め込む。
+    /// </summary>
+    [PLCommand(Category = "io.export", Writes = PLWriteScope.None, Description = "現在のモデルを FBX ファイルへ書き出す（メッシュ・ボーン・スキン・ブレンドシェイプ・材質・テクスチャ）。テクスチャは FBX と同じフォルダの「ファイル名_textures」へも書く。作業フォルダの下だけへ書ける。")]
+    [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]
+    [PLResult("resolved",      PLResultKind.Flag,    Description = "作業フォルダの関門を通ったか")]
+    [PLResult("path",          PLResultKind.Text,    Description = "実際に書いた経路", Optional = true)]
+    [PLResult("exists",        PLResultKind.Flag,    Description = "書き出し先が実在するか")]
+    [PLResult("files",         PLResultKind.Integer, Description = "数えたファイルの数")]
+    [PLResult("bytes",         PLResultKind.Text,    Description = "大きさの合計。10 進の文字列")]
+    public class ExportFbxFileCommand : PanelCommand
+    {
+        [PLParam(Description = "書き出し先のパス（.fbx）。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "書き出し設定。省いた項目は既定値のまま")]
+        public Poly_Ling.Fbx.FbxExportSettings Settings { get; }
+
+        public ExportFbxFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.Fbx.FbxExportSettings settings = null)
+            : base(modelIndex)
+        {
+            FilePath = filePath ?? "";
+            Settings = settings ?? Poly_Ling.Fbx.FbxExportSettings.CreateDefault();
+        }
+    }
+
+    /// <summary>
+    /// glTF（.glb / .gltf）ファイルを読み込む。
+    /// テクスチャの書き出し先は GltfImportSettings 側で Ignore にしてある。
+    /// 受け口が「glTF と同じフォルダの ファイル名_textures」を関門（TryResolveFolder）に通す。
+    /// </summary>
+    [PLCommand(Category = "io.import", Writes = PLWriteScope.AddOnly, Description = "glTF（.glb / .gltf）ファイルを読み込む。作業フォルダの下だけを読める。テクスチャは glTF と同じフォルダの「ファイル名_textures」へ書き出す。")]
+    public class ImportGltfFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む glTF（.glb / .gltf）のパス。作業フォルダからの相対でも絶対でもよい",
+                 Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
+        public Poly_Ling.Gltf.GltfImportSettings Settings { get; }
+
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
+        public ImportGltfFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.Gltf.GltfImportSettings settings = null,
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
+            : base(modelIndex)
+        {
+            FilePath                 = filePath ?? "";
+            Settings                 = settings ?? Poly_Ling.Gltf.GltfImportSettings.CreateDefault();
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
+        }
+    }
+
+    /// <summary>
+    /// FBX ファイルを読み込む（ufbx。規則は FbxImporter.cs 冒頭）。
+    /// テクスチャの書き出し先は FbxImportSettings 側で Ignore にしてある。
+    /// 受け口が「FBX と同じフォルダの ファイル名_textures」を関門（TryResolveFolder）に通す。
+    /// </summary>
+    [PLCommand(Category = "io.import", Writes = PLWriteScope.AddOnly, Description = "FBX ファイルを読み込む（ボーン・スキン・ブレンドシェイプ・材質・テクスチャ。多角形は三角形化しない）。作業フォルダの下だけを読める。テクスチャは FBX と同じフォルダの「ファイル名_textures」へ書き出す。")]
+    public class ImportFbxFileCommand : PanelCommand
+    {
+        [PLParam(Description = "読み込む FBX のパス。作業フォルダからの相対でも絶対でもよい", Required = true)]
+        public string FilePath { get; }
+
+        [PLParam(Description = "読み込み設定。省いた項目は既定値のまま")]
+        public Poly_Ling.Fbx.FbxImportSettings Settings { get; }
+
+        [PLParam(Description = "読込後にボーン名から Humanoid の割当を自動で行う")]
+        public bool HumanoidAutoMap { get; }
+
+        [PLParam(Description = "読込後に原点 CSV を適用する")]
+        public bool ApplyOriginCsv { get; }
+
+        [PLParam(Description = "適用する原点 CSV のパス。ApplyOriginCsv が false のときは使わない")]
+        public string OriginCsvPath { get; }
+
+        [PLParam(Description = "原点 CSV の回転列（rotX,rotY,rotZ）も適用する")]
+        public bool OriginCsvIncludeRotation { get; }
+
+        public ImportFbxFileCommand(
+            int modelIndex,
+            string filePath,
+            Poly_Ling.Fbx.FbxImportSettings settings = null,
+            bool humanoidAutoMap = false,
+            bool applyOriginCsv = false,
+            string originCsvPath = "",
+            bool originCsvIncludeRotation = false)
+            : base(modelIndex)
+        {
+            FilePath                 = filePath ?? "";
+            Settings                 = settings ?? Poly_Ling.Fbx.FbxImportSettings.CreateDefault();
+            HumanoidAutoMap          = humanoidAutoMap;
+            ApplyOriginCsv           = applyOriginCsv;
+            OriginCsvPath            = originCsvPath ?? "";
+            OriginCsvIncludeRotation = originCsvIncludeRotation;
+        }
+    }
+
     /// <summary>プロジェクトを .mfproj（JSON）へ保存する。</summary>
     [PLCommand(Category = "io.project", Writes = PLWriteScope.None, Description = "プロジェクトを .mfproj ファイルへ保存する。作業フォルダの下だけへ書ける。")]
     [PLResult("requestedPath", PLResultKind.Text,    Description = "指定された経路")]

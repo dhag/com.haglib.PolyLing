@@ -5,8 +5,9 @@
 //   フレーム終端（PlayerCaptureRunner）で、メイン 3D 画面（Perspective ビューポート）の RenderTexture を
 //   そのまま読み、PNG にする。同時にそのカメラの worldToCameraMatrix・projectionMatrix と画像の大きさを控える。
 //   読むのは画面に描かれている内容そのものなので、ワイヤー・頂点・グリッドなどを表示していれば写り込む。
-//   撮った PNG は motionLive（受け入れ許可中の WebSocket）で MediaPipe クライアントへ送り、顔検出を頼む。
-//   返事（role:'before'、同じ requestId）が来たら BEFORE として持つ。requestId の違う返事は捨てる。
+//   撮った PNG は motionLive（受け入れ許可中の WebSocket）の RequestDetectImage で MediaPipe クライアントへ
+//   要求として送り、顔検出を頼む。返事（Duplex の response）が来たら BEFORE として持つ。
+//   撮り直したときは、前の要求の返事を捨てる（撮影ごとに番号を振って照合する）。
 //
 // ■ AFTER
 //   motionLive が保持している MediaPipe の最新 1 件（顔を含むもの）。転写の実行時に取り出す。
@@ -15,8 +16,6 @@
 //   パネルが FaceExpressionTransferCommand を送り、PlayerCommandDispatcher が GetInputs で材料を受け取って実行する。
 
 using System;
-using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools.MediaPipe;
@@ -43,7 +42,7 @@ namespace Poly_Ling.Player
 
         private FaceCaptureCamera _camera;
         private Vector3[]         _beforePixels;
-        private int               _requestId;
+        private int               _shotId;
         private int               _waitingId = -1;
 
         [PLToolState(Description = "BEFORE を撮ったカメラを持っているか")]
@@ -116,8 +115,9 @@ namespace Poly_Ling.Player
                     Height     = rt.height,
                 };
                 _beforePixels = null;
-                _waitingId = ++_requestId;
-                int sent = Live.SendDetectImage(png, _waitingId);
+                int shot = ++_shotId;
+                _waitingId = shot;
+                int sent = Live.RequestDetectImage(png, (frame, why) => ReceiveBefore(shot, frame, why));
                 SetStatus(sent > 0
                     ? $"撮影しました（{rt.width}x{rt.height}）。MediaPipe クライアントの検出を待っています"
                     : "撮影しましたが、つながっている MediaPipe クライアントがありません");
@@ -136,26 +136,23 @@ namespace Poly_Ling.Player
 
         // ---------------- BEFORE の返事（メインスレッド） ----------------
 
-        /// <summary>motionLive から role:'before' の JSON を受ける。</summary>
-        public void ReceiveBefore(string json)
+        private void ReceiveBefore(int shot, MediaPipeFrame frame, string why)
         {
-            if (_waitingId < 0 || _camera == null) return;
-            JObject o;
-            try { o = JObject.Parse(json); } catch (Exception) { return; }
-            if ((int?)o["requestId"] != _waitingId) return;       // 古い依頼の返事
+            if (shot != _waitingId || _camera == null) return;   // 撮り直した・捨てた後の返事
             _waitingId = -1;
 
-            if (!TryReadFace(o, out var pts, out int w, out int h, out string reason))
+            if (frame == null) { SetStatus("BEFORE の検出に失敗しました: " + why); return; }
+            if (!TryFacePixels(frame, out var pixels, out string reason))
             {
                 SetStatus("BEFORE の検出に失敗しました: " + reason);
                 return;
             }
-            if (w != _camera.Width || h != _camera.Height)
+            if (frame.ImageWidth != _camera.Width || frame.ImageHeight != _camera.Height)
             {
-                SetStatus($"BEFORE の画像の大きさが撮影時と違います（{w}x{h}）");
+                SetStatus($"BEFORE の画像の大きさが撮影時と違います（{frame.ImageWidth}x{frame.ImageHeight}）");
                 return;
             }
-            _beforePixels = FaceExpressionTransfer.ToPixels(pts, w, h, FaceExpressionTransfer.FaceMeshPoints);
+            _beforePixels = pixels;
             SetStatus($"BEFORE を受け取りました（顔 {_beforePixels.Length} 点）");
         }
 
@@ -165,39 +162,22 @@ namespace Poly_Ling.Player
         {
             pixels = null;
             reason = "";
-            if (Live == null || !Live.TryGetLatestMediaPipe(out string json, out _))
+            if (Live == null || !Live.TryGetLatestMediaPipe(out var frame))
             { reason = "AFTER がありません（MediaPipe クライアントから顔を送ってください）"; return false; }
-            JObject o;
-            try { o = JObject.Parse(json); } catch (Exception e) { reason = "AFTER が読めません: " + e.Message; return false; }
-            if (!TryReadFace(o, out var pts, out int w, out int h, out reason)) { reason = "AFTER: " + reason; return false; }
-            pixels = FaceExpressionTransfer.ToPixels(pts, w, h, FaceExpressionTransfer.FaceMeshPoints);
+            if (!TryFacePixels(frame, out pixels, out reason)) { reason = "AFTER: " + reason; return false; }
             return true;
         }
 
-        // {image:{w,h}, face:{landmarks:[[x,y,z,visibility],…]}} を読む
-        private static bool TryReadFace(JObject o, out List<float[]> pts, out int w, out int h, out string reason)
+        // 顔の先頭 468 点を画素単位にする。
+        private static bool TryFacePixels(MediaPipeFrame frame, out Vector3[] pixels, out string reason)
         {
-            pts = null; w = 0; h = 0; reason = "";
-            try
-            {
-                w = (int?)o["image"]?["w"] ?? 0;
-                h = (int?)o["image"]?["h"] ?? 0;
-                if (w <= 0 || h <= 0) { reason = "画像の大きさがありません"; return false; }
-                var lm = o["face"]?["landmarks"] as JArray;
-                if (lm == null || lm.Count < FaceExpressionTransfer.FaceMeshPoints) { reason = "顔が検出されていません"; return false; }
-                pts = new List<float[]>(lm.Count);
-                foreach (var p in lm)
-                {
-                    var a = (JArray)p;
-                    pts.Add(new[] { (float)a[0], (float)a[1], (float)a[2] });
-                }
-                return true;
-            }
-            catch (Exception e)
-            {
-                reason = "形が違います: " + e.Message;
-                return false;
-            }
+            pixels = null;
+            reason = "";
+            if (!frame.HasImageSize) { reason = "画像の大きさがありません"; return false; }
+            var lm = frame.Face?.Landmarks;
+            if (lm == null || lm.Length < MediaPipeFrame.FaceMeshPoints) { reason = "顔が検出されていません"; return false; }
+            pixels = MediaPipeCoords.ToPixels(lm, frame.ImageWidth, frame.ImageHeight, MediaPipeFrame.FaceMeshPoints);
+            return true;
         }
 
         private void SetStatus(string s)

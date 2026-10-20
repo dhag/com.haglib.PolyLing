@@ -28,7 +28,7 @@ namespace Poly_Ling.Player
         // モード
         // ================================================================
 
-        public enum Mode { PMX, MQO, OBJ, VRM, STL }
+        public enum Mode { PMX, MQO, OBJ, VRM, STL, GLTF, FBX }
 
         private Mode _mode;
 
@@ -56,6 +56,15 @@ namespace Poly_Ling.Player
         // 規約は IVrm10Exporter.cs 冒頭のコメントを正典とする。
         private Vrm10ExportSettings _vrmSettings = Vrm10ExportSettings.CreateDefault();
 
+        // glTF。実装は VRM と同じく PolyLing.Vrm10 アセンブリ側（PLGltfBridge）。
+        // 形式（GLB / .gltf＋.bin）は保存先の拡張子で決まる。パネルでは保存ダイアログの
+        // 拡張子をこのチェックで切り替える（ダイアログは拡張子を 1 つしか取れないため）。
+        private Poly_Ling.Gltf.GltfExportSettings _gltfSettings = Poly_Ling.Gltf.GltfExportSettings.CreateDefault();
+        private bool _gltfSeparate = false;
+
+        // FBX。実装は PolyLing.Fbx アセンブリ側（PLFbxBridge）。テクスチャは「ファイル名_textures」へも書く。
+        private Poly_Ling.Fbx.FbxExportSettings _fbxSettings = Poly_Ling.Fbx.FbxExportSettings.CreateDefault();
+
         // ================================================================
         // コールバック
         // ================================================================
@@ -74,6 +83,12 @@ namespace Poly_Ling.Player
 
         /// <summary>VRM Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
         public Action<string, Vrm10ExportSettings> OnExportVrm;
+
+        /// <summary>glTF Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
+        public Action<string, Poly_Ling.Gltf.GltfExportSettings> OnExportGltf;
+
+        /// <summary>FBX Export 実行時。引数は (outputPath, settingsのコピー)。</summary>
+        public Action<string, Poly_Ling.Fbx.FbxExportSettings> OnExportFbx;
 
         // ================================================================
         // 内部 UI 参照
@@ -145,7 +160,7 @@ namespace Poly_Ling.Player
             if (_saveDest != null)
             {
                 _saveDest.DialogTitle = "Export " + ModeName(mode);
-                _saveDest.Extension   = ModeName(mode).ToLowerInvariant();
+                _saveDest.Extension   = DialogExtension(mode);
                 _saveDest.Refresh();
             }
             RebuildSettings();
@@ -175,8 +190,19 @@ namespace Poly_Ling.Player
                 OnExportStl?.Invoke(savePath, _stlSettings.Clone());
             else if (_mode == Mode.VRM)
                 OnExportVrm?.Invoke(savePath, _vrmSettings.Clone());
+            else if (_mode == Mode.GLTF)
+                OnExportGltf?.Invoke(savePath, _gltfSettings.Clone());
+            else if (_mode == Mode.FBX)
+                OnExportFbx?.Invoke(savePath, _fbxSettings.Clone());
             else
                 OnExportMqo?.Invoke(savePath, CloneMqoSettings());
+        }
+
+        /// <summary>保存ダイアログの拡張子。glTF だけは形式のチェックで glb / gltf を切り替える。</summary>
+        private string DialogExtension(Mode mode)
+        {
+            if (mode == Mode.GLTF) return _gltfSeparate ? "gltf" : "glb";
+            return ModeName(mode).ToLowerInvariant();
         }
 
         /// <summary>モード名（表示・保存キー・拡張子の共通元）</summary>
@@ -188,6 +214,8 @@ namespace Poly_Ling.Player
                 case Mode.OBJ: return "OBJ";
                 case Mode.VRM: return "VRM";
                 case Mode.STL: return "STL";
+                case Mode.GLTF: return "glTF";
+                case Mode.FBX: return "FBX";
                 default:       return "MQO";
             }
         }
@@ -222,6 +250,10 @@ namespace Poly_Ling.Player
                 BuildStlSettings(_settingsContainer);
             else if (_mode == Mode.VRM)
                 BuildVrmSettings(_settingsContainer);
+            else if (_mode == Mode.GLTF)
+                BuildGltfSettings(_settingsContainer);
+            else if (_mode == Mode.FBX)
+                BuildFbxSettings(_settingsContainer);
             else
                 BuildMqoSettings(_settingsContainer);
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
@@ -451,6 +483,92 @@ namespace Poly_Ling.Player
             var note = new Label(
                 "表情はモーフの出力が前提です（モーフを切ると表情も出ません）。\n"
                 + "テクスチャ・視線（LookAt）・一人称設定は未対応です。");
+            note.style.whiteSpace = WhiteSpace.Normal;
+            note.style.fontSize   = 10;
+            note.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+            parent.Add(note);
+        }
+
+        // ────────────────────────────────────────────────────────
+        // glTF 設定
+        //   軸は Z 反転（UniGLTF の glTF 既定）。Z マイナス向きのモデルが glTF の正面 +Z になる。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildGltfSettings(VisualElement parent)
+        {
+            if (!Poly_Ling.Gltf.PLGltfBridge.Exporter.IsAvailable)
+            {
+                var warn = new Label(
+                    "glTF エクスポータが利用できません。\n" +
+                    "VRM パッケージ (com.vrmc.vrm / com.vrmc.gltf) を導入し、再生モードで実行してください。");
+                warn.style.whiteSpace = WhiteSpace.Normal;
+                warn.style.fontSize   = 10;
+                warn.style.color      = new StyleColor(new Color(1f, 0.6f, 0.4f));
+                parent.Add(warn);
+                return;
+            }
+
+            parent.Add(SectionLabel("形式"));
+            parent.Add(ToggleRow("separate", "分割形式（.gltf ＋ .bin）で保存",
+                () => _gltfSeparate,
+                v =>
+                {
+                    _gltfSeparate = v;
+                    if (_saveDest != null) _saveDest.Extension = DialogExtension(_mode);
+                }));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("出力対象"));
+            parent.Add(ToggleRow("skinning", "スキニング",
+                () => _gltfSettings.ExportSkinning, v => _gltfSettings.ExportSkinning = v));
+            parent.Add(ToggleRow("morphTargets", "モーフ（モーフターゲット）",
+                () => _gltfSettings.ExportMorphTargets, v => _gltfSettings.ExportMorphTargets = v));
+            parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
+                () => _gltfSettings.ExportInvisibleObjects, v => _gltfSettings.ExportInvisibleObjects = v));
+
+            parent.Add(Separator());
+            var note = new Label("アニメーション・カメラ・ライトは出力しません。");
+            note.style.whiteSpace = WhiteSpace.Normal;
+            note.style.fontSize   = 10;
+            note.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+            parent.Add(note);
+        }
+
+        // ────────────────────────────────────────────────────────
+        // FBX 設定
+        //   軸と単位は FBX Exporter（com.unity.formats.fbx）と同じ変換（PolyLing_FBX対応計画.md 段 2）。面は三角形で書く。
+        //   テクスチャは保存先と同じフォルダの「ファイル名_textures」へも書き出す。
+        // ────────────────────────────────────────────────────────
+
+        private void BuildFbxSettings(VisualElement parent)
+        {
+            if (!Poly_Ling.Fbx.PLFbxBridge.Exporter.IsAvailable)
+            {
+                var warn = new Label("FBX エクスポータが利用できません（PolyLing.Fbx が未登録）。");
+                warn.style.whiteSpace = WhiteSpace.Normal;
+                warn.style.fontSize   = 10;
+                warn.style.color      = new StyleColor(new Color(1f, 0.6f, 0.4f));
+                parent.Add(warn);
+                return;
+            }
+
+            parent.Add(SectionLabel("出力対象"));
+            parent.Add(ToggleRow("skinning", "スキニング",
+                () => _fbxSettings.ExportSkinning, v => _fbxSettings.ExportSkinning = v));
+            parent.Add(ToggleRow("morphTargets", "モーフ（ブレンドシェイプ）",
+                () => _fbxSettings.ExportMorphTargets, v => _fbxSettings.ExportMorphTargets = v));
+            parent.Add(ToggleRow("invisibleObjects", "非表示メッシュも出力",
+                () => _fbxSettings.ExportInvisibleObjects, v => _fbxSettings.ExportInvisibleObjects = v));
+
+            parent.Add(Separator());
+            parent.Add(SectionLabel("出力形式"));
+            parent.Add(ToggleRow("embedTextures", "テクスチャを埋め込む（バイナリのとき）",
+                () => _fbxSettings.EmbedTextures, v => _fbxSettings.EmbedTextures = v));
+            parent.Add(ToggleRow("ascii", "ASCII 形式（OFF でバイナリ）",
+                () => _fbxSettings.Ascii, v => _fbxSettings.Ascii = v));
+
+            parent.Add(Separator());
+            var note = new Label("面は三角形で書き出します。モーションは「モーション」パネルの FBX 書き出しで出します。");
             note.style.whiteSpace = WhiteSpace.Normal;
             note.style.fontSize   = 10;
             note.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));

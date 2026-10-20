@@ -654,4 +654,169 @@ namespace Poly_Ling.Commands
             _onResult?.Invoke(model, result);
         }
     }
+
+    /// <summary>
+    /// glTF（.glb / .gltf）ファイルをインポートするコマンド。
+    /// Execute() が同期でインポートを実行し、onResult にModelContextを返す。
+    ///
+    /// 実処理は PLGltfBridge.Importer（PolyLing.Vrm10 の実装）が行う。
+    /// VRM パッケージが無い環境では GltfImporterNull が失敗を返す。
+    /// </summary>
+    public class ImportGltfCommand : ICommand
+    {
+        private readonly string                            _filePath;
+        private readonly Poly_Ling.Gltf.GltfImportSettings _settings;
+        private readonly Action<ModelContext, Poly_Ling.Gltf.GltfImportResult> _onResult;
+        private readonly Action<string>                    _onError;
+
+        public string         Description  => $"Import glTF: {Path.GetFileName(_filePath)}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        public ImportGltfCommand(
+            string                            filePath,
+            Poly_Ling.Gltf.GltfImportSettings settings,
+            Action<ModelContext, Poly_Ling.Gltf.GltfImportResult> onResult,
+            Action<string>                    onError = null)
+        {
+            _filePath = filePath;
+            _settings = settings ?? Poly_Ling.Gltf.GltfImportSettings.CreateDefault();
+            _onResult = onResult;
+            _onError  = onError;
+        }
+
+        public void Execute()
+        {
+            if (string.IsNullOrEmpty(_filePath))
+            {
+                _onError?.Invoke("ファイルパスが空です");
+                return;
+            }
+
+            if (!File.Exists(_filePath))
+            {
+                _onError?.Invoke($"ファイルが見つかりません: {_filePath}");
+                return;
+            }
+
+            var importer = Poly_Ling.Gltf.PLGltfBridge.Importer;
+            if (!importer.IsAvailable)
+            {
+                _onError?.Invoke("glTF インポータが利用できません（VRM パッケージ未導入、または Play 中でない）");
+                return;
+            }
+
+            Poly_Ling.Gltf.GltfImportResult result;
+            try
+            {
+                result = importer.Import(_filePath, _settings);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ImportGltfCommand] {e.Message}");
+                _onError?.Invoke(e.Message);
+                return;
+            }
+
+            if (result == null || !result.Success)
+            {
+                _onError?.Invoke(result?.ErrorMessage ?? "読み込み結果がありません");
+                return;
+            }
+
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileNameWithoutExtension(_filePath),
+                FilePath = _filePath,
+            };
+
+            if (result.MaterialReferences.Count > 0)
+                model.MaterialReferences = result.MaterialReferences;
+
+            foreach (var mc in result.MeshContexts)
+                model.Add(mc);
+
+            foreach (var morph in result.MorphExpressions)
+                model.MorphExpressions.Add(morph);
+
+            // Humanoid の割当は glTF に無いが、per-bone から Dict を作る同期規約は同じ
+            // （HumanoidMappingResolver.cs 冒頭）。
+            Poly_Ling.Ops.HumanoidMappingResolver.RebuildMappingFromPerBone(model);
+
+            model.ComputeWorldMatrices();
+
+            _onResult?.Invoke(model, result);
+        }
+    }
+
+    /// <summary>
+    /// FBX ファイルをインポートするコマンド。
+    /// Execute() が同期でインポートを実行し、onResult にModelContextを返す。
+    /// 実処理は Poly_Ling.Fbx.FbxImporter（ufbx。plufbx.dll）。規則は FbxImporter.cs 冒頭。
+    /// </summary>
+    public class ImportFbxCommand : ICommand
+    {
+        private readonly string                          _filePath;
+        private readonly Poly_Ling.Fbx.FbxImportSettings _settings;
+        private readonly Action<ModelContext, Poly_Ling.Fbx.FbxImportResult> _onResult;
+        private readonly Action<string>                  _onError;
+
+        public string         Description  => $"Import FBX: {Path.GetFileName(_filePath)}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        public ImportFbxCommand(
+            string                          filePath,
+            Poly_Ling.Fbx.FbxImportSettings settings,
+            Action<ModelContext, Poly_Ling.Fbx.FbxImportResult> onResult,
+            Action<string>                  onError = null)
+        {
+            _filePath = filePath;
+            _settings = settings ?? Poly_Ling.Fbx.FbxImportSettings.CreateDefault();
+            _onResult = onResult;
+            _onError  = onError;
+        }
+
+        public void Execute()
+        {
+            Poly_Ling.Fbx.FbxImportResult result;
+            try
+            {
+                result = Poly_Ling.Fbx.FbxImporter.Import(_filePath, _settings);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ImportFbxCommand] {e.Message}");
+                _onError?.Invoke(e.Message);
+                return;
+            }
+
+            if (result == null || !result.Success)
+            {
+                _onError?.Invoke(result?.ErrorMessage ?? "読み込み結果がありません");
+                return;
+            }
+
+            var model = new ModelContext
+            {
+                Name     = Path.GetFileNameWithoutExtension(_filePath),
+                FilePath = _filePath,
+            };
+
+            if (result.MaterialReferences.Count > 0)
+                model.MaterialReferences = result.MaterialReferences;
+
+            foreach (var mc in result.MeshContexts)
+                model.Add(mc);
+
+            foreach (var morph in result.MorphExpressions)
+                model.MorphExpressions.Add(morph);
+
+            // Humanoid の割当は FBX に無いが、per-bone から Dict を作る同期規約は同じ
+            // （HumanoidMappingResolver.cs 冒頭）。
+            Poly_Ling.Ops.HumanoidMappingResolver.RebuildMappingFromPerBone(model);
+
+            model.ComputeWorldMatrices();
+
+            _onResult?.Invoke(model, result);
+        }
+    }
 }

@@ -56,6 +56,13 @@ namespace Poly_Ling.Player
             // PointDefinedToolHandler の同じ計画を通す。
             if (_current == ShapeKind.PointDefined) return GeneratePointDefinedMesh();
 
+            // 魔法陣は部品ごとの子オブジェクトとして作る（CreateMagicCircleCommand）。
+            // プレビューは部品を 1 つへ連結して見せる。
+            if (_current == ShapeKind.MagicCircle) return GenerateMagicCirclePreview(forPreview, applyTransform);
+
+            // 鉄塔も塔体とデッキを子として作る（CreateTowerAssemblyCommand）。プレビューは 1 つへ連結。
+            if (_current == ShapeKind.LatticeTower) return GenerateLatticeTowerPreview(forPreview, applyTransform);
+
             var cmd = BuildCreateCommand(applyTransform ? CurrentPlacement() : NeutralPlacement());
             if (cmd == null) return null;
 
@@ -142,6 +149,12 @@ namespace Poly_Ling.Player
                     // 穴つなぎは書き込み先の既存頂点を参照する面を足すため、
                     // 単一 MeshObject を新規追加する経路は通らない。
                     if (_current == ShapeKind.Bridge) { InvokeBridgeGenerate(); return; }
+
+                    // 魔法陣は空の親と部品の子を作るので、専用コマンドを送る。
+                    if (_current == ShapeKind.MagicCircle) { InvokeMagicCircleGenerate(); return; }
+
+                    // 鉄塔も空の親と塔体・デッキの子を作るので、専用コマンドを送る。
+                    if (_current == ShapeKind.LatticeTower) { InvokeLatticeTowerGenerate(); return; }
 
                     // 辺から帯面は選択辺から組むため、パラメータだけで作る
                     // CreatePrimitiveMeshCommand には載らない。専用コマンドを送る。
@@ -254,6 +267,14 @@ namespace Poly_Ling.Player
                     return OnObjectArrayGenerate != null
                         && _objArrayPanel != null
                         && _objArrayPanel.SelectedMasterIndices().Count > 0;
+
+                // 部品が 1 つ以上あり、どの部品も作れる状態であること。
+                case ShapeKind.MagicCircle:
+                    return SendCommand != null && MagicCircleReady(out _);
+
+                // 脚線が作れて、どのデッキにも配置元があること。
+                case ShapeKind.LatticeTower:
+                    return SendCommand != null && LatticeTowerReady(out _);
 
                 // 部品が1つも無いと頂点0のメッシュになる。
                 case ShapeKind.Ribbon:

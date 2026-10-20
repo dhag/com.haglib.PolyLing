@@ -119,11 +119,11 @@ namespace Poly_Ling.VMD
         }
 
         // 正準 T ポーズへの整列 A をノード索引で引ける形にする。
-        // 値と範囲（腕 8 本だけ）は UnityClipApplier が正本。BuildMapping はモデルを書き換えない。
+        // 値と範囲（腕 8 本。AlignLegs なら脚 4 本も）は UnityClipApplier が正本。BuildMapping はモデルを書き換えない。
         private static Quaternion[] BuildAlign(
             ModelContext model, VmdNodeWorldSampler sampler, VmdVrmAnimationOptions options)
         {
-            var canon = new UnityClipApplier { DebugLog = false };
+            var canon = new UnityClipApplier { DebugLog = false, AlignLegs = options.AlignLegs };
             canon.BuildMapping(model);
 
             var align = new Quaternion[sampler.Skeleton.Nodes.Count];
@@ -142,7 +142,7 @@ namespace Poly_Ling.VMD
             }
 
             if (options.DiagnosticLog)
-                Debug.Log($"[VmdVrmAnimationExport] T ポーズ整列（腕 8 本）: 補正 {applied.Count} 本 / " +
+                Debug.Log($"[VmdVrmAnimationExport] T ポーズ整列（腕 8 本{(options.AlignLegs ? "＋脚 4 本" : "")}）: 補正 {applied.Count} 本 / " +
                           $"{VmdVrmAnimationExport.TopAngles(applied, 10)}");
             return align;
         }

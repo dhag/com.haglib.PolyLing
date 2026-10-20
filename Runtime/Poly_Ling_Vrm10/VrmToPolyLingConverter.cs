@@ -125,12 +125,32 @@ namespace Poly_Ling.Vrm10Impl
         }
         private readonly List<PendingMorph> _pendingMorphs = new List<PendingMorph>();
 
+        // glTF → Unity の軸変換の元座標系。VRM 1.0 は Vrm1（X 反転）、
+        // 素の glTF は Vrm0（Z 反転。UniGLTF の glTF 既定 GltfExportSettings.InverseAxis = Axes.Z と同じ）。
+        private readonly VrmLib.Coordinates _sourceCoords;
+
         public VrmToPolyLingConverter(Vrm10Data vrm, string filePath, Vrm10ImportSettings settings)
         {
-            _vrm      = vrm;
-            _data     = vrm.Data;
-            _filePath = filePath;
-            _settings = settings ?? Vrm10ImportSettings.CreateDefault();
+            _vrm          = vrm;
+            _data         = vrm.Data;
+            _filePath     = filePath;
+            _settings     = settings ?? Vrm10ImportSettings.CreateDefault();
+            _sourceCoords = VrmLib.Coordinates.Vrm1;
+        }
+
+        /// <summary>
+        /// 素の glTF 用。VRM 拡張は読まない（_vrm == null。Humanoid・Meta・視線・一人称・
+        /// 表情は拡張が無いので何もしない）。揺れ・制約は呼び出し側が設定で切ること
+        /// （拡張データは VRM 1.0 の X 反転前提のため）。
+        /// </summary>
+        public VrmToPolyLingConverter(GltfData data, string filePath, Vrm10ImportSettings settings,
+                                      VrmLib.Coordinates sourceCoords)
+        {
+            _vrm          = null;
+            _data         = data;
+            _filePath     = filePath;
+            _settings     = settings ?? Vrm10ImportSettings.CreateDefault();
+            _sourceCoords = sourceCoords;
         }
 
         // ================================================================
@@ -140,7 +160,7 @@ namespace Poly_Ling.Vrm10Impl
         public Vrm10ImportResult Convert()
         {
             // Unity 座標の VrmLib.Model（ノード行列・頂点・モーフ・逆バインド行列を変換済み）
-            _model = ModelReader.Read(_data);
+            _model = ModelReader.Read(_data, _sourceCoords);
             for (int i = 0; i < _model.Nodes.Count; i++)
                 _nodeIndex[_model.Nodes[i]] = i;
 
@@ -299,7 +319,7 @@ namespace Poly_Ling.Vrm10Impl
             var set = new HashSet<int>();
 
             // Humanoid（VRMC_vrm.humanoid.humanBones の各 node）
-            var hb = _vrm.VrmExtension?.Humanoid?.HumanBones;
+            var hb = _vrm?.VrmExtension?.Humanoid?.HumanBones;
             if (hb != null)
             {
                 foreach (var f in typeof(VrmExt.HumanBones).GetFields())
@@ -1146,7 +1166,7 @@ namespace Poly_Ling.Vrm10Impl
 
         private void BuildHumanoid()
         {
-            var hb = _vrm.VrmExtension?.Humanoid?.HumanBones;
+            var hb = _vrm?.VrmExtension?.Humanoid?.HumanBones;
             if (hb == null) return;
 
             // VRM → Unity の対応は Vrm10Importer.cs:106-160 と同じ（親指は段がずれる）。
@@ -1219,7 +1239,7 @@ namespace Poly_Ling.Vrm10Impl
 
         private void BuildMeta()
         {
-            var src = _vrm.VrmExtension?.Meta;
+            var src = _vrm?.VrmExtension?.Meta;
             if (src == null) return;
 
             var meta = new VrmMetaData
@@ -1318,7 +1338,7 @@ namespace Poly_Ling.Vrm10Impl
 
         private void BuildLookAt()
         {
-            var src = _vrm.VrmExtension?.LookAt;
+            var src = _vrm?.VrmExtension?.LookAt;
             if (src == null) return;
 
             var dst = new VrmLookAtData
@@ -1348,7 +1368,7 @@ namespace Poly_Ling.Vrm10Impl
 
         private void BuildFirstPerson()
         {
-            var anns = _vrm.VrmExtension?.FirstPerson?.MeshAnnotations;
+            var anns = _vrm?.VrmExtension?.FirstPerson?.MeshAnnotations;
             if (anns == null) return;
 
             foreach (var a in anns)
@@ -1394,7 +1414,7 @@ namespace Poly_Ling.Vrm10Impl
 
             if (!onlyTargets)
             {
-                var ex = _vrm.VrmExtension?.Expressions;
+                var ex = _vrm?.VrmExtension?.Expressions;
                 var preset = ex?.Preset;
                 if (preset != null)
                 {

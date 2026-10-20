@@ -88,13 +88,18 @@ namespace Poly_Ling.PrimitiveMesh
         {
             if (cmd == null) return null;
 
+            var __sw = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
             MeshObject mo = Generate(cmd, resolvePlaceSources, resolveBeltSource);
             if (mo == null) return null;
+            long __tGen = __sw.ElapsedMilliseconds; // TEMP-TIMING
+            int __v0 = mo.VertexCount; // TEMP-TIMING
 
             if (!forPreview && cmd.Placement.MergeDuplicateVertices && mo.VertexCount >= 2)
                 MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, MergeEpsilon);
+            long __tMerge = __sw.ElapsedMilliseconds - __tGen; // TEMP-TIMING
 
             AssignPartsIds(mo, cmd.ShapeName);
+            UnityEngine.Debug.Log($"[PL/Timing] Build {cmd.ShapeName} preview={forPreview} generate={__tGen}ms merge={__tMerge}ms parts={__sw.ElapsedMilliseconds - __tGen - __tMerge}ms v={__v0}->{mo.VertexCount}"); // TEMP-TIMING
 
             // はしごのウェイトを引き継いだときは、種別を確定させる。
             // 塗られた頂点だけがボーンの欄を引くので、無 → 有の遷移点で呼ぶ。
@@ -144,6 +149,8 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreateHairStrandCommand c:   return HairStrandMeshGenerator.Generate(c.Params);
                 case CreateNGonGearCommand c:     return NGonGearMeshGenerator.Generate(c.Params);
                 case CreateNGonStarCommand c:     return NGonStarMeshGenerator.Generate(c.Params);
+                case CreateZodiacSignCommand c:   return ZodiacSignMeshGenerator.Generate(c.Params);
+                case CreateEmblemCommand c:       return EmblemMeshGenerator.Generate(c.Params);
                 case CreateInvoluteGearCommand c: return InvoluteTrochoidGearMeshGenerator.Generate(c.Params);
 
                 // ── 機構部品A（Gears/ 配下） ──
@@ -181,6 +188,19 @@ namespace Poly_Ling.PrimitiveMesh
                 case CreatePipeCommand c:         return GeneratePipe(c, resolveBeltSource);
                 case CreatePlaceObjectCommand c:  return GeneratePlaceObject(c, resolvePlaceSources);
                 case CreateBoltPatternCommand c:  return GenerateBoltPattern(c, resolvePlaceSources);
+
+                // ── 魔法陣の部品 ──
+                case CreateMagicRingCommand c:    return MagicRingMeshGenerator.Generate(c.Params);
+                case CreateZodiacCircleCommand c: return ZodiacCircleMeshGenerator.Generate(c.Params);
+                case CreateRadialPlaceCommand c:
+                    return RadialPlaceMeshGenerator.Generate(c.Params,
+                        resolvePlaceSources?.Invoke(c.SourceMasterIndices, c.Params.IncludeChildren));
+
+                // ── 鉄塔の部品 ──
+                case CreateLatticeTowerCommand c: return LatticeTowerMeshGenerator.Generate(c.Params);
+                case CreateTowerDeckCommand c:
+                    return TowerDeckMeshGenerator.Generate(c.Params,
+                        resolvePlaceSources?.Invoke(c.SourceMasterIndices, c.Params.IncludeChildren));
 
                 default:
                     Debug.LogWarning($"[PrimitiveMeshFactory] 未対応のコマンド: {cmd.GetType().Name}");
@@ -240,8 +260,10 @@ namespace Poly_Ling.PrimitiveMesh
         /// </summary>
         private static MeshObject GenerateText(CreateTextMeshCommand c)
         {
+            var __swT = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
             var font = PlyFontLibrary.Open(c.Params.FontFamily);
             if (font == null) { LastTextMissingGlyphs = 0; return null; }
+            UnityEngine.Debug.Log($"[PL/Timing] Text fontOpen={__swT.ElapsedMilliseconds}ms"); // TEMP-TIMING
 
             var glyphs = TextOutlineBuilder.BuildPerGlyph(font, c.Params.Text ?? "",
                 new TextLayoutParams
@@ -253,6 +275,7 @@ namespace Poly_Ling.PrimitiveMesh
                 out int missing);
 
             LastTextMissingGlyphs = missing;
+            UnityEngine.Debug.Log($"[PL/Timing] Text outline(BuildPerGlyph)={__swT.ElapsedMilliseconds}ms glyphs={glyphs?.Count}"); // TEMP-TIMING
 
             if (glyphs == null || glyphs.Count == 0) return null;
 
@@ -273,17 +296,35 @@ namespace Poly_Ling.PrimitiveMesh
             MeshObject result = null;
             int partsId = 0;
 
+            // 1 周への均等割り付けは行ごとの全長が要るので、先に全文字から測っておく。
+            var fit = c.Params.CurveFitCircle && c.Params.CurveMode == TextCurveMode.DiskRim
+                ? TextCurveLayout.FitLineWidths(glyphs)
+                : null;
+
+            long __tExtrude = 0, __tAppend = 0; // TEMP-TIMING
             foreach (var g in glyphs)
             {
+                long __a = __swT.ElapsedMilliseconds; // TEMP-TIMING
                 var one = Profile2DExtrudeMeshGenerator.Generate(g.Loops, c.Params.MeshName, gp);
+                __tExtrude += __swT.ElapsedMilliseconds - __a; // TEMP-TIMING
                 if (one == null || one.VertexCount == 0) continue;
+
+                Vector2 fitLine = default;
+                if (fit != null) fit.TryGetValue(g.LineY, out fitLine);
+
+                TextCurveLayout.Apply(one, g, c.Params.Size,
+                    c.Params.CurveMode, c.Params.CurveRadius, c.Params.CurveFlip,
+                    c.Params.CurveStartAngle, fitLine);
 
                 PartsIdOps.SetPartsId(one, partsId);
                 partsId++;
 
+                long __b = __swT.ElapsedMilliseconds; // TEMP-TIMING
                 if (result == null) result = one;
                 else MeshObjectAppendOps.Append(result, one, copyNormals: true);
+                __tAppend += __swT.ElapsedMilliseconds - __b; // TEMP-TIMING
             }
+            UnityEngine.Debug.Log($"[PL/Timing] Text extrude={__tExtrude}ms append={__tAppend}ms total={__swT.ElapsedMilliseconds}ms"); // TEMP-TIMING
 
             return result;
         }
@@ -576,6 +617,16 @@ namespace Poly_Ling.PrimitiveMesh
             {
                 case "PlaceObject":
                 case "BoltPattern":
+                // オブジェクトの円周配置も配置元のサブIDをそのまま使う。
+                case "RadialPlace":
+                // 鉄塔のデッキも配置元のパーツID・サブIDをそのまま使う。
+                case "TowerDeck":
+                    return;
+
+                // リングは 1 本ごと、星座の円周配置はマーク 1 個ごとに生成器がパーツIDを振っている。
+                case "MagicRing":
+                case "ZodiacCircle":
+                    PartsIdOps.AssignSubIdByPartsId(mo);
                     return;
 
                 case "Frill":
@@ -586,6 +637,10 @@ namespace Poly_Ling.PrimitiveMesh
 
                 // 文字は生成器が文字ごとにパーツIDを振っているので、サブIDだけ振り直す。
                 case "Text":
+                // 星座マークはマーク 0・周囲の円 1 を生成器が振っている。
+                case "ZodiacSign":
+                // 紋章図形は図形 0・周囲の円 1 を生成器が振っている。
+                case "Emblem":
                     PartsIdOps.AssignSubIdByPartsId(mo);
                     return;
 

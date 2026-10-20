@@ -19,6 +19,21 @@ namespace Poly_Ling.Player
         /// <summary>DispatchCore の分担：カメラ。該当するコマンドなら処理して true を返す。</summary>
         private bool DispatchCamera(PanelCommand cmd, ProjectContext project, ModelContext model)
         {
+            // ブルームはカメラの位置ではなくビューの描画設定なので、Viewer を通さず橋へ渡す。
+            if (cmd is SetViewportBloomCommand bloom)
+            {
+                string bloomReason = Poly_Ling.PostFx.PLPostFxBridge.SetBloom(new Poly_Ling.PostFx.PLBloomSettings
+                {
+                    Enabled   = bloom.Enabled,
+                    Intensity = bloom.Intensity,
+                    Threshold = bloom.Threshold,
+                    Scatter   = bloom.Scatter,
+                    Tint      = bloom.Tint,
+                });
+                if (bloomReason != null) Fail(bloomReason);
+                return true;
+            }
+
             bool needsModel;
             switch (cmd)
             {

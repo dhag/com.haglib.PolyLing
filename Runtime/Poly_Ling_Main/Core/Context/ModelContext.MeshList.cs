@@ -114,7 +114,16 @@ namespace Poly_Ling.Context
             InvalidateTypedIndices();
             IsDirty = true;
 
-            if (removeMap != null) RemapIndexReferences(removeMap);
+            // 親系（階層・モーフの所属）とボーンウェイトは祖先へ繰り上げた表で、
+            // それ以外（Humanoid 割当・ミラー元・T ポーズ退避など）は消えた要素を -1 にした表で付け替える。
+            // 繰り上げた表を全部に使うと、消したボーンの Humanoid 割当が親へ付け替わって残る
+            // （指を消すと指の割当がすべて手首を指す）。
+            if (removeMap != null)
+            {
+                var strictMap = (int[])removeMap.Clone();
+                strictMap[index] = -1;
+                RemapIndexReferences(strictMap, removeMap);
+            }
 
             if (adjustSelection)
             {

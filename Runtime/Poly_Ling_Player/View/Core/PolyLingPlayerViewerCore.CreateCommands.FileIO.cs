@@ -349,6 +349,136 @@ namespace Poly_Ling.Player
             return null;
         }
 
+        /// <summary>glTF（.glb / .gltf）書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportGltfFile(Poly_Ling.Data.ExportGltfFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Gltf.PLGltfBridge.Exporter.IsAvailable)
+                return "glTF エクスポータが利用できません（VRM パッケージ未導入、または Play 中でない）";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            // .gltf は同じフォルダへ「ファイル名.bin」も書くので、それも関門に通す。
+            if (string.Equals(System.IO.Path.GetExtension(path), ".gltf", System.StringComparison.OrdinalIgnoreCase))
+            {
+                string bin = System.IO.Path.ChangeExtension(path, ".bin");
+                if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(bin, out _, out string binReason))
+                    return binReason;
+            }
+
+            return OnExportGltf(
+                path, cmd.Settings ?? Poly_Ling.Gltf.GltfExportSettings.CreateDefault());
+        }
+
+        /// <summary>
+        /// FBX 書き出しコマンド。書き出し先と、テクスチャの書き出し先（「ファイル名_textures」）を関門に通す。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportFbxFile(Poly_Ling.Data.ExportFbxFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Fbx.PLFbxBridge.Exporter.IsAvailable)
+                return "FBX エクスポータが利用できません（PolyLing.Fbx が未登録）";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            var settings = (cmd.Settings ?? Poly_Ling.Fbx.FbxExportSettings.CreateDefault()).Clone();
+            string texFolder = Poly_Ling.Fbx.FbxExportSettings.DefaultTextureFolder(path);
+            if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                    texFolder, out string texResolved, out string texReason))
+                return texReason;
+            settings.TextureFolder = texResolved;
+
+            return OnExportFbx(path, settings);
+        }
+
+        /// <summary>
+        /// glTF（.glb / .gltf）読み込みコマンド。実際の読み込みは CommandQueue が後で流す。
+        /// 関門は VRM と同じ（入力は TryResolveRead、テクスチャ書き出し先は TryResolveFolder）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportGltfFile(Poly_Ling.Data.ImportGltfFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Gltf.PLGltfBridge.Importer.IsAvailable)
+                return "glTF インポータが利用できません（VRM パッケージ未導入、または Play 中でない）";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            var settings = (cmd.Settings ?? Poly_Ling.Gltf.GltfImportSettings.CreateDefault()).Clone();
+            settings.TextureFolder = "";
+
+            if (settings.ExtractTextures)
+            {
+                string texFolder = Poly_Ling.Gltf.GltfImportSettings.DefaultTextureFolder(path);
+                if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                        texFolder, out string texResolved, out string texReason))
+                    return texReason;
+                settings.TextureFolder = texResolved;
+            }
+
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportGltf(path, settings, post);
+            return null;
+        }
+
+        /// <summary>
+        /// FBX 読み込みコマンド。実際の読み込みは CommandQueue が後で流す。
+        /// 関門は glTF と同じ（入力は TryResolveRead、テクスチャ書き出し先は TryResolveFolder）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteImportFbxFile(Poly_Ling.Data.ImportFbxFileCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+            if (string.IsNullOrEmpty(cmd.FilePath)) return "FilePath が空です";
+
+            if (!Poly_Ling.Fbx.UfbxNative.TryGetVersion(out _, out string dllReason))
+                return dllReason;
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
+                    cmd.FilePath, out string path, out string reason))
+                return reason;
+
+            var settings = (cmd.Settings ?? Poly_Ling.Fbx.FbxImportSettings.CreateDefault()).Clone();
+            settings.TextureFolder = "";
+
+            if (settings.ExtractTextures)
+            {
+                string texFolder = Poly_Ling.Fbx.FbxImportSettings.DefaultTextureFolder(path);
+                if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(
+                        texFolder, out string texResolved, out string texReason))
+                    return texReason;
+                settings.TextureFolder = texResolved;
+            }
+
+            if (!TryBuildImportPostOptions(
+                    cmd.HumanoidAutoMap, cmd.ApplyOriginCsv,
+                    cmd.OriginCsvPath, cmd.OriginCsvIncludeRotation,
+                    out var post, out string postReason))
+                return postReason;
+
+            OnImportFbx(path, settings, post);
+            return null;
+        }
+
         /// <summary>プロジェクト（.mfproj）保存コマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
         private string ExecuteSaveProjectFile(Poly_Ling.Data.SaveProjectFileCommand cmd)
@@ -451,73 +581,15 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // VRM アニメーション（.vrma）書き出し
+        // VRM アニメーション（.vrma）
         //
-        // 入力は PolyLing モーション（.plmotion.json）。フレームごとにモデルへ適用しながら
-        // 骨格を写し取るので、終了後はパネルの表示フレームへ戻す。
+        // 出口は「.plmotion → .vrma」1 本（VrmaCodec。PolyLing_VRMA整備計画.md 2.5）。
+        // VMD は VmdMotionBake で .plmotion にしてから同じ出口を通す。
         // ================================================================
 
-        /// <summary>VRM アニメーション（.vrma）書き出しコマンド。</summary>
+        /// <summary>PolyLing モーション → VRMA 書き出しコマンド（モデル非依存）。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
-        private string ExecuteExportVrmAnimation(Poly_Ling.Data.ExportVrmAnimationCommand cmd)
-        {
-            if (cmd == null) return "コマンドが null";
-
-            var model = ActiveProject?.CurrentModel;
-            if (model == null) return "モデルがありません";
-
-            if (string.IsNullOrEmpty(cmd.FilePath))     return "FilePath が空です";
-            if (string.IsNullOrEmpty(cmd.ClipFilePath)) return "ClipFilePath が空です";
-
-            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
-                    cmd.FilePath, out string outPath, out string outReason))
-                return outReason;
-
-            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
-                    cmd.ClipFilePath, out string clipPath, out string clipReason))
-                return clipReason;
-
-            string limitText = null;
-            if (!string.IsNullOrEmpty(cmd.MuscleLimitCsvPath))
-            {
-                if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
-                        cmd.MuscleLimitCsvPath, out string limitPath, out string limitReason))
-                    return limitReason;
-                limitText = System.IO.File.ReadAllText(limitPath);
-            }
-
-            var loaded = Poly_Ling.Motion.MotionClipSerializer.Load(clipPath);
-            if (loaded.Dto == null) return $"モーションを読み込めません: {loaded.FormatIssues(5)}";
-            var clip = loaded.Dto;
-
-            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
-            {
-                Scale    = cmd.Scale,
-                Fps      = cmd.Fps,
-                StartSec = cmd.StartSec,
-                EndSec   = cmd.EndSec,
-            };
-
-            var result = Poly_Ling.UnityClip.UnityClipVrmAnimationSource.ExportToFile(
-                model, clip, limitText, outPath, settings);
-
-            // 書き出しはモデルへ実際にフレームを適用する。
-            // ポーズ層は ExportToFile が戻すので、統合モーションパネルの表示フレームを引き直す。
-            _motionClipTestSubPanel?.ReapplyCurrentFrame();
-            _viewportManager.UpdateTransform();
-            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
-
-            if (result == null)     return "書き出し結果がありません";
-            if (!result.Success)    return result.ErrorMessage;
-
-            Debug.Log($"[PolyLing] VRMA 書き出し: {result.OutputPath} " +
-                      $"(Humanoid {result.HumanoidBoneCount} / {result.FrameCount} frames / {result.DurationSec:F2}s)");
-            return null;
-        }
-
-        /// <summary>PolyLing モーション → VRMA 変換コマンド（モデル非依存）。</summary>
-        /// <returns>失敗理由。成功時は null。</returns>
-        private string ExecuteConvertUnityClipToVrma(Poly_Ling.Data.ConvertUnityClipToVrmaCommand cmd)
+        private string ExecuteConvertMotionToVrma(Poly_Ling.Data.ConvertMotionToVrmaCommand cmd)
         {
             if (cmd == null) return "コマンドが null";
 
@@ -536,27 +608,23 @@ namespace Poly_Ling.Player
             if (loaded.Dto == null) return $"モーションを読み込めません: {loaded.FormatIssues(5)}";
             var clip = loaded.Dto;
 
-            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
+            var options = new Poly_Ling.Motion.VrmaExportOptions
             {
                 Fps      = cmd.Fps,
                 StartSec = cmd.StartSec,
                 EndSec   = cmd.EndSec,
+                UseBody  = cmd.UseBody,
             };
+            if (!Poly_Ling.Motion.VrmaCodec.WriteFile(clip, outPath, options, out var report, out string reason))
+                return $"{reason}（出力先: {outPath}）";
 
-            var result = Poly_Ling.UnityClip.UnityClipCanonVrmAnimation.ConvertToFile(
-                clip, outPath, settings, cmd.BoneLength, cmd.UseRoot);
-
-            if (result == null)  return "変換結果がありません";
-            if (!result.Success) return $"{result.ErrorMessage}（出力先: {outPath}）";
-
-            Debug.Log($"[PolyLing] VRMA 変換: {result.OutputPath} " +
-                      $"(Humanoid {result.HumanoidBoneCount} / {result.FrameCount} frames / {result.DurationSec:F2}s)");
+            Debug.Log($"[PolyLing] VRMA 変換: {report.OutputPath} / {report.Summary()}");
             return null;
         }
 
-        /// <summary>VMD → VRMA 書き出しコマンド。</summary>
+        /// <summary>VMD＋モデル → PolyLing モーション（マッスル＋二次骨＋表情）＋ VRMA 書き出しコマンド。</summary>
         /// <returns>失敗理由。成功時は null。</returns>
-        private string ExecuteExportVmdToVrma(Poly_Ling.Data.ExportVmdToVrmaCommand cmd)
+        private string ExecuteExportVmdToMotion(Poly_Ling.Data.ExportVmdToMotionCommand cmd)
         {
             if (cmd == null) return "コマンドが null";
 
@@ -569,6 +637,11 @@ namespace Poly_Ling.Player
             if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
                     cmd.FilePath, out string outPath, out string outReason))
                 return outReason;
+
+            string vrmaPath = null;
+            if (!string.IsNullOrEmpty(cmd.VrmaFilePath)
+                && !Poly_Ling.Core.PLSandbox.TryResolveWrite(cmd.VrmaFilePath, out vrmaPath, out string vrmaReason))
+                return vrmaReason;
 
             if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
                     cmd.VmdFilePath, out string vmdPath, out string vmdReason))
@@ -585,14 +658,6 @@ namespace Poly_Ling.Player
             }
             if (vmd == null) return "VMD を読み取れません";
 
-            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
-            {
-                Scale    = cmd.Scale,
-                Fps      = cmd.Fps,
-                StartSec = cmd.StartSec,
-                EndSec   = cmd.EndSec,
-            };
-
             // 座標変換と位置倍率は EditorState を正本にする。
             // PlayerVMDTestSubPanel.LoadVMD と同じ規則で、ここでは新しい変換を足さない。
             var options = Poly_Ling.VMD.VmdVrmAnimationOptions.CreateDefault();
@@ -600,7 +665,7 @@ namespace Poly_Ling.Player
             options.DiagnosticLog     = cmd.DiagnosticLog;
             options.IgnoreAngleLimits = cmd.IgnoreAngleLimits;
             options.KneePreBend       = cmd.KneePreBend;
-            options.ViaMuscles        = cmd.ViaMuscles;
+            options.AlignLegs         = cmd.AlignLegs;
 
             // IK の残差 CSV の出力先。指定があるときだけ関門を通す。
             if (!string.IsNullOrEmpty(cmd.IkTraceDirectory))
@@ -618,78 +683,8 @@ namespace Poly_Ling.Player
                 options.FlipZ         = es.PmxFlipZ;
             }
 
-            var result = Poly_Ling.VMD.VmdVrmAnimationExport.ExportToFile(
-                model, vmd, outPath, settings, options);
-
-            // 書き出しはモデルへ実際にフレームを適用する。
-            // ポーズ層は ExportToFile が戻すので、表示を引き直す。
-            _viewportManager.UpdateTransform();
-            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
-
-            if (result == null)  return "書き出し結果がありません";
-            if (!result.Success) return $"{result.ErrorMessage}（出力先: {outPath}）";
-
-            Debug.Log($"[PolyLing] VMD→VRMA 書き出し: {result.OutputPath} " +
-                      $"(Humanoid {result.HumanoidBoneCount} / {result.FrameCount} frames / {result.DurationSec:F2}s)");
-            if (!string.IsNullOrEmpty(result.Warning))
-                Debug.LogWarning($"[PolyLing] VMD→VRMA: {result.Warning}");
-            return null;
-        }
-
-        /// <summary>VMD → PolyLing モーション（マッスル＋二次骨＋表情）書き出しコマンド。</summary>
-        /// <returns>失敗理由。成功時は null。</returns>
-        private string ExecuteExportVmdToMotionJson(Poly_Ling.Data.ExportVmdToMotionJsonCommand cmd)
-        {
-            if (cmd == null) return "コマンドが null";
-
-            var model = ActiveProject?.CurrentModel;
-            if (model == null) return "モデルがありません";
-
-            if (string.IsNullOrEmpty(cmd.FilePath))    return "FilePath が空です";
-            if (string.IsNullOrEmpty(cmd.VmdFilePath)) return "VmdFilePath が空です";
-
-            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(
-                    cmd.FilePath, out string outPath, out string outReason))
-                return outReason;
-
-            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(
-                    cmd.VmdFilePath, out string vmdPath, out string vmdReason))
-                return vmdReason;
-
-            Poly_Ling.VMD.VMDData vmd;
-            try
-            {
-                vmd = Poly_Ling.VMD.VMDData.LoadFromFile(vmdPath);
-            }
-            catch (System.Exception ex)
-            {
-                return $"VMD の読込みに失敗: {ex.Message}";
-            }
-            if (vmd == null) return "VMD を読み取れません";
-
-            var settings = new Poly_Ling.Vrm.VrmAnimationExportSettings
-            {
-                Fps      = cmd.Fps,
-                StartSec = cmd.StartSec,
-                EndSec   = cmd.EndSec,
-            };
-
-            // 座標変換と位置倍率は EditorState を正本にする（ExecuteExportVmdToVrma と同じ）。
-            var options = Poly_Ling.VMD.VmdVrmAnimationOptions.CreateDefault();
-            options.EnableIK          = cmd.EnableIK;
-            options.DiagnosticLog     = cmd.DiagnosticLog;
-            options.IgnoreAngleLimits = cmd.IgnoreAngleLimits;
-            options.KneePreBend       = cmd.KneePreBend;
-            var es = _editOps?.UndoController?.EditorState;
-            if (es != null)
-            {
-                options.PositionScale = es.PmxUnityRatio;
-                options.FlipX         = es.PmxFlipX;
-                options.FlipZ         = es.PmxFlipZ;
-            }
-
             var dto = Poly_Ling.VMD.VmdMotionBake.Bake(
-                model, vmd, settings, options, out var report, out string bakeReason);
+                model, vmd, cmd.Fps, cmd.StartSec, cmd.EndSec, options, out var report, out string bakeReason);
 
             // 焼き込みはモデルへ実際にフレームを適用する。
             // ポーズ層は Bake が戻すので、表示を引き直す。
@@ -709,7 +704,138 @@ namespace Poly_Ling.Player
             if (report.DroppedHumanoid.Count > 0)
                 Debug.LogWarning("[PolyLing] VMD→モーション: 骨格に載せられなかった Humanoid: "
                                  + string.Join(", ", report.DroppedHumanoid.ToArray()));
+
+            // VRMA は保存した内容（bakedBones 込み）から、.plmotion → .vrma の出口で書く。
+            if (!string.IsNullOrEmpty(vrmaPath))
+            {
+                var vopt = new Poly_Ling.Motion.VrmaExportOptions { Fps = saved.Dto.frameRate };
+                if (!Poly_Ling.Motion.VrmaCodec.WriteFile(saved.Dto, vrmaPath, vopt, out var vrep, out string vreason))
+                    return $"{vreason}（出力先: {vrmaPath}）";
+                Debug.Log($"[PolyLing] VMD→VRMA 書き出し: {vrep.OutputPath} / {vrep.Summary()}");
+            }
             return null;
+        }
+
+        // ================================================================
+        // BVH（モーション＋モデル → モデルの骨格の BVH。PolyLing_BVH対応計画.md 5）
+        // ================================================================
+
+        /// <summary>モーション＋モデル → BVH 書き出しコマンド。</summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteExportMotionToBvh(Poly_Ling.Data.ExportMotionToBvhCommand cmd, Poly_Ling.Motion.BvhExportReport report)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            if (string.IsNullOrEmpty(cmd.FilePath))   return "FilePath が空です";
+            if (string.IsNullOrEmpty(cmd.SourcePath)) return "SourcePath が空です";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(cmd.FilePath, out string outPath, out string outReason))
+                return outReason;
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(cmd.SourcePath, out string srcPath, out string srcReason))
+                return srcReason;
+            if (!System.IO.File.Exists(srcPath)) return $"読み込むファイルがありません: {srcPath}";
+            if (!PlayerCommandDispatcher.BuildBvhReadOptions(cmd.BvhSkeleton, cmd.BvhMappingCsvPath, out var bvhOptions, out string bvhReason))
+                return bvhReason;
+            if (!PlayerCommandDispatcher.BuildFbxReadOptions(bvhOptions, cmd.FbxRestPath, cmd.FbxTake, out var fbxOptions, out string fbxReason))
+                return fbxReason;
+
+            var loaded = Poly_Ling.Motion.MotionFileLoad.Load(srcPath, cmd.SourceKind, bvhOptions, fbxOptions);
+            if (loaded.Dto == null) return $"モーションを読み込めません: {loaded.FormatIssues(5)}";
+
+            // VMD の位置は PMX 単位なので、パネル再生（MotionClipHandler.Load）と同じく PmxUnityRatio を掛けて当てる。
+            float clipScale = 1f;
+            if (cmd.SourceKind == Poly_Ling.Data.MotionSourceKind.Vmd)
+                clipScale = _editOps?.UndoController?.EditorState?.PmxUnityRatio ?? 0.1f;
+
+            var options = new Poly_Ling.Motion.BvhExportOptions
+            {
+                Fps               = cmd.Fps,
+                StartSec          = cmd.StartSec,
+                EndSec            = cmd.EndSec,
+                PositionScale     = cmd.PositionScale,
+                ClipPositionScale = clipScale,
+                AlignLegs         = cmd.AlignLegs,
+            };
+            bool ok = Poly_Ling.Motion.BvhCodec.ExportFromModel(model, loaded.Dto, outPath, options, report, out string reason);
+
+            // 書き出しはモデルへ実際にフレームを当てる。ポーズ層は ExportFromModel が戻すので、表示を引き直す。
+            // UpdateTransform は規約で新規に呼ばない入口なので、正規入口だけを通す。
+            // パネルから撃ったときはパネルが表示中のフレームを当て直す（motionClip の setTime）。
+            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+
+            if (!ok) return $"{reason}（出力先: {outPath}）";
+            Debug.Log($"[PolyLing] BVH 書き出し: {report.OutputPath} / {report.Summary()}");
+            return null;
+        }
+
+        // ================================================================
+        // FBX（モーション＋モデル → FBX。PolyLing_FBX対応計画.md 段 3）
+        // ================================================================
+
+        /// <summary>モーション＋モデル → FBX 書き出しコマンド。読み込みと関門は BVH 書き出しと同じ。</summary>
+        private Poly_Ling.Fbx.FbxExportResult ExecuteExportMotionToFbx(Poly_Ling.Data.ExportMotionToFbxCommand cmd)
+        {
+            Poly_Ling.Fbx.FbxExportResult Fail(string why) => Poly_Ling.Fbx.FbxExportResult.Failed(why);
+
+            if (cmd == null) return Fail("コマンドが null");
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return Fail("モデルがありません");
+            if (string.IsNullOrEmpty(cmd.FilePath))   return Fail("FilePath が空です");
+            if (string.IsNullOrEmpty(cmd.SourcePath)) return Fail("SourcePath が空です");
+
+            if (!Poly_Ling.Fbx.PLFbxBridge.Exporter.IsAvailable)
+                return Fail("FBX エクスポータが利用できません（PolyLing.Fbx が未登録）");
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(cmd.FilePath, out string outPath, out string outReason))
+                return Fail(outReason);
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(cmd.SourcePath, out string srcPath, out string srcReason))
+                return Fail(srcReason);
+            if (!System.IO.File.Exists(srcPath)) return Fail($"読み込むファイルがありません: {srcPath}");
+            if (!PlayerCommandDispatcher.BuildBvhReadOptions(cmd.BvhSkeleton, cmd.BvhMappingCsvPath, out var bvhOptions, out string bvhReason))
+                return Fail(bvhReason);
+
+            var settings = (cmd.Settings ?? Poly_Ling.Fbx.FbxExportSettings.CreateDefault()).Clone();
+            string texFolder = Poly_Ling.Fbx.FbxExportSettings.DefaultTextureFolder(outPath);
+            if (!Poly_Ling.Core.PLSandbox.TryResolveFolder(texFolder, out string texResolved, out string texReason))
+                return Fail(texReason);
+            settings.TextureFolder = texResolved;
+
+            if (!PlayerCommandDispatcher.BuildFbxReadOptions(bvhOptions, cmd.FbxRestPath, cmd.FbxTake, out var fbxOptions, out string fbxReason))
+                return Fail(fbxReason);
+
+            var loaded = Poly_Ling.Motion.MotionFileLoad.Load(srcPath, cmd.SourceKind, bvhOptions, fbxOptions);
+            if (loaded.Dto == null) return Fail($"モーションを読み込めません: {loaded.FormatIssues(5)}");
+
+            // VMD の位置は PMX 単位なので、パネル再生（MotionClipHandler.Load）と同じく PmxUnityRatio を掛けて当てる。
+            float clipScale = 1f;
+            if (cmd.SourceKind == Poly_Ling.Data.MotionSourceKind.Vmd)
+                clipScale = _editOps?.UndoController?.EditorState?.PmxUnityRatio ?? 0.1f;
+
+            var motion = new Poly_Ling.Fbx.FbxMotionExportOptions
+            {
+                Fps               = cmd.Fps,
+                StartSec          = cmd.StartSec,
+                EndSec            = cmd.EndSec,
+                ClipPositionScale = clipScale,
+                AlignLegs         = cmd.AlignLegs,
+                IncludeMesh       = cmd.IncludeMesh,
+                TakeName          = string.IsNullOrEmpty(loaded.Dto.name)
+                                    ? System.IO.Path.GetFileNameWithoutExtension(srcPath)
+                                    : loaded.Dto.name,
+            };
+            var result = Poly_Ling.Fbx.PLFbxBridge.Exporter.ExportMotion(model, loaded.Dto, outPath, settings, motion);
+
+            // 書き出しはモデルへ実際にフレームを当てる。ポーズ層は標本化が戻すので、表示を引き直す（BVH と同じ正規入口）。
+            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+
+            if (result.Success)
+                Debug.Log($"[PolyLing] FBX モーション書き出し: {outPath} / {result.Summary()}");
+            else
+                result.ErrorMessage = $"{result.ErrorMessage}（出力先: {outPath}）";
+            return result;
         }
 
         // ================================================================

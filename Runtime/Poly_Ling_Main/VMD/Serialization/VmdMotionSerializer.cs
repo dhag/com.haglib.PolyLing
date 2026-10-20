@@ -1,8 +1,5 @@
-using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEngine;
-using Newtonsoft.Json;
 using Poly_Ling.VMD;
 
 namespace Poly_Ling.VMD.Serialization
@@ -11,17 +8,14 @@ namespace Poly_Ling.VMD.Serialization
     // VmdMotionSerializer
     // ----------------------------------------------------------------
     // VMDData（VMD読み込み結果・左手系/正面 -Z・スパースキー）から
-    // MotionDTO（Unity左手系・純POCO）を生成し、JSON 入出力する。
+    // MotionDTO（Unity左手系・純POCO）を生成する。
+    // MotionDTO は PolyLing 内部の中間形で、ファイルには書かない
+    // （保存形式は PolyLing モーション MotionClipDTO だけ。MotionClipConverters.FromVMD がここを通る）。
     //
     // 役割分担:
     //   - 軸反転(VMD 正面 -Z → Unity 正面 +Z)・Vector/Quaternion→float[] 変換は
     //     “この生成側(Unity依存)” に閉じる。MotionDTO 自体は純POCO のまま。
     //   - キーはスパースのまま運ぶ（補間しない／密化しない）。キー間補間は消費側の責務。
-    //
-    // 移植メモ:
-    //   他言語(Python/JS)で同じ JSON を作る場合、必要なのは
-    //   (1) VMDバイナリのキー読み出し、(2) X・Z 両反転(Y軸180°回転)、(3) 本DTO構造への詰め替え。
-    //   ここの ToMotionDTO がその参照実装になる。
     // ================================================================
     public static class VmdMotionSerializer
     {
@@ -104,45 +98,6 @@ namespace Poly_Ling.VMD.Serialization
             }
 
             return dto;
-        }
-
-        // ------------------------------------------------------------
-        // JSON 入出力
-        // ------------------------------------------------------------
-        public static string ToJson(MotionDTO dto, bool indented = true)
-        {
-            return JsonConvert.SerializeObject(
-                dto,
-                indented ? Formatting.Indented : Formatting.None);
-        }
-
-        public static MotionDTO FromJson(string json)
-        {
-            return JsonConvert.DeserializeObject<MotionDTO>(json);
-        }
-
-        // VMDData から直接 JSON 文字列へ。
-        public static string ToJson(VMDData vmd, bool indented = true)
-        {
-            return ToJson(ToMotionDTO(vmd), indented);
-        }
-
-        // ------------------------------------------------------------
-        // ファイル入出力
-        // ------------------------------------------------------------
-        public static void SaveJson(MotionDTO dto, string path)
-        {
-            File.WriteAllText(path, ToJson(dto));
-        }
-
-        public static void SaveJson(VMDData vmd, string path)
-        {
-            File.WriteAllText(path, ToJson(vmd));
-        }
-
-        public static MotionDTO LoadJson(string path)
-        {
-            return FromJson(File.ReadAllText(path));
         }
     }
 }

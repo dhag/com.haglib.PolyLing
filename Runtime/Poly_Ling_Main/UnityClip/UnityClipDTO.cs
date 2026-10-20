@@ -4,11 +4,12 @@ using System.Collections.Generic;
 namespace Poly_Ling.UnityClip
 {
     // ================================================================
-    // UnityClipDTO （Unityモーションクリップ中間データ・純POCO）
+    // UnityClipDTO （UnityClipApplier の入力・PolyLing 内部専用）
     // ----------------------------------------------------------------
-    // UnityEngine.AnimationClip を言語間で持ち運ぶための中間契約。
-    // UnityEngine 型をフィールドに一切持たない（int / float / float[] / string のみ）。
-    // よって Newtonsoft でそのまま JSON 化でき、Python/JS でも同じ構造をミラーできる。
+    // ファイル形式（旧 "UnityMotionSamples"）は 2026-10-06 に廃止した。保存・受け渡しは
+    // PolyLing モーション（MotionClipDTO）だけ。この型は MotionClipApplier / UnityClipCanonVrmAnimation が
+    // 「その時刻で評価済みのキー 1 個」を UnityClipApplier へ渡す入れ物としてだけ使う。
+    // 外部（Python / ブラウザ）はこの型を真似しないこと。
     //
     // ■ VMD 系 MotionDTO との違い（恒久メモ）
     //   MotionDTO は「MMD 骨名トラック ＋ rot/pos」の VMD 用中間形式。
@@ -62,13 +63,10 @@ namespace Poly_Ling.UnityClip
         public UnityBodyTrackDTO body = null;
 
         /// <summary>
-        /// 拡張Aで焼いた本体ボーンのローカル回転トラック。
-        /// マッスルを AnimationMode.SampleAnimationClip でアバターに焼き、
-        /// GetBoneTransform(HumanBodyBones).localRotation を格納したもの。
-        /// path = HumanBodyBones 名（例 "LeftUpperArm"）。key.t=秒、rot=[x,y,z,w]。
-        /// PolyLing 側「焼いた使用」経路(a)で用いる。
+        /// 駆動されているボーンのトラックの無い dof を正準 T ポーズのマッスル値で解くか
+        /// （MotionClipDTO.absentMuscles = "rest"）。false は 0。
         /// </summary>
-        public List<UnityBoneTrackDTO> bakedBones = new List<UnityBoneTrackDTO>();
+        public bool absentMusclesRest = false;
     }
 
     // ----------------------------------------------------------------

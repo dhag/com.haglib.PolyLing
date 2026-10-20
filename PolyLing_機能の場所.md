@@ -148,6 +148,8 @@
 | .OBJファイル読込／.OBJファイル保存 | OBJ を開く／保存 | |
 | .VRMファイル読込 | VRM を開く | VRM 1.0、VRM 0.x |
 | .STLファイル読込／.STL保存 | STL を開く／保存 | 3D プリンタ |
+| .glTF読込／glTF保存 | glTF を開く／保存 | .glb、.gltf |
+| .FBX読込／FBX保存 | FBX のモデルを開く／保存 | .fbx。モーション付きの書き出しは「モーション」パネル |
 | PMX保存 | PMX で保存 | 書き出し、エクスポート |
 | MQO保存 | MQO で保存 | |
 | VRM保存 | VRM で保存 | |
@@ -282,9 +284,8 @@
 | メディアパイプ（顔フィット） | 顔の点で変形・表情転写 | MediaPipe |
 | メディアパイプ（姿勢・指） | 手の点から指の動き | MediaPipe |
 | メディアパイプ（姿勢・ボディ） | 姿勢の点から体の動き | MediaPipe |
-| モーション | モーションを読み込んで再生 | アニメーション、VRMA 書き出し |
-| モーション→VRMA変換（モデル不要） | モーションを VRMA へ変換（モデル不要） | |
-| VMD→VRMA書き出し | VMD を VRMA で書き出す | |
+| モーション | モーション（.plmotion / .vrma / .vmd / .bvh / .fbx）を読み込んで再生。.plmotion を VRMA へ書き出す（モデル不要）。今のモデルへ当てて BVH・FBX（モデル＋モーション）を書き出す。どれも .plmotion へ変換できる（JSON保存）。FBX はレスト用 FBX とテイク番号を指定できる | アニメーション、VRMA 書き出し、VRMA 読込、VRM アニメーション、BVH、FBX モーション |
+| VMD→モーション・VRMA書き出し | VMD をモデルへ当てて .plmotion と .vrma を書き出す | VMD を VRMA に、MMD モーション変換 |
 | 下絵 | 下絵を敷く・薄くする | 参照画像、トレース、下絵が邪魔、コントラスト、明るさ（方向ごと。モデルに保存） |
 | 軸/グリッド | グリッドと軸の表示 | 方眼 |
 | ログ | ログを見る・保存する | |
@@ -331,10 +332,50 @@
 
 ---
 
-## 3. この表を直すとき
+## 3. Blender で PolyLing のデータを扱う（Blender アドオン「PolyLing IO」）
+
+PolyLing の画面ではなく Blender の中の場所。答えるときは「Blender の」と付ける。決まりの詳細は `PolyLing_外部連携の契約.md` の §5.1（モーション）・§7（プロジェクト）。
+
+入れ方：`データとツール/poly_ling_py/polyling_io` フォルダをフォルダごと zip にし、Blender の［編集 > プリファレンス > アドオン］で入れて「PolyLing IO」を有効にする（3.6〜4.1 は「インストール…」、4.2 以降は右上のメニューの「Install from Disk」）。Blender 3.6 以上。
+
+| 場所（Blender） | やりたいこと | 言い換え | ひとこと |
+|---|---|---|---|
+| ［ファイル > インポート > PolyLing プロジェクト (.mfproj/.csv)］ | PolyLing のプロジェクトを Blender で開く | Blender に読み込む、Blender で編集、.mfproj、CSV フォルダ、project.csv、model.csv | プロジェクトがコレクション、モデルが子コレクション、ボーンがアーマチュア、モーフがシェイプキーになる |
+| ［ファイル > エクスポート > PolyLing プロジェクト (.mfproj/.csv)］ | Blender で直したものを PolyLing のプロジェクトに戻す | Blender から書き出す、Blender から保存、PolyLing へ戻す | 拡張子 .mfproj なら JSON、.csv なら CSV フォルダ。チェック「名前で参照（CSV）」。PolyLing から取り込んだものだけを書く。PolyLing では左の「ファイル」→「プロジェクト読み込み」で開く |
+| ［ファイル > インポート > PolyLing モーション (.plmotion.json)］、またはサイドバー（N キー）のタブ［PolyLing］の「モーションを読む」 | PolyLing のモーションを Blender のアニメーションにする | モーション読込、.plmotion、アクション、Blender でモーションを直す | アーマチュアを選んでから。「腰の回転と位置も当てる」（既定オン。切ると PolyLing のパネル再生と同じく腰を当てない）・「脚も T ポーズに合わせる」・「シーンの fps と範囲を合わせる」（既定オン）。表情はシェイプキー、視線は空オブジェクト「＜アーマチュア名＞_視線」 |
+| ［ファイル > エクスポート > PolyLing モーション (.plmotion.json)］、またはサイドバーのタブ［PolyLing］の「モーションを書く」 | Blender のアニメーションを PolyLing のモーションにする | モーション書き出し、Blender で作ったモーション | アーマチュアを選んでから。PolyLing では左の「その他」→「モーション」で読み込む |
+| サイドバーのタブ［PolyLing］の「Humanoid の割り当て」→「自動で割り当て」「VRM アドオンから取り込む」 | どのボーンが腕・脚かを決める | ヒューマノイド、Humanoid、ボーン割り当て、マッピング、VRM Add-on | 表の右の欄でボーンを選び直せる。表が空のままモーションを読み書きすると自動で割り当てる |
+
+### 3-1. 動いている PolyLing とつなぐ（Blender アドオン「PolyLing Bridge」）
+
+入れ方：`データとツール/poly_ling_py/polyling_bridge.py` を Blender の［編集 > プリファレンス > アドオン］で入れて「PolyLing Bridge」を有効にする。モーションの送受信には「PolyLing IO」も有効にしておく。PolyLing 側はリモートサーバを開始しておく。決まりの詳細は契約 §3.6（メッシュ）・§3.7（モーション）。
+
+| 場所（Blender） | やりたいこと | 言い換え | ひとこと |
+|---|---|---|---|
+| サイドバーのタブ［PolyLing］の［PolyLing連携］の一覧と「接続」「切断」 | 動いている PolyLing につなぐ | ブリッジ、リモート、WebSocket、ライブ連携 | 一覧の右のボタンで一覧を取り直す |
+| ［PolyLing連携］の「送信」「新規として送信」 | Blender のメッシュを PolyLing へ送る | メッシュ送信 | PolyLing から来たメッシュは頂点の移動だけ（面のつながりは変えられない） |
+| ［PolyLing連携］の「取り込み」 | PolyLing で選んでいる描画オブジェクトを Blender へ持ってくる | メッシュ受信 | PolyLing のコマンド `sendMeshToClient` で PolyLing から押し出すこともできる |
+| ［PolyLing連携］の「モーション」の「送る」 | Blender のアニメーションを PolyLing ですぐ再生する | モーション送信、Blender から PolyLing へモーション | アーマチュアを選んでから。PolyLing の「その他」→「モーション」のパネルに読み込まれ、今のフレームが今のモデルに当たる。ファイルは作らない（パネルの JSON保存・読み直し・VRMA 書き出しは使えない） |
+| ［PolyLing連携］の「モーション」の「取得」 | PolyLing で開いているモーションを Blender のアニメーションにする | モーション受信、PolyLing から Blender へモーション | アーマチュアを選んでから。PolyLing の「その他」→「モーション」のパネルに読み込んであるクリップを取る（VRMA・BVH・FBX から読んだものも .plmotion にして取る）。選べることは「モーションを読む」と同じ |
+
+### 3-2. VRM Add-on 経由で行き来させる（`.vrma`）
+
+VRM 1.0 のモデルなら、VRM Add-on for Blender で `.vrma` を読み書きしても行き来できる。視線・カスタムの表情・モデルに無いボーンが消え、長さとキーの時刻がシーンの fps と範囲に打ち直される（契約 §5.2）。値をそのまま行き来させるなら 3・3-1 の `.plmotion.json` を使う。
+
+| 場所 | やりたいこと | ひとこと |
+|---|---|---|
+| PolyLing の左の「その他」→「モーション」の「VRMA 書き出し」（コマンド `convertMotionToVrma`） | PolyLing のモーションを `.vrma` にする | パネルで PolyLing モーションを開いてから |
+| Blender の［ファイル > インポート／エクスポート > VRM Animation (.vrma)］ | `.vrma` を VRM モデルのアニメーションにする／書き出す | VRM Add-on のメニュー。書き出す前にシーンの fps と範囲をクリップに合わせる |
+| PolyLing の左の「その他」→「モーション」で種類「VRM アニメーション (.vrma)」を開く | Blender で書いた `.vrma` を PolyLing で再生する | 「JSON保存」で `.plmotion.json` にできる |
+
+---
+
+## 4. この表を直すとき
 
 | 変わったもの | 見る場所 |
 |---|---|
+| Blender アドオンのメニュー・パネル・チェックの文字 | `データとツール/poly_ling_py/polyling_io/blender/__init__.py` |
+| Blender のブリッジ（［PolyLing連携］）のボタンの文字 | `データとツール/poly_ling_py/polyling_bridge.py` の `POLYLING_PT_bridge` と各オペレーター |
 | 折り畳み・ボタンの文字や並び | `PlayerLayoutRoot.LeftPaneButtons.cs` の `BuildLeftPaneToolButtons` |
 | 左の常時表示部 | `PlayerLayoutRoot.LeftPane.cs` の `BuildLeftPane` |
 | 右最上部の 3 ボタン | `PlayerLayoutRoot.RightPane.cs` の `BuildRightPane` |

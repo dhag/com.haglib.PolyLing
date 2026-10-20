@@ -313,15 +313,7 @@ namespace Poly_Ling.Player
             };
             _robotBuildTestSubPanel.Build(_layoutRoot.RobotBuildTestSection);
 
-            // モデルを見ない変換専用パネル。GetModel は持たせない。
-            _unityClipToVrmaSubPanel = new PlayerUnityClipToVrmaSubPanel
-            {
-                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
-                SendCommand   = cmd => _panelContext?.SendCommand(cmd),
-            };
-            _unityClipToVrmaSubPanel.Build(_layoutRoot.UnityClipToVrmaSection);
-
-            // VMD をモデルへ適用しながら書き出す。Humanoid 割り当てが要る。
+            // VMD をモデルへ適用しながら .plmotion（と .vrma）を書き出す。Humanoid 割り当てが要る。
             _vmdToVrmaSubPanel = new PlayerVmdToVrmaSubPanel
             {
                 GetModel      = () => ActiveProject?.CurrentModel,
@@ -377,7 +369,6 @@ namespace Poly_Ling.Player
                 Live        = _motionLiveHandler,
                 OnChanged   = () => _mediaPipeSubPanel?.RefreshTransfer(),
             };
-            _motionLiveHandler.OnBeforeReceived = json => _faceTransferHandler.ReceiveBefore(json);
 
             // メディアパイプ（姿勢）（ツールの窓口 "mediaPipePose"）。指の欄とボディの欄が同じ窓口を使う。
             _mediaPipePoseHandler = new MediaPipePoseHandler
@@ -390,7 +381,7 @@ namespace Poly_Ling.Player
             _mediaPipeBodySubPanel   = new PlayerMediaPipePoseSubPanel { IsBody = true,  Surface = ToolSurface };
             _mediaPipeBodySubPanel.Build(_layoutRoot.MediaPipeBodySection);
             // 再生で当てたフレームを、ライブ受信の受け入れ中なら全接続へ配信する（マッスルを持つクリップだけ）。
-            var playFrame = new Poly_Ling.Motion.MotionLiveFrame();
+            var playFrame = new Poly_Ling.Motion.MotionLiveFrame { Source = Poly_Ling.Motion.MotionLiveJson.SourcePlayback };
             _motionClipHandler.OnPlaybackFrame = time =>
             {
                 var index = _motionLiveHandler.MuscleIndex;
@@ -406,6 +397,9 @@ namespace Poly_Ling.Player
                 Surface           = ToolSurface,
             };
             _motionClipTestSubPanel.Build(_layoutRoot.MotionClipTestSection);
+            // パネルを通さずに読み込んだクリップ（loadMotionClipJson。Blender ブリッジの送信）に表示を合わせる。
+            _motionClipHandler.OnClipLoadedFromJson = t => _motionClipTestSubPanel?.AdoptExternalClip(t);
+            _motionClipHandler.OnSourceChanged      = () => _motionClipTestSubPanel?.Refresh();
         }
     }
 }

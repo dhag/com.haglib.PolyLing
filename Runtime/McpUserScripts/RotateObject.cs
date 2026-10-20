@@ -12,8 +12,33 @@ public class RotateObject : MonoBehaviour
     [Tooltip("回転速度（度/秒）")]
     [SerializeField] private float degreesPerSecond = 90f;
 
+    [Tooltip("回転のスイッチ。オフの間は止まる")]
+    [SerializeField] private bool rotating = true;
+
+    /// <summary>回転軸（ローカル空間）。</summary>
+    public Vector3 RotationAxis
+    {
+        get => rotationAxis;
+        set => rotationAxis = value;
+    }
+
+    /// <summary>回転速度（度/秒）。</summary>
+    public float DegreesPerSecond
+    {
+        get => degreesPerSecond;
+        set => degreesPerSecond = value;
+    }
+
+    /// <summary>回転のスイッチ。</summary>
+    public bool Rotating
+    {
+        get => rotating;
+        set => rotating = value;
+    }
+
     private void Update()
     {
+        if (!rotating) return;
         transform.Rotate(rotationAxis, degreesPerSecond * Time.deltaTime, Space.Self);
     }
 }

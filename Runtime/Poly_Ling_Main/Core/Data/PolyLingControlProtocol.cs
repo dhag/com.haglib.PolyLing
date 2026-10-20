@@ -325,23 +325,22 @@ namespace Poly_Ling.Data
         {
             var raw = msg?.Params;
             if (raw == null || raw.Count == 0)
-                return BuildError(op, "params がありません");
+                return BuildError(op, "params がありません", CommandErrorCodes.InvalidArgs);
 
             if (!raw.TryGetValue("command", out string command) || string.IsNullOrEmpty(command))
-                return BuildError(op, "params.command がありません");
+                return BuildError(op, "params.command がありません", CommandErrorCodes.InvalidArgs);
 
             int modelIndex = 0;
             if (raw.TryGetValue("modelIndex", out string mi) && !string.IsNullOrEmpty(mi))
             {
                 if (!int.TryParse(mi, out modelIndex))
-                    return BuildError(op, $"modelIndex を整数にできません: {mi}");
+                    return BuildError(op, $"modelIndex を整数にできません: {mi}", CommandErrorCodes.InvalidArgs);
             }
 
             // 封筒の値。コマンドの引数ではないので外す。
             //   wantRevision … 応答に版と差分（modelRevision / createdObjectIds / deletedObjectIds）を足す。
             //                  既定は付けない。付けると応答が変わるので、要求した呼び出しにだけ足す。
-            bool wantRevision = raw.TryGetValue("wantRevision", out string wr)
-                                && (wr == "1" || string.Equals(wr, "true", StringComparison.OrdinalIgnoreCase));
+            bool wantRevision = raw.TryGetValue("wantRevision", out string wr) && CommandResultJson.IsTrue(wr);
 
             var args = new Dictionary<string, string>();
             foreach (var kv in raw)
@@ -351,20 +350,21 @@ namespace Poly_Ling.Data
             }
 
             if (!PolyLingCommandGateway.IsReady)
-                return BuildError(op, "PolyLing のパネルが開いていません");
+                return BuildError(op, "PolyLing のパネルが開いていません", CommandErrorCodes.NotReady);
 
             var cmd = PanelCommandFactory.Create(command, modelIndex, args, out string createError);
             if (cmd == null)
-                return BuildError(op, createError ?? "コマンドを組み立てられませんでした");
+                return BuildError(op, createError ?? "コマンドを組み立てられませんでした",
+                                  CommandResultJson.CodeForCreateFailure(command));
 
             Debug.Log($"{logTag} call: {PanelCommandDump.Describe(cmd)}");
 
             var result = PolyLingCommandGateway.Invoke(cmd);
             if (result == null)
-                return BuildError(op, "結果がありません");
+                return BuildError(op, "結果がありません", CommandErrorCodes.Failed);
 
             if (!result.Success)
-                return BuildError(op, result.Reason ?? "unknown error");
+                return BuildError(op, result.Reason ?? "unknown error", result.Code);
 
             var jb = new JsonBuilder();
             jb.BeginObject();
@@ -372,18 +372,10 @@ namespace Poly_Ling.Data
             jb.KeyValue("success", true);
             jb.KeyValue("action",  op);
             jb.KeyValue("command", command);
-            AppendIntArray(jb, "masterIndices", result.MasterIndices);
-            AppendUlongArray(jb, "objectIds",   result.ObjectIds);
+            // masterIndices / objectIds / 版 / result（欄の形はリモートの command と共通：CommandResultJson）
+            CommandResultJson.AppendSuccess(jb, result, wantRevision);
 
-            if (wantRevision)
-            {
-                jb.KeyValue("modelRevision", result.ModelRevision);
-                AppendUlongArray(jb, "createdObjectIds", result.CreatedObjectIds);
-                AppendUlongArray(jb, "deletedObjectIds", result.DeletedObjectIds);
-            }
-
-            // コマンドが返した実データ。既に JSON オブジェクトの文字列なので
-            // そのまま差し込む（tools と同じ KeyRaw の経路）。
+            // result（コマンドが返した実データ）について。
             //
             // 【なぜ "data" ではないか】
             //   "data" は BuildOk が文字列を入れる欄で、ping / state / play / stop が
@@ -394,37 +386,9 @@ namespace Poly_Ling.Data
             //   call は生 JSON がそのまま呼び出し側へ渡るので、
             //   Parse が触らない別のキーにしておけば型の食い違いが起きない。
             //   C# 側のプロパティ名は CommandResult.Data のままにしてある。
-            if (!string.IsNullOrEmpty(result.Data)) jb.KeyRaw("result", result.Data);
 
             jb.EndObject();
             return jb.ToString();
-        }
-
-        /// <summary>int 配列を JSON 配列として足す。null・空なら足さない。</summary>
-        private static void AppendIntArray(JsonBuilder jb, string key, int[] values)
-        {
-            if (values == null || values.Length == 0) return;
-
-            jb.Key(key);
-            jb.BeginArray();
-            for (int i = 0; i < values.Length; i++) jb.Value(values[i]);
-            jb.EndArray();
-        }
-
-        /// <summary>
-        /// ulong 配列を JSON 配列として足す。null・空なら足さない。
-        /// JsonBuilder に ulong の Value が無いため、数値のまま RawValue で入れる
-        /// （文字列にすると受け側で型が変わる）。
-        /// </summary>
-        private static void AppendUlongArray(JsonBuilder jb, string key, ulong[] values)
-        {
-            if (values == null || values.Length == 0) return;
-
-            jb.Key(key);
-            jb.BeginArray();
-            for (int i = 0; i < values.Length; i++)
-                jb.RawValue(values[i].ToString(System.Globalization.CultureInfo.InvariantCulture));
-            jb.EndArray();
         }
 
         // ================================================================
@@ -444,15 +408,15 @@ namespace Poly_Ling.Data
             return jb.ToString();
         }
 
-        /// <summary>失敗応答。</summary>
-        public static string BuildError(string action, string error)
+        /// <summary>失敗応答。code は CommandErrorCodes（省くと Failed）。</summary>
+        public static string BuildError(string action, string error, string code = CommandErrorCodes.Failed)
         {
             var jb = new JsonBuilder();
             jb.BeginObject();
             jb.KeyValue("type",    "response");
             jb.KeyValue("success", false);
             jb.KeyValue("action",  action);
-            jb.KeyValue("error",   error);
+            CommandResultJson.AppendFailure(jb, error, code);
             jb.EndObject();
             return jb.ToString();
         }

@@ -78,6 +78,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.Ribbon:     return _ribbonP.MeshName;
                 case ShapeKind.NGonGear:     return _ngonGearP.MeshName;
                 case ShapeKind.NGonStar:     return _ngonStarP.MeshName;
+                case ShapeKind.ZodiacSign:   return _zodiacP.MeshName;
+                case ShapeKind.Emblem:       return _emblemP.MeshName;
+                case ShapeKind.MagicCircle:  return _mcName;
+                case ShapeKind.LatticeTower: return _ltName;
                 case ShapeKind.InvoluteGear: return _involGearP.MeshName;
                 case ShapeKind.StadiumBox:   return _stadiumP.MeshName;
                 case ShapeKind.PipeStadium:  return _pipeStadiumP.MeshName;
@@ -137,6 +141,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.Ribbon:      _ribbonP.MeshName  = name; break;
                 case ShapeKind.NGonGear:     _ngonGearP.MeshName = name; break;
                 case ShapeKind.NGonStar:     _ngonStarP.MeshName = name; break;
+                case ShapeKind.ZodiacSign:   _zodiacP.MeshName   = name; break;
+                case ShapeKind.Emblem:       _emblemP.MeshName   = name; break;
+                case ShapeKind.MagicCircle:  _mcName             = name; break;
+                case ShapeKind.LatticeTower: _ltName             = name; break;
                 case ShapeKind.InvoluteGear: _involGearP.MeshName = name; break;
                 case ShapeKind.StadiumBox:   _stadiumP.MeshName   = name; break;
                 case ShapeKind.PipeStadium:  _pipeStadiumP.MeshName = name; break;

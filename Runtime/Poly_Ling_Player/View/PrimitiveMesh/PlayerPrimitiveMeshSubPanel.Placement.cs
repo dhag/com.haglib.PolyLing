@@ -307,7 +307,10 @@ namespace Poly_Ling.Player
             // 材質はパネルの指定を使うので、追加先の値に関係なく出す。
             bool pointDefined = _current == ShapeKind.PointDefined;
 
+            // 魔法陣・鉄塔は常に新しい親と子を作るので、追加先を選ばせない。
             bool useAddMode = _current != ShapeKind.ObjectArray
+                           && _current != ShapeKind.MagicCircle
+                           && _current != ShapeKind.LatticeTower
                            && !pointDefined;
             bool usePose    = _current != ShapeKind.ObjectArray
                            && _current != ShapeKind.EdgeRibbonFace
@@ -352,6 +355,10 @@ namespace Poly_Ling.Player
                     case ShapeKind.SpringBoneCylinder:
                     case ShapeKind.SpringBoneRevolution:
                     case ShapeKind.SpringBoneLadder:
+                    // 魔法陣は常に部品の並びを 1 件のグループとして残す。
+                    case ShapeKind.MagicCircle:
+                    // 鉄塔も塔体とデッキの並びを 1 件のグループとして残す。
+                    case ShapeKind.LatticeTower:
                         return false;
                     case ShapeKind.EdgeRibbonFace:
                         return !_ribbonFacePipe;

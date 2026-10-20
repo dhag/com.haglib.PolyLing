@@ -139,13 +139,22 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // materialprops.csv（シェーダー固有プロパティ。materials.csv の列を伸ばさないため独立CSV）
             WriteMaterialPropsCsv(modelFolderPath, model);
 
+            // 【中身が無いファイルは消す】
+            //   以下のファイルは読込でファイルがあれば読む。中身が無いときに書かずに残すと、
+            //   同じフォルダへ保存し直したときに前回の中身が次の読込で復活する
+            //   （datastore.csv と同じ扱い。PolyLing_Blender不具合修正計画.md の 3）。
+
             // humanoid.export.csv（書き出し専用の派生。読み戻さない）
             if (model.HumanoidMapping != null && !model.HumanoidMapping.IsEmpty)
                 WriteHumanoidCsv(modelFolderPath, model, useNameBased, indexToName);
+            else
+                DeleteIfExists(modelFolderPath, "humanoid.export.csv");
 
             // morphgroups.csv
             if (model.MorphExpressions != null && model.MorphExpressions.Count > 0)
                 WriteMorphGroupsCsv(modelFolderPath, model, useNameBased, indexToName);
+            else
+                DeleteIfExists(modelFolderPath, "morphgroups.csv");
 
             // vrmexpressions.csv（VRM 表情の付帯データ。無ければ古いファイルを消す）
             WriteVrmExpressionsCsv(modelFolderPath, model);
@@ -153,10 +162,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // meshselsets.csv
             if (model.MeshSelectionSets != null && model.MeshSelectionSets.Count > 0)
                 WriteMeshSelSetsCsv(modelFolderPath, model);
+            else
+                DeleteIfExists(modelFolderPath, "meshselsets.csv");
 
             // objectgroups.csv
             if (model.ObjectGroups != null && model.ObjectGroups.Count > 0)
                 WriteObjectGroupsCsv(modelFolderPath, model);
+            else
+                DeleteIfExists(modelFolderPath, "objectgroups.csv");
 
             // datastore.csv（コマンドが返した実データの辞書）
             //   空のときはファイルを消す。残しておくと、前回の保存で作られた
@@ -166,25 +179,36 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // mirrorpairs.csv
             if (model.MirrorPairs != null && model.MirrorPairs.Count > 0)
                 WriteMirrorPairsCsv(modelFolderPath, model, useNameBased);
+            else
+                DeleteIfExists(modelFolderPath, "mirrorpairs.csv");
 
-            // editorstate.csv
+            // editorstate.csv（呼び出し元が渡さないときも消す。ファイルの有無と中身を一致させる）
             if (editorState != null)
                 WriteEditorStateCsv(modelFolderPath, editorState, useNameBased, indexToName);
+            else
+                DeleteIfExists(modelFolderPath, "editorstate.csv");
 
-            // workplane.csv
+            // workplane.csv（同上）
             if (workPlane != null)
                 WriteWorkPlaneCsv(modelFolderPath, workPlane);
+            else
+                DeleteIfExists(modelFolderPath, "workplane.csv");
 
             // 作業軸は作業軸オブジェクト（MeshType.WorkAxis）の行（MeshDTO.workAxis）に載る。
             // モデル単位のファイル（旧 workaxis.csv）は書かず、読みもしない。
 
-            // tposebackup.csv
+            // tposebackup.csv（「ファイルがある ⇔ TPoseBackup がある」。中身が空でも見出しだけ書く。
+            //   .mfproj の tPoseBackup と同じ。PolyLing_Blender不具合修正計画.md の 4）
             if (model.TPoseBackup != null)
                 WriteTPoseBackupCsv(modelFolderPath, model.TPoseBackup, useNameBased, indexToName);
+            else
+                DeleteIfExists(modelFolderPath, "tposebackup.csv");
 
             // springbonegroups.csv（SpringBone コライダーグループ名。規約4: CSV/JSON 対称）
             if (model.SpringBoneColliderGroupNames != null && model.SpringBoneColliderGroupNames.Count > 0)
                 WriteSpringBoneGroupsCsv(modelFolderPath, model);
+            else
+                DeleteIfExists(modelFolderPath, "springbonegroups.csv");
 
             // previewsettings.csv（PolyLing 内のプレビュー評価設定。
             //   既定値でも往復対称のため常時出力）

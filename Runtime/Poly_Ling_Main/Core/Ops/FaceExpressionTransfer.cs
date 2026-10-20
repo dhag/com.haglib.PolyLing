@@ -57,21 +57,8 @@ namespace Poly_Ling.Tools.MediaPipe
 
     public static class FaceExpressionTransfer
     {
-        /// <summary>MediaPipe の顔メッシュの点数（残り 10 点は虹彩）。</summary>
-        public const int FaceMeshPoints = 468;
-
-        /// <summary>正規化座標の点（[x,y,z] 以上）を画素単位（x·w, y·h, z·w）にする。先頭 count 点。</summary>
-        public static Vector3[] ToPixels(IReadOnlyList<float[]> normalized, int width, int height, int count)
-        {
-            int n = Mathf.Min(count, normalized.Count);
-            var r = new Vector3[n];
-            for (int i = 0; i < n; i++)
-            {
-                var p = normalized[i];
-                r[i] = new Vector3(p[0] * width, p[1] * height, (p.Length > 2 ? p[2] : 0f) * width);
-            }
-            return r;
-        }
+        /// <summary>MediaPipe の顔メッシュの点数（残り 10 点は虹彩）。正本は MediaPipeFrame.FaceMeshPoints。</summary>
+        public const int FaceMeshPoints = MediaPipeFrame.FaceMeshPoints;
 
         /// <summary>
         /// src を dst へ重ねる相似変換を求め、src の全点にかけた結果を返す（点数は同じであること）。

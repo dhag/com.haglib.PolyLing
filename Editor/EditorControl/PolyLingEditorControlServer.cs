@@ -321,7 +321,8 @@ namespace Poly_Ling.EditorControl
         // 要求: {"type":"command","action":"ping"|"play"|"stop"|"state"|"tools"|"call"
         //                                  |"tools_generic"|"tools_search"|"tools_describe"
         //                                  |"refresh"|"recompile"
-        //                                  |"prefab_export"|"prefab_instantiate"|"prefab_import"}
+        //                                  |"prefab_export"|"prefab_instantiate"|"prefab_import"
+        //                                  |"prefab_add_component"}
         //       call と prefab_* は "params" を伴う（HandleCall・「プレファブ」節の注記を参照）
         // 応答: {"type":"response","success":true,"action":"...","data":"..."}
         //       {"type":"response","success":false,"action":"...","error":"..."}
@@ -376,6 +377,9 @@ namespace Poly_Ling.EditorControl
 
                 case "prefab_import":
                     return LogResponse(HandlePrefabImport(op, msg));
+
+                case "prefab_add_component":
+                    return LogResponse(HandlePrefabAddComponent(op, msg));
 
                 case "build_player":
                     return LogResponse(HandleBuildPlayer(op, msg));
@@ -641,6 +645,12 @@ namespace Poly_Ling.EditorControl
         //           outputFolder（必須。作業フォルダ基準。PLSandbox を通す）
         //           detectNamedMirror / restoreHumanoid（任意。true/false。既定 true）
         //
+        // prefab_add_component … プレファブのオブジェクトへコンポーネントを付ける
+        //   params: prefabPath（必須。Assets/... .prefab）
+        //           componentType（必須。完全名または短い名前）
+        //           objectPath（任意。ルートからの子のパス。空ならルート）
+        //           allowMultiple（任意。true/false。既定 false。既に付いていれば何もしない）
+        //
         // 【Play 中は受けない】
         //   Play 中に作った GameObject は Play 終了で破棄される
         //   （HierarchyExportClientWindow.CanExportNow と同じ理由）。
@@ -649,7 +659,7 @@ namespace Poly_Ling.EditorControl
         // 【ダイアログを出さない】
         //   メインスレッドがダイアログで止まると応答が返らない。
         //   本体（HierarchyPrefabExporter / HierarchyImportWindow.ImportToProjectFile /
-        //   PrefabInstantiateOps）はダイアログを出さず、文言を返す。
+        //   PrefabInstantiateOps / PrefabComponentOps）はダイアログを出さず、文言を返す。
         // ================================================================
 
         private static string HandlePrefabExport(string op, RemoteMessage msg)
@@ -852,6 +862,34 @@ namespace Poly_Ling.EditorControl
 
             string text = $"{title}\n{message}";
             return ok ? BuildOk(op, text) : BuildError(op, text);
+        }
+
+        private static string HandlePrefabAddComponent(string op, RemoteMessage msg)
+        {
+            if (!CheckEditModeIdle(op, out string busy)) return busy;
+
+            var raw = msg?.Params;
+
+            if (!TryGetParam(raw, "prefabPath", out string prefabPath))
+                return BuildError(op, "params.prefabPath がありません");
+
+            if (!TryNormalizeAssetsPath(prefabPath, ".prefab", out string normalizedPrefab, out string reason))
+                return BuildError(op, "prefabPath: " + reason);
+
+            if (!TryGetParam(raw, "componentType", out string componentType))
+                return BuildError(op, "params.componentType がありません");
+
+            TryGetParam(raw, "objectPath", out string objectPath);
+
+            bool allowMultiple = false;
+            string err = null;
+            ReadBool(raw, "allowMultiple", ref allowMultiple, ref err);
+            if (err != null) return BuildError(op, err);
+
+            bool ok = Poly_Ling.EditorIO.PrefabComponentOps.AddComponent(
+                normalizedPrefab, componentType, objectPath, allowMultiple, out string message);
+
+            return ok ? BuildOk(op, message) : BuildError(op, message);
         }
 
         /// <summary>Edit モードで、コンパイル中・インポート中でなければ true。不可なら応答 JSON を返す。</summary>

@@ -226,7 +226,6 @@ namespace Poly_Ling.Player
                 _layoutRoot.MqoToPmxTestBtn.clicked += ShowMqoToPmxTestPanel;
             if (_layoutRoot.RobotBuildTestBtn != null)
                 _layoutRoot.RobotBuildTestBtn.clicked += ShowRobotBuildTestPanel;
-            _layoutRoot.UnityClipToVrmaBtn.clicked  += ShowUnityClipToVrmaPanel;
             if (_layoutRoot.VmdToVrmaBtn != null)
                 _layoutRoot.VmdToVrmaBtn.clicked    += ShowVmdToVrmaPanel;
             _layoutRoot.MotionClipTestBtn.clicked   += ShowMotionClipTestPanel;
@@ -260,6 +259,14 @@ namespace Poly_Ling.Player
                 _layoutRoot.StlLoadBtn.clicked     += () => ShowImportPanel(PlayerImportSubPanel.Mode.STL);
             if (_layoutRoot.StlSaveBtn != null)
                 _layoutRoot.StlSaveBtn.clicked     += () => ShowExportPanel(PlayerExportSubPanel.Mode.STL);
+            if (_layoutRoot.GltfLoadBtn != null)
+                _layoutRoot.GltfLoadBtn.clicked    += () => ShowImportPanel(PlayerImportSubPanel.Mode.GLTF);
+            if (_layoutRoot.GltfSaveBtn != null)
+                _layoutRoot.GltfSaveBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.GLTF);
+            if (_layoutRoot.FbxLoadBtn != null)
+                _layoutRoot.FbxLoadBtn.clicked     += () => ShowImportPanel(PlayerImportSubPanel.Mode.FBX);
+            if (_layoutRoot.FbxSaveBtn != null)
+                _layoutRoot.FbxSaveBtn.clicked     += () => ShowExportPanel(PlayerExportSubPanel.Mode.FBX);
             _layoutRoot.PartialImportPmxBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.PMX);
             _layoutRoot.PartialImportMqoBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.MQO);
             _layoutRoot.PartialExportPmxBtn.clicked += () => ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode.PMX);
@@ -781,7 +788,6 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.Profile2DTestSection,     () => _profile2DTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.PmxToMqoTestSection,      () => _pmxToMqoTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MqoToPmxTestSection,      () => _mqoToPmxTestSubPanel?.Refresh()));
-            _sectionRefreshPairs.Add((_layoutRoot.UnityClipToVrmaSection,   () => _unityClipToVrmaSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.LogSection,               () => _logSubPanel?.Refresh()));

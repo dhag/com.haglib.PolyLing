@@ -1,5 +1,5 @@
 // PanelCommand.Vrm.cs
-// VRM（.vrma 書き出し・モデルレベル設定・一人称）の操作要求。
+// VRM（.vrma の書き出し・VMD からの焼き込み・モデルレベル設定・一人称）の操作要求。
 // Runtime/Poly_Ling_Main/Core/Data/ に配置（PanelCommand.cs と同じ名前空間。PanelCommand.cs から分割）
 
 using System.Collections.Generic;
@@ -16,78 +16,24 @@ namespace Poly_Ling.Data
     // VRM アニメーション（.vrma）書き出し
     // ================================================================
 
-    /// <summary>
-    /// PolyLing モーション（.plmotion.json）を現在のモデルへ適用しながら
-    /// VRM アニメーション（.vrma）として書き出す。
-    /// </summary>
-    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "PolyLing モーション（.plmotion.json）をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
-    public class ExportVrmAnimationCommand : PanelCommand
-    {
-        [PLParam(TextKey = "VrmAnimationSavePath",
-                 Description = "書き出し先の .vrma。作業フォルダからの相対経路。絶対経路と \"..\" は拒否される（ダイアログで選んだ直後のパスだけは例外）", Required = true)]
-        public string FilePath { get; }
-
-        [PLParam(TextKey = "VrmAnimationClipPath",
-                 Description = "読み込む PolyLing モーション（.plmotion.json）。作業フォルダからの相対経路", Required = true)]
-        public string ClipFilePath { get; }
-
-        [PLParam(TextKey = "VrmAnimationLimitPath",
-                 Description = "マッスル可動域・実測 CSV（UnityLimit）。空にすると既定値で再構成する")]
-        public string MuscleLimitCsvPath { get; }
-
-        [PLParam(TextKey = "VrmAnimationFps",
-                 Description = "1 秒あたりのサンプリング枚数。0 以下にするとクリップの frameRate を使う",
-                 Min = 0.0, Max = 240.0)]
-        public float Fps { get; }
-
-        [PLParam(TextKey = "VrmAnimationStartSec",
-                 Description = "書き出す区間の開始時刻（秒）", Min = 0.0)]
-        public float StartSec { get; }
-
-        [PLParam(TextKey = "VrmAnimationEndSec",
-                 Description = "書き出す区間の終了時刻（秒）。StartSec 以下にするとクリップの終端まで",
-                 Min = 0.0)]
-        public float EndSec { get; }
-
-        [PLParam(TextKey = "VrmAnimationScale",
-                 Description = "骨格の位置と Hips の平行移動に掛ける倍率。VRM はメートル",
-                 Min = 0.0001, Max = 1000.0)]
-        public float Scale { get; }
-
-        // 既定値を付ける理由。
-        //   required の判定は PLParam.Required ではなくコンストラクタ既定値の
-        //   有無で決まる（PanelCommandSchema.cs:153-155）。
-        //   fps = 0 はクリップの frameRate、endSec = 0 はクリップ終端の意味で、
-        //   どちらも UnityClipVrmAnimationSource.ExportToFile が解釈する。
-        public ExportVrmAnimationCommand(
-            int modelIndex, string filePath, string clipFilePath,
-            string muscleLimitCsvPath = "", float fps = 0f,
-            float startSec = 0f, float endSec = 0f, float scale = 1f)
-            : base(modelIndex)
-        {
-            FilePath           = filePath;
-            ClipFilePath       = clipFilePath;
-            MuscleLimitCsvPath = muscleLimitCsvPath;
-            Fps                = fps;
-            StartSec           = startSec;
-            EndSec             = endSec;
-            Scale              = scale;
-        }
-    }
+    // 経路（PolyLing_VRMA整備計画.md 2.5）
+    //   書き出し … ConvertMotionToVrmaCommand（.plmotion → .vrma。モデル不要）。
+    //   読込     … ExportMotionJsonCommand（SourceKind = Vrma。.vrma → .plmotion）。
+    //   VMD      … ExportVmdToMotionCommand（VMD＋モデル → .plmotion ＋ .vrma）。
 
     /// <summary>
-    /// PolyLing モーション（muscles を持つもの）を T ポーズ基準の正準骨格へ載せて
-    /// VRM アニメーション（.vrma）へ変換する。モデルを参照しない。
+    /// PolyLing モーション（.plmotion.json）を VRM アニメーション（.vrma）へ書き出す（VrmaCodec）。
+    /// モデルは参照しない。
     /// </summary>
-    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "PolyLing モーション（.plmotion.json。muscles を持つもの）を T ポーズ基準で VRM アニメーション（.vrma）へ変換する。モデルは参照しない。作業フォルダが要る。")]
-    public class ConvertUnityClipToVrmaCommand : PanelCommand
+    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "PolyLing モーション（.plmotion.json）を VRM アニメーション（.vrma）へ書き出す。Humanoid の回転・Hips の位置・表情・視線を書く。モデルは参照しない。作業フォルダが要る。")]
+    public class ConvertMotionToVrmaCommand : PanelCommand
     {
         [PLParam(TextKey = "VrmaConvertSavePath",
                  Description = "書き出し先の .vrma。作業フォルダからの相対経路。絶対経路と \"..\" は拒否される（ダイアログで選んだ直後のパスだけは例外）", Required = true)]
         public string FilePath { get; }
 
         [PLParam(TextKey = "VrmaConvertClipPath",
-                 Description = "読み込む PolyLing モーション（.plmotion.json）。muscles を持つこと", Required = true)]
+                 Description = "読み込む PolyLing モーション（.plmotion.json）。muscles か bakedBones を持つこと", Required = true)]
         public string ClipFilePath { get; }
 
         [PLParam(TextKey = "VrmaConvertFps",
@@ -104,22 +50,17 @@ namespace Poly_Ling.Data
                  Min = 0.0)]
         public float EndSec { get; }
 
-        [PLParam(TextKey = "VrmaConvertBoneLength",
-                 Description = "正準骨格の骨 1 本の長さ（メートル）。VRMA は骨長を持たないので出力の見た目以外に影響しない",
-                 Min = 0.001, Max = 10.0)]
-        public float BoneLength { get; }
+        [PLParam(TextKey = "VrmaConvertUseBody",
+                 Description = "body（身体全体の位置と向き）を使う。切るとレストの body で解く")]
+        public bool UseBody { get; }
 
-        [PLParam(TextKey = "VrmaConvertUseRoot",
-                 Description = "RootT / RootQ（身体全体の移動と向き）を Hips へ載せる。切ると回転だけになり、以前の挙動に戻る")]
-        public bool UseRoot { get; }
-
-        // 既定値の意味は ExportVrmAnimationCommand と同じ。
-        // fps = 0 はクリップの frameRate、endSec = 0 はクリップ終端。
-        // useRoot の既定は true。Humanoid クリップの Root 情報は本来落とすものではない。
-        public ConvertUnityClipToVrmaCommand(
+        // 既定値を付ける理由。
+        //   required の判定は PLParam.Required ではなくコンストラクタ既定値の
+        //   有無で決まる（PanelCommandSchema.cs:153-155）。
+        //   fps = 0 はクリップの frameRate、endSec = 0 はクリップ終端（VrmaCodec が解釈する）。
+        public ConvertMotionToVrmaCommand(
             int modelIndex, string filePath, string clipFilePath,
-            float fps = 0f, float startSec = 0f, float endSec = 0f, float boneLength = 0.1f,
-            bool useRoot = true)
+            float fps = 0f, float startSec = 0f, float endSec = 0f, bool useBody = true)
             : base(modelIndex)
         {
             FilePath     = filePath;
@@ -127,101 +68,17 @@ namespace Poly_Ling.Data
             Fps          = fps;
             StartSec     = startSec;
             EndSec       = endSec;
-            BoneLength   = boneLength;
-            UseRoot      = useRoot;
-        }
-    }
-
-    /// <summary>
-    /// VMD モーションを現在のモデルへ適用しながら
-    /// VRM アニメーション（.vrma）として書き出す。
-    /// </summary>
-    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "VMD をモデルへ適用しながら VRM アニメーション（.vrma）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
-    public class ExportVmdToVrmaCommand : PanelCommand
-    {
-        [PLParam(TextKey = "VmdToVrmaSavePath",
-                 Description = "書き出し先の .vrma。作業フォルダからの相対経路。絶対経路と \"..\" は拒否される（ダイアログで選んだ直後のパスだけは例外）", Required = true)]
-        public string FilePath { get; }
-
-        [PLParam(TextKey = "VmdToVrmaVmdPath",
-                 Description = "読み込む VMD。作業フォルダからの相対経路", Required = true)]
-        public string VmdFilePath { get; }
-
-        [PLParam(TextKey = "VmdToVrmaFps",
-                 Description = "1 秒あたりのサンプリング枚数。0 以下にすると VMD の 30fps を使う",
-                 Min = 0.0, Max = 240.0)]
-        public float Fps { get; }
-
-        [PLParam(TextKey = "VmdToVrmaStartSec",
-                 Description = "書き出す区間の開始時刻（秒）", Min = 0.0)]
-        public float StartSec { get; }
-
-        [PLParam(TextKey = "VmdToVrmaEndSec",
-                 Description = "書き出す区間の終了時刻（秒）。StartSec 以下にすると VMD の終端まで",
-                 Min = 0.0)]
-        public float EndSec { get; }
-
-        [PLParam(TextKey = "VmdToVrmaScale",
-                 Description = "骨格の位置と Hips の平行移動に掛ける倍率。VRM はメートル",
-                 Min = 0.0001, Max = 1000.0)]
-        public float Scale { get; }
-
-        [PLParam(TextKey = "VmdToVrmaEnableIK",
-                 Description = "IK を解いてから採取するか。既定は true")]
-        public bool EnableIK { get; }
-
-        [PLParam(TextKey = "VmdToVrmaIkTraceDir",
-                 Description = "IK の残差 CSV の出力先フォルダ。作業フォルダからの相対経路。空なら出力しない")]
-        public string IkTraceDirectory { get; }
-
-        [PLParam(TextKey = "VmdToVrmaIgnoreAngleLimits",
-                 Description = "IK の角度制限を無視するか。切り分け用。既定は false")]
-        public bool IgnoreAngleLimits { get; }
-
-        [PLParam(TextKey = "VmdToVrmaKneePreBend",
-                 Description = "ひざを解く前に微小量だけ曲げるか。既定は false")]
-        public bool KneePreBend { get; }
-
-        [PLParam(TextKey = "VmdToVrmaDiagnosticLog",
-                 Description = "切り分け用のログを出すか。既定は false")]
-        public bool DiagnosticLog { get; }
-
-        [PLParam(TextKey = "VmdToVrmaViaMuscles",
-                 Description = "マッスルへ焼き込んでから書き出すか。既定は true。false はモデルの骨格のボーン回転をそのまま書き出す（Scale はこのときだけ使う）")]
-        public bool ViaMuscles { get; }
-
-        // 既定値の意味は ExportVrmAnimationCommand と同じ。
-        // fps = 0 は VMD の 30fps、endSec = 0 は VMD 終端。
-        public ExportVmdToVrmaCommand(
-            int modelIndex, string filePath, string vmdFilePath,
-            float fps = 0f, float startSec = 0f, float endSec = 0f,
-            float scale = 1f, bool enableIK = true,
-            bool diagnosticLog = false, string ikTraceDirectory = "",
-            bool ignoreAngleLimits = false, bool kneePreBend = false,
-            bool viaMuscles = true)
-            : base(modelIndex)
-        {
-            ViaMuscles        = viaMuscles;
-            FilePath          = filePath;
-            VmdFilePath       = vmdFilePath;
-            Fps               = fps;
-            StartSec          = startSec;
-            EndSec            = endSec;
-            Scale             = scale;
-            EnableIK          = enableIK;
-            DiagnosticLog     = diagnosticLog;
-            IkTraceDirectory  = ikTraceDirectory;
-            IgnoreAngleLimits = ignoreAngleLimits;
-            KneePreBend       = kneePreBend;
+            UseBody      = useBody;
         }
     }
 
     /// <summary>
     /// VMD モーションを現在のモデルへ適用しながら、マッスル＋ボーン（二次骨）＋表情の
     /// PolyLing モーション（.plmotion.json）を書き出す（VmdMotionBake）。
+    /// VrmaFilePath があれば、保存した内容を .vrma へも書く（VrmaCodec。.plmotion → .vrma の出口と同じ）。
     /// </summary>
-    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "VMD をモデルへ適用しながら、マッスル＋二次骨＋表情の PolyLing モーション（.plmotion.json）を書き出す。モデルに Humanoid 割り当てと作業フォルダが要る。")]
-    public class ExportVmdToMotionJsonCommand : PanelCommand
+    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "VMD をモデルへ適用しながら、マッスル＋二次骨＋表情の PolyLing モーション（.plmotion.json）を書き出す。vrmaFilePath を指定すると同じ内容を VRM アニメーション（.vrma）へも書く。モデルに Humanoid 割り当てと作業フォルダが要る。")]
+    public class ExportVmdToMotionCommand : PanelCommand
     {
         [PLParam(TextKey = "VmdToMotionSavePath",
                  Description = "書き出し先の .plmotion.json。作業フォルダからの相対経路。絶対経路と \"..\" は拒否される（ダイアログで選んだ直後のパスだけは例外）", Required = true)]
@@ -230,6 +87,14 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "VmdToMotionVmdPath",
                  Description = "読み込む VMD。作業フォルダからの相対経路", Required = true)]
         public string VmdFilePath { get; }
+
+        [PLParam(TextKey = "VmdToMotionVrmaPath",
+                 Description = "同じ内容を書き出す .vrma。作業フォルダからの相対経路。空なら書かない")]
+        public string VrmaFilePath { get; }
+
+        [PLParam(TextKey = "VmdToMotionIkTraceDir",
+                 Description = "IK の残差 CSV の出力先フォルダ。作業フォルダからの相対経路。空なら出力しない")]
+        public string IkTraceDirectory { get; }
 
         [PLParam(TextKey = "VmdToMotionFps",
                  Description = "1 秒あたりのサンプリング枚数。0 以下にすると VMD の 30fps を使う",
@@ -261,16 +126,24 @@ namespace Poly_Ling.Data
                  Description = "切り分け用のログを出すか（焼いたモーションを再生したときの VMD 直接との差など）。既定は false")]
         public bool DiagnosticLog { get; }
 
-        public ExportVmdToMotionJsonCommand(
-            int modelIndex, string filePath, string vmdFilePath,
+        [PLParam(TextKey = "VmdToMotionAlignLegs",
+                 Description = "T ポーズ合わせを腕に加えて脚（太もも・すね）にも掛けるか。既定は false（腕だけ）。再生するときも同じ設定にすること")]
+        public bool AlignLegs { get; }
+
+        // fps = 0 は VMD の 30fps、endSec = 0 は VMD 終端。
+        public ExportVmdToMotionCommand(
+            int modelIndex, string filePath, string vmdFilePath, string vrmaFilePath = "",
             float fps = 0f, float startSec = 0f, float endSec = 0f,
             bool enableIK = true,
-            bool diagnosticLog = false,
-            bool ignoreAngleLimits = false, bool kneePreBend = false)
+            bool diagnosticLog = false, string ikTraceDirectory = "",
+            bool ignoreAngleLimits = false, bool kneePreBend = false,
+            bool alignLegs = false)
             : base(modelIndex)
         {
             FilePath          = filePath;
             VmdFilePath       = vmdFilePath;
+            VrmaFilePath      = vrmaFilePath ?? "";
+            IkTraceDirectory  = ikTraceDirectory ?? "";
             Fps               = fps;
             StartSec          = startSec;
             EndSec            = endSec;
@@ -278,6 +151,7 @@ namespace Poly_Ling.Data
             DiagnosticLog     = diagnosticLog;
             IgnoreAngleLimits = ignoreAngleLimits;
             KneePreBend       = kneePreBend;
+            AlignLegs         = alignLegs;
         }
     }
 

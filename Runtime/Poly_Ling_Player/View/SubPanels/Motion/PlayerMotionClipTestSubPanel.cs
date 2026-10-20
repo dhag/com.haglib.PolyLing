@@ -1,13 +1,17 @@
 // PlayerMotionClipTestSubPanel.cs
 // モーション（MotionClipDTO・float 秒）の試し再生と VRMA 書き出しの Player サブパネル。
-// 入力: VMD / PolyLing モーション（.plmotion.json）を読み込み、内部で
-//       MotionClipDTO に変換して秒スライダーで適用する。
+// 入力: VMD / PolyLing モーション（.plmotion.json）/ VRMA / BVH / FBX を読み込み、内部で
+//       MotionClipDTO に変換して秒スライダーで適用する。FBX はレスト用 FBX とテイク番号を指定できる。
+// 出力: JSON保存（.plmotion.json）、VRMA、BVH（モデルの骨格）、FBX（モデル＋モーション）。
 // 可動域 CSV（UnityLimit）を読むと、マッスルをその実測で再構成する（ベイク元アバターの limits.csv）。
-// VRMA 書き出しは PolyLing モーションを読んだときだけ（ExportVrmAnimationCommand）。
+// VRMA 書き出しは PolyLing モーションを読んだときだけ（ConvertMotionToVrmaCommand。モデルは使わない）。
+// .vrma の読込はソース種別「VRM アニメーション」、.plmotion への変換は「JSON保存」。
 // 旧 PlayerVMDTestSubPanel は比較用に残置。
 //
 // 仕様: 値は Unity 左手系のまま・座標変換なし（MotionClipDTO 準拠）。
-//       boneName は VMD 直接適用、path/humanoid は UnityClipApplier 経路（Applier 側で分岐）。
+//       boneName は VMD 直接適用、path・マッスルは UnityClipApplier 経路（Applier 側で分岐）。
+//       本体ボーンは rotationSource が "bakedBones"（BVH・FBX・VRMA の読込）なら bakedBones、
+//       そうでなければマッスルで当てる（MotionClipApplier）。
 //
 // ■ PositionScale（重要）
 //   MotionClipApplier.PositionScale の既定は 1。ソースが VMD の場合、値は PMX 単位
@@ -55,14 +59,21 @@ namespace Poly_Ling.Player
         public Action<Poly_Ling.Data.PanelCommand> SendCommand;
 
         // ── ソース種別 ────────────────────────────────────────────────────
+        // 並びは MotionSourceKind の値と同じ（0=VMD / 1=PolyLing モーション / 2=VRM アニメーション / 3=BVH / 4=FBX）。
         private static readonly List<string> SourceChoices =
-            new List<string> { "VMD", "PolyLing モーション" };
+            new List<string> { "VMD", "PolyLing モーション", "VRM アニメーション (.vrma)", "BVH (.bvh)", "FBX (.fbx)" };
+        private const int SourceFbx = (int)Poly_Ling.Data.MotionSourceKind.Fbx;
 
         // ── 状態 ──────────────────────────────────────────────────────────
         private float            _currentTime;   // 秒
         private float            _maxTime;       // 秒
-        private string           _filePath;
-        private int              _sourceKind;    // 0=VMD, 1=PolyLing モーション
+        private int              _sourceKind;    // 読み込む種類（ドロップダウン。MotionSourceKind の値）
+
+        // 読み込んだクリップの元ファイルと種類は窓口 motionClip（MotionClipHandler）だけが持つ。
+        //   パネルは自分で持たずに読む（外から受けたクリップを saveMotionClipJson で保存すると
+        //   ここにも反映される。PolyLing_Blender不具合修正計画.md の B）。
+        private string _filePath   => Surface?.GetString(Tool, "sourcePath") ?? "";
+        private int    _loadedKind => Surface?.GetInt(Tool, "sourceKind") ?? 0;
 
         // ── ボタンや入力欄 ───────────────────────────────────────────────────────
         // UI 自動操作の ID は "motionClipTest.<下の Id>"（UiControlAttribute.cs）。
@@ -71,26 +82,18 @@ namespace Poly_Ling.Player
         private Label         _modelLabel;
         [UiControl("file", Safety = UiSafety.ReadOnly, Description = "読み込んだクリップ")]
         private Label         _fileLabel;
-        [UiControl("bindPoseFile", Safety = UiSafety.ReadOnly, Description = "読み込んだバインドポーズ")]
-        private Label         _bindPoseLabel;
         [UiControl("source", Description = "読み込む種類")]
         private DropdownField _sourceField;
         [UiControl("path", Description = "クリップのパス（ダイアログの初期値として使う）")]
         private TextField     _pathField;
-        [UiControl("bindPosePath", Description = "バインドポーズのパス（ダイアログの初期値として使う）")]
-        private TextField     _bindPathField;
         [UiControl("clear", Safety = UiSafety.Destructive, Description = "読み込んだクリップを外す")]
         private Button        _btnClear;
         [UiControl("reload", Safety = UiSafety.SafeWrite, Description = "クリップを読み直す")]
         private Button        _btnReload;
         [UiControl("open", Safety = UiSafety.UserOnly, Description = "クリップを開く（ファイル選択ダイアログを開く）")]
         private Button        _btnOpen;
-        [UiControl("openBindPose", Safety = UiSafety.UserOnly, Description = "バインドポーズを開く（ファイル選択ダイアログを開く）")]
-        private Button        _btnOpenBind;
         [UiControl("browse", Safety = UiSafety.UserOnly, Description = "クリップの [...]（ファイル選択ダイアログを開く）")]
         private Button        _btnBrowse;
-        [UiControl("browseBindPose", Safety = UiSafety.UserOnly, Description = "バインドポーズの [...]（ファイル選択ダイアログを開く）")]
-        private Button        _btnBrowseBind;
         [UiControl(Ignore = true)]
         private VisualElement _clipSection;
         [UiControl("clipInfo", Safety = UiSafety.ReadOnly, Description = "クリップの情報")]
@@ -105,6 +108,10 @@ namespace Poly_Ling.Player
         private FloatField    _timeInput;
         [UiControl("scale", Description = "取り込みの倍率")]
         private FloatField    _scaleField;
+        [UiControl("absentMuscles", Description = "動かすボーンのうちトラックの無い方向の値（0 / T ポーズの値）。切り替えると再生に反映し、JSON 保存でファイルに書く")]
+        private DropdownField _absentField;
+        private static readonly List<string> AbsentChoices =
+            new List<string> { "0（マッスル 0）", "T ポーズの値" };
         [UiControl(Ignore = true, Rows = true)]
         private VisualElement _boneListContainer;
         [UiControl(Ignore = true)]
@@ -156,10 +163,8 @@ namespace Poly_Ling.Player
         private TextField     _vrmaPathField;
         [UiControl("vrma.browse", Safety = UiSafety.UserOnly, Description = "VRMA の [...]（保存ダイアログを開く）")]
         private Button        _btnBrowseVrma;
-        [UiControl("vrma.fps", Description = "VRMA 書き出しのフレームレート")]
+        [UiControl("vrma.fps", Description = "VRMA 書き出しのフレームレート（0 以下ならクリップの frameRate）")]
         private FloatField    _vrmaFpsField;
-        [UiControl("vrma.scale", Description = "VRMA 書き出しの倍率")]
-        private FloatField    _vrmaScaleField;
         [UiControl("vrma.startTime", Description = "VRMA 書き出しの開始時刻")]
         private FloatField    _vrmaStartField;
         [UiControl("vrma.endTime", Description = "VRMA 書き出しの終了時刻")]
@@ -169,7 +174,51 @@ namespace Poly_Ling.Player
         [UiControl("vrma.status", Safety = UiSafety.ReadOnly, Description = "VRMA 書き出しの状態")]
         private Label         _vrmaLabel;
 
+        // BVH 書き出し（モデルの骨格）
+        [UiControl("bvh.path", Description = "BVH の書き出し先（ダイアログの初期値として使う）")]
+        private TextField     _bvhPathField;
+        [UiControl("bvh.browse", Safety = UiSafety.UserOnly, Description = "BVH の [...]（保存ダイアログを開く）")]
+        private Button        _btnBrowseBvh;
+        [UiControl("bvh.fps", Description = "BVH 書き出しのフレームレート（0 以下ならクリップの frameRate）")]
+        private FloatField    _bvhFpsField;
+        [UiControl("bvh.scale", Description = "BVH 書き出しでモデルの長さに掛ける倍率")]
+        private FloatField    _bvhScaleField;
+        [UiControl("bvh.export", Safety = UiSafety.UserOnly, Description = "読み込んだモーションを今のモデルへ当てて、モデルの骨格の BVH を書き出す（保存ダイアログを開く）")]
+        private Button        _btnBvhExport;
+        [UiControl("bvh.status", Safety = UiSafety.ReadOnly, Description = "BVH 書き出しの状態")]
+        private Label         _bvhLabel;
+
+        // FBX 書き出し（モデル＋モーション）
+        [UiControl("fbx.path", Description = "FBX の書き出し先（ダイアログの初期値として使う）")]
+        private TextField     _fbxPathField;
+        [UiControl("fbx.browse", Safety = UiSafety.UserOnly, Description = "FBX の [...]（保存ダイアログを開く）")]
+        private Button        _btnBrowseFbx;
+        [UiControl("fbx.fps", Description = "FBX 書き出しのフレームレート（0 以下ならクリップの frameRate）")]
+        private FloatField    _fbxFpsField;
+        [UiControl("fbx.includeMesh", Description = "FBX にメッシュ・材質・スキンも書く（切ると骨とモーションだけ）")]
+        private Toggle        _fbxIncludeMeshToggle;
+        [UiControl("fbx.export", Safety = UiSafety.UserOnly, Description = "読み込んだモーションを今のモデルへ当てて、モデルとモーションの FBX を書き出す（保存ダイアログを開く）")]
+        private Button        _btnFbxExport;
+        [UiControl("fbx.status", Safety = UiSafety.ReadOnly, Description = "FBX 書き出しの状態")]
+        private Label         _fbxLabel;
+
+        // FBX を読むときの設定（ソース種別が FBX のときだけ出す）
+        [UiControl(Ignore = true)]
+        private VisualElement _fbxReadSection;
+        [UiControl("fbxRest.path", Description = "レスト（T ポーズ）として使う同じ骨格のモデル FBX。空なら読み込むファイル自身のバインド姿勢")]
+        private TextField     _fbxRestPathField;
+        [UiControl("fbxRest.browse", Safety = UiSafety.UserOnly, Description = "レスト用 FBX の [...]（ファイル選択ダイアログを開く）")]
+        private Button        _btnBrowseFbxRest;
+        [UiControl("fbxRest.clear", Safety = UiSafety.SafeWrite, Description = "レスト用 FBX の指定を外す")]
+        private Button        _btnClearFbxRest;
+        [UiControl("fbxTake", Description = "読むテイク（アニメーションスタック）の番号。0 から")]
+        private IntegerField  _fbxTakeField;
+
         // ライブ受信（ツールの窓口 "motionLive"）
+        [UiControl("alignLegs", Description = "T ポーズ合わせを脚（太もも・すね）にも掛ける。切は腕だけ。再生・BVH 書き出し・ライブ受信に効く")]
+        private Toggle        _alignLegsToggle;
+        private const string  AlignLegsKey = "MotionClip.AlignLegs";
+
         [UiControl("live.port", Description = "ライブ受信の待ち受けポート（WebSocket。送る側も画面も同じポートへつなぐ）")]
         private IntegerField  _livePortField;
         [UiControl("live.lan", Description = "ライブ受信を LAN 上の別の PC からも受ける（オフは同じ PC の中だけ）")]
@@ -186,7 +235,6 @@ namespace Poly_Ling.Player
         // 直近の読込の検査結果（統合JSON のときだけ）。
 
         private const string PathKey     = "MotionClip.Path";
-        private const string BindPathKey = "MotionClip.Bind.Path";
         private const string SourceKey   = "MotionClip.Source";
         private const string LimitPathKey = "MotionClip.Limit.Path";
         private const string LivePortKey  = "MotionClip.Live.WsPort";
@@ -228,6 +276,7 @@ namespace Poly_Ling.Player
                 _sourceKind = Mathf.Max(0, SourceChoices.IndexOf(e.newValue));
                 RecentPaths.Set(SourceKey, _sourceKind.ToString());
                 RefreshVrmaSection();
+                RefreshFbxReadSection();
             });
             root.Add(_sourceField);
 
@@ -254,21 +303,8 @@ namespace Poly_Ling.Player
             _fileLabel.style.marginBottom = 3;
             root.Add(_fileLabel);
 
-            // ── バインドポーズ行（ソース rest = 外部 UnityBone CSV v2）───────
-            root.Add(PlayerIoUiKit.SectionLabel("バインドポーズ CSV（UnityBone v2）"));
-            _bindPathField = new TextField();
-            _bindPathField.RegisterValueChangedCallback(e => RecentPaths.Set(BindPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_bindPathField, OnBrowseBind, out _btnBrowseBind));
-            _bindPathField.SetValueWithoutNotify(RecentPaths.Get(BindPathKey));
-
-            var btnBindPose = PlayerIoUiKit.OpenButton("開く", OnBrowseBind);
-            _btnOpenBind = btnBindPose;
-            root.Add(btnBindPose);
-            _bindPoseLabel = new Label("(未読込)");
-            _bindPoseLabel.style.fontSize = 10;
-            _bindPoseLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            _bindPoseLabel.style.marginBottom = 3;
-            root.Add(_bindPoseLabel);
+            // ── FBX を読むときの設定（ソース種別が FBX のときだけ）──────────
+            BuildFbxReadSection(root);
 
             // ── 可動域 CSV（UnityLimit。ベイク元アバターの limits.csv）──────
             root.Add(PlayerIoUiKit.SectionLabel("可動域 CSV（UnityLimit）"));
@@ -292,6 +328,21 @@ namespace Poly_Ling.Player
             _limitLabel.style.marginBottom = 3;
             root.Add(_limitLabel);
 
+            // ── T ポーズ合わせの範囲（再生・BVH 書き出し・ライブ受信で共通）──────
+            _alignLegsToggle = new Toggle("脚も T ポーズに合わせる（切は腕だけ）")
+            {
+                value = RecentPaths.Get(AlignLegsKey) == "1",
+            };
+            _alignLegsToggle.style.fontSize = 10; _alignLegsToggle.style.marginBottom = 4;
+            _alignLegsToggle.RegisterValueChangedCallback(e =>
+            {
+                RecentPaths.Set(AlignLegsKey, e.newValue ? "1" : "0");
+                PushAlignLegs();
+                SetStatus(e.newValue ? "T ポーズ合わせ：腕＋脚" : "T ポーズ合わせ：腕だけ");
+            });
+            root.Add(_alignLegsToggle);
+            PushAlignLegs();
+
             // ── ライブ受信（UDP でマッスルを受けて当てる）────────────────
             BuildLiveSection(root);
 
@@ -308,6 +359,14 @@ namespace Poly_Ling.Player
             root.Add(_statusLabel);
 
             RefreshAll();
+        }
+
+        // チェックの値を再生（motionClip）とライブ受信（motionLive）の両方へ渡す。
+        private void PushAlignLegs()
+        {
+            bool on = _alignLegsToggle != null && _alignLegsToggle.value;
+            Surface?.Invoke(Tool, "setAlignLegs", ("enabled", on), ("time", _currentTime));
+            Surface?.Invoke(LiveTool, "setAlignLegs", ("enabled", on));
         }
 
         private void BuildLiveSection(VisualElement root)
@@ -472,7 +531,21 @@ namespace Poly_Ling.Player
             scaleRow.Add(scaleLbl); scaleRow.Add(_scaleField);
             root.Add(scaleRow);
 
+            // トラックの無い dof の値（absentMuscles）。JSON 保存でファイルにも書く。
+            _absentField = new DropdownField("無い dof の値", AbsentChoices, 0);
+            _absentField.style.marginBottom = 6;
+            _absentField.RegisterValueChangedCallback(e =>
+            {
+                string mode = AbsentChoices.IndexOf(e.newValue) == 1 ? "rest" : "zero";
+                Surface?.Invoke(Tool, "setAbsentMuscles", ("mode", mode), ("time", _currentTime));
+                string err = Surface?.GetString(Tool, "error") ?? "";
+                SetStatus(string.IsNullOrEmpty(err) ? $"トラックの無い dof: {e.newValue}" : err);
+            });
+            root.Add(_absentField);
+
             BuildVrmaSection(root);
+            BuildBvhSection(root);
+            BuildFbxSection(root);
 
             _boneListFoldout = new Foldout { text = "Tracks (0)", value = false };
             _boneListContainer = new VisualElement();
@@ -499,6 +572,13 @@ namespace Poly_Ling.Player
             if (_btnClear  != null) _btnClear.SetEnabled(HasClip);
             if (_btnReload != null) _btnReload.SetEnabled(!string.IsNullOrEmpty(_filePath));
             if (_btnLimitClear != null) _btnLimitClear.SetEnabled((Surface?.GetInt(Tool, "limitBoneCount") ?? 0) > 0);
+            if (_absentField != null)
+            {
+                _absentField.SetEnabled(HasClip);
+                if (HasClip)
+                    _absentField.SetValueWithoutNotify(
+                        AbsentChoices[Surface.GetString(Tool, "absentMuscles") == "rest" ? 1 : 0]);
+            }
             RefreshLiveStatus();
 
             if (_clipSection == null) return;
@@ -561,7 +641,8 @@ namespace Poly_Ling.Player
         // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowse()
         {
-            string ext  = _sourceKind == 0 ? "vmd" : "json";
+            string ext  = _sourceKind == 0 ? "vmd" : _sourceKind == 2 ? "vrma" : _sourceKind == 3 ? "bvh"
+                        : _sourceKind == SourceFbx ? "fbx" : "json";
             string path = PlayerIoUiKit.AskLoadPath("Open Motion", PathKey, _pathField.value, ext);
             if (string.IsNullOrEmpty(path)) return;
             _pathField.value = path;
@@ -575,15 +656,29 @@ namespace Poly_Ling.Player
             if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
 
             // 読み込み・対応付け・フレーム適用はツールの窓口 "motionClip" が本体側で行う。
-            Surface?.Invoke(Tool, "load", ("path", path), ("sourceKind", _sourceKind), ("time", 0f));
+            Surface?.Invoke(Tool, "load", ("path", path), ("sourceKind", _sourceKind), ("time", 0f),
+                ("fbxRestPath", FbxRestPath ?? ""), ("fbxTake", FbxTake));
             string err = Surface?.GetString(Tool, "error") ?? "";
             if (!string.IsNullOrEmpty(err)) { SetStatus($"読込み失敗: {err}"); return; }
 
-            _filePath    = path;
             _currentTime = 0f;
             _maxTime     = Surface.GetFloat(Tool, "clipLength");
             _scaleField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "positionScale"));
             SetStatus($"読込み完了: {Path.GetFileName(path)}");
+            RefreshAll();
+        }
+
+        /// <summary>
+        /// パネルを通さずに窓口 motionClip へ読み込まれたクリップ（コマンド loadMotionClipJson。Blender ブリッジの送信）に
+        /// 表示を合わせる。元ファイルが無いので、JSON 保存（窓口のクリップを書く）までは読み直し・VRMA・BVH・FBX 書き出しは使えない。
+        /// </summary>
+        public void AdoptExternalClip(float time)
+        {
+            StopPlay();
+            _maxTime     = Surface?.GetFloat(Tool, "clipLength") ?? 0f;
+            _currentTime = Mathf.Clamp(time, 0f, _maxTime);
+            if (Surface != null) _scaleField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "positionScale"));
+            SetStatus($"外から受けたクリップ: {Surface?.GetString(Tool, "clipName")}");
             RefreshAll();
         }
 
@@ -611,23 +706,39 @@ namespace Poly_Ling.Player
         // パネル内の DTO は元ファイルから決まるので、コマンドの結果と同じものになる。
         private void OnSaveJson()
         {
-            if (!HasClip || string.IsNullOrEmpty(_filePath)) { SetStatus("クリップを読み込んでください"); return; }
+            if (!HasClip) { SetStatus("クリップを読み込んでください"); return; }
             if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
 
             string defName = Surface?.GetString(Tool, "clipName");
-            if (string.IsNullOrEmpty(defName)) defName = Path.GetFileNameWithoutExtension(_filePath);
+            if (string.IsNullOrEmpty(defName) && !string.IsNullOrEmpty(_filePath)) defName = Path.GetFileNameWithoutExtension(_filePath);
+            if (string.IsNullOrEmpty(defName)) defName = "motion";
             string outPath = SaveDest.AskSavePath(
                 "PolyLing モーション JSON の保存", SaveDest.Keys.Motion, "", defName + ".plmotion.json", "json");
             if (string.IsNullOrEmpty(outPath)) return;
+
+            // 元ファイルの無いクリップ（外から受けたもの）は、窓口のクリップをそのまま書き、
+            // そのファイルを元ファイルにする（SaveMotionClipJsonCommand）。
+            if (string.IsNullOrEmpty(_filePath))
+            {
+                var since0 = DateTime.Now.AddSeconds(-2);
+                SendCommand(new Poly_Ling.Data.SaveMotionClipJsonCommand(GetModelIndex?.Invoke() ?? 0, outPath));
+                bool ok0 = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since0;
+                SetStatus(ok0 ? $"保存しました: {Path.GetFileName(outPath)}（このファイルを元ファイルにしました）"
+                              : "保存に失敗しました。理由はコンソールログに出ています");
+                RefreshAll();
+                return;
+            }
 
             // 元ファイルはこのパネルのダイアログで利用者が選んだもの。1 回許可を付け直す。
             PLSandbox.AllowOnceFromDialog(_filePath);
 
             var since = DateTime.Now.AddSeconds(-2);
-            var kind  = _sourceKind == 0 ? Poly_Ling.Data.MotionSourceKind.Vmd
-                      :                    Poly_Ling.Data.MotionSourceKind.PolyLingMotionJson;
+            var kind  = (Poly_Ling.Data.MotionSourceKind)_loadedKind;   // 読み込んだクリップの種類（窓口の状態）
 
-            SendCommand(new Poly_Ling.Data.ExportMotionJsonCommand(GetModelIndex?.Invoke() ?? 0, outPath, _filePath, kind));
+            string absent = Surface?.GetString(Tool, "absentMuscles");
+            SendCommand(new Poly_Ling.Data.ExportMotionJsonCommand(GetModelIndex?.Invoke() ?? 0, outPath, _filePath, kind,
+                string.IsNullOrEmpty(absent) ? null : absent,
+                fbxRestPath: AllowFbxRestPath(), fbxTake: FbxTake));
 
             // Dispatch は同期なので、書き出し結果をここで確かめる。
             bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
@@ -637,34 +748,6 @@ namespace Poly_Ling.Player
             SetStatus(check.Success
                 ? $"保存しました: {Path.GetFileName(outPath)}（警告 {check.WarningCount}）"
                 : $"保存したファイルを読み戻せません: {check.FormatIssues(3)}");
-        }
-
-        // 外部 UnityBone CSV v2（ソース rest）を読み、リターゲット経路を有効化。
-        private void OnBrowseBind()
-        {
-            string path = PlayerIoUiKit.AskLoadPath(
-                "Open UnityBone CSV (bind pose)", BindPathKey, _bindPathField.value, "csv");
-            if (string.IsNullOrEmpty(path)) return;
-            _bindPathField.value = path;
-            LoadBind(path);
-        }
-
-        private void LoadBind(string path)
-        {
-            if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
-            if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
-
-            Surface?.Invoke(Tool, "loadBind", ("path", path), ("time", _currentTime));
-            string err = Surface?.GetString(Tool, "error") ?? "";
-            if (!string.IsNullOrEmpty(err)) { SetStatus($"バインドポーズ読込失敗: {err}"); return; }
-
-            int n = Surface.GetInt(Tool, "bindBoneCount");
-            if (_bindPoseLabel != null)
-                _bindPoseLabel.text = n > 0 ? $"✓ {Path.GetFileName(path)} ({n} bones)" : "(0 bones)";
-            SetStatus(n > 0
-                ? $"バインドポーズ読込: {n} bones（リターゲット有効）"
-                : "バインドポーズ: Humanoid 行が見つかりません");
-            RefreshAll();
         }
 
         // ── 可動域 CSV ────────────────────────────────────────────────
@@ -705,7 +788,8 @@ namespace Poly_Ling.Player
         }
 
         // ── VRMA 書き出し ─────────────────────────────────────────────
-        //   出るのは Hips の平行移動と Humanoid 骨の回転だけ。二次骨と表情は VRMA に載らない。
+        //   読み込んだ PolyLing モーションを ConvertMotionToVrmaCommand（VrmaCodec）で .vrma にする。
+        //   モデルは使わない。出るのは Humanoid 骨の回転・Hips の位置・表情・視線。二次骨は VRMA に載らない。
         private void BuildVrmaSection(VisualElement root)
         {
             root.Add(SecLabel("VRM アニメーション書き出し（.vrma）"));
@@ -716,8 +800,7 @@ namespace Poly_Ling.Player
             _vrmaPathField.SetValueWithoutNotify(RecentPaths.Get(VrmaPathKey));
 
             var row1 = new VisualElement(); row1.style.flexDirection = FlexDirection.Row; row1.style.marginBottom = 2;
-            row1.Add(NumField("FPS", out _vrmaFpsField, 30f));
-            row1.Add(NumField("Scale", out _vrmaScaleField, 1f));
+            row1.Add(NumField("FPS", out _vrmaFpsField, 0f));
             root.Add(row1);
 
             var row2 = new VisualElement(); row2.style.flexDirection = FlexDirection.Row; row2.style.marginBottom = 3;
@@ -745,17 +828,19 @@ namespace Poly_Ling.Player
             return box;
         }
 
-        // 書き出しの可否と理由。VRM パッケージ無し・VMD 読込中・Humanoid 未割当を区別する。
+        // 書き出しの可否と理由。VRMA への出口は「.plmotion → .vrma」1 本（PolyLing_VRMA整備計画.md 2.5）。
         private void RefreshVrmaSection()
         {
             if (_btnVrmaExport == null || _vrmaLabel == null) return;
             string reason = null;
-            int mapped = Surface?.GetInt(Tool, "humanoidBoneCount") ?? 0;
-            if (!PLVrmAnimationBridge.I.IsAvailable) reason = "VRM パッケージ (com.vrmc.vrm) が無いため書き出せません";
-            else if (_sourceKind != 1)               reason = "PolyLing モーションを読み込んだときだけ書き出せます（VMD は VMD→VRMA 書き出しを使う）";
-            else if (mapped == 0)                    reason = "Humanoid 割り当てがありません";
+            if (!HasClip)              reason = "PolyLing モーションを読み込んでください";
+            else if (_loadedKind == 0) reason = "VMD は「VMD→モーション・VRMA書き出し」で .plmotion を作ってから書き出します";
+            else if (_loadedKind == 2) reason = "VRM アニメーションを読み込んでいます（JSON保存で .plmotion にできます）";
+            else if (_loadedKind == 3) reason = "BVH を読み込んでいます（JSON保存で .plmotion にしてから書き出します）";
+            else if (_loadedKind == SourceFbx) reason = "FBX を読み込んでいます（JSON保存で .plmotion にしてから書き出します）";
+            else if (string.IsNullOrEmpty(_filePath)) reason = "外から受けたクリップです（JSON保存でファイルにしてから書き出します）";
             _btnVrmaExport.SetEnabled(reason == null && SendCommand != null);
-            _vrmaLabel.text = reason ?? $"Humanoid {mapped} bones。Hips 位置と Humanoid 骨の回転だけを出します";
+            _vrmaLabel.text = reason ?? "モデルは使いません。Humanoid 骨の回転・Hips の位置・表情・視線を出します";
         }
 
         private void OnBrowseVrma()
@@ -774,7 +859,7 @@ namespace Poly_Ling.Player
 
         private void OnExportVrma()
         {
-            if (!HasClip || string.IsNullOrEmpty(_filePath) || _sourceKind != 1)
+            if (!HasClip || string.IsNullOrEmpty(_filePath) || _loadedKind != 1)
             { SetStatus("PolyLing モーションを読み込んでください"); return; }
             if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
 
@@ -782,22 +867,251 @@ namespace Poly_Ling.Player
             if (string.IsNullOrEmpty(outPath)) return;
             _vrmaPathField.value = outPath;
 
-            // モーションと CSV はこのパネルのダイアログで利用者が選んだもの。
+            // モーションはこのパネルのダイアログで利用者が選んだもの。
             // PLSandbox の 1 回許可は解決した時点で消えるので、コマンドを送る直前に付け直す。
-            string limitPath = (Surface?.GetInt(Tool, "limitBoneCount") ?? 0) > 0 ? (_limitPathField?.value?.Trim() ?? "") : "";
             PLSandbox.AllowOnceFromDialog(_filePath);
-            if (!string.IsNullOrEmpty(limitPath)) PLSandbox.AllowOnceFromDialog(limitPath);
 
             var since = DateTime.Now.AddSeconds(-2);
-            SendCommand(new Poly_Ling.Data.ExportVrmAnimationCommand(
-                GetModelIndex?.Invoke() ?? 0, outPath, _filePath, limitPath,
-                _vrmaFpsField?.value ?? 30f, _vrmaStartField?.value ?? 0f,
-                _vrmaEndField?.value ?? 0f, _vrmaScaleField?.value ?? 1f));
+            SendCommand(new Poly_Ling.Data.ConvertMotionToVrmaCommand(
+                GetModelIndex?.Invoke() ?? 0, outPath, _filePath,
+                _vrmaFpsField?.value ?? 0f, _vrmaStartField?.value ?? 0f, _vrmaEndField?.value ?? 0f));
 
             // Dispatch は同期なので、書き出し結果をここで確かめる。
             bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
             SetStatus(ok ? $"VRMA を書き出しました: {Path.GetFileName(outPath)}" : "VRMA 書き出しに失敗しました（ログを参照）");
             RefreshAll();
+        }
+
+        // ── BVH 書き出し ──────────────────────────────────────────────
+        //   読み込んだモーションを今のモデルへ当て、モデルの骨格（IK ボーンを除く）の BVH を
+        //   ExportMotionToBvhCommand（BvhCodec.ExportFromModel）で書く。PolyLing_BVH対応計画.md 5。
+        private const string BvhPathKey  = "MotionClip.Bvh.Path";
+        private const string BvhScaleKey = "MotionClip.Bvh.Scale";
+
+        private void BuildBvhSection(VisualElement root)
+        {
+            root.Add(SecLabel("BVH 書き出し（今のモデルの骨格）"));
+
+            _bvhPathField = new TextField();
+            _bvhPathField.RegisterValueChangedCallback(e => RecentPaths.Set(BvhPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_bvhPathField, OnBrowseBvh, out _btnBrowseBvh));
+            _bvhPathField.SetValueWithoutNotify(RecentPaths.Get(BvhPathKey));
+
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
+            row.Add(NumField("FPS", out _bvhFpsField, 0f));
+            float savedScale = float.TryParse(RecentPaths.Get(BvhScaleKey), System.Globalization.NumberStyles.Float,
+                                              System.Globalization.CultureInfo.InvariantCulture, out float s) && s > 0f ? s : 1f;
+            row.Add(NumField("倍率", out _bvhScaleField, savedScale));
+            _bvhScaleField.RegisterValueChangedCallback(e =>
+                RecentPaths.Set(BvhScaleKey, e.newValue.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            root.Add(row);
+
+            _btnBvhExport = new Button(OnExportBvh) { text = "BVH 書き出し" };
+            _btnBvhExport.style.marginBottom = 2;
+            root.Add(_btnBvhExport);
+
+            _bvhLabel = new Label("読み込んだモーションを今のモデルへ当てて書き出します（IK ボーンは除きます）");
+            _bvhLabel.style.fontSize = 10; _bvhLabel.style.whiteSpace = WhiteSpace.Normal; _bvhLabel.style.marginBottom = 4;
+            root.Add(_bvhLabel);
+        }
+
+        private void OnBrowseBvh()
+        {
+            string path = AskBvhSavePath();
+            if (!string.IsNullOrEmpty(path)) _bvhPathField.value = path;
+        }
+
+        // 書き出しは必ず保存ダイアログを通す。パス欄の値は初期値としてだけ使う。
+        private string AskBvhSavePath()
+        {
+            string defName = Surface?.GetString(Tool, "clipName");
+            if (string.IsNullOrEmpty(defName)) defName = "motion";
+            return SaveDest.AskSavePath("BVH の書き出し", SaveDest.Keys.Motion, "", defName + ".bvh", "bvh");
+        }
+
+        private void OnExportBvh()
+        {
+            if (!HasClip || string.IsNullOrEmpty(_filePath)) { SetStatus("モーションを読み込んでください"); return; }
+            if (Model == null) { SetStatus("モデルを読み込んでください"); return; }
+            if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
+
+            string outPath = AskBvhSavePath();
+            if (string.IsNullOrEmpty(outPath)) return;
+            _bvhPathField.value = outPath;
+
+            // モーションはこのパネルのダイアログで利用者が選んだもの。1 回許可を送る直前に付け直す。
+            PLSandbox.AllowOnceFromDialog(_filePath);
+
+            var since = DateTime.Now.AddSeconds(-2);
+            SendCommand(new Poly_Ling.Data.ExportMotionToBvhCommand(
+                GetModelIndex?.Invoke() ?? 0, outPath, _filePath, (Poly_Ling.Data.MotionSourceKind)_loadedKind,
+                Poly_Ling.Data.BvhSkeletonKind.Auto, null,
+                _bvhFpsField?.value ?? 0f, 0f, 0f, _bvhScaleField != null && _bvhScaleField.value > 0f ? _bvhScaleField.value : 1f,
+                _alignLegsToggle != null && _alignLegsToggle.value,
+                AllowFbxRestPath(), FbxTake));
+
+            // Dispatch は同期なので、書き出し結果をここで確かめる。書き出しはポーズ層を戻すので、表示中のフレームを当て直す。
+            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
+            ApplyFrame();
+            string msg = ok ? $"BVH を書き出しました: {Path.GetFileName(outPath)}" : "BVH 書き出しに失敗しました（ログを参照）";
+            if (_bvhLabel != null) _bvhLabel.text = msg;
+            SetStatus(msg);
+        }
+
+        // ── FBX 書き出し ──────────────────────────────────────────────
+        //   読み込んだモーションを今のモデルへ当て、モデル（メッシュ・材質・スキン）とモーションの FBX を
+        //   ExportMotionToFbxCommand で書く。PolyLing_FBX対応計画.md 段 3。
+        private const string FbxPathKey        = "MotionClip.Fbx.Path";
+        private const string FbxIncludeMeshKey = "MotionClip.Fbx.IncludeMesh";
+
+        private void BuildFbxSection(VisualElement root)
+        {
+            root.Add(SecLabel("FBX 書き出し（今のモデル＋モーション）"));
+
+            _fbxPathField = new TextField();
+            _fbxPathField.RegisterValueChangedCallback(e => RecentPaths.Set(FbxPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_fbxPathField, OnBrowseFbx, out _btnBrowseFbx));
+            _fbxPathField.SetValueWithoutNotify(RecentPaths.Get(FbxPathKey));
+
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
+            row.Add(NumField("FPS", out _fbxFpsField, 0f));
+            root.Add(row);
+
+            _fbxIncludeMeshToggle = new Toggle("メッシュ・材質・スキンも書く")
+            {
+                value = RecentPaths.Get(FbxIncludeMeshKey) != "0",
+            };
+            _fbxIncludeMeshToggle.style.fontSize = 10; _fbxIncludeMeshToggle.style.marginBottom = 3;
+            _fbxIncludeMeshToggle.RegisterValueChangedCallback(e => RecentPaths.Set(FbxIncludeMeshKey, e.newValue ? "1" : "0"));
+            root.Add(_fbxIncludeMeshToggle);
+
+            _btnFbxExport = new Button(OnExportFbx) { text = "FBX 書き出し" };
+            _btnFbxExport.style.marginBottom = 2;
+            root.Add(_btnFbxExport);
+
+            _fbxLabel = new Label("読み込んだモーションを今のモデルへ当てて書き出します（IK ボーンは除きます）");
+            _fbxLabel.style.fontSize = 10; _fbxLabel.style.whiteSpace = WhiteSpace.Normal; _fbxLabel.style.marginBottom = 4;
+            root.Add(_fbxLabel);
+        }
+
+        private void OnBrowseFbx()
+        {
+            string path = AskFbxSavePath();
+            if (!string.IsNullOrEmpty(path)) _fbxPathField.value = path;
+        }
+
+        // 書き出しは必ず保存ダイアログを通す。パス欄の値は初期値としてだけ使う。
+        private string AskFbxSavePath()
+        {
+            string defName = Surface?.GetString(Tool, "clipName");
+            if (string.IsNullOrEmpty(defName)) defName = "motion";
+            return SaveDest.AskSavePath("FBX の書き出し", SaveDest.Keys.Motion, "", defName + ".fbx", "fbx");
+        }
+
+        private void OnExportFbx()
+        {
+            if (!HasClip || string.IsNullOrEmpty(_filePath)) { SetStatus("モーションを読み込んでください"); return; }
+            if (Model == null) { SetStatus("モデルを読み込んでください"); return; }
+            if (SendCommand == null) { SetStatus("コマンドの発行口がありません"); return; }
+
+            string outPath = AskFbxSavePath();
+            if (string.IsNullOrEmpty(outPath)) return;
+            _fbxPathField.value = outPath;
+
+            // モーションはこのパネルのダイアログで利用者が選んだもの。1 回許可を送る直前に付け直す。
+            // 受け口はテクスチャの書き出し先（「ファイル名_textures」）も関門に通すので、それも許可する。
+            PLSandbox.AllowOnceFromDialog(_filePath);
+            PLSandbox.AllowOnceFromDialog(Poly_Ling.Fbx.FbxExportSettings.DefaultTextureFolder(outPath));
+
+            var since = DateTime.Now.AddSeconds(-2);
+            SendCommand(new Poly_Ling.Data.ExportMotionToFbxCommand(
+                GetModelIndex?.Invoke() ?? 0, outPath, _filePath, (Poly_Ling.Data.MotionSourceKind)_loadedKind,
+                Poly_Ling.Data.BvhSkeletonKind.Auto, null,
+                _fbxFpsField?.value ?? 0f, 0f, 0f,
+                _alignLegsToggle != null && _alignLegsToggle.value,
+                _fbxIncludeMeshToggle == null || _fbxIncludeMeshToggle.value,
+                null,
+                AllowFbxRestPath(), FbxTake));
+
+            // Dispatch は同期なので、書き出し結果をここで確かめる。書き出しはポーズ層を戻すので、表示中のフレームを当て直す。
+            bool ok = File.Exists(outPath) && File.GetLastWriteTime(outPath) >= since;
+            ApplyFrame();
+            string msg = ok ? $"FBX を書き出しました: {Path.GetFileName(outPath)}" : "FBX 書き出しに失敗しました（ログを参照）";
+            if (_fbxLabel != null) _fbxLabel.text = msg;
+            SetStatus(msg);
+        }
+
+        // ── FBX を読むときの設定 ──────────────────────────────────────
+        //   レスト用 FBX：モーションだけの FBX はバインドポーズを持たず、ノードの既定の姿勢が
+        //   T ポーズとは限らない。同じ骨格のモデル FBX を渡すと、そのバインドポーズをレストにする
+        //   （PolyLing_FBX対応計画.md 段 5）。読み込み・JSON保存・BVH / FBX 書き出しのすべてに渡す。
+        private const string FbxRestPathKey = "MotionClip.FbxRest.Path";
+        private const string FbxTakeKey     = "MotionClip.Fbx.Take";
+
+        private void BuildFbxReadSection(VisualElement root)
+        {
+            _fbxReadSection = new VisualElement();
+            root.Add(_fbxReadSection);
+
+            _fbxReadSection.Add(PlayerIoUiKit.SectionLabel("レスト用 FBX（T ポーズのモデル。空なら読むファイル自身）"));
+            _fbxRestPathField = new TextField();
+            _fbxRestPathField.RegisterValueChangedCallback(e => RecentPaths.Set(FbxRestPathKey, e.newValue));
+            _fbxReadSection.Add(PlayerIoUiKit.PathRow(_fbxRestPathField, OnBrowseFbxRest, out _btnBrowseFbxRest));
+            _fbxRestPathField.SetValueWithoutNotify(RecentPaths.Get(FbxRestPathKey));
+
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
+            var takeLbl = new Label("テイク");
+            takeLbl.style.width = 44; takeLbl.style.fontSize = 10; takeLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _fbxTakeField = new IntegerField { value = Mathf.Max(0, ParseInt(RecentPaths.Get(FbxTakeKey), 0)) };
+            _fbxTakeField.style.width = 60; _fbxTakeField.style.marginRight = 4;
+            _fbxTakeField.RegisterValueChangedCallback(e =>
+            {
+                int v = Mathf.Max(0, e.newValue);
+                if (v != e.newValue) _fbxTakeField.SetValueWithoutNotify(v);
+                RecentPaths.Set(FbxTakeKey, v.ToString());
+            });
+            _btnClearFbxRest = new Button(() =>
+            {
+                _fbxRestPathField.value = string.Empty;
+                SetStatus("レスト用 FBX の指定を外しました（再読込で反映）");
+            }) { text = "レスト指定を外す" };
+            _btnClearFbxRest.style.flexGrow = 1;
+            row.Add(takeLbl); row.Add(_fbxTakeField); row.Add(_btnClearFbxRest);
+            _fbxReadSection.Add(row);
+
+            RefreshFbxReadSection();
+        }
+
+        private void RefreshFbxReadSection()
+        {
+            if (_fbxReadSection != null)
+                _fbxReadSection.style.display = _sourceKind == SourceFbx ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private void OnBrowseFbxRest()
+        {
+            string path = PlayerIoUiKit.AskLoadPath("Open Rest FBX", FbxRestPathKey, _fbxRestPathField.value, "fbx");
+            if (!string.IsNullOrEmpty(path)) _fbxRestPathField.value = path;
+        }
+
+        /// <summary>FBX を読むときのレスト用 FBX（FBX 以外・未指定は null）。</summary>
+        private string FbxRestPath
+            => _sourceKind == SourceFbx && _fbxRestPathField != null && !string.IsNullOrEmpty(_fbxRestPathField.value)
+                ? _fbxRestPathField.value : null;
+
+        /// <summary>FBX を読むときのテイク番号（FBX 以外は 0）。</summary>
+        private int FbxTake
+            => _sourceKind == SourceFbx && _fbxTakeField != null ? Mathf.Max(0, _fbxTakeField.value) : 0;
+
+        /// <summary>
+        /// コマンドへ渡すレスト用 FBX。このパネルのダイアログで利用者が選んだものなので、
+        /// 送る直前に 1 回許可を付け直す。無ければ null。
+        /// </summary>
+        private string AllowFbxRestPath()
+        {
+            string rest = FbxRestPath;
+            if (rest != null) PLSandbox.AllowOnceFromDialog(rest);
+            return rest;
         }
 
         /// <summary>
@@ -809,7 +1123,7 @@ namespace Poly_Ling.Player
         {
             StopPlay();
             Surface?.Invoke(Tool, "clear");
-            _filePath = null; _currentTime = 0f; _maxTime = 0f;
+            _currentTime = 0f; _maxTime = 0f;
             SetStatus("クリアしました");
             RefreshAll();
         }
@@ -818,14 +1132,15 @@ namespace Poly_Ling.Player
         {
             if (string.IsNullOrEmpty(_filePath)) return;
             string path = _filePath;
+            int    kind = _loadedKind;   // 読み込んだときの種類で読み直す（ドロップダウンの今の値ではない）
             float  time = _currentTime;
             Clear();
 
-            Surface?.Invoke(Tool, "load", ("path", path), ("sourceKind", _sourceKind), ("time", 0f));
+            Surface?.Invoke(Tool, "load", ("path", path), ("sourceKind", kind), ("time", 0f),
+                ("fbxRestPath", FbxRestPath ?? ""), ("fbxTake", FbxTake));
             string err = Surface?.GetString(Tool, "error") ?? "";
             if (!string.IsNullOrEmpty(err)) { SetStatus($"再読込み失敗: {err}"); return; }
 
-            _filePath    = path;
             _maxTime     = Surface.GetFloat(Tool, "clipLength");
             _currentTime = Mathf.Clamp(time, 0f, _maxTime);
             _scaleField?.SetValueWithoutNotify(Surface.GetFloat(Tool, "positionScale"));
@@ -932,7 +1247,7 @@ namespace Poly_Ling.Player
         private static int TrackCount(MotionClipDTO dto)
         {
             if (dto == null) return 0;
-            return (dto.bones?.Count ?? 0) + (dto.bakedBones?.Count ?? 0);
+            return dto.bones?.Count ?? 0;
         }
 
         // 長さの正本は MotionClipSerializer.Length（duration とキー時刻の最大値の大きい方）。

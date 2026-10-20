@@ -400,28 +400,33 @@ namespace Poly_Ling.Data
             if (candidateNames == null || aliases == null)
                 return -1;
 
+            // 1 巡目：全エイリアスで完全一致（case-insensitive）。
+            //   別名ごとに「完全一致 → 部分一致」を回すと、先の別名の部分一致が後の別名の完全一致より
+            //   先に当たる（Zunko_MMD の Spine が "Spine" の部分一致で「kimono_spine_02.x」に当たり、
+            //   完全一致の「上半身」に届かなかった。PolyLing_Blender不具合修正計画.md の 8）。
             foreach (string alias in aliases)
             {
                 if (string.IsNullOrEmpty(alias)) continue;
-
-                // 完全一致（case-insensitive）
                 for (int i = 0; i < candidateNames.Count; i++)
                 {
                     if (string.Equals(candidateNames[i], alias, StringComparison.OrdinalIgnoreCase))
                         return i;
                 }
+            }
 
-                if (fuzzyMatch)
+            if (!fuzzyMatch) return -1;
+
+            // 2 巡目：全エイリアスで部分一致（候補名がエイリアスを含む。例: alias="右手首", candidate="右手首Cylinder" → hit）。
+            //   逆方向（alias.Contains(candidate)）は誤マッチの原因になるため除外
+            //   例: alias="上半身3"がcandidate="上半身"にマッチしてしまう
+            foreach (string alias in aliases)
+            {
+                if (string.IsNullOrEmpty(alias)) continue;
+                for (int i = 0; i < candidateNames.Count; i++)
                 {
-                    // 候補名がエイリアスを含む（例: alias="右手首", candidate="右手首Cylinder" → hit）
-                    // 逆方向（alias.Contains(candidate)）は誤マッチの原因になるため除外
-                    // 例: alias="上半身3"がcandidate="上半身"にマッチしてしまう
-                    for (int i = 0; i < candidateNames.Count; i++)
-                    {
-                        if (candidateNames[i] != null &&
-                            candidateNames[i].IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
-                            return i;
-                    }
+                    if (candidateNames[i] != null &&
+                        candidateNames[i].IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return i;
                 }
             }
 

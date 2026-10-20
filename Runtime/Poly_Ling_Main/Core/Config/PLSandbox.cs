@@ -66,7 +66,9 @@ namespace Poly_Ling.Core
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 ".csv", ".json", ".txt",
-                ".pmx", ".mqo", ".obj", ".stl", ".vrm", ".vrma", ".vmd", ".plrf", ".mfproj",
+                ".pmx", ".mqo", ".obj", ".stl", ".vrm", ".vrma", ".vmd", ".bvh", ".plrf", ".mfproj",
+                ".glb", ".gltf", ".bin",   // glTF（.gltf は同名の .bin を伴う）
+                ".fbx",
                 ".png", ".jpg", ".jpeg",
             };
 

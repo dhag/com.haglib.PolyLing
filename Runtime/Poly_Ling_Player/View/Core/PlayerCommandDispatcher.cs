@@ -22,6 +22,8 @@
 //     NormalEdit.cs               法線編集
 //     ObjectOrigin.cs             オブジェクト原点の一括設定・姿勢くさび
 //     UiAutomation.cs             UI 自動操作（DispatchUiAutomation）。プロジェクトの null 門より前で呼ぶ
+//     MeshArrays.cs               配列からの描画オブジェクト生成（addMeshFromArrays。case は MeshAttributes.cs）
+//     RemoteClient.cs             リモートのクライアントへの要求（requestClient / sendMeshToClient ほか）
 
 using System;
 using System.Collections.Generic;
@@ -394,6 +396,18 @@ namespace Poly_Ling.Player
         /// <summary>VRM（1.0 / 0.x）ファイル読み込みコマンドの実行。</summary>
         public Func<ImportVrmFileCommand, string> OnImportVrmFile;
 
+        /// <summary>glTF（.glb / .gltf）ファイル書き出しコマンドの実行。</summary>
+        public Func<ExportGltfFileCommand, string> OnExportGltfFile;
+
+        /// <summary>glTF（.glb / .gltf）ファイル読み込みコマンドの実行。</summary>
+        public Func<ImportGltfFileCommand, string> OnImportGltfFile;
+
+        /// <summary>FBX 読み込みコマンドの実行。失敗理由を返す（成功時 null）。</summary>
+        public Func<ImportFbxFileCommand, string> OnImportFbxFile;
+
+        /// <summary>FBX ファイル書き出しコマンドの実行。</summary>
+        public Func<ExportFbxFileCommand, string> OnExportFbxFile;
+
         /// <summary>プロジェクト（.mfproj）保存コマンドの実行。</summary>
         public Func<SaveProjectFileCommand, string> OnSaveProjectFile;
 
@@ -443,17 +457,17 @@ namespace Poly_Ling.Player
         /// <summary>面に張り付けコマンドの実行。</summary>
         public Func<SurfaceSnapCommand, string> OnSurfaceSnap;
 
-        /// <summary>VRM アニメーション（.vrma）書き出しコマンドの実行。</summary>
-        public Func<ExportVrmAnimationCommand, string> OnExportVrmAnimation;
+        /// <summary>PolyLing モーション → VRMA 書き出しコマンドの実行（モデル非依存）。</summary>
+        public Func<ConvertMotionToVrmaCommand, string> OnConvertMotionToVrma;
 
-        /// <summary>Unity クリップ → VRMA 変換コマンドの実行（モデル非依存）。</summary>
-        public Func<ConvertUnityClipToVrmaCommand, string> OnConvertUnityClipToVrma;
+        /// <summary>VMD＋モデル → PolyLing モーション（＋VRMA）書き出しコマンドの実行。</summary>
+        public Func<ExportVmdToMotionCommand, string> OnExportVmdToMotion;
 
-        /// <summary>VMD → VRMA 書き出しコマンドの実行。</summary>
-        public Func<ExportVmdToVrmaCommand, string> OnExportVmdToVrma;
+        /// <summary>モーション＋モデル → BVH 書き出しコマンドの実行。結果の数は report に入れる。</summary>
+        public Func<ExportMotionToBvhCommand, Poly_Ling.Motion.BvhExportReport, string> OnExportMotionToBvh;
 
-        /// <summary>VMD → PolyLing モーション（マッスル焼き込み）書き出しコマンドの実行。</summary>
-        public Func<ExportVmdToMotionJsonCommand, string> OnExportVmdToMotionJson;
+        /// <summary>モーション＋モデル → FBX 書き出しコマンドの実行。結果（Success / ErrorMessage）を返す。</summary>
+        public Func<ExportMotionToFbxCommand, Poly_Ling.Fbx.FbxExportResult> OnExportMotionToFbx;
 
         // ================================================================
         // ドラッグ確定（ベベル・押し出し）
@@ -571,6 +585,13 @@ namespace Poly_Ling.Player
 
         /// <summary>空のモデルを足す。戻り値は失敗理由。成功時は null。</summary>
         public Func<CreateEmptyModelCommand, string> OnCreateEmptyModel;
+
+        /// <summary>
+        /// 生成系で、プロジェクトとモデルが無ければ用意させる。用意できたプロジェクトを返す
+        /// （CurrentModel が選ばれた状態）。図形生成と同じく PlayerLocalLoader.EnsureProject を通す。
+        /// 魔法陣のように、部品を作る前に親をモデルへ足すコマンドが使う。
+        /// </summary>
+        public Func<ProjectContext> OnEnsureProjectForCreate;
 
         /// <summary>歪み複製コマンドの実行。戻り値は失敗理由。成功時は null。</summary>
         public Func<CreateObjectArrayCommand, string> OnCreateObjectArray;
@@ -778,7 +799,7 @@ namespace Poly_Ling.Player
                         OnOwnershipDenied?.Invoke(cmd, _currentActor, verdict.Reason);
                         return verdict.StaleView
                             ? CommandResult.FailStale(verdict.Reason)
-                            : CommandResult.Fail(verdict.Reason);
+                            : CommandResult.Fail(verdict.Reason, CommandErrorCodes.Unauthorized);
                     }
                 }
 
@@ -1058,18 +1079,18 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            // Unity クリップ → VRMA 変換はモデルもプロジェクトも見ない。
-            // 下の null 門より前で捧かないと、何も読み込んでいない状態で
+            // PolyLing モーション → VRMA 書き出しはモデルもプロジェクトも見ない。
+            // 下の null 門より前で捌かないと、何も読み込んでいない状態で
             // "no project" になって黙って何も起きない。
-            if (cmd is ConvertUnityClipToVrmaCommand clipToVrmaCmd)
+            if (cmd is ConvertMotionToVrmaCommand clipToVrmaCmd)
             {
-                if (OnConvertUnityClipToVrma == null)
+                if (OnConvertMotionToVrma == null)
                 {
                     Fail("vrma convert handler not wired");
                     Debug.LogError("[PolyLing] VRMA 変換: 受け口が配線されていません");
                     return;
                 }
-                string clipToVrmaReason = OnConvertUnityClipToVrma.Invoke(clipToVrmaCmd);
+                string clipToVrmaReason = OnConvertMotionToVrma.Invoke(clipToVrmaCmd);
                 if (clipToVrmaReason != null)
                 {
                     Fail(clipToVrmaReason);
@@ -1081,6 +1102,9 @@ namespace Poly_Ling.Player
 
             // PolyLing モーション JSON の書き出し・検査もファイルだけを扱う。同じ理由でここで捌く。
             if (DispatchMotionFile(cmd)) return;
+
+            // リモートのクライアントへの要求も通信だけを扱う。同じ理由でここで捌く。
+            if (DispatchRemoteClient(cmd)) return;
 
             // UI 自動操作（パネル表示・値の読み書き・強調・キャプチャ）もモデルと
             // プロジェクトを見ない。下の null 門より前で捌かないと、何も読み込んでいない
@@ -1112,9 +1136,11 @@ namespace Poly_Ling.Player
             // 診断ログは通したいので、ResetProjectCommand のような早期 return にはしない。
             bool createsOwnProject =
                    cmd is CreatePrimitiveMeshCommand || cmd is AddGeneratedMeshCommand
+                || cmd is AddMeshFromArraysCommand   || cmd is CreateMagicCircleCommand
                 || cmd is ImportPmxFileCommand       || cmd is ImportMqoFileCommand
                 || cmd is ImportObjFileCommand       || cmd is ImportVrmFileCommand
                 || cmd is ImportStlFileCommand       || cmd is ImportStlFolderCommand
+                || cmd is ImportGltfFileCommand      || cmd is ImportFbxFileCommand
                 || cmd is LoadProjectFileCommand     || cmd is LoadProjectCsvCommand
                 || cmd is LoadProjectBinaryCommand;
 
@@ -1148,6 +1174,8 @@ namespace Poly_Ling.Player
             if (DispatchEdgePipe(cmd, project, model))          return;
             if (DispatchVertexBillboard(cmd, project, model))   return;
             if (DispatchSubdivision(cmd, project, model))       return;
+            if (DispatchMagicCircle(cmd, project, model))       return;
+            if (DispatchLatticeTower(cmd, project, model))      return;
             if (DispatchLineGroup(cmd, project, model))         return;
             if (DispatchBoolean2D(cmd, project, model))         return;
             if (DispatchUnderlay(cmd, project, model))          return;

@@ -178,6 +178,37 @@ namespace Poly_Ling.Materials
             SetScalar(matRef.Material, kind, value);
         }
 
+        /// <summary>
+        /// 発光を材質へ書く（Data は触らない）。発光の欄が無ければ false。
+        /// 切るときは発光色を黒にしてキーワードを外す。
+        /// </summary>
+        public static bool SetEmission(Material mat, bool enabled, Color hdrColor)
+        {
+            if (mat == null || !mat.HasProperty("_EmissionColor")) return false;
+            mat.SetColor("_EmissionColor", enabled ? hdrColor : Color.black);
+            if (enabled) mat.EnableKeyword("_EMISSION");
+            else         mat.DisableKeyword("_EMISSION");
+            mat.globalIlluminationFlags = enabled
+                ? MaterialGlobalIlluminationFlags.RealtimeEmissive
+                : MaterialGlobalIlluminationFlags.EmissiveIsBlack;
+            return true;
+        }
+
+        /// <summary>発光を設定する。失敗理由を返し、成功時は null。</summary>
+        public static string ApplyEmission(MaterialReference matRef, bool enabled, Color hdrColor)
+        {
+            if (matRef == null) return "材質スロットがありません";
+            var mat = matRef.Material;
+            if (mat == null) return "マテリアルが割り当てられていません";
+            if (!SetEmission(mat, enabled, hdrColor))
+                return $"このシェーダーには発光の欄がありません: {mat.shader?.name}";
+
+            var d = EnsureData(matRef);
+            d.EmissionEnabled = enabled;
+            d.SetEmissionColor(enabled ? hdrColor : Color.black);
+            return null;
+        }
+
         /// <summary>不透明／半透明を設定する。</summary>
         public static void ApplySurface(MaterialReference matRef, bool transparent)
         {

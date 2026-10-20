@@ -52,10 +52,10 @@ namespace Poly_Ling.Data
         /// </summary>
         public static CommandResult Invoke(PanelCommand cmd)
         {
-            if (cmd == null) return CommandResult.Fail("コマンドが null");
+            if (cmd == null) return CommandResult.Fail("コマンドが null", CommandErrorCodes.InvalidArgs);
 
             var d = Dispatch;
-            if (d == null) return CommandResult.Fail("PolyLing のパネルが開いていません");
+            if (d == null) return CommandResult.Fail("PolyLing のパネルが開いていません", CommandErrorCodes.NotReady);
 
             try
             {
@@ -65,7 +65,7 @@ namespace Poly_Ling.Data
             {
                 // 呼んだ側には型と文言しか返らないので、どこで落ちたかをログに残す。
                 UnityEngine.Debug.LogException(ex);
-                return CommandResult.Fail($"{ex.GetType().Name}: {ex.Message}");
+                return CommandResult.Fail($"{ex.GetType().Name}: {ex.Message}", CommandErrorCodes.Exception);
             }
         }
     }

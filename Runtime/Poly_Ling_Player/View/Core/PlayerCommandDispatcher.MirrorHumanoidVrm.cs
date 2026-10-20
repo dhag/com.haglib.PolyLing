@@ -236,7 +236,11 @@ namespace Poly_Ling.Player
                             for (int m = 0; m < model.MeshContextCount; m++)
                             {
                                 var bmc = model.GetMeshContext(m);
-                                if (bmc == null || bmc.Type != MeshType.Bone) continue;
+                                // ボーンと、ミラー側でない描画オブジェクト（MQO の人型は描画オブジェクトへ割り当てる）
+                                if (bmc == null) continue;
+                                bool isTarget = bmc.Type == MeshType.Bone
+                                             || (bmc.Type == MeshType.Mesh && !MirrorBranchOps.IsMirrorSideContext(bmc));
+                                if (!isTarget) continue;
                                 if (!string.Equals(bmc.Name, c.BoneObjectNames[i], System.StringComparison.Ordinal)) continue;
                                 hit = m; hits++;
                             }
@@ -244,13 +248,20 @@ namespace Poly_Ling.Player
                             if (hits > 1)  { Fail($"同じ名前のボーンが {hits} 本あります: {c.BoneObjectNames[i]}"); return true; }
                             resolved[i] = hit;
                         }
-                        c = new ApplyHumanoidMappingCommand(c.ModelIndex, c.BoneNames, resolved);
+                        c = new ApplyHumanoidMappingCommand(c.ModelIndex, c.BoneNames, resolved, null, c.Merge);
                     }
 
                     if (c.Mapping == null) { Fail("Mapping が空です"); return true; }
                     _undoController?.SetModelContext(model);
                     var hmBefore = model.HumanoidMapping.Clone();
-                    model.HumanoidMapping.CopyFrom(c.Mapping);
+                    if (c.Merge)
+                    {
+                        // 今の割当を残し、渡した Humanoid ボーンだけ差し替える
+                        foreach (var kv in c.Mapping.BoneIndexMap)
+                            model.HumanoidMapping.Set(kv.Key, kv.Value);
+                    }
+                    else
+                        model.HumanoidMapping.CopyFrom(c.Mapping);
                     var hmAfter = model.HumanoidMapping.Clone();
                     if (_undoController != null)
                     {

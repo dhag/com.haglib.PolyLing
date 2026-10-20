@@ -146,6 +146,23 @@ namespace Poly_Ling.Player
             c.Add(SR(T("TextLineSpacing"), TextMeshParams.LineSpacingMin, TextMeshParams.LineSpacingMax, () => _textP.LineSpacing,
                 v => { _textP.LineSpacing = v; D(); }));
 
+            // ── 配置（平面／円筒／円盤のふち） ──
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(DD(T("TextCurve"),
+                new List<string> { T("TextCurveFlat"), T("TextCurveCylinder"), T("TextCurveDisk") },
+                () => (int)_textP.CurveMode,
+                i => { _textP.CurveMode = (TextCurveMode)i; RebuildSettings(); D(); }));
+            if (_textP.CurveMode != TextCurveMode.Flat)
+                c.Add(SR(T("Radius"), TextMeshParams.CurveRadiusMin, TextMeshParams.CurveRadiusMax, () => _textP.CurveRadius,
+                    v => { _textP.CurveRadius = v; D(); }));
+            if (_textP.CurveMode == TextCurveMode.DiskRim)
+            {
+                c.Add(TR(T("TextCurveFlip"), () => _textP.CurveFlip, v => { _textP.CurveFlip = v; D(); }));
+                c.Add(SR(T("TextCurveStartAngle"), TextMeshParams.CurveStartAngleMin, TextMeshParams.CurveStartAngleMax,
+                    () => _textP.CurveStartAngle, v => { _textP.CurveStartAngle = v; D(); }));
+                c.Add(TR(T("TextCurveFitCircle"), () => _textP.CurveFitCircle, v => { _textP.CurveFitCircle = v; D(); }));
+            }
+
             // ── 厚み付け ──
             c.Add(PlayerIoUiKit.Divider());
             c.Add(SR(T("Thickness"), TextMeshParams.ThicknessMin, TextMeshParams.ThicknessMax, () => _textP.Thickness,
@@ -394,6 +411,9 @@ namespace Poly_Ling.Player
             {
                 var one = Profile2DExtrudeMeshGenerator.Generate(g.Loops, _textP.MeshName, gp);
                 if (one == null || one.VertexCount == 0) continue;
+
+                TextCurveLayout.Apply(one, g, _textP.Size,
+                    _textP.CurveMode, _textP.CurveRadius, _textP.CurveFlip);
 
                 Poly_Ling.Ops.PartsIdOps.SetPartsId(one, partsId);
                 partsId++;

@@ -32,8 +32,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_SpringBoneGroups,version,1.0");
 
+            // 空の名前は "" と書く。空行は読込で飛ばされ、後ろのグループの番号がずれるため
+            //   （per-bone の grp 番号はこの並びへの参照。PolyLing_Blender不具合修正計画.md の 5）。
+            //   Split は "" を空の欄 1 つとして読む。
             foreach (var name in model.SpringBoneColliderGroupNames)
-                sb.AppendLine(Esc(name ?? ""));
+                sb.AppendLine(string.IsNullOrEmpty(name) ? "\"\"" : Esc(name));
 
             File.WriteAllText(Path.Combine(folderPath, "springbonegroups.csv"), sb.ToString(), Encoding.UTF8);
         }

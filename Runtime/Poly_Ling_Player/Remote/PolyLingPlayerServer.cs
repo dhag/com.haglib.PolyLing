@@ -43,6 +43,20 @@ namespace Poly_Ling.Player
             => _server?.BroadcastPositions(mc, modelIndex);
         public void ClearCapturedImages()                  => _server?.ClearCapturedImages();
 
+        /// <summary>クライアントへ要求を送る（RemoteServerCore.RequestClient）。</summary>
+        public bool RequestClient(string userName, string action, string paramsJson, int timeoutMs,
+                                  out int requestNo, out string reason, out string code)
+        {
+            if (_server == null) { requestNo = 0; reason = "サーバがありません"; code = CommandErrorCodes.NotReady; return false; }
+            return _server.RequestClient(userName, action, paramsJson, timeoutMs, out requestNo, out reason, out code);
+        }
+
+        /// <summary>要求番号の状態（RemoteServerCore.GetClientRequest）。</summary>
+        public RemoteServerCore.ClientRequestState GetClientRequest(int requestNo) => _server?.GetClientRequest(requestNo);
+
+        /// <summary>登録済みクライアントの一覧（JSON 配列）。</summary>
+        public string BuildClientListJson() => _server?.BuildClientListJson() ?? "[]";
+
         /// <summary>
         /// 表示更新の通知（メインスレッドで発火。UI 側が購読して状態表示を更新する）。
         /// ログ本文は PlayerLog（統合ログ）へ集約したため、ここでは扱わない。

@@ -132,7 +132,8 @@ namespace Poly_Ling.Context
         //
         // 【表の意味】
         //   map[old] = new。new が -1 なら「その要素は消えた」。
-        //   親系フィールドは -1 のとき祖先へ繰り上げる（BuildRemoveMap が解決済み）。
+        //   削除だけは表を 2 つ使う。親系フィールドとボーンウェイトは祖先へ繰り上げた表
+        //   （BuildRemoveMap）、それ以外は消えた要素を -1 にした表（RemoveAt で作る）。
         // ================================================================
 
         /// <summary>挿入用の付け替え表を作る。newCount は挿入後の件数。</summary>
@@ -249,15 +250,27 @@ namespace Poly_Ling.Context
             _pendingBoneWeightBackup = null;
         }
 
-        /// <summary>索引で他要素を指している全参照を付け替える。</summary>
-        private void RemapIndexReferences(int[] map)
+        /// <summary>
+        /// 索引で他要素を指している全参照を付け替える。
+        /// parentMap を渡すと、親系フィールド（階層・モーフの所属）とボーンウェイトだけはそちらで付け替える。
+        /// 削除では、親系は消えた要素の祖先へ繰り上げた表、それ以外は消えた要素を -1 にした表を使う。
+        /// 省くと map を全部に使う（挿入・移動・並べ替えは両者が同じ）。
+        /// </summary>
+        private void RemapIndexReferences(int[] map, int[] parentMap = null)
         {
             if (map == null) return;
+            if (parentMap == null) parentMap = map;
 
             int Map(int old)
             {
                 if (old < 0 || old >= map.Length) return -1;
                 return map[old];
+            }
+
+            int MapParent(int old)
+            {
+                if (old < 0 || old >= parentMap.Length) return -1;
+                return parentMap[old];
             }
 
             // 1) メッシュ側の索引参照
@@ -268,8 +281,8 @@ namespace Poly_Ling.Context
 
                 // ParentIndex は HierarchyParentIndex と同じ入れ物なので 1 回だけ写す。
                 // 2 回書くと +1 が 2 度掛かり、親が 1 つ先の要素（多くは自分自身）を指す。
-                if (mc.HierarchyParentIndex >= 0) mc.HierarchyParentIndex = Map(mc.HierarchyParentIndex);
-                if (mc.MorphParentIndex     >= 0) mc.MorphParentIndex     = Map(mc.MorphParentIndex);
+                if (mc.HierarchyParentIndex >= 0) mc.HierarchyParentIndex = MapParent(mc.HierarchyParentIndex);
+                if (mc.MorphParentIndex     >= 0) mc.MorphParentIndex     = MapParent(mc.MorphParentIndex);
 
                 // MirrorOf モーフの参照先。切れると鏡像モーフが導出できなくなるので付け替える。
                 if (mc.MirrorOfMorphIndex   >= 0) mc.MirrorOfMorphIndex   = Map(mc.MirrorOfMorphIndex);
@@ -302,7 +315,8 @@ namespace Poly_Ling.Context
             TPoseBackup?.RemapIndices(Map);
 
             // 4) 頂点のボーンウェイト（boneIndex は MeshContextList の索引）
-            RemapBoneWeights(map);
+            //    消えたボーンのウェイトは親ボーンへ寄せる（形が根元から外れないように）。
+            RemapBoneWeights(parentMap);
         }
 
         /// <summary>

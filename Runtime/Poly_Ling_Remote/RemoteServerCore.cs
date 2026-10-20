@@ -117,6 +117,7 @@ namespace Poly_Ling.Remote
         {
             public string ClientType;   // 例: "modelList" / "meshList" / "materialList" / "probe"
             public string UserName;     // 既定は空（名前なし）。将来の協働開発で使用。
+            public string[] Capabilities; // PolyLing から要求できる action（register の capabilities。無ければ空）
         }
 
         private readonly Dictionary<IDuplexChannel, ClientRegistration> _clientRegistry

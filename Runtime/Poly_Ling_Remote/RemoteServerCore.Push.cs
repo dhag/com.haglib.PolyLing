@@ -91,6 +91,7 @@ namespace Poly_Ling.Remote
             var project = GetProjectContext();
             var jb = new JsonBuilder();
             jb.BeginObject();
+            jb.KeyValue("protocolVersion",   ProtocolVersion);
             jb.KeyValue("port",              Port);
             jb.KeyValue("modelCount",        project?.ModelCount ?? 0);
             jb.KeyValue("currentModelIndex", project?.CurrentModelIndex ?? -1);
@@ -381,8 +382,11 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         /// <summary>
-        /// register コマンド（{"type":"command","action":"register","params":{"clientType":..,"userName":..}}）
+        /// register コマンド（{"type":"command","action":"register",
+        ///   "params":{"clientType":..,"userName":..,"capabilities":"action1,action2"}}）
         /// を横取りしてチャネル→登録情報を記録し、ack を返す。register 以外は false。
+        /// capabilities はクライアントが PolyLing からの要求（requestClient）で受けられる action の一覧。
+        /// ack の data には protocolVersion を入れる。
         /// </summary>
         private bool TryHandleRegister(IDuplexChannel channel, DuplexMessage request, bool isRequest, string json)
         {
@@ -392,9 +396,16 @@ namespace Poly_Ling.Remote
             string clientType = PeekJsonString(json, "clientType") ?? "";
             string userName   = PeekJsonString(json, "userName")   ?? "";
             string id         = PeekJsonString(json, "id");
+            string capsCsv    = PeekJsonString(json, "capabilities") ?? "";
+            var caps = new List<string>();
+            foreach (var c in capsCsv.Split(','))
+                if (!string.IsNullOrWhiteSpace(c)) caps.Add(c.Trim());
 
-            _clientRegistry[channel] = new ClientRegistration { ClientType = clientType, UserName = userName };
-            Log($"register: type=\"{clientType}\" user=\"{userName}\" (clients={_clientRegistry.Count})");
+            _clientRegistry[channel] = new ClientRegistration
+            {
+                ClientType = clientType, UserName = userName, Capabilities = caps.ToArray(),
+            };
+            Log($"register: type=\"{clientType}\" user=\"{userName}\" caps=[{string.Join(",", caps)}] (clients={_clientRegistry.Count})");
 
             // 協働編集: このユーザーの選択スロットを用意する。
             // 初回はホストの現在選択を種にして、いきなり無選択にならないようにする。
@@ -409,9 +420,10 @@ namespace Poly_Ling.Remote
 
             var data = new JsonBuilder();
             data.BeginObject();
-            data.KeyValue("registered", true);
-            data.KeyValue("clientType", clientType);
-            data.KeyValue("userName",   userName);
+            data.KeyValue("registered",      true);
+            data.KeyValue("clientType",      clientType);
+            data.KeyValue("userName",        userName);
+            data.KeyValue("protocolVersion", ProtocolVersion);
             data.EndObject();
 
             var reply = new TypedPayload().AddJson(BuildSuccessResponse(id, data.ToString()));
@@ -472,14 +484,15 @@ namespace Poly_Ling.Remote
             return jb.ToString();
         }
 
-        private static string BuildErrorResponse(string id, string error)
+        /// <summary>失敗応答。code は CommandErrorCodes（省くと Failed）。欄の形は MCP の call と共通（CommandResultJson）。</summary>
+        private static string BuildErrorResponse(string id, string error, string code = CommandErrorCodes.Failed)
         {
             var jb = new JsonBuilder();
             jb.BeginObject();
             jb.KeyValue("id",      id);
             jb.KeyValue("type",    "response");
             jb.KeyValue("success", false);
-            jb.KeyValue("error",   error);
+            CommandResultJson.AppendFailure(jb, error, code);
             jb.EndObject();
             return jb.ToString();
         }

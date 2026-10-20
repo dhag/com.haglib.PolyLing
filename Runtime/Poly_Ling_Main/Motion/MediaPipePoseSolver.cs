@@ -15,6 +15,7 @@
 //   MediaPipe の world 座標は x 右・y 下・z 奥（人はカメラの方を向く）。
 //   正準骨格（UnityClipApplier の正準テーブル）は Unity の左手系で、人は +Z を向き、左手は -X 側。
 //   変換は p_u = (-x, -y, -z)：y を上向きにし、Y 軸まわりに 180° 回して人を +Z 向きにする（行列式 -1 で右手系→左手系）。
+//   実装は MediaPipeCoords.ToUnity（呼び出し側が変換してから渡す）。
 //
 // ■ 正準骨格
 //   T ポーズで全骨のレストのローカル回転が単位。骨の向きは UnityClipApplier.TryGetCanonDir（自骨→子骨）。
@@ -78,8 +79,7 @@ namespace Poly_Ling.Motion
         };
         private static readonly string[] Segments = { "Proximal", "Intermediate", "Distal" };
 
-        /// <summary>MediaPipe の world 座標の点を正準骨格の座標へ直す。</summary>
-        public static Vector3 ToUnity(float x, float y, float z) => new Vector3(-x, -y, -z);
+        // MediaPipe の点を正準骨格の座標へ直す変換は Poly_Ling.Tools.MediaPipe.MediaPipeCoords.ToUnity。
 
         // ================================================================
         // 1 フレーム
@@ -286,7 +286,7 @@ namespace Poly_Ling.Motion
         /// <summary>正準骨格と Avatar を組む。ToMuscles の前に 1 回呼ぶ。</summary>
         public bool Build(out string reason)
         {
-            if (!_rig.Build(0.1f, out reason)) return false;
+            if (!_rig.Build(out reason)) return false;
             _pose = new HumanPose();
             return true;
         }

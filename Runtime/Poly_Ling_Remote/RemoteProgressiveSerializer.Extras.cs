@@ -2,6 +2,7 @@
 // プログレッシブ転送の付帯（CSV と揃えるための欄）。
 //
 //   PLRH v2 … 作業軸辞書（workaxis_library.csv）
+//   PLRM v10 … グループモーフの子（morphgroups.csv の子の欄）
 //   PLRM v9 … モデル単位の付帯（materials.csv の既定材質、vrmexpressions.csv、meshselsets.csv、
 //              datastore.csv、mirrorpairs.csv、tposebackup.csv、springbonegroups.csv、
 //              previewsettings.csv、vrmmeta.csv、vrmlookat.csv、avatarsettings.csv、
@@ -61,6 +62,47 @@ namespace Poly_Ling.Remote
                     Length   = r.ReadSingle(),
                 };
                 lib.Set(name, e);
+            }
+        }
+
+        // ================================================================
+        // PLRM v10：グループモーフの子（MorphExpression.GroupChildren）
+        //   表情の数（int）、表情ごとに子の数（int）と（名前・重み）。並びは MorphExpressions と同じ。
+        //   morphgroups.csv の子の欄・MorphExpressionDTO.groupChildren と揃える。
+        // ================================================================
+
+        private static void WriteMorphGroupChildren(BinaryWriter w, ModelContext model)
+        {
+            var exprs = model.MorphExpressions;
+            int n = exprs?.Count ?? 0;
+            w.Write(n);
+            for (int i = 0; i < n; i++)
+            {
+                var ch = exprs[i]?.GroupChildren;
+                int c = ch?.Count ?? 0;
+                w.Write(c);
+                for (int j = 0; j < c; j++)
+                {
+                    WriteString(w, ch[j].Name ?? "");
+                    w.Write(ch[j].Weight);
+                }
+            }
+        }
+
+        private static void ReadMorphGroupChildren(BinaryReader r, ModelContext model)
+        {
+            int n = r.ReadInt32();
+            for (int i = 0; i < n; i++)
+            {
+                int c = r.ReadInt32();
+                var me = (model.MorphExpressions != null && i < model.MorphExpressions.Count)
+                    ? model.MorphExpressions[i] : null;
+                for (int j = 0; j < c; j++)
+                {
+                    string name = ReadString(r);
+                    float weight = r.ReadSingle();
+                    me?.GroupChildren.Add(new MorphGroupChild(name, weight));
+                }
             }
         }
 

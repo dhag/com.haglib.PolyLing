@@ -294,6 +294,9 @@ namespace Poly_Ling.Player
                     _undoController?.SetModelContext(model);
                     var bpBefore = MeshFilterToSkinnedRecord.CaptureList(model);
 
+                    // 直前の編集がワールド行列へ反映されていないと、古い姿勢で置き直してしまう。
+                    model.ComputeWorldMatrices();
+
                     int bpDone = 0;
                     foreach (int i in c.MasterIndices)
                     {
@@ -302,26 +305,29 @@ namespace Poly_Ling.Player
                         if (mc == null || mc.Type != MeshType.Bone) continue;
                         if (i == c.ParentMasterIndex) continue;
 
-                        // ワールド位置を保つ。親のワールド行列の逆を掛けて
-                        // 新しい親から見たローカル位置に置き直す。
-                        Vector3 world = new Vector3(
-                            mc.WorldMatrix.m03, mc.WorldMatrix.m13, mc.WorldMatrix.m23);
+                        // ワールド姿勢（位置と回転）を保つ。バインド階層で
+                        // 新しい親のワールドの逆を掛け、ローカルの位置・回転に置き直す。
+                        // 位置だけの差では、親が回っているとき位置も回転もずれる。
+                        Matrix4x4 boneBindWorld = mc.BindWorldMatrix;
 
-                        Vector3 parentWorld = Vector3.zero;
+                        Matrix4x4 parentBindWorld = Matrix4x4.identity;
                         if (c.ParentMasterIndex >= 0 && c.ParentMasterIndex < model.MeshContextCount)
                         {
                             var pmc = model.GetMeshContext(c.ParentMasterIndex);
-                            if (pmc != null)
-                                parentWorld = new Vector3(
-                                    pmc.WorldMatrix.m03, pmc.WorldMatrix.m13, pmc.WorldMatrix.m23);
+                            if (pmc != null) parentBindWorld = pmc.BindWorldMatrix;
                         }
+
+                        Matrix4x4 newLocal = parentBindWorld.inverse * boneBindWorld;
 
                         mc.HierarchyParentIndex = c.ParentMasterIndex;
                         if (mc.MeshObject != null)
                             mc.MeshObject.HierarchyParentIndex = c.ParentMasterIndex;
 
                         if (mc.BoneTransform != null)
-                            mc.BoneTransform.Position = world - parentWorld;
+                        {
+                            mc.BoneTransform.Position = new Vector3(newLocal.m03, newLocal.m13, newLocal.m23);
+                            mc.BoneTransform.Rotation = newLocal.rotation.eulerAngles;
+                        }
 
                         bpDone++;
                     }

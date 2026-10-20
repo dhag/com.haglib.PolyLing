@@ -32,14 +32,13 @@ namespace Poly_Ling.Player
         private MotionClipDTO        _dto;
         private MotionClipApplier    _applier;
         private MotionClipLoadResult _loadResult;
-        private int                  _bindBoneCount;
         private int                  _limitBoneCount;
 
         public bool HasClip => _dto != null;
 
         [PLToolState(Description = "クリップを読み込んでいるか")]
         public bool   ClipLoaded => _dto != null;
-        [PLToolState(Description = "直近の load・loadBind の失敗理由（成功なら空）")]
+        [PLToolState(Description = "直近の load・loadLimit の失敗理由（成功なら空）")]
         public string Error { get; private set; } = "";
         [PLToolState(Description = "クリップ名")]
         public string ClipName => _dto?.name ?? "";
@@ -68,14 +67,12 @@ namespace Poly_Ling.Player
                 return text;
             }
         }
-        [PLToolState(Description = "トラックの一覧（先頭 50 件。✓ 対応あり / ⚠ 競合 / ✗ 対応なし）")]
+        [PLToolState(Description = "ボーン（bones）トラックの一覧（先頭 50 件。✓ 対応あり / ⚠ 競合 / ✗ 対応なし）。bakedBones は再生に使わないので載せない")]
         public string[] TrackLines => BuildTrackLines(out _);
         [PLToolState(Description = "トラックの一覧の各行が対応ありか（TrackLines と同じ並び）")]
         public bool[]   TrackMatched { get { BuildTrackLines(out var m); return m; } }
-        [PLToolState(Description = "ボーン・焼き込みボーンのトラックの総数")]
-        public int      TrackTotal => (_dto?.bones?.Count ?? 0) + (_dto?.bakedBones?.Count ?? 0);
-        [PLToolState(Description = "直近の loadBind で読んだボーン数")]
-        public int      BindBoneCount => _bindBoneCount;
+        [PLToolState(Description = "ボーン（bones）トラックの総数")]
+        public int      TrackTotal => _dto?.bones?.Count ?? 0;
         [PLToolState(Description = "直近の loadLimit で読んだボーン数（0 は未読込）")]
         public int      LimitBoneCount => _limitBoneCount;
         [PLToolState(Description = "読み込んだ可動域 CSV が実測列を持つか")]
@@ -85,36 +82,39 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// クリップを読み込み、対応付けて time のフレームを当てる。
-        /// sourceKind: 0 = VMD、1 = PolyLing モーション（.plmotion.json）。位置の倍率は種類の既定値にする
-        /// （VMD は PmxUnityRatio。PolyLing モーションは生成元の単位系を DTO から判別できないため 1）。
+        /// sourceKind は MotionSourceKind の値：0 = VMD、1 = PolyLing モーション（.plmotion.json）、
+        /// 2 = VRM アニメーション（.vrma）、3 = BVH（関節名の割り当て表は自動選択）、4 = FBX。
+        /// FBX は fbxTake 番のテイクを読み、fbxRestPath（空でなければ）のバインドポーズをレストにする。
+        /// 位置の倍率は種類の既定値にする（VMD は PmxUnityRatio。ほかは 1）。
         /// </summary>
-        [PLToolAction(Description = "クリップを読み込み、対応付けて time 秒のフレームを当てる（sourceKind: 0=VMD / 1=PolyLing モーション）")]
-        public void Load(string path, int sourceKind, float time)
+        [PLToolAction(Description = "クリップを読み込み、対応付けて time 秒のフレームを当てる（sourceKind: 0=VMD / 1=PolyLing モーション / 2=VRM アニメーション / 3=BVH / 4=FBX）。FBX は fbxTake 番のテイクを読み、fbxRestPath が空でなければそのモデル FBX のバインドポーズをレストにする")]
+        public void Load(string path, int sourceKind, float time, string fbxRestPath = "", int fbxTake = 0)
         {
             Error = "";
             if (string.IsNullOrEmpty(path)) { Error = "ファイルパスを指定してください"; return; }
             if (!File.Exists(path))        { Error = $"ファイルが見つかりません: {Path.GetFileName(path)}"; return; }
+            if (!Enum.IsDefined(typeof(MotionSourceKind), sourceKind)) { Error = $"sourceKind が {sourceKind} です"; return; }
+            Poly_Ling.Fbx.FbxMotionReadOptions fbx = null;
+            if (sourceKind == (int)MotionSourceKind.Fbx)
+            {
+                if (!string.IsNullOrEmpty(fbxRestPath) && !File.Exists(fbxRestPath))
+                { Error = $"レスト用の FBX が見つかりません: {Path.GetFileName(fbxRestPath)}"; return; }
+                fbx = new Poly_Ling.Fbx.FbxMotionReadOptions
+                {
+                    TakeIndex   = fbxTake,
+                    RestFbxPath = string.IsNullOrEmpty(fbxRestPath) ? null : fbxRestPath,
+                };
+            }
             try
             {
                 _loadResult = null;
-                MotionClipDTO dto;
-                switch (sourceKind)
-                {
-                    case 0:  dto = MotionClipConverters.FromVMD(VMDData.LoadFromFile(path)); break;
-                    default:
-                        _loadResult = MotionClipSerializer.Load(path);
-                        if (_loadResult.Dto == null) throw new InvalidDataException(_loadResult.FormatIssues(8));
-                        dto = _loadResult.Dto;
-                        break;
-                }
-                if (dto == null) { Error = "読込み結果が空です"; return; }
-
-                _dto = dto;
-                EnsureApplier();
-                _applier.PositionScale = sourceKind == 0 ? (GetPmxUnityRatio?.Invoke() ?? 0.1f) : 1f;
-                _applier.SetClip(_dto);
-                var model = GetModel?.Invoke();
-                if (model != null) { _applier.BuildMapping(model); ApplyFrameCore(time); }
+                var loaded = MotionFileLoad.Load(path, (MotionSourceKind)sourceKind, null, fbx);
+                if (loaded.Dto == null) throw new InvalidDataException(loaded.FormatIssues(8));
+                // VMD は検査を通らないので、報告に載せる検査結果は持たない（以前と同じ）。
+                SetClipCore(loaded.Dto, sourceKind == (int)MotionSourceKind.Vmd ? null : loaded,
+                            sourceKind == 0 ? (GetPmxUnityRatio?.Invoke() ?? 0.1f) : 1f, time);
+                SourcePath = path;
+                SourceKind = sourceKind;
             }
             catch (Exception ex)
             {
@@ -123,12 +123,103 @@ namespace Poly_Ling.Player
             }
         }
 
+        /// <summary>
+        /// PolyLing モーション JSON の文字列（.plmotion.json と同じ中身）を MotionClipSerializer.Parse で読み、
+        /// 読み込んだクリップにして time 秒のフレームを当てる（Load の sourceKind=1 と同じ扱い。位置の倍率は 1）。
+        /// 元ファイルは無いので SourcePath は空になる。読めなければ今のクリップはそのままで、Error に理由が入る。
+        /// 成功したら OnClipLoadedFromJson を呼ぶ（パネルの表示を合わせる）。
+        /// コマンド loadMotionClipJson（Blender ブリッジのモーション送信）が使う。
+        /// </summary>
+        public MotionClipLoadResult LoadJson(string json, float time)
+        {
+            Error = "";
+            var loaded = MotionClipSerializer.Parse(json);
+            if (loaded.Dto == null) { Error = loaded.FormatIssues(8); return loaded; }
+            try
+            {
+                SetClipCore(loaded.Dto, loaded, 1f, time);
+                SourcePath = "";
+                SourceKind = (int)MotionSourceKind.PolyLingMotionJson;
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+                UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
+                return loaded;
+            }
+            OnClipLoadedFromJson?.Invoke(time);
+            return loaded;
+        }
+
+        /// <summary>LoadJson で読み込んだ後に呼ぶ（引数は当てた時刻）。パネルの表示を合わせる。</summary>
+        public Action<float> OnClipLoadedFromJson;
+
+        /// <summary>読み込んでいるクリップ（無ければ null）。書き換えないこと。</summary>
+        public MotionClipDTO Clip => _dto;
+
+        // 【元ファイルの持ち主】読み込んだクリップの元ファイルとその種類はこの窓口だけが持つ。
+        //   パネル（PlayerMotionClipTestSubPanel）は自分では持たず、この状態を読む
+        //   （以前はパネルが別に持ち、窓口へ外から読み込んだクリップでは食い違った。PolyLing_Blender不具合修正計画.md の B）。
+        [PLToolState(Description = "読み込んだクリップの元ファイル（load で読んだもの、または saveJson で書いたもの。JSON の文字列から読んで保存していないときと未読込は空）")]
+        public string SourcePath { get; private set; } = "";
+
+        [PLToolState(Description = "元ファイルの種類（MotionSourceKind の値：0=VMD / 1=PolyLing モーション / 2=VRM アニメーション / 3=BVH / 4=FBX）。JSON の文字列から読んだものは 1")]
+        public int SourceKind { get; private set; } = 0;
+
+        /// <summary>
+        /// 読み込んでいるクリップを PolyLing モーション JSON（MotionClipSerializer.ToSaveJson。queryMotionClipJson と同じ中身）で
+        /// path へ書き、そのファイルを元ファイルにする（SourcePath = path、SourceKind = PolyLing モーション）。
+        /// path は関門を通した実際の経路を渡すこと。失敗したら false で、Error に理由が入る。
+        /// コマンド saveMotionClipJson と、パネルの JSON 保存（元ファイルが無いクリップのとき）が使う。
+        /// </summary>
+        public bool SaveJson(string path)
+        {
+            Error = "";
+            if (_dto == null) { Error = "クリップを読み込んでください"; return false; }
+            if (string.IsNullOrEmpty(path)) { Error = "保存先を指定してください"; return false; }
+            var r = MotionClipSerializer.ToSaveJson(_dto, out string json);
+            if (json == null) { Error = r.FormatIssues(8); return false; }
+            try
+            {
+                string dir = Path.GetDirectoryName(Path.GetFullPath(path));
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                // MotionClipSerializer.Save と同じく BOM なしの UTF-8
+                File.WriteAllText(path, json, new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+                UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
+                return false;
+            }
+            SourcePath = path;
+            SourceKind = (int)MotionSourceKind.PolyLingMotionJson;
+            OnSourceChanged?.Invoke();
+            return true;
+        }
+
+        /// <summary>SaveJson で元ファイルが変わった後に呼ぶ（パネルの表示を合わせる）。</summary>
+        public Action OnSourceChanged;
+
+        private void SetClipCore(MotionClipDTO dto, MotionClipLoadResult report, float positionScale, float time)
+        {
+            _loadResult = report;
+            _dto = dto;
+            EnsureApplier();
+            _applier.PositionScale = positionScale;
+            _applier.SetClip(_dto);
+            var model = GetModel?.Invoke();
+            if (model != null) { _applier.BuildMapping(model); ApplyFrameCore(time); }
+        }
+
         [PLToolAction(Description = "姿勢を初期へ戻し、クリップを捨てる")]
         public void Clear()
         {
             ResetPoseCore();
             _dto = null;
             _loadResult = null;
+            SourcePath = "";
+            SourceKind = 0;
         }
 
         [PLToolAction(Description = "姿勢を初期へ戻す（クリップは残す）")]
@@ -152,36 +243,41 @@ namespace Poly_Ling.Player
         public bool TrySampleMuscleFrame(float time, IReadOnlyDictionary<string, int> indexOf, int count, MotionLiveFrame into)
             => _applier != null && _dto != null && _applier.TrySampleMuscleFrame(time, indexOf, count, into);
 
+        [PLToolState(Description = "読み込んだクリップの absentMuscles（駆動されているボーンのトラックの無い dof の値。zero = 0 / rest = 正準 T ポーズの値）")]
+        public string AbsentMuscles => _dto == null ? "" : (MotionClipDTO.AbsentIsRest(_dto) ? MotionClipDTO.AbsentMusclesRest : MotionClipDTO.AbsentMusclesZero);
+
+        [PLToolAction(Description = "トラックの無い dof の値（mode: zero / rest）を変え、time 秒のフレームを当て直す。JSON 保存でファイルにも書く")]
+        public void SetAbsentMuscles(string mode, float time)
+        {
+            Error = "";
+            if (mode != MotionClipDTO.AbsentMusclesZero && mode != MotionClipDTO.AbsentMusclesRest)
+            {
+                Error = $"mode は {MotionClipDTO.AbsentMusclesZero} か {MotionClipDTO.AbsentMusclesRest}（\"{mode}\"）";
+                return;
+            }
+            if (_dto == null || _applier == null) { Error = "クリップを読み込んでください"; return; }
+            _applier.SetAbsentMuscles(mode);
+            ApplyFrameCore(time);
+        }
+
+        [PLToolState(Description = "T ポーズ合わせを脚（太もも・すね）にも掛けるか（false は腕だけ）")]
+        public bool AlignLegs => _alignLegs;
+        private bool _alignLegs;
+
+        [PLToolAction(Description = "T ポーズ合わせを脚（太もも・すね）にも掛けるかを切り替え（enabled=false は腕だけ）、time 秒のフレームを当て直す")]
+        public void SetAlignLegs(bool enabled, float time)
+        {
+            _alignLegs = enabled;
+            EnsureApplier();
+            if (_dto != null) ApplyFrameCore(time);
+        }
+
         [PLToolAction(Description = "位置に掛ける倍率を変え、time 秒のフレームを当て直す")]
         public void SetPositionScale(float scale, float time)
         {
             EnsureApplier();
             _applier.PositionScale = scale;
             if (_dto != null) ApplyFrameCore(time);
-        }
-
-        /// <summary>外部 UnityBone CSV v2（ソースの rest）を読み、リターゲット経路を有効にする。</summary>
-        [PLToolAction(Description = "外部 UnityBone CSV（バインドポーズ）を読み、対応付けし直して time 秒のフレームを当てる")]
-        public void LoadBind(string path, float time)
-        {
-            Error = "";
-            _bindBoneCount = 0;
-            if (string.IsNullOrEmpty(path)) { Error = "ファイルパスを指定してください"; return; }
-            if (!File.Exists(path))        { Error = $"ファイルが見つかりません: {Path.GetFileName(path)}"; return; }
-            try
-            {
-                string text = File.ReadAllText(path);
-                EnsureApplier();
-                _bindBoneCount = _applier.LoadSourceRestCsv(text);
-                var model = GetModel?.Invoke();
-                if (model != null) _applier.BuildMapping(model);
-                if (_dto != null) ApplyFrameCore(time);
-            }
-            catch (Exception ex)
-            {
-                Error = ex.Message;
-                UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
-            }
         }
 
         /// <summary>外部 UnityLimit CSV（マッスル可動域・実測）を読む。ベイク元アバターの limits.csv を渡す。</summary>
@@ -219,6 +315,7 @@ namespace Poly_Ling.Player
         {
             if (_applier == null) _applier = new MotionClipApplier();
             _applier.SyncMeshPositions = SyncMeshPositions;
+            _applier.AlignLegs = _alignLegs;
         }
 
         private bool ApplyFrameCore(float time)
@@ -245,8 +342,7 @@ namespace Poly_Ling.Player
             if (_dto != null)
             {
                 var all = new List<MotionTrackDTO>();
-                if (_dto.bones != null)      all.AddRange(_dto.bones);
-                if (_dto.bakedBones != null) all.AddRange(_dto.bakedBones);
+                if (_dto.bones != null) all.AddRange(_dto.bones);
                 bool hasModel = GetModel?.Invoke() != null;
                 int n = 0;
                 foreach (var track in all)

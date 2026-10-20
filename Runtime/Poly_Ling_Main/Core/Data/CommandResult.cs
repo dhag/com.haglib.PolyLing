@@ -6,6 +6,28 @@
 
 namespace Poly_Ling.Data
 {
+    /// <summary>
+    /// 失敗の種類（機械が判定するための値）。応答の "code" に入る。理由の文（Reason）は人が読むためのもの。
+    /// 値は外部（Python など）との契約なので、変えないこと。足すときは PolyLing_外部連携の契約.md も直す。
+    /// </summary>
+    public static class CommandErrorCodes
+    {
+        /// <summary>action（コマンド名）が無い。</summary>
+        public const string UnknownCommand = "unknownCommand";
+        /// <summary>引数が足りない・型にできない。</summary>
+        public const string InvalidArgs    = "invalidArgs";
+        /// <summary>PolyLing のパネルが開いていない・受け口の準備ができていない。</summary>
+        public const string NotReady       = "notReady";
+        /// <summary>担当者判定で拒否された（ほかの人の担当）。</summary>
+        public const string Unauthorized   = "unauthorized";
+        /// <summary>送り手の見ている構造が古い（索引と安定 ID の食い違い）。取り直してから送り直す。</summary>
+        public const string StaleView      = "staleView";
+        /// <summary>実行中に例外が出た。</summary>
+        public const string Exception      = "exception";
+        /// <summary>上のどれでもない失敗（対象が無い・処理が成り立たないなど）。</summary>
+        public const string Failed         = "failed";
+    }
+
     public sealed class CommandResult
     {
         /// <summary>実行できたか。</summary>
@@ -13,6 +35,9 @@ namespace Poly_Ling.Data
 
         /// <summary>失敗理由。成功時は null。</summary>
         public string Reason { get; }
+
+        /// <summary>失敗の種類（CommandErrorCodes）。成功時は null。</summary>
+        public string Code { get; }
 
         /// <summary>生成／変更された対象の位置インデックス。無ければ null。</summary>
         public int[] MasterIndices { get; }
@@ -59,11 +84,12 @@ namespace Poly_Ling.Data
         /// <summary>この呼び出しで消えたオブジェクトの安定 ID。無ければ null。</summary>
         public ulong[] DeletedObjectIds { get; internal set; }
 
-        private CommandResult(bool success, string reason, int[] masterIndices, ulong[] objectIds,
+        private CommandResult(bool success, string reason, string code, int[] masterIndices, ulong[] objectIds,
                               string data, bool staleView = false)
         {
             Success       = success;
             Reason        = reason;
+            Code          = code;
             MasterIndices = masterIndices;
             ObjectIds     = objectIds;
             Data          = data;
@@ -72,16 +98,17 @@ namespace Poly_Ling.Data
 
         public static CommandResult Ok(int[] masterIndices = null, ulong[] objectIds = null,
                                        string data = null)
-            => new CommandResult(true, null, masterIndices, objectIds, data);
+            => new CommandResult(true, null, null, masterIndices, objectIds, data);
 
-        public static CommandResult Fail(string reason)
-            => new CommandResult(false, reason ?? "unknown error", null, null, null);
+        /// <summary>失敗。code は CommandErrorCodes（省くと Failed）。</summary>
+        public static CommandResult Fail(string reason, string code = CommandErrorCodes.Failed)
+            => new CommandResult(false, reason ?? "unknown error", code ?? CommandErrorCodes.Failed, null, null, null);
 
         /// <summary>担当者判定のズレ検出で拒否した結果。</summary>
         public static CommandResult FailStale(string reason)
-            => new CommandResult(false, reason ?? "unknown error", null, null, null, staleView: true);
+            => new CommandResult(false, reason ?? "unknown error", CommandErrorCodes.StaleView, null, null, null, staleView: true);
 
         public override string ToString()
-            => Success ? "ok" : $"fail: {Reason}";
+            => Success ? "ok" : $"fail[{Code}]: {Reason}";
     }
 }

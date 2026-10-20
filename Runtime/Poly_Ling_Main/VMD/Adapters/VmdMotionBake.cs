@@ -9,15 +9,14 @@
 // ============================================================
 //
 //   1 フレームごとに、
-//     ・VmdPoseSession で VMD をモデルへ当て（IK・T ポーズ整列込み）、VRMA 用の骨格へ写す。
-//       ここまでは VMD → VRMA の直接経路と同じ姿勢である。
+//     ・VmdPoseSession で VMD をモデルへ当て（IK・T ポーズ整列込み）、Humanoid だけの骨格へ写す。
 //     ・骨格の Humanoid ボーンのワールド回転を、正準骨格（CanonHumanPoseRig）へ
 //       親から順に代入する。どちらもレストのワールド回転が単位なので、
 //       同じワールド回転を入れればレスト相対の回転がそのまま移る。
 //       モデルに無い Humanoid ボーンはローカル単位（親に付いていくだけ）。
 //     ・Hips の位置は、Hips のレスト高さの比で正準骨格の寸法へ直す。
 //     ・HumanPoseHandler.GetHumanPose で 95 マッスルと RootT / RootQ を取る
-//       （Editor の UnityClipExportWindow のベイクと同じ取り方）。
+//       （Editor の UnityClipExportWindow のベイクと同じ取り方）。RootT / RootQ は body トラックへ。
 //
 //   ボーン（二次骨）… Humanoid でも IK ボーンでもなく、子孫に Humanoid ボーンを持たないもの
 //     （髪・スカート等）だけを、モデルのワールド行列からレスト相対のローカルに直して書く。
@@ -50,7 +49,6 @@ using Poly_Ling.Data;
 using Poly_Ling.Motion;
 using Poly_Ling.Ops;
 using Poly_Ling.UnityClip;
-using Poly_Ling.Vrm;
 
 namespace Poly_Ling.VMD
 {
@@ -72,21 +70,17 @@ namespace Poly_Ling.VMD
     public static class VmdMotionBake
     {
         /// <summary>
-        /// 正準骨格の骨長。マッスルと RootT は正規化量なので値に依らないが、
-        /// VRMA 変換（UnityClipCanonVrmAnimation.ConvertToFile）と同じ値にそろえておく。
-        /// </summary>
-        public const float CanonBoneLength = 0.1f;
-
-        /// <summary>
         /// VMD をモデルへ当てながらマッスル＋ボーン＋表情のモーションを作る。
         /// モデルの VMD 層は終了時に必ず戻す。失敗時は null と理由。
         /// </summary>
-        /// <param name="settings">毎秒枚数と区間。Scale は使わない。null なら既定値。</param>
+        /// <param name="fpsIn">毎秒枚数。0 以下なら VMD の 30。</param>
+        /// <param name="startSec">区間の開始（秒）。出力では 0 秒になる。</param>
+        /// <param name="endSec">区間の終了（秒）。startSec 以下なら VMD の終端。</param>
         /// <param name="options">VMD 適用側の設定。null なら既定値。</param>
-        /// <param name="withBonesAndExpressions">false ならマッスルと Root だけ作る（VRMA 用）。</param>
+        /// <param name="withBonesAndExpressions">false ならマッスルと Root だけ作る。</param>
         public static MotionClipDTO Bake(
             ModelContext model, VMDData vmd,
-            VrmAnimationExportSettings settings, VmdVrmAnimationOptions options,
+            float fpsIn, float startSec, float endSec, VmdVrmAnimationOptions options,
             out VmdMotionBakeReport report, out string reason,
             bool withBonesAndExpressions = true)
         {
@@ -95,10 +89,9 @@ namespace Poly_Ling.VMD
             if (model == null) { reason = "モデルがありません"; return null; }
             if (vmd == null)   { reason = "VMD がありません";   return null; }
 
-            settings = settings ?? VrmAnimationExportSettings.CreateDefault();
             options  = options  ?? VmdVrmAnimationOptions.CreateDefault();
 
-            var times = VmdVrmAnimationExport.SampleTimes(vmd, settings, out float fps, out float start, out float end);
+            var times = VmdVrmAnimationExport.SampleTimes(vmd, fpsIn, startSec, endSec, out float fps, out float start, out float end);
 
             var session = VmdPoseSession.Open(model, vmd, 1f, options, out reason);
             if (session == null) return null;
@@ -106,7 +99,7 @@ namespace Poly_Ling.VMD
             var rig = new CanonHumanPoseRig();
             try
             {
-                if (!rig.Build(CanonBoneLength, out reason)) return null;
+                if (!rig.Build(out reason)) return null;
 
                 var src = session.Src;
                 report.DroppedHumanoid.AddRange(src.Dropped);
@@ -128,13 +121,8 @@ namespace Poly_Ling.VMD
                 var muscleTracks = new MotionScalarTrackDTO[mc];
                 for (int m = 0; m < mc; m++) muscleTracks[m] = new MotionScalarTrackDTO { name = muscleNames[m] };
 
-                string[] rootNames =
-                {
-                    UnityClipRootMotion.NameTx, UnityClipRootMotion.NameTy, UnityClipRootMotion.NameTz,
-                    UnityClipRootMotion.NameQx, UnityClipRootMotion.NameQy, UnityClipRootMotion.NameQz, UnityClipRootMotion.NameQw,
-                };
-                var rootTracks = new MotionScalarTrackDTO[rootNames.Length];
-                for (int k = 0; k < rootNames.Length; k++) rootTracks[k] = new MotionScalarTrackDTO { name = rootNames[k] };
+                // Root（RootT / RootQ）は body トラックに置く（UnityClipRootMotion の冒頭）。
+                var body = new MotionTrackDTO { id = MotionClipDTO.BodyTrackId, targetKind = MotionClipDTO.TargetBody };
 
                 var boneSampler = withBonesAndExpressions
                     ? new SecondaryBoneSampler(model, session.Sampler.Skeleton)
@@ -169,8 +157,12 @@ namespace Poly_Ling.VMD
                     Quaternion q = pose.bodyRotation;
                     if (hasPrev && Quaternion.Dot(prevQ, q) < 0f) q = new Quaternion(-q.x, -q.y, -q.z, -q.w);
                     prevQ = q; hasPrev = true;
-                    float[] rv = { pose.bodyPosition.x, pose.bodyPosition.y, pose.bodyPosition.z, q.x, q.y, q.z, q.w };
-                    for (int k = 0; k < rv.Length; k++) rootTracks[k].keys.Add(new MotionScalarKeyDTO { t = tLocal, v = rv[k] });
+                    body.keys.Add(new MotionKeyDTO
+                    {
+                        t   = tLocal,
+                        pos = new[] { pose.bodyPosition.x, pose.bodyPosition.y, pose.bodyPosition.z },
+                        rot = new[] { q.x, q.y, q.z, q.w },
+                    });
 
                     boneSampler?.Sample(model, tLocal);
 
@@ -188,7 +180,7 @@ namespace Poly_Ling.VMD
                     metadata  = new MotionMetadataDTO { createdWith = "PolyLing VmdMotionBake" },
                 };
                 dto.muscles.AddRange(muscleTracks);
-                dto.muscles.AddRange(rootTracks);
+                dto.body = body;
 
                 if (withBonesAndExpressions)
                 {
@@ -201,9 +193,9 @@ namespace Poly_Ling.VMD
                 report.ExpressionTrackCount = dto.expressions.Count;
 
                 if (options.DiagnosticLog && probes.Count > 0)
-                    LogPlaybackCheck(model, dto, session, probes, report);
+                    LogPlaybackCheck(model, dto, session, probes, report, options.AlignLegs);
 
-                Debug.Log($"[VmdMotionBake] {times.Length} フレーム / マッスル {mc} ＋ Root 7 / " +
+                Debug.Log($"[VmdMotionBake] {times.Length} フレーム / マッスル {mc} ＋ body / " +
                           $"ボーン {dto.bones.Count} / 表情 {dto.expressions.Count} / " +
                           $"Hips 高さ比 {hipsRatio:G4}" +
                           (report.DroppedHumanoid.Count > 0
@@ -248,12 +240,13 @@ namespace Poly_Ling.VMD
         // モデルのポーズ層は最後に戻す（VMD 層は呼び出し側の Close が戻す）。
         private static void LogPlaybackCheck(
             ModelContext model, MotionClipDTO dto, VmdPoseSession session,
-            List<(float t, Dictionary<string, Quaternion> rel)> probes, VmdMotionBakeReport report)
+            List<(float t, Dictionary<string, Quaternion> rel)> probes, VmdMotionBakeReport report, bool alignLegs)
         {
             // VMD 層を外してから再生経路を当てる
             session.Applier.ResetAllBones(model);
 
-            var applier = new MotionClipApplier();
+            // 焼き込みと同じ整列の範囲で再生する（そろえないと再生が焼き込みの逆にならない）
+            var applier = new MotionClipApplier { AlignLegs = alignLegs };
             try
             {
                 applier.SetClip(dto);

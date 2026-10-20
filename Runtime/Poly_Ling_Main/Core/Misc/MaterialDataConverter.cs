@@ -328,6 +328,9 @@ namespace Poly_Ling.Materials
             if (data.EmissionEnabled)
             {
                 mat.EnableKeyword("_EMISSION");
+                // URP は材質の検証（取り込み・インスペクタ）で、GI フラグが EmissiveIsBlack（新規材質の既定）だと
+                // _EMISSION を外す（BaseShaderGUI.SetMaterialKeywords）。書き出した .mat が光らなくなるので立て直す。
+                mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
                 mat.SetColor(PROP_EMISSION_COLOR, data.GetEmissionColor());
                 SetTexture(mat, PROP_EMISSION_MAP, data.EmissionMapPath);
             }
@@ -410,6 +413,7 @@ namespace Poly_Ling.Materials
             if (data.EmissionEnabled)
             {
                 mat.EnableKeyword("_EMISSION");
+                mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
                 mat.SetColor(PROP_EMISSION_COLOR, data.GetEmissionColor());
             }
         }

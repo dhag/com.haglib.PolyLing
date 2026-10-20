@@ -28,9 +28,9 @@
 //
 // 【階層】
 //   ダミーは直近の近位 Transform の子として作る。
-//   生成後、チェーン全体を近位→遠位に見て親子を張り直す
-//   （SetParent(worldPositionStays: true)）。Avatar は Humanoid ボーンの
-//   親子関係が Transform 階層と一致している必要があるため。
+//   生成後、チェーン全体を近位→遠位に見て、遠位側が近位側の子孫でないものだけ
+//   親子を張り直す（SetParent(worldPositionStays: true)）。Avatar は Humanoid ボーンの
+//   祖先関係が Transform 階層と一致している必要があるため（直接の親子でなくてよい）。
 //   例1: Hips 欠損時は既存 Spine を新 Hips の下へ移す。
 //   例2: Spine を補完したとき、欠損していない 左腕 が Hips 直下のままだと
 //        Spine の子孫にならないので、腕チェーンの整合で Spine の下へ移す。
@@ -305,7 +305,10 @@ namespace Poly_Ling.HierarchyIO
                 Transform parentTf = items[k - 1].Tf;
                 Transform childTf  = items[k].Tf;
                 if (parentTf == null || childTf == null) continue;
-                if (childTf.parent == parentTf) continue;
+                // 既に子孫なら張り直さない。Avatar が要るのは祖先関係で、直接の親子でなくてよい
+                // （間に割当の無い Transform が挟まってよい）。直接の親へ付け替えると、
+                // 間の節（例: ロボ取付・ダミー肩）の下に居ることを前提にした仕組みが壊れる。
+                if (IsSelfOrDescendantOf(childTf, parentTf)) continue;
 
                 if (IsSelfOrDescendantOf(parentTf, childTf))
                 {

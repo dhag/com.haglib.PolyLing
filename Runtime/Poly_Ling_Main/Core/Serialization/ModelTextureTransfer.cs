@@ -5,8 +5,13 @@
 // 【使う所】
 //   ・CSV（プロジェクトファイル）の textures フォルダの保存・読み込み（CsvModelSerializer.Texture.cs）
 //   ・リモートのヒエラルキー送信で ModelDTO.embeddedTextures に画像を載せる／受け側で戻す
-//   どちらも同じ集め方・同じ対応づけ（MaterialData のパスのファイル名で照合）を使う。
+//   ・FBX 書き出し（FbxExporterImpl）。材質ごとにテクスチャをつなぐため Entry.Uses を使う
+//   どれも同じ集め方・同じ対応づけ（MaterialData のパスのファイル名で照合）を使う。
 //   以前は CsvModelSerializer.Texture.cs にフォルダ直書きで実装されていたものを、中身を変えずに切り出した。
+//
+// 【Entry.Uses】
+//   集めた 1 枚を「どの材質のどの用途で使うか」の一覧。同じ画像を複数の材質・用途で使えば複数入る。
+//   集め方・保存名は Uses の有無で変わらない（CSV とリモートは Uses を見ない）。
 
 using System;
 using System.Collections.Generic;
@@ -20,6 +25,30 @@ namespace Poly_Ling.Serialization
     /// <summary>テクスチャ画像の収集と適用。フォルダにもネットワークにも依存しない。</summary>
     public static class ModelTextureTransfer
     {
+        /// <summary>テクスチャの用途（MaterialData のパス欄・材質のプロパティに対応）。</summary>
+        public enum TextureSlot
+        {
+            /// <summary>BaseMapPath / SourceTexturePath / _BaseMap / _MainTex</summary>
+            Base,
+            /// <summary>SourceAlphaMapPath</summary>
+            Alpha,
+            /// <summary>NormalMapPath / SourceBumpMapPath / _BumpMap</summary>
+            Normal,
+            /// <summary>MetallicMapPath / _MetallicGlossMap</summary>
+            Metallic,
+            /// <summary>OcclusionMapPath / _OcclusionMap</summary>
+            Occlusion,
+            /// <summary>EmissionMapPath / _EmissionMap</summary>
+            Emission,
+        }
+
+        /// <summary>集めた 1 枚を使う材質と用途。</summary>
+        public sealed class Use
+        {
+            public MaterialReference Material;
+            public TextureSlot       Slot;
+        }
+
         /// <summary>集めたテクスチャ 1 枚。</summary>
         public sealed class Entry
         {
@@ -28,6 +57,16 @@ namespace Poly_Ling.Serialization
 
             /// <summary>画像ファイルのバイト列（元ファイルの中身、または PNG）。</summary>
             public byte[] Data;
+
+            /// <summary>この 1 枚を使う材質と用途（ファイル冒頭【Entry.Uses】）。</summary>
+            public readonly List<Use> Uses = new List<Use>();
+
+            internal void AddUse(MaterialReference material, TextureSlot slot)
+            {
+                foreach (var u in Uses)
+                    if (ReferenceEquals(u.Material, material) && u.Slot == slot) return;
+                Uses.Add(new Use { Material = material, Slot = slot });
+            }
         }
 
         // ================================================================
@@ -47,10 +86,12 @@ namespace Poly_Ling.Serialization
 
             // 読み込み済みの元ファイル（正規化フルパス → 保存名）
             var copiedFiles = new Dictionary<string, string>();
-            // PNG にしたテクスチャ（instanceID）
-            var encodedTextures = new HashSet<int>();
+            // PNG にしたテクスチャ（instanceID → 保存名）
+            var encodedTextures = new Dictionary<int, string>();
             // 使用済みの保存名
             var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // 保存名 → 集めた 1 枚（用途の記録に使う）
+            var byName = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
 
             void ProcessMaterialList(List<MaterialReference> matRefs)
             {
@@ -62,24 +103,24 @@ namespace Poly_Ling.Serialization
 
                     // 1. ファイルパスベース
                     // Unity AssetDBパス（Assets/...）
-                    AddFile(entries, d.BaseMapPath, copiedFiles, usedNames, true);
-                    AddFile(entries, d.MetallicMapPath, copiedFiles, usedNames, true);
-                    AddFile(entries, d.NormalMapPath, copiedFiles, usedNames, true);
-                    AddFile(entries, d.OcclusionMapPath, copiedFiles, usedNames, true);
-                    AddFile(entries, d.EmissionMapPath, copiedFiles, usedNames, true);
+                    AddFile(entries, byName, matRef, TextureSlot.Base,      d.BaseMapPath,      copiedFiles, usedNames, true);
+                    AddFile(entries, byName, matRef, TextureSlot.Metallic,  d.MetallicMapPath,  copiedFiles, usedNames, true);
+                    AddFile(entries, byName, matRef, TextureSlot.Normal,    d.NormalMapPath,    copiedFiles, usedNames, true);
+                    AddFile(entries, byName, matRef, TextureSlot.Occlusion, d.OcclusionMapPath, copiedFiles, usedNames, true);
+                    AddFile(entries, byName, matRef, TextureSlot.Emission,  d.EmissionMapPath,  copiedFiles, usedNames, true);
 
                     // 外部ファイルパス（絶対パス）
-                    AddFile(entries, d.SourceTexturePath, copiedFiles, usedNames, false);
-                    AddFile(entries, d.SourceAlphaMapPath, copiedFiles, usedNames, false);
-                    AddFile(entries, d.SourceBumpMapPath, copiedFiles, usedNames, false);
+                    AddFile(entries, byName, matRef, TextureSlot.Base,   d.SourceTexturePath,  copiedFiles, usedNames, false);
+                    AddFile(entries, byName, matRef, TextureSlot.Alpha,  d.SourceAlphaMapPath, copiedFiles, usedNames, false);
+                    AddFile(entries, byName, matRef, TextureSlot.Normal, d.SourceBumpMapPath,  copiedFiles, usedNames, false);
 
                     // 2. フォールバック: パスから読めなかったテクスチャを Material から直接抽出
-                    AddFromMaterial(entries, matRef, "_BaseMap", d.BaseMapPath, d.SourceTexturePath, copiedFiles, encodedTextures, usedNames);
-                    AddFromMaterial(entries, matRef, "_MainTex", d.BaseMapPath, d.SourceTexturePath, copiedFiles, encodedTextures, usedNames);
-                    AddFromMaterial(entries, matRef, "_MetallicGlossMap", d.MetallicMapPath, null, copiedFiles, encodedTextures, usedNames);
-                    AddFromMaterial(entries, matRef, "_BumpMap", d.NormalMapPath, d.SourceBumpMapPath, copiedFiles, encodedTextures, usedNames);
-                    AddFromMaterial(entries, matRef, "_OcclusionMap", d.OcclusionMapPath, null, copiedFiles, encodedTextures, usedNames);
-                    AddFromMaterial(entries, matRef, "_EmissionMap", d.EmissionMapPath, null, copiedFiles, encodedTextures, usedNames);
+                    AddFromMaterial(entries, byName, matRef, TextureSlot.Base,      "_BaseMap",          d.BaseMapPath,      d.SourceTexturePath, copiedFiles, encodedTextures, usedNames);
+                    AddFromMaterial(entries, byName, matRef, TextureSlot.Base,      "_MainTex",          d.BaseMapPath,      d.SourceTexturePath, copiedFiles, encodedTextures, usedNames);
+                    AddFromMaterial(entries, byName, matRef, TextureSlot.Metallic,  "_MetallicGlossMap", d.MetallicMapPath,  null,                copiedFiles, encodedTextures, usedNames);
+                    AddFromMaterial(entries, byName, matRef, TextureSlot.Normal,    "_BumpMap",          d.NormalMapPath,    d.SourceBumpMapPath, copiedFiles, encodedTextures, usedNames);
+                    AddFromMaterial(entries, byName, matRef, TextureSlot.Occlusion, "_OcclusionMap",     d.OcclusionMapPath, null,                copiedFiles, encodedTextures, usedNames);
+                    AddFromMaterial(entries, byName, matRef, TextureSlot.Emission,  "_EmissionMap",      d.EmissionMapPath,  null,                copiedFiles, encodedTextures, usedNames);
                 }
             }
 
@@ -88,9 +129,10 @@ namespace Poly_Ling.Serialization
             return entries;
         }
 
-        /// <summary>テクスチャファイルを 1 つ読む。</summary>
+        /// <summary>テクスチャファイルを 1 つ読む。読み込み済みなら用途だけ足す。</summary>
         private static void AddFile(
-            List<Entry> entries, string texturePath,
+            List<Entry> entries, Dictionary<string, Entry> byName,
+            MaterialReference matRef, TextureSlot slot, string texturePath,
             Dictionary<string, string> copiedFiles, HashSet<string> usedNames, bool isAssetPath)
         {
             if (string.IsNullOrEmpty(texturePath)) return;
@@ -98,14 +140,21 @@ namespace Poly_Ling.Serialization
             string normalizedSource = ResolveFullPath(texturePath, isAssetPath);
             if (normalizedSource == null) return;
 
-            if (copiedFiles.ContainsKey(normalizedSource)) return;
+            if (copiedFiles.TryGetValue(normalizedSource, out string copiedName))
+            {
+                if (byName.TryGetValue(copiedName, out var copied)) copied.AddUse(matRef, slot);
+                return;
+            }
             if (!File.Exists(normalizedSource)) return;
 
             try
             {
                 byte[] data = File.ReadAllBytes(normalizedSource);
                 string name = UniqueName(usedNames, Path.GetFileName(normalizedSource));
-                entries.Add(new Entry { FileName = name, Data = data });
+                var entry = new Entry { FileName = name, Data = data };
+                entry.AddUse(matRef, slot);
+                entries.Add(entry);
+                byName[name] = entry;
                 copiedFiles[normalizedSource] = name;
             }
             catch (Exception e)
@@ -114,11 +163,15 @@ namespace Poly_Ling.Serialization
             }
         }
 
-        /// <summary>パスから読めなかった場合、Material の Texture2D を PNG にする。</summary>
+        /// <summary>
+        /// パスから読めなかった場合、Material の Texture2D を PNG にする。
+        /// パスから読めた場合の用途は AddFile が同じ材質・用途で記録済み。
+        /// </summary>
         private static void AddFromMaterial(
-            List<Entry> entries, MaterialReference matRef, string propertyName,
+            List<Entry> entries, Dictionary<string, Entry> byName,
+            MaterialReference matRef, TextureSlot slot, string propertyName,
             string assetPath, string sourcePath,
-            Dictionary<string, string> copiedFiles, HashSet<int> encodedTextures, HashSet<string> usedNames)
+            Dictionary<string, string> copiedFiles, Dictionary<int, string> encodedTextures, HashSet<string> usedNames)
         {
             // 既にパスベースで読み込み済みならスキップ
             if (IsAlreadyCopied(assetPath, copiedFiles, true) || IsAlreadyCopied(sourcePath, copiedFiles, false))
@@ -131,7 +184,11 @@ namespace Poly_Ling.Serialization
             if (tex == null) return;
 
             int id = tex.GetInstanceID();
-            if (encodedTextures.Contains(id)) return;
+            if (encodedTextures.TryGetValue(id, out string encodedName))
+            {
+                if (byName.TryGetValue(encodedName, out var encoded)) encoded.AddUse(matRef, slot);
+                return;
+            }
 
             string baseName = !string.IsNullOrEmpty(tex.name) ? tex.name : $"texture_{id}";
 
@@ -145,8 +202,11 @@ namespace Poly_Ling.Serialization
                 if (pngData != null && pngData.Length > 0)
                 {
                     string name = UniqueName(usedNames, baseName + ".png");
-                    entries.Add(new Entry { FileName = name, Data = pngData });
-                    encodedTextures.Add(id);
+                    var entry = new Entry { FileName = name, Data = pngData };
+                    entry.AddUse(matRef, slot);
+                    entries.Add(entry);
+                    byName[name] = entry;
+                    encodedTextures[id] = name;
                 }
             }
             catch (Exception e)

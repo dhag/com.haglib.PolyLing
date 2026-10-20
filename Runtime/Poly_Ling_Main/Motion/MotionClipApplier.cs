@@ -6,12 +6,16 @@
 //       ローカル軸補正 R^-1·Q·R（R = ctx.BoneModelRotation）を掛け、
 //       "MotionClipVMD" レイヤーのデルタとして載せる（VMD 直接適用・リターゲットなし）。
 //       値は既に Unity 化済みのため、ここで座標変換（Z 反転）は行わない。
-//   - path / humanoid / muscles / body トラック: 検証済みの UnityClipApplier に委譲する
-//       （二次骨＝path、baked 本体＝humanoid、リターゲットは外部 UnityBone CSV v2 の
-//        ソース rest を用いる）。
+//   - path / muscles / body トラック: 検証済みの UnityClipApplier に委譲する
+//       （二次骨＝path、本体＝muscles＋body）。
+//   - 本体ボーンの正本は rotationSource で決まる（MotionClipDTO 冒頭）。
+//       "muscles"（既定）: muscles を UnityClipApplier で解いて当てる。bakedBones は再生に使わない。
+//       "bakedBones"（BVH・FBX・VRMA の読込、bakedBones だけの .plmotion）: bakedBones の
+//         正準ローカル回転を UnityClipApplier.ApplyFrame(…, canonLocals) で当てる。
+//         マッスルで表せない回転（肩・手のねじり、前腕・すねの横曲げ）も残る。
 //   - expressions: モデルの MorphExpression を名前（Name、無ければ NameEnglish）で引き、
 //       頂点モーフの差分を基準メッシュの WorkingPositions へ重みを掛けて足す
-//       （MorphPreviewState.Apply と同じ置き場所）。グループモーフは子を名前で辿る。
+//       （MorphPreviewState.Apply と同じ置き場所）。グループモーフは MeshEntries で展開する（ExpandToVertexMorphs）。
 //       頂点モーフ以外の種類（ボーン・UV・材質など）は未対応として報告する。
 //       provider は解決に使っていない（どの provider でも名前で引く）。
 //
@@ -23,13 +27,13 @@
 //   ApplyFrame では値だけを書き換える。
 //
 // ■ マッスルと補助ボーンの競合
-//   マッスル（または bakedBones）が駆動する Humanoid ボーンと同じノードへ解決される
+//   マッスルが駆動する Humanoid ボーンと同じノードへ解決される
 //   path トラックは、二重に変換されるので委譲用ビューから外して適用しない。
 //   外したトラックは BindingReport.Conflicts に載る。
 //
 // ■ PositionScale の適用範囲（注意）
 //   PositionScale は boneName トラック（本クラスの ApplyBoneNameTrack）と、
-//   path / humanoid トラック（_clip = UnityClipApplier へ委譲）の両方に同じ値が掛かる。
+//   path トラック（_clip = UnityClipApplier へ委譲）の両方に同じ値が掛かる。
 //   既定は 1。VMD 由来（PMX 単位）のクリップでは呼び出し側が
 //   EditorState.PmxUnityRatio（既定 0.1）を設定しなければ位置が 10 倍になる。
 //   MotionClipDTO は単位系を持たないため、本クラスでは自動判別できない。
@@ -97,7 +101,7 @@ namespace Poly_Ling.Motion
     {
         private const string VmdLayerName = "MotionClipVMD";
 
-        // path / humanoid / muscles / body は検証済みの UnityClipApplier に委譲する。
+        // path / muscles / body は検証済みの UnityClipApplier に委譲する。
         private readonly UnityClipApplier _clip = new UnityClipApplier();
 
         // boneName 解決（モデル骨名 → MeshContextList インデックス）
@@ -125,7 +129,6 @@ namespace Poly_Ling.Motion
             public UnityWeightKeyDTO    Key;
         }
         private readonly List<ViewBone>   _viewBones   = new List<ViewBone>();
-        private readonly List<ViewBone>   _viewBaked   = new List<ViewBone>();
         private readonly List<ViewMuscle> _viewMuscles = new List<ViewMuscle>();
         private ViewBone _viewBody;
         private readonly float[] _bodyPos = new float[3];
@@ -169,9 +172,6 @@ namespace Poly_Ling.Motion
         /// <summary>直近の ApplyFrame で適用した表情トラック数。</summary>
         public int AppliedExpressionCount { get; private set; }
 
-        /// <summary>ソース rest（バインドポーズ）読込済みなら true。</summary>
-        public bool HasSourceRest => _clip.HasSourceRest;
-
         /// <summary>現在のクリップとモデルの結び付き状況。SetClip / BuildMapping のたびに作り直す。</summary>
         public MotionBindingReport BindingReport { get; private set; } = new MotionBindingReport();
 
@@ -179,28 +179,43 @@ namespace Poly_Ling.Motion
         // 設定
         // ================================================================
 
-        /// <summary>適用対象のクリップを設定し、結び付けと委譲用ビューを作り直す。</summary>
+        /// <summary>
+        /// 適用対象のクリップを設定し、結び付けと委譲用ビューを作り直す。
+        /// </summary>
         public void SetClip(MotionClipDTO dto)
         {
             _dto = dto;
+            _bakedSampler = MotionClipDTO.BakedBonesArePrimary(dto) ? new MotionBakedBoneSampler(dto) : null;
             RebuildBindings();
         }
 
-        /// <summary>外部 UnityBone CSV v2（ソース rest）を読み込む。以後 humanoid はリターゲット適用。</summary>
-        public int LoadSourceRestCsv(string csvText) => _clip.LoadSourceRestCsv(csvText);
+        // rotationSource = "bakedBones" のクリップの本体ボーン（null ならマッスルで当てる）
+        private MotionBakedBoneSampler _bakedSampler;
+        private readonly Dictionary<HumanBodyBones, Quaternion> _canonLocals = new Dictionary<HumanBodyBones, Quaternion>();
+
+        /// <summary>本体ボーンを bakedBones で当てているか（rotationSource = "bakedBones"）。</summary>
+        public bool UsesBakedBones => _bakedSampler != null;
+
+        /// <summary>
+        /// クリップの absentMuscles（"zero" / "rest"）を変えて再生に反映する。DTO 自体を書き換えるので、
+        /// そのまま保存すればファイルにも入る（bakedBones は保存時に焼き直される）。
+        /// </summary>
+        public void SetAbsentMuscles(string mode)
+        {
+            if (_dto == null) return;
+            _dto.absentMuscles = mode == MotionClipDTO.AbsentMusclesRest ? MotionClipDTO.AbsentMusclesRest : MotionClipDTO.AbsentMusclesZero;
+            if (_clipView != null) _clipView.absentMusclesRest = MotionClipDTO.AbsentIsRest(_dto);
+        }
 
         /// <summary>外部 UnityLimit CSV（マッスル可動域・実測）を委譲先へ読み込む。</summary>
         public int LoadMuscleLimitCsv(string csvText) => _clip.LoadMuscleLimitCsv(csvText);
 
-        /// <summary>本体ボーンの適用方式（委譲先の設定）。</summary>
-        public UnityClipApplier.BodySource BodyMode
+        /// <summary>オプション「脚も T ポーズに合わせる」（UnityClipApplier.AlignLegs）。既定は false。</summary>
+        public bool AlignLegs
         {
-            get => _clip.BodyMode;
-            set => _clip.BodyMode = value;
+            get => _clip.AlignLegs;
+            set => _clip.AlignLegs = value;
         }
-
-        /// <summary>ソース rest を破棄。</summary>
-        public void ClearSourceRest() => _clip.ClearSourceRest();
 
         /// <summary>UnityLimit CSV を破棄し、既定（CanonMuscleTable）へ戻す。</summary>
         public void ClearMuscleLimits() => _clip.ClearMuscleLimits();
@@ -288,7 +303,6 @@ namespace Poly_Ling.Motion
                 foreach (var m in _dto.muscles)
                 {
                     if (m == null || string.IsNullOrEmpty(m.name)) continue;
-                    if (IsRootCurveName(m.name)) continue;
                     rep.MuscleTotal++;
                     if (muscleNames.Contains(m.name)) rep.MuscleKnown++;
                     else rep.Add(MotionFileCodes.UnknownMuscle, m.name);
@@ -326,17 +340,6 @@ namespace Poly_Ling.Motion
                     }
                 }
 
-                if (_dto.bakedBones != null)
-                {
-                    foreach (var t in _dto.bakedBones)
-                    {
-                        if (t == null) continue;
-                        rep.BoneTotal++;
-                        if (_clip.ResolveNode(t.id) >= 0) rep.BoneResolved++;
-                        else rep.Add(MotionFileCodes.UnknownBone, t.id);
-                    }
-                }
-
                 BuildExpressionBindings(_mappedModel, rep);
             }
             else if (_dto.expressions != null)
@@ -347,12 +350,7 @@ namespace Poly_Ling.Motion
             BuildView();
         }
 
-        private static bool IsRootCurveName(string name)
-            => name == UnityClipRootMotion.NameTx || name == UnityClipRootMotion.NameTy || name == UnityClipRootMotion.NameTz
-            || name == UnityClipRootMotion.NameQx || name == UnityClipRootMotion.NameQy
-            || name == UnityClipRootMotion.NameQz || name == UnityClipRootMotion.NameQw;
-
-        // マッスルまたは bakedBones が駆動する Humanoid ボーンのノード集合。
+        // マッスルが駆動する Humanoid ボーンのノード集合。
         // ノードの引き方は UnityClipApplier.ApplySelfMuscle と同じ（名前の空白を抜いて、だめなら空白入り）。
         private HashSet<int> ComputeDrivenNodes()
         {
@@ -382,14 +380,6 @@ namespace Poly_Ling.Motion
                 }
             }
 
-            if (_dto.bakedBones != null)
-                foreach (var t in _dto.bakedBones)
-                {
-                    if (t == null) continue;
-                    int n = _clip.ResolveNode(t.id);
-                    if (n >= 0) set.Add(n);
-                }
-
             return set;
         }
 
@@ -410,8 +400,12 @@ namespace Poly_Ling.Motion
                 }
 
                 var binding = new ExpressionBinding { Track = tr };
-                var visiting = new HashSet<MorphExpression>();
-                CollectOffsets(model, expr, 1f, binding.Entries, visiting);
+                ExpandToVertexMorphs(model, expr, 1f, (morphIndex, baseIndex, morphCtx, w) =>
+                {
+                    var offsets = morphCtx.GetMorphOffsets();
+                    if (offsets == null || offsets.Count == 0) return;
+                    binding.Entries.Add(new OffsetEntry { BaseIndex = baseIndex, Offsets = offsets, Weight = w });
+                });
                 if (binding.Entries.Count == 0)
                 {
                     rep.Add(MotionFileCodes.UnknownExpression, $"{tr.name}（頂点モーフを含みません: {expr.Type}）");
@@ -424,7 +418,8 @@ namespace Poly_Ling.Motion
             }
         }
 
-        private static MorphExpression FindExpression(ModelContext model, string name)
+        /// <summary>表情トラックの名前からモデルの表情を引く（Name、無ければ NameEnglish の完全一致）。</summary>
+        public static MorphExpression FindExpression(ModelContext model, string name)
         {
             if (model?.MorphExpressions == null || string.IsNullOrEmpty(name)) return null;
             foreach (var e in model.MorphExpressions)
@@ -434,28 +429,34 @@ namespace Poly_Ling.Motion
             return null;
         }
 
-        // 頂点モーフは差分を控え、グループモーフは子を名前で辿る（循環は打ち切る）。
-        private static void CollectOffsets(ModelContext model, MorphExpression expr, float weight,
-            List<OffsetEntry> outEntries, HashSet<MorphExpression> visiting)
+        /// <summary>
+        /// 表情を頂点モーフ（モーフ MeshContext）へ展開する。頂点モーフとグループモーフは
+        /// MeshEntries（モーフメッシュと重み）で展開する。モーフのパネルの試し当て
+        /// （MorphExpressionHandler → MorphPreviewState.BuildMorphBasePairs）と同じ規則。
+        /// グループは取り込み（PMX・VRM）で子のモーフメッシュを重み付きで MeshEntries に展開して持ち、
+        /// 子の表情そのものは一覧から外すので、GroupChildren（PMX 書き出しの構造用）の名前では辿れない
+        /// （以前は GroupChildren で辿り、グループの表情は何も動かなかった。PolyLing_Blender不具合修正計画.md の 9）。
+        /// それ以外の種類は何も返さない。
+        /// 再生（BuildExpressionBindings）と FBX 書き出しのブレンドシェイプ曲線が同じ展開を使う。
+        /// </summary>
+        /// <param name="visit">(モーフ MeshContext 索引, 基準メッシュ索引, モーフ MeshContext, 重み)。</param>
+        public static void ExpandToVertexMorphs(ModelContext model, MorphExpression expr, float weight,
+            Action<int, int, MeshContext, float> visit)
+        {
+            if (visit == null) return;
+            ExpandToVertexMorphs(model, expr, weight, visit, new HashSet<MorphExpression>());
+        }
+
+        private static void ExpandToVertexMorphs(ModelContext model, MorphExpression expr, float weight,
+            Action<int, int, MeshContext, float> visit, HashSet<MorphExpression> visiting)
         {
             if (expr == null || !visiting.Add(expr)) return;
             try
             {
-                if (expr.Type == MorphType.Group)
-                {
-                    if (expr.GroupChildren == null) return;
-                    foreach (var child in expr.GroupChildren)
-                        CollectOffsets(model, FindExpression(model, child.Name), weight * child.Weight, outEntries, visiting);
-                    return;
-                }
-                if (expr.Type != MorphType.Vertex) return;
+                if (expr.Type != MorphType.Vertex && expr.Type != MorphType.Group) return;
 
                 foreach (var (morphIndex, baseIndex, morphCtx, baseCtx, w) in MorphPreviewState.BuildMorphBasePairs(model, expr))
-                {
-                    var offsets = morphCtx.GetMorphOffsets();
-                    if (offsets == null || offsets.Count == 0) continue;
-                    outEntries.Add(new OffsetEntry { BaseIndex = baseIndex, Offsets = offsets, Weight = weight * w });
-                }
+                    visit(morphIndex, baseIndex, morphCtx, weight * w);
             }
             finally
             {
@@ -469,7 +470,7 @@ namespace Poly_Ling.Motion
 
         private void ClearView()
         {
-            _viewBones.Clear(); _viewBaked.Clear(); _viewMuscles.Clear();
+            _viewBones.Clear(); _viewMuscles.Clear();
             _viewBody = null;
             _clipView = null;
         }
@@ -490,12 +491,6 @@ namespace Poly_Ling.Motion
                 foreach (var t in _dto.bones)
                     if (t != null && t.targetKind == "path" && !_conflicted.Contains(t))
                         _viewBones.Add(MakeViewBone(t, view.bones));
-
-            // baked 本体（humanoid）
-            if (_dto.bakedBones != null)
-                foreach (var t in _dto.bakedBones)
-                    if (t != null)
-                        _viewBaked.Add(MakeViewBone(t, view.bakedBones));
 
             // マッスル
             if (_dto.muscles != null)
@@ -522,7 +517,8 @@ namespace Poly_Ling.Motion
                 view.body.keys.Add(new UnityBodyKeyDTO());
             }
 
-            view.clipType = (view.muscles.Count > 0 || view.bakedBones.Count > 0) ? "Humanoid" : "Generic";
+            view.clipType = view.muscles.Count > 0 ? "Humanoid" : "Generic";
+            view.absentMusclesRest = MotionClipDTO.AbsentIsRest(_dto);
         }
 
         private static ViewBone MakeViewBone(MotionTrackDTO src, List<UnityBoneTrackDTO> into)
@@ -570,6 +566,31 @@ namespace Poly_Ling.Motion
                 into.Valid[i]   = true;
             }
 
+            // absentMuscles = "rest" のクリップは、駆動されているボーンのトラックの無い dof を
+            // T ポーズの値で埋めて送る（受信側は値の無い dof を 0 で解くため、埋めないと再生とずれる）。
+            if (MotionClipDTO.AbsentIsRest(_dto))
+            {
+                var rest = _clip.CanonRestMuscles;
+                if (rest != null)
+                {
+                    var driven = new bool[(int)HumanBodyBones.LastBone];
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (!into.Valid[i]) continue;
+                        int b = HumanTrait.BoneFromMuscle(i);
+                        if (b >= 0 && b < driven.Length) driven[b] = true;
+                    }
+                    for (int i = 0; i < count && i < rest.Length; i++)
+                    {
+                        if (into.Valid[i]) continue;
+                        int b = HumanTrait.BoneFromMuscle(i);
+                        if (b < 0 || b >= driven.Length || !driven[b]) continue;
+                        into.Muscles[i] = rest[i];
+                        into.Valid[i]   = true;
+                    }
+                }
+            }
+
             into.HasRoot = false;
             if (_dto.body != null
                 && MotionCurveMath.TryEvaluateVector3(_dto.body, MotionCurveMath.VectorChannel.Position, timeSec, out var p)
@@ -587,7 +608,6 @@ namespace Poly_Ling.Motion
         private void UpdateView(float timeSec)
         {
             foreach (var vb in _viewBones) UpdateViewBone(vb, timeSec);
-            foreach (var vb in _viewBaked) UpdateViewBone(vb, timeSec);
 
             foreach (var vm in _viewMuscles)
             {
@@ -623,7 +643,6 @@ namespace Poly_Ling.Motion
         {
             if (view == null) return false;
             return (view.bones != null && view.bones.Count > 0)
-                || (view.bakedBones != null && view.bakedBones.Count > 0)
                 || (view.muscles != null && view.muscles.Count > 0)
                 || (view.body != null && view.body.keys != null && view.body.keys.Count > 0);
         }
@@ -645,11 +664,13 @@ namespace Poly_Ling.Motion
                     if (track != null && track.targetKind == "boneName")
                         matched += ApplyBoneNameTrack(model, track, timeSec);
 
-            // path / humanoid / muscles / body（UnityClipApplier に委譲）
+            // path / muscles / body（UnityClipApplier に委譲）
             if (HasClipViewContent(_clipView))
             {
                 UpdateView(timeSec);
-                _clip.ApplyFrame(model, _clipView, timeSec);   // 内部で ComputeWorldMatrices
+                if (_bakedSampler != null) _bakedSampler.Sample(timeSec, _canonLocals);
+                _clip.ApplyFrame(model, _clipView, timeSec,
+                                 _bakedSampler != null ? _canonLocals : null);   // 内部で ComputeWorldMatrices
                 matched += _clip.MatchedTrackCount;
             }
             else

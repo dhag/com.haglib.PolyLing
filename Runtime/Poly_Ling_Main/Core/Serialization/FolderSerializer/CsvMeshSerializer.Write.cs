@@ -68,8 +68,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             else
             {
                 sb.AppendLine($"bakedMirrorSourceIndex,{mc.BakedMirrorSourceIndex}");
-                sb.AppendLine($"mirrorGeometryDerived,{mc.MirrorGeometryDerived}");
             }
+            // 参照ではない値なので、どちらのモードでも書く（読みは両方のモードで読む）。
+            sb.AppendLine($"mirrorGeometryDerived,{mc.MirrorGeometryDerived}");
 
             sb.AppendLine($"hasBakedMirrorChild,{mc.HasBakedMirrorChild}");
             if (mc.DetachedMirrorObjectId != 0)

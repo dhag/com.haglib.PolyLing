@@ -693,6 +693,30 @@ namespace Poly_Ling.Player
                     originCsvPath: AllowPanelPath(post?.OriginCsvPath),
                     originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
             };
+            _importSubPanel.OnImportGltf = (p, s, post) =>
+            {
+                // テクスチャを書き出す場合は、書き出し先（glTF と同じフォルダの「ファイル名_textures」）も許可する。
+                if (s != null && s.ExtractTextures && !string.IsNullOrEmpty(p))
+                    AllowPanelPath(Poly_Ling.Gltf.GltfImportSettings.DefaultTextureFolder(p));
+                DispatchFromPanel(new ImportGltfFileCommand(
+                    PanelModelIndex(), AllowPanelPath(p), s,
+                    humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                    applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                    originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                    originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            };
+            _importSubPanel.OnImportFbx = (p, s, post) =>
+            {
+                // テクスチャを書き出す場合は、書き出し先（FBX と同じフォルダの「ファイル名_textures」）も許可する。
+                if (s != null && s.ExtractTextures && !string.IsNullOrEmpty(p))
+                    AllowPanelPath(Poly_Ling.Fbx.FbxImportSettings.DefaultTextureFolder(p));
+                DispatchFromPanel(new ImportFbxFileCommand(
+                    PanelModelIndex(), AllowPanelPath(p), s,
+                    humanoidAutoMap: post?.HumanoidAutoMap ?? false,
+                    applyOriginCsv: post?.ApplyOriginCsv ?? false,
+                    originCsvPath: AllowPanelPath(post?.OriginCsvPath),
+                    originCsvIncludeRotation: post?.OriginCsvIncludeRotation ?? false));
+            };
             AttachPanelSelectToggle(_layoutRoot.ImportSection, PanelSelectKeyImport);
 
             _exportSubPanel = new PlayerExportSubPanel();
@@ -710,6 +734,23 @@ namespace Poly_Ling.Player
                 PanelModelIndex(), AllowPanelPath(p), s));
             _exportSubPanel.OnExportVrm = (p, s) => DispatchFromPanel(new ExportVrmFileCommand(
                 PanelModelIndex(), AllowPanelPath(p), s, s?.Authors?.ToArray()));
+            _exportSubPanel.OnExportGltf = (p, s) =>
+            {
+                // .gltf は同じフォルダへ「ファイル名.bin」も書くので、それも許可する。
+                if (!string.IsNullOrEmpty(p) &&
+                    string.Equals(System.IO.Path.GetExtension(p), ".gltf", System.StringComparison.OrdinalIgnoreCase))
+                    AllowPanelPath(System.IO.Path.ChangeExtension(p, ".bin"));
+                DispatchFromPanel(new ExportGltfFileCommand(
+                    PanelModelIndex(), AllowPanelPath(p), s));
+            };
+            _exportSubPanel.OnExportFbx = (p, s) =>
+            {
+                // 受け口はテクスチャの書き出し先（「ファイル名_textures」）も関門に通すので、それも許可する。
+                if (!string.IsNullOrEmpty(p))
+                    AllowPanelPath(Poly_Ling.Fbx.FbxExportSettings.DefaultTextureFolder(p));
+                DispatchFromPanel(new ExportFbxFileCommand(
+                    PanelModelIndex(), AllowPanelPath(p), s));
+            };
             AttachPanelSelectToggle(_layoutRoot.ExportSection, PanelSelectKeyExport);
 
             _projectSaveSubPanel = new PlayerProjectFileSubPanel

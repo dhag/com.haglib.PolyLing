@@ -536,7 +536,14 @@ namespace Poly_Ling.Player
                 args[key] = expanded;
             }
 
-            var inner = PanelCommandFactory.Create(step.Action, modelIndex, args, out string createError);
+            // モデル番号は項目を実行する時点のカレントモデルにする。
+            //   流しの途中で createEmptyModel などがカレントを切り替える。ほとんどのコマンドは
+            //   カレントモデルを対象にするが、renameModel / queryBone などは渡したモデル番号を使うため、
+            //   runScenario の番号のままだと前の項目で作ったモデルと別のモデルに効いてしまう。
+            int stepModelIndex = _getProject()?.CurrentModelIndex ?? modelIndex;
+            if (stepModelIndex < 0) stepModelIndex = modelIndex;
+
+            var inner = PanelCommandFactory.Create(step.Action, stepModelIndex, args, out string createError);
             if (inner == null) { reason = $"{step.Action} を組み立てられません: {createError}"; return false; }
 
             var result = Dispatch(inner);

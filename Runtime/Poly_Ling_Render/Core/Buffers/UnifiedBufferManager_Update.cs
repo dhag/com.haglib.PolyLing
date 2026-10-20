@@ -68,41 +68,9 @@ namespace Poly_Ling.Core
 
                 if (useWorldTransform)
                 {
-                    // MeshFilter（Type=Mesh かつ BoneWeight なし）: WorldMatrix を直接使用
-                    //   → ローカル座標に WorldMatrix を適用してワールド座標を得る
-                    // スキンドメッシュ（Type=Mesh かつ BoneWeight あり）: SkinningMatrix を使用
-                    // ボーン（Type=Bone）: SkinningMatrix を使用
-                    //   → スキンドメッシュ頂点の boneIndex がボーンを指すため、
-                    //     SkinningMatrix = BoneWorldMatrix × BoneBindPose が必要
-                    // ミラー側（MirrorSide / BakedMirror）も、スキンを持たなければ
-                    // MeshFilter と同じ実体である。Type だけで弾くと SkinningMatrix 経路に
-                    // 落ち、BindPose が WorldMatrix⁻¹ に更新された瞬間（Tポーズ変換など）
-                    // SkinningMatrix = W·W⁻¹ = 単位 となって変換が丸ごと消える。
-                    // ここは「行列表の中身」を決める場所であって、頂点の座標系の判定では
-                    // ない。対象の型を明示すること。型で絞らずに IsSkinned だけで分けると、
-                    // ボーンの欄が WorldMatrix になり、その欄を boneIndex で引く
-                    // スキンド頂点が全部ボーンのワールド位置ぶん飛ぶ。
-                    bool usesWorldMatrixDirect =
-                        (ctx.Type == MeshType.Mesh ||
-                         ctx.Type == MeshType.MirrorSide ||
-                         ctx.Type == MeshType.BakedMirror) &&
-                        !ctx.IsSkinned;
-
-                    if (showBindPose)
-                    {
-                        // バインド表示。非スキンドはポーズを含まない階層、
-                        // ボーン・スキンドは単位行列（＝頂点のバインド空間をそのまま出す）。
-                        _transformMatrices[i] = usesWorldMatrixDirect
-                            ? ctx.BindWorldMatrix
-                            : Matrix4x4.identity;
-                    }
-                    else
-                    {
-                        // ビルボード指定のある非スキンドメッシュは DisplayWorldMatrix。
-                        // 指定が無ければ WorldMatrix と同じ値が返る。
-                        // 書き戻し側（ToolContext）も同じ行列を使うこと（規約 10.1）。
-                        _transformMatrices[i] = usesWorldMatrixDirect ? ctx.DisplayWorldMatrix : ctx.SkinningMatrix;
-                    }
+                    // 行列表の中身の規則は MeshContext.TransformRowMatrix の 1 か所に置く
+                    // （書き戻し側の VertexMatrix も同じものを使う。規約 10.1）。
+                    _transformMatrices[i] = ctx.TransformRowMatrix(showBindPose);
                 }
                 else
                 {

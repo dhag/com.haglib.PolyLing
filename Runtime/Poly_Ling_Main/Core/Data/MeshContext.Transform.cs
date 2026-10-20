@@ -538,21 +538,25 @@ namespace Poly_Ling.Data
         /// 表示に使った行列と書き戻しの逆行列がずれると、画面で掴んだ位置と
         /// 書き込む値が食い違う（規約 PolyLing_姿勢の規約.md 10.1）。
         ///   ウェイトあり … 単位行列（頂点はバインド空間にあるのでそのまま）
-        ///   ウェイトなし … BindWorldMatrix（ポーズを含まない階層）
+        ///   ウェイトなし … TransformRowMatrix（描画の行列表のこのメッシュの欄）
         ///
-        /// バインド表示でないときはビルボードを含む DisplayWorldMatrix を返す。
-        /// バインド表示中はビルボードを掛けない（バインド表示を優先する）。
-        /// 描画側の行列表と同じ規則にしてある。
+        /// ウェイトの無い頂点は、描画の行列表と同じ TransformRowMatrix を使う
+        /// （非スキンドはビルボード込みの DisplayWorldMatrix／バインド表示は BindWorldMatrix、
+        ///   スキンド種別は SkinningMatrix／バインド表示は単位）。
         /// </summary>
         public Matrix4x4 VertexMatrix(int vertexIndex, bool showBindPose)
         {
+            // ウェイトの無い頂点は、描画の行列表のこのメッシュ自身の欄（TransformRowMatrix）を使う。
+            //   以前はここだけ種別によらず BindWorldMatrix／DisplayWorldMatrix を返しており、
+            //   スキンド種別のメッシュ（描画は SkinningMatrix／単位）で食い違っていた
+            //   （PolyLing_Blender不具合修正計画.md の 6）。
             var mo = MeshObject;
             if (mo == null || vertexIndex < 0 || vertexIndex >= mo.Vertices.Count)
-                return showBindPose ? BindWorldMatrix : DisplayWorldMatrix;
+                return TransformRowMatrix(showBindPose);
 
             var vtx = mo.Vertices[vertexIndex];
             if (vtx == null || !vtx.HasBoneWeight)
-                return showBindPose ? BindWorldMatrix : DisplayWorldMatrix;
+                return TransformRowMatrix(showBindPose);
 
             // ウェイトありの頂点はバインド空間に焼かれている。
             // バインド表示では単位行列（描画側の行列表と同じ扱い）。
@@ -576,6 +580,31 @@ namespace Poly_Ling.Data
                 return WorldMatrix;
 
             return acc;
+        }
+
+        /// <summary>
+        /// 描画の行列表（UnifiedBufferManager.UpdateTransformMatrices、ワールド表示）でこのメッシュ自身の欄に入る行列。
+        /// ウェイトの無い頂点と、BoneWeight の boneIndex がこのメッシュを指す頂点がこれで変換される。
+        /// 規則の定義はこの 1 か所だけに置き、描画（UnifiedBufferManager）と編集（VertexMatrix）が共に使う。
+        ///   非スキンドの描画オブジェクト（Mesh・MirrorSide・BakedMirror で IsSkinned でない）
+        ///     … バインド表示 BindWorldMatrix、通常 DisplayWorldMatrix（ビルボード込み）
+        ///   それ以外（ボーン・スキンド種別のメッシュ）
+        ///     … バインド表示 単位行列、通常 SkinningMatrix（WorldMatrix·BindPose）
+        /// 型で絞らずに IsSkinned だけで分けると、ボーンの欄が WorldMatrix になり、その欄を boneIndex で引く
+        /// スキンド頂点が全部ボーンのワールド位置ぶん飛ぶ。ミラー側も、スキンを持たなければ MeshFilter と同じ実体
+        /// （型だけで弾くと BindPose が WorldMatrix⁻¹ に更新された瞬間に SkinningMatrix = 単位 となって変換が消える）。
+        /// </summary>
+        public Matrix4x4 TransformRowMatrix(bool showBindPose)
+        {
+            bool usesWorldMatrixDirect =
+                (Type == MeshType.Mesh ||
+                 Type == MeshType.MirrorSide ||
+                 Type == MeshType.BakedMirror) &&
+                !IsSkinned;
+
+            if (showBindPose)
+                return usesWorldMatrixDirect ? BindWorldMatrix : Matrix4x4.identity;
+            return usesWorldMatrixDirect ? DisplayWorldMatrix : SkinningMatrix;
         }
 
         /// <summary>
