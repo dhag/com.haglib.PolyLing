@@ -32,8 +32,10 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>登録済みのシナリオを一覧する。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "登録済みのシナリオを一覧する。名前・目的・項目数を同じ並びの配列で返す。query を指定すると、名前・目的・札・項目のコマンド名で絞り込む。usageScene を指定すると、その利用シーンを項目に持つシナリオと、利用シーンの relatedScenarios に挙がったシナリオだけを返す。")]
-    [PLResult("count",      PLResultKind.Integer,      Description = "シナリオの数")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "登録済みのシナリオを一覧する。名前・目的・項目数を同じ並びの配列で返す。query を指定すると、名前・目的・札・項目のコマンド名で絞り込む。usageScene を指定すると、その利用シーンを項目に持つシナリオと、利用シーンの relatedScenarios に挙がったシナリオだけを返す。folder を指定するとそのフォルダ（下のフォルダも含む）だけを返す。offset / limit で一部だけ返せる（数が多いときに使う）。")]
+    [PLResult("count",      PLResultKind.Integer,      Description = "返したシナリオの数（names の長さ）")]
+    [PLResult("total",      PLResultKind.Integer,      Description = "条件に合うシナリオの総数（offset / limit を掛ける前）")]
+    [PLResult("hasMore",    PLResultKind.Flag,         Description = "offset + count の先にまだあるか")]
     [PLResult("storePath",  PLResultKind.Text,         Description = "シナリオを置いている場所の絶対パス。その下に <フォルダ>/<名前>.csv")]
     [PLResult("names",      PLResultKind.TextArray,    Description = "シナリオの名前", Optional = true)]
     [PLResult("folders",    PLResultKind.TextArray,    Description = "シナリオを置いているフォルダ（「a/b」の形。直下は空）。names と同じ並び", Optional = true)]
@@ -51,24 +53,39 @@ namespace Poly_Ling.Data
         [PLParam(Description = "利用シーンの名前。その利用シーンを項目に持つシナリオと、利用シーンの relatedScenarios に挙がったシナリオだけを返す。省くと絞らない")]
         public string UsageScene { get; }
 
-        public QueryScenariosCommand(int modelIndex = 0, bool reload = false, string query = "", string usageScene = "")
+        [PLParam(Description = "シナリオのフォルダ。そのフォルダと下のフォルダにあるものだけを返す（「a」は「a/b」も含む）。省くと絞らない")]
+        public string Folder { get; }
+
+        [PLParam(Description = "条件に合うものの先頭から飛ばす数。ページ送りに使う")]
+        public int Offset { get; }
+
+        [PLParam(Description = "返す数の上限。0 なら全部（既定）")]
+        public int Limit { get; }
+
+        public QueryScenariosCommand(int modelIndex = 0, bool reload = false, string query = "", string usageScene = "",
+                                     string folder = "", int offset = 0, int limit = 0)
             : base(modelIndex)
         {
             Reload     = reload;
             Query      = query ?? "";
             UsageScene = usageScene ?? "";
+            Folder     = folder ?? "";
+            Offset     = System.Math.Max(0, offset);
+            Limit      = System.Math.Max(0, limit);
         }
     }
 
     /// <summary>シナリオ 1 本の中身を返す。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオ 1 本の中身を返す。項目は scenarioItemIds と同じ並びの配列で返し、引数は argCounts で区切った argKeys / argValues に連結して返す。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオ 1 本の中身を返す。項目は scenarioItemIds と同じ並びの配列で返し、引数は argCounts で区切った argKeys / argValues に連結して返す。既定（detail=outline）は引数の値（argValues）を返さない。値が要るときは detail=full にし、直したい項目だけを items で指定する。")]
+    [PLResult("detail",          PLResultKind.Text,         Description = "返した詳しさ。outline / full")]
+    [PLResult("totalSteps",      PLResultKind.Integer,      Description = "items で絞る前の項目の数。items を指定したときだけ", Optional = true)]
     [PLResult("name",            PLResultKind.Text,         Description = "シナリオの名前")]
     [PLResult("folder",          PLResultKind.Text,         Description = "シナリオを置いているフォルダ。直下は空")]
     [PLResult("goal",            PLResultKind.Text,         Description = "このシナリオで達成したいこと")]
     [PLResult("parentName",      PLResultKind.Text,         Description = "元にしたシナリオの名前。空 = 元がない")]
     [PLResult("changeSummary",   PLResultKind.Text,         Description = "元から何を変えたか")]
     [PLResult("createdBy",       PLResultKind.Text,         Description = "作った者")]
-    [PLResult("steps",           PLResultKind.Integer,      Description = "項目の数")]
+    [PLResult("steps",           PLResultKind.Integer,      Description = "返した項目の数")]
     [PLResult("preconditions",   PLResultKind.TextArray,    Description = "使う前に満たしているべきこと", Optional = true)]
     [PLResult("successCriteria", PLResultKind.TextArray,    Description = "終わったときに確かめること", Optional = true)]
     [PLResult("tags",            PLResultKind.TextArray,    Description = "探すための札", Optional = true)]
@@ -79,7 +96,7 @@ namespace Poly_Ling.Data
     [PLResult("usageScenes",     PLResultKind.TextArray,    Description = "項目が属する利用シーンの名前。空なら指定なし。scenarioItemIds と同じ並び", Optional = true)]
     [PLResult("argCounts",       PLResultKind.IntegerArray, Description = "項目ごとの引数の数。scenarioItemIds と同じ並び", Optional = true)]
     [PLResult("argKeys",         PLResultKind.TextArray,    Description = "全項目の引数のキーを項目の順に連結したもの。argCounts で区切る", Optional = true)]
-    [PLResult("argValues",       PLResultKind.TextArray,    Description = "argKeys と同じ並びの値", Optional = true)]
+    [PLResult("argValues",       PLResultKind.TextArray,    Description = "argKeys と同じ並びの値。detail=full のときだけ（頂点座標の列などで大きくなるため）", Optional = true)]
     [PLResult("refNames",        PLResultKind.TextArray,    Description = "参照先のシナリオの名前。参照項目以外は空。scenarioItemIds と同じ並び", Optional = true)]
     [PLResult("expansionPolicies", PLResultKind.TextArray,  Description = "参照項目の扱い方。参照項目以外は空。scenarioItemIds と同じ並び", Optional = true)]
     [PLResult("scenarioNames",   PLResultKind.TextArray,    Description = "その項目が載っているシナリオの名前。resolve のときだけ。scenarioItemIds と同じ並び", Optional = true)]
@@ -89,14 +106,22 @@ namespace Poly_Ling.Data
         [PLParam(Description = "シナリオの名前。queryScenarios の names のどれか", Required = true)]
         public string Name { get; }
 
-        [PLParam(Description = "参照項目を辿って平たい項目の列で返す。参照項目そのものは列に出ない")]
+        [PLParam(Description = "参照項目を辿って平たい項目の列で返す。参照項目そのものは列に出ない。items とは一緒に使えない")]
         public bool Resolve { get; }
 
-        public DescribeScenarioCommand(int modelIndex, string name, bool resolve = false)
+        [PLParam(Description = "詳しさ。outline（既定）は引数の値を返さない。full は argValues も返す")]
+        public string Detail { get; }
+
+        [PLParam(Description = "返す項目 ID（scenarioItemIds のどれか）をカンマ区切りで。省くと全項目。resolve とは一緒に使えない（項目 ID はシナリオごとの名前なので、子のシナリオは名前で直接指定する）")]
+        public string Items { get; }
+
+        public DescribeScenarioCommand(int modelIndex, string name, bool resolve = false, string detail = "", string items = "")
             : base(modelIndex)
         {
             Name    = name ?? "";
             Resolve = resolve;
+            Detail  = detail ?? "";
+            Items   = items ?? "";
         }
     }
 

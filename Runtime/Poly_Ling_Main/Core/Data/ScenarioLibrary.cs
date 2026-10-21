@@ -424,7 +424,8 @@ namespace Poly_Ling.Data
                     string oldFile = _fileOf[n];
                     if (string.Equals(FolderOfFile(oldFile), canonical, StringComparison.Ordinal)) continue;
                     _fileOf[n] = NewFileFor(n, canonical);
-                    if (!WriteOne(FindInternal(n))) { _fileOf[n] = oldFile; error = $"書き込めませんでした: {n}"; return false; }
+                    // 途中で失敗しても、それまでに移した分は変わっている。版を進めてから返す。
+                    if (!WriteOne(FindInternal(n))) { _fileOf[n] = oldFile; Revision++; error = $"書き込めませんでした: {n}"; return false; }
                     DeleteFile(oldFile);
                 }
                 AddFolderChain(canonical);
@@ -465,7 +466,8 @@ namespace Poly_Ling.Data
                 {
                     string oldFile = _fileOf[n];
                     _fileOf[n] = NewFileFor(n, Rebase(FolderOfFile(oldFile)));
-                    if (!WriteOne(FindInternal(n))) { _fileOf[n] = oldFile; error = $"書き込めませんでした: {n}"; return false; }
+                    // 途中で失敗しても、それまでに移した分は変わっている。版を進めてから返す。
+                    if (!WriteOne(FindInternal(n))) { _fileOf[n] = oldFile; Revision++; error = $"書き込めませんでした: {n}"; return false; }
                     DeleteFile(oldFile);
                 }
 
@@ -573,6 +575,129 @@ namespace Poly_Ling.Data
             for (int i = 0; i < _items.Count; i++)
                 if (string.Equals(_items[i].Name, name, StringComparison.Ordinal)) return _items[i];
             return null;
+        }
+
+        // ================================================================
+        // 検索の索引
+        // ================================================================
+        //
+        // 【なぜ作り置くか】
+        //   シナリオはコマンドより頻繁に増える。検索のたびに全件を複製して照合用の本文を
+        //   組み直すと、件数に比例して重くなる。コマンドの索引（PanelCommandSchemaIndex の
+        //   _toolIndex）と同じく作り置き、Revision が変わったときだけ組み直す。
+        //   そのため置き場を変える操作は、必ず Revision を進めること。
+        //
+        // 【照合の本文】
+        //   queryScenarios（PlayerCommandDispatcher.Scenario.cs）と MCP の検索
+        //   （PanelCommandFactory.BuildToolsSearchJson）が同じものを使う。
+
+        /// <summary>検索の索引 1 件。原本の参照は持たない。</summary>
+        public sealed class SearchEntry
+        {
+            public string Name;
+            /// <summary>小文字化した名前（照合用）。</summary>
+            public string NameLower;
+            /// <summary>置いているフォルダ。直下は空。</summary>
+            public string Folder;
+            public string Goal;
+            public int    StepCount;
+            /// <summary>照合用の本文（SearchText を小文字化したもの）。</summary>
+            public string Haystack;
+            /// <summary>項目が属する利用シーンの名前（重複なし）。</summary>
+            public List<string> UsageScenes;
+        }
+
+        private static List<SearchEntry> _searchIndex;
+        private static int _searchIndexRevision = -1;
+
+        /// <summary>
+        /// 検索の索引。登録順。Revision が前に組んだときと同じなら組み直さない。
+        /// 返すリストは読むだけにすること（共有している）。
+        /// </summary>
+        public static List<SearchEntry> SearchIndex()
+        {
+            EnsureLoaded();
+            lock (_lock)
+            {
+                if (_searchIndex != null && _searchIndexRevision == Revision) return _searchIndex;
+
+                var list = new List<SearchEntry>(_items.Count);
+                foreach (var g in _items)
+                {
+                    if (g == null) continue;
+
+                    var scenes = new List<string>();
+                    if (g.Steps != null)
+                        foreach (var s in g.Steps)
+                            if (s != null && !string.IsNullOrEmpty(s.UsageScene) && !ContainsIgnoreCase(scenes, s.UsageScene))
+                                scenes.Add(s.UsageScene);
+
+                    list.Add(new SearchEntry
+                    {
+                        Name        = g.Name ?? "",
+                        NameLower   = (g.Name ?? "").ToLowerInvariant(),
+                        Folder      = _fileOf.TryGetValue(g.Name ?? "", out var f) ? FolderOfFile(f) : "",
+                        Goal        = g.Goal ?? "",
+                        StepCount   = g.StepCount,
+                        Haystack    = SearchText(g).ToLowerInvariant(),
+                        UsageScenes = scenes,
+                    });
+                }
+
+                _searchIndex = list;
+                _searchIndexRevision = Revision;
+                return list;
+            }
+        }
+
+        /// <summary>シナリオの検索で照合する本文。目的・札・満たすべきこと・項目の目的とコマンド名。</summary>
+        public static string SearchText(ObjectGroup g)
+        {
+            if (g == null) return "";
+            var sb = new StringBuilder();
+            sb.Append(g.Goal ?? "").Append('\n');
+            if (g.Tags != null)            foreach (var t in g.Tags)            sb.Append(t).Append('\n');
+            if (g.Preconditions != null)   foreach (var t in g.Preconditions)   sb.Append(t).Append('\n');
+            if (g.SuccessCriteria != null) foreach (var t in g.SuccessCriteria) sb.Append(t).Append('\n');
+            if (g.Steps != null)
+                foreach (var s in g.Steps)
+                {
+                    if (s == null) continue;
+                    sb.Append(s.Action ?? "").Append('\n').Append(s.Purpose ?? "").Append('\n');
+                }
+            return sb.ToString();
+        }
+
+        /// <summary>シナリオが利用シーンに関係するか。項目に名前がある、または利用シーンの relatedScenarios に挙がっている。</summary>
+        public static bool UsesScene(SearchEntry e, SceneDefinition usage)
+        {
+            if (e == null || usage == null) return false;
+            if (usage.RelatedScenarios != null)
+                foreach (var r in usage.RelatedScenarios)
+                    if (string.Equals(r, e.Name, StringComparison.OrdinalIgnoreCase)) return true;
+            return e.UsageScenes != null && ContainsIgnoreCase(e.UsageScenes, usage.Name);
+        }
+
+        /// <summary>
+        /// フォルダの階層一致。filter が空なら常に当たる。
+        /// 「a」は「a」「a/b」に当たり、「ab」には当たらない。大小は無視する。区切りは '/'（'\' も受ける）。
+        /// </summary>
+        public static bool FolderMatches(string folder, string filter)
+        {
+            string want = (filter ?? "").Trim().Replace('\\', '/').Trim('/');
+            if (want.Length == 0) return true;
+            string have = folder ?? "";
+            if (string.Equals(have, want, StringComparison.OrdinalIgnoreCase)) return true;
+            return have.Length > want.Length
+                && have[want.Length] == '/'
+                && have.StartsWith(want, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsIgnoreCase(List<string> list, string value)
+        {
+            foreach (var v in list)
+                if (string.Equals(v, value, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         // ================================================================
@@ -736,6 +861,8 @@ namespace Poly_Ling.Data
 
                 _fileOf[copy.Name] = file;
                 AddFolderChain(FolderOfFile(file));
+                // 中身はもう差し替えた。書き込みに失敗しても版は進める（索引・queryRevisions が見逃さないように）。
+                Revision++;
                 if (!WriteOne(copy)) { error = $"書き込めませんでした: {copy.Name}"; return false; }
                 if (oldFile != null && !string.Equals(oldFile, file, StringComparison.Ordinal)) DeleteFile(oldFile);
             }
@@ -770,6 +897,7 @@ namespace Poly_Ling.Data
                     _fileOf.TryGetValue(name, out var oldFile);
                     _fileOf.Remove(name);
                     DeleteFile(oldFile);
+                    Revision++;
                     return true;
                 }
             }

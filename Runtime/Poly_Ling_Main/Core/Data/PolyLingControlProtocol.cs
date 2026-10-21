@@ -111,8 +111,11 @@ namespace Poly_Ling.Data
         //
         //   tools_generic  … profile=generic 用。全件 + schemaRevision
         //                     {"schemaRevision":"sha256:…","usable":N,"skipped":M,"tools":[…]}
-        //   tools_search   … profile=optimized 用。params: query / category / scene / offset / limit
-        //   tools_describe … profile=optimized 用。params: names（カンマ区切り、最大 10 件）
+        //   tools_search   … profile=optimized 用。params: query / kind / category / folder / scene / offset / limit
+        //                     コマンドとシナリオを 1 本の列で返す（kind で片方に絞れる）。
+        //   tools_describe … profile=optimized 用。params: names（コマンド名）/ scenarios（シナリオ名）/ resolve
+        //                     / detail（outline 既定・full）/ items（項目 ID。シナリオ 1 本のときだけ）
+        //                     names・scenarios はカンマ区切りで、合わせて最大 10 件
         //   scenes         … profile=optimized 用。利用シーン（SceneLibrary）の定義を全部返す
         //                     {"storePath":"…","scenes":[{"name","description","explicitCommands":[],"includeCategories":[],
         //                       "boostTags":[],"tools":[],"excludeCommands":[],"stateAssumptions":[],"hazardPolicy":[],
@@ -159,7 +162,18 @@ namespace Poly_Ling.Data
                 var p = msg?.Params;
                 string query     = GetParam(p, "query");
                 string category  = GetParam(p, "category");
+                string folder    = GetParam(p, "folder");
                 string sceneName = GetParam(p, "scene");
+
+                string kind = (GetParam(p, "kind") ?? "").Trim().ToLowerInvariant();
+                if (kind.Length > 0 && kind != PanelCommandFactory.SearchKindCommand && kind != PanelCommandFactory.SearchKindScenario)
+                    return BuildError(op, $"kind は {PanelCommandFactory.SearchKindCommand} / {PanelCommandFactory.SearchKindScenario} / 空のどれかです: {kind}");
+                if (kind == PanelCommandFactory.SearchKindCommand && !string.IsNullOrWhiteSpace(folder))
+                    return BuildError(op, "folder はシナリオのフォルダです。kind=command とは一緒に使えません");
+                if (kind == PanelCommandFactory.SearchKindScenario && !string.IsNullOrWhiteSpace(category))
+                    return BuildError(op, "category はコマンドの分類です。kind=scenario とは一緒に使えません");
+                if (!string.IsNullOrWhiteSpace(folder) && !string.IsNullOrWhiteSpace(category))
+                    return BuildError(op, "category（コマンド）と folder（シナリオ）は一緒に使えません");
 
                 SceneDefinition scene = null;
                 if (!string.IsNullOrWhiteSpace(sceneName))
@@ -193,7 +207,7 @@ namespace Poly_Ling.Data
                     catch (Exception ex) { Debug.LogWarning($"{logTag} モデル状態を取れませんでした: {ex.Message}"); }
                 }
 
-                return BuildResult(op, PanelCommandFactory.BuildToolsSearchJson(query, category, scene, state, offset, limit));
+                return BuildResult(op, PanelCommandFactory.BuildToolsSearchJson(query, kind, category, folder, scene, state, offset, limit));
             }
             catch (Exception ex)
             {
@@ -205,23 +219,56 @@ namespace Poly_Ling.Data
         {
             try
             {
-                string namesText = GetParam(msg?.Params, "names");
-                if (string.IsNullOrWhiteSpace(namesText))
-                    return BuildError(op, "params.names がありません（カンマ区切りのコマンド名）");
+                // names … コマンド名、scenarios … シナリオ名（どちらもカンマ区切り）。どちらか一方があればよい。
+                // 件数の上限は両方の合計。シナリオ名にカンマは使えない前提（MCP サーバ側でも弾く）。
+                var names     = SplitNames(GetParam(msg?.Params, "names"));
+                var scenarios = SplitNames(GetParam(msg?.Params, "scenarios"));
+                bool resolve  = CommandResultJson.IsTrue(GetParam(msg?.Params, "resolve"));
+                string detail = GetParam(msg?.Params, "detail") ?? "";
+                string items  = GetParam(msg?.Params, "items") ?? "";
 
-                var names = new List<string>();
-                foreach (var part in namesText.Split(','))
+                // 項目 ID はシナリオごとの名前なので、items はシナリオ 1 本のときだけ受ける。
+                if (!string.IsNullOrWhiteSpace(items) && scenarios.Count != 1)
+                    return BuildError(op, $"items はシナリオを 1 本だけ指定したときに使えます（{scenarios.Count} 本）");
+
+                if (names.Count == 0 && scenarios.Count == 0)
+                    return BuildError(op, "params.names（コマンド名）か params.scenarios（シナリオ名）がありません（カンマ区切り）");
+                int requested = names.Count + scenarios.Count;
+                if (requested > ToolsDescribeMaxNames)
+                    return BuildError(op, $"names と scenarios は合わせて {ToolsDescribeMaxNames} 件までです（{requested} 件）");
+
+                // コマンドの記述は従来どおり。シナリオは "scenarios" と "scenarioNotFound" を足す。
+                string toolsJson = PanelCommandFactory.BuildToolsDescribeJson(names);
+                if (scenarios.Count == 0) return BuildResult(op, toolsJson);
+
+                var sb = new System.Text.StringBuilder(toolsJson.Length + 256);
+                sb.Append(toolsJson, 0, toolsJson.Length - 1);   // 末尾の '}' を外して足す
+                sb.Append(",\"scenarioRevision\":").Append(ScenarioLibrary.Revision);
+                sb.Append(",\"resolve\":").Append(resolve ? "true" : "false");
+                sb.Append(",\"scenarios\":[");
+                var missing = new List<KeyValuePair<string, string>>();
+                bool first = true;
+                foreach (var n in scenarios)
                 {
-                    var n = part.Trim();
-                    if (n.Length > 0 && !names.Contains(n)) names.Add(n);
+                    string json = Poly_Ling.Player.PlayerCommandDispatcher.BuildScenarioDescribeJson(n, resolve, detail, items, out string err);
+                    if (json == null) { missing.Add(new KeyValuePair<string, string>(n, err ?? "unknown scenario")); continue; }
+                    if (!first) sb.Append(',');
+                    first = false;
+                    sb.Append(json);
                 }
-
-                if (names.Count == 0)
-                    return BuildError(op, "params.names が空です");
-                if (names.Count > ToolsDescribeMaxNames)
-                    return BuildError(op, $"names は {ToolsDescribeMaxNames} 件までです（{names.Count} 件）");
-
-                return BuildResult(op, PanelCommandFactory.BuildToolsDescribeJson(names));
+                sb.Append("],\"scenarioNotFound\":[");
+                for (int i = 0; i < missing.Count; i++)
+                {
+                    var jb = new JsonBuilder();
+                    jb.BeginObject();
+                    jb.KeyValue("name",   missing[i].Key);
+                    jb.KeyValue("reason", missing[i].Value);
+                    jb.EndObject();
+                    if (i > 0) sb.Append(',');
+                    sb.Append(jb.ToString());
+                }
+                sb.Append("]}");
+                return BuildResult(op, sb.ToString());
             }
             catch (Exception ex)
             {
@@ -306,6 +353,19 @@ namespace Poly_Ling.Data
 
         private static string GetParam(Dictionary<string, string> p, string key)
             => p != null && p.TryGetValue(key, out string v) ? v : null;
+
+        /// <summary>カンマ区切りの名前を、空と重複を除いて分ける。null は空の一覧。</summary>
+        private static List<string> SplitNames(string text)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrWhiteSpace(text)) return list;
+            foreach (var part in text.Split(','))
+            {
+                var n = part.Trim();
+                if (n.Length > 0 && !list.Contains(n)) list.Add(n);
+            }
+            return list;
+        }
 
         /// <summary>成功応答の "result" に JSON オブジェクトを入れて返す。</summary>
         public static string BuildResult(string op, string resultJson)

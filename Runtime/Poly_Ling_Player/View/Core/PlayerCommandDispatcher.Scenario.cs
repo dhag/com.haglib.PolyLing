@@ -315,8 +315,6 @@ namespace Poly_Ling.Player
         {
             if (cmd.Reload) ScenarioLibrary.Reload();
 
-            var all        = ScenarioLibrary.GetAll();
-
             // 利用シーンからの逆引き。登録されていない名前は、黙って 0 件にせず断る。
             SceneDefinition usage = null;
             if (!string.IsNullOrWhiteSpace(cmd.UsageScene))
@@ -325,26 +323,37 @@ namespace Poly_Ling.Player
                 if (usage == null) { Fail($"利用シーンがありません: {cmd.UsageScene}"); return; }
             }
 
-            var names      = new List<string>(all.Count);
-            var folders    = new List<string>(all.Count);
-            var goals      = new List<string>(all.Count);
-            var stepCounts = new List<int>(all.Count);
+            // 作り置きの索引で照合する（件数が増えても、検索のたびに全件を複製しない）。
+            // 照合はコマンド検索と同じ方式（PanelCommandSchemaIndex.ScoreTerms）。空の query は全部通る。
+            var index = ScenarioLibrary.SearchIndex();
+            var terms = PanelCommandFactory.QueryTerms(cmd.Query);
 
-            foreach (var g in all)
+            var names      = new List<string>();
+            var folders    = new List<string>();
+            var goals      = new List<string>();
+            var stepCounts = new List<int>();
+            int total      = 0;
+
+            foreach (var e in index)
             {
-                // query の照合はコマンド検索と同じ方式（PanelCommandSchemaIndex.ScoreText）。
-                // 空の query は全部通る。
-                if (PanelCommandFactory.ScoreText(cmd.Query, g.Name, ScenarioHaystack(g)) <= 0f) continue;
-                if (usage != null && !ScenarioUsesScene(g, usage)) continue;
+                if (!ScenarioLibrary.FolderMatches(e.Folder, cmd.Folder)) continue;
+                if (usage != null && !ScenarioLibrary.UsesScene(e, usage)) continue;
+                if (PanelCommandFactory.ScoreTerms(e.NameLower, e.Haystack, terms) <= 0f) continue;
 
-                names.Add(g.Name ?? "");
-                folders.Add(ScenarioLibrary.FolderOf(g.Name) ?? "");
-                goals.Add(g.Goal ?? "");
-                stepCounts.Add(g.StepCount);
+                int at = total++;
+                if (at < cmd.Offset) continue;
+                if (cmd.Limit > 0 && names.Count >= cmd.Limit) continue;
+
+                names.Add(e.Name);
+                folders.Add(e.Folder);
+                goals.Add(e.Goal);
+                stepCounts.Add(e.StepCount);
             }
 
             ReportData(CommandDataJson.New()
                 .Int  ("count",      names.Count)
+                .Int  ("total",      total)
+                .Flag ("hasMore",    cmd.Offset + names.Count < total)
                 .Text ("storePath",  ScenarioLibrary.StorePath)
                 .Texts("names",      names)
                 .Texts("folders",    folders)
@@ -354,48 +363,62 @@ namespace Poly_Ling.Player
                 .Build());
         }
 
-        /// <summary>シナリオが利用シーンに関係するか。項目に名前がある、または利用シーンの relatedScenarios に挙がっている。</summary>
-        private static bool ScenarioUsesScene(ObjectGroup g, SceneDefinition usage)
-        {
-            foreach (var r in usage.RelatedScenarios)
-                if (string.Equals(r, g.Name, StringComparison.OrdinalIgnoreCase)) return true;
-            if (g.Steps == null) return false;
-            foreach (var s in g.Steps)
-                if (s != null && string.Equals(s.UsageScene, usage.Name, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
-
-        /// <summary>シナリオの検索で照合する本文。目的・札・満たすべきこと・項目の目的とコマンド名。</summary>
-        private static string ScenarioHaystack(ObjectGroup g)
-        {
-            var sb = new System.Text.StringBuilder();
-            sb.Append(g.Goal ?? "").Append('\n');
-            if (g.Tags != null)            foreach (var t in g.Tags)            sb.Append(t).Append('\n');
-            if (g.Preconditions != null)   foreach (var t in g.Preconditions)   sb.Append(t).Append('\n');
-            if (g.SuccessCriteria != null) foreach (var t in g.SuccessCriteria) sb.Append(t).Append('\n');
-            if (g.Steps != null)
-                foreach (var s in g.Steps)
-                {
-                    if (s == null) continue;
-                    sb.Append(s.Action ?? "").Append('\n').Append(s.Purpose ?? "").Append('\n');
-                }
-            return sb.ToString();
-        }
-
         private void RunDescribeScenario(DescribeScenarioCommand cmd)
         {
-            var g = ScenarioLibrary.Get(cmd.Name);
-            if (g == null) { Fail($"シナリオがありません: {cmd.Name}"); return; }
+            string json = BuildScenarioDescribeJson(cmd.Name, cmd.Resolve, cmd.Detail, cmd.Items, out string error);
+            if (json == null) { Fail(error); return; }
+            ReportData(json);
+        }
+
+        /// <summary>describe の詳しさ。</summary>
+        public const string DescribeDetailOutline = "outline";
+        public const string DescribeDetailFull    = "full";
+
+        /// <summary>
+        /// describeScenario の結果（JSON オブジェクト）を組み立てる。
+        /// MCP の polyling_describe（PolyLingControlProtocol.HandleToolsDescribe）も同じものを返す。
+        /// 失敗したら null を返し、理由を error に入れる。
+        ///
+        /// 【詳しさ】
+        ///   outline（既定）… 引数の値（argValues）を返さない。値には頂点座標の列などが
+        ///                     そのまま入り、項目数と関係なく応答が膨らむため。
+        ///                     流す（runScenario）には値は要らない。
+        ///   full           … 値も返す。項目を直すときに、items で直す項目だけに絞って使う。
+        /// </summary>
+        /// <param name="detail">outline / full。空は outline。</param>
+        /// <param name="items">返す項目 ID のカンマ区切り。空なら全項目。resolve とは併用できない。</param>
+        public static string BuildScenarioDescribeJson(string name, bool resolve, string detail, string items, out string error)
+        {
+            error = null;
+
+            string d = (detail ?? "").Trim().ToLowerInvariant();
+            if (d.Length == 0) d = DescribeDetailOutline;
+            if (d != DescribeDetailOutline && d != DescribeDetailFull)
+            { error = $"detail は {DescribeDetailOutline} / {DescribeDetailFull} のどちらかです: {detail}"; return null; }
+            bool full = d == DescribeDetailFull;
+
+            var wanted = new List<string>();
+            if (!string.IsNullOrWhiteSpace(items))
+                foreach (var part in items.Split(','))
+                {
+                    var id = part.Trim();
+                    if (id.Length > 0 && !wanted.Contains(id)) wanted.Add(id);
+                }
+            if (wanted.Count > 0 && resolve)
+            { error = "items は resolve と一緒に使えません（項目 ID はシナリオごとの名前です。子のシナリオは名前で直接指定してください）"; return null; }
+
+            var g = ScenarioLibrary.Get(name);
+            if (g == null) { error = $"シナリオがありません: {name}"; return null; }
 
             // 項目の並び。resolve のときは参照を辿って平たくしたもの。
             var ordered = new List<ObjectGroupStep>();
             var owners  = new List<string>();
             var depths  = new List<int>();
 
-            if (cmd.Resolve)
+            if (resolve)
             {
-                if (!ScenarioLibrary.TryFlatten(cmd.Name, out var flat, out string flatError))
-                { Fail(flatError); return; }
+                if (!ScenarioLibrary.TryFlatten(name, out var flat, out string flatError))
+                { error = flatError; return null; }
 
                 foreach (var f in flat)
                 {
@@ -408,6 +431,23 @@ namespace Poly_Ling.Player
             {
                 foreach (var step in g.Steps)
                     if (step != null) ordered.Add(step);
+            }
+
+            // items の指定。並びは元の順のまま。無い ID は黙って落とさず断る。
+            int totalSteps = ordered.Count;
+            if (wanted.Count > 0)
+            {
+                var picked = new List<ObjectGroupStep>();
+                var found  = new HashSet<string>();
+                foreach (var step in ordered)
+                    if (wanted.Contains(step.ScenarioItemId ?? "")) { picked.Add(step); found.Add(step.ScenarioItemId); }
+
+                var missing = new List<string>();
+                foreach (var id in wanted) if (!found.Contains(id)) missing.Add(id);
+                if (missing.Count > 0)
+                { error = $"{name} に項目がありません: {string.Join(",", missing)}"; return null; }
+
+                ordered = picked;
             }
 
             var scenarioItemIds = new List<string>();
@@ -442,8 +482,12 @@ namespace Poly_Ling.Player
 
             var prov = g.Provenance ?? new ObjectGroupProvenance();
 
-            ReportData(CommandDataJson.New()
+            var builder = CommandDataJson.New()
                 .Text ("name",              g.Name ?? "")
+                .Text ("detail",            d);
+            if (wanted.Count > 0) builder.Int("totalSteps", totalSteps);
+
+            return builder
                 .Text ("folder",            ScenarioLibrary.FolderOf(g.Name) ?? "")
                 .Text ("goal",              g.Goal ?? "")
                 .Text ("parentName",        prov.ParentName ?? "")
@@ -464,8 +508,8 @@ namespace Poly_Ling.Player
                 .Ints ("depths",            depths)
                 .Ints ("argCounts",         argCounts)
                 .Texts("argKeys",           argKeys)
-                .Texts("argValues",         argValues)
-                .Build());
+                .Texts("argValues",         full ? argValues : null)
+                .Build();
         }
 
         // ================================================================

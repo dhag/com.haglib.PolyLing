@@ -129,30 +129,60 @@ namespace Poly_Ling.Data
         // 検索
         // ================================================================
 
+        /// <summary>検索で返す種類。</summary>
+        public const string SearchKindCommand  = "command";
+        public const string SearchKindScenario = "scenario";
+
+        /// <summary>検索の当たり 1 件。コマンドかシナリオのどちらか一方を持つ。</summary>
+        private struct SearchHit
+        {
+            public float Score;
+            public string Name;
+            public ToolIndexEntry Command;
+            public ScenarioLibrary.SearchEntry Scenario;
+        }
+
         /// <summary>
         /// 検索結果を JSON オブジェクトとして返す。
-        /// {"schemaRevision","query","category"?,"scene"?,"total","offset","returned","hasMore",
-        ///  "matches":[{"name","summary","writes","category"?}]}
+        /// {"schemaRevision","scenarioRevision","query","kind"?,"category"?,"folder"?,"scene"?,
+        ///  "total","commandTotal","scenarioTotal","offset","returned","hasMore",
+        ///  "matches":[{"kind":"command","name","summary","writes","category"?} |
+        ///             {"kind":"scenario","name","summary","folder","steps"}]}
+        ///
+        /// 【コマンドとシナリオを 1 本の列にする】
+        ///   シナリオはコマンドより頻繁に増える。別の配列で全部返すと件数に比例して応答が膨らむ。
+        ///   同じ点数（Score）で 1 本に並べ、offset / limit を共通に掛けるので、
+        ///   1 回の応答は何件あっても limit 件まで。
         /// </summary>
         /// <param name="query">問い合わせ。空なら全件（名前順）。</param>
-        /// <param name="category">分類。階層一致（"geometry" は "geometry.topology" も含む）。空なら絞らない。</param>
-        /// <param name="scene">利用シーン（SceneLibrary）。null なら絞らない。対象外のコマンドは返さない。</param>
+        /// <param name="kind">"command" / "scenario" / 空（両方）。</param>
+        /// <param name="category">コマンドの分類。階層一致（"geometry" は "geometry.topology" も含む）。指定するとシナリオは返さない。</param>
+        /// <param name="folder">シナリオのフォルダ。階層一致。指定するとコマンドは返さない。</param>
+        /// <param name="scene">利用シーン（SceneLibrary）。null なら絞らない。対象外のコマンド・シナリオは返さない。</param>
         /// <param name="state">
         /// カレントモデルの状態。利用シーンの stateAssumptions と突き合わせる。
         /// null ならモデル状態を取れなかった（パネルが開いていない）として、照合しなかったことを結果に書く。
         /// </param>
-        public static string BuildToolsSearchJson(string query, string category, SceneDefinition scene,
-                                                  ModelStateSnapshot state, int offset, int limit)
+        public static string BuildToolsSearchJson(string query, string kind, string category, string folder,
+                                                  SceneDefinition scene, ModelStateSnapshot state, int offset, int limit)
         {
             EnsureToolIndex();
 
             if (offset < 0) offset = 0;
             if (limit < 1) limit = 1;
 
-            string[] terms = SplitQuery(query);
-            var hits = new List<KeyValuePair<float, ToolIndexEntry>>();
-            var actions = new Dictionary<ToolIndexEntry, PLHazardAction>();
+            bool hasCategory = !string.IsNullOrEmpty(category);
+            bool hasFolder   = !string.IsNullOrWhiteSpace(folder);
+            bool wantCommands  = kind != SearchKindScenario && !hasFolder;
+            bool wantScenarios = kind != SearchKindCommand  && !hasCategory;
 
+            string[] terms = SplitQuery(query);
+            var hits = new List<SearchHit>();
+            var actions = new Dictionary<ToolIndexEntry, PLHazardAction>();
+            int commandTotal  = 0;
+            int scenarioTotal = 0;
+
+            if (wantCommands)
             foreach (var e in _toolIndex)
             {
                 // 分類は階層一致（"geometry" で "geometry.topology" も当たる）。
@@ -173,13 +203,32 @@ namespace Poly_Ling.Data
                 // 文字列照合の 1 語ぶん（ASCII の名前一致 3 点）より小さく、同点を割る程度にする。
                 if (scene != null) score += TagBoostPerHit * scene.TagBoost(e.Tags);
                 if (action != PLHazardAction.Allow) actions[e] = action;
-                hits.Add(new KeyValuePair<float, ToolIndexEntry>(score, e));
+                hits.Add(new SearchHit { Score = score, Name = e.Name, Command = e });
+                commandTotal++;
             }
 
+            // シナリオは作り置きの索引（ScenarioLibrary.SearchIndex）で照合する。点数はコマンドと同じ Score。
+            if (wantScenarios)
+            foreach (var e in ScenarioLibrary.SearchIndex())
+            {
+                if (hasFolder && !ScenarioLibrary.FolderMatches(e.Folder, folder)) continue;
+                if (scene != null && !ScenarioLibrary.UsesScene(e, scene)) continue;
+
+                float score = terms.Length == 0 ? 1f : Score(e.NameLower, e.Haystack, terms);
+                if (score <= 0f) continue;
+
+                hits.Add(new SearchHit { Score = score, Name = e.Name, Scenario = e });
+                scenarioTotal++;
+            }
+
+            // 点数の高い順。同点は名前順、名前も同じならコマンドを先に。
             hits.Sort((a, b) =>
             {
-                int c = b.Key.CompareTo(a.Key);
-                return c != 0 ? c : string.CompareOrdinal(a.Value.Name, b.Value.Name);
+                int c = b.Score.CompareTo(a.Score);
+                if (c != 0) return c;
+                c = string.CompareOrdinal(a.Name, b.Name);
+                if (c != 0) return c;
+                return (a.Command != null ? 0 : 1).CompareTo(b.Command != null ? 0 : 1);
             });
 
             int end = Math.Min(hits.Count, offset + limit);
@@ -187,8 +236,11 @@ namespace Poly_Ling.Data
             var sb = new StringBuilder();
             sb.Append('{');
             sb.Append("\"schemaRevision\":").Append(Quote(_toolIndexRevision));
+            sb.Append(",\"scenarioRevision\":").Append(ScenarioLibrary.Revision.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"query\":").Append(Quote(query ?? ""));
-            if (!string.IsNullOrEmpty(category)) sb.Append(",\"category\":").Append(Quote(category));
+            if (!string.IsNullOrEmpty(kind)) sb.Append(",\"kind\":").Append(Quote(kind));
+            if (hasCategory) sb.Append(",\"category\":").Append(Quote(category));
+            if (hasFolder)   sb.Append(",\"folder\":").Append(Quote(folder));
             if (scene != null)
             {
                 sb.Append(",\"scene\":").Append(Quote(scene.Name));
@@ -215,6 +267,8 @@ namespace Poly_Ling.Data
                 if (!string.IsNullOrEmpty(scene.Notes)) sb.Append(",\"notes\":").Append(Quote(scene.Notes));
             }
             sb.Append(",\"total\":").Append(hits.Count.ToString(CultureInfo.InvariantCulture));
+            sb.Append(",\"commandTotal\":").Append(commandTotal.ToString(CultureInfo.InvariantCulture));
+            sb.Append(",\"scenarioTotal\":").Append(scenarioTotal.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"offset\":").Append(offset.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"returned\":").Append(Math.Max(0, end - offset).ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"hasMore\":").Append(end < hits.Count ? "true" : "false");
@@ -222,9 +276,23 @@ namespace Poly_Ling.Data
 
             for (int i = offset; i < end; i++)
             {
-                var e = hits[i].Value;
                 if (i > offset) sb.Append(',');
-                sb.Append("{\"name\":").Append(Quote(e.Name));
+
+                var sc = hits[i].Scenario;
+                if (sc != null)
+                {
+                    sb.Append("{\"kind\":").Append(Quote(SearchKindScenario));
+                    sb.Append(",\"name\":").Append(Quote(sc.Name));
+                    sb.Append(",\"summary\":").Append(Quote(sc.Goal));
+                    sb.Append(",\"folder\":").Append(Quote(sc.Folder));
+                    sb.Append(",\"steps\":").Append(sc.StepCount.ToString(CultureInfo.InvariantCulture));
+                    sb.Append('}');
+                    continue;
+                }
+
+                var e = hits[i].Command;
+                sb.Append("{\"kind\":").Append(Quote(SearchKindCommand));
+                sb.Append(",\"name\":").Append(Quote(e.Name));
                 sb.Append(",\"summary\":").Append(Quote(e.Description));
                 sb.Append(",\"writes\":").Append(Quote(e.Writes));
                 if (!string.IsNullOrEmpty(e.Category)) sb.Append(",\"category\":").Append(Quote(e.Category));
@@ -319,6 +387,19 @@ namespace Poly_Ling.Data
             var terms = SplitQuery(query);
             if (terms.Length == 0) return 1f;
             return Score((name ?? "").ToLowerInvariant(), (body ?? "").ToLowerInvariant(), terms);
+        }
+
+        /// <summary>問い合わせを照合用の語に分ける。空なら長さ 0。多数の本文と照合するときに 1 回だけ呼ぶ。</summary>
+        public static string[] QueryTerms(string query) => SplitQuery(query);
+
+        /// <summary>
+        /// 小文字化済みの名前・本文と、QueryTerms で分けた語で照合する（作り置いた索引用）。
+        /// 語が無ければ常に 1（絞らない）。0 なら当たらなかった。
+        /// </summary>
+        public static float ScoreTerms(string nameLower, string haystackLower, string[] terms)
+        {
+            if (terms == null || terms.Length == 0) return 1f;
+            return Score(nameLower ?? "", haystackLower ?? "", terms);
         }
 
         /// <summary>旗の列挙を "A,B" の形にする。None なら空。</summary>
