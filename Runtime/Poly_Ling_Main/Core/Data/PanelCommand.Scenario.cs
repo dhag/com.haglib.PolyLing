@@ -89,6 +89,9 @@ namespace Poly_Ling.Data
     [PLResult("preconditions",   PLResultKind.TextArray,    Description = "使う前に満たしているべきこと", Optional = true)]
     [PLResult("successCriteria", PLResultKind.TextArray,    Description = "終わったときに確かめること", Optional = true)]
     [PLResult("tags",            PLResultKind.TextArray,    Description = "探すための札", Optional = true)]
+    [PLResult("paramNames",      PLResultKind.TextArray,    Description = "シナリオの引数の名前（宣言の順）。項目の引数の値に ${名前} と書いた所が流すときに置き換わる。outline でも載る", Optional = true)]
+    [PLResult("paramDefaults",   PLResultKind.TextArray,    Description = "引数の既定値。paramNames と同じ並び", Optional = true)]
+    [PLResult("paramDescriptions", PLResultKind.TextArray,  Description = "引数の説明。paramNames と同じ並び", Optional = true)]
     [PLResult("scenarioItemIds",      PLResultKind.TextArray,    Description = "項目を指す名前", Optional = true)]
     [PLResult("kinds",           PLResultKind.TextArray,    Description = "項目の種別。scenarioItemIds と同じ並び", Optional = true)]
     [PLResult("actions",         PLResultKind.TextArray,    Description = "項目のコマンド名。実行しない項目は空。scenarioItemIds と同じ並び", Optional = true)]
@@ -577,8 +580,60 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>シナリオの引数を宣言する（足す・直す）。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの引数を 1 つ宣言する。同じ名前があれば既定値と説明を直す（並びは変えない）。無ければ末尾に足す。項目の引数の値に ${名前} と丸ごと書いた所が、runScenario の paramKeys / paramValues（渡さなければ既定値）に置き換わる。値をシナリオに焼かず、1 本を値を変えて流すために使う。")]
+    [PLResult("name",      PLResultKind.Text,      Description = "シナリオの名前")]
+    [PLResult("param",     PLResultKind.Text,      Description = "引数の名前")]
+    [PLResult("added",     PLResultKind.Flag,      Description = "新しく足したか（false は直した）")]
+    [PLResult("params",    PLResultKind.TextArray, Description = "宣言の順の引数の名前", Optional = true)]
+    public sealed class SetScenarioParamCommand : PanelCommand
+    {
+        [PLParam(Description = "シナリオの名前", Required = true)]
+        public string Name { get; }
+
+        [PLParam(Description = "引数の名前。英数字と _、先頭は数字以外、64 文字まで", Required = true)]
+        public string Param { get; }
+
+        [PLParam(Description = "既定値（渡されなかったときの値）。カンマを含んでよい")]
+        public string DefaultValue { get; }
+
+        [PLParam(Description = "何の値か。単位や範囲もここに書く")]
+        public string Description { get; }
+
+        public SetScenarioParamCommand(int modelIndex, string name, string param,
+                                       string defaultValue = "", string description = "")
+            : base(modelIndex)
+        {
+            Name         = name ?? "";
+            Param        = param ?? "";
+            DefaultValue = defaultValue ?? "";
+            Description  = description ?? "";
+        }
+    }
+
+    /// <summary>シナリオの引数の宣言を消す。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの引数の宣言を 1 つ消す。項目に ${名前} が残っていると流すときに失敗するので、先に setScenarioItemArg で値を書き直す（queryScenarioAudit の unknownParam で見つかる）。")]
+    [PLResult("name",      PLResultKind.Text,      Description = "シナリオの名前")]
+    [PLResult("param",     PLResultKind.Text,      Description = "消した引数の名前")]
+    [PLResult("params",    PLResultKind.TextArray, Description = "残った引数の名前（宣言の順）", Optional = true)]
+    public sealed class RemoveScenarioParamCommand : PanelCommand
+    {
+        [PLParam(Description = "シナリオの名前", Required = true)]
+        public string Name { get; }
+
+        [PLParam(Description = "消す引数の名前", Required = true)]
+        public string Param { get; }
+
+        public RemoveScenarioParamCommand(int modelIndex, string name, string param)
+            : base(modelIndex)
+        {
+            Name  = name ?? "";
+            Param = param ?? "";
+        }
+    }
+
     /// <summary>シナリオの項目の引数を 1 つだけ書く。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの項目の引数を 1 つだけ書く。値にカンマを含む引数（masterIndices や点列など）はこちらを使う。addScenarioItem / setScenarioItem の argValues は配列なのでカンマで割れてしまう。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの項目の引数を 1 つだけ書く。値にカンマを含む引数（masterIndices や点列など）はこちらを使う。addScenarioItem / setScenarioItem の argValues は配列なのでカンマで割れてしまう。参照項目（ScenarioRef）にも書け、キーを呼ぶシナリオの引数名、値を渡す値（親の ${名前} でもよい）とする。")]
     [PLResult("name",      PLResultKind.Text,    Description = "シナリオの名前")]
     [PLResult("scenarioItemId", PLResultKind.Text,    Description = "項目 ID")]
     [PLResult("key",       PLResultKind.Text,    Description = "書いた引数のキー")]
@@ -615,7 +670,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>参照項目を、参照先の項目の列で置き換える。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "参照項目を、参照先のシナリオの項目の列で置き換える。置き換えた項目には新しい名前を振る。参照先は変わらない。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "参照項目を、参照先のシナリオの項目の列で置き換える。置き換えた項目には新しい名前を振る。参照先は変わらない。参照先が引数を宣言していれば、参照項目の引数（または参照先の既定値）を、写した項目の ${名前} へ値として写す。")]
     [PLResult("name",       PLResultKind.Text,      Description = "シナリオの名前")]
     [PLResult("refName",    PLResultKind.Text,      Description = "展開した参照先のシナリオの名前")]
     [PLResult("inserted",   PLResultKind.Integer,   Description = "入れ替わった項目の数")]
@@ -642,7 +697,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>シナリオを先頭から流す。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオを先頭の項目から順に実行する。指示（Instruction）・確認（Observe）の項目と、失敗した項目で止まる。注意（Note）の項目は止まらずに読み飛ばし、別のシナリオを呼ぶ項目（ScenarioRef）では呼ばれたシナリオをその場で流す。止まったら stop と stopMessage を読み、continueScenario で続ける。@prev と @<項目 ID> は、この流れの中で実行した項目の結果だけを指す。途中の項目だけを選んで実行する口は無い。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオを先頭の項目から順に実行する。指示（Instruction）・確認（Observe）の項目と、失敗した項目で止まる。注意（Note）の項目は止まらずに読み飛ばし、別のシナリオを呼ぶ項目（ScenarioRef）では呼ばれたシナリオをその場で流す。止まったら stop と stopMessage を読み、continueScenario で続ける。@prev と @<項目 ID> は、この流れの中で実行した項目の結果だけを指す。途中の項目だけを選んで実行する口は無い。シナリオが引数を宣言していれば（describeScenario の paramNames）、paramKeys / paramValues で値を渡せる。渡さない引数は既定値、宣言に無い名前は流し始める前に失敗。項目の引数の値に ${名前} と丸ごと書いた所がその値に置き換わる。参照項目の引数（キーが子の引数名）で子シナリオへ値を渡す。")]
     [PLResult("rootName",         PLResultKind.Text,      Description = "流しているシナリオの名前")]
     [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none（項目数の上限で一旦返した）/ judgment（指示・確認の項目）/ failed（項目が失敗）/ finished（最後まで終わった）")]
     [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった項目の内容、または失敗の理由")]
@@ -670,12 +725,21 @@ namespace Poly_Ling.Data
         [PLParam(Description = "true なら流しを用意するだけで項目を処理しない。案内バーが最初の項目の前に赤枠を出すために使う。MCP からは省く")]
         public bool PrepareOnly { get; }
 
-        public RunScenarioCommand(int modelIndex, string name, int maxSteps = 0, bool prepareOnly = false)
+        [PLParam(Description = "渡す引数の名前。describeScenario の paramNames のどれか。paramValues と同じ長さにすること")]
+        public string[] ParamKeys { get; }
+
+        [PLParam(Description = "paramKeys と同じ並びの値。カンマを含む値は引用符で囲む（例: \"1,2,3\"）")]
+        public string[] ParamValues { get; }
+
+        public RunScenarioCommand(int modelIndex, string name, int maxSteps = 0, bool prepareOnly = false,
+                                  string[] paramKeys = null, string[] paramValues = null)
             : base(modelIndex)
         {
             Name        = name ?? "";
             MaxSteps    = maxSteps;
             PrepareOnly = prepareOnly;
+            ParamKeys   = paramKeys   ?? new string[0];
+            ParamValues = paramValues ?? new string[0];
         }
     }
 
@@ -869,7 +933,7 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>シナリオの項目を点検する。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの項目を点検し、撃ち直すと壊れる箇所を返す。literalMeshIndex は IsMeshRef の印が付いた引数に索引が直接入っている項目（名前から引く照会と @ 参照に置き換える）、unknownAction は action を解決できない項目、badRef / missingRef / forwardRef は @<項目 ID>.<キー> の書き方違い・存在しない項目・後ろの項目を指している参照、unknownUsageScene は項目に書いた利用シーンが登録されていないもの。頂点や面の番号は印が無いので点検の対象外。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの項目を点検し、撃ち直すと壊れる箇所を返す。literalMeshIndex は IsMeshRef の印が付いた引数に索引が直接入っている項目（名前から引く照会と @ 参照に置き換える）、unknownAction は action を解決できない項目、badRef / missingRef / forwardRef は @<項目 ID>.<キー> の書き方違い・存在しない項目・後ろの項目を指している参照、unknownUsageScene は項目に書いた利用シーンが登録されていないもの。引数（${名前}）について、badParamName は名前の形が違う宣言、duplicateParam は同じ名前の宣言が 2 つ以上、unknownParam は宣言していない名前を使う値、partialParamRef は値の一部に ${ を含む（丸ごとでないので置き換わらない）値、unusedParam は宣言したがどの項目も使わない引数、unknownChildParam は参照項目の引数のキーが呼ぶシナリオで宣言されていないもの。引数そのものの指摘では scenarioItemIds が空で keys が引数の名前。頂点や面の番号は印が無いので点検の対象外。")]
     [PLResult("name",       PLResultKind.Text,      Description = "シナリオの名前")]
     [PLResult("issues",     PLResultKind.Integer,   Description = "指摘の数")]
     [PLResult("scenarioItemIds", PLResultKind.TextArray, Description = "指摘した項目 ID", Optional = true)]
@@ -936,5 +1000,82 @@ namespace Poly_Ling.Data
             Overwrite = overwrite;
             Folder    = folder ?? "";
         }
+    }
+
+    // ================================================================
+    // 実行記録（学習用。ExecutionLog.cs。棚・検索とは別）
+    // ================================================================
+
+    /// <summary>実行記録を入れる・切る。</summary>
+    [PLCommand(Category = "scenario.log", Writes = PLWriteScope.None, Description = "実行記録（学習用）を入れる・切る。既定は入で、変えた状態は覚えて次の起動にも使う。入れている間、一番外側で実行したコマンド（パネル・MCP・UI のどこから撃ったものでも）を、引数・成否・所要時間ごと <persistentDataPath>/PolyLing/runlogs/<日付>/<タスク ID>.jsonl へ書く。戻り値の本文は書かない。シナリオの置き場・検索とは別で、ここから読む口は無い。")]
+    [PLResult("enabled", PLResultKind.Flag, Description = "入っているか")]
+    [PLResult("dir",     PLResultKind.Text, Description = "書き込み先のフォルダ（runlogs）")]
+    public sealed class SetExecutionLogCommand : PanelCommand
+    {
+        [PLParam(Description = "true で入れる、false で切る", Required = true)]
+        public bool Enabled { get; }
+
+        public SetExecutionLogCommand(int modelIndex, bool enabled) : base(modelIndex) { Enabled = enabled; }
+    }
+
+    /// <summary>実行記録のタスクを始める。</summary>
+    [PLCommand(Category = "scenario.log", Writes = PLWriteScope.None, Description = "実行記録のタスクを始める。目標と条件の文を 1 件として書き、以後のコマンドの記録をこのタスクのファイルへまとめる。前のタスクを閉じていなければ置き換える（記録に残す）。実行記録が切なら失敗。")]
+    [PLResult("taskId", PLResultKind.Text, Description = "タスク ID（ファイル名）")]
+    public sealed class BeginTaskCommand : PanelCommand
+    {
+        [PLParam(Description = "達成したいこと（要求を整理した文）", Required = true)]
+        public string Goal { get; }
+
+        [PLParam(Description = "条件・前提の文（形式は自由。構造化した JSON でもよい）")]
+        public string Conditions { get; }
+
+        [PLParam(Description = "タスク ID。省くと日時から作る。ファイル名に使えない文字は _ になる")]
+        public string TaskId { get; }
+
+        public BeginTaskCommand(int modelIndex, string goal, string conditions = "", string taskId = "")
+            : base(modelIndex)
+        {
+            Goal       = goal ?? "";
+            Conditions = conditions ?? "";
+            TaskId     = taskId ?? "";
+        }
+    }
+
+    /// <summary>実行記録のタスクを終える。</summary>
+    [PLCommand(Category = "scenario.log", Writes = PLWriteScope.None, Description = "実行記録のタスクを終える。判定（success＝そのまま成功 / fixed＝直して成功 / failed＝失敗）と一言を 1 件として書く。開いているタスクが無ければ失敗。")]
+    [PLResult("taskId", PLResultKind.Text, Description = "終えたタスク ID")]
+    public sealed class EndTaskCommand : PanelCommand
+    {
+        [PLParam(Description = "判定。success / fixed / failed", Required = true)]
+        public string Verdict { get; }
+
+        [PLParam(Description = "一言（何を直したか、なぜ失敗したかなど）")]
+        public string Note { get; }
+
+        public EndTaskCommand(int modelIndex, string verdict, string note = "")
+            : base(modelIndex)
+        {
+            Verdict = verdict ?? "";
+            Note    = note ?? "";
+        }
+    }
+
+    /// <summary>実行記録の状態を返す。</summary>
+    [PLCommand(Category = "scenario.log", Writes = PLWriteScope.None, Description = "実行記録の状態を返す。入切・今のタスク・書き込み先・積んだ件数・書き終えた件数・書き待ちの件数、メインスレッドで記録に使った時間の合計と 1 件あたり（記録あり・なしの負荷を比べるため）。reset で集計を 0 に戻す。")]
+    [PLResult("enabled",     PLResultKind.Flag,    Description = "入っているか")]
+    [PLResult("taskId",      PLResultKind.Text,    Description = "今のタスク ID。タスクの外なら空")]
+    [PLResult("dir",         PLResultKind.Text,    Description = "書き込み先のフォルダ")]
+    [PLResult("records",     PLResultKind.Integer, Description = "集計を始めてから積んだコマンドの記録の数")]
+    [PLResult("written",     PLResultKind.Integer, Description = "書き終えた行の数（起動から）")]
+    [PLResult("pending",     PLResultKind.Integer, Description = "書き待ちの行の数")]
+    [PLResult("mainMsTotal", PLResultKind.Number,  Description = "メインスレッドで記録に使った時間の合計（ミリ秒）")]
+    [PLResult("mainMsPer",   PLResultKind.Number,  Description = "1 件あたりのメインスレッドの時間（ミリ秒）")]
+    [PLResult("lastError",   PLResultKind.Text,    Description = "最後の書き込みエラー。無ければ空")]
+    public sealed class QueryExecutionLogCommand : PanelCommand
+    {
+        [PLParam(Description = "true なら返したあと集計（records / mainMsTotal）を 0 に戻す")]
+        public bool Reset { get; }
+
+        public QueryExecutionLogCommand(int modelIndex, bool reset = false) : base(modelIndex) { Reset = reset; }
     }
 }

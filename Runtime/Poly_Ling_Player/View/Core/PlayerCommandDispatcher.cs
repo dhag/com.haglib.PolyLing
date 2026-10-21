@@ -855,6 +855,12 @@ namespace Poly_Ling.Player
                 _dispatchEntryObjectIds = CaptureObjectIds();
             }
 
+            // 実行記録（ExecutionLog.cs。既定は切）。切なら判定 1 回だけ。
+            bool logThis = topLevel && ExecutionLog.Enabled && !IsExecutionLogControl(cmd);
+            long logStartTicks = logThis ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            int  runLogStart   = (logThis && cmd is ContinueScenarioCommand && _scenarioRun != null)
+                               ? _scenarioRun.LogLines.Count : 0;
+
             _dispatchDepth++;
 
             CommandResult result;
@@ -879,11 +885,40 @@ namespace Poly_Ling.Player
             if (topLevel && !_dispatchNotRecorded && ScenarioRecorder.IsRecording)
                 ScenarioRecorder.RecordCommand(cmd, result);
 
+            if (logThis) RecordExecution(cmd, result, logStartTicks, runLogStart);
+
             // シナリオの案内バーが人の入力を待っているなら、同じコマンドが実行されたかを見る
             // （PlayerCommandDispatcher.ScenarioRun.cs）。
             if (topLevel) AcceptUserStepIfAwaiting(cmd, result);
 
             return result;
+        }
+
+        /// <summary>
+        /// 一番外側のコマンドを実行記録へ積む。引数はここ（メインスレッド）で文字列にする
+        /// （パネルは諸元のオブジェクトを渡したあとも書き換えるため）。書き込みは ExecutionLog の別スレッド。
+        /// </summary>
+        private void RecordExecution(PanelCommand cmd, CommandResult result, long startTicks, int runLogStart)
+        {
+            long recStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            double ms = (recStart - startTicks) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+
+            List<string> runLog = null;
+            if ((cmd is RunScenarioCommand || cmd is ContinueScenarioCommand) && _scenarioRun != null)
+            {
+                var lines = _scenarioRun.LogLines;
+                int from  = Math.Min(Math.Max(0, runLogStart), lines.Count);
+                runLog = lines.GetRange(from, lines.Count - from);
+            }
+
+            ExecutionLog.RecordCommand(
+                _currentActor?.ToString() ?? "",
+                PanelCommandFactory.ActionOf(cmd.GetType()),
+                PanelCommandFactory.ToArgs(cmd),
+                Poly_Ling.Remote.RemoteOwnership.WriteScopeOf(cmd).ToString(),
+                result?.Success ?? true,
+                result?.Reason,
+                ms, runLog, recStart);
         }
 
         // ================================================================

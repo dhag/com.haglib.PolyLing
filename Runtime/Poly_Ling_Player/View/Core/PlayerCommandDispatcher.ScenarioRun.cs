@@ -67,6 +67,12 @@ namespace Poly_Ling.Player
             public string      Name;
             public ObjectGroup Group;
             public int         Index;
+
+            /// <summary>
+            /// このシナリオの引数に結んだ値（既定値＋渡された値）。呼び出しの段ごとに持ち、親子で混ざらない。
+            /// 項目の引数の値が ${名前} 丸ごとなら、実行の直前にここから引く。
+            /// </summary>
+            public Dictionary<string, string> Params;
         }
 
         internal readonly List<Frame> Stack = new List<Frame>();
@@ -196,9 +202,20 @@ namespace Poly_Ling.Player
             var g = ScenarioLibrary.Get(cmd.Name);
             if (g == null) { Fail($"シナリオがありません: {cmd.Name}"); return; }
 
+            // 引数を結ぶ。流し始める前に断るので、綴り違いで途中まで流れることはない。
+            var keys   = cmd.ParamKeys   ?? new string[0];
+            var values = cmd.ParamValues ?? new string[0];
+            if (keys.Length != values.Length)
+            { Fail($"paramKeys が {keys.Length} 件、paramValues が {values.Length} 件で長さが合いません"); return; }
+
+            var supplied = new List<KeyValuePair<string, string>>(keys.Length);
+            for (int i = 0; i < keys.Length; i++)
+                supplied.Add(new KeyValuePair<string, string>(keys[i] ?? "", values[i] ?? ""));
+            if (!ScenarioParam.TryBind(g, supplied, out var bound, out string bindError)) { Fail(bindError); return; }
+
             var run = new ScenarioRunState { RootName = g.Name ?? "" };
-            run.Stack.Add(new ScenarioRunState.Frame { Name = g.Name ?? "", Group = g, Index = 0 });
-            run.AddLog($"「{g.Name}」を先頭から流す（{g.StepCount} 項目）");
+            run.Stack.Add(new ScenarioRunState.Frame { Name = g.Name ?? "", Group = g, Index = 0, Params = bound });
+            run.AddLog($"「{g.Name}」を先頭から流す（{g.StepCount} 項目）" + DescribeParams(bound));
             _scenarioRun = run;
 
             int logStart = run.LogLines.Count - 1;
@@ -393,15 +410,22 @@ namespace Poly_Ling.Player
                         return;
                     }
 
+                    // 参照項目の Args を子の引数に結ぶ。値の親の ${名前} はこの段の値で置き換える。
+                    if (!ScenarioParam.TryBindRef(step, child, frame.Params, out var childParams, out string bindError))
+                    {
+                        FailRunStep(run, frame, step, at, bindError);
+                        return;
+                    }
+
                     run.SetStatus(frame.Name, step.ScenarioItemId, ScenarioItemRunStatus.Running);
-                    run.AddLog($"{at} 別のシナリオ「{refName}」を流す（{child.StepCount} 項目）");
-                    run.Stack.Add(new ScenarioRunState.Frame { Name = refName, Group = child, Index = 0 });
+                    run.AddLog($"{at} 別のシナリオ「{refName}」を流す（{child.StepCount} 項目）" + DescribeParams(childParams));
+                    run.Stack.Add(new ScenarioRunState.Frame { Name = refName, Group = child, Index = 0, Params = childParams });
                     processed++;
                     continue;
                 }
 
                 // ── コマンドを実行する ──
-                if (!TryExecuteRunStep(run, frame.Name, step, modelIndex, out string reason))
+                if (!TryExecuteRunStep(run, frame.Name, frame.Params, step, modelIndex, out string reason))
                 {
                     FailRunStep(run, frame, step, at, reason);
                     return;
@@ -414,6 +438,18 @@ namespace Poly_Ling.Player
                 frame.Index++;
                 processed++;
             }
+        }
+
+        private static readonly Dictionary<string, string> EmptyParams
+            = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>流れの記録に添える引数の一覧（「 引数: a=1, b=2」）。無ければ空。</summary>
+        private static string DescribeParams(Dictionary<string, string> bound)
+        {
+            if (bound == null || bound.Count == 0) return "";
+            var parts = new List<string>(bound.Count);
+            foreach (var kv in bound) parts.Add($"{kv.Key}={kv.Value}");
+            return " 引数: " + string.Join(", ", parts);
         }
 
         /// <summary>済ませた項目に経路があれば、次の項目の経路選びの基準として控える。</summary>
@@ -508,11 +544,13 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// コマンドの項目を 1 つ実行する。引数はシナリオのものに、continueScenario で渡した差し替えを重ね、
-        /// @prev / @&lt;項目 ID&gt; を流れの控えから直してから組み立てる。
+        /// ${名前} をこの段の引数の値に、@prev / @&lt;項目 ID&gt; を流れの控えから直してから組み立てる。
+        /// 引数を先に置き換えるので、引数の値に @prev を渡してもよい。
         /// 成功したら控えを更新し、差し替えを使い切る。
         /// </summary>
         private bool TryExecuteRunStep(
-            ScenarioRunState run, string scenarioName, ObjectGroupStep step, int modelIndex, out string reason)
+            ScenarioRunState run, string scenarioName, IReadOnlyDictionary<string, string> frameParams,
+            ObjectGroupStep step, int modelIndex, out string reason)
         {
             reason = null;
 
@@ -531,6 +569,11 @@ namespace Poly_Ling.Player
             var keys = new List<string>(args.Keys);
             foreach (var key in keys)
             {
+                // 引数が結ばれていない段（古い流れ）でも、${…} が残ったまま撃たないよう空の辞書で照合する。
+                if (!ScenarioParam.TrySubstitute(args[key], frameParams ?? EmptyParams, out string substituted, out string perr))
+                { reason = perr; return false; }
+                args[key] = substituted;
+
                 if (!TryExpandPrev(run, args[key], scenarioName, out string expanded, out string why))
                 { reason = why; return false; }
                 args[key] = expanded;

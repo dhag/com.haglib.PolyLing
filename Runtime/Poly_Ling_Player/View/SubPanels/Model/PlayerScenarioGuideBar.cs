@@ -169,12 +169,17 @@ namespace Poly_Ling.Player
         // 操作（シナリオパネルとバーのボタンから）
         // ================================================================
 
-        /// <summary>シナリオを先頭から流し始める。うまくいかなければ理由。</summary>
-        public string Start(string scenarioName)
+        /// <summary>
+        /// シナリオを先頭から流し始める。うまくいかなければ理由。
+        /// paramKeys / paramValues はシナリオの引数（省くと既定値）。引数は流し始めに結ばれ、
+        /// その後の 1 項目ずつの continueScenario では渡し直さない。
+        /// </summary>
+        public string Start(string scenarioName, string[] paramKeys = null, string[] paramValues = null)
         {
             CancelAwait();
             _shownStepKey = null;
-            var r = RunCommand?.Invoke(new RunScenarioCommand(ModelIndex, scenarioName, 1, prepareOnly: true));
+            var r = RunCommand?.Invoke(new RunScenarioCommand(ModelIndex, scenarioName, 1, prepareOnly: true,
+                                                              paramKeys: paramKeys, paramValues: paramValues));
             if (r == null || !r.Success) return r?.Reason ?? "実行の口が配線されていません";
             SetVisible(true);
             Advance();

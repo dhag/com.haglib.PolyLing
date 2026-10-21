@@ -141,6 +141,162 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// シナリオの引数 1 件（PolyLing_シナリオ引数と実行記録計画.md）。
+    ///
+    /// 【何のためか】
+    ///   値だけ違う派生を棚に増やさず、1 本のシナリオを値を変えて流すため。
+    ///   項目の引数の値に「${名前}」と丸ごと書くと、流すときにその値へ置き換わる。
+    ///   値の一部（"1,${n},1"）は置き換えない。
+    ///
+    /// 【記号が @ でない理由】
+    ///   @prev / @&lt;項目 ID&gt; と同じ @ にすると、「@名前」が項目 ID と区別できない。
+    /// </summary>
+    [Serializable]
+    public class ScenarioParam
+    {
+        /// <summary>名前。英数字と _ だけ。先頭は数字以外。シナリオ内で一意。</summary>
+        public string Name = "";
+
+        /// <summary>渡されなかったときの値。</summary>
+        public string Default = "";
+
+        /// <summary>何の値か。単位や範囲もここに書く。</summary>
+        public string Description = "";
+
+        public ScenarioParam Clone() => new ScenarioParam
+        {
+            Name        = Name,
+            Default     = Default,
+            Description = Description,
+        };
+
+        /// <summary>参照の書き方の頭と尻。</summary>
+        public const string RefOpen  = "${";
+        public const string RefClose = "}";
+
+        /// <summary>名前に使えるか（英数字と _、先頭は数字以外、1〜64 文字）。</summary>
+        public static bool IsValidName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length > 64) return false;
+            if (name[0] >= '0' && name[0] <= '9') return false;
+            foreach (char c in name)
+            {
+                bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+                if (!ok) return false;
+            }
+            return true;
+        }
+
+        /// <summary>値が「${名前}」丸ごとなら名前を返す。名前の形が正しいかは見ない（監査が見る）。</summary>
+        public static bool TryParseRef(string value, out string name)
+        {
+            name = null;
+            if (string.IsNullOrEmpty(value)) return false;
+            if (!value.StartsWith(RefOpen, StringComparison.Ordinal)) return false;
+            if (!value.EndsWith(RefClose, StringComparison.Ordinal)) return false;
+            if (value.Length <= RefOpen.Length + RefClose.Length) return false;
+            name = value.Substring(RefOpen.Length, value.Length - RefOpen.Length - RefClose.Length);
+            return true;
+        }
+
+        /// <summary>名前から参照の書き方を作る。</summary>
+        public static string MakeRef(string name) => RefOpen + (name ?? "") + RefClose;
+
+        /// <summary>
+        /// シナリオの引数に値を結ぶ。宣言の既定値から始め、渡された値で上書きする。
+        /// 宣言に無い名前が渡されたら失敗にする（綴り違いが黙って既定値で流れるのを防ぐ）。
+        /// 流す（runScenario・参照項目）・平らにする（describe の resolve）・展開（expandScenarioRef）が共通に使う。
+        /// </summary>
+        /// <param name="supplied">渡された名前と値。値の中の ${…} は呼ぶ側で置き換えておく。null は何も渡さない。</param>
+        public static bool TryBind(ObjectGroup g, IEnumerable<KeyValuePair<string, string>> supplied,
+                                   out Dictionary<string, string> bound, out string error)
+        {
+            bound = new Dictionary<string, string>(StringComparer.Ordinal);
+            error = null;
+
+            if (g?.Params != null)
+                foreach (var p in g.Params)
+                    if (p != null && !string.IsNullOrEmpty(p.Name))
+                        bound[p.Name] = p.Default ?? "";
+
+            if (supplied == null) return true;
+            foreach (var kv in supplied)
+            {
+                if (string.IsNullOrEmpty(kv.Key)) continue;
+                if (!bound.ContainsKey(kv.Key))
+                {
+                    error = $"シナリオ「{g?.Name}」に引数 {kv.Key} はありません"
+                          + (bound.Count > 0 ? $"（宣言: {string.Join(", ", bound.Keys)}）" : "（引数の宣言が無い）");
+                    return false;
+                }
+                bound[kv.Key] = kv.Value ?? "";
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 値が「${名前}」丸ごとなら、結んだ値に置き換える。そうでなければそのまま返す。
+        /// bound が null のときは置き換えない（引数を結ばない場面。例：describe の起点のシナリオ）。
+        /// 名前が結ばれていなければ失敗にする（宣言していない名前）。
+        /// </summary>
+        public static bool TrySubstitute(string value, IReadOnlyDictionary<string, string> bound,
+                                         out string result, out string error)
+        {
+            result = value;
+            error  = null;
+            if (bound == null) return true;
+            if (!TryParseRef(value, out string name)) return true;
+            if (!bound.TryGetValue(name, out string v))
+            { error = $"{value} の引数 {name} が宣言されていない"; return false; }
+            result = v ?? "";
+            return true;
+        }
+
+        /// <summary>
+        /// 参照項目から呼ぶシナリオの引数を結ぶ。参照項目の Args の 1 件が「子の引数名 = 値」。
+        /// 値に親の ${名前} が書いてあれば parentBound で置き換えてから渡す（親の引数を子へ送る）。
+        /// parentBound が null なら親の ${…} はそのまま子へ渡る（describe の起点など、親を結ばない場面）。
+        /// </summary>
+        public static bool TryBindRef(ObjectGroupStep refStep, ObjectGroup child,
+                                      IReadOnlyDictionary<string, string> parentBound,
+                                      out Dictionary<string, string> bound, out string error)
+        {
+            bound = null;
+            error = null;
+
+            var supplied = new List<KeyValuePair<string, string>>();
+            if (refStep?.Args != null)
+                foreach (var kv in refStep.SortedArgs())
+                {
+                    if (!TrySubstitute(kv.Value, parentBound, out string v, out error)) return false;
+                    supplied.Add(new KeyValuePair<string, string>(kv.Key, v));
+                }
+
+            return TryBind(child, supplied, out bound, out error);
+        }
+
+        /// <summary>
+        /// 項目の引数の値を、結んだ値で置き換えた複製を返す（平らにする・展開するとき用）。
+        /// 失敗したら null を返し、理由を error に入れる。
+        /// </summary>
+        public static ObjectGroupStep SubstituteStep(ObjectGroupStep step, IReadOnlyDictionary<string, string> bound,
+                                                     out string error)
+        {
+            error = null;
+            if (step == null) return null;
+            var copy = step.Clone();
+            if (bound == null || copy.Args == null) return copy;
+
+            foreach (var kv in new List<KeyValuePair<string, string>>(copy.SortedArgs()))
+            {
+                if (!TrySubstitute(kv.Value, bound, out string v, out error)) return null;
+                if (!string.Equals(v, kv.Value, StringComparison.Ordinal)) copy.SetArg(kv.Key, v);
+            }
+            return copy;
+        }
+    }
+
+    /// <summary>
     /// グループの 1 項目。生成コマンド 1 つぶんのパラメータと出力先。
     /// </summary>
     [Serializable]
@@ -424,6 +580,21 @@ namespace Poly_Ling.Data
 
         /// <summary>どれを元に、何を変えて作ったか。null にはしない。</summary>
         public ObjectGroupProvenance Provenance = new ObjectGroupProvenance();
+
+        /// <summary>
+        /// シナリオの引数。並びは宣言の順。null にはしない。
+        /// 項目の引数の値に「${名前}」と書いた所が、流すときにこの値へ置き換わる。
+        /// </summary>
+        public List<ScenarioParam> Params = new List<ScenarioParam>();
+
+        /// <summary>名前で引数を探す（大小を区別する）。無ければ null。</summary>
+        public ScenarioParam FindParam(string name)
+        {
+            if (Params == null || string.IsNullOrEmpty(name)) return null;
+            foreach (var p in Params)
+                if (p != null && string.Equals(p.Name, name, StringComparison.Ordinal)) return p;
+            return null;
+        }
 
         // ================================================================
         // 参照（すべて MeshContext.ObjectId）
@@ -802,6 +973,11 @@ namespace Poly_Ling.Data
             c.SuccessCriteria = SuccessCriteria != null ? new List<string>(SuccessCriteria) : new List<string>();
             c.Tags            = Tags            != null ? new List<string>(Tags)            : new List<string>();
             c.Provenance      = Provenance      != null ? Provenance.Clone() : new ObjectGroupProvenance();
+
+            c.Params = new List<ScenarioParam>();
+            if (Params != null)
+                foreach (var p in Params)
+                    if (p != null) c.Params.Add(p.Clone());
 
             if (Steps != null)
                 foreach (var s in Steps)

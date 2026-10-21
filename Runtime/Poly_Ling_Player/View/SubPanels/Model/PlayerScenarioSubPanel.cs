@@ -50,8 +50,8 @@ namespace Poly_Ling.Player
         /// <summary>流している途中の状態。流していなければ null。</summary>
         public Func<ScenarioRunState> GetRun;
 
-        /// <summary>案内バーで先頭から流し始める。うまくいかなければ理由。</summary>
-        public Func<string, string> StartRun;
+        /// <summary>案内バーで先頭から流し始める（名前・引数の名前・引数の値）。うまくいかなければ理由。</summary>
+        public Func<string, string[], string[], string> StartRun;
 
         /// <summary>案内バーで止まった所から続ける。</summary>
         public Action ContinueRun;
@@ -171,6 +171,24 @@ namespace Poly_Ling.Player
         private VisualElement _root;
         private int  _selected = -1;
 
+        // ── 引数の入力欄 ──
+        //   選んだシナリオが宣言する引数（ObjectGroup.Params）ごとに 1 つ。数がシナリオで変わるので
+        //   作り直す部品の置き場（UiDynamicControls）へ "param.<名前>" で載せる（MCP からも uiSetValue で書ける）。
+        //   選んだシナリオか宣言が変わったときだけ作り直す。UpdateView は流している間も呼ばれるので、
+        //   毎回作り直すと打った値が消える。
+
+        /// <summary>引数の入力欄（作り直すたびに中身が変わる）。</summary>
+        private readonly UiDynamicControls _uiParams = new UiDynamicControls();
+
+        [UiControl(Ignore = true)]
+        private VisualElement _paramBox;
+
+        /// <summary>入力欄を作ったときのシナリオ名と宣言（名前・既定値）。変わったら作り直す。</summary>
+        private string _paramSignature;
+
+        /// <summary>宣言の順の入力欄。キーは引数の名前。</summary>
+        private readonly List<KeyValuePair<string, TextField>> _paramFields = new List<KeyValuePair<string, TextField>>();
+
         // ================================================================
         // 組み立て
         // ================================================================
@@ -218,6 +236,10 @@ namespace Poly_Ling.Player
             _detailLabel.style.fontSize     = 10;
             _detailLabel.style.marginBottom = 4;
             _root.Add(_detailLabel);
+
+            _paramBox = new VisualElement();
+            _paramBox.style.marginBottom = 4;
+            _root.Add(_paramBox);
 
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
@@ -536,6 +558,8 @@ namespace Poly_Ling.Player
                 + $"前提: {Join(sel.Preconditions)}\n"
                 + $"成功条件: {Join(sel.SuccessCriteria)}";
 
+            RebuildParamFieldsIfChanged(sel);
+
             // ── いま ──
             ObjectGroup shown;
             if (run != null)
@@ -631,8 +655,75 @@ namespace Poly_Ling.Player
             if (sel == null) { SetStop("シナリオを選んでください"); return; }
 
             if (StartRun == null) { SetStop("流せませんでした: 案内バーが配線されていません"); return; }
-            string err = StartRun(sel.Name);
+
+            // 入力欄の値をそのまま渡す（既定値のままの欄も渡す。どの値で流したかが記録に出る）。
+            var keys   = new string[_paramFields.Count];
+            var values = new string[_paramFields.Count];
+            for (int i = 0; i < _paramFields.Count; i++)
+            {
+                keys[i]   = _paramFields[i].Key;
+                values[i] = _paramFields[i].Value?.value ?? "";
+            }
+
+            string err = StartRun(sel.Name, keys, values);
             if (err != null) SetStop($"流せませんでした: {err}");
+        }
+
+        // ================================================================
+        // 引数の入力欄
+        // ================================================================
+
+        /// <summary>選んだシナリオか、その引数の宣言が変わったときだけ入力欄を作り直す。</summary>
+        private void RebuildParamFieldsIfChanged(ObjectGroup sel)
+        {
+            if (_paramBox == null) return;
+
+            var sb = new StringBuilder();
+            if (sel != null)
+            {
+                sb.Append(sel.Name);
+                if (sel.Params != null)
+                    foreach (var p in sel.Params)
+                        if (p != null) sb.Append('\n').Append(p.Name).Append('=').Append(p.Default).Append('|').Append(p.Description);
+            }
+            string sig = sb.ToString();
+            if (sig == _paramSignature) return;
+            _paramSignature = sig;
+
+            _uiParams.Begin("");
+            _paramFields.Clear();
+            _paramBox.Clear();
+
+            if (sel?.Params == null || sel.Params.Count == 0) return;
+
+            var head = new Label("引数（流すときに使う値。空欄にすると空の値で流れる）");
+            head.style.fontSize = 10;
+            head.style.unityFontStyleAndWeight = FontStyle.Bold;
+            head.style.marginBottom = 2;
+            _paramBox.Add(head);
+
+            foreach (var p in sel.Params)
+            {
+                if (p == null || string.IsNullOrEmpty(p.Name)) continue;
+
+                var tf = new TextField(p.Name) { value = p.Default ?? "" };
+                tf.tooltip = string.IsNullOrEmpty(p.Description) ? $"既定 {p.Default}" : $"{p.Description}（既定 {p.Default}）";
+                tf.style.marginBottom = 0;
+                _paramBox.Add(_uiParams.Add("param." + p.Name, tf,
+                    $"シナリオの引数 {p.Name}：{Or(p.Description, "説明なし")}（既定 {p.Default}）。「流す」でこの値を渡す"));
+                _paramFields.Add(new KeyValuePair<string, TextField>(p.Name, tf));
+
+                if (!string.IsNullOrEmpty(p.Description))
+                {
+                    var d = new Label(p.Description);
+                    d.style.fontSize    = 9;
+                    d.style.whiteSpace  = WhiteSpace.Normal;
+                    d.style.paddingLeft = 6;
+                    d.style.marginBottom = 2;
+                    d.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+                    _paramBox.Add(d);
+                }
+            }
         }
 
         private void OnContinue() => ContinueRun?.Invoke();

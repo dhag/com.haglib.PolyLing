@@ -650,7 +650,7 @@ namespace Poly_Ling.Data
             }
         }
 
-        /// <summary>シナリオの検索で照合する本文。目的・札・満たすべきこと・項目の目的とコマンド名。</summary>
+        /// <summary>シナリオの検索で照合する本文。目的・札・満たすべきこと・引数の名前と説明・項目の目的とコマンド名。</summary>
         public static string SearchText(ObjectGroup g)
         {
             if (g == null) return "";
@@ -659,6 +659,9 @@ namespace Poly_Ling.Data
             if (g.Tags != null)            foreach (var t in g.Tags)            sb.Append(t).Append('\n');
             if (g.Preconditions != null)   foreach (var t in g.Preconditions)   sb.Append(t).Append('\n');
             if (g.SuccessCriteria != null) foreach (var t in g.SuccessCriteria) sb.Append(t).Append('\n');
+            if (g.Params != null)
+                foreach (var p in g.Params)
+                    if (p != null) sb.Append(p.Name ?? "").Append('\n').Append(p.Description ?? "").Append('\n');
             if (g.Steps != null)
                 foreach (var s in g.Steps)
                 {
@@ -751,12 +754,22 @@ namespace Poly_Ling.Data
             var root = FindInternal(name);
             if (root == null) { error = $"シナリオがありません: {name}"; return false; }
 
-            return Walk(_items, name, 0, new List<string>(), steps, out error);
+            // 起点の引数は結ばない（${名前} のまま返す。値は流すときに決まる）。
+            return Walk(_items, name, 0, new List<string>(), steps, out error, bindParams: true, bound: null);
         }
 
+        /// <param name="bindParams">
+        /// true なら参照項目の Args を子の引数に結び、子の項目の ${名前} を置き換える（describe の resolve）。
+        /// false なら結ばない（登録・取り込みの循環検査。組み立て途中で引数の宣言が揃っていなくても断らない）。
+        /// </param>
+        /// <param name="bound">
+        /// このシナリオの引数に結んだ値。null なら置き換えない（起点）。
+        /// 子の ${名前} は結ばれた値（親の ${名前} のこともある）に置き換わる。
+        /// </param>
         private static bool Walk(
             List<ObjectGroup> items, string name, int depth,
-            List<string> path, List<FlatStep> into, out string error)
+            List<string> path, List<FlatStep> into, out string error,
+            bool bindParams = false, IReadOnlyDictionary<string, string> bound = null)
         {
             error = null;
 
@@ -781,11 +794,23 @@ namespace Poly_Ling.Data
 
                     if (step.IsScenarioRef)
                     {
-                        if (!Walk(items, step.RefName, depth + 1, path, into, out error)) return false;
+                        Dictionary<string, string> childBound = null;
+                        if (bindParams)
+                        {
+                            var child = FindIn(items, step.RefName);
+                            if (child != null &&
+                                !ScenarioParam.TryBindRef(step, child, bound, out childBound, out error))
+                            { error = $"{name} の {step.ScenarioItemId}: {error}"; return false; }
+                        }
+
+                        // child が無いときは Walk が「参照先が無い」と断る。
+                        if (!Walk(items, step.RefName, depth + 1, path, into, out error, bindParams, childBound)) return false;
                         continue;
                     }
 
-                    into.Add(new FlatStep { ScenarioName = name, Depth = depth, Step = step.Clone() });
+                    var flat = ScenarioParam.SubstituteStep(step, bindParams ? bound : null, out error);
+                    if (flat == null) { error = $"{name} の {step.ScenarioItemId}: {error}"; return false; }
+                    into.Add(new FlatStep { ScenarioName = name, Depth = depth, Step = flat });
                 }
             }
             finally

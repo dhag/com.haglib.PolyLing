@@ -47,6 +47,8 @@ namespace Poly_Ling.Player
                 case SetScenarioItemCommand c:       RunSetScenarioItem(c);       return true;
                 case RemoveScenarioItemCommand c:    RunRemoveScenarioItem(c);    return true;
                 case SetScenarioItemArgCommand c:    RunSetScenarioItemArg(c);    return true;
+                case SetScenarioParamCommand c:      RunSetScenarioParam(c);      return true;
+                case RemoveScenarioParamCommand c:   RunRemoveScenarioParam(c);   return true;
                 case MoveScenarioItemCommand c:      RunMoveScenarioItem(c);      return true;
                 case ExpandScenarioRefCommand c:     RunExpandScenarioRef(c);     return true;
                 case RunScenarioCommand c:           RunRunScenario(c);           return true;
@@ -63,9 +65,84 @@ namespace Poly_Ling.Player
                 case QueryScenarioAuditCommand c:     RunQueryScenarioAudit(c);     return true;
                 case ExportScenariosCommand c:        RunExportScenarios(c);        return true;
                 case ImportScenariosCommand c:        RunImportScenarios(c);        return true;
+                case SetExecutionLogCommand c:        RunSetExecutionLog(c);        return true;
+                case BeginTaskCommand c:              RunBeginTask(c);              return true;
+                case EndTaskCommand c:                RunEndTask(c);                return true;
+                case QueryExecutionLogCommand c:      RunQueryExecutionLog(c);      return true;
                 default: return false;
             }
         }
+
+        // ================================================================
+        // 実行記録（ExecutionLog.cs）
+        // ================================================================
+
+        /// <summary>実行記録の書き込み先。persistentDataPath はメインスレッドでしか読めないのでここで作る。</summary>
+        private static string ExecutionLogDir()
+            => System.IO.Path.Combine(UnityEngine.Application.persistentDataPath, "PolyLing", "runlogs");
+
+        /// <summary>
+        /// 入切の設定を覚えるキー（PlayerPrefs）。既定は入（2026-10-21 決定。1 件あたり約 0.2 ms）。
+        /// setExecutionLog で変えると覚え、次の起動もその状態で始まる。
+        /// </summary>
+        private const string PrefExecutionLog = "PolyLing.ExecutionLog.Enabled";
+
+        /// <summary>起動時に、覚えている入切（無ければ入）で実行記録を始める。ビューアがディスパッチャを作った直後に呼ぶ。</summary>
+        public void ApplyExecutionLogPreference()
+        {
+            bool on = UnityEngine.PlayerPrefs.GetInt(PrefExecutionLog, 1) != 0;
+            ExecutionLog.SetEnabled(on, ExecutionLogDir());
+        }
+
+        private void RunSetExecutionLog(SetExecutionLogCommand cmd)
+        {
+            ExecutionLog.SetEnabled(cmd.Enabled, ExecutionLogDir());
+            UnityEngine.PlayerPrefs.SetInt(PrefExecutionLog, cmd.Enabled ? 1 : 0);
+            UnityEngine.PlayerPrefs.Save();
+            ReportData(CommandDataJson.New()
+                .Flag("enabled", ExecutionLog.Enabled)
+                .Text("dir",     ExecutionLog.RootDir)
+                .Build());
+        }
+
+        private void RunBeginTask(BeginTaskCommand cmd)
+        {
+            if (!ExecutionLog.Enabled) { Fail("実行記録が切です。setExecutionLog enabled=true で入れてください"); return; }
+            if (string.IsNullOrWhiteSpace(cmd.Goal)) { Fail("goal が空です"); return; }
+            string id = ExecutionLog.BeginTask(cmd.TaskId, cmd.Goal, cmd.Conditions);
+            ReportData(CommandDataJson.New().Text("taskId", id).Build());
+        }
+
+        private void RunEndTask(EndTaskCommand cmd)
+        {
+            string v = (cmd.Verdict ?? "").Trim().ToLowerInvariant();
+            if (v != "success" && v != "fixed" && v != "failed")
+            { Fail($"verdict は success / fixed / failed のどれかです: {cmd.Verdict}"); return; }
+            if (!ExecutionLog.EndTask(v, cmd.Note, out string id)) { Fail("開いているタスクがありません"); return; }
+            ReportData(CommandDataJson.New().Text("taskId", id).Build());
+        }
+
+        private void RunQueryExecutionLog(QueryExecutionLogCommand cmd)
+        {
+            var s = ExecutionLog.Snapshot();
+            if (cmd.Reset) ExecutionLog.ResetStats();
+            ReportData(CommandDataJson.New()
+                .Flag("enabled",     s.Enabled)
+                .Text("taskId",      s.TaskId ?? "")
+                .Text("dir",         s.RootDir ?? "")
+                .Int ("records",     (int)s.Records)
+                .Int ("written",     (int)s.Written)
+                .Int ("pending",     (int)s.Pending)
+                .Num ("mainMsTotal", s.MainMsTotal)
+                .Num ("mainMsPer",   s.Records > 0 ? s.MainMsTotal / s.Records : 0.0)
+                .Text("lastError",   s.LastError ?? "")
+                .Build());
+        }
+
+        /// <summary>実行記録の操作そのもの（記録しない）。</summary>
+        private static bool IsExecutionLogControl(PanelCommand cmd)
+            => cmd is SetExecutionLogCommand || cmd is BeginTaskCommand
+            || cmd is EndTaskCommand || cmd is QueryExecutionLogCommand;
 
         // ================================================================
         // 別ファイルとの出し入れ
@@ -229,11 +306,54 @@ namespace Poly_Ling.Player
                 details.Add(detail ?? "");
             }
 
+            // ── 引数の宣言 ──
+            var declared = new HashSet<string>(StringComparer.Ordinal);
+            var used     = new HashSet<string>(StringComparer.Ordinal);
+            if (g.Params != null)
+                foreach (var p in g.Params)
+                {
+                    if (p == null) continue;
+                    if (!ScenarioParam.IsValidName(p.Name))
+                        Add("", "badParamName", p.Name, $"引数の名前 {p.Name} は使えない（英数字と _、先頭は数字以外、64 文字まで）");
+                    else if (!declared.Add(p.Name))
+                        Add("", "duplicateParam", p.Name, $"引数 {p.Name} が 2 回以上宣言されている");
+                }
+
             for (int i = 0; i < g.StepCount; i++)
             {
                 var step = g.Steps[i];
                 if (step == null) continue;
                 string id = step.ScenarioItemId ?? "";
+
+                // ── 引数の参照 ──
+                if (step.Args != null)
+                    foreach (var kv in step.SortedArgs())
+                    {
+                        string v = kv.Value;
+                        if (string.IsNullOrEmpty(v)) continue;
+                        if (ScenarioParam.TryParseRef(v, out string pname))
+                        {
+                            if (!declared.Contains(pname))
+                                Add(id, "unknownParam", kv.Key, $"{v} の引数 {pname} が宣言されていない");
+                            else
+                                used.Add(pname);
+                        }
+                        else if (v.IndexOf(ScenarioParam.RefOpen, StringComparison.Ordinal) >= 0)
+                        {
+                            Add(id, "partialParamRef", kv.Key,
+                                $"{v} は ${{ を含むが、値の丸ごとが ${{名前}} ではないので置き換わらない");
+                        }
+                    }
+
+                // 参照項目の Args は呼ぶシナリオの引数へ渡す値。キーが子の宣言に無ければ、流したとき失敗する。
+                if (step.IsScenarioRef && step.Args != null && step.Args.Count > 0)
+                {
+                    var child = ScenarioLibrary.Get(step.RefName);
+                    if (child != null)
+                        foreach (var kv in step.SortedArgs())
+                            if (child.FindParam(kv.Key) == null)
+                                Add(id, "unknownChildParam", kv.Key, $"呼ぶシナリオ {step.RefName} に引数 {kv.Key} が宣言されていない");
+                }
 
                 // 項目の利用シーンが消えた・改名された。区間の意味が失われるので指摘する。
                 if (!string.IsNullOrEmpty(step.UsageScene) && SceneLibrary.Get(step.UsageScene) == null)
@@ -252,6 +372,7 @@ namespace Poly_Ling.Player
                         {
                             string v = step.GetArg(mr.Key);
                             if (string.IsNullOrEmpty(v) || v[0] == '@') continue;
+                            if (ScenarioParam.TryParseRef(v, out _)) continue;   // 引数で渡す
                             if (!HasNonNegativeIndex(v)) continue;
 
                             Add(id, "literalMeshIndex", mr.Key,
@@ -284,6 +405,10 @@ namespace Poly_Ling.Player
                         Add(id, "forwardRef", kv.Key, $"{v} が指す項目 {refId} はこの項目より後ろにある");
                 }
             }
+
+            foreach (var name in declared)
+                if (!used.Contains(name))
+                    Add("", "unusedParam", name, $"引数 {name} を使う項目が無い");
 
             ReportData(CommandDataJson.New()
                 .Text ("name",       g.Name ?? "")
@@ -482,6 +607,19 @@ namespace Poly_Ling.Player
 
             var prov = g.Provenance ?? new ObjectGroupProvenance();
 
+            // 引数の宣言。outline でも載せる（流す前に何を渡せるか分かるように。量は宣言の数だけ）。
+            var paramNames    = new List<string>();
+            var paramDefaults = new List<string>();
+            var paramDescs    = new List<string>();
+            if (g.Params != null)
+                foreach (var p in g.Params)
+                {
+                    if (p == null) continue;
+                    paramNames.Add(p.Name ?? "");
+                    paramDefaults.Add(p.Default ?? "");
+                    paramDescs.Add(p.Description ?? "");
+                }
+
             var builder = CommandDataJson.New()
                 .Text ("name",              g.Name ?? "")
                 .Text ("detail",            d);
@@ -497,6 +635,9 @@ namespace Poly_Ling.Player
                 .Texts("preconditions",     g.Preconditions)
                 .Texts("successCriteria",   g.SuccessCriteria)
                 .Texts("tags",              g.Tags)
+                .Texts("paramNames",        paramNames)
+                .Texts("paramDefaults",     paramDefaults)
+                .Texts("paramDescriptions", paramDescs)
                 .Texts("scenarioItemIds",        scenarioItemIds)
                 .Texts("kinds",             kinds)
                 .Texts("actions",           actions)
@@ -838,6 +979,56 @@ namespace Poly_Ling.Player
         /// （masterIndices、点列、pivot など）はあちらでは書けないため、
         /// キーと値を単独の文字列で受けるこの口を通す。
         /// </summary>
+        private void RunSetScenarioParam(SetScenarioParamCommand cmd)
+        {
+            var g = ScenarioLibrary.Get(cmd.Name);
+            if (g == null) { Fail($"シナリオがありません: {cmd.Name}"); return; }
+            if (!ScenarioParam.IsValidName(cmd.Param))
+            { Fail($"引数の名前 {cmd.Param} は使えません（英数字と _、先頭は数字以外、64 文字まで）"); return; }
+
+            if (g.Params == null) g.Params = new List<ScenarioParam>();
+            var p = g.FindParam(cmd.Param);
+            bool added = p == null;
+            if (added) { p = new ScenarioParam { Name = cmd.Param }; g.Params.Add(p); }
+            p.Default     = cmd.DefaultValue ?? "";
+            p.Description = cmd.Description ?? "";
+
+            if (!ScenarioLibrary.Register(g, overwrite: true, out string error)) { Fail(error); return; }
+
+            ReportData(CommandDataJson.New()
+                .Text ("name",   g.Name)
+                .Text ("param",  cmd.Param)
+                .Flag ("added",  added)
+                .Texts("params", ParamNames(g))
+                .Build());
+        }
+
+        private void RunRemoveScenarioParam(RemoveScenarioParamCommand cmd)
+        {
+            var g = ScenarioLibrary.Get(cmd.Name);
+            if (g == null) { Fail($"シナリオがありません: {cmd.Name}"); return; }
+
+            var p = g.FindParam(cmd.Param);
+            if (p == null) { Fail($"{cmd.Name} に引数 {cmd.Param} はありません"); return; }
+            g.Params.Remove(p);
+
+            if (!ScenarioLibrary.Register(g, overwrite: true, out string error)) { Fail(error); return; }
+
+            ReportData(CommandDataJson.New()
+                .Text ("name",   g.Name)
+                .Text ("param",  cmd.Param)
+                .Texts("params", ParamNames(g))
+                .Build());
+        }
+
+        private static List<string> ParamNames(ObjectGroup g)
+        {
+            var list = new List<string>();
+            if (g?.Params != null)
+                foreach (var p in g.Params) if (p != null) list.Add(p.Name ?? "");
+            return list;
+        }
+
         private void RunSetScenarioItemArg(SetScenarioItemArgCommand cmd)
         {
             var g = ScenarioLibrary.Get(cmd.Name);
@@ -848,7 +1039,8 @@ namespace Poly_Ling.Player
 
             var step = g.Steps[at];
 
-            if (!step.IsExecutable)
+            // 参照項目の引数は、呼ぶシナリオの引数へ渡す値（キーが子の引数名）。
+            if (!step.IsExecutable && !step.IsScenarioRef)
             { Fail($"{cmd.ScenarioItemId} は {step.Kind} の項目で、引数を持ちません"); return; }
 
             if (string.IsNullOrEmpty(cmd.Key)) { Fail("key が空です"); return; }
@@ -942,8 +1134,14 @@ namespace Poly_Ling.Player
             var src = ScenarioLibrary.Get(refStep.RefName);
             if (src == null) { Fail($"参照先のシナリオがありません: {refStep.RefName}"); return; }
 
+            // 参照項目の Args を参照先の引数に結ぶ。写した項目の ${参照先の引数} は結んだ値に置き換える
+            // （参照項目が消えると結び付けも消えるので、値として写す）。結んだ値が親の ${名前} なら、
+            // そのまま親の引数を指す項目になる。親の側は結ばない（親の引数は流すときに決まる）。
+            if (!ScenarioParam.TryBindRef(refStep, src, null, out var bound, out string bindError))
+            { Fail(bindError); return; }
+
             // 参照先の項目をそのまま写す。参照先がさらに参照項目を持つ場合は
-            // 参照項目のまま入る。深い項目を開くにはもう一度この口を使う。
+            // 参照項目のまま入る（その Args も置き換わる）。深い項目を開くにはもう一度この口を使う。
             var inserted = new List<ObjectGroupStep>();
             var oldIds   = new List<string>();
             if (src.Steps != null)
@@ -951,7 +1149,8 @@ namespace Poly_Ling.Player
                 foreach (var s in src.Steps)
                 {
                     if (s == null) continue;
-                    var copy = s.Clone();
+                    var copy = ScenarioParam.SubstituteStep(s, bound, out string substError);
+                    if (copy == null) { Fail($"{refStep.RefName} の {s.ScenarioItemId}: {substError}"); return; }
                     oldIds.Add(copy.ScenarioItemId ?? "");
                     copy.ScenarioItemId = "";   // 名前は入れた先で振り直す
                     inserted.Add(copy);

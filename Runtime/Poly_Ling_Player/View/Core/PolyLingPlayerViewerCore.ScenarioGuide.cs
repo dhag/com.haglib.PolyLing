@@ -35,7 +35,7 @@ namespace Poly_Ling.Player
 
             if (_scenarioSubPanel != null)
             {
-                _scenarioSubPanel.StartRun    = name => _scenarioGuideBar.Start(name);
+                _scenarioSubPanel.StartRun    = (name, keys, values) => _scenarioGuideBar.Start(name, keys, values);
                 _scenarioSubPanel.ContinueRun = _scenarioGuideBar.Continue;
                 _scenarioSubPanel.StopRun     = _scenarioGuideBar.Stop;
                 _scenarioSubPanel.IsBusy      = () => _scenarioGuideBar.IsBusy;

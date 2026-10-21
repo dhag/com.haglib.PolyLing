@@ -369,6 +369,9 @@ namespace Poly_Ling.Player
                 _editOps?.CommandQueue,
                 () => _structureNotifyCount);
 
+            // 実行記録（ExecutionLog.cs）を前回の設定（既定は入）で始める。
+            _commandDispatcher.ApplyExecutionLogPreference();
+
             // 作業軸ライブラリへの登録（RegisterWorkAxisEntryCommand）が読むアクティブな作業軸。
             _commandDispatcher.GetActiveWorkAxis = CurrentWorkAxis;
             // 表情転写（FaceExpressionTransferCommand）の材料を持つ窓口。

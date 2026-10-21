@@ -257,9 +257,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // model.csv 読み込み
             string modelCsvPath = Path.Combine(modelFolderPath, "model.csv");
-            var (modelName, entries) = ReadModelCsv(modelCsvPath);
 
-            if (entries == null || entries.Count == 0) return null;
+            // model.csv が無いフォルダはモデルのフォルダではない。
+            // entry 行が 0 件なのはメッシュ 0 個のモデル（createEmptyModel で作れる正しい状態）なので、
+            // 落とさずに読み進める。ここで null を返すと、材質・オブジェクトグループなど
+            // メッシュ以外のファイルごとモデルがプロジェクトから消える。
+            if (!File.Exists(modelCsvPath)) return null;
+
+            var (modelName, entries) = ReadModelCsv(modelCsvPath);
+            if (entries == null) entries = new List<ModelEntry>();
 
             var model = new ModelContext(modelName);
             string modelPrefix = SanitizeFileName(modelName).ToLowerInvariant() + ".";

@@ -141,6 +141,11 @@ namespace Poly_Ling.Remote
         //   ※ Version 8 で各材質の末尾に AssetPath・金属度・滑らかさ・法線強度・遮蔽強度・
         //     ブレンド・各テクスチャ経路（materials.csv と同じ項目）を追加。材質は途中に並ぶので
         //     Version 7 以前の受信側とは非互換。Editor/Player を同時更新すること。
+        //   ※ Version 11 で ObjectGroup の由来の直後にシナリオの引数を追加。
+        //     ObjectGroup: … [string] ProvCreatedBy
+        //                  [2B] ParamCount ([string] Name [string] Default [string] Description) × ParamCount
+        //                  [2B] StepCount …
+        //     グループは途中に並ぶので Version 10 以前の受信側とは非互換。Editor/Player を同時更新すること。
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -158,7 +163,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.ModelMeta);
-                w.Write((byte)10);  // version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
+                w.Write((byte)11);  // version 11: シナリオの引数（ObjectGroup.Params）。version 10: グループモーフの子（GroupChildren）。version 9: モデル単位の付帯（既定材質・VRM・下絵など CSV と揃える）。v8: 材質の拡張（金属度・滑らかさ・各テクスチャ経路・AssetPath）。v7: 使う作業軸の ID。v6: 参照項目（RefName / ExpansionPolicy）。v5: 意味情報、v4: 項目列、v3: ObjectGroup ブロック
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
 
@@ -212,6 +217,7 @@ namespace Poly_Ling.Remote
                         WriteString(w, "");                                     // Goal
                         w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)0); // 前提 / 成功条件 / 札
                         WriteString(w, ""); WriteString(w, ""); WriteString(w, ""); // 由来
+                        w.Write((ushort)0);                                     // 引数
                         w.Write((ushort)0);
                         continue;
                     }
@@ -230,6 +236,19 @@ namespace Poly_Ling.Remote
                     WriteString(w, prov?.ParentName    ?? "");
                     WriteString(w, prov?.ChangeSummary ?? "");
                     WriteString(w, prov?.CreatedBy     ?? "");
+
+                    // 引数（version 11）。名前の無いものは書かない。
+                    var prms = new List<Poly_Ling.Data.ScenarioParam>();
+                    if (g.Params != null)
+                        foreach (var p in g.Params)
+                            if (p != null && !string.IsNullOrEmpty(p.Name)) prms.Add(p);
+                    w.Write((ushort)prms.Count);
+                    foreach (var p in prms)
+                    {
+                        WriteString(w, p.Name);
+                        WriteString(w, p.Default ?? "");
+                        WriteString(w, p.Description ?? "");
+                    }
 
                     var steps = g.Steps;
                     int stepCount = steps?.Count ?? 0;
@@ -404,6 +423,20 @@ namespace Poly_Ling.Remote
                                     ChangeSummary = ReadString(r),
                                     CreatedBy     = ReadString(r),
                                 };
+                            }
+
+                            if (metaVersion >= 11)
+                            {
+                                ushort paramCount = r.ReadUInt16();
+                                for (int pi = 0; pi < paramCount; pi++)
+                                {
+                                    g.Params.Add(new Poly_Ling.Data.ScenarioParam
+                                    {
+                                        Name        = ReadString(r),
+                                        Default     = ReadString(r),
+                                        Description = ReadString(r),
+                                    });
+                                }
                             }
 
                             ushort stepCount = r.ReadUInt16();

@@ -24,7 +24,7 @@
 // 【後から足した欄】
 //   scenarioItemId / kind / purpose / refName / expansionPolicy（項目）と
 //   goal / preconditions / successCriteria /
-//   tags / prov*（グループ）は、いずれも既定が空か 0。JsonUtility は無い欄を
+//   tags / prov* / scenarioParams（グループ）は、いずれも既定が空か 0。JsonUtility は無い欄を
 //   既定のまま残すので、これらを持たない保存データもそのまま読める。
 //   ScenarioItemId だけは空のままにできない（項目を ID で指すため）ので、
 //   読みの最後に ObjectGroup.EnsureScenarioItemIds が振る。
@@ -52,6 +52,15 @@ namespace Poly_Ling.Serialization
 
         /// <summary>ObjectId の 10 進文字列。並びは Args の索引配列と 1 対 1。</summary>
         public List<string> objectIds = new List<string>();
+    }
+
+    /// <summary>シナリオの引数 1 件（ScenarioParam）。</summary>
+    [Serializable]
+    public class ScenarioParamDTO
+    {
+        public string name = "";
+        public string defaultValue = "";
+        public string description = "";
     }
 
     /// <summary>項目 1 つぶん（生成コマンド 1 つ）。</summary>
@@ -229,6 +238,9 @@ namespace Poly_Ling.Serialization
         /// <summary>由来。作った者。</summary>
         public string provCreatedBy = "";
 
+        /// <summary>シナリオの引数。並びは宣言の順。古い保存データには無い（引数なしとして読む）。</summary>
+        public List<ScenarioParamDTO> scenarioParams = new List<ScenarioParamDTO>();
+
         // ================================================================
         // 変換
         // ================================================================
@@ -257,6 +269,16 @@ namespace Poly_Ling.Serialization
                 dto.provChangeSummary = g.Provenance.ChangeSummary ?? "";
                 dto.provCreatedBy     = g.Provenance.CreatedBy     ?? "";
             }
+
+            if (g.Params != null)
+                foreach (var p in g.Params)
+                    if (p != null && !string.IsNullOrEmpty(p.Name))
+                        dto.scenarioParams.Add(new ScenarioParamDTO
+                        {
+                            name         = p.Name,
+                            defaultValue = p.Default ?? "",
+                            description  = p.Description ?? "",
+                        });
 
             if (g.Steps != null)
             {
@@ -302,6 +324,17 @@ namespace Poly_Ling.Serialization
                 ChangeSummary = provChangeSummary ?? "",
                 CreatedBy     = provCreatedBy     ?? "",
             };
+
+            g.Params = new List<ScenarioParam>();
+            if (scenarioParams != null)
+                foreach (var pd in scenarioParams)
+                    if (pd != null && !string.IsNullOrEmpty(pd.name))
+                        g.Params.Add(new ScenarioParam
+                        {
+                            Name        = pd.name,
+                            Default     = pd.defaultValue ?? "",
+                            Description = pd.description ?? "",
+                        });
 
             if (!string.IsNullOrEmpty(createdAt) && DateTime.TryParse(
                     createdAt, CultureInfo.InvariantCulture,
