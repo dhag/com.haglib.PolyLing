@@ -161,21 +161,69 @@ namespace Poly_Ling.Player
         {
             if (cmd == null) return "コマンドが null";
 
+            // 画像板は画像を 1 回だけ読み、画素数を確定させてから生成する。
+            // 読んだテクスチャはそのまま材質へ渡す。
+            GeneratedImageMaterial imageMaterial = null;
+            if (cmd is CreateImagePlateCommand ipc)
+            {
+                string why = PrepareImagePlate(ipc, out var prepared, out imageMaterial);
+                if (why != null) return why;
+                cmd = prepared;
+            }
+
             var mo = PrimitiveMeshFactory.Build(
                 cmd, forPreview: false,
                 resolvePlaceSources: ResolvePlaceSourcesForCommand,
                 resolveBeltSource:   ResolveBeltSourceForCommand);
             if (mo == null)
+            {
+                if (imageMaterial != null) Object.Destroy(imageMaterial.Texture);
                 return $"{cmd.ShapeName} を生成できませんでした（フォントが開けない・輪郭が 0 本など）";
+            }
 
             var __sw = System.Diagnostics.Stopwatch.StartNew(); // TEMP-TIMING
             string reason = PlaceGeneratedMesh(
                 mo, cmd.MeshName, cmd.Placement, cmd.PoseRotation, cmd.PoseScale,
-                out int createdIndex);
+                out int createdIndex, imageMaterial);
             UnityEngine.Debug.Log($"[PL/Timing] Place {cmd.ShapeName} {__sw.ElapsedMilliseconds}ms"); // TEMP-TIMING
 
             if (reason == null) ReportCreatedMesh(createdIndex);
             return reason;
+        }
+
+        /// <summary>
+        /// 画像板の前処理。画像のパスを作業フォルダで解決して読み、
+        /// 画素数を画像の値で書き直したコマンドと、材質に貼るテクスチャを返す。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private static string PrepareImagePlate(
+            CreateImagePlateCommand cmd,
+            out CreatePrimitiveMeshCommand prepared, out GeneratedImageMaterial imageMaterial)
+        {
+            prepared      = null;
+            imageMaterial = null;
+
+            var p = cmd.Params;
+            if (string.IsNullOrWhiteSpace(p.ImagePath)) return "画像が指定されていません";
+
+            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(p.ImagePath, out string fullPath, out string sandboxReason))
+                return sandboxReason;
+
+            string why = Poly_Ling.Materials.MaterialEditOps.LoadTextureFile(fullPath, out var tex);
+            if (why != null) return why;
+
+            p.ImageWidth  = tex.width;
+            p.ImageHeight = tex.height;
+            prepared = new CreateImagePlateCommand(cmd.ModelIndex, p, cmd.Placement);
+
+            imageMaterial = new GeneratedImageMaterial
+            {
+                Texture  = tex,
+                FullPath = fullPath,
+                Name     = tex.name,
+                FaceTag  = ImagePlateMeshGenerator.FrontFaceTag,
+            };
+            return null;
         }
 
         /// <summary>
@@ -242,7 +290,8 @@ namespace Poly_Ling.Player
         /// <returns>失敗理由。成功時は null。</returns>
         private string PlaceGeneratedMesh(
             MeshObject meshObject, string meshName, PrimitivePlacement placement,
-            Vector3 poseRotation, Vector3 poseScale, out int createdMasterIndex)
+            Vector3 poseRotation, Vector3 poseScale, out int createdMasterIndex,
+            GeneratedImageMaterial imageMaterial = null)
         {
             createdMasterIndex = -1;
 
@@ -259,24 +308,24 @@ namespace Poly_Ling.Player
                 case PrimitiveAddMode.NewObject:
                     createdMasterIndex = PrimitiveMeshCreateNewObject(project, meshObject, meshName,
                         placement.WorldPosition, poseRotation, poseScale,
-                        placement.IgnorePoseInArmature, placement.MaterialIndex);
+                        placement.IgnorePoseInArmature, placement.MaterialIndex, imageMaterial);
                     break;
                 case PrimitiveAddMode.AddToExisting:
                     createdMasterIndex = PrimitiveMeshAddToExisting(project, meshObject, meshName,
                         placement.WorldPosition, poseRotation, poseScale,
                         placement.IgnorePoseInArmature, placement.AddTargetIndex,
-                        placement.MaterialIndex);
+                        placement.MaterialIndex, imageMaterial);
                     break;
                 case PrimitiveAddMode.NewModel:
                     createdMasterIndex = PrimitiveMeshCreateNewModel(project, meshObject, meshName,
                         placement.WorldPosition, poseRotation, poseScale,
-                        placement.IgnorePoseInArmature, placement.MaterialIndex);
+                        placement.IgnorePoseInArmature, placement.MaterialIndex, imageMaterial);
                     break;
                 case PrimitiveAddMode.ReplaceExisting:
                     return PrimitiveMeshReplaceExisting(project, meshObject,
                         placement.WorldPosition, poseRotation, poseScale,
                         placement.AddTargetIndex, placement.MaterialIndex,
-                        out createdMasterIndex);
+                        out createdMasterIndex, imageMaterial);
             }
 
             return null;

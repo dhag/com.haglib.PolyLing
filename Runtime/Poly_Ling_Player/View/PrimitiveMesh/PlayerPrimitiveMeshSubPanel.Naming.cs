@@ -67,6 +67,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Cylinder:   return _cylP.MeshName;
                 case ShapeKind.Capsule:    return _capsP.MeshName;
                 case ShapeKind.Plane:      return _planeP.MeshName;
+                case ShapeKind.ImagePlate: return _imagePlateP.MeshName;
                 case ShapeKind.Pyramid:    return _pyramidP.MeshName;
                 case ShapeKind.Revolution: return _revP.MeshName;
                 case ShapeKind.Profile2D:  return _p2dP.MeshName;
@@ -130,6 +131,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Cylinder:    _cylP.MeshName     = name; break;
                 case ShapeKind.Capsule:     _capsP.MeshName    = name; break;
                 case ShapeKind.Plane:       _planeP.MeshName   = name; break;
+                case ShapeKind.ImagePlate:  _imagePlateP.MeshName = name; break;
                 case ShapeKind.Pyramid:     _pyramidP.MeshName = name; break;
                 case ShapeKind.Revolution:  _revP.MeshName     = name; break;
                 case ShapeKind.Profile2D:   _p2dP.MeshName     = name; break;

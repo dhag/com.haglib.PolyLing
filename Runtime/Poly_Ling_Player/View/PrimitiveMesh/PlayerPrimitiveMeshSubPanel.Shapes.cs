@@ -53,7 +53,9 @@ namespace Poly_Ling.Player
                                // ── 魔法陣（高度な図形）
                                MagicCircle,
                                // ── 鉄塔（高度な図形）
-                               LatticeTower }
+                               LatticeTower,
+                               // ── 画像板（基本図形）
+                               ImagePlate }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge","Ribbon",
@@ -71,7 +73,8 @@ namespace Poly_Ling.Player
               "ZodiacSign",
               "Emblem",
               "MagicCircle",
-              "LatticeTower" };
+              "LatticeTower",
+              "ImagePlate" };
 
         /// <summary>
         /// 図形カテゴリ（左ペインの「基本図形」/「高度な図形」/「機構部品A」/「機構部品B」/
@@ -85,7 +88,7 @@ namespace Poly_Ling.Player
         // カテゴリ別の図形リスト。グリッドはこの内容だけを表示する。
         private static readonly ShapeKind[] BasicShapes =
             { ShapeKind.Cube, ShapeKind.Sphere, ShapeKind.Cylinder, ShapeKind.Capsule, ShapeKind.Plane, ShapeKind.Pyramid,
-              ShapeKind.StadiumBox };
+              ShapeKind.StadiumBox, ShapeKind.ImagePlate };
         private static readonly ShapeKind[] AdvancedShapes =
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.Ribbon,
               ShapeKind.NGonGear, ShapeKind.NGonStar, ShapeKind.Emblem, ShapeKind.ZodiacSign, ShapeKind.MagicCircle,
@@ -379,6 +382,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Cylinder:   BuildCylinderUI(_settingsContainer);   break;
                 case ShapeKind.Capsule:    BuildCapsuleUI(_settingsContainer);    break;
                 case ShapeKind.Plane:      BuildPlaneUI(_settingsContainer);      break;
+                case ShapeKind.ImagePlate: BuildImagePlateUI(_settingsContainer); break;
                 case ShapeKind.Pyramid:    BuildPyramidUI(_settingsContainer);    break;
                 case ShapeKind.Revolution: BuildRevolutionUI(_settingsContainer); break;
                 case ShapeKind.SpringBoneSingle:

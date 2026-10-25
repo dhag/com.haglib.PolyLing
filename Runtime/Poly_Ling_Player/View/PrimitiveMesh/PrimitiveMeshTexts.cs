@@ -20,6 +20,20 @@ namespace Poly_Ling.Player
             ["Cylinder"]      = new() { ["en"] = "Cylinder",    ["ja"] = "円柱",        ["hi"] = "つつ" },
             ["Capsule"]       = new() { ["en"] = "Capsule",     ["ja"] = "カプセル",    ["hi"] = "カプセル" },
             ["Plane"]         = new() { ["en"] = "Plane",       ["ja"] = "平面",        ["hi"] = "ひらたい" },
+
+            // 画像板（基本図形）
+            ["ImagePlate"]            = new() { ["en"] = "Image Plate",       ["ja"] = "画像板",             ["hi"] = "えのいた" },
+            ["ImagePlateHint"]        = new() { ["en"] = "A plate with the image's aspect ratio. The image is put on the front (+Z) as a new material; the back and sides follow the material setting.",
+                                                ["ja"] = "画像の縦横比で厚みのある板を作ります。表面（+Z 側）には画像を貼った材質を新しく作り、裏面と側面は材質の指定に従います。",
+                                                ["hi"] = "えのかたちのいたをつくる。おもてにえをはる" },
+            ["ImagePlateImage"]       = new() { ["en"] = "Image",             ["ja"] = "画像",               ["hi"] = "え" },
+            ["ImagePlatePick"]        = new() { ["en"] = "Choose Image",      ["ja"] = "画像を選ぶ",         ["hi"] = "えをえらぶ" },
+            ["ImagePlateNoImage"]     = new() { ["en"] = "No image chosen",   ["ja"] = "画像が選ばれていません", ["hi"] = "えがまだない" },
+            ["ImagePlateImageWidth"]  = new() { ["en"] = "Image Width (px)",  ["ja"] = "画像の横の画素数",   ["hi"] = "えのよこ" },
+            ["ImagePlateImageHeight"] = new() { ["en"] = "Image Height (px)", ["ja"] = "画像の縦の画素数",   ["hi"] = "えのたて" },
+            ["ImagePlateLongSide"]    = new() { ["en"] = "Long Side",         ["ja"] = "長辺の長さ",         ["hi"] = "ながいへん" },
+            ["ImagePlateSegmentsX"]   = new() { ["en"] = "Segments X",        ["ja"] = "横の分割数",         ["hi"] = "よこのわけかず" },
+            ["ImagePlateSegmentsY"]   = new() { ["en"] = "Segments Y",        ["ja"] = "縦の分割数",         ["hi"] = "たてのわけかず" },
             ["Pyramid"]       = new() { ["en"] = "Pyramid",     ["ja"] = "角錐",        ["hi"] = "かくすい" },
             ["Revolution"]    = new() { ["en"] = "Revolution",  ["ja"] = "回転体",      ["hi"] = "かいてんたい" },
 

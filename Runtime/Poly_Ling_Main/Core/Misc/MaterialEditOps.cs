@@ -282,21 +282,70 @@ namespace Poly_Ling.Materials
             if (mat == null) return "マテリアルが割り当てられていません";
             if (string.IsNullOrEmpty(propName) || !mat.HasProperty(propName))
                 return $"テクスチャ欄がありません: {propName}";
-            if (!File.Exists(fullPath)) return $"ファイルがありません: {fullPath}";
 
-            var tex = new Texture2D(2, 2);
-            if (!tex.LoadImage(File.ReadAllBytes(fullPath)))
+            string why = LoadTextureFile(fullPath, out var tex);
+            if (why != null) return why;
+
+            why = ApplyLoadedTexture(matRef, propName, tex, fullPath);
+            if (why != null) { Object.DestroyImmediate(tex); return why; }
+
+            loaded = tex;
+            return null;
+        }
+
+        /// <summary>
+        /// 画像ファイルを読んでテクスチャを作る。名前はファイル名（拡張子なし）。
+        /// 失敗したときは作りかけのテクスチャを破棄する。
+        /// </summary>
+        /// <param name="fullPath">解決済みの絶対パス（サンドボックスの判定は呼び出し側）</param>
+        /// <returns>失敗理由。成功時は null。</returns>
+        public static string LoadTextureFile(string fullPath, out Texture2D tex)
+        {
+            tex = null;
+            if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath)) return $"ファイルがありません: {fullPath}";
+
+            var t = new Texture2D(2, 2);
+            if (!t.LoadImage(File.ReadAllBytes(fullPath)))
             {
-                Object.DestroyImmediate(tex);
+                Object.DestroyImmediate(t);
                 return "テクスチャの読み込みに失敗しました";
             }
-            tex.name = Path.GetFileNameWithoutExtension(fullPath);
+            t.name = Path.GetFileNameWithoutExtension(fullPath);
+            tex = t;
+            return null;
+        }
+
+        /// <summary>
+        /// 読み込み済みのテクスチャを材質のテクスチャ欄へ設定する。
+        /// Data の書き方は ApplyTextureFile と同じ（SourceTexturePath に絶対パス、BaseMapPath は無効）。
+        /// </summary>
+        /// <param name="fullPath">テクスチャの元ファイルの絶対パス（保存時の複製に使う）</param>
+        /// <returns>失敗理由。成功時は null。</returns>
+        public static string ApplyLoadedTexture(MaterialReference matRef, string propName, Texture2D tex, string fullPath)
+        {
+            if (matRef == null) return "材質スロットがありません";
+            var mat = matRef.Material;
+            if (mat == null) return "マテリアルが割り当てられていません";
+            if (string.IsNullOrEmpty(propName) || !mat.HasProperty(propName))
+                return $"テクスチャ欄がありません: {propName}";
+            if (tex == null) return "テクスチャがありません";
+
             mat.SetTexture(propName, tex);
 
             var d = EnsureData(matRef);
             d.SourceTexturePath = fullPath;
             d.BaseMapPath       = null;
-            loaded = tex;
+            return null;
+        }
+
+        /// <summary>
+        /// 材質のメインテクスチャ欄の名前。URP は _BaseMap、それ以外は _MainTex。どちらも無ければ null。
+        /// </summary>
+        public static string MainTexturePropertyName(Material mat)
+        {
+            if (mat == null) return null;
+            if (mat.HasProperty("_BaseMap")) return "_BaseMap";
+            if (mat.HasProperty("_MainTex")) return "_MainTex";
             return null;
         }
     }

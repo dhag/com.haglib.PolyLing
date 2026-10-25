@@ -100,6 +100,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Cylinder:     return new CreateCylinderCommand(mi, _cylP, pl);
                 case ShapeKind.Capsule:      return new CreateCapsuleCommand(mi, _capsP, pl);
                 case ShapeKind.Plane:        return new CreatePlaneCommand(mi, _planeP, pl);
+                case ShapeKind.ImagePlate:   return new CreateImagePlateCommand(mi, _imagePlateP, pl);
                 case ShapeKind.Pyramid:      return new CreatePyramidCommand(mi, _pyramidP, pl);
                 case ShapeKind.StadiumBox:   return new CreateStadiumBoxCommand(mi, _stadiumP, pl);
                 case ShapeKind.PipeStadium:  return new CreatePipeStadiumCommand(mi, _pipeStadiumP, pl);

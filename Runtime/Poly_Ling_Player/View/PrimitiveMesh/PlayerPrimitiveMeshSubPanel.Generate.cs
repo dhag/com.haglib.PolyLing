@@ -203,6 +203,9 @@ namespace Poly_Ling.Player
                     if (cmd == null) { _statusLabel.text = "生成失敗"; return; }
                     if (SendCommand == null) { _statusLabel.text = "配線が足りません（SendCommand）"; return; }
 
+                    // 画像板は画面で選んだ画像を、送るたびに 1 回だけ読めるようにする。
+                    if (_current == ShapeKind.ImagePlate) AllowImagePlateImageOnce();
+
                     SendCommand(cmd);
                     _statusLabel.text = T("Create");
 
@@ -275,6 +278,9 @@ namespace Poly_Ling.Player
                 // 脚線が作れて、どのデッキにも配置元があること。
                 case ShapeKind.LatticeTower:
                     return SendCommand != null && LatticeTowerReady(out _);
+
+                // 画像を選ぶまでは縦横比も貼るものも無い。
+                case ShapeKind.ImagePlate: return ImagePlateReady;
 
                 // 部品が1つも無いと頂点0のメッシュになる。
                 case ShapeKind.Ribbon:

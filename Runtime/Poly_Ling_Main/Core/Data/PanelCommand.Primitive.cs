@@ -305,6 +305,34 @@ namespace Poly_Ling.Data
             : base(modelIndex, placement) { Params = @params; }
     }
 
+    /// <summary>
+    /// 画像板。画像の縦横比で板を作り、厚みを付け、表面に画像を貼った材質を作る。
+    ///
+    /// 【材質】
+    ///   受け口（PolyLingPlayerViewerCore）が画像を読み、材質スロットを 1 つ作って表面へ割り当てる。
+    ///   裏面と側面は配置指定の materialIndex の材質（-1 ならスロット 0）。
+    ///
+    /// 【画像のパス】
+    ///   作業フォルダの下だけを読める。画面で選んだ画像は生成ボタンを押すたびに 1 回だけ許可される。
+    ///   オブジェクトグループの作り直しでは許可が無いので、作業フォルダの外の画像は読めない。
+    /// </summary>
+    [PLCommand(Category = "geometry.create.primitive", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets,
+        Description = "画像の縦横比で厚みのある板を作り、表面に画像を貼った材質を作って割り当てる。画像は作業フォルダの下だけを読める。")]
+    public sealed class CreateImagePlateCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "ImagePlate", Description = "画像板のパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.ImagePlateMeshGenerator.ImagePlateParams Params { get; }
+
+        public override string ShapeName => "ImagePlate";
+        public override string MeshName  => Params.MeshName;
+
+        public CreateImagePlateCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.ImagePlateMeshGenerator.ImagePlateParams @params,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement) { Params = @params; }
+    }
+
     [PLCommand(Category = "geometry.create.primitive", Writes = PLWriteScope.Targets, Description = "角錐を作る。")]
     public sealed class CreatePyramidCommand : CreatePrimitiveMeshCommand
     {

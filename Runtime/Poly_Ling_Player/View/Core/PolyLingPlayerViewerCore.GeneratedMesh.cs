@@ -134,8 +134,12 @@ namespace Poly_Ling.Player
         /// Undo へ渡すこと。
         /// </summary>
         private bool ApplyGeneratedMaterialIndex(
-            ModelContext model, MeshObject meshObject, int materialIndex)
+            ModelContext model, MeshObject meshObject, int materialIndex,
+            GeneratedImageMaterial imageMaterial = null)
         {
+            if (imageMaterial != null)
+                return ApplyGeneratedImageMaterial(model, meshObject, materialIndex, imageMaterial);
+
             if (model == null || meshObject == null || materialIndex < 0) return false;
 
             bool added = false;
@@ -154,6 +158,61 @@ namespace Poly_Ling.Player
                 f.MaterialIndex = slot;
             }
             return added;
+        }
+
+        /// <summary>
+        /// 図形生成で作る画像の材質。受け口が画像を 1 回だけ読んで用意する。
+        /// </summary>
+        private sealed class GeneratedImageMaterial
+        {
+            /// <summary>読み込み済みのテクスチャ。</summary>
+            public Texture2D Texture;
+            /// <summary>元ファイルの絶対パス（保存時に textures フォルダへ複製される）。</summary>
+            public string FullPath;
+            /// <summary>材質スロットの名前。</summary>
+            public string Name;
+            /// <summary>この材質を割り当てる面の、生成器が入れた仮番号。</summary>
+            public int FaceTag;
+        }
+
+        /// <summary>
+        /// 画像の材質スロットを 1 つ作り、生成器が FaceTag を入れた面へ割り当てる。
+        /// それ以外の面は materialIndex のスロット（負ならスロット 0）。
+        ///
+        /// スロット 0 件のモデルには、先に既定スロットを作る（EnsureDefaultMaterialSlot）。
+        /// 材質一覧が必ず変わるので true を返す。呼出し側は「作る前の一覧」を Undo へ渡すこと。
+        /// </summary>
+        private bool ApplyGeneratedImageMaterial(
+            ModelContext model, MeshObject meshObject, int materialIndex, GeneratedImageMaterial img)
+        {
+            if (model == null || meshObject == null) return false;
+
+            if (model.MaterialCount == 0) EnsureDefaultMaterialSlot(model);
+            if (model.MaterialCount == 0) return false;
+
+            // 裏面・側面のスロットは、画像のスロットを足す前の一覧で決める。
+            int baseSlot = materialIndex < 0 ? 0 : Mathf.Clamp(materialIndex, 0, model.MaterialCount - 1);
+
+            model.AddMaterial(null);   // 既定 MaterialData（URPLit）でスロット追加
+            int texSlot = model.MaterialCount - 1;
+            var matRef  = model.GetMaterialReference(texSlot);
+            if (matRef?.Data != null)
+            {
+                matRef.Data.Name = img.Name;
+                matRef.InvalidateCache();   // Data から材質を再生成させる
+            }
+
+            string prop = Poly_Ling.Materials.MaterialEditOps.MainTexturePropertyName(matRef?.Material);
+            string why  = Poly_Ling.Materials.MaterialEditOps.ApplyLoadedTexture(matRef, prop, img.Texture, img.FullPath);
+            if (why != null)
+                Debug.LogError($"[ImagePlate] 材質へ画像を設定できませんでした（スロット {texSlot}）: {why}");
+
+            foreach (var f in meshObject.Faces)
+            {
+                if (f == null) continue;
+                f.MaterialIndex = f.MaterialIndex == img.FaceTag ? texSlot : baseSlot;
+            }
+            return true;
         }
 
         /// <summary>
@@ -199,7 +258,8 @@ namespace Poly_Ling.Player
         private int PrimitiveMeshCreateNewObject(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature, int materialIndex = -1)
+            bool ignorePoseInArmature, int materialIndex = -1,
+            GeneratedImageMaterial imageMaterial = null)
         {
             var model = project.CurrentModel;
             if (model == null) return -1;
@@ -207,13 +267,13 @@ namespace Poly_Ling.Player
             // 既存の描画オブジェクトと名前が衝突しないようにしてから作る。
             meshName = model.GenerateUniqueMeshName(meshName);
 
-            // マテリアル割当。スロットを作るのは 0 件のときだけなので、
-            // その場合の「作る前の一覧」は必ず空になる。
+            // マテリアル割当。スロットを作るのは 0 件のときと、画像の材質を作るときだけ。
+            // 作る可能性があるときだけ「作る前の一覧」を取る。
             // 指定が無いときは Materials に触れない（MaterialReference の実体化を避ける）。
-            bool willAddSlot      = materialIndex >= 0 && model.MaterialCount == 0;
-            var  oldMaterials     = willAddSlot ? new List<Material>() : null;
+            bool mayAddSlot       = imageMaterial != null || (materialIndex >= 0 && model.MaterialCount == 0);
+            var  oldMaterials     = mayAddSlot ? new List<Material>(model.Materials) : null;
             int  oldMaterialIndex = model.CurrentMaterialIndex;
-            bool matSlotAdded     = ApplyGeneratedMaterialIndex(model, meshObject, materialIndex);
+            bool matSlotAdded     = ApplyGeneratedMaterialIndex(model, meshObject, materialIndex, imageMaterial);
 
             var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos,
                 poseRotation, poseScale, ignorePoseInArmature);
@@ -252,7 +312,8 @@ namespace Poly_Ling.Player
         private int PrimitiveMeshAddToExisting(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature, int addTargetIndex = -1, int materialIndex = -1)
+            bool ignorePoseInArmature, int addTargetIndex = -1, int materialIndex = -1,
+            GeneratedImageMaterial imageMaterial = null)
         {
             var model  = project.CurrentModel;
             if (model == null) return -1;
@@ -263,7 +324,7 @@ namespace Poly_Ling.Player
             if (targetMc == null || targetMc.MeshObject == null)
             {
                 return PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
-                    poseRotation, poseScale, ignorePoseInArmature, materialIndex);
+                    poseRotation, poseScale, ignorePoseInArmature, materialIndex, imageMaterial);
             }
 
             // 既存オブジェクトへのマージでは姿勢を持てないため、
@@ -301,7 +362,7 @@ namespace Poly_Ling.Player
             // マテリアル割当。MeshObjectSnapshot は Materials も保持するので、
             // スロットを作る可能性のあるこの処理は必ず before 捕獲の後に行う。
             // 面を書き換える対象は、マージで実際に読まれる srcObject 側。
-            ApplyGeneratedMaterialIndex(model, srcObject, materialIndex);
+            ApplyGeneratedMaterialIndex(model, srcObject, materialIndex, imageMaterial);
 
             // 部品IDは追加先の空き番号へずらす。生成物が内部で複数パーツに分かれている
             // （フリル・パイプ・藤壺）場合も、内部の構成を保ったまま全体を平行移動させる。
@@ -372,7 +433,8 @@ namespace Poly_Ling.Player
         private string PrimitiveMeshReplaceExisting(
             ProjectContext project, MeshObject meshObject,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            int targetIndex, int materialIndex, out int masterIndex)
+            int targetIndex, int materialIndex, out int masterIndex,
+            GeneratedImageMaterial imageMaterial = null)
         {
             masterIndex = -1;
 
@@ -413,7 +475,7 @@ namespace Poly_Ling.Player
 
             // マテリアル割当。MeshObjectSnapshot は Materials も保持するので、
             // スロットを作る可能性のあるこの処理は必ず before 捕獲の後に行う。
-            ApplyGeneratedMaterialIndex(model, srcObject, materialIndex);
+            ApplyGeneratedMaterialIndex(model, srcObject, materialIndex, imageMaterial);
 
             // ── 中身の入れ替え
             //    MeshObject の実体は差し替えず、頂点と面だけを入れ替える。
@@ -554,7 +616,8 @@ namespace Poly_Ling.Player
         private int PrimitiveMeshCreateNewModel(
             ProjectContext project, MeshObject meshObject, string meshName,
             Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
-            bool ignorePoseInArmature, int materialIndex = -1)
+            bool ignorePoseInArmature, int materialIndex = -1,
+            GeneratedImageMaterial imageMaterial = null)
         {
             var newModel = project.CreateNewModel(meshName);
             if (newModel == null) return -1;
@@ -563,11 +626,12 @@ namespace Poly_Ling.Player
             meshName = newModel.GenerateUniqueMeshName(meshName);
 
             // 新規モデルはマテリアルスロットが 0 件なので、指定があれば 1 つ作る。
-            // 作る前の一覧は必ず空。指定が無いときは Materials に触れない。
-            bool willAddSlot      = materialIndex >= 0 && newModel.MaterialCount == 0;
-            var  oldMaterials     = willAddSlot ? new List<Material>() : null;
+            // 画像の材質を作るときはさらに 1 つ足す。作る前の一覧は必ず空。
+            // 指定が無いときは Materials に触れない。
+            bool mayAddSlot       = imageMaterial != null || (materialIndex >= 0 && newModel.MaterialCount == 0);
+            var  oldMaterials     = mayAddSlot ? new List<Material>(newModel.Materials) : null;
             int  oldMaterialIndex = newModel.CurrentMaterialIndex;
-            bool matSlotAdded     = ApplyGeneratedMaterialIndex(newModel, meshObject, materialIndex);
+            bool matSlotAdded     = ApplyGeneratedMaterialIndex(newModel, meshObject, materialIndex, imageMaterial);
 
             var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos,
                 poseRotation, poseScale, ignorePoseInArmature);
