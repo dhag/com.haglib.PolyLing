@@ -298,7 +298,18 @@ namespace Poly_Ling.Data
     [PLResult("triangles",       PLResultKind.Integer, Description = "アフィンに使った三角形の数")]
     [PLResult("copiedVertices",  PLResultKind.Integer, Description = "MediaPipe の位置をそのまま入れた頂点の数")]
     [PLResult("affineVertices",  PLResultKind.Integer, Description = "アフィンで XY を決めた頂点の数")]
-    [PLResult("outsideVertices", PLResultKind.Integer, Description = "そのうち、どの三角形にも入らず最寄りの三角形を使った頂点の数")]
+    [PLResult("targetMasterIndex",    PLResultKind.Integer, Description = "写す先の顔メッシュから作ったメッシュの masterIndex。作らなかったときは -1")]
+    [PLResult("targetInsideVertices", PLResultKind.Integer, Description = "写す先の顔メッシュで、顔の領域の内側だった頂点の数")]
+    [PLResult("targetOutsideVertices",PLResultKind.Integer, Description = "写す先の顔メッシュで、顔の領域の外側だった頂点の数")]
+    [PLResult("targetTexturedFaces",  PLResultKind.Integer, Description = "写す先の顔メッシュで、顔面の材質と UV を当てた面の数")]
+    [PLResult("maxBeforeSymShift",    PLResultKind.Number,  Description = "貼り付け用の顔を左右対称にしたときに動いた量の最大（ワールド）")]
+    [PLResult("texturedFaces",        PLResultKind.Integer, Description = "顔面の材質と UV を当てた面の数（通常の結果の側）")]
+    [PLResult("symmetricMasterIndex", PLResultKind.Integer, Description = "左右対称の頭部の masterIndex。作らなかったときは -1")]
+    [PLResult("halfDeletedFaces",     PLResultKind.Integer, Description = "左右対称の頭部で、+X 側として消した面の数")]
+    [PLResult("seamVertices",         PLResultKind.Integer, Description = "頭蓋の継ぎ目とみなした頂点の数")]
+    [PLResult("seamMaxShift",         PLResultKind.Number,  Description = "継ぎ目合わせで頭蓋の頂点を X に動かした量の最大（ワールド）")]
+    [PLResult("clampedVertices",      PLResultKind.Integer, Description = "残した面で対称面を越えていたので対称面へ載せた頂点の数")]
+    [PLResult("outsideVertices", PLResultKind.Integer, Description = "そのうち、どの三角形にも入らず、検出点の領域の外周を使って写した頂点の数")]
     public class MediaPipeHeadBuildCommand : PanelCommand
     {
         [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
@@ -313,12 +324,48 @@ namespace Poly_Ling.Data
                  Description = "貼り付け用の顔に頭部をつないだメッシュの masterIndex。これを写して新しいメッシュを作る", Required = true)]
         public int HeadMasterIndex   { get; }
 
-        public MediaPipeHeadBuildCommand(int modelIndex, int faceMasterIndex, int beforeMasterIndex, int headMasterIndex)
+        [PLParam(Description = "左右対称の頭部の半身も作る。結果を写した 2 個目のメッシュで −X 側を残し、頭蓋の継ぎ目を顔の対称面へ合わせる。鏡写しはこの半身に bakeMirror（X 軸、planeOffset = mirrorPlaneX）をかけて作る")]
+        public bool MakeSymmetric    { get; }
+
+        [PLParam(Description = "元の頭部で頭蓋の継ぎ目（開いた縁）が並ぶ x（ワールド）。MakeSymmetric のときだけ使う")]
+        public float SeamX           { get; }
+
+        [PLParam(Description = "継ぎ目とみなす、SeamX からの距離の上限（ワールド）", Min = 0.000001f, Max = 1f)]
+        public float SeamTolerance   { get; }
+
+        [PLParam(Description = "顔面の材質の枠。0 以上なら、MediaPipe の位置を入れた顔の点だけでできた面をこの枠にし、MediaPipe の顔メッシュの UV（画像の正規化座標）を使わせる。-1 で何もしない", Min = -1, Max = 1000, Step = 1)]
+        public int FaceMaterialIndex { get; }
+
+        [PLParam(Description = "診断用：写し方（入った三角形、または外周の q・q'・L）をコンソールへ出す頭部の頂点番号。空なら出さない")]
+        public int[] DebugVertexIndices { get; }
+
+        [PLParam(Description = "奥行きのブレンド（0〜1）。0 は元の Z のまま、1 は MediaPipe の奥行きの変化をすべて足す（MediaPipe の位置を入れた顔の点は常に MediaPipe の位置）", Min = 0f, Max = 1f)]
+        public float DepthBlend { get; }
+
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "写す先の顔メッシュ（A・B タイプなど、貼り付け用の顔と同じ場所に置かれたもの）の masterIndex。0 以上なら、その全頂点を同じ写し方で動かした新しいメッシュも作る。-1 で作らない")]
+        public int TargetMasterIndex { get; }
+
+        [PLParam(Description = "顔の領域の内側とみなす奥行きの差の上限（ワールド）。正面から見て顔に重なっても、貼り付け用の顔の面とのZの差がこれより大きい頂点は外側として扱う", Min = 0.0001f, Max = 1f)]
+        public float InsideDepthTolerance { get; }
+
+        public MediaPipeHeadBuildCommand(int modelIndex, int faceMasterIndex, int beforeMasterIndex, int headMasterIndex,
+            bool makeSymmetric = false, float seamX = 0f, float seamTolerance = 0.001f, int faceMaterialIndex = -1,
+            int[] debugVertexIndices = null, float depthBlend = 0f, int targetMasterIndex = -1,
+            float insideDepthTolerance = 0.03f)
             : base(modelIndex)
         {
+            InsideDepthTolerance = insideDepthTolerance;
+            DepthBlend        = depthBlend;
+            TargetMasterIndex = targetMasterIndex;
+            DebugVertexIndices = debugVertexIndices ?? System.Array.Empty<int>();
+            FaceMaterialIndex = faceMaterialIndex;
             FaceMasterIndex   = faceMasterIndex;
             BeforeMasterIndex = beforeMasterIndex;
             HeadMasterIndex   = headMasterIndex;
+            MakeSymmetric     = makeSymmetric;
+            SeamX             = seamX;
+            SeamTolerance     = seamTolerance;
         }
     }
 

@@ -687,7 +687,7 @@ namespace Poly_Ling.Player
 
                         var hbWorld = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.Build(
                             ToWorld(hbBeforeMc), hbBeforeFaces, ToWorld(hbFaceMc), ToWorld(hbHeadMc),
-                            out var hbRep);
+                            out var hbRep, c.DebugVertexIndices, c.DepthBlend, c.InsideDepthTolerance);
 
                         var hbList = MeshFilterToSkinnedRecord.CaptureList(model);
                         var hbSrc  = hbHeadMc.MeshObject;
@@ -695,6 +695,8 @@ namespace Poly_Ling.Player
                         cloned.Name = hbSrc.Name + "_MP";
                         var toLocal = hbHeadMc.WorldToVertexMatrix;
                         for (int i = 0; i < cloned.VertexCount; i++) cloned.Vertices[i].Position = toLocal.MultiplyPoint3x4(hbWorld[i]);
+                        int hbTextured = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.ApplyFaceTexture(
+                            cloned, hbRep.Copied, hbFaceMc.MeshObject, c.FaceMaterialIndex);
 
                         var hbNewMc = new MeshContext
                         {
@@ -707,6 +709,92 @@ namespace Poly_Ling.Player
                         hbNewMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
                         hbNewMc.ParentModelContext  = model;
                         int hbIdx = model.Add(hbNewMc);
+
+                        // 左右対称の頭部の半身（鏡写しは bakeMirror で別に行う）
+                        int hsIdx = -1, hsDeleted = 0, hsSeam = 0, hsClamped = 0; float hsMaxShift = 0f;
+                        if (c.MakeSymmetric)
+                        {
+                            var hbHeadFaces = new List<int[]>();
+                            foreach (var f in hbSrc.Faces) hbHeadFaces.Add(f.VertexIndices.ToArray());
+                            var halfWorld = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.BuildHalf(
+                                ToWorld(hbHeadMc), hbWorld, hbHeadFaces, hbBeforeMc.MeshObject.VertexCount,
+                                hbRep.MirrorPlaneX, c.SeamX, c.SeamTolerance,
+                                out bool[] keepFace, out hsDeleted, out hsSeam, out _, out hsMaxShift, out hsClamped);
+
+                            var half = hbSrc.Clone();
+                            half.Name = hbSrc.Name + "_MP_対称";
+                            for (int i = 0; i < half.VertexCount; i++) half.Vertices[i].Position = toLocal.MultiplyPoint3x4(halfWorld[i]);
+                            // 顔面の材質と UV（詰める前の、元の頭部と同じ頂点番号のうちに当てる）
+                            Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.ApplyFaceTexture(
+                                half, hbRep.Copied, hbFaceMc.MeshObject, c.FaceMaterialIndex);
+                            // 消した面を除き、使われなくなった頂点を詰める
+                            var keptFaces = new List<Face>();
+                            for (int fi = 0; fi < half.Faces.Count; fi++) if (keepFace[fi]) keptFaces.Add(half.Faces[fi]);
+                            var remap = new int[half.VertexCount];
+                            for (int i = 0; i < remap.Length; i++) remap[i] = -1;
+                            var keptVerts = new List<Vertex>();
+                            foreach (var f in keptFaces)
+                                foreach (int v in f.VertexIndices)
+                                    if (remap[v] < 0) { remap[v] = keptVerts.Count; keptVerts.Add(half.Vertices[v]); }
+                            foreach (var f in keptFaces)
+                                for (int k = 0; k < f.VertexIndices.Count; k++) f.VertexIndices[k] = remap[f.VertexIndices[k]];
+                            half.Vertices = keptVerts;
+                            half.Faces    = keptFaces;
+
+                            var hsMc = new MeshContext
+                            {
+                                MeshObject = half,
+                                Materials  = new System.Collections.Generic.List<Material>(
+                                    hbHeadMc.Materials ?? new System.Collections.Generic.List<Material>()),
+                            };
+                            hsMc.UnityMesh           = half.ToUnityMesh();
+                            hsMc.UnityMesh.name      = half.Name;
+                            hsMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+                            hsMc.ParentModelContext  = model;
+                            hsIdx = model.Add(hsMc);
+                        }
+
+                        // 写す先の顔メッシュ（A・B タイプなど）
+                        int tgIdx = -1, tgInside = 0, tgOutside = 0, tgTextured = 0;
+                        if (c.TargetMasterIndex >= 0)
+                        {
+                            var tgMc = model.GetMeshContext(c.TargetMasterIndex);
+                            if (tgMc?.MeshObject == null) throw new InvalidOperationException($"写す先の顔メッシュがありません（{c.TargetMasterIndex}）");
+                            var fm = hbFaceMc.MeshObject;
+                            var faceUVs = new Vector2[fm.VertexCount];
+                            for (int i = 0; i < faceUVs.Length; i++)
+                                faceUVs[i] = fm.Vertices[i].UVs != null && fm.Vertices[i].UVs.Count > 0 ? fm.Vertices[i].UVs[0] : Vector2.zero;
+                            var tgWorld = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.BuildTarget(
+                                ToWorld(hbBeforeMc), hbBeforeFaces, ToWorld(hbFaceMc), ToWorld(tgMc),
+                                c.DepthBlend, faceUVs, out var tgRep, out var tgUv, out var tgUvValid,
+                                null, c.InsideDepthTolerance);
+                            tgOutside = tgRep.OutsideVertices;
+                            tgInside  = tgRep.AffineVertices - tgRep.OutsideVertices;
+
+                            var tgSrc = tgMc.MeshObject;
+                            var tg = tgSrc.Clone();
+                            tg.Name = tgSrc.Name + "_MP";
+                            var tgToLocal = tgMc.WorldToVertexMatrix;
+                            for (int i = 0; i < tg.VertexCount; i++) tg.Vertices[i].Position = tgToLocal.MultiplyPoint3x4(tgWorld[i]);
+                            tgTextured = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.ApplyTargetTexture(
+                                tg, tgUv, tgUvValid, c.FaceMaterialIndex);
+
+                            var tgNewMc = new MeshContext
+                            {
+                                MeshObject = tg,
+                                Materials  = new System.Collections.Generic.List<Material>(
+                                    tgMc.Materials ?? new System.Collections.Generic.List<Material>()),
+                            };
+                            tgNewMc.UnityMesh           = tg.ToUnityMesh();
+                            tgNewMc.UnityMesh.name      = tg.Name;
+                            tgNewMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+                            tgNewMc.ParentModelContext  = model;
+                            tgIdx = model.Add(tgNewMc);
+                        }
+                        var hbOutIdx = new List<int> { hbIdx };
+                        var hbOutIds = new List<ulong> { hbNewMc.ObjectId };
+                        foreach (int oi in new[] { hsIdx, tgIdx })
+                            if (oi >= 0) { hbOutIdx.Add(oi); hbOutIds.Add(model.GetMeshContext(oi).ObjectId); }
                         model.OnListChanged?.Invoke();
 
                         if (_undoController != null)
@@ -731,8 +819,15 @@ namespace Poly_Ling.Player
                             .Int("mirrorFacesOk", hbRep.MirrorFacesOk).Int("mirrorFaces", hbRep.MirrorFaces)
                             .Int("triangles", hbRep.Triangles)
                             .Int("copiedVertices", hbRep.CopiedVertices).Int("affineVertices", hbRep.AffineVertices)
-                            .Int("outsideVertices", hbRep.OutsideVertices).Build(),
-                            new[] { hbIdx }, new[] { hbNewMc.ObjectId });
+                            .Int("outsideVertices", hbRep.OutsideVertices)
+                            .Num("maxBeforeSymShift", hbRep.MaxBeforeSymShift)
+                            .Int("targetMasterIndex", tgIdx).Int("targetInsideVertices", tgInside)
+                            .Int("targetOutsideVertices", tgOutside).Int("targetTexturedFaces", tgTextured)
+                            .Int("texturedFaces", hbTextured)
+                            .Int("symmetricMasterIndex", hsIdx).Int("halfDeletedFaces", hsDeleted)
+                            .Int("seamVertices", hsSeam).Num("seamMaxShift", hsMaxShift)
+                            .Int("clampedVertices", hsClamped).Build(),
+                            hbOutIdx.ToArray(), hbOutIds.ToArray());
                     }
                     catch (Exception ex)
                     {
