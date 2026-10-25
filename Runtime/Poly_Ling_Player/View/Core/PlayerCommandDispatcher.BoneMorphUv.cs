@@ -653,6 +653,29 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── マテリアルの名前
+                case SetMaterialNameCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var nmRef = model.GetMaterialReference(c.SlotIndex);
+                    if (nmRef == null) { Fail($"材質スロット {c.SlotIndex} がありません"); return true; }
+                    string newName = (c.Name ?? "").Trim();
+                    if (newName.Length == 0) { Fail("名前が空です"); return true; }
+                    for (int i = 0; i < model.MaterialCount; i++)
+                    {
+                        if (i == c.SlotIndex) continue;
+                        var other = model.GetMaterialReference(i);
+                        if (other != null && other.Name == newName)
+                        { Fail($"材質スロット {i} が同じ名前「{newName}」を持っています"); return true; }
+                    }
+                    nmRef.Name = newName;
+                    if (nmRef.Material != null) nmRef.Material.name = newName;
+                    model.IsDirty = true;
+                    model.OnListChanged?.Invoke();
+                    _notifyPanels(ChangeKind.Attributes);
+                    return true;
+                }
+
                 // ── マテリアルのシェーダー・不透明／半透明・テクスチャ（操作経路統一計画.md H-3b）
                 case SetMaterialShaderCommand c:
                 {

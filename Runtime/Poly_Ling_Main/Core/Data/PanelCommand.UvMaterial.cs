@@ -342,6 +342,29 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// マテリアルスロットの名前を変える。
+    /// MQO は材質を名前で見分けるため（同じ名前が並ぶとメタセコイアは先頭の 1 つしか出さない）、
+    /// モデル内の他の枠と重なる名前は受け付けない。
+    /// 書き出しは Material.name を先に見るので、Data と Material の両方を書く（受け口側）。
+    /// </summary>
+    [PLCommand(Category = "material", Effects = PLCommandEffect.Material, Writes = PLWriteScope.ModelWide, Description = "マテリアルスロットの名前を変える。モデル内の他の枠と同じ名前は付けられない。")]
+    public class SetMaterialNameCommand : PanelCommand
+    {
+        [PLParam(Description = "対象のマテリアルスロットの番号", Required = true)]
+        public int SlotIndex { get; }
+
+        [PLParam(Description = "新しい名前（空は不可。他の枠と重ならないこと）", Required = true)]
+        public string Name { get; }
+
+        public SetMaterialNameCommand(int modelIndex, int slotIndex, string name)
+            : base(modelIndex)
+        {
+            SlotIndex = slotIndex;
+            Name      = name ?? "";
+        }
+    }
+
+    /// <summary>
     /// マテリアルスロットのシェーダーを差し替える。色・メインテクスチャ・不透明／半透明は引き継ぐ。
     /// 処理は MaterialEditOps.ApplyShader（操作経路統一計画.md H-3b）。
     /// </summary>
