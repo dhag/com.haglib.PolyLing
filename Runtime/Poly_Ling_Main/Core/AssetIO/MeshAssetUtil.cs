@@ -43,6 +43,8 @@ namespace Poly_Ling.AssetIO
             {
                 // 既存 .asset を現在の mesh 内容で上書き（GUID/参照を保持）
                 PLEditorBridge.I.CopySerialized(mesh, existing);
+                // 変更済みにしないと SaveAssets がディスクへ書かず、古いメッシュが残る。
+                PLEditorBridge.I.SetDirty(existing);
                 PLEditorBridge.I.SaveAssets();
                 return existing;
             }

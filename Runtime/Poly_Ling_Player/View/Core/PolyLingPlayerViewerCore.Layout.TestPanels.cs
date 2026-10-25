@@ -327,8 +327,9 @@ namespace Poly_Ling.Player
             {
                 GetModel          = () => ActiveProject?.CurrentModel,
                 GetPmxUnityRatio  = () => _editOps?.UndoController?.EditorState?.PmxUnityRatio ?? 0.1f,
-                // 表情適用で WorkingPositions を変えた基準メッシュの表示を更新させる。
-                SyncMeshPositions = ctx => _viewportManager.GetCurrentToolContext(_activeViewport)?.SyncMeshContextPositionsOnly?.Invoke(ctx),
+                // 表情適用で WorkingPositions を変えた基準メッシュの表示を更新させる（モーフの試し表示と同じ経路）。
+                // GetCurrentToolContext の文脈は SyncMeshContextPositionsOnly を持たないので、それを経由しない。
+                SyncMeshPositions = ctx => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, ctx),
                 // フレーム適用後に GPU メッシュの再スキンを起こす。
                 OnFrameApplied    = () =>
                 {

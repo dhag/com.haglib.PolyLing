@@ -662,6 +662,9 @@ namespace Poly_Ling.Data
             if (g.Params != null)
                 foreach (var p in g.Params)
                     if (p != null) sb.Append(p.Name ?? "").Append('\n').Append(p.Description ?? "").Append('\n');
+            if (g.Outputs != null)
+                foreach (var o in g.Outputs)
+                    if (o != null) sb.Append(o.Name ?? "").Append('\n').Append(o.Description ?? "").Append('\n');
             if (g.Steps != null)
                 foreach (var s in g.Steps)
                 {

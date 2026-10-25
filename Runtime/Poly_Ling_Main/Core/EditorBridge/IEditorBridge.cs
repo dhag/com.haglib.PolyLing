@@ -31,6 +31,11 @@ namespace Poly_Ling.EditorBridge
         void CreateAsset(Object asset, string path);
         void DeleteAsset(string path);
         void CopySerialized(Object source, Object dest);
+        /// <summary>
+        /// アセットを変更済みにする。CopySerialized で既存アセットを上書きしたあとに呼ばないと、
+        /// SaveAssets がディスクへ書かず、次に読み込んだとき古い中身に戻る。
+        /// </summary>
+        void SetDirty(Object obj);
         void ImportAsset(string path);
         void SaveAssets();
         void Refresh();

@@ -492,7 +492,8 @@ namespace Poly_Ling.Player
             CreateBeltPrimitiveCommand.SplitBelts(
                 acquired.Belts.ToArray(),
                 out var bL, out var bR, out var bStarts,
-                out var bClosed, out var bFlip, out var bHeight);
+                out var bClosed, out var bFlip, out var bHeight,
+                out var bSp, out var bHasSp, out var bEp, out var bHasEp);
 
             var pp = PipeParams.Default;
             pp.MeshName = PipeName;
@@ -516,7 +517,9 @@ namespace Poly_Ling.Player
                 bL, bR, bStarts, bClosed, bFlip, bHeight,
                 BeltOrientOptions.Default, spline,
                 pl,
-                SourceIndex, BeltAcquireMethod.AutoLadder, false, ""));
+                SourceIndex, BeltAcquireMethod.AutoLadder, false, "",
+                beltStartPoints: bSp, beltHasStartPoint: bHasSp,
+                beltEndPoints: bEp, beltHasEndPoint: bHasEp));
 
             OutputIdBefore = 0UL;
 

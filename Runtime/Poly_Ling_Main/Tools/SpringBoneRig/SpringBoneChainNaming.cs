@@ -38,14 +38,13 @@ namespace Poly_Ling.Tools.SpringBoneRig
             }
 
             // 鎖 1 本だけの形も、番号付きの形も同じ手順で拾う。
+            // ミラー側の鎖（{接頭辞}_M…。SpringBoneLadderPlacer がミラー側にも鎖を作るときの名前）も拾う。
+            //   同じ接頭辞で作った左右の鎖は一組なので、片側だけに揺れ方が付くと
+            //   左右で揺れ方が食い違う（反対側は書き出しで揺れの鎖として出ない）。
             var heads = new List<string>();
-            if (byName.ContainsKey(prefix + "_top")) heads.Add(prefix);
-            for (int c = 0; c < 1000; c++)
-            {
-                string name = $"{prefix}_{c:00}";
-                if (!byName.ContainsKey(name + "_top")) break;
-                heads.Add(name);
-            }
+            CollectHeads(byName, prefix, heads);
+            if (!prefix.EndsWith(SpringBoneLadderPlacer.MirrorSuffix, StringComparison.Ordinal))
+                CollectHeads(byName, prefix + SpringBoneLadderPlacer.MirrorSuffix, heads);
 
             foreach (string head in heads)
             {
@@ -60,6 +59,18 @@ namespace Poly_Ling.Tools.SpringBoneRig
             }
 
             return chains;
+        }
+
+        /// <summary>{接頭辞}_top と {接頭辞}_{番号:00}_top を鎖の頭として足す。</summary>
+        private static void CollectHeads(Dictionary<string, int> byName, string prefix, List<string> heads)
+        {
+            if (byName.ContainsKey(prefix + "_top")) heads.Add(prefix);
+            for (int c = 0; c < 1000; c++)
+            {
+                string name = $"{prefix}_{c:00}";
+                if (!byName.ContainsKey(name + "_top")) break;
+                heads.Add(name);
+            }
         }
 
         /// <summary>鎖の名前。鎖が 1 本なら接頭辞そのもの。</summary>

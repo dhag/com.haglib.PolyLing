@@ -297,6 +297,40 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// シナリオの出力（戻り値）1 件。
+    ///
+    /// 【何のためか】
+    ///   シナリオをコマンドと同じく「入力と出力の決まった部品」として呼ぶため。
+    ///   最後まで流し終えたとき（stop=finished）に From を評価し、名前 → 値として返す
+    ///   （runScenario / continueScenario / queryScenarioRun の outputs）。
+    ///   別のシナリオから参照項目で呼ばれたときは、呼んだ側の参照項目の戻り値になる
+    ///   （親から @&lt;参照項目 ID&gt;.&lt;名前&gt;、直後の項目から @prev.&lt;名前&gt; で引ける）。
+    ///
+    /// 【From の書き方】
+    ///   @&lt;項目 ID&gt;.&lt;キー&gt; / @prev.&lt;キー&gt; / ${引数} / 固定値。項目の引数の値と同じ規則で読む。
+    ///   途中で止まったとき（指示・確認・失敗）は評価しない。
+    /// </summary>
+    [Serializable]
+    public class ScenarioOutput
+    {
+        /// <summary>名前。引数と同じ規則（英数字と _、先頭は数字以外、64 文字まで）。シナリオ内で一意。</summary>
+        public string Name = "";
+
+        /// <summary>値の出どころ。</summary>
+        public string From = "";
+
+        /// <summary>何の値か。</summary>
+        public string Description = "";
+
+        public ScenarioOutput Clone() => new ScenarioOutput
+        {
+            Name        = Name,
+            From        = From,
+            Description = Description,
+        };
+    }
+
+    /// <summary>
     /// グループの 1 項目。生成コマンド 1 つぶんのパラメータと出力先。
     /// </summary>
     [Serializable]
@@ -593,6 +627,21 @@ namespace Poly_Ling.Data
             if (Params == null || string.IsNullOrEmpty(name)) return null;
             foreach (var p in Params)
                 if (p != null && string.Equals(p.Name, name, StringComparison.Ordinal)) return p;
+            return null;
+        }
+
+        /// <summary>
+        /// シナリオの出力（戻り値）。並びは宣言の順。null にはしない。
+        /// 流し終えたときに評価して返す（ScenarioOutput の注記）。
+        /// </summary>
+        public List<ScenarioOutput> Outputs = new List<ScenarioOutput>();
+
+        /// <summary>名前で出力を探す（大小を区別する）。無ければ null。</summary>
+        public ScenarioOutput FindOutput(string name)
+        {
+            if (Outputs == null || string.IsNullOrEmpty(name)) return null;
+            foreach (var o in Outputs)
+                if (o != null && string.Equals(o.Name, name, StringComparison.Ordinal)) return o;
             return null;
         }
 
@@ -978,6 +1027,11 @@ namespace Poly_Ling.Data
             if (Params != null)
                 foreach (var p in Params)
                     if (p != null) c.Params.Add(p.Clone());
+
+            c.Outputs = new List<ScenarioOutput>();
+            if (Outputs != null)
+                foreach (var o in Outputs)
+                    if (o != null) c.Outputs.Add(o.Clone());
 
             if (Steps != null)
                 foreach (var s in Steps)

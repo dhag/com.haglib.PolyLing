@@ -24,7 +24,8 @@
 //                        （クリップ内の指の名前 "LeftHand.Thumb.1 Stretched" → "Left Thumb 1 Stretched"）。
 //                        RootT / RootQ は body トラック（pos / rot。接線つき）へまとめる。
 //                        IK ゴール（LeftFootT.x 等）とその他は書かない（報告する）。
-//   blendShape カーブ  → expressions（provider "blendShape"）。値と接線は 1/100（0〜1 に換算）。
+//   blendShape カーブ  → expressions（provider "blendShape"、path = レンダラーの Transform パス）。
+//                        値と接線は 1/100（0〜1 に換算）。同じ名前でもレンダラーが違えば別のトラック。
 //
 // ■ マッスルにベイク（チェックボックス。アバター指定時のみ）
 //   マッスルを持たないクリップだけをベイクする。既にマッスルを持つクリップは元のマッスルを使い、報告する。
@@ -328,12 +329,12 @@ namespace Poly_Ling.UnityClip.Editor
                 if (b.type == typeof(SkinnedMeshRenderer) && b.propertyName.StartsWith("blendShape.", StringComparison.Ordinal))
                 {
                     string ename = b.propertyName.Substring("blendShape.".Length);
-                    if (!exprNames.Add(ename)) { notes.Add($"表情 {ename}: 同名が複数のレンダラーにあり、先のものを使いました（{b.path}）"); continue; }
+                    if (!exprNames.Add(b.path + "\n" + ename)) { notes.Add($"表情 {ename}: 同じレンダラーに同名のカーブが重なり、先のものを使いました（{b.path}）"); continue; }
                     var st = BuildScalarTrack(ename, AnimationUtility.GetEditorCurve(clip, b), 0.01f);
                     if (st != null)
                         dto.expressions.Add(new MotionExpressionTrackDTO
                         {
-                            name = st.name, provider = "blendShape", keys = st.keys,
+                            name = st.name, provider = "blendShape", path = b.path, keys = st.keys,
                             preWrapMode = st.preWrapMode, postWrapMode = st.postWrapMode
                         });
                     continue;

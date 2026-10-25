@@ -787,7 +787,8 @@ namespace Poly_Ling.Player
             CreateBeltPrimitiveCommand.SplitBelts(
                 acquired.Belts.ToArray(),
                 out var beltLeft, out var beltRight, out var beltStarts,
-                out var beltClosed, out var beltFlip, out var beltHeight);
+                out var beltClosed, out var beltFlip, out var beltHeight,
+                out var beltSp, out var beltHasSp, out var beltEp, out var beltHasEp);
 
             var prms = FrillParams.Default;
             prms.MeshName           = FrillName;
@@ -810,7 +811,9 @@ namespace Poly_Ling.Player
                 pl,
                 beltSourceIndex: _ladderIndex,
                 acquireMethod: BeltAcquireMethod.AutoRing,
-                acquireCrossRows: true));
+                acquireCrossRows: true,
+                beltStartPoints: beltSp, beltHasStartPoint: beltHasSp,
+                beltEndPoints: beltEp, beltHasEndPoint: beltHasEp));
 
             return Ok(
                 $"CreateFrillCommand を送った（梯子={_ladderName.value} / 取り込んだ帯 {acquired.Belts.Count} 本 / "

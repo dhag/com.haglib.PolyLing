@@ -107,6 +107,7 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnLoadProjectBinary   = ExecuteLoadProjectBinary;
             _commandDispatcher.OnSendHierarchyBundle = ExecuteSendHierarchyBundle;
             _commandDispatcher.GetPlayerServer       = () => _playerServer;
+            _commandDispatcher.GetPyAddonHost        = () => _pyAddonHost;
             _commandDispatcher.GetMotionClipHandler  = () => _motionClipHandler;
             _commandDispatcher.OnPlanarizeAlongBones = ExecutePlanarizeAlongBones;
             _commandDispatcher.OnMergeVertices       = ExecuteMergeVertices;

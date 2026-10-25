@@ -442,7 +442,9 @@ namespace Poly_Ling.Motion
                     if (tr == null) { r.Error(MotionFileCodes.InvalidTrack, "expressions に空の要素があります"); continue; }
                     string label = $"expressions[{tr.name}]";
                     if (string.IsNullOrEmpty(tr.name)) { r.Error(MotionFileCodes.InvalidTrack, "expressions に名前の無いトラックがあります"); continue; }
-                    if (!seen.Add(tr.name)) r.Error(MotionFileCodes.DuplicateTrack, $"{label} が重複しています");
+                    // 同じ名前でもパス（レンダラー）が違えば別のトラック。
+                    if (!string.IsNullOrEmpty(tr.path)) label = $"expressions[{tr.path}:{tr.name}]";
+                    if (!seen.Add((tr.path ?? "") + "\n" + tr.name)) r.Error(MotionFileCodes.DuplicateTrack, $"{label} が重複しています");
                     ValidateScalarTrack(tr, label, r, 0f, 1f, MotionFileCodes.ExpressionOutOfRange);
                 }
             }

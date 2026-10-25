@@ -169,7 +169,7 @@ namespace Poly_Ling.PrimitiveMesh
         /// 三角形 fi が開始タグかを判定する。
         /// 条件は「3辺とも他面と非共有」かつ「他面と共有する頂点がちょうど1個」。
         /// </summary>
-        private static bool TryGetMarker(MeshObject mo,
+        internal static bool TryGetMarker(MeshObject mo,
             Dictionary<VertexPair, List<int>> edgeToFaces,
             Dictionary<int, List<int>> vertToFaces,
             int fi, out int apex)

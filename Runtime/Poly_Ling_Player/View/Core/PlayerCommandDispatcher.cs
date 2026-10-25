@@ -1141,6 +1141,9 @@ namespace Poly_Ling.Player
             // リモートのクライアントへの要求も通信だけを扱う。同じ理由でここで捌く。
             if (DispatchRemoteClient(cmd)) return;
 
+            // Python アドオン（子プロセスの起動とリモート経由の呼び出し）も同じ理由でここで捌く。
+            if (DispatchPyAddon(cmd)) return;
+
             // UI 自動操作（パネル表示・値の読み書き・強調・キャプチャ）もモデルと
             // プロジェクトを見ない。下の null 門より前で捌かないと、何も読み込んでいない
             // 状態で "no project" になり、UI を操作できない。

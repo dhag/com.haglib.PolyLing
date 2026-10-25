@@ -154,6 +154,8 @@ namespace Poly_Ling.Player
                 case nameof(PlayerLayoutRoot.ConnectBtn):
                 case nameof(PlayerLayoutRoot.DisconnectBtn):
                 case nameof(PlayerLayoutRoot.FetchBtn):
+                // Python アドオンのパネルを開くだけ（起動・実行はパネルの中のボタン）。
+                case nameof(PlayerLayoutRoot.PyAddonBtn):
                     return UiSafety.SafeWrite;
                 default:
                     return UiSafety.Unspecified;
@@ -219,6 +221,10 @@ namespace Poly_Ling.Player
         {
             RegisterLeftPaneUiAutomation();
             RegisterRightPaneTopUiAutomation();
+
+            // 左ペイン「Python アドオン」のアドオンごとのボタン（登録簿で増減する動的なボタン）。
+            if (_pyAddonQuick != null)
+                _uiAutomationRegistry.RegisterObject(LeftPanePanelId, _pyAddonQuick, "pyAddon");
 
             RegisterUiPanel("underlay", "下絵（3D 背面に敷く参照画像）の方向別設定",
                 _layoutRoot.UnderlaySection, ShowUnderlayPanel, _underlaySubPanel);
@@ -464,6 +470,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.LightSection, ShowLightPanel, _lightSubPanel);
             RegisterUiPanel("workFolder", "作業フォルダ（読み書きできる範囲）",
                 _layoutRoot.WorkFolderSection, ShowWorkFolderPanel, _workFolderSubPanel);
+            RegisterUiPanel("pyAddon", "Python アドオン（起動・停止・引数・実行と Python 環境の設定）",
+                _layoutRoot.PyAddonSection, ShowPyAddonPanel, _pyAddonSubPanel);
             RegisterUiPanel("camera", "カメラ（メイン画面・3 面図の注視点・回転・画角）",
                 _layoutRoot.CameraSection, ShowCameraPanel, _cameraSubPanel);
             RegisterUiPanel("log", "ログ（表示・保存・診断ログのスイッチ）",
@@ -636,6 +644,7 @@ namespace Poly_Ling.Player
 
             // シナリオの案内バー：人間の入力待ちで、人が項目のコマンドを実行したら次の項目へ進む。
             _commandDispatcher.OnScenarioUserStepAccepted = () => _scenarioGuideBar?.OnUserStepAccepted();
+            _commandDispatcher.OnScenarioAsyncStepFinished = () => _scenarioGuideBar?.OnAsyncStepFinished();
         }
 
         // ================================================================

@@ -197,10 +197,13 @@ namespace Poly_Ling.Motion
                 var morphTerms = new Dictionary<int, List<(MotionExpressionTrackDTO track, float w)>>();
                 if (options.SampleExpressions && clip.expressions != null)
                 {
+                    // 同じ名前のトラック（パス＝レンダラー違い）は最初の 1 本だけを当てる（MotionClipApplier と同じ）。
+                    var usedExprNames = new HashSet<string>(StringComparer.Ordinal);
                     foreach (var tr in clip.expressions)
                     {
                         if (tr == null) continue;
                         s.ExpressionTrackCount++;
+                        if (tr.name != null && !usedExprNames.Add(tr.name)) continue;
                         var expr = MotionClipApplier.FindExpression(model, tr.name);
                         int before = morphTerms.Count;
                         bool any = false;

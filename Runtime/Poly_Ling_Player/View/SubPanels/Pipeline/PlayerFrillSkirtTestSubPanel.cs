@@ -207,7 +207,8 @@ namespace Poly_Ling.Player
             CreateBeltPrimitiveCommand.SplitBelts(
                 acquired.Belts.ToArray(),
                 out var bL, out var bR, out var bStarts,
-                out var bClosed, out var bFlip, out var bHeight);
+                out var bClosed, out var bFlip, out var bHeight,
+                out var bSp, out var bHasSp, out var bEp, out var bHasEp);
 
             var fp = FrillParams.Default;
             fp.MeshName      = FrillName;
@@ -225,7 +226,9 @@ namespace Poly_Ling.Player
                 bL, bR, bStarts, bClosed, bFlip, bHeight,
                 BeltOrientOptions.Default, BeltSplineOptions.Default,
                 pl,
-                SourceIndex, BeltAcquireMethod.AutoRing, true, ""));
+                SourceIndex, BeltAcquireMethod.AutoRing, true, "",
+                beltStartPoints: bSp, beltHasStartPoint: bHasSp,
+                beltEndPoints: bEp, beltHasEndPoint: bHasEp));
 
             OutputIdBefore = 0UL;
 

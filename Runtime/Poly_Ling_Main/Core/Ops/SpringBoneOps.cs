@@ -733,6 +733,8 @@ namespace Poly_Ling.Ops
 
                 var mo = model.GetMeshContext(cur)?.MeshObject;
                 if (mo?.SpringBoneJoint == null) continue;
+                // 別の鎖の根元から先はその鎖のもの（VRM 出力の CollectJointPaths と同じ規則）。
+                if (cur != rootIndex && mo.SpringBoneChainRoot != null) continue;
 
                 result.Add(cur);
 
@@ -766,6 +768,7 @@ namespace Poly_Ling.Ops
                     {
                         var mo = model.GetMeshContext(c)?.MeshObject;
                         if (mo?.SpringBoneJoint == null) continue;
+                        if (mo.SpringBoneChainRoot != null) continue;   // 別の鎖の根元
                         stack.Push(c);
                         next++;
                     }

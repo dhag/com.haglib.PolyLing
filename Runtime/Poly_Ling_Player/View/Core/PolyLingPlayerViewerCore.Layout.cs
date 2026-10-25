@@ -240,6 +240,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.LightBtn.clicked        += ShowLightPanel;
             if (_layoutRoot.WorkFolderBtn != null)
                 _layoutRoot.WorkFolderBtn.clicked   += ShowWorkFolderPanel;
+            if (_layoutRoot.PyAddonBtn != null)
+                _layoutRoot.PyAddonBtn.clicked      += ShowPyAddonPanel;
             if (_layoutRoot.CameraBtn != null)
                 _layoutRoot.CameraBtn.clicked       += ShowCameraPanel;
             if (_layoutRoot.CaptureBtn != null)

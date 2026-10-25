@@ -134,6 +134,7 @@ namespace Poly_Ling.PMX
             for (int i = 0; i < meshContexts.Count; i++)
                 boneNames.Add(meshContexts[i]?.Name ?? "");
             tempMapping.AutoMapFromEmbeddedCSV(boneNames);
+            tempMapping.FixHipsByHierarchy(meshContexts);
 
             TPoseConverter.ConvertToTPose(meshContexts, tempMapping);
         }

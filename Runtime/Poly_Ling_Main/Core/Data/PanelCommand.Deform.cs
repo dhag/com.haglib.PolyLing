@@ -281,6 +281,48 @@ namespace Poly_Ling.Data
     }
 
     // ================================================================
+    // MediaPipe の顔から頭部を作る（計算は MediaPipeHeadBuilder）
+    // ================================================================
+
+    [PLCommand(Category = "geometry.deform", Writes = PLWriteScope.AddOnly, NoUi = true,
+        Effects = PLCommandEffect.CreatesObject,
+        Description = "MediaPipe の顔から頭部を作る。MediaPipe の顔を貼り付け用の顔へ大きさ合わせして左右対称にし、貼り付け用の顔の三角形ごとの 2 次元アフィン（貼り付け用→MediaPipe）で頭部の XY を決め（Z はそのまま）、新しいメッシュとして足す。")]
+    [PLResult("fitScale",        PLResultKind.Number,  Description = "大きさ合わせの拡大率（MediaPipe → 貼り付け用）")]
+    [PLResult("mirrorPlaneX",    PLResultKind.Number,  Description = "貼り付け用の顔から求めた対称面の x（ワールド）")]
+    [PLResult("pairs",           PLResultKind.Integer, Description = "左右の組の数（中央の頂点を除く）")]
+    [PLResult("midline",         PLResultKind.Integer, Description = "中央の頂点の数")]
+    [PLResult("unpaired",        PLResultKind.Integer, Description = "組にならなかった頂点の数（対称化されない）")]
+    [PLResult("maxPairError",    PLResultKind.Number,  Description = "貼り付け用の顔での、組の鏡像のずれの最大")]
+    [PLResult("mirrorFacesOk",   PLResultKind.Integer, Description = "組で鏡写しにしても面になった面の数")]
+    [PLResult("mirrorFaces",     PLResultKind.Integer, Description = "鏡写しを検算できた面の数（頂点がすべて組を持つ面）")]
+    [PLResult("triangles",       PLResultKind.Integer, Description = "アフィンに使った三角形の数")]
+    [PLResult("copiedVertices",  PLResultKind.Integer, Description = "MediaPipe の位置をそのまま入れた頂点の数")]
+    [PLResult("affineVertices",  PLResultKind.Integer, Description = "アフィンで XY を決めた頂点の数")]
+    [PLResult("outsideVertices", PLResultKind.Integer, Description = "そのうち、どの三角形にも入らず最寄りの三角形を使った頂点の数")]
+    public class MediaPipeHeadBuildCommand : PanelCommand
+    {
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "MediaPipe の顔（createNohMask の出力。穴埋め・外縁あり）の masterIndex", Required = true)]
+        public int FaceMasterIndex   { get; }
+
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "貼り付け用の顔（MediaPipe の顔と頂点番号が一致するもの）の masterIndex", Required = true)]
+        public int BeforeMasterIndex { get; }
+
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "貼り付け用の顔に頭部をつないだメッシュの masterIndex。これを写して新しいメッシュを作る", Required = true)]
+        public int HeadMasterIndex   { get; }
+
+        public MediaPipeHeadBuildCommand(int modelIndex, int faceMasterIndex, int beforeMasterIndex, int headMasterIndex)
+            : base(modelIndex)
+        {
+            FaceMasterIndex   = faceMasterIndex;
+            BeforeMasterIndex = beforeMasterIndex;
+            HeadMasterIndex   = headMasterIndex;
+        }
+    }
+
+    // ================================================================
     // 表情転写（MediaPipe。BEFORE＝ターゲットを描いた画像、AFTER＝人の顔）
     // ================================================================
 

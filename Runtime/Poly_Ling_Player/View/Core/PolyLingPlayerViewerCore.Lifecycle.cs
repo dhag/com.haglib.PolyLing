@@ -465,6 +465,9 @@ namespace Poly_Ling.Player
                     // ホストの操作者名は端末名。リストクライアントもユーザー名が空欄なら端末名を使うため、
                     // 同じ PC で空欄のまま開いた別窓はホストと同一人物として選択が連動する。
                     hostUserName: UnityEngine.SystemInfo.deviceName);
+
+                // 外で起動した常駐アドオンのつながり・切断も画面に出すため、ここで購読を始める。
+                _pyAddonHost?.Attach();
             }
 
             // RemoteMode.Client: 接続先はマスターから得る。複数あれば選択 UI を出す。
@@ -759,6 +762,9 @@ namespace Poly_Ling.Player
                 _client.OnBinaryPushReceived = null;
                 _client.Dispose();
             }
+            _pyAddonHost?.Dispose();        // 起動した Python アドオンの子プロセスを終わらせる
+            if (_pyAddonHost != null && PanelCommandFactory.AddonCatalogProvider == (System.Func<System.Collections.Generic.List<AddonCatalogEntry>>)_pyAddonHost.Catalog)
+                PanelCommandFactory.AddonCatalogProvider = null;
             _playerServer?.Dispose();
             _mediaPipePoseHandler?.Stop();  // 正準骨格・Avatar を破棄する
             _motionLiveHandler?.Reject();   // UDP の待ち受けを閉じる（Play 停止後もポートを掴んだままにしない）

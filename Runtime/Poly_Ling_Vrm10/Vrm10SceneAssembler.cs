@@ -84,6 +84,9 @@ namespace Poly_Ling.Vrm10Impl
         /// <summary>付けたスプリングボーン・コライダーの数。</summary>
         public int SpringBoneColliderCount;
 
+        /// <summary>付けたスプリングボーン・ジョイント（揺れる関節）の数。</summary>
+        public int SpringBoneJointCount;
+
         /// <summary>視線設定を書いたか（false=VRM の既定のまま）。</summary>
         public bool LookAtWritten;
 
@@ -164,21 +167,7 @@ namespace Poly_Ling.Vrm10Impl
                 if (supplemented.Count > 0) transformMap = supplemented;
             }
 
-            var humanoid = root.GetComponent<UniHumanoid.Humanoid>();
-            if (humanoid == null) humanoid = root.AddComponent<UniHumanoid.Humanoid>();
-
-            var pairs = new List<(HumanBodyBones, Transform)>();
-            var assignedTraits = new HashSet<string>();
-            foreach (var kv in transformMap)
-            {
-                var bone = HumanoidTransformMap.ToHumanBodyBones(kv.Key);
-                if (bone == HumanBodyBones.LastBone || kv.Value == null) continue;
-                pairs.Add((bone, kv.Value));
-                assignedTraits.Add(kv.Key);
-            }
-            humanoid.AssignBones(pairs);
-            report.HumanoidBoneCount = pairs.Count;
-            report.MissingRequiredBones.AddRange(CollectMissingRequiredBones(assignedTraits));
+            AssignHumanoid(root, transformMap, report);
 
             // ----------------------------------------------------------------
             // Vrm10Instance + VRM10Object
@@ -227,6 +216,70 @@ namespace Poly_Ling.Vrm10Impl
             BuildLookAt(model, report);
             BuildFirstPerson(model, hierarchy, report);
 
+            return report;
+        }
+
+        /// <summary>
+        /// root の UniHumanoid.Humanoid へ humanName→Transform を割り当てる。
+        /// VRM 書き出し（Assemble）とプレファブ書き出し（AssembleSpringBonesForPrefab）の共通部。
+        /// </summary>
+        private static void AssignHumanoid(
+            GameObject root, IReadOnlyDictionary<string, Transform> transformMap, AssembleReport report)
+        {
+            var humanoid = root.GetComponent<UniHumanoid.Humanoid>();
+            if (humanoid == null) humanoid = root.AddComponent<UniHumanoid.Humanoid>();
+
+            var pairs = new List<(HumanBodyBones, Transform)>();
+            var assignedTraits = new HashSet<string>();
+            if (transformMap != null)
+            {
+                foreach (var kv in transformMap)
+                {
+                    var bone = HumanoidTransformMap.ToHumanBodyBones(kv.Key);
+                    if (bone == HumanBodyBones.LastBone || kv.Value == null) continue;
+                    pairs.Add((bone, kv.Value));
+                    assignedTraits.Add(kv.Key);
+                }
+            }
+            humanoid.AssignBones(pairs);
+            report.HumanoidBoneCount = pairs.Count;
+            report.MissingRequiredBones.AddRange(CollectMissingRequiredBones(assignedTraits));
+        }
+
+        // ================================================================
+        // プレファブ書き出し用（エディタの HierarchyPrefabExporter から呼ぶ）
+        // ================================================================
+
+        /// <summary>
+        /// プレファブ書き出し用。root へ Humanoid と Vrm10Instance を付け、揺れものだけを組む。
+        /// Play したときに UniVRM の揺れの仕組みが動くようにするためのもの。
+        ///
+        /// VRM 書き出し（Assemble）との違い：
+        ///   ・Vrm10Instance を有効のままにする。Start で Runtime が作られ、
+        ///     LateUpdate で揺れが進む（Vrm10Instance.cs の Start / LateUpdate）。
+        ///   ・VRM10Object は呼び出し側が渡す。プレファブと一緒にアセットとして
+        ///     保存しないと参照が切れ、Start が「no VRM10Object」で止まるため。
+        ///   ・表情・視線・一人称・ノード制約・出力スケールは扱わない。
+        /// Vrm10Runtime は Humanoid の Head が無いと例外を投げる（Vrm10Runtime.cs のコンストラクタ）。
+        /// Head の有無は呼び出し側で確かめること。
+        /// </summary>
+        /// <param name="humanoidTransformMap">humanName→Transform。不足関節を補完済みならその結果。</param>
+        public static AssembleReport AssembleSpringBonesForPrefab(
+            ModelContext model, HierarchyBuildResult hierarchy,
+            IReadOnlyDictionary<string, Transform> humanoidTransformMap, VRM10Object vrmObject)
+        {
+            var report = new AssembleReport();
+            if (model == null || hierarchy?.Root == null || vrmObject == null) return report;
+
+            var root = hierarchy.Root;
+            AssignHumanoid(root, humanoidTransformMap, report);
+
+            var instance = root.GetComponent<Vrm10Instance>();
+            if (instance == null) instance = root.AddComponent<Vrm10Instance>();
+            instance.enabled = true;
+            instance.Vrm = vrmObject;
+
+            BuildSpringBones(model, hierarchy, instance, report);
             return report;
         }
 
@@ -658,7 +711,7 @@ namespace Poly_Ling.Vrm10Impl
         ///   決められないため、揺れは実体側にだけ載せ、実体側の出力が無い
         ///   ノードに揺れが付いていたら警告して落とす。
         /// </summary>
-        private void BuildSpringBones(
+        private static void BuildSpringBones(
             ModelContext model, HierarchyBuildResult hierarchy,
             Vrm10Instance instance, AssembleReport report)
         {
@@ -766,6 +819,7 @@ namespace Poly_Ling.Vrm10Impl
 
                 jointComp[i] = comp;
             }
+            report.SpringBoneJointCount = jointComp.Count;
 
             // ---- チェーン ------------------------------------------------
             // 親子表は HierarchyBuilder と同じ規則（ボーンは HierarchyParentIndex、
@@ -783,6 +837,12 @@ namespace Poly_Ling.Vrm10Impl
                 if (!string.IsNullOrEmpty(mc.Name) && !boneIndexByName.ContainsKey(mc.Name))
                     boneIndexByName[mc.Name] = i;
             }
+
+            // 鎖の根元の一覧。鎖を辿るとき、別の鎖の根元から先へは下りない。
+            var chainRoots = new HashSet<int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+                if (model.GetMeshContext(i)?.MeshObject?.SpringBoneChainRoot != null)
+                    chainRoots.Add(i);
 
             for (int i = 0; i < model.MeshContextCount; i++)
             {
@@ -803,7 +863,7 @@ namespace Poly_Ling.Vrm10Impl
                 // ルートから葉までの経路を列挙する。分岐は別チェーンとして出す
                 // （VRM の joints は先頭以外が直前の子孫であることを要求するため）。
                 var paths = new List<List<int>>();
-                CollectJointPaths(i, childrenOf, jointComp, new List<int>(), paths);
+                CollectJointPaths(i, childrenOf, jointComp, new List<int>(), paths, chainRoots);
                 if (paths.Count == 0) continue;
 
                 if (paths.Count > 1)
@@ -855,14 +915,19 @@ namespace Poly_Ling.Vrm10Impl
         private static void CollectJointPaths(
             int current, Dictionary<int, List<int>> childrenOf,
             Dictionary<int, VRM10SpringBoneJoint> jointComp,
-            List<int> path, List<List<int>> result)
+            List<int> path, List<List<int>> result,
+            HashSet<int> chainRoots = null)
         {
             path.Add(current);
 
+            // 子が別の鎖の根元（SpringBoneChainRoot 付き）なら、その先はその鎖のもの。
+            // 下りると、スカートの関節に付けたエプロンの縁の鎖が「分岐」として数えられ、
+            // スカートの上側の関節が複数の鎖に重複して入る。
             var next = new List<int>();
             if (childrenOf.TryGetValue(current, out var children))
                 foreach (int c in children)
-                    if (jointComp.ContainsKey(c)) next.Add(c);
+                    if (jointComp.ContainsKey(c) && (chainRoots == null || !chainRoots.Contains(c)))
+                        next.Add(c);
 
             if (next.Count == 0)
             {
@@ -871,7 +936,7 @@ namespace Poly_Ling.Vrm10Impl
             else
             {
                 foreach (int c in next)
-                    CollectJointPaths(c, childrenOf, jointComp, path, result);
+                    CollectJointPaths(c, childrenOf, jointComp, path, result, chainRoots);
             }
 
             path.RemoveAt(path.Count - 1);

@@ -99,6 +99,12 @@ namespace Poly_Ling.Remote
                 // probe クライアント用（リスト系とは別データ・テキスト応答）。
                 case "server_info":       return BuildSuccessResponse(msg.Id, BuildServerInfoData());
 
+                // コマンド・シナリオの検索と説明、利用シーン（MCP の制御プロトコルと同じ処理）。
+                // 外のプログラム（Python のアドオンなど）が、MCP を通さずに引数の形を引けるようにする。
+                case "tools_search":
+                case "tools_describe":
+                case "scenes":            return ProcessCatalogQuery(msg);
+
                 // 協働編集: 現在の担当状況（接続直後の初期同期用）
                 case "ownership":
                 {
@@ -112,6 +118,28 @@ namespace Poly_Ling.Remote
                 default:
                     return BuildErrorResponse(msg.Id, $"Unknown target: {msg.Target}");
             }
+        }
+
+        /// <summary>
+        /// tools_search / tools_describe / scenes を PolyLingControlProtocol の処理へ渡し、
+        /// その "result" をリモートの応答の "data" に入れて返す。引数（params）の形は制御プロトコルと同じ。
+        /// 処理を書き写さないため、制御プロトコルの応答 JSON を読み替えるだけにする。
+        /// </summary>
+        private string ProcessCatalogQuery(RemoteMessage msg)
+        {
+            if (!PolyLingControlProtocol.TryHandleCommon(msg.Target, msg, "[Remote]", out string resp) || resp == null)
+                return BuildErrorResponse(msg.Id, $"Unknown target: {msg.Target}", CommandErrorCodes.InvalidArgs);
+
+            Newtonsoft.Json.Linq.JObject o;
+            try { o = Newtonsoft.Json.Linq.JObject.Parse(resp); }
+            catch (Exception ex) { return BuildErrorResponse(msg.Id, "応答を組み立てられません: " + ex.Message); }
+
+            if ((bool?)o["success"] != true)
+                return BuildErrorResponse(msg.Id, (string)o["error"] ?? "失敗しました",
+                                          (string)o["code"] ?? CommandErrorCodes.Failed);
+            var result = o["result"] as Newtonsoft.Json.Linq.JObject;
+            return BuildSuccessResponse(msg.Id, result != null
+                ? result.ToString(Newtonsoft.Json.Formatting.None) : "{}");
         }
 
         private string ProcessProjectHeaderQuery(RemoteMessage msg)

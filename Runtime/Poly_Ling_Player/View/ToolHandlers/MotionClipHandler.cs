@@ -201,6 +201,46 @@ namespace Poly_Ling.Player
         /// <summary>SaveJson で元ファイルが変わった後に呼ぶ（パネルの表示を合わせる）。</summary>
         public Action OnSourceChanged;
 
+        /// <summary>
+        /// 読み込んでいるクリップを edit で書き換え、対応付けをやり直して time 秒のフレームを当てる。
+        /// クリップが無ければ空のクリップ（newName）を作ってから書き換える（元ファイルは無し）。
+        /// 書き換えの後 OnClipLoadedFromJson を呼ぶ（パネルの表示を合わせる）。
+        /// コマンド createLipSyncFromVoicevox が使う。
+        /// </summary>
+        public void EditClip(Action<MotionClipDTO> edit, string newName, float time)
+        {
+            Error = "";
+            bool created = false;
+            var dto = _dto;
+            if (dto == null)
+            {
+                dto = new MotionClipDTO
+                {
+                    name = newName ?? "",
+                    metadata = new MotionMetadataDTO { createdWith = "PolyLing" },
+                };
+                created = true;
+            }
+            edit?.Invoke(dto);
+            float scale = _applier?.PositionScale ?? 1f;
+            try
+            {
+                SetClipCore(dto, _loadResult, scale, time);
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+                UnityEngine.Debug.LogError($"[MotionClipHandler] {ex}");
+                return;
+            }
+            if (created)
+            {
+                SourcePath = "";
+                SourceKind = (int)MotionSourceKind.PolyLingMotionJson;
+            }
+            OnClipLoadedFromJson?.Invoke(time);
+        }
+
         private void SetClipCore(MotionClipDTO dto, MotionClipLoadResult report, float positionScale, float time)
         {
             _loadResult = report;

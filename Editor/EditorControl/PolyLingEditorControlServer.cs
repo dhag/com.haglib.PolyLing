@@ -693,6 +693,7 @@ namespace Poly_Ling.EditorControl
             ReadBool(raw, "buildAvatar",               ref opt.BuildAvatar,               ref err);
             ReadBool(raw, "attachAnimator",            ref opt.AttachAnimator,            ref err);
             ReadBool(raw, "supplementHumanoid",        ref opt.SupplementHumanoid,        ref err);
+            ReadBool(raw, "attachSpringBones",         ref opt.AttachSpringBones,         ref err);
             ReadBool(raw, "writeAttach",               ref opt.WriteAttach,               ref err);
             ReadBool(raw, "tolerantMirrorBranch",      ref opt.TolerantMirrorBranch,      ref err);
             if (err != null) return BuildError(op, err);

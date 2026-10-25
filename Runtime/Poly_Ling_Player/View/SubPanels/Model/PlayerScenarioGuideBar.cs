@@ -206,6 +206,18 @@ namespace Poly_Ling.Player
             OnRunChanged?.Invoke();
         }
 
+        /// <summary>
+        /// 非同期の項目（invokePyAddon）の返事が来て、ディスパッチャが控えを入れた（ディスパッチャから）。
+        /// 成功なら続きを流し、失敗なら止まった表示にする。
+        /// </summary>
+        public void OnAsyncStepFinished()
+        {
+            if (_section == null || _section.style.display == DisplayStyle.None) return;
+            var run = GetRun?.Invoke();
+            if (run != null && run.Stop == ScenarioRunStop.None) ScheduleAdvance(TickIntervalMs);
+            else UpdateView();
+        }
+
         /// <summary>入力待ちで人が項目を済ませた（ディスパッチャから）。</summary>
         public void OnUserStepAccepted()
         {
@@ -387,11 +399,13 @@ namespace Poly_Ling.Player
                     break;
                 case ScenarioRunStop.Failed:   stop = $"失敗して止まっています: {run.StopMessage}"; break;
                 case ScenarioRunStop.Finished: stop = "最後の項目まで終わりました。「やめる」で閉じます。"; break;
+                case ScenarioRunStop.Waiting:  stop = $"{run.StopMessage}。返事が来たら続きを流します。"; break;
                 default:                       stop = "流しています…"; break;
             }
             _stopLabel.text = stop;
 
-            _btnContinue.SetEnabled(run.Stop != ScenarioRunStop.Finished && (!_ticking || _awaiting));
+            _btnContinue.SetEnabled(run.Stop != ScenarioRunStop.Finished && run.Stop != ScenarioRunStop.Waiting
+                                    && (!_ticking || _awaiting));
             _btnStop.SetEnabled(true);
         }
     }

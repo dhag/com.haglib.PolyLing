@@ -42,6 +42,10 @@ namespace Poly_Ling.Data
     [PLResult("beltClosed",      PLResultKind.IntegerArray, Description = "ベルトごとに閉じているか。1 = 閉じている", Optional = true)]
     [PLResult("beltFlipWinding", PLResultKind.IntegerArray, Description = "ベルトごとに巻き順を反転するか。1 = 反転", Optional = true)]
     [PLResult("beltHeightScale", PLResultKind.NumberArray, Description = "ベルトごとの高さ倍率。フリル以外では使わない", Optional = true)]
+    [PLResult("beltStartPoints",   PLResultKind.NumberArray,  Description = "ベルトごとの開始側の先端（開始タグ三角形の頂点）の位置。x,y,z を 3 個ずつ。無いベルトは 0", Optional = true)]
+    [PLResult("beltHasStartPoint", PLResultKind.IntegerArray, Description = "ベルトごとに開始側の先端があるか。1 = ある", Optional = true)]
+    [PLResult("beltEndPoints",     PLResultKind.NumberArray,  Description = "ベルトごとの終了側の先端の位置。x,y,z を 3 個ずつ。無いベルトは 0", Optional = true)]
+    [PLResult("beltHasEndPoint",   PLResultKind.IntegerArray, Description = "ベルトごとに終了側の先端があるか。1 = ある", Optional = true)]
     [PLResult("rungCounts",      PLResultKind.IntegerArray, Description = "ベルトごとの段数（点数）", Optional = true)]
     public class AcquireBeltStripsCommand : PanelCommand
     {
@@ -96,9 +100,12 @@ namespace Poly_Ling.Data
         /// 全ベルトの点列を連結し、ベルトごとの開始位置を別の配列で持つ。
         /// SkinWeightPaintCommand.StepStarts と同じ形。
         ///
-        /// BeltCsvEntry の残りのフィールド（StartPoint / EndPoint / GroupId /
-        /// RowIndex / RowCount）は CSV 読み込み時の付帯情報と自動検索の結果で、
-        /// 外から指定するものではないので載せない。既定値のまま残る。
+        /// BeltCsvEntry の残りのフィールドのうち GroupId / RowIndex / RowCount は
+        /// CSV 読み込み時の付帯情報と自動検索の結果で、外から指定するものではないので
+        /// 載せない。既定値のまま残る。
+        /// StartPoint / EndPoint（はしごの先端）は載せる（BeltStartPoints ほか）。
+        /// 載せないとパイプの蓋が先端へすぼまらず、平らな蓋になる
+        /// （PipeMeshGenerator は先端があればそこへ収束させる）。
         /// </summary>
         [PLParam(TextKey = "BeltLeftPoints",
                  Description = "全ベルトの左点列を連結したもの。x,y,z を 3 個ずつ並べる",
@@ -126,6 +133,27 @@ namespace Poly_Ling.Data
         [PLParam(TextKey = "BeltHeightScale",
                  Description = "ベルトごとの高さ倍率。BeltStarts と同じ長さ。フリル以外では使われない")]
         public float[] BeltHeightScale { get; }
+
+        /// <summary>
+        /// ベルトごとの開始側の先端（開始タグ三角形の頂点）の位置。x,y,z を 3 個ずつ。
+        /// 先端の無いベルトは BeltHasStartPoint を false にし、ここは 0 を入れておく。
+        /// </summary>
+        [PLParam(TextKey = "BeltStartPoints",
+                 Description = "ベルトごとの開始側の先端の位置。x,y,z を 3 個ずつ、BeltStarts と同じ本数。先端が無いベルトは 0 を入れ BeltHasStartPoint を 0 にする")]
+        public float[] BeltStartPoints { get; }
+
+        [PLParam(TextKey = "BeltHasStartPoint",
+                 Description = "ベルトごとに開始側の先端があるか。BeltStarts と同じ長さ。省くと先端なし")]
+        public bool[] BeltHasStartPoint { get; }
+
+        /// <summary>ベルトごとの終了側の先端（終了タグ三角形の頂点）の位置。並びは BeltStartPoints と同じ。</summary>
+        [PLParam(TextKey = "BeltEndPoints",
+                 Description = "ベルトごとの終了側の先端の位置。x,y,z を 3 個ずつ、BeltStarts と同じ本数。先端が無いベルトは 0 を入れ BeltHasEndPoint を 0 にする")]
+        public float[] BeltEndPoints { get; }
+
+        [PLParam(TextKey = "BeltHasEndPoint",
+                 Description = "ベルトごとに終了側の先端があるか。BeltStarts と同じ長さ。省くと先端なし")]
+        public bool[] BeltHasEndPoint { get; }
 
         /// <summary>
         /// 梯子の取り込み元オブジェクトの索引。-1 = ひも付けなし。
@@ -197,6 +225,8 @@ namespace Poly_Ling.Data
                     e.FlipWinding = BeltFlipWinding != null && i < BeltFlipWinding.Length && BeltFlipWinding[i];
                     e.HeightScale = (BeltHeightScale != null && i < BeltHeightScale.Length)
                         ? BeltHeightScale[i] : 1f;
+                    e.StartPoint  = PointAt(BeltStartPoints, BeltHasStartPoint, i);
+                    e.EndPoint    = PointAt(BeltEndPoints,   BeltHasEndPoint,   i);
                     result[i] = e;
                 }
                 return result;
@@ -210,12 +240,46 @@ namespace Poly_Ling.Data
             Poly_Ling.PrimitiveMesh.BeltCsvEntry[] belts,
             out float[] leftPoints, out float[] rightPoints, out int[] starts,
             out bool[] closed, out bool[] flipWinding, out float[] heightScale)
+            => SplitBelts(belts, out leftPoints, out rightPoints, out starts,
+                          out closed, out flipWinding, out heightScale,
+                          out _, out _, out _, out _);
+
+        /// <summary>
+        /// 先端（StartPoint / EndPoint）も分ける版。生成コマンドへ渡すときはこちらを使う。
+        /// 先端の無いベルトは位置に 0 を入れ、有無を false にする。
+        /// </summary>
+        public static void SplitBelts(
+            Poly_Ling.PrimitiveMesh.BeltCsvEntry[] belts,
+            out float[] leftPoints, out float[] rightPoints, out int[] starts,
+            out bool[] closed, out bool[] flipWinding, out float[] heightScale,
+            out float[] startPoints, out bool[] hasStartPoint,
+            out float[] endPoints,   out bool[] hasEndPoint)
         {
             int n = belts?.Length ?? 0;
             starts      = new int[n];
             closed      = new bool[n];
             flipWinding = new bool[n];
             heightScale = new float[n];
+            startPoints   = new float[n * 3];
+            hasStartPoint = new bool[n];
+            endPoints     = new float[n * 3];
+            hasEndPoint   = new bool[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                var sp = belts[i]?.StartPoint;
+                var ep = belts[i]?.EndPoint;
+                if (sp.HasValue)
+                {
+                    hasStartPoint[i] = true;
+                    startPoints[i * 3] = sp.Value.x; startPoints[i * 3 + 1] = sp.Value.y; startPoints[i * 3 + 2] = sp.Value.z;
+                }
+                if (ep.HasValue)
+                {
+                    hasEndPoint[i] = true;
+                    endPoints[i * 3] = ep.Value.x; endPoints[i * 3 + 1] = ep.Value.y; endPoints[i * 3 + 2] = ep.Value.z;
+                }
+            }
 
             var left  = new System.Collections.Generic.List<float>();
             var right = new System.Collections.Generic.List<float>();
@@ -245,6 +309,14 @@ namespace Poly_Ling.Data
             rightPoints = right.ToArray();
         }
 
+        /// <summary>ベルト i の先端。有無が false か、値が足りなければ null。</summary>
+        private static Vector3? PointAt(float[] points, bool[] has, int i)
+        {
+            if (has == null || i < 0 || i >= has.Length || !has[i]) return null;
+            if (points == null || i * 3 + 2 >= points.Length) return null;
+            return new Vector3(points[i * 3], points[i * 3 + 1], points[i * 3 + 2]);
+        }
+
         /// <summary>向き補正。</summary>
         [PLParam(TextKey = "BeltOrient", Description = "梯子の向き補正")]
         public Poly_Ling.PrimitiveMesh.BeltOrientOptions Orient { get; }
@@ -271,9 +343,15 @@ namespace Poly_Ling.Data
             string acquireSetName = "",
             int profileSourceIndex = -1,
             Poly_Ling.PrimitiveMesh.ProfileAcquireMethod profileAcquire
-                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked)
+                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked,
+            float[] beltStartPoints = null, bool[] beltHasStartPoint = null,
+            float[] beltEndPoints   = null, bool[] beltHasEndPoint   = null)
             : base(modelIndex, placement, profileSourceIndex, profileAcquire)
         {
+            BeltStartPoints   = beltStartPoints   ?? System.Array.Empty<float>();
+            BeltHasStartPoint = beltHasStartPoint ?? System.Array.Empty<bool>();
+            BeltEndPoints     = beltEndPoints     ?? System.Array.Empty<float>();
+            BeltHasEndPoint   = beltHasEndPoint   ?? System.Array.Empty<bool>();
             BeltLeftPoints  = beltLeftPoints  ?? System.Array.Empty<float>();
             BeltRightPoints = beltRightPoints ?? System.Array.Empty<float>();
             BeltStarts      = beltStarts      ?? System.Array.Empty<int>();
@@ -327,12 +405,15 @@ namespace Poly_Ling.Data
             string acquireSetName = "",
             int profileSourceIndex = -1,
             Poly_Ling.PrimitiveMesh.ProfileAcquireMethod profileAcquire
-                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked)
+                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked,
+            float[] beltStartPoints = null, bool[] beltHasStartPoint = null,
+            float[] beltEndPoints   = null, bool[] beltHasEndPoint   = null)
             : base(modelIndex, placement,
                    beltLeftPoints, beltRightPoints, beltStarts,
                    beltClosed, beltFlipWinding, beltHeightScale, orient, spline,
                    beltSourceIndex, acquireMethod, acquireCrossRows, acquireSetName,
-                   profileSourceIndex, profileAcquire)
+                   profileSourceIndex, profileAcquire,
+                   beltStartPoints, beltHasStartPoint, beltEndPoints, beltHasEndPoint)
         {
             Params   = @params;
             ProfileA = profileA;
@@ -373,12 +454,15 @@ namespace Poly_Ling.Data
             string acquireSetName = "",
             int profileSourceIndex = -1,
             Poly_Ling.PrimitiveMesh.ProfileAcquireMethod profileAcquire
-                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked)
+                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked,
+            float[] beltStartPoints = null, bool[] beltHasStartPoint = null,
+            float[] beltEndPoints   = null, bool[] beltHasEndPoint   = null)
             : base(modelIndex, placement,
                    beltLeftPoints, beltRightPoints, beltStarts,
                    beltClosed, beltFlipWinding, beltHeightScale, orient, spline,
                    beltSourceIndex, acquireMethod, acquireCrossRows, acquireSetName,
-                   profileSourceIndex, profileAcquire)
+                   profileSourceIndex, profileAcquire,
+                   beltStartPoints, beltHasStartPoint, beltEndPoints, beltHasEndPoint)
         {
             Params        = @params;
             Profile       = profile;
@@ -420,12 +504,15 @@ namespace Poly_Ling.Data
             string acquireSetName = "",
             int profileSourceIndex = -1,
             Poly_Ling.PrimitiveMesh.ProfileAcquireMethod profileAcquire
-                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked)
+                = Poly_Ling.PrimitiveMesh.ProfileAcquireMethod.Baked,
+            float[] beltStartPoints = null, bool[] beltHasStartPoint = null,
+            float[] beltEndPoints   = null, bool[] beltHasEndPoint   = null)
             : base(modelIndex, placement,
                    beltLeftPoints, beltRightPoints, beltStarts,
                    beltClosed, beltFlipWinding, beltHeightScale, orient, spline,
                    beltSourceIndex, acquireMethod, acquireCrossRows, acquireSetName,
-                   profileSourceIndex, profileAcquire)
+                   profileSourceIndex, profileAcquire,
+                   beltStartPoints, beltHasStartPoint, beltEndPoints, beltHasEndPoint)
         {
             Params              = @params;
             SourceMasterIndices = sourceMasterIndices;

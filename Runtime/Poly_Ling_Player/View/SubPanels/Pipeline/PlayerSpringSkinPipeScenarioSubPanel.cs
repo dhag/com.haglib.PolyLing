@@ -825,7 +825,8 @@ namespace Poly_Ling.Player
             CreateBeltPrimitiveCommand.SplitBelts(
                 acquired.Belts.ToArray(),
                 out var beltLeft, out var beltRight, out var beltStarts,
-                out var beltClosed, out var beltFlip, out var beltHeight);
+                out var beltClosed, out var beltFlip, out var beltHeight,
+                out var beltSp, out var beltHasSp, out var beltEp, out var beltHasEp);
 
             var pp = PipeParams.Default;
             pp.MeshName           = PipeName;
@@ -849,7 +850,9 @@ namespace Poly_Ling.Player
                 pl,
                 beltSourceIndex: _ladderIndex,
                 acquireMethod: BeltAcquireMethod.AutoLadder,
-                acquireCrossRows: false));
+                acquireCrossRows: false,
+                beltStartPoints: beltSp, beltHasStartPoint: beltHasSp,
+                beltEndPoints: beltEp, beltHasEndPoint: beltHasEp));
 
             return Ok(
                 $"CreatePipeCommand を送った（梯子={_ladderName.value} / 取り込んだはしご {acquired.Belts.Count} 本 / "

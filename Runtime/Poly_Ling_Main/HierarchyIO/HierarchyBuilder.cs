@@ -233,17 +233,12 @@ namespace Poly_Ling.HierarchyIO
                     }
 
                     // 3パス目: ワールド位置設定（親子確定後に WorldMatrix で配置）
+                    //   親を先に置いてから子を置く。並び順で置くと、親より前に並ぶ子
+                    //   （Robot Kyle の「右ひじ」8 番の親が「右腕捩」59 番）は、後から親を
+                    //   動かしたときに一緒に動いてずれる（ひじから先が抜けた）。
+                    var placedBones = new HashSet<int>();
                     for (int i = 0; i < model.MeshContextCount; i++)
-                    {
-                        var mc = model.GetMeshContext(i);
-                        if (mc == null || mc.Type != MeshType.Bone) continue;
-
-                        var boneTf = boneTransformMap[i];
-                        var wm = mc.WorldMatrix;
-                        boneTf.position   = new Vector3(wm.m03, wm.m13, wm.m23);
-                        boneTf.rotation   = wm.rotation;
-                        boneTf.localScale = Vector3.one;
-                    }
+                        PlaceBoneWorld(model, boneTransformMap, placedBones, i);
                 }
             }
 
@@ -952,6 +947,30 @@ namespace Poly_Ling.HierarchyIO
 
             _result.SkippedInvisibleCount = skipped < 0 ? 0 : skipped;
             return targets;
+        }
+
+        /// <summary>
+        /// ボーン index の Transform を WorldMatrix の位置・回転へ置く。親ボーンが未配置なら先に親を置く。
+        /// 親子は 2 パス目で HierarchyParentIndex に従って組んだものと同じ。
+        /// placed に入れてから親をたどるので、親子が輪になっていても止まる。
+        /// </summary>
+        private static void PlaceBoneWorld(
+            ModelContext model, Dictionary<int, Transform> boneTransformMap, HashSet<int> placed, int index)
+        {
+            if (!boneTransformMap.TryGetValue(index, out var boneTf)) return;
+            if (!placed.Add(index)) return;
+
+            var mc = model.GetMeshContext(index);
+            if (mc == null) return;
+
+            int parentIdx = mc.HierarchyParentIndex;
+            if (parentIdx >= 0 && boneTransformMap.ContainsKey(parentIdx))
+                PlaceBoneWorld(model, boneTransformMap, placed, parentIdx);
+
+            var wm = mc.WorldMatrix;
+            boneTf.position   = new Vector3(wm.m03, wm.m13, wm.m23);
+            boneTf.rotation   = wm.rotation;
+            boneTf.localScale = Vector3.one;
         }
 
         /// <summary>Depth 補正済みの親インデックスを引く。範囲外なら HierarchyParentIndex。</summary>

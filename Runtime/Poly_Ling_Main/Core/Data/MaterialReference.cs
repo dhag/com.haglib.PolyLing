@@ -330,6 +330,8 @@ namespace Poly_Ling.Materials
                 if (existingAtTarget != null && !ReferenceEquals(existingAtTarget, mat))
                 {
                     PLEditorBridge.I.CopySerialized(mat, existingAtTarget);
+                    // 変更済みにしないと保存でディスクへ書かれず、古い中身が残る。
+                    PLEditorBridge.I.SetDirty(existingAtTarget);
                     mat = existingAtTarget;
                 }
                 else

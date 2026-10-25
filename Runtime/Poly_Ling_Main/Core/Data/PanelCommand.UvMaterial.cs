@@ -240,7 +240,9 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>マテリアルスロットを末尾に追加する</summary>
-    [PLCommand(Category = "material", Effects = PLCommandEffect.Material, Writes = PLWriteScope.ModelWide, Description = "マテリアルの枠を末尾へ足す。")]
+    [PLCommand(Category = "material", Effects = PLCommandEffect.Material, Writes = PLWriteScope.ModelWide, Description = "マテリアルの枠を末尾へ足す。足した枠の番号（slotIndex）を返す。")]
+    [PLResult("slotIndex",     PLResultKind.Integer, Description = "足した枠の番号（setMaterialTexture などに渡す）")]
+    [PLResult("materialCount", PLResultKind.Integer, Description = "足したあとの枠の数")]
     public class AddMaterialSlotCommand : PanelCommand
     {
         public AddMaterialSlotCommand(int modelIndex) : base(modelIndex) { }

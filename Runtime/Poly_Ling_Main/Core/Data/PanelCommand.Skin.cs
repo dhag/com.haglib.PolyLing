@@ -159,6 +159,33 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// 選択中の描画メッシュの各頂点へ、写し元メッシュの最も近い面の点のウェイトを写す。
+    /// 面の 3 頂点のウェイトを、点の位置の割合（重心座標）で混ぜ、多い順に 4 本へ絞って正規化する。
+    /// 写し元・写し先とも頂点がワールド座標のスキンドであること。
+    ///
+    /// 【なぜ要るか】
+    ///   エプロン本体のように、別メッシュ（スカートのはしご）に沿って一緒に揺れてほしいものへ、
+    ///   そのメッシュの揺れボーンのウェイトを付ける手段がほかに無い。
+    /// </summary>
+    [PLCommand(Category = "rig.skinning", Effects = PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights,
+        Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.ModelWide, NoUi = true,
+        Description = "選択中の描画メッシュの各頂点へ、写し元メッシュの最も近い面の点のウェイトを写す。両方ともスキンドであること。")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "ウェイトを書き換えた頂点の数")]
+    [PLResult("meshes",   PLResultKind.Integer, Description = "書き換えた描画メッシュの数")]
+    public class CopySkinWeightsFromNearestCommand : PanelCommand
+    {
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "ウェイトの写し元の描画オブジェクトの masterIndex", Required = true)]
+        public int SourceMasterIndex { get; }
+
+        public CopySkinWeightsFromNearestCommand(int modelIndex, int sourceMasterIndex)
+            : base(modelIndex)
+        {
+            SourceMasterIndex = sourceMasterIndex;
+        }
+    }
+
     /// <summary>選択中の描画メッシュ全頂点のボーンウェイトを正規化する（Normalize）</summary>
     [PLCommand(Category = "rig.skinning", Effects = PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights, Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.ModelWide, Description = "選択中の描画メッシュの全頂点のボーンウェイトを、合計が 1 になるよう揃える。")]
     public class NormalizeSkinWeightCommand : PanelCommand
@@ -340,6 +367,86 @@ namespace Poly_Ling.Data
             ParentBone   = parentBone;
             Radius       = radius;
             SelectedOnly = selectedOnly;
+        }
+    }
+
+    /// <summary>
+    /// 骨の列に沿って関節の前後をぼかす（SkinWeightChainOps）。
+    /// 骨 Bk は関節 Jk〜Jk+1 を受け持ち、関節の前後 h で前の骨から次の骨へ直線で移す。
+    /// h は関節の太さ × 係数（fullSmooth なら隣の区間の短い方の半分＝関節から関節まで滑らか）。
+    /// 対象は選択中の描画オブジェクトの全頂点。非スキンドが含まれていれば失敗する。
+    /// </summary>
+    [PLCommand(Category = "rig.skinning", Effects = PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights,
+        Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.ModelWide, NoUi = true,
+        Description = "骨の列（名前、Humanoid 名も可）に沿って、選択中の描画オブジェクトのウェイトを付け直す。各骨は自関節から次の関節までを受け持ち、関節の前後は前の骨から次の骨へ直線でぼかす。ぼかしの幅は関節の太さ×係数。fullSmooth なら幅を使わず、関節でその骨 100%・次の関節へ向かって次の骨へ直線で移す（関節から関節まで滑らか）。")]
+    [PLResult("vertices",   PLResultKind.Integer, Description = "書き換えた頂点数（全対象の合計）")]
+    [PLResult("meshes",     PLResultKind.Integer, Description = "書き換えた描画オブジェクトの数")]
+    [PLResult("radii",      PLResultKind.Text,    Description = "関節ごとの太さ（半径）。先頭の骨の分は 0。カンマ区切り")]
+    [PLResult("halfWidths", PLResultKind.Text,    Description = "関節ごとのぼかしの片側の幅。先頭の骨の分は 0。カンマ区切り")]
+    public class SkinWeightChainBlendCommand : PanelCommand
+    {
+        [PLParam(Description = "骨の名前の列（根元から先へ。2 本以上）。オブジェクト名か Humanoid 名", Required = true)]
+        public string[] BoneNames { get; }
+
+        [PLParam(Description = "true なら関節から関節まで滑らかに変える（太さは測らない）。既定は false")]
+        public bool FullSmooth { get; }
+
+        [PLParam(Description = "ぼかしの片側の幅 ＝ 関節の太さ × この係数。fullSmooth のときは使わない。既定は 1")]
+        public float WidthFactor { get; }
+
+        [PLParam(Description = "太さを測る輪切りの厚さ（片側）の、隣の区間の短い方に対する比。既定は 0.05")]
+        public float SliceRatio { get; }
+
+        public SkinWeightChainBlendCommand(
+            int modelIndex, string[] boneNames, bool fullSmooth = false,
+            float widthFactor = 1f, float sliceRatio = 0.05f)
+            : base(modelIndex)
+        {
+            BoneNames   = boneNames ?? System.Array.Empty<string>();
+            FullSmooth  = fullSmooth;
+            WidthFactor = widthFactor;
+            SliceRatio  = sliceRatio;
+        }
+    }
+
+    /// <summary>
+    /// 既存モデルの関節のぼかし方を測る（モデルは変えない）。ゼロちゃんなどを手本に幅の係数を決めるために使う。
+    /// </summary>
+    [PLCommand(Category = "query", Writes = PLWriteScope.None, NoUi = true,
+        Description = "関節のぼかし方を測る。関節 jointBone（軸は axisFromBone の関節→jointBone の関節）について、側 A・側 B のボーン群のウェイトの合計が 0.99 以上の頂点のうち、輪切りに入るものの軸からの最大距離（太さ）と、B が混ざっている頂点の軸方向の範囲を返す。モデルは変えない。")]
+    [PLResult("radius",     PLResultKind.Number,  Description = "関節の太さ（半径）")]
+    [PLResult("sMin",       PLResultKind.Number,  Description = "混ざっている頂点の、関節からの軸方向の最小（手前が負）")]
+    [PLResult("sMax",       PLResultKind.Number,  Description = "混ざっている頂点の、関節からの軸方向の最大")]
+    [PLResult("blendCount", PLResultKind.Integer, Description = "混ざっている頂点の数")]
+    [PLResult("sliceCount", PLResultKind.Integer, Description = "輪切りに入った頂点の数")]
+    [PLResult("boneLength", PLResultKind.Number,  Description = "axisFromBone の関節〜jointBone の関節の長さ")]
+    public class MeasureJointBlendCommand : PanelCommand
+    {
+        [PLParam(Description = "関節のボーン名（Humanoid 名も可）", Required = true)]
+        public string JointBone { get; }
+
+        [PLParam(Description = "軸の始点にするボーン名（Humanoid 名も可）", Required = true)]
+        public string AxisFromBone { get; }
+
+        [PLParam(Description = "関節の手前側のボーン名の列", Required = true)]
+        public string[] SideABones { get; }
+
+        [PLParam(Description = "関節の先側のボーン名の列", Required = true)]
+        public string[] SideBBones { get; }
+
+        [PLParam(Description = "輪切りの厚さ（片側）の、ボーンの長さに対する比。既定は 0.05")]
+        public float SliceRatio { get; }
+
+        public MeasureJointBlendCommand(
+            int modelIndex, string jointBone, string axisFromBone,
+            string[] sideABones, string[] sideBBones, float sliceRatio = 0.05f)
+            : base(modelIndex)
+        {
+            JointBone    = jointBone;
+            AxisFromBone = axisFromBone;
+            SideABones   = sideABones ?? System.Array.Empty<string>();
+            SideBBones   = sideBBones ?? System.Array.Empty<string>();
+            SliceRatio   = sliceRatio;
         }
     }
 

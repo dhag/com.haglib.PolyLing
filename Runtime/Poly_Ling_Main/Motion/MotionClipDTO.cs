@@ -244,6 +244,13 @@ namespace Poly_Ling.Motion
 
         /// <summary>解決方式の補助情報。"generic" / "vrm1" / "blendShape" / "custom"。省略可。</summary>
         public string provider;
+
+        /// <summary>
+        /// provider が "blendShape" のとき、blendShape を持つ SkinnedMeshRenderer の Transform パス
+        /// （Unity クリップのカーブの path）。省略可。同じ名前のトラックはパスが違えば別のトラック。
+        /// PolyLing のモデルへの適用は名前だけで引く（パスは Unity クリップへ戻すときに使う）。
+        /// </summary>
+        public string path;
     }
 
     // ----------------------------------------------------------------

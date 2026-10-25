@@ -63,6 +63,15 @@ namespace Poly_Ling.Serialization
         public string description = "";
     }
 
+    /// <summary>シナリオの出力 1 件（ScenarioOutput）。</summary>
+    [Serializable]
+    public class ScenarioOutputDTO
+    {
+        public string name = "";
+        public string from = "";
+        public string description = "";
+    }
+
     /// <summary>項目 1 つぶん（生成コマンド 1 つ）。</summary>
     [Serializable]
     public class ObjectGroupStepDTO
@@ -241,6 +250,9 @@ namespace Poly_Ling.Serialization
         /// <summary>シナリオの引数。並びは宣言の順。古い保存データには無い（引数なしとして読む）。</summary>
         public List<ScenarioParamDTO> scenarioParams = new List<ScenarioParamDTO>();
 
+        /// <summary>シナリオの出力。並びは宣言の順。古い保存データには無い（出力なしとして読む）。</summary>
+        public List<ScenarioOutputDTO> scenarioOutputs = new List<ScenarioOutputDTO>();
+
         // ================================================================
         // 変換
         // ================================================================
@@ -278,6 +290,16 @@ namespace Poly_Ling.Serialization
                             name         = p.Name,
                             defaultValue = p.Default ?? "",
                             description  = p.Description ?? "",
+                        });
+
+            if (g.Outputs != null)
+                foreach (var o in g.Outputs)
+                    if (o != null && !string.IsNullOrEmpty(o.Name))
+                        dto.scenarioOutputs.Add(new ScenarioOutputDTO
+                        {
+                            name        = o.Name,
+                            from        = o.From ?? "",
+                            description = o.Description ?? "",
                         });
 
             if (g.Steps != null)
@@ -334,6 +356,17 @@ namespace Poly_Ling.Serialization
                             Name        = pd.name,
                             Default     = pd.defaultValue ?? "",
                             Description = pd.description ?? "",
+                        });
+
+            g.Outputs = new List<ScenarioOutput>();
+            if (scenarioOutputs != null)
+                foreach (var od in scenarioOutputs)
+                    if (od != null && !string.IsNullOrEmpty(od.name))
+                        g.Outputs.Add(new ScenarioOutput
+                        {
+                            Name        = od.name,
+                            From        = od.from ?? "",
+                            Description = od.description ?? "",
                         });
 
             if (!string.IsNullOrEmpty(createdAt) && DateTime.TryParse(

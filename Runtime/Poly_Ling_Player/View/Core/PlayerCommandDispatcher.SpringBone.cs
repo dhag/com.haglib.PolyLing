@@ -158,14 +158,52 @@ namespace Poly_Ling.Player
                     int maxLen = 0;
                     foreach (var ch in chains) maxLen = Mathf.Max(maxLen, ch.Count);
 
+                    int fixedLv = c.FixedLevels;
+                    foreach (var ch in chains)
+                    {
+                        if (fixedLv < ch.Count) continue;
+                        Fail($"揺らさない段数 {fixedLv} が鎖の段数 {ch.Count} 以上です");
+                        return true;
+                    }
+
+                    // 揺らさない上の段は、前に付いたジョイントと先頭指定を外す（付いていなければ何もしない）。
+                    if (fixedLv > 0)
+                    {
+                        var fixedNodes = new List<int>();
+                        foreach (var ch in chains)
+                            for (int step = 0; step < fixedLv; step++)
+                                if (model.GetMeshContext(ch[step])?.MeshObject?.SpringBoneJoint != null)
+                                    fixedNodes.Add(ch[step]);
+
+                        if (fixedNodes.Count > 0)
+                        {
+                            var r = Dispatch(new ClearSpringBoneJointCommand(c.ModelIndex, fixedNodes.ToArray()));
+                            if (r != null && !r.Success) { Fail($"clearSpringBoneJoint が失敗しました: {r.Reason}"); return true; }
+                        }
+                    }
+
                     // 段ごとに同じ値を入れる（検証パネルがしていたのと同じ分け方）。
-                    for (int step = 0; step < maxLen; step++)
+                    for (int step = fixedLv; step < maxLen; step++)
                     {
                         var atStep = new List<int>();
                         foreach (var ch in chains) if (step < ch.Count) atStep.Add(ch[step]);
                         if (atStep.Count == 0) continue;
+
+                        // 先端側の tipLevels 段は、硬さを stiffness → tipStiffness へ直線で変える
+                        // （先端の段でちょうど tipStiffness）。段は鎖の最長に合わせて数える。
+                        float stiff = c.Stiffness;
+                        if (c.TipLevels > 0)
+                        {
+                            int fromTip = (maxLen - 1) - step;          // 先端が 0
+                            if (fromTip < c.TipLevels)
+                            {
+                                float t = (float)(c.TipLevels - fromTip) / c.TipLevels;   // 先端で 1
+                                stiff = Mathf.Lerp(c.Stiffness, c.TipStiffness, t);
+                            }
+                        }
+
                         var r = Dispatch(new SetSpringBoneJointCommand(
-                            c.ModelIndex, atStep.ToArray(), c.HitRadius, c.Stiffness, c.GravityPower,
+                            c.ModelIndex, atStep.ToArray(), c.HitRadius, stiff, c.GravityPower,
                             new Vector3(0f, -1f, 0f), c.DragForce));
                         if (r != null && !r.Success) { Fail($"setSpringBoneJoint が失敗しました: {r.Reason}"); return true; }
                     }
@@ -176,9 +214,9 @@ namespace Poly_Ling.Player
                     {
                         string chainName = Poly_Ling.Tools.SpringBoneRig.SpringBoneChainNaming.ChainName(c.NamePrefix, i, chains.Count);
                         var r = Dispatch(new SetSpringBoneChainRootCommand(
-                            c.ModelIndex, chains[i][0], chainName, "", System.Array.Empty<int>()));
+                            c.ModelIndex, chains[i][fixedLv], chainName, "", System.Array.Empty<int>()));
                         if (r != null && !r.Success) { Fail($"setSpringBoneChainRoot が失敗しました: {r.Reason}"); return true; }
-                        roots.Add(chains[i][0]);
+                        roots.Add(chains[i][fixedLv]);
                     }
 
                     ReportData(CommandDataJson.New()
@@ -519,6 +557,17 @@ namespace Poly_Ling.Player
                             ? "ボーンを作れませんでした"
                             : sblResult.Message);
                         return true;
+                    }
+
+                    // 新しく作った鎖の根元を、指定の接頭辞のボーンのうち最も近いものへ付け替える
+                    // （エプロンの縁のフリルをスカートの鎖に乗せる）。流し込み（Updated）では親を変えない。
+                    if (!sblResult.Updated && !string.IsNullOrEmpty(c.AttachNearestPrefix))
+                    {
+                        int moved = Poly_Ling.Tools.SpringBoneRig.SpringBoneLadderPlacer.ReattachRootsToNearest(
+                            model, sblResult.Chains, c.AttachNearestPrefix);
+                        moved += Poly_Ling.Tools.SpringBoneRig.SpringBoneLadderPlacer.ReattachRootsToNearest(
+                            model, sblResult.MirrorChains, c.AttachNearestPrefix);
+                        Debug.Log($"[PlaceSpringBoneLadderChains] 鎖の根元 {moved} 本を「{c.AttachNearestPrefix}」の最寄りのボーンへ付け替えました");
                     }
 
                     // 左右の対を立て直したので、ミラーペアの対応表を作り直す。

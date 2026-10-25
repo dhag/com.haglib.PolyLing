@@ -728,5 +728,20 @@ namespace Poly_Ling.Player
             ShowRightPanel(_layoutRoot?.WorkFolderSection, _layoutRoot?.WorkFolderBtn);
             _workFolderSubPanel?.Refresh();
         }
+
+        /// <summary>Python アドオンのパネルを開く。</summary>
+        private void ShowPyAddonPanel()
+        {
+            ApplyGeneralPanelMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.PyAddonSection, _layoutRoot?.PyAddonBtn);
+            _pyAddonSubPanel?.Refresh();
+        }
+
+        /// <summary>左ペインのアドオンのボタン：パネルをそのアドオンで開き、起動していなければ起動する。</summary>
+        private void OpenPyAddon(string id)
+        {
+            ShowPyAddonPanel();
+            _pyAddonSubPanel?.Open(id);
+        }
     }
 }

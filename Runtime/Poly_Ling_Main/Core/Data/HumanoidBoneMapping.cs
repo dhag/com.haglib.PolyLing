@@ -420,18 +420,99 @@ namespace Poly_Ling.Data
             // 2 巡目：全エイリアスで部分一致（候補名がエイリアスを含む。例: alias="右手首", candidate="右手首Cylinder" → hit）。
             //   逆方向（alias.Contains(candidate)）は誤マッチの原因になるため除外
             //   例: alias="上半身3"がcandidate="上半身"にマッチしてしまう
+            //   IK ボーン（「左つま先ＩＫ」など）は Humanoid の骨ではないので、別名自体が IK を
+            //   含む場合を除き部分一致の候補から外す（Appearance Miku で Toes が「左つま先ＩＫ」に
+            //   当たり、足首の子孫でないため Avatar 作成に失敗した）。
             foreach (string alias in aliases)
             {
                 if (string.IsNullOrEmpty(alias)) continue;
+                bool aliasIsIk = ContainsIkMark(alias);
                 for (int i = 0; i < candidateNames.Count; i++)
                 {
                     if (candidateNames[i] != null &&
-                        candidateNames[i].IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
+                        candidateNames[i].IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        (aliasIsIk || !ContainsIkMark(candidateNames[i])))
                         return i;
                 }
             }
 
             return -1;
+        }
+
+        /// <summary>
+        /// 名前だけで決めた Hips を骨の親子で確かめ、直す。
+        ///
+        /// Unity の Avatar は Hips が Spine と左右の UpperLeg の祖先であることを求める。
+        /// 名前の一致だけだと、脚の付け根だけを束ねる骨（Robot Kyle の「Hip」：
+        /// センター → 下半身 → 腰 → Hip → 左足・右足、上半身はセンターの子）が
+        /// 別名「hip」の完全一致で先に当たり、Avatar 作成に失敗する。
+        /// Hips が 3 本の祖先でない（または未割当）なら、3 本に共通する一番近い祖先を Hips にする。
+        /// Spine・左右 UpperLeg のどれかが未割当なら何もしない。
+        /// </summary>
+        /// <param name="contexts">索引 = 割当の索引となる MeshContext の並び（親は ParentIndex）</param>
+        /// <returns>Hips を変えたか</returns>
+        public bool FixHipsByHierarchy(IList<MeshContext> contexts)
+        {
+            if (contexts == null) return false;
+            int spine = Get("Spine");
+            int lLeg  = Get("LeftUpperLeg");
+            int rLeg  = Get("RightUpperLeg");
+            if (spine < 0 || lLeg < 0 || rLeg < 0) return false;
+
+            int hips = Get("Hips");
+            if (hips >= 0 &&
+                IsStrictAncestor(contexts, hips, spine) &&
+                IsStrictAncestor(contexts, hips, lLeg) &&
+                IsStrictAncestor(contexts, hips, rLeg))
+                return false;
+
+            // Spine の祖先を近い順にたどり、左右 UpperLeg の祖先でもある最初のものを採る
+            int guard = contexts.Count;
+            int a = ParentOf(contexts, spine);
+            while (a >= 0 && guard-- > 0)
+            {
+                if (IsStrictAncestor(contexts, a, lLeg) && IsStrictAncestor(contexts, a, rLeg))
+                {
+                    string oldName = hips >= 0 && hips < contexts.Count ? contexts[hips]?.Name : "(未割当)";
+                    _boneIndexMap["Hips"] = a;
+                    Debug.Log($"[HumanoidBoneMapping] Hips を骨の親子で直した: '{oldName}' → '{contexts[a]?.Name}'" +
+                              "（Spine と左右 UpperLeg に共通する一番近い祖先）");
+                    return true;
+                }
+                a = ParentOf(contexts, a);
+            }
+            return false;
+        }
+
+        private static int ParentOf(IList<MeshContext> contexts, int index)
+        {
+            if (index < 0 || index >= contexts.Count) return -1;
+            int p = contexts[index]?.ParentIndex ?? -1;
+            return (p >= 0 && p < contexts.Count && p != index) ? p : -1;
+        }
+
+        /// <summary>ancestor が index の（自分を含まない）祖先か。</summary>
+        private static bool IsStrictAncestor(IList<MeshContext> contexts, int ancestor, int index)
+        {
+            int guard = contexts.Count;
+            int p = ParentOf(contexts, index);
+            while (p >= 0 && guard-- > 0)
+            {
+                if (p == ancestor) return true;
+                p = ParentOf(contexts, p);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 名前に IK の印（半角「IK」・全角「ＩＫ」）を含むか。
+        /// 大小は区別する（大小無視だと "Miku_Hips" の "ik" まで IK 扱いになる）。
+        /// </summary>
+        private static bool ContainsIkMark(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.IndexOf("IK", StringComparison.Ordinal) >= 0 ||
+                   name.IndexOf("ＩＫ", StringComparison.Ordinal) >= 0;
         }
 
         // ================================================================

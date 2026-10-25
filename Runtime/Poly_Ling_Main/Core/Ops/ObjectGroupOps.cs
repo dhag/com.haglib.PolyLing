@@ -522,7 +522,8 @@ namespace Poly_Ling.Ops
             CreateBeltPrimitiveCommand.SplitBelts(
                 acquired.Belts.ToArray(),
                 out var left, out var right, out var starts,
-                out var closed, out var flip, out var height);
+                out var closed, out var flip, out var height,
+                out var startPts, out var hasStart, out var endPts, out var hasEnd);
 
             void Put(string prop, string value)
             {
@@ -536,6 +537,26 @@ namespace Poly_Ling.Ops
             Put(nameof(CreateBeltPrimitiveCommand.BeltClosed),      JoinBools(closed));
             Put(nameof(CreateBeltPrimitiveCommand.BeltFlipWinding), JoinBools(flip));
             Put(nameof(CreateBeltPrimitiveCommand.BeltHeightScale), JoinFloats(height));
+            // 先端も取り直す。控えた点列の先端が残ると、ソースを直しても蓋の先が古いまま。
+            //   ただし元の生成が先端を使っていたときだけ（有無の列が控えにあるとき）。
+            //   辺のパイプ化のように、検出の起点として足しただけの開始タグを持つ梯子は
+            //   先端を渡さずに作っている。作り直しで勝手に先端へすぼめると形が変わる。
+            string hasStartKey = PanelCommandFactory.KeyOfProperty(t, nameof(CreateBeltPrimitiveCommand.BeltHasStartPoint));
+            string hasEndKey   = PanelCommandFactory.KeyOfProperty(t, nameof(CreateBeltPrimitiveCommand.BeltHasEndPoint));
+            bool usedStart = !string.IsNullOrEmpty(hasStartKey)
+                          && args.TryGetValue(hasStartKey, out var hs) && !string.IsNullOrEmpty(hs);
+            bool usedEnd   = !string.IsNullOrEmpty(hasEndKey)
+                          && args.TryGetValue(hasEndKey, out var he) && !string.IsNullOrEmpty(he);
+            if (usedStart)
+            {
+                Put(nameof(CreateBeltPrimitiveCommand.BeltStartPoints),   JoinFloats(startPts));
+                Put(nameof(CreateBeltPrimitiveCommand.BeltHasStartPoint), JoinBools(hasStart));
+            }
+            if (usedEnd)
+            {
+                Put(nameof(CreateBeltPrimitiveCommand.BeltEndPoints),     JoinFloats(endPts));
+                Put(nameof(CreateBeltPrimitiveCommand.BeltHasEndPoint),   JoinBools(hasEnd));
+            }
 
             return $"梯子を {acquired.Belts.Count} 本取り直した（{method} / "
                  + $"上下展開={(cross ? "する" : "しない")} / {acquired.Message}）";

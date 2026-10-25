@@ -99,6 +99,8 @@ namespace Poly_Ling.Player
         private Toggle   _importOverwrite;
         [UiControl("fileStatus", Safety = UiSafety.ReadOnly, Description = "書き出し・取り込みの結果")]
         private Label    _fileStatusLabel;
+        [UiControl("remoteImport", Description = "リモート接続の参加者からのシナリオの取り込み（本文で・差し替えなし）を許可する。保存せず、起動し直すと切に戻る")]
+        private Toggle   _remoteImport;
 
         [UiControl("recStartEnd", Safety = UiSafety.SafeWrite, Description = "シナリオの記録を開始する／終了する（終了後は保存か破棄を待つ）")]
         private Button   _btnRecStartEnd;
@@ -312,6 +314,15 @@ namespace Poly_Ling.Player
             _importOverwrite.style.marginBottom = 2;
             _root.Add(_importOverwrite);
 
+            // 許可の正本は RemoteOwnership。切り替えはコマンドで行い、表示は Refresh で写す。
+            _remoteImport = new Toggle("リモート接続からの取り込みを許可する")
+            {
+                value = Poly_Ling.Remote.RemoteOwnership.AllowRemoteScenarioImport
+            };
+            _remoteImport.style.marginBottom = 2;
+            _remoteImport.RegisterValueChangedCallback(OnRemoteImportChanged);
+            _root.Add(_remoteImport);
+
             _fileStatusLabel = new Label();
             _fileStatusLabel.style.whiteSpace = WhiteSpace.Normal;
             _fileStatusLabel.style.fontSize   = 10;
@@ -335,6 +346,8 @@ namespace Poly_Ling.Player
             RebuildRows();
             UpdateView();
             UpdateRecordingView();
+            // MCP からも切り替わるので、開くたびに正本を写す。
+            _remoteImport?.SetValueWithoutNotify(Poly_Ling.Remote.RemoteOwnership.AllowRemoteScenarioImport);
         }
 
         /// <summary>選んでいる行のシナリオ（参照の行なら呼ばれる子）。フォルダの行・参照切れなら null。</summary>
@@ -639,7 +652,8 @@ namespace Poly_Ling.Player
             }
 
             // ── ボタン ──
-            bool canContinue = run != null && !busy && run.Stop != ScenarioRunStop.Finished;
+            bool canContinue = run != null && !busy && run.Stop != ScenarioRunStop.Finished
+                               && run.Stop != ScenarioRunStop.Waiting;
             _btnRun.SetEnabled(!busy && sel != null);
             _btnContinue.SetEnabled(canContinue);
             _btnStop.SetEnabled(run != null);
@@ -779,9 +793,21 @@ namespace Poly_Ling.Player
             path = Poly_Ling.Core.PLSandbox.AllowOnceFromDialog(path);
 
             bool overwrite = _importOverwrite != null && _importOverwrite.value;
-            var r = RunCommand?.Invoke(new ImportScenariosCommand(ModelIndex, path, overwrite));
-            SetFileStatus(r, $"読み込みました: {path}");
+            // 新しく入るシナリオはフォルダ欄のフォルダへ置く（空なら直下）。
+            string folder = _folderField?.value?.Trim() ?? "";
+            var r = RunCommand?.Invoke(new ImportScenariosCommand(ModelIndex, path, overwrite, folder));
+            string where = folder.Length > 0 ? $"（フォルダ {folder}）" : "";
+            SetFileStatus(r, $"読み込みました{where}: {path}");
             if (r != null && r.Success) Refresh();
+        }
+
+        /// <summary>リモート接続からの取り込みの許可を切り替える。失敗したら表示を正本へ戻す。</summary>
+        private void OnRemoteImportChanged(ChangeEvent<bool> e)
+        {
+            var r = RunCommand?.Invoke(new SetRemoteScenarioImportCommand(ModelIndex, e.newValue));
+            if (r == null || !r.Success)
+                SetFileStatus(r, "");
+            _remoteImport?.SetValueWithoutNotify(Poly_Ling.Remote.RemoteOwnership.AllowRemoteScenarioImport);
         }
 
         private void SetFileStatus(CommandResult r, string ok)
@@ -1006,7 +1032,9 @@ namespace Poly_Ling.Player
                 case ScenarioRunStop.Failed:
                     return $"失敗して止まっています。\n理由: {run.StopMessage}\n→ 原因を直してから「続きを流す」を押すと、同じ項目をやり直します。";
                 case ScenarioRunStop.Finished:
-                    return "最後の項目まで終わりました。";
+                    return run.OutputsJson != null ? $"最後の項目まで終わりました。\n出力: {run.OutputsJson}" : "最後の項目まで終わりました。";
+                case ScenarioRunStop.Waiting:
+                    return $"{run.StopMessage}。\n→ 返事が来たら案内バーが続きを流します。";
                 default:
                     return "流しています…";
             }

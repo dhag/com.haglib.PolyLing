@@ -1,0 +1,29 @@
+{
+    "name": "PolyLing.Vrm10.Editor",
+    "rootNamespace": "",
+    "references": [
+        "PolyLing.Runtime",
+        "PolyLing.Editor",
+        "PolyLing.Vrm10",
+        "VRM10"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "POLYLING_HAS_VRM10"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.vrmc.vrm",
+            "expression": "",
+            "define": "POLYLING_HAS_VRM10"
+        }
+    ],
+    "noEngineReferences": false
+}

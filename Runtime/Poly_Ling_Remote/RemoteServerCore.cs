@@ -191,6 +191,7 @@ namespace Poly_Ling.Remote
                     Log("クライアント切断");
                     if (RemoteOwnership.ReleaseLocksOf(GetProjectContext(), leftUser))
                         CheckOwnershipChanged();
+                    RaiseClientsChanged();
                     OnRepaint?.Invoke();
                 });
 

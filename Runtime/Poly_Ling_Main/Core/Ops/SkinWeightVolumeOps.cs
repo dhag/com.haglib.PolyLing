@@ -499,4 +499,344 @@ namespace Poly_Ling.Ops
             return w;
         }
     }
+
+    // ====================================================================
+    // 骨の列に沿った関節ぼかし（関節の太さで幅を決める／関節から関節まで滑らか）
+    // ====================================================================
+    //
+    // 【なぜ要るか】
+    //   範囲塗り（SkinWeightVolumeOps.ApplyToMesh）は親と自分の 2 本だけを扱い、範囲内を上書きする。
+    //   胴体のように関節が 3 つ以上並ぶところへ順に掛けると、後の塗りは関節の直後から親 100% で
+    //   始まるため、前の塗りの 50% と食い違い、関節の位置でウェイトが飛ぶ。
+    //   また半径・幅を手で決める必要があり、関節の太さに応じた幅にできない。
+    //
+    // 【配分】
+    //   骨の列 B0..Bn-1 の関節（BindPose⁻¹ の原点）J0..Jn-1 を折れ線にする。
+    //   骨 Bk は Jk〜Jk+1 の区間を受け持つ（B0 は J1 より手前すべて、Bn-1 は Jn-1 より先すべて）。
+    //   関節 Jj（j≥1）の前後 hj の範囲では Bj-1 → Bj を直線で移す（Jj で 50%）。
+    //   hj = 係数 × 関節の太さ rj。隣り合う区間の短い方の半分を上限にする（隣の関節のぼかしと重ならない）。
+    //   関節から関節まで（FullSmooth）は幅を使わず、関節 Jk で Bk 100%、次の関節 Jk+1 へ向かって
+    //   Bk+1 へ直線で移す（区間の中に 100% の平らな所を作らない）。J0 より手前は B0、最後の関節より先は Bn-1。
+    //   範囲内の頂点の他ボーンのウェイトは消える。対象は選択中の描画オブジェクトの全頂点。
+    //
+    // 【関節の太さ】
+    //   Jj を通り、前後の区間の向きの平均に直角な薄い輪切り（|s| ≤ 輪切り比 × 短い方の区間）に入る
+    //   対象頂点のうち、軸から最も遠いものの距離を rj とする。
+    //
+    // 【頂点の位置づけ】
+    //   各頂点を最も近い区間へ投影し、列の始点からの道のり u を求める。
+    //   端の区間だけは区間の外へも伸ばす（中の区間は区間内へ寄せる）。
+    //
+    // 【座標】範囲塗りと同じくバインド空間（頂点の格納値と BindPose⁻¹ の原点）。
+
+    /// <summary>骨の列に沿った関節ぼかしの計算結果（バインド空間）。</summary>
+    public sealed class SkinWeightChainFrame
+    {
+        public int[]     Bones;
+        public Vector3[] Joints;
+        /// <summary>区間 k（Jk→Jk+1）の単位方向。</summary>
+        public Vector3[] Dirs;
+        /// <summary>区間 k の長さ。</summary>
+        public float[]   Lengths;
+        /// <summary>関節 j までの道のり（J0 が 0）。</summary>
+        public float[]   Cum;
+        /// <summary>関節 j の太さ（半径）。j=0 は使わない。測らなかったときは 0。</summary>
+        public float[]   Radii;
+        /// <summary>関節 j のぼかしの片側の幅。j=0 は使わない。FullSmooth では使わない（0）。</summary>
+        public float[]   HalfWidths;
+        /// <summary>関節から関節まで滑らか（関節で 100%、次の関節へ直線）。</summary>
+        public bool      FullSmooth;
+    }
+
+    public static class SkinWeightChainOps
+    {
+        private const float Epsilon = 1e-6f;
+
+        /// <summary>
+        /// ボーン名（オブジェクト名、無ければ Humanoid 名）から masterIndex を引く。見つからなければ -1。
+        /// </summary>
+        public static int ResolveBone(ModelContext model, string name)
+        {
+            if (model == null || string.IsNullOrEmpty(name)) return -1;
+            string n = name.Trim();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc != null && mc.Type == MeshType.Bone && mc.Name == n) return i;
+            }
+            int h = model.HumanoidMapping != null ? model.HumanoidMapping.Get(n) : -1;
+            if (h >= 0)
+            {
+                var hm = model.GetMeshContext(h);
+                if (hm != null && hm.Type == MeshType.Bone) return h;
+            }
+            return -1;
+        }
+
+        /// <summary>名前の並びをボーン索引の並びにする。1 つでも引けなければ false。</summary>
+        public static bool ResolveBones(ModelContext model, string[] names, out int[] bones, out string error)
+        {
+            bones = null;
+            error = null;
+            if (names == null || names.Length == 0) { error = "ボーンの名前がありません。"; return false; }
+            bones = new int[names.Length];
+            for (int i = 0; i < names.Length; i++)
+            {
+                bones[i] = ResolveBone(model, names[i]);
+                if (bones[i] < 0) { error = $"ボーン「{names[i]}」が見つかりません。"; return false; }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 計算用の形を作る。fullSmooth が false なら targets の頂点から関節の太さを測って幅を決める。
+        /// </summary>
+        public static bool TryBuildFrame(
+            ModelContext model, int[] bones, List<MeshContext> targets,
+            bool fullSmooth, float widthFactor, float sliceRatio,
+            out SkinWeightChainFrame frame, out string error)
+        {
+            frame = null;
+            error = null;
+            if (model == null) { error = "モデルがありません。"; return false; }
+            if (bones == null || bones.Length < 2) { error = "骨は 2 本以上並べてください。"; return false; }
+            if (!fullSmooth && !(widthFactor > Epsilon)) { error = "幅の係数は 0 より大きくしてください。"; return false; }
+            if (!(sliceRatio > Epsilon)) { error = "輪切りの比は 0 より大きくしてください。"; return false; }
+
+            int n = bones.Length;
+            var f = new SkinWeightChainFrame
+            {
+                Bones      = (int[])bones.Clone(),
+                Joints     = new Vector3[n],
+                Dirs       = new Vector3[n - 1],
+                Lengths    = new float[n - 1],
+                Cum        = new float[n],
+                Radii      = new float[n],
+                HalfWidths = new float[n],
+                FullSmooth = fullSmooth,
+            };
+
+            for (int i = 0; i < n; i++)
+            {
+                var b = model.GetMeshContext(bones[i]);
+                if (b == null || b.Type != MeshType.Bone) { error = $"{bones[i]} 番はボーンではありません。"; return false; }
+                f.Joints[i] = SkinWeightVolumeOps.BindJointPosition(b);
+            }
+            for (int k = 0; k < n - 1; k++)
+            {
+                Vector3 d = f.Joints[k + 1] - f.Joints[k];
+                float   l = d.magnitude;
+                if (l <= Epsilon) { error = $"関節 {k} と {k + 1} が同じ位置にあります。"; return false; }
+                f.Dirs[k]    = d / l;
+                f.Lengths[k] = l;
+                f.Cum[k + 1] = f.Cum[k] + l;
+            }
+
+            for (int j = 1; j < n; j++)
+            {
+                float limit = (j < n - 1)
+                    ? 0.5f * Mathf.Min(f.Lengths[j - 1], f.Lengths[j])
+                    : 0.5f * f.Lengths[j - 1];
+
+                if (fullSmooth) continue;
+
+                Vector3 axis = (j < n - 1) ? (f.Dirs[j - 1] + f.Dirs[j]) : f.Dirs[j - 1];
+                if (axis.sqrMagnitude <= Epsilon) axis = f.Dirs[j - 1];
+                axis.Normalize();
+                float slab = sliceRatio * ((j < n - 1) ? Mathf.Min(f.Lengths[j - 1], f.Lengths[j]) : f.Lengths[j - 1]);
+
+                float r = MeasureRadius(targets, f.Joints[j], axis, slab);
+                if (r <= Epsilon)
+                {
+                    error = $"関節 {j}（{model.GetMeshContext(bones[j])?.Name}）の輪切りに頂点がありません。";
+                    return false;
+                }
+                f.Radii[j]      = r;
+                f.HalfWidths[j] = Mathf.Min(widthFactor * r, limit);
+            }
+
+            frame = f;
+            return true;
+        }
+
+        /// <summary>関節を通る輪切り（|s| ≤ slab）に入る頂点の、軸からの最大距離。無ければ 0。</summary>
+        public static float MeasureRadius(List<MeshContext> targets, Vector3 joint, Vector3 axis, float slab)
+        {
+            float best = 0f;
+            if (targets == null) return 0f;
+            foreach (var mc in targets)
+            {
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+                for (int vi = 0; vi < mo.VertexCount; vi++)
+                {
+                    Vector3 d = mo.Vertices[vi].Position - joint;
+                    float   s = Vector3.Dot(d, axis);
+                    if (s < -slab || s > slab) continue;
+                    float r = (d - axis * s).magnitude;
+                    if (r > best) best = r;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>頂点の、列の始点からの道のり。</summary>
+        public static float PathCoordinate(SkinWeightChainFrame f, Vector3 x)
+        {
+            int   segs  = f.Lengths.Length;
+            float bestD = float.MaxValue;
+            float bestU = 0f;
+            for (int k = 0; k < segs; k++)
+            {
+                Vector3 d   = x - f.Joints[k];
+                float   t   = Vector3.Dot(d, f.Dirs[k]);
+                float   tc  = Mathf.Clamp(t, 0f, f.Lengths[k]);
+                float   dist = (d - f.Dirs[k] * tc).sqrMagnitude;
+                if (dist < bestD)
+                {
+                    bestD = dist;
+                    float tu = t;
+                    if (k > 0 && tu < 0f) tu = 0f;
+                    if (k < segs - 1 && tu > f.Lengths[k]) tu = f.Lengths[k];
+                    bestU = f.Cum[k] + tu;
+                }
+            }
+            return bestU;
+        }
+
+        /// <summary>道のり u での BoneWeight。</summary>
+        public static BoneWeight WeightAt(SkinWeightChainFrame f, float u)
+        {
+            int n = f.Bones.Length;
+            if (f.FullSmooth)
+            {
+                // 関節 Jk で骨 Bk が 100%、次の関節 Jk+1 へ向かって Bk+1 へ直線で移す（区間の中に 100% の平らな所を作らない）。
+                if (u <= 0f) return Pack(f.Bones[0], 1f, 0, 0f);
+                for (int k = 0; k < n - 1; k++)
+                {
+                    if (u > f.Cum[k + 1]) continue;
+                    float w = Mathf.Clamp01((u - f.Cum[k]) / f.Lengths[k]);
+                    return Pack(f.Bones[k + 1], w, f.Bones[k], 1f - w);
+                }
+                return Pack(f.Bones[n - 1], 1f, 0, 0f);
+            }
+            for (int j = 1; j < n; j++)
+            {
+                float h = f.HalfWidths[j];
+                if (h <= Epsilon) continue;
+                float a = f.Cum[j] - h;
+                float b = f.Cum[j] + h;
+                if (u < a || u > b) continue;
+                float w = Mathf.Clamp01((u - a) / (b - a));
+                return Pack(f.Bones[j], w, f.Bones[j - 1], 1f - w);
+            }
+            int owner = 0;
+            for (int j = 1; j < n; j++) if (u >= f.Cum[j]) owner = j;
+            return Pack(f.Bones[owner], 1f, 0, 0f);
+        }
+
+        private static BoneWeight Pack(int b0, float w0, int b1, float w1)
+        {
+            var slots = new (int idx, float w)[4] { (b0, w0), (b1, w1), (0, 0f), (0, 0f) };
+            return SkinWeightOps.SortBoneWeight(SkinWeightOps.Pack(slots));
+        }
+
+        /// <summary>1 メッシュの全頂点へ適用する。Undo・同期は呼び出し側。</summary>
+        public static int ApplyToMesh(MeshContext mc, SkinWeightChainFrame f)
+        {
+            var mo = mc?.MeshObject;
+            if (mo == null || mo.SkinKind != SkinKind.Skinned) return 0;
+            int count = 0;
+            for (int vi = 0; vi < mo.VertexCount; vi++)
+            {
+                var v = mo.Vertices[vi];
+                v.BoneWeight = WeightAt(f, PathCoordinate(f, v.Position));
+                count++;
+            }
+            if (count > 0) mo.RecomputeSkinKind();
+            return count;
+        }
+
+        // ================================================================
+        // 既存モデルの関節ぼかしを測る（ゼロちゃんなどの手本を調べる）
+        // ================================================================
+
+        /// <summary>測定結果。</summary>
+        public struct BlendMeasure
+        {
+            /// <summary>関節の太さ（輪切りの最大距離）。</summary>
+            public float Radius;
+            /// <summary>混ざっている頂点の、関節からの軸方向の最小・最大。</summary>
+            public float SMin, SMax;
+            /// <summary>混ざっている頂点の数。</summary>
+            public int   BlendCount;
+            /// <summary>輪切りに入った頂点の数。</summary>
+            public int   SliceCount;
+            /// <summary>軸に使った区間の長さ（axisFrom の関節〜関節）。</summary>
+            public float BoneLength;
+        }
+
+        /// <summary>
+        /// 関節 joint（軸は axisFrom の関節→joint の向き）について、側 A のボーン群と側 B のボーン群の
+        /// ウェイトの合計が 0.99 以上の頂点を関係する頂点とし、
+        /// ・輪切り（|s| ≤ sliceRatio × ボーンの長さ）に入る関係頂点の軸からの最大距離
+        /// ・B の合計が (eps, 1-eps) に入る関係頂点の s の最小・最大
+        /// を返す。対象は全メッシュのうちスキンドのもの。
+        /// </summary>
+        public static bool Measure(
+            ModelContext model, int joint, int axisFrom, int[] sideA, int[] sideB, float sliceRatio,
+            out BlendMeasure m, out string error)
+        {
+            m = default;
+            error = null;
+            var jb = model?.GetMeshContext(joint);
+            var ab = model?.GetMeshContext(axisFrom);
+            if (jb == null || ab == null) { error = "ボーンが見つかりません。"; return false; }
+            Vector3 J = SkinWeightVolumeOps.BindJointPosition(jb);
+            Vector3 P = SkinWeightVolumeOps.BindJointPosition(ab);
+            float   L = (J - P).magnitude;
+            if (L <= Epsilon) { error = "関節が同じ位置にあります。"; return false; }
+            Vector3 axis = (J - P) / L;
+            float slab = sliceRatio * L;
+            const float eps = 0.01f;
+
+            m.BoneLength = L;
+            m.SMin = float.MaxValue;
+            m.SMax = float.MinValue;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                var mo = mc?.MeshObject;
+                // SkinKind では絞らない：ウェイトを持つ頂点はバインド空間（ワールド）にある前提で読む。
+                if (mo == null || mc.Type == MeshType.Bone) continue;
+                for (int vi = 0; vi < mo.VertexCount; vi++)
+                {
+                    var v = mo.Vertices[vi];
+                    if (!v.HasBoneWeight) continue;
+                    var bw = v.BoneWeight.Value;
+                    float wa = 0f, wb = 0f;
+                    foreach (int b in sideA) wa += SkinWeightVolumeOps.BoneWeightOf(bw, b);
+                    foreach (int b in sideB) wb += SkinWeightVolumeOps.BoneWeightOf(bw, b);
+                    if (wa + wb < 0.99f) continue;
+
+                    Vector3 d = v.Position - J;
+                    float   s = Vector3.Dot(d, axis);
+                    if (s >= -slab && s <= slab)
+                    {
+                        float r = (d - axis * s).magnitude;
+                        if (r > m.Radius) m.Radius = r;
+                        m.SliceCount++;
+                    }
+                    if (wb > eps && wb < 1f - eps)
+                    {
+                        m.BlendCount++;
+                        if (s < m.SMin) m.SMin = s;
+                        if (s > m.SMax) m.SMax = s;
+                    }
+                }
+            }
+            if (m.BlendCount == 0) { m.SMin = 0f; m.SMax = 0f; }
+            return true;
+        }
+    }
 }

@@ -79,6 +79,8 @@ namespace Poly_Ling.EditorBridge
             Debug.LogError($"{Prefix}: CopySerializedはできません");
         }
 
+        public void SetDirty(Object obj) { }
+
         public void ImportAsset(string path)
         {
             Debug.LogWarning($"{Prefix}: ImportAssetは無効です ({path})");

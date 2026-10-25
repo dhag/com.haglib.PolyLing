@@ -56,6 +56,9 @@ namespace Poly_Ling.EditorIO
         /// <summary>Avatar の生成結果（未実行なら null）。</summary>
         public string AvatarResult;
 
+        /// <summary>揺れもの（スプリングボーン）を付けた結果（揺れものが無い・未実行なら null）。</summary>
+        public string SpringBoneResult;
+
         /// <summary>
         /// 書き出したレポートテキストのパス（未書き出しなら null）。
         /// ダイアログはコンソールの代わりにここを案内する。
@@ -82,6 +85,7 @@ namespace Poly_Ling.EditorIO
             SupplementedJointCount    = 0;
             BoneCount                 = 0;
             AvatarResult              = null;
+            SpringBoneResult          = null;
             LogFilePath               = null;
         }
 
@@ -143,6 +147,9 @@ namespace Poly_Ling.EditorIO
             if (!string.IsNullOrEmpty(AvatarResult))
                 sb.AppendLine($"Avatar: {AvatarResult}");
 
+            if (!string.IsNullOrEmpty(SpringBoneResult))
+                sb.AppendLine($"揺れもの: {SpringBoneResult}");
+
             AppendSection(sb, "エラー", _errors);
             AppendSection(sb, "警告",   _warnings);
             AppendSection(sb, "補足",   _notes);
@@ -187,6 +194,7 @@ namespace Poly_Ling.EditorIO
             sb.AppendLine($"不可視でスキップ            : {SkippedInvisibleCount}");
             sb.AppendLine($"不足する必須関節を補完      : {SupplementedJointCount}");
             sb.AppendLine($"Avatar                      : {(string.IsNullOrEmpty(AvatarResult) ? "(未実行)" : AvatarResult)}");
+            sb.AppendLine($"揺れもの                    : {(string.IsNullOrEmpty(SpringBoneResult) ? "(なし)" : SpringBoneResult)}");
 
             AppendFullSection(sb, "エラー", _errors);
             AppendFullSection(sb, "警告",   _warnings);

@@ -116,6 +116,14 @@ namespace Poly_Ling.Data
         [PLParam(Description = "取り付け先を取り込み元の親から決める。true のとき attachMasterIndex は使わない")]
         public bool AttachToSourceParent { get; }
 
+        /// <summary>
+        /// 新しく作った鎖の根元を、名前がこの接頭辞で始まるボーンのうち最も近いものへ付け替える。空で付け替えない。
+        /// エプロンの縁のフリルのように、別の揺れもの（スカートの鎖）に乗って動く鎖に使う。
+        /// 取り付け先は 1 本しか指定できないので、鎖ごとに近いボーンを選ぶにはこれが要る。
+        /// </summary>
+        [PLParam(Description = "新しく作った鎖の根元を、名前がこの接頭辞で始まるボーンのうち最も近いものへ付け替える。空で付け替えない")]
+        public string AttachNearestPrefix { get; }
+
         public PlaceSpringBoneLadderChainsCommand(
             int modelIndex,
             int sourceMasterIndex,
@@ -134,10 +142,12 @@ namespace Poly_Ling.Data
             int[] chainRootMasterIndices = null,
             bool keepAsGroup = false,
             bool makeMirrorChains = false,
-            bool attachToSourceParent = false)
+            bool attachToSourceParent = false,
+            string attachNearestPrefix = "")
             : base(modelIndex)
         {
             AttachToSourceParent = attachToSourceParent;
+            AttachNearestPrefix  = attachNearestPrefix ?? "";
             SourceMasterIndex = sourceMasterIndex;
             Method            = method;
             Mode              = mode;

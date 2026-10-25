@@ -43,6 +43,7 @@ namespace Poly_Ling.Player
                 case LoadMotionClipJsonCommand c:  RunLoadMotionClipJson(c);  return true;
                 case QueryMotionClipJsonCommand _: RunQueryMotionClipJson();  return true;
                 case SaveMotionClipJsonCommand c:  RunSaveMotionClipJson(c);  return true;
+                case CreateLipSyncFromVoicevoxCommand c: RunCreateLipSyncFromVoicevox(c); return true;
                 default: return false;
             }
         }
@@ -111,6 +112,53 @@ namespace Poly_Ling.Player
                 .Text("path",        outPath)
                 .Text("name",        h.Clip.name ?? "")
                 .Num ("durationSec", MotionClipSerializer.Length(h.Clip))
+                .Build());
+        }
+
+        // createLipSyncFromVoicevox：VOICEVOX の audio_query から母音の表情トラックを作り、窓口のクリップへ入れる。
+        private void RunCreateLipSyncFromVoicevox(CreateLipSyncFromVoicevoxCommand cmd)
+        {
+            var h = GetMotionClipHandler?.Invoke();
+            if (h == null) { _pendingResult = CommandResult.Fail("モーションの試し再生の窓口がありません", CommandErrorCodes.NotReady); return; }
+            if (string.IsNullOrWhiteSpace(cmd.Text))
+            { _pendingResult = CommandResult.Fail("text が空です", CommandErrorCodes.InvalidArgs); return; }
+            if (cmd.StartTime < 0f)
+            { _pendingResult = CommandResult.Fail($"startTime が {cmd.StartTime} です", CommandErrorCodes.InvalidArgs); return; }
+            if (cmd.Weight < 0f || cmd.Weight > 1f)
+            { _pendingResult = CommandResult.Fail($"weight は 0～1（{cmd.Weight}）", CommandErrorCodes.InvalidArgs); return; }
+
+            string[] names = { cmd.NameA, cmd.NameI, cmd.NameU, cmd.NameE, cmd.NameO };
+
+            string json = VoicevoxLipSync.QueryAudio(cmd.Host, cmd.Text, cmd.Speaker, Math.Max(100, cmd.TimeoutMs), out string qErr);
+            if (json == null) { MotionFail(qErr); return; }
+
+            var segs = VoicevoxLipSync.ParseSegments(json, cmd.StartTime, out string pErr);
+            if (segs == null) { MotionFail(pErr); return; }
+
+            var keys  = VoicevoxLipSync.BuildKeys(segs, cmd.Weight);
+            float start = segs[0].Start;
+            float end   = segs[segs.Count - 1].End;
+
+            System.Collections.Generic.List<string> written = null;
+            h.EditClip(dto => { written = VoicevoxLipSync.MergeInto(dto, names, keys, start, end); }, "LipSync", start);
+            if (!string.IsNullOrEmpty(h.Error)) { MotionFail($"クリップへ入れられません: {h.Error}"); return; }
+
+            int moraCount = 0;
+            foreach (var s in segs) if (s.Phoneme != "sil") moraCount++;
+
+            var unresolved = new System.Collections.Generic.List<string>();
+            var model = h.GetModel?.Invoke();
+            if (model != null && written != null)
+                foreach (var n in written)
+                    if (MotionClipApplier.FindExpression(model, n) == null) unresolved.Add(n);
+
+            ReportData(CommandDataJson.New()
+                .Int ("moraCount",  moraCount)
+                .Num ("startSec",   start)
+                .Num ("endSec",     end)
+                .Text("phonemes",   VoicevoxLipSync.FormatSegments(segs))
+                .Text("tracks",     written == null ? "" : string.Join(",", written))
+                .Text("unresolved", string.Join(",", unresolved))
                 .Build());
         }
 

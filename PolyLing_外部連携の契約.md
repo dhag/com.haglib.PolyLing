@@ -59,7 +59,9 @@ Python・ブラウザ・mocopi アプリなど、PolyLing の外のプログラ�
 ```
 {"id":"<任意>","type":"command","action":"<コマンド名>","params":{"modelIndex":"0","wantRevision":"1"?, "<引数>":"<値>", …}}
 ```
-query は `{"type":"query","target":"meshList" など,"fields":[…]}`。push は `{"type":"push","event":"…","data":{…}}`。
+query は `{"type":"query","target":"meshList" など,"params":{…}?,"fields":[…]?}`。push は `{"type":"push","event":"…","data":{…}}`。
+テキストで返る query の target：`meshList`・`meshData`（params.index）・`modelInfo`（`modelCount`・`currentModelIndex`・`meshCount`・`selectedMeshIndices` など）・`availableFields`・`server_info`・`ownership`、
+およびコマンドの検索と説明 `tools_search`・`tools_describe`・`scenes`（`RemoteServerCore.ProcessCatalogQuery`。params と data の中身は MCP の制御プロトコルの同名の action と同じ：`PolyLingControlProtocol.cs` の冒頭）。`project_header`・`mesh_data` などはバイナリで返る。
 
 ### 3.3 応答の欄（両方で共通。`Core/Data/CommandResultJson.cs`）
 
@@ -122,7 +124,7 @@ MCP の `call` はこれらを応答の直下に、リモートの `command` は
 ```
 返事の data は受け手が決める（Blender ブリッジは `{"object":"<Blender のオブジェクト名>"}`）。
 
-Blender ブリッジ（`データとツール/poly_ling_py/polyling_bridge.py`）の決まり：
+Blender ブリッジ（PolyLing IO アドオンの `データとツール/poly_ling_py/polyling_io/blender/bridge.py`。通信は bpy を使わない `polyling_io/net/` で、素の Python からも同じ `PolyLingClient` を使える〔既定の clientType は `python`、capabilities は空〕）の決まり：
 - clientType `blender`、userName はホストと同じ名前（PolyLing の選択をそのまま使う）、capabilities `putMesh`。
 - Blender (x, y, z) ⇔ PolyLing (x, z, y)。面の頂点の並びは逆にする。Blender → PolyLing は配置（matrix_world）を頂点へ焼いて送る。PolyLing → Blender は配置を単位行列にして置く。
 - PolyLing の番号はカスタムプロパティ `polyling_object_id` / `polyling_master_index` / `polyling_model_index` に持つ。同じ `polyling_object_id` のオブジェクトはメッシュを置き換える。
@@ -142,8 +144,8 @@ Blender ブリッジ（`データとツール/poly_ling_py/polyling_bridge.py`�
 `saveMotionClipJson` の結果：`path`（実際に書いた経路）・`name`・`durationSec`。
 元ファイルとその種類は窓口 `motionClip` の状態 `sourcePath`・`sourceKind` だけが持ち、パネルはそれを読む。
 
-Blender ブリッジ（`polyling_bridge.py`）の決まり：
-- モーションの変換は Blender アドオン PolyLing IO（`polyling_io`、§5.1・§7）の `blender/motion.py` をそのまま使う（`export_motion_text`・`import_motion_text`。ファイルの読み書き〔`export_motion`・`import_motion`〕と同じ処理で、文字列は `.plmotion.json` のファイルとバイト単位で同じ）。PolyLing IO が入っていない・有効でなければモーションのボタンだけが失敗する。PolyLing IO はモジュール名 `polyling_io`（入れたフォルダ名）で探す。
+Blender ブリッジ（`polyling_io/blender/bridge.py`）の決まり：
+- モーションの変換は同じアドオンの `blender/motion.py` をそのまま使う（`export_motion_text`・`import_motion_text`。ファイルの読み書き〔`export_motion`・`import_motion`〕と同じ処理で、文字列は `.plmotion.json` のファイルとバイト単位で同じ）。
 - 対象のアーマチュアは §5.1 と同じ（選んだオブジェクトがアーマチュア・その親・Armature 修飾子の相手）。オブジェクトモードかポーズモードで使う。
 - 送信（パネルの「送る」）：今のアクションを §5.1 の書き出しの決まりで文字列にして `loadMotionClipJson` で送る。`time` は今のフレームの時刻（(今のフレーム − 開始) ÷ fps。開始・fps も §5.1 の書き出しと同じ）。
 - 取得（パネルの「取得」）：`queryMotionClipJson` の `motionJson` を §5.1 の読込の決まりでアクションにする（名前はクリップの `name`、無ければ結果の `name`、それも無ければ "PolyLing"）。選べること（腰の回転と位置も当てる・脚も T ポーズに合わせる・シーンの fps と範囲を合わせる）と既定値は §5.1 の読込と同じ。
@@ -204,7 +206,7 @@ Blender ブリッジ（`polyling_bridge.py`）の決まり：
  "lookAt":トラック|null, "lookAtOffsetFromHeadBone":[x,y,z]|null, "absentMuscles":"zero"|"rest"|null,
  "rotationSource":"muscles"|"bakedBones"|null,
  "muscles":[{"name":"<HumanTrait.MuscleName>","keys":[{"t":秒,"v":値,"tan":…?}], "preWrapMode":…, "postWrapMode":…}],
- "expressions":[{"name":"…","category":…,"provider":…,"keys":[…]}],
+ "expressions":[{"name":"…","category":…,"provider":…,"path":…?,"keys":[…]}],
  "metadata":{"author":…,"description":…,"createdWith":…}}
 ```
 トラック：`{"id":"…","targetKind":"…","keys":[{"t":秒,"pos":[3]?,"rot":[4]?,"scl":[3]?,"posTan":…,"rotTan":…,"sclTan":…}],"preWrapMode":…,"postWrapMode":…}`
@@ -311,7 +313,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 **書式**（`format/plmotion.py`。`MotionClipSerializer.ToJson` と同じ形）
 
 - Newtonsoft の Indented（2 字下げ、`": "`）、null の欄は書かない（配列の要素の null は残す）、BOM なし UTF-8、改行 CRLF。書く前に検査し、エラーがあれば書かない。
-- 欄の順は DTO の宣言順（クリップは format・version・name・frameRate・duration・space・loop・bones・expressions・muscles・body・bakedBones・lookAt・lookAtOffsetFromHeadBone・absentMuscles・rotationSource・metadata）。表情トラックは category・provider が先。知らない欄は既知の欄の後ろに元の順で書く（C# は読まないので捨てる）。
+- 欄の順は DTO の宣言順（クリップは format・version・name・frameRate・duration・space・loop・bones・expressions・muscles・body・bakedBones・lookAt・lookAtOffsetFromHeadBone・absentMuscles・rotationSource・metadata）。表情トラックは category・provider・path が先（path は provider "blendShape" のときのレンダラーの Transform パス。省略可。同じ name でも path が違えば別のトラック。PolyLing のモデルへの適用は name だけで引き、同じ name は先の 1 本だけを当てる）。知らない欄は既知の欄の後ろに元の順で書く（C# は読まないので捨てる）。
 - DTO が初期値を持つ欄（format・version・frameRate・duration・space・loop・bones・expressions・muscles・bakedBones、トラックの targetKind・keys、キーの t・v）は無くても書く。version は常に 4。
 - float の欄：float32 に丸め、G7 で戻ればその 10 進、だめなら G9（ちょうど半分は 0 から遠い側へ）。整数値には `.0` を付ける。0 と −0 は `0.0`。知らない欄の数は最短往復の 10 進。
 
@@ -348,6 +350,7 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 - x, y, z はライブの landmarks と同じ正規化座標。
 - 三角形 JSON：`{"triangle_count":n,"vertex_count":n,"triangles":[[i0,i1,i2,…], …]}`（3 点以上の多角形も可）。
 - 注意：能面 JSON の書き出し（NohMaskMeshExporter）は任意メッシュの頂点位置をそのまま x, y, z に書く。そのファイルの x, y, z は正規化座標ではない。
+- 顔メッシュの生成（`createNohMask`、`NohMaskMeshGenerator.Generate`）は、`image.width`・`height` があれば y に 高さ/幅 を掛けて画素の縦横比に戻す（x・z は幅の尺度のまま）。UV は `(x, 1−y)` なので元画像がそのまま貼れる。大きさの無いファイルは比 1。
 
 ---
 
@@ -357,9 +360,11 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 
 ### 7.1 置き場所・入れ方・入口
 
-- 置き場所 `データとツール/poly_ling_py/polyling_io/`（Blender ブリッジ `polyling_bridge.py` とは別のアドオン）。名前「PolyLing IO」、Blender 3.6 以上、分類 Import-Export。
+- 置き場所 `データとツール/poly_ling_py/polyling_io/`（Blender ブリッジ〔§3.6・§3.7〕も含む 1 つのアドオン）。名前「PolyLing IO」、Blender 3.6 以上、分類 Import-Export。
   - `format/`：bpy を使わない層。`.mfproj`・CSV フォルダ ⇔ `ProjectDTO` と同じ形の辞書（JSON の欄名そのまま。CSV にしか無い情報は `_csv` で始まる欄）、`.plmotion.json` ⇔ `MotionClipDTO` と同じ形の辞書。知らない欄・行は捨てずに書き戻す。素の Python でも使える。
-  - `blender/`：辞書 ⇔ Blender。
+  - `net/`：bpy を使わない層。リモートサーバとの通信（サーバ一覧・WebSocket・封筒・コマンド）。素の Python でも使える。
+  - `blender/`：辞書・通信 ⇔ Blender（`bridge.py` がブリッジ）。
+- 素の Python から使う：`データとツール/poly_ling_py` で `python -m pip install -e .`（`setup.py`）。例は `examples/send_mesh.py`。
 - 入れ方：`polyling_io` フォルダをフォルダごと zip にし、Blender の［編集 > プリファレンス > アドオン］で入れて有効にする（3.6〜4.1 は「インストール…」、4.2 以降は右上のメニューの「Install from Disk」）。`polyling_io` フォルダを Blender のアドオンのフォルダに置いてもよい。
 - 入口：
 
@@ -460,6 +465,49 @@ Blender ブリッジのモーションの送信・取得（§3.7）も同じ処�
 - **`morphgroups.csv`**：行は `名前,英語名,panel,type,エントリの数,<メッシュ>:<重み>…`。グループの子（`MorphExpression.GroupChildren`）があれば、エントリの後ろに `,<子の数>,<名前>:<重み>…` を足す（子 1 つが 1 欄。`名前:重み` を 1 つの値として CSV の引用の決まりで書く。名前と重みは最後の `:` で分ける）。子が無ければ何も足さない（以前と同じ行）。子の欄の無い行は子 0 件として読む。
 - **グループの子の置き場所**：`.mfproj` は `MorphExpressionDTO.groupChildren`（`[{"name":…, "weight":…}]`。子が無ければ欄ごと省く）、転送（PLRM）は v10 で表情ごとに子の一覧、CSV は上の `morphgroups.csv`。`groupChildren` は PMX 書き出しがグループモーフを作るのに使う。表情の再生・パネルの試し当て・Blender の表情の割り当て（§5.1）は `meshEntries` を使う。
 - **`mirrorGeometryDerived`**（メッシュの行）：索引モードでも名前モードでも書く（参照ではない値。読みは両方のモードで読む）。
+
+---
+
+## 7b. Python の PolyLing アドオン（`データとツール/poly_ling_py/polyling_io/addon/`）
+
+Unity Editor を持たない人が、動いている PolyLing（ビルド版でもエディタでもよい）を外の Python プログラムから操作するための土台。bpy を使わない。通信はリモート（3.2〜3.4）。
+
+- 入れ方：`データとツール/poly_ling_py` で `python -m pip install -e .`。PolyLing 側はリモートサーバを開始し、作業フォルダを設定しておく。Python と PolyLing は同じ PC で動かす（ファイルを同じパスで見る）。
+- 入口：`from polyling_io.addon import Session`。`with Session("<アドオン名>") as s:` でサーバ一覧の先頭へつなぐ（register の clientType は `python-addon`、userName はホストと同じ名前）。
+- コマンド：`s.call("<コマンド名>", 引数=値, …)`。値は文字列にして送る（配列はカンマ区切り、真偽は true/false、入れ子の辞書は `params.xxx`）。応答は `Reply`（`result`・`master_index` など）。引数の形は `s.search("やりたいこと")`・`s.describe("<コマンド名>")`（3.2 の `tools_search`・`tools_describe`）。
+- モデル：コマンドは `s.model_index` へ送る。`s.new_model()`（`createEmptyModel`）、`s.use_current_model()`（照会 `modelInfo` の `currentModelIndex`。`importMqoFile` などの NewModel で増えたモデルは応答に番号が出ないのでこれで引く）。
+- 作業フォルダ：コマンド `queryWorkFolder`（`isSet`・`path`・`topFolders`）で引く。コマンドが読み書きできるのは作業フォルダの下だけで、根の直下には新しいものを作れない（`PLSandbox`）ので、アドオンの置き場所は `<作業フォルダ>/SandBox/PyAddon/<アドオン名>/`（`s.folder`・`s.path()`・`s.rel()`・`s.copy_in()`）。
+- データの受け渡しは 2 通り：
+  | 方法 | 取得 | 戻し | 性質 |
+  |---|---|---|---|
+  | メッシュ単位 | `s.get_mesh(masterIndex)`（`getRawData` を 20000 件ずつ取り切る） | `put_positions`（`setVertexPositions`）・`put_uvs`（`applyUVChanges`）・`add_mesh`（`addMeshFromArrays`） | 座標は PolyLing のまま（ローカル）。Undo に残る |
+  | ファイル往復 | `s.get_project()`（`saveProjectFile` → `polyling_io.format` で辞書） | `s.put_project(辞書)`（`.mfproj` を書いて `loadProjectFile`） | 全項目を扱える。読ませるとプロジェクトが置き換わる（Undo では戻らない） |
+- 材質：`addMaterialSlot` は足した枠の番号 `slotIndex`（と `materialCount`）を返す。
+- 手本：`examples/addons/smooth_mesh.py`（メッシュ単位）、`examples/addons/center_line.py`（ファイル往復）、`examples/mediapipe_face_to_polyling.py`（画像の顔 → 顔メッシュ・テクスチャ・下絵。下の常駐にも対応）。
+
+### 7b-2. PolyLing の画面から呼ぶアドオン（常駐。`polyling_io/addon/service.py`、C# は `Runtime/Poly_Ling_Player/PyAddon/`）
+
+- 書き方：`Addon(id, title, run, args=[Arg(…), …])` を作り、`ADDON.main()` を呼ぶ。`run(session, args, log)` は引数の辞書を受け、経過を `log(…)` で出し、辞書（`result`）を返す。同じスクリプトが端末（`python x.py 引数…`。argparse は Arg から作る）と常駐（`--serve --port N`）の両方で動く。
+- 引数の宣言 `Arg(name, type, label, default, choices, filter, help, required, min, max, positional)`。type は text / number / int / bool / choice / file / folder。file・folder の値は絶対パス（作業フォルダの外でもよい。読むのは Python）。
+- 常駐の約束（PolyLing → アドオンの要求、3.4 の requestClient と同じ封筒）：
+  | action | params | 返事の data |
+  |---|---|---|
+  | `<id>.describe` | なし | `{specVersion:1, id, title, description, args:[{name,type,label,default,required,choices?,filter?,help?,min?,max?}]}` |
+  | `<id>.run` | `{args:{名前:値…}, modelIndex}` | `{message, log:[…], result:{…}}`。失敗は error（経過を後ろに付ける）と code（引数の誤りは invalidArgs、実行中は busy） |
+  | `<id>.quit` | なし | `{quitting:true}` の後に終わる |
+  register の capabilities はこの 3 つ。要求は別スレッドで 1 件ずつ処理する。PolyLing との接続が切れたら終わる。
+- PolyLing 側（`PyAddonHost`）：起動中かは登録簿に `<id>.run` を申告した接続があるか。無ければ venv の python でスクリプトを `--serve --port <リモートサーバのポート>` 付きの子プロセスとして起動し（作業フォルダは poly_ling_py、`PYTHONIOENCODING=utf-8`・`PYTHONUNBUFFERED=1`、venv の Scripts を PATH の先頭へ）、register の通知（`ClientsChanged`）で待っていた呼び出しを送る。起動の上限は 60 秒。出力は統合ログ（カテゴリ PyAddon）。PolyLing の終了で子プロセスを終わらせる。
+- 登録簿と設定：`persistentDataPath/PolyLing/PyAddons.json`（`root`・`python`・`user`・`specs`・`lastArgs`）。公式アドオンは C# の表 `PyAddonSettings.OfficialAddons`（今は `mediapipe_face` → `examples/mediapipe_face_to_polyling.py`）。自作は画面から登録し、id はスクリプトのファイル名。Python 環境と登録は起動するプログラムを決める設定なので、作業フォルダと同じくコマンドにせず画面（ダイアログ）だけで変える。
+- コマンド：`queryPyAddons`（一覧と状態 stopped / starting / running / failed）、`startPyAddon`・`stopPyAddon`（addonId）、`invokePyAddon`（addonId・action run / describe・argsJson・timeoutMs。起動していなければ起動してから送り、呼び出しの番号 callNo を返す）、`queryPyAddonCall`（callNo → status starting / pending / done / failed・data・error・code）。
+- 画面：左ペイン「Python アドオン」にアドオンごとのボタン（UI 自動操作の ID `leftPane.pyAddon.<id>`）と「アドオンの設定・一覧」。右ペインのパネル（`pyAddon.*`）はアドオンの宣言から引数の欄（`pyAddon.arg.<name>`、ファイル選択 `pyAddon.pick.<name>`）を作り、「実行」で `invokePyAddon` を流す。
+- 出力の宣言：`Addon(…, outputs=[Out(name, description), …])`（省いてよい）。describe の返事に `outputs:[{name, description}]` として載る。
+- 「呼べるもの」の一覧：tools_search の kind に `addon` がある（コマンド・シナリオと同じ列。`addonTotal`。分類・フォルダ・利用シーンで絞ったときは出ない）。
+  当たりは `{kind:"addon", name:<id>, summary, state, hasSpec}`。tools_describe は `addons`（id のカンマ区切り）で `{name, title, description, official, state, hasSpec, args, outputs, invoke}` と `addonNotFound` を返す。
+  宣言は describe で受けて保存したもの（一度も起動していなければ hasSpec=false）。queryPyAddons の各要素にも `args` / `outputs` が載る。
+  MCP からは polyling_search（kind `addon`）で探し、polyling_describe の `addons`（id の配列）で引く。件数の上限 10 はコマンド・シナリオと合わせた数。
+- `invokePyAddon` の `argKeys` / `argValues`：引数を 1 つずつ渡し、argsJson に重ねる。シナリオの項目では要素ごとに `${引数}` / `@prev.<キー>` が置き換わる。
+- シナリオの項目にした `invokePyAddon` は返事を待つ（`stop=waiting`。`PolyLing_追加作業の必読.md` の D 節）。控えは `result` の欄＋`message`。
+- mediapipe（C++）には Windows で日本語などを含むパスを渡さない。`polyling_io.mediapipe` はモデルと画像を Python で読んで渡す（`model_asset_buffer`・`cv2.imdecode`）。
 
 ---
 

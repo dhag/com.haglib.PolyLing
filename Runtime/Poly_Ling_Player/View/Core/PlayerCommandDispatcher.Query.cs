@@ -383,7 +383,8 @@ namespace Poly_Ling.Player
                     CreateBeltPrimitiveCommand.SplitBelts(
                         acquired.Belts.ToArray(),
                         out var bLeft, out var bRight, out var bStarts,
-                        out var bClosed, out var bFlip, out var bHeight);
+                        out var bClosed, out var bFlip, out var bHeight,
+                        out var bStartPts, out var bHasStart, out var bEndPts, out var bHasEnd);
 
                     var rungs = new List<int>();
                     for (int i = 0; i < bStarts.Length; i++)
@@ -403,6 +404,10 @@ namespace Poly_Ling.Player
                         .Ints ("beltClosed",      BoolsToInts(bClosed))
                         .Ints ("beltFlipWinding", BoolsToInts(bFlip))
                         .Nums ("beltHeightScale", bHeight)
+                        .Nums ("beltStartPoints",   bStartPts)
+                        .Ints ("beltHasStartPoint", BoolsToInts(bHasStart))
+                        .Nums ("beltEndPoints",     bEndPts)
+                        .Ints ("beltHasEndPoint",   BoolsToInts(bHasEnd))
                         .Ints ("rungCounts",      rungs)
                         .Build(),
                         new[] { abModel.MeshContextList.IndexOf(abMc) },

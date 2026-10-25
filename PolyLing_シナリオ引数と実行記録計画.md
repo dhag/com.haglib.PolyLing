@@ -84,6 +84,16 @@ resolve は子の ${seg} を親の ${seg} に置き換えて返す。展開も�
 - タスクの区切り：`beginTask`（目標・条件の文）、`endTask`（判定：成功・修正・失敗、一言）。
 - 記録あり・なしで同じシナリオを流して時間を比べ、既定を入にするか決める。
 
+## 4b. 出力（戻り値）と Python アドオンの項目（済 2026-10-23）
+
+- シナリオに出力を宣言できる（`ScenarioOutput`。`setScenarioOutput` / `removeScenarioOutput`、CSV の `gr` 行・DTO の `scenarioOutputs`）。
+  流し終えたら `outputs` で返し、参照項目で呼ばれたときは親の参照項目の戻り値になる。
+- `invokePyAddon` の項目は `stop=waiting` で返事を待ち、返事を控えて先へ進む。案内バーは自動で続ける。
+- 文字列の配列の引数は要素ごとに `${名前}` / `@…` を置き換える。`@…` で引いた文字列はエスケープを戻して渡す。
+- 確かめたこと：子の出力を親で `@p1.folder` / `@p1.tag` で引き、親の出力に返る。宣言の無い名前は監査（unknownChildOutput）と流したとき（失敗）の両方で出る。
+  MediaPipe アドオンを describe → run（argValues に `${img}`）→ getRawData（`@a2.masterIndex`）と流し、MCP（continueScenario）と案内バーの両方で最後まで流れた。
+- 詳しい規則は `Runtime/PolyLing_追加作業の必読.md` の D 節。
+
 ## 5. 各段の終わり
 
 - 3 つの csproj をコンパイル、`unity_validate_changes`、Play で確かめる、キャプチャ。

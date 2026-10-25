@@ -374,7 +374,11 @@ namespace Poly_Ling.Tools.SpringBoneRig
                     result.MirrorChains.AddRange(upMirror);
 
                     if (canPaint)
+                    {
                         result.WeightedVertexCount = PaintWeights(mesh, result.Chains, weights);
+                        if (mode == SpringBoneLadderMode.Stack)
+                            result.WeightedVertexCount += PaintRootCap(model, mesh, bundles, result.Chains);
+                    }
 
                     result.Ok      = true;
                     result.Updated = true;
@@ -444,7 +448,11 @@ namespace Poly_Ling.Tools.SpringBoneRig
 
             // ── ウェイト ──
             if (canPaint)
+            {
                 result.WeightedVertexCount = PaintWeights(mesh, result.Chains, weights);
+                if (mode == SpringBoneLadderMode.Stack)
+                    result.WeightedVertexCount += PaintRootCap(model, mesh, bundles, result.Chains);
+            }
 
             result.Ok        = true;
             result.Recreated = recreateWhy != null;
@@ -863,8 +871,11 @@ namespace Poly_Ling.Tools.SpringBoneRig
         // ボーンの組み立て
         // ================================================================
 
-        /// <summary>ミラー側の鎖の名前に付ける接尾辞。</summary>
-        private const string MirrorSuffix = "_M";
+        /// <summary>
+        /// ミラー側の鎖の名前に付ける接尾辞（接頭辞の直後に付く）。
+        /// 名前から鎖を拾う SpringBoneChainNaming もこの値を読む。
+        /// </summary>
+        public const string MirrorSuffix = "_M";
 
         /// <summary>
         /// 計画からボーン鎖を作る。xform は位置に掛ける写し行列
@@ -975,6 +986,63 @@ namespace Poly_Ling.Tools.SpringBoneRig
         /// ボーンの左右の相方を引く。無ければ元の索引をそのまま返す
         /// （中心のボーンに取り付けたときは左右で同じ親になる）。
         /// </summary>
+        /// <summary>
+        /// 鎖の根元を、名前が prefix で始まるボーンのうち根元に最も近いものへ付け替える。
+        /// 見た目の位置は変えない（根元の位置を新しい親からの差に直す）。戻り値は付け替えた本数。
+        ///
+        /// 【なぜ要るか】
+        ///   エプロンの縁のフリルは、エプロン本体と同じくスカートの鎖に乗って動く必要がある。
+        ///   取り付け先は 1 本しか指定できず、鎖ごとに違うスカートの関節へ付けられない。
+        ///   自分の鎖のボーンは候補から外す。
+        /// </summary>
+        public static int ReattachRootsToNearest(ModelContext model, IList<List<int>> chains, string prefix)
+        {
+            if (model == null || chains == null || string.IsNullOrEmpty(prefix)) return 0;
+
+            model.ComputeWorldMatrices();
+
+            var own = new HashSet<int>();
+            foreach (var ch in chains) if (ch != null) foreach (int b in ch) own.Add(b);
+
+            var cand = new List<int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.Type != MeshType.Bone || own.Contains(i)) continue;
+                if (mc.Name != null && mc.Name.StartsWith(prefix, System.StringComparison.Ordinal))
+                    cand.Add(i);
+            }
+            if (cand.Count == 0) return 0;
+
+            int moved = 0;
+            foreach (var ch in chains)
+            {
+                if (ch == null || ch.Count == 0) continue;
+                var root = model.GetMeshContext(ch[0]);
+                if (root?.BoneTransform == null) continue;
+
+                Vector3 rootWorld = Origin(root.WorldMatrix);
+
+                int best = -1; float bestD = float.MaxValue;
+                foreach (int b in cand)
+                {
+                    float d = (Origin(model.GetMeshContext(b).WorldMatrix) - rootWorld).sqrMagnitude;
+                    if (d < bestD) { bestD = d; best = b; }
+                }
+                if (best < 0) continue;
+
+                root.HierarchyParentIndex  = best;
+                root.BoneTransform.Position = rootWorld - Origin(model.GetMeshContext(best).WorldMatrix);
+                moved++;
+            }
+
+            model.ComputeWorldMatrices();
+            foreach (var ch in chains)
+                if (ch != null && ch.Count > 0)
+                    SpringBoneChainPlacer.FixBindPoses(model, new List<List<int>> { ch });
+            return moved;
+        }
+
         private static int MirrorPeer(ModelContext model, int index)
         {
             if (index < 0 || index >= model.MeshContextCount) return index;
@@ -1090,6 +1158,30 @@ namespace Poly_Ling.Tools.SpringBoneRig
 
                 // 親は既にある鎖のものを使う。コマンドの取り付け先で付け替えると
                 // 鎖ごと動いてしまい、位置だけ直す操作にならない。
+                //
+                // 【例外：ミラー側の鎖を左右の相手の骨へ付け替える】
+                //   鎖を作るのはスキンド化の前で、そのとき取り付け先（ミラー分岐の中の
+                //   部品ノードなど）には左右の相手がまだ無い。MirrorPeer は親そのものを
+                //   返すので、ミラー側の鎖も実体側と同じ骨に付く（右足首のフリルが
+                //   左の @すね に付き、歩くと地面に残った）。スキンド化の後は相手
+                //   （@すね+ など）が MirrorBoneIndex に立つので、ここで付け替える。
+                //   実体側と同じ親に付いているときだけ直す。相手の無い親（頭など）は今のまま。
+                if (isMirror)
+                {
+                    var realChain  = found[c - plans.Count];
+                    int realParent = model.GetMeshContext(realChain[0])?.HierarchyParentIndex ?? -1;
+                    var rootMc     = model.GetMeshContext(chain[0]);
+                    if (rootMc != null && realParent >= 0 && rootMc.HierarchyParentIndex == realParent)
+                    {
+                        int peer = MirrorPeer(model, realParent);
+                        if (peer != realParent && peer >= 0)
+                        {
+                            rootMc.HierarchyParentIndex = peer;
+                            model.ComputeWorldMatrices();
+                        }
+                    }
+                }
+
                 int parentIndex = model.GetMeshContext(chain[0])?.HierarchyParentIndex ?? -1;
                 var parentCtx   = (parentIndex >= 0 && parentIndex < model.MeshContextCount)
                     ? model.GetMeshContext(parentIndex) : null;
@@ -1267,6 +1359,67 @@ namespace Poly_Ling.Tools.SpringBoneRig
             // 描画オブジェクトの種別を確定させる。
             if (count > 0) mesh.RecomputeSkinKind();
 
+            return count;
+        }
+
+        /// <summary>
+        /// 根元のふた（根元レールに辺で接する四角形以外の面）のうち、
+        /// レールに載っていない頂点（扇の中心など）を鎖の親ボーンへ 1.0 で塗る。
+        ///
+        /// 【なぜ要るか】
+        ///   はしごの取り込みは四角形だけを辿るので、ふたの頂点はどの線にも入らず
+        ///   ウェイトを受けない。ふたは根元の目印として残すので（BeltRingRootOrienter）、
+        ///   根元と同じく揺れない親ボーンに付けておく。
+        ///   根元の段は線の先頭（Nodes[0]）。reverseChain で入れ替えたときもそれに従う。
+        /// 戻り値は書き換えた頂点数。
+        /// </summary>
+        private static int PaintRootCap(
+            ModelContext model, MeshObject mesh, List<List<GridLine>> bundles, List<List<int>> chains)
+        {
+            if (model == null || mesh == null || bundles == null || chains == null || chains.Count == 0) return 0;
+
+            // 親ボーン。鎖はすべて同じ親へ付く（BuildChains / UpdateChains）。
+            int parent = model.GetMeshContext(chains[0][0])?.HierarchyParentIndex ?? -1;
+            var pc = (parent >= 0 && parent < model.MeshContextCount) ? model.GetMeshContext(parent) : null;
+            if (pc == null || pc.Type != MeshType.Bone) return 0;
+
+            var rail = new HashSet<int>();
+            foreach (var bundle in bundles)
+                foreach (var line in bundle)
+                    if (line.Count > 0 && line.Nodes[0].Verts != null)
+                        foreach (int v in line.Nodes[0].Verts) rail.Add(v);
+            if (rail.Count == 0) return 0;
+
+            var targets = new HashSet<int>();
+            for (int fi = 0; fi < mesh.FaceCount; fi++)
+            {
+                var vs = mesh.Faces[fi]?.VertexIndices;
+                if (vs == null || vs.Count == 4 || vs.Count < 3) continue;
+
+                bool onRail = false;
+                for (int k = 0; k < vs.Count; k++)
+                    if (rail.Contains(vs[k]) && rail.Contains(vs[(k + 1) % vs.Count])) { onRail = true; break; }
+                if (!onRail) continue;
+
+                foreach (int v in vs)
+                    if (!rail.Contains(v)) targets.Add(v);
+            }
+
+            int count = 0;
+            foreach (int vi in targets)
+            {
+                if (!InRange(mesh, vi)) continue;
+
+                var slots = new (int idx, float w)[4];
+                slots[0] = (parent, 1f);
+                for (int i = 1; i < 4; i++) slots[i] = (0, 0f);
+
+                mesh.Vertices[vi].BoneWeight =
+                    SkinWeightOps.NormalizeBoneWeight(SkinWeightOps.Pack(slots));
+                count++;
+            }
+
+            if (count > 0) mesh.RecomputeSkinKind();
             return count;
         }
 

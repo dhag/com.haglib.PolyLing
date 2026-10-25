@@ -112,8 +112,8 @@ namespace Poly_Ling.Data
         //   tools_generic  … profile=generic 用。全件 + schemaRevision
         //                     {"schemaRevision":"sha256:…","usable":N,"skipped":M,"tools":[…]}
         //   tools_search   … profile=optimized 用。params: query / kind / category / folder / scene / offset / limit
-        //                     コマンドとシナリオを 1 本の列で返す（kind で片方に絞れる）。
-        //   tools_describe … profile=optimized 用。params: names（コマンド名）/ scenarios（シナリオ名）/ resolve
+        //                     コマンドとシナリオと Python アドオンを 1 本の列で返す（kind = command / scenario / addon で絞れる）。
+        //   tools_describe … profile=optimized 用。params: names（コマンド名）/ scenarios（シナリオ名）/ addons（アドオンの id）/ resolve
         //                     / detail（outline 既定・full）/ items（項目 ID。シナリオ 1 本のときだけ）
         //                     names・scenarios はカンマ区切りで、合わせて最大 10 件
         //   scenes         … profile=optimized 用。利用シーン（SceneLibrary）の定義を全部返す
@@ -166,8 +166,12 @@ namespace Poly_Ling.Data
                 string sceneName = GetParam(p, "scene");
 
                 string kind = (GetParam(p, "kind") ?? "").Trim().ToLowerInvariant();
-                if (kind.Length > 0 && kind != PanelCommandFactory.SearchKindCommand && kind != PanelCommandFactory.SearchKindScenario)
-                    return BuildError(op, $"kind は {PanelCommandFactory.SearchKindCommand} / {PanelCommandFactory.SearchKindScenario} / 空のどれかです: {kind}");
+                if (kind.Length > 0 && kind != PanelCommandFactory.SearchKindCommand && kind != PanelCommandFactory.SearchKindScenario
+                    && kind != PanelCommandFactory.SearchKindAddon)
+                    return BuildError(op, $"kind は {PanelCommandFactory.SearchKindCommand} / {PanelCommandFactory.SearchKindScenario} / {PanelCommandFactory.SearchKindAddon} / 空のどれかです: {kind}");
+                if (kind == PanelCommandFactory.SearchKindAddon
+                    && (!string.IsNullOrWhiteSpace(folder) || !string.IsNullOrWhiteSpace(category) || !string.IsNullOrWhiteSpace(sceneName)))
+                    return BuildError(op, "アドオンは分類・フォルダ・利用シーンを持たないので、kind=addon とは一緒に使えません");
                 if (kind == PanelCommandFactory.SearchKindCommand && !string.IsNullOrWhiteSpace(folder))
                     return BuildError(op, "folder はシナリオのフォルダです。kind=command とは一緒に使えません");
                 if (kind == PanelCommandFactory.SearchKindScenario && !string.IsNullOrWhiteSpace(category))
@@ -223,6 +227,7 @@ namespace Poly_Ling.Data
                 // 件数の上限は両方の合計。シナリオ名にカンマは使えない前提（MCP サーバ側でも弾く）。
                 var names     = SplitNames(GetParam(msg?.Params, "names"));
                 var scenarios = SplitNames(GetParam(msg?.Params, "scenarios"));
+                var addons    = SplitNames(GetParam(msg?.Params, "addons"));
                 bool resolve  = CommandResultJson.IsTrue(GetParam(msg?.Params, "resolve"));
                 string detail = GetParam(msg?.Params, "detail") ?? "";
                 string items  = GetParam(msg?.Params, "items") ?? "";
@@ -231,18 +236,33 @@ namespace Poly_Ling.Data
                 if (!string.IsNullOrWhiteSpace(items) && scenarios.Count != 1)
                     return BuildError(op, $"items はシナリオを 1 本だけ指定したときに使えます（{scenarios.Count} 本）");
 
-                if (names.Count == 0 && scenarios.Count == 0)
-                    return BuildError(op, "params.names（コマンド名）か params.scenarios（シナリオ名）がありません（カンマ区切り）");
-                int requested = names.Count + scenarios.Count;
+                if (names.Count == 0 && scenarios.Count == 0 && addons.Count == 0)
+                    return BuildError(op, "params.names（コマンド名）か params.scenarios（シナリオ名）か params.addons（アドオンの id）がありません（カンマ区切り）");
+                int requested = names.Count + scenarios.Count + addons.Count;
                 if (requested > ToolsDescribeMaxNames)
-                    return BuildError(op, $"names と scenarios は合わせて {ToolsDescribeMaxNames} 件までです（{requested} 件）");
+                    return BuildError(op, $"names・scenarios・addons は合わせて {ToolsDescribeMaxNames} 件までです（{requested} 件）");
 
-                // コマンドの記述は従来どおり。シナリオは "scenarios" と "scenarioNotFound" を足す。
+                // コマンドの記述は従来どおり。シナリオは "scenarios" と "scenarioNotFound"、
+                // アドオンは "addons" と "addonNotFound" を足す。
                 string toolsJson = PanelCommandFactory.BuildToolsDescribeJson(names);
-                if (scenarios.Count == 0) return BuildResult(op, toolsJson);
+                if (scenarios.Count == 0 && addons.Count == 0) return BuildResult(op, toolsJson);
 
                 var sb = new System.Text.StringBuilder(toolsJson.Length + 256);
                 sb.Append(toolsJson, 0, toolsJson.Length - 1);   // 末尾の '}' を外して足す
+
+                if (addons.Count > 0)
+                {
+                    sb.Append(",\"addons\":").Append(PanelCommandFactory.BuildAddonDescribeJson(addons, out var addonMissing));
+                    sb.Append(",\"addonNotFound\":[");
+                    for (int i = 0; i < addonMissing.Count; i++)
+                    {
+                        if (i > 0) sb.Append(',');
+                        sb.Append('"').Append(addonMissing[i].Replace("\\", "\\\\").Replace("\"", "\\\"")).Append('"');
+                    }
+                    sb.Append(']');
+                }
+                if (scenarios.Count == 0) { sb.Append('}'); return BuildResult(op, sb.ToString()); }
+
                 sb.Append(",\"scenarioRevision\":").Append(ScenarioLibrary.Revision);
                 sb.Append(",\"resolve\":").Append(resolve ? "true" : "false");
                 sb.Append(",\"scenarios\":[");

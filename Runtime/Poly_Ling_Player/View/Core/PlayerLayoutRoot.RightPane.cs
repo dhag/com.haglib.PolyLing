@@ -153,6 +153,9 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：作業フォルダ設定セクション（ScrollView内）。</summary>
         public VisualElement WorkFolderSection { get; private set; }
 
+        /// <summary>右ペイン：Python アドオンのセクション（ScrollView内）。</summary>
+        public VisualElement PyAddonSection { get; private set; }
+
         /// <summary>右ペイン：軸/グリッド設定セクション（ScrollView内）。</summary>
         public VisualElement GridAxisSection { get; private set; }
 
@@ -637,6 +640,7 @@ namespace Poly_Ling.Player
             GridAxisSection            = AddSection(visible: false, kind: RightPanelKind.General);
             LightSection               = AddSection(visible: false, kind: RightPanelKind.General);
             WorkFolderSection          = AddSection(visible: false, kind: RightPanelKind.General);
+            PyAddonSection             = AddSection(visible: false, kind: RightPanelKind.General);
             CameraSection              = AddSection(visible: false, kind: RightPanelKind.Tool3D);
             CaptureSection             = AddSection(visible: false, kind: RightPanelKind.General);
             RemoteServerSection        = AddSection(visible: false, kind: RightPanelKind.General);

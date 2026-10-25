@@ -157,8 +157,32 @@ Instruction、「なぜ」が Note として入る。
 | `@<項目 ID>.<キー>` | 名指しした項目の戻り値。間に何項目挟んでもよい |
 
 どれも**同じ流れの中で実行した項目の結果**だけを指す。別の流れや前回の結果は混ざらない。
+文字列の値はエスケープを戻して渡す（Windows のパスもそのまま渡る）。
 
 カンマを含む値は `setScenarioItemArg` で書く。`argValues` は配列なので割れる。
+文字列の配列の引数（`argKeys` / `argValues` など）は、**要素ごと**に丸ごとの `${名前}` / `@…` を置き換える
+（例 `invokePyAddon` の `argValues` を `${img},true,face`）。要素の一部は置き換えない。
+
+### シナリオの出力（戻り値）
+
+`setScenarioOutput(name, output, from)` で宣言する（`removeScenarioOutput` で消す）。`from` は項目の引数と同じ書き方
+（`@<項目 ID>.<キー>` / `@prev.<キー>` / `${引数}` / 固定値）。
+
+- 最後まで流し終えたとき（`stop=finished`）に評価し、`runScenario` / `continueScenario` / `queryScenarioRun` の `outputs`
+  （名前 → 値の JSON）で返す。途中で止まったときは出ない。評価できなければ失敗で止まる
+- 参照項目で呼ばれたときは、子の出力が**参照項目の戻り値**になる。親から `@<参照項目 ID>.<名前>`、
+  直後の項目から `@prev.<名前>` で引く。出力に `masterIndices` / `objectIds` を置くと `@prev.masterIndices` で対象として渡る
+- 出力を宣言していない子では、`@prev` は子の最後の項目の戻り値のまま（旧来の動き）
+- 宣言は `describeScenario` / tools_describe の `outputNames` / `outputFroms` / `outputDescriptions`。保存は CSV の `gr` 行（1.7）と DTO の `scenarioOutputs`
+- `queryScenarioAudit` が見るもの：`badOutputName` / `duplicateOutput` / `emptyOutputFrom` / `badOutputRef` / `missingOutputRef`、
+  参照項目の戻り値を引くときの `refWithoutOutputs`（子が出力を宣言していない）/ `unknownChildOutput`（子の出力に無い名前）
+
+### Python アドオンを項目にする
+
+`invokePyAddon` の項目は返事を待つ。実行すると `stop=waiting` で止まり、返事が来たら控えて先へ進める状態に戻る
+（案内バーは自動で続ける。MCP は `continueScenario` を繰り返せば、waiting の間は状態だけ返り、戻ったら先へ進む）。
+控えはアドオンの返事の `result` の欄を平らにして `message` を足したもの（`@prev.<result の欄>`）。
+`result` に `masterIndices`（配列）か `masterIndex`（数）があれば対象として控える。失敗なら `stop=failed`（続けると送り直す）。
 
 ### 流す
 
@@ -176,6 +200,7 @@ Instruction、「なぜ」が Note として入る。
 | 指示（Instruction）の項目 | その項目を越えて進む。`continueScenario(argKeys, argValues)` で次に実行する項目の値を差し替えられる |
 | 確認（Observe）の項目 | その項目を越えて進む |
 | 失敗した項目 | 同じ項目をやり直す |
+| Python アドオンの返事待ち（waiting） | 返事が来るまでは進まない（状態だけ返す）。返事が来たら次の項目から |
 
 注意（Note）の項目は止まらずに読み飛ばす。別のシナリオを呼ぶ項目（ScenarioRef）では、
 呼ばれたシナリオをその場で流し、終わったら元のシナリオへ戻る。

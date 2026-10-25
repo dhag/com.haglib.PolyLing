@@ -263,7 +263,8 @@ namespace Poly_Ling.Player
             CreateBeltPrimitiveCommand.SplitBelts(
                 BeltsToCsv(_frillBelts).ToArray(),
                 out var fL, out var fR, out var fStarts,
-                out var fClosed, out var fFlip, out var fHeight);
+                out var fClosed, out var fFlip, out var fHeight,
+                out var fSp, out var fHasSp, out var fEp, out var fHasEp);
 
             return new CreateFrillCommand(
                 mi, _frillP,
@@ -278,7 +279,8 @@ namespace Poly_Ling.Player
                 _frillEdit?.SourceMasterIndex ?? -1,
                 (_frillEdit?.SourceMasterIndex ?? -1) >= 0
                     ? ProfileAcquireMethod.LinePolyline
-                    : ProfileAcquireMethod.Baked);
+                    : ProfileAcquireMethod.Baked,
+                fSp, fHasSp, fEp, fHasEp);
         }
 
         private CreatePrimitiveMeshCommand BuildPipeCommand(int mi, PrimitivePlacement pl)
@@ -288,7 +290,8 @@ namespace Poly_Ling.Player
             CreateBeltPrimitiveCommand.SplitBelts(
                 BeltsToCsv(_pipeBelts).ToArray(),
                 out var pL, out var pR, out var pStarts,
-                out var pClosed, out var pFlip, out var pHeight);
+                out var pClosed, out var pFlip, out var pHeight,
+                out var pSp, out var pHasSp, out var pEp, out var pHasEp);
 
             return new CreatePipeCommand(
                 mi, _pipeP,
@@ -303,7 +306,8 @@ namespace Poly_Ling.Player
                 _pipeEdit?.SourceMasterIndex ?? -1,
                 (_pipeEdit?.SourceMasterIndex ?? -1) < 0 ? ProfileAcquireMethod.Baked
                     : (_pipeEdit.ClosedLoop ? ProfileAcquireMethod.LineLoops
-                                            : ProfileAcquireMethod.LinePolyline));
+                                            : ProfileAcquireMethod.LinePolyline),
+                pSp, pHasSp, pEp, pHasEp);
         }
 
         private CreatePrimitiveMeshCommand BuildPlaceObjectCommand(int mi, PrimitivePlacement pl)
@@ -311,7 +315,8 @@ namespace Poly_Ling.Player
             CreateBeltPrimitiveCommand.SplitBelts(
                 BeltsToCsv(_placeBelts).ToArray(),
                 out var oL, out var oR, out var oStarts,
-                out var oClosed, out var oFlip, out var oHeight);
+                out var oClosed, out var oFlip, out var oHeight,
+                out var oSp, out var oHasSp, out var oEp, out var oHasEp);
 
             return new CreatePlaceObjectCommand(
                 mi, _placeP,
@@ -321,7 +326,9 @@ namespace Poly_Ling.Player
                 ToSplineOptions(_placeSpline),
                 pl,
                 BeltsSourceMasterIndex(_placeBelts), BeltsAcquireMethod(_placeBelts),
-                BeltsAcquireCrossRows(_placeBelts), BeltsAcquireSetName(_placeBelts));
+                BeltsAcquireCrossRows(_placeBelts), BeltsAcquireSetName(_placeBelts),
+                -1, ProfileAcquireMethod.Baked,
+                oSp, oHasSp, oEp, oHasEp);
         }
 
         /// <summary>パネル内部の向き補正 → コマンドに載せる形。</summary>

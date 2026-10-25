@@ -66,6 +66,7 @@ namespace Poly_Ling.EditorIO
         public bool AttachAnimator            = true;   // 生成した Avatar を Animator に割り当てる（プレファブ時）
         public bool SceneAnimator             = true;   // シーン出力時にルートへ空の Animator を付与
         public bool TolerantMirrorBranch      = true;   // ミラー設定漏れを許容
+        public bool AttachSpringBones         = true;   // 揺れもの（UniVRM の SpringBone）をプレファブに付ける。VRM パッケージが無ければ付けない
 
         /// <summary>レンダラ種別。定義は Runtime（HierarchyRendererMode）が正本。</summary>
         public HierarchyRendererMode RendererMode = HierarchyRendererMode.Auto;
@@ -501,6 +502,9 @@ namespace Poly_Ling.EditorIO
                     return false;
                 }
 
+                // 揺れものへ渡す humanName→Transform。Avatar を作るときはその割当（補完後）を使う。
+                Dictionary<string, Transform> humanoidTf = null;
+
                 // Avatar も生成（Humanoid 割当 + 可動域を model から直接）。
                 //   プレファブ保存より前に実行する。保存後だと Animator への割当結果が
                 //   プレファブに含まれない。
@@ -508,6 +512,7 @@ namespace Poly_Ling.EditorIO
                 {
                     var humanoid = HumanoidTransformMap.Build(model, _build);
                     foreach (string w in humanoid.Warnings) _report.Warn(w);
+                    humanoidTf = humanoid.TransformMap;
                     if (humanoid.SupplementedLog.Count > 0)
                     {
                         Debug.Log(
@@ -529,8 +534,10 @@ namespace Poly_Ling.EditorIO
                         //   名前重複検査より前に実行する。補完で追加した名前も検査対象にするため。
                         if (_opt.SupplementHumanoid)
                         {
+                            var supplementedTf = new Dictionary<string, Transform>();
                             _report.SupplementedJointCount = HumanoidSupplementBuilder.Supplement(
-                                root, avMap, m => _report.Log(m), m => _report.Warn(m));
+                                root, avMap, m => _report.Log(m), m => _report.Warn(m), supplementedTf);
+                            if (supplementedTf.Count > 0) humanoidTf = supplementedTf;
                         }
 
                         if (!HumanoidTransformMap.ValidateHumanoidBoneNames(root, avMap, out string dupNames))
@@ -573,6 +580,10 @@ namespace Poly_Ling.EditorIO
                         }
                     }
                 }
+
+                // 揺れもの（スプリングボーン）。プレファブ保存より前に付ける。
+                if (_opt.AttachSpringBones)
+                    AttachSpringBones(model, humanoidTf, baseDir, modelName);
 
                 // Animator Controller の割当（指定時のみ）。
                 //   root はプレファブ化後に破棄する一時オブジェクトのため Undo 登録しない。
@@ -631,6 +642,46 @@ namespace Poly_Ling.EditorIO
                 // Hierarchyにも追加する場合は生成物を残す。Prefabだけなら一時ルートを破棄する。
                 if (root != null && !keepHierarchyObject)
                     UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        /// <summary>
+        /// 揺れもの（スプリングボーン）をプレファブの一時ルート（_build.Root）へ付ける。
+        /// 実装は PolyLing.Vrm10.Editor が登録する（PrefabSpringBoneHook.cs 冒頭）。
+        /// 揺れる関節の無いモデルには何もしない。VRM パッケージが無ければ付けずに警告だけ出す。
+        /// </summary>
+        private void AttachSpringBones(
+            ModelContext model, Dictionary<string, Transform> humanoidTf, string baseDir, string modelName)
+        {
+            if (!PrefabSpringBoneHook.HasSpringBones(model)) return;
+
+            var attacher = PrefabSpringBoneHook.Attacher;
+            if (attacher == null)
+            {
+                _report.SpringBoneResult = "省略（VRM パッケージが無い）";
+                _report.Warn("揺れものがありますが、VRM パッケージ（com.vrmc.vrm）が無いためプレファブには付けません。"
+                           + "通常のヒューマノイドとして書き出します。");
+                return;
+            }
+
+            if (humanoidTf == null)
+            {
+                var humanoid = HumanoidTransformMap.Build(model, _build);
+                foreach (string w in humanoid.Warnings) _report.Warn(w);
+                humanoidTf = humanoid.TransformMap;
+            }
+
+            var r = attacher.Attach(model, _build, humanoidTf, baseDir, modelName);
+            foreach (string w in r.Warnings) _report.Warn(w);
+
+            if (r.Attached)
+            {
+                _report.SpringBoneResult = $"鎖 {r.SpringCount} / 関節 {r.JointCount} / 当たり判定 {r.ColliderCount}";
+            }
+            else
+            {
+                _report.SpringBoneResult = $"省略（{r.SkipReason}）";
+                _report.Warn("揺れものをプレファブに付けませんでした: " + r.SkipReason);
             }
         }
 
@@ -1014,8 +1065,22 @@ namespace Poly_Ling.EditorIO
             int undoGroup = Undo.GetCurrentGroup();
 
             // プレファブ保存のときだけメッシュを共有アセット化する。
+            //
+            // 【既存のメッシュアセットは消してから作る】
+            //   SaveDeterministic の上書き（CopySerialized）では、ディスクのファイルが
+            //   更新されないことがあった（SetDirty を足しても直らず、原因は未特定）。
+            //   古いメッシュの頂点のボーン番号が、作り直したボーン一覧の別の関節を指し、
+            //   歩かせるとトゲが出た。プレファブ側の参照は毎回作り直すので、
+            //   guid が変わってもプレファブは切れない。
+            //   Unity の外で消すとメッシュを見失うので、必ず AssetDatabase で消す。
             System.Func<Mesh, Mesh> persistMesh = _prefabExportActive
-                ? (m => MeshAssetUtil.SaveDeterministic(m, ResolveMeshAssetPath(m.name)))
+                ? (m =>
+                {
+                    string path = ResolveMeshAssetPath(m.name);
+                    if (AssetDatabase.LoadAssetAtPath<Mesh>(path) != null)
+                        AssetDatabase.DeleteAsset(path);
+                    return MeshAssetUtil.SaveDeterministic(m, path);
+                })
                 : (System.Func<Mesh, Mesh>)null;
 
             try

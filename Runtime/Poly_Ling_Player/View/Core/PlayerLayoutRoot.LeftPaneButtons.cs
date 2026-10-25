@@ -81,6 +81,12 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：作業フォルダ設定ボタン（その他）。</summary>
         public Button WorkFolderBtn { get; private set; }
 
+        /// <summary>左ペイン：Python アドオンの設定・一覧パネルを開くボタン（Python アドオン）。</summary>
+        public Button PyAddonBtn { get; private set; }
+
+        /// <summary>左ペイン：アドオンごとのボタンの入れ物（中身は PlayerPyAddonQuickButtons が作る）。</summary>
+        public VisualElement PyAddonQuickBox { get; private set; }
+
         /// <summary>左ペイン：軸/グリッドボタン（その他）。</summary>
         public Button GridAxisBtn { get; private set; }
         public Button LightBtn { get; private set; }
@@ -769,6 +775,16 @@ namespace Poly_Ling.Player
             RemoteSection.Add(FetchBtn);
             foRemote.Add(RemoteSection);
 
+            // ── Python アドオン ────────────────────────────────────────
+            // 登録簿のアドオンごとのボタンは PyAddonQuickBox に PlayerPyAddonQuickButtons が作る
+            // （登録簿で増減するので、UI 自動操作には動的なボタンとして登録する）。
+            // 押すと右ペインのパネルをそのアドオンで開き、起動していなければ起動する。
+            var foPyAddon = MakeFoldout("Python アドオン", "PyAddon");
+            PyAddonQuickBox = new VisualElement();
+            foPyAddon.Add(PyAddonQuickBox);
+            PyAddonBtn = MakeBtn("アドオンの設定・一覧");
+            foPyAddon.Add(PyAddonBtn);
+
             // ── その他 ─────────────────────────────────────────────────
             var foOther = MakeFoldout("その他", "Other");
 
@@ -939,6 +955,7 @@ namespace Poly_Ling.Player
             scroll.Add(foVertexTopo);
             scroll.Add(foUvMat);
             scroll.Add(foBoneMorph);
+            scroll.Add(foPyAddon);
             scroll.Add(foOther);
             scroll.Add(foMerge);
             scroll.Add(foSysDebug);

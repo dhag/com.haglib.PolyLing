@@ -374,6 +374,10 @@ namespace Poly_Ling.Player
             var rings = BeltRingDetector.Detect(mesh, out string message);
             var rows  = BeltStackExpander.ExpandAll(mesh, rings, crossRows, out int groupCount);
 
+            // 作り直し（BeltAcquire.AcquireStrips）と同じ向きにそろえる。
+            rows = BeltRingRootOrienter.Orient(mesh, rows, out string rootMsg);
+            if (!string.IsNullOrEmpty(rootMsg)) message += " " + rootMsg;
+
             int srcIdx = ResolveMasterIndexOf(mesh);
 
             dst.Clear();

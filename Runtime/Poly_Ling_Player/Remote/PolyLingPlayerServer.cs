@@ -43,13 +43,20 @@ namespace Poly_Ling.Player
             => _server?.BroadcastPositions(mc, modelIndex);
         public void ClearCapturedImages()                  => _server?.ClearCapturedImages();
 
-        /// <summary>クライアントへ要求を送る（RemoteServerCore.RequestClient）。</summary>
+        /// <summary>クライアントへ要求を送る（RemoteServerCore.RequestClient）。onFinished は結果が決まったときメインスレッドで呼ぶ。</summary>
         public bool RequestClient(string userName, string action, string paramsJson, int timeoutMs,
-                                  out int requestNo, out string reason, out string code)
+                                  out int requestNo, out string reason, out string code,
+                                  System.Action<RemoteServerCore.ClientRequestState> onFinished = null)
         {
             if (_server == null) { requestNo = 0; reason = "サーバがありません"; code = CommandErrorCodes.NotReady; return false; }
-            return _server.RequestClient(userName, action, paramsJson, timeoutMs, out requestNo, out reason, out code);
+            return _server.RequestClient(userName, action, paramsJson, timeoutMs, out requestNo, out reason, out code, onFinished);
         }
+
+        /// <summary>action を capabilities に申告したクライアントがつながっているか（RemoteServerCore.HasClientAction）。</summary>
+        public bool HasClientAction(string action) => _server != null && _server.IsRunning && _server.HasClientAction(action);
+
+        /// <summary>登録済みクライアントの顔ぶれが変わった（register・切断）。メインスレッドで発火する。</summary>
+        public event System.Action ClientsChanged;
 
         /// <summary>要求番号の状態（RemoteServerCore.GetClientRequest）。</summary>
         public RemoteServerCore.ClientRequestState GetClientRequest(int requestNo) => _server?.GetClientRequest(requestNo);
@@ -89,6 +96,7 @@ namespace Poly_Ling.Player
                 // PlayerLog 側でも時刻を付けるため、先頭の時刻を取り除いてから投入する。
                 OnLog           = msg => PlayerLog.Add("Server", StripTimeStamp(msg)),
             };
+            _server.ClientsChanged += () => ClientsChanged?.Invoke();
 
             // 協働編集: 選択スコープ差し替えからの復帰時にホストUIを再同期する。
             // 未指定なら OnRepaint にフォールバックする（RemoteServerCore 側で処理）。

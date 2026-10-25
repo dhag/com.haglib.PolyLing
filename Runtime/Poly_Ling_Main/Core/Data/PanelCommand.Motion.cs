@@ -353,6 +353,76 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// VOICEVOX エンジンの audio_query でセリフのモーラの時刻を求め、母音 a/i/u/e/o の表情トラック（口パク）を
+    /// モーションの試し再生（ツールの窓口 motionClip）のクリップへ入れる（VoicevoxLipSync）。
+    /// </summary>
+    [PLCommand(Category = "animation", Writes = PLWriteScope.None, Description = "VOICEVOX エンジンの audio_query でセリフのモーラの時刻を求め、母音 a/i/u/e/o の表情トラック（口パク）をモーションの試し再生（ツールの窓口 motionClip）のクリップへ入れる。各母音はそのモーラの母音区間の中央で weight、ほかの区間の中央で 0（線形）。ん・っ・休止・前後の無音は 0。開始～終了の範囲にある同名トラックの既存キーは消してから入れる。クリップが無ければ表情だけのクリップを作る。入れた後 startTime のフレームを当てる。ファイルは書かない。VOICEVOX との通信を待つ間は止まる。")]
+    [PLResult("moraCount",     PLResultKind.Integer, Description = "モーラの数（休止を含み、前後の無音は含まない）")]
+    [PLResult("startSec",      PLResultKind.Number,  Description = "入れた範囲の始まり（秒）")]
+    [PLResult("endSec",        PLResultKind.Number,  Description = "入れた範囲の終わり（秒。末尾の無音を含む）")]
+    [PLResult("phonemes",      PLResultKind.Text,    Description = "モーラの文字と母音の音素の並び（例：コ(o) ン(N)）")]
+    [PLResult("tracks",        PLResultKind.Text,    Description = "書いた表情トラック名（カンマ区切り）")]
+    [PLResult("unresolved",    PLResultKind.Text,    Description = "書いたトラックのうち、今のモデルに同じ名前の表情が無いもの（カンマ区切り。モデルが無ければ空）")]
+    public class CreateLipSyncFromVoicevoxCommand : PanelCommand
+    {
+        [PLParam(Description = "セリフ（日本語の文）", Required = true)]
+        public string Text { get; }
+
+        [PLParam(Description = "VOICEVOX の話者（スタイル）番号", Min = 0.0)]
+        public int Speaker { get; }
+
+        [PLParam(Description = "VOICEVOX エンジンの接続先（例：http://127.0.0.1:50021）")]
+        public string Host { get; }
+
+        [PLParam(Description = "セリフの始まり（先頭の無音の始まり）の時刻（秒）", Min = 0.0)]
+        public float StartTime { get; }
+
+        [PLParam(Description = "母音 a（あ）に当てる表情名")]
+        public string NameA { get; }
+
+        [PLParam(Description = "母音 i（い）に当てる表情名")]
+        public string NameI { get; }
+
+        [PLParam(Description = "母音 u（う）に当てる表情名")]
+        public string NameU { get; }
+
+        [PLParam(Description = "母音 e（え）に当てる表情名")]
+        public string NameE { get; }
+
+        [PLParam(Description = "母音 o（お）に当てる表情名")]
+        public string NameO { get; }
+
+        [PLParam(Description = "口を開いたときの重み（0～1）", Min = 0.0, Max = 1.0)]
+        public float Weight { get; }
+
+        [PLParam(Description = "VOICEVOX の応答を待つ時間（ミリ秒）", Min = 100.0)]
+        public int TimeoutMs { get; }
+
+        public CreateLipSyncFromVoicevoxCommand(
+            int modelIndex, string text,
+            int speaker = 0,
+            string host = "http://127.0.0.1:50021",
+            float startTime = 0f,
+            string nameA = "あ", string nameI = "い", string nameU = "う", string nameE = "え", string nameO = "お",
+            float weight = 1f,
+            int timeoutMs = 10000)
+            : base(modelIndex)
+        {
+            Text      = text ?? "";
+            Speaker   = speaker;
+            Host      = host;
+            StartTime = startTime;
+            NameA     = nameA;
+            NameI     = nameI;
+            NameU     = nameU;
+            NameE     = nameE;
+            NameO     = nameO;
+            Weight    = weight;
+            TimeoutMs = timeoutMs;
+        }
+    }
+
+    /// <summary>
     /// モーションの試し再生（ツールの窓口 motionClip）に読み込んであるクリップを、PolyLing モーション JSON の
     /// 文字列で返す（MotionClipSerializer.ToSaveJson。JSON 保存で書くものと同じ中身）。
     /// Blender ブリッジのモーション取得が使う。

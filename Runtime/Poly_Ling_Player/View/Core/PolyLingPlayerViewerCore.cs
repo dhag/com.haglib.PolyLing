@@ -467,6 +467,11 @@ namespace Poly_Ling.Player
         private PlayerLightSubPanel          _lightSubPanel;
         private PlayerWorkFolderSubPanel     _workFolderSubPanel;
 
+        // Python アドオン（子プロセスの起動とリモート経由の呼び出し）
+        private PyAddonHost                  _pyAddonHost;
+        private PlayerPyAddonSubPanel        _pyAddonSubPanel;
+        private PlayerPyAddonQuickButtons    _pyAddonQuick;
+
         // 画面キャプチャ（PNG 保存）
         private PlayerCaptureSubPanel        _captureSubPanel;
 

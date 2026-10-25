@@ -45,6 +45,11 @@ namespace Poly_Ling.Player
         Failed,
         /// <summary>最後の項目まで終わった。</summary>
         Finished,
+        /// <summary>
+        /// 非同期の項目（invokePyAddon）の返事を待っている。返事が来たらディスパッチャが控えて None に戻す
+        /// （失敗なら Failed）。毎フレームの見回りはしない（PyAddonHost.CallFinished で受ける）。
+        /// </summary>
+        Waiting,
     }
 
     /// <summary>流れの中での項目の状態。</summary>
@@ -108,6 +113,20 @@ namespace Poly_Ling.Player
         public ObjectGroupStepKind StopStepKind { get; internal set; } = ObjectGroupStepKind.Command;
 
         public int             ExecutedCommands { get; internal set; }
+
+        /// <summary>
+        /// 流し始めたシナリオの出力を評価した値（名前 → 値の JSON オブジェクト）。
+        /// 最後まで流し終え、出力を宣言しているときだけ入る。それ以外は null。
+        /// </summary>
+        public string OutputsJson { get; internal set; }
+
+        /// <summary>返事を待っている呼び出しの番号（PyAddonHost の CallState.No）。待っていなければ 0。</summary>
+        public int WaitCallNo { get; internal set; }
+
+        /// <summary>返事を待っている項目のシナリオ名と項目 ID、記録の頭。</summary>
+        internal string WaitScenario;
+        internal string WaitItemId;
+        internal string WaitAt;
 
         /// <summary>
         /// 直前に済ませた、経路を持つ項目の経路。次の項目の経路を選ぶとき「近いもの」の基準にする
@@ -229,6 +248,14 @@ namespace Poly_Ling.Player
             if (run == null) { Fail("流しているシナリオがありません。runScenario で始めてください"); return; }
             if (run.Stop == ScenarioRunStop.Finished) { Fail($"「{run.RootName}」は最後まで終わっています"); return; }
 
+            // アドオンの返事を待っている間は進めない（同じ項目を 2 度送らない）。今の状態だけ返すので、
+            // MCP はこれ（か queryScenarioRun）を繰り返して stop が waiting でなくなるのを待てる。
+            if (run.Stop == ScenarioRunStop.Waiting)
+            {
+                ReportScenarioRun(run, run.LogLines.Count, allLog: false);
+                return;
+            }
+
             var keys   = cmd.ArgKeys   ?? new string[0];
             var values = cmd.ArgValues ?? new string[0];
             if (keys.Length != values.Length)
@@ -324,6 +351,7 @@ namespace Poly_Ling.Player
         private void AdvanceScenarioRun(ScenarioRunState run, int modelIndex, int maxSteps)
         {
             int processed = 0;
+            if (run.Stop == ScenarioRunStop.Waiting) return;
 
             while (true)
             {
@@ -341,15 +369,47 @@ namespace Poly_Ling.Player
                 // このシナリオを流し終えた。呼び出し元へ戻り、呼んだ項目を済みにする。
                 if (steps == null || frame.Index >= steps.Count)
                 {
+                    // 出力を宣言していれば、この段の控えが残っているうちに評価する。
+                    // 評価できなければ失敗で止める（段は外さないので、直して続けると評価し直す）。
+                    string outJson = null;
+                    Dictionary<string, string> outVals = null;
+                    if (frame.Group?.Outputs != null && frame.Group.Outputs.Count > 0)
+                    {
+                        if (!TryEvaluateOutputs(run, frame, out outJson, out outVals, out string outError))
+                        {
+                            FailOutputs(run, frame, outError);
+                            return;
+                        }
+                    }
+
                     run.Stack.RemoveAt(run.Stack.Count - 1);
 
                     var parent = run.Top;
                     if (parent != null)
                     {
                         var refStep = parent.Group.Steps[parent.Index];
+
+                        // 子の出力を、呼んだ参照項目の戻り値として控える（@<参照項目 ID>.<名前> / @prev.<名前>）。
+                        // 出力を宣言していない子では控えを変えない（@prev は子の最後の項目の戻り値のまま。旧来の動き）。
+                        if (outJson != null)
+                        {
+                            int[]   master = OutputInts(outVals, "masterIndices");
+                            ulong[] ids    = OutputIds(outVals, "objectIds");
+                            run.PrevMaster = master;
+                            run.PrevIds    = ids;
+                            run.PrevData   = outJson;
+                            run.Results[ScenarioRunState.Key(parent.Name, refStep.ScenarioItemId)] = (master, ids, outJson);
+                        }
+
                         run.SetStatus(parent.Name, refStep.ScenarioItemId, ScenarioItemRunStatus.Done);
-                        run.AddLog($"「{frame.Name}」が終わった。「{parent.Name}」へ戻る");
+                        run.AddLog($"「{frame.Name}」が終わった。「{parent.Name}」へ戻る"
+                                   + (outJson != null ? $" 出力: {outJson}" : ""));
                         parent.Index++;
+                    }
+                    else if (outJson != null)
+                    {
+                        run.OutputsJson = outJson;
+                        run.AddLog($"「{frame.Name}」の出力: {outJson}");
                     }
                     continue;
                 }
@@ -425,10 +485,34 @@ namespace Poly_Ling.Player
                 }
 
                 // ── コマンドを実行する ──
-                if (!TryExecuteRunStep(run, frame.Name, frame.Params, step, modelIndex, out string reason))
+                if (!TryExecuteRunStep(run, frame.Name, frame.Params, step, modelIndex, out string reason, out int waitNo))
                 {
                     FailRunStep(run, frame, step, at, reason);
                     return;
+                }
+
+                // ── 非同期の項目（invokePyAddon）：返事を待って止まる ──
+                if (waitNo > 0)
+                {
+                    run.ExecutedCommands++;
+                    NotePrevRoute(run, step);
+                    run.WaitCallNo   = waitNo;
+                    run.WaitScenario = frame.Name;
+                    run.WaitItemId   = step.ScenarioItemId;
+                    run.WaitAt       = at;
+                    run.SetStatus(frame.Name, step.ScenarioItemId, ScenarioItemRunStatus.Running);
+                    run.Stop         = ScenarioRunStop.Waiting;
+                    run.StopStepKind = step.Kind;
+                    run.StopMessage  = $"Python アドオンの返事を待っています（呼び出し #{waitNo}）";
+                    run.AddLog($"{at} {Or(step.Purpose, step.Action)} → アドオンの返事を待つ（#{waitNo}）");
+                    HookPyAddonCalls();
+
+                    // 起動できなかったなど、送る前に結果が決まっていることがある。そのときはここで控える。
+                    var already = GetPyAddonHost?.Invoke()?.GetCall(waitNo);
+                    if (already == null || !IsCallFinished(already)) return;
+                    if (!ApplyAddonCall(run, already)) return;
+                    processed++;
+                    continue;
                 }
 
                 run.ExecutedCommands++;
@@ -550,9 +634,10 @@ namespace Poly_Ling.Player
         /// </summary>
         private bool TryExecuteRunStep(
             ScenarioRunState run, string scenarioName, IReadOnlyDictionary<string, string> frameParams,
-            ObjectGroupStep step, int modelIndex, out string reason)
+            ObjectGroupStep step, int modelIndex, out string reason, out int waitCallNo)
         {
             reason = null;
+            waitCallNo = 0;
 
             var args = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var kv in step.SortedArgs()) args[kv.Key] = kv.Value ?? "";
@@ -566,9 +651,30 @@ namespace Poly_Ling.Player
                 }
             }
 
+            var cmdType = PanelCommandFactory.ResolveType(step.Action);
             var keys = new List<string>(args.Keys);
             foreach (var key in keys)
             {
+                // 文字列の配列（argKeys / argValues など）は、要素ごとに丸ごとの ${名前} / @… を置き換える。
+                // 値の一部は置き換えない規則（ScenarioParam）は要素の単位で守る。
+                if (PanelCommandFactory.IsStringArrayParam(cmdType, key)
+                    && !ScenarioParam.TryParseRef(args[key], out _)
+                    && (args[key].IndexOf(ScenarioParam.RefOpen, StringComparison.Ordinal) >= 0 || args[key].IndexOf('@') >= 0))
+                {
+                    var parts = PanelCommandFactory.SplitQuotedCsv(args[key]);
+                    var outParts = new List<string>(parts.Length);
+                    foreach (var part in parts)
+                    {
+                        if (!ScenarioParam.TrySubstitute(part, frameParams ?? EmptyParams, out string ps, out string pe))
+                        { reason = pe; return false; }
+                        if (!TryExpandPrev(run, ps, scenarioName, out string px, out string pw))
+                        { reason = pw; return false; }
+                        outParts.Add(PanelCommandFactory.EscCsvItem(px));
+                    }
+                    args[key] = string.Join(",", outParts);
+                    continue;
+                }
+
                 // 引数が結ばれていない段（古い流れ）でも、${…} が残ったまま撃たないよう空の辞書で照合する。
                 if (!ScenarioParam.TrySubstitute(args[key], frameParams ?? EmptyParams, out string substituted, out string perr))
                 { reason = perr; return false; }
@@ -596,12 +702,210 @@ namespace Poly_Ling.Player
             run.OverrideKeys   = null;
             run.OverrideValues = null;
 
+            // invokePyAddon は呼び出しの番号だけを返す（返事は後で届く）。控えは返事が来てから入れる。
+            if (inner is InvokePyAddonCommand)
+            {
+                if (result?.Data == null || !TryReadJsonValue(result.Data, "callNo", out string noText)
+                    || !int.TryParse(noText, System.Globalization.NumberStyles.Integer,
+                                     System.Globalization.CultureInfo.InvariantCulture, out waitCallNo)
+                    || waitCallNo <= 0)
+                { reason = "invokePyAddon が呼び出しの番号を返しませんでした"; waitCallNo = 0; return false; }
+                return true;
+            }
+
             run.PrevMaster = result?.MasterIndices;
             run.PrevIds    = result?.ObjectIds;
             run.PrevData   = result?.Data;
             run.Results[ScenarioRunState.Key(scenarioName, step.ScenarioItemId)] =
                 (result?.MasterIndices, result?.ObjectIds, result?.Data);
             return true;
+        }
+
+        // ================================================================
+        // シナリオの出力
+        // ================================================================
+
+        /// <summary>
+        /// 段（frame）のシナリオの出力を評価する。From は項目の引数の値と同じ規則で読む
+        /// （${名前} をこの段の引数で、@prev / @&lt;項目 ID&gt; を流れの控えで）。
+        /// 値は文字列にそろえる（配列はカンマ区切り。TryReadJsonValue と同じ形）。
+        /// </summary>
+        private static bool TryEvaluateOutputs(
+            ScenarioRunState run, ScenarioRunState.Frame frame,
+            out string json, out Dictionary<string, string> values, out string error)
+        {
+            json   = null;
+            values = new Dictionary<string, string>(StringComparer.Ordinal);
+            error  = null;
+
+            var obj = new Newtonsoft.Json.Linq.JObject();
+            foreach (var o in frame.Group.Outputs)
+            {
+                if (o == null || string.IsNullOrEmpty(o.Name)) continue;
+                string v = o.From ?? "";
+                if (!ScenarioParam.TrySubstitute(v, frame.Params ?? EmptyParams, out string s1, out string perr))
+                { error = $"出力 {o.Name}: {perr}"; return false; }
+                if (!TryExpandPrev(run, s1, frame.Name, out string s2, out string why))
+                { error = $"出力 {o.Name}: {why}"; return false; }
+                values[o.Name] = s2 ?? "";
+                obj[o.Name]    = s2 ?? "";
+            }
+            json = obj.ToString(Newtonsoft.Json.Formatting.None);
+            return true;
+        }
+
+        /// <summary>出力を評価できなかった。呼んだ参照項目（無ければ流し始めのシナリオ）の失敗として止める。</summary>
+        private static void FailOutputs(ScenarioRunState run, ScenarioRunState.Frame frame, string reason)
+        {
+            ScenarioRunState.Frame parent = run.Stack.Count >= 2 ? run.Stack[run.Stack.Count - 2] : null;
+            if (parent != null)
+            {
+                var refStep = parent.Group.Steps[parent.Index];
+                run.SetStatus(parent.Name, refStep.ScenarioItemId, ScenarioItemRunStatus.Failed);
+                run.StopStepKind = refStep.Kind;
+            }
+            run.Stop        = ScenarioRunStop.Failed;
+            run.StopMessage = $"「{frame.Name}」の出力を評価できません: {reason}";
+            run.AddLog($"[{frame.Name}] 出力を評価できない: {reason}");
+        }
+
+        private static int[] OutputInts(Dictionary<string, string> vals, string key)
+        {
+            if (vals == null || !vals.TryGetValue(key, out string csv) || string.IsNullOrEmpty(csv)) return null;
+            var list = new List<int>();
+            foreach (var part in csv.Split(','))
+                if (int.TryParse(part.Trim(), System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out int n))
+                    list.Add(n);
+            return list.Count > 0 ? list.ToArray() : null;
+        }
+
+        private static ulong[] OutputIds(Dictionary<string, string> vals, string key)
+        {
+            if (vals == null || !vals.TryGetValue(key, out string csv) || string.IsNullOrEmpty(csv)) return null;
+            var list = new List<ulong>();
+            foreach (var part in csv.Split(','))
+                if (ulong.TryParse(part.Trim(), System.Globalization.NumberStyles.Integer,
+                                   System.Globalization.CultureInfo.InvariantCulture, out ulong n))
+                    list.Add(n);
+            return list.Count > 0 ? list.ToArray() : null;
+        }
+
+        // ================================================================
+        // 非同期の項目（invokePyAddon）の返事
+        // ================================================================
+        //
+        // 【待ち方】
+        //   項目を実行したら stop=waiting で止まり、PyAddonHost.CallFinished で返事を受ける（見回りはしない）。
+        //   返事が来たら控え（@prev / @<項目 ID>）を入れて項目を済ませ、stop を none に戻す。
+        //   その先を流すのは呼ぶ側：案内バーは OnScenarioAsyncStepFinished で自動で続け、
+        //   MCP は continueScenario で続ける。失敗なら stop=failed（続けると同じ項目をやり直す＝送り直す）。
+        // 【控えの形】
+        //   run の data はアドオンの返事 {message, log, result:{…}}。控えには result の欄を平らにして
+        //   message を足したものを入れる（@prev.<result の欄>・@prev.message で引ける）。
+        //   result に masterIndices（配列）か masterIndex（数）があれば対象として、objectIds があれば安定 ID として控える。
+        //   describe の data（引数の宣言）はそのまま控える。
+
+        /// <summary>非同期の項目の返事を受けて、ディスパッチャが控えを入れたとき（案内バーが続けるため）。</summary>
+        public Action OnScenarioAsyncStepFinished;
+
+        private PyAddonHost _hookedPyAddonHost;
+
+        private void HookPyAddonCalls()
+        {
+            var h = GetPyAddonHost?.Invoke();
+            if (h == null || h == _hookedPyAddonHost) return;
+            if (_hookedPyAddonHost != null) _hookedPyAddonHost.CallFinished -= OnPyAddonCallFinished;
+            _hookedPyAddonHost = h;
+            h.CallFinished += OnPyAddonCallFinished;
+        }
+
+        private static bool IsCallFinished(PyAddonHost.CallState c)
+            => c.Status == PyAddonHost.CallState.Done || c.Status == PyAddonHost.CallState.Failed;
+
+        private void OnPyAddonCallFinished(PyAddonHost.CallState call)
+        {
+            var run = _scenarioRun;
+            if (run == null || run.Stop != ScenarioRunStop.Waiting || run.WaitCallNo != call.No) return;
+            ApplyAddonCall(run, call);
+            OnScenarioAsyncStepFinished?.Invoke();
+        }
+
+        /// <summary>待っていた返事を控えて項目を済ませる（成功なら true）。失敗なら失敗で止めて false。</summary>
+        private bool ApplyAddonCall(ScenarioRunState run, PyAddonHost.CallState call)
+        {
+            var frame = run.Top;
+            string scen = run.WaitScenario ?? "", item = run.WaitItemId ?? "", at = run.WaitAt ?? "";
+            run.WaitCallNo = 0;
+
+            if (call.Status != PyAddonHost.CallState.Done)
+            {
+                run.SetStatus(scen, item, ScenarioItemRunStatus.Failed);
+                run.Stop        = ScenarioRunStop.Failed;
+                run.StopMessage = $"アドオン {call.AddonId} の {call.Action} が失敗しました: {call.Error}";
+                run.AddLog($"{at} → アドオンが失敗: {call.Error}");
+                return false;
+            }
+
+            string data = call.ResultJson ?? "{}";
+            int[]   master = null;
+            ulong[] ids    = null;
+            if (call.Action == PyAddonHost.ActionRun)
+                data = FlattenAddonResult(data, out master, out ids);
+
+            run.PrevMaster = master;
+            run.PrevIds    = ids;
+            run.PrevData   = data;
+            run.Results[ScenarioRunState.Key(scen, item)] = (master, ids, data);
+
+            run.SetStatus(scen, item, ScenarioItemRunStatus.Done);
+            run.Stop        = ScenarioRunStop.None;
+            run.StopMessage = "";
+            run.AddLog($"{at} → アドオンの返事を受けた（#{call.No}）");
+            if (frame != null && string.Equals(frame.Name, scen, StringComparison.Ordinal)) frame.Index++;
+            return true;
+        }
+
+        /// <summary>アドオンの返事 {message, log, result:{…}} を、result の欄＋message の平らな JSON にする。</summary>
+        private static string FlattenAddonResult(string json, out int[] master, out ulong[] ids)
+        {
+            master = null;
+            ids    = null;
+            var flat = new Newtonsoft.Json.Linq.JObject();
+            try
+            {
+                var o = Newtonsoft.Json.Linq.JObject.Parse(string.IsNullOrEmpty(json) ? "{}" : json);
+                if (o["result"] is Newtonsoft.Json.Linq.JObject r)
+                {
+                    foreach (var p in r.Properties())
+                    {
+                        if (p.Value is Newtonsoft.Json.Linq.JArray arr)
+                        {
+                            var parts = new List<string>();
+                            foreach (var e in arr) parts.Add(e.Type == Newtonsoft.Json.Linq.JTokenType.String
+                                ? (string)e : e.ToString(Newtonsoft.Json.Formatting.None));
+                            flat[p.Name] = string.Join(",", parts);
+                        }
+                        else if (p.Value is Newtonsoft.Json.Linq.JValue v)
+                        {
+                            flat[p.Name] = v.Type == Newtonsoft.Json.Linq.JTokenType.Boolean
+                                ? ((bool)v ? "true" : "false")
+                                : Convert.ToString(v.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
+                        }
+                    }
+                }
+                flat["message"] = (string)o["message"] ?? "";
+            }
+            catch (Exception e)
+            {
+                flat["message"] = "返事を読めません: " + e.Message;
+            }
+
+            var vals = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var p in flat.Properties()) vals[p.Name] = (string)p.Value;
+            master = OutputInts(vals, "masterIndices") ?? OutputInts(vals, "masterIndex");
+            ids    = OutputIds(vals, "objectIds");
+            return flat.ToString(Newtonsoft.Json.Formatting.None);
         }
 
         // ================================================================
@@ -619,7 +923,10 @@ namespace Poly_Ling.Player
 
             var route = run.Stop == ScenarioRunStop.Finished ? null : run.CurrentRoute;
 
-            ReportData(CommandDataJson.New()
+            var b = CommandDataJson.New();
+            if (run.Stop == ScenarioRunStop.Finished && run.OutputsJson != null)
+                b.Text("outputs", run.OutputsJson);
+            ReportData(b
                 .Text ("routeName",        route?.Name ?? "")
                 .Texts("routeItems",       route != null ? new List<string>(route.Items) : new List<string>())
                 .Text ("routeNote",        route?.Note ?? "")
@@ -646,6 +953,7 @@ namespace Poly_Ling.Player
                 case ScenarioRunStop.Judgment: return "judgment";
                 case ScenarioRunStop.Failed:   return "failed";
                 case ScenarioRunStop.Finished: return "finished";
+                case ScenarioRunStop.Waiting:  return "waiting";
                 default:                       return "none";
             }
         }

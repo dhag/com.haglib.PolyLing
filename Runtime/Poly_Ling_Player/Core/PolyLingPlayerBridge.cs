@@ -32,6 +32,7 @@ namespace Poly_Ling.EditorBridge
         public void CreateAsset(Object asset, string path) { }
         public void DeleteAsset(string path) { }
         public void CopySerialized(Object source, Object dest) { }
+        public void SetDirty(Object obj) { }
         public void ImportAsset(string path) { }
         public void SaveAssets() { }
         public void Refresh() { }

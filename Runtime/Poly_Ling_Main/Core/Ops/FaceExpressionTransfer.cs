@@ -62,10 +62,12 @@ namespace Poly_Ling.Tools.MediaPipe
 
         /// <summary>
         /// src を dst へ重ねる相似変換を求め、src の全点にかけた結果を返す（点数は同じであること）。
+        /// fitCount が正なら、対応点として先頭 fitCount 点だけを使う（変換は src の全点にかける）。
         /// </summary>
-        public static Vector3[] AlignSimilarity(Vector3[] src, Vector3[] dst)
+        public static Vector3[] AlignSimilarity(Vector3[] src, Vector3[] dst, int fitCount = -1)
         {
             int n = Mathf.Min(src.Length, dst.Length);
+            if (fitCount > 0) n = Mathf.Min(n, fitCount);
             if (n < 3) throw new InvalidOperationException("対応点が 3 点未満です");
 
             Vector3 ca = Vector3.zero, cb = Vector3.zero;

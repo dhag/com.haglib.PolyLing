@@ -92,6 +92,9 @@ namespace Poly_Ling.Data
     [PLResult("paramNames",      PLResultKind.TextArray,    Description = "シナリオの引数の名前（宣言の順）。項目の引数の値に ${名前} と書いた所が流すときに置き換わる。outline でも載る", Optional = true)]
     [PLResult("paramDefaults",   PLResultKind.TextArray,    Description = "引数の既定値。paramNames と同じ並び", Optional = true)]
     [PLResult("paramDescriptions", PLResultKind.TextArray,  Description = "引数の説明。paramNames と同じ並び", Optional = true)]
+    [PLResult("outputNames",     PLResultKind.TextArray,    Description = "シナリオの出力（戻り値）の名前（宣言の順）。流し終えたとき outputs で返る。outline でも載る", Optional = true)]
+    [PLResult("outputFroms",     PLResultKind.TextArray,    Description = "出力の値の出どころ。outputNames と同じ並び", Optional = true)]
+    [PLResult("outputDescriptions", PLResultKind.TextArray, Description = "出力の説明。outputNames と同じ並び", Optional = true)]
     [PLResult("scenarioItemIds",      PLResultKind.TextArray,    Description = "項目を指す名前", Optional = true)]
     [PLResult("kinds",           PLResultKind.TextArray,    Description = "項目の種別。scenarioItemIds と同じ並び", Optional = true)]
     [PLResult("actions",         PLResultKind.TextArray,    Description = "項目のコマンド名。実行しない項目は空。scenarioItemIds と同じ並び", Optional = true)]
@@ -632,6 +635,58 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>シナリオの出力（戻り値）を宣言する（足す・直す）。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの出力（戻り値）を 1 つ宣言する。同じ名前があれば出どころと説明を直す（並びは変えない）。無ければ末尾に足す。最後まで流し終えたとき（stop=finished）に from を評価し、runScenario / continueScenario / queryScenarioRun の outputs（名前 → 値の JSON）で返す。別のシナリオから参照項目で呼ばれたときは、その参照項目の戻り値になり、親から @<参照項目 ID>.<名前>、直後の項目から @prev.<名前> で引ける。from は項目の引数の値と同じ書き方（@<項目 ID>.<キー> / @prev.<キー> / ${引数} / 固定値）。")]
+    [PLResult("name",    PLResultKind.Text,      Description = "シナリオの名前")]
+    [PLResult("output",  PLResultKind.Text,      Description = "出力の名前")]
+    [PLResult("added",   PLResultKind.Flag,      Description = "新しく足したか（false は直した）")]
+    [PLResult("outputs", PLResultKind.TextArray, Description = "宣言の順の出力の名前", Optional = true)]
+    public sealed class SetScenarioOutputCommand : PanelCommand
+    {
+        [PLParam(Description = "シナリオの名前", Required = true)]
+        public string Name { get; }
+
+        [PLParam(Description = "出力の名前。英数字と _、先頭は数字以外、64 文字まで", Required = true)]
+        public string Output { get; }
+
+        [PLParam(Description = "値の出どころ。@<項目 ID>.<キー> / @prev.<キー> / ${引数} / 固定値。カンマを含んでよい", Required = true)]
+        public string From { get; }
+
+        [PLParam(Description = "何の値か。単位や形もここに書く")]
+        public string Description { get; }
+
+        public SetScenarioOutputCommand(int modelIndex, string name, string output, string from,
+                                        string description = "")
+            : base(modelIndex)
+        {
+            Name        = name ?? "";
+            Output      = output ?? "";
+            From        = from ?? "";
+            Description = description ?? "";
+        }
+    }
+
+    /// <summary>シナリオの出力の宣言を消す。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの出力（戻り値）の宣言を 1 つ消す。親のシナリオがこの出力を @<参照項目 ID>.<名前> で引いていると、流すときに失敗する。")]
+    [PLResult("name",    PLResultKind.Text,      Description = "シナリオの名前")]
+    [PLResult("output",  PLResultKind.Text,      Description = "消した出力の名前")]
+    [PLResult("outputs", PLResultKind.TextArray, Description = "残った出力の名前（宣言の順）", Optional = true)]
+    public sealed class RemoveScenarioOutputCommand : PanelCommand
+    {
+        [PLParam(Description = "シナリオの名前", Required = true)]
+        public string Name { get; }
+
+        [PLParam(Description = "消す出力の名前", Required = true)]
+        public string Output { get; }
+
+        public RemoveScenarioOutputCommand(int modelIndex, string name, string output)
+            : base(modelIndex)
+        {
+            Name   = name ?? "";
+            Output = output ?? "";
+        }
+    }
+
     /// <summary>シナリオの項目の引数を 1 つだけ書く。</summary>
     [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオの項目の引数を 1 つだけ書く。値にカンマを含む引数（masterIndices や点列など）はこちらを使う。addScenarioItem / setScenarioItem の argValues は配列なのでカンマで割れてしまう。参照項目（ScenarioRef）にも書け、キーを呼ぶシナリオの引数名、値を渡す値（親の ${名前} でもよい）とする。")]
     [PLResult("name",      PLResultKind.Text,    Description = "シナリオの名前")]
@@ -697,9 +752,9 @@ namespace Poly_Ling.Data
     // ================================================================
 
     /// <summary>シナリオを先頭から流す。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオを先頭の項目から順に実行する。指示（Instruction）・確認（Observe）の項目と、失敗した項目で止まる。注意（Note）の項目は止まらずに読み飛ばし、別のシナリオを呼ぶ項目（ScenarioRef）では呼ばれたシナリオをその場で流す。止まったら stop と stopMessage を読み、continueScenario で続ける。@prev と @<項目 ID> は、この流れの中で実行した項目の結果だけを指す。途中の項目だけを選んで実行する口は無い。シナリオが引数を宣言していれば（describeScenario の paramNames）、paramKeys / paramValues で値を渡せる。渡さない引数は既定値、宣言に無い名前は流し始める前に失敗。項目の引数の値に ${名前} と丸ごと書いた所がその値に置き換わる。参照項目の引数（キーが子の引数名）で子シナリオへ値を渡す。")]
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオを先頭の項目から順に実行する。指示（Instruction）・確認（Observe）の項目と、失敗した項目で止まる。注意（Note）の項目は止まらずに読み飛ばし、別のシナリオを呼ぶ項目（ScenarioRef）では呼ばれたシナリオをその場で流す。止まったら stop と stopMessage を読み、continueScenario で続ける。@prev と @<項目 ID> は、この流れの中で実行した項目の結果だけを指す。途中の項目だけを選んで実行する口は無い。シナリオが引数を宣言していれば（describeScenario の paramNames）、paramKeys / paramValues で値を渡せる。渡さない引数は既定値、宣言に無い名前は流し始める前に失敗。項目の引数の値に ${名前} と丸ごと書いた所がその値に置き換わる。参照項目の引数（キーが子の引数名）で子シナリオへ値を渡す。シナリオが出力を宣言していれば（describeScenario の outputNames）、最後まで流し終えたとき outputs で返す。子シナリオの出力は親の参照項目の戻り値になる（@<参照項目 ID>.<名前>・@prev.<名前>）。invokePyAddon の項目では返事を待って stop=waiting で止まり、返事が来たら戻り値（アドオンの result と message）を控えて先へ進める状態に戻る（続きは continueScenario。案内バーは自動で続ける）。")]
     [PLResult("rootName",         PLResultKind.Text,      Description = "流しているシナリオの名前")]
-    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none（項目数の上限で一旦返した）/ judgment（指示・確認の項目）/ failed（項目が失敗）/ finished（最後まで終わった）")]
+    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none（項目数の上限で一旦返した）/ judgment（指示・確認の項目）/ failed（項目が失敗）/ waiting（Python アドオンの返事待ち。返事が来たら控えて先へ進められる状態になる）/ finished（最後まで終わった）")]
     [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった項目の内容、または失敗の理由")]
     [PLResult("scenario",         PLResultKind.Text,      Description = "いま居るシナリオの名前。別のシナリオを呼んでいる間はそちら")]
     [PLResult("scenarioItemId",        PLResultKind.Text,      Description = "いま居る項目 ID（次に処理する項目、または止まった項目）")]
@@ -714,6 +769,7 @@ namespace Poly_Ling.Data
     [PLResult("routeItems",       PLResultKind.TextArray, Description = "その経路のボタン・入力欄の ID。uiReveal / uiHighlight add=true で示せる", Optional = true)]
     [PLResult("routeNote",        PLResultKind.Text,      Description = "その経路のうちボタンで表せない操作の説明", Optional = true)]
     [PLResult("awaitUser",        PLResultKind.Flag,      Description = "人がこの項目のコマンドを実行するのを待っているか（案内バーの入力待ち）", Optional = true)]
+    [PLResult("outputs",          PLResultKind.Text,      Description = "シナリオの出力（describeScenario の outputNames）を評価した値。名前 → 値の JSON オブジェクトの文字列。stop=finished で出力を宣言しているときだけ", Optional = true)]
     public sealed class RunScenarioCommand : PanelCommand
     {
         [PLParam(Description = "流すシナリオの名前", Required = true)]
@@ -746,7 +802,7 @@ namespace Poly_Ling.Data
     /// <summary>止まった所から続ける。</summary>
     [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "runScenario で止まった所から続ける。指示・確認の項目で止まっていたときはその項目を越えて進み、失敗で止まっていたときは同じ項目をやり直す。argKeys / argValues を渡すと、次に実行するコマンドの項目の値だけを差し替える（指示の項目で決めた値を渡すため）。戻り値は runScenario と同じ。")]
     [PLResult("rootName",         PLResultKind.Text,      Description = "流しているシナリオの名前")]
-    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / finished")]
+    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / waiting / finished")]
     [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった項目の内容、または失敗の理由")]
     [PLResult("scenario",         PLResultKind.Text,      Description = "いま居るシナリオの名前")]
     [PLResult("scenarioItemId",        PLResultKind.Text,      Description = "いま居る項目 ID")]
@@ -761,6 +817,7 @@ namespace Poly_Ling.Data
     [PLResult("routeItems",       PLResultKind.TextArray, Description = "その経路のボタン・入力欄の ID", Optional = true)]
     [PLResult("routeNote",        PLResultKind.Text,      Description = "その経路のうちボタンで表せない操作の説明", Optional = true)]
     [PLResult("awaitUser",        PLResultKind.Flag,      Description = "人がこの項目のコマンドを実行するのを待っているか", Optional = true)]
+    [PLResult("outputs",          PLResultKind.Text,      Description = "シナリオの出力を評価した値（名前 → 値の JSON オブジェクトの文字列）。stop=finished で出力を宣言しているときだけ", Optional = true)]
     public sealed class ContinueScenarioCommand : PanelCommand
     {
         [PLParam(Description = "1 回の呼び出しで処理する項目の上限。0 は止まるまで。MCP からは省く", Min = 0)]
@@ -785,7 +842,7 @@ namespace Poly_Ling.Data
     /// <summary>流しているシナリオの状態を返す。</summary>
     [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "流しているシナリオの状態を返す。戻り値は runScenario と同じで、log にはこの流れの記録がすべて入る。流していなければ rootName が空。")]
     [PLResult("rootName",         PLResultKind.Text,      Description = "流しているシナリオの名前。流していなければ空")]
-    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / finished")]
+    [PLResult("stop",             PLResultKind.Text,      Description = "止まった理由。none / judgment / failed / waiting / finished")]
     [PLResult("stopMessage",      PLResultKind.Text,      Description = "止まった項目の内容、または失敗の理由")]
     [PLResult("scenario",         PLResultKind.Text,      Description = "いま居るシナリオの名前")]
     [PLResult("scenarioItemId",        PLResultKind.Text,      Description = "いま居る項目 ID")]
@@ -800,6 +857,7 @@ namespace Poly_Ling.Data
     [PLResult("routeItems",       PLResultKind.TextArray, Description = "その経路のボタン・入力欄の ID。uiReveal / uiHighlight add=true で示せる", Optional = true)]
     [PLResult("routeNote",        PLResultKind.Text,      Description = "その経路のうちボタンで表せない操作の説明", Optional = true)]
     [PLResult("awaitUser",        PLResultKind.Flag,      Description = "人がこの項目のコマンドを実行するのを待っているか", Optional = true)]
+    [PLResult("outputs",          PLResultKind.Text,      Description = "シナリオの出力を評価した値（名前 → 値の JSON オブジェクトの文字列）。stop=finished で出力を宣言しているときだけ", Optional = true)]
     public sealed class QueryScenarioRunCommand : PanelCommand
     {
         public QueryScenarioRunCommand(int modelIndex = 0)
@@ -956,20 +1014,29 @@ namespace Poly_Ling.Data
     // 別ファイルとの出し入れ
     // ================================================================
 
-    /// <summary>シナリオをファイルへ書き出す。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオを CSV ファイルへ書き出す。形式はシナリオの置き場のファイルと同じ。指定したシナリオが参照しているシナリオも一緒に書くので、そのファイルだけで取り込める。作業フォルダの下だけへ書ける。")]
-    [PLResult("path",  PLResultKind.Text,      Description = "書いたファイルの絶対パス")]
+    /// <summary>シナリオを書き出す。ファイルへ書くか、CSV の本文を戻り値で返す。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオを CSV で書き出す。filePath を渡すとそのファイルへ書き（作業フォルダの下だけ）、省くとファイルを書かずに CSV の本文を戻り値 csv で返す（ダウンロード用。本文が長すぎるときは失敗するので names で絞るか filePath を使う）。形式はシナリオの置き場のファイルと同じ。指定したシナリオが参照しているシナリオも一緒に書くので、それだけで取り込める。リモート接続からは filePath を省いたときだけ使える。")]
+    [PLResult("path",  PLResultKind.Text,      Description = "書いたファイルの絶対パス。filePath を渡したときだけ", Optional = true)]
+    [PLResult("csv",   PLResultKind.Text,      Description = "CSV の本文。filePath を省いたときだけ。importScenarios の csvText にそのまま渡せる", Optional = true)]
     [PLResult("count", PLResultKind.Integer,   Description = "書いたシナリオの数")]
     [PLResult("names", PLResultKind.TextArray, Description = "書いたシナリオの名前。参照先として加わったものも含む", Optional = true)]
     public sealed class ExportScenariosCommand : PanelCommand
     {
+        /// <summary>
+        /// filePath を省いたとき戻り値に載せる CSV の文字数の上限。
+        /// MCP の道具応答は全体でおよそ 1MB が上限（PolyLingMcpServer の McpContent.cs）で、
+        /// MCP サーバは非 ASCII を \uXXXX にして送るので、文字数の割に膨らむ。
+        /// MCP サーバの文字列出力の上限（search_text / read_unity_log の 400000 文字）にそろえる。
+        /// </summary>
+        public const int InlineCsvMaxChars = 400_000;
+
         [PLParam(Description = "書き出すシナリオの名前。省くと全部")]
         public string[] Names { get; }
 
-        [PLParam(Description = "書き出し先の CSV ファイルのパス。作業フォルダからの相対でも絶対でもよい", Required = true)]
+        [PLParam(Description = "書き出し先の CSV ファイルのパス。作業フォルダからの相対でも絶対でもよい。省くとファイルを書かず、本文を戻り値 csv で返す")]
         public string FilePath { get; }
 
-        public ExportScenariosCommand(int modelIndex, string filePath, string[] names = null)
+        public ExportScenariosCommand(int modelIndex, string filePath = "", string[] names = null)
             : base(modelIndex)
         {
             Names    = names ?? System.Array.Empty<string>();
@@ -977,14 +1044,14 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>ファイルからシナリオを取り込む。</summary>
-    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "CSV ファイルからシナリオを取り込む。ファイルのシナリオをまとめて検査し、1 本でも問題（参照先が無い・循環・名前の重なり）があれば何も登録しない。同じ名前のシナリオは overwrite を立てたときだけ差し替える。作業フォルダの下だけを読める。")]
+    /// <summary>シナリオを取り込む。ファイルからか、CSV の本文から。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "シナリオを CSV から取り込む。filePath（作業フォルダの下だけ）か csvText（CSV の本文。アップロード用）のどちらか一方を渡す。まとめて検査し、1 本でも問題（参照先が無い・循環・名前の重なり）があれば何も登録しない。同じ名前のシナリオは overwrite を立てたときだけ差し替える。リモート接続からは、ホストが許可（setRemoteScenarioImport）しているときに csvText でだけ使え、overwrite は使えない。")]
     [PLResult("added",    PLResultKind.TextArray, Description = "新しく登録したシナリオの名前", Optional = true)]
     [PLResult("replaced", PLResultKind.TextArray, Description = "差し替えたシナリオの名前", Optional = true)]
     [PLResult("count",    PLResultKind.Integer,   Description = "取り込み後のシナリオの数")]
     public sealed class ImportScenariosCommand : PanelCommand
     {
-        [PLParam(Description = "取り込む CSV ファイルのパス。作業フォルダからの相対でも絶対でもよい", Required = true)]
+        [PLParam(Description = "取り込む CSV ファイルのパス。作業フォルダからの相対でも絶対でもよい。csvText とどちらか一方")]
         public string FilePath { get; }
 
         [PLParam(Description = "同じ名前のシナリオがあるとき差し替える。立てないと、重なる名前を挙げて失敗する")]
@@ -993,12 +1060,31 @@ namespace Poly_Ling.Data
         [PLParam(Description = "新しく入るシナリオを置くフォルダ。省くと直下。差し替えるシナリオは今の場所のまま")]
         public string Folder { get; }
 
-        public ImportScenariosCommand(int modelIndex, string filePath, bool overwrite = false, string folder = "")
+        [PLParam(Description = "取り込む CSV の本文（exportScenarios の csv と同じ形）。filePath とどちらか一方")]
+        public string CsvText { get; }
+
+        public ImportScenariosCommand(int modelIndex, string filePath = "", bool overwrite = false, string folder = "", string csvText = "")
             : base(modelIndex)
         {
             FilePath  = filePath ?? "";
             Overwrite = overwrite;
             Folder    = folder ?? "";
+            CsvText   = csvText ?? "";
+        }
+    }
+
+    /// <summary>リモート接続からのシナリオの取り込みを許可する・しない。</summary>
+    [PLCommand(Category = "scenario", Writes = PLWriteScope.None, Description = "リモート接続の参加者が importScenarios（csvText のみ・差し替えなし）でシナリオを取り込むのを許可する・しない。既定はしない。保存せず、起動し直すとしないに戻る。リモート接続からは実行できない。")]
+    [PLResult("enabled", PLResultKind.Flag, Description = "許可しているか")]
+    public sealed class SetRemoteScenarioImportCommand : PanelCommand
+    {
+        [PLParam(Description = "true で許可、false で不許可", Required = true)]
+        public bool Enabled { get; }
+
+        public SetRemoteScenarioImportCommand(int modelIndex, bool enabled)
+            : base(modelIndex)
+        {
+            Enabled = enabled;
         }
     }
 

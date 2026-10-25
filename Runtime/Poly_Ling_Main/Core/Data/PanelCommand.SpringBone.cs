@@ -646,15 +646,29 @@ namespace Poly_Ling.Data
         [PLParam(Description = "抵抗", Required = true)]
         public float DragForce { get; }
 
+        [PLParam(Description = "揺らさない上の段数。鎖の先頭からこの段数ぶんはジョイントを付けず（付いていれば外し）、"
+                             + "その次の段を鎖の先頭にする。外した段のボーンは揺れの計算に入らず親に従う。0 で全段を揺らす")]
+        public int FixedLevels { get; }
+
+        [PLParam(Description = "先端側で硬さを変える段数。鎖の先からこの段数のあいだ、硬さを stiffness から tipStiffness まで直線で変え、先端で tipStiffness にする。0 で全段 stiffness")]
+        public int TipLevels { get; }
+
+        [PLParam(Description = "先端の硬さ。tipLevels が 1 以上のときだけ使う")]
+        public float TipStiffness { get; }
+
         public ApplySpringBoneByPrefixCommand(int modelIndex, string namePrefix,
-            float hitRadius, float stiffness, float gravityPower, float dragForce)
+            float hitRadius, float stiffness, float gravityPower, float dragForce,
+            int fixedLevels = 0, int tipLevels = 0, float tipStiffness = 0f)
             : base(modelIndex)
         {
+            TipLevels    = tipLevels < 0 ? 0 : tipLevels;
+            TipStiffness = tipStiffness;
             NamePrefix   = namePrefix ?? "";
             HitRadius    = hitRadius;
             Stiffness    = stiffness;
             GravityPower = gravityPower;
             DragForce    = dragForce;
+            FixedLevels  = fixedLevels < 0 ? 0 : fixedLevels;
         }
     }
 }

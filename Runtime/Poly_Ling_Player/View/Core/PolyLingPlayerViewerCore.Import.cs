@@ -583,6 +583,9 @@ namespace Poly_Ling.Player
                 }
             }
 
+            // 名前だけで決めた Hips を骨の親子で確かめる（Robot Kyle の「Hip」対策）
+            mapping.FixHipsByHierarchy(model.MeshContextList);
+
             if (mapped == 0)
             {
                 _status = bonesOnly

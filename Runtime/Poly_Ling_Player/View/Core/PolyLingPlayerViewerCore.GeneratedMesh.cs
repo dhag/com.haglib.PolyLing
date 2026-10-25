@@ -457,12 +457,94 @@ namespace Poly_Ling.Player
             }
             _editOps?.UndoController?.ClearTargetMeshContext();
 
+            // 置き換え先がミラー対の実体側なら、ミラー側も実体側から作り直す。
+            ReplaceMirrorSideContents(model, targetMc);
+
             model.ComputeWorldMatrices();
             PrimitiveMeshFinalize(model);
 
             // 置き換え先の位置。呼び出し側が CommandResult へ載せる。
             masterIndex = model.IndexOf(targetMc);
             return null;
+        }
+
+        /// <summary>
+        /// 中身を入れ替えた実体側に合わせて、ミラー側の中身を作り直す。
+        ///
+        /// 【なぜ要るか】
+        ///   ReplaceExisting（オブジェクトグループの作り直し）は実体側の頂点・面を
+        ///   丸ごと入れ替えるが、ミラー側は自分の頂点を持つ別の描画オブジェクトで、
+        ///   放っておくと古い形と古いウェイトのまま残る。スキンド化の後は
+        ///   ミラー側が MirrorGeometryDerived = false になるので、
+        ///   RebuildDerivedMirrorGeometry の対象にもならない。
+        ///   例：パイプの作り直しで実体側ははしごのウェイトを引き継ぐのに、
+        ///   ミラー側はスキンド化が書いた「自分のボーン 1.0」のまま動かなかった。
+        ///
+        /// 【作り方】
+        ///   形は生成ミラーと同じ BuildMirroredMeshObject で作る（添字恒等対応が保たれる）。
+        ///   中身を入れ替えたので MirrorPair の頂点対応表を張り直し、
+        ///   実体側がスキンドなら対のボーンへ写したウェイトをミラー側へ書く
+        ///   （SyncBoneWeights。ミラーの有効化 EnableMirror と同じ手順）。
+        ///   描画オブジェクト自体は差し替えないので、名前・階層・ObjectId は残る。
+        /// </summary>
+        private void ReplaceMirrorSideContents(ModelContext model, MeshContext realCtx)
+        {
+            var pair = model?.GetMirrorPair(realCtx);
+            if (pair == null || !ReferenceEquals(pair.Real, realCtx)) return;
+
+            var mirrorCtx = pair.Mirror;
+            var mirrorMo  = mirrorCtx?.MeshObject;
+            var realMo    = realCtx.MeshObject;
+            if (mirrorMo == null || realMo == null) return;
+
+            int axis = MirrorBranchOps.ResolveMirrorAxis(realCtx);
+            var built = MirrorBranchOps.BuildMirroredMeshObject(
+                realMo, axis, realCtx.MirrorDistance, realCtx.MirrorMaterialOffset, mirrorCtx.Name);
+            if (built == null) return;
+
+            var undo = _editOps?.UndoController;
+            MeshObjectSnapshot before = null;
+            if (undo != null)
+            {
+                undo.SetMeshObjectFor(mirrorCtx, mirrorCtx.UnityMesh);
+                undo.MeshUndoContext.ParentModelContext = model;
+                before = undo.CaptureMeshObjectSnapshotOf(mirrorCtx);
+            }
+
+            mirrorMo.Vertices.Clear();
+            mirrorMo.Faces.Clear();
+            foreach (var v in built.Vertices) mirrorMo.Vertices.Add(v);
+            foreach (var f in built.Faces)    mirrorMo.Faces.Add(f);
+            mirrorMo.LineGroups = LineGroupOps.CloneList(realMo);
+            LineGroupOps.MirrorHandles(mirrorMo.LineGroups, n => MirrorBranchOps.MirrorNormal(axis, n));
+            mirrorMo.RebuildIdSets();
+            mirrorMo.InvalidatePositionCache();
+
+            // 消えた頂点・面を指したままの選択を残さない。
+            mirrorCtx.Selection?.ClearAll();
+
+            if (pair.Build(model.MeshContextList))
+            {
+                if (realCtx.IsSkinned) pair.SyncBoneWeights();
+            }
+            else
+            {
+                Debug.LogWarning($"[Mirror] 作り直し後のペアの張り直しに失敗しました mirror=\"{mirrorCtx.Name}\"\n{pair.BuildLog}");
+            }
+            mirrorMo.RecomputeSkinKind();
+
+            var newUnityMesh = mirrorMo.ToUnityMesh();
+            newUnityMesh.name      = mirrorCtx.Name;
+            newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
+            mirrorCtx.ReplaceUnityMesh(newUnityMesh);
+            mirrorCtx.OriginalPositions = (Vector3[])mirrorMo.Positions.Clone();
+
+            if (undo != null && before != null)
+            {
+                var after = undo.CaptureMeshObjectSnapshotOf(mirrorCtx);
+                undo.RecordTopologyChange(before, after, $"Replace Contents of {mirrorCtx.Name} (mirror)");
+            }
+            undo?.ClearTargetMeshContext();
         }
 
         /// <summary>

@@ -274,6 +274,13 @@
 | 揺れもの編集 | 揺れものを設定 | スプリングボーン、髪揺れ |
 | 当たり判定の作成と編集 | 揺れものの当たり判定 | コライダー |
 
+### 折り畳み「Python アドオン」
+
+| 押すボタン | やりたいこと | 言い換え |
+|---|---|---|
+| 顔メッシュ（MediaPipe）などアドオンの名前 | Python アドオンを開いて実行する（起動していなければ起動する） | Python、公式アドオン、メディアパイプで顔メッシュ、画像から顔 |
+| アドオンの設定・一覧 | Python 環境（poly_ling_py のフォルダ・python）を決める、自作アドオンを登録する | venv、アドオン登録、Python の設定 |
+
 ### 折り畳み「その他」
 
 | 押すボタン | やりたいこと | 言い換え |
@@ -346,9 +353,9 @@ PolyLing の画面ではなく Blender の中の場所。答えるときは「Bl
 | ［ファイル > エクスポート > PolyLing モーション (.plmotion.json)］、またはサイドバーのタブ［PolyLing］の「モーションを書く」 | Blender のアニメーションを PolyLing のモーションにする | モーション書き出し、Blender で作ったモーション | アーマチュアを選んでから。PolyLing では左の「その他」→「モーション」で読み込む |
 | サイドバーのタブ［PolyLing］の「Humanoid の割り当て」→「自動で割り当て」「VRM アドオンから取り込む」 | どのボーンが腕・脚かを決める | ヒューマノイド、Humanoid、ボーン割り当て、マッピング、VRM Add-on | 表の右の欄でボーンを選び直せる。表が空のままモーションを読み書きすると自動で割り当てる |
 
-### 3-1. 動いている PolyLing とつなぐ（Blender アドオン「PolyLing Bridge」）
+### 3-1. 動いている PolyLing とつなぐ（Blender アドオン「PolyLing IO」のパネル［PolyLing連携］）
 
-入れ方：`データとツール/poly_ling_py/polyling_bridge.py` を Blender の［編集 > プリファレンス > アドオン］で入れて「PolyLing Bridge」を有効にする。モーションの送受信には「PolyLing IO」も有効にしておく。PolyLing 側はリモートサーバを開始しておく。決まりの詳細は契約 §3.6（メッシュ）・§3.7（モーション）。
+入れ方：`データとツール/poly_ling_py/polyling_io` をフォルダごと zip にして Blender の［編集 > プリファレンス > アドオン］で入れ、「PolyLing IO」を有効にする（以前の別アドオン「PolyLing Bridge」が入っていれば外す）。PolyLing 側はリモートサーバを開始しておく。決まりの詳細は契約 §3.6（メッシュ）・§3.7（モーション）。
 
 | 場所（Blender） | やりたいこと | 言い換え | ひとこと |
 |---|---|---|---|
@@ -375,7 +382,7 @@ VRM 1.0 のモデルなら、VRM Add-on for Blender で `.vrma` を読み書き�
 | 変わったもの | 見る場所 |
 |---|---|
 | Blender アドオンのメニュー・パネル・チェックの文字 | `データとツール/poly_ling_py/polyling_io/blender/__init__.py` |
-| Blender のブリッジ（［PolyLing連携］）のボタンの文字 | `データとツール/poly_ling_py/polyling_bridge.py` の `POLYLING_PT_bridge` と各オペレーター |
+| Blender のブリッジ（［PolyLing連携］）のボタンの文字 | `データとツール/poly_ling_py/polyling_io/blender/bridge.py` の `POLYLING_PT_bridge` と各オペレーター |
 | 折り畳み・ボタンの文字や並び | `PlayerLayoutRoot.LeftPaneButtons.cs` の `BuildLeftPaneToolButtons` |
 | 左の常時表示部 | `PlayerLayoutRoot.LeftPane.cs` の `BuildLeftPane` |
 | 右最上部の 3 ボタン | `PlayerLayoutRoot.RightPane.cs` の `BuildRightPane` |

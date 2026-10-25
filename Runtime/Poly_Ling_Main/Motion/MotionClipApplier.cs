@@ -387,10 +387,17 @@ namespace Poly_Ling.Motion
         {
             if (_dto.expressions == null) return;
 
+            // モデルの表情は名前で引く。同じ名前のトラック（パス＝レンダラー違い）は最初の 1 本だけを当てる。
+            var usedNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var tr in _dto.expressions)
             {
                 if (tr == null) continue;
                 rep.ExpressionTotal++;
+                if (tr.name != null && !usedNames.Add(tr.name))
+                {
+                    rep.Add(MotionFileCodes.DuplicateTrack, $"{tr.name}（{tr.path}。同じ名前の先のトラックを当てました）");
+                    continue;
+                }
 
                 var expr = FindExpression(model, tr.name);
                 if (expr == null)

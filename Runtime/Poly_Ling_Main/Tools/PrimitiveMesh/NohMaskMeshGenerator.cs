@@ -223,12 +223,19 @@ namespace Poly_Ling.NohMask
             float sy = p.FlipY ? -1f : 1f;
             float sz = p.FlipZ ? -1f : 1f;
 
+            // 縦横比：正規化座標の x は画像の幅、y は高さで割った値なので、正方形でない画像では
+            // そのままだと顔が縦横に伸びる。画像の大きさが分かれば y に 高さ/幅 を掛けて画素の比に戻す
+            // （x と z は MediaPipe でどちらも幅の尺度なので変えない）。大きさが無いファイルは従来どおり 1。
+            float aspectY = 1f;
+            if (faceData.image != null && faceData.image.width > 0 && faceData.image.height > 0)
+                aspectY = (float)faceData.image.height / faceData.image.width;
+
             var positions = new Vector3[faceData.landmarks.Length];
             for (int i = 0; i < faceData.landmarks.Length; i++)
             {
                 var lm = faceData.landmarks[i];
                 float x = -(lm.x - center.x) * p.Scale;
-                float y = ((1f - lm.y) - (1f - center.y)) * p.Scale;
+                float y = ((1f - lm.y) - (1f - center.y)) * p.Scale * aspectY;
                 float z = -(lm.z - center.z) * p.Scale * p.DepthScale;
                 positions[i] = new Vector3(x * sx, y * sy, z * sz);
             }

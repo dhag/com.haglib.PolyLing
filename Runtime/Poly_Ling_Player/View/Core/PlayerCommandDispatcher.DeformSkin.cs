@@ -189,6 +189,43 @@ namespace Poly_Ling.Player
                             mc, c.TargetBoneMaster, c.PaintMode, c.WeightValue, c.Strength));
                     return true;
 
+                // ── 写し元メッシュの最も近い面の点からウェイトを写す
+                //    対象・Undo・ミラー同期は Flood と同じ共通経路（ApplySkinWeightPerMesh）。
+                case CopySkinWeightsFromNearestCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+
+                    int src = c.SourceMasterIndex;
+                    var srcMc = (src >= 0 && src < model.MeshContextCount) ? model.GetMeshContext(src) : null;
+                    if (srcMc?.MeshObject == null) { Fail($"写し元 {src} がありません"); return true; }
+
+                    var cwTargets = SkinWeightOperations.CollectTargetMeshContexts(model);
+                    if (cwTargets.Count == 0) { Fail("対象の描画オブジェクトがありません。"); return true; }
+
+                    var cwCheck = new List<MeshContext>(cwTargets) { srcMc };
+                    var cwNonSkinned = SkinWeightVolumeOps.FindNonSkinned(cwCheck);
+                    if (cwNonSkinned.Count > 0)
+                    {
+                        Fail("スキンドでない描画オブジェクトが含まれています: " + string.Join(" / ", cwNonSkinned));
+                        return true;
+                    }
+
+                    int cwVerts = 0, cwMeshes = 0;
+                    ApplySkinWeightPerMesh(project, model, "Copy Skin Weights From Nearest", mc =>
+                    {
+                        if (mc == srcMc) return 0;
+                        int n = Poly_Ling.Ops.SkinWeightTransferOps.CopyFromNearest(srcMc.MeshObject, mc.MeshObject);
+                        if (n > 0) { cwVerts += n; cwMeshes++; }
+                        return n;
+                    });
+
+                    ReportData(CommandDataJson.New()
+                        .Int("vertices", cwVerts)
+                        .Int("meshes",   cwMeshes)
+                        .Build());
+                    return true;
+                }
+
                 case NormalizeSkinWeightCommand _:
                     ApplySkinWeightPerMesh(project, model, "Normalize Skin Weights",
                         mc => SkinWeightOperations.ApplyNormalizeToMesh(mc));
@@ -256,6 +293,80 @@ namespace Poly_Ling.Player
                         .Int("meshes",     sfChanged.Count)
                         .Int("parentBone", sfFrame.ParentBone)
                         .Build(), sfIdx, sfIds);
+                    return true;
+                }
+
+                // ── 骨の列に沿った関節ぼかし（太さで幅／関節から関節まで滑らか）
+                //    対象・Undo・ミラー同期は Flood と同じ共通経路（ApplySkinWeightPerMesh）。
+                case SkinWeightChainBlendCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (!SkinWeightChainOps.ResolveBones(model, c.BoneNames, out var cbBones, out string cbErr))
+                    { Fail(cbErr); return true; }
+
+                    var cbTargets = SkinWeightOperations.CollectTargetMeshContexts(model);
+                    if (cbTargets.Count == 0) { Fail("対象の描画オブジェクトがありません。"); return true; }
+                    var cbNonSkinned = SkinWeightVolumeOps.FindNonSkinned(cbTargets);
+                    if (cbNonSkinned.Count > 0)
+                    {
+                        Fail("スキンドでない描画オブジェクトが含まれています: " + string.Join(" / ", cbNonSkinned));
+                        return true;
+                    }
+
+                    if (!SkinWeightChainOps.TryBuildFrame(model, cbBones, cbTargets,
+                            c.FullSmooth, c.WidthFactor, c.SliceRatio, out var cbFrame, out cbErr))
+                    { Fail(cbErr); return true; }
+
+                    int cbVerts = 0;
+                    var cbChanged = new List<MeshContext>();
+                    ApplySkinWeightPerMesh(project, model, "Skin Weight Chain Blend", mc =>
+                    {
+                        int n = SkinWeightChainOps.ApplyToMesh(mc, cbFrame);
+                        if (n > 0) { cbVerts += n; cbChanged.Add(mc); }
+                        return n;
+                    });
+
+                    var cbIdx = new int[cbChanged.Count];
+                    var cbIds = new ulong[cbChanged.Count];
+                    for (int i = 0; i < cbChanged.Count; i++)
+                    {
+                        cbIdx[i] = model.MeshContextList.IndexOf(cbChanged[i]);
+                        cbIds[i] = cbChanged[i].ObjectId;
+                    }
+
+                    var inv = System.Globalization.CultureInfo.InvariantCulture;
+                    ReportData(CommandDataJson.New()
+                        .Int("vertices",    cbVerts)
+                        .Int("meshes",      cbChanged.Count)
+                        .Text("radii",      string.Join(",", cbFrame.Radii.Select(v => v.ToString("0.#####", inv))))
+                        .Text("halfWidths", string.Join(",", cbFrame.HalfWidths.Select(v => v.ToString("0.#####", inv))))
+                        .Build(), cbIdx, cbIds);
+                    return true;
+                }
+
+                // ── 関節のぼかし方を測る（モデルは変えない）
+                case MeasureJointBlendCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    int mjJoint = SkinWeightChainOps.ResolveBone(model, c.JointBone);
+                    int mjFrom  = SkinWeightChainOps.ResolveBone(model, c.AxisFromBone);
+                    if (mjJoint < 0) { Fail($"ボーン「{c.JointBone}」が見つかりません。"); return true; }
+                    if (mjFrom  < 0) { Fail($"ボーン「{c.AxisFromBone}」が見つかりません。"); return true; }
+                    if (!SkinWeightChainOps.ResolveBones(model, c.SideABones, out var mjA, out string mjErr)
+                     || !SkinWeightChainOps.ResolveBones(model, c.SideBBones, out var mjB, out mjErr))
+                    { Fail(mjErr); return true; }
+                    if (!SkinWeightChainOps.Measure(model, mjJoint, mjFrom, mjA, mjB, c.SliceRatio,
+                            out var mj, out mjErr))
+                    { Fail(mjErr); return true; }
+
+                    ReportData(CommandDataJson.New()
+                        .Num("radius",     mj.Radius)
+                        .Num("sMin",       mj.SMin)
+                        .Num("sMax",       mj.SMax)
+                        .Int("blendCount", mj.BlendCount)
+                        .Int("sliceCount", mj.SliceCount)
+                        .Num("boneLength", mj.BoneLength)
+                        .Build());
                     return true;
                 }
 
@@ -544,6 +655,88 @@ namespace Poly_Ling.Player
                     catch (Exception ex)
                     {
                         Fail($"MediaPipe 変形に失敗しました: {ex.Message}");
+                    }
+                    return true;
+                }
+
+                // ── MediaPipe の顔から頭部を作る
+                case MediaPipeHeadBuildCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var hbFaceMc   = model.GetMeshContext(c.FaceMasterIndex);
+                    var hbBeforeMc = model.GetMeshContext(c.BeforeMasterIndex);
+                    var hbHeadMc   = model.GetMeshContext(c.HeadMasterIndex);
+                    if (hbFaceMc?.MeshObject   == null) { Fail($"MediaPipe の顔がありません（{c.FaceMasterIndex}）"); return true; }
+                    if (hbBeforeMc?.MeshObject == null) { Fail($"貼り付け用の顔がありません（{c.BeforeMasterIndex}）"); return true; }
+                    if (hbHeadMc?.MeshObject   == null) { Fail($"頭部のメッシュがありません（{c.HeadMasterIndex}）"); return true; }
+
+                    try
+                    {
+                        // 頂点（静止時）をワールドへ。描画と同じ VertexToWorldMatrix。
+                        Vector3[] ToWorld(MeshContext mc)
+                        {
+                            var mo = mc.MeshObject;
+                            var m  = mc.VertexToWorldMatrix;
+                            var w  = new Vector3[mo.VertexCount];
+                            for (int i = 0; i < w.Length; i++) w[i] = m.MultiplyPoint3x4(mo.Vertices[i].Position);
+                            return w;
+                        }
+                        var hbBeforeFaces = new List<int[]>();
+                        foreach (var f in hbBeforeMc.MeshObject.Faces)
+                            if (f?.VertexIndices != null && f.VertexIndices.Count >= 3) hbBeforeFaces.Add(f.VertexIndices.ToArray());
+
+                        var hbWorld = Poly_Ling.Tools.MediaPipe.MediaPipeHeadBuilder.Build(
+                            ToWorld(hbBeforeMc), hbBeforeFaces, ToWorld(hbFaceMc), ToWorld(hbHeadMc),
+                            out var hbRep);
+
+                        var hbList = MeshFilterToSkinnedRecord.CaptureList(model);
+                        var hbSrc  = hbHeadMc.MeshObject;
+                        var cloned = hbSrc.Clone();
+                        cloned.Name = hbSrc.Name + "_MP";
+                        var toLocal = hbHeadMc.WorldToVertexMatrix;
+                        for (int i = 0; i < cloned.VertexCount; i++) cloned.Vertices[i].Position = toLocal.MultiplyPoint3x4(hbWorld[i]);
+
+                        var hbNewMc = new MeshContext
+                        {
+                            MeshObject = cloned,
+                            Materials  = new System.Collections.Generic.List<Material>(
+                                hbHeadMc.Materials ?? new System.Collections.Generic.List<Material>()),
+                        };
+                        hbNewMc.UnityMesh           = cloned.ToUnityMesh();
+                        hbNewMc.UnityMesh.name      = cloned.Name;
+                        hbNewMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+                        hbNewMc.ParentModelContext  = model;
+                        int hbIdx = model.Add(hbNewMc);
+                        model.OnListChanged?.Invoke();
+
+                        if (_undoController != null)
+                        {
+                            var hbAfterList = MeshFilterToSkinnedRecord.CaptureList(model);
+                            var hbRecord = new MeshFilterToSkinnedRecord { BeforeList = hbList, AfterList = hbAfterList };
+                            PLDiag.UndoRecord("MeshList", "MediaPipe 頭部生成", hbRecord);
+                            _undoController.MeshListStack.Record(hbRecord, "MediaPipe 頭部生成");
+                            _undoController.FocusMeshList();
+                        }
+                        _viewportManager.EnterTopologyChanged(project);
+                        _notifyPanels(ChangeKind.ListStructure);
+
+                        Debug.Log($"[MediaPipeHead] 拡大率 {hbRep.FitScale:G4} / 対称面 x={hbRep.MirrorPlaneX:G4} / 組 {hbRep.Pairs}・中央 {hbRep.Midline}・組なし {hbRep.Unpaired}"
+                                  + $"（ずれ最大 {hbRep.MaxPairError:G3}）/ 鏡写しの面 {hbRep.MirrorFacesOk}/{hbRep.MirrorFaces} / 三角形 {hbRep.Triangles}"
+                                  + $" / そのまま {hbRep.CopiedVertices}・アフィン {hbRep.AffineVertices}（三角形の外 {hbRep.OutsideVertices}）");
+
+                        ReportData(CommandDataJson.New()
+                            .Num("fitScale", hbRep.FitScale).Num("mirrorPlaneX", hbRep.MirrorPlaneX)
+                            .Int("pairs", hbRep.Pairs).Int("midline", hbRep.Midline).Int("unpaired", hbRep.Unpaired)
+                            .Num("maxPairError", hbRep.MaxPairError)
+                            .Int("mirrorFacesOk", hbRep.MirrorFacesOk).Int("mirrorFaces", hbRep.MirrorFaces)
+                            .Int("triangles", hbRep.Triangles)
+                            .Int("copiedVertices", hbRep.CopiedVertices).Int("affineVertices", hbRep.AffineVertices)
+                            .Int("outsideVertices", hbRep.OutsideVertices).Build(),
+                            new[] { hbIdx }, new[] { hbNewMc.ObjectId });
+                    }
+                    catch (Exception ex)
+                    {
+                        Fail($"MediaPipe 頭部生成に失敗しました: {ex.Message}");
                     }
                     return true;
                 }

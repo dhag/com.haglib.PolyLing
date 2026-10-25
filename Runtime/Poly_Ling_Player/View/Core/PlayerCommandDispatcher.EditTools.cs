@@ -72,6 +72,49 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── 1 オブジェクトの面・頂点を全部選ぶ
+                //   SelectElementsCommand（Replace）へ展開して同じ受け口を通す。
+                case SelectAllElementsCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnSelectElements == null) { Fail("selection handler not wired"); return true; }
+
+                    int mi = c.MasterIndex;
+                    var mc = (mi >= 0 && mi < model.MeshContextCount) ? model.GetMeshContext(mi) : null;
+                    var mo = mc?.MeshObject;
+                    if (mo == null) { Fail($"描画オブジェクト {mi} がありません"); return true; }
+
+                    var vIdx  = new List<int>();
+                    var vMesh = new List<int>();
+                    var fIdx  = new List<int>();
+                    var fMesh = new List<int>();
+
+                    if (c.SelectVertices)
+                        for (int v = 0; v < mo.VertexCount; v++) { vIdx.Add(v); vMesh.Add(mi); }
+
+                    if (c.SelectFaces)
+                        for (int f = 0; f < mo.FaceCount; f++)
+                        {
+                            var fv = mo.Faces[f]?.VertexIndices;
+                            if (fv == null || fv.Count < 3) continue;   // 線分は面として扱わない
+                            fIdx.Add(f); fMesh.Add(mi);
+                        }
+
+                    var expanded = new SelectElementsCommand(
+                        c.ModelIndex, new[] { mi },
+                        vIdx.ToArray(), vMesh.ToArray(),
+                        System.Array.Empty<int>(), System.Array.Empty<int>(),
+                        fIdx.ToArray(), fMesh.ToArray(),
+                        System.Array.Empty<int>(), System.Array.Empty<int>(),
+                        SelectElementsCommand.SelectOp.Replace);
+
+                    string allReason = OnSelectElements.Invoke(expanded);
+                    if (allReason != null) { Fail(allReason); return true; }
+
+                    ReportData(BuildSelectionCountsData(model));
+                    return true;
+                }
+
                 // ── 選択頂点の移動
                 //
                 // 頂点への展開規則・マグネット・Undo 記録・リモート配信は

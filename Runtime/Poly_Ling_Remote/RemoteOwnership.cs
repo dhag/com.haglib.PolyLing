@@ -268,6 +268,13 @@ namespace Poly_Ling.Remote
         /// </summary>
         public static bool AllowAnonymousEdit = false;
 
+        /// <summary>
+        /// リモートの参加者がシナリオを取り込む（importScenarios を csvText で・差し替えなし）のを許すか。
+        /// 既定は許さない。ホストが setRemoteScenarioImport で切り替える。保存しない
+        /// （AllowAnonymousEdit・ライブ受信の受け入れ許可と同じく、起動し直すと戻る）。
+        /// </summary>
+        public static bool AllowRemoteScenarioImport = false;
+
         // ================================================================
         // 本体
         // ================================================================
@@ -297,9 +304,14 @@ namespace Poly_Ling.Remote
                 return OwnershipVerdict.Deny("UI 自動操作はリモート接続からは実行できません");
 
             // シナリオの置き場はホストの持ち物で、モデルにも属さない。
-            // リモートの参加者が書き換える筋合いがないので同じく受けない。
+            // リモートの参加者には、読むこと（一覧・中身・本文での書き出し）と、
+            // ホストが許可したときの本文での取り込み（差し替えなし）だけを許す。それ以外は受けない。
             if (isRemote && IsScenario(cmd))
-                return OwnershipVerdict.Deny("シナリオの操作はリモート接続からは実行できません");
+            {
+                string scenarioDeny = RemoteScenarioDenyReason(cmd);
+                if (scenarioDeny != null) return OwnershipVerdict.Deny(scenarioDeny);
+                return OwnershipVerdict.Ok;
+            }
 
             // 利用シーンの置き場もホストの持ち物。シナリオと同じく受けない。
             if (isRemote && IsScene(cmd))
@@ -600,6 +612,40 @@ namespace Poly_Ling.Remote
         private static bool IsScene(PanelCommand cmd)
             => cmd is QueryScenesCommand || cmd is SetSceneCommand || cmd is DeleteSceneCommand;
 
+        /// <summary>
+        /// リモートの参加者からのシナリオのコマンドを拒む理由。許すなら null。
+        ///   読む … queryScenarios / describeScenario / exportScenarios（filePath 無し）は許す。
+        ///   取り込む … importScenarios は、ホストの許可があり、csvText で、差し替えなしのときだけ許す。
+        ///   filePath はホストのファイルシステムを指すので、出し入れとも受けない。
+        ///   それ以外（作成・編集・削除・フォルダ・実行・記録・点検・許可の切り替え）は受けない。
+        /// </summary>
+        private static string RemoteScenarioDenyReason(PanelCommand cmd)
+        {
+            switch (cmd)
+            {
+                case QueryScenariosCommand _:
+                case DescribeScenarioCommand _:
+                    return null;
+
+                case ExportScenariosCommand ex:
+                    return string.IsNullOrEmpty(ex.FilePath)
+                        ? null
+                        : "リモート接続からはファイルへ書き出せません。filePath を省くと本文（csv）で受け取れます";
+
+                case ImportScenariosCommand im:
+                    if (!string.IsNullOrEmpty(im.FilePath))
+                        return "リモート接続からはファイルを指定して取り込めません。csvText で本文を送ってください";
+                    if (!AllowRemoteScenarioImport)
+                        return "ホストがリモート接続からのシナリオの取り込みを許可していません";
+                    if (im.Overwrite)
+                        return "リモート接続からは同じ名前のシナリオを差し替えられません（overwrite は使えません）";
+                    return null;
+
+                default:
+                    return "このシナリオの操作はリモート接続からは実行できません";
+            }
+        }
+
         /// <summary>シナリオのコマンドか（PanelCommand.Scenario.cs）。</summary>
         private static bool IsScenario(PanelCommand cmd)
         {
@@ -631,6 +677,7 @@ namespace Poly_Ling.Remote
                 case ExpandScenarioRefCommand _:
                 case ExportScenariosCommand _:
                 case ImportScenariosCommand _:
+                case SetRemoteScenarioImportCommand _:
                 case RunScenarioCommand _:
                 case ContinueScenarioCommand _:
                 case QueryScenarioRunCommand _:

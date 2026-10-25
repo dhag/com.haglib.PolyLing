@@ -140,6 +140,7 @@ namespace Poly_Ling.Data
             public string Name;
             public ToolIndexEntry Command;
             public ScenarioLibrary.SearchEntry Scenario;
+            public AddonCatalogEntry Addon;
         }
 
         /// <summary>
@@ -173,8 +174,12 @@ namespace Poly_Ling.Data
 
             bool hasCategory = !string.IsNullOrEmpty(category);
             bool hasFolder   = !string.IsNullOrWhiteSpace(folder);
-            bool wantCommands  = kind != SearchKindScenario && !hasFolder;
-            bool wantScenarios = kind != SearchKindCommand  && !hasCategory;
+            bool anyKind       = string.IsNullOrEmpty(kind);
+            bool wantCommands  = (anyKind || kind == SearchKindCommand)  && !hasFolder;
+            bool wantScenarios = (anyKind || kind == SearchKindScenario) && !hasCategory;
+            // アドオンは分類・フォルダ・利用シーンを持たないので、どれかで絞ったときは返さない。
+            bool wantAddons    = (anyKind || kind == SearchKindAddon) && !hasCategory && !hasFolder && scene == null;
+            int addonTotal = 0;
 
             string[] terms = SplitQuery(query);
             var hits = new List<SearchHit>();
@@ -221,6 +226,17 @@ namespace Poly_Ling.Data
                 scenarioTotal++;
             }
 
+            // Python アドオン（登録簿。PanelCommandAddonCatalog.cs）。点数はコマンドと同じ Score。
+            if (wantAddons)
+            foreach (var e in AddonCatalog())
+            {
+                string nameLower = (e.Id ?? "").ToLowerInvariant();
+                float score = terms.Length == 0 ? 1f : Score(nameLower, e.Haystack ?? nameLower, terms);
+                if (score <= 0f) continue;
+                hits.Add(new SearchHit { Score = score, Name = e.Id, Addon = e });
+                addonTotal++;
+            }
+
             // 点数の高い順。同点は名前順、名前も同じならコマンドを先に。
             hits.Sort((a, b) =>
             {
@@ -228,7 +244,9 @@ namespace Poly_Ling.Data
                 if (c != 0) return c;
                 c = string.CompareOrdinal(a.Name, b.Name);
                 if (c != 0) return c;
-                return (a.Command != null ? 0 : 1).CompareTo(b.Command != null ? 0 : 1);
+                int ra = a.Command != null ? 0 : a.Scenario != null ? 1 : 2;
+                int rb = b.Command != null ? 0 : b.Scenario != null ? 1 : 2;
+                return ra.CompareTo(rb);
             });
 
             int end = Math.Min(hits.Count, offset + limit);
@@ -269,6 +287,7 @@ namespace Poly_Ling.Data
             sb.Append(",\"total\":").Append(hits.Count.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"commandTotal\":").Append(commandTotal.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"scenarioTotal\":").Append(scenarioTotal.ToString(CultureInfo.InvariantCulture));
+            sb.Append(",\"addonTotal\":").Append(addonTotal.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"offset\":").Append(offset.ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"returned\":").Append(Math.Max(0, end - offset).ToString(CultureInfo.InvariantCulture));
             sb.Append(",\"hasMore\":").Append(end < hits.Count ? "true" : "false");
@@ -286,6 +305,19 @@ namespace Poly_Ling.Data
                     sb.Append(",\"summary\":").Append(Quote(sc.Goal));
                     sb.Append(",\"folder\":").Append(Quote(sc.Folder));
                     sb.Append(",\"steps\":").Append(sc.StepCount.ToString(CultureInfo.InvariantCulture));
+                    sb.Append('}');
+                    continue;
+                }
+
+                var ad = hits[i].Addon;
+                if (ad != null)
+                {
+                    sb.Append("{\"kind\":").Append(Quote(SearchKindAddon));
+                    sb.Append(",\"name\":").Append(Quote(ad.Id));
+                    sb.Append(",\"summary\":").Append(Quote(string.IsNullOrEmpty(ad.Description)
+                        ? ad.Title : ad.Title + "：" + ad.Description));
+                    sb.Append(",\"state\":").Append(Quote(ad.State));
+                    sb.Append(",\"hasSpec\":").Append(ad.HasSpec ? "true" : "false");
                     sb.Append('}');
                     continue;
                 }

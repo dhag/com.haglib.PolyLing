@@ -551,6 +551,11 @@ namespace Poly_Ling.Player
                     model.IsDirty = true;
                     model.OnListChanged?.Invoke();
                     _notifyPanels(ChangeKind.Attributes);
+                    // 足した枠は末尾（AddMaterial）。外のプログラムが続けて枠を指定できるよう番号を返す。
+                    ReportData(CommandDataJson.New()
+                        .Int("slotIndex", model.MaterialCount - 1)
+                        .Int("materialCount", model.MaterialCount)
+                        .Build());
                     return true;
                 }
 

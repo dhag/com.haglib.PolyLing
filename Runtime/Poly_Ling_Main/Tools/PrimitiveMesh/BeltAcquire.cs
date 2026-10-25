@@ -189,6 +189,11 @@ namespace Poly_Ling.PrimitiveMesh
                     if (rings == null || rings.Count == 0)
                         return BeltStripAcquireResult.Fail($"円環を検出できない（{message}）");
                     rows = BeltStackExpander.ExpandAll(mesh, rings, crossRows, out groupCount);
+
+                    // 根元の端をメッシュ側の目印（開始タグ / ふた）で決める。
+                    // 揺れボーンの鎖・フリルの A/B・作り直しが同じ向きになる。
+                    rows = BeltRingRootOrienter.Orient(mesh, rows, out string rootMsg);
+                    if (!string.IsNullOrEmpty(rootMsg)) message += " " + rootMsg;
                     break;
                 }
 
@@ -219,6 +224,10 @@ namespace Poly_Ling.PrimitiveMesh
                     rows    = BeltStackExpander.ExpandAll(
                         mesh, new List<BeltAutoStrip>(1) { baseRow }, crossRows, out groupCount);
                     message = strip.Message;
+
+                    // 選択から取り込んだ帯も、根元の端を目印（開始タグ / ふた / 短いレール）で決める。
+                    rows = BeltRingRootOrienter.Orient(mesh, rows, out string selRootMsg);
+                    if (!string.IsNullOrEmpty(selRootMsg)) message += " " + selRootMsg;
                     break;
                 }
 

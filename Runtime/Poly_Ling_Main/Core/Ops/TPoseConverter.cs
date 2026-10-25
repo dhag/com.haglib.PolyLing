@@ -126,6 +126,7 @@ namespace Poly_Ling.Ops
                 boneNames.Add(meshContexts[i]?.Name ?? "");
             }
             tempMapping.AutoMapFromEmbeddedCSV(boneNames);
+            tempMapping.FixHipsByHierarchy(meshContexts);
 
             ConvertToTPose(meshContexts, tempMapping, backup);
         }

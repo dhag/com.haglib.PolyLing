@@ -110,6 +110,12 @@ namespace Poly_Ling.EditorIO
             EditorUtility.CopySerialized(source, dest);
         }
 
+        public void SetDirty(Object obj)
+        {
+            if (obj == null) return;
+            EditorUtility.SetDirty(obj);
+        }
+
         public void ImportAsset(string path)
         {
             if (string.IsNullOrEmpty(path)) return;

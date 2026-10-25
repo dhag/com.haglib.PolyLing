@@ -92,6 +92,23 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// 作業フォルダ（PLSandbox。コマンドのファイル入出力が読み書きできる根）の絶対パスを照会する。
+    /// 外のプログラム（Python のアドオンなど）がファイルを置く場所を決めるのに使う。
+    /// 根の直下には新しいファイル・フォルダを作れないので、置き場所は既存の直下フォルダの中にする。
+    /// </summary>
+    [PLCommand(Category = "io.project", Writes = PLWriteScope.None, NoUi = true, Description = "作業フォルダ（コマンドのファイル入出力が読み書きできる根）の絶対パスを照会する。根の直下には新しいファイル・フォルダを作れないので、外のプログラムは既存の直下フォルダ（topFolders）の中にファイルを置く。")]
+    [PLResult("isSet",      PLResultKind.Flag,      Description = "作業フォルダが設定されているか")]
+    [PLResult("path",       PLResultKind.Text,      Description = "作業フォルダの絶対パス。未設定なら空")]
+    [PLResult("topFolders", PLResultKind.TextArray, Description = "作業フォルダ直下の既存フォルダの名前（この中にファイルを置ける）")]
+    public class QueryWorkFolderCommand : PanelCommand
+    {
+        public QueryWorkFolderCommand(int modelIndex = 0)
+            : base(modelIndex)
+        {
+        }
+    }
+
     /// <summary>リモートに登録済みのクライアントの一覧を照会する。</summary>
     [PLCommand(Category = "remote", Writes = PLWriteScope.None, Description = "リモートに登録済みのクライアントの一覧（clientType・userName・capabilities）を照会する。")]
     [PLResult("count",   PLResultKind.Integer, Description = "登録済みのクライアントの数")]

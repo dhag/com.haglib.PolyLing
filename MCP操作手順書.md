@@ -67,6 +67,7 @@
 ```
 polyling_search query=<目的を言葉で>      … 名前と要約だけが返る（既定 8 件）
 polyling_describe commands=[<選んだ名前>] … その分だけ完全な引数・戻り値の Schema
+polyling_describe addons=[<アドオンの id>] … kind=addon の当たり。引数・出力の宣言と invoke（invokePyAddon の呼び方）
 polyling_call command=<名前> args=<引数>
 ```
 

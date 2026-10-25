@@ -433,6 +433,7 @@ namespace Poly_Ling.Remote
             // 全体 push ではないので他ユーザーの画面は動かない。
             if (slot != null) SendSelectionToUser(userName, slot);
 
+            RaiseClientsChanged();
             return true;
         }
 

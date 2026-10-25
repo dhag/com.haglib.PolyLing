@@ -676,6 +676,20 @@ namespace Poly_Ling.Data
             return sb.ToString();
         }
 
+        /// <summary>
+        /// コマンドの引数（キー）が文字列の配列（string[]）か。シナリオの項目で、配列の要素ごとに
+        /// ${名前} / @prev.&lt;キー&gt; を置き換えるかの判定に使う（PlayerCommandDispatcher.ScenarioRun.cs）。
+        /// </summary>
+        public static bool IsStringArrayParam(Type commandType, string key)
+        {
+            if (commandType == null || string.IsNullOrEmpty(key)) return false;
+            var prop = FindProperty(commandType, key);
+            return prop != null && prop.PropertyType == typeof(string[]);
+        }
+
+        /// <summary>SplitQuotedCsv で 1 要素に戻る形にする（カンマ・引用符を含めば二重引用符で包む）。</summary>
+        public static string EscCsvItem(string s) => EscName(s);
+
         /// <summary>区切りと衝突する文字を二重引用符で包む。</summary>
         private static string EscName(string s)
         {

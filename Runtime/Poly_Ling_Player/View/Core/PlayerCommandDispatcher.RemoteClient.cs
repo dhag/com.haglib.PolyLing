@@ -1,5 +1,6 @@
 // PlayerCommandDispatcher.RemoteClient.cs
-// リモートのクライアントへの要求（requestClient / queryClientRequest / queryRemoteClients / sendMeshToClient）の受け口。
+// リモートのクライアントへの要求（requestClient / queryClientRequest / queryRemoteClients / sendMeshToClient）と、
+// 外のプログラム向けの照会（queryWorkFolder）の受け口。
 // sendMeshToClient はモデルを読むが、プロジェクトが無いときは自分で失敗を返すので、null 門より前で捌いてよい。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 //
@@ -27,6 +28,7 @@ namespace Poly_Ling.Player
                 case QueryClientRequestCommand c: RunQueryClientRequest(c); return true;
                 case QueryRemoteClientsCommand _: RunQueryRemoteClients();  return true;
                 case SendMeshToClientCommand c:   RunSendMeshToClient(c);   return true;
+                case QueryWorkFolderCommand _:    RunQueryWorkFolder();     return true;
                 default: return false;
             }
         }
@@ -134,6 +136,33 @@ namespace Poly_Ling.Player
                 return;
             }
             ReportData(CommandDataJson.New().Int("requestNo", no).Build());
+        }
+
+        /// <summary>作業フォルダの絶対パスと直下の既存フォルダ（サーバを要らない。モデルも見ない）。</summary>
+        private void RunQueryWorkFolder()
+        {
+            string root = Poly_Ling.Core.PLSandbox.WorkFolder;
+            bool isSet = !string.IsNullOrEmpty(root) && System.IO.Directory.Exists(root);
+            var tops = new System.Collections.Generic.List<string>();
+            if (isSet)
+            {
+                try
+                {
+                    foreach (var d in System.IO.Directory.GetDirectories(root))
+                        tops.Add(System.IO.Path.GetFileName(d));
+                    tops.Sort(System.StringComparer.OrdinalIgnoreCase);
+                }
+                catch (System.Exception e)
+                {
+                    _pendingResult = CommandResult.Fail("作業フォルダを読めません: " + e.Message, CommandErrorCodes.Failed);
+                    return;
+                }
+            }
+            ReportData(CommandDataJson.New()
+                .Flag("isSet", isSet)
+                .Text("path", isSet ? root : "")
+                .Texts("topFolders", tops)
+                .Build());
         }
 
         private void RunQueryRemoteClients()

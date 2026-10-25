@@ -395,6 +395,43 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// 描画オブジェクト 1 個の面・頂点を全部選ぶ。
+    ///
+    /// 【なぜ要るか】
+    ///   SelectElementsCommand は要素と同じ数だけ masterIndex を並べる必要があり、
+    ///   シナリオの @ 参照（値全体が参照 1 個）では書けない。solidify や
+    ///   選択辞書の保存の前に「このオブジェクトの面を全部」と言う手段がほかに無い。
+    ///   受け口は SelectElementsCommand へ展開して同じ経路（Undo 記録・頂点への展開）を通す。
+    /// </summary>
+    [PLCommand(Category = "selection", Writes = PLWriteScope.None, NoUi = true,
+        Description = "描画オブジェクト 1 個の面（と頂点）を全部選ぶ。ほかのオブジェクトの選択は消す。")]
+    [PLResult("vertices", PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている頂点の数")]
+    [PLResult("edges",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている辺の数")]
+    [PLResult("faces",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている面の数")]
+    [PLResult("lines",    PLResultKind.Integer, Description = "実行後にモデル全体で選ばれている線分の数")]
+    public class SelectAllElementsCommand : PanelCommand
+    {
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "面を全部選ぶ描画オブジェクトの masterIndex", Required = true)]
+        public int MasterIndex { get; }
+
+        [PLParam(Description = "面（3 頂点以上）を選ぶ")]
+        public bool SelectFaces { get; }
+
+        [PLParam(Description = "頂点を選ぶ")]
+        public bool SelectVertices { get; }
+
+        public SelectAllElementsCommand(int modelIndex, int masterIndex,
+            bool selectFaces = true, bool selectVertices = true)
+            : base(modelIndex)
+        {
+            MasterIndex    = masterIndex;
+            SelectFaces    = selectFaces;
+            SelectVertices = selectVertices;
+        }
+    }
+
     // ================================================================
     // 詳細選択（Advanced Select）
     // ================================================================

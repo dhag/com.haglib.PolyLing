@@ -49,6 +49,8 @@ namespace Poly_Ling.Player
                 case SetScenarioItemArgCommand c:    RunSetScenarioItemArg(c);    return true;
                 case SetScenarioParamCommand c:      RunSetScenarioParam(c);      return true;
                 case RemoveScenarioParamCommand c:   RunRemoveScenarioParam(c);   return true;
+                case SetScenarioOutputCommand c:     RunSetScenarioOutput(c);     return true;
+                case RemoveScenarioOutputCommand c:  RunRemoveScenarioOutput(c);  return true;
                 case MoveScenarioItemCommand c:      RunMoveScenarioItem(c);      return true;
                 case ExpandScenarioRefCommand c:     RunExpandScenarioRef(c);     return true;
                 case RunScenarioCommand c:           RunRunScenario(c);           return true;
@@ -65,6 +67,7 @@ namespace Poly_Ling.Player
                 case QueryScenarioAuditCommand c:     RunQueryScenarioAudit(c);     return true;
                 case ExportScenariosCommand c:        RunExportScenarios(c);        return true;
                 case ImportScenariosCommand c:        RunImportScenarios(c);        return true;
+                case SetRemoteScenarioImportCommand c: RunSetRemoteScenarioImport(c); return true;
                 case SetExecutionLogCommand c:        RunSetExecutionLog(c);        return true;
                 case BeginTaskCommand c:              RunBeginTask(c);              return true;
                 case EndTaskCommand c:                RunEndTask(c);                return true;
@@ -148,8 +151,30 @@ namespace Poly_Ling.Player
         // 別ファイルとの出し入れ
         // ================================================================
 
+        // 【ファイルか本文か】
+        //   どちらも ScenarioLibrary.TryExport / TryImport を通す。違うのは CSV をファイルに置くか
+        //   戻り値・引数で運ぶかだけで、検査（全部か無しか・参照・循環・名前の重なり）は同じ。
+        //   本文で運ぶ口は、作業フォルダへファイルを置けない経路（MCP の Player 接続・リモート接続）のため。
+
         private void RunExportScenarios(ExportScenariosCommand cmd)
         {
+            if (string.IsNullOrEmpty(cmd.FilePath))
+            {
+                if (!ScenarioLibrary.TryExport(cmd.Names, out string text, out var textNames, out string textError)) { Fail(textError); return; }
+                if (text.Length > ExportScenariosCommand.InlineCsvMaxChars)
+                {
+                    Fail($"CSV の本文が {text.Length} 文字で、戻り値に載せられる上限 {ExportScenariosCommand.InlineCsvMaxChars} 文字を超えます。"
+                       + "names で書き出すシナリオを絞るか、filePath を渡してファイルへ書いてください");
+                    return;
+                }
+                ReportData(CommandDataJson.New()
+                    .Text ("csv",   text)
+                    .Int  ("count", textNames.Count)
+                    .Texts("names", textNames)
+                    .Build());
+                return;
+            }
+
             if (!Poly_Ling.Core.PLSandbox.TryResolveWrite(cmd.FilePath, out string path, out string reason)) { Fail(reason); return; }
 
             if (!ScenarioLibrary.TryExport(cmd.Names, out string csv, out var names, out string error)) { Fail(error); return; }
@@ -171,12 +196,24 @@ namespace Poly_Ling.Player
 
         private void RunImportScenarios(ImportScenariosCommand cmd)
         {
-            if (!Poly_Ling.Core.PLSandbox.TryResolveRead(cmd.FilePath, out string path, out string reason)) { Fail(reason); return; }
-            if (!System.IO.File.Exists(path)) { Fail($"ファイルがありません: {cmd.FilePath}"); return; }
+            bool hasPath = !string.IsNullOrEmpty(cmd.FilePath);
+            bool hasText = !string.IsNullOrEmpty(cmd.CsvText);
+            if (hasPath && hasText) { Fail("filePath と csvText はどちらか一方だけ渡してください"); return; }
+            if (!hasPath && !hasText) { Fail("filePath か csvText のどちらかを渡してください"); return; }
 
             string[] lines;
-            try { lines = System.IO.File.ReadAllLines(path, System.Text.Encoding.UTF8); }
-            catch (Exception e) { Fail($"読み込みに失敗しました: {e.Message}"); return; }
+            if (hasText)
+            {
+                lines = SplitLinesLikeReadAllLines(cmd.CsvText);
+            }
+            else
+            {
+                if (!Poly_Ling.Core.PLSandbox.TryResolveRead(cmd.FilePath, out string path, out string reason)) { Fail(reason); return; }
+                if (!System.IO.File.Exists(path)) { Fail($"ファイルがありません: {cmd.FilePath}"); return; }
+
+                try { lines = System.IO.File.ReadAllLines(path, System.Text.Encoding.UTF8); }
+                catch (Exception e) { Fail($"読み込みに失敗しました: {e.Message}"); return; }
+            }
 
             if (!ScenarioLibrary.TryImport(lines, cmd.Overwrite, out var added, out var replaced, out string error, cmd.Folder)) { Fail(error); return; }
 
@@ -184,6 +221,31 @@ namespace Poly_Ling.Player
                 .Texts("added",    added)
                 .Texts("replaced", replaced)
                 .Int  ("count",    ScenarioLibrary.Count)
+                .Build());
+        }
+
+        /// <summary>
+        /// 本文を File.ReadAllLines と同じ規則で行に割る。改行は \r\n / \n / \r、
+        /// 末尾の改行は空行を作らない（StringReader.ReadLine が同じ規則）。
+        /// ReadAllLines は UTF-8 の BOM を落とすので、先頭の U+FEFF も落とす。
+        /// </summary>
+        private static string[] SplitLinesLikeReadAllLines(string text)
+        {
+            if (text.Length > 0 && text[0] == '\uFEFF') text = text.Substring(1);
+            var lines = new List<string>();
+            using (var reader = new System.IO.StringReader(text))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null) lines.Add(line);
+            }
+            return lines.ToArray();
+        }
+
+        private void RunSetRemoteScenarioImport(SetRemoteScenarioImportCommand cmd)
+        {
+            Poly_Ling.Remote.RemoteOwnership.AllowRemoteScenarioImport = cmd.Enabled;
+            ReportData(CommandDataJson.New()
+                .Flag("enabled", Poly_Ling.Remote.RemoteOwnership.AllowRemoteScenarioImport)
                 .Build());
         }
 
@@ -326,11 +388,32 @@ namespace Poly_Ling.Player
                 string id = step.ScenarioItemId ?? "";
 
                 // ── 引数の参照 ──
+                Type stepType = step.IsExecutable ? PanelCommandFactory.ResolveType(step.Action) : null;
                 if (step.Args != null)
                     foreach (var kv in step.SortedArgs())
                     {
                         string v = kv.Value;
                         if (string.IsNullOrEmpty(v)) continue;
+
+                        // 文字列の配列は要素ごとに丸ごとの ${名前} を置き換える（流す側と同じ規則）。
+                        if (PanelCommandFactory.IsStringArrayParam(stepType, kv.Key) && !ScenarioParam.TryParseRef(v, out _))
+                        {
+                            foreach (var part in PanelCommandFactory.SplitQuotedCsv(v))
+                            {
+                                if (ScenarioParam.TryParseRef(part, out string en))
+                                {
+                                    if (!declared.Contains(en)) Add(id, "unknownParam", kv.Key, $"{part} の引数 {en} が宣言されていない");
+                                    else used.Add(en);
+                                }
+                                else if (part.IndexOf(ScenarioParam.RefOpen, StringComparison.Ordinal) >= 0)
+                                {
+                                    Add(id, "partialParamRef", kv.Key,
+                                        $"{part} は ${{ を含むが、要素の丸ごとが ${{名前}} ではないので置き換わらない");
+                                }
+                            }
+                            continue;
+                        }
+
                         if (ScenarioParam.TryParseRef(v, out string pname))
                         {
                             if (!declared.Contains(pname))
@@ -403,8 +486,62 @@ namespace Poly_Ling.Player
                         Add(id, "missingRef", kv.Key, $"{v} が指す項目 {refId} がこのシナリオに無い");
                     else if (at >= i)
                         Add(id, "forwardRef", kv.Key, $"{v} が指す項目 {refId} はこの項目より後ろにある");
+                    else
+                        AuditChildOutputRef(g.Steps[at], v, v.Substring(dot + 1), id, kv.Key);
                 }
             }
+
+            // 参照項目の戻り値は、呼ぶシナリオが宣言した出力だけ（ScenarioOutput）。宣言の無い名前は流したとき失敗する。
+            void AuditChildOutputRef(ObjectGroupStep target, string v, string key, string id, string argKey)
+            {
+                if (target == null || !target.IsScenarioRef) return;
+                var child = ScenarioLibrary.Get(target.RefName);
+                if (child == null) return;
+                if (child.Outputs == null || child.Outputs.Count == 0)
+                    Add(id, "refWithoutOutputs", argKey, $"{v} が指す参照項目の呼ぶシナリオ {target.RefName} は出力を宣言していない");
+                else if (child.FindOutput(key) == null)
+                    Add(id, "unknownChildOutput", argKey, $"{v} の {key} は、呼ぶシナリオ {target.RefName} の出力に無い");
+            }
+
+            // ── 出力の宣言 ──
+            //   from は流し終えた時点で評価するので、@<項目 ID> はこのシナリオのどの項目でもよい（後ろの項目という制限は無い）。
+            var outDeclared = new HashSet<string>(StringComparer.Ordinal);
+            if (g.Outputs != null)
+                foreach (var o in g.Outputs)
+                {
+                    if (o == null) continue;
+                    if (!ScenarioParam.IsValidName(o.Name))
+                        Add("", "badOutputName", o.Name, $"出力の名前 {o.Name} は使えない（英数字と _、先頭は数字以外、64 文字まで）");
+                    else if (!outDeclared.Add(o.Name))
+                        Add("", "duplicateOutput", o.Name, $"出力 {o.Name} が 2 回以上宣言されている");
+
+                    string f = o.From ?? "";
+                    if (f.Length == 0)
+                    {
+                        Add("", "emptyOutputFrom", o.Name, $"出力 {o.Name} の出どころが空");
+                        continue;
+                    }
+                    if (ScenarioParam.TryParseRef(f, out string pn))
+                    {
+                        if (!declared.Contains(pn)) Add("", "unknownParam", o.Name, $"出力 {o.Name} の {f} の引数 {pn} が宣言されていない");
+                        else used.Add(pn);
+                        continue;
+                    }
+                    if (f[0] != '@' || f.Length < 2 || f.StartsWith(PrevPrefix, StringComparison.Ordinal)) continue;
+
+                    int odot = f.IndexOf('.');
+                    if (odot <= 1)
+                    {
+                        Add("", "badOutputRef", o.Name, $"出力 {o.Name} の {f} は @prev.<キー> か @<項目 ID>.<キー> の形になっていない");
+                        continue;
+                    }
+                    string oid = f.Substring(1, odot - 1);
+                    int oat = g.IndexOfStep(oid);
+                    if (oat < 0)
+                        Add("", "missingOutputRef", o.Name, $"出力 {o.Name} の {f} が指す項目 {oid} がこのシナリオに無い");
+                    else
+                        AuditChildOutputRef(g.Steps[oat], f, f.Substring(odot + 1), "", o.Name);
+                }
 
             foreach (var name in declared)
                 if (!used.Contains(name))
@@ -620,6 +757,19 @@ namespace Poly_Ling.Player
                     paramDescs.Add(p.Description ?? "");
                 }
 
+            // 出力の宣言。引数と同じく outline でも載せる（呼ぶ側が何を受け取れるか分かるように）。
+            var outNames = new List<string>();
+            var outFroms = new List<string>();
+            var outDescs = new List<string>();
+            if (g.Outputs != null)
+                foreach (var o in g.Outputs)
+                {
+                    if (o == null) continue;
+                    outNames.Add(o.Name ?? "");
+                    outFroms.Add(o.From ?? "");
+                    outDescs.Add(o.Description ?? "");
+                }
+
             var builder = CommandDataJson.New()
                 .Text ("name",              g.Name ?? "")
                 .Text ("detail",            d);
@@ -638,6 +788,9 @@ namespace Poly_Ling.Player
                 .Texts("paramNames",        paramNames)
                 .Texts("paramDefaults",     paramDefaults)
                 .Texts("paramDescriptions", paramDescs)
+                .Texts("outputNames",        outNames)
+                .Texts("outputFroms",        outFroms)
+                .Texts("outputDescriptions", outDescs)
                 .Texts("scenarioItemIds",        scenarioItemIds)
                 .Texts("kinds",             kinds)
                 .Texts("actions",           actions)
@@ -1021,6 +1174,57 @@ namespace Poly_Ling.Player
                 .Build());
         }
 
+        private void RunSetScenarioOutput(SetScenarioOutputCommand cmd)
+        {
+            var g = ScenarioLibrary.Get(cmd.Name);
+            if (g == null) { Fail($"シナリオがありません: {cmd.Name}"); return; }
+            if (!ScenarioParam.IsValidName(cmd.Output))
+            { Fail($"出力の名前 {cmd.Output} は使えません（英数字と _、先頭は数字以外、64 文字まで）"); return; }
+            if (string.IsNullOrEmpty(cmd.From)) { Fail("from が空です"); return; }
+
+            if (g.Outputs == null) g.Outputs = new List<ScenarioOutput>();
+            var o = g.FindOutput(cmd.Output);
+            bool added = o == null;
+            if (added) { o = new ScenarioOutput { Name = cmd.Output }; g.Outputs.Add(o); }
+            o.From        = cmd.From;
+            o.Description = cmd.Description ?? "";
+
+            if (!ScenarioLibrary.Register(g, overwrite: true, out string error)) { Fail(error); return; }
+
+            ReportData(CommandDataJson.New()
+                .Text ("name",    g.Name)
+                .Text ("output",  cmd.Output)
+                .Flag ("added",   added)
+                .Texts("outputs", OutputNames(g))
+                .Build());
+        }
+
+        private void RunRemoveScenarioOutput(RemoveScenarioOutputCommand cmd)
+        {
+            var g = ScenarioLibrary.Get(cmd.Name);
+            if (g == null) { Fail($"シナリオがありません: {cmd.Name}"); return; }
+
+            var o = g.FindOutput(cmd.Output);
+            if (o == null) { Fail($"{cmd.Name} に出力 {cmd.Output} はありません"); return; }
+            g.Outputs.Remove(o);
+
+            if (!ScenarioLibrary.Register(g, overwrite: true, out string error)) { Fail(error); return; }
+
+            ReportData(CommandDataJson.New()
+                .Text ("name",    g.Name)
+                .Text ("output",  cmd.Output)
+                .Texts("outputs", OutputNames(g))
+                .Build());
+        }
+
+        private static List<string> OutputNames(ObjectGroup g)
+        {
+            var list = new List<string>();
+            if (g?.Outputs != null)
+                foreach (var o in g.Outputs) if (o != null) list.Add(o.Name ?? "");
+            return list;
+        }
+
         private static List<string> ParamNames(ObjectGroup g)
         {
             var list = new List<string>();
@@ -1326,8 +1530,13 @@ namespace Poly_Ling.Player
         /// これで faceIndices などをそのまま次の項目の引数に入れられる。
         /// 入れ子の配列や連想配列は扱わない。
         ///
-        /// CommandDataJson が作る平たい JSON だけを相手にするため、
-        /// 汎用の JSON 構文解析はしない。深い入れ子が来たら失敗にして、
+        /// 値は JSON として読み、文字列のエスケープ（\\ や \"）を戻してから渡す。
+        /// 戻さずに渡すと、Windows のパスなどが次の項目で「\\」のまま使われ、
+        /// 段を重ねるたびにエスケープが倍になる（シナリオの出力で起きた）。
+        ///
+        /// キーは最上位を先に見て、無ければ入れ子の中から最初に見つかったものを使う
+        /// （以前の文字列検索と同じく、どの深さのキーでも引ける）。
+        /// 値が配列なら中身は数・文字列・真偽だけ（入れ子の配列・連想配列は失敗）。連想配列そのものも失敗にして、
         /// 黙って誤った値を渡さない。
         /// </summary>
         private static bool TryReadJsonValue(string json, string key, out string value)
@@ -1335,52 +1544,50 @@ namespace Poly_Ling.Player
             value = null;
             if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(key)) return false;
 
-            string needle = "\"" + key + "\":";
-            int at = json.IndexOf(needle, StringComparison.Ordinal);
-            if (at < 0) return false;
+            Newtonsoft.Json.Linq.JObject root;
+            try { root = Newtonsoft.Json.Linq.JObject.Parse(json); }
+            catch { return false; }
 
-            int p = at + needle.Length;
-            while (p < json.Length && char.IsWhiteSpace(json[p])) p++;
-            if (p >= json.Length) return false;
-
-            // 配列
-            if (json[p] == '[')
+            var token = root[key];
+            if (token == null)
             {
-                int end = json.IndexOf(']', p);
-                if (end < 0) return false;
+                foreach (var d in root.Descendants())
+                    if (d is Newtonsoft.Json.Linq.JProperty jp && string.Equals(jp.Name, key, StringComparison.Ordinal))
+                    { token = jp.Value; break; }
+            }
+            if (token == null) return false;
 
-                string body = json.Substring(p + 1, end - p - 1);
-                if (body.IndexOf('[') >= 0 || body.IndexOf('{') >= 0) return false;
-
-                var parts = new List<string>();
-                foreach (string raw in body.Split(','))
+            if (token is Newtonsoft.Json.Linq.JArray arr)
+            {
+                var parts = new List<string>(arr.Count);
+                foreach (var e in arr)
                 {
-                    string s = raw.Trim();
-                    if (s.Length >= 2 && s[0] == '"' && s[s.Length - 1] == '"')
-                        s = s.Substring(1, s.Length - 2);
-                    parts.Add(s);
+                    if (!(e is Newtonsoft.Json.Linq.JValue ev)) return false;
+                    parts.Add(JsonScalarText(ev));
                 }
                 value = string.Join(",", parts);
                 return true;
             }
 
-            // 文字列
-            if (json[p] == '"')
+            if (token is Newtonsoft.Json.Linq.JValue v)
             {
-                int end = json.IndexOf('"', p + 1);
-                if (end < 0) return false;
-                value = json.Substring(p + 1, end - p - 1);
-                return true;
+                value = JsonScalarText(v);
+                return v.Type == Newtonsoft.Json.Linq.JTokenType.String || value.Length > 0;
             }
 
-            // 入れ子は扱わない
-            if (json[p] == '{') return false;
+            return false;   // 連想配列は扱わない
+        }
 
-            // 数と真偽
-            int stop = p;
-            while (stop < json.Length && json[stop] != ',' && json[stop] != '}' && json[stop] != ']') stop++;
-            value = json.Substring(p, stop - p).Trim();
-            return value.Length > 0;
+        /// <summary>JSON の値 1 つを引数の文字列にする（文字列はそのまま、真偽は true/false、数は JSON の書き方）。</summary>
+        private static string JsonScalarText(Newtonsoft.Json.Linq.JValue v)
+        {
+            switch (v.Type)
+            {
+                case Newtonsoft.Json.Linq.JTokenType.String:  return (string)v ?? "";
+                case Newtonsoft.Json.Linq.JTokenType.Boolean: return (bool)v ? "true" : "false";
+                case Newtonsoft.Json.Linq.JTokenType.Null:    return "";
+                default: return v.ToString(Newtonsoft.Json.Formatting.None);
+            }
         }
 
         /// <summary>安定 ID を 10 進の文字列にする。null は空の列。</summary>

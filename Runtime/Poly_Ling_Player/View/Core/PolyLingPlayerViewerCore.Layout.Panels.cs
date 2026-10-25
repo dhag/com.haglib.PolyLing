@@ -589,6 +589,16 @@ namespace Poly_Ling.Player
             _workFolderSubPanel = new PlayerWorkFolderSubPanel();
             _workFolderSubPanel.Build(_layoutRoot.WorkFolderSection);
 
+            // Python アドオン。起動・停止・呼び出しはコマンドを通す（設定はダイアログだけ。パネルの冒頭注記）。
+            // サーバは Initialize 前でも、使うときに引けばよい（_playerServer は Client モードでは null）。
+            _pyAddonHost = new PyAddonHost(() => _playerServer);
+            // 「呼べるもの」の一覧（tools_search / tools_describe）にアドオンを載せる。
+            PanelCommandFactory.AddonCatalogProvider = _pyAddonHost.Catalog;
+            _pyAddonSubPanel = new PlayerPyAddonSubPanel(_pyAddonHost, DispatchHost, PanelModelIndex);
+            _pyAddonSubPanel.Build(_layoutRoot.PyAddonSection);
+            _pyAddonQuick = new PlayerPyAddonQuickButtons(_layoutRoot.PyAddonQuickBox, _pyAddonHost, OpenPyAddon);
+            _pyAddonSubPanel.OnQuickChanged = () => _pyAddonQuick?.Rebuild();
+
             _captureSubPanel = new PlayerCaptureSubPanel
             {
                 OnCapture = ExecuteCapture,

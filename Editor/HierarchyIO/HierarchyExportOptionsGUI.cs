@@ -143,6 +143,7 @@ namespace Poly_Ling.EditorIO
                     opt.SupplementHumanoid = EditorGUILayout.Toggle("不足関節を補完", opt.SupplementHumanoid);
                 }
                 opt.WriteAttach = EditorGUILayout.Toggle("IK付帯(attach.csv)も出力", opt.WriteAttach);
+                opt.AttachSpringBones = EditorGUILayout.Toggle("揺れものを付ける", opt.AttachSpringBones);
                 EditorGUILayout.HelpBox(
                     HierarchyPrefabExporter.NormalizeOutputRoot(opt.PrefabOutputRoot) +
                     "/<モデル名>/ にメッシュ/マテリアルを共有アセット化し、" +
@@ -151,7 +152,9 @@ namespace Poly_Ling.EditorIO
                     (opt.BuildAvatar && opt.AttachAnimator
                         ? "\n生成した Avatar を Animator に割り当ててからプレファブ化します。" : "") +
                     (opt.BuildAvatar && opt.SupplementHumanoid
-                        ? "\n不足する必須関節をダミーの空オブジェクトで補ってから生成します。" : ""),
+                        ? "\n不足する必須関節をダミーの空オブジェクトで補ってから生成します。" : "") +
+                    (opt.AttachSpringBones
+                        ? "\n揺れものがあれば UniVRM の揺れの部品を付け、Play で揺れるようにします（VRM パッケージが無ければ付けません）。" : ""),
                     MessageType.Info);
             }
 

@@ -851,6 +851,8 @@ namespace Poly_Ling.Ops
                     }
 
                     int added = mapping.AutoMapFromEmbeddedCSV(boneNames);
+                    // 名前だけで決めた Hips を骨の親子で確かめる（HumanoidBoneMapping.FixHipsByHierarchy）
+                    if (mapping.FixHipsByHierarchy(model.MeshContextList)) added++;
 
                     // ① を直したら ② へも配る。次に RebuildMappingFromPerBone が
                     // 走ったときに、また空で上書きされないようにするため。

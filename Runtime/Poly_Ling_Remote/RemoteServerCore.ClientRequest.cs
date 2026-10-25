@@ -60,11 +60,38 @@ namespace Poly_Ling.Remote
         private int _clientRequestNo;
 
         /// <summary>
+        /// 登録済みクライアントの顔ぶれが変わった（register・切断）。メインスレッドで発火する。
+        /// 起動した子プロセス（Python アドオン）の register 待ちなどに使う。
+        /// </summary>
+        public event Action ClientsChanged;
+
+        /// <summary>登録簿・切断の処理の後に呼ぶ（メインスレッド）。</summary>
+        private void RaiseClientsChanged()
+        {
+            try { ClientsChanged?.Invoke(); }
+            catch (Exception e) { Log("ClientsChanged の受け手で例外: " + e.Message); }
+        }
+
+        /// <summary>userName（空なら問わない）のクライアントのうち、action を capabilities に申告した接続があるか（メインスレッド）。</summary>
+        public bool HasClientAction(string action, string userName = "")
+        {
+            if (string.IsNullOrEmpty(action)) return false;
+            foreach (var kv in _clientRegistry)
+            {
+                if (!string.IsNullOrEmpty(userName) && kv.Value.UserName != userName) continue;
+                if (kv.Value.Capabilities != null && Array.IndexOf(kv.Value.Capabilities, action) >= 0) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// userName のクライアントのうち action を受けられる接続へ要求を送る（メインスレッド）。
         /// paramsJson は JSON オブジェクトの文字列（空なら {}）。送れたら true と要求番号、送れなければ false と理由。
+        /// onFinished を渡すと、結果が決まったとき（done / failed）にメインスレッドで呼ぶ（送れなかった false のときは呼ばない）。
         /// </summary>
         public bool RequestClient(string userName, string action, string paramsJson, int timeoutMs,
-                                  out int requestNo, out string reason, out string code)
+                                  out int requestNo, out string reason, out string code,
+                                  Action<ClientRequestState> onFinished = null)
         {
             requestNo = 0;
             code = null;
@@ -113,6 +140,7 @@ namespace Poly_Ling.Remote
                 state.Code   = CommandErrorCodes.Failed;
                 requestNo = state.No;
                 reason = null;
+                if (onFinished != null) RunOnMainThread(() => onFinished(state));
                 return true;
             }
 
@@ -146,6 +174,11 @@ namespace Poly_Ling.Remote
                     if (resultJson != null) { state.Status = ClientRequestState.Done; state.ResultJson = resultJson; }
                     else { state.Status = ClientRequestState.Failed; state.Error = error; state.Code = errCode; }
                     Log($"requestClient #{state.No} {state.Action} → {state.Status}{(error != null ? ": " + error : "")}");
+                    if (onFinished != null)
+                    {
+                        try { onFinished(state); }
+                        catch (Exception e) { Log($"requestClient #{state.No} の受け手で例外: {e.Message}"); }
+                    }
                 });
             });
 
