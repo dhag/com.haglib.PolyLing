@@ -95,6 +95,8 @@ namespace Poly_Ling.Remote
 
                 // リモートからのヒエラルキー書き出し：プロジェクト全体の JSON（ProjectDTO。要求者にだけ返す）。
                 case "project_bundle":    return ProcessProjectBundleQuery(msg);
+                // 外部受け渡し：モデル 1 つ分（ModelDTO の JSON ＋ embeddedTextures。要求者にだけ返す）。
+                case "model_bundle":      return ProcessModelBundleQuery(msg);
 
                 // probe クライアント用（リスト系とは別データ・テキスト応答）。
                 case "server_info":       return BuildSuccessResponse(msg.Id, BuildServerInfoData());
@@ -318,6 +320,10 @@ namespace Poly_Ling.Remote
         {
             try
             {
+                // モデルの受け入れは本体を封筒の添付で受けるので、引数だけから組む PanelCommandFactory を通せない。
+                // ここで ModelDTO にしてから、同じディスパッチャへ流す（RemoteServerCore.ProcessPutModel）。
+                if (msg.Action == PutModelAction) return ProcessPutModel(msg, channel);
+
                 // 受信コマンドは全て PanelCommand 経由で処理する。
                 return ProcessCommandViaPanelCommand(msg, channel);
             }

@@ -450,6 +450,40 @@ namespace Poly_Ling.Data
         }
     }
 
+    /// <summary>
+    /// ボーンヒートによる自動ウェイト（Blender の「自動のウェイトで」と同じ方式。SkinWeightHeatOps）。
+    /// 対象は選択中の描画オブジェクト全件で、非スキンドが含まれていれば失敗する。
+    /// 1 件でも解けなければ何も書き換えない。
+    /// </summary>
+    [PLCommand(Category = "rig.skinning", Effects = PLCommandEffect.SkinWeights, Verification = PLCommandVerification.SkinWeights,
+        Preconditions = PLCommandPrecondition.RequiresSelection, Writes = PLWriteScope.ModelWide,
+        Description = "ボーンヒート（Blender の自動ウェイトと同じ方式）で、選択中の描画オブジェクトのウェイトを付け直す。各ボーンは関節から子ボーンの関節までの線分（子が無ければ関節の点）として扱う。1 頂点 4 本までに絞り合計 1 に正規化する。どのボーンからも届かない頂点は変えない。")]
+    [PLResult("vertices",  PLResultKind.Integer, Description = "書き換えた頂点数（全対象の合計）")]
+    [PLResult("meshes",    PLResultKind.Integer, Description = "書き換えた描画オブジェクトの数")]
+    [PLResult("unreached", PLResultKind.Integer, Description = "どのボーンからも届かず書き換えなかった頂点数")]
+    [PLResult("bones",     PLResultKind.Integer, Description = "使ったボーンの数")]
+    public class SkinWeightAutoHeatCommand : PanelCommand
+    {
+        [PLParam(Description = "使うボーンの範囲。AllExceptIK=IK ボーンを除く全ボーン（既定）/ Humanoid=Humanoid に割り当てたボーンだけ / Selected=選択中のボーンだけ。boneNames を渡したときは使わない")]
+        public HeatBoneScope BoneScope { get; }
+
+        [PLParam(Description = "使うボーンの名前の列（オブジェクト名か Humanoid 名）。渡すと boneScope より優先する")]
+        public string[] BoneNames { get; }
+
+        [PLParam(Description = "true なら選択頂点だけを書き換える（計算はメッシュ全体で行う）。既定は false")]
+        public bool SelectedOnly { get; }
+
+        public SkinWeightAutoHeatCommand(
+            int modelIndex, HeatBoneScope boneScope = HeatBoneScope.AllExceptIK,
+            string[] boneNames = null, bool selectedOnly = false)
+            : base(modelIndex)
+        {
+            BoneScope    = boneScope;
+            BoneNames    = boneNames ?? System.Array.Empty<string>();
+            SelectedOnly = selectedOnly;
+        }
+    }
+
     // ================================================================
     // スキンウェイト塗り
     // ================================================================

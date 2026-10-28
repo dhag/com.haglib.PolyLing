@@ -81,6 +81,62 @@ namespace Poly_Ling.Pipe
                  Min = PrimitiveMeshPostProcess.PivotMin, Max = PrimitiveMeshPostProcess.PivotMax)]
         public Vector3 Pivot;
 
+        // ── 旧ツール互換（NCSHAGLIB の髪パイプ生成 HairMakerHairA / CreatePipe_） ──
+        //   一括（LegacyCompat）を入れると下の 4 つが全部入る。個別に入れることもできる。
+
+        /// <summary>旧ツール互換の 4 項目（座標系・断面の縮尺・頂点の並び・UV）をまとめて入れる。</summary>
+        [PLParam(TextKey = "PipeLegacyCompat",
+                 Description = "旧ツール（NCSHAGLIB の髪パイプ生成）互換。座標系・断面の縮尺・頂点の並び・UV の 4 つをまとめて旧方式にする")]
+        public bool LegacyCompat;
+
+        /// <summary>
+        /// 断面の上方向を旧方式にする。段の両端と次の段の中点（最後の段は終点）が作る三角形の法線を上にする。
+        /// 切ると、隣り合う帯の面法線の平均を上にする（現行）。
+        /// </summary>
+        [PLParam(TextKey = "PipeLegacyFrame",
+                 Description = "断面の上方向を旧方式にする（段の両端と次の段の中点が作る三角形の法線）。一括が入っていれば入る")]
+        public bool LegacyFrame;
+
+        /// <summary>
+        /// 断面を正規化せず、生の座標を段の中点に置く。各軸に「段の長さ × 断面スケール」を掛ける（旧方式）。
+        /// 切ると、長辺が 1 になるよう正規化した断面を左レールから置く（現行）。
+        /// 入っているときは、断面を取り込むときにも正規化しない。
+        /// </summary>
+        [PLParam(TextKey = "PipeLegacyRawProfile",
+                 Description = "断面を正規化せず生の座標で使い、段の中点に置いて段の長さ×断面スケールを掛ける（旧方式）。一括が入っていれば入る")]
+        public bool LegacyRawProfile;
+
+        /// <summary>頂点を「始点・断面×段・終点」の順に並べる（旧方式）。切ると始点・終点は最後に足す。</summary>
+        [PLParam(TextKey = "PipeLegacyVertexOrder",
+                 Description = "頂点を「始点・断面×段・終点」の順に並べる（旧方式）。一括が入っていれば入る")]
+        public bool LegacyVertexOrder;
+
+        /// <summary>
+        /// UV を旧方式にする（断面の周りが u、長さ方向が v。PMX/MQO へ書き出したとき始点 (0.5,0)・終点 (0.5,1)）。
+        /// PolyLing の中では Unity の向き（下が v=0）で持つので、v は 1 − 段/(段数+1)。
+        /// </summary>
+        [PLParam(TextKey = "PipeLegacyUV",
+                 Description = "UV を旧方式にする（断面の周りが u、長さ方向が v。PMX/MQO へ書き出したとき始点 (0.5,0)・終点 (0.5,1)）。一括が入っていれば入る")]
+        public bool LegacyUV;
+
+        /// <summary>
+        /// 旧方式の断面スケール。各成分が 0 以上なら段の長さに対する倍率、負なら絶対の大きさ。
+        /// 旧ツールの既定は (1,1,0)（断面の z を捨てる）。断面を正規化しないときだけ使う。
+        /// </summary>
+        [PLParam(TextKey = "PipeLegacyCutEndScale",
+                 Description = "旧方式の断面スケール。0 以上は段の長さに対する倍率、負は絶対の大きさ。断面を正規化しないときだけ使う")]
+        public Vector3 LegacyCutEndScale;
+
+        /// <summary>終点を最後の輪の頂点の平均位置へ置く（旧ツールの「終端ぱっつん」）。</summary>
+        [PLParam(TextKey = "PipePattsunEnd",
+                 Description = "毛先の扇の要を最後の輪の平均位置へ置く（終端ぱっつん）")]
+        public bool PattsunEnd;
+
+        public bool UseLegacyFrame       => LegacyCompat || LegacyFrame;
+        public bool UseLegacyRawProfile  => LegacyCompat || LegacyRawProfile;
+        public bool UseLegacyVertexOrder => LegacyCompat || LegacyVertexOrder;
+        public bool UseLegacyUV          => LegacyCompat || LegacyUV;
+
         public static PipeParams Default => new PipeParams
         {
             MeshName      = "Pipe",
@@ -93,11 +149,19 @@ namespace Poly_Ling.Pipe
             EdgeInward    = false,
             FlipFaces     = false,
             Pivot         = Vector3.zero,
+            LegacyCutEndScale = new Vector3(1f, 1f, 0f),
         };
 
         public bool Equals(PipeParams o)
             => MeshName == o.MeshName
             && CapEnds  == o.CapEnds
+            && LegacyCompat      == o.LegacyCompat
+            && LegacyFrame       == o.LegacyFrame
+            && LegacyRawProfile  == o.LegacyRawProfile
+            && LegacyVertexOrder == o.LegacyVertexOrder
+            && LegacyUV          == o.LegacyUV
+            && LegacyCutEndScale == o.LegacyCutEndScale
+            && PattsunEnd        == o.PattsunEnd
             && InheritBeltWeights == o.InheritBeltWeights
             && Mathf.Approximately(Thickness, o.Thickness)
             && SegmentsFront == o.SegmentsFront

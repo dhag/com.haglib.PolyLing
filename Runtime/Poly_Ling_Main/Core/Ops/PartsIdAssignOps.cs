@@ -151,48 +151,14 @@ namespace Poly_Ling.Ops
 
             int n = mo.Vertices.Count;
 
-            var parent = BuildUnionFind(mo, out bool[] hasLink);
-
-            // 代表 → パーツ番号。番号は「そのパーツに属する最小頂点インデックス」の昇順。
-            // 頂点を先頭から走査して初出の代表に番号を配るだけで昇順になる。
-            var repToPart = new Dictionary<int, int>();
-            int nextPart  = 0;
-
-            int isolatedCount = 0;
-            for (int i = 0; i < n; i++)
-            {
-                if (mo.Vertices[i] == null) continue;
-                if (!hasLink[i]) isolatedCount++;
-            }
-
-            // まとめる方式のときだけ、孤立頂点用の番号を最後に確保する。
-            bool poolIsolated = (isolatedPolicy == IsolatedVertexPolicy.SingleGroup)
-                             && isolatedCount > 0;
+            var partOf = ComputeConnectivityParts(
+                mo, isolatedPolicy, out int partCount, out int isolatedCount);
 
             for (int i = 0; i < n; i++)
             {
                 var v = mo.Vertices[i];
                 if (v == null) continue;
-                if (poolIsolated && !hasLink[i]) continue;
-
-                int rep = Find(parent, i);
-                if (!repToPart.ContainsKey(rep))
-                {
-                    repToPart[rep] = nextPart;
-                    nextPart++;
-                }
-            }
-
-            int isolatedPart = poolIsolated ? nextPart : -1;
-            int partCount    = poolIsolated ? nextPart + 1 : nextPart;
-
-            for (int i = 0; i < n; i++)
-            {
-                var v = mo.Vertices[i];
-                if (v == null) continue;
-
-                if (poolIsolated && !hasLink[i]) { v.PartsId = isolatedPart; continue; }
-                v.PartsId = repToPart[Find(parent, i)];
+                v.PartsId = partOf[i];
             }
 
             PartsIdOps.AssignSubIdByPartsId(mo);
@@ -354,6 +320,66 @@ namespace Poly_Ling.Ops
         // ================================================================
         // つながりの計算
         // ================================================================
+
+        /// <summary>
+        /// 面・線のつながりで頂点ごとのつながり番号を求める。メッシュは書き換えない。
+        /// 番号はつながり内の最小頂点インデックスの昇順で 0 から。
+        /// 孤立頂点は SingleGroup なら末尾の 1 番号にまとめ、SeparateParts なら 1 つずつ番号を持つ。
+        /// null の頂点は -1。
+        /// AssignByConnectivity（パーツIDへ書く）と ConnectivitySplitOps（分解）が共有する。
+        /// </summary>
+        public static int[] ComputeConnectivityParts(
+            MeshObject mo, IsolatedVertexPolicy isolatedPolicy,
+            out int partCount, out int isolatedCount)
+        {
+            partCount     = 0;
+            isolatedCount = 0;
+            if (mo == null || mo.Vertices == null) return new int[0];
+
+            int n = mo.Vertices.Count;
+            var partOf = new int[n];
+
+            var parent = BuildUnionFind(mo, out bool[] hasLink);
+
+            for (int i = 0; i < n; i++)
+            {
+                if (mo.Vertices[i] == null) continue;
+                if (!hasLink[i]) isolatedCount++;
+            }
+
+            // まとめる方式のときだけ、孤立頂点用の番号を最後に確保する。
+            bool poolIsolated = (isolatedPolicy == IsolatedVertexPolicy.SingleGroup)
+                             && isolatedCount > 0;
+
+            // 代表 → 番号。頂点を先頭から走査して初出の代表に番号を配るだけで昇順になる。
+            var repToPart = new Dictionary<int, int>();
+            int nextPart  = 0;
+
+            for (int i = 0; i < n; i++)
+            {
+                if (mo.Vertices[i] == null) continue;
+                if (poolIsolated && !hasLink[i]) continue;
+
+                int rep = Find(parent, i);
+                if (!repToPart.ContainsKey(rep))
+                {
+                    repToPart[rep] = nextPart;
+                    nextPart++;
+                }
+            }
+
+            int isolatedPart = poolIsolated ? nextPart : -1;
+            partCount        = poolIsolated ? nextPart + 1 : nextPart;
+
+            for (int i = 0; i < n; i++)
+            {
+                if (mo.Vertices[i] == null) { partOf[i] = -1; continue; }
+                if (poolIsolated && !hasLink[i]) { partOf[i] = isolatedPart; continue; }
+                partOf[i] = repToPart[Find(parent, i)];
+            }
+
+            return partOf;
+        }
 
         /// <summary>
         /// 面（三角以上）と線（2頂点の Face）で頂点を併合した Union-Find を作る。

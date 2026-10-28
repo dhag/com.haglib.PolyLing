@@ -530,6 +530,53 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 面・線のつながり（頂点番号の共有）で描画オブジェクト 1 つを分解し、
+    /// 空のオブジェクトを親にして、つながりごとの描画オブジェクトを子として並べる。
+    ///
+    /// 【対象】
+    ///   TargetMasterIndex で指定した描画オブジェクト 1 つだけ。
+    ///   ビューポートの「オブジェクト選択」とは無関係で、選択状態を参照しない。
+    ///
+    /// 【元のオブジェクト】
+    ///   DeleteSource=true（既定）なら削除する。追加と削除は 1 回の Undo で戻る。
+    ///   元が子オブジェクトを持つときは削除せずに失敗させる（子の付け替えが Undo で戻らないため）。
+    ///
+    /// 【分解の規則】
+    ///   頂点のパーツIDは読まないし書かない。規則の全文は ConnectivitySplitOps.cs の冒頭にある。
+    /// </summary>
+    [PLCommand(Category = "object.list", Writes = PLWriteScope.Targets, Description =
+        "面・線のつながりで描画オブジェクトをばらばらに分解し、空のオブジェクトの子として並べる。既定で元のオブジェクトは削除する。")]
+    public class SplitObjectByConnectivityCommand : PanelCommand
+    {
+        /// <summary>分解する描画オブジェクトの masterIndex。</summary>
+        [PLParam(TextKey = "ConnectivitySplitTargetMasterIndex", IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Write,
+                 Description = "分解する描画オブジェクトの masterIndex", Required = true)]
+        public int TargetMasterIndex { get; }
+
+        /// <summary>面にも線にも属さない頂点の扱い。</summary>
+        [PLParam(TextKey = "ConnectivitySplitIsolatedPolicy",
+                 Description = "孤立頂点をまとめて 1 オブジェクトにするか、1 つずつ独立させるか")]
+        public IsolatedVertexPolicy IsolatedPolicy { get; }
+
+        /// <summary>分解後に元のオブジェクトを削除するか。</summary>
+        [PLParam(TextKey = "ConnectivitySplitDeleteSource",
+                 Description = "分解後に元のオブジェクトを削除するか（既定 true）")]
+        public bool DeleteSource { get; }
+
+        public SplitObjectByConnectivityCommand(
+            int modelIndex,
+            int targetMasterIndex,
+            IsolatedVertexPolicy isolatedPolicy = IsolatedVertexPolicy.SingleGroup,
+            bool deleteSource = true)
+            : base(modelIndex)
+        {
+            TargetMasterIndex = targetMasterIndex;
+            IsolatedPolicy    = isolatedPolicy;
+            DeleteSource      = deleteSource;
+        }
+    }
+
+    /// <summary>
     /// モデル間・オブジェクト間で頂点データを転送する。
     ///
     /// メッシュのペアは SourceMeshIndices[i] ↔ TargetMeshIndices[i] で明示する

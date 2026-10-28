@@ -2,9 +2,8 @@
 // 表情転写のツールの窓口 "faceTransfer"。BEFORE の撮影・検出依頼と、転写に使う材料（カメラ・BEFORE・AFTER）を持つ。
 //
 // ■ BEFORE の撮影（captureBefore）
-//   フレーム終端（PlayerCaptureRunner）で、メイン 3D 画面（Perspective ビューポート）の RenderTexture を
-//   そのまま読み、PNG にする。同時にそのカメラの worldToCameraMatrix・projectionMatrix と画像の大きさを控える。
-//   読むのは画面に描かれている内容そのものなので、ワイヤー・頂点・グリッドなどを表示していれば写り込む。
+//   フレーム終端（PlayerCaptureRunner）で、メイン 3D 画面（Perspective ビューポート）を ViewportShot で撮り、
+//   PNG とカメラ（worldToCameraMatrix・projectionMatrix・画像の大きさ）を得る。
 //   撮った PNG は motionLive（受け入れ許可中の WebSocket）の RequestDetectImage で MediaPipe クライアントへ
 //   要求として送り、顔検出を頼む。返事（Duplex の response）が来たら BEFORE として持つ。
 //   撮り直したときは、前の要求の返事を捨てる（撮影ごとに番号を振って照合する）。
@@ -93,45 +92,17 @@ namespace Poly_Ling.Player
 
         private void Shoot(PlayerViewport vp)
         {
-            var rt = vp.RT;
-            var cam = vp.Cam;
-            if (rt == null || cam == null) { SetStatus("メイン 3D 画面がありません"); return; }
+            if (!ViewportShot.TryShoot(vp, out var png, out var camera, out string error)) { SetStatus(error); return; }
 
-            Texture2D tex = null;
-            var prev = RenderTexture.active;
-            try
-            {
-                RenderTexture.active = rt;
-                tex = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
-                tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-                tex.Apply();
-                byte[] png = tex.EncodeToPNG();
-
-                _camera = new FaceCaptureCamera
-                {
-                    View       = cam.worldToCameraMatrix,
-                    Projection = cam.projectionMatrix,
-                    Width      = rt.width,
-                    Height     = rt.height,
-                };
-                _beforePixels = null;
-                int shot = ++_shotId;
-                _waitingId = shot;
-                int sent = Live.RequestDetectImage(png, (frame, why) => ReceiveBefore(shot, frame, why));
-                SetStatus(sent > 0
-                    ? $"撮影しました（{rt.width}x{rt.height}）。MediaPipe クライアントの検出を待っています"
-                    : "撮影しましたが、つながっている MediaPipe クライアントがありません");
-                if (sent == 0) _waitingId = -1;
-            }
-            catch (Exception e)
-            {
-                SetStatus("撮影に失敗しました: " + e.Message);
-            }
-            finally
-            {
-                RenderTexture.active = prev;
-                if (tex != null) UnityEngine.Object.Destroy(tex);
-            }
+            _camera = camera;
+            _beforePixels = null;
+            int shot = ++_shotId;
+            _waitingId = shot;
+            int sent = Live.RequestDetectImage(png, (frame, why) => ReceiveBefore(shot, frame, why));
+            if (sent == 0) _waitingId = -1;   // SetStatus がパネルを読み直す前に戻す
+            SetStatus(sent > 0
+                ? $"撮影しました（{camera.Width}x{camera.Height}）。MediaPipe クライアントの検出を待っています"
+                : "撮影しましたが、つながっている MediaPipe クライアントがありません");
         }
 
         // ---------------- BEFORE の返事（メインスレッド） ----------------

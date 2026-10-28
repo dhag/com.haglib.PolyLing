@@ -43,6 +43,10 @@ namespace Poly_Ling.Player
                              Script = "examples/mediapipe_face_to_polyling.py", Official = true },
             new PyAddonDef { Id = "mediapipe_live", Title = "MediaPipe ライブ送信",
                              Script = "examples/mediapipe_live_to_polyling.py", Official = true },
+            new PyAddonDef { Id = "humanoid_fit", Title = "ヒューマノイドボーン当てはめ（MediaPipe）",
+                             Script = "examples/mediapipe_humanoid_fit_to_polyling.py", Official = true },
+            new PyAddonDef { Id = "hand_fit", Title = "指ボーン当てはめ（MediaPipe Hand）",
+                             Script = "examples/mediapipe_hand_fit_to_polyling.py", Official = true },
         };
 
         [JsonProperty("root")]   public string Root   = "";

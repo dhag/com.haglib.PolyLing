@@ -290,6 +290,15 @@ namespace Poly_Ling.Remote
 
                 bool isRequest = message.Type == MessageType.Request;
 
+                // 同じ封筒の Binary の項目は、JSON のコマンドの添付として先に控える（putModel の本体）。
+                // コマンドが添付を使ったら、その Binary は ProcessBinaryMessage へ回さない。
+                // 封筒の並びは「JSON の項目 → Binary の項目」（段①の putModel と同じ）。
+                List<byte[]> attachments = null;
+                foreach (var it in incoming)
+                    if (it.Type == ContentType.Binary && it.Data != null)
+                        (attachments ??= new List<byte[]>()).Add(it.Data);
+                bool attachmentsUsed = false;
+
                 foreach (var item in incoming)
                 {
                     if (item.Type == ContentType.Json || item.Type == ContentType.Text)
@@ -303,8 +312,13 @@ namespace Poly_Ling.Remote
 
                         _pendingBinaryResponses = null;
                         _pendingSelectionUser   = null;
+                        _incomingAttachments     = attachments;
+                        _incomingAttachmentsUsed = false;
                         // channel を渡すのは所有権判定に要求者名が要るため。
                         string response = ProcessMessage(json, channel);
+                        attachmentsUsed |= _incomingAttachmentsUsed;
+                        _incomingAttachments     = null;
+                        _incomingAttachmentsUsed = false;
                         var pending      = _pendingBinaryResponses;
                         var selUser      = _pendingSelectionUser;
                         _pendingBinaryResponses = null;
@@ -329,6 +343,9 @@ namespace Poly_Ling.Remote
                     else if (item.Type == ContentType.Binary || item.Type == ContentType.Image
                              || item.Type == ContentType.Custom)
                     {
+                        // コマンドの添付として使った本体は、ヘッダ付きのバイナリとして読まない。
+                        if (attachmentsUsed && item.Type == ContentType.Binary) continue;
+
                         UnityEngine.Debug.Log($"[EditSync] OnDup binary-branch enter type={item.Type} data={item.Data?.Length ?? 0}");
                         byte[] response = ProcessBinaryMessage(item.Data, ResolveUserName(channel));
                         if (response == null) continue;

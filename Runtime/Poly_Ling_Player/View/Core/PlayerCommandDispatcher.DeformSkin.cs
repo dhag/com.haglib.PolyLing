@@ -172,9 +172,44 @@ namespace Poly_Ling.Player
                     }
 
                     // UnityMesh + GPU 更新
-                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+                    // 面の描画は ctx.UnityMesh の UV をそのまま使う。頂点移動用の経路
+                    // （EnterVerticesMoved）は位置しか送らないので、UV が表示に反映されなかった。
+                    // xyzToUv（PolyLingCore_UvHandlers.HandleXyzToUv）と同じく MeshObject から
+                    // 作った一時メッシュを UnityMesh へその場で書き込む。差し替えにしないのは、
+                    // Undo 側（SetMeshObject）が書き込み前の UnityMesh の参照を持っているため。
+                    // 位置はローカルのままになるが、EnterTopologyChanged の RebuildAdapter 末尾の
+                    // WritebackTransformedVertices がワールド座標で上書きする。
+                    if (uvMc.UnityMesh != null)
+                    {
+                        var uvRebuilt = mo.ToUnityMesh(model.MaterialCount);
+                        try
+                        {
+                            var um = uvMc.UnityMesh;
+                            // ToUnityMesh が作るもの（位置・UV・法線・ボーンウェイト・面）をすべて写す。
+                            // バインドポーズは ToUnityMesh が作らないので、元の値を残す。
+                            var keepBindposes = um.bindposes;
+                            um.Clear();
+                            um.indexFormat  = uvRebuilt.indexFormat;
+                            um.vertices     = uvRebuilt.vertices;
+                            um.normals      = uvRebuilt.normals;
+                            um.uv           = uvRebuilt.uv;
+                            var rebuiltWeights = uvRebuilt.boneWeights;
+                            if (rebuiltWeights != null && rebuiltWeights.Length == uvRebuilt.vertexCount)
+                                um.boneWeights = rebuiltWeights;
+                            if (keepBindposes != null && keepBindposes.Length > 0)
+                                um.bindposes = keepBindposes;
+                            um.subMeshCount = uvRebuilt.subMeshCount;
+                            for (int s = 0; s < uvRebuilt.subMeshCount; s++)
+                                um.SetTriangles(uvRebuilt.GetTriangles(s), s);
+                            um.RecalculateBounds();
+                        }
+                        finally
+                        {
+                            UnityEngine.Object.Destroy(uvRebuilt);
+                        }
+                    }
 
-                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, uvMc);
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return true;
                 }
@@ -341,6 +376,87 @@ namespace Poly_Ling.Player
                         .Text("radii",      string.Join(",", cbFrame.Radii.Select(v => v.ToString("0.#####", inv))))
                         .Text("halfWidths", string.Join(",", cbFrame.HalfWidths.Select(v => v.ToString("0.#####", inv))))
                         .Build(), cbIdx, cbIds);
+                    return true;
+                }
+
+                // ── ボーンヒートによる自動ウェイト
+                //    全対象を先に計算し、1 件でも解けなければ何も書かない。
+                //    書き込み・Undo・ミラー同期は共通経路（ApplySkinWeightPerMesh）。
+                case SkinWeightAutoHeatCommand c:
+                {
+                    // パネルの結果表示用（LastSkinWeightAutoHeatResult）。失敗も成功もここへ残す。
+                    var ahRun = new HeatRunResult();
+                    LastSkinWeightAutoHeatResult = ahRun;
+                    void AhFail(string reason) { ahRun.Success = false; ahRun.Reason = reason; Fail(reason); }
+
+                    if (model == null) { AhFail("モデルがありません。"); return true; }
+
+                    int[] ahBones;
+                    string ahErr;
+                    if (c.BoneNames != null && c.BoneNames.Length > 0)
+                    {
+                        if (!SkinWeightChainOps.ResolveBones(model, c.BoneNames, out ahBones, out ahErr))
+                        { AhFail(ahErr); return true; }
+                    }
+                    else if (!SkinWeightHeatOps.TryResolveScope(model, c.BoneScope, model.SelectedBoneIndices,
+                                 out ahBones, out ahErr))
+                    { AhFail(ahErr); return true; }
+
+                    if (!SkinWeightHeatOps.TryBuildSources(model, ahBones, out var ahSources, out ahErr))
+                    { AhFail(ahErr); return true; }
+
+                    var ahTargets = SkinWeightOperations.CollectTargetMeshContexts(model);
+                    if (ahTargets.Count == 0) { AhFail("対象の描画オブジェクトがありません。"); return true; }
+                    var ahNonSkinned = SkinWeightVolumeOps.FindNonSkinned(ahTargets);
+                    if (ahNonSkinned.Count > 0)
+                    {
+                        AhFail("スキンドでない描画オブジェクトが含まれています: " + string.Join(" / ", ahNonSkinned));
+                        return true;
+                    }
+
+                    var ahResults = new Dictionary<MeshContext, HeatWeightResult>();
+                    int ahUnreached = 0;
+                    foreach (var mc in ahTargets)
+                    {
+                        if (!SkinWeightHeatOps.TryCompute(mc, ahSources, c.SelectedOnly, out var r, out ahErr))
+                        { AhFail(ahErr); return true; }
+                        ahResults[mc] = r;
+                        ahUnreached += r.Unreached;
+                    }
+
+                    int ahVerts = 0;
+                    var ahChanged = new List<MeshContext>();
+                    ApplySkinWeightPerMesh(project, model, "Skin Weight Auto (Bone Heat)", mc =>
+                    {
+                        if (!ahResults.TryGetValue(mc, out var r)) return 0;
+                        int n = SkinWeightHeatOps.Apply(r);
+                        if (n > 0) { ahVerts += n; ahChanged.Add(mc); }
+                        return n;
+                    });
+
+                    var ahIdx = new int[ahChanged.Count];
+                    var ahIds = new ulong[ahChanged.Count];
+                    for (int i = 0; i < ahChanged.Count; i++)
+                    {
+                        ahIdx[i] = model.MeshContextList.IndexOf(ahChanged[i]);
+                        ahIds[i] = ahChanged[i].ObjectId;
+                    }
+
+                    var ahBoneSet = new HashSet<int>();
+                    foreach (var s in ahSources) ahBoneSet.Add(s.Bone);
+
+                    ahRun.Success   = true;
+                    ahRun.Vertices  = ahVerts;
+                    ahRun.Meshes    = ahChanged.Count;
+                    ahRun.Unreached = ahUnreached;
+                    ahRun.Bones     = ahBoneSet.Count;
+
+                    ReportData(CommandDataJson.New()
+                        .Int("vertices",  ahVerts)
+                        .Int("meshes",    ahChanged.Count)
+                        .Int("unreached", ahUnreached)
+                        .Int("bones",     ahBoneSet.Count)
+                        .Build(), ahIdx, ahIds);
                     return true;
                 }
 

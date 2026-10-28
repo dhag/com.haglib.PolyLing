@@ -242,6 +242,7 @@ namespace Poly_Ling.Player
         private PlayerSkinWeightPaintPanel   _skinWeightPaintPanel;
         private PlayerSkinWeightNumericSubPanel _skinWeightNumericSubPanel;
         private PlayerSkinWeightVolumeSubPanel  _skinWeightVolumeSubPanel;
+        private PlayerSkinWeightAutoHeatSubPanel _skinWeightAutoHeatSubPanel;
         private int                          _skinWeightUndoMasterIndex = -1;
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;

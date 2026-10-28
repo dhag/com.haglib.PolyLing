@@ -355,15 +355,23 @@ PolyLing の画面ではなく Blender の中の場所。答えるときは「Bl
 
 ### 3-1. 動いている PolyLing とつなぐ（Blender アドオン「PolyLing IO」のパネル［PolyLing連携］）
 
-入れ方：`データとツール/poly_ling_py/polyling_io` をフォルダごと zip にして Blender の［編集 > プリファレンス > アドオン］で入れ、「PolyLing IO」を有効にする（以前の別アドオン「PolyLing Bridge」が入っていれば外す）。PolyLing 側はリモートサーバを開始しておく。決まりの詳細は契約 §3.6（メッシュ）・§3.7（モーション）。
+入れ方：`データとツール/poly_ling_py/polyling_io` をフォルダごと zip にして Blender の［編集 > プリファレンス > アドオン］で入れ、「PolyLing IO」を有効にする（以前の別アドオン「PolyLing Bridge」が入っていれば外す）。PolyLing 側はリモートサーバを開始しておく。決まりの詳細は契約 §3.6（モデル）・§3.7（モーション）。
 
 | 場所（Blender） | やりたいこと | 言い換え | ひとこと |
 |---|---|---|---|
 | サイドバーのタブ［PolyLing］の［PolyLing連携］の一覧と「接続」「切断」 | 動いている PolyLing につなぐ | ブリッジ、リモート、WebSocket、ライブ連携 | 一覧の右のボタンで一覧を取り直す |
-| ［PolyLing連携］の「送信」「新規として送信」 | Blender のメッシュを PolyLing へ送る | メッシュ送信 | PolyLing から来たメッシュは頂点の移動だけ（面のつながりは変えられない） |
-| ［PolyLing連携］の「取り込み」 | PolyLing で選んでいる描画オブジェクトを Blender へ持ってくる | メッシュ受信 | PolyLing のコマンド `sendMeshToClient` で PolyLing から押し出すこともできる |
+| ［PolyLing連携］の「送信」「新規として送信」 | Blender のモデルを PolyLing へ送る | モデル送信、メッシュ送信 | PolyLing から取り込んだモデルは「送信」で置き換え、「新規として送信」で新しいモデル（テクスチャも送る）。PolyLing 由来でないメッシュは、選んだものをまとめて新しいモデルにする（材質は運ばない） |
+| ［PolyLing連携］の「取り込み」 | PolyLing の今のモデルを丸ごと（テクスチャも）Blender へ持ってくる | モデル受信、メッシュ受信 | PolyLing のコマンド `sendModelToClient` で PolyLing から押し出すこともできる |
 | ［PolyLing連携］の「モーション」の「送る」 | Blender のアニメーションを PolyLing ですぐ再生する | モーション送信、Blender から PolyLing へモーション | アーマチュアを選んでから。PolyLing の「その他」→「モーション」のパネルに読み込まれ、今のフレームが今のモデルに当たる。ファイルは作らない。パネルの「JSON保存」（コマンド `saveMotionClipJson`）でファイルにすると、そのファイルが元ファイルになり、読み直し・VRMA・BVH・FBX 書き出しが使える |
 | ［PolyLing連携］の「モーション」の「取得」 | PolyLing で開いているモーションを Blender のアニメーションにする | モーション受信、PolyLing から Blender へモーション | アーマチュアを選んでから。PolyLing の「その他」→「モーション」のパネルに読み込んであるクリップを取る（VRMA・BVH・FBX から読んだものも .plmotion にして取る）。選べることは「モーションを読む」と同じ |
+
+### 3-1b. ComfyUI（Stable Fast 3D）から送る（カスタムノード「PolyLing Send (SF3D)」）
+
+入れ方：`custom_nodes/ComfyUI-PolyLing/__init__.py`（読み込み口）を置いて ComfyUI を起動し直す。本体は `データとツール/poly_ling_py/comfyui/polyling_send/`。PolyLing 側はリモートサーバを開始しておく。決まりの詳細は契約 §3.6。
+
+| 場所（ComfyUI） | やりたいこと | 言い換え | ひとこと |
+|---|---|---|---|
+| ノード一覧の［PolyLing］→「PolyLing Send (SF3D)」 | SF3D で作ったメッシュを PolyLing へ直接送る | ComfyUI 連携、SF3D 送信、OBJ を経ずに読み込む | 「Stable Fast 3D Sampler」の mesh をつなぐ。新しいモデル（名前は model_name）として足され、ベースカラーのテクスチャも付く。向きは glTF と同じ（OBJ の読み込みとは Y 軸まわりに 180° 違う） |
 
 ### 3-2. VRM Add-on 経由で行き来させる（`.vrma`）
 
@@ -383,6 +391,9 @@ VRM 1.0 のモデルなら、VRM Add-on for Blender で `.vrma` を読み書き�
 |---|---|
 | Blender アドオンのメニュー・パネル・チェックの文字 | `データとツール/poly_ling_py/polyling_io/blender/__init__.py` |
 | Blender のブリッジ（［PolyLing連携］）のボタンの文字 | `データとツール/poly_ling_py/polyling_io/blender/bridge.py` の `POLYLING_PT_bridge` と各オペレーター |
+| Blender とのモデルの受け渡し（取り込み・送信・押し出し） | `bridge.py` の `receive_model`・`send_model`・`_on_model`、`blender/importer.py` の `import_model_dict`、`blender/exporter.py` の `export_model`（with_textures）・`build_model_from_objects` |
+| ComfyUI のノード（SF3D の送信） | `データとツール/poly_ling_py/comfyui/polyling_send/nodes.py`、変換は `polyling_io/convert/trimesh_model.py` の `trimesh_to_model` |
+| モデルの受け渡しの通信（素の Python からも使う） | `データとツール/poly_ling_py/polyling_io/net/client.py` の `get_model`・`put_model`・`on_model` |
 | 折り畳み・ボタンの文字や並び | `PlayerLayoutRoot.LeftPaneButtons.cs` の `BuildLeftPaneToolButtons` |
 | 左の常時表示部 | `PlayerLayoutRoot.LeftPane.cs` の `BuildLeftPane` |
 | 右最上部の 3 ボタン | `PlayerLayoutRoot.RightPane.cs` の `BuildRightPane` |

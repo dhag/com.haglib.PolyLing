@@ -53,9 +53,16 @@ namespace Poly_Ling.Ops
         /// 挿入した (索引, MeshContext) の一覧。先頭が空の親、以降がパーツIDの昇順。
         /// 何も入れられなかったときは空。
         /// </returns>
+        /// <param name="parentSuffix">空の親の名前に付ける語。既定はパーツIDによる分解の "_Parts"。</param>
+        /// <param name="childName">
+        /// 子の名前（元の名前, piece.PartsId）→ 名前。null ならパーツIDによる分解の付け方。
+        /// </param>
         public static List<(int Index, MeshContext MeshContext)> Insert(
-            ModelContext model, int sourceMasterIndex, IReadOnlyList<PartsIdSplitPiece> pieces)
+            ModelContext model, int sourceMasterIndex, IReadOnlyList<PartsIdSplitPiece> pieces,
+            string parentSuffix = "_Parts",
+            System.Func<string, int, string> childName = null)
         {
+            if (childName == null) childName = ChildName;
             var added = new List<(int Index, MeshContext MeshContext)>();
             if (model == null || pieces == null || pieces.Count == 0) return added;
 
@@ -68,7 +75,7 @@ namespace Poly_Ling.Ops
 
             // ── 親（空のオブジェクト） ──────────────────────────────────
             var emptyCtx = BuildContext(
-                model, new MeshObject(), model.GenerateUniqueMeshName(baseName + "_Parts"));
+                model, new MeshObject(), model.GenerateUniqueMeshName(baseName + parentSuffix));
             emptyCtx.BoneTransform?.CopyFrom(src.BoneTransform);
 
             model.Insert(insertAt, emptyCtx);
@@ -81,7 +88,7 @@ namespace Poly_Ling.Ops
                 if (mo == null) continue;
 
                 int    index = insertAt + added.Count;
-                string name  = model.GenerateUniqueMeshName(ChildName(baseName, pieces[i].PartsId));
+                string name  = model.GenerateUniqueMeshName(childName(baseName, pieces[i].PartsId));
 
                 var ctx = BuildContext(model, mo, name);
                 model.Insert(index, ctx);

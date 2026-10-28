@@ -116,13 +116,58 @@ namespace Poly_Ling.Player
             f.Add(TR(T("BeltSplineUseLast"),  () => opt.UseLast,  v => { opt.UseLast  = v; D(); }));
             f.Add(IR(T("BeltSplineTrimStart"), BeltSplineOptions.TrimMin, BeltSplineOptions.TrimMax, () => opt.TrimStart, v => { opt.TrimStart = v; D(); }));
             f.Add(IR(T("BeltSplineTrimEnd"), BeltSplineOptions.TrimMin, BeltSplineOptions.TrimMax, () => opt.TrimEnd,   v => { opt.TrimEnd   = v; D(); }));
+
+            // 残す段の番号（旧ツールの「残す梯子を番号で指定」）。分割を切っていても効く。
+            var keepLx = T("BeltSplineKeepRungs");
+            f.Add(SL(keepLx));
+            var keepTf = new TextField { value = opt.KeepRungsText ?? "", multiline = false };
+            keepTf.style.marginBottom = 2;
+            keepTf.RegisterValueChangedCallback(e => { opt.KeepRungsText = e.newValue ?? ""; D(); });
+            f.Add(RowTarget.Add(keepLx.Key, keepTf, keepLx.Text));
+        }
+
+        /// <summary>「0,1,2 5」のような番号の並びを読む。読めない語は飛ばす。</summary>
+        private static int[] ParseRungList(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return System.Array.Empty<int>();
+            var list = new List<int>();
+            foreach (var s in text.Split(new[] { ',', ' ', '\t', '\r', '\n', '、' },
+                                         System.StringSplitOptions.RemoveEmptyEntries))
+                if (int.TryParse(s.Trim(), out int v) && v >= 0) list.Add(v);
+            return list.ToArray();
         }
 
         /// <summary>
         /// スプライン分割を適用したベルトを返す。無効・閉じた梯子・補間不能なら元をそのまま返す。
-        /// 取り込み済みデータは変更しない。
+        /// 残す段の指定があれば、そのあとで指定の段だけを残す。取り込み済みデータは変更しない。
         /// </summary>
         private static BeltSnapshot ApplyBeltSpline(BeltSnapshot belt, BeltSplineOption opt)
+        {
+            var b = ApplyBeltSplineOnly(belt, opt);
+            if (b == null || !b.HasData || opt == null || b.Closed) return b;
+
+            var keepRungs = ParseRungList(opt.KeepRungsText);
+            if (keepRungs.Length == 0) return b;
+
+            var keep = BeltShapeOps.KeepIndices(Mathf.Min(b.Left.Count, b.Right.Count), keepRungs);
+            if (keep.Count < 2) return b;
+
+            return new BeltSnapshot
+            {
+                Left        = BeltShapeOps.Pick(b.Left,  keep),
+                Right       = BeltShapeOps.Pick(b.Right, keep),
+                Closed      = false,
+                FlipWinding = b.FlipWinding,
+                HeightScale = b.HeightScale,
+                StartPoint  = b.StartPoint,
+                EndPoint    = b.EndPoint,
+                GroupId     = b.GroupId,
+                RowIndex    = b.RowIndex,
+                RowCount    = b.RowCount,
+            };
+        }
+
+        private static BeltSnapshot ApplyBeltSplineOnly(BeltSnapshot belt, BeltSplineOption opt)
         {
             if (belt == null || !belt.HasData) return belt;
             if (opt == null || !opt.Enabled)   return belt;

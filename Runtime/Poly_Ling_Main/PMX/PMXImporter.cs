@@ -341,6 +341,23 @@ namespace Poly_Ling.PMX
             // ミラーペア検出・構築（常に実行）
             DetectAndBuildMirrorPairs(result, boneContextCount, settings);
 
+            // ボーンを読まないとき、頂点のウェイトは PMX のボーン番号を指したまま残る。
+            // 描画はウェイトの番号をモデル内のオブジェクト番号として引くので、ボーンの無いモデルでは
+            // 範囲外や別のオブジェクトを引いて形が飛ぶ。部分インポート（KeepSourceBoneWeights）以外では捨てる。
+            // 対象はウェイトを持つ頂点があるオブジェクトだけ（メッシュとモーフ用メッシュ。剛体・ジョイントの入れ物は触らない）。
+            if (!settings.ShouldImportBones && !settings.KeepSourceBoneWeights)
+            {
+                foreach (var mc in result.MeshContexts)
+                {
+                    var mo = mc?.MeshObject;
+                    if (mo == null) continue;
+                    bool weighted = false;
+                    foreach (var v in mo.Vertices)
+                        if (v.HasBoneWeight || v.HasMirrorBoneWeight) { weighted = true; break; }
+                    if (weighted) mo.ClearAllBoneWeights();
+                }
+            }
+
             // 描画オブジェクトの種別を確定する。
             // 頂点のウェイトが揃うのはここまでの変換が全部終わったあと
             // （ボーン索引のオフセット補正・ミラーペア構築を含む）なので、最後に 1 回だけ行う。

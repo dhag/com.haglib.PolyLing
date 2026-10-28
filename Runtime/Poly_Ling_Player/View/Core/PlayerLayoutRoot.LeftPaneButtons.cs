@@ -62,6 +62,8 @@ namespace Poly_Ling.Player
 
         /// <summary>左ペイン：スキンW範囲塗りボタン（円筒・球の範囲で親・自ボーンを配分）。</summary>
         public Button SkinWeightVolumeBtn { get; private set; }
+        /// <summary>左ペイン「スキンW自動（ボーンヒート）」。</summary>
+        public Button SkinWeightAutoHeatBtn { get; private set; }
 
         /// <summary>左ペイン：一時選択サブツール呼び出しボタン (デバッグ用。ショートカット R / G と同処理)。</summary>
         public Button SubToolBoxSelectBtn   { get; private set; }
@@ -727,6 +729,9 @@ namespace Poly_Ling.Player
 
             SkinWeightVolumeBtn = MakeBtn("スキンW範囲塗り");
             foBoneMorph.Add(SkinWeightVolumeBtn);
+
+            SkinWeightAutoHeatBtn = MakeBtn("スキンW自動（ボーンヒート）");
+            foBoneMorph.Add(SkinWeightAutoHeatBtn);
 
             // ブレンド / シュリンカー / TPSモーフ / 格子変形は「特殊な変形」へ移動した。
 

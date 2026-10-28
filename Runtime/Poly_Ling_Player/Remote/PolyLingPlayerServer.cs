@@ -43,13 +43,18 @@ namespace Poly_Ling.Player
             => _server?.BroadcastPositions(mc, modelIndex);
         public void ClearCapturedImages()                  => _server?.ClearCapturedImages();
 
-        /// <summary>クライアントへ要求を送る（RemoteServerCore.RequestClient）。onFinished は結果が決まったときメインスレッドで呼ぶ。</summary>
+        /// <summary>
+        /// クライアントへ要求を送る（RemoteServerCore.RequestClient）。onFinished は結果が決まったときメインスレッドで呼ぶ。
+        /// attachment は Binary の項目として添える本体（putModel のモデル 1 つ分など）。
+        /// </summary>
         public bool RequestClient(string userName, string action, string paramsJson, int timeoutMs,
                                   out int requestNo, out string reason, out string code,
-                                  System.Action<RemoteServerCore.ClientRequestState> onFinished = null)
+                                  System.Action<RemoteServerCore.ClientRequestState> onFinished = null,
+                                  byte[] attachment = null)
         {
             if (_server == null) { requestNo = 0; reason = "サーバがありません"; code = CommandErrorCodes.NotReady; return false; }
-            return _server.RequestClient(userName, action, paramsJson, timeoutMs, out requestNo, out reason, out code, onFinished);
+            return _server.RequestClient(userName, action, paramsJson, timeoutMs, out requestNo, out reason, out code,
+                                         onFinished, attachment);
         }
 
         /// <summary>action を capabilities に申告したクライアントがつながっているか（RemoteServerCore.HasClientAction）。</summary>

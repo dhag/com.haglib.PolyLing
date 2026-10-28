@@ -23,7 +23,7 @@
 //     ObjectOrigin.cs             オブジェクト原点の一括設定・姿勢くさび
 //     UiAutomation.cs             UI 自動操作（DispatchUiAutomation）。プロジェクトの null 門より前で呼ぶ
 //     MeshArrays.cs               配列からの描画オブジェクト生成（addMeshFromArrays。case は MeshAttributes.cs）
-//     RemoteClient.cs             リモートのクライアントへの要求（requestClient / sendMeshToClient ほか）
+//     RemoteClient.cs             リモートのクライアントへの要求（requestClient / sendModelToClient ほか）
 
 using System;
 using System.Collections.Generic;
@@ -98,6 +98,11 @@ namespace Poly_Ling.Player
         /// NormalEditCommand の直近の実行結果（前後比較による実測）。パネルが結果表示へ使う。
         /// </summary>
         public Poly_Ling.Ops.NormalEditResult LastNormalEditResult { get; private set; }
+
+        /// <summary>
+        /// SkinWeightAutoHeatCommand の直近の実行結果（成功・失敗とも）。パネルが結果表示へ使う。
+        /// </summary>
+        public Poly_Ling.Ops.HeatRunResult LastSkinWeightAutoHeatResult { get; private set; }
 
         // BoneTransformスライダーのUndo用スナップショット（Begin～End間で保持）
         private readonly Dictionary<int, BoneTransformSnapshot> _boneTransformBeforeSnapshots
@@ -586,6 +591,12 @@ namespace Poly_Ling.Player
         /// <summary>空のモデルを足す。戻り値は失敗理由。成功時は null。</summary>
         public Func<CreateEmptyModelCommand, string> OnCreateEmptyModel;
 
+        /// <summary>外部から届いたモデルを新しいモデルとして足す。戻り値は失敗理由。成功時は null。</summary>
+        public Func<AddModelBundleCommand, string> OnAddModelBundle;
+
+        /// <summary>外部から届いたモデルで指定したモデルを置き換える。戻り値は失敗理由。成功時は null。</summary>
+        public Func<ReplaceModelBundleCommand, string> OnReplaceModelBundle;
+
         /// <summary>
         /// 生成系で、プロジェクトとモデルが無ければ用意させる。用意できたプロジェクトを返す
         /// （CurrentModel が選ばれた状態）。図形生成と同じく PlayerLocalLoader.EnsureProject を通す。
@@ -602,6 +613,12 @@ namespace Poly_Ling.Player
         /// 実行は Viewer 側が持つ（PolyLingPlayerViewerCore.CreateCommands.cs:4-8）。
         /// </summary>
         public Func<SplitObjectByPartsIdCommand, string> OnSplitObjectByPartsId;
+
+        /// <summary>
+        /// つながりによる分解コマンドの実行。戻り値は失敗理由。成功時は null。
+        /// 実行は Viewer 側が持つ（パーツIDによる分解と同じ理由）。
+        /// </summary>
+        public Func<SplitObjectByConnectivityCommand, string> OnSplitObjectByConnectivity;
 
         /// <summary>
         /// コマンドの門。理由を返したコマンドは実行せずに失敗させる（null なら通す）。
@@ -1032,6 +1049,18 @@ namespace Poly_Ling.Player
             }
         }
 
+        /// <summary>カレントモデルの索引と名前を結果として報告する（モデルを足す・置き換えるコマンド用）。</summary>
+        private void ReportCurrentModel()
+        {
+            var project = _getProject();
+            int index   = project?.CurrentModelIndex ?? -1;
+            var model   = index >= 0 ? project.GetModel(index) : null;
+            ReportData(CommandDataJson.New()
+                .Int("modelIndex", index)
+                .Text("modelName", model?.Name ?? "")
+                .Build());
+        }
+
         private void DispatchCore(PanelCommand cmd)
         {
             // コマンドの門。プロジェクト初期化も対象にするので、一番先に見る。
@@ -1062,6 +1091,28 @@ namespace Poly_Ling.Player
                     .Int("modelIndex", cemIndex)
                     .Text("modelName", cemModel?.Name ?? "")
                     .Build());
+                return;
+            }
+
+            // 外部から届いたモデルの受け入れ（PolyLing_外部受け渡し計画.md ②）。
+            // 足す方はプロジェクトがまだ無い状態からも呼べるよう、空のモデルの追加と同じくここで捌く。
+            // 本体（ModelDTO）はシナリオに書けないので記録しない。
+            if (cmd is AddModelBundleCommand addBundle)
+            {
+                MarkNotRecorded();
+                if (OnAddModelBundle == null) { Fail("add model bundle handler not wired"); return; }
+                string abReason = OnAddModelBundle.Invoke(addBundle);
+                if (abReason != null) { Fail(abReason); return; }
+                ReportCurrentModel();
+                return;
+            }
+            if (cmd is ReplaceModelBundleCommand replaceBundle)
+            {
+                MarkNotRecorded();
+                if (OnReplaceModelBundle == null) { Fail("replace model bundle handler not wired"); return; }
+                string rbReason = OnReplaceModelBundle.Invoke(replaceBundle);
+                if (rbReason != null) { Fail(rbReason); return; }
+                ReportCurrentModel();
                 return;
             }
 
@@ -1137,6 +1188,9 @@ namespace Poly_Ling.Player
 
             // PolyLing モーション JSON の書き出し・検査もファイルだけを扱う。同じ理由でここで捌く。
             if (DispatchMotionFile(cmd)) return;
+
+            // ComfyUI の操作も通信と作業フォルダのファイルだけを扱う。同じ理由でここで捌く。
+            if (DispatchComfyUi(cmd)) return;
 
             // リモートのクライアントへの要求も通信だけを扱う。同じ理由でここで捌く。
             if (DispatchRemoteClient(cmd)) return;

@@ -97,7 +97,7 @@ Blender とモーションを行き来させる。道筋は 2 本とも確保す
 
 - MCP サーバに `blender --background --python <スクリプト>` を実行する道具を足せば、Blender 上の確認（段 ①〜③）を自動化できる。MCP サーバの再コンパイルが要る。
 - 段 ③ の Windows の Blender での確認（MCP から Blender を動かせないので操作者の作業。決まりは契約 §3.7・§5.1）：
-  1. 入れる：`データとツール/poly_ling_py/polyling_io` をフォルダごと zip にして入れ「PolyLing IO」を有効にする（`PolyLing_Blender入出力計画.md` 5 の 1）。`データとツール/poly_ling_py/polyling_bridge.py` を［編集 > プリファレンス > アドオン］で入れ（4.2 以降は「Install from Disk」）、「PolyLing Bridge」を有効にする（版 0.3.0。前の版が入っていれば入れ替える）。
+  1. 入れる：`データとツール/poly_ling_py/polyling_io` をフォルダごと zip にして入れ「PolyLing IO」を有効にする（`PolyLing_Blender入出力計画.md` 5 の 1）。`データとツール/poly_ling_py/polyling_bridge.py` を［編集 > プリファレンス > アドオン］で入れ（4.2 以降は「Install from Disk」）、「PolyLing Bridge」を有効にする（版 0.3.0。前の版が入っていれば入れ替える）。（2026-10-26：`polyling_bridge.py` は廃止。ブリッジは PolyLing IO に含まれる。`PolyLing_外部受け渡し計画.md` 段 ④）
   2. PolyLing を Play し、左の「ファイル」→「プロジェクト読み込み」で `SandBox/bintest/A4/project.csv` を開き、モデルを Zunko_MMD にする。リモートサーバを開始する。
   3. Blender で同じ `project.csv` を［ファイル > インポート > PolyLing プロジェクト］で読み、3D ビューのサイドバー［PolyLing］の［PolyLing連携］で一覧を更新して「接続」。
   4. 送信：「Zunko_MMD_Armature」を選び、［PolyLing］タブの「モーションを読む」で `SandBox/BlenderIO/stage4/bl/fresh_Z.plmotion.json` を読む（腰の回転と位置も当てる は切る）。フレーム 30 にして［PolyLing連携］の「モーション」の「送る」。PolyLing の画面が `SandBox/Captures/BlenderIO/link3_freshZ_t1_0002.png`（左腕を上げ、左脚を開き、頭を回す）と同じ姿勢になり、左の「その他」→「モーション」のパネルのクリップ名が fresh_Z、長さ 1.00 秒になればよい。

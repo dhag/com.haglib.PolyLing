@@ -429,7 +429,8 @@ namespace Poly_Ling.Data
         public Poly_Ling.Pipe.PipeParams Params { get; }
 
         [PLParam(TextKey = "PipeProfile", Description = "断面プロファイル（x,y,z）", Required = true,
-                 ProfileRole = PLProfileRole.Points, ProfileNormalize = true, LegacyXYPairs = true)]
+                 ProfileRole = PLProfileRole.Points, ProfileNormalize = true, LegacyXYPairs = true,
+                 ProfileNormalizeOffKeys = "params.legacyCompat,params.legacyRawProfile")]
         public Vector3[] Profile { get; }
 
         [PLParam(TextKey = "PipeProfileClosed", Description = "断面を閉ループとして扱う")]
@@ -467,6 +468,42 @@ namespace Poly_Ling.Data
             Params        = @params;
             Profile       = profile;
             ProfileClosed = profileClosed;
+        }
+    }
+
+    /// <summary>
+    /// パイプから梯子（基準ベルト）を取り出す（旧 NCSHAGLIB の「←パイプからの取り出し」）。
+    /// 取り出した梯子は開始タグ三角形・開始三角形・終了三角形を持つので、
+    /// そのまま「はしごの自動検索」で拾ってパイプ生成をやり直せる。
+    /// 取り込み元の索引から MeshObject への解決はディスパッチャ側が行う（藤壺と同じ口）。
+    /// </summary>
+    [PLCommand(Category = "geometry.create.derived", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.Targets,
+        Description = "パイプ（断面の輪を縦に積み、両端を扇で閉じた筒）から、断面の 2 頂点の列を左右のレールにした梯子を取り出す。1 本ぶんの頂点が「始点・断面×段・終点」の順に並んでいるパイプが対象で、オブジェクトに何本入っていてもよい。梯子は開始タグ三角形と終了三角形を持ち、はしごの自動検索でそのまま拾える。重複頂点の結合は切っておくこと（梯子どうしの端がつながる）。")]
+    [PLUiRoute("パイプの梯子取り出し",
+        "leftPane.fold.Primitive", "leftPane.liveAdvancedPrimitiveBtn",
+        "primitiveAdvanced.shape.Pipe", "primitiveAdvanced.PipeBeltExtractRun")]
+    public sealed class ExtractPipeBeltCommand : CreatePrimitiveMeshCommand
+    {
+        [PLParam(TextKey = "PipeBeltExtract", Description = "取り出しのパラメータ", Required = true)]
+        public Poly_Ling.PrimitiveMesh.PipeBeltExtractParams Params { get; }
+
+        /// <summary>取り込み元（パイプ）の MeshContextList インデックス。</summary>
+        [PLParam(TextKey = "PipeBeltSourceIndices", Description = "取り込み元（パイプ）のオブジェクトの索引", Required = true,
+                 IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
+        public int[] SourceMasterIndices { get; }
+
+        public override string ShapeName => "PipeBelt";
+        public override string MeshName  => Params.MeshName;
+
+        public ExtractPipeBeltCommand(
+            int modelIndex,
+            Poly_Ling.PrimitiveMesh.PipeBeltExtractParams @params,
+            int[] sourceMasterIndices,
+            PrimitivePlacement placement)
+            : base(modelIndex, placement)
+        {
+            Params              = @params;
+            SourceMasterIndices = sourceMasterIndices ?? System.Array.Empty<int>();
         }
     }
 

@@ -248,6 +248,8 @@ namespace Poly_Ling.Player
                 case ImportPmxVertexAttributesCommand _:
                 case ResetProjectCommand _:
                 case CreateEmptyModelCommand _:
+                case AddModelBundleCommand _:
+                case ReplaceModelBundleCommand _:
                 // モデル切替・削除
                 case SwitchModelCommand _:
                 case DeleteModelCommand _:

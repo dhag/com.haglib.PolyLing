@@ -54,6 +54,9 @@ namespace Poly_Ling.Ops
         /// <summary>作った節の索引。作った順（親が先）。</summary>
         public readonly List<int> Created = new List<int>();
 
+        /// <summary>Created と同じ並びの、表の行の名前（改名した節も表の名前のまま）。</summary>
+        public readonly List<string> CreatedRowNames = new List<string>();
+
         /// <summary>モデルの既存名と重なって名前を変えた件数。</summary>
         public int Renamed;
 
@@ -300,6 +303,7 @@ namespace Poly_Ling.Ops
                 var addedCtx = AddNode(model, objName, parentIndex, local, asBones);
                 ctxOf[name] = addedCtx;
                 createdCtx.Add(addedCtx);
+                result.CreatedRowNames.Add(name);
             }
 
             foreach (var c in createdCtx) result.Created.Add(model.MeshContextList.IndexOf(c));

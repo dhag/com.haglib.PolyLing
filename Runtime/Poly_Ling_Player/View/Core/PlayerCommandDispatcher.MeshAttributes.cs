@@ -397,6 +397,26 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── MediaPipe の姿勢からヒューマノイドボーンを作って割り当てる（撮影とその結果の照会を含む）
+                case CaptureViewportImageCommand c:
+                    CaptureViewportImage(c);
+                    return true;
+                case QueryViewportImageCaptureCommand c:
+                    QueryViewportImageCapture(c);
+                    return true;
+                case FitHumanoidBonesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    FitHumanoidBones(project, model, c);
+                    return true;
+                }
+                case FitHumanoidHandBonesCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    FitHumanoidHandBones(project, model, c);
+                    return true;
+                }
+
                 // ── 姿勢くさびの生成
                 case GenerateObjectPoseWedgesCommand c:
                 {

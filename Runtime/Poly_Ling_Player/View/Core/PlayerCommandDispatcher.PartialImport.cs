@@ -342,6 +342,7 @@ namespace Poly_Ling.Player
                 RecalculateNormals    = false,
                 DetectNamedMirror     = true,
                 UseObjectNameGrouping = true,
+                KeepSourceBoneWeights = true,   // PMX のウェイトを既存モデルへ移すため
             };
 
             var result = Poly_Ling.PMX.PMXImporter.ImportFile(pmxPath, settings);

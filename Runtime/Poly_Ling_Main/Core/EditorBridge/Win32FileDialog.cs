@@ -56,6 +56,12 @@ namespace Poly_Ling.EditorBridge
             public int    FlagsEx           = 0;
         }
 
+        // ダイアログのオーナーにする呼び出しスレッドのアクティブウィンドウ（Unity のウィンドウ）。
+        // オーナー無しだと Unity のウィンドウが有効なまま残り、ダイアログ表示中のクリックを
+        // 受け付けてしまう（閉じた後にそのクリックでダイアログが再度開く）。
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr GetActiveWindow();
+
         [System.Runtime.InteropServices.DllImport("comdlg32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
         private static extern bool GetOpenFileName([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] OpenFileName ofn);
 
@@ -148,6 +154,7 @@ namespace Poly_Ling.EditorBridge
         public static string OpenFile(string title, string directory, string defaultName, string extension)
         {
             var ofn = new OpenFileName();
+            ofn.hwndOwner       = GetActiveWindow();
             ofn.lpstrTitle      = title;
             ofn.lpstrFilter     = BuildFilter(extension);
             ofn.lpstrFile       = (defaultName ?? "") + new string('\0', 512);
@@ -164,6 +171,7 @@ namespace Poly_Ling.EditorBridge
         public static string SaveFile(string title, string directory, string defaultName, string extension)
         {
             var ofn = new OpenFileName();
+            ofn.hwndOwner       = GetActiveWindow();
             ofn.lpstrTitle      = title;
             ofn.lpstrFilter     = BuildFilter(extension);
             ofn.lpstrFile       = (defaultName ?? "") + new string('\0', 512);
@@ -183,6 +191,7 @@ namespace Poly_Ling.EditorBridge
             try
             {
                 var bi = new BrowseInfo();
+                bi.hwndOwner = GetActiveWindow();
                 bi.lpszTitle = title;
                 bi.ulFlags   = 0x0001 | 0x0010; // BIF_RETURNONLYFSDIRS | BIF_EDITBOX
 

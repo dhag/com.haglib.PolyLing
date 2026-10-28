@@ -356,6 +356,10 @@ namespace Poly_Ling.Player
 
             BuildLayout(uiRoot);
 
+            // ファイルダイアログを開く直前に、開かせたボタンからフォーカスを外す。
+            // 理由は FileDialogGuard.Opening のコメントを参照。
+            FileDialogGuard.Opening += OnFileDialogOpening;
+
             SetupVertexInteraction();
 
             _commandDispatcher = new PlayerCommandDispatcher(
@@ -493,89 +497,23 @@ namespace Poly_Ling.Player
                 UnityEngine.Debug.Log("[LoadDbg] 01 handler-enter");
                 var loadedModel = project.CurrentModel;
 
-                if (_importSubPanel?.AutoScale == true)
+                RefreshAfterModelPlaced(project, loadedModel, () =>
                 {
-                    var list = loadedModel.MeshContextList;
-                    for (int i = 0; i < list.Count; i++)
+                    // UNDO記録: PMX/MQO/CSV 読込によるモデル追加全体を 1 ステップ (ProjectStack) として記録。
+                    // (問題 E/I: 従来は MeshListStack に RecordMeshContextsAdd していたが、Undo で
+                    //  モデル内のメッシュが消えるだけで ProjectContext.Models にモデル自体 (空) が
+                    //  残り、モデルリストに名前だけ残るバグがあった。ModelOperationRecord.CreateAdd は
+                    //  ModelContextSnapshot にモデル全体を保存し、Undo でモデル自体を削除・
+                    //  Redo で復元するため、リスト表示も一致する)
+                    UnityEngine.Debug.Log("[LoadDbg] 11 before-RecordModelAdd");
+                    if (_editOps?.UndoController != null && loadedModel != null)
                     {
-                        if (list[i].UnityMesh != null)
-                        {
-                            // Phase 2a-2d: ResetToMesh → EnterCameraChanged(Reset) に集約。
-                            _viewportManager.EnterCameraChanged(
-                                _viewportManager.PerspectiveViewport,
-                                CameraChangePhase.Reset,
-                                list[i].UnityMesh.bounds);
-                            break;
-                        }
+                        int __addedIdx = _localLoader?.LastAddedModelIndex ?? project.CurrentModelIndex;
+                        int __oldIdx   = _localLoader?.LastPreviousCurrentModelIndex ?? -1;
+                        _editOps.UndoController.SetProjectContext(project);
+                        _editOps.UndoController.RecordModelAdd(__addedIdx, loadedModel, __oldIdx);
                     }
-                }
-                UnityEngine.Debug.Log("[LoadDbg] 03 before-UndoCtx");
-                _editOps?.UndoController.SetModelContext(loadedModel);
-                // 問題 A/B 対応: ProjectStack (モデル切替用 Undo) の Context も同期する。
-                _editOps?.UndoController.SetProjectContext(project);
-
-                UnityEngine.Debug.Log("[LoadDbg] 04 before-ComputeWorldMatrices");
-                loadedModel.ComputeWorldMatrices();
-                UnityEngine.Debug.Log("[LoadDbg] 05 after-ComputeWorldMatrices");
-
-                // Phase 2a-2b-2 Batch 3: モデル初期選択処理を先に行ってから EnterSceneReset で一括更新。
-                UnityEngine.Debug.Log("[LoadDbg] 06 before-Drawables");
-                var loadedDrawables = loadedModel.DrawableMeshes;
-                if (loadedDrawables != null)
-                    foreach (var entry in loadedDrawables)
-                    {
-                        var mc = entry.Context;
-                        if (mc?.MeshObject != null && mc.MeshObject.VertexCount > 0 && mc.IsVisible)
-                        { loadedModel.SelectMesh(entry.MasterIndex); break; }
-                    }
-
-                UnityEngine.Debug.Log("[LoadDbg] 07 before-BoneScan");
-                int lNeckIdx = -1, lFirstBone = -1;
-                for (int ci = 0; ci < loadedModel.MeshContextCount; ci++)
-                {
-                    var bmc = loadedModel.GetMeshContext(ci);
-                    if (bmc == null || bmc.Type != MeshType.Bone) continue;
-                    if (lFirstBone < 0) lFirstBone = ci;
-                    string n = bmc.Name ?? "";
-                    if (n == "首" || n.ToLower() == "neck") { lNeckIdx = ci; break; }
-                }
-                int lSelBone = lNeckIdx >= 0 ? lNeckIdx : lFirstBone;
-                if (lSelBone >= 0) loadedModel.SelectBone(lSelBone);
-
-                if (_editOps?.UndoController?.MeshUndoContext != null)
-                    _editOps.UndoController.MeshUndoContext.ParentModelContext = loadedModel;
-
-                // RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を一括実行。
-                // Phase 2a-2g-3: clearScene: true で冒頭の ClearScene 呼出しを統合。
-                UnityEngine.Debug.Log("[LoadDbg] 08 before-EnterSceneReset");
-                _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
-                UnityEngine.Debug.Log("[LoadDbg] 09 before-EnterCameraChanged");
-                _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
-                UnityEngine.Debug.Log("[LoadDbg] 10 after-EnterCameraChanged");
-
-                // UNDO記録: PMX/MQO/CSV 読込によるモデル追加全体を 1 ステップ (ProjectStack) として記録。
-                // (問題 E/I: 従来は MeshListStack に RecordMeshContextsAdd していたが、Undo で
-                //  モデル内のメッシュが消えるだけで ProjectContext.Models にモデル自体 (空) が
-                //  残り、モデルリストに名前だけ残るバグがあった。ModelOperationRecord.CreateAdd は
-                //  ModelContextSnapshot にモデル全体を保存し、Undo でモデル自体を削除・
-                //  Redo で復元するため、リスト表示も一致する)
-                UnityEngine.Debug.Log("[LoadDbg] 11 before-RecordModelAdd");
-                if (_editOps?.UndoController != null && loadedModel != null)
-                {
-                    int __addedIdx = _localLoader?.LastAddedModelIndex ?? project.CurrentModelIndex;
-                    int __oldIdx   = _localLoader?.LastPreviousCurrentModelIndex ?? -1;
-                    _editOps.UndoController.SetProjectContext(project);
-                    _editOps.UndoController.RecordModelAdd(__addedIdx, loadedModel, __oldIdx);
-                }
-
-                UnityEngine.Debug.Log("[LoadDbg] 12 before-RebuildModelList");
-                RebuildModelList();
-                UnityEngine.Debug.Log("[LoadDbg] 13 before-RefreshBoneList");
-                _skinWeightPaintPanel?.RefreshBoneList(loadedModel);
-                UnityEngine.Debug.Log("[LoadDbg] 14 before-NotifyPanels");
-                NotifyPanels(ChangeKind.ModelSwitch);
-                _loadDbgSubmitLeft = 12;
-                UnityEngine.Debug.Log("[LoadDbg] 15 handler-exit");
+                });
             };
 
             _receiver.OnProjectHeaderReceived += OnProjectHeaderReceived;
@@ -608,6 +546,86 @@ namespace Poly_Ling.Player
                 _editSpace != null && !_editSpace.IsBroken ? _editSpace.CameraViewport : null;
 
             SetupPerfLog();
+        }
+
+        /// <summary>
+        /// モデルをプロジェクトに置いた直後（読み込み・外部からの受け入れ・置き換え）の後始末。
+        /// Undo の文脈・行列・初期選択・画面・リストを新しいモデルへ合わせる。
+        /// Undo の記録は置き方で違うので recordUndo で受ける（追加＝RecordModelAdd、置き換え＝RecordModelReplace）。
+        /// 中身は従来の _localLoader.OnLoaded と同じ（並びも変えない）。
+        /// </summary>
+        private void RefreshAfterModelPlaced(ProjectContext project, ModelContext loadedModel, System.Action recordUndo)
+        {
+            if (_importSubPanel?.AutoScale == true)
+            {
+                var list = loadedModel.MeshContextList;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (list[i].UnityMesh != null)
+                    {
+                        // Phase 2a-2d: ResetToMesh → EnterCameraChanged(Reset) に集約。
+                        _viewportManager.EnterCameraChanged(
+                            _viewportManager.PerspectiveViewport,
+                            CameraChangePhase.Reset,
+                            list[i].UnityMesh.bounds);
+                        break;
+                    }
+                }
+            }
+            UnityEngine.Debug.Log("[LoadDbg] 03 before-UndoCtx");
+            _editOps?.UndoController.SetModelContext(loadedModel);
+            // 問題 A/B 対応: ProjectStack (モデル切替用 Undo) の Context も同期する。
+            _editOps?.UndoController.SetProjectContext(project);
+
+            UnityEngine.Debug.Log("[LoadDbg] 04 before-ComputeWorldMatrices");
+            loadedModel.ComputeWorldMatrices();
+            UnityEngine.Debug.Log("[LoadDbg] 05 after-ComputeWorldMatrices");
+
+            // Phase 2a-2b-2 Batch 3: モデル初期選択処理を先に行ってから EnterSceneReset で一括更新。
+            UnityEngine.Debug.Log("[LoadDbg] 06 before-Drawables");
+            var loadedDrawables = loadedModel.DrawableMeshes;
+            if (loadedDrawables != null)
+                foreach (var entry in loadedDrawables)
+                {
+                    var mc = entry.Context;
+                    if (mc?.MeshObject != null && mc.MeshObject.VertexCount > 0 && mc.IsVisible)
+                    { loadedModel.SelectMesh(entry.MasterIndex); break; }
+                }
+
+            UnityEngine.Debug.Log("[LoadDbg] 07 before-BoneScan");
+            int lNeckIdx = -1, lFirstBone = -1;
+            for (int ci = 0; ci < loadedModel.MeshContextCount; ci++)
+            {
+                var bmc = loadedModel.GetMeshContext(ci);
+                if (bmc == null || bmc.Type != MeshType.Bone) continue;
+                if (lFirstBone < 0) lFirstBone = ci;
+                string n = bmc.Name ?? "";
+                if (n == "首" || n.ToLower() == "neck") { lNeckIdx = ci; break; }
+            }
+            int lSelBone = lNeckIdx >= 0 ? lNeckIdx : lFirstBone;
+            if (lSelBone >= 0) loadedModel.SelectBone(lSelBone);
+
+            if (_editOps?.UndoController?.MeshUndoContext != null)
+                _editOps.UndoController.MeshUndoContext.ParentModelContext = loadedModel;
+
+            // RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を一括実行。
+            // Phase 2a-2g-3: clearScene: true で冒頭の ClearScene 呼出しを統合。
+            UnityEngine.Debug.Log("[LoadDbg] 08 before-EnterSceneReset");
+            _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+            UnityEngine.Debug.Log("[LoadDbg] 09 before-EnterCameraChanged");
+            _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
+            UnityEngine.Debug.Log("[LoadDbg] 10 after-EnterCameraChanged");
+
+            recordUndo?.Invoke();
+
+            UnityEngine.Debug.Log("[LoadDbg] 12 before-RebuildModelList");
+            RebuildModelList();
+            UnityEngine.Debug.Log("[LoadDbg] 13 before-RefreshBoneList");
+            _skinWeightPaintPanel?.RefreshBoneList(loadedModel);
+            UnityEngine.Debug.Log("[LoadDbg] 14 before-NotifyPanels");
+            NotifyPanels(ChangeKind.ModelSwitch);
+            _loadDbgSubmitLeft = 12;
+            UnityEngine.Debug.Log("[LoadDbg] 15 handler-exit");
         }
 
         // ================================================================
@@ -734,9 +752,21 @@ namespace Poly_Ling.Player
             _viewportManager?.SubmitForCamera(cam, ActiveProject);
         }
 
+        /// <summary>
+        /// ファイルダイアログ表示直前の処理。フォーカス中の要素（ダイアログを開かせたボタン）を
+        /// Blur し、ダイアログを Enter で確定したときの NavigationSubmitEvent が
+        /// そのボタンに届いて再発火するのを防ぐ。
+        /// </summary>
+        private void OnFileDialogOpening()
+        {
+            _uiRoot?.panel?.focusController?.focusedElement?.Blur();
+        }
+
         /// <summary>破棄。OnDestroy 相当。</summary>
         public void Dispose()
         {
+            FileDialogGuard.Opening -= OnFileDialogOpening;
+
             if (_activePanel != null)
                 _vertexInteractor?.Disconnect(_activePanel);
 

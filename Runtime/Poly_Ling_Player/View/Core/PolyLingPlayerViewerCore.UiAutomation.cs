@@ -396,6 +396,8 @@ namespace Poly_Ling.Player
             RegisterUiPanel("skinWeightVolume", "スキンW範囲塗り（円筒・球の範囲で親・自ボーンのウェイトを直線補間で配分）",
                 _layoutRoot.SkinWeightVolumeSection, () => ShowCategory1Panel(InteractionMode.SkinWeightVolume),
                 _skinWeightVolumeSubPanel);
+            RegisterUiPanel("skinWeightAutoHeat", "スキンW自動（ボーンヒート。Blender の自動ウェイトと同じ方式で付け直す）",
+                _layoutRoot.SkinWeightAutoHeatSection, ShowSkinWeightAutoHeatPanel, _skinWeightAutoHeatSubPanel);
             RegisterUiPanel("vrmSettings", "VRM 設定（作者情報・許諾・視線・一人称）",
                 _layoutRoot.VrmSettingsSection, ShowVrmSettingsPanel, _vrmSettingsSubPanel);
             RegisterUiPanel("skinKind", "スキンの種類（MeshFilter 系とスキンドの相互変換・ミラー）",

@@ -501,4 +501,77 @@ namespace Poly_Ling.Data
             FilePath     = filePath ?? "";
         }
     }
+
+    // ================================================================
+    // UV 調整に合わせたテクスチャの描き直し（計算は UvTextureRemapper）
+    // ================================================================
+
+    /// <summary>RemapTextureByUvCommand の写し方。</summary>
+    public enum UvTextureRemapMethod
+    {
+        /// <summary>面ごとのアフィン（四角形は 2 通りの分割の三角形 4 つ、五角形以上は扇形分割の平均）。</summary>
+        Affine = 0,
+
+        /// <summary>面ごとに近傍点で解く 2 次元 TPS。解けない面はアフィンへ降格。</summary>
+        Tps = 1,
+    }
+
+    [PLCommand(Category = "uv", Writes = PLWriteScope.None, NoUi = true,
+        Description = "UV 調整前と調整後のオブジェクト（面番号・角番号が一致するもの）から、調整前の UV に合わせて描かれたテクスチャを調整後の UV に合うよう描き直し、PNG に書き出す。写し方は面ごとのアフィン、または近傍点数を指定した 2 次元 TPS。モデルは変えない。")]
+    [PLResult("faces",            PLResultKind.Integer, Description = "面の総数")]
+    [PLResult("skippedFaces",     PLResultKind.Integer, Description = "角数の不一致・3 角未満・UV 不正で飛ばした面の数")]
+    [PLResult("unmappedFaces",    PLResultKind.Integer, Description = "写像が決まらなかった面の数（三角形がすべて潰れているなど）")]
+    [PLResult("tpsFaces",         PLResultKind.Integer, Description = "TPS で写した面の数")]
+    [PLResult("tpsFallbackFaces", PLResultKind.Integer, Description = "TPS が解けずアフィンへ降格した面の数")]
+    [PLResult("controlPoints",    PLResultKind.Integer, Description = "TPS の制御点の数（調整後 UV の位置の重なりを除く）")]
+    [PLResult("coveredPixels",    PLResultKind.Integer, Description = "面に覆われた画素の数")]
+    [PLResult("paddedPixels",     PLResultKind.Integer, Description = "延ばした画素の数")]
+    [PLResult("copiedPixels",     PLResultKind.Integer, Description = "入力をそのまま写した画素の数")]
+    [PLResult("invalidPixels",    PLResultKind.Integer, Description = "写像の結果が不正で入力をそのまま写した画素の数")]
+    [PLResult("width",            PLResultKind.Integer, Description = "出力の幅")]
+    [PLResult("height",           PLResultKind.Integer, Description = "出力の高さ")]
+    public class RemapTextureByUvCommand : PanelCommand
+    {
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "UV 調整前のオブジェクトの masterIndex", Required = true)]
+        public int BeforeMasterIndex { get; }
+
+        [PLParam(IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read,
+                 Description = "UV 調整後のオブジェクトの masterIndex（調整前と面番号・角番号が一致すること）", Required = true)]
+        public int AfterMasterIndex { get; }
+
+        [PLParam(Description = "入力画像（調整前の UV に合わせたテクスチャ）のパス。作業フォルダからの相対", Required = true)]
+        public string InputPath { get; }
+
+        [PLParam(Description = "出力 PNG のパス。作業フォルダからの相対。大きさは入力と同じ", Required = true)]
+        public string OutputPath { get; }
+
+        [PLParam(Description = "写し方。Affine（面ごとのアフィン）または Tps（近傍点数を指定した 2 次元 TPS）")]
+        public UvTextureRemapMethod Method { get; }
+
+        [PLParam(Description = "TPS の近傍点数。面の重心（調整後 UV）に近い点をこの数だけ使う。0 で全点を使い 1 回だけ解く", Min = 0, Max = 256, Step = 1)]
+        public int NeighborCount { get; }
+
+        [PLParam(Description = "TPS の平滑化係数（画素単位の座標に対する値）。0 で対応点を厳密に通る", Min = 0f, Max = 1000f)]
+        public float Lambda { get; }
+
+        [PLParam(Description = "面に覆われない画素を、隣の面の写像で延ばす幅（画素）。それより外は入力をそのまま写す", Min = 0, Max = 64, Step = 1)]
+        public int PadPixels { get; }
+
+        public RemapTextureByUvCommand(int modelIndex, int beforeMasterIndex, int afterMasterIndex,
+            string inputPath, string outputPath,
+            UvTextureRemapMethod method = UvTextureRemapMethod.Affine,
+            int neighborCount = 16, float lambda = 0.001f, int padPixels = 4)
+            : base(modelIndex)
+        {
+            BeforeMasterIndex = beforeMasterIndex;
+            AfterMasterIndex  = afterMasterIndex;
+            InputPath         = inputPath ?? "";
+            OutputPath        = outputPath ?? "";
+            Method            = method;
+            NeighborCount     = neighborCount;
+            Lambda            = lambda;
+            PadPixels         = padPixels;
+        }
+    }
 }

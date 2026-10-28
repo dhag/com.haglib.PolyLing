@@ -60,35 +60,32 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// 描画オブジェクト 1 つをクライアントへ押し出す（Duplex の request、action は putMesh）。
+    /// モデル 1 つを丸ごとクライアントへ押し出す（Duplex の request、action は putModel）。
     /// 返事は待たずに要求番号を返す。返事は queryClientRequest で取り出す。
-    /// 要求の params は getRawData の結果と同じ平坦な形（座標は PolyLing のまま）：
-    ///   {name, modelIndex, masterIndex, objectId, positions:[…], faceSizes:[…], faceVertices:[…]}
+    /// 要求の params は {modelIndex, modelName, byteCount}。本体は封筒の 2 つ目の項目（Binary）で、
+    /// ModelDTO の JSON（.mfproj の models[] の 1 要素と同じ形）＋ embeddedTextures の UTF-8 バイト列（ModelBundle）。
     /// </summary>
-    [PLCommand(Category = "remote", Writes = PLWriteScope.None, Description = "描画オブジェクト 1 つの頂点座標と面を、putMesh を受けられるクライアント（Blender ブリッジなど）へ押し出し、要求番号を返す。返事は待たない（queryClientRequest で取り出す）。")]
+    [PLCommand(Category = "remote", Writes = PLWriteScope.None, Description = "モデル 1 つを丸ごと（オブジェクト・頂点・面・UV・法線・ウェイト・ボーン・材質・テクスチャ画像・表情など .mfproj が持つもの全部）、putModel を受けられるクライアント（Blender ブリッジなど）へ押し出し、要求番号を返す。返事は待たない（queryClientRequest で取り出す）。")]
     [PLResult("requestNo", PLResultKind.Integer, Description = "要求番号（queryClientRequest に渡す）")]
-    public class SendMeshToClientCommand : PanelCommand
+    [PLResult("byteCount", PLResultKind.Integer, Description = "送った本体（モデル 1 つ分の JSON）のバイト数")]
+    public class SendModelToClientCommand : PanelCommand
     {
         /// <summary>クライアントへ送る要求の action。受ける側は register の capabilities にこれを入れる。</summary>
-        public const string ClientAction = "putMesh";
-
-        [PLParam(Description = "送る描画オブジェクトの masterIndex", Required = true, IsMeshRef = true, MeshRefAccess = PLMeshRefAccess.Read)]
-        public int MasterIndex { get; }
+        public const string ClientAction = "putModel";
 
         [PLParam(TextKey = "RemoteRequestUserName",
-                 Description = "宛先のユーザー名（register の userName）。空なら putMesh を受けられる最初の接続")]
+                 Description = "宛先のユーザー名（register の userName）。空なら putModel を受けられる最初の接続")]
         public string UserName { get; }
 
         [PLParam(TextKey = "RemoteRequestTimeoutMs",
                  Description = "返事を待つ上限（ミリ秒）。過ぎると failed になる", Min = 100, Max = 600000, Step = 100)]
         public int TimeoutMs { get; }
 
-        public SendMeshToClientCommand(int modelIndex, int masterIndex, string userName = "", int timeoutMs = 30000)
+        public SendModelToClientCommand(int modelIndex, string userName = "", int timeoutMs = 60000)
             : base(modelIndex)
         {
-            MasterIndex = masterIndex;
-            UserName    = userName ?? "";
-            TimeoutMs   = timeoutMs;
+            UserName  = userName ?? "";
+            TimeoutMs = timeoutMs;
         }
     }
 
@@ -106,6 +103,48 @@ namespace Poly_Ling.Data
         public QueryWorkFolderCommand(int modelIndex = 0)
             : base(modelIndex)
         {
+        }
+    }
+
+    /// <summary>
+    /// クライアントから届いたモデル 1 つ分（ModelBundle）を新しいモデルとして足し、カレントにする。
+    /// 本体はリモートのコマンド putModel（mode=add）の添付で届き、RemoteServerCore が ModelDTO にして渡す。
+    /// 【Undo】ファイル読み込みと同じくモデルの追加として記録する（PlayerLocalLoader.LoadModel 経由）。
+    /// </summary>
+    [PLCommand(Category = "remote", Effects = PLCommandEffect.CreatesObject, Writes = PLWriteScope.AddOnly, Description = "クライアントから届いたモデル 1 つ分を新しいモデルとして足す。内部用で、外からはリモートのコマンド putModel（mode=add）で本体を添えて送る。")]
+    [PLResult("modelIndex", PLResultKind.Integer, Description = "足したモデルの索引")]
+    [PLResult("modelName",  PLResultKind.Text,    Description = "足したモデルの名前")]
+    public class AddModelBundleCommand : PanelCommand
+    {
+        /// <summary>届いたモデル（ModelDTO ＋ embeddedTextures）。</summary>
+        [PLParam(Ignore = true, Description = "届いたモデル。スキーマには出さない")]
+        public Poly_Ling.Serialization.ModelDTO Model { get; }
+
+        public AddModelBundleCommand(Poly_Ling.Serialization.ModelDTO model)
+            : base(0)
+        {
+            Model = model;
+        }
+    }
+
+    /// <summary>
+    /// クライアントから届いたモデル 1 つ分（ModelBundle）で、ModelIndex のモデルを置き換え、カレントにする。
+    /// 本体はリモートのコマンド putModel（mode=replace）の添付で届く。
+    /// 【Undo】置き換え前と後の ModelDTO を ModelReplaceRecord に控える。
+    /// </summary>
+    [PLCommand(Category = "remote", Effects = PLCommandEffect.CreatesObject | PLCommandEffect.DeletesObject, Writes = PLWriteScope.ModelWide, Description = "クライアントから届いたモデル 1 つ分で、指定したモデルを置き換える。内部用で、外からはリモートのコマンド putModel（mode=replace、modelIndex）で本体を添えて送る。")]
+    [PLResult("modelIndex", PLResultKind.Integer, Description = "置き換えたモデルの索引")]
+    [PLResult("modelName",  PLResultKind.Text,    Description = "置き換えたあとのモデルの名前")]
+    public class ReplaceModelBundleCommand : PanelCommand
+    {
+        /// <summary>届いたモデル（ModelDTO ＋ embeddedTextures）。</summary>
+        [PLParam(Ignore = true, Description = "届いたモデル。スキーマには出さない")]
+        public Poly_Ling.Serialization.ModelDTO Model { get; }
+
+        public ReplaceModelBundleCommand(int modelIndex, Poly_Ling.Serialization.ModelDTO model)
+            : base(modelIndex)
+        {
+            Model = model;
         }
     }
 

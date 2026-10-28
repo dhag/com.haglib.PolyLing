@@ -225,18 +225,42 @@ namespace Poly_Ling.EditorControl
             RunOnMainThread(() =>
             {
                 string responseJson;
-                string action     = string.Empty;
-                Action afterReply = null;
+                string action           = string.Empty;
+                Action afterReply       = null;
+                Func<string> deferred   = null;
 
                 try
                 {
-                    responseJson = Handle(requestJson, out afterReply, out action);
+                    responseJson = Handle(requestJson, out afterReply, out action, out deferred);
                 }
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"{LogTag} 要求処理で例外: {ex.Message}");
                     responseJson = BuildError("", ex.Message);
                     afterReply   = null;
+                    deferred     = null;
+                }
+
+                if (deferred != null)
+                {
+                    // プレイヤーループ内（UnitySynchronizationContext）では実行できない処理
+                    // （BuildPipeline.BuildPlayer）は delayCall に回し、完了後に応答する。
+                    string deferredAction = action;
+                    EditorApplication.delayCall += () =>
+                    {
+                        string deferredResponse;
+                        try
+                        {
+                            deferredResponse = LogResponse(deferred());
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"{LogTag} 遅延処理で例外: {ex.Message}");
+                            deferredResponse = BuildError(deferredAction, ex.Message);
+                        }
+                        ReplyThen(channel, message, deferredResponse, null, deferredAction);
+                    };
+                    return;
                 }
 
                 ReplyThen(channel, message, responseJson, afterReply, action);
@@ -336,9 +360,14 @@ namespace Poly_Ling.EditorControl
 
         /// <param name="afterReply">応答送出後にメインスレッドで実行する処理。不要なら null。</param>
         /// <param name="action">解決した action 名。ログ用に呼び出し側へ渡す。</param>
-        private static string Handle(string requestJson, out Action afterReply, out string action)
+        /// <param name="deferred">
+        /// プレイヤーループ外（EditorApplication.delayCall）で実行して応答を作る処理。
+        /// null でなければ戻り値は使われず、deferred の戻り値が応答になる。
+        /// </param>
+        private static string Handle(string requestJson, out Action afterReply, out string action, out Func<string> deferred)
         {
             afterReply = null;
+            deferred   = null;
 
             var msg = JsonParser.Parse(requestJson ?? string.Empty);
             var op  = msg.Action ?? string.Empty;
@@ -382,7 +411,11 @@ namespace Poly_Ling.EditorControl
                     return LogResponse(HandlePrefabAddComponent(op, msg));
 
                 case "build_player":
-                    return LogResponse(HandleBuildPlayer(op, msg));
+                {
+                    // 検証エラーは即時応答。検証を通ればビルド本体は deferred で実行する。
+                    string error = HandleBuildPlayer(op, msg, out deferred);
+                    return error != null ? LogResponse(error) : null;
+                }
 
                 default:
                     return LogResponse(BuildError(op, $"unknown action: {op}"));
@@ -737,8 +770,16 @@ namespace Poly_Ling.EditorControl
         /// <summary>build_player の既定の出力先（プロジェクト直下からの相対）。</summary>
         public const string DefaultPlayerOutput = "ビルド用/PolyLing.exe";
 
-        private static string HandleBuildPlayer(string op, RemoteMessage msg)
+        /// <summary>
+        /// 引数を検証し、ビルド本体を deferred に入れる。
+        /// 検証エラーなら応答 JSON を返し deferred は null。通れば null を返す。
+        /// BuildPipeline.BuildPlayer はプレイヤーループ内で呼ぶと
+        /// "A player build cannot be executed while inside the player loop." で失敗するため、
+        /// 呼び出し側が EditorApplication.delayCall から deferred を実行する。
+        /// </summary>
+        private static string HandleBuildPlayer(string op, RemoteMessage msg, out Func<string> deferred)
         {
+            deferred = null;
             if (!CheckEditModeIdle(op, out string busy)) return busy;
 
             var raw = msg?.Params;
@@ -772,8 +813,41 @@ namespace Poly_Ling.EditorControl
                 options          = development ? BuildOptions.Development : BuildOptions.None,
             };
 
+            deferred = () => RunBuildPlayer(op, options, output, scenes, development);
+            return null;
+        }
+
+        /// <summary>build_player の本体。プレイヤーループ外（delayCall）から呼ぶこと。</summary>
+        private static string RunBuildPlayer(
+            string op, BuildPlayerOptions options, string output, List<string> scenes, bool development)
+        {
+            if (!CheckEditModeIdle(op, out string busy)) return busy;
+
+            // BuildReport に載らないエラー（例: プレイヤーループ内呼び出しの拒否）も応答に添えるため、
+            // ビルド中に出た Error / Exception ログを拾う。
+            const int MaxErrors = 10;
+            var logged = new List<string>();
+            Application.LogCallback onLog = (condition, stackTrace, type) =>
+            {
+                if (type != LogType.Error && type != LogType.Exception) return;
+                lock (logged)
+                {
+                    if (logged.Count < MaxErrors) logged.Add(condition);
+                }
+            };
+
             Debug.Log($"{LogTag} build_player 開始: {output} scenes={string.Join(",", scenes)} dev={development}");
-            var report = BuildPipeline.BuildPlayer(options);
+
+            UnityEditor.Build.Reporting.BuildReport report;
+            Application.logMessageReceivedThreaded += onLog;
+            try
+            {
+                report = BuildPipeline.BuildPlayer(options);
+            }
+            finally
+            {
+                Application.logMessageReceivedThreaded -= onLog;
+            }
             var sum = report.summary;
 
             var sb = new System.Text.StringBuilder();
@@ -783,7 +857,7 @@ namespace Poly_Ling.EditorControl
 
             if (sum.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
             {
-                // エラーの本文（先頭いくつか）を添える
+                // エラーの本文（先頭いくつか）を添える。BuildReport を優先し、無ければログから拾ったものを使う。
                 int shown = 0;
                 foreach (var step in report.steps)
                 {
@@ -791,9 +865,16 @@ namespace Poly_Ling.EditorControl
                     {
                         if (m.type != LogType.Error && m.type != LogType.Exception) continue;
                         sb.Append("\n").Append(m.content);
-                        if (++shown >= 10) break;
+                        if (++shown >= MaxErrors) break;
                     }
-                    if (shown >= 10) break;
+                    if (shown >= MaxErrors) break;
+                }
+                if (shown == 0)
+                {
+                    lock (logged)
+                    {
+                        foreach (var line in logged) sb.Append("\n").Append(line);
+                    }
                 }
                 return BuildError(op, sb.ToString());
             }

@@ -236,6 +236,15 @@ namespace Poly_Ling.Data
         public bool ProfileNormalize { get; set; }
 
         /// <summary>
+        /// ProfileNormalize が true でも、ここに挙げた引数（MCP の引数キー。カンマ区切り）の
+        /// どれかが真なら正規化を掛けない。作り直しで取り込みを掛け直すときに読む。
+        ///
+        /// パイプの旧ツール互換（断面を生の座標で使う）のように、同じ図形で
+        /// 正規化する・しないを引数で切り替えるときに使う。
+        /// </summary>
+        public string ProfileNormalizeOffKeys { get; set; } = "";
+
+        /// <summary>
         /// 旧版の保存データではこの値を x,y の 2 個ずつで書いていた（今は x,y,z の 3 個ずつ）。
         ///
         /// 【何のために要るか】

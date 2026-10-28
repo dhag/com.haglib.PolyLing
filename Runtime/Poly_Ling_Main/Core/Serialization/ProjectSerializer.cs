@@ -55,13 +55,7 @@ namespace Poly_Ling.Serialization
         public static string ToJson(ProjectDTO projectDTO)
         {
             if (projectDTO == null) return null;
-
-            var settings = new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                NullValueHandling = NullValueHandling.Ignore
-            };
-            return JsonConvert.SerializeObject(projectDTO, settings);
+            return JsonConvert.SerializeObject(projectDTO, JsonSettings());
         }
 
         /// <summary>JSON 文字列から ProjectDTO を復元する。失敗時は例外をそのまま投げる。</summary>
@@ -70,6 +64,30 @@ namespace Poly_Ling.Serialization
             if (string.IsNullOrEmpty(json)) return null;
             return JsonConvert.DeserializeObject<ProjectDTO>(json);
         }
+
+        /// <summary>
+        /// ModelDTO（.mfproj の models[] の 1 要素と同じ形）を JSON 文字列にする。
+        /// 外部受け渡しのモデル 1 つ分（ModelBundle）で使う。書き方は ToJson(ProjectDTO) と同じ。
+        /// </summary>
+        public static string ToJson(ModelDTO modelDTO)
+        {
+            if (modelDTO == null) return null;
+            return JsonConvert.SerializeObject(modelDTO, JsonSettings());
+        }
+
+        /// <summary>JSON 文字列から ModelDTO を復元する。失敗時は例外をそのまま投げる。</summary>
+        public static ModelDTO ModelFromJson(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            return JsonConvert.DeserializeObject<ModelDTO>(json);
+        }
+
+        /// <summary>.mfproj とリモートの受け渡しで共通の JSON の書き方。</summary>
+        private static JsonSerializerSettings JsonSettings() => new JsonSerializerSettings
+        {
+            Formatting = Formatting.Indented,
+            NullValueHandling = NullValueHandling.Ignore
+        };
 
         // ================================================================
         // エクスポート

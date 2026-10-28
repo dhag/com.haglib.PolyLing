@@ -187,6 +187,9 @@ namespace Poly_Ling.PrimitiveMesh
 
                 case CreateFrillCommand c:        return GenerateFrill(c, resolveBeltSource);
                 case CreatePipeCommand c:         return GeneratePipe(c, resolveBeltSource);
+                case ExtractPipeBeltCommand c:
+                    return PipeBeltExtractor.Build(c.Params,
+                        resolvePlaceSources?.Invoke(c.SourceMasterIndices, false));
                 case CreatePlaceObjectCommand c:  return GeneratePlaceObject(c, resolvePlaceSources);
                 case CreateBoltPatternCommand c:  return GenerateBoltPattern(c, resolvePlaceSources);
 
@@ -327,6 +330,9 @@ namespace Poly_Ling.PrimitiveMesh
             }
             UnityEngine.Debug.Log($"[PL/Timing] Text extrude={__tExtrude}ms append={__tAppend}ms total={__swT.ElapsedMilliseconds}ms"); // TEMP-TIMING
 
+            // 看板（と裏面の文字）。条件を満たさなければ何もしない。
+            TextSignboard.Apply(result, c.Params, partsId);
+
             return result;
         }
 
@@ -441,7 +447,8 @@ namespace Poly_Ling.PrimitiveMesh
                     profile, c.ProfileClosed, c.Params.CapEnds,
                     b.StartPoint, b.EndPoint,
                     c.Params.MeshName, partsIds,
-                    b.LeftWeights, b.RightWeights);
+                    b.LeftWeights, b.RightWeights,
+                    PipeGenOptions.FromParams(c.Params));
 
                 part = BeltShapeOps.ApplySolidify(part,
                     c.Params.Thickness, c.Params.SegmentsFront, c.Params.SegmentsBack,

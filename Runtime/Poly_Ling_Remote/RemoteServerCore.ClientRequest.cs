@@ -88,10 +88,12 @@ namespace Poly_Ling.Remote
         /// userName のクライアントのうち action を受けられる接続へ要求を送る（メインスレッド）。
         /// paramsJson は JSON オブジェクトの文字列（空なら {}）。送れたら true と要求番号、送れなければ false と理由。
         /// onFinished を渡すと、結果が決まったとき（done / failed）にメインスレッドで呼ぶ（送れなかった false のときは呼ばない）。
+        /// attachment を渡すと、封筒の items の 2 つ目に Binary の項目として載せ、Binary フレームで送る
+        /// （モデル 1 つ分など、JSON の引数に入れない本体。putModel）。
         /// </summary>
         public bool RequestClient(string userName, string action, string paramsJson, int timeoutMs,
                                   out int requestNo, out string reason, out string code,
-                                  Action<ClientRequestState> onFinished = null)
+                                  Action<ClientRequestState> onFinished = null, byte[] attachment = null)
         {
             requestNo = 0;
             code = null;
@@ -118,7 +120,10 @@ namespace Poly_Ling.Remote
             }
 
             var body = new JObject { ["type"] = "request", ["action"] = action, ["params"] = p };
-            var msg = TypedPayload.FromJson(body.ToString(Newtonsoft.Json.Formatting.None)).ToMessage();
+            var payload = TypedPayload.FromJson(body.ToString(Newtonsoft.Json.Formatting.None));
+            if (attachment != null) payload.AddBinary(attachment);
+            var msg = payload.ToMessage();
+            var frame = attachment != null ? WebSocketFrameKind.Binary : WebSocketFrameKind.Text;
 
             var state = new ClientRequestState { No = ++_clientRequestNo, UserName = userName ?? "", Action = action };
             _clientRequests[state.No] = state;
@@ -128,8 +133,8 @@ namespace Poly_Ling.Remote
             Task<DuplexMessage> task;
             try
             {
-                if (target is TcpDuplexServerChannel tcp)        task = tcp.SendAndReceiveAsync(msg, WebSocketFrameKind.Text, cts.Token);
-                else if (target is WebSocketDuplexChannel wsc)   task = wsc.SendAndReceiveAsync(msg, WebSocketFrameKind.Text, cts.Token);
+                if (target is TcpDuplexServerChannel tcp)        task = tcp.SendAndReceiveAsync(msg, frame, cts.Token);
+                else if (target is WebSocketDuplexChannel wsc)   task = wsc.SendAndReceiveAsync(msg, frame, cts.Token);
                 else                                             task = target.SendAndReceiveAsync(msg, cts.Token);
             }
             catch (Exception e)

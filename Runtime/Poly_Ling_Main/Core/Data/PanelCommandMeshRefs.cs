@@ -184,14 +184,36 @@ namespace Poly_Ling.Data
             /// <summary>長辺を 1 にする等方スケールを掛けるか。</summary>
             public readonly bool Normalize;
 
+            /// <summary>
+            /// どれかが真なら Normalize を掛けない引数のキー（PLParam.ProfileNormalizeOffKeys）。
+            /// </summary>
+            public readonly string[] NormalizeOffKeys;
+
             public ProfileKey(string key, PLProfileRole role,
-                              string loopStartsKey, string loopIsHoleKey, bool normalize)
+                              string loopStartsKey, string loopIsHoleKey, bool normalize,
+                              string normalizeOffKeys = "")
             {
                 Key           = key;
                 Role          = role;
                 LoopStartsKey = loopStartsKey ?? "";
                 LoopIsHoleKey = loopIsHoleKey ?? "";
                 Normalize     = normalize;
+                NormalizeOffKeys = string.IsNullOrWhiteSpace(normalizeOffKeys)
+                    ? System.Array.Empty<string>()
+                    : normalizeOffKeys.Split(new[] { ',' }, System.StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < NormalizeOffKeys.Length; i++) NormalizeOffKeys[i] = NormalizeOffKeys[i].Trim();
+            }
+
+            /// <summary>引数の値から、実際に正規化を掛けるかを決める。</summary>
+            public bool NormalizeFor(System.Collections.Generic.IReadOnlyDictionary<string, string> args)
+            {
+                if (!Normalize) return false;
+                if (args == null) return true;
+                foreach (var k in NormalizeOffKeys)
+                    if (args.TryGetValue(k, out var v) && v != null
+                        && (v.Trim() == "1" || string.Equals(v.Trim(), "true", System.StringComparison.OrdinalIgnoreCase)))
+                        return false;
+                return true;
             }
 
             public override string ToString() => $"{Key}({Role})";
@@ -231,7 +253,7 @@ namespace Poly_Ling.Data
                     KeyOf(t, prop), attr.ProfileRole,
                     ResolveSiblingKey(t, attr.ProfileLoopStartsKey, ""),
                     ResolveSiblingKey(t, attr.ProfileLoopIsHoleKey, ""),
-                    attr.ProfileNormalize));
+                    attr.ProfileNormalize, attr.ProfileNormalizeOffKeys));
             }
 
             return result;
@@ -262,7 +284,7 @@ namespace Poly_Ling.Data
                     key, m.Attr.ProfileRole,
                     NestedSiblingKey(prefix, m.Attr.ProfileLoopStartsKey),
                     NestedSiblingKey(prefix, m.Attr.ProfileLoopIsHoleKey),
-                    m.Attr.ProfileNormalize));
+                    m.Attr.ProfileNormalize, m.Attr.ProfileNormalizeOffKeys));
             }
         }
 

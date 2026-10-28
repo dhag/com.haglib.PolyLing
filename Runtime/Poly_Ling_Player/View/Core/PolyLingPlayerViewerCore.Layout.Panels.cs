@@ -110,6 +110,17 @@ namespace Poly_Ling.Player
                 _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _skinWeightVolumeSubPanel.Build(_layoutRoot.SkinWeightVolumeSection);
 
+            // スキンW自動（ボーンヒート）。3D 操作を伴わない一般パネル。
+            //    結果（成否・件数）を表示するため、同期の DispatchHost で流す。
+            _skinWeightAutoHeatSubPanel = new PlayerSkinWeightAutoHeatSubPanel
+            {
+                Dispatch      = cmd => DispatchHost(cmd),
+                GetLastResult = () => _commandDispatcher?.LastSkinWeightAutoHeatResult,
+                GetModelIndex = PanelModelIndex,
+                OnRepaint     = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _skinWeightAutoHeatSubPanel.Build(_layoutRoot.SkinWeightAutoHeatSection);
+
             // メッシュブレンドの試し表示（ツールの窓口 "blend"。操作経路統一計画.md E）。
             // 以下の同期・可視・ロックの配線は、従来パネルへ渡していたものをハンドラへ移した。
             _blendToolHandler = new BlendToolHandler

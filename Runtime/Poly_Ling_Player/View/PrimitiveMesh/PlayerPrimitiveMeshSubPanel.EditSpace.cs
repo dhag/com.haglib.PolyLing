@@ -158,7 +158,13 @@ namespace Poly_Ling.Player
                         pts = LineProfileExtractor.ExtractPolyline(mesh, lineFaces);
                     }
                     if (pts == null || pts.Count < 2) return T("NoLinesFound");
-                    var norm = NormalizeBeltProfile(pts);
+
+                    // パイプの旧ツール互換で「断面を正規化しない」が入っているときは生の座標を使う
+                    // （作り直しでも同じ扱いになるよう、CreatePipeCommand.Profile の
+                    //  ProfileNormalizeOffKeys が同じ引数を見ている）。
+                    var norm = (ReferenceEquals(ed, _pipeEdit) && _pipeP.UseLegacyRawProfile)
+                        ? new List<Vector3>(pts)
+                        : NormalizeBeltProfile(pts);
                     if (norm == null) return T("ProfileDegenerate");
                     result = new ProfileReadResult { Points = norm };
                     return null;

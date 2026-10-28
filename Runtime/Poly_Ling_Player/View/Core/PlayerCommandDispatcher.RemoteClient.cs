@@ -1,7 +1,7 @@
 // PlayerCommandDispatcher.RemoteClient.cs
-// リモートのクライアントへの要求（requestClient / queryClientRequest / queryRemoteClients / sendMeshToClient）と、
+// リモートのクライアントへの要求（requestClient / queryClientRequest / queryRemoteClients / sendModelToClient）と、
 // 外のプログラム向けの照会（queryWorkFolder）の受け口。
-// sendMeshToClient はモデルを読むが、プロジェクトが無いときは自分で失敗を返すので、null 門より前で捌いてよい。
+// sendModelToClient はモデルを読むが、プロジェクトが無いときは自分で失敗を返すので、null 門より前で捌いてよい。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 //
 // 【モデルを見ない】
@@ -27,7 +27,7 @@ namespace Poly_Ling.Player
                 case RequestClientCommand c:      RunRequestClient(c);      return true;
                 case QueryClientRequestCommand c: RunQueryClientRequest(c); return true;
                 case QueryRemoteClientsCommand _: RunQueryRemoteClients();  return true;
-                case SendMeshToClientCommand c:   RunSendMeshToClient(c);   return true;
+                case SendModelToClientCommand c:  RunSendModelToClient(c);  return true;
                 case QueryWorkFolderCommand _:    RunQueryWorkFolder();     return true;
                 default: return false;
             }
@@ -77,10 +77,10 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 描画オブジェクト 1 つを putMesh としてクライアントへ押し出す。
-        /// params は getRawData の結果と同じ平坦な形（座標は PolyLing のまま）。
+        /// モデル 1 つを丸ごと putModel としてクライアントへ押し出す。
+        /// params は {modelIndex, modelName, byteCount}、本体はモデル 1 つ分の JSON（ModelBundle）を Binary の項目で添える。
         /// </summary>
-        private void RunSendMeshToClient(SendMeshToClientCommand cmd)
+        private void RunSendModelToClient(SendModelToClientCommand cmd)
         {
             var s = RemoteServerOrFail();
             if (s == null) return;
@@ -93,49 +93,36 @@ namespace Poly_Ling.Player
                 _pendingResult = CommandResult.Fail($"モデル {cmd.ModelIndex} がありません", CommandErrorCodes.InvalidArgs);
                 return;
             }
-            var mc = (cmd.MasterIndex >= 0 && cmd.MasterIndex < model.MeshContextCount)
-                ? model.GetMeshContext(cmd.MasterIndex) : null;
-            var mo = mc?.MeshObject;
-            if (mo == null || mo.VertexCount == 0)
+
+            byte[] bundle;
+            try { bundle = Poly_Ling.Serialization.ModelBundle.ToBytes(model); }
+            catch (System.Exception e)
             {
-                _pendingResult = CommandResult.Fail($"masterIndex {cmd.MasterIndex} に頂点を持つメッシュがありません", CommandErrorCodes.InvalidArgs);
+                _pendingResult = CommandResult.Fail("モデルを組めません: " + e.Message, CommandErrorCodes.Exception);
                 return;
             }
-
-            var positions = new Newtonsoft.Json.Linq.JArray();
-            foreach (var v in mo.Vertices)
+            if (bundle == null)
             {
-                var p = v != null ? v.Position : UnityEngine.Vector3.zero;
-                positions.Add(p.x); positions.Add(p.y); positions.Add(p.z);
-            }
-            var faceSizes    = new Newtonsoft.Json.Linq.JArray();
-            var faceVertices = new Newtonsoft.Json.Linq.JArray();
-            foreach (var f in mo.Faces)
-            {
-                if (f?.VertexIndices == null) continue;
-                faceSizes.Add(f.VertexIndices.Count);
-                foreach (int vi in f.VertexIndices) faceVertices.Add(vi);
+                _pendingResult = CommandResult.Fail($"モデル {cmd.ModelIndex} を組めません", CommandErrorCodes.Failed);
+                return;
             }
 
             var p0 = new Newtonsoft.Json.Linq.JObject
             {
-                ["name"]         = mc.Name ?? "",
-                ["modelIndex"]   = cmd.ModelIndex,
-                ["masterIndex"]  = cmd.MasterIndex,
-                ["objectId"]     = mc.ObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["positions"]    = positions,
-                ["faceSizes"]    = faceSizes,
-                ["faceVertices"] = faceVertices,
+                ["modelIndex"] = cmd.ModelIndex,
+                ["modelName"]  = model.Name ?? "",
+                ["byteCount"]  = bundle.Length,
             };
 
-            if (!s.RequestClient(cmd.UserName, SendMeshToClientCommand.ClientAction,
+            if (!s.RequestClient(cmd.UserName, SendModelToClientCommand.ClientAction,
                                  p0.ToString(Newtonsoft.Json.Formatting.None), cmd.TimeoutMs,
-                                 out int no, out string reason, out string code))
+                                 out int no, out string reason, out string code,
+                                 null, bundle))
             {
                 _pendingResult = CommandResult.Fail(reason, code);
                 return;
             }
-            ReportData(CommandDataJson.New().Int("requestNo", no).Build());
+            ReportData(CommandDataJson.New().Int("requestNo", no).Int("byteCount", bundle.Length).Build());
         }
 
         /// <summary>作業フォルダの絶対パスと直下の既存フォルダ（サーバを要らない。モデルも見ない）。</summary>

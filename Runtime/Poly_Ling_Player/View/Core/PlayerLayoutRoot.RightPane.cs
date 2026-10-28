@@ -134,6 +134,8 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：スキンW範囲塗りセクション（ScrollView内）。</summary>
         public VisualElement SkinWeightVolumeSection { get; private set; }
+        /// <summary>右ペイン：スキンW自動（ボーンヒート）。3D 操作を伴わない。</summary>
+        public VisualElement SkinWeightAutoHeatSection { get; private set; }
 
         /// <summary>右ペイン：頂点移動サブパネルセクション（ScrollView内）。</summary>
         public VisualElement VertexMoveSection { get; private set; }
@@ -524,6 +526,7 @@ namespace Poly_Ling.Player
 
             // ── スキンW範囲塗りセクション
             SkinWeightVolumeSection = AddSection(visible: false, kind: RightPanelKind.Tool3D);
+            SkinWeightAutoHeatSection = AddSection(visible: false, kind: RightPanelKind.General);
 
             // ── ブレンドセクション
             BlendSection = AddSection(visible: false, kind: RightPanelKind.General);

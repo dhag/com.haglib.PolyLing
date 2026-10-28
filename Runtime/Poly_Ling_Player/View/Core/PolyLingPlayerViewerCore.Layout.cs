@@ -287,6 +287,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.SkinWeightNumericBtn.clicked += () => ShowCategory1Panel(InteractionMode.SkinWeightNumeric);
             if (_layoutRoot.SkinWeightVolumeBtn != null)
                 _layoutRoot.SkinWeightVolumeBtn.clicked += () => ShowCategory1Panel(InteractionMode.SkinWeightVolume);
+            if (_layoutRoot.SkinWeightAutoHeatBtn != null)
+                _layoutRoot.SkinWeightAutoHeatBtn.clicked += ShowSkinWeightAutoHeatPanel;
 
             // 一時選択サブツール (デバッグ用ボタン。ショートカット R / G と同処理)。
             if (_layoutRoot.SubToolBoxSelectBtn != null)

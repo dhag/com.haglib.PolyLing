@@ -2,9 +2,9 @@
 
 Python・ブラウザ・mocopi アプリなど、PolyLing の外のプログラムがやり取りするときの決まりをまとめる。
 ここに書いた形が正本で、外側の実装はこれに合わせる。C# 側の型名・ファイル名は各節に書いた。
-メッシュ・モデル本体の受け渡し（PLR 系バイナリ・CSV・ProjectDTO）の形そのものはこの文書の範囲外（配列での受け渡しは 3.6、Blender アドオンでの `.mfproj`・CSV フォルダの読み書きの決まりは 7）。
+PLR 系バイナリ（`project_header`・`mesh_data` など）・CSV・ProjectDTO の形そのものはこの文書の範囲外（モデル丸ごとの受け渡し〔ModelDTO の JSON＋embeddedTextures〕は 3.6、Blender アドオンでの `.mfproj`・CSV フォルダの読み書きの決まりは 7）。
 
-最終更新：2026-10-20（§3.7 に saveMotionClipJson、元ファイルの持ち主）／2026-10-20（§5.2 Blender とモーションを行き来させる 2 つの道筋）／2026-10-20（§3.7 モーションの受け渡し〔loadMotionClipJson・queryMotionClipJson、Blender ブリッジの送信・取得〕）／2026-10-20（Blender アドオン PolyLing IO：§5 に rotationSource、§5.1 Blender との対応、§7 プロジェクトの読み書き。旧 §7 は §8）／2026-10-11（モーション version 4：bakedBones を正準に固定、lookAt を追加、sourceRest を廃止）／2026-10-06（Root を body トラックに統一、sourceRest を基準姿勢の正本に、detectImage を要求応答に、コマンド応答の共通化とエラーコード、クライアントへの要求）
+最終更新：2026-10-26（§2 Binary フレームの封筒、§3.2 照会 model_bundle・project_bundle、§3.6 をモデルの受け渡しに書き直し、§7b のデータの受け渡し）／2026-10-20（§3.7 に saveMotionClipJson、元ファイルの持ち主）／2026-10-20（§5.2 Blender とモーションを行き来させる 2 つの道筋）／2026-10-20（§3.7 モーションの受け渡し〔loadMotionClipJson・queryMotionClipJson、Blender ブリッジの送信・取得〕）／2026-10-20（Blender アドオン PolyLing IO：§5 に rotationSource、§5.1 Blender との対応、§7 プロジェクトの読み書き。旧 §7 は §8）／2026-10-11（モーション version 4：bakedBones を正準に固定、lookAt を追加、sourceRest を廃止）／2026-10-06（Root を body トラックに統一、sourceRest を基準姿勢の正本に、detectImage を要求応答に、コマンド応答の共通化とエラーコード、クライアントへの要求）
 
 ---
 
@@ -31,15 +31,24 @@ Python・ブラウザ・mocopi アプリなど、PolyLing の外のプログラ�
 | 一覧で公開 | WebSocket（Duplex 封筒） | リモート（パネル・Python など）。query / command / push、PolyLing → クライアントの要求 | `Runtime/Poly_Ling_Remote/RemoteServerCore*.cs` |
 | 12361（既定） | WebSocket（Duplex 封筒） | ライブ（マッスル・MediaPipe・detectImage） | `Runtime/Poly_Ling_Player/View/ToolHandlers/MotionLiveHandler.cs` |
 
-### Duplex 封筒（WebSocket の Text フレーム）
+### Duplex 封筒（WebSocket の Text フレーム・Binary フレーム）
 
+Text フレーム：
 ```
 {"type":"push"|"request"|"response", "id":整数, "items":[{"type":種類, "mimeType":"…", "data":"…", "encoding":"base64"?}]}
 ```
 
-- `items[].type`：0 = Text、3 = Json（data は JSON 文字列）、2 = Image、それ以外はバイナリ（data は base64、`encoding:"base64"`）
+Binary フレーム（`DuplexPacket.cs`・`TypedPayload.cs`。数はすべて little-endian）：
+```
+ヘッダ 16 バイト：[magic "DPX\n":4][version=1:1][type 0=push/1=request/2=response:1][id:4][payloadLength:4][tagLength:2]
+続いて tag（tagLength バイト、ふつう 0）と payload（TypedPayload）
+TypedPayload：[項目数:4] 各項目 [サイズ:4][type:1][mimeType の長さ:2][mimeType（UTF-8）][data]（サイズは type 以降のバイト数）
+```
+
+- `items[].type`（ContentType）：0 = Text、1 = Binary、2 = Image、3 = Json（data は JSON 文字列）、255 = Custom。Text フレームでは Text・Json 以外の data は base64（`encoding:"base64"`）。
+- Binary の項目（モデルの本体など）を持つ封筒は Binary フレームで送る。持たない封筒は Text フレーム（PolyLing は両方を受ける）。項目の並びは JSON の項目 → Binary の項目（§3.6）。
 - `request` には同じ `id` の `response` で返す。対応付けは部品（com.haglib.net_duplexchannel）が受け持つ。中身に自前の要求番号を入れない。
-- Binary フレーム（DuplexPacket）の形は `polyling_live.js` の `decodeBinaryPacket` を参照。
+- 読み書きの写し：Python は `polyling_io/net/client.py`（`pack_items`・`unpack_items`・`_on_binary`）、JS は `polyling_live.js` の `decodeBinaryPacket`。
 
 ---
 
@@ -62,6 +71,7 @@ Python・ブラウザ・mocopi アプリなど、PolyLing の外のプログラ�
 query は `{"type":"query","target":"meshList" など,"params":{…}?,"fields":[…]?}`。push は `{"type":"push","event":"…","data":{…}}`。
 テキストで返る query の target：`meshList`・`meshData`（params.index）・`modelInfo`（`modelCount`・`currentModelIndex`・`meshCount`・`selectedMeshIndices` など）・`availableFields`・`server_info`・`ownership`、
 およびコマンドの検索と説明 `tools_search`・`tools_describe`・`scenes`（`RemoteServerCore.ProcessCatalogQuery`。params と data の中身は MCP の制御プロトコルの同名の action と同じ：`PolyLingControlProtocol.cs` の冒頭）。`project_header`・`mesh_data` などはバイナリで返る。
+モデル・プロジェクトの本体を返す照会 `model_bundle`（params.modelIndex）・`project_bundle` は、data に概要、本体を同じ封筒の Binary の項目に入れて返す（3.6）。
 
 ### 3.3 応答の欄（両方で共通。`Core/Data/CommandResultJson.cs`）
 
@@ -107,27 +117,53 @@ MCP の `call` はこれらを応答の直下に、リモートの `command` は
 4. `queryClientRequest`（requestNo）で `status`（pending / done / failed）・`data`・`error`・`code` を取り出す。
 5. `queryRemoteClients` で登録済みのクライアント（clientType・userName・capabilities）を見る。
 
-### 3.6 メッシュの受け渡し（Blender ブリッジなど）
+### 3.6 モデルの受け渡し（Blender ブリッジ・Python など）
 
-配列の形は `getRawData` の結果と同じ平坦な形。座標と面の並びは PolyLing のまま（Unity 左手系・ローカル座標）。外部ツールの座標系への変換は外側が行う。
+受け渡しの単位はモデル丸ごと（決定の経緯は `PolyLing_外部受け渡し計画.md`）。
 
-| 向き | 方法 |
-|---|---|
-| 外 → PolyLing（新規） | コマンド `addMeshFromArrays`（meshName・positions・faceSizes・faceVertices。面は 3 頂点以上）。応答の `masterIndices` / `objectIds` が作った描画オブジェクト |
-| 外 → PolyLing（頂点の移動） | `getRawData`（scope=Object）で面を照合してから `setVertexPositions`。どちらも封筒の `objectIds` を添える（対象がずれていれば `staleView`） |
-| PolyLing → 外（取り込み） | `getRawData`（scope=SelectedObjects、includeFaces）。選択は register の userName のもの |
-| PolyLing → 外（押し出し） | コマンド `sendMeshToClient`（masterIndex・userName・timeoutMs）。3.5 の仕組みで action `putMesh` を送る |
+**本体の形**（`Core/Serialization/ModelBundle.cs`）：
+- ModelDTO の JSON。`.mfproj` の `models[]` の 1 要素と同じ形で、書き方も同じ（`ProjectSerializer.ToJson`）。オブジェクト・頂点（位置・UV・法線・ウェイト・ID）・面・材質・ボーン・表情・Humanoid・揺れもの・VRM の情報まで、`.mfproj` が持つものは全部入る。
+- 材質が参照するテクスチャ画像を `embeddedTextures`（`[{"fileName":"…","data":"<base64>"}]`）として添える。受け手は材質のパスのファイル名で照合する（`ModelTextureTransfer`）。
+- UTF-8 のバイト列にして、封筒の Binary の項目（type 1）で運ぶ。JSON の引数には入れない（§2）。
+- 座標は PolyLing のまま（Unity 左手系）。外部ツールの座標系への変換は外側が行う。
 
-`putMesh` の params：
-```
-{"name":"…","modelIndex":0,"masterIndex":3,"objectId":"<10 進の文字列>","positions":[x,y,z,…],"faceSizes":[…],"faceVertices":[…]}
-```
-返事の data は受け手が決める（Blender ブリッジは `{"object":"<Blender のオブジェクト名>"}`）。
+| 向き | 方法 | 要求 | 応答 |
+|---|---|---|---|
+| PolyLing → 外（モデル 1 つ） | 照会 `model_bundle` | params.modelIndex（省くと今のモデル） | data `{modelIndex, modelName, byteCount}`、本体は Binary の項目 1 つ |
+| PolyLing → 外（プロジェクト全体） | 照会 `project_bundle` | なし | data `{bundleName, modelCount, byteCount}`、本体は Binary の項目 1 つ（ProjectDTO の JSON。各モデルに `embeddedTextures`） |
+| 外 → PolyLing | コマンド `putModel`（3.2 の command） | params.mode＝`add`（既定。新しいモデルとして足す）／`replace`（params.modelIndex のモデルを置き換える）。本体は同じ封筒の Binary の項目 | 3.3 の形。`result` に `modelIndex`・`modelName` |
+| PolyLing → 外（押し出し） | コマンド `sendModelToClient`（modelIndex・userName・timeoutMs） | 3.5 の要求。action `putModel`、params `{modelIndex, modelName, byteCount}`、本体は同じ封筒の Binary の項目 | 結果は `requestNo`・`byteCount`。受け手の返事は `queryClientRequest` で引く |
 
-Blender ブリッジ（PolyLing IO アドオンの `データとツール/poly_ling_py/polyling_io/blender/bridge.py`。通信は bpy を使わない `polyling_io/net/` で、素の Python からも同じ `PolyLingClient` を使える〔既定の clientType は `python`、capabilities は空〕）の決まり：
-- clientType `blender`、userName はホストと同じ名前（PolyLing の選択をそのまま使う）、capabilities `putMesh`。
-- Blender (x, y, z) ⇔ PolyLing (x, z, y)。面の頂点の並びは逆にする。Blender → PolyLing は配置（matrix_world）を頂点へ焼いて送る。PolyLing → Blender は配置を単位行列にして置く。
-- PolyLing の番号はカスタムプロパティ `polyling_object_id` / `polyling_master_index` / `polyling_model_index` に持つ。同じ `polyling_object_id` のオブジェクトはメッシュを置き換える。
+- `putModel`（外 → PolyLing）：
+  - 処理：本体を ModelDTO に戻し（`ModelBundle.FromBytes`）、要求者を操作者として内部のコマンド `AddModelBundle`／`ReplaceModelBundle` をディスパッチャへ流す（担当者判定・Undo・操作者の記録は他のコマンドと同じ。`RemoteServerCore.ProcessPutModel`）。
+  - `add`：ファイル読み込みと同じくモデルを足してカレントにする（Undo はモデルの追加）。
+  - `replace`：置き換えてカレントにする。Undo で置き換え前に戻る。
+  - 作業空間を開いている間は断る。
+  - 本体が無い・mode が add／replace でない・replace に modelIndex が無い・本体を読めないときは `invalidArgs`。
+- 要求 `putModel`（PolyLing → 外）：受けるクライアントは register の capabilities に `putModel` を入れる。返事の data は受け手が決める（Python の `PolyLingClient` は `{modelName, byteCount}`）。
+- 位置と面だけのコマンド（`getRawData`・`addMeshFromArrays`・`setVertexPositions`）はシナリオ・MCP のために残るが、外部連携の受け渡しには使わない。
+
+**Python の入口**（`データとツール/poly_ling_py/polyling_io/net/client.py`。bpy を使わず、素の Python でも Blender でも使う）：
+- `PolyLingClient`：`get_model(model_index)`（照会 `model_bundle`）、`put_model(model, mode, model_index)`（コマンド `putModel`）、`get_project()`（照会 `project_bundle`）、`on_model(params, model)`（要求 `putModel` の受け手。渡すと capabilities に `putModel` が入る）。
+- 辞書の形は `polyling_io.format`（`.mfproj` の読み書き）と同じ（`model_to_bytes`・`model_from_bytes`）。
+- 既定の clientType は `python`。待ち時間はモデル・プロジェクトとも 120 秒（`MODEL_TIMEOUT`）。
+- アドオンの `Session`（§7b）も同じ名前の入口を持つ。
+
+**Blender ブリッジ**（PolyLing IO アドオンの `polyling_io/blender/bridge.py`）の決まり：
+- clientType `blender`、userName はホストと同じ名前、capabilities `putModel`。
+- 取り込み（`receive_model`）：`get_model`（PolyLing の今のモデル）→ `importer.import_model_dict`。置き方と空間はファイルの読み込みと同じ（§7.2・§7.3）。モデルのコレクションのカスタムプロパティ `polyling_model_index` に PolyLing でのモデルの番号を持つ。テクスチャは pack して、コレクションの `polyling_textures` に残す。
+- 送信（`send_model`）：
+  - 取り込んだモデルのコレクションにあるもの：`exporter.export_model(with_textures=True)` を `putModel`。「送信」は replace（`polyling_model_index` のモデル）、「新規として送信」は add。書き出しの決まりは §7.4。
+  - PolyLing 由来でないメッシュ：選んでいるもの（PolyLing 由来でないもの）をまとめて `exporter.build_model_from_objects` で新しいモデルにして add する。
+    - 頂点は配置（matrix_world）を焼いた位置で送る。
+    - 法線は持たせず、`preserveNormals` を false にする（PolyLing が計算する）。
+    - 材質は運ばない（面の材質の番号は 0）。
+- 押し出し（`_on_model`）：要求 `putModel` を受信スレッドで受け、メインスレッドで取り込みと同じく置き、終わるまで待ってから返事をする（例外なら失敗の返事）。
+
+**ComfyUI のノード**（`poly_ling_py/comfyui/polyling_send/`、ノード「PolyLing Send (SF3D)」）の決まり：
+- ComfyUI へは `custom_nodes/ComfyUI-PolyLing/__init__.py`（読み込み口。本体フォルダの絶対パスを持つ）から読ませる。polyling_io は ComfyUI の venv に入れない。
+- clientType `comfyui`。サーバ一覧の先頭につなぎ、MESH（Stable Fast 3D の `trimesh.Trimesh` のリスト）の 1 つずつを `put_model(mode="add")` で新しいモデルとして足す。
+- 変換は `polyling_io.convert.trimesh_to_model`：位置・法線は glTF と同じ Z 反転 (x, y, −z)、面の頂点の並びは逆、UV は反転しない、`preserveNormals` true。材質 1 つ（metallic＝`metallicFactor`、smoothness＝1−`roughnessFactor`、`sourceTexturePath`＝`<モデル名>_basecolor.png`）と、`baseColorTexture` を PNG にした `embeddedTextures`。`normalTexture` は運ばない。
 
 ### 3.7 モーションの受け渡し（Blender ブリッジなど）
 
@@ -477,13 +513,15 @@ Unity Editor を持たない人が、動いている PolyLing（ビルド版で�
 - コマンド：`s.call("<コマンド名>", 引数=値, …)`。値は文字列にして送る（配列はカンマ区切り、真偽は true/false、入れ子の辞書は `params.xxx`）。応答は `Reply`（`result`・`master_index` など）。引数の形は `s.search("やりたいこと")`・`s.describe("<コマンド名>")`（3.2 の `tools_search`・`tools_describe`）。
 - モデル：コマンドは `s.model_index` へ送る。`s.new_model()`（`createEmptyModel`）、`s.use_current_model()`（照会 `modelInfo` の `currentModelIndex`。`importMqoFile` などの NewModel で増えたモデルは応答に番号が出ないのでこれで引く）。
 - 作業フォルダ：コマンド `queryWorkFolder`（`isSet`・`path`・`topFolders`）で引く。コマンドが読み書きできるのは作業フォルダの下だけで、根の直下には新しいものを作れない（`PLSandbox`）ので、アドオンの置き場所は `<作業フォルダ>/SandBox/PyAddon/<アドオン名>/`（`s.folder`・`s.path()`・`s.rel()`・`s.copy_in()`）。
-- データの受け渡しは 2 通り：
-  | 方法 | 取得 | 戻し | 性質 |
+- データの受け渡し（辞書の形は `polyling_io.format` と同じ。座標は PolyLing のまま）：
+  | 単位 | 取得 | 戻し | 性質 |
   |---|---|---|---|
-  | メッシュ単位 | `s.get_mesh(masterIndex)`（`getRawData` を 20000 件ずつ取り切る） | `put_positions`（`setVertexPositions`）・`put_uvs`（`applyUVChanges`）・`add_mesh`（`addMeshFromArrays`） | 座標は PolyLing のまま（ローカル）。Undo に残る |
-  | ファイル往復 | `s.get_project()`（`saveProjectFile` → `polyling_io.format` で辞書） | `s.put_project(辞書)`（`.mfproj` を書いて `loadProjectFile`） | 全項目を扱える。読ませるとプロジェクトが置き換わる（Undo では戻らない） |
+  | モデル | `s.get_model(model_index)`（照会 `model_bundle`。§3.6） | `s.put_model(辞書, mode="add"／"replace", model_index)`（コマンド `putModel`） | ModelDTO の辞書（＋`embeddedTextures`）で全項目を運ぶ。Undo に残る |
+  | プロジェクト | `s.get_project()`（照会 `project_bundle`。ファイルを介さない） | `s.put_project(辞書)`（`.mfproj` を作業フォルダの中に書いて `loadProjectFile`） | 読ませると編集中のプロジェクトが置き換わる（Undo では戻らない） |
+  | モーション | `s.get_motion()`（`queryMotionClipJson`。§3.7） | `s.put_motion(辞書か文字列, time)`（`loadMotionClipJson`） | `.plmotion.json` v4 の辞書 |
+- PolyLing から押し出されるモデル（`sendModelToClient`）は `Session(…, on_model=…)` で受ける（受信スレッドで呼ばれる）。
 - 材質：`addMaterialSlot` は足した枠の番号 `slotIndex`（と `materialCount`）を返す。
-- 手本：`examples/addons/smooth_mesh.py`（メッシュ単位）、`examples/addons/center_line.py`（ファイル往復）、`examples/mediapipe_face_to_polyling.py`（画像の顔 → 顔メッシュ・テクスチャ・下絵。下の常駐にも対応）。
+- 手本：`examples/addons/smooth_mesh.py`（モデル単位：get_model → 頂点をならす → put_model replace）、`examples/addons/center_line.py`（プロジェクト）、`examples/mediapipe_face_to_polyling.py`（画像の顔 → 顔メッシュ・テクスチャ・下絵。下の常駐にも対応）。
 
 ### 7b-2. PolyLing の画面から呼ぶアドオン（常駐。`polyling_io/addon/service.py`、C# は `Runtime/Poly_Ling_Player/PyAddon/`）
 
@@ -511,8 +549,27 @@ Unity Editor を持たない人が、動いている PolyLing（ビルド版で�
 
 ---
 
+## 7c. PolyLing から ComfyUI を操作する（`Runtime/Poly_Ling_Main/External/ComfyUiClient.cs`・`ComfyUiWorkflow.cs`）
+
+PolyLing が ComfyUI の HTTP API のクライアントになる（3.6 の「PolyLing Send (SF3D)」とは向きが逆）。接続先の既定は `http://127.0.0.1:8188`。どのコマンドもモデルを参照せず、通信を待つ間は主スレッドが止まる（時間切れは `timeoutMs`、1 回の通信ごと）。
+
+| コマンド | すること | 使う ComfyUI の入口 |
+|---|---|---|
+| `comfyDescribeWorkflow` | ワークフローを読み、API 形式にしたノードの一覧（番号・種類・題名・入力の値・線）を返す | `/userdata/{file}`、`/object_info/{class}` |
+| `comfyUploadImage` | 作業フォルダの画像を入力フォルダへ送り、LoadImage の image に入れる名前を返す | `POST /upload/image`（type=input） |
+| `comfyQueuePrompt` | ワークフローを読み、`overridesJson`（`{"ノード番号":{"入力名":値}}`）を当てて実行を依頼し、`promptId` を返す。完了は待たない | `POST /prompt` |
+| `comfyFetchOutputs` | `promptId` の状況を 1 回だけ問い合わせ（pending / running / success / error / unknown）、終わっていれば出力の `images` を `outputFolder` へ保存する | `/history/{id}`、`/queue`、`/view` |
+
+- ワークフローの読込元は、ComfyUI のユーザーフォルダ（`user/default/workflows`）の名前（`workflowName`。ComfyUI から HTTP で取得）か、作業フォルダのファイル（`workflowPath`）のどちらか一方。
+- 画面の「保存」で書いた形式（`nodes`・`links`）は、ComfyUI 画面（ComfyUI_frontend の `graphToPrompt`）と同じ規則で API 形式に変換する。規則は `ComfyUiWorkflow.cs` の冒頭。ミュート・バイパス・Reroute・PrimitiveNode を扱う。サブグラフは扱わない（失敗）。
+- 入力欄の値の並びの末尾にある、カスタムノードの画面スクリプトが足した入力欄の値（例 Stable Fast 3D Save の `preview`）は読み飛ばす。定義から求めた数より少なければ失敗。
+- 生成したメッシュは、ワークフローに入れた「PolyLing Send (SF3D)」が 3.6 の `putModel` で送ってくる（このコマンドの戻りには載らない）。画像をテクスチャにするのは `setMaterialTexture`。
+- 画像の保存先は作業フォルダの書き込み規則に従う（直下の既存フォルダの中だけ、拡張子は .png / .jpg / .jpeg）。規則に合わない出力は `skipped` に理由つきで載る。
+
+---
+
 ## 8. 未確定・未対応
 
 - ライブ・クリップとも Root（rootT / rootQ、body）はモデルへ当てていない（VRMA 書き出しは当てる）。
 - MediaPipe の leftHand / rightHand の左右（4.2）。
-- メッシュ・モデル本体の契約（3.6 の配列の受け渡しと 7 の Blender アドオン以外）。
+- メッシュ・モデル本体の契約のうち、3.6 のモデルの受け渡しと 7 の Blender アドオン以外（PLR 系バイナリ〔`project_header`・`mesh_data` など〕の形）。

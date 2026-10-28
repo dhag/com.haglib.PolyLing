@@ -603,7 +603,7 @@ namespace Poly_Ling.Ops
 
             foreach (var pk in keys)
             {
-                var got = ProfileAcquire.Acquire(source, method, pk.Normalize);
+                var got = ProfileAcquire.Acquire(source, method, pk.NormalizeFor(args));
                 if (!got.Ok) return $"プロファイルを取り直せないので控えた値を使う（{got.Message}）";
 
                 message = got.Message;

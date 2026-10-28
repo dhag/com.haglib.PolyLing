@@ -510,6 +510,7 @@ namespace Poly_Ling.Player
                                                ? _commandDispatcher.LastPartsIdByBoneWeightResult
                                                : default,
                 GetLastSplitResult       = () => _lastPartsIdSplitResult,
+                GetLastConnectivitySplitResult = () => _lastConnectivitySplitResult,
             };
             _partsIdSubPanel.Build(_layoutRoot.PartsIdSection);
 

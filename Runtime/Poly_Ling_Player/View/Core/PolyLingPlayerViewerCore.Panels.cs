@@ -461,6 +461,14 @@ namespace Poly_Ling.Player
             _vrmSettingsSubPanel?.Refresh();
         }
 
+        /// <summary>スキンW自動（ボーンヒート）。3D 操作を伴わない一般パネル。</summary>
+        private void ShowSkinWeightAutoHeatPanel()
+        {
+            ApplyGeneralPanelMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.SkinWeightAutoHeatSection, _layoutRoot?.SkinWeightAutoHeatBtn);
+            _skinWeightAutoHeatSubPanel?.Refresh();
+        }
+
         private void ShowMirrorPanel()
         {
             // カテゴリ 3

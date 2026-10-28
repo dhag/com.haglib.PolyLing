@@ -186,6 +186,32 @@ namespace Poly_Ling.Player
             c.Add(textSolid.EdgeLabel); c.Add(textSolid.FrontSeg); c.Add(textSolid.FrontSize);
             c.Add(textSolid.BackSeg);   c.Add(textSolid.BackSize); c.Add(textSolid.Inward);
             RefreshTextSolidVis();
+
+            // ── 看板（平面のときだけ） ──
+            if (_textP.CurveMode == TextCurveMode.Flat)
+            {
+                c.Add(PlayerIoUiKit.Divider());
+                c.Add(TR(T("TextSignboard"), () => _textP.Signboard,
+                    v => { _textP.Signboard = v; RebuildSettings(); D(); }));
+
+                if (_textP.Signboard)
+                {
+                    var signHint = new Label(T("TextSignboardHint"));
+                    signHint.style.fontSize = 10;
+                    signHint.style.whiteSpace = WhiteSpace.Normal;
+                    signHint.style.marginBottom = 2;
+                    c.Add(signHint);
+
+                    c.Add(SR(T("TextSignMarginH"), TextMeshParams.SignMarginMin, TextMeshParams.SignMarginMax,
+                        () => _textP.SignMarginH, v => { _textP.SignMarginH = v; D(); }));
+                    c.Add(SR(T("TextSignMarginV"), TextMeshParams.SignMarginMin, TextMeshParams.SignMarginMax,
+                        () => _textP.SignMarginV, v => { _textP.SignMarginV = v; D(); }));
+                    c.Add(SR(T("TextSignDepth"), TextMeshParams.SignDepthMin, TextMeshParams.SignDepthMax,
+                        () => _textP.SignDepth, v => { _textP.SignDepth = v; D(); }));
+                    c.Add(TR(T("TextSignBackText"), () => _textP.SignBackText,
+                        v => { _textP.SignBackText = v; D(); }));
+                }
+            }
         }
 
         // ================================================================
@@ -421,6 +447,9 @@ namespace Poly_Ling.Player
                 if (result == null) result = one;
                 else Poly_Ling.Ops.MeshObjectAppendOps.Append(result, one, copyNormals: true);
             }
+
+            // 看板（と裏面の文字）。確定側と同じ処理。
+            TextSignboard.Apply(result, _textP, partsId);
 
             return result;
         }

@@ -30,6 +30,30 @@ using Poly_Ling.PrimitiveMesh;
 
 namespace Poly_Ling.Pipe
 {
+    /// <summary>
+    /// 生成の細かい切り替え（旧ツール互換・終端ぱっつん）。既定値（default）は現行の作り方。
+    /// PipeParams の「一括」と「個別」を合わせた実効値を入れる（FromParams）。
+    /// </summary>
+    public struct PipeGenOptions
+    {
+        public bool    LegacyFrame;
+        public bool    LegacyRawProfile;
+        public bool    LegacyVertexOrder;
+        public bool    LegacyUV;
+        public Vector3 LegacyCutEndScale;
+        public bool    PattsunEnd;
+
+        public static PipeGenOptions FromParams(PipeParams p) => new PipeGenOptions
+        {
+            LegacyFrame       = p.UseLegacyFrame,
+            LegacyRawProfile  = p.UseLegacyRawProfile,
+            LegacyVertexOrder = p.UseLegacyVertexOrder,
+            LegacyUV          = p.UseLegacyUV,
+            LegacyCutEndScale = p.LegacyCutEndScale,
+            PattsunEnd        = p.PattsunEnd,
+        };
+    }
+
     public static class PipeMeshGenerator
     {
         /// <summary>
@@ -75,7 +99,8 @@ namespace Poly_Ling.Pipe
             IReadOnlyList<Vector3> profile, bool profileClosed, bool capEnds,
             Vector3? startPoint, Vector3? endPoint,
             string meshName, PartsIdCounter partsIds,
-            IReadOnlyList<BoneWeight?> leftWeights, IReadOnlyList<BoneWeight?> rightWeights)
+            IReadOnlyList<BoneWeight?> leftWeights, IReadOnlyList<BoneWeight?> rightWeights,
+            PipeGenOptions opt = default)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Pipe" : meshName);
 
@@ -88,12 +113,18 @@ namespace Poly_Ling.Pipe
             var len  = new float[n];
             BuildFrames(left, right, beltClosed, flipWinding, xDir, yDir, len);
 
+            // 旧方式の上方向（段の両端と次の段の中点が作る三角形の法線）。
+            // 現行の上方向と逆を向く段が多ければ、面の巻き順を反転して外向きを保つ。
+            bool legacyUpFlipsSide = false;
+            if (opt.LegacyFrame)
+                legacyUpFlipsSide = ApplyLegacyUp(left, right, beltClosed, endPoint, yDir);
+
             // 側面の巻き順。閉じた断面（3点以上）が正の向き（符号付き面積 > 0）のときは
             // 筒が内向きになるため反転し、断面をどちら回りで描いても外向きへ揃える。
             // 開いた断面・2点断面は基準ベルトの巻き順のまま
             //（断面 2 点 (0,0)-(1,0) が基準ベルトと同一面になる規約を保つ）。
             bool invertSide = profileClosed && m >= 3 && SignedProfileArea(profile) > 0f;
-            bool quadFlip   = flipWinding ^ invertSide;
+            bool quadFlip   = flipWinding ^ invertSide ^ legacyUpFlipsSide;
 
             int   segments = beltClosed ? n : n - 1;
             float den      = beltClosed ? n : n - 1;
@@ -105,17 +136,36 @@ namespace Poly_Ling.Pipe
                 BoneWeight? wl = WeightAt(leftWeights,  i);
                 BoneWeight? wr = WeightAt(rightWeights, i);
 
+                // 断面を置く原点と各軸の倍率。
+                //   現行：原点は左レール。断面は正規化済みなので、各軸に段の長さを掛ける。
+                //   旧方式：原点は段の中点。生の断面に「段の長さ × 断面スケール」を掛ける
+                //           （負の成分は絶対の大きさ。NCSHAGLIB の CreateAndAddVertex0 と同じ）。
+                Vector3 origin = opt.LegacyRawProfile ? (left[i] + right[i]) * 0.5f : left[i];
+                float sx = opt.LegacyRawProfile ? LegacyScale(opt.LegacyCutEndScale.x, len[i]) : len[i];
+                float sy = opt.LegacyRawProfile ? LegacyScale(opt.LegacyCutEndScale.y, len[i]) : len[i];
+                float sz = opt.LegacyRawProfile ? LegacyScale(opt.LegacyCutEndScale.z, len[i]) : len[i];
+
+                // 断面の z は rung 系の 3 つ目の軸（xDir × yDir）へ置く。
+                Vector3 zDir = Vector3.Cross(xDir[i], yDir[i]);
+
                 for (int k = 0; k < m; k++)
                 {
                     Vector3 p   = profile[k];
-                    // 断面の z は rung 系の 3 つ目の軸（xDir × yDir）へ、x・y と同じ rung 長の倍率で置く。
-                    Vector3 zDir = Vector3.Cross(xDir[i], yDir[i]);
-                    Vector3 pos = left[i] + xDir[i] * (p.x * len[i]) + yDir[i] * (p.y * len[i])
-                                + zDir * (p.z * len[i]);
-                    float   v   = profileClosed ? k / (float)m : k / (float)(m - 1);
+                    Vector3 pos = origin + xDir[i] * (p.x * sx) + yDir[i] * (p.y * sy) + zDir * (p.z * sz);
 
-                    var vert = new Vertex(pos, new Vector2(u, v));
-                    vert.BoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(wl, wr, p.x);
+                    // 旧方式の UV は PMX/MQO の向き（上が v=0）で v = 段 / (段数+1) だった。
+                    // PolyLing は Unity の向き（下が v=0）で持ち、書き出しで反転するので、ここでは 1 − それを入れる。
+                    Vector2 uv = opt.LegacyUV
+                        ? new Vector2(k / (float)m, 1f - i / (float)(n + 1))
+                        : new Vector2(u, profileClosed ? k / (float)m : k / (float)(m - 1));
+
+                    // ウェイトは rung 上の位置（左 0 → 右 1）で左右を混ぜる。
+                    float t = opt.LegacyRawProfile
+                        ? (len[i] > 1e-6f ? Mathf.Clamp01(0.5f + p.x * sx / len[i]) : 0.5f)
+                        : p.x;
+
+                    var vert = new Vertex(pos, uv);
+                    vert.BoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(wl, wr, t);
                     mo.Vertices.Add(vert);
                 }
             }
@@ -143,6 +193,7 @@ namespace Poly_Ling.Pipe
             // 巻き順は隣接する側面の境界辺から決める。
             //   rung 0 の境界辺を側面は k→k+1（quadFlip=false）／k+1→k（true）で通るので、
             //   先端の蓋はその逆を通る。rung n-1 では側面が逆順に通るため条件も逆になる。
+            int startApex = -1, endApex = -1;
             if (capEnds && !beltClosed && profileClosed && m >= 3)
             {
                 bool headReverse = !quadFlip;
@@ -152,8 +203,13 @@ namespace Poly_Ling.Pipe
                 // 収束点は rung のどちらのレールでもないので、左右の真ん中を入れる。
                 int capFrom = mo.VertexCount;
 
-                if (startPoint.HasValue) AddPointCap(mo, 0,           m, startPoint.Value, headReverse);
-                else                     AddCap     (mo, 0,           m,                  headReverse);
+                if (startPoint.HasValue)
+                {
+                    startApex = mo.VertexCount;
+                    AddPointCap(mo, 0, m, startPoint.Value, headReverse);
+                    if (opt.LegacyUV) mo.Vertices[startApex].UVs[0] = new Vector2(0.5f, 1f);
+                }
+                else AddCap(mo, 0, m, headReverse);
 
                 FillCapWeights(mo, capFrom,
                     Poly_Ling.UI.SkinWeightOps.LerpNullable(
@@ -161,13 +217,26 @@ namespace Poly_Ling.Pipe
 
                 capFrom = mo.VertexCount;
 
-                if (endPoint.HasValue)   AddPointCap(mo, (n - 1) * m, m, endPoint.Value,   tailReverse);
-                else                     AddCap     (mo, (n - 1) * m, m,                  tailReverse);
+                // 終端ぱっつん：毛先の要を最後の輪の平均位置へ置く（NCSHAGLIB の pattsun）。
+                Vector3? tip = endPoint;
+                if (opt.PattsunEnd && tip.HasValue) tip = RingAverage(mo, (n - 1) * m, m);
+
+                if (tip.HasValue)
+                {
+                    endApex = mo.VertexCount;
+                    AddPointCap(mo, (n - 1) * m, m, tip.Value, tailReverse);
+                    if (opt.LegacyUV) mo.Vertices[endApex].UVs[0] = new Vector2(0.5f, 0f);
+                }
+                else AddCap(mo, (n - 1) * m, m, tailReverse);
 
                 FillCapWeights(mo, capFrom,
                     Poly_Ling.UI.SkinWeightOps.LerpNullable(
                         WeightAt(leftWeights, n - 1), WeightAt(rightWeights, n - 1), 0.5f));
             }
+
+            // 旧方式の頂点の並び：始点・断面×段・終点。
+            if (opt.LegacyVertexOrder && (startApex >= 0 || endApex >= 0))
+                ReorderLegacy(mo, startApex, endApex);
 
             // この梯子で作った全頂点へ同じパーツIDを書く（側面・蓋をまとめて1パーツ）。
             if (partsIds != null && mo.VertexCount > 0)
@@ -257,6 +326,95 @@ namespace Poly_Ling.Pipe
 
                 Vector3 ortho = y - xDir[i] * Vector3.Dot(y, xDir[i]);
                 yDir[i] = (ortho.sqrMagnitude > 1e-10f) ? ortho.normalized : y;
+            }
+        }
+
+        // ================================================================
+        // 旧ツール互換（NCSHAGLIB の髪パイプ生成）
+        // ================================================================
+
+        /// <summary>
+        /// yDir を旧方式の上方向で置き換える。
+        /// 段 i の上方向 = normalize(cross(v0 − c, R[i] − c))。c は段の中点、v0 は次の段の中点
+        /// （最後の段は終点。終点が無ければ前の段からの延長）。NCSHAGLIB の CreateBaseTriangles /
+        /// CreateAndAddVertex0 と同じ式。縮退した段は現行の上方向のまま残す。
+        /// </summary>
+        /// <returns>現行の上方向と逆を向く段が多ければ true（呼び出し側が巻き順を反転して外向きを保つ）。</returns>
+        private static bool ApplyLegacyUp(
+            IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
+            bool beltClosed, Vector3? endPoint, Vector3[] yDir)
+        {
+            int n = yDir.Length;
+            int opposite = 0, same = 0;
+
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 c = (left[i] + right[i]) * 0.5f;
+                Vector3 v0;
+                if (i < n - 1)        v0 = (left[i + 1] + right[i + 1]) * 0.5f;
+                else if (beltClosed)  v0 = (left[0] + right[0]) * 0.5f;
+                else if (endPoint.HasValue) v0 = endPoint.Value;
+                else
+                {
+                    Vector3 prev = (left[i - 1] + right[i - 1]) * 0.5f;
+                    v0 = c + (c - prev);
+                }
+
+                // 縮退の判定は辺の長さに対する比で行う（髪の根元のように段が 1mm 前後だと、
+                // 外積の大きさそのものは 1e-12 を下回る）。
+                Vector3 a  = v0 - c, b = right[i] - c;
+                Vector3 up = Vector3.Cross(a, b);
+                float scale = a.sqrMagnitude * b.sqrMagnitude;
+                if (scale <= 0f || up.sqrMagnitude <= scale * 1e-12f) continue;
+                up /= Mathf.Sqrt(up.sqrMagnitude);
+
+                if (Vector3.Dot(up, yDir[i]) < 0f) opposite++; else same++;
+                yDir[i] = up;
+            }
+            return opposite > same;
+        }
+
+        /// <summary>旧方式の断面スケール 1 成分。0 以上は段の長さに対する倍率、負は絶対の大きさ。</summary>
+        private static float LegacyScale(float e, float rungLength)
+            => e >= 0f ? rungLength * e : -e;
+
+        /// <summary>baseIdx から m 個の輪の頂点の平均位置。</summary>
+        private static Vector3 RingAverage(MeshObject mo, int baseIdx, int m)
+        {
+            Vector3 sum = Vector3.zero;
+            for (int k = 0; k < m; k++) sum += mo.Vertices[baseIdx + k].Position;
+            return sum / m;
+        }
+
+        /// <summary>
+        /// 頂点を「始点・断面×段・終点」の順に並べ替える。面の頂点番号も付け替える。
+        /// 始点・終点の要が無い側はそのまま（輪の頂点の並びは変えない）。
+        /// </summary>
+        private static void ReorderLegacy(MeshObject mo, int startApex, int endApex)
+        {
+            int count = mo.Vertices.Count;
+            var order = new List<int>(count);
+            if (startApex >= 0) order.Add(startApex);
+            for (int v = 0; v < count; v++)
+                if (v != startApex && v != endApex) order.Add(v);
+            if (endApex >= 0) order.Add(endApex);
+
+            var map   = new int[count];
+            var verts = new List<Vertex>(count);
+            for (int i = 0; i < order.Count; i++)
+            {
+                map[order[i]] = i;
+                verts.Add(mo.Vertices[order[i]]);
+            }
+
+            mo.Vertices.Clear();
+            mo.Vertices.AddRange(verts);
+
+            for (int f = 0; f < mo.FaceCount; f++)
+            {
+                var vi = mo.Faces[f]?.VertexIndices;
+                if (vi == null) continue;
+                for (int j = 0; j < vi.Count; j++) vi[j] = map[vi[j]];
             }
         }
 

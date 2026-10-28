@@ -89,6 +89,25 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
+        /// モデルの置き換え（外部から届いたモデルで差し替え）を Undo 記録する。
+        /// 置き換え前と後を ModelDTO（.mfproj と同じ全データ）で控える（ModelReplaceRecord）。
+        /// 呼出し前に SetProjectContext で Context が設定されていること。
+        /// </summary>
+        public void RecordModelReplace(int modelIndex,
+            Poly_Ling.Serialization.ModelDTO oldModel, Poly_Ling.Serialization.ModelDTO newModel)
+        {
+            if (_projectStack == null) return;
+            if (oldModel == null || newModel == null) return;
+            var record = new ModelReplaceRecord(modelIndex, oldModel, newModel);
+            {
+                string __dbgDesc = $"Replace Model: {oldModel.name} -> {newModel.name} (idx={modelIndex})";
+                PLDiag.UndoRecord("Project", __dbgDesc, record);
+                _projectStack.Record(record, __dbgDesc);
+            }
+            FocusProjectStack();
+        }
+
+        /// <summary>
         /// Player 問題: UndoManager._root は FocusPriority なので FocusedChildId が
         /// 設定されていないと Undo が解決されない。ProjectStack に Record した直後に
         /// _mainGroup と _undoManager の FocusedChildId を設定して Undo を可能にする。

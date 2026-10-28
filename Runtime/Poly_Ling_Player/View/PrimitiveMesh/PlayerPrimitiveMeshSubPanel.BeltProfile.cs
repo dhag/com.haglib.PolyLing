@@ -138,6 +138,9 @@ namespace Poly_Ling.Player
             public bool UseLast;
             public int  TrimStart;
             public int  TrimEnd;
+
+            /// <summary>残す段の番号（カンマ・空白・改行区切り）。空なら全段。</summary>
+            public string KeepRungsText = "";
         }
 
         /// <summary>断面プロファイルの編集状態（キャンバス1面ぶん）。</summary>

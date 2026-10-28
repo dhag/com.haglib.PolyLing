@@ -69,6 +69,17 @@ namespace Poly_Ling.PrimitiveMesh
                  Min = TrimMin, Max = TrimMax, Step = 1)]
         public int TrimEnd;
 
+        /// <summary>
+        /// 残す段の番号（スプライン分割と切り詰めのあとの番号、0 起点）。空なら全段を残す。
+        /// 旧ツール（NCSHAGLIB の髪パイプ生成）の「残す梯子を番号で指定」にあたる。
+        /// スプライン分割を切っていても効く。閉じた梯子には効かない。
+        /// </summary>
+        [PLParam(TextKey = "BeltSplineKeepRungs",
+                 Description = "残す段の番号（スプライン分割と切り詰めのあとの番号、0 起点）。空にすると全段を残す。分割を切っていても効く")]
+        public int[] KeepRungs;
+
+        public bool HasKeepRungs => KeepRungs != null && KeepRungs.Length > 0;
+
         public static BeltSplineOptions Default => new BeltSplineOptions
         {
             Enabled   = false,
@@ -77,6 +88,7 @@ namespace Poly_Ling.PrimitiveMesh
             UseLast   = false,
             TrimStart = 0,
             TrimEnd   = 0,
+            KeepRungs = System.Array.Empty<int>(),
         };
     }
 
@@ -180,6 +192,48 @@ namespace Poly_Ling.PrimitiveMesh
         /// 細分に失敗したときも元をそのまま返す。
         /// </summary>
         public static BeltCsvEntry ApplySpline(BeltCsvEntry belt, BeltSplineOptions opt)
+            => ApplyKeepRungs(ApplySplineOnly(belt, opt), opt);
+
+        /// <summary>
+        /// 残す段だけを残す（BeltSplineOptions.KeepRungs）。指定が無い・閉じた梯子・
+        /// 残る段が 2 未満のときは元をそのまま返す。ウェイト列も同じ段を残す。
+        /// </summary>
+        public static BeltCsvEntry ApplyKeepRungs(BeltCsvEntry belt, BeltSplineOptions opt)
+        {
+            if (belt == null || !belt.HasData) return belt;
+            if (!opt.HasKeepRungs || belt.Closed) return belt;
+
+            var keep = KeepIndices(Mathf.Min(belt.Left.Count, belt.Right.Count), opt.KeepRungs);
+            if (keep.Count < 2) return belt;
+
+            var b = Clone(belt);
+            b.Left  = Pick(belt.Left,  keep);
+            b.Right = Pick(belt.Right, keep);
+            b.LeftWeights  = belt.LeftWeights  != null ? Pick(belt.LeftWeights,  keep) : null;
+            b.RightWeights = belt.RightWeights != null ? Pick(belt.RightWeights, keep) : null;
+            return b;
+        }
+
+        /// <summary>残す段の番号を、0..count-1 の範囲で昇順・重複なしにして返す。</summary>
+        public static List<int> KeepIndices(int count, int[] keepRungs)
+        {
+            var set = new HashSet<int>(keepRungs ?? System.Array.Empty<int>());
+            var result = new List<int>();
+            for (int i = 0; i < count; i++)
+                if (set.Contains(i)) result.Add(i);
+            return result;
+        }
+
+        /// <summary>list から indices の要素だけを順に取り出す。範囲外の番号は飛ばす。</summary>
+        public static List<T> Pick<T>(IReadOnlyList<T> list, List<int> indices)
+        {
+            var result = new List<T>(indices.Count);
+            foreach (int i in indices)
+                if (i >= 0 && i < list.Count) result.Add(list[i]);
+            return result;
+        }
+
+        private static BeltCsvEntry ApplySplineOnly(BeltCsvEntry belt, BeltSplineOptions opt)
         {
             if (belt == null || !belt.HasData) return belt;
             if (!opt.Enabled) return belt;

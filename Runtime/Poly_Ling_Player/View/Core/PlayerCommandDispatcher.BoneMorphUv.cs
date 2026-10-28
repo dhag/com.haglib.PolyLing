@@ -750,6 +750,72 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                // ── UV 調整に合わせたテクスチャの描き直し（モデルは変えない）
+                case RemapTextureByUvCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    var rtBefore = model.GetMeshContext(c.BeforeMasterIndex)?.MeshObject;
+                    var rtAfter  = model.GetMeshContext(c.AfterMasterIndex)?.MeshObject;
+                    if (rtBefore == null) { Fail($"調整前のオブジェクトがありません（{c.BeforeMasterIndex}）"); return true; }
+                    if (rtAfter  == null) { Fail($"調整後のオブジェクトがありません（{c.AfterMasterIndex}）"); return true; }
+                    int rtBeforeFaces = rtBefore.Faces != null ? rtBefore.Faces.Count : 0;
+                    int rtAfterFaces  = rtAfter.Faces  != null ? rtAfter.Faces.Count  : 0;
+                    if (rtBeforeFaces != rtAfterFaces)
+                    { Fail($"面数が一致しません（調整前 {rtBeforeFaces}・調整後 {rtAfterFaces}）"); return true; }
+                    if (rtAfterFaces == 0) { Fail("面がありません"); return true; }
+
+                    if (!PLSandbox.TryResolveRead(c.InputPath, out string rtInPath, out string rtWhy))
+                    { Fail($"InputPath: {rtWhy}"); return true; }
+                    if (!PLSandbox.TryResolveWrite(c.OutputPath, out string rtOutPath, out rtWhy))
+                    { Fail($"OutputPath: {rtWhy}"); return true; }
+                    if (!string.Equals(System.IO.Path.GetExtension(rtOutPath), ".png", StringComparison.OrdinalIgnoreCase))
+                    { Fail("OutputPath は .png にしてください"); return true; }
+
+                    Texture2D rtSrc = null, rtDst = null;
+                    try
+                    {
+                        string rtLoad = Poly_Ling.Materials.MaterialEditOps.LoadTextureFile(rtInPath, out rtSrc);
+                        if (rtLoad != null) { Fail(rtLoad); return true; }
+                        int rtW = rtSrc.width, rtH = rtSrc.height;
+                        Color32[] rtPixels = rtSrc.GetPixels32();
+
+                        Color32[] rtOut = UvTextureRemapper.Remap(
+                            rtPixels, rtW, rtH,
+                            UvTextureRemapper.CollectFaceUvs(rtBefore),
+                            UvTextureRemapper.CollectFaceUvs(rtAfter),
+                            c.Method == UvTextureRemapMethod.Tps, c.NeighborCount, c.Lambda, c.PadPixels,
+                            out var rtRep);
+
+                        rtDst = new Texture2D(rtW, rtH, TextureFormat.RGBA32, false);
+                        rtDst.SetPixels32(rtOut);
+                        rtDst.Apply(false);
+                        byte[] rtPng = rtDst.EncodeToPNG();
+                        if (rtPng == null || rtPng.Length == 0) { Fail("PNG への変換に失敗しました"); return true; }
+                        string rtDir = System.IO.Path.GetDirectoryName(rtOutPath);
+                        if (!string.IsNullOrEmpty(rtDir)) System.IO.Directory.CreateDirectory(rtDir);
+                        System.IO.File.WriteAllBytes(rtOutPath, rtPng);
+
+                        ReportData(CommandDataJson.New()
+                            .Int("faces", rtRep.Faces).Int("skippedFaces", rtRep.SkippedFaces)
+                            .Int("unmappedFaces", rtRep.UnmappedFaces)
+                            .Int("tpsFaces", rtRep.TpsFaces).Int("tpsFallbackFaces", rtRep.TpsFallbackFaces)
+                            .Int("controlPoints", rtRep.ControlPoints)
+                            .Int("coveredPixels", rtRep.CoveredPixels).Int("paddedPixels", rtRep.PaddedPixels)
+                            .Int("copiedPixels", rtRep.CopiedPixels).Int("invalidPixels", rtRep.InvalidPixels)
+                            .Int("width", rtW).Int("height", rtH).Build());
+                    }
+                    catch (Exception ex)
+                    {
+                        Fail($"テクスチャの描き直しに失敗しました: {ex.Message}");
+                    }
+                    finally
+                    {
+                        if (rtSrc != null) UnityEngine.Object.DestroyImmediate(rtSrc);
+                        if (rtDst != null) UnityEngine.Object.DestroyImmediate(rtDst);
+                    }
+                    return true;
+                }
+
                 // ── LSCM UV 展開
                 case ApplyLscmUnwrapCommand c:
                 {

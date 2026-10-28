@@ -234,6 +234,17 @@ namespace Poly_Ling.Player
                     return true;
                 }
 
+                case SplitObjectByConnectivityCommand c:
+                {
+                    if (model == null) { Fail("no current model"); return true; }
+                    if (OnSplitObjectByConnectivity == null)
+                    { Fail("connectivity split handler not wired"); return true; }
+
+                    string connSplitReason = OnSplitObjectByConnectivity.Invoke(c);
+                    if (connSplitReason != null) { Fail(connSplitReason); return true; }
+                    return true;
+                }
+
                 case TransferVertexDataCommand c:
                 {
                     var srcModel = project?.GetModel(c.SourceModelIndex);

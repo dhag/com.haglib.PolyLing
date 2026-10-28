@@ -350,6 +350,7 @@ namespace Poly_Ling.Player
                     UseLast   = o.UseLast,
                     TrimStart = o.TrimStart,
                     TrimEnd   = o.TrimEnd,
+                    KeepRungs = ParseRungList(o.KeepRungsText),
                 };
 
         // ================================================================

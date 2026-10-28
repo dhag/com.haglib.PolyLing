@@ -41,6 +41,9 @@ namespace Poly_Ling.Player
         /// <summary>直近の分解結果。Viewer から設定する。</summary>
         public Func<PartsIdSplitResult> GetLastSplitResult;
 
+        /// <summary>直近のつながり分解の結果。Viewer から設定する。</summary>
+        public Func<ConnectivitySplitResult> GetLastConnectivitySplitResult;
+
         // ── UI ───────────────────────────────────────────────────────
 
         // UI 自動操作の ID は "partsId.<下の Id>"（UiControlAttribute.cs）。
@@ -68,6 +71,10 @@ namespace Poly_Ling.Player
         private Button _assignByBoneWeightBtn;
         [UiControl("split", Safety = UiSafety.SafeWrite, Description = "④ パーツ ID ごとのオブジェクトに分ける（元のオブジェクトは残す）")]
         private Button _splitBtn;
+        [UiControl("connectivitySplitDeleteSource", Description = "⑤ 分解後に元のオブジェクトを削除する（既定オン）")]
+        private Toggle _connSplitDeleteToggle;
+        [UiControl("connectivitySplit", Safety = UiSafety.SafeWrite, Description = "⑤ 面と線のつながりごとのオブジェクトにばらばらに分ける")]
+        private Button _connSplitBtn;
         [UiControl("reassignSubId", Safety = UiSafety.SafeWrite, Description = "サブ ID だけ振り直す")]
         private Button _reassignSubIdBtn;
         [UiControl("clear", Safety = UiSafety.Destructive, Description = "パーツ ID とサブ ID を消去する")]
@@ -199,6 +206,25 @@ namespace Poly_Ling.Player
               + "ボーンをまたぐ境目のオブジェクトに分かれます。"));
 
             root.Add(_splitBtn = PlayerIoUiKit.WideBtn("パーツIDで分解", RunSplit));
+
+            // ── つながりで分解 ───────────────────────────────────────
+            root.Add(PlayerIoUiKit.Divider());
+            root.Add(PlayerIoUiKit.SectionLabel("⑤ つながりで分解"));
+
+            root.Add(new HelpBox(
+                "対象オブジェクトを、面と線でつながっている塊ごとのオブジェクトへばらばらに分けます。\n"
+              + "空のオブジェクトを1つ作り、分けたオブジェクトをその子として並べます。\n"
+              + "・頂点のパーツIDは使わず、書き換えもしません\n"
+              + "・位置が同じでも頂点が別なら、別の塊として分かれます\n"
+              + "・面にも線にも属さない孤立頂点は①の選択に従います\n"
+              + "元のオブジェクトに子があるときは、元を削除できません。",
+                HelpBoxMessageType.Info));
+
+            _connSplitDeleteToggle = new Toggle("元のオブジェクトを削除") { value = true };
+            _connSplitDeleteToggle.style.marginBottom = 3;
+            root.Add(_connSplitDeleteToggle);
+
+            root.Add(_connSplitBtn = PlayerIoUiKit.WideBtn("つながりで分解", RunConnectivitySplit));
 
             // ── その他 ───────────────────────────────────────────────
             root.Add(PlayerIoUiKit.Divider());
@@ -393,6 +419,29 @@ namespace Poly_Ling.Player
             SetStatus(r.Success
                 ? "パーツIDで分解: " + r.Summary
                 : "パーツIDで分解: 実行しませんでした"
+                  + $"（{(string.IsNullOrEmpty(r.Reason) ? "理由不明" : r.Reason)}）");
+        }
+
+        private void RunConnectivitySplit()
+        {
+            int target = CurrentTargetMasterIndex();
+            if (target < 0) { SetStatus("対象オブジェクトを選んでください"); return; }
+
+            var isolated = (_isolatedGroup != null && _isolatedGroup.value == 1)
+                ? IsolatedVertexPolicy.SeparateParts
+                : IsolatedVertexPolicy.SingleGroup;
+            bool deleteSource = _connSplitDeleteToggle == null || _connSplitDeleteToggle.value;
+
+            SendCommand?.Invoke(new SplitObjectByConnectivityCommand(
+                ModelIndex, target, isolated, deleteSource));
+
+            // Dispatch は同期なので、実行後の状態をそのまま診断し直せる。
+            Refresh();
+
+            var r = GetLastConnectivitySplitResult != null ? GetLastConnectivitySplitResult() : default;
+            SetStatus(r.Success
+                ? "つながりで分解: " + r.Summary
+                : "つながりで分解: 実行しませんでした"
                   + $"（{(string.IsNullOrEmpty(r.Reason) ? "理由不明" : r.Reason)}）");
         }
 

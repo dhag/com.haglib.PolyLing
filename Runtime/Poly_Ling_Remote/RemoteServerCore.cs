@@ -100,6 +100,15 @@ namespace Poly_Ling.Remote
         private List<byte[]> _pendingBinaryResponses;
 
         /// <summary>
+        /// 処理中の JSON のコマンドと同じ封筒で届いた Binary の項目（コマンドの添付。putModel の本体）。
+        /// OnDuplexReceived が ProcessMessage の前に入れ、後で消す。使ったコマンドは _incomingAttachmentsUsed を立てる。
+        /// </summary>
+        private List<byte[]> _incomingAttachments;
+
+        /// <summary>処理中のコマンドが _incomingAttachments を使ったか。</summary>
+        private bool _incomingAttachmentsUsed;
+
+        /// <summary>
         /// 応答送出の直後に selectionChanged を送り直す対象ユーザー（1回使い切り）。
         /// project_header 等がホストの選択を含むため、本人の選択で上書きし直す。
         /// </summary>
@@ -430,13 +439,9 @@ namespace Poly_Ling.Remote
                 var dto = Poly_Ling.Serialization.ProjectDTO.Create(project.Name);
                 foreach (var model in project.Models)
                 {
-                    var modelDto = Poly_Ling.Serialization.ModelSerializer.FromModelContext(model);
+                    // テクスチャ画像そのものも載せる（JSON はパスしか持たないため）。model_bundle と同じ組み方。
+                    var modelDto = Poly_Ling.Serialization.ModelBundle.BuildDto(model);
                     if (modelDto == null) continue;
-
-                    // テクスチャ画像そのものも載せる（JSON はパスしか持たないため）。
-                    modelDto.embeddedTextures = Poly_Ling.Serialization.ModelTextureTransfer.ToEmbedded(
-                        Poly_Ling.Serialization.ModelTextureTransfer.Collect(model));
-
                     dto.models.Add(modelDto);
                 }
 
@@ -478,6 +483,106 @@ namespace Poly_Ling.Remote
 
             Log($"プロジェクト束の応答: {project.ModelCount}モデル {bundle.Length}B");
             return BuildSuccessResponse(msg.Id, jb.ToString());
+        }
+
+        /// <summary>
+        /// 照会 model_bundle：モデル 1 つ分（ModelDTO の JSON ＋ embeddedTextures。ModelBundle）を要求者にだけ返す。
+        /// params.modelIndex（省くと今のモデル）。本体は Binary の項目、data は {modelIndex, modelName, byteCount}。
+        /// </summary>
+        private string ProcessModelBundleQuery(RemoteMessage msg)
+        {
+            var project = GetProjectContext();
+            if (project == null) return BuildErrorResponse(msg.Id, "No project", CommandErrorCodes.NotReady);
+
+            int mi = GetParamInt(msg, "modelIndex", project.CurrentModelIndex);
+            if (mi < 0 || mi >= project.ModelCount)
+                return BuildErrorResponse(msg.Id, $"モデル {mi} がありません", CommandErrorCodes.InvalidArgs);
+
+            var model = project.Models[mi];
+            byte[] bundle;
+            try { bundle = Poly_Ling.Serialization.ModelBundle.ToBytes(model); }
+            catch (Exception ex)
+            {
+                Log("モデル束の応答: 失敗 " + ex.Message);
+                return BuildErrorResponse(msg.Id, "失敗 " + ex.Message, CommandErrorCodes.Exception);
+            }
+            if (bundle == null) return BuildErrorResponse(msg.Id, $"モデル {mi} を組めません", CommandErrorCodes.Failed);
+
+            _pendingBinaryResponses = new List<byte[]> { bundle };
+
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("modelIndex", mi);
+            jb.KeyValue("modelName",  model.Name ?? "");
+            jb.KeyValue("byteCount",  bundle.Length);
+            jb.EndObject();
+
+            Log($"モデル束の応答: モデル {mi}「{model.Name}」 {bundle.Length}B");
+            return BuildSuccessResponse(msg.Id, jb.ToString());
+        }
+
+        /// <summary>クライアントからのモデルの受け入れの action（PolyLing → クライアントの要求 putModel と同じ名前）。</summary>
+        private const string PutModelAction = "putModel";
+
+        /// <summary>
+        /// コマンド putModel：クライアントから届いたモデル 1 つ分（ModelBundle）を受け入れる。
+        /// params.mode＝add（既定。新しいモデルとして足す）／replace（params.modelIndex のモデルを置き換える）。
+        /// 本体は同じ封筒の Binary の項目（ModelDTO の JSON ＋ embeddedTextures の UTF-8 バイト列。model_bundle と同じ形）。
+        /// 要求者を操作者として AddModelBundleCommand / ReplaceModelBundleCommand をディスパッチャへ流す
+        /// （担当者判定・Undo・操作者の記録を他のコマンドと揃える。操作経路統一計画.md R-3）。
+        /// data は他のコマンドと同じ形（CommandResultJson）で、result に modelIndex・modelName。
+        /// </summary>
+        private string ProcessPutModel(RemoteMessage msg, IDuplexChannel channel)
+        {
+            var attachments = _incomingAttachments;
+            if (attachments == null || attachments.Count == 0)
+                return BuildErrorResponse(msg.Id,
+                    "モデルの本体がありません（同じ封筒に Binary の項目として添える）", CommandErrorCodes.InvalidArgs);
+            _incomingAttachmentsUsed = true;
+            byte[] body = attachments[0];
+
+            string mode = GetParamString(msg, "mode", "add") ?? "add";
+            if (mode != "add" && mode != "replace")
+                return BuildErrorResponse(msg.Id, $"mode は add か replace です: {mode}", CommandErrorCodes.InvalidArgs);
+
+            Poly_Ling.Serialization.ModelDTO dto;
+            try { dto = Poly_Ling.Serialization.ModelBundle.FromBytes(body); }
+            catch (Exception ex)
+            {
+                Log("モデル受け入れ: 本体を読めません " + ex.Message);
+                return BuildErrorResponse(msg.Id, "本体を読めません: " + ex.Message, CommandErrorCodes.InvalidArgs);
+            }
+            if (dto == null)
+                return BuildErrorResponse(msg.Id, "本体が空です", CommandErrorCodes.InvalidArgs);
+
+            PanelCommand cmd;
+            if (mode == "replace")
+            {
+                int mi = GetParamInt(msg, "modelIndex", -1);
+                if (mi < 0)
+                    return BuildErrorResponse(msg.Id, "replace には modelIndex が要ります", CommandErrorCodes.InvalidArgs);
+                cmd = new ReplaceModelBundleCommand(mi, dto);
+            }
+            else
+            {
+                cmd = new AddModelBundleCommand(dto);
+            }
+
+            string requester = ResolveUserName(channel);
+            var result = DispatchWithSelectionOf(requester, cmd, CommandActor.Remote(requester, null));
+
+            Log($"モデル受け入れ: mode={mode} 「{dto.name}」 {body.Length}B user=\"{requester}\" → {result}");
+
+            if (!result.Success && result.StaleView)
+                SendToChannel(channel,
+                    TypedPayload.FromJson(BuildPushMessage("refreshRequired", "{}")),
+                    WebSocketFrameKind.Text);
+
+            CheckOwnershipChanged();
+
+            if (!result.Success)
+                return BuildErrorResponse(msg.Id, result.Reason, result.Code);
+            return BuildSuccessResponse(msg.Id, CommandResultJson.BuildSuccessObject(result, false));
         }
 
         public void SendProjectHeader()
@@ -619,13 +724,6 @@ namespace Poly_Ling.Remote
 
                     Log($"位置更新: {targetCtx.Name} ({resolveNote}) user=\"{requesterName}\" → {posResult}");
                     CheckOwnershipChanged();
-                    return null;
-                }
-                case BinaryMessageType.RawFile:
-                {
-                    var (fileData, ext) = RemoteBinarySerializer.ExtractRawFile(data);
-                    if (fileData != null)
-                        Log($"ファイル受信: {ext} ({fileData.Length} bytes)");
                     return null;
                 }
                 default:

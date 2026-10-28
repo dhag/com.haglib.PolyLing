@@ -897,5 +897,66 @@ namespace Poly_Ling.Player
             NotifyPanels(ChangeKind.ListStructure);
             return null;
         }
+
+        // ================================================================
+        // 外部から届いたモデルの受け入れ（PolyLing_外部受け渡し計画.md ②）
+        //
+        // 本体はリモートのコマンド putModel の添付（ModelBundle）。RemoteServerCore.ProcessPutModel が
+        // ModelDTO にしてディスパッチャへ流す。組み立ては ModelBundle.ToModel
+        // （ModelSerializer.ToModelContext → ModelTextureTransfer.Apply）。
+        // ================================================================
+
+        /// <summary>
+        /// 届いたモデルを新しいモデルとして足し、カレントにする。
+        /// ファイル読み込みと同じ _localLoader.LoadModel を通す（Undo はモデルの追加として記録される）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteAddModelBundle(Poly_Ling.Data.AddModelBundleCommand cmd)
+        {
+            if (cmd?.Model == null) return "モデルの本体がありません（リモートのコマンド putModel で添えて送る）";
+
+            var model = Poly_Ling.Serialization.ModelBundle.ToModel(cmd.Model);
+            if (model == null) return "届いたモデルを組み立てられません";
+
+            _localLoader.LoadModel(string.IsNullOrEmpty(model.Name) ? "RemoteModel" : model.Name, model);
+            AdoptCoordinateConvention();
+            return null;
+        }
+
+        /// <summary>
+        /// 届いたモデルで ModelIndex のモデルを置き換え、カレントにする。
+        /// 置き換え前のモデルは ModelDTO（.mfproj と同じ全データ）で控え、Undo に積む（ModelReplaceRecord）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteReplaceModelBundle(Poly_Ling.Data.ReplaceModelBundleCommand cmd)
+        {
+            if (cmd?.Model == null) return "モデルの本体がありません（リモートのコマンド putModel で添えて送る）";
+
+            var project = ActiveProject;
+            if (project == null) return "プロジェクトがありません";
+
+            int index = cmd.ModelIndex;
+            if (index < 0 || index >= project.ModelCount) return $"モデル {index} がありません";
+
+            var model = Poly_Ling.Serialization.ModelBundle.ToModel(cmd.Model);
+            if (model == null) return "届いたモデルを組み立てられません";
+
+            // 外す前に控える。RemoveModelAt は外したモデルを Clear(true) する。
+            var oldDto = Poly_Ling.Serialization.ModelBundle.BuildDto(project.Models[index]);
+            if (oldDto == null) return $"モデル {index} を控えられません";
+
+            project.RemoveModelAt(index);
+            project.InsertModel(index, model);
+            project.SelectModel(index);
+
+            RefreshAfterModelPlaced(project, model, () =>
+            {
+                if (_editOps?.UndoController == null) return;
+                _editOps.UndoController.SetProjectContext(project);
+                _editOps.UndoController.RecordModelReplace(index, oldDto, cmd.Model);
+            });
+            AdoptCoordinateConvention();
+            return null;
+        }
     }
 }

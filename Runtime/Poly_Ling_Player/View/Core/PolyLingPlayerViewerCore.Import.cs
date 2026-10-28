@@ -37,15 +37,82 @@ namespace Poly_Ling.Player
             string esBlock = EditSpaceBlockReason();
             if (esBlock != null) { _status = esBlock; return; }
 
+            var mode = settings?.ImportMode ?? PMXImportMode.NewModel;
+
+            // メッシュだけを追加するときは、PMX のボーン番号のウェイトを残して読み、
+            // 追加先のボーンへ名前で引き当てる（AppendImportedModel の boneNames）。
+            // 渡された設定（パネルの設定）は書き換えない。
+            var useSettings = settings;
+            if (mode == PMXImportMode.Append && settings != null && !settings.ShouldImportBones)
+            {
+                useSettings = (PMXImportSettings)settings.Clone();
+                useSettings.KeepSourceBoneWeights = true;
+            }
+
             var cmd = new ImportPmxCommand(
-                filePath, settings,
-                onResult: (model, _) =>
+                filePath, useSettings,
+                onResult: (model, result) =>
                 {
+                    var target = ActiveProject?.CurrentModel;
+                    // 追加（Append）は読込時点の現在モデルへ足す。モデルが無ければ新規と同じ。
+                    if (mode == PMXImportMode.Append && target != null)
+                    {
+                        List<string> boneNames = null;
+                        if (useSettings != null && !useSettings.ShouldImportBones && result?.Document != null)
+                            boneNames = result.Document.Bones.Select(b => b?.Name ?? "").ToList();
+                        var renames = AppendImportedModel(target, model, filePath, "PMX", boneNames);
+                        ApplyImportPostOptions(post, renames);
+                        return;
+                    }
+                    // 置換（Replace）は現在モデルを読み込んだモデルで置き換える。モデルが無ければ新規と同じ。
+                    if (mode == PMXImportMode.Replace && target != null)
+                    {
+                        string err = ReplaceCurrentModelWithImported(model, filePath);
+                        if (err != null) { _status = $"PMX読込失敗: {err}"; return; }
+                        ApplyImportPostOptions(post);
+                        return;
+                    }
                     _localLoader.LoadModel(filePath, model);
                     ApplyImportPostOptions(post);
                 },
                 onError:  msg       => _status = $"PMX読込失敗: {msg}");
             _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
+        /// <summary>
+        /// 現在のモデルを、読み込んだモデルで置き換えてカレントにする（PMX の置換）。
+        /// 手順は外部から届いたモデルでの置き換え（ExecuteReplaceModelBundle）と同じ。
+        /// 置き換え前と後を ModelDTO（.mfproj と同じ全データ）で控えて Undo に積む（ModelReplaceRecord）。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ReplaceCurrentModelWithImported(ModelContext model, string filePath)
+        {
+            var project = ActiveProject;
+            if (project == null) return "プロジェクトがありません";
+            int index = project.CurrentModelIndex;
+            if (index < 0 || index >= project.ModelCount) return "現在のモデルがありません";
+
+            // 外す前に控える。RemoveModelAt は外したモデルを Clear(true) する。
+            var oldDto = Poly_Ling.Serialization.ModelBundle.BuildDto(project.Models[index]);
+            if (oldDto == null) return $"モデル {index} を控えられません";
+            var newDto = Poly_Ling.Serialization.ModelBundle.BuildDto(model);
+            if (newDto == null) return "読み込んだモデルを控えられません";
+
+            project.RemoveModelAt(index);
+            project.InsertModel(index, model);
+            project.SelectModel(index);
+
+            RefreshAfterModelPlaced(project, model, () =>
+            {
+                if (_editOps?.UndoController == null) return;
+                _editOps.UndoController.SetProjectContext(project);
+                _editOps.UndoController.RecordModelReplace(index, oldDto, newDto);
+            });
+            AdoptCoordinateConvention();
+
+            _status = $"PMX置換読込: {System.IO.Path.GetFileName(filePath)}（モデル {index} を置き換え）";
+            UnityEngine.Debug.Log("[ImportPmx] " + _status);
+            return null;
         }
 
         private void OnImportMqo(string filePath, MQOImportSettings settings,
@@ -72,7 +139,7 @@ namespace Poly_Ling.Player
                     var target = ActiveProject?.CurrentModel;
                     if (mode == MQOImportMode.Append && target != null)
                     {
-                        var renames = AppendImportedModel(target, model, result, filePath);
+                        var renames = AppendImportedModel(target, model, filePath, "MQO", null);
                         ApplyImportPostOptions(post, renames);
                         return;
                     }
@@ -87,7 +154,7 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // MQO の追加読込（Append）
+        // MQO / PMX の追加読込（Append）
         // ================================================================
 
         /// <summary>
@@ -98,13 +165,23 @@ namespace Poly_Ling.Player
         ///   なので、一括で末尾へ足せばずれは崩れない。
         /// 【索引参照】親・ミラー元・左右対ボーン・ボーンウェイト・IK を既存のオブジェクト数
         ///   だけずらす（ModelContext.OffsetIndexReferences）。
+        /// 【表情（PMX のモーフ）】MorphExpressions は索引で描画オブジェクトを指すので、同じだけずらして
+        ///   末尾へ足す。名前が重なれば改名する（材質と同じ決め方）。
+        /// 【ボーンの引き当て】boneNames を渡したとき（PMX をボーン無しで追加）は、頂点のウェイトが
+        ///   PMX のボーン番号を指しているので、その番号の名前で target のボーンを引いて付け替える。
+        ///   引けない名前が 1 つでもあるオブジェクトはウェイトを捨てて足す（ボーンに付かない通常のメッシュ）。
+        ///   一部の頂点だけウェイトを外すと、スキンドのまま無ウェイトの頂点が混ざって形が崩れるため。
         /// 【名前】既存と重なる名前は改名する（ResolveAppendNames）。
         /// 【モデル単位の情報】target の名前・パス・下絵・Humanoid 割当はそのまま。
-        /// 【Undo】MeshListChangeRecord 1 件（材質参照・ミラー対も戻す）。
+        /// 【Undo】MeshListChangeRecord（材質参照・ミラー対も戻す）と、表情を足したときは
+        ///   MorphExpressionListReplaceRecord を 1 件にまとめる。
         /// </summary>
+        /// <param name="kind">状態表示とログの名前（MQO / PMX）。</param>
+        /// <param name="boneNames">PMX のボーン番号 → 名前。ウェイトを名前で引き当てるときだけ渡す。</param>
         /// <returns>オブジェクト名の改名表（旧名→新名）。改名が無ければ空。</returns>
         private Dictionary<string, string> AppendImportedModel(
-            ModelContext target, ModelContext imported, MQOImportResult result, string filePath)
+            ModelContext target, ModelContext imported, string filePath, string kind,
+            IReadOnlyList<string> boneNames)
         {
             var renames = new Dictionary<string, string>();
             if (target == null || imported == null) return renames;
@@ -115,6 +192,64 @@ namespace Poly_Ling.Player
             var oldSelected    = target.CaptureAllSelectedIndices();
             var oldMatRefs     = MeshListChangeRecord.CloneMaterialRefs(target.MaterialReferences);
             int oldMatIndex    = target.CurrentMaterialIndex;
+            var oldExpressions = target.MorphExpressions.Select(e => e.Clone()).ToList();
+
+            // ── ボーンの引き当て（索引をずらす前に、ウェイトを外して控える）──
+            //   OffsetIndexReferences はウェイトの番号も imported の並びとしてずらすので、
+            //   target の番号へ付け替えたウェイトは、ずらした後に戻す。
+            var heldWeights = new List<(Poly_Ling.Data.Vertex V, BoneWeight? W, BoneWeight? M)>();
+            var unresolvedNames = new SortedSet<string>(StringComparer.Ordinal);
+            int unboundObjects = 0;
+            if (boneNames != null)
+            {
+                var boneIndexByName = new Dictionary<string, int>(StringComparer.Ordinal);
+                for (int i = 0; i < target.MeshContextCount; i++)
+                {
+                    var bc = target.GetMeshContext(i);
+                    if (bc == null || bc.Type != MeshType.Bone || string.IsNullOrEmpty(bc.Name)) continue;
+                    if (!boneIndexByName.ContainsKey(bc.Name)) boneIndexByName[bc.Name] = i;
+                }
+                foreach (var mc in imported.MeshContextList)
+                {
+                    var mo = mc?.MeshObject;
+                    if (mo == null) continue;
+                    if (!mo.Vertices.Any(v => v.HasBoneWeight || v.HasMirrorBoneWeight)) continue;
+
+                    var missing = new List<string>();
+                    int Resolve(int pmxIndex)
+                    {
+                        string n = pmxIndex >= 0 && pmxIndex < boneNames.Count ? boneNames[pmxIndex] : null;
+                        if (n != null && boneIndexByName.TryGetValue(n, out int ti)) return ti;
+                        missing.Add(n ?? $"#{pmxIndex}");
+                        return -1;
+                    }
+                    BoneWeight? Remap(BoneWeight? w)
+                    {
+                        if (!w.HasValue) return null;
+                        var b = w.Value;
+                        if (b.weight0 > 0f) b.boneIndex0 = Resolve(b.boneIndex0); else b.boneIndex0 = 0;
+                        if (b.weight1 > 0f) b.boneIndex1 = Resolve(b.boneIndex1); else b.boneIndex1 = 0;
+                        if (b.weight2 > 0f) b.boneIndex2 = Resolve(b.boneIndex2); else b.boneIndex2 = 0;
+                        if (b.weight3 > 0f) b.boneIndex3 = Resolve(b.boneIndex3); else b.boneIndex3 = 0;
+                        return b;
+                    }
+
+                    var mapped = mo.Vertices.Select(v => (V: v, W: Remap(v.BoneWeight), M: Remap(v.MirrorBoneWeight))).ToList();
+                    if (missing.Count > 0)
+                    {
+                        foreach (var n in missing) unresolvedNames.Add(n);
+                        mo.ClearAllBoneWeights();
+                        unboundObjects++;
+                        continue;
+                    }
+                    foreach (var e in mapped)
+                    {
+                        heldWeights.Add(e);
+                        e.V.BoneWeight       = null;
+                        e.V.MirrorBoneWeight = null;
+                    }
+                }
+            }
 
             // ── 名前の重複を解消（索引をずらす前に行う。名前だけを見る）──
             int renamedObjects = ResolveAppendObjectNames(target, imported, renames);
@@ -140,6 +275,42 @@ namespace Poly_Ling.Player
                     if (f.MaterialIndex >= 0) f.MaterialIndex += matOffset;
             }
             imported.OffsetIndexReferences(meshOffset);
+
+            // ── 引き当てたウェイトを戻す（target の番号なのでずらさない）──
+            foreach (var (v, w, m) in heldWeights)
+            {
+                v.BoneWeight       = w;
+                v.MirrorBoneWeight = m;
+            }
+
+            // ── 表情の索引をずらし、名前の重複を解消する（target へ足すのはオブジェクトを足した後）──
+            var addExpressions = new List<MorphExpression>();
+            int renamedExprs = 0;
+            if (imported.MorphExpressions != null && imported.MorphExpressions.Count > 0)
+            {
+                var exprNames = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var e in target.MorphExpressions)
+                    if (!string.IsNullOrEmpty(e?.Name)) exprNames.Add(e.Name);
+                var exprMap = ResolveGroupedNames(
+                    imported.MorphExpressions.Where(e => !string.IsNullOrEmpty(e?.Name)).Select(e => e.Name).ToList(),
+                    null, exprNames);
+                foreach (var e in imported.MorphExpressions)
+                {
+                    if (e == null) continue;
+                    for (int i = 0; i < e.MeshEntries.Count; i++)
+                    {
+                        var entry = e.MeshEntries[i];
+                        if (entry.MeshIndex >= 0) entry.MeshIndex += meshOffset;
+                        e.MeshEntries[i] = entry;
+                    }
+                    if (!string.IsNullOrEmpty(e.Name) && exprMap.TryGetValue(e.Name, out var nn))
+                    {
+                        e.Name = nn;
+                        renamedExprs++;
+                    }
+                    addExpressions.Add(e);
+                }
+            }
 
             // ── 材質を末尾へ ──
             if (imported.MaterialReferences != null)
@@ -173,17 +344,24 @@ namespace Poly_Ling.Player
                     else
                     {
                         UnityEngine.Debug.LogWarning(
-                            $"[ImportMqo] ミラー対を組めませんでした: '{p.Real.Name}' ↔ '{p.Mirror.Name}'\n{pair.BuildLog}");
+                            $"[Import{kind}] ミラー対を組めませんでした: '{p.Real.Name}' ↔ '{p.Mirror.Name}'\n{pair.BuildLog}");
                     }
                 }
             }
 
+            // ── 表情を末尾へ ──
+            foreach (var e in addExpressions) target.MorphExpressions.Add(e);
+
             target.ComputeWorldMatrices();
             target.IsDirty = true;
 
-            // ── Undo 記録 ──
+            // ── Undo 記録（オブジェクトの追加と表情の差し替えを 1 件にまとめる）──
             if (_editOps?.UndoController != null)
             {
+                string desc = $"Append {kind}: {System.IO.Path.GetFileName(filePath)}";
+                var undo = _editOps.UndoController;
+                undo.SetModelContext(target);
+                undo.MeshListStack.BeginGroup(desc);
                 var record = new MeshListChangeRecord
                 {
                     AddedMeshContexts = added
@@ -197,9 +375,19 @@ namespace Poly_Ling.Player
                     NewCurrentMaterialIndex = target.CurrentMaterialIndex,
                     AddedMirrorPairs = addedPairs,
                 };
-                _editOps.UndoController.SetModelContext(target);
-                _editOps.UndoController.RecordMeshListChange(
-                    record, $"Append MQO: {System.IO.Path.GetFileName(filePath)}");
+                undo.RecordMeshListChange(record, desc);
+                if (addExpressions.Count > 0)
+                {
+                    var exprRecord = new MorphExpressionListReplaceRecord
+                    {
+                        OldSets = oldExpressions,
+                        NewSets = target.MorphExpressions.Select(e => e.Clone()).ToList(),
+                    };
+                    PLDiag.UndoRecord("MeshList", desc, exprRecord);
+                    undo.MeshListStack.Record(exprRecord, desc);
+                }
+                undo.MeshListStack.EndGroup();
+                undo.FocusMeshList();
             }
 
             // ── 表示の作り直し ──
@@ -208,11 +396,16 @@ namespace Poly_Ling.Player
             RebuildModelList();
             NotifyPanels(ChangeKind.ListStructure);
 
-            _status = $"MQO追加読込: {System.IO.Path.GetFileName(filePath)}" +
+            _status = $"{kind}追加読込: {System.IO.Path.GetFileName(filePath)}" +
                       $"（オブジェクト +{added.Count} / 材質 +{imported.MaterialReferences?.Count ?? 0}" +
-                      (renamedObjects + renamedMats > 0
-                          ? $" / 改名 オブジェクト {renamedObjects}・材質 {renamedMats}" : "") + "）";
-            UnityEngine.Debug.Log("[ImportMqo] " + _status);
+                      (addExpressions.Count > 0 ? $" / 表情 +{addExpressions.Count}" : "") +
+                      (renamedObjects + renamedMats + renamedExprs > 0
+                          ? $" / 改名 オブジェクト {renamedObjects}・材質 {renamedMats}・表情 {renamedExprs}" : "") +
+                      (unboundObjects > 0
+                          ? $" / ボーン名が見つからずウェイトを捨てたオブジェクト {unboundObjects}（{string.Join(", ", unresolvedNames)}）" : "") +
+                      "）";
+            if (unboundObjects > 0) UnityEngine.Debug.LogWarning($"[Import{kind}] " + _status);
+            else                    UnityEngine.Debug.Log($"[Import{kind}] " + _status);
             return renames;
         }
 

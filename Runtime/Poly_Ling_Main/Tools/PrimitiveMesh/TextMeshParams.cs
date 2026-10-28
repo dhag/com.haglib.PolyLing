@@ -132,6 +132,35 @@ namespace Poly_Ling.GlyphText
                  Description = "円盤のふちのみ。各行を 1 周に均等割り付けする（字間は半径から決めず、1 周を文字数で割る）")]
         public bool CurveFitCircle;
 
+        // ── 看板 ─────────────────────────────────────────────────
+
+        /// <summary>看板の余白（片側）の下限・上限</summary>
+        public const float SignMarginMin = 0f;
+        public const float SignMarginMax = 5f;
+
+        /// <summary>看板の奥行きの下限・上限</summary>
+        public const float SignDepthMin = 0.001f;
+        public const float SignDepthMax = 2f;
+
+        [PLParam(TextKey = "TextSignboard",
+                 Description = "配置が平面で厚みが 0 より大きいときのみ。文字の外形に余白を足した直方体（看板）を作り、表面を文字の裏面に合わせて貼る")]
+        public bool Signboard;
+
+        [PLParam(TextKey = "TextSignMarginH", Description = "看板の左右の余白（片側。左右同じ）",
+                 Min = SignMarginMin, Max = SignMarginMax)]
+        public float SignMarginH;
+
+        [PLParam(TextKey = "TextSignMarginV", Description = "看板の上下の余白（片側。上下同じ）",
+                 Min = SignMarginMin, Max = SignMarginMax)]
+        public float SignMarginV;
+
+        [PLParam(TextKey = "TextSignDepth", Description = "看板の奥行き（Z）", Min = SignDepthMin, Max = SignDepthMax)]
+        public float SignDepth;
+
+        [PLParam(TextKey = "TextSignBackText",
+                 Description = "看板ありのときのみ。看板の裏面にも同じ文字を、裏から読める向きで貼る")]
+        public bool SignBackText;
+
         public static TextMeshParams Default => new TextMeshParams
         {
             MeshName      = "Text",
@@ -152,6 +181,11 @@ namespace Poly_Ling.GlyphText
             CurveFlip     = false,
             CurveStartAngle = 0f,
             CurveFitCircle  = false,
+            Signboard       = false,
+            SignMarginH     = 0.1f,
+            SignMarginV     = 0.1f,
+            SignDepth       = 0.05f,
+            SignBackText    = false,
         };
 
         public bool Equals(TextMeshParams o)
@@ -173,6 +207,11 @@ namespace Poly_Ling.GlyphText
             if (CurveFlip != o.CurveFlip) return false;
             if (!Mathf.Approximately(CurveStartAngle, o.CurveStartAngle)) return false;
             if (CurveFitCircle != o.CurveFitCircle) return false;
+            if (Signboard != o.Signboard) return false;
+            if (!Mathf.Approximately(SignMarginH, o.SignMarginH)) return false;
+            if (!Mathf.Approximately(SignMarginV, o.SignMarginV)) return false;
+            if (!Mathf.Approximately(SignDepth, o.SignDepth)) return false;
+            if (SignBackText != o.SignBackText) return false;
             return true;
         }
 

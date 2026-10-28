@@ -481,4 +481,60 @@ namespace Poly_Ling.UndoSystem
             ctx.OnModelsChanged?.Invoke();
         }
     }
+
+    // ================================================================
+    // モデル置き換えUndoレコード
+    // ================================================================
+
+    /// <summary>
+    /// モデルの置き換え（外部から届いたモデルで差し替え）の Undo 記録。
+    ///
+    /// 【なぜ ModelDTO で控えるか】
+    ///   ModelContextSnapshot は名前・メッシュ・材質・選択しか持たず、表情・Humanoid・揺れものが落ちる。
+    ///   また RemoveModelAt は外したモデルを Clear(true) するので、実体を持っておくこともできない。
+    ///   .mfproj と同じ全データ（ModelBundle.BuildDto。テクスチャ画像込み）で控え、戻すたびに組み直す。
+    /// </summary>
+    public class ModelReplaceRecord : IUndoRecord<ProjectContext>
+    {
+        public UndoOperationInfo Info { get; set; }
+
+        /// <summary>置き換えたモデルの位置。</summary>
+        public int ModelIndex;
+
+        /// <summary>置き換え前のモデル。</summary>
+        public Poly_Ling.Serialization.ModelDTO OldModel;
+
+        /// <summary>置き換え後のモデル。</summary>
+        public Poly_Ling.Serialization.ModelDTO NewModel;
+
+        public ModelReplaceRecord(int modelIndex,
+            Poly_Ling.Serialization.ModelDTO oldModel, Poly_Ling.Serialization.ModelDTO newModel)
+        {
+            ModelIndex = modelIndex;
+            OldModel   = oldModel;
+            NewModel   = newModel;
+        }
+
+        public void Undo(ProjectContext ctx) => Swap(ctx, OldModel);
+
+        public void Redo(ProjectContext ctx) => Swap(ctx, NewModel);
+
+        private void Swap(ProjectContext ctx, Poly_Ling.Serialization.ModelDTO dto)
+        {
+            if (ctx == null || dto == null) return;
+            if (ModelIndex < 0 || ModelIndex >= ctx.ModelCount) return;
+
+            var model = Poly_Ling.Serialization.ModelBundle.ToModel(dto);
+            if (model == null) return;
+            // 組み直したモデルはワールド行列を持たない（ToModelContext は作らない）。置いた直後の後始末
+            // （PolyLingPlayerViewerCore.RefreshAfterModelPlaced の ComputeWorldMatrices）と同じく、ここで作る。
+            // 作らないと、階層を持つモデルは Undo・Redo の後に部品が原点へ集まって描かれる。
+            model.ComputeWorldMatrices();
+
+            ctx.RemoveModelAt(ModelIndex);
+            ctx.InsertModel(ModelIndex, model);
+            ctx.CurrentModelIndex = ModelIndex;
+            ctx.OnModelsChanged?.Invoke();
+        }
+    }
 }

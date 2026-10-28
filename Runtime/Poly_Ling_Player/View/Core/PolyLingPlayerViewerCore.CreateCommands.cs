@@ -23,6 +23,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Ops;
 using Poly_Ling.PrimitiveMesh;
 using Poly_Ling.Selection;
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
@@ -46,9 +47,12 @@ namespace Poly_Ling.Player
             _commandDispatcher.OnMatchEdgeChainCount = ExecuteMatchEdgeChainCount;
             _commandDispatcher.OnResetProject        = ExecuteResetProject;
             _commandDispatcher.OnCreateEmptyModel    = ExecuteCreateEmptyModel;
+            _commandDispatcher.OnAddModelBundle      = ExecuteAddModelBundle;
+            _commandDispatcher.OnReplaceModelBundle  = ExecuteReplaceModelBundle;
             _commandDispatcher.OnEnsureProjectForCreate = EnsureProjectForCreate;
             _commandDispatcher.OnCreateObjectArray   = ExecuteCreateObjectArray;
             _commandDispatcher.OnSplitObjectByPartsId = ExecuteSplitObjectByPartsId;
+            _commandDispatcher.OnSplitObjectByConnectivity = ExecuteSplitObjectByConnectivity;
             _commandDispatcher.OnAdvancedSelect      = ExecuteAdvancedSelect;
             _commandDispatcher.OnSculptStroke        = ExecuteSculptStroke;
             _commandDispatcher.OnMovePivot           = ExecuteMovePivot;
@@ -178,6 +182,8 @@ namespace Poly_Ling.Player
             if (mo == null)
             {
                 if (imageMaterial != null) Object.Destroy(imageMaterial.Texture);
+                if (cmd is ExtractPipeBeltCommand)
+                    return $"パイプから梯子を取り出せませんでした（{PipeBeltExtractor.LastMessage}）";
                 return $"{cmd.ShapeName} を生成できませんでした（フォントが開けない・輪郭が 0 本など）";
             }
 
@@ -614,6 +620,130 @@ namespace Poly_Ling.Player
             ReportMeshes(model, added.ConvertAll(e => e.Index));
 
             Debug.Log($"[PartsId] 分解: \"{srcMc.Name}\" {result.Summary}");
+            return null;
+        }
+
+        // ================================================================
+        // つながりによる分解
+        // ================================================================
+
+        /// <summary>直近のつながり分解の結果。パネルが結果表示へ使う。</summary>
+        private ConnectivitySplitResult _lastConnectivitySplitResult;
+
+        /// <summary>
+        /// 面・線のつながりで描画オブジェクト 1 つを分解し、空のオブジェクトの子として並べる。
+        /// DeleteSource なら元を削除し、追加と削除を 1 つの Undo 記録にまとめる。
+        /// 切り出しは ConnectivitySplitOps、挿入は PartsIdSplitInserter が持つ。
+        /// </summary>
+        /// <returns>失敗理由。成功時は null。</returns>
+        private string ExecuteSplitObjectByConnectivity(SplitObjectByConnectivityCommand cmd)
+        {
+            if (cmd == null) return "コマンドが null";
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return "モデルがありません";
+
+            int srcIndex = cmd.TargetMasterIndex;
+            var srcMc    = model.GetMeshContext(srcIndex);
+            if (srcMc?.MeshObject == null)
+            {
+                _lastConnectivitySplitResult =
+                    ConnectivitySplitResult.Fail("対象メッシュが見つかりません");
+                return _lastConnectivitySplitResult.Reason;
+            }
+
+            // 元を消すとき、子があれば止める。削除で子は祖父へ付け替わるが、
+            // その付け替えは Undo の挿し戻しで元に戻らない（ModelContext.RemoveAt）。
+            if (cmd.DeleteSource)
+            {
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    if (i == srcIndex) continue;
+                    var mc = model.GetMeshContext(i);
+                    if (mc != null && mc.HierarchyParentIndex == srcIndex)
+                    {
+                        _lastConnectivitySplitResult = ConnectivitySplitResult.Fail(
+                            $"元オブジェクトに子（{mc.Name}）があるため削除できません。"
+                          + "元を残す設定で実行してください");
+                        return _lastConnectivitySplitResult.Reason;
+                    }
+                }
+            }
+
+            // 元メッシュは書き換えない。
+            var result = ConnectivitySplitOps.Split(srcMc.MeshObject, cmd.IsolatedPolicy, out var pieces);
+            _lastConnectivitySplitResult = result;
+            if (!result.Success) return result.Reason;
+
+            var oldSelected = model.CaptureAllSelectedIndices();
+
+            // 元の姿は挿入前に控える（削除の Undo で挿し戻す）。
+            var srcSnapshot = cmd.DeleteSource ? MeshContextSnapshot.Capture(srcMc) : null;
+
+            var added = PartsIdSplitInserter.Insert(
+                model, srcIndex, pieces,
+                parentSuffix: "_Split",
+                childName: (baseName, part) => baseName + "_" + part);
+            if (added.Count == 0)
+            {
+                _lastConnectivitySplitResult = ConnectivitySplitResult.Fail("挿入できませんでした");
+                return _lastConnectivitySplitResult.Reason;
+            }
+
+            if (cmd.DeleteSource)
+            {
+                // 子は元のサブツリーの後ろへ入るので、元の索引は挿入で動かない。
+                // 削除で後ろの索引が 1 つ詰まり、親子の参照も RemoveAt が付け替える。
+                model.RemoveAt(srcIndex);
+                for (int i = 0; i < added.Count; i++)
+                {
+                    int idx = added[i].Index;
+                    added[i] = (idx > srcIndex ? idx - 1 : idx, added[i].MeshContext);
+                }
+                result.SourceDeleted = true;
+                _lastConnectivitySplitResult = result;
+            }
+
+            model.ComputeWorldMatrices();
+
+            model.ClearMeshSelection();
+            foreach (var e in added) model.AddToMeshSelection(e.Index);
+            var newSelected = model.CaptureAllSelectedIndices();
+
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetModelContext(model);
+                if (cmd.DeleteSource)
+                {
+                    // 追加と削除を 1 つの記録にする。
+                    //   Undo: 追加分を（削除後の索引で）抜き、元を元の索引へ挿し戻す。
+                    //   Redo: 元を抜き、追加分を削除後の索引へ挿す。
+                    // 索引は MeshListChangeRecord.Undo / Redo の順序に合わせてある。
+                    var record = new MeshListChangeRecord
+                    {
+                        RemovedMeshContexts = new List<(int, MeshContextSnapshot)>
+                        {
+                            (srcIndex, srcSnapshot)
+                        },
+                        AddedMeshContexts = added.ConvertAll(
+                            e => (e.Index, MeshContextSnapshot.Capture(e.MeshContext))),
+                        OldSelectedIndices = oldSelected,
+                        NewSelectedIndices = newSelected,
+                    };
+                    _editOps.UndoController.RecordMeshListChange(
+                        record, $"Split By Connectivity: {srcMc.Name}");
+                }
+                else
+                {
+                    _editOps.UndoController.RecordMeshContextsAdd(added, oldSelected, newSelected);
+                }
+            }
+
+            PrimitiveMeshFinalize(model);
+
+            ReportMeshes(model, added.ConvertAll(e => e.Index));
+
+            Debug.Log($"[ConnectivitySplit] 分解: \"{srcMc.Name}\" {result.Summary}");
             return null;
         }
 

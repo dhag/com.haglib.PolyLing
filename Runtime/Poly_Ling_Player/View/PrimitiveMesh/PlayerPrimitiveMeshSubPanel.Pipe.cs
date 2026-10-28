@@ -103,6 +103,9 @@ namespace Poly_Ling.Player
             _pipeInfoLabel.style.marginTop  = 2;
             bc.Add(_pipeInfoLabel);
 
+            // ── パイプから梯子を取り出す（旧ツールの「←パイプからの取り出し」） ──
+            BuildPipeBeltExtractUI(bc);
+
             // ── はしごCSV ──
             BuildBeltCsvUI(bc, _pipeBelts,
                 "Primitive.Pipe.BeltCsv", "pipe_belt.csv", RefreshPipeInfo);
@@ -111,6 +114,9 @@ namespace Poly_Ling.Player
             BuildBeltOrientUI(bc, _pipeOrient);
 
             c.Add(TR(T("PipeCapEnds"), () => _pipeP.CapEnds, v => { _pipeP.CapEnds = v; D(); }));
+
+            // ── 旧ツール互換・終端ぱっつん ──
+            BuildPipeLegacyUI(c);
 
             // ── はしごのウェイトを引き継ぐ ──
             c.Add(TR(T("BeltInheritWeights"), () => _pipeP.InheritBeltWeights,
@@ -162,6 +168,132 @@ namespace Poly_Ling.Player
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
             BuildBeltProfileEditor(_profileEditorContainer, _pipeEdit, T("PipeAxisHint"));
+        }
+
+        // ================================================================
+        // パイプ → 梯子（旧 NCSHAGLIB の「←パイプからの取り出し」）
+        // ================================================================
+
+        private PipeBeltExtractParams _pipeBeltP = PipeBeltExtractParams.Default;
+        private string _pipeBeltKeepText = "";
+
+        [UiControl("pipe.beltInfo", Safety = UiSafety.ReadOnly, Description = "パイプから梯子を取り出した結果")]
+        private Label  _pipeBeltInfo;
+
+        private void BuildPipeBeltExtractUI(VisualElement c)
+        {
+            c.Add(PlayerIoUiKit.Divider());
+            var fold = new Foldout { text = T("PipeBeltSection"), value = false };
+            fold.style.marginBottom = 4;
+            var f = fold.contentContainer;
+            c.Add(fold);
+
+            var hint = new Label(T("PipeBeltHint"));
+            hint.style.fontSize     = 10;
+            hint.style.whiteSpace   = WhiteSpace.Normal;
+            hint.style.marginBottom = 2;
+            f.Add(hint);
+
+            f.Add(IR(T("PipeBeltRingVertexCount"),
+                PipeBeltExtractParams.RingVertexCountMin, PipeBeltExtractParams.RingVertexCountMax,
+                () => _pipeBeltP.RingVertexCount, v => _pipeBeltP.RingVertexCount = v));
+            f.Add(IR(T("PipeBeltRailA"), 0, PipeBeltExtractParams.RingVertexCountMax - 1,
+                () => _pipeBeltP.RailA, v => _pipeBeltP.RailA = v));
+            f.Add(IR(T("PipeBeltRailB"), 0, PipeBeltExtractParams.RingVertexCountMax - 1,
+                () => _pipeBeltP.RailB, v => _pipeBeltP.RailB = v));
+            f.Add(IR(T("PipeBeltStartRung"), 0, 64,
+                () => _pipeBeltP.StartRung, v => _pipeBeltP.StartRung = v));
+            f.Add(IR(T("PipeBeltRungStep"), PipeBeltExtractParams.RungStepMin, PipeBeltExtractParams.RungStepMax,
+                () => _pipeBeltP.RungStep, v => _pipeBeltP.RungStep = v));
+
+            var keepLx = T("PipeBeltKeepRungs");
+            f.Add(SL(keepLx));
+            var keepTf = new TextField { value = _pipeBeltKeepText, multiline = false };
+            keepTf.style.marginBottom = 2;
+            keepTf.RegisterValueChangedCallback(e => _pipeBeltKeepText = e.newValue ?? "");
+            f.Add(RowTarget.Add(keepLx.Key, keepTf, keepLx.Text));
+
+            f.Add(TR(T("PipeBeltReverse"), () => _pipeBeltP.Reverse, v => _pipeBeltP.Reverse = v));
+
+            var runLx = T("PipeBeltExtractRun");
+            var run = PlayerIoUiKit.WideBtn(runLx, RunPipeBeltExtract);
+            f.Add(RowTarget.Add(runLx.Key, run, runLx.Text, UiSafety.Destructive));
+
+            _pipeBeltInfo = new Label("");
+            _pipeBeltInfo.style.fontSize   = 10;
+            _pipeBeltInfo.style.whiteSpace = WhiteSpace.Normal;
+            _pipeBeltInfo.style.marginTop  = 2;
+            f.Add(_pipeBeltInfo);
+        }
+
+        /// <summary>
+        /// 自動検索の取り込み元に選んだパイプから梯子を取り出し、新しいオブジェクトとして置く。
+        /// 位置は取り込み元と同じ座標のまま（回転・拡大・移動は掛けない）。
+        /// 梯子どうしの端がつながらないよう、重複頂点の結合は掛けない。
+        /// </summary>
+        private void RunPipeBeltExtract()
+        {
+            var mesh = _pipePick.Current;
+            int src  = ResolveMasterIndexOf(mesh);
+            if (src < 0)
+            {
+                if (_pipeBeltInfo != null) _pipeBeltInfo.text = T("PipeBeltNoSource");
+                return;
+            }
+            if (SendCommand == null)
+            {
+                if (_pipeBeltInfo != null) _pipeBeltInfo.text = "配線が足りません（SendCommand）";
+                return;
+            }
+
+            var p = _pipeBeltP;
+            p.KeepRungs = ParseRungList(_pipeBeltKeepText);
+
+            var pl = CurrentPlacement();
+            pl.AddMode                = PrimitiveAddMode.NewObject;
+            pl.WorldPosition          = Vector3.zero;
+            pl.PlaceRotation          = Vector3.zero;
+            pl.PlaceScale             = Vector3.one;
+            pl.MergeDuplicateVertices = false;
+
+            SendCommand(new ExtractPipeBeltCommand(ModelIndex(), p, new[] { src }, pl));
+
+            if (_pipeBeltInfo != null) _pipeBeltInfo.text = PipeBeltExtractor.LastMessage;
+            RefreshMeshSourcePick(_pipePick);
+        }
+
+        // ================================================================
+        // 旧ツール互換（NCSHAGLIB の髪パイプ生成）
+        // ================================================================
+
+        private void BuildPipeLegacyUI(VisualElement c)
+        {
+            var fold = new Foldout { text = T("PipeLegacyFold"), value = false };
+            fold.style.marginBottom = 4;
+            var f = fold.contentContainer;
+            c.Add(fold);
+
+            var hint = new Label(T("PipeLegacyHint"));
+            hint.style.fontSize     = 10;
+            hint.style.whiteSpace   = WhiteSpace.Normal;
+            hint.style.marginBottom = 2;
+            f.Add(hint);
+
+            f.Add(TR(T("PipeLegacyCompat"), () => _pipeP.LegacyCompat, v => { _pipeP.LegacyCompat = v; D(); }));
+
+            f.Add(SL(T("PipeLegacyIndividual")));
+            f.Add(TR(T("PipeLegacyFrame"),       () => _pipeP.LegacyFrame,       v => { _pipeP.LegacyFrame       = v; D(); }));
+            f.Add(TR(T("PipeLegacyRawProfile"),  () => _pipeP.LegacyRawProfile,  v => { _pipeP.LegacyRawProfile  = v; D(); }));
+            f.Add(TR(T("PipeLegacyVertexOrder"), () => _pipeP.LegacyVertexOrder, v => { _pipeP.LegacyVertexOrder = v; D(); }));
+            f.Add(TR(T("PipeLegacyUV"),          () => _pipeP.LegacyUV,          v => { _pipeP.LegacyUV          = v; D(); }));
+
+            f.Add(SL(T("PipeLegacyCutEndScale")));
+            f.Add(V3F(T("PipeLegacyCutEndScaleX"), T("PipeLegacyCutEndScaleY"), T("PipeLegacyCutEndScaleZ"),
+                () => _pipeP.LegacyCutEndScale.x, v => { _pipeP.LegacyCutEndScale.x = v; D(); },
+                () => _pipeP.LegacyCutEndScale.y, v => { _pipeP.LegacyCutEndScale.y = v; D(); },
+                () => _pipeP.LegacyCutEndScale.z, v => { _pipeP.LegacyCutEndScale.z = v; D(); }));
+
+            f.Add(TR(T("PipePattsunEnd"), () => _pipeP.PattsunEnd, v => { _pipeP.PattsunEnd = v; D(); }));
         }
 
         private void RefreshPipeInfo()

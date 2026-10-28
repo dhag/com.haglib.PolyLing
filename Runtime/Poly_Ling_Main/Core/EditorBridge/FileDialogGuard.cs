@@ -37,6 +37,15 @@ namespace Poly_Ling.EditorBridge
         public static bool IsOpen { get; private set; }
 
         /// <summary>
+        /// ダイアログを表示する直前に発火する。
+        /// UI 側はこれを購読し、ダイアログを開かせたボタンからフォーカスを外す。
+        /// （フォーカスが残ったままだと、ダイアログを Enter で確定したときの
+        ///   決定入力が NavigationSubmitEvent としてそのボタンに届き、
+        ///   ダイアログがもう一度開く。）
+        /// </summary>
+        public static event Action Opening;
+
+        /// <summary>
         /// ダイアログ表示を門番ごしに実行する。
         /// 既に開いているときは show を呼ばず空文字を返す。
         /// </summary>
@@ -46,7 +55,11 @@ namespace Poly_Ling.EditorBridge
             if (IsOpen) return string.Empty;
 
             IsOpen = true;
-            try { return show() ?? string.Empty; }
+            try
+            {
+                Opening?.Invoke();
+                return show() ?? string.Empty;
+            }
             finally { IsOpen = false; }
         }
     }

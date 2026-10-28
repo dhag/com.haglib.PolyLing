@@ -181,6 +181,19 @@ namespace Poly_Ling.PMX
         public AlphaConflictMode AlphaConflict = AlphaConflictMode.PreferTransparent;
 
         // ================================================================
+        // 内部用（コマンド引数・設定ファイルには出さない）
+        // ================================================================
+
+        /// <summary>
+        /// ボーンを読まないとき（ImportTarget に Bones が無いとき）も、頂点に PMX のボーン番号のウェイトを残す。
+        /// 既定は false で、そのときは読込の最後でウェイトを捨て、MeshFilter 系として確定させる
+        /// （ボーンの無いモデルでウェイトが PMX の番号を指したままだと、描画が範囲外の番号を引いて形が飛ぶ）。
+        /// 部分インポート（PMX のウェイトを既存モデルへ移す）だけが true にする。
+        /// </summary>
+        [NonSerialized]
+        public bool KeepSourceBoneWeights = false;
+
+        // ================================================================
         // ファクトリメソッド
         // ================================================================
 
@@ -256,7 +269,8 @@ namespace Poly_Ling.PMX
                 DetectNamedMirror = this.DetectNamedMirror,
                 BakeMirror = this.BakeMirror,
                 AlphaCutoff = this.AlphaCutoff,
-                AlphaConflict = this.AlphaConflict
+                AlphaConflict = this.AlphaConflict,
+                KeepSourceBoneWeights = this.KeepSourceBoneWeights
             };
         }
 
@@ -279,7 +293,8 @@ namespace Poly_Ling.PMX
                    DetectNamedMirror != o.DetectNamedMirror ||
                    BakeMirror != o.BakeMirror ||
                    !Mathf.Approximately(AlphaCutoff, o.AlphaCutoff) ||
-                   AlphaConflict != o.AlphaConflict;
+                   AlphaConflict != o.AlphaConflict ||
+                   KeepSourceBoneWeights != o.KeepSourceBoneWeights;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -302,6 +317,7 @@ namespace Poly_Ling.PMX
             BakeMirror = o.BakeMirror;
             AlphaCutoff = o.AlphaCutoff;
             AlphaConflict = o.AlphaConflict;
+            KeepSourceBoneWeights = o.KeepSourceBoneWeights;
         }
 
         // ================================================================
